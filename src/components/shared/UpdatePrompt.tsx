@@ -98,6 +98,8 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         log.error('checkNow failed', e);
+        // quietWhenCurrent only suppresses the “already latest” toast (Settings owns that).
+        // Errors must still surface — either here or via rethrow to the caller.
         if (!quiet) {
           toast({
             title: '检查更新失败',
@@ -105,7 +107,7 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
             variant: 'danger',
           });
         }
-        return null;
+        throw e instanceof Error ? e : new Error(msg);
       }
     },
     [presentUpdate, toast],

@@ -4,9 +4,10 @@ import {
   Gauge,
   MessagesSquare,
   Bot,
-  Cable,
+  Key,
   Route,
   Blocks,
+  Plug,
   FolderKanban,
   Settings2,
   PanelLeftClose,
@@ -26,13 +27,14 @@ const NAV_WORKSPACE = [
   { to: '/chat', label: 'Chat', icon: MessagesSquare },
   { to: '/agents', label: 'Agents', icon: Bot },
   { to: '/skills', label: 'Skills', icon: Blocks },
+  { to: '/mcp', label: 'MCP', icon: Plug },
   { to: '/projects', label: 'Projects', icon: FolderKanban },
 ] as const;
 
 /** 管理 */
 const NAV_MANAGE = [
   { to: '/', label: 'Dashboard', icon: Gauge },
-  { to: '/connections', label: 'Connections', icon: Cable },
+  { to: '/connections', label: 'Connections', icon: Key },
   { to: '/router', label: 'Router', icon: Route },
   { to: '/settings', label: 'Settings', icon: Settings2 },
 ] as const;

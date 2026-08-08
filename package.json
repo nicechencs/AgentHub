@@ -2,6 +2,16 @@
   "name": "agenthub",
   "private": true,
   "version": "0.1.0",
+  "description": "Multi-agent desktop hub: install runtimes, manage providers/accounts, skills, usage, and chat",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicechencs/AgentHub.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nicechencs/AgentHub/issues"
+  },
+  "homepage": "https://github.com/nicechencs/AgentHub#readme",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,6 +24,7 @@
     "test:watch": "vitest",
     "pricing:update": "node scripts/update-embedded-pricing.mjs",
     "pricing:check": "node scripts/update-embedded-pricing.mjs --check",
+    "icons": "node scripts/generate-desktop-icons.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",

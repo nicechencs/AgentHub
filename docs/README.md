@@ -1,6 +1,6 @@
 # AgentHub 文档索引
 
-仓库入口见根目录 [README.md](../README.md)。项目约定见 [AGENTS.md](../AGENTS.md)。
+仓库入口见根目录 [README.md](../README.md)。项目约定见 [AGENTS.md](../AGENTS.md)。漏洞披露见 [SECURITY.md](../SECURITY.md)。
 
 ## 稳定设计文档
 

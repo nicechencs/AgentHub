@@ -12,6 +12,7 @@ import AgentsPage from '@/pages/agents';
 import ConnectionsPage from '@/pages/connections';
 import RouterPage from '@/pages/router';
 import SkillsPage from '@/pages/skills';
+import McpPage from '@/pages/mcp';
 import ProjectsPage from '@/pages/projects';
 import SettingsPage from '@/pages/settings';
 import {
@@ -85,6 +86,7 @@ export default function App() {
                 <Route path="/providers" element={<LegacyConnectionsRedirect mode="providers" />} />
                 <Route path="/accounts" element={<LegacyConnectionsRedirect mode="accounts" />} />
                 <Route path="/skills" element={<SkillsPage />} />
+                <Route path="/mcp" element={<McpPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/usage" element={<LegacyUsageRedirect />} />
                 {/* 已并入 Settings */}

@@ -40,7 +40,7 @@ AgentHub/
 
 静态资源约定（无顶层 `assets/`）：
 
-- 桌面/安装图标：`src-tauri/icons/`
+- 桌面/安装图标：`src-tauri/icons/`（仅 Win/macOS/Linux；源图 `app-icon.svg`；生成请用 `pnpm icons`，会剔除移动端/商店产物）
 - 前端供应商预设模板：`src/config/presets/`
 - Core 侧预设：`crates/agenthub-core/src/presets/`
 

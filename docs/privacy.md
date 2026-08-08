@@ -29,6 +29,11 @@
 `crates/agenthub-core/src/oauth/providers.rs` 中为各 CLI 的 **public client** 配置（PKCE，无 client_secret）。  
 这些值属于运行时真源，**不要**再抄进 README、issue、对外方案文档。
 
+## 漏洞披露
+
+安全问题（凭据泄露、任意文件读写、命令注入等）的报告渠道与范围见根目录 [SECURITY.md](../SECURITY.md)。  
+**不要**在公开 Issue 中贴复现细节或真实凭据。
+
 ## 开源致谢
 
 对上游开源项目的 attribution 保留在根 [README.md](../README.md)；实现注释中避免逐文件「对齐某仓库」的对照叙述。

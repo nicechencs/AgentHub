@@ -398,7 +398,7 @@ log_level = "info"              # error | warn | info | debug | trace
 | Runtime 元数据 | core `runtime/` | id、检测方式、min_version、bootstrap 渠道（winget/url/命令） |
 | Provider 预设 | **P1 起以 core 为准**；前端 presets 为镜像 | `anthropic` / `openai-compatible` 等模板 |
 | 定价表 | `usage/pricing.rs` + `embedded-pricing.json` | 成本估算（USD；离线快照；`pnpm pricing:update` 同步 LiteLLM） |
-| Logo/文案 | `src-tauri/icons/`、UI 文案；前端无顶层 `assets/` | |
+| Logo/文案 | `src-tauri/icons/`、UI 文案；前端无顶层 `assets/`；改图标：`pnpm icons`（桌面专用，勿裸跑 `tauri icon`） | |
 
 用户「另存为供应商」写入 L1 `providers`，不改 L3 仓库文件。
 
