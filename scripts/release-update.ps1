@@ -126,13 +126,20 @@ Or set:
   `$env:TAURI_SIGNING_PRIVATE_KEY = '<key contents>'
 "@
     }
-    $env:TAURI_SIGNING_PRIVATE_KEY_PATH = (Resolve-Path $path).Path
+    $resolved = (Resolve-Path $path).Path
+    $env:TAURI_SIGNING_PRIVATE_KEY_PATH = $resolved
+    # Prefer PATH only (do not also set PRIVATE_KEY — tauri rejects both).
+    # Always set password env (empty string OK) so build never blocks on interactive prompt.
     if ($KeyPassword -ne "") {
         $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $KeyPassword
     } elseif (-not $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
         $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
     }
-    Write-Info "Signing key: $($env:TAURI_SIGNING_PRIVATE_KEY_PATH)"
+    # Clear content env if we are using path mode to avoid "cannot use both" errors.
+    if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+        Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY -ErrorAction SilentlyContinue
+    }
+    Write-Info "Signing key path: $resolved (password from env or empty)"
 }
 
 function Ensure-Tools([switch]$NeedGh) {
