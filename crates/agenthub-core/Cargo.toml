@@ -1,0 +1,30 @@
+[package]
+name = "agenthub-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "AgentHub business core — shared by GUI and CLI (no Tauri dependency)"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+dirs = { workspace = true }
+rusqlite = { workspace = true }
+which = { workspace = true }
+semver = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+tempfile = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+toml_edit = "0.25.13"
+sha2 = { workspace = true }
+base64 = { workspace = true }
+urlencoding = { workspace = true }
+ureq = { workspace = true }
+getrandom = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

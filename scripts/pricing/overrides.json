@@ -1,0 +1,46 @@
+{
+  "$comment": "Hand-curated models missing or unreliable in LiteLLM. Always win over remote rows. Units: USD per 1M tokens. Refresh remote first-party rows via `pnpm pricing:update` (LiteLLM).",
+  "codex-auto-review": {
+    "$comment": "Not in LiteLLM as of 2026-08; public list price ~$2.50/$15 (cache read ~10% input). Update when LiteLLM gains a row.",
+    "input": 2.5,
+    "output": 15,
+    "cacheCreate": 2.5,
+    "cacheRead": 0.25
+  },
+  "kimi-for-coding": {
+    "input": 0.6,
+    "output": 2.5,
+    "cacheCreate": 0.6,
+    "cacheRead": 0.15
+  },
+  "kimi-for-coding-highspeed": {
+    "input": 0.6,
+    "output": 2.5,
+    "cacheCreate": 0.6,
+    "cacheRead": 0.15
+  },
+  "k3": {
+    "input": 0.6,
+    "output": 2.5,
+    "cacheCreate": 0.6,
+    "cacheRead": 0.15
+  },
+  "k3-256k": {
+    "input": 0.6,
+    "output": 2.5,
+    "cacheCreate": 0.6,
+    "cacheRead": 0.15
+  },
+  "kimi-code/k3": {
+    "input": 0.6,
+    "output": 2.5,
+    "cacheCreate": 0.6,
+    "cacheRead": 0.15
+  },
+  "kimi-k2.6": {
+    "input": 0.95,
+    "output": 4,
+    "cacheCreate": 0.95,
+    "cacheRead": 0.16
+  }
+}

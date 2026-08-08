@@ -1,0 +1,20 @@
+[package]
+name = "agenthub-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "AgentHub command-line interface"
+default-run = "agenthub"
+
+[[bin]]
+name = "agenthub"
+path = "src/main.rs"
+
+[dependencies]
+agenthub-core = { workspace = true }
+clap = { workspace = true }
+comfy-table = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

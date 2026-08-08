@@ -1,0 +1,704 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import {
+  ArrowLeftRight,
+  BarChart3,
+  DatabaseBackup,
+  RefreshCw,
+  UserRound,
+} from 'lucide-react';
+
+import { PageHeader } from '@/components/layout/PageHeader';
+import { PageSection } from '@/components/layout/PageSection';
+import { pageRhythm } from '@/components/layout/page-rhythm';
+import { EmptyState } from '@/components/shared/EmptyState';
+import { ErrorState } from '@/components/shared/ErrorState';
+import { Notice } from '@/components/shared/Notice';
+import { UsageParserHealth } from '@/components/shared/UsageParserHealth';
+import { useUsageSync } from '@/components/shared/UsageSyncProvider';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { Tip } from '@/components/ui/tooltip';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Skeleton, TableSkeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/components/ui/toast';
+
+import { listAgents } from '@/lib/api/agent';
+import { listRuntimes } from '@/lib/api/env';
+import {
+  getUsageAvailability,
+  listModels,
+  queryUsage,
+  usageTrend,
+  type UsageAvailability,
+} from '@/lib/api/usage';
+import { createBackup } from '@/lib/api/backup';
+import { AGENTS, AGENT_MAP } from '@/config/agents';
+import { hasEnvIssues } from '@/lib/env';
+import { loadBool, saveBool, StorageKey } from '@/lib/storage';
+import type { AgentId, AgentStatus, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
+import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
+import { usageTokenParts } from '@/lib/usage-tokens';
+import { cn, fmtTokens } from '@/lib/utils';
+import { AgentOverview, AgentOverviewSkeleton } from './AgentOverview';
+import { UsageDetailsTable } from './UsageDetailsTable';
+
+/** 日期筛选预设：today / 24h 均按 days=1 拉取，today 再按本地日历日收窄 */
+type DateRange = 'today' | '24h' | '7d' | '30d';
+
+const DATE_RANGE_OPTIONS: { value: DateRange; label: string; days: number }[] = [
+  { value: 'today', label: '今天', days: 1 },
+  { value: '24h', label: '近 24 小时', days: 1 },
+  { value: '7d', label: '7 天', days: 7 },
+  { value: '30d', label: '一个月', days: 30 },
+];
+
+function isLocalToday(iso: string): boolean {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
+function localDateKey(d = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+export default function DashboardPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { toast } = useToast();
+  const usageSync = useUsageSync();
+  const usageSectionRef = useRef<HTMLElement>(null);
+
+  // —— Agent / runtime（上半）——
+  const [agents, setAgents] = useState<AgentStatus[] | null>(null);
+  const [runtimes, setRuntimes] = useState<RuntimeDetect[]>([]);
+  const [agentsLoading, setAgentsLoading] = useState(true);
+  const [agentsError, setAgentsError] = useState<unknown>(null);
+  const [backingUp, setBackingUp] = useState(false);
+
+  // —— 页面级共享筛选（时间 + Agent；模型仅作用于明细表，但 UI 与前两者并排）——
+  const [dateRange, setDateRange] = useState<DateRange>('7d');
+  const [agentFilter, setAgentFilter] = useState<AgentId | 'all'>('all');
+  const [modelFilter, setModelFilter] = useState<string>('all');
+  const [models, setModels] = useState<string[]>([]);
+
+  // —— 用量数据（全页一份）——
+  const [usageAvailability, setUsageAvailability] = useState<UsageAvailability | null>(null);
+  const [usage, setUsage] = useState<UsageRecord[] | null>(null);
+  const [trend, setTrend] = useState<UsageTrendPoint[]>([]);
+  const [usageLoading, setUsageLoading] = useState(true);
+  const [usageRefreshing, setUsageRefreshing] = useState(false);
+  const [usageError, setUsageError] = useState<unknown>(null);
+
+  const days =
+    DATE_RANGE_OPTIONS.find((o) => o.value === dateRange)?.days ?? 7;
+  const dayLabel =
+    DATE_RANGE_OPTIONS.find((o) => o.value === dateRange)?.label ?? '';
+
+  // —— 采集（状态由 UsageSyncProvider 统一管理）——
+  const collecting = usageSync.collecting;
+  const collectPct = usageSync.collectPct;
+  const [healthRefreshKey, setHealthRefreshKey] = useState(0);
+  const [showGuide, setShowGuide] = useState(() => !loadBool(StorageKey.usageGuideDismissed));
+
+  const loadAgents = useCallback(async () => {
+    setAgentsLoading(true);
+    setAgentsError(null);
+    try {
+      const [agentList, runtimeList] = await Promise.all([listAgents(), listRuntimes()]);
+      setAgents(agentList);
+      setRuntimes(runtimeList);
+    } catch (e) {
+      setAgentsError(e);
+    } finally {
+      setAgentsLoading(false);
+    }
+  }, []);
+
+  /** days / agentFilter 变化时各请求一次，上下共用 */
+  const loadUsage = useCallback(
+    async (initial: boolean) => {
+      if (initial) setUsageLoading(true);
+      else setUsageRefreshing(true);
+      setUsageError(null);
+      try {
+        const availability = await getUsageAvailability();
+        setUsageAvailability(availability);
+        if (availability.status === 'unavailable') {
+          setTrend([]);
+          setUsage([]);
+          setModels([]);
+          return;
+        }
+        const [trendData, records, modelList] = await Promise.all([
+          usageTrend(days, agentFilter),
+          queryUsage({ days, agentId: agentFilter }),
+          listModels().catch(() => [] as string[]),
+        ]);
+        setTrend(trendData);
+        setUsage(records);
+        setModels(modelList);
+      } catch (e) {
+        setUsageError(e);
+      } finally {
+        setUsageLoading(false);
+        setUsageRefreshing(false);
+      }
+    },
+    [days, agentFilter],
+  );
+
+  useEffect(() => {
+    void loadAgents();
+  }, [loadAgents]);
+
+  useEffect(() => {
+    void loadUsage(usage === null && usageAvailability === null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadUsage]);
+
+  // /?section=usage 或 /usage 重定向后滚到用量段
+  useEffect(() => {
+    if (searchParams.get('section') !== 'usage') return;
+    const t = window.setTimeout(() => {
+      usageSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+    return () => window.clearTimeout(t);
+  }, [searchParams, agentsLoading, usageLoading]);
+
+  const handleBackupAll = async () => {
+    if (!agents) return;
+    const installed = agents.filter((a) => a.installed);
+    if (installed.length === 0) {
+      toast({ title: '没有已安装的 agent', variant: 'danger' });
+      return;
+    }
+    setBackingUp(true);
+    try {
+      await Promise.all(installed.map((a) => createBackup(a.agentId, 'Dashboard 手动备份')));
+      toast({ title: '备份完成', description: `已为 ${installed.length} 个 agent 创建备份`, variant: 'success' });
+    } catch (e) {
+      toast({ title: '备份失败', description: String(e), variant: 'danger' });
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
+  const usageUnavailable = usageAvailability?.status === 'unavailable';
+  const usageUnavailableReason =
+    usageAvailability?.status === 'unavailable'
+      ? usageAvailability.reason
+      : 'Usage 尚未接入';
+
+  const handleCollect = async () => {
+    if (usageUnavailable) {
+      toast({
+        title: 'Usage 不可用',
+        description: usageUnavailableReason,
+        variant: 'danger',
+      });
+      return;
+    }
+    await usageSync.manualCollect();
+  };
+
+  // 手动/自动采集完成后刷新总览数据
+  useEffect(() => {
+    const onCollected = (_ev: Event) => {
+      setHealthRefreshKey((k) => k + 1);
+      void loadUsage(false);
+    };
+    window.addEventListener(USAGE_COLLECTED_EVENT, onCollected);
+    return () => window.removeEventListener(USAGE_COLLECTED_EVENT, onCollected);
+  }, [loadUsage]);
+
+  /** 「今天」在 days=1 拉取后再按本地日历日收窄；其余范围直接用后端窗口 */
+  const rangedUsage = useMemo(() => {
+    const list = usage ?? [];
+    if (dateRange !== 'today') return list;
+    return list.filter((r) => isLocalToday(r.timestamp));
+  }, [usage, dateRange]);
+
+  const rangedTrend = useMemo(() => {
+    if (dateRange !== 'today') return trend;
+    const key = localDateKey();
+    return trend.filter((p) => p.date === key);
+  }, [trend, dateRange]);
+
+  const metrics = useMemo(() => {
+    const list = rangedUsage;
+    // 输入 = 计费/non-cached（与 ccusage 一致）；缓存命中按 full prompt
+    let billableIn = 0;
+    let fullIn = 0;
+    let output = 0;
+    let cacheRead = 0;
+    let cost = 0;
+    for (const r of list) {
+      const p = usageTokenParts(r);
+      billableIn += p.billableInput;
+      fullIn += p.fullInput;
+      output += r.outputTokens;
+      cacheRead += p.cache;
+      cost += r.costUsd;
+    }
+    return {
+      input: fmtTokens(billableIn),
+      output: fmtTokens(output),
+      cacheHit: fullIn > 0 ? `${Math.round((cacheRead / fullIn) * 100)}%` : '—',
+      cost: `$${cost.toFixed(2)}`,
+      totalIn: billableIn,
+      totalOut: output,
+      totalCost: cost,
+    };
+  }, [rangedUsage]);
+
+  /** 分布:全部 agent 时按 agent 聚合;选中单个 agent 时按模型聚合 */
+  const distribution = useMemo(() => {
+    const list = rangedUsage;
+    const byKey = new Map<string, { label: string; color: string; tokens: number; cost: number }>();
+    for (const r of list) {
+      const key = agentFilter === 'all' ? r.agentId : r.model;
+      const meta = AGENT_MAP[r.agentId];
+      const entry = byKey.get(key) ?? {
+        label: agentFilter === 'all' ? meta.name : r.model,
+        color: meta.color,
+        tokens: 0,
+        cost: 0,
+      };
+      const p = usageTokenParts(r);
+      // total tokens ≈ billable input + cache + output (ccusage totalTokens)
+      entry.tokens += p.billableInput + p.cache + r.outputTokens;
+      entry.cost += r.costUsd;
+      byKey.set(key, entry);
+    }
+    return [...byKey.values()].sort((a, b) => b.tokens - a.tokens);
+  }, [rangedUsage, agentFilter]);
+
+  /** 模型筛选仅作用于明细表，不改 metrics / trend */
+  const tableRows = useMemo(() => {
+    const filtered =
+      modelFilter === 'all'
+        ? rangedUsage
+        : rangedUsage.filter((r) => r.model === modelFilter);
+    return [...filtered].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  }, [rangedUsage, modelFilter]);
+
+  const trendAgents = agentFilter === 'all' ? AGENTS : [AGENT_MAP[agentFilter]];
+  const maxTokens = distribution[0]?.tokens ?? 0;
+  const installedCount = agents?.filter((a) => a.installed).length ?? 0;
+  const envBad = hasEnvIssues(runtimes);
+  const showEnvCta = !agentsLoading && agents !== null && installedCount === 0 && envBad;
+
+  return (
+    <div>
+      <PageHeader
+        title="总览"
+        description="状态与用量"
+        descriptionTip="上半为各 Agent 状态，下半为本地日志解析的 Token 用量与成本估算。"
+      />
+
+      {/* —— 上半：Agent 总览（独立 loading / error）—— */}
+      <PageSection first>
+        {agentsLoading ? (
+          <AgentOverviewSkeleton />
+        ) : agentsError ? (
+          <ErrorState error={agentsError} onRetry={() => void loadAgents()} />
+        ) : agents ? (
+          <div className={showEnvCta ? pageRhythm.lead : undefined}>
+            {showEnvCta && (
+              <Notice
+                className="text-sm"
+                tone="warning"
+                actionLabel="去修复"
+                onAction={() => navigate('/agents')}
+              >
+                <p className="font-medium text-warning">环境未就绪，尚未安装 Agent</p>
+                <p className="mt-0.5 text-secondary">先修运行环境，再装 CLI</p>
+              </Notice>
+            )}
+            <AgentOverview agents={agents} />
+          </div>
+        ) : null}
+      </PageSection>
+
+      {/* —— 用量总览：筛选 + 指标 + 趋势 + 分布 —— */}
+      <PageSection>
+        <div className={cn(pageRhythm.chromeRow)}>
+          <Select value={agentFilter} onValueChange={(v) => setAgentFilter(v as AgentId | 'all')}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部 Agent</SelectItem>
+              {AGENTS.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={modelFilter} onValueChange={setModelFilter}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="全部模型" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部模型</SelectItem>
+              {models.map((m) => (
+                <SelectItem key={m} value={m}>
+                  {m}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DATE_RANGE_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="ml-auto flex min-w-[12.5rem] max-w-full flex-col items-end gap-1.5 sm:min-w-[16rem]">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {!collecting && (
+                <Tip
+                  className="max-w-[12rem] shrink-0 text-right text-xs leading-snug text-muted sm:max-w-[14rem]"
+                  label={usageSync.statusLine}
+                >
+                  {usageSync.statusLine}
+                </Tip>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => void handleCollect()}
+                disabled={collecting || usageUnavailable || usageLoading}
+                title={
+                  usageUnavailable
+                    ? usageUnavailableReason
+                    : usageSync.intervalMin > 0
+                      ? `从本地日志增量导入；也可等自动同步（每 ${usageSync.intervalMin} 分钟，仅前台）`
+                      : '从本地日志增量导入；当前仅手动（间隔为 0）'
+                }
+              >
+                <RefreshCw className={collecting ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} />
+                {collecting
+                  ? usageSync.collectSource === 'auto'
+                    ? '同步中…'
+                    : '采集中…'
+                  : '采集'}
+              </Button>
+            </div>
+            {collecting && (
+              <div className="flex w-full max-w-[16rem] items-center gap-2">
+                <Progress value={collectPct} className="h-1.5 flex-1" />
+                <span className="shrink-0 tabular-nums text-xs text-secondary">{collectPct}%</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {usageLoading ? (
+          <UsageOverviewSkeleton />
+        ) : usageUnavailable ? (
+          <Card className="p-6">
+            <div className="flex flex-col items-start gap-2">
+              <p className="text-sm font-medium text-primary">用量不可用</p>
+              <p className="text-xs text-secondary">{usageUnavailableReason}</p>
+              <p className="text-xs text-muted">
+                演示数据请用 <code className="font-mono">pnpm dev:mock</code>
+              </p>
+            </div>
+          </Card>
+        ) : usageError ? (
+          <ErrorState error={usageError} onRetry={() => void loadUsage(true)} />
+        ) : (
+          <div
+            className={cn(
+              pageRhythm.blocks,
+              usageRefreshing ? 'opacity-60 transition-opacity' : 'transition-opacity',
+            )}
+          >
+            <div className={pageRhythm.metricGrid}>
+              <MetricCard label={`输入(${dayLabel})`} value={metrics.input} />
+              <MetricCard label={`输出(${dayLabel})`} value={metrics.output} />
+              <MetricCard label="缓存命中" value={metrics.cacheHit} />
+              <MetricCard label="估算成本" value={metrics.cost} />
+            </div>
+
+            <div className="grid grid-cols-3 items-start gap-4">
+              <Card className="col-span-2">
+                <CardHeader>
+                  <CardTitle>{dayLabel} Token 用量</CardTitle>
+                  <p className="text-xs text-muted">
+                    合计 {fmtTokens(metrics.totalIn)} in / {fmtTokens(metrics.totalOut)} out / ≈$
+                    {metrics.totalCost.toFixed(1)}
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-56">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={rangedTrend} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                        <defs>
+                          {trendAgents.map((meta) => (
+                            <linearGradient
+                              key={`grad-${meta.id}`}
+                              id={`usage-fill-${meta.id}`}
+                              x1="0"
+                              y1="0"
+                              x2="0"
+                              y2="1"
+                            >
+                              <stop offset="0%" stopColor={meta.color} stopOpacity={0.18} />
+                              <stop offset="100%" stopColor={meta.color} stopOpacity={0.02} />
+                            </linearGradient>
+                          ))}
+                        </defs>
+                        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} strokeOpacity={0.6} />
+                        <XAxis
+                          dataKey="date"
+                          tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                          tickLine={false}
+                          axisLine={{ stroke: 'var(--border)' }}
+                          tickFormatter={(d: string) => d.slice(5)}
+                        />
+                        <YAxis
+                          tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(v: number) => fmtTokens(v)}
+                          width={48}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: 'var(--bg-panel)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 8,
+                            fontSize: 12,
+                          }}
+                          labelStyle={{ color: 'var(--text-secondary)' }}
+                          formatter={(value, name) => [
+                            fmtTokens(Number(value)),
+                            AGENT_MAP[name as AgentId]?.name ?? String(name),
+                          ]}
+                        />
+                        {trendAgents.map((meta) => (
+                          <Area
+                            key={meta.id}
+                            type="monotone"
+                            dataKey={meta.id}
+                            stackId="total"
+                            stroke={meta.color}
+                            strokeWidth={1.5}
+                            fill={`url(#usage-fill-${meta.id})`}
+                            activeDot={{ r: 3, strokeWidth: 0 }}
+                          />
+                        ))}
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>快捷操作</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-2">
+                  <Button
+                    variant="outline"
+                    className="justify-start"
+                    onClick={() => navigate('/connections?mode=providers')}
+                  >
+                    <ArrowLeftRight className="h-4 w-4" /> 切换供应商
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="justify-start"
+                    onClick={() => navigate('/connections')}
+                  >
+                    <UserRound className="h-4 w-4" /> 切换账号
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="justify-start"
+                    disabled={backingUp || !agents}
+                    onClick={() => void handleBackupAll()}
+                  >
+                    <DatabaseBackup className="h-4 w-4" />
+                    {backingUp ? '备份中…' : '立即备份'}
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>{agentFilter === 'all' ? 'Agent 用量分布' : '模型用量分布'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {distribution.length === 0 ? (
+                  <p className="py-4 text-sm text-secondary">暂无数据</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {distribution.map((d) => (
+                      <li key={d.label} className="flex h-7 items-center gap-3">
+                        <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm">
+                          <span
+                            className="inline-block h-2 w-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: d.color }}
+                          />
+                          <span className="truncate">{d.label}</span>
+                        </span>
+                        {d.tokens === 0 ? (
+                          <span className="shrink-0 text-xs text-muted">无数据</span>
+                        ) : (
+                          <>
+                            <div className="h-1.5 w-32 shrink-0 overflow-hidden rounded-full bg-subtle sm:w-40">
+                              <div
+                                className="h-full rounded-full"
+                                style={{
+                                  width: maxTokens > 0 ? `${(d.tokens / maxTokens) * 100}%` : 0,
+                                  backgroundColor: d.color,
+                                }}
+                              />
+                            </div>
+                            <span className="w-20 shrink-0 text-right font-mono text-xs text-secondary">
+                              {fmtTokens(d.tokens)}
+                            </span>
+                            <span className="w-14 shrink-0 text-right font-mono text-xs text-muted">
+                              ${d.cost.toFixed(2)}
+                            </span>
+                          </>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </PageSection>
+
+      {/* —— 用量明细（大段分割）—— */}
+      <PageSection
+        ref={usageSectionRef}
+        id="usage"
+        ruled
+        title="用量明细"
+        description="与上方共用时间、Agent 筛选；模型筛选仅作用于本表。"
+      >
+        {showGuide && !usageUnavailable && (
+          <Notice
+            className="mb-4"
+            tone="info"
+            onDismiss={() => {
+              setShowGuide(false);
+              saveBool(StorageKey.usageGuideDismissed, true);
+            }}
+          >
+            首次请点「采集」导入历史；之后可按设置自动同步（仅前台）。
+          </Notice>
+        )}
+
+        {usageLoading ? (
+          <TableSkeleton rows={8} cols={8} />
+        ) : usageUnavailable ? (
+          <EmptyState
+            icon={BarChart3}
+            title="用量不可用"
+            description={usageUnavailableReason}
+          />
+        ) : usageError ? (
+          <ErrorState
+            compact
+            error={usageError}
+            onRetry={() => void loadUsage(true)}
+            title="用量加载失败"
+          />
+        ) : tableRows.length === 0 ? (
+          <EmptyState
+            icon={BarChart3}
+            title="暂无用量"
+            description="调整筛选，或点「采集」同步本地日志"
+            actionLabel="采集"
+            onAction={() => void handleCollect()}
+          />
+        ) : (
+          <UsageDetailsTable rows={tableRows} />
+        )}
+
+        {!usageUnavailable && (
+          <UsageParserHealth variant="dashboard" refreshKey={healthRefreshKey} />
+        )}
+      </PageSection>
+    </div>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <Card className="p-3">
+      <p className="text-xs text-muted">{label}</p>
+      <p className="mt-1 text-xl font-semibold tracking-tight">{value}</p>
+    </Card>
+  );
+}
+
+function UsageOverviewSkeleton() {
+  return (
+    <div className={pageRhythm.blocks}>
+      <div className={pageRhythm.metricGrid}>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-20" />
+        ))}
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        <Card className="col-span-2 p-4">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="mt-4 h-56 w-full" />
+        </Card>
+        <Card className="space-y-2 p-4">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-9 w-full" />
+        </Card>
+      </div>
+      <Card className="space-y-3 p-4">
+        <Skeleton className="h-4 w-28" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-full" />
+      </Card>
+    </div>
+  );
+}

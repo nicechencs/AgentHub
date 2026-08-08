@@ -1,0 +1,120 @@
+import type { SettingsPort } from '@/lib/backend/contracts';
+import { delay, randomLatency } from '@/dev/mocks/delay';
+import {
+  loadJson,
+  loadString,
+  saveJson,
+  saveString,
+  StorageKey,
+} from '@/lib/ui-preferences';
+import { applyTheme, type ThemeMode } from '@/lib/theme';
+import type { AppSettings, LogLevel, SkillMarketSource } from '@/lib/types';
+
+const LOG_LEVELS: LogLevel[] = ['error', 'warn', 'info', 'debug', 'trace'];
+const SKILL_MARKET_SOURCES: SkillMarketSource[] = ['auto', 'skills.sh', 'skillhub.cn'];
+
+const DEFAULTS: AppSettings = {
+  language: 'zh',
+  theme: 'light',
+  autoStart: true,
+  closeToTray: true,
+  hasMasterPassword: false,
+  credentialStore: 'keyring',
+  dataDir: '~/.agenthub',
+  logsDir: '~/.agenthub/logs',
+  logLevel: 'info',
+  logRetentionDays: 14,
+  skillMarketSource: 'auto',
+  autoBackup: true,
+  usageCollectIntervalMin: 30,
+  appVersion: '0.1.0',
+};
+
+const SETTINGS_KEY = 'agenthub:settings';
+
+function parseLogLevel(raw: string | undefined | null): LogLevel {
+  const v = (raw ?? 'info').trim().toLowerCase();
+  return (LOG_LEVELS as string[]).includes(v) ? (v as LogLevel) : 'info';
+}
+
+function parseSkillMarketSource(raw: string | undefined | null): SkillMarketSource {
+  const v = (raw ?? 'auto').trim().toLowerCase();
+  return (SKILL_MARKET_SOURCES as string[]).includes(v) ? (v as SkillMarketSource) : 'auto';
+}
+
+function mapTheme(raw: string): ThemeMode {
+  if (raw === 'light' || raw === 'dark' || raw === 'system') return raw;
+  return 'system';
+}
+
+function loadState(): AppSettings {
+  const stored = loadJson<Partial<AppSettings>>(SETTINGS_KEY, {});
+  const themeRaw = loadString(StorageKey.theme, stored.theme ?? DEFAULTS.theme);
+  const theme = mapTheme(themeRaw);
+  const logLevel = parseLogLevel(stored.logLevel ?? DEFAULTS.logLevel);
+  const logRetentionDays =
+    typeof stored.logRetentionDays === 'number' && stored.logRetentionDays >= 1
+      ? Math.min(365, Math.floor(stored.logRetentionDays))
+      : DEFAULTS.logRetentionDays;
+  const skillMarketSource = parseSkillMarketSource(
+    stored.skillMarketSource ?? DEFAULTS.skillMarketSource,
+  );
+  return {
+    ...DEFAULTS,
+    ...stored,
+    theme,
+    logLevel,
+    logRetentionDays,
+    skillMarketSource,
+    logsDir: stored.logsDir ?? DEFAULTS.logsDir,
+  };
+}
+
+let state: AppSettings = loadState();
+
+const LOG_LEVEL_OPTIONS: { value: LogLevel; label: string }[] = [
+  { value: 'error', label: 'error — 仅错误' },
+  { value: 'warn', label: 'warn — 警告及以上' },
+  { value: 'info', label: 'info — 常规（默认）' },
+  { value: 'debug', label: 'debug — 详细诊断' },
+  { value: 'trace', label: 'trace — 极细' },
+];
+
+export function createMockSettingsPort(): SettingsPort {
+  return {
+    logLevelOptions: LOG_LEVEL_OPTIONS,
+
+    async getSettings() {
+      await delay(randomLatency(200, 300));
+      state = loadState();
+      return { ...state };
+    },
+
+    async updateSettings(patch) {
+      await delay(randomLatency(300, 300));
+      state = { ...state, ...patch };
+      saveJson(SETTINGS_KEY, state);
+      if (patch.theme) {
+        saveString(StorageKey.theme, patch.theme);
+        applyTheme(patch.theme);
+      }
+      if (patch.language) {
+        saveString(StorageKey.language, patch.language);
+      }
+      return { ...state };
+    },
+
+    async openLogsDir() {
+      throw new Error('浏览器预览无法打开本地日志目录，请使用桌面版');
+    },
+
+    async openExternalUrl(url) {
+      await delay(50);
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        // Popup blocked — still resolve; user may allow and retry.
+        throw new Error('浏览器拦截了弹窗，请允许本页打开新窗口后重试');
+      }
+    },
+  };
+}

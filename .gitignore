@@ -1,0 +1,61 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Node / frontend
+node_modules/
+dist/
+*.tsbuildinfo
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# AgentHub local data (never commit)
+.agenthub-data/
+# Runtime caches must live under data_dir — never under the source tree
+**/project_session_index.json
+**/project_metadata.json
+**/agenthub.db
+**/agenthub.db-*
+**/*.sqlite
+**/*.sqlite-journal
+**/*.sqlite-wal
+**/*.sqlite-shm
+
+# Local dumps / scratch / personal machine capture (never commit)
+skill-list.json
+audit/
+**/daemon.log
+# Personal UI captures with real paths/accounts
+docs/assets/**/*-personal*
+docs/assets/**/*-local*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+credentials.json
+.credentials.json
+auth.json
+!**/fixtures/**/auth.json
+!**/tests/**/auth.json
+
+/.agents
+.codegraph/
+.grok/
+.tmp-usage-compare/
+temp/
+
+# Tauri updater signing keys (never commit private keys)
+*.key
+*.key.pub
+latest.json
+
+# Local release packaging output (installers + latest.json)
+/release-out/

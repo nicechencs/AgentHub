@@ -1,0 +1,243 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * 设计 token 色值 / 圆角 / 阴影真源：src/styles/tokens.ts
+ * 由 Vite 插件生成 virtual:agenthub-design-tokens.css，在 main.tsx 中先于本文件 import。
+ * 禁止在业务代码或本文件中再写一套 agent / 背景 hex。
+ */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  /* 兜底：即使 tailwind class 失效也有浅灰画布 */
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  @apply bg-canvas text-primary font-sans antialiased;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ─── Boot splash 启动动画 ─── */
+/* React 接管时不做容器入场淡入，避免替换 #boot-fallback 时闪一下画布 */
+.boot-splash {
+  opacity: 1;
+}
+
+.boot-splash--exit {
+  animation: boot-splash-out 420ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  pointer-events: none;
+}
+
+.boot-splash__glow {
+  background:
+    radial-gradient(ellipse 50% 40% at 50% 42%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
+    radial-gradient(ellipse 30% 24% at 50% 48%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%);
+  animation: boot-glow-pulse 2.4s ease-in-out infinite;
+}
+
+.boot-splash__mark {
+  animation: boot-mark-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.boot-splash__mark-ring {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  filter: blur(10px);
+  animation: boot-ring-pulse 1.8s ease-in-out infinite;
+}
+
+.boot-splash__title {
+  animation: boot-fade-up 480ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
+}
+
+.boot-splash__subtitle {
+  animation: boot-fade-up 480ms cubic-bezier(0.22, 1, 0.36, 1) 140ms both;
+}
+
+.boot-splash__dots {
+  animation: boot-fade-up 480ms cubic-bezier(0.22, 1, 0.36, 1) 200ms both;
+}
+
+.boot-splash__dot {
+  opacity: 0.28;
+  transform: scale(0.75);
+  animation: boot-dot-pop 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.boot-splash__bar {
+  animation: boot-fade-up 480ms cubic-bezier(0.22, 1, 0.36, 1) 260ms both;
+}
+
+.boot-splash__bar-fill {
+  width: 32%;
+  animation: boot-bar-slide 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.boot-splash__bar-fill--done {
+  animation: boot-bar-finish 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* HTML 兜底已播完入场；React 遮罩保持终态，仅保留光晕/进度/退场 */
+.boot-splash--handoff .boot-splash__mark,
+.boot-splash--handoff .boot-splash__title,
+.boot-splash--handoff .boot-splash__subtitle,
+.boot-splash--handoff .boot-splash__dots,
+.boot-splash--handoff .boot-splash__bar {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+
+.boot-splash--handoff .boot-splash__dot {
+  animation: none;
+  opacity: 0.85;
+  transform: scale(1);
+}
+
+@keyframes boot-splash-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes boot-mark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.72) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes boot-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes boot-dot-pop {
+  0% {
+    opacity: 0.2;
+    transform: scale(0.6);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+}
+
+@keyframes boot-bar-slide {
+  0% {
+    left: -36%;
+    width: 28%;
+  }
+  50% {
+    width: 42%;
+  }
+  100% {
+    left: 108%;
+    width: 28%;
+  }
+}
+
+@keyframes boot-bar-finish {
+  from {
+    left: 0;
+    width: 40%;
+  }
+  to {
+    left: 0;
+    width: 100%;
+  }
+}
+
+@keyframes boot-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes boot-ring-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.08);
+  }
+}
+
+/* 面板开合等可选过渡（拖拽中请用 motion-reduce:transition-none 或 JS 关掉） */
+.motion-panel-width {
+  transition-property: width, min-width, max-width, opacity;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-splash--exit,
+  .boot-splash__glow,
+  .boot-splash__mark,
+  .boot-splash__mark-ring,
+  .boot-splash__title,
+  .boot-splash__subtitle,
+  .boot-splash__dots,
+  .boot-splash__dot,
+  .boot-splash__bar,
+  .boot-splash__bar-fill,
+  .boot-splash__bar-fill--done {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .motion-panel-width,
+  .motion-safe-transition {
+    transition-duration: 0.01ms !important;
+    transition-property: none !important;
+  }
+
+  /* 骨架 pulse 在减动效下改为静态弱底，避免持续闪动 */
+  .animate-pulse {
+    animation: none !important;
+    opacity: 0.65;
+  }
+}

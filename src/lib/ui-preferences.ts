@@ -1,0 +1,71 @@
+/**
+ * UiPreferencesStore — 真实 UI 本地偏好（theme / onboarding 等）。
+ * 不是 backend mock；生产与 dev:mock 均可使用 localStorage。
+ */
+
+const PREFIX = 'agenthub:';
+
+export const StorageKey = {
+  theme: `${PREFIX}theme`,
+  language: `${PREFIX}language`,
+  onboardingDone: `${PREFIX}onboarding-done`,
+  usageGuideDismissed: `${PREFIX}usage-guide-dismissed`,
+  dismissedAlertIds: `${PREFIX}dismissed-alert-ids`,
+  sidebarCollapsed: `${PREFIX}sidebar-collapsed`,
+  /** epoch ms of last successful usage collect (manual or auto) */
+  usageLastCollectAt: `${PREFIX}usage-last-collect-at`,
+  /** SemVer last dismissed via “稍后” on the update prompt */
+  updateDismissedVersion: `${PREFIX}update-dismissed-version`,
+} as const;
+
+export function loadJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+export function saveJson(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // 隐私模式 / 配额满时忽略
+  }
+}
+
+export function loadString(key: string, fallback: string): string {
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function saveString(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+}
+
+export function loadBool(key: string, fallback = false): boolean {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    return raw === '1' || raw === 'true';
+  } catch {
+    return fallback;
+  }
+}
+
+export function saveBool(key: string, value: boolean): void {
+  try {
+    localStorage.setItem(key, value ? '1' : '0');
+  } catch {
+    // ignore
+  }
+}

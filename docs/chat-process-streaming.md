@@ -1,0 +1,234 @@
+# Chat 过程流式展示设计
+
+> 状态：**Phase 0–2 已落地**（2026-08-03）；Phase 3 体验打磨未做  
+> 范围：GUI Chat 的「Cursor 式过程」——命令、状态、stderr、结构化工具/thinking 步骤  
+> 非目标：接管各 CLI 原生多轮 session、交互式 tool 审批（RPC）、凭据加密
+
+## 1. 背景与问题（历史；Phase 0–2 已修复主体）
+
+Chat 链路支持子进程流式（`StreamingProcessRunner` → `RunEvent` → `ChatEvent` → Tauri `Channel`）。早期 UI 只拼 stdout，过程信息丢失。
+
+| 能力 | 当前（Phase 0–2 后） |
+|------|------|
+| 文本流式 | ✅ |
+| 启动命令 | ✅ 过程面板展示 `agentStarted.command` |
+| stderr / 日志 | ✅ 进过程区，不进气泡正文 |
+| 细粒度状态 | ✅ queued/running/终态 |
+| 工具 / thinking 步骤 | ✅ Claude/Codex/Kimi/Grok/Pi 结构化；WorkBuddy/Cursor 仍 text |
+
+根因曾是强制 text + 无过程模型；现已由 `ProcessMode::Auto` + `stream_parse/*` + `ProcessStep` 解决五家结构化流。
+
+## 2. 目标
+
+1. **统一过程模型**：前端与 core 用同一套语义事件展示「过程」，与各家原始 JSON schema 解耦。  
+2. **按 Agent 能力分级**：有结构化 parser 的 Agent 走结构化流；否则 text；未知事件降级为 raw。  
+3. **可回退**：解析失败或旧 CLI 仍可按 text 流展示，不中断对话。  
+4. **多 Agent 并行**：过程按 `(turn, agent)` 隔离，禁止混成单时间线。
+
+## 3. 现状数据流（真源）
+
+```
+chat_send (Tauri Channel<ChatEvent>)
+  → ChatService::send
+      · insert turn + running placeholders
+      · RunService::run_each (Parallel)
+          · Adapter::build_run_spec (Chat: ProcessMode::Auto → 结构化 flag)
+          · StreamingProcessRunner
+              · RunEvent::{Started,Chunk,Step,Finished}
+              · stream_parse/* 行缓冲 → ProcessStep
+      · map → ChatEvent::{Started,AgentStarted,AgentChunk,AgentProcess,AgentFinished,Finished,Error}
+  → 前端 applyEvent + reduceProcessEvent 更新 messages / 过程面板
+```
+
+`ChatEvent` 已含 `agentProcess` + `ProcessStep`（core 与 `src/lib/types.ts` 同步）。CLI `run` 保持 text 模式。
+
+## 4. 统一过程模型（目标态）
+
+### 4.1 内部类型（建议 Phase 1 落入 core + TS 同步）
+
+```ts
+/** 归一化后的过程事件；与各家 CLI schema 解耦 */
+export type ProcessEvent =
+  | { type: 'status'; phase: ProcessPhase; detail?: string }
+  | { type: 'command'; command: string }
+  | { type: 'thinking'; text: string; done?: boolean }
+  | {
+      type: 'tool';
+      id?: string;
+      name: string;
+      input?: unknown;
+      status: 'start' | 'update' | 'end';
+      result?: string;
+    }
+  | { type: 'text'; text: string; stream?: 'stdout' | 'stderr' }
+  | { type: 'raw'; text: string; note?: string }
+  | { type: 'error'; message: string };
+
+export type ProcessPhase =
+  | 'queued'
+  | 'starting'
+  | 'running'
+  | 'ok'
+  | 'failed'
+  | 'cancelled'
+  | 'timeout';
+```
+
+### 4.2 与现有 ChatEvent 的关系
+
+| 阶段 | 策略 |
+|------|------|
+| Phase 0 | **不改** `ChatEvent` wire 格式；前端用 `reduceProcessEvent` 从现有事件推导 `AgentProcessView` |
+| Phase 1+ | 新增可选事件，例如 `agentProcess` / `agentStep`（camelCase + tag），或在 `AgentChunk` 旁并行推送；**旧前端忽略未知 type** |
+| 持久化 | Phase 0–1 **不**把过程步骤写入 `chat_messages`（仅 stdout 终稿进 `content`）；后续若需要回放再加 `chat_process_events` 表 |
+
+### 4.3 UI 视图模型（Phase 0 已用）
+
+```ts
+type AgentProcessView = {
+  turn: number;
+  agent: AgentId;
+  phase: ProcessPhase;
+  command?: string;
+  stdout: string;
+  stderr: string;
+  updatedAt: number;
+};
+```
+
+Key：`` `${turn}:${agent}` ``。会话切换时清空；同会话多轮可保留，便于当轮回看命令/日志。
+
+## 5. 各 Agent 能力与接入计划
+
+| Agent | Chat 过程 | Parser 位置 | 备注 |
+|-------|-----------|-------------|------|
+| Claude / Codex / Kimi / Pi / Grok | 结构化流（`ProcessMode::Auto`） | `stream_parse/<agent>.rs` | 事件 schema 以 parser 源码为准 |
+| WorkBuddy / Cursor | text only | — | 能力矩阵 StructuredStream = Unsupported |
+
+CLI flag 与事件字段随上游版本变化，**不在本文抄写完整映射**；以 adapter `build_run_spec` 与 parser 实现为真源。
+
+**兼容开关（建议）**：`RunOptions` 或会话级 `processMode: 'text' | 'structured' | 'auto'`；`auto` = 有 parser 用结构化，否则 text。
+
+## 6. 架构变更（Phase 1+）
+
+```
+adapters/*
+  build_run_spec(..., ProcessMode)  // 按 mode 换 flag
+
+stream_parsers/                     // 新模块（建议）
+  mod.rs                            // trait StreamParser + registry
+  claude_ndjson.rs
+  codex_jsonl.rs
+  kimi_ndjson.rs
+  pi_json.rs
+  passthrough.rs                    // text：chunk → ProcessEvent::text
+
+run_service
+  行缓冲 stdout → parser.feed(line) → on_process(ProcessEvent)
+  同时可保留原始 chunk 供 debug
+
+chat_service
+  ProcessEvent → ChatEvent 扩展变体 / 或复用 AgentChunk + agentStep
+
+frontend
+  reduceProcessEvent → Timeline + ToolCard + Thinking + 正文
+```
+
+### 6.1 行缓冲约定
+
+- 结构化模式按 **`\n` 切行**；残缺行留在 buffer。  
+- 单行超长（如 > 256KiB）截断并记 `raw`。  
+- 继续遵守 `max_output_bytes`（当前 2MiB）；过程事件可单独 cap 条数（如 2000 steps / turn）。
+
+### 6.2 失败回退
+
+1. JSON 解析失败 → 该行变 `ProcessEvent::raw`，不中断。  
+2. 连续 N 行无法识别且不像 JSON → 整段 fallback 为 text 模式。  
+3. CLI 不支持 flag（exit 非 0 且 stderr 含 unknown option）→ 可选自动重试 text（需明确产品策略，默认 **不静默重试**，仅报错）。
+
+## 7. 分阶段交付
+
+### Phase 0 — 可见过程底座（本分支）
+
+- [x] 设计文档（本文）  
+- [x] 前端消费 `agentStarted.command`  
+- [x] 前端累积并展示 `stderr`  
+- [x] 状态：排队/启动/生成中/完成/失败/取消  
+- [x] 可折叠「过程」面板（命令 + 状态 + stderr）  
+- [x] 纯函数 `reduceProcessEvent` + 单测  
+- [x] Phase 0 不强制改 Adapter flag（Phase 1 起 Auto）  
+
+### Phase 1 — Claude + Codex 结构化（本分支已实现）
+
+- [x] `ProcessMode` + Chat 默认 `Auto`；CLI `run` 保持 `Text`  
+- [x] Claude / Codex 结构化 flag 与 parser（细节见源码）  
+- [x] `utils/stream_parse`（line buffer + 各家 parser）  
+- [x] `RunEvent::Step` / `ChatEvent::AgentProcess` + `ProcessStep`  
+- [x] UI：步骤时间线 + 工具/thinking 卡片  
+- [x] 结构化模式下正文只拼 assistant text，不落 raw 事件流  
+- [x] 日志：stream session open/close、agent_started、process step(trace)  
+
+### Phase 2 — Kimi + Pi + Grok（本分支已实现）
+
+- [x] Kimi / Pi / Grok 结构化 parser  
+- [x] `ProcessMode::Auto` 覆盖支持结构化流的 Agent（WorkBuddy / Cursor 仍 text）  
+
+### Phase 3 — 体验打磨（后续）
+
+- diff 预览、usage、更稳 cancel  
+- 可选过程持久化  
+- 交互式 tool 审批（若上游提供稳定契约）  
+
+## 8. Phase 0 实现说明
+
+| 文件 | 职责 |
+|------|------|
+| `docs/chat-process-streaming.md` | 本设计 |
+| `src/lib/chat-process.ts` | `AgentProcessView` + `reduceProcessEvent` |
+| `src/lib/chat-process.test.ts` | 状态机单测 |
+| `src/pages/chat/index.tsx` | 过程面板渲染；会话切换清空 |
+| `src/lib/api/chat.ts`（mock） | 模拟 stderr 一行，便于浏览器原型 |
+
+行为要点：
+
+- `started` → 各 agent `phase=queued`  
+- `agentStarted` → 写入 `command`，`phase=running`  
+- `agentChunk` stdout → 正文（既有）+ process.stdout  
+- `agentChunk` stderr → process.stderr（不进气泡正文）  
+- `agentFinished` → phase 映射 message.status  
+- 过程数据仅内存；刷新页面后历史 turn 无命令/stderr（可接受）
+
+## 9. 风险
+
+| 风险 | 缓解 |
+|------|------|
+| 各家 schema 漂移 | parser 容错 + raw；版本探测可选 |
+| 结构化事件流体积大 | 行 cap + max_output_bytes |
+| 多 Agent 并行写同 cwd | 既有产品风险；过程 UI 不解决；后续 worktree |
+| 危险 auto-approve | 与过程展示正交；仍默认关闭 |
+| 把 tool 参数当可信 UI | 展示时转义；不自动执行 |
+
+## 10. 验收清单
+
+### Phase 0–2（已实现，验收对照）
+
+- [x] 发送后气泡旁可见「过程」折叠区  
+- [x] 运行中展示状态「生成中」，结束后为完成/失败/取消  
+- [x] 启动命令 / stderr 在过程区  
+- [x] Claude/Codex/Kimi/Grok/Pi 结构化步骤（tool/thinking/status）  
+- [x] text fallback 仍可完整出字（WorkBuddy/Cursor 等）  
+- [x] `chat-process` 单测  
+
+### Phase 3（未做）
+
+- [ ] diff 预览、过程内 usage 展示  
+- [ ] 过程步骤可选落库回放  
+- [ ] Pi rpc 交互审批  
+
+
+## 11. 决策记录
+
+- **凭据落盘加密**：范围外（见 `AGENTS.md`）。  
+- **过程不落库（Phase 0–1）**：降低迁移成本；终稿仍在 `chat_messages.content`。  
+- **Pi 暂不默认 rpc**：json print 模式成本更低；rpc 留给交互审批。  
+- **不静默跨模式重试**：避免重复扣费/双跑；错误显式暴露。

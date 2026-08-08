@@ -1,0 +1,34 @@
+[package]
+name = "agenthub-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "AgentHub Tauri v2 GUI shell (thin layer over agenthub-core)"
+default-run = "agenthub-gui"
+
+[lib]
+name = "agenthub_gui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "agenthub-gui"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+agenthub-core = { workspace = true }
+notify = { version = "6", features = ["macos_fsevent"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-process = "2.3.1"
+tauri-plugin-single-instance = "2"
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-updater = "2.10.1"

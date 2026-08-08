@@ -1,0 +1,25 @@
+import { describe, expect, it } from 'vitest';
+import { buildAgentInstallPreview, buildEnvInstallPreview } from './install-preview';
+
+describe('buildInstallPreview', () => {
+  it('builds agent install/upgrade preview without claiming success', () => {
+    const install = buildAgentInstallPreview('claude', 'install', 'native');
+    expect(install[0]).toContain('agenthub agent install claude');
+    expect(install.join('\n')).not.toMatch(/✓|成功|完成/);
+
+    const upgrade = buildAgentInstallPreview('codex', 'upgrade');
+    expect(upgrade[0]).toContain('agenthub agent upgrade codex');
+  });
+
+  it('builds env install preview for winget nodejs and git', () => {
+    const lines = buildEnvInstallPreview(['nodejs', 'npm', 'git'], 'winget');
+    expect(lines.length).toBe(3);
+    expect(lines[0]).toContain('OpenJS.NodeJS.LTS');
+    expect(lines[1]).toContain('OpenJS.NodeJS.LTS');
+    expect(lines[2]).toContain('Git.Git');
+  });
+
+  it('handles empty targets', () => {
+    expect(buildEnvInstallPreview([])).toEqual(['# no auto-install targets']);
+  });
+});

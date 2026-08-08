@@ -1,0 +1,57 @@
+# Daily LiteLLM → embedded-pricing.json sync (offline runtime snapshot).
+# Opens a PR when the table drifts; never fetches pricing inside the app.
+name: update-embedded-pricing
+
+on:
+  schedule:
+    # 06:00 UTC daily
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Sync pricing from LiteLLM
+        run: node scripts/update-embedded-pricing.mjs
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: |
+            chore(usage): refresh embedded model pricing from LiteLLM
+
+            Auto-synced offline snapshot. Units remain USD per 1M tokens; no FX.
+          title: 'chore(usage): refresh embedded model pricing'
+          body: |
+            ## Summary
+
+            Daily refresh of `crates/agenthub-core/src/usage/embedded-pricing.json` from the public LiteLLM catalog, plus local overrides in `scripts/pricing/overrides.json`.
+
+            - **Unit**: USD per 1M tokens (same as the table; no currency conversion)
+            - **Runtime**: app still uses the embedded file only (offline-safe)
+            - **Source**: LiteLLM `model_prices_and_context_window.json` (main)
+
+            Meta: `embedded-pricing.meta.json`
+
+            Please skim the diff for unexpected model drops, then merge.
+          branch: chore/update-embedded-pricing
+          delete-branch: true
+          labels: |
+            automated
+            usage
+          add-paths: |
+            crates/agenthub-core/src/usage/embedded-pricing.json
+            crates/agenthub-core/src/usage/embedded-pricing.meta.json

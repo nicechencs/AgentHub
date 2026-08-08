@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AgentHub</title>
+    <script>
+      /* 首屏主题预同步，避免 splash / body 闪色 */
+      (function () {
+        try {
+          var mode = localStorage.getItem('agenthub:theme') || 'light';
+          var dark =
+            mode === 'dark' ||
+            (mode === 'system' &&
+              window.matchMedia &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.toggle('dark', dark);
+          document.documentElement.classList.toggle('light', !dark);
+        } catch (e) {
+          document.documentElement.classList.add('light');
+        }
+      })();
+    </script>
+    <style>
+      /* 首屏兜底：JS 未挂载前避免纯白空白窗（与 BootSplash 视觉对齐） */
+      /* 色值由 Vite 从 src/styles/tokens.ts 注入，勿在此手写 hex */
+      /* @@design-tokens-boot:start@@ */
+      :root {
+        --bg-canvas: #f7f7f8;
+        --bg-subtle: #f1f1f3;
+        --text-primary: #18181b;
+        --text-muted: #70707a;
+        --border: #e6e6e9;
+        --accent: #4f46e5;
+        --agent-claude: #d97757;
+        --agent-codex: #10a37f;
+        --agent-kimi: #7c6cff;
+        --agent-grok: #000000;
+        --agent-pi: #0ea5e9;
+        --agent-workbuddy: #0052d9;
+        --agent-cursor: #f54e00;
+      }
+      html.dark {
+        --bg-canvas: #0a0a0b;
+        --bg-subtle: #1a1a1d;
+        --text-primary: #fafafa;
+        --text-muted: #8b8b96;
+        --border: #27272a;
+        --accent: #6366f1;
+        --agent-claude: #d97757;
+        --agent-codex: #10a37f;
+        --agent-kimi: #8b7cff;
+        --agent-grok: #000000;
+        --agent-pi: #38bdf8;
+        --agent-workbuddy: #3b82f6;
+        --agent-cursor: #ff6b2c;
+      }
+      /* @@design-tokens-boot:end@@ */
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: var(--bg-canvas);
+        color: var(--text-muted);
+        font: 13px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC',
+          'Microsoft YaHei', sans-serif;
+      }
+      #boot-fallback {
+        display: flex;
+        height: 100%;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 20px;
+        position: relative;
+        overflow: hidden;
+        animation: boot-in 320ms ease both;
+      }
+      #boot-fallback::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          ellipse 50% 40% at 50% 42%,
+          color-mix(in srgb, var(--accent) 14%, transparent),
+          transparent 70%
+        );
+        pointer-events: none;
+        animation: boot-glow 2.4s ease-in-out infinite;
+      }
+      #boot-fallback .mark-wrap {
+        position: relative;
+        width: 56px;
+        height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: boot-mark 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+      #boot-fallback .mark-ring {
+        position: absolute;
+        inset: 0;
+        border-radius: 16px;
+        background: color-mix(in srgb, var(--accent) 18%, transparent);
+        filter: blur(10px);
+        animation: boot-ring 1.8s ease-in-out infinite;
+      }
+      #boot-fallback .mark {
+        position: relative;
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        background: var(--bg-subtle);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      }
+      #boot-fallback .mark svg {
+        width: 24px;
+        height: 24px;
+      }
+      #boot-fallback .title {
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        color: var(--text-primary);
+        animation: boot-up 480ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
+      }
+      #boot-fallback .sub {
+        font-size: 12px;
+        color: var(--text-muted);
+        animation: boot-up 480ms cubic-bezier(0.22, 1, 0.36, 1) 140ms both;
+      }
+      #boot-fallback .dots {
+        display: flex;
+        gap: 6px;
+        animation: boot-up 480ms cubic-bezier(0.22, 1, 0.36, 1) 200ms both;
+      }
+      #boot-fallback .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        opacity: 0.28;
+        transform: scale(0.75);
+        animation: boot-dot 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+      #boot-fallback .dot:nth-child(1) {
+        background: var(--agent-claude);
+        animation-delay: 180ms;
+      }
+      #boot-fallback .dot:nth-child(2) {
+        background: var(--agent-codex);
+        animation-delay: 250ms;
+      }
+      #boot-fallback .dot:nth-child(3) {
+        background: var(--agent-kimi);
+        animation-delay: 320ms;
+      }
+      #boot-fallback .dot:nth-child(4) {
+        background: var(--agent-grok);
+        animation-delay: 390ms;
+      }
+      #boot-fallback .dot:nth-child(5) {
+        background: var(--agent-pi);
+        animation-delay: 460ms;
+      }
+      #boot-fallback .dot:nth-child(6) {
+        background: var(--agent-workbuddy);
+        animation-delay: 530ms;
+      }
+      #boot-fallback .dot:nth-child(7) {
+        background: var(--agent-cursor);
+        animation-delay: 600ms;
+      }
+      #boot-fallback .bar {
+        position: relative;
+        width: 112px;
+        height: 2px;
+        border-radius: 999px;
+        background: var(--border);
+        overflow: hidden;
+        animation: boot-up 480ms cubic-bezier(0.22, 1, 0.36, 1) 260ms both;
+      }
+      #boot-fallback .bar > i {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 32%;
+        border-radius: 999px;
+        background: var(--accent);
+        animation: boot-bar 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+      @keyframes boot-in {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      @keyframes boot-mark {
+        from {
+          opacity: 0;
+          transform: scale(0.72) translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1) translateY(0);
+        }
+      }
+      @keyframes boot-up {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes boot-dot {
+        0% {
+          opacity: 0.2;
+          transform: scale(0.6);
+        }
+        45% {
+          opacity: 1;
+          transform: scale(1.15);
+        }
+        100% {
+          opacity: 0.85;
+          transform: scale(1);
+        }
+      }
+      @keyframes boot-bar {
+        0% {
+          left: -36%;
+          width: 28%;
+        }
+        50% {
+          width: 42%;
+        }
+        100% {
+          left: 108%;
+          width: 28%;
+        }
+      }
+      @keyframes boot-glow {
+        0%,
+        100% {
+          opacity: 0.85;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      @keyframes boot-ring {
+        0%,
+        100% {
+          opacity: 0.55;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.9;
+          transform: scale(1.08);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #boot-fallback,
+        #boot-fallback * {
+          animation-duration: 1ms !important;
+          animation-iteration-count: 1 !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="boot-fallback" role="status" aria-label="AgentHub 正在启动">
+        <div class="mark-wrap">
+          <span class="mark-ring" aria-hidden="true"></span>
+          <span class="mark" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 2.5 20 7v10l-8 4.5L4 17V7l8-4.5Z" />
+              <path d="M12 8v8" opacity="0.35" />
+              <path d="M8.5 10.5 12 12.5l3.5-2" opacity="0.55" />
+            </svg>
+          </span>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px">
+          <div class="title">AgentHub</div>
+          <div class="sub">正在启动…</div>
+        </div>
+        <div class="dots" aria-hidden="true">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+        <div class="bar" aria-hidden="true"><i></i></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,288 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+
+import { useToast } from '@/components/ui/toast';
+import { getSettings } from '@/lib/api/settings';
+import { collectUsage, getUsageAvailability } from '@/lib/api/usage';
+import {
+  buildUsageSyncStatusLine,
+  computeNextCollectAt,
+  loadLastCollectAt,
+  normalizeIntervalMin,
+  notifyUsageCollected,
+  saveLastCollectAt,
+  USAGE_SYNC_SETTINGS_CHANGED,
+  type UsageCollectSource,
+} from '@/lib/usage-sync';
+
+/** Grace delay when overdue so first paint / availability check can settle. */
+const OVERDUE_GRACE_MS = 2_000;
+const TICK_MS = 1_000;
+
+export interface UsageSyncContextValue {
+  intervalMin: number;
+  lastCollectAt: number | null;
+  nextCollectAt: number | null;
+  collecting: boolean;
+  collectPct: number;
+  collectSource: UsageCollectSource | null;
+  statusLine: string;
+  /** Manual collect (toasts always). */
+  manualCollect: () => Promise<void>;
+  reloadSettings: () => Promise<void>;
+}
+
+const UsageSyncContext = createContext<UsageSyncContextValue | null>(null);
+
+export function useUsageSync(): UsageSyncContextValue {
+  const ctx = useContext(UsageSyncContext);
+  if (!ctx) {
+    throw new Error('useUsageSync must be used within UsageSyncProvider');
+  }
+  return ctx;
+}
+
+export function UsageSyncProvider({ children }: { children: ReactNode }) {
+  const { toast } = useToast();
+  const [intervalMin, setIntervalMin] = useState(0);
+  const [lastCollectAt, setLastCollectAt] = useState<number | null>(() => loadLastCollectAt());
+  const [nextCollectAt, setNextCollectAt] = useState<number | null>(null);
+  const [collecting, setCollecting] = useState(false);
+  const [collectPct, setCollectPct] = useState(0);
+  const [collectSource, setCollectSource] = useState<UsageCollectSource | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  /** Bumped on visibility resume so the schedule effect re-arms. */
+  const [scheduleGen, setScheduleGen] = useState(0);
+
+  const collectingRef = useRef(false);
+  const intervalMinRef = useRef(0);
+  const lastCollectAtRef = useRef(lastCollectAt);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    intervalMinRef.current = intervalMin;
+  }, [intervalMin]);
+  useEffect(() => {
+    lastCollectAtRef.current = lastCollectAt;
+  }, [lastCollectAt]);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current != null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const recomputeNext = useCallback(
+    (last: number | null, mins: number, now = Date.now()) => {
+      const next = computeNextCollectAt(last, mins, now);
+      setNextCollectAt(next);
+      return next;
+    },
+    [],
+  );
+
+  const reloadSettings = useCallback(async () => {
+    try {
+      const s = await getSettings();
+      const mins = normalizeIntervalMin(s.usageCollectIntervalMin);
+      setIntervalMin(mins);
+      recomputeNext(lastCollectAtRef.current, mins);
+    } catch {
+      // keep previous interval
+    }
+  }, [recomputeNext]);
+
+  const runCollect = useCallback(
+    async (source: UsageCollectSource) => {
+      if (collectingRef.current) return;
+      collectingRef.current = true;
+      setCollecting(true);
+      setCollectSource(source);
+      setCollectPct(source === 'manual' ? 0 : 5);
+      clearTimer();
+
+      try {
+        const availability = await getUsageAvailability();
+        if (availability.status === 'unavailable') {
+          if (source === 'manual') {
+            toast({
+              title: 'Usage 不可用',
+              description: availability.reason,
+              variant: 'danger',
+            });
+          }
+          return;
+        }
+
+        const result = await collectUsage((pct) => setCollectPct(pct));
+        const at = Date.now();
+        saveLastCollectAt(at);
+        setLastCollectAt(at);
+        lastCollectAtRef.current = at;
+        recomputeNext(at, intervalMinRef.current, at);
+
+        const inserted =
+          result && typeof result === 'object' && 'inserted' in result
+            ? Number(result.inserted) || 0
+            : undefined;
+        const missing =
+          result && typeof result === 'object' && 'missingPricingModels' in result
+            ? (result.missingPricingModels as string[] | undefined) ?? []
+            : [];
+
+        notifyUsageCollected({ source, inserted, at });
+
+        if (source === 'manual') {
+          toast({
+            title: '手动采集完成',
+            description:
+              missing.length > 0
+                ? `导入完成${inserted != null ? `（+${inserted}）` : ''}。缺价模型: ${missing.slice(0, 4).join(', ')}${missing.length > 4 ? '…' : ''}（成本记为 $0）`
+                : inserted != null
+                  ? `已从本地日志增量导入 ${inserted} 条用量。`
+                  : '已从各 agent 本地日志增量导入最新用量。',
+            variant: missing.length > 0 ? 'default' : 'success',
+          });
+        } else if (inserted != null && inserted > 0) {
+          toast({
+            title: '自动同步完成',
+            description:
+              missing.length > 0
+                ? `新增 ${inserted} 条。缺价模型: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''}（成本 $0）`
+                : `新增 ${inserted} 条用量记录。`,
+            variant: 'success',
+          });
+        }
+      } catch (e) {
+        if (source === 'manual') {
+          toast({
+            title: '采集失败',
+            description: e instanceof Error ? e.message : String(e),
+            variant: 'danger',
+          });
+        }
+        // keep schedule for auto failures
+        recomputeNext(lastCollectAtRef.current, intervalMinRef.current);
+      } finally {
+        collectingRef.current = false;
+        setCollecting(false);
+        setCollectSource(null);
+        setCollectPct(0);
+      }
+    },
+    [clearTimer, recomputeNext, toast],
+  );
+
+  const manualCollect = useCallback(async () => {
+    await runCollect('manual');
+  }, [runCollect]);
+
+  // Load interval on mount + settings change
+  useEffect(() => {
+    void reloadSettings();
+    const onSettings = () => {
+      void reloadSettings();
+    };
+    window.addEventListener(USAGE_SYNC_SETTINGS_CHANGED, onSettings);
+    return () => window.removeEventListener(USAGE_SYNC_SETTINGS_CHANGED, onSettings);
+  }, [reloadSettings]);
+
+  // 1s tick for countdown labels
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick(Date.now()), TICK_MS);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // Schedule auto collect while document is visible
+  useEffect(() => {
+    clearTimer();
+    if (collecting) return;
+    if (normalizeIntervalMin(intervalMin) <= 0) {
+      setNextCollectAt(null);
+      return;
+    }
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      return;
+    }
+
+    const now = Date.now();
+    let next = computeNextCollectAt(lastCollectAt, intervalMin, now);
+    if (next != null && next <= now) {
+      next = now + OVERDUE_GRACE_MS;
+    }
+    setNextCollectAt(next);
+    if (next == null) return;
+
+    const delay = Math.max(0, next - now);
+    timerRef.current = setTimeout(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return;
+      }
+      void runCollect('auto');
+    }, delay);
+
+    return clearTimer;
+  }, [intervalMin, lastCollectAt, collecting, scheduleGen, clearTimer, runCollect]);
+
+  // Pause / resume on visibility
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') {
+        clearTimer();
+        return;
+      }
+      setNowTick(Date.now());
+      setScheduleGen((g) => g + 1);
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [clearTimer]);
+
+  const statusLine = useMemo(
+    () =>
+      buildUsageSyncStatusLine({
+        lastCollectAt,
+        nextCollectAt,
+        intervalMin,
+        collecting,
+        now: nowTick,
+      }),
+    [lastCollectAt, nextCollectAt, intervalMin, collecting, nowTick],
+  );
+
+  const value = useMemo<UsageSyncContextValue>(
+    () => ({
+      intervalMin,
+      lastCollectAt,
+      nextCollectAt,
+      collecting,
+      collectPct,
+      collectSource,
+      statusLine,
+      manualCollect,
+      reloadSettings,
+    }),
+    [
+      intervalMin,
+      lastCollectAt,
+      nextCollectAt,
+      collecting,
+      collectPct,
+      collectSource,
+      statusLine,
+      manualCollect,
+      reloadSettings,
+    ],
+  );
+
+  return <UsageSyncContext.Provider value={value}>{children}</UsageSyncContext.Provider>;
+}

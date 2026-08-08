@@ -1,0 +1,110 @@
+//! Unit tests for skill Tauri command inners (kept out of production source).
+
+use super::*;
+use std::fs;
+use tempfile::tempdir;
+
+fn hub_with_skills(skill_names: &[&str]) -> (tempfile::TempDir, AgentHub) {
+    let dir = tempdir().unwrap();
+    let hub = AgentHub::open(Some(dir.path())).unwrap();
+    let _ = skill_names;
+    (dir, hub)
+}
+
+#[test]
+fn list_missing_source_is_empty() {
+    let (_dir, hub) = hub_with_skills(&[]);
+    let skills = list_skills_inner(&hub).unwrap();
+    for s in skills {
+        assert_eq!(s.projections.len(), AgentId::ALL.len());
+    }
+}
+
+#[test]
+fn sync_rejects_invalid_agent() {
+    let (_dir, hub) = hub_with_skills(&[]);
+    let err = sync_skill_inner(&hub, "any", "bad-agent", false).unwrap_err();
+    assert!(err.contains("invalid agent"));
+}
+
+#[test]
+fn disable_rejects_invalid_agent() {
+    let (_dir, hub) = hub_with_skills(&[]);
+    let err = disable_skill_inner(&hub, "any", "nope").unwrap_err();
+    assert!(err.contains("invalid agent"));
+}
+
+#[test]
+fn sync_all_report_shape() {
+    let dir = tempdir().unwrap();
+    let hub = AgentHub::open(Some(dir.path())).unwrap();
+    let report = sync_all_skills_inner(&hub, Some("kimi"), false).unwrap();
+    let v = serde_json::to_value(&report).unwrap();
+    assert!(v["synced"].is_array());
+    assert!(v["skipped"].is_array());
+    assert!(v["failed"].is_array());
+}
+
+#[test]
+fn skill_service_sync_disable_with_temp_source() {
+    use agenthub_core::adapters::register_all;
+    use agenthub_core::services::SkillService;
+
+    let root = tempdir().unwrap();
+    let source = root.path().join("skills");
+    let skill_dir = source.join("demo-skill");
+    fs::create_dir_all(&skill_dir).unwrap();
+    fs::write(skill_dir.join("SKILL.md"), "# Demo\n").unwrap();
+
+    let svc = SkillService::new(source.clone(), register_all());
+    let listed = svc.list().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, "demo-skill");
+}
+
+#[test]
+fn read_skill_markdown_shared_via_command_inner() {
+    use agenthub_core::adapters::register_all;
+    use agenthub_core::services::SkillService;
+
+    let root = tempdir().unwrap();
+    // AgentHub::open puts skills under data dir; also exercise hub.skills after seeding.
+    let hub = AgentHub::open(Some(root.path())).unwrap();
+    let source = hub.skills.source_root().to_path_buf();
+    let skill_dir = source.join("preview-demo");
+    fs::create_dir_all(&skill_dir).unwrap();
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: Preview Demo\ndescription: d\n---\n\n# Hi\n\n**bold**\n",
+    )
+    .unwrap();
+    hub.skills.invalidate_list_cache();
+
+    // Ensure service path works even if list cache was warm elsewhere.
+    let _ = SkillService::new(source, register_all());
+
+    let preview = read_skill_markdown_inner(&hub, "preview-demo", None).unwrap();
+    assert_eq!(preview.skill_id, "preview-demo");
+    assert_eq!(preview.name, "Preview Demo");
+    assert!(preview.content.contains("**bold**"));
+    assert!(!preview.truncated);
+
+    let err = read_skill_markdown_inner(&hub, "missing-skill", None).unwrap_err();
+    assert!(
+        err.contains("not found") || err.contains("not_found") || err.contains("SKILL.md"),
+        "unexpected error: {err}"
+    );
+
+    let bad_id = read_skill_markdown_inner(&hub, "../escape", None).unwrap_err();
+    assert!(
+        bad_id.contains("invalid") || bad_id.contains("skill id"),
+        "unexpected error: {bad_id}"
+    );
+}
+
+#[test]
+fn read_skill_markdown_rejects_invalid_private_agent() {
+    let (_dir, hub) = hub_with_skills(&[]);
+    let err = read_skill_markdown_inner(&hub, "any", Some("not-an-agent")).unwrap_err();
+    assert!(err.contains("invalid agent"), "unexpected: {err}");
+}

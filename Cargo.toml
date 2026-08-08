@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/agenthub-core",
+    "crates/agenthub-cli",
+    "src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["AgentHub"]
+
+[workspace.dependencies]
+agenthub-core = { path = "crates/agenthub-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+dirs = "6"
+rusqlite = { version = "0.32", features = ["bundled"] }
+clap = { version = "4", features = ["derive", "env"] }
+comfy-table = "7"
+which = "7"
+semver = "1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+tempfile = "3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry", "std"] }
+tracing-appender = "0.2"
+sha2 = "0.10"
+base64 = "0.22"
+urlencoding = "2"
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
+getrandom = "0.2"
