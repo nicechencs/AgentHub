@@ -114,8 +114,8 @@ pub fn cwd_storage_key(cwd: &str) -> String {
 /// Decode Pi session folder names under `~/.pi/agent/sessions/`.
 ///
 /// Pi wraps a Claude-like encoding with doubled separators, e.g.
-/// - `--C--Users-chen--` → `C:\Users\chen`
-/// - `--C--Users-chen-Downloads-pi-windows-x64--` → lossy path decode (hyphens in
+/// - `--C--Users-example--` → `C:\Users\example`
+/// - `--C--Users-example-Downloads-pi-windows-x64--` → lossy path decode (hyphens in
 ///   segment names share Claude's ambiguity)
 pub fn decode_pi_session_dir(encoded: &str) -> Option<String> {
     let s = encoded.trim();
@@ -126,7 +126,7 @@ pub fn decode_pi_session_dir(encoded: &str) -> Option<String> {
         .strip_prefix("--")
         .and_then(|x| x.strip_suffix("--"))
         .unwrap_or(s);
-    // `C--Users-chen` → Claude-style `-C-Users-chen`
+    // `C--Users-example` → Claude-style `-C-Users-example`
     let normalized = format!("-{}", core.replace("--", "-"));
     decode_claude_project_dir(&normalized)
 }
@@ -173,7 +173,10 @@ mod tests {
 
     #[test]
     fn normalize_cwd_drive_case_and_trailing_slash() {
-        assert_eq!(normalize_cwd(r"d:\demo_chen\2026\AgentHub"), "D:/demo_chen/2026/AgentHub");
+        assert_eq!(
+            normalize_cwd(r"d:\demo\workspace\2026\AgentHub"),
+            "D:/demo/workspace/2026/AgentHub"
+        );
         assert_eq!(normalize_cwd("D:/work/repo/"), "D:/work/repo");
         assert_eq!(normalize_cwd("D:/"), "D:/");
         assert_eq!(
@@ -185,12 +188,13 @@ mod tests {
     #[test]
     fn decode_pi_session_dir_windows() {
         assert_eq!(
-            decode_pi_session_dir("--C--Users-chen--").as_deref(),
-            Some(r"C:\Users\chen")
+            decode_pi_session_dir("--C--Users-example--").as_deref(),
+            Some(r"C:\Users\example")
         );
         // Hyphenated path segments are ambiguous (same as Claude encoding).
-        let lossy = decode_pi_session_dir("--C--Users-chen-Downloads-pi-windows-x64--").unwrap();
-        assert!(lossy.starts_with(r"C:\Users\chen\Downloads\"));
+        let lossy =
+            decode_pi_session_dir("--C--Users-example-Downloads-pi-windows-x64--").unwrap();
+        assert!(lossy.starts_with(r"C:\Users\example\Downloads\"));
         assert!(lossy.contains("pi"));
     }
 }
