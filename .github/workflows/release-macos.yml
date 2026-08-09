@@ -1,0 +1,200 @@
+# Build signed macOS updater artifacts and attach them to an existing GitHub Release.
+# Does not replace Windows assets; merges darwin-* into latest.json.
+#
+# Trigger:
+#   gh workflow run release-macos.yml -f tag=v0.2.0
+#
+# Required secrets:
+#   TAURI_SIGNING_PRIVATE_KEY
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  (may be empty)
+name: release-macos
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach macOS assets to (e.g. v0.2.0)"
+        required: true
+        type: string
+        default: v0.2.0
+      ref:
+        description: "Git ref to build (branch/tag/SHA). Empty = same as tag."
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: Build macOS (aarch64)
+    runs-on: macos-latest
+    steps:
+      - name: Resolve ref
+        id: meta
+        run: |
+          TAG="${{ inputs.tag }}"
+          TAG="${TAG#v}"
+          REF="${{ inputs.ref }}"
+          if [ -z "$REF" ]; then REF="${{ inputs.tag }}"; fi
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          echo "tag=v${TAG}" >> "$GITHUB_OUTPUT"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "Building version=$TAG tag=v$TAG ref=$REF"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.meta.outputs.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            src-tauri
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Tauri macOS build (signed updater artifacts)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri:build
+
+      - name: Collect macOS artifacts
+        id: arts
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.meta.outputs.version }}"
+          BUNDLE="target/release/bundle/macos"
+          OUT="mac-dist"
+          mkdir -p "$OUT"
+          ls -la "$BUNDLE" || true
+
+          # Prefer arch-marked tarballs; fall back to generic .app.tar.gz
+          mapfile -t TARS < <(find "$BUNDLE" -maxdepth 1 -type f -name '*.app.tar.gz' | sort)
+          if [ "${#TARS[@]}" -eq 0 ]; then
+            echo "No .app.tar.gz under $BUNDLE" >&2
+            exit 1
+          fi
+
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            arm64|aarch64) PLATFORM="darwin-aarch64"; ARCH_LABEL="aarch64" ;;
+            x86_64) PLATFORM="darwin-x86_64"; ARCH_LABEL="x86_64" ;;
+            *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
+          esac
+          echo "platform=$PLATFORM" >> "$GITHUB_OUTPUT"
+          echo "mac_arch=$ARCH_LABEL" >> "$GITHUB_OUTPUT"
+
+          for src in "${TARS[@]}"; do
+            base="$(basename "$src")"
+            # Normalize name for Release downloads
+            if [[ "$base" != *"aarch64"* && "$base" != *"arm64"* && "$base" != *"x86_64"* && "$base" != *"x64"* ]]; then
+              dest="AgentHub_${VERSION}_${ARCH_LABEL}.app.tar.gz"
+            else
+              dest="$base"
+            fi
+            cp -f "$src" "$OUT/$dest"
+            if [ -f "${src}.sig" ]; then
+              cp -f "${src}.sig" "$OUT/${dest}.sig"
+            else
+              echo "Missing signature for $src" >&2
+              exit 1
+            fi
+            echo "staged $dest"
+          done
+          ls -la "$OUT"
+
+      - name: Upload assets to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          # Fail if release does not exist (we only attach, never invent tags here)
+          gh release view "$TAG" --repo "${{ github.repository }}"
+          gh release upload "$TAG" mac-dist/* --repo "${{ github.repository }}" --clobber
+
+      - name: Merge macOS into latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PLATFORM: ${{ steps.arts.outputs.platform }}
+          MAC_ARCH: ${{ steps.arts.outputs.mac_arch }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+
+          node scripts/build-latest-json.mjs \
+            --version "$VERSION" \
+            --base-url "$BASE_URL" \
+            --notes "AgentHub ${TAG}" \
+            --mac-arch "$MAC_ARCH" \
+            --out mac-only.json \
+            --target-dir target/release/bundle
+
+          mkdir -p existing
+          if gh release download "$TAG" --repo "$REPO" --pattern latest.json --dir existing; then
+            echo "Downloaded existing latest.json"
+          else
+            echo "No existing latest.json; using mac-only feed"
+            echo '{}' > existing/latest.json
+          fi
+
+          BASE_URL="$BASE_URL" PLATFORM="$PLATFORM" node <<'NODE'
+          const fs = require("fs");
+          const path = require("path");
+          const base = process.env.BASE_URL;
+          const platform = process.env.PLATFORM;
+          const existing = JSON.parse(fs.readFileSync("existing/latest.json", "utf8"));
+          const mac = JSON.parse(fs.readFileSync("mac-only.json", "utf8"));
+          const merged = {
+            version: mac.version || existing.version,
+            notes: existing.notes || mac.notes || "",
+            pub_date: new Date().toISOString(),
+            platforms: { ...(existing.platforms || {}), ...(mac.platforms || {}) },
+          };
+          const staged = fs
+            .readdirSync("mac-dist")
+            .filter((n) => n.endsWith(".app.tar.gz"))
+            .sort();
+          if (staged.length && merged.platforms[platform]) {
+            const name = staged[staged.length - 1];
+            merged.platforms[platform].url = `${base}/${name}`;
+            merged.platforms[platform].signature = fs
+              .readFileSync(path.join("mac-dist", `${name}.sig`), "utf8")
+              .trim();
+          }
+          fs.writeFileSync("latest.json", `${JSON.stringify(merged, null, 2)}\n`);
+          console.log(JSON.stringify(merged, null, 2));
+          NODE
+
+          gh release upload "$TAG" latest.json --repo "$REPO" --clobber
+          echo "Updated latest.json on $TAG"
+
+      - name: Summary
+        run: |
+          echo "### macOS release attached" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`${{ steps.meta.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Platform: \`${{ steps.arts.outputs.platform }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.meta.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
