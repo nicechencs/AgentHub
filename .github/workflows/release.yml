@@ -1,0 +1,513 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - release
+  workflow_dispatch:
+
+# Build runs must never be cancelled midway after a later release push. Only
+# the publish job receives a write token, and it runs after both builds pass.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
+    steps:
+      - name: Require the release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/release" ]; then
+            echo "Releases may only run from refs/heads/release; received $GITHUB_REF" >&2
+            exit 1
+          fi
+
+      - name: Checkout release commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate release version
+        id: metadata
+        run: node scripts/release-metadata.mjs --github-output "$GITHUB_OUTPUT"
+
+      - name: Test release scripts
+        run: pnpm release:test
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Run frontend tests
+        run: pnpm test
+
+      - name: Refuse an existing tag or release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! tag_line="$(git ls-remote --refs origin "refs/tags/$TAG")"; then
+            echo "Unable to query remote tag $TAG; refusing to release without a definitive result." >&2
+            exit 1
+          fi
+          if [ -n "$tag_line" ]; then
+            echo "Release tag $TAG already exists; bump all three release versions before retrying." >&2
+            exit 1
+          fi
+          if ! release_id="$(gh api graphql \
+            -f query='query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { id } } }' \
+            -F owner="$GITHUB_REPOSITORY_OWNER" \
+            -F name="${GITHUB_REPOSITORY#*/}" \
+            -F tag="$TAG" \
+            --jq '.data.repository.release.id // empty')"; then
+            echo "Unable to query GitHub Release $TAG; refusing to release without a definitive result." >&2
+            exit 1
+          fi
+          if [ -n "$release_id" ]; then
+            echo "GitHub Release $TAG already exists; refusing to overwrite it." >&2
+            exit 1
+          fi
+
+  build-windows:
+    name: Build Windows (x64)
+    needs: validate
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout validated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require updater signing key
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw "TAURI_SIGNING_PRIVATE_KEY is required to produce signed updater artifacts."
+          }
+
+      - name: Build signed Tauri bundles
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri:build
+
+      - name: Collect signed Windows artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = 'target\release\bundle'
+          $out = 'release-assets\windows'
+          $groups = @(
+            @{ Name = 'nsis'; Pattern = '*.exe' },
+            @{ Name = 'msi'; Pattern = '*.msi' }
+          )
+
+          foreach ($group in $groups) {
+            $source = Join-Path $bundle $group.Name
+            if (-not (Test-Path -LiteralPath $source)) {
+              throw "Missing bundle directory: $source"
+            }
+            $files = @(Get-ChildItem -LiteralPath $source -File -Filter $group.Pattern)
+            if ($files.Count -eq 0) {
+              throw "No $($group.Pattern) artifact found in $source"
+            }
+            $destinationDirectory = Join-Path $out $group.Name
+            New-Item -ItemType Directory -Force -Path $destinationDirectory | Out-Null
+            foreach ($file in $files) {
+              $signature = "$($file.FullName).sig"
+              if (-not (Test-Path -LiteralPath $signature)) {
+                throw "Missing updater signature for $($file.FullName)"
+              }
+              $signatureContent = (Get-Content -LiteralPath $signature -Raw).Trim()
+              if ([string]::IsNullOrWhiteSpace($signatureContent)) {
+                throw "Empty updater signature for $($file.FullName)"
+              }
+              $destination = Join-Path $destinationDirectory $file.Name
+              if (Test-Path -LiteralPath $destination) {
+                throw "Duplicate staged asset name: $($file.Name)"
+              }
+              Copy-Item -LiteralPath $file.FullName -Destination $destination
+              Copy-Item -LiteralPath $signature -Destination "$destination.sig"
+            }
+          }
+          Get-ChildItem -Recurse -File $out | Select-Object FullName, Length
+
+      - name: Upload Windows release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: release-assets/windows
+          if-no-files-found: error
+          retention-days: 1
+
+  build-macos:
+    name: Build macOS (aarch64)
+    needs: validate
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Checkout validated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require updater signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY is required to produce signed updater artifacts." >&2
+            exit 1
+          fi
+
+      - name: Build signed Tauri bundles
+        env:
+          APPLE_SIGNING_IDENTITY: '-'
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri:build
+
+      - name: Collect signed macOS artifacts
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          BUNDLE="target/release/bundle"
+          OUT="release-assets/macos/macos"
+          mkdir -p "$OUT"
+
+          case "$(uname -m)" in
+            arm64|aarch64) ;;
+            *) echo "macos-15 release builds must run on ARM64; found $(uname -m)" >&2; exit 1 ;;
+          esac
+
+          # macOS ships Bash 3.2: use quoted glob loops, not mapfile/Bash 4.
+          TAR_COUNT=0
+          TAR_SOURCE=""
+          for source in "$BUNDLE"/macos/*.app.tar.gz; do
+            [ -f "$source" ] || continue
+            TAR_COUNT=$((TAR_COUNT + 1))
+            TAR_SOURCE="$source"
+          done
+          if [ "$TAR_COUNT" -eq 0 ]; then
+            echo "No .app.tar.gz updater artifact under $BUNDLE/macos" >&2
+            exit 1
+          fi
+          if [ "$TAR_COUNT" -ne 1 ]; then
+            echo "Expected exactly one macOS updater tarball, found $TAR_COUNT" >&2
+            exit 1
+          fi
+
+          DMG_COUNT=0
+          for source in "$BUNDLE"/dmg/*.dmg; do
+            [ -f "$source" ] || continue
+            DMG_COUNT=$((DMG_COUNT + 1))
+            destination="$OUT/$(basename "$source")"
+            if [ -e "$destination" ]; then
+              echo "Duplicate staged asset name: $(basename "$source")" >&2
+              exit 1
+            fi
+            cp "$source" "$destination"
+          done
+          if [ "$DMG_COUNT" -eq 0 ]; then
+            echo "No DMG artifact under $BUNDLE/dmg" >&2
+            exit 1
+          fi
+
+          # The tar may be generic; normalize it to the ARM updater platform.
+          base="$(basename "$TAR_SOURCE")"
+          case "$base" in
+            *aarch64*) destination="$OUT/$base" ;;
+            *) destination="$OUT/AgentHub_${VERSION}_aarch64.app.tar.gz" ;;
+          esac
+          if [ -e "$destination" ]; then
+            echo "Duplicate staged asset name: $(basename "$destination")" >&2
+            exit 1
+          fi
+          if [ ! -f "${TAR_SOURCE}.sig" ]; then
+            echo "Missing updater signature for $TAR_SOURCE" >&2
+            exit 1
+          fi
+          if [ -z "$(LC_ALL=C tr -d '[:space:]' < "${TAR_SOURCE}.sig")" ]; then
+            echo "Empty updater signature for $TAR_SOURCE" >&2
+            exit 1
+          fi
+          cp "$TAR_SOURCE" "$destination"
+          cp "${TAR_SOURCE}.sig" "${destination}.sig"
+          find "release-assets/macos" -type f -print | LC_ALL=C sort
+
+      - name: Upload macOS release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: release-assets/macos
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish GitHub Release
+    needs:
+      - validate
+      - build-windows
+      - build-macos
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download Windows release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-windows
+          path: build-tree/target/release/bundle
+
+      - name: Download macOS release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-macos
+          path: build-tree/target/release/bundle
+
+      - name: Validate publish target and prepare assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/release" ]; then
+            echo "Releases may only publish from refs/heads/release; received $GITHUB_REF" >&2
+            exit 1
+          fi
+          case "$PRERELEASE" in
+            true|false) ;;
+            *) echo "Invalid prerelease value '$PRERELEASE'" >&2; exit 1 ;;
+          esac
+          if ! tag_line="$(git ls-remote --refs origin "refs/tags/$TAG")"; then
+            echo "Unable to query remote tag $TAG; refusing to release without a definitive result." >&2
+            exit 1
+          fi
+          if [ -n "$tag_line" ]; then
+            echo "Release tag $TAG appeared during this workflow; refusing to overwrite it." >&2
+            exit 1
+          fi
+          if ! release_id="$(gh api graphql \
+            -f query='query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { id } } }' \
+            -F owner="$GITHUB_REPOSITORY_OWNER" \
+            -F name="${GITHUB_REPOSITORY#*/}" \
+            -F tag="$TAG" \
+            --jq '.data.repository.release.id // empty')"; then
+            echo "Unable to query GitHub Release $TAG; refusing to release without a definitive result." >&2
+            exit 1
+          fi
+          if [ -n "$release_id" ]; then
+            echo "GitHub Release $TAG appeared during this workflow; refusing to overwrite it." >&2
+            exit 1
+          fi
+
+          BUNDLE="build-tree/target/release/bundle"
+          ASSETS="release-assets"
+          mkdir -p "$ASSETS"
+          while IFS= read -r -d '' source; do
+            name="$(basename "$source")"
+            destination="$ASSETS/$name"
+            if [ -e "$destination" ]; then
+              echo "Release asset filename collision: $name" >&2
+              exit 1
+            fi
+            cp "$source" "$destination"
+          done < <(find "$BUNDLE" -type f -print0)
+
+          node scripts/build-latest-json.mjs \
+            --version "$VERSION" \
+            --notes "AgentHub $TAG" \
+            --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG" \
+            --target-dir "$BUNDLE" \
+            --mac-arch aarch64 \
+            --out "$ASSETS/latest.json"
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const feed = JSON.parse(fs.readFileSync('release-assets/latest.json', 'utf8'));
+          for (const platform of ['windows-x86_64', 'darwin-aarch64']) {
+            if (!feed.platforms?.[platform]?.url || !feed.platforms?.[platform]?.signature) {
+              throw new Error(`latest.json is missing a signed ${platform} updater artifact`);
+            }
+          }
+          NODE
+
+          find "$ASSETS" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort
+
+          # Claim the tag only after every asset and latest.json is ready. A
+          # lightweight tag push is the atomic remote ownership check.
+          git tag "$TAG" "$GITHUB_SHA"
+          if ! git push origin "refs/tags/$TAG"; then
+            echo "Unable to claim release tag $TAG; it may have been created concurrently." >&2
+            exit 1
+          fi
+          if ! tag_line="$(git ls-remote --refs origin "refs/tags/$TAG")"; then
+            echo "Unable to confirm remote tag $TAG after claiming it." >&2
+            exit 1
+          fi
+          remote_tag_sha="$(printf '%s\n' "$tag_line" | awk '{print $1}')"
+          if [ "$remote_tag_sha" != "$GITHUB_SHA" ]; then
+            echo "Remote tag $TAG points to $remote_tag_sha, expected $GITHUB_SHA; refusing to publish." >&2
+            exit 1
+          fi
+
+      - name: Create draft release with all assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$PRERELEASE" = true ]; then
+            gh release create "$TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "AgentHub $TAG" \
+              --notes "AgentHub $TAG" \
+              --draft \
+              --prerelease \
+              --verify-tag
+          else
+            gh release create "$TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "AgentHub $TAG" \
+              --notes "AgentHub $TAG" \
+              --draft \
+              --verify-tag
+          fi
+
+      - name: Publish release and mark latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! tag_line="$(git ls-remote --refs origin "refs/tags/$TAG")"; then
+            echo "Unable to confirm remote tag $TAG before publishing the draft." >&2
+            exit 1
+          fi
+          remote_tag_sha="$(printf '%s\n' "$tag_line" | awk '{print $1}')"
+          if [ "$remote_tag_sha" != "$GITHUB_SHA" ]; then
+            echo "Remote tag $TAG points to $remote_tag_sha, expected $GITHUB_SHA; refusing to publish." >&2
+            exit 1
+          fi
+          if [ "$PRERELEASE" = true ]; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
+          else
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          fi
+
+      - name: Write release summary
+        env:
+          TAG: ${{ needs.validate.outputs.tag }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        shell: bash
+        run: |
+          {
+            echo "### Release published"
+            echo
+            echo "- Version: \`$VERSION\`"
+            echo "- Tag: \`$TAG\`"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Prerelease: \`$PRERELEASE\`"
+            echo "- Assets:"
+            find release-assets -maxdepth 1 -type f -printf '  - `%f`\n' | LC_ALL=C sort
+            echo "- URL: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+          } >> "$GITHUB_STEP_SUMMARY"
