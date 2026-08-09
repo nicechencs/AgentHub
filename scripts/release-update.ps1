@@ -127,19 +127,22 @@ Or set:
 "@
     }
     $resolved = (Resolve-Path $path).Path
-    $env:TAURI_SIGNING_PRIVATE_KEY_PATH = $resolved
-    # Prefer PATH only (do not also set PRIVATE_KEY — tauri rejects both).
+    # Tauri on Windows often fails to load TAURI_SIGNING_PRIVATE_KEY_PATH
+    # ("public key found, but no private key"). Prefer file contents in
+    # TAURI_SIGNING_PRIVATE_KEY and clear PATH to avoid "cannot use both".
+    $keyBody = (Get-Content -LiteralPath $resolved -Raw -Encoding UTF8).Trim()
+    if (-not $keyBody) { Fail "Signing key file is empty: $resolved" }
+    $env:TAURI_SIGNING_PRIVATE_KEY = $keyBody
+    if ($env:TAURI_SIGNING_PRIVATE_KEY_PATH) {
+        Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PATH -ErrorAction SilentlyContinue
+    }
     # Always set password env (empty string OK) so build never blocks on interactive prompt.
     if ($KeyPassword -ne "") {
         $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $KeyPassword
     } elseif (-not $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
         $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
     }
-    # Clear content env if we are using path mode to avoid "cannot use both" errors.
-    if ($env:TAURI_SIGNING_PRIVATE_KEY) {
-        Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY -ErrorAction SilentlyContinue
-    }
-    Write-Info "Signing key path: $resolved (password from env or empty)"
+    Write-Info "Signing key loaded from: $resolved (password from env or empty)"
 }
 
 function Ensure-Tools([switch]$NeedGh) {
@@ -167,14 +170,20 @@ function Ensure-Tools([switch]$NeedGh) {
     }
 }
 
-function Collect-Artifacts([string]$bundleDir, [string]$destDir) {
+function Collect-Artifacts([string]$bundleDir, [string]$destDir, [string]$ver) {
     New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+    # Drop stale assets from a previous partial release into the same OutDir.
+    Get-ChildItem -Path $destDir -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne 'latest.json' } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+
     $patterns = @(
         (Join-Path $bundleDir "nsis\*"),
         (Join-Path $bundleDir "msi\*"),
         (Join-Path $bundleDir "appimage\*"),
         (Join-Path $bundleDir "macos\*")
     )
+    $verToken = $ver.TrimStart('v')
     $copied = @()
     foreach ($pat in $patterns) {
         $items = Get-Item -Path $pat -ErrorAction SilentlyContinue |
@@ -185,6 +194,11 @@ function Collect-Artifacts([string]$bundleDir, [string]$destDir) {
                     $_.Name -like '*.msi.sig' -or
                     $_.Name -like '*.AppImage.sig' -or
                     $_.Name -like '*.tar.gz.sig'
+                ) -and (
+                    # Prefer versioned installer names (AgentHub_0.2.0_...); keep
+                    # unversioned updater tarballs (common on macOS).
+                    ($_.Name -like "*${verToken}*") -or
+                    ($_.Name -notmatch '_\d+\.\d+\.\d+')
                 )
             }
         foreach ($f in $items) {
@@ -252,9 +266,9 @@ if ($DryRun) {
     if (-not (Test-Path $bundleDir)) {
         Fail "Bundle dir missing: $bundleDir (build first or drop -SkipBuild)"
     }
-    $copied = Collect-Artifacts $bundleDir $OutDir
+    $copied = Collect-Artifacts $bundleDir $OutDir $Version
     if ($copied.Count -eq 0) {
-        Fail "No installers/signatures found under $bundleDir"
+        Fail "No installers/signatures for version $Version under $bundleDir"
     }
     Write-Info ("Copied: " + ($copied -join ", "))
 }

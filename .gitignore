@@ -59,3 +59,4 @@ latest.json
 
 # Local release packaging output (installers + latest.json)
 /release-out/
+.codex/
