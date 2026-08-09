@@ -111,8 +111,13 @@ pub fn run() {
             commands::account::switch_account,
             commands::account::delete_account,
             commands::account::refresh_account_token,
+            commands::account::refresh_account_quota,
             // OAuth PKCE
+            commands::oauth::oauth_list_options,
             commands::oauth::oauth_start,
+            commands::oauth::oauth_device_start,
+            commands::oauth::oauth_device_poll,
+            commands::oauth::oauth_device_complete,
             commands::oauth::oauth_wait,
             commands::oauth::oauth_complete,
             commands::oauth::oauth_supported,

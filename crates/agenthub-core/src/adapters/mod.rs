@@ -6,6 +6,7 @@ pub(crate) mod cursor;
 mod grok;
 mod kimi;
 mod pi;
+pub mod pi_auth;
 pub(crate) mod workbuddy;
 
 use std::collections::{BTreeMap, HashMap};
@@ -148,6 +149,8 @@ pub fn default_identity_label(
         credentials,
         &[
             "email",
+            "email_address",
+            "emailAddress",
             "user_id",
             "userId",
             "principal_id",
@@ -155,6 +158,7 @@ pub fn default_identity_label(
             "sub",
             "account_id",
             "accountId",
+            "account_uuid",
         ],
     ) {
         return Some(s);

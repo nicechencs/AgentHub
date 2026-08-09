@@ -14,22 +14,37 @@ import { useToast } from '@/components/ui/toast';
 import { Notice } from '@/components/shared/Notice';
 import { Tip } from '@/components/ui/tooltip';
 import {
+  finishDeviceOAuth,
   finishOAuth,
+  listOAuthOptions,
   oauthSupported,
+  pollDeviceOAuth,
+  startDeviceOAuth,
   startOAuth,
   waitOAuth,
+  type DeviceOAuthStartInfo,
+  type OAuthLoginOption,
 } from '@/lib/api/account';
 import { AGENT_MAP } from '@/config/agents';
 import { openExternalLink } from '@/lib/open-external';
 import type { Account, AgentId } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
-type Step = 'check' | 'browser' | 'waiting' | 'done' | 'unavailable' | 'error';
+type Step =
+  | 'check'
+  | 'pick'
+  | 'browser'
+  | 'waiting'
+  | 'device'
+  | 'done'
+  | 'unavailable'
+  | 'error';
 
 /**
- * 生产 OAuth PKCE 对话框：
- * - 已配置 PKCE：系统浏览器 + loopback + 入库
- * - 等待回调：倒计时 + 复制授权链接 + 手动粘贴回调 URL 降级
- * - 未配置：明确 unavailable
+ * OAuth 对话框：
+ * - 单 provider：直接 PKCE 浏览器流
+ * - Pi 多 provider：先选 anthropic / openai-codex / xai
+ * - xai：设备码流
  */
 export function OAuthFlowDialog({
   agentId,
@@ -52,6 +67,9 @@ export function OAuthFlowDialog({
   const [redirectUri, setRedirectUri] = React.useState<string | null>(null);
   const [manualUrl, setManualUrl] = React.useState('');
   const [submittingManual, setSubmittingManual] = React.useState(false);
+  const [options, setOptions] = React.useState<OAuthLoginOption[]>([]);
+  const [selected, setSelected] = React.useState<OAuthLoginOption | null>(null);
+  const [deviceInfo, setDeviceInfo] = React.useState<DeviceOAuthStartInfo | null>(null);
   const meta = AGENT_MAP[agentId];
   const cancelRef = React.useRef({ cancelled: false });
 
@@ -67,12 +85,29 @@ export function OAuthFlowDialog({
     setRedirectUri(null);
     setManualUrl('');
     setSubmittingManual(false);
+    setOptions([]);
+    setSelected(null);
+    setDeviceInfo(null);
 
     void (async () => {
       try {
         const ok = await oauthSupported(agentId);
         if (cancelRef.current.cancelled) return;
-        setStep(ok ? 'browser' : 'unavailable');
+        if (!ok) {
+          setStep('unavailable');
+          return;
+        }
+        const opts = await listOAuthOptions(agentId);
+        if (cancelRef.current.cancelled) return;
+        setOptions(opts);
+        if (opts.length === 0) {
+          setStep('unavailable');
+        } else if (opts.length === 1) {
+          setSelected(opts[0]!);
+          setStep(opts[0]!.flow === 'deviceCode' ? 'device' : 'browser');
+        } else {
+          setStep('pick');
+        }
       } catch (e) {
         if (cancelRef.current.cancelled) return;
         setErrorMsg(e instanceof Error ? e.message : String(e));
@@ -86,18 +121,24 @@ export function OAuthFlowDialog({
   }, [open, agentId]);
 
   React.useEffect(() => {
-    if (!open || step !== 'waiting') return;
+    if (!open || (step !== 'waiting' && step !== 'device')) return;
     const tick = window.setInterval(() => setCountdown((c) => Math.max(0, c - 1)), 1000);
     return () => window.clearInterval(tick);
   }, [open, step]);
 
-  const startFlow = async () => {
+  const chooseOption = (opt: OAuthLoginOption) => {
+    setSelected(opt);
+    setErrorMsg(null);
+    setStep(opt.flow === 'deviceCode' ? 'device' : 'browser');
+  };
+
+  const startPkceFlow = async () => {
     setErrorMsg(null);
     setStep('waiting');
     setCountdown(120);
     setManualUrl('');
     try {
-      const start = await startOAuth(agentId, true);
+      const start = await startOAuth(agentId, true, selected?.id ?? null);
       if (cancelRef.current.cancelled) return;
       setOauthState(start.state);
       setAuthorizeUrl(start.authorizeUrl);
@@ -107,9 +148,7 @@ export function OAuthFlowDialog({
           title: '请手动打开授权页',
           description: start.authorizeUrl,
         });
-        void openExternalLink(start.authorizeUrl).catch(() => {
-          /* toast already above; copy remains available */
-        });
+        void openExternalLink(start.authorizeUrl).catch(() => {});
       }
       const wait = await waitOAuth(start.state, 120);
       if (cancelRef.current.cancelled) return;
@@ -129,15 +168,58 @@ export function OAuthFlowDialog({
     }
   };
 
+  const startDeviceFlow = async () => {
+    if (!selected) return;
+    setErrorMsg(null);
+    setStep('device');
+    try {
+      const start = await startDeviceOAuth(agentId, selected.id);
+      if (cancelRef.current.cancelled) return;
+      setDeviceInfo(start);
+      setOauthState(start.state);
+      setCountdown(start.expiresInSecs || 900);
+      if (start.verificationUriComplete || start.verificationUri) {
+        void openExternalLink(start.verificationUriComplete || start.verificationUri).catch(
+          () => {},
+        );
+      }
+      const intervalMs = Math.max(2, start.intervalSecs || 5) * 1000;
+      const deadline = Date.now() + (start.expiresInSecs || 900) * 1000;
+      while (!cancelRef.current.cancelled && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, intervalMs));
+        if (cancelRef.current.cancelled) return;
+        const poll = await pollDeviceOAuth(start.state);
+        if (poll.status === 'complete') {
+          const acc = await finishDeviceOAuth(start.state);
+          if (cancelRef.current.cancelled) return;
+          setAccount(acc);
+          setStep('done');
+          return;
+        }
+        if (poll.status === 'failed' || poll.status === 'expired') {
+          setErrorMsg(poll.error ?? '设备码授权失败');
+          setStep('error');
+          return;
+        }
+      }
+      if (!cancelRef.current.cancelled) {
+        setErrorMsg('设备码授权超时');
+        setStep('error');
+      }
+    } catch (e) {
+      if (cancelRef.current.cancelled) return;
+      setErrorMsg(e instanceof Error ? e.message : String(e));
+      setStep('error');
+    }
+  };
+
   /** 用户把浏览器最终跳转的 loopback 回调 URL 粘贴回来时，fetch 触发本机 listener */
   const submitManualCallback = async () => {
     const url = manualUrl.trim();
     if (!url) return;
     setSubmittingManual(true);
     try {
-      // 触发 core loopback listener 写入 code；waitOAuth 仍在进行时会自动完成
       await fetch(url, { mode: 'no-cors', credentials: 'omit' }).catch(() => {
-        // no-cors 可能 opaque；另开窗口作为兜底
         void openExternalLink(url).catch(() => {});
       });
       toast({ title: '已提交回调，若仍等待请确认 URL 含 code 与 state' });
@@ -152,6 +234,12 @@ export function OAuthFlowDialog({
     toast({ title: '授权链接已复制' });
   };
 
+  const copyUserCode = () => {
+    if (!deviceInfo?.userCode) return;
+    navigator.clipboard.writeText(deviceInfo.userCode).catch(() => {});
+    toast({ title: '设备码已复制' });
+  };
+
   const mm = String(Math.floor(countdown / 60));
   const ss = String(countdown % 60).padStart(2, '0');
 
@@ -159,7 +247,10 @@ export function OAuthFlowDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>OAuth 登录 — {meta.name}</DialogTitle>
+          <DialogTitle>
+            OAuth 登录 — {meta.name}
+            {selected ? ` · ${selected.label}` : ''}
+          </DialogTitle>
         </DialogHeader>
 
         {step === 'check' && (
@@ -172,10 +263,39 @@ export function OAuthFlowDialog({
         {step === 'unavailable' && (
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <AlertCircle className="h-10 w-10 text-warning" />
-            <p className="text-sm font-medium text-primary">OAuth 浏览器授权尚未配置</p>
+            <p className="text-sm font-medium text-primary">OAuth 授权尚未配置</p>
             <p className="text-xs text-secondary">
-              该 Agent 暂未接入 PKCE。请改用「导入当前账号」或「添加 API Key」。
+              该 Agent 暂未接入 OAuth。请改用「导入当前账号」或「添加 API Key」。
             </p>
+          </div>
+        )}
+
+        {step === 'pick' && (
+          <div className="flex flex-col gap-3 py-2">
+            <p className="text-sm text-secondary">
+              Pi 支持多家上游 OAuth。请选择要登录的提供商；凭据将写入{' '}
+              <span className="font-mono text-xs">~/.pi/agent/auth.json</span>。
+            </p>
+            <div className="flex flex-col gap-2">
+              {options.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={cn(
+                    'rounded-lg border border-border bg-canvas px-3 py-2.5 text-left transition-colors',
+                    'hover:border-accent/50 hover:bg-subtle',
+                  )}
+                  onClick={() => chooseOption(opt)}
+                >
+                  <div className="text-sm font-medium text-primary">{opt.label}</div>
+                  <div className="mt-0.5 text-xs text-muted">{opt.description}</div>
+                  <div className="mt-1 font-mono text-2xs text-muted">
+                    {opt.flow === 'deviceCode' ? '设备码' : '浏览器 PKCE'}
+                    {opt.authJsonKey ? ` · ${opt.authJsonKey}` : ''}
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -183,11 +303,69 @@ export function OAuthFlowDialog({
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <ExternalLink className="h-8 w-8 text-accent" />
             <p className="text-sm text-secondary">
-              将在系统浏览器中打开 {meta.name} 授权页面，请完成登录授权。回调经本机 loopback 接收。
+              将在系统浏览器中打开 {selected?.label ?? meta.name} 授权页面，请完成登录授权。
+              回调经本机 loopback 接收。
             </p>
-            <Button onClick={() => void startFlow()}>
+            {options.length > 1 ? (
+              <Button variant="ghost" size="sm" onClick={() => setStep('pick')}>
+                重选提供商
+              </Button>
+            ) : null}
+            <Button onClick={() => void startPkceFlow()}>
               <ExternalLink className="h-4 w-4" /> 打开浏览器授权
             </Button>
+          </div>
+        )}
+
+        {step === 'device' && (
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            {!deviceInfo ? (
+              <>
+                <ExternalLink className="h-8 w-8 text-accent" />
+                <p className="text-sm text-secondary">
+                  {selected?.label ?? 'xAI'} 使用设备码登录：打开验证页并输入显示的代码。
+                </p>
+                {options.length > 1 ? (
+                  <Button variant="ghost" size="sm" onClick={() => setStep('pick')}>
+                    重选提供商
+                  </Button>
+                ) : null}
+                <Button onClick={() => void startDeviceFlow()}>开始设备码登录</Button>
+              </>
+            ) : (
+              <>
+                <Loader2 className="h-8 w-8 animate-spin text-accent" />
+                <p className="text-sm text-secondary">等待在浏览器中完成设备授权…</p>
+                <Card variant="plain" className="w-full bg-canvas px-4 py-3 text-left">
+                  <p className="text-xs text-muted">设备码</p>
+                  <p className="font-mono text-2xl tracking-widest text-primary">
+                    {deviceInfo.userCode}
+                  </p>
+                  <p className="mt-2 break-all font-mono text-2xs text-muted">
+                    {deviceInfo.verificationUri}
+                  </p>
+                </Card>
+                <p className="font-mono text-lg tabular-nums text-primary">
+                  {mm}:{ss}
+                </p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button size="sm" variant="outline" onClick={copyUserCode}>
+                    <Copy className="h-3.5 w-3.5" /> 复制设备码
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      const url =
+                        deviceInfo.verificationUriComplete || deviceInfo.verificationUri;
+                      void openExternalLink(url).catch(() => {});
+                    }}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> 打开验证页
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -271,7 +449,14 @@ export function OAuthFlowDialog({
             <AlertCircle className="h-10 w-10 text-danger" />
             <p className="text-sm font-medium text-primary">授权失败</p>
             <p className="text-xs text-secondary">{errorMsg ?? '未知错误'}</p>
-            <Button variant="secondary" onClick={() => setStep('browser')}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                if (options.length > 1) setStep('pick');
+                else if (selected?.flow === 'deviceCode') setStep('device');
+                else setStep('browser');
+              }}
+            >
               重试
             </Button>
           </div>
@@ -286,8 +471,15 @@ export function OAuthFlowDialog({
               {account.subscription && (
                 <p className="mt-0.5 text-xs text-secondary">{account.subscription}</p>
               )}
+              {account.identityLabel && account.identityLabel !== account.email ? (
+                <p className="mt-0.5 text-xs text-muted">{account.identityLabel}</p>
+              ) : null}
             </Card>
-            <p className="text-xs text-muted">账号已写入本地账号池</p>
+            <p className="text-xs text-muted">
+              {agentId === 'pi'
+                ? '已写入账号池，并合并到 Pi auth.json'
+                : '账号已写入本地账号池'}
+            </p>
           </div>
         )}
 
@@ -308,7 +500,7 @@ export function OAuthFlowDialog({
             </>
           ) : (
             <Button variant="outline" onClick={() => onOpenChange(false)}>
-              {step === 'waiting' ? '取消等待' : '关闭'}
+              {step === 'waiting' || (step === 'device' && deviceInfo) ? '取消等待' : '关闭'}
             </Button>
           )}
         </DialogFooter>

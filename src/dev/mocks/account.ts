@@ -114,17 +114,61 @@ export function createMockAccountPort(): AccountPort {
       return { ...acc };
     },
 
-    async oauthSupported() {
-      return true;
+    async oauthSupported(agentId) {
+      return agentId === 'claude' || agentId === 'codex' || agentId === 'grok' || agentId === 'pi';
     },
 
-    async startOAuth(agentId) {
+    async listOAuthOptions(agentId) {
+      if (agentId === 'pi') {
+        return [
+          {
+            id: 'anthropic',
+            agentId: 'pi',
+            label: 'Claude Pro/Max',
+            description: '写入 Pi auth.json → anthropic',
+            flow: 'pkce' as const,
+            authJsonKey: 'anthropic',
+          },
+          {
+            id: 'openai-codex',
+            agentId: 'pi',
+            label: 'ChatGPT Plus/Pro (Codex)',
+            description: '写入 Pi auth.json → openai-codex',
+            flow: 'pkce' as const,
+            authJsonKey: 'openai-codex',
+          },
+          {
+            id: 'xai',
+            agentId: 'pi',
+            label: 'xAI (Grok 订阅)',
+            description: '设备码登录 → Pi auth.json → xai',
+            flow: 'deviceCode' as const,
+            authJsonKey: 'xai',
+          },
+        ];
+      }
+      if (agentId === 'claude' || agentId === 'codex' || agentId === 'grok') {
+        return [
+          {
+            id: agentId,
+            agentId,
+            label: agentId,
+            description: 'OAuth',
+            flow: 'pkce' as const,
+          },
+        ];
+      }
+      return [];
+    },
+
+    async startOAuth(agentId, _openBrowser, providerKey) {
       await delay(50);
       return {
         state: `mock-${agentId}-${Date.now()}`,
         authorizeUrl: 'http://127.0.0.1:34567/callback?code=mock-code&state=mock',
         redirectUri: 'http://127.0.0.1:34567/callback',
         agentId,
+        providerKey: providerKey ?? null,
         browserOpened: false,
       };
     },
@@ -144,17 +188,49 @@ export function createMockAccountPort(): AccountPort {
       return this.completeOAuth('claude');
     },
 
-    async completeOAuth(agentId) {
+    async startDeviceOAuth(agentId, providerKey) {
+      await delay(50);
+      return {
+        state: `mock-dev-${Date.now()}`,
+        agentId,
+        providerKey,
+        userCode: 'ABCD-EFGH',
+        verificationUri: 'https://auth.x.ai/device',
+        verificationUriComplete: 'https://auth.x.ai/device?user_code=ABCD-EFGH',
+        intervalSecs: 1,
+        expiresInSecs: 120,
+      };
+    },
+
+    async pollDeviceOAuth(state) {
+      await delay(80);
+      return { state, status: 'complete' as const, error: null };
+    },
+
+    async finishDeviceOAuth(state) {
+      void state;
+      return this.completeOAuth('pi', 'xai');
+    },
+
+    async completeOAuth(agentId, providerKey) {
       await delay(400);
       const email = `user${Math.floor(Math.random() * 900 + 100)}@gmail.com`;
+      const provider = providerKey ? String(providerKey) : undefined;
+      const label =
+        agentId === 'pi' && provider ? `pi:${provider} · ${email}` : email;
       const acc: Account = {
         id: `${agentId}-acc-${Date.now()}`,
         agentId,
         kind: 'oauth',
-        label: email,
+        label,
         email,
+        identityLabel: email,
         subscription:
-          agentId === 'codex' ? 'ChatGPT Plus' : agentId === 'grok' ? 'SuperGrok' : 'Claude Pro',
+          agentId === 'codex' || provider === 'openai-codex'
+            ? 'ChatGPT Plus'
+            : agentId === 'grok' || provider === 'xai'
+              ? 'SuperGrok'
+              : 'Claude Pro',
         isCurrent: false,
         tokenValid: true,
         tokenRemainingSec: 30 * 24 * 3600,
@@ -162,6 +238,7 @@ export function createMockAccountPort(): AccountPort {
         quota7dPct: 0,
         quotaResetIn: '5h00m 后重置',
         lastUsedAt: new Date().toISOString(),
+        source: agentId === 'pi' ? 'oauth_pkce' : 'oauth_pkce',
       };
       mockState[agentId].push(acc);
       return { ...acc };
@@ -179,6 +256,16 @@ export function createMockAccountPort(): AccountPort {
         acc.tokenValid = true;
         acc.tokenRemainingSec = 30 * 24 * 3600;
       }
+    },
+
+    async refreshQuota(agentId, accountId) {
+      await delay(randomLatency());
+      const acc = mockState[agentId].find((a) => a.id === accountId);
+      if (!acc) throw new Error('account not found');
+      acc.quota5hPct = 12;
+      acc.quota7dPct = 34;
+      acc.quotaResetIn = '4h20m 后重置';
+      return { ...acc };
     },
   };
 }

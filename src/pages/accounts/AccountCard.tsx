@@ -7,12 +7,14 @@ import { Card } from '@/components/ui/card';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { QuotaBar } from '@/components/shared/QuotaBar';
 import { liveConfigPaths } from '@/lib/provider-detect';
-import { cn, fmtRelative, fmtRemaining } from '@/lib/utils';
+import { cn, fmtRelative } from '@/lib/utils';
 
 /** 由账号字段推导四态认证状态 */
 function authStatusOf(a: Account): AuthStatus {
   if (!a.tokenValid) return 'expired';
-  if (a.tokenRemainingSec === undefined) return a.kind === 'apikey' ? 'valid' : 'none';
+  if (a.tokenRemainingSec !== undefined && a.tokenRemainingSec <= 0) return 'expired';
+  // Unknown remaining still means credentials are present/active.
+  if (a.tokenRemainingSec === undefined) return 'valid';
   if (a.tokenRemainingSec <= 3 * 3600) return 'expiring';
   return 'valid';
 }
@@ -64,10 +66,10 @@ export function AccountCard({
       : { variant: 'default' as const, label: '官方登录' };
 
   const tokenLine = !account.tokenValid
-    ? 'token 已失效'
-    : account.tokenRemainingSec !== undefined
-      ? `token 剩余 ${fmtRemaining(account.tokenRemainingSec)}`
-      : 'token 有效';
+    ? '登录已失效'
+    : account.kind === 'apikey'
+      ? 'API Key · 当前生效'
+      : '已登录';
 
   const authTime = account.updatedAt ?? account.createdAt;
   const title = grouped
@@ -99,6 +101,7 @@ export function AccountCard({
         {/* 右：配额 + 操作 */}
         <div className="flex shrink-0 items-center gap-2">
           <QuotaBar label="5h" pct={account.quota5hPct} resetIn={account.quotaResetIn} />
+          <QuotaBar label="7d" pct={account.quota7dPct} resetIn={account.quota7dResetIn} />
           {!account.isCurrent && (
             <Button size="sm" variant="outline" disabled={switching} onClick={() => onSwitch(account)}>
               切换
@@ -154,13 +157,7 @@ export function AccountCard({
             <DetailRow label="创建" value={fmtAuthTime(account.createdAt)} />
             <DetailRow label="更新" value={fmtAuthTime(account.updatedAt)} />
             <span className="inline-flex items-center gap-1.5 sm:col-span-2">
-              Token <StatusDot status={auth} withLabel />
-              {account.tokenValid && account.tokenRemainingSec !== undefined && (
-                <span className="text-muted">剩余 {fmtRemaining(account.tokenRemainingSec)}</span>
-              )}
-              {account.tokenRemainingSec !== undefined && account.tokenRemainingSec < 0 && (
-                <span className="text-danger">已过期</span>
-              )}
+              登录态 <StatusDot status={auth} withLabel />
             </span>
             {account.credentialSummary && (
               <DetailRow
@@ -189,7 +186,7 @@ export function AccountCard({
           {(account.quota5hPct != null || account.quota7dPct != null) && (
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5">
               <QuotaBar label="5h" pct={account.quota5hPct} resetIn={account.quotaResetIn} />
-              <QuotaBar label="7d" pct={account.quota7dPct} />
+              <QuotaBar label="7d" pct={account.quota7dPct} resetIn={account.quota7dResetIn} />
             </div>
           )}
           <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
