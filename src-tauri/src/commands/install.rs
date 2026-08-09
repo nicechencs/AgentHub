@@ -98,7 +98,9 @@ pub async fn install_runtime(
 ) -> Result<InstallOutcome, String> {
     let hub = state.hub_arc()?;
     let id = parse_runtime(&runtime_id)?;
-    let channel = channel.unwrap_or_else(|| "winget".into());
+    // An empty channel lets core select the platform default (Homebrew on
+    // macOS, winget on Windows). Explicit channels remain unchanged.
+    let channel = channel.unwrap_or_default();
     let hook = install_progress_hook(app, None, "runtime");
     with_hub_blocking(hub, move |hub| {
         hub.with_install_log_hook(hook, || {

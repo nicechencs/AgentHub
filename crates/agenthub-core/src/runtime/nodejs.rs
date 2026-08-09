@@ -236,10 +236,8 @@ enum PsProbe {
 }
 
 fn probe_powershell_candidate(names: &[&str], fallback: Option<PathBuf>) -> PsProbe {
-    for name in names {
-        if let Ok(path) = which(name) {
-            return probe_ps_path(&path);
-        }
+    if let Some(path) = resolve_which(names) {
+        return probe_ps_path(&path);
     }
     if let Some(fb) = fallback {
         if fb.is_file() {
@@ -275,7 +273,30 @@ fn resolve_which(names: &[&str]) -> Option<PathBuf> {
             return Some(p);
         }
     }
+    // GUI-launched macOS apps often inherit a minimal PATH that omits the
+    // Homebrew prefix. Probe both supported Homebrew locations directly so a
+    // freshly installed runtime is visible without restarting the shell.
+    for candidate in platform_binary_candidates(names) {
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
     None
+}
+
+/// Well-known non-PATH binary locations for the current platform.
+///
+/// Kept as a pure helper so path coverage is testable without mutating PATH or
+/// requiring Homebrew to be installed on the test host.
+fn platform_binary_candidates(names: &[&str]) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    #[cfg(target_os = "macos")]
+    for prefix in ["/opt/homebrew/bin", "/usr/local/bin"] {
+        for name in names {
+            candidates.push(PathBuf::from(prefix).join(name));
+        }
+    }
+    candidates
 }
 
 /// Detect Git CLI (`git --version`).
@@ -454,5 +475,19 @@ mod tests {
                 assert!(p.is_file());
             }
         }
+    }
+
+    #[test]
+    fn platform_binary_candidates_include_macos_homebrew_prefixes() {
+        let candidates = platform_binary_candidates(&["node", "npm"]);
+        #[cfg(target_os = "macos")]
+        {
+            assert!(candidates.contains(&PathBuf::from("/opt/homebrew/bin/node")));
+            assert!(candidates.contains(&PathBuf::from("/opt/homebrew/bin/npm")));
+            assert!(candidates.contains(&PathBuf::from("/usr/local/bin/node")));
+            assert!(candidates.contains(&PathBuf::from("/usr/local/bin/npm")));
+        }
+        #[cfg(not(target_os = "macos"))]
+        assert!(candidates.is_empty());
     }
 }

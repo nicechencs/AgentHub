@@ -2,12 +2,31 @@
  * Pure env install planning (no I/O). Shared by tauri + mock env ports.
  */
 import { RUNTIME_MAP } from '@/config/runtimes';
+import {
+  detectHostPlatform,
+  getRuntimeInstallChannel,
+  type HostPlatform,
+  type RuntimeInstallChannel,
+} from '@/lib/platform-detect';
 import type { RuntimeDetect, RuntimeId } from '@/lib/types';
+
+export type { HostPlatform, RuntimeInstallChannel } from '@/lib/platform-detect';
 
 export interface AutoInstallPlan {
   targets: RuntimeId[];
   skipped: RuntimeId[];
   summary: string;
+}
+
+/**
+ * Select the package-manager channel once for all runtime installs in a plan.
+ * Keeping this beside plan resolution prevents individual UI surfaces from
+ * silently falling back to Windows-only winget on macOS.
+ */
+export function runtimeChannelForPlan(
+  platform: HostPlatform = detectHostPlatform(),
+): RuntimeInstallChannel {
+  return getRuntimeInstallChannel(platform);
 }
 
 export function resolveAutoInstallPlan(

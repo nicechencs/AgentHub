@@ -18,18 +18,18 @@ export function createTauriEnvPort(backend: Backend): EnvPort {
       return found;
     },
 
-    async installRuntimeDetailed(id, channel = 'winget') {
+    async installRuntimeDetailed(id, channel) {
       return backend.install.installRuntime(id, channel);
     },
 
-    async installRuntime(id, channel = 'winget') {
+    async installRuntime(id, channel) {
       const outcome = await backend.install.installRuntime(id, channel);
       if (!outcome.ok) throw new RuntimeInstallFailedError(outcome);
       await backend.doctor.refreshDoctor();
       return this.getRuntime(id);
     },
 
-    async installRuntimesBatch(targets, channel = 'winget') {
+    async installRuntimesBatch(targets, channel) {
       const results: RuntimeDetect[] = [];
       const ordered = [...new Set(targets)].sort((a, b) => {
         if (a === 'nodejs') return -1;

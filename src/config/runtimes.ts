@@ -1,4 +1,5 @@
 import type { EnvRemediation, RuntimeId } from '@/lib/types';
+import type { HostPlatform } from '@/lib/platform-detect';
 
 export interface RuntimeMeta {
   id: RuntimeId;
@@ -10,6 +11,23 @@ export interface RuntimeMeta {
   /** 是否支持在 App 内引导自动安装 */
   canAutoInstall: boolean;
   remediations: EnvRemediation[];
+}
+
+/**
+ * Keep package-manager guidance honest for the host webview. Backend doctor
+ * data may come from an older core and omit a platform marker, so filter by
+ * both the explicit marker and the remediation kind.
+ */
+export function runtimeRemediationsForPlatform(
+  remediations: EnvRemediation[],
+  platform: HostPlatform = 'unknown',
+): EnvRemediation[] {
+  return remediations.filter((item) => {
+    if (item.platform && item.platform !== platform) return false;
+    if (item.kind === 'winget') return platform === 'windows';
+    if (item.kind === 'brew') return platform === 'macos';
+    return true;
+  });
 }
 
 /** 共享运行时元数据(docs/agenthub-plan.md §5.7.2) */
@@ -26,6 +44,13 @@ export const RUNTIMES: RuntimeMeta[] = [
         kind: 'winget',
         value: 'winget install OpenJS.NodeJS.LTS',
         label: '用 winget 安装 LTS',
+        platform: 'windows',
+      },
+      {
+        kind: 'brew',
+        value: 'brew install node',
+        label: '用 Homebrew 安装 Node.js',
+        platform: 'macos',
       },
       {
         kind: 'url',
@@ -73,12 +98,19 @@ export const RUNTIMES: RuntimeMeta[] = [
         kind: 'hint',
         value:
           'Windows 通常自带 PowerShell 5.1；PowerShell 7 (pwsh) 可选但更推荐。AgentHub 不提供一键安装 PowerShell。若脚本被策略拦截，请调整 ExecutionPolicy。',
+        platform: 'windows',
       },
       {
         kind: 'url',
         value:
           'https://learn.microsoft.com/powershell/scripting/install/installing-powershell',
         label: '安装 PowerShell 7',
+      },
+      {
+        kind: 'brew',
+        value: 'brew install --cask powershell',
+        label: '用 Homebrew 安装 PowerShell 7',
+        platform: 'macos',
       },
     ],
   },
@@ -94,6 +126,13 @@ export const RUNTIMES: RuntimeMeta[] = [
         kind: 'winget',
         value: 'winget install --id Git.Git -e --source winget',
         label: '用 winget 安装 Git',
+        platform: 'windows',
+      },
+      {
+        kind: 'brew',
+        value: 'brew install git',
+        label: '用 Homebrew 安装 Git',
+        platform: 'macos',
       },
       {
         kind: 'url',

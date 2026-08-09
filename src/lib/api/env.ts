@@ -21,21 +21,21 @@ export async function getRuntime(id: RuntimeId): Promise<RuntimeDetect> {
 
 export async function installRuntimeDetailed(
   id: RuntimeId,
-  channel: string = 'winget',
+  channel?: string,
 ): Promise<InstallOutcome> {
   return getBackend().env.installRuntimeDetailed(id, channel);
 }
 
 export async function installRuntime(
   id: RuntimeId,
-  channel: string = 'winget',
+  channel?: string,
 ): Promise<RuntimeDetect> {
   return getBackend().env.installRuntime(id, channel);
 }
 
 export async function installRuntimesBatch(
   targets: RuntimeId[],
-  channel: string = 'winget',
+  channel?: string,
 ): Promise<RuntimeDetect[]> {
   return getBackend().env.installRuntimesBatch(targets, channel);
 }

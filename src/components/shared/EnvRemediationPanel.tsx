@@ -6,13 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
-import { RUNTIME_MAP } from '@/config/runtimes';
+import { RUNTIME_MAP, runtimeRemediationsForPlatform } from '@/config/runtimes';
 import {
   installRuntimeDetailed,
   resolveAutoInstallPlan,
   RuntimeInstallFailedError,
 } from '@/lib/api/env';
 import { formatMissingList } from '@/lib/env';
+import { runtimeChannelForPlan } from '@/lib/env-plan';
+import { detectHostPlatform } from '@/lib/platform-detect';
 import { openExternalLink } from '@/lib/open-external';
 import type { EnvRemediation, RuntimeDetect, RuntimeId } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -58,6 +60,8 @@ export function EnvRemediationPanel({
 
   const meta = primary ? RUNTIME_MAP[primary.id] : null;
   const canOneClick = plan.targets.length > 0;
+  const hostPlatform = detectHostPlatform();
+  const runtimeChannel = runtimeChannelForPlan(hostPlatform);
 
   const [lines, setLines] = React.useState<string[]>([]);
   const [status, setStatus] = React.useState<TerminalStatus | null>(null);
@@ -88,7 +92,7 @@ export function EnvRemediationPanel({
     try {
       const allLogs: string[] = [];
       for (const id of plan.targets) {
-        const outcome = await installRuntimeDetailed(id, 'winget');
+        const outcome = await installRuntimeDetailed(id, runtimeChannel);
         allLogs.push(...outcome.logs);
         setLines([...allLogs]);
         if (!outcome.ok) {
@@ -118,7 +122,7 @@ export function EnvRemediationPanel({
     } finally {
       setRunning(false);
     }
-  }, [canOneClick, plan.targets, plan.summary, plan.skipped, onDone, toast, setRunning]);
+  }, [canOneClick, plan.targets, plan.summary, plan.skipped, onDone, toast, setRunning, runtimeChannel]);
 
   React.useEffect(() => {
     if (!autoStart || autoStartedRef.current || !canOneClick) return;
@@ -143,7 +147,10 @@ export function EnvRemediationPanel({
 
   if (!primary || !meta) return null;
 
-  const remediations = primary.remediations.length ? primary.remediations : meta.remediations;
+  const remediations = runtimeRemediationsForPlatform(
+    primary.remediations.length ? primary.remediations : meta.remediations,
+    hostPlatform,
+  );
   const title =
     focusIds && focusIds.length > 1
       ? `环境未就绪 · ${formatMissingList(focusIds)}`
@@ -271,7 +278,12 @@ function RemediationRow({
     <li className="flex items-center justify-between gap-2 rounded-btn border border-border bg-panel px-2.5 py-1.5">
       <div className="min-w-0">
         <p className="text-xs text-muted">
-          {item.label ?? (item.kind === 'winget' ? 'winget' : '命令')}
+          {item.label ??
+            (item.kind === 'winget'
+              ? 'winget'
+              : item.kind === 'brew'
+                ? 'Homebrew'
+                : '命令')}
         </p>
         <p className="truncate font-mono text-xs text-secondary">{item.value}</p>
       </div>

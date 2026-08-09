@@ -61,11 +61,17 @@ export function mapDoctorRemediation(r: DoctorRemediation): EnvRemediation[] {
   const kind = (r.kind || 'hint').toLowerCase();
 
   if (r.command) {
-    const cmdKind: RemediationKind = kind === 'winget' ? 'winget' : 'command';
+    const cmdKind: RemediationKind =
+      kind === 'winget' ? 'winget' : kind === 'brew' ? 'brew' : 'command';
     items.push({
       kind: cmdKind,
       value: r.command,
-      label: cmdKind === 'winget' ? '用 winget 安装' : '执行命令',
+      label:
+        cmdKind === 'winget'
+          ? '用 winget 安装'
+          : cmdKind === 'brew'
+            ? '用 Homebrew 安装'
+            : '执行命令',
     });
   }
   if (r.url) {

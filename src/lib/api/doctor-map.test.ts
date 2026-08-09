@@ -136,6 +136,20 @@ describe('mapDoctorRemediation', () => {
       { kind: 'hint', value: 'restart after install' },
     ]);
   });
+
+  it('preserves brew remediation as a package-manager row', () => {
+    const items = mapDoctorRemediation({
+      kind: 'brew',
+      command: 'brew install node',
+      url: 'https://nodejs.org/',
+      text: 'Restart AgentHub after installation.',
+    });
+    expect(items[0]).toEqual({
+      kind: 'brew',
+      value: 'brew install node',
+      label: '用 Homebrew 安装',
+    });
+  });
 });
 
 describe('mapDoctorEnvStatus', () => {

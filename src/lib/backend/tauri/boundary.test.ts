@@ -90,6 +90,35 @@ describe('production Usage availability (Tauri port shape)', () => {
   });
 });
 
+describe('production runtime install channel forwarding', () => {
+  beforeEach(() => {
+    tauriRuntime = true;
+    invokeMock.mockReset();
+    setBackend(createTauriBackend());
+  });
+
+  afterEach(() => {
+    resetBackend();
+  });
+
+  it('omits an unspecified channel so Rust selects the host default', async () => {
+    invokeMock.mockResolvedValueOnce({ ok: true, action: 'env_install', logs: [], message: 'ok' });
+    const backend = createTauriBackend();
+    await backend.install.installRuntime('nodejs');
+    expect(invokeMock).toHaveBeenCalledWith('install_runtime', { runtimeId: 'nodejs' });
+  });
+
+  it('preserves an explicit Windows winget channel', async () => {
+    invokeMock.mockResolvedValueOnce({ ok: true, action: 'env_install', logs: [], message: 'ok' });
+    const backend = createTauriBackend();
+    await backend.install.installRuntime('git', 'winget');
+    expect(invokeMock).toHaveBeenCalledWith('install_runtime', {
+      runtimeId: 'git',
+      channel: 'winget',
+    });
+  });
+});
+
 describe('production Dashboard alerts', () => {
   beforeEach(() => {
     tauriRuntime = true;

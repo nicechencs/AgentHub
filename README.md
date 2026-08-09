@@ -1,17 +1,17 @@
 # AgentHub
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078D6.svg)](#系统要求)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-0078D6.svg)](#系统要求)
 [![Version](https://img.shields.io/badge/version-0.1.0-informational.svg)](https://github.com/nicechencs/AgentHub/releases)
 
-**多 Agent 桌面管理中枢**：在一台 Windows 机器上统一检测与安装 AI Agent 运行时、管理 Provider / 账号池、投影 Skills、备份 live 配置、统计 Token 用量，并提供桌面 Chat 入口。
+**多 Agent 桌面管理中枢**：在一台 Windows 或 macOS 机器上统一检测与安装 AI Agent 运行时、管理 Provider / 账号池、投影 Skills、备份 live 配置、统计 Token 用量，并提供桌面 Chat 入口。
 
 技术栈：**Tauri v2 + React + Rust core**；形态为 **GUI + CLI** 双端，业务逻辑集中在 `agenthub-core`。
 
 | 状态 | 说明 |
 |---|---|
 | 版本 | `0.1.0`（活跃开发） |
-| 平台 | **Windows 优先**；macOS / Linux 仅在架构上预留路径抽象，尚未作为交付目标 |
+| 平台 | **Windows 为主交付平台**；macOS 支持源码运行与本机 Tauri 构建，Linux 仍仅预留路径抽象 |
 | 许可 | [MIT](LICENSE) |
 
 面向本机 AI Agent：
@@ -130,7 +130,8 @@ Agent 安装状态、近 N 天 Token 趋势、各 Agent 用量分布、快捷切
 |---|---|
 | 操作系统 | **Windows 10 / 11**（当前主交付平台） |
 | 运行 GUI 构建产物 | [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)（Windows 10/11 通常已预装） |
-| 从源码开发 | [Node.js](https://nodejs.org/)（建议 LTS）、[Rust / Cargo](https://rustup.rs/)、pnpm（缺失时 `run.ps1` 可自动安装） |
+| macOS 源码开发 | macOS + Xcode Command Line Tools、[Node.js](https://nodejs.org/)（建议 LTS）、[Rust / Cargo](https://rustup.rs/)、pnpm；[Homebrew](https://brew.sh/) 用于 Runtime 一键修复（可选） |
+| Windows 源码开发 | [Node.js](https://nodejs.org/)（建议 LTS）、[Rust / Cargo](https://rustup.rs/)、pnpm（缺失时 `run.ps1` 可自动安装） |
 | 可选 | 被管理的 Agent 及其官方 Runtime（如 Node 供 npm 渠道）；AgentHub 会检测并引导 |
 
 ---
@@ -141,6 +142,8 @@ Agent 安装状态、近 N 天 Token 趋势、各 Agent 用量分布、快捷切
 
 从 [GitHub Releases](https://github.com/nicechencs/AgentHub/releases) 下载 Windows 安装包（`.msi` / 安装程序）。  
 应用内可检查更新（Tauri updater 指向仓库 `latest.json`）。
+
+macOS 当前以源码运行和本机打包为主；仓库没有承诺签名、公证或可直接安装的 macOS 发布包。
 
 ### 从源码启动开发环境
 
@@ -163,13 +166,52 @@ pnpm tauri:dev
 pnpm dev:mock
 ```
 
+#### macOS
+
+在仓库根目录运行（脚本会检查 Node、Cargo、Xcode Command Line Tools、pnpm，并在缺少依赖目录时执行 `pnpm install`）：
+
+```bash
+chmod +x ./run.sh   # 首次使用需要；git checkout 通常会保留可执行位
+./run.sh
+```
+
+等价命令：
+
+```bash
+pnpm install
+pnpm tauri:dev
+```
+
+macOS 缺少 Homebrew 时仍可开发；运行时修复面板会提供 Node.js / Git 的 Homebrew 命令和官网链接，不会展示 Windows 专用 `winget`。安装后请完全退出并重启 AgentHub，再重新检测 PATH。
+
 打包桌面安装包：
 
 ```powershell
 pnpm tauri:build
 ```
 
-产物一般在 `src-tauri/target/release/bundle/`（NSIS / MSI 等，视 `tauri.conf` 配置而定）。
+产物一般在仓库根目录的 `target/release/bundle/`（NSIS / MSI 等，视 `tauri.conf` 配置而定）。
+
+macOS 本地自用构建无需 updater 签名私钥：
+
+```bash
+pnpm tauri:build:macos
+```
+
+它会按当前架构生成 `.app`：
+
+- `target/release/bundle/macos/AgentHub.app`
+
+正式发布仍使用 `pnpm tauri:build`；由于该命令会创建签名 updater artifact，必须配置 `TAURI_SIGNING_PRIVATE_KEY`。如需 DMG，可使用 Tauri 的 `--bundles dmg` 构建参数并完成 Apple 签名与公证配置。
+
+这些产物目前是开发/自用构建，未配置稳定的 Apple Developer 签名、公证和发布渠道。
+
+### 当前 macOS 限制
+
+- Windows 仍是主要交付平台；Release 页面默认提供 Windows 安装包。
+- macOS Runtime 自动修复使用 Homebrew（`brew`）；没有 Homebrew 时只能打开官网或复制命令手动安装。
+- 依赖 Windows PowerShell 的 native 安装渠道在 macOS 上可能不可用，请优先选择 Agent 提供的 npm/Unix 渠道或官网安装方式。
+- Linux 尚未作为交付目标；macOS 与 Linux 的路径、Agent 能力和官方安装脚本仍可能存在差异。
 
 ---
 
@@ -178,6 +220,8 @@ pnpm tauri:build
 | 命令 | 说明 |
 |---|---|
 | `pnpm tauri:dev` | 桌面端（真实 Tauri 后端） |
+| `pnpm dev:macos` / `./run.sh` | macOS 依赖检查后启动桌面端 |
+| `pnpm tauri:build:macos` | macOS 本地无 updater 签名的 `.app` 构建 |
 | `pnpm dev:mock` | 浏览器 mock（无 Tauri） |
 | `pnpm test` | 前端单测 |
 | `pnpm build` | 前端生产构建（**强制** Tauri adapter） |
@@ -238,7 +282,7 @@ cargo run -p agenthub-cli -- agent capabilities --markdown
 
 ```text
 AgentHub/
-├── run.bat / run.ps1     # 本机一键启动
+├── run.bat / run.ps1 / run.sh # Windows / macOS 一键启动
 ├── LICENSE               # MIT
 ├── SECURITY.md           # 漏洞披露与安全范围
 ├── AGENTS.md             # 项目约定 + Agent 协作规则（真源）

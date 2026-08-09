@@ -19,6 +19,14 @@ describe('buildInstallPreview', () => {
     expect(lines[2]).toContain('Git.Git');
   });
 
+  it('builds Homebrew previews for macOS runtimes', () => {
+    const lines = buildEnvInstallPreview(['nodejs', 'npm', 'git'], 'brew');
+    expect(lines[0]).toContain('brew install node');
+    expect(lines[1]).toContain('brew install node');
+    expect(lines[2]).toContain('brew install git');
+    expect(lines.join('\n')).not.toContain('winget');
+  });
+
   it('handles empty targets', () => {
     expect(buildEnvInstallPreview([])).toEqual(['# no auto-install targets']);
   });

@@ -20,9 +20,12 @@ export function createTauriInstallPort(): InstallPort {
       }
     },
 
-    async installRuntime(runtimeId: RuntimeId, channel = 'winget') {
+    async installRuntime(runtimeId: RuntimeId, channel?: string) {
       try {
-        return await invoke<InstallOutcome>('install_runtime', { runtimeId, channel });
+        // Omit an unspecified channel so Rust can select the host-native
+        // package manager (Homebrew on macOS, winget on Windows).
+        const args = channel === undefined ? { runtimeId } : { runtimeId, channel };
+        return await invoke<InstallOutcome>('install_runtime', args);
       } catch (e) {
         log.error('install_runtime failed', e);
         throw e;

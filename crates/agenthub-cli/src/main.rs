@@ -287,13 +287,13 @@ enum ProviderCommands {
 enum EnvCommands {
     /// List runtime detection results
     List,
-    /// Install a shared runtime (Node.js via winget)
+    /// Install a shared runtime (Homebrew on macOS, winget on Windows)
     Install {
         /// Runtime id: nodejs | npm | powershell | git
         runtime: String,
-        /// Install channel (default: winget)
-        #[arg(long, default_value = "winget")]
-        channel: String,
+        /// Install channel (default: platform-native package manager)
+        #[arg(long)]
+        channel: Option<String>,
     },
 }
 
@@ -388,7 +388,12 @@ fn main() -> ExitCode {
         Commands::Env { action } => match action {
             EnvCommands::List => env_cmd::list(&hub, cli.output),
             EnvCommands::Install { runtime, channel } => {
-                env_cmd::install(&hub, &runtime, &channel, cli.output)
+                env_cmd::install(
+                    &hub,
+                    &runtime,
+                    channel.as_deref().unwrap_or(""),
+                    cli.output,
+                )
             }
         },
         Commands::Agent { action } => match action {

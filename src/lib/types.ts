@@ -38,13 +38,15 @@ export type RuntimeId = 'nodejs' | 'npm' | 'powershell' | 'git';
 /** Runtime 健康:ok / 缺失 / 版本过旧 / PATH 异常 */
 export type EnvStatus = 'ok' | 'missing' | 'outdated' | 'broken_path';
 
-export type RemediationKind = 'winget' | 'command' | 'url' | 'hint';
+export type RemediationKind = 'winget' | 'brew' | 'command' | 'url' | 'hint';
 
 export interface EnvRemediation {
   kind: RemediationKind;
-  /** winget/command 的可执行文本;url 时为链接;hint 时为说明 */
+  /** winget/brew/command 的可执行文本;url 时为链接;hint 时为说明 */
   value: string;
   label?: string;
+  /** Optional host scope for package-manager-specific rows. */
+  platform?: 'windows' | 'macos' | 'linux';
 }
 
 export interface RuntimeDetect {

@@ -41,6 +41,42 @@ fn install_runtime_powershell_refuses() {
 }
 
 #[test]
+fn runtime_default_channel_matches_platform() {
+    if cfg!(target_os = "macos") {
+        assert_eq!(default_runtime_channel(), "brew");
+    } else {
+        assert_eq!(default_runtime_channel(), "winget");
+    }
+}
+
+#[cfg(not(windows))]
+#[test]
+fn native_sh_install_does_not_probe_powershell() {
+    let registry = register_all();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+    };
+
+    // Grok has an allowlisted install.sh URL.  The mock executor prevents any
+    // network/process side effects; this only exercises dependency selection
+    // and command construction.
+    let _ = install_agent(&registry, AgentId::Grok, "native", false, &ex).unwrap();
+    let commands = calls.lock().unwrap();
+    assert!(
+        commands.iter().any(|command| command.contains("bash -lc")),
+        "expected POSIX shell command, got {commands:?}"
+    );
+    assert!(
+        commands
+            .iter()
+            .all(|command| !command.to_ascii_lowercase().contains("powershell"))
+    );
+}
+
+#[test]
 fn install_agent_env_not_ready_without_deps() {
     // Use a mock that should never be called if env missing and no install_deps.
     // On machines without node, codex npm channel fails env ensure.
@@ -232,28 +268,38 @@ fn install_runtime_git_uses_winget_git_package() {
         exit_code: 0,
         stdout: "Successfully installed".into(),
     };
-    // Even if git is already present, we still invoke winget (then redetect).
-    // When winget is missing on the host, resolve_bin fails before executor runs.
-    let out = install_runtime(RuntimeId::Git, "winget", &ex).unwrap();
+    // Even if git is already present, we still invoke the platform package
+    // manager (then redetect). If it is missing, resolution fails before the
+    // executor runs.
+    let channel = default_runtime_channel();
+    let out = install_runtime(RuntimeId::Git, channel, &ex).unwrap();
     let cmds = calls.lock().unwrap();
     if cmds.is_empty() {
-        // winget not on PATH in this environment
+        // The package manager may not be installed on this environment.
         assert!(!out.ok);
         assert!(
-            out.message.contains("winget") || out.logs.iter().any(|l| l.contains("winget")),
-            "expected winget-missing path: msg={} logs={:?}",
+            out.message.contains("winget")
+                || out.message.contains("Homebrew")
+                || out.logs.iter().any(|l| l.contains("winget") || l.contains("brew")),
+            "expected package-manager-missing path: msg={} logs={:?}",
             out.message,
             out.logs
         );
     } else {
         assert!(
-            cmds.iter().any(|c| c.contains("Git.Git")),
-            "expected winget install Git.Git, got {cmds:?}"
+            cmds.iter().any(|c| {
+                if cfg!(target_os = "macos") {
+                    c.contains("brew") && c.contains("install git")
+                } else {
+                    c.contains("Git.Git")
+                }
+            }),
+            "expected platform package install, got {cmds:?}"
         );
         assert!(
             out.logs
                 .iter()
-                .any(|l| l.contains("Git.Git") || l.contains("git")),
+                .any(|l| l.contains("Git.Git") || l.contains("git") || l.contains("brew")),
             "logs should mention git package: {:?}",
             out.logs
         );

@@ -16,6 +16,7 @@
   "scripts": {
     "dev": "vite",
     "dev:mock": "vite --mode mock",
+    "dev:macos": "./run.sh",
     "build": "tsc -p tsconfig.app.json --pretty false && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.app.json --pretty false",
@@ -28,6 +29,7 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "tauri:build:macos": "tauri build --bundles app --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'",
     "updater:latest-json": "node scripts/build-latest-json.mjs",
     "release:update": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1",
     "release:update:publish": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1 -Publish"

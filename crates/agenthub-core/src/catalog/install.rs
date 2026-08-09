@@ -140,8 +140,29 @@ fn push_native(out: &mut Vec<InstallChannelPlan>, agent: AgentId) {
         id: "native".into(),
         label: label.into(),
         command,
-        requires: vec![RuntimeId::PowerShell],
+        requires: native_runtime_requirements(agent),
     });
+}
+
+/// Runtime requirements for the native channel are platform-specific.
+///
+/// A Unix/macOS `install.sh` is executed directly by the POSIX shell and must
+/// never advertise PowerShell as a prerequisite.  Windows keeps the historical
+/// PowerShell requirement for the allowlisted `.ps1` installers.
+fn native_runtime_requirements(agent: AgentId) -> Vec<RuntimeId> {
+    #[cfg(windows)]
+    {
+        let _ = agent;
+        vec![RuntimeId::PowerShell]
+    }
+    #[cfg(not(windows))]
+    {
+        // Setup pages and official sh installers are self-contained.  A
+        // Windows-only ps1 URL is intentionally not offered on Unix/macOS by
+        // `native_command_display`, so it cannot leak a PowerShell dependency.
+        let _ = agent;
+        vec![]
+    }
 }
 
 fn native_command_display(agent: AgentId) -> (&'static str, Option<String>) {
@@ -167,9 +188,8 @@ fn native_command_display(agent: AgentId) -> (&'static str, Option<String>) {
         if let Some(url) = native_sh_url(agent) {
             return (label, Some(format!("curl -fsS {url} | bash")));
         }
-        if let Some(url) = native_ps1_url(agent) {
-            return (label, Some(format!("irm {url} | iex")));
-        }
+        // A Windows-only ps1 URL is not a Unix/macOS install channel.  Do not
+        // expose a PowerShell command in the native catalog on these platforms.
         (label, None)
     }
 }
@@ -249,6 +269,20 @@ mod tests {
         ));
     }
 
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_native_shell_channels_do_not_require_powershell() {
+        for agent in AgentId::ALL {
+            for channel in channels_for(agent) {
+                if channel.id == "native" && native_sh_url(agent).is_some() {
+                    assert!(!channel.requires.contains(&RuntimeId::PowerShell));
+                    assert!(!channel.command.contains("irm "));
+                    assert!(!channel.command.contains("PowerShell"));
+                }
+            }
+        }
+    }
+
     #[test]
     fn kimi_and_grok_version_sources() {
         assert_eq!(npm_package(AgentId::Kimi), Some("@moonshot-ai/kimi-code"));
@@ -273,8 +307,17 @@ mod tests {
     #[test]
     fn codex_orders_npm_before_native() {
         let ch = channels_for(AgentId::Codex);
-        assert!(ch.len() >= 2);
         assert_eq!(ch[0].id, "npm");
-        assert_eq!(ch[1].id, "native");
+        #[cfg(windows)]
+        {
+            assert!(ch.len() >= 2);
+            assert_eq!(ch[1].id, "native");
+        }
+        #[cfg(not(windows))]
+        {
+            // Codex currently publishes only a Windows PowerShell script;
+            // don't expose that as a Unix/macOS native channel.
+            assert_eq!(ch.len(), 1);
+        }
     }
 }

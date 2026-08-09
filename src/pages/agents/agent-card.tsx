@@ -41,6 +41,7 @@ import {
   upgradeAgentDetailed,
 } from '@/lib/api/agent';
 import { resolveAutoInstallPlan } from '@/lib/api/env';
+import { runtimeChannelForPlan } from '@/lib/env-plan';
 import { openExternalLink } from '@/lib/open-external';
 import { openPathInFileManager } from '@/lib/api/skill';
 import {
@@ -765,7 +766,7 @@ export function AgentCard({
                     onSelect={() => {
                       const lines =
                         envPlan.targets.length > 0
-                          ? buildEnvInstallPreview(envPlan.targets, 'winget')
+                          ? buildEnvInstallPreview(envPlan.targets, runtimeChannelForPlan())
                           : buildAgentInstallPreview(agent.agentId, 'install', selectedChannel.id);
                       navigator.clipboard.writeText(lines.join('\n')).catch(() => {});
                       toast({ title: '命令预览已复制' });

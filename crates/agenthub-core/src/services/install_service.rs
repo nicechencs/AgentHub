@@ -231,10 +231,22 @@ fn channel_requires(
                 agent.as_str()
             ))
         })?;
+
+    // Adapter metadata predates the platform-aware catalog and historically
+    // marked every native channel as requiring PowerShell.  POSIX shell
+    // installers (`install.sh`) execute with bash/sh, so carrying that
+    // requirement on macOS/Linux would block an otherwise ready install.
+    // Windows keeps the adapter's PowerShell requirement unchanged.
+    #[cfg(not(windows))]
+    if channel == "native" {
+        return Ok(Vec::new());
+    }
+
     Ok(ch.requires)
 }
 
-/// Install a shared runtime (Node.js / Git via winget on Windows).
+/// Install a shared runtime (Node.js / Git via winget on Windows or Homebrew
+/// on macOS). Passing an empty channel selects the platform default.
 pub fn install_runtime(
     id: RuntimeId,
     channel: &str,
@@ -252,6 +264,103 @@ fn winget_package_id(id: RuntimeId) -> Option<&'static str> {
     }
 }
 
+/// The native runtime package manager for the current desktop platform.
+///
+/// Keep Windows on winget for compatibility. macOS uses Homebrew because it is
+/// the standard way to install both Node.js and Git without a PowerShell
+/// dependency. Linux retains the historical winget default; callers can still
+/// pass an explicit channel and will receive a clear unsupported-channel error.
+fn default_runtime_channel() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "brew"
+    } else {
+        "winget"
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn brew_formula(id: RuntimeId) -> Option<&'static str> {
+    match id {
+        RuntimeId::NodeJs | RuntimeId::Npm => Some("node"),
+        RuntimeId::Git => Some("git"),
+        RuntimeId::PowerShell => None,
+    }
+}
+
+/// Resolve Homebrew even when a GUI-launched process has not inherited the
+/// user's shell PATH.  The two paths cover Intel and Apple Silicon defaults.
+#[cfg(target_os = "macos")]
+fn resolve_brew() -> Result<String> {
+    if let Ok(path) = resolve_bin(&["brew"]) {
+        return Ok(path);
+    }
+    for candidate in ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"] {
+        let path = std::path::Path::new(candidate);
+        if path.is_file() {
+            return Ok(candidate.into());
+        }
+    }
+    Err(AppError::NotFound(
+        "command not found: brew (install Homebrew from https://brew.sh/)".into(),
+    ))
+}
+
+/// Complete an environment install by invalidating detection caches and
+/// checking the exact requested runtime (plus Node.js for an npm request).
+fn finalize_runtime_install(
+    id: RuntimeId,
+    mut logs: Vec<String>,
+    res: ExecResult,
+) -> InstallOutcome {
+    runtime::invalidate_cache();
+    let status = runtime::detect_one(id);
+    let node = runtime::detect_one(RuntimeId::NodeJs);
+    let ok = match id {
+        RuntimeId::Npm => {
+            node.status == EnvStatusKind::Ok && status.status == EnvStatusKind::Ok
+        }
+        RuntimeId::NodeJs => node.status == EnvStatusKind::Ok,
+        RuntimeId::PowerShell | RuntimeId::Git => status.status == EnvStatusKind::Ok,
+    };
+
+    if ok {
+        InstallOutcome {
+            ok: true,
+            action: "env_install".into(),
+            logs,
+            message: format!(
+                "{} 已就绪{}",
+                id.as_str(),
+                if res.success() {
+                    ""
+                } else {
+                    "（命令非 0 退出，但重新检测已通过）"
+                }
+            ),
+            agent: None,
+            runtime: Some(status),
+        }
+    } else {
+        logs.push(format!("重新检测: {} => {:?}", id.as_str(), status.status));
+        logs.push(
+            "提示: 安装成功后当前进程 PATH 可能未刷新，请完全退出并重启 AgentHub 后再检测。"
+                .into(),
+        );
+        InstallOutcome {
+            ok: false,
+            action: "env_install".into(),
+            logs,
+            message: format!(
+                "{} 安装后检测仍未就绪（status={:?}）",
+                id.as_str(),
+                status.status
+            ),
+            agent: None,
+            runtime: Some(status),
+        }
+    }
+}
+
 fn install_runtime_inner(
     id: RuntimeId,
     channel: &str,
@@ -259,7 +368,7 @@ fn install_runtime_inner(
 ) -> Result<InstallOutcome> {
     let started = Instant::now();
     let channel_log = if channel.is_empty() {
-        "winget"
+        default_runtime_channel()
     } else {
         channel
     };
@@ -303,15 +412,54 @@ fn install_runtime_inner(
         };
 
         let channel = if channel.is_empty() {
-            "winget"
+            default_runtime_channel()
         } else {
             channel
         };
+
+        #[cfg(target_os = "macos")]
+        if channel == "brew" {
+            let formula = brew_formula(target).ok_or_else(|| {
+                AppError::Unsupported(format!(
+                    "runtime {} 暂不支持 Homebrew 安装",
+                    id.as_str()
+                ))
+            })?;
+            logs.push(format!(
+                "# install runtime {} via brew ({formula})",
+                target.as_str()
+            ));
+            let brew = match resolve_brew() {
+                Ok(path) => path,
+                Err(e) => {
+                    logs.push(e.to_string());
+                    return Ok(InstallOutcome::failure(
+                        action,
+                        logs,
+                        "未找到 Homebrew。请先安装 Homebrew（https://brew.sh/）后重试。",
+                    ));
+                }
+            };
+            let req = ExecRequest {
+                program: brew,
+                args: vec!["install".into(), formula.into()],
+                timeout: ENV_TIMEOUT,
+                max_output_bytes: MAX_OUTPUT,
+            };
+            let res = executor.run(&req);
+            push_exec_logs(&mut logs, &res, ENV_TIMEOUT.as_secs());
+            return Ok(finalize_runtime_install(id, logs, res));
+        }
+
         if channel != "winget" {
+            #[cfg(target_os = "macos")]
+            let hint = "（macOS 默认使用 brew；可传 --channel brew）";
+            #[cfg(not(target_os = "macos"))]
+            let hint = "";
             return Ok(InstallOutcome::failure(
                 action,
                 logs,
-                format!("不支持的安装渠道 '{channel}'（当前仅 winget）"),
+                format!("不支持的安装渠道 '{channel}'（当前仅 winget{hint}）"),
             ));
         }
 
@@ -353,54 +501,7 @@ fn install_runtime_inner(
         let res = executor.run(&req);
         push_exec_logs(&mut logs, &res, ENV_TIMEOUT.as_secs());
 
-        runtime::invalidate_cache();
-        let status = runtime::detect_one(id);
-        // When installing for npm request, also check nodejs
-        let node = runtime::detect_one(RuntimeId::NodeJs);
-        let ok = match id {
-            RuntimeId::Npm => {
-                node.status == EnvStatusKind::Ok && status.status == EnvStatusKind::Ok
-            }
-            RuntimeId::NodeJs => node.status == EnvStatusKind::Ok,
-            RuntimeId::PowerShell | RuntimeId::Git => status.status == EnvStatusKind::Ok,
-        };
-
-        if ok {
-            Ok(InstallOutcome {
-                ok: true,
-                action: action.into(),
-                logs,
-                message: format!(
-                    "{} 已就绪{}",
-                    id.as_str(),
-                    if res.success() {
-                        ""
-                    } else {
-                        "（命令非 0 退出，但重新检测已通过）"
-                    }
-                ),
-                agent: None,
-                runtime: Some(status),
-            })
-        } else {
-            logs.push(format!("重新检测: {} => {:?}", id.as_str(), status.status));
-            logs.push(
-                "提示: winget 安装成功后当前进程 PATH 可能未刷新，请完全退出并重启 AgentHub 后再检测。"
-                    .into(),
-            );
-            Ok(InstallOutcome {
-                ok: false,
-                action: action.into(),
-                logs,
-                message: format!(
-                    "{} 安装后检测仍未就绪（status={:?}）",
-                    id.as_str(),
-                    status.status
-                ),
-                agent: None,
-                runtime: Some(status),
-            })
-        }
+        Ok(finalize_runtime_install(id, logs, res))
     })();
 
     log_install_result("install_runtime", started, None, Some(id.as_str()), &result);
@@ -466,7 +567,7 @@ pub fn install_agent(
             for missing in &env_err.missing {
                 if matches!(missing, RuntimeId::NodeJs | RuntimeId::Npm | RuntimeId::Git) {
                     logs.push(format!("# auto install runtime {}", missing.as_str()));
-                    let env_out = install_runtime_inner(*missing, "winget", executor)?;
+                    let env_out = install_runtime_inner(*missing, default_runtime_channel(), executor)?;
                     logs.extend(env_out.logs);
                     if !env_out.ok {
                         return Ok(InstallOutcome::failure(
