@@ -6,6 +6,7 @@
 import type { AgentCatalogStatus } from '@/app/runtime/agent-catalog-store';
 import type { AgentCatalogEntryDto } from '@/lib/backend/contracts/agent-catalog-types';
 import type {
+  AgentConfigSchemaDto,
   ConfigValidationIssueDto,
   ConfigValidationResultDto,
 } from '@/lib/backend/contracts/config-types';
@@ -136,6 +137,8 @@ export type ProviderSaveResult =
 export interface ProviderSaveFlowInput {
   agentId: AgentId;
   schemaStatus: SchemaUiStatus;
+  /** Schema returned by the backend; required on the projector path. */
+  configSchema?: AgentConfigSchemaDto | null;
   isEdit: boolean;
   existing?: Provider | null;
   name: string;
@@ -149,6 +152,29 @@ export interface ProviderSaveFlowInput {
   finalFormat: 'json' | 'toml';
   /** Scaffold / official base when configText is empty or redacted. */
   baseText: string;
+}
+
+/**
+ * Project the shared provider form onto the backend's declared field set.
+ *
+ * ProviderFormVars is intentionally a union-shaped UI model shared by
+ * Claude/Codex/Kimi/Grok. The backend validators are strict and must only see
+ * keys declared by the active agent schema. Empty strings and redaction
+ * markers are preserved because they carry submit semantics for secrets and
+ * optional fields.
+ */
+export function projectValuesToSchema(
+  schema: AgentConfigSchemaDto,
+  source: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const field of schema.fields) {
+    if (Object.prototype.hasOwnProperty.call(source, field.key)) {
+      const value = source[field.key];
+      if (value !== undefined) out[field.key] = value;
+    }
+  }
+  return out;
 }
 
 export interface ProviderSaveFlowDeps {
@@ -345,6 +371,14 @@ export async function runProviderSaveFlow(
   );
 
   if (path === 'projector') {
+    if (!input.configSchema) {
+      return {
+        ok: false,
+        code: 'schema_not_ready',
+        message: '配置 schema 未就绪，禁止保存',
+        preserveInput: true,
+      };
+    }
     // Build baseRaw without falling back to {} on parse errors.
     let baseRaw: unknown;
     if (input.finalFormat === 'toml') {
@@ -362,7 +396,10 @@ export async function runProviderSaveFlow(
       baseRaw = parsed.value;
     }
 
-    const values = { ...input.saveVars } as unknown as Record<string, unknown>;
+    const values = projectValuesToSchema(
+      input.configSchema,
+      input.saveVars as unknown as Record<string, unknown>,
+    );
 
     let validation: ConfigValidationResultDto;
     try {

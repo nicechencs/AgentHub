@@ -13,8 +13,9 @@ import { QuotaBar } from '@/components/shared/QuotaBar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { liveConfigPaths } from '@/lib/provider-detect';
-import { cn, fmtRelative, fmtRemaining } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
+import { authDisplayForAccount, authHealthLabel } from '@/lib/backend/contracts/auth-state';
 import {
   endpointModeBadge,
   kindBadge,
@@ -23,6 +24,7 @@ import {
 
 /**
  * 统一连接卡：官方登录 / API Key / 供应商共用外壳，操作按 kind 分支。
+ * 详情只保留用户决策相关字段，不展示内部 ID / 调试摘要。
  */
 export function ConnectionCard({
   entry,
@@ -35,6 +37,8 @@ export function ConnectionCard({
   onRefreshToken,
   onTest,
   onOpenConfigDir,
+  canEditProvider = true,
+  canSwitchProvider = true,
 }: {
   entry: ConnectionEntry;
   brandColor?: string;
@@ -46,13 +50,19 @@ export function ConnectionCard({
   onRefreshToken?: (e: ConnectionEntry) => void;
   onTest?: (e: ConnectionEntry) => void;
   onOpenConfigDir?: (e: ConnectionEntry) => void;
+  /** Provider/API Key configuration is unavailable when the capability is blocked. */
+  canEditProvider?: boolean;
+  /** Applying a saved Provider writes the agent's live config. */
+  canSwitchProvider?: boolean;
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const detailsId = React.useId();
   const badge = kindBadge(entry.kind);
-  const paths = liveConfigPaths(entry.agentId);
   const account = entry.account;
-  const provider = entry.provider;
+  const accountAction = account ? accountActionPolicy(account) : undefined;
+  const authLabel = account
+    ? authDisplayForAccount(account).label
+    : authHealthLabel(entry.authHealth ?? 'unknown');
 
   return (
     <ListRow
@@ -76,7 +86,9 @@ export function ConnectionCard({
           ) : (
             <StatusDot status={entry.authStatus} />
           )}
-          <span className="truncate text-sm font-medium">{entry.title}</span>
+          <span className="truncate text-sm font-medium" title={entry.title}>
+            {entry.title}
+          </span>
           <Badge variant={badge.variant}>{badge.label}</Badge>
           {(() => {
             const ep = endpointModeBadge(entry.endpointMode);
@@ -91,19 +103,27 @@ export function ConnectionCard({
 
         <div className="flex shrink-0 items-center gap-2">
           {entry.kind === 'oauth' || entry.kind === 'apikey' ? (
-            <QuotaBar label="5h" pct={entry.quota5hPct} resetIn={entry.quotaResetIn} />
+            <>
+              <QuotaBar label="5h" pct={entry.quota5hPct} resetIn={entry.quotaResetIn} />
+              <QuotaBar label="7d" pct={entry.quota7dPct} resetIn={entry.quota7dResetIn} />
+            </>
           ) : null}
           {!entry.isCurrent && (
             <Button
               size="sm"
               variant="outline"
-              disabled={switching}
+              disabled={switching || (entry.source === 'provider' && !canSwitchProvider)}
+              title={
+                entry.source === 'provider' && !canSwitchProvider
+                  ? '该 Agent 不支持配置写入'
+                  : undefined
+              }
               onClick={() => onSwitch(entry)}
             >
               切换
             </Button>
           )}
-          {entry.source === 'provider' && (
+          {entry.source === 'provider' && canEditProvider && (
             <Button size="sm" variant="secondary" onClick={() => onEdit(entry)}>
               <Pencil className="h-3.5 w-3.5" /> 编辑
             </Button>
@@ -143,7 +163,6 @@ export function ConnectionCard({
           className="mt-3 flex flex-col gap-2.5 bg-canvas p-3 text-xs"
         >
           <div className="grid gap-1.5 text-secondary sm:grid-cols-2">
-            <DetailRow label="ID" value={entry.id} mono />
             <DetailRow label="类型" value={badge.label} />
             {entry.endpointMode ? (
               <DetailRow
@@ -151,62 +170,30 @@ export function ConnectionCard({
                 value={entry.endpointMode === 'official' ? '官方' : '自定义'}
               />
             ) : null}
-            {entry.identityLabel ? (
-              <DetailRow label="身份" value={entry.identityLabel} />
+            {account ? (
+              <DetailRow
+                label={entry.kind === 'oauth' ? '官方账号' : '账号'}
+                value={
+                  entry.kind === 'oauth'
+                    ? account.email ??
+                      account.identityLabel ??
+                      account.subjectId ??
+                      '官方未提供账号信息'
+                    : account.email ?? account.identityLabel ?? account.label
+                }
+              />
             ) : null}
-            {account?.email ? <DetailRow label="邮箱" value={account.email} /> : null}
-            {account?.source ? (
-              <DetailRow label="来源" value={account.source} mono />
-            ) : null}
-            {account?.credentialFormat ? (
-              <DetailRow label="凭据格式" value={account.credentialFormat} mono />
-            ) : null}
-            {account?.envKey ? (
-              <DetailRow label="环境变量键" value={account.envKey} mono />
+            {account?.provider && !entry.title.includes(account.provider) ? (
+              <DetailRow label="提供商" value={account.provider} />
             ) : null}
             {entry.endpointHost ? (
               <DetailRow label="Endpoint" value={entry.endpointHost} mono />
             ) : null}
-            {provider?.preset ? (
-              <DetailRow label="预设" value={provider.preset} mono />
-            ) : null}
-            {account?.createdAt ? (
-              <DetailRow label="创建" value={fmtLooseTime(account.createdAt)} />
-            ) : null}
-            {entry.sortKey ? (
-              <DetailRow label="更新" value={fmtLooseTime(entry.sortKey)} />
-            ) : null}
-            {account && (
+            {account ? (
               <span className="inline-flex items-center gap-1.5 sm:col-span-2">
-                Token <StatusDot status={entry.authStatus} withLabel />
-                {account.tokenValid && account.tokenRemainingSec !== undefined && (
-                  <span className="text-muted">
-                    剩余 {fmtRemaining(account.tokenRemainingSec)}
-                  </span>
-                )}
+                登录态 <StatusDot status={entry.authStatus} />
+                <span className="text-xs text-secondary">{authLabel}</span>
               </span>
-            )}
-            {account?.credentialSummary ? (
-              <DetailRow
-                label="凭据摘要"
-                value={account.credentialSummary}
-                mono
-                className="sm:col-span-2"
-              />
-            ) : null}
-            <DetailRow
-              label="Live 配置"
-              value={paths.config}
-              mono
-              className="sm:col-span-2"
-            />
-            {paths.auth ? (
-              <DetailRow
-                label="Live 凭据"
-                value={paths.auth}
-                mono
-                className="sm:col-span-2"
-              />
             ) : null}
           </div>
 
@@ -217,7 +204,11 @@ export function ConnectionCard({
                 pct={account.quota5hPct}
                 resetIn={account.quotaResetIn}
               />
-              <QuotaBar label="7d" pct={account.quota7dPct} />
+              <QuotaBar
+                label="7d"
+                pct={account.quota7dPct}
+                resetIn={account.quota7dResetIn}
+              />
             </div>
           )}
 
@@ -232,9 +223,10 @@ export function ConnectionCard({
                 <FolderOpen className="h-3.5 w-3.5" /> 打开配置目录
               </Button>
             )}
-            {entry.kind === 'oauth' && onRefreshToken && (
+            {accountAction && onRefreshToken && (
               <Button size="sm" variant="secondary" onClick={() => onRefreshToken(entry)}>
-                <RefreshCw className="h-3.5 w-3.5" /> 刷新 Token
+                <RefreshCw className="h-3.5 w-3.5" />
+                {accountAction.label}
               </Button>
             )}
             {entry.kind === 'apikey' && (
@@ -242,36 +234,29 @@ export function ConnectionCard({
                 <Pencil className="h-3.5 w-3.5" /> 编辑密钥
               </Button>
             )}
-            {entry.source === 'provider' && (
+            {entry.source === 'provider' && canEditProvider && (
               <Button size="sm" variant="secondary" onClick={() => onEdit(entry)}>
                 <Pencil className="h-3.5 w-3.5" /> 编辑配置
               </Button>
             )}
-            {/* 供应商允许删当前项（只清池）；账号当前项不删以免误伤 */}
-            {(entry.source === 'provider' || !entry.isCurrent) && (
-              <Button
-                size="sm"
-                variant="dangerOutline"
-                onClick={() => onDelete(entry)}
-              >
-                <Trash2 className="h-3.5 w-3.5" /> 删除
-              </Button>
-            )}
+            {/* Account and Provider rows are both pool-only deletions, including current rows. */}
+            <Button
+              size="sm"
+              variant="dangerOutline"
+              title={
+                entry.isCurrent
+                  ? '移入回收站；本机连接可能仍继续生效'
+                  : undefined
+              }
+              onClick={() => onDelete(entry)}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> 删除
+            </Button>
           </div>
         </Card>
       )}
     </ListRow>
   );
-}
-
-function fmtLooseTime(raw?: string): string {
-  if (!raw) return '—';
-  const normalized = raw.includes('T')
-    ? raw
-    : `${raw.replace(' ', 'T')}${/[zZ]|[+-]\d{2}:?\d{2}$/.test(raw) ? '' : 'Z'}`;
-  const d = new Date(normalized);
-  if (Number.isNaN(d.getTime())) return raw.slice(0, 16);
-  return fmtRelative(d.toISOString());
 }
 
 function DetailRow({

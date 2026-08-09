@@ -104,6 +104,13 @@ export interface AgentStatus {
   binPath?: string;
   authStatus: AuthStatus;
   authLabel: string; // 如 "已登录" / "API" / "未配置"
+  /** Semantic six-state auth health (optional for old backend/doctor rows). */
+  authHealth?: import('@/lib/backend/contracts/auth-state').AuthHealth;
+  /** Display label for authHealth; authLabel remains as a legacy compatibility field. */
+  authHealthLabel?: string;
+  /** Redacted source/revision metadata from the live auth probe. */
+  authSource?: string;
+  authRevision?: string;
   /**
    * 兼容字段：当前生效连接的短展示（账号 label，或 供应商名 · URL）。
    * 新代码优先读 effectiveLabel。
@@ -168,18 +175,33 @@ export interface Account {
    * 来自 core extra.identityLabel，缺省回退 email / label。
    */
   identityLabel?: string;
+  /** 上游提供商标识（Pi multi-provider：xai / anthropic / openai-codex …） */
+  provider?: string;
+  /** 用户/主体 id（sub / principal_id），无邮箱时用于展示 */
+  subjectId?: string;
   subscription?: string; // 订阅等级,如 "ChatGPT Plus"
   isCurrent: boolean;
   tokenValid: boolean;
+  /** Health stored with this saved account-pool row. */
+  authHealth?: import('@/lib/backend/contracts/auth-state').AuthHealth;
+  /** Current-agent live probe metadata, distinct from the saved pool row. */
+  liveAuthHealth?: import('@/lib/backend/contracts/auth-state').AuthHealth;
+  liveAuthSource?: string;
+  liveAuthRevision?: string;
+  /** OAuth has a refresh credential and can renew an expired access token. */
+  refreshable?: boolean;
   /** core 原始 status（如 active） */
   status?: string;
   /** token 剩余秒数 */
   tokenRemainingSec?: number;
   /** 5h 窗口配额用量百分比 0-100 */
   quota5hPct?: number;
-  /** 7d 窗口配额用量百分比 0-100 */
+  /** 7d 窗口配额用量百分比 0-100（Codex 周窗 / Grok 周账单） */
   quota7dPct?: number;
-  quotaResetIn?: string; // 如 "2h13m 后重置"
+  /** 5h 窗口重置倒计时，如 "2h13m 后重置" */
+  quotaResetIn?: string;
+  /** 7d 窗口重置倒计时 */
+  quota7dResetIn?: string;
   lastUsedAt?: string; // ISO 时间
   /** core 更新时间（比较当前生效项时使用） */
   updatedAt?: string;

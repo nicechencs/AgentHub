@@ -103,7 +103,7 @@ pub struct CapabilityState {
 
 | Capability | claude | codex | kimi | grok | pi | workbuddy | cursor |
 |---|---|---|---|---|---|---|---|
-| ConfigWrite | Full | Full | Full | Full | **Unsup** | **Unsup** | **Unsup** |
+| ConfigWrite | Full | Full | Full | Full | Full | Full | **Unsup** |
 | AccountSwitch | Full | Full | Full | Full | Full | **Unsup** | **Unsup** |
 | ApiKeyAccount | Full | **Partial** | Full | Full | **Partial** | **Unsup** | **Partial** |
 | Skills | Full | Full | **Unsup** | Full | Full | Full | Full |
@@ -122,7 +122,7 @@ pub struct CapabilityState {
 
 | 单元格 | reason |
 |---|---|
-| ConfigWrite / pi·workbuddy·cursor | 无稳定 settings 合并契约，fail-closed |
+| ConfigWrite / cursor | 无稳定配置写入契约，fail-closed |
 | AccountSwitch / workbuddy | UI：`暂不支持账号池切换` |
 | AccountSwitch / cursor | UI：`账号由 Cursor 管理`；不读写 IDE 私有账号库 |
 | ApiKeyAccount / codex | 可入池；live 应用仅支持官方 OAuth 凭据形态 |
@@ -136,7 +136,8 @@ pub struct CapabilityState {
 | ProjectHistory / cursor | 仅工作区目录列表，无会话 transcript |
 | ProjectDelete / cursor | 目录内部结构无安全浅删契约 |
 | ProjectHistory / 各支持家 | 只读扫描 agent home 下已知会话/项目布局；mtime 索引可加速 |
-| ProviderPresets / pi·workbuddy·cursor | 写入契约未锁定，无内置模板 |
+| ProviderPresets / pi·workbuddy | 暂无内置 provider 模板（手工 Provider 仍可写回） |
+| ProviderPresets / cursor | 无 provider 配置契约 |
 
 **注意**：`Skills` 与 `ProviderPresets` 之外，本矩阵不重复 `install_channels()` 已返回的结构化数据——安装渠道是数据不是能力（§3）。
 

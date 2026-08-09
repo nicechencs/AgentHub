@@ -1,21 +1,15 @@
 import * as React from 'react';
 import { ChevronDown, FolderOpen, Pencil, RefreshCw, Trash2 } from 'lucide-react';
-import type { Account, AuthStatus } from '@/lib/types';
+import type { Account } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { QuotaBar } from '@/components/shared/QuotaBar';
 import { liveConfigPaths } from '@/lib/provider-detect';
-import { cn, fmtRelative, fmtRemaining } from '@/lib/utils';
-
-/** 由账号字段推导四态认证状态 */
-function authStatusOf(a: Account): AuthStatus {
-  if (!a.tokenValid) return 'expired';
-  if (a.tokenRemainingSec === undefined) return a.kind === 'apikey' ? 'valid' : 'none';
-  if (a.tokenRemainingSec <= 3 * 3600) return 'expiring';
-  return 'valid';
-}
+import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
+import { authDisplayForAccount } from '@/lib/backend/contracts/auth-state';
+import { cn, fmtRelative } from '@/lib/utils';
 
 /** core 时间多为 `YYYY-MM-DD HH:MM:SS.ffffff`，转相对时间展示 */
 function fmtAuthTime(raw?: string): string {
@@ -56,18 +50,16 @@ export function AccountCard({
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const detailsId = React.useId();
-  const auth = authStatusOf(account);
+  const authDisplay = authDisplayForAccount(account);
+  const auth = authDisplay.legacyStatus;
+  const accountAction = accountActionPolicy(account);
   const paths = liveConfigPaths(account.agentId);
   const kindBadge =
     account.kind === 'apikey'
       ? { variant: 'info' as const, label: 'API Key' }
       : { variant: 'default' as const, label: '官方登录' };
 
-  const tokenLine = !account.tokenValid
-    ? 'token 已失效'
-    : account.tokenRemainingSec !== undefined
-      ? `token 剩余 ${fmtRemaining(account.tokenRemainingSec)}`
-      : 'token 有效';
+  const tokenLine = authDisplay.label;
 
   const authTime = account.updatedAt ?? account.createdAt;
   const title = grouped
@@ -99,6 +91,7 @@ export function AccountCard({
         {/* 右：配额 + 操作 */}
         <div className="flex shrink-0 items-center gap-2">
           <QuotaBar label="5h" pct={account.quota5hPct} resetIn={account.quotaResetIn} />
+          <QuotaBar label="7d" pct={account.quota7dPct} resetIn={account.quota7dResetIn} />
           {!account.isCurrent && (
             <Button size="sm" variant="outline" disabled={switching} onClick={() => onSwitch(account)}>
               切换
@@ -148,19 +141,20 @@ export function AccountCard({
               <DetailRow label="凭据格式" value={account.credentialFormat} mono />
             )}
             {account.source && <DetailRow label="来源" value={account.source} mono />}
+            {account.liveAuthSource && (
+              <DetailRow label="实时认证来源" value={account.liveAuthSource} mono />
+            )}
+            {account.liveAuthRevision && (
+              <DetailRow label="实时认证修订" value={account.liveAuthRevision} mono />
+            )}
             {account.envKey && (
               <DetailRow label="环境变量键" value={account.envKey} mono />
             )}
             <DetailRow label="创建" value={fmtAuthTime(account.createdAt)} />
             <DetailRow label="更新" value={fmtAuthTime(account.updatedAt)} />
             <span className="inline-flex items-center gap-1.5 sm:col-span-2">
-              Token <StatusDot status={auth} withLabel />
-              {account.tokenValid && account.tokenRemainingSec !== undefined && (
-                <span className="text-muted">剩余 {fmtRemaining(account.tokenRemainingSec)}</span>
-              )}
-              {account.tokenRemainingSec !== undefined && account.tokenRemainingSec < 0 && (
-                <span className="text-danger">已过期</span>
-              )}
+              登录态 <StatusDot status={auth} />
+              <span className="text-xs text-secondary">{authDisplay.label}</span>
             </span>
             {account.credentialSummary && (
               <DetailRow
@@ -171,13 +165,13 @@ export function AccountCard({
               />
             )}
             <DetailRow
-              label="Live 配置"
+              label="本机当前配置"
               value={paths.config}
               mono
               className="sm:col-span-2"
             />
             {paths.auth && (
-              <DetailRow label="Live 凭据" value={paths.auth} mono className="sm:col-span-2" />
+              <DetailRow label="本机登录凭据" value={paths.auth} mono className="sm:col-span-2" />
             )}
             <DetailRow
               label="打开目录"
@@ -189,7 +183,7 @@ export function AccountCard({
           {(account.quota5hPct != null || account.quota7dPct != null) && (
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5">
               <QuotaBar label="5h" pct={account.quota5hPct} resetIn={account.quotaResetIn} />
-              <QuotaBar label="7d" pct={account.quota7dPct} />
+              <QuotaBar label="7d" pct={account.quota7dPct} resetIn={account.quota7dResetIn} />
             </div>
           )}
           <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
@@ -203,9 +197,10 @@ export function AccountCard({
                 <FolderOpen className="h-3.5 w-3.5" /> 打开配置目录
               </Button>
             )}
-            {account.kind === 'oauth' && (
+            {accountAction && (
               <Button size="sm" variant="secondary" onClick={() => onRefreshToken(account)}>
-                <RefreshCw className="h-3.5 w-3.5" /> 刷新 Token
+                <RefreshCw className="h-3.5 w-3.5" />
+                {accountAction.label}
               </Button>
             )}
             {account.kind === 'apikey' && onEdit && (
@@ -213,11 +208,18 @@ export function AccountCard({
                 <Pencil className="h-3.5 w-3.5" /> 编辑
               </Button>
             )}
-            {!account.isCurrent && (
-              <Button size="sm" variant="dangerOutline" onClick={() => onDelete(account)}>
-                <Trash2 className="h-3.5 w-3.5" /> 删除账号
-              </Button>
-            )}
+            <Button
+              size="sm"
+              variant="dangerOutline"
+              title={
+                account.isCurrent
+                  ? '移入回收站；本机连接可能仍继续生效'
+                  : '移入回收站；不会修改本机配置文件'
+              }
+              onClick={() => onDelete(account)}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> 删除账号
+            </Button>
           </div>
         </Card>
       )}

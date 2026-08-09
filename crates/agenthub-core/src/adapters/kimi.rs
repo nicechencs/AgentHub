@@ -11,8 +11,9 @@ use crate::utils::paths::agent_home;
 use crate::utils::redact::mask_secret_preview;
 
 use super::{
-    api_key_live_account, detect_binary, require_api_key, write_toml_config,
-    write_verified_json_object, AgentAdapter,
+    api_key_live_account, auth_file_revision, detect_binary, inspect_auth_credentials,
+    oauth_auth_health, require_api_key, write_toml_config, write_verified_json_object,
+    AgentAdapter,
 };
 
 pub struct KimiAdapter;
@@ -77,21 +78,8 @@ impl AgentAdapter for KimiAdapter {
     fn read_auth(&self) -> Result<AuthState> {
         let home = agent_home(AgentId::Kimi)?;
         let cred = home.join("credentials").join("kimi-code.json");
-        let has = cred.exists();
-        Ok(AuthState {
-            agent: AgentId::Kimi,
-            kind: if has {
-                Some("oauth+apikey".into())
-            } else {
-                None
-            },
-            summary: if has {
-                "credentials present".into()
-            } else {
-                "no credentials file".into()
-            },
-            has_credentials: has,
-        })
+        let config = home.join("config.toml");
+        Ok(kimi_auth_state(&config, &cred))
     }
 
     fn read_account(&self) -> Result<LiveAccount> {
@@ -170,7 +158,10 @@ impl AgentAdapter for KimiAdapter {
                 let body = account.credentials.get("body").cloned().ok_or_else(|| {
                     AppError::InvalidArg("Kimi credentials body is required".into())
                 })?;
-                write_verified_json_object(&home.join("credentials").join("kimi-code.json"), &body)?;
+                write_verified_json_object(
+                    &home.join("credentials").join("kimi-code.json"),
+                    &body,
+                )?;
                 // Official OAuth must win over leftover API key (read prefers api_key).
                 clear_kimi_api_key(&home.join("config.toml"))?;
                 Ok(())
@@ -217,9 +208,7 @@ impl AgentAdapter for KimiAdapter {
             ConfigWrite | AccountSwitch | ApiKeyAccount | LiveBackup | StructuredStream
             | ProjectHistory | ProjectDelete | ProviderPresets => CapabilityState::full(),
             Skills => CapabilityState::unsupported("Kimi CLI 无技能目录模型"),
-            DangerousMode => CapabilityState::partial(
-                "-p 与 --yolo 互斥，headless 下该开关不生效",
-            ),
+            DangerousMode => CapabilityState::partial("-p 与 --yolo 互斥，headless 下该开关不生效"),
             Usage => CapabilityState::full(),
             Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
         }
@@ -264,6 +253,89 @@ impl AgentAdapter for KimiAdapter {
             cwd: opts.cwd.clone(),
             env: vec![],
         })
+    }
+}
+
+pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
+    match read_kimi_api_key(config) {
+        Ok(Some(key)) if !key.is_empty() => {
+            return AuthState {
+                agent: AgentId::Kimi,
+                kind: Some("api_key".into()),
+                summary: "API key present in config.toml".into(),
+                has_credentials: true,
+                health: crate::models::AuthHealth::Configured,
+                source: Some("kimi:config.toml".into()),
+                revision: auth_file_revision(config),
+            };
+        }
+        Ok(_) => {}
+        Err(_) => {
+            return AuthState {
+                agent: AgentId::Kimi,
+                kind: None,
+                summary: "config.toml could not be parsed".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Unknown,
+                source: Some("kimi:config.toml".into()),
+                revision: auth_file_revision(config),
+            };
+        }
+    }
+
+    if !cred.is_file() {
+        return AuthState {
+            agent: AgentId::Kimi,
+            kind: None,
+            summary: "no credentials file".into(),
+            has_credentials: false,
+            health: crate::models::AuthHealth::Missing,
+            source: Some("kimi:credentials/kimi-code.json".into()),
+            revision: None,
+        };
+    }
+    let body = match std::fs::read_to_string(cred)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+    {
+        Some(body) => body,
+        None => {
+            return AuthState {
+                agent: AgentId::Kimi,
+                kind: None,
+                summary: "credentials file could not be parsed".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Unknown,
+                source: Some("kimi:credentials/kimi-code.json".into()),
+                revision: auth_file_revision(cred),
+            };
+        }
+    };
+    let metadata = inspect_auth_credentials(&body);
+    if !metadata.has_access_token && !metadata.has_refresh_token {
+        return AuthState {
+            agent: AgentId::Kimi,
+            kind: None,
+            summary: "credentials file present but credentials could not be classified".into(),
+            has_credentials: false,
+            health: crate::models::AuthHealth::Unknown,
+            source: Some("kimi:credentials/kimi-code.json".into()),
+            revision: auth_file_revision(cred),
+        };
+    }
+    let health = oauth_auth_health(metadata);
+    AuthState {
+        agent: AgentId::Kimi,
+        kind: Some("oauth".into()),
+        summary: if health == crate::models::AuthHealth::NeedsLogin {
+            "Kimi OAuth credentials are expired; run `kimi login`".into()
+        } else {
+            "Kimi OAuth credentials present".into()
+        },
+        has_credentials: true,
+        health,
+        source: Some("kimi:credentials/kimi-code.json".into()),
+        revision: auth_file_revision(cred),
     }
 }
 
@@ -362,9 +434,9 @@ fn clear_kimi_api_key(path: &Path) -> Result<()> {
     if live.trim().is_empty() {
         return Ok(());
     }
-    let mut doc = live.parse::<toml_edit::DocumentMut>().map_err(|e| {
-        AppError::InvalidArg(format!("existing Kimi config.toml is invalid: {e}"))
-    })?;
+    let mut doc = live
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| AppError::InvalidArg(format!("existing Kimi config.toml is invalid: {e}")))?;
     let mut changed = false;
     if let Some(providers) = doc.get_mut("providers").and_then(|p| p.as_table_mut()) {
         let names: Vec<String> = providers.iter().map(|(k, _)| k.to_string()).collect();

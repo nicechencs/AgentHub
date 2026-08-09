@@ -83,14 +83,14 @@ const BUILTIN: &[PresetDef] = &[
         id: "xai",
         label: "xAI 官方",
         format: ConfigFormat::Toml,
-        template: "model = \"grok-code-fast-1\"\napi_key = \"xai-xxxxxxxx\"\n",
+        template: "[models]\ndefault = \"grok\"\nweb_search = \"grok\"\n\n[model.\"grok\"]\nmodel = \"grok-4.5\"\napi_key = \"xai-xxxxxxxx\"\napi_backend = \"responses\"\ncontext_window = 1000000\nsupports_backend_search = true\n",
     },
     PresetDef {
         agent: AgentId::Grok,
         id: "openai-compatible",
         label: "OpenAI 兼容",
         format: ConfigFormat::Toml,
-        template: "model = \"grok-code-fast-1\"\nbase_url = \"https://your-relay.example.com/v1\"\napi_key = \"sk-xxxxxxxx\"\n",
+        template: "[models]\ndefault = \"grok\"\nweb_search = \"grok\"\n\n[model.\"grok\"]\nmodel = \"grok-4.5\"\nbase_url = \"https://your-relay.example.com/v1\"\napi_key = \"sk-xxxxxxxx\"\napi_backend = \"responses\"\ncontext_window = 1000000\nsupports_backend_search = true\n",
     },
 ];
 
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn registry_has_eight_presets_for_historical_agents() {
-        // Agents may have zero presets until write/merge rules are locked (e.g. pi).
+        // Pi/WorkBuddy support manual provider writes but do not ship built-in presets.
         assert_eq!(count(), 8);
         let all = list_all();
         assert_eq!(all.len(), 8);
@@ -139,11 +139,11 @@ mod tests {
         }
         assert!(
             list_for(AgentId::Pi).is_empty(),
-            "pi has no built-in presets (write_config fail-closed)"
+            "pi has no built-in presets (manual models.json providers are supported)"
         );
         assert!(
             list_for(AgentId::Cursor).is_empty(),
-            "cursor has no provider presets (half-surface; write_config fail-closed)"
+            "cursor has no provider presets (half-surface; write_config unsupported)"
         );
     }
 

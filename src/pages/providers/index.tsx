@@ -228,12 +228,12 @@ export default function ProvidersPage({
 
   const handleDelete = async (p: Provider) => {
     const msg = p.isCurrent
-      ? `「${p.name}」是池内当前项。删除只从 AgentHub 供应商池移除，不会改本机 live 文件（如 ~/.claude/settings.json / ~/.codex/config.toml）。确定删除？`
-      : `确定删除供应商「${p.name}」？此操作不可恢复（仅删池内记录，不改 live）。`;
+       ? `「${p.name}」是当前连接。删除只移入 AgentHub 回收站，不会修改本机配置文件（如 ~/.claude/settings.json / ~/.codex/config.toml）。确定继续？`
+       : `确定删除供应商「${p.name}」？记录会移入回收站，本机配置文件不会修改。`;
     if (!window.confirm(msg)) return;
     try {
       await deleteProvider(agentId, p.id);
-      toast({ title: `已删除「${p.name}」` });
+      toast({ title: `已将「${p.name}」移入回收站` });
       await refresh(agentId);
     } catch (e) {
       toast({
@@ -244,13 +244,13 @@ export default function ProvidersPage({
     }
   };
 
-  /** 清空当前 Agent 供应商池内全部记录（不改本机 live） */
+  /** 清空当前 Agent 供应商池内全部记录（不改本机配置） */
   const handleDeleteAll = async () => {
     if (providers.length === 0) return;
     const n = providers.length;
     if (
       !window.confirm(
-        `确定删除 ${AGENT_MAP[agentId].name} 的全部 ${n} 条供应商配置？\n仅清空 AgentHub 池，不会修改本机 live 文件。此操作不可恢复。`,
+        `确定删除 ${AGENT_MAP[agentId].name} 的全部 ${n} 条供应商配置？\n记录会移入回收站，不会修改本机配置文件。`,
       )
     ) {
       return;
@@ -262,7 +262,7 @@ export default function ProvidersPage({
         await deleteProvider(agentId, p.id);
       }
       setEditTarget(null);
-      toast({ title: `已删除全部 ${n} 条供应商` });
+      toast({ title: `已将全部 ${n} 条供应商移入回收站` });
       await refresh(agentId);
     } catch (e) {
       toast({
@@ -325,7 +325,7 @@ export default function ProvidersPage({
           size="sm"
           onClick={() => void handleDeleteAll()}
           disabled={loading || deletingAll || importing}
-          title="清空当前 Agent 供应商池（不改 live）"
+        title="清空当前 Agent 供应商池（不改本机配置）"
         >
           <Trash2 className="h-3.5 w-3.5 text-danger" />
           {deletingAll ? '删除中…' : '删除全部'}
@@ -346,10 +346,10 @@ export default function ProvidersPage({
         size="sm"
         onClick={() => void handleImport()}
         disabled={loading || importing || deletingAll}
-        title="读取本机 live 配置并立即写入供应商池（非草稿）"
+         title="读取本机配置并保存到供应商列表"
       >
         <Import className="h-3.5 w-3.5" />
-        {importing ? '导入中…' : '从 live 导入'}
+         {importing ? '导入中…' : '从本机配置导入'}
       </Button>
       <Button size="sm" onClick={openAdd} disabled={loading || deletingAll}>
         <Plus className="h-3.5 w-3.5" /> 添加供应商
@@ -387,7 +387,7 @@ export default function ProvidersPage({
             <EmptyState
               icon={Cable}
               title="还没有供应商"
-              description="添加中转/自部署配置，或从本机 live 导入"
+              description="添加中转/自部署配置，或从本机配置导入"
               // 嵌入态工具栏已有添加；独立页用 EmptyState 主按钮
               actionLabel={embedded ? undefined : '添加供应商'}
               onAction={embedded ? undefined : openAdd}
@@ -463,7 +463,7 @@ export default function ProvidersPage({
                           aria-label="删除供应商"
                           title={
                             p.isCurrent
-                              ? '删除池内记录（当前项也可删；不改本机 live）'
+                              ? '删除池内记录（当前项也可删；不改本机配置）'
                               : '删除供应商'
                           }
                           onClick={() => void handleDelete(p)}
@@ -475,8 +475,8 @@ export default function ProvidersPage({
 
                     <p className="mt-1 pl-5 text-xs text-muted">
                       {p.isCurrent
-                        ? `当前生效 · live ${livePaths.config}`
-                        : `未生效 · 切换后写入 ${livePaths.config}`}
+                        ? `当前生效 · 本机配置：${livePaths.config}`
+                        : `未生效 · 切换后写入本机配置：${livePaths.config}`}
                       {livePaths.auth ? ` · 凭据 ${livePaths.auth}` : ''}
                     </p>
                   </Card>

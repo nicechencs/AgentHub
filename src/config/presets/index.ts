@@ -109,9 +109,9 @@ export const PRESETS: Record<AgentId, ProviderPreset[]> = {
       template: GROK_COMPAT,
     },
   ],
-  // write_config fail-closed：无内置 provider 模板，待 models.json 合并规则锁定后再补
+  // Pi 支持手工 models.json provider 写回；暂不提供内置 provider 模板
   pi: [],
-  // WorkBuddy: write_config fail-closed；无供应商模板
+  // WorkBuddy 支持手工 models.json provider 写回；暂不提供内置 provider 模板
   workbuddy: [],
   // Cursor Agent：半套接入，无 models.json/config.toml 供应商契约
   cursor: [],

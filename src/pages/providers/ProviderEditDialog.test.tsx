@@ -5,13 +5,17 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { MOCK_AGENT_CATALOG } from '@/dev/mocks/fixtures/agent-catalog';
 import { createMockConfigPort } from '@/dev/mocks/config';
-import { SECRET_REDACTED } from '@/lib/backend/contracts/config-types';
+import {
+  SECRET_REDACTED,
+  type AgentConfigSchemaDto,
+} from '@/lib/backend/contracts/config-types';
 import type { AgentCatalogEntryDto } from '@/lib/backend/contracts/agent-catalog-types';
 import type { Provider } from '@/lib/types';
 import { EMPTY_FORM_VARS, REDACTED_MARKER, type ProviderFormVars } from '@/lib/provider-detect';
 import {
   canSaveWithSchemaStatus,
   parseJsonConfigBase,
+  projectValuesToSchema,
   planSchemaLoad,
   resolveProjectorExpectation,
   resolveSavePath,
@@ -20,6 +24,28 @@ import {
   type ProviderSaveFlowInput,
   type SchemaUiStatus,
 } from './providerSaveFlow';
+
+const TEST_CLAUDE_SCHEMA: AgentConfigSchemaDto = {
+  agentKey: 'claude',
+  schemaVersion: 1,
+  nativeFormat: 'json',
+  relativePath: 'settings.json',
+  fields: [
+    { key: 'baseUrl', label: 'Base URL', valueType: { kind: 'string' } },
+    { key: 'apiKey', label: 'API Key', valueType: { kind: 'secret' }, secret: true },
+    {
+      key: 'claudeAuthEnv',
+      label: 'Auth env',
+      valueType: { kind: 'enum', options: ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY'] },
+    },
+    { key: 'model', label: 'Model', valueType: { kind: 'string' } },
+    { key: 'modelOpus', label: 'Opus', valueType: { kind: 'string' } },
+    { key: 'modelSonnet', label: 'Sonnet', valueType: { kind: 'string' } },
+    { key: 'modelHaiku', label: 'Haiku', valueType: { kind: 'string' } },
+    { key: 'modelFable', label: 'Fable', valueType: { kind: 'string' } },
+    { key: 'modelSubagent', label: 'Subagent', valueType: { kind: 'string' } },
+  ],
+};
 
 function entry(
   key: string,
@@ -51,6 +77,7 @@ function baseInput(
   return {
     agentId: 'claude',
     schemaStatus: 'ready',
+    configSchema: TEST_CLAUDE_SCHEMA,
     isEdit: false,
     existing: null,
     name: 'Test Provider',
@@ -192,6 +219,33 @@ describe('save gate by schema status', () => {
 });
 
 describe('projector path fail-closed', () => {
+  it('projects shared form vars to the active backend schema', () => {
+    const values = projectValuesToSchema(
+      {
+        agentKey: 'grok',
+        schemaVersion: 2,
+        nativeFormat: 'toml',
+        relativePath: 'config.toml',
+        fields: [
+          { key: 'model', label: 'Model', valueType: { kind: 'string' } },
+          { key: 'baseUrl', label: 'Base URL', valueType: { kind: 'string' } },
+          { key: 'apiKey', label: 'API Key', valueType: { kind: 'secret' }, secret: true },
+        ],
+      },
+      {
+        ...EMPTY_FORM_VARS,
+        model: 'grok-4.5',
+        baseUrl: 'https://relay.example.com/v1',
+        apiKey: REDACTED_MARKER,
+      },
+    );
+    expect(values).toEqual({
+      model: 'grok-4.5',
+      baseUrl: 'https://relay.example.com/v1',
+      apiKey: REDACTED_MARKER,
+    });
+  });
+
   it('schema load failure is planned as error (no legacy fallback)', () => {
     // When Catalog requires projector, plan is load_schema — dialog maps load failure → error.
     // Legacy is only planned when expectation is unsupported.
@@ -460,13 +514,14 @@ describe('mock Catalog aligns with mock ConfigPort projector support', () => {
     configPort = createMockConfigPort();
   });
 
-  it('claude/codex/kimi/grok have configSchemaVersion=1 and schema exists', async () => {
+  it('claude/codex/kimi/grok have projector schemas and schema exists', async () => {
+    const expectedVersions = { claude: 1, codex: 1, kimi: 1, grok: 2 } as const;
     for (const key of ['claude', 'codex', 'kimi', 'grok'] as const) {
       const row = MOCK_AGENT_CATALOG.find((e) => e.key === key);
       expect(row, key).toBeDefined();
-      expect(row!.configSchemaVersion).toBe(1);
+      expect(row!.configSchemaVersion).toBe(expectedVersions[key]);
       const schema = await configPort.getAgentConfigSchema(key);
-      expect(schema.schemaVersion).toBe(1);
+      expect(schema.schemaVersion).toBe(expectedVersions[key]);
       expect(schema.agentKey).toBe(key);
     }
   });

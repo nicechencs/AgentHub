@@ -85,7 +85,10 @@ fn looks_like_version_line_accepts_cli_versions() {
 fn extract_version_token_strips_cli_name_noise() {
     assert_eq!(extract_version_token("codex-cli 0.144.5"), "0.144.5");
     assert_eq!(extract_version_token("2.1.220 (Claude Code)"), "2.1.220");
-    assert_eq!(extract_version_token("grok 0.2.118 (1e1687c1cf)"), "0.2.118");
+    assert_eq!(
+        extract_version_token("grok 0.2.118 (1e1687c1cf)"),
+        "0.2.118"
+    );
     assert_eq!(extract_version_token("0.83.0"), "0.83.0");
     assert_eq!(extract_version_token("v1.2.3"), "1.2.3");
     assert_eq!(extract_version_token("pi 0.83.0"), "0.83.0");
@@ -529,7 +532,6 @@ fn supports_structured_stream_uses_shared_registry() {
     assert!(!supports_structured_stream(AgentId::Cursor));
 }
 
-
 #[test]
 fn default_authorization_key_api_key_stable_and_distinct() {
     let a = json!({"format": "api_key", "api_key": "sk-same"});
@@ -586,4 +588,255 @@ fn default_identity_label_uses_email_not_for_auth_key() {
     let key = default_authorization_key(AccountKind::Oauth, &creds).unwrap();
     assert!(!key.contains("person@example.com"));
     assert!(key.starts_with("oauth:access_sha:"));
+}
+
+#[test]
+fn auth_metadata_recognizes_nested_refresh_and_expiry_without_values() {
+    let value = json!({
+        "account": {
+            "tokens": {
+                "accessToken": "fake-access-token",
+                "refreshToken": "fake-refresh-token",
+                "expiresAt": 1
+            }
+        }
+    });
+    let metadata = inspect_auth_credentials(&value);
+    assert!(metadata.has_access_token);
+    assert!(metadata.has_refresh_token);
+    assert_eq!(metadata.access_expired, Some(true));
+    let debug = format!("{metadata:?}");
+    assert!(!debug.contains("fake-access-token"));
+    assert!(!debug.contains("fake-refresh-token"));
+}
+
+#[test]
+fn auth_metadata_parses_absolute_expiry_but_ignores_relative_expires_in() {
+    let seconds = inspect_auth_credentials(&json!({ "access_token": "access", "expires_at": 1 }));
+    assert_eq!(seconds.access_expired, Some(true));
+
+    let millis =
+        inspect_auth_credentials(&json!({ "access_token": "access", "expires_at": 1_000 }));
+    assert_eq!(millis.access_expired, Some(true));
+
+    let rfc3339 = inspect_auth_credentials(&json!({
+        "access_token": "access",
+        "expires_at": "1970-01-01T00:00:01Z"
+    }));
+    assert_eq!(rfc3339.access_expired, Some(true));
+
+    let relative = inspect_auth_credentials(&json!({
+        "access_token": "access",
+        "expires_in": 1,
+        "expiresin": "60"
+    }));
+    assert_eq!(relative.access_expired, None);
+}
+
+#[test]
+fn oauth_health_requires_both_expired_tokens_before_needs_login() {
+    let expired_access_and_refresh = AuthCredentialMetadata {
+        has_access_token: true,
+        has_refresh_token: true,
+        access_expired: Some(true),
+        refresh_expired: Some(true),
+        ..Default::default()
+    };
+    assert_eq!(
+        oauth_auth_health(expired_access_and_refresh),
+        crate::models::AuthHealth::NeedsLogin
+    );
+
+    let renewable = AuthCredentialMetadata {
+        has_access_token: true,
+        has_refresh_token: true,
+        access_expired: Some(true),
+        refresh_expired: None,
+        ..Default::default()
+    };
+    assert_eq!(
+        oauth_auth_health(renewable),
+        crate::models::AuthHealth::Renewable
+    );
+
+    for access_expired in [Some(false), None] {
+        let stale_refresh = AuthCredentialMetadata {
+            has_access_token: true,
+            has_refresh_token: true,
+            access_expired,
+            refresh_expired: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            oauth_auth_health(stale_refresh),
+            crate::models::AuthHealth::Configured
+        );
+    }
+
+    let missing_access_with_expired_refresh = AuthCredentialMetadata {
+        has_refresh_token: true,
+        refresh_expired: Some(true),
+        ..Default::default()
+    };
+    assert_eq!(
+        oauth_auth_health(missing_access_with_expired_refresh),
+        crate::models::AuthHealth::NeedsLogin
+    );
+
+    for refresh_expired in [Some(false), None] {
+        let missing_access_with_renewable_refresh = AuthCredentialMetadata {
+            has_refresh_token: true,
+            refresh_expired,
+            ..Default::default()
+        };
+        assert_eq!(
+            oauth_auth_health(missing_access_with_renewable_refresh),
+            crate::models::AuthHealth::Renewable
+        );
+    }
+}
+
+#[test]
+fn kimi_malformed_auth_inputs_are_unknown() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let cred = dir.path().join("credentials").join("kimi-code.json");
+    std::fs::write(&config, "providers = [").unwrap();
+
+    let malformed_config = kimi::kimi_auth_state(&config, &cred);
+    assert_eq!(malformed_config.health, crate::models::AuthHealth::Unknown);
+    assert_eq!(malformed_config.source.as_deref(), Some("kimi:config.toml"));
+
+    std::fs::write(&config, "").unwrap();
+    std::fs::create_dir_all(cred.parent().unwrap()).unwrap();
+    std::fs::write(&cred, "{").unwrap();
+
+    let malformed_credentials = kimi::kimi_auth_state(&config, &cred);
+    assert_eq!(
+        malformed_credentials.health,
+        crate::models::AuthHealth::Unknown
+    );
+    assert_eq!(
+        malformed_credentials.source.as_deref(),
+        Some("kimi:credentials/kimi-code.json")
+    );
+}
+
+#[test]
+fn cursor_status_parser_handles_negative_authenticated_phrase() {
+    assert_eq!(
+        cursor::cursor_status_health("Status: not authenticated"),
+        crate::models::AuthHealth::NeedsLogin
+    );
+    assert_eq!(
+        cursor::cursor_status_health("Authenticated: true"),
+        crate::models::AuthHealth::Verified
+    );
+    for false_status in [
+        "Authenticated: false",
+        "logged in: false",
+        "is authenticated: false",
+        r#"{"authenticated": false}"#,
+    ] {
+        assert_eq!(
+            cursor::cursor_status_health(false_status),
+            crate::models::AuthHealth::NeedsLogin,
+            "{false_status}"
+        );
+    }
+    assert_eq!(
+        cursor::cursor_status_health("status unavailable"),
+        crate::models::AuthHealth::Unknown
+    );
+}
+
+#[test]
+fn auth_file_revision_is_opaque_and_contains_no_secret_or_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    std::fs::write(&path, br#"{"access_token":"fake-secret-token"}"#).unwrap();
+    let revision = auth_file_revision(&path).unwrap();
+    let canonical = std::fs::canonicalize(&path).unwrap();
+    let path_text = path.to_string_lossy();
+    let canonical_text = canonical.to_string_lossy();
+    assert!(revision.starts_with("file:sha256:"));
+    assert!(!revision.contains("fake-secret-token"));
+    assert!(!revision.contains(path_text.as_ref()));
+    assert!(!revision.contains(canonical_text.as_ref()));
+}
+
+#[test]
+fn auth_file_revision_changes_after_same_length_atomic_replacement_with_forced_mtime() {
+    use std::fs::{FileTimes, OpenOptions};
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    std::fs::write(&path, b"credential-one").unwrap();
+    let forced_time = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_times(FileTimes::new().set_modified(forced_time))
+        .unwrap();
+    let before = auth_file_revision(&path).unwrap();
+
+    // The helper uses the production atomic-replace path.  Reset the mtime
+    // after the replacement to prove detection does not rely on coarse mtime
+    // or length alone.
+    atomic_write(&path, b"credential-two").unwrap();
+    OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_times(FileTimes::new().set_modified(forced_time))
+        .unwrap();
+    let after = auth_file_revision(&path).unwrap();
+
+    assert_eq!(b"credential-one".len(), b"credential-two".len());
+    assert_ne!(before, after);
+}
+
+#[test]
+fn pi_auth_health_is_provider_scoped_and_order_independent() {
+    use crate::models::AuthHealth;
+
+    let expired_oauth = json!({
+        "type": "oauth",
+        "access": "expired-access",
+        "refresh": "expired-refresh",
+        "expires": 1,
+        "refresh_expires": 1,
+    });
+    let api_key = json!({ "type": "api_key", "key": "configured-key" });
+    let expired = pi::pi_provider_auth_health(&expired_oauth);
+    let configured = pi::pi_provider_auth_health(&api_key);
+    assert_eq!(expired, AuthHealth::NeedsLogin);
+    assert_eq!(configured, AuthHealth::Configured);
+    assert_eq!(
+        pi::aggregate_pi_provider_auth_health([expired, configured]),
+        AuthHealth::Configured
+    );
+    assert_eq!(
+        pi::aggregate_pi_provider_auth_health([configured, expired]),
+        AuthHealth::Configured
+    );
+    assert_eq!(
+        pi::aggregate_pi_provider_auth_health([expired, expired]),
+        AuthHealth::NeedsLogin
+    );
+}
+
+#[test]
+fn claude_keychain_oauth_apply_is_explicitly_unsupported() {
+    let error =
+        claude::ensure_claude_oauth_file_apply_source(claude::ClaudeOauthSource::MacosKeychain)
+            .unwrap_err();
+    assert_eq!(error.code(), "unsupported");
+    assert!(error.to_string().contains("Keychain"));
+    assert!(claude::ensure_claude_oauth_file_apply_source(
+        claude::ClaudeOauthSource::CredentialsFile
+    )
+    .is_ok());
 }

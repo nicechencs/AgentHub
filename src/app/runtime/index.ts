@@ -1,8 +1,7 @@
 /**
  * Application composition root — selects and holds the Backend instance.
  */
-import type { Backend } from '@/lib/backend/contracts';
-import { createBackend } from '@/lib/backend/current';
+export { getBackend, resetBackend, setBackend } from './backend-runtime';
 
 export {
   getAgentCatalogSnapshot,
@@ -13,23 +12,18 @@ export {
 } from './agent-catalog-store';
 export type { AgentCatalogSnapshot, AgentCatalogStatus } from './agent-catalog-store';
 export { AgentCatalogProvider, useAgentCatalog, useAgentCatalogOptional } from './AgentCatalogProvider';
+export {
+  getAgentStatusSnapshot,
+  liveAuthProbeForAgent,
+  loadAgentStatuses,
+  resetAgentStatusStore,
+  subscribeAgentStatuses,
+} from './agent-status-store';
+export type { AgentStatusLoadState, AgentStatusSnapshot } from './agent-status-store';
+export {
+  AgentStatusProvider,
+  useAgentStatuses,
+  useAgentStatusesOptional,
+} from './AgentStatusProvider';
 
-let instance: Backend | null = null;
-
-export function getBackend(): Backend {
-  if (!instance) {
-    instance = createBackend();
-  }
-  return instance;
-}
-
-/** Tests / advanced: replace backend instance. */
-export function setBackend(backend: Backend): void {
-  instance = backend;
-}
-
-export function resetBackend(): void {
-  instance = null;
-}
-
-export type { Backend };
+export type { Backend } from '@/lib/backend/contracts';

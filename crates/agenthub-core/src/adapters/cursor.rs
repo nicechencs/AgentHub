@@ -277,7 +277,7 @@ impl AgentAdapter for CursorAdapter {
             "auth".into(),
             serde_json::json!({
                 "cursorApiKeyEnvSet": api_key_set,
-                "note": "Use CURSOR_API_KEY or `agent login`; no provider template file",
+                "note": "Use CURSOR_API_KEY or `cursor-agent login`; no provider template file",
             }),
         );
         raw.insert(
@@ -307,8 +307,8 @@ impl AgentAdapter for CursorAdapter {
     fn write_config(&self, _config: &AgentConfig) -> Result<()> {
         Err(AppError::Unsupported(
             "live config writes are not supported for cursor \
-             (no stable models.json/config.toml provider contract; \
-              use CURSOR_API_KEY or `agent login`)"
+              (no stable models.json/config.toml provider contract; \
+               use CURSOR_API_KEY or `cursor-agent login`)"
                 .into(),
         ))
     }
@@ -323,6 +323,9 @@ impl AgentAdapter for CursorAdapter {
                 kind: Some("env-CURSOR_API_KEY".into()),
                 summary: "CURSOR_API_KEY is set in the environment".into(),
                 has_credentials: true,
+                health: crate::models::AuthHealth::Configured,
+                source: Some("env:CURSOR_API_KEY".into()),
+                revision: None,
             });
         }
         // Optional non-destructive status probe when CLI is present.
@@ -333,30 +336,53 @@ impl AgentAdapter for CursorAdapter {
                     String::from_utf8_lossy(&out.stdout),
                     String::from_utf8_lossy(&out.stderr)
                 );
-                let lower = text.to_ascii_lowercase();
-                let looks_logged_in = lower.contains("logged in")
-                    || lower.contains("authenticated")
-                    || lower.contains("signed in");
-                if looks_logged_in {
+                let health = cursor_status_health(&text);
+                if health == crate::models::AuthHealth::Verified {
                     return Ok(AuthState {
                         agent: AgentId::Cursor,
                         kind: Some("cli-status".into()),
-                        summary: "agent status suggests authenticated session".into(),
+                        summary: "cursor-agent status reports authenticated".into(),
                         has_credentials: true,
+                        health,
+                        source: Some("cursor-agent status".into()),
+                        revision: None,
                     });
                 }
+                if health == crate::models::AuthHealth::NeedsLogin {
+                    return Ok(AuthState {
+                        agent: AgentId::Cursor,
+                        kind: Some("cli-status".into()),
+                        summary: "cursor-agent status reports not authenticated; run `cursor-agent login`".into(),
+                        has_credentials: false,
+                        health,
+                        source: Some("cursor-agent status".into()),
+                        revision: None,
+                    });
+                }
+                return Ok(AuthState {
+                    agent: AgentId::Cursor,
+                    kind: Some("cli-status".into()),
+                    summary: "cursor-agent status could not determine authentication".into(),
+                    has_credentials: false,
+                    health,
+                    source: Some("cursor-agent status".into()),
+                    revision: None,
+                });
             }
         }
         Ok(AuthState {
             agent: AgentId::Cursor,
             kind: None,
-            summary: "no CURSOR_API_KEY; run `agent login` or set CURSOR_API_KEY".into(),
+            summary: "no CURSOR_API_KEY; run `cursor-agent login` or set CURSOR_API_KEY".into(),
             has_credentials: false,
+            health: crate::models::AuthHealth::Missing,
+            source: Some("cursor-agent".into()),
+            revision: None,
         })
     }
 
     fn build_api_key_account(&self, api_key: &str) -> Result<LiveAccount> {
-        // Pool-only: apply to live remains Unsupported (set env / agent login).
+        // Pool-only: apply to live remains Unsupported (set env / cursor-agent login).
         let key = require_api_key(api_key)?;
         Ok(api_key_live_account(
             AgentId::Cursor,
@@ -368,7 +394,7 @@ impl AgentAdapter for CursorAdapter {
             "CURSOR_API_KEY",
             serde_json::json!({
                 "source": "manual",
-                "note": "pool-only; apply live is unsupported — set CURSOR_API_KEY or run agent login"
+                "note": "pool-only; apply live is unsupported — set CURSOR_API_KEY or run `cursor-agent login`"
             }),
         ))
     }
@@ -376,7 +402,7 @@ impl AgentAdapter for CursorAdapter {
     fn apply_account(&self, _account: &LiveAccount) -> Result<()> {
         Err(AppError::Unsupported(
             "applying Cursor accounts to live is not supported; \
-             set CURSOR_API_KEY in the environment or run `agent login` \
+             set CURSOR_API_KEY in the environment or run `cursor-agent login` \
              (IDE private account stores are intentionally not used)"
                 .into(),
         ))
@@ -395,17 +421,11 @@ impl AgentAdapter for CursorAdapter {
             ConfigWrite => CapabilityState::unsupported("无稳定配置写入契约，fail-closed"),
             // UI 文案保持短句；IDE 私有库禁写见模块注释 / capability 矩阵
             AccountSwitch => CapabilityState::unsupported("账号由 Cursor 管理"),
-            ApiKeyAccount => CapabilityState::partial("可用 API Key 或 agent login"),
+            ApiKeyAccount => CapabilityState::partial("可用 API Key 或 cursor-agent login"),
             LiveBackup => CapabilityState::unsupported("无稳定配置/凭据文件"),
-            StructuredStream => {
-                CapabilityState::unsupported("Agent CLI 仅提供 text 输出")
-            }
-            ProjectHistory => CapabilityState::partial(
-                "仅工作区目录列表，无会话 transcript",
-            ),
-            ProjectDelete => CapabilityState::unsupported(
-                "无安全浅删契约",
-            ),
+            StructuredStream => CapabilityState::unsupported("Agent CLI 仅提供 text 输出"),
+            ProjectHistory => CapabilityState::partial("仅工作区目录列表，无会话 transcript"),
+            ProjectDelete => CapabilityState::unsupported("无安全浅删契约"),
             ProviderPresets => CapabilityState::unsupported("无 provider 配置契约"),
             Usage => CapabilityState::unsupported("IDE 内部用量库，明确范围外"),
             Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
@@ -620,6 +640,140 @@ fn path_is_rejected_non_cursor(path: &Path) -> bool {
     false
 }
 
+/// Parse only explicit Cursor Agent status wording. Structured booleans and
+/// individual status lines take precedence over prose, and any explicit false
+/// wins before a positive line can be considered.
+pub(crate) fn cursor_status_health(text: &str) -> crate::models::AuthHealth {
+    use crate::models::AuthHealth;
+
+    let mut explicit_true = false;
+    let mut explicit_false = false;
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
+        collect_cursor_auth_booleans(&value, &mut explicit_true, &mut explicit_false);
+    }
+    for line in text.lines() {
+        if let Some(value) = cursor_status_line_boolean(line) {
+            if value {
+                explicit_true = true;
+            } else {
+                explicit_false = true;
+            }
+        }
+    }
+    if explicit_false {
+        return crate::models::AuthHealth::NeedsLogin;
+    }
+    if explicit_true {
+        return AuthHealth::Verified;
+    }
+
+    let mut has_positive = false;
+    for raw_line in text.lines() {
+        let line = raw_line.trim().to_ascii_lowercase();
+        if matches!(
+            line.as_str(),
+            "not authenticated"
+                | "unauthenticated"
+                | "not logged in"
+                | "logged out"
+                | "not signed in"
+                | "signed out"
+                | "login required"
+                | "authentication required"
+        ) {
+            return AuthHealth::NeedsLogin;
+        }
+        if matches!(line.as_str(), "authenticated" | "logged in" | "signed in")
+            || line.starts_with("logged in as ")
+            || line.starts_with("signed in as ")
+        {
+            has_positive = true;
+        }
+    }
+    if has_positive {
+        AuthHealth::Verified
+    } else {
+        AuthHealth::Unknown
+    }
+}
+
+fn collect_cursor_auth_booleans(
+    value: &serde_json::Value,
+    explicit_true: &mut bool,
+    explicit_false: &mut bool,
+) {
+    let Some(object) = value.as_object() else {
+        return;
+    };
+    for (key, value) in object {
+        if is_cursor_auth_field(key) {
+            if let Some(status) = cursor_auth_boolean(value) {
+                if status {
+                    *explicit_true = true;
+                } else {
+                    *explicit_false = true;
+                }
+            }
+        }
+        collect_cursor_auth_booleans(value, explicit_true, explicit_false);
+    }
+}
+
+fn cursor_status_line_boolean(line: &str) -> Option<bool> {
+    let (field, raw_value) = line.split_once(':').or_else(|| line.split_once('='))?;
+    let field = field.trim().trim_matches(['"', '\'']);
+    let raw_value = raw_value
+        .trim()
+        .trim_end_matches(',')
+        .trim_matches(['"', '\'']);
+    if is_cursor_auth_field(field) {
+        return cursor_auth_boolean(&serde_json::Value::String(raw_value.to_string()));
+    }
+    if normalize_cursor_status_field(field) == "status" {
+        return match raw_value.to_ascii_lowercase().as_str() {
+            "authenticated" | "logged in" | "signed in" => Some(true),
+            "not authenticated"
+            | "unauthenticated"
+            | "not logged in"
+            | "logged out"
+            | "not signed in"
+            | "signed out"
+            | "login required"
+            | "authentication required" => Some(false),
+            _ => None,
+        };
+    }
+    None
+}
+
+fn is_cursor_auth_field(field: &str) -> bool {
+    matches!(
+        normalize_cursor_status_field(field).as_str(),
+        "authenticated" | "isauthenticated" | "loggedin" | "isloggedin" | "signedin" | "issignedin"
+    )
+}
+
+fn normalize_cursor_status_field(field: &str) -> String {
+    field
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect()
+}
+
+fn cursor_auth_boolean(value: &serde_json::Value) -> Option<bool> {
+    match value {
+        serde_json::Value::Bool(value) => Some(*value),
+        serde_json::Value::String(value) => match value.trim().to_ascii_lowercase().as_str() {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn version_looks_like_grok(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     lower.contains("grok") || lower.contains("grok build")
@@ -831,11 +985,9 @@ mod tests {
 
     #[test]
     fn account_switch_disabled() {
-        assert!(
-            CursorAdapter
-                .capability(crate::models::Capability::AccountSwitch)
-                .is_blocked()
-        );
+        assert!(CursorAdapter
+            .capability(crate::models::Capability::AccountSwitch)
+            .is_blocked());
     }
 
     #[test]

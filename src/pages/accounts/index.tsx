@@ -28,12 +28,15 @@ import {
   deleteAccount,
   importCurrentLogin,
   listAccounts,
+  refreshLiveAuthState,
   refreshToken,
   switchAccount,
   undoSwitchAccount,
 } from '@/lib/api/account';
 import { groupAccountsByIdentity } from '@/lib/backend/contracts/account-map';
-import { listAgents } from '@/lib/api/agent';
+import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
+import { attachLiveAgentAuth } from '@/lib/backend/contracts/auth-state';
+import { useAgentStatusesOptional } from '@/app/runtime';
 import { openAgentConfigDir } from '@/lib/api/install';
 import { resolveAgentMeta } from '@/config/agents';
 import { isCapabilityBlocked } from '@/lib/capability';
@@ -83,8 +86,8 @@ export default function AccountsPage({
   const [kindFilter, setKindFilter] = React.useState<AccountKindFilter>('all');
   const [phase, setPhase] = React.useState<'loading' | 'error' | 'ready'>('loading');
   const [error, setError] = React.useState<unknown>(null);
-  // partial:agent 运行状态加载失败仅影响切换警告,不阻塞页面
-  const [agentStatuses, setAgentStatuses] = React.useState<AgentStatus[]>([]);
+  // Shared status carries the current live auth probe; pool rows stay local.
+  const { statuses: agentStatuses } = useAgentStatusesOptional();
 
   const [switchTarget, setSwitchTarget] = React.useState<Account | null>(null);
   const [switching, setSwitching] = React.useState(false);
@@ -128,13 +131,11 @@ export default function AccountsPage({
     setKindFilter('all');
   }, [agent]);
 
-  React.useEffect(() => {
-    listAgents()
-      .then(setAgentStatuses)
-      .catch(() => setAgentStatuses([]));
-  }, []);
-
-  const current = accounts.find((a) => a.isCurrent);
+  const accountsWithLiveAuth = React.useMemo(() => {
+    const status = agentStatuses.find((item) => item.agentId === agent);
+    return accounts.map((account) => attachLiveAgentAuth(account, status));
+  }, [accounts, agent, agentStatuses]);
+  const current = accountsWithLiveAuth.find((a) => a.isCurrent);
   const meta = resolveAgentMeta(agent);
   const kindCounts = React.useMemo(() => {
     let oauth = 0;
@@ -147,8 +148,10 @@ export default function AccountsPage({
   }, [accounts]);
   const visibleAccounts = React.useMemo(
     () =>
-      kindFilter === 'all' ? accounts : accounts.filter((account) => account.kind === kindFilter),
-    [accounts, kindFilter],
+      kindFilter === 'all'
+        ? accountsWithLiveAuth
+        : accountsWithLiveAuth.filter((account) => account.kind === kindFilter),
+    [accountsWithLiveAuth, kindFilter],
   );
   const identityGroups = React.useMemo(
     () => groupAccountsByIdentity(visibleAccounts),
@@ -192,12 +195,19 @@ export default function AccountsPage({
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
+    const wasCurrent = deleteTarget.isCurrent;
     setDeleting(true);
     try {
       await deleteAccount(agent, deleteTarget.id);
       setDeleteTarget(null);
       await load(agent);
-      toast({ title: '凭据已删除', variant: 'success' });
+      toast({
+        title: '已将认证信息移入回收站',
+        description: wasCurrent
+          ? '本机配置未清除，当前连接可能仍继续生效。'
+          : '本机配置未修改。',
+        variant: 'success',
+      });
     } catch (e) {
       toast({ title: '删除失败', description: String(e), variant: 'danger' });
     } finally {
@@ -220,12 +230,27 @@ export default function AccountsPage({
   };
 
   const handleRefreshToken = async (acc: Account) => {
+    const action = accountActionPolicy(acc);
+    if (!action) return;
     try {
+      if (action.kind === 'sync-current-login') {
+        // list_accounts performs the non-destructive Grok live reconciliation;
+        // importCurrentLogin remains an explicit new-authorization import.
+        await listAccounts(agent);
+        refreshLiveAuthState(agent);
+        await load(agent);
+        toast({
+          title: '已同步当前登录',
+          description: '已读取 Grok CLI 当前登录凭据。',
+          variant: 'success',
+        });
+        return;
+      }
       await refreshToken(agent, acc.id);
       await load(agent);
-      toast({ title: 'Token 已刷新', description: acc.label, variant: 'success' });
+      toast({ title: action.label, description: acc.label, variant: 'success' });
     } catch (e) {
-      toast({ title: '刷新失败', description: String(e), variant: 'danger' });
+      toast({ title: `${action.label}失败`, description: String(e), variant: 'danger' });
     }
   };
 
@@ -275,7 +300,7 @@ export default function AccountsPage({
           <LogIn className="h-4 w-4" /> OAuth 登录
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setApiKeyOpen(true)}>
-          <KeyRound className="h-4 w-4" /> API Key
+          <KeyRound className="h-4 w-4" /> 添加 API Key
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => handleImport()}>
           <DownloadCloud className="h-4 w-4" /> 导入当前登录态
@@ -420,7 +445,9 @@ export default function AccountsPage({
           <DialogHeader>
             <DialogTitle>删除凭据 "{deleteTarget?.label}"?</DialogTitle>
             <DialogDescription>
-              将从凭据池移除该项（官方登录或 API Key），此操作不可撤销。不修改本机 live，除非该项正是当前生效项的池记录。
+              {deleteTarget?.isCurrent
+                ? '会移入回收站；本机配置不会被清除，当前连接可能仍继续生效。'
+                : '会移入回收站；不会修改本机配置文件。'}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

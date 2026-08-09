@@ -11,7 +11,8 @@ use crate::utils::paths::{agent_home, home_dir};
 use crate::utils::redact::mask_secret_preview;
 
 use super::{
-    api_key_live_account, detect_binary, require_api_key, write_json_config, AgentAdapter,
+    api_key_live_account, auth_file_revision, detect_binary, inspect_auth_credentials,
+    oauth_auth_health, require_api_key, write_json_config, AgentAdapter,
 };
 
 pub struct ClaudeAdapter;
@@ -77,24 +78,66 @@ impl AgentAdapter for ClaudeAdapter {
     }
 
     fn read_auth(&self) -> Result<AuthState> {
-        // Official OAuth: macOS Keychain first, then credentials file under agent home.
-        let oauth = read_claude_oauth_bundle()?;
-        if oauth.is_some() {
+        let home = agent_home(AgentId::Claude)?;
+        let settings_path = home.join("settings.json");
+        // Match read_account: an explicit settings token is the effective
+        // auth mode even when stale OAuth credentials remain on disk.
+        match read_claude_settings_token(&settings_path) {
+            Ok(Some(_)) => {
+                return Ok(AuthState {
+                    agent: AgentId::Claude,
+                    kind: Some("api_key".into()),
+                    summary: "API key present in settings.json".into(),
+                    has_credentials: true,
+                    health: crate::models::AuthHealth::Configured,
+                    source: Some("claude:settings.json".into()),
+                    revision: auth_file_revision(&settings_path),
+                });
+            }
+            Ok(None) => {}
+            Err(_) => {
+                return Ok(AuthState {
+                    agent: AgentId::Claude,
+                    kind: None,
+                    summary: "Claude settings.json could not be parsed".into(),
+                    has_credentials: false,
+                    health: crate::models::AuthHealth::Unknown,
+                    source: Some("claude:settings.json".into()),
+                    revision: auth_file_revision(&settings_path),
+                });
+            }
+        }
+        // Official OAuth: macOS Keychain first, then credentials file under
+        // agent home.
+        if let Some(bundle) = read_claude_oauth_bundle()? {
+            let mut metadata = inspect_auth_credentials(&bundle.body);
+            metadata.access_expired = metadata.access_expired.or(Some(bundle.expired));
+            let health = oauth_auth_health(metadata);
+            let credentials_path = home.join(".credentials.json");
             return Ok(AuthState {
                 agent: AgentId::Claude,
                 kind: Some("oauth".into()),
-                summary: "Claude OAuth credentials located".into(),
+                summary: if health == crate::models::AuthHealth::NeedsLogin {
+                    "Claude OAuth credentials are expired; sign in again".into()
+                } else {
+                    "Claude OAuth credentials located".into()
+                },
                 has_credentials: true,
+                health,
+                source: Some(format!("claude:{}", bundle.source.as_str())),
+                revision: claude_oauth_revision(&bundle, &credentials_path),
             });
         }
-        let home = agent_home(AgentId::Claude)?;
-        let settings_path = home.join("settings.json");
-        if read_claude_settings_token(&settings_path)?.is_some() {
+        let credentials_path = home.join(".credentials.json");
+        if credentials_path.is_file() {
             return Ok(AuthState {
                 agent: AgentId::Claude,
-                kind: Some("api_key".into()),
-                summary: "API key present in settings.json".into(),
-                has_credentials: true,
+                kind: None,
+                summary: "Claude credentials file could not be classified".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Unknown,
+                source: Some("claude:.credentials.json".into()),
+                revision: auth_file_revision(&credentials_path),
             });
         }
         Ok(AuthState {
@@ -103,6 +146,9 @@ impl AgentAdapter for ClaudeAdapter {
             summary: "no Claude credentials found (settings API key or official login state)"
                 .into(),
             has_credentials: false,
+            health: crate::models::AuthHealth::Missing,
+            source: Some("claude:settings.json".into()),
+            revision: auth_file_revision(&settings_path),
         })
     }
 
@@ -127,7 +173,7 @@ impl AgentAdapter for ClaudeAdapter {
         // Official OAuth — keychain / credentials file.
         if let Some(bundle) = read_claude_oauth_bundle()? {
             let mut extra = serde_json::json!({
-                "source": bundle.source,
+                "source": bundle.source.as_str(),
             });
             if let Some(obj) = extra.as_object_mut() {
                 if let Some(exp) = bundle.expires_at {
@@ -189,6 +235,7 @@ impl AgentAdapter for ClaudeAdapter {
                 Ok(())
             }
             "credentials_json" => {
+                ensure_claude_oauth_file_apply_supported()?;
                 let body = account.credentials.get("body").cloned().ok_or_else(|| {
                     AppError::InvalidArg("Claude credentials body is required".into())
                 })?;
@@ -406,7 +453,49 @@ struct ClaudeOauthBundle {
     access_token: String,
     expires_at: Option<serde_json::Value>,
     expired: bool,
-    source: &'static str,
+    source: ClaudeOauthSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ClaudeOauthSource {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    MacosKeychain,
+    CredentialsFile,
+}
+
+impl ClaudeOauthSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::MacosKeychain => "macos-keychain",
+            Self::CredentialsFile => ".credentials.json",
+        }
+    }
+}
+
+fn claude_oauth_revision(bundle: &ClaudeOauthBundle, credentials_path: &Path) -> Option<String> {
+    match bundle.source {
+        ClaudeOauthSource::CredentialsFile => auth_file_revision(credentials_path),
+        // Keychain is the effective source on macOS. It has no safe portable
+        // revision probe here, so never pretend the lower-priority file is a
+        // revision for it; OAuth apply below fails closed for the same reason.
+        ClaudeOauthSource::MacosKeychain => None,
+    }
+}
+
+fn ensure_claude_oauth_file_apply_supported() -> Result<()> {
+    if let Some(bundle) = read_claude_oauth_bundle()? {
+        ensure_claude_oauth_file_apply_source(bundle.source)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn ensure_claude_oauth_file_apply_source(source: ClaudeOauthSource) -> Result<()> {
+    match source {
+        ClaudeOauthSource::CredentialsFile => Ok(()),
+        ClaudeOauthSource::MacosKeychain => Err(AppError::Unsupported(
+            "Claude OAuth account switching is unavailable while macOS Keychain is the active credential source; re-login through Claude Code or remove the Keychain entry before switching".into(),
+        )),
+    }
 }
 
 /// Read Claude official OAuth credentials.
@@ -449,7 +538,10 @@ fn read_claude_oauth_from_keychain() -> Result<Option<ClaudeOauthBundle>> {
     if json_str.is_empty() {
         return Ok(None);
     }
-    Ok(parse_claude_oauth_json(json_str, "macos-keychain"))
+    Ok(parse_claude_oauth_json(
+        json_str,
+        ClaudeOauthSource::MacosKeychain,
+    ))
 }
 
 fn read_claude_oauth_from_file() -> Result<Option<ClaudeOauthBundle>> {
@@ -458,10 +550,13 @@ fn read_claude_oauth_from_file() -> Result<Option<ClaudeOauthBundle>> {
         return Ok(None);
     }
     let content = std::fs::read_to_string(&path)?;
-    Ok(parse_claude_oauth_json(&content, ".credentials.json"))
+    Ok(parse_claude_oauth_json(
+        &content,
+        ClaudeOauthSource::CredentialsFile,
+    ))
 }
 
-fn parse_claude_oauth_json(content: &str, source: &'static str) -> Option<ClaudeOauthBundle> {
+fn parse_claude_oauth_json(content: &str, source: ClaudeOauthSource) -> Option<ClaudeOauthBundle> {
     let body: serde_json::Value = serde_json::from_str(content).ok()?;
     let entry = body
         .get("claudeAiOauth")
@@ -503,14 +598,17 @@ fn is_claude_token_expired(expires_at: &serde_json::Value) -> bool {
             let Some(ts) = n.as_u64() else {
                 return false;
             };
-            let ts_secs = if ts > 1_000_000_000_000 { ts / 1000 } else { ts };
+            let ts_secs = if ts > 1_000_000_000_000 {
+                ts / 1000
+            } else {
+                ts
+            };
             ts_secs < now_secs
         }
         serde_json::Value::String(s) => {
             if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
                 (dt.timestamp() as u64) < now_secs
-            } else if let Ok(dt) =
-                chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
+            } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
             {
                 (dt.and_utc().timestamp() as u64) < now_secs
             } else {
@@ -530,16 +628,16 @@ mod tests {
     fn parse_claude_oauth_accepts_camel_and_dotted_keys() {
         let a = parse_claude_oauth_json(
             r#"{"claudeAiOauth":{"accessToken":"tok-aaa","expiresAt":9999999999}}"#,
-            "test",
+            ClaudeOauthSource::CredentialsFile,
         )
         .expect("camel key");
         assert_eq!(a.access_token, "tok-aaa");
         assert!(!a.expired);
-        assert_eq!(a.source, "test");
+        assert_eq!(a.source, ClaudeOauthSource::CredentialsFile);
 
         let b = parse_claude_oauth_json(
             r#"{"claude.ai_oauth":{"accessToken":"tok-bbb","expiresAt":1}}"#,
-            "test",
+            ClaudeOauthSource::CredentialsFile,
         )
         .expect("dotted key");
         assert_eq!(b.access_token, "tok-bbb");
@@ -548,10 +646,13 @@ mod tests {
 
     #[test]
     fn parse_claude_oauth_rejects_missing_or_empty_token() {
-        assert!(parse_claude_oauth_json(r#"{"mcpOAuth":{}}"#, "t").is_none());
+        assert!(
+            parse_claude_oauth_json(r#"{"mcpOAuth":{}}"#, ClaudeOauthSource::CredentialsFile)
+                .is_none()
+        );
         assert!(parse_claude_oauth_json(
             r#"{"claudeAiOauth":{"accessToken":""}}"#,
-            "t"
+            ClaudeOauthSource::CredentialsFile
         )
         .is_none());
     }
@@ -562,9 +663,7 @@ mod tests {
         assert!(!is_claude_token_expired(&json!(9_999_999_999_u64)));
         // millis
         assert!(is_claude_token_expired(&json!(1_000_u64)));
-        assert!(!is_claude_token_expired(&json!(
-            "2099-01-01T00:00:00.000Z"
-        )));
+        assert!(!is_claude_token_expired(&json!("2099-01-01T00:00:00.000Z")));
         assert!(is_claude_token_expired(&json!("2000-01-01T00:00:00Z")));
     }
 
@@ -592,6 +691,8 @@ mod tests {
         assert_eq!(v["env"]["OTHER"], "keep");
         assert!(v["env"].get("ANTHROPIC_AUTH_TOKEN").is_none());
         assert!(v["env"].get("ANTHROPIC_BASE_URL").is_none());
-        assert!(read_claude_settings_token(&path).expect("read token").is_none());
+        assert!(read_claude_settings_token(&path)
+            .expect("read token")
+            .is_none());
     }
 }

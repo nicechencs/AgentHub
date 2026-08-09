@@ -1,0 +1,21 @@
+import type { Backend } from '@/lib/backend/contracts';
+import { createBackend } from '@/lib/backend/current';
+import { resetAgentStatusStore } from './agent-status-store';
+
+let instance: Backend | null = null;
+
+export function getBackend(): Backend {
+  if (!instance) instance = createBackend();
+  return instance;
+}
+
+/** Tests / advanced: replace backend instance. */
+export function setBackend(backend: Backend): void {
+  instance = backend;
+  resetAgentStatusStore();
+}
+
+export function resetBackend(): void {
+  instance = null;
+  resetAgentStatusStore();
+}

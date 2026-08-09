@@ -12,6 +12,7 @@ pub mod project;
 pub mod provider;
 pub mod settings;
 pub mod skill;
+pub mod trash;
 pub mod usage;
 
 use std::sync::Arc;

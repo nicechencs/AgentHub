@@ -2,11 +2,28 @@
 //!
 //! Uses a short-lived in-process session store + std TCP listener (no Tokio runtime).
 
+mod catalog;
+mod device;
+mod identity;
+mod pi_refresh;
 mod pkce;
 mod providers;
 mod server;
 mod session;
 
+pub use catalog::{
+    is_device_code_option, list_oauth_options, pi_auth_json_key, resolve_pkce_provider,
+    OAuthFlowKind, OAuthLoginOption,
+};
+pub use device::{
+    complete_device_oauth, poll_device_oauth, start_device_oauth, DeviceOAuthPoll, DeviceOAuthStart,
+    DeviceOAuthStatus,
+};
+pub use identity::{
+    apply_identity_to_credentials, decode_jwt_payload, extract_oauth_identity, identity_extra,
+    identity_from_credentials, OAuthIdentity,
+};
+pub use pi_refresh::refresh_pi_provider;
 pub use providers::{oauth_provider_for, OAuthProvider};
 pub use server::open_in_browser;
 pub use session::{OAuthSessionInfo, OAuthStart, OAuthStatus};
@@ -46,17 +63,39 @@ pub struct StartOAuthResult {
     pub authorize_url: String,
     pub redirect_uri: String,
     pub agent_id: AgentId,
+    /// Selected multi-provider key when applicable (Pi).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_key: Option<String>,
     /// True when system browser open was attempted.
     pub browser_opened: bool,
 }
 
 /// Begin OAuth for an agent. Spawns a callback listener thread.
-pub fn start_oauth(agent: AgentId, open_browser: bool) -> Result<StartOAuthResult> {
-    let provider = oauth_provider_for(agent).ok_or_else(|| {
-        AppError::Unsupported(format!(
-            "OAuth PKCE is not configured for {}",
-            agent.as_str()
-        ))
+///
+/// `provider_key` selects which upstream login to run when the agent supports
+/// multiple (Pi: `anthropic` / `openai-codex`). Omit for single-provider agents.
+pub fn start_oauth(
+    agent: AgentId,
+    open_browser: bool,
+    provider_key: Option<&str>,
+) -> Result<StartOAuthResult> {
+    if is_device_code_option(agent, provider_key) {
+        return Err(AppError::InvalidArg(
+            "this provider uses device-code flow; call start_device_oauth instead".into(),
+        ));
+    }
+
+    let provider = resolve_pkce_provider(agent, provider_key).ok_or_else(|| {
+        if agent == AgentId::Pi {
+            AppError::InvalidArg(
+                "Pi OAuth requires providerKey: anthropic | openai-codex (xai 使用设备码)".into(),
+            )
+        } else {
+            AppError::Unsupported(format!(
+                "OAuth PKCE is not configured for {}",
+                agent.as_str()
+            ))
+        }
     })?;
 
     let pkce = PkcePair::generate()?;
@@ -65,9 +104,33 @@ pub fn start_oauth(agent: AgentId, open_browser: bool) -> Result<StartOAuthResul
     // Prefer fixed redirect ports when the provider requires them; else ephemeral.
     let listener = server::bind_listener(provider.redirect_port)?;
     let port = listener.local_addr()?.port();
-    let redirect_uri = format!("http://127.0.0.1:{port}/callback");
+    let path = if provider.redirect_path.is_empty() {
+        "/callback"
+    } else {
+        provider.redirect_path
+    };
+    // Pi Anthropic registers `localhost` (not 127.0.0.1) as redirect host.
+    let host = if agent == AgentId::Pi {
+        "localhost"
+    } else {
+        "127.0.0.1"
+    };
+    let redirect_uri = format!("http://{host}:{port}{path}");
 
     let authorize_url = provider.build_authorize_url(&redirect_uri, &state, &pkce.challenge);
+
+    let resolved_key = provider_key
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            if agent == AgentId::Pi {
+                pi_auth_json_key(provider.id.strip_prefix("pi-").unwrap_or(provider.id))
+                    .map(|s| s.to_string())
+            } else {
+                None
+            }
+        });
 
     let st = store();
     st.insert(session::OAuthSession {
@@ -75,6 +138,7 @@ pub fn start_oauth(agent: AgentId, open_browser: bool) -> Result<StartOAuthResul
         agent,
         verifier: pkce.verifier.clone(),
         redirect_uri: redirect_uri.clone(),
+        provider_key: resolved_key.clone(),
         status: OAuthStatus::Waiting,
         code: None,
         error: None,
@@ -129,6 +193,7 @@ pub fn start_oauth(agent: AgentId, open_browser: bool) -> Result<StartOAuthResul
         authorize_url,
         redirect_uri,
         agent_id: agent,
+        provider_key: resolved_key,
         browser_opened,
     })
 }
@@ -163,34 +228,46 @@ pub fn complete_oauth(accounts: &AccountService, state: &str) -> Result<Account>
         .clone()
         .ok_or_else(|| AppError::message("oauth.no_code", "OAuth 回调未包含 code"))?;
 
-    let provider = oauth_provider_for(session.agent).ok_or_else(|| {
-        AppError::Unsupported(format!(
-            "OAuth provider missing for {}",
-            session.agent.as_str()
-        ))
-    })?;
+    let provider = resolve_pkce_provider(session.agent, session.provider_key.as_deref())
+        .ok_or_else(|| {
+            AppError::Unsupported(format!(
+                "OAuth provider missing for {} ({})",
+                session.agent.as_str(),
+                session.provider_key.as_deref().unwrap_or("-")
+            ))
+        })?;
 
-    let tokens = provider.exchange_code(&code, &session.verifier, &session.redirect_uri)?;
-    let live = LiveAccount {
-        agent: session.agent,
-        kind: AccountKind::Oauth,
-        credentials: tokens.credentials,
-        label_hint: tokens.label_hint.clone(),
-        extra: tokens.extra.clone(),
+    let tokens = provider.exchange_code_with_state(
+        &code,
+        &session.verifier,
+        &session.redirect_uri,
+        Some(&session.state),
+    )?;
+
+    let account = if session.agent == AgentId::Pi {
+        complete_pi_oauth(accounts, &session, tokens)?
+    } else {
+        let live = LiveAccount {
+            agent: session.agent,
+            kind: AccountKind::Oauth,
+            credentials: tokens.credentials,
+            label_hint: tokens.label_hint.clone(),
+            extra: tokens.extra.clone(),
+        };
+
+        let label = tokens
+            .label_hint
+            .unwrap_or_else(|| format!("{} oauth", session.agent.as_str()));
+
+        accounts.create(AccountInput {
+            agent_id: session.agent,
+            kind: AccountKind::Oauth,
+            label,
+            credentials: live.credentials,
+            extra: live.extra,
+            is_current: false,
+        })?
     };
-
-    let label = tokens
-        .label_hint
-        .unwrap_or_else(|| format!("{} oauth", session.agent.as_str()));
-
-    let account = accounts.create(AccountInput {
-        agent_id: session.agent,
-        kind: AccountKind::Oauth,
-        label,
-        credentials: live.credentials,
-        extra: live.extra,
-        is_current: false,
-    })?;
 
     st.mark_succeeded(state)?;
     tracing::info!(
@@ -203,20 +280,95 @@ pub fn complete_oauth(accounts: &AccountService, state: &str) -> Result<Account>
     Ok(account)
 }
 
+fn complete_pi_oauth(
+    accounts: &AccountService,
+    session: &session::OAuthSession,
+    tokens: TokenBundle,
+) -> Result<Account> {
+    let provider_key = session
+        .provider_key
+        .as_deref()
+        .and_then(pi_auth_json_key)
+        .ok_or_else(|| {
+            AppError::message(
+                "oauth.pi",
+                "Pi OAuth session missing provider key (anthropic|openai-codex)",
+            )
+        })?;
+
+    let access = tokens
+        .credentials
+        .get("access_token")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::message("oauth.pi", "token response missing access_token"))?;
+    let refresh = tokens
+        .credentials
+        .get("refresh_token")
+        .and_then(|v| v.as_str());
+    let expires_at = tokens
+        .credentials
+        .get("expires_at")
+        .and_then(|v| v.as_str());
+    let expires_in = tokens
+        .credentials
+        .get("expires_in")
+        .and_then(|v| v.as_i64());
+    let id_token = tokens
+        .credentials
+        .get("id_token")
+        .and_then(|v| v.as_str());
+
+    let live = crate::adapters::pi_auth::live_account_from_oauth_tokens(
+        provider_key,
+        access,
+        refresh,
+        expires_at,
+        expires_in,
+        id_token,
+    )?;
+
+    // Write into ~/.pi/agent/auth.json (merge, keep other providers).
+    let patch = live
+        .credentials
+        .get("body")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let merged = crate::adapters::pi_auth::merge_auth_json(&patch)?;
+    let path = crate::adapters::pi_auth::pi_auth_path()?;
+    let mut bytes = serde_json::to_vec_pretty(&merged)?;
+    bytes.push(b'\n');
+    crate::utils::atomic::atomic_write(&path, &bytes)?;
+
+    let label = live
+        .label_hint
+        .clone()
+        .or(tokens.label_hint)
+        .unwrap_or_else(|| format!("pi:{provider_key}"));
+
+    accounts.create(AccountInput {
+        agent_id: AgentId::Pi,
+        kind: AccountKind::Oauth,
+        label,
+        credentials: live.credentials,
+        extra: live.extra,
+        is_current: false,
+    })
+}
+
 /// Convenience: start + wait + complete (blocking). Used by CLI.
 pub fn run_oauth_blocking(
     accounts: &AccountService,
     agent: AgentId,
     timeout_secs: u64,
 ) -> Result<Account> {
-    let start = start_oauth(agent, true)?;
+    let start = start_oauth(agent, true, None)?;
     let _ = wait_oauth(&start.state, timeout_secs)?;
     complete_oauth(accounts, &start.state)
 }
 
-/// Whether OAuth PKCE is wired for this agent.
+/// Whether any OAuth login option is available for this agent.
 pub fn oauth_supported(agent: AgentId) -> bool {
-    oauth_provider_for(agent).is_some()
+    catalog::oauth_supported(agent)
 }
 
 /// Token exchange payload.

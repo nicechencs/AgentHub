@@ -50,11 +50,70 @@ export function defaultConfigScaffold(agentId: string): {
         format: 'toml',
         preset: 'custom',
         text: [
-          'model = "grok-code-fast-1"',
+          '[models]',
+          'default = "grok"',
+          'web_search = "grok"',
+          '',
+          '[model."grok"]',
+          'model = "grok-4.5"',
           'base_url = "https://your-relay.example.com/v1"',
           'api_key = "sk-xxxxxxxx"',
+          'api_backend = "responses"',
+          'context_window = 1000000',
+          'supports_backend_search = true',
           '',
         ].join('\n'),
+      };
+    case 'pi':
+      return {
+        format: 'json',
+        preset: 'custom',
+        text: JSON.stringify(
+          {
+            providers: {
+              custom: {
+                baseUrl: 'https://your-relay.example.com/v1',
+                api: 'openai-completions',
+                apiKey: '',
+                models: [
+                  {
+                    id: 'custom-model',
+                    name: 'Custom Model',
+                    input: ['text'],
+                    contextWindow: 128000,
+                    maxTokens: 16384,
+                  },
+                ],
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      };
+    case 'workbuddy':
+      return {
+        format: 'json',
+        preset: 'custom',
+        text: JSON.stringify(
+          {
+            models: [
+              {
+                id: 'custom-model',
+                name: 'Custom Model',
+                vendor: 'custom',
+                url: 'https://your-relay.example.com/v1/chat/completions',
+                apiKey: '',
+                maxInputTokens: 128000,
+                maxOutputTokens: 8192,
+                supportsToolCall: true,
+              },
+            ],
+            availableModels: ['custom-model'],
+          },
+          null,
+          2,
+        ),
       };
     default:
       return {
@@ -66,7 +125,7 @@ export function defaultConfigScaffold(agentId: string): {
 }
 
 /**
- * 切换供应商 / 账号时相关的 live 路径（展示用，与 core adapter 对齐）。
+ * 切换服务 / 账号时相关的本机配置路径（展示用，与 core adapter 对齐）。
  * 打开目录请用 `openAgentConfigDir(agentId)`（会解析 CLAUDE_CONFIG_DIR 等覆盖）。
  * 完整读写规则以 adapter 为准；此处仅给用户「打开目录 / 备份」提示。
  */
@@ -88,28 +147,28 @@ export function liveConfigPaths(agentId: string): {
         auth: '官方登录态 / 文件型凭据（以 detect 为准）',
         extra: ['~/.claude.json（MCP / 全局）'],
         openDir: '~/.claude（或 CLAUDE_CONFIG_DIR）',
-        hint: 'API/供应商写入 settings.json 的 env；官方登录态由 CLI 管理，未必在单一文件中',
+        hint: 'API/服务配置写入 settings.json 的环境变量；官方登录由工具自身管理，未必在单一文件中',
       };
     case 'codex':
       return {
         config: '~/.codex/config.toml',
         auth: '~/.codex/auth.json',
         openDir: '~/.codex',
-        hint: 'TOML 写入 config.toml；认证写入 auth 文件',
+        hint: '服务设置写入 config.toml；登录凭据写入 auth 文件',
       };
     case 'kimi':
       return {
         config: '~/.kimi-code/config.toml（旧 ~/.kimi）',
         auth: 'credentials 目录（以 adapter 为准）',
         openDir: '~/.kimi-code 或 ~/.kimi',
-        hint: '供应商/API Key 写 config.toml；OAuth 凭据在 credentials 目录',
+        hint: '服务/API Key 写入 config.toml；官方登录凭据在 credentials 目录',
       };
     case 'grok':
       return {
         config: '~/.grok/config.toml',
         auth: '~/.grok/auth.json',
         openDir: '~/.grok',
-        hint: 'API Key 可写 config.toml；OAuth 使用 auth 文件',
+        hint: 'API Key 可写入 config.toml；官方登录使用 auth 文件',
       };
     case 'pi':
       return {
@@ -117,7 +176,7 @@ export function liveConfigPaths(agentId: string): {
         auth: '~/.pi/agent/auth.json',
         extra: ['~/.pi/agent/models.json'],
         openDir: '~/.pi/agent（或 PI_CODING_AGENT_DIR）',
-        hint: '账号 import/switch 读写 auth 文件；供应商写回暂 fail-closed',
+        hint: '服务设置写回 models.json；账号导入/切换仍使用 auth 文件',
       };
     case 'workbuddy':
       return {
@@ -125,20 +184,20 @@ export function liveConfigPaths(agentId: string): {
         auth: '桌面登录态（不由 AgentHub 切换）',
         extra: ['~/.workbuddy/models.json', '~/.workbuddy/.mcp.json'],
         openDir: '~/.workbuddy（或 WORKBUDDY_CONFIG_DIR）',
-        hint: '账号切换 unsupported；备份含 settings/models/mcp',
+        hint: '服务设置写回 models.json；账号切换暂不支持',
       };
     case 'cursor':
       return {
         config: '无稳定 provider 配置文件',
         auth: 'CURSOR_API_KEY 或 agent login',
         openDir: '~/.cursor',
-        hint: '供应商/账号池 live 写回 unsupported；技能目录由 adapter 声明',
+        hint: '服务和账号暂不支持写回本机配置；技能目录由工具适配器决定',
       };
     default:
       return {
-        config: '（该 agent 暂无 live 供应商写回）',
+        config: '（该工具暂无本机服务配置写回）',
         openDir: '~',
-        hint: '仅保存到供应商池，不一定写入 live',
+        hint: '仅保存到 AgentHub，不一定写入本机配置',
       };
   }
 }

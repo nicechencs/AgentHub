@@ -100,10 +100,11 @@ export function applySmartPaste(
   if (detect.wireApi) vars.wireApi = detect.wireApi;
   if (detect.providerSlug) vars.providerSlug = detect.providerSlug;
 
-  // Codex：完整 toml 粘贴优先保留全文，再叠表单字段（不丢 review_model / features）
+  // Codex/Grok：完整 TOML 粘贴优先保留全文，再叠表单字段。
+  // This keeps provider-specific tables and newer native options intact.
   let configBase = base.text;
   let outFormat: 'json' | 'toml' = base.format;
-  if (agentId === 'codex' && detect.rawConfigText?.trim()) {
+  if ((agentId === 'codex' || agentId === 'grok') && detect.rawConfigText?.trim()) {
     configBase = detect.rawConfigText;
     outFormat = 'toml';
   }

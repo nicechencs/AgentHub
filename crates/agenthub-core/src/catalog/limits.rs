@@ -38,6 +38,10 @@ pub const AGENT_DETECT_CACHE_TTL: Duration = Duration::from_secs(30);
 
 /// In-memory OAuth session TTL.
 pub const OAUTH_SESSION_TTL: Duration = Duration::from_secs(30 * 60);
+/// Upstream account quota probe (ChatGPT /wham/usage, Claude oauth usage).
+pub const ACCOUNT_QUOTA_HTTP_TIMEOUT: Duration = Duration::from_secs(12);
+/// How long a successful quota snapshot is considered fresh on list().
+pub const ACCOUNT_QUOTA_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
 /// Local callback listener overall wait.
 pub const OAUTH_CALLBACK_LISTEN_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 /// Token HTTP request timeout.

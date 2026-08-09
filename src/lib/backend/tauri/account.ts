@@ -1,4 +1,10 @@
-import type { AccountPort, OAuthStartInfo, OAuthWaitInfo } from '@/lib/backend/contracts';
+import {
+  normalizeAuthState,
+  type AccountPort,
+  type AuthState,
+  type OAuthStartInfo,
+  type OAuthWaitInfo,
+} from '@/lib/backend/contracts';
 import {
   mapCoreAccount,
   type CoreAccount,
@@ -21,6 +27,16 @@ export function createTauriAccountPort(): AccountPort {
         return rows.map(mapCoreAccount);
       } catch (e) {
         log.error('list_accounts failed', e);
+        throw e;
+      }
+    },
+
+    async probeLiveAuth(agentId) {
+      try {
+        const raw = await invoke<AuthState & { agentId?: AgentId }>('probe_live_auth', { agentId });
+        return normalizeAuthState(raw, agentId);
+      } catch (e) {
+        log.error('probe_live_auth failed', e);
         throw e;
       }
     },
@@ -88,10 +104,15 @@ export function createTauriAccountPort(): AccountPort {
       return invoke<boolean>('oauth_supported', { agentId });
     },
 
-    async startOAuth(agentId, openBrowser = true) {
+    async listOAuthOptions(agentId) {
+      return invoke('oauth_list_options', { agentId });
+    },
+
+    async startOAuth(agentId, openBrowser = true, providerKey) {
       return invoke<OAuthStartInfo>('oauth_start', {
         agentId,
         openBrowser,
+        providerKey: providerKey ?? null,
       });
     },
 
@@ -109,15 +130,46 @@ export function createTauriAccountPort(): AccountPort {
       return mapCoreAccount(row);
     },
 
-    async completeOAuth(agentId: AgentId) {
+    async startDeviceOAuth(agentId, providerKey) {
+      return invoke('oauth_device_start', { agentId, providerKey });
+    },
+
+    async pollDeviceOAuth(state) {
+      return invoke('oauth_device_poll', { oauthState: state });
+    },
+
+    async finishDeviceOAuth(state) {
+      const row = await invoke<CoreAccount>('oauth_device_complete', {
+        oauthState: state,
+      });
+      return mapCoreAccount(row);
+    },
+
+    async completeOAuth(agentId: AgentId, providerKey) {
       const supported = await this.oauthSupported(agentId);
       if (!supported) {
         throw unsupportedError(
           'OAuth 浏览器授权',
-          '该 Agent 未配置 PKCE；请使用「导入当前账号」或「添加 API Key」',
+          '该 Agent 未配置 OAuth；请使用「导入当前账号」或「添加 API Key」',
         );
       }
-      const start = await this.startOAuth(agentId, true);
+      const options = await this.listOAuthOptions(agentId);
+      const key = providerKey ?? (options.length === 1 ? options[0]!.id : null);
+      const opt = key ? options.find((o) => o.id === key) : undefined;
+      if (opt?.flow === 'deviceCode') {
+        const start = await this.startDeviceOAuth(agentId, opt.id);
+        const deadline = Date.now() + (start.expiresInSecs || 900) * 1000;
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, (start.intervalSecs || 5) * 1000));
+          const poll = await this.pollDeviceOAuth(start.state);
+          if (poll.status === 'complete') return this.finishDeviceOAuth(start.state);
+          if (poll.status === 'failed' || poll.status === 'expired') {
+            throw unsupportedError('OAuth 授权', poll.error ?? '设备码授权失败');
+          }
+        }
+        throw unsupportedError('OAuth 授权', '设备码授权超时');
+      }
+      const start = await this.startOAuth(agentId, true, key);
       const wait = await this.waitOAuth(start.state, 120);
       if (wait.status === 'failed') {
         throw unsupportedError('OAuth 授权', wait.error ?? '授权失败');
@@ -145,6 +197,19 @@ export function createTauriAccountPort(): AccountPort {
         });
       } catch (e) {
         log.error('refresh_account_token failed', e);
+        throw e;
+      }
+    },
+
+    async refreshQuota(agentId, accountId) {
+      try {
+        const raw = await invoke<CoreAccount>('refresh_account_quota', {
+          agentId,
+          idOrLabel: accountId,
+        });
+        return mapCoreAccount(raw);
+      } catch (e) {
+        log.error('refresh_account_quota failed', e);
         throw e;
       }
     },

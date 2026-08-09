@@ -2,8 +2,20 @@
  * Account API façade — delegates to app runtime backend.
  * Pages may keep importing from here during progressive migration.
  */
-import { getBackend } from '@/app/runtime';
-import type { OAuthStartInfo, OAuthWaitInfo } from '@/lib/backend/contracts/ports';
+import { getBackend, loadAgentStatuses } from '@/app/runtime';
+import type {
+  AuthState,
+  DeviceOAuthPollInfo,
+  DeviceOAuthStartInfo,
+  LiveAuthProbe,
+  OAuthLoginOption,
+  OAuthStartInfo,
+  OAuthWaitInfo,
+} from '@/lib/backend/contracts/ports';
+import {
+  clearLiveAuthProbeCache as clearProbeCache,
+  probeLiveAuthWithPort,
+} from '@/lib/backend/contracts/live-auth-probe-cache';
 import type { Account, AgentId } from '@/lib/types';
 
 export type {
@@ -11,18 +23,56 @@ export type {
   CoreAccountSwitchResult,
 } from '@/lib/backend/contracts/account-map';
 export { mapCoreAccount } from '@/lib/backend/contracts/account-map';
-export type { OAuthStartInfo, OAuthWaitInfo };
+export type {
+  DeviceOAuthPollInfo,
+  DeviceOAuthStartInfo,
+  AuthState,
+  LiveAuthProbe,
+  OAuthLoginOption,
+  OAuthStartInfo,
+  OAuthWaitInfo,
+};
 
 export async function listAccounts(agentId?: AgentId): Promise<Account[]> {
   return getBackend().account.listAccounts(agentId);
 }
 
+/**
+ * Probe cache invalidation is followed by a background shared-status refresh.
+ * Pages read the AgentStatus store, so this keeps Dashboard/Connections in
+ * sync without every mutation handler issuing its own live probe.
+ */
+function authStateChanged(agentId: AgentId): void {
+  clearProbeCache(agentId);
+  void loadAgentStatuses(getBackend(), { force: true }).catch(() => {
+    // The mutation itself succeeded. Keep the old display until a later
+    // normal refresh can read the live config again.
+  });
+}
+
+/** Reconcile an externally rotated/current login through the shared store. */
+export function refreshLiveAuthState(agentId: AgentId): void {
+  authStateChanged(agentId);
+}
+
+export async function probeLiveAuth(
+  agentId: AgentId,
+  options: { force?: boolean } = {},
+): Promise<LiveAuthProbe> {
+  return probeLiveAuthWithPort(getBackend().account, agentId, options);
+}
+
+export { clearProbeCache as clearLiveAuthProbeCache };
+
 export async function switchAccount(agentId: AgentId, accountId: string): Promise<void> {
-  return getBackend().account.switchAccount(agentId, accountId);
+  await getBackend().account.switchAccount(agentId, accountId);
+  authStateChanged(agentId);
 }
 
 export async function undoSwitchAccount(agentId: AgentId): Promise<boolean> {
-  return getBackend().account.undoSwitchAccount(agentId);
+  const undone = await getBackend().account.undoSwitchAccount(agentId);
+  if (undone) authStateChanged(agentId);
+  return undone;
 }
 
 export async function addApiKeyAccount(
@@ -31,7 +81,9 @@ export async function addApiKeyAccount(
   label?: string | null,
   envKey?: string | null,
 ): Promise<Account> {
-  return getBackend().account.addApiKeyAccount(agentId, key, label, envKey);
+  const account = await getBackend().account.addApiKeyAccount(agentId, key, label, envKey);
+  authStateChanged(agentId);
+  return account;
 }
 
 export async function updateApiKeyAccount(
@@ -39,22 +91,31 @@ export async function updateApiKeyAccount(
   accountId: string,
   opts: { label?: string | null; key?: string | null },
 ): Promise<Account> {
-  return getBackend().account.updateApiKeyAccount(agentId, accountId, opts);
+  const account = await getBackend().account.updateApiKeyAccount(agentId, accountId, opts);
+  authStateChanged(agentId);
+  return account;
 }
 
 export async function importCurrentLogin(agentId: AgentId): Promise<Account> {
-  return getBackend().account.importCurrentLogin(agentId);
+  const account = await getBackend().account.importCurrentLogin(agentId);
+  authStateChanged(agentId);
+  return account;
 }
 
 export async function oauthSupported(agentId: AgentId): Promise<boolean> {
   return getBackend().account.oauthSupported(agentId);
 }
 
+export async function listOAuthOptions(agentId: AgentId): Promise<OAuthLoginOption[]> {
+  return getBackend().account.listOAuthOptions(agentId);
+}
+
 export async function startOAuth(
   agentId: AgentId,
   openBrowser = true,
+  providerKey?: string | null,
 ): Promise<OAuthStartInfo> {
-  return getBackend().account.startOAuth(agentId, openBrowser);
+  return getBackend().account.startOAuth(agentId, openBrowser, providerKey);
 }
 
 export async function waitOAuth(
@@ -65,17 +126,53 @@ export async function waitOAuth(
 }
 
 export async function finishOAuth(state: string): Promise<Account> {
-  return getBackend().account.finishOAuth(state);
+  const account = await getBackend().account.finishOAuth(state);
+  authStateChanged(account.agentId);
+  return account;
 }
 
-export async function completeOAuth(agentId: AgentId): Promise<Account> {
-  return getBackend().account.completeOAuth(agentId);
+export async function startDeviceOAuth(
+  agentId: AgentId,
+  providerKey: string,
+): Promise<DeviceOAuthStartInfo> {
+  return getBackend().account.startDeviceOAuth(agentId, providerKey);
+}
+
+export async function pollDeviceOAuth(state: string): Promise<DeviceOAuthPollInfo> {
+  return getBackend().account.pollDeviceOAuth(state);
+}
+
+export async function finishDeviceOAuth(state: string): Promise<Account> {
+  const account = await getBackend().account.finishDeviceOAuth(state);
+  authStateChanged(account.agentId);
+  return account;
+}
+
+export async function completeOAuth(
+  agentId: AgentId,
+  providerKey?: string | null,
+): Promise<Account> {
+  const account = await getBackend().account.completeOAuth(agentId, providerKey);
+  authStateChanged(agentId);
+  return account;
 }
 
 export async function deleteAccount(agentId: AgentId, accountId: string): Promise<void> {
-  return getBackend().account.deleteAccount(agentId, accountId);
+  await getBackend().account.deleteAccount(agentId, accountId);
+  authStateChanged(agentId);
 }
 
 export async function refreshToken(agentId: AgentId, accountId: string): Promise<void> {
-  return getBackend().account.refreshToken(agentId, accountId);
+  await getBackend().account.refreshToken(agentId, accountId);
+  authStateChanged(agentId);
+}
+
+/** Force-refresh upstream 5h/7d quota for OAuth (no-op when unsupported). */
+export async function refreshQuota(
+  agentId: AgentId,
+  accountId: string,
+): Promise<Account | undefined> {
+  const port = getBackend().account;
+  if (!port.refreshQuota) return undefined;
+  return port.refreshQuota(agentId, accountId);
 }

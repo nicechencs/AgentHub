@@ -570,6 +570,46 @@ fn import_live_preserves_full_secrets_and_marks_new_row_current() {
         "***"
     );
     assert!(!svc.get("old", None).unwrap().is_current);
+
+    // Re-importing the unchanged live snapshot is idempotent: it reuses the
+    // same canonical live row instead of creating another UUID row.
+    let imported_again = svc
+        .import_live(AgentId::Claude, Some("Imported live"))
+        .unwrap();
+    assert_eq!(imported_again.id, imported.id);
+    assert_eq!(svc.list(Some(AgentId::Claude)).unwrap().len(), 2);
+}
+
+#[test]
+fn import_live_updates_existing_live_row_but_never_manual_provider() {
+    let live = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "before"}}),
+    };
+    let (_root, _db, svc, adapter, _backups) = live_svc(AgentId::Claude, live.clone());
+
+    let imported = svc
+        .import_live(AgentId::Claude, Some("Live snapshot"))
+        .unwrap();
+    let manual = input("manual", AgentId::Claude, "Manual", false);
+    svc.create(&manual).unwrap();
+
+    let changed = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "after"}});
+    *adapter.config.lock().unwrap() = AgentConfig {
+        agent: AgentId::Claude,
+        raw: changed.clone(),
+    };
+
+    let refreshed = svc.import_live(AgentId::Claude, None).unwrap();
+    assert_eq!(refreshed.id, imported.id);
+    assert_eq!(refreshed.settings_config, changed);
+    assert_eq!(refreshed.name, "Live snapshot");
+    assert!(refreshed.is_current);
+
+    let manual_after = svc.get("manual", Some(AgentId::Claude)).unwrap();
+    assert_eq!(manual_after.settings_config, manual.settings_config);
+    assert!(!manual_after.is_current);
+    assert_eq!(svc.list(Some(AgentId::Claude)).unwrap().len(), 2);
 }
 
 #[test]

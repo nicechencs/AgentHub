@@ -9,7 +9,6 @@ import {
   FolderOpen,
   Import,
   KeyRound,
-  LogIn,
   Plus,
   Trash2,
 } from 'lucide-react';
@@ -17,7 +16,6 @@ import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { SwitchConfirmDialog } from '@/components/shared/SwitchConfirmDialog';
-import { OAuthFlowDialog } from '#oauth-flow-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -38,15 +36,16 @@ import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { AGENT_MAP } from '@/config/agents';
+import { liveAuthProbeForAgent, useAgentStatusesOptional } from '@/app/runtime';
 import {
   deleteAccount,
   importCurrentLogin,
   listAccounts,
+  refreshLiveAuthState,
   refreshToken,
   switchAccount,
   undoSwitchAccount,
 } from '@/lib/api/account';
-import { listAgents } from '@/lib/api/agent';
 import { openAgentConfigDir } from '@/lib/api/install';
 import {
   deleteProvider,
@@ -57,7 +56,9 @@ import {
   testLatency,
   undoSwitch as undoProviderSwitch,
 } from '@/lib/api/provider';
-import { isCapabilityBlocked } from '@/lib/capability';
+import { isCapabilityBlocked, providerCapabilityGate } from '@/lib/capability';
+import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
+import { attachLiveAgentAuth } from '@/lib/backend/contracts/auth-state';
 import { logger } from '@/lib/logger';
 import { liveConfigPaths } from '@/lib/provider-detect';
 import type { Account, AgentId, AgentStatus, Provider, SwitchPreview } from '@/lib/types';
@@ -65,10 +66,15 @@ import { cn } from '@/lib/utils';
 import { ApiKeyAccountDialog } from '@/pages/accounts/ApiKeyAccountDialog';
 import { ProviderEditDialog } from '@/pages/providers/ProviderEditDialog';
 import { ConnectionCard } from './ConnectionCard';
+import { ConnectionTrashButton } from './ConnectionTrashButton';
 import {
   CONNECTION_FILTERS,
   countByKind,
+  deleteConnectionDialogDescription,
+  deleteConnectionToastDescription,
   filterConnectionEntries,
+  liveApiKeyImportGate,
+  liveAuthImportGate,
   mergeConnectionEntries,
   withProviderLatency,
   type ConnectionEntry,
@@ -76,6 +82,14 @@ import {
 } from './connection-model';
 
 const log = logger.scope('connections:list');
+
+function errorCode(error: unknown): string {
+  if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
+    return error.code;
+  }
+  if (error instanceof Error && error.name) return error.name;
+  return 'unknown';
+}
 
 /** 列表切换后通知父级刷新「当前生效」摘要（勿依赖陈旧 doctor statuses） */
 export type ConnectionPoolSnapshot = {
@@ -87,26 +101,30 @@ export type ConnectionPoolSnapshot = {
 
 export function ConnectionList({
   agentId,
+  agentStatuses,
   onPoolChanged,
   onSnapshot,
   initialFilter = 'all',
 }: {
   agentId: AgentId;
+  /** Shared application-level Agent detection; do not re-probe per list. */
+  agentStatuses: AgentStatus[];
   onPoolChanged?: () => void;
   onSnapshot?: (snap: ConnectionPoolSnapshot) => void;
   /** 深链 ?mode= 映射到初始筛选 */
   initialFilter?: ConnectionFilter;
 }) {
   const { toast } = useToast();
+  const sharedAgentStatus = useAgentStatusesOptional();
   const meta = AGENT_MAP[agentId];
   const paths = liveConfigPaths(agentId);
 
   const [accounts, setAccounts] = React.useState<Account[]>([]);
   const [providers, setProviders] = React.useState<Provider[]>([]);
   const [phase, setPhase] = React.useState<'loading' | 'error' | 'ready'>('loading');
+  const [loadedAgentId, setLoadedAgentId] = React.useState<AgentId | null>(null);
   const [error, setError] = React.useState<unknown>(null);
   const [filter, setFilter] = React.useState<ConnectionFilter>(initialFilter);
-  const [agentStatuses, setAgentStatuses] = React.useState<AgentStatus[]>([]);
 
   const [switchEntry, setSwitchEntry] = React.useState<ConnectionEntry | null>(null);
   const [switchPreview, setSwitchPreview] = React.useState<SwitchPreview | undefined>();
@@ -116,13 +134,17 @@ export function ConnectionList({
   const [deleteEntry, setDeleteEntry] = React.useState<ConnectionEntry | null>(null);
   const [deleting, setDeleting] = React.useState(false);
 
-  const [oauthOpen, setOauthOpen] = React.useState(false);
   /** 账号池遗留纯 API Key（仅密钥）编辑 */
   const [editAccountKey, setEditAccountKey] = React.useState<Account | null>(null);
   /** API Key 设置（含官方/自定义端点，写入 provider 池） */
   const [apiKeyDialogOpen, setApiKeyDialogOpen] = React.useState(false);
   const [editProvider, setEditProvider] = React.useState<Provider | null>(null);
   const [importing, setImporting] = React.useState(false);
+  const [importingAccount, setImportingAccount] = React.useState(false);
+  const [discoveredAuth, setDiscoveredAuth] = React.useState<{
+    agentId: AgentId;
+    kind: 'account' | 'provider';
+  } | null>(null);
   const [testingId, setTestingId] = React.useState<string | null>(null);
   const [latencyById, setLatencyById] = React.useState<Record<string, number>>({});
 
@@ -130,6 +152,13 @@ export function ConnectionList({
   onSnapshotRef.current = onSnapshot;
   const onPoolChangedRef = React.useRef(onPoolChanged);
   onPoolChangedRef.current = onPoolChanged;
+  const accountsRef = React.useRef(accounts);
+  accountsRef.current = accounts;
+  const providersRef = React.useRef(providers);
+  providersRef.current = providers;
+  const agentStatusesRef = React.useRef(agentStatuses);
+  agentStatusesRef.current = agentStatuses;
+  const probeSignatureRef = React.useRef<{ agentId: AgentId; value: string } | null>(null);
 
   /** 请求代数：快速连点 Agent 时丢弃过期响应 */
   const loadGenRef = React.useRef(0);
@@ -144,12 +173,40 @@ export function ConnectionList({
     agentStatuses.find((s) => s.agentId === agentId)?.capabilities?.accountSwitch?.reason ??
     '该 Agent 不支持账号池切换';
 
+  const providerCapabilities =
+    agentStatuses.find((s) => s.agentId === agentId)?.capabilities ?? meta?.capabilities;
+  // Hand-authored Provider/API Key configs only need ConfigWrite. A missing
+  // ProviderPresets contract affects preset/template entry-points, which this
+  // page does not expose, so it must not disable custom provider editing.
+  const providerGate = React.useMemo(
+    () => providerCapabilityGate(providerCapabilities),
+    [providerCapabilities],
+  );
+  const providerBlockReason = providerGate.reason ?? '当前 Agent 不支持 Provider 配置写入';
+  const liveAuthProbe = liveAuthProbeForAgent(sharedAgentStatus, agentId) ?? null;
+  const liveAuthProbeLoading =
+    sharedAgentStatus.state === 'idle' ||
+    sharedAgentStatus.state === 'loading' ||
+    sharedAgentStatus.refreshing;
+  const liveAuthImport = React.useMemo(
+    () => liveAuthImportGate(liveAuthProbe, liveAuthProbeLoading, agentId),
+    [agentId, liveAuthProbe, liveAuthProbeLoading],
+  );
+  const liveApiKeyImport = React.useMemo(
+    () => liveApiKeyImportGate(liveAuthProbe, liveAuthProbeLoading, agentId),
+    [agentId, liveAuthProbe, liveAuthProbeLoading],
+  );
+  const discoveredAuthForCurrentAgent =
+    discoveredAuth?.agentId === agentId ? discoveredAuth.kind : null;
+
   const publish = React.useCallback(
     (accs: Account[], provs: Provider[], forAgent: AgentId) => {
-      const current = mergeConnectionEntries(accs, provs).find((e) => e.isCurrent);
+      const liveStatus = agentStatusesRef.current.find((status) => status.agentId === forAgent);
+      const accountsWithLiveAuth = accs.map((account) => attachLiveAgentAuth(account, liveStatus));
+      const current = mergeConnectionEntries(accountsWithLiveAuth, provs).find((e) => e.isCurrent);
       onSnapshotRef.current?.({
         agentId: forAgent,
-        accounts: accs,
+        accounts: accountsWithLiveAuth,
         providers: provs,
         current,
       });
@@ -173,14 +230,22 @@ export function ConnectionList({
         setRefreshing(true);
       }
       try {
+        // Do not swallow listAccounts errors — empty list + silent fail
+        // made Pi accounts look "missing" when backend threw.
         const [accs, provs] = await Promise.all([
-          listAccounts(forAgent).catch(() => [] as Account[]),
-          listProviders(forAgent),
+          listAccounts(forAgent),
+          listProviders(forAgent).catch((e) => {
+            log.warn('listProviders failed; continue with accounts only', {
+              agentId: forAgent,
+              source: 'provider',
+              errorCode: errorCode(e),
+            });
+            return [] as Provider[];
+          }),
         ]);
         if (gen !== loadGenRef.current) return;
         log.info('pool loaded', {
           agentId: forAgent,
-          mode,
           accounts: accs.length,
           providers: provs.length,
           currentAccount: accs.find((a) => a.isCurrent)?.id ?? null,
@@ -188,11 +253,12 @@ export function ConnectionList({
         });
         setAccounts(accs);
         setProviders(provs);
+        setLoadedAgentId(forAgent);
         setPhase('ready');
         publish(accs, provs, forAgent);
       } catch (e) {
         if (gen !== loadGenRef.current) return;
-        log.error('pool load failed', e);
+        log.error('pool load failed', { agentId: forAgent, errorCode: errorCode(e) });
         setError(e);
         setPhase('error');
       } finally {
@@ -217,26 +283,66 @@ export function ConnectionList({
       setApiKeyDialogOpen(false);
       setEditProvider(null);
       setEditAccountKey(null);
-      setOauthOpen(false);
+      setDiscoveredAuth(null);
       setError(null);
     }
     void load(first ? 'full' : 'soft');
   }, [agentId, load, initialFilter]);
 
   React.useEffect(() => {
-    listAgents()
-      .then(setAgentStatuses)
-      .catch(() => setAgentStatuses([]));
-  }, []);
+    if (loadedAgentId !== agentId || !liveAuthProbe) {
+      if (loadedAgentId === agentId) setDiscoveredAuth(null);
+      return;
+    }
+
+    const kind = liveAuthProbe.kind?.trim().toLowerCase() ?? '';
+    const isOAuth = kind === 'oauth' || kind === 'file-auth' || kind === 'file-auth.json';
+    const isApiKey = kind === 'api_key' || kind === 'api-key' || kind === 'apikey';
+    const signature = `${kind}:${liveAuthProbe.hasCredentials}:${liveAuthProbe.revision ?? liveAuthProbe.summary}`;
+    const previous = probeSignatureRef.current;
+    const changed = previous?.agentId !== agentId || previous.value !== signature;
+    if (!changed) return;
+
+    probeSignatureRef.current = { agentId, value: signature };
+    if (!liveAuthProbe.hasCredentials) {
+      setDiscoveredAuth(null);
+      return;
+    }
+
+    const isSubsequentDiscovery = previous?.agentId === agentId;
+    const hasExistingOAuth = accountsRef.current.some((account) => account.kind === 'oauth');
+    const hasExistingApiKey =
+      accountsRef.current.some((account) => account.kind === 'apikey') ||
+      providersRef.current.length > 0;
+    // Grok rotates access/refresh tokens in auth.json during normal use.
+    // Reconcile the current pool row automatically when a live revision changes
+    // instead of presenting a duplicate-import prompt.
+    if (isSubsequentDiscovery && isOAuth && hasExistingOAuth) {
+      void load('soft');
+    }
+    if (isOAuth && !hasExistingOAuth) {
+      setDiscoveredAuth({ agentId, kind: 'account' });
+    } else if (isApiKey && !hasExistingApiKey) {
+      setDiscoveredAuth({ agentId, kind: 'provider' });
+    } else {
+      setDiscoveredAuth(null);
+    }
+  }, [agentId, liveAuthProbe, load, loadedAgentId]);
+
+  const liveAgentStatus = agentStatuses.find((status) => status.agentId === agentId);
+  const accountsWithLiveAuth = React.useMemo(
+    () => accounts.map((account) => attachLiveAgentAuth(account, liveAgentStatus)),
+    [accounts, liveAgentStatus],
+  );
 
   const entries = React.useMemo(() => {
-    const merged = mergeConnectionEntries(accounts, providers).map((e) => {
+    const merged = mergeConnectionEntries(accountsWithLiveAuth, providers).map((e) => {
       if (e.source !== 'provider') return e;
       const ms = latencyById[e.id];
       return ms !== undefined ? withProviderLatency(e, ms) : e;
     });
     return merged;
-  }, [accounts, providers, latencyById]);
+  }, [accountsWithLiveAuth, providers, latencyById]);
 
   const counts = React.useMemo(() => countByKind(entries), [entries]);
   const visible = React.useMemo(
@@ -271,7 +377,6 @@ export function ConnectionList({
       agentId,
       source: entry.source,
       id: entry.id,
-      title: entry.title,
     });
     setPreviewLoading(true);
     try {
@@ -289,11 +394,23 @@ export function ConnectionList({
         });
         setSwitchEntry(entry);
       } else if (entry.source === 'provider' && entry.provider) {
+        if (!providerGate.canSwitch) {
+          toast({
+            title: '无法切换 Provider',
+            description: providerBlockReason,
+            variant: 'danger',
+          });
+          return;
+        }
         const preview = await providerSwitchPreview(agentId, entry.id);
         setSwitchPreview(preview);
         setSwitchEntry(entry);
-      } else {
-        log.warn('switch entry missing payload', { entry });
+    } else {
+      log.warn('switch entry missing payload', {
+        agentId,
+        id: entry.id,
+        source: entry.source,
+      });
         toast({
           title: '无法切换',
           description: '连接数据不完整，请刷新后重试',
@@ -301,7 +418,12 @@ export function ConnectionList({
         });
       }
     } catch (e) {
-      log.error('switch preview failed', e);
+      log.error('switch preview failed', {
+        agentId,
+        id: entry.id,
+        source: entry.source,
+        errorCode: errorCode(e),
+      });
       toast({
         title: '无法预览切换',
         description: e instanceof Error ? e.message : String(e),
@@ -337,6 +459,16 @@ export function ConnectionList({
           duration: 5000,
         });
       } else {
+        if (!providerGate.canSwitch) {
+          toast({
+            title: '无法切换 Provider',
+            description: providerBlockReason,
+            variant: 'danger',
+          });
+          setSwitchEntry(null);
+          setSwitchPreview(undefined);
+          return;
+        }
         await switchProvider(agentId, target.id);
         log.info('switch provider ok', { agentId, id: target.id });
         applyLocalCurrent(target);
@@ -384,7 +516,12 @@ export function ConnectionList({
       }
       await load('soft');
     } catch (e) {
-      log.error('switch failed', e);
+      log.error('switch failed', {
+        agentId,
+        id: target.id,
+        source: target.source,
+        errorCode: errorCode(e),
+      });
       toast({
         title: '切换失败',
         description: e instanceof Error ? e.message : String(e),
@@ -398,6 +535,7 @@ export function ConnectionList({
 
   const confirmDelete = async () => {
     if (!deleteEntry) return;
+    const wasCurrent = deleteEntry.isCurrent;
     setDeleting(true);
     try {
       if (deleteEntry.source === 'account') {
@@ -407,7 +545,11 @@ export function ConnectionList({
       }
       setDeleteEntry(null);
       await load('soft');
-      toast({ title: '已删除', variant: 'success' });
+      toast({
+        title: '已移入回收站',
+        description: deleteConnectionToastDescription({ isCurrent: wasCurrent }),
+        variant: 'success',
+      });
     } catch (e) {
       toast({
         title: '删除失败',
@@ -420,9 +562,20 @@ export function ConnectionList({
   };
 
   const handleImportAccount = async () => {
+    if (!liveAuthImport.enabled) {
+      toast({
+        title: '无法导入当前登录态',
+        description: liveAuthImport.reason,
+        variant: 'danger',
+      });
+      return;
+    }
+    setImportingAccount(true);
     try {
+      // Pi：会把 auth.json 各 provider 拆成多行；list 时会 heal 身份字段。
       const acc = await importCurrentLogin(agentId);
       await load('soft');
+      setDiscoveredAuth(null);
       toast({
         title: '已导入当前登录态',
         description: `${acc.label} 已入库`,
@@ -434,13 +587,23 @@ export function ConnectionList({
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
+    } finally {
+      setImportingAccount(false);
     }
   };
 
   const handleImportProvider = async () => {
+    if (!liveApiKeyImport.enabled) {
+      toast({
+        title: '无法导入当前 API Key',
+        description: liveApiKeyImport.reason,
+        variant: 'danger',
+      });
+      return;
+    }
     if (
       !window.confirm(
-        '将读取本机当前配置并新增一条 API Key 记录，导入后可编辑或删除。是否继续？',
+        '将读取本机当前 API 配置；已有本机导入记录会更新，不会重复创建。是否继续？',
       )
     ) {
       return;
@@ -448,13 +611,17 @@ export function ConnectionList({
     setImporting(true);
     try {
       const imported = await importProviderLive(agentId);
+      setDiscoveredAuth(null);
       toast({
-        title: `已导入「${imported.name}」`,
-        description: '已写入 API Key 配置；可改名后保存。',
+        title: `已同步「${imported.name}」`,
+        description: '已保存到 AgentHub 连接池；本机配置文件未被修改。',
         variant: 'success',
       });
       await load('soft');
-      setEditProvider(imported);
+      // Import is read-only with respect to the agent's live file. Do not
+      // immediately open an editable dialog when the provider writer is
+      // blocked; the imported row remains available for inspection/deletion.
+      if (providerGate.canManage) setEditProvider(imported);
     } catch (e) {
       toast({
         title: '导入失败',
@@ -467,13 +634,28 @@ export function ConnectionList({
   };
 
   const handleRefreshToken = async (entry: ConnectionEntry) => {
+    const action = entry.account ? accountActionPolicy(entry.account) : undefined;
+    if (!action) return;
     try {
+      if (action.kind === 'sync-current-login') {
+        // list_accounts performs the non-destructive Grok live reconciliation;
+        // importCurrentLogin remains an explicit new-authorization import.
+        await listAccounts(agentId);
+        refreshLiveAuthState(agentId);
+        await load('soft');
+        toast({
+          title: '已同步当前登录',
+          description: '已读取 Grok CLI 当前登录凭据。',
+          variant: 'success',
+        });
+        return;
+      }
       await refreshToken(agentId, entry.id);
       await load('soft');
-      toast({ title: 'Token 已刷新', description: entry.title, variant: 'success' });
+      toast({ title: action.label, description: entry.title, variant: 'success' });
     } catch (e) {
       toast({
-        title: '刷新失败',
+        title: `${action.label}失败`,
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
@@ -512,9 +694,10 @@ export function ConnectionList({
 
   const handleDeleteAllProviders = async () => {
     if (providers.length === 0) return;
+    const hadCurrent = providers.some((p) => p.isCurrent);
     if (
       !window.confirm(
-        `确定删除 ${meta.name} 的全部 ${providers.length} 条 API Key 配置？\n只清空 AgentHub 列表，不改本机文件。`,
+        `确定将 ${meta.name} 的全部 ${providers.length} 条 API Key 配置移入回收站？\n不会修改本机配置文件。`,
       )
     ) {
       return;
@@ -523,8 +706,11 @@ export function ConnectionList({
       for (const p of providers) {
         await deleteProvider(agentId, p.id);
       }
-      toast({ title: `已删除全部 ${providers.length} 条 API Key 配置` });
       await load('soft');
+      toast({
+        title: `已将全部 ${providers.length} 条 API Key 配置移入回收站`,
+        description: deleteConnectionToastDescription({ isCurrent: hadCurrent }),
+      });
     } catch (e) {
       toast({
         title: '批量删除失败',
@@ -542,33 +728,17 @@ export function ConnectionList({
         setEditAccountKey(entry.account);
       }
     } else if (entry.source === 'provider' && entry.provider) {
+      if (!providerGate.canManage) {
+        toast({
+          title: '无法编辑 Provider',
+          description: providerBlockReason,
+          variant: 'danger',
+        });
+        return;
+      }
       setEditProvider(entry.provider);
       setApiKeyDialogOpen(true);
     }
-  };
-
-  const handleOAuthCompleted = (acc: Account) => {
-    void load('soft').then(() => {
-      setSwitchEntry({
-        key: `account:${acc.id}`,
-        source: 'account',
-        kind: acc.kind === 'apikey' ? 'apikey' : 'oauth',
-        id: acc.id,
-        agentId: acc.agentId,
-        title: acc.label,
-        subtitle: 'OAuth 完成',
-        isCurrent: acc.isCurrent,
-        authStatus: 'valid',
-        sortKey: acc.updatedAt || '',
-        account: acc,
-      });
-      setSwitchPreview({
-        backfillSummary: currentEntry
-          ? `当前连接「${currentEntry.title}」将先保存回连接池`
-          : '当前没有需要先保存的生效连接',
-        backupPath: `~/.agenthub/backups/${agentId}/`,
-      });
-    });
   };
 
   const addMenu = (
@@ -581,28 +751,33 @@ export function ConnectionList({
       <DropdownMenuContent align="end" className="min-w-[13rem]">
         {!accountsBlocked && (
           <>
-            <DropdownMenuItem onSelect={() => setOauthOpen(true)}>
-              <LogIn className="h-4 w-4" /> 官方登录 (OAuth)
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void handleImportAccount()}>
+            <DropdownMenuItem
+              disabled={!liveAuthImport.enabled || importingAccount}
+              title={!liveAuthImport.enabled ? liveAuthImport.reason : undefined}
+              onSelect={() => void handleImportAccount()}
+            >
               <DownloadCloud className="h-4 w-4" /> 导入当前登录态
             </DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
         )}
         <DropdownMenuItem
+          disabled={!providerGate.canManage}
+          title={!providerGate.canManage ? providerBlockReason : undefined}
           onSelect={() => {
+            if (!providerGate.canManage) return;
             setEditProvider(null);
             setApiKeyDialogOpen(true);
           }}
         >
-          <KeyRound className="h-4 w-4" /> API Key
+          <KeyRound className="h-4 w-4" /> 添加 API Key
         </DropdownMenuItem>
         <DropdownMenuItem
-          disabled={importing}
+          disabled={!liveApiKeyImport.enabled || importing}
+          title={!liveApiKeyImport.enabled ? liveApiKeyImport.reason : undefined}
           onSelect={() => void handleImportProvider()}
         >
-          <Import className="h-4 w-4" /> 从本机导入 API 配置
+          <Import className="h-4 w-4" /> 导入当前 API Key
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => void handleOpenConfigDir()}>
@@ -613,7 +788,7 @@ export function ConnectionList({
             className="text-danger"
             onSelect={() => void handleDeleteAllProviders()}
           >
-            <Trash2 className="h-4 w-4" /> 清空全部 API Key 配置
+            <Trash2 className="h-4 w-4" /> 移入回收站
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
@@ -646,7 +821,56 @@ export function ConnectionList({
           <span className="font-medium text-primary">{meta.name}</span>
           {' · '}
           {accountsBlockReason}
-          <span className="text-muted"> · 可用 API Key</span>
+          <span className="text-muted">
+            {' · '}
+            {providerGate.canManage
+              ? '可用 API Key'
+              : '此工具暂不支持通过 AgentHub 配置 API Key'}
+          </span>
+        </div>
+      )}
+
+      {discoveredAuthForCurrentAgent && (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-card border border-info/40 bg-info/5 px-3 py-2 text-xs text-secondary">
+          <span>
+            检测到本机新的
+            {discoveredAuthForCurrentAgent === 'account' ? '官方登录' : ' API Key'} 授权信息，可导入到连接列表。
+          </span>
+          <span className="flex shrink-0 gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                void (discoveredAuthForCurrentAgent === 'account'
+                  ? handleImportAccount()
+                  : handleImportProvider())
+              }
+              disabled={
+                discoveredAuthForCurrentAgent === 'account'
+                  ? !liveAuthImport.enabled || importingAccount
+                  : !liveApiKeyImport.enabled || importing
+              }
+            >
+              导入
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setDiscoveredAuth(null)}
+            >
+              忽略
+            </Button>
+          </span>
+        </div>
+      )}
+
+      {!accountsBlocked && !providerGate.canManage && (
+        <div className="mb-3 rounded-card border border-border bg-subtle px-3 py-2 text-xs text-secondary">
+          <span className="font-medium text-primary">{meta.name}</span>
+          {' · 此工具暂不支持通过 AgentHub 配置 API Key'}
+          <span className="text-muted"> · 可从本机导入现有配置</span>
         </div>
       )}
 
@@ -675,8 +899,12 @@ export function ConnectionList({
               title={`${meta.name} 暂无连接`}
               description={
                 accountsBlocked
-                  ? '可添加 API Key，或从本机导入现有配置'
-                  : '可官方登录、添加 API Key，或导入本机现有配置'
+                  ? providerGate.canManage
+                    ? '可添加 API Key，或从本机导入现有配置'
+                    : '当前工具不支持通过 AgentHub 配置 API Key，可从本机导入现有配置'
+                  : providerGate.canManage
+                    ? '可添加 API Key，或导入本机现有配置'
+                    : '可从本机导入现有配置；此工具暂不支持配置 API Key'
               }
               action={addMenu}
             />
@@ -707,6 +935,8 @@ export function ConnectionList({
                   onRefreshToken={(e) => void handleRefreshToken(e)}
                   onTest={(e) => void handleTest(e)}
                   onOpenConfigDir={() => void handleOpenConfigDir()}
+                  canEditProvider={providerGate.canManage}
+                  canSwitchProvider={providerGate.canSwitch}
                 />
               ))}
             </div>
@@ -743,9 +973,9 @@ export function ConnectionList({
           <DialogHeader>
             <DialogTitle>删除「{deleteEntry?.title}」？</DialogTitle>
             <DialogDescription>
-              {deleteEntry?.source === 'provider'
-                ? '只从列表移除，不改本机配置文件。'
-                : '只从列表移除；本机文件仅在之后切换其它连接时才会变化。'}
+              {deleteEntry
+                ? deleteConnectionDialogDescription(deleteEntry)
+                 : '会移入回收站；不会修改本机配置文件。'}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -759,12 +989,6 @@ export function ConnectionList({
         </DialogContent>
       </Dialog>
 
-      <OAuthFlowDialog
-        agentId={agentId}
-        open={oauthOpen}
-        onOpenChange={setOauthOpen}
-        onCompleted={handleOAuthCompleted}
-      />
       <ApiKeyAccountDialog
         agentId={agentId}
         mode="edit"
@@ -791,6 +1015,7 @@ export function ConnectionList({
           void load('soft');
         }}
       />
+      <ConnectionTrashButton agentId={agentId} onChanged={() => void load('soft')} />
     </div>
   );
 }
