@@ -70,8 +70,10 @@ export function smartDetectUrlAndKey(raw: string): SmartDetectResult {
 
     // plain-url / plain-api-key 已足够则提前结束
     if (det.id === 'plain-url' || det.id === 'plain-api-key') break;
-    // 完整 codex toml 已拿到正文
-    if (det.id === 'codex-config-toml' && rawConfigText) break;
+    // 完整 provider TOML 已拿到正文
+    if ((det.id === 'codex-config-toml' || det.id === 'grok-config-toml') && rawConfigText) {
+      break;
+    }
     // shell export / settings 已同时拿到 url+key 可结束
     if (baseUrl && apiKey && det.id.startsWith('claude-')) break;
     if (baseUrl && apiKey && det.id !== 'generic-mixed' && !det.id.startsWith('codex-'))

@@ -949,3 +949,44 @@ fn fully_empty_binding_row_returns_none() {
     assert!(conn.get_active(AgentId::Grok).unwrap().is_none());
     assert!(ActiveBindingRepo::new(db).get("grok").unwrap().is_none());
 }
+
+#[test]
+fn delete_account_moves_to_trash_and_restore_does_not_reactivate() {
+    let (_d, db) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    let conn = ConnectionService::new(db.clone());
+    let created = accounts
+        .create(&account("trash-account", AgentId::Claude, true, "t1"))
+        .unwrap();
+
+    conn.delete_account(&created.id, AgentId::Claude).unwrap();
+    assert!(accounts.get_by_id(&created.id).unwrap().is_none());
+    let trash = conn.list_trash(Some(AgentId::Claude)).unwrap();
+    assert_eq!(trash.len(), 1);
+    assert_eq!(trash[0].source_id, created.id);
+    assert!(trash[0].account.is_some());
+    assert!(trash[0].account.as_ref().unwrap().credentials.is_object());
+
+    let trash_id = trash[0].id.clone();
+    conn.restore_trash(&trash_id).unwrap();
+    let restored = accounts.get_by_id(&created.id).unwrap().unwrap();
+    assert!(!restored.is_current);
+    assert!(conn.list_trash(Some(AgentId::Claude)).unwrap().is_empty());
+}
+
+#[test]
+fn provider_trash_can_be_permanently_deleted() {
+    let (_d, db) = tmp();
+    let providers = ProviderRepo::new(db.clone());
+    let conn = ConnectionService::new(db.clone());
+    let created = providers
+        .create(&provider("trash-provider", AgentId::Codex, false, "t1"))
+        .unwrap();
+
+    conn.delete_provider(&created.id, AgentId::Codex).unwrap();
+    let trash = conn.list_trash(Some(AgentId::Codex)).unwrap();
+    assert_eq!(trash.len(), 1);
+    assert_eq!(trash[0].provider.as_ref().unwrap().id, created.id);
+    conn.delete_trash(&trash[0].id).unwrap();
+    assert!(conn.list_trash(Some(AgentId::Codex)).unwrap().is_empty());
+}

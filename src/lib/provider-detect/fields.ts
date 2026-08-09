@@ -25,6 +25,99 @@ function sanitizeSecretForForm(v: string): string {
   return looksRedactedOrPlaceholder(v) ? '' : v;
 }
 
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function extractPiProviderVars(root: unknown): ProviderFormVars {
+  const rootObject = objectValue(root);
+  const modelsObject = objectValue(rootObject?.models);
+  const providers = objectValue(rootObject?.providers) ?? objectValue(modelsObject?.providers);
+  const [providerSlug, providerValue] = providers ? Object.entries(providers)[0] ?? [] : [];
+  const provider = objectValue(providerValue);
+  const models = Array.isArray(provider?.models) ? provider.models : [];
+  const model = objectValue(models[0]);
+  return {
+    ...EMPTY_FORM_VARS,
+    providerSlug: providerSlug ?? 'custom',
+    baseUrl: typeof provider?.baseUrl === 'string' ? provider.baseUrl : '',
+    apiKey: sanitizeSecretForForm(typeof provider?.apiKey === 'string' ? provider.apiKey : ''),
+    model: typeof model?.id === 'string' ? model.id : '',
+  };
+}
+
+function extractWorkBuddyModelVars(root: unknown): ProviderFormVars {
+  const rootObject = objectValue(root);
+  const nestedModels = objectValue(rootObject?.models);
+  const modelsValue = nestedModels?.models ?? rootObject?.models;
+  const models = Array.isArray(modelsValue) ? modelsValue : [];
+  const model = objectValue(models[0]);
+  return {
+    ...EMPTY_FORM_VARS,
+    baseUrl: typeof model?.url === 'string' ? model.url : '',
+    apiKey: sanitizeSecretForForm(typeof model?.apiKey === 'string' ? model.apiKey : ''),
+    model: typeof model?.id === 'string' ? model.id : '',
+  };
+}
+
+function applyPiProviderVars(root: Record<string, unknown>, vars: ProviderFormVars): string {
+  const modelsObject = objectValue(root.models);
+  const native = modelsObject && objectValue(modelsObject.providers) ? modelsObject : root;
+  const existingProviders = objectValue(native.providers);
+  const providers: Record<string, unknown> = existingProviders ? { ...existingProviders } : {};
+  const slug = vars.providerSlug.trim() || Object.keys(providers)[0] || 'custom';
+  const existingProvider = objectValue(providers[slug]);
+  const provider: Record<string, unknown> = existingProvider ? { ...existingProvider } : {};
+  const models = Array.isArray(provider.models) ? [...provider.models] : [];
+  const existingModel = objectValue(models[0]);
+  const model: Record<string, unknown> = existingModel ? { ...existingModel } : {};
+  const modelId = vars.model.trim() || (typeof model.id === 'string' ? model.id : 'custom-model');
+
+  if (vars.baseUrl.trim()) provider.baseUrl = vars.baseUrl.trim();
+  if (vars.apiKey.trim()) provider.apiKey = vars.apiKey.trim();
+  else if (typeof provider.apiKey === 'string') provider.apiKey = REDACTED_MARKER;
+  if (typeof provider.api !== 'string' || !provider.api) provider.api = 'openai-completions';
+  model.id = modelId;
+  if (typeof model.name !== 'string' || !model.name) model.name = modelId;
+  models[0] = model;
+  provider.models = models;
+  providers[slug] = provider;
+  native.providers = providers;
+  if (native !== root) root.models = native;
+  return JSON.stringify(root, null, 2);
+}
+
+function applyWorkBuddyModelVars(root: Record<string, unknown>, vars: ProviderFormVars): string {
+  const nestedModels = objectValue(root.models);
+  const native = nestedModels && ('models' in nestedModels || 'availableModels' in nestedModels)
+    ? nestedModels
+    : root;
+  const models = Array.isArray(native.models) ? [...native.models] : [];
+  const existingModel = objectValue(models[0]);
+  const model: Record<string, unknown> = existingModel ? { ...existingModel } : {};
+  const oldId = typeof model.id === 'string' ? model.id : '';
+  const modelId = vars.model.trim() || oldId || 'custom-model';
+
+  model.id = modelId;
+  if (typeof model.name !== 'string' || !model.name) model.name = modelId;
+  if (vars.baseUrl.trim()) model.url = vars.baseUrl.trim();
+  if (vars.apiKey.trim()) model.apiKey = vars.apiKey.trim();
+  else if (typeof model.apiKey === 'string') model.apiKey = REDACTED_MARKER;
+  models[0] = model;
+  native.models = models;
+
+  const available = Array.isArray(native.availableModels)
+    ? native.availableModels.filter((id): id is string => typeof id === 'string')
+    : [];
+  const nextAvailable = available.map((id) => (oldId && id === oldId ? modelId : id));
+  if (!nextAvailable.includes(modelId)) nextAvailable.push(modelId);
+  native.availableModels = nextAvailable;
+  if (native !== root) root.models = native;
+  return JSON.stringify(root, null, 2);
+}
+
 function tomlGet(text: string, key: string): string {
   const re = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*"([^"]*)"`, 'm');
   return text.match(re)?.[1] ?? '';
@@ -88,6 +181,82 @@ function tomlTableSet(text: string, table: string, key: string, value: string): 
   return text.slice(0, bodyStart) + newBody + rest;
 }
 
+function grokDefaultAlias(text: string): string {
+  const configured = tomlTableGet(text, 'models', 'default');
+  if (configured.trim()) return configured.trim();
+  const m = text.match(/^\[model\.(?:"([^"]+)"|([^\]]+))\]\s*$/m);
+  return (m?.[1] ?? m?.[2] ?? 'grok').trim() || 'grok';
+}
+
+function grokModelTable(text: string, alias: string): string {
+  const quoted = `model."${alias}"`;
+  if (text.includes(`[${quoted}]`)) return quoted;
+  const bare = `model.${alias}`;
+  if (text.includes(`[${bare}]`)) return bare;
+  return quoted;
+}
+
+function ensureGrokRegistry(text: string, alias: string): string {
+  let out = text;
+  if (!/^\s*\[models\]\s*$/m.test(out)) {
+    const pad = out.endsWith('\n') || out.length === 0 ? '' : '\n';
+    out += `${pad}\n[models]\ndefault = "${alias}"\nweb_search = "${alias}"\n`;
+  } else {
+    if (!tomlTableGet(out, 'models', 'default')) {
+      out = tomlTableSet(out, 'models', 'default', alias);
+    }
+    if (!tomlTableGet(out, 'models', 'web_search')) {
+      out = tomlTableSet(out, 'models', 'web_search', alias);
+    }
+  }
+  const table = grokModelTable(out, alias);
+  if (!out.includes(`[${table}]`)) {
+    const pad = out.endsWith('\n') || out.length === 0 ? '' : '\n';
+    out += `${pad}\n[${table}]\n`;
+  }
+  return out;
+}
+
+function applyGrokFormVars(configText: string, vars: ProviderFormVars): string {
+  const hasRegistry = /^\s*\[models\]\s*$/m.test(configText);
+  let text = configText;
+  if (!hasRegistry) {
+    // Migrate the legacy top-level shape while retaining any existing values.
+    const legacyModel = tomlGet(configText, 'model');
+    const legacyBaseUrl = tomlGet(configText, 'base_url');
+    const legacyApiKey = tomlGet(configText, 'api_key');
+    const model = vars.model.trim() || legacyModel || 'grok-4.5';
+    const baseUrl = vars.baseUrl.trim() || legacyBaseUrl;
+    const apiKey = vars.apiKey.trim() || legacyApiKey;
+    text = [
+      '[models]',
+      'default = "grok"',
+      'web_search = "grok"',
+      '',
+      '[model."grok"]',
+      `model = "${model}"`,
+      ...(baseUrl ? [`base_url = "${baseUrl}"`] : []),
+      ...(apiKey ? [`api_key = "${apiKey}"`] : []),
+      '',
+    ].join('\n');
+  }
+
+  const alias = grokDefaultAlias(text);
+  text = ensureGrokRegistry(text, alias);
+  const table = grokModelTable(text, alias);
+  if (vars.model.trim()) text = tomlTableSet(text, table, 'model', vars.model.trim());
+  if (vars.baseUrl.trim()) {
+    text = tomlTableSet(text, table, 'base_url', vars.baseUrl.trim());
+  }
+  if (vars.apiKey.trim() && vars.apiKey.trim() !== REDACTED_MARKER) {
+    text = tomlTableSet(text, table, 'api_key', vars.apiKey.trim());
+  } else if (tomlTableGet(text, table, 'api_key')) {
+    // Empty / redacted means keep the native secret on materialize.
+    text = tomlTableSet(text, table, 'api_key', REDACTED_MARKER);
+  }
+  return text;
+}
+
 function isOpaqueRedactedToml(configText: string): boolean {
   return configText.trim() === REDACTED_MARKER;
 }
@@ -107,6 +276,9 @@ export function extractFormVars(
         env?: Record<string, unknown>;
         model?: unknown;
       };
+      if (agentId === 'pi') return extractPiProviderVars(root);
+      if (agentId === 'workbuddy') return extractWorkBuddyModelVars(root);
+
       const env = root.env && typeof root.env === 'object' ? root.env : {};
       const token = String(env.ANTHROPIC_AUTH_TOKEN ?? '');
       const apiKey = String(env.ANTHROPIC_API_KEY ?? '');
@@ -207,6 +379,9 @@ export function applyFormVars(
     } catch {
       root = {};
     }
+    if (agentId === 'pi') return applyPiProviderVars(root, vars);
+    if (agentId === 'workbuddy') return applyWorkBuddyModelVars(root, vars);
+
     const envRaw = root.env;
     const env: Record<string, unknown> =
       envRaw && typeof envRaw === 'object' && !Array.isArray(envRaw)
@@ -336,7 +511,9 @@ export function applyFormVars(
     return text;
   }
 
-  // grok 等顶层字段
+  if (agentId === 'grok') return applyGrokFormVars(configText, vars);
+
+  // 其它顶层字段
   if (vars.model.trim()) text = tomlSet(text, 'model', vars.model.trim());
   if (vars.baseUrl.trim()) text = tomlSet(text, 'base_url', vars.baseUrl.trim());
   if (vars.apiKey.trim()) text = tomlSet(text, 'api_key', vars.apiKey.trim());

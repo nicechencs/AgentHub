@@ -3,6 +3,7 @@ import { PRESETS } from '@/config/presets';
 import type { ProviderPort } from '@/lib/backend/contracts';
 import { delay, randomLatency } from '@/dev/mocks/delay';
 import type { AgentId, Provider } from '@/lib/types';
+import { moveMockProviderToTrash } from './trash';
 
 function defaultPresetId(agentId: AgentId): string {
   return PRESETS[agentId]?.[0]?.id ?? 'default';
@@ -46,6 +47,8 @@ export function createMockProviderPort(): ProviderPort {
 
     async deleteProvider(agentId, providerId) {
       await delay(randomLatency());
+      const removed = (mockState[agentId] ?? []).find((provider) => provider.id === providerId);
+      if (removed) moveMockProviderToTrash(removed);
       mockState[agentId] = (mockState[agentId] ?? []).filter((p) => p.id !== providerId);
     },
 
@@ -119,4 +122,12 @@ export function createMockProviderPort(): ProviderPort {
       );
     },
   };
+}
+
+export function restoreMockProvider(provider: Provider): void {
+  const list = mockState[provider.agentId];
+  if (list.some((item) => item.id === provider.id)) {
+    throw new Error(`provider already exists: ${provider.id}`);
+  }
+  list.push({ ...provider, isCurrent: false });
 }

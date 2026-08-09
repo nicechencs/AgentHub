@@ -586,7 +586,7 @@ export default function SettingsPage({
           </Card>
         </TabsContent>
 
-        {/* 备份：live 配置快照；操作即时生效，无底部保存 */}
+        {/* 备份：本机配置快照；操作即时生效，无底部保存 */}
         <TabsContent value="backups">
           <BackupsPanel />
         </TabsContent>

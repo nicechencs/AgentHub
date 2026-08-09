@@ -411,7 +411,8 @@ fn projector_schema_versions_are_stable() {
         AgentId::Grok,
     ] {
         let p = reg.get_agent_id(agent).unwrap();
-        assert_eq!(p.schema().schema_version, 1);
+        let expected = if agent == AgentId::Grok { 2 } else { 1 };
+        assert_eq!(p.schema().schema_version, expected);
         assert!(!p.schema().fields.is_empty());
     }
 }
@@ -432,8 +433,72 @@ fn grok_apply_and_secret_unchanged() {
     desired.insert("apiKey".into(), json!(SECRET_REDACTED));
     svc.apply_at(AgentId::Grok, &desired, Some(home)).unwrap();
     let text = std::fs::read_to_string(home.join("config.toml")).unwrap();
+    assert!(text.contains("[models]"));
+    assert!(text.contains("[model."));
     assert!(text.contains("grok-3"));
     assert!(text.contains("sk-old"));
+}
+
+#[test]
+fn grok_registry_roundtrip_preserves_native_model_options() {
+    let dir = tempdir().unwrap();
+    let home = dir.path();
+    std::fs::write(
+        home.join("config.toml"),
+        r#"[models]
+default = "grok"
+web_search = "grok"
+
+[model."grok"]
+model = "grok-4.5"
+base_url = "https://relay.example.com/v1"
+name = "Grok 4.5"
+api_key = "sk-native-secret"
+api_backend = "responses"
+context_window = 1000000
+supports_backend_search = true
+"#,
+    )
+    .unwrap();
+
+    let svc = ConfigurationService::new();
+    let read = svc.read_at(AgentId::Grok, Some(home)).unwrap();
+    assert_eq!(
+        read.values.get("model").and_then(Value::as_str),
+        Some("grok-4.5")
+    );
+    assert_eq!(
+        read.values.get("baseUrl").and_then(Value::as_str),
+        Some("https://relay.example.com/v1")
+    );
+    assert_eq!(
+        read.values.get("apiKey").and_then(Value::as_str),
+        Some(SECRET_REDACTED)
+    );
+    let safe_content = read
+        .unknown_native
+        .get("content")
+        .and_then(Value::as_str)
+        .unwrap();
+    assert!(safe_content.contains("api_backend = \"responses\""));
+    assert!(safe_content.contains("context_window = 1000000"));
+    assert!(safe_content.contains("supports_backend_search = true"));
+    assert!(!safe_content.contains("sk-native-secret"));
+    assert!(safe_content.contains("api_key = \"***\""));
+
+    let mut desired = BTreeMap::new();
+    desired.insert("model".into(), json!("grok-4.5-latest"));
+    desired.insert("baseUrl".into(), json!("https://new-relay.example.com/v1"));
+    desired.insert("apiKey".into(), json!(SECRET_REDACTED));
+    svc.apply_at(AgentId::Grok, &desired, Some(home)).unwrap();
+    let text = std::fs::read_to_string(home.join("config.toml")).unwrap();
+    assert!(text.contains("model = \"grok-4.5-latest\""));
+    assert!(text.contains("base_url = \"https://new-relay.example.com/v1\""));
+    assert!(text.contains("name = \"Grok 4.5\""));
+    assert!(text.contains("api_backend = \"responses\""));
+    assert!(text.contains("context_window = 1000000"));
+    assert!(text.contains("supports_backend_search = true"));
+    assert!(text.contains("api_key = \"sk-native-secret\""));
 }
 
 #[test]

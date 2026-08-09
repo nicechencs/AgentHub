@@ -54,8 +54,8 @@
 > - 不支持基于私有数据库的账号池切换。半套 CLI 管理见 `adapters/cursor.rs` 与 [adding-an-agent.md](adding-an-agent.md)。
 
 > **Pi / WorkBuddy 边界（摘要）**  
-> - Pi：npm 渠道；write_config fail-closed；usage 以能力矩阵为准。  
-> - WorkBuddy：Electron 桌面 + bundled CLI；仅官网 Setup 引导；accountSwitch / usage 以能力矩阵为准。  
+> - Pi：npm 渠道；Provider 写回 `~/.pi/agent/models.json`，账号切换与 usage 以能力矩阵为准。
+> - WorkBuddy：Electron 桌面 + bundled CLI；Provider 写回 `~/.workbuddy/models.json`；accountSwitch / usage 以能力矩阵为准。
 > - 禁止改动安装包内部产品文件。
 
 共享技能源：`~/.agents/skills/`（带 lock 清单），各 Agent 的 `skills` 目录是其投影目标，不是第二真源。

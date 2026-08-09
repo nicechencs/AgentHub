@@ -234,3 +234,87 @@ export function withProviderLatency(
 export function providerDisplayLabel(p: Provider): string {
   return formatApiConnectionLabel(p);
 }
+
+/**
+ * Deleting a connection moves its AgentHub pool row to the recovery bin. It
+ * never implies that the agent's local config/auth file was cleared.
+ */
+export function deleteConnectionDialogDescription(
+  entry: Pick<ConnectionEntry, 'isCurrent'>,
+): string {
+  return entry.isCurrent
+    ? '会移入回收站；本机配置不会被清除，当前连接可能仍继续生效。'
+    : '会移入回收站；不会修改本机配置文件。';
+}
+
+export function deleteConnectionToastDescription(
+  entry: Pick<ConnectionEntry, 'isCurrent'>,
+): string {
+  return entry.isCurrent
+    ? '已移入回收站；本机配置未清除，当前连接可能仍继续生效。'
+    : '已移入回收站；本机配置未修改。';
+}
+
+export type LiveAuthProbeLike = {
+  kind?: string | null;
+  summary?: string | null;
+  hasCredentials?: boolean;
+};
+
+export type LiveAuthImportGate = {
+  enabled: boolean;
+  reason: string;
+};
+
+/**
+ * Import-current-login is intentionally stricter than generic auth probing:
+ * only OAuth/file-auth material can be imported as an Account. API keys and
+ * opaque desktop login state must not be mislabeled as OAuth.
+ */
+export function liveAuthImportGate(
+  probe: LiveAuthProbeLike | null | undefined,
+  loading: boolean,
+): LiveAuthImportGate {
+  if (loading) return { enabled: false, reason: '正在检测本机登录态…' };
+  if (!probe) return { enabled: false, reason: '无法确认本机登录态，已禁用导入' };
+
+  const kind = probe.kind?.trim().toLowerCase() ?? '';
+  const isFileAuth = kind === 'file-auth' || kind === 'file-auth.json';
+  if ((kind === 'oauth' || isFileAuth) && probe.hasCredentials === true) {
+    return { enabled: true, reason: '' };
+  }
+  if (kind === 'api_key' || kind === 'api-key' || kind === 'apikey') {
+    return { enabled: false, reason: '当前本机配置为 API Key，不是 OAuth 登录态' };
+  }
+  if (kind === 'desktop-login') {
+    return { enabled: false, reason: '检测到桌面登录，但该登录态不可直接导入' };
+  }
+  return { enabled: false, reason: probe.summary || '未检测到可导入的 OAuth 登录态' };
+}
+
+/**
+ * Importing the live provider snapshot is only meaningful when the probe
+ * positively identifies an API-key configuration. Keep OAuth and opaque
+ * desktop sessions on the account-import path instead of labeling them as a
+ * provider/API-key connection.
+ */
+export function liveApiKeyImportGate(
+  probe: LiveAuthProbeLike | null | undefined,
+  loading: boolean,
+): LiveAuthImportGate {
+  if (loading) return { enabled: false, reason: '正在检测本机认证方式…' };
+  if (!probe) return { enabled: false, reason: '无法确认本机认证方式，已禁用 API Key 导入' };
+
+  const kind = probe.kind?.trim().toLowerCase() ?? '';
+  const isApiKey = kind === 'api_key' || kind === 'api-key' || kind === 'apikey';
+  if (isApiKey && probe.hasCredentials === true) {
+    return { enabled: true, reason: '' };
+  }
+  if (kind === 'oauth' || kind === 'file-auth' || kind === 'file-auth.json') {
+    return { enabled: false, reason: '当前本机为 OAuth 登录态，请导入当前登录态' };
+  }
+  if (kind === 'desktop-login') {
+    return { enabled: false, reason: '当前为桌面登录态，无法直接导入 API Key' };
+  }
+  return { enabled: false, reason: probe.summary || '未检测到可导入的 API Key' };
+}

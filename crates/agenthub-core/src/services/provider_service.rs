@@ -150,6 +150,9 @@ impl ProviderService {
         let started = Instant::now();
         let agent = input.agent_id;
         let result = self.update_inner(input);
+        if result.is_ok() {
+            self.snapshot_after_pool_change(agent, "after provider update");
+        }
         log_provider_op("update", agent, started, &result);
         result
     }
@@ -181,6 +184,9 @@ impl ProviderService {
         let started = Instant::now();
         let agent = input.agent_id;
         let result = self.upsert_inner(input);
+        if result.is_ok() {
+            self.snapshot_after_pool_change(agent, "after provider upsert");
+        }
         log_provider_op("upsert", agent, started, &result);
         result
     }
@@ -230,6 +236,9 @@ impl ProviderService {
     pub fn import_live(&self, agent: AgentId, name: Option<&str>) -> Result<Provider> {
         let started = Instant::now();
         let result = self.import_live_inner(agent, name);
+        if result.is_ok() {
+            self.snapshot_after_pool_change(agent, "after live provider import");
+        }
         log_provider_op("import", agent, started, &result);
         result
     }
@@ -250,6 +259,31 @@ impl ProviderService {
             .map(str::to_owned)
             .unwrap_or_else(|| format!("Imported {}", now_ts()));
         validate_name(&display_name)?;
+
+        // A live config is a single canonical snapshot per agent. Reuse the
+        // existing live-import row instead of creating a UUID row on every
+        // refresh. Manual providers are deliberately ignored: only rows whose
+        // metadata explicitly identifies `source = live` participate here.
+        if let Some(existing) = self.find_live_import(agent)? {
+            let desired_name = name.unwrap_or(&existing.name);
+            if existing.settings_config == live.raw
+                && existing.name == desired_name
+                && existing.is_current
+            {
+                return Ok(existing);
+            }
+
+            let input = ProviderInput {
+                id: existing.id,
+                agent_id: agent,
+                name: desired_name.to_owned(),
+                settings_config: live.raw,
+                meta: existing.meta,
+                is_current: true,
+            };
+            return self.update_inner(&input);
+        }
+
         let input = ProviderInput {
             id: format!("{}-live-{}", agent.as_str(), Uuid::new_v4()),
             agent_id: agent,
@@ -260,6 +294,27 @@ impl ProviderService {
         };
         // Use inner create so import is a single log op (not create + import).
         self.create_inner(&input)
+    }
+
+    /// Locate the canonical live-import row for one agent. Older databases may
+    /// contain more than one duplicate; choose deterministically and leave
+    /// the other historical rows untouched rather than deleting user data.
+    fn find_live_import(&self, agent: AgentId) -> Result<Option<Provider>> {
+        let mut candidates: Vec<Provider> = self
+            .repo
+            .list(Some(agent))?
+            .into_iter()
+            .filter(|provider| {
+                provider.meta.get("source").and_then(|value| value.as_str()) == Some("live")
+            })
+            .collect();
+        candidates.sort_by(|left, right| {
+            right
+                .updated_at
+                .cmp(&left.updated_at)
+                .then_with(|| right.id.cmp(&left.id))
+        });
+        Ok(candidates.into_iter().next())
     }
 
     /// Apply a saved provider to the live agent config.
@@ -375,6 +430,25 @@ impl ProviderService {
     /// Storage access for tests / future write paths (not used by list/show CLI).
     pub fn repo(&self) -> &ProviderRepo {
         &self.repo
+    }
+
+    /// Pool changes do not rewrite live files, but retaining a post-change
+    /// snapshot makes imports/edits auditable and recoverable when live files
+    /// already exist. A missing live file is a normal no-op.
+    fn snapshot_after_pool_change(&self, agent: AgentId, note: &str) {
+        let Some(backup) = self.backup.as_ref() else {
+            return;
+        };
+        if let Err(error) = backup.snapshot(agent, BackupKind::AutoSwitch, Some(note)) {
+            if error.code() != "not_found" {
+                tracing::warn!(
+                    target: targets::BACKUP,
+                    agent = agent.as_str(),
+                    error = %error,
+                    "automatic post-change live snapshot failed"
+                );
+            }
+        }
     }
 
     fn adapter(&self, agent: AgentId) -> Result<std::sync::Arc<dyn crate::adapters::AgentAdapter>> {

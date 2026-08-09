@@ -77,23 +77,25 @@ impl AgentAdapter for ClaudeAdapter {
     }
 
     fn read_auth(&self) -> Result<AuthState> {
-        // Official OAuth: macOS Keychain first, then credentials file under agent home.
-        let oauth = read_claude_oauth_bundle()?;
-        if oauth.is_some() {
-            return Ok(AuthState {
-                agent: AgentId::Claude,
-                kind: Some("oauth".into()),
-                summary: "Claude OAuth credentials located".into(),
-                has_credentials: true,
-            });
-        }
         let home = agent_home(AgentId::Claude)?;
         let settings_path = home.join("settings.json");
+        // Match read_account: an explicit settings token is the effective
+        // auth mode even when stale OAuth credentials remain on disk.
         if read_claude_settings_token(&settings_path)?.is_some() {
             return Ok(AuthState {
                 agent: AgentId::Claude,
                 kind: Some("api_key".into()),
                 summary: "API key present in settings.json".into(),
+                has_credentials: true,
+            });
+        }
+        // Official OAuth: macOS Keychain first, then credentials file under
+        // agent home.
+        if read_claude_oauth_bundle()?.is_some() {
+            return Ok(AuthState {
+                agent: AgentId::Claude,
+                kind: Some("oauth".into()),
+                summary: "Claude OAuth credentials located".into(),
                 has_credentials: true,
             });
         }

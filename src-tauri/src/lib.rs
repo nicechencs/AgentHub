@@ -81,6 +81,9 @@ pub fn run() {
             commands::provider::get_provider,
             commands::provider::upsert_provider,
             commands::provider::delete_provider,
+            commands::trash::list_connection_trash,
+            commands::trash::restore_connection_trash,
+            commands::trash::delete_connection_trash,
             commands::provider::import_provider_live,
             commands::provider::switch_provider,
             commands::provider::switch_provider_preview,
@@ -105,6 +108,7 @@ pub fn run() {
             commands::backup::delete_backup,
             // Account
             commands::account::list_accounts,
+            commands::account::probe_live_auth,
             commands::account::import_account_live,
             commands::account::add_api_key_account,
             commands::account::update_api_key_account,

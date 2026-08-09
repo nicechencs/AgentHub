@@ -99,6 +99,150 @@ describe('provider-detect fields', () => {
     expect(next).not.toContain('sk-should-not-land-in-toml');
   });
 
+  it('extracts Grok Build fields from the active nested model table', () => {
+    const toml = [
+      '[models]',
+      'default = "grok"',
+      'web_search = "grok"',
+      '',
+      '[model."grok"]',
+      'model = "grok-4.5"',
+      'base_url = "https://relay.example.com/v1"',
+      'api_key = "sk-grok-test-abcdefghijklmnop"',
+      'api_backend = "responses"',
+      'context_window = 1000000',
+      'supports_backend_search = true',
+      '',
+    ].join('\n');
+
+    const vars = extractFormVars('grok', toml, 'toml');
+    expect(vars.model).toBe('grok-4.5');
+    expect(vars.baseUrl).toBe('https://relay.example.com/v1');
+    expect(vars.apiKey).toBe('sk-grok-test-abcdefghijklmnop');
+
+    const next = applyFormVars('grok', toml, 'toml', {
+      ...vars,
+      model: 'grok-4.5-latest',
+      baseUrl: 'https://new-relay.example.com/v1',
+      apiKey: '',
+    });
+    expect(next).toContain('[models]');
+    expect(next).toContain('[model."grok"]');
+    expect(next).toContain('model = "grok-4.5-latest"');
+    expect(next).toContain('base_url = "https://new-relay.example.com/v1"');
+    expect(next).toContain('api_backend = "responses"');
+    expect(next).toContain('context_window = 1000000');
+    expect(next).toContain('supports_backend_search = true');
+    expect(next).toContain('api_key = "***"');
+  });
+
+  it('extracts and applies Pi provider fields without falling back to Claude env', () => {
+    const source = JSON.stringify({
+      providers: {
+        custom: {
+          baseUrl: 'https://old.example.com/v1',
+          api: 'openai-responses',
+          apiKey: 'sk-pi-secret',
+          models: [{ id: 'old-model', name: 'Old Model' }],
+        },
+        keep: { baseUrl: 'https://keep.example.com', models: [{ id: 'keep' }] },
+      },
+    });
+    const vars = extractFormVars('pi', source, 'json');
+    expect(vars.baseUrl).toBe('https://old.example.com/v1');
+    expect(vars.apiKey).toBe('sk-pi-secret');
+    expect(vars.model).toBe('old-model');
+
+    const next = applyFormVars('pi', source, 'json', {
+      ...vars,
+      baseUrl: 'https://new.example.com/v1',
+      model: 'new-model',
+      apiKey: '',
+    });
+    const parsed = JSON.parse(next) as {
+      providers: Record<string, { baseUrl?: string; apiKey?: string; models: { id: string }[] }>;
+    };
+    expect(parsed.providers.custom.baseUrl).toBe('https://new.example.com/v1');
+    expect(parsed.providers.custom.apiKey).toBe(REDACTED_MARKER);
+    expect(parsed.providers.custom.models[0]?.id).toBe('new-model');
+    expect(parsed.providers.keep.models[0]?.id).toBe('keep');
+  });
+
+  it('keeps Pi live-config envelope metadata while editing nested models', () => {
+    const source = JSON.stringify({
+      settings: { defaultProvider: 'custom' },
+      models: { providers: { custom: { models: [{ id: 'old' }] } } },
+      paths: { models: 'models.json' },
+    });
+    const next = applyFormVars('pi', source, 'json', {
+      ...extractFormVars('pi', source, 'json'),
+      model: 'new',
+      apiKey: 'sk-new',
+    });
+    const parsed = JSON.parse(next) as {
+      settings: { defaultProvider: string };
+      models: { providers: { custom: { models: { id: string }[] } } };
+      paths: { models: string };
+    };
+    expect(parsed.settings.defaultProvider).toBe('custom');
+    expect(parsed.models.providers.custom.models[0]?.id).toBe('new');
+    expect(parsed.paths.models).toBe('models.json');
+  });
+
+  it('extracts and applies WorkBuddy models.json fields', () => {
+    const source = JSON.stringify({
+      models: [
+        {
+          id: 'old-model',
+          name: 'Old Model',
+          url: 'https://old.example.com/v1/chat/completions',
+          apiKey: 'sk-workbuddy-secret',
+        },
+      ],
+      availableModels: ['old-model'],
+    });
+    const vars = extractFormVars('workbuddy', source, 'json');
+    expect(vars.baseUrl).toBe('https://old.example.com/v1/chat/completions');
+    expect(vars.apiKey).toBe('sk-workbuddy-secret');
+    expect(vars.model).toBe('old-model');
+
+    const next = applyFormVars('workbuddy', source, 'json', {
+      ...vars,
+      baseUrl: 'https://new.example.com/v1/chat/completions',
+      model: 'new-model',
+      apiKey: '',
+    });
+    const parsed = JSON.parse(next) as {
+      models: { url?: string; apiKey?: string; id: string }[];
+      availableModels: string[];
+    };
+    expect(parsed.models[0]?.url).toBe('https://new.example.com/v1/chat/completions');
+    expect(parsed.models[0]?.apiKey).toBe(REDACTED_MARKER);
+    expect(parsed.models[0]?.id).toBe('new-model');
+    expect(parsed.availableModels).toEqual(['new-model']);
+  });
+
+  it('keeps WorkBuddy live-config envelope metadata while editing nested models', () => {
+    const source = JSON.stringify({
+      settings: { sandbox: true },
+      models: { models: [{ id: 'old', url: 'https://old.example.com' }] },
+      mcp: { servers: {} },
+    });
+    const next = applyFormVars('workbuddy', source, 'json', {
+      ...extractFormVars('workbuddy', source, 'json'),
+      model: 'new',
+      apiKey: 'sk-new',
+    });
+    const parsed = JSON.parse(next) as {
+      settings: { sandbox: boolean };
+      models: { models: { id: string }[] };
+      mcp: { servers: object };
+    };
+    expect(parsed.settings.sandbox).toBe(true);
+    expect(parsed.models.models[0]?.id).toBe('new');
+    expect(parsed.mcp.servers).toEqual({});
+  });
+
   it('keeps *** for untouched opaque TOML content', () => {
     const out = applyFormVars('codex', REDACTED_MARKER, 'toml', {
       baseUrl: '',

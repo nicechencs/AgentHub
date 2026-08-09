@@ -278,6 +278,9 @@ impl AccountService {
     ) -> Result<Account> {
         let started = Instant::now();
         let result = self.update_api_key_inner(agent, id_or_label, label, api_key);
+        if result.is_ok() {
+            self.snapshot_after_pool_change(agent, "after API Key account update");
+        }
         log_account_op("update_api_key", agent, started, &result);
         result
     }
@@ -614,6 +617,9 @@ impl AccountService {
     pub fn import_live(&self, agent: AgentId, name: Option<&str>) -> Result<Account> {
         let started = Instant::now();
         let result = self.import_live_inner(agent, name);
+        if result.is_ok() {
+            self.snapshot_after_pool_change(agent, "after live account import");
+        }
         log_account_op("import", agent, started, &result);
         result
     }
@@ -924,6 +930,25 @@ impl AccountService {
 
     pub fn repo(&self) -> &AccountRepo {
         &self.repo
+    }
+
+    /// Import/update changes the AgentHub pool, not the live files. Keep an
+    /// audit snapshot of the live state when the service is running with the
+    /// live backup dependency; a missing live file is a normal no-op.
+    fn snapshot_after_pool_change(&self, agent: AgentId, note: &str) {
+        let Some(backup) = self.backup.as_ref() else {
+            return;
+        };
+        if let Err(error) = backup.snapshot(agent, BackupKind::AutoSwitch, Some(note)) {
+            if error.code() != "not_found" {
+                tracing::warn!(
+                    target: targets::BACKUP,
+                    agent = agent.as_str(),
+                    error = %error,
+                    "automatic post-change live snapshot failed"
+                );
+            }
+        }
     }
 
     fn adapter(&self, agent: AgentId) -> Result<Arc<dyn AgentAdapter>> {

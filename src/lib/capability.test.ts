@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isCapabilityBlocked,
   isCapabilityUsable,
+  providerCapabilityGate,
   type Capability,
   type CapabilityLevel,
 } from '@/lib/capability';
@@ -51,6 +52,57 @@ describe('isCapabilityUsable / isCapabilityBlocked', () => {
     expect(isCapabilityUsable(undefined)).toBe(false);
     expect(isCapabilityUsable(null)).toBe(false);
     expect(isCapabilityBlocked(undefined)).toBe(true);
+  });
+});
+
+describe('providerCapabilityGate', () => {
+  it('allows Provider/API Key management and switching when both contracts are usable', () => {
+    expect(
+      providerCapabilityGate({
+        configWrite: { level: 'full' },
+        providerPresets: { level: 'partial' },
+      }),
+    ).toEqual({ canManage: true, canSwitch: true, canUsePresets: true });
+  });
+
+  it('blocks add/edit and switching when configWrite is unsupported', () => {
+    const gate = providerCapabilityGate({
+      configWrite: { level: 'unsupported', reason: 'no live writer' },
+      providerPresets: { level: 'full' },
+    });
+    expect(gate).toMatchObject({
+      canManage: false,
+      canSwitch: false,
+      canUsePresets: true,
+      reason: 'no live writer',
+    });
+  });
+
+  it('keeps custom Provider management usable when built-in presets are unsupported', () => {
+    const gate = providerCapabilityGate({
+      configWrite: { level: 'full' },
+      providerPresets: { level: 'unsupported', reason: 'no presets' },
+    });
+    expect(gate).toEqual({ canManage: true, canSwitch: true, canUsePresets: false });
+  });
+
+  it('fails closed when capability data is missing', () => {
+    expect(providerCapabilityGate()).toMatchObject({
+      canManage: false,
+      canSwitch: false,
+      canUsePresets: false,
+    });
+  });
+
+  it('allows the current Pi and WorkBuddy provider controls without affecting account capability', () => {
+    for (const id of ['pi', 'workbuddy'] as const) {
+      const gate = providerCapabilityGate(MOCK_CAPABILITIES[id]);
+      expect(gate.canManage, id).toBe(true);
+      expect(gate.canSwitch, id).toBe(true);
+      expect(MOCK_CAPABILITIES[id]!.accountSwitch!.level).toBe(
+        id === 'pi' ? 'full' : 'unsupported',
+      );
+    }
   });
 });
 

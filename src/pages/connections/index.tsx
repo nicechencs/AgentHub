@@ -7,6 +7,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { ErrorState } from '@/components/shared/ErrorState';
+import { ListSkeleton } from '@/components/ui/skeleton';
 import { AGENT_IDS, AGENT_MAP } from '@/config/agents';
 import { resolveEffectiveConnection } from '@/lib/api/agent-connection';
 import { listAccounts } from '@/lib/api/account';
@@ -54,7 +56,8 @@ function effectiveKindLabel(kind: EffectiveConnectionKind): string {
 }
 
 export default function ConnectionsPage() {
-  const { installedIds, installedAgents, statuses, loading } = useInstalledAgents();
+  const { installedIds, installedAgents, statuses, loading, state, error, reload } =
+    useInstalledAgents();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const rawAgent = parseAgentParam(searchParams.get('agent'), installedIds);
@@ -144,12 +147,44 @@ export default function ConnectionsPage() {
       : agentStatus?.effectiveLabel;
   const agentName = AGENT_MAP[agentId]?.name ?? agentId;
 
+  if (loading) {
+    return (
+      <div>
+        <PageHeader
+          title="连接"
+          description="官方登录 · API Key"
+          descriptionTip="正在检测已安装的 Agent。"
+        />
+        <div className={pageRhythm.chrome}>
+          <ListSkeleton rows={4} />
+        </div>
+      </div>
+    );
+  }
+
+  if (state === 'error') {
+    return (
+      <div>
+        <PageHeader
+          title="连接"
+          description="官方登录 · API Key"
+          descriptionTip="Agent 检测失败，请重试后再管理连接。"
+        />
+        <ErrorState
+          error={error}
+          title="无法读取 Agent 安装状态"
+          onRetry={() => void reload()}
+        />
+      </div>
+    );
+  }
+
   if (!loading && installedIds.length === 0) {
     return (
       <div>
         <PageHeader
           title="连接"
-          description="官方登录 · API Key · 供应商"
+          description="官方登录 · API Key"
           descriptionTip="先安装 Agent，再管理连接。"
         />
         <EmptyState
@@ -174,7 +209,7 @@ export default function ConnectionsPage() {
             ? `${agentName} · 当前生效：${effectiveKindLabel(effectiveKind)} · ${effectiveLabel}`
             : `${agentName} · 当前生效：未配置`
         }
-        descriptionTip="官方登录与 API Key 同一列表；可填官方或中转端点。同时只能有一条生效。"
+        descriptionTip="官方登录与 API Key 在同一列表；可使用官方服务或自定义服务地址。同时只能有一条当前使用的连接。"
       />
 
       <div className={pageRhythm.chrome}>
@@ -209,6 +244,7 @@ export default function ConnectionsPage() {
       {/* 当前生效只保留在 PageHeader description，避免与条下横幅重复 */}
       <ConnectionList
         agentId={agentId}
+        agentStatuses={statuses ?? []}
         onPoolChanged={handlePoolChanged}
         onSnapshot={handleSnapshot}
         initialFilter={focusFilter ?? 'all'}

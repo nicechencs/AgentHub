@@ -91,7 +91,16 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn read_auth(&self) -> Result<AuthState> {
-        let auth = agent_home(AgentId::Codex)?.join("auth.json");
+        let home = agent_home(AgentId::Codex)?;
+        let auth = home.join("auth.json");
+        if read_live_openai_api_key(&auth)?.is_some() {
+            return Ok(AuthState {
+                agent: AgentId::Codex,
+                kind: Some("api_key".into()),
+                summary: "OPENAI_API_KEY present in auth.json".into(),
+                has_credentials: true,
+            });
+        }
         let has = auth.exists();
         Ok(AuthState {
             agent: AgentId::Codex,

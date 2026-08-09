@@ -168,13 +168,13 @@ export function AccountCard({
               />
             )}
             <DetailRow
-              label="Live 配置"
+              label="本机当前配置"
               value={paths.config}
               mono
               className="sm:col-span-2"
             />
             {paths.auth && (
-              <DetailRow label="Live 凭据" value={paths.auth} mono className="sm:col-span-2" />
+              <DetailRow label="本机登录凭据" value={paths.auth} mono className="sm:col-span-2" />
             )}
             <DetailRow
               label="打开目录"
@@ -210,11 +210,18 @@ export function AccountCard({
                 <Pencil className="h-3.5 w-3.5" /> 编辑
               </Button>
             )}
-            {!account.isCurrent && (
-              <Button size="sm" variant="dangerOutline" onClick={() => onDelete(account)}>
-                <Trash2 className="h-3.5 w-3.5" /> 删除账号
-              </Button>
-            )}
+            <Button
+              size="sm"
+              variant="dangerOutline"
+              title={
+                account.isCurrent
+                  ? '移入回收站；本机连接可能仍继续生效'
+                  : '移入回收站；不会修改本机配置文件'
+              }
+              onClick={() => onDelete(account)}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> 删除账号
+            </Button>
           </div>
         </Card>
       )}

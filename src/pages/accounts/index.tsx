@@ -192,12 +192,19 @@ export default function AccountsPage({
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
+    const wasCurrent = deleteTarget.isCurrent;
     setDeleting(true);
     try {
       await deleteAccount(agent, deleteTarget.id);
       setDeleteTarget(null);
       await load(agent);
-      toast({ title: '凭据已删除', variant: 'success' });
+      toast({
+        title: '已将认证信息移入回收站',
+        description: wasCurrent
+          ? '本机配置未清除，当前连接可能仍继续生效。'
+          : '本机配置未修改。',
+        variant: 'success',
+      });
     } catch (e) {
       toast({ title: '删除失败', description: String(e), variant: 'danger' });
     } finally {
@@ -275,7 +282,7 @@ export default function AccountsPage({
           <LogIn className="h-4 w-4" /> OAuth 登录
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setApiKeyOpen(true)}>
-          <KeyRound className="h-4 w-4" /> API Key
+          <KeyRound className="h-4 w-4" /> 添加 API Key
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => handleImport()}>
           <DownloadCloud className="h-4 w-4" /> 导入当前登录态
@@ -420,7 +427,9 @@ export default function AccountsPage({
           <DialogHeader>
             <DialogTitle>删除凭据 "{deleteTarget?.label}"?</DialogTitle>
             <DialogDescription>
-              将从凭据池移除该项（官方登录或 API Key），此操作不可撤销。不修改本机 live，除非该项正是当前生效项的池记录。
+              {deleteTarget?.isCurrent
+                ? '会移入回收站；本机配置不会被清除，当前连接可能仍继续生效。'
+                : '会移入回收站；不会修改本机配置文件。'}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

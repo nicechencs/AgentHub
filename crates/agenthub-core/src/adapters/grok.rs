@@ -9,6 +9,7 @@ use crate::runtime;
 use crate::utils::atomic::atomic_write;
 use crate::utils::paths::{agent_home, home_dir};
 use crate::utils::redact::mask_secret_preview;
+use toml_edit::{DocumentMut, Item};
 
 use super::{
     api_key_live_account, detect_binary, require_api_key, write_toml_config,
@@ -71,20 +72,24 @@ impl AgentAdapter for GrokAdapter {
         let home = agent_home(AgentId::Grok)?;
         let auth = home.join("auth.json");
         let config = home.join("config.toml");
-        let has = auth.exists() || config.exists();
+        if read_grok_api_key(&config)?.is_some_and(|key| !key.is_empty()) {
+            return Ok(AuthState {
+                agent: AgentId::Grok,
+                kind: Some("api_key".into()),
+                summary: "API key present in config.toml".into(),
+                has_credentials: true,
+            });
+        }
+        let has = auth.exists();
         Ok(AuthState {
             agent: AgentId::Grok,
             kind: if auth.exists() {
                 Some("oauth".into())
-            } else if config.exists() {
-                Some("apikey-in-config".into())
             } else {
                 None
             },
             summary: if auth.exists() {
                 "auth.json present".into()
-            } else if config.exists() {
-                "config present (api_key may be inline)".into()
             } else {
                 "no auth".into()
             },
@@ -96,7 +101,7 @@ impl AgentAdapter for GrokAdapter {
         let home = agent_home(AgentId::Grok)?;
         let auth_path = home.join("auth.json");
         let config_path = home.join("config.toml");
-        let api_key = read_toml_string_key(&config_path, "api_key")?;
+        let api_key = read_grok_api_key(&config_path)?;
         let auth_body = if auth_path.exists() {
             let text = std::fs::read_to_string(&auth_path)?;
             Some(serde_json::from_str::<serde_json::Value>(&text)?)
@@ -161,8 +166,8 @@ impl AgentAdapter for GrokAdapter {
                     .get("api_key")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::InvalidArg("Grok api_key is required".into()))?;
-                write_toml_string_key(&home.join("config.toml"), "api_key", key)?;
-                verify_toml_string_key(&home.join("config.toml"), "api_key", key)?;
+                write_grok_api_key(&home.join("config.toml"), key)?;
+                verify_grok_field(&home.join("config.toml"), "api_key", key)?;
                 Ok(())
             }
             "auth_json" => {
@@ -170,16 +175,16 @@ impl AgentAdapter for GrokAdapter {
                     AppError::InvalidArg("Grok account credentials.body is required".into())
                 })?;
                 write_verified_json_object(&home.join("auth.json"), &body)?;
-                // Official OAuth must win over leftover API key (read prefers api_key).
-                clear_toml_string_key(&home.join("config.toml"), "api_key")?;
+                // Official OAuth must win over leftover inline credentials.
+                clear_grok_field(&home.join("config.toml"), "api_key")?;
                 // Relay base_url would keep traffic off official endpoint.
-                clear_toml_string_key(&home.join("config.toml"), "base_url")?;
+                clear_grok_field(&home.join("config.toml"), "base_url")?;
                 Ok(())
             }
             "grok_bundle" => {
                 if let Some(key) = account.credentials.get("api_key").and_then(|v| v.as_str()) {
-                    write_toml_string_key(&home.join("config.toml"), "api_key", key)?;
-                    verify_toml_string_key(&home.join("config.toml"), "api_key", key)?;
+                    write_grok_api_key(&home.join("config.toml"), key)?;
+                    verify_grok_field(&home.join("config.toml"), "api_key", key)?;
                 }
                 if let Some(body) = account.credentials.get("auth") {
                     write_verified_json_object(&home.join("auth.json"), body)?;
@@ -251,7 +256,83 @@ impl AgentAdapter for GrokAdapter {
     }
 }
 
-fn read_toml_string_key(path: &Path, key: &str) -> Result<Option<String>> {
+fn active_model_alias(doc: &DocumentMut) -> String {
+    doc.get("models")
+        .and_then(Item::as_table)
+        .and_then(|models| models.get("default"))
+        .and_then(Item::as_str)
+        .map(str::trim)
+        .filter(|alias| !alias.is_empty())
+        .map(str::to_owned)
+        .or_else(|| {
+            doc.get("model")
+                .and_then(Item::as_table)
+                .and_then(|models| models.iter().next().map(|(key, _)| key.to_string()))
+        })
+        .unwrap_or_else(|| "grok".into())
+}
+
+fn ensure_grok_profile<'a>(
+    doc: &'a mut DocumentMut,
+    alias: &str,
+) -> Result<&'a mut toml_edit::Table> {
+    let legacy_model = doc.get("model").and_then(Item::as_str).map(str::to_owned);
+    let legacy_base_url = doc
+        .get("base_url")
+        .and_then(Item::as_str)
+        .map(str::to_owned);
+
+    if doc.get("models").is_none() {
+        doc["models"] = toml_edit::table();
+    }
+    {
+        let models = doc["models"]
+            .as_table_mut()
+            .ok_or_else(|| AppError::InvalidArg("Grok models must be a table".into()))?;
+        if models.get("default").is_none() {
+            models["default"] = toml_edit::value(alias);
+        }
+        if models.get("web_search").is_none() {
+            models["web_search"] = toml_edit::value(alias);
+        }
+    }
+
+    if doc.get("model").and_then(Item::as_table).is_none() {
+        doc.remove("model");
+        doc["model"] = toml_edit::table();
+    }
+    {
+        let models = doc["model"]
+            .as_table_mut()
+            .ok_or_else(|| AppError::InvalidArg("Grok model must be a table".into()))?;
+        if models.get(alias).is_none() {
+            let mut entry = toml_edit::table();
+            if let Some(model) = legacy_model {
+                entry["model"] = toml_edit::value(model);
+            }
+            if let Some(base_url) = legacy_base_url {
+                entry["base_url"] = toml_edit::value(base_url);
+            }
+            models.insert(alias, entry);
+        }
+        if models.get(alias).and_then(Item::as_table).is_none() {
+            return Err(AppError::InvalidArg(format!(
+                "Grok model.{alias} must be a table"
+            )));
+        }
+    }
+
+    doc.remove("base_url");
+    doc.remove("api_key");
+    doc.remove("env_key");
+    doc["model"]
+        .as_table_mut()
+        .and_then(|models| models.get_mut(alias))
+        .and_then(Item::as_table_mut)
+        .ok_or_else(|| AppError::InvalidArg(format!("Grok model.{alias} must be a table")))
+}
+
+fn read_grok_api_key(path: &Path) -> Result<Option<String>> {
     if !path.exists() {
         return Ok(None);
     }
@@ -259,13 +340,56 @@ fn read_toml_string_key(path: &Path, key: &str) -> Result<Option<String>> {
     let doc = text
         .parse::<toml_edit::DocumentMut>()
         .map_err(|e| AppError::InvalidArg(format!("invalid Grok config.toml: {e}")))?;
-    Ok(doc
-        .get(key)
-        .and_then(|item| item.as_str())
-        .map(|s| s.to_string()))
+    let alias = active_model_alias(&doc);
+    let entry = doc
+        .get("model")
+        .and_then(Item::as_table)
+        .and_then(|models| models.get(&alias))
+        .and_then(Item::as_table);
+    if let Some(key) = entry
+        .and_then(|entry| entry.get("api_key"))
+        .and_then(Item::as_str)
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+    {
+        return Ok(Some(key.to_owned()));
+    }
+    if let Some(env_key) = entry
+        .and_then(|entry| entry.get("env_key"))
+        .and_then(Item::as_str)
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+    {
+        if let Ok(value) = std::env::var(env_key) {
+            if !value.trim().is_empty() {
+                return Ok(Some(value));
+            }
+        }
+    }
+    Ok(doc.get("api_key").and_then(Item::as_str).map(str::to_owned))
 }
 
-fn write_toml_string_key(path: &Path, key: &str, value: &str) -> Result<()> {
+fn read_grok_inline_field(path: &Path, key: &str) -> Result<Option<String>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(path)?;
+    let doc = text
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::InvalidArg(format!("invalid Grok config.toml: {e}")))?;
+    let alias = active_model_alias(&doc);
+    Ok(doc
+        .get("model")
+        .and_then(Item::as_table)
+        .and_then(|models| models.get(&alias))
+        .and_then(Item::as_table)
+        .and_then(|entry| entry.get(key))
+        .and_then(Item::as_str)
+        .map(str::to_owned)
+        .or_else(|| doc.get(key).and_then(Item::as_str).map(str::to_owned)))
+}
+
+fn write_grok_api_key(path: &Path, value: &str) -> Result<()> {
     let live = match std::fs::read_to_string(path) {
         Ok(content) => content,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -278,12 +402,15 @@ fn write_toml_string_key(path: &Path, key: &str, value: &str) -> Result<()> {
             AppError::InvalidArg(format!("existing Grok config.toml is invalid: {e}"))
         })?
     };
-    doc[key] = toml_edit::value(value);
+    let alias = active_model_alias(&doc);
+    let entry = ensure_grok_profile(&mut doc, &alias)?;
+    entry["api_key"] = toml_edit::value(value);
+    entry.remove("env_key");
     atomic_write(path, doc.to_string().as_bytes())
 }
 
-fn verify_toml_string_key(path: &Path, key: &str, expected: &str) -> Result<()> {
-    let got = read_toml_string_key(path, key)?;
+fn verify_grok_field(path: &Path, key: &str, expected: &str) -> Result<()> {
+    let got = read_grok_inline_field(path, key)?;
     if got.as_deref() != Some(expected) {
         return Err(AppError::message(
             "account.verify",
@@ -293,7 +420,7 @@ fn verify_toml_string_key(path: &Path, key: &str, expected: &str) -> Result<()> 
     Ok(())
 }
 
-fn clear_toml_string_key(path: &Path, key: &str) -> Result<()> {
+fn clear_grok_field(path: &Path, key: &str) -> Result<()> {
     if !path.exists() {
         return Ok(());
     }
@@ -301,14 +428,35 @@ fn clear_toml_string_key(path: &Path, key: &str) -> Result<()> {
     if live.trim().is_empty() {
         return Ok(());
     }
-    let mut doc = live.parse::<toml_edit::DocumentMut>().map_err(|e| {
-        AppError::InvalidArg(format!("existing Grok config.toml is invalid: {e}"))
-    })?;
-    if doc.remove(key).is_none() {
+    let mut doc = live
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| AppError::InvalidArg(format!("existing Grok config.toml is invalid: {e}")))?;
+    let alias = active_model_alias(&doc);
+    let mut changed = false;
+    if doc.remove(key).is_some() {
+        changed = true;
+    }
+    if key == "api_key" && doc.remove("env_key").is_some() {
+        changed = true;
+    }
+    if let Some(entry) = doc
+        .get_mut("model")
+        .and_then(Item::as_table_mut)
+        .and_then(|models| models.get_mut(&alias))
+        .and_then(Item::as_table_mut)
+    {
+        if entry.remove(key).is_some() {
+            changed = true;
+        }
+        if key == "api_key" && entry.remove("env_key").is_some() {
+            changed = true;
+        }
+    }
+    if !changed {
         return Ok(());
     }
     atomic_write(path, doc.to_string().as_bytes())?;
-    if read_toml_string_key(path, key)?.is_some() {
+    if read_grok_inline_field(path, key)?.is_some() {
         return Err(AppError::message(
             "account.verify",
             format!("Grok {key} still present after clear"),
@@ -316,3 +464,6 @@ fn clear_toml_string_key(path: &Path, key: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

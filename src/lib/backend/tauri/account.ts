@@ -25,6 +25,15 @@ export function createTauriAccountPort(): AccountPort {
       }
     },
 
+    async probeLiveAuth(agentId) {
+      try {
+        return await invoke('probe_live_auth', { agentId });
+      } catch (e) {
+        log.error('probe_live_auth failed', e);
+        throw e;
+      }
+    },
+
     async switchAccount(agentId, accountId) {
       try {
         await invoke<CoreAccountSwitchResult>('switch_account', {

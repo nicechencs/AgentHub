@@ -35,6 +35,8 @@ export function ConnectionCard({
   onRefreshToken,
   onTest,
   onOpenConfigDir,
+  canEditProvider = true,
+  canSwitchProvider = true,
 }: {
   entry: ConnectionEntry;
   brandColor?: string;
@@ -46,6 +48,10 @@ export function ConnectionCard({
   onRefreshToken?: (e: ConnectionEntry) => void;
   onTest?: (e: ConnectionEntry) => void;
   onOpenConfigDir?: (e: ConnectionEntry) => void;
+  /** Provider/API Key configuration is unavailable when the capability is blocked. */
+  canEditProvider?: boolean;
+  /** Applying a saved Provider writes the agent's live config. */
+  canSwitchProvider?: boolean;
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const detailsId = React.useId();
@@ -100,13 +106,18 @@ export function ConnectionCard({
             <Button
               size="sm"
               variant="outline"
-              disabled={switching}
+              disabled={switching || (entry.source === 'provider' && !canSwitchProvider)}
+              title={
+                entry.source === 'provider' && !canSwitchProvider
+                  ? '该 Agent 不支持配置写入'
+                  : undefined
+              }
               onClick={() => onSwitch(entry)}
             >
               切换
             </Button>
           )}
-          {entry.source === 'provider' && (
+          {entry.source === 'provider' && canEditProvider && (
             <Button size="sm" variant="secondary" onClick={() => onEdit(entry)}>
               <Pencil className="h-3.5 w-3.5" /> 编辑
             </Button>
@@ -153,8 +164,18 @@ export function ConnectionCard({
                 value={entry.endpointMode === 'official' ? '官方' : '自定义'}
               />
             ) : null}
-            {account?.email && account.email !== entry.title ? (
-              <DetailRow label="账号" value={account.email} />
+            {account ? (
+              <DetailRow
+                label={entry.kind === 'oauth' ? '官方账号' : '账号'}
+                value={
+                  entry.kind === 'oauth'
+                    ? account.email ??
+                      account.identityLabel ??
+                      account.subjectId ??
+                      '官方未提供账号信息'
+                    : account.email ?? account.identityLabel ?? account.label
+                }
+              />
             ) : null}
             {account?.provider && !entry.title.includes(account.provider) ? (
               <DetailRow label="提供商" value={account.provider} />
@@ -205,21 +226,24 @@ export function ConnectionCard({
                 <Pencil className="h-3.5 w-3.5" /> 编辑密钥
               </Button>
             )}
-            {entry.source === 'provider' && (
+            {entry.source === 'provider' && canEditProvider && (
               <Button size="sm" variant="secondary" onClick={() => onEdit(entry)}>
                 <Pencil className="h-3.5 w-3.5" /> 编辑配置
               </Button>
             )}
-            {/* 供应商允许删当前项（只清池）；账号当前项不删以免误伤 */}
-            {(entry.source === 'provider' || !entry.isCurrent) && (
-              <Button
-                size="sm"
-                variant="dangerOutline"
-                onClick={() => onDelete(entry)}
-              >
-                <Trash2 className="h-3.5 w-3.5" /> 删除
-              </Button>
-            )}
+            {/* Account and Provider rows are both pool-only deletions, including current rows. */}
+            <Button
+              size="sm"
+              variant="dangerOutline"
+              title={
+                entry.isCurrent
+                  ? '移入回收站；本机连接可能仍继续生效'
+                  : undefined
+              }
+              onClick={() => onDelete(entry)}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> 删除
+            </Button>
           </div>
         </Card>
       )}

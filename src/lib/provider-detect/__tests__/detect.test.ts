@@ -69,6 +69,17 @@ describe('defaultConfigScaffold', () => {
     expect(defaultConfigScaffold('codex').format).toBe('toml');
     expect(defaultConfigScaffold('codex').text).toContain('model_providers');
   });
+
+  it('uses native model configuration shapes for Pi and WorkBuddy', () => {
+    const pi = JSON.parse(defaultConfigScaffold('pi').text) as { providers: object };
+    const workbuddy = JSON.parse(defaultConfigScaffold('workbuddy').text) as {
+      models: unknown[];
+      availableModels: string[];
+    };
+    expect(pi.providers).toBeDefined();
+    expect(workbuddy.models).toHaveLength(1);
+    expect(workbuddy.availableModels).toEqual(['custom-model']);
+  });
 });
 
 describe('claude-code bash export (smoke from test fixtures only)', () => {
