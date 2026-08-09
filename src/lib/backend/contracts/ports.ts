@@ -37,6 +37,7 @@ import type {
 import type { UsageAvailability, UsageQuery } from './usage-types';
 import type { ConfigPort } from './config-types';
 import type { UpdatePort } from './update-types';
+import { normalizeAuthHealth } from './auth-state';
 
 /** PKCE start result from backend. */
 export interface OAuthStartInfo {
@@ -86,11 +87,47 @@ export interface DeviceOAuthPollInfo {
 }
 
 /** Read-only live authentication probe; never contains credential material. */
+export interface AuthState {
+  /** Core wire field. Older adapters may return agentId instead. */
+  agent: AgentId;
+  kind?: string | null;
+  summary: string;
+  hasCredentials: boolean;
+  /** Non-secret live-file revision used to detect external token rotation. */
+  revision?: string | null;
+  /** Optional backend verification result (old backends omit it). */
+  health?: import('./auth-state').AuthHealth;
+  /** Redacted source label (settings/auth file/live/etc.). */
+  source?: string | null;
+}
+
+/** Normalized probe consumed by browser pages; keeps agentId for old callers. */
 export interface LiveAuthProbe {
   agentId: AgentId;
   kind?: string | null;
   summary: string;
   hasCredentials: boolean;
+  /** Non-secret live-file revision used to detect external token rotation. */
+  revision?: string | null;
+  health?: import('./auth-state').AuthHealth;
+  source?: string | null;
+}
+
+/** Accept both current core AuthState (`agent`) and legacy JS probe (`agentId`). */
+export function normalizeAuthState(
+  raw: Partial<AuthState> & { agentId?: AgentId },
+  fallbackAgentId: AgentId,
+): LiveAuthProbe {
+  const agentId = raw.agentId ?? raw.agent ?? fallbackAgentId;
+  return {
+    agentId,
+    kind: raw.kind ?? null,
+    summary: typeof raw.summary === 'string' ? raw.summary : '',
+    hasCredentials: raw.hasCredentials === true,
+    revision: raw.revision ?? null,
+    health: normalizeAuthHealth(raw.health),
+    source: raw.source ?? null,
+  };
 }
 
 export interface AccountPort {

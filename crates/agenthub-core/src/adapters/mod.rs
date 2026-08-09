@@ -12,6 +12,7 @@ pub(crate) mod workbuddy;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::{AppError, Result};
 use crate::logging::targets;
@@ -97,6 +98,261 @@ pub trait AgentAdapter: Send + Sync {
     fn capability(&self, cap: Capability) -> CapabilityState;
 }
 
+/// Metadata extracted from JSON credential envelopes without retaining any
+/// credential values. It is intentionally limited to token presence and
+/// expiry state so auth probes cannot leak secrets.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct AuthCredentialMetadata {
+    pub has_access_token: bool,
+    pub has_refresh_token: bool,
+    pub has_api_key: bool,
+    pub access_expired: Option<bool>,
+    pub refresh_expired: Option<bool>,
+    pub has_identity: bool,
+}
+
+/// Return an opaque file revision derived from non-secret filesystem metadata.
+///
+/// Credential bytes are never read or hashed.  The canonical path is only an
+/// input to the hash, so it is never exposed to clients.  In addition to the
+/// full mtime precision and length, include platform file identity/change
+/// metadata: a same-length atomic replacement can otherwise retain a coarse
+/// timestamp and evade the optimistic live-switch check.
+pub(crate) fn auth_file_revision(path: &Path) -> Option<String> {
+    let metadata = std::fs::metadata(path).ok()?;
+    let modified = metadata.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
+    let normalized = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let fingerprint_input = format!(
+        "auth-file-revision-v2\u{0}{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}",
+        normalized.to_string_lossy(),
+        modified.as_secs(),
+        modified.subsec_nanos(),
+        metadata.len(),
+        auth_file_identity(path, &metadata),
+    );
+    Some(format!("file:sha256:{}", sha256_hex(&fingerprint_input)))
+}
+
+/// Combine several opaque file revisions without exposing their paths or
+/// metadata.  Callers retain the input order where that order is meaningful.
+pub(crate) fn auth_files_revision(paths: &[&Path]) -> Option<String> {
+    let revisions: Vec<String> = paths
+        .iter()
+        .filter_map(|path| auth_file_revision(path))
+        .collect();
+    (!revisions.is_empty()).then(|| {
+        format!(
+            "files:sha256:{}",
+            sha256_hex(&format!(
+                "auth-files-revision-v2\u{0}{}",
+                revisions.join("\u{0}")
+            ))
+        )
+    })
+}
+
+#[cfg(unix)]
+fn auth_file_identity(_path: &Path, metadata: &std::fs::Metadata) -> String {
+    use std::os::unix::fs::MetadataExt;
+
+    format!(
+        "unix:{}:{}:{}:{}",
+        metadata.dev(),
+        metadata.ino(),
+        metadata.ctime(),
+        metadata.ctime_nsec()
+    )
+}
+
+#[cfg(windows)]
+fn auth_file_identity(path: &Path, metadata: &std::fs::Metadata) -> String {
+    use std::os::windows::fs::MetadataExt;
+    use std::os::windows::io::AsRawHandle;
+
+    #[repr(C)]
+    struct FileTime {
+        low_date_time: u32,
+        high_date_time: u32,
+    }
+
+    #[repr(C)]
+    struct ByHandleFileInformation {
+        file_attributes: u32,
+        creation_time: FileTime,
+        last_access_time: FileTime,
+        last_write_time: FileTime,
+        volume_serial_number: u32,
+        file_size_high: u32,
+        file_size_low: u32,
+        number_of_links: u32,
+        file_index_high: u32,
+        file_index_low: u32,
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetFileInformationByHandle(
+            file: *mut std::ffi::c_void,
+            information: *mut ByHandleFileInformation,
+        ) -> i32;
+    }
+
+    let fallback = || {
+        format!(
+            "windows:fallback:{}:{}:{}",
+            metadata.creation_time(),
+            metadata.last_write_time(),
+            metadata.len(),
+        )
+    };
+    let Ok(file) = std::fs::File::open(path) else {
+        return fallback();
+    };
+    let mut information = std::mem::MaybeUninit::<ByHandleFileInformation>::zeroed();
+    // `file` owns a valid handle for the duration of this call and the buffer
+    // is correctly sized for the documented Win32 structure.
+    let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle(), information.as_mut_ptr()) };
+    if ok == 0 {
+        return fallback();
+    }
+    let information = unsafe { information.assume_init() };
+    let file_index =
+        (u64::from(information.file_index_high) << 32) | u64::from(information.file_index_low);
+    format!(
+        "windows:{}:{}:{}:{}",
+        information.volume_serial_number,
+        file_index,
+        metadata.creation_time(),
+        metadata.last_write_time(),
+    )
+}
+
+#[cfg(not(any(unix, windows)))]
+fn auth_file_identity(_path: &Path, metadata: &std::fs::Metadata) -> String {
+    // Keep a metadata-only fallback for less common targets.  mtime precision
+    // and length are already part of the enclosing fingerprint.
+    format!(
+        "fallback:{}:{}",
+        metadata.len(),
+        metadata.permissions().readonly()
+    )
+}
+
+fn sha256_hex(input: &str) -> String {
+    use sha2::{Digest, Sha256};
+
+    Sha256::digest(input.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// Inspect a credential JSON object recursively. Only key names and whether
+/// a non-empty value exists are retained; token values are dropped immediately.
+pub(crate) fn inspect_auth_credentials(value: &serde_json::Value) -> AuthCredentialMetadata {
+    fn visit(value: &serde_json::Value, out: &mut AuthCredentialMetadata) {
+        let Some(object) = value.as_object() else {
+            return;
+        };
+        for (raw_key, value) in object {
+            let key = raw_key.to_ascii_lowercase().replace(['-', '.'], "_");
+            let non_empty = value.as_str().map(str::trim).is_some_and(|s| !s.is_empty());
+            match key.as_str() {
+                "access" | "access_token" | "accesstoken" | "id_token" | "idtoken" => {
+                    out.has_access_token |= non_empty;
+                    if let Some(expired) = value_expired(value) {
+                        out.access_expired = Some(expired);
+                    }
+                }
+                "refresh" | "refresh_token" | "refreshtoken" => {
+                    out.has_refresh_token |= non_empty;
+                    if let Some(expired) = value_expired(value) {
+                        out.refresh_expired = Some(expired);
+                    }
+                }
+                "expires" | "expires_at" | "expiresat" => {
+                    if let Some(expired) = value_expired(value) {
+                        out.access_expired = Some(expired);
+                    }
+                }
+                "refresh_expires" | "refresh_expires_at" | "refreshexpiresat" => {
+                    if let Some(expired) = value_expired(value) {
+                        out.refresh_expired = Some(expired);
+                    }
+                }
+                "api_key" | "apikey" | "openai_api_key" | "key" => {
+                    out.has_api_key |= non_empty;
+                }
+                "email" | "email_address" | "emailaddress" | "user_id" | "userid"
+                | "account_id" | "accountid" | "sub" | "name" => {
+                    out.has_identity |= non_empty;
+                }
+                _ => {}
+            }
+            visit(value, out);
+        }
+    }
+
+    let mut out = AuthCredentialMetadata::default();
+    visit(value, &mut out);
+    out
+}
+
+/// Derive OAuth health from only explicit token and expiry evidence.
+///
+/// A refresh token is considered renewable unless its own expiry is explicitly
+/// known to have passed. If the refresh token is explicitly expired, an access
+/// token that is still valid (or whose expiry is unknown) remains configured;
+/// it becomes `NeedsLogin` when the access token is also known expired or is
+/// absent altogether.
+pub(crate) fn oauth_auth_health(metadata: AuthCredentialMetadata) -> crate::models::AuthHealth {
+    use crate::models::AuthHealth;
+
+    match (
+        metadata.has_access_token,
+        metadata.access_expired,
+        metadata.has_refresh_token,
+        metadata.refresh_expired,
+    ) {
+        (false, _, _, Some(true)) => AuthHealth::NeedsLogin,
+        (_, Some(true), true, Some(true)) | (_, Some(true), false, _) => AuthHealth::NeedsLogin,
+        (_, _, true, Some(false) | None) => AuthHealth::Renewable,
+        _ => AuthHealth::Configured,
+    }
+}
+
+fn value_expired(value: &serde_json::Value) -> Option<bool> {
+    let now_secs = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    match value {
+        serde_json::Value::Number(number) => {
+            let timestamp = number.as_i64()?;
+            let timestamp = if timestamp.unsigned_abs() > 1_000_000_000_000 {
+                timestamp / 1000
+            } else {
+                timestamp
+            };
+            Some(timestamp <= now_secs as i64)
+        }
+        serde_json::Value::String(text) => {
+            let text = text.trim();
+            if text.is_empty() {
+                return None;
+            }
+            if let Ok(number) = text.parse::<i64>() {
+                let number = if number.unsigned_abs() > 1_000_000_000_000 {
+                    number / 1000
+                } else {
+                    number
+                };
+                return Some(number <= now_secs as i64);
+            }
+            let timestamp = chrono::DateTime::parse_from_rfc3339(text).ok()?.timestamp();
+            Some(timestamp <= now_secs as i64)
+        }
+        _ => None,
+    }
+}
+
 /// Shared default for [`AgentAdapter::authorization_key`].
 ///
 /// - ApiKey: hash of `api_key`
@@ -113,10 +369,9 @@ pub fn default_authorization_key(
             Some(format!("apikey:sha256:{}", short_sha(&key)))
         }
         AccountKind::Oauth => {
-            if let Some(refresh) = find_string_field(
-                credentials,
-                &["refresh_token", "refreshToken", "refresh"],
-            ) {
+            if let Some(refresh) =
+                find_string_field(credentials, &["refresh_token", "refreshToken", "refresh"])
+            {
                 return Some(format!("oauth:refresh_sha:{}", short_sha(&refresh)));
             }
             if let Some(access) = find_string_field(
@@ -188,10 +443,7 @@ fn short_sha(input: &str) -> String {
 /// Find first non-empty string for any of `keys` at top-level, under `body`,
 /// under `body.tokens`, or one level of provider-keyed objects under `body`.
 fn find_string_field(credentials: &serde_json::Value, keys: &[&str]) -> Option<String> {
-    fn from_map(
-        obj: &serde_json::Map<String, serde_json::Value>,
-        keys: &[&str],
-    ) -> Option<String> {
+    fn from_map(obj: &serde_json::Map<String, serde_json::Value>, keys: &[&str]) -> Option<String> {
         for key in keys {
             if let Some(s) = obj
                 .get(*key)

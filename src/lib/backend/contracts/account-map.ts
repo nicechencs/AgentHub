@@ -1,4 +1,5 @@
 import type { Account, AccountKind, AgentId } from '@/lib/types';
+import { normalizeAuthHealth } from './auth-state';
 
 export interface CoreAccount {
   id: string;
@@ -8,6 +9,11 @@ export interface CoreAccount {
   credentials?: Record<string, unknown>;
   extra?: Record<string, unknown>;
   status: string;
+  /** Optional semantic auth fields added by newer backends. */
+  health?: string | null;
+  source?: string | null;
+  authSource?: string | null;
+  liveRevision?: string | null;
   isCurrent: boolean;
   createdAt: string;
   updatedAt: string;
@@ -80,7 +86,9 @@ export function mapCoreAccount(a: CoreAccount): Account {
     typeof credentials.format === 'string' ? credentials.format : undefined;
   const envKey = typeof credentials.env_key === 'string' ? credentials.env_key : undefined;
   const source =
-    typeof extra.source === 'string'
+    typeof a.source === 'string'
+      ? a.source
+      : typeof extra.source === 'string'
       ? extra.source
       : typeof credentials.source === 'string'
         ? credentials.source
@@ -91,12 +99,29 @@ export function mapCoreAccount(a: CoreAccount): Account {
     source,
     provider,
   });
+  // `health`/`extra.health` belong to this saved pool row. The newer
+  // `extra.auth*` fields describe the agent's current live configuration and
+  // must remain separate so a stale pool account cannot overwrite a probe.
+  const poolAuthHealth = normalizeAuthHealth(a.health ?? extra.health);
+  const liveAuthHealth = normalizeAuthHealth(extra.authHealth);
+  const liveAuthSource =
+    pickString(a.authSource) ??
+    pickString(extra.authSource);
+  const liveAuthRevision =
+    pickString(a.liveRevision) ??
+    pickString(extra.liveRevision);
 
   const tokenExpired =
     extra.tokenExpired === true ||
     (tokenRemainingSec !== undefined && tokenRemainingSec <= 0);
+  const refreshable =
+    a.kind === 'oauth' && hasNonEmptyField(credentials, [
+      'refresh_token',
+      'refreshToken',
+      'refresh',
+    ]);
   const tokenValid =
-    !tokenExpired && (a.status === 'active' || a.status === '');
+    (a.status === 'active' || a.status === '') && (!tokenExpired || refreshable);
 
   // Prefer real account identity as the list title when available.
   // Backend may still store placeholder labels (codex-oauth / grok-oauth) even after
@@ -125,6 +150,13 @@ export function mapCoreAccount(a: CoreAccount): Account {
     subscription,
     isCurrent: a.isCurrent,
     tokenValid,
+    // Keep the legacy account field populated when old callers do not yet
+    // consume liveAuthHealth, while preserving its separate provenance.
+    authHealth: poolAuthHealth ?? liveAuthHealth,
+    liveAuthHealth,
+    liveAuthSource,
+    liveAuthRevision,
+    refreshable,
     status: a.status || undefined,
     tokenRemainingSec,
     quota5hPct,
@@ -143,6 +175,14 @@ export function mapCoreAccount(a: CoreAccount): Account {
 
 function pickString(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+}
+
+function hasNonEmptyField(value: unknown, names: string[]): boolean {
+  if (!value || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some((item) => hasNonEmptyField(item, names));
+  const object = value as Record<string, unknown>;
+  if (names.some((name) => pickString(object[name]))) return true;
+  return Object.values(object).some((child) => hasNonEmptyField(child, names));
 }
 
 function looksLikeEmail(s: string): boolean {

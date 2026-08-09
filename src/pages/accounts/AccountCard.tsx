@@ -1,23 +1,15 @@
 import * as React from 'react';
 import { ChevronDown, FolderOpen, Pencil, RefreshCw, Trash2 } from 'lucide-react';
-import type { Account, AuthStatus } from '@/lib/types';
+import type { Account } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { QuotaBar } from '@/components/shared/QuotaBar';
 import { liveConfigPaths } from '@/lib/provider-detect';
+import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
+import { authDisplayForAccount } from '@/lib/backend/contracts/auth-state';
 import { cn, fmtRelative } from '@/lib/utils';
-
-/** 由账号字段推导四态认证状态 */
-function authStatusOf(a: Account): AuthStatus {
-  if (!a.tokenValid) return 'expired';
-  if (a.tokenRemainingSec !== undefined && a.tokenRemainingSec <= 0) return 'expired';
-  // Unknown remaining still means credentials are present/active.
-  if (a.tokenRemainingSec === undefined) return 'valid';
-  if (a.tokenRemainingSec <= 3 * 3600) return 'expiring';
-  return 'valid';
-}
 
 /** core 时间多为 `YYYY-MM-DD HH:MM:SS.ffffff`，转相对时间展示 */
 function fmtAuthTime(raw?: string): string {
@@ -58,18 +50,16 @@ export function AccountCard({
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const detailsId = React.useId();
-  const auth = authStatusOf(account);
+  const authDisplay = authDisplayForAccount(account);
+  const auth = authDisplay.legacyStatus;
+  const accountAction = accountActionPolicy(account);
   const paths = liveConfigPaths(account.agentId);
   const kindBadge =
     account.kind === 'apikey'
       ? { variant: 'info' as const, label: 'API Key' }
       : { variant: 'default' as const, label: '官方登录' };
 
-  const tokenLine = !account.tokenValid
-    ? '登录已失效'
-    : account.kind === 'apikey'
-      ? 'API Key · 当前生效'
-      : '已登录';
+  const tokenLine = authDisplay.label;
 
   const authTime = account.updatedAt ?? account.createdAt;
   const title = grouped
@@ -151,13 +141,20 @@ export function AccountCard({
               <DetailRow label="凭据格式" value={account.credentialFormat} mono />
             )}
             {account.source && <DetailRow label="来源" value={account.source} mono />}
+            {account.liveAuthSource && (
+              <DetailRow label="实时认证来源" value={account.liveAuthSource} mono />
+            )}
+            {account.liveAuthRevision && (
+              <DetailRow label="实时认证修订" value={account.liveAuthRevision} mono />
+            )}
             {account.envKey && (
               <DetailRow label="环境变量键" value={account.envKey} mono />
             )}
             <DetailRow label="创建" value={fmtAuthTime(account.createdAt)} />
             <DetailRow label="更新" value={fmtAuthTime(account.updatedAt)} />
             <span className="inline-flex items-center gap-1.5 sm:col-span-2">
-              登录态 <StatusDot status={auth} withLabel />
+              登录态 <StatusDot status={auth} />
+              <span className="text-xs text-secondary">{authDisplay.label}</span>
             </span>
             {account.credentialSummary && (
               <DetailRow
@@ -200,9 +197,10 @@ export function AccountCard({
                 <FolderOpen className="h-3.5 w-3.5" /> 打开配置目录
               </Button>
             )}
-            {account.kind === 'oauth' && (
+            {accountAction && (
               <Button size="sm" variant="secondary" onClick={() => onRefreshToken(account)}>
-                <RefreshCw className="h-3.5 w-3.5" /> 刷新 Token
+                <RefreshCw className="h-3.5 w-3.5" />
+                {accountAction.label}
               </Button>
             )}
             {account.kind === 'apikey' && onEdit && (

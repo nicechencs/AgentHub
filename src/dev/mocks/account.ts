@@ -36,6 +36,9 @@ export function createMockAccountPort(): AccountPort {
           kind: 'api_key',
           summary: 'API key present in mock live config',
           hasCredentials: true,
+          health: current.authHealth ?? 'configured',
+          source: 'mock-live-config',
+          revision: current.updatedAt ?? null,
         };
       }
       if (current?.kind === 'oauth') {
@@ -44,6 +47,9 @@ export function createMockAccountPort(): AccountPort {
           kind: 'oauth',
           summary: 'OAuth credentials present in mock live config',
           hasCredentials: true,
+          health: current.authHealth ?? (current.refreshable ? 'renewable' : 'unknown'),
+          source: 'mock-live-config',
+          revision: current.updatedAt ?? null,
         };
       }
       return {
@@ -51,6 +57,9 @@ export function createMockAccountPort(): AccountPort {
         kind: null,
         summary: 'no live credentials detected',
         hasCredentials: false,
+        health: 'missing',
+        source: 'mock-live-config',
+        revision: null,
       };
     },
 
@@ -86,6 +95,7 @@ export function createMockAccountPort(): AccountPort {
         subscription: 'API Key',
         isCurrent: false,
         tokenValid: true,
+        authHealth: 'configured',
         identityLabel: label?.trim() || masked,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -134,6 +144,8 @@ export function createMockAccountPort(): AccountPort {
         subscription: agentId === 'codex' ? 'ChatGPT Plus' : 'Claude Pro',
         isCurrent: false,
         tokenValid: true,
+        authHealth: 'renewable',
+        refreshable: true,
         tokenRemainingSec: 8 * 3600,
         quota5hPct: 5,
         lastUsedAt: new Date().toISOString(),
@@ -261,6 +273,8 @@ export function createMockAccountPort(): AccountPort {
               : 'Claude Pro',
         isCurrent: false,
         tokenValid: true,
+        authHealth: 'renewable',
+        refreshable: true,
         tokenRemainingSec: 30 * 24 * 3600,
         quota5hPct: 0,
         quota7dPct: 0,

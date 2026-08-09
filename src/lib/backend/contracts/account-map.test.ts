@@ -217,6 +217,19 @@ describe('mapCoreAccount', () => {
     );
     expect(expired.tokenValid).toBe(false);
     expect(expired.tokenRemainingSec).toBeLessThan(0);
+
+    const renewable = mapCoreAccount(
+      core({
+        id: 'o3',
+        credentials: {
+          format: 'auth_json',
+          body: { refresh_token: 'refresh-token', access_token: 'expired-access' },
+        },
+        extra: { tokenExpired: true, expiresAt: 1 },
+      }),
+    );
+    expect(renewable.refreshable).toBe(true);
+    expect(renewable.tokenValid).toBe(true);
   });
 });
 

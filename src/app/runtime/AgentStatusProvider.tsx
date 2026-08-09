@@ -16,6 +16,16 @@ export function AgentStatusProvider({ children }: { children: React.ReactNode })
     getAgentStatusSnapshot,
   );
 
+  // Returning to the desktop app is a meaningful boundary for external CLI
+  // token rotation. One shared forced reload avoids every page probing alone.
+  React.useEffect(() => {
+    const onFocus = () => {
+      void loadAgentStatuses(getBackend(), { force: true }).catch(() => {});
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
   return (
     <AgentStatusContext.Provider value={snapshot}>
       {children}

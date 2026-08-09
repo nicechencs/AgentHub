@@ -28,12 +28,15 @@ import {
   deleteAccount,
   importCurrentLogin,
   listAccounts,
+  refreshLiveAuthState,
   refreshToken,
   switchAccount,
   undoSwitchAccount,
 } from '@/lib/api/account';
 import { groupAccountsByIdentity } from '@/lib/backend/contracts/account-map';
-import { listAgents } from '@/lib/api/agent';
+import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
+import { attachLiveAgentAuth } from '@/lib/backend/contracts/auth-state';
+import { useAgentStatusesOptional } from '@/app/runtime';
 import { openAgentConfigDir } from '@/lib/api/install';
 import { resolveAgentMeta } from '@/config/agents';
 import { isCapabilityBlocked } from '@/lib/capability';
@@ -83,8 +86,8 @@ export default function AccountsPage({
   const [kindFilter, setKindFilter] = React.useState<AccountKindFilter>('all');
   const [phase, setPhase] = React.useState<'loading' | 'error' | 'ready'>('loading');
   const [error, setError] = React.useState<unknown>(null);
-  // partial:agent 运行状态加载失败仅影响切换警告,不阻塞页面
-  const [agentStatuses, setAgentStatuses] = React.useState<AgentStatus[]>([]);
+  // Shared status carries the current live auth probe; pool rows stay local.
+  const { statuses: agentStatuses } = useAgentStatusesOptional();
 
   const [switchTarget, setSwitchTarget] = React.useState<Account | null>(null);
   const [switching, setSwitching] = React.useState(false);
@@ -128,13 +131,11 @@ export default function AccountsPage({
     setKindFilter('all');
   }, [agent]);
 
-  React.useEffect(() => {
-    listAgents()
-      .then(setAgentStatuses)
-      .catch(() => setAgentStatuses([]));
-  }, []);
-
-  const current = accounts.find((a) => a.isCurrent);
+  const accountsWithLiveAuth = React.useMemo(() => {
+    const status = agentStatuses.find((item) => item.agentId === agent);
+    return accounts.map((account) => attachLiveAgentAuth(account, status));
+  }, [accounts, agent, agentStatuses]);
+  const current = accountsWithLiveAuth.find((a) => a.isCurrent);
   const meta = resolveAgentMeta(agent);
   const kindCounts = React.useMemo(() => {
     let oauth = 0;
@@ -147,8 +148,10 @@ export default function AccountsPage({
   }, [accounts]);
   const visibleAccounts = React.useMemo(
     () =>
-      kindFilter === 'all' ? accounts : accounts.filter((account) => account.kind === kindFilter),
-    [accounts, kindFilter],
+      kindFilter === 'all'
+        ? accountsWithLiveAuth
+        : accountsWithLiveAuth.filter((account) => account.kind === kindFilter),
+    [accountsWithLiveAuth, kindFilter],
   );
   const identityGroups = React.useMemo(
     () => groupAccountsByIdentity(visibleAccounts),
@@ -227,12 +230,27 @@ export default function AccountsPage({
   };
 
   const handleRefreshToken = async (acc: Account) => {
+    const action = accountActionPolicy(acc);
+    if (!action) return;
     try {
+      if (action.kind === 'sync-current-login') {
+        // list_accounts performs the non-destructive Grok live reconciliation;
+        // importCurrentLogin remains an explicit new-authorization import.
+        await listAccounts(agent);
+        refreshLiveAuthState(agent);
+        await load(agent);
+        toast({
+          title: '已同步当前登录',
+          description: '已读取 Grok CLI 当前登录凭据。',
+          variant: 'success',
+        });
+        return;
+      }
       await refreshToken(agent, acc.id);
       await load(agent);
-      toast({ title: 'Token 已刷新', description: acc.label, variant: 'success' });
+      toast({ title: action.label, description: acc.label, variant: 'success' });
     } catch (e) {
-      toast({ title: '刷新失败', description: String(e), variant: 'danger' });
+      toast({ title: `${action.label}失败`, description: String(e), variant: 'danger' });
     }
   };
 

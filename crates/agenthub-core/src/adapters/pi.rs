@@ -4,7 +4,10 @@ use super::pi_auth::{
     combined_live_account, expand_auth_to_live_accounts, merge_auth_json, pi_config_dir,
     read_auth_json,
 };
-use super::{api_key_live_account, detect_binary, require_api_key, AgentAdapter};
+use super::{
+    api_key_live_account, auth_file_revision, detect_binary, inspect_auth_credentials,
+    oauth_auth_health, require_api_key, AgentAdapter,
+};
 use crate::error::{AppError, Result};
 use crate::models::{
     AccountKind, AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult,
@@ -85,22 +88,30 @@ impl AgentAdapter for PiAdapter {
 
     fn read_auth(&self) -> Result<AuthState> {
         let auth = pi_config_dir()?.join("auth.json");
-        let has = auth.exists();
-        let (kind, summary, has_credentials) = if !has {
-            (None, "no auth.json".into(), false)
+        let has = auth.is_file();
+        let (kind, summary, has_credentials, health) = if !has {
+            (
+                None,
+                "no auth.json".into(),
+                false,
+                crate::models::AuthHealth::Missing,
+            )
         } else {
             match read_auth_json().and_then(|body| {
                 let n = body.as_object().map(|o| o.len()).unwrap_or(0);
                 if n == 0 {
                     return Ok((
-                        Some("file-auth.json".into()),
+                        None,
                         "auth.json exists but contains no provider credentials".into(),
                         false,
+                        crate::models::AuthHealth::Unknown,
                     ));
                 }
                 let entries = expand_auth_to_live_accounts(&body)?;
                 let has_oauth = entries.iter().any(|entry| entry.kind == AccountKind::Oauth);
-                let has_api_key = entries.iter().any(|entry| entry.kind == AccountKind::ApiKey);
+                let has_api_key = entries
+                    .iter()
+                    .any(|entry| entry.kind == AccountKind::ApiKey);
                 let kind = match (has_oauth, has_api_key) {
                     (true, true) => Some("mixed"),
                     (true, false) => Some("oauth"),
@@ -111,13 +122,34 @@ impl AgentAdapter for PiAdapter {
                     "auth.json present ({n} provider credentials; {})",
                     kind.unwrap_or("file-auth.json")
                 );
-                Ok((kind.map(str::to_owned), summary, !entries.is_empty()))
+                let provider_healths: Vec<_> = body
+                    .as_object()
+                    .expect("Pi auth.json was validated as an object")
+                    .values()
+                    .map(pi_provider_auth_health)
+                    .collect();
+                let health = aggregate_pi_provider_auth_health(provider_healths);
+                if health == crate::models::AuthHealth::Unknown {
+                    return Ok((
+                        None,
+                        "auth.json present but credentials could not be classified".into(),
+                        false,
+                        crate::models::AuthHealth::Unknown,
+                    ));
+                }
+                Ok((
+                    kind.map(str::to_owned),
+                    summary,
+                    !entries.is_empty(),
+                    health,
+                ))
             }) {
                 Ok(result) => result,
                 Err(_) => (
-                    Some("file-auth.json".into()),
+                    None,
                     "auth.json present but credentials could not be classified".into(),
                     false,
+                    crate::models::AuthHealth::Unknown,
                 ),
             }
         };
@@ -126,6 +158,9 @@ impl AgentAdapter for PiAdapter {
             kind,
             summary,
             has_credentials,
+            health,
+            source: Some("pi:auth.json".into()),
+            revision: auth_file_revision(&auth),
         })
     }
 
@@ -269,6 +304,47 @@ impl AgentAdapter for PiAdapter {
             env: vec![],
         })
     }
+}
+
+/// Classify one Pi provider entry without mixing expiry/token facts from its
+/// siblings.  A provider that contains an API key remains configured even if
+/// stale OAuth fields are also present.
+pub(crate) fn pi_provider_auth_health(entry: &serde_json::Value) -> crate::models::AuthHealth {
+    let metadata = inspect_auth_credentials(entry);
+    if metadata.has_api_key {
+        crate::models::AuthHealth::Configured
+    } else if metadata.has_access_token || metadata.has_refresh_token {
+        oauth_auth_health(metadata)
+    } else {
+        crate::models::AuthHealth::Unknown
+    }
+}
+
+/// Aggregate provider health by usable capability.  `NeedsLogin` is only the
+/// overall state when every present provider has been classified as unusable;
+/// an unknown entry intentionally keeps the result conservative rather than
+/// claiming the whole agent is signed out.
+pub(crate) fn aggregate_pi_provider_auth_health<I>(provider_healths: I) -> crate::models::AuthHealth
+where
+    I: IntoIterator<Item = crate::models::AuthHealth>,
+{
+    use crate::models::AuthHealth;
+
+    fn rank(health: &AuthHealth) -> u8 {
+        match health {
+            AuthHealth::Verified => 5,
+            AuthHealth::Renewable => 4,
+            AuthHealth::Configured => 3,
+            AuthHealth::Unknown => 2,
+            AuthHealth::NeedsLogin => 1,
+            AuthHealth::Missing => 0,
+        }
+    }
+
+    provider_healths
+        .into_iter()
+        .max_by_key(rank)
+        .unwrap_or(AuthHealth::Missing)
 }
 
 fn read_json_object_or_empty(path: &Path) -> Result<serde_json::Value> {

@@ -3,6 +3,13 @@
  * 数据源是 AgentHub SQLite 中 isCurrent 行（切换时写入），不是演示 mock。
  */
 import { logger } from '@/lib/logger';
+import {
+  authDisplayForAccount,
+  authDisplayForAgentStatus,
+  authHealthLabel,
+  normalizeAuthHealth,
+  type AuthHealth,
+} from '@/lib/backend/contracts/auth-state';
 import type {
   Account,
   AgentStatus,
@@ -19,6 +26,8 @@ export interface EffectiveConnection {
   label: string;
   authLabel: string;
   authStatus: AuthStatus;
+  authHealth: AuthHealth;
+  authHealthLabel: string;
 }
 
 /** 从脱敏配置文本里尽量抽出 endpoint / base_url（无密钥） */
@@ -89,11 +98,7 @@ export function formatApiConnectionLabel(provider: Provider): string {
 }
 
 function authStatusFromAccount(account: Account): AuthStatus {
-  if (!account.tokenValid) return 'expired';
-  if (account.tokenRemainingSec !== undefined && account.tokenRemainingSec <= 3 * 3600) {
-    return 'expiring';
-  }
-  return 'valid';
+  return authDisplayForAccount(account).legacyStatus;
 }
 
 function accountAuthLabel(account: Account): string {
@@ -125,6 +130,8 @@ export function resolveEffectiveConnection(
         label: formatApiConnectionLabel(provider),
         authLabel: 'API',
         authStatus: 'valid',
+        authHealth: 'configured',
+        authHealthLabel: authHealthLabel('configured'),
       };
     }
     return {
@@ -132,6 +139,8 @@ export function resolveEffectiveConnection(
       label: account.label,
       authLabel: accountAuthLabel(account),
       authStatus: authStatusFromAccount(account),
+      authHealth: authDisplayForAccount(account).health,
+      authHealthLabel: authDisplayForAccount(account).label,
     };
   }
 
@@ -141,6 +150,8 @@ export function resolveEffectiveConnection(
       label: account.label,
       authLabel: accountAuthLabel(account),
       authStatus: authStatusFromAccount(account),
+      authHealth: authDisplayForAccount(account).health,
+      authHealthLabel: authDisplayForAccount(account).label,
     };
   }
 
@@ -150,6 +161,8 @@ export function resolveEffectiveConnection(
       label: formatApiConnectionLabel(provider),
       authLabel: 'API',
       authStatus: 'valid',
+      authHealth: 'configured',
+      authHealthLabel: authHealthLabel('configured'),
     };
   }
 
@@ -158,6 +171,8 @@ export function resolveEffectiveConnection(
     label: '未配置',
     authLabel: '未配置',
     authStatus: 'none',
+    authHealth: 'missing',
+    authHealthLabel: authHealthLabel('missing'),
   };
 }
 
@@ -175,18 +190,27 @@ export function applyEffectiveConnection(
       currentProvider: undefined,
       authStatus: 'none',
       authLabel: '未配置',
+      authHealth: 'missing',
+      authHealthLabel: authHealthLabel('missing'),
     };
   }
 
   const eff = resolveEffectiveConnection(account, provider);
+  // The shared AgentStatus store attaches this from probe_live_auth. Account
+  // rows describe the saved pool, while this value describes the credentials
+  // actually present in the agent's live configuration right now.
+  const liveHealth = normalizeAuthHealth(status.authHealth);
+  const liveDisplay = liveHealth ? authDisplayForAgentStatus(status) : undefined;
   return {
     ...status,
     effectiveKind: eff.kind,
     effectiveLabel: eff.label,
     // 兼容旧字段名：Dashboard 等曾用 currentProvider 表示副标题左侧
     currentProvider: eff.kind === 'none' ? undefined : eff.label,
-    authStatus: eff.authStatus,
-    authLabel: eff.authLabel,
+    authStatus: liveDisplay?.legacyStatus ?? eff.authStatus,
+    authLabel: liveDisplay?.label ?? eff.authLabel,
+    authHealth: liveDisplay?.health ?? eff.authHealth,
+    authHealthLabel: liveDisplay?.label ?? eff.authHealthLabel,
   };
 }
 
@@ -236,12 +260,6 @@ export function enrichStatusesWithConnections(
     currentAccounts: currentAccountByAgent.size,
     currentProviders: currentProviderByAgent.size,
     installed: installed.length,
-    effective: installed.map((a) => ({
-      agentId: a.agentId,
-      kind: a.effectiveKind ?? 'none',
-      label: a.effectiveLabel ?? '未配置',
-      auth: a.authStatus,
-    })),
   });
 
   return enriched;

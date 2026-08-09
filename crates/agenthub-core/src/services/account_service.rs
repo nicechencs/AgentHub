@@ -2,8 +2,9 @@
 //!
 //! Credentials use the existing storage scheme (no additional at-rest encryption).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 use chrono::Utc;
@@ -19,7 +20,7 @@ use crate::models::{
 use crate::services::{BackupService, ConnectionService};
 use crate::storage::{AccountRepo, Database};
 use crate::utils::agent_lock::AgentWriteLock;
-use crate::utils::redact::{mask_secret_preview, redact_text};
+use crate::utils::redact::mask_secret_preview;
 use serde_json::{json, Value};
 
 pub const MAX_ACCOUNT_ID_LEN: usize = 128;
@@ -67,6 +68,10 @@ impl AccountService {
     }
 
     pub fn list(&self, agent: Option<AgentId>) -> Result<Vec<Account>> {
+        // File-backed agents can rotate credentials while they are running.
+        // Reconcile a safe live snapshot before mapping rows for the UI so a
+        // stale DB snapshot cannot be shown as a dead login.
+        self.sync_current_live(agent);
         let mut items = self.repo.list(agent)?;
         // Persist identity extracted from stored tokens so GUI sees email/sub
         // after redaction (JWT lives only in credentials until healed).
@@ -76,9 +81,7 @@ impl AccountService {
             if super::account_identity_heal::heal_account_identity(item) {
                 dirty = true;
             }
-            if item.kind == AccountKind::Oauth
-                && super::account_quota::heal_token_expiry(item)
-            {
+            if item.kind == AccountKind::Oauth && super::account_quota::heal_token_expiry(item) {
                 dirty = true;
             }
             // Tick quota countdown from absolute reset timestamps (no network).
@@ -106,8 +109,368 @@ impl AccountService {
                 }
             }
         }
+        // Live auth health describes the file currently observed by the adapter,
+        // rather than the persisted pool row. Surface it only on the pool row
+        // that still corresponds to that live authorization, and never write it
+        // back to the database.
+        self.merge_live_auth_state(&mut items, agent);
         sort_accounts(&mut items);
         Ok(items)
+    }
+
+    /// Best-effort reconciliation of the adapter's current live credentials.
+    /// Exact authorizations and safe rotations update their existing pool row;
+    /// a verified, distinct live grant is retained as its own row instead of
+    /// being mistaken for a token refresh. Pi is expanded by provider before
+    /// reconciliation because its live snapshot is a combined auth.json file.
+    fn sync_current_live(&self, agent: Option<AgentId>) {
+        let adapters = match agent {
+            Some(id) => self.registry.get(id).into_iter().collect::<Vec<_>>(),
+            None => self.registry.all(),
+        };
+        for adapter in adapters {
+            let id = adapter.id();
+            if !adapter.capability(Capability::AccountSwitch).is_usable() {
+                continue;
+            }
+            // Keep the snapshot, match, and persistence decision serialized with
+            // account switches. The process-local guard is still required for
+            // CRUD-only services that have no file-lock directory configured.
+            let process_lock = live_reconcile_lock(id);
+            let _process_lock = process_lock
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let _file_lock = match self.acquire_live_lock(id) {
+                Ok(lock) => lock,
+                Err(error) => {
+                    tracing::debug!(
+                        module = targets::ACCOUNT,
+                        agent = id.as_str(),
+                        error_code = error.code(),
+                        "live account sync skipped because the live lock is held"
+                    );
+                    continue;
+                }
+            };
+            let lives = match self.read_live_accounts(adapter.as_ref(), id) {
+                Ok(lives) => lives,
+                Err(error) if error.code() == "not_found" || error.code() == "unsupported" => {
+                    continue;
+                }
+                Err(error) => {
+                    tracing::debug!(
+                        module = targets::ACCOUNT,
+                        agent = id.as_str(),
+                        error_code = error.code(),
+                        "live account sync skipped"
+                    );
+                    continue;
+                }
+            };
+            for live in lives {
+                if let Err(error) = self.reconcile_live_account(adapter.as_ref(), id, live) {
+                    tracing::warn!(
+                        module = targets::ACCOUNT,
+                        agent = id.as_str(),
+                        error_code = error.code(),
+                        "failed to persist live account rotation"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Read the live account slots represented by an adapter snapshot. Pi's
+    /// auth.json is a combined file snapshot, so it must be expanded before it
+    /// reaches pool reconciliation; the combined snapshot is only safe for
+    /// backup / complete-file rollback.
+    fn read_live_accounts(
+        &self,
+        adapter: &dyn AgentAdapter,
+        agent: AgentId,
+    ) -> Result<Vec<LiveAccount>> {
+        let snapshot = adapter.read_account()?;
+        if snapshot.agent != agent {
+            return Err(AppError::InvalidArg(format!(
+                "adapter returned account for {}, expected {}",
+                snapshot.agent.as_str(),
+                agent.as_str()
+            )));
+        }
+        if live_account_is_empty(&snapshot) {
+            return Err(AppError::NotFound(
+                "no live account credentials found".into(),
+            ));
+        }
+        if agent != AgentId::Pi {
+            return Ok(vec![snapshot]);
+        }
+
+        let body = snapshot.credentials.get("body").ok_or_else(|| {
+            AppError::InvalidArg("Pi combined live account is missing credentials.body".into())
+        })?;
+        crate::adapters::pi_auth::expand_auth_to_live_accounts(body)
+    }
+
+    /// Reconcile one safe live snapshot into the account pool.
+    ///
+    /// Authorization fingerprints are checked before identity. This lets an
+    /// exact token/key rotation update its owning row even when an adapter
+    /// cannot expose a stable identity, while all other unknown/ambiguous
+    /// cases fail closed. No account is ever deleted by this path.
+    fn reconcile_live_account(
+        &self,
+        adapter: &dyn AgentAdapter,
+        agent: AgentId,
+        live: LiveAccount,
+    ) -> Result<Option<Account>> {
+        if live.agent != agent || live_account_is_empty(&live) {
+            return Ok(None);
+        }
+        let rows = self.repo.list(Some(agent))?;
+
+        let authorization_matches = rows
+            .iter()
+            .filter(|row| row.kind == live.kind)
+            .filter(|row| same_live_slot(agent, &live.credentials, &row.credentials))
+            .filter(|row| accounts_same_authorization(adapter, live.kind, &live.credentials, row))
+            .cloned()
+            .collect::<Vec<_>>();
+        if let Some(existing) = pick_primary_authorization_match(authorization_matches) {
+            let (row, changed) = self.update_live_row(adapter, existing, live);
+            return Ok(Some(self.persist_reconciled_live_row(agent, row, changed)?));
+        }
+
+        let Some(live_identity) = stable_live_identity(adapter, live.kind, &live.credentials)
+        else {
+            tracing::warn!(
+                module = targets::ACCOUNT,
+                agent = agent.as_str(),
+                "live account identity is unknown; refusing non-exact reconcile"
+            );
+            return Ok(None);
+        };
+
+        let identity_matches = rows
+            .iter()
+            .filter(|row| same_live_slot(agent, &live.credentials, &row.credentials))
+            .filter(|row| {
+                stable_live_identity(adapter, row.kind, &row.credentials).as_deref()
+                    == Some(live_identity.as_str())
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if identity_matches.len() > 1 {
+            tracing::warn!(
+                module = targets::ACCOUNT,
+                agent = agent.as_str(),
+                matches = identity_matches.len(),
+                "live identity has multiple grants; retaining the observed grant separately"
+            );
+        }
+
+        // A non-exact credential change is a rotation only when it is the one
+        // and only authorization for the stable identity *and* it belongs to
+        // the current live slot. In particular, never choose between multiple
+        // grants for the same identity based on a label or list order.
+        let current = rows.iter().find(|row| {
+            row.is_current && same_live_slot(agent, &live.credentials, &row.credentials)
+        });
+        if let ([existing], Some(current)) = (identity_matches.as_slice(), current) {
+            if existing.id == current.id
+                && stable_live_identity(adapter, current.kind, &current.credentials).as_deref()
+                    == Some(live_identity.as_str())
+            {
+                let (row, changed) = self.update_live_row(adapter, current.clone(), live);
+                return Ok(Some(self.persist_reconciled_live_row(agent, row, changed)?));
+            }
+        }
+
+        // The live authorization is not exact, and is not an unambiguous
+        // rotation of the current row. Retain it as a separate grant. For
+        // single-current agents this is an external live login, so make the
+        // new row current rather than leaving the UI bound to a different
+        // account. Pi is different: each provider shares one auth.json and
+        // reconciling a provider must never choose a global current row.
+        let label = live
+            .label_hint
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| format!("{} · OAuth", agent.display_name()));
+        validate_label(&label, "account label", MAX_ACCOUNT_LABEL_LEN)?;
+        let mut extra = live.extra.clone();
+        if let Some(obj) = extra.as_object_mut() {
+            obj.insert("source".into(), json!("live"));
+        }
+        let extra = attach_identity_meta(adapter, live.kind, &live.credentials, &label, extra);
+        let now = now_ts();
+        let row = Account {
+            id: format!("{}-live-{}", agent.as_str(), Uuid::new_v4()),
+            agent_id: agent,
+            kind: live.kind,
+            label,
+            credentials: live.credentials,
+            extra,
+            status: "active".into(),
+            is_current: agent != AgentId::Pi,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+        let created = if row.is_current {
+            self.connections.create_and_activate_account(&row)?.0
+        } else {
+            self.repo.create(&row)?
+        };
+        Ok(Some(created))
+    }
+
+    fn update_live_row(
+        &self,
+        adapter: &dyn AgentAdapter,
+        mut row: Account,
+        live: LiveAccount,
+    ) -> (Account, bool) {
+        if !live_credentials_changed(&row, &live) {
+            return (row, false);
+        }
+        let display =
+            if row.kind == AccountKind::Oauth && is_generic_oauth_label(&row.label, row.agent_id) {
+                live.label_hint
+                    .clone()
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or_else(|| row.label.clone())
+            } else {
+                row.label.clone()
+            };
+        let mut extra = live.extra.clone();
+        if let Some(obj) = extra.as_object_mut() {
+            obj.insert("source".into(), json!("live"));
+        }
+        row.label = display.clone();
+        row.credentials = live.credentials;
+        row.extra = attach_identity_meta(adapter, live.kind, &row.credentials, &display, extra);
+        row.kind = live.kind;
+        row.status = "active".into();
+        row.updated_at = now_ts();
+        let _ = super::account_identity_heal::heal_account_identity(&mut row);
+        let _ = super::account_quota::heal_token_expiry(&mut row);
+        (row, true)
+    }
+
+    /// Persist a reconciled row and, for single-current agents, atomically
+    /// align both the legacy current flag and the active connection binding.
+    /// Pi provider slots are concurrent entries in one auth.json, so they must
+    /// never be globally activated by reconciliation.
+    fn persist_reconciled_live_row(
+        &self,
+        agent: AgentId,
+        mut row: Account,
+        changed: bool,
+    ) -> Result<Account> {
+        if agent == AgentId::Pi {
+            return if changed {
+                self.repo.update(&row)
+            } else {
+                Ok(row)
+            };
+        }
+        if !changed && row.is_current {
+            return Ok(row);
+        }
+        row.is_current = true;
+        row.updated_at = now_ts();
+        Ok(self.connections.update_and_activate_account(&row)?.0)
+    }
+
+    /// Add a transient, desensitized AuthState view to the current pool row.
+    /// This intentionally runs after all persistence/healing and does not call
+    /// AccountRepo::update, keeping live state separate from the account pool.
+    fn merge_live_auth_state(&self, items: &mut [Account], agent: Option<AgentId>) {
+        let adapters = match agent {
+            Some(id) => self.registry.get(id).into_iter().collect::<Vec<_>>(),
+            None => self.registry.all(),
+        };
+        for adapter in adapters {
+            let id = adapter.id();
+            let Ok(state) = adapter.read_auth() else {
+                continue;
+            };
+            if state.agent != id {
+                continue;
+            }
+            let Ok(lives) = self.read_live_accounts(adapter.as_ref(), id) else {
+                continue;
+            };
+            let Some(current) = items.iter_mut().find(|row| {
+                row.agent_id == id
+                    && row.is_current
+                    && lives.iter().any(|live| {
+                        same_live_slot(id, &live.credentials, &row.credentials)
+                            && row.kind == live.kind
+                            && accounts_same_authorization(
+                                adapter.as_ref(),
+                                live.kind,
+                                &live.credentials,
+                                row,
+                            )
+                    })
+            }) else {
+                continue;
+            };
+            if !current.extra.is_object() {
+                current.extra = json!({});
+            }
+            if let Some(extra) = current.extra.as_object_mut() {
+                extra.insert("authHealth".into(), json!(state.health));
+                extra.insert("authSource".into(), json!(state.source));
+                extra.insert("liveRevision".into(), json!(state.revision));
+            }
+        }
+    }
+
+    fn validate_live_switch_identity(
+        &self,
+        adapter: &dyn AgentAdapter,
+        agent: AgentId,
+        live: &LiveAccount,
+    ) -> Result<()> {
+        let rows = self.repo.list(Some(agent))?;
+        let exact = rows.iter().any(|row| {
+            row.kind == live.kind
+                && same_live_slot(agent, &live.credentials, &row.credentials)
+                && accounts_same_authorization(adapter, live.kind, &live.credentials, row)
+        });
+        if exact {
+            return Ok(());
+        }
+        let Some(identity) = stable_live_identity(adapter, live.kind, &live.credentials) else {
+            return Err(AppError::message(
+                "account.identity_conflict",
+                "live account identity is unknown; refusing to backfill or switch",
+            ));
+        };
+        let identity_count = rows
+            .iter()
+            .filter(|row| {
+                stable_live_identity(adapter, row.kind, &row.credentials).as_deref()
+                    == Some(identity.as_str())
+            })
+            .count();
+        if identity_count > 1 {
+            return Err(AppError::message(
+                "account.identity_conflict",
+                "live account identity is ambiguous; refusing to backfill or switch",
+            ));
+        }
+        if rows.iter().any(|row| {
+            row.is_current && stable_live_identity(adapter, row.kind, &row.credentials).is_none()
+        }) {
+            return Err(AppError::message(
+                "account.identity_conflict",
+                "current account identity is unknown; refusing to backfill or switch",
+            ));
+        }
+        Ok(())
     }
 
     /// Force-refresh upstream 5h/7d quota windows for one OAuth account.
@@ -466,6 +829,11 @@ impl AccountService {
     }
 
     fn refresh_token_inner(&self, id_or_label: &str, agent: AgentId) -> Result<Account> {
+        if agent == AgentId::Grok {
+            return Err(AppError::Unsupported(
+                "Grok CLI 会在本机 auth.json 中自动续期，请使用“同步当前登录”".into(),
+            ));
+        }
         let mut account = self.get(id_or_label, Some(agent))?;
         if account.kind != AccountKind::Oauth {
             return Err(AppError::Unsupported(
@@ -589,11 +957,7 @@ impl AccountService {
                 || super::account_identity_heal::needs_identity_heal(&account)
             {
                 if agent == AgentId::Pi {
-                    if let Some(p) = account
-                        .credentials
-                        .get("provider")
-                        .and_then(|v| v.as_str())
-                    {
+                    if let Some(p) = account.credentials.get("provider").and_then(|v| v.as_str()) {
                         account.label = format!("pi:{p} · {lab}");
                     } else {
                         account.label = lab;
@@ -646,9 +1010,13 @@ impl AccountService {
     }
 
     /// Import each Pi auth.json provider as its own pool account.
-    /// Returns the activated (or primary) account for UI focus.
+    /// Returns the last imported account for UI focus. Pi providers are
+    /// concurrent entries in one live file, so import does not guess a global
+    /// current provider.
     fn import_pi_providers_inner(&self, name: Option<&str>) -> Result<Account> {
-        let adapter = self.registry.require(AgentId::Pi, Capability::AccountSwitch)?;
+        let adapter = self
+            .registry
+            .require(AgentId::Pi, Capability::AccountSwitch)?;
         let _lock = self.acquire_live_lock(AgentId::Pi)?;
         let body = crate::adapters::pi_auth::read_auth_json()?;
         let lives = crate::adapters::pi_auth::expand_auth_to_live_accounts(&body)?;
@@ -662,19 +1030,9 @@ impl AccountService {
         let n = lives.len();
         for (i, live) in lives.into_iter().enumerate() {
             let is_last = i + 1 == n;
-            // Only the last imported provider becomes current (live switch once).
-            let display_name = if is_last {
-                name
-            } else {
-                None
-            };
-            let acc = self.upsert_live_account(
-                adapter.as_ref(),
-                AgentId::Pi,
-                live,
-                display_name,
-                is_last,
-            )?;
+            let display_name = if is_last { name } else { None };
+            let acc =
+                self.upsert_live_account(adapter.as_ref(), AgentId::Pi, live, display_name, false)?;
             last = Some(acc);
         }
         last.ok_or_else(|| AppError::message("account.import", "Pi import produced no accounts"))
@@ -708,22 +1066,13 @@ impl AccountService {
         if let Some(obj) = extra.as_object_mut() {
             obj.insert("source".into(), json!("live"));
         }
-        let extra = attach_identity_meta(
-            adapter,
-            live.kind,
-            &live.credentials,
-            &display,
-            extra,
-        );
+        let extra = attach_identity_meta(adapter, live.kind, &live.credentials, &display, extra);
 
         // 仅按「授权票」去重：同 token/key 再 import → upsert；
         // 同人不同 token → 新行（见 docs/account-authorization-pool.md）。
-        if let Some(existing) = self.find_duplicate_authorization(
-            adapter,
-            agent,
-            live.kind,
-            &live.credentials,
-        )? {
+        if let Some(existing) =
+            self.find_duplicate_authorization(adapter, agent, live.kind, &live.credentials)?
+        {
             return self.merge_into_existing(
                 adapter,
                 existing,
@@ -768,6 +1117,7 @@ impl AccountService {
         let matches: Vec<Account> = candidates
             .into_iter()
             .filter(|a| a.kind == kind)
+            .filter(|a| same_live_slot(agent, credentials, &a.credentials))
             .filter(|a| accounts_same_authorization(adapter, kind, credentials, a))
             .collect();
         Ok(pick_primary_authorization_match(matches))
@@ -808,7 +1158,9 @@ impl AccountService {
             if other.id == updated.id || other.kind != updated.kind {
                 continue;
             }
-            if accounts_same_authorization(adapter, updated.kind, &updated.credentials, &other) {
+            if same_live_slot(updated.agent_id, &updated.credentials, &other.credentials)
+                && accounts_same_authorization(adapter, updated.kind, &updated.credentials, &other)
+            {
                 // Prefer consistency path so an active leftover never leaves a dangling binding.
                 // Propagate delete errors — never report merge success with leftover rows.
                 self.connections
@@ -833,23 +1185,66 @@ impl AccountService {
                 "account live switching requires an explicitly configured backup root".into(),
             )
         })?;
+        let process_lock = live_reconcile_lock(agent);
+        let _process_lock = process_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let _lock = self.acquire_live_lock(agent)?.ok_or_else(|| {
             AppError::Unsupported("account live switching is not configured".into())
         })?;
 
         let adapter = self.registry.require(agent, Capability::AccountSwitch)?;
 
-        let target = self.get(id_or_label, Some(agent))?;
-        let live_before = match adapter.read_account() {
-            Ok(live) => Some(live),
-            Err(err) if err.code() == "not_found" || err.code() == "unsupported" => None,
-            Err(err) => return Err(err),
-        };
+        let mut target = self.get(id_or_label, Some(agent))?;
+        // The live credentials are only accepted when their file revision is
+        // unchanged across `revision-before -> read_account -> revision-after`.
+        // A bounded retry absorbs an in-progress CLI atomic write without ever
+        // backfilling from a torn snapshot.
+        let (live_before, revision) = capture_stable_live_snapshot(adapter.as_ref(), 2)?;
+
+        // A Pi LiveAccount here is deliberately the full auth.json snapshot:
+        // it is safe for backup/rollback, but never safe to reconcile into a
+        // single pool row. Provider reconciliation happens in list/sync only.
+        if agent != AgentId::Pi {
+            if let Some(live) = live_before
+                .as_ref()
+                .filter(|live| !live_account_is_empty(live))
+            {
+                self.validate_live_switch_identity(adapter.as_ref(), agent, live)?;
+                self.reconcile_live_account(adapter.as_ref(), agent, live.clone())?;
+                target = self.get(id_or_label, Some(agent))?;
+            }
+        }
+
         let current = self.repo.get_current(agent)?;
 
-        let live_for_backfill = live_before
-            .as_ref()
-            .filter(|live| !live_account_is_empty(live));
+        let live_for_backfill = if agent == AgentId::Pi {
+            None
+        } else {
+            live_before
+                .as_ref()
+                .filter(|live| !live_account_is_empty(live))
+                .filter(|live| {
+                    current.as_ref().is_some_and(|current| {
+                        accounts_same_authorization(
+                            adapter.as_ref(),
+                            live.kind,
+                            &live.credentials,
+                            current,
+                        ) || stable_live_identity(
+                            adapter.as_ref(),
+                            current.kind,
+                            &current.credentials,
+                        )
+                        .zip(stable_live_identity(
+                            adapter.as_ref(),
+                            live.kind,
+                            &live.credentials,
+                        ))
+                        .is_some_and(|(current, live)| current == live)
+                    })
+                })
+        };
         let backfilled_account_id = current
             .as_ref()
             .filter(|_| live_for_backfill.is_some())
@@ -892,6 +1287,21 @@ impl AccountService {
                 return Err(compensated_switch_error(error, None, db_rollback));
             }
         };
+
+        // Snapshotting can itself take long enough for a CLI to refresh the
+        // file. Check the opaque revision after backup and immediately before
+        // apply; on conflict report any failed DB compensation rather than
+        // silently discarding it.
+        if let Some(observed_revision) = revision.as_deref() {
+            if probe_auth_revision(adapter.as_ref()).as_deref() != Some(observed_revision) {
+                let db_rollback = rollback_backfill();
+                return Err(compensated_switch_error(
+                    live_revision_conflict(),
+                    None,
+                    db_rollback,
+                ));
+            }
+        }
 
         if let Err(error) = adapter.apply_account(&apply_live) {
             let live_rollback = match &live_before {
@@ -968,6 +1378,22 @@ impl AccountService {
     }
 }
 
+/// Process-local counterpart to the optional cross-process file lock. Services
+/// built without a backup root have no `lock_dir`, but concurrent UI reads can
+/// still reconcile the same live snapshot, so they must share this guard.
+fn live_reconcile_lock(agent: AgentId) -> Arc<Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<AgentId, Arc<Mutex<()>>>>> = OnceLock::new();
+    let locks = LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut locks = locks
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    Arc::clone(
+        locks
+            .entry(agent)
+            .or_insert_with(|| Arc::new(Mutex::new(()))),
+    )
+}
+
 fn log_account_op<T>(op: &str, agent: AgentId, started: Instant, result: &Result<T>) {
     let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     match result {
@@ -989,14 +1415,13 @@ fn log_account_op<T>(op: &str, agent: AgentId, started: Instant, result: &Result
             );
         }
         Err(err) => {
-            let msg = redact_text(&err.to_string());
             tracing::error!(
                 module = targets::ACCOUNT,
                 op,
                 agent = agent.as_str(),
                 code = err.code(),
                 elapsed_ms,
-                "{msg}"
+                "account operation failed"
             );
         }
     }
@@ -1025,11 +1450,78 @@ fn now_ts() -> String {
     Utc::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string()
 }
 
+fn probe_auth_revision(adapter: &dyn AgentAdapter) -> Option<String> {
+    match adapter.read_auth() {
+        Ok(state) => state.revision,
+        Err(error) if error.code() == "not_found" || error.code() == "unsupported" => None,
+        Err(error) => {
+            tracing::debug!(
+                module = targets::ACCOUNT,
+                agent = adapter.id().as_str(),
+                error_code = error.code(),
+                "live auth revision probe unavailable"
+            );
+            None
+        }
+    }
+}
+
+/// Return a live account snapshot only when the adapter's opaque revision is
+/// stable on both sides of the read. `None` remains a valid revision for
+/// adapters without a revision probe; a transition between `Some` and `None`
+/// is still treated as a conflict and retried.
+fn capture_stable_live_snapshot(
+    adapter: &dyn AgentAdapter,
+    attempts: usize,
+) -> Result<(Option<LiveAccount>, Option<String>)> {
+    for _ in 0..attempts.max(1) {
+        let before = probe_auth_revision(adapter);
+        let live = match adapter.read_account() {
+            Ok(live) if live.agent == adapter.id() => Some(live),
+            Ok(live) => {
+                return Err(AppError::InvalidArg(format!(
+                    "adapter returned account for {}, expected {}",
+                    live.agent.as_str(),
+                    adapter.id().as_str()
+                )))
+            }
+            Err(error) if error.code() == "not_found" || error.code() == "unsupported" => None,
+            Err(error) => return Err(error),
+        };
+        let after = probe_auth_revision(adapter);
+        if before == after {
+            return Ok((live, after));
+        }
+    }
+    Err(live_revision_conflict())
+}
+
+fn live_revision_conflict() -> AppError {
+    AppError::message(
+        "account.live_conflict",
+        "live account changed while switching; retry the switch",
+    )
+}
+
 fn live_account_is_empty(live: &LiveAccount) -> bool {
     live.credentials
         .as_object()
         .map(|o| o.is_empty())
         .unwrap_or(true)
+}
+
+/// Pi has one live auth file with independent provider entries. Matching an
+/// identity across providers is not evidence that either provider's grant may
+/// be overwritten, nor that it is the UI's globally selected account.
+fn same_live_slot(agent: AgentId, incoming: &Value, existing: &Value) -> bool {
+    if agent != AgentId::Pi {
+        return true;
+    }
+    incoming
+        .get("provider")
+        .and_then(|value| value.as_str())
+        .zip(existing.get("provider").and_then(|value| value.as_str()))
+        .is_some_and(|(incoming, existing)| incoming == existing)
 }
 
 /// 是否为「同一授权票」（非身份）。见 `docs/account-authorization-pool.md`。
@@ -1052,6 +1544,74 @@ fn accounts_same_authorization(
     ) {
         (Some(a), Some(b)) => a == b,
         _ => false,
+    }
+}
+
+/// Compare the serialized live credential payload, not the authorization key.
+///
+/// A Grok CLI refresh rotates the access/refresh token pair while preserving
+/// the same user and grant. Treat that as an update to the current row; the
+/// authorization-key matcher intentionally remains token-sensitive for
+/// explicit imports of separate grants.
+fn live_credentials_changed(current: &Account, live: &LiveAccount) -> bool {
+    let Some(current_body) = current.credentials.get("body") else {
+        return current.credentials != live.credentials;
+    };
+    let Some(live_body) = live.credentials.get("body") else {
+        return current.credentials != live.credentials;
+    };
+    current.credentials.get("format") != live.credentials.get("format") || current_body != live_body
+}
+
+/// Stable identity extracted from credentials only. Passing `None` as the
+/// label hint is intentional: a display label (especially a token preview)
+/// is not an identity proof and must never authorize a live overwrite.
+fn stable_live_identity(
+    adapter: &dyn AgentAdapter,
+    kind: AccountKind,
+    credentials: &Value,
+) -> Option<String> {
+    if let Some(identity) = adapter
+        .identity_label(kind, credentials, None)
+        .map(|identity| identity.trim().to_owned())
+        .filter(|identity| !identity.is_empty())
+    {
+        return Some(identity);
+    }
+    // A number of file formats wrap the account object under `body`,
+    // `auth`, or provider-specific maps.  Read only well-known stable
+    // identity fields recursively; never use arbitrary labels/token previews.
+    find_stable_identity_field(credentials)
+}
+
+fn find_stable_identity_field(value: &Value) -> Option<String> {
+    const KEYS: &[&str] = &[
+        "email",
+        "email_address",
+        "emailAddress",
+        "user_id",
+        "userId",
+        "principal_id",
+        "principalId",
+        "sub",
+        "account_id",
+        "accountId",
+        "account_uuid",
+    ];
+    match value {
+        Value::Object(map) => {
+            for key in KEYS {
+                if let Some(Value::String(identity)) = map.get(*key) {
+                    let identity = identity.trim();
+                    if !identity.is_empty() {
+                        return Some(identity.to_owned());
+                    }
+                }
+            }
+            map.values().find_map(find_stable_identity_field)
+        }
+        Value::Array(items) => items.iter().find_map(find_stable_identity_field),
+        _ => None,
     }
 }
 
