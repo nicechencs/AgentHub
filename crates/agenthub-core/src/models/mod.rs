@@ -16,6 +16,9 @@ mod skill;
 mod update;
 mod usage;
 
+#[cfg(test)]
+mod tests;
+
 pub use account::*;
 pub use agent::*;
 pub use backup::*;

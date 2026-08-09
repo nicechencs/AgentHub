@@ -8,6 +8,10 @@ import {
   formatEndpointHost,
 } from '@/lib/api/agent-connection';
 import { looksLikeOfficialEndpoint } from '@/config/official-api';
+import {
+  authDisplayForAccount,
+  type AuthHealth,
+} from '@/lib/backend/contracts/auth-state';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
 /**
  * 列表行类型。
@@ -35,6 +39,8 @@ export type ConnectionEntry = {
   subtitle: string;
   isCurrent: boolean;
   authStatus: AuthStatus;
+  /** Optional for legacy hand-written entries; account/provider mappers fill it. */
+  authHealth?: AuthHealth;
   sortKey: string;
   identityLabel?: string;
   subscription?: string;
@@ -54,28 +60,23 @@ export type ConnectionEntry = {
 };
 
 export function authStatusOfAccount(a: Account): AuthStatus {
-  if (!a.tokenValid) return 'expired';
-  // Remaining ≤ 0 means access token is past exp (JWT/expiresAt).
-  if (a.tokenRemainingSec !== undefined && a.tokenRemainingSec <= 0) return 'expired';
-  // Unknown remaining is common for some live imports before JWT exp heal —
-  // if status is still valid, show authenticated (not "未配置").
-  if (a.tokenRemainingSec === undefined) return 'valid';
-  if (a.tokenRemainingSec <= 3 * 3600) return 'expiring';
-  return 'valid';
+  return authDisplayForAccount(a).legacyStatus;
+}
+
+export function authHealthOfAccount(a: Account): AuthHealth {
+  return authDisplayForAccount(a).health;
 }
 
 function accountSubtitle(a: Account): string {
   // Keep subtitle short: status + subscription only (title already holds account name).
   if (a.isCurrent) {
     const bits: string[] = [];
-    if (!a.tokenValid) bits.push('登录已失效');
-    else bits.push(a.kind === 'apikey' ? 'API Key · 当前生效' : '已登录');
+    bits.push(authDisplayForAccount(a).label);
     if (a.subscription) bits.push(a.subscription);
     return bits.join(' · ');
   }
   const bits: string[] = [];
-  if (a.kind === 'apikey') bits.push('API Key');
-  else bits.push('未生效');
+  bits.push(authDisplayForAccount(a).label, '未生效');
   if (a.provider && !a.label.includes(a.provider)) bits.push(a.provider);
   if (a.subscription) bits.push(a.subscription);
   return bits.join(' · ');
@@ -101,10 +102,12 @@ function providerSubtitle(
   const host = endpoint ? formatEndpointHost(endpoint) : undefined;
   if (p.isCurrent) {
     return host
-      ? `当前生效 · ${modeLabel} · ${host}`
-      : `当前生效 · ${modeLabel}`;
+      ? `已配置·未验证 · 当前生效 · ${modeLabel} · ${host}`
+      : `已配置·未验证 · 当前生效 · ${modeLabel}`;
   }
-  return host ? `未生效 · ${modeLabel} · ${host}` : `未生效 · ${modeLabel}`;
+  return host
+    ? `已配置·未验证 · 未生效 · ${modeLabel} · ${host}`
+    : `已配置·未验证 · 未生效 · ${modeLabel}`;
 }
 
 export function accountToEntry(a: Account): ConnectionEntry {
@@ -118,6 +121,7 @@ export function accountToEntry(a: Account): ConnectionEntry {
     subtitle: accountSubtitle(a),
     isCurrent: a.isCurrent,
     authStatus: authStatusOfAccount(a),
+    authHealth: authHealthOfAccount(a),
     sortKey: a.updatedAt || a.lastUsedAt || a.createdAt || '',
     identityLabel: a.identityLabel,
     subscription: a.subscription,
@@ -145,6 +149,7 @@ export function providerToEntry(p: Provider): ConnectionEntry {
     subtitle: providerSubtitle(p, endpoint, endpointMode),
     isCurrent: p.isCurrent,
     authStatus: 'valid',
+    authHealth: 'configured',
     sortKey: p.updatedAt || '',
     latencyMs: p.latencyMs,
     endpointHost: endpoint ? formatEndpointHost(endpoint) : undefined,
@@ -219,11 +224,11 @@ export function withProviderLatency(
   const host = entry.endpointHost;
   const base = entry.isCurrent
     ? host
-      ? `当前生效 · ${modeLabel} · ${host}`
-      : `当前生效 · ${modeLabel}`
+      ? `已配置·未验证 · 当前生效 · ${modeLabel} · ${host}`
+      : `已配置·未验证 · 当前生效 · ${modeLabel}`
     : host
-      ? `未生效 · ${modeLabel} · ${host}`
-      : `未生效 · ${modeLabel}`;
+      ? `已配置·未验证 · 未生效 · ${modeLabel} · ${host}`
+      : `已配置·未验证 · 未生效 · ${modeLabel}`;
   return {
     ...entry,
     latencyMs,
@@ -256,9 +261,13 @@ export function deleteConnectionToastDescription(
 }
 
 export type LiveAuthProbeLike = {
+  agentId: AgentId;
   kind?: string | null;
   summary?: string | null;
   hasCredentials?: boolean;
+  health?: AuthHealth;
+  source?: string | null;
+  revision?: string | null;
 };
 
 export type LiveAuthImportGate = {
@@ -274,9 +283,13 @@ export type LiveAuthImportGate = {
 export function liveAuthImportGate(
   probe: LiveAuthProbeLike | null | undefined,
   loading: boolean,
+  agentId: AgentId,
 ): LiveAuthImportGate {
   if (loading) return { enabled: false, reason: '正在检测本机登录态…' };
   if (!probe) return { enabled: false, reason: '无法确认本机登录态，已禁用导入' };
+  if (probe.agentId !== agentId) {
+    return { enabled: false, reason: '本机登录态正在切换，已禁用导入' };
+  }
 
   const kind = probe.kind?.trim().toLowerCase() ?? '';
   const isFileAuth = kind === 'file-auth' || kind === 'file-auth.json';
@@ -301,9 +314,13 @@ export function liveAuthImportGate(
 export function liveApiKeyImportGate(
   probe: LiveAuthProbeLike | null | undefined,
   loading: boolean,
+  agentId: AgentId,
 ): LiveAuthImportGate {
   if (loading) return { enabled: false, reason: '正在检测本机认证方式…' };
   if (!probe) return { enabled: false, reason: '无法确认本机认证方式，已禁用 API Key 导入' };
+  if (probe.agentId !== agentId) {
+    return { enabled: false, reason: '本机认证方式正在切换，已禁用 API Key 导入' };
+  }
 
   const kind = probe.kind?.trim().toLowerCase() ?? '';
   const isApiKey = kind === 'api_key' || kind === 'api-key' || kind === 'apikey';

@@ -36,15 +36,15 @@ import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { AGENT_MAP } from '@/config/agents';
+import { liveAuthProbeForAgent, useAgentStatusesOptional } from '@/app/runtime';
 import {
   deleteAccount,
   importCurrentLogin,
   listAccounts,
-  probeLiveAuth,
+  refreshLiveAuthState,
   refreshToken,
   switchAccount,
   undoSwitchAccount,
-  type LiveAuthProbe,
 } from '@/lib/api/account';
 import { openAgentConfigDir } from '@/lib/api/install';
 import {
@@ -57,6 +57,8 @@ import {
   undoSwitch as undoProviderSwitch,
 } from '@/lib/api/provider';
 import { isCapabilityBlocked, providerCapabilityGate } from '@/lib/capability';
+import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
+import { attachLiveAgentAuth } from '@/lib/backend/contracts/auth-state';
 import { logger } from '@/lib/logger';
 import { liveConfigPaths } from '@/lib/provider-detect';
 import type { Account, AgentId, AgentStatus, Provider, SwitchPreview } from '@/lib/types';
@@ -80,6 +82,14 @@ import {
 } from './connection-model';
 
 const log = logger.scope('connections:list');
+
+function errorCode(error: unknown): string {
+  if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
+    return error.code;
+  }
+  if (error instanceof Error && error.name) return error.name;
+  return 'unknown';
+}
 
 /** 列表切换后通知父级刷新「当前生效」摘要（勿依赖陈旧 doctor statuses） */
 export type ConnectionPoolSnapshot = {
@@ -105,6 +115,7 @@ export function ConnectionList({
   initialFilter?: ConnectionFilter;
 }) {
   const { toast } = useToast();
+  const sharedAgentStatus = useAgentStatusesOptional();
   const meta = AGENT_MAP[agentId];
   const paths = liveConfigPaths(agentId);
 
@@ -130,9 +141,10 @@ export function ConnectionList({
   const [editProvider, setEditProvider] = React.useState<Provider | null>(null);
   const [importing, setImporting] = React.useState(false);
   const [importingAccount, setImportingAccount] = React.useState(false);
-  const [liveAuthProbe, setLiveAuthProbe] = React.useState<LiveAuthProbe | null>(null);
-  const [liveAuthProbeLoading, setLiveAuthProbeLoading] = React.useState(true);
-  const [discoveredAuth, setDiscoveredAuth] = React.useState<'account' | 'provider' | null>(null);
+  const [discoveredAuth, setDiscoveredAuth] = React.useState<{
+    agentId: AgentId;
+    kind: 'account' | 'provider';
+  } | null>(null);
   const [testingId, setTestingId] = React.useState<string | null>(null);
   const [latencyById, setLatencyById] = React.useState<Record<string, number>>({});
 
@@ -144,8 +156,9 @@ export function ConnectionList({
   accountsRef.current = accounts;
   const providersRef = React.useRef(providers);
   providersRef.current = providers;
-  const probeSignatureRef = React.useRef<string | null>(null);
-  const probeRunRef = React.useRef(0);
+  const agentStatusesRef = React.useRef(agentStatuses);
+  agentStatusesRef.current = agentStatuses;
+  const probeSignatureRef = React.useRef<{ agentId: AgentId; value: string } | null>(null);
 
   /** 请求代数：快速连点 Agent 时丢弃过期响应 */
   const loadGenRef = React.useRef(0);
@@ -170,21 +183,30 @@ export function ConnectionList({
     [providerCapabilities],
   );
   const providerBlockReason = providerGate.reason ?? '当前 Agent 不支持 Provider 配置写入';
+  const liveAuthProbe = liveAuthProbeForAgent(sharedAgentStatus, agentId) ?? null;
+  const liveAuthProbeLoading =
+    sharedAgentStatus.state === 'idle' ||
+    sharedAgentStatus.state === 'loading' ||
+    sharedAgentStatus.refreshing;
   const liveAuthImport = React.useMemo(
-    () => liveAuthImportGate(liveAuthProbe, liveAuthProbeLoading),
-    [liveAuthProbe, liveAuthProbeLoading],
+    () => liveAuthImportGate(liveAuthProbe, liveAuthProbeLoading, agentId),
+    [agentId, liveAuthProbe, liveAuthProbeLoading],
   );
   const liveApiKeyImport = React.useMemo(
-    () => liveApiKeyImportGate(liveAuthProbe, liveAuthProbeLoading),
-    [liveAuthProbe, liveAuthProbeLoading],
+    () => liveApiKeyImportGate(liveAuthProbe, liveAuthProbeLoading, agentId),
+    [agentId, liveAuthProbe, liveAuthProbeLoading],
   );
+  const discoveredAuthForCurrentAgent =
+    discoveredAuth?.agentId === agentId ? discoveredAuth.kind : null;
 
   const publish = React.useCallback(
     (accs: Account[], provs: Provider[], forAgent: AgentId) => {
-      const current = mergeConnectionEntries(accs, provs).find((e) => e.isCurrent);
+      const liveStatus = agentStatusesRef.current.find((status) => status.agentId === forAgent);
+      const accountsWithLiveAuth = accs.map((account) => attachLiveAgentAuth(account, liveStatus));
+      const current = mergeConnectionEntries(accountsWithLiveAuth, provs).find((e) => e.isCurrent);
       onSnapshotRef.current?.({
         agentId: forAgent,
-        accounts: accs,
+        accounts: accountsWithLiveAuth,
         providers: provs,
         current,
       });
@@ -213,19 +235,21 @@ export function ConnectionList({
         const [accs, provs] = await Promise.all([
           listAccounts(forAgent),
           listProviders(forAgent).catch((e) => {
-            log.warn('listProviders failed; continue with accounts only', e);
+            log.warn('listProviders failed; continue with accounts only', {
+              agentId: forAgent,
+              source: 'provider',
+              errorCode: errorCode(e),
+            });
             return [] as Provider[];
           }),
         ]);
         if (gen !== loadGenRef.current) return;
         log.info('pool loaded', {
           agentId: forAgent,
-          mode,
           accounts: accs.length,
           providers: provs.length,
           currentAccount: accs.find((a) => a.isCurrent)?.id ?? null,
           currentProvider: provs.find((p) => p.isCurrent)?.id ?? null,
-          sampleLabels: accs.slice(0, 3).map((a) => a.label),
         });
         setAccounts(accs);
         setProviders(provs);
@@ -234,7 +258,7 @@ export function ConnectionList({
         publish(accs, provs, forAgent);
       } catch (e) {
         if (gen !== loadGenRef.current) return;
-        log.error('pool load failed', e);
+        log.error('pool load failed', { agentId: forAgent, errorCode: errorCode(e) });
         setError(e);
         setPhase('error');
       } finally {
@@ -259,69 +283,66 @@ export function ConnectionList({
       setApiKeyDialogOpen(false);
       setEditProvider(null);
       setEditAccountKey(null);
+      setDiscoveredAuth(null);
       setError(null);
     }
     void load(first ? 'full' : 'soft');
   }, [agentId, load, initialFilter]);
 
-  const runLiveAuthProbe = React.useCallback(async () => {
-    const runId = ++probeRunRef.current;
-    setLiveAuthProbeLoading(true);
-    try {
-      const probe = await probeLiveAuth(agentId);
-      if (runId !== probeRunRef.current) return;
-      setLiveAuthProbe(probe);
-      const kind = probe.kind?.trim().toLowerCase() ?? '';
-      const isOAuth = kind === 'oauth' || kind === 'file-auth' || kind === 'file-auth.json';
-      const isApiKey = kind === 'api_key' || kind === 'api-key' || kind === 'apikey';
-      const signature = `${kind}:${probe.hasCredentials}:${probe.summary}`;
-      const previousSignature = probeSignatureRef.current;
-      const changed = signature !== previousSignature;
-      probeSignatureRef.current = signature;
-      if (probe.hasCredentials && changed) {
-        const isSubsequentDiscovery = previousSignature !== null;
-        if (
-          isOAuth &&
-          (isSubsequentDiscovery ||
-            !accountsRef.current.some((account) => account.kind === 'oauth'))
-        ) {
-          setDiscoveredAuth('account');
-        } else if (
-          isApiKey &&
-          (isSubsequentDiscovery ||
-            (accountsRef.current.every((account) => account.kind !== 'apikey') &&
-              providersRef.current.length === 0))
-        ) {
-          setDiscoveredAuth('provider');
-        }
-      }
-    } catch (e) {
-      if (runId !== probeRunRef.current) return;
-      log.warn('live auth probe failed; disable import', e);
-      setLiveAuthProbe(null);
-    } finally {
-      if (runId === probeRunRef.current) setLiveAuthProbeLoading(false);
-    }
-  }, [agentId]);
-
   React.useEffect(() => {
-    if (loadedAgentId !== agentId) return;
-    probeSignatureRef.current = null;
-    setDiscoveredAuth(null);
-    void runLiveAuthProbe();
-    const onFocus = () => void runLiveAuthProbe();
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [agentId, loadedAgentId, runLiveAuthProbe]);
+    if (loadedAgentId !== agentId || !liveAuthProbe) {
+      if (loadedAgentId === agentId) setDiscoveredAuth(null);
+      return;
+    }
+
+    const kind = liveAuthProbe.kind?.trim().toLowerCase() ?? '';
+    const isOAuth = kind === 'oauth' || kind === 'file-auth' || kind === 'file-auth.json';
+    const isApiKey = kind === 'api_key' || kind === 'api-key' || kind === 'apikey';
+    const signature = `${kind}:${liveAuthProbe.hasCredentials}:${liveAuthProbe.revision ?? liveAuthProbe.summary}`;
+    const previous = probeSignatureRef.current;
+    const changed = previous?.agentId !== agentId || previous.value !== signature;
+    if (!changed) return;
+
+    probeSignatureRef.current = { agentId, value: signature };
+    if (!liveAuthProbe.hasCredentials) {
+      setDiscoveredAuth(null);
+      return;
+    }
+
+    const isSubsequentDiscovery = previous?.agentId === agentId;
+    const hasExistingOAuth = accountsRef.current.some((account) => account.kind === 'oauth');
+    const hasExistingApiKey =
+      accountsRef.current.some((account) => account.kind === 'apikey') ||
+      providersRef.current.length > 0;
+    // Grok rotates access/refresh tokens in auth.json during normal use.
+    // Reconcile the current pool row automatically when a live revision changes
+    // instead of presenting a duplicate-import prompt.
+    if (isSubsequentDiscovery && isOAuth && hasExistingOAuth) {
+      void load('soft');
+    }
+    if (isOAuth && !hasExistingOAuth) {
+      setDiscoveredAuth({ agentId, kind: 'account' });
+    } else if (isApiKey && !hasExistingApiKey) {
+      setDiscoveredAuth({ agentId, kind: 'provider' });
+    } else {
+      setDiscoveredAuth(null);
+    }
+  }, [agentId, liveAuthProbe, load, loadedAgentId]);
+
+  const liveAgentStatus = agentStatuses.find((status) => status.agentId === agentId);
+  const accountsWithLiveAuth = React.useMemo(
+    () => accounts.map((account) => attachLiveAgentAuth(account, liveAgentStatus)),
+    [accounts, liveAgentStatus],
+  );
 
   const entries = React.useMemo(() => {
-    const merged = mergeConnectionEntries(accounts, providers).map((e) => {
+    const merged = mergeConnectionEntries(accountsWithLiveAuth, providers).map((e) => {
       if (e.source !== 'provider') return e;
       const ms = latencyById[e.id];
       return ms !== undefined ? withProviderLatency(e, ms) : e;
     });
     return merged;
-  }, [accounts, providers, latencyById]);
+  }, [accountsWithLiveAuth, providers, latencyById]);
 
   const counts = React.useMemo(() => countByKind(entries), [entries]);
   const visible = React.useMemo(
@@ -356,7 +377,6 @@ export function ConnectionList({
       agentId,
       source: entry.source,
       id: entry.id,
-      title: entry.title,
     });
     setPreviewLoading(true);
     try {
@@ -385,8 +405,12 @@ export function ConnectionList({
         const preview = await providerSwitchPreview(agentId, entry.id);
         setSwitchPreview(preview);
         setSwitchEntry(entry);
-      } else {
-        log.warn('switch entry missing payload', { entry });
+    } else {
+      log.warn('switch entry missing payload', {
+        agentId,
+        id: entry.id,
+        source: entry.source,
+      });
         toast({
           title: '无法切换',
           description: '连接数据不完整，请刷新后重试',
@@ -394,7 +418,12 @@ export function ConnectionList({
         });
       }
     } catch (e) {
-      log.error('switch preview failed', e);
+      log.error('switch preview failed', {
+        agentId,
+        id: entry.id,
+        source: entry.source,
+        errorCode: errorCode(e),
+      });
       toast({
         title: '无法预览切换',
         description: e instanceof Error ? e.message : String(e),
@@ -487,7 +516,12 @@ export function ConnectionList({
       }
       await load('soft');
     } catch (e) {
-      log.error('switch failed', e);
+      log.error('switch failed', {
+        agentId,
+        id: target.id,
+        source: target.source,
+        errorCode: errorCode(e),
+      });
       toast({
         title: '切换失败',
         description: e instanceof Error ? e.message : String(e),
@@ -600,13 +634,28 @@ export function ConnectionList({
   };
 
   const handleRefreshToken = async (entry: ConnectionEntry) => {
+    const action = entry.account ? accountActionPolicy(entry.account) : undefined;
+    if (!action) return;
     try {
+      if (action.kind === 'sync-current-login') {
+        // list_accounts performs the non-destructive Grok live reconciliation;
+        // importCurrentLogin remains an explicit new-authorization import.
+        await listAccounts(agentId);
+        refreshLiveAuthState(agentId);
+        await load('soft');
+        toast({
+          title: '已同步当前登录',
+          description: '已读取 Grok CLI 当前登录凭据。',
+          variant: 'success',
+        });
+        return;
+      }
       await refreshToken(agentId, entry.id);
       await load('soft');
-      toast({ title: 'Token 已刷新', description: entry.title, variant: 'success' });
+      toast({ title: action.label, description: entry.title, variant: 'success' });
     } catch (e) {
       toast({
-        title: '刷新失败',
+        title: `${action.label}失败`,
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
@@ -781,11 +830,11 @@ export function ConnectionList({
         </div>
       )}
 
-      {discoveredAuth && (
+      {discoveredAuthForCurrentAgent && (
         <div className="mb-3 flex items-center justify-between gap-3 rounded-card border border-info/40 bg-info/5 px-3 py-2 text-xs text-secondary">
           <span>
             检测到本机新的
-            {discoveredAuth === 'account' ? '官方登录' : ' API Key'} 授权信息，可导入到连接列表。
+            {discoveredAuthForCurrentAgent === 'account' ? '官方登录' : ' API Key'} 授权信息，可导入到连接列表。
           </span>
           <span className="flex shrink-0 gap-2">
             <Button
@@ -793,12 +842,12 @@ export function ConnectionList({
               size="sm"
               variant="outline"
               onClick={() =>
-                void (discoveredAuth === 'account'
+                void (discoveredAuthForCurrentAgent === 'account'
                   ? handleImportAccount()
                   : handleImportProvider())
               }
               disabled={
-                discoveredAuth === 'account'
+                discoveredAuthForCurrentAgent === 'account'
                   ? !liveAuthImport.enabled || importingAccount
                   : !liveApiKeyImport.enabled || importing
               }

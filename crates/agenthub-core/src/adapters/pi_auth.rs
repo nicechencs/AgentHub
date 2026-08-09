@@ -60,12 +60,12 @@ pub fn read_auth_json() -> Result<Value> {
 /// Merge `patch` keys into existing auth.json (provider-level merge).
 pub fn merge_auth_json(patch: &Value) -> Result<Value> {
     let mut base = read_auth_json()?;
-    let patch_obj = patch.as_object().ok_or_else(|| {
-        AppError::InvalidArg("Pi auth.json patch must be a JSON object".into())
-    })?;
-    let base_obj = base.as_object_mut().ok_or_else(|| {
-        AppError::InvalidArg("Pi auth.json must be a JSON object".into())
-    })?;
+    let patch_obj = patch
+        .as_object()
+        .ok_or_else(|| AppError::InvalidArg("Pi auth.json patch must be a JSON object".into()))?;
+    let base_obj = base
+        .as_object_mut()
+        .ok_or_else(|| AppError::InvalidArg("Pi auth.json must be a JSON object".into()))?;
     for (k, v) in patch_obj {
         base_obj.insert(k.clone(), v.clone());
     }
@@ -74,9 +74,9 @@ pub fn merge_auth_json(patch: &Value) -> Result<Value> {
 
 /// Expand full auth.json into one LiveAccount per provider key.
 pub fn expand_auth_to_live_accounts(body: &Value) -> Result<Vec<LiveAccount>> {
-    let obj = body.as_object().ok_or_else(|| {
-        AppError::InvalidArg("Pi auth.json must be a JSON object".into())
-    })?;
+    let obj = body
+        .as_object()
+        .ok_or_else(|| AppError::InvalidArg("Pi auth.json must be a JSON object".into()))?;
     if obj.is_empty() {
         return Err(AppError::NotFound(
             "Pi auth.json has no provider credentials".into(),
@@ -172,9 +172,8 @@ pub fn pi_oauth_entry_from_tokens(
     expires_in_secs: Option<i64>,
 ) -> Value {
     let expires_ms = expires_at_to_ms(expires_at_rfc3339).or_else(|| {
-        expires_in_secs.map(|s| {
-            chrono::Utc::now().timestamp_millis() + s.max(0) * 1000 - 5 * 60 * 1000
-        })
+        expires_in_secs
+            .map(|s| chrono::Utc::now().timestamp_millis() + s.max(0) * 1000 - 5 * 60 * 1000)
     });
     let mut m = Map::new();
     m.insert("type".into(), json!("oauth"));
@@ -323,14 +322,15 @@ fn expires_at_to_ms(expires_at: Option<&str>) -> Option<i64> {
 }
 
 fn fallback_provider_label(provider: &str, entry: &Value) -> String {
-    let ty = entry
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or(if entry_api_key(entry).is_some() {
-            "api_key"
-        } else {
-            "oauth"
-        });
+    let ty =
+        entry
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or(if entry_api_key(entry).is_some() {
+                "api_key"
+            } else {
+                "oauth"
+            });
     if let Some(key) = entry_api_key(entry) {
         return format!("pi:{provider} · {} ({ty})", mask_secret_preview(&key));
     }
@@ -385,9 +385,9 @@ mod tests {
         });
         let accounts = expand_auth_to_live_accounts(&body).unwrap();
         assert_eq!(accounts.len(), 3);
-        assert!(accounts.iter().any(|a| {
-            a.credentials.get("provider").and_then(|v| v.as_str()) == Some("xai")
-        }));
+        assert!(accounts
+            .iter()
+            .any(|a| { a.credentials.get("provider").and_then(|v| v.as_str()) == Some("xai") }));
         assert!(accounts.iter().any(|a| {
             a.credentials.get("provider").and_then(|v| v.as_str()) == Some("anthropic")
         }));

@@ -12,7 +12,8 @@ use crate::utils::redact::mask_secret_preview;
 use toml_edit::{DocumentMut, Item};
 
 use super::{
-    api_key_live_account, detect_binary, require_api_key, write_toml_config,
+    api_key_live_account, auth_file_revision, auth_files_revision, detect_binary,
+    inspect_auth_credentials, oauth_auth_health, require_api_key, write_toml_config,
     write_verified_json_object, AgentAdapter,
 };
 
@@ -78,22 +79,65 @@ impl AgentAdapter for GrokAdapter {
                 kind: Some("api_key".into()),
                 summary: "API key present in config.toml".into(),
                 has_credentials: true,
+                health: crate::models::AuthHealth::Configured,
+                source: Some("grok:config.toml".into()),
+                revision: auth_files_revision(&[&config, &auth]),
             });
         }
-        let has = auth.exists();
+        let has = auth.is_file();
+        if !has {
+            return Ok(AuthState {
+                agent: AgentId::Grok,
+                kind: None,
+                summary: "no auth".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Missing,
+                source: Some("grok:auth.json".into()),
+                revision: None,
+            });
+        }
+        let body = match std::fs::read_to_string(&auth)
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        {
+            Some(body) => body,
+            None => {
+                return Ok(AuthState {
+                    agent: AgentId::Grok,
+                    kind: None,
+                    summary: "auth.json could not be parsed".into(),
+                    has_credentials: false,
+                    health: crate::models::AuthHealth::Unknown,
+                    source: Some("grok:auth.json".into()),
+                    revision: auth_file_revision(&auth),
+                });
+            }
+        };
+        let metadata = inspect_auth_credentials(&body);
+        if !metadata.has_access_token && !metadata.has_refresh_token {
+            return Ok(AuthState {
+                agent: AgentId::Grok,
+                kind: None,
+                summary: "auth.json present but credentials could not be classified".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Unknown,
+                source: Some("grok:auth.json".into()),
+                revision: auth_file_revision(&auth),
+            });
+        }
+        let health = oauth_auth_health(metadata);
         Ok(AuthState {
             agent: AgentId::Grok,
-            kind: if auth.exists() {
-                Some("oauth".into())
+            kind: Some("oauth".into()),
+            summary: if health == crate::models::AuthHealth::NeedsLogin {
+                "Grok OAuth credentials are expired; sign in again".into()
             } else {
-                None
+                "auth.json credentials present".into()
             },
-            summary: if auth.exists() {
-                "auth.json present".into()
-            } else {
-                "no auth".into()
-            },
-            has_credentials: has,
+            has_credentials: true,
+            health,
+            source: Some("grok:auth.json".into()),
+            revision: auth_file_revision(&auth),
         })
     }
 

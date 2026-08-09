@@ -1,4 +1,10 @@
-import type { AccountPort, OAuthStartInfo, OAuthWaitInfo } from '@/lib/backend/contracts';
+import {
+  normalizeAuthState,
+  type AccountPort,
+  type AuthState,
+  type OAuthStartInfo,
+  type OAuthWaitInfo,
+} from '@/lib/backend/contracts';
 import {
   mapCoreAccount,
   type CoreAccount,
@@ -27,7 +33,8 @@ export function createTauriAccountPort(): AccountPort {
 
     async probeLiveAuth(agentId) {
       try {
-        return await invoke('probe_live_auth', { agentId });
+        const raw = await invoke<AuthState & { agentId?: AgentId }>('probe_live_auth', { agentId });
+        return normalizeAuthState(raw, agentId);
       } catch (e) {
         log.error('probe_live_auth failed', e);
         throw e;

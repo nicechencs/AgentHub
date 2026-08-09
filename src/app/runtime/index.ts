@@ -14,6 +14,7 @@ export type { AgentCatalogSnapshot, AgentCatalogStatus } from './agent-catalog-s
 export { AgentCatalogProvider, useAgentCatalog, useAgentCatalogOptional } from './AgentCatalogProvider';
 export {
   getAgentStatusSnapshot,
+  liveAuthProbeForAgent,
   loadAgentStatuses,
   resetAgentStatusStore,
   subscribeAgentStatuses,

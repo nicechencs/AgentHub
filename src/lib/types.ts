@@ -102,6 +102,13 @@ export interface AgentStatus {
   binPath?: string;
   authStatus: AuthStatus;
   authLabel: string; // 如 "已登录" / "API" / "未配置"
+  /** Semantic six-state auth health (optional for old backend/doctor rows). */
+  authHealth?: import('@/lib/backend/contracts/auth-state').AuthHealth;
+  /** Display label for authHealth; authLabel remains as a legacy compatibility field. */
+  authHealthLabel?: string;
+  /** Redacted source/revision metadata from the live auth probe. */
+  authSource?: string;
+  authRevision?: string;
   /**
    * 兼容字段：当前生效连接的短展示（账号 label，或 供应商名 · URL）。
    * 新代码优先读 effectiveLabel。
@@ -173,6 +180,14 @@ export interface Account {
   subscription?: string; // 订阅等级,如 "ChatGPT Plus"
   isCurrent: boolean;
   tokenValid: boolean;
+  /** Health stored with this saved account-pool row. */
+  authHealth?: import('@/lib/backend/contracts/auth-state').AuthHealth;
+  /** Current-agent live probe metadata, distinct from the saved pool row. */
+  liveAuthHealth?: import('@/lib/backend/contracts/auth-state').AuthHealth;
+  liveAuthSource?: string;
+  liveAuthRevision?: string;
+  /** OAuth has a refresh credential and can renew an expired access token. */
+  refreshable?: boolean;
   /** core 原始 status（如 active） */
   status?: string;
   /** token 剩余秒数 */

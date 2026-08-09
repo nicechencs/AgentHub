@@ -87,6 +87,18 @@ describe('connection-model', () => {
         }),
       ),
     ).toBe('expiring');
+    expect(
+      authStatusOfAccount(
+        acc({
+          id: 'o4',
+          kind: 'oauth',
+          label: 'x',
+          tokenValid: true,
+          refreshable: true,
+          tokenRemainingSec: -10,
+        }),
+      ),
+    ).toBe('valid');
   });
 
   it('maps oauth / apikey; providers collapse into apikey kind', () => {
@@ -169,42 +181,68 @@ describe('connection-model', () => {
   });
 
   it('only enables current-login import for credentialed OAuth/file-auth probes', () => {
-    expect(liveAuthImportGate(undefined, true)).toEqual({
+    expect(liveAuthImportGate(undefined, true, 'claude')).toEqual({
       enabled: false,
       reason: '正在检测本机登录态…',
     });
     expect(
-      liveAuthImportGate({ kind: 'api_key', hasCredentials: true }, false).reason,
+      liveAuthImportGate({ agentId: 'claude', kind: 'api_key', hasCredentials: true }, false, 'claude')
+        .reason,
     ).toContain('API Key');
     expect(
-      liveAuthImportGate({ kind: 'desktop-login', hasCredentials: true }, false).enabled,
+      liveAuthImportGate(
+        { agentId: 'claude', kind: 'desktop-login', hasCredentials: true },
+        false,
+        'claude',
+      ).enabled,
     ).toBe(false);
-    expect(liveAuthImportGate({ kind: 'oauth', hasCredentials: false }, false).enabled).toBe(
-      false,
-    );
-    expect(liveAuthImportGate({ kind: 'oauth', hasCredentials: true }, false)).toEqual({
+    expect(
+      liveAuthImportGate({ agentId: 'claude', kind: 'oauth', hasCredentials: false }, false, 'claude')
+        .enabled,
+    ).toBe(false);
+    expect(
+      liveAuthImportGate({ agentId: 'claude', kind: 'oauth', hasCredentials: true }, false, 'claude'),
+    ).toEqual({
       enabled: true,
       reason: '',
     });
-    expect(liveAuthImportGate({ kind: 'file-auth.json', hasCredentials: true }, false)).toEqual({
-      enabled: true,
-      reason: '',
+    expect(
+      liveAuthImportGate(
+        { agentId: 'claude', kind: 'file-auth.json', hasCredentials: true },
+        false,
+        'claude',
+      ),
+    ).toEqual({ enabled: true, reason: '' });
+  });
+
+  it('does not authorize an import while the selected agent has changed', () => {
+    const previousAgentProbe = { agentId: 'claude' as const, kind: 'oauth', hasCredentials: true };
+
+    expect(liveAuthImportGate(previousAgentProbe, false, 'codex')).toEqual({
+      enabled: false,
+      reason: '本机登录态正在切换，已禁用导入',
+    });
+    expect(liveApiKeyImportGate(previousAgentProbe, false, 'codex')).toEqual({
+      enabled: false,
+      reason: '本机认证方式正在切换，已禁用 API Key 导入',
     });
   });
 
   it('only enables API Key import for credentialed API-key probes', () => {
-    expect(liveApiKeyImportGate(undefined, true)).toEqual({
+    expect(liveApiKeyImportGate(undefined, true, 'claude')).toEqual({
       enabled: false,
       reason: '正在检测本机认证方式…',
     });
-    expect(liveApiKeyImportGate({ kind: 'oauth', hasCredentials: true }, false)).toEqual({
-      enabled: false,
-      reason: '当前本机为 OAuth 登录态，请导入当前登录态',
-    });
-    expect(liveApiKeyImportGate({ kind: 'api_key', hasCredentials: false }, false).enabled).toBe(
-      false,
-    );
-    expect(liveApiKeyImportGate({ kind: 'api_key', hasCredentials: true }, false)).toEqual({
+    expect(
+      liveApiKeyImportGate({ agentId: 'claude', kind: 'oauth', hasCredentials: true }, false, 'claude'),
+    ).toEqual({ enabled: false, reason: '当前本机为 OAuth 登录态，请导入当前登录态' });
+    expect(
+      liveApiKeyImportGate({ agentId: 'claude', kind: 'api_key', hasCredentials: false }, false, 'claude')
+        .enabled,
+    ).toBe(false);
+    expect(
+      liveApiKeyImportGate({ agentId: 'claude', kind: 'api_key', hasCredentials: true }, false, 'claude'),
+    ).toEqual({
       enabled: true,
       reason: '',
     });

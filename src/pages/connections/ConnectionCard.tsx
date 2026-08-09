@@ -14,6 +14,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
+import { authDisplayForAccount, authHealthLabel } from '@/lib/backend/contracts/auth-state';
 import {
   endpointModeBadge,
   kindBadge,
@@ -57,6 +59,10 @@ export function ConnectionCard({
   const detailsId = React.useId();
   const badge = kindBadge(entry.kind);
   const account = entry.account;
+  const accountAction = account ? accountActionPolicy(account) : undefined;
+  const authLabel = account
+    ? authDisplayForAccount(account).label
+    : authHealthLabel(entry.authHealth ?? 'unknown');
 
   return (
     <ListRow
@@ -185,7 +191,8 @@ export function ConnectionCard({
             ) : null}
             {account ? (
               <span className="inline-flex items-center gap-1.5 sm:col-span-2">
-                登录态 <StatusDot status={entry.authStatus} withLabel />
+                登录态 <StatusDot status={entry.authStatus} />
+                <span className="text-xs text-secondary">{authLabel}</span>
               </span>
             ) : null}
           </div>
@@ -216,9 +223,10 @@ export function ConnectionCard({
                 <FolderOpen className="h-3.5 w-3.5" /> 打开配置目录
               </Button>
             )}
-            {entry.kind === 'oauth' && onRefreshToken && (
+            {accountAction && onRefreshToken && (
               <Button size="sm" variant="secondary" onClick={() => onRefreshToken(entry)}>
-                <RefreshCw className="h-3.5 w-3.5" /> 刷新 Token
+                <RefreshCw className="h-3.5 w-3.5" />
+                {accountAction.label}
               </Button>
             )}
             {entry.kind === 'apikey' && (

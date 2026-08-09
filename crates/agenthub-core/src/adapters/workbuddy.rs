@@ -16,7 +16,7 @@ use crate::models::{
 use crate::utils::paths::home_dir;
 use crate::utils::redact::redact_json;
 
-use super::AgentAdapter;
+use super::{auth_file_revision, AgentAdapter};
 
 /// Official setup landing page (no npm / no allowlisted install.ps1).
 pub const SETUP_URL: &str = "https://www.codebuddy.cn/work/";
@@ -165,21 +165,77 @@ impl AgentAdapter for WorkBuddyAdapter {
     }
 
     fn read_auth(&self) -> Result<AuthState> {
-        let path = auth_info_path();
-        let has = path.as_ref().map(|p| p.is_file()).unwrap_or(false);
+        let Some(path) = auth_info_path() else {
+            return Ok(AuthState {
+                agent: AgentId::WorkBuddy,
+                kind: None,
+                summary: "WorkBuddy auth metadata path is unavailable".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Unknown,
+                source: None,
+                revision: None,
+            });
+        };
+        if !path.is_file() {
+            return Ok(AuthState {
+                agent: AgentId::WorkBuddy,
+                kind: None,
+                summary: "no WorkBuddy desktop login metadata".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Missing,
+                source: Some("workbuddy:desktop-login-metadata".into()),
+                revision: None,
+            });
+        }
+        let body = match std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        {
+            Some(body) => body,
+            None => {
+                return Ok(AuthState {
+                    agent: AgentId::WorkBuddy,
+                    kind: None,
+                    summary: "WorkBuddy login metadata could not be parsed".into(),
+                    has_credentials: false,
+                    health: crate::models::AuthHealth::Unknown,
+                    source: Some("workbuddy:desktop-login-metadata".into()),
+                    revision: auth_file_revision(&path),
+                });
+            }
+        };
+        let metadata = workbuddy_auth_metadata(&body);
+        let Some(metadata) = metadata else {
+            return Ok(AuthState {
+                agent: AgentId::WorkBuddy,
+                kind: None,
+                summary: "WorkBuddy login metadata is incomplete".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Unknown,
+                source: Some("workbuddy:desktop-login-metadata".into()),
+                revision: auth_file_revision(&path),
+            });
+        };
+        let health =
+            if metadata.expires_expired == Some(true) && metadata.refresh_expired == Some(true) {
+                crate::models::AuthHealth::NeedsLogin
+            } else if metadata.refresh_expired == Some(false) {
+                crate::models::AuthHealth::Renewable
+            } else {
+                crate::models::AuthHealth::Configured
+            };
         Ok(AuthState {
             agent: AgentId::WorkBuddy,
-            kind: if has {
-                Some("desktop-login".into())
+            kind: Some("desktop-login".into()),
+            summary: if health == crate::models::AuthHealth::NeedsLogin {
+                "WorkBuddy desktop login metadata is expired; sign in via WorkBuddy UI".into()
             } else {
-                None
+                "WorkBuddy desktop login metadata present (tokens not exposed)".into()
             },
-            summary: if has {
-                "desktop login state present (tokens not exposed)".into()
-            } else {
-                "no desktop login state (sign in via WorkBuddy UI)".into()
-            },
-            has_credentials: has,
+            has_credentials: true,
+            health,
+            source: Some("workbuddy:desktop-login-metadata".into()),
+            revision: auth_file_revision(&path),
         })
     }
 
@@ -427,6 +483,88 @@ fn auth_info_path() -> Option<PathBuf> {
     #[cfg(not(windows))]
     {
         None
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct WorkBuddyAuthMetadata {
+    expires_expired: Option<bool>,
+    refresh_expired: Option<bool>,
+}
+
+/// Extract only non-sensitive identity/expiry metadata from the desktop info
+/// file. Token-looking fields are deliberately ignored.
+fn workbuddy_auth_metadata(value: &serde_json::Value) -> Option<WorkBuddyAuthMetadata> {
+    fn visit(
+        value: &serde_json::Value,
+        has_identity: &mut bool,
+        expires: &mut Option<bool>,
+        refresh_expires: &mut Option<bool>,
+    ) {
+        let Some(object) = value.as_object() else {
+            return;
+        };
+        for (raw_key, child) in object {
+            let key = raw_key.to_ascii_lowercase().replace(['-', '.'], "_");
+            let non_empty = child.as_str().map(str::trim).is_some_and(|s| !s.is_empty());
+            match key.as_str() {
+                "email" | "email_address" | "emailaddress" | "user_id" | "userid"
+                | "account_id" | "accountid" | "username" | "name" => {
+                    *has_identity |= non_empty;
+                }
+                "expires_at" | "expiresat" | "expires" => {
+                    if let Some(value) = parse_expiry(child) {
+                        *expires = Some(value);
+                    }
+                }
+                "refresh_expires_at" | "refreshexpiresat" | "refresh_expires" => {
+                    if let Some(value) = parse_expiry(child) {
+                        *refresh_expires = Some(value);
+                    }
+                }
+                _ => {}
+            }
+            visit(child, has_identity, expires, refresh_expires);
+        }
+    }
+
+    let mut has_identity = false;
+    let mut expires = None;
+    let mut refresh_expires = None;
+    visit(value, &mut has_identity, &mut expires, &mut refresh_expires);
+    (has_identity || expires.is_some() || refresh_expires.is_some()).then_some(
+        WorkBuddyAuthMetadata {
+            expires_expired: expires,
+            refresh_expired: refresh_expires,
+        },
+    )
+}
+
+fn parse_expiry(value: &serde_json::Value) -> Option<bool> {
+    let now = chrono::Utc::now().timestamp();
+    match value {
+        serde_json::Value::Number(number) => {
+            let value = number.as_i64()?;
+            let value = if value.unsigned_abs() > 1_000_000_000_000 {
+                value / 1000
+            } else {
+                value
+            };
+            Some(value <= now)
+        }
+        serde_json::Value::String(text) => {
+            let text = text.trim();
+            if let Ok(value) = text.parse::<i64>() {
+                let value = if value.unsigned_abs() > 1_000_000_000_000 {
+                    value / 1000
+                } else {
+                    value
+                };
+                return Some(value <= now);
+            }
+            Some(chrono::DateTime::parse_from_rfc3339(text).ok()?.timestamp() <= now)
+        }
+        _ => None,
     }
 }
 

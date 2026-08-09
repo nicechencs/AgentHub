@@ -1,7 +1,8 @@
 /**
  * Provider API façade — delegates to app runtime backend.
  */
-import { getBackend } from '@/app/runtime';
+import { getBackend, loadAgentStatuses } from '@/app/runtime';
+import { clearLiveAuthProbeCache } from '@/lib/backend/contracts/live-auth-probe-cache';
 import type { AgentId, Provider, SwitchPreview } from '@/lib/types';
 
 export type {
@@ -20,12 +21,20 @@ export async function listProviders(agentId?: AgentId): Promise<Provider[]> {
   return getBackend().provider.listProviders(agentId);
 }
 
+function providerAuthStateChanged(agentId: AgentId): void {
+  clearLiveAuthProbeCache(agentId);
+  void loadAgentStatuses(getBackend(), { force: true }).catch(() => {});
+}
+
 export async function upsertProvider(p: Provider): Promise<Provider> {
-  return getBackend().provider.upsertProvider(p);
+  const provider = await getBackend().provider.upsertProvider(p);
+  providerAuthStateChanged(p.agentId);
+  return provider;
 }
 
 export async function deleteProvider(agentId: AgentId, providerId: string): Promise<void> {
-  return getBackend().provider.deleteProvider(agentId, providerId);
+  await getBackend().provider.deleteProvider(agentId, providerId);
+  providerAuthStateChanged(agentId);
 }
 
 export async function importProviderLive(agentId: AgentId, name?: string): Promise<Provider> {
@@ -37,11 +46,14 @@ export async function switchPreview(agentId: AgentId, toProviderId: string): Pro
 }
 
 export async function switchProvider(agentId: AgentId, toProviderId: string): Promise<void> {
-  return getBackend().provider.switchProvider(agentId, toProviderId);
+  await getBackend().provider.switchProvider(agentId, toProviderId);
+  providerAuthStateChanged(agentId);
 }
 
 export async function undoSwitch(agentId: AgentId): Promise<boolean> {
-  return getBackend().provider.undoSwitch(agentId);
+  const undone = await getBackend().provider.undoSwitch(agentId);
+  if (undone) providerAuthStateChanged(agentId);
+  return undone;
 }
 
 export async function testLatency(agentId: AgentId, providerId: string): Promise<number> {
