@@ -123,6 +123,24 @@ pub async fn refresh_account_token(
     .await
 }
 
+/// Invoke: `refresh_account_quota` — force 5h/7d upstream quota probe for OAuth.
+#[tauri::command]
+pub async fn refresh_account_quota(
+    state: State<'_, AppState>,
+    agent_id: String,
+    id_or_label: String,
+) -> Result<Account, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        let agent = parse_agent(&agent_id)?;
+        hub.accounts
+            .refresh_quota(&id_or_label, agent)
+            .map(|a| a.redacted())
+            .map_err(|e| map_err_string("refresh_account_quota", e))
+    })
+    .await
+}
+
 fn list_accounts_inner(hub: &AgentHub, agent_id: Option<&str>) -> Result<Vec<Account>, String> {
     let filter = match agent_id {
         None => None,

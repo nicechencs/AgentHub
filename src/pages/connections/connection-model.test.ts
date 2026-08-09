@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Account, Provider } from '@/lib/types';
 import {
   accountToEntry,
+  authStatusOfAccount,
   countByKind,
   filterConnectionEntries,
   mergeConnectionEntries,
@@ -34,6 +35,56 @@ function prov(partial: Partial<Provider> & Pick<Provider, 'id' | 'name'>): Provi
 }
 
 describe('connection-model', () => {
+  it('surfaces account email / subscription on oauth entries', () => {
+    const entry = accountToEntry(
+      acc({
+        id: 'o1',
+        kind: 'oauth',
+        label: 'me@x.com',
+        email: 'me@x.com',
+        identityLabel: 'me@x.com',
+        subscription: 'plus',
+        isCurrent: false,
+        source: 'oauth_pkce',
+      }),
+    );
+    expect(entry.title).toBe('me@x.com');
+    expect(entry.identityLabel).toBe('me@x.com');
+    expect(entry.subscription).toBe('plus');
+    expect(entry.subtitle).toContain('plus');
+    expect(entry.subtitle).not.toContain('oauth_pkce');
+  });
+
+  it('treats oauth without remaining as valid, not none', () => {
+    expect(
+      authStatusOfAccount(
+        acc({ id: 'o', kind: 'oauth', label: 'x', tokenValid: true }),
+      ),
+    ).toBe('valid');
+    expect(
+      authStatusOfAccount(
+        acc({
+          id: 'o2',
+          kind: 'oauth',
+          label: 'x',
+          tokenValid: true,
+          tokenRemainingSec: -10,
+        }),
+      ),
+    ).toBe('expired');
+    expect(
+      authStatusOfAccount(
+        acc({
+          id: 'o3',
+          kind: 'oauth',
+          label: 'x',
+          tokenValid: true,
+          tokenRemainingSec: 2 * 3600,
+        }),
+      ),
+    ).toBe('expiring');
+  });
+
   it('maps oauth / apikey; providers collapse into apikey kind', () => {
     expect(accountToEntry(acc({ id: 'a1', kind: 'oauth', label: 'me@x.com' })).kind).toBe(
       'oauth',

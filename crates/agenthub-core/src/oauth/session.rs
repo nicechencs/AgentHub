@@ -26,6 +26,8 @@ pub struct OAuthSession {
     pub agent: AgentId,
     pub verifier: String,
     pub redirect_uri: String,
+    /// Optional multi-provider key (Pi: anthropic / openai-codex / …).
+    pub provider_key: Option<String>,
     pub status: OAuthStatus,
     pub code: Option<String>,
     pub error: Option<String>,

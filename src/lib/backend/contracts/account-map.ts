@@ -22,13 +22,34 @@ export interface CoreAccountSwitchResult {
 export function mapCoreAccount(a: CoreAccount): Account {
   const extra = a.extra ?? {};
   const credentials = a.credentials ?? {};
-  const email = typeof extra.email === 'string' ? extra.email : undefined;
+  const email =
+    pickString(extra.email) ??
+    pickString(credentials.email) ??
+    pickString(credentials.email_address) ??
+    pickString(credentials.emailAddress);
+  const provider =
+    pickString(extra.provider) ??
+    pickString(credentials.provider) ??
+    inferProviderFromBody(credentials.body);
+  const subjectId =
+    pickString(extra.sub) ??
+    pickString(credentials.sub) ??
+    pickString(credentials.subject) ??
+    pickString(credentials.principal_id) ??
+    pickString(credentials.account_id);
+  const rawIdentity = pickString(extra.identityLabel);
   const identityLabel =
-    typeof extra.identityLabel === 'string' && extra.identityLabel.trim()
-      ? extra.identityLabel.trim()
-      : email ?? a.label;
+    email ??
+    (rawIdentity && looksLikeEmail(rawIdentity) ? rawIdentity : undefined) ??
+    (rawIdentity && !looksLikeUuid(rawIdentity) ? rawIdentity : undefined) ??
+    (subjectId ? shortId(subjectId) : undefined) ??
+    (rawIdentity && !looksLikeUuid(rawIdentity) ? rawIdentity : undefined) ??
+    a.label;
   const subscription =
-    typeof extra.subscription === 'string' ? extra.subscription : undefined;
+    pickString(extra.subscription) ??
+    pickString(credentials.plan_type) ??
+    pickString(credentials.planType) ??
+    pickString(credentials.subscription_tier);
   let tokenRemainingSec =
     typeof extra.tokenRemainingSec === 'number' ? extra.tokenRemainingSec : undefined;
   // Derive remaining from expiresAt when adapter only stored absolute expiry.
@@ -37,7 +58,17 @@ export function mapCoreAccount(a: CoreAccount): Account {
   }
   const quota5hPct = typeof extra.quota5hPct === 'number' ? extra.quota5hPct : undefined;
   const quota7dPct = typeof extra.quota7dPct === 'number' ? extra.quota7dPct : undefined;
-  const quotaResetIn = typeof extra.quotaResetIn === 'string' ? extra.quotaResetIn : undefined;
+  // Live countdown from absolute resets. Keep 5h and 7d separate — never mix.
+  const rem5 = remainingSecFromExpiresAt(extra.quota5hResetAt);
+  const rem7 = remainingSecFromExpiresAt(extra.quota7dResetAt);
+  const quotaResetIn =
+    formatQuotaResetIn(
+      rem5 !== undefined ? Math.min(Math.max(rem5, 0), 5 * 3600 + 120) : undefined,
+    ) ?? (typeof extra.quotaResetIn === 'string' ? extra.quotaResetIn : undefined);
+  const quota7dResetIn =
+    formatQuotaResetIn(
+      rem7 !== undefined ? Math.min(Math.max(rem7, 0), 7 * 24 * 3600 + 120) : undefined,
+    ) ?? (typeof extra.quota7dResetIn === 'string' ? extra.quota7dResetIn : undefined);
   const lastUsedAt =
     typeof extra.lastUsedAt === 'string'
       ? extra.lastUsedAt
@@ -58,19 +89,39 @@ export function mapCoreAccount(a: CoreAccount): Account {
     format: credentialFormat,
     envKey,
     source,
+    provider,
   });
 
-  const tokenExpired = extra.tokenExpired === true;
+  const tokenExpired =
+    extra.tokenExpired === true ||
+    (tokenRemainingSec !== undefined && tokenRemainingSec <= 0);
   const tokenValid =
     !tokenExpired && (a.status === 'active' || a.status === '');
+
+  // Prefer real account identity as the list title when available.
+  // Backend may still store placeholder labels (codex-oauth / grok-oauth) even after
+  // email was written into extra — always prefer email for display.
+  const label =
+    (email && looksLikeEmail(email) ? email : undefined) ??
+    (identityLabel && looksLikeEmail(identityLabel) ? identityLabel : undefined) ??
+    improveGenericOAuthLabel(a.label, {
+      provider,
+      identityLabel,
+      email,
+      subjectId,
+      agentId: a.agentId,
+    }) ??
+    a.label;
 
   return {
     id: a.id,
     agentId: a.agentId,
     kind: a.kind,
-    label: a.label,
+    label,
     email,
     identityLabel,
+    provider,
+    subjectId,
     subscription,
     isCurrent: a.isCurrent,
     tokenValid,
@@ -79,6 +130,7 @@ export function mapCoreAccount(a: CoreAccount): Account {
     quota5hPct,
     quota7dPct,
     quotaResetIn,
+    quota7dResetIn,
     lastUsedAt,
     updatedAt: a.updatedAt,
     createdAt: a.createdAt,
@@ -89,12 +141,92 @@ export function mapCoreAccount(a: CoreAccount): Account {
   };
 }
 
+function pickString(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+}
+
+function looksLikeEmail(s: string): boolean {
+  return s.includes('@') && !s.includes(' ');
+}
+
+function shortId(raw: string): string {
+  const t = raw.trim();
+  if (t.length > 12 && t.includes('-')) {
+    const head = t.split('-')[0] ?? t;
+    if (head.length >= 8) return `${head}…`;
+  }
+  return t.length > 16 ? `${t.slice(0, 12)}…` : t;
+}
+
+function inferProviderFromBody(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined;
+  const keys = Object.keys(body as Record<string, unknown>);
+  if (keys.length === 1) return keys[0];
+  const preferred = [
+    'anthropic',
+    'openai-codex',
+    'xai',
+    'github-copilot',
+    'openrouter',
+    'kimi-coding',
+  ];
+  return preferred.find((k) => keys.includes(k)) ?? keys[0];
+}
+
+/** Upgrade legacy placeholder titles when we have better identity. */
+function improveGenericOAuthLabel(
+  raw: string,
+  bits: {
+    provider?: string;
+    identityLabel?: string;
+    email?: string;
+    subjectId?: string;
+    agentId?: string;
+  },
+): string | undefined {
+  const t = raw.trim();
+  const weak =
+    /\(oauth\)$/i.test(t) ||
+    /-oauth$/i.test(t) ||
+    / · oauth$/i.test(t) ||
+    / oauth$/i.test(t) ||
+    t === 'pi-auth' ||
+    t === 'codex-oauth' ||
+    t === 'grok-oauth' ||
+    t === 'kimi-oauth' ||
+    t === 'claude-oauth' ||
+    (t.startsWith('pi:') && t === bits.identityLabel);
+  if (!weak) return undefined;
+
+  const email = bits.email && looksLikeEmail(bits.email) ? bits.email : undefined;
+  const niceIdentity =
+    bits.identityLabel && looksLikeEmail(bits.identityLabel)
+      ? bits.identityLabel
+      : bits.identityLabel && !looksLikeUuid(bits.identityLabel)
+        ? bits.identityLabel
+        : undefined;
+  const id = email ?? niceIdentity ?? (bits.subjectId ? shortId(bits.subjectId) : undefined);
+
+  if (bits.agentId === 'pi' || t.startsWith('pi:')) {
+    if (bits.provider && id) return `pi:${bits.provider} · ${id}`;
+    if (id) return id;
+    if (bits.provider) return `pi:${bits.provider}`;
+  }
+  return id;
+}
+
+function looksLikeUuid(s: string): boolean {
+  const t = s.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t);
+}
+
 /** Build a short non-secret summary for the account detail panel. */
 function buildCredentialSummary(
   credentials: Record<string, unknown>,
-  bits: { format?: string; envKey?: string; source?: string },
+  bits: { format?: string; envKey?: string; source?: string; provider?: string },
 ): string | undefined {
   const parts: string[] = [];
+  if (bits.provider) parts.push(`provider=${bits.provider}`);
   if (bits.format) parts.push(`format=${bits.format}`);
   if (bits.envKey) parts.push(`env=${bits.envKey}`);
   if (bits.source) parts.push(`source=${bits.source}`);
@@ -110,6 +242,9 @@ function buildCredentialSummary(
   }
   if (typeof credentials.api_key === 'string') {
     parts.push(credentials.api_key === '***' ? 'api_key=***' : 'api_key=set');
+  }
+  if (credentials.access_token === '***' || credentials.refresh_token === '***') {
+    parts.push('oauth=set');
   }
   return parts.length ? parts.join(' · ') : undefined;
 }
@@ -132,6 +267,21 @@ function remainingSecFromExpiresAt(raw: unknown): number | undefined {
   if (expMs === undefined) return undefined;
   const rem = Math.floor((expMs - Date.now()) / 1000);
   return rem;
+}
+
+/** Absolute remaining seconds → "2h05m 后重置" / "45m 后重置" / "即将重置". */
+function formatQuotaResetIn(sec: number | undefined): string | undefined {
+  if (sec === undefined) return undefined;
+  if (sec <= 0) return '即将重置';
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (h >= 24) {
+    const d = Math.floor(h / 24);
+    const rh = h % 24;
+    return `${d}d${rh}h 后重置`;
+  }
+  if (h === 0) return `${m}m 后重置`;
+  return `${h}h${String(m).padStart(2, '0')}m 后重置`;
 }
 
 /** 按身份分组账号（同人多授权并列；组内 current 优先，再按更新时间新→旧） */

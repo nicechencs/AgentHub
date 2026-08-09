@@ -3,12 +3,13 @@
 //! Values live only in this module — do not copy client IDs / endpoints into
 //! public docs or issues. Do not invent client secrets.
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::AgentId;
 
+use super::identity::{apply_identity_to_credentials, extract_oauth_identity, identity_extra};
 use super::TokenBundle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,10 +29,14 @@ pub struct OAuthProvider {
     pub client_id: &'static str,
     /// Fixed loopback port when required by the provider; None = ephemeral.
     pub redirect_port: Option<u16>,
+    /// Path on the loopback redirect URI (e.g. `/callback`, `/auth/callback`).
+    pub redirect_path: &'static str,
     pub scopes: &'static str,
     pub body_style: TokenBodyStyle,
     /// Optional extra authorize query params (e.g. Claude `code=true`).
     pub authorize_extra: &'static str,
+    /// When true, token exchange JSON body includes `state` (Anthropic/Pi).
+    pub token_includes_state: bool,
 }
 
 pub fn oauth_provider_for(agent: AgentId) -> Option<&'static OAuthProvider> {
@@ -44,7 +49,7 @@ pub fn oauth_provider_for(agent: AgentId) -> Option<&'static OAuthProvider> {
 }
 
 /// Claude Code native OAuth (public client).
-static CLAUDE: OAuthProvider = OAuthProvider {
+pub static CLAUDE: OAuthProvider = OAuthProvider {
     id: "claude",
     agent: AgentId::Claude,
     authorize_url: "https://claude.ai/oauth/authorize",
@@ -52,35 +57,72 @@ static CLAUDE: OAuthProvider = OAuthProvider {
     token_url: "https://console.anthropic.com/v1/oauth/token",
     client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
     redirect_port: None,
+    redirect_path: "/callback",
     scopes: "org:create_api_key user:profile user:inference",
     body_style: TokenBodyStyle::Json,
     authorize_extra: "&code=true",
+    token_includes_state: false,
 };
 
 /// OpenAI Codex / ChatGPT OAuth (fixed loopback port required by provider).
-static CODEX: OAuthProvider = OAuthProvider {
+pub static CODEX: OAuthProvider = OAuthProvider {
     id: "codex",
     agent: AgentId::Codex,
     authorize_url: "https://auth.openai.com/oauth/authorize",
     token_url: "https://auth.openai.com/oauth/token",
     client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
     redirect_port: Some(1455),
+    redirect_path: "/callback",
     scopes: "openid profile email offline_access",
     body_style: TokenBodyStyle::Form,
     authorize_extra: "",
+    token_includes_state: false,
 };
 
 /// xAI / Grok OAuth (fixed loopback port required by provider).
-static XAI: OAuthProvider = OAuthProvider {
+pub static XAI: OAuthProvider = OAuthProvider {
     id: "xai",
     agent: AgentId::Grok,
     authorize_url: "https://accounts.x.ai/oauth/authorize",
     token_url: "https://accounts.x.ai/oauth/token",
     client_id: "grok-cli",
     redirect_port: Some(56121),
+    redirect_path: "/callback",
     scopes: "openid offline_access",
     body_style: TokenBodyStyle::Form,
     authorize_extra: "",
+    token_includes_state: false,
+};
+
+/// Pi → Anthropic subscription OAuth (matches `@earendil-works/pi-ai` anthropic flow).
+pub static PI_ANTHROPIC: OAuthProvider = OAuthProvider {
+    id: "pi-anthropic",
+    agent: AgentId::Pi,
+    authorize_url: "https://claude.ai/oauth/authorize",
+    // Pi uses platform.claude.com (not console.anthropic.com).
+    token_url: "https://platform.claude.com/v1/oauth/token",
+    client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+    redirect_port: Some(53692),
+    redirect_path: "/callback",
+    scopes: "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload",
+    body_style: TokenBodyStyle::Json,
+    authorize_extra: "&code=true",
+    token_includes_state: true,
+};
+
+/// Pi → OpenAI Codex OAuth (matches pi-ai openai-codex redirect path).
+pub static PI_OPENAI_CODEX: OAuthProvider = OAuthProvider {
+    id: "pi-openai-codex",
+    agent: AgentId::Pi,
+    authorize_url: "https://auth.openai.com/oauth/authorize",
+    token_url: "https://auth.openai.com/oauth/token",
+    client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+    redirect_port: Some(1455),
+    redirect_path: "/auth/callback",
+    scopes: "openid profile email offline_access",
+    body_style: TokenBodyStyle::Form,
+    authorize_extra: "",
+    token_includes_state: false,
 };
 
 impl OAuthProvider {
@@ -103,17 +145,31 @@ impl OAuthProvider {
         verifier: &str,
         redirect_uri: &str,
     ) -> Result<TokenBundle> {
+        self.exchange_code_with_state(code, verifier, redirect_uri, None)
+    }
+
+    pub fn exchange_code_with_state(
+        &self,
+        code: &str,
+        verifier: &str,
+        redirect_uri: &str,
+        state: Option<&str>,
+    ) -> Result<TokenBundle> {
         // Some providers embed "#state" suffix in the returned code; strip it.
         let code = code.split('#').next().unwrap_or(code).trim();
-        let body = self.token_request(
-            &[
-                ("grant_type", "authorization_code"),
-                ("code", code),
-                ("redirect_uri", redirect_uri),
-                ("client_id", self.client_id),
-                ("code_verifier", verifier),
-            ],
-        )?;
+        let mut fields: Vec<(&str, &str)> = vec![
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("redirect_uri", redirect_uri),
+            ("client_id", self.client_id),
+            ("code_verifier", verifier),
+        ];
+        if self.token_includes_state {
+            if let Some(st) = state.filter(|s| !s.is_empty()) {
+                fields.push(("state", st));
+            }
+        }
+        let body = self.token_request(&fields)?;
         self.bundle_from_token_json(body)
     }
 
@@ -210,28 +266,78 @@ impl OAuthProvider {
                 .map(|s| s.to_string())
         };
 
-        let credentials = json!({
-            "type": "oauth",
-            "provider": self.id,
-            "access_token": access,
-            "refresh_token": refresh,
-            "expires_in": body.get("expires_in"),
-            "expires_at": expires_at,
-            "token_type": body.get("token_type"),
-            "scope": body.get("scope"),
-            "id_token": body.get("id_token"),
-            "raw": body,
-        });
+        let id_token = body
+            .get("id_token")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+
+        // Best-effort identity for Connections UI (email / plan / subject).
+        let identity = extract_oauth_identity(
+            self.id,
+            &body,
+            access.as_deref(),
+            id_token.as_deref(),
+        );
+
+        let mut cred_map = Map::new();
+        cred_map.insert("type".into(), json!("oauth"));
+        cred_map.insert("provider".into(), json!(self.id));
+        if let Some(ref at) = access {
+            cred_map.insert("access_token".into(), json!(at));
+        }
+        if let Some(ref rt) = refresh {
+            cred_map.insert("refresh_token".into(), json!(rt));
+        }
+        if let Some(ei) = body.get("expires_in") {
+            cred_map.insert("expires_in".into(), ei.clone());
+        }
+        if let Some(ref exp) = expires_at {
+            cred_map.insert("expires_at".into(), json!(exp));
+        }
+        if let Some(tt) = body.get("token_type") {
+            cred_map.insert("token_type".into(), tt.clone());
+        }
+        if let Some(sc) = body.get("scope") {
+            cred_map.insert("scope".into(), sc.clone());
+        }
+        if let Some(ref idt) = id_token {
+            cred_map.insert("id_token".into(), json!(idt));
+        }
+        // Keep raw for debugging / future parsers; redaction masks secret keys.
+        cred_map.insert("raw".into(), body.clone());
+        apply_identity_to_credentials(&mut cred_map, &identity);
+
+        let label_hint = identity
+            .display_label()
+            .unwrap_or_else(|| format!("{} · OAuth", self.agent.display_name()));
+
+        let mut extra = identity_extra(
+            self.id,
+            &identity,
+            expires_at.as_deref(),
+            "oauth_pkce",
+        );
+        // Ensure identityLabel is set even when only fallback label exists.
+        if let Some(obj) = extra.as_object_mut() {
+            obj.entry("identityLabel".to_string())
+                .or_insert_with(|| json!(&label_hint));
+        }
+
+        if !identity.is_empty() {
+            tracing::info!(
+                module = targets::OAUTH,
+                op = "token_identity",
+                provider = self.id,
+                has_email = identity.email.is_some(),
+                has_subscription = identity.subscription.is_some(),
+                "oauth identity extracted"
+            );
+        }
 
         Ok(TokenBundle {
-            credentials,
-            label_hint: Some(format!("{} · OAuth", self.agent.display_name())),
-            extra: json!({
-                "source": "oauth_pkce",
-                "provider": self.id,
-                "subscription": null,
-                "expiresAt": expires_at,
-            }),
+            credentials: Value::Object(cred_map),
+            label_hint: Some(label_hint),
+            extra,
         })
     }
 }
@@ -259,5 +365,58 @@ mod tests {
         assert!(oauth_provider_for(AgentId::Codex).is_some());
         assert!(oauth_provider_for(AgentId::Grok).is_some());
         assert!(oauth_provider_for(AgentId::Kimi).is_none());
+    }
+
+    #[test]
+    fn bundle_from_token_json_sets_email_label_from_claude_account() {
+        let body = json!({
+            "access_token": "at-1",
+            "refresh_token": "rt-1",
+            "expires_in": 3600,
+            "account": {
+                "uuid": "acct-1",
+                "email_address": "me@anthropic.test"
+            },
+            "organization": { "uuid": "org-1" }
+        });
+        let bundle = CLAUDE.bundle_from_token_json(body).expect("bundle");
+        assert_eq!(
+            bundle.label_hint.as_deref(),
+            Some("me@anthropic.test")
+        );
+        assert_eq!(
+            bundle.credentials.get("email").and_then(|v| v.as_str()),
+            Some("me@anthropic.test")
+        );
+        assert_eq!(
+            bundle.extra.get("email").and_then(|v| v.as_str()),
+            Some("me@anthropic.test")
+        );
+        assert_eq!(
+            bundle.extra.get("identityLabel").and_then(|v| v.as_str()),
+            Some("me@anthropic.test")
+        );
+        assert_eq!(
+            bundle
+                .credentials
+                .get("organization_id")
+                .and_then(|v| v.as_str()),
+            Some("org-1")
+        );
+    }
+
+    #[test]
+    fn bundle_from_token_json_fallback_label_when_no_identity() {
+        let body = json!({
+            "access_token": "opaque-token",
+            "refresh_token": "rt",
+            "expires_in": 60
+        });
+        let bundle = XAI.bundle_from_token_json(body).expect("bundle");
+        assert_eq!(
+            bundle.label_hint.as_deref(),
+            Some("Grok · OAuth")
+        );
+        assert!(bundle.credentials.get("email").is_none());
     }
 }

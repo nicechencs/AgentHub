@@ -9,8 +9,6 @@ import {
 } from '@/lib/api/agent-connection';
 import { looksLikeOfficialEndpoint } from '@/config/official-api';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
-import { fmtRemaining } from '@/lib/utils';
-
 /**
  * 列表行类型。
  * - oauth：官方登录
@@ -41,7 +39,9 @@ export type ConnectionEntry = {
   identityLabel?: string;
   subscription?: string;
   quota5hPct?: number;
+  quota7dPct?: number;
   quotaResetIn?: string;
+  quota7dResetIn?: string;
   latencyMs?: number;
   endpointHost?: string;
   /**
@@ -55,24 +55,30 @@ export type ConnectionEntry = {
 
 export function authStatusOfAccount(a: Account): AuthStatus {
   if (!a.tokenValid) return 'expired';
-  if (a.tokenRemainingSec === undefined) return a.kind === 'apikey' ? 'valid' : 'none';
+  // Remaining ≤ 0 means access token is past exp (JWT/expiresAt).
+  if (a.tokenRemainingSec !== undefined && a.tokenRemainingSec <= 0) return 'expired';
+  // Unknown remaining is common for some live imports before JWT exp heal —
+  // if status is still valid, show authenticated (not "未配置").
+  if (a.tokenRemainingSec === undefined) return 'valid';
   if (a.tokenRemainingSec <= 3 * 3600) return 'expiring';
   return 'valid';
 }
 
 function accountSubtitle(a: Account): string {
+  // Keep subtitle short: status + subscription only (title already holds account name).
   if (a.isCurrent) {
-    if (!a.tokenValid) return 'token 已失效';
-    if (a.tokenRemainingSec !== undefined) {
-      return `token 剩余 ${fmtRemaining(a.tokenRemainingSec)}`;
-    }
-    return a.kind === 'apikey' ? 'API Key · 当前生效' : 'token 有效';
+    const bits: string[] = [];
+    if (!a.tokenValid) bits.push('登录已失效');
+    else bits.push(a.kind === 'apikey' ? 'API Key · 当前生效' : '已登录');
+    if (a.subscription) bits.push(a.subscription);
+    return bits.join(' · ');
   }
   const bits: string[] = [];
   if (a.kind === 'apikey') bits.push('API Key');
-  if (a.identityLabel && a.identityLabel !== a.label) bits.push(a.identityLabel);
-  if (a.source) bits.push(a.source);
-  return bits.length ? bits.join(' · ') : '未生效';
+  else bits.push('未生效');
+  if (a.provider && !a.label.includes(a.provider)) bits.push(a.provider);
+  if (a.subscription) bits.push(a.subscription);
+  return bits.join(' · ');
 }
 
 function providerEndpointMode(p: Provider, endpoint?: string): 'official' | 'custom' {
@@ -116,7 +122,9 @@ export function accountToEntry(a: Account): ConnectionEntry {
     identityLabel: a.identityLabel,
     subscription: a.subscription,
     quota5hPct: a.quota5hPct,
+    quota7dPct: a.quota7dPct,
     quotaResetIn: a.quotaResetIn,
+    quota7dResetIn: a.quota7dResetIn,
     // 账号池 API Key 默认视为官方直连（无 endpoint 字段）
     endpointMode: a.kind === 'apikey' ? 'official' : undefined,
     account: a,

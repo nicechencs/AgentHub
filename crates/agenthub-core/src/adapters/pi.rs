@@ -2,11 +2,14 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    AccountKind, AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult,
-    InstallChannel, LiveAccount, RunOptions, RunSpec, RuntimeId,
+    AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult, InstallChannel,
+    LiveAccount, RunOptions, RunSpec, RuntimeId,
 };
 use crate::runtime;
 use crate::utils::atomic::atomic_write;
+use super::pi_auth::{
+    combined_live_account, merge_auth_json, pi_config_dir, read_auth_json,
+};
 use super::{api_key_live_account, detect_binary, require_api_key, AgentAdapter};
 
 pub struct PiAdapter;
@@ -94,6 +97,17 @@ impl AgentAdapter for PiAdapter {
     fn read_auth(&self) -> Result<AuthState> {
         let auth = pi_config_dir()?.join("auth.json");
         let has = auth.exists();
+        let summary = if has {
+            match read_auth_json() {
+                Ok(body) => {
+                    let n = body.as_object().map(|o| o.len()).unwrap_or(0);
+                    format!("auth.json present ({n} provider credentials)")
+                }
+                Err(_) => "auth.json present (provider-keyed OAuth / credentials)".into(),
+            }
+        } else {
+            "no auth.json".into()
+        };
         Ok(AuthState {
             agent: AgentId::Pi,
             kind: if has {
@@ -101,41 +115,21 @@ impl AgentAdapter for PiAdapter {
             } else {
                 None
             },
-            summary: if has {
-                "auth.json present (provider-keyed OAuth / credentials)".into()
-            } else {
-                "no auth.json".into()
-            },
+            summary,
             has_credentials: has,
         })
     }
 
     fn read_account(&self) -> Result<LiveAccount> {
-        let path = pi_config_dir()?.join("auth.json");
-        if !path.exists() {
+        let body = read_auth_json()?;
+        if body.as_object().map(|o| o.is_empty()).unwrap_or(true) {
             return Err(AppError::NotFound(
                 "no live Pi auth.json found to import".into(),
             ));
         }
-        let text = std::fs::read_to_string(&path)?;
-        let body: serde_json::Value = serde_json::from_str(&text)?;
-        if !body.is_object() {
-            return Err(AppError::InvalidArg(
-                "Pi auth.json must be a JSON object".into(),
-            ));
-        }
-        let label_hint = extract_pi_label(&body);
-        let kind = infer_pi_account_kind(&body);
-        Ok(LiveAccount {
-            agent: AgentId::Pi,
-            kind,
-            credentials: serde_json::json!({
-                "format": "auth_json",
-                "body": body,
-            }),
-            label_hint,
-            extra: serde_json::json!({ "source": "auth.json" }),
-        })
+        // Combined snapshot for "import whole file" / live status.
+        // Multi-provider expansion happens in AccountService::import_live.
+        combined_live_account(&body)
     }
 
     fn apply_account(&self, account: &LiveAccount) -> Result<()> {
@@ -159,13 +153,16 @@ impl AgentAdapter for PiAdapter {
                         "Pi account credentials.body must be a JSON object".into(),
                     ));
                 }
+                // Merge provider keys so switching one OAuth account does not
+                // wipe other providers already stored in auth.json.
+                let merged = merge_auth_json(&body)?;
                 let path = pi_config_dir()?.join("auth.json");
-                let mut bytes = serde_json::to_vec_pretty(&body)?;
+                let mut bytes = serde_json::to_vec_pretty(&merged)?;
                 bytes.push(b'\n');
                 atomic_write(&path, &bytes)?;
                 let written = std::fs::read_to_string(&path)?;
                 let parsed: serde_json::Value = serde_json::from_str(&written)?;
-                if parsed != body {
+                if parsed != merged {
                     return Err(AppError::message(
                         "account.verify",
                         "Pi auth.json verification failed after write",
@@ -269,11 +266,6 @@ impl AgentAdapter for PiAdapter {
     }
 }
 
-/// Config root: `PI_CODING_AGENT_DIR` or `~/.pi/agent` (same as `agent_config_dir`).
-fn pi_config_dir() -> Result<PathBuf> {
-    crate::utils::paths::agent_config_dir(AgentId::Pi)
-}
-
 fn read_json_object_or_empty(path: &Path) -> Result<serde_json::Value> {
     if !path.exists() {
         return Ok(serde_json::json!({}));
@@ -287,52 +279,6 @@ fn read_json_object_or_empty(path: &Path) -> Result<serde_json::Value> {
         )));
     }
     Ok(value)
-}
-
-fn extract_pi_label(body: &serde_json::Value) -> Option<String> {
-    let obj = body.as_object()?;
-    let providers: Vec<&str> = obj.keys().map(|s| s.as_str()).collect();
-    if providers.is_empty() {
-        return Some("pi-auth".into());
-    }
-    if providers.len() == 1 {
-        let name = providers[0];
-        let ty = obj
-            .get(name)
-            .and_then(|v| v.get("type"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("cred");
-        return Some(format!("pi:{name} ({ty})"));
-    }
-    Some(format!("pi:{} providers", providers.len()))
-}
-
-fn infer_pi_account_kind(body: &serde_json::Value) -> AccountKind {
-    let Some(obj) = body.as_object() else {
-        return AccountKind::Oauth;
-    };
-    let mut saw_oauth = false;
-    let mut saw_key = false;
-    for (_k, v) in obj {
-        match v.get("type").and_then(|t| t.as_str()) {
-            Some("oauth") => saw_oauth = true,
-            Some("api_key") | Some("apikey") | Some("api-key") => saw_key = true,
-            _ => {
-                if v.get("access").is_some() || v.get("refresh").is_some() {
-                    saw_oauth = true;
-                }
-                if v.get("key").is_some() || v.get("apiKey").is_some() || v.get("api_key").is_some()
-                {
-                    saw_key = true;
-                }
-            }
-        }
-    }
-    match (saw_oauth, saw_key) {
-        (true, false) => AccountKind::Oauth,
-        (false, true) => AccountKind::ApiKey,
-        _ => AccountKind::Oauth,
-    }
 }
 
 #[cfg(test)]
@@ -397,17 +343,6 @@ mod tests {
         assert!(joined.iter().any(|n| n == "settings.json"));
         assert!(joined.iter().any(|n| n == "auth.json"));
         assert!(joined.iter().any(|n| n == "models.json"));
-    }
-
-    #[test]
-    fn extract_pi_label_single_provider() {
-        let body = json!({
-            "xai": { "type": "oauth", "access": "a", "refresh": "r", "expires": 1 }
-        });
-        let label = extract_pi_label(&body).unwrap();
-        assert!(label.contains("xai"));
-        assert!(label.contains("oauth"));
-        assert_eq!(infer_pi_account_kind(&body), AccountKind::Oauth);
     }
 
     #[test]

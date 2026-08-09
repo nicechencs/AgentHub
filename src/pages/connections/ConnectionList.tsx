@@ -173,9 +173,14 @@ export function ConnectionList({
         setRefreshing(true);
       }
       try {
+        // Do not swallow listAccounts errors — empty list + silent fail
+        // made Pi accounts look "missing" when backend threw.
         const [accs, provs] = await Promise.all([
-          listAccounts(forAgent).catch(() => [] as Account[]),
-          listProviders(forAgent),
+          listAccounts(forAgent),
+          listProviders(forAgent).catch((e) => {
+            log.warn('listProviders failed; continue with accounts only', e);
+            return [] as Provider[];
+          }),
         ]);
         if (gen !== loadGenRef.current) return;
         log.info('pool loaded', {
@@ -185,6 +190,7 @@ export function ConnectionList({
           providers: provs.length,
           currentAccount: accs.find((a) => a.isCurrent)?.id ?? null,
           currentProvider: provs.find((p) => p.isCurrent)?.id ?? null,
+          sampleLabels: accs.slice(0, 3).map((a) => a.label),
         });
         setAccounts(accs);
         setProviders(provs);
@@ -421,6 +427,7 @@ export function ConnectionList({
 
   const handleImportAccount = async () => {
     try {
+      // Pi：会把 auth.json 各 provider 拆成多行；list 时会 heal 身份字段。
       const acc = await importCurrentLogin(agentId);
       await load('soft');
       toast({

@@ -68,8 +68,62 @@ impl AccountService {
 
     pub fn list(&self, agent: Option<AgentId>) -> Result<Vec<Account>> {
         let mut items = self.repo.list(agent)?;
+        // Persist identity extracted from stored tokens so GUI sees email/sub
+        // after redaction (JWT lives only in credentials until healed).
+        // Also promote token expiry and (for current OAuth) best-effort 5h/7d quota.
+        for item in &mut items {
+            let mut dirty = false;
+            if super::account_identity_heal::heal_account_identity(item) {
+                dirty = true;
+            }
+            if item.kind == AccountKind::Oauth
+                && super::account_quota::heal_token_expiry(item)
+            {
+                dirty = true;
+            }
+            // Tick quota countdown from absolute reset timestamps (no network).
+            if item.kind == AccountKind::Oauth
+                && super::account_quota::refresh_quota_reset_label(item, Utc::now())
+            {
+                dirty = true;
+            }
+            // Only probe upstream quota for the active OAuth account to keep list snappy.
+            if item.is_current
+                && item.kind == AccountKind::Oauth
+                && super::account_quota::try_refresh_account_quota(item, false)
+            {
+                dirty = true;
+            }
+            if dirty {
+                if let Err(e) = self.repo.update(item) {
+                    tracing::warn!(
+                        module = targets::ACCOUNT,
+                        account_id = %item.id,
+                        agent = item.agent_id.as_str(),
+                        error = %e,
+                        "failed to persist healed account identity/quota"
+                    );
+                }
+            }
+        }
         sort_accounts(&mut items);
         Ok(items)
+    }
+
+    /// Force-refresh upstream 5h/7d quota windows for one OAuth account.
+    pub fn refresh_quota(&self, id_or_label: &str, agent: AgentId) -> Result<Account> {
+        let mut account = self.get(id_or_label, Some(agent))?;
+        if account.kind != AccountKind::Oauth {
+            return Err(AppError::Unsupported(
+                "quota refresh is only supported for OAuth accounts".into(),
+            ));
+        }
+        let _ = super::account_identity_heal::heal_account_identity(&mut account);
+        let _ = super::account_quota::heal_token_expiry(&mut account);
+        let _ = super::account_quota::try_refresh_account_quota(&mut account, true);
+        account.updated_at = Utc::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string();
+        self.repo.update(&account)?;
+        Ok(account)
     }
 
     /// Resolve by id first, then exact label (optionally scoped to agent).
@@ -415,54 +469,142 @@ impl AccountService {
                 "token refresh is only supported for OAuth accounts".into(),
             ));
         }
-        let provider_id = account
-            .credentials
-            .get("provider")
-            .and_then(|v| v.as_str())
-            .unwrap_or(agent.as_str());
-        let refresh = account
-            .credentials
-            .get("refresh_token")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| {
-                AppError::message(
-                    "oauth.refresh",
-                    "account has no refresh_token; re-run OAuth login",
-                )
-            })?;
 
-        let provider = crate::oauth::oauth_provider_for(agent).ok_or_else(|| {
-            AppError::Unsupported(format!(
-                "OAuth refresh is not configured for {} (provider={provider_id})",
-                agent.as_str()
-            ))
-        })?;
+        // Heal first so Pi body.refresh is promoted to refresh_token.
+        let _ = super::account_identity_heal::heal_account_identity(&mut account);
 
-        let bundle = provider.refresh(refresh)?;
-        // Preserve refresh_token if provider omitted a new one.
-        let mut creds = bundle.credentials;
-        if creds
-            .get("refresh_token")
-            .and_then(|v| v.as_str())
-            .is_none()
-            || creds
+        let (mut creds, extra_base, new_identity) = if agent == AgentId::Pi {
+            let creds = crate::oauth::refresh_pi_provider(&account.credentials)?;
+            // Merge into live auth.json so Pi CLI keeps working.
+            if let Some(body) = creds.get("body") {
+                let merged = crate::adapters::pi_auth::merge_auth_json(body)?;
+                let path = crate::adapters::pi_auth::pi_auth_path()?;
+                let mut bytes = serde_json::to_vec_pretty(&merged)?;
+                bytes.push(b'\n');
+                crate::utils::atomic::atomic_write(&path, &bytes)?;
+            }
+            let identity = crate::oauth::identity_from_credentials(&creds);
+            let extra = json!({
+                "source": "oauth_refresh",
+                "provider": creds.get("provider").cloned().unwrap_or(json!(null)),
+            });
+            (creds, extra, identity)
+        } else {
+            let provider_id = account
+                .credentials
+                .get("provider")
+                .and_then(|v| v.as_str())
+                .unwrap_or(agent.as_str());
+            let refresh = account
+                .credentials
                 .get("refresh_token")
                 .and_then(|v| v.as_str())
-                .map(|s| s.is_empty())
-                .unwrap_or(true)
-        {
-            if let Some(obj) = creds.as_object_mut() {
-                obj.insert("refresh_token".into(), serde_json::json!(refresh));
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| {
+                    AppError::message(
+                        "oauth.refresh",
+                        "account has no refresh_token; re-run OAuth login",
+                    )
+                })?;
+
+            let provider = crate::oauth::oauth_provider_for(agent).ok_or_else(|| {
+                AppError::Unsupported(format!(
+                    "OAuth refresh is not configured for {} (provider={provider_id})",
+                    agent.as_str()
+                ))
+            })?;
+
+            let bundle = provider.refresh(refresh)?;
+            let mut creds = bundle.credentials;
+            if creds
+                .get("refresh_token")
+                .and_then(|v| v.as_str())
+                .is_none()
+                || creds
+                    .get("refresh_token")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.is_empty())
+                    .unwrap_or(true)
+            {
+                if let Some(obj) = creds.as_object_mut() {
+                    obj.insert("refresh_token".into(), serde_json::json!(refresh));
+                }
             }
+            let prior_identity = crate::oauth::identity_from_credentials(&account.credentials);
+            let mut new_identity = crate::oauth::identity_from_credentials(&creds);
+            new_identity.merge_missing(&prior_identity);
+            if let Some(obj) = creds.as_object_mut() {
+                crate::oauth::apply_identity_to_credentials(obj, &new_identity);
+            }
+            (creds, bundle.extra, new_identity)
+        };
+
+        // Keep prior identity fields when the refresh response omits them.
+        let prior_identity = crate::oauth::identity_from_credentials(&account.credentials);
+        let mut new_identity = new_identity;
+        new_identity.merge_missing(&prior_identity);
+        if let Some(obj) = creds.as_object_mut() {
+            crate::oauth::apply_identity_to_credentials(obj, &new_identity);
         }
+
         account.credentials = creds;
-        if let Some(obj) = account.extra.as_object_mut() {
+
+        let mut extra = extra_base;
+        if let Some(obj) = extra.as_object_mut() {
             if let Some(exp) = account.credentials.get("expires_at").cloned() {
                 obj.insert("expiresAt".into(), exp);
             }
             obj.insert("source".into(), serde_json::json!("oauth_refresh"));
+            if let Some(ref email) = new_identity.email {
+                obj.insert("email".into(), json!(email));
+            }
+            if let Some(ref plan) = new_identity.subscription {
+                obj.insert("subscription".into(), json!(plan));
+            }
+            if let Some(label) = new_identity.display_label() {
+                obj.insert("identityLabel".into(), json!(label));
+            }
+            if let Some(p) = account.credentials.get("provider").and_then(|v| v.as_str()) {
+                obj.insert("provider".into(), json!(p));
+            }
         }
+        // Prefer adapter identity_label for final extra shape.
+        if let Ok(adapter) = self.adapter(agent) {
+            extra = attach_identity_meta(
+                adapter.as_ref(),
+                account.kind,
+                &account.credentials,
+                &account.label,
+                extra,
+            );
+        }
+        account.extra = extra;
+
+        // Upgrade generic OAuth labels once we learn a real identity.
+        if let Some(lab) = new_identity.display_label() {
+            if is_generic_oauth_label(&account.label, agent)
+                || super::account_identity_heal::needs_identity_heal(&account)
+            {
+                if agent == AgentId::Pi {
+                    if let Some(p) = account
+                        .credentials
+                        .get("provider")
+                        .and_then(|v| v.as_str())
+                    {
+                        account.label = format!("pi:{p} · {lab}");
+                    } else {
+                        account.label = lab;
+                    }
+                } else {
+                    account.label = lab;
+                }
+            }
+        }
+
+        let _ = super::account_quota::heal_token_expiry(&mut account);
+        // Fresh access token → re-probe 5h/7d windows when supported.
+        let _ = super::account_quota::try_refresh_account_quota(&mut account, true);
+
         account.updated_at = now_ts();
         account.status = "active".into();
         self.repo.update(&account)
@@ -477,9 +619,69 @@ impl AccountService {
     }
 
     fn import_live_inner(&self, agent: AgentId, name: Option<&str>) -> Result<Account> {
+        // Pi stores multi-provider credentials in one auth.json — expand to
+        // one pool row per provider so Connections can show each OAuth login.
+        if agent == AgentId::Pi {
+            return self.import_pi_providers_inner(name);
+        }
+
         let adapter = self.registry.require(agent, Capability::AccountSwitch)?;
         let _lock = self.acquire_live_lock(agent)?;
         let live = adapter.read_account()?;
+        if live.agent != agent {
+            return Err(AppError::InvalidArg(format!(
+                "adapter returned account for {}, expected {}",
+                live.agent.as_str(),
+                agent.as_str()
+            )));
+        }
+
+        self.upsert_live_account(adapter.as_ref(), agent, live, name, true)
+    }
+
+    /// Import each Pi auth.json provider as its own pool account.
+    /// Returns the activated (or primary) account for UI focus.
+    fn import_pi_providers_inner(&self, name: Option<&str>) -> Result<Account> {
+        let adapter = self.registry.require(AgentId::Pi, Capability::AccountSwitch)?;
+        let _lock = self.acquire_live_lock(AgentId::Pi)?;
+        let body = crate::adapters::pi_auth::read_auth_json()?;
+        let lives = crate::adapters::pi_auth::expand_auth_to_live_accounts(&body)?;
+        if lives.is_empty() {
+            return Err(AppError::NotFound(
+                "Pi auth.json has no provider credentials to import".into(),
+            ));
+        }
+
+        let mut last: Option<Account> = None;
+        let n = lives.len();
+        for (i, live) in lives.into_iter().enumerate() {
+            let is_last = i + 1 == n;
+            // Only the last imported provider becomes current (live switch once).
+            let display_name = if is_last {
+                name
+            } else {
+                None
+            };
+            let acc = self.upsert_live_account(
+                adapter.as_ref(),
+                AgentId::Pi,
+                live,
+                display_name,
+                is_last,
+            )?;
+            last = Some(acc);
+        }
+        last.ok_or_else(|| AppError::message("account.import", "Pi import produced no accounts"))
+    }
+
+    fn upsert_live_account(
+        &self,
+        adapter: &dyn AgentAdapter,
+        agent: AgentId,
+        live: LiveAccount,
+        name: Option<&str>,
+        make_current: bool,
+    ) -> Result<Account> {
         if live.agent != agent {
             return Err(AppError::InvalidArg(format!(
                 "adapter returned account for {}, expected {}",
@@ -501,7 +703,7 @@ impl AccountService {
             obj.insert("source".into(), json!("live"));
         }
         let extra = attach_identity_meta(
-            adapter.as_ref(),
+            adapter,
             live.kind,
             &live.credentials,
             &display,
@@ -511,19 +713,19 @@ impl AccountService {
         // 仅按「授权票」去重：同 token/key 再 import → upsert；
         // 同人不同 token → 新行（见 docs/account-authorization-pool.md）。
         if let Some(existing) = self.find_duplicate_authorization(
-            adapter.as_ref(),
+            adapter,
             agent,
             live.kind,
             &live.credentials,
         )? {
             return self.merge_into_existing(
-                adapter.as_ref(),
+                adapter,
                 existing,
                 live.kind,
                 display,
                 live.credentials,
                 extra,
-                true,
+                make_current,
             );
         }
 
@@ -536,12 +738,16 @@ impl AccountService {
             credentials: live.credentials,
             extra,
             status: "active".into(),
-            is_current: true,
+            is_current: make_current,
             created_at: now.clone(),
             updated_at: now,
         };
-        let (created, _binding) = self.connections.create_and_activate_account(&row)?;
-        Ok(created)
+        if make_current {
+            let (created, _binding) = self.connections.create_and_activate_account(&row)?;
+            Ok(created)
+        } else {
+            self.repo.create(&row)
+        }
     }
 
     /// 查找与给定凭据为「同一授权票」的已有行（非身份）。
@@ -822,6 +1028,25 @@ fn accounts_same_authorization(
         (Some(a), Some(b)) => a == b,
         _ => false,
     }
+}
+
+/// True when label is a placeholder like `Claude · OAuth` / `claude oauth`.
+fn is_generic_oauth_label(label: &str, agent: AgentId) -> bool {
+    let t = label.trim();
+    if t.is_empty() {
+        return true;
+    }
+    let lower = t.to_ascii_lowercase();
+    let agent_name = agent.display_name().to_ascii_lowercase();
+    let agent_id = agent.as_str().to_ascii_lowercase();
+    lower == format!("{agent_name} · oauth")
+        || lower == format!("{agent_name} ·oauth")
+        || lower == format!("{agent_name} oauth")
+        || lower == format!("{agent_id} oauth")
+        || lower == format!("{agent_id}-oauth")
+        || lower == format!("{agent_id} · oauth")
+        || lower.ends_with(" · oauth")
+        || lower.ends_with(" oauth")
 }
 
 /// 写入 extra.identityLabel（及 email）供 UI 分组；不参与去重。
