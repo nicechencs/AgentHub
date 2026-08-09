@@ -31,6 +31,8 @@
     "tauri:build": "tauri build",
     "tauri:build:macos": "tauri build --bundles app --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'",
     "updater:latest-json": "node scripts/build-latest-json.mjs",
+    "release:check": "node scripts/release-metadata.mjs",
+    "release:test": "node --test scripts/release-metadata.test.mjs scripts/build-latest-json.test.mjs",
     "release:update": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1",
     "release:update:publish": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1 -Publish"
   },

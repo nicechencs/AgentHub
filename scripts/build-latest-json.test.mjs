@@ -9,8 +9,12 @@ import { buildFeed, macArtifacts, normalizeMacArch } from './build-latest-json.m
 function tempBundle() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agenthub-latest-json-'));
   const macos = path.join(root, 'macos');
+  const nsis = path.join(root, 'nsis');
+  const msi = path.join(root, 'msi');
   fs.mkdirSync(macos, { recursive: true });
-  return { root, macos };
+  fs.mkdirSync(nsis, { recursive: true });
+  fs.mkdirSync(msi, { recursive: true });
+  return { root, macos, nsis, msi };
 }
 
 function signedArtifact(dir, name, signature = 'sig') {
@@ -55,5 +59,40 @@ test('generic macOS artifact fails closed without explicit architecture', () => 
   assert.throws(
     () => macArtifacts(macos),
     /cannot determine architecture.*--mac-arch/,
+  );
+});
+
+test('builds Windows and ARM macOS updater feed from downloaded artifact layout', () => {
+  const { root, macos, nsis, msi } = tempBundle();
+  signedArtifact(nsis, 'AgentHub_1.0.0_x64-setup.exe', 'windows-sig');
+  signedArtifact(msi, 'AgentHub_1.0.0_x64_en-US.msi', 'msi-sig');
+  signedArtifact(macos, 'AgentHub_1.0.0_aarch64.app.tar.gz', 'mac-sig');
+
+  const feed = buildFeed({
+    version: '1.0.0',
+    notes: 'release notes',
+    baseUrl: 'https://example.invalid/releases/download/v1.0.0',
+    out: 'latest.json',
+    targetDir: root,
+    macArch: 'aarch64',
+  });
+
+  assert.equal(feed.platforms['windows-x86_64'].signature, 'windows-sig');
+  assert.equal(feed.platforms['darwin-aarch64'].signature, 'mac-sig');
+});
+
+test('fails when a selected updater signature is empty after trimming', () => {
+  const { root, nsis } = tempBundle();
+  signedArtifact(nsis, 'AgentHub_1.0.0_x64-setup.exe', ' \n\t ');
+  assert.throws(
+    () => buildFeed({
+      version: '1.0.0',
+      notes: '',
+      baseUrl: 'https://example.invalid/releases/download/v1.0.0',
+      out: 'latest.json',
+      targetDir: root,
+      macArch: null,
+    }),
+    /empty updater signature/,
   );
 });

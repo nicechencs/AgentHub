@@ -71,7 +71,11 @@ function inferMacArch(fileName) {
 }
 
 function readSig(filePath) {
-  return fs.readFileSync(filePath, 'utf8').trim();
+  const signature = fs.readFileSync(filePath, 'utf8').trim();
+  if (!signature) {
+    throw new Error(`empty updater signature ${filePath}`);
+  }
+  return signature;
 }
 
 function findFirst(dir, predicate, preferVersion = null) {
