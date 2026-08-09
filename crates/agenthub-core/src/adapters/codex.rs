@@ -12,7 +12,8 @@ use crate::utils::atomic::atomic_write;
 use crate::utils::paths::{agent_home, home_dir};
 
 use super::{
-    api_key_live_account, detect_binary, require_api_key, write_toml_config, AgentAdapter,
+    api_key_live_account, auth_file_revision, detect_binary, inspect_auth_credentials,
+    oauth_auth_health, require_api_key, write_toml_config, AgentAdapter,
 };
 
 pub struct CodexAdapter;
@@ -91,17 +92,73 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn read_auth(&self) -> Result<AuthState> {
-        let auth = agent_home(AgentId::Codex)?.join("auth.json");
-        let has = auth.exists();
+        let home = agent_home(AgentId::Codex)?;
+        let auth = home.join("auth.json");
+        if read_live_openai_api_key(&auth).ok().flatten().is_some() {
+            return Ok(AuthState {
+                agent: AgentId::Codex,
+                kind: Some("api_key".into()),
+                summary: "OPENAI_API_KEY present in auth.json".into(),
+                has_credentials: true,
+                health: crate::models::AuthHealth::Configured,
+                source: Some("codex:auth.json".into()),
+                revision: auth_file_revision(&auth),
+            });
+        }
+        let has = auth.is_file();
+        if !has {
+            return Ok(AuthState {
+                agent: AgentId::Codex,
+                kind: None,
+                summary: "no auth.json".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Missing,
+                source: Some("codex:auth.json".into()),
+                revision: None,
+            });
+        }
+        let body = match std::fs::read_to_string(&auth)
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        {
+            Some(body) => body,
+            None => {
+                return Ok(AuthState {
+                    agent: AgentId::Codex,
+                    kind: None,
+                    summary: "auth.json could not be parsed".into(),
+                    has_credentials: false,
+                    health: crate::models::AuthHealth::Unknown,
+                    source: Some("codex:auth.json".into()),
+                    revision: auth_file_revision(&auth),
+                });
+            }
+        };
+        let metadata = inspect_auth_credentials(&body);
+        if !metadata.has_access_token && !metadata.has_refresh_token {
+            return Ok(AuthState {
+                agent: AgentId::Codex,
+                kind: None,
+                summary: "auth.json present but credentials could not be classified".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Unknown,
+                source: Some("codex:auth.json".into()),
+                revision: auth_file_revision(&auth),
+            });
+        }
+        let health = oauth_auth_health(metadata);
         Ok(AuthState {
             agent: AgentId::Codex,
-            kind: if has { Some("oauth".into()) } else { None },
-            summary: if has {
-                "auth.json present".into()
+            kind: Some("oauth".into()),
+            summary: if health == crate::models::AuthHealth::NeedsLogin {
+                "Codex OAuth credentials are expired; run `codex login`".into()
             } else {
-                "no auth.json".into()
+                "Codex OAuth credentials present".into()
             },
-            has_credentials: has,
+            has_credentials: true,
+            health,
+            source: Some("codex:auth.json".into()),
+            revision: auth_file_revision(&auth),
         })
     }
 
@@ -202,9 +259,7 @@ impl AgentAdapter for CodexAdapter {
             | DangerousMode | ProjectHistory | ProjectDelete | ProviderPresets => {
                 CapabilityState::full()
             }
-            ApiKeyAccount => CapabilityState::partial(
-                "可入池；live 应用仅支持 OAuth auth.json",
-            ),
+            ApiKeyAccount => CapabilityState::partial("可入池；live 应用仅支持 OAuth auth.json"),
             Usage => CapabilityState::full(),
             Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
         }
@@ -305,9 +360,9 @@ fn clear_codex_apikey_auth_preference(path: &Path) -> Result<()> {
     if live.trim().is_empty() {
         return Ok(());
     }
-    let mut doc = live.parse::<toml_edit::DocumentMut>().map_err(|e| {
-        AppError::InvalidArg(format!("existing Codex config.toml is invalid: {e}"))
-    })?;
+    let mut doc = live
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| AppError::InvalidArg(format!("existing Codex config.toml is invalid: {e}")))?;
     let pref = doc
         .get("preferred_auth_method")
         .and_then(|v| v.as_str())

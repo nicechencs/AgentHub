@@ -1,7 +1,7 @@
 /**
  * Agent API façade — delegates to app runtime backend.
  */
-import { getBackend } from '@/app/runtime';
+import { getBackend, loadAgentStatuses } from '@/app/runtime';
 import type { InstallOutcome } from '@/lib/backend/contracts/install-types';
 import type { AgentId, AgentStatus, AgentUpdateInfo } from '@/lib/types';
 
@@ -12,8 +12,17 @@ export {
 
 export { mergeAgentListWithCatalog } from '@/lib/backend/contracts/agent-catalog';
 
-export async function listAgents(): Promise<AgentStatus[]> {
-  return getBackend().agent.listAgents();
+export async function listAgents(opts: { force?: boolean } = {}): Promise<AgentStatus[]> {
+  const snapshot = await loadAgentStatuses(getBackend(), opts);
+  return snapshot.statuses;
+}
+
+async function refreshAgentStatusStore(): Promise<void> {
+  try {
+    await loadAgentStatuses(getBackend(), { force: true });
+  } catch {
+    // The mutation result remains authoritative; a later page read can retry detection.
+  }
 }
 
 export async function getAgent(agentId: AgentId): Promise<AgentStatus> {
@@ -25,7 +34,9 @@ export async function installAgentDetailed(
   channel: string,
   opts: { installDeps?: boolean } = {},
 ): Promise<InstallOutcome> {
-  return getBackend().agent.installAgentDetailed(agentId, channel, opts);
+  const outcome = await getBackend().agent.installAgentDetailed(agentId, channel, opts);
+  await refreshAgentStatusStore();
+  return outcome;
 }
 
 export async function installAgent(
@@ -33,26 +44,35 @@ export async function installAgent(
   channel: string,
   opts: { installDeps?: boolean } = {},
 ): Promise<AgentStatus> {
-  return getBackend().agent.installAgent(agentId, channel, opts);
+  const outcome = await getBackend().agent.installAgent(agentId, channel, opts);
+  await refreshAgentStatusStore();
+  return outcome;
 }
 
 export async function upgradeAgentDetailed(agentId: AgentId): Promise<InstallOutcome> {
-  return getBackend().agent.upgradeAgentDetailed(agentId);
+  const outcome = await getBackend().agent.upgradeAgentDetailed(agentId);
+  await refreshAgentStatusStore();
+  return outcome;
 }
 
 export async function upgradeAgent(agentId: AgentId): Promise<AgentStatus> {
-  return getBackend().agent.upgradeAgent(agentId);
+  const outcome = await getBackend().agent.upgradeAgent(agentId);
+  await refreshAgentStatusStore();
+  return outcome;
 }
 
 export async function uninstallAgentDetailed(
   agentId: AgentId,
   deleteConfig: boolean,
 ): Promise<InstallOutcome> {
-  return getBackend().agent.uninstallAgentDetailed(agentId, deleteConfig);
+  const outcome = await getBackend().agent.uninstallAgentDetailed(agentId, deleteConfig);
+  await refreshAgentStatusStore();
+  return outcome;
 }
 
 export async function uninstallAgent(agentId: AgentId, deleteConfig: boolean): Promise<void> {
-  return getBackend().agent.uninstallAgent(agentId, deleteConfig);
+  await getBackend().agent.uninstallAgent(agentId, deleteConfig);
+  await refreshAgentStatusStore();
 }
 
 export async function openAgentConfig(agentId: AgentId): Promise<string | null> {

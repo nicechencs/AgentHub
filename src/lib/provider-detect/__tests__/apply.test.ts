@@ -28,6 +28,36 @@ describe('applySmartPaste', () => {
     expect(r.configText).toContain('model_providers');
     expect(r.configText).not.toContain('sk-abcdefghijklmnopqrstuvwxyz012345');
   });
+
+  it('preserves a complete Grok Build registry TOML paste', () => {
+    const r = applySmartPaste(
+      'grok',
+      [
+        '[models]',
+        'default = "grok"',
+        'web_search = "grok"',
+        '',
+        '[model."grok"]',
+        'model = "grok-4.5"',
+        'base_url = "https://relay.example.com/v1"',
+        'name = "Grok 4.5"',
+        'api_key = "sk-grok-test-abcdefghijklmnop"',
+        'api_backend = "responses"',
+        'context_window = 1000000',
+        'supports_backend_search = true',
+        '',
+      ].join('\n'),
+    );
+    expect(r.vars.model).toBe('grok-4.5');
+    expect(r.vars.baseUrl).toBe('https://relay.example.com/v1');
+    expect(r.vars.apiKey).toBe('sk-grok-test-abcdefghijklmnop');
+    expect(r.configFormat).toBe('toml');
+    expect(r.configText).toContain('[models]');
+    expect(r.configText).toContain('[model."grok"]');
+    expect(r.configText).toContain('name = "Grok 4.5"');
+    expect(r.configText).toContain('api_backend = "responses"');
+    expect(r.configText).toContain('supports_backend_search = true');
+  });
 });
 
 describe('initFormFromConfig', () => {

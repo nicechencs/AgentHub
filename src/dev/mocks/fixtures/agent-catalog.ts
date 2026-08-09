@@ -44,7 +44,7 @@ const PROJECTOR_SCHEMA_VERSION: Record<string, number> = {
   claude: 1,
   codex: 1,
   kimi: 1,
-  grok: 1,
+  grok: 2,
 };
 
 /** Agents without projector: explicit null (legacy applyFormVars path). */

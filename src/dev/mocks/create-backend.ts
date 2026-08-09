@@ -1,6 +1,6 @@
 import { seedAgentCatalog } from '@/app/runtime/agent-catalog-store';
 import type { Backend, CreateBackend } from '@/lib/backend/contracts';
-import { createMockAccountPort } from './account';
+import { createMockAccountPort, restoreMockAccount } from './account';
 import { createMockAgentPort } from './agent';
 import { createMockBackupPort } from './backup';
 import { createMockCatalogPort, resetMockAgentCatalog } from './catalog';
@@ -12,11 +12,12 @@ import { createMockEnvPort } from './env';
 import { MOCK_AGENT_CATALOG } from './fixtures/agent-catalog';
 import { createMockInstallPort } from './install';
 import { createMockProjectPort, resetProjectMock } from './project';
-import { createMockProviderPort } from './provider';
+import { createMockProviderPort, restoreMockProvider } from './provider';
 import { createMockSettingsPort } from './settings';
 import { createMockSkillPort } from './skill';
 import { createMockUpdatePort } from './update';
 import { createMockUsagePort } from './usage';
+import { createMockTrashPort, resetMockTrash } from './trash';
 
 /** Browser / vitest backend — never selected by production build. */
 export const createBackend: CreateBackend = () => {
@@ -25,6 +26,7 @@ export const createBackend: CreateBackend = () => {
   resetProjectMock();
   resetMockAgentCatalog();
   resetMockConfig();
+  resetMockTrash();
   // Seed full agent catalog (ids / names / channels / capabilities).
   seedAgentCatalog(MOCK_AGENT_CATALOG);
 
@@ -43,6 +45,10 @@ export const createBackend: CreateBackend = () => {
     doctor: createMockDoctorPort(),
     install: createMockInstallPort(),
     update: createMockUpdatePort(),
+    trash: createMockTrashPort({
+      restoreAccount: restoreMockAccount,
+      restoreProvider: restoreMockProvider,
+    }),
   } as Backend;
 
   backend.env = createMockEnvPort(backend);

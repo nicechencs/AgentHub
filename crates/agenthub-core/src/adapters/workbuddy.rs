@@ -16,7 +16,7 @@ use crate::models::{
 use crate::utils::paths::home_dir;
 use crate::utils::redact::redact_json;
 
-use super::AgentAdapter;
+use super::{auth_file_revision, AgentAdapter};
 
 /// Official setup landing page (no npm / no allowlisted install.ps1).
 pub const SETUP_URL: &str = "https://www.codebuddy.cn/work/";
@@ -161,30 +161,81 @@ impl AgentAdapter for WorkBuddyAdapter {
     }
 
     fn write_config(&self, _config: &AgentConfig) -> Result<()> {
-        // models.json dual-shape merge not locked for P0 — fail closed.
-        Err(AppError::Unsupported(
-            "live config writes are not supported for workbuddy \
-             (models.json / settings.json merge rules not locked; use WorkBuddy UI or edit files)"
-                .into(),
-        ))
+        write_workbuddy_config(_config)
     }
 
     fn read_auth(&self) -> Result<AuthState> {
-        let path = auth_info_path();
-        let has = path.as_ref().map(|p| p.is_file()).unwrap_or(false);
+        let Some(path) = auth_info_path() else {
+            return Ok(AuthState {
+                agent: AgentId::WorkBuddy,
+                kind: None,
+                summary: "WorkBuddy auth metadata path is unavailable".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Unknown,
+                source: None,
+                revision: None,
+            });
+        };
+        if !path.is_file() {
+            return Ok(AuthState {
+                agent: AgentId::WorkBuddy,
+                kind: None,
+                summary: "no WorkBuddy desktop login metadata".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Missing,
+                source: Some("workbuddy:desktop-login-metadata".into()),
+                revision: None,
+            });
+        }
+        let body = match std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        {
+            Some(body) => body,
+            None => {
+                return Ok(AuthState {
+                    agent: AgentId::WorkBuddy,
+                    kind: None,
+                    summary: "WorkBuddy login metadata could not be parsed".into(),
+                    has_credentials: false,
+                    health: crate::models::AuthHealth::Unknown,
+                    source: Some("workbuddy:desktop-login-metadata".into()),
+                    revision: auth_file_revision(&path),
+                });
+            }
+        };
+        let metadata = workbuddy_auth_metadata(&body);
+        let Some(metadata) = metadata else {
+            return Ok(AuthState {
+                agent: AgentId::WorkBuddy,
+                kind: None,
+                summary: "WorkBuddy login metadata is incomplete".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Unknown,
+                source: Some("workbuddy:desktop-login-metadata".into()),
+                revision: auth_file_revision(&path),
+            });
+        };
+        let health =
+            if metadata.expires_expired == Some(true) && metadata.refresh_expired == Some(true) {
+                crate::models::AuthHealth::NeedsLogin
+            } else if metadata.refresh_expired == Some(false) {
+                crate::models::AuthHealth::Renewable
+            } else {
+                crate::models::AuthHealth::Configured
+            };
         Ok(AuthState {
             agent: AgentId::WorkBuddy,
-            kind: if has {
-                Some("desktop-login".into())
+            kind: Some("desktop-login".into()),
+            summary: if health == crate::models::AuthHealth::NeedsLogin {
+                "WorkBuddy desktop login metadata is expired; sign in via WorkBuddy UI".into()
             } else {
-                None
+                "WorkBuddy desktop login metadata present (tokens not exposed)".into()
             },
-            summary: if has {
-                "desktop login state present (tokens not exposed)".into()
-            } else {
-                "no desktop login state (sign in via WorkBuddy UI)".into()
-            },
-            has_credentials: has,
+            has_credentials: true,
+            health,
+            source: Some("workbuddy:desktop-login-metadata".into()),
+            revision: auth_file_revision(&path),
         })
     }
 
@@ -198,13 +249,13 @@ impl AgentAdapter for WorkBuddyAdapter {
             Skills | LiveBackup | DangerousMode | ProjectHistory | ProjectDelete => {
                 CapabilityState::full()
             }
-            ConfigWrite => CapabilityState::unsupported("无稳定 settings 合并契约，fail-closed"),
+            ConfigWrite => CapabilityState::full(),
             AccountSwitch => CapabilityState::unsupported("暂不支持账号池切换"),
             ApiKeyAccount => CapabilityState::unsupported("暂不支持 API Key 账号池"),
             StructuredStream => {
                 CapabilityState::unsupported("CLI 仅提供 text 输出，无结构化事件流")
             }
-            ProviderPresets => CapabilityState::unsupported("写入契约未锁定，无内置模板"),
+            ProviderPresets => CapabilityState::unsupported("暂无内置 WorkBuddy provider 预设"),
             Usage => CapabilityState::full(),
             Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
         }
@@ -231,8 +282,7 @@ impl AgentAdapter for WorkBuddyAdapter {
             .ok_or_else(|| AppError::NotFound("WorkBuddy binary has no parent directory".into()))?;
         let codebuddy = resolve_bundled_codebuddy(&install_dir).ok_or_else(|| {
             AppError::NotFound(
-                "bundled codebuddy CLI not found under WorkBuddy install resources"
-                    .into(),
+                "bundled codebuddy CLI not found under WorkBuddy install resources".into(),
             )
         })?;
 
@@ -359,14 +409,12 @@ fn well_known_exe_paths() -> Vec<PathBuf> {
 
 /// Production bundled CLI only (never unpack/extract scratch paths).
 pub fn resolve_bundled_codebuddy(install_dir: &Path) -> Option<PathBuf> {
-    let mut candidates = vec![
-        install_dir
-            .join("resources")
-            .join("app.asar.unpacked")
-            .join("cli")
-            .join("bin")
-            .join("codebuddy"),
-    ];
+    let mut candidates = vec![install_dir
+        .join("resources")
+        .join("app.asar.unpacked")
+        .join("cli")
+        .join("bin")
+        .join("codebuddy")];
     #[cfg(windows)]
     {
         candidates.push(
@@ -435,6 +483,88 @@ fn auth_info_path() -> Option<PathBuf> {
     #[cfg(not(windows))]
     {
         None
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct WorkBuddyAuthMetadata {
+    expires_expired: Option<bool>,
+    refresh_expired: Option<bool>,
+}
+
+/// Extract only non-sensitive identity/expiry metadata from the desktop info
+/// file. Token-looking fields are deliberately ignored.
+fn workbuddy_auth_metadata(value: &serde_json::Value) -> Option<WorkBuddyAuthMetadata> {
+    fn visit(
+        value: &serde_json::Value,
+        has_identity: &mut bool,
+        expires: &mut Option<bool>,
+        refresh_expires: &mut Option<bool>,
+    ) {
+        let Some(object) = value.as_object() else {
+            return;
+        };
+        for (raw_key, child) in object {
+            let key = raw_key.to_ascii_lowercase().replace(['-', '.'], "_");
+            let non_empty = child.as_str().map(str::trim).is_some_and(|s| !s.is_empty());
+            match key.as_str() {
+                "email" | "email_address" | "emailaddress" | "user_id" | "userid"
+                | "account_id" | "accountid" | "username" | "name" => {
+                    *has_identity |= non_empty;
+                }
+                "expires_at" | "expiresat" | "expires" => {
+                    if let Some(value) = parse_expiry(child) {
+                        *expires = Some(value);
+                    }
+                }
+                "refresh_expires_at" | "refreshexpiresat" | "refresh_expires" => {
+                    if let Some(value) = parse_expiry(child) {
+                        *refresh_expires = Some(value);
+                    }
+                }
+                _ => {}
+            }
+            visit(child, has_identity, expires, refresh_expires);
+        }
+    }
+
+    let mut has_identity = false;
+    let mut expires = None;
+    let mut refresh_expires = None;
+    visit(value, &mut has_identity, &mut expires, &mut refresh_expires);
+    (has_identity || expires.is_some() || refresh_expires.is_some()).then_some(
+        WorkBuddyAuthMetadata {
+            expires_expired: expires,
+            refresh_expired: refresh_expires,
+        },
+    )
+}
+
+fn parse_expiry(value: &serde_json::Value) -> Option<bool> {
+    let now = chrono::Utc::now().timestamp();
+    match value {
+        serde_json::Value::Number(number) => {
+            let value = number.as_i64()?;
+            let value = if value.unsigned_abs() > 1_000_000_000_000 {
+                value / 1000
+            } else {
+                value
+            };
+            Some(value <= now)
+        }
+        serde_json::Value::String(text) => {
+            let text = text.trim();
+            if let Ok(value) = text.parse::<i64>() {
+                let value = if value.unsigned_abs() > 1_000_000_000_000 {
+                    value / 1000
+                } else {
+                    value
+                };
+                return Some(value <= now);
+            }
+            Some(chrono::DateTime::parse_from_rfc3339(text).ok()?.timestamp() <= now)
+        }
+        _ => None,
     }
 }
 
@@ -561,6 +691,143 @@ fn read_json_value_or_empty(path: &Path) -> Result<serde_json::Value> {
     Ok(value)
 }
 
+const REDACTED_MARKER: &str = "***";
+
+fn write_workbuddy_config(config: &AgentConfig) -> Result<()> {
+    if config.agent != AgentId::WorkBuddy {
+        return Err(AppError::InvalidArg(format!(
+            "config agent mismatch: expected workbuddy, got {}",
+            config.agent.as_str()
+        )));
+    }
+    let raw = config.raw.as_object().ok_or_else(|| {
+        AppError::InvalidArg("WorkBuddy settings_config must be a JSON object".into())
+    })?;
+    // ProviderService stores a complete read_config envelope, while the UI
+    // sends the user-level models.json object directly. Ignore adapter metadata
+    // (settings/mcp/paths) and only project the models payload.
+    let desired = raw.get("models").unwrap_or(&config.raw);
+    let models_path = workbuddy_config_dir()?.join("models.json");
+    let live = read_json_value_or_empty(&models_path)?;
+    let merged = merge_workbuddy_models(&live, desired)?;
+    let mut bytes = serde_json::to_vec_pretty(&merged)?;
+    bytes.push(b'\n');
+    crate::utils::atomic::atomic_write(&models_path, &bytes)
+}
+
+/// Merge both WorkBuddy/CodeBuddy models.json shapes:
+/// `[{...}]` and `{ "models": [{...}], "availableModels": [...] }`.
+/// Entries are keyed by `id`; unknown fields and unrelated models survive.
+fn merge_workbuddy_models(
+    live: &serde_json::Value,
+    desired: &serde_json::Value,
+) -> Result<serde_json::Value> {
+    let desired_entries = workbuddy_model_entries(desired, "target")?;
+    let live_entries = workbuddy_model_entries(live, "existing")?;
+    let merged_entries = merge_workbuddy_entries(&live_entries, &desired_entries)?;
+
+    match (live, desired) {
+        (serde_json::Value::Array(_), _) => Ok(serde_json::Value::Array(merged_entries)),
+        (serde_json::Value::Object(live_obj), serde_json::Value::Array(_))
+            if live_obj.is_empty() =>
+        {
+            Ok(serde_json::Value::Array(merged_entries))
+        }
+        (serde_json::Value::Object(_), serde_json::Value::Array(_)) => {
+            let mut out = live.as_object().cloned().unwrap_or_default();
+            out.insert("models".into(), serde_json::Value::Array(merged_entries));
+            Ok(serde_json::Value::Object(out))
+        }
+        (_, serde_json::Value::Object(desired_obj)) => {
+            let mut out = live.as_object().cloned().unwrap_or_default();
+            for (key, value) in desired_obj {
+                if key != "models" {
+                    out.insert(key.clone(), value.clone());
+                }
+            }
+            out.insert("models".into(), serde_json::Value::Array(merged_entries));
+            Ok(serde_json::Value::Object(out))
+        }
+        _ => Err(AppError::InvalidArg(
+            "target WorkBuddy models.json must be an array or object".into(),
+        )),
+    }
+}
+
+fn workbuddy_model_entries(
+    value: &serde_json::Value,
+    label: &str,
+) -> Result<Vec<serde_json::Value>> {
+    match value {
+        serde_json::Value::Array(items) => Ok(items.clone()),
+        serde_json::Value::Object(object) => {
+            match object.get("models").and_then(serde_json::Value::as_array) {
+                Some(items) => Ok(items.clone()),
+                None if label == "existing" => Ok(Vec::new()),
+                None => Err(AppError::InvalidArg(format!(
+                    "{label} WorkBuddy models.json.models must be an array"
+                ))),
+            }
+        }
+        _ => Err(AppError::InvalidArg(format!(
+            "{label} WorkBuddy models.json must be an array or object"
+        ))),
+    }
+}
+
+fn merge_workbuddy_entries(
+    live: &[serde_json::Value],
+    desired: &[serde_json::Value],
+) -> Result<Vec<serde_json::Value>> {
+    let mut merged = live.to_vec();
+    for desired_entry in desired {
+        let desired_obj = desired_entry.as_object().ok_or_else(|| {
+            AppError::InvalidArg("WorkBuddy models entries must be JSON objects".into())
+        })?;
+        let id = desired_obj
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .filter(|id| !id.trim().is_empty())
+            .ok_or_else(|| {
+                AppError::InvalidArg("WorkBuddy model entry requires a non-empty id".into())
+            })?;
+        if let Some(existing_index) = merged.iter().position(|entry| {
+            entry
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|existing_id| existing_id == id)
+        }) {
+            merged[existing_index] = merge_redacted_json(&merged[existing_index], desired_entry);
+        } else {
+            merged.push(desired_entry.clone());
+        }
+    }
+    Ok(merged)
+}
+
+fn merge_redacted_json(
+    existing: &serde_json::Value,
+    desired: &serde_json::Value,
+) -> serde_json::Value {
+    if desired.as_str() == Some(REDACTED_MARKER) {
+        return existing.clone();
+    }
+    match (existing, desired) {
+        (serde_json::Value::Object(old), serde_json::Value::Object(new)) => {
+            let mut merged = old.clone();
+            for (key, value) in new {
+                let next = merged
+                    .get(key)
+                    .map(|prior| merge_redacted_json(prior, value))
+                    .unwrap_or_else(|| value.clone());
+                merged.insert(key.clone(), next);
+            }
+            serde_json::Value::Object(merged)
+        }
+        _ => desired.clone(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -660,38 +927,71 @@ mod tests {
     }
 
     #[test]
-    fn write_config_is_fail_closed() {
-        let err = WorkBuddyAdapter
-            .write_config(&AgentConfig {
-                agent: AgentId::WorkBuddy,
-                raw: json!({}),
-            })
-            .unwrap_err();
-        assert_eq!(err.code(), "unsupported");
+    fn merge_models_array_preserves_unknown_fields_and_redacted_key() {
+        let live = json!({
+            "models": [
+                { "id": "keep", "name": "Keep", "apiKey": "keep-secret", "unknown": 7 },
+                { "id": "custom", "name": "Old", "apiKey": "old-secret" }
+            ],
+            "availableModels": ["keep", "custom"],
+            "other": true
+        });
+        let desired = json!({
+            "models": [
+                { "id": "custom", "name": "New", "apiKey": "***" }
+            ]
+        });
+        let merged = merge_workbuddy_models(&live, &desired).unwrap();
+        assert_eq!(merged["models"][0]["unknown"], 7);
+        assert_eq!(merged["models"][1]["name"], "New");
+        assert_eq!(merged["models"][1]["apiKey"], "old-secret");
+        assert_eq!(merged["availableModels"], json!(["keep", "custom"]));
+        assert_eq!(merged["other"], true);
+    }
+
+    #[test]
+    fn merge_models_supports_top_level_array_shape() {
+        let live = json!([
+            { "id": "keep", "apiKey": "secret" }
+        ]);
+        let desired = json!([
+            { "id": "custom", "name": "Custom" }
+        ]);
+        let merged = merge_workbuddy_models(&live, &desired).unwrap();
+        assert_eq!(merged[0]["id"], "keep");
+        assert_eq!(merged[1]["id"], "custom");
+    }
+
+    #[test]
+    fn merge_models_keeps_object_shape_and_unknown_top_level_fields() {
+        let live = json!({
+            "models": [{ "id": "keep", "apiKey": "secret" }],
+            "availableModels": ["keep"],
+            "unknown": { "preserve": true }
+        });
+        let desired = json!([{ "id": "custom", "name": "Custom" }]);
+        let merged = merge_workbuddy_models(&live, &desired).unwrap();
+        assert_eq!(merged["models"][0]["id"], "keep");
+        assert_eq!(merged["models"][1]["id"], "custom");
+        assert_eq!(merged["availableModels"], json!(["keep"]));
+        assert_eq!(merged["unknown"]["preserve"], true);
     }
 
     #[test]
     fn account_switch_disabled_p0() {
-        assert!(
-            WorkBuddyAdapter
-                .capability(crate::models::Capability::AccountSwitch)
-                .is_blocked()
-        );
-        assert!(
-            WorkBuddyAdapter
-                .capability(crate::models::Capability::Skills)
-                .is_usable()
-        );
+        assert!(WorkBuddyAdapter
+            .capability(crate::models::Capability::AccountSwitch)
+            .is_blocked());
+        assert!(WorkBuddyAdapter
+            .capability(crate::models::Capability::Skills)
+            .is_usable());
     }
 
     #[test]
     fn resolve_bundled_codebuddy_ignores_extracted() {
         let tmp = tempfile_dir();
         // only extracted path — must NOT be used
-        let extracted = tmp
-            .join("extracted")
-            .join("cli")
-            .join("bin");
+        let extracted = tmp.join("extracted").join("cli").join("bin");
         fs::create_dir_all(&extracted).unwrap();
         fs::write(extracted.join("codebuddy"), b"bad").unwrap();
         assert!(resolve_bundled_codebuddy(&tmp).is_none());

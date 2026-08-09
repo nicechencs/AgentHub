@@ -1,4 +1,4 @@
-// Settings「备份」分区：live 配置快照
+// Settings「备份」分区：本机配置快照
 // Agent Tab = 已安装 ∪ 有备份记录；列表平铺不折叠
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Database, Plus, RotateCcw, Trash2 } from 'lucide-react';
@@ -19,12 +19,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/toast';
 import { AGENTS, AGENT_MAP, type AgentMeta } from '@/config/agents';
 import { createBackup, deleteBackup, listBackups, restoreBackup } from '@/lib/api/backup';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { getSettings, updateSettings } from '@/lib/api/settings';
 import type { AgentId, BackupKind, BackupMeta } from '@/lib/types';
 import { cn, fmtBytes, fmtRelative } from '@/lib/utils';
 
@@ -66,8 +64,6 @@ export function BackupsPanel() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState<BackupMeta | null>(null);
-  const [autoBackup, setAutoBackup] = useState(true);
-  const [autoBackupBusy, setAutoBackupBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -84,14 +80,6 @@ export function BackupsPanel() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
-
-  useEffect(() => {
-    void getSettings()
-      .then((s) => setAutoBackup(s.autoBackup))
-      .catch(() => {
-        /* 读取失败时保持默认 true */
-      });
-  }, []);
 
   const counts = useMemo(() => {
     const map = Object.fromEntries(AGENTS.map((a) => [a.id, 0])) as Record<AgentId, number>;
@@ -134,28 +122,6 @@ export function BackupsPanel() {
   const isInstalled = agentId ? installedIds.includes(agentId) : false;
   const pageLoading = loading || agentsLoading;
   const pageError = error ?? agentsError;
-
-  const handleAutoBackup = async (v: boolean) => {
-    const prev = autoBackup;
-    setAutoBackup(v);
-    setAutoBackupBusy(true);
-    try {
-      await updateSettings({ autoBackup: v });
-      toast({
-        title: v ? '已开启自动备份' : '已关闭自动备份',
-        variant: 'success',
-      });
-    } catch (e) {
-      setAutoBackup(prev);
-      toast({
-        title: '保存失败',
-        description: e instanceof Error ? e.message : String(e),
-        variant: 'danger',
-      });
-    } finally {
-      setAutoBackupBusy(false);
-    }
-  };
 
   const handleCreate = async () => {
     if (!agentId || !agentMeta) return;
@@ -218,14 +184,11 @@ export function BackupsPanel() {
       {/* 工具条 */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
-          <Switch
-            checked={autoBackup}
-            disabled={autoBackupBusy}
-            onCheckedChange={(v) => void handleAutoBackup(v)}
-          />
           <div className="min-w-0">
-            <p className="text-sm">自动备份</p>
-            <p className="mt-0.5 text-xs text-muted">切换账号或供应商前，先备份当前配置</p>
+            <p className="text-sm">安全备份已启用</p>
+            <p className="mt-0.5 text-xs text-muted">
+              切换、导入或更新连接后自动保留当前配置快照
+            </p>
           </div>
         </div>
         {agentMeta && (
@@ -294,7 +257,7 @@ export function BackupsPanel() {
           title={`${agentMeta.name} 暂无备份`}
           description={
             isInstalled
-              ? '切换时会自动备份，也可点右上角立即备份'
+              ? '切换、导入或更新后会自动保留快照，也可点右上角立即备份'
               : '该 Agent 已卸载，且没有可恢复的备份'
           }
           actionLabel={isInstalled ? `备份 ${agentMeta.name.replace(' Code', '')}` : undefined}

@@ -103,7 +103,7 @@ pub fn oauth_url(
         )));
     }
     // Start without opening browser — still binds loopback so the URL is valid.
-    let start = agenthub_core::oauth::start_oauth(agent, false)?;
+    let start = agenthub_core::oauth::start_oauth(agent, false, None)?;
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => print_json(&start),

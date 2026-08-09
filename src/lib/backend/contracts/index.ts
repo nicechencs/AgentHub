@@ -4,6 +4,8 @@ export * from './agent-catalog-types';
 export * from './agent-catalog';
 export * from './config-types';
 export * from './ports';
+export * from './auth-state';
+export * from './account-actions';
 export * from './update-types';
 export * from './doctor-types';
 export * from './doctor-port';

@@ -143,6 +143,23 @@ pub struct AgentConfig {
     pub raw: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthHealth {
+    Verified,
+    Renewable,
+    Configured,
+    NeedsLogin,
+    Unknown,
+    Missing,
+}
+
+impl Default for AuthHealth {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthState {
@@ -151,61 +168,14 @@ pub struct AuthState {
     /// Desensitized summary only.
     pub summary: String,
     pub has_credentials: bool,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn agent_id_parse_as_str_roundtrip() {
-        for id in AgentId::ALL {
-            let s = id.as_str();
-            assert_eq!(AgentId::parse(s), Some(id));
-        }
-        assert_eq!(AgentId::parse("Claude"), Some(AgentId::Claude));
-        assert_eq!(AgentId::parse("  CODEx  "), Some(AgentId::Codex));
-        assert_eq!(AgentId::parse("kimi"), Some(AgentId::Kimi));
-        assert_eq!(AgentId::parse("grok"), Some(AgentId::Grok));
-        assert_eq!(AgentId::parse("pi"), Some(AgentId::Pi));
-        assert_eq!(AgentId::parse("  PI  "), Some(AgentId::Pi));
-        assert_eq!(AgentId::parse("workbuddy"), Some(AgentId::WorkBuddy));
-        assert_eq!(AgentId::parse("  WorkBuddy  "), Some(AgentId::WorkBuddy));
-        assert_eq!(AgentId::parse("cursor"), Some(AgentId::Cursor));
-        assert_eq!(AgentId::parse("  Cursor  "), Some(AgentId::Cursor));
-        assert_eq!(AgentId::parse("cursor-agent"), Some(AgentId::Cursor));
-        let expected = AgentId::expected_list();
-        assert!(expected.contains("pi"));
-        assert!(expected.contains("workbuddy"));
-        assert!(expected.contains("cursor"));
-        assert_eq!(
-            expected,
-            "claude|codex|kimi|grok|pi|workbuddy|cursor"
-        );
-    }
-
-    #[test]
-    fn agent_id_parse_rejects_invalid() {
-        assert_eq!(AgentId::parse(""), None);
-        assert_eq!(AgentId::parse("unknown"), None);
-        assert_eq!(AgentId::parse("claude-code"), None);
-        assert_eq!(AgentId::parse("gpt"), None);
-    }
-
-    #[test]
-    fn agent_id_parse_required_and_optional() {
-        assert_eq!(
-            AgentId::parse_required("GROK").unwrap(),
-            AgentId::Grok
-        );
-        assert_eq!(AgentId::parse_optional(None).unwrap(), None);
-        assert_eq!(AgentId::parse_optional(Some("")).unwrap(), None);
-        assert_eq!(
-            AgentId::parse_optional(Some("  claude  ")).unwrap(),
-            Some(AgentId::Claude)
-        );
-        let err = AgentId::parse_required("not-an-agent").unwrap_err();
-        assert_eq!(err.code(), "invalid_arg");
-        assert!(err.to_string().contains("expected:"));
-    }
+    /// Live authentication health. Older payloads omit this field and decode
+    /// as [`AuthHealth::Unknown`].
+    #[serde(default)]
+    pub health: AuthHealth,
+    /// Non-secret identifier for the source that was inspected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// Opaque revision of the live auth source (for change detection only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
 }

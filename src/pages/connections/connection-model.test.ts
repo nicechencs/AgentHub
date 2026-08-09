@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { Account, Provider } from '@/lib/types';
 import {
   accountToEntry,
+  authStatusOfAccount,
   countByKind,
+  deleteConnectionDialogDescription,
+  deleteConnectionToastDescription,
   filterConnectionEntries,
+  liveApiKeyImportGate,
+  liveAuthImportGate,
   mergeConnectionEntries,
   providerToEntry,
 } from './connection-model';
@@ -34,6 +39,68 @@ function prov(partial: Partial<Provider> & Pick<Provider, 'id' | 'name'>): Provi
 }
 
 describe('connection-model', () => {
+  it('surfaces account email / subscription on oauth entries', () => {
+    const entry = accountToEntry(
+      acc({
+        id: 'o1',
+        kind: 'oauth',
+        label: 'me@x.com',
+        email: 'me@x.com',
+        identityLabel: 'me@x.com',
+        subscription: 'plus',
+        isCurrent: false,
+        source: 'oauth_pkce',
+      }),
+    );
+    expect(entry.title).toBe('me@x.com');
+    expect(entry.identityLabel).toBe('me@x.com');
+    expect(entry.subscription).toBe('plus');
+    expect(entry.subtitle).toContain('plus');
+    expect(entry.subtitle).not.toContain('oauth_pkce');
+  });
+
+  it('treats oauth without remaining as valid, not none', () => {
+    expect(
+      authStatusOfAccount(
+        acc({ id: 'o', kind: 'oauth', label: 'x', tokenValid: true }),
+      ),
+    ).toBe('valid');
+    expect(
+      authStatusOfAccount(
+        acc({
+          id: 'o2',
+          kind: 'oauth',
+          label: 'x',
+          tokenValid: true,
+          tokenRemainingSec: -10,
+        }),
+      ),
+    ).toBe('expired');
+    expect(
+      authStatusOfAccount(
+        acc({
+          id: 'o3',
+          kind: 'oauth',
+          label: 'x',
+          tokenValid: true,
+          tokenRemainingSec: 2 * 3600,
+        }),
+      ),
+    ).toBe('expiring');
+    expect(
+      authStatusOfAccount(
+        acc({
+          id: 'o4',
+          kind: 'oauth',
+          label: 'x',
+          tokenValid: true,
+          refreshable: true,
+          tokenRemainingSec: -10,
+        }),
+      ),
+    ).toBe('valid');
+  });
+
   it('maps oauth / apikey; providers collapse into apikey kind', () => {
     expect(accountToEntry(acc({ id: 'a1', kind: 'oauth', label: 'me@x.com' })).kind).toBe(
       'oauth',
@@ -100,5 +167,84 @@ describe('connection-model', () => {
     expect(counts).toEqual({ all: 3, oauth: 1, apikey: 2 });
     expect(filterConnectionEntries(rows, 'apikey')).toHaveLength(2);
     expect(filterConnectionEntries(rows, 'oauth')[0]!.id).toBe('o');
+  });
+
+  it('uses the same recoverable delete semantics for current accounts and providers', () => {
+    for (const current of [true, false]) {
+      const dialog = deleteConnectionDialogDescription({ isCurrent: current });
+      const toast = deleteConnectionToastDescription({ isCurrent: current });
+      expect(dialog).toContain('移入回收站');
+      expect(dialog).toContain(current ? '当前连接可能仍继续生效' : '不会修改本机配置文件');
+      expect(toast).toContain('已移入回收站');
+      expect(toast).toContain(current ? '当前连接可能仍继续生效' : '本机配置未修改');
+    }
+  });
+
+  it('only enables current-login import for credentialed OAuth/file-auth probes', () => {
+    expect(liveAuthImportGate(undefined, true, 'claude')).toEqual({
+      enabled: false,
+      reason: '正在检测本机登录态…',
+    });
+    expect(
+      liveAuthImportGate({ agentId: 'claude', kind: 'api_key', hasCredentials: true }, false, 'claude')
+        .reason,
+    ).toContain('API Key');
+    expect(
+      liveAuthImportGate(
+        { agentId: 'claude', kind: 'desktop-login', hasCredentials: true },
+        false,
+        'claude',
+      ).enabled,
+    ).toBe(false);
+    expect(
+      liveAuthImportGate({ agentId: 'claude', kind: 'oauth', hasCredentials: false }, false, 'claude')
+        .enabled,
+    ).toBe(false);
+    expect(
+      liveAuthImportGate({ agentId: 'claude', kind: 'oauth', hasCredentials: true }, false, 'claude'),
+    ).toEqual({
+      enabled: true,
+      reason: '',
+    });
+    expect(
+      liveAuthImportGate(
+        { agentId: 'claude', kind: 'file-auth.json', hasCredentials: true },
+        false,
+        'claude',
+      ),
+    ).toEqual({ enabled: true, reason: '' });
+  });
+
+  it('does not authorize an import while the selected agent has changed', () => {
+    const previousAgentProbe = { agentId: 'claude' as const, kind: 'oauth', hasCredentials: true };
+
+    expect(liveAuthImportGate(previousAgentProbe, false, 'codex')).toEqual({
+      enabled: false,
+      reason: '本机登录态正在切换，已禁用导入',
+    });
+    expect(liveApiKeyImportGate(previousAgentProbe, false, 'codex')).toEqual({
+      enabled: false,
+      reason: '本机认证方式正在切换，已禁用 API Key 导入',
+    });
+  });
+
+  it('only enables API Key import for credentialed API-key probes', () => {
+    expect(liveApiKeyImportGate(undefined, true, 'claude')).toEqual({
+      enabled: false,
+      reason: '正在检测本机认证方式…',
+    });
+    expect(
+      liveApiKeyImportGate({ agentId: 'claude', kind: 'oauth', hasCredentials: true }, false, 'claude'),
+    ).toEqual({ enabled: false, reason: '当前本机为 OAuth 登录态，请导入当前登录态' });
+    expect(
+      liveApiKeyImportGate({ agentId: 'claude', kind: 'api_key', hasCredentials: false }, false, 'claude')
+        .enabled,
+    ).toBe(false);
+    expect(
+      liveApiKeyImportGate({ agentId: 'claude', kind: 'api_key', hasCredentials: true }, false, 'claude'),
+    ).toEqual({
+      enabled: true,
+      reason: '',
+    });
   });
 });

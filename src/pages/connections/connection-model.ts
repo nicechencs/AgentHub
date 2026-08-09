@@ -8,9 +8,11 @@ import {
   formatEndpointHost,
 } from '@/lib/api/agent-connection';
 import { looksLikeOfficialEndpoint } from '@/config/official-api';
+import {
+  authDisplayForAccount,
+  type AuthHealth,
+} from '@/lib/backend/contracts/auth-state';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
-import { fmtRemaining } from '@/lib/utils';
-
 /**
  * 列表行类型。
  * - oauth：官方登录
@@ -37,11 +39,15 @@ export type ConnectionEntry = {
   subtitle: string;
   isCurrent: boolean;
   authStatus: AuthStatus;
+  /** Optional for legacy hand-written entries; account/provider mappers fill it. */
+  authHealth?: AuthHealth;
   sortKey: string;
   identityLabel?: string;
   subscription?: string;
   quota5hPct?: number;
+  quota7dPct?: number;
   quotaResetIn?: string;
+  quota7dResetIn?: string;
   latencyMs?: number;
   endpointHost?: string;
   /**
@@ -54,25 +60,26 @@ export type ConnectionEntry = {
 };
 
 export function authStatusOfAccount(a: Account): AuthStatus {
-  if (!a.tokenValid) return 'expired';
-  if (a.tokenRemainingSec === undefined) return a.kind === 'apikey' ? 'valid' : 'none';
-  if (a.tokenRemainingSec <= 3 * 3600) return 'expiring';
-  return 'valid';
+  return authDisplayForAccount(a).legacyStatus;
+}
+
+export function authHealthOfAccount(a: Account): AuthHealth {
+  return authDisplayForAccount(a).health;
 }
 
 function accountSubtitle(a: Account): string {
+  // Keep subtitle short: status + subscription only (title already holds account name).
   if (a.isCurrent) {
-    if (!a.tokenValid) return 'token 已失效';
-    if (a.tokenRemainingSec !== undefined) {
-      return `token 剩余 ${fmtRemaining(a.tokenRemainingSec)}`;
-    }
-    return a.kind === 'apikey' ? 'API Key · 当前生效' : 'token 有效';
+    const bits: string[] = [];
+    bits.push(authDisplayForAccount(a).label);
+    if (a.subscription) bits.push(a.subscription);
+    return bits.join(' · ');
   }
   const bits: string[] = [];
-  if (a.kind === 'apikey') bits.push('API Key');
-  if (a.identityLabel && a.identityLabel !== a.label) bits.push(a.identityLabel);
-  if (a.source) bits.push(a.source);
-  return bits.length ? bits.join(' · ') : '未生效';
+  bits.push(authDisplayForAccount(a).label, '未生效');
+  if (a.provider && !a.label.includes(a.provider)) bits.push(a.provider);
+  if (a.subscription) bits.push(a.subscription);
+  return bits.join(' · ');
 }
 
 function providerEndpointMode(p: Provider, endpoint?: string): 'official' | 'custom' {
@@ -95,10 +102,12 @@ function providerSubtitle(
   const host = endpoint ? formatEndpointHost(endpoint) : undefined;
   if (p.isCurrent) {
     return host
-      ? `当前生效 · ${modeLabel} · ${host}`
-      : `当前生效 · ${modeLabel}`;
+      ? `已配置·未验证 · 当前生效 · ${modeLabel} · ${host}`
+      : `已配置·未验证 · 当前生效 · ${modeLabel}`;
   }
-  return host ? `未生效 · ${modeLabel} · ${host}` : `未生效 · ${modeLabel}`;
+  return host
+    ? `已配置·未验证 · 未生效 · ${modeLabel} · ${host}`
+    : `已配置·未验证 · 未生效 · ${modeLabel}`;
 }
 
 export function accountToEntry(a: Account): ConnectionEntry {
@@ -112,11 +121,14 @@ export function accountToEntry(a: Account): ConnectionEntry {
     subtitle: accountSubtitle(a),
     isCurrent: a.isCurrent,
     authStatus: authStatusOfAccount(a),
+    authHealth: authHealthOfAccount(a),
     sortKey: a.updatedAt || a.lastUsedAt || a.createdAt || '',
     identityLabel: a.identityLabel,
     subscription: a.subscription,
     quota5hPct: a.quota5hPct,
+    quota7dPct: a.quota7dPct,
     quotaResetIn: a.quotaResetIn,
+    quota7dResetIn: a.quota7dResetIn,
     // 账号池 API Key 默认视为官方直连（无 endpoint 字段）
     endpointMode: a.kind === 'apikey' ? 'official' : undefined,
     account: a,
@@ -137,6 +149,7 @@ export function providerToEntry(p: Provider): ConnectionEntry {
     subtitle: providerSubtitle(p, endpoint, endpointMode),
     isCurrent: p.isCurrent,
     authStatus: 'valid',
+    authHealth: 'configured',
     sortKey: p.updatedAt || '',
     latencyMs: p.latencyMs,
     endpointHost: endpoint ? formatEndpointHost(endpoint) : undefined,
@@ -211,11 +224,11 @@ export function withProviderLatency(
   const host = entry.endpointHost;
   const base = entry.isCurrent
     ? host
-      ? `当前生效 · ${modeLabel} · ${host}`
-      : `当前生效 · ${modeLabel}`
+      ? `已配置·未验证 · 当前生效 · ${modeLabel} · ${host}`
+      : `已配置·未验证 · 当前生效 · ${modeLabel}`
     : host
-      ? `未生效 · ${modeLabel} · ${host}`
-      : `未生效 · ${modeLabel}`;
+      ? `已配置·未验证 · 未生效 · ${modeLabel} · ${host}`
+      : `已配置·未验证 · 未生效 · ${modeLabel}`;
   return {
     ...entry,
     latencyMs,
@@ -225,4 +238,100 @@ export function withProviderLatency(
 
 export function providerDisplayLabel(p: Provider): string {
   return formatApiConnectionLabel(p);
+}
+
+/**
+ * Deleting a connection moves its AgentHub pool row to the recovery bin. It
+ * never implies that the agent's local config/auth file was cleared.
+ */
+export function deleteConnectionDialogDescription(
+  entry: Pick<ConnectionEntry, 'isCurrent'>,
+): string {
+  return entry.isCurrent
+    ? '会移入回收站；本机配置不会被清除，当前连接可能仍继续生效。'
+    : '会移入回收站；不会修改本机配置文件。';
+}
+
+export function deleteConnectionToastDescription(
+  entry: Pick<ConnectionEntry, 'isCurrent'>,
+): string {
+  return entry.isCurrent
+    ? '已移入回收站；本机配置未清除，当前连接可能仍继续生效。'
+    : '已移入回收站；本机配置未修改。';
+}
+
+export type LiveAuthProbeLike = {
+  agentId: AgentId;
+  kind?: string | null;
+  summary?: string | null;
+  hasCredentials?: boolean;
+  health?: AuthHealth;
+  source?: string | null;
+  revision?: string | null;
+};
+
+export type LiveAuthImportGate = {
+  enabled: boolean;
+  reason: string;
+};
+
+/**
+ * Import-current-login is intentionally stricter than generic auth probing:
+ * only OAuth/file-auth material can be imported as an Account. API keys and
+ * opaque desktop login state must not be mislabeled as OAuth.
+ */
+export function liveAuthImportGate(
+  probe: LiveAuthProbeLike | null | undefined,
+  loading: boolean,
+  agentId: AgentId,
+): LiveAuthImportGate {
+  if (loading) return { enabled: false, reason: '正在检测本机登录态…' };
+  if (!probe) return { enabled: false, reason: '无法确认本机登录态，已禁用导入' };
+  if (probe.agentId !== agentId) {
+    return { enabled: false, reason: '本机登录态正在切换，已禁用导入' };
+  }
+
+  const kind = probe.kind?.trim().toLowerCase() ?? '';
+  const isFileAuth = kind === 'file-auth' || kind === 'file-auth.json';
+  if ((kind === 'oauth' || isFileAuth) && probe.hasCredentials === true) {
+    return { enabled: true, reason: '' };
+  }
+  if (kind === 'api_key' || kind === 'api-key' || kind === 'apikey') {
+    return { enabled: false, reason: '当前本机配置为 API Key，不是 OAuth 登录态' };
+  }
+  if (kind === 'desktop-login') {
+    return { enabled: false, reason: '检测到桌面登录，但该登录态不可直接导入' };
+  }
+  return { enabled: false, reason: probe.summary || '未检测到可导入的 OAuth 登录态' };
+}
+
+/**
+ * Importing the live provider snapshot is only meaningful when the probe
+ * positively identifies an API-key configuration. Keep OAuth and opaque
+ * desktop sessions on the account-import path instead of labeling them as a
+ * provider/API-key connection.
+ */
+export function liveApiKeyImportGate(
+  probe: LiveAuthProbeLike | null | undefined,
+  loading: boolean,
+  agentId: AgentId,
+): LiveAuthImportGate {
+  if (loading) return { enabled: false, reason: '正在检测本机认证方式…' };
+  if (!probe) return { enabled: false, reason: '无法确认本机认证方式，已禁用 API Key 导入' };
+  if (probe.agentId !== agentId) {
+    return { enabled: false, reason: '本机认证方式正在切换，已禁用 API Key 导入' };
+  }
+
+  const kind = probe.kind?.trim().toLowerCase() ?? '';
+  const isApiKey = kind === 'api_key' || kind === 'api-key' || kind === 'apikey';
+  if (isApiKey && probe.hasCredentials === true) {
+    return { enabled: true, reason: '' };
+  }
+  if (kind === 'oauth' || kind === 'file-auth' || kind === 'file-auth.json') {
+    return { enabled: false, reason: '当前本机为 OAuth 登录态，请导入当前登录态' };
+  }
+  if (kind === 'desktop-login') {
+    return { enabled: false, reason: '当前为桌面登录态，无法直接导入 API Key' };
+  }
+  return { enabled: false, reason: probe.summary || '未检测到可导入的 API Key' };
 }

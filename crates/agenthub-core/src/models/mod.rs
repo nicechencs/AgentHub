@@ -5,6 +5,7 @@ mod agent;
 mod backup;
 mod capability;
 mod chat;
+mod connection_trash;
 mod install;
 mod project;
 mod provider;
@@ -15,11 +16,15 @@ mod skill;
 mod update;
 mod usage;
 
+#[cfg(test)]
+mod tests;
+
 pub use account::*;
 pub use agent::*;
 pub use backup::*;
 pub use capability::*;
 pub use chat::*;
+pub use connection_trash::*;
 pub use install::*;
 pub use project::*;
 pub use provider::*;

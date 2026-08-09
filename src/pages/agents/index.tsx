@@ -102,7 +102,7 @@ export default function AgentsPage() {
   }, [load]);
 
   const refreshAgents = React.useCallback(() => {
-    listAgents()
+    listAgents({ force: true })
       .then((a) => {
         setAgents(a);
         void mergeUpdates(a, true);
@@ -131,7 +131,7 @@ export default function AgentsPage() {
       const forced = await tryRefreshDoctor();
       const r = forced?.runtimes ?? (await listRuntimes());
       setRuntimes(r);
-      const nextAgents = forced?.agents ?? (await listAgents());
+      const nextAgents = forced?.agents ?? (await listAgents({ force: true }));
       setAgents(nextAgents);
       void mergeUpdates(nextAgents, true);
       setPageFix((prev) => {

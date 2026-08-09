@@ -1,3 +1,5 @@
+pub mod account_identity_heal;
+pub mod account_quota;
 pub mod account_service;
 pub mod agent_service;
 pub mod backup_service;

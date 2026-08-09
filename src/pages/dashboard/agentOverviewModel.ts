@@ -1,4 +1,5 @@
 import type { AgentMeta } from '@/config/agents';
+import { authDisplayForAgentStatus } from '@/lib/backend/contracts/auth-state';
 import type { AgentStatus, AuthStatus } from '@/lib/types';
 
 /** 内容与骨架屏共用：auto-fit 自适应，支持任意 agent 数量 */
@@ -9,6 +10,11 @@ export const AGENT_OVERVIEW_GRID =
 export function isAgentIssue(status: AgentStatus | undefined): boolean {
   if (!status || !status.installed) return true;
   if (status.envReady === false) return true;
+  const display = authDisplayForAgentStatus(status);
+  if (display.health === 'needs_login') return true;
+  // Legacy doctor rows may still report expiring; explicit renewable health
+  // must take precedence so Dashboard does not call it an outage.
+  if (status.authHealth) return false;
   if (status.authStatus === 'expired' || status.authStatus === 'expiring') return true;
   return false;
 }
@@ -35,7 +41,7 @@ export function cardAuthStatus(
   missing: boolean,
 ): AuthStatus {
   if (missing) return 'none';
-  return status?.authStatus ?? 'none';
+  return authDisplayForAgentStatus(status).legacyStatus;
 }
 
 export interface AgentCardView {
@@ -50,6 +56,7 @@ export interface AgentCardView {
   ariaLabel: string;
   statusDotTitle: string;
   authStatus: AuthStatus;
+  authHealth: ReturnType<typeof authDisplayForAgentStatus>['health'];
   /** 已装/未装两态均为 true：用于约束等高两行布局 */
   twoLineLayout: true;
 }
@@ -76,7 +83,8 @@ export function buildAgentCardView(
     status?.effectiveLabel ?? status?.currentProvider ?? '未配置';
   const version = status?.version ?? '—';
   const versionText = missing ? null : `v${version}`;
-  const authLabel = status?.authLabel || '—';
+  const authDisplay = authDisplayForAgentStatus(status);
+  const authLabel = (status?.authHealth ? authDisplay.label : status?.authLabel) || '—';
 
   let metaText: string;
   let metaClass: 'text-muted' | 'text-warning' = 'text-muted';
@@ -114,6 +122,7 @@ export function buildAgentCardView(
     ariaLabel,
     statusDotTitle,
     authStatus: cardAuthStatus(status, missing),
+    authHealth: authDisplay.health,
     twoLineLayout: true,
   };
 }

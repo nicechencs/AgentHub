@@ -35,3 +35,40 @@ export function isCapabilityUsable(cap?: AgentCapability | null): boolean {
 export function isCapabilityBlocked(cap?: AgentCapability | null): boolean {
   return !isCapabilityUsable(cap);
 }
+
+/**
+ * Provider controls in Connections have two distinct capability boundaries:
+ * creating/editing a saved provider and switching it both need the live config
+ * writer. Presets are an optional convenience contract and do not prevent a
+ * user from entering a custom provider manually. Missing writer capability is
+ * intentionally fail-closed.
+ */
+export interface ProviderCapabilityGate {
+  /** Add/edit a Provider/API Key configuration. */
+  canManage: boolean;
+  /** Apply a saved Provider to the agent's live configuration. */
+  canSwitch: boolean;
+  /** Whether the agent exposes usable provider presets. */
+  canUsePresets: boolean;
+  /** Why provider controls are blocked, when blocked. */
+  reason?: string;
+}
+
+export function providerCapabilityGate(
+  capabilities?: AgentCapabilities | null,
+): ProviderCapabilityGate {
+  const configWrite = capabilities?.configWrite;
+  const providerPresets = capabilities?.providerPresets;
+  const canSwitch = isCapabilityUsable(configWrite);
+  const canUsePresets = isCapabilityUsable(providerPresets);
+
+  if (!canSwitch) {
+    return {
+      canManage: false,
+      canSwitch: false,
+      canUsePresets,
+      reason: configWrite?.reason ?? '该 Agent 不支持配置写入',
+    };
+  }
+  return { canManage: true, canSwitch: true, canUsePresets };
+}

@@ -133,6 +133,20 @@ describe('applyEffectiveConnection / enrichStatusesWithConnections', () => {
     expect(next.authStatus).toBe('valid');
   });
 
+  it('does not let a saved account inference overwrite live probe health', () => {
+    const next = applyEffectiveConnection(
+      status({ authHealth: 'verified', authSource: 'auth.json', authRevision: 'live-rev' }),
+      account({ authHealth: 'renewable', refreshable: true }),
+      undefined,
+    );
+    expect(next).toMatchObject({
+      authHealth: 'verified',
+      authHealthLabel: '已验证',
+      authSource: 'auth.json',
+      authRevision: 'live-rev',
+    });
+  });
+
   it('does not invent connection for uninstalled agents', () => {
     const next = applyEffectiveConnection(
       status({ installed: false }),
