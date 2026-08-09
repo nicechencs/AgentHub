@@ -7,7 +7,13 @@ import { ToastProvider } from '@/components/ui/toast';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ThemeProvider } from '@/components/shared/ThemeProvider';
 import { UsageSyncProvider } from '@/components/shared/UsageSyncProvider';
-import { AgentCatalogProvider, getBackend, loadAgentCatalog } from '@/app/runtime';
+import {
+  AgentCatalogProvider,
+  AgentStatusProvider,
+  getBackend,
+  loadAgentCatalog,
+  loadAgentStatuses,
+} from '@/app/runtime';
 import { applyTheme, loadStoredTheme } from '@/lib/theme';
 import { logger } from '@/lib/logger';
 // Design tokens first (SSOT: src/styles/tokens.ts), then structural styles
@@ -44,9 +50,11 @@ function Root() {
           <TooltipProvider delayDuration={200} skipDelayDuration={0}>
             <ToastProvider>
               <AgentCatalogProvider>
-                <UsageSyncProvider>
-                  <App />
-                </UsageSyncProvider>
+                <AgentStatusProvider>
+                  <UsageSyncProvider>
+                    <App />
+                  </UsageSyncProvider>
+                </AgentStatusProvider>
               </AgentCatalogProvider>
             </ToastProvider>
           </TooltipProvider>
@@ -64,6 +72,13 @@ async function boot() {
     await loadAgentCatalog(getBackend());
   } catch (e) {
     log.error('agent catalog load failed', e);
+  }
+  try {
+    // Resolve installation state before React renders route-level empty states.
+    // A failure is kept in the shared store and rendered as an error/retry UI.
+    await loadAgentStatuses(getBackend());
+  } catch (e) {
+    log.error('agent status load failed', e);
   }
 
   const elapsed = performance.now() - started;

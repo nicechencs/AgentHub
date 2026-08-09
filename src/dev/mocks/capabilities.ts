@@ -23,7 +23,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     accountSwitch: { level: 'full' },
     apiKeyAccount: {
       level: 'partial',
-      reason: '可入池；live 应用仅支持 OAuth auth.json',
+      reason: '可入池；应用本机配置仅支持 OAuth auth.json',
     },
     skills: { level: 'full' },
     liveBackup: { level: 'full' },
@@ -73,10 +73,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     sessionResume: { level: 'planned', reason: '待验证接入' },
   },
   pi: {
-    configWrite: {
-      level: 'unsupported',
-      reason: '无稳定 settings 合并契约，fail-closed',
-    },
+    configWrite: { level: 'full' },
     accountSwitch: { level: 'full' },
     apiKeyAccount: {
       level: 'partial',
@@ -93,7 +90,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     projectDelete: { level: 'full' },
     providerPresets: {
       level: 'unsupported',
-      reason: '写入契约未锁定，无内置模板',
+      reason: '暂无内置 Pi provider 预设',
     },
     usage: { level: 'planned', reason: '待验证接入' },
     mcp: { level: 'planned', reason: '待验证接入' },
@@ -101,10 +98,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     sessionResume: { level: 'planned', reason: '待验证接入' },
   },
   workbuddy: {
-    configWrite: {
-      level: 'unsupported',
-      reason: '无稳定 settings 合并契约，fail-closed',
-    },
+    configWrite: { level: 'full' },
     accountSwitch: {
       level: 'unsupported',
       reason: '暂不支持账号池切换',
@@ -121,7 +115,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     projectDelete: { level: 'full' },
     providerPresets: {
       level: 'unsupported',
-      reason: '写入契约未锁定，无内置模板',
+      reason: '暂无内置 WorkBuddy provider 预设',
     },
     usage: { level: 'planned', reason: '待验证接入' },
     mcp: { level: 'planned', reason: '待验证接入' },

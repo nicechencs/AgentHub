@@ -1,6 +1,7 @@
 import type { AccountPort } from '@/lib/backend/contracts';
 import { delay, randomLatency } from '@/dev/mocks/delay';
 import type { Account, AgentId } from '@/lib/types';
+import { moveMockAccountToTrash } from './trash';
 
 const mockState: Record<AgentId, Account[]> = {
   claude: [],
@@ -24,6 +25,33 @@ export function createMockAccountPort(): AccountPort {
       return (Object.keys(mockState) as AgentId[]).flatMap((id) =>
         (mockState[id] ?? []).map((a) => ({ ...a })),
       );
+    },
+
+    async probeLiveAuth(agentId) {
+      await delay(40);
+      const current = (mockState[agentId] ?? []).find((a) => a.isCurrent);
+      if (current?.kind === 'apikey') {
+        return {
+          agentId,
+          kind: 'api_key',
+          summary: 'API key present in mock live config',
+          hasCredentials: true,
+        };
+      }
+      if (current?.kind === 'oauth') {
+        return {
+          agentId,
+          kind: 'oauth',
+          summary: 'OAuth credentials present in mock live config',
+          hasCredentials: true,
+        };
+      }
+      return {
+        agentId,
+        kind: null,
+        summary: 'no live credentials detected',
+        hasCredentials: false,
+      };
     },
 
     async switchAccount(agentId, accountId) {
@@ -246,6 +274,8 @@ export function createMockAccountPort(): AccountPort {
 
     async deleteAccount(agentId, accountId) {
       await delay(randomLatency());
+      const removed = mockState[agentId].find((account) => account.id === accountId);
+      if (removed) moveMockAccountToTrash(removed);
       mockState[agentId] = mockState[agentId].filter((a) => a.id !== accountId);
     },
 
@@ -268,4 +298,12 @@ export function createMockAccountPort(): AccountPort {
       return { ...acc };
     },
   };
+}
+
+export function restoreMockAccount(account: Account): void {
+  const list = mockState[account.agentId];
+  if (list.some((item) => item.id === account.id)) {
+    throw new Error(`account already exists: ${account.id}`);
+  }
+  list.push({ ...account, isCurrent: false });
 }

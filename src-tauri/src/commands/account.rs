@@ -2,7 +2,7 @@
 //!
 //! All responses that may contain credentials are redacted before return.
 
-use agenthub_core::models::{Account, AccountSwitchResult};
+use agenthub_core::models::{Account, AccountSwitchResult, AuthState};
 use agenthub_core::AgentHub;
 use tauri::State;
 
@@ -17,6 +17,16 @@ pub async fn list_accounts(
 ) -> Result<Vec<Account>, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| list_accounts_inner(hub, agent_id.as_deref())).await
+}
+
+/// Invoke: `probe_live_auth` — read-only, redacted authentication status.
+#[tauri::command]
+pub async fn probe_live_auth(
+    state: State<'_, AppState>,
+    agent_id: String,
+) -> Result<AuthState, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| probe_live_auth_inner(hub, &agent_id)).await
 }
 
 /// Invoke: `import_account_live`
@@ -152,6 +162,17 @@ fn list_accounts_inner(hub: &AgentHub, agent_id: Option<&str>) -> Result<Vec<Acc
         .list(filter)
         .map_err(|e| map_err_string("list_accounts", e))?;
     Ok(items.into_iter().map(|a| a.redacted()).collect())
+}
+
+fn probe_live_auth_inner(hub: &AgentHub, agent_id: &str) -> Result<AuthState, String> {
+    let agent = parse_agent(agent_id)?;
+    let adapter = hub
+        .registry
+        .get(agent)
+        .ok_or_else(|| format!("adapter not registered: {}", agent.as_str()))?;
+    adapter
+        .read_auth()
+        .map_err(|e| map_err_string("probe_live_auth", e))
 }
 
 fn import_account_live_inner(

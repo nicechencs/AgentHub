@@ -424,6 +424,7 @@ export function ProviderEditDialog({
         {
           agentId,
           schemaStatus,
+          configSchema,
           isEdit,
           existing: provider,
           name,
@@ -481,7 +482,7 @@ export function ProviderEditDialog({
             {isEdit ? '编辑 API Key' : '添加 API Key'} — {agentName}
           </DialogTitle>
           <DialogDescription>
-            勾选「官方」时使用官方 URL 与模型；取消后可填中转地址。切换生效后写入
+            勾选「官方」时使用官方服务地址与模型；取消后可填自定义服务地址。应用后写入本机当前配置文件
             <span className="font-mono text-2xs"> {livePaths.config}</span>
             {livePaths.auth ? (
               <>
@@ -497,12 +498,12 @@ export function ProviderEditDialog({
           <div className="flex flex-wrap items-start justify-between gap-2 rounded-card border border-border bg-canvas px-3 py-2 text-2xs text-muted">
             <div className="min-w-0 flex-1 space-y-0.5">
               <p>
-                <span className="text-secondary">Live 配置 </span>
+                <span className="text-secondary">本机当前配置 </span>
                 <code className="break-all font-mono">{livePaths.config}</code>
               </p>
               {livePaths.auth && (
                 <p>
-                  <span className="text-secondary">Live 凭据 </span>
+                  <span className="text-secondary">本机登录凭据 </span>
                   <code className="break-all font-mono">{livePaths.auth}</code>
                 </p>
               )}

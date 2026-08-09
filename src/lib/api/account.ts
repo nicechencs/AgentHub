@@ -6,6 +6,7 @@ import { getBackend } from '@/app/runtime';
 import type {
   DeviceOAuthPollInfo,
   DeviceOAuthStartInfo,
+  LiveAuthProbe,
   OAuthLoginOption,
   OAuthStartInfo,
   OAuthWaitInfo,
@@ -20,6 +21,7 @@ export { mapCoreAccount } from '@/lib/backend/contracts/account-map';
 export type {
   DeviceOAuthPollInfo,
   DeviceOAuthStartInfo,
+  LiveAuthProbe,
   OAuthLoginOption,
   OAuthStartInfo,
   OAuthWaitInfo,
@@ -27,6 +29,11 @@ export type {
 
 export async function listAccounts(agentId?: AgentId): Promise<Account[]> {
   return getBackend().account.listAccounts(agentId);
+}
+
+/** Read-only probe of the live auth kind; never returns credential material. */
+export async function probeLiveAuth(agentId: AgentId): Promise<LiveAuthProbe> {
+  return getBackend().account.probeLiveAuth(agentId);
 }
 
 export async function switchAccount(agentId: AgentId, accountId: string): Promise<void> {

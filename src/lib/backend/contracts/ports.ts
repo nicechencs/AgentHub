@@ -85,8 +85,17 @@ export interface DeviceOAuthPollInfo {
   error?: string | null;
 }
 
+/** Read-only live authentication probe; never contains credential material. */
+export interface LiveAuthProbe {
+  agentId: AgentId;
+  kind?: string | null;
+  summary: string;
+  hasCredentials: boolean;
+}
+
 export interface AccountPort {
   listAccounts(agentId?: AgentId): Promise<Account[]>;
+  probeLiveAuth(agentId: AgentId): Promise<LiveAuthProbe>;
   switchAccount(agentId: AgentId, accountId: string): Promise<void>;
   undoSwitchAccount(agentId: AgentId): Promise<boolean>;
   addApiKeyAccount(
@@ -141,6 +150,29 @@ export interface ProviderPort {
   undoSwitch(agentId: AgentId): Promise<boolean>;
   testLatency(agentId: AgentId, providerId: string): Promise<number>;
   listProviderPresets(agentId?: AgentId): Promise<CoreProviderPreset[]>;
+}
+
+export type ConnectionTrashKind = 'account' | 'provider';
+
+/** A deleted connection retained for 30 days and available for restore. */
+export interface ConnectionTrashItem {
+  id: string;
+  agentId: AgentId;
+  kind: ConnectionTrashKind;
+  sourceId: string;
+  label: string;
+  wasCurrent: boolean;
+  deletedAt: string;
+  expiresAt: string;
+  /** Redacted account/provider payload returned by the backend. */
+  account?: Account;
+  provider?: Provider;
+}
+
+export interface TrashPort {
+  list(agentId?: AgentId): Promise<ConnectionTrashItem[]>;
+  restore(id: string): Promise<void>;
+  permanentlyDelete(id: string): Promise<void>;
 }
 
 export interface BackupPort {
@@ -349,6 +381,7 @@ export interface Backend {
   install: InstallPort;
   /** Desktop self-update (check / one-click install). */
   update: UpdatePort;
+  trash: TrashPort;
 }
 
 export type CreateBackend = () => Backend;

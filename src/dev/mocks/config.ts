@@ -71,7 +71,7 @@ const SCHEMAS: Record<string, AgentConfigSchemaDto> = {
   },
   grok: {
     agentKey: 'grok',
-    schemaVersion: 1,
+    schemaVersion: 2,
     nativeFormat: 'toml',
     relativePath: 'config.toml',
     fields: [
@@ -140,13 +140,20 @@ export function createMockConfigPort(): ConfigPort {
       return doc;
     },
     async validateAgentConfig(agentId, values) {
-      if (!SCHEMAS[agentId]) {
+      const schema = SCHEMAS[agentId];
+      if (!schema) {
         throw new Error(`unsupported config projector for ${agentId} [unsupported]`);
       }
-      if ('nope' in values) {
+      const known = new Set(schema.fields.map((field) => field.key));
+      const unknown = Object.keys(values).filter((key) => !known.has(key));
+      if (unknown.length > 0) {
         return {
           ok: false,
-          issues: [{ fieldKey: 'nope', code: 'unknown_field', message: 'unknown field: nope' }],
+          issues: unknown.map((fieldKey) => ({
+            fieldKey,
+            code: 'unknown_field',
+            message: `unknown field: ${fieldKey}`,
+          })),
         };
       }
       return { ok: true, issues: [] };
@@ -154,7 +161,7 @@ export function createMockConfigPort(): ConfigPort {
     async planAgentConfig(agentId, values) {
       return {
         agentKey: agentId,
-        schemaVersion: 1,
+        schemaVersion: SCHEMAS[agentId]?.schemaVersion ?? 1,
         targetPath: SCHEMAS[agentId]?.relativePath ?? 'config',
         fieldChanges: Object.keys(values).map((fieldKey) => ({
           fieldKey,

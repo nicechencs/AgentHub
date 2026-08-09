@@ -9,6 +9,7 @@ import {
   isCodexAuthJsonPaste,
   isCodexTomlPaste,
 } from './codexToml';
+import { extractGrokDetectFields, isGrokTomlPaste } from './grokToml';
 
 const URL_RE = /https?:\/\/[^\s"'<>\\]+/gi;
 
@@ -185,6 +186,14 @@ export const DETECTORS: ProviderConfigDetector[] = [
     extract: (text) => {
       if (!/ANTHROPIC_/i.test(text)) return null;
       return extractClaudeBlock(text);
+    },
+  },
+  {
+    id: 'grok-config-toml',
+    description: 'Grok Build config.toml（models + model.<alias>）',
+    extract: (text) => {
+      if (!isGrokTomlPaste(text)) return null;
+      return extractGrokDetectFields(text);
     },
   },
   {

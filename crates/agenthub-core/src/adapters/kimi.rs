@@ -77,14 +77,19 @@ impl AgentAdapter for KimiAdapter {
     fn read_auth(&self) -> Result<AuthState> {
         let home = agent_home(AgentId::Kimi)?;
         let cred = home.join("credentials").join("kimi-code.json");
+        let config = home.join("config.toml");
+        if read_kimi_api_key(&config)?.is_some_and(|key| !key.is_empty()) {
+            return Ok(AuthState {
+                agent: AgentId::Kimi,
+                kind: Some("api_key".into()),
+                summary: "API key present in config.toml".into(),
+                has_credentials: true,
+            });
+        }
         let has = cred.exists();
         Ok(AuthState {
             agent: AgentId::Kimi,
-            kind: if has {
-                Some("oauth+apikey".into())
-            } else {
-                None
-            },
+            kind: if has { Some("oauth".into()) } else { None },
             summary: if has {
                 "credentials present".into()
             } else {

@@ -28,6 +28,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00010_skill_assignments",
         include_str!("00010_skill_assignments.sql"),
     ),
+    (
+        "00011_connection_trash",
+        include_str!("00011_connection_trash.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

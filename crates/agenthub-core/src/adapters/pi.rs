@@ -1,16 +1,17 @@
 use std::path::{Path, PathBuf};
 
+use super::pi_auth::{
+    combined_live_account, expand_auth_to_live_accounts, merge_auth_json, pi_config_dir,
+    read_auth_json,
+};
+use super::{api_key_live_account, detect_binary, require_api_key, AgentAdapter};
 use crate::error::{AppError, Result};
 use crate::models::{
-    AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult, InstallChannel,
-    LiveAccount, RunOptions, RunSpec, RuntimeId,
+    AccountKind, AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult,
+    InstallChannel, LiveAccount, RunOptions, RunSpec, RuntimeId,
 };
 use crate::runtime;
 use crate::utils::atomic::atomic_write;
-use super::pi_auth::{
-    combined_live_account, merge_auth_json, pi_config_dir, read_auth_json,
-};
-use super::{api_key_live_account, detect_binary, require_api_key, AgentAdapter};
 
 pub struct PiAdapter;
 
@@ -27,13 +28,7 @@ impl AgentAdapter for PiAdapter {
             .unwrap_or_default();
         let env_ready = runtime::is_ready(&requires);
         // Prefer PATH `pi` (npm global shim); channel inferred from path / well-known.
-        detect_binary(
-            AgentId::Pi,
-            &["pi"],
-            &["--version"],
-            Some("npm"),
-            env_ready,
-        )
+        detect_binary(AgentId::Pi, &["pi"], &["--version"], Some("npm"), env_ready)
     }
 
     fn install_channels(&self) -> Vec<InstallChannel> {
@@ -85,38 +80,52 @@ impl AgentAdapter for PiAdapter {
     }
 
     fn write_config(&self, _config: &AgentConfig) -> Result<()> {
-        // settings.json / models.json schemas are multi-provider and partially
-        // undocumented for atomic merge. Fail closed (do not invent writers).
-        Err(AppError::Unsupported(
-            "live config writes are not supported for pi \
-             (settings.json / models.json merge rules not locked; use pi CLI or edit files)"
-                .into(),
-        ))
+        write_pi_config(_config)
     }
 
     fn read_auth(&self) -> Result<AuthState> {
         let auth = pi_config_dir()?.join("auth.json");
         let has = auth.exists();
-        let summary = if has {
-            match read_auth_json() {
-                Ok(body) => {
-                    let n = body.as_object().map(|o| o.len()).unwrap_or(0);
-                    format!("auth.json present ({n} provider credentials)")
-                }
-                Err(_) => "auth.json present (provider-keyed OAuth / credentials)".into(),
-            }
+        let (kind, summary, has_credentials) = if !has {
+            (None, "no auth.json".into(), false)
         } else {
-            "no auth.json".into()
+            match read_auth_json().and_then(|body| {
+                let n = body.as_object().map(|o| o.len()).unwrap_or(0);
+                if n == 0 {
+                    return Ok((
+                        Some("file-auth.json".into()),
+                        "auth.json exists but contains no provider credentials".into(),
+                        false,
+                    ));
+                }
+                let entries = expand_auth_to_live_accounts(&body)?;
+                let has_oauth = entries.iter().any(|entry| entry.kind == AccountKind::Oauth);
+                let has_api_key = entries.iter().any(|entry| entry.kind == AccountKind::ApiKey);
+                let kind = match (has_oauth, has_api_key) {
+                    (true, true) => Some("mixed"),
+                    (true, false) => Some("oauth"),
+                    (false, true) => Some("api_key"),
+                    (false, false) => Some("file-auth.json"),
+                };
+                let summary = format!(
+                    "auth.json present ({n} provider credentials; {})",
+                    kind.unwrap_or("file-auth.json")
+                );
+                Ok((kind.map(str::to_owned), summary, !entries.is_empty()))
+            }) {
+                Ok(result) => result,
+                Err(_) => (
+                    Some("file-auth.json".into()),
+                    "auth.json present but credentials could not be classified".into(),
+                    false,
+                ),
+            }
         };
         Ok(AuthState {
             agent: AgentId::Pi,
-            kind: if has {
-                Some("file-auth.json".into())
-            } else {
-                None
-            },
+            kind,
             summary,
-            has_credentials: has,
+            has_credentials,
         })
     }
 
@@ -134,9 +143,7 @@ impl AgentAdapter for PiAdapter {
 
     fn apply_account(&self, account: &LiveAccount) -> Result<()> {
         if account.agent != AgentId::Pi {
-            return Err(AppError::InvalidArg(
-                "account agent mismatch for pi".into(),
-            ));
+            return Err(AppError::InvalidArg("account agent mismatch for pi".into()));
         }
         let format = account
             .credentials
@@ -211,14 +218,12 @@ impl AgentAdapter for PiAdapter {
         match cap {
             AccountSwitch | Skills | LiveBackup | StructuredStream | ProjectHistory
             | ProjectDelete => CapabilityState::full(),
-            ConfigWrite => CapabilityState::unsupported("无稳定 settings 合并契约，fail-closed"),
-            ApiKeyAccount => CapabilityState::partial(
-                "可入池；auth.json provider schema 不稳定，不写回",
-            ),
-            DangerousMode => CapabilityState::partial(
-                "--approve 仅信任项目文件，非完全跳过确认",
-            ),
-            ProviderPresets => CapabilityState::unsupported("写入契约未锁定，无内置模板"),
+            ConfigWrite => CapabilityState::full(),
+            ApiKeyAccount => {
+                CapabilityState::partial("可入池；auth.json provider schema 不稳定，不写回")
+            }
+            DangerousMode => CapabilityState::partial("--approve 仅信任项目文件，非完全跳过确认"),
+            ProviderPresets => CapabilityState::unsupported("暂无内置 Pi provider 预设"),
             Usage => CapabilityState::full(),
             Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
         }
@@ -281,6 +286,135 @@ fn read_json_object_or_empty(path: &Path) -> Result<serde_json::Value> {
     Ok(value)
 }
 
+const REDACTED_MARKER: &str = "***";
+
+fn write_pi_config(config: &AgentConfig) -> Result<()> {
+    if config.agent != AgentId::Pi {
+        return Err(AppError::InvalidArg(format!(
+            "config agent mismatch: expected pi, got {}",
+            config.agent.as_str()
+        )));
+    }
+    let raw = config
+        .raw
+        .as_object()
+        .ok_or_else(|| AppError::InvalidArg("Pi settings_config must be a JSON object".into()))?;
+    let dir = pi_config_dir()?;
+
+    let desired_models = raw
+        .get("models")
+        .or_else(|| raw.get("providers").map(|_| &config.raw))
+        .ok_or_else(|| {
+            AppError::InvalidArg(
+                "Pi settings_config must contain models.providers or providers".into(),
+            )
+        })?;
+    let models_path = dir.join("models.json");
+    let live_models = read_json_object_or_empty(&models_path)?;
+    let merged = merge_pi_models(&live_models, desired_models)?;
+    let merged_settings = raw
+        .get("settings")
+        .map(|settings| {
+            if !settings.is_object() {
+                return Err(AppError::InvalidArg(
+                    "Pi settings_config.settings must be a JSON object".into(),
+                ));
+            }
+            let live_settings = read_json_object_or_empty(&dir.join("settings.json"))?;
+            Ok(merge_redacted_json(&live_settings, settings))
+        })
+        .transpose()?;
+
+    // A live snapshot contains settings + models + paths.  Only settings is
+    // written back from that envelope; paths is adapter metadata and is never
+    // persisted to Pi's files.
+    if let Some(settings) = merged_settings {
+        write_json_value(&dir.join("settings.json"), &settings)?;
+    }
+    write_json_value(&models_path, &merged)?;
+    Ok(())
+}
+
+fn write_json_value(path: &Path, value: &serde_json::Value) -> Result<()> {
+    let mut bytes = serde_json::to_vec_pretty(value)?;
+    bytes.push(b'\n');
+    atomic_write(path, &bytes)
+}
+
+/// Merge Pi's documented `{ "providers": { ... } }` model store by provider
+/// key.  Unrelated providers and unknown fields remain intact.  A redacted
+/// secret (`***`) from the UI never replaces an existing credential.
+fn merge_pi_models(
+    live: &serde_json::Value,
+    desired: &serde_json::Value,
+) -> Result<serde_json::Value> {
+    let live_obj = live.as_object().ok_or_else(|| {
+        AppError::InvalidArg("existing Pi models.json must be a JSON object".into())
+    })?;
+    let desired_obj = desired.as_object().ok_or_else(|| {
+        AppError::InvalidArg("target Pi models.json must be a JSON object".into())
+    })?;
+    let desired_providers = desired_obj
+        .get("providers")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| {
+            AppError::InvalidArg("target Pi models.json.providers must be a JSON object".into())
+        })?;
+
+    let mut merged = live_obj.clone();
+    let mut providers = merged
+        .remove("providers")
+        .unwrap_or_else(|| serde_json::json!({}));
+    let providers_obj = providers.as_object_mut().ok_or_else(|| {
+        AppError::InvalidArg("existing Pi models.json.providers must be a JSON object".into())
+    })?;
+    for (provider, desired_config) in desired_providers {
+        if !desired_config.is_object() {
+            return Err(AppError::InvalidArg(format!(
+                "Pi provider {provider} must be a JSON object"
+            )));
+        }
+        let next = providers_obj
+            .get(provider)
+            .map(|existing| merge_redacted_json(existing, desired_config))
+            .unwrap_or_else(|| desired_config.clone());
+        providers_obj.insert(provider.clone(), next);
+    }
+    merged.insert("providers".into(), providers);
+
+    // Apply desired top-level options (for example `baseUrl` overrides) while
+    // retaining unknown keys already present in the live file.
+    for (key, value) in desired_obj {
+        if key != "providers" {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    Ok(serde_json::Value::Object(merged))
+}
+
+fn merge_redacted_json(
+    existing: &serde_json::Value,
+    desired: &serde_json::Value,
+) -> serde_json::Value {
+    if desired.as_str() == Some(REDACTED_MARKER) {
+        return existing.clone();
+    }
+    match (existing, desired) {
+        (serde_json::Value::Object(old), serde_json::Value::Object(new)) => {
+            let mut merged = old.clone();
+            for (key, value) in new {
+                let next = merged
+                    .get(key)
+                    .map(|prior| merge_redacted_json(prior, value))
+                    .unwrap_or_else(|| value.clone());
+                merged.insert(key.clone(), next);
+            }
+            serde_json::Value::Object(merged)
+        }
+        _ => desired.clone(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -307,9 +441,7 @@ mod tests {
         let adapter = PiAdapter;
         let mut opts = RunOptions::default();
         opts.allow_dangerous = true;
-        let spec = adapter
-            .build_run_spec(Path::new("pi"), "x", &opts)
-            .unwrap();
+        let spec = adapter.build_run_spec(Path::new("pi"), "x", &opts).unwrap();
         assert!(spec.args.iter().any(|a| a == "--approve"));
     }
 
@@ -346,13 +478,30 @@ mod tests {
     }
 
     #[test]
-    fn write_config_is_fail_closed() {
-        let err = PiAdapter
-            .write_config(&AgentConfig {
-                agent: AgentId::Pi,
-                raw: json!({}),
-            })
-            .unwrap_err();
-        assert_eq!(err.code(), "unsupported");
+    fn merge_models_preserves_unrelated_providers_and_redacted_keys() {
+        let live = json!({
+            "providers": {
+                "keep": { "baseUrl": "https://keep", "apiKey": "live-secret", "unknown": 1 },
+                "custom": { "baseUrl": "https://old", "apiKey": "old-secret" }
+            },
+            "unknownTopLevel": true
+        });
+        let desired = json!({
+            "providers": {
+                "custom": { "baseUrl": "https://new", "apiKey": "***" }
+            }
+        });
+        let merged = merge_pi_models(&live, &desired).unwrap();
+        assert_eq!(merged["providers"]["keep"]["apiKey"], "live-secret");
+        assert_eq!(merged["providers"]["keep"]["unknown"], 1);
+        assert_eq!(merged["providers"]["custom"]["baseUrl"], "https://new");
+        assert_eq!(merged["providers"]["custom"]["apiKey"], "old-secret");
+        assert_eq!(merged["unknownTopLevel"], true);
+    }
+
+    #[test]
+    fn merge_models_requires_provider_object() {
+        let err = merge_pi_models(&json!({}), &json!({"models": []})).unwrap_err();
+        assert_eq!(err.code(), "invalid_arg");
     }
 }

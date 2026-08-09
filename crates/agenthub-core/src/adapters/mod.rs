@@ -439,7 +439,7 @@ fn managed_toml_provider_keys(agent: AgentId) -> Result<&'static [&'static str]>
             "features",
         ]),
         AgentId::Kimi => Ok(&["default_model", "default_provider", "providers"]),
-        AgentId::Grok => Ok(&["model", "base_url", "api_key"]),
+        AgentId::Grok => Ok(&["models", "model", "base_url", "api_key", "env_key"]),
         AgentId::Claude | AgentId::Pi | AgentId::WorkBuddy | AgentId::Cursor => {
             Err(crate::error::AppError::InvalidArg(format!(
                 "{} provider config is JSON, not TOML",

@@ -15,6 +15,7 @@ import { createTauriSettingsPort } from './settings';
 import { createTauriSkillPort } from './skill';
 import { createTauriUpdatePort } from './update';
 import { createTauriUsagePort } from './usage';
+import { createTauriTrashPort } from './trash';
 
 /** Production / default dev backend: Tauri only (fail-closed outside shell). */
 export const createBackend: CreateBackend = () => {
@@ -33,6 +34,7 @@ export const createBackend: CreateBackend = () => {
     doctor: createTauriDoctorPort(),
     install: createTauriInstallPort(),
     update: createTauriUpdatePort(),
+    trash: createTauriTrashPort(),
   } as Backend;
 
   backend.env = createTauriEnvPort(backend);
