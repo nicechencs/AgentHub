@@ -74,14 +74,26 @@ function readSig(filePath) {
   return fs.readFileSync(filePath, 'utf8').trim();
 }
 
-function findFirst(dir, predicate) {
+function findFirst(dir, predicate, preferVersion = null) {
   if (!fs.existsSync(dir)) return null;
   const names = fs.readdirSync(dir);
+  const matches = [];
   for (const name of names) {
     const full = path.join(dir, name);
-    if (predicate(name, full)) return full;
+    if (predicate(name, full)) matches.push(full);
   }
-  return null;
+  if (matches.length === 0) return null;
+  if (preferVersion) {
+    const ver = String(preferVersion).replace(/^v/, '');
+    const versioned = matches.filter((p) => path.basename(p).includes(ver));
+    if (versioned.length > 0) {
+      versioned.sort((a, b) => path.basename(b).localeCompare(path.basename(a)));
+      return versioned[0];
+    }
+  }
+  // Prefer newer-looking filenames when multiple installers coexist.
+  matches.sort((a, b) => path.basename(b).localeCompare(path.basename(a)));
+  return matches[0];
 }
 
 function findAll(dir, predicate) {
@@ -175,15 +187,19 @@ function buildFeed(args) {
   const macos = path.join(args.targetDir, 'macos');
 
   // Prefer NSIS setup for Windows x64 updater install.
-  const nsisExe = findFirst(nsis, (n) => n.endsWith('-setup.exe') || n.endsWith('.exe'));
+  const nsisExe = findFirst(
+    nsis,
+    (n) => n.endsWith('-setup.exe') || n.endsWith('.exe'),
+    args.version,
+  );
   addPlatform(platforms, 'windows-x86_64', nsisExe, args.baseUrl);
 
   if (!platforms['windows-x86_64']) {
-    const msiFile = findFirst(msi, (n) => n.endsWith('.msi'));
+    const msiFile = findFirst(msi, (n) => n.endsWith('.msi'), args.version);
     addPlatform(platforms, 'windows-x86_64', msiFile, args.baseUrl);
   }
 
-  const appImg = findFirst(appimage, (n) => n.endsWith('.AppImage'));
+  const appImg = findFirst(appimage, (n) => n.endsWith('.AppImage'), args.version);
   addPlatform(platforms, 'linux-x86_64', appImg, args.baseUrl);
 
   for (const { key, file } of macArtifacts(macos, args.macArch)) {
