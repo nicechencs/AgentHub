@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-0078D6.svg)](#系统要求)
-[![Version](https://img.shields.io/badge/version-0.1.0-informational.svg)](https://github.com/nicechencs/AgentHub/releases)
+[![Release](https://img.shields.io/github/v/release/nicechencs/AgentHub?label=version)](https://github.com/nicechencs/AgentHub/releases)
 
 **多 Agent 桌面管理中枢**：在一台 Windows 或 macOS 机器上统一检测与安装 AI Agent 运行时、管理 Provider / 账号池、投影 Skills、备份 live 配置、统计 Token 用量，并提供桌面 Chat 入口。
 
@@ -10,7 +10,7 @@
 
 | 状态 | 说明 |
 |---|---|
-| 版本 | `0.1.0`（活跃开发） |
+| 版本 | 以 [GitHub Releases](https://github.com/nicechencs/AgentHub/releases) 最新版为准（活跃开发） |
 | 平台 | **Windows 为主交付平台**；macOS 支持源码运行与本机 Tauri 构建，Linux 仍仅预留路径抽象 |
 | 许可 | [MIT](LICENSE) |
 

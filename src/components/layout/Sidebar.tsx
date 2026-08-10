@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { AGENTS } from '@/config/agents';
+import { useAppUpdateAvailable } from '@/app/runtime';
 import { listAgents } from '@/lib/api/agent';
 import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
@@ -47,32 +48,64 @@ function SidebarNavLink({
   item,
   collapsed,
   itemClass,
+  notice,
 }: {
   item: NavItem;
   collapsed: boolean;
   itemClass: (isActive: boolean) => string;
+  /** Optional silent tip (e.g. app update available on Settings). */
+  notice?: { label: string } | null;
 }) {
   const { to, label, icon: Icon } = item;
+  const tip = notice?.label;
+  const a11yLabel = tip ? `${label} — ${tip}` : label;
 
   return (
     <NavLink
       to={to}
       end={to === '/'}
-      aria-label={collapsed ? label : undefined}
+      aria-label={collapsed || tip ? a11yLabel : undefined}
       className="block rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
     >
       {({ isActive }) => {
         const node = (
-          <span className={itemClass(isActive)}>
-            <Icon className={ICON_CLASS} strokeWidth={1.8} />
-            {!collapsed && <span className="truncate">{label}</span>}
+          <span className={cn(itemClass(isActive), 'relative')}>
+            <span className="relative shrink-0">
+              <Icon className={ICON_CLASS} strokeWidth={1.8} />
+              {/* Collapsed: corner pin on icon only (expanded uses trailing pin). */}
+              {notice && collapsed && (
+                <span
+                  className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-warning ring-2 ring-panel"
+                  aria-hidden
+                />
+              )}
+            </span>
+            {!collapsed && (
+              <>
+                <span className="truncate">{label}</span>
+                {notice && (
+                  <span
+                    className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
+                    aria-hidden
+                    title={tip}
+                  />
+                )}
+              </>
+            )}
           </span>
         );
 
-        if (!collapsed) return node;
+        if (!collapsed) {
+          if (!tip) return node;
+          return (
+            <Hint label={tip} side="right">
+              {node}
+            </Hint>
+          );
+        }
 
         return (
-          <Hint label={label} side="right">
+          <Hint label={a11yLabel} side="right">
             {node}
           </Hint>
         );
@@ -119,6 +152,10 @@ function agentDotLabel(
 export function Sidebar() {
   const { collapsed, toggle } = useSidebar();
   const [agents, setAgents] = React.useState<AgentStatus[]>([]);
+  const appUpdate = useAppUpdateAvailable();
+  const settingsNotice = appUpdate
+    ? { label: `有可用更新 v${appUpdate.version}` }
+    : null;
 
   React.useEffect(() => {
     listAgents().then(setAgents).catch(() => {});
@@ -206,7 +243,13 @@ export function Sidebar() {
         </NavGroup>
         <NavGroup label="管理" collapsed={collapsed} className="mt-auto pb-2">
           {NAV_MANAGE.map((item) => (
-            <SidebarNavLink key={item.to} item={item} collapsed={collapsed} itemClass={itemClass} />
+            <SidebarNavLink
+              key={item.to}
+              item={item}
+              collapsed={collapsed}
+              itemClass={itemClass}
+              notice={item.to === '/settings' ? settingsNotice : null}
+            />
           ))}
         </NavGroup>
       </nav>

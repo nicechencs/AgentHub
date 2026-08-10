@@ -26,4 +26,12 @@ export {
   useAgentStatusesOptional,
 } from './AgentStatusProvider';
 
+export {
+  getAppUpdateAvailable,
+  resetAppUpdateStore,
+  setAppUpdateAvailable,
+  subscribeAppUpdate,
+} from './app-update-store';
+export { useAppUpdateAvailable } from './useAppUpdateAvailable';
+
 export type { Backend } from '@/lib/backend/contracts';
