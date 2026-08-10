@@ -1,5 +1,6 @@
 import { getVersion } from '@tauri-apps/api/app';
 import type { SettingsPort } from '@/lib/backend/contracts';
+import { UNKNOWN_APP_VERSION } from '@/lib/app-version';
 import { logger } from '@/lib/logger';
 import {
   loadJson,
@@ -30,7 +31,8 @@ const DEFAULTS: AppSettings = {
   skillMarketSource: 'auto',
   autoBackup: true,
   usageCollectIntervalMin: 30,
-  appVersion: '0.1.0',
+  // Real value comes from Tauri getVersion(); do not hardcode a product semver.
+  appVersion: UNKNOWN_APP_VERSION,
 };
 
 const SETTINGS_KEY = 'agenthub:settings';

@@ -1,10 +1,14 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildBootCriticalCss, buildDesignTokensCss } from './src/styles/tokens';
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
+const packageVersion = JSON.parse(
+  readFileSync(path.resolve(rootDir, 'package.json'), 'utf8'),
+).version as string;
 const tauriBackend = path.resolve(rootDir, 'src/lib/backend/tauri/create-backend.ts');
 const mockBackend = path.resolve(rootDir, 'src/dev/mocks/create-backend.ts');
 const productionOAuthDialog = path.resolve(
@@ -120,6 +124,8 @@ export default defineConfig(({ mode, command }) => {
     envPrefix: ['VITE_', 'TAURI_'],
     define: {
       'import.meta.env.VITE_BACKEND': JSON.stringify(useMock ? 'mock' : 'tauri'),
+      // From package.json only — never hand-edit display version strings in src/.
+      'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageVersion),
     },
     build: {
       target: 'esnext',
