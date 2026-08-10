@@ -195,41 +195,54 @@ impl AgentAdapter for CodexAdapter {
             .get("format")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        match format {
-            "auth_json" => {
-                let body = account.credentials.get("body").cloned().ok_or_else(|| {
-                    AppError::InvalidArg("Codex account credentials.body is required".into())
-                })?;
-                if !body.is_object() {
-                    return Err(AppError::InvalidArg(
-                        "Codex account credentials.body must be a JSON object".into(),
-                    ));
-                }
-                let home = agent_home(AgentId::Codex)?;
-                let path = home.join("auth.json");
-                let mut bytes = serde_json::to_vec_pretty(&body)?;
-                bytes.push(b'\n');
-                atomic_write(&path, &bytes)?;
-                let written = std::fs::read_to_string(&path)?;
-                let parsed: serde_json::Value = serde_json::from_str(&written)?;
-                if parsed != body {
-                    return Err(AppError::message(
-                        "account.verify",
-                        "Codex auth.json verification failed after write",
-                    ));
-                }
-                // Drop preferred_auth_method=apikey so OAuth auth.json is used
-                // after switching back from an API provider.
-                clear_codex_apikey_auth_preference(&home.join("config.toml"))?;
-                Ok(())
+        // OAuth PKCE historically stored a flat token bundle (`type=oauth`) without
+        // `format=auth_json`. Normalize that shape so switch can still write live.
+        let credentials = match format {
+            "auth_json" => account.credentials.clone(),
+            "api_key" => {
+                return Err(AppError::Unsupported(
+                    "Codex live apply for API key accounts is not supported; import OAuth auth.json or use provider config".into(),
+                ));
             }
-            "api_key" => Err(AppError::Unsupported(
-                "Codex live apply for API key accounts is not supported; import OAuth auth.json or use provider config".into(),
-            )),
-            other => Err(AppError::InvalidArg(format!(
-                "unsupported Codex account credential format: {other}"
-            ))),
+            "" | "oauth" => normalize_oauth_credentials(&account.credentials)?,
+            other => {
+                // Unknown label, but still try token-bundle recovery before failing.
+                match normalize_oauth_credentials(&account.credentials) {
+                    Ok(normalized) => normalized,
+                    Err(_) => {
+                        return Err(AppError::InvalidArg(format!(
+                            "unsupported Codex account credential format: {other} \
+                             (expected auth_json with body, or OAuth token fields that can be converted)"
+                        )));
+                    }
+                }
+            }
+        };
+        let body = credentials.get("body").cloned().ok_or_else(|| {
+            AppError::InvalidArg("Codex account credentials.body is required".into())
+        })?;
+        if !body.is_object() {
+            return Err(AppError::InvalidArg(
+                "Codex account credentials.body must be a JSON object".into(),
+            ));
         }
+        let home = agent_home(AgentId::Codex)?;
+        let path = home.join("auth.json");
+        let mut bytes = serde_json::to_vec_pretty(&body)?;
+        bytes.push(b'\n');
+        atomic_write(&path, &bytes)?;
+        let written = std::fs::read_to_string(&path)?;
+        let parsed: serde_json::Value = serde_json::from_str(&written)?;
+        if parsed != body {
+            return Err(AppError::message(
+                "account.verify",
+                "Codex auth.json verification failed after write",
+            ));
+        }
+        // Drop preferred_auth_method=apikey so OAuth auth.json is used
+        // after switching back from an API provider.
+        clear_codex_apikey_auth_preference(&home.join("config.toml"))?;
+        Ok(())
     }
 
     fn build_api_key_account(&self, api_key: &str) -> Result<LiveAccount> {
@@ -375,6 +388,163 @@ fn clear_codex_apikey_auth_preference(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Convert generic OAuth token fields into the Codex pool/live shape:
+/// `{ format: "auth_json", body: { auth_mode, OPENAI_API_KEY, tokens, last_refresh }, ... }`.
+///
+/// Accepts:
+/// - already-normalized `auth_json` credentials (returned as-is when body is valid)
+/// - flat token bundles from PKCE (`type=oauth`, top-level access/refresh/id tokens)
+/// - nested `body.tokens` / `tokens` maps
+///
+/// Identity fields already present on `credentials` are preserved at the top level
+/// so refresh/heal/UI keep working without re-decoding JWTs.
+pub(crate) fn normalize_oauth_credentials(credentials: &Value) -> Result<Value> {
+    if credentials
+        .get("format")
+        .and_then(|v| v.as_str())
+        .is_some_and(|f| f == "auth_json")
+    {
+        if credentials
+            .get("body")
+            .and_then(|b| b.as_object())
+            .is_some_and(|body| {
+                body.get("tokens")
+                    .and_then(|t| t.as_object())
+                    .is_some_and(|tokens| {
+                        tokens
+                            .get("access_token")
+                            .and_then(|v| v.as_str())
+                            .is_some_and(|s| !s.is_empty())
+                            || tokens
+                                .get("refresh_token")
+                                .and_then(|v| v.as_str())
+                                .is_some_and(|s| !s.is_empty())
+                    })
+            })
+        {
+            return Ok(credentials.clone());
+        }
+    }
+
+    let access = first_nonempty_str(
+        credentials,
+        &[
+            "/access_token",
+            "/tokens/access_token",
+            "/body/tokens/access_token",
+            "/raw/access_token",
+            "/body/access_token",
+        ],
+    );
+    let refresh = first_nonempty_str(
+        credentials,
+        &[
+            "/refresh_token",
+            "/tokens/refresh_token",
+            "/body/tokens/refresh_token",
+            "/raw/refresh_token",
+            "/body/refresh_token",
+        ],
+    );
+    let id_token = first_nonempty_str(
+        credentials,
+        &[
+            "/id_token",
+            "/tokens/id_token",
+            "/body/tokens/id_token",
+            "/raw/id_token",
+            "/body/id_token",
+        ],
+    );
+    let account_id = first_nonempty_str(
+        credentials,
+        &[
+            "/account_id",
+            "/tokens/account_id",
+            "/body/tokens/account_id",
+            "/chatgpt_account_id",
+            "/body/account_id",
+        ],
+    );
+    let last_refresh = first_nonempty_str(
+        credentials,
+        &["/last_refresh", "/body/last_refresh", "/raw/last_refresh"],
+    )
+    .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+    let access = access.ok_or_else(|| {
+        AppError::InvalidArg(
+            "Codex OAuth credentials missing access_token; re-run OAuth login or import live auth.json"
+                .into(),
+        )
+    })?;
+
+    let mut tokens = serde_json::Map::new();
+    tokens.insert("access_token".into(), json!(access));
+    if let Some(ref rt) = refresh {
+        tokens.insert("refresh_token".into(), json!(rt));
+    }
+    if let Some(ref idt) = id_token {
+        tokens.insert("id_token".into(), json!(idt));
+    }
+    if let Some(ref aid) = account_id {
+        tokens.insert("account_id".into(), json!(aid));
+    }
+
+    let body = json!({
+        "auth_mode": "chatgpt",
+        "OPENAI_API_KEY": null,
+        "tokens": tokens,
+        "last_refresh": last_refresh,
+    });
+
+    let mut cred = serde_json::Map::new();
+    cred.insert("format".into(), json!("auth_json"));
+    cred.insert("body".into(), body);
+    // Flatten common token/identity fields for refresh + heal helpers.
+    cred.insert("access_token".into(), json!(access));
+    if let Some(rt) = refresh {
+        cred.insert("refresh_token".into(), json!(rt));
+    }
+    if let Some(idt) = id_token {
+        cred.insert("id_token".into(), json!(idt));
+    }
+    if let Some(aid) = account_id {
+        cred.insert("account_id".into(), json!(aid));
+    }
+    for key in [
+        "email",
+        "sub",
+        "organization_id",
+        "org_uuid",
+        "plan_type",
+        "expires_at",
+        "expires_in",
+        "provider",
+    ] {
+        if let Some(v) = credentials.get(key).cloned() {
+            if !v.is_null() {
+                cred.entry(key.to_string()).or_insert(v);
+            }
+        }
+    }
+    Ok(Value::Object(cred))
+}
+
+fn first_nonempty_str(value: &Value, pointers: &[&str]) -> Option<String> {
+    for pointer in pointers {
+        if let Some(s) = value
+            .pointer(pointer)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            return Some(s.to_string());
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -418,5 +588,91 @@ mod tests {
         )
         .unwrap();
         assert!(read_live_openai_api_key(&path).unwrap().is_none());
+    }
+
+    #[test]
+    fn normalize_oauth_credentials_from_pkce_bundle() {
+        let bundle = json!({
+            "type": "oauth",
+            "provider": "codex",
+            "access_token": "at-1",
+            "refresh_token": "rt-1",
+            "id_token": "idt-1",
+            "account_id": "acc-1",
+            "email": "user@example.com",
+            "expires_at": "2026-08-20T00:00:00+00:00",
+            "raw": {
+                "access_token": "at-1",
+                "refresh_token": "rt-1",
+                "id_token": "idt-1"
+            }
+        });
+        let normalized = normalize_oauth_credentials(&bundle).unwrap();
+        assert_eq!(
+            normalized.get("format").and_then(|v| v.as_str()),
+            Some("auth_json")
+        );
+        assert_eq!(
+            normalized.pointer("/body/auth_mode").and_then(|v| v.as_str()),
+            Some("chatgpt")
+        );
+        assert!(normalized.pointer("/body/OPENAI_API_KEY").unwrap().is_null());
+        assert_eq!(
+            normalized
+                .pointer("/body/tokens/access_token")
+                .and_then(|v| v.as_str()),
+            Some("at-1")
+        );
+        assert_eq!(
+            normalized
+                .pointer("/body/tokens/refresh_token")
+                .and_then(|v| v.as_str()),
+            Some("rt-1")
+        );
+        assert_eq!(
+            normalized
+                .pointer("/body/tokens/account_id")
+                .and_then(|v| v.as_str()),
+            Some("acc-1")
+        );
+        assert_eq!(
+            normalized.get("email").and_then(|v| v.as_str()),
+            Some("user@example.com")
+        );
+        assert_eq!(
+            normalized.get("refresh_token").and_then(|v| v.as_str()),
+            Some("rt-1")
+        );
+    }
+
+    #[test]
+    fn normalize_oauth_credentials_keeps_valid_auth_json() {
+        let already = json!({
+            "format": "auth_json",
+            "body": {
+                "auth_mode": "chatgpt",
+                "OPENAI_API_KEY": null,
+                "tokens": {
+                    "access_token": "at-keep",
+                    "refresh_token": "rt-keep"
+                },
+                "last_refresh": "2026-08-01T00:00:00Z"
+            },
+            "email": "keep@example.com"
+        });
+        let normalized = normalize_oauth_credentials(&already).unwrap();
+        assert_eq!(normalized, already);
+    }
+
+    #[test]
+    fn normalize_oauth_credentials_requires_access_token() {
+        let err = normalize_oauth_credentials(&json!({
+            "type": "oauth",
+            "provider": "codex",
+            "refresh_token": "rt-only"
+        }))
+        .unwrap_err();
+        assert_eq!(err.code(), "invalid_arg");
+        assert!(err.to_string().contains("access_token"));
     }
 }
