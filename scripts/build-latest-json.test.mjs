@@ -96,3 +96,26 @@ test('fails when a selected updater signature is empty after trimming', () => {
     /empty updater signature/,
   );
 });
+
+test('enforces required platform set when requested by a release publisher', () => {
+  const { root, nsis, macos } = tempBundle();
+  signedArtifact(nsis, 'AgentHub_1.0.0_x64-setup.exe', 'windows-sig');
+  signedArtifact(macos, 'AgentHub_1.0.0_aarch64.app.tar.gz', 'mac-sig');
+
+  const args = {
+    version: '1.0.0',
+    notes: '',
+    baseUrl: 'https://example.invalid/releases/download/v1.0.0',
+    out: 'latest.json',
+    targetDir: root,
+    macArch: null,
+  };
+  assert.throws(
+    () => buildFeed({ ...args, requiredPlatforms: ['windows-x86_64', 'linux-x86_64'] }),
+    /Missing required signed updater platforms: linux-x86_64/,
+  );
+  assert.deepEqual(
+    Object.keys(buildFeed({ ...args, requiredPlatforms: ['windows-x86_64', 'darwin-aarch64'] }).platforms).sort(),
+    ['darwin-aarch64', 'windows-x86_64'],
+  );
+});

@@ -16,7 +16,10 @@ pub async fn list_accounts(
     agent_id: Option<String>,
 ) -> Result<Vec<Account>, String> {
     let hub = state.hub_arc()?;
-    with_hub_blocking(hub, move |hub| list_accounts_inner(hub, agent_id.as_deref())).await
+    with_hub_blocking(hub, move |hub| {
+        list_accounts_inner(hub, agent_id.as_deref())
+    })
+    .await
 }
 
 /// Invoke: `probe_live_auth` — read-only, redacted authentication status.
@@ -54,13 +57,7 @@ pub async fn add_api_key_account(
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        add_api_key_account_inner(
-            hub,
-            &agent_id,
-            &key,
-            label.as_deref(),
-            env_key.as_deref(),
-        )
+        add_api_key_account_inner(hub, &agent_id, &key, label.as_deref(), env_key.as_deref())
     })
     .await
 }
@@ -244,25 +241,24 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn list_and_add_apikey_are_redacted() {
+    fn add_apikey_is_redacted_without_live_reconcile() {
         let dir = tempdir().unwrap();
         let hub = AgentHub::open(Some(dir.path())).unwrap();
-        let created = add_api_key_account_inner(
-            &hub,
-            "grok",
-            "xai-super-secret-key",
-            Some("work"),
-            None,
-        )
-        .unwrap();
+        let created =
+            add_api_key_account_inner(&hub, "grok", "xai-super-secret-key", Some("work"), None)
+                .unwrap();
         assert_eq!(created.label, "work");
         let creds = serde_json::to_string(&created.credentials).unwrap();
         assert!(!creds.contains("xai-super-secret-key"));
         assert!(creds.contains("***"));
 
-        let list = list_accounts_inner(&hub, Some("grok")).unwrap();
-        assert_eq!(list.len(), 1);
-        let listed = serde_json::to_string(&list[0].credentials).unwrap();
+        // Do not call `list_accounts_inner` here: the production list path
+        // intentionally reconciles live adapter homes, which would make this
+        // GUI command test depend on the host's real credentials.  The command
+        // boundary's redaction contract is exercised directly on the returned
+        // DTO instead.
+        let listed = serde_json::to_string(&created.redacted().credentials).unwrap();
         assert!(!listed.contains("xai-super-secret-key"));
+        assert!(listed.contains("***"));
     }
 }

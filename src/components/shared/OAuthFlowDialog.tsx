@@ -40,6 +40,32 @@ type Step =
   | 'unavailable'
   | 'error';
 
+/** Identity for one mounted OAuth attempt. */
+export interface OAuthFlowToken {
+  generation: number;
+  cancelled: boolean;
+}
+
+export function createOAuthFlowToken(generation: number): OAuthFlowToken {
+  return { generation, cancelled: false };
+}
+
+export function isOAuthFlowTokenCurrent(
+  current: OAuthFlowToken | null,
+  token: OAuthFlowToken,
+): boolean {
+  return current === token && !token.cancelled;
+}
+
+export async function openManualCallbackFallbackIfCurrent(
+  url: string,
+  isCurrent: () => boolean,
+  openLink: (target: string) => Promise<void> = openExternalLink,
+): Promise<void> {
+  if (!isCurrent()) return;
+  await openLink(url);
+}
+
 /**
  * OAuth 对话框：
  * - 单 provider：直接 PKCE 浏览器流
@@ -71,11 +97,29 @@ export function OAuthFlowDialog({
   const [selected, setSelected] = React.useState<OAuthLoginOption | null>(null);
   const [deviceInfo, setDeviceInfo] = React.useState<DeviceOAuthStartInfo | null>(null);
   const meta = AGENT_MAP[agentId];
-  const cancelRef = React.useRef({ cancelled: false });
+  const flowGenerationRef = React.useRef(0);
+  const flowTokenRef = React.useRef<OAuthFlowToken | null>(null);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      if (flowTokenRef.current) flowTokenRef.current.cancelled = true;
+      flowTokenRef.current = null;
+      flowGenerationRef.current += 1;
+    }
+    onOpenChange(nextOpen);
+  };
 
   React.useEffect(() => {
-    if (!open) return;
-    cancelRef.current.cancelled = false;
+    if (!open) {
+      if (flowTokenRef.current) flowTokenRef.current.cancelled = true;
+      flowTokenRef.current = null;
+      flowGenerationRef.current += 1;
+      return;
+    }
+    const token = createOAuthFlowToken(++flowGenerationRef.current);
+    flowTokenRef.current = token;
+    const isCurrent = () => isOAuthFlowTokenCurrent(flowTokenRef.current, token);
+
     setStep('check');
     setCountdown(120);
     setAccount(null);
@@ -92,13 +136,13 @@ export function OAuthFlowDialog({
     void (async () => {
       try {
         const ok = await oauthSupported(agentId);
-        if (cancelRef.current.cancelled) return;
+        if (!isCurrent()) return;
         if (!ok) {
           setStep('unavailable');
           return;
         }
         const opts = await listOAuthOptions(agentId);
-        if (cancelRef.current.cancelled) return;
+        if (!isCurrent()) return;
         setOptions(opts);
         if (opts.length === 0) {
           setStep('unavailable');
@@ -109,14 +153,15 @@ export function OAuthFlowDialog({
           setStep('pick');
         }
       } catch (e) {
-        if (cancelRef.current.cancelled) return;
+        if (!isCurrent()) return;
         setErrorMsg(e instanceof Error ? e.message : String(e));
         setStep('error');
       }
     })();
 
     return () => {
-      cancelRef.current.cancelled = true;
+      token.cancelled = true;
+      if (flowTokenRef.current === token) flowTokenRef.current = null;
     };
   }, [open, agentId]);
 
@@ -133,13 +178,16 @@ export function OAuthFlowDialog({
   };
 
   const startPkceFlow = async () => {
+    const token = flowTokenRef.current;
+    if (!token) return;
+    const isCurrent = () => isOAuthFlowTokenCurrent(flowTokenRef.current, token);
     setErrorMsg(null);
     setStep('waiting');
     setCountdown(120);
     setManualUrl('');
     try {
       const start = await startOAuth(agentId, true, selected?.id ?? null);
-      if (cancelRef.current.cancelled) return;
+      if (!isCurrent()) return;
       setOauthState(start.state);
       setAuthorizeUrl(start.authorizeUrl);
       setRedirectUri(start.redirectUri);
@@ -151,18 +199,18 @@ export function OAuthFlowDialog({
         void openExternalLink(start.authorizeUrl).catch(() => {});
       }
       const wait = await waitOAuth(start.state, 120);
-      if (cancelRef.current.cancelled) return;
+      if (!isCurrent()) return;
       if (wait.status === 'failed') {
         setErrorMsg(wait.error ?? '授权失败');
         setStep('error');
         return;
       }
       const acc = await finishOAuth(start.state);
-      if (cancelRef.current.cancelled) return;
+      if (!isCurrent()) return;
       setAccount(acc);
       setStep('done');
     } catch (e) {
-      if (cancelRef.current.cancelled) return;
+      if (!isCurrent()) return;
       setErrorMsg(e instanceof Error ? e.message : String(e));
       setStep('error');
     }
@@ -170,11 +218,14 @@ export function OAuthFlowDialog({
 
   const startDeviceFlow = async () => {
     if (!selected) return;
+    const token = flowTokenRef.current;
+    if (!token) return;
+    const isCurrent = () => isOAuthFlowTokenCurrent(flowTokenRef.current, token);
     setErrorMsg(null);
     setStep('device');
     try {
       const start = await startDeviceOAuth(agentId, selected.id);
-      if (cancelRef.current.cancelled) return;
+      if (!isCurrent()) return;
       setDeviceInfo(start);
       setOauthState(start.state);
       setCountdown(start.expiresInSecs || 900);
@@ -185,13 +236,14 @@ export function OAuthFlowDialog({
       }
       const intervalMs = Math.max(2, start.intervalSecs || 5) * 1000;
       const deadline = Date.now() + (start.expiresInSecs || 900) * 1000;
-      while (!cancelRef.current.cancelled && Date.now() < deadline) {
+      while (isCurrent() && Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, intervalMs));
-        if (cancelRef.current.cancelled) return;
+        if (!isCurrent()) return;
         const poll = await pollDeviceOAuth(start.state);
+        if (!isCurrent()) return;
         if (poll.status === 'complete') {
           const acc = await finishDeviceOAuth(start.state);
-          if (cancelRef.current.cancelled) return;
+          if (!isCurrent()) return;
           setAccount(acc);
           setStep('done');
           return;
@@ -201,13 +253,16 @@ export function OAuthFlowDialog({
           setStep('error');
           return;
         }
+        // A concurrent completion holds the session in Completing; keep
+        // polling until the consumer either finishes or the session expires.
+        if (poll.status === 'completing') continue;
       }
-      if (!cancelRef.current.cancelled) {
+      if (isCurrent()) {
         setErrorMsg('设备码授权超时');
         setStep('error');
       }
     } catch (e) {
-      if (cancelRef.current.cancelled) return;
+      if (!isCurrent()) return;
       setErrorMsg(e instanceof Error ? e.message : String(e));
       setStep('error');
     }
@@ -217,14 +272,20 @@ export function OAuthFlowDialog({
   const submitManualCallback = async () => {
     const url = manualUrl.trim();
     if (!url) return;
+    const token = flowTokenRef.current;
+    if (!token) return;
+    const isCurrent = () => isOAuthFlowTokenCurrent(flowTokenRef.current, token);
     setSubmittingManual(true);
     try {
-      await fetch(url, { mode: 'no-cors', credentials: 'omit' }).catch(() => {
-        void openExternalLink(url).catch(() => {});
-      });
+      try {
+        await fetch(url, { mode: 'no-cors', credentials: 'omit' });
+      } catch {
+        await openManualCallbackFallbackIfCurrent(url, isCurrent).catch(() => {});
+      }
+      if (!isCurrent()) return;
       toast({ title: '已提交回调，若仍等待请确认 URL 含 code 与 state' });
     } finally {
-      setSubmittingManual(false);
+      if (isCurrent()) setSubmittingManual(false);
     }
   };
 
@@ -244,7 +305,7 @@ export function OAuthFlowDialog({
   const ss = String(countdown % 60).padStart(2, '0');
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>
@@ -408,8 +469,10 @@ export function OAuthFlowDialog({
                   variant="ghost"
                   disabled={!authorizeUrl}
                   onClick={() => {
-                    if (!authorizeUrl) return;
+                    const token = flowTokenRef.current;
+                    if (!authorizeUrl || !token) return;
                     void openExternalLink(authorizeUrl).catch((e) => {
+                      if (!isOAuthFlowTokenCurrent(flowTokenRef.current, token)) return;
                       toast({
                         title: '无法打开授权页',
                         description: e instanceof Error ? e.message : String(e),
@@ -486,20 +549,20 @@ export function OAuthFlowDialog({
         <DialogFooter>
           {step === 'done' && account ? (
             <>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
+              <Button variant="outline" onClick={() => handleOpenChange(false)}>
                 稍后
               </Button>
               <Button
                 onClick={() => {
                   onCompleted(account);
-                  onOpenChange(false);
+                  handleOpenChange(false);
                 }}
               >
                 立即切换到此账号
               </Button>
             </>
           ) : (
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="outline" onClick={() => handleOpenChange(false)}>
               {step === 'waiting' || (step === 'device' && deviceInfo) ? '取消等待' : '关闭'}
             </Button>
           )}

@@ -49,6 +49,30 @@ jobs:
         with:
           version: 9
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            src-tauri
+
+      - name: Install Linux native test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            wget
+
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
@@ -62,8 +86,14 @@ jobs:
       - name: Type check
         run: pnpm typecheck
 
+      - name: Type check tests
+        run: pnpm typecheck:test
+
       - name: Run frontend tests
         run: pnpm test
+
+      - name: Run Rust workspace tests
+        run: cargo test --workspace --locked
 
       - name: Refuse an existing tag or release
         env:
@@ -141,7 +171,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm tauri:build
+        run: pnpm tauri:build -- --locked
 
       - name: Collect signed Windows artifacts
         shell: pwsh
@@ -242,7 +272,7 @@ jobs:
           APPLE_SIGNING_IDENTITY: '-'
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm tauri:build
+        run: pnpm tauri:build -- --locked
 
       - name: Collect signed macOS artifacts
         shell: bash
@@ -414,6 +444,7 @@ jobs:
             --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG" \
             --target-dir "$BUNDLE" \
             --mac-arch aarch64 \
+            --required-platforms windows-x86_64,darwin-aarch64 \
             --out "$ASSETS/latest.json"
 
           node --input-type=module <<'NODE'

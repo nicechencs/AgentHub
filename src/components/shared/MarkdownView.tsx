@@ -1,5 +1,6 @@
 import type { MouseEvent } from 'react';
 import MarkdownPreview from '@uiw/react-markdown-preview';
+import rehypeRaw from 'rehype-raw';
 import { useTheme } from '@/components/shared/ThemeProvider';
 import { isHttpUrl, openExternalLink } from '@/lib/open-external';
 import { resolveTheme } from '@/lib/theme';
@@ -20,7 +21,90 @@ export interface MarkdownViewProps {
 }
 
 /** Minimal HAST element shape used by rehypeRewrite (avoids depending on `hast` types). */
-type HastNode = { type?: string; tagName?: string; children?: HastNode[] };
+type HastNode = {
+  type?: string;
+  tagName?: string;
+  children?: HastNode[];
+  properties?: Record<string, unknown>;
+};
+
+const BLOCKED_TAGS = new Set([
+  'base',
+  'button',
+  'embed',
+  'form',
+  'iframe',
+  'input',
+  'link',
+  'meta',
+  'object',
+  'script',
+  'select',
+  'style',
+  'textarea',
+  'video',
+]);
+
+/**
+ * Markdown links/images are untrusted input. Allow ordinary web URLs and
+ * same-document/relative links, but reject every other URI scheme (including
+ * javascript:, data:, file:, and custom protocol handlers).
+ */
+export function isSafeMarkdownUrl(url: string): boolean {
+  let candidate = url.trim();
+  if (!candidate) return false;
+
+  // Decode a couple of layers so encoded `javascript:` cannot bypass the
+  // scheme check. Invalid percent escapes are treated as unsafe.
+  for (let i = 0; i < 2; i += 1) {
+    try {
+      const decoded = decodeURIComponent(candidate);
+      if (decoded === candidate) break;
+      candidate = decoded;
+    } catch {
+      return false;
+    }
+  }
+  candidate = candidate.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  // Browsers normalize backslashes in special URLs, so `\\\\host` can act
+  // like a protocol-relative URL. Reject them before the webview resolves the
+  // relative href.
+  if (!candidate || candidate.startsWith('//') || candidate.includes('\\')) return false;
+
+  const scheme = candidate.match(/^([a-z][a-z\d+.-]*):/i)?.[1]?.toLowerCase();
+  if (scheme) {
+    return (scheme === 'http' || scheme === 'https') && /^https?:\/\//i.test(candidate);
+  }
+  return true;
+}
+
+/** Remove unsafe URL/HTML properties from one HAST node. */
+export function sanitizeMarkdownNode(
+  node: HastNode,
+  _index?: number,
+  parent?: HastNode,
+) {
+  const tagName = node.tagName?.toLowerCase();
+  if (tagName && BLOCKED_TAGS.has(tagName)) {
+    if (Array.isArray(parent?.children)) {
+      parent.children = parent.children.filter((child) => child !== node);
+    }
+    return;
+  }
+
+  const properties = node.properties;
+  if (!properties) return;
+  for (const key of Object.keys(properties)) {
+    const value = properties[key];
+    if (/^on[a-z]/i.test(key)) {
+      delete properties[key];
+      continue;
+    }
+    if ((key === 'href' || key === 'src' || key === 'cite') && typeof value === 'string') {
+      if (!isSafeMarkdownUrl(value)) delete properties[key];
+    }
+  }
+}
 
 /**
  * Strip GitHub-style heading permalink anchors.
@@ -46,6 +130,25 @@ function stripHeadingPermalink(
   }
 }
 
+function rewriteMarkdownNode(node: HastNode, index?: number, parent?: HastNode) {
+  sanitizeMarkdownNode(node, index, parent);
+  stripHeadingPermalink(node, index, parent);
+}
+
+/**
+ * The preview package injects `rehype-raw` in its default entry point. Remove
+ * every copy so untrusted HTML is never parsed into renderable elements.
+ */
+export const filterUnsafeMarkdownPlugins: NonNullable<
+  React.ComponentProps<typeof MarkdownPreview>['pluginsFilter']
+> = (type, plugins) => {
+  if (type !== 'rehype') return plugins;
+  return plugins.filter((entry) => {
+    const plugin = Array.isArray(entry) ? entry[0] : entry;
+    return plugin !== rehypeRaw;
+  });
+};
+
 /**
  * Shared markdown preview powered by `@uiw/react-markdown-preview`
  * (same family as the project's CodeMirror). GFM + code highlight + dark/light
@@ -67,7 +170,13 @@ export function MarkdownView({
     const a = el.closest('a');
     if (!a || !e.currentTarget.contains(a)) return;
     const href = a.getAttribute('href')?.trim() ?? '';
-    if (!href || href.startsWith('#') || href.startsWith('/')) return;
+    if (!href || !isSafeMarkdownUrl(href)) {
+      // Unsafe schemes must never reach the browser's default navigation.
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    if (href.startsWith('#') || href.startsWith('/')) return;
     if (!isHttpUrl(href)) return;
     // Tauri webview: open system browser instead of navigating in-app.
     e.preventDefault();
@@ -81,9 +190,15 @@ export function MarkdownView({
     <div onClick={onMarkdownClick}>
       <MarkdownPreview
         source={text}
+        // v5 inverts this prop before passing it to react-markdown. Combined
+        // with the plugin filter, `false` means raw nodes are skipped.
+        skipHtml={false}
+        pluginsFilter={filterUnsafeMarkdownPlugins}
+        urlTransform={(url) => (isSafeMarkdownUrl(url) ? url.trim() : '')}
+        allowElement={(element) => !BLOCKED_TAGS.has(element.tagName.toLowerCase())}
         wrapperElement={{ 'data-color-mode': colorMode }}
         // Must stay disabled while HashRouter owns the URL fragment.
-        rehypeRewrite={stripHeadingPermalink}
+        rehypeRewrite={rewriteMarkdownNode}
         className={cn(
           // Reset library default canvas so it inherits chat/dialog backgrounds.
           '!bg-transparent',

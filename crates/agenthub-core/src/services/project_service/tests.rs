@@ -141,6 +141,13 @@ fn extract_user_text_from_claude_shape() {
 }
 
 #[test]
+fn extract_user_text_from_codex_response_item_shape() {
+    let line = r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello from codex"}]}}"#;
+    let text = extract_userish_text(line).expect("response_item user payload should be recognized");
+    assert!(text.contains("hello from codex"));
+}
+
+#[test]
 fn list_claude_aggregates_sessions_into_project() {
     let dir = tempdir().unwrap();
     let home = dir.path().join(".claude");
@@ -836,8 +843,7 @@ fn list_pi_groups_by_encoded_session_dir() {
         .expect("example project");
     assert_eq!(example.session_count, 1);
     let (_, key) = parse_project_id(&example.id).unwrap();
-    let only =
-        list_sessions_for_project_home(AgentId::Pi, &home, &example.id, &key, None).unwrap();
+    let only = list_sessions_for_project_home(AgentId::Pi, &home, &example.id, &key, None).unwrap();
     assert_eq!(only.len(), 1);
     assert!(
         only[0]

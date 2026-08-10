@@ -31,6 +31,26 @@ function objectValue(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+export type JsonObjectParseResult =
+  | { ok: true; value: Record<string, unknown> }
+  | { ok: false; message: string };
+
+/** Parse a structured JSON config without ever substituting an empty object. */
+export function parseJsonObjectConfig(configText: string): JsonObjectParseResult {
+  const trimmed = configText.trim();
+  if (!trimmed) return { ok: true, value: {} };
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { ok: false, message: '配置 JSON 必须是对象' };
+    }
+    return { ok: true, value: parsed as Record<string, unknown> };
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    return { ok: false, message: `配置 JSON 解析失败：${detail}` };
+  }
+}
+
 function extractPiProviderVars(root: unknown): ProviderFormVars {
   const rootObject = objectValue(root);
   const modelsObject = objectValue(rootObject?.models);
@@ -367,18 +387,16 @@ export function applyFormVars(
   opts?: { extraEnv?: Record<string, string> },
 ): string {
   if (format === 'json' || agentId === 'claude') {
-    let root: Record<string, unknown>;
-    try {
-      const parsed = JSON.parse(
-        configText.trim() === REDACTED_MARKER ? '{}' : configText || '{}',
-      ) as unknown;
-      root =
-        parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-          ? { ...(parsed as Record<string, unknown>) }
-          : {};
-    } catch {
-      root = {};
-    }
+    // An opaque redaction marker / empty field starts from a scaffold. Any
+    // other malformed or non-object JSON is preserved byte-for-byte so a
+    // structured-field edit can never erase the user's original document.
+    const trimmed = configText.trim();
+    const parsed =
+      trimmed === REDACTED_MARKER || !trimmed
+        ? { ok: true as const, value: {} }
+        : parseJsonObjectConfig(configText);
+    if (!parsed.ok) return configText;
+    const root: Record<string, unknown> = { ...parsed.value };
     if (agentId === 'pi') return applyPiProviderVars(root, vars);
     if (agentId === 'workbuddy') return applyWorkBuddyModelVars(root, vars);
 

@@ -77,6 +77,7 @@ impl AccountService {
         // after redaction (JWT lives only in credentials until healed).
         // Also promote token expiry and (for current OAuth) best-effort 5h/7d quota.
         for item in &mut items {
+            let expected_updated_at = item.updated_at.clone();
             let mut dirty = false;
             if super::account_identity_heal::heal_account_identity(item) {
                 dirty = true;
@@ -98,14 +99,21 @@ impl AccountService {
                 dirty = true;
             }
             if dirty {
-                if let Err(e) = self.repo.update(item) {
-                    tracing::warn!(
-                        module = targets::ACCOUNT,
-                        account_id = %item.id,
-                        agent = item.agent_id.as_str(),
-                        error = %e,
-                        "failed to persist healed account identity/quota"
-                    );
+                let updated_at = now_ts();
+                match self
+                    .repo
+                    .update_healed_fields(item, &expected_updated_at, &updated_at)
+                {
+                    Ok(updated) => *item = updated,
+                    Err(e) => {
+                        tracing::warn!(
+                            module = targets::ACCOUNT,
+                            account_id = %item.id,
+                            agent = item.agent_id.as_str(),
+                            error = %e,
+                            "failed to persist healed account identity/quota"
+                        );
+                    }
                 }
             }
         }
@@ -351,7 +359,6 @@ impl AccountService {
         row.extra = attach_identity_meta(adapter, live.kind, &row.credentials, &display, extra);
         row.kind = live.kind;
         row.status = "active".into();
-        row.updated_at = now_ts();
         let _ = super::account_identity_heal::heal_account_identity(&mut row);
         let _ = super::account_quota::heal_token_expiry(&mut row);
         (row, true)
@@ -369,7 +376,9 @@ impl AccountService {
     ) -> Result<Account> {
         if agent == AgentId::Pi {
             return if changed {
-                self.repo.update(&row)
+                let expected_updated_at = row.updated_at.clone();
+                self.repo
+                    .update_healed_fields(&row, &expected_updated_at, &now_ts())
             } else {
                 Ok(row)
             };
@@ -481,12 +490,22 @@ impl AccountService {
                 "quota refresh is only supported for OAuth accounts".into(),
             ));
         }
-        let _ = super::account_identity_heal::heal_account_identity(&mut account);
-        let _ = super::account_quota::heal_token_expiry(&mut account);
-        let _ = super::account_quota::try_refresh_account_quota(&mut account, true);
-        account.updated_at = Utc::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string();
-        self.repo.update(&account)?;
-        Ok(account)
+        let expected_updated_at = account.updated_at.clone();
+        let mut dirty = super::account_identity_heal::heal_account_identity(&mut account);
+        if super::account_quota::heal_token_expiry(&mut account) {
+            dirty = true;
+        }
+        // Explicit refreshes are user-visible: propagate network, auth and
+        // parsing failures instead of the list path's best-effort behavior.
+        if super::account_quota::refresh_account_quota(&mut account, true)? {
+            dirty = true;
+        }
+        if !dirty {
+            return Ok(account);
+        }
+        let updated_at = now_ts();
+        self.repo
+            .update_healed_fields(&account, &expected_updated_at, &updated_at)
     }
 
     /// Resolve by id first, then exact label (optionally scoped to agent).
@@ -835,6 +854,7 @@ impl AccountService {
             ));
         }
         let mut account = self.get(id_or_label, Some(agent))?;
+        let expected_updated_at = account.updated_at.clone();
         if account.kind != AccountKind::Oauth {
             return Err(AppError::Unsupported(
                 "token refresh is only supported for OAuth accounts".into(),
@@ -846,14 +866,6 @@ impl AccountService {
 
         let (mut creds, extra_base, new_identity) = if agent == AgentId::Pi {
             let creds = crate::oauth::refresh_pi_provider(&account.credentials)?;
-            // Merge into live auth.json so Pi CLI keeps working.
-            if let Some(body) = creds.get("body") {
-                let merged = crate::adapters::pi_auth::merge_auth_json(body)?;
-                let path = crate::adapters::pi_auth::pi_auth_path()?;
-                let mut bytes = serde_json::to_vec_pretty(&merged)?;
-                bytes.push(b'\n');
-                crate::utils::atomic::atomic_write(&path, &bytes)?;
-            }
             let identity = crate::oauth::identity_from_credentials(&creds);
             let extra = json!({
                 "source": "oauth_refresh",
@@ -974,7 +986,11 @@ impl AccountService {
 
         account.updated_at = now_ts();
         account.status = "active".into();
-        self.repo.update(&account)
+        if agent == AgentId::Pi {
+            return self.persist_pi_oauth_account_update(&account, &expected_updated_at);
+        }
+        self.repo
+            .update_healed_fields(&account, &expected_updated_at, &account.updated_at)
     }
 
     /// Import the agent's current live file credentials into the account pool.
@@ -1342,6 +1358,122 @@ impl AccountService {
         &self.repo
     }
 
+    /// Persist a Pi OAuth provider entry through the same process/file lock
+    /// boundary used by account switches. The live file is restored when the
+    /// subsequent pool mutation fails so a partially completed OAuth flow can
+    /// be retried safely.
+    pub fn persist_pi_oauth_live(&self, live: LiveAccount, label: String) -> Result<Account> {
+        if live.agent != AgentId::Pi || live.kind != AccountKind::Oauth {
+            return Err(AppError::InvalidArg(
+                "Pi OAuth mutation requires a Pi OAuth live account".into(),
+            ));
+        }
+        let process_lock = live_reconcile_lock(AgentId::Pi);
+        let _process_lock = process_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _file_lock = self.acquire_live_lock(AgentId::Pi)?.ok_or_else(|| {
+            AppError::Unsupported("Pi OAuth mutation requires a configured lock directory".into())
+        })?;
+
+        let path = crate::adapters::pi_auth::pi_auth_path()?;
+        let original = read_optional_file(&path)?;
+        let patch = live
+            .credentials
+            .get("body")
+            .cloned()
+            .ok_or_else(|| AppError::message("oauth.device", "missing Pi auth body"))?;
+        let merged = crate::adapters::pi_auth::merge_auth_json(&patch)?;
+        let mut bytes = serde_json::to_vec_pretty(&merged)?;
+        bytes.push(b'\n');
+        crate::utils::atomic::atomic_write(&path, &bytes)?;
+
+        let result = self.create(AccountInput {
+            agent_id: AgentId::Pi,
+            kind: AccountKind::Oauth,
+            label,
+            credentials: live.credentials,
+            extra: live.extra,
+            is_current: false,
+        });
+        if let Err(error) = result {
+            let rollback = match original {
+                Some(previous) => crate::utils::atomic::atomic_write(&path, &previous).err(),
+                None => std::fs::remove_file(&path).err().map(AppError::from),
+            };
+            if let Some(rollback) = rollback {
+                return Err(AppError::message(
+                    "oauth.device.rollback",
+                    format!(
+                        "Pi OAuth pool mutation failed ({}); file rollback failed ({})",
+                        error.code(),
+                        rollback
+                    ),
+                ));
+            }
+            return Err(error);
+        }
+        result
+    }
+
+    /// Persist a refreshed Pi OAuth row and its provider entry under the shared
+    /// process/file lock. A DB conflict restores the exact auth.json bytes.
+    pub fn persist_pi_oauth_account_update(
+        &self,
+        account: &Account,
+        expected_updated_at: &str,
+    ) -> Result<Account> {
+        if account.agent_id != AgentId::Pi || account.kind != AccountKind::Oauth {
+            return Err(AppError::InvalidArg(
+                "Pi OAuth mutation requires a Pi OAuth account".into(),
+            ));
+        }
+        let process_lock = live_reconcile_lock(AgentId::Pi);
+        let _process_lock = process_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _file_lock = self.acquire_live_lock(AgentId::Pi)?.ok_or_else(|| {
+            AppError::Unsupported("Pi OAuth mutation requires a configured lock directory".into())
+        })?;
+
+        let path = crate::adapters::pi_auth::pi_auth_path()?;
+        let original = read_optional_file(&path)?;
+        let patch = account
+            .credentials
+            .get("body")
+            .cloned()
+            .ok_or_else(|| AppError::message("oauth.refresh", "missing Pi auth body"))?;
+        let merged = crate::adapters::pi_auth::merge_auth_json(&patch)?;
+        let mut bytes = serde_json::to_vec_pretty(&merged)?;
+        bytes.push(b'\n');
+        crate::utils::atomic::atomic_write(&path, &bytes)?;
+
+        let updated_at = now_ts();
+        match self
+            .repo
+            .update_healed_fields(account, expected_updated_at, &updated_at)
+        {
+            Ok(updated) => Ok(updated),
+            Err(error) => {
+                let rollback = match original {
+                    Some(previous) => crate::utils::atomic::atomic_write(&path, &previous).err(),
+                    None => std::fs::remove_file(&path).err().map(AppError::from),
+                };
+                if let Some(rollback) = rollback {
+                    return Err(AppError::message(
+                        "oauth.refresh.rollback",
+                        format!(
+                            "Pi OAuth DB update failed ({}); file rollback failed ({})",
+                            error.code(),
+                            rollback
+                        ),
+                    ));
+                }
+                Err(error)
+            }
+        }
+    }
+
     /// Import/update changes the AgentHub pool, not the live files. Keep an
     /// audit snapshot of the live state when the service is running with the
     /// live backup dependency; a missing live file is a normal no-op.
@@ -1448,6 +1580,14 @@ fn compensated_switch_error(
 
 fn now_ts() -> String {
     Utc::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string()
+}
+
+fn read_optional_file(path: &std::path::Path) -> Result<Option<Vec<u8>>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
 }
 
 fn probe_auth_revision(adapter: &dyn AgentAdapter) -> Option<String> {

@@ -316,9 +316,7 @@ fn finalize_runtime_install(
     let status = runtime::detect_one(id);
     let node = runtime::detect_one(RuntimeId::NodeJs);
     let ok = match id {
-        RuntimeId::Npm => {
-            node.status == EnvStatusKind::Ok && status.status == EnvStatusKind::Ok
-        }
+        RuntimeId::Npm => node.status == EnvStatusKind::Ok && status.status == EnvStatusKind::Ok,
         RuntimeId::NodeJs => node.status == EnvStatusKind::Ok,
         RuntimeId::PowerShell | RuntimeId::Git => status.status == EnvStatusKind::Ok,
     };
@@ -343,8 +341,7 @@ fn finalize_runtime_install(
     } else {
         logs.push(format!("重新检测: {} => {:?}", id.as_str(), status.status));
         logs.push(
-            "提示: 安装成功后当前进程 PATH 可能未刷新，请完全退出并重启 AgentHub 后再检测。"
-                .into(),
+            "提示: 安装成功后当前进程 PATH 可能未刷新，请完全退出并重启 AgentHub 后再检测。".into(),
         );
         InstallOutcome {
             ok: false,
@@ -420,10 +417,7 @@ fn install_runtime_inner(
         #[cfg(target_os = "macos")]
         if channel == "brew" {
             let formula = brew_formula(target).ok_or_else(|| {
-                AppError::Unsupported(format!(
-                    "runtime {} 暂不支持 Homebrew 安装",
-                    id.as_str()
-                ))
+                AppError::Unsupported(format!("runtime {} 暂不支持 Homebrew 安装", id.as_str()))
             })?;
             logs.push(format!(
                 "# install runtime {} via brew ({formula})",
@@ -567,7 +561,8 @@ pub fn install_agent(
             for missing in &env_err.missing {
                 if matches!(missing, RuntimeId::NodeJs | RuntimeId::Npm | RuntimeId::Git) {
                     logs.push(format!("# auto install runtime {}", missing.as_str()));
-                    let env_out = install_runtime_inner(*missing, default_runtime_channel(), executor)?;
+                    let env_out =
+                        install_runtime_inner(*missing, default_runtime_channel(), executor)?;
                     logs.extend(env_out.logs);
                     if !env_out.ok {
                         return Ok(InstallOutcome::failure(
@@ -744,7 +739,13 @@ pub fn upgrade_agent(
             "npm" => run_npm_install(agent, true, executor, &mut logs)?,
             _ => run_native_install(agent, executor, &mut logs)?,
         };
-        let _ = res;
+        // A redetected old binary is not evidence that an upgrade succeeded:
+        // setup-only channels (for example WorkBuddy) and failed installers
+        // intentionally leave the previous installation in place.
+        let command_ok = res.success();
+        if !command_ok {
+            logs.push("升级命令未成功退出；即使仍检测到旧二进制，也不会报告升级完成。".into());
+        }
 
         runtime::invalidate_cache();
         crate::services::agent_service::invalidate_detect_cache();
@@ -754,7 +755,7 @@ pub fn upgrade_agent(
             .ok_or_else(|| AppError::NotFound(format!("unknown agent {}", agent.as_str())))?;
 
         let after_ver = detect.version.clone().unwrap_or_else(|| "?".into());
-        let ok = detect.status == DetectStatus::Installed;
+        let ok = upgrade_succeeded(command_ok, &detect.status);
         if ok {
             logs.push(format!("version: {before_ver} → {after_ver}"));
             if before_ver == after_ver && before_ver != "?" {
@@ -790,6 +791,10 @@ pub fn upgrade_agent(
         &result,
     );
     result
+}
+
+fn upgrade_succeeded(command_ok: bool, detected: &DetectStatus) -> bool {
+    command_ok && *detected == DetectStatus::Installed
 }
 
 /// Uninstall agent binary when possible (npm global only).

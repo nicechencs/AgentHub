@@ -33,6 +33,9 @@ function parseArgs(argv) {
     targetDir: path.join(root, 'target', 'release', 'bundle'),
     // Optional when a macOS artifact name does not carry an architecture.
     macArch: null,
+    // Optional release-mode completeness gate. Local generation intentionally
+    // remains permissive when this is omitted.
+    requiredPlatforms: [],
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -42,8 +45,18 @@ function parseArgs(argv) {
     else if (a === '--out') out.out = argv[++i];
     else if (a === '--target-dir') out.targetDir = path.resolve(argv[++i]);
     else if (a === '--mac-arch') out.macArch = normalizeMacArch(argv[++i]);
+    else if (a === '--required-platforms') {
+      const value = argv[++i];
+      if (!value) throw new Error('--required-platforms requires a comma-separated platform list');
+      out.requiredPlatforms.push(
+        ...String(value)
+          .split(',')
+          .map((platform) => platform.trim())
+          .filter(Boolean),
+      );
+    }
     else if (a === '--help' || a === '-h') {
-      console.log(`Usage: node scripts/build-latest-json.mjs --version X.Y.Z --base-url URL [--notes TEXT] [--out latest.json] [--mac-arch aarch64|x86_64]`);
+      console.log(`Usage: node scripts/build-latest-json.mjs --version X.Y.Z --base-url URL [--notes TEXT] [--out latest.json] [--mac-arch aarch64|x86_64] [--required-platforms platform[,platform...]]`);
       process.exit(0);
     }
   }
@@ -212,6 +225,17 @@ function buildFeed(args) {
 
   if (Object.keys(platforms).length === 0) {
     throw new Error(`No signed updater artifacts under ${args.targetDir}`);
+  }
+
+  const requiredPlatformValues = Array.isArray(args.requiredPlatforms)
+    ? args.requiredPlatforms
+    : String(args.requiredPlatforms ?? '').split(',');
+  const requiredPlatforms = [...new Set(requiredPlatformValues.map((platform) => String(platform).trim()).filter(Boolean))];
+  const missingPlatforms = requiredPlatforms.filter((platform) => !platforms[platform]);
+  if (missingPlatforms.length > 0) {
+    throw new Error(
+      `Missing required signed updater platforms: ${missingPlatforms.join(', ')}; found: ${Object.keys(platforms).sort().join(', ') || '(none)'}`,
+    );
   }
 
   return {

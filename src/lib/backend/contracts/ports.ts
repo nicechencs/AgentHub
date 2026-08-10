@@ -82,7 +82,7 @@ export interface DeviceOAuthStartInfo {
 
 export interface DeviceOAuthPollInfo {
   state: string;
-  status: 'pending' | 'slowDown' | 'complete' | 'failed' | 'expired';
+  status: 'pending' | 'slowDown' | 'complete' | 'completing' | 'failed' | 'expired';
   error?: string | null;
 }
 

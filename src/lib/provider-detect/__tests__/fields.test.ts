@@ -189,6 +189,37 @@ describe('provider-detect fields', () => {
     expect(parsed.paths.models).toBe('models.json');
   });
 
+  it('fails closed for invalid JSON and preserves the exact intermediate text', () => {
+    const malformed = '{"providers":{"custom":{"baseUrl":"https://old.example.com"}';
+    const out = applyFormVars('pi', malformed, 'json', {
+      ...extractFormVars('pi', malformed, 'json'),
+      baseUrl: 'https://new.example.com',
+      model: 'new-model',
+    });
+    expect(out).toBe(malformed);
+  });
+
+  it('preserves unknown JSON fields while updating structured fields', () => {
+    const source = JSON.stringify({
+      env: { ANTHROPIC_AUTH_TOKEN: '***', CUSTOM_FLAG: 'keep-me' },
+      unknownNested: { enabled: true },
+    });
+    const out = applyFormVars('claude', source, 'json', {
+      ...extractFormVars('claude', source, 'json'),
+      baseUrl: 'https://new.example.com',
+      model: 'new-model',
+    });
+    const parsed = JSON.parse(out) as {
+      env: Record<string, unknown>;
+      unknownNested: { enabled: boolean };
+      model: string;
+    };
+    expect(parsed.env.CUSTOM_FLAG).toBe('keep-me');
+    expect(parsed.unknownNested).toEqual({ enabled: true });
+    expect(parsed.env.ANTHROPIC_BASE_URL).toBe('https://new.example.com');
+    expect(parsed.model).toBe('new-model');
+  });
+
   it('extracts and applies WorkBuddy models.json fields', () => {
     const source = JSON.stringify({
       models: [
