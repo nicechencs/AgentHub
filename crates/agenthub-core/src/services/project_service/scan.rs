@@ -1470,11 +1470,6 @@ pub(crate) fn extract_userish_text(line: &str) -> Option<String> {
         .and_then(|r| r.as_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    let payload_ty = v
-        .pointer("/payload/type")
-        .and_then(|r| r.as_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
     // Kimi wire: turn.prompt / context.append_message with user role
     if ty_l == "turn.prompt" {
         return extract_text_from_value(&v);
@@ -1501,11 +1496,8 @@ pub(crate) fn extract_userish_text(line: &str) -> Option<String> {
             }
         }
     }
-    let is_user = ty_l.contains("user")
-        || ty_l == "human"
-        || role == "user"
-        || payload_role == "user"
-        || (ty_l == "response_item" && payload_ty == "message" && payload_role == "user");
+    let is_user =
+        ty_l.contains("user") || ty_l == "human" || role == "user" || payload_role == "user";
     if !is_user {
         return None;
     }

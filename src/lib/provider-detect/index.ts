@@ -36,7 +36,9 @@ export {
   formFieldVisibility,
   FORM_FIELD_LABELS,
   looksRedactedOrPlaceholder,
+  parseJsonObjectConfig,
 } from './fields';
+export type { JsonObjectParseResult } from './fields';
 
 export {
   applySmartPaste,

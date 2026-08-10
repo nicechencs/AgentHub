@@ -53,6 +53,51 @@ impl AccountRepo {
         })
     }
 
+    /// Persist fields healed or refreshed from an account snapshot without
+    /// allowing a stale caller to overwrite `is_current` (or other identity
+    /// fields). The expected `updated_at` is an optimistic concurrency token.
+    pub fn update_healed_fields(
+        &self,
+        account: &Account,
+        expected_updated_at: &str,
+        updated_at: &str,
+    ) -> Result<Account> {
+        self.mutate(|conn| {
+            let credentials = serde_json::to_string(&account.credentials)?;
+            let extra = serde_json::to_string(&account.extra)?;
+            let changed = conn.execute(
+                r#"
+                UPDATE accounts SET
+                    label = ?2,
+                    credentials = ?3,
+                    extra = ?4,
+                    status = ?5,
+                    updated_at = ?6
+                WHERE id = ?1 AND agent_id = ?7 AND updated_at = ?8
+                "#,
+                params![
+                    account.id,
+                    account.label,
+                    credentials,
+                    extra,
+                    account.status,
+                    updated_at,
+                    account.agent_id.as_str(),
+                    expected_updated_at,
+                ],
+            )?;
+            if changed != 1 {
+                return Err(AppError::message(
+                    "account.conflict",
+                    format!("account changed before field update: {}", account.id),
+                ));
+            }
+            get_by_id_conn(conn, &account.id)?.ok_or_else(|| {
+                AppError::message("db.account", "account missing after field update")
+            })
+        })
+    }
+
     pub fn delete(&self, id: &str) -> Result<()> {
         self.mutate(|conn| {
             let n = conn.execute("DELETE FROM accounts WHERE id = ?1", params![id])?;
@@ -630,71 +675,4 @@ fn map_account_row(row: &Row<'_>) -> rusqlite::Result<Account> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-    use tempfile::tempdir;
-
-    fn sample(id: &str, agent: AgentId, label: &str, current: bool) -> Account {
-        Account {
-            id: id.into(),
-            agent_id: agent,
-            kind: AccountKind::ApiKey,
-            label: label.into(),
-            credentials: json!({"format": "api_key", "api_key": "sk-secret"}),
-            extra: json!({}),
-            status: "active".into(),
-            is_current: current,
-            created_at: "2026-01-01 00:00:00".into(),
-            updated_at: "2026-01-01 00:00:00".into(),
-        }
-    }
-
-    fn repo() -> (tempfile::TempDir, AccountRepo) {
-        let dir = tempdir().unwrap();
-        let db = Database::open(&dir.path().join("t.db")).unwrap();
-        (dir, AccountRepo::new(db))
-    }
-
-    #[test]
-    fn create_list_get_and_single_current() {
-        let (_dir, repo) = repo();
-        repo.create(&sample("a1", AgentId::Grok, "key-a", true))
-            .unwrap();
-        repo.create(&sample("a2", AgentId::Grok, "key-b", true))
-            .unwrap();
-
-        let list = repo.list(Some(AgentId::Grok)).unwrap();
-        assert_eq!(list.len(), 2);
-        let current = repo.get_current(AgentId::Grok).unwrap().unwrap();
-        assert_eq!(current.id, "a2");
-        assert!(list.iter().filter(|a| a.is_current).count() == 1);
-    }
-
-    #[test]
-    fn select_current_enforces_single_current() {
-        let (_dir, repo) = repo();
-        repo.create(&sample("a1", AgentId::Codex, "one", true))
-            .unwrap();
-        repo.create(&sample("a2", AgentId::Codex, "two", false))
-            .unwrap();
-        let selected = repo
-            .select_current(
-                "a2",
-                AgentId::Codex,
-                "2026-01-01 00:00:00",
-                "2026-02-01 00:00:00",
-            )
-            .unwrap();
-        assert!(selected.is_current);
-        assert_eq!(selected.id, "a2");
-        let a1 = repo.get_by_id("a1").unwrap().unwrap();
-        assert!(!a1.is_current);
-    }
-
-    #[test]
-    fn delete_missing_is_not_found() {
-        let (_dir, repo) = repo();
-        assert_eq!(repo.delete("missing").unwrap_err().code(), "not_found");
-    }
-}
+mod tests;

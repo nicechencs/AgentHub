@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  AgentHub 桌面更新发版一键脚本：升版本 → 签名构建 → 生成 latest.json →（可选）上传 GitHub Release。
+  AgentHub 桌面更新发版准备脚本：升版本 → 签名构建 → 生成 latest.json（发布统一由 CI 完成）。
 
 .DESCRIPTION
   默认读取 package.json 当前版本；传入 -Version 可指定新版本。
@@ -15,10 +15,6 @@
 .EXAMPLE
   # 升到 0.2.0、写回三处版本、构建、生成清单
   .\scripts\release-update.ps1 -Version 0.2.0 -Bump -Notes "修复更新与用量统计"
-
-.EXAMPLE
-  # 构建并上传到 GitHub Latest Release（需要已安装 gh 且已登录）
-  .\scripts\release-update.ps1 -Version 0.2.0 -Bump -Notes "..." -Publish
 
 .EXAMPLE
   # 只根据已有构建产物生成 latest.json
@@ -55,6 +51,15 @@ function Fail([string]$msg) {
     Write-Host ""
     Write-Host "[ERROR] $msg" -ForegroundColor Red
     exit 1
+}
+
+# Publishing from a developer worktree is intentionally disabled. GitHub
+# Actions is the single release authority: it validates a clean release branch,
+# claims an exact commit tag, and refuses existing releases/assets before any
+# write. Keeping this guard before version/build work also makes accidental
+# `-Publish` invocations side-effect free.
+if ($Publish) {
+    Fail "Local publishing is disabled. Push the release branch and let .github/workflows/release.yml publish the release."
 }
 
 function Read-PackageVersion {
@@ -247,11 +252,11 @@ if ($Bump) {
 if (-not $SkipBuild) {
     Write-Step "Configure signing + tauri build"
     if ($DryRun) {
-        Write-Info "(dry-run) would set signing env and run: pnpm tauri:build"
+        Write-Info "(dry-run) would set signing env and run: pnpm tauri:build -- --locked"
     } else {
         Resolve-SigningKey
-        Write-Info "Running pnpm tauri:build (first time may take long)..."
-        pnpm tauri:build
+        Write-Info "Running pnpm tauri:build -- --locked (first time may take long)..."
+        pnpm tauri:build -- --locked
         if ($LASTEXITCODE -ne 0) { Fail "tauri:build failed with code $LASTEXITCODE" }
     }
 } else {
@@ -291,33 +296,6 @@ if ($DryRun) {
     Write-Info "Wrote $latestPath"
 }
 
-if ($Publish) {
-    Write-Step "Publish GitHub Release $tag → $Repo"
-    if ($DryRun) {
-        Write-Info "(dry-run) gh release create $tag ... --repo $Repo"
-    } else {
-        $assets = Get-ChildItem -Path $OutDir -File | ForEach-Object { $_.FullName }
-        if ($assets.Count -eq 0) { Fail "No assets in $OutDir" }
-
-        $existing = gh release view $tag --repo $Repo 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Info "Release $tag exists — uploading/clobbering assets"
-            gh release upload $tag @assets --repo $Repo --clobber
-            if ($LASTEXITCODE -ne 0) { Fail "gh release upload failed" }
-        } else {
-            Write-Info "Creating release $tag"
-            gh release create $tag @assets `
-                --repo $Repo `
-                --title $tag `
-                --notes $notesArg `
-                --latest
-            if ($LASTEXITCODE -ne 0) { Fail "gh release create failed" }
-        }
-        Write-Info "Release URL: https://github.com/$Repo/releases/tag/$tag"
-        Write-Info "Updater feed: https://github.com/$Repo/releases/latest/download/latest.json"
-    }
-}
-
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
 Write-Host "  Done" -ForegroundColor Green
@@ -327,10 +305,5 @@ Write-Host "Tag     : $tag"
 Write-Host "OutDir  : $OutDir"
 Write-Host "Feed URL: https://github.com/$Repo/releases/latest/download/latest.json"
 Write-Host ""
-if (-not $Publish) {
-    Write-Host "Next: upload everything in OutDir to GitHub Release $tag" -ForegroundColor Yellow
-    Write-Host "  (or re-run with -Publish if gh is logged in)" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "  gh release create $tag `"$OutDir\*`" --repo $Repo --title $tag --notes `"$notesArg`" --latest" -ForegroundColor DarkGray
-}
+Write-Host "Publishing is CI-only: push the release branch and let .github/workflows/release.yml publish." -ForegroundColor Yellow
 Write-Host ""

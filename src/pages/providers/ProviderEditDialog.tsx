@@ -45,6 +45,7 @@ import {
   extractFormVars,
   initFormFromConfig,
   liveConfigPaths,
+  parseJsonObjectConfig,
   REDACTED_MARKER,
   smartDetectUrlAndKey,
   type ProviderFormVars,
@@ -59,6 +60,18 @@ import {
 } from './providerSaveFlow';
 
 export type ProviderDialogMode = 'add' | 'edit';
+
+export function getConfigTextError(
+  agentId: AgentId,
+  configText: string,
+  configFormat: 'json' | 'toml',
+): string | null {
+  if (configFormat !== 'json' && agentId !== 'claude') return null;
+  const trimmed = configText.trim();
+  if (!trimmed || trimmed === REDACTED_MARKER) return null;
+  const parsed = parseJsonObjectConfig(configText);
+  return parsed.ok ? null : parsed.message;
+}
 
 export function ProviderEditDialog({
   agentId,
@@ -84,6 +97,7 @@ export function ProviderEditDialog({
   const [name, setName] = React.useState('');
   const [configText, setConfigText] = React.useState('');
   const [configFormat, setConfigFormat] = React.useState<'json' | 'toml'>('json');
+  const [configError, setConfigError] = React.useState<string | null>(null);
   const [vars, setVars] = React.useState<ProviderFormVars>({ ...EMPTY_FORM_VARS });
   const [pasteBuf, setPasteBuf] = React.useState('');
   const [detectHints, setDetectHints] = React.useState<string[]>([]);
@@ -190,6 +204,7 @@ export function ProviderEditDialog({
         const scaffold = defaultConfigScaffold(agentId);
         setConfigText(scaffold.text);
         setConfigFormat(scaffold.format);
+        setConfigError(null);
         const extracted = extractFormVars(agentId, scaffold.text, scaffold.format);
         setVars({
           ...extracted,
@@ -199,6 +214,7 @@ export function ProviderEditDialog({
       }
       setConfigFormat(off.format);
       setConfigText(off.scaffoldText);
+      setConfigError(null);
       const extracted = extractFormVars(agentId, off.scaffoldText, off.format);
       setVars({
         ...extracted,
@@ -237,6 +253,7 @@ export function ProviderEditDialog({
       setName(provider.name ?? '');
       setConfigText(provider.configText);
       setConfigFormat(provider.configFormat);
+      setConfigError(getConfigTextError(agentId, provider.configText, provider.configFormat));
       const nextVars = initFormFromConfig(
         agentId,
         provider.configText,
@@ -254,6 +271,7 @@ export function ProviderEditDialog({
     }
     // 新增：默认官方
     setName('');
+    setConfigError(null);
     setUseOfficial(true);
     setShowAdvanced(false);
     applyOfficialDefaults();
@@ -274,6 +292,7 @@ export function ProviderEditDialog({
       const next = { ...extracted, apiKey: vars.apiKey };
       setVars(next);
       setConfigText(applyFormVars(agentId, scaffold.text, scaffold.format, next));
+      setConfigError(null);
     }
   };
 
@@ -291,6 +310,7 @@ export function ProviderEditDialog({
       setVars(result.vars);
       setConfigText(result.configText);
       setConfigFormat(result.configFormat);
+      setConfigError(getConfigTextError(agentId, result.configText, result.configFormat));
       if (opts?.fillName !== false && result.suggestedName) {
         setName((n) => n.trim() || result.suggestedName || '');
       }
@@ -306,7 +326,9 @@ export function ProviderEditDialog({
         configText.trim() === REDACTED_MARKER || !configText.trim()
           ? defaultConfigScaffold(agentId).text
           : configText;
-      setConfigText(applyFormVars(agentId, base, configFormat, next));
+      const nextConfigText = applyFormVars(agentId, base, configFormat, next);
+      setConfigText(nextConfigText);
+      setConfigError(getConfigTextError(agentId, nextConfigText, configFormat));
       return next;
     });
   };
@@ -351,6 +373,7 @@ export function ProviderEditDialog({
 
   const onConfigTextChange = (text: string) => {
     setConfigText(text);
+    setConfigError(getConfigTextError(agentId, text, configFormat));
     const extracted = extractFormVars(agentId, text, configFormat);
     const hit = smartDetectUrlAndKey(text);
     setVars({
@@ -365,6 +388,7 @@ export function ProviderEditDialog({
   // schema idle/loading/error → fail closed，禁止保存
   const canSave =
     canSaveWithSchemaStatus(schemaStatus) &&
+    !configError &&
     (isEdit ? true : Boolean(vars.apiKey.trim()));
 
   const openLiveDir = async () => {
@@ -385,6 +409,14 @@ export function ProviderEditDialog({
   };
 
   const save = async () => {
+    if (configError) {
+      toast({
+        title: '配置原文无效',
+        description: `${configError}。请修正 JSON 后再保存，当前原文不会被覆盖。`,
+        variant: 'danger',
+      });
+      return;
+    }
     if (!canSaveWithSchemaStatus(schemaStatus)) {
       toast({
         title: '暂不可保存',
@@ -621,6 +653,15 @@ export function ProviderEditDialog({
               ? '当前 TOML 在列表中整段脱敏。填写下方 URL/Key 将基于模板重建。'
               : '\u00a0'}
           </p>
+
+          {configError ? (
+            <p
+              role="alert"
+              className="rounded-btn border border-danger/40 bg-danger/5 px-2.5 py-2 text-2xs text-danger"
+            >
+              {configError}。请修正 JSON 原文后再保存；当前原文会保留，不会被结构化字段覆盖。
+            </p>
+          ) : null}
 
           {schemaStatus === 'loading' || schemaStatus === 'idle' ? (
             <p className="text-2xs text-muted">加载配置字段 schema…</p>

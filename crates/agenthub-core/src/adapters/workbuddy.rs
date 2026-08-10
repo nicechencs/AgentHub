@@ -14,7 +14,6 @@ use crate::models::{
     InstallChannel, RunOptions, RunSpec,
 };
 use crate::utils::paths::home_dir;
-use crate::utils::redact::redact_json;
 
 use super::{auth_file_revision, AgentAdapter};
 
@@ -137,12 +136,16 @@ impl AgentAdapter for WorkBuddyAdapter {
         };
 
         let mut raw = serde_json::Map::new();
-        raw.insert("settings".into(), redact_json(&settings));
+        // `read_config` is the storage-side snapshot consumed by the provider
+        // pool, so retain the real values here. Redaction belongs at output
+        // boundaries (`Provider::redacted`/CLI serialization), otherwise an
+        // imported `***` would overwrite a live secret on the next write.
+        raw.insert("settings".into(), settings);
         if let Some(m) = models {
-            raw.insert("models".into(), redact_json(&m));
+            raw.insert("models".into(), m);
         }
         if let Some(m) = mcp {
-            raw.insert("mcp".into(), redact_json(&m));
+            raw.insert("mcp".into(), m);
         }
         raw.insert(
             "paths".into(),

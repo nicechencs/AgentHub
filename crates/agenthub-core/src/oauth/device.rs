@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use crate::error::{AppError, Result};
 use crate::logging::targets;
-use crate::models::{Account, AccountInput, AccountKind, AgentId};
+use crate::models::{Account, AgentId};
 use crate::services::AccountService;
 
 use super::catalog::pi_auth_json_key;
@@ -50,10 +50,12 @@ pub enum DeviceOAuthStatus {
     Pending,
     SlowDown,
     Complete,
+    Completing,
     Failed,
     Expired,
 }
 
+#[derive(Clone)]
 struct DeviceSession {
     #[allow(dead_code)]
     agent: AgentId,
@@ -67,6 +69,7 @@ struct DeviceSession {
     expires_at_ms: Option<i64>,
     status: DeviceOAuthStatus,
     error: Option<String>,
+    completing: bool,
 }
 
 static DEVICE_STORE: std::sync::OnceLock<Mutex<HashMap<String, DeviceSession>>> =
@@ -132,6 +135,7 @@ pub fn start_device_oauth(agent: AgentId, provider_key: &str) -> Result<DeviceOA
         expires_at_ms: None,
         status: DeviceOAuthStatus::Pending,
         error: None,
+        completing: false,
     };
     store()
         .lock()
@@ -174,6 +178,13 @@ pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
             error: None,
         });
     }
+    if session.status == DeviceOAuthStatus::Completing || session.completing {
+        return Ok(DeviceOAuthPoll {
+            state: state.into(),
+            status: DeviceOAuthStatus::Completing,
+            error: Some("device oauth completion is already in progress".into()),
+        });
+    }
     if Instant::now() >= session.expires_at {
         session.status = DeviceOAuthStatus::Expired;
         session.error = Some("device code expired".into());
@@ -198,10 +209,7 @@ pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
     let body = post_form(
         XAI_TOKEN_URL,
         &[
-            (
-                "grant_type",
-                "urn:ietf:params:oauth:grant-type:device_code",
-            ),
+            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
             ("client_id", XAI_CLIENT_ID),
             ("device_code", &device_code),
         ],
@@ -227,8 +235,9 @@ pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
                     .unwrap_or(3600);
                 session.access = Some(access.to_string());
                 session.refresh = refresh;
-                session.expires_at_ms =
-                    Some(chrono::Utc::now().timestamp_millis() + expires_in * 1000 - REFRESH_SKEW_MS);
+                session.expires_at_ms = Some(
+                    chrono::Utc::now().timestamp_millis() + expires_in * 1000 - REFRESH_SKEW_MS,
+                );
                 session.status = DeviceOAuthStatus::Complete;
                 return Ok(DeviceOAuthPoll {
                     state: state.into(),
@@ -286,8 +295,9 @@ pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
                 }
             }
         }
-        Err(e) => {
-            // Network blip: keep pending.
+        Err(e) if e.code() == "oauth.device.retry" => {
+            // Transport/5xx blip: keep pending. RFC device errors are parsed
+            // above and never get silently converted into a retry.
             tracing::warn!(
                 module = targets::OAUTH,
                 op = "device_poll",
@@ -300,6 +310,11 @@ pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
                 error: None,
             })
         }
+        Err(e) => {
+            session.status = DeviceOAuthStatus::Failed;
+            session.error = Some(e.to_string());
+            Err(e)
+        }
     }
 }
 
@@ -309,63 +324,70 @@ pub fn complete_device_oauth(accounts: &AccountService, state: &str) -> Result<A
         .lock()
         .map_err(|_| AppError::message("oauth.device", "device store poisoned"))?;
     let session = guard
-        .remove(state)
+        .get_mut(state)
         .ok_or_else(|| AppError::NotFound(format!("device oauth session not found: {state}")))?;
-    if session.status != DeviceOAuthStatus::Complete {
+    if session.status != DeviceOAuthStatus::Complete || session.completing {
         return Err(AppError::message(
             "oauth.device",
             session
                 .error
+                .clone()
                 .unwrap_or_else(|| "device oauth not complete".into()),
         ));
     }
-    let access = session
-        .access
-        .ok_or_else(|| AppError::message("oauth.device", "missing access token"))?;
-    let expires_at = session.expires_at_ms.and_then(|ms| {
-        chrono::DateTime::from_timestamp(ms / 1000, 0).map(|dt| dt.to_rfc3339())
-    });
+    let snapshot = session.clone();
+    session.completing = true;
+    session.status = DeviceOAuthStatus::Completing;
+    drop(guard);
 
-    let live = crate::adapters::pi_auth::live_account_from_oauth_tokens(
-        &session.provider_key,
-        &access,
-        session.refresh.as_deref(),
-        expires_at.as_deref(),
-        None,
-        None,
-    )?;
+    let attempt = (|| -> Result<Account> {
+        let access = snapshot
+            .access
+            .as_deref()
+            .ok_or_else(|| AppError::message("oauth.device", "missing access token"))?;
+        let expires_at = snapshot.expires_at_ms.and_then(|ms| {
+            chrono::DateTime::from_timestamp(ms / 1000, 0).map(|dt| dt.to_rfc3339())
+        });
+        let live = crate::adapters::pi_auth::live_account_from_oauth_tokens(
+            &snapshot.provider_key,
+            access,
+            snapshot.refresh.as_deref(),
+            expires_at.as_deref(),
+            None,
+            None,
+        )?;
+        let label = live
+            .label_hint
+            .clone()
+            .unwrap_or_else(|| format!("pi:{}", snapshot.provider_key));
+        accounts.persist_pi_oauth_live(live, label)
+    })();
 
-    let label = live
-        .label_hint
-        .clone()
-        .unwrap_or_else(|| format!("pi:{}", session.provider_key));
-
-    // Merge into live auth.json immediately so Pi CLI sees the credential.
-    let patch = live
-        .credentials
-        .get("body")
-        .cloned()
-        .ok_or_else(|| AppError::message("oauth.device", "missing auth body"))?;
-    let merged = crate::adapters::pi_auth::merge_auth_json(&patch)?;
-    let path = crate::adapters::pi_auth::pi_auth_path()?;
-    let mut bytes = serde_json::to_vec_pretty(&merged)?;
-    bytes.push(b'\n');
-    crate::utils::atomic::atomic_write(&path, &bytes)?;
-
-    let account = accounts.create(AccountInput {
-        agent_id: AgentId::Pi,
-        kind: AccountKind::Oauth,
-        label,
-        credentials: live.credentials,
-        extra: live.extra,
-        is_current: false,
-    })?;
+    let account = match attempt {
+        Ok(account) => {
+            store()
+                .lock()
+                .map_err(|_| AppError::message("oauth.device", "device store poisoned"))?
+                .remove(state);
+            account
+        }
+        Err(error) => {
+            if let Ok(mut guard) = store().lock() {
+                if let Some(session) = guard.get_mut(state) {
+                    session.completing = false;
+                    session.status = DeviceOAuthStatus::Complete;
+                    session.error = Some(error.to_string());
+                }
+            }
+            return Err(error);
+        }
+    };
 
     tracing::info!(
         module = targets::OAUTH,
         op = "device_complete",
         agent = "pi",
-        provider = %session.provider_key,
+        provider = %snapshot.provider_key,
         account_id = %account.id,
         "device-code oauth stored"
     );
@@ -377,19 +399,46 @@ fn post_form(url: &str, fields: &[(&str, &str)]) -> Result<Value> {
         .set("Content-Type", "application/x-www-form-urlencoded")
         .set("Accept", "application/json");
     req = req.timeout(crate::catalog::limits::OAUTH_TOKEN_HTTP_TIMEOUT);
-    let resp = req.send_form(fields).map_err(|e| {
-        AppError::message("oauth.device", format!("device request failed: {e}"))
-    })?;
-    let status = resp.status();
-    let body: Value = resp
+    match req.send_form(fields) {
+        Ok(resp) => {
+            let status = resp.status();
+            let body: Value = resp
+                .into_json()
+                .map_err(|e| AppError::message("oauth.device", format!("invalid JSON: {e}")))?;
+            parse_device_http_response(status, body)
+        }
+        Err(ureq::Error::Status(status, resp)) => parse_device_status_response(status, resp),
+        Err(e) => Err(AppError::message(
+            "oauth.device.retry",
+            format!("device request failed: {e}"),
+        )),
+    }
+}
+
+fn parse_device_status_response(status: u16, response: ureq::Response) -> Result<Value> {
+    // Gate transient server responses before parsing: gateways commonly return
+    // HTML or an empty body for 5xx, and that must remain retryable.
+    if status >= 500 {
+        return parse_device_http_response(status, Value::Null);
+    }
+    let body: Value = response
         .into_json()
         .map_err(|e| AppError::message("oauth.device", format!("invalid JSON: {e}")))?;
-    // Device token endpoint returns 400 with error=authorization_pending — still a body.
+    parse_device_http_response(status, body)
+}
+
+fn parse_device_http_response(status: u16, body: Value) -> Result<Value> {
     if status >= 500 {
         return Err(AppError::message(
-            "oauth.device",
+            "oauth.device.retry",
             format!("device endpoint HTTP {status}"),
         ));
+    }
+    if (400..500).contains(&status) {
+        // RFC 8628 device errors are returned as JSON on HTTP 400; preserve
+        // the body so the poll state machine can distinguish pending,
+        // slow_down, access_denied and expired_token.
+        return Ok(body);
     }
     Ok(body)
 }
@@ -407,3 +456,6 @@ fn required_str(body: &Value, field: &str) -> Result<String> {
             )
         })
 }
+
+#[cfg(test)]
+mod tests;

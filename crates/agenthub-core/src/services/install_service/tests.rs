@@ -69,11 +69,9 @@ fn native_sh_install_does_not_probe_powershell() {
         commands.iter().any(|command| command.contains("bash -lc")),
         "expected POSIX shell command, got {commands:?}"
     );
-    assert!(
-        commands
-            .iter()
-            .all(|command| !command.to_ascii_lowercase().contains("powershell"))
-    );
+    assert!(commands
+        .iter()
+        .all(|command| !command.to_ascii_lowercase().contains("powershell")));
 }
 
 #[test]
@@ -242,6 +240,33 @@ fn upgrade_not_installed_fails_closed() {
 }
 
 #[test]
+fn workbuddy_setup_channel_never_reports_success() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+    };
+    let mut logs = Vec::new();
+
+    // WorkBuddy's native channel is an official Setup page, not a scripted
+    // installer.  The helper must force a non-success result even when opening
+    // the page itself succeeds, so upgrade cannot claim the old binary was
+    // upgraded.
+    let result = run_native_install(AgentId::WorkBuddy, &ex, &mut logs).unwrap();
+    assert!(!result.success());
+    assert!(logs.iter().any(|line| line.contains("Setup")));
+    assert_eq!(calls.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn failed_upgrade_command_does_not_claim_existing_binary_is_upgraded() {
+    assert!(!upgrade_succeeded(false, &DetectStatus::Installed));
+    assert!(!upgrade_succeeded(true, &DetectStatus::NotFound));
+    assert!(upgrade_succeeded(true, &DetectStatus::Installed));
+}
+
+#[test]
 fn install_runtime_powershell_logs_dual_version_context() {
     let ex = MockExecutor {
         calls: Arc::new(Mutex::new(Vec::new())),
@@ -280,7 +305,10 @@ fn install_runtime_git_uses_winget_git_package() {
         assert!(
             out.message.contains("winget")
                 || out.message.contains("Homebrew")
-                || out.logs.iter().any(|l| l.contains("winget") || l.contains("brew")),
+                || out
+                    .logs
+                    .iter()
+                    .any(|l| l.contains("winget") || l.contains("brew")),
             "expected package-manager-missing path: msg={} logs={:?}",
             out.message,
             out.logs

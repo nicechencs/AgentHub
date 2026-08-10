@@ -14,6 +14,7 @@ import { getSettings } from '@/lib/api/settings';
 import { collectUsage, getUsageAvailability } from '@/lib/api/usage';
 import {
   buildUsageSyncStatusLine,
+  computeAutoRetryAt,
   computeNextCollectAt,
   loadLastCollectAt,
   normalizeIntervalMin,
@@ -55,6 +56,7 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
   const [intervalMin, setIntervalMin] = useState(0);
   const [lastCollectAt, setLastCollectAt] = useState<number | null>(() => loadLastCollectAt());
   const [nextCollectAt, setNextCollectAt] = useState<number | null>(null);
+  const [autoRetryAt, setAutoRetryAt] = useState<number | null>(null);
   const [collecting, setCollecting] = useState(false);
   const [collectPct, setCollectPct] = useState(0);
   const [collectSource, setCollectSource] = useState<UsageCollectSource | null>(null);
@@ -65,6 +67,9 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
   const collectingRef = useRef(false);
   const intervalMinRef = useRef(0);
   const lastCollectAtRef = useRef(lastCollectAt);
+  const autoRetryAtRef = useRef(autoRetryAt);
+  const autoLastAttemptAtRef = useRef<number | null>(null);
+  const autoFailureCountRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -73,6 +78,9 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     lastCollectAtRef.current = lastCollectAt;
   }, [lastCollectAt]);
+  useEffect(() => {
+    autoRetryAtRef.current = autoRetryAt;
+  }, [autoRetryAt]);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current != null) {
@@ -95,6 +103,9 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
       const s = await getSettings();
       const mins = normalizeIntervalMin(s.usageCollectIntervalMin);
       setIntervalMin(mins);
+      autoFailureCountRef.current = 0;
+      autoRetryAtRef.current = null;
+      setAutoRetryAt(null);
       recomputeNext(lastCollectAtRef.current, mins);
     } catch {
       // keep previous interval
@@ -109,10 +120,25 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
       setCollectSource(source);
       setCollectPct(source === 'manual' ? 0 : 5);
       clearTimer();
+      const attemptAt = Date.now();
+      if (source === 'auto') autoLastAttemptAtRef.current = attemptAt;
 
       try {
         const availability = await getUsageAvailability();
         if (availability.status === 'unavailable') {
+          // An unavailable source is not a transient 2s overdue condition:
+          // defer until the next normal cycle (or an explicit manual run).
+          autoFailureCountRef.current = 0;
+          const existingRetry = autoRetryAtRef.current;
+          const retryAt =
+            existingRetry != null && existingRetry > attemptAt
+              ? existingRetry
+              : intervalMinRef.current > 0
+                ? attemptAt + intervalMinRef.current * 60_000
+                : null;
+          autoRetryAtRef.current = retryAt;
+          setAutoRetryAt(retryAt);
+          setNextCollectAt(retryAt);
           if (source === 'manual') {
             toast({
               title: 'Usage 不可用',
@@ -128,6 +154,9 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
         saveLastCollectAt(at);
         setLastCollectAt(at);
         lastCollectAtRef.current = at;
+        autoFailureCountRef.current = 0;
+        autoRetryAtRef.current = null;
+        setAutoRetryAt(null);
         recomputeNext(at, intervalMinRef.current, at);
 
         const inserted =
@@ -170,8 +199,30 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
             variant: 'danger',
           });
         }
-        // keep schedule for auto failures
-        recomputeNext(lastCollectAtRef.current, intervalMinRef.current);
+        if (source === 'auto') {
+          const failureCount = ++autoFailureCountRef.current;
+          const retryAt = computeAutoRetryAt(
+            autoLastAttemptAtRef.current ?? Date.now(),
+            intervalMinRef.current,
+            failureCount,
+          );
+          autoRetryAtRef.current = retryAt;
+          setAutoRetryAt(retryAt);
+          setNextCollectAt(retryAt);
+        } else {
+          // A manual failure must not cause the overdue auto timer to fire
+          // again after its 2s grace period.
+          const existingRetry = autoRetryAtRef.current;
+          const retryAt =
+            existingRetry != null && existingRetry > Date.now()
+              ? existingRetry
+              : intervalMinRef.current > 0
+                ? Date.now() + intervalMinRef.current * 60_000
+                : null;
+          autoRetryAtRef.current = retryAt;
+          setAutoRetryAt(retryAt);
+          setNextCollectAt(retryAt);
+        }
       } finally {
         collectingRef.current = false;
         setCollecting(false);
@@ -215,7 +266,10 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
     }
 
     const now = Date.now();
-    let next = computeNextCollectAt(lastCollectAt, intervalMin, now);
+    const retryAt = autoRetryAtRef.current;
+    let next = retryAt != null && retryAt > now
+      ? retryAt
+      : computeNextCollectAt(lastCollectAt, intervalMin, now);
     if (next != null && next <= now) {
       next = now + OVERDUE_GRACE_MS;
     }
@@ -231,7 +285,7 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
     }, delay);
 
     return clearTimer;
-  }, [intervalMin, lastCollectAt, collecting, scheduleGen, clearTimer, runCollect]);
+  }, [intervalMin, lastCollectAt, collecting, autoRetryAt, scheduleGen, clearTimer, runCollect]);
 
   // Pause / resume on visibility
   useEffect(() => {

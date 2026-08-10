@@ -34,7 +34,7 @@
     "release:check": "node scripts/release-metadata.mjs",
     "release:test": "node --test scripts/release-metadata.test.mjs scripts/build-latest-json.test.mjs",
     "release:update": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1",
-    "release:update:publish": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1 -Publish"
+    "release:update:publish": "node -e \"console.error('Local publishing is disabled; push the release branch and let .github/workflows/release.yml publish the release.'); process.exit(1)\""
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.1",
@@ -61,6 +61,7 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
     "recharts": "^2.13.3",
+    "rehype-raw": "^7.0.0",
     "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {

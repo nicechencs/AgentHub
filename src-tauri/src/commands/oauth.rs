@@ -72,10 +72,7 @@ pub async fn oauth_complete(
 
 /// Invoke: `oauth_supported`
 #[tauri::command]
-pub async fn oauth_supported(
-    state: State<'_, AppState>,
-    agent_id: String,
-) -> Result<bool, String> {
+pub async fn oauth_supported(state: State<'_, AppState>, agent_id: String) -> Result<bool, String> {
     let _hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     Ok(oauth::oauth_supported(agent))
@@ -88,9 +85,13 @@ pub async fn oauth_device_start(
     agent_id: String,
     provider_key: String,
 ) -> Result<DeviceOAuthStart, String> {
-    let _hub = state.hub_arc()?;
-    let agent = parse_agent(&agent_id)?;
-    oauth::start_device_oauth(agent, &provider_key).map_err(|e| map_err_string("oauth_device_start", e))
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |_hub| {
+        let agent = parse_agent(&agent_id)?;
+        oauth::start_device_oauth(agent, &provider_key)
+            .map_err(|e| map_err_string("oauth_device_start", e))
+    })
+    .await
 }
 
 /// Invoke: `oauth_device_poll`
@@ -99,8 +100,11 @@ pub async fn oauth_device_poll(
     state: State<'_, AppState>,
     oauth_state: String,
 ) -> Result<DeviceOAuthPoll, String> {
-    let _hub = state.hub_arc()?;
-    oauth::poll_device_oauth(&oauth_state).map_err(|e| map_err_string("oauth_device_poll", e))
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |_hub| {
+        oauth::poll_device_oauth(&oauth_state).map_err(|e| map_err_string("oauth_device_poll", e))
+    })
+    .await
 }
 
 /// Invoke: `oauth_device_complete`

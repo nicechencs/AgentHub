@@ -613,6 +613,37 @@ fn import_live_updates_existing_live_row_but_never_manual_provider() {
 }
 
 #[test]
+fn import_live_change_and_restore_roundtrip_keeps_canonical_live_row() {
+    let config_a = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({
+            "models": [{"id": "a", "apiKey": "secret-a"}],
+            "settings": {"endpoint": "https://a.example"}
+        }),
+    };
+    let (_root, _db, svc, adapter, _backups) = live_svc(AgentId::Claude, config_a.clone());
+    let imported_a = svc.import_live(AgentId::Claude, Some("Live A")).unwrap();
+
+    let config_b = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({
+            "models": [{"id": "b", "apiKey": "secret-b"}],
+            "settings": {"endpoint": "https://b.example"}
+        }),
+    };
+    *adapter.config.lock().unwrap() = config_b.clone();
+    let imported_b = svc.import_live(AgentId::Claude, None).unwrap();
+    assert_eq!(imported_b.id, imported_a.id);
+    assert_eq!(imported_b.settings_config, config_b.raw);
+
+    *adapter.config.lock().unwrap() = config_a.clone();
+    let restored_a = svc.import_live(AgentId::Claude, None).unwrap();
+    assert_eq!(restored_a.id, imported_a.id);
+    assert_eq!(restored_a.settings_config, config_a.raw);
+    assert_eq!(restored_a.name, "Live A");
+}
+
+#[test]
 fn import_live_rejects_empty_or_wrong_agent_without_rows() {
     let empty = AgentConfig {
         agent: AgentId::Claude,

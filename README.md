@@ -229,6 +229,10 @@ pnpm tauri:build:macos
 | `cargo test -p agenthub-core` | Rust core 测试 |
 | `cargo run -p agenthub-cli -- --help` | CLI 帮助 |
 
+### 发布流程
+
+正式 Release 统一由 `release` 分支的 GitHub Actions 工作流完成（包含版本、签名产物、`latest.json` 完整平台集合与重复发布门禁）。`pnpm release:update` 仅用于本地构建和检查；`pnpm release:update:publish` 已禁用，请推送 `release` 分支触发 CI。
+
 ### CLI 示例
 
 ```powershell

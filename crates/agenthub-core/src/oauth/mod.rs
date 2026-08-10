@@ -16,8 +16,8 @@ pub use catalog::{
     OAuthFlowKind, OAuthLoginOption,
 };
 pub use device::{
-    complete_device_oauth, poll_device_oauth, start_device_oauth, DeviceOAuthPoll, DeviceOAuthStart,
-    DeviceOAuthStatus,
+    complete_device_oauth, poll_device_oauth, start_device_oauth, DeviceOAuthPoll,
+    DeviceOAuthStart, DeviceOAuthStatus,
 };
 pub use identity::{
     apply_identity_to_credentials, decode_jwt_payload, extract_oauth_identity, identity_extra,
@@ -50,9 +50,7 @@ use self::session::SessionStore;
 static STORE: std::sync::OnceLock<Arc<SessionStore>> = std::sync::OnceLock::new();
 
 fn store() -> Arc<SessionStore> {
-    STORE
-        .get_or_init(|| Arc::new(SessionStore::new()))
-        .clone()
+    STORE.get_or_init(|| Arc::new(SessionStore::new())).clone()
 }
 
 /// Start PKCE authorize: bind loopback, build URL, optionally open browser.
@@ -313,10 +311,7 @@ fn complete_pi_oauth(
         .credentials
         .get("expires_in")
         .and_then(|v| v.as_i64());
-    let id_token = tokens
-        .credentials
-        .get("id_token")
-        .and_then(|v| v.as_str());
+    let id_token = tokens.credentials.get("id_token").and_then(|v| v.as_str());
 
     let live = crate::adapters::pi_auth::live_account_from_oauth_tokens(
         provider_key,
@@ -327,32 +322,15 @@ fn complete_pi_oauth(
         id_token,
     )?;
 
-    // Write into ~/.pi/agent/auth.json (merge, keep other providers).
-    let patch = live
-        .credentials
-        .get("body")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}));
-    let merged = crate::adapters::pi_auth::merge_auth_json(&patch)?;
-    let path = crate::adapters::pi_auth::pi_auth_path()?;
-    let mut bytes = serde_json::to_vec_pretty(&merged)?;
-    bytes.push(b'\n');
-    crate::utils::atomic::atomic_write(&path, &bytes)?;
-
     let label = live
         .label_hint
         .clone()
         .or(tokens.label_hint)
         .unwrap_or_else(|| format!("pi:{provider_key}"));
 
-    accounts.create(AccountInput {
-        agent_id: AgentId::Pi,
-        kind: AccountKind::Oauth,
-        label,
-        credentials: live.credentials,
-        extra: live.extra,
-        is_current: false,
-    })
+    // AccountService owns the shared process/file lock and compensation path
+    // for all Pi auth.json mutations.
+    accounts.persist_pi_oauth_live(live, label)
 }
 
 /// Convenience: start + wait + complete (blocking). Used by CLI.

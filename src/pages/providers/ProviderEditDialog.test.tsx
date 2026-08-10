@@ -11,7 +11,12 @@ import {
 } from '@/lib/backend/contracts/config-types';
 import type { AgentCatalogEntryDto } from '@/lib/backend/contracts/agent-catalog-types';
 import type { Provider } from '@/lib/types';
-import { EMPTY_FORM_VARS, REDACTED_MARKER, type ProviderFormVars } from '@/lib/provider-detect';
+import {
+  applyFormVars,
+  EMPTY_FORM_VARS,
+  REDACTED_MARKER,
+  type ProviderFormVars,
+} from '@/lib/provider-detect';
 import {
   canSaveWithSchemaStatus,
   parseJsonConfigBase,
@@ -24,6 +29,7 @@ import {
   type ProviderSaveFlowInput,
   type SchemaUiStatus,
 } from './providerSaveFlow';
+import { getConfigTextError } from './ProviderEditDialog';
 
 const TEST_CLAUDE_SCHEMA: AgentConfigSchemaDto = {
   agentKey: 'claude',
@@ -283,6 +289,19 @@ describe('projector path fail-closed', () => {
     expect(deps.materializeAgentConfig).not.toHaveBeenCalled();
     expect(deps.applyFormVars).not.toHaveBeenCalled();
     expect(deps.upsertProvider).not.toHaveBeenCalled();
+  });
+
+  it('structured edits preserve invalid intermediate text and expose a clear error', () => {
+    const malformed = '{"env":{"CUSTOM":"keep-me"}';
+    expect(getConfigTextError('claude', malformed, 'json')).toMatch(/JSON/);
+    expect(
+      applyFormVars('claude', malformed, 'json', {
+        ...EMPTY_FORM_VARS,
+        baseUrl: 'https://new.example.com',
+        model: 'new-model',
+      }),
+    ).toBe(malformed);
+    expect(getConfigTextError('claude', '{"unknown":true}', 'json')).toBeNull();
   });
 
   it('validate ok=false does not materialize or upsert', async () => {

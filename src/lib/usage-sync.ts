@@ -38,6 +38,28 @@ export function normalizeIntervalMin(raw: unknown): number {
   return Math.min(24 * 60, Math.floor(n));
 }
 
+/** Automatic collection retry policy. Keep transient failures away from the
+ * overdue grace timer, which is intentionally short for a healthy schedule. */
+export const AUTO_RETRY_BASE_MS = 30_000;
+export const AUTO_RETRY_MAX_MS = 15 * 60_000;
+
+export function computeAutoRetryDelay(failureCount: number, intervalMin: number): number {
+  const count = Math.max(1, Math.floor(Number.isFinite(failureCount) ? failureCount : 1));
+  const exponential = Math.min(AUTO_RETRY_MAX_MS, AUTO_RETRY_BASE_MS * 2 ** (count - 1));
+  const normalInterval = normalizeIntervalMin(intervalMin) * 60_000;
+  return normalInterval > 0 ? Math.min(exponential, normalInterval) : exponential;
+}
+
+export function computeAutoRetryAt(
+  lastAttemptAt: number,
+  intervalMin: number,
+  failureCount: number,
+  now = Date.now(),
+): number | null {
+  if (normalizeIntervalMin(intervalMin) <= 0) return null;
+  return Math.max(now, lastAttemptAt + computeAutoRetryDelay(failureCount, intervalMin));
+}
+
 /**
  * Next fire time from last collect + interval.
  * - interval 0 → null (manual only)

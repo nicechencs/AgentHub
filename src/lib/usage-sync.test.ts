@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   buildUsageSyncStatusLine,
+  computeAutoRetryAt,
+  computeAutoRetryDelay,
   computeNextCollectAt,
   formatDurationShort,
   formatLastCollectLabel,
@@ -19,6 +21,46 @@ describe('normalizeIntervalMin', () => {
   it('floors and clamps', () => {
     expect(normalizeIntervalMin(30.9)).toBe(30);
     expect(normalizeIntervalMin(99999)).toBe(24 * 60);
+  });
+});
+
+describe('automatic retry backoff', () => {
+  it('backs off transient failures instead of using the overdue grace delay', () => {
+    const now = 1_000_000;
+    expect(computeAutoRetryDelay(1, 30)).toBe(30_000);
+    expect(computeAutoRetryDelay(2, 30)).toBe(60_000);
+    expect(computeAutoRetryAt(now, 30, 1, now)).toBe(now + 30_000);
+  });
+
+  it('caps retries at the configured normal interval', () => {
+    const now = 1_000_000;
+    expect(computeAutoRetryDelay(5, 1)).toBe(60_000);
+    expect(computeAutoRetryAt(now, 1, 5, now)).toBe(now + 60_000);
+  });
+
+  it('does not schedule an automatic retry in manual-only mode', () => {
+    expect(computeAutoRetryAt(1_000, 0, 1, 1_000)).toBeNull();
+  });
+
+  it('keeps a failed auto attempt off the 2s overdue timer', () => {
+    vi.useFakeTimers({ now: 10_000 });
+    try {
+      let calls = 0;
+      const retryAt = computeAutoRetryAt(Date.now(), 30, 1);
+      expect(retryAt).toBe(40_000);
+      setTimeout(() => {
+        calls += 1;
+      }, retryAt! - Date.now());
+
+      vi.advanceTimersByTime(2_000);
+      expect(calls).toBe(0);
+      vi.advanceTimersByTime(27_999);
+      expect(calls).toBe(0);
+      vi.advanceTimersByTime(1);
+      expect(calls).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
