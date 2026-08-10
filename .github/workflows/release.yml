@@ -35,17 +35,17 @@ jobs:
           fi
 
       - name: Checkout release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 9
 
@@ -131,17 +131,17 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout validated commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 9
 
@@ -215,7 +215,7 @@ jobs:
           Get-ChildItem -Recurse -File $out | Select-Object FullName, Length
 
       - name: Upload Windows release assets
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-windows
           path: release-assets/windows
@@ -229,17 +229,17 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout validated commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 9
 
@@ -345,7 +345,7 @@ jobs:
           find "release-assets/macos" -type f -print | LC_ALL=C sort
 
       - name: Upload macOS release assets
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-macos
           path: release-assets/macos
@@ -364,24 +364,24 @@ jobs:
       contents: write
     steps:
       - name: Checkout release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
       - name: Download Windows release assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: release-windows
           path: build-tree/target/release/bundle
 
       - name: Download macOS release assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: release-macos
           path: build-tree/target/release/bundle
