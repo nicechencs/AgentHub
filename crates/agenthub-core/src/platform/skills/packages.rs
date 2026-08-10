@@ -340,14 +340,11 @@ pub(crate) fn swap_staging_keep_backup(
                     // link and pretend first install. Callers that own link
                     // removal (clear_managed / unproject) must do it first.
                     best_effort_remove_dir(staging, skills_root);
-                    return Err(AppError::message(
-                        "skill.conflict",
-                        format!(
-                            "refusing to replace skill target that is a {} (symlink/junction/reparse): {}",
-                            kind.as_str(),
-                            target.display()
-                        ),
-                    ));
+                    return Err(AppError::InvalidArg(format!(
+                        "refusing to replace skill target that is a {} (symlink/junction/reparse): {}",
+                        kind.as_str(),
+                        target.display()
+                    )));
                 }
                 TargetPresence::Missing => {
                     best_effort_remove_dir(staging, skills_root);

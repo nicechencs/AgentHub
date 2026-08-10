@@ -606,9 +606,9 @@ pub(crate) fn unproject_with_ownership(
             Ok(())
         }
         TargetPresence::Directory => {
+            validate_tree_entries_safe(target_dir, "skill target")?;
             // Ownership proof required before any delete.
             verify_copy_ownership(skills_root, skill_id, target_dir, None)?;
-            validate_tree_entries_safe(target_dir, "skill target")?;
             // Clear marker first; if remove_dir_all then fails, target remains
             // unmarked (no stale ownership claim).
             clear_ownership_marker(skills_root, skill_id)?;

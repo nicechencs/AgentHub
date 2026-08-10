@@ -1,10 +1,79 @@
 use super::*;
-use crate::adapters::register_all;
+use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::utils::process::RecordingProcessRunner;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 use tempfile::tempdir;
+
+struct DeterministicAgentAdapter {
+    id: AgentId,
+}
+
+impl AgentAdapter for DeterministicAgentAdapter {
+    fn id(&self) -> AgentId {
+        self.id
+    }
+
+    fn detect(&self) -> crate::models::DetectResult {
+        crate::models::DetectResult {
+            agent: self.id,
+            status: crate::models::DetectStatus::Installed,
+            version: Some("test".into()),
+            binary_path: Some(std::path::PathBuf::from("test-agent")),
+            channel: Some("test".into()),
+            env_ready: true,
+            notes: Vec::new(),
+        }
+    }
+
+    fn install_channels(&self) -> Vec<crate::models::InstallChannel> {
+        Vec::new()
+    }
+
+    fn read_config(&self) -> crate::error::Result<crate::models::AgentConfig> {
+        Err(crate::error::AppError::Unsupported("test adapter".into()))
+    }
+
+    fn read_auth(&self) -> crate::error::Result<crate::models::AuthState> {
+        Err(crate::error::AppError::Unsupported("test adapter".into()))
+    }
+
+    fn skills_dir(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+
+    fn live_backup_paths(&self) -> Vec<std::path::PathBuf> {
+        Vec::new()
+    }
+
+    fn build_run_spec(
+        &self,
+        binary: &std::path::Path,
+        prompt: &str,
+        opts: &crate::models::RunOptions,
+    ) -> crate::error::Result<crate::models::RunSpec> {
+        Ok(crate::models::RunSpec {
+            agent: self.id,
+            program: binary.to_path_buf(),
+            args: vec!["--prompt".into(), prompt.into()],
+            cwd: opts.cwd.clone(),
+            env: Vec::new(),
+        })
+    }
+
+    fn capability(&self, _cap: crate::models::Capability) -> crate::models::CapabilityState {
+        crate::models::CapabilityState::unsupported("test adapter")
+    }
+}
+
+fn deterministic_registry() -> AdapterRegistry {
+    let mut registry = AdapterRegistry::new();
+    for id in AgentId::ALL {
+        registry.register(Arc::new(DeterministicAgentAdapter { id }));
+    }
+    registry
+}
 
 fn msg(
     turn: i64,
@@ -90,7 +159,7 @@ fn create_dedupes_agent_ids() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let run = Arc::new(RunService::with_runner(
-        register_all(),
+        deterministic_registry(),
         Arc::new(RecordingProcessRunner::new()),
     ));
     let chat = ChatService::new(db, run);
@@ -106,7 +175,10 @@ fn send_persists_and_isolates_prompts() {
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let recorder = RecordingProcessRunner::new();
     let calls = Arc::clone(&recorder.calls);
-    let run = Arc::new(RunService::with_runner(register_all(), Arc::new(recorder)));
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(recorder),
+    ));
     let chat = ChatService::new(db, run);
 
     let conv = chat
@@ -129,6 +201,9 @@ fn send_persists_and_isolates_prompts() {
     calls.lock().unwrap().clear();
     chat.send(&conv.id, "second", &|_| {}).unwrap();
     let specs = calls.lock().unwrap().clone();
+    assert_eq!(specs.len(), 2, "each selected agent must reach the runner");
+    assert!(specs.iter().any(|s| s.agent == AgentId::Claude));
+    assert!(specs.iter().any(|s| s.agent == AgentId::Codex));
     for s in &specs {
         let joined = s.args.join(" ");
         // Second-turn prompt should include prior user text when agent ran.
@@ -150,31 +225,44 @@ fn send_persists_and_isolates_prompts() {
 fn concurrent_send_rejected() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
-    let mut recorder = RecordingProcessRunner::new();
-    recorder.delay = Duration::from_millis(400);
-    let run = Arc::new(RunService::with_runner(register_all(), Arc::new(recorder)));
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
     let chat = Arc::new(ChatService::new(db, run));
     let conv = chat
         .create_conversation(vec![AgentId::Claude], None)
         .unwrap();
     let id = conv.id.clone();
 
-    let started = Arc::new(AtomicUsize::new(0));
-    let started2 = Arc::clone(&started);
+    let (started_tx, started_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let release_rx = Arc::new(Mutex::new(release_rx));
+    let release_rx2 = Arc::clone(&release_rx);
     let chat2 = Arc::clone(&chat);
     let id2 = id.clone();
     let t1 = thread::spawn(move || {
-        started2.fetch_add(1, Ordering::SeqCst);
-        chat2.send(&id2, "slow", &|_| {})
+        chat2.send(&id2, "slow", &move |event| {
+            if matches!(event, ChatEvent::AgentStarted { .. }) {
+                started_tx.send(()).expect("notify first agent start");
+                release_rx2
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(10))
+                    .expect("release first send after concurrent assertion");
+            }
+        })
     });
 
-    // Wait until first send is likely inside run_each.
-    while started.load(Ordering::SeqCst) == 0 {
-        thread::sleep(Duration::from_millis(10));
-    }
-    thread::sleep(Duration::from_millis(50));
+    // Hold the first send inside its AgentStarted callback until the concurrent
+    // assertion completes, so the test does not depend on scheduler timing.
+    started_rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("first send did not start an agent in time");
 
-    let err = chat.send(&id, "second", &|_| {}).unwrap_err();
+    let second = chat.send(&id, "second", &|_| {});
+    release_tx.send(()).expect("release first send");
+    let err = second.unwrap_err();
     assert!(err.to_string().contains("in-flight"), "unexpected: {err}");
     t1.join().unwrap().unwrap();
 }
@@ -185,7 +273,10 @@ fn delete_conversation_cancels_active() {
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let mut recorder = RecordingProcessRunner::new();
     recorder.delay = Duration::from_millis(500);
-    let run = Arc::new(RunService::with_runner(register_all(), Arc::new(recorder)));
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(recorder),
+    ));
     let chat = Arc::new(ChatService::new(db, run));
     let conv = chat
         .create_conversation(vec![AgentId::Claude], None)
@@ -224,7 +315,7 @@ fn invalid_cwd_rejected_on_create() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let run = Arc::new(RunService::with_runner(
-        register_all(),
+        deterministic_registry(),
         Arc::new(RecordingProcessRunner::new()),
     ));
     let chat = ChatService::new(db, run);
@@ -242,7 +333,7 @@ fn empty_prompt_and_empty_agents_rejected() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let run = Arc::new(RunService::with_runner(
-        register_all(),
+        deterministic_registry(),
         Arc::new(RecordingProcessRunner::new()),
     ));
     let chat = ChatService::new(db, run);
@@ -262,7 +353,7 @@ fn send_events_include_turn_and_no_running_left() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let run = Arc::new(RunService::with_runner(
-        register_all(),
+        deterministic_registry(),
         Arc::new(RecordingProcessRunner::new()),
     ));
     let chat = ChatService::new(db, run);
@@ -310,7 +401,7 @@ fn failed_runner_status_persists_failed_not_running() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let run = Arc::new(RunService::with_runner(
-        register_all(),
+        deterministic_registry(),
         Arc::new(RecordingProcessRunner::with_status(RunStatus::Failed)),
     ));
     let chat = ChatService::new(db, run);
@@ -337,7 +428,10 @@ fn cancel_mid_send_marks_cancelled() {
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let mut recorder = RecordingProcessRunner::new();
     recorder.delay = Duration::from_millis(500);
-    let run = Arc::new(RunService::with_runner(register_all(), Arc::new(recorder)));
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(recorder),
+    ));
     let chat = Arc::new(ChatService::new(db, run));
     let conv = chat
         .create_conversation(vec![AgentId::Claude], None)
@@ -376,7 +470,7 @@ fn update_conversation_dedupes_and_validates_cwd() {
     std::fs::create_dir_all(&cwd).unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let run = Arc::new(RunService::with_runner(
-        register_all(),
+        deterministic_registry(),
         Arc::new(RecordingProcessRunner::new()),
     ));
     let chat = ChatService::new(db, run);
@@ -417,7 +511,7 @@ fn valid_cwd_accepted_on_create_and_send() {
     std::fs::create_dir_all(&work).unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let run = Arc::new(RunService::with_runner(
-        register_all(),
+        deterministic_registry(),
         Arc::new(RecordingProcessRunner::new()),
     ));
     let chat = ChatService::new(db, run);

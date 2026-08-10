@@ -1433,12 +1433,17 @@ fn force_sync_rejects_nested_target_symlink_unix() {
     symlink("a.txt", claude.join("demo").join("nested-link")).unwrap();
     write_file(&claude.join("sibling").join("s.txt"), "sib");
 
-    let before = collect_regular_files(&claude.join("demo")).unwrap();
     // Force must still refuse nested symlink with invalid_arg (not replace).
     let err = svc.sync("demo", AgentId::Claude, true).unwrap_err();
     assert_eq!(err.code(), "invalid_arg");
-    let after = collect_regular_files(&claude.join("demo")).unwrap();
-    assert_eq!(before, after);
+    assert_eq!(
+        fs::read_to_string(claude.join("demo").join("SKILL.md")).unwrap(),
+        skill_md("D", "old")
+    );
+    assert_eq!(
+        fs::read_to_string(claude.join("demo").join("a.txt")).unwrap(),
+        "target"
+    );
     assert!(
         fs::symlink_metadata(claude.join("demo").join("nested-link"))
             .unwrap()
@@ -1495,6 +1500,14 @@ fn force_sync_rejects_nested_target_symlink_when_creatable() {
     assert!(before_link.file_type().is_symlink());
     let err = svc.sync("demo", AgentId::Claude, true).unwrap_err();
     assert_eq!(err.code(), "invalid_arg");
+    assert_eq!(
+        fs::read_to_string(claude.join("demo").join("SKILL.md")).unwrap(),
+        skill_md("D", "old")
+    );
+    assert_eq!(
+        fs::read_to_string(claude.join("demo").join("a.txt")).unwrap(),
+        "target"
+    );
     assert!(
         fs::symlink_metadata(claude.join("demo").join("nested-link"))
             .unwrap()
