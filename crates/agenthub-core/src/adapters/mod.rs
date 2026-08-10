@@ -9,6 +9,10 @@ mod pi;
 pub mod pi_auth;
 pub(crate) mod workbuddy;
 
+// Codex OAuth PKCE historically stored flat token bundles; adapters + oauth finish
+// both need the same conversion into live `auth_json` shape.
+pub(crate) use codex::normalize_oauth_credentials as normalize_codex_oauth_credentials;
+
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};

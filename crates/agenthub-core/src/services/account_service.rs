@@ -913,6 +913,27 @@ impl AccountService {
                     obj.insert("refresh_token".into(), serde_json::json!(refresh));
                 }
             }
+            // Keep Codex accounts in live-writable auth_json shape after refresh.
+            // Generic OAuth refresh returns a flat token bundle; without this step
+            // a successful refresh would re-break account switch.
+            if agent == AgentId::Codex {
+                // Preserve prior body tokens (account_id / id_token) when refresh omits them.
+                if let Some(prior_body) = account.credentials.get("body").cloned() {
+                    if let Some(obj) = creds.as_object_mut() {
+                        obj.entry("body".to_string()).or_insert(prior_body);
+                    }
+                }
+                for key in ["account_id", "id_token", "email", "sub", "plan_type"] {
+                    if creds.get(key).and_then(|v| v.as_str()).is_none() {
+                        if let Some(v) = account.credentials.get(key).cloned() {
+                            if let Some(obj) = creds.as_object_mut() {
+                                obj.insert(key.into(), v);
+                            }
+                        }
+                    }
+                }
+                creds = crate::adapters::normalize_codex_oauth_credentials(&creds)?;
+            }
             let prior_identity = crate::oauth::identity_from_credentials(&account.credentials);
             let mut new_identity = crate::oauth::identity_from_credentials(&creds);
             new_identity.merge_missing(&prior_identity);

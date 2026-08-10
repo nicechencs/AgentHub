@@ -52,17 +52,21 @@ pub fn needs_identity_heal(account: &Account) -> bool {
 /// Best-effort extract identity from credentials; mutates account when improved.
 /// Returns true if the account was modified (caller should persist).
 pub fn heal_account_identity(account: &mut Account) -> bool {
+    // Codex: promote legacy PKCE token bundles (`type=oauth`, no format) into
+    // live-writable `auth_json` before identity/token extraction.
+    let shape_dirty = heal_codex_credential_shape(account);
+
     let Some(identity) = extract_identity_from_credentials(account.agent_id, &account.credentials)
     else {
         // Still try to upgrade pure placeholder labels using nothing but body provider.
-        let mut dirty = upgrade_placeholder_label_only(account);
+        let mut dirty = shape_dirty || upgrade_placeholder_label_only(account);
         if super::account_quota::heal_token_expiry(account) {
             dirty = true;
         }
         return dirty;
     };
     if identity.is_empty() {
-        let mut dirty = upgrade_placeholder_label_only(account);
+        let mut dirty = shape_dirty || upgrade_placeholder_label_only(account);
         if super::account_quota::heal_token_expiry(account) {
             dirty = true;
         }
@@ -148,12 +152,45 @@ pub fn heal_account_identity(account: &mut Account) -> bool {
         }
     }
 
-    before
-        != (
-            account.label.clone(),
-            account.extra.clone(),
-            account.credentials.clone(),
-        )
+    shape_dirty
+        || before
+            != (
+                account.label.clone(),
+                account.extra.clone(),
+                account.credentials.clone(),
+            )
+}
+
+/// Convert Codex OAuth PKCE token bundles into `format=auth_json` when needed.
+fn heal_codex_credential_shape(account: &mut Account) -> bool {
+    if account.agent_id != AgentId::Codex || account.kind != crate::models::AccountKind::Oauth {
+        return false;
+    }
+    let format = account
+        .credentials
+        .get("format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let has_live_body = account
+        .credentials
+        .pointer("/body/tokens/access_token")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty())
+        || account
+            .credentials
+            .pointer("/body/tokens/refresh_token")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.is_empty());
+    if format == "auth_json" && has_live_body {
+        return false;
+    }
+    match crate::adapters::normalize_codex_oauth_credentials(&account.credentials) {
+        Ok(normalized) if normalized != account.credentials => {
+            account.credentials = normalized;
+            true
+        }
+        _ => false,
+    }
 }
 
 fn upgrade_placeholder_label_only(account: &mut Account) -> bool {
@@ -571,6 +608,45 @@ mod tests {
             created_at: "t".into(),
             updated_at: "t".into(),
         }
+    }
+
+    #[test]
+    fn heals_codex_legacy_pkce_bundle_into_auth_json() {
+        let mut acc = base_account(
+            AgentId::Codex,
+            "codex-oauth",
+            json!({
+                "type": "oauth",
+                "provider": "codex",
+                "access_token": "at-legacy",
+                "refresh_token": "rt-legacy",
+                "id_token": "idt-legacy",
+                "account_id": "acc-legacy",
+                "email": "legacy@example.com"
+            }),
+            json!({ "source": "oauth_pkce" }),
+        );
+        assert!(heal_account_identity(&mut acc));
+        assert_eq!(
+            acc.credentials.get("format").and_then(|v| v.as_str()),
+            Some("auth_json")
+        );
+        assert_eq!(
+            acc.credentials
+                .pointer("/body/tokens/access_token")
+                .and_then(|v| v.as_str()),
+            Some("at-legacy")
+        );
+        assert_eq!(
+            acc.credentials
+                .pointer("/body/tokens/refresh_token")
+                .and_then(|v| v.as_str()),
+            Some("rt-legacy")
+        );
+        assert_eq!(
+            acc.credentials.get("email").and_then(|v| v.as_str()),
+            Some("legacy@example.com")
+        );
     }
 
     #[test]

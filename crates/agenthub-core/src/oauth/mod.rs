@@ -245,10 +245,18 @@ pub fn complete_oauth(accounts: &AccountService, state: &str) -> Result<Account>
     let account = if session.agent == AgentId::Pi {
         complete_pi_oauth(accounts, &session, tokens)?
     } else {
+        // Codex live apply only accepts `format=auth_json` with a full auth.json
+        // body. Convert the generic PKCE token bundle before pool insert so the
+        // account is switchable immediately (not only after import-live).
+        let credentials = if session.agent == AgentId::Codex {
+            crate::adapters::normalize_codex_oauth_credentials(&tokens.credentials)?
+        } else {
+            tokens.credentials
+        };
         let live = LiveAccount {
             agent: session.agent,
             kind: AccountKind::Oauth,
-            credentials: tokens.credentials,
+            credentials,
             label_hint: tokens.label_hint.clone(),
             extra: tokens.extra.clone(),
         };
