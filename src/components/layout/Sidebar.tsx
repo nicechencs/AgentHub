@@ -5,14 +5,14 @@ import {
   MessagesSquare,
   Bot,
   Key,
-  Route,
   Blocks,
+  Boxes,
+  Hexagon,
   Plug,
   FolderKanban,
   Settings2,
   PanelLeftClose,
   PanelLeftOpen,
-  Hexagon,
 } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { AGENTS } from '@/config/agents';
@@ -36,7 +36,7 @@ const NAV_WORKSPACE = [
 const NAV_MANAGE = [
   { to: '/', label: 'Dashboard', icon: Gauge },
   { to: '/connections', label: 'Connections', icon: Key },
-  { to: '/router', label: 'Router', icon: Route },
+  { to: '/adapter', label: 'Adapter', icon: Boxes },
   { to: '/settings', label: 'Settings', icon: Settings2 },
 ] as const;
 

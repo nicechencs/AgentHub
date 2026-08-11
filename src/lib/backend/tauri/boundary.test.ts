@@ -129,8 +129,9 @@ describe('production Dashboard alerts', () => {
     resetBackend();
   });
 
-  it('returns empty alerts (no demo notifications)', async () => {
+  it('derives alerts from live agents (no demo fixtures)', async () => {
     const backend = createTauriBackend();
+    // Without Tauri invoke the agent list fails → empty (not mock demos).
     await expect(backend.dashboard.listAlerts()).resolves.toEqual([]);
   });
 });

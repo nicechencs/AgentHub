@@ -43,6 +43,15 @@ if not exist "node_modules\" (
   echo.
 )
 
+echo [INFO] Prefer run.ps1 for port-conflict diagnostics; checking 5173 ...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$c=Get-NetTCPConnection -LocalPort 5173 -State Listen -EA SilentlyContinue; if($c){ Write-Host '[WARN] Port 5173 is in use. Free it or run: powershell -File .\run.ps1' -ForegroundColor Yellow; $c | ForEach-Object { $p=Get-Process -Id $_.OwningProcess -EA SilentlyContinue; Write-Host ('  PID {0} {1}' -f $_.OwningProcess, $p.ProcessName) }; exit 2 } else { exit 0 }"
+if errorlevel 2 (
+  echo [ERROR] Port 5173 is already in use - Vite cannot start.
+  echo [HINT] Stop previous tauri:dev / pnpm dev:mock, or run: powershell -File .\run.ps1
+  goto fail
+)
+
 echo [START] pnpm tauri:dev
 echo [INFO] Starts Vite + Tauri desktop window (real backend, NOT browser mock)
 echo [INFO] First build may take a while. Press Ctrl+C to stop.
@@ -53,6 +62,7 @@ set "EC=%ERRORLEVEL%"
 if not "%EC%"=="0" (
   echo.
   echo [ERROR] tauri:dev exited with code %EC%
+  echo [HINT] If "Port 5173 is already in use", close other Vite/tauri:dev and retry.
   goto fail
 )
 
