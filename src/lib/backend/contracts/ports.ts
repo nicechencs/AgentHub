@@ -397,6 +397,7 @@ export interface InstallPort {
 }
 
 export type { UpdatePort } from './update-types';
+export type { McpPort } from './mcp-types';
 
 export interface Backend {
   account: AccountPort;
@@ -419,6 +420,8 @@ export interface Backend {
   /** Desktop self-update (check / one-click install). */
   update: UpdatePort;
   trash: TrashPort;
+  /** Read-only MCP config inventory (not full MCP management). */
+  mcp: import('./mcp-types').McpPort;
 }
 
 export type CreateBackend = () => Backend;

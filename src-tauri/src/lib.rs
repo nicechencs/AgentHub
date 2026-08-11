@@ -75,6 +75,8 @@ pub fn run() {
             commands::install::uninstall_agent,
             commands::install::open_agent_config_dir,
             commands::install::open_path_in_file_manager,
+            // MCP inventory (read-only)
+            commands::mcp::list_mcp_inventory_cmd,
             // Provider
             commands::provider::list_provider_presets,
             commands::provider::list_providers,

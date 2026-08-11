@@ -7,6 +7,7 @@ pub mod chat;
 pub mod configuration;
 pub mod doctor;
 pub mod install;
+pub mod mcp;
 pub mod oauth;
 pub mod project;
 pub mod provider;
