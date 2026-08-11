@@ -242,6 +242,7 @@ fn build_kimi_session(
             message_count: None,
             size_bytes,
             updated_at,
+            session_id: None,
         }
     };
 
@@ -265,6 +266,10 @@ fn build_kimi_session(
     if let Some(sz) = dir_size_shallow(session_dir) {
         meta.size_bytes = sz;
     }
+    // Prefer session dir name when content has no session id.
+    if meta.session_id.is_none() {
+        meta.session_id = native_session_id_from_path(AgentId::Kimi, session_dir);
+    }
 
     let mut rec = build_session_from_meta(AgentId::Kimi, home, &primary, project_id, meta, None)?;
     if let Some(t) = title {
@@ -276,6 +281,9 @@ fn build_kimi_session(
         }
     }
     rec.cwd = rec.cwd.or_else(|| workspace_cwd.map(|s| s.to_string()));
+    if rec.session_id.is_none() {
+        rec.session_id = native_session_id_from_path(AgentId::Kimi, session_dir);
+    }
     Some(rec)
 }
 
@@ -535,6 +543,7 @@ fn list_sessions_tree(
                         updated_at: ent.updated_at.clone(),
                         preview: ent.preview.clone(),
                         message_count: ent.message_count,
+                        session_id: ent.session_id.clone(),
                     });
                     continue;
                 }
@@ -564,6 +573,7 @@ fn list_sessions_tree(
                                 preview: meta.preview,
                                 message_count: meta.message_count,
                                 updated_at,
+                                session_id: meta.session_id,
                             },
                         );
                     }
@@ -584,6 +594,7 @@ fn list_sessions_tree(
                         preview: meta.preview.clone(),
                         message_count: meta.message_count,
                         updated_at: meta.updated_at.clone(),
+                        session_id: meta.session_id.clone(),
                     },
                 );
             }
@@ -649,6 +660,8 @@ struct SessionFileMeta {
     message_count: Option<u32>,
     size_bytes: u64,
     updated_at: String,
+    /// Native CLI session id when known from content / path.
+    session_id: Option<String>,
 }
 
 fn session_file_meta(agent: AgentId, path: &Path) -> SessionFileMeta {
@@ -665,12 +678,186 @@ fn session_file_meta(agent: AgentId, path: &Path) -> SessionFileMeta {
     let text = read_head(path, SCAN_BYTES).unwrap_or_default();
     let cwd = extract_cwd_from_text(agent, &text);
     let (preview, message_count) = scan_preview_from_text(&text);
+    let session_id = extract_native_session_id(agent, path, &text);
     SessionFileMeta {
         cwd,
         preview,
         message_count,
         size_bytes,
         updated_at,
+        session_id,
+    }
+}
+
+/// Native CLI session id: content field first, then path heuristics.
+fn extract_native_session_id(agent: AgentId, path: &Path, text: &str) -> Option<String> {
+    if let Some(sid) = extract_session_id_from_text(agent, text) {
+        return Some(sid);
+    }
+    native_session_id_from_path(agent, path)
+}
+
+fn extract_session_id_from_text(agent: AgentId, text: &str) -> Option<String> {
+    for line in text.lines().take(40) {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if let Some(s) = session_id_from_json_value(agent, &v) {
+            return Some(s);
+        }
+    }
+    None
+}
+
+fn session_id_from_json_value(agent: AgentId, v: &serde_json::Value) -> Option<String> {
+    let non_empty = |s: &str| {
+        let t = s.trim();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t.to_string())
+        }
+    };
+
+    // Top-level keys common across Claude-like / Grok / Pi logs.
+    for key in ["sessionId", "session_id", "sessionID"] {
+        if let Some(s) = v.get(key).and_then(|x| x.as_str()).and_then(non_empty) {
+            return Some(s);
+        }
+    }
+
+    let ty = v.get("type").and_then(|x| x.as_str()).unwrap_or("");
+    match agent {
+        AgentId::Codex => {
+            // Prefer explicit session_id; only use payload.id on session_meta
+            // (other events use payload.id for message / item ids).
+            if let Some(s) = v
+                .pointer("/payload/session_id")
+                .or_else(|| v.pointer("/payload/sessionId"))
+                .and_then(|x| x.as_str())
+                .and_then(non_empty)
+            {
+                return Some(s);
+            }
+            if ty == "session_meta" {
+                if let Some(s) = v
+                    .pointer("/payload/id")
+                    .and_then(|x| x.as_str())
+                    .and_then(non_empty)
+                {
+                    return Some(s);
+                }
+            }
+            None
+        }
+        AgentId::Grok => v
+            .pointer("/info/id")
+            .or_else(|| v.pointer("/payload/session_id"))
+            .and_then(|x| x.as_str())
+            .and_then(non_empty),
+        AgentId::Pi => {
+            // Pi session header: {"type":"session","id":"…"} — avoid message ids.
+            if ty == "session" {
+                return v.get("id").and_then(|x| x.as_str()).and_then(non_empty);
+            }
+            None
+        }
+        AgentId::Kimi => None, // path `session_<uuid>` is the source of truth
+        // Claude / WorkBuddy / default
+        _ => v
+            .pointer("/session/id")
+            .or_else(|| v.pointer("/message/sessionId"))
+            .and_then(|x| x.as_str())
+            .and_then(non_empty),
+    }
+}
+
+/// Path-derived native id when content has no field.
+fn native_session_id_from_path(agent: AgentId, path: &Path) -> Option<String> {
+    match agent {
+        AgentId::Claude | AgentId::WorkBuddy => {
+            // `projects/<encoded>/<uuid>.jsonl` → stem is the session uuid
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+        }
+        AgentId::Codex => {
+            // Prefer `rollout-…-<sessionId>` tail; else whole stem.
+            let stem = path.file_stem().and_then(|s| s.to_str())?.trim();
+            if stem.is_empty() {
+                return None;
+            }
+            if let Some(rest) = stem.strip_prefix("rollout-") {
+                if let Some((_, tail)) = rest.rsplit_once('-') {
+                    if !tail.is_empty() {
+                        return Some(tail.to_string());
+                    }
+                }
+            }
+            Some(stem.to_string())
+        }
+        AgentId::Grok => {
+            // Prefer parent dir when file is chat_history.jsonl
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name.eq_ignore_ascii_case("chat_history.jsonl") {
+                return path
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty() && *s != "." && *s != "..")
+                    .map(|s| s.to_string());
+            }
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+        }
+        AgentId::Kimi => {
+            // Prefer `session_<uuid>` directory; strip prefix for CLI-native uuid.
+            let mut cur = path.to_path_buf();
+            for _ in 0..8 {
+                if let Some(name) = cur.file_name().and_then(|n| n.to_str()) {
+                    if let Some(rest) = name.strip_prefix("session_") {
+                        let t = rest.trim();
+                        if !t.is_empty() {
+                            return Some(t.to_string());
+                        }
+                        return Some(name.to_string());
+                    }
+                    if name.starts_with("session") && name.len() > 7 {
+                        return Some(name.to_string());
+                    }
+                }
+                match cur.parent() {
+                    Some(p) if p != cur => cur = p.to_path_buf(),
+                    _ => break,
+                }
+            }
+            None
+        }
+        AgentId::Pi => {
+            // Filename often `agent_<sessionId>.jsonl` → take after first `_`
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                if let Some((_, sid)) = stem.split_once('_') {
+                    if !sid.is_empty() {
+                        return Some(sid.to_string());
+                    }
+                }
+                if !stem.is_empty() {
+                    return Some(stem.to_string());
+                }
+            }
+            None
+        }
+        AgentId::Cursor => None,
     }
 }
 
@@ -697,6 +884,9 @@ fn build_session_from_meta(
         _ => None,
     });
     let title = title_from(meta.preview.as_deref(), cwd.as_deref(), path);
+    let session_id = meta
+        .session_id
+        .or_else(|| native_session_id_from_path(agent, path));
     Some(AgentSession {
         id: format!("{}:{}", agent.as_str(), rel_str),
         project_id: project_id.to_string(),
@@ -709,6 +899,7 @@ fn build_session_from_meta(
         updated_at: meta.updated_at,
         preview: meta.preview,
         message_count: meta.message_count,
+        session_id,
     })
 }
 
@@ -727,7 +918,7 @@ fn build_grok_session(
     let mut title_override: Option<String> = None;
     let mut count_override: Option<u32> = None;
     if let Some(dir) = session_dir {
-        if let Some((title, cwd, count)) = read_grok_summary(dir) {
+        if let Some((title, cwd, count, sid)) = read_grok_summary(dir) {
             if title_override.is_none() {
                 title_override = title;
             }
@@ -735,6 +926,20 @@ fn build_grok_session(
                 meta.cwd = cwd;
             }
             count_override = count.or(count_override);
+            // Prefer directory name (native layout); summary id is often truncated.
+            if meta.session_id.is_none() {
+                meta.session_id = sid;
+            }
+        }
+        // Directory name is the stable Grok session id.
+        if let Some(name) = dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+        {
+            meta.session_id = Some(name);
         }
     }
     if let Some(c) = count_override {
@@ -753,7 +958,9 @@ fn build_grok_session(
     Some(rec)
 }
 
-fn read_grok_summary(session_dir: &Path) -> Option<(Option<String>, Option<String>, Option<u32>)> {
+fn read_grok_summary(
+    session_dir: &Path,
+) -> Option<(Option<String>, Option<String>, Option<u32>, Option<String>)> {
     let path = session_dir.join("summary.json");
     let raw = fs::read_to_string(&path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
@@ -773,7 +980,15 @@ fn read_grok_summary(session_dir: &Path) -> Option<(Option<String>, Option<Strin
         .or_else(|| v.get("num_messages"))
         .and_then(|x| x.as_u64())
         .map(|n| n as u32);
-    Some((title, cwd, count))
+    let session_id = v
+        .pointer("/info/id")
+        .or_else(|| v.get("session_id"))
+        .or_else(|| v.get("sessionId"))
+        .or_else(|| v.get("id"))
+        .and_then(|x| x.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    Some((title, cwd, count, session_id))
 }
 
 /// Percent-decode a path segment (Grok session parent dirs).
@@ -1340,6 +1555,7 @@ pub(crate) fn load_excerpt(id: &str, home_override: Option<&Path>) -> Result<Age
                 .unwrap_or_else(|| Utc::now().to_rfc3339()),
             preview,
             message_count,
+            session_id: native_session_id_from_path(agent, &abs_path),
         }
     });
     let text = read_head(&abs_path, SCAN_BYTES * 2).unwrap_or_default();

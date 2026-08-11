@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronDown,
   ChevronRight,
+  Copy,
   EyeOff,
   FolderKanban,
   FolderOpen,
@@ -126,10 +127,30 @@ function buildContinuePrompt(p: AgentSession): string {
 
 function sessionMatches(s: AgentSession, q: string): boolean {
   if (!q) return true;
-  const hay = [s.title, s.preview ?? '', s.cwd ?? '', s.path, s.relativePath]
+  const hay = [
+    s.sessionId ?? '',
+    s.id,
+    s.title,
+    s.preview ?? '',
+    s.cwd ?? '',
+    s.path,
+    s.relativePath,
+  ]
     .join('\n')
     .toLowerCase();
   return hay.includes(q);
+}
+
+/** 原生 CLI session id（无则 null） */
+function nativeSessionId(s: AgentSession): string | null {
+  const sid = s.sessionId?.trim();
+  return sid ? sid : null;
+}
+
+/** 展示用短 id */
+function shortSessionId(id: string, max = 36): string {
+  if (id.length <= max) return id;
+  return `${id.slice(0, max - 1)}…`;
 }
 
 function projectMatches(p: AgentProject, q: string): boolean {
@@ -438,6 +459,21 @@ export default function ProjectsPage() {
         title: err instanceof Error ? err.message : String(err),
         variant: 'danger',
       });
+    }
+  }
+
+  async function copySessionId(s: AgentSession, e?: React.MouseEvent) {
+    e?.stopPropagation();
+    const sid = nativeSessionId(s);
+    if (!sid) {
+      toast({ title: '该会话没有原生 Session ID', variant: 'danger' });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(sid);
+      toast({ title: 'Session ID 已复制', description: shortSessionId(sid, 48) });
+    } catch {
+      toast({ title: '复制失败', variant: 'danger' });
     }
   }
 
@@ -911,9 +947,29 @@ export default function ProjectsPage() {
                                     {s.preview}
                                   </p>
                                 )}
-                                <div className="mt-0.5 font-mono text-2xs text-muted">
+                                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-2xs text-muted">
+                                  {(() => {
+                                    const sid = nativeSessionId(s);
+                                    if (!sid) return null;
+                                    return (
+                                      <Tip label={`原生 Session ID：${sid}`}>
+                                        <button
+                                          type="button"
+                                          className="inline-flex max-w-full items-center gap-1 rounded-sm text-left hover:text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                                          aria-label={`复制 Session ID ${sid}`}
+                                          title="点击复制原生 Session ID"
+                                          onClick={(e) => void copySessionId(s, e)}
+                                        >
+                                          <span className="truncate">
+                                            id: {shortSessionId(sid)}
+                                          </span>
+                                          <Copy className="h-3 w-3 shrink-0 opacity-70" />
+                                        </button>
+                                      </Tip>
+                                    );
+                                  })()}
                                   {s.cwd && (
-                                    <Tip label={s.cwd} className="mr-3">
+                                    <Tip label={s.cwd}>
                                       cwd: {shortPath(s.cwd, 36)}
                                     </Tip>
                                   )}
@@ -936,6 +992,22 @@ export default function ProjectsPage() {
                                       onClick={(e) => void openSessionCwd(s, e)}
                                     >
                                       <FolderOpen className="h-3.5 w-3.5" />
+                                    </Button>
+                                  );
+                                })()}
+                                {(() => {
+                                  const sid = nativeSessionId(s);
+                                  if (!sid) return null;
+                                  return (
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      disabled={busy}
+                                      aria-label="复制 Session ID"
+                                      title={`复制 Session ID：${sid}`}
+                                      onClick={(e) => void copySessionId(s, e)}
+                                    >
+                                      <Copy className="h-3.5 w-3.5" />
                                     </Button>
                                   );
                                 })()}
@@ -988,6 +1060,11 @@ export default function ProjectsPage() {
           {deleteTarget && (
             <div className="rounded-btn bg-subtle px-3 py-2 text-sm">
               <p className="font-medium">{deleteTarget.title}</p>
+              {nativeSessionId(deleteTarget) && (
+                <p className="mt-0.5 break-all font-mono text-xs text-muted">
+                  session: {nativeSessionId(deleteTarget)}
+                </p>
+              )}
               <p className="mt-0.5 break-all font-mono text-xs text-muted">
                 {deleteTarget.path}
               </p>
