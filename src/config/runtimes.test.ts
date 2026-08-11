@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { RUNTIME_MAP, runtimeRemediationsForPlatform } from './runtimes';
+import {
+  RUNTIME_MAP,
+  runtimesForPlatform,
+  runtimeRemediationsForPlatform,
+} from './runtimes';
 
 describe('runtime remediation platform filtering', () => {
   it('offers Homebrew and official links on macOS without winget', () => {
@@ -19,5 +23,11 @@ describe('runtime remediation platform filtering', () => {
     const rows = runtimeRemediationsForPlatform(RUNTIME_MAP.git.remediations, 'unknown');
     expect(rows.some((row) => row.kind === 'winget' || row.kind === 'brew')).toBe(false);
     expect(rows.some((row) => row.kind === 'url')).toBe(true);
+  });
+
+  it('omits PowerShell from host runtime list outside Windows', () => {
+    expect(runtimesForPlatform('macos').map((r) => r.id)).not.toContain('powershell');
+    expect(runtimesForPlatform('linux').map((r) => r.id)).not.toContain('powershell');
+    expect(runtimesForPlatform('windows').map((r) => r.id)).toContain('powershell');
   });
 });
