@@ -61,6 +61,9 @@ pub struct AgentSession {
     pub preview: Option<String>,
     /// Rough message / line count when cheap to compute.
     pub message_count: Option<u32>,
+    /// Native CLI session id (for resume / copy), when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 /// Text excerpt for multi-select summarize / continue-chat context.

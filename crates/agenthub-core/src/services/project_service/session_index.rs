@@ -13,7 +13,7 @@ use crate::models::AgentId;
 use crate::utils::atomic::atomic_write;
 
 const INDEX_FILE: &str = "project_session_index.json";
-const INDEX_VERSION: u32 = 1;
+const INDEX_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -45,6 +45,9 @@ pub struct IndexEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_count: Option<u32>,
     pub updated_at: String,
+    /// Native CLI session id when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 pub struct SessionIndexStore {
@@ -103,7 +106,8 @@ impl SessionIndexStore {
                     && old.cwd == entry.cwd
                     && old.title == entry.title
                     && old.preview == entry.preview
-                    && old.message_count == entry.message_count =>
+                    && old.message_count == entry.message_count
+                    && old.session_id == entry.session_id =>
             {
                 // unchanged
             }
@@ -155,7 +159,16 @@ fn load_doc(path: &Path) -> SessionIndexFile {
             agents: BTreeMap::new(),
         };
     }
-    serde_json::from_str(&raw).unwrap_or_default()
+    let mut doc: SessionIndexFile = serde_json::from_str(&raw).unwrap_or_default();
+    // Drop cache when schema advances so new fields (e.g. sessionId) are re-scanned.
+    if doc.version != INDEX_VERSION {
+        return SessionIndexFile {
+            version: INDEX_VERSION,
+            agents: BTreeMap::new(),
+        };
+    }
+    doc.version = INDEX_VERSION;
+    doc
 }
 
 pub fn mtime_ms_from_system(t: SystemTime) -> u64 {
