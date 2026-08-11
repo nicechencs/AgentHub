@@ -7,7 +7,6 @@ import {
   Key,
   Blocks,
   Boxes,
-  Hexagon,
   Plug,
   FolderKanban,
   Settings2,
@@ -15,6 +14,7 @@ import {
   PanelLeftOpen,
 } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { AppLogo } from '@/components/shared/AppLogo';
 import { AGENTS } from '@/config/agents';
 import { useAppUpdateAvailable } from '@/app/runtime';
 import { listAgents } from '@/lib/api/agent';
@@ -199,8 +199,8 @@ export function Sidebar() {
               className="group relative flex h-7 w-7 shrink-0 items-center justify-center rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
               aria-label="展开侧栏"
             >
-              <span className="flex h-7 w-7 items-center justify-center rounded-btn bg-subtle text-secondary transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
-                <Hexagon className="h-4 w-4" strokeWidth={1.8} />
+              <span className="flex h-7 w-7 items-center justify-center rounded-btn transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
+                <AppLogo size={20} className="h-5 w-5 rounded-[22%]" />
               </span>
               <span className="absolute inset-0 flex items-center justify-center rounded-btn text-muted opacity-0 transition-opacity group-hover:bg-hover group-hover:text-primary group-hover:opacity-100 group-focus-visible:bg-hover group-focus-visible:text-primary group-focus-visible:opacity-100">
                 <PanelLeftOpen className="h-4 w-4" strokeWidth={1.8} />
@@ -210,8 +210,8 @@ export function Sidebar() {
         ) : (
           <>
             <div className="flex min-w-0 items-center gap-2">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-btn bg-subtle text-secondary">
-                <Hexagon className="h-3.5 w-3.5" strokeWidth={1.8} />
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-btn">
+                <AppLogo size={20} className="h-5 w-5 rounded-[22%]" />
               </span>
               <span className="truncate text-sm font-semibold tracking-tight">AgentHub</span>
             </div>

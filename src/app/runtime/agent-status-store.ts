@@ -210,6 +210,17 @@ export async function loadAgentStatuses(
   inflight = backend.agent
     .listAgents()
     .then(async (statuses) => {
+      // 两阶段：先放出 detect/连接池结果，主界面可立刻渲染；
+      // live-auth 随后补齐，避免启动被每个已装 agent 的凭据探测拖住。
+      setSnapshot({
+        state: 'ready',
+        statuses,
+        liveAuthProbes: {},
+        // 仍有 live-auth 在飞时保持 refreshing，消费者不必当整页重载。
+        refreshing: true,
+        error: null,
+      });
+
       const enriched = await enrichWithLiveAuth(backend, statuses, opts.force === true);
       const next = {
         state: 'ready' as const,
