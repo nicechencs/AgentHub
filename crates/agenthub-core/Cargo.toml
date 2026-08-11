@@ -25,6 +25,7 @@ base64 = { workspace = true }
 urlencoding = { workspace = true }
 ureq = { workspace = true }
 getrandom = { workspace = true }
+trash = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

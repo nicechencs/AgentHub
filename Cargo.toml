@@ -34,3 +34,4 @@ base64 = "0.22"
 urlencoding = "2"
 ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 getrandom = "0.2"
+trash = "5.2.6"

@@ -2,7 +2,7 @@
 //!
 //! Platform may only delete projections it can prove it created and that have
 //! not been tampered with. Byte-identical copies without a valid marker are
-//! **not** managed.
+//! **not** managed (but may be removed as a legacy copy during disable).
 //!
 //! Marker path (per agent skills root):
 //!   `<skills_root>/.agenthub/skill-ownership/<skill_id>.json`
@@ -555,15 +555,37 @@ pub(crate) fn finalize_link_projection_ownership(
     }
 }
 
+/// Move a verified directory projection to the operating system recycle bin.
+#[cfg(not(test))]
+fn recycle_projection_dir(target_dir: &Path) -> Result<()> {
+    trash::delete(target_dir).map_err(|e| {
+        AppError::message(
+            "skill.recycle",
+            format!(
+                "failed to move verified skill projection to the recycle bin at {}: {e}",
+                target_dir.display()
+            ),
+        )
+    })
+}
+
+/// Unit tests must not add temporary fixtures to the user's real recycle bin.
+#[cfg(test)]
+fn recycle_projection_dir(target_dir: &Path) -> Result<()> {
+    fs::remove_dir_all(target_dir).map_err(AppError::from)
+}
+
 /// Remove a projection only when ownership can be proven.
 ///
-/// Fail-closed order for managed targets: clear ownership marker first (errors
-/// propagate), then remove the link/directory. If target removal then fails,
-/// the remaining target is left without a marker (acceptable safety failure —
-/// no stale ownership claim).
+/// Directory copies are moved to the operating system recycle bin. A verified
+/// marker is cleared before recycling so a successful recycle can never leave
+/// stale ownership evidence; if recycling fails, the verified marker is
+/// restored.
 ///
 /// - Link → only if resolves to source; never follow.
-/// - Directory → marker + fingerprint must match; then clear marker, then delete.
+/// - Directory with marker → marker + fingerprint must match, then recycle.
+/// - Directory without marker → only a safe, byte-identical source copy is
+///   accepted as a legacy AgentHub projection, then recycled.
 /// - Missing → idempotent success; clear stale marker.
 /// - force is not a parameter: ownership cannot be bypassed for delete.
 /// - `clear_ownership_marker` errors are never swallowed.
@@ -574,6 +596,30 @@ pub(crate) fn unproject_with_ownership(
     target_dir: &Path,
     agent: &AgentKey,
 ) -> Result<()> {
+    unproject_with_recycler(
+        skills_root,
+        skill_id,
+        source_dir,
+        target_dir,
+        agent,
+        recycle_projection_dir,
+    )
+}
+
+/// Internal unproject implementation with an injected directory recycler.
+/// Tests pass a temporary-directory cleanup closure so they never touch the
+/// user's real operating system recycle bin.
+pub(crate) fn unproject_with_recycler<F>(
+    skills_root: &Path,
+    skill_id: &str,
+    source_dir: &Path,
+    target_dir: &Path,
+    agent: &AgentKey,
+    recycler: F,
+) -> Result<()>
+where
+    F: FnOnce(&Path) -> Result<()>,
+{
     let skill_id = validate_skill_id(skill_id)?;
     if !is_exact_child(target_dir, skills_root, skill_id) {
         return Err(AppError::InvalidArg(format!(
@@ -607,12 +653,55 @@ pub(crate) fn unproject_with_ownership(
         }
         TargetPresence::Directory => {
             validate_tree_entries_safe(target_dir, "skill target")?;
-            // Ownership proof required before any delete.
-            verify_copy_ownership(skills_root, skill_id, target_dir, None)?;
-            // Clear marker first; if remove_dir_all then fails, target remains
-            // unmarked (no stale ownership claim).
-            clear_ownership_marker(skills_root, skill_id)?;
-            fs::remove_dir_all(target_dir)?;
+            let verified_marker = match read_ownership_marker_raw(skills_root, skill_id)? {
+                Some(_) => {
+                    // A present marker must pass every normal ownership check;
+                    // malformed or mismatched markers never fall back to legacy.
+                    Some(verify_copy_ownership(
+                        skills_root,
+                        skill_id,
+                        target_dir,
+                        None,
+                    )?)
+                }
+                None => {
+                    // Pre-marker AgentHub copies can be disabled only when both
+                    // trees pass validation and are exactly content-identical.
+                    let source_fp = fingerprint_tree_at(source_dir)?;
+                    let target_fp = fingerprint_tree_at(target_dir)?;
+                    if source_fp != target_fp {
+                        return Err(ownership_conflict(
+                            skill_id,
+                            target_dir,
+                            "missing ownership marker and content differs from source",
+                        ));
+                    }
+                    None
+                }
+            };
+
+            if let Some(marker) = verified_marker.as_ref() {
+                clear_ownership_marker(skills_root, skill_id)?;
+                if let Err(recycle_err) = recycler(target_dir) {
+                    if let Err(restore_err) = write_copy_ownership_marker(
+                        skills_root,
+                        skill_id,
+                        &marker.applied_revision,
+                        &marker.content_fingerprint,
+                    ) {
+                        return Err(AppError::message(
+                            "skill.recycle_rollback",
+                            format!(
+                                "failed to recycle verified skill projection ({recycle_err}); \
+                                 restoring its ownership marker also failed ({restore_err})"
+                            ),
+                        ));
+                    }
+                    return Err(recycle_err);
+                }
+            } else {
+                recycler(target_dir)?;
+            }
             Ok(())
         }
         TargetPresence::Dangerous { kind } => Err(AppError::InvalidArg(format!(
