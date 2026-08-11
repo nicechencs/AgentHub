@@ -1,8 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- Solid brand fill (matches THEME.light.accent in tokens.ts); no gradient -->
-  <rect width="1024" height="1024" rx="224" fill="#4f46e5"/>
-  <path d="M300 682 430 342h164l130 340M354 548h316" fill="none" stroke="#fff" stroke-width="78" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="300" cy="682" r="52" fill="#fff"/>
-  <circle cx="512" cy="548" r="52" fill="#fff"/>
-  <circle cx="724" cy="682" r="52" fill="#fff"/>
+  <!--
+    macOS Dock icons need transparent margin so the glyph does not look larger
+    than neighboring apps. Apple HIG roughly targets ~80–82% fill of the canvas.
+    Keep the brand tile + mark centered with ~10% inset on each side.
+  -->
+  <g transform="translate(102.4 102.4) scale(0.8)">
+    <!-- Solid brand fill (matches THEME.light.accent in tokens.ts); no gradient -->
+    <rect width="1024" height="1024" rx="224" fill="#4f46e5"/>
+    <path d="M300 682 430 342h164l130 340M354 548h316" fill="none" stroke="#fff" stroke-width="78" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="300" cy="682" r="52" fill="#fff"/>
+    <circle cx="512" cy="548" r="52" fill="#fff"/>
+    <circle cx="724" cy="682" r="52" fill="#fff"/>
+  </g>
 </svg>

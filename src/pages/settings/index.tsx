@@ -338,7 +338,7 @@ export default function SettingsPage({
               <Row
                 label="关闭到托盘"
                 description="关窗不退出"
-                descriptionTip="点击关闭按钮后最小化到系统托盘，进程保持运行。"
+                descriptionTip="点击关闭按钮后隐藏到系统托盘，进程保持运行。Windows 可从托盘图标恢复；macOS 可从菜单栏托盘或 Dock 图标恢复。"
               >
                 <Switch
                   checked={settings.closeToTray}

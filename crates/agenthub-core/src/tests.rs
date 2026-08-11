@@ -7,7 +7,18 @@ fn agent_hub_open_doctor_has_all_runtimes_and_agents() {
     assert_eq!(hub.data_dir, dir.path());
 
     let report = hub.doctor();
-    assert_eq!(report.runtimes.len(), crate::models::RuntimeId::ALL.len());
+    assert_eq!(
+        report.runtimes.len(),
+        crate::runtime::host_runtimes().len(),
+        "doctor runtimes must match host-relevant set (no PowerShell on macOS/Linux)"
+    );
+    assert!(
+        report
+            .runtimes
+            .iter()
+            .all(|r| r.id != crate::models::RuntimeId::PowerShell || cfg!(windows)),
+        "PowerShell must not appear in doctor runtimes on non-Windows hosts"
+    );
     assert_eq!(report.agents.len(), crate::models::AgentId::ALL.len());
     // Usage health covers every agent id (supported or not)
     assert_eq!(report.usage_health.len(), crate::models::AgentId::ALL.len());

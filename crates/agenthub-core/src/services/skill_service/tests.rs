@@ -7,7 +7,7 @@ use crate::models::{
 };
 use crate::platform::skills::replace_target_with_staging;
 use std::sync::Arc;
-use tempfile::tempdir;
+use crate::utils::test_temp::real_tempdir;
 
 struct FakeAdapter {
     id: AgentId,
@@ -156,7 +156,7 @@ fn construction_does_not_scan() {
 
 #[test]
 fn missing_source_root_returns_empty() {
-    let root = tempdir().unwrap();
+    let root = real_tempdir();
     let missing = root.path().join("nope");
     let reg = make_registry(
         root.path().join("c"),
@@ -170,7 +170,7 @@ fn missing_source_root_returns_empty() {
 
 #[test]
 fn source_root_file_is_invalid_arg() {
-    let root = tempdir().unwrap();
+    let root = real_tempdir();
     let file = root.path().join("not-a-dir");
     fs::write(&file, b"x").unwrap();
     let reg = AdapterRegistry::new();
@@ -181,7 +181,7 @@ fn source_root_file_is_invalid_arg() {
 
 #[test]
 fn list_deterministic_order_and_ignores_noise() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     fs::create_dir_all(&source).unwrap();
 
@@ -217,7 +217,7 @@ fn list_deterministic_order_and_ignores_noise() {
 
 #[test]
 fn list_cache_hits_until_invalidate_or_fingerprint_change() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     fs::create_dir_all(&source).unwrap();
     write_file(
@@ -259,7 +259,7 @@ fn list_cache_hits_until_invalidate_or_fingerprint_change() {
 
 #[test]
 fn metadata_from_frontmatter_and_fallback() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
 
     write_file(
@@ -347,7 +347,7 @@ fn parse_frontmatter_unit_cases() {
 
 #[test]
 fn projection_states_unsupported_absent_copied_foreign() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -398,7 +398,7 @@ fn projection_states_unsupported_absent_copied_foreign() {
 
 #[test]
 fn nested_identical_trees_are_copied() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -431,7 +431,7 @@ fn nested_identical_trees_are_copied() {
 
 #[test]
 fn extra_target_file_is_foreign() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -456,7 +456,7 @@ fn extra_target_file_is_foreign() {
 
 #[test]
 fn supports_true_but_no_skills_dir_is_unsupported() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     fs::create_dir_all(source.join("x")).unwrap();
 
@@ -484,7 +484,7 @@ fn supports_true_but_no_skills_dir_is_unsupported() {
 
 #[test]
 fn target_path_is_file_is_conflict() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     fs::create_dir_all(source.join("s")).unwrap();
@@ -510,7 +510,7 @@ fn target_path_is_file_is_conflict() {
 fn symlink_inside_tree_is_conflict() {
     use std::os::unix::fs::symlink;
 
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -535,7 +535,7 @@ fn symlink_inside_tree_is_conflict() {
 fn symlink_inside_tree_is_conflict_when_creatable() {
     use std::os::windows::fs::symlink_file;
 
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -570,7 +570,7 @@ fn setup_write_fixture() -> (
     PathBuf,
     SkillService,
 ) {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -1097,7 +1097,7 @@ fn validate_skill_id_unit() {
 
 #[test]
 fn read_skill_markdown_shared_and_private() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -1138,7 +1138,7 @@ fn read_skill_markdown_shared_and_private() {
 
 #[test]
 fn read_skill_markdown_rejects_unsafe_id() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -1157,7 +1157,7 @@ fn read_skill_markdown_rejects_unsafe_id() {
 
 #[test]
 fn read_skill_markdown_accepts_lowercase_skill_md() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -1190,7 +1190,7 @@ fn read_skill_markdown_accepts_lowercase_skill_md() {
 
 #[test]
 fn read_skill_markdown_missing_md_is_not_found() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -1209,7 +1209,7 @@ fn read_skill_markdown_missing_md_is_not_found() {
 fn read_skill_markdown_truncates_large_body() {
     use crate::catalog::limits::SKILL_MARKDOWN_PREVIEW_CHARS;
 
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -1262,7 +1262,7 @@ fn skill_markdown_preview_serde_camel_case() {
 
 #[test]
 fn replace_rolls_back_when_staging_missing() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let skills_root = tmp.path().join("skills-root");
     fs::create_dir_all(&skills_root).unwrap();
     let target = skills_root.join("demo");
@@ -1299,7 +1299,7 @@ fn replace_rolls_back_when_staging_missing() {
 
 #[test]
 fn materialize_cleans_staging_on_invalid_relative_map() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let skills_root = tmp.path().join("skills-root");
     fs::create_dir_all(&skills_root).unwrap();
     write_file(&skills_root.join("sibling").join("ok.txt"), "sib");
@@ -1338,7 +1338,7 @@ fn portable_relative_path_validation_rejects_aliases() {
 
 #[test]
 fn materialize_missing_branch_preserves_late_conflict() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let skills_root = tmp.path().join("skills-root");
     fs::create_dir_all(&skills_root).unwrap();
     let target = skills_root.join("demo");
@@ -1372,24 +1372,45 @@ fn sync_rejects_nonportable_and_case_alias_source_names_unix() {
     assert!(!claude.join("demo").exists());
 
     fs::remove_file(source_skill.join("bad:name")).unwrap();
-    write_file(&source_skill.join("Name.txt"), "one");
-    write_file(&source_skill.join("name.txt"), "two");
-    let err = svc.sync("demo", AgentId::Claude, false).unwrap_err();
-    assert_eq!(err.code(), "invalid_arg");
-    assert!(!claude.join("demo").exists());
 
-    fs::remove_file(source_skill.join("Name.txt")).unwrap();
-    fs::remove_file(source_skill.join("name.txt")).unwrap();
+    // Case-alias rejection needs two distinct directory entries. On
+    // case-insensitive volumes (default macOS APFS) `Name.txt` and `name.txt`
+    // collapse to one file, so only run this branch when both can coexist.
+    write_file(&source_skill.join("Name.txt"), "one");
+    let case_sensitive = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(source_skill.join("name.txt"))
+        .map(|mut f| {
+            use std::io::Write;
+            f.write_all(b"two").is_ok()
+        })
+        .unwrap_or(false);
+    if case_sensitive {
+        let err = svc.sync("demo", AgentId::Claude, false).unwrap_err();
+        assert_eq!(err.code(), "invalid_arg");
+        assert!(!claude.join("demo").exists());
+        let _ = fs::remove_file(source_skill.join("Name.txt"));
+        let _ = fs::remove_file(source_skill.join("name.txt"));
+    } else {
+        let _ = fs::remove_file(source_skill.join("Name.txt"));
+        let _ = fs::remove_file(source_skill.join("name.txt"));
+    }
+
+    // Non-UTF8 path components are rejected when the host FS can store them.
+    // Default macOS APFS rejects illegal byte sequences, so skip that branch.
     let invalid_utf8 = OsString::from_vec(vec![b'n', b'o', b'n', 0xff]);
-    fs::write(source_skill.join(invalid_utf8), b"unsafe").unwrap();
-    let err = svc.sync("demo", AgentId::Claude, false).unwrap_err();
-    assert_eq!(err.code(), "invalid_arg");
-    assert!(!claude.join("demo").exists());
+    if fs::write(source_skill.join(&invalid_utf8), b"unsafe").is_ok() {
+        let err = svc.sync("demo", AgentId::Claude, false).unwrap_err();
+        assert_eq!(err.code(), "invalid_arg");
+        assert!(!claude.join("demo").exists());
+        let _ = fs::remove_file(source_skill.join(invalid_utf8));
+    }
 }
 
 #[test]
 fn same_source_and_skills_root_rejected_preserves_source() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let shared = tmp.path().join("shared-skills");
     write_file(
         &shared.join("demo").join("SKILL.md"),
@@ -1548,7 +1569,7 @@ fn disable_rejects_nested_target_symlink_when_creatable() {
 
 #[test]
 fn skills_root_as_file_is_rejected() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     write_file(&source.join("demo").join("SKILL.md"), &skill_md("D", "d"));
     let skills_file = tmp.path().join("not-a-dir");
@@ -1571,7 +1592,7 @@ fn skills_root_as_file_is_rejected() {
 
 #[test]
 fn shared_skill_is_projectable_with_available_map_status() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -1607,7 +1628,7 @@ fn shared_skill_is_projectable_with_available_map_status() {
 
 #[test]
 fn private_skill_is_not_projectable_with_private_source() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     fs::create_dir_all(&source).unwrap();
     let claude = tmp.path().join("claude-skills");
@@ -1631,7 +1652,7 @@ fn private_skill_is_not_projectable_with_private_source() {
 
 #[test]
 fn import_private_to_shared_copies_without_deleting_private() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     fs::create_dir_all(&source).unwrap();
     let claude = tmp.path().join("claude-skills");
@@ -1678,7 +1699,7 @@ fn import_private_to_shared_copies_without_deleting_private() {
 
 #[test]
 fn agent_skill_same_id_as_shared_is_available_not_private_source() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -1710,7 +1731,7 @@ fn agent_skill_same_id_as_shared_is_available_not_private_source() {
 
 #[test]
 fn agent_skill_same_id_content_differs_is_conflict() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -1739,7 +1760,7 @@ fn agent_skill_same_id_content_differs_is_conflict() {
 
 #[test]
 fn import_private_same_name_without_overwrite_is_conflict() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");
@@ -1780,7 +1801,7 @@ fn import_private_same_name_without_overwrite_is_conflict() {
 
 #[test]
 fn foreign_projection_map_status_is_conflict_not_blocked() {
-    let tmp = tempdir().unwrap();
+    let tmp = real_tempdir();
     let source = tmp.path().join("skills");
     let claude = tmp.path().join("claude-skills");
     let codex = tmp.path().join("codex-skills");

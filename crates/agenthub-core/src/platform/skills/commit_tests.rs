@@ -64,7 +64,7 @@ fn assert_no_helper_dirs(skills_root: &Path) {
 }
 
 fn tmp_db() -> (tempfile::TempDir, Database) {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = crate::utils::test_temp::real_tempdir();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     (dir, db)
 }
@@ -86,7 +86,7 @@ fn record(
 
 #[test]
 fn skill_lock_load_surfaces_corrupt_json() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let root = tmp.path().join("skills");
     fs::create_dir_all(&root).unwrap();
     fs::write(skill_lock_file(&root), "{not-json").unwrap();
@@ -97,7 +97,7 @@ fn skill_lock_load_surfaces_corrupt_json() {
 
 #[test]
 fn overwrite_commit_keeps_live_lock_package_revision_aligned() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills");
     fs::create_dir_all(&skills_root).unwrap();
     let (_db_dir, db) = tmp_db();
@@ -159,7 +159,7 @@ fn overwrite_commit_keeps_live_lock_package_revision_aligned() {
 
 #[test]
 fn lock_write_failure_restores_old_live_and_lock() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills");
     fs::create_dir_all(&skills_root).unwrap();
     let (_db_dir, db) = tmp_db();
@@ -213,7 +213,7 @@ fn lock_write_failure_restores_old_live_and_lock() {
 
 #[test]
 fn package_db_write_failure_restores_old_live_lock_package() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills");
     fs::create_dir_all(&skills_root).unwrap();
     let (_db_dir, db) = tmp_db();
@@ -287,7 +287,7 @@ fn package_db_write_failure_restores_old_live_lock_package() {
 
 #[test]
 fn first_install_metadata_failure_leaves_no_live_or_lock_or_package() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills");
     fs::create_dir_all(&skills_root).unwrap();
     let (_db_dir, db) = tmp_db();
@@ -327,7 +327,7 @@ fn first_install_metadata_failure_leaves_no_live_or_lock_or_package() {
 
 #[test]
 fn first_install_lock_failure_leaves_no_live() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills");
     fs::create_dir_all(&skills_root).unwrap();
     let (_db_dir, db) = tmp_db();
@@ -365,7 +365,7 @@ fn first_install_lock_failure_leaves_no_live() {
 
 #[test]
 fn materialize_validate_failure_leaves_old_content_unchanged() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills");
     fs::create_dir_all(&skills_root).unwrap();
     let (_db_dir, db) = tmp_db();
@@ -432,7 +432,7 @@ fn materialize_validate_failure_leaves_old_content_unchanged() {
 
 #[test]
 fn install_skill_service_success_and_validate_failure() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills");
     let source = tmp.path().join("pkg");
     write_skill_tree_dir(&source, "---\nname: Demo\n---\n# body\n", None);
@@ -468,7 +468,7 @@ fn install_skill_service_success_and_validate_failure() {
 fn reconcile_single_target_failure_keeps_shared_package_and_observed_error() {
     use crate::platform::skills::reconcile::observed;
 
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -525,7 +525,7 @@ fn reconcile_single_target_failure_keeps_shared_package_and_observed_error() {
 
 #[test]
 fn staging_with_symlink_rejected_and_old_live_unchanged() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills");
     fs::create_dir_all(&skills_root).unwrap();
     let (_db_dir, db) = tmp_db();
@@ -596,7 +596,7 @@ fn staging_with_symlink_rejected_and_old_live_unchanged() {
 
 #[test]
 fn linked_shared_source_update_rejected_and_link_unchanged() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills");
     let real = tmp.path().join("real-skill");
     write_skill_tree_dir(&real, "# real\n", None);
@@ -651,7 +651,7 @@ fn linked_shared_source_update_rejected_and_link_unchanged() {
 fn observed_db_write_failure_makes_reconcile_skill_infra_err() {
     use crate::platform::skills::reconcile::observed;
 
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -706,7 +706,7 @@ fn observed_db_write_failure_makes_reconcile_skill_infra_err() {
 
 #[test]
 fn same_second_install_then_update_bumps_content_and_package_revision() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills");
     let source = tmp.path().join("pkg");
     write_skill_tree_dir(&source, "---\nname: Demo\n---\n# v1\n", None);
@@ -745,7 +745,7 @@ fn same_second_install_then_update_bumps_content_and_package_revision() {
 
 #[test]
 fn swap_rejects_existing_link_without_deleting_it() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills");
     let real = tmp.path().join("real");
     write_skill_tree_dir(&real, "# real\n", None);
@@ -784,7 +784,7 @@ fn swap_rejects_existing_link_without_deleting_it() {
 
 #[test]
 fn uninstall_corrupt_lock_has_no_delete_side_effects() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills");
     let live = skills_root.join("demo");
     write_skill_tree_dir(&live, "# keep\n", None);
@@ -810,7 +810,7 @@ fn uninstall_corrupt_lock_has_no_delete_side_effects() {
 
 #[test]
 fn uninstall_shared_skill_removes_registered_custom_key_projection() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let shared_root = tmp.path().join("shared");
     let install_source = tmp.path().join("pkg");
     let target_root = tmp.path().join("future-agent");
@@ -856,7 +856,7 @@ fn uninstall_shared_skill_removes_registered_custom_key_projection() {
 
 #[test]
 fn uninstall_foreign_custom_projection_keeps_source_and_retry_converges() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let shared_root = tmp.path().join("shared");
     let install_source = tmp.path().join("pkg");
     let managed_root = tmp.path().join("custom-a");
@@ -924,7 +924,7 @@ fn uninstall_foreign_custom_projection_keeps_source_and_retry_converges() {
 
 #[test]
 fn uninstall_custom_target_lock_failure_keeps_source_and_lock_record() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let shared_root = tmp.path().join("shared");
     let install_source = tmp.path().join("pkg");
     let target_root = tmp.path().join("future-agent");
