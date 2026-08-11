@@ -85,16 +85,36 @@ body {
   animation: boot-fade-up 480ms cubic-bezier(0.22, 1, 0.36, 1) 260ms both;
 }
 
-.boot-splash__bar-fill {
-  width: 32%;
-  animation: boot-bar-slide 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+/* 确定进度：width 由 inline style 驱动，transition 保证连续滑动 */
+.boot-splash__bar-fill--determinate {
+  width: 6%;
+  left: 0;
+  transition: width 120ms linear;
+  will-change: width;
+}
+
+/* 不确定进度：用 transform 滑动，避免与 Tailwind left-0 冲突、也不依赖 left 合成 */
+.boot-splash__bar-fill--indeterminate {
+  left: 0;
+  width: 40%;
+  animation: boot-bar-slide 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: transform;
 }
 
 .boot-splash__bar-fill--done {
-  animation: boot-bar-finish 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: none !important;
+  animation: boot-bar-finish 360ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+  width: 100% !important;
+  transform: none !important;
+  left: 0 !important;
 }
 
-/* HTML 兜底已播完入场；React 遮罩保持终态，仅保留光晕/进度/退场 */
+/* handoff 轻呼吸：进主界面前至少有一点持续动效 */
+.boot-splash__dot--pulse {
+  animation: boot-dot-breathe 1.4s ease-in-out infinite;
+}
+
+/* HTML 兜底已播完入场；React 遮罩保持终态，但保留光晕/进度/点呼吸/退场 */
 .boot-splash--handoff .boot-splash__mark,
 .boot-splash--handoff .boot-splash__title,
 .boot-splash--handoff .boot-splash__subtitle,
@@ -105,10 +125,14 @@ body {
   transform: none;
 }
 
-.boot-splash--handoff .boot-splash__dot {
+.boot-splash--handoff .boot-splash__dot:not(.boot-splash__dot--pulse) {
   animation: none;
   opacity: 0.85;
   transform: scale(1);
+}
+
+.boot-splash--handoff .boot-splash__dot--pulse {
+  opacity: 0.85;
 }
 
 @keyframes boot-splash-out {
@@ -159,28 +183,36 @@ body {
   }
 }
 
+/* transform 滑动：不碰 left，避免与 utility 冲突，合成更稳 */
 @keyframes boot-bar-slide {
   0% {
-    left: -36%;
-    width: 28%;
-  }
-  50% {
-    width: 42%;
+    transform: translateX(-120%);
   }
   100% {
-    left: 108%;
-    width: 28%;
+    transform: translateX(280%);
   }
 }
 
 @keyframes boot-bar-finish {
   from {
-    left: 0;
     width: 40%;
+    transform: none;
   }
   to {
-    left: 0;
     width: 100%;
+    transform: none;
+  }
+}
+
+@keyframes boot-dot-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
   }
 }
 
@@ -222,11 +254,17 @@ body {
   .boot-splash__subtitle,
   .boot-splash__dots,
   .boot-splash__dot,
+  .boot-splash__dot--pulse,
   .boot-splash__bar,
   .boot-splash__bar-fill,
+  .boot-splash__bar-fill--indeterminate,
   .boot-splash__bar-fill--done {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
+  }
+
+  .boot-splash__bar-fill--determinate {
+    transition: none !important;
   }
 
   .motion-panel-width,
