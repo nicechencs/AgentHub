@@ -150,19 +150,8 @@ fn push_native(out: &mut Vec<InstallChannelPlan>, agent: AgentId) {
 /// never advertise PowerShell as a prerequisite.  Windows keeps the historical
 /// PowerShell requirement for the allowlisted `.ps1` installers.
 fn native_runtime_requirements(agent: AgentId) -> Vec<RuntimeId> {
-    #[cfg(windows)]
-    {
-        let _ = agent;
-        vec![RuntimeId::PowerShell]
-    }
-    #[cfg(not(windows))]
-    {
-        // Setup pages and official sh installers are self-contained.  A
-        // Windows-only ps1 URL is intentionally not offered on Unix/macOS by
-        // `native_command_display`, so it cannot leak a PowerShell dependency.
-        let _ = agent;
-        vec![]
-    }
+    let _ = agent;
+    crate::runtime::native_install_requires()
 }
 
 fn native_command_display(agent: AgentId) -> (&'static str, Option<String>) {
