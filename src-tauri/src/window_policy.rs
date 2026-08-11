@@ -40,6 +40,15 @@ pub fn is_close_to_tray_enabled(value: &str) -> bool {
     )
 }
 
+/// macOS Dock / app-icon reopen should always surface the main window.
+///
+/// After hide-to-tray the process is still running with a hidden window, so the
+/// system often reports `has_visible_windows = false`. Even when a window is
+/// already visible (minimized / behind others), focusing it is the expected UX.
+pub fn should_show_on_reopen(_has_visible_windows: bool) -> bool {
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -62,6 +71,12 @@ mod tests {
             decide_close_action(true, false),
             CloseAction::AllowExit
         );
+    }
+
+    #[test]
+    fn dock_reopen_always_surfaces_main_window() {
+        assert!(should_show_on_reopen(false));
+        assert!(should_show_on_reopen(true));
     }
 
     #[test]

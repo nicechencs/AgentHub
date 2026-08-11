@@ -50,7 +50,8 @@ impl AgentAdapter for CodexAdapter {
             InstallChannel {
                 id: "native".into(),
                 label: "Official install script".into(),
-                requires: vec![RuntimeId::PowerShell],
+                // Windows-only native .ps1; catalog hides this channel on Unix.
+                requires: runtime::native_install_requires(),
                 min_runtime_notes: None,
             },
         ]

@@ -42,11 +42,12 @@ impl AgentAdapter for ClaudeAdapter {
     fn install_channels(&self) -> Vec<InstallChannel> {
         // native first — aligns with frontend `src/config/agents.ts` and common
         // Windows install path; `env_ready` is computed from channels[0].
+        // macOS/Linux native uses bash/sh and must not require PowerShell.
         vec![
             InstallChannel {
                 id: "native".into(),
                 label: "Official native installer".into(),
-                requires: vec![RuntimeId::PowerShell],
+                requires: runtime::native_install_requires(),
                 min_runtime_notes: None,
             },
             InstallChannel {
