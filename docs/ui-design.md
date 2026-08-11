@@ -4,7 +4,8 @@
 > **实际依赖**以根目录 `package.json` 为准：**未**引入 TanStack Query / i18next / react-hook-form / zod；页面用本地 state + `lib/api`。  
 > 范围：**七家** Agent（Claude / Codex / Kimi / Grok / Pi / WorkBuddy / **Cursor Agent** 半套 CLI）；**不支持基于 Cursor IDE 私有库的账号池**。Dashboard 与侧栏按 `AGENTS` 自适应，不写死数量。  
 > v1.1：Usage 模型筛选语义、Backups 流程、Dashboard/侧栏与当前 agent 集合对齐。  
-> v1.3：Agents / 首次引导增加 **「环境未就绪」** 态；安装链路先 Runtime 再 Agent。
+> v1.3：Agents / 首次引导增加 **「环境未就绪」** 态；安装链路先 Runtime 再 Agent。  
+> v1.4：环境条/安装预览按宿主平台分流——macOS 不展示 PowerShell；native 命令预览 Windows=`irm|iex`、macOS=`curl|bash`；Runtime 修复默认 winget/brew。
 
 ## 1. 设计原则
 
@@ -136,7 +137,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 ```
 ┌─ Agents ───────────────────────────────────────────────────┐
-│ 环境条(可折叠): Node v20.11 ✓  npm ✓  PowerShell ✓   [重新检测] │
+│ 环境条(可折叠): Node v20.11 ✓  npm ✓  [Windows: PS ✓] Git ✓  [重新检测] │
 │ ┌────────────────────────────────────────────────────────┐ │
 │ │ [logo] Claude Code      v2.1.218  最新 v2.2.0 ↗        │ │
 │ │ 路径:（detect 结果）   渠道:native                     │ │
@@ -163,10 +164,10 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 | `agent_installing` | 安装 Agent 中… | 同流式面板 |
 | `env_outdated` / `broken_path` | 警告条 | 升级 Node / 修复 PATH / 重启 AgentHub 提示 |
 
-- 页顶 **环境条**：共享 Runtime 总览（与 doctor 同源）；任一 Agent 的 npm 渠道依赖 Node，装一次全局受益。
-- 每 agent 一张宽卡片：版本、渠道（npm/native）、二进制路径、可升级标记、**渠道前置状态**。
-- **安装 Agent**：仅 `ready_to_install` 可点；core 仍会二次 `ensure_env`，防止 UI 竞态。
-- **安装环境**：展开 InlineTerminal；优先 winget 等可自动渠道，失败则展示官方下载链接 + 可复制命令 +「我已装好，重新检测」。
+- 页顶 **环境条**：共享 Runtime 总览（与 doctor 同源，**仅宿主相关**）；Windows 可显示 PowerShell 5.1/7 芯片，**macOS/Linux 不展示 PowerShell**。任一 Agent 的 npm 渠道依赖 Node，装一次全局受益。
+- 每 agent 一张宽卡片：版本、渠道（npm/native）、二进制路径、可升级标记、**渠道前置状态**（native 在 Unix 上不得要求 PowerShell）。
+- **安装 Agent**：仅 `ready_to_install` 可点；core 仍会二次 `ensure_env`，防止 UI 竞态。安装/升级预览可附带平台底层命令（Windows `irm…|iex` / macOS `curl…|bash`）。
+- **安装环境**：展开 InlineTerminal；默认包管理器 **Windows=`winget`、macOS=`brew`**，失败则展示官方下载链接 + 可复制命令 +「我已装好，重新检测」。禁止跨平台展示错误的包管理器命令。
 - PATH 刚刷新场景：检测仍失败时 toast/横幅提示「请完全退出并重启 AgentHub 后再检测」（GUI 进程继承旧 PATH）。
 - 卸载：DropdownMenu 二级——「仅卸载程序」/「卸载并删除配置」（后者红字 + 输入 agent 名确认 + **自动 pre-uninstall 备份**）。**不提供「卸载 Node」**（共享运行时）。
 
