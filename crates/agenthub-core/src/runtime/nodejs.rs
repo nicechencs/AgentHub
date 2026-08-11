@@ -238,6 +238,9 @@ pub fn detect_powershell() -> EnvStatus {
     } // #[cfg(windows)]
 }
 
+/// Windows-only dual-version probe helpers.  On macOS/Linux `detect_powershell`
+/// short-circuits without spawning interpreters.
+#[cfg(windows)]
 #[derive(Clone)]
 enum PsProbe {
     Ok {
@@ -248,11 +251,10 @@ enum PsProbe {
         path: PathBuf,
     },
     Missing,
-    /// Constructed only on non-Windows targets.
-    #[cfg_attr(windows, allow(dead_code))]
     NotApplicable,
 }
 
+#[cfg(windows)]
 fn probe_powershell_candidate(names: &[&str], fallback: Option<PathBuf>) -> PsProbe {
     if let Some(path) = resolve_which(names) {
         return probe_ps_path(&path);
@@ -265,6 +267,7 @@ fn probe_powershell_candidate(names: &[&str], fallback: Option<PathBuf>) -> PsPr
     PsProbe::Missing
 }
 
+#[cfg(windows)]
 fn probe_ps_path(path: &Path) -> PsProbe {
     match run_capture(
         path,
