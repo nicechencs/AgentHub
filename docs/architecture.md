@@ -166,12 +166,14 @@ struct InstallChannel {
     label: &'static str,
     requires: &'static [RuntimeId],
 }
+// host_runtimes(): Windows → ALL；macOS/Linux → NodeJs/Npm/Git（不含 PowerShell）
+// native_install_requires(): Windows → [PowerShell]；其它 → []
 ```
 
 | 方法 | 含义 |
 |---|---|
 | `detect` / `read_*` / `apply_*` | 该 Agent 安装态与 live 配置/凭据的读写真相 |
-| `install_channels` | 可选安装渠道及**前置 Runtime**；service 据此跑 ensure_env |
+| `install_channels` | 可选安装渠道及**平台相关前置 Runtime**；native 在 Unix 上不得 require PowerShell；service 据此跑 ensure_env |
 | `supports_skills` / `skills_dir` | 技能投影目标；Kimi 等返回 false / None |
 | `live_backup_paths` | 写前快照文件清单，供 `backup_service` 统一拷贝 |
 | `usage_source` | 挂接该 Agent 的 UsageParser；无日志源则 None |
@@ -187,8 +189,8 @@ struct InstallChannel {
 | `skill_service` | 真源扫描、投影矩阵、sync/enable/disable、install/uninstall/update/project、import_private | 不扫描会话日志；远程市场由 `skill_market`/`skillssh_market` 提供；插件体系仅只读协作 |
 | `usage_service` | collect、入库、summary/trend、**list_models（用量去重）** | 不提供官方模型商店；不算 live 配置默认 model 源 |
 | `backup_service` | live/db 快照、恢复（恢复前再备）、索引 | 不解释 TOML/JSON 语义（只拷文件） |
-| `env_service` | Runtime detect/ensure/引导安装计划；doctor 的 runtimes 段 | 不装具体 Agent；不写 L2 live |
-| `agent_service` | detect；**install = ensure_env → 官方渠道**；upgrade/uninstall | 不直接改 providers 表；不在各 Adapter 内复制 `which node` |
+| `env_service` | Runtime detect/ensure/引导安装计划；doctor 的 runtimes 段（**仅 host_runtimes**） | 不装具体 Agent；不写 L2 live；非 Windows 不探测 PowerShell |
+| `agent_service` / install 管线 | detect；**install/upgrade = ensure_env → 平台渠道**（Windows ps1 / Unix sh / npm） | 不直接改 providers 表；不在各 Adapter 内复制 `which node` |
 | `run_service` | 多 Agent headless 执行（`run` / `run_each`）；流式 stdout 行推送 | 不维护多轮会话；不拼聊天上下文 |
 | `chat_service` | 会话 CRUD；按 Agent **隔离**拼接历史；调用 `run_each`；取消令牌 | 不使用各 CLI 原生 `--resume`；core 内无 Tauri 类型 |
 
@@ -467,6 +469,7 @@ CLI 与 GUI 共用数据目录与 per-agent 写锁（core 内文件锁，跨进�
 4. **backup 独立 service** —— 所有写 live 的路径（切换/卸载/恢复）共用快照与索引，避免 Adapter 漏备。
 5. **skills 真源在 service** —— 矩阵与 lock 是跨 Agent 视图；Adapter 只提供目标目录（及未来落盘策略）。
 6. **runtime 与 agent 解耦** —— Node/npm 等是共享前置环境，装一次多渠道受益；卸载 Agent **不**卸载 Runtime。禁止在 Adapter 内各自 `Command::new("node")` 散落检测。
+7. **平台分流** —— `runtime::host_runtimes()` 决定 doctor/环境条探测集（PowerShell **仅 Windows**）；`runtime::native_install_requires()` 与 install catalog 决定 native 前置与展示命令（Windows `irm|iex` / macOS·Linux `curl|bash`）；Runtime 一键修复默认渠道 Windows=`winget`、macOS=`brew`。细节真源：[agenthub-plan.md §5.7.5](agenthub-plan.md)。
 7. **commands 一文件一模块、薄到只做校验** —— 参考项目里 290 个 command 全塞 lib.rs 的教训。
 8. **models 纯数据、credentials 脱敏边界清晰** —— 当前版本沿用现有存储方案，DTO 出 core 前集中脱敏，避免 API、CLI、日志泄漏完整凭据。
 9. **前端 invoke 单点 + mock 外置** —— 仅 `lib/backend/tauri/` 可 `invoke`；mock 只在 `dev/mocks/` 且仅由 `dev:mock` 注入；`build` 强制 Tauri；非 Tauri 生产页明确报错/unavailable。
