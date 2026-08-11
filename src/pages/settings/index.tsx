@@ -347,7 +347,11 @@ export default function SettingsPage({
                   </SelectContent>
                 </Select>
               </Row>
-              <Row label="开机自启" description="登录后启动">
+              <Row
+                label="开机自启"
+                description="登录后启动"
+                descriptionTip="写入操作系统登录项（Windows 启动项 / macOS Login Item）。保存「外观与行为」后生效。"
+              >
                 <Switch
                   checked={settings.autoStart}
                   onCheckedChange={(v) => patch({ autoStart: v })}

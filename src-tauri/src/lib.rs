@@ -21,6 +21,11 @@ pub fn run() {
             tray::show_main_window(app);
         }))
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            // No extra args: start the normal GUI (tray/close-to-tray still apply).
+            None::<Vec<&'static str>>,
+        ))
         .manage(state)
         .setup(|app| {
             // Desktop-only auto-update (signed release artifacts + latest.json).

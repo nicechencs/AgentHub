@@ -1,13 +1,6 @@
-import { Route } from 'lucide-react';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { EmptyState } from '@/components/shared/EmptyState';
+import { Navigate } from 'react-router-dom';
 
-/** Router 路由管理（占位） */
-export default function RouterPage() {
-  return (
-    <div>
-      <PageHeader title="Router" description="请求路由与转发" />
-      <EmptyState icon={Route} title="规划中" description="该功能正在规划中，稍后开放。" />
-    </div>
-  );
+/** 兼容旧路径：Router 已更名为 Adapter */
+export default function RouterToAdapterRedirect() {
+  return <Navigate to="/adapter" replace />;
 }

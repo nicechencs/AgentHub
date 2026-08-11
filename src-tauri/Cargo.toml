@@ -23,6 +23,7 @@ notify = { version = "6", features = ["macos_fsevent"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
 tauri-plugin-process = "2.3.1"
 tauri-plugin-single-instance = "2"
 tracing = { workspace = true }
