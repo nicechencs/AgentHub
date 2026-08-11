@@ -22,6 +22,7 @@ describe('skillsCopy', () => {
     expect(skillsCopy.toast.installOk.title.length).toBeLessThanOrEqual(16);
     expect(skillsCopy.toast.marketInstallOk('pdf').title.length).toBeLessThanOrEqual(16);
     expect(skillsCopy.toast.enableFailed('x').title).toBe('无法启用');
+    expect(skillsCopy.toast.disableFailed('x').title).toBe('无法取消启用');
   });
 
   it('market meta is one short line', () => {

@@ -49,6 +49,7 @@ auth.json
 /.agents
 .codegraph/
 .grok/
+.pi-subagents/
 .tmp-usage-compare/
 temp/
 
