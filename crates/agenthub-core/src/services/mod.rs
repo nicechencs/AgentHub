@@ -8,6 +8,7 @@ pub mod connection_service;
 pub mod env_service;
 pub mod install_progress;
 pub mod install_service;
+pub mod mcp_inventory;
 pub mod project_service;
 pub mod provider_service;
 pub mod run_service;
@@ -29,11 +30,13 @@ pub use install_progress::{emit_install_log, with_install_log_hook, InstallLogHo
 pub use install_service::{
     install_agent_system, install_runtime_system, uninstall_agent_system, upgrade_agent_system,
 };
+pub use mcp_inventory::{list_mcp_inventory, McpInventory, McpServerEntry, McpSourceFile};
 pub use project_service::ProjectService;
 pub use provider_service::ProviderService;
 pub use run_service::RunService;
 pub use settings_service::SettingsService;
 pub use skill_market::{BuiltinSkillMarket, SkillMarket, SkillMarketRegistry};
+pub use skill_service::SkillService;
 pub use skillhub_market::{
     install_skillhub_listing, is_skillhub_listing_id, local_skill_id_from_skillhub_id,
     SkillhubMarket, SKILLHUB_ID_PREFIX,
@@ -41,8 +44,5 @@ pub use skillhub_market::{
 pub use skillssh_market::{
     install_skills_sh_listing, local_skill_id_from_market_id, SkillsShMarket,
 };
-pub use skill_service::SkillService;
-pub use update_check_service::{
-    check_agent_updates, invalidate_latest_cache, DEFAULT_LATEST_TTL,
-};
+pub use update_check_service::{check_agent_updates, invalidate_latest_cache, DEFAULT_LATEST_TTL};
 pub use usage_service::UsageService;

@@ -19,3 +19,4 @@ export * from './backup-map';
 export * from './chat-map';
 export * from './project-map';
 export * from './skill-map';
+export * from './mcp-types';
