@@ -2,6 +2,7 @@
 //! No Tauri dependency.
 
 pub mod adapters;
+pub mod bridge;
 pub mod catalog;
 pub mod error;
 pub mod logging;
@@ -24,8 +25,9 @@ use models::{AgentId, AgentUpdateInfo, InstallOutcome, MultiRunReport, RunOption
 use platform::{LifecycleCoordinator, LifecycleResult};
 use services::{
     check_agent_updates as probe_agent_updates, install_runtime_system, invalidate_latest_cache,
-    AccountService, AgentService, BackupService, ChatService, ConnectionService, EnvService,
-    ProjectService, ProviderService, RunService, SettingsService, SkillService, UsageService,
+    AccountService, AdapterApplyService, AdapterBridgeService, AdapterRouteService, AgentService,
+    BackupService, ChatService, ConnectionService, EnvService, ProjectService, ProviderService,
+    RunService, SettingsService, SkillService, UsageService,
 };
 use storage::Database;
 use utils::command_exec::SystemCommandExecutor;
@@ -55,6 +57,13 @@ pub struct AgentHub {
     pub agents: AgentService,
     pub providers: ProviderService,
     pub accounts: AccountService,
+    /// Read-only compatibility route analysis. Never applies configuration.
+    pub adapter_routes: AdapterRouteService,
+    /// Applies the one supported Kimi membership -> Claude adapter projection.
+    pub adapter_apply: AdapterApplyService,
+    /// Prepares/persists the Kimi membership -> Codex bridge saga. The desktop
+    /// host owns listener lifetime and live configuration switching.
+    pub adapter_bridge: AdapterBridgeService,
     pub backups: BackupService,
     pub skills: SkillService,
     pub settings: SettingsService,
@@ -76,7 +85,7 @@ impl AgentHub {
         let registry = register_all();
         let catalog = AgentCatalogService::from_registry(&registry)?;
         let lifecycle = LifecycleCoordinator::new(db.clone(), registry.clone());
-        let configuration = ConfigurationService::new();
+        let configuration = ConfigurationService::new(db.clone());
         let connections = ConnectionService::new(db.clone());
         // AgentService keeps a cheap Arc clone of the same adapters; do not call register_all twice.
         let agents = AgentService::new(registry.clone());
@@ -86,6 +95,10 @@ impl AgentHub {
             ProviderService::with_live(db.clone(), registry.clone(), backups_dir(&data_dir));
         let accounts =
             AccountService::with_live(db.clone(), registry.clone(), backups_dir(&data_dir));
+        let adapter_routes = AdapterRouteService::new(db.clone());
+        let adapter_apply =
+            AdapterApplyService::new(db.clone(), registry.clone(), backups_dir(&data_dir));
+        let adapter_bridge = AdapterBridgeService::new(db.clone());
         let backups = BackupService::new(db.clone(), registry.clone(), backups_dir(&data_dir));
         let skills = SkillService::with_db(
             home_dir()?.join(".agents").join("skills"),
@@ -114,6 +127,9 @@ impl AgentHub {
             agents,
             providers,
             accounts,
+            adapter_routes,
+            adapter_apply,
+            adapter_bridge,
             backups,
             skills,
             settings,

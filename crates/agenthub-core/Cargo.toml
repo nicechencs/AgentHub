@@ -26,6 +26,13 @@ urlencoding = { workspace = true }
 ureq = { workspace = true }
 getrandom = { workspace = true }
 trash = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+axum = { workspace = true }
+reqwest = { workspace = true }
+tower = { workspace = true }
+futures-util = { workspace = true }
+async-stream = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

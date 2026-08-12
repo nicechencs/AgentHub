@@ -1,0 +1,9 @@
+[
+  {
+    "id": "chatcmpl_stream_length",
+    "created": 1720000005,
+    "model": "kimi-k2.5",
+    "choices": [{"index": 0, "delta": {"role": "assistant", "content": "partial"}, "finish_reason": "length"}],
+    "usage": {"prompt_tokens": 6, "completion_tokens": 3, "total_tokens": 9}
+  }
+]
