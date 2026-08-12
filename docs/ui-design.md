@@ -9,7 +9,7 @@
 
 ## 1. 设计原则
 
-1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航按功能（Dashboard / Chat / Agents / Connections / Skills / Projects / Settings；用量合并进 Dashboard，备份并入 Settings），功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换——账号池、统计这类跨 agent 视图需要同屏对比。Connections 按 **Agent** 为第一导航，**一个列表**聚合官方登录 (OAuth) 与 **API Key**（含官方端点 / 自定义端点；原「供应商」已并入）。`?mode=` 映射初始筛选。底层 accounts/providers 表与 service 仍分离。
+1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / Adapter / Settings）；用量合并进 Dashboard，备份并入 Settings。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换——账号池、统计这类跨 agent 视图需要同屏对比。Connections 按 **Agent** 为第一导航，**一个列表**聚合官方登录 (OAuth) 与 **API Key**（含官方端点 / 自定义端点；原「供应商」已并入）。`?mode=` 映射初始筛选。底层 accounts/providers 表与 service 仍分离。
 2. **危险操作必有前置信息**：切换供应商/账号前展示 backfill 摘要、备份位置、运行中进程警告。
 3. **凭据永不明文回显**：SecretInput 组件统一脱敏（`sk-••••3f2a`），「显示」需二次确认且 10s 后自动遮蔽。
 4. **空状态给动作**：每个空列表都有明确的下一步按钮（添加供应商/导入账号/安装 Agent / 安装运行环境）。
@@ -75,13 +75,17 @@ Agent 品牌色（logo 点、图表系列；改 tokens.ts 的 AGENT_COLORS）:
 │ ┌────────────────┐   ├──────────────────────────────────────┤
 │ │ ◆ AgentHub     │   │                                      │
 │ ├────────────────┤   │                                      │
-│ │ ▣ Dashboard    │   │           Page Content               │
+│ │ Workspace      │   │           Page Content               │
 │ │ 💬 Chat        │   │   内容区 max-w-content（1200px）居中   │
 │ │ ▦ Agents       │   │   （Chat / Skills 全高特例）          │
-│ │ ⇄ Connections  │   │                                      │
 │ │ ✦ Skills       │   │                                      │
+│ │ ◉ MCP          │   │                                      │
 │ │ ◫ Projects     │   │                                      │
 │ ├────────────────┤   │                                      │
+│ │ Manage         │   │                                      │
+│ │ ▣ Dashboard    │   │                                      │
+│ │ ⇄ Connections  │   │                                      │
+│ │ ▦ Adapter      │   │                                      │
 │ │ ⚙ Settings     │   │                                      │
 │ ├────────────────┤   │                                      │
 │ │ ● N/M agents   │   │   (侧栏底部:agent 在线状态迷你条)      │
@@ -240,6 +244,16 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - OAuth 添加：对话框展示进度三步——① 打开浏览器授权 ② **等待回调**（loopback 倒计时；**复制授权链接** + **手动粘贴回调 URL** 双降级） ③ 成功显示邮箱 + 订阅等级。
 - 不支持账号切换的 agent 在 mode=accounts 时 Tab 置灰，提示改用「API 配置」。
 
+#### 4.3.3 Adapter（连接适配）
+
+路由 `/adapter`；旧 `/router` 重定向到该页。页面从 Connections 选择来源和目标 Agent，展示兼容路径、限制、证据与写入预览。
+
+- 后端返回的 `canApply` 是唯一写入门禁；页面不得根据 route 名称自行开放按钮。
+- 规则名称、route 和可执行状态以[当前实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)为准；应用后创建受管 profile 和目标 Provider。
+- `plan.canApply=false` 的规则不能从新建预览应用；可应用的实验 Bridge 由 Tauri 专用路径执行。已有 Bridge profile 可显示 start/stop/status 与 auto-start 控件，实验路径仍需完成端到端验收。
+- 预览只展示凭据引用和脱敏动作，不展示 Connection secret 或完整配置正文。
+- 厂商/API/OAuth 规则见 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)；页面与 Bridge 设计见 [adapter-design.md](adapter-design.md)。
+
 ### 4.4 Chat（会话）
 
 全高特例布局（`App` 中 `pathname === '/chat'`）：**无 TopBar / 无 PageHeader**，主区 `overflow-hidden` + 子树 `h-full`，会话列表与消息区自行分配高度；**不**套用 `max-w-content` 居中内容壳。其余功能页保持标准壳（TopBar + max-w-content）。
@@ -266,7 +280,15 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - 插件（Claude `plugins/`、Grok `installed-plugins/`）若展示，与技能矩阵分区或单独只读区，**不混进同步矩阵**。
 - 视觉执行细节见 [ui-experience-alignment.md](ui-experience-alignment.md)。
 
-### 4.5.1 Projects（Agent 会话 / 工程记录）
+### 4.5.1 MCP（只读清单）
+
+路由 `/mcp`。页面只读扫描各 Agent 已知的 MCP 配置文件，按 Agent 汇总 server、transport、来源文件和启用状态，并允许打开配置目录。
+
+- 当前不创建、编辑、删除或注入 MCP server；页面需明确显示“管理/注入仍为规划能力”。
+- 配置缺失、解析失败和空清单分别显示可恢复状态，不得把空结果伪装成“不支持”。
+- 只读 inventory 是独立诊断能力，不代表能力矩阵中的 `Mcp` 已从 Planned 变为 Full。
+
+### 4.5.2 Projects（Agent 会话 / 工程记录）
 
 侧栏在 Skills 下方；路由 `/projects`（可 `?agent=claude`）。
 

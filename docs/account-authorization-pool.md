@@ -1,7 +1,7 @@
 # 账号池：身份 × 授权 与去重方案
 
 > 状态：**产品决策已定；PR-A/B/C 已落地（2026-08-03）**。  
-> 关联：[capability-matrix.md](capability-matrix.md)（能不能）、[architecture.md](architecture.md)（Service/Adapter）、[cli-and-config.md](cli-and-config.md)（account 命令）。  
+> 关联：[capability-matrix.md](capability-matrix.md)（Agent 原生能力）、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)（跨 Agent API/OAuth 规则）、[architecture.md](architecture.md)（Service/Adapter）、[cli-and-config.md](cli-and-config.md)（account 命令）。
 > **废止**：此前「同 email/user_id 必合并为一条」的草案；以本文为准。
 
 ## 1. 产品决策（硬约束）
