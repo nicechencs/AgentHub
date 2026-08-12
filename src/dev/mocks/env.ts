@@ -1,7 +1,11 @@
 import { RUNTIME_MAP, runtimesForPlatform } from '@/config/runtimes';
 import type { Backend, EnvPort } from '@/lib/backend/contracts';
 import { delay, randomLatency } from '@/dev/mocks/delay';
-import { detectHostPlatform } from '@/lib/platform-detect';
+import {
+  detectHostPlatform,
+  getRuntimeInstallChannel,
+  type HostPlatform,
+} from '@/lib/platform-detect';
 import { loadJson, saveJson } from '@/lib/ui-preferences';
 import type { EnvStatus, RuntimeDetect, RuntimeId } from '@/lib/types';
 
@@ -10,6 +14,10 @@ const STORAGE_KEY = 'agenthub:runtime-state';
 type RuntimeState = Partial<
   Record<RuntimeId, { status: EnvStatus; version?: string; path?: string }>
 >;
+
+function defaultChannel(): string {
+  return getRuntimeInstallChannel(detectHostPlatform());
+}
 
 function defaultState(): RuntimeState {
   const platform = detectHostPlatform();
@@ -53,7 +61,51 @@ function toDetect(
   };
 }
 
-function mockEnvInstallLogs(id: RuntimeId, channel = 'winget'): string[] {
+/** Platform-shaped installed paths so macOS mock dogfood never shows Windows paths. */
+function mockInstalledRuntime(
+  id: 'nodejs' | 'npm' | 'git',
+  platform: HostPlatform,
+): { status: EnvStatus; version: string; path: string } {
+  if (platform === 'macos') {
+    if (id === 'nodejs') {
+      return { status: 'ok', version: '20.11.1', path: '/opt/homebrew/bin/node' };
+    }
+    if (id === 'npm') {
+      return { status: 'ok', version: '10.2.4', path: '/opt/homebrew/bin/npm' };
+    }
+    return { status: 'ok', version: '2.43.0', path: '/opt/homebrew/bin/git' };
+  }
+  if (platform === 'linux' || platform === 'unknown') {
+    if (id === 'nodejs') {
+      return { status: 'ok', version: '20.11.1', path: '/usr/bin/node' };
+    }
+    if (id === 'npm') {
+      return { status: 'ok', version: '10.2.4', path: '/usr/bin/npm' };
+    }
+    return { status: 'ok', version: '2.43.0', path: '/usr/bin/git' };
+  }
+  if (id === 'nodejs') {
+    return {
+      status: 'ok',
+      version: '20.11.1',
+      path: 'C:\\Program Files\\nodejs\\node.exe',
+    };
+  }
+  if (id === 'npm') {
+    return {
+      status: 'ok',
+      version: '10.2.4',
+      path: 'C:\\Program Files\\nodejs\\npm.cmd',
+    };
+  }
+  return {
+    status: 'ok',
+    version: '2.43.0.windows.1',
+    path: 'C:\\Program Files\\Git\\cmd\\git.exe',
+  };
+}
+
+function mockEnvInstallLogs(id: RuntimeId, channel: string): string[] {
   const meta = RUNTIME_MAP[id === 'npm' ? 'nodejs' : id];
   if ((id === 'nodejs' || id === 'npm') && channel === 'winget') {
     return [
@@ -80,6 +132,27 @@ function mockEnvInstallLogs(id: RuntimeId, channel = 'winget'): string[] {
       `✓ Git 环境就绪(mock)`,
     ];
   }
+  if ((id === 'nodejs' || id === 'npm') && channel === 'brew') {
+    return [
+      `$ brew install node`,
+      `==> Downloading https://ghcr.io/v2/homebrew/core/node/...`,
+      `==> Pouring node--20.11.1.arm64_sonoma.bottle.tar.gz`,
+      `🍺  /opt/homebrew/Cellar/node/20.11.1: 2,000 files`,
+      `验证: node -v → v20.11.1`,
+      `验证: npm -v → 10.2.4`,
+      `✓ Node.js + npm 环境就绪(mock)`,
+    ];
+  }
+  if (id === 'git' && channel === 'brew') {
+    return [
+      `$ brew install git`,
+      `==> Downloading https://ghcr.io/v2/homebrew/core/git/...`,
+      `==> Pouring git--2.43.0.arm64_sonoma.bottle.tar.gz`,
+      `🍺  /opt/homebrew/Cellar/git/2.43.0: 1,500 files`,
+      `验证: git --version → git version 2.43.0`,
+      `✓ Git 环境就绪(mock)`,
+    ];
+  }
   return [
     `$ agenthub env install ${id} --channel ${channel}`,
     `正在一键安装 ${meta.name}...`,
@@ -102,7 +175,7 @@ export function createMockEnvPort(_backend: Backend): EnvPort {
       return toDetect(id, state[id]);
     },
 
-    async installRuntimeDetailed(id, channel = 'winget') {
+    async installRuntimeDetailed(id, channel = defaultChannel()) {
       await this.installRuntime(id, channel);
       return {
         ok: true,
@@ -112,26 +185,19 @@ export function createMockEnvPort(_backend: Backend): EnvPort {
       };
     },
 
-    async installRuntime(id, channel = 'winget') {
+    async installRuntime(id, channel = defaultChannel()) {
       void channel;
       await delay(randomLatency());
       const state = readState();
       const meta = RUNTIME_MAP[id];
+      const platform = detectHostPlatform();
 
       if (id === 'nodejs' || id === 'npm') {
         if (!RUNTIME_MAP.nodejs.canAutoInstall) {
           throw new Error('Node.js 不支持一键安装,请按修复步骤手动处理');
         }
-        state.nodejs = {
-          status: 'ok',
-          version: '20.11.1',
-          path: 'C:\\Program Files\\nodejs\\node.exe',
-        };
-        state.npm = {
-          status: 'ok',
-          version: '10.2.4',
-          path: 'C:\\Program Files\\nodejs\\npm.cmd',
-        };
+        state.nodejs = mockInstalledRuntime('nodejs', platform);
+        state.npm = mockInstalledRuntime('npm', platform);
         writeState(state);
         return toDetect(id, state[id]);
       }
@@ -140,11 +206,7 @@ export function createMockEnvPort(_backend: Backend): EnvPort {
         if (!meta.canAutoInstall) {
           throw new Error('Git 不支持一键安装,请按修复步骤手动处理');
         }
-        state.git = {
-          status: 'ok',
-          version: '2.43.0.windows.1',
-          path: 'C:\\Program Files\\Git\\cmd\\git.exe',
-        };
+        state.git = mockInstalledRuntime('git', platform);
         writeState(state);
         return toDetect(id, state.git);
       }
@@ -156,13 +218,13 @@ export function createMockEnvPort(_backend: Backend): EnvPort {
       state[id] = {
         status: 'ok',
         version: '1.0.0',
-        path: `~/.local/bin/${id}`,
+        path: platform === 'windows' ? `C:\\Tools\\${id}.exe` : `/usr/local/bin/${id}`,
       };
       writeState(state);
       return toDetect(id, state[id]);
     },
 
-    async installRuntimesBatch(targets, channel = 'winget') {
+    async installRuntimesBatch(targets, channel = defaultChannel()) {
       const results: RuntimeDetect[] = [];
       const ordered = [...new Set(targets)].sort((a, b) => {
         if (a === 'nodejs') return -1;

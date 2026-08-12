@@ -171,6 +171,26 @@ function mapBridgeState(value: string): AdapterBridgeRuntimeState {
   return 'error';
 }
 
+/**
+ * Whitelist upstream health labels. Unknown future values fail closed to
+ * `unknown` so the UI never invents connectivity it cannot prove.
+ *
+ * Current desktop DTO only emits `unknown`; keep room for connected/stopped
+ * without hard-coding a permanent discard.
+ */
+function mapUpstreamStatus(value: string | undefined | null): string {
+  if (
+    value === 'unknown'
+    || value === 'connected'
+    || value === 'stopped'
+    || value === 'degraded'
+    || value === 'unavailable'
+  ) {
+    return value;
+  }
+  return 'unknown';
+}
+
 function mapAction(wire: AdapterActionWire): AdapterAction {
   const kind = mapActionKind(wire.kind);
   if (wire.secret) {
@@ -283,6 +303,6 @@ export function mapAdapterBridgeStatusDto(
     port,
     endpoint: port ? `http://127.0.0.1:${port}/v1` : null,
     startedAt: mapStartedAt(wire.startedAtUnixMs),
-    upstreamStatus: wire.upstreamStatus === 'unknown' ? 'unknown' : 'unknown',
+    upstreamStatus: mapUpstreamStatus(wire.upstreamStatus),
   };
 }

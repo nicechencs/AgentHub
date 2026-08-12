@@ -240,7 +240,9 @@ fn tampered_managed_copy_disable_conflicts() {
 
 #[test]
 fn unmarked_copy_with_different_content_cannot_be_disabled() {
-    let root = tempfile::tempdir().unwrap();
+    // Use real_tempdir: macOS /var is a symlink to /private/var, and skills
+    // safety refuses symlink prefixes before ownership conflict checks.
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -255,7 +257,7 @@ fn unmarked_copy_with_different_content_cannot_be_disabled() {
 
 #[test]
 fn recycler_failure_keeps_verified_copy_and_marker() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -282,7 +284,7 @@ fn recycler_failure_keeps_verified_copy_and_marker() {
 
 #[test]
 fn verified_marker_is_cleared_before_recycler_runs() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();

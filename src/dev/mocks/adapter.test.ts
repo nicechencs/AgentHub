@@ -77,7 +77,8 @@ describe('mock adapter route preview', () => {
     const applied = await adapter.apply({ sourceKind: 'provider', sourceId, targetAgentId: 'codex' });
     const visible = await createMockProviderPort().listProviders('codex');
     expect(visible.find((provider) => provider.id === applied.provider.id)).toMatchObject({ isCurrent: true });
-    expect(applied.profile.autoStart).toBe(true);
+    // Desktop apply forces opt-in auto-start; mock must not invent true.
+    expect(applied.profile.autoStart).toBe(false);
     expect(await adapter.getBridgeStatus(applied.profile.id)).toMatchObject({ state: 'running', port: 32123 });
     expect(await adapter.stopBridge(applied.profile.id)).toMatchObject({ state: 'stopped' });
     expect(await adapter.startBridge(applied.profile.id)).toMatchObject({ state: 'running' });
