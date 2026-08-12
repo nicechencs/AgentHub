@@ -99,6 +99,51 @@ function formatStepInput(input: unknown): string | null {
   }
 }
 
+/** Render tool/stderr text; highlight unified-diff style lines when present. */
+function DiffAwarePre({ text, className }: { text: string; className?: string }) {
+  const looksDiff =
+    /^(?:diff --git|@@ |--- |\+\+\+ )/m.test(text) ||
+    (text.includes('\n+') && text.includes('\n-') && /^(?:[+-](?![+-])).+/m.test(text));
+
+  if (!looksDiff) {
+    return (
+      <pre className={className}>{text.length > 4000 ? `${text.slice(0, 4000)}…` : text}</pre>
+    );
+  }
+
+  const lines = text.split('\n').slice(0, 200);
+  return (
+    <pre className={cn(className, 'space-y-0')}>
+      {lines.map((line, i) => {
+        const tone =
+          line.startsWith('+') && !line.startsWith('+++')
+            ? 'text-success'
+            : line.startsWith('-') && !line.startsWith('---')
+              ? 'text-danger'
+              : line.startsWith('@@')
+                ? 'text-info'
+                : 'text-secondary';
+        return (
+          <div key={i} className={cn('whitespace-pre-wrap break-all', tone)}>
+            {line || ' '}
+          </div>
+        );
+      })}
+      {text.split('\n').length > 200 ? (
+        <div className="text-muted">…已截断</div>
+      ) : null}
+    </pre>
+  );
+}
+
+function formatDurationMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60_000);
+  const s = Math.round((ms % 60_000) / 1000);
+  return `${m}m ${s}s`;
+}
+
 function ProcessStepRow({ step }: { step: ProcessStep }) {
   if (step.type === 'tool') {
     const input = formatStepInput(step.input);
@@ -117,9 +162,10 @@ function ProcessStepRow({ step }: { step: ProcessStep }) {
           </pre>
         ) : null}
         {step.result ? (
-          <pre className="mt-1 max-h-20 overflow-auto whitespace-pre-wrap break-all font-mono text-2xs text-secondary">
-            {step.result}
-          </pre>
+          <DiffAwarePre
+            text={step.result}
+            className="mt-1 max-h-28 overflow-auto rounded-btn bg-subtle/50 px-1.5 py-1 font-mono text-2xs leading-relaxed text-secondary"
+          />
         ) : null}
       </div>
     );
@@ -161,12 +207,18 @@ function isProcessErrorPhase(phase: AgentProcessView['phase']): boolean {
 function AgentProcessPanel({
   view,
   messageStatus,
+  durationMs,
+  exitCode,
 }: {
   view: AgentProcessView;
   /** 对应气泡消息状态；终态时强制驱动折叠策略 */
   messageStatus?: string;
+  durationMs?: number;
+  exitCode?: number | null;
 }) {
   const timeline = view.steps.filter((s) => s.type !== 'text');
+  const toolCount = timeline.filter((s) => s.type === 'tool').length;
+  const thinkingCount = timeline.filter((s) => s.type === 'thinking').length;
 
   const effectivePhase: AgentProcessView['phase'] =
     messageStatus && messageStatus !== 'running'
@@ -209,6 +261,9 @@ function AgentProcessPanel({
         {timeline.length > 0 ? (
           <span className="text-muted">· {timeline.length} 步</span>
         ) : null}
+        {durationMs != null && durationMs > 0 ? (
+          <span className="text-muted">· {formatDurationMs(durationMs)}</span>
+        ) : null}
         {view.command ? (
           <Tip
             className="ml-auto max-w-[45%] truncate font-mono text-2xs text-muted"
@@ -224,6 +279,28 @@ function AgentProcessPanel({
           <span className="font-medium text-secondary">
             {processPhaseLabel(effectivePhase)}
           </span>
+          {durationMs != null && durationMs > 0 ? (
+            <>
+              <span className="text-muted">·</span>
+              <span className="text-muted">耗时 {formatDurationMs(durationMs)}</span>
+            </>
+          ) : null}
+          {exitCode != null ? (
+            <>
+              <span className="text-muted">·</span>
+              <span className="text-muted">exit {exitCode}</span>
+            </>
+          ) : null}
+          {toolCount > 0 || thinkingCount > 0 ? (
+            <>
+              <span className="text-muted">·</span>
+              <span className="text-muted">
+                {[toolCount > 0 ? `工具 ${toolCount}` : null, thinkingCount > 0 ? `思考 ${thinkingCount}` : null]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+            </>
+          ) : null}
         </div>
         {view.command ? (
           <div>
@@ -912,6 +989,12 @@ export default function ChatPage() {
     if (!sendingConversationId) return;
     try {
       await chatCancel(sendingConversationId);
+      toast({
+        title: '已请求取消',
+        description: '正在停止当前生成，过程面板将显示已取消。',
+        variant: 'success',
+        duration: 4000,
+      });
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
     }
@@ -1143,12 +1226,16 @@ export default function ChatPage() {
                                   {AGENT_MAP[agent].name}
                                 </span>
                                 {statusText && <span>{statusText}</span>}
-                                {m.durationMs > 0 && <span>{m.durationMs}ms</span>}
+                                {m.durationMs > 0 && (
+                                  <span>{formatDurationMs(m.durationMs)}</span>
+                                )}
                               </div>
                               {hasProcessDetails(proc) && proc ? (
                                 <AgentProcessPanel
                                   view={proc}
                                   messageStatus={m.status}
+                                  durationMs={m.durationMs}
+                                  exitCode={m.exitCode}
                                 />
                               ) : null}
                               <div className="text-sm leading-relaxed text-primary">

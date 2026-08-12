@@ -1,0 +1,13 @@
+{
+  "model": "kimi-k2.5",
+  "input": [
+    {"type": "message", "role": "user", "content": "Use the prior tool result."},
+    {
+      "type": "function_call_output",
+      "call_id": "call_media",
+      "output": [
+        {"type": "input_image", "image_url": "https://example.invalid/image.png"}
+      ]
+    }
+  ]
+}

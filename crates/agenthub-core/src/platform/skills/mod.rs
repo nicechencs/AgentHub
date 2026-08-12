@@ -42,9 +42,7 @@ pub(crate) use ownership::{
     clear_managed_target_for_reproject, finalize_link_projection_ownership,
     project_copy_with_ownership, record_copy_ownership, unproject_with_ownership,
 };
-pub(crate) use packages::{
-    materialize_projection, validate_and_collect_source, write_skill_tree,
-};
+pub(crate) use packages::{materialize_projection, validate_and_collect_source, write_skill_tree};
 
 // Used by SkillService tests (projection atomicity); keep re-export for façade tests.
 #[cfg(test)]

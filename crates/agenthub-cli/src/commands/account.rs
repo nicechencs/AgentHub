@@ -89,11 +89,7 @@ pub fn switch(
 }
 
 /// Print OAuth authorize URL for --agent (does not wait for callback).
-pub fn oauth_url(
-    hub: &AgentHub,
-    format: OutputFormat,
-    agent_filter: Option<&str>,
-) -> Result<()> {
+pub fn oauth_url(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
     let _ = hub;
     let agent = require_agent(agent_filter, "oauth-url")?;
     if !agenthub_core::oauth::oauth_supported(agent) {

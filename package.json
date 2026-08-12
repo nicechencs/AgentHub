@@ -34,6 +34,9 @@
     "release:check": "node scripts/release-metadata.mjs",
     "release:test": "node --test scripts/release-metadata.test.mjs scripts/build-latest-json.test.mjs",
     "release:update": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1",
+    "release:bump": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1 -BumpPatch -VersionOnly",
+    "release:bump:minor": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1 -BumpMinor -VersionOnly",
+    "release:bump:major": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1 -BumpMajor -VersionOnly",
     "release:update:publish": "node -e \"console.error('Local publishing is disabled; push the release branch and let .github/workflows/release.yml publish the release.'); process.exit(1)\""
   },
   "dependencies": {
@@ -50,7 +53,7 @@
     "@radix-ui/react-toast": "^1.2.2",
     "@radix-ui/react-tooltip": "^1.1.4",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-autostart": "^2",
     "@tauri-apps/plugin-updater": "^2.10.1",
     "@uiw/react-codemirror": "^4.23.6",
     "@uiw/react-markdown-preview": "^5.2.1",

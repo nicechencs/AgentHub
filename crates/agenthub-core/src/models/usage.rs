@@ -47,11 +47,7 @@ impl UsageTrendPoint {
 
     pub fn add_tokens(&mut self, agent: AgentId, tokens: i64) {
         let key = agent.as_str().to_string();
-        let prev = self
-            .0
-            .get(&key)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let prev = self.0.get(&key).and_then(|v| v.as_i64()).unwrap_or(0);
         self.0.insert(key, Value::from(prev + tokens));
     }
 }

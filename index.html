@@ -112,17 +112,18 @@
         position: relative;
         width: 48px;
         height: 48px;
-        border-radius: 12px;
-        background: var(--bg-subtle);
+        border-radius: 22%;
+        overflow: hidden;
         display: flex;
         align-items: center;
         justify-content: center;
-        color: var(--text-muted);
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
       }
-      #boot-fallback .mark svg {
-        width: 24px;
-        height: 24px;
+      #boot-fallback .mark img {
+        width: 48px;
+        height: 48px;
+        display: block;
+        object-fit: cover;
       }
       #boot-fallback .title {
         font-size: 16px;
@@ -189,10 +190,12 @@
       #boot-fallback .bar > i {
         position: absolute;
         inset: 0 auto 0 0;
-        width: 32%;
+        width: 40%;
         border-radius: 999px;
         background: var(--accent);
-        animation: boot-bar 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        /* transform 滑动：与 React BootSplash 一致，避免 left 动画被合成卡住 */
+        animation: boot-bar 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        will-change: transform;
       }
       @keyframes boot-in {
         from {
@@ -238,15 +241,10 @@
       }
       @keyframes boot-bar {
         0% {
-          left: -36%;
-          width: 28%;
-        }
-        50% {
-          width: 42%;
+          transform: translateX(-120%);
         }
         100% {
-          left: 108%;
-          width: 28%;
+          transform: translateX(280%);
         }
       }
       @keyframes boot-glow {
@@ -284,18 +282,8 @@
         <div class="mark-wrap">
           <span class="mark-ring" aria-hidden="true"></span>
           <span class="mark" aria-hidden="true">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M12 2.5 20 7v10l-8 4.5L4 17V7l8-4.5Z" />
-              <path d="M12 8v8" opacity="0.35" />
-              <path d="M8.5 10.5 12 12.5l3.5-2" opacity="0.55" />
-            </svg>
+            <!-- public/app-icon.png：与安装包 / 桌面图标同源 -->
+            <img src="./app-icon.png" width="48" height="48" alt="" />
           </span>
         </div>
         <div style="display: flex; flex-direction: column; align-items: center; gap: 6px">

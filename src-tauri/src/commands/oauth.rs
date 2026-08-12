@@ -62,7 +62,16 @@ pub async fn oauth_complete(
     oauth_state: String,
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
+    let target = oauth::oauth_session_info(&oauth_state)
+        .map_err(|e| map_err_string("oauth_complete", e))?
+        .agent_id;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(target).await;
     with_hub_blocking(hub, move |hub| {
+        let current = oauth::oauth_session_info(&oauth_state)
+            .map_err(|e| map_err_string("oauth_complete", e))?;
+        if current.agent_id != target {
+            return Err("oauth target changed before completion [oauth.target_changed]".into());
+        }
         oauth::complete_oauth(&hub.accounts, &oauth_state)
             .map(|a| a.redacted())
             .map_err(|e| map_err_string("oauth_complete", e))
@@ -114,7 +123,17 @@ pub async fn oauth_device_complete(
     oauth_state: String,
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
+    let target = oauth::device_oauth_agent(&oauth_state)
+        .map_err(|e| map_err_string("oauth_device_complete", e))?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(target).await;
     with_hub_blocking(hub, move |hub| {
+        let current = oauth::device_oauth_agent(&oauth_state)
+            .map_err(|e| map_err_string("oauth_device_complete", e))?;
+        if current != target {
+            return Err(
+                "oauth device target changed before completion [oauth.target_changed]".into(),
+            );
+        }
         oauth::complete_device_oauth(&hub.accounts, &oauth_state)
             .map(|a| a.redacted())
             .map_err(|e| map_err_string("oauth_device_complete", e))

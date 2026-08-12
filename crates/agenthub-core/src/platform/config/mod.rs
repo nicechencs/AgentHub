@@ -10,9 +10,7 @@ mod schema;
 mod service;
 pub mod sources;
 
-pub use document::{
-    ConfigApplyResult, ConfigChangePlan, FieldChange, NormalizedConfigDocument,
-};
+pub use document::{ConfigApplyResult, ConfigChangePlan, FieldChange, NormalizedConfigDocument};
 pub use projector::AgentConfigProjector;
 pub use registry::{builtin_config_registry, ConfigProjectorRegistry};
 pub use schema::{

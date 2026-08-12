@@ -48,6 +48,16 @@ vi.mock('@tauri-apps/api/app', () => ({
   getVersion: async () => '0.1.0-test',
 }));
 
+const autostartIsEnabled = vi.fn(async () => false);
+const autostartEnable = vi.fn(async () => {});
+const autostartDisable = vi.fn(async () => {});
+
+vi.mock('@tauri-apps/plugin-autostart', () => ({
+  isEnabled: () => autostartIsEnabled(),
+  enable: () => autostartEnable(),
+  disable: () => autostartDisable(),
+}));
+
 vi.mock('@/lib/theme', () => ({
   applyTheme: vi.fn(),
 }));
@@ -77,6 +87,9 @@ describe('createTauriSettingsPort closeToTray', () => {
   beforeEach(() => {
     tauriRuntime = true;
     invokeMock.mockReset();
+    autostartIsEnabled.mockReset().mockResolvedValue(false);
+    autostartEnable.mockReset().mockResolvedValue(undefined);
+    autostartDisable.mockReset().mockResolvedValue(undefined);
     memory = installMemoryLocalStorage();
   });
 
@@ -181,5 +194,65 @@ describe('createTauriSettingsPort closeToTray', () => {
 
     // Theme local key is unrelated; ensure we did not require it.
     expect(localStorage.getItem(StorageKey.theme)).toBeNull();
+  });
+
+  it('reads autoStart from OS login item when plugin is available', async () => {
+    autostartIsEnabled.mockResolvedValue(true);
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'get_app_settings') {
+        return {
+          theme: 'system',
+          language: 'zh-CN',
+          logLevel: 'info',
+          logRetentionDays: 14,
+          closeToTray: true,
+        };
+      }
+      if (cmd === 'get_path_info') {
+        return {
+          dataDir: 'D:/data',
+          dbPath: 'D:/data/agenthub.db',
+          backupsDir: 'D:/data/backups',
+          logsDir: 'D:/data/logs',
+        };
+      }
+      throw new Error(`unexpected invoke: ${cmd}`);
+    });
+
+    localStorage.setItem(settingsKey, JSON.stringify({ autoStart: false }));
+    const port = createTauriSettingsPort();
+    const s = await port.getSettings();
+    expect(s.autoStart).toBe(true);
+  });
+
+  it('updateSettings writes OS autostart enable/disable', async () => {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'set_setting') return;
+      if (cmd === 'get_app_settings') {
+        return {
+          theme: 'system',
+          language: 'zh-CN',
+          logLevel: 'info',
+          logRetentionDays: 14,
+          closeToTray: true,
+        };
+      }
+      if (cmd === 'get_path_info') {
+        return {
+          dataDir: 'D:/data',
+          dbPath: 'D:/data/agenthub.db',
+          backupsDir: 'D:/data/backups',
+          logsDir: 'D:/data/logs',
+        };
+      }
+      throw new Error(`unexpected invoke: ${cmd}`);
+    });
+
+    const port = createTauriSettingsPort();
+    await port.updateSettings({ autoStart: true });
+    expect(autostartEnable).toHaveBeenCalledTimes(1);
+
+    await port.updateSettings({ autoStart: false });
+    expect(autostartDisable).toHaveBeenCalledTimes(1);
   });
 });

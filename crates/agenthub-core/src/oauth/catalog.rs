@@ -36,14 +36,24 @@ pub struct OAuthLoginOption {
 /// List login options for an agent (empty ⇒ OAuth unsupported).
 pub fn list_oauth_options(agent: AgentId) -> Vec<OAuthLoginOption> {
     match agent {
-        AgentId::Claude => vec![single_pkce(agent, "claude", "Claude Pro/Max", "Anthropic 订阅 OAuth")],
+        AgentId::Claude => vec![single_pkce(
+            agent,
+            "claude",
+            "Claude Pro/Max",
+            "Anthropic 订阅 OAuth",
+        )],
         AgentId::Codex => vec![single_pkce(
             agent,
             "codex",
             "ChatGPT Plus/Pro",
             "OpenAI Codex OAuth",
         )],
-        AgentId::Grok => vec![single_pkce(agent, "xai", "Grok / xAI", "xAI OAuth (Grok CLI)")],
+        AgentId::Grok => vec![single_pkce(
+            agent,
+            "xai",
+            "Grok / xAI",
+            "xAI OAuth (Grok CLI)",
+        )],
         AgentId::Pi => pi_options(),
         _ => vec![],
     }
@@ -160,7 +170,9 @@ mod tests {
         assert!(opts.len() >= 3);
         assert!(opts.iter().any(|o| o.id == "anthropic"));
         assert!(opts.iter().any(|o| o.id == "openai-codex"));
-        assert!(opts.iter().any(|o| o.id == "xai" && o.flow == OAuthFlowKind::DeviceCode));
+        assert!(opts
+            .iter()
+            .any(|o| o.id == "xai" && o.flow == OAuthFlowKind::DeviceCode));
         assert!(oauth_supported(AgentId::Pi));
     }
 

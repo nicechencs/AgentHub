@@ -978,9 +978,7 @@ enum CodexReplaySkip {
     #[default]
     Done,
     /// Skipping dense open burst; last skipped event timestamp (unix ms).
-    SkippingBurst {
-        last_ms: i64,
-    },
+    SkippingBurst { last_ms: i64 },
 }
 
 /// ccusage: longest pause still treated as the same rewritten parent-history burst.
@@ -1018,10 +1016,7 @@ impl CodexParseState {
         let forkish = codex_file_is_forkish(path);
         let (replay, burst_skip_active) = if forkish {
             if let Some(first_ms) = codex_detect_rewritten_burst(path) {
-                (
-                    CodexReplaySkip::SkippingBurst { last_ms: first_ms },
-                    true,
-                )
+                (CodexReplaySkip::SkippingBurst { last_ms: first_ms }, true)
             } else {
                 (CodexReplaySkip::Done, false)
             }
@@ -1239,10 +1234,7 @@ pub(crate) fn extract_codex(
 
     // Only event_msg / token_count carries usage (session path).
     let is_token_count = v.get("type").and_then(|t| t.as_str()) == Some("event_msg")
-        && v
-            .pointer("/payload/type")
-            .and_then(|t| t.as_str())
-            == Some("token_count");
+        && v.pointer("/payload/type").and_then(|t| t.as_str()) == Some("token_count");
 
     if !is_token_count {
         // Fallback to generic usage object if present (headless / atypical logs).
@@ -1488,7 +1480,9 @@ mod tests {
         // When model is present on the token_count info itself
         let line = r#"{"timestamp":"2026-05-13T09:01:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5.2-codex","last_token_usage":{"input_tokens":1000,"cached_input_tokens":250,"output_tokens":125,"reasoning_output_tokens":75,"total_tokens":1200}}}}"#;
         let mut state = CodexParseState::default();
-        let ev = extract_codex(line, Some("s1"), &mut state).unwrap().unwrap();
+        let ev = extract_codex(line, Some("s1"), &mut state)
+            .unwrap()
+            .unwrap();
         // Stored input is non-cached (ccusage inputTokens), cache kept separate
         assert_eq!(ev.input_tokens, 750);
         // reasoning is informational; output_tokens already bills it (ccusage)

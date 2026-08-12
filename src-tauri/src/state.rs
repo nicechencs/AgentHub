@@ -4,14 +4,27 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::logging::{self, targets};
 use agenthub_core::AgentHub;
 
+use crate::adapter_bridge_controller::AdapterBridgeSagaCoordinator;
+use crate::exit_coordinator::{ExitCoordinator, LifecycleShutdownBarrier};
 use crate::window_policy::{self, parse_bool_setting};
 
 /// Shared GUI state: one AgentHub opened at process start.
 pub struct AppState {
     hub: Result<Arc<AgentHub>, String>,
+    /// Process-owned loopback bridge listeners. The GUI owns this host because
+    /// it can keep running in the tray after the main window is hidden.
+    bridge_host: Arc<BridgeRuntimeHost>,
+    /// Process-local authority for every adapter bridge lifecycle saga.
+    bridge_saga_coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    /// Coordinates every controllable process exit through bridge shutdown.
+    exit_coordinator: ExitCoordinator,
+    /// Prevents a second tray click or window close from opening another
+    /// bridge-impact prompt while the first native dialog is still visible.
+    exit_confirmation_pending: AtomicBool,
     /// Set when the user chooses Quit from the tray (or equivalent).
     /// When true, window close is allowed to exit the process.
     exit_requested: AtomicBool,
@@ -48,6 +61,10 @@ impl AppState {
         let close_to_tray = load_close_to_tray(&hub);
         Self {
             hub,
+            bridge_host: Arc::new(BridgeRuntimeHost::new()),
+            bridge_saga_coordinator: Arc::new(AdapterBridgeSagaCoordinator::new()),
+            exit_coordinator: ExitCoordinator::new(),
+            exit_confirmation_pending: AtomicBool::new(false),
             exit_requested: AtomicBool::new(false),
             close_to_tray: AtomicBool::new(close_to_tray),
         }
@@ -63,6 +80,46 @@ impl AppState {
             .as_ref()
             .map(Arc::clone)
             .map_err(|error| error.to_owned())
+    }
+
+    /// Shared bridge listener host. Construction does not start or restore any
+    /// adapter profile; that is intentionally owned by a later control-plane
+    /// command layer.
+    pub(crate) fn bridge_host(&self) -> Arc<BridgeRuntimeHost> {
+        Arc::clone(&self.bridge_host)
+    }
+
+    pub(crate) fn bridge_saga_coordinator(&self) -> Arc<AdapterBridgeSagaCoordinator> {
+        Arc::clone(&self.bridge_saga_coordinator)
+    }
+
+    pub(crate) fn exit_coordinator(&self) -> &ExitCoordinator {
+        &self.exit_coordinator
+    }
+
+    /// Shared read/write barrier used by bridge lifecycle sagas and the
+    /// coordinated exit/restart path.  Lifecycle callers must acquire this
+    /// before a profile or target guard.
+    pub(crate) fn lifecycle_shutdown_barrier(&self) -> Arc<LifecycleShutdownBarrier> {
+        self.exit_coordinator.lifecycle_barrier()
+    }
+
+    /// Claim the one outstanding bridge-impact confirmation dialog.
+    pub(crate) fn begin_exit_confirmation(&self) -> bool {
+        self.exit_confirmation_pending
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+
+    /// Release the confirmation gate when the user hides to tray or cancels.
+    pub(crate) fn finish_exit_confirmation(&self) {
+        self.exit_confirmation_pending
+            .store(false, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn exit_confirmation_pending(&self) -> bool {
+        self.exit_confirmation_pending.load(Ordering::SeqCst)
     }
 
     pub fn request_exit(&self) {
@@ -143,6 +200,20 @@ mod tests {
         assert!(state.close_to_tray());
         state.request_exit();
         assert!(state.should_exit());
+    }
+
+    #[test]
+    fn exit_confirmation_gate_is_idempotent() {
+        let (_dir, hub) = hub_tmp();
+        let state = AppState::from_hub(Ok(hub));
+
+        assert!(state.begin_exit_confirmation());
+        assert!(state.exit_confirmation_pending());
+        assert!(!state.begin_exit_confirmation());
+
+        state.finish_exit_confirmation();
+        assert!(!state.exit_confirmation_pending());
+        assert!(state.begin_exit_confirmation());
     }
 
     #[test]

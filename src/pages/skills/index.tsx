@@ -198,7 +198,6 @@ export default function SkillsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchSyncing, setBatchSyncing] = useState(false);
   const [pendingCells, setPendingCells] = useState<Set<string>>(new Set());
-  const [conflictCell, setConflictCell] = useState<{ skill: Skill; agentId: AgentId } | null>(null);
   const [installSource, setInstallSource] = useState('');
   const [installOpen, setInstallOpen] = useState(false);
   const [importingIds, setImportingIds] = useState<Set<string>>(new Set());
@@ -214,11 +213,6 @@ export default function SkillsPage() {
     agentId: AgentId;
     name: string;
     inLibrary: boolean;
-  } | null>(null);
-  /** 取消同步到某工具（本地共享库格子） */
-  const [unsyncConfirm, setUnsyncConfirm] = useState<{
-    skill: Skill;
-    agentId: AgentId;
   } | null>(null);
   const [dangerBusy, setDangerBusy] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<SkillPreviewTarget | null>(null);
@@ -463,22 +457,52 @@ export default function SkillsPage() {
     setSelected(allSelected ? new Set() : new Set(filtered.map((s) => s.id)));
   };
 
-  const doToggle = async (skillId: string, agentId: AgentId, force = false) => {
+  const doToggle = async (
+    skillId: string,
+    agentId: AgentId,
+    force = false,
+    meta?: { name?: string; wasMapped?: boolean },
+  ) => {
     const key = cellKey(skillId, agentId);
+    const agentName = AGENT_MAP[agentId]?.name ?? agentId;
+    const skillName = meta?.name ?? skills?.find((s) => s.id === skillId)?.name ?? skillId;
     setPendingCells((prev) => new Set(prev).add(key));
     try {
       const result = await toggleSkillSync(skillId, agentId, { force });
       if (result.conflict && !force) {
-        const skill = skills?.find((s) => s.id === skillId);
-        if (skill) setConflictCell({ skill, agentId });
+        toast({
+          ...skillsCopy.toast.conflictPrompt(agentName, skillName),
+          duration: 12_000,
+          onAction: () => {
+            void doToggle(skillId, agentId, true, { name: skillName, wasMapped: false });
+          },
+        });
         return;
       }
       setSkills((prev) =>
         prev ? applyCellState(prev, skillId, agentId, result.state, result.conflict) : prev,
       );
+      if (force) {
+        toast({
+          ...skillsCopy.toast.overwriteOk(agentName, skillName),
+          variant: 'success',
+        });
+      } else if (meta?.wasMapped) {
+        toast({
+          ...skillsCopy.toast.disableOk(agentName, skillName),
+          variant: 'success',
+        });
+      } else if (isMappedState(result.state)) {
+        toast({
+          ...skillsCopy.toast.enableOk(agentName, skillName),
+          variant: 'success',
+        });
+      }
     } catch (e) {
       toast({
-        ...skillsCopy.toast.enableFailed(e instanceof Error ? e.message : String(e)),
+        ...(meta?.wasMapped ? skillsCopy.toast.disableFailed : skillsCopy.toast.enableFailed)(
+          e instanceof Error ? e.message : String(e),
+        ),
         variant: 'danger',
       });
       // 写失败后从服务端拉齐，避免本地假状态
@@ -495,55 +519,32 @@ export default function SkillsPage() {
   const handleCellClick = async (skill: Skill, agentId: AgentId) => {
     const state = skill.sync[agentId];
     if (state === 'unsupported') return;
-    // 已同步 → 确认后再取消
+    const agentName = AGENT_MAP[agentId]?.name ?? agentId;
+    // 已同步 → 直接取消，结果由 doToggle 统一提示
     if (isMappedState(state)) {
-      setUnsyncConfirm({ skill, agentId });
+      await doToggle(skill.id, agentId, false, { name: skill.name, wasMapped: true });
       return;
     }
-    // foreign / conflict → 同步前先确认覆盖
+    // foreign / conflict → 通知确认覆盖
     if (state === 'foreign' || state === 'conflict' || skill.conflicts.includes(agentId)) {
       try {
         const conflict =
           skill.conflicts.includes(agentId) || (await checkConflict(skill.id, agentId));
         if (conflict) {
-          setConflictCell({ skill, agentId });
+          toast({
+            ...skillsCopy.toast.conflictPrompt(agentName, skill.name),
+            duration: 12_000,
+            onAction: () => {
+              void doToggle(skill.id, agentId, true, { name: skill.name, wasMapped: false });
+            },
+          });
           return;
         }
       } catch {
         // 查询失败时直接尝试同步，由后端返回 conflict
       }
     }
-    void doToggle(skill.id, agentId, false);
-  };
-
-  const handleOverwrite = async () => {
-    if (!conflictCell) return;
-    const { skill, agentId } = conflictCell;
-    setConflictCell(null);
-    const key = cellKey(skill.id, agentId);
-    setPendingCells((prev) => new Set(prev).add(key));
-    try {
-      const result = await toggleSkillSync(skill.id, agentId, { force: true });
-      setSkills((prev) =>
-        prev ? applyCellState(prev, skill.id, agentId, result.state, result.conflict) : prev,
-      );
-      toast({
-        ...skillsCopy.toast.overwriteOk(AGENT_MAP[agentId].name, skill.name),
-        variant: 'success',
-      });
-    } catch (e) {
-      toast({
-        ...skillsCopy.toast.overwriteFailed(e instanceof Error ? e.message : String(e)),
-        variant: 'danger',
-      });
-      await load();
-    } finally {
-      setPendingCells((prev) => {
-        const next = new Set(prev);
-        next.delete(key);
-        return next;
-      });
-    }
+    void doToggle(skill.id, agentId, false, { name: skill.name, wasMapped: false });
   };
 
   const handleInstall = async () => {
@@ -804,13 +805,6 @@ export default function SkillsPage() {
     } finally {
       setDangerBusy(false);
     }
-  };
-
-  const confirmUnsync = async () => {
-    if (!unsyncConfirm) return;
-    const { skill, agentId } = unsyncConfirm;
-    setUnsyncConfirm(null);
-    await doToggle(skill.id, agentId, false);
   };
 
   const activeKey = previewTarget ? skillPreviewActiveKey(previewTarget) : null;
@@ -1236,53 +1230,6 @@ export default function SkillsPage() {
           </>
         ) : null}
       </div>
-
-      <Dialog open={conflictCell !== null} onOpenChange={(open) => !open && setConflictCell(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{skillsCopy.dialog.conflictTitle}</DialogTitle>
-            <DialogDescription>
-              {conflictCell &&
-                skillsCopy.dialog.conflictBody(
-                  AGENT_MAP[conflictCell.agentId].name,
-                  conflictCell.skill.name,
-                )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConflictCell(null)}>
-              {skillsCopy.dialog.conflictCancel}
-            </Button>
-            <Button onClick={handleOverwrite}>{skillsCopy.dialog.conflictConfirm}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={unsyncConfirm !== null}
-        onOpenChange={(open) => !open && setUnsyncConfirm(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{skillsCopy.dialog.unsyncTitle}</DialogTitle>
-            <DialogDescription>
-              {unsyncConfirm &&
-                skillsCopy.dialog.unsyncBody(
-                  AGENT_MAP[unsyncConfirm.agentId].name,
-                  unsyncConfirm.skill.name,
-                )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setUnsyncConfirm(null)}>
-              {skillsCopy.dialog.unsyncKeep}
-            </Button>
-            <Button variant="secondary" onClick={() => void confirmUnsync()}>
-              {skillsCopy.dialog.unsyncConfirm}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog
         open={removeFromTool !== null}

@@ -1,0 +1,5 @@
+{
+  "model": "kimi-k2.5",
+  "input": "Search this",
+  "tools": [{"type": "web_search_preview"}]
+}

@@ -37,6 +37,7 @@ import type {
 import type { UsageAvailability, UsageQuery } from './usage-types';
 import type { ConfigPort } from './config-types';
 import type { UpdatePort } from './update-types';
+import type { AdapterPort } from './adapter';
 import { normalizeAuthHealth } from './auth-state';
 
 /** PKCE start result from backend. */
@@ -397,9 +398,12 @@ export interface InstallPort {
 }
 
 export type { UpdatePort } from './update-types';
+export type { McpPort } from './mcp-types';
 
 export interface Backend {
   account: AccountPort;
+  /** Read-only route compatibility preview; does not apply or start anything. */
+  adapter: AdapterPort;
   agent: AgentPort;
   /** Read-only agent directory (keys, capabilities, install channels). */
   catalog: AgentCatalogPort;
@@ -419,6 +423,8 @@ export interface Backend {
   /** Desktop self-update (check / one-click install). */
   update: UpdatePort;
   trash: TrashPort;
+  /** Read-only MCP config inventory (not full MCP management). */
+  mcp: import('./mcp-types').McpPort;
 }
 
 export type CreateBackend = () => Backend;

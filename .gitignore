@@ -49,6 +49,7 @@ auth.json
 /.agents
 .codegraph/
 .grok/
+.pi-subagents/
 .tmp-usage-compare/
 temp/
 
@@ -60,3 +61,4 @@ latest.json
 # Local release packaging output (installers + latest.json)
 /release-out/
 .codex/
+*.exe

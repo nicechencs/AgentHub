@@ -1,9 +1,7 @@
 //! Provider pool service — CRUD, import-live, and safe live switching.
 
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::path::PathBuf;
+use std::time::Instant;
 
 use chrono::Utc;
 use uuid::Uuid;
@@ -14,7 +12,9 @@ use crate::logging::targets;
 use crate::models::{
     AgentConfig, AgentId, BackupKind, Provider, ProviderInput, ProviderSwitchResult,
 };
-use crate::services::{BackupService, ConnectionService};
+use crate::services::{
+    AdapterSecretResolver, BackupService, ConnectionService, LiveWriteAuthority, LiveWriteGuard,
+};
 use crate::storage::{Database, ProviderRepo};
 use crate::utils::redact::redact_text;
 
@@ -28,8 +28,63 @@ pub struct ProviderService {
     repo: ProviderRepo,
     registry: AdapterRegistry,
     backup: Option<BackupService>,
-    lock_dir: Option<PathBuf>,
+    authority: LiveWriteAuthority,
     connections: ConnectionService,
+    secret_resolver: AdapterSecretResolver,
+}
+
+/// An in-memory copy of one agent's complete live configuration, held only
+/// while a cross-boundary saga may need to compensate a successful switch.
+/// It intentionally has no serialization implementation or value-bearing
+/// `Debug` output because provider configs can contain credentials.
+#[derive(Clone)]
+pub struct ProviderLiveConfigSnapshot {
+    agent: AgentId,
+    config: AgentConfig,
+}
+
+impl std::fmt::Debug for ProviderLiveConfigSnapshot {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ProviderLiveConfigSnapshot")
+            .field("agent", &self.agent)
+            .field("config", &"REDACTED")
+            .finish()
+    }
+}
+
+/// RAII guard for a cross-boundary, per-agent provider saga.
+///
+/// Holding this guard retains the same cross-process lock used by ordinary
+/// provider switches. Guarded APIs validate both the originating service and
+/// target agent, so callers cannot accidentally use a Claude saga guard for a
+/// different agent or service.
+pub struct ProviderLiveSagaGuard<'a> {
+    service: &'a ProviderService,
+    agent: AgentId,
+    guard: LiveWriteGuard,
+}
+
+impl std::fmt::Debug for ProviderLiveSagaGuard<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ProviderLiveSagaGuard")
+            .field("agent", &self.agent)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ProviderLiveSagaGuard<'_> {
+    pub fn agent(&self) -> AgentId {
+        self.agent
+    }
+
+    /// Borrow the shared authority proof for another Core live-write service.
+    /// This is intended for one larger orchestration saga and avoids nested
+    /// acquisition of the same cross-process lock.
+    pub fn as_live_write_guard(&self) -> &LiveWriteGuard {
+        &self.guard
+    }
 }
 
 impl ProviderService {
@@ -46,15 +101,15 @@ impl ProviderService {
             repo: ProviderRepo::new(db.clone()),
             registry,
             backup: None,
-            lock_dir: None,
-            connections: ConnectionService::new(db),
+            authority: LiveWriteAuthority::from_database(&db),
+            connections: ConnectionService::new(db.clone()),
+            secret_resolver: AdapterSecretResolver::new(db),
         }
     }
 
     /// Construct the full live-switch service with explicit shared
     /// dependencies and backup location.
     pub fn with_live(db: Database, registry: AdapterRegistry, backups_root: PathBuf) -> Self {
-        let lock_dir = backups_root.parent().unwrap_or(&backups_root).join("locks");
         Self {
             repo: ProviderRepo::new(db.clone()),
             backup: Some(BackupService::new(
@@ -63,8 +118,9 @@ impl ProviderService {
                 backups_root,
             )),
             registry,
-            lock_dir: Some(lock_dir),
-            connections: ConnectionService::new(db),
+            authority: LiveWriteAuthority::from_database(&db),
+            connections: ConnectionService::new(db.clone()),
+            secret_resolver: AdapterSecretResolver::new(db),
         }
     }
 
@@ -116,9 +172,22 @@ impl ProviderService {
     pub fn create(&self, input: &ProviderInput) -> Result<Provider> {
         let started = Instant::now();
         let agent = input.agent_id;
-        let result = self.create_inner(input);
+        let result = (|| {
+            let guard = self.begin_live_saga(agent)?;
+            self.create_with_guard(&guard, input)
+        })();
         log_provider_op("create", agent, started, &result);
         result
+    }
+
+    /// Create a provider while an existing per-agent saga guard remains held.
+    pub fn create_with_guard(
+        &self,
+        guard: &ProviderLiveSagaGuard<'_>,
+        input: &ProviderInput,
+    ) -> Result<Provider> {
+        self.validate_live_saga_guard(guard, input.agent_id)?;
+        self.create_inner(input)
     }
 
     fn create_inner(&self, input: &ProviderInput) -> Result<Provider> {
@@ -149,11 +218,29 @@ impl ProviderService {
     pub fn update(&self, input: &ProviderInput) -> Result<Provider> {
         let started = Instant::now();
         let agent = input.agent_id;
+        let result = (|| {
+            let guard = self.begin_live_saga(agent)?;
+            self.update_with_guard(&guard, input)
+        })();
+        log_provider_op("update", agent, started, &result);
+        result
+    }
+
+    /// Update a provider while an existing per-agent saga guard remains held.
+    pub fn update_with_guard(
+        &self,
+        guard: &ProviderLiveSagaGuard<'_>,
+        input: &ProviderInput,
+    ) -> Result<Provider> {
+        self.validate_live_saga_guard(guard, input.agent_id)?;
+        self.update_and_snapshot(input)
+    }
+
+    fn update_and_snapshot(&self, input: &ProviderInput) -> Result<Provider> {
         let result = self.update_inner(input);
         if result.is_ok() {
-            self.snapshot_after_pool_change(agent, "after provider update");
+            self.snapshot_after_pool_change(input.agent_id, "after provider update");
         }
-        log_provider_op("update", agent, started, &result);
         result
     }
 
@@ -183,11 +270,29 @@ impl ProviderService {
     pub fn upsert(&self, input: &ProviderInput) -> Result<Provider> {
         let started = Instant::now();
         let agent = input.agent_id;
+        let result = (|| {
+            let guard = self.begin_live_saga(agent)?;
+            self.upsert_with_guard(&guard, input)
+        })();
+        log_provider_op("upsert", agent, started, &result);
+        result
+    }
+
+    /// Upsert a provider while an existing per-agent saga guard remains held.
+    pub fn upsert_with_guard(
+        &self,
+        guard: &ProviderLiveSagaGuard<'_>,
+        input: &ProviderInput,
+    ) -> Result<Provider> {
+        self.validate_live_saga_guard(guard, input.agent_id)?;
+        self.upsert_and_snapshot(input)
+    }
+
+    fn upsert_and_snapshot(&self, input: &ProviderInput) -> Result<Provider> {
         let result = self.upsert_inner(input);
         if result.is_ok() {
-            self.snapshot_after_pool_change(agent, "after provider upsert");
+            self.snapshot_after_pool_change(input.agent_id, "after provider upsert");
         }
-        log_provider_op("upsert", agent, started, &result);
         result
     }
 
@@ -221,12 +326,83 @@ impl ProviderService {
     pub fn delete(&self, id: &str, agent: AgentId) -> Result<()> {
         let started = Instant::now();
         let result = (|| {
-            validate_id(id)?;
-            // Clear active binding in the same transaction when deleting the active row.
-            self.connections.delete_provider(id, agent)
+            let guard = self.begin_live_saga(agent)?;
+            self.delete_with_guard(&guard, id, agent)
         })();
         log_provider_op("delete", agent, started, &result);
         result
+    }
+
+    /// Delete a provider while an existing per-agent saga guard remains held.
+    pub fn delete_with_guard(
+        &self,
+        guard: &ProviderLiveSagaGuard<'_>,
+        id: &str,
+        agent: AgentId,
+    ) -> Result<()> {
+        self.validate_live_saga_guard(guard, agent)?;
+        self.delete_inner(id, agent)
+    }
+
+    fn delete_inner(&self, id: &str, agent: AgentId) -> Result<()> {
+        validate_id(id)?;
+        // Clear active binding in the same transaction when deleting the active row.
+        self.connections.delete_provider(id, agent)
+    }
+
+    /// Acquire the per-agent cross-process lock for an entire provider saga.
+    /// The returned guard releases it on drop.
+    pub fn begin_live_saga(&self, agent: AgentId) -> Result<ProviderLiveSagaGuard<'_>> {
+        let guard = self.acquire_live_lock(agent)?;
+        Ok(ProviderLiveSagaGuard {
+            service: self,
+            agent,
+            guard,
+        })
+    }
+
+    /// Capture the exact current live config for a narrowly-scoped saga
+    /// compensation. The snapshot is never persisted or returned to a UI.
+    pub fn capture_live_config_snapshot(
+        &self,
+        agent: AgentId,
+    ) -> Result<ProviderLiveConfigSnapshot> {
+        let guard = self.begin_live_saga(agent)?;
+        self.capture_live_config_snapshot_with_guard(&guard, agent)
+    }
+
+    /// Capture a live config while an existing saga guard remains held.
+    pub fn capture_live_config_snapshot_with_guard(
+        &self,
+        guard: &ProviderLiveSagaGuard<'_>,
+        agent: AgentId,
+    ) -> Result<ProviderLiveConfigSnapshot> {
+        self.validate_live_saga_guard(guard, agent)?;
+        let config = self.adapter(agent)?.read_config()?;
+        ensure_config_agent(&config, agent)?;
+        Ok(ProviderLiveConfigSnapshot { agent, config })
+    }
+
+    /// Restore a snapshot captured by [`Self::capture_live_config_snapshot`].
+    /// ProviderService owns this write so compensation uses the same per-agent
+    /// live-config lock as normal switches rather than bypassing it in a host.
+    pub fn restore_live_config_snapshot(
+        &self,
+        snapshot: &ProviderLiveConfigSnapshot,
+    ) -> Result<()> {
+        let guard = self.begin_live_saga(snapshot.agent)?;
+        self.restore_live_config_snapshot_with_guard(&guard, snapshot)
+    }
+
+    /// Restore a live config while an existing saga guard remains held.
+    pub fn restore_live_config_snapshot_with_guard(
+        &self,
+        guard: &ProviderLiveSagaGuard<'_>,
+        snapshot: &ProviderLiveConfigSnapshot,
+    ) -> Result<()> {
+        self.validate_live_saga_guard(guard, snapshot.agent)?;
+        let adapter = self.adapter(snapshot.agent)?;
+        adapter.write_config(&snapshot.config)
     }
 
     /// Capture the agent's complete live provider config as a new current row.
@@ -325,30 +501,59 @@ impl ProviderService {
     /// rollback-specific error reports compensation failure using error codes
     /// only, so adapter messages cannot expose provider secrets.
     pub fn switch(&self, id_or_name: &str, agent: AgentId) -> Result<ProviderSwitchResult> {
+        let guard = self.begin_live_saga(agent)?;
+        self.switch_with_guard(&guard, id_or_name, agent)
+    }
+
+    /// Apply a provider while an existing saga guard remains held.
+    pub fn switch_with_guard(
+        &self,
+        guard: &ProviderLiveSagaGuard<'_>,
+        id_or_name: &str,
+        agent: AgentId,
+    ) -> Result<ProviderSwitchResult> {
         let started = Instant::now();
-        let result = self.switch_inner(id_or_name, agent);
+        let result = (|| {
+            self.validate_live_saga_guard(guard, agent)?;
+            self.switch_locked_inner(id_or_name, agent)
+        })();
         log_provider_op("switch", agent, started, &result);
         result
     }
 
-    fn switch_inner(&self, id_or_name: &str, agent: AgentId) -> Result<ProviderSwitchResult> {
+    fn switch_locked_inner(
+        &self,
+        id_or_name: &str,
+        agent: AgentId,
+    ) -> Result<ProviderSwitchResult> {
         let backup = self.backup.as_ref().ok_or_else(|| {
             AppError::Unsupported(
                 "provider live switching requires an explicitly configured backup root".into(),
             )
         })?;
-        let _lock = self.acquire_live_lock(agent)?.ok_or_else(|| {
-            AppError::Unsupported("provider live switching is not configured".into())
-        })?;
 
         let target = self.get(id_or_name, Some(agent))?;
+        let target_is_reference = self.secret_resolver.is_reference_provider(&target)?;
+        let materialized_target = if target_is_reference {
+            Some(self.secret_resolver.materialize_for_live(&target)?)
+        } else {
+            None
+        };
         let adapter = self.adapter(agent)?;
         let live_before = adapter.read_config()?;
         ensure_config_agent(&live_before, agent)?;
         let current = self.repo.get_current(agent)?;
 
-        let live_for_backfill =
-            (!live_config_is_empty(&live_before.raw)).then_some(live_before.raw.clone());
+        let live_for_backfill = if live_config_is_empty(&live_before.raw) {
+            None
+        } else if let Some(current) = current.as_ref() {
+            Some(
+                self.secret_resolver
+                    .scrub_for_backfill(current, &live_before.raw)?,
+            )
+        } else {
+            Some(live_before.raw.clone())
+        };
         let backfilled_provider_id = current
             .as_ref()
             .filter(|_| live_for_backfill.is_some())
@@ -356,9 +561,15 @@ impl ProviderService {
 
         // If the selected row is already current, its backfilled live value is
         // authoritative and must not immediately be overwritten by stale L1.
-        let target_raw = match (&current, &live_for_backfill) {
-            (Some(current), Some(raw)) if current.id == target.id => raw.clone(),
-            _ => target.settings_config.clone(),
+        let target_raw = if let Some(target) = materialized_target {
+            // Do not reuse live state for a generated reference: source key
+            // rotation must take effect even when this row is already current.
+            target.settings_config
+        } else {
+            match (&current, &live_for_backfill) {
+                (Some(current), Some(raw)) if current.id == target.id => raw.clone(),
+                _ => target.settings_config.clone(),
+            }
         };
         let target_config = AgentConfig {
             agent,
@@ -460,11 +671,21 @@ impl ProviderService {
         })
     }
 
-    fn acquire_live_lock(&self, agent: AgentId) -> Result<Option<ProviderSwitchLock>> {
-        self.lock_dir
-            .as_deref()
-            .map(|lock_dir| ProviderSwitchLock::acquire(lock_dir, agent))
-            .transpose()
+    fn acquire_live_lock(&self, agent: AgentId) -> Result<LiveWriteGuard> {
+        self.authority.acquire(agent)
+    }
+
+    fn validate_live_saga_guard(
+        &self,
+        guard: &ProviderLiveSagaGuard<'_>,
+        agent: AgentId,
+    ) -> Result<()> {
+        if !std::ptr::eq(self, guard.service) || guard.agent != agent {
+            return Err(AppError::InvalidArg(
+                "provider live saga guard does not match this service and agent".into(),
+            ));
+        }
+        self.authority.validate_guard(&guard.guard, agent)
     }
 }
 
@@ -547,309 +768,6 @@ fn live_config_is_empty(raw: &serde_json::Value) -> bool {
                 .get("content")
                 .and_then(|value| value.as_str())
                 .is_some_and(str::is_empty))
-}
-
-/// Conservative upper bound for a live provider switch/import.
-/// Locks older than this are treated as abandoned even if the PID still
-/// appears alive (PID reuse / hung process safety net).
-const PROVIDER_LOCK_TTL: Duration = Duration::from_secs(30 * 60);
-
-/// How many create/reclaim attempts after observing an existing lock file.
-const PROVIDER_LOCK_ACQUIRE_ATTEMPTS: usize = 3;
-
-/// Per-agent exclusive live-switch lock with owner metadata and stale recovery.
-///
-/// Lock file format (line-oriented, diagnostic-friendly):
-/// ```text
-/// pid=<os pid>
-/// created_unix_ms=<epoch millis>
-/// token=<uuid>
-/// ```
-#[derive(Debug)]
-struct ProviderSwitchLock {
-    path: PathBuf,
-    file: Option<std::fs::File>,
-    /// Identity of this holder; Drop only unlinks when the file still carries it.
-    token: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LockOwner {
-    pid: u32,
-    created_unix_ms: u64,
-    token: String,
-}
-
-impl LockOwner {
-    fn current() -> Self {
-        Self {
-            pid: std::process::id(),
-            created_unix_ms: unix_now_ms(),
-            token: Uuid::new_v4().to_string(),
-        }
-    }
-
-    fn serialize(&self) -> String {
-        format!(
-            "pid={}\ncreated_unix_ms={}\ntoken={}\n",
-            self.pid, self.created_unix_ms, self.token
-        )
-    }
-
-    /// Parse owner metadata. Unknown keys are ignored for forward compatibility;
-    /// missing/invalid required fields fail closed (not reclaimable).
-    fn parse(raw: &str) -> Option<Self> {
-        let mut pid = None;
-        let mut created_unix_ms = None;
-        let mut token = None;
-
-        for line in raw.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let (key, value) = line.split_once('=')?;
-            let key = key.trim();
-            let value = value.trim();
-            match key {
-                "pid" => {
-                    pid = Some(value.parse::<u32>().ok()?);
-                }
-                "created_unix_ms" => {
-                    created_unix_ms = Some(value.parse::<u64>().ok()?);
-                }
-                "token" => {
-                    if value.is_empty() {
-                        return None;
-                    }
-                    token = Some(value.to_string());
-                }
-                _ => {}
-            }
-        }
-
-        Some(Self {
-            pid: pid?,
-            created_unix_ms: created_unix_ms?,
-            token: token?,
-        })
-    }
-
-    fn is_stale(&self) -> bool {
-        if lock_age_ms(self.created_unix_ms) >= PROVIDER_LOCK_TTL.as_millis() as u64 {
-            return true;
-        }
-        !process_is_alive(self.pid)
-    }
-
-    fn same_identity(&self, other: &Self) -> bool {
-        self.pid == other.pid
-            && self.created_unix_ms == other.created_unix_ms
-            && self.token == other.token
-    }
-}
-
-impl ProviderSwitchLock {
-    fn acquire(lock_dir: &Path, agent: AgentId) -> Result<Self> {
-        std::fs::create_dir_all(lock_dir)?;
-        let path = lock_dir.join(format!("provider-{}.lock", agent.as_str()));
-
-        for _ in 0..PROVIDER_LOCK_ACQUIRE_ATTEMPTS {
-            match Self::try_create(&path) {
-                Ok(lock) => return Ok(lock),
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                    if !try_reclaim_stale_lock(&path)? {
-                        return Err(lock_held_error(agent));
-                    }
-                    // Stale lock removed (or raced away); retry exclusive create.
-                }
-                Err(error) => return Err(error.into()),
-            }
-        }
-
-        Err(lock_held_error(agent))
-    }
-
-    fn try_create(path: &Path) -> std::io::Result<Self> {
-        let owner = LockOwner::current();
-        let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-        if let Err(error) = file.write_all(owner.serialize().as_bytes()) {
-            // Close the handle first (Windows cannot unlink an open file), then
-            // best-effort remove the exclusive-created path so a write failure
-            // does not leave a permanent empty/partial lock behind.
-            drop(file);
-            let _ = std::fs::remove_file(path);
-            return Err(error);
-        }
-        // Best-effort durability so a crash mid-write is less likely to leave
-        // an empty/partial owner record that another process must interpret.
-        let _ = file.sync_all();
-        Ok(Self {
-            path: path.to_path_buf(),
-            file: Some(file),
-            token: owner.token,
-        })
-    }
-}
-
-impl Drop for ProviderSwitchLock {
-    fn drop(&mut self) {
-        // Windows refuses to unlink an open file; close the handle first.
-        drop(self.file.take());
-        // Never delete a lock we no longer own (reclaimed / replaced).
-        match std::fs::read_to_string(&self.path) {
-            Ok(raw) => {
-                if LockOwner::parse(&raw).is_some_and(|owner| owner.token == self.token) {
-                    let _ = std::fs::remove_file(&self.path);
-                }
-            }
-            Err(_) => {
-                // Missing or unreadable: nothing safe to do.
-            }
-        }
-    }
-}
-
-fn lock_held_error(agent: AgentId) -> AppError {
-    AppError::message(
-        "provider.lock",
-        format!(
-            "another provider switch is already running for agent {}",
-            agent.as_str()
-        ),
-    )
-}
-
-/// Attempt to remove a lock file only when it is both stale and unchanged
-/// between diagnosis and unlink (read-after-verify + identity token).
-///
-/// Returns `true` when the path is clear for a new exclusive create
-/// (removed by us, already gone, or raced away). Returns `false` when the
-/// lock is active or malformed (fail-closed: do not reclaim).
-fn try_reclaim_stale_lock(path: &Path) -> Result<bool> {
-    let raw = match std::fs::read_to_string(path) {
-        Ok(raw) => raw,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(true),
-        Err(error) => return Err(error.into()),
-    };
-
-    let owner = match LockOwner::parse(&raw) {
-        Some(owner) => owner,
-        // Malformed / incomplete metadata: fail closed, never unlink.
-        None => return Ok(false),
-    };
-
-    if !owner.is_stale() {
-        return Ok(false);
-    }
-
-    // Re-read and require identical owner identity before unlinking so we do
-    // not delete a lock that was just replaced or refreshed by another process.
-    let raw_again = match std::fs::read_to_string(path) {
-        Ok(raw) => raw,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(true),
-        Err(error) => return Err(error.into()),
-    };
-    if raw_again != raw {
-        return Ok(false);
-    }
-    let owner_again = match LockOwner::parse(&raw_again) {
-        Some(owner) => owner,
-        None => return Ok(false),
-    };
-    if !owner.same_identity(&owner_again) {
-        return Ok(false);
-    }
-
-    match std::fs::remove_file(path) {
-        Ok(()) => Ok(true),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
-        // Someone else may hold the file open (Windows) or replaced it mid-flight.
-        Err(_) => Ok(false),
-    }
-}
-
-fn unix_now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
-}
-
-fn lock_age_ms(created_unix_ms: u64) -> u64 {
-    unix_now_ms().saturating_sub(created_unix_ms)
-}
-
-/// Best-effort liveness probe. Prefer false negatives (assume alive) when the
-/// OS check is inconclusive so reclaim falls back to TTL only.
-fn process_is_alive(pid: u32) -> bool {
-    if pid == 0 {
-        return false;
-    }
-
-    #[cfg(windows)]
-    {
-        windows_process_is_alive(pid)
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        Path::new(&format!("/proc/{pid}")).exists()
-    }
-
-    #[cfg(all(unix, not(target_os = "linux")))]
-    {
-        use std::process::{Command, Stdio};
-        Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|status| status.success())
-            // Unknown → treat as alive (do not reclaim on PID alone).
-            .unwrap_or(true)
-    }
-
-    #[cfg(not(any(windows, unix)))]
-    {
-        let _ = pid;
-        // No process probe: only TTL can mark the lock stale.
-        true
-    }
-}
-
-#[cfg(windows)]
-fn windows_process_is_alive(pid: u32) -> bool {
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn OpenProcess(
-            desired_access: u32,
-            inherit_handle: i32,
-            process_id: u32,
-        ) -> *mut core::ffi::c_void;
-        fn CloseHandle(handle: *mut core::ffi::c_void) -> i32;
-        fn GetExitCodeProcess(handle: *mut core::ffi::c_void, exit_code: *mut u32) -> i32;
-        fn GetLastError() -> u32;
-    }
-
-    // PROCESS_QUERY_LIMITED_INFORMATION — enough for exit code, works across sessions.
-    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
-    const STILL_ACTIVE: u32 = 259;
-    const ERROR_ACCESS_DENIED: u32 = 5;
-
-    unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if handle.is_null() {
-            // Access denied ⇒ process exists but is protected; treat as alive.
-            // Any other open failure (invalid/exited pid) ⇒ not alive.
-            return GetLastError() == ERROR_ACCESS_DENIED;
-        }
-        let mut exit_code = 0u32;
-        let ok = GetExitCodeProcess(handle, &mut exit_code);
-        CloseHandle(handle);
-        ok != 0 && exit_code == STILL_ACTIVE
-    }
 }
 
 fn validate_provider_input(input: &ProviderInput) -> Result<()> {

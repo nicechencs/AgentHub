@@ -81,7 +81,10 @@ fn assignment_requires_package_and_valid_agent_key() {
         last_error: None,
         updated_at: "t0".into(),
     };
-    assert_eq!(repo.upsert_assignment(&row).unwrap_err().code(), "not_found");
+    assert_eq!(
+        repo.upsert_assignment(&row).unwrap_err().code(),
+        "not_found"
+    );
 
     repo.upsert_package(&sample_package("demo")).unwrap();
     let bad = SkillAssignmentRow {
@@ -94,7 +97,10 @@ fn assignment_requires_package_and_valid_agent_key() {
         last_error: None,
         updated_at: "t0".into(),
     };
-    assert_eq!(repo.upsert_assignment(&bad).unwrap_err().code(), "invalid_arg");
+    assert_eq!(
+        repo.upsert_assignment(&bad).unwrap_err().code(),
+        "invalid_arg"
+    );
 }
 
 #[test]
@@ -118,14 +124,7 @@ fn assignment_upsert_observed_and_indexes() {
     assert_eq!(saved.observed_status, "pending");
 
     let observed = repo
-        .update_observed(
-            "demo",
-            "claude",
-            "applied",
-            Some("rev-1"),
-            None,
-            "t1",
-        )
+        .update_observed("demo", "claude", "applied", Some("rev-1"), None, "t1")
         .unwrap();
     assert_eq!(observed.observed_status, "applied");
     assert_eq!(observed.applied_revision.as_deref(), Some("rev-1"));

@@ -134,7 +134,12 @@ mod tests {
         assert_eq!(count(), 8);
         let all = list_all();
         assert_eq!(all.len(), 8);
-        for agent in [AgentId::Claude, AgentId::Codex, AgentId::Kimi, AgentId::Grok] {
+        for agent in [
+            AgentId::Claude,
+            AgentId::Codex,
+            AgentId::Kimi,
+            AgentId::Grok,
+        ] {
             assert_eq!(list_for(agent).len(), 2, "agent {agent}");
         }
         assert!(

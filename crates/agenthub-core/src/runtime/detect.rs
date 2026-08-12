@@ -67,11 +67,9 @@ mod tests {
     fn detect_all_matches_host_runtimes() {
         let statuses = detect_all();
         assert_eq!(statuses.len(), host_runtimes().len());
-        assert!(
-            statuses
-                .iter()
-                .all(|s| s.id != RuntimeId::PowerShell || cfg!(windows))
-        );
+        assert!(statuses
+            .iter()
+            .all(|s| s.id != RuntimeId::PowerShell || cfg!(windows)));
     }
 }
 

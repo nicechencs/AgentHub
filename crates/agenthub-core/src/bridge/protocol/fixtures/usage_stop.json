@@ -1,0 +1,18 @@
+{
+  "id": "chatcmpl_length",
+  "created": 1720000004,
+  "model": "kimi-k2.5",
+  "choices": [
+    {
+      "index": 0,
+      "message": {"role": "assistant", "content": "partial"},
+      "finish_reason": "length"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 10,
+    "completion_tokens": 5,
+    "total_tokens": 15,
+    "prompt_tokens_details": {"cached_tokens": 3}
+  }
+}

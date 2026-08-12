@@ -15,6 +15,14 @@ const mockState: Record<AgentId, Account[]> = {
 
 let lastSwitch: { agentId: AgentId; fromId: string } | null = null;
 
+/** Read-only lookup used by browser-only compatibility previews. */
+export function getMockAccountById(accountId: string): Account | undefined {
+  const found = (Object.keys(mockState) as AgentId[])
+    .flatMap((agentId) => mockState[agentId] ?? [])
+    .find((account) => account.id === accountId);
+  return found ? { ...found } : undefined;
+}
+
 export function createMockAccountPort(): AccountPort {
   return {
     async listAccounts(agentId) {

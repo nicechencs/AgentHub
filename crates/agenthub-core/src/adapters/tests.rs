@@ -69,6 +69,35 @@ fn infer_channel_from_npm_and_native_paths() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn infer_channel_follows_unix_npm_shim_target() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir
+        .path()
+        .join("nvm")
+        .join("versions")
+        .join("node")
+        .join("v22.0.0")
+        .join("lib")
+        .join("node_modules")
+        .join("@openai")
+        .join("codex")
+        .join("bin")
+        .join("codex.js");
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    std::fs::write(&target, "#!/usr/bin/env node\n").unwrap();
+    // A generic ~/.local/bin shim looks native without following the link.
+    let shim_dir = dir.path().join(".local").join("bin");
+    std::fs::create_dir_all(&shim_dir).unwrap();
+    let shim = shim_dir.join("codex");
+    symlink(&target, &shim).unwrap();
+
+    assert_eq!(infer_channel(&shim, None), "npm");
+}
+
 #[test]
 fn looks_like_version_line_accepts_cli_versions() {
     assert!(looks_like_version_line("2.1.220 (Claude Code)"));

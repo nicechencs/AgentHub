@@ -67,6 +67,10 @@ pub async fn upsert_provider(
     input: ProviderInput,
 ) -> Result<Provider, String> {
     let hub = state.hub_arc()?;
+    let _target_guard = state
+        .bridge_saga_coordinator()
+        .lock_target(input.agent_id)
+        .await;
     with_hub_blocking(hub, move |hub| upsert_provider_inner(hub, input)).await
 }
 
@@ -77,7 +81,9 @@ pub async fn delete_provider(
     agent_id: String,
     provider_id: String,
 ) -> Result<(), String> {
+    let agent = parse_agent(&agent_id)?;
     let hub = state.hub_arc()?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
         delete_provider_inner(hub, &agent_id, &provider_id)
     })
@@ -91,7 +97,9 @@ pub async fn import_provider_live(
     agent_id: String,
     name: Option<String>,
 ) -> Result<Provider, String> {
+    let agent = parse_agent(&agent_id)?;
     let hub = state.hub_arc()?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
         import_provider_live_inner(hub, &agent_id, name.as_deref())
     })
@@ -105,7 +113,9 @@ pub async fn switch_provider(
     agent_id: String,
     id_or_name: String,
 ) -> Result<ProviderSwitchResult, String> {
+    let agent = parse_agent(&agent_id)?;
     let hub = state.hub_arc()?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
         switch_provider_inner(hub, &agent_id, &id_or_name)
     })

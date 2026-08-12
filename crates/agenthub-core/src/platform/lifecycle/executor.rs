@@ -2,9 +2,11 @@
 
 use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
-use crate::models::{AgentId, InstallOutcome};
+use crate::models::{AgentId, BackupKind, InstallOutcome};
 use crate::platform::install::InstallContribution;
 use crate::platform::AgentKey;
+use crate::services::{BackupService, LiveWriteAuthority};
+use crate::storage::Database;
 use crate::utils::command_exec::CommandExecutor;
 
 use super::{LifecycleError, OperationKind};
@@ -43,11 +45,22 @@ pub trait LifecycleInstallExecutor: Send + Sync {
 #[derive(Clone)]
 pub struct BuiltinLifecycleInstallExecutor {
     adapters: AdapterRegistry,
+    authority: LiveWriteAuthority,
+    backups: BackupService,
 }
 
 impl BuiltinLifecycleInstallExecutor {
-    pub fn new(adapters: AdapterRegistry) -> Self {
-        Self { adapters }
+    pub fn new(db: &Database, adapters: AdapterRegistry) -> Self {
+        let authority = LiveWriteAuthority::from_database(db);
+        Self {
+            backups: BackupService::new(
+                db.clone(),
+                adapters.clone(),
+                authority.data_root().join("backups"),
+            ),
+            adapters,
+            authority,
+        }
     }
 }
 
@@ -102,8 +115,29 @@ impl LifecycleInstallExecutor for BuiltinLifecycleInstallExecutor {
         command_executor: &dyn CommandExecutor,
     ) -> Result<InstallOutcome> {
         let agent = require_builtin(key, OperationKind::Uninstall)?;
-        crate::services::install_service::uninstall_agent(
+        if purge_config {
+            let guard = self.authority.acquire(agent)?;
+            match self.backups.snapshot_with_guard(
+                &guard,
+                agent,
+                BackupKind::PreUninstall,
+                Some("pre-uninstall"),
+            ) {
+                Ok(_) | Err(crate::error::AppError::NotFound(_)) => {}
+                Err(error) => return Err(error),
+            }
+            return crate::services::install_service::uninstall_agent_with_guard(
+                &self.adapters,
+                &self.authority,
+                &guard,
+                agent,
+                true,
+                command_executor,
+            );
+        }
+        crate::services::install_service::uninstall_agent_with_authority(
             &self.adapters,
+            &self.authority,
             agent,
             purge_config,
             command_executor,

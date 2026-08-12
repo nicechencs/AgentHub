@@ -196,5 +196,3 @@ fn map_row(row: &Row<'_>) -> rusqlite::Result<OperationRecord> {
         finished_at: row.get(10)?,
     })
 }
-
-

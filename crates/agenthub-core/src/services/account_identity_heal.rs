@@ -52,17 +52,21 @@ pub fn needs_identity_heal(account: &Account) -> bool {
 /// Best-effort extract identity from credentials; mutates account when improved.
 /// Returns true if the account was modified (caller should persist).
 pub fn heal_account_identity(account: &mut Account) -> bool {
+    // Codex: promote legacy PKCE token bundles (`type=oauth`, no format) into
+    // live-writable `auth_json` before identity/token extraction.
+    let shape_dirty = heal_codex_credential_shape(account);
+
     let Some(identity) = extract_identity_from_credentials(account.agent_id, &account.credentials)
     else {
         // Still try to upgrade pure placeholder labels using nothing but body provider.
-        let mut dirty = upgrade_placeholder_label_only(account);
+        let mut dirty = shape_dirty || upgrade_placeholder_label_only(account);
         if super::account_quota::heal_token_expiry(account) {
             dirty = true;
         }
         return dirty;
     };
     if identity.is_empty() {
-        let mut dirty = upgrade_placeholder_label_only(account);
+        let mut dirty = shape_dirty || upgrade_placeholder_label_only(account);
         if super::account_quota::heal_token_expiry(account) {
             dirty = true;
         }
@@ -148,12 +152,45 @@ pub fn heal_account_identity(account: &mut Account) -> bool {
         }
     }
 
-    before
-        != (
-            account.label.clone(),
-            account.extra.clone(),
-            account.credentials.clone(),
-        )
+    shape_dirty
+        || before
+            != (
+                account.label.clone(),
+                account.extra.clone(),
+                account.credentials.clone(),
+            )
+}
+
+/// Convert Codex OAuth PKCE token bundles into `format=auth_json` when needed.
+fn heal_codex_credential_shape(account: &mut Account) -> bool {
+    if account.agent_id != AgentId::Codex || account.kind != crate::models::AccountKind::Oauth {
+        return false;
+    }
+    let format = account
+        .credentials
+        .get("format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let has_live_body = account
+        .credentials
+        .pointer("/body/tokens/access_token")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty())
+        || account
+            .credentials
+            .pointer("/body/tokens/refresh_token")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.is_empty());
+    if format == "auth_json" && has_live_body {
+        return false;
+    }
+    match crate::adapters::normalize_codex_oauth_credentials(&account.credentials) {
+        Ok(normalized) if normalized != account.credentials => {
+            account.credentials = normalized;
+            true
+        }
+        _ => false,
+    }
 }
 
 fn upgrade_placeholder_label_only(account: &mut Account) -> bool {
@@ -185,7 +222,11 @@ fn best_label_for(agent: AgentId, identity: &OAuthIdentity, credentials: &Value)
     Some(core)
 }
 
-fn flatten_tokens_for_agent(agent: AgentId, obj: &mut serde_json::Map<String, Value>, original: &Value) {
+fn flatten_tokens_for_agent(
+    agent: AgentId,
+    obj: &mut serde_json::Map<String, Value>,
+    original: &Value,
+) {
     // Codex: body.tokens.*
     if let Some(tokens) = original.pointer("/body/tokens") {
         if obj.get("access_token").and_then(|v| v.as_str()).is_none() {
@@ -267,10 +308,7 @@ fn flatten_tokens_for_agent(agent: AgentId, obj: &mut serde_json::Map<String, Va
     }
 }
 
-fn extract_identity_from_credentials(
-    agent: AgentId,
-    credentials: &Value,
-) -> Option<OAuthIdentity> {
+fn extract_identity_from_credentials(agent: AgentId, credentials: &Value) -> Option<OAuthIdentity> {
     let mut id = identity_from_credentials(credentials);
     let access = credentials
         .get("access_token")
@@ -282,7 +320,10 @@ fn extract_identity_from_credentials(
         .and_then(|v| v.as_str())
         .unwrap_or(agent.as_str());
     id.merge_missing(&extract_oauth_identity(
-        provider, credentials, access, id_token,
+        provider,
+        credentials,
+        access,
+        id_token,
     ));
 
     if let Some(body) = credentials.get("body") {
@@ -317,9 +358,7 @@ fn identity_from_live_body(agent: AgentId, body: &Value) -> OAuthIdentity {
         let access = tokens.get("access_token").and_then(|v| v.as_str());
         let id_token = tokens.get("id_token").and_then(|v| v.as_str());
         // Prefer id_token first (has email); extract_oauth_identity already merges both.
-        id.merge_missing(&extract_oauth_identity(
-            "codex", tokens, access, id_token,
-        ));
+        id.merge_missing(&extract_oauth_identity("codex", tokens, access, id_token));
         // Explicit: if id_token present, force email extraction path again with id_token as primary.
         if let Some(idt) = id_token {
             id.merge_missing(&extract_oauth_identity("codex", tokens, None, Some(idt)));
@@ -574,6 +613,45 @@ mod tests {
     }
 
     #[test]
+    fn heals_codex_legacy_pkce_bundle_into_auth_json() {
+        let mut acc = base_account(
+            AgentId::Codex,
+            "codex-oauth",
+            json!({
+                "type": "oauth",
+                "provider": "codex",
+                "access_token": "at-legacy",
+                "refresh_token": "rt-legacy",
+                "id_token": "idt-legacy",
+                "account_id": "acc-legacy",
+                "email": "legacy@example.com"
+            }),
+            json!({ "source": "oauth_pkce" }),
+        );
+        assert!(heal_account_identity(&mut acc));
+        assert_eq!(
+            acc.credentials.get("format").and_then(|v| v.as_str()),
+            Some("auth_json")
+        );
+        assert_eq!(
+            acc.credentials
+                .pointer("/body/tokens/access_token")
+                .and_then(|v| v.as_str()),
+            Some("at-legacy")
+        );
+        assert_eq!(
+            acc.credentials
+                .pointer("/body/tokens/refresh_token")
+                .and_then(|v| v.as_str()),
+            Some("rt-legacy")
+        );
+        assert_eq!(
+            acc.credentials.get("email").and_then(|v| v.as_str()),
+            Some("legacy@example.com")
+        );
+    }
+
+    #[test]
     fn heals_codex_tokens_id_token_email_and_plan() {
         let exp = chrono::Utc::now().timestamp() + 6 * 3600;
         let id_token = make_jwt(json!({
@@ -623,7 +701,11 @@ mod tests {
             Some("prolite")
         );
         // JWT exp should surface as expiresAt so the UI can show remaining time.
-        assert!(acc.extra.get("expiresAt").and_then(|v| v.as_str()).is_some());
+        assert!(acc
+            .extra
+            .get("expiresAt")
+            .and_then(|v| v.as_str())
+            .is_some());
         assert_eq!(
             acc.extra.get("tokenExpired").and_then(|v| v.as_bool()),
             Some(false)

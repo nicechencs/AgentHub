@@ -9,6 +9,10 @@ mod pi;
 pub mod pi_auth;
 pub(crate) mod workbuddy;
 
+// Codex OAuth PKCE historically stored flat token bundles; adapters + oauth finish
+// both need the same conversion into live `auth_json` shape.
+pub(crate) use codex::normalize_oauth_credentials as normalize_codex_oauth_credentials;
+
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -1077,8 +1081,30 @@ fn npm_global_bin_dirs(home: &Path) -> Vec<PathBuf> {
 
 /// Prefer concrete channel (`npm` / `native`) over ambiguous hints like `npm-or-native`.
 fn infer_channel(path: &Path, hint: Option<&str>) -> String {
+    // npm global shims on Homebrew/nvm are commonly symlinks from `bin/`
+    // into `lib/node_modules/...`. Prefer the canonical target, so even a
+    // shim under a generic `~/.local/bin` is not misclassified as native.
+    let canonical = std::fs::canonicalize(path).ok();
+    let from_path = canonical
+        .as_deref()
+        .and_then(infer_channel_from_path)
+        .or_else(|| infer_channel_from_path(path));
+
+    if let Some(c) = from_path {
+        return c.to_string();
+    }
+    match hint {
+        Some("npm") | Some("native") => hint.unwrap().to_string(),
+        Some(h) if h.contains("npm") && !h.contains("native") => "npm".into(),
+        Some(h) if h.contains("native") && !h.contains("npm") => "native".into(),
+        // Ambiguous (e.g. claude "npm-or-native"): default native when path looks like home bin.
+        _ => "native".into(),
+    }
+}
+
+fn infer_channel_from_path(path: &Path) -> Option<&'static str> {
     let s = path.to_string_lossy().to_ascii_lowercase();
-    let from_path = if s.contains(std::path::MAIN_SEPARATOR) {
+    if s.contains(std::path::MAIN_SEPARATOR) {
         // Windows npm shim: ...\AppData\Roaming\npm\xxx.cmd
         // Unix npm: .../node_modules/... or .../npm-global/...
         if s.contains(&format!("{sep}npm{sep}", sep = std::path::MAIN_SEPARATOR))
@@ -1105,17 +1131,6 @@ fn infer_channel(path: &Path, hint: Option<&str>) -> String {
         }
     } else {
         None
-    };
-
-    if let Some(c) = from_path {
-        return c.to_string();
-    }
-    match hint {
-        Some("npm") | Some("native") => hint.unwrap().to_string(),
-        Some(h) if h.contains("npm") && !h.contains("native") => "npm".into(),
-        Some(h) if h.contains("native") && !h.contains("npm") => "native".into(),
-        // Ambiguous (e.g. claude "npm-or-native"): default native when path looks like home bin.
-        _ => "native".into(),
     }
 }
 

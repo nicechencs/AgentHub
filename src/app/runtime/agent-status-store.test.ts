@@ -104,9 +104,14 @@ describe('agent-status-store', () => {
     } as unknown as Backend;
 
     const loading = loadAgentStatuses(backend);
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(getAgentStatusSnapshot().state).toBe('loading');
+
+    // listAgents 先完成时：主界面已可渲染（ready + refreshing），live-auth 仍在飞
+    await vi.waitFor(() => {
+      const mid = getAgentStatusSnapshot();
+      expect(mid.state).toBe('ready');
+      expect(mid.refreshing).toBe(true);
+      expect(mid.statuses).toHaveLength(2);
+    });
     expect(liveAuthProbeForAgent(getAgentStatusSnapshot(), 'codex')).toBeUndefined();
 
     claude.resolve({
@@ -125,6 +130,7 @@ describe('agent-status-store', () => {
     });
     const ready = await loading;
 
+    expect(ready.refreshing).toBe(false);
     expect(liveAuthProbeForAgent(ready, 'claude')?.agentId).toBe('claude');
     expect(liveAuthProbeForAgent(ready, 'codex')?.agentId).toBe('codex');
     expect(
@@ -133,6 +139,47 @@ describe('agent-status-store', () => {
         'codex',
       ),
     ).toBeUndefined();
+  });
+
+  it('publishes detect results before live-auth enrichment finishes', async () => {
+    const auth = deferred<{
+      agentId: string;
+      kind: string;
+      summary: string;
+      hasCredentials: boolean;
+      health: 'verified';
+    }>();
+    const backend = {
+      agent: {
+        listAgents: vi.fn(async () => [
+          { agentId: 'claude', installed: true, authStatus: 'none', authLabel: '未配置', running: false },
+        ]),
+      },
+      account: {
+        probeLiveAuth: vi.fn(() => auth.promise),
+      },
+    } as unknown as Backend;
+
+    const loading = loadAgentStatuses(backend);
+    await vi.waitFor(() => {
+      expect(getAgentStatusSnapshot()).toMatchObject({
+        state: 'ready',
+        refreshing: true,
+      });
+    });
+    expect(getAgentStatusSnapshot().statuses[0]?.installed).toBe(true);
+    expect(liveAuthProbeForAgent(getAgentStatusSnapshot(), 'claude')).toBeUndefined();
+
+    auth.resolve({
+      agentId: 'claude',
+      kind: 'oauth',
+      summary: 'verified',
+      hasCredentials: true,
+      health: 'verified',
+    });
+    const ready = await loading;
+    expect(ready).toMatchObject({ state: 'ready', refreshing: false });
+    expect(liveAuthProbeForAgent(ready, 'claude')?.health).toBe('verified');
   });
 
   it('keeps backend failure distinct from an empty installed result', async () => {

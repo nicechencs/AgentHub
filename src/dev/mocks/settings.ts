@@ -7,6 +7,7 @@ import {
   saveString,
   StorageKey,
 } from '@/lib/ui-preferences';
+import { packageAppVersion } from '@/lib/app-version';
 import { applyTheme, type ThemeMode } from '@/lib/theme';
 import type { AppSettings, LogLevel, SkillMarketSource } from '@/lib/types';
 
@@ -27,7 +28,8 @@ const DEFAULTS: AppSettings = {
   skillMarketSource: 'auto',
   autoBackup: true,
   usageCollectIntervalMin: 30,
-  appVersion: '0.1.0',
+  // Tracks package.json via Vite inject — no hand-maintained semver.
+  appVersion: packageAppVersion(),
 };
 
 const SETTINGS_KEY = 'agenthub:settings';

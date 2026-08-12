@@ -4,9 +4,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use crate::models::AgentId;
-use crate::platform::paths::{
-    builtin_path_registry, resolve_agent_config_dir, resolve_agent_home,
-};
+use crate::platform::paths::{builtin_path_registry, resolve_agent_config_dir, resolve_agent_home};
 
 fn restore_env(key: &str, prev: Option<OsString>) {
     match prev {

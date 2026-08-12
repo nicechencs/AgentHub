@@ -174,6 +174,12 @@ fn list_claude_aggregates_sessions_into_project() {
     assert!(sessions
         .iter()
         .all(|s| s.project_id == "claude:proj:-C-Users-demo-app"));
+    let mut native_ids: Vec<_> = sessions
+        .iter()
+        .filter_map(|s| s.session_id.as_deref())
+        .collect();
+    native_ids.sort();
+    assert_eq!(native_ids, vec!["sess-1", "sess-2"]);
     assert!(
         sessions[0].cwd.as_deref() == Some("C:\\Users\\demo\\app")
             || sessions
@@ -309,6 +315,7 @@ fn list_codex_groups_by_payload_cwd_session_meta() {
 
     let sessions = list_sessions_for_agent_home(AgentId::Codex, &home, None).unwrap();
     assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].session_id.as_deref(), Some("abc"));
     // Drive letter normalized to uppercase in storage key.
     assert_eq!(
         sessions[0].project_id,
@@ -409,6 +416,19 @@ fn list_grok_groups_by_url_encoded_dir_and_ignores_sidecars() {
         3,
         "ids={:?}",
         sessions.iter().map(|s| &s.id).collect::<Vec<_>>()
+    );
+    let mut native_ids: Vec<_> = sessions
+        .iter()
+        .filter_map(|s| s.session_id.clone())
+        .collect();
+    native_ids.sort();
+    assert_eq!(
+        native_ids,
+        vec![
+            "019fb8a7-06a3-7cb2-83e6-980123542122".to_string(),
+            "019fc000-0000-0000-0000-000000000001".to_string(),
+            "bbbbbbbb-0000-0000-0000-000000000002".to_string(),
+        ]
     );
     let projects = list_projects_for_agent_home(AgentId::Grok, &home, None).unwrap();
     assert_eq!(projects.len(), 2);
@@ -783,6 +803,10 @@ fn list_kimi_uses_workspaces_and_one_row_per_session() {
         sessions[0].cwd.as_deref().map(|c| c.replace('\\', "/")),
         Some("D:/demo_chen/2026/AgentHub".into())
     );
+    assert_eq!(
+        sessions[0].session_id.as_deref(),
+        Some("cc77e803-2743-4383-900d-4e2f4e054951")
+    );
 
     let projects = list_projects_for_agent_home(AgentId::Kimi, &home, None).unwrap();
     assert_eq!(projects.len(), 1);
@@ -830,6 +854,16 @@ fn list_pi_groups_by_encoded_session_dir() {
 
     let sessions = list_sessions_for_agent_home(AgentId::Pi, &home, None).unwrap();
     assert_eq!(sessions.len(), 2);
+    assert!(
+        sessions
+            .iter()
+            .any(|s| s.session_id.as_deref() == Some("019fc1b2")),
+        "native ids={:?}",
+        sessions
+            .iter()
+            .map(|s| s.session_id.as_deref())
+            .collect::<Vec<_>>()
+    );
     let projects = list_projects_for_agent_home(AgentId::Pi, &home, None).unwrap();
     assert_eq!(projects.len(), 2);
     assert!(projects.iter().all(|p| p.title != "未分类会话"));
@@ -845,6 +879,7 @@ fn list_pi_groups_by_encoded_session_dir() {
     let (_, key) = parse_project_id(&example.id).unwrap();
     let only = list_sessions_for_project_home(AgentId::Pi, &home, &example.id, &key, None).unwrap();
     assert_eq!(only.len(), 1);
+    assert_eq!(only[0].session_id.as_deref(), Some("019fc1b2"));
     assert!(
         only[0]
             .preview
@@ -979,6 +1014,7 @@ fn session_index_roundtrip_and_freshness() {
             preview: Some("p".into()),
             message_count: Some(2),
             updated_at: "t0".into(),
+            session_id: Some("sid-1".into()),
         },
     );
     store.save_if_dirty();

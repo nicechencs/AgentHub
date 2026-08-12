@@ -1,0 +1,23 @@
+{
+  "model": "kimi-k2.5",
+  "instructions": "Answer precisely.",
+  "input": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": [{"type": "input_text", "text": "Hello, 世界"}]
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "name": "weather",
+      "description": "Get weather",
+      "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}
+    }
+  ],
+  "tool_choice": "auto",
+  "temperature": 0.2,
+  "max_output_tokens": 512,
+  "stream": false
+}

@@ -30,8 +30,8 @@ use crate::catalog::install::{
 };
 use crate::error::{AppError, Result};
 use crate::logging::targets;
-use crate::utils::redact::redact_text;
 use crate::models::{AgentId, AgentUpdateInfo, AgentUpdateState, DetectStatus};
+use crate::utils::redact::redact_text;
 
 /// Default cache TTL for npm latest versions (interactive Agents page).
 /// Shorter than the old 12h so reopening the page revalidates within a session;
@@ -114,7 +114,9 @@ pub fn invalidate_latest_cache(data_dir: &Path, agent: AgentId) {
     if let Some(pkg) = npm_package(agent) {
         // Remove any key that starts with this package (includes local-version buckets).
         let prefix = format!("{pkg}|");
-        cache.entries.retain(|k, _| k != pkg && !k.starts_with(&prefix));
+        cache
+            .entries
+            .retain(|k, _| k != pkg && !k.starts_with(&prefix));
         // Legacy single-key form.
         cache.entries.remove(pkg);
     }
@@ -171,13 +173,7 @@ fn check_one(
         );
     }
 
-    let remote = match resolve_remote_latest(
-        agent,
-        current.as_deref(),
-        force,
-        cache,
-        dirty,
-    ) {
+    let remote = match resolve_remote_latest(agent, current.as_deref(), force, cache, dirty) {
         Ok(r) => r,
         Err(e) => {
             return AgentUpdateInfo::unknown(
@@ -200,9 +196,7 @@ fn check_one(
     // Annotate non-npm installs: remote probe source may differ from install channel.
     if channel != "npm" {
         let base = if remote.source.starts_with("npm") {
-            format!(
-                "当前安装渠道为 {channel}，已对照 npm dist-tag 版本；升级仍按本机渠道执行"
-            )
+            format!("当前安装渠道为 {channel}，已对照 npm dist-tag 版本；升级仍按本机渠道执行")
         } else {
             format!(
                 "当前安装渠道为 {channel}，已对照官方版本源（{}）；升级仍按本机渠道执行",
@@ -276,8 +270,7 @@ fn resolve_official_probe(
     let version = match probe {
         OfficialVersionProbe::JsonVersion { url, .. } => {
             let body = http_get_json(url, "application/json")?;
-            let v: Value =
-                serde_json::from_str(&body).map_err(|e| format!("invalid json: {e}"))?;
+            let v: Value = serde_json::from_str(&body).map_err(|e| format!("invalid json: {e}"))?;
             v.get("version")
                 .and_then(|x| x.as_str())
                 .map(str::trim)
@@ -566,12 +559,9 @@ fn resolve_npm_remote(
     }
 
     let dist_tags = fetch_npm_dist_tags(package)?;
-    let (version, tag) = pick_latest_from_dist_tags(
-        &dist_tags,
-        npm_prerelease_tags(agent),
-        local_version,
-    )
-    .ok_or_else(|| "registry dist-tags missing latest".to_string())?;
+    let (version, tag) =
+        pick_latest_from_dist_tags(&dist_tags, npm_prerelease_tags(agent), local_version)
+            .ok_or_else(|| "registry dist-tags missing latest".to_string())?;
 
     let checked_at = Utc::now().to_rfc3339();
     let source = if tag == "latest" {
@@ -650,8 +640,8 @@ fn fetch_npm_dist_tags_via_tag_endpoints(
         let url = format!("{}/{}", npm_package_url(package), tag);
         match http_get_json(&url, "application/json") {
             Ok(body) => {
-                let v: Value =
-                    serde_json::from_str(&body).map_err(|e| format!("invalid json ({tag}): {e}"))?;
+                let v: Value = serde_json::from_str(&body)
+                    .map_err(|e| format!("invalid json ({tag}): {e}"))?;
                 if let Some(ver) = v
                     .get("version")
                     .and_then(|x| x.as_str())
@@ -758,9 +748,8 @@ fn load_cache(path: &Path) -> LatestCacheFile {
 
 fn save_cache(path: &Path, cache: &LatestCacheFile) -> Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| {
-            AppError::message("update.cache", format!("create cache dir: {e}"))
-        })?;
+        fs::create_dir_all(parent)
+            .map_err(|e| AppError::message("update.cache", format!("create cache dir: {e}")))?;
     }
     let raw = serde_json::to_string_pretty(cache)
         .map_err(|e| AppError::message("update.cache", format!("serialize cache: {e}")))?;
@@ -799,10 +788,7 @@ mod tests {
 
     #[test]
     fn version_cmp_strips_noise() {
-        assert_eq!(
-            version_cmp("claude 1.0.5 (x64)", "1.0.6"),
-            VersionCmp::Less
-        );
+        assert_eq!(version_cmp("claude 1.0.5 (x64)", "1.0.6"), VersionCmp::Less);
     }
 
     #[test]

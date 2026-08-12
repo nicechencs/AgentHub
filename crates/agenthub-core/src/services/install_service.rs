@@ -7,6 +7,9 @@
 
 use std::time::{Duration, Instant};
 
+#[cfg(not(windows))]
+use std::path::{Path, PathBuf};
+
 use crate::adapters::AdapterRegistry;
 use crate::catalog::install::{
     native_ps1_url, native_setup_url, native_sh_url, npm_install_extra_flags, npm_package,
@@ -20,6 +23,8 @@ use crate::logging::{self, targets};
 use crate::models::{AgentId, DetectStatus, EnvStatusKind, InstallOutcome, RuntimeId};
 use crate::platform::install::builtin_install_registry;
 use crate::runtime;
+use crate::services::{LiveWriteAuthority, LiveWriteGuard};
+use crate::storage::Database;
 use crate::utils::command_exec::{CommandExecutor, ExecRequest, ExecResult, SystemCommandExecutor};
 use crate::utils::paths::agent_home;
 use crate::utils::redact::redact_text;
@@ -108,15 +113,9 @@ fn log_install_result(
 }
 
 fn resolve_bin(names: &[&str]) -> Result<String> {
-    for name in names {
-        if let Ok(p) = which::which(name) {
-            return Ok(p.to_string_lossy().into_owned());
-        }
-    }
-    Err(AppError::NotFound(format!(
-        "command not found: {}",
-        names.join(" | ")
-    )))
+    runtime::resolve_binary(names)
+        .map(|path| path.to_string_lossy().into_owned())
+        .ok_or_else(|| AppError::NotFound(format!("command not found: {}", names.join(" | "))))
 }
 
 /// Allowlisted binary paths that may be deleted on native uninstall (never arbitrary dirs).
@@ -291,18 +290,11 @@ fn brew_formula(id: RuntimeId) -> Option<&'static str> {
 /// user's shell PATH.  The two paths cover Intel and Apple Silicon defaults.
 #[cfg(target_os = "macos")]
 fn resolve_brew() -> Result<String> {
-    if let Ok(path) = resolve_bin(&["brew"]) {
-        return Ok(path);
-    }
-    for candidate in ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"] {
-        let path = std::path::Path::new(candidate);
-        if path.is_file() {
-            return Ok(candidate.into());
-        }
-    }
-    Err(AppError::NotFound(
-        "command not found: brew (install Homebrew from https://brew.sh/)".into(),
-    ))
+    resolve_bin(&["brew"]).map_err(|_| {
+        AppError::NotFound(
+            "command not found: brew (install Homebrew from https://brew.sh/)".into(),
+        )
+    })
 }
 
 /// Complete an environment install by invalidating detection caches and
@@ -802,6 +794,55 @@ fn upgrade_succeeded(command_ok: bool, detected: &DetectStatus) -> bool {
 /// after optional backup handled by caller.
 pub fn uninstall_agent(
     registry: &AdapterRegistry,
+    db: &Database,
+    agent: AgentId,
+    purge_config: bool,
+    executor: &dyn CommandExecutor,
+) -> Result<InstallOutcome> {
+    let authority = LiveWriteAuthority::from_database(db);
+    uninstall_agent_with_authority(registry, &authority, agent, purge_config, executor)
+}
+
+/// Uninstall using a caller-composed shared live-write authority.
+///
+/// Lifecycle composition retains this guard across the entire purge, so the
+/// destructive config-directory removal cannot race a provider bridge,
+/// configuration apply, or backup restore for the same agent.
+pub fn uninstall_agent_with_authority(
+    registry: &AdapterRegistry,
+    authority: &LiveWriteAuthority,
+    agent: AgentId,
+    purge_config: bool,
+    executor: &dyn CommandExecutor,
+) -> Result<InstallOutcome> {
+    if purge_config {
+        let guard = authority.acquire(agent)?;
+        return uninstall_agent_with_guard(registry, authority, &guard, agent, true, executor);
+    }
+    uninstall_agent_inner(registry, agent, false, executor)
+}
+
+/// Guarded purge counterpart for an enclosing Core lifecycle saga that has
+/// already created its PreUninstall snapshot under the same authority.
+pub fn uninstall_agent_with_guard(
+    registry: &AdapterRegistry,
+    authority: &LiveWriteAuthority,
+    guard: &LiveWriteGuard,
+    agent: AgentId,
+    purge_config: bool,
+    executor: &dyn CommandExecutor,
+) -> Result<InstallOutcome> {
+    if !purge_config {
+        return Err(AppError::InvalidArg(
+            "live-write guard is only valid for config purge".into(),
+        ));
+    }
+    authority.validate_guard(guard, agent)?;
+    uninstall_agent_inner(registry, agent, true, executor)
+}
+
+fn uninstall_agent_inner(
+    registry: &AdapterRegistry,
     agent: AgentId,
     purge_config: bool,
     executor: &dyn CommandExecutor,
@@ -1200,6 +1241,81 @@ fn run_native_ps1(
 }
 
 #[cfg(not(windows))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeShellRequirement {
+    Bash,
+    Posix,
+}
+
+#[cfg(not(windows))]
+fn native_sh_shell_requirement(agent: AgentId) -> NativeShellRequirement {
+    // The current allowlisted CLI setup guides publish `curl ... | bash`.
+    // Keep an explicit Posix variant so a future documented sh-compatible
+    // script can use the resolved shell without falling back to a hardcoded
+    // `bash` inside the pipeline.
+    match agent {
+        AgentId::Claude | AgentId::Kimi | AgentId::Grok | AgentId::Cursor => {
+            NativeShellRequirement::Bash
+        }
+        _ => NativeShellRequirement::Posix,
+    }
+}
+
+#[cfg(not(windows))]
+fn resolve_native_shell(requirement: NativeShellRequirement) -> Result<PathBuf> {
+    let bash = runtime::resolve_binary(&["bash"]);
+    if requirement == NativeShellRequirement::Bash {
+        return select_native_shell(requirement, bash.as_deref(), None);
+    }
+
+    let sh = runtime::resolve_binary(&["sh"]);
+    select_native_shell(requirement, bash.as_deref(), sh.as_deref())
+}
+
+#[cfg(not(windows))]
+fn select_native_shell(
+    requirement: NativeShellRequirement,
+    bash: Option<&Path>,
+    sh: Option<&Path>,
+) -> Result<PathBuf> {
+    match requirement {
+        NativeShellRequirement::Bash => bash.map(Path::to_path_buf).ok_or_else(|| {
+            AppError::NotFound(
+                "bash not found; this official native installer explicitly requires bash".into(),
+            )
+        }),
+        NativeShellRequirement::Posix => bash
+            .or(sh)
+            .map(Path::to_path_buf)
+            .ok_or_else(|| AppError::NotFound("no POSIX shell found (need bash or sh)".into())),
+    }
+}
+
+#[cfg(not(windows))]
+fn native_shell_invocation(shell: &Path, url: &str) -> (Vec<String>, String) {
+    let shell_text = shell.to_string_lossy();
+    let script = format!(
+        "curl -fL --progress-bar {url} | {}",
+        quote_posix_shell_word(&shell_text)
+    );
+    let option = if shell
+        .file_name()
+        .map(|name| name.to_string_lossy().eq_ignore_ascii_case("bash"))
+        .unwrap_or(false)
+    {
+        "-lc"
+    } else {
+        "-c"
+    };
+    (vec![option.into(), script], shell_text.into_owned())
+}
+
+#[cfg(not(windows))]
+fn quote_posix_shell_word(word: &str) -> String {
+    format!("'{}'", word.replace('\'', "'\\\"'\\\"'"))
+}
+
+#[cfg(not(windows))]
 fn run_native_sh(
     agent: AgentId,
     executor: &dyn CommandExecutor,
@@ -1214,19 +1330,22 @@ fn run_native_sh(
     if !url.starts_with("https://") {
         return Err(AppError::InvalidArg("install URL must be https".into()));
     }
-    let shell = resolve_bin(&["bash", "sh"])?;
-    push_log(logs, format!("using shell: {shell}"));
-    // curl | bash with allowlisted URL only. -L follows redirects; progress to stderr.
-    let script = format!("curl -fL --progress-bar {url} | bash");
+    let requirement = native_sh_shell_requirement(agent);
+    let shell = resolve_native_shell(requirement)?;
+    let (args, shell_program) = native_shell_invocation(&shell, url);
+    push_log(logs, format!("using shell: {shell_program}"));
+    // The pipeline always invokes the same resolved interpreter as the outer
+    // command. This prevents a sh fallback from silently requiring bash.
+    let script = args[1].clone();
     push_log(logs, format!("# 官方安装脚本: {url}"));
     push_log(
         logs,
         "# 正在下载并执行官方安装脚本（下载大文件时可能数分钟，请耐心等待）…",
     );
-    push_log(logs, format!("# {shell} -lc {script}"));
+    push_log(logs, format!("# {shell_program} {} {script}", args[0]));
     let req = ExecRequest {
-        program: shell,
-        args: vec!["-lc".into(), script],
+        program: shell_program,
+        args,
         timeout: AGENT_TIMEOUT,
         max_output_bytes: MAX_OUTPUT,
     };
@@ -1261,10 +1380,11 @@ pub fn upgrade_agent_system(registry: &AdapterRegistry, agent: AgentId) -> Resul
 
 pub fn uninstall_agent_system(
     registry: &AdapterRegistry,
+    db: &Database,
     agent: AgentId,
     purge_config: bool,
 ) -> Result<InstallOutcome> {
-    uninstall_agent(registry, agent, purge_config, &SystemCommandExecutor)
+    uninstall_agent(registry, db, agent, purge_config, &SystemCommandExecutor)
 }
 
 #[cfg(test)]

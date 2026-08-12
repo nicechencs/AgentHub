@@ -41,11 +41,15 @@ pub fn spawn_callback_listener(
         .set_nonblocking(true)
         .map_err(|e| AppError::message("oauth.accept", e.to_string()))?;
 
-    let deadline = std::time::Instant::now() + crate::catalog::limits::OAUTH_CALLBACK_LISTEN_TIMEOUT;
+    let deadline =
+        std::time::Instant::now() + crate::catalog::limits::OAUTH_CALLBACK_LISTEN_TIMEOUT;
     loop {
         if std::time::Instant::now() >= deadline {
             let _ = store.mark_error(expected_state, "callback listener timed out");
-            return Err(AppError::message("oauth.timeout", "callback listener timed out"));
+            return Err(AppError::message(
+                "oauth.timeout",
+                "callback listener timed out",
+            ));
         }
         match listener.accept() {
             Ok((stream, _)) => {
@@ -110,10 +114,7 @@ fn handle_connection(
     };
 
     store.set_code(expected_state, code)?;
-    let body = html_page(
-        "授权成功",
-        "可以关闭此窗口，返回 AgentHub 继续。",
-    );
+    let body = html_page("授权成功", "可以关闭此窗口，返回 AgentHub 继续。");
     write_response(&mut stream, 200, &body)?;
     Ok(())
 }

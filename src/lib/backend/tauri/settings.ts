@@ -1,5 +1,6 @@
 import { getVersion } from '@tauri-apps/api/app';
 import type { SettingsPort } from '@/lib/backend/contracts';
+import { UNKNOWN_APP_VERSION } from '@/lib/app-version';
 import { logger } from '@/lib/logger';
 import {
   loadJson,
@@ -11,6 +12,22 @@ import {
 import { applyTheme, type ThemeMode } from '@/lib/theme';
 import type { AppSettings, LogLevel, SkillMarketSource } from '@/lib/types';
 import { invoke } from './invoke';
+
+/** OS login-item helpers (Tauri plugin). Soft-fail outside desktop shell. */
+async function readOsAutoStart(): Promise<boolean | undefined> {
+  try {
+    const { isEnabled } = await import('@tauri-apps/plugin-autostart');
+    return await isEnabled();
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeOsAutoStart(enabled: boolean): Promise<void> {
+  const { enable, disable } = await import('@tauri-apps/plugin-autostart');
+  if (enabled) await enable();
+  else await disable();
+}
 
 const log = logger.scope('backend:tauri:settings');
 const LOG_LEVELS: LogLevel[] = ['error', 'warn', 'info', 'debug', 'trace'];
@@ -30,7 +47,8 @@ const DEFAULTS: AppSettings = {
   skillMarketSource: 'auto',
   autoBackup: true,
   usageCollectIntervalMin: 30,
-  appVersion: '0.1.0',
+  // Real value comes from Tauri getVersion(); do not hardcode a product semver.
+  appVersion: UNKNOWN_APP_VERSION,
 };
 
 const SETTINGS_KEY = 'agenthub:settings';
@@ -117,10 +135,11 @@ export function createTauriSettingsPort(): SettingsPort {
 
     async getSettings() {
       try {
-        const [core, paths, appVersion] = await Promise.all([
+        const [core, paths, appVersion, osAutoStart] = await Promise.all([
           invoke<CoreAppSettings>('get_app_settings'),
           invoke<CorePathInfo>('get_path_info'),
           getVersion().catch(() => DEFAULTS.appVersion),
+          readOsAutoStart(),
         ]);
         const local = loadUiLocal();
         const themeRaw = loadString(StorageKey.theme, core.theme ?? DEFAULTS.theme);
@@ -134,6 +153,13 @@ export function createTauriSettingsPort(): SettingsPort {
           skillMarketSource: parseSkillMarketSource(core.skillMarketSource),
           // Core is source of truth for close-to-tray (Rust window handler reads it).
           closeToTray: resolveCloseToTray(core.closeToTray, local.closeToTray),
+          // OS login item is authoritative when the plugin is available.
+          autoStart:
+            typeof osAutoStart === 'boolean'
+              ? osAutoStart
+              : typeof local.autoStart === 'boolean'
+                ? local.autoStart
+                : DEFAULTS.autoStart,
           dataDir: paths.dataDir,
           logsDir: paths.logsDir,
           // Package version from Tauri shell (not localStorage).
@@ -181,6 +207,16 @@ export function createTauriSettingsPort(): SettingsPort {
             key: 'close_to_tray',
             value: closeToTraySettingValue(patch.closeToTray),
           });
+        }
+        if (patch.autoStart !== undefined) {
+          try {
+            await writeOsAutoStart(patch.autoStart);
+          } catch (e) {
+            log.error('OS autostart update failed', e);
+            throw new Error(
+              `无法写入系统开机自启：${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
         }
 
         const local = loadUiLocal();
