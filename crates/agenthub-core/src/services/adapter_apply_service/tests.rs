@@ -414,6 +414,98 @@ fn failed_switch_restores_a_repaired_current_provider_and_binding() {
 }
 
 #[test]
+fn finalize_failure_after_first_switch_restores_previous_current_and_live() {
+    let (dir, db) = test_db();
+    let source = kimi_source("kimi-source", "test-kimi-secret");
+    let previous = Provider {
+        id: "previous-claude".into(),
+        agent_id: AgentId::Claude,
+        name: "Previous Claude".into(),
+        settings_config: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "previous-secret"}}),
+        meta: json!({}),
+        is_current: true,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    };
+    ProviderRepo::new(db.clone()).create(&source).unwrap();
+    ProviderRepo::new(db.clone()).create(&previous).unwrap();
+    ActiveBindingRepo::new(db.clone())
+        .set_refs(
+            "claude",
+            None,
+            Some(previous.id.clone()),
+            None,
+            "before-first-apply",
+        )
+        .unwrap();
+    db.with_conn(|conn| {
+        conn.execute_batch(
+            r#"
+            CREATE TRIGGER fail_adapter_profile_finalize_first
+            BEFORE UPDATE OF status ON adapter_profiles
+            WHEN NEW.status = 'active'
+            BEGIN
+                SELECT RAISE(ABORT, 'injected adapter profile finalization failure');
+            END;
+            "#,
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    let fake = Arc::new(FakeClaudeAdapter::new());
+    fake.write_config(&crate::models::AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "previous-secret"}}),
+    })
+    .unwrap();
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
+
+    let error = service
+        .apply(&request(&source.id, AgentId::Claude))
+        .unwrap_err();
+    assert_eq!(error.code(), "adapter.profile_finalize");
+
+    let profiles = AdapterProfileRepo::new(db.clone())
+        .list(None, None, None)
+        .unwrap();
+    assert_eq!(profiles.len(), 1);
+    assert_eq!(profiles[0].status, AdapterProfileStatus::NeedsAttention);
+    assert_eq!(
+        profiles[0].last_error_code.as_deref(),
+        Some("adapter.profile_finalize")
+    );
+    assert_eq!(
+        ActiveBindingRepo::new(db.clone())
+            .get("claude")
+            .unwrap()
+            .unwrap()
+            .provider_id
+            .as_deref(),
+        Some(previous.id.as_str())
+    );
+    assert!(ProviderRepo::new(db.clone())
+        .get_by_id(&previous.id)
+        .unwrap()
+        .unwrap()
+        .is_current);
+    // The create was compensated: generated provider must not remain current.
+    let generated_id = stable_id("claude-kimi-adapter", &source.id);
+    let generated = ProviderRepo::new(db)
+        .get_by_id(&generated_id)
+        .unwrap();
+    assert!(
+        generated.is_none()
+            || generated.as_ref().is_some_and(|provider| !provider.is_current)
+    );
+    assert_eq!(
+        fake.read_config().unwrap().raw["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "previous-secret"
+    );
+}
+
+#[test]
 fn finalize_and_rollback_failure_is_reported_as_incomplete_attention() {
     let (dir, db) = test_db();
     let source = kimi_source("kimi-source", "test-kimi-secret");

@@ -102,18 +102,45 @@ fn remap_lock(error: AppError) -> AppError {
 /// directory. This intentionally does not depend on a service-local backup
 /// root, so CLI, desktop, and direct Core composition share one authority.
 fn database_lock_dir(db: &Database) -> PathBuf {
-    let database_dir = db
-        .with_conn(|conn| {
-            conn.query_row(
-                "SELECT file FROM pragma_database_list WHERE name = 'main'",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .map_err(Into::into)
-        })
-        .ok()
-        .and_then(|path| PathBuf::from(path).parent().map(Path::to_path_buf));
-    database_dir
-        .unwrap_or_else(std::env::temp_dir)
-        .join("locks")
+    match main_database_file(db) {
+        Ok(path) if is_memory_database_path(&path) => {
+            // In-memory databases have no durable data root; keep locks process-local.
+            std::env::temp_dir().join("agenthub-memory-db-locks")
+        }
+        Ok(path) => path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."))
+            .join("locks"),
+        Err(error) => {
+            // Never fall back to a shared bare temp `locks/` directory: that
+            // silently breaks cross-process exclusion for file-backed DBs.
+            tracing::error!(
+                target: "core.storage",
+                error = %error,
+                "live-write lock dir could not be derived from the main database path"
+            );
+            std::env::temp_dir().join(format!(
+                "agenthub-unresolved-db-locks-{}",
+                std::process::id()
+            ))
+        }
+    }
+}
+
+fn main_database_file(db: &Database) -> Result<PathBuf> {
+    let path = db.with_conn(|conn| {
+        conn.query_row(
+            "SELECT file FROM pragma_database_list WHERE name = 'main'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(Into::into)
+    })?;
+    Ok(PathBuf::from(path))
+}
+
+fn is_memory_database_path(path: &Path) -> bool {
+    let raw = path.to_string_lossy();
+    raw.is_empty() || raw == ":memory:" || raw.starts_with("file:memdb")
 }

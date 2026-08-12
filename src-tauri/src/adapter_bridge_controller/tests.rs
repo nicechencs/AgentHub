@@ -1,6 +1,8 @@
 use super::*;
 
-use agenthub_core::bridge::{BridgeUpstreamConfig, ResolvedAuth};
+use agenthub_core::bridge::{
+    BridgeHostError, BridgeStartSpec, BridgeUpstreamConfig, ResolvedAuth,
+};
 use agenthub_core::storage::AdapterProfileRepo;
 use agenthub_core::AgentHub;
 
@@ -66,6 +68,41 @@ fn started_listener_is_compensated_after_apply_stage_failure() {
         compensate_started_bridge(&host, "profile-compensate", true).await;
 
         assert!(host.status("profile-compensate").unwrap().is_none());
+    });
+}
+
+#[test]
+fn ensure_listener_replaces_conflicting_running_spec() {
+    tauri::async_runtime::block_on(async {
+        let host = BridgeRuntimeHost::new();
+        host.start(start_spec("profile-rotate")).await.unwrap();
+
+        let rotated = BridgeStartSpec::new(
+            "profile-rotate",
+            0,
+            "local-bearer-rotated-value-xxxxxxxx",
+            BridgeUpstreamConfig {
+                base_url: "https://api.kimi.com/coding/v1".into(),
+                model: Some("kimi-k2.5".into()),
+                source_connection_id: Some("kimi-connection".into()),
+                auth: ResolvedAuth::bearer("upstream-bearer-rotated-value-xxxxxx"),
+            },
+        );
+
+        // Direct host start must reject drift so the controller path is required.
+        assert!(matches!(
+            host.start(rotated.clone()).await.unwrap_err(),
+            BridgeHostError::ConflictingStart
+        ));
+
+        // Same sequence as ensure_bridge_listener after ConflictingStart.
+        match host.stop("profile-rotate").await {
+            Ok(_) | Err(BridgeHostError::NotRunning) => {}
+            Err(error) => panic!("stop failed: {error}"),
+        }
+        let status = host.start(rotated).await.unwrap();
+        assert!(status.running);
+        host.shutdown().await.unwrap();
     });
 }
 

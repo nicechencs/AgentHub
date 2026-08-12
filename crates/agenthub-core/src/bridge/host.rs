@@ -28,6 +28,9 @@ use crate::bridge::runtime::{
 use crate::bridge::types::ProtocolError;
 
 const BODY_LIMIT_BYTES: usize = 1_048_576;
+/// Streamed Completions/Responses traffic can exceed the request-body safety
+/// ceiling; keep a hard cap while allowing realistic agent sessions.
+const STREAM_LIMIT_BYTES: usize = 32 * 1_048_576;
 const MAX_IN_FLIGHT_REQUESTS_PER_PROFILE: usize = 4;
 const UPSTREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const UPSTREAM_RESPONSE_HEADER_TIMEOUT: Duration = Duration::from_secs(30);
@@ -935,7 +938,7 @@ fn stream_response(
                 yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             };
-            if upstream_bytes.saturating_add(chunk.len()) > BODY_LIMIT_BYTES {
+            if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
                 yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             }
@@ -966,7 +969,7 @@ fn stream_response(
                 match translator.push_chunk(&value) {
                     Ok(events) => for event in events {
                         let frame = crate::bridge::protocol::chat::sse_frame(&event);
-                        if output_bytes.saturating_add(frame.len()) > BODY_LIMIT_BYTES {
+                        if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                             yield Ok::<_, Infallible>(stream_error_frame());
                             return;
                         }
@@ -988,7 +991,7 @@ fn stream_response(
         }
         for event in translator.finish() {
             let frame = crate::bridge::protocol::chat::sse_frame(&event);
-            if output_bytes.saturating_add(frame.len()) > BODY_LIMIT_BYTES {
+            if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                 yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             }
@@ -1005,6 +1008,12 @@ fn stream_response(
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     headers.insert(header::CONNECTION, HeaderValue::from_static("keep-alive"));
     (StatusCode::OK, headers, Body::from_stream(output)).into_response()
+}
+
+#[cfg(test)]
+pub(super) fn sse_frame_end(buffer: &[u8]) -> Option<(usize, usize)> {
+    let deque: std::collections::VecDeque<u8> = buffer.iter().copied().collect();
+    sse_frame_end_deque(&deque)
 }
 
 fn sse_frame_end_deque(buffer: &std::collections::VecDeque<u8>) -> Option<(usize, usize)> {

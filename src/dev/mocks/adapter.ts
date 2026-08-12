@@ -121,7 +121,10 @@ function analyze(
         action('set_env', 'Claude Code', '使用 Claude Code 的认证环境变量名。', 'ANTHROPIC_AUTH_TOKEN'),
         secretAction('Claude Code', '从已选 Connection 引用 API Key；不会读取或显示它。'),
       ],
-      limitations: ['仅预览；不会写入 Claude 配置或传输凭据。'],
+      limitations: [
+        '将写入 Claude 的 base URL 与凭据引用标记；不会在预览中传输明文 Key。',
+        '应用后会切换当前 Claude Connection；请确认无其他进行中的配置写入。',
+      ],
       evidence: [evidence('Kimi Code: Claude Code integration', 'https://www.kimi.com/code/docs/en/third-party-tools/claude-code.html')],
     };
   }
@@ -131,7 +134,12 @@ function analyze(
       support: 'experimental',
       reason: 'Kimi Code 会员到 Codex 需要本地协议桥接。',
       actions: [action('requires_local_bridge', 'Codex', 'Codex Responses 与 Kimi Chat Completions 需要本地双向协议转换。')],
-      limitations: ['桥接仅监听本机 127.0.0.1；AgentHub 需要保持在托盘运行。'],
+      limitations: [
+        '将在本机 loopback 启动协议桥接，并切换 Codex 到该本地端点。',
+        'AgentHub 需保持在托盘运行；退出前会尝试排空监听。',
+        '桥接为实验性协议覆盖；长流与工具调用可能受实现限制。',
+        '固定端口被占用时会尝试重新分配端口并写回配置。',
+      ],
       evidence: [evidence('Kimi Code: Codex local routing', 'https://www.kimi.com/code/docs/third-party-tools/codex.html')],
     };
   }

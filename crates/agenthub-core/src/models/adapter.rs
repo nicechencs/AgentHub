@@ -226,7 +226,7 @@ pub struct AdapterPlanChange {
     pub secret: bool,
 }
 
-/// Read-only Phase 0 apply preview. `can_apply` is deliberately false.
+/// Safe apply preview. `can_apply` is true only for implemented write paths.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdapterApplyPlan {
