@@ -125,7 +125,9 @@ export function supportBadge(support: AdapterSupport): { label: string; variant:
 }
 
 export function futureAvailability(route: AdapterRouteAnalysis['route']): string | null {
-  if (route === 'config_sync' || route === 'native_endpoint') return '配置写入后续开放';
+  // Applyable routes (native_endpoint / local_bridge) must not claim "later".
+  // Preview-only config_sync still surfaces the future-write notice.
+  if (route === 'config_sync') return '配置写入后续开放';
   return null;
 }
 

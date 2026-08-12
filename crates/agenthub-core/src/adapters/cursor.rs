@@ -927,7 +927,7 @@ pub fn uninstall_bin_candidates() -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::AccountKind;
+    use crate::models::{AccountKind, RuntimeId};
 
     #[test]
     fn build_run_spec_print_mode() {

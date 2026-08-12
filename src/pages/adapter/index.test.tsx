@@ -69,7 +69,7 @@ describe('Adapter page view model', () => {
     expect(routeLabel(native.analysis.route)).toBe('原生端点');
     native.canApply = true;
     expect(canApplyAdapterPlan(native)).toBe(true);
-    expect(futureAvailability(native.analysis.route)).toBe('配置写入后续开放');
+    expect(futureAvailability(native.analysis.route)).toBeNull();
   });
 
   it('allows an explicit local bridge plan and labels the desktop service impact', () => {
@@ -87,6 +87,11 @@ describe('Adapter page view model', () => {
     expect(futureAvailability(unsupported.analysis.route)).toBeNull();
     expect(unsupported.changes).toEqual([]);
     expect(canApplyAdapterPlan(unsupported)).toBe(false);
+  });
+
+  it('marks preview-only config_sync as future availability', () => {
+    const configSync = plan('config_sync');
+    expect(futureAvailability(configSync.analysis.route)).toBe('配置写入后续开放');
   });
 
   it('clears an old preview response when a newer selection is in flight', () => {

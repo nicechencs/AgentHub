@@ -34,12 +34,16 @@ pub struct AdapterApplyService {
     secrets: AdapterSecretResolver,
 }
 
-/// In-memory state needed to reverse a repair of a generated provider that
-/// was already selected.  It is deliberately private and non-serializable:
-/// the live config may contain materialized credentials.
-struct RepairedCurrentSnapshot {
-    provider: Provider,
+/// Pre-switch snapshot used to reverse a successful live switch when profile
+/// finalization (or the switch itself) fails. Deliberately private and
+/// non-serializable: the live config may contain materialized credentials.
+struct ClaudeApplySnapshot {
+    /// Generated provider row before create/update in this apply, if any.
+    generated_before: Option<Provider>,
+    /// Claude current provider before switch (may equal `generated_before`).
+    previous_current: Option<Provider>,
     live_config: ProviderLiveConfigSnapshot,
+    created: bool,
 }
 
 impl AdapterApplyService {
@@ -128,7 +132,7 @@ impl AdapterApplyService {
                 // demoted or drifted row must be repaired and switched again.
                 return Ok(AdapterApplyResult {
                     profile,
-                    provider: existing.clone(),
+                    provider: existing.redacted(),
                 });
             }
         }
@@ -140,28 +144,33 @@ impl AdapterApplyService {
             profile = self.profiles.update(&profile)?;
         }
 
-        let repaired_current = match existing.as_ref() {
-            Some(existing)
-                if existing.is_current && !provider_matches_projection(existing, &provider) =>
-            {
-                let live_config = match self
-                    .providers
-                    .capture_live_config_snapshot_with_guard(&saga_guard, AgentId::Claude)
-                {
-                    Ok(snapshot) => snapshot,
-                    Err(error) => return Err(self.fail_profile(profile, &error)),
-                };
-                Some(RepairedCurrentSnapshot {
-                    provider: existing.clone(),
-                    live_config,
-                })
-            }
-            _ => None,
+        // Capture compensation inputs before demote/create: a repair demotes a
+        // current generated row, so get_current after that would miss the
+        // pre-saga binding needed for full inverse.
+        let previous_current = match self.providers.repo().get_current(AgentId::Claude) {
+            Ok(current) => current,
+            Err(error) => return Err(self.fail_profile(profile, &error)),
+        };
+        let live_config = match self
+            .providers
+            .capture_live_config_snapshot_with_guard(&saga_guard, AgentId::Claude)
+        {
+            Ok(snapshot) => snapshot,
+            Err(error) => return Err(self.fail_profile(profile, &error)),
+        };
+        let generated_before = existing.clone();
+        let created = existing.is_none();
+        let snapshot = ClaudeApplySnapshot {
+            generated_before,
+            previous_current,
+            live_config,
+            created,
         };
 
-        let created = existing.is_none();
-        let provider = match existing {
-            Some(existing) if provider_matches_projection(&existing, &provider) => existing,
+        // Create/repair the pool row before switch; the switched provider is
+        // returned from switch_with_guard below.
+        if let Err(error) = match existing {
+            Some(existing) if provider_matches_projection(&existing, &provider) => Ok(()),
             Some(_) => {
                 // Repair the persisted generated projection before switching it
                 // live.  Explicitly demote first so the switch owns the only
@@ -170,16 +179,18 @@ impl AdapterApplyService {
                     is_current: false,
                     ..provider.clone()
                 };
-                match self.providers.update_with_guard(&saga_guard, &repaired) {
-                    Ok(provider) => provider,
-                    Err(error) => return Err(self.fail_profile(profile, &error)),
-                }
+                self.providers
+                    .update_with_guard(&saga_guard, &repaired)
+                    .map(|_| ())
             }
-            None => match self.providers.create_with_guard(&saga_guard, &provider) {
-                Ok(provider) => provider,
-                Err(error) => return Err(self.fail_profile(profile, &error)),
-            },
-        };
+            None => self
+                .providers
+                .create_with_guard(&saga_guard, &provider)
+                .map(|_| ()),
+        } {
+            return Err(self.fail_profile(profile, &error));
+        }
+
         let switched =
             match self
                 .providers
@@ -187,26 +198,17 @@ impl AdapterApplyService {
             {
                 Ok(result) => result.provider,
                 Err(error) => {
-                    if let Some(snapshot) = repaired_current.as_ref() {
-                        if let Err(restore_error) =
-                            self.restore_repaired_current(&saga_guard, snapshot)
-                        {
-                            return Err(self.fail_profile(profile, &restore_error));
-                        }
-                    }
-                    if created && !provider.is_current {
-                        let _ = self.providers.delete_with_guard(
-                            &saga_guard,
-                            &provider_id,
-                            AgentId::Claude,
-                        );
+                    if let Err(restore_error) =
+                        self.compensate_claude_apply(&saga_guard, &provider_id, &snapshot)
+                    {
+                        return Err(self.fail_profile(profile, &restore_error));
                     }
                     return Err(self.fail_profile(profile, &error));
                 }
             };
 
         profile.status = AdapterProfileStatus::Active;
-        profile.generated_provider_id = Some(provider_id);
+        profile.generated_provider_id = Some(provider_id.clone());
         profile.last_error_code = None;
         profile.updated_at = now();
         let profile = match self.profiles.update(&profile) {
@@ -214,9 +216,9 @@ impl AdapterApplyService {
             Err(_) => {
                 let mut attention = profile;
                 attention.status = AdapterProfileStatus::NeedsAttention;
-                let restore_error = repaired_current.as_ref().and_then(|snapshot| {
-                    self.restore_repaired_current(&saga_guard, snapshot).err()
-                });
+                let restore_error = self
+                    .compensate_claude_apply(&saga_guard, &provider_id, &snapshot)
+                    .err();
                 attention.last_error_code = Some(
                     if restore_error.is_some() {
                         "adapter.rollback_incomplete"
@@ -241,7 +243,7 @@ impl AdapterApplyService {
         };
         Ok(AdapterApplyResult {
             profile,
-            provider: switched,
+            provider: switched.redacted(),
         })
     }
 
@@ -325,24 +327,67 @@ impl AdapterApplyService {
         )
     }
 
-    /// Restore both the prior persisted projection/current binding and the
-    /// live configuration after a repair has crossed the live-switch boundary.
-    /// Run both recovery steps even if one fails, so a single failed restore
-    /// cannot prevent the other half of the saga from being attempted.
-    fn restore_repaired_current(
+    /// Inverse of a successful Claude switch: restore the generated pool row
+    /// (or delete a create), re-select the pre-switch current provider when one
+    /// existed, then force the pre-switch live config. Every step is attempted
+    /// even if an earlier step fails.
+    fn compensate_claude_apply(
         &self,
         saga_guard: &ProviderLiveSagaGuard<'_>,
-        snapshot: &RepairedCurrentSnapshot,
+        provider_id: &str,
+        snapshot: &ClaudeApplySnapshot,
     ) -> Result<()> {
-        let live_restore = self
+        let mut failed: Option<AppError> = None;
+        let previous_id = snapshot
+            .previous_current
+            .as_ref()
+            .map(|provider| provider.id.as_str());
+        let generated_was_previous = snapshot
+            .generated_before
+            .as_ref()
+            .is_some_and(|provider| previous_id == Some(provider.id.as_str()));
+
+        if let Some(old) = &snapshot.generated_before {
+            let mut input = provider_input(old);
+            // When the generated row itself was current, re-activate via the
+            // pool update path (no second live switch). A different previous
+            // current is re-selected below with switch_with_guard.
+            input.is_current = generated_was_previous;
+            if let Err(error) = self.providers.update_with_guard(saga_guard, &input) {
+                failed = Some(error);
+            }
+        } else if snapshot.created {
+            if let Err(error) =
+                self.providers
+                    .delete_with_guard(saga_guard, provider_id, AgentId::Claude)
+            {
+                failed = Some(error);
+            }
+        }
+
+        if let Some(previous) = &snapshot.previous_current {
+            if !generated_was_previous {
+                if let Err(error) =
+                    self.providers
+                        .switch_with_guard(saga_guard, &previous.id, AgentId::Claude)
+                {
+                    failed = Some(error);
+                }
+            }
+        }
+
+        // Always restore live last so a switch-back that backfills a drifted
+        // value cannot leave the on-disk Claude config changed.
+        if let Err(error) = self
             .providers
-            .restore_live_config_snapshot_with_guard(saga_guard, &snapshot.live_config);
-        let provider_restore = self
-            .providers
-            .update_with_guard(saga_guard, &provider_input(&snapshot.provider));
-        match (live_restore, provider_restore) {
-            (Ok(()), Ok(_)) => Ok(()),
-            (Err(error), _) | (_, Err(error)) => Err(error),
+            .restore_live_config_snapshot_with_guard(saga_guard, &snapshot.live_config)
+        {
+            failed = Some(error);
+        }
+
+        match failed {
+            Some(error) => Err(error),
+            None => Ok(()),
         }
     }
 }

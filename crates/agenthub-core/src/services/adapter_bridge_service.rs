@@ -617,6 +617,55 @@ impl AdapterBridgeService {
         self.profiles.update(&profile)
     }
 
+    /// Build a demoted provider projection for a restore-time port rebind.
+    /// The desktop host writes the row through `ProviderService` under its
+    /// live-saga guard, then calls [`Self::persist_restored_port`].
+    pub fn projection_for_restored_port(
+        &self,
+        profile_id: &str,
+        bound_port: u16,
+    ) -> Result<(ProviderInput, bool)> {
+        validate_bound_port(bound_port)?;
+        let profile = self.bridge_profile(profile_id)?;
+        if profile.status != AdapterProfileStatus::Active {
+            return Err(AppError::InvalidArg(
+                "only active bridge profiles can realign a restored port".into(),
+            ));
+        }
+        let provider_id = profile.generated_provider_id.as_deref().ok_or_else(|| {
+            AppError::message(
+                "adapter.provider_missing",
+                "bridge profile has no generated provider id",
+            )
+        })?;
+        let provider = self.providers.get_by_id(provider_id)?.ok_or_else(|| {
+            AppError::message(
+                "adapter.provider_missing",
+                "generated bridge provider is missing",
+            )
+        })?;
+        validate_generated_provider(&provider, &profile, profile.local_port)?;
+        let local_bearer = local_bearer_from_provider(&provider)?;
+        let mut input = projected_provider_input(&profile, &local_bearer, bound_port)?;
+        input.is_current = false;
+        Ok((input, provider.is_current))
+    }
+
+    /// Persist the bound port after a successful restore-time rebind and clear
+    /// any retryable marker on the active profile.
+    pub fn persist_restored_port(
+        &self,
+        profile_id: &str,
+        bound_port: u16,
+    ) -> Result<AdapterProfile> {
+        validate_bound_port(bound_port)?;
+        let mut profile = self.bridge_profile(profile_id)?;
+        profile.local_port = Some(bound_port);
+        profile.last_error_code = None;
+        profile.updated_at = now();
+        self.profiles.update(&profile)
+    }
+
     /// Update only the persisted host-restore preference for a bridge profile.
     pub fn set_auto_start(&self, profile_id: &str, auto_start: bool) -> Result<AdapterProfile> {
         let mut profile = self.bridge_profile(profile_id)?;

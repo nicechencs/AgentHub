@@ -82,7 +82,7 @@ export function AdapterPreviewResult({
         <ShieldCheck className="h-4 w-4 text-secondary" aria-label="只读预览" />
       </div>
       <p>{analysis.reason}</p>
-      <AdapterPreviewList title="将写配置" values={plan?.changes ?? []} empty="此路径不会在 Phase 0 写入配置。" />
+      <AdapterPreviewList title="将写配置" values={plan?.changes ?? []} empty="此路径当前不会写入配置。" />
       <p className="text-xs text-secondary">
         服务影响：{plan?.serviceImpact === 'requires_local_bridge'
           ? '将启动仅本机可访问的协议桥接；请让 AgentHub 保持在托盘运行。'

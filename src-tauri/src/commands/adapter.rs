@@ -104,7 +104,8 @@ pub async fn apply_adapter(
                 source_kind: source_kind_parsed,
                 source_id,
                 target_agent_id: target_agent_parsed,
-                auto_start: true,
+                // Opt-in via the Adapter auto-start switch after a successful start.
+                auto_start: false,
             },
         )
         .await;

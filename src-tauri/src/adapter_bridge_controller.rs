@@ -11,8 +11,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[cfg(test)]
-use agenthub_core::bridge::BridgeStartSpec;
 use agenthub_core::bridge::{
     BridgeHostError, BridgeRuntimeHost, BridgeRuntimeState, BridgeRuntimeStatus,
     BridgeUpstreamStatus,
@@ -173,26 +171,27 @@ async fn apply_local_bridge_locked(
     .await?;
 
     let profile_id = prepared.profile().id.clone();
-    let had_running_listener = host
-        .status(&profile_id)
-        .map_err(map_bridge_host_error)?
-        .is_some_and(|status| status.running);
-    let runtime = match host
-        .start(prepared.runtime_material().start_spec(None))
-        .await
-    {
+    let runtime = match ensure_bridge_listener(host.as_ref(), prepared.runtime_material()).await {
         Ok(runtime) => runtime,
         Err(error) => {
-            mark_retryable(hub, &profile_id, CODE_BRIDGE_START).await;
+            let code = if matches!(error, BridgeHostError::Bind(_)) {
+                CODE_BRIDGE_PORT_IN_USE
+            } else {
+                CODE_BRIDGE_START
+            };
+            mark_retryable(hub, &profile_id, code).await;
             return Err(map_bridge_host_error(error));
         }
     };
+    // Own any listener this saga started or replaced. An idempotent reuse of an
+    // already-running identical spec is not compensated on later projection failure.
+    let owns_listener = runtime.owned_by_saga;
 
-    let port = runtime.port;
+    let port = runtime.status.port;
     if let Err(error) = prepared.runtime_material().verify_bound_health(port).await {
         let code = error.code().to_owned();
         let listener_compensated =
-            compensate_started_bridge(&host, &profile_id, !had_running_listener).await;
+            compensate_started_bridge(&host, &profile_id, owns_listener).await;
         if listener_compensated {
             mark_retryable(hub, &profile_id, &code).await;
         } else {
@@ -225,11 +224,8 @@ async fn apply_local_bridge_locked(
     match result {
         Ok(result) => Ok(result),
         Err(error) => {
-            // Do not tear down a listener that was already serving this
-            // profile before a retry.  A listener created for this saga must
-            // be compensated before the failure is surfaced.
             let listener_compensated =
-                compensate_started_bridge(&host, &profile_id, !had_running_listener).await;
+                compensate_started_bridge(&host, &profile_id, owns_listener).await;
             let code = if error.contains("finalize_adapter_bridge") {
                 CODE_BRIDGE_FINALIZE
             } else {
@@ -346,10 +342,22 @@ pub(crate) async fn remove_adapter_with_bridge_cleanup(
         .await;
     }
 
-    // Keep deletion under the same target authority and Core cross-process
-    // live-saga guard as bridge apply. `block_on` is confined to the blocking
-    // worker so the guard remains held across stop -> revalidate -> delete ->
-    // complete and another process cannot switch the current provider midway.
+    // Preflight and stop outside the Core live-saga critical section so listener
+    // drain does not hold the cross-process provider lock.
+    let preflight_profile = with_hub_blocking(hub.clone(), {
+        let profile_id = profile_id.clone();
+        move |hub| {
+            hub.adapter_bridge
+                .preflight_remove(&profile_id)
+                .map(|removal| removal.profile().clone())
+                .map_err(|error| map_err_string("preflight_remove_adapter_bridge", error))
+        }
+    })
+    .await?;
+    let _ = stop_bridge_runtime(&host, &preflight_profile).await?;
+
+    // Revalidate, delete provider, and complete profile removal under the same
+    // target authority and Core live-saga guard as bridge apply.
     with_hub_blocking(hub, move |hub| {
         let core_guard = hub
             .providers
@@ -358,14 +366,6 @@ pub(crate) async fn remove_adapter_with_bridge_cleanup(
         let removal = hub
             .adapter_bridge
             .preflight_remove(&profile_id)
-            .map_err(|error| map_err_string("preflight_remove_adapter_bridge", error))?;
-        let profile = removal.profile().clone();
-        let _ = tauri::async_runtime::block_on(stop_bridge_runtime(&host, &profile))?;
-        // Revalidate after stopping the listener. This prevents deletion if a
-        // profile or generated provider was changed while the host drained.
-        let removal = hub
-            .adapter_bridge
-            .preflight_remove(&profile.id)
             .map_err(|error| map_err_string("remove_adapter_bridge", error))?;
         let recovery = removal.recovery_input();
         if let Some(provider_id) = removal.generated_provider_id() {
@@ -442,16 +442,7 @@ pub(crate) fn restore_adapter_bridges(
                 }
             };
 
-            let had_running_listener = match host.status(&profile.id) {
-                Ok(status) => status.is_some_and(|status| status.running),
-                Err(error) => {
-                    mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
-                    tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "adapter bridge runtime status could not be read before restore");
-                    continue;
-                }
-            };
-            let runtime = match host
-                .start(material.runtime_material().start_spec(None))
+            let runtime = match ensure_bridge_listener(host.as_ref(), material.runtime_material())
                 .await
             {
                 Ok(runtime) => runtime,
@@ -469,12 +460,12 @@ pub(crate) fn restore_adapter_bridges(
 
             if let Err(error) = material
                 .runtime_material()
-                .verify_bound_health(runtime.port)
+                .verify_bound_health(runtime.status.port)
                 .await
             {
                 let code = error.code().to_owned();
                 let listener_compensated =
-                    compensate_started_bridge(&host, &profile.id, !had_running_listener).await;
+                    compensate_started_bridge(&host, &profile.id, runtime.owned_by_saga).await;
                 if listener_compensated {
                     mark_retryable(hub.clone(), &profile.id, &code).await;
                 } else {
@@ -484,7 +475,25 @@ pub(crate) fn restore_adapter_bridges(
                 continue;
             }
 
-            if let Err(error) = with_hub_blocking(hub.clone(), {
+            // Preferred-port rebind must rewrite profile.local_port and the
+            // generated Codex base_url; otherwise restore leaves a dead endpoint.
+            if Some(runtime.status.port) != profile.local_port {
+                let _target_guard = coordinator.lock_target(AgentId::Codex).await;
+                if let Err(error) = with_hub_blocking(hub.clone(), {
+                    let profile_id = profile.id.clone();
+                    let port = runtime.status.port;
+                    move |hub| {
+                        realign_restored_bridge_port(hub, &profile_id, port)
+                    }
+                })
+                .await
+                {
+                    let _ = compensate_started_bridge(&host, &profile.id, runtime.owned_by_saga).await;
+                    mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_PROJECTION).await;
+                    tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "bridge rebound to a new port but provider projection could not be realigned");
+                    continue;
+                }
+            } else if let Err(error) = with_hub_blocking(hub.clone(), {
                 let profile_id = profile.id.clone();
                 move |hub| {
                     hub.adapter_bridge
@@ -761,6 +770,93 @@ async fn compensate_started_bridge(
         }
     }
     true
+}
+
+struct EnsuredBridgeListener {
+    status: BridgeRuntimeStatus,
+    /// True when this saga started or replaced the listener and must stop it
+    /// on later failure. False when an already-running identical spec was reused.
+    owned_by_saga: bool,
+}
+
+/// Start (or refresh) a loopback listener for one profile.
+///
+/// - Identical running specs are reused without ownership.
+/// - `ConflictingStart` (token/port drift) stops the old listener then starts
+///   with the new material so credential rotation can take effect.
+/// - `Bind` on the preferred port retries once with port `0`.
+async fn ensure_bridge_listener(
+    host: &BridgeRuntimeHost,
+    material: &agenthub_core::services::AdapterBridgeRuntimeMaterial,
+) -> Result<EnsuredBridgeListener, BridgeHostError> {
+    let profile_id = material.profile_id().to_owned();
+    let had_running = host
+        .status(&profile_id)?
+        .is_some_and(|status| status.running);
+    let preferred = material.start_spec(None);
+    match host.start(preferred).await {
+        Ok(status) => {
+            // host.start is idempotent for an identical live instance; ownership
+            // only attaches when we did not already have a running listener.
+            Ok(EnsuredBridgeListener {
+                owned_by_saga: !had_running,
+                status,
+            })
+        }
+        Err(BridgeHostError::ConflictingStart) => {
+            match host.stop(&profile_id).await {
+                Ok(_) | Err(BridgeHostError::NotRunning) => {}
+                Err(error) => return Err(error),
+            }
+            let status = start_with_bind_fallback(host, material).await?;
+            Ok(EnsuredBridgeListener {
+                status,
+                owned_by_saga: true,
+            })
+        }
+        Err(BridgeHostError::Bind(_)) => {
+            let status = host.start(material.start_spec(Some(0))).await?;
+            Ok(EnsuredBridgeListener {
+                status,
+                owned_by_saga: true,
+            })
+        }
+        Err(error) => Err(error),
+    }
+}
+
+async fn start_with_bind_fallback(
+    host: &BridgeRuntimeHost,
+    material: &agenthub_core::services::AdapterBridgeRuntimeMaterial,
+) -> Result<BridgeRuntimeStatus, BridgeHostError> {
+    match host.start(material.start_spec(None)).await {
+        Ok(status) => Ok(status),
+        Err(BridgeHostError::Bind(_)) => host.start(material.start_spec(Some(0))).await,
+        Err(error) => Err(error),
+    }
+}
+
+fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> Result<(), String> {
+    let core_guard = hub
+        .providers
+        .begin_live_saga(AgentId::Codex)
+        .map_err(|error| map_err_string("begin_adapter_bridge_restore_rebind_saga", error))?;
+    let (input, was_current) = hub
+        .adapter_bridge
+        .projection_for_restored_port(profile_id, port)
+        .map_err(|error| map_err_string("projection_adapter_bridge_restore_port", error))?;
+    hub.providers
+        .update_with_guard(&core_guard, &input)
+        .map_err(|error| map_err_string("update_adapter_bridge_restore_port", error))?;
+    if was_current {
+        hub.providers
+            .switch_with_guard(&core_guard, &input.id, AgentId::Codex)
+            .map_err(|error| map_err_string("switch_adapter_bridge_restore_port", error))?;
+    }
+    hub.adapter_bridge
+        .persist_restored_port(profile_id, port)
+        .map_err(|error| map_err_string("persist_adapter_bridge_restore_port", error))?;
+    Ok(())
 }
 
 async fn stop_bridge_runtime(
