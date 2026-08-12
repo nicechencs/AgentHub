@@ -154,7 +154,8 @@ pub(crate) async fn apply_local_bridge(
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let profile_id = bridge_profile_id_for_request(hub.clone(), request.clone()).await?;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
-    apply_local_bridge_locked(hub, host, coordinator, request).await
+    // First-time apply must make the generated Codex Connection current.
+    apply_local_bridge_locked(hub, host, coordinator, request, true).await
 }
 
 async fn apply_local_bridge_locked(
@@ -162,6 +163,10 @@ async fn apply_local_bridge_locked(
     host: Arc<BridgeRuntimeHost>,
     coordinator: Arc<AdapterBridgeSagaCoordinator>,
     request: AdapterBridgePrepareRequest,
+    // When true (initial apply), always switch Codex to the generated bridge.
+    // Manual start keeps the user's current Connection unless the generated
+    // bridge provider was already current (then refresh live config only).
+    force_switch_current: bool,
 ) -> Result<AdapterApplyResult, String> {
     let prepared = with_hub_blocking(hub.clone(), move |hub| {
         hub.adapter_bridge
@@ -217,7 +222,15 @@ async fn apply_local_bridge_locked(
             .map_err(|error| map_err_string("revalidate_adapter_bridge_provider", error))?;
         let provider_id = prepared.profile().generated_provider_id.clone();
         let snapshot = capture_provider_snapshot(hub, &core_guard, provider_id.as_deref())?;
-        persist_bridge_projection_inner(hub, &core_guard, &prepared, projection, port, &snapshot)
+        persist_bridge_projection_inner(
+            hub,
+            &core_guard,
+            &prepared,
+            projection,
+            port,
+            &snapshot,
+            force_switch_current,
+        )
     })
     .await;
 
@@ -262,7 +275,9 @@ pub(crate) async fn start_local_bridge(
         target_agent_id: profile.target_agent_id,
         auto_start: profile.auto_start,
     };
-    let applied = apply_local_bridge_locked(hub, host.clone(), coordinator, request).await?;
+    // Manual start must not steal Codex current if the user already switched away.
+    let applied =
+        apply_local_bridge_locked(hub, host.clone(), coordinator, request, false).await?;
     let status = host
         .status(&applied.profile.id)
         .map_err(map_bridge_host_error)?
@@ -517,6 +532,7 @@ fn persist_bridge_projection_inner(
     projection: AdapterBridgeProviderProjection,
     port: u16,
     snapshot: &BridgeProviderSnapshot,
+    force_switch_current: bool,
 ) -> Result<AdapterApplyResult, String> {
     let provider_id = prepared
         .profile()
@@ -541,20 +557,36 @@ fn persist_bridge_projection_inner(
         AdapterBridgeProviderProjection::None => false,
     };
 
-    let switched = match hub
-        .providers
-        .switch_with_guard(core_guard, &provider_id, AgentId::Codex)
-    {
-        Ok(result) => result,
-        Err(error) => {
-            let rollback =
-                rollback_bridge_projection(hub, core_guard, &provider_id, snapshot, created);
-            return Err(composite_saga_error(
-                "switch_adapter_bridge_provider",
-                map_err_string("switch_adapter_bridge_provider", error),
-                rollback,
-            ));
+    let generated_was_current = snapshot
+        .generated
+        .as_ref()
+        .map(|provider| provider.is_current)
+        .unwrap_or(false);
+    let should_switch = should_make_bridge_current(force_switch_current, generated_was_current);
+
+    let provider = if should_switch {
+        match hub
+            .providers
+            .switch_with_guard(core_guard, &provider_id, AgentId::Codex)
+        {
+            Ok(result) => result.provider.redacted(),
+            Err(error) => {
+                let rollback =
+                    rollback_bridge_projection(hub, core_guard, &provider_id, snapshot, created);
+                return Err(composite_saga_error(
+                    "switch_adapter_bridge_provider",
+                    map_err_string("switch_adapter_bridge_provider", error),
+                    rollback,
+                ));
+            }
         }
+    } else {
+        hub.providers
+            .repo()
+            .get_by_id(&provider_id)
+            .map_err(|error| map_err_string("load_adapter_bridge_provider", error))?
+            .ok_or_else(|| "adapter bridge provider missing after projection".to_string())?
+            .redacted()
     };
     let profile = match hub.adapter_bridge.finalize(prepared, port) {
         Ok(profile) => profile,
@@ -568,10 +600,13 @@ fn persist_bridge_projection_inner(
             ));
         }
     };
-    Ok(AdapterApplyResult {
-        profile,
-        provider: switched.provider.redacted(),
-    })
+    Ok(AdapterApplyResult { profile, provider })
+}
+
+/// Initial apply always promotes the generated bridge; manual start only
+/// refreshes live config when that bridge was already the current Connection.
+fn should_make_bridge_current(force_switch_current: bool, generated_was_current: bool) -> bool {
+    force_switch_current || generated_was_current
 }
 
 #[derive(Clone)]

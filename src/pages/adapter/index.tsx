@@ -138,6 +138,8 @@ export default function AdapterPage() {
     setAnalysis(null);
     setPlan(null);
     setAnalysisError(null);
+    // A previous apply failure must not stick on a newly selected source/target.
+    setApplyError(null);
     if (!source) {
       setAnalyzing(false);
       return;
@@ -439,8 +441,17 @@ export default function AdapterPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={applyConfirmOpen} onOpenChange={setApplyConfirmOpen}>
-        <DialogContent className="flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden" hideClose={applying}>
+      <Dialog
+        open={applyConfirmOpen}
+        onOpenChange={(open) => closeConfirmationOnOpenChange(open, applying, () => setApplyConfirmOpen(false))}
+      >
+        <DialogContent
+          className="flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden"
+          hideClose={applying}
+          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(applying, event)}
+          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(applying, event)}
+          onInteractOutside={(event) => preventBusyConfirmationDismissal(applying, event)}
+        >
           <DialogHeader className="shrink-0">
             <DialogTitle>{plan?.analysis.route === 'local_bridge' ? '启用本地桥接' : '应用适配配置'}</DialogTitle>
             <DialogDescription>

@@ -212,13 +212,16 @@ describe('Adapter page view model', () => {
 });
 
 describe('Adapter profile interactions', () => {
-  it('keeps Stop and Delete confirmations open when Radix reports an attempted busy close', () => {
+  it('keeps Apply, Stop and Delete confirmations open when Radix reports an attempted busy close', () => {
+    const closeApply = vi.fn();
     const closeStop = vi.fn();
     const closeDelete = vi.fn();
 
+    closeConfirmationOnOpenChange(false, true, closeApply);
     closeConfirmationOnOpenChange(false, true, closeStop);
     closeConfirmationOnOpenChange(false, true, closeDelete);
 
+    expect(closeApply).not.toHaveBeenCalled();
     expect(closeStop).not.toHaveBeenCalled();
     expect(closeDelete).not.toHaveBeenCalled();
   });

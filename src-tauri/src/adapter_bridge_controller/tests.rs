@@ -158,6 +158,16 @@ fn stop_is_idempotent_for_an_already_stopped_bridge() {
 }
 
 #[test]
+fn apply_always_switches_current_but_manual_start_preserves_user_choice() {
+    // Initial apply must promote the generated bridge Connection.
+    assert!(should_make_bridge_current(true, false));
+    assert!(should_make_bridge_current(true, true));
+    // Manual start only refreshes live config when the bridge is already current.
+    assert!(should_make_bridge_current(false, true));
+    assert!(!should_make_bridge_current(false, false));
+}
+
+#[test]
 fn restore_filter_only_keeps_active_auto_start_local_bridges() {
     let profiles = vec![
         profile(

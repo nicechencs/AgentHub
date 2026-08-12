@@ -264,7 +264,8 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           ? `codex-kimi-bridge-${safeId}`
           : `claude-kimi-adapter-${safeId}`,
         localPort: isLocalBridge ? 32123 : null,
-        autoStart: isLocalBridge,
+        // Match desktop apply: local bridges are opt-in for auto-start.
+        autoStart: false,
         createdAt: now,
         updatedAt: now,
       };
@@ -339,7 +340,9 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         port: profile.localPort ?? current?.port ?? null,
         endpoint: profile.localPort ? `http://127.0.0.1:${profile.localPort}/v1` : null,
         startedAt: current?.startedAt ?? null,
-        upstreamStatus: 'stopped',
+        // Desktop bridge DTO currently only emits upstream "unknown"; keep mock
+        // aligned so dogfood does not invent richer health than Tauri returns.
+        upstreamStatus: 'unknown',
       };
       state.bridgeStatuses.set(profileId, status);
       return { ...status };
@@ -382,6 +385,6 @@ function runningBridgeStatus(profile: AdapterProfile): AdapterBridgeRuntimeStatu
     port,
     endpoint: `http://127.0.0.1:${port}/v1`,
     startedAt: new Date().toISOString(),
-    upstreamStatus: 'connected',
+    upstreamStatus: 'unknown',
   };
 }

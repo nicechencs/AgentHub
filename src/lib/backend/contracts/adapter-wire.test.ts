@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  mapAdapterApplyPlan,
   mapAdapterApplyResult,
   mapAdapterBridgeStatusDto,
 } from './adapter-wire';
@@ -89,5 +90,92 @@ describe('Adapter Rust wire mappers', () => {
       startedAt: null,
       upstreamStatus: 'unknown',
     });
+  });
+
+  it('passes through known upstream labels and fails closed on unknown ones', () => {
+    expect(
+      mapAdapterBridgeStatusDto({
+        profileId: 'adapter-kimi-codex-1',
+        port: 43123,
+        running: true,
+        state: 'running',
+        upstreamStatus: 'connected',
+      }).upstreamStatus,
+    ).toBe('connected');
+    expect(
+      mapAdapterBridgeStatusDto({
+        profileId: 'adapter-kimi-codex-1',
+        port: null,
+        running: false,
+        state: 'stopped',
+        upstreamStatus: 'stopped',
+      }).upstreamStatus,
+    ).toBe('stopped');
+    expect(
+      mapAdapterBridgeStatusDto({
+        profileId: 'adapter-kimi-codex-1',
+        port: 43123,
+        running: true,
+        state: 'degraded',
+        upstreamStatus: 'degraded',
+      }).upstreamStatus,
+    ).toBe('degraded');
+    expect(
+      mapAdapterBridgeStatusDto({
+        profileId: 'adapter-kimi-codex-1',
+        port: 43123,
+        running: false,
+        state: 'error',
+        upstreamStatus: 'not-a-real-label',
+      }).upstreamStatus,
+    ).toBe('unknown');
+  });
+
+  it('strips secret values from plan changes and analysis actions', () => {
+    const plan = mapAdapterApplyPlan({
+      analysis: {
+        route: 'native_endpoint',
+        support: 'stable',
+        reason: 'ok',
+        actions: [
+          {
+            kind: 'reference_connection_secret',
+            target: 'claude',
+            description: 'reference source secret',
+            value: 'sk-must-not-leak',
+            secret: true,
+          },
+          {
+            kind: 'set_env',
+            target: 'claude',
+            description: 'set base url',
+            value: 'https://api.example/',
+            secret: false,
+          },
+        ],
+        limitations: [],
+        evidence: [],
+      },
+      targetAgentId: 'claude',
+      canApply: true,
+      serviceImpact: 'none',
+      changes: [
+        { target: 'claude', field: 'apiKey', value: 'sk-must-not-leak', secret: true },
+        { target: 'claude', field: 'baseUrl', value: 'https://api.example/', secret: false },
+      ],
+    });
+
+    const secretAction = plan.analysis.actions.find((item) => item.secret);
+    const secretChange = plan.changes.find((item) => item.secret);
+    expect(secretAction).toEqual({
+      kind: 'reference_connection_secret',
+      target: 'claude',
+      description: 'reference source secret',
+      secret: true,
+    });
+    expect(secretAction).not.toHaveProperty('value');
+    expect(secretChange).toEqual({ target: 'claude', field: 'apiKey', secret: true });
+    expect(secretChange).not.toHaveProperty('value');
+    expect(JSON.stringify(plan)).not.toContain('sk-must-not-leak');
   });
 });
