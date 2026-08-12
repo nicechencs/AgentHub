@@ -101,6 +101,24 @@ impl AdapterBridgeRuntimeMaterial {
         self.preferred_port
     }
 
+    /// Construct material for host/controller tests without a full prepare saga.
+    /// Production callers must use `prepare` / restore paths only.
+    pub fn for_test(
+        profile_id: impl Into<String>,
+        preferred_port: Option<u16>,
+        local_bearer: impl Into<String>,
+        upstream_token: impl Into<String>,
+    ) -> Self {
+        Self {
+            profile_id: profile_id.into(),
+            source_connection_id: "test-source".into(),
+            preferred_port,
+            upstream_base_url: KIMI_CHAT_BASE_URL.into(),
+            upstream_auth: ResolvedAuth::bearer(upstream_token),
+            local_bearer: local_bearer.into(),
+        }
+    }
+
     /// Build a host input without serializing either bearer. `port` can be
     /// `None` to reuse the persisted port, or `Some(0)` for explicit
     /// reallocation after a bind conflict.
