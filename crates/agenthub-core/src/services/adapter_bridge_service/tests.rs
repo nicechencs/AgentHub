@@ -346,6 +346,54 @@ fn successful_restore_clears_only_retryable_marker() {
     let cleared = service.clear_retryable_error(&active.id).unwrap();
     assert_eq!(cleared.status, AdapterProfileStatus::Active);
     assert_eq!(cleared.last_error_code, None);
+}
+
+#[test]
+fn restored_port_projection_and_persist_realign_active_profile() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source(
+            "kimi-membership",
+            "upstream-membership-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service.prepare(&request("kimi-membership")).unwrap();
+    let local_bearer = prepared.runtime_material().start_spec(None).local_token.clone();
+    create_projection(&db, &prepared, 43121);
+    let active = service.finalize(&prepared, 43121).unwrap();
+    service
+        .mark_retryable(&active.id, "adapter.port_in_use")
+        .unwrap();
+
+    let (input, was_current) = service
+        .projection_for_restored_port(&active.id, 43155)
+        .unwrap();
+    assert!(!was_current);
+    assert!(!input.is_current);
+    assert_eq!(input.id, active.generated_provider_id.as_deref().unwrap());
+    let content = input
+        .settings_config
+        .get("content")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    assert!(
+        content.contains("127.0.0.1:43155"),
+        "projection toml must target rebound port: {content}"
+    );
+    assert_eq!(
+        input
+            .settings_config
+            .pointer("/auth/OPENAI_API_KEY")
+            .and_then(|value| value.as_str()),
+        Some(local_bearer.as_str())
+    );
+
+    ProviderService::new(db.clone()).update(&input).unwrap();
+    let persisted = service.persist_restored_port(&active.id, 43155).unwrap();
+    assert_eq!(persisted.local_port, Some(43155));
+    assert_eq!(persisted.last_error_code, None);
+    assert_eq!(persisted.status, AdapterProfileStatus::Active);
 
     let attention = service
         .mark_needs_attention(&active.id, "adapter.bridge_rollback")

@@ -772,11 +772,11 @@ async fn compensate_started_bridge(
     true
 }
 
-struct EnsuredBridgeListener {
-    status: BridgeRuntimeStatus,
+pub(crate) struct EnsuredBridgeListener {
+    pub(crate) status: BridgeRuntimeStatus,
     /// True when this saga started or replaced the listener and must stop it
     /// on later failure. False when an already-running identical spec was reused.
-    owned_by_saga: bool,
+    pub(crate) owned_by_saga: bool,
 }
 
 /// Start (or refresh) a loopback listener for one profile.
@@ -785,7 +785,7 @@ struct EnsuredBridgeListener {
 /// - `ConflictingStart` (token/port drift) stops the old listener then starts
 ///   with the new material so credential rotation can take effect.
 /// - `Bind` on the preferred port retries once with port `0`.
-async fn ensure_bridge_listener(
+pub(crate) async fn ensure_bridge_listener(
     host: &BridgeRuntimeHost,
     material: &agenthub_core::services::AdapterBridgeRuntimeMaterial,
 ) -> Result<EnsuredBridgeListener, BridgeHostError> {

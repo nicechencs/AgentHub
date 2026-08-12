@@ -1,7 +1,7 @@
 # Adapter 页面与本地协议桥接设计
 
-> 状态：**Phase 0 已落地，Phase 1 部分实现**。当前仅首条稳定直连规则进入普通 Apply 白名单；Kimi → Codex 已有实验性 Bridge 调用路径，但尚未完成健康检查与端到端验收。
-> 调研日期：2026-08-12
+> 状态：**可应用路径已接线（Claude 稳定直连 + Codex 实验性本地桥接）**。Pi/config_sync 等仍为预览-only；发布前仍需实机 dogfood（密钥轮转、端口冲突、托盘退出 drain）。
+> 调研日期：2026-08-12（进度同步：2026-08-12）
 > 重点参考：`D:\demo_github\AgentHub_Ref\Cli-Proxy-API-Management-Center`
 > 关联文档：[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
 
@@ -9,11 +9,11 @@
 
 | 范围 | 状态 | 当前边界 |
 |---|---|---|
-| 规则分析与预览 | ✅ | contracts、mock、`analyze`、`plan`、Adapter 页面和 profile 列表已接线 |
-| 稳定规则应用 | 🟡 | 仅 Kimi Code 会员 Provider → Claude Code `native_endpoint` 可应用；生成 Provider 后复用现有切换与备份链路 |
-| 其它直连 / 配置同步规则 | 🟡 | 可返回预览或 unsupported；未被后端显式标记 `canApply` 的规则一律不可写 |
-| Bridge core | 🟡 | `BridgeRuntimeHost`、Responses ↔ Chat 协议转换、fixtures、profile 持久化和退出 drain 已在当前工作区实现 |
-| Bridge 产品接线 | 🟡 | 实验规则的 `plan.canApply` 已开放；已有 Tauri 专用 apply/start/stop/status、UI 控件、auto-start 恢复与退出 drain，健康检查和 Kimi → Codex 端到端验收尚未收口 |
+| 规则分析与预览 | ✅ | contracts、mock、`analyze`、`plan`、Adapter 页面和 profile 列表已接线；limitations 与 `canApply` 对齐真实能力 |
+| 稳定规则应用 | ✅ | Kimi Code 会员 Provider → Claude Code `native_endpoint` 可 apply；finalize 失败会回滚 live/current；返回值脱敏 |
+| 其它直连 / 配置同步规则 | 🟡 | Pi 等仍预览或 unsupported；未显式 `canApply=true` 一律不可写 |
+| Bridge core | ✅ | `BridgeRuntimeHost`（per-profile gate、admission、超时与 cancellation-safe drain）、Responses ↔ Chat 协议与 fixtures |
+| Bridge 产品接线 | ✅ | Codex `local_bridge` 的 `canApply`、Tauri apply/start/stop/status、健康检查、失败补偿、凭证轮转 stop→restart、端口 rebind、opt-in auto-start 恢复、退出 drain；UI 已拆分 wire/model/components |
 
 这里的“已落地”描述当前工作区状态，不代表相关能力已经随 Release 发布。
 
@@ -548,19 +548,19 @@ MVP 不做全文搜索、自动滚动、错误文件下载、方法/路径筛选
 
 ## 10. 实施顺序
 
-### Phase 0：规则与预览（已落地，规则集受限）
+### Phase 0：规则与预览（已落地）
 
 - contracts、mock、`analyze`、`plan`、来源/目标选择、结果解释和应用预览已接线。
-- 普通 Apply 只开放独立规则文档中标记为“可应用”的白名单；当前写入范围见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。
+- 普通 Apply 只开放后端显式 `canApply=true` 的规则；当前写入范围见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。
 - 其它结果仍可用于解释兼容路径，但未显式返回 `canApply=true` 时必须 fail-closed。
-- 仅预览规则不产生写入；Phase 0 不启动本地服务。
+- 仅预览规则（如 Pi `config_sync`）不产生写入、不启动本地服务。
 
-### Phase 1：首条真实桥接（部分实现，尚未产品化）
+### Phase 1：首条真实桥接（工作区已接线，发布前待 dogfood）
 
 - core 已有 `BridgeRuntimeHost`、loopback token、实例 start/status/stop/shutdown，以及 OpenAI Responses ↔ Chat Completions 的文本、SSE、工具、用量、停止原因和错误映射 fixtures。
-- Tauri `AppState` 持有 host；controller 已实现 apply/start/stop/status/auto-start restore，`ExitCoordinator` 负责退出 drain；Adapter 页面也已有对应状态与操作控件。
-- 当前实验 Bridge 已由 route plan 开放 Apply，并通过 Tauri 专用路径执行；规则状态见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。IPC transport contract、健康检查、失败补偿和启动恢复需在发布前完成集成验证。
-- 首个 Bridge 组合仍需端到端验收；在此之前不得把 `local_bridge` 作为发布版可用能力。
+- Tauri `AppState` 持有 host；controller 已实现 apply/start/stop/status、健康检查、失败补偿、凭证漂移 stop→restart、端口占用 rebind、opt-in auto-start restore；`ExitCoordinator` 负责退出 drain；Adapter 页面已有对应状态与操作控件。
+- Codex `local_bridge` 已由 route plan 开放 Apply（实验性），规则状态见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。**发布前**仍需实机验收：密钥轮转、端口冲突、长流/工具闭环、托盘退出 drain。
+- 默认 `auto_start=false`；用户可在成功启动后自行打开自动恢复。
 
 ### Phase 2：Claude Code 桥接
 

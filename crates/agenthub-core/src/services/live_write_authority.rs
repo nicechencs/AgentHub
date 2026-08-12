@@ -33,10 +33,22 @@ pub struct LiveWriteGuard {
 
 impl LiveWriteAuthority {
     /// Derive the stable shared lock root for all services built over `db`.
+    ///
+    /// File-backed databases must resolve a durable parent directory so every
+    /// process sharing the same DB also shares the same lock path. In-memory
+    /// databases are allowed a process-local temp root. Unresolvable paths
+    /// fail closed rather than inventing a shared temp lock directory.
     pub fn from_database(db: &Database) -> Self {
-        Self {
-            lock_dir: database_lock_dir(db),
-        }
+        Self::try_from_database(db).unwrap_or_else(|error| {
+            panic!("LiveWriteAuthority::from_database: {error}");
+        })
+    }
+
+    /// Fallible counterpart to [`Self::from_database`].
+    pub fn try_from_database(db: &Database) -> Result<Self> {
+        Ok(Self {
+            lock_dir: database_lock_dir(db)?,
+        })
     }
 
     /// Acquire the authority for a built-in agent.
@@ -101,31 +113,17 @@ fn remap_lock(error: AppError) -> AppError {
 /// Every service constructed from one database uses its parent `locks/`
 /// directory. This intentionally does not depend on a service-local backup
 /// root, so CLI, desktop, and direct Core composition share one authority.
-fn database_lock_dir(db: &Database) -> PathBuf {
-    match main_database_file(db) {
-        Ok(path) if is_memory_database_path(&path) => {
-            // In-memory databases have no durable data root; keep locks process-local.
-            std::env::temp_dir().join("agenthub-memory-db-locks")
-        }
-        Ok(path) => path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."))
-            .join("locks"),
-        Err(error) => {
-            // Never fall back to a shared bare temp `locks/` directory: that
-            // silently breaks cross-process exclusion for file-backed DBs.
-            tracing::error!(
-                target: "core.storage",
-                error = %error,
-                "live-write lock dir could not be derived from the main database path"
-            );
-            std::env::temp_dir().join(format!(
-                "agenthub-unresolved-db-locks-{}",
-                std::process::id()
-            ))
-        }
+fn database_lock_dir(db: &Database) -> Result<PathBuf> {
+    let path = main_database_file(db)?;
+    if is_memory_database_path(&path) {
+        // In-memory databases have no durable data root; keep locks process-local.
+        return Ok(std::env::temp_dir().join("agenthub-memory-db-locks"));
     }
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    Ok(parent.join("locks"))
 }
 
 fn main_database_file(db: &Database) -> Result<PathBuf> {
@@ -137,6 +135,12 @@ fn main_database_file(db: &Database) -> Result<PathBuf> {
         )
         .map_err(Into::into)
     })?;
+    if path.trim().is_empty() {
+        return Err(AppError::message(
+            "provider.lock_dir",
+            "main database path is empty; cannot derive live-write lock directory",
+        ));
+    }
     Ok(PathBuf::from(path))
 }
 
@@ -144,3 +148,6 @@ fn is_memory_database_path(path: &Path) -> bool {
     let raw = path.to_string_lossy();
     raw.is_empty() || raw == ":memory:" || raw.starts_with("file:memdb")
 }
+
+#[cfg(test)]
+mod tests;

@@ -3,6 +3,7 @@ use super::*;
 use agenthub_core::bridge::{
     BridgeHostError, BridgeStartSpec, BridgeUpstreamConfig, ResolvedAuth,
 };
+use agenthub_core::services::AdapterBridgeRuntimeMaterial;
 use agenthub_core::storage::AdapterProfileRepo;
 use agenthub_core::AgentHub;
 
@@ -75,34 +76,63 @@ fn started_listener_is_compensated_after_apply_stage_failure() {
 fn ensure_listener_replaces_conflicting_running_spec() {
     tauri::async_runtime::block_on(async {
         let host = BridgeRuntimeHost::new();
-        host.start(start_spec("profile-rotate")).await.unwrap();
-
-        let rotated = BridgeStartSpec::new(
+        let first = AdapterBridgeRuntimeMaterial::for_test(
             "profile-rotate",
-            0,
-            "local-bearer-rotated-value-xxxxxxxx",
-            BridgeUpstreamConfig {
-                base_url: "https://api.kimi.com/coding/v1".into(),
-                model: Some("kimi-k2.5".into()),
-                source_connection_id: Some("kimi-connection".into()),
-                auth: ResolvedAuth::bearer("upstream-bearer-rotated-value-xxxxxx"),
-            },
+            Some(0),
+            "local-bearer-original-value-xxxxxxx",
+            "upstream-bearer-original-value-xxxxx",
         );
+        let first_status = ensure_bridge_listener(&host, &first).await.unwrap();
+        assert!(first_status.status.running);
+        assert!(first_status.owned_by_saga);
 
-        // Direct host start must reject drift so the controller path is required.
+        let rotated = AdapterBridgeRuntimeMaterial::for_test(
+            "profile-rotate",
+            Some(0),
+            "local-bearer-rotated-value-xxxxxxxx",
+            "upstream-bearer-rotated-value-xxxxxx",
+        );
+        // Direct host start must reject drift.
         assert!(matches!(
-            host.start(rotated.clone()).await.unwrap_err(),
+            host.start(rotated.start_spec(None)).await.unwrap_err(),
             BridgeHostError::ConflictingStart
         ));
 
-        // Same sequence as ensure_bridge_listener after ConflictingStart.
-        match host.stop("profile-rotate").await {
-            Ok(_) | Err(BridgeHostError::NotRunning) => {}
-            Err(error) => panic!("stop failed: {error}"),
-        }
-        let status = host.start(rotated).await.unwrap();
-        assert!(status.running);
+        let replaced = ensure_bridge_listener(&host, &rotated).await.unwrap();
+        assert!(replaced.status.running);
+        assert!(replaced.owned_by_saga);
+        // Reuse of the same rotated material is not owned by a later saga.
+        let reused = ensure_bridge_listener(&host, &rotated).await.unwrap();
+        assert!(reused.status.running);
+        assert!(!reused.owned_by_saga);
+
         host.shutdown().await.unwrap();
+    });
+}
+
+#[test]
+fn ensure_listener_rebinds_when_preferred_port_is_busy() {
+    tauri::async_runtime::block_on(async {
+        let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let busy_port = blocker.local_addr().unwrap().port();
+        let host = BridgeRuntimeHost::new();
+        let material = AdapterBridgeRuntimeMaterial::for_test(
+            "profile-rebind",
+            Some(busy_port),
+            "local-bearer-rebind-value-xxxxxxxxx",
+            "upstream-bearer-rebind-value-xxxxxxx",
+        );
+
+        let ensured = ensure_bridge_listener(&host, &material).await.unwrap();
+        assert!(ensured.status.running);
+        assert!(ensured.owned_by_saga);
+        assert_ne!(
+            ensured.status.port, busy_port,
+            "listener must rebind away from the occupied preferred port"
+        );
+
+        host.shutdown().await.unwrap();
+        drop(blocker);
     });
 }
 
