@@ -6,14 +6,14 @@
 
 | 文档 | 内容 |
 |---|---|
-| [agenthub-plan.md](agenthub-plan.md) | 产品方案、决策、适配矩阵、模块、路线图、风险（当前 **v1.3**） |
-| [architecture.md](architecture.md) | cargo workspace 目录、core/gui/cli 拆分、Service/Adapter、**runtime/env**；**前端目标目录（`lib/backend` / `dev/mocks`）与 pnpm 命令 ↔ adapter** |
+| [agenthub-plan.md](agenthub-plan.md) | 产品方案、决策、适配矩阵、模块、路线图、风险（当前 **v1.4**；含 **§5.7.5 平台环境差异**） |
+| [architecture.md](architecture.md) | cargo workspace 目录、core/gui/cli 拆分、Service/Adapter、**runtime/env / host_runtimes**；**前端目标目录（`lib/backend` / `dev/mocks`）与 pnpm 命令 ↔ adapter** |
 | [platform-capability-refactor.md](platform-capability-refactor.md) | **平台能力架构改造方案**：解耦边界、稀疏端口、生命周期/Skills/连接/用量；P01-P13 与 R00-R08 已完成 |
 | [platform-capability-remediation.md](platform-capability-remediation.md) | **2026-08-07 审查修正方案**：Active Binding、配置 fail-closed、Skills 安全/原子性、Lifecycle 审计与 AgentKey/OCP 真验证 |
 | [testing.md](testing.md) | **测试约定**：测试与生产分文件、vitest/cargo 命令、mock 边界、Markdown 预览用例索引 |
 | [ui-design.md](ui-design.md) | 前端布局、页面线框、交互与组件（含环境未就绪态） |
 | [ui-experience-alignment.md](ui-experience-alignment.md) | **UI 风格/体验对标 Cursor·Codex**：颜色层级、边框、字号、预览与提示体系、分阶段优化方案（**v1.1**） |
-| [cli-and-config.md](cli-and-config.md) | **CLI 命令树 / 退出码 / GUI 矩阵 / 配置 L0–L3 契约与验收清单**（**v1.1**） |
+| [cli-and-config.md](cli-and-config.md) | **CLI 命令树 / 退出码 / GUI 矩阵 / 配置 L0–L3 契约与验收清单**（**v1.2**；doctor/env 宿主 Runtime） |
 | [logging.md](logging.md) | **日志规范**：级别、文件路径、保留、module 字段、脱敏、排查与 `config` 键（**v1.0**） |
 | [chat-process-streaming.md](chat-process-streaming.md) | **Chat 过程流式**：Cursor 式步骤/工具展示的统一模型、分 Agent 接入、Phase 0–3 计划 |
 | [capability-matrix.md](capability-matrix.md) | **能力矩阵**：`Capability` 枚举 + 四级状态、现状矩阵、防漂移测试、P0–P4（**v1.0 已落地**） |

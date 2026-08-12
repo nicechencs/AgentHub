@@ -91,20 +91,37 @@ pub fn detect_npm() -> EnvStatus {
 /// - **Windows**: probes Windows PowerShell 5.1 (`powershell`) and PowerShell 7+ (`pwsh`)
 ///   separately; either is enough for `RuntimeId::PowerShell` readiness (native install scripts).
 ///   Prefer `pwsh` as the primary path/version when both work.
-/// - **macOS / Linux**: only `pwsh` is meaningful; do not claim 5.1 exists.
+/// - **macOS / Linux**: PowerShell is not a shared runtime.  Doctor skips it via
+///   [`super::detect::host_runtimes`]; this function only remains for explicit
+///   Windows-only native install resolution and tests.
 pub fn detect_powershell() -> EnvStatus {
+    #[cfg(not(windows))]
+    {
+        return EnvStatus {
+            id: RuntimeId::PowerShell,
+            status: EnvStatusKind::Ok,
+            version: None,
+            path: None,
+            min_required: None,
+            remediation: None,
+            notes: vec![
+                "Windows PowerShell 5.1: not applicable on this platform".into(),
+                "PowerShell 7 (pwsh): not required (native installers use bash/sh)".into(),
+            ],
+        };
+    }
+
+    #[cfg(windows)]
+    {
     let mut notes = Vec::new();
     let mut last_broken: Option<PathBuf> = None;
 
-    #[cfg(windows)]
     let ps51 = probe_powershell_candidate(
         &["powershell", "powershell.exe"],
         Some(PathBuf::from(
             r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
         )),
     );
-    #[cfg(not(windows))]
-    let ps51: PsProbe = PsProbe::NotApplicable;
 
     let pwsh = probe_powershell_candidate(&["pwsh", "pwsh.exe"], None);
 
@@ -218,8 +235,12 @@ pub fn detect_powershell() -> EnvStatus {
     }
 
     status
+    } // #[cfg(windows)]
 }
 
+/// Windows-only dual-version probe helpers.  On macOS/Linux `detect_powershell`
+/// short-circuits without spawning interpreters.
+#[cfg(windows)]
 #[derive(Clone)]
 enum PsProbe {
     Ok {
@@ -230,11 +251,10 @@ enum PsProbe {
         path: PathBuf,
     },
     Missing,
-    /// Constructed only on non-Windows targets.
-    #[cfg_attr(windows, allow(dead_code))]
     NotApplicable,
 }
 
+#[cfg(windows)]
 fn probe_powershell_candidate(names: &[&str], fallback: Option<PathBuf>) -> PsProbe {
     if let Some(path) = resolve_which(names) {
         return probe_ps_path(&path);
@@ -247,6 +267,7 @@ fn probe_powershell_candidate(names: &[&str], fallback: Option<PathBuf>) -> PsPr
     PsProbe::Missing
 }
 
+#[cfg(windows)]
 fn probe_ps_path(path: &Path) -> PsProbe {
     match run_capture(
         path,
@@ -441,14 +462,18 @@ mod tests {
         }
         #[cfg(not(windows))]
         {
+            // macOS/Linux: do not probe pwsh; mark as not required / not applicable.
+            assert_eq!(st.status, EnvStatusKind::Ok);
+            assert!(st.path.is_none());
             assert!(
-                st.notes.iter().any(|n| n.contains("not applicable")),
-                "non-Windows must mark 5.1 not applicable: {:?}",
+                st.notes.iter().any(|n| n.contains("not applicable") || n.contains("not required")),
+                "non-Windows must mark PowerShell as not applicable/required: {:?}",
                 st.notes
             );
-            // Must not claim a real 5.1 install path on macOS/Linux.
             assert!(
-                !st.notes.iter().any(|n| n.contains("Windows PowerShell 5.1:") && n.contains('@')),
+                !st.notes
+                    .iter()
+                    .any(|n| n.contains("Windows PowerShell 5.1:") && n.contains('@')),
                 "non-Windows must not report a 5.1 binary path: {:?}",
                 st.notes
             );

@@ -8,8 +8,8 @@ mod tray;
 mod window_policy;
 
 use state::AppState;
-use tauri::{Manager, WindowEvent};
-use window_policy::{decide_close_action, CloseAction};
+use tauri::{Manager, RunEvent, WindowEvent};
+use window_policy::{decide_close_action, should_show_on_reopen, CloseAction};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -164,6 +164,21 @@ pub fn run() {
             commands::settings::open_logs_dir,
             commands::settings::open_external_url,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running AgentHub GUI");
+        .build(tauri::generate_context!())
+        .expect("error while building AgentHub GUI")
+        .run(|app_handle, event| {
+            // macOS Dock click after hide-to-tray: window is still alive but not
+            // visible, so the system reports no visible windows. Surface it the
+            // same way the menu-bar tray "打开" action does.
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Reopen {
+                has_visible_windows, ..
+            } = event
+            {
+                if should_show_on_reopen(has_visible_windows) {
+                    tray::show_main_window(app_handle);
+                }
+            }
+            let _ = (app_handle, event);
+        });
 }

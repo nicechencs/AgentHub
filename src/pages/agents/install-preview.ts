@@ -1,23 +1,51 @@
 import { AGENT_MAP } from '@/config/agents';
 import { RUNTIME_MAP } from '@/config/runtimes';
 import { runtimeChannelForPlan } from '@/lib/env-plan';
+import { detectHostPlatform, type HostPlatform } from '@/lib/platform-detect';
 import type { AgentId, RuntimeId } from '@/lib/types';
 
 /**
  * Feature-local install command preview (copy / display only).
  * Does not execute installs and does not claim success.
+ *
+ * Upgrade reuses the same platform-aware channel the agent was installed with:
+ * npm → `npm i -g …@latest`; native → Windows `irm … | iex` / macOS `curl … | bash`.
+ * The CLI entrypoint remains `agenthub agent upgrade` on every host.
  */
 export function buildAgentInstallPreview(
   agentId: AgentId,
   action: 'install' | 'upgrade',
   channel?: string,
+  platform: HostPlatform = detectHostPlatform(),
 ): string[] {
-  const name = AGENT_MAP[agentId]?.name ?? agentId;
+  const meta = AGENT_MAP[agentId];
+  const name = meta?.name ?? agentId;
   if (action === 'upgrade') {
-    return [`$ agenthub agent upgrade ${agentId}`, `# target: ${name}`];
+    const lines = [`$ agenthub agent upgrade ${agentId}`, `# target: ${name}`];
+    const channelId =
+      channel ??
+      meta?.installChannels.find((c) => c.id === 'npm')?.id ??
+      meta?.installChannels[0]?.id;
+    const chMeta = meta?.installChannels.find((c) => c.id === channelId);
+    if (chMeta?.command) {
+      // Show the platform-specific underlying command (already filtered by catalog).
+      lines.push(`# underlying (${platform}): ${chMeta.command}`);
+    } else if (platform === 'windows') {
+      lines.push('# underlying: Windows re-runs allowlisted native .ps1 or npm latest');
+    } else {
+      lines.push('# underlying: macOS/Linux re-runs allowlisted install.sh or npm latest');
+    }
+    return lines;
   }
   const ch = channel ? ` --channel ${channel}` : '';
-  return [`$ agenthub agent install ${agentId}${ch}`, `# target: ${name}`];
+  const lines = [`$ agenthub agent install ${agentId}${ch}`, `# target: ${name}`];
+  const chMeta = channel
+    ? meta?.installChannels.find((c) => c.id === channel)
+    : meta?.installChannels[0];
+  if (chMeta?.command) {
+    lines.push(`# underlying (${platform}): ${chMeta.command}`);
+  }
+  return lines;
 }
 
 export function buildEnvInstallPreview(
@@ -27,6 +55,10 @@ export function buildEnvInstallPreview(
   if (targets.length === 0) return ['# no auto-install targets'];
   return targets.map((id) => {
     const meta = RUNTIME_MAP[id === 'npm' ? 'nodejs' : id];
+    if (id === 'powershell') {
+      // PowerShell is Windows-only and never one-click installed.
+      return `# PowerShell is Windows-only; native installers on macOS use bash/sh`;
+    }
     if ((id === 'nodejs' || id === 'npm') && channel === 'winget') {
       return `$ winget install OpenJS.NodeJS.LTS  # ${meta?.name ?? id}`;
     }
@@ -38,9 +70,6 @@ export function buildEnvInstallPreview(
     }
     if (id === 'git' && channel === 'brew') {
       return `$ brew install git  # ${meta?.name ?? id}`;
-    }
-    if (id === 'powershell' && channel === 'brew') {
-      return `$ brew install --cask powershell  # ${meta?.name ?? id}`;
     }
     return `$ agenthub env install ${id} --channel ${channel}`;
   });

@@ -28,6 +28,53 @@ pub fn invalidate_cache() {
     }
 }
 
+/// Runtimes probed by doctor / env bar on the current host.
+///
+/// PowerShell is a Windows-only shared runtime: native installers on macOS/Linux
+/// use official `install.sh` (bash/sh), so probing `pwsh` there only creates
+/// noise and false "fix environment" chips.
+pub fn host_runtimes() -> &'static [RuntimeId] {
+    #[cfg(windows)]
+    {
+        &RuntimeId::ALL
+    }
+    #[cfg(not(windows))]
+    {
+        &[RuntimeId::NodeJs, RuntimeId::Npm, RuntimeId::Git]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn host_runtimes_skip_powershell_outside_windows() {
+        let ids: Vec<_> = host_runtimes().iter().copied().collect();
+        #[cfg(windows)]
+        {
+            assert!(ids.contains(&RuntimeId::PowerShell));
+            assert_eq!(ids.len(), RuntimeId::ALL.len());
+        }
+        #[cfg(not(windows))]
+        {
+            assert!(!ids.contains(&RuntimeId::PowerShell));
+            assert_eq!(ids, vec![RuntimeId::NodeJs, RuntimeId::Npm, RuntimeId::Git]);
+        }
+    }
+
+    #[test]
+    fn detect_all_matches_host_runtimes() {
+        let statuses = detect_all();
+        assert_eq!(statuses.len(), host_runtimes().len());
+        assert!(
+            statuses
+                .iter()
+                .all(|s| s.id != RuntimeId::PowerShell || cfg!(windows))
+        );
+    }
+}
+
 pub fn detect_all() -> Vec<EnvStatus> {
     if let Ok(guard) = cache().lock() {
         if let Some(entry) = guard.as_ref() {
@@ -37,12 +84,7 @@ pub fn detect_all() -> Vec<EnvStatus> {
         }
     }
 
-    let statuses = vec![
-        detect_one(RuntimeId::NodeJs),
-        detect_one(RuntimeId::Npm),
-        detect_one(RuntimeId::PowerShell),
-        detect_one(RuntimeId::Git),
-    ];
+    let statuses: Vec<EnvStatus> = host_runtimes().iter().copied().map(detect_one).collect();
 
     if let Ok(mut guard) = cache().lock() {
         *guard = Some(CacheEntry {
@@ -54,6 +96,25 @@ pub fn detect_all() -> Vec<EnvStatus> {
 }
 
 pub fn detect_one(id: RuntimeId) -> EnvStatus {
+    // Explicit PowerShell probes are Windows-only.  On macOS/Linux return a
+    // static "not applicable" row so any residual caller still fails soft
+    // instead of spawning `pwsh` / claiming a broken environment.
+    #[cfg(not(windows))]
+    if id == RuntimeId::PowerShell {
+        return EnvStatus {
+            id: RuntimeId::PowerShell,
+            status: EnvStatusKind::Ok,
+            version: None,
+            path: None,
+            min_required: None,
+            remediation: None,
+            notes: vec![
+                "PowerShell is not required on this platform (native installers use bash/sh)"
+                    .into(),
+            ],
+        };
+    }
+
     let mut status = match id {
         RuntimeId::NodeJs => detect_nodejs(),
         RuntimeId::Npm => detect_npm(),

@@ -1,8 +1,15 @@
 /**
  * Mock install catalog snapshot — mirrors core `catalog::list_install_catalog`
- * for Windows-oriented commands (dev:mock / vitest). Not a second production source.
+ * for the current host (dev:mock / vitest). Not a second production source.
+ *
+ * Windows native → `irm … | iex` + PowerShell requires.
+ * macOS/Linux native → `curl … | bash` and no PowerShell dependency.
+ * Codex has no Unix native channel (npm only).
  */
 import type { AgentInstallCatalogEntryDto } from '@/lib/backend/contracts/install-types';
+import { detectHostPlatform } from '@/lib/platform-detect';
+
+const isWindows = detectHostPlatform() === 'windows';
 
 export const MOCK_INSTALL_CATALOG: AgentInstallCatalogEntryDto[] = [
   {
@@ -11,8 +18,10 @@ export const MOCK_INSTALL_CATALOG: AgentInstallCatalogEntryDto[] = [
       {
         id: 'native',
         label: 'native 官方脚本',
-        command: 'irm https://claude.ai/install.ps1 | iex',
-        requires: ['powershell'],
+        command: isWindows
+          ? 'irm https://claude.ai/install.ps1 | iex'
+          : 'curl -fsS https://claude.ai/install.sh | bash',
+        requires: isWindows ? ['powershell'] : [],
       },
       {
         id: 'npm',
@@ -31,12 +40,16 @@ export const MOCK_INSTALL_CATALOG: AgentInstallCatalogEntryDto[] = [
         command: 'npm i -g @openai/codex',
         requires: ['nodejs', 'npm'],
       },
-      {
-        id: 'native',
-        label: 'native 官方脚本',
-        command: 'irm https://openai.com/codex/install.ps1 | iex',
-        requires: ['powershell'],
-      },
+      ...(isWindows
+        ? [
+            {
+              id: 'native',
+              label: 'native 官方脚本',
+              command: 'irm https://openai.com/codex/install.ps1 | iex',
+              requires: ['powershell' as const],
+            },
+          ]
+        : []),
     ],
   },
   {
@@ -45,8 +58,10 @@ export const MOCK_INSTALL_CATALOG: AgentInstallCatalogEntryDto[] = [
       {
         id: 'native',
         label: 'native 官方脚本',
-        command: 'irm https://code.kimi.com/kimi-code/install.ps1 | iex',
-        requires: ['powershell'],
+        command: isWindows
+          ? 'irm https://code.kimi.com/kimi-code/install.ps1 | iex'
+          : 'curl -fsS https://code.kimi.com/kimi-code/install.sh | bash',
+        requires: isWindows ? ['powershell'] : [],
       },
       {
         id: 'npm',
@@ -62,8 +77,10 @@ export const MOCK_INSTALL_CATALOG: AgentInstallCatalogEntryDto[] = [
       {
         id: 'native',
         label: 'native 官方脚本',
-        command: 'irm https://x.ai/cli/install.ps1 | iex',
-        requires: ['powershell'],
+        command: isWindows
+          ? 'irm https://x.ai/cli/install.ps1 | iex'
+          : 'curl -fsS https://x.ai/cli/install.sh | bash',
+        requires: isWindows ? ['powershell'] : [],
       },
     ],
   },
@@ -95,8 +112,10 @@ export const MOCK_INSTALL_CATALOG: AgentInstallCatalogEntryDto[] = [
       {
         id: 'native',
         label: 'Cursor Agent CLI 官方脚本',
-        command: "irm 'https://cursor.com/install?win32=true' | iex",
-        requires: ['powershell'],
+        command: isWindows
+          ? "irm 'https://cursor.com/install?win32=true' | iex"
+          : 'curl -fsS https://cursor.com/install | bash',
+        requires: isWindows ? ['powershell'] : [],
       },
     ],
   },

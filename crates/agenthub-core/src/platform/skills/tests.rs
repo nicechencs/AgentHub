@@ -27,7 +27,7 @@ fn git_locator_splits_branch() {
 
 #[test]
 fn skill_lock_roundtrip_upsert_and_remove() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let root = tmp.path().join("skills");
     fs::create_dir_all(&root).unwrap();
 
@@ -60,7 +60,7 @@ fn skill_lock_roundtrip_upsert_and_remove() {
 
 #[test]
 fn ensure_skill_md_and_infer_id() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let pkg = tmp.path().join("my-skill");
     fs::create_dir_all(&pkg).unwrap();
     assert!(ensure_skill_md(&pkg).is_err());
@@ -74,7 +74,7 @@ fn ensure_skill_md_and_infer_id() {
 
 #[test]
 fn source_service_materializes_local_dir_without_network() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let pkg = tmp.path().join("local-skill");
     fs::create_dir_all(&pkg).unwrap();
     fs::write(pkg.join("SKILL.md"), "---\nname: L\n---\n").unwrap();
@@ -92,7 +92,7 @@ fn source_service_materializes_local_dir_without_network() {
 
 #[test]
 fn package_install_atomicity_first_and_overwrite() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("root");
     fs::create_dir_all(&skills_root).unwrap();
 
@@ -125,7 +125,7 @@ fn package_install_atomicity_first_and_overwrite() {
 
 #[test]
 fn package_rejects_missing_and_unsafe_source() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let missing = tmp.path().join("nope");
     let err = validate_and_collect_source(&missing, "x").unwrap_err();
     assert_eq!(err.code(), "not_found");
@@ -138,7 +138,7 @@ fn package_rejects_missing_and_unsafe_source() {
 
 #[test]
 fn materialize_cleans_staging_on_path_traversal_map() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills-root");
     fs::create_dir_all(&skills_root).unwrap();
     let mut bad = BTreeMap::new();
@@ -152,7 +152,7 @@ fn materialize_cleans_staging_on_path_traversal_map() {
 
 #[test]
 fn replace_rolls_back_when_staging_missing() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills-root");
     fs::create_dir_all(&skills_root).unwrap();
     let target = skills_root.join("demo");
@@ -179,7 +179,7 @@ fn replace_rolls_back_when_staging_missing() {
 
 #[test]
 fn materialize_missing_branch_preserves_late_conflict() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills-root");
     fs::create_dir_all(&skills_root).unwrap();
     let target = skills_root.join("demo");

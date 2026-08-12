@@ -1,9 +1,10 @@
-# AgentHub CLI 命令规范与配置契约 v1.1
+# AgentHub CLI 命令规范与配置契约 v1.2
 
 > 对应《项目方案》GUI + CLI 双端与《架构拆分》`agenthub-cli` / 数据目录。  
 > 本文是**可验收契约**：实现 CLI 与配置读写时以本文为准；与 GUI 冲突时以 **core service 行为一致** 为最高原则。  
 > 状态（2026-08-03，以代码为准）：CLI 已覆盖 doctor / run / env / agent（含 `capabilities`）/ provider / account（含 `oauth-url`、`refresh`、`delete`）/ skill 全树 / usage / backup / config。GUI 已接线 doctor、安装、Provider、Account、OAuth PKCE（Claude/Codex/Grok）、Skill、Usage、Backup、Chat、Projects、Settings。**备份导出**仍未实现。凭据落盘加密为当前范围外。
-> v1.1：`doctor` 含 runtimes；新增 `env` 资源；`agent install` 两阶段与 `--install-deps`。
+> v1.1：`doctor` 含 runtimes；新增 `env` 资源；`agent install` 两阶段与 `--install-deps`。  
+> v1.2：平台环境差异——`doctor`/`env list` 仅返回宿主相关 Runtime（macOS 不含 PowerShell）；`env install` 默认 channel 与 `agent install|upgrade` native 底层命令按 Windows/macOS 分流。
 
 系列文档：[项目方案](agenthub-plan.md) · [架构拆分](architecture.md) · [UI 设计](ui-design.md) · [日志规范](logging.md)
 
@@ -130,13 +131,15 @@ agenthub
 
 | 项 | 约定 |
 |---|---|
-| 作用 | 一页看健康：**共享 runtimes**、数据目录、db 可写、**全部已注册 Agent** detect、当前 provider/账号摘要（脱敏）、parser health、锁是否异常 |
-| core | `env_service.detect_all` + `agent_service.detect_all` + `usage_service.parser_health` + settings/paths |
+| 作用 | 一页看健康：**宿主相关共享 runtimes**、数据目录、db 可写、**全部已注册 Agent** detect、当前 provider/账号摘要（脱敏）、parser health、锁是否异常 |
+| core | `env_service.detect_all`（= `runtime::host_runtimes`）+ `agent_service.detect_all` + `usage_service.parser_health` + settings/paths |
 | 输出 | table 分区或 json：`{ dataDir, runtimes[], agents[], usageHealth[], ok: bool, warnings[] }` |
 | 分区顺序 | ① Runtimes ② Agents ③ Paths/DB ④ Usage parsers ⑤ Locks |
 | 退出码 | 全部关键检查通过 `0`；runtime 缺失/过旧视为 **警告**（`0` + warnings，不挡 doctor）；db 不可用等硬错误 `1` |
 
-`runtimes[]` 元素建议字段：`id`（`nodejs`/`npm`/…）、`status`（`ok`/`missing`/`outdated`/`broken_path`）、`version?`、`path?`、`minRequired?`、`remediation?`。
+`runtimes[]` 元素建议字段：`id`（`nodejs`/`npm`/`git`，Windows 另可含 `powershell`）、`status`（`ok`/`missing`/`outdated`/`broken_path`）、`version?`、`path?`、`minRequired?`、`remediation?`、`notes?`。
+
+**平台约束**：macOS/Linux 的 `runtimes[]` **不得**包含 `powershell`；不得把「未安装 pwsh」计为环境故障。完整约定见 [agenthub-plan.md §5.7.5](agenthub-plan.md)。
 
 ### 4.1b `run`（P0.5 multi-agent execution）
 
@@ -161,19 +164,20 @@ agenthub
 
 | 命令 | 参数 | core | 危险 | 说明 |
 |---|---|---|---|---|
-| `list` | | `env_service.detect_all` | 否 | 与 doctor 的 runtimes 段同源；P0 即可交付 |
-| `install` | `<runtime> [--channel]` | `env_service.install_runtime` | 中 | P2；`runtime`：`nodejs` 等；channel 如 `winget` / `manual`；流式日志 stderr；成功后 invalidate 缓存 |
+| `list` | | `env_service.detect_all` | 否 | 与 doctor 的 runtimes 段同源；**仅宿主相关 Runtime**（macOS/Linux 不含 `powershell`） |
+| `install` | `<runtime> [--channel]` | `env_service.install_runtime` | 中 | P2；`runtime`：`nodejs`/`git` 等；channel 默认 **Windows=`winget`、macOS=`brew`**；`powershell` **永不**一键安装；流式日志 stderr；成功后 invalidate 缓存 |
 
 - `install` 在无自动渠道时打印 remediations（命令 + URL）并以退出码 `3`（业务失败）结束，**不**假装成功。
 - **不提供** `env uninstall`（避免误伤系统 Node）。
+- 平台环境差异硬约束见 [agenthub-plan.md §5.7.5](agenthub-plan.md)。
 
 ### 4.3 `agent`
 
 | 命令 | 参数 | core | 危险 | 说明 |
 |---|---|---|---|---|
 | `list` | | `detect_all` | 否 | 安装态、版本、渠道、bin、认证摘要；建议附带所选默认渠道的 `envReady` |
-| `install` | `<agent> [--channel] [--install-deps]` | `install`（两阶段） | 中 | **先 ensure_env**；缺环境且无 `--install-deps` → 退出码 `3`，json/文本含 `EnvNotReady`；有 `--install-deps` 则先引导装 Runtime 再装 Agent；channel 默认取元数据第一个；流式日志 stderr |
-| `upgrade` | `<agent>` | `upgrade` | 中 | 升级前同样校验渠道 Runtime（过旧可警告） |
+| `install` | `<agent> [--channel] [--install-deps]` | `install`（两阶段） | 中 | **先 ensure_env**；缺环境且无 `--install-deps` → 退出码 `3`，json/文本含 `EnvNotReady`；有 `--install-deps` 则先引导装 Runtime 再装 Agent；channel 默认取元数据第一个；**底层 native：Windows ps1 / Unix sh**；流式日志 stderr |
+| `upgrade` | `<agent>` | `upgrade` | 中 | 复用安装渠道：npm → 重装 latest；native → 平台对应官方脚本；升级前同样校验渠道 Runtime |
 | `uninstall` | `<agent> [--purge-config]` | `uninstall` | **高** | `--purge-config` 必确认或 `-y`；先 `pre-uninstall` 备份；**不卸载**共享 Runtime |
 
 `EnvNotReady`（`--output json` 时 `details`）建议：
@@ -188,6 +192,7 @@ agenthub
     "missing": ["nodejs"],
     "remediations": [
       { "kind": "winget", "command": "winget install OpenJS.NodeJS.LTS" },
+      { "kind": "brew", "command": "brew install node" },
       { "kind": "url", "url": "https://nodejs.org/" },
       { "kind": "hint", "text": "Install Node, restart shell/AgentHub, then re-run" }
     ],
@@ -195,6 +200,8 @@ agenthub
   }
 }
 ```
+
+GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `brew`，macOS 不展示 `winget`）。
 
 ### 4.4 `provider`
 

@@ -6,3 +6,6 @@ pub mod process;
 pub mod project_path;
 pub mod redact;
 pub mod stream_parse;
+
+#[cfg(test)]
+pub mod test_temp;

@@ -1,10 +1,11 @@
-# AgentHub 项目方案 v1.3
+# AgentHub 项目方案 v1.4
 
 > 多 Agent 管理桌面工具：统一管理 Claude Code、Codex、Grok、Kimi 等 AI Agent 的安装、技能、API 配置、Token 统计与 OAuth 账号。  
 > 技术栈：Tauri v2 + React + Rust，GUI + CLI 双端。  
 > v1.1：补齐 Adapter / Service 职责边界、Skills 投影模型、备份流程、Token 统计与「模型列表」语义。  
 > v1.2：CLI 命令树与配置三层契约见专文 [cli-and-config.md](cli-and-config.md)。  
-> v1.3：**安装前置环境（Runtime）**：用户机可能无法直接装 Agent（缺 Node/npm 等），安装管线改为「检测环境 → 引导装环境 → 再装 Agent」。
+> v1.3：**安装前置环境（Runtime）**：用户机可能无法直接装 Agent（缺 Node/npm 等），安装管线改为「检测环境 → 引导装环境 → 再装 Agent」。  
+> v1.4：**平台环境差异**：PowerShell 仅 Windows 共享 Runtime；macOS/Linux native 安装/升级走官方 sh + bash，不得检测或要求 PowerShell；包管理引导 Windows=`winget`、macOS=`brew`。
 
 系列文档：[目录结构与模块拆分](architecture.md) · [前端 UI 设计](ui-design.md) · [CLI 与配置契约](cli-and-config.md)
 
@@ -12,7 +13,7 @@
 
 | 决策点 | 结论 |
 |---|---|
-| 平台范围 | Windows 优先，架构上为 macOS/Linux 预留（路径解析抽象） |
+| 平台范围 | Windows 为主交付；macOS 已支持源码运行与本机构建；Linux 仅路径/命令抽象预留。**共享 Runtime 与 native 安装命令按宿主平台分流**（见 §5.7.2 / §5.7.5） |
 | 复用策略 | 借鉴同类开源桌面工具的分层与配置管理实践，从零自研 |
 | MVP 范围 | Agent 安装/卸载（含**前置运行时检测与引导**）、API 配置管理、技能/插件管理、Token 统计 |
 | 产品形态 | GUI + CLI 双端，核心逻辑抽成 `agenthub-core` crate 共享 |
@@ -250,22 +251,33 @@ trait AgentAdapter {
 
 #### 5.7.2 Runtime 清单（MVP）
 
-| RuntimeId | 典型检测 | 谁需要 | Windows 引导优先级（建议） |
-|---|---|---|---|
-| `nodejs` | `node -v` + 路径 | Claude/Codex 的 **npm** 渠道 | ① `winget install OpenJS.NodeJS.LTS` ② 官方 LTS MSI 链接 ③ 仅展示命令 |
-| `npm` | `npm -v`（通常随 Node） | 同上 | 随 Node；若 node 在而 npm 不在 → 提示修复 PATH / 重装 Node |
-| `powershell` | 默认存在；脚本执行策略可提示 | native 官方脚本渠道 | 一般只检测，不「安装」；ExecutionPolicy 给出说明 |
-| `git` | `git --version` + 路径 | Skills 市场 / git URL 安装（clone、pull） | ① `winget install --id Git.Git` ② 官网下载 ③ 仅展示命令 |
-| `curl` / 系统下载器 | 可选 | 部分官方一键脚本 | 缺失时改用系统自带下载方式或提示浏览器下载 |
+| RuntimeId | 典型检测 | 谁需要 | Windows | macOS / Linux |
+|---|---|---|---|---|
+| `nodejs` | `node -v` + 路径 | Claude/Codex/Pi 等 **npm** 渠道 | ① `winget install OpenJS.NodeJS.LTS` ② 官网 LTS ③ 可复制命令 | ① `brew install node` ② 官网 ③ 包管理器提示 |
+| `npm` | `npm -v`（通常随 Node） | 同上 | 随 Node；node 在 npm 不在 → 修 PATH / 重装 Node | 同左 |
+| `powershell` | 5.1（`powershell`）与 7（`pwsh`）双探针，任一可用即可 | **仅 Windows** native `.ps1` 渠道 | **只检测、不一键安装**；ExecutionPolicy 提示 | **不检测、不展示、不作为渠道前置**；native 走官方 sh |
+| `git` | `git --version` + 路径 | Skills 市场 / git URL 安装 | ① `winget install --id Git.Git` ② 官网 | ① `brew install git` ② 官网 |
+| `curl` / 系统下载器 | 可选（执行 native sh 时用） | 部分官方一键脚本 | 系统自带 / 浏览器降级 | 系统 `curl`；缺失时提示手动下载 |
 
 版本门槛：在 Adapter/渠道元数据中声明 `min_version`（如 Node ≥ 18）；detect 返回 `ok | outdated | missing`。
+
+**检测范围（硬约束）**：
+
+- `env_service.detect_all()` / doctor 的 `runtimes[]` **只返回宿主相关 Runtime**（实现：`runtime::host_runtimes()`）。
+- Windows：`nodejs` / `npm` / `powershell` / `git`。
+- macOS / Linux：`nodejs` / `npm` / `git`（**不含** `powershell`）。
+- 对 PowerShell 的显式 `detect_one` 在非 Windows 上必须 fail-soft（标记 not applicable / not required），**禁止** spawn `pwsh` 或把缺失当成环境故障。
 
 #### 5.7.3 Agent 检测与安装命令
 
 - **Agent 检测**：扫描 npm/pnpm 全局、常见用户 bin 目录、PATH；Windows 下执行命令加 `CREATE_NO_WINDOW`。
-- **Runtime 检测**：`env_service.detect_all()` / `detect(RuntimeId)`；结果缓存短 TTL，安装后强制失效。
-- **安装/升级 Agent**：仅在 Phase A 通过后，封装官方渠道命令（`npm install -g …` / 官方安装脚本），捕获输出展示。
-- **卸载**：官方卸载 + 可选清理配置目录（二次确认 + **pre-uninstall 备份**）。**不**因卸载 Agent 而卸载 Node（共享运行时）。
+- **Runtime 检测**：`env_service.detect_all()` / `detect(RuntimeId)`；结果缓存短 TTL，安装后强制失效；**范围见 §5.7.2**。
+- **安装/升级 Agent**：仅在 Phase A 通过后，封装官方渠道命令，捕获输出展示。
+  - **npm**：各平台均为 `npm i -g <pkg>`（升级同路径 / latest）。
+  - **native Windows**：allowlist 的 `install.ps1`，经 PowerShell `irm … | iex`（需 PowerShell）。
+  - **native macOS/Linux**：allowlist 的 `install.sh`，经 `curl … | bash`（**不**要求 PowerShell）。
+  - **CLI 入口统一**：`agenthub agent install|upgrade <id>`；底层命令由 core 按平台选择。
+- **卸载**：官方卸载 + 可选清理配置目录（二次确认 + **pre-uninstall 备份**）。**不**因卸载 Agent 而卸载 Node/Git（共享运行时）。
 - 路径白名单校验，拒绝危险字符防注入。
 
 #### 5.7.4 结构化结果（GUI/CLI 共用）
@@ -274,10 +286,30 @@ trait AgentAdapter {
 DetectResult（Agent）     : installed | not_found | path/version/channel
 EnvStatus（Runtime）      : ok | missing | outdated | broken_path
 InstallPlan               : channel + required_runtimes[] + agent_command
-EnvNotReady               : missing[] + remediations[]（winget/命令/url）+ can_auto_fix
+EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url）+ can_auto_fix
 ```
 
-`doctor` 必须同时报告 **Agent 安装态** 与 **Runtime 健康**（见 [cli-and-config.md](cli-and-config.md)）。
+`doctor` 必须同时报告 **Agent 安装态** 与 **宿主相关 Runtime 健康**（见 [cli-and-config.md](cli-and-config.md)）。macOS doctor 的 `runtimes[]` **不得**出现 PowerShell 行。
+
+#### 5.7.5 平台环境差异（硬约束）
+
+| 主题 | Windows | macOS | Linux（预留） |
+|---|---|---|---|
+| 共享 Runtime 探测 | Node / npm / **PowerShell** / Git | Node / npm / Git | 同 macOS |
+| Runtime 一键修复默认渠道 | `winget` | `brew` | 无自动包管理器时仅 URL/命令 |
+| native 渠道前置 | `requires: [powershell]` | `requires: []` | `requires: []` |
+| native 安装/升级命令 | `irm <allowlisted-ps1> \| iex` | `curl -fsS <allowlisted-sh> \| bash` | 同 macOS |
+| 仅 Windows 有 ps1 的 Agent（如 Codex native） | 展示 native 渠道 | **不**暴露 Windows-only ps1 为 native；优先 npm 或官网 | 同 macOS |
+| 打开官网 Setup | `cmd /C start` | `open` | `xdg-open` |
+| GUI 环境条 | 可显示 PS 5.1/7 双版本芯片 | **不**显示 PowerShell 芯片 | 同 macOS |
+| 适配器 `install_channels().requires` | 与 catalog 一致，可用 `runtime::native_install_requires()` | 同左；**禁止**在 Unix 上硬编码 PowerShell | 同左 |
+
+**禁止事项**：
+
+1. 在 macOS/Linux doctor / 环境条把「未安装 pwsh」标成环境故障。
+2. 在 Unix native catalog 展示 `irm … | iex` 或把 PowerShell 写进 `requires`。
+3. 在前端 remediation 给 macOS 用户推 `winget`，或给 Windows 用户推 `brew`（可用 `platform` 标记过滤）。
+4. 在多个 Adapter 内复制 `which node` / PowerShell 探测；统一走 `runtime/`。
 
 ## 6. 前端设计
 
