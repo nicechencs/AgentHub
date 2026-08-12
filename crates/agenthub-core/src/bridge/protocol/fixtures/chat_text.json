@@ -1,0 +1,14 @@
+{
+  "id": "chatcmpl_text_1",
+  "object": "chat.completion",
+  "created": 1720000000,
+  "model": "kimi-k2.5",
+  "choices": [
+    {
+      "index": 0,
+      "message": {"role": "assistant", "content": "你好，世界。"},
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {"prompt_tokens": 8, "completion_tokens": 4, "total_tokens": 12}
+}

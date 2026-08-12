@@ -1,0 +1,23 @@
+{
+  "id": "chatcmpl_tool_1",
+  "created": 1720000001,
+  "model": "kimi-k2.5",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_weather_1",
+            "type": "function",
+            "function": {"name": "weather", "arguments": "{\"city\":\"Taipei\"}"}
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {"prompt_tokens": 12, "completion_tokens": 9, "total_tokens": 21}
+}

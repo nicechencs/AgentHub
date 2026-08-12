@@ -1,0 +1,14 @@
+{
+  "model": "kimi-k2.5",
+  "input": [
+    {"type": "message", "role": "user", "content": "Use the prior tool result."},
+    {
+      "type": "function_call_output",
+      "call_id": "call_text",
+      "output": [
+        {"type": "input_text", "text": "first "},
+        {"type": "text", "text": "second"}
+      ]
+    }
+  ]
+}
