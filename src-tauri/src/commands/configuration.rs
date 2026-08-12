@@ -88,6 +88,7 @@ pub async fn apply_agent_config(
 ) -> Result<ConfigApplyResult, String> {
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
         hub.configuration
             .apply_value(agent, values)
@@ -115,8 +116,8 @@ pub async fn materialize_agent_config(
 }
 
 fn value_to_map(values: Value) -> Result<BTreeMap<String, Value>, String> {
-    let obj = values.as_object().ok_or_else(|| {
-        "config values must be a JSON object [invalid_arg]".to_string()
-    })?;
+    let obj = values
+        .as_object()
+        .ok_or_else(|| "config values must be a JSON object [invalid_arg]".to_string())?;
     Ok(obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
 }

@@ -194,6 +194,14 @@ pub async fn uninstall_agent(
     let hub = state.hub_arc()?;
     let key = parse_lifecycle_agent_key(&agent_id)?;
     let purge = purge_config.unwrap_or(false);
+    // Built-in agent uninstall can remove live configuration/auth when purge
+    // is requested. Serialize the entire command against the same per-agent
+    // Tauri authority even for non-purge lifecycle variants, so no target
+    // mutation can interleave while Core owns its cross-process guard.
+    let _target_guard = match legacy_builtin_agent_id(&key) {
+        Some(agent) => Some(state.bridge_saga_coordinator().lock_target(agent).await),
+        None => None,
+    };
     let hook = install_progress_hook(app, Some(key.as_str().into()), "uninstall");
     with_hub_blocking(hub, move |hub| {
         hub.with_install_log_hook(hook, || {
