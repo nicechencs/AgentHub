@@ -1,0 +1,7 @@
+{
+  "error": {
+    "message": "Authentication failed for sk-secret-key; prompt: user private input",
+    "type": "invalid_request_error",
+    "code": "invalid_api_key"
+  }
+}

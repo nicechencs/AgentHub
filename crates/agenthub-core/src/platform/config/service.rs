@@ -11,6 +11,8 @@ use crate::logging::{self, targets};
 use crate::models::AgentId;
 use crate::platform::paths::resolve_agent_home;
 use crate::platform::AgentKey;
+use crate::services::{LiveWriteAuthority, LiveWriteGuard};
+use crate::storage::Database;
 use crate::utils::redact::redact_text;
 
 use super::document::{ConfigApplyResult, ConfigChangePlan, NormalizedConfigDocument};
@@ -22,24 +24,23 @@ use super::schema::{AgentConfigSchema, ConfigValidationResult};
 #[derive(Clone)]
 pub struct ConfigurationService {
     registry: Arc<ConfigProjectorRegistry>,
-}
-
-impl Default for ConfigurationService {
-    fn default() -> Self {
-        Self::new()
-    }
+    authority: LiveWriteAuthority,
 }
 
 impl ConfigurationService {
-    pub fn new() -> Self {
+    /// Construct a configuration writer tied to the database's shared
+    /// per-agent live-write authority.
+    pub fn new(db: Database) -> Self {
         Self {
             registry: Arc::new(builtin_config_registry().clone()),
+            authority: LiveWriteAuthority::from_database(&db),
         }
     }
 
-    pub fn with_registry(registry: ConfigProjectorRegistry) -> Self {
+    pub fn with_registry(db: Database, registry: ConfigProjectorRegistry) -> Self {
         Self {
             registry: Arc::new(registry),
+            authority: LiveWriteAuthority::from_database(&db),
         }
     }
 
@@ -180,14 +181,54 @@ impl ConfigurationService {
         self.apply_for_agent_key(&key, desired, &home)
     }
 
+    /// Apply while a larger Core live-write saga already holds the authority.
+    pub fn apply_with_guard(
+        &self,
+        guard: &LiveWriteGuard,
+        agent: AgentId,
+        desired: &BTreeMap<String, Value>,
+    ) -> Result<ConfigApplyResult> {
+        self.apply_at_with_guard(guard, agent, desired, None)
+    }
+
+    /// Guarded counterpart to [`Self::apply_at`].
+    pub fn apply_at_with_guard(
+        &self,
+        guard: &LiveWriteGuard,
+        agent: AgentId,
+        desired: &BTreeMap<String, Value>,
+        home_override: Option<&Path>,
+    ) -> Result<ConfigApplyResult> {
+        let key = AgentKey::from_agent_id(agent);
+        let home = self.legacy_home(agent, home_override)?;
+        self.apply_for_agent_key_with_guard(guard, &key, desired, &home)
+    }
+
     pub fn apply_for_agent_key(
         &self,
         key: &AgentKey,
         desired: &BTreeMap<String, Value>,
         agent_home: &Path,
     ) -> Result<ConfigApplyResult> {
+        let guard = self.authority.acquire_key(key)?;
+        self.apply_for_agent_key_with_guard(&guard, key, desired, agent_home)
+    }
+
+    /// Key-native guarded apply for callers that already hold the shared
+    /// per-agent authority (for example a provider bridge saga).
+    pub fn apply_for_agent_key_with_guard(
+        &self,
+        guard: &LiveWriteGuard,
+        key: &AgentKey,
+        desired: &BTreeMap<String, Value>,
+        agent_home: &Path,
+    ) -> Result<ConfigApplyResult> {
+        self.authority.validate_guard_key(guard, key)?;
         // Never log desired values (may contain secrets); only keys + counts.
-        match self.projector(key).and_then(|p| p.apply(agent_home, desired)) {
+        match self
+            .projector(key)
+            .and_then(|p| p.apply(agent_home, desired))
+        {
             Ok(mut result) => {
                 scrub_unknown_native(&mut result.document);
                 let changed = result.plan.field_changes.len();

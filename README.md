@@ -1,365 +1,141 @@
 # AgentHub
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-0078D6.svg)](#系统要求)
-[![Version](https://img.shields.io/badge/version-0.1.0-informational.svg)](https://github.com/nicechencs/AgentHub/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-0078D6.svg)](#快速开始)
+[![Release](https://img.shields.io/github/v/release/nicechencs/AgentHub?label=version)](https://github.com/nicechencs/AgentHub/releases)
 
-**多 Agent 桌面管理中枢**：在一台 Windows 或 macOS 机器上统一检测与安装 AI Agent 运行时、管理 Provider / 账号池、投影 Skills、备份 live 配置、统计 Token 用量，并提供桌面 Chat 入口。
+AgentHub 是一个本地运行的多 Agent 桌面管理工具。它用统一的 GUI 和 CLI 管理 AI Coding Agent 的安装环境、连接、Skills、用量与本地会话。
 
-技术栈：**Tauri v2 + React + Rust core**；形态为 **GUI + CLI** 双端，业务逻辑集中在 `agenthub-core`。
+技术栈：**Tauri v2 + React + Rust**。Windows 是主要交付平台；macOS 支持源码运行与本机构建。
 
-| 状态 | 说明 |
+## 主要功能
+
+以下描述当前源码工作区；发布包可能滞后，请以对应版本的 [Release notes](https://github.com/nicechencs/AgentHub/releases) 为准。
+
+| 模块 | 用途 |
 |---|---|
-| 版本 | `0.1.0`（活跃开发） |
-| 平台 | **Windows 为主交付平台**；macOS 支持源码运行与本机 Tauri 构建，Linux 仍仅预留路径抽象 |
-| 许可 | [MIT](LICENSE) |
+| **Dashboard** | 查看 Agent 状态、Token 趋势、成本估算与解析健康度 |
+| **Agents** | 检测 Node/npm/Git 等运行环境，安装、升级或卸载 Agent |
+| **Connections** | 统一管理官方账号与 API Provider；切换前自动备份 live 配置 |
+| **Adapter** | 按[厂商、API 与 OAuth 规则](docs/provider-api-oauth-adaptation.md)分析连接，预览并应用已验证路径 |
+| **Skills** | 以 `~/.agents/skills/` 为共享真源，向各 Agent 投影和同步技能 |
+| **MCP** | 只读汇总各 Agent 的本机 MCP 配置；管理与注入仍在规划中 |
+| **Chat** | 在桌面端调用一个或多个本机 Agent，并展示流式过程 |
+| **Projects** | 浏览、整理和汇总各 Agent 的本地项目与会话 |
+| **Settings** | 管理偏好、日志、数据目录、更新与配置备份 |
+| **CLI** | 提供 doctor、env、agent、provider、account、skill、usage、backup、run 等命令 |
 
-面向本机 AI Agent：
+当前内置适配：**Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、Cursor Agent**。各家能力不同，请以 [能力矩阵](docs/capability-matrix.md) 或以下命令为准：
 
-| Agent | 说明 |
-|---|---|
-| **Claude Code** | 安装引导、配置切换、账号池、Skills、Usage、Chat |
-| **Codex** | 同上 |
-| **Kimi** | 安装 / 配置 / 账号 / Usage（Skills 因对方无独立目录受限） |
-| **Grok** | 安装 / 配置 / 账号 / Skills / Usage |
-| **Pi** | npm 渠道；能力以矩阵为准 |
-| **WorkBuddy** | 官网 Setup 引导；能力以矩阵为准 |
-| **Cursor Agent** | 公开 Agent CLI（半套）；**不**支持 Cursor IDE 私有库账号池 |
+```powershell
+cargo run -p agenthub-cli -- agent capabilities
+```
 
-能力「能不能」以 [docs/capability-matrix.md](docs/capability-matrix.md) 与 CLI `agenthub agent capabilities` 为准。
+> Adapter 的普通配置写入只开放稳定白名单；本地协议 Bridge 已有实验路径，尚未完成端到端验收。Cursor 仅支持公开的 Agent CLI 能力，不读写 Cursor IDE 私有账号库。
 
-## 目录
+## 快速开始
 
-- [它解决什么问题](#它解决什么问题)
-- [界面预览](#界面预览)
-- [功能一览](#功能一览)
-- [系统要求](#系统要求)
-- [安装与运行](#安装与运行)
-- [常用命令](#常用命令)
-- [数据与隐私](#数据与隐私)
-- [架构摘要](#架构摘要)
-- [文档](#文档)
-- [贡献](#贡献)
-- [安全](#安全)
-- [致谢与开源借鉴](#致谢与开源借鉴)
-- [许可证](#许可证)
+### 使用发布包
 
----
+从 [GitHub Releases](https://github.com/nicechencs/AgentHub/releases) 下载 Windows 安装包。macOS 当前以源码运行和本机打包为主，暂不承诺签名、公证后的发行包。
 
-## 它解决什么问题
+### 从源码运行
 
-本机往往同时装着多家 coding agent，各自有安装方式、配置文件、OAuth / API Key 落点、技能目录与会话日志。AgentHub 把这些差异收敛到统一界面与 CLI：
+需要 [Node.js](https://nodejs.org/)、[Rust](https://rustup.rs/) 和 pnpm。
 
-1. **先环境、后 Agent** — 缺 Node / npm 时先引导安装运行时，再装对应渠道的 Agent  
-2. **连接统一管理** — 官方 OAuth 账号池与 API Provider（官方 / 自定义 endpoint）同一套 Connections  
-3. **Skills 真源投影** — 共享库 `~/.agents/skills/`，按需同步到各 Agent 的 skills 目录  
-4. **零侵入 Usage** — 解析各 Agent 本地会话 / 日志，不做本地代理  
-5. **写前备份** — 切换 Provider / 账号前自动快照 live 文件，可回滚  
-
-**不做的事（刻意边界）**：通用包管理、本地 LLM 代理、多租户云同步、Cursor IDE 私有库账号池、反编译第三方安装包内部文件。
-
----
-
-## 界面预览
-
-截图来自 `pnpm dev:mock` 演示数据（路径为 mock 占位，非真实用户目录）。
-
-### Dashboard — 总览与用量
-
-Agent 安装状态、近 N 天 Token 趋势、各 Agent 用量分布、快捷切换 / 备份入口。用量合并在 Dashboard，不再单独成页。
-
-![Dashboard](docs/assets/screenshots/dashboard.png)
-
-### Agents — 运行时与安装
-
-检测共享 Runtime（Node / npm / Git；**Windows 另含 PowerShell**），按渠道一键安装或引导修复；环境未就绪时主操作是「修复环境」，而不是假装可装 Agent。macOS 不检测 PowerShell，native 安装走官方 bash/sh。
-
-![Agents](docs/assets/screenshots/agents.png)
-
-### Connections — 账号与 API
-
-按 Agent 聚合 **官方账号（OAuth）** 与 **API 配置（Provider）**。切换会 backfill → 备份 live → 原子写入。
-
-![Connections](docs/assets/screenshots/connections.png)
-
-### Skills — 技能库与同步
-
-共享技能库、按工具矩阵查看同步状态、一键全部同步；支持从本地路径或市场安装。
-
-![Skills](docs/assets/screenshots/skills.png)
-
-### Chat — 桌面对话
-
-选择 Agent / 模型后发送消息；支持多选 Agent 对比回答。过程流式展示步骤与工具调用（按 Agent 能力接入）。
-
-![Chat](docs/assets/screenshots/chat.png)
-
-### Projects — 工作区会话
-
-按 Agent 浏览本机项目 / 会话树，可打开、重命名、删除或汇总；**不**调用各 CLI 原生 resume。
-
-![Projects](docs/assets/screenshots/projects.png)
-
-### Settings — 偏好与备份
-
-语言、主题、开机启动、托盘最小化；以及安全、数据目录与备份管理。
-
-![Settings](docs/assets/screenshots/settings.png)
-
----
-
-## 功能一览
-
-| 模块 | 做什么 |
-|---|---|
-| **Dashboard** | Agent 就绪概览 + Token 用量（趋势 / 分布 / 明细 / 解析健康度） |
-| **Agents** | Runtime 检测与修复、渠道安装 / 卸载、重新检测 |
-| **Connections** | OAuth 账号池、API Provider 预设与自定义、一键切换（写前备份） |
-| **Skills** | 共享库扫描、投影同步、安装 / 卸载、冲突策略 |
-| **Chat** | 本机 Agent 对话入口、过程流、多 Agent 对比 |
-| **Projects** | 项目 / 会话树浏览与维护 |
-| **Settings** | 应用偏好、备份索引、数据与关于 |
-| **Router** | 规划中（占位页） |
-| **CLI** | 与 GUI 同源的资源型命令（`provider` / `account` / `skill` / `usage` 等） |
-
----
-
-## 系统要求
-
-| 项 | 要求 |
-|---|---|
-| 操作系统 | **Windows 10 / 11**（当前主交付平台） |
-| 运行 GUI 构建产物 | [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)（Windows 10/11 通常已预装） |
-| macOS 源码开发 | macOS + Xcode Command Line Tools、[Node.js](https://nodejs.org/)（建议 LTS）、[Rust / Cargo](https://rustup.rs/)、pnpm；[Homebrew](https://brew.sh/) 用于 Runtime 一键修复（可选） |
-| Windows 源码开发 | [Node.js](https://nodejs.org/)（建议 LTS）、[Rust / Cargo](https://rustup.rs/)、pnpm（缺失时 `run.ps1` 可自动安装） |
-| 可选 | 被管理的 Agent 及其官方 Runtime（如 Node 供 npm 渠道）；AgentHub 会检测并引导 |
-
----
-
-## 安装与运行
-
-### 使用发布包（终端用户）
-
-从 [GitHub Releases](https://github.com/nicechencs/AgentHub/releases) 下载 Windows 安装包（`.msi` / 安装程序）。  
-应用内可检查更新（Tauri updater 指向仓库 `latest.json`）。
-
-macOS 当前以源码运行和本机打包为主；仓库没有承诺签名、公证或可直接安装的 macOS 发布包。
-
-### 从源码启动开发环境
-
-双击根目录 **`run.bat`**（推荐），或在 PowerShell 中：
+Windows：
 
 ```powershell
 .\run.ps1
 ```
 
-等价命令：
+也可以双击 `run.bat`。脚本会检查开发依赖并启动 Tauri 桌面端。
 
-```powershell
-pnpm install
-pnpm tauri:dev
-```
-
-仅浏览 UI、不连真实后端时：
-
-```powershell
-pnpm dev:mock
-```
-
-#### macOS
-
-在仓库根目录运行（脚本会检查 Node、Cargo、Xcode Command Line Tools、pnpm，并在缺少依赖目录时执行 `pnpm install`）：
+macOS：
 
 ```bash
-chmod +x ./run.sh   # 首次使用需要；git checkout 通常会保留可执行位
+chmod +x ./run.sh
 ./run.sh
 ```
 
-等价命令：
+仅查看前端和演示数据，无需真实 Agent：
 
 ```bash
 pnpm install
-pnpm tauri:dev
+pnpm dev:mock
 ```
-
-macOS 缺少 Homebrew 时仍可开发；运行时修复面板会提供 Node.js / Git 的 Homebrew 命令和官网链接，不会展示 Windows 专用 `winget`。安装后请完全退出并重启 AgentHub，再重新检测 PATH。
-
-打包桌面安装包：
-
-```powershell
-pnpm tauri:build
-```
-
-产物一般在仓库根目录的 `target/release/bundle/`（NSIS / MSI 等，视 `tauri.conf` 配置而定）。
-
-macOS 本地自用构建无需 updater 签名私钥：
-
-```bash
-pnpm tauri:build:macos
-```
-
-它会按当前架构生成 `.app`：
-
-- `target/release/bundle/macos/AgentHub.app`
-
-正式发布仍使用 `pnpm tauri:build`；由于该命令会创建签名 updater artifact，必须配置 `TAURI_SIGNING_PRIVATE_KEY`。如需 DMG，可使用 Tauri 的 `--bundles dmg` 构建参数并完成 Apple 签名与公证配置。
-
-这些产物目前是开发/自用构建，未配置稳定的 Apple Developer 签名、公证和发布渠道。
-
-### 当前 macOS 限制
-
-- Windows 仍是主要交付平台；Release 页面默认提供 Windows 安装包。
-- macOS Runtime 自动修复使用 Homebrew（`brew`）；没有 Homebrew 时只能打开官网或复制命令手动安装。
-- **PowerShell 不是 macOS 共享 Runtime**：doctor / 环境条不探测 `pwsh`，native 渠道也不要求 PowerShell。
-- Agent 安装/升级底层命令按平台分流：Windows native 为 allowlist 的 `irm … | iex`；macOS/Linux native 为 allowlist 的 `curl … | bash`；npm 渠道各平台相同。仅 Windows 有 ps1 的 Agent（如 Codex native）在 macOS 上不会展示该 native 渠道，请用 npm 或官网方式。
-- Linux 尚未作为交付目标；macOS 与 Linux 的路径、Agent 能力和官方安装脚本仍可能存在差异。
-
-平台环境差异的完整约定见 [docs/agenthub-plan.md §5.7.5](docs/agenthub-plan.md)。
-
----
 
 ## 常用命令
 
 | 命令 | 说明 |
 |---|---|
-| `pnpm tauri:dev` | 桌面端（真实 Tauri 后端） |
-| `pnpm dev:macos` / `./run.sh` | macOS 依赖检查后启动桌面端 |
-| `pnpm tauri:build:macos` | macOS 本地无 updater 签名的 `.app` 构建 |
-| `pnpm dev:mock` | 浏览器 mock（无 Tauri） |
-| `pnpm test` | 前端单测 |
-| `pnpm build` | 前端生产构建（**强制** Tauri adapter） |
-| `pnpm tauri:build` | 打包桌面安装包 |
-| `cargo test -p agenthub-core` | Rust core 测试 |
-| `cargo run -p agenthub-cli -- --help` | CLI 帮助 |
+| `pnpm tauri:dev` | 启动桌面端，连接真实 Tauri 后端 |
+| `pnpm dev:mock` | 启动浏览器 mock 环境 |
+| `pnpm typecheck` | 前端类型检查 |
+| `pnpm test` | 前端测试 |
+| `pnpm build` | 前端生产构建，强制使用 Tauri adapter |
+| `pnpm tauri:build` | 构建桌面安装包 |
+| `pnpm tauri:build:macos` | 构建本地使用的 macOS `.app` |
+| `cargo test -p agenthub-core` | 运行 Rust core 测试 |
+| `cargo run -p agenthub-cli -- --help` | 查看 CLI 帮助 |
 
-### 发布流程
-
-正式 Release 统一由 `release` 分支的 GitHub Actions 工作流完成（包含版本、签名产物、`latest.json` 完整平台集合与重复发布门禁）。`pnpm release:update` 仅用于本地构建和检查；`pnpm release:update:publish` 已禁用，请推送 `release` 分支触发 CI。
-
-### CLI 示例
-
-```powershell
-# 查看帮助与资源型子命令
-cargo run -p agenthub-cli -- --help
-
-# 各 Agent 能力矩阵（以代码真源为准）
-cargo run -p agenthub-cli -- agent capabilities
-cargo run -p agenthub-cli -- agent capabilities --markdown
-```
-
-完整命令树、退出码与配置分层见 [docs/cli-and-config.md](docs/cli-and-config.md)。
-
----
+正式 Release 由 `release` 分支的 GitHub Actions 生成和发布，本地发布命令已禁用。
 
 ## 数据与隐私
 
-| 路径 | 用途 |
+AgentHub 默认只处理本机数据：
+
+| 路径 | 内容 |
 |---|---|
-| `~/.agenthub/` | 本应用 SQLite 状态、备份索引、设置等 |
-| `~/.agenthub/backups/` | live 配置快照（切换 / 卸载前） |
-| `~/.agents/skills/` | Skills **共享真源**（投影到各 Agent，非第二真源） |
+| `~/.agenthub/` | SQLite 状态、设置与日志等应用数据 |
+| `~/.agenthub/backups/` | 切换或修改前创建的 live 配置快照 |
+| `~/.agents/skills/` | Skills 共享真源 |
 
-- 凭据沿用现有存储方案；API、CLI、日志侧做脱敏，不明文回显密钥。  
-- **零侵入**：Usage 只读解析各 Agent 本地会话 / 日志，不设本地代理、不上传云端。  
-- 对外文档与截图规范见 [docs/privacy.md](docs/privacy.md)。
+- Usage 只读解析本地会话或日志，不通过代理截取请求，也不上传云端。
+- 凭据沿用项目现有存储方案；界面、CLI 和日志输出会进行脱敏。
+- Adapter 引用已有 Connection，不复制凭据；Bridge 不记录请求或响应正文。
 
----
+完整边界见 [隐私规范](docs/privacy.md) 和 [安全策略](SECURITY.md)。
 
-## 架构摘要
+## 架构
 
 ```text
-┌─────────────────────────────────────────────────┐
-│  Tauri GUI (React)          agenthub CLI        │
-│  invoke commands            clap subcommands    │
-├─────────────────────────────────────────────────┤
-│              agenthub-core (Rust)               │
-│  services（编排） · storage（SQLite） · adapters │
-│  claude / codex / kimi / grok / pi / workbuddy  │
-│  / cursor                                       │
-└─────────────────────────────────────────────────┘
+React GUI ── Tauri commands ─┐
+                             ├── agenthub-core ── Agent adapters / SQLite / local files
+agenthub CLI ────────────────┘
 ```
 
-- **Service** 管跨 Agent 流程：备份、锁、backfill、技能投影、Usage 聚合、安装前 ensure_env  
-- **Adapter** 管单 Agent 差异：路径、配置格式、认证落点、UsageParser 挂接  
-- 前端仅 `lib/backend/tauri/` 可 `invoke`；`pnpm build` 禁止打进 mock  
-
-更细目录与约束见 [docs/architecture.md](docs/architecture.md)、[AGENTS.md](AGENTS.md)。
-
-### 仓库结构
+- `agenthub-core` 集中业务逻辑，GUI 与 CLI 是薄入口。
+- Service 负责编排备份、切换、投影和聚合；Agent Adapter 负责路径、配置格式和能力差异。
+- Adapter 的 `local_bridge` 目标由同包用户级 `agenthub-adapterd` sidecar 长驻托管；当前版本仍由 Tauri 进程内宿主，详见[迁移方案](docs/adapter-sidecar-design.md)。Connections 数据域不随 sidecar 拆分。
+- 前端只有 `src/lib/backend/tauri/` 可以调用 Tauri `invoke`。
+- `pnpm dev:mock` 使用浏览器 mock；生产构建不会静默回退到 mock。
 
 ```text
-AgentHub/
-├── run.bat / run.ps1 / run.sh # Windows / macOS 一键启动
-├── LICENSE               # MIT
-├── SECURITY.md           # 漏洞披露与安全范围
-├── AGENTS.md             # 项目约定 + Agent 协作规则（真源）
-├── Cargo.toml            # Rust workspace（license = MIT）
-├── package.json          # 前端 (pnpm)
-├── crates/               # agenthub-core / agenthub-cli
-├── src-tauri/            # Tauri GUI 壳
-├── src/                  # React 前端
-├── docs/                 # 设计、规范与界面截图
-│   └── assets/screenshots/
-└── scripts/              # 运维与发布脚本
+crates/agenthub-core/   Rust 业务核心
+crates/agenthub-cli/    CLI
+src-tauri/              Tauri 桌面壳
+src/                    React 前端
+docs/                   设计、契约与测试文档
+scripts/                构建与发布脚本
 ```
 
----
+## 文档与贡献
 
-## 文档
+- [文档索引](docs/README.md)
+- [当前实现状态](docs/agenthub-plan.md#8-当前实现状态以代码与测试为准)
+- [架构说明](docs/architecture.md)
+- [Adapter Sidecar 目标架构](docs/adapter-sidecar-design.md)
+- [能力矩阵](docs/capability-matrix.md)
+- [厂商、API 与 OAuth 适配规则](docs/provider-api-oauth-adaptation.md)
+- [CLI 与配置](docs/cli-and-config.md)
+- [测试约定](docs/testing.md)
+- [新增 Agent 指南](docs/adding-an-agent.md)
 
-完整索引：[docs/README.md](docs/README.md)。实现状态与未实现清单：[docs/agenthub-plan.md §8](docs/agenthub-plan.md)。
-
-| 文档 | 内容 |
-|---|---|
-| [docs/architecture.md](docs/architecture.md) | workspace、Service / Adapter、前端 backend 分层 |
-| [docs/agenthub-plan.md](docs/agenthub-plan.md) | 产品方案、适配矩阵、模块设计 |
-| [docs/capability-matrix.md](docs/capability-matrix.md) | 各 Agent 能力四级状态 |
-| [docs/cli-and-config.md](docs/cli-and-config.md) | CLI 命令树与配置契约 |
-| [docs/ui-design.md](docs/ui-design.md) | 页面与交互 |
-| [docs/privacy.md](docs/privacy.md) | 发布与隐私边界 |
-| [docs/testing.md](docs/testing.md) | 测试约定 |
-| [SECURITY.md](SECURITY.md) | 漏洞披露与安全范围 |
-| [AGENTS.md](AGENTS.md) | 贡献与协作约定 |
-
----
-
-## 贡献
-
-欢迎 Issue / PR。动手改代码前请先阅读：
-
-- [AGENTS.md](AGENTS.md) — 目录分层、mock 边界、测试约定、协作流程  
-- [docs/testing.md](docs/testing.md) — 提交前应跑的测试  
-- [docs/adding-an-agent.md](docs/adding-an-agent.md) — 新增 Agent 适配清单  
-
-原则摘要：只改任务所需文件；测试与生产分文件；不得把 mock 打进生产 build；敏感路径与 OAuth 常量勿写入对外文档（见 [docs/privacy.md](docs/privacy.md)）。
-
----
-
-## 安全
-
-若发现可被利用的安全问题（凭据泄露、任意文件读写、命令注入、更新链篡改等），请**不要**开公开 Issue。  
-披露方式、范围与响应预期见 **[SECURITY.md](SECURITY.md)**。  
-文档截图与仓库禁止提交项见 [docs/privacy.md](docs/privacy.md)。
-
----
-
-## 致谢与开源借鉴
-
-AgentHub 在配置切换、用量解析等方向上借鉴了下列开源项目，感谢原作者与社区。
-
-| 项目 | 链接 | 主要借鉴方向 |
-|---|---|---|
-| **ccusage** | [github.com/ccusage/ccusage](https://github.com/ccusage/ccusage) | 会话 / 日志 Usage 解析策略、成本估算思路、解析健康度呈现 |
-| **cc-switch** | [github.com/farion1231/cc-switch](https://github.com/farion1231/cc-switch) | 多应用配置切换、原子写与 backfill、SQLite 自管状态 |
-
-以及其他相关开源项目。更细的设计说明见 [docs/agenthub-plan.md](docs/agenthub-plan.md)、[docs/architecture.md](docs/architecture.md)。
-
----
+欢迎提交 Issue 或 PR。修改代码前请阅读 [AGENTS.md](AGENTS.md)；提交前至少运行改动范围内的测试和类型检查。安全问题请按 [SECURITY.md](SECURITY.md) 私下披露，不要创建公开 Issue。
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE) 开源。
+本项目采用 [MIT License](LICENSE)。
 
-```text
-Copyright (c) 2026 AgentHub Contributors
-```
+AgentHub 在用量解析与配置切换方面借鉴了 [ccusage](https://github.com/ccusage/ccusage) 和 [cc-switch](https://github.com/farion1231/cc-switch)，感谢相关作者与社区。

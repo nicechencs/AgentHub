@@ -90,6 +90,7 @@ export function seedMockSessions(): AgentSession[] {
       updatedAt: new Date(now - 2 * h).toISOString(),
       preview: '修复登录页 token 过期问题，需要检查 refresh 流程…',
       messageCount: 42,
+      sessionId: 'sess-a1',
     },
     {
       id: 'claude:projects/-C-Users-demo-app/sess-a2.jsonl',
@@ -103,6 +104,7 @@ export function seedMockSessions(): AgentSession[] {
       updatedAt: new Date(now - 1 * d).toISOString(),
       preview: '给 auth 模块补测试，目标覆盖率 80%…',
       messageCount: 18,
+      sessionId: 'sess-a2',
     },
     {
       id: 'codex:sessions/2026/08/sess-c1.jsonl',
@@ -116,6 +118,7 @@ export function seedMockSessions(): AgentSession[] {
       updatedAt: new Date(now - 5 * h).toISOString(),
       preview: '重构 provider 切换逻辑，避免并发写配置…',
       messageCount: 31,
+      sessionId: 'sess-c1',
     },
     {
       id: 'kimi:sessions/sess-k1.jsonl',
@@ -129,6 +132,7 @@ export function seedMockSessions(): AgentSession[] {
       updatedAt: new Date(now - 3 * d).toISOString(),
       preview: '请润色 README 中的安装说明…',
       messageCount: 9,
+      sessionId: 'sess-k1',
     },
     {
       id: 'grok:sessions/sess-g1.jsonl',
@@ -142,6 +146,7 @@ export function seedMockSessions(): AgentSession[] {
       updatedAt: new Date(now - 8 * h).toISOString(),
       preview: '分析冷启动耗时，给出优化建议…',
       messageCount: 14,
+      sessionId: 'sess-g1',
     },
   ];
 }

@@ -32,6 +32,14 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00011_connection_trash",
         include_str!("00011_connection_trash.sql"),
     ),
+    (
+        "00012_adapter_profiles",
+        include_str!("00012_adapter_profiles.sql"),
+    ),
+    (
+        "00013_adapter_bridge_profiles",
+        include_str!("00013_adapter_bridge_profiles.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {
@@ -53,11 +61,24 @@ pub fn run(conn: &Connection) -> Result<()> {
         if already {
             continue;
         }
-        conn.execute_batch(sql)?;
-        conn.execute(
-            "INSERT INTO schema_migrations (version) VALUES (?1)",
-            [version],
-        )?;
+        apply_migration(conn, version, sql)?;
     }
     Ok(())
 }
+
+/// Applies a migration and records its version as one indivisible database
+/// change.  If either the SQL script or marker insert fails, dropping the
+/// transaction rolls the whole migration back.
+fn apply_migration(conn: &Connection, version: &str, sql: &str) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(sql)?;
+    tx.execute(
+        "INSERT INTO schema_migrations (version) VALUES (?1)",
+        [version],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

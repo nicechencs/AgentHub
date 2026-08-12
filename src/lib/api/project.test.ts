@@ -71,6 +71,7 @@ describe('project API (browser mock)', () => {
       updatedAt: 't0',
       preview: null,
       messageCount: null,
+      sessionId: 'a',
     };
     expect(mapAgentSession(s)).toEqual(s);
 

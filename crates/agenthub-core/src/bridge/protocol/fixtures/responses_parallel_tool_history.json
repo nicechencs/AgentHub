@@ -1,0 +1,32 @@
+{
+  "model": "kimi-k2.5",
+  "input": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": [{"type": "input_text", "text": "Check weather and calendar."}]
+    },
+    {
+      "type": "function_call",
+      "call_id": "call_weather",
+      "name": "weather",
+      "arguments": "{\"city\":\"Taipei\"}"
+    },
+    {
+      "type": "function_call",
+      "call_id": "call_calendar",
+      "name": "calendar",
+      "arguments": "{\"date\":\"2026-08-12\"}"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_weather",
+      "output": "Sunny"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_calendar",
+      "output": "No meetings"
+    }
+  ]
+}

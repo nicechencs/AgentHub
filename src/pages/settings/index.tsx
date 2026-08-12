@@ -3,6 +3,7 @@
 // 常规/数据草稿态编辑后点 [保存]；备份分区操作即时生效，无底部保存。
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { ExternalLink } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -30,16 +31,24 @@ import {
   updateSettings,
 } from '@/lib/api/settings';
 import {
+  setAppUpdateAvailable,
+  useAppUpdateAvailable,
+} from '@/app/runtime';
+import {
   checkForUpdate,
   downloadAndInstallUpdate,
   getAppVersion,
   isUpdateAvailable,
   type UpdateInfo,
 } from '@/lib/api/update';
+import { openExternalLink } from '@/lib/open-external';
 import { invalidateSkills } from '@/lib/hooks/useSkills';
 import type { AppSettings, LogLevel, SkillMarketSource } from '@/lib/types';
 import { notifyUsageSettingsChanged } from '@/lib/usage-sync';
 import { BackupsPanel } from './BackupsPanel';
+
+/** Project homepage on GitHub (releases, issues, source). */
+const GITHUB_REPO_URL = 'https://github.com/nicechencs/AgentHub';
 
 const SKILL_MARKET_OPTIONS: { value: SkillMarketSource; label: string }[] = [
   { value: 'auto', label: '自动（不通则切换）' },
@@ -144,10 +153,10 @@ export default function SettingsPage({
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
 
-  // 检查 / 安装更新
+  // 检查 / 安装更新（pending 来自全局 store，启动检查后关于页与导航同步可见）
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
-  const [pendingUpdate, setPendingUpdate] = useState<UpdateInfo | null>(null);
+  const pendingUpdate = useAppUpdateAvailable();
 
   const load = async () => {
     setLoading(true);
@@ -187,8 +196,7 @@ export default function SettingsPage({
       try {
         if (onCheckUpdate) {
           const found = await onCheckUpdate();
-          setPendingUpdate(found);
-          // Shared path opens the dialog when found; toast only for “up to date”.
+          // UpdatePrompt already publishes to the store; keep local toast for “up to date”.
           if (!found) {
             toast({ title: '已是最新版本', variant: 'success' });
           }
@@ -203,7 +211,7 @@ export default function SettingsPage({
           return;
         }
         const found = await checkForUpdate();
-        setPendingUpdate(found);
+        setAppUpdateAvailable(found);
         if (!found) {
           toast({ title: '已是最新版本', variant: 'success' });
         } else {
@@ -230,6 +238,7 @@ export default function SettingsPage({
       setInstalling(true);
       try {
         await downloadAndInstallUpdate();
+        setAppUpdateAvailable(null);
         toast({
           title: '更新已安装',
           description: '请手动重启应用以完成更新',
@@ -289,7 +298,16 @@ export default function SettingsPage({
           <TabsTrigger value="security">安全</TabsTrigger>
           <TabsTrigger value="data">数据</TabsTrigger>
           <TabsTrigger value="backups">备份</TabsTrigger>
-          <TabsTrigger value="about">关于</TabsTrigger>
+          <TabsTrigger value="about" className="gap-1.5">
+            关于
+            {pendingUpdate && (
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
+                aria-label={`有可用更新 v${pendingUpdate.version}`}
+                title={`可更新至 v${pendingUpdate.version}`}
+              />
+            )}
+          </TabsTrigger>
         </TabsList>
 
         {/* 常规 */}
@@ -329,7 +347,11 @@ export default function SettingsPage({
                   </SelectContent>
                 </Select>
               </Row>
-              <Row label="开机自启" description="登录后启动">
+              <Row
+                label="开机自启"
+                description="登录后启动"
+                descriptionTip="写入操作系统登录项（Windows 启动项 / macOS Login Item）。保存「外观与行为」后生效。"
+              >
                 <Switch
                   checked={settings.autoStart}
                   onCheckedChange={(v) => patch({ autoStart: v })}
@@ -603,8 +625,9 @@ export default function SettingsPage({
                     : '检查发布频道的新版本'
                 }
               >
-                <span className="font-mono text-sm text-secondary">
+                <span className="flex items-center gap-2 font-mono text-sm text-secondary">
                   v{settings.appVersion}
+                  {pendingUpdate && <Badge variant="warning">有新版本</Badge>}
                 </span>
                 <Button
                   size="sm"
@@ -629,6 +652,28 @@ export default function SettingsPage({
                   </Button>
                 </Row>
               )}
+              <Row
+                label="GitHub"
+                description="源码、Issue 与发布页"
+                descriptionTip={GITHUB_REPO_URL}
+              >
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    void openExternalLink(GITHUB_REPO_URL).catch((e) => {
+                      toast({
+                        title: '无法打开 GitHub',
+                        description: e instanceof Error ? e.message : String(e),
+                        variant: 'danger',
+                      });
+                    });
+                  }}
+                >
+                  <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                  打开仓库
+                </Button>
+              </Row>
             </CardContent>
           </Card>
           <p className="mt-3 text-xs text-muted">

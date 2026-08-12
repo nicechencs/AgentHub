@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/components/ui/toast';
+import { setAppUpdateAvailable } from '@/app/runtime';
 import {
   checkForUpdate,
   downloadAndInstallUpdate,
@@ -63,6 +64,7 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
   const installingRef = React.useRef(false);
 
   const presentUpdate = React.useCallback((next: UpdateInfo) => {
+    setAppUpdateAvailable(next);
     setInfo(next);
     setError(null);
     setPhase('idle');
@@ -88,6 +90,7 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
         }
         const next = await checkForUpdate();
         if (!next) {
+          setAppUpdateAvailable(null);
           if (!quiet) {
             toast({ title: '已是最新版本', variant: 'success' });
           }
@@ -129,6 +132,8 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
           if (!(await isUpdateAvailable())) return;
           const next = await checkForUpdate();
           if (cancelled || !next) return;
+          // Always publish for nav/about badge; only skip dialog when user dismissed this version.
+          setAppUpdateAvailable(next);
           if (wasDismissed(next.version)) return;
           presentUpdate(next);
         } catch (e) {
@@ -175,6 +180,7 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
           }
         });
         setPhase('installing');
+        setAppUpdateAvailable(null);
         // relaunch() should terminate; if we are still here, show a soft message.
         toast({
           title: '更新已安装',

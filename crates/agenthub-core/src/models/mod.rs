@@ -1,6 +1,7 @@
 //! Pure data structures (serde). No business logic.
 
 mod account;
+mod adapter;
 mod agent;
 mod backup;
 mod capability;
@@ -20,6 +21,7 @@ mod usage;
 mod tests;
 
 pub use account::*;
+pub use adapter::*;
 pub use agent::*;
 pub use backup::*;
 pub use capability::*;

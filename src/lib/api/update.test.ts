@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resetBackend, setBackend } from '@/app/runtime';
 import { createBackend as createMockBackend } from '@/dev/mocks/create-backend';
 import { __setMockAvailableUpdate } from '@/dev/mocks/update';
+import { packageAppVersion } from '@/lib/app-version';
 import {
   checkForUpdate,
   downloadAndInstallUpdate,
@@ -10,6 +11,8 @@ import {
 } from '@/lib/api/update';
 
 describe('update API (mock backend)', () => {
+  const current = packageAppVersion();
+
   beforeEach(() => {
     setBackend(createMockBackend());
     __setMockAvailableUpdate(null);
@@ -22,7 +25,7 @@ describe('update API (mock backend)', () => {
 
   it('reports update capability and current version', async () => {
     await expect(isUpdateAvailable()).resolves.toBe(true);
-    await expect(getAppVersion()).resolves.toBe('0.1.0');
+    await expect(getAppVersion()).resolves.toBe(current);
   });
 
   it('returns null when already up to date', async () => {
@@ -31,13 +34,13 @@ describe('update API (mock backend)', () => {
 
   it('surfaces a pending update and completes one-click install', async () => {
     __setMockAvailableUpdate({
-      version: '0.2.0',
-      currentVersion: '0.1.0',
+      version: '9.9.9',
+      currentVersion: current,
       notes: 'test release',
       date: null,
     });
     const info = await checkForUpdate();
-    expect(info).toMatchObject({ version: '0.2.0', currentVersion: '0.1.0' });
+    expect(info).toMatchObject({ version: '9.9.9', currentVersion: current });
 
     const percents: number[] = [];
     await downloadAndInstallUpdate((p) => {

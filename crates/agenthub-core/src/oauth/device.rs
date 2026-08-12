@@ -79,6 +79,18 @@ fn store() -> &'static Mutex<HashMap<String, DeviceSession>> {
     DEVICE_STORE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Resolve a device-flow target without mutating the session.  Completion is
+/// serialized by the GUI's per-agent live-config coordinator using this value.
+pub fn device_oauth_agent(state: &str) -> Result<AgentId> {
+    let guard = store()
+        .lock()
+        .map_err(|_| AppError::message("oauth.device", "device store poisoned"))?;
+    guard
+        .get(state)
+        .map(|session| session.agent)
+        .ok_or_else(|| AppError::NotFound(format!("device oauth session not found: {state}")))
+}
+
 /// Start xAI (or future) device-code login for Pi.
 pub fn start_device_oauth(agent: AgentId, provider_key: &str) -> Result<DeviceOAuthStart> {
     if agent != AgentId::Pi {

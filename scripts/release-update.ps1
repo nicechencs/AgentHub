@@ -5,12 +5,19 @@
 
 .DESCRIPTION
   默认读取 package.json 当前版本；传入 -Version 可指定新版本。
+  也可用 -BumpPatch / -BumpMinor / -BumpMajor 从当前版本自动 +1，并查询远端
+  tag/release：若已占用则继续 patch +1，直到找到空闲版本（最多尝试 50 次）。
+  -VersionOnly 只写回三处版本号，不构建、不生成 latest.json。
   签名私钥默认：%USERPROFILE%\.tauri\agenthub.key
   也可用环境变量 TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PATH。
 
 .EXAMPLE
   # 用当前 package.json 版本构建 + 生成 latest.json（不改版本号、不上传）
   .\scripts\release-update.ps1
+
+.EXAMPLE
+  # 自动 patch 升版（0.2.1 → 0.2.2，若 v0.2.2 已占用则试 0.2.3…）并只改版本
+  .\scripts\release-update.ps1 -BumpPatch -VersionOnly
 
 .EXAMPLE
   # 升到 0.2.0、写回三处版本、构建、生成清单
@@ -24,6 +31,10 @@
 param(
     [string]$Version = "",
     [switch]$Bump,
+    [switch]$BumpPatch,
+    [switch]$BumpMinor,
+    [switch]$BumpMajor,
+    [switch]$VersionOnly,
     [string]$Notes = "",
     [string]$Repo = "nicechencs/AgentHub",
     [string]$KeyPath = "",
@@ -69,6 +80,100 @@ function Read-PackageVersion {
     return [string]$pkg.version
 }
 
+function Assert-ReleaseVersionsAligned {
+    $metaScript = Join-Path $Root "scripts\release-metadata.mjs"
+    if (-not (Test-Path $metaScript)) { Fail "scripts/release-metadata.mjs not found" }
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        Fail "Node.js not found (needed to validate release versions)"
+    }
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $output = & node $metaScript 2>&1
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    if ($code -ne 0) {
+        Fail ("Release version metadata invalid:`n" + ($output | Out-String).Trim())
+    }
+    return ($output | Out-String).Trim()
+}
+
+function Get-CoreSemVerParts([string]$ver) {
+    # Strip build metadata and prerelease so auto-bump always produces X.Y.Z.
+    $core = ($ver.Split('+', 2)[0]).Split('-', 2)[0]
+    if ($core -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+        Fail "Cannot auto-bump version '$ver' (need strict X.Y.Z core)"
+    }
+    return [pscustomobject]@{
+        Major = [int]$Matches[1]
+        Minor = [int]$Matches[2]
+        Patch = [int]$Matches[3]
+    }
+}
+
+function Format-SemVer([int]$Major, [int]$Minor, [int]$Patch) {
+    return "$Major.$Minor.$Patch"
+}
+
+function Get-NextSemVer([string]$current, [string]$kind) {
+    $p = Get-CoreSemVerParts $current
+    switch ($kind) {
+        'patch' { return Format-SemVer $p.Major $p.Minor ($p.Patch + 1) }
+        'minor' { return Format-SemVer $p.Major ($p.Minor + 1) 0 }
+        'major' { return Format-SemVer ($p.Major + 1) 0 0 }
+        default { Fail "Unknown bump kind: $kind" }
+    }
+}
+
+function Test-RemoteReleaseTaken([string]$tag, [string]$repository) {
+    # Prefer git ls-remote for tags; fall back to gh for Release objects without a tag.
+    $tagRefs = $null
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $tagRefs = & git ls-remote --refs origin "refs/tags/$tag" 2>$null
+    $gitCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    if ($gitCode -ne 0) {
+        Fail "Unable to query remote tag $tag via git ls-remote; refuse to auto-bump without a definitive result."
+    }
+    if ($tagRefs -and ("$tagRefs".Trim().Length -gt 0)) {
+        return $true
+    }
+
+    if (Get-Command gh -ErrorAction SilentlyContinue) {
+        $ErrorActionPreference = "Continue"
+        $releaseId = & gh api graphql `
+            -f query='query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { id } } }' `
+            -F owner="$($repository.Split('/')[0])" `
+            -F name="$($repository.Split('/')[1])" `
+            -F tag="$tag" `
+            --jq '.data.repository.release.id // empty' 2>$null
+        $ghCode = $LASTEXITCODE
+        $ErrorActionPreference = $prevEap
+        if ($ghCode -eq 0 -and $releaseId -and ("$releaseId".Trim().Length -gt 0)) {
+            return $true
+        }
+        # gh failure after a successful empty tag query: treat as not taken only when
+        # gh is unavailable/auth-less; do not block local bumps on optional gh checks.
+    }
+    return $false
+}
+
+function Resolve-FreeReleaseVersion([string]$startVersion, [string]$repository, [int]$maxAttempts = 50) {
+    $candidate = $startVersion.TrimStart('v')
+    for ($i = 0; $i -lt $maxAttempts; $i++) {
+        $tag = "v$candidate"
+        if (-not (Test-RemoteReleaseTaken $tag $repository)) {
+            if ($i -gt 0) {
+                Write-Info "Skipped $i occupied version(s); free version is $candidate"
+            }
+            return $candidate
+        }
+        Write-Info "Remote already has $tag; trying next patch..."
+        $candidate = Get-NextSemVer $candidate 'patch'
+    }
+    Fail "Could not find a free release version after $maxAttempts attempts (last tried v$candidate)."
+}
+
 function Set-ProjectVersion([string]$ver) {
     if ($ver -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
         Fail "Invalid semver: $ver (expect X.Y.Z)"
@@ -104,7 +209,7 @@ function Set-ProjectVersion([string]$ver) {
     if ($tauriNew -eq $tauriText) { Fail "Failed to patch tauri.conf.json version" }
     Set-Content -Path $tauriPath -Value $tauriNew -Encoding UTF8 -NoNewline
 
-    Write-Info "Bumped version → $ver (package.json, Cargo.toml, tauri.conf.json)"
+    Write-Info "Bumped version -> $ver (package.json, Cargo.toml, tauri.conf.json)"
 }
 
 function Resolve-SigningKey {
@@ -221,12 +326,69 @@ Write-Host "  AgentHub Release / Updater" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Root: $Root"
 
+$autoBumpKinds = @()
+if ($BumpPatch) { $autoBumpKinds += 'patch' }
+if ($BumpMinor) { $autoBumpKinds += 'minor' }
+if ($BumpMajor) { $autoBumpKinds += 'major' }
+if ($autoBumpKinds.Count -gt 1) {
+    Fail "Use only one of -BumpPatch / -BumpMinor / -BumpMajor"
+}
+if ($autoBumpKinds.Count -eq 1 -and $Version) {
+    Fail "-Version cannot be combined with -BumpPatch / -BumpMinor / -BumpMajor"
+}
+if ($VersionOnly -and -not ($Bump -or $autoBumpKinds.Count -eq 1 -or $Version)) {
+    Fail "-VersionOnly requires -BumpPatch / -BumpMinor / -BumpMajor, or -Version with -Bump"
+}
+
+# VersionOnly implies no local build/artifact work; publishing remains CI-only.
+if ($VersionOnly) {
+    $SkipBuild = $true
+}
+
 $current = Read-PackageVersion
-if (-not $Version) {
+Write-Step "Validate current release metadata"
+$metaJson = Assert-ReleaseVersionsAligned
+Write-Info $metaJson
+
+$willBump = $false
+$versionExplicit = $PSBoundParameters.ContainsKey('Version') -and [string]$PSBoundParameters['Version']
+
+if ($autoBumpKinds.Count -eq 1) {
+    $kind = $autoBumpKinds[0]
+    $computed = Get-NextSemVer $current $kind
+    Write-Step "Auto-bump $kind from $current -> candidate $computed"
+    Write-Info "Checking remote tags/releases for a free version..."
+    $Version = Resolve-FreeReleaseVersion $computed $Repo
+    $willBump = $true
+    Write-Info "Selected free version: $Version (from $current)"
+} elseif ($versionExplicit) {
+    $Version = $Version.TrimStart('v')
+    Write-Info "Requested version: $Version (package.json now: $current)"
+    if ($Bump -or $VersionOnly) {
+        Write-Info "Checking that v$Version is free on origin..."
+        if (Test-RemoteReleaseTaken "v$Version" $Repo) {
+            Fail "Release tag v$Version already exists; choose another -Version or use -BumpPatch"
+        }
+        $willBump = $true
+    } elseif ($Version -ne $current) {
+        # Building a different version than package.json without -Bump is allowed
+        # only for artifact packaging; files are not rewritten.
+        Write-Info "Using -Version $Version without rewriting project files (no -Bump)"
+    }
+} else {
     $Version = $current
     Write-Info "Version not specified, using package.json: $Version"
-} else {
-    Write-Info "Requested version: $Version (package.json now: $current)"
+}
+
+# Bare -Bump (no -Version, no -BumpPatch/Minor/Major) → patch auto-bump.
+if ($Bump -and -not $willBump -and $autoBumpKinds.Count -eq 0 -and -not $versionExplicit) {
+    Write-Step "Auto-bump patch from $current (bare -Bump)"
+    $computed = Get-NextSemVer $current 'patch'
+    $Version = Resolve-FreeReleaseVersion $computed $Repo
+    $willBump = $true
+    Write-Info "Selected free version: $Version"
+} elseif ($Bump -and -not $willBump -and $versionExplicit -and $Version -eq $current) {
+    Fail "Nothing to bump: package.json is already $current. Pass a new -Version or use -BumpPatch."
 }
 
 $tag = "v$($Version.TrimStart('v'))"
@@ -238,15 +400,37 @@ if (-not $OutDir) {
 }
 $latestPath = Join-Path $OutDir "latest.json"
 
-Ensure-Tools -NeedGh:$Publish
+if (-not $VersionOnly) {
+    Ensure-Tools -NeedGh:$Publish
+} elseif (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Fail "Node.js not found"
+}
 
-if ($Bump) {
+if ($willBump) {
     Write-Step "Bump project version to $Version"
     if ($DryRun) {
         Write-Info "(dry-run) would patch package.json / Cargo.toml / tauri.conf.json"
     } else {
         Set-ProjectVersion $Version
+        $metaAfter = Assert-ReleaseVersionsAligned
+        Write-Info "Post-bump metadata: $metaAfter"
     }
+}
+
+if ($VersionOnly) {
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host "  Version bumped (no build)" -ForegroundColor Green
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host "Version : $Version"
+    Write-Host "Tag     : $tag"
+    Write-Host ""
+    Write-Host "Next:" -ForegroundColor Yellow
+    Write-Host "  git add package.json Cargo.toml Cargo.lock src-tauri/tauri.conf.json"
+    Write-Host "  git commit -m `"chore(release): bump version to $Version`""
+    Write-Host "  git push origin release"
+    Write-Host ""
+    exit 0
 }
 
 if (-not $SkipBuild) {
@@ -263,7 +447,7 @@ if (-not $SkipBuild) {
     Write-Step "Skip build (-SkipBuild)"
 }
 
-Write-Step "Collect artifacts → $OutDir"
+Write-Step "Collect artifacts -> $OutDir"
 $bundleDir = Join-Path $Root "target\release\bundle"
 if ($DryRun) {
     Write-Info "(dry-run) would copy from $bundleDir"
@@ -305,5 +489,5 @@ Write-Host "Tag     : $tag"
 Write-Host "OutDir  : $OutDir"
 Write-Host "Feed URL: https://github.com/$Repo/releases/latest/download/latest.json"
 Write-Host ""
-Write-Host "Publishing is CI-only: push the release branch and let .github/workflows/release.yml publish." -ForegroundColor Yellow
+Write-Host "Publishing is CI-only: push the release branch and let .github/workflows/release.yml publish the release." -ForegroundColor Yellow
 Write-Host ""

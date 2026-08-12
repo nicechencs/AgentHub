@@ -1,6 +1,7 @@
 //! SQLite layer: WAL mode + versioned migrations.
 
 mod account_repo;
+mod adapter_profile_repo;
 mod backup_repo;
 mod binding_repo;
 mod chat_repo;
@@ -11,6 +12,7 @@ mod skill_repo;
 mod usage_repo;
 
 pub use account_repo::AccountRepo;
+pub use adapter_profile_repo::AdapterProfileRepo;
 pub use backup_repo::BackupRepo;
 /// Test-only convenience wrapper; production code uses `binding_*_conn` helpers.
 #[cfg(test)]

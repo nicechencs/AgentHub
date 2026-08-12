@@ -213,9 +213,9 @@ impl OAuthProvider {
         })?;
 
         let status = resp.status();
-        let body: Value = resp.into_json().map_err(|e| {
-            AppError::message("oauth.token", format!("invalid token JSON: {e}"))
-        })?;
+        let body: Value = resp
+            .into_json()
+            .map_err(|e| AppError::message("oauth.token", format!("invalid token JSON: {e}")))?;
 
         if !(200..300).contains(&status) {
             let msg = body
@@ -257,9 +257,7 @@ impl OAuthProvider {
 
         let expires_in = body.get("expires_in").and_then(|v| v.as_i64()).unwrap_or(0);
         let expires_at = if expires_in > 0 {
-            Some(
-                (chrono::Utc::now() + chrono::Duration::seconds(expires_in.max(0))).to_rfc3339(),
-            )
+            Some((chrono::Utc::now() + chrono::Duration::seconds(expires_in.max(0))).to_rfc3339())
         } else {
             body.get("expires_at")
                 .and_then(|v| v.as_str())
@@ -272,12 +270,8 @@ impl OAuthProvider {
             .map(str::to_string);
 
         // Best-effort identity for Connections UI (email / plan / subject).
-        let identity = extract_oauth_identity(
-            self.id,
-            &body,
-            access.as_deref(),
-            id_token.as_deref(),
-        );
+        let identity =
+            extract_oauth_identity(self.id, &body, access.as_deref(), id_token.as_deref());
 
         let mut cred_map = Map::new();
         cred_map.insert("type".into(), json!("oauth"));
@@ -311,12 +305,7 @@ impl OAuthProvider {
             .display_label()
             .unwrap_or_else(|| format!("{} · OAuth", self.agent.display_name()));
 
-        let mut extra = identity_extra(
-            self.id,
-            &identity,
-            expires_at.as_deref(),
-            "oauth_pkce",
-        );
+        let mut extra = identity_extra(self.id, &identity, expires_at.as_deref(), "oauth_pkce");
         // Ensure identityLabel is set even when only fallback label exists.
         if let Some(obj) = extra.as_object_mut() {
             obj.entry("identityLabel".to_string())
@@ -348,11 +337,7 @@ mod tests {
 
     #[test]
     fn claude_authorize_url_contains_pkce_and_client() {
-        let url = CLAUDE.build_authorize_url(
-            "http://127.0.0.1:12345/callback",
-            "st",
-            "ch",
-        );
+        let url = CLAUDE.build_authorize_url("http://127.0.0.1:12345/callback", "st", "ch");
         assert!(url.contains(&format!("client_id={}", CLAUDE.client_id)));
         assert!(url.contains("code_challenge=ch"));
         assert!(url.contains("code_challenge_method=S256"));
@@ -380,10 +365,7 @@ mod tests {
             "organization": { "uuid": "org-1" }
         });
         let bundle = CLAUDE.bundle_from_token_json(body).expect("bundle");
-        assert_eq!(
-            bundle.label_hint.as_deref(),
-            Some("me@anthropic.test")
-        );
+        assert_eq!(bundle.label_hint.as_deref(), Some("me@anthropic.test"));
         assert_eq!(
             bundle.credentials.get("email").and_then(|v| v.as_str()),
             Some("me@anthropic.test")
@@ -413,10 +395,7 @@ mod tests {
             "expires_in": 60
         });
         let bundle = XAI.bundle_from_token_json(body).expect("bundle");
-        assert_eq!(
-            bundle.label_hint.as_deref(),
-            Some("Grok · OAuth")
-        );
+        assert_eq!(bundle.label_hint.as_deref(), Some("Grok · OAuth"));
         assert!(bundle.credentials.get("email").is_none());
     }
 }

@@ -3,6 +3,7 @@ use crate::adapters::register_all;
 use crate::catalog::install::{
     native_ps1_url, native_setup_url, native_sh_url, npm_install_extra_flags, npm_package,
 };
+use crate::services::ProviderService;
 use crate::utils::command_exec::ExecRequest;
 use std::sync::{Arc, Mutex};
 
@@ -72,6 +73,34 @@ fn native_sh_install_does_not_probe_powershell() {
     assert!(commands
         .iter()
         .all(|command| !command.to_ascii_lowercase().contains("powershell")));
+}
+
+#[cfg(not(windows))]
+#[test]
+fn native_shell_selection_keeps_sh_compatible_scripts_on_resolved_sh() {
+    let sh = std::path::Path::new("/usr/bin/sh");
+    let selected = select_native_shell(NativeShellRequirement::Posix, None, Some(sh)).unwrap();
+    assert_eq!(selected, sh);
+
+    let (args, program) = native_shell_invocation(&selected, "https://example.test/install.sh");
+    assert_eq!(program, "/usr/bin/sh");
+    assert_eq!(args[0], "-c");
+    assert!(args[1].ends_with("| '/usr/bin/sh'"));
+    assert!(!args[1].ends_with("| bash"));
+}
+
+#[cfg(not(windows))]
+#[test]
+fn native_shell_selection_requires_bash_when_documented_script_needs_it() {
+    let error = select_native_shell(
+        NativeShellRequirement::Bash,
+        None,
+        Some(std::path::Path::new("/usr/bin/sh")),
+    )
+    .unwrap_err();
+
+    assert_eq!(error.code(), "not_found");
+    assert!(error.to_string().contains("requires bash"));
 }
 
 #[test]
@@ -205,7 +234,9 @@ fn uninstall_not_installed_fails_without_exec() {
         // Do NOT actually delete real binaries in unit tests — exercise NotFound only when safe.
         return;
     }
-    let out = uninstall_agent(&registry, AgentId::Grok, false, &ex).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let db = crate::storage::Database::open(&dir.path().join("ah.db")).unwrap();
+    let out = uninstall_agent(&registry, &db, AgentId::Grok, false, &ex).unwrap();
     assert!(!out.ok);
     assert!(
         out.message.contains("未安装") || out.message.contains("not"),
@@ -213,6 +244,32 @@ fn uninstall_not_installed_fails_without_exec() {
         out.message
     );
     assert!(calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn purge_is_excluded_by_a_provider_live_saga_before_uninstall_preflight() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = crate::storage::Database::open(&dir.path().join("ah.db")).unwrap();
+    let providers = ProviderService::new(db.clone());
+    let guard = providers.begin_live_saga(AgentId::Claude).unwrap();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let executor = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+    };
+
+    let error = uninstall_agent(
+        &AdapterRegistry::new(),
+        &db,
+        AgentId::Claude,
+        true,
+        &executor,
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "provider.lock");
+    assert!(calls.lock().unwrap().is_empty());
+    drop(guard);
 }
 
 #[test]

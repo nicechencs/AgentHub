@@ -1,8 +1,6 @@
 //! Project / session listing commands — thin wrappers over agenthub-core.
 
-use agenthub_core::models::{
-    AgentProject, AgentProjectExcerpt, AgentSession, ProjectMetadataFile,
-};
+use agenthub_core::models::{AgentProject, AgentProjectExcerpt, AgentSession, ProjectMetadataFile};
 use agenthub_core::AgentHub;
 use tauri::State;
 

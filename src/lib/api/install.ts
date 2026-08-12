@@ -9,7 +9,8 @@ export type { InstallOutcome };
 
 export async function installRuntime(
   runtimeId: RuntimeId,
-  channel: string = 'winget',
+  /** Omit to let the host pick brew (macOS) or winget (Windows). */
+  channel?: string,
 ): Promise<InstallOutcome> {
   return getBackend().install.installRuntime(runtimeId, channel);
 }

@@ -32,15 +32,14 @@ pub(crate) fn skill_lock_load(root: &Path) -> Result<BTreeMap<String, SkillSourc
             ));
         }
     };
-    serde_json::from_str::<BTreeMap<String, SkillSourceRecord>>(&raw).map_err(|e| {
-        AppError::message(
-            "skill.lock",
-            format!("parse .skill-lock.json failed: {e}"),
-        )
-    })
+    serde_json::from_str::<BTreeMap<String, SkillSourceRecord>>(&raw)
+        .map_err(|e| AppError::message("skill.lock", format!("parse .skill-lock.json failed: {e}")))
 }
 
-pub(crate) fn skill_lock_save(root: &Path, map: &BTreeMap<String, SkillSourceRecord>) -> Result<()> {
+pub(crate) fn skill_lock_save(
+    root: &Path,
+    map: &BTreeMap<String, SkillSourceRecord>,
+) -> Result<()> {
     if !root.exists() {
         fs::create_dir_all(root)?;
     }

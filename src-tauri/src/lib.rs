@@ -1,7 +1,9 @@
 //! agenthub-gui — thin Tauri v2 shell over agenthub-core.
 //! Business logic stays in core; this crate only wires state + commands.
 
+mod adapter_bridge_controller;
 mod commands;
+mod exit_coordinator;
 mod skill_watch;
 mod state;
 mod tray;
@@ -9,7 +11,9 @@ mod window_policy;
 
 use state::AppState;
 use tauri::{Manager, RunEvent, WindowEvent};
-use window_policy::{decide_close_action, should_show_on_reopen, CloseAction};
+#[cfg(target_os = "macos")]
+use window_policy::should_show_on_reopen;
+use window_policy::{decide_close_action, CloseAction};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -20,7 +24,12 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             tray::show_main_window(app);
         }))
-        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            // No extra args: start the normal GUI (tray/close-to-tray still apply).
+            None::<Vec<&'static str>>,
+        ))
+        .plugin(tauri_plugin_dialog::init())
         .manage(state)
         .setup(|app| {
             // Desktop-only auto-update (signed release artifacts + latest.json).
@@ -40,6 +49,17 @@ pub fn run() {
             if let Ok(hub) = app.state::<AppState>().hub_arc() {
                 skill_watch::start_skill_watcher(app.handle().clone(), hub);
             }
+            // Bridge recovery is deliberately asynchronous and per-profile: a
+            // stale credential or occupied fixed port must not delay GUI/tray
+            // startup or prevent other auto-start bridges from restoring.
+            if let Ok(hub) = app.state::<AppState>().hub_arc() {
+                adapter_bridge_controller::restore_adapter_bridges(
+                    hub,
+                    app.state::<AppState>().bridge_host(),
+                    app.state::<AppState>().bridge_saga_coordinator(),
+                    app.state::<AppState>().lifecycle_shutdown_barrier(),
+                );
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -47,15 +67,49 @@ pub fn run() {
                 let Some(state) = window.try_state::<AppState>() else {
                     return;
                 };
+                // A second close while graceful shutdown is in progress must
+                // not race the bridge drain. Keep the process alive until the
+                // coordinator performs its final `app.exit(0)`.
+                if state.exit_coordinator().shutdown_in_progress()
+                    && !state.exit_coordinator().exit_ready()
+                {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    return;
+                }
                 if decide_close_action(state.should_exit(), state.close_to_tray())
                     == CloseAction::HideToTray
                 {
                     api.prevent_close();
                     let _ = window.hide();
+                    return;
+                }
+                // When this is a real close (rather than the normal
+                // close-to-tray setting), keep the window alive only while an
+                // active bridge impact dialog is resolved. An empty host keeps
+                // the pre-existing close -> RunEvent::ExitRequested path.
+                if !state.should_exit()
+                    && exit_coordinator::ExitCoordinator::requires_impact_confirmation(
+                        state.exit_coordinator().prepare_exit(&state.bridge_host()),
+                    )
+                {
+                    api.prevent_close();
+                    let _ = tray::request_app_exit(window.app_handle());
                 }
             }
         })
         .invoke_handler(tauri::generate_handler![
+            // Adapter route preview (read-only)
+            commands::adapter::analyze_adapter,
+            commands::adapter::plan_adapter,
+            commands::adapter::list_adapter_profiles,
+            commands::adapter::apply_adapter,
+            commands::adapter::start_adapter_bridge,
+            commands::adapter::stop_adapter_bridge,
+            commands::adapter::get_adapter_bridge_status,
+            commands::adapter::set_adapter_bridge_auto_start,
+            commands::adapter::remove_adapter,
+            commands::lifecycle::request_controlled_restart,
             commands::doctor::get_doctor_report,
             // Agent catalog (read-only directory)
             commands::agent_catalog::list_agent_catalog,
@@ -75,6 +129,8 @@ pub fn run() {
             commands::install::uninstall_agent,
             commands::install::open_agent_config_dir,
             commands::install::open_path_in_file_manager,
+            // MCP inventory (read-only)
+            commands::mcp::list_mcp_inventory_cmd,
             // Provider
             commands::provider::list_provider_presets,
             commands::provider::list_providers,
@@ -163,15 +219,34 @@ pub fn run() {
             // macOS Dock click after hide-to-tray: window is still alive but not
             // visible, so the system reports no visible windows. Surface it the
             // same way the menu-bar tray "打开" action does.
-            #[cfg(target_os = "macos")]
-            if let RunEvent::Reopen {
-                has_visible_windows, ..
-            } = event
-            {
-                if should_show_on_reopen(has_visible_windows) {
-                    tray::show_main_window(app_handle);
+            match &event {
+                #[cfg(target_os = "macos")]
+                RunEvent::Reopen {
+                    has_visible_windows,
+                    ..
+                } => {
+                    if should_show_on_reopen(*has_visible_windows) {
+                        tray::show_main_window(app_handle);
+                    }
                 }
+                // A window close with close-to-tray disabled, OS shutdown, or
+                // another controllable Tauri exit must not bypass bridge
+                // draining. The coordinator avoids a duplicate when its own
+                // eventual `app.exit(0)` produces another exit event.
+                RunEvent::ExitRequested { api, .. } => {
+                    if let Some(state) = app_handle.try_state::<AppState>() {
+                        if !state.exit_coordinator().exit_ready() {
+                            api.prevent_exit();
+                            if !state.exit_coordinator().shutdown_in_progress() {
+                                state.request_exit();
+                                let _ = state
+                                    .exit_coordinator()
+                                    .request_exit(app_handle.clone(), state.bridge_host());
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
-            let _ = (app_handle, event);
         });
 }

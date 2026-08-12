@@ -9,7 +9,6 @@ use crate::logging::targets;
 use crate::models::{
     AgentId, CollectResult, ParserHealth, UsageQuery, UsageRecord, UsageTrendPoint,
 };
-use crate::utils::redact::redact_text;
 use crate::platform::usage::{
     builtin_usage_registry, collect_with_source, collect_with_source_for_agent_id, TokenAccounting,
     UsageSourceRegistry,
@@ -20,6 +19,7 @@ use crate::usage::session_jsonl::CollectStats;
 use crate::usage::{
     codex_billable_tokens, estimate_cost_usd, estimate_cost_usd_for_agent, has_embedded_pricing,
 };
+use crate::utils::redact::redact_text;
 
 pub struct UsageService {
     repo: UsageRepo,

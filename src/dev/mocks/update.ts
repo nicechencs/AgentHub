@@ -1,7 +1,9 @@
 import type { UpdateDownloadProgress, UpdateInfo, UpdatePort } from '@/lib/backend/contracts/update-types';
 import { delay } from '@/dev/mocks/delay';
+import { packageAppVersion } from '@/lib/app-version';
 
-const MOCK_VERSION = '0.1.0';
+/** Current mock app version — from package.json (Vite), not a hard-coded string. */
+const MOCK_VERSION = packageAppVersion();
 
 /**
  * Browser mock update port.

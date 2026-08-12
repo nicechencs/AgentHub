@@ -480,6 +480,8 @@ export interface AgentSession {
   updatedAt: string;
   preview?: string | null;
   messageCount?: number | null;
+  /** 原生 CLI session id（用于 resume / 复制）；内部 id 仍是 path-based `id` */
+  sessionId?: string | null;
 }
 
 /** 多选总结用的摘录 */

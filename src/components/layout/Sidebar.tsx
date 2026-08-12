@@ -5,17 +5,18 @@ import {
   MessagesSquare,
   Bot,
   Key,
-  Route,
   Blocks,
+  Boxes,
   Plug,
   FolderKanban,
   Settings2,
   PanelLeftClose,
   PanelLeftOpen,
-  Hexagon,
 } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { AppLogo } from '@/components/shared/AppLogo';
 import { AGENTS } from '@/config/agents';
+import { useAppUpdateAvailable } from '@/app/runtime';
 import { listAgents } from '@/lib/api/agent';
 import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
@@ -35,7 +36,7 @@ const NAV_WORKSPACE = [
 const NAV_MANAGE = [
   { to: '/', label: 'Dashboard', icon: Gauge },
   { to: '/connections', label: 'Connections', icon: Key },
-  { to: '/router', label: 'Router', icon: Route },
+  { to: '/adapter', label: 'Adapter', icon: Boxes },
   { to: '/settings', label: 'Settings', icon: Settings2 },
 ] as const;
 
@@ -47,32 +48,64 @@ function SidebarNavLink({
   item,
   collapsed,
   itemClass,
+  notice,
 }: {
   item: NavItem;
   collapsed: boolean;
   itemClass: (isActive: boolean) => string;
+  /** Optional silent tip (e.g. app update available on Settings). */
+  notice?: { label: string } | null;
 }) {
   const { to, label, icon: Icon } = item;
+  const tip = notice?.label;
+  const a11yLabel = tip ? `${label} — ${tip}` : label;
 
   return (
     <NavLink
       to={to}
       end={to === '/'}
-      aria-label={collapsed ? label : undefined}
+      aria-label={collapsed || tip ? a11yLabel : undefined}
       className="block rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
     >
       {({ isActive }) => {
         const node = (
-          <span className={itemClass(isActive)}>
-            <Icon className={ICON_CLASS} strokeWidth={1.8} />
-            {!collapsed && <span className="truncate">{label}</span>}
+          <span className={cn(itemClass(isActive), 'relative')}>
+            <span className="relative shrink-0">
+              <Icon className={ICON_CLASS} strokeWidth={1.8} />
+              {/* Collapsed: corner pin on icon only (expanded uses trailing pin). */}
+              {notice && collapsed && (
+                <span
+                  className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-warning ring-2 ring-panel"
+                  aria-hidden
+                />
+              )}
+            </span>
+            {!collapsed && (
+              <>
+                <span className="truncate">{label}</span>
+                {notice && (
+                  <span
+                    className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
+                    aria-hidden
+                    title={tip}
+                  />
+                )}
+              </>
+            )}
           </span>
         );
 
-        if (!collapsed) return node;
+        if (!collapsed) {
+          if (!tip) return node;
+          return (
+            <Hint label={tip} side="right">
+              {node}
+            </Hint>
+          );
+        }
 
         return (
-          <Hint label={label} side="right">
+          <Hint label={a11yLabel} side="right">
             {node}
           </Hint>
         );
@@ -119,6 +152,10 @@ function agentDotLabel(
 export function Sidebar() {
   const { collapsed, toggle } = useSidebar();
   const [agents, setAgents] = React.useState<AgentStatus[]>([]);
+  const appUpdate = useAppUpdateAvailable();
+  const settingsNotice = appUpdate
+    ? { label: `有可用更新 v${appUpdate.version}` }
+    : null;
 
   React.useEffect(() => {
     listAgents().then(setAgents).catch(() => {});
@@ -162,8 +199,8 @@ export function Sidebar() {
               className="group relative flex h-7 w-7 shrink-0 items-center justify-center rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
               aria-label="展开侧栏"
             >
-              <span className="flex h-7 w-7 items-center justify-center rounded-btn bg-subtle text-secondary transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
-                <Hexagon className="h-4 w-4" strokeWidth={1.8} />
+              <span className="flex h-7 w-7 items-center justify-center rounded-btn transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
+                <AppLogo size={20} className="h-5 w-5 rounded-[22%]" />
               </span>
               <span className="absolute inset-0 flex items-center justify-center rounded-btn text-muted opacity-0 transition-opacity group-hover:bg-hover group-hover:text-primary group-hover:opacity-100 group-focus-visible:bg-hover group-focus-visible:text-primary group-focus-visible:opacity-100">
                 <PanelLeftOpen className="h-4 w-4" strokeWidth={1.8} />
@@ -173,8 +210,8 @@ export function Sidebar() {
         ) : (
           <>
             <div className="flex min-w-0 items-center gap-2">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-btn bg-subtle text-secondary">
-                <Hexagon className="h-3.5 w-3.5" strokeWidth={1.8} />
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-btn">
+                <AppLogo size={20} className="h-5 w-5 rounded-[22%]" />
               </span>
               <span className="truncate text-sm font-semibold tracking-tight">AgentHub</span>
             </div>
@@ -206,7 +243,13 @@ export function Sidebar() {
         </NavGroup>
         <NavGroup label="管理" collapsed={collapsed} className="mt-auto pb-2">
           {NAV_MANAGE.map((item) => (
-            <SidebarNavLink key={item.to} item={item} collapsed={collapsed} itemClass={itemClass} />
+            <SidebarNavLink
+              key={item.to}
+              item={item}
+              collapsed={collapsed}
+              itemClass={itemClass}
+              notice={item.to === '/settings' ? settingsNotice : null}
+            />
           ))}
         </NavGroup>
       </nav>

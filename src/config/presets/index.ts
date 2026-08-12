@@ -83,6 +83,13 @@ export const PRESETS: Record<AgentId, ProviderPreset[]> = {
   ],
   kimi: [
     {
+      id: 'kimi-code-membership',
+      label: 'Kimi Code 会员',
+      format: 'toml',
+      // Explicit membership source. Do not treat the Moonshot API preset as membership.
+      template: 'default_model = "kimi-code"\n',
+    },
+    {
       id: 'moonshot',
       label: 'Moonshot 官方',
       format: 'toml',

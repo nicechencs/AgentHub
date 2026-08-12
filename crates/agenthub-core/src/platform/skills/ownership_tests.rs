@@ -14,8 +14,8 @@ use crate::models::{
 };
 use crate::platform::skills::ownership::{
     fingerprint_tree_at, is_managed_projection, ownership_marker_path, ownership_store_dir,
-    verify_copy_ownership, write_copy_ownership_marker, SkillOwnershipMarker,
-    OWNERSHIP_FORMAT_VERSION,
+    unproject_with_recycler, verify_copy_ownership, write_copy_ownership_marker,
+    SkillOwnershipMarker, OWNERSHIP_FORMAT_VERSION,
 };
 use crate::platform::skills::{
     bootstrap_skill_assignments, SkillAssignmentService, SkillReconciler, SkillTargetRegistry,
@@ -126,7 +126,8 @@ fn try_symlink_dir(target: &Path, link: &Path) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Byte-identical without marker: not bootstrap-imported; disable/force sync conflict
+// 1. Byte-identical without marker: not bootstrap-imported; force cannot claim,
+// but legacy disable can safely recycle it.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -152,14 +153,6 @@ fn byte_identical_without_marker_not_managed() {
     let svc = make_svc(source.clone(), claude.clone());
     let body_before = fs::read_to_string(claude.join("demo").join("SKILL.md")).unwrap();
 
-    let err = svc.disable("demo", AgentId::Claude).unwrap_err();
-    assert_eq!(err.code(), "skill.conflict");
-    assert_eq!(
-        fs::read_to_string(claude.join("demo").join("SKILL.md")).unwrap(),
-        body_before,
-        "content preserved on disable conflict"
-    );
-
     // force cannot claim unmarked directories either.
     let err2 = svc.sync("demo", AgentId::Claude, false).unwrap_err();
     assert_eq!(err2.code(), "skill.conflict");
@@ -172,6 +165,16 @@ fn byte_identical_without_marker_not_managed() {
     assert_eq!(
         fs::read_to_string(claude.join("demo").join("SKILL.md")).unwrap(),
         body_before
+    );
+
+    svc.disable("demo", AgentId::Claude).unwrap();
+    assert!(
+        !claude.join("demo").exists(),
+        "legacy exact copy is recycled"
+    );
+    assert!(
+        !ownership_marker_path(&claude, "demo").exists(),
+        "legacy copy has no marker left behind"
     );
 }
 
@@ -233,6 +236,82 @@ fn tampered_managed_copy_disable_conflicts() {
         ownership_marker_path(&claude, "demo").is_file(),
         "marker remains when delete is refused"
     );
+}
+
+#[test]
+fn unmarked_copy_with_different_content_cannot_be_disabled() {
+    // Use real_tempdir: macOS /var is a symlink to /private/var, and skills
+    // safety refuses symlink prefixes before ownership conflict checks.
+    let root = crate::utils::test_temp::real_tempdir();
+    let source = root.path().join("source");
+    let claude = root.path().join("claude");
+    fs::create_dir_all(&source).unwrap();
+    write_skill(&source, "demo", "# source\n");
+    write_skill(&claude, "demo", "# different\n");
+
+    let svc = make_svc(source, claude.clone());
+    let err = svc.disable("demo", AgentId::Claude).unwrap_err();
+    assert_eq!(err.code(), "skill.conflict");
+    assert!(claude.join("demo").join("SKILL.md").is_file());
+}
+
+#[test]
+fn recycler_failure_keeps_verified_copy_and_marker() {
+    let root = crate::utils::test_temp::real_tempdir();
+    let source = root.path().join("source");
+    let claude = root.path().join("claude");
+    fs::create_dir_all(&source).unwrap();
+    write_skill(&source, "demo", "# platform\n");
+
+    let svc = make_svc(source.clone(), claude.clone());
+    svc.sync("demo", AgentId::Claude, false).unwrap();
+    let marker = ownership_marker_path(&claude, "demo");
+    let agent = AgentKey::from_agent_id(AgentId::Claude);
+    let err = unproject_with_recycler(
+        &claude,
+        "demo",
+        &source.join("demo"),
+        &claude.join("demo"),
+        &agent,
+        |_| Err(AppError::message("skill.recycle", "recycle unavailable")),
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code(), "skill.recycle");
+    assert!(claude.join("demo").join("SKILL.md").is_file());
+    assert!(marker.is_file(), "marker survives a failed recycle");
+}
+
+#[test]
+fn verified_marker_is_cleared_before_recycler_runs() {
+    let root = crate::utils::test_temp::real_tempdir();
+    let source = root.path().join("source");
+    let claude = root.path().join("claude");
+    fs::create_dir_all(&source).unwrap();
+    write_skill(&source, "demo", "# platform\n");
+
+    let svc = make_svc(source.clone(), claude.clone());
+    svc.sync("demo", AgentId::Claude, false).unwrap();
+    let marker = ownership_marker_path(&claude, "demo");
+    let agent = AgentKey::from_agent_id(AgentId::Claude);
+    unproject_with_recycler(
+        &claude,
+        "demo",
+        &source.join("demo"),
+        &claude.join("demo"),
+        &agent,
+        |target| {
+            assert!(
+                !marker.exists(),
+                "canonical marker must be gone before recycle can succeed"
+            );
+            fs::remove_dir_all(target).map_err(AppError::from)
+        },
+    )
+    .unwrap();
+
+    assert!(!claude.join("demo").exists());
+    assert!(!marker.exists());
 }
 
 // ---------------------------------------------------------------------------

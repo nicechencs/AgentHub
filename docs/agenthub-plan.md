@@ -1,4 +1,4 @@
-# AgentHub 项目方案 v1.4
+# AgentHub 项目方案 v1.5
 
 > 多 Agent 管理桌面工具：统一管理 Claude Code、Codex、Grok、Kimi 等 AI Agent 的安装、技能、API 配置、Token 统计与 OAuth 账号。  
 > 技术栈：Tauri v2 + React + Rust，GUI + CLI 双端。  
@@ -6,8 +6,9 @@
 > v1.2：CLI 命令树与配置三层契约见专文 [cli-and-config.md](cli-and-config.md)。  
 > v1.3：**安装前置环境（Runtime）**：用户机可能无法直接装 Agent（缺 Node/npm 等），安装管线改为「检测环境 → 引导装环境 → 再装 Agent」。  
 > v1.4：**平台环境差异**：PowerShell 仅 Windows 共享 Runtime；macOS/Linux native 安装/升级走官方 sh + bash，不得检测或要求 PowerShell；包管理引导 Windows=`winget`、macOS=`brew`。
+> v1.5：**Adapter sidecar 目标架构**：`local_bridge` 的长驻 Runtime 与完整 saga 迁入用户级 `agenthub-adapterd`；Connections 与 live 配置事务继续由 core service 管理。当前实现仍为 Tauri 进程内宿主，按三阶段迁移。
 
-系列文档：[目录结构与模块拆分](architecture.md) · [前端 UI 设计](ui-design.md) · [CLI 与配置契约](cli-and-config.md)
+系列文档：[目录结构与模块拆分](architecture.md) · [Adapter Sidecar 目标架构](adapter-sidecar-design.md) · [前端 UI 设计](ui-design.md) · [CLI 与配置契约](cli-and-config.md)
 
 ## 1. 已确认决策
 
@@ -21,6 +22,7 @@
 | Token 统计来源 | **零侵入**：解析各 agent 本地日志/会话文件，不做本地代理 |
 | Agent 范围 | **七家**：Claude / Codex / Kimi / Grok / Pi / WorkBuddy / **Cursor Agent**（半套 CLI）；不支持 Cursor IDE 私有库账号池 |
 | 分层原则 | **Service 管编排**（备份/锁/backfill/投影/聚合）；**Adapter 管差异**（路径、读写格式、解析器挂接） |
+| Adapter 进程边界 | `local_bridge` 目标由同包用户级 `agenthub-adapterd` 托管；GUI/CLI 是控制客户端。Connections 不拆进程，OS 系统服务不在当前范围 |
 
 ## 2. 参考项目结论
 
@@ -315,7 +317,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 - 技术：React + TypeScript + Vite + Tailwind + shadcn/Radix（**只选一套 UI**）+ recharts + react-router + CodeMirror。**当前未**引入 TanStack Query / i18next（方案历史提及，以 `package.json` 为准）。
 - 结构：`lib/backend/tauri`（唯一 invoke）→ `lib/api` façade → 页面本地 state；mock 仅 `dev:mock`。事件桥为目标态，现以前端主动拉取为主。
-- 页面：Dashboard（含用量）/ Chat / Agents / Connections（账号 + API 配置）/ Skills / Projects / Settings（含 Backups）。
+- 页面：Dashboard（含用量）/ Chat / Agents / Connections（账号 + API 配置）/ Adapter / Skills / MCP（只读清单）/ Projects / Settings（含 Backups）。
 - 详细交互见 [ui-design.md](ui-design.md)。
 
 ## 7. 分期路线图
@@ -349,6 +351,8 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 前端 backend 分层（tauri / mocks / contracts / api façade） | ✅；`pnpm build` 强制 Tauri + 护栏 |
 | CLI `run` 多 Agent headless | ✅ |
 | 日志 tracing 文件 + 脱敏 | ✅ 见 logging.md |
+| Adapter 规则分析 / 预览 / profile 管理 | ✅；仅显式白名单可应用，当前组合与状态见[厂商、API 与 OAuth 适配规则](provider-api-oauth-adaptation.md#4-当前实现矩阵) |
+| MCP 本机配置清单 | ✅ core 只读扫描 + Tauri command + 前端页面；不修改或注入配置 |
 | 凭据落盘加密 | **范围外**（不实现） |
 
 ### 8.2 未实现 / 仅部分 / 范围外
@@ -359,7 +363,9 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 自身 **DB 备份**（`backups/db/`） | ❌ | 仅 live 快照 |
 | Dashboard **生产告警** | ❌ | 固定空实现；mock 可演示 |
 | Tauri **事件桥** | ❌ | 文档目标；现以前端 refetch 为主 |
-| 能力 `Mcp` / `ModelSelect` / `SessionResume` | Planned | 矩阵已声明，无调用方 |
+| MCP **管理 / 注入**、`ModelSelect`、`SessionResume` | Planned | `Mcp` 矩阵仍表示管理/注入能力；独立的只读 MCP inventory 已落地，不改变矩阵状态 |
+| Adapter 本地 Bridge 产品接线 | 🟡 部分实现 | core host、协议转换、Tauri controller、UI 控件、auto-start 恢复与退出 drain 已进入当前工作区；具体可执行状态见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)，端到端验收尚未收口 |
+| Adapter 用户级 sidecar | 🎯 目标已决策 / 未实现 | 当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有；待完成 Tauri-neutral control contract、`agenthub-adapterd`、本地 IPC、单实例/版本+schema 握手、SQLite shared/exclusive schema lease、更新/卸载 saga 和分阶段切换，见 [adapter-sidecar-design.md](adapter-sidecar-design.md) |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |
 | Token **后台自动刷新守护** | ❌ | 有手动 refresh |
 | Settings 部分开关真实生效 | 🟡 | 主题/语言/日志/用量定时采集部分接线；系统集成项未完整 |
@@ -374,15 +380,18 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 ### 8.3 前端导航（与代码 `App.tsx` 一致）
 
-Dashboard（含用量）/ Chat / Agents / Connections / Skills / Projects / Settings（含 Backups）。  
-旧路由 `/usage` → `/?section=usage`；`/backups` → `/settings?tab=backups`；`/providers`·`/accounts` → `/connections`。
+- Workspace：Chat / Agents / Skills / MCP / Projects。
+- Manage：Dashboard（含用量）/ Connections / Adapter / Settings（含 Backups）。
+
+旧路由 `/router` → `/adapter`；`/usage` → `/?section=usage`；`/backups` → `/settings?tab=backups`；`/providers`·`/accounts` → `/connections`。
 
 ## 9. 风险与开放问题
 
 1. **官方凭据落点随版本变化**：部分 Agent 的主登录态未必落在公开配置文件中。账号切换以文件型凭据导入/备份为先，未确认的路径不强行写入。
 2. **日志格式漂移**：各家 sessions 格式会随版本变。UsageParser 设计为容错（跳过失配记录 + 统计失败率 + 按 agent 版本选择解析器）。
 3. **合规边界**：定位是个人本地管理工具，不提供分发/网关能力；用户须遵守各上游服务条款。
-4. **写第三方配置的跟进成本**：各家配置格式都会变，适配层需要持续维护 —— 这也是克制范围、不做代理模式（P4 再评估）的原因。
+4. **写第三方配置的跟进成本**：各家配置格式都会变，适配层需要持续维护。项目不建设通用代理平台；Adapter 只按有证据、有 fixtures 的规则开放本地协议桥接。
 5. **Skills 真源假设**：以 `~/.agents/skills` 为唯一真源；若用户长期只在 Agent 目录改 skill，需补导入/回收，否则仅是单向投影器。
 6. **前置环境安装的权限与策略**：公司机可能禁用 winget/MSI、Node 装完但 GUI 进程 PATH 未刷新、需要「新开终端/重启 AgentHub」才能看到 `node`。产品文案与 `doctor` 需覆盖 **PATH 刷新 / 重启提示**；自动装 Runtime 失败必须降级为可复制命令，禁止假成功。
 7. **不替官方背锅**：Runtime/Agent 安装脚本来自上游；AgentHub 只编排与展示。网络失败、镜像源、证书问题在 UI 中归类为「环境/网络」并给出官方文档入口。
+8. **sidecar 双主、版本与 schema 漂移**：GUI、CLI 和 sidecar 若同时持有 Bridge host、分别写 `local_bridge` profile，或旧进程跨 SQLite migration 继续访问，会产生重复监听、跨进程半事务和数据库不兼容。必须坚持每个 data dir 单一 runtime owner、mutation 经 IPC、Database handle 生命周期 shared schema lease / migration exclusive lease、rule/revision/schema 重验和不兼容版本拒绝写入；普通 GUI 退出不再等于停止 sidecar。

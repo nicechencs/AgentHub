@@ -16,6 +16,13 @@ export function AgentStatusProvider({ children }: { children: React.ReactNode })
     getAgentStatusSnapshot,
   );
 
+  // Boot / first paint: if main preload was skipped or still idle, kick once.
+  React.useEffect(() => {
+    if (getAgentStatusSnapshot().state === 'idle') {
+      void loadAgentStatuses(getBackend()).catch(() => {});
+    }
+  }, []);
+
   // Returning to the desktop app is a meaningful boundary for external CLI
   // token rotation. One shared forced reload avoids every page probing alone.
   React.useEffect(() => {

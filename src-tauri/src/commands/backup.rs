@@ -1,7 +1,8 @@
 //! Backup Tauri commands — thin wrappers over agenthub-core.
 //! Snapshots copy raw file bytes; no encrypt/decrypt or format conversion.
 
-use agenthub_core::models::{BackupKind, BackupRecord};
+use agenthub_core::error::AppError;
+use agenthub_core::models::{AgentId, BackupKind, BackupRecord};
 use agenthub_core::services::RestoreResult;
 use agenthub_core::AgentHub;
 use tauri::State;
@@ -40,7 +41,15 @@ pub async fn restore_backup(
     backup_id: String,
 ) -> Result<RestoreResult, String> {
     let hub = state.hub_arc()?;
-    with_hub_blocking(hub, move |hub| restore_backup_inner(hub, &backup_id)).await
+    // Identify before locking so unrelated agents can proceed, then fetch the
+    // row again while holding the target lock.  The second lookup prevents a
+    // delete/replace race from restoring a backup for a different agent.
+    let target = backup_target_agent(hub.clone(), backup_id.clone()).await?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(target).await;
+    with_hub_blocking(hub, move |hub| {
+        restore_backup_for_target_inner(hub, &backup_id, target)
+    })
+    .await
 }
 
 /// Invoke: `delete_backup`
@@ -72,6 +81,38 @@ fn restore_backup_inner(hub: &AgentHub, backup_id: &str) -> Result<RestoreResult
     hub.backups
         .restore(backup_id)
         .map_err(|e| map_err_string("restore_backup", e))
+}
+
+fn restore_backup_for_target_inner(
+    hub: &AgentHub,
+    backup_id: &str,
+    target: AgentId,
+) -> Result<RestoreResult, String> {
+    let record = hub
+        .backups
+        .get_by_id(backup_id)
+        .map_err(|e| map_err_string("restore_backup", e))?;
+    if record.agent_id != Some(target) {
+        return Err("backup target changed before restore [backup.target_changed]".into());
+    }
+    restore_backup_inner(hub, backup_id)
+}
+
+async fn backup_target_agent(
+    hub: std::sync::Arc<AgentHub>,
+    backup_id: String,
+) -> Result<AgentId, String> {
+    with_hub_blocking(hub, move |hub| {
+        hub.backups
+            .get_by_id(&backup_id)
+            .and_then(|record| {
+                record.agent_id.ok_or_else(|| {
+                    AppError::InvalidArg("backup restore requires an agent-scoped record".into())
+                })
+            })
+            .map_err(|e| map_err_string("restore_backup", e))
+    })
+    .await
 }
 
 fn delete_backup_inner(hub: &AgentHub, backup_id: &str) -> Result<(), String> {

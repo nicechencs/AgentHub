@@ -74,8 +74,14 @@ impl SkillsShMarket {
             .timeout_connect(SKILLS_SH_CONNECT_TIMEOUT)
             .timeout_read(SKILLS_SH_READ_TIMEOUT);
         // Honor common proxy env vars (Clash / corporate proxies).
-        for key in ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy"]
-        {
+        for key in [
+            "HTTPS_PROXY",
+            "https_proxy",
+            "ALL_PROXY",
+            "all_proxy",
+            "HTTP_PROXY",
+            "http_proxy",
+        ] {
             if let Ok(proxy_url) = std::env::var(key) {
                 let proxy_url = proxy_url.trim();
                 if !proxy_url.is_empty() {
@@ -168,8 +174,9 @@ impl SkillsShMarket {
             self.limit
         );
         let body = Self::http_get(&url)?;
-        let v: Value = serde_json::from_str(&body)
-            .map_err(|e| AppError::message("skill.market", format!("skills.sh search JSON: {e}")))?;
+        let v: Value = serde_json::from_str(&body).map_err(|e| {
+            AppError::message("skill.market", format!("skills.sh search JSON: {e}"))
+        })?;
         let arr = v
             .get("skills")
             .and_then(|x| x.as_array())
@@ -199,9 +206,8 @@ impl SkillsShMarket {
     fn materialize_skill(&self, listing_id: &str) -> Result<(PathBuf, PathBuf)> {
         let sh = parse_listing_id(listing_id)?;
         let git_url = format!("https://github.com/{}.git", sh.source);
-        let tmp = tempfile::tempdir().map_err(|e| {
-            AppError::message("skill.market", format!("tempdir failed: {e}"))
-        })?;
+        let tmp = tempfile::tempdir()
+            .map_err(|e| AppError::message("skill.market", format!("tempdir failed: {e}")))?;
         let repo = tmp.path().join("repo");
         let status = Command::new("git")
             .args(["clone", "--depth", "1", &git_url])
@@ -340,11 +346,7 @@ fn parse_skills_array(arr: &[Value]) -> Vec<ShSkill> {
             }
         } else if skill_id.contains('/') {
             // skillId field might be full path
-            let folder = skill_id
-                .rsplit('/')
-                .next()
-                .unwrap_or(&skill_id)
-                .to_string();
+            let folder = skill_id.rsplit('/').next().unwrap_or(&skill_id).to_string();
             (source, folder)
         } else {
             (source, skill_id)
@@ -480,10 +482,7 @@ fn extract_json_u64(window: &str, key: &str) -> Option<u64> {
     let after = &window[i + pat.len()..];
     let colon = after.find(':')?;
     let s = after[colon + 1..].trim_start();
-    let num: String = s
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
+    let num: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
     num.parse().ok()
 }
 
@@ -505,7 +504,12 @@ fn find_skill_dir(repo: &Path, skill_id: &str) -> Option<PathBuf> {
     find_skill_dir_rec(repo, skill_id, 0, 5)
 }
 
-fn find_skill_dir_rec(dir: &Path, skill_id: &str, depth: usize, max_depth: usize) -> Option<PathBuf> {
+fn find_skill_dir_rec(
+    dir: &Path,
+    skill_id: &str,
+    depth: usize,
+    max_depth: usize,
+) -> Option<PathBuf> {
     if depth > max_depth {
         return None;
     }

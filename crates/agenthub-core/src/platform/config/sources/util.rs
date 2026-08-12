@@ -180,9 +180,9 @@ pub(super) fn plan_from_maps(
             if to_s.map(|s| !s.is_empty()).unwrap_or(false) {
                 field_changes.push(FieldChange {
                     field_key: f.key.clone(),
-                    from: from_s.filter(|s| !s.is_empty()).map(|_| {
-                        Value::String(SECRET_REDACTED.to_string())
-                    }),
+                    from: from_s
+                        .filter(|s| !s.is_empty())
+                        .map(|_| Value::String(SECRET_REDACTED.to_string())),
                     to: Some(Value::String(SECRET_REDACTED.to_string())),
                     secret: true,
                 });
@@ -232,10 +232,7 @@ pub(super) fn json_object_or_empty(v: &Value) -> Map<String, Value> {
 }
 
 pub(super) fn invalid_toml(path: &Path, e: impl std::fmt::Display) -> AppError {
-    AppError::InvalidArg(format!(
-        "invalid TOML at {}: {e}",
-        path.display()
-    ))
+    AppError::InvalidArg(format!("invalid TOML at {}: {e}", path.display()))
 }
 
 pub(super) fn finish_apply(

@@ -5,6 +5,8 @@
 > v1.1 同步：Adapter 接口加厚（skills/backup 路径）、Service 职责表、Usage/模型列表边界。  
 > v1.2：CLI 命令与配置契约详见 [cli-and-config.md](cli-and-config.md)（本文 §5–§6 仅结构摘要）。  
 > v1.3：`runtime/` + `env_service` —— 安装 Agent 前的共享运行时（Node/npm 等）检测与引导。  
+> 2026-08-12 同步：Adapter 规则分析/稳定直连、Bridge core 与只读 MCP inventory 的当前工作区结构。
+> 2026-08-12 决策同步：`local_bridge` 的目标宿主确定为用户级 `agenthub-adapterd` sidecar；当前实现仍由 Tauri `AppState` 进程内托管，迁移契约见 [adapter-sidecar-design.md](adapter-sidecar-design.md)。
 > 日志：core 统一 tracing（文件 + 可选 stderr）→ [logging.md](logging.md)。  
 > **前端 backend 分层（已落地）**：`lib/backend/{contracts,tauri,current}` + `dev/mocks` + `app/runtime`；命令与 adapter 选择见 **§4.1–§4.2**。
 
@@ -53,7 +55,7 @@ AgentHub/
 ```
 crates/agenthub-core/
 ├── Cargo.toml                 # rusqlite(bundled)/serde/toml_edit/
-│                              # tokio(仅 oauth 回调节点用)/thiserror/dirs/tempfile/jsonc-parser
+│                              # tokio/axum/reqwest（OAuth + Bridge）/thiserror/dirs/tempfile/jsonc-parser
 └── src/
     ├── lib.rs                 # 对外门面:pub use 各 service;AgentHub::new(data_dir) 统一构造
     ├── error.rs               # AppError(thiserror),含 i18n key + 中英文消息;Result<T> 别名
@@ -74,11 +76,13 @@ crates/agenthub-core/
     │   ├── project.rs         # AgentProject 容器 + AgentSession 会话列表模型
     │   ├── install.rs         # InstallChannel / InstallPlan / InstallOutcome
     │   ├── runtime.rs         # RuntimeId / EnvStatus
+    │   ├── adapter.rs         # 路由分析、apply plan、profile 与状态
     │   └── settings.rs        # AppSettings（主题/语言/日志等）
     │
     ├── storage/               # SQLite 层:agenthub.db,WAL,schema 版本迁移
     │   ├── mod.rs             # Database 结构(连接池/r2d2 或 Arc<Mutex<Connection>>)
     │   ├── migrations/        # 0001_init.sql, 0002_*.sql ... 版本号递增,启动时顺序执行
+    │   ├── adapter_profile_repo.rs # Adapter profile 持久化
     │   └── (repo)/            # 每表一个 repo: provider_repo / backup_repo / …
     │                          # （规划名 dao；实现用 *Repo 后缀）
     │
@@ -93,6 +97,12 @@ crates/agenthub-core/
     │   ├── cursor.rs          # 半套 Agent CLI（不碰 IDE 私有账号库）
     │   └── tests.rs
     │
+    ├── bridge/                # loopback host + Responses/Chat 协议转换
+    │   ├── host.rs            # 实例 start/status/stop/shutdown
+    │   ├── runtime.rs         # 上游配置与请求执行
+    │   ├── types.rs           # 非序列化 runtime 输入/状态
+    │   └── protocol/          # chat/responses 映射、SSE 与 fixtures
+    │
     ├── runtime/               # 共享运行时(与具体 Agent 解耦;安装 Agent 的前置环境)
     │   ├── mod.rs             # RuntimeId; EnvStatus; RuntimeDetect; InstallChannel requires
     │   ├── detect.rs          # which/where + 版本解析;短 TTL 缓存;安装后 invalidate
@@ -106,6 +116,11 @@ crates/agenthub-core/
     │   ├── install_service.rs # 两阶段安装 / upgrade / uninstall
     │   ├── provider_service.rs# CRUD + 切换(backfill→backup→原子写→锁)
     │   ├── account_service.rs # 账号池、切换、import、refresh_token
+    │   ├── adapter_route_service.rs  # 只读兼容规则分析/预览
+    │   ├── adapter_apply_service.rs  # 仅应用显式稳定的直连规则
+    │   ├── adapter_secret_resolver.rs# 进程内解析 Connection secret
+    │   ├── adapter_bridge_service.rs # Bridge saga/profile 准备与收尾
+    │   ├── mcp_inventory.rs   # 只读扫描本机 MCP 配置
     │   ├── skill_service.rs   # 真源 list、投影、install/uninstall/update/project/import_private
     │   ├── skill_market.rs    # SkillMarket trait + 注册表（默认 skills.sh；可选 builtin）
     │   ├── skillssh_market.rs # skills.sh 远程搜索/安装（HTTP + git clone）
@@ -140,7 +155,7 @@ crates/agenthub-core/
         └── stream_parse/      # Chat 结构化流解析（claude/codex/kimi/grok/pi）
 ```
 
-**关键依赖对照**：`rusqlite(bundled)`、`toml_edit`、`serde_json(preserve_order)`、`dirs`、`tempfile`、`jsonc-parser`、`thiserror`、`tokio`（仅 oauth server）、`tracing` / `tracing-subscriber` / `tracing-appender`（日志）。凭据加密依赖不属于当前版本。日志模块与契约见 [logging.md](logging.md)。
+**关键依赖对照**：`rusqlite(bundled)`、`toml_edit`、`serde_json(preserve_order)`、`dirs`、`tempfile`、`jsonc-parser`、`thiserror`、`tokio`、`axum`、`reqwest`（OAuth / Bridge）、`tracing` / `tracing-subscriber` / `tracing-appender`（日志）。凭据加密依赖不属于当前版本。日志模块与契约见 [logging.md](logging.md)。
 
 ### 2.1 AgentAdapter 接口约定
 
@@ -186,6 +201,9 @@ struct InstallChannel {
 |---|---|---|
 | `provider_service` | CRUD、切换编排（backfill→backup→写→锁） | 不解析 jsonl；不知 skills 真源 |
 | `account_service` | 账号池、OAuth/导入、切换编排 | 不实现各家 OAuth 端点细节（oauth/ 模块） |
+| `adapter_route_service` / `adapter_apply_service` | 只读分析、预览；应用后端显式允许的稳定规则 | 不推断未知凭据，不把 preview 自动升级为可写 |
+| `adapter_bridge_service` | 准备/恢复 Bridge profile 与 runtime material，记录 finalize/needs_attention | 不持有 listener，不直接写 live 配置；当前由 Tauri controller、目标由 sidecar application service 编排 host 与 ProviderService |
+| `mcp_inventory` | 只读扫描已知 MCP 配置文件并归一化 server 条目 | 不创建、编辑、删除或注入 MCP server |
 | `skill_service` | 真源扫描、投影矩阵、sync/enable/disable、install/uninstall/update/project、import_private | 不扫描会话日志；远程市场由 `skill_market`/`skillssh_market` 提供；插件体系仅只读协作 |
 | `usage_service` | collect、入库、summary/trend、**list_models（用量去重）** | 不提供官方模型商店；不算 live 配置默认 model 源 |
 | `backup_service` | live/db 快照、恢复（恢复前再备）、索引 | 不解释 TOML/JSON 语义（只拷文件） |
@@ -218,6 +236,25 @@ struct InstallChannel {
          · missing 且 opts.install_deps  → runtime/bootstrap 流式执行 → 再 detect
     → process 跑官方 install 命令（白名单 + CREATE_NO_WINDOW）
     → adapter.detect() 刷新；runtime 缓存 invalidate
+
+应用稳定 Adapter 规则:
+  adapter_route_service.analyze / plan
+    → 后端显式 can_apply 门禁
+    → adapter_apply_service.apply
+    → 创建受管 profile / Provider
+    → provider_service.switch（复用备份与原子写）
+
+应用 local_bridge（当前 / 目标）:
+  当前：Tauri adapter_bridge_controller → BridgeRuntimeHost + core services
+  目标：Tauri/CLI control client → local IPC → agenthub-adapterd
+      → AdapterRuntimeApplication（local_bridge 完整 saga 的唯一进程 owner）
+      → BridgeRuntimeHost + AdapterBridgeService + ProviderService
+  // Connections/ProviderService 仍是领域 owner；sidecar 不直接写表或 live 文件
+
+MCP 清单:
+  mcp_inventory.list
+    → 只读解析各 Agent 已知配置文件
+    → Tauri command → MCP 页面
 
 采集 Usage:
   usage_service.collect
@@ -271,6 +308,33 @@ src-tauri/
 ```
 
 事件约定（**目标**）：切换/采集完成后可 `app.emit("provider-switched" | "account-switched" | "usage-updated", payload)`。**当前实现**以前端主动 refetch 为主，尚未统一 emit 事件桥。Chat 流式走 Tauri v2 `ipc::Channel<ChatEvent>`（非 SSE），阻塞 IO 经 `spawn_blocking` / hub blocking 封装。
+
+### 3.1 Adapter Runtime 进程边界（目标）
+
+当前工作区中，`src-tauri::AppState` 同时持有 `BridgeRuntimeHost`、process-local saga coordinator 与退出 barrier。这是可工作的进程内实现，不是最终部署边界。
+
+目标结构：
+
+```text
+React Adapter UI
+  → lib/backend/tauri/adapter.ts
+  → Tauri adapter command（薄映射）
+  → AdapterControlClient
+  → 用户级本地 IPC
+  → agenthub-adapterd（每个 canonical data dir 单实例）
+       ├─ AdapterRuntimeApplication   # local_bridge 完整 saga
+       ├─ BridgeRuntimeHost           # listener / drain / observed status
+       └─ agenthub-core services      # profile、Connection 引用、Provider 安全切换
+```
+
+进程边界不改变领域边界：
+
+- Connections 不拆进程；Account、Provider、ActiveBinding 仍由 `AccountService`、`ProviderService`、`ConnectionService` 管理。
+- sidecar 是 `local_bridge` runtime 与其 lifecycle mutation 的唯一进程 owner，但数据库/live 配置写入仍必须通过上述 core service 和跨进程 `LiveWriteAuthority`。
+- `native_endpoint` / `config_sync` 不依赖 sidecar。sidecar 不可用时它们仍应正常工作。
+- GUI 不直接持有第二个 host，也不跨 IPC 执行 saga 的后半段；否则会形成双主和跨进程半事务。
+- SQLite WAL 是共享持久化真源，但 `running` 是 sidecar 内存中的 observed truth。控制面不可达时由页面派生 `host_unavailable`，不得信任上次运行记录。
+- 当前与目标态、IPC、版本/schema 握手、SQLite shared/exclusive schema lease 与 migration 权威、锁序、更新/卸载 saga 及三阶段迁移详见 [Adapter Sidecar 目标架构与迁移方案](adapter-sidecar-design.md)。
 
 ## 4. `src` — React 前端
 
@@ -365,6 +429,7 @@ src/
 | 原文件 | 生产 | mock | façade |
 |---|---|---|---|
 | `account.ts` | `lib/backend/tauri/account.ts` | `dev/mocks/account.ts` | `lib/api/account.ts` |
+| `adapter.ts` | `lib/backend/tauri/adapter.ts` | `dev/mocks/adapter.ts` | `lib/api/adapter.ts` |
 | `agent.ts` | `lib/backend/tauri/agent.ts` | `dev/mocks/agent.ts` | `lib/api/agent.ts` |
 | `backup.ts` | `lib/backend/tauri/backup.ts` | `dev/mocks/backup.ts` | `lib/api/backup.ts` |
 | `chat.ts` | `lib/backend/tauri/chat.ts` | `dev/mocks/chat.ts` | `lib/api/chat.ts` |
@@ -373,6 +438,7 @@ src/
 | `doctor-map.ts` | 保留纯映射（无 MOCK fill） | — | 同左 |
 | `env.ts` | `lib/backend/tauri/env.ts` + `lib/env-plan.ts` | `dev/mocks/env.ts` | `lib/api/env.ts` |
 | `install.ts` | `lib/backend/tauri/install.ts` | `dev/mocks/install.ts` | `lib/api/install.ts` |
+| `mcp.ts` | `lib/backend/tauri/mcp.ts` | `dev/mocks/mcp.ts` | `lib/api/mcp.ts` |
 | `project.ts` | `lib/backend/tauri/project.ts` | `dev/mocks/project.ts` + fixtures | `lib/api/project.ts` |
 | `provider.ts` | `lib/backend/tauri/provider.ts` | `dev/mocks/provider.ts` | `lib/api/provider.ts` |
 | `settings.ts` | `lib/backend/tauri/settings.ts` | `dev/mocks/settings.ts` | `lib/api/settings.ts` |
@@ -403,7 +469,7 @@ DTO / mapper：`lib/backend/contracts/*-map.ts`。错误类型：`contracts/erro
 
 ### 4.6 页面与其它约定
 
-产品导航以 Connections 收拢账号/供应商。页面仍可 import `@/lib/api/*`（渐进迁移，第一阶段不强制改 pages）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
+产品导航以 Connections 收拢账号/供应商；Adapter 复用 Connection 引用，厂商、API 与 OAuth 的跨 Agent 判定统一见 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)；MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移，第一阶段不强制改 pages）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
 
 **未迁移 / 有意保留**：
 
@@ -470,6 +536,7 @@ CLI 与 GUI 共用数据目录与 per-agent 写锁（core 内文件锁，跨进�
 5. **skills 真源在 service** —— 矩阵与 lock 是跨 Agent 视图；Adapter 只提供目标目录（及未来落盘策略）。
 6. **runtime 与 agent 解耦** —— Node/npm 等是共享前置环境，装一次多渠道受益；卸载 Agent **不**卸载 Runtime。禁止在 Adapter 内各自 `Command::new("node")` 散落检测。
 7. **平台分流** —— `runtime::host_runtimes()` 决定 doctor/环境条探测集（PowerShell **仅 Windows**）；`runtime::native_install_requires()` 与 install catalog 决定 native 前置与展示命令（Windows `irm|iex` / macOS·Linux `curl|bash`）；Runtime 一键修复默认渠道 Windows=`winget`、macOS=`brew`。细节真源：[agenthub-plan.md §5.7.5](agenthub-plan.md)。
-7. **commands 一文件一模块、薄到只做校验** —— 参考项目里 290 个 command 全塞 lib.rs 的教训。
-8. **models 纯数据、credentials 脱敏边界清晰** —— 当前版本沿用现有存储方案，DTO 出 core 前集中脱敏，避免 API、CLI、日志泄漏完整凭据。
-9. **前端 invoke 单点 + mock 外置** —— 仅 `lib/backend/tauri/` 可 `invoke`；mock 只在 `dev/mocks/` 且仅由 `dev:mock` 注入；`build` 强制 Tauri；非 Tauri 生产页明确报错/unavailable。
+8. **commands 一文件一模块、薄到只做校验** —— 参考项目里 290 个 command 全塞 lib.rs 的教训。
+9. **models 纯数据、credentials 脱敏边界清晰** —— 当前版本沿用现有存储方案，DTO 出 core 前集中脱敏，避免 API、CLI、日志泄漏完整凭据。
+10. **前端 invoke 单点 + mock 外置** —— 仅 `lib/backend/tauri/` 可 `invoke`；mock 只在 `dev/mocks/` 且仅由 `dev:mock` 注入；`build` 强制 Tauri；非 Tauri 生产页明确报错/unavailable。
+11. **Bridge 数据面独立进程、Connections 领域不拆** —— `agenthub-adapterd` 只承接 `local_bridge` 的长驻 listener、协议转换和完整 saga；Account/Provider/ActiveBinding 继续由 core service 单点负责，避免按页面边界制造 `connectionsd` 或双写。

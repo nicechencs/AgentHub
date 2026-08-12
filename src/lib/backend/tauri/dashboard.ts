@@ -1,17 +1,37 @@
 import type { DashboardPort } from '@/lib/backend/contracts';
 import type { DashboardAlert } from '@/lib/types';
+import { logger } from '@/lib/logger';
+import { createTauriDoctorPort } from './doctor';
+import {
+  buildAlertsFromAgents,
+  dismissAlertLocal,
+  filterDismissedAlerts,
+} from './dashboard-alerts';
+
+const log = logger.scope('backend:tauri:dashboard');
 
 /**
- * 告警聚合尚未接线：生产返回空列表，不展示模拟通知。
+ * Production alerts derived from doctor-mapped agent status (auth / env / updates).
+ * No demo notifications. Dismiss is local until the condition fingerprint changes.
  */
 export function createTauriDashboardPort(): DashboardPort {
+  const doctor = createTauriDoctorPort();
+  let lastBuilt: DashboardAlert[] = [];
+
   return {
     async listAlerts(): Promise<DashboardAlert[]> {
-      return [];
+      try {
+        const mapped = await doctor.loadDoctorMapped();
+        lastBuilt = buildAlertsFromAgents(mapped.agents);
+        return filterDismissedAlerts(lastBuilt);
+      } catch (e) {
+        log.warn('listAlerts failed; returning empty', e);
+        return [];
+      }
     },
 
-    async dismissAlert(_id: string): Promise<void> {
-      // no-op until real alert source exists
+    async dismissAlert(id: string): Promise<void> {
+      dismissAlertLocal(id, lastBuilt);
     },
   };
 }

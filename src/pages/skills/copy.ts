@@ -200,6 +200,23 @@ export const skillsCopy = {
       title: '无法启用',
       description: reason,
     }),
+    disableFailed: (reason: string) => ({
+      title: '无法取消启用',
+      description: reason,
+    }),
+    enableOk: (agentName: string, skillName: string) => ({
+      title: `已启用到 ${agentName}`,
+      description: skillName,
+    }),
+    disableOk: (agentName: string, skillName: string) => ({
+      title: `已取消 ${agentName} 的启用`,
+      description: skillName,
+    }),
+    conflictPrompt: (agentName: string, skillName: string) => ({
+      title: `覆盖 ${agentName} 中的同名技能？`,
+      description: `「${skillName}」与共享库不同。覆盖后使用共享库版本。`,
+      actionLabel: '覆盖并启用' as const,
+    }),
     overwriteOk: (agentName: string, skillName: string) => ({
       title: `已启用到 ${agentName}`,
       description: skillName,
