@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ExternalLink, ShieldCheck } from 'lucide-react';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Badge } from '@/components/ui/badge';
@@ -5,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { openExternalLink } from '@/lib/open-external';
 import type {
   AdapterApplyPlan,
   AdapterBridgeRuntimeStatus,
@@ -29,6 +31,14 @@ export function isBridgeStopCapable(
   state: AdapterBridgeRuntimeStatus['state'] | undefined,
 ): boolean {
   return state === 'running' || state === 'degraded';
+}
+
+/** Small injectable seam that keeps the Adapter evidence path on the Tauri-safe opener. */
+export async function openAdapterEvidence(
+  url: string,
+  opener: (target: string) => Promise<void> = openExternalLink,
+): Promise<void> {
+  await opener(url);
 }
 
 export function AdapterPreviewResult({
@@ -72,6 +82,25 @@ export function AdapterPreviewResult({
   if (!analysis) return <p className="text-sm text-secondary">选择来源后自动生成预览。</p>;
 
   const support = supportBadge(analysis.support);
+  if (analysis.route === 'unsupported') {
+    return (
+      <div className="space-y-4 text-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="font-medium">暂未支持此组合</h2>
+          <Badge variant={support.variant}>{support.label}</Badge>
+          <ShieldCheck className="h-4 w-4 text-secondary" aria-label="不会执行更改" />
+        </div>
+        <p>{analysis.reason}</p>
+        <section className="space-y-1 rounded-btn border border-border bg-subtle p-3 text-secondary">
+          <h3 className="font-medium text-primary">暂未支持不等于连接失效</h3>
+          <p>本次不会写入配置、启动服务或改变当前连接。</p>
+          <p>下一步：继续使用原连接、改用目标 Agent 自身登录，或更换已支持的来源与目标组合。</p>
+        </section>
+        <EvidenceList evidence={analysis.evidence} />
+      </div>
+    );
+  }
+
   const availability = onApply ? null : futureAvailability(analysis.route);
   return (
     <div className="space-y-4 text-sm">
@@ -269,26 +298,41 @@ function StringList({ title, values, empty }: { title: string; values: string[];
 }
 
 function EvidenceList({ evidence }: Pick<AdapterRouteAnalysis, 'evidence'>) {
+  const [openError, setOpenError] = useState<unknown>(null);
+
+  const openEvidence = async (url: string) => {
+    setOpenError(null);
+    try {
+      await openAdapterEvidence(url);
+    } catch (error) {
+      setOpenError(error);
+    }
+  };
+
   return (
     <section>
-      <h3 className="font-medium">判定依据</h3>
+      <h3 className="font-medium">兼容性说明</h3>
       {evidence.length ? (
         <ul className="mt-1 space-y-1 text-secondary">
           {evidence.map((item) => (
             <li key={item.url}>
-              <a
+              <button
+                type="button"
                 className="inline-flex items-center gap-1 text-info hover:underline"
-                href={item.url}
-                target="_blank"
-                rel="noreferrer"
+                onClick={() => { void openEvidence(item.url); }}
               >
                 {item.label} <ExternalLink className="h-3 w-3" />
-              </a>
+              </button>
               <span className="ml-1 text-xs">验证于 {item.verifiedAt}</span>
             </li>
           ))}
         </ul>
       ) : <p className="mt-1 text-secondary">无可展示依据。</p>}
+      {openError ? (
+        <p className="mt-2 text-sm text-danger" role="alert">
+          {errorMessage(openError, '无法打开外部链接')}
+        </p>
+      ) : null}
     </section>
   );
 }

@@ -115,13 +115,13 @@ export function routeLabel(route: AdapterRouteAnalysis['route']): string {
   if (route === 'native_endpoint') return '原生端点';
   if (route === 'local_bridge') return '需要本地代理';
   if (route === 'config_sync') return '直接同步';
-  return '不支持';
+  return '暂未支持';
 }
 
 export function supportBadge(support: AdapterSupport): { label: string; variant: 'success' | 'warning' | 'default' } {
   if (support === 'stable') return { label: '稳定规则', variant: 'success' };
   if (support === 'experimental') return { label: '实验规则', variant: 'warning' };
-  return { label: '不支持', variant: 'default' };
+  return { label: '暂未支持', variant: 'default' };
 }
 
 export function futureAvailability(route: AdapterRouteAnalysis['route']): string | null {

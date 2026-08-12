@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import type {
   AdapterAction,
   AdapterApplyPlan,
@@ -24,8 +26,8 @@ import {
   routeLabel,
   sourceLabel,
 } from './index';
-import { isBridgeStopCapable } from './adapter-components';
-import { loadAdapterPageResources } from './adapter-model';
+import { AdapterPreviewResult, isBridgeStopCapable, openAdapterEvidence } from './adapter-components';
+import { loadAdapterPageResources, supportBadge } from './adapter-model';
 import type { Account, Provider } from '@/lib/types';
 
 const evidence = [{
@@ -83,10 +85,42 @@ describe('Adapter page view model', () => {
 
   it('shows unsupported without config writes', () => {
     const unsupported = plan('unsupported');
-    expect(routeLabel(unsupported.analysis.route)).toBe('不支持');
+    expect(routeLabel(unsupported.analysis.route)).toBe('暂未支持');
+    expect(supportBadge(unsupported.analysis.support).label).toBe('暂未支持');
     expect(futureAvailability(unsupported.analysis.route)).toBeNull();
     expect(unsupported.changes).toEqual([]);
     expect(canApplyAdapterPlan(unsupported)).toBe(false);
+  });
+
+  it('renders an actionable unsupported state without mutation controls', () => {
+    const unsupported = plan('unsupported');
+    unsupported.analysis.reason = '当前尚未完成上游授权、条款和协议兼容性验证。';
+    const markup = renderToStaticMarkup(
+      <AdapterPreviewResult
+        analysis={unsupported.analysis}
+        plan={unsupported}
+        loading={false}
+        error={null}
+        onRetry={vi.fn()}
+        onApply={vi.fn()}
+      />,
+    );
+    expect(markup).toContain('暂未支持此组合');
+    expect(markup).toContain('暂未支持不等于连接失效');
+    expect(markup).toContain('改用目标 Agent 自身登录');
+    expect(markup).not.toContain('应用配置');
+    expect(markup).not.toContain('启用本地桥接');
+    expect(markup).not.toContain('无需本地服务');
+  });
+
+  it('opens compatibility evidence through the injected external opener', async () => {
+    const opener = vi.fn().mockResolvedValue(undefined);
+    await openAdapterEvidence(evidence[0].url, opener);
+    expect(opener).toHaveBeenCalledWith(evidence[0].url);
+
+    const failure = new Error('system browser unavailable');
+    await expect(openAdapterEvidence(evidence[0].url, vi.fn().mockRejectedValue(failure)))
+      .rejects.toBe(failure);
   });
 
   it('marks preview-only config_sync as future availability', () => {
