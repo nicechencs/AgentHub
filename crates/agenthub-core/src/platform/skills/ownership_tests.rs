@@ -109,7 +109,7 @@ fn make_svc_db(source: PathBuf, claude: PathBuf, db: Database) -> SkillService {
 }
 
 fn tmp_db() -> (tempfile::TempDir, Database) {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = crate::utils::test_temp::real_tempdir();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     (dir, db)
 }
@@ -132,7 +132,7 @@ fn try_symlink_dir(target: &Path, link: &Path) -> bool {
 
 #[test]
 fn byte_identical_without_marker_not_managed() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -184,7 +184,7 @@ fn byte_identical_without_marker_not_managed() {
 
 #[test]
 fn platform_copy_marker_and_disable_idempotent() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -214,7 +214,7 @@ fn platform_copy_marker_and_disable_idempotent() {
 
 #[test]
 fn tampered_managed_copy_disable_conflicts() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -318,7 +318,7 @@ fn verified_marker_is_cleared_before_recycler_runs() {
 
 #[test]
 fn bootstrap_imports_valid_marker_and_is_idempotent() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -369,7 +369,7 @@ fn bootstrap_imports_valid_marker_and_is_idempotent() {
 
 #[test]
 fn marker_field_mismatches_reject_operations() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -421,7 +421,7 @@ fn marker_field_mismatches_reject_operations() {
 
 #[test]
 fn link_ownership_and_foreign_link_conflict() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     let foreign = root.path().join("foreign-target");
@@ -468,7 +468,7 @@ fn link_ownership_and_foreign_link_conflict() {
 
 #[test]
 fn ownership_store_symlink_is_rejected() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     let decoy = root.path().join("decoy");
@@ -504,7 +504,7 @@ fn ownership_store_symlink_is_rejected() {
 
 #[test]
 fn force_cannot_claim_unmarked_directory() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -529,7 +529,7 @@ fn force_cannot_claim_unmarked_directory() {
 
 #[test]
 fn force_refreshes_verified_managed_after_source_change() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -553,7 +553,7 @@ fn force_refreshes_verified_managed_after_source_change() {
 
 #[test]
 fn force_foreign_link_remains_conflict() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     let foreign = root.path().join("foreign");
@@ -576,7 +576,7 @@ fn force_foreign_link_remains_conflict() {
 
 #[test]
 fn malformed_marker_blocks_delete_and_records_conflict() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -620,7 +620,7 @@ fn malformed_marker_blocks_delete_and_records_conflict() {
 
 #[test]
 fn link_fallback_copy_writes_marker_and_disables() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -647,7 +647,7 @@ fn link_fallback_copy_writes_marker_and_disables() {
 fn non_default_revision_in_marker_and_bootstrap() {
     use crate::platform::skills::ownership::{fingerprint_tree_at, write_copy_ownership_marker};
 
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -708,7 +708,7 @@ fn non_default_revision_in_marker_and_bootstrap() {
 
 #[test]
 fn reconcile_unproject_conflict_records_observed_conflict() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -747,7 +747,7 @@ fn reconcile_unproject_conflict_records_observed_conflict() {
 
 #[test]
 fn ownership_store_dir_layout() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let skills = root.path().join("skills");
     assert_eq!(
         ownership_store_dir(&skills),

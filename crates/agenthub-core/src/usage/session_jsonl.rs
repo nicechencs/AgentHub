@@ -2032,16 +2032,16 @@ mod tests {
         }
         let models: std::collections::BTreeSet<_> =
             batch.events.iter().map(|e| e.model.as_str()).collect();
-        // Real machine has seen claude-opus-5 / claude-sonnet-5 / etc.
+        // Live Claude project logs may contain third-party models (custom
+        // providers). Only assert parser hygiene: no synthetic placeholders and
+        // at least one non-empty model id.
         assert!(
             models.iter().all(|m| *m != "<synthetic>"),
             "synthetic models should be filtered: {models:?}"
         );
         assert!(
-            models
-                .iter()
-                .any(|m| m.contains("claude") || *m == "opus" || *m == "sonnet" || *m == "unknown"),
-            "unexpected live claude models: {models:?}"
+            models.iter().any(|m| !m.trim().is_empty()),
+            "live claude parse produced empty model ids: {models:?}"
         );
     }
 

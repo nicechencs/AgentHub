@@ -253,10 +253,11 @@ impl AgentAdapter for CursorAdapter {
 
     fn install_channels(&self) -> Vec<InstallChannel> {
         // Native official script only — no npm package for Cursor Agent CLI.
+        // Windows: PowerShell irm|iex; macOS/Linux: curl|bash (no PowerShell).
         vec![InstallChannel {
             id: "native".into(),
             label: "Cursor Agent CLI 官方脚本".into(),
-            requires: vec![RuntimeId::PowerShell],
+            requires: runtime::native_install_requires(),
             min_runtime_notes: Some(
                 "Windows: irm 'https://cursor.com/install?win32=true' | iex; \
                  macOS/Linux: curl https://cursor.com/install -fsS | bash \
@@ -959,7 +960,13 @@ mod tests {
         let channels = CursorAdapter.install_channels();
         assert_eq!(channels.len(), 1);
         assert_eq!(channels[0].id, "native");
+        #[cfg(windows)]
         assert!(channels[0].requires.contains(&RuntimeId::PowerShell));
+        #[cfg(not(windows))]
+        assert!(
+            !channels[0].requires.contains(&RuntimeId::PowerShell),
+            "macOS/Linux native channel must not require PowerShell"
+        );
     }
 
     #[test]

@@ -27,6 +27,18 @@ describe('buildInstallPreview', () => {
     expect(lines.join('\n')).not.toContain('winget');
   });
 
+  it('does not suggest installing PowerShell on non-Windows previews', () => {
+    const lines = buildEnvInstallPreview(['powershell'], 'brew');
+    expect(lines.join('\n')).not.toContain('brew install');
+    expect(lines.join('\n').toLowerCase()).toContain('windows-only');
+  });
+
+  it('annotates upgrade with platform-aware underlying command', () => {
+    const upgrade = buildAgentInstallPreview('claude', 'upgrade', 'native', 'macos');
+    expect(upgrade[0]).toContain('agenthub agent upgrade claude');
+    expect(upgrade.join('\n')).toMatch(/underlying \(macos\)/i);
+  });
+
   it('handles empty targets', () => {
     expect(buildEnvInstallPreview([])).toEqual(['# no auto-install targets']);
   });

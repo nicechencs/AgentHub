@@ -30,6 +30,14 @@ export function runtimeRemediationsForPlatform(
   });
 }
 
+/** Shared runtimes relevant on the current host (PowerShell is Windows-only). */
+export function runtimesForPlatform(
+  platform: HostPlatform = 'unknown',
+): RuntimeMeta[] {
+  if (platform === 'windows') return RUNTIMES;
+  return RUNTIMES.filter((r) => r.id !== 'powershell');
+}
+
 /** 共享运行时元数据(docs/agenthub-plan.md §5.7.2) */
 export const RUNTIMES: RuntimeMeta[] = [
   {
@@ -91,7 +99,7 @@ export const RUNTIMES: RuntimeMeta[] = [
     name: 'PowerShell',
     shortName: 'PS',
     description:
-      'native 安装脚本运行时。Windows 可分别识别 5.1 与 7(pwsh)，任一可用即可；macOS 仅检测 pwsh。',
+      'Windows native 安装脚本运行时。可分别识别 5.1 与 7(pwsh)，任一可用即可。macOS/Linux 不检测 PowerShell，native 安装走官方 bash/sh。',
     canAutoInstall: false,
     remediations: [
       {
@@ -105,12 +113,7 @@ export const RUNTIMES: RuntimeMeta[] = [
         value:
           'https://learn.microsoft.com/powershell/scripting/install/installing-powershell',
         label: '安装 PowerShell 7',
-      },
-      {
-        kind: 'brew',
-        value: 'brew install --cask powershell',
-        label: '用 Homebrew 安装 PowerShell 7',
-        platform: 'macos',
+        platform: 'windows',
       },
     ],
   },

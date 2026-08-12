@@ -106,7 +106,7 @@ fn make_registry(claude: PathBuf, codex: PathBuf) -> AdapterRegistry {
 }
 
 fn tmp_db() -> (tempfile::TempDir, Database) {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = crate::utils::test_temp::real_tempdir();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     (dir, db)
 }
@@ -134,7 +134,7 @@ fn migration_applies_skill_assignment_tables_on_database_open() {
 
 #[test]
 fn enable_disable_desired_flips_and_observed() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     let codex = root.path().join("codex");
@@ -175,7 +175,7 @@ fn enable_disable_desired_flips_and_observed() {
 
 #[test]
 fn unsupported_agent_records_observed_and_keeps_desired() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     fs::create_dir_all(&source).unwrap();
     write_skill(&source, "demo", "# skill\n");
@@ -200,7 +200,7 @@ fn unsupported_agent_records_observed_and_keeps_desired() {
 
 #[test]
 fn conflict_without_force_keeps_desired_and_fs() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -228,7 +228,7 @@ fn conflict_without_force_keeps_desired_and_fs() {
 
 #[test]
 fn force_cannot_take_over_foreign_directory() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -257,7 +257,7 @@ fn force_cannot_take_over_foreign_directory() {
 
 #[test]
 fn force_refreshes_verified_managed_copy_after_source_update() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -286,7 +286,7 @@ fn force_refreshes_verified_managed_copy_after_source_update() {
 
 #[test]
 fn reconcile_is_idempotent() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -324,7 +324,7 @@ fn reconcile_is_idempotent() {
 fn bootstrap_imports_managed_copy_not_unmanaged() {
     use crate::platform::skills::ownership::{fingerprint_tree_at, write_copy_ownership_marker};
 
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     let codex = root.path().join("codex");
@@ -414,7 +414,7 @@ fn bootstrap_imports_managed_copy_not_unmanaged() {
 
 #[test]
 fn skill_service_without_db_keeps_fs_only_path() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let claude = root.path().join("claude");
     fs::create_dir_all(&source).unwrap();
@@ -430,7 +430,7 @@ fn skill_service_without_db_keeps_fs_only_path() {
 
 #[test]
 fn agent_key_target_registry_and_reconcile_are_open_and_stable() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     let future_root = root.path().join("future");
     fs::create_dir_all(&source).unwrap();
@@ -491,7 +491,7 @@ fn agent_key_target_registry_and_reconcile_are_open_and_stable() {
 
 #[test]
 fn reconcile_skill_reports_unregistered_valid_agent_key() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     fs::create_dir_all(&source).unwrap();
     write_skill(&source, "demo", "# skill");
@@ -521,7 +521,7 @@ fn reconcile_skill_reports_unregistered_valid_agent_key() {
 
 #[test]
 fn reconcile_skill_rejects_invalid_database_agent_key() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::utils::test_temp::real_tempdir();
     let source = root.path().join("source");
     fs::create_dir_all(&source).unwrap();
     write_skill(&source, "demo", "# skill");

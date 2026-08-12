@@ -72,7 +72,7 @@ Agent 安装状态、近 N 天 Token 趋势、各 Agent 用量分布、快捷切
 
 ### Agents — 运行时与安装
 
-检测共享 Runtime（Node / npm / PowerShell 等），按渠道一键安装或引导修复；环境未就绪时主操作是「修复环境」，而不是假装可装 Agent。
+检测共享 Runtime（Node / npm / Git；**Windows 另含 PowerShell**），按渠道一键安装或引导修复；环境未就绪时主操作是「修复环境」，而不是假装可装 Agent。macOS 不检测 PowerShell，native 安装走官方 bash/sh。
 
 ![Agents](docs/assets/screenshots/agents.png)
 
@@ -210,8 +210,11 @@ pnpm tauri:build:macos
 
 - Windows 仍是主要交付平台；Release 页面默认提供 Windows 安装包。
 - macOS Runtime 自动修复使用 Homebrew（`brew`）；没有 Homebrew 时只能打开官网或复制命令手动安装。
-- 依赖 Windows PowerShell 的 native 安装渠道在 macOS 上可能不可用，请优先选择 Agent 提供的 npm/Unix 渠道或官网安装方式。
+- **PowerShell 不是 macOS 共享 Runtime**：doctor / 环境条不探测 `pwsh`，native 渠道也不要求 PowerShell。
+- Agent 安装/升级底层命令按平台分流：Windows native 为 allowlist 的 `irm … | iex`；macOS/Linux native 为 allowlist 的 `curl … | bash`；npm 渠道各平台相同。仅 Windows 有 ps1 的 Agent（如 Codex native）在 macOS 上不会展示该 native 渠道，请用 npm 或官网方式。
 - Linux 尚未作为交付目标；macOS 与 Linux 的路径、Agent 能力和官方安装脚本仍可能存在差异。
+
+平台环境差异的完整约定见 [docs/agenthub-plan.md §5.7.5](docs/agenthub-plan.md)。
 
 ---
 

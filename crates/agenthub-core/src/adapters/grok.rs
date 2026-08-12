@@ -45,7 +45,7 @@ impl AgentAdapter for GrokAdapter {
         vec![InstallChannel {
             id: "native".into(),
             label: "Official native binary".into(),
-            requires: vec![RuntimeId::PowerShell],
+            requires: runtime::native_install_requires(),
             min_runtime_notes: None,
         }]
     }

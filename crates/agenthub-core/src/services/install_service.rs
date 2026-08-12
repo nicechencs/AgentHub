@@ -395,7 +395,7 @@ fn install_runtime_inner(
             let msg = if cfg!(windows) {
                 "PowerShell 不支持一键安装。Windows 通常自带 5.1；PowerShell 7 (pwsh) 需手动安装。任一带可用即可跑 native 安装脚本。"
             } else {
-                "PowerShell 不支持一键安装。macOS/Linux 请自行安装 PowerShell 7 (pwsh)；native 安装优先使用官方 sh 脚本。"
+                "macOS/Linux 不需要 PowerShell：native 安装使用官方 bash/sh 脚本。AgentHub 不会在此平台检测或安装 PowerShell。"
             };
             return Ok(InstallOutcome::failure(action, logs, msg));
         }

@@ -1,42 +1,53 @@
-import { RUNTIMES, RUNTIME_MAP } from '@/config/runtimes';
+import { RUNTIME_MAP, runtimesForPlatform } from '@/config/runtimes';
 import type { Backend, EnvPort } from '@/lib/backend/contracts';
 import { delay, randomLatency } from '@/dev/mocks/delay';
+import { detectHostPlatform } from '@/lib/platform-detect';
 import { loadJson, saveJson } from '@/lib/ui-preferences';
 import type { EnvStatus, RuntimeDetect, RuntimeId } from '@/lib/types';
 
 const STORAGE_KEY = 'agenthub:runtime-state';
 
-type RuntimeState = Record<
-  RuntimeId,
-  { status: EnvStatus; version?: string; path?: string }
+type RuntimeState = Partial<
+  Record<RuntimeId, { status: EnvStatus; version?: string; path?: string }>
 >;
 
-const DEFAULT_STATE: RuntimeState = {
-  nodejs: { status: 'missing' },
-  npm: { status: 'missing' },
-  powershell: {
-    status: 'ok',
-    version: '5.1',
-    path: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
-  },
-  git: { status: 'missing' },
-};
+function defaultState(): RuntimeState {
+  const platform = detectHostPlatform();
+  const state: RuntimeState = {
+    nodejs: { status: 'missing' },
+    npm: { status: 'missing' },
+    git: { status: 'missing' },
+  };
+  // PowerShell is a Windows-only shared runtime; omit on macOS/Linux mocks.
+  if (platform === 'windows') {
+    state.powershell = {
+      status: 'ok',
+      version: '5.1',
+      path: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+    };
+  }
+  return state;
+}
 
 function readState(): RuntimeState {
-  return loadJson<RuntimeState>(STORAGE_KEY, DEFAULT_STATE);
+  return loadJson<RuntimeState>(STORAGE_KEY, defaultState());
 }
 
 function writeState(state: RuntimeState): void {
   saveJson(STORAGE_KEY, state);
 }
 
-function toDetect(id: RuntimeId, s: RuntimeState[RuntimeId]): RuntimeDetect {
+function toDetect(
+  id: RuntimeId,
+  s: RuntimeState[RuntimeId] | undefined,
+): RuntimeDetect {
   const meta = RUNTIME_MAP[id];
+  const status = s?.status ?? 'missing';
   return {
     id,
-    status: s.status,
-    version: s.version,
-    path: s.path,
+    status,
+    version: s?.version,
+    path: s?.path,
     minRequired: meta.minVersion,
     remediations: meta.remediations,
   };
@@ -81,13 +92,14 @@ export function createMockEnvPort(_backend: Backend): EnvPort {
     async listRuntimes() {
       await delay(randomLatency(180, 320));
       const state = readState();
-      return RUNTIMES.map((m) => toDetect(m.id, state[m.id] ?? { status: 'missing' }));
+      const hostRuntimes = runtimesForPlatform(detectHostPlatform());
+      return hostRuntimes.map((m) => toDetect(m.id, state[m.id]));
     },
 
     async getRuntime(id) {
       await delay(randomLatency(180, 320));
       const state = readState();
-      return toDetect(id, state[id] ?? { status: 'missing' });
+      return toDetect(id, state[id]);
     },
 
     async installRuntimeDetailed(id, channel = 'winget') {
@@ -178,5 +190,5 @@ export async function simulateBrokenPath(id: RuntimeId = 'nodejs'): Promise<void
 
 export async function resetRuntimesDemo(): Promise<void> {
   await delay(100);
-  writeState({ ...DEFAULT_STATE });
+  writeState(defaultState());
 }
