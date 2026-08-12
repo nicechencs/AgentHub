@@ -34,6 +34,9 @@
     "release:check": "node scripts/release-metadata.mjs",
     "release:test": "node --test scripts/release-metadata.test.mjs scripts/build-latest-json.test.mjs",
     "release:update": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1",
+    "release:bump": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1 -BumpPatch -VersionOnly",
+    "release:bump:minor": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1 -BumpMinor -VersionOnly",
+    "release:bump:major": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1 -BumpMajor -VersionOnly",
     "release:update:publish": "node -e \"console.error('Local publishing is disabled; push the release branch and let .github/workflows/release.yml publish the release.'); process.exit(1)\""
   },
   "dependencies": {
