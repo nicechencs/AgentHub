@@ -40,6 +40,8 @@ pub async fn import_account_live(
     name: Option<String>,
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
+    let agent = parse_agent(&agent_id)?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
         import_account_live_inner(hub, &agent_id, name.as_deref())
     })
@@ -56,6 +58,8 @@ pub async fn add_api_key_account(
     env_key: Option<String>,
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
+    let agent = parse_agent(&agent_id)?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
         add_api_key_account_inner(hub, &agent_id, &key, label.as_deref(), env_key.as_deref())
     })
@@ -72,6 +76,8 @@ pub async fn update_api_key_account(
     key: Option<String>,
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
+    let agent = parse_agent(&agent_id)?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
         update_api_key_account_inner(
             hub,
@@ -92,6 +98,8 @@ pub async fn switch_account(
     id_or_label: String,
 ) -> Result<AccountSwitchResult, String> {
     let hub = state.hub_arc()?;
+    let agent = parse_agent(&agent_id)?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
         switch_account_inner(hub, &agent_id, &id_or_label)
     })
@@ -106,6 +114,8 @@ pub async fn delete_account(
     id_or_label: String,
 ) -> Result<(), String> {
     let hub = state.hub_arc()?;
+    let agent = parse_agent(&agent_id)?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
         delete_account_inner(hub, &agent_id, &id_or_label)
     })
@@ -120,8 +130,9 @@ pub async fn refresh_account_token(
     id_or_label: String,
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
+    let agent = parse_agent(&agent_id)?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
-        let agent = parse_agent(&agent_id)?;
         hub.accounts
             .refresh_token(&id_or_label, agent)
             .map(|a| a.redacted())
@@ -138,8 +149,9 @@ pub async fn refresh_account_quota(
     id_or_label: String,
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
+    let agent = parse_agent(&agent_id)?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
-        let agent = parse_agent(&agent_id)?;
         hub.accounts
             .refresh_quota(&id_or_label, agent)
             .map(|a| a.redacted())
