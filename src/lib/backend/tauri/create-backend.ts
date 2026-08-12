@@ -1,5 +1,6 @@
 import type { Backend, CreateBackend } from '@/lib/backend/contracts';
 import { createTauriAccountPort } from './account';
+import { createTauriAdapterPort } from './adapter';
 import { createTauriAgentPort } from './agent';
 import { createTauriBackupPort } from './backup';
 import { createTauriCatalogPort } from './catalog';
@@ -22,6 +23,7 @@ import { createTauriTrashPort } from './trash';
 export const createBackend: CreateBackend = () => {
   const backend = {
     account: createTauriAccountPort(),
+    adapter: createTauriAdapterPort(),
     catalog: createTauriCatalogPort(),
     config: createTauriConfigPort(),
     backup: createTauriBackupPort(),

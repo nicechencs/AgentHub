@@ -37,6 +37,7 @@ import type {
 import type { UsageAvailability, UsageQuery } from './usage-types';
 import type { ConfigPort } from './config-types';
 import type { UpdatePort } from './update-types';
+import type { AdapterPort } from './adapter';
 import { normalizeAuthHealth } from './auth-state';
 
 /** PKCE start result from backend. */
@@ -401,6 +402,8 @@ export type { McpPort } from './mcp-types';
 
 export interface Backend {
   account: AccountPort;
+  /** Read-only route compatibility preview; does not apply or start anything. */
+  adapter: AdapterPort;
   agent: AgentPort;
   /** Read-only agent directory (keys, capabilities, install channels). */
   catalog: AgentCatalogPort;
