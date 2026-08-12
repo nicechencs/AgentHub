@@ -109,12 +109,14 @@ pub(crate) fn parse_file_for_agent_id(
     path: &Path,
     repo: &UsageRepo,
 ) -> Result<FileBatch> {
-    let source = builtin_usage_registry().get_agent_id(agent).ok_or_else(|| {
-        AppError::InvalidArg(format!(
-            "no usage source registered for agent {}",
-            agent.as_str()
-        ))
-    })?;
+    let source = builtin_usage_registry()
+        .get_agent_id(agent)
+        .ok_or_else(|| {
+            AppError::InvalidArg(format!(
+                "no usage source registered for agent {}",
+                agent.as_str()
+            ))
+        })?;
     parse_one_file(source.as_ref(), agent, path, repo)
 }
 

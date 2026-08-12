@@ -18,10 +18,7 @@ impl SkillSourceService {
     }
 
     /// Returns `(package_dir, optional_cleanup_dir, kind, locator)`.
-    pub fn materialize(
-        &self,
-        source: &str,
-    ) -> Result<(PathBuf, Option<PathBuf>, String, String)> {
+    pub fn materialize(&self, source: &str) -> Result<(PathBuf, Option<PathBuf>, String, String)> {
         materialize_install_package(source)
     }
 
@@ -67,7 +64,9 @@ pub(crate) fn infer_skill_id(package_dir: &Path, source: &str) -> Result<String>
 }
 
 /// Returns (package_dir, optional_cleanup_dir, kind, locator).
-pub(crate) fn materialize_install_package(source: &str) -> Result<(PathBuf, Option<PathBuf>, String, String)> {
+pub(crate) fn materialize_install_package(
+    source: &str,
+) -> Result<(PathBuf, Option<PathBuf>, String, String)> {
     let path = PathBuf::from(source);
     if path.is_dir() {
         return Ok((
@@ -208,4 +207,3 @@ pub(crate) fn extract_zip_file(zip: &Path, dest: &Path) -> Result<()> {
         }
     }
 }
-

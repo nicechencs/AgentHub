@@ -16,8 +16,8 @@ pub use catalog::{
     OAuthFlowKind, OAuthLoginOption,
 };
 pub use device::{
-    complete_device_oauth, poll_device_oauth, start_device_oauth, DeviceOAuthPoll,
-    DeviceOAuthStart, DeviceOAuthStatus,
+    complete_device_oauth, device_oauth_agent, poll_device_oauth, start_device_oauth,
+    DeviceOAuthPoll, DeviceOAuthStart, DeviceOAuthStatus,
 };
 pub use identity::{
     apply_identity_to_credentials, decode_jwt_payload, extract_oauth_identity, identity_extra,
@@ -215,6 +215,13 @@ pub fn wait_oauth(state: &str, timeout_secs: u64) -> Result<OAuthSessionInfo> {
             }
         }
     }
+}
+
+/// Resolve the target agent of an existing PKCE session without waiting or
+/// changing its state. UI callers use this to take the matching lifecycle
+/// lock before completing a flow that writes account/auth data.
+pub fn oauth_session_info(state: &str) -> Result<OAuthSessionInfo> {
+    store().get_info(state)
 }
 
 /// Exchange code for tokens and persist as pool account (does not switch live).

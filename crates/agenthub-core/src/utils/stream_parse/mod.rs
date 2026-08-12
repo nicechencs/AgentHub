@@ -78,10 +78,7 @@ impl StreamSession {
                 process_mode = process_mode.as_str(),
                 "structured stream session open"
             );
-        } else if structured_requested
-            && process_mode != ProcessMode::Text
-            && parser.is_none()
-        {
+        } else if structured_requested && process_mode != ProcessMode::Text && parser.is_none() {
             // Caller asked for structured decoding but no parser is registered —
             // fall back to text chunks so the session still works.
             tracing::warn!(

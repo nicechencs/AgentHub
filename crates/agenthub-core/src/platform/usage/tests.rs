@@ -241,9 +241,7 @@ fn token_layout_repair_runs_once_then_skips() {
     let service = UsageService::with_registry(db.clone(), UsageSourceRegistry::new());
     let _r1 = service.collect(Some(AgentId::Codex)).unwrap();
     assert_eq!(
-        db.get_setting("usage_token_layout")
-            .unwrap()
-            .as_deref(),
+        db.get_setting("usage_token_layout").unwrap().as_deref(),
         Some("3")
     );
     assert!(
@@ -262,9 +260,7 @@ fn token_layout_repair_runs_once_then_skips() {
     seed();
     let _r2 = service.collect(Some(AgentId::Codex)).unwrap();
     assert_eq!(
-        db.get_setting("usage_token_layout")
-            .unwrap()
-            .as_deref(),
+        db.get_setting("usage_token_layout").unwrap().as_deref(),
         Some("3")
     );
     assert_eq!(

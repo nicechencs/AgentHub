@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use crate::error::{AppError, Result};
 use crate::models::{
     AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
-    InstallChannel, LiveAccount, RunOptions, RunSpec, RuntimeId,
+    InstallChannel, LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
 use crate::utils::paths::{agent_home, home_dir};

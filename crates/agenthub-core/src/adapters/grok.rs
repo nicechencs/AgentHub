@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::error::{AppError, Result};
 use crate::models::{
     AccountKind, AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult,
-    InstallChannel, LiveAccount, RunOptions, RunSpec, RuntimeId,
+    InstallChannel, LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
 use crate::utils::atomic::atomic_write;

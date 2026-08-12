@@ -61,10 +61,7 @@ impl StreamParserRegistry {
     }
 
     /// Require a parser by its native key or return typed unsupported.
-    pub fn require_key(
-        &self,
-        key: &AgentKey,
-    ) -> Result<Arc<dyn StreamParser>, StreamParseError> {
+    pub fn require_key(&self, key: &AgentKey) -> Result<Arc<dyn StreamParser>, StreamParseError> {
         self.get(key)
             .ok_or_else(|| StreamParseError::unsupported_key(key))
     }

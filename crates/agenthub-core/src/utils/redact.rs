@@ -71,11 +71,7 @@ pub fn redact_text(input: &str) -> String {
     let mut out = redact_url_userinfo(input);
 
     // authorization: Bearer xxx / Bearer xxx
-    out = regex_replace_static(
-        &out,
-        r"(?i)(bearer\s+)[a-z0-9._\-+/=]{8,}",
-        "${1}***",
-    );
+    out = regex_replace_static(&out, r"(?i)(bearer\s+)[a-z0-9._\-+/=]{8,}", "${1}***");
 
     // secret_key=value or "api_key": "..."
     out = regex_replace_static(
@@ -85,7 +81,15 @@ pub fn redact_text(input: &str) -> String {
     );
 
     // Common token prefixes (keep short head for support)
-    for prefix in ["sk-", "xai-", "ghp_", "gho_", "github_pat_", "xoxb-", "xoxp-"] {
+    for prefix in [
+        "sk-",
+        "xai-",
+        "ghp_",
+        "gho_",
+        "github_pat_",
+        "xoxb-",
+        "xoxp-",
+    ] {
         out = redact_prefixed_tokens(&out, prefix);
     }
 
@@ -434,7 +438,10 @@ mod tests {
         let s = redact_url_userinfo(
             "git clone failed from https://user:s3cret-token@github.com/org/repo.git#main",
         );
-        assert!(s.contains("https://***@github.com/org/repo.git#main"), "{s}");
+        assert!(
+            s.contains("https://***@github.com/org/repo.git#main"),
+            "{s}"
+        );
         assert!(!s.contains("s3cret-token"), "{s}");
         assert!(!s.contains("user:"), "{s}");
 

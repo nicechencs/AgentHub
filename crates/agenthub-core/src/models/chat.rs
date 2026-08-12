@@ -142,9 +142,7 @@ pub enum ProcessStep {
         result: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
-    Text {
-        text: String,
-    },
+    Text { text: String },
     #[serde(rename_all = "camelCase")]
     Raw {
         text: String,
@@ -152,9 +150,7 @@ pub enum ProcessStep {
         note: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
-    Error {
-        message: String,
-    },
+    Error { message: String },
 }
 
 impl ProcessStep {
@@ -175,10 +171,7 @@ impl ProcessStep {
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum ChatEvent {
     #[serde(rename_all = "camelCase")]
-    Started {
-        turn: i64,
-        agents: Vec<AgentId>,
-    },
+    Started { turn: i64, agents: Vec<AgentId> },
     #[serde(rename_all = "camelCase")]
     AgentStarted {
         turn: i64,
@@ -206,14 +199,9 @@ pub enum ChatEvent {
         message: ChatMessage,
     },
     #[serde(rename_all = "camelCase")]
-    Finished {
-        turn: i64,
-        ok: bool,
-    },
+    Finished { turn: i64, ok: bool },
     #[serde(rename_all = "camelCase")]
-    Error {
-        message: String,
-    },
+    Error { message: String },
 }
 
 /// Process-level events used by `RunService::run_each` (no Tauri types).
@@ -221,10 +209,7 @@ pub enum ChatEvent {
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum RunEvent {
     #[serde(rename_all = "camelCase")]
-    Started {
-        agent: AgentId,
-        command: String,
-    },
+    Started { agent: AgentId, command: String },
     #[serde(rename_all = "camelCase")]
     Chunk {
         agent: AgentId,
@@ -233,14 +218,9 @@ pub enum RunEvent {
     },
     /// Decoded process step from structured CLI stdout.
     #[serde(rename_all = "camelCase")]
-    Step {
-        agent: AgentId,
-        step: ProcessStep,
-    },
+    Step { agent: AgentId, step: ProcessStep },
     #[serde(rename_all = "camelCase")]
-    Finished {
-        agent: AgentId,
-    },
+    Finished { agent: AgentId },
 }
 
 #[cfg(test)]
@@ -264,7 +244,10 @@ mod tests {
             ChatMessageStatus::parse("canceled"),
             Some(ChatMessageStatus::Cancelled)
         );
-        assert_eq!(ChatMessageStatus::parse("running"), Some(ChatMessageStatus::Running));
+        assert_eq!(
+            ChatMessageStatus::parse("running"),
+            Some(ChatMessageStatus::Running)
+        );
     }
 
     #[test]

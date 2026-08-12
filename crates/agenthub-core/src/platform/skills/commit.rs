@@ -255,10 +255,7 @@ fn compensate_failed_commit(
     if errors.is_empty() {
         Ok(())
     } else {
-        Err(AppError::message(
-            "skill.commit",
-            errors.join("; "),
-        ))
+        Err(AppError::message("skill.commit", errors.join("; ")))
     }
 }
 

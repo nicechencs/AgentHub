@@ -175,10 +175,7 @@ impl CapabilityState {
 
     /// `Full` or `Partial` — callers may proceed.
     pub fn is_usable(self) -> bool {
-        matches!(
-            self.level,
-            CapabilityLevel::Full | CapabilityLevel::Partial
-        )
+        matches!(self.level, CapabilityLevel::Full | CapabilityLevel::Partial)
     }
 }
 

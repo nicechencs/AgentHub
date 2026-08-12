@@ -76,12 +76,10 @@ pub fn refresh_quota_reset_label(account: &mut Account, now: DateTime<Utc>) -> b
         .and_then(|v| v.as_str())
         .and_then(parse_rfc3339);
 
-    let label5 = at5.map(|at| {
-        format_reset_in(clamp_reset_after((at - now).num_seconds(), 5 * 3600))
-    });
-    let label7 = at7.map(|at| {
-        format_reset_in(clamp_reset_after((at - now).num_seconds(), 7 * 24 * 3600))
-    });
+    let label5 =
+        at5.map(|at| format_reset_in(clamp_reset_after((at - now).num_seconds(), 5 * 3600)));
+    let label7 =
+        at7.map(|at| format_reset_in(clamp_reset_after((at - now).num_seconds(), 7 * 24 * 3600)));
 
     let zero_5h = at5.map(|t| t <= now).unwrap_or(false);
     let zero_7d = at7.map(|t| t <= now).unwrap_or(false);
@@ -91,7 +89,10 @@ pub fn refresh_quota_reset_label(account: &mut Account, now: DateTime<Utc>) -> b
     };
     let mut dirty = false;
     if let Some(ref label) = label5 {
-        let prev = obj.get("quotaResetIn").and_then(|v| v.as_str()).unwrap_or("");
+        let prev = obj
+            .get("quotaResetIn")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         if prev != label {
             obj.insert("quotaResetIn".into(), json!(label));
             dirty = true;
@@ -137,10 +138,11 @@ pub fn quota_is_stale(account: &Account, now: DateTime<Utc>) -> bool {
             && account.extra.get("quota7dPct").is_none();
     };
     match DateTime::parse_from_rfc3339(raw) {
-        Ok(dt) => now.signed_duration_since(dt.with_timezone(&Utc))
-            >= ChronoDuration::from_std(ACCOUNT_QUOTA_CACHE_TTL).unwrap_or_else(|_| {
-                ChronoDuration::minutes(10)
-            }),
+        Ok(dt) => {
+            now.signed_duration_since(dt.with_timezone(&Utc))
+                >= ChronoDuration::from_std(ACCOUNT_QUOTA_CACHE_TTL)
+                    .unwrap_or_else(|_| ChronoDuration::minutes(10))
+        }
         Err(_) => true,
     }
 }
@@ -206,7 +208,11 @@ pub fn try_refresh_account_quota(account: &mut Account, force: bool) -> bool {
     }
 }
 
-pub fn apply_quota_snapshot(account: &mut Account, snap: &QuotaSnapshot, now: DateTime<Utc>) -> bool {
+pub fn apply_quota_snapshot(
+    account: &mut Account,
+    snap: &QuotaSnapshot,
+    now: DateTime<Utc>,
+) -> bool {
     if !account.extra.is_object() {
         account.extra = json!({});
     }
@@ -359,10 +365,16 @@ fn probe_codex_rate_limit_headers(
             ..Default::default()
         });
     };
-    Ok(normalize_codex_snapshot_to_quota(&raw, now, "codex_responses_headers"))
+    Ok(normalize_codex_snapshot_to_quota(
+        &raw,
+        now,
+        "codex_responses_headers",
+    ))
 }
 
-fn extract_codex_headers_from_ureq(resp: &ureq::Response) -> std::collections::HashMap<String, String> {
+fn extract_codex_headers_from_ureq(
+    resp: &ureq::Response,
+) -> std::collections::HashMap<String, String> {
     let mut m = std::collections::HashMap::new();
     for key in [
         "x-codex-primary-used-percent",
@@ -408,7 +420,10 @@ const GROK_CLI_VERSION: &str = "0.2.114";
 
 fn fetch_grok_quota(account: &Account) -> Result<QuotaSnapshot> {
     let access = extract_access_token(account).ok_or_else(|| {
-        AppError::message("account.quota", "no access token/key for Grok billing probe")
+        AppError::message(
+            "account.quota",
+            "no access token/key for Grok billing probe",
+        )
     })?;
     let now = Utc::now();
 
@@ -424,11 +439,7 @@ fn fetch_grok_quota(account: &Account) -> Result<QuotaSnapshot> {
         ));
     }
 
-    let snap = parse_grok_billing(
-        weekly_body.as_ref(),
-        monthly_body.as_ref(),
-        now,
-    );
+    let snap = parse_grok_billing(weekly_body.as_ref(), monthly_body.as_ref(), now);
     if snap.is_empty() && snap.plan_type.is_none() {
         return Err(AppError::message(
             "account.quota",
@@ -449,9 +460,9 @@ fn http_get_json_grok_billing(url: &str, access: &str) -> Result<Value> {
         .set("x-grok-client-version", GROK_CLI_VERSION)
         .set("User-Agent", &ua);
     req = req.timeout(ACCOUNT_QUOTA_HTTP_TIMEOUT);
-    let resp = req
-        .call()
-        .map_err(|e| AppError::message("account.quota", format!("Grok billing request failed: {e}")))?;
+    let resp = req.call().map_err(|e| {
+        AppError::message("account.quota", format!("Grok billing request failed: {e}"))
+    })?;
     let status = resp.status();
     let body: Value = resp.into_json().map_err(|e| {
         AppError::message("account.quota", format!("invalid Grok billing JSON: {e}"))
@@ -507,7 +518,10 @@ pub fn parse_grok_billing(
                 }
             }
         }
-        if let Some(period) = cfg.get("currentPeriod").or_else(|| cfg.get("current_period")) {
+        if let Some(period) = cfg
+            .get("currentPeriod")
+            .or_else(|| cfg.get("current_period"))
+        {
             if let Some(end) = period
                 .get("end")
                 .and_then(|v| v.as_str())
@@ -605,9 +619,9 @@ fn http_get_json(url: &str, headers: &[(&str, &str)]) -> Result<Value> {
         .call()
         .map_err(|e| AppError::message("account.quota", format!("quota request failed: {e}")))?;
     let status = resp.status();
-    let body: Value = resp.into_json().map_err(|e| {
-        AppError::message("account.quota", format!("invalid quota JSON: {e}"))
-    })?;
+    let body: Value = resp
+        .into_json()
+        .map_err(|e| AppError::message("account.quota", format!("invalid quota JSON: {e}")))?;
     if !(200..300).contains(&status) {
         let msg = body
             .get("error")
@@ -778,7 +792,10 @@ pub fn parse_openai_wham_usage(body: &Value, now: DateTime<Utc>) -> QuotaSnapsho
 
     // Prefer codex metered feature when present (bengalfox / desktop).
     let mut rate = body.get("rate_limit");
-    if let Some(arr) = body.get("additional_rate_limits").and_then(|v| v.as_array()) {
+    if let Some(arr) = body
+        .get("additional_rate_limits")
+        .and_then(|v| v.as_array())
+    {
         for item in arr {
             let feature = item
                 .get("metered_feature")
@@ -809,7 +826,10 @@ fn rate_limit_json_to_codex_raw(rate: Option<&Value>) -> CodexRawSnapshot {
         raw.primary_window_mins = window_minutes_from_json(w);
         // Prefer reset_after; only fall back to absolute reset_at if after missing.
         if raw.primary_reset_after.is_none() {
-            if let Some(at) = w.get("reset_at").and_then(|v| v.as_i64()).and_then(parse_unix_timestamp)
+            if let Some(at) = w
+                .get("reset_at")
+                .and_then(|v| v.as_i64())
+                .and_then(parse_unix_timestamp)
             {
                 let after = (at - Utc::now()).num_seconds();
                 raw.primary_reset_after = Some(after.max(0));
@@ -821,7 +841,10 @@ fn rate_limit_json_to_codex_raw(rate: Option<&Value>) -> CodexRawSnapshot {
         raw.secondary_reset_after = w.get("reset_after_seconds").and_then(|v| v.as_i64());
         raw.secondary_window_mins = window_minutes_from_json(w);
         if raw.secondary_reset_after.is_none() {
-            if let Some(at) = w.get("reset_at").and_then(|v| v.as_i64()).and_then(parse_unix_timestamp)
+            if let Some(at) = w
+                .get("reset_at")
+                .and_then(|v| v.as_i64())
+                .and_then(parse_unix_timestamp)
             {
                 let after = (at - Utc::now()).num_seconds();
                 raw.secondary_reset_after = Some(after.max(0));
@@ -983,7 +1006,8 @@ fn extract_chatgpt_account_id(account: &Account) -> Option<String> {
         c.get("account_id").and_then(|v| v.as_str()),
         c.get("chatgpt_account_id").and_then(|v| v.as_str()),
         extra.get("accountId").and_then(|v| v.as_str()),
-        c.pointer("/body/tokens/account_id").and_then(|v| v.as_str()),
+        c.pointer("/body/tokens/account_id")
+            .and_then(|v| v.as_str()),
         c.pointer("/body/account/id").and_then(|v| v.as_str()),
     ]
     .into_iter()
@@ -1315,8 +1339,16 @@ mod tests {
             }
         });
         let snap = parse_openai_wham_usage(&body, now);
-        assert_eq!(snap.quota5h_pct, Some(42.5), "5h must come from secondary (18000s)");
-        assert_eq!(snap.quota7d_pct, Some(18.0), "7d must come from primary (604800s)");
+        assert_eq!(
+            snap.quota5h_pct,
+            Some(42.5),
+            "5h must come from secondary (18000s)"
+        );
+        assert_eq!(
+            snap.quota7d_pct,
+            Some(18.0),
+            "7d must come from primary (604800s)"
+        );
         assert_eq!(snap.plan_type.as_deref(), Some("prolite"));
         let r5 = snap.reset_5h_at.expect("5h reset");
         let r7 = snap.reset_7d_at.expect("7d reset");
@@ -1328,9 +1360,16 @@ mod tests {
         // 5h row uses only 5h reset (~2h), never weekly remaining.
         assert!(label.starts_with("2h"), "label={label}");
         let label7 = snap.reset_in_label_7d(now).unwrap();
-        assert!(label7.starts_with("1d") || label7.contains("24h") || label7.starts_with("1d0h") || label7.contains("后重置"));
+        assert!(
+            label7.starts_with("1d")
+                || label7.contains("24h")
+                || label7.starts_with("1d0h")
+                || label7.contains("后重置")
+        );
         // 86400s = 1d exactly
-        assert!(label7.starts_with("1d") || label7 == "24h00m 后重置" || label7.starts_with("1d0h"));
+        assert!(
+            label7.starts_with("1d") || label7 == "24h00m 后重置" || label7.starts_with("1d0h")
+        );
     }
 
     #[test]
@@ -1352,7 +1391,10 @@ mod tests {
             rem7 <= 7 * 24 * 3600 + 120,
             "7d remaining {rem7}s must not exceed 7d window"
         );
-        assert!(rem7 >= 7 * 24 * 3600 - 5, "should clamp near full 7d, got {rem7}");
+        assert!(
+            rem7 >= 7 * 24 * 3600 - 5,
+            "should clamp near full 7d, got {rem7}"
+        );
         let rem5 = (snap.reset_5h_at.unwrap() - now).num_seconds();
         assert!(
             rem5 <= 5 * 3600 + 120,
@@ -1439,9 +1481,8 @@ mod tests {
             use base64::engine::general_purpose::URL_SAFE_NO_PAD;
             use base64::Engine;
             let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
-            let payload = URL_SAFE_NO_PAD.encode(
-                json!({"sub":"u","exp": access_exp}).to_string().as_bytes(),
-            );
+            let payload =
+                URL_SAFE_NO_PAD.encode(json!({"sub":"u","exp": access_exp}).to_string().as_bytes());
             format!("{header}.{payload}.sig")
         };
         let id_token = {
@@ -1479,9 +1520,15 @@ mod tests {
             "must use access_token exp, not expired id_token"
         );
         let exp = acc.extra.get("expiresAt").and_then(|v| v.as_str()).unwrap();
-        let rem = (DateTime::parse_from_rfc3339(exp).unwrap().with_timezone(&Utc) - Utc::now())
-            .num_seconds();
-        assert!(rem > 100 * 3600, "remaining should be ~200h from access, got {rem}");
+        let rem = (DateTime::parse_from_rfc3339(exp)
+            .unwrap()
+            .with_timezone(&Utc)
+            - Utc::now())
+        .num_seconds();
+        assert!(
+            rem > 100 * 3600,
+            "remaining should be ~200h from access, got {rem}"
+        );
     }
 
     #[test]
@@ -1503,8 +1550,15 @@ mod tests {
             updated_at: "t".into(),
         };
         assert!(refresh_quota_reset_label(&mut acc, Utc::now()));
-        let label = acc.extra.get("quotaResetIn").and_then(|v| v.as_str()).unwrap();
-        assert!(label.starts_with("1h"), "expected ~1h remaining, got {label}");
+        let label = acc
+            .extra
+            .get("quotaResetIn")
+            .and_then(|v| v.as_str())
+            .unwrap();
+        assert!(
+            label.starts_with("1h"),
+            "expected ~1h remaining, got {label}"
+        );
         assert!(label.contains("后重置"));
     }
 
@@ -1543,8 +1597,15 @@ mod tests {
             updated_at: "t".into(),
         };
         assert!(heal_token_expiry(&mut acc));
-        assert!(acc.extra.get("expiresAt").and_then(|v| v.as_str()).is_some());
-        assert_eq!(acc.extra.get("tokenExpired").and_then(|v| v.as_bool()), Some(false));
+        assert!(acc
+            .extra
+            .get("expiresAt")
+            .and_then(|v| v.as_str())
+            .is_some());
+        assert_eq!(
+            acc.extra.get("tokenExpired").and_then(|v| v.as_bool()),
+            Some(false)
+        );
         assert!(acc
             .credentials
             .get("access_token")
@@ -1576,8 +1637,14 @@ mod tests {
             source: "test",
         };
         assert!(apply_quota_snapshot(&mut acc, &snap, now));
-        assert_eq!(acc.extra.get("quota5hPct").and_then(|v| v.as_i64()), Some(62));
-        assert_eq!(acc.extra.get("quota7dPct").and_then(|v| v.as_i64()), Some(10));
+        assert_eq!(
+            acc.extra.get("quota5hPct").and_then(|v| v.as_i64()),
+            Some(62)
+        );
+        assert_eq!(
+            acc.extra.get("quota7dPct").and_then(|v| v.as_i64()),
+            Some(10)
+        );
         assert!(acc
             .extra
             .get("quota5hResetAt")

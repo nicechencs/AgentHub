@@ -184,7 +184,8 @@ impl ChatRepo {
 
     /// Next turn number for a conversation (max+1, or 1 if empty).
     pub fn next_turn(&self, conversation_id: &str) -> Result<i64> {
-        self.db.with_conn(|conn| next_turn_conn(conn, conversation_id))
+        self.db
+            .with_conn(|conn| next_turn_conn(conn, conversation_id))
     }
 
     /// Atomically allocate the next turn and insert the user message plus agent

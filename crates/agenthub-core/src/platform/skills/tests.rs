@@ -6,6 +6,7 @@ use std::path::Path;
 
 use crate::models::SkillSourceRecord;
 
+use super::fs_safe::collect_regular_files;
 use super::git_update::parse_git_locator;
 use super::lockfile::{skill_lock_file, skill_lock_load, skill_lock_remove, skill_lock_upsert};
 use super::packages::{
@@ -13,7 +14,6 @@ use super::packages::{
     SkillPackageService,
 };
 use super::sources::{ensure_skill_md, infer_skill_id, SkillSourceService};
-use super::fs_safe::collect_regular_files;
 
 #[test]
 fn git_locator_splits_branch() {
@@ -32,10 +32,7 @@ fn skill_lock_roundtrip_upsert_and_remove() {
     fs::create_dir_all(&root).unwrap();
 
     assert!(skill_lock_load(&root).unwrap().is_empty());
-    assert_eq!(
-        skill_lock_file(&root),
-        root.join(".skill-lock.json")
-    );
+    assert_eq!(skill_lock_file(&root), root.join(".skill-lock.json"));
 
     let rec = SkillSourceRecord {
         kind: "local".into(),
@@ -66,10 +63,7 @@ fn ensure_skill_md_and_infer_id() {
     assert!(ensure_skill_md(&pkg).is_err());
     fs::write(pkg.join("SKILL.md"), "# hi\n").unwrap();
     ensure_skill_md(&pkg).unwrap();
-    assert_eq!(
-        infer_skill_id(&pkg, r"C:\other\path").unwrap(),
-        "my-skill"
-    );
+    assert_eq!(infer_skill_id(&pkg, r"C:\other\path").unwrap(), "my-skill");
 }
 
 #[test]
@@ -80,14 +74,15 @@ fn source_service_materializes_local_dir_without_network() {
     fs::write(pkg.join("SKILL.md"), "---\nname: L\n---\n").unwrap();
 
     let sources = SkillSourceService::new();
-    let (dir, cleanup, kind, locator) = sources
-        .materialize(pkg.to_str().unwrap())
-        .unwrap();
+    let (dir, cleanup, kind, locator) = sources.materialize(pkg.to_str().unwrap()).unwrap();
     assert!(cleanup.is_none());
     assert_eq!(kind, "local");
     assert_eq!(locator, pkg.to_str().unwrap());
     sources.ensure_skill_md(&dir).unwrap();
-    assert_eq!(sources.infer_skill_id(&dir, &locator).unwrap(), "local-skill");
+    assert_eq!(
+        sources.infer_skill_id(&dir, &locator).unwrap(),
+        "local-skill"
+    );
 }
 
 #[test]

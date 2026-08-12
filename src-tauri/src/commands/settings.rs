@@ -185,20 +185,38 @@ mod tests {
 
     #[test]
     fn app_state_syncs_close_to_tray_flag_after_setting_write() {
-        use std::sync::Arc;
         use crate::state::AppState;
+        use std::sync::Arc;
 
         let (_dir, hub) = hub_tmp();
         let state = AppState::from_hub(Ok(Arc::new(hub)));
         assert!(state.close_to_tray());
 
         // Mimic set_setting success path: DB write then flag sync.
-        state.hub().unwrap().settings.set("close_to_tray", "false").unwrap();
+        state
+            .hub()
+            .unwrap()
+            .settings
+            .set("close_to_tray", "false")
+            .unwrap();
         state.sync_setting_flag("close_to_tray", "false");
         assert!(!state.close_to_tray());
-        assert!(!state.hub().unwrap().settings.get_all().unwrap().close_to_tray);
+        assert!(
+            !state
+                .hub()
+                .unwrap()
+                .settings
+                .get_all()
+                .unwrap()
+                .close_to_tray
+        );
 
-        state.hub().unwrap().settings.set("close_to_tray", "true").unwrap();
+        state
+            .hub()
+            .unwrap()
+            .settings
+            .set("close_to_tray", "true")
+            .unwrap();
         state.sync_setting_flag("close_to_tray", "true");
         assert!(state.close_to_tray());
     }

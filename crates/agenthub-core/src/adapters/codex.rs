@@ -614,10 +614,15 @@ mod tests {
             Some("auth_json")
         );
         assert_eq!(
-            normalized.pointer("/body/auth_mode").and_then(|v| v.as_str()),
+            normalized
+                .pointer("/body/auth_mode")
+                .and_then(|v| v.as_str()),
             Some("chatgpt")
         );
-        assert!(normalized.pointer("/body/OPENAI_API_KEY").unwrap().is_null());
+        assert!(normalized
+            .pointer("/body/OPENAI_API_KEY")
+            .unwrap()
+            .is_null());
         assert_eq!(
             normalized
                 .pointer("/body/tokens/access_token")

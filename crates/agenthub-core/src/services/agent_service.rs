@@ -146,7 +146,7 @@ impl AgentService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::{AgentAdapter, AdapterRegistry};
+    use crate::adapters::{AdapterRegistry, AgentAdapter};
     use crate::error::{AppError, Result};
     use crate::models::{
         AgentConfig, AuthState, Capability, CapabilityState, DetectStatus, InstallChannel,

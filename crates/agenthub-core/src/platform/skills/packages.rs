@@ -48,7 +48,10 @@ impl SkillPackageService {
     }
 }
 
-pub(crate) fn validate_and_collect_source(source: &Path, skill_id: &str) -> Result<BTreeMap<String, Vec<u8>>> {
+pub(crate) fn validate_and_collect_source(
+    source: &Path,
+    skill_id: &str,
+) -> Result<BTreeMap<String, Vec<u8>>> {
     let meta = match fs::symlink_metadata(source) {
         Ok(m) => m,
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -554,4 +557,3 @@ fn try_remove_helper_dir(path: &Path, root: &Path) -> bool {
         Err(_) => false,
     }
 }
-

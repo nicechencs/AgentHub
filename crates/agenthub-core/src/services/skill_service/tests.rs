@@ -6,8 +6,8 @@ use crate::models::{
     InstallChannel, RunOptions, RunSpec,
 };
 use crate::platform::skills::replace_target_with_staging;
-use std::sync::Arc;
 use crate::utils::test_temp::real_tempdir;
+use std::sync::Arc;
 
 struct FakeAdapter {
     id: AgentId,
