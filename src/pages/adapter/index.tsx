@@ -3,6 +3,7 @@ import { Boxes, ChevronRight } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -295,6 +296,7 @@ export default function AdapterPage() {
     <div>
       <PageHeader
         title="Adapter"
+        badge={<Badge variant="warning">开发中</Badge>}
         description="复用已有连接；直连或本机桥接均由明确规则创建。"
         descriptionTip="桥接仅监听本机 127.0.0.1；请让 AgentHub 保持在托盘运行。"
         actions={(

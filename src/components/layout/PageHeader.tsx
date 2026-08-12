@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
  */
 export function PageHeader({
   title,
+  badge,
   description,
   descriptionTip,
   actions,
@@ -18,6 +19,8 @@ export function PageHeader({
   className,
 }: {
   title: string;
+  /** 标题旁状态标记（如「开发中」） */
+  badge?: ReactNode;
   description?: string;
   /** 悬停时的详细说明；有则 description 可更短 */
   descriptionTip?: string;
@@ -36,14 +39,17 @@ export function PageHeader({
       )}
     >
       <div className="min-w-0">
-        <h1
-          className={cn(
-            'font-semibold tracking-tight text-primary',
-            compact ? 'text-base leading-tight' : 'text-lg',
-          )}
-        >
-          {title}
-        </h1>
+        <div className="flex min-w-0 items-center gap-2">
+          <h1
+            className={cn(
+              'font-semibold tracking-tight text-primary',
+              compact ? 'text-base leading-tight' : 'text-lg',
+            )}
+          >
+            {title}
+          </h1>
+          {badge}
+        </div>
         {description &&
           (descriptionTip ? (
             <Tip
