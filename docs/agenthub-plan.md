@@ -1,4 +1,4 @@
-# AgentHub 项目方案 v1.4
+# AgentHub 项目方案 v1.5
 
 > 多 Agent 管理桌面工具：统一管理 Claude Code、Codex、Grok、Kimi 等 AI Agent 的安装、技能、API 配置、Token 统计与 OAuth 账号。  
 > 技术栈：Tauri v2 + React + Rust，GUI + CLI 双端。  
@@ -6,8 +6,9 @@
 > v1.2：CLI 命令树与配置三层契约见专文 [cli-and-config.md](cli-and-config.md)。  
 > v1.3：**安装前置环境（Runtime）**：用户机可能无法直接装 Agent（缺 Node/npm 等），安装管线改为「检测环境 → 引导装环境 → 再装 Agent」。  
 > v1.4：**平台环境差异**：PowerShell 仅 Windows 共享 Runtime；macOS/Linux native 安装/升级走官方 sh + bash，不得检测或要求 PowerShell；包管理引导 Windows=`winget`、macOS=`brew`。
+> v1.5：**Adapter sidecar 目标架构**：`local_bridge` 的长驻 Runtime 与完整 saga 迁入用户级 `agenthub-adapterd`；Connections 与 live 配置事务继续由 core service 管理。当前实现仍为 Tauri 进程内宿主，按三阶段迁移。
 
-系列文档：[目录结构与模块拆分](architecture.md) · [前端 UI 设计](ui-design.md) · [CLI 与配置契约](cli-and-config.md)
+系列文档：[目录结构与模块拆分](architecture.md) · [Adapter Sidecar 目标架构](adapter-sidecar-design.md) · [前端 UI 设计](ui-design.md) · [CLI 与配置契约](cli-and-config.md)
 
 ## 1. 已确认决策
 
@@ -21,6 +22,7 @@
 | Token 统计来源 | **零侵入**：解析各 agent 本地日志/会话文件，不做本地代理 |
 | Agent 范围 | **七家**：Claude / Codex / Kimi / Grok / Pi / WorkBuddy / **Cursor Agent**（半套 CLI）；不支持 Cursor IDE 私有库账号池 |
 | 分层原则 | **Service 管编排**（备份/锁/backfill/投影/聚合）；**Adapter 管差异**（路径、读写格式、解析器挂接） |
+| Adapter 进程边界 | `local_bridge` 目标由同包用户级 `agenthub-adapterd` 托管；GUI/CLI 是控制客户端。Connections 不拆进程，OS 系统服务不在当前范围 |
 
 ## 2. 参考项目结论
 
@@ -363,6 +365,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | Tauri **事件桥** | ❌ | 文档目标；现以前端 refetch 为主 |
 | MCP **管理 / 注入**、`ModelSelect`、`SessionResume` | Planned | `Mcp` 矩阵仍表示管理/注入能力；独立的只读 MCP inventory 已落地，不改变矩阵状态 |
 | Adapter 本地 Bridge 产品接线 | 🟡 部分实现 | core host、协议转换、Tauri controller、UI 控件、auto-start 恢复与退出 drain 已进入当前工作区；具体可执行状态见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)，端到端验收尚未收口 |
+| Adapter 用户级 sidecar | 🎯 目标已决策 / 未实现 | 当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有；待完成 Tauri-neutral control contract、`agenthub-adapterd`、本地 IPC、单实例/版本+schema 握手、SQLite shared/exclusive schema lease、更新/卸载 saga 和分阶段切换，见 [adapter-sidecar-design.md](adapter-sidecar-design.md) |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |
 | Token **后台自动刷新守护** | ❌ | 有手动 refresh |
 | Settings 部分开关真实生效 | 🟡 | 主题/语言/日志/用量定时采集部分接线；系统集成项未完整 |
@@ -391,3 +394,4 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 5. **Skills 真源假设**：以 `~/.agents/skills` 为唯一真源；若用户长期只在 Agent 目录改 skill，需补导入/回收，否则仅是单向投影器。
 6. **前置环境安装的权限与策略**：公司机可能禁用 winget/MSI、Node 装完但 GUI 进程 PATH 未刷新、需要「新开终端/重启 AgentHub」才能看到 `node`。产品文案与 `doctor` 需覆盖 **PATH 刷新 / 重启提示**；自动装 Runtime 失败必须降级为可复制命令，禁止假成功。
 7. **不替官方背锅**：Runtime/Agent 安装脚本来自上游；AgentHub 只编排与展示。网络失败、镜像源、证书问题在 UI 中归类为「环境/网络」并给出官方文档入口。
+8. **sidecar 双主、版本与 schema 漂移**：GUI、CLI 和 sidecar 若同时持有 Bridge host、分别写 `local_bridge` profile，或旧进程跨 SQLite migration 继续访问，会产生重复监听、跨进程半事务和数据库不兼容。必须坚持每个 data dir 单一 runtime owner、mutation 经 IPC、Database handle 生命周期 shared schema lease / migration exclusive lease、rule/revision/schema 重验和不兼容版本拒绝写入；普通 GUI 退出不再等于停止 sidecar。

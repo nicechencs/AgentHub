@@ -1,9 +1,9 @@
 # Adapter 页面与本地协议桥接设计
 
-> 状态：**可应用路径已接线（Claude 稳定直连 + Codex 实验性本地桥接）**。Pi/config_sync 等仍为预览-only；发布前仍需实机 dogfood（密钥轮转、端口冲突、托盘退出 drain）。
+> 状态：**可应用路径已接线（Claude 稳定直连 + Codex 实验性本地桥接）**。Pi/config_sync 等仍为预览-only；发布前仍需实机 dogfood。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。
 > 调研日期：2026-08-12（进度同步：2026-08-12）
 > 重点参考：`D:\demo_github\AgentHub_Ref\Cli-Proxy-API-Management-Center`
-> 关联文档：[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
+> 关联文档：[adapter-sidecar-design.md](adapter-sidecar-design.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
 
 ## 0. 当前落地状态
 
@@ -14,8 +14,9 @@
 | 其它直连 / 配置同步规则 | 🟡 | Pi 等仍预览或 unsupported；未显式 `canApply=true` 一律不可写 |
 | Bridge core | ✅ | `BridgeRuntimeHost`（per-profile gate、admission、超时与 cancellation-safe drain）、Responses ↔ Chat 协议与 fixtures |
 | Bridge 产品接线 | ✅ | Codex `local_bridge` 的 `canApply`、Tauri apply/start/stop/status、健康检查、失败补偿、凭证轮转 stop→restart、端口 rebind、opt-in auto-start 恢复、退出 drain；UI 已拆分 wire/model/components |
+| Bridge 进程边界 | 🎯 已决策 / 未迁移 | 目标为同包用户级 `agenthub-adapterd`；当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有，详细契约见 [Adapter Sidecar 目标架构](adapter-sidecar-design.md) |
 
-这里的“已落地”描述当前工作区状态，不代表相关能力已经随 Release 发布。
+这里的“已落地”描述当前工作区状态，不代表相关能力已经随 Release 发布；“已决策”只表示目标架构确定，不代表 sidecar 二进制、IPC 或进程监管已经实现。
 
 ## 1. 结论
 
@@ -37,7 +38,7 @@ Adapter 负责把 **Connections 中已有的授权或 API Key** 接入另一个 
 3. **桥接是兜底**：只有明确需要协议转换时才启动本地服务，并把生成的端点登记回 Connections。
 4. **不是 Token 格式互转**：OAuth access/refresh token 不能通过改字段名变成另一家授权。只有目标客户端明确支持同一授权和刷新语义时，才可做配置同步。
 5. **能力要可验证**：兼容性由版本化规则和真实探测共同决定，不依赖页面硬编码的宣传矩阵。
-6. **Provider 不是服务**：Provider/Connection 是持久化配置实体；需要后台运行的是 `BridgeRuntime`。MVP 将 Runtime 作为独立 core 模块，由现有 AgentHub 托盘进程托管，不把页面组件或 ProviderService 变成长驻 HTTP 服务。
+6. **Provider 不是服务**：Provider/Connection 是持久化配置实体；需要后台运行的是 `BridgeRuntime`。当前由 AgentHub 托盘进程托管，目标迁移到用户级 `agenthub-adapterd`；无论部署形态如何，都不把页面组件、Connections 或 ProviderService 变成长驻 HTTP 服务。
 
 ## 2. 范围与非目标
 
@@ -269,43 +270,39 @@ adapter_service
 
 ### 5.2 本地桥接形态
 
-需要区分“模块独立”和“进程独立”：MVP 要求 Bridge Runtime 在业务和生命周期上独立于 UI，但先不拆成 OS 系统服务。当前 AgentHub 已有单实例、托盘、默认关闭到托盘和可选开机自启，足以用最低成本提供后台运行。
+需要区分“模块独立”和“进程独立”。Bridge Runtime 已在 core 中完成模块隔离；下一目标是把 `local_bridge` 的完整运行时与生命周期迁入同包用户级 sidecar `agenthub-adapterd`。这项决策不等于把 Connections、Adapter 页面或所有 Adapter 规则搬进另一个进程。
 
-| 形态 | 能否关窗口继续运行 | 能否退出 AgentHub 后运行 | 安装/升级成本 | 决策 |
+| 形态 | 能否关窗口继续运行 | 能否退出 GUI 后运行 | 安装/升级成本 | 决策 |
 |---|---:|---:|---:|---|
-| AgentHub 托盘进程内托管 | 是 | 否 | 低 | **MVP 采用** |
-| 同包 sidecar / `agenthub-adapterd` 用户级进程 | 是 | 是 | 中；需 IPC、进程监管、版本握手 | 有明确无 GUI/高可用需求后再做 |
+| AgentHub 托盘进程内托管 | 是 | 否 | 低 | **当前实现；迁移期回滚路径** |
+| 同包 sidecar / `agenthub-adapterd` 用户级进程 | 是 | 是 | 中；需 IPC、单实例、版本握手与升级协调 | **目标架构** |
 | Windows Service / macOS LaunchAgent / systemd 系统服务 | 是 | 是 | 高；涉及权限、安装器、跨平台运维 | 个人桌面产品当前不做 |
 
-MVP 的 `BridgeRuntimeHost` 由 Tauri `AppState` 持有，但 Runtime 实现仍在 agenthub-core：页面关闭、窗口隐藏或前端重载不会影响已有监听；普通一次性 CLI 命令不能托管桥接服务。
+当前 `BridgeRuntimeHost` 由 Tauri `AppState` 持有：窗口隐藏或前端重载不影响监听，但显式退出 GUI 会停止 Bridge。目标态由 sidecar 持有 host 与 `local_bridge` 完整 saga；GUI 只通过本地 IPC 管理它，退出 GUI 默认不停止已运行的本地适配。
+
+进程迁移必须遵守以下边界：
+
+- Connections 继续管理 Account、Provider、ActiveBinding 与来源引用，不建设 `connectionsd`，也不复制账号池。
+- `ConnectionService` / `ProviderService` / `AccountService` 仍是数据库与 live 配置事务的领域 owner；sidecar 只能调用这些 core service，禁止直接拼 SQL 或直接写 Agent 配置。
+- `native_endpoint` / `config_sync` 不依赖 sidecar；只有 `local_bridge` 的监听、协议转换、运行状态、恢复和完整 apply/start/stop/remove saga 进入 sidecar。
+- `local_bridge` profile 的变更在目标态只有 sidecar 一个进程 writer；GUI 只读持久化 profile，并通过 IPC 发起 mutation。
+- GUI 与 sidecar 必须复用同一规则实现。plan 携带 `rule_version`，sidecar apply 时重新解析来源、校验 revision 与规则版本，不能信任陈旧的前端计划。
+- sidecar 是当前用户权限下的同包进程，不默认提权为系统服务；`AdapterProfile.autoStart` 也不得静默开启 OS 开机自启。
 
 - 仅监听 `127.0.0.1`/`::1`，禁止默认监听 `0.0.0.0`。
 - 默认自动分配端口；用户指定端口时先检测占用。
 - 每个 profile 一个稳定本地访问 Token，目标 Agent 只持有本地 Token，不直接获得上游 OAuth Token。
 - 上游凭据按 `connection_id` 在 core 内解析和刷新；协议层只接收已授权的请求上下文。
-- 关闭窗口且进入托盘时实例继续运行；只有托盘“退出”、进程终止或系统关机才停止。
-- 所有可控退出路径统一经过 Tauri `ExitCoordinator`：托盘“退出”、`close_to_tray=false` 时的窗口关闭、前端调用的退出/重启以及应用更新重启。禁止某一路径绕过 Runtime 直接 `app.exit(0)`。
-- 有活跃桥接时，退出协调器展示“退出将停止 N 个本地适配，Codex/Claude Code 等连接将暂时不可用”，并提供 `隐藏到托盘继续运行`、`停止桥接并退出`、`取消`。选择退出后停止接收新请求，给在途请求一个短暂 drain 窗口，再结束进程。
-- 无活跃桥接时继续沿用现有 `close_to_tray` 语义，不增加确认。系统强制终止、崩溃和断电无法保证 drain，依靠下次启动恢复与日志诊断。
-- `AdapterProfile.autoStart` 只表示“Bridge Runtime 宿主启动后恢复此 profile”，不得静默开启 OS 开机自启。若系统自启未开启，UI 只提示“需先启动 AgentHub”，由用户选择是否在 Settings 开启现有自启动能力。
+- 当前进程内实现的可控退出仍统一经过 Tauri `ExitCoordinator`；目标态的普通 GUI 退出不 drain sidecar，只有显式“停止适配并退出”、应用更新、卸载或 sidecar 自身关停才走控制面 drain。
+- `AdapterProfile.autoStart` 只表示“sidecar 启动后恢复此 profile”。若系统后台启动未开启，UI 只提示依赖条件，由用户在 Settings 明确选择。
 - 恢复顺序为先启动并健康检查，再校验目标配置；失败时保持 `stopped/error`，不静默切到 mock 或其他上游。
-- GUI 启动恢复和手动 start 必须经过同一份 single-runtime lock；第二个 AgentHub 实例继续由现有 single-instance 机制退出，避免重复占用 profile 端口。
-- Phase 1 CLI 只提供 list/status/test 等短命令，并明确状态来自正在运行的 GUI host 或持久化记录。若未来确有无 GUI 常驻需求，再将相同 `BridgeRuntimeHost` 接到前台阻塞的 `agenthub adapter serve` 或同包 sidecar；不得用普通命令暗示后台 daemon 已存在。
+- 每个 canonical data directory 只能有一个 sidecar/runtime owner；GUI 单实例不能替代 sidecar 自身的进程锁、instance epoch 和安全陈旧锁回收。
 
-#### 5.2.1 何时升级为独立 sidecar
-
-满足任一条件再立项，不提前预建空 daemon：
-
-- 用户明确要求退出 AgentHub GUI 后，生成的 Connection 仍必须可用；
-- 需要无界面服务器/CI 场景；
-- GUI 更新、崩溃或重启不能中断在途请求；
-- Bridge Runtime 需要独立资源限制或故障隔离。
-
-sidecar 仍是当前用户级进程，不默认提权为系统服务。它与 GUI 共享 profile 数据真源和 tracing 日志，通过本地 IPC 或带控制 Token 的 loopback control plane 通信；请求数据面与控制面端口分离。GUI 是管理客户端，不再是进程 owner。sidecar 与 GUI 必须做协议/版本握手，不兼容时拒绝热接管并给出升级提示。
+控制面、状态真相、进程启动/退出、版本与 schema 握手、SQLite shared/exclusive schema lease 与 migration 权威、锁序、崩溃恢复、更新前 running-set 恢复、卸载前 live binding 清理和三阶段迁移的完整契约见 [Adapter Sidecar 目标架构与迁移方案](adapter-sidecar-design.md)。
 
 ### 5.3 应用事务
 
-延续现有 Provider 安全切换，不使用参考项目“多段写入后仅 refetch”的弱补偿方式。事务边界分为两层：`adapter_service` 负责完整操作的 saga；目标 Agent live 配置事务仍由 `ProviderService` 作为唯一 owner。`adapter_service` 不在外层持有 agent lock 后调用公开 `ProviderService::switch`，也不重复调用 `ConfigurationService.apply`：
+延续现有 Provider 安全切换，不使用参考项目“多段写入后仅 refetch”的弱补偿方式。事务边界分为两层：`adapter_service` 负责完整操作的 saga；目标 Agent live 配置事务仍由 `ProviderService` 作为唯一 owner。当前 saga 接线位于 Tauri controller；迁移完成后由 sidecar 内的 Tauri-neutral application service 成为 `local_bridge` 唯一编排者，GUI 不得跨 IPC 继续执行后半段。`adapter_service` 不在外层持有 agent lock 后调用公开 `ProviderService::switch`，也不重复调用 `ConfigurationService.apply`：
 
 ```text
 analyze
@@ -343,19 +340,22 @@ analyze
 
 ### 5.4 运行状态机
 
+持久化 profile 生命周期、`auto_start` 恢复意图和进程内 observed runtime 必须分开。SQLite 可以保存最后错误与诊断信息，但 `running` 只能由当前 sidecar instance 的实时状态确认；sidecar 不可达时，页面派生 `host_unavailable`，不得把上次运行记录当成仍在监听。
+
 ```text
-draft → applying → active
-                 ↘ rolled_back
-active → stopping → stopped → starting → active
-   ↘ degraded                 ↘ error
-host_unavailable（仅 local_bridge；宿主未运行，持久化 profile 仍存在）
-任意补偿不完整 → needs_attention
+durable profile：draft → applying → active → removing → removed
+                         └──────────────→ needs_attention
+
+runtime observed：unknown/stopped → starting → running ↔ degraded
+                                      └→ error      └→ stopping → stopped
+
+client derived：宿主不可达 + 持久化 local_bridge profile → host_unavailable
 ```
 
 - `degraded`：服务仍可监听，但上游探测失败或最近请求连续失败。
 - `error`：实例未运行，且自动启动/显式启动失败。
-- `host_unavailable`：目标配置仍指向 loopback，但 AgentHub 后台宿主未运行；页面启动后应立即恢复或给出启动动作。
-- `needs_attention`：配置和实例状态无法自动恢复一致，必须由用户执行明确恢复动作。
+- `host_unavailable`：目标配置仍指向 loopback，但当前 GUI 宿主或目标 sidecar 不可达；页面应给出启动、重连或修复动作。
+- `needs_attention`：durable 配置、依赖或补偿无法自动恢复一致，必须由用户执行明确恢复动作。
 
 禁止用单一 `is_running` 掩盖“监听成功但协议探测失败”。
 
@@ -573,7 +573,17 @@ MVP 不做全文搜索、自动滚动、错误文件下载、方法/路径筛选
 - 只有新组合有官方文档、兼容规则、协议 fixtures 和端到端测试后才开放。
 - 根据真实诊断需求决定是否建设全局 Logs 页面。
 - WebSocket、厂商原生工具、复杂多模态均独立评审，不因“协议大致兼容”自动开启。
-- 只有 §5.2.1 的触发条件成立时，才把同一 BridgeRuntime 提取为用户级 sidecar；OS 系统服务继续单独评审。
+- 协议/厂商扩展与进程迁移分别推进；不得以“sidecar 已存在”为由绕过规则证据、fixtures 或 fail-closed 门禁。
+
+### Runtime 进程迁移轨
+
+sidecar 目标已经确认，但不进行 big-bang 重写：
+
+1. **建立进程缝**：把 Tauri controller 中的 `local_bridge` 编排抽成 Tauri-neutral application/control contract，继续使用 in-process host，产品行为不变。
+2. **可回滚 sidecar**：新增同包 `agenthub-adapterd`、本地 IPC、单实例、shared/exclusive schema lease 与版本/schema 握手；以内部 rollout mode 二选一启用 in-process 或 sidecar，禁止双 host。
+3. **sidecar 成为唯一 owner**：GUI 只保留 control client，退出 GUI 不再停止 Bridge；完成更新前 running-set 恢复、卸载前 live loopback 解除、后台启动和 CLI 接线后，再删除进程内兼容路径。
+
+每一阶段的验收门槛、回滚条件和故障注入矩阵以 [adapter-sidecar-design.md](adapter-sidecar-design.md) 为准。OS 系统服务、远程控制面与多机高可用继续单独评审。
 
 ## 11. 测试与验收
 
@@ -591,10 +601,11 @@ MVP 不做全文搜索、自动滚动、错误文件下载、方法/路径筛选
 - 配置写入成功但 read-back 不一致时恢复快照。
 - 补偿自身失败时进入 `needs_attention` 并给出稳定恢复动作。
 - 应用重启后只恢复 `auto_start` profile；恢复失败不污染已有当前 Provider。
-- 关闭窗口进入托盘后端点持续可用；显式退出执行 drain 并释放端口。
-- `close_to_tray=false` 且有活跃桥接时，窗口关闭必须出现“隐藏到托盘 / 停止并退出 / 取消”，不能直接结束进程。
-- 托盘退出、窗口退出、前端退出/重启与更新重启均通过同一 ExitCoordinator，并验证不会重复 shutdown。
-- 第二实例、重复恢复和并发 start 不能创建重复监听器。
+- 当前进程内模式：关闭窗口进入托盘后端点持续可用；显式退出执行 drain 并释放端口。
+- 当前进程内模式：`close_to_tray=false` 且有活跃桥接时，窗口关闭必须出现“隐藏到托盘 / 停止桥接并退出 / 取消”，不能直接结束进程。
+- sidecar 模式：普通 GUI 退出后端点持续可用；只有显式停止、更新、卸载或 sidecar 自身关停才 drain。
+- sidecar 模式：GUI 崩溃不影响 listener；sidecar 崩溃后必须明确呈现 `host_unavailable`，重启与恢复不得产生第二个 listener。
+- 第二实例、重复恢复、IPC 重试和并发 start 不能创建重复监听器；版本不兼容的客户端不得执行 mutation。
 - 宿主未运行时生成的 loopback Provider 明确返回连接失败；不得静默绕过到其他上游。
 
 ### 11.3 前端测试
@@ -610,7 +621,7 @@ MVP 不做全文搜索、自动滚动、错误文件下载、方法/路径筛选
 
 1. 用户可在 3 个主要选择内完成 `Connection → 目标 Agent → 适配路径`。
 2. 直连路径不启动任何本地服务。
-3. Kimi Code → Codex 能完成文本流和至少一次工具调用闭环，关闭主窗口进入托盘后仍可继续请求。
+3. Kimi Code → Codex 能完成文本流和至少一次工具调用闭环；当前模式关闭主窗口进入托盘后继续请求，sidecar 目标态退出 GUI 后仍继续请求。
 4. 应用前能看到写入对象、服务影响和能力损失。
 5. 任一失败均可回到操作前状态；补偿失败有明确恢复动作。
 6. Connections 可看到生成的目标 Provider，现有切换/备份体验不分叉。
@@ -643,9 +654,9 @@ src-tauri/src/commands/adapter.rs
 src-tauri/src/commands/adapter/tests.rs
 
 crates/agenthub-core/src/lib.rs             # service/repo wiring
-src-tauri/src/state.rs                      # 托盘进程持有 BridgeRuntimeHost
-src-tauri/src/exit_coordinator.rs           # 统一退出确认、drain 与 shutdown
-src-tauri/src/tray.rs                       # 退出动作委托 ExitCoordinator
+src-tauri/src/state.rs                      # 当前：托盘进程持有 BridgeRuntimeHost
+src-tauri/src/exit_coordinator.rs           # 当前：统一退出确认、drain 与 shutdown
+src-tauri/src/tray.rs                       # 当前：退出动作委托 ExitCoordinator
 
 src/lib/backend/
 ├─ contracts/adapter.ts
@@ -657,4 +668,4 @@ src/pages/adapter/
 └─ index.test.tsx
 ```
 
-以上是当前工作区的实际落点。后续拆分页面组件或扩展协议文件时继续保持 service、runtime、protocol 与 UI 边界，不要求机械照搬最初的建议文件名。
+以上是当前工作区的实际落点。sidecar 目标态预计新增 `crates/agenthub-adapterd`、Tauri-neutral control/application contract 与 `src-tauri` IPC client，均尚未落地，具体边界见 [adapter-sidecar-design.md](adapter-sidecar-design.md)。后续拆分页面组件或扩展协议文件时继续保持 service、runtime、protocol 与 UI 边界，不要求机械照搬最初的建议文件名。

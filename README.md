@@ -107,6 +107,7 @@ agenthub CLI ────────────────┘
 
 - `agenthub-core` 集中业务逻辑，GUI 与 CLI 是薄入口。
 - Service 负责编排备份、切换、投影和聚合；Agent Adapter 负责路径、配置格式和能力差异。
+- Adapter 的 `local_bridge` 目标由同包用户级 `agenthub-adapterd` sidecar 长驻托管；当前版本仍由 Tauri 进程内宿主，详见[迁移方案](docs/adapter-sidecar-design.md)。Connections 数据域不随 sidecar 拆分。
 - 前端只有 `src/lib/backend/tauri/` 可以调用 Tauri `invoke`。
 - `pnpm dev:mock` 使用浏览器 mock；生产构建不会静默回退到 mock。
 
@@ -124,6 +125,7 @@ scripts/                构建与发布脚本
 - [文档索引](docs/README.md)
 - [当前实现状态](docs/agenthub-plan.md#8-当前实现状态以代码与测试为准)
 - [架构说明](docs/architecture.md)
+- [Adapter Sidecar 目标架构](docs/adapter-sidecar-design.md)
 - [能力矩阵](docs/capability-matrix.md)
 - [厂商、API 与 OAuth 适配规则](docs/provider-api-oauth-adaptation.md)
 - [CLI 与配置](docs/cli-and-config.md)

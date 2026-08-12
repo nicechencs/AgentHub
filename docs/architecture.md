@@ -6,6 +6,7 @@
 > v1.2：CLI 命令与配置契约详见 [cli-and-config.md](cli-and-config.md)（本文 §5–§6 仅结构摘要）。  
 > v1.3：`runtime/` + `env_service` —— 安装 Agent 前的共享运行时（Node/npm 等）检测与引导。  
 > 2026-08-12 同步：Adapter 规则分析/稳定直连、Bridge core 与只读 MCP inventory 的当前工作区结构。
+> 2026-08-12 决策同步：`local_bridge` 的目标宿主确定为用户级 `agenthub-adapterd` sidecar；当前实现仍由 Tauri `AppState` 进程内托管，迁移契约见 [adapter-sidecar-design.md](adapter-sidecar-design.md)。
 > 日志：core 统一 tracing（文件 + 可选 stderr）→ [logging.md](logging.md)。  
 > **前端 backend 分层（已落地）**：`lib/backend/{contracts,tauri,current}` + `dev/mocks` + `app/runtime`；命令与 adapter 选择见 **§4.1–§4.2**。
 
@@ -201,7 +202,7 @@ struct InstallChannel {
 | `provider_service` | CRUD、切换编排（backfill→backup→写→锁） | 不解析 jsonl；不知 skills 真源 |
 | `account_service` | 账号池、OAuth/导入、切换编排 | 不实现各家 OAuth 端点细节（oauth/ 模块） |
 | `adapter_route_service` / `adapter_apply_service` | 只读分析、预览；应用后端显式允许的稳定规则 | 不推断未知凭据，不把 preview 自动升级为可写 |
-| `adapter_bridge_service` | 准备/恢复 Bridge profile 与进程内 runtime material，记录 finalize/needs_attention | 不持有 listener，不直接写 live 配置；Tauri controller 编排 host 与 ProviderService |
+| `adapter_bridge_service` | 准备/恢复 Bridge profile 与 runtime material，记录 finalize/needs_attention | 不持有 listener，不直接写 live 配置；当前由 Tauri controller、目标由 sidecar application service 编排 host 与 ProviderService |
 | `mcp_inventory` | 只读扫描已知 MCP 配置文件并归一化 server 条目 | 不创建、编辑、删除或注入 MCP server |
 | `skill_service` | 真源扫描、投影矩阵、sync/enable/disable、install/uninstall/update/project、import_private | 不扫描会话日志；远程市场由 `skill_market`/`skillssh_market` 提供；插件体系仅只读协作 |
 | `usage_service` | collect、入库、summary/trend、**list_models（用量去重）** | 不提供官方模型商店；不算 live 配置默认 model 源 |
@@ -242,6 +243,13 @@ struct InstallChannel {
     → adapter_apply_service.apply
     → 创建受管 profile / Provider
     → provider_service.switch（复用备份与原子写）
+
+应用 local_bridge（当前 / 目标）:
+  当前：Tauri adapter_bridge_controller → BridgeRuntimeHost + core services
+  目标：Tauri/CLI control client → local IPC → agenthub-adapterd
+      → AdapterRuntimeApplication（local_bridge 完整 saga 的唯一进程 owner）
+      → BridgeRuntimeHost + AdapterBridgeService + ProviderService
+  // Connections/ProviderService 仍是领域 owner；sidecar 不直接写表或 live 文件
 
 MCP 清单:
   mcp_inventory.list
@@ -300,6 +308,33 @@ src-tauri/
 ```
 
 事件约定（**目标**）：切换/采集完成后可 `app.emit("provider-switched" | "account-switched" | "usage-updated", payload)`。**当前实现**以前端主动 refetch 为主，尚未统一 emit 事件桥。Chat 流式走 Tauri v2 `ipc::Channel<ChatEvent>`（非 SSE），阻塞 IO 经 `spawn_blocking` / hub blocking 封装。
+
+### 3.1 Adapter Runtime 进程边界（目标）
+
+当前工作区中，`src-tauri::AppState` 同时持有 `BridgeRuntimeHost`、process-local saga coordinator 与退出 barrier。这是可工作的进程内实现，不是最终部署边界。
+
+目标结构：
+
+```text
+React Adapter UI
+  → lib/backend/tauri/adapter.ts
+  → Tauri adapter command（薄映射）
+  → AdapterControlClient
+  → 用户级本地 IPC
+  → agenthub-adapterd（每个 canonical data dir 单实例）
+       ├─ AdapterRuntimeApplication   # local_bridge 完整 saga
+       ├─ BridgeRuntimeHost           # listener / drain / observed status
+       └─ agenthub-core services      # profile、Connection 引用、Provider 安全切换
+```
+
+进程边界不改变领域边界：
+
+- Connections 不拆进程；Account、Provider、ActiveBinding 仍由 `AccountService`、`ProviderService`、`ConnectionService` 管理。
+- sidecar 是 `local_bridge` runtime 与其 lifecycle mutation 的唯一进程 owner，但数据库/live 配置写入仍必须通过上述 core service 和跨进程 `LiveWriteAuthority`。
+- `native_endpoint` / `config_sync` 不依赖 sidecar。sidecar 不可用时它们仍应正常工作。
+- GUI 不直接持有第二个 host，也不跨 IPC 执行 saga 的后半段；否则会形成双主和跨进程半事务。
+- SQLite WAL 是共享持久化真源，但 `running` 是 sidecar 内存中的 observed truth。控制面不可达时由页面派生 `host_unavailable`，不得信任上次运行记录。
+- 当前与目标态、IPC、版本/schema 握手、SQLite shared/exclusive schema lease 与 migration 权威、锁序、更新/卸载 saga 及三阶段迁移详见 [Adapter Sidecar 目标架构与迁移方案](adapter-sidecar-design.md)。
 
 ## 4. `src` — React 前端
 
@@ -501,6 +536,7 @@ CLI 与 GUI 共用数据目录与 per-agent 写锁（core 内文件锁，跨进�
 5. **skills 真源在 service** —— 矩阵与 lock 是跨 Agent 视图；Adapter 只提供目标目录（及未来落盘策略）。
 6. **runtime 与 agent 解耦** —— Node/npm 等是共享前置环境，装一次多渠道受益；卸载 Agent **不**卸载 Runtime。禁止在 Adapter 内各自 `Command::new("node")` 散落检测。
 7. **平台分流** —— `runtime::host_runtimes()` 决定 doctor/环境条探测集（PowerShell **仅 Windows**）；`runtime::native_install_requires()` 与 install catalog 决定 native 前置与展示命令（Windows `irm|iex` / macOS·Linux `curl|bash`）；Runtime 一键修复默认渠道 Windows=`winget`、macOS=`brew`。细节真源：[agenthub-plan.md §5.7.5](agenthub-plan.md)。
-7. **commands 一文件一模块、薄到只做校验** —— 参考项目里 290 个 command 全塞 lib.rs 的教训。
-8. **models 纯数据、credentials 脱敏边界清晰** —— 当前版本沿用现有存储方案，DTO 出 core 前集中脱敏，避免 API、CLI、日志泄漏完整凭据。
-9. **前端 invoke 单点 + mock 外置** —— 仅 `lib/backend/tauri/` 可 `invoke`；mock 只在 `dev/mocks/` 且仅由 `dev:mock` 注入；`build` 强制 Tauri；非 Tauri 生产页明确报错/unavailable。
+8. **commands 一文件一模块、薄到只做校验** —— 参考项目里 290 个 command 全塞 lib.rs 的教训。
+9. **models 纯数据、credentials 脱敏边界清晰** —— 当前版本沿用现有存储方案，DTO 出 core 前集中脱敏，避免 API、CLI、日志泄漏完整凭据。
+10. **前端 invoke 单点 + mock 外置** —— 仅 `lib/backend/tauri/` 可 `invoke`；mock 只在 `dev/mocks/` 且仅由 `dev:mock` 注入；`build` 强制 Tauri；非 Tauri 生产页明确报错/unavailable。
+11. **Bridge 数据面独立进程、Connections 领域不拆** —— `agenthub-adapterd` 只承接 `local_bridge` 的长驻 listener、协议转换和完整 saga；Account/Provider/ActiveBinding 继续由 core service 单点负责，避免按页面边界制造 `connectionsd` 或双写。
