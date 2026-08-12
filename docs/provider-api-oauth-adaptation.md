@@ -30,6 +30,19 @@
 5. **默认拒绝**：没有代码规则和测试的组合一律为 `unsupported`。
 6. **不复制凭据**：Adapter 保存来源引用；真实凭据只在写入 live 配置或请求上游时短暂解析。
 
+### 1.1 消费级订阅的受限实验边界
+
+旧的“消费订阅一律不做”不再是绝对表述：可以评估**当前用户、本机 loopback、用户显式 opt-in** 的实验候选；但这不是把订阅变成通用 API，也不是承诺任何订阅都可被任意客户端使用。
+
+实验候选必须同时满足以下边界：
+
+- 上游 token 不可导出、不可显示、不可复制到目标 Agent；目标只得到本地 loopback bearer。
+- 不监听公网地址，不作为远程服务、团队共享端点、多租户网关、转售或额度池。
+- 每个供应商、产品、OAuth client、上游通道和目标 Agent 组合独立审核；不能从“同为订阅”或某个参考项目可运行推导通用许可。
+- 只有官方契约、条款、端点稳定性、认证刷新、协议转换、隔离与端到端测试全部通过后，规则才可从 `unsupported` 进入实验性 `local_bridge`；此前 `plan.canApply=false`。
+
+本节仅定义可研究的范围，不改变默认拒绝原则。
+
 ## 2. 厂商与产品入口
 
 下表描述协议事实，不等于 AgentHub 已实现对应的跨 Agent 路由。实现状态以 [§4](#4-当前实现矩阵) 为准。
@@ -37,7 +50,7 @@
 | 厂商 / 产品 | 常见凭据 | 协议或客户端约束 | AgentHub 当前结论 |
 |---|---|---|---|
 | Anthropic API / Claude Code | Anthropic API Key；Claude 官方登录 | Claude Code 可连接 Anthropic Messages 兼容网关 | 仅 Anthropic API Key → Pi 有预览规则；Claude OAuth 不跨 Agent 复用 |
-| OpenAI API / ChatGPT | OpenAI API Key；ChatGPT 登录 | Codex 自定义 Provider 当前要求 Responses | 普通 OpenAI API Key 尚无 Adapter 规则；ChatGPT OAuth 只用于其明确支持的登录路径 |
+| OpenAI API / ChatGPT / Codex | OpenAI API Key；ChatGPT subscription 登录 | Codex 支持 ChatGPT subscription 登录；自定义 Provider 仍要求 Responses | 普通 OpenAI API Key 尚无 Adapter 规则；ChatGPT/Codex OAuth 只用于明确支持的登录路径。Codex subscription → Claude Code 是受限实验候选，**当前 unsupported** |
 | Kimi Code 会员平台 | 会员 API Key，**不是 OAuth** | 同一产品提供 Anthropic Messages 与 OpenAI Chat Completions 兼容入口 | 已有 Claude 直连、Codex 实验 Bridge、Pi 预览规则 |
 | Kimi 开放平台 | 开放平台 API Key | 使用独立 Base URL、额度和产品契约 | 不与 Kimi Code 会员 Key 混用；当前无 Adapter 路由 |
 | 智谱 GLM Coding Plan | Coding Plan API Key，**不是 OAuth** | 提供 Anthropic Messages 与 OpenAI Chat Completions 入口；套餐仅限官方支持的工具环境 | 当前无 Adapter 路由；不能由双协议入口推导 Codex Responses 直连 |
@@ -110,6 +123,7 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 | 同上 | Codex | experimental `local_bridge` | **可实验应用**；`plan.canApply=true`，由 Tauri 专用 Bridge 路径执行，尚未完成端到端验收 |
 | 同上 | Pi | stable `config_sync` | **仅预览**；不可写入 |
 | Anthropic Provider，或显式 Anthropic API-key Account | Pi | stable `config_sync` | **仅预览**；不可写入 |
+| Codex OAuth Account，`credentials.format=auth_json`（ChatGPT subscription） | Claude Code | 受限实验候选 | **unsupported**；可解释门禁，`plan.canApply=false`，不得创建 profile、启动 bridge 或写入 Claude 配置 |
 | 其他来源、目标或未标记记录 | 任意 | `unsupported` | 不产生写操作 |
 
 补充边界：
@@ -118,6 +132,7 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 - 普通 OpenAI、xAI、Gemini、Kimi 开放平台、GLM Coding Plan、DeepSeek API 或任意“兼容 API”目前都不会自动升级为 Adapter 规则。
 - `stable` 表示规则结论稳定，不等于已经开放写入；是否可写还要看 Apply 白名单。
 - Kimi → Codex 目前是唯一 Bridge 白名单，不代表已经提供通用协议网关。
+- 当前 Bridge 数据面只实现**下游** `POST /v1/responses` 到**上游** Kimi Chat Completions 的转换；它不是 Codex OAuth 上游、Anthropic Messages 下游或通用 Responses 网关。
 
 ## 5. OAuth 边界
 
@@ -133,6 +148,71 @@ AgentHub 当前可发起的登录与跨 Agent 适配是两套能力：
 
 OAuth access/refresh token 带有客户端、受众、范围和刷新语义。只有目标客户端公开支持相同契约，并且 AgentHub 增加显式规则与测试后，才允许 `config_sync`；否则应引导用户使用目标客户端自己的登录流程。
 
+### 5.1 Codex / ChatGPT subscription → Claude Code：当前结论与前置门禁
+
+该组合的目标是让 Claude Code 通过官方 LLM gateway 配置的 `ANTHROPIC_BASE_URL` 与 `ANTHROPIC_AUTH_TOKEN` 调用**本机** bridge，而非把 ChatGPT OAuth token 写入 Claude Code。它当前没有可执行规则：`unsupported`、`canApply=false`、不创建 profile、不调用 sidecar mutation。
+
+OpenAI Codex 支持 ChatGPT subscription 登录；官方 Codex App Server 面向 rich-client integration，并管理 ChatGPT OAuth 与 token refresh。但 App Server 不是标准模型 API，是否能作为安全、语义匹配的“模型上游”尚未被证明。不得把“能登录 Codex”或参考代理“能跑”视为模型请求通道已经获得批准。
+
+在判断能否进入可应用状态前，必须对上游候选分别执行独立 spike。最终至少一条候选的技术、官方契约与条款门禁完整通过并被明确选定；其他候选可以在留下结论与证据后明确淘汰：
+
+| 候选 | 必须回答的问题 | 未通过时 |
+|---|---|---|
+| Codex App Server transport | 请求/流式事件语义是否足以承载 Claude Code 回合；工具、上下文与取消如何映射；是否会造成双 Agent、双工具执行或意外副作用 | 保持 `unsupported`；不把 App Server 当作通用模型 HTTP endpoint |
+| 经批准的 Codex Responses transport | OAuth 结合 Responses 的官方支持、适用条款、端点稳定性、授权范围和刷新契约是否明确 | 保持 `unsupported`；不从非官方/反向工程端点推导生产路径 |
+
+被选定的 transport 必须证明：身份只用于当前用户，token 不跨 IPC 泄露，刷新不导致并发风暴，协议闭环正确，且失败不会留下可用的 Claude Code loopback 配置。没有任何候选通过时，UI 只能提供“使用 Claude 自身登录或已支持 API Key”的替代路径。
+
+### 5.2 订阅桥接的分层契约（设计目标，未实现）
+
+订阅桥接不得把现有 Kimi resolver 或 Adapter 页面扩展成隐式 OAuth proxy。目标职责如下：
+
+```text
+Connection / Account（core services owner）
+  → SourceIdentity + credential classifier
+  → SubscriptionSessionProvider
+  → UpstreamTransport
+  → ProtocolKernel / IR
+  → DownstreamSurface
+  → user-level agenthub-adapterd sidecar
+```
+
+| 层 | 职责与边界 |
+|---|---|
+| `SourceIdentity` / credential classifier | 只以来源产品、账户、`credential_kind`、授权范围和显式 metadata 分类；拒绝名称猜测及 API key/OAuth 混用。 |
+| `SubscriptionSessionProvider` | 通过 core 的 AccountService 解析、refresh、single-flight 和状态查询；只返回短生命周期的授权请求上下文，绝不经 GUI/sidecar IPC 返回原始 secret。当前 Codex Account 为 `auth_json`，AccountService 具备 refresh 能力；`AdapterSecretResolver` 目前只解析 Kimi Provider，不能假定其已支持 Codex。 |
+| `UpstreamTransport` | 封装一个经门禁批准的 App Server spike 或 Codex Responses transport；不让协议映射层、UI 或目标客户端猜端点。 |
+| `ProtocolKernel` / IR | 纯请求、事件和错误映射；不读数据库、不刷新凭据、不监听端口。 |
+| `DownstreamSurface` | 按协议暴露最小 loopback surface：本候选为 Anthropic Messages；现有 Kimi 路径仍为 Responses。 |
+| sidecar runtime | `agenthub-adapterd` 是 `local_bridge` 唯一运行时/监听 owner；Connections、Account、Provider 与数据库/live-config 事务仍由 core services owner 持有。 |
+| capability matrix | 对每一 source × credential × transport × target × protocol × version 记录门禁、限制、fixtures 与验证日期；缺项即 fail-closed。 |
+
+### 5.3 Codex → Claude Code 的目标数据流与语义
+
+通过门禁后的单次请求流应为：
+
+```text
+Claude Code
+  → Anthropic Messages + loopback bearer
+  → agenthub-adapterd / DownstreamSurface
+  → ProtocolKernel IR
+  → approved Codex transport（由 SubscriptionSessionProvider 注入授权上下文）
+  → ProtocolKernel IR
+  → Anthropic SSE
+  → Claude Code
+```
+
+映射必须由 fixtures 明确约束，而非“请求成功”即可开放：
+
+| 语义 | 必须处理 |
+|---|---|
+| 请求与上下文 | system/developer 指令、消息与多轮历史、模型、token 上限、工具定义、工具结果、metadata；无等价项必须在发送前 fail-closed 或显式 limitation。 |
+| 流式输出 | 将 Responses/Codex 事件归一到 IR，再按 Anthropic SSE 顺序发出 message start、text delta、tool-use delta、usage、message delta/stop 与 error；保持 Unicode 与 JSON 分片边界正确。 |
+| 工具与 thinking | 工具 id/name/参数增量/结果须能闭环；thinking/reasoning 仅在两端有可验证等价语义时映射，不能伪造、解密或重建签名块。要验证不会同时让 Claude Code 与 Codex 作为独立 Agent 各执行一轮工具。 |
+| 结束与错误 | 映射 stop reason、输入/输出/缓存用量、认证/限流/协议错误；客户端取消应立即取消上游并终止 SSE。 |
+
+重试安全性是状态机的一部分：只有在**首个有效流事件前**的可判定瞬态失败可在严格次数和 `Retry-After` 约束下重试；一旦已经向 Claude Code 输出任何有效事件，禁止重放、换账号重试或重新执行工具回合。每个账户 refresh 必须 single-flight；账户失效应隔离并返回稳定错误，不把其余账户或 token 暴露给调用方。
+
 ## 6. 判定顺序
 
 ```text
@@ -147,6 +227,8 @@ OAuth access/refresh token 带有客户端、受众、范围和刷新语义。�
 
 规则分析、计划与执行必须使用同一规则版本。`local_bridge` 由专用 Bridge 服务执行，不进入普通 `AdapterApplyService`；新增规则不得只在 UI 或命令层绕过计划门禁。
 
+对于 subscription 实验候选，流程在“是否有已测试且授权允许的转换器”前还必须检查 capability matrix 的全部门禁；任一门禁缺失或失效，分析结果固定为 `unsupported`，并且 `plan.canApply=false`。显式 opt-in 不能替代这些门禁。
+
 ## 7. 新增或更新规则
 
 每条规则至少记录：
@@ -159,10 +241,32 @@ OAuth access/refresh token 带有客户端、受众、范围和刷新语义。�
 
 出现以下变化时必须重新核对：厂商端点或认证方式变更、目标客户端协议升级、OAuth 刷新语义变化、规则代码或测试变化。未完成验证前保留原状态或降级为 `unsupported`，不能只更新文案日期。
 
+### 7.1 Codex → Claude Code 的阶段、测试与验收门槛
+
+| 阶段 | 交付与门禁 | `canApply` |
+|---|---|---|
+| 0. 证据与 fixtures | 固化官方依据、条款结论、身份分类样例、Messages/IR/Responses/SSE 正反例 fixtures；确认参考实现许可边界 | `false` |
+| 1. 纯协议内核 | 无网络、无 secret 的 Anthropic Messages ↔ IR ↔ Responses 转换及状态机测试 | `false` |
+| 2. 认证 / transport spike | 分别验证 App Server 与经批准 Responses 候选；验证 OAuth refresh、single-flight、取消、工具副作用与不泄露 secret | `false` |
+| 3. sidecar profile 与 Apply saga | 至少一个 transport 候选的技术、官方契约与条款门禁完整通过并被明确选定后，实现 loopback bearer、profile、core-owner IPC、目标配置写入和完整失败回滚；其他候选可明确淘汰 | 仅受控实验规则可为 `true` |
+| 4. dogfood / experimental rollout | 当前用户、本机、显式 opt-in 的小范围验证与持续回归；发现上游/条款/语义漂移立即降级 | 受控且可撤销 |
+| 以后 | 每个供应商/产品/目标组合重新取证 | 默认 `false` |
+
+测试矩阵至少覆盖：文本与多轮上下文、system/developer、tool definition / call / result / 并行调用、thinking 降级、usage、stop reason、上游错误、取消、SSE 分片与 Unicode；首事件前/后重试分界；refresh single-flight 与账户失效隔离；loopback bearer 拒绝缺失/错误 token；日志与 IPC 不含授权 JSON、access/refresh token、prompt、工具参数或响应正文；sidecar/GUI 进程和数据库所有权；端口冲突、配置 revision 冲突、启动后写入失败与写入后验证失败的逆序回滚。
+
+验收要求是：Claude Code 只通过 `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` 访问 loopback；上游 token 从未写入 Claude 配置、日志或 IPC 响应；一轮文本流和至少一轮工具闭环没有双执行；输出后没有重放；任一失败不会遗留 active profile 或指向失效 listener 的 live 配置；所有门禁、fixture 和端到端 dogfood 证据可追溯到 capability matrix。
+
+### 7.2 参考实现与许可证
+
+`cc-switch` 可作为本机代理、Codex OAuth single-flight refresh、Responses ↔ Anthropic（非流式/SSE）转换的设计证据；`sub2api` 可作为完整 Anthropic ↔ Responses 状态机、首事件前重试、输出后禁止重放和账号失效隔离的测试参考；`AionUi` 仅可作为轻量非流式转换参考。它们都不是上游官方契约，也不构成开放本方案的依据。
+
+在复制或改编任何代码前必须单独审查许可证与边界：cc-switch 为 MIT、sub2api 为 LGPL、AionUi 为 Apache-2.0。优先重写协议实现与 fixtures；未经审查不得把参考项目代码混入本仓库。
+
 ## 8. 官方资料
 
 - [OpenAI Codex Authentication](https://developers.openai.com/codex/auth)
 - [OpenAI Codex Configuration Reference](https://developers.openai.com/codex/config-reference)
+- [OpenAI Codex App Server](https://developers.openai.com/codex/app-server/)
 - [Anthropic Claude Code LLM gateway](https://docs.anthropic.com/en/docs/claude-code/llm-gateway)
 - [Anthropic Claude Code getting started](https://docs.anthropic.com/en/docs/claude-code/getting-started)
 - [Kimi Code 概览与 API Access](https://www.kimi.com/code/docs/en/)

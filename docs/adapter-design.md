@@ -1,6 +1,6 @@
 # Adapter 页面与本地协议桥接设计
 
-> 状态：**可应用路径已接线（Claude 稳定直连 + Codex 实验性本地桥接）**。Pi/config_sync 等仍为预览-only；发布前仍需实机 dogfood。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。
+> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi → Codex 实验性本地桥接）**。Pi/config_sync 等仍为预览-only；发布前仍需实机 dogfood。ChatGPT/Codex subscription → Claude Code 是单独受门禁约束的实验候选，当前仍为 `unsupported` / `plan.canApply=false`。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。
 > 调研日期：2026-08-12（进度同步：2026-08-12）
 > 重点参考：`D:\demo_github\AgentHub_Ref\Cli-Proxy-API-Management-Center`
 > 关联文档：[adapter-sidecar-design.md](adapter-sidecar-design.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
@@ -55,8 +55,8 @@ Adapter 负责把 **Connections 中已有的授权或 API Key** 接入另一个 
 
 ### 2.2 明确不做
 
-- 不把 ChatGPT、Claude 等消费级订阅 OAuth 当作通用 API Key 导出或任意转售。
-- 不承诺所有 OAuth 都能跨 Agent 使用；未经官方客户端或 SDK 明确支持的 OAuth 组合默认为 `unsupported`。
+- 不把 ChatGPT、Claude 等消费级订阅 OAuth 当作通用 API Key 导出、转售或共享。
+- 不承诺所有 OAuth 都能跨 Agent 使用。仅可研究“当前用户、本机 loopback、显式 opt-in、token 不可导出、不可公网/多租户”的供应商专属实验候选；未经专题门禁通过的组合一律为 `unsupported`。
 - 不建设公网网关、团队租户、计费、负载均衡、权重、冷却池或配额调度平台。
 - 不在 Adapter 首屏建设完整协议矩阵、监控大盘、日志控制台或 Provider 多栏工作台。
 - 不记录请求/响应正文，不展示或复制完整 Token。
@@ -162,7 +162,8 @@ PageHeader                                             [新建适配]
 
 - 目标 Agent 只列已安装或可配置的 Agent；不可用项置灰并说明原因。
 - 用户选择后立即运行 `analyze`，局部显示 skeleton，不锁住已有适配列表。
-- 结果使用一个清晰 Badge：`直接同步`、`原生端点`、`需要本地代理` 或 `不支持`。
+- 结果使用一个清晰 Badge：`直接同步`、`原生端点`、`需要本地代理` 或 `暂未支持`。
+- 对 subscription 实验候选，`不支持`还须显示“当前未通过上游/条款/协议门禁”，并链接[订阅桥接专题与门禁](provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code当前结论与前置门禁)；不得以 opt-in、测试按钮或隐藏开关绕开规则。
 
 #### 步骤 C：确认配置
 
@@ -230,7 +231,7 @@ PageHeader                                             [新建适配]
 | loading | 复用列表 skeleton，Dialog 分区局部 skeleton |
 | empty | 说明“把现有连接接入其他 Agent”，提供 `新建适配` |
 | disconnected | inline ErrorState；禁用新建和 mutation，已有信息可读 |
-| unsupported | 中性说明，不使用红色故障态；给出可用替代路径 |
+| unsupported | 中性说明，不使用红色故障态；给出原因、专题证据与可用替代路径。对 subscription 候选明确显示 `当前不支持`、`plan.canApply=false`，不显示 Apply、启动 bridge 或“强制继续”入口 |
 | starting/stopping | 当前行按钮 loading，其他行可操作 |
 | error | 行内短错误 + `查看诊断`；toast 只用于操作结果，不承载完整原因 |
 | needs_attention | warning 状态，显示恢复动作，不自动反复重试写配置 |

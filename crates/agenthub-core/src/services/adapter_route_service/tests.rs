@@ -173,6 +173,20 @@ fn unsupported_and_missing_sources_have_no_changes() {
     ProviderRepo::new(db.clone())
         .create(&provider("moonshot-provider", AgentId::Kimi, "moonshot"))
         .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "codex-account".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "Codex account".into(),
+            credentials: serde_json::json!({"refresh_token": "must-not-leak"}),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
     let service = AdapterRouteService::new(db);
 
     let unsupported = service
@@ -187,6 +201,29 @@ fn unsupported_and_missing_sources_have_no_changes() {
     assert!(!unsupported.can_apply);
     assert!(unsupported.changes.is_empty());
     assert_eq!(unsupported.service_impact, AdapterServiceImpact::None);
+    assert_eq!(
+        unsupported.analysis.evidence[0].url,
+        "https://github.com/nicechencs/AgentHub/blob/release/docs/provider-api-oauth-adaptation.md"
+    );
+    assert_eq!(
+        unsupported.analysis.evidence[0].label,
+        "AgentHub：厂商、API 与 OAuth 适配规则"
+    );
+
+    let codex_to_claude = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "codex-account",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert_eq!(codex_to_claude.analysis.route, AdapterRoute::Unsupported);
+    assert!(!codex_to_claude.can_apply);
+    assert!(codex_to_claude
+        .analysis
+        .reason
+        .contains("当前尚未完成上游授权、条款和协议兼容性验证"));
+    assert!(codex_to_claude.changes.is_empty());
 
     let missing = service.analyze(&request(
         AdapterSourceKind::Provider,

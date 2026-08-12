@@ -49,7 +49,7 @@ impl AdapterRouteService {
                 {
                     RouteSource::AnthropicApiKey
                 } else {
-                    RouteSource::Other
+                    RouteSource::Other(provider.agent_id)
                 }
             }
             AdapterSourceKind::Account => {
@@ -65,7 +65,7 @@ impl AdapterRouteService {
                 {
                     RouteSource::AnthropicApiKey
                 } else {
-                    RouteSource::Other
+                    RouteSource::Other(account.agent_id)
                 }
             }
         };
@@ -173,13 +173,17 @@ impl AdapterRouteService {
                 "Anthropic API Key 当前仅支持预览到 Pi。",
                 vec![anthropic_pi_evidence()],
             ),
-            (RouteSource::Other, _) => unsupported(
-                "该连接没有可识别的显式 Adapter 路由标记。",
-                vec![AdapterEvidence {
-                    label: "Adapter Phase 0 compatibility scope".into(),
-                    url: "https://www.kimi.com/code/docs/".into(),
-                    verified_at: VERIFIED_AT.into(),
-                }],
+            (RouteSource::Other(AgentId::Codex), AgentId::Claude)
+                if request.source_kind == AdapterSourceKind::Account =>
+            {
+                unsupported(
+                    "AgentHub 暂未提供从 Codex 账户到 Claude Code 的适配规则。当前尚未完成上游授权、条款和协议兼容性验证，因此不能应用；这只表示没有可执行规则，不代表连接失效。",
+                    vec![adapter_compatibility_evidence()],
+                )
+            }
+            (RouteSource::Other(_), _) => unsupported(
+                "AgentHub 暂未提供此来源到所选目标的适配规则。这不表示连接失效。",
+                vec![adapter_compatibility_evidence()],
             ),
         })
     }
@@ -270,7 +274,7 @@ impl AdapterRouteService {
 enum RouteSource {
     KimiMembership,
     AnthropicApiKey,
-    Other,
+    Other(AgentId),
 }
 
 fn json_string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
@@ -350,7 +354,7 @@ fn unsupported(reason: &str, evidence: Vec<AdapterEvidence>) -> AdapterRouteAnal
         support: AdapterSupport::Unsupported,
         reason: reason.into(),
         actions: vec![],
-        limitations: vec!["仅支持只读预览；不会 apply、sync 或启动 bridge。".into()],
+        limitations: vec!["该组合暂未支持；不会改动来源连接、本机服务或配置。".into()],
         evidence,
     }
 }
@@ -384,6 +388,16 @@ fn anthropic_pi_evidence() -> AdapterEvidence {
         label: "Pi custom provider and model configuration".into(),
         url: "https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md"
             .into(),
+        verified_at: VERIFIED_AT.into(),
+    }
+}
+
+fn adapter_compatibility_evidence() -> AdapterEvidence {
+    AdapterEvidence {
+        label: "AgentHub：厂商、API 与 OAuth 适配规则".into(),
+        url:
+            "https://github.com/nicechencs/AgentHub/blob/release/docs/provider-api-oauth-adaptation.md"
+                .into(),
         verified_at: VERIFIED_AT.into(),
     }
 }
