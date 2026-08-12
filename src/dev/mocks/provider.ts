@@ -21,6 +21,49 @@ const mockState: Record<AgentId, Provider[]> = {
 
 let lastSwitch: { agentId: AgentId; fromId: string; toId: string } | null = null;
 
+/** Clears browser-mock Connection state so each backend factory starts clean. */
+export function resetMockProviders(): void {
+  (Object.keys(mockState) as AgentId[]).forEach((agentId) => {
+    mockState[agentId].length = 0;
+  });
+  lastSwitch = null;
+}
+
+/** Read-only lookup used by browser-only compatibility previews. */
+export function getMockProviderById(providerId: string): Provider | undefined {
+  const found = (Object.keys(mockState) as AgentId[])
+    .flatMap((agentId) => mockState[agentId] ?? [])
+    .find((provider) => provider.id === providerId);
+  return found ? { ...found } : undefined;
+}
+
+/** Synchronous test-only insertion used when the mock Adapter generates a Connection. */
+export function upsertMockProvider(provider: Provider): Provider {
+  const list = mockState[provider.agentId] ?? (mockState[provider.agentId] = []);
+  const index = list.findIndex((item) => item.id === provider.id);
+  if (provider.isCurrent) {
+    list.forEach((item) => {
+      item.isCurrent = false;
+    });
+  }
+  if (index >= 0) {
+    list[index] = { ...provider };
+  } else {
+    list.push({ ...provider });
+  }
+  return { ...(index >= 0 ? list[index] : list[list.length - 1]) };
+}
+
+/** Synchronous cleanup used only by Adapter-owned generated Connections. */
+export function removeMockProvider(provider: Provider): void {
+  const list = mockState[provider.agentId] ?? [];
+  mockState[provider.agentId] = list.filter((item) => item.id !== provider.id);
+  if (lastSwitch?.agentId === provider.agentId
+    && (lastSwitch.fromId === provider.id || lastSwitch.toId === provider.id)) {
+    lastSwitch = null;
+  }
+}
+
 export function createMockProviderPort(): ProviderPort {
   return {
     async listProviders(agentId) {
@@ -35,14 +78,7 @@ export function createMockProviderPort(): ProviderPort {
 
     async upsertProvider(p) {
       await delay(randomLatency());
-      const list = mockState[p.agentId] ?? (mockState[p.agentId] = []);
-      const idx = list.findIndex((x) => x.id === p.id);
-      if (idx >= 0) {
-        list[idx] = { ...p };
-        return { ...list[idx] };
-      }
-      list.push({ ...p });
-      return { ...p };
+      return upsertMockProvider(p);
     },
 
     async deleteProvider(agentId, providerId) {

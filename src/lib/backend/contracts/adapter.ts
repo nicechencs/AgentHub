@@ -1,0 +1,143 @@
+import type { AgentId } from '@/lib/types';
+
+/** Saved connection table selected for a read-only adapter route preview. */
+export type AdapterSourceKind = 'account' | 'provider';
+
+export interface AdapterRouteRequest {
+  sourceKind: AdapterSourceKind;
+  /** Database row id; never a label, credential, or config body. */
+  sourceId: string;
+  targetAgentId: AgentId;
+}
+
+/** Closed compatibility routes; unknown wire values are rejected at the adapter boundary. */
+export type AdapterRoute = 'native_endpoint' | 'local_bridge' | 'config_sync' | 'unsupported';
+
+/** A rule can be stable, experimental, or explicitly unsupported. */
+export type AdapterSupport = 'stable' | 'experimental' | 'unsupported';
+
+export type AdapterActionKind =
+  | 'set_config'
+  | 'set_env'
+  | 'reference_connection_secret'
+  | 'requires_local_bridge';
+
+/** Safe action preview. A secret action only refers to the selected Connection. */
+export type AdapterAction =
+  | {
+      kind: AdapterActionKind;
+      target: string;
+      description: string;
+      value?: string;
+      secret: false;
+    }
+  | {
+      kind: AdapterActionKind;
+      target: string;
+      description: string;
+      secret: true;
+      value?: never;
+    };
+
+/** Official, date-stamped basis for the compatibility conclusion. */
+export interface AdapterEvidence {
+  label: string;
+  url: string;
+  verifiedAt: string;
+}
+
+/** Safe core response: no secret values or raw configuration are present. */
+export interface AdapterRouteAnalysis {
+  route: AdapterRoute;
+  support: AdapterSupport;
+  reason: string;
+  actions: AdapterAction[];
+  limitations: string[];
+  evidence: AdapterEvidence[];
+}
+
+export type AdapterServiceImpact = 'none' | 'requires_local_bridge';
+
+/** One future config mutation. A secret change has no serializable value. */
+export type AdapterPlanChange =
+  | { target: string; field: string; value?: string; secret: false }
+  | { target: string; field: string; secret: true; value?: never };
+
+/** Safe preview of the eventual configuration mutation. */
+export interface AdapterApplyPlan {
+  analysis: AdapterRouteAnalysis;
+  targetAgentId: AgentId;
+  /** Only explicit, stable rules can be applied. */
+  canApply: boolean;
+  serviceImpact: AdapterServiceImpact;
+  changes: AdapterPlanChange[];
+}
+
+/** Persisted lifecycle state for a credential-free adapter projection. */
+export type AdapterProfileStatus = 'applying' | 'active' | 'needs_attention';
+
+/** A saved adapter projection. It identifies connections but never serializes their secrets. */
+export interface AdapterProfile {
+  id: string;
+  name: string;
+  sourceKind: AdapterSourceKind;
+  sourceId: string;
+  targetAgentId: AgentId;
+  route: Exclude<AdapterRoute, 'unsupported'>;
+  status: AdapterProfileStatus;
+  ruleId: string;
+  ruleVersion: string;
+  generatedProviderId?: string | null;
+  /** Bound loopback port for a local bridge; direct routes leave this empty. */
+  localPort?: number | null;
+  /** Restored by the desktop host after launch when this is a local bridge. */
+  autoStart: boolean;
+  lastErrorCode?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Credential-free, in-process state of one local bridge listener. */
+export type AdapterBridgeRuntimeState =
+  | 'starting'
+  | 'running'
+  | 'stopping'
+  | 'stopped'
+  | 'error'
+  | 'degraded';
+
+/** Deliberately excludes the local bearer and all upstream credentials. */
+export interface AdapterBridgeRuntimeStatus {
+  profileId: string;
+  state: AdapterBridgeRuntimeState;
+  port?: number | null;
+  endpoint?: string | null;
+  startedAt?: string | null;
+  upstreamStatus?: string | null;
+}
+
+export type AdapterApplyRequest = AdapterRouteRequest;
+
+/** Generated provider is safe: it contains a connection reference, never a credential value. */
+export interface AdapterApplyResult {
+  profile: AdapterProfile;
+  provider: import('@/lib/types').Provider;
+}
+
+export interface AdapterProfileFilter {
+  sourceKind?: AdapterSourceKind;
+  sourceId?: string;
+  targetAgentId?: AgentId;
+}
+
+export interface AdapterPort {
+  analyze(request: AdapterRouteRequest): Promise<AdapterRouteAnalysis>;
+  plan(request: AdapterRouteRequest): Promise<AdapterApplyPlan>;
+  listProfiles(filter?: AdapterProfileFilter): Promise<AdapterProfile[]>;
+  apply(request: AdapterApplyRequest): Promise<AdapterApplyResult>;
+  remove(profileId: string): Promise<void>;
+  startBridge(profileId: string): Promise<AdapterBridgeRuntimeStatus>;
+  stopBridge(profileId: string): Promise<AdapterBridgeRuntimeStatus>;
+  getBridgeStatus(profileId: string): Promise<AdapterBridgeRuntimeStatus>;
+  setBridgeAutoStart(profileId: string, autoStart: boolean): Promise<AdapterProfile>;
+}

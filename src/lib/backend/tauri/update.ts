@@ -4,7 +4,7 @@
  */
 import { getVersion } from '@tauri-apps/api/app';
 import { check, type Update } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
+import { invoke } from '@tauri-apps/api/core';
 import type { UpdateDownloadProgress, UpdateInfo, UpdatePort } from '@/lib/backend/contracts/update-types';
 import { assertTauriRuntime } from './invoke';
 import { logger } from '@/lib/logger';
@@ -114,7 +114,9 @@ export function createTauriUpdatePort(): UpdatePort {
         });
 
         pendingUpdate = null;
-        await relaunch();
+        // Raw process-plugin relaunch would bypass active bridge impact
+        // confirmation. The Rust lifecycle command drains/asks first.
+        await invoke('request_controlled_restart');
       } catch (e) {
         log.error('downloadAndInstall failed', e);
         throw e;
