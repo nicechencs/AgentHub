@@ -42,6 +42,11 @@ fn demo_key() -> AgentKey {
     AgentKey::parse(DEMO_KEY).expect("demo-agent is a valid open AgentKey")
 }
 
+fn test_configuration_database() -> Database {
+    let dir = tempdir().expect("configuration authority tempdir");
+    Database::open(&dir.path().join("configuration-authority.db")).expect("configuration db")
+}
+
 // ── Test-only contributions (never registered in production) ─────────────────
 
 /// Detector that observes install state via a shared flag (no filesystem / process).
@@ -364,7 +369,7 @@ fn open_demo_platform() -> (
     config_reg
         .register(Arc::new(DemoConfigProjector { key: key.clone() }))
         .expect("register demo config projector");
-    let configuration = ConfigurationService::with_registry(config_reg.clone());
+    let configuration = ConfigurationService::with_registry(db.clone(), config_reg.clone());
 
     let lifecycle = LifecycleCoordinator::with_registries_and_executor(
         db,
@@ -507,7 +512,7 @@ fn demo_agent_config_schema_and_validate_via_configuration_service() {
     let mut reg = ConfigProjectorRegistry::new();
     reg.register(Arc::new(DemoConfigProjector { key: key.clone() }))
         .unwrap();
-    let svc = ConfigurationService::with_registry(reg);
+    let svc = ConfigurationService::with_registry(test_configuration_database(), reg);
 
     let schema = svc.schema_for_agent_key(&key).expect("schema via service");
     assert_eq!(schema.agent_key.as_str(), DEMO_KEY);
@@ -525,7 +530,10 @@ fn demo_agent_config_schema_and_validate_via_configuration_service() {
 #[test]
 fn unregistered_optional_projector_returns_unsupported() {
     // Empty registry: demo-agent has no projector — optional contribution absent.
-    let svc = ConfigurationService::with_registry(ConfigProjectorRegistry::new());
+    let svc = ConfigurationService::with_registry(
+        test_configuration_database(),
+        ConfigProjectorRegistry::new(),
+    );
     let key = demo_key();
     let err = svc
         .schema_for_agent_key(&key)

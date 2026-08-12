@@ -82,7 +82,7 @@ impl LifecycleCoordinator {
         detectors: DetectorRegistry,
         installs: InstallContributionRegistry,
     ) -> Self {
-        let executor = Arc::new(BuiltinLifecycleInstallExecutor::new(legacy_adapters));
+        let executor = Arc::new(BuiltinLifecycleInstallExecutor::new(&db, legacy_adapters));
         Self::with_registries_and_executor(db, detectors, installs, executor)
     }
 
@@ -430,9 +430,8 @@ impl LifecycleCoordinator {
                 err
             })?;
         if kind != OperationKind::Repair && !self.installs.contains_key(key) {
-            let err = AppError::from(
-                LifecycleError::unsupported(key, kind).with_operation_id(&op_id),
-            );
+            let err =
+                AppError::from(LifecycleError::unsupported(key, kind).with_operation_id(&op_id));
             log_lifecycle_error("lifecycle_unsupported", key, &op_id, kind, &err);
             return Err(err);
         }
@@ -674,14 +673,7 @@ impl LifecycleCoordinator {
             redact_text(&lifecycle.outcome.message)
         );
         if lifecycle.outcome.ok {
-            log_lifecycle_info(
-                "lifecycle_finalize",
-                key,
-                &op_id,
-                kind,
-                Some(status),
-                &msg,
-            );
+            log_lifecycle_info("lifecycle_finalize", key, &op_id, kind, Some(status), &msg);
         } else {
             // Execute body reported failure but coordination completed (DB finalized).
             let msg = redact_text(&msg);

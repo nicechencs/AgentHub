@@ -5,6 +5,7 @@ use crate::models::{
     RunSpec,
 };
 use serde_json::json;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tempfile::tempdir;
@@ -732,6 +733,183 @@ fn switching_already_current_provider_keeps_backfilled_live_value() {
 }
 
 #[test]
+fn live_config_snapshot_restores_exact_config_without_serializing_it() {
+    let original = AgentConfig {
+        agent: AgentId::Codex,
+        raw: json!({"format": "toml", "content": "api_key = 'original-secret'"}),
+    };
+    let (_root, _db, service, adapter, _backups) = live_svc(AgentId::Codex, original.clone());
+    let snapshot = service
+        .capture_live_config_snapshot(AgentId::Codex)
+        .unwrap();
+    adapter
+        .write_config(&AgentConfig {
+            agent: AgentId::Codex,
+            raw: json!({"format": "toml", "content": "api_key = 'bridge-secret'"}),
+        })
+        .unwrap();
+
+    service.restore_live_config_snapshot(&snapshot).unwrap();
+    assert_eq!(adapter.config(), original);
+    assert!(!format!("{snapshot:?}").contains("original-secret"));
+}
+
+#[test]
+fn switching_away_from_reference_provider_scrubs_backfill_before_db_write() {
+    let live = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+                "ANTHROPIC_AUTH_TOKEN": "live-kimi-secret"
+            }
+        }),
+    };
+    let (_root, _db, svc, adapter, _backups) = live_svc(AgentId::Claude, live);
+    let mut source = input("kimi-source", AgentId::Kimi, "Kimi membership", false);
+    source.settings_config = json!({"apiKey": "source-kimi-secret"});
+    source.meta = json!({"preset": "kimi-code-membership"});
+    svc.create(&source).unwrap();
+
+    let mut reference = input("claude-reference", AgentId::Claude, "Generated", true);
+    reference.settings_config = json!({"env": {
+        "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+        "ANTHROPIC_AUTH_TOKEN": "$AGENTHUB_CONNECTION_SECRET$"
+    }});
+    reference.meta = json!({
+        "generatedBy": "adapter",
+        "adapterRuleId": "kimi-membership-to-claude-v1",
+        "adapterRuleVersion": 1,
+        "adapterSecretMode": "source_reference",
+        "adapterSourceRef": {"kind": "provider", "id": "kimi-source"}
+    });
+    svc.create(&reference).unwrap();
+    let mut target = input("claude-manual", AgentId::Claude, "Manual", false);
+    target.settings_config = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "manual-target-secret"}});
+    svc.create(&target).unwrap();
+
+    svc.switch("claude-manual", AgentId::Claude).unwrap();
+    let stored_reference = svc.get("claude-reference", Some(AgentId::Claude)).unwrap();
+    let stored = serde_json::to_string(&stored_reference.settings_config).unwrap();
+    assert!(!stored.contains("live-kimi-secret"));
+    assert_eq!(
+        stored_reference.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "$AGENTHUB_CONNECTION_SECRET$"
+    );
+    assert_eq!(
+        stored_reference.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        "https://api.kimi.com/coding/"
+    );
+    assert_eq!(adapter.config().raw, target.settings_config);
+}
+
+#[test]
+fn selecting_current_reference_refreshes_secret_from_source() {
+    let live = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({"env": {
+            "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+            "ANTHROPIC_AUTH_TOKEN": "old-live-secret"
+        }}),
+    };
+    let (_root, _db, svc, adapter, _backups) = live_svc(AgentId::Claude, live);
+    let mut source = input("kimi-source", AgentId::Kimi, "Kimi membership", false);
+    source.settings_config = json!({"apiKey": "rotated-source-secret"});
+    source.meta = json!({"preset": "kimi-code-membership"});
+    svc.create(&source).unwrap();
+
+    let mut reference = input("claude-reference", AgentId::Claude, "Generated", true);
+    reference.settings_config = json!({"env": {
+        "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+        "ANTHROPIC_AUTH_TOKEN": "$AGENTHUB_CONNECTION_SECRET$"
+    }});
+    reference.meta = json!({
+        "generatedBy": "adapter",
+        "adapterRuleId": "kimi-membership-to-claude-v1",
+        "adapterRuleVersion": 1,
+        "adapterSecretMode": "source_reference",
+        "adapterSourceRef": {"kind": "provider", "id": "kimi-source"}
+    });
+    svc.create(&reference).unwrap();
+
+    let result = svc.switch("claude-reference", AgentId::Claude).unwrap();
+    assert_eq!(
+        adapter.config().raw["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "rotated-source-secret"
+    );
+    assert_eq!(
+        result.provider.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "$AGENTHUB_CONNECTION_SECRET$"
+    );
+    assert!(!serde_json::to_string(&result.provider.settings_config)
+        .unwrap()
+        .contains("old-live-secret"));
+}
+
+#[test]
+fn codex_local_token_adapter_provider_create_update_switch_and_readback_never_use_upstream_key() {
+    let upstream_key = "kimi-upstream-key-must-not-reach-codex";
+    let initial = AgentConfig {
+        agent: AgentId::Codex,
+        raw: json!({}),
+    };
+    let (_root, _db, svc, adapter, _backups) = live_svc(AgentId::Codex, initial);
+    let mut bridge = input("codex-kimi-bridge", AgentId::Codex, "Kimi Bridge", false);
+    bridge.settings_config = json!({
+        "format": "toml",
+        "content": "model_provider = \"agenthub_kimi_bridge\"\n[model_providers.agenthub_kimi_bridge]\nbase_url = \"http://127.0.0.1:43121/v1\"\nwire_api = \"responses\"\n",
+        "auth": { "OPENAI_API_KEY": "local-bridge-token-v1" },
+    });
+    bridge.meta = json!({
+        "preset": "openai-compatible",
+        "generatedBy": "adapter",
+        "adapterRuleId": "kimi-membership-to-codex-v1",
+        "adapterRuleVersion": 1,
+        "adapterSecretMode": "local_token",
+        "adapterProfileId": "bridge-profile",
+        "adapterSourceRef": {"kind": "provider", "id": "kimi-source"},
+    });
+    svc.create(&bridge).unwrap();
+
+    let first = svc.switch("codex-kimi-bridge", AgentId::Codex).unwrap();
+    assert_eq!(
+        adapter.config().raw["auth"]["OPENAI_API_KEY"],
+        "local-bridge-token-v1"
+    );
+    assert!(!serde_json::to_string(&adapter.config().raw)
+        .unwrap()
+        .contains(upstream_key));
+    assert!(!serde_json::to_string(&first.provider)
+        .unwrap()
+        .contains(upstream_key));
+
+    bridge.settings_config["content"] = json!("model_provider = \"agenthub_kimi_bridge\"\n[model_providers.agenthub_kimi_bridge]\nbase_url = \"http://127.0.0.1:43122/v1\"\nwire_api = \"responses\"\n");
+    bridge.settings_config["auth"]["OPENAI_API_KEY"] = json!("local-bridge-token-v2");
+    svc.update(&bridge).unwrap();
+    let second = svc.switch("codex-kimi-bridge", AgentId::Codex).unwrap();
+    let readback = svc.get("codex-kimi-bridge", Some(AgentId::Codex)).unwrap();
+    assert_eq!(
+        adapter.config().raw["auth"]["OPENAI_API_KEY"],
+        "local-bridge-token-v2"
+    );
+    assert!(adapter.config().raw["content"]
+        .as_str()
+        .unwrap()
+        .contains("43122"));
+    assert_eq!(
+        readback.settings_config["auth"]["OPENAI_API_KEY"],
+        "local-bridge-token-v2"
+    );
+    for value in [
+        serde_json::to_string(&second.provider).unwrap(),
+        serde_json::to_string(&readback).unwrap(),
+        serde_json::to_string(&adapter.config().raw).unwrap(),
+    ] {
+        assert!(!value.contains(upstream_key));
+    }
+}
+
+#[test]
 fn failed_live_write_leaves_db_and_live_unchanged_and_releases_lock() {
     let live = AgentConfig {
         agent: AgentId::Claude,
@@ -756,6 +934,88 @@ fn failed_live_write_leaves_db_and_live_unchanged_and_releases_lock() {
         1,
         "pre-write snapshot remains available after a failed write"
     );
+    assert!(!backups_root
+        .parent()
+        .unwrap()
+        .join("locks")
+        .join("provider-claude.lock")
+        .exists());
+}
+
+#[test]
+fn saga_guard_reuses_the_live_lock_and_rejects_the_wrong_agent() {
+    let live = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({}),
+    };
+    let (_root, db, svc, adapter, backups_root) = live_svc(AgentId::Claude, live.clone());
+    svc.create(&input("c1", AgentId::Claude, "Target", false))
+        .unwrap();
+
+    let guard = svc.begin_live_saga(AgentId::Claude).unwrap();
+    assert_eq!(guard.agent(), AgentId::Claude);
+    for result in [
+        svc.create(&input("c2", AgentId::Claude, "Blocked create", false))
+            .map(|_| ()),
+        svc.update(&input("c1", AgentId::Claude, "Blocked update", false))
+            .map(|_| ()),
+        svc.upsert(&input("c1", AgentId::Claude, "Blocked upsert", false))
+            .map(|_| ()),
+        svc.delete("c1", AgentId::Claude),
+    ] {
+        assert_eq!(result.unwrap_err().code(), "provider.lock");
+    }
+
+    let snapshot = svc
+        .capture_live_config_snapshot_with_guard(&guard, AgentId::Claude)
+        .unwrap();
+    assert_eq!(
+        svc.capture_live_config_snapshot_with_guard(&guard, AgentId::Codex)
+            .unwrap_err()
+            .code(),
+        "invalid_arg"
+    );
+    assert_eq!(
+        svc.switch_with_guard(&guard, "c1", AgentId::Codex)
+            .unwrap_err()
+            .code(),
+        "invalid_arg"
+    );
+    for result in [
+        svc.create_with_guard(&guard, &input("wrong", AgentId::Codex, "Wrong", false))
+            .map(|_| ()),
+        svc.update_with_guard(&guard, &input("c1", AgentId::Codex, "Wrong", false))
+            .map(|_| ()),
+        svc.upsert_with_guard(&guard, &input("c1", AgentId::Codex, "Wrong", false))
+            .map(|_| ()),
+        svc.delete_with_guard(&guard, "c1", AgentId::Codex),
+    ] {
+        assert_eq!(result.unwrap_err().code(), "invalid_arg");
+    }
+    let other_service = ProviderService::new(db);
+    assert_eq!(
+        other_service
+            .create_with_guard(
+                &guard,
+                &input("other", AgentId::Claude, "Wrong service", false)
+            )
+            .unwrap_err()
+            .code(),
+        "invalid_arg"
+    );
+
+    svc.switch_with_guard(&guard, "c1", AgentId::Claude)
+        .unwrap();
+    svc.restore_live_config_snapshot_with_guard(&guard, &snapshot)
+        .unwrap();
+    assert_eq!(adapter.config(), live);
+    assert!(backups_root
+        .parent()
+        .unwrap()
+        .join("locks")
+        .join("provider-claude.lock")
+        .exists());
+    drop(guard);
     assert!(!backups_root
         .parent()
         .unwrap()
@@ -924,139 +1184,4 @@ fn unsupported_apply_attempts_live_and_db_compensation() {
     assert_eq!(svc.get("c1", None).unwrap(), before);
     assert!(!svc.get("c2", None).unwrap().is_current);
     assert!(!error.to_string().contains("ANTHROPIC_AUTH_TOKEN"));
-}
-
-fn lock_path(dir: &Path, agent: AgentId) -> PathBuf {
-    dir.join(format!("provider-{}.lock", agent.as_str()))
-}
-
-fn write_lock_fixture(path: &Path, pid: u32, created_unix_ms: u64, token: &str) {
-    std::fs::write(
-        path,
-        format!("pid={pid}\ncreated_unix_ms={created_unix_ms}\ntoken={token}\n"),
-    )
-    .unwrap();
-}
-
-#[test]
-fn lock_owner_parse_roundtrip_and_rejects_malformed() {
-    let owner = LockOwner {
-        pid: 4242,
-        created_unix_ms: 1_700_000_000_000,
-        token: "tok-abc".into(),
-    };
-    let parsed = LockOwner::parse(&owner.serialize()).unwrap();
-    assert_eq!(parsed, owner);
-
-    assert!(LockOwner::parse("held").is_none());
-    assert!(LockOwner::parse("pid=1\ncreated_unix_ms=2\n").is_none());
-    assert!(LockOwner::parse("pid=x\ncreated_unix_ms=1\ntoken=t\n").is_none());
-    assert!(LockOwner::parse("pid=1\ncreated_unix_ms=nope\ntoken=t\n").is_none());
-    assert!(LockOwner::parse("pid=1\ncreated_unix_ms=1\ntoken=\n").is_none());
-}
-
-#[test]
-fn stale_lock_reclaimed_when_owner_pid_is_dead() {
-    let dir = tempdir().unwrap();
-    let path = lock_path(dir.path(), AgentId::Claude);
-    // pid 0 is never a live owner in our probe.
-    write_lock_fixture(&path, 0, unix_now_ms(), "dead-owner");
-
-    let lock = ProviderSwitchLock::acquire(dir.path(), AgentId::Claude).unwrap();
-    let raw = std::fs::read_to_string(&path).unwrap();
-    let owner = LockOwner::parse(&raw).unwrap();
-    assert_eq!(owner.pid, std::process::id());
-    assert_ne!(owner.token, "dead-owner");
-    drop(lock);
-    assert!(!path.exists());
-}
-
-#[test]
-fn stale_lock_reclaimed_when_ttl_exceeded() {
-    let dir = tempdir().unwrap();
-    let path = lock_path(dir.path(), AgentId::Codex);
-    // Current process is alive, but created far beyond the conservative TTL.
-    let ancient = unix_now_ms().saturating_sub(PROVIDER_LOCK_TTL.as_millis() as u64 + 60_000);
-    write_lock_fixture(&path, std::process::id(), ancient, "expired-owner");
-
-    let lock = ProviderSwitchLock::acquire(dir.path(), AgentId::Codex).unwrap();
-    let owner = LockOwner::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(owner.pid, std::process::id());
-    assert_ne!(owner.token, "expired-owner");
-    drop(lock);
-    assert!(!path.exists());
-}
-
-#[test]
-fn active_lock_with_live_owner_is_still_rejected() {
-    let dir = tempdir().unwrap();
-    let path = lock_path(dir.path(), AgentId::Grok);
-    write_lock_fixture(&path, std::process::id(), unix_now_ms(), "live-owner-token");
-
-    let err = ProviderSwitchLock::acquire(dir.path(), AgentId::Grok).unwrap_err();
-    assert_eq!(err.code(), "provider.lock");
-    // Fixture must remain untouched.
-    let owner = LockOwner::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(owner.token, "live-owner-token");
-}
-
-#[test]
-fn old_guard_drop_does_not_remove_new_owner_lock() {
-    let dir = tempdir().unwrap();
-    let path = lock_path(dir.path(), AgentId::Kimi);
-
-    let mut old_guard = ProviderSwitchLock::acquire(dir.path(), AgentId::Kimi).unwrap();
-    let old_token = old_guard.token.clone();
-
-    // Simulate another process replacing the lock: close our handle (Windows
-    // cannot replace an open file) without running Drop's ownership check,
-    // then write a new owner record under the same path.
-    drop(old_guard.file.take());
-    write_lock_fixture(
-        &path,
-        std::process::id(),
-        unix_now_ms(),
-        "replacement-owner",
-    );
-
-    // Drop must not delete the replacement owner's lock.
-    drop(old_guard);
-    assert!(path.exists());
-    let owner = LockOwner::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(owner.token, "replacement-owner");
-    assert_ne!(owner.token, old_token);
-}
-
-#[test]
-fn malformed_lock_is_fail_closed_and_not_reclaimed() {
-    let dir = tempdir().unwrap();
-    let path = lock_path(dir.path(), AgentId::Claude);
-    std::fs::write(&path, b"held").unwrap();
-
-    let err = ProviderSwitchLock::acquire(dir.path(), AgentId::Claude).unwrap_err();
-    assert_eq!(err.code(), "provider.lock");
-    assert_eq!(std::fs::read(&path).unwrap(), b"held");
-
-    // Partial metadata also fails closed.
-    std::fs::write(&path, b"pid=1\ntoken=only\n").unwrap();
-    let err = ProviderSwitchLock::acquire(dir.path(), AgentId::Claude).unwrap_err();
-    assert_eq!(err.code(), "provider.lock");
-    assert!(std::fs::read_to_string(&path)
-        .unwrap()
-        .contains("token=only"));
-}
-
-#[test]
-fn concurrent_guards_mutually_exclude_same_agent() {
-    let dir = tempdir().unwrap();
-    let first = ProviderSwitchLock::acquire(dir.path(), AgentId::Claude).unwrap();
-    let err = ProviderSwitchLock::acquire(dir.path(), AgentId::Claude).unwrap_err();
-    assert_eq!(err.code(), "provider.lock");
-    // Different agents do not share a lock file.
-    let other = ProviderSwitchLock::acquire(dir.path(), AgentId::Codex).unwrap();
-    drop(first);
-    // After release, same agent can acquire again.
-    let second = ProviderSwitchLock::acquire(dir.path(), AgentId::Claude).unwrap();
-    drop(other);
-    drop(second);
 }

@@ -792,7 +792,10 @@ fn key_native_detailed_uninstall_clears_install_and_records_operation() {
     assert_eq!(result.outcome.action, "agent_uninstall");
     assert!(!installed.load(Ordering::SeqCst));
     assert_eq!(result.operation_id.as_str(), sink.events[0].operation_id);
-    assert!(sink.events.iter().all(|e| e.kind == OperationKind::Uninstall));
+    assert!(sink
+        .events
+        .iter()
+        .all(|e| e.kind == OperationKind::Uninstall));
     assert!(sink.events.iter().any(|e| e.step == "execute"));
     assert!(sink.events.iter().any(|e| e.step == "redetect"));
     assert_eq!(
