@@ -541,20 +541,26 @@ fn persist_bridge_projection_inner(
         .ok_or_else(|| "adapter bridge profile has no generated provider".to_string())?
         .to_owned();
 
-    let created = match projection {
+    // Keep the row returned by create/update.  Re-reading it below is not only
+    // unnecessary, it creates a failure window after the projection has already
+    // been persisted: a transient read error would bypass compensation and
+    // leave the provider/profile pair out of sync.
+    let (created, projected_provider) = match projection {
         AdapterBridgeProviderProjection::Create(input) => {
-            hub.providers
+            let provider = hub
+                .providers
                 .create_with_guard(core_guard, &input)
                 .map_err(|error| map_err_string("create_adapter_bridge_provider", error))?;
-            true
+            (true, Some(provider))
         }
         AdapterBridgeProviderProjection::Update(input) => {
-            hub.providers
+            let provider = hub
+                .providers
                 .update_with_guard(core_guard, &input)
                 .map_err(|error| map_err_string("update_adapter_bridge_provider", error))?;
-            false
+            (false, Some(provider))
         }
-        AdapterBridgeProviderProjection::None => false,
+        AdapterBridgeProviderProjection::None => (false, None),
     };
 
     let generated_was_current = snapshot
@@ -580,7 +586,12 @@ fn persist_bridge_projection_inner(
                 ));
             }
         }
+    } else if let Some(provider) = projected_provider {
+        provider.redacted()
     } else {
+        // `None` means no pool mutation was needed.  The provider must still
+        // exist for the result, but this read happens only on the no-op path,
+        // before any new projection has been written by this saga.
         hub.providers
             .repo()
             .get_by_id(&provider_id)
