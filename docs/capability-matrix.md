@@ -146,13 +146,13 @@ pub struct CapabilityState {
 | Capability | 说明 | 当前事实（2026-08-03） |
 |---|---|---|
 | `Usage` | token / 计费统计 | **已实现**：`UsageService` + session 日志解析；六家 Full。Cursor **Unsupported**（IDE 内部用量库，范围外）。矩阵声明须与 `usage::supports_usage` 一致。 |
-| `Mcp` | MCP server 管理 / 注入 | **全 Planned**。配置层可能保留/备份 MCP 文件，但无 MCP 管理 Service；headless run 不传 MCP 参数。 |
+| `Mcp` | MCP server 管理 / 注入 | **全 Planned**。当前已有独立的只读 MCP inventory（core scanner + Tauri command + 页面），只汇总本机配置，不管理或注入 server；因此不改变本矩阵状态。 |
 | `ModelSelect` | 运行时指定模型 | **全 Planned**。模型经 live config / provider 池切换，非独立运行时目录。 |
 | `SessionResume` | 续接历史会话 | **全 Planned**。Chat 不用各 CLI 原生续会话能力。 |
 
 **填表纪律**：无本地验证证据前不得把 Planned 改成 Full。依据 `adding-an-agent.md`——「本地验证 > 仅 README」。
 
-**约束**：`Mcp` / `ModelSelect` / `SessionResume` 在对应 Service 落地前**不得产生调用方**。`require` 遇 `Planned` 与 `Unsupported` 同样拒绝，错误文案不同。
+**约束**：`Mcp` 的**管理 / 注入调用方**、`ModelSelect`、`SessionResume` 在对应 Service 落地前不得产生；只读 MCP inventory 是独立扫描能力，不经过 `Capability::Mcp` 放行。`require` 遇 `Planned` 与 `Unsupported` 同样拒绝，错误文案不同。
 
 ## 7. 真源与防漂移
 

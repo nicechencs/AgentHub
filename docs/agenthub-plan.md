@@ -315,7 +315,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 - 技术：React + TypeScript + Vite + Tailwind + shadcn/Radix（**只选一套 UI**）+ recharts + react-router + CodeMirror。**当前未**引入 TanStack Query / i18next（方案历史提及，以 `package.json` 为准）。
 - 结构：`lib/backend/tauri`（唯一 invoke）→ `lib/api` façade → 页面本地 state；mock 仅 `dev:mock`。事件桥为目标态，现以前端主动拉取为主。
-- 页面：Dashboard（含用量）/ Chat / Agents / Connections（账号 + API 配置）/ Skills / Projects / Settings（含 Backups）。
+- 页面：Dashboard（含用量）/ Chat / Agents / Connections（账号 + API 配置）/ Adapter / Skills / MCP（只读清单）/ Projects / Settings（含 Backups）。
 - 详细交互见 [ui-design.md](ui-design.md)。
 
 ## 7. 分期路线图
@@ -349,6 +349,8 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 前端 backend 分层（tauri / mocks / contracts / api façade） | ✅；`pnpm build` 强制 Tauri + 护栏 |
 | CLI `run` 多 Agent headless | ✅ |
 | 日志 tracing 文件 + 脱敏 | ✅ 见 logging.md |
+| Adapter 规则分析 / 预览 / profile 管理 | ✅；仅显式白名单可应用，当前组合与状态见[厂商、API 与 OAuth 适配规则](provider-api-oauth-adaptation.md#4-当前实现矩阵) |
+| MCP 本机配置清单 | ✅ core 只读扫描 + Tauri command + 前端页面；不修改或注入配置 |
 | 凭据落盘加密 | **范围外**（不实现） |
 
 ### 8.2 未实现 / 仅部分 / 范围外
@@ -359,7 +361,8 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 自身 **DB 备份**（`backups/db/`） | ❌ | 仅 live 快照 |
 | Dashboard **生产告警** | ❌ | 固定空实现；mock 可演示 |
 | Tauri **事件桥** | ❌ | 文档目标；现以前端 refetch 为主 |
-| 能力 `Mcp` / `ModelSelect` / `SessionResume` | Planned | 矩阵已声明，无调用方 |
+| MCP **管理 / 注入**、`ModelSelect`、`SessionResume` | Planned | `Mcp` 矩阵仍表示管理/注入能力；独立的只读 MCP inventory 已落地，不改变矩阵状态 |
+| Adapter 本地 Bridge 产品接线 | 🟡 部分实现 | core host、协议转换、Tauri controller、UI 控件、auto-start 恢复与退出 drain 已进入当前工作区；具体可执行状态见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)，端到端验收尚未收口 |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |
 | Token **后台自动刷新守护** | ❌ | 有手动 refresh |
 | Settings 部分开关真实生效 | 🟡 | 主题/语言/日志/用量定时采集部分接线；系统集成项未完整 |
@@ -374,15 +377,17 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 ### 8.3 前端导航（与代码 `App.tsx` 一致）
 
-Dashboard（含用量）/ Chat / Agents / Connections / Skills / Projects / Settings（含 Backups）。  
-旧路由 `/usage` → `/?section=usage`；`/backups` → `/settings?tab=backups`；`/providers`·`/accounts` → `/connections`。
+- Workspace：Chat / Agents / Skills / MCP / Projects。
+- Manage：Dashboard（含用量）/ Connections / Adapter / Settings（含 Backups）。
+
+旧路由 `/router` → `/adapter`；`/usage` → `/?section=usage`；`/backups` → `/settings?tab=backups`；`/providers`·`/accounts` → `/connections`。
 
 ## 9. 风险与开放问题
 
 1. **官方凭据落点随版本变化**：部分 Agent 的主登录态未必落在公开配置文件中。账号切换以文件型凭据导入/备份为先，未确认的路径不强行写入。
 2. **日志格式漂移**：各家 sessions 格式会随版本变。UsageParser 设计为容错（跳过失配记录 + 统计失败率 + 按 agent 版本选择解析器）。
 3. **合规边界**：定位是个人本地管理工具，不提供分发/网关能力；用户须遵守各上游服务条款。
-4. **写第三方配置的跟进成本**：各家配置格式都会变，适配层需要持续维护 —— 这也是克制范围、不做代理模式（P4 再评估）的原因。
+4. **写第三方配置的跟进成本**：各家配置格式都会变，适配层需要持续维护。项目不建设通用代理平台；Adapter 只按有证据、有 fixtures 的规则开放本地协议桥接。
 5. **Skills 真源假设**：以 `~/.agents/skills` 为唯一真源；若用户长期只在 Agent 目录改 skill，需补导入/回收，否则仅是单向投影器。
 6. **前置环境安装的权限与策略**：公司机可能禁用 winget/MSI、Node 装完但 GUI 进程 PATH 未刷新、需要「新开终端/重启 AgentHub」才能看到 `node`。产品文案与 `doctor` 需覆盖 **PATH 刷新 / 重启提示**；自动装 Runtime 失败必须降级为可复制命令，禁止假成功。
 7. **不替官方背锅**：Runtime/Agent 安装脚本来自上游；AgentHub 只编排与展示。网络失败、镜像源、证书问题在 UI 中归类为「环境/网络」并给出官方文档入口。
