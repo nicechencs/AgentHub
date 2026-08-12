@@ -91,7 +91,12 @@ pub struct ProjectUserMeta {
 
 impl ProjectUserMeta {
     pub fn is_empty(&self) -> bool {
-        !self.hidden && self.alias.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true)
+        !self.hidden
+            && self
+                .alias
+                .as_ref()
+                .map(|s| s.trim().is_empty())
+                .unwrap_or(true)
     }
 }
 

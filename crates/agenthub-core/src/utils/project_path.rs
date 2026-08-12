@@ -192,8 +192,7 @@ mod tests {
             Some(r"C:\Users\example")
         );
         // Hyphenated path segments are ambiguous (same as Claude encoding).
-        let lossy =
-            decode_pi_session_dir("--C--Users-example-Downloads-pi-windows-x64--").unwrap();
+        let lossy = decode_pi_session_dir("--C--Users-example-Downloads-pi-windows-x64--").unwrap();
         assert!(lossy.starts_with(r"C:\Users\example\Downloads\"));
         assert!(lossy.contains("pi"));
     }

@@ -157,7 +157,12 @@ pub fn identity_from_credentials(credentials: &Value) -> OAuthIdentity {
         subject: string_field(credentials, &["sub", "subject", "user_id", "userId"]),
         account_id: string_field(
             credentials,
-            &["account_id", "accountId", "account_uuid", "chatgpt_account_id"],
+            &[
+                "account_id",
+                "accountId",
+                "account_uuid",
+                "chatgpt_account_id",
+            ],
         ),
         organization_id: string_field(
             credentials,
@@ -328,7 +333,11 @@ fn base64url_decode(input: &str) -> Option<Vec<u8>> {
     base64::engine::general_purpose::STANDARD
         .decode(s.as_bytes())
         .ok()
-        .or_else(|| base64::engine::general_purpose::URL_SAFE.decode(s.as_bytes()).ok())
+        .or_else(|| {
+            base64::engine::general_purpose::URL_SAFE
+                .decode(s.as_bytes())
+                .ok()
+        })
 }
 
 fn string_field(v: &Value, keys: &[&str]) -> Option<String> {

@@ -957,5 +957,3 @@ fn uninstall_custom_target_lock_failure_keeps_source_and_lock_record() {
     assert!(shared_root.join("pkg").join("SKILL.md").is_file());
     assert!(skill_lock_load(&shared_root).unwrap().contains_key("pkg"));
 }
-
-

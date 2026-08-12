@@ -198,10 +198,7 @@ pub async fn uninstall_skill(
 
 /// Invoke: `update_skill`
 #[tauri::command]
-pub async fn update_skill(
-    state: State<'_, AppState>,
-    skill_id: String,
-) -> Result<Skill, String> {
+pub async fn update_skill(state: State<'_, AppState>, skill_id: String) -> Result<Skill, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
         hub.skills
@@ -259,8 +256,7 @@ pub async fn search_skill_market(
         // to mark market rows as installed.
         if let Ok(ids) = hub.skills.list_shared_ids() {
             for item in &mut items {
-                let local_id =
-                    agenthub_core::services::local_skill_id_from_market_id(&item.id);
+                let local_id = agenthub_core::services::local_skill_id_from_market_id(&item.id);
                 item.installed = ids.contains(item.id.as_str()) || ids.contains(&local_id);
             }
         }

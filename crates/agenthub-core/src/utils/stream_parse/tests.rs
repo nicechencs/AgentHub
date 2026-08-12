@@ -204,12 +204,7 @@ fn structured_requested_without_parser_falls_back_to_text() {
     let key = AgentKey::parse("no-parser-agent").unwrap();
     let empty = StreamParserRegistry::new();
     // Explicit structured request + empty registry → not structured, no panic.
-    let mut s = StreamSession::for_agent_key(
-        key,
-        ProcessMode::Structured,
-        true,
-        &empty,
-    );
+    let mut s = StreamSession::for_agent_key(key, ProcessMode::Structured, true, &empty);
     assert!(!s.is_structured());
     let out = s.feed(OutputStream::Stdout, "hello\n");
     assert_eq!(

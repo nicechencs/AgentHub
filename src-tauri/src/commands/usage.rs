@@ -8,9 +8,7 @@ use crate::commands::{map_err_string, parse_agent_opt, with_hub_blocking};
 use crate::state::AppState;
 
 #[tauri::command]
-pub async fn usage_get_availability(
-    state: State<'_, AppState>,
-) -> Result<Value, String> {
+pub async fn usage_get_availability(state: State<'_, AppState>) -> Result<Value, String> {
     let _hub = state.hub_arc()?;
     // Wired in core; always available in Tauri desktop.
     Ok(serde_json::json!({ "status": "available" }))
@@ -83,9 +81,7 @@ pub async fn usage_list_models(state: State<'_, AppState>) -> Result<Vec<String>
 }
 
 #[tauri::command]
-pub async fn usage_parser_health(
-    state: State<'_, AppState>,
-) -> Result<Vec<ParserHealth>, String> {
+pub async fn usage_parser_health(state: State<'_, AppState>) -> Result<Vec<ParserHealth>, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
         hub.usage
@@ -110,4 +106,3 @@ pub async fn usage_missing_pricing(
     })
     .await
 }
-

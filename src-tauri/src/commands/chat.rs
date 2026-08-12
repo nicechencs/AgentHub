@@ -211,12 +211,7 @@ mod tests {
 
     #[test]
     fn parse_agent_ids_dedupes_and_rejects_empty() {
-        let ids = parse_agent_ids(vec![
-            "claude".into(),
-            "claude".into(),
-            "codex".into(),
-        ])
-        .unwrap();
+        let ids = parse_agent_ids(vec!["claude".into(), "claude".into(), "codex".into()]).unwrap();
         assert_eq!(ids, vec![AgentId::Claude, AgentId::Codex]);
 
         let err = parse_agent_ids(vec![]).unwrap_err();
@@ -236,10 +231,7 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(
-            conv.agent_ids,
-            vec![AgentId::Claude, AgentId::Grok]
-        );
+        assert_eq!(conv.agent_ids, vec![AgentId::Claude, AgentId::Grok]);
 
         let updated = update_conversation_inner(
             &hub,

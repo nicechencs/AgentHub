@@ -192,5 +192,3 @@ fn replace_dir_atomic(
         }
     }
 }
-
-

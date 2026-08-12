@@ -72,10 +72,7 @@ pub fn start_skill_watcher(app: AppHandle, hub: Arc<AgentHub>) {
     }
 
     let roots_count = roots.len();
-    let root_labels: Vec<String> = roots
-        .iter()
-        .map(|p| p.display().to_string())
-        .collect();
+    let root_labels: Vec<String> = roots.iter().map(|p| p.display().to_string()).collect();
 
     std::thread::Builder::new()
         .name("skill-fs-watch".into())

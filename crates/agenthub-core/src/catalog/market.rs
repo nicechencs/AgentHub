@@ -167,10 +167,7 @@ pub fn skillhub_download_url(slug: &str, version: Option<&str>) -> String {
 
 /// User-Agent using the crate package version (not a hardcoded 0.1).
 pub fn skills_sh_user_agent() -> String {
-    format!(
-        "AgentHub/{} (+{REPO_URL})",
-        env!("CARGO_PKG_VERSION")
-    )
+    format!("AgentHub/{} (+{REPO_URL})", env!("CARGO_PKG_VERSION"))
 }
 
 /// Alias for shared market HTTP UA (skills.sh + skillhub).
@@ -207,9 +204,14 @@ mod tests {
         if std::env::var_os("AGENTHUB_SKILLHUB_API_BASE").is_none() {
             assert_eq!(skillhub_api_base_url(), "https://api.skillhub.cn");
             assert!(skillhub_skills_list_url().ends_with("/api/skills"));
-            assert!(skillhub_download_url("find-skills", Some("1.0.0")).contains("slug=find-skills"));
+            assert!(
+                skillhub_download_url("find-skills", Some("1.0.0")).contains("slug=find-skills")
+            );
         }
-        assert_eq!(SkillMarketSource::parse("auto").unwrap(), SkillMarketSource::Auto);
+        assert_eq!(
+            SkillMarketSource::parse("auto").unwrap(),
+            SkillMarketSource::Auto
+        );
         assert_eq!(
             SkillMarketSource::parse("skills.sh").unwrap(),
             SkillMarketSource::SkillsSh

@@ -574,7 +574,12 @@ pub(crate) fn reject_source_target_overlap(
     Ok(())
 }
 
-pub(crate) fn reject_canonical_overlap(a: &Path, b: &Path, a_label: &str, b_label: &str) -> Result<()> {
+pub(crate) fn reject_canonical_overlap(
+    a: &Path,
+    b: &Path,
+    a_label: &str,
+    b_label: &str,
+) -> Result<()> {
     let (Ok(ca), Ok(cb)) = (try_canonicalize_existing(a), try_canonicalize_existing(b)) else {
         return Ok(());
     };
@@ -715,7 +720,9 @@ pub(crate) fn validate_tree_entries_safe_rec(dir: &Path, label: &str) -> Result<
     Ok(())
 }
 
-pub(crate) fn collect_regular_files(root: &Path) -> std::result::Result<BTreeMap<String, Vec<u8>>, ()> {
+pub(crate) fn collect_regular_files(
+    root: &Path,
+) -> std::result::Result<BTreeMap<String, Vec<u8>>, ()> {
     let root_meta = fs::symlink_metadata(root).map_err(|_| ())?;
     if is_link_or_reparse(&root_meta) || !root_meta.is_dir() {
         return Err(());
@@ -795,4 +802,3 @@ pub(crate) fn normalize_rel_path(path: &Path) -> std::result::Result<String, ()>
     }
     Ok(parts.join("/"))
 }
-

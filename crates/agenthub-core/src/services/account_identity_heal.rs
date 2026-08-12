@@ -222,7 +222,11 @@ fn best_label_for(agent: AgentId, identity: &OAuthIdentity, credentials: &Value)
     Some(core)
 }
 
-fn flatten_tokens_for_agent(agent: AgentId, obj: &mut serde_json::Map<String, Value>, original: &Value) {
+fn flatten_tokens_for_agent(
+    agent: AgentId,
+    obj: &mut serde_json::Map<String, Value>,
+    original: &Value,
+) {
     // Codex: body.tokens.*
     if let Some(tokens) = original.pointer("/body/tokens") {
         if obj.get("access_token").and_then(|v| v.as_str()).is_none() {
@@ -304,10 +308,7 @@ fn flatten_tokens_for_agent(agent: AgentId, obj: &mut serde_json::Map<String, Va
     }
 }
 
-fn extract_identity_from_credentials(
-    agent: AgentId,
-    credentials: &Value,
-) -> Option<OAuthIdentity> {
+fn extract_identity_from_credentials(agent: AgentId, credentials: &Value) -> Option<OAuthIdentity> {
     let mut id = identity_from_credentials(credentials);
     let access = credentials
         .get("access_token")
@@ -319,7 +320,10 @@ fn extract_identity_from_credentials(
         .and_then(|v| v.as_str())
         .unwrap_or(agent.as_str());
     id.merge_missing(&extract_oauth_identity(
-        provider, credentials, access, id_token,
+        provider,
+        credentials,
+        access,
+        id_token,
     ));
 
     if let Some(body) = credentials.get("body") {
@@ -354,9 +358,7 @@ fn identity_from_live_body(agent: AgentId, body: &Value) -> OAuthIdentity {
         let access = tokens.get("access_token").and_then(|v| v.as_str());
         let id_token = tokens.get("id_token").and_then(|v| v.as_str());
         // Prefer id_token first (has email); extract_oauth_identity already merges both.
-        id.merge_missing(&extract_oauth_identity(
-            "codex", tokens, access, id_token,
-        ));
+        id.merge_missing(&extract_oauth_identity("codex", tokens, access, id_token));
         // Explicit: if id_token present, force email extraction path again with id_token as primary.
         if let Some(idt) = id_token {
             id.merge_missing(&extract_oauth_identity("codex", tokens, None, Some(idt)));
@@ -699,7 +701,11 @@ mod tests {
             Some("prolite")
         );
         // JWT exp should surface as expiresAt so the UI can show remaining time.
-        assert!(acc.extra.get("expiresAt").and_then(|v| v.as_str()).is_some());
+        assert!(acc
+            .extra
+            .get("expiresAt")
+            .and_then(|v| v.as_str())
+            .is_some());
         assert_eq!(
             acc.extra.get("tokenExpired").and_then(|v| v.as_bool()),
             Some(false)

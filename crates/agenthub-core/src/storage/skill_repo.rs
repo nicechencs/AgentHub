@@ -169,13 +169,12 @@ impl SkillRepo {
         updated_at: &str,
     ) -> Result<SkillAssignmentRow> {
         self.db.with_conn(|conn| {
-            let existing = get_assignment_conn(conn, skill_package_id, agent_key)?.ok_or_else(
-                || {
+            let existing =
+                get_assignment_conn(conn, skill_package_id, agent_key)?.ok_or_else(|| {
                     AppError::NotFound(format!(
                         "skill assignment not found: {skill_package_id}/{agent_key}"
                     ))
-                },
-            )?;
+                })?;
             let row = SkillAssignmentRow {
                 skill_package_id: existing.skill_package_id,
                 agent_key: existing.agent_key,
@@ -188,7 +187,10 @@ impl SkillRepo {
             };
             upsert_assignment_conn(conn, &row)?;
             get_assignment_conn(conn, skill_package_id, agent_key)?.ok_or_else(|| {
-                AppError::message("db.skill_assignment", "assignment missing after update_observed")
+                AppError::message(
+                    "db.skill_assignment",
+                    "assignment missing after update_observed",
+                )
             })
         })
     }

@@ -174,7 +174,14 @@ pub fn list_installed(hub: &AgentHub, format: OutputFormat) -> Result<()> {
         OutputFormat::Table => {
             let mut table = Table::new();
             table.load_preset(UTF8_FULL);
-            table.set_header(vec!["Id", "Name", "Origin", "Root", "Projectable", "MapStatus"]);
+            table.set_header(vec![
+                "Id",
+                "Name",
+                "Origin",
+                "Root",
+                "Projectable",
+                "MapStatus",
+            ]);
             for s in &items {
                 table.add_row(vec![
                     Cell::new(&s.id),

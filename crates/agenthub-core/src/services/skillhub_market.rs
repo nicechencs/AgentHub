@@ -190,14 +190,12 @@ impl SkillhubMarket {
     fn materialize_skill(&self, listing_id: &str) -> Result<(PathBuf, PathBuf)> {
         let (slug, version) = parse_skillhub_id(listing_id)?;
         let download_url = skillhub_download_url(&slug, version.as_deref());
-        let tmp = tempfile::tempdir().map_err(|e| {
-            AppError::message("skill.market", format!("tempdir failed: {e}"))
-        })?;
+        let tmp = tempfile::tempdir()
+            .map_err(|e| AppError::message("skill.market", format!("tempdir failed: {e}")))?;
         let zip_path = tmp.path().join("skill.zip");
         let extract_dir = tmp.path().join("extracted");
-        fs::create_dir_all(&extract_dir).map_err(|e| {
-            AppError::message("skill.market", format!("mkdir extract failed: {e}"))
-        })?;
+        fs::create_dir_all(&extract_dir)
+            .map_err(|e| AppError::message("skill.market", format!("mkdir extract failed: {e}")))?;
 
         download_file(&download_url, &zip_path)?;
         extract_zip(&zip_path, &extract_dir)?;
@@ -301,9 +299,8 @@ pub fn is_skillhub_listing_id(id: &str) -> bool {
 }
 
 fn parse_skills_page(body: &str) -> Result<Vec<HubSkill>> {
-    let v: Value = serde_json::from_str(body).map_err(|e| {
-        AppError::message("skill.market", format!("skillhub.cn list JSON: {e}"))
-    })?;
+    let v: Value = serde_json::from_str(body)
+        .map_err(|e| AppError::message("skill.market", format!("skillhub.cn list JSON: {e}")))?;
     // { code: 0, data: { skills: [...], total }, message }
     if let Some(code) = v.get("code").and_then(|c| c.as_i64()) {
         if code != 0 {
@@ -322,7 +319,10 @@ fn parse_skills_page(body: &str) -> Result<Vec<HubSkill>> {
         .and_then(|x| x.as_array())
         .or_else(|| v.get("skills").and_then(|x| x.as_array()))
         .ok_or_else(|| {
-            AppError::message("skill.market", "skillhub.cn list: missing data.skills array")
+            AppError::message(
+                "skill.market",
+                "skillhub.cn list: missing data.skills array",
+            )
         })?;
     Ok(parse_skills_array(arr))
 }
@@ -431,7 +431,10 @@ fn download_file(url: &str, dest: &Path) -> Result<()> {
         ));
     }
     let meta = fs::metadata(dest).map_err(|e| {
-        AppError::message("skill.market", format!("skillhub zip missing after download: {e}"))
+        AppError::message(
+            "skill.market",
+            format!("skillhub zip missing after download: {e}"),
+        )
     })?;
     if meta.len() == 0 {
         return Err(AppError::message(
@@ -454,10 +457,7 @@ fn extract_zip(zip_path: &Path, dest_dir: &Path) -> Result<()> {
             .args(["-NoProfile", "-NonInteractive", "-Command", &script])
             .output()
             .map_err(|e| {
-                AppError::message(
-                    "skill.market",
-                    format!("Expand-Archive spawn failed: {e}"),
-                )
+                AppError::message("skill.market", format!("Expand-Archive spawn failed: {e}"))
             })?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

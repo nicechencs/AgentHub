@@ -11,9 +11,7 @@ mod registry;
 pub mod sources;
 
 pub use parser::{StreamParseError, StreamParser};
-pub use registry::{
-    builtin_stream_registry, StreamParserRegistry, StreamParserRegistryError,
-};
+pub use registry::{builtin_stream_registry, StreamParserRegistry, StreamParserRegistryError};
 
 /// Whether a structured StreamParser is registered for this agent.
 pub fn has_stream_parser(agent: crate::models::AgentId) -> bool {

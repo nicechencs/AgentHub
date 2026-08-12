@@ -55,22 +55,10 @@ mod tests {
 
     #[test]
     fn close_hides_only_when_flag_on_and_not_exiting() {
-        assert_eq!(
-            decide_close_action(false, true),
-            CloseAction::HideToTray
-        );
-        assert_eq!(
-            decide_close_action(false, false),
-            CloseAction::AllowExit
-        );
-        assert_eq!(
-            decide_close_action(true, true),
-            CloseAction::AllowExit
-        );
-        assert_eq!(
-            decide_close_action(true, false),
-            CloseAction::AllowExit
-        );
+        assert_eq!(decide_close_action(false, true), CloseAction::HideToTray);
+        assert_eq!(decide_close_action(false, false), CloseAction::AllowExit);
+        assert_eq!(decide_close_action(true, true), CloseAction::AllowExit);
+        assert_eq!(decide_close_action(true, false), CloseAction::AllowExit);
     }
 
     #[test]

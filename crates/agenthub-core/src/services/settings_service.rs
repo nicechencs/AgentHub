@@ -130,9 +130,18 @@ mod tests {
     fn path_info_includes_logs_dir() {
         let (dir, svc) = svc_tmp();
         let info = svc.path_info();
-        assert!(info.data_dir.contains(dir.path().file_name().unwrap().to_str().unwrap()) || info.data_dir == dir.path().display().to_string());
-        assert!(info.logs_dir.ends_with("logs") || info.logs_dir.replace('\\', "/").ends_with("/logs"));
-        assert!(info.db_path.ends_with("agenthub.db") || info.db_path.replace('\\', "/").ends_with("agenthub.db"));
+        assert!(
+            info.data_dir
+                .contains(dir.path().file_name().unwrap().to_str().unwrap())
+                || info.data_dir == dir.path().display().to_string()
+        );
+        assert!(
+            info.logs_dir.ends_with("logs") || info.logs_dir.replace('\\', "/").ends_with("/logs")
+        );
+        assert!(
+            info.db_path.ends_with("agenthub.db")
+                || info.db_path.replace('\\', "/").ends_with("agenthub.db")
+        );
     }
 
     #[test]

@@ -12,11 +12,7 @@ fn parse_agent_filter(agent_filter: Option<&str>) -> Result<Option<AgentId>> {
 }
 
 /// Incremental collect from agent session logs.
-pub fn collect(
-    hub: &AgentHub,
-    format: OutputFormat,
-    agent_filter: Option<&str>,
-) -> Result<()> {
+pub fn collect(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
     let filter = parse_agent_filter(agent_filter)?;
     let result = hub.usage.collect(filter)?;
     emit_collect(&result, format)
@@ -44,11 +40,7 @@ pub fn stats(
 }
 
 /// Distinct model names from usage table (not an official catalog).
-pub fn models(
-    hub: &AgentHub,
-    format: OutputFormat,
-    agent_filter: Option<&str>,
-) -> Result<()> {
+pub fn models(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
     let agent = parse_agent_filter(agent_filter)?;
     let mut list = hub.usage.list_models()?;
     if let Some(a) = agent {

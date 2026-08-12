@@ -1,6 +1,8 @@
 //! Node.js / npm / PowerShell / Git detection.
 
-use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use std::path::Path;
+use std::path::PathBuf;
 
 use which::which;
 
@@ -10,7 +12,7 @@ use crate::utils::process::{run_capture, stdout_first_line};
 use crate::catalog::limits::NODE_MIN_MAJOR;
 
 pub fn detect_nodejs() -> EnvStatus {
-    match resolve_which(&["node", "node.exe"]) {
+    match resolve_binary(&["node", "node.exe"]) {
         Some(path) => match run_capture(&path, &["-v"]) {
             Ok(out) if out.status.success() => {
                 let version =
@@ -53,7 +55,7 @@ pub fn detect_nodejs() -> EnvStatus {
 }
 
 pub fn detect_npm() -> EnvStatus {
-    match resolve_which(&["npm", "npm.cmd", "npm.exe"]) {
+    match resolve_binary(&["npm", "npm.cmd", "npm.exe"]) {
         Some(path) => match run_capture(&path, &["-v"]) {
             Ok(out) if out.status.success() => EnvStatus {
                 id: RuntimeId::Npm,
@@ -113,128 +115,124 @@ pub fn detect_powershell() -> EnvStatus {
 
     #[cfg(windows)]
     {
-    let mut notes = Vec::new();
-    let mut last_broken: Option<PathBuf> = None;
+        let mut notes = Vec::new();
+        let mut last_broken: Option<PathBuf> = None;
 
-    let ps51 = probe_powershell_candidate(
-        &["powershell", "powershell.exe"],
-        Some(PathBuf::from(
-            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
-        )),
-    );
-
-    let pwsh = probe_powershell_candidate(&["pwsh", "pwsh.exe"], None);
-
-    match &ps51 {
-        PsProbe::Ok { path, version } => {
-            notes.push(format!(
-                "Windows PowerShell 5.1: {} @ {}",
-                version.as_deref().unwrap_or("ok"),
-                path.display()
-            ));
-        }
-        PsProbe::Broken { path } => {
-            notes.push(format!(
-                "Windows PowerShell 5.1: broken @ {}",
-                path.display()
-            ));
-            last_broken = Some(path.clone());
-        }
-        PsProbe::Missing => {
-            notes.push("Windows PowerShell 5.1: missing".into());
-        }
-        PsProbe::NotApplicable => {
-            notes.push("Windows PowerShell 5.1: not applicable on this platform".into());
-        }
-    }
-
-    match &pwsh {
-        PsProbe::Ok { path, version } => {
-            notes.push(format!(
-                "PowerShell 7 (pwsh): {} @ {}",
-                version.as_deref().unwrap_or("ok"),
-                path.display()
-            ));
-        }
-        PsProbe::Broken { path } => {
-            notes.push(format!("PowerShell 7 (pwsh): broken @ {}", path.display()));
-            last_broken = Some(path.clone());
-        }
-        PsProbe::Missing => {
-            notes.push("PowerShell 7 (pwsh): missing".into());
-        }
-        PsProbe::NotApplicable => {}
-    }
-
-    // Aggregate readiness: any working interpreter is enough for native channel.
-    // Prefer pwsh as the reported path/version for install execution affinity.
-    let status = if let PsProbe::Ok { path, version } = &pwsh {
-        EnvStatus {
-            id: RuntimeId::PowerShell,
-            status: EnvStatusKind::Ok,
-            version: version.clone(),
-            path: Some(path.clone()),
-            min_required: None,
-            remediation: None,
-            notes,
-        }
-    } else if let PsProbe::Ok { path, version } = &ps51 {
-        EnvStatus {
-            id: RuntimeId::PowerShell,
-            status: EnvStatusKind::Ok,
-            version: version.clone(),
-            path: Some(path.clone()),
-            min_required: None,
-            remediation: None,
-            notes,
-        }
-    } else if let Some(path) = last_broken {
-        EnvStatus {
-            id: RuntimeId::PowerShell,
-            status: EnvStatusKind::BrokenPath,
-            version: None,
-            path: Some(path),
-            min_required: None,
-            remediation: None,
-            notes,
-        }
-    } else {
-        EnvStatus {
-            id: RuntimeId::PowerShell,
-            status: EnvStatusKind::Missing,
-            version: None,
-            path: None,
-            min_required: None,
-            remediation: None,
-            notes,
-        }
-    };
-
-    for n in &status.notes {
-        tracing::debug!(
-            target: crate::logging::targets::DETECT,
-            module = crate::logging::targets::DETECT,
-            op = "detect_powershell",
-            status = ?status.status,
-            "{n}"
+        let ps51 = probe_powershell_candidate(
+            &["powershell", "powershell.exe"],
+            Some(PathBuf::from(
+                r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+            )),
         );
-    }
-    if status.status != EnvStatusKind::Ok {
-        tracing::info!(
-            target: crate::logging::targets::DETECT,
-            module = crate::logging::targets::DETECT,
-            op = "detect_powershell",
-            status = ?status.status,
-            path = %status
-                .path
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "-".into()),
-            "PowerShell runtime not fully ready (5.1 and/or 7 may be missing)"
-        );
-    }
 
-    status
+        let pwsh = probe_powershell_candidate(&["pwsh", "pwsh.exe"], None);
+
+        match &ps51 {
+            PsProbe::Ok { path, version } => {
+                notes.push(format!(
+                    "Windows PowerShell 5.1: {} @ {}",
+                    version.as_deref().unwrap_or("ok"),
+                    path.display()
+                ));
+            }
+            PsProbe::Broken { path } => {
+                notes.push(format!(
+                    "Windows PowerShell 5.1: broken @ {}",
+                    path.display()
+                ));
+                last_broken = Some(path.clone());
+            }
+            PsProbe::Missing => {
+                notes.push("Windows PowerShell 5.1: missing".into());
+            }
+        }
+
+        match &pwsh {
+            PsProbe::Ok { path, version } => {
+                notes.push(format!(
+                    "PowerShell 7 (pwsh): {} @ {}",
+                    version.as_deref().unwrap_or("ok"),
+                    path.display()
+                ));
+            }
+            PsProbe::Broken { path } => {
+                notes.push(format!("PowerShell 7 (pwsh): broken @ {}", path.display()));
+                last_broken = Some(path.clone());
+            }
+            PsProbe::Missing => {
+                notes.push("PowerShell 7 (pwsh): missing".into());
+            }
+        }
+
+        // Aggregate readiness: any working interpreter is enough for native channel.
+        // Prefer pwsh as the reported path/version for install execution affinity.
+        let status = if let PsProbe::Ok { path, version } = &pwsh {
+            EnvStatus {
+                id: RuntimeId::PowerShell,
+                status: EnvStatusKind::Ok,
+                version: version.clone(),
+                path: Some(path.clone()),
+                min_required: None,
+                remediation: None,
+                notes,
+            }
+        } else if let PsProbe::Ok { path, version } = &ps51 {
+            EnvStatus {
+                id: RuntimeId::PowerShell,
+                status: EnvStatusKind::Ok,
+                version: version.clone(),
+                path: Some(path.clone()),
+                min_required: None,
+                remediation: None,
+                notes,
+            }
+        } else if let Some(path) = last_broken {
+            EnvStatus {
+                id: RuntimeId::PowerShell,
+                status: EnvStatusKind::BrokenPath,
+                version: None,
+                path: Some(path),
+                min_required: None,
+                remediation: None,
+                notes,
+            }
+        } else {
+            EnvStatus {
+                id: RuntimeId::PowerShell,
+                status: EnvStatusKind::Missing,
+                version: None,
+                path: None,
+                min_required: None,
+                remediation: None,
+                notes,
+            }
+        };
+
+        for n in &status.notes {
+            tracing::debug!(
+                target: crate::logging::targets::DETECT,
+                module = crate::logging::targets::DETECT,
+                op = "detect_powershell",
+                status = ?status.status,
+                "{n}"
+            );
+        }
+        if status.status != EnvStatusKind::Ok {
+            tracing::info!(
+                target: crate::logging::targets::DETECT,
+                module = crate::logging::targets::DETECT,
+                op = "detect_powershell",
+                status = ?status.status,
+                path = %status
+                    .path
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "-".into()),
+                "PowerShell runtime not fully ready (5.1 and/or 7 may be missing)"
+            );
+        }
+
+        status
     } // #[cfg(windows)]
 }
 
@@ -251,12 +249,11 @@ enum PsProbe {
         path: PathBuf,
     },
     Missing,
-    NotApplicable,
 }
 
 #[cfg(windows)]
 fn probe_powershell_candidate(names: &[&str], fallback: Option<PathBuf>) -> PsProbe {
-    if let Some(path) = resolve_which(names) {
+    if let Some(path) = resolve_binary(names) {
         return probe_ps_path(&path);
     }
     if let Some(fb) = fallback {
@@ -287,8 +284,12 @@ fn probe_ps_path(path: &Path) -> PsProbe {
     }
 }
 
-/// Resolve first existing binary from candidate names (`which`).
-fn resolve_which(names: &[&str]) -> Option<PathBuf> {
+/// Resolve the first existing binary from PATH or supported platform fallbacks.
+///
+/// Keep all runtime detection and install execution on this resolver: GUI-launched
+/// macOS applications often lack Homebrew in PATH, while an absolute npm binary
+/// under `/opt/homebrew/bin` or `/usr/local/bin` remains executable.
+pub fn resolve_binary(names: &[&str]) -> Option<PathBuf> {
     for name in names {
         if let Ok(p) = which(name) {
             return Some(p);
@@ -310,14 +311,28 @@ fn resolve_which(names: &[&str]) -> Option<PathBuf> {
 /// Kept as a pure helper so path coverage is testable without mutating PATH or
 /// requiring Homebrew to be installed on the test host.
 fn platform_binary_candidates(names: &[&str]) -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
     #[cfg(target_os = "macos")]
-    for prefix in ["/opt/homebrew/bin", "/usr/local/bin"] {
-        for name in names {
-            candidates.push(PathBuf::from(prefix).join(name));
-        }
+    {
+        return homebrew_binary_candidates(names);
     }
-    candidates
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = names;
+        Vec::new()
+    }
+}
+
+/// Homebrew binary locations, kept platform-independent for deterministic tests.
+#[cfg(any(target_os = "macos", test))]
+fn homebrew_binary_candidates(names: &[&str]) -> Vec<PathBuf> {
+    ["/opt/homebrew/bin", "/usr/local/bin"]
+        .into_iter()
+        .flat_map(|prefix| {
+            names
+                .iter()
+                .map(move |name| PathBuf::from(prefix).join(name))
+        })
+        .collect()
 }
 
 /// Detect Git CLI (`git --version`).
@@ -326,7 +341,7 @@ fn platform_binary_candidates(names: &[&str]) -> Vec<PathBuf> {
 /// Not an Agent install-channel hard dependency, but listed as a shared runtime
 /// so doctor / Agents env bar can detect and guide install.
 pub fn detect_git() -> EnvStatus {
-    match resolve_which(&["git", "git.exe"]) {
+    match resolve_binary(&["git", "git.exe"]) {
         Some(path) => match run_capture(&path, &["--version"]) {
             Ok(out) if out.status.success() => {
                 let raw = stdout_first_line(&out);
@@ -367,10 +382,10 @@ pub fn detect_git() -> EnvStatus {
 /// Used by native install script runner — logs should include the chosen path.
 pub fn resolve_powershell_for_native() -> Option<PathBuf> {
     // Prefer 7 for modern script compatibility.
-    if let Some(p) = resolve_which(&["pwsh", "pwsh.exe"]) {
+    if let Some(p) = resolve_binary(&["pwsh", "pwsh.exe"]) {
         return Some(p);
     }
-    if let Some(p) = resolve_which(&["powershell", "powershell.exe"]) {
+    if let Some(p) = resolve_binary(&["powershell", "powershell.exe"]) {
         return Some(p);
     }
     #[cfg(windows)]
@@ -403,116 +418,5 @@ fn parse_git_version(line: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_major_ok() {
-        assert_eq!(parse_major("22.11.0"), Some(22));
-        assert_eq!(parse_major("7.6.4"), Some(7));
-    }
-
-    #[test]
-    fn parse_git_version_strips_prefix() {
-        assert_eq!(
-            parse_git_version("git version 2.43.0.windows.1"),
-            "2.43.0.windows.1"
-        );
-        assert_eq!(parse_git_version("git version 2.39.2"), "2.39.2");
-        assert_eq!(parse_git_version("2.40.0"), "2.40.0");
-    }
-
-    #[test]
-    fn detect_git_returns_git_runtime_id() {
-        let st = detect_git();
-        assert_eq!(st.id, RuntimeId::Git);
-        // On machines with git, status should be Ok with a path; without git → Missing.
-        match st.status {
-            EnvStatusKind::Ok => {
-                assert!(st.path.is_some());
-                assert!(st.version.is_some());
-            }
-            EnvStatusKind::Missing => {
-                assert!(st.path.is_none());
-            }
-            EnvStatusKind::BrokenPath => {
-                assert!(st.path.is_some());
-            }
-            EnvStatusKind::Outdated => panic!("git has no min version yet"),
-        }
-    }
-
-    #[test]
-    fn detect_powershell_emits_dual_version_notes() {
-        let st = detect_powershell();
-        assert!(!st.notes.is_empty(), "PowerShell detect must emit notes");
-        assert_eq!(st.id, RuntimeId::PowerShell);
-        #[cfg(windows)]
-        {
-            assert!(
-                st.notes.iter().any(|n| n.contains("Windows PowerShell 5.1")),
-                "Windows must report 5.1 line: {:?}",
-                st.notes
-            );
-            assert!(
-                st.notes.iter().any(|n| n.contains("PowerShell 7")),
-                "Windows must report pwsh line: {:?}",
-                st.notes
-            );
-        }
-        #[cfg(not(windows))]
-        {
-            // macOS/Linux: do not probe pwsh; mark as not required / not applicable.
-            assert_eq!(st.status, EnvStatusKind::Ok);
-            assert!(st.path.is_none());
-            assert!(
-                st.notes.iter().any(|n| n.contains("not applicable") || n.contains("not required")),
-                "non-Windows must mark PowerShell as not applicable/required: {:?}",
-                st.notes
-            );
-            assert!(
-                !st.notes
-                    .iter()
-                    .any(|n| n.contains("Windows PowerShell 5.1:") && n.contains('@')),
-                "non-Windows must not report a 5.1 binary path: {:?}",
-                st.notes
-            );
-        }
-    }
-
-    #[test]
-    fn resolve_powershell_for_native_prefers_existing_binary() {
-        // On CI/dev machines at least one of System32 powershell or pwsh is common on Windows.
-        let resolved = resolve_powershell_for_native();
-        #[cfg(windows)]
-        {
-            assert!(
-                resolved.is_some(),
-                "Windows should resolve at least System32 powershell or pwsh"
-            );
-            let p = resolved.unwrap();
-            assert!(p.is_file(), "resolved PowerShell must exist: {}", p.display());
-        }
-        #[cfg(not(windows))]
-        {
-            // Optional on macOS/Linux — if present must be a real file.
-            if let Some(p) = resolved {
-                assert!(p.is_file());
-            }
-        }
-    }
-
-    #[test]
-    fn platform_binary_candidates_include_macos_homebrew_prefixes() {
-        let candidates = platform_binary_candidates(&["node", "npm"]);
-        #[cfg(target_os = "macos")]
-        {
-            assert!(candidates.contains(&PathBuf::from("/opt/homebrew/bin/node")));
-            assert!(candidates.contains(&PathBuf::from("/opt/homebrew/bin/npm")));
-            assert!(candidates.contains(&PathBuf::from("/usr/local/bin/node")));
-            assert!(candidates.contains(&PathBuf::from("/usr/local/bin/npm")));
-        }
-        #[cfg(not(target_os = "macos"))]
-        assert!(candidates.is_empty());
-    }
-}
+#[path = "nodejs/tests.rs"]
+mod tests;

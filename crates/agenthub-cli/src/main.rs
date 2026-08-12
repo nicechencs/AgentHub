@@ -373,11 +373,7 @@ fn main() -> ExitCode {
     let hub = match AgentHub::open(cli.data_dir.as_deref()) {
         Ok(h) => h,
         Err(e) => {
-            agenthub_core::logging::log_app_error(
-                agenthub_core::logging::targets::CLI,
-                "open",
-                &e,
-            );
+            agenthub_core::logging::log_app_error(agenthub_core::logging::targets::CLI, "open", &e);
             print_error(&e, cli.output);
             return map_exit(&e);
         }
@@ -388,12 +384,7 @@ fn main() -> ExitCode {
         Commands::Env { action } => match action {
             EnvCommands::List => env_cmd::list(&hub, cli.output),
             EnvCommands::Install { runtime, channel } => {
-                env_cmd::install(
-                    &hub,
-                    &runtime,
-                    channel.as_deref().unwrap_or(""),
-                    cli.output,
-                )
+                env_cmd::install(&hub, &runtime, channel.as_deref().unwrap_or(""), cli.output)
             }
         },
         Commands::Agent { action } => match action {
@@ -515,7 +506,10 @@ fn main() -> ExitCode {
                 cli.agent.as_deref(),
                 cli.yes,
             ),
-            SkillCommands::Uninstall { skill: skill_id, private } => skill::uninstall(
+            SkillCommands::Uninstall {
+                skill: skill_id,
+                private,
+            } => skill::uninstall(
                 &hub,
                 &skill_id,
                 private,
@@ -523,19 +517,11 @@ fn main() -> ExitCode {
                 cli.agent.as_deref(),
                 cli.yes,
             ),
-            SkillCommands::Update { skill: skill_id } => {
-                skill::update(&hub, &skill_id, cli.output)
-            }
+            SkillCommands::Update { skill: skill_id } => skill::update(&hub, &skill_id, cli.output),
             SkillCommands::Project {
                 skill: skill_id,
                 mode,
-            } => skill::project(
-                &hub,
-                &skill_id,
-                &mode,
-                cli.output,
-                cli.agent.as_deref(),
-            ),
+            } => skill::project(&hub, &skill_id, &mode, cli.output, cli.agent.as_deref()),
             SkillCommands::Market { query } => skill::market(&hub, &query, cli.output),
         },
         Commands::Account { action } => match action {
@@ -569,9 +555,7 @@ fn main() -> ExitCode {
                 cli.agent.as_deref(),
                 cli.yes,
             ),
-            AccountCommands::OauthUrl => {
-                account::oauth_url(&hub, cli.output, cli.agent.as_deref())
-            }
+            AccountCommands::OauthUrl => account::oauth_url(&hub, cli.output, cli.agent.as_deref()),
             AccountCommands::Refresh { id_or_label } => account::refresh(
                 &hub,
                 &id_or_label,
