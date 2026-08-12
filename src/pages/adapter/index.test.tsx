@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it, vi } from 'vitest';
 import type {
   AdapterAction,
   AdapterApplyPlan,
@@ -94,15 +95,17 @@ describe('Adapter page view model', () => {
   it('renders an actionable unsupported state without mutation controls', () => {
     const unsupported = plan('unsupported');
     unsupported.analysis.reason = '当前尚未完成上游授权、条款和协议兼容性验证。';
+    // Prefer createElement over JSX so the test stays valid under both classic and
+    // automatic JSX runtimes (typecheck noUnusedLocals + vitest runtime).
     const markup = renderToStaticMarkup(
-      <AdapterPreviewResult
-        analysis={unsupported.analysis}
-        plan={unsupported}
-        loading={false}
-        error={null}
-        onRetry={vi.fn()}
-        onApply={vi.fn()}
-      />,
+      createElement(AdapterPreviewResult, {
+        analysis: unsupported.analysis,
+        plan: unsupported,
+        loading: false,
+        error: null,
+        onRetry: vi.fn(),
+        onApply: vi.fn(),
+      }),
     );
     expect(markup).toContain('暂未支持此组合');
     expect(markup).toContain('暂未支持不等于连接失效');
