@@ -425,5 +425,3 @@ impl AgentConfigProjector for ClaudeConfigProjector {
         Ok(Value::Object(merged))
     }
 }
-
-

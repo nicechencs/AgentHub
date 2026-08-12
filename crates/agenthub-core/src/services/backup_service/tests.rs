@@ -4,6 +4,7 @@ use crate::models::{
     AgentConfig, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
     InstallChannel, RunOptions, RunSpec,
 };
+use crate::services::ProviderService;
 use std::sync::Arc;
 use tempfile::tempdir;
 
@@ -526,6 +527,34 @@ fn restore_rejects_missing_backup_record() {
     let (_root, svc, _) = make_svc(AgentId::Claude, vec![f]);
     let err = svc.restore("missing-id").unwrap_err();
     assert_eq!(err.code(), "not_found");
+}
+
+#[test]
+fn restore_is_excluded_by_a_provider_live_saga() {
+    let live = tempdir().unwrap();
+    let file = live.path().join("settings.json");
+    write_file(&file, b"snapshot");
+
+    let root = tempdir().unwrap();
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let backups_root = root.path().join("backups");
+    let mut registry = AdapterRegistry::new();
+    registry.register(Arc::new(FakeAdapter {
+        id: AgentId::Claude,
+        paths: vec![file.clone()],
+    }));
+    let backups = BackupService::new(db.clone(), registry, backups_root);
+    let snapshot = backups
+        .snapshot(AgentId::Claude, BackupKind::Manual, None)
+        .unwrap();
+    write_file(&file, b"live");
+
+    let providers = ProviderService::new(db);
+    let guard = providers.begin_live_saga(AgentId::Claude).unwrap();
+    let error = backups.restore(&snapshot.id).unwrap_err();
+    assert_eq!(error.code(), "provider.lock");
+    assert_eq!(std::fs::read(&file).unwrap(), b"live");
+    drop(guard);
 }
 
 #[test]

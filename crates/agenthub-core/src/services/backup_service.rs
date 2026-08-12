@@ -20,6 +20,7 @@ use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
 use crate::logging::{self, targets};
 use crate::models::{AgentId, BackupKind, BackupRecord};
+use crate::services::{LiveWriteAuthority, LiveWriteGuard};
 use crate::storage::{BackupRepo, Database};
 use crate::utils::paths::is_safe_path;
 
@@ -89,19 +90,22 @@ enum AppliedOp {
 }
 
 /// Orchestrates live file snapshots + backup index rows + restore/delete.
+#[derive(Clone)]
 pub struct BackupService {
     repo: BackupRepo,
     registry: AdapterRegistry,
     backups_root: PathBuf,
+    authority: LiveWriteAuthority,
 }
 
 impl BackupService {
     /// Explicit dependencies — no implicit home/data-dir resolution.
     pub fn new(db: Database, registry: AdapterRegistry, backups_root: PathBuf) -> Self {
         Self {
-            repo: BackupRepo::new(db),
+            repo: BackupRepo::new(db.clone()),
             registry,
             backups_root,
+            authority: LiveWriteAuthority::from_database(&db),
         }
     }
 
@@ -135,6 +139,27 @@ impl BackupService {
     /// - On failure: no DB row; best-effort removal of the incomplete snapshot
     ///   directory when it is exactly under `backups_root`.
     pub fn snapshot(
+        &self,
+        agent: AgentId,
+        kind: BackupKind,
+        note: Option<&str>,
+    ) -> Result<BackupRecord> {
+        self.snapshot_inner(agent, kind, note)
+    }
+
+    /// Snapshot while a larger live-write saga already holds the authority.
+    pub fn snapshot_with_guard(
+        &self,
+        guard: &LiveWriteGuard,
+        agent: AgentId,
+        kind: BackupKind,
+        note: Option<&str>,
+    ) -> Result<BackupRecord> {
+        self.authority.validate_guard(guard, agent)?;
+        self.snapshot_inner(agent, kind, note)
+    }
+
+    fn snapshot_inner(
         &self,
         agent: AgentId,
         kind: BackupKind,
@@ -270,58 +295,8 @@ impl BackupService {
                     "backup {id} has no agent_id; cannot restore live files"
                 ))
             })?;
-
-            let adapter = self.registry.get(agent).ok_or_else(|| {
-                AppError::NotFound(format!(
-                    "no adapter registered for agent {}",
-                    agent.as_str()
-                ))
-            })?;
-
-            let ordered_live = adapter.live_backup_paths();
-            let allowed = allowed_path_map(&ordered_live)?;
-            let snapshot_dir = self.validate_snapshot_dir(&record)?;
-            let plan = build_restore_plan(&record, &snapshot_dir, &ordered_live, &allowed)?;
-
-            if plan.is_empty() {
-                return Err(AppError::NotFound(format!(
-                    "backup {id} has no restorable files matching adapter live paths"
-                )));
-            }
-
-            // PreRestore of current live — soft-skip when nothing exists yet.
-            let pre_restore = match self.snapshot(
-                agent,
-                BackupKind::PreRestore,
-                Some(&format!("auto before restore of {id}")),
-            ) {
-                Ok(pre) => Some(pre),
-                Err(e) if e.code() == "not_found" => None,
-                Err(e) => return Err(e),
-            };
-
-            if let Err(e) = apply_restore_plan(&plan) {
-                // apply_restore_plan rolls back partial live writes and surfaces
-                // backup.rollback when that compensation fails. Only then try
-                // PreRestore as a second-chance recovery of live files.
-                if e.code() == "backup.rollback" {
-                    if let Some(ref pre) = pre_restore {
-                        if let Err(re) = self.reapply_snapshot_files(pre, &ordered_live, &allowed) {
-                            return Err(AppError::message(
-                                "backup.rollback",
-                                format!("{e}; PreRestore recovery also failed: {re}"),
-                            ));
-                        }
-                    }
-                }
-                return Err(e);
-            }
-
-            Ok(RestoreResult {
-                restored: record,
-                pre_restore,
-                restored_paths: plan.iter().map(|p| p.dest.clone()).collect(),
-            })
+            let guard = self.authority.acquire(agent)?;
+            self.restore_with_guard(&guard, id)
         })();
 
         match &result {
@@ -347,6 +322,78 @@ impl BackupService {
             }
         }
         result
+    }
+
+    /// Restore while an enclosing provider or bridge saga already holds the
+    /// same database-derived per-agent authority.
+    pub fn restore_with_guard(&self, guard: &LiveWriteGuard, id: &str) -> Result<RestoreResult> {
+        let record = self.get_by_id(id)?;
+        let agent = record.agent_id.ok_or_else(|| {
+            AppError::InvalidArg(format!(
+                "backup {id} has no agent_id; cannot restore live files"
+            ))
+        })?;
+        self.authority.validate_guard(guard, agent)?;
+        self.restore_record(id, record, agent)
+    }
+
+    fn restore_record(
+        &self,
+        id: &str,
+        record: BackupRecord,
+        agent: AgentId,
+    ) -> Result<RestoreResult> {
+        let adapter = self.registry.get(agent).ok_or_else(|| {
+            AppError::NotFound(format!(
+                "no adapter registered for agent {}",
+                agent.as_str()
+            ))
+        })?;
+
+        let ordered_live = adapter.live_backup_paths();
+        let allowed = allowed_path_map(&ordered_live)?;
+        let snapshot_dir = self.validate_snapshot_dir(&record)?;
+        let plan = build_restore_plan(&record, &snapshot_dir, &ordered_live, &allowed)?;
+
+        if plan.is_empty() {
+            return Err(AppError::NotFound(format!(
+                "backup {id} has no restorable files matching adapter live paths"
+            )));
+        }
+
+        // PreRestore of current live — soft-skip when nothing exists yet.
+        let pre_restore = match self.snapshot(
+            agent,
+            BackupKind::PreRestore,
+            Some(&format!("auto before restore of {id}")),
+        ) {
+            Ok(pre) => Some(pre),
+            Err(e) if e.code() == "not_found" => None,
+            Err(e) => return Err(e),
+        };
+
+        if let Err(e) = apply_restore_plan(&plan) {
+            // apply_restore_plan rolls back partial live writes and surfaces
+            // backup.rollback when that compensation fails. Only then try
+            // PreRestore as a second-chance recovery of live files.
+            if e.code() == "backup.rollback" {
+                if let Some(ref pre) = pre_restore {
+                    if let Err(re) = self.reapply_snapshot_files(pre, &ordered_live, &allowed) {
+                        return Err(AppError::message(
+                            "backup.rollback",
+                            format!("{e}; PreRestore recovery also failed: {re}"),
+                        ));
+                    }
+                }
+            }
+            return Err(e);
+        }
+
+        Ok(RestoreResult {
+            restored: record,
+            pre_restore,
+            restored_paths: plan.iter().map(|p| p.dest.clone()).collect(),
+        })
     }
 
     /// Delete an indexed backup with compensatable steps:

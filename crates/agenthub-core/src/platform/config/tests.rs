@@ -16,6 +16,22 @@ use crate::platform::config::{
     NormalizedConfigDocument, SECRET_REDACTED,
 };
 use crate::platform::AgentKey;
+use crate::services::ProviderService;
+use crate::storage::Database;
+
+fn test_configuration_service() -> ConfigurationService {
+    let dir = tempdir().expect("config authority tempdir");
+    let db = Database::open(&dir.path().join("config-authority.db")).expect("config authority db");
+    ConfigurationService::new(db)
+}
+
+fn test_configuration_service_with_registry(
+    registry: ConfigProjectorRegistry,
+) -> ConfigurationService {
+    let dir = tempdir().expect("config authority tempdir");
+    let db = Database::open(&dir.path().join("config-authority.db")).expect("config authority db");
+    ConfigurationService::with_registry(db, registry)
+}
 
 struct FutureConfigProjector {
     key: AgentKey,
@@ -128,7 +144,7 @@ fn unknown_valid_agent_key_runs_key_native_config_flow() {
     registry
         .register(Arc::new(FutureConfigProjector::new("hello")))
         .unwrap();
-    let service = ConfigurationService::with_registry(registry);
+    let service = test_configuration_service_with_registry(registry);
     let home = tempdir().unwrap();
 
     assert_eq!(service.schema_for_agent_key(&key).unwrap().agent_key, key);
@@ -169,11 +185,28 @@ fn config_legacy_agent_id_helpers_delegate_to_agent_key() {
     assert!(registry.get_agent_id(AgentId::Claude).is_some());
     assert_eq!(registry.get(&key).unwrap().agent_key(), key);
 
-    let service = ConfigurationService::new();
+    let service = test_configuration_service();
     assert_eq!(
         service.schema(AgentId::Claude).unwrap(),
         service.schema_for_agent_key(&key).unwrap()
     );
+}
+
+#[test]
+fn config_apply_is_excluded_by_a_provider_live_saga() {
+    let root = tempdir().unwrap();
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let providers = ProviderService::new(db.clone());
+    let config = ConfigurationService::new(db);
+    let home = tempdir().unwrap();
+    let guard = providers.begin_live_saga(AgentId::Claude).unwrap();
+
+    let error = config
+        .apply_at(AgentId::Claude, &BTreeMap::new(), Some(home.path()))
+        .unwrap_err();
+    assert_eq!(error.code(), "provider.lock");
+    assert!(!home.path().join("settings.json").exists());
+    drop(guard);
 }
 
 #[test]
@@ -210,7 +243,7 @@ fn claude_read_normalize_roundtrip_preserves_unknown() {
     )
     .unwrap();
 
-    let svc = ConfigurationService::new();
+    let svc = test_configuration_service();
     let doc = svc.read_at(AgentId::Claude, Some(home)).unwrap();
     assert!(!doc.missing);
     assert_eq!(
@@ -274,14 +307,14 @@ fn claude_invalid_json_errors() {
     let dir = tempdir().unwrap();
     let home = dir.path();
     std::fs::write(home.join("settings.json"), "{not-json").unwrap();
-    let svc = ConfigurationService::new();
+    let svc = test_configuration_service();
     let err = svc.read_at(AgentId::Claude, Some(home)).unwrap_err();
     assert_eq!(err.code(), "invalid_arg");
 }
 
 #[test]
 fn claude_validate_rejects_unknown_field() {
-    let svc = ConfigurationService::new();
+    let svc = test_configuration_service();
     let mut values = BTreeMap::new();
     values.insert("baseUrl".into(), json!("https://x"));
     values.insert("nope".into(), json!("x"));
@@ -313,7 +346,7 @@ wire_api = "responses"
     )
     .unwrap();
 
-    let svc = ConfigurationService::new();
+    let svc = test_configuration_service();
     let doc = svc.read_at(AgentId::Codex, Some(home)).unwrap();
     assert_eq!(
         doc.values.get("model").and_then(|v| v.as_str()),
@@ -353,7 +386,7 @@ fn codex_invalid_toml_errors() {
     let dir = tempdir().unwrap();
     let home = dir.path();
     std::fs::write(home.join("config.toml"), "[[[not valid").unwrap();
-    let svc = ConfigurationService::new();
+    let svc = test_configuration_service();
     let err = svc.read_at(AgentId::Codex, Some(home)).unwrap_err();
     assert_eq!(err.code(), "invalid_arg");
 }
@@ -361,7 +394,7 @@ fn codex_invalid_toml_errors() {
 #[test]
 fn missing_file_read_is_ok() {
     let dir = tempdir().unwrap();
-    let svc = ConfigurationService::new();
+    let svc = test_configuration_service();
     let doc = svc.read_at(AgentId::Claude, Some(dir.path())).unwrap();
     assert!(doc.missing);
     assert_eq!(doc.values.get("model").and_then(|v| v.as_str()), Some(""));
@@ -369,14 +402,14 @@ fn missing_file_read_is_ok() {
 
 #[test]
 fn unsupported_agent_errors() {
-    let svc = ConfigurationService::new();
+    let svc = test_configuration_service();
     let err = svc.schema(AgentId::Cursor).unwrap_err();
     assert_eq!(err.code(), "unsupported");
 }
 
 #[test]
 fn materialize_claude_pool_settings_preserves_unknown() {
-    let svc = ConfigurationService::new();
+    let svc = test_configuration_service();
     let base = json!({
         "env": { "ANTHROPIC_AUTH_TOKEN": "sk-old", "CUSTOM_FLAG": "1" },
         "extraTop": true
@@ -426,7 +459,7 @@ fn grok_apply_and_secret_unchanged() {
         "model = \"grok-2\"\nbase_url = \"https://x\"\napi_key = \"sk-old\"\n",
     )
     .unwrap();
-    let svc = ConfigurationService::new();
+    let svc = test_configuration_service();
     let mut desired = BTreeMap::new();
     desired.insert("model".into(), json!("grok-3"));
     desired.insert("baseUrl".into(), json!("https://y"));
@@ -461,7 +494,7 @@ supports_backend_search = true
     )
     .unwrap();
 
-    let svc = ConfigurationService::new();
+    let svc = test_configuration_service();
     let read = svc.read_at(AgentId::Grok, Some(home)).unwrap();
     assert_eq!(
         read.values.get("model").and_then(Value::as_str),
@@ -517,7 +550,7 @@ api_key = "sk-kimi-old"
     )
     .unwrap();
 
-    let svc = ConfigurationService::new();
+    let svc = test_configuration_service();
     let doc = svc.read_at(AgentId::Kimi, Some(home)).unwrap();
     assert_eq!(
         doc.values.get("model").and_then(|v| v.as_str()),
@@ -547,7 +580,10 @@ api_key = "sk-kimi-old"
     let text = std::fs::read_to_string(home.join("config.toml")).unwrap();
     assert!(text.contains("kimi-k2.5"), "{text}");
     assert!(text.contains("https://api.example.kimi"), "{text}");
-    assert!(text.contains("sk-kimi-old"), "secret must be preserved; {text}");
+    assert!(
+        text.contains("sk-kimi-old"),
+        "secret must be preserved; {text}"
+    );
     assert!(!text.contains(SECRET_REDACTED), "{text}");
 
     // Materialize pool settings from base content + new secret value.
@@ -570,7 +606,7 @@ fn kimi_invalid_toml_errors() {
     let dir = tempdir().unwrap();
     let home = dir.path();
     std::fs::write(home.join("config.toml"), "[[[not valid").unwrap();
-    let svc = ConfigurationService::new();
+    let svc = test_configuration_service();
     let err = svc.read_at(AgentId::Kimi, Some(home)).unwrap_err();
     assert_eq!(err.code(), "invalid_arg");
 }
