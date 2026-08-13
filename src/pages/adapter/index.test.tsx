@@ -1,13 +1,14 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import type {
-  AdapterAction,
-  AdapterApplyPlan,
-  AdapterApplyResult,
-  AdapterBridgeRuntimeStatus,
-  AdapterPlanChange,
-  AdapterRouteAnalysis,
+import {
+  adapterCommandError,
+  type AdapterAction,
+  type AdapterApplyPlan,
+  type AdapterApplyResult,
+  type AdapterBridgeRuntimeStatus,
+  type AdapterPlanChange,
+  type AdapterRouteAnalysis,
 } from '@/lib/backend/contracts/adapter';
 import {
   adapterActionLabel,
@@ -30,12 +31,15 @@ import {
   sourceStatusHint,
   unsupportedPresentation,
 } from './index';
-import { AdapterPreviewResult, isBridgeStopCapable, openAdapterEvidence } from './adapter-components';
+import { AdapterPreviewResult, AdapterProfiles, isBridgeStopCapable, openAdapterEvidence } from './adapter-components';
 import { startAdapterBridgeStatusPoll } from './use-adapter-resources';
 import {
   ADAPTER_BRIDGE_STATUS_POLL_MS,
   adapterBridgeProfilesToPoll,
+  adapterErrorDetails,
   applyAdapterBridgeStatusPoll,
+  errorMessage,
+  isAdapterErrorRetryable,
   loadAdapterPageResources,
   shouldPollAdapterBridgeStatus,
   supportBadge,
@@ -227,6 +231,90 @@ describe('Adapter page view model', () => {
     );
     expect(errorMarkup).toContain('无法生成适配预览');
     expect(errorMarkup).toContain('不是连接失效');
+  });
+
+  it('prefers AdapterCommandError message and classifies retryable helpers', () => {
+    const retryable = adapterCommandError({
+      code: 'adapter.port_in_use',
+      message: '本地端口被占用',
+      details: '127.0.0.1:32123 already bound',
+    });
+    const rollback = adapterCommandError({
+      code: 'adapter.bridge_rollback',
+      message: '回滚未完成',
+    });
+    expect(errorMessage(retryable, 'fallback')).toBe('本地端口被占用');
+    expect(errorMessage({ message: '' }, 'fallback')).toBe('fallback');
+    expect(errorMessage('legacy string error', 'fallback')).toBe('legacy string error');
+    expect(isAdapterErrorRetryable(retryable)).toBe(true);
+    expect(isAdapterErrorRetryable(rollback)).toBe(false);
+    expect(isAdapterErrorRetryable({ code: 'adapter.bridge_restore_source' })).toBe(true);
+    expect(isAdapterErrorRetryable({ code: 'needs_attention' })).toBe(false);
+    expect(isAdapterErrorRetryable({ code: 'adapter.command' })).toBe(false);
+    expect(isAdapterErrorRetryable(new Error('plain'))).toBe(false);
+    expect(adapterErrorDetails(retryable)).toBe('127.0.0.1:32123 already bound');
+    expect(adapterErrorDetails(rollback)).toBeNull();
+  });
+
+  it('shows a retryable hint on apply and profile-row Adapter errors', () => {
+    const applyMarkup = renderToStaticMarkup(
+      createElement(AdapterPreviewResult, {
+        analysis: analysis('native_endpoint'),
+        plan: { ...plan('native_endpoint'), canApply: true },
+        loading: false,
+        error: null,
+        onRetry: vi.fn(),
+        onApply: vi.fn(),
+        applyError: adapterCommandError({
+          code: 'adapter.bridge_start',
+          message: '本地桥接启动失败',
+          details: 'listener bind failed',
+        }),
+      }),
+    );
+    expect(applyMarkup).toContain('本地桥接启动失败');
+    expect(applyMarkup).toContain('listener bind failed');
+    expect(applyMarkup).toContain('此错误可重试');
+
+    const profile = {
+      id: 'bridge-1',
+      name: 'Kimi → Codex',
+      sourceKind: 'provider' as const,
+      sourceId: 'kimi-1',
+      targetAgentId: 'codex' as const,
+      route: 'local_bridge' as const,
+      status: 'active' as const,
+      ruleId: 'bridge',
+      ruleVersion: '1',
+      generatedProviderId: 'codex-bridge-1',
+      localPort: 32123,
+      autoStart: true,
+      createdAt: '2026-08-12T00:00:00Z',
+      updatedAt: '2026-08-12T00:00:00Z',
+    };
+    const rowMarkup = renderToStaticMarkup(
+      createElement(AdapterProfiles, {
+        profiles: [profile],
+        bridgeStatuses: {},
+        loading: false,
+        loadError: null,
+        errors: {
+          [profile.id]: adapterCommandError({
+            code: 'adapter.port_in_use',
+            message: '端口被占用',
+          }),
+        },
+        removingProfileId: null,
+        busyProfileIds: {},
+        onRemove: vi.fn(),
+        onStartBridge: vi.fn(),
+        onRequestStopBridge: vi.fn(),
+        onSetBridgeAutoStart: vi.fn(),
+        onRetry: vi.fn(),
+      }),
+    );
+    expect(rowMarkup).toContain('端口被占用');
+    expect(rowMarkup).toContain('此错误可重试');
   });
 
   it('opens compatibility evidence through the injected external opener', async () => {

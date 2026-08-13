@@ -10,7 +10,7 @@ use crate::adapter_bridge_controller::{
     apply_local_bridge, local_bridge_status, remove_adapter_with_bridge_cleanup,
     set_local_bridge_auto_start, start_local_bridge, stop_local_bridge, AdapterBridgeStatusDto,
 };
-use crate::commands::{map_err_string, parse_agent, with_hub_blocking};
+use crate::commands::{adapter_error_from_string, map_err_string, parse_agent, with_hub_blocking, GuiError};
 use crate::state::AppState;
 
 /// Preview a supported connection route. This command never applies a config or starts a bridge.
@@ -20,8 +20,8 @@ pub async fn analyze_adapter(
     source_kind: String,
     source_id: String,
     target_agent_id: String,
-) -> Result<AdapterRouteAnalysis, String> {
-    let hub = state.hub_arc()?;
+) -> Result<AdapterRouteAnalysis, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     with_hub_blocking(hub, move |hub| {
         let source_kind = parse_source_kind(&source_kind)?;
         let target_agent_id = parse_agent(&target_agent_id)?;
@@ -34,6 +34,7 @@ pub async fn analyze_adapter(
             .map_err(|err| map_err_string("analyze_adapter", err))
     })
     .await
+    .map_err(adapter_error_from_string)
 }
 
 /// Preview the configuration fields an eventual apply would change. This is
@@ -44,8 +45,8 @@ pub async fn plan_adapter(
     source_kind: String,
     source_id: String,
     target_agent_id: String,
-) -> Result<AdapterApplyPlan, String> {
-    let hub = state.hub_arc()?;
+) -> Result<AdapterApplyPlan, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     with_hub_blocking(hub, move |hub| {
         let source_kind = parse_source_kind(&source_kind)?;
         let target_agent_id = parse_agent(&target_agent_id)?;
@@ -58,6 +59,7 @@ pub async fn plan_adapter(
             .map_err(|err| map_err_string("plan_adapter", err))
     })
     .await
+    .map_err(adapter_error_from_string)
 }
 
 /// List credential-free, persisted adapter profiles. All filters are optional.
@@ -67,8 +69,8 @@ pub async fn list_adapter_profiles(
     source_kind: Option<String>,
     source_id: Option<String>,
     target_agent_id: Option<String>,
-) -> Result<Vec<AdapterProfile>, String> {
-    let hub = state.hub_arc()?;
+) -> Result<Vec<AdapterProfile>, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     with_hub_blocking(hub, move |hub| {
         list_adapter_profiles_inner(
             hub,
@@ -78,6 +80,7 @@ pub async fn list_adapter_profiles(
         )
     })
     .await
+    .map_err(adapter_error_from_string)
 }
 
 /// Apply a supported Adapter route.
@@ -91,12 +94,13 @@ pub async fn apply_adapter(
     source_kind: String,
     source_id: String,
     target_agent_id: String,
-) -> Result<AdapterApplyResult, String> {
-    let source_kind_parsed = parse_source_kind(&source_kind)?;
-    let target_agent_parsed = parse_agent(&target_agent_id)?;
+) -> Result<AdapterApplyResult, GuiError> {
+    let source_kind_parsed =
+        parse_source_kind(&source_kind).map_err(adapter_error_from_string)?;
+    let target_agent_parsed = parse_agent(&target_agent_id).map_err(adapter_error_from_string)?;
     if target_agent_parsed == agenthub_core::models::AgentId::Codex {
         return apply_local_bridge(
-            state.hub_arc()?,
+            state.hub_arc().map_err(adapter_error_from_string)?,
             state.bridge_host(),
             state.bridge_saga_coordinator(),
             state.lifecycle_shutdown_barrier(),
@@ -108,9 +112,10 @@ pub async fn apply_adapter(
                 auto_start: false,
             },
         )
-        .await;
+        .await
+        .map_err(adapter_error_from_string);
     }
-    let hub = state.hub_arc()?;
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     let _target_guard = state
         .bridge_saga_coordinator()
         .lock_target(target_agent_parsed)
@@ -119,6 +124,7 @@ pub async fn apply_adapter(
         apply_adapter_inner(hub, &source_kind, &source_id, &target_agent_id)
     })
     .await
+    .map_err(adapter_error_from_string)
 }
 
 /// Start an already-created local bridge by profile id.
@@ -126,15 +132,16 @@ pub async fn apply_adapter(
 pub async fn start_adapter_bridge(
     state: State<'_, AppState>,
     profile_id: String,
-) -> Result<AdapterBridgeStatusDto, String> {
+) -> Result<AdapterBridgeStatusDto, GuiError> {
     start_local_bridge(
-        state.hub_arc()?,
+        state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
         profile_id,
     )
     .await
+    .map_err(adapter_error_from_string)
 }
 
 /// Stop one local bridge. Calling stop for an already-stopped profile is safe.
@@ -142,15 +149,16 @@ pub async fn start_adapter_bridge(
 pub async fn stop_adapter_bridge(
     state: State<'_, AppState>,
     profile_id: String,
-) -> Result<AdapterBridgeStatusDto, String> {
+) -> Result<AdapterBridgeStatusDto, GuiError> {
     stop_local_bridge(
-        state.hub_arc()?,
+        state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
         profile_id,
     )
     .await
+    .map_err(adapter_error_from_string)
 }
 
 /// Get a credential-free local listener state for one bridge profile.
@@ -158,8 +166,14 @@ pub async fn stop_adapter_bridge(
 pub async fn get_adapter_bridge_status(
     state: State<'_, AppState>,
     profile_id: String,
-) -> Result<AdapterBridgeStatusDto, String> {
-    local_bridge_status(state.hub_arc()?, state.bridge_host(), profile_id).await
+) -> Result<AdapterBridgeStatusDto, GuiError> {
+    local_bridge_status(
+        state.hub_arc().map_err(adapter_error_from_string)?,
+        state.bridge_host(),
+        profile_id,
+    )
+    .await
+    .map_err(adapter_error_from_string)
 }
 
 /// Enable or disable background restore for an existing local bridge.
@@ -168,21 +182,28 @@ pub async fn set_adapter_bridge_auto_start(
     state: State<'_, AppState>,
     profile_id: String,
     auto_start: bool,
-) -> Result<AdapterProfile, String> {
-    set_local_bridge_auto_start(state.hub_arc()?, profile_id, auto_start).await
+) -> Result<AdapterProfile, GuiError> {
+    set_local_bridge_auto_start(
+        state.hub_arc().map_err(adapter_error_from_string)?,
+        profile_id,
+        auto_start,
+    )
+    .await
+    .map_err(adapter_error_from_string)
 }
 
 /// Remove an adapter profile and its generated provider when it is not current.
 #[tauri::command]
-pub async fn remove_adapter(state: State<'_, AppState>, profile_id: String) -> Result<(), String> {
+pub async fn remove_adapter(state: State<'_, AppState>, profile_id: String) -> Result<(), GuiError> {
     remove_adapter_with_bridge_cleanup(
-        state.hub_arc()?,
+        state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
         profile_id,
     )
     .await
+    .map_err(adapter_error_from_string)
 }
 
 // ---------------------------------------------------------------------------

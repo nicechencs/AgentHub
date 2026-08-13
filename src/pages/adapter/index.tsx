@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useAgentStatusesOptional } from '@/app/runtime';
 import { AGENT_IDS } from '@/config/agents';
 import {
   analyzeAdapter,
@@ -27,11 +28,13 @@ import {
 } from '@/lib/api/adapter';
 import type {
   AdapterApplyPlan,
+  AdapterBridgeRuntimeStatus,
   AdapterProfile,
   AdapterRouteAnalysis,
 } from '@/lib/backend/contracts/adapter';
 import type { AgentId } from '@/lib/types';
 import {
+  AdapterErrorLines,
   AdapterPreviewList,
   AdapterPreviewResult,
   AdapterProfiles,
@@ -41,13 +44,21 @@ import {
   adapterPageViewState,
   adapterProfileRecordLabel,
   canApplyAdapterPlan,
-  errorMessage,
   isCurrentAdapterPreviewRequest,
   resourceFailureMessage,
   sourceLabel,
   sourceStatusHint,
   targetAgentName,
 } from './adapter-model';
+import {
+  adapterApplyStage,
+  adapterApplyStageLabel,
+  adapterBridgeProbeSummary,
+  groupAdapterSources,
+  isOAuthAuthIncomplete,
+  oauthIncompleteAuthHint,
+  selectableTargetAgentIds,
+} from './adapter-sources';
 import { useAdapterResources } from './use-adapter-resources';
 
 export {
@@ -103,6 +114,7 @@ export default function AdapterPage() {
     updateProfile,
     removeProfile,
   } = useAdapterResources();
+  const agentStatusSnapshot = useAgentStatusesOptional();
   const [sourceKey, setSourceKey] = useState('');
   const [targetAgentId, setTargetAgentId] = useState<AgentId>('claude');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -114,28 +126,42 @@ export default function AdapterPage() {
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<unknown>(null);
   const [applySuccess, setApplySuccess] = useState<string | null>(null);
+  const [applyResultProfile, setApplyResultProfile] = useState<AdapterProfile | null>(null);
+  const [applyProbeStatus, setApplyProbeStatus] = useState<AdapterBridgeRuntimeStatus | null>(null);
   const [removeConfirm, setRemoveConfirm] = useState<AdapterProfile | null>(null);
   const [stopConfirm, setStopConfirm] = useState<AdapterProfile | null>(null);
   const [removingProfileId, setRemovingProfileId] = useState<string | null>(null);
-  const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
+  const [profileErrors, setProfileErrors] = useState<Record<string, unknown>>({});
   const [busyProfileIds, setBusyProfileIds] = useState<Record<string, boolean>>({});
   const [retryToken, setRetryToken] = useState(0);
   const requestGeneration = useRef(0);
+
+  const targetAgentIds = useMemo(
+    () => selectableTargetAgentIds({
+      state: agentStatusSnapshot.state,
+      statuses: agentStatusSnapshot.statuses,
+      fallbackIds: AGENT_IDS,
+    }),
+    [agentStatusSnapshot.state, agentStatusSnapshot.statuses],
+  );
+  const sourceGroups = useMemo(
+    () => groupAdapterSources(entries, AGENT_IDS),
+    [entries],
+  );
 
   const source = useMemo(
     () => entries.find((entry) => entry.key === sourceKey) ?? null,
     [entries, sourceKey],
   );
-  const bridgeStatusErrors = useMemo(
-    () => Object.fromEntries(
-      Object.entries(resourceErrors.bridgeStatuses).map(([profileId, error]) => [
-        profileId,
-        errorMessage(error, '无法读取本地桥接运行状态'),
-      ]),
-    ),
-    [resourceErrors.bridgeStatuses],
-  );
-  const visibleProfileErrors = { ...bridgeStatusErrors, ...profileErrors };
+  const sourceAuthIncomplete = isOAuthAuthIncomplete(source);
+
+  useEffect(() => {
+    if (targetAgentIds.length === 0) return;
+    if (!targetAgentIds.includes(targetAgentId)) {
+      setTargetAgentId(targetAgentIds[0]);
+    }
+  }, [targetAgentId, targetAgentIds]);
+  const visibleProfileErrors = { ...resourceErrors.bridgeStatuses, ...profileErrors };
 
   // Every selection (and retry) starts both read-only operations. The generation
   // check prevents an old result from replacing the visible selection.
@@ -172,12 +198,22 @@ export default function AdapterPage() {
 
   const preview = plan?.analysis ?? analysis;
   const retryPreview = () => setRetryToken((token) => token + 1);
-  const canApply = canApplyAdapterPlan(plan);
+  const canApply = canApplyAdapterPlan(plan) && !sourceAuthIncomplete;
   const applyRequest = source ? {
     sourceKind: source.source,
     sourceId: source.id,
     targetAgentId,
   } as const : null;
+  const applyStage = adapterApplyStage({
+    applying,
+    successMessage: applySuccess,
+    error: applyError,
+    profileStatus: applyResultProfile?.status,
+  });
+  const applyStageText = adapterApplyStageLabel(applyStage);
+  const applyProbeText = applyResultProfile?.route === 'local_bridge'
+    ? adapterBridgeProbeSummary(applyProbeStatus ?? (applyResultProfile ? bridgeStatuses[applyResultProfile.id] : undefined))
+    : null;
 
   const setProfileBusy = (profileId: string, busy: boolean) => {
     setBusyProfileIds((current) => ({ ...current, [profileId]: busy }));
@@ -194,11 +230,14 @@ export default function AdapterPage() {
     try {
       const status = await getAdapterBridgeStatus(profile.id);
       updateBridgeStatus(status);
+      setApplyProbeStatus(status);
+      return status;
     } catch (error) {
       setProfileErrors((current) => ({
         ...current,
-        [profile.id]: errorMessage(error, '无法读取本地桥接运行状态'),
+        [profile.id]: error,
       }));
+      return null;
     }
   }, [updateBridgeStatus]);
 
@@ -206,11 +245,15 @@ export default function AdapterPage() {
     if (!applyRequest || !canApply) return;
     setApplying(true);
     setApplyError(null);
+    setApplySuccess(null);
+    setApplyResultProfile(null);
+    setApplyProbeStatus(null);
     try {
       const result = await applyAdapter(applyRequest);
       const committed = adapterApplyCommit(result);
       // Applying is the committed operation. Close both dialogs and show success
       // before any optional runtime inspection can fail or block the refresh.
+      setApplyResultProfile(result.profile);
       setApplySuccess(committed.successMessage);
       setApplyConfirmOpen(false);
       setDialogOpen(false);
@@ -230,7 +273,7 @@ export default function AdapterPage() {
       updateBridgeStatus(await startAdapterBridge(profile.id));
       void reload();
     } catch (error) {
-      setProfileErrors((current) => ({ ...current, [profile.id]: errorMessage(error, '无法启动本地桥接') }));
+      setProfileErrors((current) => ({ ...current, [profile.id]: error }));
     } finally {
       setProfileBusy(profile.id, false);
     }
@@ -246,7 +289,7 @@ export default function AdapterPage() {
       setStopConfirm(null);
       void reload();
     } catch (error) {
-      setProfileErrors((current) => ({ ...current, [profile.id]: errorMessage(error, '无法停止本地桥接') }));
+      setProfileErrors((current) => ({ ...current, [profile.id]: error }));
     } finally {
       setProfileBusy(profile.id, false);
     }
@@ -259,7 +302,7 @@ export default function AdapterPage() {
       updateProfile(await setAdapterBridgeAutoStart(profile.id, autoStart));
       void reload();
     } catch (error) {
-      setProfileErrors((current) => ({ ...current, [profile.id]: errorMessage(error, '无法更新自动启动') }));
+      setProfileErrors((current) => ({ ...current, [profile.id]: error }));
     } finally {
       setProfileBusy(profile.id, false);
     }
@@ -276,7 +319,7 @@ export default function AdapterPage() {
       setRemoveConfirm(null);
       void reload();
     } catch (error) {
-      setProfileErrors((errors) => ({ ...errors, [profileId]: errorMessage(error, '无法删除此适配') }));
+      setProfileErrors((errors) => ({ ...errors, [profileId]: error }));
     } finally {
       setRemovingProfileId(null);
     }
@@ -351,6 +394,12 @@ export default function AdapterPage() {
                   {sourceLabel(source)} <ChevronRight className="inline h-3.5 w-3.5" /> {targetAgentName(targetAgentId)}
                 </p>
                 <p className="mt-1 text-xs text-muted">{sourceStatusHint(source)}</p>
+                {sourceAuthIncomplete && (
+                  <p className="mt-2 text-sm text-warning" role="status">
+                    {oauthIncompleteAuthHint()}{' '}
+                    <a className="underline" href="#/connections">前往 Connections</a>
+                  </p>
+                )}
               </div>
               <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
                 更改选择
@@ -365,15 +414,29 @@ export default function AdapterPage() {
                 onRetry={retryPreview}
                 onApply={canApply ? () => setApplyConfirmOpen(true) : undefined}
                 applyError={applyError}
+                authIncomplete={sourceAuthIncomplete}
+                authHint={sourceAuthIncomplete ? oauthIncompleteAuthHint() : undefined}
               />
             </CardContent>
           </Card>
         )}
 
-        {applySuccess && (
-          <p className="text-sm text-success" role="status">
-            {applySuccess} <a className="underline" href="#/connections">在 Connections 查看</a>
-          </p>
+        {(applySuccess || applyError || applying) && (
+          <div className="space-y-1" role={applyError ? 'alert' : 'status'}>
+            {applyStageText && (
+              <p className={`text-sm ${applyError ? 'text-danger' : 'text-success'}`}>
+                {applyStageText}
+                {applySuccess ? ` · ${applySuccess}` : ''}
+              </p>
+            )}
+            {applyProbeText && <p className="text-sm text-secondary">{applyProbeText}</p>}
+            {applyError ? <AdapterErrorLines error={applyError} fallback="应用适配失败" /> : null}
+            {applySuccess && (
+              <p className="text-sm text-success">
+                <a className="underline" href="#/connections">在 Connections 查看</a>
+              </p>
+            )}
+          </div>
         )}
 
         <AdapterProfiles
@@ -410,10 +473,14 @@ export default function AdapterPage() {
                 onChange={(event) => setSourceKey(event.target.value)}
               >
                 <option value="">请选择连接</option>
-                {entries.map((entry) => (
-                  <option key={entry.key} value={entry.key}>
-                    {sourceLabel(entry)} · {sourceStatusHint(entry)}
-                  </option>
+                {sourceGroups.map((group) => (
+                  <optgroup key={group.id} label={group.label}>
+                    {group.entries.map((entry) => (
+                      <option key={entry.key} value={entry.key}>
+                        {sourceLabel(entry)} · {sourceStatusHint(entry)}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </label>
@@ -426,19 +493,28 @@ export default function AdapterPage() {
                 没有合适连接时，请先前往 Connections 添加官方登录或 API Key。
               </p>
             )}
+            {sourceAuthIncomplete && (
+              <p className="text-sm text-warning" role="status">
+                {oauthIncompleteAuthHint()}{' '}
+                <a className="underline" href="#/connections">前往 Connections</a>
+              </p>
+            )}
             <label className="block text-sm font-medium">
               目标 Agent
               <select
                 aria-label="目标 Agent"
                 className="mt-1 w-full rounded-btn border border-border bg-panel px-3 py-2 text-sm"
-                value={targetAgentId}
+                value={targetAgentIds.includes(targetAgentId) ? targetAgentId : (targetAgentIds[0] ?? '')}
                 onChange={(event) => setTargetAgentId(event.target.value as AgentId)}
               >
-                {AGENT_IDS.map((agentId) => (
+                {targetAgentIds.map((agentId) => (
                   <option key={agentId} value={agentId}>{targetAgentName(agentId)}</option>
                 ))}
               </select>
             </label>
+            {targetAgentIds.length === 0 && (
+              <p className="text-xs text-secondary">当前没有已安装或可配置的目标 Agent。</p>
+            )}
             {source && (
               <AdapterPreviewResult
                 analysis={preview}
@@ -449,6 +525,8 @@ export default function AdapterPage() {
                 compact
                 onApply={canApply ? () => setApplyConfirmOpen(true) : undefined}
                 applyError={applyError}
+                authIncomplete={sourceAuthIncomplete}
+                authHint={sourceAuthIncomplete ? oauthIncompleteAuthHint() : undefined}
               />
             )}
           </div>
@@ -479,7 +557,8 @@ export default function AdapterPage() {
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
             <AdapterPreviewList title="将写配置" values={plan?.changes ?? []} empty="没有需要写入的配置。" />
-            {applyError ? <p className="text-sm text-danger" role="alert">{errorMessage(applyError, '应用适配失败')}</p> : null}
+            {applyStageText ? <p className="text-xs text-secondary">当前阶段：{applyStageText}</p> : null}
+            {applyError ? <AdapterErrorLines error={applyError} fallback="应用适配失败" /> : null}
           </div>
           <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
             <Button variant="secondary" onClick={() => setApplyConfirmOpen(false)} disabled={applying}>取消</Button>
@@ -507,7 +586,7 @@ export default function AdapterPage() {
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
             {stopConfirm && <p className="text-sm text-secondary">{adapterProfileRecordLabel(stopConfirm)}</p>}
-            {stopError && <p className="text-sm text-danger" role="alert">{stopError}</p>}
+            {stopError ? <AdapterErrorLines error={stopError} fallback="无法停止本地桥接" /> : null}
           </div>
           <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
             <Button variant="secondary" onClick={() => setStopConfirm(null)} disabled={stopDialogBusy}>取消</Button>
@@ -537,7 +616,7 @@ export default function AdapterPage() {
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
             {removeConfirm && <p className="text-sm text-secondary">{adapterProfileRecordLabel(removeConfirm)}</p>}
-            {removeError && <p className="text-sm text-danger" role="alert">{removeError}</p>}
+            {removeError ? <AdapterErrorLines error={removeError} fallback="无法删除此适配" /> : null}
           </div>
           <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
             <Button variant="secondary" onClick={() => setRemoveConfirm(null)} disabled={removeDialogBusy}>取消</Button>

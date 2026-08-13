@@ -5,16 +5,18 @@ import type {
   AgentId,
   Provider,
 } from '@/lib/types';
-import type {
-  AdapterAction,
-  AdapterApplyResult,
-  AdapterApplyPlan,
-  AdapterBridgeRuntimeStatus,
-  AdapterBridgeRuntimeState,
-  AdapterProfile,
-  AdapterProfileStatus,
-  AdapterRouteAnalysis,
-  AdapterSupport,
+import {
+  AdapterCommandError,
+  isAdapterErrorCodeRetryable,
+  type AdapterAction,
+  type AdapterApplyResult,
+  type AdapterApplyPlan,
+  type AdapterBridgeRuntimeStatus,
+  type AdapterBridgeRuntimeState,
+  type AdapterProfile,
+  type AdapterProfileStatus,
+  type AdapterRouteAnalysis,
+  type AdapterSupport,
 } from '@/lib/backend/contracts/adapter';
 
 export type AdapterResourceLoadState = 'loading' | 'ready' | 'partial' | 'error';
@@ -376,7 +378,37 @@ export function profileStatusBadge(status: AdapterProfileStatus): { label: strin
 }
 
 export function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
+  if (error instanceof AdapterCommandError && error.message.trim()) return error.message;
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  return fallback;
+}
+
+export function isAdapterErrorRetryable(error: unknown): boolean {
+  if (error instanceof AdapterCommandError) return error.retryable;
+  if (error && typeof error === 'object' && 'retryable' in error && typeof error.retryable === 'boolean') {
+    return error.retryable;
+  }
+  if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
+    return isAdapterErrorCodeRetryable(error.code);
+  }
+  return false;
+}
+
+export function adapterErrorDetails(error: unknown): string | null {
+  if (error instanceof AdapterCommandError) {
+    const details = error.details?.trim();
+    return details || null;
+  }
+  if (error && typeof error === 'object' && 'details' in error && typeof error.details === 'string') {
+    const details = error.details.trim();
+    return details || null;
+  }
+  return null;
+}
+
+export function adapterErrorRetryHint(error: unknown): string | null {
+  return isAdapterErrorRetryable(error) ? '此错误可重试。' : null;
 }
 
 export type AdapterPageViewState = 'loading' | 'error' | 'empty' | 'choose' | 'preview';

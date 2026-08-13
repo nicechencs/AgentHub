@@ -1,16 +1,17 @@
-import type {
-  AdapterAction,
-  AdapterApplyRequest,
-  AdapterApplyResult,
-  AdapterApplyPlan,
-  AdapterBridgeRuntimeStatus,
-  AdapterEvidence,
-  AdapterPlanChange,
-  AdapterPort,
-  AdapterProfile,
-  AdapterProfileFilter,
-  AdapterRouteAnalysis,
-  AdapterRouteRequest,
+import {
+  adapterCommandError,
+  type AdapterAction,
+  type AdapterApplyRequest,
+  type AdapterApplyResult,
+  type AdapterApplyPlan,
+  type AdapterBridgeRuntimeStatus,
+  type AdapterEvidence,
+  type AdapterPlanChange,
+  type AdapterPort,
+  type AdapterProfile,
+  type AdapterProfileFilter,
+  type AdapterRouteAnalysis,
+  type AdapterRouteRequest,
 } from '@/lib/backend/contracts/adapter';
 import type { Account, Provider } from '@/lib/types';
 import { delay } from './delay';
@@ -175,7 +176,11 @@ function analyze(
 ): AdapterRouteAnalysis {
   const source = classify(resolver, request);
   if (source === 'not_found') {
-    throw new Error(`${request.sourceKind} not found: ${request.sourceId}`);
+    throw adapterCommandError({
+      code: 'not_found',
+      message: `${request.sourceKind} not found: ${request.sourceId}`,
+      retryable: false,
+    });
   }
   if (source === 'kimi_membership' && request.targetAgentId === 'claude') {
     return {
@@ -340,7 +345,13 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     async apply(request: AdapterApplyRequest): Promise<AdapterApplyResult> {
       await delay(20);
       const plan = buildPlan(request, analyze(resolver, request));
-      if (!plan.canApply) throw new Error('当前适配路径尚不可应用');
+      if (!plan.canApply) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: '当前适配路径尚不可应用',
+          retryable: false,
+        });
+      }
       const existing = state.profiles.find(
         (profile) =>
           profile.sourceKind === request.sourceKind &&
@@ -408,15 +419,31 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     async remove(profileId: string) {
       await delay(20);
       const index = state.profiles.findIndex((profile) => profile.id === profileId);
-      if (index < 0) throw new Error(`adapter profile not found: ${profileId}`);
+      if (index < 0) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: `adapter profile not found: ${profileId}`,
+          retryable: false,
+        });
+      }
       const profile = state.profiles[index];
       const providerId = profile.generatedProviderId;
       const generated = providerId
         ? resolver.getProviderById(providerId) ?? state.generatedProviders.get(providerId)
         : undefined;
-      if (!generated) throw new Error('适配生成的 Connection 不存在，无法安全删除');
+      if (!generated) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: '适配生成的 Connection 不存在，无法安全删除',
+          retryable: false,
+        });
+      }
       if (generated.isCurrent) {
-        throw new Error('请先在 Connections 切换到其他连接，再删除此适配');
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: '请先在 Connections 切换到其他连接，再删除此适配',
+          retryable: false,
+        });
       }
       resolver.removeGeneratedProvider?.(generated);
       state.generatedProviders.delete(generated.id);
@@ -470,8 +497,20 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
 
 function localBridgeProfile(state: MockAdapterState, profileId: string): AdapterProfile {
   const profile = state.profiles.find((item) => item.id === profileId);
-  if (!profile) throw new Error(`adapter profile not found: ${profileId}`);
-  if (profile.route !== 'local_bridge') throw new Error('此适配不需要本地桥接');
+  if (!profile) {
+    throw adapterCommandError({
+      code: 'not_found',
+      message: `adapter profile not found: ${profileId}`,
+      retryable: false,
+    });
+  }
+  if (profile.route !== 'local_bridge') {
+    throw adapterCommandError({
+      code: 'unsupported',
+      message: '此适配不需要本地桥接',
+      retryable: false,
+    });
+  }
   return profile;
 }
 

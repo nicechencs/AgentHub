@@ -17,6 +17,8 @@ import {
   adapterActionLabel,
   adapterBridgeEndpointLabel,
   adapterBridgeUpstreamLabel,
+  adapterErrorDetails,
+  adapterErrorRetryHint,
   adapterPlanChangeLabel,
   adapterProfileRecordLabel,
   bridgeStatusBadge,
@@ -28,6 +30,30 @@ import {
   supportBadge,
   unsupportedPresentation,
 } from './adapter-model';
+import {
+  adapterFailurePresentation,
+  adapterNeedsAttentionRecovery,
+  adapterProfileLastErrorCode,
+  adapterProfilePortLabel,
+} from './adapter-sources';
+
+export function AdapterErrorLines({
+  error,
+  fallback,
+}: {
+  error: unknown;
+  fallback: string;
+}) {
+  const details = adapterErrorDetails(error);
+  const retryHint = adapterErrorRetryHint(error);
+  return (
+    <>
+      <p className="text-sm text-danger" role="alert">{errorMessage(error, fallback)}</p>
+      {details ? <p className="text-xs text-secondary">{details}</p> : null}
+      {retryHint ? <p className="text-xs text-secondary">{retryHint}</p> : null}
+    </>
+  );
+}
 
 /** A degraded bridge still owns its local listener and must be stopped, not started again. */
 export function isBridgeStopCapable(
@@ -53,6 +79,8 @@ export function AdapterPreviewResult({
   compact = false,
   onApply,
   applyError,
+  authIncomplete = false,
+  authHint,
 }: {
   analysis: AdapterRouteAnalysis | null;
   plan: AdapterApplyPlan | null;
@@ -62,6 +90,8 @@ export function AdapterPreviewResult({
   compact?: boolean;
   onApply?: () => void;
   applyError?: unknown;
+  authIncomplete?: boolean;
+  authHint?: string;
 }) {
   if (loading) {
     return (
@@ -128,7 +158,7 @@ export function AdapterPreviewResult({
     );
   }
 
-  const canApply = canApplyAdapterPlan(plan);
+  const canApply = canApplyAdapterPlan(plan) && !authIncomplete;
   const availability = canApply ? null : futureAvailability(analysis.route);
   // Only the backend canApply gate may surface mutation controls.
   const showApply = Boolean(onApply) && canApply;
@@ -148,13 +178,19 @@ export function AdapterPreviewResult({
           ? '将启动仅本机可访问的协议桥接；请让 AgentHub 保持在托盘运行。'
           : '无需本地服务'}
       </p>
+      {authIncomplete && (
+        <p className="text-sm text-warning" role="status">
+          {authHint ?? '该官方登录尚未完成授权。请先到 Connections 完成登录。'}{' '}
+          <a className="underline" href="#/connections">前往 Connections</a>
+        </p>
+      )}
       {showApply && (
         <Button onClick={onApply}>{analysis.route === 'local_bridge' ? '启用本地桥接' : '应用配置'}</Button>
       )}
-      {!canApply && !availability ? (
+      {!canApply && !availability && !authIncomplete ? (
         <p className="text-xs text-secondary">当前路径不可应用（plan.canApply=false），仅展示只读预览。</p>
       ) : null}
-      {applyError ? <p className="text-sm text-danger" role="alert">{errorMessage(applyError, '应用适配失败')}</p> : null}
+      {applyError ? <AdapterErrorLines error={applyError} fallback="应用适配失败" /> : null}
       <AdapterActionList actions={analysis.actions} />
       <StringList title="限制" values={analysis.limitations} empty="无额外限制。" />
       <EvidenceList evidence={analysis.evidence} />
@@ -180,7 +216,7 @@ export function AdapterProfiles({
   bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus>;
   loading: boolean;
   loadError: unknown;
-  errors: Record<string, string>;
+  errors: Record<string, unknown>;
   removingProfileId: string | null;
   busyProfileIds: Record<string, boolean>;
   onRemove: (profile: AdapterProfile) => void;
@@ -213,6 +249,14 @@ export function AdapterProfiles({
           const bridgeEndpoint = adapterBridgeEndpointLabel(profile, bridgeStatus);
           const busy = busyProfileIds[profile.id] === true;
           const bridgeTransitioning = bridgeStatus?.state === 'starting' || bridgeStatus?.state === 'stopping';
+          const lastErrorCode = adapterProfileLastErrorCode(profile);
+          const portLabel = adapterProfilePortLabel(profile, bridgeStatus);
+          const recovery = profile.status === 'needs_attention'
+            ? adapterNeedsAttentionRecovery(profile, bridgeStatus?.state)
+            : null;
+          const rowError = errors[profile.id]
+            ? adapterFailurePresentation(errors[profile.id], '适配操作失败')
+            : null;
           return (
             <div key={profile.id} className="rounded-btn border border-border px-3 py-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -220,10 +264,13 @@ export function AdapterProfiles({
                   <p className="font-medium">{adapterProfileRecordLabel(profile)}</p>
                   <p className="mt-0.5 text-xs text-secondary">
                     {routeLabel(profile.route)} · 生成 Provider：{profile.generatedProviderId ?? '无'}
+                    {' · '}阶段：{status.label}
+                    {profile.route === 'local_bridge' || profile.localPort ? ` · 端口：${portLabel}` : ''}
+                    {lastErrorCode ? ` · lastErrorCode：${lastErrorCode}` : ''}
                   </p>
                   {profile.route === 'local_bridge' && (
                     <p className="mt-0.5 text-xs text-secondary">
-                      本机桥接{bridgeEndpoint ? ` · ${bridgeEndpoint}` : ' · 等待分配端口'}
+                      本机桥接{bridgeEndpoint ? ` · ${bridgeEndpoint}` : ` · ${portLabel}`}
                       {bridgeStatus?.upstreamStatus ? ` · 上游：${adapterBridgeUpstreamLabel(bridgeStatus.upstreamStatus)}` : ''}
                     </p>
                   )}
@@ -263,7 +310,7 @@ export function AdapterProfiles({
                       disabled={busy || bridgeTransitioning}
                       onClick={() => onStartBridge(profile)}
                     >
-                      {busy ? '处理中…' : bridgeStatus?.state === 'error' ? '重试启动' : '启动'}
+                      {busy ? '处理中…' : recovery?.startLabel ?? (bridgeStatus?.state === 'error' ? '重试启动' : '启动')}
                     </Button>
                   )}
                   <a className="text-info hover:underline" href="#/connections">在 Connections 查看</a>
@@ -274,15 +321,15 @@ export function AdapterProfiles({
                   服务降级：本地监听可能仍在，但上游健康检查未通过。可先停止再启动；不会自动反复重试写配置。
                 </p>
               )}
-              {profile.status === 'needs_attention' && (
-                <p className="mt-2 text-xs text-warning" role="status">
-                  需要处理：上次操作可能部分完成。请按错误提示恢复，或删除后重新创建；不会自动反复重试。
-                </p>
+              {recovery && (
+                <p className="mt-2 text-xs text-warning" role="status">{recovery.hint}</p>
               )}
-              {errors[profile.id] && (
+              {rowError && (
                 <div className="mt-2 space-y-1" role="alert">
-                  <p className="text-sm text-danger">{errors[profile.id]}</p>
-                  <p className="text-xs text-secondary">行内错误不会展示凭据；可重试当前操作或查看 Connections 中的来源连接状态。</p>
+                  <AdapterErrorLines error={errors[profile.id]} fallback="适配操作失败" />
+                  <p className="text-xs text-secondary">
+                    {rowError.hint} 行内错误不会展示凭据；可重试当前操作或查看 Connections 中的来源连接状态。
+                  </p>
                 </div>
               )}
             </div>

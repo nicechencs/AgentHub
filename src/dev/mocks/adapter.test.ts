@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { AdapterCommandError } from '@/lib/backend/contracts/adapter';
 import type { Account, AgentId, Provider } from '@/lib/types';
 import { createMockAdapterPort, resetMockAdapters } from './adapter';
 import { getMockAccountById } from './account';
@@ -180,6 +181,36 @@ describe('mock adapter route preview', () => {
       targetAgentId: 'claude',
     })).rejects.toThrow(/不可应用|不支持|canApply/i);
     expect(JSON.stringify({ analysis, plan })).not.toMatch(/sk-|access_token|refresh_token|bearer/i);
+  });
+
+  it('throws AdapterCommandError with a structured not-retryable shape', async () => {
+    const adapter = createMockAdapterPort(resolver);
+    await expect(adapter.analyze({
+      sourceKind: 'provider',
+      sourceId: 'missing-source',
+      targetAgentId: 'claude',
+    })).rejects.toMatchObject({
+      name: 'AdapterCommandError',
+      code: 'not_found',
+      message: 'provider not found: missing-source',
+      retryable: false,
+    });
+
+    await expect(adapter.apply({
+      sourceKind: 'account',
+      sourceId: 'missing-account',
+      targetAgentId: 'claude',
+    })).rejects.toBeInstanceOf(AdapterCommandError);
+
+    await expect(adapter.remove('missing-profile')).rejects.toMatchObject({
+      name: 'AdapterCommandError',
+      code: 'not_found',
+      retryable: false,
+    });
+    await expect(adapter.startBridge('missing-profile')).rejects.toMatchObject({
+      code: 'not_found',
+      retryable: false,
+    });
   });
 
   it('persists the same local-bridge ruleId used by production AdapterBridgeService', async () => {

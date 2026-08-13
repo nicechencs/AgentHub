@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTauriAdapterPort } from './adapter';
+import { AdapterCommandError } from '@/lib/backend/contracts/adapter';
+import { createTauriAdapterPort, mapAdapterInvokeError } from './adapter';
 
 const invokeMock = vi.fn();
 vi.mock('./invoke', () => ({ invoke: (...args: unknown[]) => invokeMock(...args) }));
@@ -148,5 +149,77 @@ describe('Tauri adapter route port', () => {
       profileId: 'bridge-1', autoStart: false,
     });
     expect(JSON.stringify(invokeMock.mock.calls)).not.toContain('token');
+  });
+});
+
+describe('mapAdapterInvokeError', () => {
+  it('keeps a structured GuiError payload including retryable and details', () => {
+    expect(() => mapAdapterInvokeError({
+      code: 'adapter.port_in_use',
+      message: '本地适配服务无法启动或停止',
+      details: '127.0.0.1:32123 already bound',
+      retryable: true,
+    })).toThrow(AdapterCommandError);
+    try {
+      mapAdapterInvokeError({
+        code: 'adapter.port_in_use',
+        message: '本地适配服务无法启动或停止',
+        details: '127.0.0.1:32123 already bound',
+        retryable: true,
+      });
+    } catch (error) {
+      expect(error).toMatchObject({
+        name: 'AdapterCommandError',
+        code: 'adapter.port_in_use',
+        message: '本地适配服务无法启动或停止',
+        details: '127.0.0.1:32123 already bound',
+        retryable: true,
+      });
+    }
+  });
+
+  it('classifies nested payloads and bracketed strings using retryable codes', () => {
+    try {
+      mapAdapterInvokeError({
+        payload: { code: 'adapter.bridge_restore_source', message: 'restore failed' },
+      });
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: 'adapter.bridge_restore_source',
+        message: 'restore failed',
+        retryable: true,
+      });
+    }
+
+    try {
+      mapAdapterInvokeError('listener compensation failed [adapter.bridge_stop]');
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: 'adapter.bridge_stop',
+        message: 'listener compensation failed',
+        retryable: false,
+      });
+    }
+  });
+
+  it('defaults unstructured rejections to adapter.command and not retryable', () => {
+    try {
+      mapAdapterInvokeError('plain failure');
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: 'adapter.command',
+        message: 'plain failure',
+        retryable: false,
+      });
+    }
+    try {
+      mapAdapterInvokeError(new Error('IPC broken'));
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: 'adapter.command',
+        message: 'IPC broken',
+        retryable: false,
+      });
+    }
   });
 });

@@ -154,6 +154,51 @@ export interface AdapterProfileFilter {
   targetAgentId?: AgentId;
 }
 
+/** Structured Adapter command error shared by Tauri and mock. */
+export interface AdapterCommandErrorFields {
+  code: string;
+  message: string;
+  details?: string | null;
+  retryable: boolean;
+}
+
+export class AdapterCommandError extends Error implements AdapterCommandErrorFields {
+  readonly code: string;
+  readonly details?: string | null;
+  readonly retryable: boolean;
+
+  constructor(fields: AdapterCommandErrorFields) {
+    super(fields.message);
+    this.name = 'AdapterCommandError';
+    this.code = fields.code;
+    this.details = fields.details ?? null;
+    this.retryable = fields.retryable;
+  }
+}
+
+/** Keep in lockstep with `is_adapter_error_retryable` in src-tauri/src/commands/mod.rs. */
+export function isAdapterErrorCodeRetryable(code: string): boolean {
+  if (code.startsWith('retryable:')) return true;
+  return code === 'adapter.port_in_use'
+    || code === 'adapter.bridge_start'
+    || code === 'adapter.bridge_upstream_auth'
+    || code.startsWith('adapter.bridge_restore_');
+}
+
+export function adapterCommandError(fields: {
+  code: string;
+  message: string;
+  details?: string | null;
+  retryable?: boolean;
+}): AdapterCommandError {
+  return new AdapterCommandError({
+    code: fields.code,
+    message: fields.message,
+    details: fields.details ?? null,
+    retryable: fields.retryable ?? isAdapterErrorCodeRetryable(fields.code),
+  });
+}
+
 export interface AdapterPort {
   analyze(request: AdapterRouteRequest): Promise<AdapterRouteAnalysis>;
   plan(request: AdapterRouteRequest): Promise<AdapterApplyPlan>;
