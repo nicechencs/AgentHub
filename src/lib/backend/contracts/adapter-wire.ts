@@ -10,6 +10,7 @@ import type {
   AdapterBridgeRuntimeState,
   AdapterBridgeRuntimeStatus,
   AdapterEvidence,
+  AdapterGateKind,
   AdapterPlanChange,
   AdapterProfile,
   AdapterProfileStatus,
@@ -89,6 +90,8 @@ export interface AdapterRouteAnalysisWire {
   actions: AdapterActionWire[];
   limitations: string[];
   evidence: AdapterEvidenceWire[];
+  ruleId?: string | null;
+  gateKind?: string | null;
 }
 
 export interface AdapterPlanChangeWire {
@@ -131,6 +134,25 @@ function mapProfileRoute(value: string): Exclude<AdapterRoute, 'unsupported'> {
 function mapSupport(value: string): AdapterSupport {
   if (value === 'stable' || value === 'experimental' || value === 'unsupported') return value;
   return invalidWireValue('support', value);
+}
+
+function mapGateKind(value: string | null | undefined): AdapterGateKind {
+  if (
+    value == null
+    || value === ''
+    || value === 'none'
+  ) {
+    return 'none';
+  }
+  if (
+    value === 'preview_only'
+    || value === 'subscription_candidate'
+    || value === 'unsupported'
+  ) {
+    return value;
+  }
+  // Unknown future gate kinds fail closed to generic unsupported chrome.
+  return 'unsupported';
 }
 
 function mapActionKind(value: string): AdapterAction['kind'] {
@@ -252,6 +274,7 @@ export function mapAdapterProfile(wire: AdapterProfileWire): AdapterProfile {
 }
 
 export function mapAdapterRouteAnalysis(wire: AdapterRouteAnalysisWire): AdapterRouteAnalysis {
+  const ruleId = typeof wire.ruleId === 'string' && wire.ruleId.trim() ? wire.ruleId : null;
   return {
     route: mapRoute(wire.route),
     support: mapSupport(wire.support),
@@ -259,6 +282,8 @@ export function mapAdapterRouteAnalysis(wire: AdapterRouteAnalysisWire): Adapter
     actions: wire.actions.map(mapAction),
     limitations: [...wire.limitations],
     evidence: wire.evidence.map(mapEvidence),
+    ruleId,
+    gateKind: mapGateKind(wire.gateKind),
   };
 }
 

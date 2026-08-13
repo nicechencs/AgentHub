@@ -1,0 +1,18 @@
+{
+  "model": "gpt-5",
+  "max_tokens": 128,
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "image",
+          "source": {
+            "type": "url",
+            "url": "https://example.invalid/a.png"
+          }
+        }
+      ]
+    }
+  ]
+}

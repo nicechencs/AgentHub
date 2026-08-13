@@ -2,6 +2,7 @@ use super::*;
 use crate::models::{
     Account, AccountKind, AdapterRoute, AdapterServiceImpact, AdapterSupport, Provider,
 };
+use crate::storage::{AccountRepo, Database, ProviderRepo};
 
 fn test_db() -> (tempfile::TempDir, Database) {
     let dir = tempfile::tempdir().unwrap();
@@ -218,12 +219,17 @@ fn unsupported_and_missing_sources_have_no_changes() {
         ))
         .unwrap();
     assert_eq!(codex_to_claude.analysis.route, AdapterRoute::Unsupported);
+    assert_eq!(codex_to_claude.analysis.support, AdapterSupport::Unsupported);
     assert!(!codex_to_claude.can_apply);
-    assert!(codex_to_claude
-        .analysis
-        .reason
-        .contains("当前尚未完成上游授权、条款和协议兼容性验证"));
+    assert!(codex_to_claude.analysis.reason.contains("当前不支持"));
+    assert!(codex_to_claude.analysis.reason.contains("门禁"));
+    assert_eq!(
+        codex_to_claude.analysis.gate_kind,
+        crate::models::AdapterGateKind::SubscriptionCandidate
+    );
     assert!(codex_to_claude.changes.is_empty());
+    assert!(codex_to_claude.analysis.actions.is_empty());
+    assert_eq!(codex_to_claude.service_impact, AdapterServiceImpact::None);
 
     let missing = service.analyze(&request(
         AdapterSourceKind::Provider,
@@ -231,6 +237,65 @@ fn unsupported_and_missing_sources_have_no_changes() {
         AgentId::Claude,
     ));
     assert!(matches!(missing, Err(AppError::NotFound(_))));
+}
+
+#[test]
+fn codex_auth_json_account_to_claude_is_matrix_closed() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "codex-auth-json".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "ChatGPT subscription".into(),
+            credentials: serde_json::json!({
+                "format": "auth_json",
+                "tokens": {"access_token": "must-not-leak", "refresh_token": "must-not-leak"}
+            }),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    let plan = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "codex-auth-json",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
+    assert_eq!(plan.analysis.support, AdapterSupport::Unsupported);
+    assert!(!plan.can_apply, "Codex OAuth → Claude must keep can_apply=false");
+    assert_eq!(
+        plan.analysis.gate_kind,
+        crate::models::AdapterGateKind::SubscriptionCandidate
+    );
+    assert_eq!(
+        plan.analysis.rule_id.as_deref(),
+        Some("codex-subscription-to-claude-app-server-v0")
+    );
+    assert_eq!(
+        plan.analysis.reason,
+        crate::models::CODEX_SUBSCRIPTION_TO_CLAUDE_REASON
+    );
+    assert!(plan.changes.is_empty());
+    assert!(plan.analysis.actions.is_empty());
+    assert!(!serde_json::to_string(&plan).unwrap().contains("must-not-leak"));
+
+    // Matrix unit surface agrees with the service.
+    let matrix = crate::models::decide_adapter_capability(
+        crate::models::AdapterSourceProduct::CodexChatGptSubscription,
+        crate::models::AdapterCredentialClass::OauthAuthJson,
+        AgentId::Claude,
+    )
+    .public_surface();
+    assert_eq!(matrix.route, AdapterRoute::Unsupported);
+    assert!(!matrix.can_apply);
 }
 
 #[test]
@@ -286,5 +351,97 @@ fn provider_and_oauth_misclassification_is_rejected() {
         let analysis = service.analyze(&source).unwrap();
         assert_eq!(analysis.route, AdapterRoute::Unsupported);
         assert_eq!(analysis.support, AdapterSupport::Unsupported);
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SharedContractFile {
+    cases: Vec<SharedContractCase>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SharedContractCase {
+    id: String,
+    source: SharedContractSource,
+    target: AgentId,
+    expect: SharedContractExpect,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SharedContractSource {
+    kind: AdapterSourceKind,
+    agent_id: AgentId,
+    preset: Option<String>,
+    account_kind: Option<AccountKind>,
+    #[allow(dead_code)]
+    credential_format: Option<String>,
+    extra: Option<serde_json::Value>,
+    credentials: Option<serde_json::Value>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SharedContractExpect {
+    route: AdapterRoute,
+    support: AdapterSupport,
+    can_apply: bool,
+    rule_id: Option<String>,
+    gate_kind: crate::models::AdapterGateKind,
+    reason: String,
+}
+
+fn shared_capability_contract() -> SharedContractFile {
+    serde_json::from_str(include_str!(
+        "../../../../../src/dev/mocks/fixtures/adapter-capability-contract.json"
+    ))
+    .expect("shared adapter capability contract")
+}
+
+#[test]
+fn shared_capability_contract_matches_classify_and_plan() {
+    let contract = shared_capability_contract();
+    for case in contract.cases {
+        let (_dir, db) = test_db();
+        let source_id = format!("contract-{}", case.id);
+        match case.source.kind {
+            AdapterSourceKind::Provider => {
+                ProviderRepo::new(db.clone())
+                    .create(&provider(
+                        &source_id,
+                        case.source.agent_id,
+                        case.source.preset.as_deref().unwrap_or("default"),
+                    ))
+                    .unwrap();
+            }
+            AdapterSourceKind::Account => {
+                AccountRepo::new(db.clone())
+                    .create(&Account {
+                        id: source_id.clone(),
+                        agent_id: case.source.agent_id,
+                        kind: case.source.account_kind.unwrap_or(AccountKind::Oauth),
+                        label: case.id.clone(),
+                        credentials: case.source.credentials.unwrap_or_else(|| serde_json::json!({})),
+                        extra: case.source.extra.unwrap_or_else(|| serde_json::json!({})),
+                        status: "active".into(),
+                        is_current: false,
+                        created_at: "now".into(),
+                        updated_at: "now".into(),
+                    })
+                    .unwrap();
+            }
+        }
+        let service = AdapterRouteService::new(db);
+        let req = request(case.source.kind, &source_id, case.target);
+        let analysis = service.analyze(&req).unwrap();
+        let plan = service.plan(&req).unwrap();
+        assert_eq!(analysis.route, case.expect.route, "{}", case.id);
+        assert_eq!(analysis.support, case.expect.support, "{}", case.id);
+        assert_eq!(analysis.rule_id, case.expect.rule_id, "{}", case.id);
+        assert_eq!(analysis.gate_kind, case.expect.gate_kind, "{}", case.id);
+        assert_eq!(analysis.reason, case.expect.reason, "{}", case.id);
+        assert_eq!(plan.can_apply, case.expect.can_apply, "{}", case.id);
     }
 }

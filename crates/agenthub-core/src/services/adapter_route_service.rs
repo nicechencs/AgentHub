@@ -1,12 +1,19 @@
 //! Read-only compatibility analysis for explicitly tagged connection records.
+//!
+//! Route presentation is sourced from the compile-time
+//! [`crate::models::ADAPTER_CAPABILITY_MATRIX`]. Missing cells fail closed.
+//!
+//! `plan.can_apply` is **matrix open ∩ implemented apply whitelist** — the matrix
+//! alone never authorizes writes.
 
 use serde_json::Value;
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    AccountKind, AdapterAction, AdapterApplyPlan, AdapterEvidence, AdapterPlanChange, AdapterRoute,
-    AdapterRouteAnalysis, AdapterRouteRequest, AdapterServiceImpact, AdapterSourceKind,
-    AdapterSupport, AgentId,
+    decide_adapter_capability, AccountKind, AdapterAction, AdapterApplyPlan,
+    AdapterCapabilityDecision, AdapterCredentialClass, AdapterEvidence, AdapterGateKind,
+    AdapterPlanChange, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
+    AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -28,173 +35,25 @@ impl AdapterRouteService {
     }
 
     pub fn analyze(&self, request: &AdapterRouteRequest) -> Result<AdapterRouteAnalysis> {
-        let source_id = request.source_id.trim();
-        if source_id.is_empty() {
-            return Err(AppError::InvalidArg(
-                "adapter source id must not be empty".into(),
-            ));
-        }
-
-        let source = match request.source_kind {
-            AdapterSourceKind::Provider => {
-                let provider = self.providers.get_by_id(source_id)?.ok_or_else(|| {
-                    AppError::NotFound(format!("provider not found: {source_id}"))
-                })?;
-                if provider.agent_id == AgentId::Kimi
-                    && json_string(&provider.meta, "preset") == Some("kimi-code-membership")
-                {
-                    RouteSource::KimiMembership
-                } else if provider.agent_id == AgentId::Claude
-                    && json_string(&provider.meta, "preset") == Some("anthropic")
-                {
-                    RouteSource::AnthropicApiKey
-                } else {
-                    RouteSource::Other(provider.agent_id)
-                }
-            }
-            AdapterSourceKind::Account => {
-                let account = self
-                    .accounts
-                    .get_by_id(source_id)?
-                    .ok_or_else(|| AppError::NotFound(format!("account not found: {source_id}")))?;
-                let explicit_provider = json_string(&account.extra, "provider")
-                    .or_else(|| json_string(&account.credentials, "provider"));
-                if account.kind == AccountKind::ApiKey
-                    && explicit_provider
-                        .is_some_and(|value| value.eq_ignore_ascii_case("anthropic"))
-                {
-                    RouteSource::AnthropicApiKey
-                } else {
-                    RouteSource::Other(account.agent_id)
-                }
-            }
-        };
-
-        Ok(match (source, request.target_agent_id) {
-            (RouteSource::KimiMembership, AgentId::Claude) => stable(
-                AdapterRoute::NativeEndpoint,
-                "Kimi Code 会员可预览为 Claude 的原生 Anthropic Messages 端点。",
-                vec![
-                    action(
-                        "set_config",
-                        "Claude Code",
-                        "设置 Kimi Code 官方 Anthropic-compatible Base URL。",
-                        Some("https://api.kimi.com/coding/"),
-                        false,
-                    ),
-                    action(
-                        "set_env",
-                        "Claude Code",
-                        "使用 Claude Code 的认证环境变量名。",
-                        Some("ANTHROPIC_AUTH_TOKEN"),
-                        false,
-                    ),
-                    action(
-                        "reference_connection_secret",
-                        "Claude Code",
-                        "从已选 Connection 引用 API Key；不会读取或显示它。",
-                        None,
-                        true,
-                    ),
-                ],
-                vec![
-                    "将写入 Claude 的 base URL 与凭据引用标记；不会在预览中传输明文 Key。",
-                    "应用后会切换当前 Claude Connection；请确认无其他进行中的配置写入。",
-                ],
-                vec![kimi_claude_evidence()],
-            ),
-            (RouteSource::KimiMembership, AgentId::Codex) => experimental(
-                AdapterRoute::LocalBridge,
-                "Kimi Code 会员到 Codex 需要本地协议桥接。",
-                vec![action(
-                    "requires_local_bridge",
-                    "Codex",
-                    "Codex Responses 与 Kimi Chat Completions 需要本地双向协议转换。",
-                    None,
-                    false,
-                )],
-                vec![
-                    "将在本机 loopback 启动协议桥接，并切换 Codex 到该本地端点。",
-                    "AgentHub 需保持在托盘运行；退出前会尝试排空监听。",
-                    "桥接为实验性协议覆盖；长流与工具调用可能受实现限制。",
-                    "固定端口被占用时会尝试重新分配端口并写回配置。",
-                ],
-                vec![kimi_codex_evidence()],
-            ),
-            (RouteSource::KimiMembership, AgentId::Pi) => stable(
-                AdapterRoute::ConfigSync,
-                "Kimi Code 会员可预览为 Pi 的配置同步。",
-                vec![
-                    action(
-                        "set_config",
-                        "Pi",
-                        "选择 Pi 的 Kimi For Coding provider。",
-                        Some("kimi-for-coding"),
-                        false,
-                    ),
-                    action(
-                        "reference_connection_secret",
-                        "Pi",
-                        "从已选 Connection 引用 API Key；不会读取或显示它。",
-                        None,
-                        true,
-                    ),
-                ],
-                vec!["Phase 0 仅预览；不会同步配置或传输凭据。"],
-                vec![kimi_pi_evidence()],
-            ),
-            (RouteSource::AnthropicApiKey, AgentId::Pi) => stable(
-                AdapterRoute::ConfigSync,
-                "显式 Anthropic API Key 可预览为 Pi 的配置同步。",
-                vec![
-                    action(
-                        "set_config",
-                        "Pi",
-                        "选择 Pi 的 Anthropic provider。",
-                        Some("anthropic"),
-                        false,
-                    ),
-                    action(
-                        "reference_connection_secret",
-                        "Pi",
-                        "从已选 Connection 引用 API Key；不会读取或显示它。",
-                        None,
-                        true,
-                    ),
-                ],
-                vec!["Phase 0 仅预览；不会同步配置或传输凭据。"],
-                vec![anthropic_pi_evidence()],
-            ),
-            (RouteSource::KimiMembership, _) => unsupported(
-                "Kimi Code 会员当前仅支持预览到 Claude、Codex 或 Pi。",
-                vec![kimi_pi_evidence()],
-            ),
-            (RouteSource::AnthropicApiKey, _) => unsupported(
-                "Anthropic API Key 当前仅支持预览到 Pi。",
-                vec![anthropic_pi_evidence()],
-            ),
-            (RouteSource::Other(AgentId::Codex), AgentId::Claude)
-                if request.source_kind == AdapterSourceKind::Account =>
-            {
-                unsupported(
-                    "AgentHub 暂未提供从 Codex 账户到 Claude Code 的适配规则。当前尚未完成上游授权、条款和协议兼容性验证，因此不能应用；这只表示没有可执行规则，不代表连接失效。",
-                    vec![adapter_compatibility_evidence()],
-                )
-            }
-            (RouteSource::Other(_), _) => unsupported(
-                "AgentHub 暂未提供此来源到所选目标的适配规则。这不表示连接失效。",
-                vec![adapter_compatibility_evidence()],
-            ),
-        })
+        let classified = self.classify(request)?;
+        Ok(analysis_from_decision(
+            &classified.decision,
+            &classified.source,
+            request,
+        ))
     }
 
     /// Build a safe representation of an eventual configuration change.
     ///
-    /// A direct Kimi -> Claude projection and the explicitly implemented
-    /// Kimi -> Codex local bridge are actionable. Every other preview remains
-    /// read-only even if it is compatible in principle.
+    /// Write permission is the intersection of:
+    /// 1. capability matrix (`decision.can_apply`: cell flag + all gates), and
+    /// 2. [`implemented_apply_whitelist`] for paths that actually have an apply service.
+    ///
+    /// Today that whitelist is provider-sourced Kimi → Claude (native) and
+    /// Kimi → Codex (local bridge). Matrix-open account sources stay preview-only.
     pub fn plan(&self, request: &AdapterRouteRequest) -> Result<AdapterApplyPlan> {
-        let analysis = self.analyze(request)?;
+        let classified = self.classify(request)?;
+        let analysis = analysis_from_decision(&classified.decision, &classified.source, request);
         let (service_impact, changes) = match analysis.route {
             AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Claude => (
                 AdapterServiceImpact::None,
@@ -247,19 +106,12 @@ impl AdapterRouteService {
             }
         };
 
-        let can_apply = request.source_kind == AdapterSourceKind::Provider
-            && matches!(
-                (analysis.route, analysis.support, request.target_agent_id),
-                (
-                    AdapterRoute::NativeEndpoint,
-                    AdapterSupport::Stable,
-                    AgentId::Claude
-                ) | (
-                    AdapterRoute::LocalBridge,
-                    AdapterSupport::Experimental,
-                    AgentId::Codex
-                )
-            );
+        let can_apply = implemented_apply_whitelist(
+            classified.decision.can_apply,
+            request,
+            &analysis,
+        );
+
         Ok(AdapterApplyPlan {
             analysis,
             target_agent_id: request.target_agent_id,
@@ -268,13 +120,170 @@ impl AdapterRouteService {
             changes,
         })
     }
+
+    fn classify(&self, request: &AdapterRouteRequest) -> Result<ClassifiedRoute> {
+        let source_id = request.source_id.trim();
+        if source_id.is_empty() {
+            return Err(AppError::InvalidArg(
+                "adapter source id must not be empty".into(),
+            ));
+        }
+
+        let identity = match request.source_kind {
+            AdapterSourceKind::Provider => {
+                let provider = self.providers.get_by_id(source_id)?.ok_or_else(|| {
+                    AppError::NotFound(format!("provider not found: {source_id}"))
+                })?;
+                if provider.agent_id == AgentId::Kimi
+                    && json_string(&provider.meta, "preset") == Some("kimi-code-membership")
+                {
+                    SourceIdentity {
+                        product: AdapterSourceProduct::KimiCodeMembership,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::KimiMembership,
+                    }
+                } else if provider.agent_id == AgentId::Claude
+                    && json_string(&provider.meta, "preset") == Some("anthropic")
+                {
+                    SourceIdentity {
+                        product: AdapterSourceProduct::AnthropicApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::AnthropicApiKey,
+                    }
+                } else {
+                    SourceIdentity {
+                        product: AdapterSourceProduct::Other,
+                        credential: AdapterCredentialClass::Unknown,
+                        label: RouteSourceLabel::Other,
+                    }
+                }
+            }
+            AdapterSourceKind::Account => {
+                let account = self
+                    .accounts
+                    .get_by_id(source_id)?
+                    .ok_or_else(|| AppError::NotFound(format!("account not found: {source_id}")))?;
+                let explicit_provider = json_string(&account.extra, "provider")
+                    .or_else(|| json_string(&account.credentials, "provider"));
+                let credential_format = json_string(&account.credentials, "format")
+                    .or_else(|| json_string(&account.extra, "format"));
+
+                if account.kind == AccountKind::ApiKey
+                    && explicit_provider
+                        .is_some_and(|value| value.eq_ignore_ascii_case("anthropic"))
+                {
+                    SourceIdentity {
+                        product: AdapterSourceProduct::AnthropicApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::AnthropicApiKey,
+                    }
+                } else if account.agent_id == AgentId::Codex
+                    && account.kind == AccountKind::Oauth
+                    && is_codex_auth_json(credential_format, &account.credentials)
+                {
+                    // Explicit Codex / ChatGPT subscription (`format=auth_json` or tokens blob).
+                    // Matrix cell exists and stays fully gated closed.
+                    SourceIdentity {
+                        product: AdapterSourceProduct::CodexChatGptSubscription,
+                        credential: AdapterCredentialClass::OauthAuthJson,
+                        label: RouteSourceLabel::CodexSubscription,
+                    }
+                } else if account.agent_id == AgentId::Codex && account.kind == AccountKind::Oauth {
+                    // Codex OAuth without auth_json shape: same product messaging, but do not
+                    // pretend the closed auth_json matrix cell matched. Fail closed via empty
+                    // candidate → subscription_candidate unsupported surface for Claude.
+                    SourceIdentity {
+                        product: AdapterSourceProduct::CodexChatGptSubscription,
+                        credential: AdapterCredentialClass::OauthOther,
+                        label: RouteSourceLabel::CodexSubscription,
+                    }
+                } else {
+                    SourceIdentity {
+                        product: AdapterSourceProduct::Other,
+                        credential: match account.kind {
+                            AccountKind::ApiKey => AdapterCredentialClass::ApiKey,
+                            AccountKind::Oauth => AdapterCredentialClass::OauthOther,
+                        },
+                        label: RouteSourceLabel::Other,
+                    }
+                }
+            }
+        };
+
+        let decision = decide_adapter_capability(
+            identity.product,
+            identity.credential,
+            request.target_agent_id,
+        )
+        .public_surface();
+
+        Ok(ClassifiedRoute {
+            source: identity.label,
+            decision,
+        })
+    }
+}
+
+struct ClassifiedRoute {
+    source: RouteSourceLabel,
+    decision: AdapterCapabilityDecision,
+}
+
+struct SourceIdentity {
+    product: AdapterSourceProduct,
+    credential: AdapterCredentialClass,
+    label: RouteSourceLabel,
 }
 
 #[derive(Debug, Clone, Copy)]
-enum RouteSource {
+enum RouteSourceLabel {
     KimiMembership,
     AnthropicApiKey,
-    Other(AgentId),
+    CodexSubscription,
+    Other,
+}
+
+fn is_codex_auth_json(format: Option<&str>, credentials: &Value) -> bool {
+    if format.is_some_and(|value| value.eq_ignore_ascii_case("auth_json")) {
+        return true;
+    }
+    // Codex on-disk auth.json often nests tokens without a separate format tag.
+    // Require the nested `tokens` object — do not treat bare access_token / API key as auth_json.
+    credentials
+        .get("tokens")
+        .and_then(Value::as_object)
+        .is_some_and(|tokens| {
+            tokens.contains_key("access_token") || tokens.contains_key("refresh_token")
+        })
+}
+
+/// Paths that have a real apply/bridge implementation today.
+///
+/// Matrix `can_apply` is necessary but not sufficient: account sources and
+/// not-yet-implemented routes stay closed even if a future matrix cell opens.
+fn implemented_apply_whitelist(
+    matrix_can_apply: bool,
+    request: &AdapterRouteRequest,
+    analysis: &AdapterRouteAnalysis,
+) -> bool {
+    if !matrix_can_apply {
+        return false;
+    }
+    if request.source_kind != AdapterSourceKind::Provider {
+        return false;
+    }
+    matches!(
+        (analysis.route, analysis.support, request.target_agent_id),
+        (
+            AdapterRoute::NativeEndpoint,
+            AdapterSupport::Stable,
+            AgentId::Claude
+        ) | (
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+            AgentId::Codex
+        )
+    )
 }
 
 fn json_string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
@@ -286,6 +295,148 @@ fn json_string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
 }
 
 const VERIFIED_AT: &str = "2026-08-12";
+
+fn analysis_from_decision(
+    decision: &AdapterCapabilityDecision,
+    source: &RouteSourceLabel,
+    request: &AdapterRouteRequest,
+) -> AdapterRouteAnalysis {
+    let actions = if decision.route == AdapterRoute::Unsupported || !decision_actions_allowed(decision)
+    {
+        vec![]
+    } else {
+        actions_for(source, request.target_agent_id, decision)
+    };
+
+    let evidence = evidence_for(source, request.target_agent_id, decision);
+    let limitations = if decision.limitations.is_empty() {
+        vec![
+            "当前不支持此组合；不会改动来源连接、本机服务或配置。".into(),
+            "plan.canApply=false：无 Apply、启动 Bridge 或强制继续入口。".into(),
+        ]
+    } else {
+        decision
+            .limitations
+            .iter()
+            .map(|item| (*item).to_owned())
+            .collect()
+    };
+
+    let gate_kind = if matches!(source, RouteSourceLabel::CodexSubscription)
+        && request.target_agent_id == AgentId::Claude
+    {
+        AdapterGateKind::SubscriptionCandidate
+    } else {
+        decision.gate_kind
+    };
+
+    AdapterRouteAnalysis {
+        route: decision.route,
+        support: decision.support,
+        reason: decision.reason.into(),
+        actions,
+        limitations,
+        evidence,
+        rule_id: decision.rule_id.map(str::to_owned),
+        gate_kind,
+    }
+}
+
+fn decision_actions_allowed(decision: &AdapterCapabilityDecision) -> bool {
+    !matches!(decision.route, AdapterRoute::Unsupported)
+}
+
+fn actions_for(
+    source: &RouteSourceLabel,
+    target: AgentId,
+    decision: &AdapterCapabilityDecision,
+) -> Vec<AdapterAction> {
+    match (source, target, decision.route) {
+        (RouteSourceLabel::KimiMembership, AgentId::Claude, AdapterRoute::NativeEndpoint) => {
+            vec![
+                action(
+                    "set_config",
+                    "Claude Code",
+                    "设置 Kimi Code 官方 Anthropic-compatible Base URL。",
+                    Some("https://api.kimi.com/coding/"),
+                    false,
+                ),
+                action(
+                    "set_env",
+                    "Claude Code",
+                    "使用 Claude Code 的认证环境变量名。",
+                    Some("ANTHROPIC_AUTH_TOKEN"),
+                    false,
+                ),
+                action(
+                    "reference_connection_secret",
+                    "Claude Code",
+                    "从已选 Connection 引用 API Key；不会读取或显示它。",
+                    None,
+                    true,
+                ),
+            ]
+        }
+        (RouteSourceLabel::KimiMembership, AgentId::Codex, AdapterRoute::LocalBridge) => {
+            vec![action(
+                "requires_local_bridge",
+                "Codex",
+                "Codex Responses 与 Kimi Chat Completions 需要本地双向协议转换。",
+                None,
+                false,
+            )]
+        }
+        (RouteSourceLabel::KimiMembership, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
+            action(
+                "set_config",
+                "Pi",
+                "选择 Pi 的 Kimi For Coding provider。",
+                Some("kimi-for-coding"),
+                false,
+            ),
+            action(
+                "reference_connection_secret",
+                "Pi",
+                "从已选 Connection 引用 API Key；不会读取或显示它。",
+                None,
+                true,
+            ),
+        ],
+        (RouteSourceLabel::AnthropicApiKey, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
+            action(
+                "set_config",
+                "Pi",
+                "选择 Pi 的 Anthropic provider。",
+                Some("anthropic"),
+                false,
+            ),
+            action(
+                "reference_connection_secret",
+                "Pi",
+                "从已选 Connection 引用 API Key；不会读取或显示它。",
+                None,
+                true,
+            ),
+        ],
+        _ => vec![],
+    }
+}
+
+fn evidence_for(
+    source: &RouteSourceLabel,
+    target: AgentId,
+    _decision: &AdapterCapabilityDecision,
+) -> Vec<AdapterEvidence> {
+    match (source, target) {
+        (RouteSourceLabel::KimiMembership, AgentId::Claude) => vec![kimi_claude_evidence()],
+        (RouteSourceLabel::KimiMembership, AgentId::Codex) => vec![kimi_codex_evidence()],
+        (RouteSourceLabel::KimiMembership, AgentId::Pi) => vec![kimi_pi_evidence()],
+        (RouteSourceLabel::KimiMembership, _) => vec![kimi_pi_evidence()],
+        (RouteSourceLabel::AnthropicApiKey, _) => vec![anthropic_pi_evidence()],
+        (RouteSourceLabel::CodexSubscription, _) => vec![adapter_compatibility_evidence()],
+        (RouteSourceLabel::Other, _) => vec![adapter_compatibility_evidence()],
+    }
+}
 
 fn action(
     kind: &str,
@@ -311,51 +462,6 @@ fn change(target: &str, field: &str, value: Option<&str>, secret: bool) -> Adapt
         field: field.into(),
         value: value.map(str::to_owned),
         secret,
-    }
-}
-
-fn stable(
-    route: AdapterRoute,
-    reason: &str,
-    actions: Vec<AdapterAction>,
-    limitations: Vec<&str>,
-    evidence: Vec<AdapterEvidence>,
-) -> AdapterRouteAnalysis {
-    AdapterRouteAnalysis {
-        route,
-        support: AdapterSupport::Stable,
-        reason: reason.into(),
-        actions,
-        limitations: limitations.into_iter().map(str::to_owned).collect(),
-        evidence,
-    }
-}
-
-fn experimental(
-    route: AdapterRoute,
-    reason: &str,
-    actions: Vec<AdapterAction>,
-    limitations: Vec<&str>,
-    evidence: Vec<AdapterEvidence>,
-) -> AdapterRouteAnalysis {
-    AdapterRouteAnalysis {
-        route,
-        support: AdapterSupport::Experimental,
-        reason: reason.into(),
-        actions,
-        limitations: limitations.into_iter().map(str::to_owned).collect(),
-        evidence,
-    }
-}
-
-fn unsupported(reason: &str, evidence: Vec<AdapterEvidence>) -> AdapterRouteAnalysis {
-    AdapterRouteAnalysis {
-        route: AdapterRoute::Unsupported,
-        support: AdapterSupport::Unsupported,
-        reason: reason.into(),
-        actions: vec![],
-        limitations: vec!["该组合暂未支持；不会改动来源连接、本机服务或配置。".into()],
-        evidence,
     }
 }
 

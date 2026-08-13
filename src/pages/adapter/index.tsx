@@ -45,6 +45,7 @@ import {
   isCurrentAdapterPreviewRequest,
   resourceFailureMessage,
   sourceLabel,
+  sourceStatusHint,
   targetAgentName,
 } from './adapter-model';
 import { useAdapterResources } from './use-adapter-resources';
@@ -61,9 +62,12 @@ export {
   canApplyAdapterPlan,
   futureAvailability,
   isCurrentAdapterPreviewRequest,
+  isSubscriptionGateUnsupported,
   maskedIdSuffix,
   routeLabel,
   sourceLabel,
+  sourceStatusHint,
+  unsupportedPresentation,
 } from './adapter-model';
 
 /** A controlled confirmation dialog must stay visible while its mutation is in flight. */
@@ -297,8 +301,8 @@ export default function AdapterPage() {
       <PageHeader
         title="Adapter"
         badge={<Badge variant="warning">开发中</Badge>}
-        description="复用已有连接；直连或本机桥接均由明确规则创建。"
-        descriptionTip="桥接仅监听本机 127.0.0.1；请让 AgentHub 保持在托盘运行。"
+        description="复用已有连接；必要时启动本地协议转换。"
+        descriptionTip="不会把一家 OAuth 凭据“转换”为另一家授权，也不会在日志记录请求正文。桥接仅监听本机 127.0.0.1。"
         actions={(
           <Button onClick={() => setDialogOpen(true)} disabled={loading || entries.length === 0}>
             新建适配 <ChevronRight className="h-4 w-4" />
@@ -324,8 +328,8 @@ export default function AdapterPage() {
         ) : viewState === 'empty' ? (
           <EmptyState
             icon={Boxes}
-            title="暂无可分析的连接"
-            description="先在 Connections 保存官方登录或 API Key，再创建适配预览。"
+            title="把现有连接接入其他 Agent"
+            description="先在 Connections 保存官方登录或 API Key，再创建适配预览。Adapter 只引用 connectionId，不复制凭据。"
             actionLabel="去 Connections"
             onAction={() => { window.location.hash = '#/connections'; }}
           />
@@ -333,7 +337,7 @@ export default function AdapterPage() {
           <EmptyState
             icon={Boxes}
             title="选择一个来源连接"
-            description="选择目标 Agent 后，会自动分析路径并生成只读配置预览。"
+            description="选择目标 Agent 后，会自动分析路径并生成只读配置预览。不支持的组合会中性说明原因与替代路径。"
             actionLabel="新建适配"
             onAction={() => setDialogOpen(true)}
           />
@@ -345,6 +349,7 @@ export default function AdapterPage() {
                 <p className="mt-1 text-sm text-secondary">
                   {sourceLabel(source)} <ChevronRight className="inline h-3.5 w-3.5" /> {targetAgentName(targetAgentId)}
                 </p>
+                <p className="mt-1 text-xs text-muted">{sourceStatusHint(source)}</p>
               </div>
               <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
                 更改选择
@@ -406,11 +411,20 @@ export default function AdapterPage() {
                 <option value="">请选择连接</option>
                 {entries.map((entry) => (
                   <option key={entry.key} value={entry.key}>
-                    {sourceLabel(entry)}
+                    {sourceLabel(entry)} · {sourceStatusHint(entry)}
                   </option>
                 ))}
               </select>
             </label>
+            {source ? (
+              <p className="text-xs text-secondary">
+                来源状态：{sourceStatusHint(source)}。Adapter 只引用 connectionId / sourceId。
+              </p>
+            ) : (
+              <p className="text-xs text-secondary">
+                没有合适连接时，请先前往 Connections 添加官方登录或 API Key。
+              </p>
+            )}
             <label className="block text-sm font-medium">
               目标 Agent
               <select

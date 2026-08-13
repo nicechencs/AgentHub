@@ -22,9 +22,12 @@ import {
   closeConfirmationOnOpenChange,
   futureAvailability,
   isCurrentAdapterPreviewRequest,
+  isSubscriptionGateUnsupported,
   preventBusyConfirmationDismissal,
   routeLabel,
   sourceLabel,
+  sourceStatusHint,
+  unsupportedPresentation,
 } from './index';
 import { AdapterPreviewResult, isBridgeStopCapable, openAdapterEvidence } from './adapter-components';
 import { loadAdapterPageResources, supportBadge } from './adapter-model';
@@ -85,8 +88,8 @@ describe('Adapter page view model', () => {
 
   it('shows unsupported without config writes', () => {
     const unsupported = plan('unsupported');
-    expect(routeLabel(unsupported.analysis.route)).toBe('暂未支持');
-    expect(supportBadge(unsupported.analysis.support).label).toBe('暂未支持');
+    expect(routeLabel(unsupported.analysis.route)).toBe('当前不支持');
+    expect(supportBadge(unsupported.analysis.support).label).toBe('当前不支持');
     expect(futureAvailability(unsupported.analysis.route)).toBeNull();
     expect(unsupported.changes).toEqual([]);
     expect(canApplyAdapterPlan(unsupported)).toBe(false);
@@ -108,11 +111,113 @@ describe('Adapter page view model', () => {
       }),
     );
     expect(markup).toContain('暂未支持此组合');
-    expect(markup).toContain('暂未支持不等于连接失效');
+    expect(markup).toContain('门禁说明');
+    expect(markup).toContain('plan.canApply=false');
+    expect(markup).toContain('可用替代路径');
     expect(markup).toContain('改用目标 Agent 自身登录');
     expect(markup).not.toContain('应用配置');
     expect(markup).not.toContain('启用本地桥接');
     expect(markup).not.toContain('无需本地服务');
+    expect(markup).not.toMatch(/<button[^>]*>[\s\S]*强制继续/);
+  });
+
+  it('marks Codex/ChatGPT → Claude as gated unsupported with alternatives and no apply path', () => {
+    const unsupported = plan('unsupported');
+    unsupported.analysis.reason = [
+      'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
+      '尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。',
+    ].join('');
+    unsupported.analysis.gateKind = 'subscription_candidate';
+    unsupported.analysis.ruleId = 'codex-subscription-to-claude-app-server-v0';
+    unsupported.analysis.evidence = [{
+      label: 'Codex / ChatGPT subscription → Claude Code 门禁',
+      url: 'https://github.com/nicechencs/AgentHub/blob/release/docs/provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code当前结论与前置门禁',
+      verifiedAt: '2026-08-12',
+    }];
+    expect(isSubscriptionGateUnsupported(unsupported.analysis)).toBe(true);
+    expect(isSubscriptionGateUnsupported({
+      route: 'unsupported',
+      reason: 'generic missing rule',
+      evidence: [],
+      gateKind: 'subscription_candidate',
+    })).toBe(true);
+    expect(canApplyAdapterPlan(unsupported)).toBe(false);
+    const presentation = unsupportedPresentation(unsupported.analysis, unsupported);
+    expect(presentation.headline).toBe('当前不支持');
+    expect(presentation.canApply).toBe(false);
+    expect(presentation.alternatives.some((line) => line.includes('Claude'))).toBe(true);
+    expect(presentation.alternatives.some((line) => /API Key/i.test(line))).toBe(true);
+
+    const markup = renderToStaticMarkup(
+      createElement(AdapterPreviewResult, {
+        analysis: unsupported.analysis,
+        plan: unsupported,
+        loading: false,
+        error: null,
+        onRetry: vi.fn(),
+        // Even if a caller accidentally supplies onApply, unsupported must not render it.
+        onApply: vi.fn(),
+      }),
+    );
+    expect(markup).toContain('当前不支持');
+    expect(markup).toContain('门禁说明');
+    expect(markup).toContain('plan.canApply=false');
+    expect(markup).toContain('也没有“强制继续”');
+    expect(markup).toContain('Claude');
+    expect(markup).toContain('API Key');
+    // Mutation controls must not appear as buttons/actions (explanatory copy may mention them).
+    expect(markup).not.toContain('应用配置');
+    expect(markup).not.toContain('启用本地桥接');
+    expect(markup).not.toMatch(/<button[^>]*>[\s\S]*强制继续/);
+  });
+
+  it('labels source OAuth/API Key health without credential material', () => {
+    expect(sourceStatusHint({
+      kind: 'oauth',
+      authHealth: 'verified',
+      authStatus: 'valid',
+    })).toContain('官方登录');
+    expect(sourceStatusHint({
+      kind: 'oauth',
+      authHealth: 'needs_login',
+      authStatus: 'expired',
+    })).toContain('继续授权');
+    expect(sourceStatusHint({
+      kind: 'apikey',
+      authHealth: 'configured',
+      authStatus: 'valid',
+    })).toContain('API Key');
+    expect(sourceStatusHint({
+      kind: 'oauth',
+      authHealth: 'verified',
+      authStatus: 'valid',
+    })).not.toMatch(/sk-|token|secret|bearer/i);
+  });
+
+  it('renders loading and error preview states with Chinese guidance', () => {
+    const loadingMarkup = renderToStaticMarkup(
+      createElement(AdapterPreviewResult, {
+        analysis: null,
+        plan: null,
+        loading: true,
+        error: null,
+        onRetry: vi.fn(),
+      }),
+    );
+    expect(loadingMarkup).toContain('正在分析路径并生成只读配置预览');
+    expect(loadingMarkup).toContain('connectionId');
+
+    const errorMarkup = renderToStaticMarkup(
+      createElement(AdapterPreviewResult, {
+        analysis: null,
+        plan: null,
+        loading: false,
+        error: new Error('network down'),
+        onRetry: vi.fn(),
+      }),
+    );
+    expect(errorMarkup).toContain('无法生成适配预览');
+    expect(errorMarkup).toContain('不是连接失效');
   });
 
   it('opens compatibility evidence through the injected external opener', async () => {

@@ -167,6 +167,45 @@ pub enum AdapterSupport {
     Unsupported,
 }
 
+/// Structured presentation / gate class for analyze UI (not a write authorization).
+///
+/// UI must prefer this over parsing `reason` text. Write permission remains
+/// `AdapterApplyPlan.can_apply` only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdapterGateKind {
+    /// Applicable or ordinary preview with no special gate chrome.
+    #[default]
+    None,
+    /// Stable/experimental rule that is intentionally preview-only.
+    PreviewOnly,
+    /// Closed experimental subscription-bridge candidate (e.g. Codex OAuth → Claude).
+    SubscriptionCandidate,
+    /// Generic missing / unsupported combination.
+    Unsupported,
+}
+
+impl AdapterGateKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::PreviewOnly => "preview_only",
+            Self::SubscriptionCandidate => "subscription_candidate",
+            Self::Unsupported => "unsupported",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "none" => Some(Self::None),
+            "preview_only" => Some(Self::PreviewOnly),
+            "subscription_candidate" => Some(Self::SubscriptionCandidate),
+            "unsupported" => Some(Self::Unsupported),
+            _ => None,
+        }
+    }
+}
+
 /// A safe, structured description of one required future action.
 ///
 /// `secret = true` is a reference to the selected Connection only. Such an
@@ -202,6 +241,12 @@ pub struct AdapterRouteAnalysis {
     pub actions: Vec<AdapterAction>,
     pub limitations: Vec<String>,
     pub evidence: Vec<AdapterEvidence>,
+    /// Capability-matrix rule id when a cell matched; never a secret.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule_id: Option<String>,
+    /// Structured gate class for UI; prefer over parsing `reason`.
+    #[serde(default)]
+    pub gate_kind: AdapterGateKind,
 }
 
 /// Whether an eventual apply would need a local runtime service.
@@ -226,7 +271,12 @@ pub struct AdapterPlanChange {
     pub secret: bool,
 }
 
-/// Safe apply preview. `can_apply` is true only for implemented write paths.
+/// Safe apply preview.
+///
+/// `can_apply` is true only when **both** hold:
+/// 1. the capability matrix cell is open (`can_apply` + all gates), and
+/// 2. a concrete apply implementation exists (provider-source whitelist).
+/// The matrix alone never authorizes writes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdapterApplyPlan {

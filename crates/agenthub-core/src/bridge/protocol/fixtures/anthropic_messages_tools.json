@@ -1,0 +1,61 @@
+{
+  "model": "gpt-5",
+  "max_tokens": 512,
+  "stream": true,
+  "messages": [
+    {
+      "role": "user",
+      "content": [{ "type": "text", "text": "Check weather and calendar." }]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "call_weather",
+          "name": "weather",
+          "input": { "city": "Tokyo" }
+        },
+        {
+          "type": "tool_use",
+          "id": "call_calendar",
+          "name": "calendar",
+          "input": { "day": "today" }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_weather",
+          "content": "sunny"
+        },
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_calendar",
+          "content": "free afternoon"
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "weather",
+      "description": "Get weather",
+      "input_schema": {
+        "type": "object",
+        "properties": { "city": { "type": "string" } }
+      }
+    },
+    {
+      "name": "calendar",
+      "description": "Get calendar",
+      "input_schema": {
+        "type": "object",
+        "properties": { "day": { "type": "string" } }
+      }
+    }
+  ]
+}

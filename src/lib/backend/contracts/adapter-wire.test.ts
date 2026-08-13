@@ -3,6 +3,7 @@ import {
   mapAdapterApplyPlan,
   mapAdapterApplyResult,
   mapAdapterBridgeStatusDto,
+  mapAdapterRouteAnalysis,
 } from './adapter-wire';
 
 describe('Adapter Rust wire mappers', () => {
@@ -129,6 +130,32 @@ describe('Adapter Rust wire mappers', () => {
         upstreamStatus: 'not-a-real-label',
       }).upstreamStatus,
     ).toBe('unknown');
+  });
+
+  it('maps optional ruleId/gateKind and defaults missing gateKind to none', () => {
+    const withGate = mapAdapterRouteAnalysis({
+      route: 'unsupported',
+      support: 'unsupported',
+      reason: 'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
+      actions: [],
+      limitations: [],
+      evidence: [],
+      ruleId: 'codex-subscription-to-claude-app-server-v0',
+      gateKind: 'subscription_candidate',
+    });
+    expect(withGate.ruleId).toBe('codex-subscription-to-claude-app-server-v0');
+    expect(withGate.gateKind).toBe('subscription_candidate');
+
+    const legacy = mapAdapterRouteAnalysis({
+      route: 'native_endpoint',
+      support: 'stable',
+      reason: 'ok',
+      actions: [],
+      limitations: [],
+      evidence: [],
+    });
+    expect(legacy.ruleId).toBeNull();
+    expect(legacy.gateKind).toBe('none');
   });
 
   it('strips secret values from plan changes and analysis actions', () => {

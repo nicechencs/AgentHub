@@ -115,13 +115,14 @@ export function routeLabel(route: AdapterRouteAnalysis['route']): string {
   if (route === 'native_endpoint') return '原生端点';
   if (route === 'local_bridge') return '需要本地代理';
   if (route === 'config_sync') return '直接同步';
-  return '暂未支持';
+  return '当前不支持';
 }
 
 export function supportBadge(support: AdapterSupport): { label: string; variant: 'success' | 'warning' | 'default' } {
   if (support === 'stable') return { label: '稳定规则', variant: 'success' };
   if (support === 'experimental') return { label: '实验规则', variant: 'warning' };
-  return { label: '暂未支持', variant: 'default' };
+  // Neutral, not a fault state: unsupported is a gate conclusion, not a red error.
+  return { label: '当前不支持', variant: 'default' };
 }
 
 export function futureAvailability(route: AdapterRouteAnalysis['route']): string | null {
@@ -134,6 +135,99 @@ export function futureAvailability(route: AdapterRouteAnalysis['route']): string
 /** The backend's explicit capability flag is the sole apply gate. */
 export function canApplyAdapterPlan(plan: AdapterApplyPlan | null): boolean {
   return plan?.canApply === true;
+}
+
+/**
+ * Subscription-bridge candidates (e.g. Codex/ChatGPT → Claude) must stay
+ * fail-closed until every gate in the adaptation matrix is green.
+ * Prefer structured `gateKind` from core; keep a narrow text fallback for legacy wires.
+ */
+export function isSubscriptionGateUnsupported(
+  analysis: Pick<AdapterRouteAnalysis, 'route' | 'reason' | 'evidence' | 'gateKind' | 'ruleId'>,
+): boolean {
+  if (analysis.route !== 'unsupported') return false;
+  if (analysis.gateKind === 'subscription_candidate') return true;
+  if (analysis.ruleId?.startsWith('codex-subscription-to-claude')) return true;
+  // Legacy wires without gateKind: last-resort content match only.
+  const haystack = [
+    analysis.reason,
+    ...analysis.evidence.map((item) => `${item.label} ${item.url}`),
+  ].join('\n').toLowerCase();
+  const mentionsCodexOrChatgpt = /codex|chatgpt|subscription|订阅/.test(haystack);
+  const mentionsClaude = /claude/.test(haystack);
+  const mentionsGate = /门禁|条款|授权|协议|canapply|unsupported|不支持|暂未/.test(haystack);
+  return mentionsCodexOrChatgpt && (mentionsClaude || mentionsGate);
+}
+
+/** Neutral unsupported presentation: reason, gate, and safe alternatives only. */
+export function unsupportedPresentation(
+  analysis: AdapterRouteAnalysis,
+  /** Present so callers can pass the paired plan; canApply is always forced false. */
+  plan?: AdapterApplyPlan | null,
+): {
+  headline: string;
+  badgeLabel: string;
+  reason: string;
+  gateLines: string[];
+  alternatives: string[];
+  safetyNote: string;
+  canApply: false;
+} {
+  const subscription = isSubscriptionGateUnsupported(analysis);
+  // A buggy wire payload with canApply=true must still fail closed in the UI.
+  const wireWouldApply = plan?.canApply === true;
+  return {
+    headline: subscription ? '当前不支持' : '暂未支持此组合',
+    badgeLabel: '当前不支持',
+    reason: analysis.reason,
+    gateLines: subscription
+      ? [
+          '门禁：当前未通过上游授权、条款与协议兼容性验证。',
+          'plan.canApply=false：不会创建适配、启动 Bridge，也没有“强制继续”。',
+          '不会把 Codex / ChatGPT 订阅凭据写入 Claude，也不会在界面或日志展示原始凭据。',
+          ...(wireWouldApply ? ['检测到异常 plan.canApply=true，界面仍保持只读并拒绝应用。'] : []),
+        ]
+      : [
+          '门禁：当前没有可执行的适配规则，或规则尚未通过验证。',
+          'plan.canApply=false：不会写入配置、启动本机服务或改变当前连接。',
+          ...(wireWouldApply ? ['检测到异常 plan.canApply=true，界面仍保持只读并拒绝应用。'] : []),
+        ],
+    alternatives: subscription
+      ? [
+          '在 Claude Code 使用自身官方登录完成授权。',
+          '改用已支持的 API Key 来源（例如 Kimi Code 会员 → Claude 原生端点）。',
+          '继续使用当前 Codex / ChatGPT 连接本身，不跨 Agent 复用订阅凭据。',
+        ]
+      : [
+          '继续使用原连接。',
+          '改用目标 Agent 自身登录。',
+          '更换已支持的来源与目标组合（例如已支持 API Key 路径）。',
+        ],
+    safetyNote: '当前不支持不等于连接失效；本次分析只读，不会读取或显示凭据。',
+    canApply: false,
+  };
+}
+
+/** Source selection hint: kind + auth health only; never credential material. */
+export function sourceStatusHint(entry: Pick<ConnectionEntry, 'kind' | 'authHealth' | 'authStatus'>): string {
+  const kind = entry.kind === 'oauth' ? '官方登录' : 'API Key';
+  const health = entry.authHealth
+    ? ({
+        verified: '已连接 · 已验证',
+        renewable: '已连接 · 可续期（未验证）',
+        configured: '已配置 · 未验证',
+        needs_login: '需要重新登录 / 继续授权',
+        unknown: '状态未知',
+        missing: '未登录',
+      } as const)[entry.authHealth]
+    : entry.authStatus === 'expired'
+      ? '需要重新登录 / 继续授权'
+      : entry.authStatus === 'none'
+        ? '未登录'
+        : entry.authStatus === 'expiring'
+          ? '即将过期'
+          : '已连接';
+  return `${kind} · ${health} · 仅引用 connectionId，不展示凭据`;
 }
 
 /** The apply mutation is final; runtime probing is a later best-effort concern. */

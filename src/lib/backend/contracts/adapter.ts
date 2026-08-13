@@ -16,6 +16,16 @@ export type AdapterRoute = 'native_endpoint' | 'local_bridge' | 'config_sync' | 
 /** A rule can be stable, experimental, or explicitly unsupported. */
 export type AdapterSupport = 'stable' | 'experimental' | 'unsupported';
 
+/**
+ * Structured gate / presentation class from core analyze.
+ * Prefer this over parsing `reason` text. Does not authorize writes.
+ */
+export type AdapterGateKind =
+  | 'none'
+  | 'preview_only'
+  | 'subscription_candidate'
+  | 'unsupported';
+
 export type AdapterActionKind =
   | 'set_config'
   | 'set_env'
@@ -54,6 +64,10 @@ export interface AdapterRouteAnalysis {
   actions: AdapterAction[];
   limitations: string[];
   evidence: AdapterEvidence[];
+  /** Capability-matrix rule id when a cell matched. */
+  ruleId?: string | null;
+  /** Structured gate class for UI chrome; prefer over parsing reason. */
+  gateKind?: AdapterGateKind;
 }
 
 export type AdapterServiceImpact = 'none' | 'requires_local_bridge';
@@ -67,7 +81,10 @@ export type AdapterPlanChange =
 export interface AdapterApplyPlan {
   analysis: AdapterRouteAnalysis;
   targetAgentId: AgentId;
-  /** Only explicit, stable rules can be applied. */
+  /**
+   * True only when the capability matrix is open **and** an apply implementation
+   * exists (provider-source whitelist). Matrix alone never authorizes writes.
+   */
   canApply: boolean;
   serviceImpact: AdapterServiceImpact;
   changes: AdapterPlanChange[];

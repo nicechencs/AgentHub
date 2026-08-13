@@ -19,11 +19,13 @@ import {
   adapterPlanChangeLabel,
   adapterProfileRecordLabel,
   bridgeStatusBadge,
+  canApplyAdapterPlan,
   errorMessage,
   futureAvailability,
   profileStatusBadge,
   routeLabel,
   supportBadge,
+  unsupportedPresentation,
 } from './adapter-model';
 
 /** A degraded bridge still owns its local listener and must be stopped, not started again. */
@@ -63,7 +65,8 @@ export function AdapterPreviewResult({
   if (loading) {
     return (
       <div className="space-y-2" aria-live="polite">
-        <p className="text-sm text-secondary">正在分析并生成只读配置预览…</p>
+        <p className="text-sm text-secondary">正在分析路径并生成只读配置预览…</p>
+        <p className="text-xs text-muted">仅使用 connectionId / sourceId；不会读取、展示或记录原始凭据。</p>
         <Skeleton className="h-4 w-40" />
         <Skeleton className="h-4 w-full" />
       </div>
@@ -71,43 +74,70 @@ export function AdapterPreviewResult({
   }
   if (error) {
     return (
-      <ErrorState
-        compact={compact}
-        error={errorMessage(error, '无法分析此连接')}
-        title="无法生成适配预览"
-        onRetry={onRetry}
-      />
+      <div className="space-y-2">
+        <ErrorState
+          compact={compact}
+          error={errorMessage(error, '无法分析此连接')}
+          title="无法生成适配预览"
+          onRetry={onRetry}
+        />
+        <p className="text-xs text-secondary">
+          这是分析失败，不是连接失效。可重试；若持续失败，请回到 Connections 确认来源状态后再试。
+        </p>
+      </div>
     );
   }
   if (!analysis) return <p className="text-sm text-secondary">选择来源后自动生成预览。</p>;
 
   const support = supportBadge(analysis.support);
   if (analysis.route === 'unsupported') {
+    // Unsupported is a neutral gate conclusion — never a red fault, never Apply/Bridge.
+    const presentation = unsupportedPresentation(analysis, plan);
     return (
       <div className="space-y-4 text-sm">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="font-medium">暂未支持此组合</h2>
-          <Badge variant={support.variant}>{support.label}</Badge>
+          <h2 className="font-medium">{presentation.headline}</h2>
+          <Badge variant="default">{presentation.badgeLabel}</Badge>
+          <Badge variant="default">plan.canApply=false</Badge>
           <ShieldCheck className="h-4 w-4 text-secondary" aria-label="不会执行更改" />
         </div>
-        <p>{analysis.reason}</p>
-        <section className="space-y-1 rounded-btn border border-border bg-subtle p-3 text-secondary">
-          <h3 className="font-medium text-primary">暂未支持不等于连接失效</h3>
-          <p>本次不会写入配置、启动服务或改变当前连接。</p>
-          <p>下一步：继续使用原连接、改用目标 Agent 自身登录，或更换已支持的来源与目标组合。</p>
+        <p className="text-primary">{presentation.reason}</p>
+        <section className="space-y-2 rounded-btn border border-border bg-subtle p-3 text-secondary">
+          <h3 className="font-medium text-primary">门禁说明</h3>
+          <ul className="list-disc space-y-1 pl-5">
+            {presentation.gateLines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <p className="text-xs">{presentation.safetyNote}</p>
         </section>
+        <section className="space-y-1">
+          <h3 className="font-medium">可用替代路径</h3>
+          <ul className="list-disc space-y-1 pl-5 text-secondary">
+            {presentation.alternatives.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </section>
+        {analysis.limitations.length > 0 ? (
+          <StringList title="限制" values={analysis.limitations} empty="无额外限制。" />
+        ) : null}
         <EvidenceList evidence={analysis.evidence} />
       </div>
     );
   }
 
-  const availability = onApply ? null : futureAvailability(analysis.route);
+  const canApply = canApplyAdapterPlan(plan);
+  const availability = canApply ? null : futureAvailability(analysis.route);
+  // Only the backend canApply gate may surface mutation controls.
+  const showApply = Boolean(onApply) && canApply;
   return (
     <div className="space-y-4 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="font-medium">{routeLabel(analysis.route)}</h2>
         <Badge variant={support.variant}>{support.label}</Badge>
         {availability && <Badge variant="warning">{availability}</Badge>}
+        {!canApply && plan ? <Badge variant="default">plan.canApply=false</Badge> : null}
         <ShieldCheck className="h-4 w-4 text-secondary" aria-label="只读预览" />
       </div>
       <p>{analysis.reason}</p>
@@ -117,7 +147,12 @@ export function AdapterPreviewResult({
           ? '将启动仅本机可访问的协议桥接；请让 AgentHub 保持在托盘运行。'
           : '无需本地服务'}
       </p>
-      {onApply && <Button onClick={onApply}>{analysis.route === 'local_bridge' ? '启用本地桥接' : '应用配置'}</Button>}
+      {showApply && (
+        <Button onClick={onApply}>{analysis.route === 'local_bridge' ? '启用本地桥接' : '应用配置'}</Button>
+      )}
+      {!canApply && !availability ? (
+        <p className="text-xs text-secondary">当前路径不可应用（plan.canApply=false），仅展示只读预览。</p>
+      ) : null}
       {applyError ? <p className="text-sm text-danger" role="alert">{errorMessage(applyError, '应用适配失败')}</p> : null}
       <AdapterActionList actions={analysis.actions} />
       <StringList title="限制" values={analysis.limitations} empty="无额外限制。" />
@@ -227,13 +262,28 @@ export function AdapterProfiles({
                       disabled={busy || bridgeTransitioning}
                       onClick={() => onStartBridge(profile)}
                     >
-                      {busy ? '处理中…' : '启动'}
+                      {busy ? '处理中…' : bridgeStatus?.state === 'error' ? '重试启动' : '启动'}
                     </Button>
                   )}
                   <a className="text-info hover:underline" href="#/connections">在 Connections 查看</a>
                 </div>
               )}
-              {errors[profile.id] && <p className="mt-2 text-sm text-danger" role="alert">{errors[profile.id]}</p>}
+              {bridgeStatus?.state === 'degraded' && (
+                <p className="mt-2 text-xs text-warning" role="status">
+                  服务降级：本地监听可能仍在，但上游健康检查未通过。可先停止再启动；不会自动反复重试写配置。
+                </p>
+              )}
+              {profile.status === 'needs_attention' && (
+                <p className="mt-2 text-xs text-warning" role="status">
+                  需要处理：上次操作可能部分完成。请按错误提示恢复，或删除后重新创建；不会自动反复重试。
+                </p>
+              )}
+              {errors[profile.id] && (
+                <div className="mt-2 space-y-1" role="alert">
+                  <p className="text-sm text-danger">{errors[profile.id]}</p>
+                  <p className="text-xs text-secondary">行内错误不会展示凭据；可重试当前操作或查看 Connections 中的来源连接状态。</p>
+                </div>
+              )}
             </div>
           );
         })}
