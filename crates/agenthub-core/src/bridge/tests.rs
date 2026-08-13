@@ -801,3 +801,61 @@ async fn request_failure_marks_upstream_degraded_and_status_does_not_probe() {
     assert_eq!(status.upstream_status, BridgeUpstreamStatus::Degraded);
     host.stop("degraded-request").await.expect("stop");
 }
+
+async fn status_upstream(status: StatusCode) -> (u16, tokio::task::JoinHandle<()>) {
+    async fn chat(State(status): State<StatusCode>) -> Response {
+        (status, Json(json!({"error":{"message":"upstream-secret"}}))).into_response()
+    }
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind status upstream");
+    let port = listener.local_addr().expect("upstream addr").port();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/chat/completions", post(chat))
+                .with_state(status),
+        )
+        .await
+        .expect("serve status upstream");
+    });
+    (port, task)
+}
+
+#[tokio::test]
+async fn upstream_429_and_5xx_are_generic_and_mark_degraded() {
+    for (label, upstream_status, expected_local) in [
+        ("too-many", StatusCode::TOO_MANY_REQUESTS, StatusCode::TOO_MANY_REQUESTS),
+        ("server-error", StatusCode::INTERNAL_SERVER_ERROR, StatusCode::BAD_GATEWAY),
+    ] {
+        let (upstream_port, upstream_task) = status_upstream(upstream_status).await;
+        let host = BridgeRuntimeHost::new();
+        let started = host
+            .start(spec(label, 0, upstream_port))
+            .await
+            .expect("start");
+        let response = client()
+            .await
+            .post(format!("http://127.0.0.1:{}/v1/responses", started.port))
+            .header(header::AUTHORIZATION, "Bearer local-test-token")
+            .json(&json!({"model":"test","input":"hello"}))
+            .send()
+            .await
+            .expect("upstream error request");
+        assert_eq!(response.status(), expected_local);
+        let body = response.text().await.expect("error body");
+        assert!(body.contains("The upstream model provider returned an error."));
+        assert!(!body.contains("upstream-secret"));
+        assert_eq!(
+            host.status(label)
+                .expect("status")
+                .expect("instance")
+                .upstream_status,
+            BridgeUpstreamStatus::Degraded
+        );
+        host.stop(label).await.expect("stop");
+        upstream_task.abort();
+    }
+}

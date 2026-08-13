@@ -41,6 +41,8 @@ const versions: Record<SkillsCacheKey, number> = {
   market: 0,
 };
 let fsWatchStarted = false;
+let fsWatchSubscribers = 0;
+let fsWatchUnsub: (() => void) | null = null;
 
 /** 进程内最后一次成功结果（跨路由 unmount 仍保留） */
 let skillsData: Skill[] | null = null;
@@ -96,26 +98,46 @@ export function useSkillsCacheVersion(key: SkillsCacheKey = 'skills'): number {
   return useCacheVersion(key);
 }
 
-/** 启动一次全局 FS 监听；浏览器 mock 为空操作。 */
-function ensureSkillsFsWatch() {
-  if (fsWatchStarted || typeof window === 'undefined') return;
+/** Subscribe to skill-directory changes while any hook consumer is mounted. */
+function retainSkillsFsWatch() {
+  if (typeof window === 'undefined') return;
+  fsWatchSubscribers += 1;
+  if (fsWatchStarted) return;
   fsWatchStarted = true;
   void onSkillsFsChanged(() => {
     // 外部目录变更：共享库矩阵 + agent 目录都可能变
     invalidateSkills(['skills', 'installed']);
+  }).then((unsub) => {
+    fsWatchUnsub = unsub;
+    if (fsWatchSubscribers === 0) {
+      releaseSkillsFsWatch(true);
+    }
   }).catch(() => {
-    // ignore — event API unavailable
+    fsWatchStarted = false;
   });
+}
+
+function releaseSkillsFsWatch(force = false) {
+  if (!force) {
+    fsWatchSubscribers = Math.max(0, fsWatchSubscribers - 1);
+    if (fsWatchSubscribers > 0) return;
+  } else {
+    fsWatchSubscribers = 0;
+  }
+  fsWatchUnsub?.();
+  fsWatchUnsub = null;
+  fsWatchStarted = false;
 }
 
 function useCacheVersion(key: SkillsCacheKey): number {
   const [, setTick] = useState(0);
   useEffect(() => {
-    ensureSkillsFsWatch();
+    retainSkillsFsWatch();
     const l = () => setTick((t) => t + 1);
     listeners.add(l);
     return () => {
       listeners.delete(l);
+      releaseSkillsFsWatch();
     };
   }, []);
   return versions[key];
