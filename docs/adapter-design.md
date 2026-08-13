@@ -560,7 +560,7 @@ MVP 不做全文搜索、自动滚动、错误文件下载、方法/路径筛选
 
 - core 已有 `BridgeRuntimeHost`、loopback token、实例 start/status/stop/shutdown，以及 OpenAI Responses ↔ Chat Completions 的文本、SSE、工具、用量、停止原因和错误映射 fixtures。
 - Tauri `AppState` 持有 host；controller 已实现 apply/start/stop/status、健康检查、失败补偿、凭证漂移 stop→restart、端口占用 rebind、opt-in auto-start restore；`ExitCoordinator` 负责退出 drain；Adapter 页面已有对应状态与操作控件。
-- Codex `local_bridge` 已由 route plan 开放 Apply（实验性），规则状态见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。**发布前**仍需实机验收：密钥轮转、端口冲突、长流/工具闭环、托盘退出 drain。
+- Codex `local_bridge` 已由 route plan 开放 Apply（实验性），规则状态见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。**发布前**仍需实机验收：密钥轮转、端口冲突、长流/工具闭环、托盘退出 drain。清单见 [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md)。
 - 默认 `auto_start=false`；用户可在成功启动后自行打开自动恢复。
 
 ### Phase 2：Claude Code 桥接

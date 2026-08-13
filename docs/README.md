@@ -13,6 +13,7 @@
 | [testing.md](testing.md) | **测试约定**：测试与生产分文件、vitest/cargo 命令、mock 边界、Markdown 预览用例索引 |
 | [ui-design.md](ui-design.md) | 前端布局、页面线框、交互与组件（含环境未就绪态） |
 | [adapter-design.md](adapter-design.md) | **Adapter 设计与进度**：页面、运行时、Claude 直连与 Codex 本地桥接；发布前待实机 dogfood |
+| [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | **Kimi → Codex 实机 dogfood 清单**：七项发布前验收；禁止记录密钥 / prompt / 正文 |
 | [adapter-sidecar-design.md](adapter-sidecar-design.md) | **Adapter Sidecar 目标架构**：`agenthub-adapterd` 所有权、IPC、状态机、单主/并发、升级恢复与三阶段迁移（目标已决策，当前未迁移） |
 | [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | **厂商 / API / OAuth 适配规则**：产品与协议边界、Kimi 双端点、当前路由矩阵和维护方法 |
 | [ui-experience-alignment.md](ui-experience-alignment.md) | **UI 风格/体验对标 Cursor·Codex**：颜色层级、边框、字号、预览与提示体系、分阶段优化方案（**v1.1**） |
