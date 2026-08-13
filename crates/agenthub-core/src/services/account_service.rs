@@ -647,10 +647,14 @@ impl AccountService {
         self.repo.create(&row)
     }
 
-    /// Update an existing API Key account (label and/or key). Does not rewrite live files.
+    /// Update an existing API Key account (label and/or key).
     ///
     /// - `label`: when `Some` and non-empty after trim, replaces the display label
     /// - `api_key`: when `Some` and non-empty after trim, rebuilds credentials via adapter
+    ///
+    /// A current row with a new key is written to live files. Label-only edits
+    /// and non-current rows stay pool-only. This must not reuse [`Self::switch`],
+    /// which treats the existing live file as authoritative for the current row.
     pub fn update_api_key(
         &self,
         agent: AgentId,
@@ -659,10 +663,11 @@ impl AccountService {
         api_key: Option<&str>,
     ) -> Result<Account> {
         let started = Instant::now();
-        let result = self.update_api_key_inner(agent, id_or_label, label, api_key);
-        if result.is_ok() {
-            self.snapshot_after_pool_change(agent, "after API Key account update");
-        }
+        let result = (|| {
+            let stored = self.update_api_key_inner(agent, id_or_label, label, api_key)?;
+            self.sync_current_account_live(&stored, api_key, "after API Key account update")?;
+            Ok(stored)
+        })();
         log_account_op("update_api_key", agent, started, &result);
         result
     }
@@ -1495,6 +1500,71 @@ impl AccountService {
         }
     }
 
+    /// After an API-key pool save: if this row is current **and** the key
+    /// changed, apply the stored credentials to live files. Label-only edits
+    /// stay in the pool.
+    fn sync_current_account_live(
+        &self,
+        stored: &Account,
+        api_key: Option<&str>,
+        note: &str,
+    ) -> Result<()> {
+        let key_changed = api_key
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty());
+        if !stored.is_current || !key_changed {
+            self.snapshot_after_pool_change(stored.agent_id, note);
+            return Ok(());
+        }
+        let Some(backup) = self.backup.as_ref() else {
+            return Ok(());
+        };
+        let adapter = match self.adapter(stored.agent_id) {
+            Ok(adapter) => adapter,
+            Err(_) => return Ok(()),
+        };
+        if !adapter.capability(Capability::AccountSwitch).is_usable() {
+            self.snapshot_after_pool_change(stored.agent_id, note);
+            return Ok(());
+        }
+
+        let live_before = adapter.read_account().ok();
+        let apply_live = stored.to_live();
+        if live_before
+            .as_ref()
+            .is_some_and(|before| before.credentials == apply_live.credentials)
+        {
+            self.snapshot_after_pool_change(stored.agent_id, note);
+            return Ok(());
+        }
+
+        let _lock = self.acquire_live_lock(stored.agent_id)?;
+        if let Err(error) = backup.snapshot(
+            stored.agent_id,
+            BackupKind::AutoSwitch,
+            Some(&format!("before applying current account {}", stored.id)),
+        ) {
+            if error.code() != "not_found" {
+                return Err(error);
+            }
+        }
+        if let Err(error) = adapter.apply_account(&apply_live) {
+            // Codex/Pi (and similar) can store API-key accounts but refuse to
+            // apply that format to live files. Keep the pool update; do not
+            // fail the save or attempt a live rollback of an unapplied write.
+            if error.code() == "unsupported" {
+                self.snapshot_after_pool_change(stored.agent_id, note);
+                return Ok(());
+            }
+            let live_rollback = match &live_before {
+                Some(before) => adapter.apply_account(before).err(),
+                None => None,
+            };
+            return Err(compensated_current_account_apply_error(error, live_rollback));
+        }
+        Ok(())
+    }
+
     /// Import/update changes the AgentHub pool, not the live files. Keep an
     /// audit snapshot of the live state when the service is running with the
     /// live backup dependency; a missing live file is a normal no-op.
@@ -1578,6 +1648,23 @@ fn log_account_op<T>(op: &str, agent: AgentId, started: Instant, result: &Result
             );
         }
     }
+}
+
+fn compensated_current_account_apply_error(
+    primary: AppError,
+    live_rollback: Option<AppError>,
+) -> AppError {
+    let Some(rollback) = live_rollback else {
+        return primary;
+    };
+    AppError::message(
+        "account.current.apply.rollback",
+        format!(
+            "applying the current account failed [{}]; compensation status: live={}",
+            primary.code(),
+            rollback.code()
+        ),
+    )
 }
 
 fn compensated_switch_error(

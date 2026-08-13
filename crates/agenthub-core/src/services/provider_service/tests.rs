@@ -1185,3 +1185,56 @@ fn unsupported_apply_attempts_live_and_db_compensation() {
     assert!(!svc.get("c2", None).unwrap().is_current);
     assert!(!error.to_string().contains("ANTHROPIC_AUTH_TOKEN"));
 }
+
+#[test]
+fn updating_current_provider_writes_new_pool_value_not_stale_live() {
+    let live = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "old-live"}}),
+    };
+    let (_root, _db, svc, adapter, _backups) = live_svc(AgentId::Claude, live);
+    let mut current = input("c1", AgentId::Claude, "Current", true);
+    current.settings_config = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "stale-pool"}});
+    svc.create(&current).unwrap();
+    assert_eq!(
+        adapter.config().raw["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "old-live",
+        "create of a current row stays pool-only"
+    );
+
+    let mut updated = current.clone();
+    updated.name = "Current rotated".into();
+    updated.settings_config = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "new-key"}});
+    let stored = svc.update(&updated).unwrap();
+    assert!(stored.is_current);
+    assert_eq!(stored.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"], "new-key");
+    assert_eq!(
+        adapter.config().raw["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "new-key",
+        "saving the current provider must apply the new pool value"
+    );
+}
+
+#[test]
+fn updating_non_current_provider_does_not_touch_live() {
+    let live = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "live-key"}}),
+    };
+    let (_root, _db, svc, adapter, _backups) = live_svc(AgentId::Claude, live.clone());
+    let mut current = input("c1", AgentId::Claude, "Current", true);
+    current.settings_config = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "live-key"}});
+    svc.create(&current).unwrap();
+    let mut spare = input("c2", AgentId::Claude, "Spare", false);
+    spare.settings_config = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "spare-old"}});
+    svc.create(&spare).unwrap();
+    let writes_before = adapter.write_attempts.load(Ordering::SeqCst);
+
+    spare.name = "Spare rotated".into();
+    spare.settings_config = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "spare-new"}});
+    let stored = svc.update(&spare).unwrap();
+    assert!(!stored.is_current);
+    assert_eq!(stored.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"], "spare-new");
+    assert_eq!(adapter.config(), live);
+    assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), writes_before);
+}

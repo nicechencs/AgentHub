@@ -10,7 +10,7 @@ use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    AgentConfig, AgentId, BackupKind, Provider, ProviderInput, ProviderSwitchResult,
+    AgentConfig, AgentId, BackupKind, Capability, Provider, ProviderInput, ProviderSwitchResult,
 };
 use crate::services::{
     AdapterSecretResolver, BackupService, ConnectionService, LiveWriteAuthority, LiveWriteGuard,
@@ -237,11 +237,9 @@ impl ProviderService {
     }
 
     fn update_and_snapshot(&self, input: &ProviderInput) -> Result<Provider> {
-        let result = self.update_inner(input);
-        if result.is_ok() {
-            self.snapshot_after_pool_change(input.agent_id, "after provider update");
-        }
-        result
+        let stored = self.update_inner(input)?;
+        self.sync_current_provider_live(&stored, "after provider update")?;
+        Ok(stored)
     }
 
     fn update_inner(&self, input: &ProviderInput) -> Result<Provider> {
@@ -289,11 +287,9 @@ impl ProviderService {
     }
 
     fn upsert_and_snapshot(&self, input: &ProviderInput) -> Result<Provider> {
-        let result = self.upsert_inner(input);
-        if result.is_ok() {
-            self.snapshot_after_pool_change(input.agent_id, "after provider upsert");
-        }
-        result
+        let stored = self.upsert_inner(input)?;
+        self.sync_current_provider_live(&stored, "after provider upsert")?;
+        Ok(stored)
     }
 
     fn upsert_inner(&self, input: &ProviderInput) -> Result<Provider> {
@@ -643,9 +639,59 @@ impl ProviderService {
         &self.repo
     }
 
-    /// Pool changes do not rewrite live files, but retaining a post-change
-    /// snapshot makes imports/edits auditable and recoverable when live files
-    /// already exist. A missing live file is a normal no-op.
+    /// After a pool save: if this row is the active connection, write the
+    /// **new stored value** to live files. This must not reuse [`Self::switch`],
+    /// which treats the existing live file as authoritative for the current row.
+    ///
+    /// Non-current rows stay pool-only. Missing backup root / writer capability
+    /// is a no-op so CRUD tests and half-surface agents do not touch real files.
+    fn sync_current_provider_live(&self, stored: &Provider, note: &str) -> Result<()> {
+        if !stored.is_current {
+            self.snapshot_after_pool_change(stored.agent_id, note);
+            return Ok(());
+        }
+        let Some(backup) = self.backup.as_ref() else {
+            return Ok(());
+        };
+        let adapter = match self.adapter(stored.agent_id) {
+            Ok(adapter) => adapter,
+            Err(_) => return Ok(()),
+        };
+        if !adapter.capability(Capability::ConfigWrite).is_usable() {
+            self.snapshot_after_pool_change(stored.agent_id, note);
+            return Ok(());
+        }
+
+        let live_before = adapter.read_config()?;
+        ensure_config_agent(&live_before, stored.agent_id)?;
+        let materialized = self.secret_resolver.materialize_for_live(stored)?;
+        let target_config = AgentConfig {
+            agent: stored.agent_id,
+            raw: materialized.settings_config,
+        };
+        if live_before.raw == target_config.raw {
+            self.snapshot_after_pool_change(stored.agent_id, note);
+            return Ok(());
+        }
+
+        if let Err(error) = backup.snapshot(
+            stored.agent_id,
+            BackupKind::AutoSwitch,
+            Some(&format!("before applying current provider {}", stored.id)),
+        ) {
+            if error.code() != "not_found" {
+                return Err(error);
+            }
+        }
+        if let Err(error) = adapter.write_config(&target_config) {
+            let live_rollback = adapter.write_config(&live_before).err();
+            return Err(compensated_current_apply_error(error, live_rollback));
+        }
+        Ok(())
+    }
+
+    /// Pool-only changes keep an audit snapshot of the untouched live file.
+    /// A missing live file is a normal no-op.
     fn snapshot_after_pool_change(&self, agent: AgentId, note: &str) {
         let Some(backup) = self.backup.as_ref() else {
             return;
@@ -722,6 +768,23 @@ fn log_provider_op<T>(op: &str, agent: AgentId, started: Instant, result: &Resul
             );
         }
     }
+}
+
+fn compensated_current_apply_error(
+    primary: AppError,
+    live_rollback: Option<AppError>,
+) -> AppError {
+    let Some(rollback) = live_rollback else {
+        return primary;
+    };
+    AppError::message(
+        "provider.current.apply.rollback",
+        format!(
+            "applying the current provider failed [{}]; compensation status: live={}",
+            primary.code(),
+            rollback.code()
+        ),
+    )
 }
 
 fn compensated_switch_error(

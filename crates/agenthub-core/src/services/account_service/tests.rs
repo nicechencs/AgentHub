@@ -24,6 +24,7 @@ struct FakeAdapter {
     revision_sequence: Mutex<Vec<String>>,
     auth_read_count: AtomicUsize,
     auth_read_hook: Mutex<Option<(usize, Box<dyn FnOnce() + Send>)>>,
+    reject_api_key_apply: AtomicBool,
 }
 
 impl FakeAdapter {
@@ -40,7 +41,12 @@ impl FakeAdapter {
             revision_sequence: Mutex::new(Vec::new()),
             auth_read_count: AtomicUsize::new(0),
             auth_read_hook: Mutex::new(None),
+            reject_api_key_apply: AtomicBool::new(false),
         }
+    }
+
+    fn reject_api_key_apply(&self) {
+        self.reject_api_key_apply.store(true, Ordering::SeqCst);
     }
 
     fn set_live(&self, live: LiveAccount) {
@@ -144,6 +150,17 @@ impl AgentAdapter for FakeAdapter {
     }
 
     fn apply_account(&self, account: &LiveAccount) -> Result<()> {
+        if self.reject_api_key_apply.load(Ordering::SeqCst)
+            && account
+                .credentials
+                .get("format")
+                .and_then(|value| value.as_str())
+                == Some("api_key")
+        {
+            return Err(AppError::Unsupported(
+                "Codex live apply for API key accounts is not supported".into(),
+            ));
+        }
         let attempt = self.write_attempts.fetch_add(1, Ordering::SeqCst) + 1;
         if self.fail_on_write.load(Ordering::SeqCst) == attempt
             || self.fail_writes.lock().unwrap().contains(&attempt)
@@ -215,7 +232,7 @@ fn add_list_delete_api_key() {
 
 #[test]
 fn update_api_key_label_and_key() {
-    let (_root, svc, _) = live_svc(AgentId::Grok);
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
     let a = svc
         .add_api_key(AgentId::Grok, Some("old-name"), "xai-old-secret-key")
         .unwrap();
@@ -234,6 +251,83 @@ fn update_api_key_label_and_key() {
     assert_eq!(rotated.credentials["api_key"], "xai-new-secret-key");
     // label falls back to masked key when only key is updated
     assert!(rotated.label.contains("API Key") || !rotated.label.is_empty());
+    assert_eq!(
+        adapter.write_attempts.load(Ordering::SeqCst),
+        0,
+        "non-current API key updates stay pool-only"
+    );
+}
+
+#[test]
+fn updating_current_api_key_writes_new_credentials_not_stale_live() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    let account = svc
+        .add_api_key(AgentId::Claude, Some("work"), "sk-old-secret-key")
+        .unwrap();
+    svc.switch(&account.id, AgentId::Claude).unwrap();
+    assert_eq!(
+        adapter.read_account().unwrap().credentials["api_key"],
+        "sk-old-secret-key"
+    );
+
+    let renamed = svc
+        .update_api_key(AgentId::Claude, &account.id, Some("work-renamed"), None)
+        .unwrap();
+    assert!(renamed.is_current);
+    assert_eq!(renamed.label, "work-renamed");
+    assert_eq!(
+        adapter.read_account().unwrap().credentials["api_key"],
+        "sk-old-secret-key",
+        "label-only edits must not rewrite live credentials"
+    );
+
+    let rotated = svc
+        .update_api_key(AgentId::Claude, &account.id, None, Some("sk-new-secret-key"))
+        .unwrap();
+    assert!(rotated.is_current);
+    assert_eq!(rotated.credentials["api_key"], "sk-new-secret-key");
+    assert_eq!(
+        adapter.read_account().unwrap().credentials["api_key"],
+        "sk-new-secret-key",
+        "saving the current API key must apply the new pool value"
+    );
+}
+
+#[test]
+fn updating_current_codex_api_key_account_stays_pool_only() {
+    let (_root, svc, adapter) = live_svc(AgentId::Codex);
+    adapter.reject_api_key_apply();
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Codex,
+        kind: AccountKind::Oauth,
+        credentials: json!({"format": "auth_json", "body": {"token": "oauth-live"}}),
+        label_hint: Some("oauth".into()),
+        extra: json!({}),
+    });
+    let imported = svc.import_live(AgentId::Codex, None).unwrap();
+    assert!(imported.is_current);
+
+    let account = svc
+        .add_api_key(AgentId::Codex, Some("codex-key"), "sk-codex-old")
+        .unwrap();
+    // Mark the API-key row current in the pool without a live apply; Codex
+    // refuses apply_account for format=api_key.
+    let mut current = svc.get(&account.id, Some(AgentId::Codex)).unwrap();
+    current.is_current = true;
+    svc.repo().update(&current).unwrap();
+    let writes_before = adapter.write_attempts.load(Ordering::SeqCst);
+
+    let rotated = svc
+        .update_api_key(AgentId::Codex, &account.id, None, Some("sk-codex-new"))
+        .unwrap();
+    assert!(rotated.is_current);
+    assert_eq!(rotated.credentials["api_key"], "sk-codex-new");
+    assert_eq!(
+        adapter.read_account().unwrap().credentials["body"]["token"],
+        "oauth-live",
+        "unsupported API-key live apply must not rewrite Codex auth.json"
+    );
+    assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), writes_before);
 }
 
 #[test]
