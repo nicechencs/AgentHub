@@ -13,6 +13,7 @@ use crate::models::{
     AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
     InstallChannel, RunOptions, RunSpec,
 };
+use crate::utils::expiry::{is_expired, normalize_credential_key};
 use crate::utils::paths::home_dir;
 
 use super::{auth_file_revision, AgentAdapter};
@@ -508,7 +509,7 @@ fn workbuddy_auth_metadata(value: &serde_json::Value) -> Option<WorkBuddyAuthMet
             return;
         };
         for (raw_key, child) in object {
-            let key = raw_key.to_ascii_lowercase().replace(['-', '.'], "_");
+            let key = normalize_credential_key(raw_key);
             let non_empty = child.as_str().map(str::trim).is_some_and(|s| !s.is_empty());
             match key.as_str() {
                 "email" | "email_address" | "emailaddress" | "user_id" | "userid"
@@ -516,12 +517,12 @@ fn workbuddy_auth_metadata(value: &serde_json::Value) -> Option<WorkBuddyAuthMet
                     *has_identity |= non_empty;
                 }
                 "expires_at" | "expiresat" | "expires" => {
-                    if let Some(value) = parse_expiry(child) {
+                    if let Some(value) = is_expired(child) {
                         *expires = Some(value);
                     }
                 }
                 "refresh_expires_at" | "refreshexpiresat" | "refresh_expires" => {
-                    if let Some(value) = parse_expiry(child) {
+                    if let Some(value) = is_expired(child) {
                         *refresh_expires = Some(value);
                     }
                 }
@@ -541,34 +542,6 @@ fn workbuddy_auth_metadata(value: &serde_json::Value) -> Option<WorkBuddyAuthMet
             refresh_expired: refresh_expires,
         },
     )
-}
-
-fn parse_expiry(value: &serde_json::Value) -> Option<bool> {
-    let now = chrono::Utc::now().timestamp();
-    match value {
-        serde_json::Value::Number(number) => {
-            let value = number.as_i64()?;
-            let value = if value.unsigned_abs() > 1_000_000_000_000 {
-                value / 1000
-            } else {
-                value
-            };
-            Some(value <= now)
-        }
-        serde_json::Value::String(text) => {
-            let text = text.trim();
-            if let Ok(value) = text.parse::<i64>() {
-                let value = if value.unsigned_abs() > 1_000_000_000_000 {
-                    value / 1000
-                } else {
-                    value
-                };
-                return Some(value <= now);
-            }
-            Some(chrono::DateTime::parse_from_rfc3339(text).ok()?.timestamp() <= now)
-        }
-        _ => None,
-    }
 }
 
 fn read_version_from_last_launch() -> Option<String> {

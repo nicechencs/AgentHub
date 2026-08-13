@@ -15,6 +15,7 @@ use crate::models::{
     AdapterPlanChange, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
     AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
 };
+use crate::services::adapter_route_constants::{ANTHROPIC_AUTH_TOKEN_ENV, KIMI_CLAUDE_BASE_URL};
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
 /// Determines whether one saved connection has a supported preview route to an agent.
@@ -58,16 +59,11 @@ impl AdapterRouteService {
             AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Claude => (
                 AdapterServiceImpact::None,
                 vec![
-                    change(
-                        "claude",
-                        "baseUrl",
-                        Some("https://api.kimi.com/coding/"),
-                        false,
-                    ),
+                    change("claude", "baseUrl", Some(KIMI_CLAUDE_BASE_URL), false),
                     change(
                         "claude",
                         "claudeAuthEnv",
-                        Some("ANTHROPIC_AUTH_TOKEN"),
+                        Some(ANTHROPIC_AUTH_TOKEN_ENV),
                         false,
                     ),
                     change("claude", "apiKey", None, true),

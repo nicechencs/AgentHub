@@ -16,6 +16,9 @@ use crate::models::{
     AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
     AdapterSupport, AgentId, Provider, ProviderInput,
 };
+use crate::services::adapter_route_constants::{
+    ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV, CONNECTION_SECRET_MARKER, KIMI_CLAUDE_BASE_URL,
+};
 use crate::services::{
     AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
     ProviderService,
@@ -24,8 +27,6 @@ use crate::storage::{AdapterProfileRepo, Database};
 
 const RULE_ID: &str = "kimi-membership-to-claude-v1";
 const RULE_VERSION: &str = "1";
-const KIMI_CLAUDE_BASE_URL: &str = "https://api.kimi.com/coding/";
-const CONNECTION_SECRET_MARKER: &str = "$AGENTHUB_CONNECTION_SECRET$";
 
 /// Applies the sole supported write-side route and owns its generated profile.
 pub struct AdapterApplyService {
@@ -100,8 +101,8 @@ impl AdapterApplyService {
             agent_id: AgentId::Claude,
             name: format!("Kimi Code ({})", safe_label(source_id)),
             settings_config: json!({"env": {
-                "ANTHROPIC_BASE_URL": KIMI_CLAUDE_BASE_URL,
-                "ANTHROPIC_AUTH_TOKEN": CONNECTION_SECRET_MARKER,
+                ANTHROPIC_BASE_URL_ENV: KIMI_CLAUDE_BASE_URL,
+                ANTHROPIC_AUTH_TOKEN_ENV: CONNECTION_SECRET_MARKER,
             }}),
             meta: json!({
                 "preset": "anthropic-compatible",

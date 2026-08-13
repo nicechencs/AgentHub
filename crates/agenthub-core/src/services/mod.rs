@@ -3,6 +3,7 @@ pub mod account_quota;
 pub mod account_service;
 pub mod adapter_apply_service;
 pub mod adapter_bridge_service;
+pub mod adapter_route_constants;
 pub mod adapter_route_service;
 pub mod adapter_secret_resolver;
 pub mod agent_service;

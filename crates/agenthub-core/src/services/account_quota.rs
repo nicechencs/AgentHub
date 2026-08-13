@@ -163,23 +163,17 @@ pub fn refresh_account_quota(account: &mut Account, force: bool) -> Result<bool>
         AgentId::Claude => fetch_claude_quota(account)?,
         AgentId::Grok => fetch_grok_quota(account)?,
         AgentId::Pi => {
-            // Pi multi-provider: openai-codex → ChatGPT windows; xai → Grok billing.
+            // Pi multi-provider routing lives in oauth::catalog (aliases → backend).
             let provider = account
                 .credentials
                 .get("provider")
                 .and_then(|v| v.as_str())
                 .or_else(|| account.extra.get("provider").and_then(|v| v.as_str()))
                 .unwrap_or("");
-            if provider.eq_ignore_ascii_case("openai-codex")
-                || provider.eq_ignore_ascii_case("openai")
-                || provider.eq_ignore_ascii_case("codex")
-            {
-                fetch_codex_quota(account)?
-            } else if provider.eq_ignore_ascii_case("xai") || provider.eq_ignore_ascii_case("grok")
-            {
-                fetch_grok_quota(account)?
-            } else {
-                return Ok(false);
+            match crate::oauth::pi_provider_quota_backend(provider) {
+                crate::oauth::PiQuotaBackend::Codex => fetch_codex_quota(account)?,
+                crate::oauth::PiQuotaBackend::Grok => fetch_grok_quota(account)?,
+                crate::oauth::PiQuotaBackend::None => return Ok(false),
             }
         }
         _ => return Ok(false),
@@ -873,8 +867,7 @@ fn parse_unix_timestamp(n: i64) -> Option<DateTime<Utc>> {
     if n <= 0 {
         return None;
     }
-    let secs = if n > 1_000_000_000_000 { n / 1000 } else { n };
-    DateTime::from_timestamp(secs, 0)
+    DateTime::from_timestamp(crate::utils::expiry::normalize_epoch_secs(n), 0)
 }
 
 fn parse_rfc3339(s: &str) -> Option<DateTime<Utc>> {
@@ -1218,39 +1211,12 @@ fn jwt_exp_rfc3339(token: &str) -> Option<String> {
 }
 
 fn normalize_expires_value(v: &Value) -> Option<String> {
-    if let Some(s) = v.as_str() {
-        return normalize_expires_str(s);
-    }
-    if let Some(n) = v.as_i64() {
-        // millis vs seconds heuristic
-        let secs = if n > 1_000_000_000_000 { n / 1000 } else { n };
-        return DateTime::from_timestamp(secs, 0).map(|d| d.to_rfc3339());
-    }
-    if let Some(n) = v.as_f64() {
-        let n = n as i64;
-        let secs = if n > 1_000_000_000_000 { n / 1000 } else { n };
-        return DateTime::from_timestamp(secs, 0).map(|d| d.to_rfc3339());
-    }
-    None
+    let secs = crate::utils::expiry::parse_expiry_epoch_secs(v)?;
+    DateTime::from_timestamp(secs, 0).map(|d| d.to_rfc3339())
 }
 
 fn normalize_expires_str(s: &str) -> Option<String> {
-    let t = s.trim();
-    if t.is_empty() {
-        return None;
-    }
-    if let Ok(dt) = DateTime::parse_from_rfc3339(t) {
-        return Some(dt.with_timezone(&Utc).to_rfc3339());
-    }
-    if let Ok(n) = t.parse::<i64>() {
-        let secs = if n > 1_000_000_000_000 { n / 1000 } else { n };
-        return DateTime::from_timestamp(secs, 0).map(|d| d.to_rfc3339());
-    }
-    // Naive ISO without zone → assume UTC
-    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(t, "%Y-%m-%dT%H:%M:%S") {
-        return Some(DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc).to_rfc3339());
-    }
-    None
+    normalize_expires_value(&Value::String(s.to_string()))
 }
 
 fn is_rfc3339_past(s: &str) -> bool {

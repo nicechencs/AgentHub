@@ -2,6 +2,9 @@
 //!
 //! Most agents have a single PKCE option. Pi exposes multiple upstream providers
 //! (anthropic / openai-codex / xai / …) that all write into `~/.pi/agent/auth.json`.
+//!
+//! Provider aliases, refresh support, and quota backends are table-driven so the
+//! various match arms do not drift.
 
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +34,107 @@ pub struct OAuthLoginOption {
     pub flow: OAuthFlowKind,
     /// Pi auth.json key (e.g. `anthropic`, `xai`). None for single-agent OAuth.
     pub auth_json_key: Option<String>,
+}
+
+/// Upstream quota probe backend for a Pi provider entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PiQuotaBackend {
+    /// No quota probe implemented.
+    None,
+    /// ChatGPT / Codex 5h+7d windows.
+    Codex,
+    /// Grok / xAI billing.
+    Grok,
+}
+
+/// Built-in Pi OAuth flow kind for a canonical provider key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PiProviderFlow {
+    Pkce,
+    DeviceCode,
+}
+
+/// Single source of truth for Pi provider aliases → canonical auth.json key,
+/// AgentHub OAuth flow, token refresh, and quota routing.
+#[derive(Debug, Clone, Copy)]
+struct PiProviderSpec {
+    /// Canonical key written under `~/.pi/agent/auth.json`.
+    canonical: &'static str,
+    /// Accepted aliases (including the canonical form).
+    aliases: &'static [&'static str],
+    /// AgentHub-implemented login flow, if any.
+    flow: Option<PiProviderFlow>,
+    /// Whether `refresh_pi_provider` can renew tokens for this key.
+    refreshable: bool,
+    /// Quota probe routing for multi-provider Pi accounts.
+    quota: PiQuotaBackend,
+}
+
+/// Table of known Pi providers. Keep alias lists exhaustive — helpers only scan this.
+const PI_PROVIDER_SPECS: &[PiProviderSpec] = &[
+    PiProviderSpec {
+        canonical: "anthropic",
+        aliases: &["anthropic", "claude"],
+        flow: Some(PiProviderFlow::Pkce),
+        refreshable: true,
+        quota: PiQuotaBackend::None,
+    },
+    PiProviderSpec {
+        canonical: "openai-codex",
+        aliases: &["openai-codex", "codex", "openai"],
+        flow: Some(PiProviderFlow::Pkce),
+        refreshable: true,
+        quota: PiQuotaBackend::Codex,
+    },
+    PiProviderSpec {
+        canonical: "xai",
+        aliases: &["xai", "grok"],
+        flow: Some(PiProviderFlow::DeviceCode),
+        refreshable: true,
+        quota: PiQuotaBackend::Grok,
+    },
+    PiProviderSpec {
+        canonical: "github-copilot",
+        aliases: &["github-copilot", "copilot"],
+        // Marked device-code so PKCE start rejects it; full device flow is not wired yet.
+        flow: Some(PiProviderFlow::DeviceCode),
+        refreshable: false,
+        quota: PiQuotaBackend::None,
+    },
+    PiProviderSpec {
+        canonical: "openrouter",
+        aliases: &["openrouter"],
+        flow: None,
+        refreshable: false,
+        quota: PiQuotaBackend::None,
+    },
+    PiProviderSpec {
+        canonical: "kimi-coding",
+        aliases: &["kimi-coding", "kimi"],
+        // Same as github-copilot: block PKCE; device flow not implemented yet.
+        flow: Some(PiProviderFlow::DeviceCode),
+        refreshable: false,
+        quota: PiQuotaBackend::None,
+    },
+    PiProviderSpec {
+        canonical: "radius",
+        aliases: &["radius"],
+        flow: None,
+        refreshable: false,
+        quota: PiQuotaBackend::None,
+    },
+];
+
+fn lookup_pi_provider(provider_key: &str) -> Option<&'static PiProviderSpec> {
+    let key = provider_key.trim();
+    if key.is_empty() {
+        return None;
+    }
+    PI_PROVIDER_SPECS.iter().find(|spec| {
+        spec.aliases
+            .iter()
+            .any(|alias| alias.eq_ignore_ascii_case(key))
+    })
 }
 
 /// List login options for an agent (empty ⇒ OAuth unsupported).
@@ -69,24 +173,19 @@ pub fn resolve_pkce_provider(
     provider_key: Option<&str>,
 ) -> Option<&'static OAuthProvider> {
     match agent {
-        AgentId::Pi => match provider_key.unwrap_or("").trim() {
-            "anthropic" | "claude" => Some(&PI_ANTHROPIC),
-            "openai-codex" | "codex" | "openai" => Some(&PI_OPENAI_CODEX),
-            // xAI for Pi is device-code only in upstream pi-ai.
-            "xai" | "grok" => None,
-            "" => None,
-            _ => None,
-        },
+        AgentId::Pi => {
+            let spec = lookup_pi_provider(provider_key.unwrap_or(""))?;
+            match (spec.flow, spec.canonical) {
+                (Some(PiProviderFlow::Pkce), "anthropic") => Some(&PI_ANTHROPIC),
+                (Some(PiProviderFlow::Pkce), "openai-codex") => Some(&PI_OPENAI_CODEX),
+                _ => None,
+            }
+        }
         other => {
-            // Single-agent OAuth ignores provider_key (or accepts its own id).
+            // Single-agent OAuth ignores provider_key (or accepts its own id / aliases).
             if let Some(key) = provider_key {
                 let key = key.trim();
-                if !key.is_empty()
-                    && key != other.as_str()
-                    && !(other == AgentId::Claude && key == "claude")
-                    && !(other == AgentId::Codex && (key == "codex" || key == "openai-codex"))
-                    && !(other == AgentId::Grok && (key == "xai" || key == "grok"))
-                {
+                if !key.is_empty() && !single_agent_accepts_provider_key(other, key) {
                     return None;
                 }
             }
@@ -95,29 +194,64 @@ pub fn resolve_pkce_provider(
     }
 }
 
+fn single_agent_accepts_provider_key(agent: AgentId, key: &str) -> bool {
+    if key.eq_ignore_ascii_case(agent.as_str()) {
+        return true;
+    }
+    match agent {
+        AgentId::Claude => key.eq_ignore_ascii_case("claude"),
+        AgentId::Codex => {
+            key.eq_ignore_ascii_case("codex") || key.eq_ignore_ascii_case("openai-codex")
+        }
+        AgentId::Grok => key.eq_ignore_ascii_case("xai") || key.eq_ignore_ascii_case("grok"),
+        _ => false,
+    }
+}
+
 /// Whether this option uses device-code flow.
 pub fn is_device_code_option(agent: AgentId, provider_key: Option<&str>) -> bool {
     match agent {
         AgentId::Pi => matches!(
-            provider_key.unwrap_or("").trim(),
-            "xai" | "grok" | "github-copilot" | "kimi-coding"
+            lookup_pi_provider(provider_key.unwrap_or("")).map(|s| s.flow),
+            Some(Some(PiProviderFlow::DeviceCode))
         ),
         _ => false,
     }
 }
 
-/// Map Pi provider key for auth.json writes.
+/// Map Pi provider key (or alias) to the canonical auth.json key.
 pub fn pi_auth_json_key(provider_key: &str) -> Option<&'static str> {
-    match provider_key.trim() {
-        "anthropic" | "claude" => Some("anthropic"),
-        "openai-codex" | "codex" | "openai" => Some("openai-codex"),
-        "xai" | "grok" => Some("xai"),
-        "github-copilot" | "copilot" => Some("github-copilot"),
-        "openrouter" => Some("openrouter"),
-        "kimi-coding" | "kimi" => Some("kimi-coding"),
-        "radius" => Some("radius"),
-        _ => None,
-    }
+    lookup_pi_provider(provider_key).map(|s| s.canonical)
+}
+
+/// Whether AgentHub can refresh tokens for this Pi provider key / alias.
+pub fn pi_provider_refreshable(provider_key: &str) -> bool {
+    lookup_pi_provider(provider_key)
+        .map(|s| s.refreshable)
+        .unwrap_or(false)
+}
+
+/// All aliases (including canonical keys) for Pi providers AgentHub can refresh.
+///
+/// Sorted, de-duplicated. Keep the TS mirror
+/// (`src/lib/backend/contracts/oauth-constants.ts` `PI_REFRESH_PROVIDERS`) in lockstep —
+/// both sides are asserted by unit tests.
+pub fn pi_refreshable_provider_aliases() -> Vec<&'static str> {
+    let mut aliases: Vec<&'static str> = PI_PROVIDER_SPECS
+        .iter()
+        .filter(|spec| spec.refreshable)
+        .flat_map(|spec| spec.aliases.iter().copied())
+        .collect();
+    aliases.sort_unstable();
+    aliases.dedup();
+    aliases
+}
+
+/// Resolve Pi provider alias → quota probe backend (None when unsupported / unknown).
+pub fn pi_provider_quota_backend(provider_key: &str) -> PiQuotaBackend {
+    lookup_pi_provider(provider_key)
+        .map(|s| s.quota)
+        .unwrap_or(PiQuotaBackend::None)
 }
 
 fn single_pkce(agent: AgentId, id: &str, label: &str, description: &str) -> OAuthLoginOption {
@@ -132,6 +266,7 @@ fn single_pkce(agent: AgentId, id: &str, label: &str, description: &str) -> OAut
 }
 
 fn pi_options() -> Vec<OAuthLoginOption> {
+    // UI only lists the three subscription logins AgentHub implements end-to-end.
     vec![
         OAuthLoginOption {
             id: "anthropic".into(),
@@ -182,6 +317,41 @@ mod tests {
         assert!(resolve_pkce_provider(AgentId::Pi, Some("openai-codex")).is_some());
         assert!(resolve_pkce_provider(AgentId::Pi, Some("xai")).is_none());
         assert_eq!(pi_auth_json_key("claude"), Some("anthropic"));
+    }
+
+    #[test]
+    fn pi_aliases_normalize_and_route_capabilities() {
+        assert_eq!(pi_auth_json_key("OPENAI"), Some("openai-codex"));
+        assert_eq!(pi_auth_json_key("grok"), Some("xai"));
+        assert!(pi_provider_refreshable("anthropic"));
+        assert!(pi_provider_refreshable("openai"));
+        assert!(pi_provider_refreshable("xai"));
+        assert!(!pi_provider_refreshable("openrouter"));
+        // Frozen set mirrored by TS PI_REFRESH_PROVIDERS — update both when the table changes.
+        assert_eq!(
+            pi_refreshable_provider_aliases(),
+            vec![
+                "anthropic",
+                "claude",
+                "codex",
+                "grok",
+                "openai",
+                "openai-codex",
+                "xai",
+            ]
+        );
+        assert_eq!(
+            pi_provider_quota_backend("codex"),
+            PiQuotaBackend::Codex
+        );
+        assert_eq!(pi_provider_quota_backend("grok"), PiQuotaBackend::Grok);
+        assert_eq!(
+            pi_provider_quota_backend("anthropic"),
+            PiQuotaBackend::None
+        );
+        assert!(is_device_code_option(AgentId::Pi, Some("github-copilot")));
+        assert!(is_device_code_option(AgentId::Pi, Some("kimi-coding")));
+        assert!(!is_device_code_option(AgentId::Pi, Some("anthropic")));
     }
 
     #[test]

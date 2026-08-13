@@ -7,6 +7,7 @@ use crate::models::{
 };
 use crate::runtime;
 use crate::utils::atomic::atomic_write;
+use crate::utils::expiry::is_expired;
 use crate::utils::paths::{agent_home, home_dir};
 use crate::utils::redact::mask_secret_preview;
 
@@ -573,9 +574,10 @@ fn parse_claude_oauth_json(content: &str, source: ClaudeOauthSource) -> Option<C
         .get("expiresAt")
         .or_else(|| entry.get("expires_at"))
         .cloned();
+    // Missing/unparseable expiry is treated as not expired (fail open for display).
     let expired = expires_at
         .as_ref()
-        .map(is_claude_token_expired)
+        .and_then(is_expired)
         .unwrap_or(false);
     Some(ClaudeOauthBundle {
         body,
@@ -584,40 +586,6 @@ fn parse_claude_oauth_json(content: &str, source: ClaudeOauthSource) -> Option<C
         expired,
         source,
     })
-}
-
-/// Accept unix seconds/millis or RFC3339 / naive ISO strings.
-fn is_claude_token_expired(expires_at: &serde_json::Value) -> bool {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let now_secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-
-    match expires_at {
-        serde_json::Value::Number(n) => {
-            let Some(ts) = n.as_u64() else {
-                return false;
-            };
-            let ts_secs = if ts > 1_000_000_000_000 {
-                ts / 1000
-            } else {
-                ts
-            };
-            ts_secs < now_secs
-        }
-        serde_json::Value::String(s) => {
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
-                (dt.timestamp() as u64) < now_secs
-            } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
-            {
-                (dt.and_utc().timestamp() as u64) < now_secs
-            } else {
-                false
-            }
-        }
-        _ => false,
-    }
 }
 
 #[cfg(test)]
@@ -660,12 +628,12 @@ mod tests {
 
     #[test]
     fn is_token_expired_handles_millis_and_iso() {
-        assert!(is_claude_token_expired(&json!(1)));
-        assert!(!is_claude_token_expired(&json!(9_999_999_999_u64)));
-        // millis
-        assert!(is_claude_token_expired(&json!(1_000_u64)));
-        assert!(!is_claude_token_expired(&json!("2099-01-01T00:00:00.000Z")));
-        assert!(is_claude_token_expired(&json!("2000-01-01T00:00:00Z")));
+        assert_eq!(is_expired(&json!(1)), Some(true));
+        assert_eq!(is_expired(&json!(9_999_999_999_u64)), Some(false));
+        // small epoch numbers are seconds (year 1970), not millis
+        assert_eq!(is_expired(&json!(1_000_u64)), Some(true));
+        assert_eq!(is_expired(&json!("2099-01-01T00:00:00.000Z")), Some(false));
+        assert_eq!(is_expired(&json!("2000-01-01T00:00:00Z")), Some(true));
     }
 
     #[test]

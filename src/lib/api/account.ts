@@ -22,6 +22,7 @@ import {
   probeLiveAuthWithPort,
 } from '@/lib/backend/contracts/live-auth-probe-cache';
 import type { Account, AgentId } from '@/lib/types';
+import { OAUTH_WAIT_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-constants';
 
 export type {
   CoreAccount,
@@ -37,6 +38,7 @@ export type {
   OAuthStartInfo,
   OAuthWaitInfo,
 };
+export { OAUTH_WAIT_TIMEOUT_SECS };
 
 export async function listAccounts(agentId?: AgentId): Promise<Account[]> {
   return getBackend().account.listAccounts(agentId);
@@ -128,7 +130,7 @@ export async function startOAuth(
 
 export async function waitOAuth(
   state: string,
-  timeoutSecs = 120,
+  timeoutSecs = OAUTH_WAIT_TIMEOUT_SECS,
 ): Promise<OAuthWaitInfo> {
   return getBackend().account.waitOAuth(state, timeoutSecs);
 }

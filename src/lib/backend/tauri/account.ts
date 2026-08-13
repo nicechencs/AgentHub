@@ -11,6 +11,7 @@ import {
   type CoreAccountSwitchResult,
 } from '@/lib/backend/contracts/account-map';
 import { unsupportedError } from '@/lib/backend/contracts/errors';
+import { OAUTH_WAIT_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-constants';
 import type { AgentId } from '@/lib/types';
 import { logger } from '@/lib/logger';
 import { invoke } from './invoke';
@@ -116,7 +117,7 @@ export function createTauriAccountPort(): AccountPort {
       });
     },
 
-    async waitOAuth(state, timeoutSecs = 120) {
+    async waitOAuth(state, timeoutSecs = OAUTH_WAIT_TIMEOUT_SECS) {
       return invoke<OAuthWaitInfo>('oauth_wait', {
         oauthState: state,
         timeoutSecs,
@@ -170,7 +171,7 @@ export function createTauriAccountPort(): AccountPort {
         throw unsupportedError('OAuth 授权', '设备码授权超时');
       }
       const start = await this.startOAuth(agentId, true, key);
-      const wait = await this.waitOAuth(start.state, 120);
+      const wait = await this.waitOAuth(start.state, OAUTH_WAIT_TIMEOUT_SECS);
       if (wait.status === 'failed') {
         throw unsupportedError('OAuth 授权', wait.error ?? '授权失败');
       }

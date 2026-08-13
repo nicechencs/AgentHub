@@ -172,8 +172,11 @@ pub fn pi_oauth_entry_from_tokens(
     expires_in_secs: Option<i64>,
 ) -> Value {
     let expires_ms = expires_at_to_ms(expires_at_rfc3339).or_else(|| {
-        expires_in_secs
-            .map(|s| chrono::Utc::now().timestamp_millis() + s.max(0) * 1000 - 5 * 60 * 1000)
+        expires_in_secs.map(|s| {
+            chrono::Utc::now().timestamp_millis()
+                + s.max(0) * 1000
+                - crate::catalog::limits::OAUTH_REFRESH_SKEW_MS
+        })
     });
     let mut m = Map::new();
     m.insert("type".into(), json!("oauth"));

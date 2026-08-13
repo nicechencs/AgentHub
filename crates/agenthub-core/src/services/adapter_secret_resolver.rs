@@ -10,10 +10,13 @@ use toml_edit::DocumentMut;
 use crate::bridge::ResolvedAuth;
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, Provider};
+use crate::services::adapter_route_constants::{
+    ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV, KIMI_CLAUDE_BASE_URL,
+};
 use crate::storage::{Database, ProviderRepo};
 
-/// Stored in generated reference providers instead of the source API key.
-pub const CONNECTION_SECRET_MARKER: &str = "$AGENTHUB_CONNECTION_SECRET$";
+// Re-export so existing `adapter_secret_resolver::CONNECTION_SECRET_MARKER` paths keep working.
+pub use crate::services::adapter_route_constants::CONNECTION_SECRET_MARKER;
 
 const GENERATED_BY: &str = "adapter";
 const KIMI_TO_CLAUDE_RULE: &str = "kimi-membership-to-claude-v1";
@@ -22,7 +25,6 @@ const SOURCE_REFERENCE_MODE: &str = "source_reference";
 const LOCAL_TOKEN_MODE: &str = "local_token";
 const SOURCE_KIND_PROVIDER: &str = "provider";
 const KIMI_MEMBERSHIP_PRESET: &str = "kimi-code-membership";
-const KIMI_CLAUDE_BASE_URL: &str = "https://api.kimi.com/coding/";
 
 /// Resolves the one supported generated-provider secret reference at the live
 /// boundary. The repository is shared with ProviderService, but resolver work
@@ -116,7 +118,7 @@ impl AdapterSecretResolver {
             .get_mut("env")
             .and_then(Value::as_object_mut)
             .ok_or_else(invalid_reference)?;
-        env.insert("ANTHROPIC_AUTH_TOKEN".into(), Value::String(api_key));
+        env.insert(ANTHROPIC_AUTH_TOKEN_ENV.into(), Value::String(api_key));
         Ok(materialized)
     }
 
@@ -139,14 +141,14 @@ impl AdapterSecretResolver {
             .get_mut("env")
             .and_then(Value::as_object_mut)
             .ok_or_else(invalid_reference)?;
-        if env.get("ANTHROPIC_BASE_URL").and_then(Value::as_str) != Some(KIMI_CLAUDE_BASE_URL) {
+        if env.get(ANTHROPIC_BASE_URL_ENV).and_then(Value::as_str) != Some(KIMI_CLAUDE_BASE_URL) {
             return Err(invalid_reference());
         }
-        if !env.contains_key("ANTHROPIC_AUTH_TOKEN") {
+        if !env.contains_key(ANTHROPIC_AUTH_TOKEN_ENV) {
             return Err(invalid_reference());
         }
         env.insert(
-            "ANTHROPIC_AUTH_TOKEN".into(),
+            ANTHROPIC_AUTH_TOKEN_ENV.into(),
             Value::String(CONNECTION_SECRET_MARKER.into()),
         );
         Ok(scrubbed)
@@ -189,8 +191,8 @@ impl AdapterSecretResolver {
             .get("env")
             .and_then(Value::as_object)
             .ok_or_else(invalid_reference)?;
-        if env.get("ANTHROPIC_AUTH_TOKEN").and_then(Value::as_str) != Some(CONNECTION_SECRET_MARKER)
-            || env.get("ANTHROPIC_BASE_URL").and_then(Value::as_str) != Some(KIMI_CLAUDE_BASE_URL)
+        if env.get(ANTHROPIC_AUTH_TOKEN_ENV).and_then(Value::as_str) != Some(CONNECTION_SECRET_MARKER)
+            || env.get(ANTHROPIC_BASE_URL_ENV).and_then(Value::as_str) != Some(KIMI_CLAUDE_BASE_URL)
         {
             return Err(invalid_reference());
         }

@@ -46,6 +46,9 @@ pub const ACCOUNT_QUOTA_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
 pub const OAUTH_CALLBACK_LISTEN_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 /// Token HTTP request timeout.
 pub const OAUTH_TOKEN_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
+/// Subtract from `expires_in` when materializing Pi auth.json `expires` (ms).
+/// Matches upstream pi-ai refresh skew so tokens renew before hard expiry.
+pub const OAUTH_REFRESH_SKEW_MS: i64 = 5 * 60 * 1000;
 
 // --- Project scan ---
 
