@@ -29,12 +29,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { segmentedCountClass } from '@/components/ui/segmented-styles';
+import { actionCountClass, segmentedCountClass } from '@/components/ui/segmented-styles';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TableSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
-import { AGENTS, AGENT_MAP } from '@/config/agents';
+import { AGENTS, agentDisplayName } from '@/config/agents';
 import {
   checkConflict,
   isMappedState,
@@ -464,7 +464,7 @@ export default function SkillsPage() {
     meta?: { name?: string; wasMapped?: boolean },
   ) => {
     const key = cellKey(skillId, agentId);
-    const agentName = AGENT_MAP[agentId]?.name ?? agentId;
+    const agentName = agentDisplayName(agentId);
     const skillName = meta?.name ?? skills?.find((s) => s.id === skillId)?.name ?? skillId;
     setPendingCells((prev) => new Set(prev).add(key));
     try {
@@ -519,7 +519,7 @@ export default function SkillsPage() {
   const handleCellClick = async (skill: Skill, agentId: AgentId) => {
     const state = skill.sync[agentId];
     if (state === 'unsupported') return;
-    const agentName = AGENT_MAP[agentId]?.name ?? agentId;
+    const agentName = agentDisplayName(agentId);
     // 已同步 → 直接取消，结果由 doToggle 统一提示
     if (isMappedState(state)) {
       await doToggle(skill.id, agentId, false, { name: skill.name, wasMapped: true });
@@ -792,7 +792,7 @@ export default function SkillsPage() {
     try {
       await runUninstallSkill(skillId, agentId);
       toast({
-        ...skillsCopy.toast.removeOk(AGENT_MAP[agentId]?.name ?? agentId, name),
+        ...skillsCopy.toast.removeOk(agentDisplayName(agentId), name),
         variant: 'success',
       });
       setRemoveFromTool(null);
@@ -951,7 +951,7 @@ export default function SkillsPage() {
             {skillsCopy.tabs.workspace}
             {privateOnlyCount > 0 ? (
               <Tip
-                className="rounded-full bg-amber-500/15 px-1.5 py-0 text-2xs tabular-nums text-amber-700 dark:text-amber-300"
+                className={actionCountClass}
                 label={skillsCopy.tabs.privateBadge(privateOnlyCount)}
               >
                 {privateOnlyCount}
@@ -1246,11 +1246,11 @@ export default function SkillsPage() {
               {removeFromTool &&
                 (removeFromTool.inLibrary
                   ? skillsCopy.dialog.removeBody(
-                      AGENT_MAP[removeFromTool.agentId]?.name ?? removeFromTool.agentId,
+                      agentDisplayName(removeFromTool.agentId),
                       removeFromTool.name,
                     )
                   : skillsCopy.dialog.deleteBody(
-                      AGENT_MAP[removeFromTool.agentId]?.name ?? removeFromTool.agentId,
+                      agentDisplayName(removeFromTool.agentId),
                       removeFromTool.name,
                     ))}
             </DialogDescription>

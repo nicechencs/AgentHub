@@ -8,8 +8,9 @@ import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { StatusPin } from '@/components/shared/StatusPin';
 import { ListSkeleton } from '@/components/ui/skeleton';
-import { AGENT_IDS, AGENT_MAP } from '@/config/agents';
+import { AGENT_IDS, agentDisplayName } from '@/config/agents';
 import { resolveEffectiveConnection } from '@/lib/api/agent-connection';
 import {
   accountsForAgent,
@@ -18,6 +19,7 @@ import {
   useConnectionPool,
 } from '@/app/runtime';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
+import { connectionKindLabel, parseConnectionFocusFilter } from '@/lib/connection-kind';
 import type { AgentId, EffectiveConnectionKind } from '@/lib/types';
 import { ConnectionList } from './ConnectionList';
 import type { ConnectionFilter } from './connection-model';
@@ -37,16 +39,12 @@ function pickInstalledAgent(preferred: AgentId, installed: AgentId[]): AgentId {
 
 /** 深链 ?mode= → 列表初始筛选（供应商已并入 API Key） */
 function parseFocusFilter(raw: string | null): ConnectionFilter | null {
-  if (raw === 'providers' || raw === 'api' || raw === 'provider' || raw === 'apikey' || raw === 'key') {
-    return 'apikey';
-  }
-  if (raw === 'accounts' || raw === 'account' || raw === 'oauth') return 'oauth';
-  return null;
+  return parseConnectionFocusFilter(raw);
 }
 
 function effectiveKindLabel(kind: EffectiveConnectionKind): string {
-  if (kind === 'account') return '官方登录';
-  if (kind === 'api') return 'API Key';
+  if (kind === 'account') return connectionKindLabel('oauth');
+  if (kind === 'api') return connectionKindLabel('apikey');
   return '未配置';
 }
 
@@ -99,7 +97,7 @@ export default function ConnectionsPage() {
     liveEffective.kind !== 'none' ? liveEffective.kind : agentStatus?.effectiveKind ?? 'none';
   const effectiveLabel =
     liveEffective.kind !== 'none' ? liveEffective.label : agentStatus?.effectiveLabel;
-  const agentName = AGENT_MAP[agentId]?.name ?? agentId;
+  const agentName = agentDisplayName(agentId);
 
   if (loading) {
     return (
@@ -179,14 +177,13 @@ export default function ConnectionsPage() {
             const hasEffective = Boolean(st?.effectiveKind && st.effectiveKind !== 'none');
             if (!hasEffective) return null;
             return (
-              <span
-                className="h-1.5 w-1.5 rounded-full bg-success"
-                title={
+              <StatusPin
+                tone="success"
+                label={
                   st?.effectiveLabel
                     ? `当前生效：${st.effectiveLabel}`
                     : '已配置生效连接'
                 }
-                aria-hidden
               />
             );
           }}

@@ -7,6 +7,8 @@ import {
   Trash2,
   Gauge,
 } from 'lucide-react';
+import { CurrentBadge } from '@/components/shared/CurrentBadge';
+import { DetailRow } from '@/components/shared/DetailRow';
 import { ListRow } from '@/components/shared/ListRow';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { QuotaBar } from '@/components/shared/QuotaBar';
@@ -101,7 +103,7 @@ export function ConnectionCard({
             return ep ? <Badge variant={ep.variant}>{ep.label}</Badge> : null;
           })()}
           {entry.subscription ? <Badge>{entry.subscription}</Badge> : null}
-          {entry.isCurrent ? <Badge variant="accent">当前</Badge> : null}
+          {entry.isCurrent ? <CurrentBadge /> : null}
           {entry.latencyMs != null ? (
             <span className="font-mono text-xs text-muted">{entry.latencyMs} ms</span>
           ) : null}
@@ -271,25 +273,3 @@ export function ConnectionCard({
   );
 }
 
-function DetailRow({
-  label,
-  value,
-  mono,
-  className,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  className?: string;
-}) {
-  return (
-    <span className={cn('min-w-0', className)}>
-      <span className="text-muted">{label} </span>
-      {mono ? (
-        <code className="break-all font-mono text-secondary">{value}</code>
-      ) : (
-        <span className="break-all text-secondary">{value}</span>
-      )}
-    </span>
-  );
-}

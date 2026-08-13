@@ -49,7 +49,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/toast';
-import { AGENT_IDS, AGENT_MAP } from '@/config/agents';
+import { AGENT_IDS, AGENT_MAP, agentDisplayName } from '@/config/agents';
 import { listAgents } from '@/lib/api/agent';
 import {
   chatCancel,
@@ -486,7 +486,7 @@ function ChatComposer({
                 >
                   <span className="flex items-center gap-2">
                     <AgentLogo agentId={id} size="sm" />
-                    {AGENT_MAP[id].name}
+                    {agentDisplayName(id)}
                   </span>
                 </DropdownMenuCheckboxItem>
               ))}
@@ -500,7 +500,7 @@ function ChatComposer({
             <Hint
               label={
                 active.agentIds.length > 1 && primaryAgent
-                  ? `模型切换作用于首个 Agent（${AGENT_MAP[primaryAgent].name}）`
+                  ? `模型切换作用于首个 Agent（${agentDisplayName(primaryAgent)}）`
                   : undefined
               }
             >
@@ -511,7 +511,7 @@ function ChatComposer({
                   className="inline-flex h-7 max-w-44 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-xs text-secondary hover:bg-hover disabled:opacity-50"
                   aria-label={
                     active.agentIds.length > 1
-                      ? `模型切换作用于首个 Agent（${AGENT_MAP[primaryAgent!].name}）`
+                      ? `模型切换作用于首个 Agent（${agentDisplayName(primaryAgent!)}）`
                       : '选择模型'
                   }
                 >
@@ -522,7 +522,7 @@ function ChatComposer({
             </Hint>
             <DropdownMenuContent align="start" className="w-64">
               <DropdownMenuLabel>
-                {primaryAgent ? `${AGENT_MAP[primaryAgent].name} · Provider / 模型` : '模型'}
+                {primaryAgent ? `${agentDisplayName(primaryAgent)} · Provider / 模型` : '模型'}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               {providers.length === 0 ? (
@@ -1223,7 +1223,7 @@ export default function ChatPage() {
                             <div className="min-w-0 flex-1 pt-0.5">
                               <div className="mb-1 flex items-center gap-2 text-xs text-muted">
                                 <span className="font-medium text-secondary">
-                                  {AGENT_MAP[agent].name}
+                                  {agentDisplayName(agent)}
                                 </span>
                                 {statusText && <span>{statusText}</span>}
                                 {m.durationMs > 0 && (

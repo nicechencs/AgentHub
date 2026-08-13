@@ -20,7 +20,7 @@ import {
   permanentlyDeleteConnectionTrash,
   restoreConnectionTrash,
 } from '@/lib/api/trash';
-import { AGENT_MAP } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
 import type { AgentId } from '@/lib/types';
 import {
   claimConnectionTrashBusy,
@@ -162,7 +162,7 @@ export function ConnectionTrashButton({
               <p className="py-8 text-center text-sm text-muted-foreground">回收站为空</p>
             ) : (
               items.map((item) => {
-                const agentName = AGENT_MAP[item.agentId]?.name ?? item.agentId;
+                const agentName = agentDisplayName(item.agentId);
                 const kindLabel =
                   item.kind === 'account' && item.account?.kind === 'oauth'
                     ? '官方登录'

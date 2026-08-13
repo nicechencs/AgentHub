@@ -4,11 +4,14 @@ import type { Account } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { CurrentBadge } from '@/components/shared/CurrentBadge';
+import { DetailRow } from '@/components/shared/DetailRow';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { QuotaBar } from '@/components/shared/QuotaBar';
 import { liveConfigPaths } from '@/lib/provider-detect';
 import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
 import { authDisplayForAccount } from '@/lib/backend/contracts/auth-state';
+import { kindBadge } from '@/lib/connection-kind';
 import { cn, fmtRelative } from '@/lib/utils';
 
 /** core 时间多为 `YYYY-MM-DD HH:MM:SS.ffffff`，转相对时间展示 */
@@ -54,10 +57,7 @@ export function AccountCard({
   const auth = authDisplay.legacyStatus;
   const accountAction = accountActionPolicy(account);
   const paths = liveConfigPaths(account.agentId);
-  const kindBadge =
-    account.kind === 'apikey'
-      ? { variant: 'info' as const, label: 'API Key' }
-      : { variant: 'default' as const, label: '官方登录' };
+  const badge = kindBadge(account.kind === 'apikey' ? 'apikey' : 'oauth');
 
   const tokenLine = authDisplay.label;
 
@@ -80,9 +80,9 @@ export function AccountCard({
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <StatusDot status={auth} />
           <span className="truncate text-sm font-medium">{title}</span>
-          <Badge variant={kindBadge.variant}>{kindBadge.label}</Badge>
+          <Badge variant={badge.variant}>{badge.label}</Badge>
           {account.subscription && <Badge>{account.subscription}</Badge>}
-          {account.isCurrent && <Badge variant="accent">当前</Badge>}
+          {account.isCurrent && <CurrentBadge />}
           {grouped && account.kind === 'apikey' && (
             <span className="truncate text-xs text-muted">{account.label}</span>
           )}
@@ -227,25 +227,3 @@ export function AccountCard({
   );
 }
 
-function DetailRow({
-  label,
-  value,
-  mono,
-  className,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  className?: string;
-}) {
-  return (
-    <span className={cn('min-w-0', className)}>
-      <span className="text-muted">{label} </span>
-      {mono ? (
-        <code className="break-all font-mono text-secondary">{value}</code>
-      ) : (
-        <span className="break-all text-secondary">{value}</span>
-      )}
-    </span>
-  );
-}

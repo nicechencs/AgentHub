@@ -22,7 +22,7 @@ import { GenericConfigForm } from '@/components/shared/GenericConfigForm';
 import { SecretInput } from '@/components/shared/SecretInput';
 import { useToast } from '@/components/ui/toast';
 import { useAgentCatalogOptional } from '@/app/runtime';
-import { AGENT_MAP } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
 import {
   looksLikeOfficialEndpoint,
   officialApiDefaults,
@@ -91,7 +91,7 @@ export function ProviderEditDialog({
   const { toast } = useToast();
   const catalog = useAgentCatalogOptional();
   const isEdit = mode === 'edit';
-  const agentName = AGENT_MAP[agentId]?.name ?? agentId;
+  const agentName = agentDisplayName(agentId);
   const livePaths = liveConfigPaths(agentId);
 
   const [name, setName] = React.useState('');

@@ -21,8 +21,9 @@ import {
   useColumnWidths,
   type ColumnWidthSpec,
 } from '@/components/ui/table';
+import { actionCountClass } from '@/components/ui/segmented-styles';
 import { Hint, Tip } from '@/components/ui/tooltip';
-import { AGENT_MAP, type AgentMeta } from '@/config/agents';
+import { AGENT_MAP, type AgentMeta, agentDisplayName } from '@/config/agents';
 import {
   canAdoptWorkspaceSkill,
   isPrivateInstalledOrigin,
@@ -65,9 +66,9 @@ const PRESENCE_FILTERS: { id: PresenceFilter; label: string }[] = [
   { id: 'conflict', label: '内容不同' },
 ];
 
-function agentDisplayName(origin: string): string {
+function originDisplayName(origin: string): string {
   if (origin === 'shared') return '共享库';
-  return AGENT_MAP[origin as AgentId]?.name ?? origin;
+  return agentDisplayName(origin as AgentId);
 }
 
 function presenceLabel(presence: ReturnType<typeof resolveWorkspacePresence>): string {
@@ -235,10 +236,7 @@ export function AgentWorkspace({
   /** 仅琥珀：可加入共享库的数量；0 不占位，避免双数字噪音 */
   const privateBadge = (privateCount: number) =>
     privateCount > 0 ? (
-      <Tip
-        className="rounded-full bg-amber-500/15 px-1.5 py-0 text-2xs tabular-nums text-amber-800 dark:text-amber-200"
-        label={W.privateTabTip}
-      >
+      <Tip className={actionCountClass} label={W.privateTabTip}>
         {privateCount}
       </Tip>
     ) : null;
@@ -494,7 +492,7 @@ export function AgentWorkspace({
                     <TableCell className="min-w-0">
                       <span className="inline-flex max-w-full items-center gap-1 truncate text-xs text-secondary">
                         {agentMeta ? <AgentDot agentId={agentId} size="sm" /> : null}
-                        <span className="truncate">{agentDisplayName(s.origin)}</span>
+                        <span className="truncate">{originDisplayName(s.origin)}</span>
                       </span>
                     </TableCell>
                     <TableCell className="min-w-0">

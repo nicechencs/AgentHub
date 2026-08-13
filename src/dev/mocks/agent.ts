@@ -1,4 +1,4 @@
-import { AGENTS, AGENT_MAP } from '@/config/agents';
+import { AGENTS, AGENT_MAP, agentDisplayName } from '@/config/agents';
 import { enrichStatusesWithConnections } from '@/lib/api/agent-connection';
 import type { Backend, AgentPort } from '@/lib/backend/contracts';
 import { mergeAgentListWithCatalog } from '@/lib/backend/contracts/agent-catalog';
@@ -352,7 +352,7 @@ function mockUpdateInfo(agentId: AgentId): AgentUpdateInfo {
 
 /** Mock-only install log lines for InstallOutcome.logs */
 function mockInstallLogs(agentId: AgentId, action: 'install' | 'upgrade'): string[] {
-  const name = AGENT_MAP[agentId]?.name ?? agentId;
+  const name = agentDisplayName(agentId);
   const ver = state[agentId].latestVersion ?? '1.0.0';
   return [
     `$ agenthub ${action} ${agentId}`,

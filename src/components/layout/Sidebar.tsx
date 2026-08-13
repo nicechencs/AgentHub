@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { AppLogo } from '@/components/shared/AppLogo';
+import { StatusPin } from '@/components/shared/StatusPin';
 import { AGENTS } from '@/config/agents';
 import { useAppUpdateAvailable } from '@/app/runtime';
 import { listAgents } from '@/lib/api/agent';
@@ -73,23 +74,12 @@ function SidebarNavLink({
             <span className="relative shrink-0">
               <Icon className={ICON_CLASS} strokeWidth={1.8} />
               {/* Collapsed: corner pin on icon only (expanded uses trailing pin). */}
-              {notice && collapsed && (
-                <span
-                  className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-warning ring-2 ring-panel"
-                  aria-hidden
-                />
-              )}
+              {notice && collapsed && <StatusPin tone="warning" ring="panel" corner />}
             </span>
             {!collapsed && (
               <>
                 <span className="truncate">{label}</span>
-                {notice && (
-                  <span
-                    className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
-                    aria-hidden
-                    title={tip}
-                  />
-                )}
+                {notice && <StatusPin tone="warning" label={tip} className="ml-auto" />}
               </>
             )}
           </span>
@@ -276,6 +266,7 @@ export function Sidebar() {
                     color={meta.color}
                     title={null}
                     ring={!hasUpdate}
+                    growOnHover
                     className={cn(hasUpdate && 'ring-2 ring-warning')}
                   />
                 );
@@ -297,6 +288,7 @@ export function Sidebar() {
                   agentId={meta.id}
                   color={meta.color}
                   title={agentDotLabel(meta, status, hasUpdate)}
+                  growOnHover
                   className={cn(hasUpdate && 'ring-2 ring-warning')}
                 />
               );

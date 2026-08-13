@@ -10,23 +10,29 @@ import {
 import { looksLikeOfficialEndpoint } from '@/config/official-api';
 import {
   authDisplayForAccount,
+  authHealthLabel,
   type AuthHealth,
 } from '@/lib/backend/contracts/auth-state';
+import {
+  CONNECTION_KIND_FILTERS,
+  connectionKindLabel,
+  countByConnectionKind,
+  filterByConnectionKind,
+  kindBadge as sharedKindBadge,
+  type ConnectionKind,
+  type ConnectionKindFilter,
+} from '@/lib/connection-kind';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
+
 /**
  * 列表行类型。
  * - oauth：官方登录
  * - apikey：API Key（含原 account apikey + 原 provider/供应商）
  */
-export type ConnectionKind = 'oauth' | 'apikey';
+export type { ConnectionKind };
+export type ConnectionFilter = ConnectionKindFilter;
 
-export type ConnectionFilter = 'all' | ConnectionKind;
-
-export const CONNECTION_FILTERS: Array<{ value: ConnectionFilter; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'oauth', label: '官方登录' },
-  { value: 'apikey', label: 'API Key' },
-];
+export const CONNECTION_FILTERS = CONNECTION_KIND_FILTERS;
 
 export type ConnectionEntry = {
   /** 列表稳定 key：`account:id` / `provider:id` */
@@ -100,14 +106,15 @@ function providerSubtitle(
 ): string {
   const modeLabel = mode === 'official' ? '官方端点' : '自定义端点';
   const host = endpoint ? formatEndpointHost(endpoint) : undefined;
+  const health = authHealthLabel('configured');
   if (p.isCurrent) {
     return host
-      ? `已配置·未验证 · 当前生效 · ${modeLabel} · ${host}`
-      : `已配置·未验证 · 当前生效 · ${modeLabel}`;
+      ? `${health} · 当前生效 · ${modeLabel} · ${host}`
+      : `${health} · 当前生效 · ${modeLabel}`;
   }
   return host
-    ? `已配置·未验证 · 未生效 · ${modeLabel} · ${host}`
-    : `已配置·未验证 · 未生效 · ${modeLabel}`;
+    ? `${health} · 未生效 · ${modeLabel} · ${host}`
+    : `${health} · 未生效 · ${modeLabel}`;
 }
 
 export function accountToEntry(a: Account): ConnectionEntry {
@@ -179,33 +186,21 @@ export function filterConnectionEntries(
   rows: ConnectionEntry[],
   filter: ConnectionFilter,
 ): ConnectionEntry[] {
-  if (filter === 'all') return rows;
-  return rows.filter((r) => r.kind === filter);
+  return filterByConnectionKind(rows, filter, (r) => r.kind);
 }
 
 export function countByKind(rows: ConnectionEntry[]): Record<ConnectionFilter, number> {
-  const counts: Record<ConnectionFilter, number> = {
-    all: rows.length,
-    oauth: 0,
-    apikey: 0,
-  };
-  for (const r of rows) {
-    counts[r.kind] += 1;
-  }
-  return counts;
+  return countByConnectionKind(rows, (r) => r.kind);
 }
 
 export function kindBadge(kind: ConnectionKind): {
   label: string;
   variant: 'default' | 'info' | 'accent';
 } {
-  switch (kind) {
-    case 'oauth':
-      return { label: '官方登录', variant: 'default' };
-    case 'apikey':
-      return { label: 'API Key', variant: 'info' };
-  }
+  return sharedKindBadge(kind);
 }
+
+export { connectionKindLabel };
 
 export function endpointModeBadge(
   mode: 'official' | 'custom' | undefined,

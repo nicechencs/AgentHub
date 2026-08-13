@@ -12,11 +12,13 @@ import { SwitchConfirmDialog } from '@/components/shared/SwitchConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/toast';
-import { AGENT_IDS, AGENT_MAP } from '@/config/agents';
+import { CurrentBadge } from '@/components/shared/CurrentBadge';
+import { ListRow } from '@/components/shared/ListRow';
+import { StatusPin } from '@/components/shared/StatusPin';
+import { AGENT_IDS, agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import { openAgentConfigDir } from '@/lib/api/install';
 import {
   deleteProvider,
@@ -100,7 +102,7 @@ export default function ProvidersPage({
     setSearchParams(id === 'claude' ? {} : { agent: id }, { replace: true });
   };
 
-  const brandColor = AGENT_MAP[agentId].color;
+  const brandColor = resolveAgentMeta(agentId).color;
 
   const refresh = useCallback(
     async (agent: AgentId) => {
@@ -279,7 +281,7 @@ export default function ProvidersPage({
     const n = providers.length;
     if (
       !window.confirm(
-        `确定删除 ${AGENT_MAP[agentId].name} 的全部 ${n} 条供应商配置？\n记录会移入回收站，不会修改本机配置文件。`,
+        `确定删除 ${agentDisplayName(agentId)} 的全部 ${n} 条供应商配置？\n记录会移入回收站，不会修改本机配置文件。`,
       )
     ) {
       return;
@@ -428,33 +430,19 @@ export default function ProvidersPage({
               {providers.map((p) => {
                 const latency = latencyById[p.id] ?? p.latencyMs;
                 return (
-                  <Card
+                  <ListRow
                     key={p.id}
+                    active={p.isCurrent}
+                    indicatorColor={p.isCurrent ? brandColor : undefined}
                     onClick={() => openEdit(p)}
-                    className={cn(
-                      'cursor-pointer p-3 transition-colors hover:border-border-strong/80',
-                      p.isCurrent ? 'border-border-strong' : undefined,
-                    )}
-                    style={
-                      p.isCurrent
-                        ? { borderLeft: `3px solid ${brandColor}` }
-                        : undefined
-                    }
+                    className="cursor-pointer p-3"
                   >
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                       <div className="flex min-w-0 flex-1 items-center gap-2">
-                        <span
-                          className={cn(
-                            'text-xs',
-                            p.isCurrent ? 'text-success' : 'text-muted',
-                          )}
-                          aria-hidden
-                        >
-                          {p.isCurrent ? '●' : '○'}
-                        </span>
+                        <StatusPin tone={p.isCurrent ? 'success' : 'muted'} />
                         <span className="truncate text-sm font-medium">{p.name}</span>
                         <Badge variant="info">供应商</Badge>
-                        {p.isCurrent && <Badge variant="accent">当前</Badge>}
+                        {p.isCurrent && <CurrentBadge />}
                         {latency != null && (
                           <span className="font-mono text-xs text-muted">{latency} ms</span>
                         )}
@@ -502,13 +490,13 @@ export default function ProvidersPage({
                       </div>
                     </div>
 
-                    <p className="mt-1 pl-5 text-xs text-muted">
+                    <p className="mt-1 text-xs text-muted">
                       {p.isCurrent
                         ? `当前生效 · 本机配置：${livePaths.config}`
                         : `未生效 · 切换后写入本机配置：${livePaths.config}`}
                       {livePaths.auth ? ` · 凭据 ${livePaths.auth}` : ''}
                     </p>
-                  </Card>
+                  </ListRow>
                 );
               })}
             </div>

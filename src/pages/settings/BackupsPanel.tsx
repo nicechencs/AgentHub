@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
-import { AGENTS, AGENT_MAP, type AgentMeta } from '@/config/agents';
+import { AGENTS, AGENT_MAP, type AgentMeta, agentDisplayName } from '@/config/agents';
 import { createBackup, deleteBackup, listBackups, restoreBackup } from '@/lib/api/backup';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import type { AgentId, BackupKind, BackupMeta } from '@/lib/types';
@@ -154,7 +154,7 @@ export function BackupsPanel() {
       await restoreBackup(target.id);
       toast({
         title: '已恢复到该备份',
-        description: `${AGENT_MAP[target.agentId].name} · ${fmtRelative(target.createdAt)}`,
+        description: `${agentDisplayName(target.agentId)} · ${fmtRelative(target.createdAt)}`,
         variant: 'success',
       });
       setRestoreTarget(null);
@@ -360,7 +360,7 @@ export function BackupsPanel() {
             <DialogDescription>
               {restoreTarget && (
                 <>
-                  将恢复 {AGENT_MAP[restoreTarget.agentId].name} 在{' '}
+                  将恢复 {agentDisplayName(restoreTarget.agentId)} 在{' '}
                   {fmtAbsolute(restoreTarget.createdAt)} 的备份（
                   {KIND_META[restoreTarget.kind].label}）。
                 </>

@@ -125,3 +125,8 @@ export function resolveAgentMeta(agentId: AgentId): AgentMeta {
     installChannels: [],
   };
 }
+
+/** Safe display name; never throws on unknown catalog keys. */
+export function agentDisplayName(agentId: AgentId): string {
+  return resolveAgentMeta(agentId).name;
+}

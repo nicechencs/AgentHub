@@ -20,6 +20,7 @@ import {
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Notice } from '@/components/shared/Notice';
@@ -49,7 +50,7 @@ import {
   type UsageAvailability,
 } from '@/lib/api/usage';
 import { createBackup } from '@/lib/api/backup';
-import { AGENTS, AGENT_MAP } from '@/config/agents';
+import { AGENTS, AGENT_MAP, agentDisplayName } from '@/config/agents';
 import { hasEnvIssues } from '@/lib/env';
 import { loadBool, saveBool, StorageKey } from '@/lib/storage';
 import type { AgentId, AgentStatus, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
@@ -507,7 +508,7 @@ export default function DashboardPage() {
                           labelStyle={{ color: 'var(--text-secondary)' }}
                           formatter={(value, name) => [
                             fmtTokens(Number(value)),
-                            AGENT_MAP[name as AgentId]?.name ?? String(name),
+                            agentDisplayName(name as AgentId),
                           ]}
                         />
                         {trendAgents.map((meta) => (
@@ -572,10 +573,7 @@ export default function DashboardPage() {
                     {distribution.map((d) => (
                       <li key={d.label} className="flex h-7 items-center gap-3">
                         <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm">
-                          <span
-                            className="inline-block h-2 w-2 shrink-0 rounded-full"
-                            style={{ backgroundColor: d.color }}
-                          />
+                          <AgentDot color={d.color} size="md" title={null} />
                           <span className="truncate">{d.label}</span>
                         </span>
                         {d.tokens === 0 ? (

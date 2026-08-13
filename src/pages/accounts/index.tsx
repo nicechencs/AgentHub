@@ -40,6 +40,16 @@ import { useAgentStatusesOptional } from '@/app/runtime';
 import { openAgentConfigDir } from '@/lib/api/install';
 import { resolveAgentMeta } from '@/config/agents';
 import { isCapabilityBlocked } from '@/lib/capability';
+import {
+  CONNECTION_KIND_FILTERS,
+  countByConnectionKind,
+  filterByConnectionKind,
+  type ConnectionKindFilter,
+} from '@/lib/connection-kind';
+import {
+  deleteConnectionDialogDescription,
+  deleteConnectionToastDescription,
+} from '@/pages/connections/connection-model';
 import type { Account, AgentId, AgentStatus, SwitchPreview } from '@/lib/types';
 import { AccountCard } from './AccountCard';
 import { ApiKeyAccountDialog } from './ApiKeyAccountDialog';
@@ -52,13 +62,8 @@ export function accountDisabledAgents(statuses?: AgentStatus[] | null): AgentId[
     .map((s) => s.agentId);
 }
 
-type AccountKindFilter = 'all' | 'oauth' | 'apikey';
-
-const ACCOUNT_KIND_FILTERS: Array<{ value: AccountKindFilter; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'oauth', label: '官方登录' },
-  { value: 'apikey', label: 'API Key' },
-];
+type AccountKindFilter = ConnectionKindFilter;
+const ACCOUNT_KIND_FILTERS = CONNECTION_KIND_FILTERS;
 
 export interface AccountsPanelProps {
   /** 嵌入 Connections 时隐藏页头与 AgentTabStrip */
@@ -137,20 +142,17 @@ export default function AccountsPage({
   }, [accounts, agent, agentStatuses]);
   const current = accountsWithLiveAuth.find((a) => a.isCurrent);
   const meta = resolveAgentMeta(agent);
-  const kindCounts = React.useMemo(() => {
-    let oauth = 0;
-    let apikey = 0;
-    for (const a of accounts) {
-      if (a.kind === 'oauth') oauth += 1;
-      else if (a.kind === 'apikey') apikey += 1;
-    }
-    return { all: accounts.length, oauth, apikey };
-  }, [accounts]);
+  const kindCounts = React.useMemo(
+    () => countByConnectionKind(accounts, (account) => (account.kind === 'apikey' ? 'apikey' : 'oauth')),
+    [accounts],
+  );
   const visibleAccounts = React.useMemo(
     () =>
-      kindFilter === 'all'
-        ? accountsWithLiveAuth
-        : accountsWithLiveAuth.filter((account) => account.kind === kindFilter),
+      filterByConnectionKind(
+        accountsWithLiveAuth,
+        kindFilter,
+        (account) => (account.kind === 'apikey' ? 'apikey' : 'oauth'),
+      ),
     [accountsWithLiveAuth, kindFilter],
   );
   const identityGroups = React.useMemo(
@@ -203,9 +205,7 @@ export default function AccountsPage({
       await load(agent);
       toast({
         title: '已将认证信息移入回收站',
-        description: wasCurrent
-          ? '本机配置未清除，当前连接可能仍继续生效。'
-          : '本机配置未修改。',
+        description: deleteConnectionToastDescription({ isCurrent: wasCurrent }),
         variant: 'success',
       });
     } catch (e) {
@@ -445,9 +445,9 @@ export default function AccountsPage({
           <DialogHeader>
             <DialogTitle>删除凭据 "{deleteTarget?.label}"?</DialogTitle>
             <DialogDescription>
-              {deleteTarget?.isCurrent
-                ? '会移入回收站；本机配置不会被清除，当前连接可能仍继续生效。'
-                : '会移入回收站；不会修改本机配置文件。'}
+              {deleteTarget
+                ? deleteConnectionDialogDescription(deleteTarget)
+                : null}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

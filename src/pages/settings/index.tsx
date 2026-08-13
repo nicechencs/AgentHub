@@ -23,6 +23,7 @@ import {
 import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { StatusPin } from '@/components/shared/StatusPin';
 import { useTheme } from '@/components/shared/ThemeProvider';
 import {
   getSettings,
@@ -301,10 +302,10 @@ export default function SettingsPage({
           <TabsTrigger value="about" className="gap-1.5">
             关于
             {pendingUpdate && (
-              <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
-                aria-label={`有可用更新 v${pendingUpdate.version}`}
-                title={`可更新至 v${pendingUpdate.version}`}
+              <StatusPin
+                tone="warning"
+                label={`可更新至 v${pendingUpdate.version}`}
+                className="shrink-0"
               />
             )}
           </TabsTrigger>

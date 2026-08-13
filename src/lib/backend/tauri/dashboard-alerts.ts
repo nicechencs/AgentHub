@@ -3,8 +3,8 @@
  * Dismiss is local-only (session/localStorage); alerts reappear when the
  * underlying condition changes (stable id + fingerprint).
  */
-import type { AgentStatus, DashboardAlert } from '@/lib/types';
-import { AGENT_MAP } from '@/config/agents';
+import type { AgentId, AgentStatus, DashboardAlert } from '@/lib/types';
+import { agentDisplayName } from '@/config/agents';
 import { loadJson, saveJson } from '@/lib/ui-preferences';
 
 const DISMISS_KEY = 'agenthub:dismissed-alerts';
@@ -12,7 +12,7 @@ const DISMISS_KEY = 'agenthub:dismissed-alerts';
 type DismissMap = Record<string, string>; // id -> fingerprint when dismissed
 
 function agentName(id: string): string {
-  return AGENT_MAP[id as keyof typeof AGENT_MAP]?.name ?? id;
+  return agentDisplayName(id as AgentId);
 }
 
 function fingerprint(alert: Omit<DashboardAlert, 'id'> & { id: string }): string {
