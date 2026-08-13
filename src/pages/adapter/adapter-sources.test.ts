@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AdapterCommandError } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/pages/connections/connection-model';
 import { AdapterPreviewResult, AdapterProfiles } from './adapter-components';
-import { AdapterSourceList } from './AdapterSourceList';
+import { AdapterAgentBadge, AdapterSourceList } from './AdapterSourceList';
 import {
   adapterApplyStage,
   adapterApplyStageLabel,
@@ -45,10 +45,41 @@ describe('adapter source grouping and target filter', () => {
     expect(filterAdapterSourcesByKind([api, oauth, apiAccount], 'apikey')).toEqual([api, apiAccount]);
     expect(filterAdapterSourcesByKind([api, oauth, apiAccount], 'oauth')).toEqual([oauth]);
     expect(filterAdapterSourcesByCredential([api, oauth, apiAccount], 'all')).toEqual([api, oauth, apiAccount]);
-    expect(filterAdapterSourcesByCredential([api, oauth, apiAccount], 'api')).toEqual([api, apiAccount]);
-    expect(adapterSourceCounts([api, oauth, apiAccount])).toEqual({ all: 3, api: 2, oauth: 1 });
+    expect(filterAdapterSourcesByCredential([api, oauth, apiAccount], 'apikey')).toEqual([api, apiAccount]);
+    expect(adapterSourceCounts([api, oauth, apiAccount])).toEqual({ all: 3, apikey: 2, oauth: 1 });
     expect(searchAdapterSources([api, oauth, apiAccount], '官方登录')).toEqual([oauth]);
     expect(searchAdapterSources([api, oauth, apiAccount], 'kimi')).toEqual([api]);
+  });
+
+  it('hides a selected API Key when switching to OAuth or searching it away', () => {
+    const api = entry({
+      key: 'provider:kimi-1',
+      id: 'kimi-1',
+      agentId: 'kimi',
+      source: 'provider',
+      kind: 'apikey',
+      title: 'Kimi member key',
+    });
+    const oauth = entry({
+      key: 'account:codex-1',
+      id: 'codex-1',
+      agentId: 'codex',
+      source: 'account',
+      kind: 'oauth',
+      title: 'Codex login',
+    });
+    // Selecting an API Key then switching 全部/API Key → 官方登录 removes it from the visible list.
+    const oauthOnly = filterAdapterSourcesByCredential([api, oauth], 'oauth');
+    expect(oauthOnly.map((item) => item.key)).toEqual([oauth.key]);
+    expect(oauthOnly.some((item) => item.key === api.key)).toBe(false);
+
+    // Searching for a different agent also hides the current selection.
+    const searchedAway = searchAdapterSources([api, oauth], 'codex');
+    expect(searchedAway.map((item) => item.key)).toEqual([oauth.key]);
+    expect(searchedAway.some((item) => item.key === api.key)).toBe(false);
+
+    // Searching for the selected title keeps it visible.
+    expect(searchAdapterSources([api, oauth], 'Kimi member').map((item) => item.key)).toEqual([api.key]);
   });
 
   it('falls back to AGENT_IDS only when detect status is unavailable', () => {
@@ -202,7 +233,7 @@ describe('adapter apply and profile recovery presentation', () => {
         groups: [{ id: 'codex:account', label: 'Codex · 账户', entries: [oauth] }],
         selectedKey: oauth.key,
         filter: 'all',
-        counts: { all: 1, api: 0, oauth: 1 },
+        counts: { all: 1, apikey: 0, oauth: 1 },
         query: '',
         loading: false,
         loadError: null,
@@ -217,10 +248,21 @@ describe('adapter apply and profile recovery presentation', () => {
     );
     expect(markup).toContain('可用连接');
     expect(markup).toContain('官方登录');
-    expect(markup).toContain('授权未完成');
+    expect(markup).toContain('官方登录未完成');
     expect(markup).toContain('全部');
     expect(markup).toContain('API Key');
+    // Agent brand chip is present beside the credential-kind badge.
+    expect(markup).toMatch(/color-mix\(in srgb,\s*var\(--agent-codex\)/);
     expect(markup).not.toContain('应用配置');
+  });
+
+  it('renders distinct agent-colored badges for different agents', () => {
+    const claude = renderToStaticMarkup(createElement(AdapterAgentBadge, { agentId: 'claude' }));
+    const kimi = renderToStaticMarkup(createElement(AdapterAgentBadge, { agentId: 'kimi' }));
+    expect(claude).toContain('var(--agent-claude)');
+    expect(kimi).toContain('var(--agent-kimi)');
+    expect(claude).not.toContain('var(--agent-kimi)');
+    expect(kimi).not.toContain('var(--agent-claude)');
   });
 
   it('renders an OAuth auth hint and Connections link instead of apply', () => {
@@ -256,14 +298,14 @@ describe('adapter apply and profile recovery presentation', () => {
         authHint: oauthIncompleteAuthHint(),
       }),
     );
-    expect(markup).toContain('前往 Connections');
+    expect(markup).toContain('去 Connections');
     expect(markup).toContain('#/connections');
-    expect(markup).toContain('不会代替发起 OAuth');
+    expect(markup).toContain('先完成授权');
     expect(markup).not.toContain('应用配置');
     expect(markup).not.toContain('启用本地桥接');
   });
 
-  it('renders profile details for port, lastErrorCode, and recovery actions', () => {
+  it('renders profile rows with endpoint, two-layer status, and a recovery entry', () => {
     const markup = renderToStaticMarkup(
       createElement(AdapterProfiles, {
         profiles: [{
@@ -292,26 +334,74 @@ describe('adapter apply and profile recovery presentation', () => {
             upstreamStatus: 'unavailable',
           },
         },
+        statusErrors: {},
+        entries: [entry({ key: 'provider:kimi-1', id: 'kimi-1', agentId: 'kimi', source: 'provider', title: 'Kimi 会员 Key' })],
         loading: false,
         loadError: null,
         errors: {},
         removingProfileId: null,
         busyProfileIds: {},
-        onRemove: vi.fn(),
         onStartBridge: vi.fn(),
         onRequestStopBridge: vi.fn(),
-        onSetBridgeAutoStart: vi.fn(),
+        onShowDetail: vi.fn(),
         onRetry: vi.fn(),
+        onStartCreate: vi.fn(),
       }),
     );
-    expect(markup).toContain('端口：127.0.0.1:32123');
-    expect(markup).toContain('lastErrorCode：adapter.bridge_start');
-    expect(markup).toContain('凭据类型');
+    // Human-readable source name resolved by (sourceKind, sourceId).
+    expect(markup).toContain('Kimi 会员 Key');
+    // Two-layer status: durable configuration first, observed runtime second.
+    expect(markup).toContain('需要处理');
+    expect(markup).toContain('桥接启动失败');
+    // Recovery entry carries the stable error code and points at the detail dialog.
+    expect(markup).toContain('adapter.bridge_start');
+    expect(markup).toContain('详情');
+    expect(markup).toContain('127.0.0.1:32123');
     expect(markup).toContain('API Key');
     expect(markup).toContain('本地协议转换');
     expect(markup).toContain('重试启动');
-    expect(markup).toContain('删除');
-    expect(markup).toContain('不会自动反复重试');
+    // Remove moved into the detail dialog; rows keep only the state-matched action.
+    expect(markup).not.toContain('删除');
     expect(markup).not.toContain('代理路由');
+  });
+
+  it('shows 状态不可用 for a failed bridge status read instead of a bridge fault', () => {
+    const markup = renderToStaticMarkup(
+      createElement(AdapterProfiles, {
+        profiles: [{
+          id: 'bridge-2',
+          name: 'Kimi → Codex',
+          sourceKind: 'provider',
+          sourceId: 'kimi-1',
+          targetAgentId: 'codex',
+          route: 'local_bridge',
+          mode: 'api',
+          status: 'active',
+          ruleId: 'bridge',
+          ruleVersion: '1',
+          generatedProviderId: 'codex-bridge-2',
+          localPort: 32123,
+          autoStart: true,
+          createdAt: '2026-08-12T00:00:00Z',
+          updatedAt: '2026-08-12T00:00:00Z',
+        }],
+        bridgeStatuses: {},
+        statusErrors: { 'bridge-2': new Error('host unreachable') },
+        entries: [],
+        loading: false,
+        loadError: null,
+        errors: {},
+        removingProfileId: null,
+        busyProfileIds: {},
+        onStartBridge: vi.fn(),
+        onRequestStopBridge: vi.fn(),
+        onShowDetail: vi.fn(),
+        onRetry: vi.fn(),
+        onStartCreate: vi.fn(),
+      }),
+    );
+    expect(markup).toContain('配置已生效');
+    expect(markup).toContain('状态不可用');
+    expect(markup).not.toContain('桥接启动失败');
   });
 });

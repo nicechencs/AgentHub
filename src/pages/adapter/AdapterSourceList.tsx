@@ -1,22 +1,43 @@
 import { Boxes } from 'lucide-react';
+import { AgentDot } from '@/components/shared/AgentDot';
+import { CurrentBadge } from '@/components/shared/CurrentBadge';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { ListRow } from '@/components/shared/ListRow';
+import { SearchField } from '@/components/shared/SearchField';
 import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { resolveAgentMeta } from '@/config/agents';
+import type { AgentId } from '@/lib/types';
 import { kindBadge } from '@/pages/connections/connection-model';
 import type { ConnectionEntry } from '@/pages/connections/connection-model';
 import {
   ADAPTER_CREDENTIAL_FILTERS,
+  adapterAgentBadgeStyle,
   adapterCredentialFilterLabel,
   sourceKindLabel,
   sourceStatusHint,
-  targetAgentName,
   type AdapterCredentialFilter,
 } from './adapter-model';
-import { isOAuthAuthIncomplete } from './adapter-sources';
+import { isOAuthAuthIncomplete, oauthIncompleteAuthHint } from './adapter-sources';
+
+/** Agent brand-colored chip so OAuth / API Key rows are scannable by agent. */
+export function AdapterAgentBadge({
+  agentId,
+  className,
+}: {
+  agentId: AgentId;
+  className?: string;
+}) {
+  const meta = resolveAgentMeta(agentId);
+  return (
+    <Badge className={className} style={adapterAgentBadgeStyle(meta.color)}>
+      <AgentDot agentId={agentId} size="sm" title={null} />
+      {meta.name}
+    </Badge>
+  );
+}
 
 export type AdapterSourceListProps = {
   groups: Array<{
@@ -59,9 +80,9 @@ export function AdapterSourceList({
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="space-y-1">
         <h2 className="text-sm font-medium">可用连接</h2>
-        <p className="text-xs text-secondary">选择一条 Connection 作为适配来源。凭据仍留在 Connections。</p>
+        <p className="text-xs text-secondary">选择一条连接作为来源。</p>
       </div>
-      <Input
+      <SearchField
         value={query}
         onChange={(event) => onQueryChange(event.target.value)}
         placeholder="搜索名称、Agent 或凭据类型"
@@ -94,7 +115,7 @@ export function AdapterSourceList({
           <EmptyState
             icon={Boxes}
             title="还没有可用来源"
-            description="先在 Connections 保存 API Key 或完成官方登录。Adapter 只引用 connectionId，不复制凭据。"
+            description="先到 Connections 保存 API Key 或完成官方登录。"
             actionLabel="去 Connections"
             onAction={() => onGoConnections('all')}
           />
@@ -103,10 +124,10 @@ export function AdapterSourceList({
             icon={Boxes}
             title="没有匹配的连接"
             description={query.trim()
-              ? '换个关键词，或把筛选改回全部。'
+              ? '换个关键词，或改回全部。'
               : filter === 'oauth'
-                ? '当前没有官方登录。可前往 Connections 完成授权。'
-                : '当前没有 API Key。可前往 Connections 添加。'}
+                ? '还没有官方登录。可前往 Connections 授权。'
+                : '还没有 API Key。可前往 Connections 添加。'}
             actionLabel={query.trim() ? undefined : '去 Connections'}
             onAction={query.trim() ? undefined : () => onGoConnections(filter)}
           />
@@ -138,15 +159,16 @@ export function AdapterSourceList({
                         <div className="min-w-0 space-y-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <p className="truncate text-sm font-medium">{entry.title}</p>
+                            <AdapterAgentBadge agentId={entry.agentId} />
                             <Badge variant={badge.variant}>{badge.label}</Badge>
-                            {entry.isCurrent ? <Badge variant="success">当前</Badge> : null}
+                            {entry.isCurrent ? <CurrentBadge /> : null}
                           </div>
                           <p className="truncate text-xs text-secondary">
-                            {targetAgentName(entry.agentId)} · {sourceKindLabel(entry.source)}
+                            {sourceKindLabel(entry.source)}
                           </p>
                           <p className="truncate text-xs text-muted">{sourceStatusHint(entry)}</p>
                           {incomplete ? (
-                            <p className="text-xs text-warning">授权未完成，需先到 Connections 登录</p>
+                            <p className="text-xs text-warning">{oauthIncompleteAuthHint()}</p>
                           ) : null}
                         </div>
                       </ListRow>

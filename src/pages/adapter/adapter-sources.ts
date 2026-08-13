@@ -1,4 +1,4 @@
-import { AGENT_MAP } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
 import {
   AdapterCommandError,
   isAdapterErrorCodeRetryable,
@@ -7,6 +7,12 @@ import {
   type AdapterProfileStatus,
 } from '@/lib/backend/contracts/adapter';
 import { isCapabilityUsable, type AgentCapabilities } from '@/lib/capability';
+import {
+  connectionKindSearchText,
+  countByConnectionKind,
+  filterByConnectionKind,
+  type ConnectionKind,
+} from '@/lib/connection-kind';
 import type { AgentId } from '@/lib/types';
 import type { ConnectionEntry } from '@/pages/connections/connection-model';
 import {
@@ -124,8 +130,7 @@ export function groupAdapterSources(
     .sort((left, right) => {
       const agentDelta = agentSortIndex(left.agentId, catalogOrder) - agentSortIndex(right.agentId, catalogOrder);
       if (agentDelta !== 0) return agentDelta;
-      const nameDelta = (AGENT_MAP[left.agentId]?.name ?? left.agentId)
-        .localeCompare(AGENT_MAP[right.agentId]?.name ?? right.agentId);
+      const nameDelta = agentDisplayName(left.agentId).localeCompare(agentDisplayName(right.agentId));
       if (nameDelta !== 0) return nameDelta;
       return sourceKindSort(left.source) - sourceKindSort(right.source);
     });
@@ -134,9 +139,9 @@ export function groupAdapterSources(
 /** Keep the Adapter source picker on one credential family (API Key vs official login). */
 export function filterAdapterSourcesByKind(
   entries: readonly ConnectionEntry[],
-  kind: ConnectionEntry['kind'],
+  kind: ConnectionKind,
 ): ConnectionEntry[] {
-  return entries.filter((entry) => entry.kind === kind);
+  return filterByConnectionKind(entries, kind, (entry) => entry.kind);
 }
 
 /** Page filter: all connections, or one credential family. */
@@ -144,7 +149,7 @@ export function filterAdapterSourcesByCredential(
   entries: readonly ConnectionEntry[],
   filter: AdapterCredentialFilter,
 ): ConnectionEntry[] {
-  if (filter === 'all') return [...entries];
+  if (filter === 'all') return filterByConnectionKind(entries, 'all', (entry) => entry.kind);
   return filterAdapterSourcesByKind(entries, connectionKindForFilter(filter));
 }
 
@@ -154,8 +159,8 @@ export function adapterSourceSearchText(entry: ConnectionEntry): string {
     entry.subtitle ?? '',
     entry.id,
     entry.agentId,
-    AGENT_MAP[entry.agentId]?.name ?? '',
-    entry.kind === 'oauth' ? '官方登录 oauth' : 'api key apikey',
+    agentDisplayName(entry.agentId),
+    connectionKindSearchText(entry.kind),
     sourceKindLabel(entry.source),
   ].join(' ').toLowerCase();
 }
@@ -171,11 +176,7 @@ export function searchAdapterSources(
 }
 
 export function adapterSourceCounts(entries: readonly ConnectionEntry[]): Record<AdapterCredentialFilter, number> {
-  return {
-    all: entries.length,
-    api: filterAdapterSourcesByKind(entries, 'apikey').length,
-    oauth: filterAdapterSourcesByKind(entries, 'oauth').length,
-  };
+  return countByConnectionKind(entries, (entry) => entry.kind);
 }
 
 /** Adapter-generated Provider projections must not be offered as nested sources. */
@@ -202,7 +203,7 @@ export function isOAuthAuthIncomplete(
 }
 
 export function oauthIncompleteAuthHint(): string {
-  return '该官方登录尚未完成授权（需要重新登录、已过期或未登录）。请先到 Connections 完成授权；适配页不会代替发起 OAuth。';
+  return '官方登录未完成，先到 Connections 授权。';
 }
 
 export type AdapterApplyStage = 'idle' | 'applying' | 'active' | 'failed';
@@ -248,8 +249,8 @@ export function adapterFailurePresentation(error: unknown, fallback: string): {
     message: errorMessage(error, fallback),
     retryable,
     hint: retryable
-      ? '可重试此次操作；不会自动反复重试写配置。'
-      : '此失败不可重试写入。请检查来源连接或删除后重新创建；不会自动重试。',
+      ? '可重试；不会自动反复重试。'
+      : '不可重试。检查来源连接，或删除后重建。',
   };
 }
 
@@ -282,8 +283,8 @@ export function adapterNeedsAttentionRecovery(
   const retryStart = profile.route === 'local_bridge' && (bridgeState === 'error' || lastError != null);
   return {
     hint: lastError
-      ? `需要处理（${lastError}）：可手动启动、重试启动或删除后重新创建；不会自动反复重试写配置。`
-      : '需要处理：上次操作可能部分完成。请手动启动 / 重试启动，或删除后重新创建；不会自动反复重试。',
+      ? `需要处理（${lastError}）。可启动、重试或删除重建；不会自动反复重试。`
+      : '需要处理：上次可能未完成。可启动、重试或删除重建；不会自动反复重试。',
     startLabel: profile.route === 'local_bridge'
       ? (retryStart ? '重试启动' : '启动')
       : null,

@@ -1,29 +1,31 @@
-import { useState } from 'react';
-import { ExternalLink, ShieldCheck } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { ChevronDown, ExternalLink } from 'lucide-react';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { openExternalLink } from '@/lib/open-external';
+import { cn } from '@/lib/utils';
 import type {
   AdapterApplyPlan,
   AdapterBridgeRuntimeStatus,
-  AdapterProfile,
   AdapterRouteAnalysis,
 } from '@/lib/backend/contracts/adapter';
-import { AdapterProfilesTable } from './AdapterProfilesTable';
+import { AdapterProfilesList, type AdapterProfilesListProps } from './AdapterProfilesList';
+import { AdapterRoutePipeline } from './AdapterRoutePipeline';
 import {
   adapterActionLabel,
   adapterErrorDetails,
   adapterErrorRetryHint,
   adapterPlanChangeLabel,
+  adapterPreviewOutcome,
+  adapterServiceImpactLabel,
   canApplyAdapterPlan,
   errorMessage,
-  futureAvailability,
-  routeLabel,
-  supportBadge,
   unsupportedPresentation,
 } from './adapter-model';
+import type { AdapterPipelineModel } from './adapter-view-model';
+import { oauthIncompleteAuthHint } from './adapter-sources';
 
 export function AdapterErrorLines({
   error,
@@ -69,6 +71,7 @@ export function AdapterPreviewResult({
   applyError,
   authIncomplete = false,
   authHint,
+  pipeline,
 }: {
   analysis: AdapterRouteAnalysis | null;
   plan: AdapterApplyPlan | null;
@@ -80,155 +83,163 @@ export function AdapterPreviewResult({
   applyError?: unknown;
   authIncomplete?: boolean;
   authHint?: string;
+  /** Optional route topology rendered above the conclusion (preview pane only). */
+  pipeline?: AdapterPipelineModel | null;
 }) {
   if (loading) {
     return (
       <div className="space-y-2" aria-live="polite">
-        <p className="text-sm text-secondary">正在分析路径并生成只读配置预览…</p>
-        <p className="text-xs text-muted">仅使用 connectionId / sourceId；不会读取、展示或记录原始凭据。</p>
-        <Skeleton className="h-4 w-40" />
-        <Skeleton className="h-4 w-full" />
+        <p className="text-sm text-secondary">分析中…</p>
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-4 w-48" />
       </div>
     );
   }
   if (error) {
     return (
-      <div className="space-y-2">
-        <ErrorState
-          compact={compact}
-          error={errorMessage(error, '无法分析此连接')}
-          title="无法生成适配预览"
-          onRetry={onRetry}
-        />
-        <p className="text-xs text-secondary">
-          这是分析失败，不是连接失效。可重试；若持续失败，请回到 Connections 确认来源状态后再试。
-        </p>
-      </div>
+      <ErrorState
+        compact={compact}
+        error={errorMessage(error, '无法分析此连接')}
+        title="分析失败"
+        onRetry={onRetry}
+      />
     );
   }
-  if (!analysis) return <p className="text-sm text-secondary">选择来源后自动生成预览。</p>;
+  if (!analysis) return <p className="text-sm text-secondary">选择来源后显示结果。</p>;
 
-  const support = supportBadge(analysis.support);
   if (analysis.route === 'unsupported') {
     // Unsupported is a neutral gate conclusion — never a red fault, never Apply/Bridge.
     const presentation = unsupportedPresentation(analysis, plan);
     return (
-      <div className="space-y-4 text-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="font-medium">{presentation.headline}</h2>
-          <Badge variant="default">{presentation.badgeLabel}</Badge>
-          <Badge variant="default">plan.canApply=false</Badge>
-          <ShieldCheck className="h-4 w-4 text-secondary" aria-label="不会执行更改" />
-        </div>
-        <p className="text-primary">{presentation.reason}</p>
-        <section className="space-y-2 rounded-btn border border-border bg-subtle p-3 text-secondary">
-          <h3 className="font-medium text-primary">门禁说明</h3>
-          <ul className="list-disc space-y-1 pl-5">
-            {presentation.gateLines.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-          <p className="text-xs">{presentation.safetyNote}</p>
-        </section>
-        <section className="space-y-1">
-          <h3 className="font-medium">可用替代路径</h3>
-          <ul className="list-disc space-y-1 pl-5 text-secondary">
+      <div className="space-y-3 text-sm">
+        {pipeline ? <AdapterRoutePipeline model={pipeline} /> : null}
+        <PreviewHeader
+          title={presentation.headline}
+          badgeLabel={presentation.badgeLabel}
+          badgeVariant="default"
+          summary={presentation.summary}
+        />
+        {presentation.reason ? (
+          <p className="text-secondary">{presentation.reason}</p>
+        ) : null}
+        {presentation.alternatives.length > 0 ? (
+          <ul className="list-disc space-y-0.5 pl-5 text-secondary">
             {presentation.alternatives.map((line) => (
               <li key={line}>{line}</li>
             ))}
           </ul>
-        </section>
-        {analysis.limitations.length > 0 ? (
-          <StringList title="限制" values={analysis.limitations} empty="无额外限制。" />
         ) : null}
-        <EvidenceList evidence={analysis.evidence} />
+        <PreviewDetails>
+          <StringList title="说明" values={presentation.gateLines} empty="" />
+          {presentation.safetyNote ? (
+            <p className="text-xs text-muted">{presentation.safetyNote}</p>
+          ) : null}
+          {analysis.limitations.length > 0 ? (
+            <StringList title="限制" values={analysis.limitations} empty="" />
+          ) : null}
+          <EvidenceList evidence={analysis.evidence} />
+        </PreviewDetails>
       </div>
     );
   }
 
   const canApply = canApplyAdapterPlan(plan) && !authIncomplete;
-  const availability = canApply ? null : futureAvailability(analysis.route);
+  const outcome = adapterPreviewOutcome({
+    route: analysis.route,
+    canApply: canApplyAdapterPlan(plan),
+    authIncomplete,
+  });
   // Only the backend canApply gate may surface mutation controls.
   const showApply = Boolean(onApply) && canApply;
+  const changes = plan?.changes ?? [];
+  const hasDetails = changes.length > 0
+    || analysis.actions.length > 0
+    || analysis.limitations.length > 0
+    || analysis.evidence.length > 0
+    || Boolean(plan?.serviceImpact);
+
   return (
-    <div className="space-y-4 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="font-medium">{routeLabel(analysis.route)}</h2>
-        <Badge variant={support.variant}>{support.label}</Badge>
-        {availability && <Badge variant="warning">{availability}</Badge>}
-        {!canApply && plan ? <Badge variant="default">plan.canApply=false</Badge> : null}
-        <ShieldCheck className="h-4 w-4 text-secondary" aria-label="只读预览" />
-      </div>
-      <p>{analysis.reason}</p>
-      <AdapterPreviewList title="将写配置" values={plan?.changes ?? []} empty="此路径当前不会写入配置。" />
-      <p className="text-xs text-secondary">
-        服务影响：{plan?.serviceImpact === 'requires_local_bridge'
-          ? '将启动仅本机可访问的协议桥接；请让 AgentHub 保持在托盘运行。'
-          : '无需本地服务'}
-      </p>
+    <div className="space-y-3 text-sm">
+      {pipeline ? <AdapterRoutePipeline model={pipeline} /> : null}
+      <PreviewHeader
+        title={outcome.title}
+        badgeLabel={outcome.badgeLabel}
+        badgeVariant={outcome.badgeVariant}
+        summary={outcome.nextStep}
+      />
       {authIncomplete && (
         <p className="text-sm text-warning" role="status">
-          {authHint ?? '该官方登录尚未完成授权。请先到 Connections 完成登录。'}{' '}
-          <a className="underline" href="#/connections">前往 Connections</a>
+          {authHint ?? oauthIncompleteAuthHint()}{' '}
+          <a className="underline" href="#/connections">去 Connections</a>
         </p>
       )}
       {showApply && (
-        <Button onClick={onApply}>{analysis.route === 'local_bridge' ? '启用本地桥接' : '应用配置'}</Button>
+        <Button onClick={onApply}>
+          {analysis.route === 'local_bridge' ? '启用本地桥接' : '应用配置'}
+        </Button>
       )}
-      {!canApply && !availability && !authIncomplete ? (
-        <p className="text-xs text-secondary">当前路径不可应用（plan.canApply=false），仅展示只读预览。</p>
-      ) : null}
       {applyError ? <AdapterErrorLines error={applyError} fallback="应用适配失败" /> : null}
-      <AdapterActionList actions={analysis.actions} />
-      <StringList title="限制" values={analysis.limitations} empty="无额外限制。" />
-      <EvidenceList evidence={analysis.evidence} />
+      {hasDetails ? (
+        <PreviewDetails>
+          <AdapterPreviewList title="预计改动" values={changes} empty="无需写入配置。" />
+          <p className="text-xs text-secondary">
+            运行方式：{adapterServiceImpactLabel(plan?.serviceImpact)}
+          </p>
+          {analysis.actions.length > 0 ? (
+            <AdapterActionList actions={analysis.actions} />
+          ) : null}
+          {analysis.limitations.length > 0 ? (
+            <StringList title="限制" values={analysis.limitations} empty="" />
+          ) : null}
+          {analysis.evidence.length > 0 ? (
+            <EvidenceList evidence={analysis.evidence} />
+          ) : null}
+        </PreviewDetails>
+      ) : null}
     </div>
   );
 }
 
-export function AdapterProfiles({
-  profiles,
-  bridgeStatuses,
-  loading,
-  loadError,
-  errors,
-  removingProfileId,
-  busyProfileIds,
-  onRemove,
-  onStartBridge,
-  onRequestStopBridge,
-  onSetBridgeAutoStart,
-  onRetry,
+function PreviewHeader({
+  title,
+  badgeLabel,
+  badgeVariant,
+  summary,
 }: {
-  profiles: AdapterProfile[];
-  bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus>;
-  loading: boolean;
-  loadError: unknown;
-  errors: Record<string, unknown>;
-  removingProfileId: string | null;
-  busyProfileIds: Record<string, boolean>;
-  onRemove: (profile: AdapterProfile) => void;
-  onStartBridge: (profile: AdapterProfile) => void;
-  onRequestStopBridge: (profile: AdapterProfile) => void;
-  onSetBridgeAutoStart: (profile: AdapterProfile, autoStart: boolean) => void;
-  onRetry: () => void;
+  title: string;
+  badgeLabel: string;
+  badgeVariant: 'success' | 'warning' | 'default' | 'info';
+  summary: string;
 }) {
   return (
-    <AdapterProfilesTable
-      profiles={profiles}
-      bridgeStatuses={bridgeStatuses}
-      loading={loading}
-      loadError={loadError}
-      errors={errors}
-      removingProfileId={removingProfileId}
-      busyProfileIds={busyProfileIds}
-      onRemove={onRemove}
-      onStartBridge={onStartBridge}
-      onRequestStopBridge={onRequestStopBridge}
-      onSetBridgeAutoStart={onSetBridgeAutoStart}
-      onRetry={onRetry}
-    />
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-base font-medium">{title}</h2>
+        <Badge variant={badgeVariant}>{badgeLabel}</Badge>
+      </div>
+      <p className="text-secondary">{summary}</p>
+    </div>
   );
+}
+
+/** Secondary detail blocks stay collapsed so the first screen stays scannable. */
+function PreviewDetails({ children }: { children: ReactNode }) {
+  return (
+    <details className="group rounded-btn border border-border bg-subtle/60">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
+        <span>查看详情</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className={cn('space-y-3 border-t border-border px-3 py-3')}>
+        {children}
+      </div>
+    </details>
+  );
+}
+
+/** Stable page-facing alias for the managed-profile service list. */
+export function AdapterProfiles(props: AdapterProfilesListProps) {
+  return <AdapterProfilesList {...props} />;
 }
 
 export function AdapterPreviewList({
@@ -259,7 +270,7 @@ export function AdapterPreviewList({
 function AdapterActionList({ actions }: Pick<AdapterRouteAnalysis, 'actions'>) {
   return (
     <section>
-      <h3 className="font-medium">预览动作</h3>
+      <h3 className="font-medium">步骤</h3>
       {actions.length ? (
         <ul className="mt-1 list-disc space-y-1 pl-5 text-secondary">
           {actions.map((item) => (
@@ -268,7 +279,7 @@ function AdapterActionList({ actions }: Pick<AdapterRouteAnalysis, 'actions'>) {
             </li>
           ))}
         </ul>
-      ) : <p className="mt-1 text-secondary">没有可执行动作。</p>}
+      ) : <p className="mt-1 text-secondary">无额外步骤。</p>}
     </section>
   );
 }
@@ -298,25 +309,25 @@ function EvidenceList({ evidence }: Pick<AdapterRouteAnalysis, 'evidence'>) {
     }
   };
 
+  if (evidence.length === 0) return null;
+
   return (
     <section>
-      <h3 className="font-medium">兼容性说明</h3>
-      {evidence.length ? (
-        <ul className="mt-1 space-y-1 text-secondary">
-          {evidence.map((item) => (
-            <li key={item.url}>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 text-info hover:underline"
-                onClick={() => { void openEvidence(item.url); }}
-              >
-                {item.label} <ExternalLink className="h-3 w-3" />
-              </button>
-              <span className="ml-1 text-xs">验证于 {item.verifiedAt}</span>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="mt-1 text-secondary">无可展示依据。</p>}
+      <h3 className="font-medium">参考</h3>
+      <ul className="mt-1 space-y-1 text-secondary">
+        {evidence.map((item) => (
+          <li key={item.url}>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-info hover:underline"
+              onClick={() => { void openEvidence(item.url); }}
+            >
+              {item.label} <ExternalLink className="h-3 w-3" />
+            </button>
+            <span className="ml-1 text-xs text-muted">{item.verifiedAt}</span>
+          </li>
+        ))}
+      </ul>
       {openError ? (
         <p className="mt-2 text-sm text-danger" role="alert">
           {errorMessage(openError, '无法打开外部链接')}

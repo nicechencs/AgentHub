@@ -12,19 +12,25 @@ import {
 } from '@/lib/backend/contracts/adapter';
 import {
   adapterActionLabel,
+  adapterAgentBadgeStyle,
   adapterApplyCommit,
   adapterBridgeEndpointLabel,
   adapterBridgeStateLabel,
   adapterBridgeUpstreamLabel,
   adapterPageViewState,
   adapterPlanChangeLabel,
+  adapterPlanRequestSignature,
+  adapterPreviewOutcome,
   adapterProfileRecordLabel,
   adapterProfileStatusLabel,
+  adapterServiceImpactLabel,
   adapterTableRouteLabel,
   adapterTabLabel,
   adapterCredentialFilterLabel,
   adapterCredentialKindLabel,
   canApplyAdapterPlan,
+  canApplyAdapterSelection,
+  canConfirmAdapterApply,
   canRequestAdapterPlan,
   closeConfirmationOnOpenChange,
   connectionKindForTab,
@@ -33,8 +39,11 @@ import {
   parseAdapterCredentialFilter,
   parseAdapterTab,
   resolveAdapterTargetAgentId,
+  resolveAdapterVisibleSourceKey,
   futureAvailability,
+  isAdapterPlanMatchedToSelection,
   isCurrentAdapterPreviewRequest,
+  isSameAdapterPlanRequestSignature,
   isSubscriptionGateUnsupported,
   preventBusyConfirmationDismissal,
   routeLabel,
@@ -95,11 +104,13 @@ describe('Adapter page view model', () => {
   it('maps legacy ?tab= links onto a credential filter and keeps local_bridge off OAuth', () => {
     expect(parseAdapterCredentialFilter(null)).toBe('all');
     expect(parseAdapterCredentialFilter('oauth')).toBe('oauth');
-    expect(parseAdapterCredentialFilter('api')).toBe('api');
+    // Legacy wire token `api` normalizes to shared `apikey`.
+    expect(parseAdapterCredentialFilter('api')).toBe('apikey');
+    expect(parseAdapterCredentialFilter('apikey')).toBe('apikey');
     expect(parseAdapterTab('bridge')).toBe('all');
-    expect(connectionKindForTab('api')).toBe('apikey');
+    expect(connectionKindForTab('apikey')).toBe('apikey');
     expect(connectionKindForTab('oauth')).toBe('oauth');
-    expect(adapterTabLabel('api')).toBe('API Key');
+    expect(adapterTabLabel('apikey')).toBe('API Key');
     expect(adapterCredentialFilterLabel('all')).toBe('全部');
     expect(adapterCredentialKindLabel('oauth')).toBe('官方登录');
     expect(filterProfilesByMode([
@@ -115,6 +126,10 @@ describe('Adapter page view model', () => {
       { mode: 'api' },
       { mode: 'oauth' },
     ], 'oauth')).toHaveLength(1);
+    expect(filterProfilesByCredential([
+      { mode: 'api' },
+      { mode: 'oauth' },
+    ], 'apikey')).toHaveLength(1);
     expect(routeLabel('local_bridge')).toBe('需要本地代理');
     expect(adapterTableRouteLabel('local_bridge')).toBe('本地协议转换');
     expect(adapterTableRouteLabel('native_endpoint')).toBe('原生端点');
@@ -165,13 +180,12 @@ describe('Adapter page view model', () => {
       }),
     );
     expect(markup).toContain('暂未支持此组合');
-    expect(markup).toContain('门禁说明');
-    expect(markup).toContain('plan.canApply=false');
-    expect(markup).toContain('可用替代路径');
-    expect(markup).toContain('改用目标 Agent 自身登录');
+    expect(markup).toContain('不能应用');
+    expect(markup).toContain('改用目标 Agent 自己登录');
+    expect(markup).toContain('查看详情');
+    expect(markup).not.toContain('plan.canApply');
     expect(markup).not.toContain('应用配置');
     expect(markup).not.toContain('启用本地桥接');
-    expect(markup).not.toContain('无需本地服务');
     expect(markup).not.toMatch(/<button[^>]*>[\s\S]*强制继续/);
   });
 
@@ -179,7 +193,7 @@ describe('Adapter page view model', () => {
     const unsupported = plan('unsupported');
     unsupported.analysis.reason = [
       'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
-      '尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。',
+      '尚未通过上游授权、条款与协议兼容性验证。',
     ].join('');
     unsupported.analysis.gateKind = 'subscription_candidate';
     unsupported.analysis.ruleId = 'codex-subscription-to-claude-app-server-v0';
@@ -201,6 +215,7 @@ describe('Adapter page view model', () => {
     expect(presentation.canApply).toBe(false);
     expect(presentation.alternatives.some((line) => line.includes('Claude'))).toBe(true);
     expect(presentation.alternatives.some((line) => /API Key/i.test(line))).toBe(true);
+    expect(presentation.gateLines.join('\n')).not.toContain('plan.canApply');
 
     const markup = renderToStaticMarkup(
       createElement(AdapterPreviewResult, {
@@ -214,11 +229,10 @@ describe('Adapter page view model', () => {
       }),
     );
     expect(markup).toContain('当前不支持');
-    expect(markup).toContain('门禁说明');
-    expect(markup).toContain('plan.canApply=false');
-    expect(markup).toContain('也没有“强制继续”');
     expect(markup).toContain('Claude');
     expect(markup).toContain('API Key');
+    expect(markup).toContain('查看详情');
+    expect(markup).not.toContain('plan.canApply');
     // Mutation controls must not appear as buttons/actions (explanatory copy may mention them).
     expect(markup).not.toContain('应用配置');
     expect(markup).not.toContain('启用本地桥接');
@@ -230,22 +244,74 @@ describe('Adapter page view model', () => {
       kind: 'oauth',
       authHealth: 'verified',
       authStatus: 'valid',
-    })).toContain('官方登录');
+    })).toBe('已验证');
     expect(sourceStatusHint({
       kind: 'oauth',
       authHealth: 'needs_login',
       authStatus: 'expired',
-    })).toContain('继续授权');
+    })).toContain('重新登录');
     expect(sourceStatusHint({
       kind: 'apikey',
       authHealth: 'configured',
       authStatus: 'valid',
-    })).toContain('API Key');
+    })).toContain('已配置');
     expect(sourceStatusHint({
       kind: 'oauth',
       authHealth: 'verified',
       authStatus: 'valid',
-    })).not.toMatch(/sk-|token|secret|bearer/i);
+    })).not.toMatch(/sk-|token|secret|bearer|connectionId/i);
+  });
+
+  it('presents applyable routes with plain-language outcome instead of internal flags', () => {
+    expect(adapterPreviewOutcome({
+      route: 'native_endpoint',
+      canApply: true,
+    })).toMatchObject({
+      title: '可接入 · 直接写入',
+      badgeLabel: '可应用',
+    });
+    expect(adapterPreviewOutcome({
+      route: 'local_bridge',
+      canApply: true,
+    }).nextStep).toContain('本机桥接');
+    expect(adapterPreviewOutcome({
+      route: 'config_sync',
+      canApply: false,
+    }).badgeLabel).toBe('仅预览');
+    expect(adapterServiceImpactLabel('requires_local_bridge')).toContain('本机桥接');
+    expect(adapterServiceImpactLabel('none')).toBe('无需本地服务');
+
+    const applyable = {
+      ...plan('native_endpoint', [
+        { target: 'claude', field: 'baseUrl', value: 'https://api.kimi.com/coding/', secret: false },
+      ]),
+      canApply: true,
+    };
+    const markup = renderToStaticMarkup(
+      createElement(AdapterPreviewResult, {
+        analysis: applyable.analysis,
+        plan: applyable,
+        loading: false,
+        error: null,
+        onRetry: vi.fn(),
+        onApply: vi.fn(),
+      }),
+    );
+    expect(markup).toContain('可接入 · 直接写入');
+    expect(markup).toContain('应用配置');
+    expect(markup).toContain('查看详情');
+    expect(markup).toContain('预计改动');
+    expect(markup).not.toContain('plan.canApply');
+    expect(markup).not.toContain('稳定规则');
+  });
+
+  it('styles agent badges from brand CSS vars without inventing hex colors', () => {
+    const style = adapterAgentBadgeStyle('var(--agent-claude)');
+    expect(style.color).toBe('var(--agent-claude)');
+    expect(style.backgroundColor).toContain('var(--agent-claude)');
+    expect(style.backgroundColor).toContain('color-mix');
+    expect(style.boxShadow).toContain('var(--agent-claude)');
+    expect(JSON.stringify(style)).not.toMatch(/#[0-9a-fA-F]{3,8}/);
   });
 
   it('renders loading and error preview states with Chinese guidance', () => {
@@ -258,8 +324,8 @@ describe('Adapter page view model', () => {
         onRetry: vi.fn(),
       }),
     );
-    expect(loadingMarkup).toContain('正在分析路径并生成只读配置预览');
-    expect(loadingMarkup).toContain('connectionId');
+    expect(loadingMarkup).toContain('分析中');
+    expect(loadingMarkup).not.toContain('connectionId');
 
     const errorMarkup = renderToStaticMarkup(
       createElement(AdapterPreviewResult, {
@@ -270,8 +336,7 @@ describe('Adapter page view model', () => {
         onRetry: vi.fn(),
       }),
     );
-    expect(errorMarkup).toContain('无法生成适配预览');
-    expect(errorMarkup).toContain('不是连接失效');
+    expect(errorMarkup).toContain('分析失败');
   });
 
   it('prefers AdapterCommandError message and classifies retryable helpers', () => {
@@ -338,6 +403,8 @@ describe('Adapter page view model', () => {
       createElement(AdapterProfiles, {
         profiles: [profile],
         bridgeStatuses: {},
+        statusErrors: {},
+        entries: [],
         loading: false,
         loadError: null,
         errors: {
@@ -348,11 +415,11 @@ describe('Adapter page view model', () => {
         },
         removingProfileId: null,
         busyProfileIds: {},
-        onRemove: vi.fn(),
         onStartBridge: vi.fn(),
         onRequestStopBridge: vi.fn(),
-        onSetBridgeAutoStart: vi.fn(),
+        onShowDetail: vi.fn(),
         onRetry: vi.fn(),
+        onStartCreate: vi.fn(),
       }),
     );
     expect(rowMarkup).toContain('端口被占用');
@@ -377,6 +444,97 @@ describe('Adapter page view model', () => {
   it('clears an old preview response when a newer selection is in flight', () => {
     expect(isCurrentAdapterPreviewRequest(3, 4)).toBe(false);
     expect(isCurrentAdapterPreviewRequest(4, 4)).toBe(true);
+  });
+
+  it('binds plan preview and apply to the exact source/target signature', () => {
+    const signatureA = adapterPlanRequestSignature({
+      sourceKind: 'provider',
+      sourceId: 'kimi-1',
+      targetAgentId: 'claude',
+    });
+    const signatureB = adapterPlanRequestSignature({
+      sourceKind: 'provider',
+      sourceId: 'kimi-2',
+      targetAgentId: 'claude',
+    });
+    const signatureTargetSwap = adapterPlanRequestSignature({
+      sourceKind: 'provider',
+      sourceId: 'kimi-1',
+      targetAgentId: 'codex',
+    });
+    const applyable = { ...plan('native_endpoint'), canApply: true };
+
+    expect(isSameAdapterPlanRequestSignature(signatureA, {
+      sourceKind: 'provider',
+      sourceId: 'kimi-1',
+      targetAgentId: 'claude',
+    })).toBe(true);
+    expect(isSameAdapterPlanRequestSignature(signatureA, signatureB)).toBe(false);
+    expect(isSameAdapterPlanRequestSignature(signatureA, signatureTargetSwap)).toBe(false);
+
+    // Old plan from A must not preview or apply after switching to B.
+    expect(isAdapterPlanMatchedToSelection(applyable, signatureA, signatureB)).toBe(false);
+    expect(canApplyAdapterSelection({
+      plan: applyable,
+      planSignature: signatureA,
+      currentSignature: signatureB,
+    })).toBe(false);
+    expect(canConfirmAdapterApply({
+      applyRequest: signatureB,
+      plan: applyable,
+      planSignature: signatureA,
+    })).toBe(false);
+
+    // Target switch is the same class of mismatch.
+    expect(canApplyAdapterSelection({
+      plan: applyable,
+      planSignature: signatureA,
+      currentSignature: signatureTargetSwap,
+    })).toBe(false);
+
+    // Matching signature + backend gate still required.
+    expect(canApplyAdapterSelection({
+      plan: applyable,
+      planSignature: signatureA,
+      currentSignature: signatureA,
+    })).toBe(true);
+    expect(canApplyAdapterSelection({
+      plan: { ...applyable, canApply: false },
+      planSignature: signatureA,
+      currentSignature: signatureA,
+    })).toBe(false);
+    expect(canApplyAdapterSelection({
+      plan: applyable,
+      planSignature: signatureA,
+      currentSignature: signatureA,
+      authIncomplete: true,
+    })).toBe(false);
+    expect(canConfirmAdapterApply({
+      applyRequest: signatureA,
+      plan: applyable,
+      planSignature: signatureA,
+    })).toBe(true);
+    expect(canConfirmAdapterApply({
+      applyRequest: null,
+      plan: applyable,
+      planSignature: signatureA,
+    })).toBe(false);
+
+    // Late response for generation N is still discarded when N+1 is current.
+    expect(isCurrentAdapterPreviewRequest(1, 2)).toBe(false);
+    expect(isAdapterPlanMatchedToSelection(applyable, signatureA, signatureA)).toBe(true);
+  });
+
+  it('clears selection when the current source is filtered or searched out of the visible list', () => {
+    const visible = [
+      { key: 'provider:kimi-1' },
+      { key: 'account:codex-1' },
+    ];
+    expect(resolveAdapterVisibleSourceKey('provider:kimi-1', visible)).toBe('provider:kimi-1');
+    // Switching 全部/API Key → 官方登录 (or a search that hides the row) must drop selection.
+    expect(resolveAdapterVisibleSourceKey('provider:kimi-1', [{ key: 'account:codex-1' }])).toBe('');
+    expect(resolveAdapterVisibleSourceKey('provider:kimi-1', [])).toBe('');
+    expect(resolveAdapterVisibleSourceKey('', visible)).toBe('');
   });
 
   it('does not reuse a stale target Agent when none are selectable', () => {
@@ -446,11 +604,12 @@ describe('Adapter page view model', () => {
     expect(JSON.stringify({ runtime, endpoint: adapterBridgeEndpointLabel(profile, runtime) })).not.toContain('token');
   });
 
-  it('uses one canonical source label with kind, current state, and a stable masked id suffix', () => {
+  it('uses one canonical source label with agent, title, current state, and a stable masked id suffix', () => {
     const label = sourceLabel({
       source: 'account', id: 'account-1234', agentId: 'claude', title: 'Work OAuth', isCurrent: true,
     });
-    expect(label).toBe('账户 · Claude Code · Work OAuth · 当前 · …1234');
+    expect(label).toBe('Claude Code · Work OAuth · 当前 · …1234');
+    expect(label).not.toMatch(/账户|Provider|connectionId/i);
   });
 
   it('preserves successful resources when another pool or bridge status fails', async () => {

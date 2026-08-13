@@ -123,25 +123,32 @@ type CompatibilityRule = {
 
 ### 4.2 首屏信息架构
 
-左右主从（`lg` 及以上并排，窄屏上下堆叠），已创建记录单独放在下方 table：
+左右主从（`lg` 及以上并排，窄屏上下堆叠），已创建记录单独放在下方紧凑服务列表：
 
 ```text
 PageHeader                                             [去 Connections]
 
-┌ 可用连接 ─────────────┐  ┌ 路由适配 ──────────────────────────┐
-│ 搜索                   │  │ 来源摘要 · 凭据类型 Badge           │
-│ [全部] [API Key] [官方]│  │ 目标 Agent                         │
-│ Kimi key  [API Key]    │  │ 路径分析 / 限制 / 配置预览 / 应用  │
-│ Codex 登录 [官方登录]  │  │ OAuth 未完成 → 去 Connections      │
-└────────────────────────┘  └────────────────────────────────────┘
+┌ 可用连接 ─────────────┐  ┌ 接入目标 ──────────────────────────┐
+│ 搜索(SearchField)      │  │ 来源摘要 · 凭据类型 Badge           │
+│ [全部] [API Key] [官方]│  │ 目标全景（每个 Agent 一张卡）：     │
+│ Kimi key  [API Key]    │  │  [Claude 直连] [Codex 桥接·实验]   │
+│ Codex 登录 [官方登录]  │  │  [Pi 配置同步] [Grok 暂不支持] …   │
+└────────────────────────┘  │ 点选目标 → 路径管道图 + 预览 + 应用 │
+                            │ OAuth 未完成 → Notice 去 Connections│
+                            └────────────────────────────────────┘
 
-已创建的适配
-来源 | 目标 | 凭据类型 | 路径 | 状态 | 端点 / Provider | 操作
-Kimi → Codex   API Key   本地协议转换   运行中   127.0.0.1:43121   [停止]
-Kimi → Claude  API Key   原生端点       已生效   Provider …        [删除]
+已创建的适配（服务列表，非数据库表格）
+● 配置已生效       Kimi 会员 Key → Codex                    [停止] [详情]
+  ● 桥接运行中     [API Key][本地协议转换] 127.0.0.1:43121⧉
+● 配置已生效       Kimi 会员 Key → Claude Code                     [详情]
 ```
 
-`mode`（`api` | `oauth`）是持久化凭据族，与 `route` / `source_kind` 正交。Kimi API Key → Codex 的 `local_bridge` 仍是 API Key 协议转换，不得标成 OAuth。
+- **目标全景**：选中来源后对每个已安装/可配置目标并行执行只读 `analyze`，卡片显示路由结论 Badge（直连 / 桥接·实验 / 配置同步 / 暂不支持）。不可配置目标置灰标注「未安装或不可配置」，这是机器状态，不是兼容性结论。单卡分析失败按卡隔离并可重试，不得伪装成「不支持」。卡片顺序固定为 `AGENTS` 目录序，不按状态重排。它只是当前来源的一行扇出，不是被禁止的全量源 × 目标矩阵。卡片 hover 以原生 title 显示 `analyze.reason` 摘要。
+- **未选择来源时**：右侧展示静态「当前支持一键接入」示例（如 Kimi Code 会员 → Claude 直连 / → Codex 桥接·实验），仅作产品引导并注明以实际分析为准；capability matrix 仍是唯一真源，示例列表随版本演进需同步。
+- **路径管道图**：点选目标后展示 `来源 →（本地桥接）→ 目标` 的数据流拓扑；仅出现在预览区。确认 Dialog 用一行路径摘要，详情 Dialog 用紧凑身份行，不重复整图。
+- 目标卡只反映 `analyze` 路由结论，不暗示可应用；Apply 依旧只看 `plan.canApply`。
+
+`mode`（`api` | `oauth`）是持久化凭据族，与 `route` / `source_kind` 正交。Kimi API Key → Codex 的 `local_bridge` 仍是 API Key 协议转换，不得标成 OAuth。`?tab=` 筛选同时作用于左侧连接列表与下方已创建适配。
 
 不默认展示：
 
@@ -165,9 +172,10 @@ Kimi → Claude  API Key   原生端点       已生效   Provider …        [�
 
 #### 步骤 B：选择目标
 
-- 目标 Agent 只列已安装或可配置的 Agent；不可用项置灰并说明原因。
-- 用户选择左侧连接并确认目标后立即运行 `plan`，局部显示 skeleton，不锁住已有适配列表。
-- 结果使用一个清晰 Badge：`直接同步`、`原生端点`、`需要本地代理` 或 `暂未支持`。
+- 选中来源后立即对所有已安装或可配置目标并行 `analyze`（目标全景），每张卡异步从 skeleton 变为路由结论 Badge；不可配置目标置灰说明原因、不发请求。
+- 来源 OAuth 未完成时整体阻断：不 fan-out、不 plan，目标区只显示「先完成授权」Notice 与去 Connections 的 CTA。
+- 用户点选目标卡后才运行 `plan`，局部显示 skeleton，不锁住已有适配列表。
+- 分析结果按 `(sourceKind, sourceId, target)` 做会话级缓存；换来源或重试时按生成计数丢弃过期响应。
 - 对 subscription 实验候选，`不支持`还须显示“当前未通过上游/条款/协议门禁”，并链接[订阅桥接专题与门禁](provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code当前结论与前置门禁)；不得以 opt-in、测试按钮或隐藏开关绕开规则。
 
 #### 步骤 C：确认配置
@@ -210,24 +218,24 @@ Kimi → Claude  API Key   原生端点       已生效   Provider …        [�
 
 ### 4.4 适配列表与详情
 
-每行只展示：
+已创建适配使用紧凑服务列表（`ListRow`），不是可拖列宽的数据库表格。每行只展示：
 
-- 状态点；
-- `来源连接 → 目标 Agent`；
-- 路径 Badge；
-- 本地 endpoint（仅桥接）；
-- 当前状态、最近请求或最近错误；
-- 与状态匹配的主操作：启动、停止、重新验证；
-- `详情`。
+- **两层状态**（一列两行，不合并成单点）：第一行持久配置状态（`配置已生效 / 应用中 / 需要处理`）；第二行仅桥接显示观测运行状态（`桥接运行中 / 启动中 / 停止中 / 桥接已降级 / 桥接启动失败 / 桥接已停止 / 状态不可用`）。`getBridgeStatus` 读取失败显示 `状态不可用`，不得伪装成桥接故障；`needs_attention` 是主要视觉警告但不遮蔽运行状态。
+- `来源连接 → 目标 Agent`：按 `(sourceKind, sourceId)` 反查连接池取人类可读名称；来源已删除时回退 profile 名并标注。
+- 凭据类型与路径 Badge；本地 endpoint（仅桥接，一键复制）。
+- 与状态匹配的单一主操作：启动 / 停止 / 重试启动（degraded 仍视为持有 listener，只能停止）。
+- `详情`。删除与 auto-start 不占行内，移入详情 Dialog。
 
-列表区顶部仅在存在 `local_bridge` 时显示一行后台服务摘要：`运行中 / 启动中 / 已停止 / 异常`、桥接数量和 `重新启动`。它不是新的监控面板；`config_sync`、`native_endpoint` 不依赖后台服务，也不计入数量。
+列表区顶部仅在存在 `local_bridge` 时显示一行后台服务摘要：桥接数量、运行数量与托盘依赖提示。它不是新的监控面板；`config_sync`、`native_endpoint` 不依赖后台服务，也不计入数量。
 
-详情 Dialog 使用 `detail / edit` 三态：
+详情 Dialog 为只读 detail 单态（当前后端唯一可编辑字段是 auto-start，直接用行内 Switch，不需要 edit 态与 dirty 保护）：
 
-- 详情：配置摘要、能力限制、最近 5 条事件、生成的 Connection 链接。
-- 编辑：模型映射、端口/自动启动等必要字段；dirty 时才允许保存。
-- 关闭或切换对象时若有未保存变更，使用二次确认 Dialog 拦截。
-- 停止/删除走独立确认；只禁用当前行，不锁住整个列表。
+- 身份行（来源 → 目标 + 凭据/路径 Badge）、两层状态。
+- 桥接区：endpoint 复制、上游状态、auto-start 开关（明确「不是系统开机自启」）。
+- 生成的 Connection 链接；`needs_attention` 的恢复步骤（错误码 + 「启动只恢复运行时，不修复配置不一致」+ 删除重建兜底）。
+- 折叠的诊断信息：profile id、规则 id/版本、时间戳、最近错误码、`打开日志目录`（复用 settings 的 `openLogsDir`）。规则技术字段不与来源/目标同级展示。
+- 状态点仅过渡态（应用中 / 启动中 / 停止中）使用脉冲动画；稳态（运行中 / 已生效）保持静点，与全站状态点行为一致。
+- 停止/删除走独立确认；只禁用当前行，不锁住整个列表。最近事件、模型映射编辑、探测按钮在后端提供对应 API 前不做。
 
 ### 4.5 页面状态与文案
 
@@ -239,6 +247,8 @@ Kimi → Claude  API Key   原生端点       已生效   Provider …        [�
 | unsupported | 中性说明，不使用红色故障态；给出原因、专题证据与可用替代路径。对 subscription 候选明确显示 `当前不支持`、`plan.canApply=false`，不显示 Apply、启动 bridge 或“强制继续”入口 |
 | starting/stopping | 当前行按钮 loading，其他行可操作 |
 | error | 行内短错误 + `查看诊断`；toast 只用于操作结果，不承载完整原因 |
+| status_unavailable | 桥接状态读取失败时第二层状态显示 `状态不可用`（中性），不改写为桥接故障，也不清空持久 profile 信息 |
+| analyze_failed | 目标全景单卡显示 `分析失败 · 点击重试`，按卡隔离，不影响其他目标与已有适配列表 |
 | needs_attention | warning 状态，显示恢复动作，不自动反复重试写配置 |
 
 ## 5. 服务设计

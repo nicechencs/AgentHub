@@ -1,4 +1,14 @@
-import { AGENT_MAP } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
+import {
+  CONNECTION_KIND_FILTERS,
+  connectionKindFilterLabel,
+  connectionKindFromAdapterProfileMode,
+  connectionKindLabel,
+  parseConnectionKindFilter,
+  type ConnectionKind,
+  type ConnectionKindFilter,
+} from '@/lib/connection-kind';
+import { authHealthLabel } from '@/lib/backend/contracts/auth-state';
 import { mergeConnectionEntries, type ConnectionEntry } from '@/pages/connections/connection-model';
 import type {
   Account,
@@ -20,19 +30,22 @@ import {
   type AdapterSupport,
 } from '@/lib/backend/contracts/adapter';
 
-export const ADAPTER_CREDENTIAL_FILTERS = ['all', 'api', 'oauth'] as const;
-export type AdapterCredentialFilter = (typeof ADAPTER_CREDENTIAL_FILTERS)[number];
+/**
+ * Adapter page filter uses the shared connection-kind taxonomy (`all|oauth|apikey`).
+ * Wire profile mode still uses backend `api|oauth`; map at edges only.
+ */
+export const ADAPTER_CREDENTIAL_FILTERS = CONNECTION_KIND_FILTERS.map((item) => item.value);
+export type AdapterCredentialFilter = ConnectionKindFilter;
 
 /** Legacy alias: old `?tab=api|oauth` deep links map onto the credential filter. */
 export type AdapterTab = Exclude<AdapterCredentialFilter, 'all'>;
 
 /**
- * Page filter. Missing / unknown values default to all profiles.
- * Old `?tab=api|oauth` links stay valid as a credential-family filter.
+ * Page filter. Missing / unknown values default to all.
+ * Accepts legacy `?tab=api|oauth` and normalizes `api` → `apikey`.
  */
 export function parseAdapterCredentialFilter(raw: string | null | undefined): AdapterCredentialFilter {
-  if (raw === 'oauth' || raw === 'api') return raw;
-  return 'all';
+  return parseConnectionKindFilter(raw);
 }
 
 /** @deprecated Prefer {@link parseAdapterCredentialFilter}; unknown values now default to `all`. */
@@ -41,9 +54,7 @@ export function parseAdapterTab(raw: string | null | undefined): AdapterCredenti
 }
 
 export function adapterCredentialFilterLabel(filter: AdapterCredentialFilter): string {
-  if (filter === 'oauth') return '官方登录';
-  if (filter === 'api') return 'API Key';
-  return '全部';
+  return connectionKindFilterLabel(filter);
 }
 
 export function adapterTabLabel(tab: AdapterTab | AdapterCredentialFilter): string {
@@ -51,23 +62,23 @@ export function adapterTabLabel(tab: AdapterTab | AdapterCredentialFilter): stri
 }
 
 export function adapterPageDescription(): string {
-  return '复用 Connections 中的 API Key 或官方登录，接入另一个 Agent。不会把一家 OAuth 转成另一家授权。';
+  return '复用 Connections 里的 API Key 或官方登录，接入另一个 Agent。';
 }
 
 export function adapterTabDescription(_tab?: AdapterTab | AdapterCredentialFilter): string {
   return adapterPageDescription();
 }
 
-export function connectionKindForFilter(filter: Exclude<AdapterCredentialFilter, 'all'>): 'apikey' | 'oauth' {
-  return filter === 'oauth' ? 'oauth' : 'apikey';
+export function connectionKindForFilter(filter: Exclude<AdapterCredentialFilter, 'all'>): ConnectionKind {
+  return filter;
 }
 
-export function connectionKindForTab(tab: AdapterTab): 'apikey' | 'oauth' {
+export function connectionKindForTab(tab: AdapterTab): ConnectionKind {
   return connectionKindForFilter(tab);
 }
 
 export function adapterCredentialKindLabel(mode: AdapterProfileMode): string {
-  return mode === 'oauth' ? '官方登录' : 'API Key';
+  return connectionKindLabel(connectionKindFromAdapterProfileMode(mode));
 }
 
 export function filterProfilesByMode<T extends { mode?: AdapterProfileMode | null }>(
@@ -82,7 +93,9 @@ export function filterProfilesByCredential<T extends { mode?: AdapterProfileMode
   filter: AdapterCredentialFilter,
 ): T[] {
   if (filter === 'all') return [...profiles];
-  return filterProfilesByMode(profiles, filter);
+  // Page filter is `apikey`; profile wire mode is still `api`.
+  const mode: AdapterProfileMode = filter === 'oauth' ? 'oauth' : 'api';
+  return filterProfilesByMode(profiles, mode);
 }
 
 export type AdapterResourceLoadState = 'loading' | 'ready' | 'partial' | 'error';
@@ -304,6 +317,89 @@ export function canApplyAdapterPlan(plan: AdapterApplyPlan | null): boolean {
 }
 
 /**
+ * Client-side binding for a plan request. A plan is only safe for preview/apply
+ * when this signature still matches the user's current selection.
+ */
+export type AdapterPlanRequestSignature = {
+  sourceKind: 'account' | 'provider';
+  sourceId: string;
+  targetAgentId: AgentId;
+};
+
+export function adapterPlanRequestSignature(input: {
+  sourceKind: 'account' | 'provider';
+  sourceId: string;
+  targetAgentId: AgentId;
+}): AdapterPlanRequestSignature {
+  return {
+    sourceKind: input.sourceKind,
+    sourceId: input.sourceId,
+    targetAgentId: input.targetAgentId,
+  };
+}
+
+export function isSameAdapterPlanRequestSignature(
+  left: AdapterPlanRequestSignature | null | undefined,
+  right: AdapterPlanRequestSignature | null | undefined,
+): boolean {
+  if (!left || !right) return false;
+  return left.sourceKind === right.sourceKind
+    && left.sourceId === right.sourceId
+    && left.targetAgentId === right.targetAgentId;
+}
+
+/**
+ * Preview / canApply / confirm must all require an exact signature match.
+ * Generation already drops late responses; this blocks any leftover plan state.
+ */
+export function isAdapterPlanMatchedToSelection(
+  plan: AdapterApplyPlan | null | undefined,
+  planSignature: AdapterPlanRequestSignature | null | undefined,
+  current: AdapterPlanRequestSignature | null | undefined,
+): plan is AdapterApplyPlan {
+  return Boolean(plan) && isSameAdapterPlanRequestSignature(planSignature, current);
+}
+
+/** Apply only when the bound plan matches the current selection and the backend gate is open. */
+export function canApplyAdapterSelection(input: {
+  plan: AdapterApplyPlan | null | undefined;
+  planSignature: AdapterPlanRequestSignature | null | undefined;
+  currentSignature: AdapterPlanRequestSignature | null | undefined;
+  authIncomplete?: boolean;
+}): boolean {
+  if (input.authIncomplete) return false;
+  if (!isAdapterPlanMatchedToSelection(input.plan, input.planSignature, input.currentSignature)) {
+    return false;
+  }
+  return canApplyAdapterPlan(input.plan);
+}
+
+/** Final confirm gate: re-check signature so a stale dialog cannot submit a new request. */
+export function canConfirmAdapterApply(input: {
+  applyRequest: AdapterPlanRequestSignature | null | undefined;
+  plan: AdapterApplyPlan | null | undefined;
+  planSignature: AdapterPlanRequestSignature | null | undefined;
+  authIncomplete?: boolean;
+}): boolean {
+  if (!input.applyRequest) return false;
+  return canApplyAdapterSelection({
+    plan: input.plan,
+    planSignature: input.planSignature,
+    currentSignature: input.applyRequest,
+    authIncomplete: input.authIncomplete,
+  });
+}
+
+/** Selection is only operable when the key is still present in the visible (filtered/search) list. */
+export function resolveAdapterVisibleSourceKey(
+  sourceKey: string,
+  visibleEntries: readonly { key: string }[],
+): string {
+  if (!sourceKey) return '';
+  return visibleEntries.some((entry) => entry.key === sourceKey) ? sourceKey : '';
+}
+
+/**
  * Subscription-bridge candidates (e.g. Codex/ChatGPT → Claude) must stay
  * fail-closed until every gate in the adaptation matrix is green.
  * Prefer structured `gateKind` from core; keep a narrow text fallback for legacy wires.
@@ -325,7 +421,7 @@ export function isSubscriptionGateUnsupported(
   return mentionsCodexOrChatgpt && (mentionsClaude || mentionsGate);
 }
 
-/** Neutral unsupported presentation: reason, gate, and safe alternatives only. */
+/** Neutral unsupported presentation: short reason + few alternatives. */
 export function unsupportedPresentation(
   analysis: AdapterRouteAnalysis,
   /** Present so callers can pass the paired plan; canApply is always forced false. */
@@ -334,6 +430,7 @@ export function unsupportedPresentation(
   headline: string;
   badgeLabel: string;
   reason: string;
+  summary: string;
   gateLines: string[];
   alternatives: string[];
   safetyNote: string;
@@ -344,56 +441,105 @@ export function unsupportedPresentation(
   const wireWouldApply = plan?.canApply === true;
   return {
     headline: subscription ? '当前不支持' : '暂未支持此组合',
-    badgeLabel: '当前不支持',
+    badgeLabel: '不可用',
     reason: analysis.reason,
+    summary: '不能应用，不会改动配置。',
     gateLines: subscription
       ? [
-          '门禁：当前未通过上游授权、条款与协议兼容性验证。',
-          'plan.canApply=false：不会创建适配、启动 Bridge，也没有“强制继续”。',
-          '不会把 Codex / ChatGPT 订阅凭据写入 Claude，也不会在界面或日志展示原始凭据。',
-          ...(wireWouldApply ? ['检测到异常 plan.canApply=true，界面仍保持只读并拒绝应用。'] : []),
+          '跨产品授权尚未验证。',
+          '不会创建适配或启动桥接。',
+          ...(wireWouldApply ? ['异常可应用标记已被忽略。'] : []),
         ]
       : [
-          '门禁：当前没有可执行的适配规则，或规则尚未通过验证。',
-          'plan.canApply=false：不会写入配置、启动本机服务或改变当前连接。',
-          ...(wireWouldApply ? ['检测到异常 plan.canApply=true，界面仍保持只读并拒绝应用。'] : []),
+          '没有可用路径。',
+          '不会写入配置或启动服务。',
+          ...(wireWouldApply ? ['异常可应用标记已被忽略。'] : []),
         ],
     alternatives: subscription
       ? [
-          '在 Claude Code 使用自身官方登录完成授权。',
-          '改用已支持的 API Key 来源（例如 Kimi Code 会员 → Claude 原生端点）。',
-          '继续使用当前 Codex / ChatGPT 连接本身，不跨 Agent 复用订阅凭据。',
+          '改用 Claude 官方登录。',
+          '改用已支持的 API Key，如 Kimi → Claude。',
         ]
       : [
-          '继续使用原连接。',
-          '改用目标 Agent 自身登录。',
-          '更换已支持的来源与目标组合（例如已支持 API Key 路径）。',
+          '改用目标 Agent 自己登录。',
+          '换一条已支持的组合。',
         ],
-    safetyNote: '当前不支持不等于连接失效；本次分析只读，不会读取或显示凭据。',
+    safetyNote: '',
     canApply: false,
   };
 }
 
-/** Source selection hint: kind + auth health only; never credential material. */
+/**
+ * Compact user-facing outcome. Prefer one title + one short line.
+ * Backend fields (canApply / route) stay out of visible copy.
+ */
+export function adapterPreviewOutcome(input: {
+  route: AdapterRouteAnalysis['route'];
+  canApply: boolean;
+  authIncomplete?: boolean;
+}): {
+  title: string;
+  badgeLabel: string;
+  badgeVariant: 'success' | 'warning' | 'default' | 'info';
+  nextStep: string;
+} {
+  if (input.authIncomplete) {
+    return {
+      title: '先完成授权',
+      badgeLabel: '待授权',
+      badgeVariant: 'warning',
+      nextStep: '到 Connections 完成授权。',
+    };
+  }
+  if (input.canApply && input.route === 'local_bridge') {
+    return {
+      title: '可接入 · 本地桥接',
+      badgeLabel: '可应用',
+      badgeVariant: 'success',
+      nextStep: '确认后创建本机桥接，需保持托盘运行。',
+    };
+  }
+  if (input.canApply && input.route === 'native_endpoint') {
+    return {
+      title: '可接入 · 直接写入',
+      badgeLabel: '可应用',
+      badgeVariant: 'success',
+      nextStep: '确认后写入目标配置。',
+    };
+  }
+  if (input.route === 'config_sync') {
+    return {
+      title: '仅可预览',
+      badgeLabel: '仅预览',
+      badgeVariant: 'warning',
+      nextStep: '暂不支持一键应用。',
+    };
+  }
+  return {
+    title: routeLabel(input.route),
+    badgeLabel: '仅预览',
+    badgeVariant: 'default',
+    nextStep: '暂不支持一键应用。',
+  };
+}
+
+export function adapterServiceImpactLabel(
+  impact: AdapterApplyPlan['serviceImpact'] | null | undefined,
+): string {
+  return impact === 'requires_local_bridge'
+    ? '本机桥接'
+    : '无需本地服务';
+}
+
+/** Source health only; kind is already shown as a badge. Never credential material. */
 export function sourceStatusHint(entry: Pick<ConnectionEntry, 'kind' | 'authHealth' | 'authStatus'>): string {
-  const kind = entry.kind === 'oauth' ? '官方登录' : 'API Key';
-  const health = entry.authHealth
-    ? ({
-        verified: '已连接 · 已验证',
-        renewable: '已连接 · 可续期（未验证）',
-        configured: '已配置 · 未验证',
-        needs_login: '需要重新登录 / 继续授权',
-        unknown: '状态未知',
-        missing: '未登录',
-      } as const)[entry.authHealth]
-    : entry.authStatus === 'expired'
-      ? '需要重新登录 / 继续授权'
-      : entry.authStatus === 'none'
-        ? '未登录'
-        : entry.authStatus === 'expiring'
-          ? '即将过期'
-          : '已连接';
-  return `${kind} · ${health} · 仅引用 connectionId，不展示凭据`;
+  if (entry.authHealth) {
+    return authHealthLabel(entry.authHealth);
+  }
+  if (entry.authStatus === 'expired') return authHealthLabel('needs_login');
+  if (entry.authStatus === 'none') return authHealthLabel('missing');
+  if (entry.authStatus === 'expiring') return '即将过期';
+  return entry.kind === 'oauth' ? '已连接' : '已配置';
 }
 
 /** The apply mutation is final; runtime probing is a later best-effort concern. */
@@ -424,11 +570,12 @@ export function sourceKindLabel(sourceKind: 'account' | 'provider'): string {
 /** One canonical source label for selection, preview, and confirmation. */
 export function sourceLabel(entry: Pick<ConnectionEntry, 'source' | 'id' | 'agentId' | 'title' | 'isCurrent'>): string {
   const current = entry.isCurrent ? ' · 当前' : '';
-  return `${sourceKindLabel(entry.source)} · ${AGENT_MAP[entry.agentId]?.name ?? entry.agentId} · ${entry.title}${current} · ${maskedIdSuffix(entry.id)}`;
+  // Lead with human names; keep a short id suffix only for same-title disambiguation.
+  return `${agentDisplayName(entry.agentId)} · ${entry.title}${current} · ${maskedIdSuffix(entry.id)}`;
 }
 
 export function adapterProfileRecordLabel(profile: AdapterProfile): string {
-  return `${sourceKindLabel(profile.sourceKind)} · ${maskedIdSuffix(profile.sourceId)} → ${AGENT_MAP[profile.targetAgentId]?.name ?? profile.targetAgentId}`;
+  return `${sourceKindLabel(profile.sourceKind)} · ${maskedIdSuffix(profile.sourceId)} → ${agentDisplayName(profile.targetAgentId)}`;
 }
 
 export function adapterProfileStatusLabel(status: AdapterProfileStatus): string {
@@ -597,13 +744,13 @@ export function mergeAdapterProfileLoad(
 /** Never interpolate a secret plan value into the page. */
 export function adapterPlanChangeLabel(change: AdapterApplyPlan['changes'][number]): string {
   return change.secret
-    ? `${change.target} · ${change.field}：引用已保存 Connection（不会显示）`
+    ? `${change.target} · ${change.field}：使用已保存的密钥`
     : `${change.target} · ${change.field}：${change.value ?? '保持默认'}`;
 }
 
 /** Secret actions are descriptive references, not a credential display. */
 export function adapterActionLabel(action: AdapterAction): string {
-  return `${action.description}${action.secret ? '（引用已保存 Connection）' : action.value ? `：${action.value}` : ''}`;
+  return `${action.description}${action.secret ? '（使用已保存的密钥）' : action.value ? `：${action.value}` : ''}`;
 }
 
 export function resourceFailureMessage(errors: AdapterResourceErrors): string | null {
@@ -611,9 +758,25 @@ export function resourceFailureMessage(errors: AdapterResourceErrors): string | 
     errors.accounts ? '账户' : null,
     errors.providers ? 'Provider' : null,
   ].filter(Boolean);
-  return failed.length ? `部分连接资源未能加载：${failed.join('、')}。已保留其余可用数据。` : null;
+  return failed.length ? `部分连接未能加载：${failed.join('、')}。其余仍可用。` : null;
 }
 
 export function targetAgentName(agentId: AgentId): string {
-  return AGENT_MAP[agentId]?.name ?? agentId;
+  return agentDisplayName(agentId);
+}
+
+/**
+ * Soft agent-colored badge tone for Adapter source rows.
+ * Uses brand CSS vars only (no new hex palette).
+ */
+export function adapterAgentBadgeStyle(color: string): {
+  color: string;
+  backgroundColor: string;
+  boxShadow: string;
+} {
+  return {
+    color,
+    backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)`,
+    boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color} 34%, transparent)`,
+  };
 }
