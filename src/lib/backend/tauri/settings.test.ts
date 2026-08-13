@@ -3,6 +3,7 @@ import { StorageKey } from '@/lib/ui-preferences';
 import {
   closeToTraySettingValue,
   createTauriSettingsPort,
+  isAlreadyDisabledAutostartError,
   resolveCloseToTray,
 } from './settings';
 
@@ -249,10 +250,90 @@ describe('createTauriSettingsPort closeToTray', () => {
     });
 
     const port = createTauriSettingsPort();
+    // Plugin reports currently disabled → enable should call enable().
+    autostartIsEnabled.mockResolvedValue(false);
     await port.updateSettings({ autoStart: true });
     expect(autostartEnable).toHaveBeenCalledTimes(1);
 
+    // Plugin reports currently enabled → disable should call disable().
+    autostartIsEnabled.mockResolvedValue(true);
     await port.updateSettings({ autoStart: false });
     expect(autostartDisable).toHaveBeenCalledTimes(1);
+  });
+
+  it('updateSettings skips OS autostart write when already at desired state', async () => {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'set_setting') return;
+      if (cmd === 'get_app_settings') {
+        return {
+          theme: 'system',
+          language: 'zh-CN',
+          logLevel: 'info',
+          logRetentionDays: 14,
+          closeToTray: true,
+        };
+      }
+      if (cmd === 'get_path_info') {
+        return {
+          dataDir: 'D:/data',
+          dbPath: 'D:/data/agenthub.db',
+          backupsDir: 'D:/data/backups',
+          logsDir: 'D:/data/logs',
+        };
+      }
+      throw new Error(`unexpected invoke: ${cmd}`);
+    });
+
+    autostartIsEnabled.mockResolvedValue(false);
+    const port = createTauriSettingsPort();
+    await port.updateSettings({ autoStart: false });
+    expect(autostartDisable).not.toHaveBeenCalled();
+    expect(autostartEnable).not.toHaveBeenCalled();
+  });
+
+  it('updateSettings treats missing Run key on disable as success', async () => {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'set_setting') return;
+      if (cmd === 'get_app_settings') {
+        return {
+          theme: 'system',
+          language: 'zh-CN',
+          logLevel: 'info',
+          logRetentionDays: 14,
+          closeToTray: true,
+        };
+      }
+      if (cmd === 'get_path_info') {
+        return {
+          dataDir: 'D:/data',
+          dbPath: 'D:/data/agenthub.db',
+          backupsDir: 'D:/data/backups',
+          logsDir: 'D:/data/logs',
+        };
+      }
+      throw new Error(`unexpected invoke: ${cmd}`);
+    });
+
+    // isEnabled may report true while the Run value is already gone, or probe fails.
+    autostartIsEnabled.mockResolvedValue(true);
+    autostartDisable.mockRejectedValueOnce(
+      new Error('系统找不到指定的文件。 (os error 2)'),
+    );
+
+    const port = createTauriSettingsPort();
+    await expect(port.updateSettings({ autoStart: false })).resolves.toBeDefined();
+    expect(autostartDisable).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('isAlreadyDisabledAutostartError', () => {
+  it('matches Windows missing-value errors', () => {
+    expect(
+      isAlreadyDisabledAutostartError(new Error('系统找不到指定的文件。 (os error 2)')),
+    ).toBe(true);
+    expect(
+      isAlreadyDisabledAutostartError(new Error('The system cannot find the file specified. (os error 2)')),
+    ).toBe(true);
+    expect(isAlreadyDisabledAutostartError(new Error('access denied'))).toBe(false);
   });
 });

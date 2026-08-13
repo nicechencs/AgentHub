@@ -23,10 +23,40 @@ async function readOsAutoStart(): Promise<boolean | undefined> {
   }
 }
 
+/**
+ * auto-launch 0.5 on Windows: `disable()` calls `delete_value` and fails with
+ * ERROR_FILE_NOT_FOUND (os error 2 / 系统找不到指定的文件) when the Run key
+ * entry is already absent. Treat that as already-disabled success.
+ */
+export function isAlreadyDisabledAutostartError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /os error 2|ERROR_FILE_NOT_FOUND|找不到指定的文件|cannot find the file|not found/i.test(
+    msg,
+  );
+}
+
+/**
+ * Write OS login-item. Skips when already at the desired state so saving other
+ * general settings does not re-touch the registry. Disable is idempotent on
+ * Windows (missing Run value is success).
+ */
 async function writeOsAutoStart(enabled: boolean): Promise<void> {
-  const { enable, disable } = await import('@tauri-apps/plugin-autostart');
-  if (enabled) await enable();
-  else await disable();
+  const { enable, disable, isEnabled } = await import('@tauri-apps/plugin-autostart');
+  try {
+    if ((await isEnabled()) === enabled) return;
+  } catch {
+    // Plugin probe failed — still attempt the write below.
+  }
+  if (enabled) {
+    await enable();
+    return;
+  }
+  try {
+    await disable();
+  } catch (e) {
+    if (isAlreadyDisabledAutostartError(e)) return;
+    throw e;
+  }
 }
 
 const log = logger.scope('backend:tauri:settings');
