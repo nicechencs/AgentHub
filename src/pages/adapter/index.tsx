@@ -55,6 +55,7 @@ export {
   adapterApplyCommit,
   adapterBridgeEndpointLabel,
   adapterBridgeStateLabel,
+  adapterBridgeUpstreamLabel,
   adapterPageViewState,
   adapterPlanChangeLabel,
   adapterProfileRecordLabel,

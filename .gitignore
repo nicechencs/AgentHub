@@ -62,3 +62,4 @@ latest.json
 /release-out/
 .codex/
 *.exe
+.pi/

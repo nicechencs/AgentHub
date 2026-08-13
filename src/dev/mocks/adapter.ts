@@ -440,9 +440,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         port: profile.localPort ?? current?.port ?? null,
         endpoint: profile.localPort ? `http://127.0.0.1:${profile.localPort}/v1` : null,
         startedAt: current?.startedAt ?? null,
-        // Desktop bridge DTO currently only emits upstream "unknown"; keep mock
-        // aligned so dogfood does not invent richer health than Tauri returns.
-        upstreamStatus: 'unknown',
+        upstreamStatus: 'stopped',
       };
       state.bridgeStatuses.set(profileId, status);
       return { ...status };
@@ -456,7 +454,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         port: profile.localPort ?? null,
         endpoint: profile.localPort ? `http://127.0.0.1:${profile.localPort}/v1` : null,
         startedAt: null,
-        upstreamStatus: 'unknown',
+        upstreamStatus: 'stopped',
       };
       return { ...status };
     },

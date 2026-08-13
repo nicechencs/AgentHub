@@ -14,6 +14,7 @@ import {
   adapterApplyCommit,
   adapterBridgeEndpointLabel,
   adapterBridgeStateLabel,
+  adapterBridgeUpstreamLabel,
   adapterPageViewState,
   adapterPlanChangeLabel,
   adapterProfileRecordLabel,
@@ -30,7 +31,15 @@ import {
   unsupportedPresentation,
 } from './index';
 import { AdapterPreviewResult, isBridgeStopCapable, openAdapterEvidence } from './adapter-components';
-import { loadAdapterPageResources, supportBadge } from './adapter-model';
+import { startAdapterBridgeStatusPoll } from './use-adapter-resources';
+import {
+  ADAPTER_BRIDGE_STATUS_POLL_MS,
+  adapterBridgeProfilesToPoll,
+  applyAdapterBridgeStatusPoll,
+  loadAdapterPageResources,
+  shouldPollAdapterBridgeStatus,
+  supportBadge,
+} from './adapter-model';
 import type { Account, Provider } from '@/lib/types';
 
 const evidence = [{
@@ -290,6 +299,10 @@ describe('Adapter page view model', () => {
     };
     expect(adapterBridgeStateLabel(runtime.state)).toBe('运行中');
     expect(adapterBridgeEndpointLabel(profile, runtime)).toBe('127.0.0.1:32123');
+    expect(adapterBridgeUpstreamLabel(runtime.upstreamStatus)).toBe('已连接');
+    expect(adapterBridgeUpstreamLabel('stopped')).toBe('已停止');
+    expect(adapterBridgeUpstreamLabel('degraded')).toBe('降级');
+    expect(adapterBridgeUpstreamLabel('unavailable')).toBe('不可用');
     expect(JSON.stringify({ runtime, endpoint: adapterBridgeEndpointLabel(profile, runtime) })).not.toContain('token');
   });
 
@@ -394,5 +407,67 @@ describe('Adapter profile interactions', () => {
     expect(isBridgeStopCapable('degraded')).toBe(true);
     expect(isBridgeStopCapable('starting')).toBe(false);
     expect(isBridgeStopCapable('stopped')).toBe(false);
+  });
+
+  it('polls only running or degraded local-bridge profiles and clears a stale generation', () => {
+    const running = {
+      id: 'bridge-running', name: 'Running', sourceKind: 'provider' as const, sourceId: 'source-1',
+      targetAgentId: 'codex' as const, route: 'local_bridge' as const, status: 'active' as const,
+      ruleId: 'bridge', ruleVersion: '1', generatedProviderId: 'codex-bridge-1', localPort: 32123,
+      autoStart: true, createdAt: '2026-08-12T00:00:00Z', updatedAt: '2026-08-12T00:00:00Z',
+    };
+    const stopped = { ...running, id: 'bridge-stopped' };
+    const native = { ...running, id: 'native-1', route: 'native_endpoint' as const, localPort: null };
+    const statuses = {
+      [running.id]: { profileId: running.id, state: 'running' as const, port: 32123, upstreamStatus: 'connected' },
+      [stopped.id]: { profileId: stopped.id, state: 'stopped' as const, port: 32123, upstreamStatus: 'stopped' },
+    };
+    expect(shouldPollAdapterBridgeStatus(running, statuses[running.id])).toBe(true);
+    expect(shouldPollAdapterBridgeStatus(running, { ...statuses[running.id], state: 'degraded' })).toBe(true);
+    expect(shouldPollAdapterBridgeStatus(stopped, statuses[stopped.id])).toBe(false);
+    expect(shouldPollAdapterBridgeStatus(native, statuses[running.id])).toBe(false);
+    expect(adapterBridgeProfilesToPoll([running, stopped, native], statuses).map((item) => item.id)).toEqual([running.id]);
+    expect(ADAPTER_BRIDGE_STATUS_POLL_MS).toBeGreaterThanOrEqual(3_000);
+    expect(ADAPTER_BRIDGE_STATUS_POLL_MS).toBeLessThanOrEqual(5_000);
+
+    const current = {
+      entries: [],
+      profiles: [running],
+      bridgeStatuses: statuses,
+      errors: { bridgeStatuses: {} },
+      connectionState: 'ready' as const,
+      profileState: 'ready' as const,
+    };
+    const next = applyAdapterBridgeStatusPoll(current, [running], [{
+      status: 'fulfilled',
+      value: { profileId: running.id, state: 'degraded', port: 32123, upstreamStatus: 'degraded' },
+    }]);
+    expect(next.bridgeStatuses[running.id]).toMatchObject({ state: 'degraded', upstreamStatus: 'degraded' });
+
+    const failed = applyAdapterBridgeStatusPoll(current, [running], [{
+      status: 'rejected',
+      reason: new Error('status read failed'),
+    }]);
+    expect(failed.bridgeStatuses[running.id]).toMatchObject({ state: 'error', upstreamStatus: 'unavailable' });
+    expect(failed.errors.bridgeStatuses[running.id]).toBeInstanceOf(Error);
+    expect(isCurrentAdapterPreviewRequest(1, 2)).toBe(false);
+
+    let generation = 1;
+    const setIntervalFn = vi.fn().mockReturnValue(77);
+    const clearIntervalFn = vi.fn();
+    const stop = startAdapterBridgeStatusPoll({
+      getGeneration: () => generation,
+      getResources: () => current,
+      apply: vi.fn(),
+      getBridgeStatus: async () => {
+        throw new Error('poll must not run after dispose');
+      },
+      setIntervalFn: setIntervalFn as unknown as typeof setInterval,
+      clearIntervalFn: clearIntervalFn as unknown as typeof clearInterval,
+    });
+    expect(setIntervalFn).toHaveBeenCalledWith(expect.any(Function), ADAPTER_BRIDGE_STATUS_POLL_MS);
+    generation += 1;
+    stop();
+    expect(clearIntervalFn).toHaveBeenCalledWith(77);
   });
 });

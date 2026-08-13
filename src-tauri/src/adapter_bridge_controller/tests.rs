@@ -1,11 +1,25 @@
 use super::*;
 
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+
+use agenthub_core::adapters::{AdapterRegistry, AgentAdapter};
 use agenthub_core::bridge::{
-    BridgeHostError, BridgeStartSpec, BridgeUpstreamConfig, ResolvedAuth,
+    BridgeHostError, BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamStatus, ResolvedAuth,
 };
-use agenthub_core::services::AdapterBridgeRuntimeMaterial;
-use agenthub_core::storage::AdapterProfileRepo;
+use agenthub_core::error::{AppError, Result as CoreResult};
+use agenthub_core::models::{
+    AgentConfig, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
+    InstallChannel, Provider, RunOptions, RunSpec,
+};
+use agenthub_core::services::{
+    AdapterBridgePrepareRequest, AdapterBridgePrepared, AdapterBridgeProviderProjection,
+    AdapterBridgeRuntimeMaterial, ProviderService,
+};
+use agenthub_core::storage::{AdapterProfileRepo, ProviderRepo};
 use agenthub_core::AgentHub;
+use serde_json::json;
 
 fn profile(
     id: &str,
@@ -56,6 +70,51 @@ fn status_dto_never_serializes_local_or_upstream_bearers() {
         assert!(!json.contains("local-bearer-that-must-never-serialize"));
         assert!(!json.contains("upstream-bearer-that-must-never-serialize"));
         assert!(!json.contains("base_url"));
+        host.shutdown().await.unwrap();
+    });
+}
+
+#[test]
+fn status_dto_maps_observed_upstream_and_missing_instance_to_stopped() {
+    tauri::async_runtime::block_on(async {
+        let host = BridgeRuntimeHost::new();
+        let runtime = host.start(start_spec("profile-upstream")).await.unwrap();
+        let unknown = AdapterBridgeStatusDto::from_runtime(runtime.clone());
+        assert_eq!(unknown.upstream_status, "unknown");
+        assert_eq!(unknown.state, "running");
+
+        let connected = host
+            .record_upstream_outcome("profile-upstream", BridgeUpstreamStatus::Connected)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            AdapterBridgeStatusDto::from_runtime(connected).upstream_status,
+            "connected"
+        );
+
+        let degraded = host
+            .record_upstream_outcome("profile-upstream", BridgeUpstreamStatus::Degraded)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            AdapterBridgeStatusDto::from_runtime(degraded).upstream_status,
+            "degraded"
+        );
+
+        let stopped = AdapterBridgeStatusDto::from_runtime(
+            host.stop("profile-upstream").await.unwrap(),
+        );
+        assert_eq!(stopped.state, "stopped");
+        assert_eq!(stopped.upstream_status, "stopped");
+
+        let missing = AdapterBridgeStatusDto::stopped(&profile(
+            "profile-upstream",
+            AdapterRoute::LocalBridge,
+            AdapterProfileStatus::Active,
+            true,
+        ));
+        assert_eq!(missing.state, "stopped");
+        assert_eq!(missing.upstream_status, "stopped");
         host.shutdown().await.unwrap();
     });
 }
@@ -306,4 +365,352 @@ fn direct_remove_waits_for_the_same_target_coordinator() {
             .unwrap()
             .is_none());
     });
+}
+
+fn kimi_source(id: &str, api_key: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Kimi,
+        name: "Kimi membership".into(),
+        settings_config: json!({"apiKey": api_key}),
+        meta: json!({"preset": "kimi-code-membership"}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+fn restore_prepare_request(source_id: &str) -> AdapterBridgePrepareRequest {
+    AdapterBridgePrepareRequest {
+        source_kind: AdapterSourceKind::Provider,
+        source_id: source_id.into(),
+        target_agent_id: AgentId::Codex,
+        auto_start: true,
+    }
+}
+
+fn create_projection(hub: &AgentHub, prepared: &AdapterBridgePrepared, port: u16) -> Provider {
+    let input = match prepared.provider_projection(port).unwrap() {
+        AdapterBridgeProviderProjection::Create(input) => input,
+        other => panic!("expected create projection, got {other:?}"),
+    };
+    // Keep the generated row non-current so realign never writes ~/.codex.
+    assert!(!input.is_current);
+    hub.providers.create(&input).unwrap()
+}
+
+fn seed_active_bridge(hub: &AgentHub, source_id: &str, old_port: u16) -> AdapterProfile {
+    ProviderRepo::new(hub.db.clone())
+        .create(&kimi_source(source_id, "upstream-membership-secret"))
+        .unwrap();
+    let prepared = hub
+        .adapter_bridge
+        .prepare(&restore_prepare_request(source_id))
+        .unwrap();
+    let generated = create_projection(hub, &prepared, old_port);
+    assert!(!generated.is_current);
+    hub.adapter_bridge.finalize(&prepared, old_port).unwrap()
+}
+
+fn provider_content_contains(hub: &AgentHub, provider_id: &str, needle: &str) -> bool {
+    let stored = hub.providers.repo().get_by_id(provider_id).unwrap().unwrap();
+    stored.settings_config["content"]
+        .as_str()
+        .unwrap_or_default()
+        .contains(needle)
+}
+
+fn install_sql_trigger(hub: &AgentHub, sql: &str) {
+    hub.db
+        .with_conn(|conn| {
+            conn.execute_batch(sql)?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn realign_restored_bridge_port_updates_provider_and_profile() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = AgentHub::open(Some(dir.path())).unwrap();
+    let profile = seed_active_bridge(&hub, "kimi-restore-happy", 43121);
+    let provider_id = profile.generated_provider_id.clone().unwrap();
+
+    realign_restored_bridge_port(&hub, &profile.id, 43155).unwrap();
+
+    let persisted = AdapterProfileRepo::new(hub.db.clone())
+        .get(&profile.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(persisted.local_port, Some(43155));
+    assert_eq!(persisted.last_error_code, None);
+    assert!(provider_content_contains(
+        &hub,
+        &provider_id,
+        "127.0.0.1:43155"
+    ));
+    assert!(!provider_content_contains(
+        &hub,
+        &provider_id,
+        "127.0.0.1:43121"
+    ));
+}
+
+#[test]
+fn realign_restored_bridge_port_rolls_back_when_provider_update_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = AgentHub::open(Some(dir.path())).unwrap();
+    let profile = seed_active_bridge(&hub, "kimi-restore-update-fail", 43121);
+    let provider_id = profile.generated_provider_id.clone().unwrap();
+    install_sql_trigger(
+        &hub,
+        r#"
+        CREATE TRIGGER fail_restore_rebind_update
+        BEFORE UPDATE ON providers
+        WHEN NEW.settings_config LIKE '%127.0.0.1:43155%'
+        BEGIN
+            SELECT RAISE(ABORT, 'injected restore update failure');
+        END;
+        "#,
+    );
+
+    let error = realign_restored_bridge_port(&hub, &profile.id, 43155).unwrap_err();
+    assert!(
+        error.contains("injected restore update failure"),
+        "{error}"
+    );
+    assert!(
+        !error.contains("adapter.bridge_rollback"),
+        "update-stage failure must not need compensation: {error}"
+    );
+
+    let persisted = AdapterProfileRepo::new(hub.db.clone())
+        .get(&profile.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(persisted.local_port, Some(43121));
+    assert!(provider_content_contains(
+        &hub,
+        &provider_id,
+        "127.0.0.1:43121"
+    ));
+    assert!(!provider_content_contains(
+        &hub,
+        &provider_id,
+        "127.0.0.1:43155"
+    ));
+}
+
+#[test]
+fn realign_restored_bridge_port_rolls_back_provider_when_persist_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = AgentHub::open(Some(dir.path())).unwrap();
+    let profile = seed_active_bridge(&hub, "kimi-restore-persist-fail", 43121);
+    let provider_id = profile.generated_provider_id.clone().unwrap();
+    install_sql_trigger(
+        &hub,
+        r#"
+        CREATE TRIGGER fail_restore_rebind_persist
+        BEFORE UPDATE OF local_port ON adapter_profiles
+        WHEN NEW.local_port = 43155
+        BEGIN
+            SELECT RAISE(ABORT, 'injected restore persist failure');
+        END;
+        "#,
+    );
+
+    let error = realign_restored_bridge_port(&hub, &profile.id, 43155).unwrap_err();
+    assert!(
+        error.contains("injected restore persist failure"),
+        "{error}"
+    );
+    assert!(
+        !error.contains("adapter.bridge_rollback"),
+        "successful compensation must not report adapter.bridge_rollback: {error}"
+    );
+
+    let persisted = AdapterProfileRepo::new(hub.db.clone())
+        .get(&profile.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(persisted.local_port, Some(43121));
+    assert!(provider_content_contains(
+        &hub,
+        &provider_id,
+        "127.0.0.1:43121"
+    ));
+    assert!(!provider_content_contains(
+        &hub,
+        &provider_id,
+        "127.0.0.1:43155"
+    ));
+}
+
+struct IsolatedCodexAdapter {
+    config: Mutex<AgentConfig>,
+    config_path: PathBuf,
+    write_attempts: AtomicUsize,
+    fail_on_write: AtomicUsize,
+}
+
+impl IsolatedCodexAdapter {
+    fn new(config: AgentConfig, config_path: PathBuf) -> Self {
+        Self {
+            config: Mutex::new(config),
+            config_path,
+            write_attempts: AtomicUsize::new(0),
+            fail_on_write: AtomicUsize::new(0),
+        }
+    }
+
+    fn fail_on_write(&self, attempt: usize) {
+        self.fail_on_write.store(attempt, Ordering::SeqCst);
+    }
+
+    fn config(&self) -> AgentConfig {
+        self.config.lock().unwrap().clone()
+    }
+}
+
+impl AgentAdapter for IsolatedCodexAdapter {
+    fn id(&self) -> AgentId {
+        AgentId::Codex
+    }
+
+    fn detect(&self) -> DetectResult {
+        DetectResult {
+            agent: AgentId::Codex,
+            status: DetectStatus::NotFound,
+            version: None,
+            binary_path: None,
+            channel: None,
+            env_ready: true,
+            notes: vec![],
+        }
+    }
+
+    fn install_channels(&self) -> Vec<InstallChannel> {
+        vec![]
+    }
+
+    fn read_config(&self) -> CoreResult<AgentConfig> {
+        Ok(self.config())
+    }
+
+    fn write_config(&self, config: &AgentConfig) -> CoreResult<()> {
+        let attempt = self.write_attempts.fetch_add(1, Ordering::SeqCst) + 1;
+        if self.fail_on_write.load(Ordering::SeqCst) == attempt {
+            return Err(AppError::message(
+                "test.write",
+                format!("injected live write failure {attempt}"),
+            ));
+        }
+        let bytes = serde_json::to_vec(config)?;
+        std::fs::create_dir_all(self.config_path.parent().unwrap()).ok();
+        std::fs::write(&self.config_path, bytes)?;
+        *self.config.lock().unwrap() = config.clone();
+        Ok(())
+    }
+
+    fn read_auth(&self) -> CoreResult<AuthState> {
+        Err(AppError::Unsupported("isolated".into()))
+    }
+
+    fn capability(&self, cap: Capability) -> CapabilityState {
+        match cap {
+            Capability::ConfigWrite | Capability::LiveBackup => CapabilityState::full(),
+            _ => CapabilityState::unsupported("isolated"),
+        }
+    }
+
+    fn skills_dir(&self) -> Option<PathBuf> {
+        None
+    }
+
+    fn live_backup_paths(&self) -> Vec<PathBuf> {
+        vec![self.config_path.clone()]
+    }
+
+    fn build_run_spec(
+        &self,
+        _binary: &Path,
+        _prompt: &str,
+        _opts: &RunOptions,
+    ) -> CoreResult<RunSpec> {
+        Err(AppError::Unsupported("isolated".into()))
+    }
+}
+
+fn isolated_restore_hub(
+    live: AgentConfig,
+) -> (
+    tempfile::TempDir,
+    AgentHub,
+    Arc<IsolatedCodexAdapter>,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = AgentHub::open(Some(dir.path())).unwrap();
+    let adapter = Arc::new(IsolatedCodexAdapter::new(
+        live,
+        dir.path().join("isolated-codex.json"),
+    ));
+    let mut registry = AdapterRegistry::new();
+    registry.register(adapter.clone());
+    hub.providers = ProviderService::with_live(
+        hub.db.clone(),
+        registry,
+        dir.path().join("isolated-backups"),
+    );
+    (dir, hub, adapter)
+}
+
+fn mark_generated_current(hub: &AgentHub, provider_id: &str) {
+    let mut stored = hub.providers.repo().get_by_id(provider_id).unwrap().unwrap();
+    stored.is_current = true;
+    hub.providers.repo().update(&stored).unwrap();
+}
+
+#[test]
+fn realign_restored_bridge_port_rolls_back_when_switch_fails() {
+    let old_live = AgentConfig {
+        agent: AgentId::Codex,
+        raw: json!({
+            "format": "toml",
+            "content": "model = \"old-live\"\n"
+        }),
+    };
+    let (_dir, hub, adapter) = isolated_restore_hub(old_live.clone());
+    let profile = seed_active_bridge(&hub, "kimi-restore-switch-fail", 43121);
+    let provider_id = profile.generated_provider_id.clone().unwrap();
+    mark_generated_current(&hub, &provider_id);
+    // Fail the first live write, which switch_locked_inner performs after the
+    // pool update has already rewritten the generated provider to the new port.
+    adapter.fail_on_write(1);
+
+    let error = realign_restored_bridge_port(&hub, &profile.id, 43155).unwrap_err();
+    assert!(
+        error.contains("injected live write failure"),
+        "{error}"
+    );
+    assert!(
+        !error.contains("adapter.bridge_rollback"),
+        "successful compensation must not report adapter.bridge_rollback: {error}"
+    );
+
+    let persisted = AdapterProfileRepo::new(hub.db.clone())
+        .get(&profile.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(persisted.local_port, Some(43121));
+    assert!(provider_content_contains(
+        &hub,
+        &provider_id,
+        "127.0.0.1:43121"
+    ));
+    assert!(!provider_content_contains(
+        &hub,
+        &provider_id,
+        "127.0.0.1:43155"
+    ));
+    assert_eq!(adapter.config(), old_live);
 }

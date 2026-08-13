@@ -197,8 +197,8 @@ function mapBridgeState(value: string): AdapterBridgeRuntimeState {
  * Whitelist upstream health labels. Unknown future values fail closed to
  * `unknown` so the UI never invents connectivity it cannot prove.
  *
- * Current desktop DTO only emits `unknown`; keep room for connected/stopped
- * without hard-coding a permanent discard.
+ * Desktop DTO emits unknown|connected|stopped|degraded|unavailable. Keep room
+ * for future labels without inventing connectivity.
  */
 function mapUpstreamStatus(value: string | undefined | null): string {
   if (

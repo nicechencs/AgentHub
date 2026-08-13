@@ -106,6 +106,7 @@ struct RuntimeInstance {
     port: u16,
     started_at: SystemTime,
     lifecycle: BridgeRuntimeState,
+    upstream_status: Arc<Mutex<BridgeUpstreamStatus>>,
     accept_shutdown: CancellationToken,
     force_shutdown: CancellationToken,
     task: Option<JoinHandle<Result<(), ()>>>,
@@ -127,6 +128,7 @@ struct AppState {
     client: Client,
     force_shutdown: CancellationToken,
     admission: Arc<Semaphore>,
+    observed_upstream: Arc<Mutex<BridgeUpstreamStatus>>,
 }
 
 /// A tiny cancellation-safe completion primitive. The cleanup task, rather than an RPC caller,
@@ -243,6 +245,7 @@ impl BridgeRuntimeHost {
         let port = listener.local_addr()?.port();
         let accept_shutdown = CancellationToken::new();
         let force_shutdown = CancellationToken::new();
+        let observed_upstream = Arc::new(Mutex::new(BridgeUpstreamStatus::Unknown));
         let state = AppState {
             profile_id: Arc::from(spec.profile_id.clone()),
             local_token: Arc::from(spec.local_token.clone()),
@@ -256,6 +259,7 @@ impl BridgeRuntimeHost {
                 .expect("reqwest client builder uses static valid settings"),
             force_shutdown: force_shutdown.clone(),
             admission: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS_PER_PROFILE)),
+            observed_upstream: Arc::clone(&observed_upstream),
         };
         let app = router(state);
         let task_shutdown = accept_shutdown.clone();
@@ -290,6 +294,7 @@ impl BridgeRuntimeHost {
             port,
             started_at: SystemTime::now(),
             lifecycle: BridgeRuntimeState::Running,
+            upstream_status: observed_upstream,
             accept_shutdown,
             force_shutdown,
             task: Some(task),
@@ -314,6 +319,24 @@ impl BridgeRuntimeHost {
             .lock()
             .map_err(|_| BridgeHostError::StatePoisoned)?;
         Ok(instances.values().map(RuntimeInstance::status).collect())
+    }
+
+    /// Records the last observed health or request outcome. Status/health reads
+    /// later report this stored value and must not issue a new upstream probe.
+    pub fn record_upstream_outcome(
+        &self,
+        profile_id: &str,
+        status: BridgeUpstreamStatus,
+    ) -> Result<Option<BridgeRuntimeStatus>, BridgeHostError> {
+        let instances = self
+            .instances
+            .lock()
+            .map_err(|_| BridgeHostError::StatePoisoned)?;
+        let Some(instance) = instances.get(profile_id) else {
+            return Ok(None);
+        };
+        instance.record_upstream(status);
+        Ok(Some(instance.status()))
     }
 
     fn profile_gate(&self, profile_id: &str) -> Result<Arc<AsyncMutex<()>>, BridgeHostError> {
@@ -346,6 +369,7 @@ impl BridgeRuntimeHost {
                 return Err(BridgeHostError::NotRunning);
             }
             instance.lifecycle = BridgeRuntimeState::Stopping;
+            instance.record_upstream(BridgeUpstreamStatus::Stopped);
             instance.accept_shutdown.cancel();
             let stopped = instance.stopped_status();
             let completion = Arc::new(CleanupCompletion::new());
@@ -428,6 +452,7 @@ async fn run_shutdown(
             let mut stopping = Vec::new();
             for (profile_id, instance) in instances.iter_mut() {
                 instance.lifecycle = BridgeRuntimeState::Stopping;
+                instance.record_upstream(BridgeUpstreamStatus::Stopped);
                 instance.accept_shutdown.cancel();
                 if let Some(task) = instance.task.take() {
                     tasks.push(ActiveTask {
@@ -476,6 +501,29 @@ impl RuntimeInstance {
         self.task.as_ref().is_none_or(JoinHandle::is_finished)
     }
 
+    fn record_upstream(&self, status: BridgeUpstreamStatus) {
+        if let Ok(mut observed) = self.upstream_status.lock() {
+            *observed = status;
+        }
+    }
+
+    fn observed_upstream(&self) -> BridgeUpstreamStatus {
+        self.upstream_status
+            .lock()
+            .map(|status| *status)
+            .unwrap_or(BridgeUpstreamStatus::Unavailable)
+    }
+
+    fn public_upstream_status(&self, state: BridgeRuntimeState) -> BridgeUpstreamStatus {
+        match state {
+            BridgeRuntimeState::Stopped | BridgeRuntimeState::Stopping => {
+                BridgeUpstreamStatus::Stopped
+            }
+            BridgeRuntimeState::Error => BridgeUpstreamStatus::Unavailable,
+            _ => self.observed_upstream(),
+        }
+    }
+
     fn status(&self) -> BridgeRuntimeStatus {
         let state = match self.lifecycle {
             BridgeRuntimeState::Stopping => BridgeRuntimeState::Stopping,
@@ -494,7 +542,7 @@ impl RuntimeInstance {
             started_at: self.started_at,
             source_connection_id: self.spec.upstream.source_connection_id.clone(),
             state,
-            upstream_status: BridgeUpstreamStatus::Unknown,
+            upstream_status: self.public_upstream_status(state),
         }
     }
 
@@ -506,7 +554,7 @@ impl RuntimeInstance {
             started_at: self.started_at,
             source_connection_id: self.spec.upstream.source_connection_id.clone(),
             state: BridgeRuntimeState::Stopped,
-            upstream_status: BridgeUpstreamStatus::Unknown,
+            upstream_status: BridgeUpstreamStatus::Stopped,
         }
     }
 }
@@ -653,6 +701,29 @@ fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
+impl AppState {
+    fn observed_upstream(&self) -> BridgeUpstreamStatus {
+        self.observed_upstream
+            .lock()
+            .map(|status| *status)
+            .unwrap_or(BridgeUpstreamStatus::Unavailable)
+    }
+
+    fn record_upstream(&self, status: BridgeUpstreamStatus) {
+        if let Ok(mut observed) = self.observed_upstream.lock() {
+            *observed = status;
+        }
+    }
+
+    fn record_upstream_success(&self) {
+        self.record_upstream(BridgeUpstreamStatus::Connected);
+    }
+
+    fn record_upstream_failure(&self) {
+        self.record_upstream(BridgeUpstreamStatus::Degraded);
+    }
+}
+
 async fn health(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if !has_valid_bearer(&headers, &state.local_token) {
         tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, op = "health", code = "unauthorized", status = 401_u16, "bridge health request rejected");
@@ -663,12 +734,15 @@ async fn health(State(state): State<AppState>, headers: HeaderMap) -> Response {
             None,
         );
     }
-    tracing::debug!(target: "core.adapter", profile_id = %state.profile_id, op = "health", "bridge health check");
+    // Local health is a listener liveness check. It reports the last stored
+    // upstream outcome and never issues a new billable provider probe.
+    let upstream_status = state.observed_upstream();
+    tracing::debug!(target: "core.adapter", profile_id = %state.profile_id, op = "health", upstream_status = upstream_status.as_str(), "bridge health check");
     Json(json!({
         "ok": true,
         "service": "agenthub-bridge",
         "listener_status": "running",
-        "upstream_status": "unknown"
+        "upstream_status": upstream_status.as_str()
     }))
     .into_response()
 }
@@ -753,6 +827,7 @@ async fn responses(State(state): State<AppState>, request: Request) -> Response 
     let url = match state.upstream_url.join("chat/completions") {
         Ok(url) => url,
         Err(_) => {
+            state.record_upstream_failure();
             return error_response(
                 StatusCode::BAD_GATEWAY,
                 "upstream_error",
@@ -773,6 +848,7 @@ async fn responses(State(state): State<AppState>, request: Request) -> Response 
             Ok(result) => result,
             Err(_) => {
                 tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "header_timeout", status = 504_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream response headers timed out");
+                state.record_upstream_failure();
                 return error_response(
                     StatusCode::GATEWAY_TIMEOUT,
                     "upstream_timeout",
@@ -786,6 +862,7 @@ async fn responses(State(state): State<AppState>, request: Request) -> Response 
         Ok(response) => response,
         Err(_) => {
             tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "unavailable", status = 502_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream unavailable");
+            state.record_upstream_failure();
             return error_response(
                 StatusCode::BAD_GATEWAY,
                 "upstream_unavailable",
@@ -803,6 +880,7 @@ async fn responses(State(state): State<AppState>, request: Request) -> Response 
             StatusCode::BAD_GATEWAY
         };
         tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "upstream_status", status = status.as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream returned an error");
+        state.record_upstream_failure();
         return error_response(
             local_status,
             "upstream_error",
@@ -818,15 +896,18 @@ async fn responses(State(state): State<AppState>, request: Request) -> Response 
             _ = force_shutdown.cancelled() => stopping_response(),
             result = tokio::time::timeout(
                 UPSTREAM_NON_STREAM_TIMEOUT,
-                non_stream_response(state, response, request_id, started, permit),
+                non_stream_response(state.clone(), response, request_id, started, permit),
             ) => match result {
                 Ok(response) => response,
-                Err(_) => error_response(
-                    StatusCode::GATEWAY_TIMEOUT,
-                    "upstream_timeout",
-                    "The upstream model provider timed out.",
-                    None,
-                ),
+                Err(_) => {
+                    state.record_upstream_failure();
+                    error_response(
+                        StatusCode::GATEWAY_TIMEOUT,
+                        "upstream_timeout",
+                        "The upstream model provider timed out.",
+                        None,
+                    )
+                }
             },
         }
     }
@@ -843,6 +924,7 @@ async fn non_stream_response(
         Ok(value) => value,
         Err(UpstreamBodyError::Stopping) => return stopping_response(),
         Err(UpstreamBodyError::InvalidOrTooLarge) => {
+            state.record_upstream_failure();
             return error_response(
                 StatusCode::BAD_GATEWAY,
                 "upstream_error",
@@ -854,6 +936,7 @@ async fn non_stream_response(
     match crate::bridge::protocol::chat::translate_chat_response(&upstream_body, Some(&request_id))
     {
         Ok(value) => {
+            state.record_upstream_success();
             tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, op = "responses", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
             Json(value).into_response()
         }
@@ -907,6 +990,7 @@ fn stream_response(
     let model = state.upstream.model.clone().unwrap_or_default();
     let profile_id = state.profile_id.clone();
     let force_shutdown = state.force_shutdown.clone();
+    let observed = state.clone();
     let bytes = response.bytes_stream();
     let output = stream! {
         let mut translator = crate::bridge::protocol::chat::ResponsesSseTranslator::new(request_id.clone(), model);
@@ -928,6 +1012,7 @@ fn stream_response(
                 next = tokio::time::timeout(UPSTREAM_STREAM_IDLE_TIMEOUT, bytes.next()) => match next {
                     Ok(next) => next,
                     Err(_) => {
+                        observed.record_upstream_failure();
                         yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
@@ -935,10 +1020,12 @@ fn stream_response(
             };
             let Some(chunk) = next else { break; };
             let Ok(chunk) = chunk else {
+                observed.record_upstream_failure();
                 yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             };
             if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
+                observed.record_upstream_failure();
                 yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             }
@@ -952,6 +1039,7 @@ fn stream_response(
                 let payload = match sse_data_payload(&frame) {
                     Ok(payload) => payload,
                     Err(()) => {
+                        observed.record_upstream_failure();
                         yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
@@ -963,6 +1051,7 @@ fn stream_response(
                     break 'upstream;
                 }
                 let Ok(value) = serde_json::from_str::<Value>(&payload) else {
+                    observed.record_upstream_failure();
                     yield Ok::<_, Infallible>(stream_error_frame());
                     return;
                 };
@@ -970,6 +1059,7 @@ fn stream_response(
                     Ok(events) => for event in events {
                         let frame = crate::bridge::protocol::chat::sse_frame(&event);
                         if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
+                            observed.record_upstream_failure();
                             yield Ok::<_, Infallible>(stream_error_frame());
                             return;
                         }
@@ -977,6 +1067,7 @@ fn stream_response(
                         yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
                     },
                     Err(_) => {
+                        observed.record_upstream_failure();
                         yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
@@ -986,18 +1077,21 @@ fn stream_response(
         // A clean EOF without the provider's terminal marker is not a completed response. This
         // distinction matters to response clients, which otherwise persist a truncated answer.
         if !saw_done || !buffer.is_empty() {
+            observed.record_upstream_failure();
             yield Ok::<_, Infallible>(stream_error_frame());
             return;
         }
         for event in translator.finish() {
             let frame = crate::bridge::protocol::chat::sse_frame(&event);
             if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
+                observed.record_upstream_failure();
                 yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             }
             output_bytes += frame.len();
             yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
         }
+        observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, op = "stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
     };
     let mut headers = HeaderMap::new();

@@ -39,6 +39,40 @@ export type AdapterResourceLoaders = {
   getBridgeStatus: (profileId: string) => Promise<AdapterBridgeRuntimeStatus>;
 };
 
+export const ADAPTER_BRIDGE_STATUS_POLL_MS = 4_000;
+
+export function adapterBridgeProfilesToPoll(
+  profiles: AdapterProfile[],
+  bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus>,
+): AdapterProfile[] {
+  return profiles.filter((profile) => shouldPollAdapterBridgeStatus(profile, bridgeStatuses[profile.id]));
+}
+
+export function applyAdapterBridgeStatusPoll(
+  current: AdapterPageResources,
+  targets: AdapterProfile[],
+  results: PromiseSettledResult<AdapterBridgeRuntimeStatus>[],
+): AdapterPageResources {
+  const bridgeStatuses = { ...current.bridgeStatuses };
+  const bridgeStatusErrors = { ...current.errors.bridgeStatuses };
+  results.forEach((result, index) => {
+    const profile = targets[index];
+    if (!profile) return;
+    if (result.status === 'fulfilled') {
+      bridgeStatuses[profile.id] = result.value;
+      delete bridgeStatusErrors[profile.id];
+      return;
+    }
+    bridgeStatuses[profile.id] = unavailableBridgeStatusForPoll(profile, bridgeStatuses[profile.id]);
+    bridgeStatusErrors[profile.id] = result.reason;
+  });
+  return {
+    ...current,
+    bridgeStatuses,
+    errors: { ...current.errors, bridgeStatuses: bridgeStatusErrors },
+  };
+}
+
 function isFulfilled<T>(result: PromiseSettledResult<T>): result is PromiseFulfilledResult<T> {
   return result.status === 'fulfilled';
 }
@@ -50,6 +84,21 @@ function unavailableBridgeStatus(profile: AdapterProfile): AdapterBridgeRuntimeS
     port: profile.localPort ?? null,
     endpoint: null,
     startedAt: null,
+    upstreamStatus: 'unavailable',
+  };
+}
+
+/** A later poll/read failure must not invent connectivity or erase the last known port. */
+export function unavailableBridgeStatusForPoll(
+  profile: AdapterProfile,
+  previous?: AdapterBridgeRuntimeStatus,
+): AdapterBridgeRuntimeStatus {
+  return {
+    profileId: profile.id,
+    state: 'error',
+    port: previous?.port ?? profile.localPort ?? null,
+    endpoint: previous?.endpoint ?? null,
+    startedAt: previous?.startedAt ?? null,
     upstreamStatus: 'unavailable',
   };
 }
@@ -278,6 +327,23 @@ export function adapterBridgeStateLabel(state: AdapterBridgeRuntimeState | undef
   if (state === 'error') return '运行错误';
   if (state === 'degraded') return '服务降级';
   return '已停止';
+}
+
+export function adapterBridgeUpstreamLabel(status: AdapterBridgeRuntimeStatus['upstreamStatus']): string {
+  if (status === 'connected') return '已连接';
+  if (status === 'stopped') return '已停止';
+  if (status === 'degraded') return '降级';
+  if (status === 'unavailable') return '不可用';
+  return '未知';
+}
+
+/** Live local-bridge rows that should keep reading stored runtime status. */
+export function shouldPollAdapterBridgeStatus(
+  profile: Pick<AdapterProfile, 'route'>,
+  status?: AdapterBridgeRuntimeStatus,
+): boolean {
+  if (profile.route !== 'local_bridge') return false;
+  return status?.state === 'running' || status?.state === 'degraded';
 }
 
 export function adapterBridgeEndpointLabel(

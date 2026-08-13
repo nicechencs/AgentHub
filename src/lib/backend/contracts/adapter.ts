@@ -123,6 +123,13 @@ export type AdapterBridgeRuntimeState =
   | 'error'
   | 'degraded';
 
+export type AdapterBridgeUpstreamStatus =
+  | 'unknown'
+  | 'connected'
+  | 'stopped'
+  | 'degraded'
+  | 'unavailable';
+
 /** Deliberately excludes the local bearer and all upstream credentials. */
 export interface AdapterBridgeRuntimeStatus {
   profileId: string;
@@ -130,7 +137,7 @@ export interface AdapterBridgeRuntimeStatus {
   port?: number | null;
   endpoint?: string | null;
   startedAt?: string | null;
-  upstreamStatus?: string | null;
+  upstreamStatus?: AdapterBridgeUpstreamStatus | string | null;
 }
 
 export type AdapterApplyRequest = AdapterRouteRequest;

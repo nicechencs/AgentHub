@@ -127,6 +127,15 @@ describe('Adapter Rust wire mappers', () => {
         port: 43123,
         running: false,
         state: 'error',
+        upstreamStatus: 'unavailable',
+      }).upstreamStatus,
+    ).toBe('unavailable');
+    expect(
+      mapAdapterBridgeStatusDto({
+        profileId: 'adapter-kimi-codex-1',
+        port: 43123,
+        running: false,
+        state: 'error',
         upstreamStatus: 'not-a-real-label',
       }).upstreamStatus,
     ).toBe('unknown');

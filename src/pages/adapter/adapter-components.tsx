@@ -16,6 +16,7 @@ import type {
 import {
   adapterActionLabel,
   adapterBridgeEndpointLabel,
+  adapterBridgeUpstreamLabel,
   adapterPlanChangeLabel,
   adapterProfileRecordLabel,
   bridgeStatusBadge,
@@ -223,7 +224,7 @@ export function AdapterProfiles({
                   {profile.route === 'local_bridge' && (
                     <p className="mt-0.5 text-xs text-secondary">
                       本机桥接{bridgeEndpoint ? ` · ${bridgeEndpoint}` : ' · 等待分配端口'}
-                      {bridgeStatus?.upstreamStatus ? ` · 上游：${bridgeStatus.upstreamStatus}` : ''}
+                      {bridgeStatus?.upstreamStatus ? ` · 上游：${adapterBridgeUpstreamLabel(bridgeStatus.upstreamStatus)}` : ''}
                     </p>
                   )}
                 </div>

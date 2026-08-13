@@ -121,7 +121,7 @@ impl AdapterBridgeStatusDto {
             port: profile.local_port,
             running: false,
             state: "stopped".into(),
-            upstream_status: "unknown".into(),
+            upstream_status: "stopped".into(),
             source_connection_id: Some(profile.source_id.clone()),
             started_at_unix_ms: None,
         }
@@ -194,6 +194,7 @@ async fn apply_local_bridge_locked(
 
     let port = runtime.status.port;
     if let Err(error) = prepared.runtime_material().verify_bound_health(port).await {
+        let _ = host.record_upstream_outcome(&profile_id, BridgeUpstreamStatus::Degraded);
         let code = error.code().to_owned();
         let listener_compensated =
             compensate_started_bridge(&host, &profile_id, owns_listener).await;
@@ -204,6 +205,7 @@ async fn apply_local_bridge_locked(
         }
         return Err(map_err_string("verify_adapter_bridge_health", error));
     }
+    let _ = host.record_upstream_outcome(&profile_id, BridgeUpstreamStatus::Connected);
 
     // Keep the same Tauri target authority as every configuration/account/
     // provider mutation. Inside the blocking critical section, the Core guard
@@ -478,6 +480,7 @@ pub(crate) fn restore_adapter_bridges(
                 .verify_bound_health(runtime.status.port)
                 .await
             {
+                let _ = host.record_upstream_outcome(&profile.id, BridgeUpstreamStatus::Degraded);
                 let code = error.code().to_owned();
                 let listener_compensated =
                     compensate_started_bridge(&host, &profile.id, runtime.owned_by_saga).await;
@@ -489,6 +492,7 @@ pub(crate) fn restore_adapter_bridges(
                 tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, code = %code, "adapter bridge health check failed after restore");
                 continue;
             }
+            let _ = host.record_upstream_outcome(&profile.id, BridgeUpstreamStatus::Connected);
 
             // Preferred-port rebind must rewrite profile.local_port and the
             // generated Codex base_url; otherwise restore leaves a dead endpoint.
@@ -891,17 +895,46 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
         .adapter_bridge
         .projection_for_restored_port(profile_id, port)
         .map_err(|error| map_err_string("projection_adapter_bridge_restore_port", error))?;
-    hub.providers
-        .update_with_guard(&core_guard, &input)
-        .map_err(|error| map_err_string("update_adapter_bridge_restore_port", error))?;
-    if was_current {
-        hub.providers
-            .switch_with_guard(&core_guard, &input.id, AgentId::Codex)
-            .map_err(|error| map_err_string("switch_adapter_bridge_restore_port", error))?;
+    // Snapshot before any pool or live mutation so a later-stage failure can
+    // restore the previous generated row and Codex config in reverse order.
+    let snapshot = capture_provider_snapshot(hub, &core_guard, Some(input.id.as_str()))?;
+    let provider_id = input.id.clone();
+
+    if let Err(error) = hub.providers.update_with_guard(&core_guard, &input) {
+        let rollback =
+            rollback_bridge_projection(hub, &core_guard, &provider_id, &snapshot, false);
+        return Err(composite_saga_error(
+            "update_adapter_bridge_restore_port",
+            map_err_string("update_adapter_bridge_restore_port", error),
+            rollback,
+        ));
     }
-    hub.adapter_bridge
-        .persist_restored_port(profile_id, port)
-        .map_err(|error| map_err_string("persist_adapter_bridge_restore_port", error))?;
+    if was_current {
+        if let Err(error) =
+            hub.providers
+                .switch_with_guard(&core_guard, &provider_id, AgentId::Codex)
+        {
+            let rollback =
+                rollback_bridge_projection(hub, &core_guard, &provider_id, &snapshot, false);
+            return Err(composite_saga_error(
+                "switch_adapter_bridge_restore_port",
+                map_err_string("switch_adapter_bridge_restore_port", error),
+                rollback,
+            ));
+        }
+    }
+    if let Err(error) = hub.adapter_bridge.persist_restored_port(profile_id, port) {
+        // persist_restored_port is last and transactional, so a failure leaves
+        // profile.local_port on the old preferred port. Compensate provider and
+        // live config so restore can stop the rebound listener safely.
+        let rollback =
+            rollback_bridge_projection(hub, &core_guard, &provider_id, &snapshot, false);
+        return Err(composite_saga_error(
+            "persist_adapter_bridge_restore_port",
+            map_err_string("persist_adapter_bridge_restore_port", error),
+            rollback,
+        ));
+    }
     Ok(())
 }
 
@@ -928,7 +961,7 @@ fn stopped_runtime_status(profile: &AdapterProfile) -> BridgeRuntimeStatus {
         started_at: SystemTime::now(),
         source_connection_id: Some(profile.source_id.clone()),
         state: BridgeRuntimeState::Stopped,
-        upstream_status: BridgeUpstreamStatus::Unknown,
+        upstream_status: BridgeUpstreamStatus::Stopped,
     }
 }
 
@@ -973,9 +1006,7 @@ fn runtime_state_name(state: BridgeRuntimeState) -> &'static str {
 }
 
 fn upstream_status_name(status: BridgeUpstreamStatus) -> &'static str {
-    match status {
-        BridgeUpstreamStatus::Unknown => "unknown",
-    }
+    status.as_str()
 }
 
 fn system_time_millis(value: SystemTime) -> Option<u128> {
