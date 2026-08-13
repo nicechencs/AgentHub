@@ -67,6 +67,12 @@ export interface SkillProjectResultDto {
   targetDir: string;
 }
 
+/** Debounced skill-directory change from the desktop filesystem watcher. */
+export interface SkillsFsChangedPayload {
+  source?: string;
+  roots?: number;
+}
+
 /** Local `SKILL.md` body for GUI markdown preview. */
 export interface SkillMarkdownPreviewDto {
   skillId: string;

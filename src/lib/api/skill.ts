@@ -8,6 +8,7 @@ import type {
   SkillListingDto,
   SkillMarkdownPreviewDto,
   SkillProjectResultDto,
+  SkillsFsChangedPayload,
 } from '@/lib/backend/contracts/skill-types';
 import type { AgentId, Skill, SkillMapStatus, SkillSyncState } from '@/lib/types';
 
@@ -22,6 +23,7 @@ export type {
   SkillListingDto,
   SkillMarkdownPreviewDto,
   SkillProjectResultDto,
+  SkillsFsChangedPayload,
 } from '@/lib/backend/contracts/skill-types';
 
 export {
@@ -120,6 +122,13 @@ export async function readSkillMarkdown(
   privateAgent?: AgentId | null,
 ): Promise<SkillMarkdownPreviewDto> {
   return getBackend().skill.readSkillMarkdown(skillId, privateAgent);
+}
+
+/** Subscribe to skill-directory changes. Browser mock is a no-op. */
+export async function onSkillsFsChanged(
+  handler: (payload?: SkillsFsChangedPayload) => void,
+): Promise<() => void> {
+  return getBackend().skill.onFsChanged(handler);
 }
 
 // re-export type for mapStatus consumers

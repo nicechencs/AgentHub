@@ -7,8 +7,10 @@ import type {
   SkillMarkdownPreviewDto,
   SkillProjectResultDto,
   SkillSyncReport,
+  SkillsFsChangedPayload,
 } from '@/lib/backend/contracts/skill-types';
 import { unsupportedError } from '@/lib/backend/contracts/errors';
+import { onSkillsFsChanged } from './skill-events';
 import { invoke } from './invoke';
 
 export function createTauriSkillPort(): SkillPort {
@@ -127,6 +129,10 @@ export function createTauriSkillPort(): SkillPort {
         skillId,
         privateAgent: privateAgent ?? null,
       });
+    },
+
+    onFsChanged(handler: (payload?: SkillsFsChangedPayload) => void) {
+      return onSkillsFsChanged(handler);
     },
   };
 }

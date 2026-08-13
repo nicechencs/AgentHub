@@ -25,7 +25,7 @@ import type {
 } from '@/lib/types';
 import type { AgentCatalogPort } from './agent-catalog';
 import type { DoctorMapped, DoctorReport } from './doctor-port';
-import type { InstallOutcome } from './install-types';
+import type { InstallOutcome, InstallProgressPayload } from './install-types';
 import type {
   CoreProviderPreset,
   CoreSkill,
@@ -33,6 +33,7 @@ import type {
   SkillListingDto,
   SkillMarkdownPreviewDto,
   SkillProjectResultDto,
+  SkillsFsChangedPayload,
 } from './skill-types';
 import type { UsageAvailability, UsageQuery } from './usage-types';
 import type { ConfigPort } from './config-types';
@@ -341,6 +342,10 @@ export interface SkillPort {
     skillId: string,
     privateAgent?: AgentId | null,
   ): Promise<SkillMarkdownPreviewDto>;
+  /** Subscribe to skill-directory changes. Returns an unsubscribe function. */
+  onFsChanged(
+    handler: (payload?: SkillsFsChangedPayload) => void,
+  ): Promise<() => void> | (() => void);
 }
 
 /** Result of a usage collect pass (mirrors core CollectResult). */
@@ -395,6 +400,10 @@ export interface InstallPort {
   upgradeAgentCmd(agentId: AgentId): Promise<InstallOutcome>;
   uninstallAgentCmd(agentId: AgentId, purgeConfig: boolean): Promise<InstallOutcome>;
   openAgentConfigDir(agentId: AgentId): Promise<string>;
+  /** Subscribe to live install/upgrade/uninstall log lines. Returns an unsubscribe function. */
+  onProgress(
+    handler: (payload: InstallProgressPayload) => void,
+  ): Promise<() => void> | (() => void);
 }
 
 export type { UpdatePort } from './update-types';

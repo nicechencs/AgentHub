@@ -411,6 +411,10 @@ export function createMockSkillPort(): SkillPort {
       throw unsupportedError('打开目录');
     },
 
+    onFsChanged() {
+      return () => {};
+    },
+
     async readSkillMarkdown(skillId, privateAgent = null) {
       await delay(120);
       const fromShared = mockState.find((s) => s.id === skillId);

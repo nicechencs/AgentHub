@@ -10,6 +10,22 @@ export interface InstallOutcome {
   runtime?: DoctorEnvStatus | null;
 }
 
+/** Live install/upgrade/uninstall log line from the desktop event stream. */
+export interface InstallProgressPayload {
+  agentId?: string | null;
+  action?: string;
+  line: string;
+}
+
+/** Filter helper: only lines for this agent (runtime-only lines have a null agentId). */
+export function isProgressForAgent(
+  payload: InstallProgressPayload,
+  agentId: AgentId,
+): boolean {
+  if (!payload.agentId) return false;
+  return payload.agentId === agentId;
+}
+
 /** Mirrors core `catalog::InstallChannelPlan`. */
 export interface InstallChannelPlanDto {
   id: string;

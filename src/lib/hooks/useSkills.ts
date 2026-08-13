@@ -16,6 +16,7 @@ import {
   installSkillFromSource,
   listInstalledSkills,
   listSkills,
+  onSkillsFsChanged,
   projectSkill,
   searchSkillMarket,
   syncAll,
@@ -95,20 +96,16 @@ export function useSkillsCacheVersion(key: SkillsCacheKey = 'skills'): number {
   return useCacheVersion(key);
 }
 
-/** 启动一次全局 FS 监听（Tauri）；浏览器 mock 为空操作。 */
+/** 启动一次全局 FS 监听；浏览器 mock 为空操作。 */
 function ensureSkillsFsWatch() {
   if (fsWatchStarted || typeof window === 'undefined') return;
   fsWatchStarted = true;
-  void import('@/lib/backend/tauri/skill-events')
-    .then((m) =>
-      m.onSkillsFsChanged(() => {
-        // 外部目录变更：共享库矩阵 + agent 目录都可能变
-        invalidateSkills(['skills', 'installed']);
-      }),
-    )
-    .catch(() => {
-      // ignore — non-Tauri or event API unavailable
-    });
+  void onSkillsFsChanged(() => {
+    // 外部目录变更：共享库矩阵 + agent 目录都可能变
+    invalidateSkills(['skills', 'installed']);
+  }).catch(() => {
+    // ignore — event API unavailable
+  });
 }
 
 function useCacheVersion(key: SkillsCacheKey): number {
