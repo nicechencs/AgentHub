@@ -1,7 +1,14 @@
 /**
  * Provider API façade — delegates to app runtime backend.
  */
-import { getBackend, loadAgentStatuses } from '@/app/runtime';
+import {
+  beginConnectionPoolMutation,
+  endConnectionPoolMutation,
+  getBackend,
+  loadAgentStatuses,
+  markConnectionCurrent,
+  notifyConnectionPoolChanged,
+} from '@/app/runtime';
 import { clearLiveAuthProbeCache } from '@/lib/backend/contracts/live-auth-probe-cache';
 import type { AgentId, Provider, SwitchPreview } from '@/lib/types';
 
@@ -23,7 +30,9 @@ export async function listProviders(agentId?: AgentId): Promise<Provider[]> {
 
 function providerAuthStateChanged(agentId: AgentId): void {
   clearLiveAuthProbeCache(agentId);
-  void loadAgentStatuses(getBackend(), { force: true }).catch(() => {});
+  const backend = getBackend();
+  void loadAgentStatuses(backend, { force: true }).catch(() => {});
+  void notifyConnectionPoolChanged(backend).catch(() => {});
 }
 
 export async function upsertProvider(p: Provider): Promise<Provider> {
@@ -38,7 +47,9 @@ export async function deleteProvider(agentId: AgentId, providerId: string): Prom
 }
 
 export async function importProviderLive(agentId: AgentId, name?: string): Promise<Provider> {
-  return getBackend().provider.importProviderLive(agentId, name);
+  const imported = await getBackend().provider.importProviderLive(agentId, name);
+  providerAuthStateChanged(agentId);
+  return imported;
 }
 
 export async function switchPreview(agentId: AgentId, toProviderId: string): Promise<SwitchPreview> {
@@ -47,7 +58,21 @@ export async function switchPreview(agentId: AgentId, toProviderId: string): Pro
 
 export async function switchProvider(agentId: AgentId, toProviderId: string): Promise<void> {
   await getBackend().provider.switchProvider(agentId, toProviderId);
+  markConnectionCurrent(agentId, 'provider', toProviderId);
   providerAuthStateChanged(agentId);
+}
+
+/** Deletes every listed Provider and refreshes the shared pool once. */
+export async function deleteProviders(agentId: AgentId, providerIds: readonly string[]): Promise<void> {
+  if (providerIds.length === 0) return;
+  beginConnectionPoolMutation();
+  try {
+    for (const providerId of providerIds) {
+      await deleteProvider(agentId, providerId);
+    }
+  } finally {
+    await endConnectionPoolMutation(getBackend());
+  }
 }
 
 export async function undoSwitch(agentId: AgentId): Promise<boolean> {

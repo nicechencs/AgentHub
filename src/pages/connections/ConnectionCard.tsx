@@ -39,6 +39,8 @@ export function ConnectionCard({
   onOpenConfigDir,
   canEditProvider = true,
   canSwitchProvider = true,
+  canSwitchAccount = true,
+  accountSwitchBlockedReason,
 }: {
   entry: ConnectionEntry;
   brandColor?: string;
@@ -54,6 +56,10 @@ export function ConnectionCard({
   canEditProvider?: boolean;
   /** Applying a saved Provider writes the agent's live config. */
   canSwitchProvider?: boolean;
+  /** Account-pool switching is unavailable when the capability is blocked. */
+  canSwitchAccount?: boolean;
+  /** Shown on the switch control when account switching is blocked. */
+  accountSwitchBlockedReason?: string;
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const detailsId = React.useId();
@@ -112,11 +118,17 @@ export function ConnectionCard({
             <Button
               size="sm"
               variant="outline"
-              disabled={switching || (entry.source === 'provider' && !canSwitchProvider)}
+              disabled={
+                switching ||
+                (entry.source === 'provider' && !canSwitchProvider) ||
+                (entry.source === 'account' && !canSwitchAccount)
+              }
               title={
                 entry.source === 'provider' && !canSwitchProvider
                   ? '该 Agent 不支持配置写入'
-                  : undefined
+                  : entry.source === 'account' && !canSwitchAccount
+                    ? accountSwitchBlockedReason ?? '该 Agent 不支持账号池切换'
+                    : undefined
               }
               onClick={() => onSwitch(entry)}
             >

@@ -24,6 +24,9 @@ import {
   closeConfirmationOnOpenChange,
   futureAvailability,
   isCurrentAdapterPreviewRequest,
+  canRequestAdapterPlan,
+  resolveAdapterTargetAgentId,
+  mergeAdapterProfileLoad,
   isSubscriptionGateUnsupported,
   preventBusyConfirmationDismissal,
   routeLabel,
@@ -335,6 +338,16 @@ describe('Adapter page view model', () => {
   it('clears an old preview response when a newer selection is in flight', () => {
     expect(isCurrentAdapterPreviewRequest(3, 4)).toBe(false);
     expect(isCurrentAdapterPreviewRequest(4, 4)).toBe(true);
+  });
+
+
+  it('does not reuse a stale target Agent when none are selectable', () => {
+    expect(resolveAdapterTargetAgentId('claude', [])).toBe('');
+    expect(resolveAdapterTargetAgentId('claude', ['codex', 'pi'])).toBe('codex');
+    expect(resolveAdapterTargetAgentId('pi', ['codex', 'pi'])).toBe('pi');
+    expect(canRequestAdapterPlan({ sourceId: 'src-1', targetAgentId: '' })).toBe(false);
+    expect(canRequestAdapterPlan({ sourceId: 'src-1', targetAgentId: 'claude' })).toBe(true);
+    expect(canRequestAdapterPlan({ sourceId: '', targetAgentId: 'claude' })).toBe(false);
   });
 
   it('never renders a secret action or change value', () => {

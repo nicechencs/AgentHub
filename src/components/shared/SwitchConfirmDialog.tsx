@@ -1,5 +1,9 @@
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import {
+  closeConfirmationOnOpenChange,
+  preventBusyConfirmationDismissal,
+} from '@/components/shared/busy-confirmation';
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -33,9 +37,19 @@ export function SwitchConfirmDialog({
     backfillSummary: '当前生效配置将先保存回连接池',
     backupPath: '~/.agenthub/backups/live/',
   };
+  const busy = Boolean(loading);
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+    <Dialog
+      open={open}
+      onOpenChange={(next) => closeConfirmationOnOpenChange(next, busy, () => onOpenChange(false))}
+    >
+      <DialogContent
+        className="max-w-md"
+        hideClose={busy}
+        onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(busy, event)}
+        onPointerDownOutside={(event) => preventBusyConfirmationDismissal(busy, event)}
+        onInteractOutside={(event) => preventBusyConfirmationDismissal(busy, event)}
+      >
         <DialogHeader>
           <DialogTitle>切换到「{targetName}」？</DialogTitle>
         </DialogHeader>
@@ -58,11 +72,11 @@ export function SwitchConfirmDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>
             取消
           </Button>
-          <Button disabled={loading} onClick={onConfirm}>
-            {loading ? '切换中…' : '确认切换'}
+          <Button disabled={busy} onClick={onConfirm}>
+            {busy ? '切换中…' : '确认切换'}
           </Button>
         </DialogFooter>
       </DialogContent>

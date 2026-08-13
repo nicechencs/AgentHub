@@ -30,7 +30,7 @@ export type AdapterPageResources = {
   profiles: AdapterProfile[];
   bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus>;
   errors: AdapterResourceErrors;
-  connectionState: Exclude<AdapterResourceLoadState, 'loading'>;
+  connectionState: AdapterResourceLoadState;
   profileState: Exclude<AdapterResourceLoadState, 'loading' | 'partial'>;
 };
 
@@ -159,6 +159,49 @@ export async function loadAdapterPageResources(loaders: AdapterResourceLoaders):
     },
     connectionState,
     profileState: profileError ? 'error' : 'ready',
+  };
+}
+
+/** Profiles + bridge status only. Connection rows come from the shared pool store. */
+export async function loadAdapterProfileResources(
+  loaders: Pick<AdapterResourceLoaders, 'listProfiles' | 'getBridgeStatus'>,
+): Promise<{
+  profiles: AdapterProfile[];
+  bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus>;
+  profileState: AdapterPageResources['profileState'];
+  profileError?: unknown;
+  bridgeStatusErrors: Record<string, unknown>;
+}> {
+  let profiles: AdapterProfile[] = [];
+  let profileError: unknown;
+  try {
+    profiles = await Promise.resolve().then(loaders.listProfiles);
+  } catch (error) {
+    profileError = error;
+  }
+  const localBridgeProfiles = profiles.filter((profile) => profile.route === 'local_bridge');
+  const statusResults = await Promise.allSettled(
+    localBridgeProfiles.map((profile) => Promise.resolve().then(() => loaders.getBridgeStatus(profile.id))),
+  );
+
+  const bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus> = {};
+  const bridgeStatusErrors: Record<string, unknown> = {};
+  statusResults.forEach((result, index) => {
+    const profile = localBridgeProfiles[index];
+    if (isFulfilled(result)) {
+      bridgeStatuses[profile.id] = result.value;
+      return;
+    }
+    bridgeStatuses[profile.id] = unavailableBridgeStatus(profile);
+    bridgeStatusErrors[profile.id] = result.reason;
+  });
+
+  return {
+    profiles,
+    bridgeStatuses,
+    profileState: profileError ? 'error' : 'ready',
+    profileError,
+    bridgeStatusErrors,
   };
 }
 
@@ -429,6 +472,55 @@ export function adapterPageViewState(input: {
 /** An old async response must never replace the currently selected preview. */
 export function isCurrentAdapterPreviewRequest(generation: number, current: number): boolean {
   return generation === current;
+}
+
+
+/** Empty target list must not reuse a stale Agent id for plan/apply. */
+export function resolveAdapterTargetAgentId(
+  selected: AgentId | '' | null | undefined,
+  available: readonly AgentId[],
+): AgentId | '' {
+  if (available.length === 0) return '';
+  if (selected && available.includes(selected)) return selected;
+  return available[0] ?? '';
+}
+
+export function canRequestAdapterPlan(input: {
+  sourceId?: string | null;
+  targetAgentId?: AgentId | '' | null;
+}): boolean {
+  return Boolean(input.sourceId) && Boolean(input.targetAgentId);
+}
+
+/** Keep the last successful profile list when a later listProfiles call fails. */
+export function mergeAdapterProfileLoad(
+  previous: {
+    profiles: AdapterProfile[];
+    bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus>;
+  },
+  next: {
+    profiles: AdapterProfile[];
+    bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus>;
+    profileState: AdapterPageResources['profileState'];
+    profileError?: unknown;
+    bridgeStatusErrors: Record<string, unknown>;
+  },
+): {
+  profiles: AdapterProfile[];
+  bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus>;
+  profileState: AdapterPageResources['profileState'];
+  profileError?: unknown;
+  bridgeStatusErrors: Record<string, unknown>;
+} {
+  if (!next.profileError) return next;
+  if (previous.profiles.length === 0) return next;
+  return {
+    ...next,
+    profiles: previous.profiles,
+    bridgeStatuses: Object.keys(next.bridgeStatuses).length > 0
+      ? next.bridgeStatuses
+      : previous.bridgeStatuses,
+  };
 }
 
 /** Never interpolate a secret plan value into the page. */

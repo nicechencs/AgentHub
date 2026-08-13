@@ -335,3 +335,89 @@ export function liveApiKeyImportGate(
   }
   return { enabled: false, reason: probe.summary || '未检测到可导入的 API Key' };
 }
+
+export type ConnectionPoolDiscoveryState = 'idle' | 'loading' | 'ready' | 'partial' | 'error';
+export type DiscoveredAuthKind = 'account' | 'provider';
+
+/**
+ * Live-auth banners must wait for a completed pool snapshot. An in-flight
+ * first load still has empty rows and would otherwise look like a new login.
+ */
+function liveAuthProbeKind(probe?: Pick<LiveAuthProbeLike, 'kind'> | null): string {
+  return probe?.kind?.trim().toLowerCase() ?? '';
+}
+
+function isOAuthLiveAuthKind(kind: string): boolean {
+  return kind === 'oauth' || kind === 'file-auth' || kind === 'file-auth.json';
+}
+
+function isApiKeyLiveAuthKind(kind: string): boolean {
+  return kind === 'api_key' || kind === 'api-key' || kind === 'apikey';
+}
+
+/**
+ * Incomplete pool data must not be stamped as “already evaluated”.
+ * A later successful refresh of the failed side should still be able to
+ * surface a real first-time discovery.
+ */
+export function isLiveAuthDiscoveryDeferred(input: {
+  poolState: ConnectionPoolDiscoveryState;
+  probe?: Pick<LiveAuthProbeLike, 'kind' | 'hasCredentials'> | null;
+  accountsFailed?: boolean;
+  providersFailed?: boolean;
+}): boolean {
+  if (input.poolState === 'idle' || input.poolState === 'loading' || input.poolState === 'error') {
+    return true;
+  }
+  if (!input.probe?.hasCredentials) return false;
+  const kind = liveAuthProbeKind(input.probe);
+  if (isOAuthLiveAuthKind(kind)) return Boolean(input.accountsFailed);
+  if (isApiKeyLiveAuthKind(kind)) return Boolean(input.accountsFailed || input.providersFailed);
+  return false;
+}
+
+export function liveAuthDiscoveryKind(input: {
+  poolState: ConnectionPoolDiscoveryState;
+  probe?: Pick<LiveAuthProbeLike, 'kind' | 'hasCredentials'> | null;
+  accounts: readonly { kind: string }[];
+  providers: readonly unknown[];
+  accountsFailed?: boolean;
+  providersFailed?: boolean;
+}): DiscoveredAuthKind | null {
+  if (isLiveAuthDiscoveryDeferred(input)) return null;
+  if (!input.probe?.hasCredentials) return null;
+
+  const kind = liveAuthProbeKind(input.probe);
+  const hasExistingOAuth = input.accounts.some((account) => account.kind === 'oauth');
+  const hasExistingApiKey =
+    input.accounts.some((account) => account.kind === 'apikey') || input.providers.length > 0;
+
+  if (isOAuthLiveAuthKind(kind) && !hasExistingOAuth) return 'account';
+  if (isApiKeyLiveAuthKind(kind) && !hasExistingApiKey) return 'provider';
+  return null;
+}
+
+/** A switch-preview response is only usable for the agent that requested it. */
+export function isCurrentSwitchPreviewRequest(
+  requestedAgentId: string,
+  currentAgentId: string,
+  generation: number,
+  currentGeneration: number,
+): boolean {
+  return requestedAgentId === currentAgentId && generation === currentGeneration;
+}
+
+export function beginExclusiveBusyIds(
+  current: ReadonlySet<string>,
+  id: string,
+): Set<string> | null {
+  if (current.size > 0 || !id) return null;
+  return new Set([id]);
+}
+
+export function endExclusiveBusyIds(current: ReadonlySet<string>, id: string): Set<string> {
+  if (!current.has(id)) return new Set(current);
+  const next = new Set(current);
+  next.delete(id);
+  return next;
+}

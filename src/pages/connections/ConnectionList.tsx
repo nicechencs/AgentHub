@@ -15,6 +15,10 @@ import {
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import {
+  closeConfirmationOnOpenChange,
+  preventBusyConfirmationDismissal,
+} from '@/components/shared/busy-confirmation';
 import { SwitchConfirmDialog } from '@/components/shared/SwitchConfirmDialog';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,7 +40,13 @@ import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { AGENT_MAP } from '@/config/agents';
-import { liveAuthProbeForAgent, useAgentStatusesOptional } from '@/app/runtime';
+import {
+  accountsForAgent,
+  liveAuthProbeForAgent,
+  providersForAgent,
+  useAgentStatusesOptional,
+  useConnectionPool,
+} from '@/app/runtime';
 import {
   deleteAccount,
   importCurrentLogin,
@@ -49,8 +59,8 @@ import {
 import { openAgentConfigDir } from '@/lib/api/install';
 import {
   deleteProvider,
+  deleteProviders,
   importProviderLive,
-  listProviders,
   switchPreview as providerSwitchPreview,
   switchProvider,
   testLatency,
@@ -73,7 +83,10 @@ import {
   deleteConnectionDialogDescription,
   deleteConnectionToastDescription,
   filterConnectionEntries,
+  isCurrentSwitchPreviewRequest,
+  isLiveAuthDiscoveryDeferred,
   liveApiKeyImportGate,
+  liveAuthDiscoveryKind,
   liveAuthImportGate,
   mergeConnectionEntries,
   withProviderLatency,
@@ -91,39 +104,47 @@ function errorCode(error: unknown): string {
   return 'unknown';
 }
 
-/** 列表切换后通知父级刷新「当前生效」摘要（勿依赖陈旧 doctor statuses） */
-export type ConnectionPoolSnapshot = {
-  agentId: AgentId;
-  accounts: Account[];
-  providers: Provider[];
-  current: ConnectionEntry | undefined;
-};
-
 export function ConnectionList({
   agentId,
   agentStatuses,
-  onPoolChanged,
-  onSnapshot,
   initialFilter = 'all',
 }: {
   agentId: AgentId;
   /** Shared application-level Agent detection; do not re-probe per list. */
   agentStatuses: AgentStatus[];
-  onPoolChanged?: () => void;
-  onSnapshot?: (snap: ConnectionPoolSnapshot) => void;
   /** 深链 ?mode= 映射到初始筛选 */
   initialFilter?: ConnectionFilter;
 }) {
   const { toast } = useToast();
   const sharedAgentStatus = useAgentStatusesOptional();
+  const pool = useConnectionPool();
   const meta = AGENT_MAP[agentId];
   const paths = liveConfigPaths(agentId);
+  const accounts = React.useMemo(
+    () => accountsForAgent(pool.accounts, agentId),
+    [agentId, pool.accounts],
+  );
+  const providers = React.useMemo(
+    () => providersForAgent(pool.providers, agentId),
+    [agentId, pool.providers],
+  );
+  const poolEmpty = pool.accounts.length === 0 && pool.providers.length === 0;
+  const phase: 'loading' | 'error' | 'ready' =
+    pool.state === 'idle' || (pool.state === 'loading' && poolEmpty)
+      ? 'loading'
+      : pool.state === 'error' && poolEmpty
+        ? 'error'
+        : 'ready';
+  const error = pool.errors.accounts ?? pool.errors.providers ?? null;
+  const refreshing = pool.refreshing;
+  const loadedAgentId = pool.state === 'idle' ? null : agentId;
+  const accountsFailed = Boolean(pool.errors.accounts);
+  const providersFailed = Boolean(pool.errors.providers);
+  const poolWarning = [
+    accountsFailed ? '官方登录' : null,
+    providersFailed ? 'API Key' : null,
+  ].filter((label): label is string => Boolean(label));
 
-  const [accounts, setAccounts] = React.useState<Account[]>([]);
-  const [providers, setProviders] = React.useState<Provider[]>([]);
-  const [phase, setPhase] = React.useState<'loading' | 'error' | 'ready'>('loading');
-  const [loadedAgentId, setLoadedAgentId] = React.useState<AgentId | null>(null);
-  const [error, setError] = React.useState<unknown>(null);
   const [filter, setFilter] = React.useState<ConnectionFilter>(initialFilter);
 
   const [switchEntry, setSwitchEntry] = React.useState<ConnectionEntry | null>(null);
@@ -133,6 +154,9 @@ export function ConnectionList({
 
   const [deleteEntry, setDeleteEntry] = React.useState<ConnectionEntry | null>(null);
   const [deleting, setDeleting] = React.useState(false);
+  const [importConfirmOpen, setImportConfirmOpen] = React.useState(false);
+  const [deleteAllConfirmOpen, setDeleteAllConfirmOpen] = React.useState(false);
+  const [deletingAll, setDeletingAll] = React.useState(false);
 
   /** 账号池遗留纯 API Key（仅密钥）编辑 */
   const [editAccountKey, setEditAccountKey] = React.useState<Account | null>(null);
@@ -148,22 +172,13 @@ export function ConnectionList({
   const [testingId, setTestingId] = React.useState<string | null>(null);
   const [latencyById, setLatencyById] = React.useState<Record<string, number>>({});
 
-  const onSnapshotRef = React.useRef(onSnapshot);
-  onSnapshotRef.current = onSnapshot;
-  const onPoolChangedRef = React.useRef(onPoolChanged);
-  onPoolChangedRef.current = onPoolChanged;
   const accountsRef = React.useRef(accounts);
   accountsRef.current = accounts;
   const providersRef = React.useRef(providers);
   providersRef.current = providers;
-  const agentStatusesRef = React.useRef(agentStatuses);
-  agentStatusesRef.current = agentStatuses;
   const probeSignatureRef = React.useRef<{ agentId: AgentId; value: string } | null>(null);
-
-  /** 请求代数：快速连点 Agent 时丢弃过期响应 */
-  const loadGenRef = React.useRef(0);
   const prevAgentRef = React.useRef<AgentId | null>(null);
-  const [refreshing, setRefreshing] = React.useState(false);
+  const previewGeneration = React.useRef(0);
 
   const accountsBlocked = React.useMemo(() => {
     const st = agentStatuses.find((s) => s.agentId === agentId);
@@ -199,97 +214,49 @@ export function ConnectionList({
   const discoveredAuthForCurrentAgent =
     discoveredAuth?.agentId === agentId ? discoveredAuth.kind : null;
 
-  const publish = React.useCallback(
-    (accs: Account[], provs: Provider[], forAgent: AgentId) => {
-      const liveStatus = agentStatusesRef.current.find((status) => status.agentId === forAgent);
-      const accountsWithLiveAuth = accs.map((account) => attachLiveAgentAuth(account, liveStatus));
-      const current = mergeConnectionEntries(accountsWithLiveAuth, provs).find((e) => e.isCurrent);
-      onSnapshotRef.current?.({
-        agentId: forAgent,
-        accounts: accountsWithLiveAuth,
-        providers: provs,
-        current,
-      });
-      onPoolChangedRef.current?.();
-    },
-    [],
-  );
+  const reload = React.useCallback(async () => {
+    await pool.reload();
+  }, [pool.reload]);
 
-  /**
-   * full：首屏 skeleton
-   * soft：换 Agent / 切换连接后不卸列表，仅轻微 refreshing，避免闪跳
-   */
-  const load = React.useCallback(
-    async (mode: 'full' | 'soft' = 'full') => {
-      const gen = ++loadGenRef.current;
-      const forAgent = agentId;
-      if (mode === 'full') {
-        setPhase('loading');
-        setError(null);
-      } else {
-        setRefreshing(true);
-      }
-      try {
-        // Do not swallow listAccounts errors — empty list + silent fail
-        // made Pi accounts look "missing" when backend threw.
-        const [accs, provs] = await Promise.all([
-          listAccounts(forAgent),
-          listProviders(forAgent).catch((e) => {
-            log.warn('listProviders failed; continue with accounts only', {
-              agentId: forAgent,
-              source: 'provider',
-              errorCode: errorCode(e),
-            });
-            return [] as Provider[];
-          }),
-        ]);
-        if (gen !== loadGenRef.current) return;
-        log.info('pool loaded', {
-          agentId: forAgent,
-          accounts: accs.length,
-          providers: provs.length,
-          currentAccount: accs.find((a) => a.isCurrent)?.id ?? null,
-          currentProvider: provs.find((p) => p.isCurrent)?.id ?? null,
-        });
-        setAccounts(accs);
-        setProviders(provs);
-        setLoadedAgentId(forAgent);
-        setPhase('ready');
-        publish(accs, provs, forAgent);
-      } catch (e) {
-        if (gen !== loadGenRef.current) return;
-        log.error('pool load failed', { agentId: forAgent, errorCode: errorCode(e) });
-        setError(e);
-        setPhase('error');
-      } finally {
-        if (gen === loadGenRef.current) setRefreshing(false);
-      }
-    },
-    [agentId, publish],
-  );
+  React.useEffect(() => {
+    if (pool.state === 'idle' || pool.state === 'loading') return;
+    log.info('pool loaded', {
+      agentId,
+      accounts: accounts.length,
+      providers: providers.length,
+      currentAccount: accounts.find((account) => account.isCurrent)?.id ?? null,
+      currentProvider: providers.find((provider) => provider.isCurrent)?.id ?? null,
+      accountsFailed,
+      providersFailed,
+    });
+  }, [accounts, accountsFailed, agentId, pool.state, providers, providersFailed]);
 
-  // agent 变化：soft 拉数 + 复位筛选/弹层；不 remount、不整表 skeleton
+  // agent 变化：复位筛选/弹层；不 remount、不整表 skeleton。数据来自共享连接池。
   React.useEffect(() => {
     const prev = prevAgentRef.current;
     const first = prev === null;
     prevAgentRef.current = agentId;
 
     if (!first) {
+      previewGeneration.current += 1;
       setLatencyById({});
       setFilter(initialFilter);
       setSwitchEntry(null);
       setSwitchPreview(undefined);
+      setPreviewLoading(false);
       setDeleteEntry(null);
       setApiKeyDialogOpen(false);
       setEditProvider(null);
       setEditAccountKey(null);
       setDiscoveredAuth(null);
-      setError(null);
+      setImportConfirmOpen(false);
+      setDeleteAllConfirmOpen(false);
     }
-    void load(first ? 'full' : 'soft');
-  }, [agentId, load, initialFilter]);
+  }, [agentId, initialFilter]);
 
   React.useEffect(() => {
+    // An in-flight first load still has empty rows; do not treat that as a new login.
+    if (pool.state === 'idle' || pool.state === 'loading') return;
     if (loadedAgentId !== agentId || !liveAuthProbe) {
       if (loadedAgentId === agentId) setDiscoveredAuth(null);
       return;
@@ -297,37 +264,34 @@ export function ConnectionList({
 
     const kind = liveAuthProbe.kind?.trim().toLowerCase() ?? '';
     const isOAuth = kind === 'oauth' || kind === 'file-auth' || kind === 'file-auth.json';
-    const isApiKey = kind === 'api_key' || kind === 'api-key' || kind === 'apikey';
     const signature = `${kind}:${liveAuthProbe.hasCredentials}:${liveAuthProbe.revision ?? liveAuthProbe.summary}`;
     const previous = probeSignatureRef.current;
     const changed = previous?.agentId !== agentId || previous.value !== signature;
+    const discoveryInput = {
+      poolState: pool.state,
+      probe: liveAuthProbe,
+      accounts: accountsRef.current,
+      providers: providersRef.current,
+      accountsFailed,
+      providersFailed,
+    };
+    // A partial/error pool is not a negative result. Leave the signature
+    // unstamped so a later successful refresh can still surface discovery.
+    if (isLiveAuthDiscoveryDeferred(discoveryInput)) return;
     if (!changed) return;
 
     probeSignatureRef.current = { agentId, value: signature };
-    if (!liveAuthProbe.hasCredentials) {
-      setDiscoveredAuth(null);
-      return;
-    }
-
+    const discovered = liveAuthDiscoveryKind(discoveryInput);
     const isSubsequentDiscovery = previous?.agentId === agentId;
     const hasExistingOAuth = accountsRef.current.some((account) => account.kind === 'oauth');
-    const hasExistingApiKey =
-      accountsRef.current.some((account) => account.kind === 'apikey') ||
-      providersRef.current.length > 0;
     // Grok rotates access/refresh tokens in auth.json during normal use.
     // Reconcile the current pool row automatically when a live revision changes
     // instead of presenting a duplicate-import prompt.
     if (isSubsequentDiscovery && isOAuth && hasExistingOAuth) {
-      void load('soft');
+      void reload();
     }
-    if (isOAuth && !hasExistingOAuth) {
-      setDiscoveredAuth({ agentId, kind: 'account' });
-    } else if (isApiKey && !hasExistingApiKey) {
-      setDiscoveredAuth({ agentId, kind: 'provider' });
-    } else {
-      setDiscoveredAuth(null);
-    }
-  }, [agentId, liveAuthProbe, load, loadedAgentId]);
+    setDiscoveredAuth(discovered ? { agentId, kind: discovered } : null);
+  }, [accountsFailed, agentId, liveAuthProbe, loadedAgentId, pool.state, providersFailed, reload]);
 
   const liveAgentStatus = agentStatuses.find((status) => status.agentId === agentId);
   const accountsWithLiveAuth = React.useMemo(
@@ -351,44 +315,39 @@ export function ConnectionList({
   );
   const currentEntry = entries.find((e) => e.isCurrent);
 
-  /** 切换成功后立刻改本地 current，再 soft 拉库校正 */
-  const applyLocalCurrent = (entry: ConnectionEntry) => {
-    if (entry.source === 'account') {
-      setAccounts((prev) =>
-        prev.map((a) => ({
-          ...a,
-          isCurrent: a.id === entry.id,
-        })),
-      );
-      setProviders((prev) => prev.map((p) => ({ ...p, isCurrent: false })));
-    } else {
-      setProviders((prev) =>
-        prev.map((p) => ({
-          ...p,
-          isCurrent: p.id === entry.id,
-        })),
-      );
-      setAccounts((prev) => prev.map((a) => ({ ...a, isCurrent: false })));
-    }
-  };
-
   const openSwitch = async (entry: ConnectionEntry) => {
+    const requestedAgentId = agentId;
+    const generation = ++previewGeneration.current;
     log.info('open switch preview', {
-      agentId,
+      agentId: requestedAgentId,
       source: entry.source,
       id: entry.id,
     });
     setPreviewLoading(true);
     try {
       if (entry.source === 'account' && entry.account) {
+        if (accountsBlocked) {
+          toast({
+            title: '无法切换账号',
+            description: accountsBlockReason,
+            variant: 'danger',
+          });
+          return;
+        }
         // 统一列表下「当前」可能是 API Key 配置：回存说明用列表 current
         const currentLabel = currentEntry?.title;
+        if (!isCurrentSwitchPreviewRequest(
+          requestedAgentId,
+          agentId,
+          generation,
+          previewGeneration.current,
+        )) return;
         setSwitchPreview({
           backfillSummary: currentLabel
             ? `当前连接「${currentLabel}」将先保存回连接池并备份`
             : '当前没有需要先保存的生效连接',
-          backupPath: `~/.agenthub/backups/${agentId}/`,
-          processWarning: agentStatuses.find((s) => s.agentId === agentId)?.running
+          backupPath: `~/.agenthub/backups/${requestedAgentId}/`,
+          processWarning: agentStatuses.find((s) => s.agentId === requestedAgentId)?.running
             ? `${meta.name} 正在运行，切换后需重启生效`
             : undefined,
         });
@@ -402,15 +361,21 @@ export function ConnectionList({
           });
           return;
         }
-        const preview = await providerSwitchPreview(agentId, entry.id);
+        const preview = await providerSwitchPreview(requestedAgentId, entry.id);
+        if (!isCurrentSwitchPreviewRequest(
+          requestedAgentId,
+          agentId,
+          generation,
+          previewGeneration.current,
+        )) return;
         setSwitchPreview(preview);
         setSwitchEntry(entry);
-    } else {
-      log.warn('switch entry missing payload', {
-        agentId,
-        id: entry.id,
-        source: entry.source,
-      });
+      } else {
+        log.warn('switch entry missing payload', {
+          agentId: requestedAgentId,
+          id: entry.id,
+          source: entry.source,
+        });
         toast({
           title: '无法切换',
           description: '连接数据不完整，请刷新后重试',
@@ -418,8 +383,14 @@ export function ConnectionList({
         });
       }
     } catch (e) {
-      log.error('switch preview failed', {
+      if (!isCurrentSwitchPreviewRequest(
+        requestedAgentId,
         agentId,
+        generation,
+        previewGeneration.current,
+      )) return;
+      log.error('switch preview failed', {
+        agentId: requestedAgentId,
         id: entry.id,
         source: entry.source,
         errorCode: errorCode(e),
@@ -430,7 +401,14 @@ export function ConnectionList({
         variant: 'danger',
       });
     } finally {
-      setPreviewLoading(false);
+      if (isCurrentSwitchPreviewRequest(
+        requestedAgentId,
+        agentId,
+        generation,
+        previewGeneration.current,
+      )) {
+        setPreviewLoading(false);
+      }
     }
   };
 
@@ -440,9 +418,18 @@ export function ConnectionList({
     setSwitching(true);
     try {
       if (target.source === 'account') {
+        if (accountsBlocked) {
+          toast({
+            title: '无法切换账号',
+            description: accountsBlockReason,
+            variant: 'danger',
+          });
+          setSwitchEntry(null);
+          setSwitchPreview(undefined);
+          return;
+        }
         await switchAccount(agentId, target.id);
         log.info('switch account ok', { agentId, id: target.id });
-        applyLocalCurrent(target);
         toast({
           title: `已切换到 ${target.title}`,
           description: '已写入本机；其它连接已取消生效',
@@ -450,10 +437,7 @@ export function ConnectionList({
           actionLabel: '撤销',
           onAction: () => {
             void undoSwitchAccount(agentId).then((ok) => {
-              if (ok) {
-                void load('soft');
-                toast({ title: '已撤销切换' });
-              }
+              if (ok) toast({ title: '已撤销切换' });
             });
           },
           duration: 5000,
@@ -471,7 +455,6 @@ export function ConnectionList({
         }
         await switchProvider(agentId, target.id);
         log.info('switch provider ok', { agentId, id: target.id });
-        applyLocalCurrent(target);
         toast({
           title: `已切换到 ${target.title}`,
           description: '已写入本机；其它连接已取消生效',
@@ -480,7 +463,6 @@ export function ConnectionList({
           onAction: () => {
             void undoProviderSwitch(agentId).then((ok) => {
               if (ok) {
-                void load('soft');
                 toast({ title: '已撤销切换' });
               } else {
                 toast({
@@ -500,21 +482,6 @@ export function ConnectionList({
       if (filter !== 'all' && filter !== target.kind) {
         setFilter('all');
       }
-      // 立即推父级摘要，再 soft 校验
-      if (target.source === 'account') {
-        publish(
-          accounts.map((a) => ({ ...a, isCurrent: a.id === target.id })),
-          providers.map((p) => ({ ...p, isCurrent: false })),
-          agentId,
-        );
-      } else {
-        publish(
-          accounts.map((a) => ({ ...a, isCurrent: false })),
-          providers.map((p) => ({ ...p, isCurrent: p.id === target.id })),
-          agentId,
-        );
-      }
-      await load('soft');
     } catch (e) {
       log.error('switch failed', {
         agentId,
@@ -527,7 +494,7 @@ export function ConnectionList({
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
-      await load('soft');
+      await reload();
     } finally {
       setSwitching(false);
     }
@@ -544,7 +511,6 @@ export function ConnectionList({
         await deleteProvider(agentId, deleteEntry.id);
       }
       setDeleteEntry(null);
-      await load('soft');
       toast({
         title: '已移入回收站',
         description: deleteConnectionToastDescription({ isCurrent: wasCurrent }),
@@ -574,7 +540,6 @@ export function ConnectionList({
     try {
       // Pi：会把 auth.json 各 provider 拆成多行；list 时会 heal 身份字段。
       const acc = await importCurrentLogin(agentId);
-      await load('soft');
       setDiscoveredAuth(null);
       toast({
         title: '已导入当前登录态',
@@ -592,7 +557,7 @@ export function ConnectionList({
     }
   };
 
-  const handleImportProvider = async () => {
+  const requestImportProvider = () => {
     if (!liveApiKeyImport.enabled) {
       toast({
         title: '无法导入当前 API Key',
@@ -601,23 +566,20 @@ export function ConnectionList({
       });
       return;
     }
-    if (
-      !window.confirm(
-        '将读取本机当前 API 配置；已有本机导入记录会更新，不会重复创建。是否继续？',
-      )
-    ) {
-      return;
-    }
+    setImportConfirmOpen(true);
+  };
+
+  const confirmImportProvider = async () => {
     setImporting(true);
     try {
       const imported = await importProviderLive(agentId);
       setDiscoveredAuth(null);
+      setImportConfirmOpen(false);
       toast({
         title: `已同步「${imported.name}」`,
         description: '已保存到 AgentHub 连接池；本机配置文件未被修改。',
         variant: 'success',
       });
-      await load('soft');
       // Import is read-only with respect to the agent's live file. Do not
       // immediately open an editable dialog when the provider writer is
       // blocked; the imported row remains available for inspection/deletion.
@@ -642,7 +604,6 @@ export function ConnectionList({
         // importCurrentLogin remains an explicit new-authorization import.
         await listAccounts(agentId);
         refreshLiveAuthState(agentId);
-        await load('soft');
         toast({
           title: '已同步当前登录',
           description: '已读取 Grok CLI 当前登录凭据。',
@@ -651,7 +612,6 @@ export function ConnectionList({
         return;
       }
       await refreshToken(agentId, entry.id);
-      await load('soft');
       toast({ title: action.label, description: entry.title, variant: 'success' });
     } catch (e) {
       toast({
@@ -692,23 +652,21 @@ export function ConnectionList({
     }
   };
 
-  const handleDeleteAllProviders = async () => {
+  const requestDeleteAllProviders = () => {
+    if (providers.length === 0) return;
+    setDeleteAllConfirmOpen(true);
+  };
+
+  const confirmDeleteAllProviders = async () => {
     if (providers.length === 0) return;
     const hadCurrent = providers.some((p) => p.isCurrent);
-    if (
-      !window.confirm(
-        `确定将 ${meta.name} 的全部 ${providers.length} 条 API Key 配置移入回收站？\n不会修改本机配置文件。`,
-      )
-    ) {
-      return;
-    }
+    const count = providers.length;
+    setDeletingAll(true);
     try {
-      for (const p of providers) {
-        await deleteProvider(agentId, p.id);
-      }
-      await load('soft');
+      await deleteProviders(agentId, providers.map((provider) => provider.id));
+      setDeleteAllConfirmOpen(false);
       toast({
-        title: `已将全部 ${providers.length} 条 API Key 配置移入回收站`,
+        title: `已将全部 ${count} 条 API Key 配置移入回收站`,
         description: deleteConnectionToastDescription({ isCurrent: hadCurrent }),
       });
     } catch (e) {
@@ -717,7 +675,8 @@ export function ConnectionList({
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
-      await load('soft');
+    } finally {
+      setDeletingAll(false);
     }
   };
 
@@ -775,7 +734,7 @@ export function ConnectionList({
         <DropdownMenuItem
           disabled={!liveApiKeyImport.enabled || importing}
           title={!liveApiKeyImport.enabled ? liveApiKeyImport.reason : undefined}
-          onSelect={() => void handleImportProvider()}
+          onSelect={() => requestImportProvider()}
         >
           <Import className="h-4 w-4" /> 导入当前 API Key
         </DropdownMenuItem>
@@ -783,17 +742,29 @@ export function ConnectionList({
         <DropdownMenuItem onSelect={() => void handleOpenConfigDir()}>
           <FolderOpen className="h-4 w-4" /> 打开配置目录
         </DropdownMenuItem>
-        {providers.length > 0 && (
-          <DropdownMenuItem
-            className="text-danger"
-            onSelect={() => void handleDeleteAllProviders()}
-          >
-            <Trash2 className="h-4 w-4" /> 移入回收站
-          </DropdownMenuItem>
-        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
+
+  const moreMenu =
+    providers.length > 0 ? (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" disabled={deletingAll}>
+            {deletingAll ? '删除中…' : '更多'} <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-[13rem]">
+          <DropdownMenuItem
+            className="text-danger"
+            disabled={deletingAll}
+            onSelect={() => requestDeleteAllProviders()}
+          >
+            <Trash2 className="h-4 w-4" /> {deletingAll ? '删除中…' : '全部移入回收站'}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    ) : null;
 
   return (
     <div>
@@ -813,7 +784,12 @@ export function ConnectionList({
         ) : (
           <span />
         )}
-        {(phase === 'ready' || phase === 'error') && addMenu}
+        {(phase === 'ready' || phase === 'error') && (
+          <div className="flex items-center gap-2">
+            {moreMenu}
+            {addMenu}
+          </div>
+        )}
       </div>
 
       {accountsBlocked && (
@@ -844,7 +820,7 @@ export function ConnectionList({
               onClick={() =>
                 void (discoveredAuthForCurrentAgent === 'account'
                   ? handleImportAccount()
-                  : handleImportProvider())
+                  : requestImportProvider())
               }
               disabled={
                 discoveredAuthForCurrentAgent === 'account'
@@ -877,7 +853,22 @@ export function ConnectionList({
       {/* 仅首屏 full loading 用 skeleton；换 Agent 保持结构，避免高度塌陷闪跳 */}
       {phase === 'loading' && <ListSkeleton rows={4} />}
       {phase === 'error' && (
-        <ErrorState error={error} onRetry={() => void load('soft')} />
+        <ErrorState error={error} onRetry={() => void reload()} />
+      )}
+
+      {phase === 'ready' && poolWarning.length > 0 && (
+        <div className="mb-3 rounded-card border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-secondary" role="alert">
+          {`部分连接未能加载：${poolWarning.join('、')}。已保留其余可用数据。`}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="ml-2 h-auto px-1 py-0 text-xs"
+            onClick={() => void reload()}
+          >
+            重试
+          </Button>
+        </div>
       )}
 
       {phase === 'ready' && (
@@ -893,7 +884,17 @@ export function ConnectionList({
             </p>
           )}
 
-          {entries.length === 0 && (
+          {entries.length === 0 && (accountsFailed || providersFailed) && (
+            <EmptyState
+              icon={KeyRound}
+              title={`无法完整读取 ${meta.name} 的连接`}
+              description="部分连接池加载失败，请重试后再判断是否为空。"
+              actionLabel="重试"
+              onAction={() => void reload()}
+            />
+          )}
+
+          {entries.length === 0 && !accountsFailed && !providersFailed && (
             <EmptyState
               icon={KeyRound}
               title={`${meta.name} 暂无连接`}
@@ -937,6 +938,8 @@ export function ConnectionList({
                   onOpenConfigDir={() => void handleOpenConfigDir()}
                   canEditProvider={providerGate.canManage}
                   canSwitchProvider={providerGate.canSwitch}
+                  canSwitchAccount={!accountsBlocked}
+                  accountSwitchBlockedReason={accountsBlockReason}
                 />
               ))}
             </div>
@@ -967,9 +970,17 @@ export function ConnectionList({
 
       <Dialog
         open={!!deleteEntry}
-        onOpenChange={(v) => !v && setDeleteEntry(null)}
+        onOpenChange={(open) =>
+          closeConfirmationOnOpenChange(open, deleting, () => setDeleteEntry(null))
+        }
       >
-        <DialogContent className="max-w-sm">
+        <DialogContent
+          className="max-w-sm"
+          hideClose={deleting}
+          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(deleting, event)}
+          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(deleting, event)}
+          onInteractOutside={(event) => preventBusyConfirmationDismissal(deleting, event)}
+        >
           <DialogHeader>
             <DialogTitle>删除「{deleteEntry?.title}」？</DialogTitle>
             <DialogDescription>
@@ -979,11 +990,83 @@ export function ConnectionList({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteEntry(null)}>
+            <Button variant="outline" disabled={deleting} onClick={() => setDeleteEntry(null)}>
               取消
             </Button>
             <Button variant="danger" disabled={deleting} onClick={() => void confirmDelete()}>
               {deleting ? '删除中…' : '删除'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={importConfirmOpen}
+        onOpenChange={(open) =>
+          closeConfirmationOnOpenChange(open, importing, () => setImportConfirmOpen(false))
+        }
+      >
+        <DialogContent
+          className="max-w-sm"
+          hideClose={importing}
+          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(importing, event)}
+          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(importing, event)}
+          onInteractOutside={(event) => preventBusyConfirmationDismissal(importing, event)}
+        >
+          <DialogHeader>
+            <DialogTitle>导入当前 API Key？</DialogTitle>
+            <DialogDescription>
+              将读取本机当前 API 配置；已有本机导入记录会更新，不会重复创建。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={importing}
+              onClick={() => setImportConfirmOpen(false)}
+            >
+              取消
+            </Button>
+            <Button disabled={importing} onClick={() => void confirmImportProvider()}>
+              {importing ? '导入中…' : '确认导入'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteAllConfirmOpen}
+        onOpenChange={(open) =>
+          closeConfirmationOnOpenChange(open, deletingAll, () => setDeleteAllConfirmOpen(false))
+        }
+      >
+        <DialogContent
+          className="max-w-sm"
+          hideClose={deletingAll}
+          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(deletingAll, event)}
+          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(deletingAll, event)}
+          onInteractOutside={(event) => preventBusyConfirmationDismissal(deletingAll, event)}
+        >
+          <DialogHeader>
+            <DialogTitle>全部移入回收站？</DialogTitle>
+            <DialogDescription>
+              {`确定将 ${meta.name} 的全部 ${providers.length} 条 API Key 配置移入回收站？不会修改本机配置文件。`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={deletingAll}
+              onClick={() => setDeleteAllConfirmOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              variant="danger"
+              disabled={deletingAll}
+              onClick={() => void confirmDeleteAllProviders()}
+            >
+              {deletingAll ? '删除中…' : '移入回收站'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -997,7 +1080,6 @@ export function ConnectionList({
         onOpenChange={(v) => !v && setEditAccountKey(null)}
         onSaved={() => {
           setEditAccountKey(null);
-          void load('soft');
         }}
       />
       <ProviderEditDialog
@@ -1012,10 +1094,9 @@ export function ConnectionList({
         onSaved={() => {
           setApiKeyDialogOpen(false);
           setEditProvider(null);
-          void load('soft');
         }}
       />
-      <ConnectionTrashButton agentId={agentId} onChanged={() => void load('soft')} />
+      <ConnectionTrashButton agentId={agentId} />
     </div>
   );
 }

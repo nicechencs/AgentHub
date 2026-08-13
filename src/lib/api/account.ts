@@ -2,7 +2,12 @@
  * Account API façade — delegates to app runtime backend.
  * Pages may keep importing from here during progressive migration.
  */
-import { getBackend, loadAgentStatuses } from '@/app/runtime';
+import {
+  getBackend,
+  loadAgentStatuses,
+  markConnectionCurrent,
+  notifyConnectionPoolChanged,
+} from '@/app/runtime';
 import type {
   AuthState,
   DeviceOAuthPollInfo,
@@ -44,10 +49,12 @@ export async function listAccounts(agentId?: AgentId): Promise<Account[]> {
  */
 function authStateChanged(agentId: AgentId): void {
   clearProbeCache(agentId);
-  void loadAgentStatuses(getBackend(), { force: true }).catch(() => {
+  const backend = getBackend();
+  void loadAgentStatuses(backend, { force: true }).catch(() => {
     // The mutation itself succeeded. Keep the old display until a later
     // normal refresh can read the live config again.
   });
+  void notifyConnectionPoolChanged(backend).catch(() => {});
 }
 
 /** Reconcile an externally rotated/current login through the shared store. */
@@ -66,6 +73,7 @@ export { clearProbeCache as clearLiveAuthProbeCache };
 
 export async function switchAccount(agentId: AgentId, accountId: string): Promise<void> {
   await getBackend().account.switchAccount(agentId, accountId);
+  markConnectionCurrent(agentId, 'account', accountId);
   authStateChanged(agentId);
 }
 
@@ -174,5 +182,7 @@ export async function refreshQuota(
 ): Promise<Account | undefined> {
   const port = getBackend().account;
   if (!port.refreshQuota) return undefined;
-  return port.refreshQuota(agentId, accountId);
+  const account = await port.refreshQuota(agentId, accountId);
+  void notifyConnectionPoolChanged(getBackend()).catch(() => {});
+  return account;
 }

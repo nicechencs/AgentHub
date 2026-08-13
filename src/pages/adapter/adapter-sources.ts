@@ -3,6 +3,7 @@ import {
   AdapterCommandError,
   isAdapterErrorCodeRetryable,
   type AdapterBridgeRuntimeStatus,
+  type AdapterProfile,
   type AdapterProfileStatus,
 } from '@/lib/backend/contracts/adapter';
 import { isCapabilityUsable, type AgentCapabilities } from '@/lib/capability';
@@ -126,6 +127,20 @@ export function groupAdapterSources(
       if (nameDelta !== 0) return nameDelta;
       return sourceKindSort(left.source) - sourceKindSort(right.source);
     });
+}
+
+/** Adapter-generated Provider projections must not be offered as nested sources. */
+export function excludeAdapterGeneratedSources(
+  entries: readonly ConnectionEntry[],
+  profiles: readonly Pick<AdapterProfile, 'generatedProviderId'>[],
+): ConnectionEntry[] {
+  const generatedIds = new Set(
+    profiles
+      .map((profile) => profile.generatedProviderId)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+  );
+  if (generatedIds.size === 0) return [...entries];
+  return entries.filter((entry) => entry.source !== 'provider' || !generatedIds.has(entry.id));
 }
 
 /** OAuth that still needs Connections-side login; Adapter must not fake an OAuth apply. */

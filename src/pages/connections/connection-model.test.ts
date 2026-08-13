@@ -7,7 +7,12 @@ import {
   deleteConnectionDialogDescription,
   deleteConnectionToastDescription,
   filterConnectionEntries,
+  beginExclusiveBusyIds,
+  endExclusiveBusyIds,
+  isCurrentSwitchPreviewRequest,
+  isLiveAuthDiscoveryDeferred,
   liveApiKeyImportGate,
+  liveAuthDiscoveryKind,
   liveAuthImportGate,
   mergeConnectionEntries,
   providerToEntry,
@@ -246,5 +251,86 @@ describe('connection-model', () => {
       enabled: true,
       reason: '',
     });
+  });
+
+  it('does not report a new login while the connection pool is still loading', () => {
+    const probe = { kind: 'oauth', hasCredentials: true };
+    expect(liveAuthDiscoveryKind({
+      poolState: 'loading',
+      probe,
+      accounts: [],
+      providers: [],
+    })).toBeNull();
+    expect(liveAuthDiscoveryKind({
+      poolState: 'idle',
+      probe,
+      accounts: [],
+      providers: [],
+    })).toBeNull();
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [],
+      providers: [],
+    })).toBe('account');
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [{ kind: 'oauth' }],
+      providers: [],
+    })).toBeNull();
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe: { kind: 'api_key', hasCredentials: true },
+      accounts: [],
+      providers: [],
+    })).toBe('provider');
+    expect(liveAuthDiscoveryKind({
+      poolState: 'error',
+      probe,
+      accounts: [],
+      providers: [],
+    })).toBeNull();
+    expect(liveAuthDiscoveryKind({
+      poolState: 'partial',
+      probe,
+      accounts: [],
+      providers: [],
+      accountsFailed: true,
+    })).toBeNull();
+    expect(isLiveAuthDiscoveryDeferred({
+      poolState: 'partial',
+      probe,
+      accountsFailed: true,
+    })).toBe(true);
+    expect(isLiveAuthDiscoveryDeferred({
+      poolState: 'ready',
+      probe,
+      accountsFailed: false,
+    })).toBe(false);
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [],
+      providers: [],
+      accountsFailed: false,
+    })).toBe('account');
+  });
+
+  it('ignores a stale switch-preview result after the selected agent changes', () => {
+    expect(isCurrentSwitchPreviewRequest('claude', 'codex', 1, 2)).toBe(false);
+    expect(isCurrentSwitchPreviewRequest('claude', 'claude', 2, 2)).toBe(true);
+  });
+
+  it('serializes recycle-bin mutations so a later finish cannot clear a newer busy id', () => {
+    const empty = new Set<string>();
+    const first = beginExclusiveBusyIds(empty, 'trash-1');
+    expect(first).toEqual(new Set(['trash-1']));
+    expect(beginExclusiveBusyIds(first!, 'trash-2')).toBeNull();
+    expect(beginExclusiveBusyIds(first!, 'trash-1')).toBeNull();
+
+    const released = endExclusiveBusyIds(first!, 'trash-1');
+    expect(released.size).toBe(0);
+    expect(endExclusiveBusyIds(first!, 'trash-2')).toEqual(first);
   });
 });

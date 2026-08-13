@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Boxes, ChevronRight } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -17,7 +18,6 @@ import {
 import { useAgentStatusesOptional } from '@/app/runtime';
 import { AGENT_IDS } from '@/config/agents';
 import {
-  analyzeAdapter,
   applyAdapter,
   getAdapterBridgeStatus,
   planAdapter,
@@ -30,7 +30,6 @@ import type {
   AdapterApplyPlan,
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
-  AdapterRouteAnalysis,
 } from '@/lib/backend/contracts/adapter';
 import type { AgentId } from '@/lib/types';
 import {
@@ -44,7 +43,9 @@ import {
   adapterPageViewState,
   adapterProfileRecordLabel,
   canApplyAdapterPlan,
+  canRequestAdapterPlan,
   isCurrentAdapterPreviewRequest,
+  resolveAdapterTargetAgentId,
   resourceFailureMessage,
   sourceLabel,
   sourceStatusHint,
@@ -54,12 +55,17 @@ import {
   adapterApplyStage,
   adapterApplyStageLabel,
   adapterBridgeProbeSummary,
+  excludeAdapterGeneratedSources,
   groupAdapterSources,
   isOAuthAuthIncomplete,
   oauthIncompleteAuthHint,
   selectableTargetAgentIds,
 } from './adapter-sources';
 import { useAdapterResources } from './use-adapter-resources';
+import {
+  closeConfirmationOnOpenChange,
+  preventBusyConfirmationDismissal,
+} from '@/components/shared/busy-confirmation';
 
 export {
   adapterActionLabel,
@@ -82,25 +88,14 @@ export {
   unsupportedPresentation,
 } from './adapter-model';
 
-/** A controlled confirmation dialog must stay visible while its mutation is in flight. */
-export function closeConfirmationOnOpenChange(
-  open: boolean,
-  busy: boolean,
-  onClose: () => void,
-): void {
-  if (!open && !busy) onClose();
-}
-
-/** Radix dismissal events need an explicit preventDefault while a mutation is in flight. */
-export function preventBusyConfirmationDismissal(
-  busy: boolean,
-  event: Pick<Event, 'preventDefault'>,
-): void {
-  if (busy) event.preventDefault();
-}
+export {
+  closeConfirmationOnOpenChange,
+  preventBusyConfirmationDismissal,
+} from '@/components/shared/busy-confirmation';
 
 /** Adapter compatibility preview and saved generated projections. */
 export default function AdapterPage() {
+  const navigate = useNavigate();
   const {
     entries,
     profiles,
@@ -118,7 +113,6 @@ export default function AdapterPage() {
   const [sourceKey, setSourceKey] = useState('');
   const [targetAgentId, setTargetAgentId] = useState<AgentId>('claude');
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [analysis, setAnalysis] = useState<AdapterRouteAnalysis | null>(null);
   const [plan, setPlan] = useState<AdapterApplyPlan | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<unknown>(null);
@@ -144,14 +138,18 @@ export default function AdapterPage() {
     }),
     [agentStatusSnapshot.state, agentStatusSnapshot.statuses],
   );
+  const selectableEntries = useMemo(
+    () => excludeAdapterGeneratedSources(entries, profiles),
+    [entries, profiles],
+  );
   const sourceGroups = useMemo(
-    () => groupAdapterSources(entries, AGENT_IDS),
-    [entries],
+    () => groupAdapterSources(selectableEntries, AGENT_IDS),
+    [selectableEntries],
   );
 
   const source = useMemo(
-    () => entries.find((entry) => entry.key === sourceKey) ?? null,
-    [entries, sourceKey],
+    () => selectableEntries.find((entry) => entry.key === sourceKey) ?? null,
+    [selectableEntries, sourceKey],
   );
   const sourceAuthIncomplete = isOAuthAuthIncomplete(source);
 
@@ -163,15 +161,17 @@ export default function AdapterPage() {
   }, [targetAgentId, targetAgentIds]);
   const visibleProfileErrors = { ...resourceErrors.bridgeStatuses, ...profileErrors };
 
-  // Every selection (and retry) starts both read-only operations. The generation
+  // Every selection (and retry) starts a plan request. The generation
   // check prevents an old result from replacing the visible selection.
   useEffect(() => {
     const generation = ++requestGeneration.current;
-    setAnalysis(null);
     setPlan(null);
     setAnalysisError(null);
-    // A previous apply failure must not stick on a newly selected source/target.
+    // A previous apply failure or success must not stick on a newly selected source/target.
     setApplyError(null);
+    setApplySuccess(null);
+    setApplyResultProfile(null);
+    setApplyProbeStatus(null);
     if (!source) {
       setAnalyzing(false);
       return;
@@ -182,10 +182,9 @@ export default function AdapterPage() {
       targetAgentId,
     } as const;
     setAnalyzing(true);
-    void Promise.all([analyzeAdapter(request), planAdapter(request)])
-      .then(([nextAnalysis, nextPlan]) => {
+    void planAdapter(request)
+      .then((nextPlan) => {
         if (!isCurrentAdapterPreviewRequest(generation, requestGeneration.current)) return;
-        setAnalysis(nextAnalysis);
         setPlan(nextPlan);
       })
       .catch((error) => {
@@ -196,7 +195,7 @@ export default function AdapterPage() {
       });
   }, [source, targetAgentId, retryToken]);
 
-  const preview = plan?.analysis ?? analysis;
+  const preview = plan?.analysis ?? null;
   const retryPreview = () => setRetryToken((token) => token + 1);
   const canApply = canApplyAdapterPlan(plan) && !sourceAuthIncomplete;
   const applyRequest = source ? {
@@ -224,6 +223,13 @@ export default function AdapterPage() {
       const { [profileId]: _ignored, ...remaining } = current;
       return remaining;
     });
+  };
+
+  const reloadThenClearProfileErrors = () => {
+    void reload().then(
+      () => { setProfileErrors({}); },
+      () => undefined,
+    );
   };
 
   const setBridgeStatusBestEffort = useCallback(async (profile: AdapterProfile) => {
@@ -258,7 +264,7 @@ export default function AdapterPage() {
       setApplyConfirmOpen(false);
       setDialogOpen(false);
       if (committed.shouldProbeBridge) void setBridgeStatusBestEffort(result.profile);
-      if (committed.shouldRefresh) void reload();
+      if (committed.shouldRefresh) reloadThenClearProfileErrors();
     } catch (error) {
       setApplyError(error);
     } finally {
@@ -271,7 +277,7 @@ export default function AdapterPage() {
     clearProfileError(profile.id);
     try {
       updateBridgeStatus(await startAdapterBridge(profile.id));
-      void reload();
+      reloadThenClearProfileErrors();
     } catch (error) {
       setProfileErrors((current) => ({ ...current, [profile.id]: error }));
     } finally {
@@ -287,7 +293,7 @@ export default function AdapterPage() {
     try {
       updateBridgeStatus(await stopAdapterBridge(profile.id));
       setStopConfirm(null);
-      void reload();
+      reloadThenClearProfileErrors();
     } catch (error) {
       setProfileErrors((current) => ({ ...current, [profile.id]: error }));
     } finally {
@@ -300,7 +306,7 @@ export default function AdapterPage() {
     clearProfileError(profile.id);
     try {
       updateProfile(await setAdapterBridgeAutoStart(profile.id, autoStart));
-      void reload();
+      reloadThenClearProfileErrors();
     } catch (error) {
       setProfileErrors((current) => ({ ...current, [profile.id]: error }));
     } finally {
@@ -317,7 +323,7 @@ export default function AdapterPage() {
       await removeAdapter(profileId);
       removeProfile(profileId);
       setRemoveConfirm(null);
-      void reload();
+      reloadThenClearProfileErrors();
     } catch (error) {
       setProfileErrors((errors) => ({ ...errors, [profileId]: error }));
     } finally {
@@ -331,7 +337,7 @@ export default function AdapterPage() {
   const viewState = adapterPageViewState({
     loading: loading && entries.length === 0,
     loadError: connectionLoadError,
-    entriesCount: entries.length,
+    entriesCount: selectableEntries.length,
     hasSource: Boolean(source),
   });
   const connectionWarning = resourceFailureMessage(resourceErrors);
@@ -348,7 +354,7 @@ export default function AdapterPage() {
         description="复用已有连接；必要时启动本地协议转换。"
         descriptionTip="不会把一家 OAuth 凭据“转换”为另一家授权，也不会在日志记录请求正文。桥接仅监听本机 127.0.0.1。"
         actions={(
-          <Button onClick={() => setDialogOpen(true)} disabled={loading || entries.length === 0}>
+          <Button onClick={() => setDialogOpen(true)} disabled={loading || selectableEntries.length === 0}>
             新建适配 <ChevronRight className="h-4 w-4" />
           </Button>
         )}
@@ -375,7 +381,7 @@ export default function AdapterPage() {
             title="把现有连接接入其他 Agent"
             description="先在 Connections 保存官方登录或 API Key，再创建适配预览。Adapter 只引用 connectionId，不复制凭据。"
             actionLabel="去 Connections"
-            onAction={() => { window.location.hash = '#/connections'; }}
+            onAction={() => navigate('/connections')}
           />
         ) : viewState === 'choose' || !source ? (
           <EmptyState
@@ -397,7 +403,7 @@ export default function AdapterPage() {
                 {sourceAuthIncomplete && (
                   <p className="mt-2 text-sm text-warning" role="status">
                     {oauthIncompleteAuthHint()}{' '}
-                    <a className="underline" href="#/connections">前往 Connections</a>
+                    <Link className="underline" to="/connections">前往 Connections</Link>
                   </p>
                 )}
               </div>
@@ -433,7 +439,7 @@ export default function AdapterPage() {
             {applyError ? <AdapterErrorLines error={applyError} fallback="应用适配失败" /> : null}
             {applySuccess && (
               <p className="text-sm text-success">
-                <a className="underline" href="#/connections">在 Connections 查看</a>
+                <Link className="underline" to="/connections">在 Connections 查看</Link>
               </p>
             )}
           </div>
@@ -460,7 +466,7 @@ export default function AdapterPage() {
           <DialogHeader className="shrink-0">
             <DialogTitle>新建适配</DialogTitle>
             <DialogDescription>
-              选择来源和目标后立即生成只读分析与配置预览；不会显示或复制凭据。
+              选择来源和目标。选择完成后将在页面展示预览；不会显示或复制凭据。
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
@@ -496,7 +502,7 @@ export default function AdapterPage() {
             {sourceAuthIncomplete && (
               <p className="text-sm text-warning" role="status">
                 {oauthIncompleteAuthHint()}{' '}
-                <a className="underline" href="#/connections">前往 Connections</a>
+                <Link className="underline" to="/connections">前往 Connections</Link>
               </p>
             )}
             <label className="block text-sm font-medium">
@@ -514,20 +520,6 @@ export default function AdapterPage() {
             </label>
             {targetAgentIds.length === 0 && (
               <p className="text-xs text-secondary">当前没有已安装或可配置的目标 Agent。</p>
-            )}
-            {source && (
-              <AdapterPreviewResult
-                analysis={preview}
-                plan={plan}
-                loading={analyzing}
-                error={analysisError}
-                onRetry={retryPreview}
-                compact
-                onApply={canApply ? () => setApplyConfirmOpen(true) : undefined}
-                applyError={applyError}
-                authIncomplete={sourceAuthIncomplete}
-                authHint={sourceAuthIncomplete ? oauthIncompleteAuthHint() : undefined}
-              />
             )}
           </div>
           <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">

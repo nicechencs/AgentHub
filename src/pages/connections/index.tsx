@@ -1,7 +1,7 @@
 // Connections：按 Agent 管理「连接」——官方登录 / API Key / 供应商统一列表。
 // 存储仍为 accounts + providers 两表；本页做 UI 聚合与筛选，?mode= 仅深链提示筛选。
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Cable } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
@@ -11,23 +11,18 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { AGENT_IDS, AGENT_MAP } from '@/config/agents';
 import { resolveEffectiveConnection } from '@/lib/api/agent-connection';
-import { listAccounts } from '@/lib/api/account';
-import { listProviders } from '@/lib/api/provider';
+import {
+  accountsForAgent,
+  connectionCountsByAgent,
+  providersForAgent,
+  useConnectionPool,
+} from '@/app/runtime';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import type { AgentId, EffectiveConnectionKind } from '@/lib/types';
-import {
-  ConnectionList,
-  type ConnectionPoolSnapshot,
-} from './ConnectionList';
+import { ConnectionList } from './ConnectionList';
 import type { ConnectionFilter } from './connection-model';
 
 export type ConnectionMode = 'accounts' | 'providers';
-
-function emptyCounts(ids: AgentId[]): Partial<Record<AgentId, number>> {
-  const next: Partial<Record<AgentId, number>> = {};
-  for (const id of ids) next[id] = 0;
-  return next;
-}
 
 function parseAgentParam(raw: string | null, allowed: AgentId[]): AgentId {
   if (raw && allowed.includes(raw as AgentId)) return raw as AgentId;
@@ -58,6 +53,8 @@ function effectiveKindLabel(kind: EffectiveConnectionKind): string {
 export default function ConnectionsPage() {
   const { installedIds, installedAgents, statuses, loading, state, error, reload } =
     useInstalledAgents();
+  const pool = useConnectionPool();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const rawAgent = parseAgentParam(searchParams.get('agent'), installedIds);
@@ -67,51 +64,14 @@ export default function ConnectionsPage() {
   );
   const focusFilter = parseFocusFilter(searchParams.get('mode'));
 
-  const installedIdsKey = installedIds.join(',');
-  const installedIdsRef = useRef(installedIds);
-  installedIdsRef.current = installedIds;
-
-  const [poolCounts, setPoolCounts] = useState<Partial<Record<AgentId, number>>>({});
-  /** 列表切换后即时摘要；避免只读陈旧 listAgents 的 effectiveKind */
-  const [liveSnap, setLiveSnap] = useState<ConnectionPoolSnapshot | null>(null);
-
-  const refreshCounts = useCallback(async () => {
-    const ids = installedIdsRef.current.length ? installedIdsRef.current : [...AGENT_IDS];
-    try {
-      const [accs, provs] = await Promise.all([listAccounts(), listProviders()]);
-      const totals = emptyCounts(ids);
-      for (const a of accs) {
-        if (a.agentId in totals || ids.includes(a.agentId)) {
-          totals[a.agentId] = (totals[a.agentId] ?? 0) + 1;
-        }
-      }
-      for (const p of provs) {
-        if (p.agentId in totals || ids.includes(p.agentId)) {
-          totals[p.agentId] = (totals[p.agentId] ?? 0) + 1;
-        }
-      }
-      setPoolCounts(totals);
-    } catch {
-      /* 角标失败不阻塞 */
-    }
-  }, []);
-
   useEffect(() => {
-    if (loading) return;
-    void refreshCounts();
-  }, [loading, installedIdsKey, refreshCounts]);
+    if (pool.state === 'idle') void pool.ensureLoaded();
+  }, [pool.ensureLoaded, pool.state]);
 
-  // 不在换 agent 时清空 liveSnap：agentId 不匹配时自然回退 doctor 摘要，
-  // 避免顶部「当前生效」先变空再填上造成闪跳。
-
-  const handlePoolChanged = useCallback(() => {
-    void refreshCounts();
-  }, [refreshCounts]);
-
-  const handleSnapshot = useCallback((snap: ConnectionPoolSnapshot) => {
-    setLiveSnap(snap);
-    // 角标由 onPoolChanged 链刷新；此处不再强制 refreshCounts，减少整页重绘
-  }, []);
+  const poolCounts = useMemo(() => {
+    const ids = installedIds.length ? installedIds : [...AGENT_IDS];
+    return connectionCountsByAgent(pool.accounts, pool.providers, ids);
+  }, [installedIds, pool.accounts, pool.providers]);
 
   useEffect(() => {
     if (agentId === rawAgent) return;
@@ -131,20 +91,14 @@ export default function ConnectionsPage() {
   };
 
   const agentStatus = statuses?.find((item) => item.agentId === agentId);
-  // 优先用列表快照（切换后即时）；否则回退 doctor 富集结果
-  const liveEffective =
-    liveSnap && liveSnap.agentId === agentId
-      ? resolveEffectiveConnection(
-          liveSnap.accounts.find((a) => a.isCurrent),
-          liveSnap.providers.find((p) => p.isCurrent),
-        )
-      : null;
+  const liveEffective = resolveEffectiveConnection(
+    accountsForAgent(pool.accounts, agentId).find((account) => account.isCurrent),
+    providersForAgent(pool.providers, agentId).find((provider) => provider.isCurrent),
+  );
   const effectiveKind: EffectiveConnectionKind =
-    liveEffective?.kind ?? agentStatus?.effectiveKind ?? 'none';
+    liveEffective.kind !== 'none' ? liveEffective.kind : agentStatus?.effectiveKind ?? 'none';
   const effectiveLabel =
-    liveEffective && liveEffective.kind !== 'none'
-      ? liveEffective.label
-      : agentStatus?.effectiveLabel;
+    liveEffective.kind !== 'none' ? liveEffective.label : agentStatus?.effectiveLabel;
   const agentName = AGENT_MAP[agentId]?.name ?? agentId;
 
   if (loading) {
@@ -192,9 +146,7 @@ export default function ConnectionsPage() {
           title="尚未安装 Agent"
           description="先到 Agents 页安装"
           actionLabel="去 Agents"
-          onAction={() => {
-            window.location.hash = '#/agents';
-          }}
+          onAction={() => navigate('/agents')}
         />
       </div>
     );
@@ -245,8 +197,6 @@ export default function ConnectionsPage() {
       <ConnectionList
         agentId={agentId}
         agentStatuses={statuses ?? []}
-        onPoolChanged={handlePoolChanged}
-        onSnapshot={handleSnapshot}
         initialFilter={focusFilter ?? 'all'}
       />
     </div>

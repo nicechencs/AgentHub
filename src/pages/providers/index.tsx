@@ -2,7 +2,7 @@
 // 卡片列表 + 弹窗编辑：智能识别 URL / API Key，不依赖预设列表。
 // 切换走 switchPreview → SwitchConfirmDialog → switchProvider → toast(可撤销)。
 // 可独立路由,也可嵌入 Connections(embedded=true,agent 由父级控制)。
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Cable, FolderOpen, Import, Pencil, Plus, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -28,6 +28,7 @@ import {
   undoSwitch,
 } from '@/lib/api/provider';
 import { liveConfigPaths } from '@/lib/provider-detect';
+import { isCurrentSwitchPreviewRequest } from '@/pages/connections/connection-model';
 import type { AgentId, Provider, SwitchPreview } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { ProviderEditDialog } from './ProviderEditDialog';
@@ -80,6 +81,7 @@ export default function ProvidersPage({
   const [editTarget, setEditTarget] = useState<Provider | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [latencyById, setLatencyById] = useState<Record<string, number>>({});
+  const previewGeneration = useRef(0);
 
   // 独立页:Dashboard 深链 /providers?agent=xxx 同步 tab
   useEffect(() => {
@@ -108,6 +110,12 @@ export default function ProvidersPage({
     },
     [onPoolChanged],
   );
+
+  useEffect(() => {
+    previewGeneration.current += 1;
+    setSwitchState(null);
+    setPreviewLoading(false);
+  }, [agentId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -165,18 +173,39 @@ export default function ProvidersPage({
 
   const openSwitchDialog = async (p: Provider) => {
     if (p.isCurrent) return;
+    const requestedAgentId = agentId;
+    const generation = ++previewGeneration.current;
     setPreviewLoading(true);
     try {
-      const preview = await switchPreview(agentId, p.id);
+      const preview = await switchPreview(requestedAgentId, p.id);
+      if (!isCurrentSwitchPreviewRequest(
+        requestedAgentId,
+        agentId,
+        generation,
+        previewGeneration.current,
+      )) return;
       setSwitchState({ target: p, preview });
     } catch (e) {
+      if (!isCurrentSwitchPreviewRequest(
+        requestedAgentId,
+        agentId,
+        generation,
+        previewGeneration.current,
+      )) return;
       toast({
         title: '无法预览切换',
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
     } finally {
-      setPreviewLoading(false);
+      if (isCurrentSwitchPreviewRequest(
+        requestedAgentId,
+        agentId,
+        generation,
+        previewGeneration.current,
+      )) {
+        setPreviewLoading(false);
+      }
     }
   };
 
