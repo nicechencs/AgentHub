@@ -13,6 +13,7 @@ import type {
   AdapterGateKind,
   AdapterPlanChange,
   AdapterProfile,
+  AdapterProfileMode,
   AdapterProfileStatus,
   AdapterRoute,
   AdapterRouteAnalysis,
@@ -29,6 +30,7 @@ export interface AdapterProfileWire {
   sourceId: string;
   targetAgentId: AgentId;
   route: string;
+  mode: string;
   status: string;
   ruleId: string;
   ruleVersion: string;
@@ -129,6 +131,11 @@ function mapProfileRoute(value: string): Exclude<AdapterRoute, 'unsupported'> {
   const route = mapRoute(value);
   if (route === 'unsupported') return invalidWireValue('profile.route', value);
   return route;
+}
+
+function mapProfileMode(value: string): AdapterProfileMode {
+  if (value === 'api' || value === 'oauth') return value;
+  return invalidWireValue('profile.mode', value);
 }
 
 function mapSupport(value: string): AdapterSupport {
@@ -261,6 +268,7 @@ export function mapAdapterProfile(wire: AdapterProfileWire): AdapterProfile {
     sourceId: wire.sourceId,
     targetAgentId: wire.targetAgentId,
     route: mapProfileRoute(wire.route),
+    mode: mapProfileMode(wire.mode),
     status: mapProfileStatus(wire.status),
     ruleId: wire.ruleId,
     ruleVersion: wire.ruleVersion,

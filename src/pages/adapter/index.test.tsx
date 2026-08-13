@@ -20,13 +20,21 @@ import {
   adapterPlanChangeLabel,
   adapterProfileRecordLabel,
   adapterProfileStatusLabel,
+  adapterTableRouteLabel,
+  adapterTabLabel,
+  adapterCredentialFilterLabel,
+  adapterCredentialKindLabel,
   canApplyAdapterPlan,
+  canRequestAdapterPlan,
   closeConfirmationOnOpenChange,
+  connectionKindForTab,
+  filterProfilesByCredential,
+  filterProfilesByMode,
+  parseAdapterCredentialFilter,
+  parseAdapterTab,
+  resolveAdapterTargetAgentId,
   futureAvailability,
   isCurrentAdapterPreviewRequest,
-  canRequestAdapterPlan,
-  resolveAdapterTargetAgentId,
-  mergeAdapterProfileLoad,
   isSubscriptionGateUnsupported,
   preventBusyConfirmationDismissal,
   routeLabel,
@@ -44,6 +52,8 @@ import {
   errorMessage,
   isAdapterErrorRetryable,
   loadAdapterPageResources,
+  loadAdapterProfileResources,
+  mergeAdapterProfileLoad,
   shouldPollAdapterBridgeStatus,
   supportBadge,
 } from './adapter-model';
@@ -80,6 +90,34 @@ describe('Adapter page view model', () => {
   it('routes an empty connection list to the Connections empty state', () => {
     expect(adapterPageViewState({ loading: false, loadError: null, entriesCount: 0, hasSource: false }))
       .toBe('empty');
+  });
+
+  it('maps legacy ?tab= links onto a credential filter and keeps local_bridge off OAuth', () => {
+    expect(parseAdapterCredentialFilter(null)).toBe('all');
+    expect(parseAdapterCredentialFilter('oauth')).toBe('oauth');
+    expect(parseAdapterCredentialFilter('api')).toBe('api');
+    expect(parseAdapterTab('bridge')).toBe('all');
+    expect(connectionKindForTab('api')).toBe('apikey');
+    expect(connectionKindForTab('oauth')).toBe('oauth');
+    expect(adapterTabLabel('api')).toBe('API Key');
+    expect(adapterCredentialFilterLabel('all')).toBe('全部');
+    expect(adapterCredentialKindLabel('oauth')).toBe('官方登录');
+    expect(filterProfilesByMode([
+      { mode: 'api' },
+      { mode: 'oauth' },
+      { mode: 'api' },
+    ], 'api')).toHaveLength(2);
+    expect(filterProfilesByCredential([
+      { mode: 'api' },
+      { mode: 'oauth' },
+    ], 'all')).toHaveLength(2);
+    expect(filterProfilesByCredential([
+      { mode: 'api' },
+      { mode: 'oauth' },
+    ], 'oauth')).toHaveLength(1);
+    expect(routeLabel('local_bridge')).toBe('需要本地代理');
+    expect(adapterTableRouteLabel('local_bridge')).toBe('本地协议转换');
+    expect(adapterTableRouteLabel('native_endpoint')).toBe('原生端点');
   });
 
   it('allows explicit direct plans', () => {
@@ -286,6 +324,7 @@ describe('Adapter page view model', () => {
       sourceId: 'kimi-1',
       targetAgentId: 'codex' as const,
       route: 'local_bridge' as const,
+      mode: 'api' as const,
       status: 'active' as const,
       ruleId: 'bridge',
       ruleVersion: '1',
@@ -340,7 +379,6 @@ describe('Adapter page view model', () => {
     expect(isCurrentAdapterPreviewRequest(4, 4)).toBe(true);
   });
 
-
   it('does not reuse a stale target Agent when none are selectable', () => {
     expect(resolveAdapterTargetAgentId('claude', [])).toBe('');
     expect(resolveAdapterTargetAgentId('claude', ['codex', 'pi'])).toBe('codex');
@@ -373,6 +411,7 @@ describe('Adapter page view model', () => {
       sourceId: 'kimi-connection',
       targetAgentId: 'claude' as const,
       route: 'native_endpoint' as const,
+      mode: 'api' as const,
       status: 'active' as const,
       ruleId: 'rule',
       ruleVersion: '1',
@@ -390,7 +429,7 @@ describe('Adapter page view model', () => {
   it('renders bridge runtime labels and only loopback endpoint information', () => {
     const profile = {
       id: 'bridge-1', name: 'Kimi → Codex', sourceKind: 'provider' as const, sourceId: 'kimi-1',
-      targetAgentId: 'codex' as const, route: 'local_bridge' as const, status: 'active' as const,
+      targetAgentId: 'codex' as const, route: 'local_bridge' as const, mode: 'api' as const, status: 'active' as const,
       ruleId: 'bridge', ruleVersion: '1', generatedProviderId: 'codex-bridge-1', localPort: 32123,
       autoStart: true, createdAt: '2026-08-12T00:00:00Z', updatedAt: '2026-08-12T00:00:00Z',
     };
@@ -417,7 +456,7 @@ describe('Adapter page view model', () => {
   it('preserves successful resources when another pool or bridge status fails', async () => {
     const profile = {
       id: 'bridge-1', name: 'Bridge', sourceKind: 'provider' as const, sourceId: 'source-9876',
-      targetAgentId: 'codex' as const, route: 'local_bridge' as const, status: 'active' as const,
+      targetAgentId: 'codex' as const, route: 'local_bridge' as const, mode: 'api' as const, status: 'active' as const,
       ruleId: 'bridge', ruleVersion: '1', generatedProviderId: 'codex-bridge-1', localPort: 32123,
       autoStart: true, createdAt: '2026-08-12T00:00:00Z', updatedAt: '2026-08-12T00:00:00Z',
     };
@@ -452,11 +491,34 @@ describe('Adapter page view model', () => {
     expect(result.profiles).toEqual([]);
   });
 
+  it('keeps the last successful profiles when a later listProfiles call fails', async () => {
+    const profile = {
+      id: 'adapter-1', name: 'Kimi → Claude', sourceKind: 'provider' as const, sourceId: 'kimi-1',
+      targetAgentId: 'claude' as const, route: 'native_endpoint' as const, mode: 'api' as const,
+      status: 'active' as const, ruleId: 'direct', ruleVersion: '1', generatedProviderId: 'generated-1',
+      localPort: null, autoStart: false, createdAt: '2026-08-12T00:00:00Z', updatedAt: '2026-08-12T00:00:00Z',
+    };
+    const previous = await loadAdapterProfileResources({
+      listProfiles: async () => [profile],
+      getBridgeStatus: async () => ({ profileId: 'unused', state: 'stopped' }),
+    });
+    const failed = await loadAdapterProfileResources({
+      listProfiles: async () => Promise.reject(new Error('profiles unavailable')) as Promise<never[]>,
+      getBridgeStatus: async () => ({ profileId: 'unused', state: 'stopped' }),
+    });
+    const merged = mergeAdapterProfileLoad(previous, failed);
+
+    expect(failed.profiles).toEqual([]);
+    expect(merged.profiles).toEqual([profile]);
+    expect(merged.profileState).toBe('error');
+    expect(merged.profileError).toBeInstanceOf(Error);
+  });
+
   it('commits apply success before deciding whether to probe bridge runtime state', () => {
     const result: Pick<AdapterApplyResult, 'profile'> = {
       profile: {
         id: 'adapter-1', name: 'Direct', sourceKind: 'account', sourceId: 'account-1234', targetAgentId: 'claude',
-        route: 'native_endpoint', status: 'active', ruleId: 'direct', ruleVersion: '1', generatedProviderId: null,
+        route: 'native_endpoint', mode: 'api', status: 'active', ruleId: 'direct', ruleVersion: '1', generatedProviderId: null,
         localPort: null, autoStart: false, createdAt: '2026-08-12T00:00:00Z', updatedAt: '2026-08-12T00:00:00Z',
       },
     };
@@ -513,7 +575,7 @@ describe('Adapter profile interactions', () => {
   it('polls only running or degraded local-bridge profiles and clears a stale generation', () => {
     const running = {
       id: 'bridge-running', name: 'Running', sourceKind: 'provider' as const, sourceId: 'source-1',
-      targetAgentId: 'codex' as const, route: 'local_bridge' as const, status: 'active' as const,
+      targetAgentId: 'codex' as const, route: 'local_bridge' as const, mode: 'api' as const, status: 'active' as const,
       ruleId: 'bridge', ruleVersion: '1', generatedProviderId: 'codex-bridge-1', localPort: 32123,
       autoStart: true, createdAt: '2026-08-12T00:00:00Z', updatedAt: '2026-08-12T00:00:00Z',
     };

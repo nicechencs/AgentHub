@@ -12,9 +12,11 @@ import type { ConnectionEntry } from '@/pages/connections/connection-model';
 import {
   adapterBridgeStateLabel,
   adapterBridgeUpstreamLabel,
+  connectionKindForFilter,
   errorMessage,
   sourceKindLabel,
   targetAgentName,
+  type AdapterCredentialFilter,
 } from './adapter-model';
 
 export type AdapterAgentStatusLike = {
@@ -127,6 +129,53 @@ export function groupAdapterSources(
       if (nameDelta !== 0) return nameDelta;
       return sourceKindSort(left.source) - sourceKindSort(right.source);
     });
+}
+
+/** Keep the Adapter source picker on one credential family (API Key vs official login). */
+export function filterAdapterSourcesByKind(
+  entries: readonly ConnectionEntry[],
+  kind: ConnectionEntry['kind'],
+): ConnectionEntry[] {
+  return entries.filter((entry) => entry.kind === kind);
+}
+
+/** Page filter: all connections, or one credential family. */
+export function filterAdapterSourcesByCredential(
+  entries: readonly ConnectionEntry[],
+  filter: AdapterCredentialFilter,
+): ConnectionEntry[] {
+  if (filter === 'all') return [...entries];
+  return filterAdapterSourcesByKind(entries, connectionKindForFilter(filter));
+}
+
+export function adapterSourceSearchText(entry: ConnectionEntry): string {
+  return [
+    entry.title,
+    entry.subtitle ?? '',
+    entry.id,
+    entry.agentId,
+    AGENT_MAP[entry.agentId]?.name ?? '',
+    entry.kind === 'oauth' ? '官方登录 oauth' : 'api key apikey',
+    sourceKindLabel(entry.source),
+  ].join(' ').toLowerCase();
+}
+
+/** Client-side search over title, agent, kind, and id. Never matches secrets. */
+export function searchAdapterSources(
+  entries: readonly ConnectionEntry[],
+  query: string,
+): ConnectionEntry[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [...entries];
+  return entries.filter((entry) => adapterSourceSearchText(entry).includes(needle));
+}
+
+export function adapterSourceCounts(entries: readonly ConnectionEntry[]): Record<AdapterCredentialFilter, number> {
+  return {
+    all: entries.length,
+    api: filterAdapterSourcesByKind(entries, 'apikey').length,
+    oauth: filterAdapterSourcesByKind(entries, 'oauth').length,
+  };
 }
 
 /** Adapter-generated Provider projections must not be offered as nested sources. */

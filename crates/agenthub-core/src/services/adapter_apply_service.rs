@@ -12,8 +12,9 @@ use serde_json::json;
 use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
 use crate::models::{
-    AdapterApplyRequest, AdapterApplyResult, AdapterProfile, AdapterProfileStatus, AdapterRoute,
-    AdapterRouteRequest, AdapterSourceKind, AdapterSupport, AgentId, Provider, ProviderInput,
+    AdapterApplyRequest, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
+    AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
+    AdapterSupport, AgentId, Provider, ProviderInput,
 };
 use crate::services::{
     AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
@@ -75,6 +76,7 @@ impl AdapterApplyService {
             source_id: source_id.into(),
             target_agent_id: AgentId::Claude,
             route: AdapterRoute::NativeEndpoint,
+            mode: AdapterProfileMode::Api,
             status: AdapterProfileStatus::Applying,
             rule_id: RULE_ID.into(),
             rule_version: RULE_VERSION.into(),
@@ -253,7 +255,17 @@ impl AdapterApplyService {
         source_id: Option<&str>,
         target_agent_id: Option<AgentId>,
     ) -> Result<Vec<AdapterProfile>> {
-        self.profiles.list(source_kind, source_id, target_agent_id)
+        self.list_filtered(&AdapterProfileFilter {
+            source_kind,
+            source_id: source_id.map(str::to_owned),
+            target_agent_id,
+            ..AdapterProfileFilter::default()
+        })
+    }
+
+    /// Lists profiles using the full typed filter, including product `mode`.
+    pub fn list_filtered(&self, filter: &AdapterProfileFilter) -> Result<Vec<AdapterProfile>> {
+        self.profiles.list_filtered(filter)
     }
 
     /// Removes the profile and its generated provider when it still exists.
@@ -399,6 +411,7 @@ fn same_profile_contract(existing: &AdapterProfile, proposed: &AdapterProfile) -
         && existing.source_id == proposed.source_id
         && existing.target_agent_id == proposed.target_agent_id
         && existing.route == proposed.route
+        && existing.mode == proposed.mode
         && existing.rule_id == proposed.rule_id
         && existing.rule_version == proposed.rule_version
         && existing.generated_provider_id == proposed.generated_provider_id

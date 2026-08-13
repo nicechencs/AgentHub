@@ -1,8 +1,8 @@
 //! Read-only Adapter route analysis and plan commands.
 
 use agenthub_core::models::{
-    AdapterApplyPlan, AdapterApplyRequest, AdapterApplyResult, AdapterProfile,
-    AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind,
+    AdapterApplyPlan, AdapterApplyRequest, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
+    AdapterProfileMode, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind,
 };
 use tauri::State;
 
@@ -69,6 +69,8 @@ pub async fn list_adapter_profiles(
     source_kind: Option<String>,
     source_id: Option<String>,
     target_agent_id: Option<String>,
+    mode: Option<String>,
+    route: Option<String>,
 ) -> Result<Vec<AdapterProfile>, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     with_hub_blocking(hub, move |hub| {
@@ -77,6 +79,8 @@ pub async fn list_adapter_profiles(
             source_kind.as_deref(),
             source_id.as_deref(),
             target_agent_id.as_deref(),
+            mode.as_deref(),
+            route.as_deref(),
         )
     })
     .await
@@ -215,11 +219,22 @@ fn list_adapter_profiles_inner(
     source_kind: Option<&str>,
     source_id: Option<&str>,
     target_agent_id: Option<&str>,
+    mode: Option<&str>,
+    route: Option<&str>,
 ) -> Result<Vec<AdapterProfile>, String> {
     let source_kind = parse_source_kind_opt(source_kind)?;
     let target_agent_id = target_agent_id.map(parse_agent).transpose()?;
+    let mode = parse_mode_opt(mode)?;
+    let route = parse_route_opt(route)?;
     hub.adapter_apply
-        .list(source_kind, source_id, target_agent_id)
+        .list_filtered(&AdapterProfileFilter {
+            source_kind,
+            source_id: source_id.map(str::to_owned),
+            target_agent_id,
+            mode,
+            route,
+            ..AdapterProfileFilter::default()
+        })
         .map_err(|err| map_err_string("list_adapter_profiles", err))
 }
 
@@ -247,6 +262,27 @@ fn parse_source_kind(source_kind: &str) -> Result<AdapterSourceKind, String> {
 
 fn parse_source_kind_opt(source_kind: Option<&str>) -> Result<Option<AdapterSourceKind>, String> {
     source_kind.map(parse_source_kind).transpose()
+}
+
+fn parse_mode(mode: &str) -> Result<AdapterProfileMode, String> {
+    AdapterProfileMode::parse(mode)
+        .ok_or_else(|| "invalid adapter mode, expected: api|oauth".to_string())
+}
+
+fn parse_mode_opt(mode: Option<&str>) -> Result<Option<AdapterProfileMode>, String> {
+    mode.map(parse_mode).transpose()
+}
+
+fn parse_route(route: &str) -> Result<AdapterRoute, String> {
+    AdapterRoute::parse(route)
+        .filter(|value| value.is_profile_supported())
+        .ok_or_else(|| {
+            "invalid adapter route, expected: config_sync|native_endpoint|local_bridge".to_string()
+        })
+}
+
+fn parse_route_opt(route: Option<&str>) -> Result<Option<AdapterRoute>, String> {
+    route.map(parse_route).transpose()
 }
 
 #[cfg(test)]

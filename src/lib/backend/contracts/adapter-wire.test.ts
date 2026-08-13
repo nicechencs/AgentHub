@@ -16,6 +16,7 @@ describe('Adapter Rust wire mappers', () => {
         sourceId: 'provider-kimi',
         targetAgentId: 'codex',
         route: 'local_bridge',
+        mode: 'api',
         status: 'active',
         ruleId: 'kimi-membership-to-codex-bridge-v1',
         ruleVersion: '1',
@@ -41,7 +42,7 @@ describe('Adapter Rust wire mappers', () => {
     });
 
     expect(result).toMatchObject({
-      profile: { route: 'local_bridge', localPort: 43123 },
+      profile: { route: 'local_bridge', mode: 'api', localPort: 43123 },
       provider: {
         agentId: 'codex',
         preset: 'openai-compatible',

@@ -29,6 +29,47 @@ impl AdapterSourceKind {
     }
 }
 
+/// Product bucket for Adapter page tabs. Orthogonal to [`AdapterSourceKind`]
+/// (table origin) and [`AdapterRoute`] (projection).
+///
+/// Derived from [`super::AdapterCredentialClass`] at apply time:
+/// API Key → `api`, OAuth shapes → `oauth`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AdapterProfileMode {
+    Api,
+    Oauth,
+}
+
+impl AdapterProfileMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Api => "api",
+            Self::Oauth => "oauth",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "api" => Some(Self::Api),
+            "oauth" => Some(Self::Oauth),
+            _ => None,
+        }
+    }
+
+    /// Map a classified credential family onto the persisted `mode` bucket.
+    ///
+    /// `Unknown` cannot become a profile: classify already fails closed.
+    pub fn from_credential_class(class: super::AdapterCredentialClass) -> Option<Self> {
+        match class {
+            super::AdapterCredentialClass::ApiKey => Some(Self::Api),
+            super::AdapterCredentialClass::OauthAuthJson
+            | super::AdapterCredentialClass::OauthOther => Some(Self::Oauth),
+            super::AdapterCredentialClass::Unknown => None,
+        }
+    }
+}
+
 /// Input to the read-only route analysis service. `source_id` is always a DB id.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -117,6 +158,8 @@ pub struct AdapterProfile {
     pub source_id: String,
     pub target_agent_id: AgentId,
     pub route: AdapterRoute,
+    /// Product tab: API conversion vs OAuth proxy. Independent of `route`.
+    pub mode: AdapterProfileMode,
     pub status: AdapterProfileStatus,
     pub rule_id: String,
     pub rule_version: String,
@@ -150,6 +193,8 @@ pub struct AdapterProfileFilter {
     pub source_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_agent_id: Option<AgentId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<AdapterProfileMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub route: Option<AdapterRoute>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -1,20 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Boxes, ChevronRight } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { PageSection } from '@/components/layout/PageSection';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { ErrorState } from '@/components/shared/ErrorState';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { kindBadge } from '@/pages/connections/connection-model';
 import { useAgentStatusesOptional } from '@/app/runtime';
 import { AGENT_IDS } from '@/config/agents';
 import {
@@ -38,27 +31,34 @@ import {
   AdapterPreviewResult,
   AdapterProfiles,
 } from './adapter-components';
+import { AdapterSourceList } from './AdapterSourceList';
 import {
   adapterApplyCommit,
+  adapterPageDescription,
   adapterPageViewState,
   adapterProfileRecordLabel,
   canApplyAdapterPlan,
   canRequestAdapterPlan,
   isCurrentAdapterPreviewRequest,
+  parseAdapterCredentialFilter,
   resolveAdapterTargetAgentId,
   resourceFailureMessage,
   sourceLabel,
   sourceStatusHint,
   targetAgentName,
+  type AdapterCredentialFilter,
 } from './adapter-model';
 import {
   adapterApplyStage,
   adapterApplyStageLabel,
   adapterBridgeProbeSummary,
+  adapterSourceCounts,
   excludeAdapterGeneratedSources,
+  filterAdapterSourcesByCredential,
   groupAdapterSources,
   isOAuthAuthIncomplete,
   oauthIncompleteAuthHint,
+  searchAdapterSources,
   selectableTargetAgentIds,
 } from './adapter-sources';
 import { useAdapterResources } from './use-adapter-resources';
@@ -66,6 +66,14 @@ import {
   closeConfirmationOnOpenChange,
   preventBusyConfirmationDismissal,
 } from '@/components/shared/busy-confirmation';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 export {
   adapterActionLabel,
@@ -73,15 +81,29 @@ export {
   adapterBridgeEndpointLabel,
   adapterBridgeStateLabel,
   adapterBridgeUpstreamLabel,
+  adapterCredentialFilterLabel,
+  adapterCredentialKindLabel,
+  adapterPageDescription,
   adapterPageViewState,
   adapterPlanChangeLabel,
   adapterProfileRecordLabel,
   adapterProfileStatusLabel,
+  adapterTabDescription,
+  adapterTabLabel,
+  adapterTableRouteLabel,
   canApplyAdapterPlan,
+  canRequestAdapterPlan,
+  connectionKindForFilter,
+  connectionKindForTab,
+  filterProfilesByCredential,
+  filterProfilesByMode,
   futureAvailability,
   isCurrentAdapterPreviewRequest,
   isSubscriptionGateUnsupported,
   maskedIdSuffix,
+  parseAdapterCredentialFilter,
+  parseAdapterTab,
+  resolveAdapterTargetAgentId,
   routeLabel,
   sourceLabel,
   sourceStatusHint,
@@ -93,9 +115,17 @@ export {
   preventBusyConfirmationDismissal,
 } from '@/components/shared/busy-confirmation';
 
+function connectionsHref(filter: AdapterCredentialFilter): string {
+  if (filter === 'oauth') return '/connections?mode=oauth';
+  if (filter === 'api') return '/connections?mode=api';
+  return '/connections';
+}
+
 /** Adapter compatibility preview and saved generated projections. */
 export default function AdapterPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filter = parseAdapterCredentialFilter(searchParams.get('tab'));
   const {
     entries,
     profiles,
@@ -105,14 +135,15 @@ export default function AdapterPage() {
     profileState,
     loading,
     reload,
+    reloadProfiles,
     updateBridgeStatus,
     updateProfile,
     removeProfile,
   } = useAdapterResources();
   const agentStatusSnapshot = useAgentStatusesOptional();
   const [sourceKey, setSourceKey] = useState('');
-  const [targetAgentId, setTargetAgentId] = useState<AgentId>('claude');
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [sourceQuery, setSourceQuery] = useState('');
+  const [targetAgentId, setTargetAgentId] = useState<AgentId | ''>('');
   const [plan, setPlan] = useState<AdapterApplyPlan | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<unknown>(null);
@@ -138,27 +169,52 @@ export default function AdapterPage() {
     }),
     [agentStatusSnapshot.state, agentStatusSnapshot.statuses],
   );
-  const selectableEntries = useMemo(
+  const allSelectableEntries = useMemo(
     () => excludeAdapterGeneratedSources(entries, profiles),
     [entries, profiles],
   );
-  const sourceGroups = useMemo(
-    () => groupAdapterSources(selectableEntries, AGENT_IDS),
-    [selectableEntries],
+  const sourceCounts = useMemo(
+    () => adapterSourceCounts(allSelectableEntries),
+    [allSelectableEntries],
   );
+  const filteredEntries = useMemo(
+    () => searchAdapterSources(
+      filterAdapterSourcesByCredential(allSelectableEntries, filter),
+      sourceQuery,
+    ),
+    [allSelectableEntries, filter, sourceQuery],
+  );
+  const sourceGroups = useMemo(
+    () => groupAdapterSources(filteredEntries, AGENT_IDS),
+    [filteredEntries],
+  );
+
+  const setFilter = (next: AdapterCredentialFilter) => {
+    const params = new URLSearchParams(searchParams);
+    if (next === 'all') params.delete('tab');
+    else params.set('tab', next);
+    setSearchParams(params, { replace: true });
+  };
 
   const source = useMemo(
-    () => selectableEntries.find((entry) => entry.key === sourceKey) ?? null,
-    [selectableEntries, sourceKey],
+    () => allSelectableEntries.find((entry) => entry.key === sourceKey) ?? null,
+    [allSelectableEntries, sourceKey],
   );
   const sourceAuthIncomplete = isOAuthAuthIncomplete(source);
+  const sourceBadge = source ? kindBadge(source.kind) : null;
+
+  const resolvedTargetAgentId = resolveAdapterTargetAgentId(targetAgentId, targetAgentIds);
 
   useEffect(() => {
-    if (targetAgentIds.length === 0) return;
-    if (!targetAgentIds.includes(targetAgentId)) {
-      setTargetAgentId(targetAgentIds[0]);
+    if (resolvedTargetAgentId === targetAgentId) return;
+    setTargetAgentId(resolvedTargetAgentId);
+  }, [resolvedTargetAgentId, targetAgentId]);
+
+  useEffect(() => {
+    if (sourceKey && !allSelectableEntries.some((entry) => entry.key === sourceKey)) {
+      setSourceKey('');
     }
-  }, [targetAgentId, targetAgentIds]);
+  }, [allSelectableEntries, sourceKey]);
   const visibleProfileErrors = { ...resourceErrors.bridgeStatuses, ...profileErrors };
 
   // Every selection (and retry) starts a plan request. The generation
@@ -172,14 +228,17 @@ export default function AdapterPage() {
     setApplySuccess(null);
     setApplyResultProfile(null);
     setApplyProbeStatus(null);
-    if (!source) {
+    if (!source || !resolvedTargetAgentId || !canRequestAdapterPlan({
+      sourceId: source.id,
+      targetAgentId: resolvedTargetAgentId,
+    })) {
       setAnalyzing(false);
       return;
     }
     const request = {
       sourceKind: source.source,
       sourceId: source.id,
-      targetAgentId,
+      targetAgentId: resolvedTargetAgentId,
     } as const;
     setAnalyzing(true);
     void planAdapter(request)
@@ -193,15 +252,15 @@ export default function AdapterPage() {
       .finally(() => {
         if (isCurrentAdapterPreviewRequest(generation, requestGeneration.current)) setAnalyzing(false);
       });
-  }, [source, targetAgentId, retryToken]);
+  }, [resolvedTargetAgentId, retryToken, source]);
 
   const preview = plan?.analysis ?? null;
   const retryPreview = () => setRetryToken((token) => token + 1);
-  const canApply = canApplyAdapterPlan(plan) && !sourceAuthIncomplete;
-  const applyRequest = source ? {
+  const canApply = Boolean(resolvedTargetAgentId) && canApplyAdapterPlan(plan) && !sourceAuthIncomplete;
+  const applyRequest = source && resolvedTargetAgentId ? {
     sourceKind: source.source,
     sourceId: source.id,
-    targetAgentId,
+    targetAgentId: resolvedTargetAgentId,
   } as const : null;
   const applyStage = adapterApplyStage({
     applying,
@@ -226,7 +285,8 @@ export default function AdapterPage() {
   };
 
   const reloadThenClearProfileErrors = () => {
-    void reload().then(
+    // apply/remove already notify the shared pool; only profiles need a second pass.
+    void reloadProfiles().then(
       () => { setProfileErrors({}); },
       () => undefined,
     );
@@ -257,12 +317,11 @@ export default function AdapterPage() {
     try {
       const result = await applyAdapter(applyRequest);
       const committed = adapterApplyCommit(result);
-      // Applying is the committed operation. Close both dialogs and show success
+      // Applying is the committed operation. Close the confirmation and show success
       // before any optional runtime inspection can fail or block the refresh.
       setApplyResultProfile(result.profile);
       setApplySuccess(committed.successMessage);
       setApplyConfirmOpen(false);
-      setDialogOpen(false);
       if (committed.shouldProbeBridge) void setBridgeStatusBestEffort(result.profile);
       if (committed.shouldRefresh) reloadThenClearProfileErrors();
     } catch (error) {
@@ -337,7 +396,7 @@ export default function AdapterPage() {
   const viewState = adapterPageViewState({
     loading: loading && entries.length === 0,
     loadError: connectionLoadError,
-    entriesCount: selectableEntries.length,
+    entriesCount: allSelectableEntries.length,
     hasSource: Boolean(source),
   });
   const connectionWarning = resourceFailureMessage(resourceErrors);
@@ -351,100 +410,132 @@ export default function AdapterPage() {
       <PageHeader
         title="Adapter"
         badge={<Badge variant="warning">开发中</Badge>}
-        description="复用已有连接；必要时启动本地协议转换。"
+        description={adapterPageDescription()}
         descriptionTip="不会把一家 OAuth 凭据“转换”为另一家授权，也不会在日志记录请求正文。桥接仅监听本机 127.0.0.1。"
         actions={(
-          <Button onClick={() => setDialogOpen(true)} disabled={loading || selectableEntries.length === 0}>
-            新建适配 <ChevronRight className="h-4 w-4" />
+          <Button variant="outline" onClick={() => navigate(connectionsHref(filter))}>
+            去 Connections
           </Button>
         )}
       />
 
-      <div className="space-y-4">
-        {connectionWarning && <p className="text-sm text-warning" role="alert">{connectionWarning}</p>}
-        {viewState === 'loading' ? (
-          <Card>
-            <CardContent className="space-y-3 pt-6">
-              <div className="h-5 w-32 animate-pulse rounded bg-muted" />
-              <div className="h-4 w-72 animate-pulse rounded bg-muted" />
-            </CardContent>
-          </Card>
-        ) : viewState === 'error' ? (
-          <ErrorState
-            error={connectionLoadError}
-            title="无法读取连接"
-            onRetry={() => void reload()}
-          />
-        ) : viewState === 'empty' ? (
-          <EmptyState
-            icon={Boxes}
-            title="把现有连接接入其他 Agent"
-            description="先在 Connections 保存官方登录或 API Key，再创建适配预览。Adapter 只引用 connectionId，不复制凭据。"
-            actionLabel="去 Connections"
-            onAction={() => navigate('/connections')}
-          />
-        ) : viewState === 'choose' || !source ? (
-          <EmptyState
-            icon={Boxes}
-            title="选择一个来源连接"
-            description="选择目标 Agent 后，会自动分析路径并生成只读配置预览。不支持的组合会中性说明原因与替代路径。"
-            actionLabel="新建适配"
-            onAction={() => setDialogOpen(true)}
-          />
-        ) : (
-          <Card>
-            <CardHeader>
-              <div className="min-w-0">
-                <CardTitle>当前预览</CardTitle>
-                <p className="mt-1 text-sm text-secondary">
-                  {sourceLabel(source)} <ChevronRight className="inline h-3.5 w-3.5" /> {targetAgentName(targetAgentId)}
-                </p>
-                <p className="mt-1 text-xs text-muted">{sourceStatusHint(source)}</p>
-                {sourceAuthIncomplete && (
-                  <p className="mt-2 text-sm text-warning" role="status">
-                    {oauthIncompleteAuthHint()}{' '}
-                    <Link className="underline" to="/connections">前往 Connections</Link>
-                  </p>
-                )}
-              </div>
-              <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
-                更改选择
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <AdapterPreviewResult
-                analysis={preview}
-                plan={plan}
-                loading={analyzing}
-                error={analysisError}
-                onRetry={retryPreview}
-                onApply={canApply ? () => setApplyConfirmOpen(true) : undefined}
-                applyError={applyError}
-                authIncomplete={sourceAuthIncomplete}
-                authHint={sourceAuthIncomplete ? oauthIncompleteAuthHint() : undefined}
+      {connectionWarning && <p className="mb-3 text-sm text-warning" role="alert">{connectionWarning}</p>}
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)] lg:items-start">
+        <Card className="flex min-h-[24rem] flex-col overflow-hidden lg:sticky lg:top-6 lg:max-h-[calc(100vh-8rem)]">
+          <CardContent className="flex min-h-0 flex-1 flex-col p-4">
+            <AdapterSourceList
+              groups={sourceGroups}
+              selectedKey={sourceKey}
+              filter={filter}
+              counts={sourceCounts}
+              query={sourceQuery}
+              loading={viewState === 'loading'}
+              loadError={viewState === 'error' ? connectionLoadError : null}
+              totalCount={allSelectableEntries.length}
+              visibleCount={filteredEntries.length}
+              onSelect={(entry) => setSourceKey(entry.key)}
+              onFilterChange={setFilter}
+              onQueryChange={setSourceQuery}
+              onRetry={() => void reload()}
+              onGoConnections={(next) => navigate(connectionsHref(next))}
+            />
+          </CardContent>
+        </Card>
+
+        <Card className="min-h-[24rem] lg:min-h-[32rem]">
+          <CardHeader>
+            <div className="min-w-0">
+              <CardTitle>路由适配</CardTitle>
+              <p className="mt-1 text-sm text-secondary">
+                {source
+                  ? <>{sourceLabel(source)} <ChevronRight className="inline h-3.5 w-3.5" /> {resolvedTargetAgentId ? targetAgentName(resolvedTargetAgentId) : '未选择目标'}</>
+                  : '选择左侧连接后，在此选择目标并预览路径。'}
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!source ? (
+              <EmptyState
+                icon={Boxes}
+                title="选择一个来源连接"
+                description="左侧同时列出 API Key 与官方登录。选择后会按该连接自己的规则分析路径；未开门禁的组合只展示原因，不会应用。"
               />
-            </CardContent>
-          </Card>
-        )}
+            ) : (
+              <>
+                <section className="space-y-2 rounded-btn border border-border bg-subtle p-3">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <h3 className="text-sm font-medium">来源摘要</h3>
+                    {sourceBadge ? <Badge variant={sourceBadge.variant}>{sourceBadge.label}</Badge> : null}
+                  </div>
+                  <p className="text-sm">{sourceLabel(source)}</p>
+                  <p className="text-xs text-muted">{sourceStatusHint(source)}</p>
+                  {sourceAuthIncomplete && (
+                    <p className="text-sm text-warning" role="status">
+                      {oauthIncompleteAuthHint()}{' '}
+                      <Link className="underline" to="/connections">前往 Connections</Link>
+                    </p>
+                  )}
+                </section>
 
-        {(applySuccess || applyError || applying) && (
-          <div className="space-y-1" role={applyError ? 'alert' : 'status'}>
-            {applyStageText && (
-              <p className={`text-sm ${applyError ? 'text-danger' : 'text-success'}`}>
-                {applyStageText}
-                {applySuccess ? ` · ${applySuccess}` : ''}
-              </p>
-            )}
-            {applyProbeText && <p className="text-sm text-secondary">{applyProbeText}</p>}
-            {applyError ? <AdapterErrorLines error={applyError} fallback="应用适配失败" /> : null}
-            {applySuccess && (
-              <p className="text-sm text-success">
-                <Link className="underline" to="/connections">在 Connections 查看</Link>
-              </p>
-            )}
-          </div>
-        )}
+                <label className="block text-sm font-medium">
+                  目标 Agent
+                  <select
+                    aria-label="目标 Agent"
+                    className="mt-1 w-full rounded-btn border border-border bg-panel px-3 py-2 text-sm"
+                    value={resolvedTargetAgentId}
+                    onChange={(event) => setTargetAgentId(event.target.value as AgentId)}
+                    disabled={targetAgentIds.length === 0}
+                  >
+                    {targetAgentIds.map((agentId) => (
+                      <option key={agentId} value={agentId}>{targetAgentName(agentId)}</option>
+                    ))}
+                  </select>
+                </label>
+                {targetAgentIds.length === 0 && (
+                  <p className="text-xs text-secondary">当前没有已安装或可配置的目标 Agent。</p>
+                )}
 
+                <AdapterPreviewResult
+                  analysis={preview}
+                  plan={plan}
+                  loading={analyzing}
+                  error={analysisError}
+                  onRetry={retryPreview}
+                  onApply={canApply ? () => setApplyConfirmOpen(true) : undefined}
+                  applyError={applyError}
+                  authIncomplete={sourceAuthIncomplete}
+                  authHint={sourceAuthIncomplete ? oauthIncompleteAuthHint() : undefined}
+                />
+
+                {(applySuccess || applyError || applying) && (
+                  <div className="space-y-1" role={applyError ? 'alert' : 'status'}>
+                    {applyStageText && (
+                      <p className={`text-sm ${applyError ? 'text-danger' : 'text-success'}`}>
+                        {applyStageText}
+                        {applySuccess ? ` · ${applySuccess}` : ''}
+                      </p>
+                    )}
+                    {applyProbeText && <p className="text-sm text-secondary">{applyProbeText}</p>}
+                    {applyError ? <AdapterErrorLines error={applyError} fallback="应用适配失败" /> : null}
+                    {applySuccess && (
+                      <p className="text-sm text-success">
+                        <Link className="underline" to="/connections">在 Connections 查看</Link>
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <PageSection
+        title="已创建的适配"
+        description="凭据类型与适配路径分列展示。本地协议转换不是 OAuth。"
+        ruled
+      >
         <AdapterProfiles
           profiles={profiles}
           bridgeStatuses={bridgeStatuses}
@@ -459,74 +550,7 @@ export default function AdapterPage() {
           onSetBridgeAutoStart={handleSetBridgeAutoStart}
           onRetry={() => void reload()}
         />
-      </div>
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden">
-          <DialogHeader className="shrink-0">
-            <DialogTitle>新建适配</DialogTitle>
-            <DialogDescription>
-              选择来源和目标。选择完成后将在页面展示预览；不会显示或复制凭据。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-            <label className="block text-sm font-medium">
-              来源连接
-              <select
-                aria-label="来源连接"
-                className="mt-1 w-full rounded-btn border border-border bg-panel px-3 py-2 text-sm"
-                value={sourceKey}
-                onChange={(event) => setSourceKey(event.target.value)}
-              >
-                <option value="">请选择连接</option>
-                {sourceGroups.map((group) => (
-                  <optgroup key={group.id} label={group.label}>
-                    {group.entries.map((entry) => (
-                      <option key={entry.key} value={entry.key}>
-                        {sourceLabel(entry)} · {sourceStatusHint(entry)}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            </label>
-            {source ? (
-              <p className="text-xs text-secondary">
-                来源状态：{sourceStatusHint(source)}。Adapter 只引用 connectionId / sourceId。
-              </p>
-            ) : (
-              <p className="text-xs text-secondary">
-                没有合适连接时，请先前往 Connections 添加官方登录或 API Key。
-              </p>
-            )}
-            {sourceAuthIncomplete && (
-              <p className="text-sm text-warning" role="status">
-                {oauthIncompleteAuthHint()}{' '}
-                <Link className="underline" to="/connections">前往 Connections</Link>
-              </p>
-            )}
-            <label className="block text-sm font-medium">
-              目标 Agent
-              <select
-                aria-label="目标 Agent"
-                className="mt-1 w-full rounded-btn border border-border bg-panel px-3 py-2 text-sm"
-                value={targetAgentIds.includes(targetAgentId) ? targetAgentId : (targetAgentIds[0] ?? '')}
-                onChange={(event) => setTargetAgentId(event.target.value as AgentId)}
-              >
-                {targetAgentIds.map((agentId) => (
-                  <option key={agentId} value={agentId}>{targetAgentName(agentId)}</option>
-                ))}
-              </select>
-            </label>
-            {targetAgentIds.length === 0 && (
-              <p className="text-xs text-secondary">当前没有已安装或可配置的目标 Agent。</p>
-            )}
-          </div>
-          <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
-            <Button variant="secondary" onClick={() => setDialogOpen(false)}>完成</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </PageSection>
 
       <Dialog
         open={applyConfirmOpen}
@@ -544,7 +568,7 @@ export default function AdapterPage() {
             <DialogDescription>
               {plan?.analysis.route === 'local_bridge'
                 ? '桥接只监听本机，并会创建、切换 Codex Connection。AgentHub 需要保持在托盘运行；不会显示或复制来源凭据。'
-                : `将为 ${source ? sourceLabel(source) : '所选连接'} 创建到 ${targetAgentName(targetAgentId)} 的适配。无需本地服务，也不会复制凭据。`}
+                : `将为 ${source ? sourceLabel(source) : '所选连接'} 创建到 ${resolvedTargetAgentId ? targetAgentName(resolvedTargetAgentId) : '未选择目标'} 的适配。无需本地服务，也不会复制凭据。`}
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">

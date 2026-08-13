@@ -340,6 +340,10 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         .filter((profile) => !filter.sourceKind || profile.sourceKind === filter.sourceKind)
         .filter((profile) => !filter.sourceId || profile.sourceId === filter.sourceId)
         .filter((profile) => !filter.targetAgentId || profile.targetAgentId === filter.targetAgentId)
+        .filter((profile) => !filter.mode || profile.mode === filter.mode)
+        .filter((profile) => !filter.route || profile.route === filter.route)
+        .filter((profile) => !filter.status || profile.status === filter.status)
+        .filter((profile) => filter.autoStart == null || profile.autoStart === filter.autoStart)
         .map((profile) => ({ ...profile }));
     },
     async apply(request: AdapterApplyRequest): Promise<AdapterApplyResult> {
@@ -368,6 +372,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         sourceId: request.sourceId,
         targetAgentId: request.targetAgentId,
         route: isLocalBridge ? 'local_bridge' : 'native_endpoint',
+        mode: 'api',
         status: 'active',
         ruleId: isLocalBridge ? 'kimi-membership-to-codex-v1' : 'kimi-membership-to-claude-v1',
         ruleVersion: '1',

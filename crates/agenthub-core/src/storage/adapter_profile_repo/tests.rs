@@ -1,6 +1,6 @@
 use crate::models::{
-    AdapterProfile, AdapterProfileFilter, AdapterProfileStatus, AdapterRoute, AdapterSourceKind,
-    AgentId,
+    AdapterProfile, AdapterProfileFilter, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
+    AdapterSourceKind, AgentId,
 };
 use crate::storage::{AdapterProfileRepo, Database};
 
@@ -18,6 +18,7 @@ fn sample_profile(id: &str, name: &str) -> AdapterProfile {
         source_id: "account-1".into(),
         target_agent_id: AgentId::Codex,
         route: AdapterRoute::ConfigSync,
+        mode: AdapterProfileMode::Api,
         status: AdapterProfileStatus::Applying,
         rule_id: "account-to-codex".into(),
         rule_version: "v1".into(),
@@ -38,9 +39,10 @@ fn migration_schema_is_credential_free_and_has_required_indexes() {
             .prepare("PRAGMA table_info(adapter_profiles)")?
             .query_map([], |row| row.get::<_, String>(1))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        assert_eq!(columns.len(), 15);
+        assert_eq!(columns.len(), 16);
         assert!(columns.iter().any(|column| column == "local_port"));
         assert!(columns.iter().any(|column| column == "auto_start"));
+        assert!(columns.iter().any(|column| column == "mode"));
         for forbidden in ["credentials", "api_key", "secret", "config"] {
             assert!(
                 !columns.iter().any(|column| column.eq_ignore_ascii_case(forbidden)),
@@ -55,6 +57,7 @@ fn migration_schema_is_credential_free_and_has_required_indexes() {
         assert!(indexes.iter().any(|name| name == "idx_adapter_profiles_source_target"));
         assert!(indexes.iter().any(|name| name == "idx_adapter_profiles_generated_provider"));
         assert!(indexes.iter().any(|name| name == "idx_adapter_profiles_bridge_restore"));
+        assert!(indexes.iter().any(|name| name == "idx_adapter_profiles_mode"));
         let version: i64 = conn.query_row(
             "SELECT COUNT(*) FROM schema_migrations WHERE version = '00012_adapter_profiles'",
             [],
@@ -67,6 +70,12 @@ fn migration_schema_is_credential_free_and_has_required_indexes() {
             |row| row.get(0),
         )?;
         assert_eq!(bridge_version, 1);
+        let mode_version: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM schema_migrations WHERE version = '00014_adapter_profile_mode'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(mode_version, 1);
         Ok(())
     })
     .unwrap();
@@ -196,6 +205,14 @@ fn bridge_fields_filter_and_invalid_persisted_values_fail_closed() {
         })
         .unwrap();
     assert_eq!(filtered, vec![bridge.clone()]);
+    assert_eq!(filtered[0].mode, AdapterProfileMode::Api);
+    let oauth_only = repo
+        .list_filtered(&AdapterProfileFilter {
+            mode: Some(AdapterProfileMode::Oauth),
+            ..AdapterProfileFilter::default()
+        })
+        .unwrap();
+    assert!(oauth_only.is_empty());
 
     db.with_conn(|conn| {
         conn.execute_batch("PRAGMA ignore_check_constraints = ON")?;

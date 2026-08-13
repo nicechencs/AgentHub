@@ -12,6 +12,7 @@ const profileWire = {
   sourceId: 'source-1',
   targetAgentId: 'codex' as const,
   route: 'local_bridge',
+  mode: 'api',
   status: 'active',
   ruleId: 'kimi-membership-to-codex-bridge-v1',
   ruleVersion: '1',
@@ -78,13 +79,13 @@ describe('Tauri adapter route port', () => {
     const port = createTauriAdapterPort();
 
     const profiles = await port.listProfiles({
-      sourceKind: 'provider', sourceId: 'source-1', targetAgentId: 'codex',
+      sourceKind: 'provider', sourceId: 'source-1', targetAgentId: 'codex', mode: 'api',
     });
 
     expect(invokeMock).toHaveBeenCalledWith('list_adapter_profiles', {
-      sourceKind: 'provider', sourceId: 'source-1', targetAgentId: 'codex',
+      sourceKind: 'provider', sourceId: 'source-1', targetAgentId: 'codex', mode: 'api',
     });
-    expect(profiles).toMatchObject([{ id: 'profile-1', route: 'local_bridge' }]);
+    expect(profiles).toMatchObject([{ id: 'profile-1', route: 'local_bridge', mode: 'api' }]);
   });
 
   it('maps the generated Core Provider in an apply response', async () => {

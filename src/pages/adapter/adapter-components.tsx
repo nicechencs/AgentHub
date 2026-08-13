@@ -3,9 +3,7 @@ import { ExternalLink, ShieldCheck } from 'lucide-react';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import { openExternalLink } from '@/lib/open-external';
 import type {
   AdapterApplyPlan,
@@ -13,29 +11,19 @@ import type {
   AdapterProfile,
   AdapterRouteAnalysis,
 } from '@/lib/backend/contracts/adapter';
+import { AdapterProfilesTable } from './AdapterProfilesTable';
 import {
   adapterActionLabel,
-  adapterBridgeEndpointLabel,
-  adapterBridgeUpstreamLabel,
   adapterErrorDetails,
   adapterErrorRetryHint,
   adapterPlanChangeLabel,
-  adapterProfileRecordLabel,
-  bridgeStatusBadge,
   canApplyAdapterPlan,
   errorMessage,
   futureAvailability,
-  profileStatusBadge,
   routeLabel,
   supportBadge,
   unsupportedPresentation,
 } from './adapter-model';
-import {
-  adapterFailurePresentation,
-  adapterNeedsAttentionRecovery,
-  adapterProfileLastErrorCode,
-  adapterProfilePortLabel,
-} from './adapter-sources';
 
 export function AdapterErrorLines({
   error,
@@ -226,117 +214,20 @@ export function AdapterProfiles({
   onRetry: () => void;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <div>
-          <CardTitle>已创建的适配</CardTitle>
-          <p className="mt-1 text-sm text-secondary">生成的 Provider 仅引用原 Connection，不含凭据。</p>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {loading ? <Skeleton className="h-12 w-full" /> : loadError ? (
-          <div className="space-y-2" role="alert">
-            <p className="text-sm text-danger">{errorMessage(loadError, '无法读取已创建的适配。')}</p>
-            <Button variant="outline" size="sm" onClick={onRetry}>重试</Button>
-          </div>
-        ) : profiles.length === 0 ? (
-          <p className="text-sm text-secondary">尚未创建适配。</p>
-        ) : profiles.map((profile) => {
-          const status = profileStatusBadge(profile.status);
-          const removing = removingProfileId === profile.id;
-          const bridgeStatus = profile.route === 'local_bridge' ? bridgeStatuses[profile.id] : undefined;
-          const bridgeBadge = bridgeStatusBadge(bridgeStatus?.state);
-          const bridgeEndpoint = adapterBridgeEndpointLabel(profile, bridgeStatus);
-          const busy = busyProfileIds[profile.id] === true;
-          const bridgeTransitioning = bridgeStatus?.state === 'starting' || bridgeStatus?.state === 'stopping';
-          const lastErrorCode = adapterProfileLastErrorCode(profile);
-          const portLabel = adapterProfilePortLabel(profile, bridgeStatus);
-          const recovery = profile.status === 'needs_attention'
-            ? adapterNeedsAttentionRecovery(profile, bridgeStatus?.state)
-            : null;
-          const rowError = errors[profile.id]
-            ? adapterFailurePresentation(errors[profile.id], '适配操作失败')
-            : null;
-          return (
-            <div key={profile.id} className="rounded-btn border border-border px-3 py-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="font-medium">{adapterProfileRecordLabel(profile)}</p>
-                  <p className="mt-0.5 text-xs text-secondary">
-                    {routeLabel(profile.route)} · 生成 Provider：{profile.generatedProviderId ?? '无'}
-                    {' · '}阶段：{status.label}
-                    {profile.route === 'local_bridge' || profile.localPort ? ` · 端口：${portLabel}` : ''}
-                    {lastErrorCode ? ` · lastErrorCode：${lastErrorCode}` : ''}
-                  </p>
-                  {profile.route === 'local_bridge' && (
-                    <p className="mt-0.5 text-xs text-secondary">
-                      本机桥接{bridgeEndpoint ? ` · ${bridgeEndpoint}` : ` · ${portLabel}`}
-                      {bridgeStatus?.upstreamStatus ? ` · 上游：${adapterBridgeUpstreamLabel(bridgeStatus.upstreamStatus)}` : ''}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant={status.variant}>{status.label}</Badge>
-                  {profile.route === 'local_bridge' && <Badge variant={bridgeBadge.variant}>{bridgeBadge.label}</Badge>}
-                  <Button variant="dangerOutline" size="sm" disabled={removing || busy} onClick={() => onRemove(profile)}>
-                    {removing ? '删除中…' : '删除'}
-                  </Button>
-                </div>
-              </div>
-              {profile.route === 'local_bridge' && (
-                <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3 text-sm">
-                  <label className="flex items-center gap-2 text-secondary">
-                    <Switch
-                      checked={profile.autoStart}
-                      disabled={busy}
-                      aria-label={`${adapterProfileRecordLabel(profile)} 自动启动`}
-                      onCheckedChange={(autoStart) => onSetBridgeAutoStart(profile, autoStart)}
-                    />
-                    自动启动
-                  </label>
-                  {isBridgeStopCapable(bridgeStatus?.state) ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={busy || bridgeTransitioning}
-                      onClick={() => onRequestStopBridge(profile)}
-                    >
-                      {busy ? '处理中…' : '停止'}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={busy || bridgeTransitioning}
-                      onClick={() => onStartBridge(profile)}
-                    >
-                      {busy ? '处理中…' : recovery?.startLabel ?? (bridgeStatus?.state === 'error' ? '重试启动' : '启动')}
-                    </Button>
-                  )}
-                  <a className="text-info hover:underline" href="#/connections">在 Connections 查看</a>
-                </div>
-              )}
-              {bridgeStatus?.state === 'degraded' && (
-                <p className="mt-2 text-xs text-warning" role="status">
-                  服务降级：本地监听可能仍在，但上游健康检查未通过。可先停止再启动；不会自动反复重试写配置。
-                </p>
-              )}
-              {recovery && (
-                <p className="mt-2 text-xs text-warning" role="status">{recovery.hint}</p>
-              )}
-              {rowError && (
-                <div className="mt-2 space-y-1" role="alert">
-                  <AdapterErrorLines error={errors[profile.id]} fallback="适配操作失败" />
-                  <p className="text-xs text-secondary">
-                    {rowError.hint} 行内错误不会展示凭据；可重试当前操作或查看 Connections 中的来源连接状态。
-                  </p>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </CardContent>
-    </Card>
+    <AdapterProfilesTable
+      profiles={profiles}
+      bridgeStatuses={bridgeStatuses}
+      loading={loading}
+      loadError={loadError}
+      errors={errors}
+      removingProfileId={removingProfileId}
+      busyProfileIds={busyProfileIds}
+      onRemove={onRemove}
+      onStartBridge={onStartBridge}
+      onRequestStopBridge={onRequestStopBridge}
+      onSetBridgeAutoStart={onSetBridgeAutoStart}
+      onRetry={onRetry}
+    />
   );
 }
 

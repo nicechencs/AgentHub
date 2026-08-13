@@ -22,6 +22,7 @@ export type {
   AdapterPlanChange,
   AdapterProfile,
   AdapterProfileFilter,
+  AdapterProfileMode,
   AdapterProfileStatus,
   AdapterRoute,
   AdapterRouteAnalysis,

@@ -25,6 +25,24 @@ fn optional_source_kind_preserves_absent_list_filter() {
 }
 
 #[test]
+fn optional_mode_and_route_filters_fail_closed() {
+    assert_eq!(parse_mode_opt(None).unwrap(), None);
+    assert_eq!(parse_mode_opt(Some("api")).unwrap(), Some(AdapterProfileMode::Api));
+    assert_eq!(
+        parse_mode_opt(Some("oauth")).unwrap(),
+        Some(AdapterProfileMode::Oauth)
+    );
+    assert!(parse_mode_opt(Some("bridge")).is_err());
+
+    assert_eq!(parse_route_opt(None).unwrap(), None);
+    assert_eq!(
+        parse_route_opt(Some("local_bridge")).unwrap(),
+        Some(AdapterRoute::LocalBridge)
+    );
+    assert!(parse_route_opt(Some("unsupported")).is_err());
+}
+
+#[test]
 fn adapter_error_from_string_keeps_bracketed_code_and_retryable() {
     let error = adapter_error_from_string(
         "本地适配服务无法启动或停止 [adapter.port_in_use]".into(),

@@ -246,7 +246,13 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 #### 4.3.3 Adapter（连接适配）
 
-路由 `/adapter`；旧 `/router` 重定向到该页。页面从 Connections 选择来源和目标 Agent，展示兼容路径、限制、证据与写入预览。
+路由 `/adapter`；旧 `/router` 重定向到该页。侧栏仍只有一个 Adapter 入口。首屏是左右主从（窄屏上下堆叠），下方独立列出已创建适配：
+
+- **左：可用连接** — 同时列出 API Key 与官方登录；支持搜索和「全部 / API Key / 官方登录」筛选。旧 `?tab=api|oauth` 映射为该筛选。
+- **右：路由适配** — 来源摘要、目标 Agent、路径分析、限制、配置预览与应用。选择左侧连接后自动 `plan`。
+- **下：已创建的适配** — 表格列出来源、目标、凭据类型、路径、状态与操作。`local_bridge` 是路径，不是 OAuth。
+
+OAuth 未完成时只引导去 Connections，不在 Adapter 发起登录。API Key 与 OAuth 共用同一预览/应用流程，兼容性规则仍按来源独立判定。
 
 - 后端返回的 `canApply` 是唯一写入门禁；页面不得根据 route 名称自行开放按钮。
 - 规则名称、route 和可执行状态以[当前实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)为准；应用后创建受管 profile 和目标 Provider。

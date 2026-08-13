@@ -13,6 +13,12 @@ export interface AdapterRouteRequest {
 /** Closed compatibility routes; unknown wire values are rejected at the adapter boundary. */
 export type AdapterRoute = 'native_endpoint' | 'local_bridge' | 'config_sync' | 'unsupported';
 
+/**
+ * Persisted credential family for a profile. Orthogonal to `sourceKind` (table) and `route`
+ * (projection). API Key conversions stay `api` even when they use a local protocol bridge.
+ */
+export type AdapterProfileMode = 'api' | 'oauth';
+
 /** A rule can be stable, experimental, or explicitly unsupported. */
 export type AdapterSupport = 'stable' | 'experimental' | 'unsupported';
 
@@ -101,6 +107,8 @@ export interface AdapterProfile {
   sourceId: string;
   targetAgentId: AgentId;
   route: Exclude<AdapterRoute, 'unsupported'>;
+  /** Credential family: API Key conversion vs official-login proxy. Independent of `route`. */
+  mode: AdapterProfileMode;
   status: AdapterProfileStatus;
   ruleId: string;
   ruleVersion: string;
@@ -152,6 +160,10 @@ export interface AdapterProfileFilter {
   sourceKind?: AdapterSourceKind;
   sourceId?: string;
   targetAgentId?: AgentId;
+  mode?: AdapterProfileMode;
+  route?: Exclude<AdapterRoute, 'unsupported'>;
+  status?: AdapterProfileStatus;
+  autoStart?: boolean;
 }
 
 /** Structured Adapter command error shared by Tauri and mock. */

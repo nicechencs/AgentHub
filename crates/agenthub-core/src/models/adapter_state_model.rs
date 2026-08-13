@@ -314,6 +314,7 @@ mod tests {
             source_id: "src".into(),
             target_agent_id: AgentId::Codex,
             route: AdapterRoute::LocalBridge,
+            mode: crate::models::AdapterProfileMode::Api,
             status,
             rule_id: "kimi-membership-to-codex-v1".into(),
             rule_version: "1".into(),

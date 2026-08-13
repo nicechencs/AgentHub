@@ -113,30 +113,35 @@ type CompatibilityRule = {
 
 - 路由：沿用 `/adapter`；旧 `/router` 继续重定向。
 - 标题：`Adapter`。
-- 简介：`复用已有连接；必要时启动本地协议转换。`
+- 侧栏仍是单一入口；API Key 与官方登录不再拆成两个子页。
+- 简介：复用 Connections 中的 API Key 或官方登录，接入另一个 Agent；不会把一家 OAuth 转成另一家授权。
 - `descriptionTip`：说明不会把一家 OAuth 凭据“转换”为另一家的授权，也不会在日志记录请求正文。
-- PageHeader 右侧唯一主按钮：`新建适配`。
+- PageHeader 右侧按钮：`去 Connections`（补来源，而不是在 Adapter 建第二套账号）。
+- 旧 `?tab=api|oauth` 仍可用，映射为左侧连接筛选；缺省或未知值视为「全部」。
 
-页面沿用 `pageRhythm.pageShell`、`PageHeader`、`ListRow`、`Card`、`Badge`、`Dialog`、`EmptyState`、`ErrorState` 和现有 Tailwind 语义 token。不引入参考项目的 SCSS token、Sheet primitive 或新的视觉系统。
+页面沿用 `pageRhythm.pageShell`、`PageHeader`、`PageSection`、`TableShell`、`SegmentedControl`、`Card`、`Badge`、`Dialog`、`EmptyState`、`ErrorState` 和现有 Tailwind 语义 token。不引入参考项目的 SCSS token、Sheet primitive 或新的视觉系统。
 
 ### 4.2 首屏信息架构
 
-保持单列纵向结构：
+左右主从（`lg` 及以上并排，窄屏上下堆叠），已创建记录单独放在下方 table：
 
 ```text
-PageHeader                                             [新建适配]
+PageHeader                                             [去 Connections]
 
-适配记录（N）                                  [仅显示异常 □]
-  后台服务 ● 运行中 · 2 个本地桥接
+┌ 可用连接 ─────────────┐  ┌ 路由适配 ──────────────────────────┐
+│ 搜索                   │  │ 来源摘要 · 凭据类型 Badge           │
+│ [全部] [API Key] [官方]│  │ 目标 Agent                         │
+│ Kimi key  [API Key]    │  │ 路径分析 / 限制 / 配置预览 / 应用  │
+│ Codex 登录 [官方登录]  │  │ OAuth 未完成 → 去 Connections      │
+└────────────────────────┘  └────────────────────────────────────┘
 
-  ● Kimi Code → Codex        本地桥接    127.0.0.1:43121
-    运行中 · 上次请求 2 分钟前 · 1280 ms        [停止] [详情]
-
-  ● Anthropic → Pi           配置同步
-    已应用 · 上次验证 今天 10:24                  [重新验证] [详情]
-
-（无记录时：说明 + 新建适配 CTA）
+已创建的适配
+来源 | 目标 | 凭据类型 | 路径 | 状态 | 端点 / Provider | 操作
+Kimi → Codex   API Key   本地协议转换   运行中   127.0.0.1:43121   [停止]
+Kimi → Claude  API Key   原生端点       已生效   Provider …        [删除]
 ```
+
+`mode`（`api` | `oauth`）是持久化凭据族，与 `route` / `source_kind` 正交。Kimi API Key → Codex 的 `local_bridge` 仍是 API Key 协议转换，不得标成 OAuth。
 
 不默认展示：
 
@@ -148,20 +153,20 @@ PageHeader                                             [新建适配]
 
 ### 4.3 新建适配流程
 
-使用现有宽 Dialog 完成创建；只在最终应用前切换到简短确认视图，不增加多页 Wizard。若未来全站经设计评审引入共享 Sheet primitive，再统一迁移，Adapter 不单独创造交互原语。
+在左右主从里完成选择与预览；只在最终应用前弹出简短确认 Dialog，不增加多页 Wizard。若未来全站经设计评审引入共享 Sheet primitive，再统一迁移，Adapter 不单独创造交互原语。
 
 #### 步骤 A：选择来源
 
-- 下拉框按 Agent/Provider 分组列出 Connections 中可用连接。
-- 每项展示：名称、凭据类型、所属产品、状态、脱敏尾号。
+- 左侧按 Agent / Account·Provider 分组列出 Connections 中可用连接；默认展示全部。
+- 每项展示：名称、凭据类型 Badge、所属产品、授权状态、脱敏尾号。
 - 来源名称、产品与凭据类型按[独立适配规则](provider-api-oauth-adaptation.md)展示；已验证的预设可自动选择端点，不要求用户手工猜 Base URL。
-- 没有连接时显示 `前往 Connections 添加`，完成后返回当前 Dialog 并刷新。
-- OAuth 尚未完成时，在当前区块内展示 `连接 / 继续授权 / 等待回调 / 已连接 / 失败`；授权成功后的主动作是继续创建，而不是另开管理页。
+- 没有连接时显示 `前往 Connections 添加`。
+- OAuth 尚未完成时，只提示前往 Connections 完成授权；Adapter 不发起登录、不伪造 apply。
 
 #### 步骤 B：选择目标
 
 - 目标 Agent 只列已安装或可配置的 Agent；不可用项置灰并说明原因。
-- 用户选择后立即运行 `analyze`，局部显示 skeleton，不锁住已有适配列表。
+- 用户选择左侧连接并确认目标后立即运行 `plan`，局部显示 skeleton，不锁住已有适配列表。
 - 结果使用一个清晰 Badge：`直接同步`、`原生端点`、`需要本地代理` 或 `暂未支持`。
 - 对 subscription 实验候选，`不支持`还须显示“当前未通过上游/条款/协议门禁”，并链接[订阅桥接专题与门禁](provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code当前结论与前置门禁)；不得以 opt-in、测试按钮或隐藏开关绕开规则。
 

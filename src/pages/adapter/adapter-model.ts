@@ -14,10 +14,76 @@ import {
   type AdapterBridgeRuntimeStatus,
   type AdapterBridgeRuntimeState,
   type AdapterProfile,
+  type AdapterProfileMode,
   type AdapterProfileStatus,
   type AdapterRouteAnalysis,
   type AdapterSupport,
 } from '@/lib/backend/contracts/adapter';
+
+export const ADAPTER_CREDENTIAL_FILTERS = ['all', 'api', 'oauth'] as const;
+export type AdapterCredentialFilter = (typeof ADAPTER_CREDENTIAL_FILTERS)[number];
+
+/** Legacy alias: old `?tab=api|oauth` deep links map onto the credential filter. */
+export type AdapterTab = Exclude<AdapterCredentialFilter, 'all'>;
+
+/**
+ * Page filter. Missing / unknown values default to all profiles.
+ * Old `?tab=api|oauth` links stay valid as a credential-family filter.
+ */
+export function parseAdapterCredentialFilter(raw: string | null | undefined): AdapterCredentialFilter {
+  if (raw === 'oauth' || raw === 'api') return raw;
+  return 'all';
+}
+
+/** @deprecated Prefer {@link parseAdapterCredentialFilter}; unknown values now default to `all`. */
+export function parseAdapterTab(raw: string | null | undefined): AdapterCredentialFilter {
+  return parseAdapterCredentialFilter(raw);
+}
+
+export function adapterCredentialFilterLabel(filter: AdapterCredentialFilter): string {
+  if (filter === 'oauth') return '官方登录';
+  if (filter === 'api') return 'API Key';
+  return '全部';
+}
+
+export function adapterTabLabel(tab: AdapterTab | AdapterCredentialFilter): string {
+  return adapterCredentialFilterLabel(tab === 'all' ? 'all' : tab);
+}
+
+export function adapterPageDescription(): string {
+  return '复用 Connections 中的 API Key 或官方登录，接入另一个 Agent。不会把一家 OAuth 转成另一家授权。';
+}
+
+export function adapterTabDescription(_tab?: AdapterTab | AdapterCredentialFilter): string {
+  return adapterPageDescription();
+}
+
+export function connectionKindForFilter(filter: Exclude<AdapterCredentialFilter, 'all'>): 'apikey' | 'oauth' {
+  return filter === 'oauth' ? 'oauth' : 'apikey';
+}
+
+export function connectionKindForTab(tab: AdapterTab): 'apikey' | 'oauth' {
+  return connectionKindForFilter(tab);
+}
+
+export function adapterCredentialKindLabel(mode: AdapterProfileMode): string {
+  return mode === 'oauth' ? '官方登录' : 'API Key';
+}
+
+export function filterProfilesByMode<T extends { mode?: AdapterProfileMode | null }>(
+  profiles: readonly T[],
+  mode: AdapterProfileMode,
+): T[] {
+  return profiles.filter((profile) => profile.mode === mode);
+}
+
+export function filterProfilesByCredential<T extends { mode?: AdapterProfileMode | null }>(
+  profiles: readonly T[],
+  filter: AdapterCredentialFilter,
+): T[] {
+  if (filter === 'all') return [...profiles];
+  return filterProfilesByMode(profiles, filter);
+}
 
 export type AdapterResourceLoadState = 'loading' | 'ready' | 'partial' | 'error';
 
@@ -210,6 +276,12 @@ export function routeLabel(route: AdapterRouteAnalysis['route']): string {
   if (route === 'local_bridge') return '需要本地代理';
   if (route === 'config_sync') return '直接同步';
   return '当前不支持';
+}
+
+/** Table column copy for the projection path. Credential family is a separate column. */
+export function adapterTableRouteLabel(route: AdapterRouteAnalysis['route']): string {
+  if (route === 'local_bridge') return '本地协议转换';
+  return routeLabel(route);
 }
 
 export function supportBadge(support: AdapterSupport): { label: string; variant: 'success' | 'warning' | 'default' } {
@@ -473,7 +545,6 @@ export function adapterPageViewState(input: {
 export function isCurrentAdapterPreviewRequest(generation: number, current: number): boolean {
   return generation === current;
 }
-
 
 /** Empty target list must not reuse a stale Agent id for plan/apply. */
 export function resolveAdapterTargetAgentId(

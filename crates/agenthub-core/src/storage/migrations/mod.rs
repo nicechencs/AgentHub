@@ -40,6 +40,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00013_adapter_bridge_profiles",
         include_str!("00013_adapter_bridge_profiles.sql"),
     ),
+    (
+        "00014_adapter_profile_mode",
+        include_str!("00014_adapter_profile_mode.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

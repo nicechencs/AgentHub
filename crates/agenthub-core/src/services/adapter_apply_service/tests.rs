@@ -159,6 +159,7 @@ fn active_profile(source_id: &str) -> AdapterProfile {
         source_id: source_id.into(),
         target_agent_id: AgentId::Claude,
         route: AdapterRoute::NativeEndpoint,
+        mode: crate::models::AdapterProfileMode::Api,
         status: AdapterProfileStatus::Active,
         rule_id: RULE_ID.into(),
         rule_version: RULE_VERSION.into(),
