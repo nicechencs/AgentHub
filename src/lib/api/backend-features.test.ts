@@ -27,10 +27,15 @@ describe('getBackendFeatures', () => {
     resetBackend();
   });
 
-  it('reports production-closed features for tauri backend', () => {
+  it('reports production undo/latency open and export closed for tauri backend', () => {
     setBackend(createTauriBackend());
-    expect(getBackendFeatures()).toEqual(DEFAULT_BACKEND_FEATURES);
-    expect(getBackend().features.providerUndoSwitch).toBe(false);
+    expect(getBackendFeatures()).toEqual({
+      providerUndoSwitch: true,
+      providerTestLatency: true,
+      accountUndoSwitch: true,
+      backupExport: false,
+    });
+    expect(getBackend().features.backupExport).toBe(false);
   });
 
   it('reports mock undo and latency as available', () => {

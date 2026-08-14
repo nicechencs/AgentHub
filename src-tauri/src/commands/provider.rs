@@ -136,6 +136,40 @@ pub async fn switch_provider_preview(
     .await
 }
 
+/// Invoke: `undo_switch_provider` — re-apply the previous provider after a switch.
+#[tauri::command]
+pub async fn undo_switch_provider(
+    state: State<'_, AppState>,
+    agent_id: String,
+) -> Result<bool, String> {
+    let agent = parse_agent(&agent_id)?;
+    let hub = state.hub_arc()?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
+    with_hub_blocking(hub, move |hub| {
+        hub.providers
+            .undo_switch(agent)
+            .map_err(|e| map_err_string("undo_switch_provider", e))
+    })
+    .await
+}
+
+/// Invoke: `test_provider_latency` — probe Base URL RTT in milliseconds.
+#[tauri::command]
+pub async fn test_provider_latency(
+    state: State<'_, AppState>,
+    agent_id: String,
+    provider_id: String,
+) -> Result<u64, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        let agent = parse_agent(&agent_id)?;
+        hub.providers
+            .test_latency(agent, &provider_id)
+            .map_err(|e| map_err_string("test_provider_latency", e))
+    })
+    .await
+}
+
 // ---------------------------------------------------------------------------
 // Testable inner implementations (take &AgentHub, no Tauri State)
 // ---------------------------------------------------------------------------

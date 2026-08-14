@@ -467,7 +467,7 @@ DTO / mapper：`lib/backend/contracts/*-map.ts`。错误类型：`contracts/erro
 | `env` `simulateBrokenPath` / `resetRuntimesDemo` | 演示工具 | 仅 `dev/mocks/env.ts` 导出，不在 EnvPort |
 | `fakeInstallScript` / `fakeEnv*Script` | 演示脚本 | 已移出生产 port；UI 统一 `*Detailed` + feature-local `install-preview` |
 | `resetForTests` on Chat/Project ports | 测试 hook | 仅 `dev/mocks` 的 `resetChatMock` / `resetProjectMock` |
-| 测速 / 切换撤销 / 导出备份 | 生产未实现 | `Backend.features` 生产全 false（UI 隐藏）；port 若被调用仍 `unsupported`。mock：测速/撤销可演示，导出仍关闭。**OAuth / token refresh 已接线**（Claude/Codex/Grok） |
+| 测速 / 切换撤销 / 导出备份 | 测速与切换撤销已实现；导出仍关 | 生产 `Backend.features`：undo/latency true，`backupExport` false。mock：测速/撤销可演示，导出仍关闭。**OAuth / token refresh 已接线**（Claude/Codex/Grok） |
 | 注释中的 mock 说明 | 文档 | 更新为「dev:mock / tauri 边界」 |
 
 ### 4.6 页面与其它约定

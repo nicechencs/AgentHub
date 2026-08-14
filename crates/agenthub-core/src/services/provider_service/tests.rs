@@ -713,6 +713,14 @@ fn switch_backfills_snapshots_writes_and_selects_transactionally() {
         result.redacted().provider.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
         "***"
     );
+
+    assert!(svc.undo_switch(AgentId::Claude).unwrap());
+    assert!(svc.get("c1", None).unwrap().is_current);
+    assert!(!svc.get("c2", None).unwrap().is_current);
+    assert!(
+        !svc.undo_switch(AgentId::Claude).unwrap(),
+        "undo is one-shot"
+    );
 }
 
 #[test]

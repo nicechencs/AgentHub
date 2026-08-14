@@ -17,6 +17,9 @@ use crate::models::{
     Account, AccountInput, AccountKind, AccountSwitchResult, AgentId, BackupKind, Capability,
     LiveAccount,
 };
+use crate::services::switch_undo::{
+    clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
+};
 use crate::services::{BackupService, ConnectionService};
 use crate::storage::{AccountRepo, Database};
 use crate::utils::agent_lock::AgentWriteLock;
@@ -28,6 +31,7 @@ pub const MAX_ACCOUNT_LABEL_LEN: usize = 256;
 
 /// Business facade over [`AccountRepo`].
 pub struct AccountService {
+    db: Database,
     repo: AccountRepo,
     registry: AdapterRegistry,
     backup: Option<BackupService>,
@@ -43,6 +47,7 @@ impl AccountService {
 
     pub fn with_registry(db: Database, registry: AdapterRegistry) -> Self {
         Self {
+            db: db.clone(),
             repo: AccountRepo::new(db.clone()),
             registry,
             backup: None,
@@ -55,6 +60,7 @@ impl AccountService {
     pub fn with_live(db: Database, registry: AdapterRegistry, backups_root: PathBuf) -> Self {
         let lock_dir = backups_root.parent().unwrap_or(&backups_root).join("locks");
         Self {
+            db: db.clone(),
             repo: AccountRepo::new(db.clone()),
             backup: Some(BackupService::new(
                 db.clone(),
@@ -1259,6 +1265,7 @@ impl AccountService {
         }
 
         let current = self.repo.get_current(agent)?;
+        let previous_current_id = current.as_ref().map(|account| account.id.clone());
 
         let live_for_backfill = if agent == AgentId::Pi {
             None
@@ -1373,11 +1380,31 @@ impl AccountService {
             }
         };
 
+        if let Some(from_id) = previous_current_id {
+            if from_id != account.id {
+                record_switch_undo(&self.db, ACCOUNT_UNDO_PREFIX, agent, &from_id, &account.id)?;
+            } else {
+                clear_switch_undo(&self.db, ACCOUNT_UNDO_PREFIX, agent)?;
+            }
+        } else {
+            clear_switch_undo(&self.db, ACCOUNT_UNDO_PREFIX, agent)?;
+        }
+
         Ok(AccountSwitchResult {
             account,
             backup: snapshot,
             backfilled_account_id,
         })
+    }
+
+    /// Re-apply the previous account after a successful [`Self::switch`], if recorded.
+    pub fn undo_switch(&self, agent: AgentId) -> Result<bool> {
+        let Some(from_id) = peek_switch_undo(&self.db, ACCOUNT_UNDO_PREFIX, agent)? else {
+            return Ok(false);
+        };
+        self.switch(&from_id, agent)?;
+        clear_switch_undo(&self.db, ACCOUNT_UNDO_PREFIX, agent)?;
+        Ok(true)
     }
 
     pub fn repo(&self) -> &AccountRepo {

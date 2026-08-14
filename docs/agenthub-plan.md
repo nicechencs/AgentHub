@@ -360,7 +360,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 项 | 状态 | 说明 |
 |---|---|---|
 | 备份**导出包**（换机） | ❌ | `exports/` 预留；无 command；`Backend.features.backupExport=false`，无 UI 入口 |
-| 测速 / 切换撤销 | ❌ | 生产 `Backend.features` 关闭并隐藏入口；mock 可演示 |
+| 测速 / 切换撤销 | ✅ | 生产已接线：`undo_switch_*` + `test_provider_latency`；`Backend.features` 打开入口；导出包仍关 |
 | 自身 **DB 备份**（`backups/db/`） | ❌ | 仅 live 快照 |
 | Dashboard **生产告警** | 🟡 | 生产从 doctor 派生 auth/env/update 告警（本地 dismiss）；无独立告警总线。mock 可演示额外样例 |
 | Tauri **事件桥** | ❌ | 文档目标；现以前端 refetch 为主 |

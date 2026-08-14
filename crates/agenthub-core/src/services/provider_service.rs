@@ -12,6 +12,10 @@ use crate::logging::targets;
 use crate::models::{
     AgentConfig, AgentId, BackupKind, Capability, Provider, ProviderInput, ProviderSwitchResult,
 };
+use crate::services::switch_undo::{
+    clear_switch_undo, extract_probe_url, peek_switch_undo, probe_url_latency_ms,
+    record_switch_undo, PROVIDER_UNDO_PREFIX,
+};
 use crate::services::{
     AdapterSecretResolver, BackupService, ConnectionService, LiveWriteAuthority, LiveWriteGuard,
 };
@@ -25,6 +29,7 @@ pub const MAX_PROVIDER_NAME_LEN: usize = 256;
 
 /// Business facade over [`ProviderRepo`].
 pub struct ProviderService {
+    db: Database,
     repo: ProviderRepo,
     registry: AdapterRegistry,
     backup: Option<BackupService>,
@@ -98,6 +103,7 @@ impl ProviderService {
     /// Inject adapters for tests or callers that only need CRUD/import-live.
     pub fn with_registry(db: Database, registry: AdapterRegistry) -> Self {
         Self {
+            db: db.clone(),
             repo: ProviderRepo::new(db.clone()),
             registry,
             backup: None,
@@ -111,6 +117,7 @@ impl ProviderService {
     /// dependencies and backup location.
     pub fn with_live(db: Database, registry: AdapterRegistry, backups_root: PathBuf) -> Self {
         Self {
+            db: db.clone(),
             repo: ProviderRepo::new(db.clone()),
             backup: Some(BackupService::new(
                 db.clone(),
@@ -539,6 +546,7 @@ impl ProviderService {
         let live_before = adapter.read_config()?;
         ensure_config_agent(&live_before, agent)?;
         let current = self.repo.get_current(agent)?;
+        let previous_current_id = current.as_ref().map(|provider| provider.id.clone());
 
         let live_for_backfill = if live_config_is_empty(&live_before.raw) {
             None
@@ -627,11 +635,48 @@ impl ProviderService {
             }
         };
 
+        if let Some(from_id) = previous_current_id {
+            if from_id != provider.id {
+                record_switch_undo(&self.db, PROVIDER_UNDO_PREFIX, agent, &from_id, &provider.id)?;
+            } else {
+                clear_switch_undo(&self.db, PROVIDER_UNDO_PREFIX, agent)?;
+            }
+        } else {
+            clear_switch_undo(&self.db, PROVIDER_UNDO_PREFIX, agent)?;
+        }
+
         Ok(ProviderSwitchResult {
             provider,
             backup: snapshot,
             backfilled_provider_id,
         })
+    }
+
+    /// Re-apply the previous provider after a successful [`Self::switch`], if recorded.
+    ///
+    /// Returns `false` when there is no undo target (never switched, or already undone).
+    pub fn undo_switch(&self, agent: AgentId) -> Result<bool> {
+        let Some(from_id) = peek_switch_undo(&self.db, PROVIDER_UNDO_PREFIX, agent)? else {
+            return Ok(false);
+        };
+        // Re-switch writes a reverse undo slot; clear afterward for one-shot toast UX.
+        self.switch(&from_id, agent)?;
+        clear_switch_undo(&self.db, PROVIDER_UNDO_PREFIX, agent)?;
+        Ok(true)
+    }
+
+    /// Best-effort TCP/HTTP reachability probe of a saved provider base URL.
+    ///
+    /// Returns round-trip milliseconds when the endpoint answers (any HTTP status
+    /// counts as reachable). Missing URL or network failure → error.
+    pub fn test_latency(&self, agent: AgentId, provider_id: &str) -> Result<u64> {
+        let provider = self.get(provider_id, Some(agent))?;
+        let url = extract_probe_url(&provider.settings_config).ok_or_else(|| {
+            AppError::InvalidArg(
+                "该连接没有可探测的 Base URL（base_url / ANTHROPIC_BASE_URL 等）".into(),
+            )
+        })?;
+        probe_url_latency_ms(&url)
     }
 
     /// Storage access for tests / future write paths (not used by list/show CLI).
