@@ -85,11 +85,13 @@ export function createTauriProviderPort(): ProviderPort {
     },
 
     async undoSwitch(_agentId) {
-      throw unsupportedError('撤销切换');
+      // Gated by BackendFeatures.providerUndoSwitch; keep fail-closed if invoked.
+      throw unsupportedError('撤销切换', '当前版本尚未接入');
     },
 
     async testLatency(_agentId, _providerId) {
-      throw unsupportedError('测速');
+      // Gated by BackendFeatures.providerTestLatency; keep fail-closed if invoked.
+      throw unsupportedError('测速', '当前版本尚未接入');
     },
 
     async listProviderPresets(agentId) {

@@ -409,7 +409,42 @@ export interface InstallPort {
 export type { UpdatePort } from './update-types';
 export type { McpPort } from './mcp-types';
 
+/**
+ * Product features that may be implemented by mock before production.
+ * UI must gate on this surface instead of offering always-fail actions.
+ * Missing fields are treated as false (fail-closed).
+ */
+export interface BackendFeatures {
+  /** Toast undo after provider live switch. */
+  providerUndoSwitch: boolean;
+  /** Provider endpoint latency probe. */
+  providerTestLatency: boolean;
+  /** Toast undo after account live switch. */
+  accountUndoSwitch: boolean;
+  /** Export a portable backup package (machine migration). */
+  backupExport: boolean;
+}
+
+export const DEFAULT_BACKEND_FEATURES: BackendFeatures = {
+  providerUndoSwitch: false,
+  providerTestLatency: false,
+  accountUndoSwitch: false,
+  backupExport: false,
+};
+
+/** Merge optional partial features onto fail-closed defaults. */
+export function resolveBackendFeatures(
+  features?: Partial<BackendFeatures> | null,
+): BackendFeatures {
+  return { ...DEFAULT_BACKEND_FEATURES, ...features };
+}
+
 export interface Backend {
+  /**
+   * Which optional product features this backend actually implements.
+   * Prefer this over catching `BackendUnsupportedError` after the user clicks.
+   */
+  features: BackendFeatures;
   account: AccountPort;
   /** Read-only route compatibility preview; does not apply or start anything. */
   adapter: AdapterPort;

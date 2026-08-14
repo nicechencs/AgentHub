@@ -20,6 +20,7 @@ import { ListRow } from '@/components/shared/ListRow';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { AGENT_IDS, agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import { openAgentConfigDir } from '@/lib/api/install';
+import { getBackendFeatures } from '@/lib/api/backend-features';
 import {
   deleteProvider,
   importProviderLive,
@@ -57,6 +58,7 @@ export default function ProvidersPage({
   onPoolChanged,
 }: ProvidersPanelProps = {}) {
   const { toast } = useToast();
+  const backendFeatures = getBackendFeatures();
   const [searchParams, setSearchParams] = useSearchParams();
   const controlled = controlledAgentId !== undefined;
 
@@ -222,29 +224,33 @@ export default function ProvidersPage({
       toast({
         title: `已切换到 "${target.name}"`,
         variant: 'success',
-        actionLabel: '撤销',
         duration: 5000,
-        onAction: () => {
-          void undoSwitch(agentId)
-            .then((ok) => {
-              if (ok === false) {
-                toast({
-                  title: '无法撤销',
-                  description: '当前 backend 不支持撤销切换',
-                  variant: 'danger',
-                });
-                return;
-              }
-              return refresh(agentId);
-            })
-            .catch((e) => {
-              toast({
-                title: '撤销失败',
-                description: e instanceof Error ? e.message : String(e),
-                variant: 'danger',
-              });
-            });
-        },
+        ...(backendFeatures.providerUndoSwitch
+          ? {
+              actionLabel: '撤销',
+              onAction: () => {
+                void undoSwitch(agentId)
+                  .then((ok) => {
+                    if (ok === false) {
+                      toast({
+                        title: '无法撤销',
+                        description: '没有可回滚的切换记录',
+                        variant: 'danger',
+                      });
+                      return;
+                    }
+                    return refresh(agentId);
+                  })
+                  .catch((e) => {
+                    toast({
+                      title: '撤销失败',
+                      description: e instanceof Error ? e.message : String(e),
+                      variant: 'danger',
+                    });
+                  });
+              },
+            }
+          : {}),
       });
     } catch (e) {
       toast({
@@ -465,14 +471,16 @@ export default function ProvidersPage({
                         <Button size="sm" variant="secondary" onClick={() => openEdit(p)}>
                           <Pencil className="h-3.5 w-3.5" /> 编辑
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={testingId === p.id}
-                          onClick={() => void handleTest(p)}
-                        >
-                          {testingId === p.id ? '测速中…' : '测速'}
-                        </Button>
+                        {backendFeatures.providerTestLatency ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={testingId === p.id}
+                            onClick={() => void handleTest(p)}
+                          >
+                            {testingId === p.id ? '测速中…' : '测速'}
+                          </Button>
+                        ) : null}
                         <Button
                           size="sm"
                           variant="ghost"

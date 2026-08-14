@@ -1,4 +1,8 @@
-import type { Backend, CreateBackend } from '@/lib/backend/contracts';
+import {
+  DEFAULT_BACKEND_FEATURES,
+  type Backend,
+  type CreateBackend,
+} from '@/lib/backend/contracts';
 import { createTauriAccountPort } from './account';
 import { createTauriAdapterPort } from './adapter';
 import { createTauriAgentPort } from './agent';
@@ -22,6 +26,9 @@ import { createTauriTrashPort } from './trash';
 /** Production / default dev backend: Tauri only (fail-closed outside shell). */
 export const createBackend: CreateBackend = () => {
   const backend = {
+    // Undo / latency / export package are not wired in production yet.
+    // UI must hide those actions; port methods still throw if invoked.
+    features: { ...DEFAULT_BACKEND_FEATURES },
     account: createTauriAccountPort(),
     adapter: createTauriAdapterPort(),
     catalog: createTauriCatalogPort(),

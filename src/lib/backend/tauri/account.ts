@@ -55,7 +55,8 @@ export function createTauriAccountPort(): AccountPort {
     },
 
     async undoSwitchAccount() {
-      return false;
+      // Gated by BackendFeatures.accountUndoSwitch; keep fail-closed if invoked.
+      throw unsupportedError('撤销账号切换', '当前版本尚未接入');
     },
 
     async addApiKeyAccount(agentId, key, label, envKey) {

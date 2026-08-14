@@ -1,5 +1,5 @@
 import { seedAgentCatalog } from '@/app/runtime/agent-catalog-store';
-import type { Backend, CreateBackend } from '@/lib/backend/contracts';
+import type { Backend, BackendFeatures, CreateBackend } from '@/lib/backend/contracts';
 import {
   createMockAccountPort,
   getMockAccountById,
@@ -33,6 +33,14 @@ import { createMockUpdatePort } from './update';
 import { createMockUsagePort } from './usage';
 import { createMockTrashPort, resetMockTrash } from './trash';
 
+/** Mock implements switch undo + latency demos; export package stays closed. */
+export const MOCK_BACKEND_FEATURES: BackendFeatures = {
+  providerUndoSwitch: true,
+  providerTestLatency: true,
+  accountUndoSwitch: true,
+  backupExport: false,
+};
+
 /** Browser / vitest backend — never selected by production build. */
 export const createBackend: CreateBackend = () => {
   // Factory 创建干净状态（无需生产 port 上的 resetForTests）
@@ -48,6 +56,7 @@ export const createBackend: CreateBackend = () => {
   seedAgentCatalog(MOCK_AGENT_CATALOG);
 
   const backend = {
+    features: { ...MOCK_BACKEND_FEATURES },
     account: createMockAccountPort(),
     adapter: createMockAdapterPort({
       getAccountById: getMockAccountById,

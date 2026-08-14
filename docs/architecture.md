@@ -413,9 +413,10 @@ src/
 - 非 Tauri 运行时调用 Tauri port：`assertTauriRuntime` → 明确 **unavailable**，禁止静默 mock。
 - Usage：生产已接线 `UsageService`（session JSONL 增量采集 + 文件游标）；解析策略全面借鉴 **ccusage**；成本优先日志 `costUSD`，否则查内嵌 `embedded-pricing.json`（**离线快照**，LiteLLM 子集 + 日期别名 + `scripts/pricing/overrides.json`）；估算结果与价表同单位（**USD / 1M tokens**，字段 `costUsd`，**不做汇率换算**）；价表日更靠 `pnpm pricing:update` / `.github/workflows/update-embedded-pricing.yml` 开 PR，**运行时不拉价**；`doctor` 附带 `usageHealth` 分区（CLI ④）；`getAvailability()` → `available`；演示曲线仍仅 `dev:mock`。GUI：`UsageSyncProvider` 按 `usageCollectIntervalMin` 在**前台**定时 `collect`（`0` 仅手动），Dashboard 展示上次/下次同步；后台守护与文件监听见 [ui-design.md §4.6](ui-design.md)。
 - OAuth PKCE：Claude / Codex / Grok 已有 loopback PKCE（`oauth_start` / `wait` / `complete`）；未配置的 Agent 对话框展示 unavailable。演示 OAuth 仍走 `#oauth-flow-dialog` mock。
-- Dashboard alerts 等未接线能力：生产空列表或 `unsupported`。
+- Dashboard alerts：生产从 doctor 派生 auth/env/update 告警（本地 dismiss）；mock 另有演示样例。
+- 可选产品能力（测速 / 切换撤销 / 备份导出包）由 `Backend.features` 声明；生产默认全 false，UI 必须按 features 隐藏入口，不得依赖用户点了再失败。
 - 页面与 `lib/api` façade **不得**直接 `import` `@/dev/*`；测试可直接实例化 mock backend。
-- 页面 **不得**用 `isTauriApp()` 在真实/ mock transport 之间分支；能力由 backend typed result / unsupported 表达。
+- 页面 **不得**用 `isTauriApp()` 在真实/ mock transport 之间分支；能力由 `Backend.features` / typed result / unsupported 表达。
 
 ### 4.3 UI 本地偏好 vs mock
 
@@ -435,7 +436,7 @@ src/
 | `agent.ts` | `lib/backend/tauri/agent.ts` | `dev/mocks/agent.ts` | `lib/api/agent.ts` |
 | `backup.ts` | `lib/backend/tauri/backup.ts` | `dev/mocks/backup.ts` | `lib/api/backup.ts` |
 | `chat.ts` | `lib/backend/tauri/chat.ts` | `dev/mocks/chat.ts` | `lib/api/chat.ts` |
-| `dashboard.ts` | `lib/backend/tauri/dashboard.ts`（空告警） | `dev/mocks/dashboard.ts` | `lib/api/dashboard.ts` |
+| `dashboard.ts` | `lib/backend/tauri/dashboard.ts`（doctor 派生告警） | `dev/mocks/dashboard.ts` | `lib/api/dashboard.ts` |
 | `doctor.ts` | `lib/backend/tauri/doctor.ts` | `dev/mocks/doctor.ts` | `lib/api/doctor.ts` |
 | `doctor-map.ts` | 保留纯映射（无 MOCK fill） | — | 同左 |
 | `env.ts` | `lib/backend/tauri/env.ts` + `lib/env-plan.ts` | `dev/mocks/env.ts` | `lib/api/env.ts` |
@@ -457,7 +458,7 @@ DTO / mapper：`lib/backend/contracts/*-map.ts`。错误类型：`contracts/erro
 | `lib/api/*` 内 `isTauriApp` + mock 分支 | 混合生产/mock | 拆到 tauri / dev/mocks；façade 仅委托 |
 | `chat.ts` / `project.ts` `__reset*MockForTests` | 测试 hook 泄漏生产 API | 删除 façade 导出；改为 `dev/mocks` 的 `reset*` |
 | `usage.ts` 演示数据 | 开发演示 | `dev/mocks/usage.ts`；**生产**已接线 `UsageService`（`getAvailability` → available） |
-| `dashboard.ts` 模拟告警 | 开发演示 | `dev/mocks/dashboard.ts`；生产空列表 |
+| `dashboard.ts` 模拟告警 | 开发演示 | `dev/mocks/dashboard.ts`；生产由 doctor 派生 |
 | `skill.ts` `C:\mock\...` 路径 | 开发演示 | `dev/mocks/skill.ts` |
 | `backup.ts` seed 备份 | 开发演示 | `dev/mocks/backup.ts` |
 | `capability.ts` `MOCK_CAPABILITIES` | 浏览器演示矩阵 | `dev/mocks/capabilities.ts`；生产只留模型/判断 |
@@ -466,7 +467,7 @@ DTO / mapper：`lib/backend/contracts/*-map.ts`。错误类型：`contracts/erro
 | `env` `simulateBrokenPath` / `resetRuntimesDemo` | 演示工具 | 仅 `dev/mocks/env.ts` 导出，不在 EnvPort |
 | `fakeInstallScript` / `fakeEnv*Script` | 演示脚本 | 已移出生产 port；UI 统一 `*Detailed` + feature-local `install-preview` |
 | `resetForTests` on Chat/Project ports | 测试 hook | 仅 `dev/mocks` 的 `resetChatMock` / `resetProjectMock` |
-| 测速 / 导出备份 | 未实现生产能力 | 生产 `unsupported`；mock 可演示。**OAuth / token refresh 已接线**（Claude/Codex/Grok） |
+| 测速 / 切换撤销 / 导出备份 | 生产未实现 | `Backend.features` 生产全 false（UI 隐藏）；port 若被调用仍 `unsupported`。mock：测速/撤销可演示，导出仍关闭。**OAuth / token refresh 已接线**（Claude/Codex/Grok） |
 | 注释中的 mock 说明 | 文档 | 更新为「dev:mock / tauri 边界」 |
 
 ### 4.6 页面与其它约定

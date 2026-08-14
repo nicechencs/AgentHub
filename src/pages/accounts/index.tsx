@@ -33,6 +33,7 @@ import {
   switchAccount,
   undoSwitchAccount,
 } from '@/lib/api/account';
+import { getBackendFeatures } from '@/lib/api/backend-features';
 import { groupAccountsByIdentity } from '@/lib/backend/contracts/account-map';
 import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
 import { attachLiveAgentAuth } from '@/lib/backend/contracts/auth-state';
@@ -83,6 +84,7 @@ export default function AccountsPage({
   onPoolChanged,
 }: AccountsPanelProps = {}) {
   const { toast } = useToast();
+  const backendFeatures = getBackendFeatures();
   const controlled = controlledAgentId !== undefined;
   const [internalAgent, setInternalAgent] = React.useState<AgentId>('claude');
   const agent = controlled ? controlledAgentId : internalAgent;
@@ -161,12 +163,20 @@ export default function AccountsPage({
   );
 
   const doUndo = React.useCallback(async () => {
-    const ok = await undoSwitchAccount(agent);
-    if (ok) {
-      await load(agent);
-      toast({ title: '已撤销切换', description: `${meta.name} 已切回原账号` });
-    } else {
+    try {
+      const ok = await undoSwitchAccount(agent);
+      if (ok) {
+        await load(agent);
+        toast({ title: '已撤销切换', description: `${meta.name} 已切回原账号` });
+        return;
+      }
       toast({ title: '无法撤销', description: '没有可回滚的切换记录', variant: 'danger' });
+    } catch (e) {
+      toast({
+        title: '撤销失败',
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
     }
   }, [agent, load, meta.name, toast]);
 
@@ -182,11 +192,15 @@ export default function AccountsPage({
         title: `已切换到 ${target.label}`,
         description: '已写入本机；原配置已回存并备份',
         variant: 'success',
-        actionLabel: '撤销',
-        onAction: () => {
-          doUndo().catch(() => {});
-        },
         duration: 5000,
+        ...(backendFeatures.accountUndoSwitch
+          ? {
+              actionLabel: '撤销',
+              onAction: () => {
+                void doUndo();
+              },
+            }
+          : {}),
       });
     } catch (e) {
       toast({ title: '切换失败', description: String(e), variant: 'danger' });

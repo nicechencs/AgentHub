@@ -359,9 +359,10 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| 备份**导出包**（换机） | ❌ | `exports/` 预留；无 command |
+| 备份**导出包**（换机） | ❌ | `exports/` 预留；无 command；`Backend.features.backupExport=false`，无 UI 入口 |
+| 测速 / 切换撤销 | ❌ | 生产 `Backend.features` 关闭并隐藏入口；mock 可演示 |
 | 自身 **DB 备份**（`backups/db/`） | ❌ | 仅 live 快照 |
-| Dashboard **生产告警** | ❌ | 固定空实现；mock 可演示 |
+| Dashboard **生产告警** | 🟡 | 生产从 doctor 派生 auth/env/update 告警（本地 dismiss）；无独立告警总线。mock 可演示额外样例 |
 | Tauri **事件桥** | ❌ | 文档目标；现以前端 refetch 为主 |
 | MCP **管理 / 注入**、`ModelSelect`、`SessionResume` | Planned | `Mcp` 矩阵仍表示管理/注入能力；独立的只读 MCP inventory 已落地，不改变矩阵状态 |
 | Adapter 本地 Bridge 产品接线 | 🟡 部分实现 | core host、协议转换、Tauri controller、UI 控件、auto-start 恢复与退出 drain 已进入当前工作区；具体可执行状态见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)，端到端验收尚未收口 |

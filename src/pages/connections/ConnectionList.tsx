@@ -57,6 +57,7 @@ import {
   undoSwitchAccount,
 } from '@/lib/api/account';
 import { openAgentConfigDir } from '@/lib/api/install';
+import { getBackendFeatures } from '@/lib/api/backend-features';
 import {
   deleteProvider,
   deleteProviders,
@@ -126,6 +127,7 @@ export function ConnectionList({
   adapterGeneratedProviderIds?: ReadonlySet<string>;
 }) {
   const { toast } = useToast();
+  const backendFeatures = getBackendFeatures();
   const sharedAgentStatus = useAgentStatusesOptional();
   const pool = useConnectionPool();
   const meta = AGENT_MAP[agentId];
@@ -444,13 +446,33 @@ export function ConnectionList({
           title: `已切换到 ${target.title}`,
           description: '已写入本机；其它连接已取消生效',
           variant: 'success',
-          actionLabel: '撤销',
-          onAction: () => {
-            void undoSwitchAccount(agentId).then((ok) => {
-              if (ok) toast({ title: '已撤销切换' });
-            });
-          },
           duration: 5000,
+          ...(backendFeatures.accountUndoSwitch
+            ? {
+                actionLabel: '撤销',
+                onAction: () => {
+                  void undoSwitchAccount(agentId)
+                    .then((ok) => {
+                      if (ok) {
+                        toast({ title: '已撤销切换' });
+                        return reload();
+                      }
+                      toast({
+                        title: '无法撤销',
+                        description: '没有可回滚的切换记录',
+                        variant: 'danger',
+                      });
+                    })
+                    .catch((e) => {
+                      toast({
+                        title: '撤销失败',
+                        description: e instanceof Error ? e.message : String(e),
+                        variant: 'danger',
+                      });
+                    });
+                },
+              }
+            : {}),
         });
       } else {
         if (!providerGate.canSwitch) {
@@ -469,21 +491,33 @@ export function ConnectionList({
           title: `已切换到 ${target.title}`,
           description: '已写入本机；其它连接已取消生效',
           variant: 'success',
-          actionLabel: '撤销',
-          onAction: () => {
-            void undoProviderSwitch(agentId).then((ok) => {
-              if (ok) {
-                toast({ title: '已撤销切换' });
-              } else {
-                toast({
-                  title: '无法撤销',
-                  description: '当前环境不支持撤销',
-                  variant: 'danger',
-                });
-              }
-            });
-          },
           duration: 5000,
+          ...(backendFeatures.providerUndoSwitch
+            ? {
+                actionLabel: '撤销',
+                onAction: () => {
+                  void undoProviderSwitch(agentId)
+                    .then((ok) => {
+                      if (ok) {
+                        toast({ title: '已撤销切换' });
+                        return reload();
+                      }
+                      toast({
+                        title: '无法撤销',
+                        description: '没有可回滚的切换记录',
+                        variant: 'danger',
+                      });
+                    })
+                    .catch((e) => {
+                      toast({
+                        title: '撤销失败',
+                        description: e instanceof Error ? e.message : String(e),
+                        variant: 'danger',
+                      });
+                    });
+                },
+              }
+            : {}),
         });
       }
       setSwitchEntry(null);
@@ -944,7 +978,11 @@ export function ConnectionList({
                   onDelete={setDeleteEntry}
                   onEdit={handleEdit}
                   onRefreshToken={(e) => void handleRefreshToken(e)}
-                  onTest={(e) => void handleTest(e)}
+                  onTest={
+                    backendFeatures.providerTestLatency
+                      ? (e) => void handleTest(e)
+                      : undefined
+                  }
                   onOpenConfigDir={() => void handleOpenConfigDir()}
                   onReuseRequest={onReuseRequest}
                   adapterGeneratedProviderIds={adapterGeneratedProviderIds}
