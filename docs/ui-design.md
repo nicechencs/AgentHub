@@ -363,8 +363,15 @@ OAuth 未完成时只引导去 Connections，不在本页发起登录。兼容�
 
 ### 4.8 Settings
 
-分区：常规（语言/主题/自启动）、**安全**（**凭据脱敏说明**——SecretInput / 不明文回显；**不要求**用户配置主密码或落盘加密，与项目「凭据不加密落盘」决策一致，勿把主密码/keyring 当必填路径）、数据（数据目录只读、**日志级别/保留/打开目录**、用量采集间隔）、**备份**（live 配置快照；安全自动备份固定启用）、关于（版本/更新）。
-**生效说明**：主题/语言/日志键部分经 core settings 接线；`usageCollectIntervalMin` **已**接前台定时采集（见 §4.6）。连接切换前及导入/更新后由核心服务自动创建 live 快照；`autoBackup` 仍作为兼容设置字段保留，但不再提供会造成误解的关闭开关。换机整库导出未实现，不在「数据」分区展示假入口。
+分区：常规（语言只读中文说明 / 主题 / 开机自启 / 关闭到托盘 / 技能市场）、**安全**（**凭据脱敏说明**——SecretInput / 不明文回显；**不要求**用户配置主密码或落盘加密，与项目「凭据不加密落盘」决策一致，勿把主密码/keyring 当必填路径）、数据（数据目录只读、**日志级别/保留/打开目录**、用量采集间隔）、**备份**（live 配置快照；安全自动备份固定启用）、关于（版本/更新）。
+
+**L1 SQLite 白名单**（`SETTINGS_WHITELIST`，与 CLI `config get/set` 共用）：`theme`、`language`、`log_level`、`log_retention_days`、`skill_market_source`、`close_to_tray`、`usage_collect_interval_min`。
+
+- **主题**：core 为权威。Settings 页 Select **只预览**（`applyTheme`）；离开未保存则回退到已提交值。点保存才 `set_setting`。启动时 ThemeProvider 用 localStorage 做首屏缓存，再 `getSettings` 对账。
+- **用量采集间隔**：已写入 SQLite，**不是**仅 localStorage。`None`=从未写入（前端默认 30）；`0`=仅手动；上限 1440。保存后 `notifyUsageSettingsChanged` 立即重排程（见 §4.6）。
+- **开机自启**（`autoStart`）：OS 登录项（Windows 启动项 / macOS Login Item），不进 L1 白名单。
+- **关闭到托盘**（`closeToTray`）：写 core，并同步 Tauri `AppState`。
+- 语言键可落盘，UI 暂不提供切换。`autoBackup` 兼容字段已不展示开关；live 快照由核心服务在切换/导入/更新后自动创建。换机整库导出未实现（`Backend.features.backupExport=false`），无 UI 入口。
 
 Tab 与 URL `?tab=` 同步（`general` / `security` / `data` / `backups` / `about`）；非法或缺省值 fallback 到 `general`。切换使用 `replace`，避免污染浏览器历史。
 
