@@ -284,5 +284,23 @@ describe('shared adapter capability contract', () => {
     expect(analysis.gateKind).toBe(item.expect.gateKind);
     expect(analysis.reason).toBe(item.expect.reason);
     expect(plan.canApply).toBe(item.expect.canApply);
+
+    // applyPath is the production entry surface (native vs local_bridge vs closed).
+    // Mock may still demo local_bridge apply; contract documents the real path split.
+    expect(item.expect.applyPath).toBeDefined();
+    if (item.expect.applyPath === 'native') {
+      expect(item.expect.canApply).toBe(true);
+      expect(item.expect.route).toBe('native_endpoint');
+      expect(analysis.route).toBe('native_endpoint');
+    } else if (item.expect.applyPath === 'local_bridge') {
+      expect(item.expect.canApply).toBe(true);
+      expect(item.expect.route).toBe('local_bridge');
+      expect(analysis.route).toBe('local_bridge');
+    } else {
+      expect(item.expect.applyPath).toBe('rejected');
+      expect(item.expect.canApply).toBe(false);
+      expect(plan.canApply).toBe(false);
+      await expect(adapter.apply(request)).rejects.toThrow(/不可应用|不支持|canApply/i);
+    }
   });
 });

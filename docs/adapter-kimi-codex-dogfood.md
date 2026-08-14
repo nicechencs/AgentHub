@@ -4,6 +4,27 @@
 > 自动验收（bridge / restore / 退出协调器）已在工作区通过；**本清单只覆盖必须用桌面应用 + 真实连接完成的项**。  
 > **禁止**把密钥、Authorization、prompt、工具参数或响应正文写入本文件或任何报告。只记 `profile_id`、端口、错误码、耗时、是否完成。
 
+## 自动覆盖对照（半 e2e ≠ 本清单放行）
+
+下列自动化已覆盖**可机器化子集**；勾选本 dogfood 清单时，自动绿只能作为前置，不能代替真机项。
+
+| Dogfood 项 | 自动化覆盖 | 测试入口（过滤） | 仍须真机 |
+|---|---|---|---|
+| 1. 密钥轮转 | 部分：上游 secret 变更 → listener 替换 + local bearer 不变；restore material 读新 key | `cargo test -p agenthub-gui ensure_listener_replaces_upstream_auth`；`cargo test -p agenthub-core restore_uses_a_rotated_source_key` | 真 Kimi 上游是否吃新 key；Codex 长连接行为 |
+| 2. 端口占用重绑 | 部分：preferred 被占 → rebind；再 realign profile/provider 端口一致；失败回滚 | `ensure_listener_rebinds_when_preferred_port_is_busy`；`busy_preferred_port_rebind_then_realign_updates_projection`；`realign_restored_bridge_port_*` | 真 Codex 读到新 `base_url` |
+| 3. 长时间 SSE | 部分：mock 上游分片 / 空闲超时（core bridge） | `cargo test -p agenthub-core -- bridge::` | 真模型数分钟流 |
+| 4. 文本+工具闭环 | 部分：协议 fixtures（Responses↔Chat） | `cargo test -p agenthub-core -- bridge::protocol` | 真 Codex 工具执行 |
+| 5. 上游失败与取消 | 部分：401 health 拒绝、脱敏 Debug、degraded 状态 | `bound_health_rejects_upstream_auth`；bridge host health/status 测 | 真 401/429/5xx 正文不泄漏；客户端取消 |
+| 6. 托盘退出 drain | 部分：ExitCoordinator / stop 幂等 | `exit_coordinator`；`stop_is_idempotent_*` | 真托盘三选一 UI |
+| 7. auto_start 恢复 | 部分：restore 过滤、retryable 标记、失败回滚、端口 realign | `restore_filter_*`；`retryable_restore_*`；`realign_restored_bridge_port_*` | 冷启动完整 GUI + 真端口竞争 |
+
+本地快捷（与 PR CI 互补）：
+
+```bash
+cargo test -p agenthub-core --locked bridge
+cargo test -p agenthub-gui --locked adapter_bridge_controller
+```
+
 ## 环境（填写，勿贴密钥）
 
 | 项 | 记录 |

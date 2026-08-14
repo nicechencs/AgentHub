@@ -196,6 +196,115 @@ fn ensure_listener_rebinds_when_preferred_port_is_busy() {
     });
 }
 
+/// Dogfood #1 (partial): upstream key rotation must replace the running listener
+/// while the loopback local bearer stays stable for Codex.
+#[test]
+fn ensure_listener_replaces_upstream_auth_while_keeping_local_bearer() {
+    tauri::async_runtime::block_on(async {
+        let host = BridgeRuntimeHost::new();
+        const LOCAL: &str = "local-bearer-stable-across-upstream-rot";
+        let first = AdapterBridgeRuntimeMaterial::for_test(
+            "profile-upstream-rotate",
+            Some(0),
+            LOCAL,
+            "upstream-bearer-original-value-xxxxx",
+        );
+        let started = ensure_bridge_listener(&host, &first).await.unwrap();
+        assert!(started.status.running);
+        let first_port = started.status.port;
+
+        let rotated = AdapterBridgeRuntimeMaterial::for_test(
+            "profile-upstream-rotate",
+            Some(first_port),
+            LOCAL,
+            "upstream-bearer-rotated-value-xxxxxx",
+        );
+        // Upstream-only drift must not be treated as an identical live start.
+        assert_eq!(rotated.start_spec(None).local_token, LOCAL);
+        assert!(matches!(
+            host.start(rotated.start_spec(None)).await.unwrap_err(),
+            BridgeHostError::ConflictingStart
+        ));
+
+        let replaced = ensure_bridge_listener(&host, &rotated).await.unwrap();
+        assert!(replaced.status.running);
+        assert!(replaced.owned_by_saga);
+        assert!(
+            host.status("profile-upstream-rotate")
+                .unwrap()
+                .is_some_and(|status| status.running),
+            "listener must be running after upstream rotation"
+        );
+
+        // Identical rotated material is reused; local bearer remains the stable loopback token.
+        let reused = ensure_bridge_listener(&host, &rotated).await.unwrap();
+        assert!(reused.status.running);
+        assert!(!reused.owned_by_saga);
+        assert_eq!(rotated.start_spec(None).local_token, LOCAL);
+
+        host.shutdown().await.unwrap();
+    });
+}
+
+/// Dogfood #2 + #7 (partial): preferred port busy → rebind listener → realign
+/// profile/provider projection so Codex base_url tracks the new port.
+#[test]
+fn busy_preferred_port_rebind_then_realign_updates_projection() {
+    tauri::async_runtime::block_on(async {
+        let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let preferred = blocker.local_addr().unwrap().port();
+        let dir = tempfile::tempdir().unwrap();
+        let hub = AgentHub::open(Some(dir.path())).unwrap();
+        let profile = seed_active_bridge(&hub, "kimi-rebind-chain", preferred);
+        let provider_id = profile.generated_provider_id.clone().unwrap();
+        let local_bearer = hub
+            .providers
+            .repo()
+            .get_by_id(&provider_id)
+            .unwrap()
+            .unwrap()
+            .settings_config["auth"]["OPENAI_API_KEY"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let material = AdapterBridgeRuntimeMaterial::for_test(
+            profile.id.clone(),
+            Some(preferred),
+            local_bearer,
+            "upstream-membership-secret",
+        );
+        let host = BridgeRuntimeHost::new();
+        let ensured = ensure_bridge_listener(&host, &material).await.unwrap();
+        assert!(ensured.status.running);
+        assert_ne!(
+            ensured.status.port, preferred,
+            "must leave the occupied preferred port"
+        );
+
+        realign_restored_bridge_port(&hub, &profile.id, ensured.status.port).unwrap();
+
+        let persisted = AdapterProfileRepo::new(hub.db.clone())
+            .get(&profile.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.local_port, Some(ensured.status.port));
+        assert!(provider_content_contains(
+            &hub,
+            &provider_id,
+            &format!("127.0.0.1:{}", ensured.status.port)
+        ));
+        assert!(!provider_content_contains(
+            &hub,
+            &provider_id,
+            &format!("127.0.0.1:{preferred}")
+        ));
+
+        host.shutdown().await.unwrap();
+        drop(blocker);
+    });
+}
+
 #[test]
 fn stop_is_idempotent_for_an_already_stopped_bridge() {
     tauri::async_runtime::block_on(async {

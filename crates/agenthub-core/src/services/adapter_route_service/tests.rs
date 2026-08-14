@@ -382,12 +382,23 @@ struct SharedContractSource {
     credentials: Option<serde_json::Value>,
 }
 
+/// Production apply entry for a route surface. Distinct from `canApply`:
+/// `local_bridge` is plan-open but must not go through `AdapterApplyService`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum SharedContractApplyPath {
+    Native,
+    LocalBridge,
+    Rejected,
+}
+
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SharedContractExpect {
     route: AdapterRoute,
     support: AdapterSupport,
     can_apply: bool,
+    apply_path: SharedContractApplyPath,
     rule_id: Option<String>,
     gate_kind: crate::models::AdapterGateKind,
     reason: String,
@@ -400,10 +411,44 @@ fn shared_capability_contract() -> SharedContractFile {
     .expect("shared adapter capability contract")
 }
 
+fn assert_apply_path_consistent(case_id: &str, expect: &SharedContractExpect) {
+    match expect.apply_path {
+        SharedContractApplyPath::Native => {
+            assert!(
+                expect.can_apply,
+                "{case_id}: applyPath=native requires canApply=true"
+            );
+            assert_eq!(
+                expect.route,
+                AdapterRoute::NativeEndpoint,
+                "{case_id}: applyPath=native requires native_endpoint"
+            );
+        }
+        SharedContractApplyPath::LocalBridge => {
+            assert!(
+                expect.can_apply,
+                "{case_id}: applyPath=local_bridge requires canApply=true"
+            );
+            assert_eq!(
+                expect.route,
+                AdapterRoute::LocalBridge,
+                "{case_id}: applyPath=local_bridge requires local_bridge route"
+            );
+        }
+        SharedContractApplyPath::Rejected => {
+            assert!(
+                !expect.can_apply,
+                "{case_id}: applyPath=rejected requires canApply=false"
+            );
+        }
+    }
+}
+
 #[test]
 fn shared_capability_contract_matches_classify_and_plan() {
     let contract = shared_capability_contract();
     for case in contract.cases {
+        assert_apply_path_consistent(&case.id, &case.expect);
         let (_dir, db) = test_db();
         let source_id = format!("contract-{}", case.id);
         match case.source.kind {
@@ -443,5 +488,19 @@ fn shared_capability_contract_matches_classify_and_plan() {
         assert_eq!(analysis.gate_kind, case.expect.gate_kind, "{}", case.id);
         assert_eq!(analysis.reason, case.expect.reason, "{}", case.id);
         assert_eq!(plan.can_apply, case.expect.can_apply, "{}", case.id);
+
+        // applyPath documents production entry: local_bridge is plan-open but
+        // never goes through AdapterApplyService (native config write only).
+        match case.expect.apply_path {
+            SharedContractApplyPath::Native => {
+                assert_eq!(analysis.route, AdapterRoute::NativeEndpoint, "{}", case.id);
+            }
+            SharedContractApplyPath::LocalBridge => {
+                assert_eq!(analysis.route, AdapterRoute::LocalBridge, "{}", case.id);
+            }
+            SharedContractApplyPath::Rejected => {
+                assert!(!plan.can_apply, "{}", case.id);
+            }
+        }
     }
 }
