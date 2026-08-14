@@ -89,6 +89,7 @@ pub(crate) fn discover_pi_files() -> Result<Vec<PathBuf>> {
     finish_files(out)
 }
 
+#[cfg(test)]
 pub(crate) use crate::usage::grok::discover_grok_files;
 
 fn finish_files(mut files: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
