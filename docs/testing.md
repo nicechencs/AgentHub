@@ -90,7 +90,23 @@ UI 组件（`MarkdownView` / 预览对话框）以库 `@uiw/react-markdown-previ
 
 快捷：`pnpm test:contracts`（含 boundary 全仓扫描 + backend features）。
 
-## 7. 分层边界护栏
+## 7. ConnectFlow / Hub 入口
+
+Hub Phase 1 统一连接流程的测试分文件存放（遵守 §1）；前端 vitest 固定走 mock backend（`#backend` → `dev/mocks`），领域 reset 放 `dev/mocks`，不要往生产 façade 塞测试 hook。
+
+| 层 | 文件 | 覆盖点 |
+|---|---|---|
+| 逻辑 | `src/lib/connect-flow/eligibility.test.ts` | 候选资格 |
+| 逻辑 | `src/lib/connect-flow/plan-fanout.test.ts` | plan fan-out |
+| 逻辑 | `src/lib/connect-flow/connection-usage.test.ts` | 用途聚合 |
+| 逻辑 | `src/lib/connect-flow/default-deps.test.ts` | 默认依赖组装 |
+| 逻辑 | `src/lib/connect-flow/reuse-offer.test.ts` | Connections 行「用于其他 Agent」可见性（Provider 白名单 / account 隐藏 / 生成 Provider 隐藏） |
+| 逻辑 | `src/lib/connect-flow/connect-intent.test.ts` | ①② 引导深链（intent/resume/`/?connect=` 的 parse/build/consume） |
+| 状态机 | `src/components/connect/connect-flow-state.test.ts` | 对话框状态机 |
+
+可行性权威为 `plan.canApply`，禁止只测 `analysis.support`。
+
+## 8. 分层边界护栏
 
 - 生产 module graph：`vite build` 禁止 `src/dev` / `src/test` / `*.test.ts` 入图。
 - 源码扫描：`src/lib/backend/boundary-imports.test.ts`  
@@ -99,7 +115,7 @@ UI 组件（`MarkdownView` / 预览对话框）以库 `@uiw/react-markdown-previ
   - `pages/**` / `lib/hooks/**` 不得 import `lib/backend/tauri` 或 `@/dev/*`
 - 运行时：非 Tauri 调用 Tauri port → `BackendUnavailableError`（禁止静默 mock）。
 
-## 8. CI
+## 9. CI
 
 | 触发 | 工作流 | 内容 |
 |---|---|---|
@@ -110,7 +126,7 @@ UI 组件（`MarkdownView` / 预览对话框）以库 `@uiw/react-markdown-previ
 
 Bridge 半 e2e（端口重绑 / 上游轮转 / restore realign）见 `pnpm test:bridge` 与 [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) 自动覆盖对照表。
 
-## 9. 提交前最低检查
+## 10. 提交前最低检查
 
 改动触及对应层时至少跑：
 

@@ -156,10 +156,14 @@ export function AgentOverview({
                     </Tip>
                   ) : null}
                   {view.bridge ? (
-                    <Tip className="shrink-0" label={view.bridge.label}>
+                    <Tip className="shrink-0" label="管理桥与适配">
                       <Badge
                         variant={bridgeBadgeVariant(view.bridge.state)}
-                        className="h-5 px-1.5 text-2xs"
+                        className="h-5 cursor-pointer px-1.5 text-2xs"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          navigate('/adapter');
+                        }}
                       >
                         <StatusPin tone={bridgePinTone(view.bridge.state)} />
                         {view.bridge.label}

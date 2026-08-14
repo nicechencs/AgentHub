@@ -2,7 +2,52 @@
 
 > 关联：[adapter-design.md](adapter-design.md) Phase 1 / §11.4。  
 > 自动验收（bridge / restore / 退出协调器）已在工作区通过；**本清单只覆盖必须用桌面应用 + 真实连接完成的项**。  
+> 创建/应用桥的日常入口可以是 Dashboard 卡片「连接/切换」或 Connections「用于其他 Agent」（ConnectFlow）；Adapter 页仍可用于完整预览与桥控件。  
 > **禁止**把密钥、Authorization、prompt、工具参数或响应正文写入本文件或任何报告。只记 `profile_id`、端口、错误码、耗时、是否完成。
+
+## Hub ConnectFlow 真机验收（最短）
+
+mock 下 apply 正向链路不可达，必须 `pnpm tauri:dev` + 真实凭据。下列勾选框保持未勾。
+
+入口：Dashboard「连接/切换」与 Connections「用于其他 Agent」（仅 Kimi 会员 Provider、Claude Anthropic Provider 显示该按钮）。
+
+反例：OAuth / 普通 apikey / 非会员 Kimi 行不应出现「用于其他 Agent」；Dashboard 对话框内这些来源置灰 + 原因原文。
+
+### 1. Kimi 会员 Provider → Claude（直连）
+
+步骤：
+
+1. 从 Dashboard Claude 卡片「连接/切换」，或从 Connections 的 Kimi 会员行「用于其他 Agent」进入。
+2. 选该 Kimi 会员为来源、Claude 为目标，预览后 apply。
+3. 核对 Claude 当前连接经兼容路由生效（只记 profile / provider id 后缀）。
+
+预期：直连可 apply；Claude 卡片显示经兼容路由；该 Kimi 行「正用于」含 Claude。
+
+- [ ]
+
+### 2. Kimi 会员 Provider → Codex（本地桥）
+
+步骤：
+
+1. 从 Dashboard Codex 卡片「连接/切换」，或从 Connections 的 Kimi 会员行「用于其他 Agent」进入。
+2. 选该 Kimi 会员为来源、Codex 为目标，预览后 apply（本地桥）。
+3. 核对桥已创建/可启动，Codex 当前连接指向生成 Provider（只记 `profile_id`、端口）。
+
+预期：本地桥路径可 apply；Codex 卡片显示经兼容路由与桥状态；该 Kimi 行「正用于」含 Codex。
+
+- [ ]
+
+### 3. Claude Anthropic Provider → Pi（配置同步）
+
+步骤：
+
+1. 从 Dashboard Pi 卡片「连接/切换」，或从 Connections 的 Claude Anthropic 行「用于其他 Agent」进入。
+2. 选该 Anthropic Provider 为来源、Pi 为目标，预览后 apply。
+3. 核对 Pi 当前连接已同步（只记 profile / provider id 后缀）。
+
+预期：配置同步可 apply；Pi 卡片显示经兼容路由；该 Anthropic 行「正用于」含 Pi。
+
+- [ ]
 
 ## 自动覆盖对照（半 e2e ≠ 本清单放行）
 
@@ -74,7 +119,7 @@ cargo test -p agenthub-gui --locked adapter_bridge_controller
 
 1. 用 `TcpListener` 或其他进程占住桥的 preferred 端口。
 2. 启动或重启该桥（或重启 AgentHub 且 `auto_start=true`）。
-3. 在 Adapter / Connections 核对写回的端口和 Codex `base_url`。
+3. 在 Adapter 页、Connections 或 Dashboard 徽标均可核对写回的端口和 Codex `base_url`（不要只看 Adapter 页）。
 
 预期：绑到新端口；profile / generated provider 对齐新端口；不留下指向已停 listener 的旧端口。
 

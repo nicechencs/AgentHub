@@ -2,7 +2,7 @@
 
 > 状态：**已实施**（2026-08-14）。v1 经 5 维度评审（需求 FAIL / 架构 PWC / 风险 PWC / 边界 FAIL / 测试 PWC）后修订为 v2，复核通过后按 §6 分工完成实施与集成。
 > 验收：pnpm typecheck / typecheck:test / test（627 用例，含集成 bug 防回归）/ build 全绿；cargo test 79 用例全绿（Rust 未改动）；dev:mock 冒烟通过（空态引导、非空可行性置灰+原因、无控制台错误）。
-> 关联文档同步：docs/architecture.md §4.1 目录树（lib/connect-flow、components/connect）、docs/adapter-design.md 头部入口定位注记。
+> 关联文档同步：docs/ui-design.md、docs/adapter-design.md 正文定位、docs/architecture.md §4.1 目录树（lib/connect-flow、components/connect）与 §4.6、README.md、docs/README.md、docs/agenthub-plan.md、docs/testing.md、docs/adapter-kimi-codex-dogfood.md。
 > v2 修订要点：plan.canApply 为可执行权威；补同 Agent 原生切换分流；用途/徽标改用 profile 联结（不读 provider.meta）；apply 自动切换语义如实；排除 adapter 生成 Provider 作为来源；两层 OAuth 门禁；可注入 helper 保证 Node 环境可测。
 
 ## 1. 背景与问题
@@ -54,10 +54,10 @@ UI 目标形态：**Dashboard 的 Agent 卡片区 = Hub 主入口**（每个 Age
    - 失败态：错误原文 + 保留选择与预览、可重试；busy 期间禁止重复提交与关闭。
    - apply 成功后由对话框触发页面级刷新（见 §6 集成契约 `onApplied`）；刷新失败显示"已应用，但列表刷新失败"，不得误报未生效。
 
-其他连接方式为**引导入口**（本期不做自动弹窗与回跳闭环）：
+其他连接方式为**引导入口**（Phase 1 只跳转；自动弹窗与回跳已在后续落地，见 §10）：
 
-- ① 导入已有登录态（OAuth）：跳 `/connections?agent=X`。**能力边界如实**：该页现有入口是"导入当前登录态"（读取官方 CLI 已完成的登录），不能发起全新 OAuth 授权；引导文案须写明"未登录请先在对应官方 CLI 完成登录，再返回导入"。发起新 OAuth 授权属 Phase 2。
-- ② 新 API Key：跳 `/connections?agent=X&mode=providers`（跳到对应列表，用户点击新增）。
+- ① 导入已有登录态（OAuth）：跳 `/connections?agent=X&intent=import-login&resume=X`，Connections 打开导入确认（不静默写入）。**能力边界如实**：入口是"导入当前登录态"（读取官方 CLI 已完成的登录），不能发起全新 OAuth 授权。
+- ② 新 API Key：跳 `/connections?agent=X&mode=providers&intent=add-key&resume=X`，自动打开添加对话框。成功后回 `/?connect=X` 重开 ConnectFlow。
 
 **空态定义**：钱包为空 → 提示并引导去 Connections 添加；有凭据但全部不可行 → 全部置灰保留原因 + 新增凭据入口；资源部分加载失败 → 显示加载错误与重试，不得把缺失数据当空池。
 
@@ -77,7 +77,7 @@ UI 目标形态：**Dashboard 的 Agent 卡片区 = Hub 主入口**（每个 Age
   - 兼容路由用途：存在 profile 满足 `profile.sourceKind/sourceId` 指向该凭据（按 `(kind, id)` 匹配，防 account/provider id 碰撞）**且** `generatedProviderId` 对应的 Provider 当前 `isCurrent=true` → 用于 `profile.targetAgentId`。
   - 同一 Agent 同时命中直接与兼容用途时去重（显示一次，直接用途优先）。
   - profile/生成 Provider/来源缺失或数据部分加载失败 → 该行用途显示"未知/不完整"，不得显示为"未使用"。
-- 行动作增加"用于其他 Agent"→ 打开 ConnectFlowDialog（来源预选）；入口对 adapter 生成的 Provider 不显示。
+- 行动作增加"用于其他 Agent"→ 打开 ConnectFlowDialog（来源预选）。入口仅对存在后端可 apply 路径的 Provider 显示：Kimi Code 会员 Provider、Claude 的 Anthropic Provider；account 来源（含 apikey）与 adapter 生成 Provider、无规则来源一律不显示。行按钮是可行动作入口；不可行诊断由 Dashboard「连接/切换」承担。
 - **不改动现有 agent tab 过滤结构**（跨 Agent 全局钱包视图属 Phase 2 终态，本期只做行级增强，控制回归面）。
 
 ### 3.2 非目标（明确不做，Review 请勿要求扩入）
@@ -85,7 +85,7 @@ UI 目标形态：**Dashboard 的 Agent 卡片区 = Hub 主入口**（每个 Age
 - **不动 Rust 后端**：analyze/plan/apply/bridge/OAuth/switch 命令与能力矩阵原样使用。若实施中发现必须改后端才能达成目标，停下上报，不得绕过。
 - **不做 AdapterProfile 与 agent_active_bindings 的物理合并**（推迟 Phase 2；本期只做前端读模型聚合）。
 - **不改 OAuth 门禁**：`canApply=false` 的路线保持不可用，UI 呈现为置灰+原因。
-- **不移除 `/adapter` 页与侧栏入口**。过渡期职责定位：Dashboard/Connections 为推荐入口，Adapter 页为高级管理与兼容入口（profile 管理、桥控制细节）；两处 apply 行为同源（同一 lib/api 门面），不允许行为分叉。
+- **不移除 `/adapter` 页与侧栏入口**。过渡期职责定位：Dashboard/Connections 为推荐入口，Adapter 页为高级管理与兼容入口（profile 管理、桥控制细节）；两处 apply 行为同源（同一 lib/api 门面），不允许行为分叉。侧栏文案已改为「桥与适配」，创建区已收掉。
 - **不重做 OAuth 授权 UI**、不做 ①② 引导跳转的自动弹窗与回跳闭环（Phase 2）。
 - **不重构 Connections 页 tab 信息架构**（全局钱包视图属 Phase 2）。
 - **不修改 `src/lib/api/adapter.ts` 既有行为**（含 apply 后连接池刷新异常被吞的既有语义——对话框通过 `onApplied` 自行补偿刷新并呈现刷新失败）。
@@ -122,7 +122,7 @@ UI 目标形态：**Dashboard 的 Agent 卡片区 = Hub 主入口**（每个 Age
 
 ### 5.2 凭据侧进入（Connections 行）
 
-1. 行菜单"用于其他 Agent"（adapter 生成 Provider 无此入口）→ ConnectFlowDialog（source 固定）。
+1. 行按钮「用于其他 Agent」（仅白名单 Provider 显示：Kimi Code 会员、Claude Anthropic）→ ConnectFlowDialog（source 固定）。
 2. 目标 Agent 网格：**直接排除来源自身所属的 Agent**（入口语义即"用于其他 Agent"；本 Agent 内的切换由 Connections 页既有交互承担）；其余目标按 canApply 可选/置灰+原因。
 3. 选中可行目标后与 5.1 步骤 5 相同。
 
@@ -215,6 +215,6 @@ UI 目标形态：**Dashboard 的 Agent 卡片区 = Hub 主入口**（每个 Age
 ## 10. Phase 2 展望（本期不做）
 
 - AdapterProfile 与 agent_active_bindings 物理合并为统一 binding。
-- Adapter 页降级（创建流程收编进 ConnectFlow 后仅留高级管理，或移除侧栏入口）。
-- OAuthFlowDialog 收编进 Connections + ①② 引导的自动弹窗与回跳闭环。
+- Adapter 页降级 **已落地**：创建/apply 收进 ConnectFlow；路由 `/adapter` 与侧栏「桥与适配」保留，只管理已创建 profile 与本地桥。本页不再渲染选来源→分析→plan→apply 创建区。
+- OAuthFlowDialog 收编进 Connections（仍未做）。①② 引导自动弹窗与回跳已落地：深链见 `src/lib/connect-flow/connect-intent.ts`（`intent=import-login|add-key`，成功回 `/?connect=`）；不发起新 OAuth 授权。
 - Connections 全局钱包视图（跨 Agent 凭据清单为默认视图）。

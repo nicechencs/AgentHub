@@ -72,6 +72,7 @@ import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
 import { attachLiveAgentAuth } from '@/lib/backend/contracts/auth-state';
 import { logger } from '@/lib/logger';
 import { liveConfigPaths } from '@/lib/provider-detect';
+import type { ConnectGuideIntent } from '@/lib/connect-flow/connect-intent';
 import type { ConnectionUsageMap } from '@/lib/connect-flow/types';
 import type { Account, AgentId, AgentStatus, Provider, SwitchPreview } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -113,6 +114,8 @@ export function ConnectionList({
   usageMap,
   onReuseRequest,
   adapterGeneratedProviderIds,
+  guideIntent,
+  onGuideSucceeded,
 }: {
   agentId: AgentId;
   /** Shared application-level Agent detection; do not re-probe per list. */
@@ -125,6 +128,10 @@ export function ConnectionList({
   onReuseRequest?: (entry: ConnectionEntry) => void;
   /** profiles 的 generatedProviderId 集合；命中的 Provider 不显示复用入口 */
   adapterGeneratedProviderIds?: ReadonlySet<string>;
+  /** ConnectFlow 深链引导：只开确认/添加弹窗，不静默写凭据 */
+  guideIntent?: ConnectGuideIntent | null;
+  /** 引导弹窗内操作成功（保存 Key / 确认导入登录态） */
+  onGuideSucceeded?: () => void;
 }) {
   const { toast } = useToast();
   const backendFeatures = getBackendFeatures();
@@ -167,6 +174,7 @@ export function ConnectionList({
   const [deleteEntry, setDeleteEntry] = React.useState<ConnectionEntry | null>(null);
   const [deleting, setDeleting] = React.useState(false);
   const [importConfirmOpen, setImportConfirmOpen] = React.useState(false);
+  const [loginImportConfirmOpen, setLoginImportConfirmOpen] = React.useState(false);
   const [deleteAllConfirmOpen, setDeleteAllConfirmOpen] = React.useState(false);
   const [deletingAll, setDeletingAll] = React.useState(false);
 
@@ -191,6 +199,8 @@ export function ConnectionList({
   const probeSignatureRef = React.useRef<{ agentId: AgentId; value: string } | null>(null);
   const prevAgentRef = React.useRef<AgentId | null>(null);
   const previewGeneration = React.useRef(0);
+  const handledGuideIntentRef = React.useRef<ConnectGuideIntent | null>(null);
+  const guideOpenedApiKeyRef = React.useRef(false);
 
   const accountsBlocked = React.useMemo(() => {
     const st = agentStatuses.find((s) => s.agentId === agentId);
@@ -262,9 +272,57 @@ export function ConnectionList({
       setEditAccountKey(null);
       setDiscoveredAuth(null);
       setImportConfirmOpen(false);
+      setLoginImportConfirmOpen(false);
       setDeleteAllConfirmOpen(false);
+      guideOpenedApiKeyRef.current = false;
     }
   }, [agentId, initialFilter]);
+
+  React.useEffect(() => {
+    if (guideIntent == null) {
+      handledGuideIntentRef.current = null;
+      return;
+    }
+    if (handledGuideIntentRef.current === guideIntent) return;
+    if (phase !== 'ready') return;
+    if (guideIntent === 'import-login' && liveAuthProbeLoading) return;
+
+    handledGuideIntentRef.current = guideIntent;
+
+    if (guideIntent === 'add-key') {
+      if (!providerGate.canManage) {
+        toast({
+          title: '无法添加 API Key',
+          description: providerBlockReason,
+          variant: 'danger',
+        });
+        return;
+      }
+      guideOpenedApiKeyRef.current = true;
+      setEditProvider(null);
+      setApiKeyDialogOpen(true);
+      return;
+    }
+
+    if (accountsBlocked) {
+      toast({
+        title: '无法导入当前登录态',
+        description: accountsBlockReason,
+        variant: 'danger',
+      });
+      return;
+    }
+    setLoginImportConfirmOpen(true);
+  }, [
+    accountsBlockReason,
+    accountsBlocked,
+    guideIntent,
+    liveAuthProbeLoading,
+    phase,
+    providerBlockReason,
+    providerGate.canManage,
+    toast,
+  ]);
 
   React.useEffect(() => {
     // An in-flight first load still has empty rows; do not treat that as a new login.
@@ -571,14 +629,14 @@ export function ConnectionList({
     }
   };
 
-  const handleImportAccount = async () => {
+  const handleImportAccount = async (): Promise<boolean> => {
     if (!liveAuthImport.enabled) {
       toast({
         title: '无法导入当前登录态',
         description: liveAuthImport.reason,
         variant: 'danger',
       });
-      return;
+      return false;
     }
     setImportingAccount(true);
     try {
@@ -590,15 +648,24 @@ export function ConnectionList({
         description: `${acc.label} 已入库`,
         variant: 'success',
       });
+      return true;
     } catch (e) {
       toast({
         title: '导入失败',
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
+      return false;
     } finally {
       setImportingAccount(false);
     }
+  };
+
+  const confirmGuideLoginImport = async () => {
+    const ok = await handleImportAccount();
+    if (!ok) return;
+    setLoginImportConfirmOpen(false);
+    onGuideSucceeded?.();
   };
 
   const requestImportProvider = () => {
@@ -1051,6 +1118,47 @@ export function ConnectionList({
       </Dialog>
 
       <Dialog
+        open={loginImportConfirmOpen}
+        onOpenChange={(open) =>
+          closeConfirmationOnOpenChange(open, importingAccount, () =>
+            setLoginImportConfirmOpen(false),
+          )
+        }
+      >
+        <DialogContent
+          className="max-w-sm"
+          hideClose={importingAccount}
+          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(importingAccount, event)}
+          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(importingAccount, event)}
+          onInteractOutside={(event) => preventBusyConfirmationDismissal(importingAccount, event)}
+        >
+          <DialogHeader>
+            <DialogTitle>导入当前登录态？</DialogTitle>
+            <DialogDescription>
+              将读取本机官方 CLI 已完成的登录；未登录请先在对应官方 CLI 完成登录，再回来导入。AgentHub
+              不会在此发起新的授权。
+              {!liveAuthImport.enabled ? ` ${liveAuthImport.reason}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={importingAccount}
+              onClick={() => setLoginImportConfirmOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              disabled={!liveAuthImport.enabled || importingAccount}
+              onClick={() => void confirmGuideLoginImport()}
+            >
+              {importingAccount ? '导入中…' : '确认导入'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={importConfirmOpen}
         onOpenChange={(open) =>
           closeConfirmationOnOpenChange(open, importing, () => setImportConfirmOpen(false))
@@ -1139,11 +1247,17 @@ export function ConnectionList({
         open={apiKeyDialogOpen}
         onOpenChange={(v) => {
           setApiKeyDialogOpen(v);
-          if (!v) setEditProvider(null);
+          if (!v) {
+            setEditProvider(null);
+            guideOpenedApiKeyRef.current = false;
+          }
         }}
         onSaved={() => {
+          const fromGuide = guideOpenedApiKeyRef.current;
           setApiKeyDialogOpen(false);
           setEditProvider(null);
+          guideOpenedApiKeyRef.current = false;
+          if (fromGuide) onGuideSucceeded?.();
         }}
       />
       <ConnectionTrashButton agentId={agentId} />

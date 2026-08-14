@@ -2,7 +2,7 @@
 
 > 状态：**当前工作区规则**，不代表已发布版本。
 > 最近核对：2026-08-12。
-> 本文是厂商入口、凭据类型和跨 Agent 适配规则的单一事实源；Adapter 的页面、运行时与协议桥架构见 [adapter-design.md](adapter-design.md)。
+> 本文是厂商入口、凭据类型和跨 Agent 适配规则的单一事实源；Adapter 的页面、运行时与协议桥架构见 [adapter-design.md](adapter-design.md)。日常 UI 入口见 [ui-design.md](ui-design.md) / ConnectFlow，本文件仍是规则真源。
 
 ## 1. 先看结论
 

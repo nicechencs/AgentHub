@@ -17,6 +17,7 @@ import {
   adapterBridgeEndpointLabel,
   adapterBridgeStateLabel,
   adapterBridgeUpstreamLabel,
+  adapterPageDescription,
   adapterPageViewState,
   adapterPlanChangeLabel,
   adapterPlanRequestSignature,
@@ -95,6 +96,12 @@ function plan(route: AdapterRouteAnalysis['route'], changes: AdapterPlanChange[]
 }
 
 describe('Adapter page view model', () => {
+  it('describes the page as profile and bridge management', () => {
+    expect(adapterPageDescription()).toBe(
+      '日常连接与跨服务复用请走 Dashboard「连接/切换」或 Connections「用于其他 Agent」。本页管理已创建的适配与本地桥。',
+    );
+  });
+
   it('routes an empty connection list to the Connections empty state', () => {
     expect(adapterPageViewState({ loading: false, loadError: null, entriesCount: 0, hasSource: false }))
       .toBe('empty');

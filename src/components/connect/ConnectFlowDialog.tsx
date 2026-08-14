@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { KeyRound, RefreshCw, Wallet } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, KeyRound, RefreshCw, Wallet } from 'lucide-react';
 import {
   closeConfirmationOnOpenChange,
   preventBusyConfirmationDismissal,
@@ -21,12 +21,19 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAgentStatusesOptional } from '@/app/runtime';
 import { useConnectionPool } from '@/app/runtime/ConnectionPoolProvider';
 import { AGENT_IDS, agentDisplayName } from '@/config/agents';
 import { resolveEffectiveConnection } from '@/lib/api/agent-connection';
 import type { AdapterProfile } from '@/lib/api/adapter';
-import type { AgentId } from '@/lib/types';
+import { buildConnectionsGuideUrl } from '@/lib/connect-flow/connect-intent';
+import {
+  AGENT_ALL_INFEASIBLE_MESSAGE,
+  SOURCE_ALL_INFEASIBLE_MESSAGE,
+} from '@/lib/connect-flow/reuse-offer';
+import type { AgentId, SwitchPreview } from '@/lib/types';
 import type {
+  ConnectFlowDeps,
   ConnectFlowDialogProps,
   ConnectFlowEntry,
   PlanEligibility,
@@ -50,6 +57,7 @@ import {
   fanoutRequestsForAgent,
   fanoutRequestsForSource,
   findOption,
+  formatConnectFlowError,
   guideTargetAgentId,
   isConnectFlowEntryStale,
   isGeneratedAdapterSource,
@@ -90,6 +98,7 @@ export function ConnectFlowDialog({
   const open = entry !== null;
   const key = connectFlowEntryKey(entry);
   const pool = useConnectionPool();
+  const { statuses } = useAgentStatusesOptional();
   const depsRef = React.useRef(deps);
   depsRef.current = deps;
   const onChangedRef = React.useRef(onConnectionChanged);
@@ -177,8 +186,9 @@ export function ConnectFlowDialog({
       accounts: pool.accounts,
       providers: pool.providers,
       profiles,
+      agentStatuses: statuses,
     });
-  }, [entry, deps, pool.accounts, pool.providers, profiles, optionsReady]);
+  }, [entry, deps, pool.accounts, pool.providers, profiles, optionsReady, statuses]);
 
   const sourceAgentId = entry
     ? sourceAgentIdOf(entry, pool.accounts, pool.providers)
@@ -282,7 +292,11 @@ export function ConnectFlowDialog({
       navigateTo('/connections');
       return;
     }
-    navigateTo(`/connections?agent=${guideAgent}`);
+    navigateTo(buildConnectionsGuideUrl({
+      agentId: guideAgent,
+      intent: 'import-login',
+      resumeAgentId: guideAgent,
+    }));
   }, [guideAgent, navigateTo]);
 
   const goNewApiKey = React.useCallback(() => {
@@ -290,7 +304,11 @@ export function ConnectFlowDialog({
       navigateTo('/connections?mode=providers');
       return;
     }
-    navigateTo(`/connections?agent=${guideAgent}&mode=providers`);
+    navigateTo(buildConnectionsGuideUrl({
+      agentId: guideAgent,
+      intent: 'add-key',
+      resumeAgentId: guideAgent,
+    }));
   }, [guideAgent, navigateTo]);
 
   const handleConfirm = React.useCallback(() => {
@@ -404,6 +422,7 @@ export function ConnectFlowDialog({
                   state={state}
                   option={selectedOption}
                   previewInvalid={previewInvalid}
+                  previewNative={deps.previewNative}
                   onGoImport={goImportLogin}
                 />
               ) : null}
@@ -623,7 +642,7 @@ function SelectStep({
 
       {emptyKind.kind === 'all_infeasible' ? (
         <Notice tone="warning">
-          现有凭据都不可用于此连接。可新增凭据后再试。
+          {entry.mode === 'for-source' ? SOURCE_ALL_INFEASIBLE_MESSAGE : AGENT_ALL_INFEASIBLE_MESSAGE}
         </Notice>
       ) : null}
 
@@ -936,15 +955,123 @@ function GuideActions({
   );
 }
 
+function SwitchPreviewFacts({ preview }: { preview: SwitchPreview }) {
+  return (
+    <div className="flex flex-col gap-2.5 text-sm">
+      <div className="flex items-start gap-2">
+        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+        <span className="text-secondary">{preview.backfillSummary}</span>
+      </div>
+      <div className="flex items-start gap-2">
+        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+        <span className="text-secondary">
+          切换前备份到 <code className="font-mono text-xs">{preview.backupPath}</code>
+        </span>
+      </div>
+      {preview.processWarning ? (
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+          <span className="text-warning">{preview.processWarning}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SwitchNativePreview({
+  option,
+  fallbackLabel,
+  lastError,
+  previewNative,
+}: {
+  option: SourceOption | null;
+  fallbackLabel?: string;
+  lastError: string | null;
+  previewNative?: ConnectFlowDeps['previewNative'];
+}) {
+  const label = option?.label ?? fallbackLabel;
+  const shouldFetch = Boolean(option?.ref.kind === 'provider' && previewNative);
+  const [phase, setPhase] = React.useState<'idle' | 'loading' | 'ready' | 'error'>(
+    shouldFetch ? 'loading' : 'idle',
+  );
+  const [preview, setPreview] = React.useState<SwitchPreview | null>(null);
+  const [previewError, setPreviewError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!shouldFetch || !option || !previewNative) {
+      setPhase('idle');
+      setPreview(null);
+      setPreviewError(null);
+      return;
+    }
+    let cancelled = false;
+    setPhase('loading');
+    setPreview(null);
+    setPreviewError(null);
+    void previewNative(option).then(
+      (result) => {
+        if (cancelled) return;
+        setPreview(result);
+        setPhase('ready');
+      },
+      (error: unknown) => {
+        if (cancelled) return;
+        setPreviewError(formatConnectFlowError(error));
+        setPhase('error');
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldFetch, option, previewNative]);
+
+  const nativeHint = (
+    <p className="text-xs text-secondary">将走本 Agent 既有切换，不会创建跨服务适配。</p>
+  );
+
+  if (phase === 'loading') {
+    return (
+      <div className="space-y-2 text-sm">
+        <p>切换到「{label}」？</p>
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-3/4" />
+        <p className="text-xs text-muted">正在预览…</p>
+        {nativeHint}
+      </div>
+    );
+  }
+
+  if (phase === 'error') {
+    return (
+      <div className="space-y-2 text-sm">
+        <p>切换到「{label}」？</p>
+        <Notice tone="danger">{previewError}</Notice>
+        {nativeHint}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 text-sm">
+      <p>切换到「{label}」？</p>
+      {preview ? <SwitchPreviewFacts preview={preview} /> : null}
+      {nativeHint}
+      {lastError ? <Notice tone="danger">{lastError}</Notice> : null}
+    </div>
+  );
+}
+
 function PreviewStep({
   state,
   option,
   previewInvalid,
+  previewNative,
   onGoImport,
 }: {
   state: ConnectFlowState;
   option: SourceOption | null;
   previewInvalid: boolean;
+  previewNative?: ConnectFlowDeps['previewNative'];
   onGoImport: () => void;
 }) {
   if (previewInvalid) {
@@ -953,11 +1080,12 @@ function PreviewStep({
 
   if (state.previewKind === 'switch') {
     return (
-      <div className="space-y-2 text-sm">
-        <p>切换到「{option?.label ?? state.selectedSource?.id}」？</p>
-        <p className="text-xs text-secondary">将走本 Agent 既有切换，不会创建跨服务适配。</p>
-        {state.lastError ? <Notice tone="danger">{state.lastError}</Notice> : null}
-      </div>
+      <SwitchNativePreview
+        option={option}
+        fallbackLabel={state.selectedSource?.id}
+        lastError={state.lastError}
+        previewNative={previewNative}
+      />
     );
   }
 

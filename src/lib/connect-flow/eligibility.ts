@@ -119,11 +119,12 @@ export function isOauthIncomplete(account: Account): boolean {
 }
 
 export function buildSourceOptions(input: SourceOptionsInput): SourceOption[] {
-  const { targetAgentId, accounts, providers, profiles } = input;
+  const { targetAgentId, accounts, providers, profiles, agentStatuses } = input;
   const generatedIds = generatedProviderIds(profiles);
-  // SourceOptionsInput has no live agentStatuses; catalog capabilities are the
-  // same fallback ConnectionList uses for providers (meta?.capabilities).
-  const capabilities = resolveAgentMeta(targetAgentId).capabilities;
+  // Prefer live doctor capabilities when the target status carries them
+  // (same fallback as ConnectionList: status.capabilities ?? meta.capabilities).
+  const liveStatus = agentStatuses?.find((status) => status.agentId === targetAgentId);
+  const capabilities = liveStatus?.capabilities ?? resolveAgentMeta(targetAgentId).capabilities;
   const native: SourceOption[] = [];
   const cross: SourceOption[] = [];
 

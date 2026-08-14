@@ -62,7 +62,7 @@ export function adapterTabLabel(tab: AdapterTab | AdapterCredentialFilter): stri
 }
 
 export function adapterPageDescription(): string {
-  return '复用 Connections 里的 API Key 或官方登录，接入另一个 Agent。';
+  return '日常连接与跨服务复用请走 Dashboard「连接/切换」或 Connections「用于其他 Agent」。本页管理已创建的适配与本地桥。';
 }
 
 export function adapterTabDescription(_tab?: AdapterTab | AdapterCredentialFilter): string {

@@ -95,8 +95,8 @@ export function AdapterProfilesList({
       <EmptyState
         icon={Boxes}
         title="尚未创建适配"
-        description="从上方选择来源，查看可接入的目标。"
-        actionLabel="选择来源连接"
+        description="日常连接请走 Dashboard「连接/切换」或 Connections「用于其他 Agent」。"
+        actionLabel="去 Dashboard 连接"
         onAction={onStartCreate}
       />
     );

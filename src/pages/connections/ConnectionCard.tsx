@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { agentDisplayName } from '@/config/agents';
 import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
 import { authDisplayForAccount, authHealthLabel } from '@/lib/backend/contracts/auth-state';
+import { shouldShowReuseAction } from '@/lib/connect-flow/reuse-offer';
 import type { ConnectionUsage } from '@/lib/connect-flow/types';
 import {
   endpointModeBadge,
@@ -82,7 +83,7 @@ export function ConnectionCard({
   onRefreshToken?: (e: ConnectionEntry) => void;
   onTest?: (e: ConnectionEntry) => void;
   onOpenConfigDir?: (e: ConnectionEntry) => void;
-  /** 凭据侧进入 ConnectFlow（来源预选）；未接线时不渲染入口 */
+  /** 凭据侧进入 ConnectFlow（来源预选）；未接线或来源无跨 Agent 可应用规则时不渲染入口 */
   onReuseRequest?: (entry: ConnectionEntry) => void;
   /** profiles 的 generatedProviderId 集合；命中的 Provider 不显示「用于其他 Agent」 */
   adapterGeneratedProviderIds?: ReadonlySet<string>;
@@ -103,9 +104,10 @@ export function ConnectionCard({
   const authLabel = account
     ? authDisplayForAccount(account).label
     : authHealthLabel(entry.authHealth ?? 'unknown');
-  const showReuse =
-    Boolean(onReuseRequest) &&
-    !(entry.source === 'provider' && adapterGeneratedProviderIds?.has(entry.id));
+  const showReuse = shouldShowReuseAction(entry, {
+    reuseEnabled: Boolean(onReuseRequest),
+    adapterGeneratedProviderIds,
+  });
 
   return (
     <ListRow

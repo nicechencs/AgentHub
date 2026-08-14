@@ -9,6 +9,7 @@
 > 2026-08-12 决策同步：`local_bridge` 的目标宿主确定为用户级 `agenthub-adapterd` sidecar；当前实现仍由 Tauri `AppState` 进程内托管，迁移契约见 [adapter-sidecar-design.md](adapter-sidecar-design.md)。
 > 日志：core 统一 tracing（文件 + 可选 stderr）→ [logging.md](logging.md)。  
 > **前端 backend 分层（已落地）**：`lib/backend/{contracts,tauri,current}` + `dev/mocks` + `app/runtime`；命令与 adapter 选择见 **§4.1–§4.2**。
+> 2026-08-14：Hub 重构 Phase 1 入口（ConnectFlow）已落地，详见 [hub-redesign-plan.md](hub-redesign-plan.md) / [ui-design.md](ui-design.md)。
 
 ## 1. 顶层结构
 
@@ -388,6 +389,8 @@ src/
 | `dev/mocks/` | 浏览器开发态 mock（backend / 领域 / fixtures） |
 | `test/` | 测试 factories 与 setup（约定见 [testing.md](testing.md)） |
 | `lib/api/` | 兼容 façade：现有页面可继续 import，内部逐步委托到 `lib/backend` |
+| `lib/connect-flow/` | 统一连接流程逻辑层（契约/可行性/fan-out/用途反查） |
+| `components/connect/` | ConnectFlowDialog（统一连接流程 UI + 状态机） |
 | `pages/` | 页面与 UI 状态；不直接碰 `invoke` |
 
 ### 4.2 命令与 Backend Adapter 选择
@@ -472,7 +475,7 @@ DTO / mapper：`lib/backend/contracts/*-map.ts`。错误类型：`contracts/erro
 
 ### 4.6 页面与其它约定
 
-产品导航以 Connections 收拢账号/供应商；Adapter 复用 Connection 引用，厂商、API 与 OAuth 的跨 Agent 判定统一见 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)；MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移，第一阶段不强制改 pages）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
+Connections 仍收拢凭据生命周期（账号/供应商的增删、导入、刷新与当前绑定）。日常「让某 Agent 用起来 / 跨服务复用」从 Dashboard Agent 卡片「连接/切换」或 Connections 行「用于其他 Agent」发起，走统一 `ConnectFlowDialog`（两边 apply 经同一 `lib/api/adapter`，以 `plan.canApply` 为可执行权威）。`/adapter` 页与侧栏「桥与适配」保留，定位为高级管理（profile、本地桥），不是日常创建入口。厂商、API 与 OAuth 的跨 Agent 判定真源仍是 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)；MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移，第一阶段不强制改 pages）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
 
 **未迁移 / 有意保留**：
 

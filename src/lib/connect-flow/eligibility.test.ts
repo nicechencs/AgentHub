@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Account, Provider } from '@/lib/types';
+import type { Account, AgentStatus, Provider } from '@/lib/types';
 import type { AdapterApplyPlan, AdapterProfile, AdapterRouteAnalysis } from '@/lib/api/adapter';
 import { buildSourceOptions, isOauthIncomplete, planToEligibility } from './eligibility';
 
@@ -48,6 +48,16 @@ function provider(overrides: Partial<Provider> = {}): Provider {
     configText: '{}',
     configFormat: 'json',
     isCurrent: false,
+    ...overrides,
+  };
+}
+
+function agentStatus(overrides: Partial<AgentStatus> & Pick<AgentStatus, 'agentId'>): AgentStatus {
+  return {
+    installed: true,
+    authStatus: 'valid',
+    authLabel: '已登录',
+    running: false,
     ...overrides,
   };
 }
@@ -234,5 +244,52 @@ describe('buildSourceOptions', () => {
       profiles: [],
     });
     expect(options[0]?.state).toEqual({ kind: 'current' });
+  });
+
+  it('falls back to catalog capabilities when agentStatuses is omitted', () => {
+    const options = buildSourceOptions({
+      targetAgentId: 'claude',
+      accounts: [account({ id: 'claude-other', label: 'other@claude' })],
+      providers: [],
+      profiles: [],
+    });
+    expect(options[0]?.state).toEqual({ kind: 'switchable' });
+  });
+
+  it('blocks native account using live agentStatuses accountSwitch reason', () => {
+    const reason = 'doctor: 账号切换已关闭';
+    const options = buildSourceOptions({
+      targetAgentId: 'claude',
+      accounts: [account({ id: 'claude-other', label: 'other@claude' })],
+      providers: [],
+      profiles: [],
+      agentStatuses: [
+        agentStatus({
+          agentId: 'claude',
+          capabilities: {
+            accountSwitch: { level: 'unsupported', reason },
+          },
+        }),
+      ],
+    });
+    expect(options[0]?.state).toEqual({ kind: 'blocked_native', reason });
+  });
+
+  it('marks native account switchable when live agentStatuses allow accountSwitch', () => {
+    const options = buildSourceOptions({
+      targetAgentId: 'workbuddy',
+      accounts: [account({ id: 'wb-1', agentId: 'workbuddy', label: 'wb@local' })],
+      providers: [],
+      profiles: [],
+      agentStatuses: [
+        agentStatus({
+          agentId: 'workbuddy',
+          capabilities: {
+            accountSwitch: { level: 'full' },
+          },
+        }),
+      ],
+    });
+    expect(options[0]?.state).toEqual({ kind: 'switchable' });
   });
 });

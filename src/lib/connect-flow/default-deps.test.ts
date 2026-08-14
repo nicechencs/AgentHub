@@ -210,6 +210,36 @@ describe('createDefaultConnectFlowDeps', () => {
     expect(switchSpy).not.toHaveBeenCalled();
   });
 
+  it('previewNative for providers calls switchPreview and does not switch', async () => {
+    seedAfterBackend();
+    const preview = {
+      backfillSummary: '当前生效配置将回存为「A」',
+      backupPath: '~/.agenthub/backups/live/claude/',
+    };
+    const previewSpy = vi.spyOn(providerApi, 'switchPreview').mockResolvedValue(preview);
+    const switchSpy = vi.spyOn(providerApi, 'switchProvider');
+    const deps = createDefaultConnectFlowDeps();
+    expect(deps.previewNative).toEqual(expect.any(Function));
+    await expect(deps.previewNative!(providerOption('p-b', 'B'))).resolves.toEqual(preview);
+    expect(previewSpy).toHaveBeenCalledTimes(1);
+    expect(previewSpy).toHaveBeenCalledWith('claude', 'p-b');
+    expect(switchSpy).not.toHaveBeenCalled();
+  });
+
+  it('previewNative for accounts returns null without calling switchPreview', async () => {
+    seedAfterBackend();
+    const previewSpy = vi.spyOn(providerApi, 'switchPreview');
+    const deps = createDefaultConnectFlowDeps();
+    await expect(deps.previewNative!({
+      ref: { kind: 'account', id: 'acc-b' },
+      group: 'native',
+      agentId: 'claude',
+      label: 'b@claude',
+      state: { kind: 'switchable' },
+    })).resolves.toBeNull();
+    expect(previewSpy).not.toHaveBeenCalled();
+  });
+
   it('createPlanFanout uses the wired plan and OAuth precheck', async () => {
     seedAfterBackend();
     upsertMockAccount({

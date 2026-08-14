@@ -23,12 +23,19 @@ async function switchNative(option: SourceOption): Promise<void> {
   await providerApi.switchProvider(agentId, option.ref.id);
 }
 
+/** account 无 preview API；provider 只 preview，不 switch。 */
+async function previewNative(option: SourceOption) {
+  if (option.ref.kind === 'account') return null;
+  return providerApi.switchPreview(option.agentId, option.ref.id);
+}
+
 export function createDefaultConnectFlowDeps(): ConnectFlowDeps {
   return {
     plan: planAdapter,
     apply: applyAdapter,
     listProfiles: listAdapterProfiles,
     switchNative,
+    previewNative,
     buildSourceOptions,
     isOauthIncomplete,
     createPlanFanout(overrides?: Partial<PlanFanoutDeps>) {

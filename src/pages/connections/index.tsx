@@ -8,12 +8,20 @@ import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { Notice } from '@/components/shared/Notice';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { AGENT_IDS, agentDisplayName } from '@/config/agents';
 import { resolveEffectiveConnection } from '@/lib/api/agent-connection';
 import { listAdapterProfiles, type AdapterProfile } from '@/lib/api/adapter';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
+import {
+  buildResumeConnectUrl,
+  consumeConnectIntent,
+  parseResumeAgentId,
+  readConnectGuide,
+  type ConnectGuide,
+} from '@/lib/connect-flow/connect-intent';
 import { computeConnectionUsageMap } from '@/lib/connect-flow/connection-usage';
 import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
 import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
@@ -67,6 +75,10 @@ export default function ConnectionsPage() {
     [rawAgent, installedIds],
   );
   const focusFilter = parseFocusFilter(searchParams.get('mode'));
+  const allowedAgents = installedIds.length ? installedIds : AGENT_IDS;
+  const [pendingGuide, setPendingGuide] = useState<ConnectGuide | null>(null);
+  const consumedGuideKeyRef = useRef<string | null>(null);
+  const resumeAgentId = parseResumeAgentId(searchParams.get('resume'), allowedAgents);
 
   useEffect(() => {
     if (pool.state === 'idle') void pool.ensureLoaded();
@@ -165,13 +177,39 @@ export default function ConnectionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, rawAgent]);
 
+  /** 一次性消费 intent：写入 pendingGuide 后立刻从 URL 去掉，刷新不再弹窗。 */
+  useEffect(() => {
+    const allowed = installedIds.length ? installedIds : AGENT_IDS;
+    const guide = readConnectGuide(searchParams, allowed);
+    if (!guide) {
+      consumedGuideKeyRef.current = null;
+      return;
+    }
+
+    const key = searchParams.toString();
+    if (consumedGuideKeyRef.current === key) return;
+
+    consumedGuideKeyRef.current = key;
+    setPendingGuide(guide);
+    setSearchParams(consumeConnectIntent(searchParams), { replace: true });
+  }, [installedIds, searchParams, setSearchParams]);
+
   const setAgent = (id: AgentId) => {
+    setPendingGuide(null);
     const next = new URLSearchParams(searchParams);
     if (id === 'claude') next.delete('agent');
     else next.set('agent', id);
     next.delete('mode');
+    next.delete('intent');
+    next.delete('resume');
     setSearchParams(next, { replace: true });
   };
+
+  const handleGuideSucceeded = useCallback(() => {
+    const resume = pendingGuide?.resumeAgentId;
+    setPendingGuide(null);
+    if (resume) navigate(buildResumeConnectUrl(resume));
+  }, [navigate, pendingGuide]);
 
   const agentStatus = statuses?.find((item) => item.agentId === agentId);
   const liveEffective = resolveEffectiveConnection(
@@ -275,6 +313,18 @@ export default function ConnectionsPage() {
         />
       </div>
 
+      {resumeAgentId ? (
+        <div className={pageRhythm.lead}>
+          <Notice
+            tone="info"
+            actionLabel="返回继续连接"
+            onAction={() => navigate(buildResumeConnectUrl(resumeAgentId))}
+          >
+            取消后可返回继续连接。
+          </Notice>
+        </div>
+      ) : null}
+
       {/* 当前生效只保留在 PageHeader description，避免与条下横幅重复 */}
       <ConnectionList
         agentId={agentId}
@@ -285,6 +335,8 @@ export default function ConnectionsPage() {
         // fail-closed：profiles 未成功加载前无法识别 adapter 生成的 Provider，
         // 复用入口整体隐藏，避免生成投影短暂出现「用于其他 Agent」形成二次投影链
         onReuseRequest={profiles !== null && !profilesFailed ? handleReuseRequest : undefined}
+        guideIntent={pendingGuide?.intent ?? null}
+        onGuideSucceeded={handleGuideSucceeded}
       />
 
       <ConnectFlowDialog

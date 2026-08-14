@@ -6,7 +6,7 @@
  * 不得互相 import 实现文件。本文件的类型名、函数名与返回类型不得擅改；
  * 如实现中发现契约缺陷，停下在交付说明中上报。
  */
-import type { Account, AgentId, Provider } from '@/lib/types';
+import type { Account, AgentId, AgentStatus, Provider, SwitchPreview } from '@/lib/types';
 import type {
   AdapterApplyPlan,
   AdapterApplyRequest,
@@ -65,6 +65,8 @@ export interface SourceOptionsInput {
   accounts: readonly Account[];
   providers: readonly Provider[];
   profiles: readonly AdapterProfile[];
+  /** 实时 doctor statuses；有 target 且带 capabilities 时优先于 catalog。 */
+  agentStatuses?: readonly AgentStatus[];
 }
 
 /**
@@ -140,6 +142,11 @@ export interface ConnectFlowDeps {
   listProfiles(): Promise<AdapterProfile[]>;
   /** 原生切换（复用 Connections 既有 lib/api 切换链）。 */
   switchNative(option: SourceOption): Promise<void>;
+  /**
+   * 原生切换预览（不执行 switch）。
+   * account 无 preview API，返回 null；provider 走 switchPreview。
+   */
+  previewNative?(option: SourceOption): Promise<SwitchPreview | null>;
   buildSourceOptions(input: SourceOptionsInput): SourceOption[];
   isOauthIncomplete(account: Account): boolean;
   createPlanFanout(overrides?: Partial<PlanFanoutDeps>): PlanFanoutController;

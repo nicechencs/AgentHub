@@ -57,6 +57,7 @@ import {
 } from '@/lib/api/usage';
 import { createBackup } from '@/lib/api/backup';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
+import { consumeConnectResume, parseConnectResumeParam } from '@/lib/connect-flow/connect-intent';
 import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
 import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
 import { getConnectionPoolSnapshot, providersForAgent, useConnectionPool } from '@/app/runtime';
@@ -109,7 +110,7 @@ const BRIDGE_POLL_MS = 4_000;
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const usageSync = useUsageSync();
   const usageSectionRef = useRef<HTMLElement>(null);
@@ -265,6 +266,27 @@ export default function DashboardPage() {
   const handleConnectRequest = useCallback((agentId: AgentId) => {
     setConnectEntry({ mode: 'for-agent', targetAgentId: agentId });
   }, []);
+
+  /** 回跳 `/?connect=`：agents 就绪后打开对应 ConnectFlow，并 replace 掉 query，避免关窗后重开。 */
+  const consumedConnectRef = useRef<string | null>(null);
+  useEffect(() => {
+    const raw = searchParams.get('connect');
+    if (raw == null || raw === '') {
+      consumedConnectRef.current = null;
+      return;
+    }
+    // 首次加载未完成：不要清掉 query，等已安装列表可用后再解析
+    if (agents == null) return;
+    if (consumedConnectRef.current === raw) return;
+
+    const allowed = agents.filter((item) => item.installed).map((item) => item.agentId);
+    const targetAgentId = parseConnectResumeParam(raw, allowed);
+    consumedConnectRef.current = raw;
+    if (targetAgentId) {
+      setConnectEntry({ mode: 'for-agent', targetAgentId });
+    }
+    setSearchParams(consumeConnectResume(searchParams), { replace: true });
+  }, [searchParams, setSearchParams, agents]);
 
   /**
    * 连接变更后重载页面数据；任一失败则抛出，由对话框呈现「已应用/已切换，但列表刷新失败」。

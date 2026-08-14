@@ -11,8 +11,9 @@
 | [platform-capability-refactor.md](platform-capability-refactor.md) | **平台能力架构改造方案**：解耦边界、稀疏端口、生命周期/Skills/连接/用量；P01-P13 与 R00-R08 已完成 |
 | [platform-capability-remediation.md](platform-capability-remediation.md) | **2026-08-07 审查修正方案**：Active Binding、配置 fail-closed、Skills 安全/原子性、Lifecycle 审计与 AgentKey/OCP 真验证 |
 | [testing.md](testing.md) | **测试约定**：测试与生产分文件、vitest/cargo 命令、mock 边界、Markdown 预览用例索引 |
-| [ui-design.md](ui-design.md) | 前端布局、页面线框、交互与组件（含环境未就绪态） |
-| [adapter-design.md](adapter-design.md) | **Adapter 设计与进度**：页面、运行时、Claude 直连与 Codex 本地桥接；发布前待实机 dogfood |
+| [ui-design.md](ui-design.md) | 前端布局、页面线框、交互与组件（含环境未就绪态；含 Dashboard/Connections 连接流程） |
+| [hub-redesign-plan.md](hub-redesign-plan.md) | **Hub 重构 Phase 1**（Agent 优先入口）**已实施**：ConnectFlowDialog；Adapter 页降级为「桥与适配」高级管理（profile / 桥），不是日常创建入口 |
+| [adapter-design.md](adapter-design.md) | **Adapter 设计与进度**：页面、运行时、Claude 直连与 Codex 本地桥接；含 Hub 入口定位；发布前待实机 dogfood |
 | [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | **Kimi → Codex 实机 dogfood 清单**：七项发布前验收；禁止记录密钥 / prompt / 正文 |
 | [adapter-sidecar-design.md](adapter-sidecar-design.md) | **Adapter Sidecar 目标架构**：`agenthub-adapterd` 所有权、IPC、状态机、单主/并发、升级恢复与三阶段迁移（目标已决策，当前未迁移） |
 | [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | **厂商 / API / OAuth 适配规则**：产品与协议边界、Kimi 双端点、当前路由矩阵和维护方法 |
@@ -32,6 +33,6 @@
 - 项目实现状态、未实现清单和风险以 [agenthub-plan.md §8](agenthub-plan.md) 为唯一真源。
 - 平台能力改造的最终约束、暂缓项和验证证据以 [platform-capability-remediation.md](platform-capability-remediation.md) 为唯一真源。
 - 对外发布、截图与凭据相关表述遵守 [privacy.md](privacy.md)。
-- 厂商端点、凭据类型与跨 Agent 路由以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为唯一真源。
+- 厂商端点、凭据类型与跨 Agent 路由以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为唯一真源。日常 UI 入口见 [ui-design.md](ui-design.md) / [hub-redesign-plan.md](hub-redesign-plan.md)，规则真源不变。
 - `local_bridge` 的进程所有权、控制面和 sidecar 迁移契约以 [adapter-sidecar-design.md](adapter-sidecar-design.md) 为唯一真源；当前实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
 - 新的一次性任务可以临时创建提示词文件；任务完成后删除提示词和任务拆分，并同步更新对应稳定文档。

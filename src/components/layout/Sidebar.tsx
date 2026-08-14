@@ -37,7 +37,7 @@ const NAV_WORKSPACE = [
 const NAV_MANAGE = [
   { to: '/', label: 'Dashboard', icon: Gauge },
   { to: '/connections', label: 'Connections', icon: Key },
-  { to: '/adapter', label: 'Adapter', icon: Boxes },
+  { to: '/adapter', label: '桥与适配', icon: Boxes },
   { to: '/settings', label: 'Settings', icon: Settings2 },
 ] as const;
 

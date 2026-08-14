@@ -3,10 +3,11 @@ import { markMockAgentInstalled } from './agent';
 import { upsertMockProvider } from './provider';
 
 /**
- * Opt-in ConnectFlow / Adapter fixtures.
+ * ConnectFlow / Adapter fixtures (Kimi membership + Anthropic API).
  *
- * `createBackend()` keeps an empty Connection pool. Call this after the mock
- * factory (or `getBackend()`) to exercise Kimi → Pi / Anthropic → Pi apply.
+ * Interactive `pnpm dev:mock` seeds these from `createBackend()` (default
+ * includeAnthropic + markPiInstalled). Vitest `createBackend()` stays an empty
+ * pool — call this after the factory or `getBackend()` to exercise apply.
  */
 export const CONNECT_FLOW_FIXTURE_IDS = {
   kimiMembership: 'kimi-code-membership',
