@@ -8,9 +8,11 @@
 //!   - Store **non-cached** input (`full − cached`) to match ccusage `inputTokens`.
 //! - Kimi: only `wire.jsonl`; old StatusUpdate/token_usage + new usage.record (turn only).
 //! - Pi: type=message role=assistant; usage.input/output/cacheRead/cacheWrite/cost.total.
-//! - Grok: session JSONL (no ccusage adapter) — Claude-like field fallback.
-//! - Paths: CLAUDE_CONFIG_DIR / XDG, KIMI_DATA_DIR, PI_AGENT_DIR.
-//! - Pricing: prefer log costUSD (Auto), else token × rates.
+//! - Grok: `sessions/**/updates.jsonl` `turn_completed` only (ccusage adapter-grok).
+//!   OpenAI-style `inputTokens` includes cache; peel cachedRead/cacheCreation.
+//!   Prefer `costUsdTicks` (1e-10 USD). Do not add `reasoningTokens` to totals.
+//! - Paths: CLAUDE_CONFIG_DIR / XDG, KIMI_DATA_DIR, PI_AGENT_DIR, GROK_HOME.
+//! - Pricing: prefer log costUSD / Grok ticks (Auto), else token × rates.
 //!
 //! AgentHub adds SQLite incremental cursors (ccusage is primarily report-oriented).
 
@@ -87,13 +89,7 @@ pub(crate) fn discover_pi_files() -> Result<Vec<PathBuf>> {
     finish_files(out)
 }
 
-/// No ccusage adapter; scan ~/.grok/sessions with Claude-like field fallback.
-pub(crate) fn discover_grok_files() -> Result<Vec<PathBuf>> {
-    let mut out = Vec::new();
-    let home = agent_home(AgentId::Grok)?;
-    walk_jsonl(&home.join("sessions"), &mut out, None);
-    finish_files(out)
-}
+pub(crate) use crate::usage::grok::discover_grok_files;
 
 fn finish_files(mut files: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
     files.sort();
@@ -239,6 +235,10 @@ pub(crate) fn session_id_from_path(path: &Path) -> Option<String> {
     // Kimi: parent session dir (or grandparent under agents/)
     if path.file_name().and_then(|n| n.to_str()) == Some("wire.jsonl") {
         return kimi_session_id_from_path(path);
+    }
+    // Grok: sessions/<cwd>/<session-uuid>/updates.jsonl → session-uuid
+    if let Some(sid) = crate::usage::grok::session_id_from_updates_path(path) {
+        return Some(sid);
     }
     // Pi: filename often `agent_<sessionId>.jsonl` → take after first `_`
     if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
@@ -837,7 +837,7 @@ pub(crate) fn extract_pi(
     }))
 }
 
-/// Claude / WorkBuddy / Grok generic assistant-log shape (ccusage UsageEntry).
+/// Claude / WorkBuddy generic assistant-log shape (ccusage UsageEntry).
 pub(crate) fn extract_claude_like(
     agent: AgentId,
     line: &str,

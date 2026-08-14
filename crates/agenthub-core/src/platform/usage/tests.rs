@@ -277,6 +277,158 @@ fn token_layout_repair_runs_once_then_skips() {
     );
 }
 
+/// Grok parser rewrite is one-shot and must not wipe other agents.
+#[test]
+fn grok_parser_repair_clears_only_grok_rows_once() {
+    use crate::models::{UsageQuery, UsageRecord};
+    use uuid::Uuid;
+
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db.clone());
+    db.set_setting("usage_token_layout", "3").unwrap();
+
+    let seed = |agent: AgentId, hash: &str| {
+        repo.insert_batch(&[UsageRecord {
+            id: Uuid::new_v4().to_string(),
+            agent_id: agent,
+            account_id: None,
+            model: "m".into(),
+            input_tokens: 10,
+            output_tokens: 1,
+            cache_tokens: 0,
+            cost_usd: Some(0.01),
+            session_id: Some("s1".into()),
+            ts: "2026-08-07T00:00:00.000Z".into(),
+            raw_hash: Some(hash.into()),
+        }])
+        .unwrap();
+    };
+    seed(AgentId::Grok, "grok-old");
+    seed(AgentId::Claude, "claude-keep");
+
+    let service = UsageService::with_registry(db.clone(), UsageSourceRegistry::new());
+    let _ = service.collect(Some(AgentId::Grok)).unwrap();
+    assert_eq!(
+        db.get_setting("usage_grok_parser").unwrap().as_deref(),
+        Some("1")
+    );
+    assert!(
+        service
+            .query(UsageQuery {
+                days: 30,
+                agent_id: Some(AgentId::Grok),
+                model: None,
+            })
+            .unwrap()
+            .is_empty(),
+        "first collect must drop stale Grok rows"
+    );
+    assert_eq!(
+        service
+            .query(UsageQuery {
+                days: 30,
+                agent_id: Some(AgentId::Claude),
+                model: None,
+            })
+            .unwrap()
+            .len(),
+        1,
+        "Grok parser repair must not wipe other agents"
+    );
+
+    seed(AgentId::Grok, "grok-new");
+    let _ = service.collect(Some(AgentId::Grok)).unwrap();
+    assert_eq!(
+        service
+            .query(UsageQuery {
+                days: 30,
+                agent_id: Some(AgentId::Grok),
+                model: None,
+            })
+            .unwrap()
+            .len(),
+        1,
+        "second collect must not wipe Grok rows again"
+    );
+}
+
+#[test]
+fn usage_repo_clears_and_resets_one_agent() {
+    use crate::models::UsageRecord;
+    use crate::storage::UsageCursor;
+    use uuid::Uuid;
+
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+
+    let row = |agent: AgentId, hash: &str| UsageRecord {
+        id: Uuid::new_v4().to_string(),
+        agent_id: agent,
+        account_id: None,
+        model: "m".into(),
+        input_tokens: 1,
+        output_tokens: 1,
+        cache_tokens: 0,
+        cost_usd: Some(0.01),
+        session_id: Some("s".into()),
+        ts: "2026-08-07T00:00:00.000Z".into(),
+        raw_hash: Some(hash.into()),
+    };
+    repo.insert_batch(&[row(AgentId::Grok, "g"), row(AgentId::Claude, "c")])
+        .unwrap();
+    repo.insert_batch_and_cursors(
+        &[],
+        &[
+            UsageCursor {
+                path: "grok.jsonl".into(),
+                agent_id: AgentId::Grok,
+                byte_offset: 99,
+                file_mtime: 1,
+            },
+            UsageCursor {
+                path: "claude.jsonl".into(),
+                agent_id: AgentId::Claude,
+                byte_offset: 88,
+                file_mtime: 1,
+            },
+        ],
+    )
+    .unwrap();
+
+    assert_eq!(repo.clear_records_for_agent(AgentId::Grok).unwrap(), 1);
+    assert_eq!(repo.reset_cursors_for_agent(AgentId::Grok).unwrap(), 1);
+
+    let grok_left = repo
+        .query(&crate::models::UsageQuery {
+            days: 30,
+            agent_id: Some(AgentId::Grok),
+            model: None,
+        })
+        .unwrap();
+    let claude_left = repo
+        .query(&crate::models::UsageQuery {
+            days: 30,
+            agent_id: Some(AgentId::Claude),
+            model: None,
+        })
+        .unwrap();
+    assert!(grok_left.is_empty());
+    assert_eq!(claude_left.len(), 1);
+    assert_eq!(
+        repo.get_cursor("grok.jsonl").unwrap().unwrap().byte_offset,
+        0
+    );
+    assert_eq!(
+        repo.get_cursor("claude.jsonl")
+            .unwrap()
+            .unwrap()
+            .byte_offset,
+        88
+    );
+}
+
 /// Recompute must not peel non-cached Codex input (double-peel regression).
 #[test]
 fn recompute_costs_preserves_codex_billable_input() {

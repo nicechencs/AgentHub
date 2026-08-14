@@ -90,6 +90,20 @@ fn workbuddy_config_dir_honors_env_overrides() {
 }
 
 #[test]
+fn grok_home_honors_grok_home_env() {
+    let expected = PathBuf::from(if cfg!(windows) {
+        r"D:\tmp\agenthub-grok-home-test"
+    } else {
+        "/tmp/agenthub-grok-home-test"
+    });
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", &expected);
+    let home = resolve_agent_home(AgentId::Grok).unwrap();
+    restore_env("GROK_HOME", prev);
+    assert_eq!(home, expected);
+}
+
+#[test]
 fn codex_and_grok_config_dir_equals_home() {
     assert_eq!(
         resolve_agent_config_dir(AgentId::Codex).unwrap(),

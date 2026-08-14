@@ -1,4 +1,4 @@
-//! Claude / WorkBuddy / Grok usage sources (Claude-like JSONL fields).
+//! Claude / WorkBuddy usage sources (Claude-like JSONL fields).
 
 use std::path::{Path, PathBuf};
 
@@ -7,7 +7,7 @@ use crate::models::AgentId;
 use crate::platform::usage::source::{UsageFileParser, UsageLineOutcome, UsageSource};
 use crate::platform::AgentKey;
 use crate::usage::session_jsonl::{
-    discover_claude_files, discover_grok_files, discover_workbuddy_files, extract_claude_like,
+    discover_claude_files, discover_workbuddy_files, extract_claude_like,
     line_might_have_usage_claude_like,
 };
 
@@ -60,4 +60,3 @@ claude_like_source!(
     AgentId::WorkBuddy,
     discover_workbuddy_files
 );
-claude_like_source!(GrokUsageSource, "grok", AgentId::Grok, discover_grok_files);
