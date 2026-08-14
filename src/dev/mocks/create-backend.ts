@@ -1,6 +1,11 @@
 import { seedAgentCatalog } from '@/app/runtime/agent-catalog-store';
 import type { Backend, CreateBackend } from '@/lib/backend/contracts';
-import { createMockAccountPort, getMockAccountById, restoreMockAccount } from './account';
+import {
+  createMockAccountPort,
+  getMockAccountById,
+  resetMockAccounts,
+  restoreMockAccount,
+} from './account';
 import { createMockAdapterPort, resetMockAdapters } from './adapter';
 import { createMockAgentPort } from './agent';
 import { createMockBackupPort } from './backup';
@@ -37,6 +42,7 @@ export const createBackend: CreateBackend = () => {
   resetMockConfig();
   resetMockTrash();
   resetMockAdapters();
+  resetMockAccounts();
   resetMockProviders();
   // Seed full agent catalog (ids / names / channels / capabilities).
   seedAgentCatalog(MOCK_AGENT_CATALOG);

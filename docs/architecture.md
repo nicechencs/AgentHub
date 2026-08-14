@@ -349,10 +349,11 @@ src/
 ├── app/
 │   └── runtime/                 # 应用组合入口（装配 backend adapter）
 ├── lib/
-│   └── backend/
-│       ├── contracts/           # DTO、接口、纯映射（不碰 Tauri）
-│       ├── tauri/               # 唯一允许调用 invoke 的地方
-│       └── current.ts           # 默认生产实现切换点
+│   ├── backend/
+│   │   ├── contracts/           # DTO、接口、纯映射（不碰 Tauri）
+│   │   ├── tauri/               # 唯一允许调用 invoke 的地方
+│   │   └── current.ts           # 默认生产实现切换点
+│   └── connect-flow/            # 统一连接流程逻辑层（契约/可行性/fan-out/用途反查），见 hub-redesign-plan.md
 ├── dev/
 │   └── mocks/
 │       ├── backend.ts
@@ -371,6 +372,7 @@ src/
 ├── components/
 │   ├── ui/                      # shadcn 生成组件
 │   ├── layout/                  # Sidebar / TopBar / PageHeader / AgentTabStrip
+│   ├── connect/                 # ConnectFlowDialog（统一连接流程 UI + 状态机）
 │   └── shared/                  # SecretInput / SwitchConfirmDialog / EmptyState / ...
 ├── hooks/                       # 或 lib/hooks/
 ├── i18n/locales/                # 如启用 i18n

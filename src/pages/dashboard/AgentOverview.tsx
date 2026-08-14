@@ -4,21 +4,54 @@ import { Bot } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { StatusDot } from '@/components/shared/StatusDot';
+import { StatusPin } from '@/components/shared/StatusPin';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tip } from '@/components/ui/tooltip';
 import { AGENTS } from '@/config/agents';
-import type { AgentStatus } from '@/lib/types';
+import type { AgentId, AgentStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 import {
   AGENT_OVERVIEW_GRID,
   mergeAgentsInOrder,
+  resolveAgentCardInteraction,
   summarizeAgentOverview,
+  type AgentCardBadgeInput,
+  type AgentCardBridgeState,
 } from './agentOverviewModel';
 
-export function AgentOverview({ agents }: { agents: AgentStatus[] }) {
+export type { AgentCardBadgeInput };
+
+export interface AgentOverviewProps {
+  agents: AgentStatus[];
+  /** 已安装卡片打开连接流程；未传时 connect 退化为 /connections?agent=X */
+  onConnectRequest?: (agentId: AgentId) => void;
+  /** 调用方提供的 profile 联结 / 桥状态；不传则不渲染徽标 */
+  badgeInputs?: Readonly<Partial<Record<AgentId, AgentCardBadgeInput>>>;
+}
+
+function bridgePinTone(state: AgentCardBridgeState): 'success' | 'warning' | 'muted' {
+  if (state === 'running') return 'success';
+  if (state === 'degraded') return 'warning';
+  return 'muted';
+}
+
+function bridgeBadgeVariant(
+  state: AgentCardBridgeState,
+): 'success' | 'warning' | 'default' {
+  if (state === 'running') return 'success';
+  if (state === 'degraded') return 'warning';
+  return 'default';
+}
+
+export function AgentOverview({
+  agents,
+  onConnectRequest,
+  badgeInputs,
+}: AgentOverviewProps) {
   const navigate = useNavigate();
   // Dashboard 只展示已安装 Agent；未安装的去 Agents 页安装。
   const installedMetas = AGENTS.filter((m) =>
@@ -26,7 +59,7 @@ export function AgentOverview({ agents }: { agents: AgentStatus[] }) {
   );
   const installedStatuses = agents.filter((a) => a.installed);
   const { summaryText } = summarizeAgentOverview(installedMetas, installedStatuses);
-  const cards = mergeAgentsInOrder(installedMetas, installedStatuses);
+  const cards = mergeAgentsInOrder(installedMetas, installedStatuses, badgeInputs);
 
   return (
     <div>
@@ -56,7 +89,19 @@ export function AgentOverview({ agents }: { agents: AgentStatus[] }) {
       ) : (
         <div className={AGENT_OVERVIEW_GRID}>
           {cards.map(({ meta, view }) => {
-            const go = () => navigate(view.target);
+            const go = () => {
+              const next = resolveAgentCardInteraction(view.action, meta.id, onConnectRequest);
+              if (next.type === 'connect') {
+                onConnectRequest?.(next.agentId);
+                return;
+              }
+              navigate(next.to);
+            };
+            const viaLabel = view.viaAdapter
+              ? view.viaAdapter.sourceLabel
+                ? `经兼容路由 · ${view.viaAdapter.sourceLabel}`
+                : '经兼容路由'
+              : null;
             return (
               <Card
                 key={meta.id}
@@ -96,12 +141,32 @@ export function AgentOverview({ agents }: { agents: AgentStatus[] }) {
                     <StatusDot status={view.authStatus} />
                   </Tip>
                 </div>
-                <Tip
-                  className={cn('mt-1.5 truncate text-xs', view.metaClass)}
-                  label={view.titleFull}
-                >
-                  {view.metaText}
-                </Tip>
+                <div className="mt-1.5 flex min-w-0 items-center gap-1">
+                  <Tip
+                    className={cn('min-w-0 truncate text-xs', view.metaClass)}
+                    label={view.titleFull}
+                  >
+                    {view.metaText}
+                  </Tip>
+                  {viaLabel ? (
+                    <Tip className="shrink-0" label={viaLabel}>
+                      <Badge variant="info" className="h-5 max-w-[7rem] truncate px-1.5 text-2xs">
+                        {viaLabel}
+                      </Badge>
+                    </Tip>
+                  ) : null}
+                  {view.bridge ? (
+                    <Tip className="shrink-0" label={view.bridge.label}>
+                      <Badge
+                        variant={bridgeBadgeVariant(view.bridge.state)}
+                        className="h-5 px-1.5 text-2xs"
+                      >
+                        <StatusPin tone={bridgePinTone(view.bridge.state)} />
+                        {view.bridge.label}
+                      </Badge>
+                    </Tip>
+                  ) : null}
+                </div>
               </Card>
             );
           })}

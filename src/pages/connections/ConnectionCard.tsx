@@ -4,6 +4,7 @@ import {
   FolderOpen,
   Pencil,
   RefreshCw,
+  Share2,
   Trash2,
   Gauge,
 } from 'lucide-react';
@@ -16,13 +17,38 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { agentDisplayName } from '@/config/agents';
 import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
 import { authDisplayForAccount, authHealthLabel } from '@/lib/backend/contracts/auth-state';
+import type { ConnectionUsage } from '@/lib/connect-flow/types';
 import {
   endpointModeBadge,
   kindBadge,
   type ConnectionEntry,
 } from './connection-model';
+
+function usageViaLabel(via: 'direct' | 'adapter'): string {
+  return via === 'direct' ? '直接' : '经兼容路由';
+}
+
+function ConnectionUsageBlock({ usage }: { usage: ConnectionUsage }) {
+  if (usage.status === 'incomplete') {
+    return <p className="mt-1 pl-5 text-2xs text-secondary">用途未知</p>;
+  }
+  if (usage.agents.length === 0) {
+    return <p className="mt-1 pl-5 text-2xs text-muted">未使用</p>;
+  }
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1 pl-5">
+      <span className="text-2xs text-secondary">正用于：</span>
+      {usage.agents.map((item) => (
+        <Badge key={`${item.agentId}:${item.via}`} variant="default">
+          {agentDisplayName(item.agentId)}（{usageViaLabel(item.via)}）
+        </Badge>
+      ))}
+    </div>
+  );
+}
 
 /**
  * 统一连接卡：官方登录 / API Key / 供应商共用外壳，操作按 kind 分支。
@@ -39,6 +65,8 @@ export function ConnectionCard({
   onRefreshToken,
   onTest,
   onOpenConfigDir,
+  onReuseRequest,
+  adapterGeneratedProviderIds,
   canEditProvider = true,
   canSwitchProvider = true,
   canSwitchAccount = true,
@@ -54,6 +82,10 @@ export function ConnectionCard({
   onRefreshToken?: (e: ConnectionEntry) => void;
   onTest?: (e: ConnectionEntry) => void;
   onOpenConfigDir?: (e: ConnectionEntry) => void;
+  /** 凭据侧进入 ConnectFlow（来源预选）；未接线时不渲染入口 */
+  onReuseRequest?: (entry: ConnectionEntry) => void;
+  /** profiles 的 generatedProviderId 集合；命中的 Provider 不显示「用于其他 Agent」 */
+  adapterGeneratedProviderIds?: ReadonlySet<string>;
   /** Provider/API Key configuration is unavailable when the capability is blocked. */
   canEditProvider?: boolean;
   /** Applying a saved Provider writes the agent's live config. */
@@ -71,6 +103,9 @@ export function ConnectionCard({
   const authLabel = account
     ? authDisplayForAccount(account).label
     : authHealthLabel(entry.authHealth ?? 'unknown');
+  const showReuse =
+    Boolean(onReuseRequest) &&
+    !(entry.source === 'provider' && adapterGeneratedProviderIds?.has(entry.id));
 
   return (
     <ListRow
@@ -137,6 +172,16 @@ export function ConnectionCard({
               切换
             </Button>
           )}
+          {showReuse && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={switching}
+              onClick={() => onReuseRequest?.(entry)}
+            >
+              <Share2 className="h-3.5 w-3.5" /> 用于其他 Agent
+            </Button>
+          )}
           {entry.source === 'provider' && canEditProvider && (
             <Button size="sm" variant="secondary" onClick={() => onEdit(entry)}>
               <Pencil className="h-3.5 w-3.5" /> 编辑
@@ -169,6 +214,7 @@ export function ConnectionCard({
       </div>
 
       <p className="mt-1 pl-5 text-xs text-muted">{entry.subtitle}</p>
+      {entry.usage ? <ConnectionUsageBlock usage={entry.usage} /> : null}
 
       {expanded && (
         <Card

@@ -41,6 +41,12 @@ import { Skeleton, TableSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 
 import { listAgents } from '@/lib/api/agent';
+import {
+  getAdapterBridgeStatus,
+  listAdapterProfiles,
+  type AdapterBridgeRuntimeState,
+  type AdapterProfile,
+} from '@/lib/api/adapter';
 import { listRuntimes } from '@/lib/api/env';
 import {
   getUsageAvailability,
@@ -50,6 +56,10 @@ import {
   type UsageAvailability,
 } from '@/lib/api/usage';
 import { createBackup } from '@/lib/api/backup';
+import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
+import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
+import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
+import { getConnectionPoolSnapshot, providersForAgent, useConnectionPool } from '@/app/runtime';
 import { AGENTS, AGENT_MAP, agentDisplayName } from '@/config/agents';
 import { hasEnvIssues } from '@/lib/env';
 import { loadBool, saveBool, StorageKey } from '@/lib/storage';
@@ -58,6 +68,7 @@ import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
 import { usageTokenParts } from '@/lib/usage-tokens';
 import { cn, fmtTokens } from '@/lib/utils';
 import { AgentOverview, AgentOverviewSkeleton } from './AgentOverview';
+import type { AgentCardBadgeInput, AgentCardBridgeState } from './agentOverviewModel';
 import { UsageDetailsTable } from './UsageDetailsTable';
 
 /** 日期筛选预设：today / 24h 均按 days=1 拉取，today 再按本地日历日收窄 */
@@ -85,6 +96,16 @@ function localDateKey(d = new Date()): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
+
+/** 桥运行态 → 卡片徽标四态：starting 乐观归 running，error 归 degraded（可见异常） */
+function mapBridgeState(state: AdapterBridgeRuntimeState): AgentCardBridgeState {
+  if (state === 'running' || state === 'starting') return 'running';
+  if (state === 'degraded' || state === 'error') return 'degraded';
+  return 'stopped';
+}
+
+/** 桥状态轮询间隔，与 Adapter 页 use-adapter-resources 一致 */
+const BRIDGE_POLL_MS = 4_000;
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -125,19 +146,142 @@ export default function DashboardPage() {
   const [healthRefreshKey, setHealthRefreshKey] = useState(0);
   const [showGuide, setShowGuide] = useState(() => !loadBool(StorageKey.usageGuideDismissed));
 
-  const loadAgents = useCallback(async () => {
+  /** 返回是否成功：连接流程的刷新契约需要真实成败，不能吞掉失败。 */
+  const loadAgents = useCallback(async (): Promise<boolean> => {
     setAgentsLoading(true);
     setAgentsError(null);
     try {
       const [agentList, runtimeList] = await Promise.all([listAgents(), listRuntimes()]);
       setAgents(agentList);
       setRuntimes(runtimeList);
+      return true;
     } catch (e) {
       setAgentsError(e);
+      return false;
     } finally {
       setAgentsLoading(false);
     }
   }, []);
+
+  // —— 连接流程（Hub 主入口）：卡片徽标数据 + ConnectFlowDialog 接线 ——
+  const pool = useConnectionPool();
+  const [profiles, setProfiles] = useState<AdapterProfile[]>([]);
+  const [connectEntry, setConnectEntry] = useState<ConnectFlowEntry | null>(null);
+  const [bridgeStates, setBridgeStates] = useState<Record<string, AgentCardBridgeState>>({});
+  const connectDeps = useMemo(() => createDefaultConnectFlowDeps(), []);
+  const poolReload = pool.reload;
+  const poolEnsureLoaded = pool.ensureLoaded;
+  const poolState = pool.state;
+
+  /** generation 防竞态：并发加载只让最新一次落盘；返回是否成功。 */
+  const profilesGeneration = useRef(0);
+  const loadProfiles = useCallback(async (): Promise<boolean> => {
+    const generation = ++profilesGeneration.current;
+    try {
+      const list = await listAdapterProfiles();
+      if (profilesGeneration.current === generation) setProfiles(list);
+      return true;
+    } catch {
+      // 徽标是增强信息：读取失败降级为不显示，不阻塞总览
+      if (profilesGeneration.current === generation) setProfiles([]);
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (poolState === 'idle') void poolEnsureLoaded();
+  }, [poolState, poolEnsureLoaded]);
+
+  useEffect(() => {
+    void loadProfiles();
+  }, [loadProfiles]);
+
+  /** 生效 provider 命中 adapter 生成投影 → 「经兼容路由」徽标（profile 联结，不读 provider.meta） */
+  const adapterBadgeHits = useMemo(() => {
+    const hits = new Map<AgentId, { profile: AdapterProfile; sourceLabel?: string }>();
+    if (profiles.length === 0) return hits;
+    for (const meta of AGENTS) {
+      const current = providersForAgent(pool.providers, meta.id).find((p) => p.isCurrent);
+      if (!current) continue;
+      const profile = profiles.find((p) => p.generatedProviderId === current.id);
+      if (!profile) continue;
+      const sourceLabel =
+        profile.sourceKind === 'account'
+          ? pool.accounts.find((a) => a.id === profile.sourceId)?.label
+          : pool.providers.find((p) => p.id === profile.sourceId)?.name;
+      hits.set(meta.id, { profile, sourceLabel });
+    }
+    return hits;
+  }, [pool.accounts, pool.providers, profiles]);
+
+  // 桥状态：仅对生效 provider 命中的 bridge 型 profile 轮询；查询失败显示「状态不可用」而非隐藏
+  useEffect(() => {
+    const bridgeProfiles = [...adapterBadgeHits.values()]
+      .map((hit) => hit.profile)
+      .filter((profile) => profile.route === 'local_bridge');
+    if (bridgeProfiles.length === 0) {
+      setBridgeStates({});
+      return;
+    }
+    let cancelled = false;
+    let timer: number | undefined;
+    // 链式轮询：上一轮完成后再排下一轮，慢请求不产生重叠与陈旧覆盖
+    const poll = async () => {
+      const next: Record<string, AgentCardBridgeState> = {};
+      await Promise.all(
+        bridgeProfiles.map(async (profile) => {
+          try {
+            const status = await getAdapterBridgeStatus(profile.id);
+            next[profile.id] = mapBridgeState(status.state);
+          } catch {
+            next[profile.id] = 'unavailable';
+          }
+        }),
+      );
+      if (cancelled) return;
+      setBridgeStates(next);
+      timer = window.setTimeout(() => void poll(), BRIDGE_POLL_MS);
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [adapterBadgeHits]);
+
+  const badgeInputs = useMemo(() => {
+    const inputs: Partial<Record<AgentId, AgentCardBadgeInput>> = {};
+    for (const [agentId, hit] of adapterBadgeHits) {
+      const bridgeState =
+        hit.profile.route === 'local_bridge' ? bridgeStates[hit.profile.id] : undefined;
+      inputs[agentId] = {
+        viaAdapter: { sourceLabel: hit.sourceLabel },
+        ...(bridgeState ? { bridge: { state: bridgeState } } : {}),
+      };
+    }
+    return inputs;
+  }, [adapterBadgeHits, bridgeStates]);
+
+  const handleConnectRequest = useCallback((agentId: AgentId) => {
+    setConnectEntry({ mode: 'for-agent', targetAgentId: agentId });
+  }, []);
+
+  /**
+   * 连接变更后重载页面数据；任一失败则抛出，由对话框呈现「已应用/已切换，但列表刷新失败」。
+   * 注意：loadAgents/loadProfiles 内部消化异常（返回 boolean），pool.reload 对
+   * partial/error 也正常 resolve——必须查返回值与 store 快照，不能依赖 reject。
+   */
+  const handleConnectionChanged = useCallback(async () => {
+    const [agentsOk, profilesOk] = await Promise.all([loadAgents(), loadProfiles()]);
+    await poolReload().catch(() => {});
+    // 双侧刷新失败时 store 保留旧 state:'ready' 并写入 errors，必须一并检查
+    const poolSnapshot = getConnectionPoolSnapshot();
+    const poolOk =
+      poolSnapshot.state === 'ready' && !poolSnapshot.errors.accounts && !poolSnapshot.errors.providers;
+    if (!agentsOk || !profilesOk || !poolOk) {
+      throw new Error('页面数据刷新失败，可手动刷新查看最新状态');
+    }
+  }, [loadAgents, poolReload, loadProfiles]);
 
   /** days / agentFilter 变化时各请求一次，上下共用 */
   const loadUsage = useCallback(
@@ -340,7 +484,11 @@ export default function DashboardPage() {
                 <p className="mt-0.5 text-secondary">先修运行环境，再装 CLI</p>
               </Notice>
             )}
-            <AgentOverview agents={agents} />
+            <AgentOverview
+              agents={agents}
+              onConnectRequest={handleConnectRequest}
+              badgeInputs={badgeInputs}
+            />
           </div>
         ) : null}
       </PageSection>
@@ -659,6 +807,14 @@ export default function DashboardPage() {
           <UsageParserHealth variant="dashboard" refreshKey={healthRefreshKey} />
         )}
       </PageSection>
+
+      <ConnectFlowDialog
+        entry={connectEntry}
+        deps={connectDeps}
+        onClose={() => setConnectEntry(null)}
+        onConnectionChanged={handleConnectionChanged}
+        onNavigate={(to) => navigate(to)}
+      />
     </div>
   );
 }

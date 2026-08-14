@@ -71,6 +71,7 @@ import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
 import { attachLiveAgentAuth } from '@/lib/backend/contracts/auth-state';
 import { logger } from '@/lib/logger';
 import { liveConfigPaths } from '@/lib/provider-detect';
+import type { ConnectionUsageMap } from '@/lib/connect-flow/types';
 import type { Account, AgentId, AgentStatus, Provider, SwitchPreview } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { ApiKeyAccountDialog } from '@/pages/accounts/ApiKeyAccountDialog';
@@ -108,12 +109,21 @@ export function ConnectionList({
   agentId,
   agentStatuses,
   initialFilter = 'all',
+  usageMap,
+  onReuseRequest,
+  adapterGeneratedProviderIds,
 }: {
   agentId: AgentId;
   /** Shared application-level Agent detection; do not re-probe per list. */
   agentStatuses: AgentStatus[];
   /** 深链 ?mode= 映射到初始筛选 */
   initialFilter?: ConnectionFilter;
+  /** 页面层计算的用途反查；未传则行上不带 usage（视觉与现状等价） */
+  usageMap?: ConnectionUsageMap;
+  /** 凭据侧进入 ConnectFlow；未传则不渲染「用于其他 Agent」 */
+  onReuseRequest?: (entry: ConnectionEntry) => void;
+  /** profiles 的 generatedProviderId 集合；命中的 Provider 不显示复用入口 */
+  adapterGeneratedProviderIds?: ReadonlySet<string>;
 }) {
   const { toast } = useToast();
   const sharedAgentStatus = useAgentStatusesOptional();
@@ -300,13 +310,13 @@ export function ConnectionList({
   );
 
   const entries = React.useMemo(() => {
-    const merged = mergeConnectionEntries(accountsWithLiveAuth, providers).map((e) => {
+    const merged = mergeConnectionEntries(accountsWithLiveAuth, providers, usageMap).map((e) => {
       if (e.source !== 'provider') return e;
       const ms = latencyById[e.id];
       return ms !== undefined ? withProviderLatency(e, ms) : e;
     });
     return merged;
-  }, [accountsWithLiveAuth, providers, latencyById]);
+  }, [accountsWithLiveAuth, providers, latencyById, usageMap]);
 
   const counts = React.useMemo(() => countByKind(entries), [entries]);
   const visible = React.useMemo(
@@ -936,6 +946,8 @@ export function ConnectionList({
                   onRefreshToken={(e) => void handleRefreshToken(e)}
                   onTest={(e) => void handleTest(e)}
                   onOpenConfigDir={() => void handleOpenConfigDir()}
+                  onReuseRequest={onReuseRequest}
+                  adapterGeneratedProviderIds={adapterGeneratedProviderIds}
                   canEditProvider={providerGate.canManage}
                   canSwitchProvider={providerGate.canSwitch}
                   canSwitchAccount={!accountsBlocked}

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { connectSourceKey, type ConnectionUsage, type ConnectionUsageMap } from '@/lib/connect-flow/types';
 import type { Account, Provider } from '@/lib/types';
 import {
   accountToEntry,
@@ -332,5 +333,90 @@ describe('connection-model', () => {
     const released = endExclusiveBusyIds(first!, 'trash-1');
     expect(released.size).toBe(0);
     expect(endExclusiveBusyIds(first!, 'trash-2')).toEqual(first);
+  });
+
+  it('fills usage from usageMap by isomorphic account:/provider: keys', () => {
+    const knownUsed: ConnectionUsage = {
+      status: 'known',
+      agents: [
+        { agentId: 'claude', via: 'direct' },
+        { agentId: 'codex', via: 'adapter' },
+      ],
+    };
+    const knownEmpty: ConnectionUsage = { status: 'known', agents: [] };
+    const incomplete: ConnectionUsage = { status: 'incomplete', agents: [] };
+    const usageMap: ConnectionUsageMap = new Map([
+      [connectSourceKey({ kind: 'account', id: 'used' }), knownUsed],
+      [connectSourceKey({ kind: 'account', id: 'idle' }), knownEmpty],
+      [connectSourceKey({ kind: 'provider', id: 'unk' }), incomplete],
+    ]);
+
+    const rows = mergeConnectionEntries(
+      [
+        acc({ id: 'used', kind: 'oauth', label: 'used' }),
+        acc({ id: 'idle', kind: 'oauth', label: 'idle' }),
+        acc({ id: 'bare', kind: 'oauth', label: 'bare' }),
+      ],
+      [prov({ id: 'unk', name: 'unk' }), prov({ id: 'other', name: 'other' })],
+      usageMap,
+    );
+
+    expect(rows.find((r) => r.id === 'used')?.usage).toEqual(knownUsed);
+    expect(rows.find((r) => r.id === 'idle')?.usage).toEqual(knownEmpty);
+    expect(rows.find((r) => r.id === 'unk')?.usage).toEqual(incomplete);
+    expect(rows.find((r) => r.id === 'bare')?.usage).toBeUndefined();
+    expect(rows.find((r) => r.id === 'other')?.usage).toBeUndefined();
+  });
+
+  it('is equivalent to the current merge when usageMap is omitted', () => {
+    const accounts = [
+      acc({
+        id: 'cur',
+        kind: 'apikey',
+        label: 'key',
+        isCurrent: true,
+        updatedAt: '2026-01-02 00:00:00',
+      }),
+      acc({ id: 'old', kind: 'oauth', label: 'old', updatedAt: '2026-01-01 00:00:00' }),
+    ];
+    const providers = [prov({ id: 'p-new', name: 'new-relay', updatedAt: '2026-06-01 00:00:00' })];
+
+    const without = mergeConnectionEntries(accounts, providers);
+    const emptyMap = mergeConnectionEntries(accounts, providers, new Map());
+
+    expect(without.map((r) => r.id)).toEqual(['cur', 'p-new', 'old']);
+    expect(emptyMap.map((r) => r.id)).toEqual(without.map((r) => r.id));
+    expect(without.every((r) => r.usage === undefined)).toBe(true);
+    expect(emptyMap.every((r) => r.usage === undefined)).toBe(true);
+    expect(without.map(({ usage: _u, ...rest }) => rest)).toEqual(
+      emptyMap.map(({ usage: _u, ...rest }) => rest),
+    );
+  });
+
+  it('does not cross-match the same id across account and provider kinds', () => {
+    const usageMap: ConnectionUsageMap = new Map([
+      [
+        connectSourceKey({ kind: 'account', id: 'same' }),
+        { status: 'known', agents: [{ agentId: 'kimi', via: 'direct' }] },
+      ],
+      [connectSourceKey({ kind: 'provider', id: 'same' }), { status: 'incomplete', agents: [] }],
+    ]);
+
+    const rows = mergeConnectionEntries(
+      [acc({ id: 'same', kind: 'oauth', label: 'acc' })],
+      [prov({ id: 'same', name: 'prov' })],
+      usageMap,
+    );
+
+    expect(rows.find((r) => r.source === 'account')?.usage).toEqual({
+      status: 'known',
+      agents: [{ agentId: 'kimi', via: 'direct' }],
+    });
+    expect(rows.find((r) => r.source === 'provider')?.usage).toEqual({
+      status: 'incomplete',
+      agents: [],
+    });
+    expect(accountToEntry(acc({ id: 'same', kind: 'oauth', label: 'acc' })).usage).toBeUndefined();
+    expect(providerToEntry(prov({ id: 'same', name: 'prov' })).usage).toBeUndefined();
   });
 });

@@ -22,6 +22,11 @@ import {
   type ConnectionKind,
   type ConnectionKindFilter,
 } from '@/lib/connection-kind';
+import {
+  connectSourceKey,
+  type ConnectionUsage,
+  type ConnectionUsageMap,
+} from '@/lib/connect-flow/types';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
 
 /**
@@ -63,6 +68,8 @@ export type ConnectionEntry = {
   endpointMode?: 'official' | 'custom';
   account?: Account;
   provider?: Provider;
+  /** 钱包用途；由页面层计算后经 usageMap 填入，未接线时缺省 */
+  usage?: ConnectionUsage;
 };
 
 export function authStatusOfAccount(a: Account): AuthStatus {
@@ -117,62 +124,75 @@ function providerSubtitle(
     : `${health} · 未生效 · ${modeLabel}`;
 }
 
-export function accountToEntry(a: Account): ConnectionEntry {
-  return {
-    key: `account:${a.id}`,
-    source: 'account',
-    kind: a.kind === 'apikey' ? 'apikey' : 'oauth',
-    id: a.id,
-    agentId: a.agentId,
-    title: a.label,
-    subtitle: accountSubtitle(a),
-    isCurrent: a.isCurrent,
-    authStatus: authStatusOfAccount(a),
-    authHealth: authHealthOfAccount(a),
-    sortKey: a.updatedAt || a.lastUsedAt || a.createdAt || '',
-    identityLabel: a.identityLabel,
-    subscription: a.subscription,
-    quota5hPct: a.quota5hPct,
-    quota7dPct: a.quota7dPct,
-    quotaResetIn: a.quotaResetIn,
-    quota7dResetIn: a.quota7dResetIn,
-    // 账号池 API Key 默认视为官方直连（无 endpoint 字段）
-    endpointMode: a.kind === 'apikey' ? 'official' : undefined,
-    account: a,
-  };
+function attachUsage(entry: ConnectionEntry, usageMap?: ConnectionUsageMap): ConnectionEntry {
+  if (!usageMap) return entry;
+  const usage = usageMap.get(connectSourceKey({ kind: entry.source, id: entry.id }));
+  return usage === undefined ? entry : { ...entry, usage };
 }
 
-export function providerToEntry(p: Provider): ConnectionEntry {
+export function accountToEntry(a: Account, usageMap?: ConnectionUsageMap): ConnectionEntry {
+  return attachUsage(
+    {
+      key: `account:${a.id}`,
+      source: 'account',
+      kind: a.kind === 'apikey' ? 'apikey' : 'oauth',
+      id: a.id,
+      agentId: a.agentId,
+      title: a.label,
+      subtitle: accountSubtitle(a),
+      isCurrent: a.isCurrent,
+      authStatus: authStatusOfAccount(a),
+      authHealth: authHealthOfAccount(a),
+      sortKey: a.updatedAt || a.lastUsedAt || a.createdAt || '',
+      identityLabel: a.identityLabel,
+      subscription: a.subscription,
+      quota5hPct: a.quota5hPct,
+      quota7dPct: a.quota7dPct,
+      quotaResetIn: a.quotaResetIn,
+      quota7dResetIn: a.quota7dResetIn,
+      // 账号池 API Key 默认视为官方直连（无 endpoint 字段）
+      endpointMode: a.kind === 'apikey' ? 'official' : undefined,
+      account: a,
+    },
+    usageMap,
+  );
+}
+
+export function providerToEntry(p: Provider, usageMap?: ConnectionUsageMap): ConnectionEntry {
   const endpoint = extractProviderEndpoint(p.configText, p.configFormat);
   const endpointMode = providerEndpointMode(p, endpoint);
-  return {
-    key: `provider:${p.id}`,
-    source: 'provider',
-    // 产品：供应商并入 API Key
-    kind: 'apikey',
-    id: p.id,
-    agentId: p.agentId,
-    title: p.name,
-    subtitle: providerSubtitle(p, endpoint, endpointMode),
-    isCurrent: p.isCurrent,
-    authStatus: 'valid',
-    authHealth: 'configured',
-    sortKey: p.updatedAt || '',
-    latencyMs: p.latencyMs,
-    endpointHost: endpoint ? formatEndpointHost(endpoint) : undefined,
-    endpointMode,
-    provider: p,
-  };
+  return attachUsage(
+    {
+      key: `provider:${p.id}`,
+      source: 'provider',
+      // 产品：供应商并入 API Key
+      kind: 'apikey',
+      id: p.id,
+      agentId: p.agentId,
+      title: p.name,
+      subtitle: providerSubtitle(p, endpoint, endpointMode),
+      isCurrent: p.isCurrent,
+      authStatus: 'valid',
+      authHealth: 'configured',
+      sortKey: p.updatedAt || '',
+      latencyMs: p.latencyMs,
+      endpointHost: endpoint ? formatEndpointHost(endpoint) : undefined,
+      endpointMode,
+      provider: p,
+    },
+    usageMap,
+  );
 }
 
 /** 合并两池：当前项优先，再按更新时间降序 */
 export function mergeConnectionEntries(
   accounts: Account[],
   providers: Provider[],
+  usageMap?: ConnectionUsageMap,
 ): ConnectionEntry[] {
   const rows: ConnectionEntry[] = [
-    ...accounts.map(accountToEntry),
-    ...providers.map(providerToEntry),
+    ...accounts.map((a) => accountToEntry(a, usageMap)),
+    ...providers.map((p) => providerToEntry(p, usageMap)),
   ];
   rows.sort((a, b) => {
     if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
