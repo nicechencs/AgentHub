@@ -357,11 +357,6 @@ function extractModel(configText: string): string | null {
   return json?.[1] ?? null;
 }
 
-function providerLabel(p: Provider): string {
-  const model = extractModel(p.configText);
-  return model ? `${p.name} · ${model}` : p.name;
-}
-
 function relativeTime(iso: string): string {
   const t = Date.parse(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
   if (Number.isNaN(t)) return '';
@@ -390,6 +385,7 @@ function ChatComposer({
   primaryAgent,
   agentPickerLabel,
   modelPickerLabel,
+  modelPickerSubtitle,
   switchingProvider,
   onSend,
   onCancel,
@@ -405,6 +401,7 @@ function ChatComposer({
   primaryAgent: AgentId | null;
   agentPickerLabel: string;
   modelPickerLabel: string;
+  modelPickerSubtitle: string | null;
   switchingProvider: boolean;
   onSend: () => void;
   onCancel: () => void;
@@ -500,7 +497,7 @@ function ChatComposer({
             <Hint
               label={
                 active.agentIds.length > 1 && primaryAgent
-                  ? `模型切换作用于首个 Agent（${agentDisplayName(primaryAgent)}）`
+                  ? `连接切换作用于首个 Agent（${agentDisplayName(primaryAgent)}）`
                   : undefined
               }
             >
@@ -511,35 +508,52 @@ function ChatComposer({
                   className="inline-flex h-7 max-w-44 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-xs text-secondary hover:bg-hover disabled:opacity-50"
                   aria-label={
                     active.agentIds.length > 1
-                      ? `模型切换作用于首个 Agent（${agentDisplayName(primaryAgent!)}）`
-                      : '选择模型'
+                      ? `连接切换作用于首个 Agent（${agentDisplayName(primaryAgent!)}）`
+                      : '切换连接'
                   }
                 >
-                  <span className="truncate">{modelPickerLabel}</span>
+                  <span className="min-w-0 truncate">
+                    {modelPickerLabel}
+                    {modelPickerSubtitle ? (
+                      <span className="text-muted"> · {modelPickerSubtitle}</span>
+                    ) : null}
+                  </span>
                   <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
                 </button>
               </DropdownMenuTrigger>
             </Hint>
             <DropdownMenuContent align="start" className="w-64">
               <DropdownMenuLabel>
-                {primaryAgent ? `${agentDisplayName(primaryAgent)} · Provider / 模型` : '模型'}
+                {primaryAgent ? `${agentDisplayName(primaryAgent)} · 切换连接` : '切换连接'}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               {providers.length === 0 ? (
-                <div className="px-2 py-3 text-xs text-muted">暂无 Provider，去连接页添加</div>
+                <div className="px-2 py-3 text-xs text-muted">暂无连接，去连接页添加</div>
               ) : (
-                providers.map((p) => (
-                  <DropdownMenuItem
-                    key={p.id}
-                    disabled={p.isCurrent || switchingProvider}
-                    onClick={() => onSwitchProvider(p.id)}
-                  >
-                    <span className="flex min-w-0 flex-1 items-center gap-2">
-                      {p.isCurrent && <Check className="h-3.5 w-3.5 shrink-0 text-accent" />}
-                      <span className={cn('truncate', !p.isCurrent && 'pl-5')}>{providerLabel(p)}</span>
-                    </span>
-                  </DropdownMenuItem>
-                ))
+                providers.map((p) => {
+                  const model = extractModel(p.configText);
+                  return (
+                    <DropdownMenuItem
+                      key={p.id}
+                      disabled={p.isCurrent || switchingProvider}
+                      onClick={() => onSwitchProvider(p.id)}
+                    >
+                      <span className="flex min-w-0 flex-1 items-center gap-2">
+                        {p.isCurrent ? (
+                          <Check className="h-3.5 w-3.5 shrink-0 text-accent" />
+                        ) : (
+                          <span className="w-3.5 shrink-0" />
+                        )}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{p.name}</span>
+                          {model ? (
+                            <span className="block truncate text-xs text-muted">{model}</span>
+                          ) : null}
+                        </span>
+                      </span>
+                    </DropdownMenuItem>
+                  );
+                })
               )}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -854,7 +868,7 @@ export default function ChatPage() {
     try {
       await switchProvider(primaryAgent, providerId);
       await loadProviders(primaryAgent);
-      toast({ title: '已切换 Provider / 模型', variant: 'success' });
+      toast({ title: '已切换连接', variant: 'success' });
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
     } finally {
@@ -1007,12 +1021,16 @@ export default function ChatPage() {
   }, [active]);
 
   const modelPickerLabel = useMemo(() => {
-    if (!primaryAgent) return '模型';
+    if (!primaryAgent) return '切换连接';
     if (switchingProvider) return '切换中…';
-    if (!currentProvider) return '未配置 Provider';
-    const model = extractModel(currentProvider.configText);
-    return model ?? currentProvider.name;
+    if (!currentProvider) return '未配置连接';
+    return currentProvider.name;
   }, [primaryAgent, currentProvider, switchingProvider]);
+
+  const modelPickerSubtitle = useMemo(() => {
+    if (!currentProvider || switchingProvider) return null;
+    return extractModel(currentProvider.configText);
+  }, [currentProvider, switchingProvider]);
 
   if (error && conversations.length === 0 && !listLoading) {
     return (
@@ -1197,7 +1215,7 @@ export default function ChatPage() {
                       开始对话
                     </p>
                     <p className="mt-2 max-w-md text-sm text-muted">
-                      选择 Agent 与模型后输入；多选可并排对比
+                      选择 Agent 与连接后输入；多选可并排对比
                     </p>
                   </div>
                 </div>
@@ -1278,6 +1296,7 @@ export default function ChatPage() {
                   primaryAgent={primaryAgent}
                   agentPickerLabel={agentPickerLabel}
                   modelPickerLabel={modelPickerLabel}
+                  modelPickerSubtitle={modelPickerSubtitle}
                   switchingProvider={switchingProvider}
                   onSend={() => void handleSend()}
                   onCancel={() => void handleCancel()}

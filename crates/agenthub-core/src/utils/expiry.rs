@@ -86,7 +86,10 @@ mod tests {
     fn normalize_credential_key_collapses_case_and_separators() {
         assert_eq!(normalize_credential_key("Access-Token"), "access_token");
         assert_eq!(normalize_credential_key("expires.at"), "expires_at");
-        assert_eq!(normalize_credential_key("refreshExpiresAt"), "refreshexpiresat");
+        assert_eq!(
+            normalize_credential_key("refreshExpiresAt"),
+            "refreshexpiresat"
+        );
     }
 
     #[test]

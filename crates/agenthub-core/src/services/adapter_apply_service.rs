@@ -1,4 +1,4 @@
-//! Narrow, write-side adapter projection for Kimi membership -> Claude.
+//! Write-side adapter apply for Kimi membership → Claude native and Pi config_sync.
 //!
 //! The generated provider deliberately stores only a reference marker.  The
 //! secret is materialized in memory by `AdapterSecretResolver` at ProviderService's
@@ -12,12 +12,14 @@ use serde_json::json;
 use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
 use crate::models::{
-    AdapterApplyRequest, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
-    AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
+    map_adapter_model, AdapterApplyRequest, AdapterApplyResult, AdapterProfile,
+    AdapterProfileFilter, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
+    AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind, AdapterSourceProduct,
     AdapterSupport, AgentId, Provider, ProviderInput,
 };
 use crate::services::adapter_route_constants::{
-    ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV, CONNECTION_SECRET_MARKER, KIMI_CLAUDE_BASE_URL,
+    ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT,
+    CONNECTION_SECRET_MARKER, KIMI_CLAUDE_BASE_URL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
 };
 use crate::services::{
     AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
@@ -26,9 +28,17 @@ use crate::services::{
 use crate::storage::{AdapterProfileRepo, Database};
 
 const RULE_ID: &str = "kimi-membership-to-claude-v1";
+const KIMI_PI_RULE_ID: &str = "kimi-membership-to-pi-v1";
+const ANTHROPIC_PI_RULE_ID: &str = "anthropic-api-to-pi-v1";
 const RULE_VERSION: &str = "1";
+const CLAUDE_PROVIDER_PREFIX: &str = "claude-kimi-adapter";
+const PI_KIMI_PROVIDER_PREFIX: &str = "pi-kimi-adapter";
+const PI_ANTHROPIC_PROVIDER_PREFIX: &str = "pi-anthropic-adapter";
+const CLAUDE_PROFILE_PREFIX: &str = "adapter-kimi-claude";
+const PI_KIMI_PROFILE_PREFIX: &str = "adapter-kimi-pi";
+const PI_ANTHROPIC_PROFILE_PREFIX: &str = "adapter-anthropic-pi";
 
-/// Applies the sole supported write-side route and owns its generated profile.
+/// Applies supported write-side routes and owns their generated profiles.
 pub struct AdapterApplyService {
     routes: AdapterRouteService,
     profiles: AdapterProfileRepo,
@@ -39,13 +49,20 @@ pub struct AdapterApplyService {
 /// Pre-switch snapshot used to reverse a successful live switch when profile
 /// finalization (or the switch itself) fails. Deliberately private and
 /// non-serializable: the live config may contain materialized credentials.
-struct ClaudeApplySnapshot {
+struct ApplySnapshot {
     /// Generated provider row before create/update in this apply, if any.
     generated_before: Option<Provider>,
-    /// Claude current provider before switch (may equal `generated_before`).
+    /// Target agent current provider before switch (may equal `generated_before`).
     previous_current: Option<Provider>,
     live_config: ProviderLiveConfigSnapshot,
     created: bool,
+}
+
+struct GeneratedApplySpec {
+    target_agent: AgentId,
+    provider_id: String,
+    proposed: AdapterProfile,
+    provider: ProviderInput,
 }
 
 impl AdapterApplyService {
@@ -59,63 +76,50 @@ impl AdapterApplyService {
     }
 
     pub fn apply(&self, request: &AdapterApplyRequest) -> Result<AdapterApplyResult> {
-        self.ensure_supported(request)?;
+        let analysis = self.ensure_supported(request)?;
         let source_id = request.source_id.trim();
-        // Validate before creating a profile or provider: a dangling/masked
-        // source must be a completely side-effect-free failure.
-        self.secrets.validate_kimi_membership_source(source_id)?;
+        match (request.target_agent_id, analysis.route) {
+            (AgentId::Claude, AdapterRoute::NativeEndpoint) => {
+                // Validate before creating a profile or provider: a dangling/masked
+                // source must be a completely side-effect-free failure.
+                self.secrets.validate_kimi_membership_source(source_id)?;
+                self.apply_generated(claude_kimi_spec(source_id))
+            }
+            (AgentId::Pi, AdapterRoute::ConfigSync) => match analysis.rule_id.as_deref() {
+                Some(KIMI_PI_RULE_ID) => {
+                    self.secrets.validate_kimi_membership_source(source_id)?;
+                    self.apply_generated(pi_kimi_spec(source_id))
+                }
+                Some(ANTHROPIC_PI_RULE_ID) => {
+                    self.secrets.validate_anthropic_api_source(source_id)?;
+                    self.apply_generated(pi_anthropic_spec(source_id))
+                }
+                _ => Err(AppError::Unsupported(
+                    "adapter apply currently supports only Kimi membership or Anthropic API provider -> Pi".into(),
+                )),
+            },
+            _ => Err(AppError::Unsupported(
+                "adapter apply currently supports Kimi membership provider -> Claude and provider -> Pi config_sync".into(),
+            )),
+        }
+    }
+
+    fn apply_generated(&self, spec: GeneratedApplySpec) -> Result<AdapterApplyResult> {
         // Acquire before reading or creating any generated-provider/profile
         // state. The guard covers every compensation input and mutation below.
-        let saga_guard = self.providers.begin_live_saga(AgentId::Claude)?;
-        let profile_id = stable_id("adapter-kimi-claude", source_id);
-        let provider_id = stable_id("claude-kimi-adapter", source_id);
-        let created_at = now();
-        let proposed = AdapterProfile {
-            id: profile_id.clone(),
-            name: format!("Kimi → Claude ({})", safe_label(source_id)),
-            source_kind: AdapterSourceKind::Provider,
-            source_id: source_id.into(),
-            target_agent_id: AgentId::Claude,
-            route: AdapterRoute::NativeEndpoint,
-            mode: AdapterProfileMode::Api,
-            status: AdapterProfileStatus::Applying,
-            rule_id: RULE_ID.into(),
-            rule_version: RULE_VERSION.into(),
-            generated_provider_id: Some(provider_id.clone()),
-            local_port: None,
-            auto_start: false,
-            last_error_code: None,
-            created_at: created_at.clone(),
-            updated_at: created_at,
-        };
-        let mut profile = self.profiles.create_or_get(&proposed)?;
-        if !same_profile_contract(&profile, &proposed) {
+        let saga_guard = self.providers.begin_live_saga(spec.target_agent)?;
+        let mut profile = self.profiles.create_or_get(&spec.proposed)?;
+        if !same_profile_contract(&profile, &spec.proposed) {
             return Err(AppError::message(
                 "adapter.profile_conflict",
                 "adapter profile conflicts with requested rule",
             ));
         }
 
-        let provider = ProviderInput {
-            id: provider_id.clone(),
-            agent_id: AgentId::Claude,
-            name: format!("Kimi Code ({})", safe_label(source_id)),
-            settings_config: json!({"env": {
-                ANTHROPIC_BASE_URL_ENV: KIMI_CLAUDE_BASE_URL,
-                ANTHROPIC_AUTH_TOKEN_ENV: CONNECTION_SECRET_MARKER,
-            }}),
-            meta: json!({
-                "preset": "anthropic-compatible",
-                "generatedBy": "adapter",
-                "adapterRuleId": RULE_ID,
-                "adapterRuleVersion": 1,
-                "adapterSecretMode": "source_reference",
-                "adapterProfileId": profile_id,
-                "adapterSourceRef": {"kind": "provider", "id": source_id},
-            }),
-            is_current: false,
-        };
-        let existing = match self.providers.get(&provider_id, Some(AgentId::Claude)) {
+        let existing = match self
+            .providers
+            .get(&spec.provider_id, Some(spec.target_agent))
+        {
             Ok(existing) => Some(existing),
             Err(AppError::NotFound(_)) => None,
             Err(error) => return Err(error),
@@ -128,7 +132,7 @@ impl AdapterApplyService {
                 ));
             }
             if profile.status == AdapterProfileStatus::Active
-                && provider_matches_projection(existing, &provider)
+                && provider_matches_projection(existing, &spec.provider)
                 && existing.is_current
             {
                 // Only a complete current projection is idempotent.  A
@@ -150,20 +154,20 @@ impl AdapterApplyService {
         // Capture compensation inputs before demote/create: a repair demotes a
         // current generated row, so get_current after that would miss the
         // pre-saga binding needed for full inverse.
-        let previous_current = match self.providers.repo().get_current(AgentId::Claude) {
+        let previous_current = match self.providers.repo().get_current(spec.target_agent) {
             Ok(current) => current,
             Err(error) => return Err(self.fail_profile(profile, &error)),
         };
         let live_config = match self
             .providers
-            .capture_live_config_snapshot_with_guard(&saga_guard, AgentId::Claude)
+            .capture_live_config_snapshot_with_guard(&saga_guard, spec.target_agent)
         {
             Ok(snapshot) => snapshot,
             Err(error) => return Err(self.fail_profile(profile, &error)),
         };
         let generated_before = existing.clone();
         let created = existing.is_none();
-        let snapshot = ClaudeApplySnapshot {
+        let snapshot = ApplySnapshot {
             generated_before,
             previous_current,
             live_config,
@@ -173,14 +177,14 @@ impl AdapterApplyService {
         // Create/repair the pool row before switch; the switched provider is
         // returned from switch_with_guard below.
         if let Err(error) = match existing {
-            Some(existing) if provider_matches_projection(&existing, &provider) => Ok(()),
+            Some(existing) if provider_matches_projection(&existing, &spec.provider) => Ok(()),
             Some(_) => {
                 // Repair the persisted generated projection before switching it
                 // live.  Explicitly demote first so the switch owns the only
                 // live write and re-validates/materializes the source secret.
                 let repaired = ProviderInput {
                     is_current: false,
-                    ..provider.clone()
+                    ..spec.provider.clone()
                 };
                 self.providers
                     .update_with_guard(&saga_guard, &repaired)
@@ -188,30 +192,33 @@ impl AdapterApplyService {
             }
             None => self
                 .providers
-                .create_with_guard(&saga_guard, &provider)
+                .create_with_guard(&saga_guard, &spec.provider)
                 .map(|_| ()),
         } {
             return Err(self.fail_profile(profile, &error));
         }
 
-        let switched =
-            match self
-                .providers
-                .switch_with_guard(&saga_guard, &provider_id, AgentId::Claude)
-            {
-                Ok(result) => result.provider,
-                Err(error) => {
-                    if let Err(restore_error) =
-                        self.compensate_claude_apply(&saga_guard, &provider_id, &snapshot)
-                    {
-                        return Err(self.fail_profile(profile, &restore_error));
-                    }
-                    return Err(self.fail_profile(profile, &error));
+        let switched = match self.providers.switch_with_guard(
+            &saga_guard,
+            &spec.provider_id,
+            spec.target_agent,
+        ) {
+            Ok(result) => result.provider,
+            Err(error) => {
+                if let Err(restore_error) = self.compensate_apply(
+                    &saga_guard,
+                    &spec.provider_id,
+                    spec.target_agent,
+                    &snapshot,
+                ) {
+                    return Err(self.fail_profile(profile, &restore_error));
                 }
-            };
+                return Err(self.fail_profile(profile, &error));
+            }
+        };
 
         profile.status = AdapterProfileStatus::Active;
-        profile.generated_provider_id = Some(provider_id.clone());
+        profile.generated_provider_id = Some(spec.provider_id.clone());
         profile.last_error_code = None;
         profile.updated_at = now();
         let profile = match self.profiles.update(&profile) {
@@ -220,7 +227,7 @@ impl AdapterApplyService {
                 let mut attention = profile;
                 attention.status = AdapterProfileStatus::NeedsAttention;
                 let restore_error = self
-                    .compensate_claude_apply(&saga_guard, &provider_id, &snapshot)
+                    .compensate_apply(&saga_guard, &spec.provider_id, spec.target_agent, &snapshot)
                     .err();
                 attention.last_error_code = Some(
                     if restore_error.is_some() {
@@ -271,11 +278,18 @@ impl AdapterApplyService {
 
     /// Removes the profile and its generated provider when it still exists.
     pub fn remove(&self, profile_id: &str) -> Result<()> {
-        // This service only owns the Kimi -> Claude direct route. Acquire the
-        // live-write authority before reading any profile/provider state used
-        // for its delete decision so another process cannot switch or repair
-        // the same generated provider between preflight and deletion.
-        let saga_guard = self.providers.begin_live_saga(AgentId::Claude)?;
+        // Lock the profile's target agent (Claude native or Pi config_sync),
+        // not a hardcoded Claude saga. Read the profile first so the lock
+        // matches the generated provider that will be deleted.
+        let profile = self.profiles.get(profile_id)?.ok_or_else(|| {
+            AppError::NotFound(format!("adapter profile not found: {profile_id}"))
+        })?;
+        if !owns_apply_profile(&profile) {
+            return Err(AppError::Unsupported(
+                "adapter apply remove supports Claude native and Pi config_sync profiles".into(),
+            ));
+        }
+        let saga_guard = self.providers.begin_live_saga(profile.target_agent_id)?;
         let profile = self.profiles.get(profile_id)?.ok_or_else(|| {
             AppError::NotFound(format!("adapter profile not found: {profile_id}"))
         })?;
@@ -310,21 +324,30 @@ impl AdapterApplyService {
         self.profiles.delete(profile_id)
     }
 
-    fn ensure_supported(&self, request: &AdapterApplyRequest) -> Result<()> {
+    fn ensure_supported(&self, request: &AdapterApplyRequest) -> Result<AdapterRouteAnalysis> {
         let analysis = self.routes.analyze(&AdapterRouteRequest {
             source_kind: request.source_kind,
             source_id: request.source_id.clone(),
             target_agent_id: request.target_agent_id,
         })?;
-        if request.source_kind == AdapterSourceKind::Provider
-            && request.target_agent_id == AgentId::Claude
-            && analysis.route == AdapterRoute::NativeEndpoint
-            && analysis.support == AdapterSupport::Stable
-        {
-            Ok(())
+        let supported = request.source_kind == AdapterSourceKind::Provider
+            && matches!(
+                (request.target_agent_id, analysis.route, analysis.support),
+                (
+                    AgentId::Claude,
+                    AdapterRoute::NativeEndpoint,
+                    AdapterSupport::Stable
+                ) | (
+                    AgentId::Pi,
+                    AdapterRoute::ConfigSync,
+                    AdapterSupport::Stable
+                )
+            );
+        if supported {
+            Ok(analysis)
         } else {
             Err(AppError::Unsupported(
-                "adapter apply currently supports only Kimi membership provider -> Claude".into(),
+                "adapter apply currently supports Kimi membership provider -> Claude and provider -> Pi config_sync".into(),
             ))
         }
     }
@@ -340,15 +363,16 @@ impl AdapterApplyService {
         )
     }
 
-    /// Inverse of a successful Claude switch: restore the generated pool row
+    /// Inverse of a successful live switch: restore the generated pool row
     /// (or delete a create), re-select the pre-switch current provider when one
     /// existed, then force the pre-switch live config. Every step is attempted
     /// even if an earlier step fails.
-    fn compensate_claude_apply(
+    fn compensate_apply(
         &self,
         saga_guard: &ProviderLiveSagaGuard<'_>,
         provider_id: &str,
-        snapshot: &ClaudeApplySnapshot,
+        target_agent: AgentId,
+        snapshot: &ApplySnapshot,
     ) -> Result<()> {
         let mut failed: Option<AppError> = None;
         let previous_id = snapshot
@@ -372,7 +396,7 @@ impl AdapterApplyService {
         } else if snapshot.created {
             if let Err(error) =
                 self.providers
-                    .delete_with_guard(saga_guard, provider_id, AgentId::Claude)
+                    .delete_with_guard(saga_guard, provider_id, target_agent)
             {
                 failed = Some(error);
             }
@@ -382,7 +406,7 @@ impl AdapterApplyService {
             if !generated_was_previous {
                 if let Err(error) =
                     self.providers
-                        .switch_with_guard(saga_guard, &previous.id, AgentId::Claude)
+                        .switch_with_guard(saga_guard, &previous.id, target_agent)
                 {
                     failed = Some(error);
                 }
@@ -418,8 +442,33 @@ fn same_profile_contract(existing: &AdapterProfile, proposed: &AdapterProfile) -
         && existing.generated_provider_id == proposed.generated_provider_id
 }
 
+fn owns_apply_profile(profile: &AdapterProfile) -> bool {
+    matches!(
+        (profile.target_agent_id, profile.route),
+        (AgentId::Claude, AdapterRoute::NativeEndpoint) | (AgentId::Pi, AdapterRoute::ConfigSync)
+    )
+}
+
+fn generated_provider_prefix(profile: &AdapterProfile) -> Option<&'static str> {
+    match (
+        profile.target_agent_id,
+        profile.route,
+        profile.rule_id.as_str(),
+    ) {
+        (AgentId::Claude, AdapterRoute::NativeEndpoint, RULE_ID) => Some(CLAUDE_PROVIDER_PREFIX),
+        (AgentId::Pi, AdapterRoute::ConfigSync, KIMI_PI_RULE_ID) => Some(PI_KIMI_PROVIDER_PREFIX),
+        (AgentId::Pi, AdapterRoute::ConfigSync, ANTHROPIC_PI_RULE_ID) => {
+            Some(PI_ANTHROPIC_PROVIDER_PREFIX)
+        }
+        _ => None,
+    }
+}
+
 fn provider_owned_by(provider: &crate::models::Provider, profile: &AdapterProfile) -> bool {
-    provider.id == stable_id("claude-kimi-adapter", &profile.source_id)
+    let Some(prefix) = generated_provider_prefix(profile) else {
+        return false;
+    };
+    provider.id == stable_id(prefix, &profile.source_id)
         && provider.agent_id == profile.target_agent_id
         && provider
             .meta
@@ -458,6 +507,165 @@ fn provider_owned_by(provider: &crate::models::Provider, profile: &AdapterProfil
             .and_then(|v| v.get("id"))
             .and_then(serde_json::Value::as_str)
             == Some(profile.source_id.as_str())
+}
+
+fn claude_kimi_spec(source_id: &str) -> GeneratedApplySpec {
+    let profile_id = stable_id(CLAUDE_PROFILE_PREFIX, source_id);
+    let provider_id = stable_id(CLAUDE_PROVIDER_PREFIX, source_id);
+    let created_at = now();
+    GeneratedApplySpec {
+        target_agent: AgentId::Claude,
+        provider_id: provider_id.clone(),
+        proposed: AdapterProfile {
+            id: profile_id.clone(),
+            name: format!("Kimi → Claude ({})", safe_label(source_id)),
+            source_kind: AdapterSourceKind::Provider,
+            source_id: source_id.into(),
+            target_agent_id: AgentId::Claude,
+            route: AdapterRoute::NativeEndpoint,
+            mode: AdapterProfileMode::Api,
+            status: AdapterProfileStatus::Applying,
+            rule_id: RULE_ID.into(),
+            rule_version: RULE_VERSION.into(),
+            generated_provider_id: Some(provider_id.clone()),
+            local_port: None,
+            auto_start: false,
+            last_error_code: None,
+            created_at: created_at.clone(),
+            updated_at: created_at,
+        },
+        provider: ProviderInput {
+            id: provider_id,
+            agent_id: AgentId::Claude,
+            name: format!("Kimi Code ({})", safe_label(source_id)),
+            settings_config: json!({"env": {
+                ANTHROPIC_BASE_URL_ENV: KIMI_CLAUDE_BASE_URL,
+                ANTHROPIC_AUTH_TOKEN_ENV: CONNECTION_SECRET_MARKER,
+            }}),
+            meta: generated_meta(
+                RULE_ID,
+                &profile_id,
+                source_id,
+                Some("anthropic-compatible"),
+            ),
+            is_current: false,
+        },
+    }
+}
+
+fn pi_kimi_spec(source_id: &str) -> GeneratedApplySpec {
+    let profile_id = stable_id(PI_KIMI_PROFILE_PREFIX, source_id);
+    let provider_id = stable_id(PI_KIMI_PROVIDER_PREFIX, source_id);
+    let created_at = now();
+    let model = map_adapter_model(AdapterSourceProduct::KimiCodeMembership, AgentId::Pi, "")
+        .unwrap_or("kimi-k2.5");
+    GeneratedApplySpec {
+        target_agent: AgentId::Pi,
+        provider_id: provider_id.clone(),
+        proposed: AdapterProfile {
+            id: profile_id.clone(),
+            name: format!("Kimi → Pi ({})", safe_label(source_id)),
+            source_kind: AdapterSourceKind::Provider,
+            source_id: source_id.into(),
+            target_agent_id: AgentId::Pi,
+            route: AdapterRoute::ConfigSync,
+            mode: AdapterProfileMode::Api,
+            status: AdapterProfileStatus::Applying,
+            rule_id: KIMI_PI_RULE_ID.into(),
+            rule_version: RULE_VERSION.into(),
+            generated_provider_id: Some(provider_id.clone()),
+            local_port: None,
+            auto_start: false,
+            last_error_code: None,
+            created_at: created_at.clone(),
+            updated_at: created_at,
+        },
+        provider: ProviderInput {
+            id: provider_id,
+            agent_id: AgentId::Pi,
+            name: format!("Kimi Code ({})", safe_label(source_id)),
+            settings_config: json!({
+                "models": {
+                    "providers": {
+                        KIMI_PI_PROVIDER_SLOT: {
+                            "baseUrl": KIMI_PI_BASE_URL,
+                            "apiKey": CONNECTION_SECRET_MARKER,
+                            "api": "openai-completions",
+                            "models": [{ "id": model }],
+                        }
+                    }
+                }
+            }),
+            meta: generated_meta(KIMI_PI_RULE_ID, &profile_id, source_id, None),
+            is_current: false,
+        },
+    }
+}
+
+fn pi_anthropic_spec(source_id: &str) -> GeneratedApplySpec {
+    let profile_id = stable_id(PI_ANTHROPIC_PROFILE_PREFIX, source_id);
+    let provider_id = stable_id(PI_ANTHROPIC_PROVIDER_PREFIX, source_id);
+    let created_at = now();
+    GeneratedApplySpec {
+        target_agent: AgentId::Pi,
+        provider_id: provider_id.clone(),
+        proposed: AdapterProfile {
+            id: profile_id.clone(),
+            name: format!("Anthropic → Pi ({})", safe_label(source_id)),
+            source_kind: AdapterSourceKind::Provider,
+            source_id: source_id.into(),
+            target_agent_id: AgentId::Pi,
+            route: AdapterRoute::ConfigSync,
+            mode: AdapterProfileMode::Api,
+            status: AdapterProfileStatus::Applying,
+            rule_id: ANTHROPIC_PI_RULE_ID.into(),
+            rule_version: RULE_VERSION.into(),
+            generated_provider_id: Some(provider_id.clone()),
+            local_port: None,
+            auto_start: false,
+            last_error_code: None,
+            created_at: created_at.clone(),
+            updated_at: created_at,
+        },
+        provider: ProviderInput {
+            id: provider_id,
+            agent_id: AgentId::Pi,
+            name: format!("Anthropic ({})", safe_label(source_id)),
+            settings_config: json!({
+                "models": {
+                    "providers": {
+                        ANTHROPIC_PI_PROVIDER_SLOT: {
+                            "apiKey": CONNECTION_SECRET_MARKER,
+                        }
+                    }
+                }
+            }),
+            meta: generated_meta(ANTHROPIC_PI_RULE_ID, &profile_id, source_id, None),
+            is_current: false,
+        },
+    }
+}
+
+fn generated_meta(
+    rule_id: &str,
+    profile_id: &str,
+    source_id: &str,
+    preset: Option<&str>,
+) -> serde_json::Value {
+    let mut meta = serde_json::Map::new();
+    if let Some(preset) = preset {
+        meta.insert("preset".into(), json!(preset));
+    }
+    meta.insert("generatedBy".into(), json!("adapter"));
+    meta.insert("adapterRuleId".into(), json!(rule_id));
+    meta.insert("adapterRuleVersion".into(), json!(1));
+    meta.insert("adapterSecretMode".into(), json!("source_reference"));
+    meta.insert("adapterProfileId".into(), json!(profile_id));
+    meta.insert(
+        "adapterSourceRef".into(),
+        json!({"kind": "provider", "id": source_id}),
+    );
+    serde_json::Value::Object(meta)
 }
 
 fn provider_matches_projection(

@@ -120,7 +120,6 @@ export {
   connectionKindForTab,
   filterProfilesByCredential,
   filterProfilesByMode,
-  futureAvailability,
   isAdapterPlanMatchedToSelection,
   isCurrentAdapterPreviewRequest,
   isSameAdapterPlanRequestSignature,

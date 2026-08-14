@@ -773,7 +773,10 @@ async fn status_and_health_report_last_observed_upstream_without_a_new_probe() {
     let stopped = host.stop("observed").await.expect("stop");
     assert_eq!(stopped.state, BridgeRuntimeState::Stopped);
     assert_eq!(stopped.upstream_status, BridgeUpstreamStatus::Stopped);
-    assert!(host.status("observed").expect("status after stop").is_none());
+    assert!(host
+        .status("observed")
+        .expect("status after stop")
+        .is_none());
     upstream_task.abort();
 }
 
@@ -827,8 +830,16 @@ async fn status_upstream(status: StatusCode) -> (u16, tokio::task::JoinHandle<()
 #[tokio::test]
 async fn upstream_429_and_5xx_are_generic_and_mark_degraded() {
     for (label, upstream_status, expected_local) in [
-        ("too-many", StatusCode::TOO_MANY_REQUESTS, StatusCode::TOO_MANY_REQUESTS),
-        ("server-error", StatusCode::INTERNAL_SERVER_ERROR, StatusCode::BAD_GATEWAY),
+        (
+            "too-many",
+            StatusCode::TOO_MANY_REQUESTS,
+            StatusCode::TOO_MANY_REQUESTS,
+        ),
+        (
+            "server-error",
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::BAD_GATEWAY,
+        ),
     ] {
         let (upstream_port, upstream_task) = status_upstream(upstream_status).await;
         let host = BridgeRuntimeHost::new();

@@ -1,6 +1,6 @@
 # Adapter 页面与本地协议桥接设计
 
-> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi → Codex 实验性本地桥接）**。Pi/config_sync 等仍为预览-only；发布前仍需实机 dogfood。ChatGPT/Codex subscription → Claude Code 是单独受门禁约束的实验候选，当前仍为 `unsupported` / `plan.canApply=false`。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。
+> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi → Codex 实验性本地桥接 + Pi 配置同步）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）。ChatGPT/Codex subscription → Claude Code 是单独受门禁约束的实验候选，当前仍为 `unsupported` / `plan.canApply=false`。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。Kimi → Codex 发布前仍需实机 dogfood。
 > 调研日期：2026-08-12（进度同步：2026-08-12）
 > 重点参考：`D:\demo_github\AgentHub_Ref\Cli-Proxy-API-Management-Center`
 > 关联文档：[adapter-sidecar-design.md](adapter-sidecar-design.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
@@ -12,7 +12,7 @@
 |---|---|---|
 | 规则分析与预览 | ✅ | contracts、mock、`analyze`、`plan`、Adapter 页面和 profile 列表已接线；limitations 与 `canApply` 对齐真实能力 |
 | 稳定规则应用 | ✅ | Kimi Code 会员 Provider → Claude Code `native_endpoint` 可 apply；finalize 失败会回滚 live/current；返回值脱敏 |
-| 其它直连 / 配置同步规则 | 🟡 | Pi 等仍预览或 unsupported；未显式 `canApply=true` 一律不可写 |
+| 其它直连 / 配置同步规则 | ✅ | Kimi 会员 / Anthropic API Key → Pi `config_sync` 可 apply；未显式 `canApply=true` 的组合一律不可写 |
 | Bridge core | ✅ | `BridgeRuntimeHost`（per-profile gate、admission、超时与 cancellation-safe drain）、Responses ↔ Chat 协议与 fixtures |
 | Bridge 产品接线 | ✅ | Codex `local_bridge` 的 `canApply`、Tauri apply/start/stop/status、健康检查、失败补偿、凭证轮转 stop→restart、端口 rebind、opt-in auto-start 恢复、退出 drain；UI 已拆分 wire/model/components |
 | Bridge 进程边界 | 🎯 已决策 / 未迁移 | 目标为同包用户级 `agenthub-adapterd`；当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有，详细契约见 [Adapter Sidecar 目标架构](adapter-sidecar-design.md) |
@@ -570,7 +570,7 @@ MVP 不做全文搜索、自动滚动、错误文件下载、方法/路径筛选
 - contracts、mock、`analyze`、`plan`、来源/目标选择、结果解释和应用预览已接线。
 - 普通 Apply 只开放后端显式 `canApply=true` 的规则；当前写入范围见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。
 - 其它结果仍可用于解释兼容路径，但未显式返回 `canApply=true` 时必须 fail-closed。
-- 仅预览规则（如 Pi `config_sync`）不产生写入、不启动本地服务。
+- 未显式 `canApply=true` 的规则不产生写入、不启动本地服务。Pi `config_sync`（Kimi 会员 / Anthropic API Key）已开放 apply。
 
 ### Phase 1：首条真实桥接（工作区已接线，发布前待 dogfood）
 

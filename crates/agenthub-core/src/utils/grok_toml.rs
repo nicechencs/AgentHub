@@ -69,9 +69,7 @@ pub fn ensure_grok_model_shape<'a>(
         .and_then(Item::as_str)
         .map(str::to_owned);
     let legacy_key = if options.migrate_legacy_api_key {
-        doc.get("api_key")
-            .and_then(Item::as_str)
-            .map(str::to_owned)
+        doc.get("api_key").and_then(Item::as_str).map(str::to_owned)
     } else {
         None
     };

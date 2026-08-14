@@ -173,8 +173,7 @@ pub fn pi_oauth_entry_from_tokens(
 ) -> Value {
     let expires_ms = expires_at_to_ms(expires_at_rfc3339).or_else(|| {
         expires_in_secs.map(|s| {
-            chrono::Utc::now().timestamp_millis()
-                + s.max(0) * 1000
+            chrono::Utc::now().timestamp_millis() + s.max(0) * 1000
                 - crate::catalog::limits::OAUTH_REFRESH_SKEW_MS
         })
     });

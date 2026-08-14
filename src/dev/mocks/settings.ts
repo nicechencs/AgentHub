@@ -19,14 +19,11 @@ const DEFAULTS: AppSettings = {
   theme: 'light',
   autoStart: true,
   closeToTray: true,
-  hasMasterPassword: false,
-  credentialStore: 'keyring',
   dataDir: '~/.agenthub',
   logsDir: '~/.agenthub/logs',
   logLevel: 'info',
   logRetentionDays: 14,
   skillMarketSource: 'auto',
-  autoBackup: true,
   usageCollectIntervalMin: 30,
   // Tracks package.json via Vite inject — no hand-maintained semver.
   appVersion: packageAppVersion(),
@@ -63,12 +60,20 @@ function loadState(): AppSettings {
   );
   return {
     ...DEFAULTS,
-    ...stored,
+    language: stored.language === 'en' || stored.language === 'zh' ? stored.language : DEFAULTS.language,
     theme,
+    autoStart: typeof stored.autoStart === 'boolean' ? stored.autoStart : DEFAULTS.autoStart,
+    closeToTray: typeof stored.closeToTray === 'boolean' ? stored.closeToTray : DEFAULTS.closeToTray,
+    dataDir: stored.dataDir ?? DEFAULTS.dataDir,
+    logsDir: stored.logsDir ?? DEFAULTS.logsDir,
     logLevel,
     logRetentionDays,
     skillMarketSource,
-    logsDir: stored.logsDir ?? DEFAULTS.logsDir,
+    usageCollectIntervalMin:
+      typeof stored.usageCollectIntervalMin === 'number'
+        ? stored.usageCollectIntervalMin
+        : DEFAULTS.usageCollectIntervalMin,
+    appVersion: stored.appVersion ?? DEFAULTS.appVersion,
   };
 }
 

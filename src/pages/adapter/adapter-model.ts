@@ -304,13 +304,6 @@ export function supportBadge(support: AdapterSupport): { label: string; variant:
   return { label: '当前不支持', variant: 'default' };
 }
 
-export function futureAvailability(route: AdapterRouteAnalysis['route']): string | null {
-  // Applyable routes (native_endpoint / local_bridge) must not claim "later".
-  // Preview-only config_sync still surfaces the future-write notice.
-  if (route === 'config_sync') return '配置写入后续开放';
-  return null;
-}
-
 /** The backend's explicit capability flag is the sole apply gate. */
 export function canApplyAdapterPlan(plan: AdapterApplyPlan | null): boolean {
   return plan?.canApply === true;
@@ -499,7 +492,7 @@ export function adapterPreviewOutcome(input: {
       nextStep: '确认后创建本机桥接，需保持托盘运行。',
     };
   }
-  if (input.canApply && input.route === 'native_endpoint') {
+  if (input.canApply && (input.route === 'native_endpoint' || input.route === 'config_sync')) {
     return {
       title: '可接入 · 直接写入',
       badgeLabel: '可应用',

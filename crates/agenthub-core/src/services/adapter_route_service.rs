@@ -15,7 +15,10 @@ use crate::models::{
     AdapterPlanChange, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
     AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
 };
-use crate::services::adapter_route_constants::{ANTHROPIC_AUTH_TOKEN_ENV, KIMI_CLAUDE_BASE_URL};
+use crate::services::adapter_route_constants::{
+    is_kimi_code_membership_source, settings_contain_anthropic_api_endpoint,
+    ANTHROPIC_AUTH_TOKEN_ENV, KIMI_CLAUDE_BASE_URL,
+};
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
 /// Determines whether one saved connection has a supported preview route to an agent.
@@ -50,8 +53,9 @@ impl AdapterRouteService {
     /// 1. capability matrix (`decision.can_apply`: cell flag + all gates), and
     /// 2. [`implemented_apply_whitelist`] for paths that actually have an apply service.
     ///
-    /// Today that whitelist is provider-sourced Kimi → Claude (native) and
-    /// Kimi → Codex (local bridge). Matrix-open account sources stay preview-only.
+    /// Today that whitelist is provider-sourced Kimi → Claude (native),
+    /// Kimi / Anthropic → Pi (config sync), and Kimi → Codex (local bridge).
+    /// Matrix-open account sources stay preview-only.
     pub fn plan(&self, request: &AdapterRouteRequest) -> Result<AdapterApplyPlan> {
         let classified = self.classify(request)?;
         let analysis = analysis_from_decision(&classified.decision, &classified.source, request);
@@ -102,11 +106,8 @@ impl AdapterRouteService {
             }
         };
 
-        let can_apply = implemented_apply_whitelist(
-            classified.decision.can_apply,
-            request,
-            &analysis,
-        );
+        let can_apply =
+            implemented_apply_whitelist(classified.decision.can_apply, request, &analysis);
 
         Ok(AdapterApplyPlan {
             analysis,
@@ -130,27 +131,43 @@ impl AdapterRouteService {
                 let provider = self.providers.get_by_id(source_id)?.ok_or_else(|| {
                     AppError::NotFound(format!("provider not found: {source_id}"))
                 })?;
-                if provider.agent_id == AgentId::Kimi
-                    && json_string(&provider.meta, "preset") == Some("kimi-code-membership")
-                {
+                let preset = json_string(&provider.meta, "preset");
+                // Membership is explicit preset *or* official Kimi coding endpoint in config.
+                // Do not invent membership from agent_id alone (moonshot / custom stay closed).
+                if is_kimi_code_membership_source(
+                    provider.agent_id,
+                    &provider.meta,
+                    &provider.settings_config,
+                ) {
                     SourceIdentity {
                         product: AdapterSourceProduct::KimiCodeMembership,
                         credential: AdapterCredentialClass::ApiKey,
                         label: RouteSourceLabel::KimiMembership,
+                        reason_hint: None,
                     }
                 } else if provider.agent_id == AgentId::Claude
-                    && json_string(&provider.meta, "preset") == Some("anthropic")
+                    && (preset == Some("anthropic")
+                        || settings_contain_anthropic_api_endpoint(&provider.settings_config))
                 {
                     SourceIdentity {
                         product: AdapterSourceProduct::AnthropicApi,
                         credential: AdapterCredentialClass::ApiKey,
                         label: RouteSourceLabel::AnthropicApiKey,
+                        reason_hint: None,
+                    }
+                } else if provider.agent_id == AgentId::Kimi {
+                    SourceIdentity {
+                        product: AdapterSourceProduct::Other,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::Other,
+                        reason_hint: Some(KIMI_NON_MEMBERSHIP_REASON),
                     }
                 } else {
                     SourceIdentity {
                         product: AdapterSourceProduct::Other,
                         credential: AdapterCredentialClass::Unknown,
                         label: RouteSourceLabel::Other,
+                        reason_hint: None,
                     }
                 }
             }
@@ -165,13 +182,16 @@ impl AdapterRouteService {
                     .or_else(|| json_string(&account.extra, "format"));
 
                 if account.kind == AccountKind::ApiKey
-                    && explicit_provider
+                    && (explicit_provider
                         .is_some_and(|value| value.eq_ignore_ascii_case("anthropic"))
+                        || settings_contain_anthropic_api_endpoint(&account.credentials)
+                        || settings_contain_anthropic_api_endpoint(&account.extra))
                 {
                     SourceIdentity {
                         product: AdapterSourceProduct::AnthropicApi,
                         credential: AdapterCredentialClass::ApiKey,
                         label: RouteSourceLabel::AnthropicApiKey,
+                        reason_hint: None,
                     }
                 } else if account.agent_id == AgentId::Codex
                     && account.kind == AccountKind::Oauth
@@ -183,6 +203,7 @@ impl AdapterRouteService {
                         product: AdapterSourceProduct::CodexChatGptSubscription,
                         credential: AdapterCredentialClass::OauthAuthJson,
                         label: RouteSourceLabel::CodexSubscription,
+                        reason_hint: None,
                     }
                 } else if account.agent_id == AgentId::Codex && account.kind == AccountKind::Oauth {
                     // Codex OAuth without auth_json shape: same product messaging, but do not
@@ -192,6 +213,7 @@ impl AdapterRouteService {
                         product: AdapterSourceProduct::CodexChatGptSubscription,
                         credential: AdapterCredentialClass::OauthOther,
                         label: RouteSourceLabel::CodexSubscription,
+                        reason_hint: None,
                     }
                 } else {
                     SourceIdentity {
@@ -201,17 +223,24 @@ impl AdapterRouteService {
                             AccountKind::Oauth => AdapterCredentialClass::OauthOther,
                         },
                         label: RouteSourceLabel::Other,
+                        reason_hint: None,
                     }
                 }
             }
         };
 
-        let decision = decide_adapter_capability(
+        let mut decision = decide_adapter_capability(
             identity.product,
             identity.credential,
             request.target_agent_id,
         )
         .public_surface();
+        // Replace the generic Other reason with an actionable product hint when we have one.
+        if matches!(identity.product, AdapterSourceProduct::Other) {
+            if let Some(hint) = identity.reason_hint {
+                decision = AdapterCapabilityDecision::unsupported(hint).public_surface();
+            }
+        }
 
         Ok(ClassifiedRoute {
             source: identity.label,
@@ -229,6 +258,8 @@ struct SourceIdentity {
     product: AdapterSourceProduct,
     credential: AdapterCredentialClass,
     label: RouteSourceLabel,
+    /// Optional replace for the generic Other unsupported reason (never secrets).
+    reason_hint: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -238,6 +269,15 @@ enum RouteSourceLabel {
     CodexSubscription,
     Other,
 }
+
+/// Kimi agent pool row that is not membership (open platform / custom compatible).
+const KIMI_NON_MEMBERSHIP_REASON: &str = concat!(
+    "当前 Kimi 连接不是「Kimi Code 会员」来源。",
+    "跨 Agent 适配仅支持会员：Connections 中选择 preset「Kimi Code 会员」，",
+    "或配置端点包含 api.kimi.com/coding。",
+    "开放平台（moonshot）与任意兼容 API 不会自动升级。",
+    "当前不支持不等于连接失效。",
+);
 
 fn is_codex_auth_json(format: Option<&str>, credentials: &Value) -> bool {
     if format.is_some_and(|value| value.eq_ignore_ascii_case("auth_json")) {
@@ -275,6 +315,10 @@ fn implemented_apply_whitelist(
             AdapterSupport::Stable,
             AgentId::Claude
         ) | (
+            AdapterRoute::ConfigSync,
+            AdapterSupport::Stable,
+            AgentId::Pi
+        ) | (
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
             AgentId::Codex
@@ -297,12 +341,12 @@ fn analysis_from_decision(
     source: &RouteSourceLabel,
     request: &AdapterRouteRequest,
 ) -> AdapterRouteAnalysis {
-    let actions = if decision.route == AdapterRoute::Unsupported || !decision_actions_allowed(decision)
-    {
-        vec![]
-    } else {
-        actions_for(source, request.target_agent_id, decision)
-    };
+    let actions =
+        if decision.route == AdapterRoute::Unsupported || !decision_actions_allowed(decision) {
+            vec![]
+        } else {
+            actions_for(source, request.target_agent_id, decision)
+        };
 
     let evidence = evidence_for(source, request.target_agent_id, decision);
     let limitations = if decision.limitations.is_empty() {

@@ -1587,7 +1587,10 @@ impl AccountService {
                 Some(before) => adapter.apply_account(before).err(),
                 None => None,
             };
-            return Err(compensated_current_account_apply_error(error, live_rollback));
+            return Err(compensated_current_account_apply_error(
+                error,
+                live_rollback,
+            ));
         }
         Ok(())
     }

@@ -5,13 +5,11 @@ use crate::bridge::types::{
 };
 
 use super::{
-    anthropic_messages::{
-        encode_anthropic_message, encode_anthropic_sse, parse_messages_request,
-    },
+    anthropic_messages::{encode_anthropic_message, encode_anthropic_sse, parse_messages_request},
     chat::{sse_frame, translate_chat_response, ResponsesSseTranslator},
     responses::{
-        parse_responses_request, responses_output_to_ir, to_kimi_chat_request, to_responses_request,
-        translate_responses_request, ResponsesStreamToIr,
+        parse_responses_request, responses_output_to_ir, to_kimi_chat_request,
+        to_responses_request, translate_responses_request, ResponsesStreamToIr,
     },
 };
 
@@ -387,10 +385,7 @@ fn anthropic_messages_request_maps_to_responses_request_with_unicode() {
     let responses = to_responses_request(&request);
     assert_eq!(responses["model"], "gpt-5");
     assert_eq!(responses["instructions"], "Answer precisely.");
-    assert_eq!(
-        responses["input"][0]["content"][0]["text"],
-        "Hello, 世界"
-    );
+    assert_eq!(responses["input"][0]["content"][0]["text"], "Hello, 世界");
     assert_eq!(responses["tools"][0]["name"], "weather");
     assert_eq!(responses["max_output_tokens"], 256);
     assert_eq!(responses["tool_choice"], "auto");
@@ -425,8 +420,8 @@ fn anthropic_tool_history_becomes_responses_function_calls_and_outputs() {
 
 #[test]
 fn anthropic_image_input_fails_closed() {
-    let error = parse_messages_request(&fixture("anthropic_messages_image"))
-        .expect_err("image rejected");
+    let error =
+        parse_messages_request(&fixture("anthropic_messages_image")).expect_err("image rejected");
     assert_eq!(error.code, "unsupported_image_input");
     assert!(!error.message.contains("example.invalid"));
 }
@@ -567,10 +562,7 @@ fn responses_stream_error_is_generic_and_never_leaks_upstream_body() {
             assert!(!retryable);
             assert!(!message.contains("sk-secret-key"));
             assert!(!message.contains("private input"));
-            assert_eq!(
-                message,
-                "The upstream model provider returned an error."
-            );
+            assert_eq!(message, "The upstream model provider returned an error.");
         }
         other => panic!("expected Error, got {other:?}"),
     }
@@ -599,9 +591,7 @@ fn retry_gate_allows_transient_only_before_first_effective_event() {
     });
     assert_eq!(state, EmissionState::Idle);
 
-    state = state.observe(&IrEvent::TextDelta {
-        text: "hi".into(),
-    });
+    state = state.observe(&IrEvent::TextDelta { text: "hi".into() });
     assert_eq!(state, EmissionState::Emitted);
     assert!(
         !gate.can_retry(state, RetryClass::Transient, 0),

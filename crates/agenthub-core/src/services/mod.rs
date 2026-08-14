@@ -17,13 +17,13 @@ pub mod live_write_authority;
 pub mod mcp_inventory;
 pub mod project_service;
 pub mod provider_service;
-pub mod switch_undo;
 pub mod run_service;
 pub mod settings_service;
 pub mod skill_market;
 pub mod skill_service;
 pub mod skillhub_market;
 pub mod skillssh_market;
+pub mod switch_undo;
 pub mod update_check_service;
 pub mod usage_service;
 

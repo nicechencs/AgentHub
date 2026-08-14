@@ -48,9 +48,11 @@ pub fn parse_messages_request(value: &Value) -> ProtocolResult<BridgeRequest> {
     };
 
     let instructions = parse_system(object.get("system"))?;
-    let input = parse_messages(object.get("messages").ok_or_else(|| {
-        ProtocolError::invalid_request("`messages` is required.")
-    })?)?;
+    let input = parse_messages(
+        object
+            .get("messages")
+            .ok_or_else(|| ProtocolError::invalid_request("`messages` is required."))?,
+    )?;
     let tools = parse_tools(object.get("tools"))?;
     let tool_choice = parse_tool_choice(object.get("tool_choice"))?;
 
@@ -220,10 +222,7 @@ pub fn encode_anthropic_sse(events: &[IrEvent]) -> ProtocolResult<Vec<String>> {
                 message_delta.insert("delta".to_owned(), Value::Object(delta));
                 message_delta.insert("usage".to_owned(), usage.to_anthropic_usage_json());
                 frames.push(sse_frame("message_delta", Value::Object(message_delta)));
-                frames.push(sse_frame(
-                    "message_stop",
-                    json!({ "type": "message_stop" }),
-                ));
+                frames.push(sse_frame("message_stop", json!({ "type": "message_stop" })));
             }
             IrEvent::Error {
                 code,

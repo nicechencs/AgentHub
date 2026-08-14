@@ -326,6 +326,93 @@ describe('createTauriSettingsPort closeToTray', () => {
   });
 });
 
+describe('createTauriSettingsPort leftover keys', () => {
+  const settingsKey = 'agenthub:settings';
+  let memory: ReturnType<typeof installMemoryLocalStorage>;
+
+  function stubCoreSettings() {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'set_setting') return;
+      if (cmd === 'get_app_settings') {
+        return {
+          theme: 'system',
+          language: 'zh-CN',
+          logLevel: 'info',
+          logRetentionDays: 14,
+          closeToTray: true,
+        };
+      }
+      if (cmd === 'get_path_info') {
+        return {
+          dataDir: 'D:/data',
+          dbPath: 'D:/data/agenthub.db',
+          backupsDir: 'D:/data/backups',
+          logsDir: 'D:/data/logs',
+        };
+      }
+      throw new Error(`unexpected invoke: ${cmd}`);
+    });
+  }
+
+  beforeEach(() => {
+    tauriRuntime = true;
+    invokeMock.mockReset();
+    autostartIsEnabled.mockReset().mockResolvedValue(false);
+    autostartEnable.mockReset().mockResolvedValue(undefined);
+    autostartDisable.mockReset().mockResolvedValue(undefined);
+    memory = installMemoryLocalStorage();
+    stubCoreSettings();
+  });
+
+  afterEach(() => {
+    memory.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it('ignores leftover localStorage keys from removed settings fields', async () => {
+    localStorage.setItem(
+      settingsKey,
+      JSON.stringify({
+        hasMasterPassword: true,
+        credentialStore: 'encrypted-file',
+        autoBackup: false,
+        usageCollectIntervalMin: 15,
+      }),
+    );
+
+    const port = createTauriSettingsPort();
+    const s = await port.getSettings();
+    expect(s.usageCollectIntervalMin).toBe(15);
+    expect(s).not.toHaveProperty('hasMasterPassword');
+    expect(s).not.toHaveProperty('credentialStore');
+    expect(s).not.toHaveProperty('autoBackup');
+  });
+
+  it('does not write removed settings keys back to localStorage', async () => {
+    localStorage.setItem(
+      settingsKey,
+      JSON.stringify({
+        hasMasterPassword: true,
+        credentialStore: 'keyring',
+        autoBackup: false,
+        usageCollectIntervalMin: 15,
+      }),
+    );
+
+    const port = createTauriSettingsPort();
+    await port.updateSettings({ usageCollectIntervalMin: 20 });
+
+    const stored = JSON.parse(localStorage.getItem(settingsKey) ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(stored.usageCollectIntervalMin).toBe(20);
+    expect(stored).not.toHaveProperty('hasMasterPassword');
+    expect(stored).not.toHaveProperty('credentialStore');
+    expect(stored).not.toHaveProperty('autoBackup');
+  });
+});
+
 describe('isAlreadyDisabledAutostartError', () => {
   it('matches Windows missing-value errors', () => {
     expect(

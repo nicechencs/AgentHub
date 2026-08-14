@@ -653,7 +653,11 @@ impl Usage {
         let cached_input_tokens = object
             .get("cache_read_input_tokens")
             .and_then(Value::as_u64)
-            .or_else(|| object.get("cache_creation_input_tokens").and_then(Value::as_u64));
+            .or_else(|| {
+                object
+                    .get("cache_creation_input_tokens")
+                    .and_then(Value::as_u64)
+            });
         Some(Self {
             input_tokens,
             output_tokens,

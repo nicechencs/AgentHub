@@ -40,7 +40,6 @@ import {
   parseAdapterTab,
   resolveAdapterTargetAgentId,
   resolveAdapterVisibleSourceKey,
-  futureAvailability,
   isAdapterPlanMatchedToSelection,
   isCurrentAdapterPreviewRequest,
   isSameAdapterPlanRequestSignature,
@@ -143,13 +142,11 @@ describe('Adapter page view model', () => {
     expect(routeLabel(native.analysis.route)).toBe('原生端点');
     native.canApply = true;
     expect(canApplyAdapterPlan(native)).toBe(true);
-    expect(futureAvailability(native.analysis.route)).toBeNull();
   });
 
   it('allows an explicit local bridge plan and labels the desktop service impact', () => {
     const local = plan('local_bridge');
     expect(routeLabel(local.analysis.route)).toBe('需要本地代理');
-    expect(futureAvailability(local.analysis.route)).toBeNull();
     expect(local.serviceImpact).toBe('requires_local_bridge');
     local.canApply = true;
     expect(canApplyAdapterPlan(local)).toBe(true);
@@ -159,7 +156,6 @@ describe('Adapter page view model', () => {
     const unsupported = plan('unsupported');
     expect(routeLabel(unsupported.analysis.route)).toBe('当前不支持');
     expect(supportBadge(unsupported.analysis.support).label).toBe('当前不支持');
-    expect(futureAvailability(unsupported.analysis.route)).toBeNull();
     expect(unsupported.changes).toEqual([]);
     expect(canApplyAdapterPlan(unsupported)).toBe(false);
   });
@@ -276,6 +272,14 @@ describe('Adapter page view model', () => {
     }).nextStep).toContain('本机桥接');
     expect(adapterPreviewOutcome({
       route: 'config_sync',
+      canApply: true,
+    })).toMatchObject({
+      title: '可接入 · 直接写入',
+      badgeLabel: '可应用',
+      nextStep: '确认后写入目标配置。',
+    });
+    expect(adapterPreviewOutcome({
+      route: 'config_sync',
       canApply: false,
     }).badgeLabel).toBe('仅预览');
     expect(adapterServiceImpactLabel('requires_local_bridge')).toContain('本机桥接');
@@ -303,6 +307,22 @@ describe('Adapter page view model', () => {
     expect(markup).toContain('预计改动');
     expect(markup).not.toContain('plan.canApply');
     expect(markup).not.toContain('稳定规则');
+
+    const syncApplyable = { ...plan('config_sync'), canApply: true, targetAgentId: 'pi' as const };
+    const syncMarkup = renderToStaticMarkup(
+      createElement(AdapterPreviewResult, {
+        analysis: syncApplyable.analysis,
+        plan: syncApplyable,
+        loading: false,
+        error: null,
+        onRetry: vi.fn(),
+        onApply: vi.fn(),
+      }),
+    );
+    expect(syncMarkup).toContain('可接入 · 直接写入');
+    expect(syncMarkup).toContain('应用配置');
+    expect(syncMarkup).not.toContain('仅预览');
+    expect(syncMarkup).not.toContain('配置写入后续开放');
   });
 
   it('styles agent badges from brand CSS vars without inventing hex colors', () => {
@@ -434,11 +454,6 @@ describe('Adapter page view model', () => {
     const failure = new Error('system browser unavailable');
     await expect(openAdapterEvidence(evidence[0].url, vi.fn().mockRejectedValue(failure)))
       .rejects.toBe(failure);
-  });
-
-  it('marks preview-only config_sync as future availability', () => {
-    const configSync = plan('config_sync');
-    expect(futureAvailability(configSync.analysis.route)).toBe('配置写入后续开放');
   });
 
   it('clears an old preview response when a newer selection is in flight', () => {

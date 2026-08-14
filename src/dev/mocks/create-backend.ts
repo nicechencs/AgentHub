@@ -7,7 +7,7 @@ import {
   restoreMockAccount,
 } from './account';
 import { createMockAdapterPort, resetMockAdapters } from './adapter';
-import { createMockAgentPort } from './agent';
+import { createMockAgentPort, resetMockAgentStatuses } from './agent';
 import { createMockBackupPort } from './backup';
 import { createMockCatalogPort, resetMockAgentCatalog } from './catalog';
 import { createMockChatPort, resetChatMock } from './chat';
@@ -52,6 +52,7 @@ export const createBackend: CreateBackend = () => {
   resetMockAdapters();
   resetMockAccounts();
   resetMockProviders();
+  resetMockAgentStatuses();
   // Seed full agent catalog (ids / names / channels / capabilities).
   seedAgentCatalog(MOCK_AGENT_CATALOG);
 
@@ -88,5 +89,11 @@ export const createBackend: CreateBackend = () => {
   backend.agent = createMockAgentPort(backend);
   return backend;
 };
+
+/**
+ * Opt-in Adapter / ConnectFlow seed. Default `createBackend()` stays an empty pool.
+ * Enable after the factory, e.g. `getBackend(); seedConnectFlowAdapterFixtures();`.
+ */
+export { seedConnectFlowAdapterFixtures } from './connect-flow-fixtures';
 
 export default createBackend;

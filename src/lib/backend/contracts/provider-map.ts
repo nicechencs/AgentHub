@@ -1,4 +1,3 @@
-import { PRESETS } from '@/config/presets';
 import type { AgentId, Provider } from '@/lib/types';
 
 export interface CoreProvider {
@@ -33,8 +32,14 @@ export interface CoreSwitchResult {
 /** 与 src-tauri provider 命令 REDACTED_MARKER 一致 */
 const REDACTED_MARKER = '***';
 
-function defaultPresetId(agentId: AgentId): string {
-  return PRESETS[agentId]?.[0]?.id ?? 'default';
+/**
+ * When meta.preset is missing, do **not** invent the first catalog preset.
+ * That lied for Kimi (first preset is kimi-code-membership) and made Adapter
+ * look like a membership source while core classify saw Other.
+ */
+function displayPresetId(metaPreset: string | undefined): string {
+  if (metaPreset && metaPreset.trim()) return metaPreset.trim();
+  return 'custom';
 }
 
 function extractTomlContent(raw: Record<string, unknown>): string {
@@ -77,7 +82,7 @@ export function mapCoreProvider(p: CoreProvider): Provider {
     id: p.id,
     agentId: p.agentId,
     name: p.name,
-    preset: metaPreset ?? defaultPresetId(p.agentId),
+    preset: displayPresetId(metaPreset),
     configText,
     configFormat,
     authApiKey,

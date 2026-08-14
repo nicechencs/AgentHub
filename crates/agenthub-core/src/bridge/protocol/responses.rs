@@ -332,9 +332,7 @@ pub fn responses_output_to_ir(value: &Value) -> ProtocolResult<Vec<IrEvent>> {
                     .and_then(Value::as_str)
                     .filter(|value| !value.is_empty())
                     .ok_or_else(|| {
-                        ProtocolError::invalid_request(
-                            "Function call output requires a call_id.",
-                        )
+                        ProtocolError::invalid_request("Function call output requires a call_id.")
                     })?;
                 let name = item_object
                     .get("name")
@@ -530,8 +528,7 @@ impl ResponsesStreamToIr {
                 if let Some(call_id) = call_id {
                     if let Some(tool) = &mut self.open_tool {
                         if tool.id == call_id {
-                            if let Some(arguments) =
-                                object.get("arguments").and_then(Value::as_str)
+                            if let Some(arguments) = object.get("arguments").and_then(Value::as_str)
                             {
                                 if tool.arguments.is_empty() && !arguments.is_empty() {
                                     self.pending.push(IrEvent::ToolCallDelta {

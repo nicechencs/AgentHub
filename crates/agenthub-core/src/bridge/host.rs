@@ -833,7 +833,7 @@ async fn responses(State(state): State<AppState>, request: Request) -> Response 
                 "upstream_error",
                 "The upstream model provider is unavailable.",
                 None,
-            )
+            );
         }
     };
     let upstream_request = state
@@ -930,7 +930,7 @@ async fn non_stream_response(
                 "upstream_error",
                 "The upstream model provider returned an invalid response.",
                 None,
-            )
+            );
         }
     };
     match crate::bridge::protocol::chat::translate_chat_response(&upstream_body, Some(&request_id))

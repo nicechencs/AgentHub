@@ -89,8 +89,7 @@ pub fn refresh_pi_provider(credentials: &Value) -> Result<Value> {
         .get("expires_in")
         .and_then(|v| v.as_i64())
         .unwrap_or(3600);
-    let expires_ms = chrono::Utc::now().timestamp_millis()
-        + expires_in * 1000
+    let expires_ms = chrono::Utc::now().timestamp_millis() + expires_in * 1000
         - crate::catalog::limits::OAUTH_REFRESH_SKEW_MS;
     let expires_at = chrono::DateTime::from_timestamp(expires_ms / 1000, 0)
         .map(|dt| dt.to_rfc3339())

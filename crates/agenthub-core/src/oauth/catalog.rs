@@ -340,15 +340,9 @@ mod tests {
                 "xai",
             ]
         );
-        assert_eq!(
-            pi_provider_quota_backend("codex"),
-            PiQuotaBackend::Codex
-        );
+        assert_eq!(pi_provider_quota_backend("codex"), PiQuotaBackend::Codex);
         assert_eq!(pi_provider_quota_backend("grok"), PiQuotaBackend::Grok);
-        assert_eq!(
-            pi_provider_quota_backend("anthropic"),
-            PiQuotaBackend::None
-        );
+        assert_eq!(pi_provider_quota_backend("anthropic"), PiQuotaBackend::None);
         assert!(is_device_code_option(AgentId::Pi, Some("github-copilot")));
         assert!(is_device_code_option(AgentId::Pi, Some("kimi-coding")));
         assert!(!is_device_code_option(AgentId::Pi, Some("anthropic")));

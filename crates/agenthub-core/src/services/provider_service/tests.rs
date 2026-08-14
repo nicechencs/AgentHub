@@ -1215,7 +1215,10 @@ fn updating_current_provider_writes_new_pool_value_not_stale_live() {
     updated.settings_config = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "new-key"}});
     let stored = svc.update(&updated).unwrap();
     assert!(stored.is_current);
-    assert_eq!(stored.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"], "new-key");
+    assert_eq!(
+        stored.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "new-key"
+    );
     assert_eq!(
         adapter.config().raw["env"]["ANTHROPIC_AUTH_TOKEN"],
         "new-key",
@@ -1242,7 +1245,10 @@ fn updating_non_current_provider_does_not_touch_live() {
     spare.settings_config = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "spare-new"}});
     let stored = svc.update(&spare).unwrap();
     assert!(!stored.is_current);
-    assert_eq!(stored.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"], "spare-new");
+    assert_eq!(
+        stored.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "spare-new"
+    );
     assert_eq!(adapter.config(), live);
     assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), writes_before);
 }

@@ -121,14 +121,15 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 |---|---|---|---|
 | Kimi Provider，`agent_id=kimi` 且 `meta.preset=kimi-code-membership` | Claude Code | stable `native_endpoint` | **可应用**；普通 Apply 服务当前唯一白名单 |
 | 同上 | Codex | experimental `local_bridge` | **可实验应用**；`plan.canApply=true`，由 Tauri 专用 Bridge 路径执行，尚未完成端到端验收 |
-| 同上 | Pi | stable `config_sync` | **仅预览**；不可写入 |
-| Anthropic Provider，或显式 Anthropic API-key Account | Pi | stable `config_sync` | **仅预览**；不可写入 |
+| 同上 | Pi | stable `config_sync` | **可应用**；写入 Pi `models.json` 的 `kimi-for-coding` 槽，凭据只引用 |
+| Anthropic Provider（显式 Anthropic API Key） | Pi | stable `config_sync` | **可应用**；写入 Pi `models.json` 的 `anthropic` 槽，凭据只引用 |
 | Codex OAuth Account，`credentials.format=auth_json`（ChatGPT subscription） | Claude Code | 受限实验候选 | **unsupported**；可解释门禁，`plan.canApply=false`，不得创建 profile、启动 bridge 或写入 Claude 配置。Phase 1 **纯协议内核**（Messages↔IR↔Responses + RetryGate fixtures）已在 `agenthub-core` 落地，**不改变**本行可执行状态 |
 | 其他来源、目标或未标记记录 | 任意 | `unsupported` | 不产生写操作 |
 
 补充边界：
 
 - Kimi managed OAuth 不会被识别为 Kimi Code 会员 API Key。
+- Kimi Code 会员识别：**`meta.preset=kimi-code-membership`**，或配置中出现官方端点 **`api.kimi.com/coding`**（无 preset 的 live import 仍可识别）。仅 `agent_id=kimi` 或 Moonshot 开放平台 **不会**升为会员。
 - 普通 OpenAI、xAI、Gemini、Kimi 开放平台、GLM Coding Plan、DeepSeek API 或任意“兼容 API”目前都不会自动升级为 Adapter 规则。
 - `stable` 表示规则结论稳定，不等于已经开放写入；是否可写还要看 Apply 白名单。
 - Kimi → Codex 目前是唯一 Bridge 白名单，不代表已经提供通用协议网关。

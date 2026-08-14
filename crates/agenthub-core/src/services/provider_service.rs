@@ -637,7 +637,13 @@ impl ProviderService {
 
         if let Some(from_id) = previous_current_id {
             if from_id != provider.id {
-                record_switch_undo(&self.db, PROVIDER_UNDO_PREFIX, agent, &from_id, &provider.id)?;
+                record_switch_undo(
+                    &self.db,
+                    PROVIDER_UNDO_PREFIX,
+                    agent,
+                    &from_id,
+                    &provider.id,
+                )?;
             } else {
                 clear_switch_undo(&self.db, PROVIDER_UNDO_PREFIX, agent)?;
             }
@@ -815,10 +821,7 @@ fn log_provider_op<T>(op: &str, agent: AgentId, started: Instant, result: &Resul
     }
 }
 
-fn compensated_current_apply_error(
-    primary: AppError,
-    live_rollback: Option<AppError>,
-) -> AppError {
+fn compensated_current_apply_error(primary: AppError, live_rollback: Option<AppError>) -> AppError {
     let Some(rollback) = live_rollback else {
         return primary;
     };

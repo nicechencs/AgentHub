@@ -11,7 +11,8 @@ fn file_database_lock_dir_is_sibling_locks_folder() {
     let db_path = dir.path().join("live-write.db");
     let db = Database::open(&db_path).unwrap();
     let authority = LiveWriteAuthority::try_from_database(&db).unwrap();
-    let expected_root = std::fs::canonicalize(dir.path()).unwrap_or_else(|_| dir.path().to_path_buf());
+    let expected_root =
+        std::fs::canonicalize(dir.path()).unwrap_or_else(|_| dir.path().to_path_buf());
     assert_eq!(authority.lock_dir(), expected_root.join("locks"));
     assert_eq!(authority.data_root(), expected_root.as_path());
 }

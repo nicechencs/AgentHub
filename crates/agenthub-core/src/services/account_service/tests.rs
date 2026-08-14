@@ -282,7 +282,12 @@ fn updating_current_api_key_writes_new_credentials_not_stale_live() {
     );
 
     let rotated = svc
-        .update_api_key(AgentId::Claude, &account.id, None, Some("sk-new-secret-key"))
+        .update_api_key(
+            AgentId::Claude,
+            &account.id,
+            None,
+            Some("sk-new-secret-key"),
+        )
         .unwrap();
     assert!(rotated.is_current);
     assert_eq!(rotated.credentials["api_key"], "sk-new-secret-key");

@@ -351,7 +351,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 前端 backend 分层（tauri / mocks / contracts / api façade） | ✅；`pnpm build` 强制 Tauri + 护栏 |
 | CLI `run` 多 Agent headless | ✅ |
 | 日志 tracing 文件 + 脱敏 | ✅ 见 logging.md |
-| Adapter 规则分析 / 预览 / profile 管理 | ✅；仅显式白名单可应用，当前组合与状态见[厂商、API 与 OAuth 适配规则](provider-api-oauth-adaptation.md#4-当前实现矩阵) |
+| Adapter 规则分析 / 预览 / profile 管理 | ✅；白名单可应用：Kimi→Claude 直连、Kimi→Codex 桥、Kimi/Anthropic→Pi 配置同步；其余见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵) |
 | MCP 本机配置清单 | ✅ core 只读扫描 + Tauri command + 前端页面；不修改或注入配置 |
 | 凭据落盘加密 | **范围外**（不实现） |
 
@@ -369,7 +369,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | Adapter 用户级 sidecar | 🎯 目标已决策 / 未实现 | 当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有；待完成 Tauri-neutral control contract、`agenthub-adapterd`、本地 IPC、单实例/版本+schema 握手、SQLite shared/exclusive schema lease、更新/卸载 saga 和分阶段切换，见 [adapter-sidecar-design.md](adapter-sidecar-design.md) |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |
 | Token **后台自动刷新守护** | ❌ | 有手动 refresh |
-| Settings 部分开关真实生效 | 🟡 | 主题/语言/日志/用量定时采集部分接线；系统集成项未完整 |
+| Settings 部分开关真实生效 | 🟡 | 主题/托盘/自启/日志/用量采集已接线；语言仅为中文只读说明，无 i18n |
 | Usage **后台守护 / 文件监听** | ❌ | 仅前台 interval + 手动 |
 | 官方模型商店 / 账号可用模型探测 | ❌ | 明确非目标（用量去重模型列表除外） |
 | WebDAV / 代理模式 / macOS·Linux 一等公民 | P4 候选 | 未开工 |

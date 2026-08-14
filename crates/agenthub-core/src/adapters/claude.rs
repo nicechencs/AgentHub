@@ -575,10 +575,7 @@ fn parse_claude_oauth_json(content: &str, source: ClaudeOauthSource) -> Option<C
         .or_else(|| entry.get("expires_at"))
         .cloned();
     // Missing/unparseable expiry is treated as not expired (fail open for display).
-    let expired = expires_at
-        .as_ref()
-        .and_then(is_expired)
-        .unwrap_or(false);
+    let expired = expires_at.as_ref().and_then(is_expired).unwrap_or(false);
     Some(ClaudeOauthBundle {
         body,
         access_token,

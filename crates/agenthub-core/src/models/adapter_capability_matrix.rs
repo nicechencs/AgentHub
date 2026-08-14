@@ -24,7 +24,7 @@ pub const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON: &str = concat!(
 /// Product / origin that owns the selected Connection credentials.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AdapterSourceProduct {
-    /// Kimi Code membership provider (`meta.preset = kimi-code-membership`).
+    /// Kimi Code membership (`meta.preset = kimi-code-membership` **or** settings contain `api.kimi.com/coding`).
     KimiCodeMembership,
     /// Explicit Anthropic API Key (provider preset or account.extra.provider).
     AnthropicApi,
@@ -290,9 +290,15 @@ const KIMI_CODEX_LIMITS: &[&str] = &[
     "固定端口被占用时会尝试重新分配端口并写回配置。",
 ];
 
-const KIMI_PI_LIMITS: &[&str] = &["Phase 0 仅预览；不会同步配置或传输凭据。"];
+const KIMI_PI_LIMITS: &[&str] = &[
+    "将写入 Pi models.json 的 kimi-for-coding 槽与凭据引用标记；不会在预览中传输明文 Key。",
+    "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
+];
 
-const ANTHROPIC_PI_LIMITS: &[&str] = &["Phase 0 仅预览；不会同步配置或传输凭据。"];
+const ANTHROPIC_PI_LIMITS: &[&str] = &[
+    "将写入 Pi models.json 的 anthropic 槽与凭据引用标记；不会在预览中传输明文 Key。",
+    "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
+];
 
 const CODEX_CLAUDE_LIMITS: &[&str] = &[
     "当前不支持此组合；尚未通过上游授权、条款与协议兼容性门禁。",
@@ -350,7 +356,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         },
         route: AdapterRoute::ConfigSync,
         support: AdapterSupport::Stable,
-        can_apply: false,
+        can_apply: true,
         reason: "Kimi Code 会员可预览为 Pi 的配置同步。",
         limitations: KIMI_PI_LIMITS,
         rule_id: "kimi-membership-to-pi-v1",
@@ -368,7 +374,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         },
         route: AdapterRoute::ConfigSync,
         support: AdapterSupport::Stable,
-        can_apply: false,
+        can_apply: true,
         reason: "显式 Anthropic API Key 可预览为 Pi 的配置同步。",
         limitations: ANTHROPIC_PI_LIMITS,
         rule_id: "anthropic-api-to-pi-v1",
@@ -615,14 +621,16 @@ mod tests {
     }
 
     #[test]
-    fn preview_only_pi_rules_do_not_open_apply() {
+    fn pi_config_sync_rules_can_apply() {
         let kimi_pi = decide_adapter_capability(
             AdapterSourceProduct::KimiCodeMembership,
             AdapterCredentialClass::ApiKey,
             AgentId::Pi,
         );
         assert_eq!(kimi_pi.route, AdapterRoute::ConfigSync);
-        assert!(!kimi_pi.can_apply);
+        assert!(kimi_pi.can_apply);
+        assert_eq!(kimi_pi.gate_kind, AdapterGateKind::None);
+        assert_eq!(kimi_pi.rule_id, Some("kimi-membership-to-pi-v1"));
 
         let anthropic_pi = decide_adapter_capability(
             AdapterSourceProduct::AnthropicApi,
@@ -630,6 +638,8 @@ mod tests {
             AgentId::Pi,
         );
         assert_eq!(anthropic_pi.route, AdapterRoute::ConfigSync);
-        assert!(!anthropic_pi.can_apply);
+        assert!(anthropic_pi.can_apply);
+        assert_eq!(anthropic_pi.gate_kind, AdapterGateKind::None);
+        assert_eq!(anthropic_pi.rule_id, Some("anthropic-api-to-pi-v1"));
     }
 }

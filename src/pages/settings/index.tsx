@@ -283,8 +283,6 @@ export default function SettingsPage({
     );
   }
 
-  const isKeyring = settings.credentialStore === 'keyring';
-
   return (
     <div>
       <PageHeader
@@ -315,19 +313,8 @@ export default function SettingsPage({
         <TabsContent value="general">
           <Card>
             <CardContent className="divide-y divide-border pt-1">
-              <Row label="语言" description="界面语言">
-                <Select
-                  value={settings.language}
-                  onValueChange={(v) => patch({ language: v as AppSettings['language'] })}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="zh">中文</SelectItem>
-                    <SelectItem value="en">English</SelectItem>
-                  </SelectContent>
-                </Select>
+              <Row label="语言" description="暂不提供切换">
+                <span className="text-sm text-secondary">界面目前仅中文</span>
               </Row>
               <Row label="主题" description="浅色 / 深色 / 跟随系统">
                 <Select
@@ -401,7 +388,6 @@ export default function SettingsPage({
                     setSaving(true);
                     try {
                       const next = await updateSettings({
-                        language: settings.language,
                         theme: settings.theme,
                         autoStart: settings.autoStart,
                         closeToTray: settings.closeToTray,
@@ -446,15 +432,10 @@ export default function SettingsPage({
               </Row>
               <Row
                 label="存储方式"
-                description="系统自动选择"
-                descriptionTip="只读展示；当前无需配置主密码或落盘加密。"
+                description="本地数据目录存储，界面脱敏展示"
+                descriptionTip="凭据写入本机数据目录；界面默认脱敏，当前不提供 keyring 或落盘加密。"
               >
-                <span className="text-sm text-secondary">
-                  {isKeyring ? '系统 keyring' : '本地存储'}
-                </span>
-                <Badge variant={isKeyring ? 'success' : 'default'}>
-                  {isKeyring ? 'keyring' : 'local'}
-                </Badge>
+                <span className="text-sm text-secondary">本地数据目录</span>
               </Row>
             </CardContent>
           </Card>

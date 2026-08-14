@@ -68,14 +68,11 @@ const DEFAULTS: AppSettings = {
   theme: 'light',
   autoStart: true,
   closeToTray: true,
-  hasMasterPassword: false,
-  credentialStore: 'keyring',
   dataDir: '~/.agenthub',
   logsDir: '~/.agenthub/logs',
   logLevel: 'info',
   logRetentionDays: 14,
   skillMarketSource: 'auto',
-  autoBackup: true,
   usageCollectIntervalMin: 30,
   // Real value comes from Tauri getVersion(); do not hardcode a product semver.
   appVersion: UNKNOWN_APP_VERSION,
@@ -175,7 +172,6 @@ export function createTauriSettingsPort(): SettingsPort {
         const themeRaw = loadString(StorageKey.theme, core.theme ?? DEFAULTS.theme);
         const next: AppSettings = {
           ...DEFAULTS,
-          ...local,
           theme: mapTheme(themeRaw),
           language: mapLanguageToUi(core.language),
           logLevel: parseLogLevel(core.logLevel),
@@ -192,6 +188,10 @@ export function createTauriSettingsPort(): SettingsPort {
                 : DEFAULTS.autoStart,
           dataDir: paths.dataDir,
           logsDir: paths.logsDir,
+          usageCollectIntervalMin:
+            typeof local.usageCollectIntervalMin === 'number'
+              ? local.usageCollectIntervalMin
+              : DEFAULTS.usageCollectIntervalMin,
           // Package version from Tauri shell (not localStorage).
           appVersion: appVersion || DEFAULTS.appVersion,
         };
@@ -250,16 +250,12 @@ export function createTauriSettingsPort(): SettingsPort {
         }
 
         const local = loadUiLocal();
+        // Only persist UI-local fields. Leftover keys (hasMasterPassword /
+        // credentialStore / autoBackup) from older clients are ignored.
         const mergedLocal = {
-          ...local,
           autoStart: patch.autoStart ?? local.autoStart ?? DEFAULTS.autoStart,
           // Mirror for offline UI; core DB is authoritative after successful set.
           closeToTray: patch.closeToTray ?? local.closeToTray ?? DEFAULTS.closeToTray,
-          hasMasterPassword:
-            patch.hasMasterPassword ?? local.hasMasterPassword ?? DEFAULTS.hasMasterPassword,
-          credentialStore:
-            patch.credentialStore ?? local.credentialStore ?? DEFAULTS.credentialStore,
-          autoBackup: patch.autoBackup ?? local.autoBackup ?? DEFAULTS.autoBackup,
           usageCollectIntervalMin:
             patch.usageCollectIntervalMin ??
             local.usageCollectIntervalMin ??

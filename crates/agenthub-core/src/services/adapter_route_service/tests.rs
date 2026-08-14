@@ -23,6 +23,22 @@ fn provider(id: &str, agent_id: AgentId, preset: &str) -> Provider {
     }
 }
 
+fn kimi_coding_provider_without_preset(id: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Kimi,
+        name: "Kimi coding live import".into(),
+        settings_config: serde_json::json!({
+            "format": "toml",
+            "content": "base_url = \"https://api.kimi.com/coding/v1\"\napi_key = \"must-not-leak\"\n"
+        }),
+        meta: serde_json::json!({}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
 fn request(
     source_kind: AdapterSourceKind,
     source_id: &str,
@@ -109,6 +125,8 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
         ))
         .unwrap();
     assert_eq!(pi.analysis.route, AdapterRoute::ConfigSync);
+    assert_eq!(pi.analysis.support, AdapterSupport::Stable);
+    assert!(pi.can_apply);
     assert_eq!(pi.changes[0].field, "provider");
     assert_eq!(pi.changes[0].value.as_deref(), Some("kimi-for-coding"));
     assert_eq!(pi.changes[1].field, "apiKey");
@@ -151,21 +169,79 @@ fn anthropic_provider_and_explicit_api_key_account_plan_for_pi() {
         .unwrap();
     let service = AdapterRouteService::new(db);
 
-    for source in [
-        request(
+    let provider_plan = service
+        .plan(&request(
             AdapterSourceKind::Provider,
             "anthropic-provider",
             AgentId::Pi,
-        ),
-        request(AdapterSourceKind::Account, "anthropic-account", AgentId::Pi),
-    ] {
-        let plan = service.plan(&source).unwrap();
-        assert_eq!(plan.analysis.route, AdapterRoute::ConfigSync);
-        assert_eq!(plan.analysis.support, AdapterSupport::Stable);
-        assert_eq!(plan.changes[0].value.as_deref(), Some("anthropic"));
-        assert!(plan.changes[1].secret);
-        assert!(plan.changes[1].value.is_none());
-    }
+        ))
+        .unwrap();
+    assert_eq!(provider_plan.analysis.route, AdapterRoute::ConfigSync);
+    assert_eq!(provider_plan.analysis.support, AdapterSupport::Stable);
+    assert!(provider_plan.can_apply);
+    assert_eq!(provider_plan.changes[0].value.as_deref(), Some("anthropic"));
+    assert!(provider_plan.changes[1].secret);
+    assert!(provider_plan.changes[1].value.is_none());
+
+    let account_plan = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "anthropic-account",
+            AgentId::Pi,
+        ))
+        .unwrap();
+    assert_eq!(account_plan.analysis.route, AdapterRoute::ConfigSync);
+    assert_eq!(account_plan.analysis.support, AdapterSupport::Stable);
+    assert!(
+        !account_plan.can_apply,
+        "account-sourced Anthropic → Pi stays preview-only"
+    );
+    assert_eq!(account_plan.changes[0].value.as_deref(), Some("anthropic"));
+    assert!(account_plan.changes[1].secret);
+    assert!(account_plan.changes[1].value.is_none());
+}
+
+#[test]
+fn kimi_coding_endpoint_without_preset_classifies_as_membership() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_coding_provider_without_preset("kimi-live-import"))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    let claude = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "kimi-live-import",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert_eq!(claude.analysis.route, AdapterRoute::NativeEndpoint);
+    assert!(claude.can_apply);
+    assert_eq!(
+        claude.analysis.rule_id.as_deref(),
+        Some("kimi-membership-to-claude-v1")
+    );
+
+    let codex = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "kimi-live-import",
+            AgentId::Codex,
+        ))
+        .unwrap();
+    assert_eq!(codex.analysis.route, AdapterRoute::LocalBridge);
+    assert!(codex.can_apply);
+
+    let pi = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "kimi-live-import",
+            AgentId::Pi,
+        ))
+        .unwrap();
+    assert_eq!(pi.analysis.route, AdapterRoute::ConfigSync);
+    assert!(pi.can_apply);
 }
 
 #[test]
@@ -202,6 +278,12 @@ fn unsupported_and_missing_sources_have_no_changes() {
     assert!(!unsupported.can_apply);
     assert!(unsupported.changes.is_empty());
     assert_eq!(unsupported.service_impact, AdapterServiceImpact::None);
+    assert!(
+        unsupported.analysis.reason.contains("Kimi Code 会员"),
+        "moonshot must not use the opaque generic Other reason: {}",
+        unsupported.analysis.reason
+    );
+    assert!(unsupported.analysis.reason.contains("api.kimi.com/coding"));
     assert_eq!(
         unsupported.analysis.evidence[0].url,
         "https://github.com/nicechencs/AgentHub/blob/release/docs/provider-api-oauth-adaptation.md"
@@ -219,7 +301,10 @@ fn unsupported_and_missing_sources_have_no_changes() {
         ))
         .unwrap();
     assert_eq!(codex_to_claude.analysis.route, AdapterRoute::Unsupported);
-    assert_eq!(codex_to_claude.analysis.support, AdapterSupport::Unsupported);
+    assert_eq!(
+        codex_to_claude.analysis.support,
+        AdapterSupport::Unsupported
+    );
     assert!(!codex_to_claude.can_apply);
     assert!(codex_to_claude.analysis.reason.contains("当前不支持"));
     assert!(codex_to_claude.analysis.reason.contains("门禁"));
@@ -270,7 +355,10 @@ fn codex_auth_json_account_to_claude_is_matrix_closed() {
         .unwrap();
     assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
     assert_eq!(plan.analysis.support, AdapterSupport::Unsupported);
-    assert!(!plan.can_apply, "Codex OAuth → Claude must keep can_apply=false");
+    assert!(
+        !plan.can_apply,
+        "Codex OAuth → Claude must keep can_apply=false"
+    );
     assert_eq!(
         plan.analysis.gate_kind,
         crate::models::AdapterGateKind::SubscriptionCandidate
@@ -285,7 +373,9 @@ fn codex_auth_json_account_to_claude_is_matrix_closed() {
     );
     assert!(plan.changes.is_empty());
     assert!(plan.analysis.actions.is_empty());
-    assert!(!serde_json::to_string(&plan).unwrap().contains("must-not-leak"));
+    assert!(!serde_json::to_string(&plan)
+        .unwrap()
+        .contains("must-not-leak"));
 
     // Matrix unit surface agrees with the service.
     let matrix = crate::models::decide_adapter_capability(
@@ -389,6 +479,7 @@ struct SharedContractSource {
 enum SharedContractApplyPath {
     Native,
     LocalBridge,
+    ConfigSync,
     Rejected,
 }
 
@@ -435,6 +526,17 @@ fn assert_apply_path_consistent(case_id: &str, expect: &SharedContractExpect) {
                 "{case_id}: applyPath=local_bridge requires local_bridge route"
             );
         }
+        SharedContractApplyPath::ConfigSync => {
+            assert!(
+                expect.can_apply,
+                "{case_id}: applyPath=config_sync requires canApply=true"
+            );
+            assert_eq!(
+                expect.route,
+                AdapterRoute::ConfigSync,
+                "{case_id}: applyPath=config_sync requires config_sync route"
+            );
+        }
         SharedContractApplyPath::Rejected => {
             assert!(
                 !expect.can_apply,
@@ -468,7 +570,10 @@ fn shared_capability_contract_matches_classify_and_plan() {
                         agent_id: case.source.agent_id,
                         kind: case.source.account_kind.unwrap_or(AccountKind::Oauth),
                         label: case.id.clone(),
-                        credentials: case.source.credentials.unwrap_or_else(|| serde_json::json!({})),
+                        credentials: case
+                            .source
+                            .credentials
+                            .unwrap_or_else(|| serde_json::json!({})),
                         extra: case.source.extra.unwrap_or_else(|| serde_json::json!({})),
                         status: "active".into(),
                         is_current: false,
@@ -497,6 +602,9 @@ fn shared_capability_contract_matches_classify_and_plan() {
             }
             SharedContractApplyPath::LocalBridge => {
                 assert_eq!(analysis.route, AdapterRoute::LocalBridge, "{}", case.id);
+            }
+            SharedContractApplyPath::ConfigSync => {
+                assert_eq!(analysis.route, AdapterRoute::ConfigSync, "{}", case.id);
             }
             SharedContractApplyPath::Rejected => {
                 assert!(!plan.can_apply, "{}", case.id);

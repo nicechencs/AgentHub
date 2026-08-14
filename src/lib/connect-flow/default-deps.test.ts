@@ -4,7 +4,8 @@ import { listAccounts } from '@/lib/api/account';
 import { listAdapterProfiles, planAdapter } from '@/lib/api/adapter';
 import * as providerApi from '@/lib/api/provider';
 import { upsertMockAccount } from '@/dev/mocks/account';
-import { upsertMockProvider } from '@/dev/mocks/provider';
+import { seedConnectFlowAdapterFixtures } from '@/dev/mocks/connect-flow-fixtures';
+import { createMockProviderPort, upsertMockProvider } from '@/dev/mocks/provider';
 import { createDefaultConnectFlowDeps } from './default-deps';
 import { planFanoutKey, type SourceOption } from './types';
 
@@ -26,6 +27,64 @@ function providerOption(id: string, label: string): SourceOption {
 describe('createDefaultConnectFlowDeps', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('keeps the default mock pool empty until ConnectFlow adapter fixtures are seeded', async () => {
+    seedAfterBackend();
+    expect(await createMockProviderPort().listProviders()).toEqual([]);
+    const seeded = seedConnectFlowAdapterFixtures();
+    const providers = await createMockProviderPort().listProviders();
+    expect(providers.map((item) => item.id).sort()).toEqual(
+      [seeded.kimiMembership.id, seeded.anthropic!.id].sort(),
+    );
+  });
+
+  it('plans and applies Kimi membership → installed Pi through the adapter façade', async () => {
+    seedAfterBackend();
+    const { kimiMembership } = seedConnectFlowAdapterFixtures({ includeAnthropic: false });
+    const deps = createDefaultConnectFlowDeps();
+    const request = {
+      sourceKind: 'provider' as const,
+      sourceId: kimiMembership.id,
+      targetAgentId: 'pi' as const,
+    };
+    const planned = await deps.plan(request);
+    const viaFacade = await planAdapter(request);
+    expect(planned.canApply).toBe(true);
+    expect(viaFacade.canApply).toBe(true);
+    expect(planned.analysis.route).toBe('config_sync');
+
+    const applied = await deps.apply(request);
+    expect(applied.profile.route).toBe('config_sync');
+    expect(applied.provider.agentId).toBe('pi');
+    expect(applied.provider.isCurrent).toBe(true);
+    expect(JSON.stringify(applied)).not.toContain('must-not-leak');
+  });
+
+  it('plans and applies Anthropic API → installed Pi through the adapter façade', async () => {
+    seedAfterBackend();
+    const { anthropic } = seedConnectFlowAdapterFixtures();
+    expect(anthropic).toBeDefined();
+    const deps = createDefaultConnectFlowDeps();
+    const request = {
+      sourceKind: 'provider' as const,
+      sourceId: anthropic!.id,
+      targetAgentId: 'pi' as const,
+    };
+    const planned = await deps.plan(request);
+    expect(planned.canApply).toBe(true);
+    expect(planned.analysis.route).toBe('config_sync');
+    expect(planned.analysis.ruleId).toBe('anthropic-api-to-pi-v1');
+
+    const applied = await deps.apply(request);
+    expect(applied.profile.route).toBe('config_sync');
+    expect(applied.provider.agentId).toBe('pi');
+    expect(applied.provider.isCurrent).toBe(true);
+    expect(JSON.parse(applied.provider.configText)).toEqual({
+      slot: 'anthropic',
+      apiKey: '$AGENTHUB_CONNECTION_SECRET$',
+    });
+    expect(JSON.stringify(applied)).not.toContain('must-not-leak');
   });
 
   it('wires plan / apply / listProfiles to the adapter façade', async () => {
