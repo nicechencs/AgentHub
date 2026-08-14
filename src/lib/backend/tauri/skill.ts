@@ -75,6 +75,10 @@ export function createTauriSkillPort(): SkillPort {
       return invoke<InstalledSkillDto[]>('list_installed_skills');
     },
 
+    async listSkillCatalog() {
+      return invoke<InstalledSkillDto[]>('list_skill_catalog');
+    },
+
     async installSkillFromSource(source, overwrite = false) {
       return invoke<CoreSkill>('install_skill', { source, overwrite });
     },

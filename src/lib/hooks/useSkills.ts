@@ -1,5 +1,5 @@
 /**
- * Skills 数据 hooks：list / installed / market + 写操作后分 key invalidate。
+ * Skills 数据 hooks：list / catalog / market + 写操作后分 key invalidate。
  * 项目尚未引入 React Query，这里用轻量订阅 + 分资源版本号失效 + 进程内 SWR 缓存。
  * Tauri 下会订阅 `skills-fs-changed`（目录变更防抖事件）自动 bump。
  *
@@ -14,7 +14,7 @@ import {
   importPrivateSkillToShared,
   installMarketSkill,
   installSkillFromSource,
-  listInstalledSkills,
+  listSkillCatalog,
   listSkills,
   onSkillsFsChanged,
   projectSkill,
@@ -30,14 +30,14 @@ import {
 } from '@/lib/api/skill';
 import type { AgentId, Skill } from '@/lib/types';
 
-export type SkillsCacheKey = 'skills' | 'installed' | 'market';
+export type SkillsCacheKey = 'skills' | 'catalog' | 'market';
 
-const ALL_KEYS: SkillsCacheKey[] = ['skills', 'installed', 'market'];
+const ALL_KEYS: SkillsCacheKey[] = ['skills', 'catalog', 'market'];
 
 const listeners = new Set<() => void>();
 const versions: Record<SkillsCacheKey, number> = {
   skills: 0,
-  installed: 0,
+  catalog: 0,
   market: 0,
 };
 let fsWatchStarted = false;
@@ -46,7 +46,7 @@ let fsWatchUnsub: (() => void) | null = null;
 
 /** 进程内最后一次成功结果（跨路由 unmount 仍保留） */
 let skillsData: Skill[] | null = null;
-let installedData: InstalledSkillDto[] | null = null;
+let catalogData: InstalledSkillDto[] | null = null;
 let marketData: { query: string; rows: SkillListingDto[] } | null = null;
 
 /**
@@ -57,7 +57,7 @@ let marketGeneration = 0;
 
 /** 同 key 请求合并 */
 let skillsInflight: Promise<Skill[]> | null = null;
-let installedInflight: Promise<InstalledSkillDto[]> | null = null;
+let catalogInflight: Promise<InstalledSkillDto[]> | null = null;
 const marketInflight = new Map<string, Promise<SkillListingDto[]>>();
 
 function bump(keys: SkillsCacheKey[]) {
@@ -87,10 +87,10 @@ export function invalidateSkills(keys?: SkillsCacheKey | SkillsCacheKey[]) {
 /** 测试 / 登出等场景：丢掉进程内 data。 */
 export function clearSkillsDataCache() {
   skillsData = null;
-  installedData = null;
+  catalogData = null;
   dropMarketCache();
   skillsInflight = null;
-  installedInflight = null;
+  catalogInflight = null;
 }
 
 /** 当前某 key 的缓存版本；技能页本地 state 可随此值重载。 */
@@ -106,7 +106,7 @@ function retainSkillsFsWatch() {
   fsWatchStarted = true;
   void onSkillsFsChanged(() => {
     // 外部目录变更：共享库矩阵 + agent 目录都可能变
-    invalidateSkills(['skills', 'installed']);
+    invalidateSkills(['skills', 'catalog']);
   }).then((unsub) => {
     fsWatchUnsub = unsub;
     if (fsWatchSubscribers === 0) {
@@ -164,18 +164,18 @@ async function fetchSkillsShared(): Promise<Skill[]> {
   return skillsInflight;
 }
 
-async function fetchInstalledShared(): Promise<InstalledSkillDto[]> {
-  if (!installedInflight) {
-    installedInflight = listInstalledSkills()
+async function fetchCatalogShared(): Promise<InstalledSkillDto[]> {
+  if (!catalogInflight) {
+    catalogInflight = listSkillCatalog()
       .then((rows) => {
-        installedData = rows;
+        catalogData = rows;
         return rows;
       })
       .finally(() => {
-        installedInflight = null;
+        catalogInflight = null;
       });
   }
-  return installedInflight;
+  return catalogInflight;
 }
 
 async function fetchMarketShared(query: string): Promise<SkillListingDto[]> {
@@ -250,22 +250,30 @@ export function useSkillsList(opts: SkillsQueryOptions = {}) {
   };
 }
 
-export function useInstalledSkills(opts: SkillsQueryOptions = {}) {
+export function useSkillCatalog(opts: SkillsQueryOptions = {}) {
   const { enabled = true } = opts;
-  const version = useCacheVersion('installed');
-  const [data, setDataState] = useState<InstalledSkillDto[] | null>(() => installedData);
+  const version = useCacheVersion('catalog');
+  const [data, setDataState] = useState<InstalledSkillDto[] | null>(() => catalogData);
   const [error, setError] = useState<unknown>(null);
   const [fetching, setFetching] = useState(false);
+
+  const setData = useCallback((action: SetStateAction<InstalledSkillDto[] | null>) => {
+    setDataState((prev) => {
+      const next = typeof action === 'function' ? action(prev) : action;
+      catalogData = next;
+      return next;
+    });
+  }, []);
 
   const reload = useCallback(async () => {
     if (!enabled) return;
     setFetching(true);
     try {
-      const rows = await fetchInstalledShared();
+      const rows = await fetchCatalogShared();
       setDataState(rows);
       setError(null);
     } catch (e) {
-      if (installedData == null) setError(e);
+      if (catalogData == null) setError(e);
     } finally {
       setFetching(false);
     }
@@ -273,7 +281,7 @@ export function useInstalledSkills(opts: SkillsQueryOptions = {}) {
 
   useEffect(() => {
     if (!enabled) return;
-    if (installedData != null) setDataState(installedData);
+    if (catalogData != null) setDataState(catalogData);
     void reload();
   }, [enabled, version, reload]);
 
@@ -283,6 +291,8 @@ export function useInstalledSkills(opts: SkillsQueryOptions = {}) {
     loading: enabled && data == null && error == null,
     refreshing: enabled && fetching && data != null,
     reload,
+    /** 乐观更新 catalog 行，并写回进程缓存 */
+    setData,
   };
 }
 
@@ -340,19 +350,19 @@ export async function runToggleSkill(
   opts?: { force?: boolean },
 ) {
   const result = await toggleSkillSync(skillId, agentId, opts);
-  invalidateSkills(['skills', 'installed']);
+  invalidateSkills(['skills', 'catalog']);
   return result;
 }
 
 export async function runSyncAll() {
   const result = await syncAll();
-  invalidateSkills(['skills', 'installed']);
+  invalidateSkills(['skills', 'catalog']);
   return result;
 }
 
 export async function runInstallSkill(source: string, overwrite = false) {
   const skill = await installSkillFromSource(source, overwrite);
-  invalidateSkills(['skills', 'installed', 'market']);
+  invalidateSkills(['skills', 'catalog', 'market']);
   return skill;
 }
 
@@ -362,18 +372,18 @@ export async function runImportPrivateSkill(
   overwrite = false,
 ) {
   const skill = await importPrivateSkillToShared(skillId, agentId, overwrite);
-  invalidateSkills(['skills', 'installed', 'market']);
+  invalidateSkills(['skills', 'catalog', 'market']);
   return skill;
 }
 
 export async function runUninstallSkill(skillId: string, privateAgent?: AgentId) {
   await uninstallSkill(skillId, privateAgent);
-  invalidateSkills(['skills', 'installed', 'market']);
+  invalidateSkills(['skills', 'catalog', 'market']);
 }
 
 export async function runUpdateSkill(skillId: string) {
   const skill = await updateSkill(skillId);
-  invalidateSkills(['skills', 'installed', 'market']);
+  invalidateSkills(['skills', 'catalog', 'market']);
   return skill;
 }
 
@@ -383,7 +393,7 @@ export async function runProjectSkill(
   mode: 'link' | 'copy' = 'link',
 ): Promise<SkillProjectResultDto> {
   const result = await projectSkill(skillId, agentId, mode);
-  invalidateSkills(['skills', 'installed']);
+  invalidateSkills(['skills', 'catalog']);
   return result;
 }
 
@@ -392,6 +402,6 @@ export async function runInstallMarketSkill(
   overwrite = false,
 ): Promise<CoreSkill> {
   const skill = await installMarketSkill(skillId, overwrite);
-  invalidateSkills(['skills', 'installed', 'market']);
+  invalidateSkills(['skills', 'catalog', 'market']);
   return skill;
 }

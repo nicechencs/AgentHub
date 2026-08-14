@@ -110,6 +110,19 @@ pub async fn list_installed_skills(
     .await
 }
 
+/// Invoke: `list_skill_catalog`
+#[tauri::command]
+pub async fn list_skill_catalog(state: State<'_, AppState>) -> Result<Vec<InstalledSkill>, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, |hub| list_skill_catalog_inner(hub)).await
+}
+
+fn list_skill_catalog_inner(hub: &AgentHub) -> Result<Vec<InstalledSkill>, String> {
+    hub.skills
+        .list_catalog()
+        .map_err(|e| map_err_string("list_skill_catalog", e))
+}
+
 /// Invoke: `read_skill_markdown` — load local `SKILL.md` for GUI preview.
 ///
 /// Pass `private_agent` for agent-private skills; omit for shared library.

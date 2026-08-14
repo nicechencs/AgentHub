@@ -63,6 +63,10 @@ export async function listInstalledSkills(): Promise<InstalledSkillDto[]> {
   return getBackend().skill.listInstalledSkills();
 }
 
+export async function listSkillCatalog(): Promise<InstalledSkillDto[]> {
+  return getBackend().skill.listSkillCatalog();
+}
+
 export async function installSkillFromSource(
   source: string,
   overwrite = false,

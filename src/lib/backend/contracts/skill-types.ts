@@ -27,6 +27,7 @@ export interface SkillSyncReport {
   failed: { skill: string; agent: AgentId; code: string; error: string }[];
 }
 
+/** Installed / catalog row. `listSkillCatalog` reuses this DTO (no extra type). */
 export interface InstalledSkillDto {
   id: string;
   name: string;

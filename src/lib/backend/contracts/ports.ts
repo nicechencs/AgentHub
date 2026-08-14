@@ -315,7 +315,10 @@ export interface SkillPort {
   ): Promise<{ state: SkillSyncState; conflict: boolean }>;
   checkConflict(skillId: string, agentId: AgentId): Promise<boolean>;
   syncAll(): Promise<{ synced: number; skipped: number; failed: number }>;
+  /** CLI / internal alignment. GUI catalog uses `listSkillCatalog`. */
   listInstalledSkills(): Promise<InstalledSkillDto[]>;
+  /** Shared library + `private_source` agent rows (no available/conflict copies). */
+  listSkillCatalog(): Promise<InstalledSkillDto[]>;
   installSkillFromSource(source: string, overwrite?: boolean): Promise<CoreSkill>;
   importPrivateSkillToShared(
     skillId: string,

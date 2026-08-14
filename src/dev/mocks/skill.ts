@@ -1,4 +1,3 @@
-import { AGENT_IDS } from '@/config/agents';
 import type { SkillPort } from '@/lib/backend/contracts';
 import { delay, randomLatency } from '@/dev/mocks/delay';
 import { unsupportedError } from '@/lib/backend/contracts/errors';
@@ -7,12 +6,13 @@ import type {
   InstalledSkillDto,
   SkillListingDto,
 } from '@/lib/backend/contracts/skill-types';
-import type {
-  AgentId,
-  Skill,
-  SkillLinkKind,
-  SkillProjection,
-  SkillSyncState,
+import {
+  KNOWN_AGENT_IDS,
+  type AgentId,
+  type Skill,
+  type SkillLinkKind,
+  type SkillProjection,
+  type SkillSyncState,
 } from '@/lib/types';
 import { loadJson } from '@/lib/ui-preferences';
 
@@ -54,13 +54,15 @@ function seededRandom(seed: number) {
 }
 
 const rand = seededRandom(42);
-const SKILL_CAPABLE: AgentId[] = AGENT_IDS.filter((id) => id !== 'kimi');
+/** Fixed list — do not use runtime AGENT_IDS here: module init runs before catalog seed. */
+const MOCK_AGENT_IDS: AgentId[] = [...KNOWN_AGENT_IDS];
+const SKILL_CAPABLE: AgentId[] = MOCK_AGENT_IDS.filter((id) => id !== 'kimi');
 
 function buildMockSkill(name: string): MockSkill {
   const sync = {} as Record<AgentId, SkillSyncState>;
   const conflicts: AgentId[] = [];
   const projections: SkillProjection[] = [];
-  for (const agentId of AGENT_IDS) {
+  for (const agentId of MOCK_AGENT_IDS) {
     if (!SKILL_CAPABLE.includes(agentId)) {
       sync[agentId] = 'unsupported';
       projections.push({
@@ -112,6 +114,22 @@ function buildMockSkill(name: string): MockSkill {
 }
 
 const mockState: MockSkill[] = uniqueNames.map(buildMockSkill);
+
+function toSharedInstalledRow(s: MockSkill): InstalledSkillDto {
+  return {
+    id: s.id,
+    name: s.name,
+    description: s.description,
+    sourceDir: s.sourceDir ?? `C:\\mock\\skills\\${s.id}`,
+    rootLabel: '~/.agents/skills',
+    rootDir: 'C:\\mock\\skills',
+    origin: 'shared',
+    projectable: true,
+    mapStatus: 'available',
+    source: null,
+    projections: (s.projections ?? []) as InstalledSkillDto['projections'],
+  };
+}
 
 const mockPrivateSkills: InstalledSkillDto[] = [
   {
@@ -253,21 +271,19 @@ export function createMockSkillPort(): SkillPort {
 
     async listInstalledSkills() {
       await delay(randomLatency());
-      const shared = mockState.map((s) => ({
-        id: s.id,
-        name: s.name,
-        description: s.description,
-        sourceDir: s.sourceDir ?? `C:\\mock\\skills\\${s.id}`,
-        rootLabel: '~/.agents/skills',
-        rootDir: 'C:\\mock\\skills',
-        origin: 'shared',
-        projectable: true,
-        mapStatus: 'available' as const,
-        source: null,
-        projections: (s.projections ?? []) as InstalledSkillDto['projections'],
-      }));
+      const shared = mockState.map(toSharedInstalledRow);
       // 私有行与真源可同 id 并存（磁盘真相）；收编成功后再从 mockPrivateSkills 移除
       return [...shared, ...mockPrivateSkills.map((s) => ({ ...s }))];
+    },
+
+    async listSkillCatalog() {
+      await delay(randomLatency());
+      const shared = mockState.map(toSharedInstalledRow);
+      // 仅 private_source：已在共享库 / 内容冲突的 agent 副本不进 catalog
+      const privateOnly = mockPrivateSkills
+        .filter((s) => s.mapStatus === 'private_source')
+        .map((s) => ({ ...s, projections: [] as InstalledSkillDto['projections'] }));
+      return [...shared, ...privateOnly];
     },
 
     async installSkillFromSource() {

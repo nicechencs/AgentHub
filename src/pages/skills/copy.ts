@@ -17,7 +17,6 @@ export const skillsCopy = {
 
   tabs: {
     library: '本地共享库',
-    workspace: '各Agent技能',
     market: '技能市场',
     libraryBadge: (n: number) => `${n} 个共享库技能`,
     privateBadge: (n: number) => `${n} 个只在本工具、可加入共享库`,
@@ -27,8 +26,10 @@ export const skillsCopy = {
     searchPlaceholder: '搜索技能名…',
     marketSearchPlaceholder: '搜索技能（如 react、pdf）…',
     enableAll: '全部',
+    enablePrivate: '只在本工具',
     enableMapped: '已启用',
     enableUnmapped: '未启用',
+    enableConflict: '冲突',
     batchEnable: '启用所选',
     batchEnableBusy: '启用中…',
     batchEnableHint: '启用所选到已装工具（跳过冲突）',
@@ -115,6 +116,7 @@ export const skillsCopy = {
     adoptHint: '加入共享库（保留本工具文件）',
     adoptConflictHint: '覆盖共享库（保留本工具文件）',
     inLibrary: '已在共享库',
+    delete: '删除',
     remove: '从该工具目录删除',
     removeProjection: '仅从该工具移除（不删共享库）',
     removeAria: '删除此技能',
@@ -255,8 +257,7 @@ export const skillsCopy = {
     }),
     adoptOk: (overwrite: boolean) => ({
       title: overwrite ? '已覆盖并加入共享库' : '已加入共享库',
-      description: '原文件保留，可在矩阵中启用',
-      actionLabel: '去本地共享库' as const,
+      description: '已可在矩阵中启用',
     }),
     adoptFailed: (reason: string) => ({
       title: '无法加入共享库',
@@ -268,9 +269,8 @@ export const skillsCopy = {
         conflict > 0 || failed > 0
           ? `冲突 ${conflict} · 失败 ${failed}`
           : ok > 0
-            ? '可在矩阵中启用到其他工具'
+            ? '已可在矩阵中启用'
             : undefined,
-      actionLabel: ok > 0 ? ('去本地共享库' as const) : undefined,
     }),
     removeOk: (agentName: string, skillName: string) => ({
       title: `已从 ${agentName} 移除`,

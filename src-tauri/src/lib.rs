@@ -148,6 +148,7 @@ pub fn run() {
             // Skill
             commands::skill::list_skills,
             commands::skill::list_installed_skills,
+            commands::skill::list_skill_catalog,
             commands::skill::read_skill_markdown,
             commands::skill::sync_skill,
             commands::skill::disable_skill,
