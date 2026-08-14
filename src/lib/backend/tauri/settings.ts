@@ -3,8 +3,10 @@ import type { SettingsPort } from '@/lib/backend/contracts';
 import { UNKNOWN_APP_VERSION } from '@/lib/app-version';
 import { logger } from '@/lib/logger';
 import {
+  loadBool,
   loadJson,
   loadString,
+  saveBool,
   saveJson,
   saveString,
   StorageKey,
@@ -12,6 +14,7 @@ import {
 import { applyTheme, type ThemeMode } from '@/lib/theme';
 import type { AppSettings, LogLevel, SkillMarketSource } from '@/lib/types';
 import { invoke } from './invoke';
+import { normalizeIntervalMin } from '@/lib/usage-sync';
 
 /** OS login-item helpers (Tauri plugin). Soft-fail outside desktop shell. */
 async function readOsAutoStart(): Promise<boolean | undefined> {
@@ -188,23 +191,34 @@ export function createTauriSettingsPort(): SettingsPort {
         // Core theme is authoritative; localStorage is a first-paint cache only.
         const theme = mapTheme(core.theme ?? loadString(StorageKey.theme, DEFAULTS.theme));
         saveString(StorageKey.theme, theme);
-        const usageCollectIntervalMin = resolveUsageCollectIntervalMin(
+
+        let usageCollectIntervalMin = resolveUsageCollectIntervalMin(
           core.usageCollectIntervalMin,
           local.usageCollectIntervalMin,
         );
-        // Older cores omit the field — migrate the local value once into SQLite.
-        if (
-          typeof core.usageCollectIntervalMin !== 'number' &&
-          typeof local.usageCollectIntervalMin === 'number'
-        ) {
-          try {
-            await invoke('set_setting', {
-              key: 'usage_collect_interval_min',
-              value: String(local.usageCollectIntervalMin),
-            });
-          } catch (e) {
-            log.error('migrate usageCollectIntervalMin to core failed', e);
+        // Key absent in SQLite (Option/undefined): migrate local once, else default.
+        if (typeof core.usageCollectIntervalMin !== 'number') {
+          const localInterval = local.usageCollectIntervalMin;
+          if (typeof localInterval === 'number' && Number.isFinite(localInterval)) {
+            const migrated = normalizeIntervalMin(localInterval);
+            usageCollectIntervalMin = migrated;
+            if (!loadBool(StorageKey.usageIntervalMigrated, false)) {
+              try {
+                await invoke('set_setting', {
+                  key: 'usage_collect_interval_min',
+                  value: String(migrated),
+                });
+                saveBool(StorageKey.usageIntervalMigrated, true);
+              } catch (e) {
+                log.error('migrate usageCollectIntervalMin to core failed', e);
+              }
+            }
+          } else {
+            usageCollectIntervalMin = DEFAULTS.usageCollectIntervalMin;
+            saveBool(StorageKey.usageIntervalMigrated, true);
           }
+        } else {
+          saveBool(StorageKey.usageIntervalMigrated, true);
         }
         const next: AppSettings = {
           ...DEFAULTS,
@@ -272,10 +286,13 @@ export function createTauriSettingsPort(): SettingsPort {
           });
         }
         if (patch.usageCollectIntervalMin !== undefined) {
+          const mins = normalizeIntervalMin(patch.usageCollectIntervalMin);
           await invoke('set_setting', {
             key: 'usage_collect_interval_min',
-            value: String(patch.usageCollectIntervalMin),
+            value: String(mins),
           });
+          saveBool(StorageKey.usageIntervalMigrated, true);
+          patch = { ...patch, usageCollectIntervalMin: mins };
         }
         // OS login-item last so a failure does not roll back already-written core keys.
         if (patch.autoStart !== undefined) {

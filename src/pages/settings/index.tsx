@@ -551,11 +551,16 @@ export default function SettingsPage({
                 <Input
                   type="number"
                   min={0}
+                  max={24 * 60}
                   className="w-20"
                   value={settings.usageCollectIntervalMin}
                   onChange={(e) => {
                     const n = parseInt(e.target.value, 10);
-                    patch({ usageCollectIntervalMin: Number.isNaN(n) ? 0 : Math.max(0, n) });
+                    if (Number.isNaN(n)) {
+                      patch({ usageCollectIntervalMin: 0 });
+                      return;
+                    }
+                    patch({ usageCollectIntervalMin: Math.min(24 * 60, Math.max(0, n)) });
                   }}
                 />
                 <Link

@@ -173,7 +173,7 @@ impl Database {
         if let Some(v) = self.get_setting("usage_collect_interval_min")? {
             if let Ok(n) = v.parse::<u32>() {
                 if n <= crate::catalog::limits::MAX_USAGE_COLLECT_INTERVAL_MIN {
-                    s.usage_collect_interval_min = n;
+                    s.usage_collect_interval_min = Some(n);
                 }
             }
         }

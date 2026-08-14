@@ -204,19 +204,19 @@ mod tests {
     #[test]
     fn usage_collect_interval_roundtrip_and_validation() {
         let (_dir, svc) = svc_tmp();
-        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, 30);
+        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, None);
 
         svc.set("usage_collect_interval_min", "0").unwrap();
-        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, 0);
+        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, Some(0));
         svc.set("usage_collect_interval_min", "45").unwrap();
-        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, 45);
+        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, Some(45));
         svc.set("usage_collect_interval_min", "1440").unwrap();
-        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, 1440);
+        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, Some(1440));
 
         assert!(svc.set("usage_collect_interval_min", "1441").is_err());
         assert!(svc.set("usage_collect_interval_min", "-1").is_err());
         assert!(svc.set("usage_collect_interval_min", "nope").is_err());
-        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, 1440);
+        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, Some(1440));
     }
 
     #[test]
