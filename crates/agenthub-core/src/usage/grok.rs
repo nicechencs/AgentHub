@@ -93,6 +93,11 @@ pub(crate) fn discover_grok_files_in(home: &Path) -> Vec<PathBuf> {
 }
 
 pub(crate) fn session_id_from_updates_path(path: &Path) -> Option<String> {
+    // Grok session dirs are often authored on Windows; normalize separators so
+    // Linux CI / cross-platform string paths still resolve the parent session id.
+    let raw = path.to_string_lossy();
+    let normalized = raw.replace('\\', "/");
+    let path = Path::new(normalized.as_str());
     if path.file_name().and_then(|n| n.to_str()) != Some("updates.jsonl") {
         return None;
     }
