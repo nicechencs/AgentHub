@@ -1,7 +1,7 @@
 // Settings 设置页(docs/ui-design.md §4.8)
 // Tabs:常规 / 安全 / 数据 / 备份 / 关于；tab 与 ?tab= URL 同步。
 // 常规/数据草稿态编辑后点 [保存]；备份分区操作即时生效，无底部保存。
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -45,6 +45,7 @@ import {
 import { openExternalLink } from '@/lib/open-external';
 import { invalidateSkills } from '@/lib/hooks/useSkills';
 import type { AppSettings, LogLevel, SkillMarketSource } from '@/lib/types';
+import { applyTheme } from '@/lib/theme';
 import { notifyUsageSettingsChanged } from '@/lib/usage-sync';
 import { BackupsPanel } from './BackupsPanel';
 
@@ -145,7 +146,8 @@ export default function SettingsPage({
   onCheckUpdate?: () => Promise<UpdateInfo | null>;
 } = {}) {
   const { toast } = useToast();
-  const { setTheme } = useTheme();
+  const { theme: providerTheme, setTheme } = useTheme();
+  const committedThemeRef = useRef(providerTheme);
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = parseSettingsTab(searchParams.get('tab'));
 
@@ -172,6 +174,8 @@ export default function SettingsPage({
         // keep settings.appVersion fallback
       }
       setSettings(s);
+      committedThemeRef.current = s.theme;
+      setTheme(s.theme);
     } catch (e) {
       setError(e);
     } finally {
@@ -181,6 +185,13 @@ export default function SettingsPage({
 
   useEffect(() => {
     void load();
+  }, []);
+
+  // Unsaved Select preview must not stick after leaving Settings.
+  useEffect(() => {
+    return () => {
+      applyTheme(committedThemeRef.current);
+    };
   }, []);
 
   const setTab = (next: string) => {
@@ -322,7 +333,7 @@ export default function SettingsPage({
                   onValueChange={(v) => {
                     const theme = v as AppSettings['theme'];
                     patch({ theme });
-                    setTheme(theme);
+                    applyTheme(theme);
                   }}
                 >
                   <SelectTrigger className="w-full">
@@ -383,7 +394,6 @@ export default function SettingsPage({
               <Button
                 disabled={saving}
                 onClick={() => {
-                  setTheme(settings.theme);
                   void (async () => {
                     setSaving(true);
                     try {
@@ -394,6 +404,8 @@ export default function SettingsPage({
                         skillMarketSource: settings.skillMarketSource ?? 'auto',
                       });
                       setSettings(next);
+                      committedThemeRef.current = next.theme;
+                      setTheme(next.theme);
                       // 必须在保存成功后再清市场缓存，否则会继续展示上一源
                       invalidateSkills('market');
                       toast({
