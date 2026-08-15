@@ -10,18 +10,10 @@ import {
 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { EnvRemediationPanel } from '@/components/shared/EnvRemediationPanel';
-import { InlineTerminal, type TerminalStatus } from '@/components/shared/InlineTerminal';
+import { InlineTerminal } from '@/components/shared/InlineTerminal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,76 +21,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { useToast } from '@/components/ui/toast';
 import { Hint } from '@/components/ui/tooltip';
 import { AGENT_MAP, type InstallChannelMeta } from '@/config/agents';
-import {
-  installAgentDetailed,
-  InstallFailedError,
-  openAgentConfig,
-  uninstallAgentDetailed,
-  upgradeAgentDetailed,
-} from '@/lib/api/agent';
-import { resolveAutoInstallPlan } from '@/lib/api/env';
+import { openAgentConfig } from '@/lib/api/agent';
 import { runtimeChannelForPlan } from '@/lib/env-plan';
 import { openExternalLink } from '@/lib/open-external';
 import { openPathInFileManager } from '@/lib/api/skill';
-import {
-  isProgressForAgent,
-  onInstallProgress,
-} from '@/lib/api/install';
 import { Tip } from '@/components/ui/tooltip';
 import { checkChannelEnv, formatMissingList } from '@/lib/env';
 import { normalizeOpenPath } from '@/lib/path-open';
 import type { AgentStatus, RuntimeDetect } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { buildAgentInstallPreview, buildEnvInstallPreview } from './install-preview';
-
-/** Prefer probe `setupUrl`; fall back to native channel when it is a bare https URL. */
-function resolveOfficialSetupUrl(
-  updateSetupUrl: string | undefined,
-  channels: InstallChannelMeta[],
-): string | undefined {
-  const fromProbe = updateSetupUrl?.trim();
-  if (fromProbe && /^https:\/\//i.test(fromProbe)) return fromProbe;
-  for (const ch of channels) {
-    if (ch.id !== 'native') continue;
-    const cmd = ch.command?.trim();
-    if (cmd && /^https:\/\//i.test(cmd)) return cmd;
-  }
-  return undefined;
-}
-
-/**
- * Format CLI version for UI: strip name noise so `codex-cli 0.144.5` → `v0.144.5`
- * (avoids the broken `vcodex-cli 0.144.5` when prefixing a raw `v`).
- */
-function formatAgentVersion(raw?: string | null): string | undefined {
-  if (!raw?.trim()) return undefined;
-  const s = raw.trim();
-  const token =
-    s
-      .split(/[\s()]+/)
-      .map((p) => p.trim())
-      .filter(Boolean)
-      .find((p) => {
-        const t = p.replace(/^[vV]/, '');
-        return t.length > 0 && /^\d/.test(t);
-      }) ?? s;
-  const cleaned = token.replace(/^[vV]/, '').replace(/[,;)]+$/g, '');
-  if (!cleaned || !/\d/.test(cleaned)) return s;
-  return `v${cleaned}`;
-}
-
-interface Task {
-  action: 'install' | 'upgrade' | 'oneclick';
-  command: string;
-  lines: string[];
-  status: TerminalStatus;
-}
-
-const DONE_HOLD_MS = 500;
+import { formatAgentVersion, resolveOfficialSetupUrl } from './agent-card-model';
+import { AgentCardDialogs } from './AgentCardDialogs';
+import { useAgentCardLifecycle } from './use-agent-card-lifecycle';
 
 export function AgentCard({
   agent,
@@ -114,48 +51,51 @@ export function AgentCard({
   /** After upgrade, parent may force-refresh update probe for this agent. */
   onRecheckUpdate?: () => void;
 }) {
-  const { toast } = useToast();
   const meta = AGENT_MAP[agent.agentId];
   const [selectedChannelId, setSelectedChannelId] = React.useState(
     () => agent.channel ?? meta?.installChannels[0]?.id ?? 'native',
   );
-  const [task, setTask] = React.useState<Task | null>(null);
-  const cancelRef = React.useRef({ cancelled: false });
-  const [elapsedSec, setElapsedSec] = React.useState(0);
-  const progressUnsubRef = React.useRef<(() => void) | null>(null);
-  const releaseProgressUnsub = React.useCallback(() => {
-    const stop = progressUnsubRef.current;
-    progressUnsubRef.current = null;
-    if (typeof stop === 'function') stop();
-  }, []);
 
-  const [confirmDialog, setConfirmDialog] = React.useState<
-    'program' | 'config' | 'force-upgrade' | null
-  >(null);
-  const [confirmName, setConfirmName] = React.useState('');
-  const [uninstalling, setUninstalling] = React.useState(false);
-  const [showEnvPanel, setShowEnvPanel] = React.useState(false);
-  const [envAutoStart, setEnvAutoStart] = React.useState(false);
+  const selectedChannelFallback: InstallChannelMeta = meta?.installChannels.find((c) => c.id === selectedChannelId)
+    ?? meta?.installChannels[0]
+    ?? { id: 'native', label: 'native', command: '', requires: [] };
 
-  React.useEffect(() => {
-    return () => {
-      cancelRef.current.cancelled = true;
-      releaseProgressUnsub();
-    };
-  }, [releaseProgressUnsub]);
+  const life = useAgentCardLifecycle({
+    agent,
+    agentName: meta?.name ?? agent.agentId,
+    runtimes,
+    selectedChannel: selectedChannelFallback,
+    selectedChannelId,
+    setSelectedChannelId,
+    onChanged,
+    onEnvChanged,
+    onRecheckUpdate,
+  });
 
-  // Live elapsed timer while install/upgrade task is running.
-  React.useEffect(() => {
-    if (task?.status !== 'running') {
-      return;
-    }
-    setElapsedSec(0);
-    const t0 = Date.now();
-    const id = window.setInterval(() => {
-      setElapsedSec(Math.floor((Date.now() - t0) / 1000));
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [task?.status, task?.action]);
+  const {
+    task,
+    setTask,
+    elapsedSec,
+    confirmDialog,
+    setConfirmDialog,
+    confirmName,
+    setConfirmName,
+    uninstalling,
+    showEnvPanel,
+    setShowEnvPanel,
+    envAutoStart,
+    setEnvAutoStart,
+    envCheck,
+    envPlan,
+    canOneClickEnv,
+    busy,
+    startAgentInstall,
+    startOneClickFull,
+    startOneClickEnvOnly,
+    startUpgrade,
+    doUninstall,
+    toast,
+  } = life;
 
   if (!meta) {
     return (
@@ -176,17 +116,8 @@ export function AgentCard({
     );
   }
 
-  const envCheck = checkChannelEnv(selectedChannel, runtimes);
-  const envPlan = resolveAutoInstallPlan(runtimes, [
-    ...envCheck.missing,
-    ...envCheck.outdated,
-    ...envCheck.broken,
-  ]);
-  const canOneClickEnv = envPlan.targets.length > 0;
-
   const updateState = agent.update?.state;
   const checkingUpdate = updateState === 'checking';
-  // Prefer structured update probe; fall back to legacy latestVersion compare.
   const upgradable =
     agent.installed &&
     (updateState === 'update_available' ||
@@ -233,184 +164,11 @@ export function AgentCard({
       ? 'ready_to_install'
       : 'env_missing';
 
-  const busy = task?.status === 'running' || uninstalling;
-
-  /** 统一走 *Detailed port：Tauri 与 Mock 返回同一 InstallOutcome 契约 */
-  const runInstallOutcome = async (
-    action: Task['action'],
-    command: string,
-    run: () => Promise<{ ok: boolean; logs: string[]; message: string }>,
-    onOk: () => void,
-  ) => {
-    cancelRef.current = { cancelled: false };
-    setElapsedSec(0);
-    setTask({
-      action,
-      command,
-      lines: [
-        '正在执行…',
-        '# 下载/安装可能需数分钟；有新输出时会实时显示在下方',
-      ],
-      status: 'running',
-    });
-    setShowEnvPanel(false);
-
-    // Subscribe to Tauri install-progress for live lines (no-op in mock/browser).
-    releaseProgressUnsub();
-    const agentId = agent.agentId;
-    void onInstallProgress((payload) => {
-      if (cancelRef.current.cancelled) return;
-      // Runtime install lines only during one-click full install on this card.
-      if (payload.action === 'runtime') {
-        if (action !== 'oneclick') return;
-      } else if (!isProgressForAgent(payload, agentId)) {
-        return;
-      }
-      const line = payload.line?.trimEnd();
-      if (!line) return;
-      setTask((prev) => {
-        if (!prev || prev.status !== 'running') return prev;
-        // Drop the static placeholder once real output arrives.
-        const base =
-          prev.lines.length === 2 && prev.lines[0] === '正在执行…'
-            ? []
-            : prev.lines;
-        // Cap live buffer to keep UI snappy.
-        const next = [...base, line];
-        return {
-          ...prev,
-          lines: next.length > 400 ? next.slice(next.length - 400) : next,
-        };
-      });
-    }).then((unsub) => {
-      progressUnsubRef.current =
-        typeof unsub === 'function' ? () => { unsub(); } : null;
-    });
-
-    try {
-      const outcome = await run();
-      if (cancelRef.current.cancelled) return;
-      setTask({
-        action,
-        command,
-        lines: outcome.logs.length ? outcome.logs : [outcome.message],
-        status: outcome.ok ? 'done' : 'failed',
-      });
-      if (outcome.ok) {
-        onOk();
-        await new Promise((r) => setTimeout(r, DONE_HOLD_MS));
-      } else {
-        toast({ title: '操作未成功', description: outcome.message, variant: 'danger' });
-      }
-    } catch (e) {
-      if (e instanceof InstallFailedError) {
-        setTask({
-          action,
-          command,
-          lines: e.logs.length ? e.logs : [e.message],
-          status: 'failed',
-        });
-        toast({ title: '操作失败', description: e.message, variant: 'danger' });
-        return;
-      }
-      setTask((prev) => (prev ? { ...prev, status: 'failed', lines: [String(e)] } : prev));
-      toast({ title: '操作失败', description: String(e), variant: 'danger' });
-    } finally {
-      releaseProgressUnsub();
-    }
-  };
-
-  const startAgentInstall = (channel: InstallChannelMeta) => {
-    const check = checkChannelEnv(channel, runtimes);
-    if (!check.ready) {
-      setSelectedChannelId(channel.id);
-      setEnvAutoStart(canOneClickEnv);
-      setShowEnvPanel(true);
-      toast({
-        title: '环境未就绪',
-        description: canOneClickEnv
-          ? `将一键安装 ${envPlan.summary}`
-          : `请先处理: ${formatMissingList([...check.missing, ...check.outdated, ...check.broken])}`,
-        variant: canOneClickEnv ? 'default' : 'danger',
-      });
-      return;
-    }
-
-    void runInstallOutcome(
-      'install',
-      channel.command,
-      () => installAgentDetailed(agent.agentId, channel.id, { installDeps: false }),
-      () => {
-        onChanged();
-        toast({ title: `${meta.name} 安装完成`, variant: 'success' });
-      },
-    );
-  };
-
-  const startOneClickFull = () => {
-    if (!canOneClickEnv && !envCheck.ready) {
-      setShowEnvPanel(true);
-      setEnvAutoStart(false);
-      toast({
-        title: '无法一键安装',
-        description: `需手动处理: ${formatMissingList([
-          ...envCheck.missing,
-          ...envCheck.outdated,
-          ...envCheck.broken,
-        ])}`,
-        variant: 'danger',
-      });
-      return;
-    }
-
-    void runInstallOutcome(
-      'oneclick',
-      `agenthub agent install ${agent.agentId} --install-deps`,
-      () =>
-        installAgentDetailed(agent.agentId, selectedChannel.id, {
-          installDeps: true,
-        }),
-      () => {
-        onChanged();
-        onEnvChanged();
-        toast({
-          title: `${meta.name} 一键安装完成`,
-          description: envCheck.ready ? undefined : `已尝试安装依赖 ${envPlan.summary}`,
-          variant: 'success',
-        });
-      },
-    );
-  };
-
-  const startOneClickEnvOnly = () => {
-    if (!canOneClickEnv) {
-      setShowEnvPanel(true);
-      setEnvAutoStart(false);
-      return;
-    }
-    setEnvAutoStart(true);
-    setShowEnvPanel(true);
-  };
-
-  const startUpgrade = () => {
-    void runInstallOutcome(
-      'upgrade',
-      `$ agenthub agent upgrade ${agent.agentId}`,
-      () => upgradeAgentDetailed(agent.agentId),
-      () => {
-        onChanged();
-        onRecheckUpdate?.();
-        toast({ title: `${meta.name} 已升级`, variant: 'success' });
-      },
-    );
-  };
-
   const onUpgradeClick = () => {
     if (upgradable) {
       startUpgrade();
       return;
     }
-    // 已最新 / 未知：二次确认后再强制重装
     setConfirmDialog('force-upgrade');
   };
 
@@ -435,18 +193,12 @@ export function AgentCard({
     }
     if (updateState === 'up_to_date') {
       return latestVersionLabel
-        ? `已是最新 ${latestVersionLabel}${sourceHint} · 点击可强制重装`
-        : '已是最新 · 点击可强制重装';
+        ? `已是最新 ${latestVersionLabel}${sourceHint} · 点击可强制升级`
+        : '已是最新 · 点击可强制升级';
     }
     if (updateState === 'unknown') {
-      // Prefer structured note; still surface remote version when probe partially succeeded.
-      if (agent.update?.note) {
-        return latestVersionLabel
-          ? `${agent.update.note}（远端 ${latestVersionLabel}）`
-          : agent.update.note;
-      }
-      return latestVersionLabel
-        ? `远端 ${latestVersionLabel} · 未能严格比对 · 点击可强制升级`
+      return agent.update?.note
+        ? `${agent.update.note} · 点击可强制升级`
         : '未能检测更新 · 点击可强制升级';
     }
     return '强制升级到最新（按已装渠道重装 / 重跑官方脚本）';
@@ -486,7 +238,6 @@ export function AgentCard({
         toast({ title: '没有可打开的安装路径', variant: 'danger' });
         return;
       }
-      // Prefer the binary's parent directory; fall back to the path itself.
       const sep = bin.includes('\\') ? '\\' : '/';
       const last = bin.lastIndexOf(sep);
       const dir = last > 2 ? bin.slice(0, last) : bin;
@@ -503,43 +254,8 @@ export function AgentCard({
     })();
   };
 
-  const doUninstall = async (deleteConfig: boolean) => {
-    setUninstalling(true);
-    try {
-      const outcome = await uninstallAgentDetailed(agent.agentId, deleteConfig);
-      if (!outcome.ok) {
-        toast({
-          title: '卸载未完成',
-          description: outcome.message,
-          variant: 'danger',
-        });
-        setTask({
-          action: 'install',
-          command: `$ agenthub agent uninstall ${agent.agentId}`,
-          lines: outcome.logs,
-          status: 'failed',
-        });
-        return;
-      }
-      setConfirmDialog(null);
-      setConfirmName('');
-      onChanged();
-      toast({
-        title: `${meta.name} 已卸载`,
-        description: deleteConfig
-          ? '配置已处理(未卸载 Node 等共享环境)'
-          : undefined,
-        variant: 'success',
-      });
-    } catch (e) {
-      const msg = e instanceof InstallFailedError ? e.message : String(e);
-      toast({ title: '卸载失败', description: msg, variant: 'danger' });
-    } finally {
-      setUninstalling(false);
-    }
-  };
-
   return (
+
     <Card
       className={cn(
         'min-h-20 p-3',
@@ -869,96 +585,21 @@ export function AgentCard({
         </div>
       )}
 
-      <Dialog open={confirmDialog === 'program'} onOpenChange={(o) => !o && setConfirmDialog(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>卸载 {meta.name}？</DialogTitle>
-            <DialogDescription>
-              只卸程序，不卸 Node 等共享环境。
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDialog(null)} disabled={uninstalling}>
-              取消
-            </Button>
-            <Button variant="danger" onClick={() => void doUninstall(false)} disabled={uninstalling}>
-              {uninstalling ? '卸载中...' : '确认卸载'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={confirmDialog === 'force-upgrade'}
-        onOpenChange={(o) => !o && setConfirmDialog(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>强制升级 {meta.name}？</DialogTitle>
-            <DialogDescription>
-              {updateState === 'up_to_date'
-                ? '当前检测为已是最新版本。强制升级将按已装渠道重新安装 / 重跑官方脚本。'
-                : '未能确认是否有新版本。强制升级将按已装渠道重新安装 / 重跑官方脚本。'}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDialog(null)} disabled={busy}>
-              取消
-            </Button>
-            <Button
-              variant="default"
-              disabled={busy}
-              onClick={() => {
-                setConfirmDialog(null);
-                startUpgrade();
-              }}
-            >
-              确认强制升级
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={confirmDialog === 'config'}
-        onOpenChange={(o) => {
-          if (!o) {
-            setConfirmDialog(null);
-            setConfirmName('');
-          }
+      <AgentCardDialogs
+        agentName={meta.name}
+        confirmDialog={confirmDialog}
+        confirmName={confirmName}
+        onConfirmNameChange={setConfirmName}
+        uninstalling={uninstalling}
+        busy={busy}
+        updateState={updateState}
+        onClose={() => {
+          setConfirmDialog(null);
+          setConfirmName('');
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>卸载并删除配置？</DialogTitle>
-            <DialogDescription className="text-danger">
-              先备份再删配置；不卸 Node 等共享环境。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="text-sm text-secondary">
-            输入 <span className="font-mono font-medium text-primary">{meta.name}</span> 确认：
-          </div>
-          <Input
-            value={confirmName}
-            onChange={(e) => setConfirmName(e.target.value)}
-            placeholder={meta.name}
-            className="mt-2"
-            disabled={uninstalling}
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDialog(null)} disabled={uninstalling}>
-              取消
-            </Button>
-            <Button
-              variant="danger"
-              onClick={() => void doUninstall(true)}
-              disabled={uninstalling || confirmName !== meta.name}
-            >
-              {uninstalling ? '卸载中...' : '卸载并删除配置'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onUninstall={(deleteConfig) => void doUninstall(deleteConfig)}
+        onConfirmForceUpgrade={startUpgrade}
+      />
     </Card>
   );
 }
