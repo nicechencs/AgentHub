@@ -1,9 +1,10 @@
 use super::*;
 use crate::models::{Account, AccountKind};
 use crate::services::adapter_route_constants::{
-    DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_PI_PROVIDER_SLOT, DSH_API_KEY_ENV,
-    DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_PI_BASE_URL, GLM_PI_PROVIDER_SLOT,
-    KIMI_CLAUDE_BASE_URL, KIMI_MEMBERSHIP_PRESET,
+    DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_CODEX_BASE_URL,
+    DEEPSEEK_CODEX_PROVIDER_SLUG, DEEPSEEK_PI_PROVIDER_SLOT, DSH_API_KEY_ENV,
+    DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CODEX_BASE_URL, GLM_CODEX_PROVIDER_SLUG,
+    GLM_PI_BASE_URL, GLM_PI_PROVIDER_SLOT, KIMI_CLAUDE_BASE_URL, KIMI_MEMBERSHIP_PRESET,
 };
 use crate::storage::AccountRepo;
 use serde_json::json;
@@ -18,6 +19,58 @@ fn provider(id: &str, agent_id: AgentId, settings_config: Value, meta: Value) ->
         is_current: false,
         created_at: "now".into(),
         updated_at: "now".into(),
+    }
+}
+
+#[test]
+fn codex_native_reference_materializes_toml_and_scrubs_both_secret_shapes() {
+    for (source_id, rule, base_url, slug, secret) in [
+        (
+            "glm-codex-source",
+            GLM_TO_CODEX_RULE,
+            GLM_CODEX_BASE_URL,
+            GLM_CODEX_PROVIDER_SLUG,
+            "glm-codex-secret",
+        ),
+        (
+            "deepseek-codex-source",
+            DEEPSEEK_TO_CODEX_RULE,
+            DEEPSEEK_CODEX_BASE_URL,
+            DEEPSEEK_CODEX_PROVIDER_SLUG,
+            "deepseek-codex-secret",
+        ),
+    ] {
+        let source = provider(
+            source_id,
+            AgentId::Claude,
+            json!({ "env": { "ANTHROPIC_AUTH_TOKEN": secret } }),
+            json!({ "preset": if rule == GLM_TO_CODEX_RULE {
+                "glm-coding-plan"
+            } else {
+                "deepseek-api"
+            }}),
+        );
+        let (_dir, resolver) = resolver_with(source);
+        let target = codex_native_target(source_id, rule, base_url, slug);
+        assert!(resolver.is_reference_provider(&target).unwrap());
+        let materialized = resolver.materialize_for_live(&target).unwrap();
+        let content = materialized.settings_config["content"].as_str().unwrap();
+        assert!(content.contains(&format!("base_url = \"{base_url}\"")));
+        assert!(content.contains(&format!("experimental_bearer_token = \"{secret}\"")));
+        assert_eq!(
+            materialized.settings_config["auth"]["OPENAI_API_KEY"],
+            secret
+        );
+        assert!(!serde_json::to_string(&target).unwrap().contains(secret));
+
+        let scrubbed = resolver
+            .scrub_for_backfill(&target, &materialized.settings_config)
+            .unwrap();
+        assert!(scrubbed["content"].as_str().unwrap().contains(&format!(
+            "experimental_bearer_token = \"{CONNECTION_SECRET_MARKER}\""
+        )));
+        assert_eq!(scrubbed["auth"]["OPENAI_API_KEY"], CONNECTION_SECRET_MARKER);
+        assert!(!serde_json::to_string(&scrubbed).unwrap().contains(secret));
     }
 }
 
@@ -95,6 +148,28 @@ fn resolver_with(source: Provider) -> (tempfile::TempDir, AdapterSecretResolver)
     let db = Database::open(&dir.path().join("adapter-secret-resolver.db")).unwrap();
     ProviderRepo::new(db.clone()).create(&source).unwrap();
     (dir, AdapterSecretResolver::new(db))
+}
+
+fn codex_native_target(source_id: &str, rule: &str, base_url: &str, slug: &str) -> Provider {
+    provider(
+        "generated-codex-native",
+        AgentId::Codex,
+        json!({
+            "format": "toml",
+            "content": format!(
+                "model_provider = \"{slug}\"\nmodel = \"test-model\"\nmodel_reasoning_effort = \"high\"\npreferred_auth_method = \"apikey\"\n\n[model_providers.{slug}]\nbase_url = \"{base_url}\"\nwire_api = \"responses\"\nexperimental_bearer_token = \"{marker}\"\n",
+                marker = CONNECTION_SECRET_MARKER,
+            ),
+            "auth": { "OPENAI_API_KEY": CONNECTION_SECRET_MARKER },
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": rule,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": SOURCE_REFERENCE_MODE,
+            "adapterSourceRef": { "kind": SOURCE_KIND_PROVIDER, "id": source_id },
+        }),
+    )
 }
 
 #[test]
@@ -549,8 +624,8 @@ fn kimi_membership_account_requires_api_key_format_and_value() {
         json!({"format": "api_key", "provider": KIMI_MEMBERSHIP_PRESET}),
     ] {
         let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("adapter-secret-resolver-kimi-invalid.db"))
-            .unwrap();
+        let db =
+            Database::open(&dir.path().join("adapter-secret-resolver-kimi-invalid.db")).unwrap();
         AccountRepo::new(db.clone())
             .create(&Account {
                 id: "kimi-invalid".into(),

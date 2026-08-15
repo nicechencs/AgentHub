@@ -293,12 +293,19 @@ const OPENAI_API_ENDPOINT_NEEDLE = 'api.openai.com';
 const XAI_API_ENDPOINT_NEEDLE = 'api.x.ai';
 const GLM_CODING_ANTHROPIC_NEEDLE = 'open.bigmodel.cn/api/anthropic';
 const GLM_CODING_CHAT_NEEDLE = 'open.bigmodel.cn/api/coding';
+const GLM_CODING_RESPONSES_NEEDLE = 'open.bigmodel.cn/api/v1';
 const DEEPSEEK_API_ENDPOINT_NEEDLE = 'api.deepseek.com';
 const KIMI_CLAUDE_BASE_URL = 'https://api.kimi.com/coding/';
 const GLM_CLAUDE_BASE_URL = 'https://open.bigmodel.cn/api/anthropic';
 const DEEPSEEK_CLAUDE_BASE_URL = 'https://api.deepseek.com/anthropic';
 const GLM_PI_BASE_URL = 'https://open.bigmodel.cn/api/coding/paas/v4';
 const DEEPSEEK_PI_BASE_URL = 'https://api.deepseek.com';
+const GLM_CODEX_BASE_URL = 'https://open.bigmodel.cn/api/v1';
+const DEEPSEEK_CODEX_BASE_URL = 'https://api.deepseek.com';
+const GLM_CODEX_RULE_ID = 'glm-coding-plan-to-codex-v1';
+const DEEPSEEK_CODEX_RULE_ID = 'deepseek-api-to-codex-v1';
+const GLM_CODEX_PROVIDER_SLUG = 'agenthub_glm';
+const DEEPSEEK_CODEX_PROVIDER_SLUG = 'agenthub_deepseek';
 const GLM_CLAUDE_RULE_ID = 'glm-coding-plan-to-claude-v1';
 const DEEPSEEK_CLAUDE_RULE_ID = 'deepseek-api-to-claude-v1';
 const CLAUDE_NATIVE_EXPERIMENTAL_RULES = new Set([
@@ -314,6 +321,8 @@ const EXPLICIT_API_TO_PI_RULES = new Set([
 ]);
 const EXPLICIT_API_TO_CODEX_RULES = new Set([
   'anthropic-api-to-codex-v1',
+  GLM_CODEX_RULE_ID,
+  DEEPSEEK_CODEX_RULE_ID,
 ]);
 const KIMI_MEMBERSHIP_RULE_IDS = new Set([
   'kimi-membership-to-claude-v1',
@@ -419,6 +428,7 @@ function classify(
       tag?.toLowerCase() === 'glm-coding-plan'
       || config.toLowerCase().includes(GLM_CODING_ANTHROPIC_NEEDLE)
       || config.toLowerCase().includes(GLM_CODING_CHAT_NEEDLE)
+      || config.toLowerCase().includes(GLM_CODING_RESPONSES_NEEDLE)
     ) {
       return 'glm_coding_plan';
     }
@@ -484,8 +494,10 @@ function classify(
     && (explicitProvider?.toLowerCase() === 'glm-coding-plan'
       || credentialsText.toLowerCase().includes(GLM_CODING_ANTHROPIC_NEEDLE)
       || credentialsText.toLowerCase().includes(GLM_CODING_CHAT_NEEDLE)
+      || credentialsText.toLowerCase().includes(GLM_CODING_RESPONSES_NEEDLE)
       || extraText.toLowerCase().includes(GLM_CODING_ANTHROPIC_NEEDLE)
-      || extraText.toLowerCase().includes(GLM_CODING_CHAT_NEEDLE))
+      || extraText.toLowerCase().includes(GLM_CODING_CHAT_NEEDLE)
+      || extraText.toLowerCase().includes(GLM_CODING_RESPONSES_NEEDLE))
   ) {
     return 'glm_coding_plan';
   }
@@ -640,6 +652,36 @@ function analyze(
       ],
       evidence: [evidence('Anthropic Messages API', 'https://docs.anthropic.com/en/api/messages')],
       ruleId: 'anthropic-api-to-codex-v1',
+      gateKind: 'none',
+    };
+  }
+  if (
+    (source === 'glm_coding_plan' || source === 'deepseek_api')
+    && request.targetAgentId === 'codex'
+  ) {
+    const glm = source === 'glm_coding_plan';
+    const baseUrl = glm ? GLM_CODEX_BASE_URL : DEEPSEEK_CODEX_BASE_URL;
+    const ruleId = glm ? GLM_CODEX_RULE_ID : DEEPSEEK_CODEX_RULE_ID;
+    const model = glm ? 'glm-5.3' : 'deepseek-v4-flash';
+    return {
+      route: 'native_endpoint',
+      support: 'experimental',
+      reason: `${glm ? 'GLM Coding Plan' : 'DeepSeek API'} 官方 Responses 端点可实验直连 Codex。`,
+      actions: [
+        action('set_config', 'Codex', `${glm ? 'GLM Coding Plan' : 'DeepSeek API'} 官方 Responses Base URL；不会启动本机桥接。`, baseUrl),
+        action('set_config', 'Codex', `使用 Codex Responses wire_api 与默认模型 ${model}。`, `wire_api=responses; model=${model}`),
+        secretAction('Codex', '从已选 Connection 引用 API Key；不会读取或显示它。'),
+      ],
+      limitations: [
+        '将把 Codex 配置为官方 Responses 端点；不会启动本机 loopback Bridge。',
+        '生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。',
+        '当前未写入官方 ~/.codex/models.json；使用默认 model 与显式 Provider 配置。',
+      ],
+      evidence: [evidence(
+        glm ? 'GLM Coding Plan Codex Responses integration' : 'DeepSeek API Codex Responses integration',
+        glm ? 'https://docs.bigmodel.cn/cn/coding-plan/tool/codex' : 'https://api-docs.deepseek.com/quick_start/agent_integrations/codex/',
+      )],
+      ruleId,
       gateKind: 'none',
     };
   }
@@ -874,6 +916,12 @@ function buildPlan(
               change('claude', 'ANTHROPIC_BASE_URL', 'http://127.0.0.1:<本机端口>'),
               secretChange('claude', 'ANTHROPIC_AUTH_TOKEN'),
             ]
+        : analysis.route === 'native_endpoint' && request.targetAgentId === 'codex'
+          ? [
+              change('codex', 'provider', analysis.ruleId === GLM_CODEX_RULE_ID ? 'GLM Coding Plan' : 'DeepSeek API'),
+              change('codex', 'baseUrl', analysis.ruleId === GLM_CODEX_RULE_ID ? GLM_CODEX_BASE_URL : DEEPSEEK_CODEX_BASE_URL),
+              change('codex', 'wireApi', 'responses'),
+            ]
         : analysis.route === 'config_sync' && request.targetAgentId === 'pi'
       ? [
           change('pi', 'provider', configuredProvider ?? 'anthropic'),
@@ -893,8 +941,12 @@ function buildPlan(
       : [];
   const implementedPath =
     (analysis.route === 'native_endpoint' && analysis.support === 'stable' && request.targetAgentId === 'claude')
-    || (analysis.route === 'native_endpoint' && analysis.support === 'experimental' && request.targetAgentId === 'claude'
+    || (analysis.route === 'native_endpoint' && analysis.support === 'experimental'
+      && (request.targetAgentId === 'claude' || request.targetAgentId === 'codex')
       && !!analysis.ruleId && CLAUDE_NATIVE_EXPERIMENTAL_RULES.has(analysis.ruleId))
+    || (analysis.route === 'native_endpoint' && analysis.support === 'experimental'
+      && request.targetAgentId === 'codex'
+      && !!analysis.ruleId && EXPLICIT_API_TO_CODEX_RULES.has(analysis.ruleId))
     || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
     || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
       && request.sourceKind === 'account'
@@ -961,7 +1013,7 @@ function buildPlan(
       : analysis.route === 'local_bridge'
         ? 'local_bridge' as const
         : 'api_endpoint' as const;
-  // Same-edge Account stays closed except explicit API → Pi / Anthropic → Codex.
+  // Same-edge Account stays closed except explicit API → Pi / Codex.
   const reason = implementedPath && request.sourceKind !== 'provider'
     && !accountExplicitApiToPi
     && !accountExplicitApiToCodex
@@ -1040,6 +1092,52 @@ function materializeApply(
   now: string,
 ): { profile: AdapterProfile; provider: Provider } {
   const safeId = safeSourceId(request.sourceId);
+  if (plan.analysis.route === 'native_endpoint' && request.targetAgentId === 'codex') {
+    const glm = plan.analysis.ruleId === GLM_CODEX_RULE_ID;
+    const slug = glm ? GLM_CODEX_PROVIDER_SLUG : DEEPSEEK_CODEX_PROVIDER_SLUG;
+    const model = glm ? 'glm-5.3' : 'deepseek-v4-flash';
+    const baseUrl = glm ? GLM_CODEX_BASE_URL : DEEPSEEK_CODEX_BASE_URL;
+    const profile: AdapterProfile = existing ?? {
+      id: `adapter-${glm ? 'glm' : 'deepseek'}-codex-${safeId}`,
+      name: `${glm ? 'GLM Coding Plan' : 'DeepSeek'} → Codex (${safeId})`,
+      sourceKind: request.sourceKind,
+      sourceId: request.sourceId,
+      targetAgentId: request.targetAgentId,
+      route: 'native_endpoint',
+      mode: 'api',
+      status: 'active',
+      ruleId: plan.analysis.ruleId!,
+      ruleVersion: '1',
+      generatedProviderId: `codex-${glm ? 'glm' : 'deepseek'}-adapter-${safeId}`,
+      localPort: null,
+      autoStart: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    return {
+      profile,
+      provider: {
+        id: profile.generatedProviderId!,
+        agentId: 'codex',
+        name: profile.name,
+        preset: 'openai-compatible',
+        configText: [
+          `model_provider = "${slug}"`,
+          `model = "${model}"`,
+          'model_reasoning_effort = "high"',
+          'preferred_auth_method = "apikey"',
+          '',
+          `[model_providers.${slug}]`,
+          `name = "${glm ? 'GLM Coding Plan' : 'DeepSeek'}"`,
+          `base_url = "${baseUrl}"`,
+          'wire_api = "responses"',
+          `experimental_bearer_token = "${CONNECTION_SECRET_MARKER}"`,
+        ].join('\n'),
+        configFormat: 'toml',
+        isCurrent: true,
+      },
+    };
+  }
   if (plan.analysis.route === 'local_bridge') {
     const codexClaudeBridge = plan.analysis.ruleId === CODEX_CLAUDE_RULE_ID;
     const anthropicBridge = plan.analysis.ruleId === 'anthropic-api-to-codex-v1';

@@ -21,8 +21,11 @@ use crate::models::{
 use crate::services::adapter_route_constants::{
     claude_native_base_url, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV,
     ANTHROPIC_PI_PROVIDER_SLOT, CONNECTION_SECRET_MARKER, DEEPSEEK_API_BASE_URL,
-    DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID, DSH_API_KEY_ENV,
-    DSH_DEEPSEEK_PROVIDER_SLOT, DSH_DEFAULT_MODEL, GLM_CLAUDE_RULE_ID, GLM_PI_BASE_URL,
+    DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_CODEX_BASE_URL, DEEPSEEK_CODEX_DEFAULT_MODEL,
+    DEEPSEEK_CODEX_PROVIDER_PREFIX, DEEPSEEK_CODEX_PROVIDER_SLUG, DEEPSEEK_CODEX_RULE_ID,
+    DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT,
+    DSH_DEFAULT_MODEL, GLM_CLAUDE_RULE_ID, GLM_CODEX_BASE_URL, GLM_CODEX_DEFAULT_MODEL,
+    GLM_CODEX_PROVIDER_PREFIX, GLM_CODEX_PROVIDER_SLUG, GLM_CODEX_RULE_ID, GLM_PI_BASE_URL,
     GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL,
     KIMI_PI_PROVIDER_SLOT, OPENAI_PI_PROVIDER_SLOT, XAI_PI_PROVIDER_SLOT,
 };
@@ -45,6 +48,8 @@ const RULE_VERSION: &str = "1";
 const CLAUDE_PROVIDER_PREFIX: &str = "claude-kimi-adapter";
 const CLAUDE_GLM_PROVIDER_PREFIX: &str = "claude-glm-adapter";
 const CLAUDE_DEEPSEEK_PROVIDER_PREFIX: &str = "claude-deepseek-adapter";
+const CODEX_GLM_PROFILE_PREFIX: &str = "adapter-glm-codex";
+const CODEX_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-codex";
 const PI_KIMI_PROVIDER_PREFIX: &str = "pi-kimi-adapter";
 const PI_ANTHROPIC_PROVIDER_PREFIX: &str = "pi-anthropic-adapter";
 const PI_OPENAI_PROVIDER_PREFIX: &str = "pi-openai-adapter";
@@ -130,6 +135,17 @@ impl AdapterApplyService {
                         "adapter apply currently supports Kimi membership Provider/Account or GLM/DeepSeek ticket -> Claude".into(),
                     )),
                 }
+            }
+            (source_kind, AgentId::Codex, AdapterRoute::NativeEndpoint)
+                if analysis
+                    .rule_id
+                    .as_deref()
+                    .is_some_and(is_codex_native_rule) =>
+            {
+                let rule = analysis.rule_id.as_deref().expect("checked above");
+                self.secrets
+                    .validate_explicit_api_source(rule, source_kind, source_id)?;
+                self.apply_generated(codex_native_spec(source_kind, source_id, rule)?)
             }
             (source_kind, AgentId::Pi, AdapterRoute::ConfigSync)
                 if source_kind == AdapterSourceKind::Provider
@@ -459,6 +475,10 @@ impl AdapterApplyService {
                 .rule_id
                 .as_deref()
                 .is_some_and(|rule| is_claude_native_apply_rule(rule, source_kind)),
+            (source_kind, AgentId::Codex, AdapterRoute::NativeEndpoint) => analysis
+                .rule_id
+                .as_deref()
+                .is_some_and(|rule| is_codex_native_rule(rule) && is_api_source_kind(source_kind)),
             (AdapterSourceKind::Provider, AgentId::Pi, AdapterRoute::ConfigSync) => {
                 (analysis.support == AdapterSupport::Stable
                     && analysis.rule_id.as_deref() == Some(KIMI_PI_RULE_ID))
@@ -665,6 +685,7 @@ fn owns_apply_profile(profile: &AdapterProfile) -> bool {
     matches!(
         (profile.target_agent_id, profile.route),
         (AgentId::Claude, AdapterRoute::NativeEndpoint)
+            | (AgentId::Codex, AdapterRoute::NativeEndpoint)
             | (AgentId::Pi, AdapterRoute::ConfigSync)
             | (AgentId::Dsh, AdapterRoute::ConfigSync)
     )
@@ -682,6 +703,12 @@ fn generated_provider_prefix(profile: &AdapterProfile) -> Option<&'static str> {
         }
         (AgentId::Claude, AdapterRoute::NativeEndpoint, DEEPSEEK_CLAUDE_RULE_ID) => {
             Some(CLAUDE_DEEPSEEK_PROVIDER_PREFIX)
+        }
+        (AgentId::Codex, AdapterRoute::NativeEndpoint, GLM_CODEX_RULE_ID) => {
+            Some(GLM_CODEX_PROVIDER_PREFIX)
+        }
+        (AgentId::Codex, AdapterRoute::NativeEndpoint, DEEPSEEK_CODEX_RULE_ID) => {
+            Some(DEEPSEEK_CODEX_PROVIDER_PREFIX)
         }
         (AgentId::Pi, AdapterRoute::ConfigSync, KIMI_PI_RULE_ID) => Some(PI_KIMI_PROVIDER_PREFIX),
         (AgentId::Pi, AdapterRoute::ConfigSync, ANTHROPIC_PI_RULE_ID) => {
@@ -758,6 +785,17 @@ fn provider_owned_by(provider: &crate::models::Provider, profile: &AdapterProfil
 
 fn is_claude_native_explicit_rule(rule_id: &str) -> bool {
     matches!(rule_id, GLM_CLAUDE_RULE_ID | DEEPSEEK_CLAUDE_RULE_ID)
+}
+
+fn is_codex_native_rule(rule_id: &str) -> bool {
+    matches!(rule_id, GLM_CODEX_RULE_ID | DEEPSEEK_CODEX_RULE_ID)
+}
+
+fn is_api_source_kind(source_kind: AdapterSourceKind) -> bool {
+    matches!(
+        source_kind,
+        AdapterSourceKind::Provider | AdapterSourceKind::Account
+    )
 }
 
 fn is_claude_native_apply_rule(rule_id: &str, source_kind: AdapterSourceKind) -> bool {
@@ -851,6 +889,86 @@ fn claude_native_spec(
     })
 }
 
+fn codex_native_spec(
+    source_kind: AdapterSourceKind,
+    source_id: &str,
+    rule_id: &str,
+) -> Result<GeneratedApplySpec> {
+    let (profile_prefix, provider_prefix, display, base_url, model, slug) = match rule_id {
+        GLM_CODEX_RULE_ID => (
+            CODEX_GLM_PROFILE_PREFIX,
+            GLM_CODEX_PROVIDER_PREFIX,
+            "GLM Coding Plan",
+            GLM_CODEX_BASE_URL,
+            GLM_CODEX_DEFAULT_MODEL,
+            GLM_CODEX_PROVIDER_SLUG,
+        ),
+        DEEPSEEK_CODEX_RULE_ID => (
+            CODEX_DEEPSEEK_PROFILE_PREFIX,
+            DEEPSEEK_CODEX_PROVIDER_PREFIX,
+            "DeepSeek",
+            DEEPSEEK_CODEX_BASE_URL,
+            DEEPSEEK_CODEX_DEFAULT_MODEL,
+            DEEPSEEK_CODEX_PROVIDER_SLUG,
+        ),
+        _ => {
+            return Err(AppError::Unsupported(
+                "adapter apply currently supports GLM / DeepSeek API -> Codex".into(),
+            ))
+        }
+    };
+    let profile_id = stable_id(profile_prefix, source_id);
+    let provider_id = stable_id(provider_prefix, source_id);
+    let created_at = now();
+    let content = format!(
+        "model_provider = \"{slug}\"\n\
+         model = \"{model}\"\n\
+         model_reasoning_effort = \"high\"\n\
+         preferred_auth_method = \"apikey\"\n\
+         \n\
+         [model_providers.{slug}]\n\
+         name = \"{display}\"\n\
+         base_url = \"{base_url}\"\n\
+         wire_api = \"responses\"\n\
+         experimental_bearer_token = \"{marker}\"\n",
+        marker = CONNECTION_SECRET_MARKER,
+    );
+    Ok(GeneratedApplySpec {
+        target_agent: AgentId::Codex,
+        provider_id: provider_id.clone(),
+        proposed: AdapterProfile {
+            id: profile_id.clone(),
+            name: format!("{display} → Codex ({})", safe_label(source_id)),
+            source_kind,
+            source_id: source_id.into(),
+            target_agent_id: AgentId::Codex,
+            route: AdapterRoute::NativeEndpoint,
+            mode: AdapterProfileMode::Api,
+            status: AdapterProfileStatus::Applying,
+            rule_id: rule_id.into(),
+            rule_version: RULE_VERSION.into(),
+            generated_provider_id: Some(provider_id.clone()),
+            local_port: None,
+            auto_start: false,
+            last_error_code: None,
+            created_at: created_at.clone(),
+            updated_at: created_at,
+        },
+        provider: ProviderInput {
+            id: provider_id,
+            agent_id: AgentId::Codex,
+            name: format!("{display} ({})", safe_label(source_id)),
+            settings_config: json!({
+                "format": "toml",
+                "content": content,
+                "auth": { "OPENAI_API_KEY": CONNECTION_SECRET_MARKER },
+            }),
+            meta: generated_meta(rule_id, &profile_id, source_kind, source_id, None),
+            is_current: false,
+        },
+    })
+}
+
 fn pi_kimi_spec(source_kind: AdapterSourceKind, source_id: &str) -> GeneratedApplySpec {
     let profile_id = stable_id(PI_KIMI_PROFILE_PREFIX, source_id);
     let provider_id = stable_id(PI_KIMI_PROVIDER_PREFIX, source_id);
@@ -894,13 +1012,7 @@ fn pi_kimi_spec(source_kind: AdapterSourceKind, source_id: &str) -> GeneratedApp
                     }
                 }
             }),
-            meta: generated_meta(
-                KIMI_PI_RULE_ID,
-                &profile_id,
-                source_kind,
-                source_id,
-                None,
-            ),
+            meta: generated_meta(KIMI_PI_RULE_ID, &profile_id, source_kind, source_id, None),
             is_current: false,
         },
     }

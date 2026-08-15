@@ -14,7 +14,7 @@ DeepSeek Harness（产品命令 `dsh`）是 **第八个已接入 Agent**，不�
 | 对象 | 身份 | 现在做什么 |
 |---|---|---|
 | **DeepSeek Harness** | Agent，`AgentKey` / 兼容期 `AgentId` = `dsh`，展示名 **DeepSeek Harness** | 按稀疏端口接入：安装、配置、账号、Skills、用量、会话/项目、headless run |
-| **DeepSeek API** | 票面（API Key，双协议，属 ①） | 接到 `dsh` 走 `config_sync`（`deepseek-api-to-dsh-v1`）；接到 Claude 走 experimental `native_endpoint`（`deepseek-api-to-claude-v1`，已开）。接到 Codex 属 ③（Chat ≠ Responses），当前未开 |
+| **DeepSeek API** | 票面（API Key，含官方 Responses，属 ①） | 接到 `dsh` 走 `config_sync`（`deepseek-api-to-dsh-v1`）；接到 Claude 走 experimental `native_endpoint`（`deepseek-api-to-claude-v1`，已开）；接到 Codex 走 experimental `native_endpoint`（`deepseek-api-to-codex-v1`，官方 Responses） |
 
 不要用 `deepseek` 当 Agent id：它会和票面、模型名、官方 API 混在一起。命令与 npm 包都以 `dsh` 出现，和现有 `pi` / `claude` 一样用 CLI 名做 key。
 
@@ -292,7 +292,7 @@ AgentHub **不**在 DSH 里再挂一个自研 LLM adapter，也不把 DSH 当 lo
 |---|---|---|---|
 | DeepSeek API Key | `dsh` | `native` / `config_sync` | P5：写入凭据引用 + `deepseek-official` + 模型 id |
 | DeepSeek API Key | Claude Code | experimental `native_endpoint` | 已开（`deepseek-api-to-claude-v1`）；官方 Anthropic 兼容入口，见适配规则文 §2.4 |
-| DeepSeek API Key | Codex | 默认 `unsupported` | 官方 Chat Completions **不是** Responses |
+| DeepSeek API Key | Codex | experimental `native_endpoint` | 已开（`deepseek-api-to-codex-v1`）；官方 Responses 入口，AgentHub 写入 `wire_api=responses`，不启动本机桥 |
 | Kimi / OpenAI / 其它 Chat 兼容票 | `dsh` | 可能 `config_sync` 到 `dsh-llm-pi-ai` | **另证**；P5 不做 |
 | 任一家 OAuth | `dsh` | `unsupported` | DSH 凭据缝是 API Key 引用，不是 OAuth |
 
@@ -423,7 +423,7 @@ P4 才做 `build_run_spec`，且必须先量：
 
 - DeepSeek API → `dsh`：`config_sync`，`canApply=true`，`rule_id=deepseek-api-to-dsh-v1`
 - DeepSeek API → Claude：experimental `native_endpoint` 已开（`deepseek-api-to-claude-v1`）
-- 不开放 Codex Responses（那是 ③，且 DSH 不是桥）、OAuth 写入 DSH 凭据缝、二次投影
+- Codex 走官方 Responses `native_endpoint`（`deepseek-api-to-codex-v1`）；不把 DSH 当协议桥，不做 OAuth 写入 DSH 凭据缝或二次投影
 
 ---
 

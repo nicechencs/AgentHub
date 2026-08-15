@@ -325,6 +325,12 @@ const KIMI_CODEX_LIMITS: &[&str] = &[
     "固定端口被占用时会尝试重新分配端口并写回配置。",
 ];
 
+const CODEX_NATIVE_API_LIMITS: &[&str] = &[
+    "将把 Codex 配置为官方 Responses 端点；不会启动本机 loopback Bridge。",
+    "生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。",
+    "当前未写入官方 ~/.codex/models.json；使用默认 model 与显式 Provider 配置。",
+];
+
 const KIMI_PI_LIMITS: &[&str] = &[
     "将写入 Pi models.json 的 kimi-for-coding 槽与凭据引用标记；不会在预览中传输明文 Key。",
     "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
@@ -404,6 +410,42 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         limitations: KIMI_CLAUDE_LIMITS,
         rule_id: "kimi-membership-to-claude-v1",
         verified_at: VERIFIED_AT,
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::GlmCodingPlan,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Codex,
+            protocol: AdapterTargetProtocol::OpenAiResponses,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::NativeEndpoint,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: "GLM Coding Plan 官方 Responses 端点可实验直连 Codex。",
+        limitations: CODEX_NATIVE_API_LIMITS,
+        rule_id: "glm-coding-plan-to-codex-v1",
+        verified_at: "2026-08-15",
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::DeepseekApi,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Codex,
+            protocol: AdapterTargetProtocol::OpenAiResponses,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::NativeEndpoint,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: "DeepSeek API 官方 Responses 端点可实验直连 Codex。",
+        limitations: CODEX_NATIVE_API_LIMITS,
+        rule_id: "deepseek-api-to-codex-v1",
+        verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
     },
     AdapterCapabilityCell {

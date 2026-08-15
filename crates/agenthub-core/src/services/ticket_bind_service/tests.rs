@@ -2,9 +2,9 @@ use super::*;
 use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::Result;
 use crate::models::{
-    ticket_id, Account, AccountKind, AgentConfig, AgentId, AuthState, Capability, CapabilityState,
-    DetectResult, DetectStatus, InstallChannel, Provider, RunOptions, RunSpec, TicketBindingRoute,
-    TicketPlanRequest, TicketUnbindRequest, PROJECTION_NOT_A_TICKET,
+    ticket_id, Account, AccountKind, AdapterSupport, AgentConfig, AgentId, AuthState, Capability,
+    CapabilityState, DetectResult, DetectStatus, InstallChannel, Provider, RunOptions, RunSpec,
+    TicketBindingRoute, TicketPlanRequest, TicketUnbindRequest, PROJECTION_NOT_A_TICKET,
 };
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
 use serde_json::json;
@@ -12,14 +12,20 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 struct FakeClaudeAdapter {
+    agent: AgentId,
     config: Mutex<AgentConfig>,
 }
 
 impl FakeClaudeAdapter {
     fn new() -> Self {
+        Self::new_for(AgentId::Claude)
+    }
+
+    fn new_for(agent: AgentId) -> Self {
         Self {
+            agent,
             config: Mutex::new(AgentConfig {
-                agent: AgentId::Claude,
+                agent,
                 raw: json!({}),
             }),
         }
@@ -28,7 +34,7 @@ impl FakeClaudeAdapter {
 
 impl AgentAdapter for FakeClaudeAdapter {
     fn id(&self) -> AgentId {
-        AgentId::Claude
+        self.agent
     }
     fn detect(&self) -> DetectResult {
         DetectResult {
@@ -387,7 +393,10 @@ fn bind_kimi_account_to_claude_and_pi_then_unbind_keeps_source_ticket() {
     let service = bind_service(
         db.clone(),
         dir.path().join("backups"),
-        vec![Arc::new(FakeClaudeAdapter::new()), Arc::new(FakePiAdapter::new())],
+        vec![
+            Arc::new(FakeClaudeAdapter::new()),
+            Arc::new(FakePiAdapter::new()),
+        ],
     );
 
     let claude = service
@@ -862,4 +871,72 @@ fn bind_glm_and_deepseek_to_claude_then_unbind_rejects_unknown_relay() {
         target_agent_id: AgentId::Claude,
     });
     assert!(relay.is_err(), "unknown custom relay must not bind");
+}
+
+#[test]
+fn bind_glm_provider_and_deepseek_account_to_codex_native_responses() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "glm-codex-source",
+            "glm-coding-plan",
+            "ANTHROPIC_AUTH_TOKEN",
+            "glm-codex-secret",
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&explicit_api_account(
+            "deepseek-codex-account",
+            "deepseek-api",
+            "deepseek-codex-secret",
+        ))
+        .unwrap();
+    let tickets = TicketReadService::new(db.clone());
+    for (kind, id, rule) in [
+        (
+            AdapterSourceKind::Provider,
+            "glm-codex-source",
+            "glm-coding-plan-to-codex-v1",
+        ),
+        (
+            AdapterSourceKind::Account,
+            "deepseek-codex-account",
+            "deepseek-api-to-codex-v1",
+        ),
+    ] {
+        let plan = tickets
+            .plan(&TicketPlanRequest {
+                ticket_id: ticket_id(kind, id),
+                target_agent_id: AgentId::Codex,
+            })
+            .unwrap();
+        assert!(plan.can_apply);
+        assert_eq!(plan.analysis.route, AdapterRoute::NativeEndpoint);
+        assert_eq!(plan.analysis.support, AdapterSupport::Experimental);
+        assert_eq!(
+            plan.reuse_path,
+            crate::models::AdapterReusePath::ApiEndpoint
+        );
+        assert_eq!(plan.analysis.rule_id.as_deref(), Some(rule));
+    }
+
+    let service = bind_service(
+        db.clone(),
+        dir.path().join("backups"),
+        vec![Arc::new(FakeClaudeAdapter::new_for(AgentId::Codex))],
+    );
+    let binding = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Provider, "glm-codex-source"),
+            target_agent_id: AgentId::Codex,
+        })
+        .unwrap();
+    assert!(binding.active);
+    assert_eq!(binding.route, TicketBindingRoute::Reshape);
+    let profile = AdapterProfileRepo::new(db)
+        .get(binding.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(profile.rule_id, "glm-coding-plan-to-codex-v1");
+    assert_eq!(profile.route, AdapterRoute::NativeEndpoint);
 }

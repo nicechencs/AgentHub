@@ -826,6 +826,90 @@ describe('mock adapter route preview', () => {
       .not.toContain('must-not-leak');
   });
 
+  it('plans and applies GLM / DeepSeek → Codex through official Responses endpoints', async () => {
+    await createMockProviderPort().upsertProvider({
+      id: 'glm-codex-src',
+      agentId: 'claude',
+      name: 'GLM Codex',
+      preset: 'glm-coding-plan',
+      configText: '{"apiKey":"must-not-leak"}',
+      configFormat: 'json',
+      isCurrent: false,
+    });
+    const deepseekAccount = {
+      id: 'deepseek-codex-acc',
+      agentId: 'claude' as const,
+      kind: 'apikey' as const,
+      label: 'DeepSeek Codex',
+      isCurrent: false,
+      tokenValid: true,
+      extra: { provider: 'deepseek-api' },
+      credentials: { format: 'api_key', api_key: 'must-not-leak' },
+    } as Account;
+    const adapter = createMockAdapterPort({
+      getAccountById: (id) => id === deepseekAccount.id ? deepseekAccount : getMockAccountById(id),
+      getProviderById: getMockProviderById,
+      upsertGeneratedProvider: upsertMockProvider,
+      removeGeneratedProvider: removeMockProvider,
+    });
+
+    const cases = [
+      {
+        sourceKind: 'provider' as const,
+        sourceId: 'glm-codex-src',
+        ruleId: 'glm-coding-plan-to-codex-v1',
+        baseUrl: 'https://open.bigmodel.cn/api/v1',
+        slug: 'agenthub_glm',
+        model: 'glm-5.3',
+      },
+      {
+        sourceKind: 'account' as const,
+        sourceId: deepseekAccount.id,
+        ruleId: 'deepseek-api-to-codex-v1',
+        baseUrl: 'https://api.deepseek.com',
+        slug: 'agenthub_deepseek',
+        model: 'deepseek-v4-flash',
+      },
+    ] as const;
+
+    for (const item of cases) {
+      const request = { sourceKind: item.sourceKind, sourceId: item.sourceId, targetAgentId: 'codex' as const };
+      const plan = await adapter.plan(request);
+      expect(plan).toMatchObject({
+        canApply: true,
+        reusePath: 'api_endpoint',
+        serviceImpact: 'none',
+        analysis: {
+          route: 'native_endpoint',
+          support: 'experimental',
+          ruleId: item.ruleId,
+          gateKind: 'none',
+        },
+        changes: [
+          { target: 'codex', field: 'provider', secret: false },
+          { target: 'codex', field: 'baseUrl', value: item.baseUrl, secret: false },
+          { target: 'codex', field: 'wireApi', value: 'responses', secret: false },
+        ],
+      });
+      const applied = await adapter.apply(request);
+      expect(applied.profile).toMatchObject({
+        route: 'native_endpoint',
+        ruleId: item.ruleId,
+        targetAgentId: 'codex',
+      });
+      expect(applied.provider).toMatchObject({
+        agentId: 'codex',
+        configFormat: 'toml',
+      });
+      expect(applied.provider.configText).toContain(`model_provider = "${item.slug}"`);
+      expect(applied.provider.configText).toContain(`model = "${item.model}"`);
+      expect(applied.provider.configText).toContain(`base_url = "${item.baseUrl}"`);
+      expect(applied.provider.configText).toContain('wire_api = "responses"');
+      expect(applied.provider.configText).toContain('$AGENTHUB_CONNECTION_SECRET$');
+      expect(JSON.stringify({ plan, applied })).not.toContain('must-not-leak');
+    }
+  });
+
   it('applies GLM / DeepSeek → Pi as custom providers with endpoint contracts', async () => {
     await createMockProviderPort().upsertProvider({
       id: 'glm-pi-src',

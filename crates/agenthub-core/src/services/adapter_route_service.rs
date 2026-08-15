@@ -22,11 +22,12 @@ use crate::models::{
 use crate::services::adapter_route_constants::{
     claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
     is_kimi_code_membership_account, is_kimi_code_membership_source, is_openai_api_marker,
-    is_xai_api_marker,
-    settings_contain_anthropic_api_endpoint, ANTHROPIC_AUTH_TOKEN_ENV, DEEPSEEK_CLAUDE_BASE_URL,
-    DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID,
-    DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID, GLM_PI_PROVIDER_SLOT,
-    GLM_PI_RULE_ID, KIMI_CLAUDE_BASE_URL, KIMI_CLAUDE_RULE_ID,
+    is_xai_api_marker, settings_contain_anthropic_api_endpoint, ANTHROPIC_AUTH_TOKEN_ENV,
+    DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_CODEX_BASE_URL,
+    DEEPSEEK_CODEX_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID,
+    DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID, GLM_CODEX_BASE_URL,
+    GLM_CODEX_RULE_ID, GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_BASE_URL,
+    KIMI_CLAUDE_RULE_ID,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -133,6 +134,22 @@ impl AdapterRouteService {
                             Some("http://127.0.0.1:<本机端口>/v1"),
                             false,
                         ),
+                    ],
+                )
+            }
+            AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Codex => {
+                let (provider, base_url) = if analysis.rule_id.as_deref() == Some(GLM_CODEX_RULE_ID)
+                {
+                    ("GLM Coding Plan", GLM_CODEX_BASE_URL)
+                } else {
+                    ("DeepSeek API", DEEPSEEK_CODEX_BASE_URL)
+                };
+                (
+                    AdapterServiceImpact::None,
+                    vec![
+                        change("codex", "provider", Some(provider), false),
+                        change("codex", "baseUrl", Some(base_url), false),
+                        change("codex", "wireApi", Some("responses"), false),
                     ],
                 )
             }
@@ -372,9 +389,7 @@ impl AdapterRouteService {
                         label: RouteSourceLabel::KimiMembership,
                         reason_hint: None,
                     })
-                } else if account.kind == AccountKind::ApiKey
-                    && account.agent_id == AgentId::Kimi
-                {
+                } else if account.kind == AccountKind::ApiKey && account.agent_id == AgentId::Kimi {
                     Ok(SourceIdentity {
                         product: AdapterSourceProduct::Other,
                         credential: AdapterCredentialClass::ApiKey,
@@ -618,6 +633,13 @@ fn bind_implementation_open(
             AdapterSupport::Experimental,
         )
         | (
+            Some(GLM_CODEX_RULE_ID) | Some(DEEPSEEK_CODEX_RULE_ID),
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            AgentId::Codex,
+            AdapterRoute::NativeEndpoint,
+            AdapterSupport::Experimental,
+        )
+        | (
             Some("codex-subscription-to-claude-responses-v1"),
             AdapterSourceKind::Account,
             AgentId::Claude,
@@ -735,6 +757,56 @@ fn actions_for(
                 None,
                 false,
             )]
+        }
+        (RouteSourceLabel::GlmCodingPlan, AgentId::Codex, AdapterRoute::NativeEndpoint) => {
+            vec![
+                action(
+                    "set_config",
+                    "Codex",
+                    "设置 GLM Coding Plan 官方 Responses Base URL；不会启动本机桥接。",
+                    Some(GLM_CODEX_BASE_URL),
+                    false,
+                ),
+                action(
+                    "set_config",
+                    "Codex",
+                    "使用 Codex Responses wire_api 与默认模型 glm-5.3。",
+                    Some("wire_api=responses; model=glm-5.3"),
+                    false,
+                ),
+                action(
+                    "reference_connection_secret",
+                    "Codex",
+                    "从已选 Connection 引用 API Key；不会读取或显示它。",
+                    None,
+                    true,
+                ),
+            ]
+        }
+        (RouteSourceLabel::DeepseekApi, AgentId::Codex, AdapterRoute::NativeEndpoint) => {
+            vec![
+                action(
+                    "set_config",
+                    "Codex",
+                    "设置 DeepSeek 官方 Responses Base URL；不会启动本机桥接。",
+                    Some(DEEPSEEK_CODEX_BASE_URL),
+                    false,
+                ),
+                action(
+                    "set_config",
+                    "Codex",
+                    "使用 Codex Responses wire_api 与默认模型 deepseek-v4-flash。",
+                    Some("wire_api=responses; model=deepseek-v4-flash"),
+                    false,
+                ),
+                action(
+                    "reference_connection_secret",
+                    "Codex",
+                    "从已选 Connection 引用 API Key；不会读取或显示它。",
+                    None,
+                    true,
+                ),
+            ]
         }
         (RouteSourceLabel::CodexSubscription, AgentId::Claude, AdapterRoute::LocalBridge) => vec![
             action(
@@ -982,8 +1054,10 @@ fn evidence_for(
             vec![anthropic_pi_evidence()]
         }
         (RouteSourceLabel::GlmCodingPlan, AgentId::Claude) => vec![glm_claude_evidence()],
+        (RouteSourceLabel::GlmCodingPlan, AgentId::Codex) => vec![glm_codex_evidence()],
         (RouteSourceLabel::GlmCodingPlan, AgentId::Pi) => vec![pi_api_evidence()],
         (RouteSourceLabel::DeepseekApi, AgentId::Claude) => vec![deepseek_claude_evidence()],
+        (RouteSourceLabel::DeepseekApi, AgentId::Codex) => vec![deepseek_codex_evidence()],
         (RouteSourceLabel::DeepseekApi, AgentId::Pi) => vec![pi_api_evidence()],
         (RouteSourceLabel::DeepseekApi, AgentId::Dsh) => vec![deepseek_dsh_evidence()],
         (
@@ -1094,6 +1168,22 @@ fn deepseek_claude_evidence() -> AdapterEvidence {
         label: "DeepSeek 接入 Claude Code".into(),
         url: "https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code/".into(),
         verified_at: VERIFIED_AT.into(),
+    }
+}
+
+fn glm_codex_evidence() -> AdapterEvidence {
+    AdapterEvidence {
+        label: "GLM Coding Plan Codex Responses integration".into(),
+        url: "https://docs.bigmodel.cn/cn/coding-plan/tool/codex".into(),
+        verified_at: "2026-08-15".into(),
+    }
+}
+
+fn deepseek_codex_evidence() -> AdapterEvidence {
+    AdapterEvidence {
+        label: "DeepSeek API Codex Responses integration".into(),
+        url: "https://api-docs.deepseek.com/quick_start/agent_integrations/codex/".into(),
+        verified_at: "2026-08-15".into(),
     }
 }
 

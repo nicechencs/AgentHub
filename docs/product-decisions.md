@@ -29,6 +29,7 @@
 | Kimi Code 会员 Key | Claude Code | 写 Anthropic 兼容入口 |
 | 同一把 Key | Pi | 写入 Pi 的对应槽 |
 | GLM Coding Plan / DeepSeek API | Claude Code | 写官方 Anthropic 兼容入口 |
+| GLM Coding Plan / DeepSeek API | Codex | 写官方 Responses 兼容入口 |
 
 同一机制也覆盖**单协议 Key**：Anthropic Key → Pi、OpenAI Key → Pi。它们不是「双协议」，但同样是直连、不起桥。
 
@@ -106,7 +107,8 @@ plan(ticket, agent):
 
 | 同一张票 | → Claude | → Pi | → Codex |
 |---|---|---|---|
-| Kimi / GLM / DeepSeek 双协议 Key | ① 直连 Messages 入口 | ① 写槽 | ③ Chat ≠ Responses，要桥 |
+| Kimi Code 会员双协议 Key | ① 直连 Messages 入口 | ① 写槽 | ③ Chat ≠ Responses，要桥 |
+| GLM / DeepSeek API Key | ① 直连 Messages 入口 | ① 写槽 | ① 官方 Responses 端点直连 |
 | Anthropic API Key | native / ① | ① 写 Anthropic 槽 | ③ Messages → Responses |
 | Codex 订阅 | ③ 本机桥 | ② 写 `openai-codex` 槽 | native |
 | Claude 订阅 | native | ② 写 Anthropic 槽 | ③ 或暂不可行 |

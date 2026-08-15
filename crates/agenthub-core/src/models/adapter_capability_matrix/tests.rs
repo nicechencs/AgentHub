@@ -338,6 +338,33 @@ fn glm_and_deepseek_claude_cells_are_experimental_and_applicable() {
 }
 
 #[test]
+fn glm_and_deepseek_codex_cells_are_experimental_native_responses() {
+    for (source, rule) in [
+        (
+            AdapterSourceProduct::GlmCodingPlan,
+            "glm-coding-plan-to-codex-v1",
+        ),
+        (
+            AdapterSourceProduct::DeepseekApi,
+            "deepseek-api-to-codex-v1",
+        ),
+    ] {
+        let decision =
+            decide_adapter_capability(source, AdapterCredentialClass::ApiKey, AgentId::Codex);
+        assert_eq!(decision.route, AdapterRoute::NativeEndpoint);
+        assert_eq!(decision.support, AdapterSupport::Experimental);
+        assert!(decision.can_apply);
+        assert_eq!(decision.rule_id, Some(rule));
+        assert_eq!(decision.transport, AdapterUpstreamTransport::NativeHttp);
+        assert_eq!(
+            decision.protocol,
+            Some(AdapterTargetProtocol::OpenAiResponses)
+        );
+        assert!(decision.gates.expect("native cell gates").all_passed());
+    }
+}
+
+#[test]
 fn deepseek_api_to_dsh_can_apply() {
     let dsh = decide_adapter_capability(
         AdapterSourceProduct::DeepseekApi,

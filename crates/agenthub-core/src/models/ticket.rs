@@ -138,6 +138,7 @@ impl TicketSurface {
             Self::GlmCodingPlan | Self::DeepseekApi => &[
                 TicketProtocol::AnthropicMessages,
                 TicketProtocol::OpenaiChat,
+                TicketProtocol::OpenaiResponses,
             ],
             Self::CodexChatgptSubscription => &[
                 TicketProtocol::OpenaiResponses,
