@@ -61,8 +61,42 @@ export function adapterTabLabel(tab: AdapterTab | AdapterCredentialFilter): stri
   return adapterCredentialFilterLabel(tab === 'all' ? 'all' : tab);
 }
 
+export const BRIDGES_PAGE_TITLE = '本机桥';
+export const BRIDGES_PAGE_DESCRIPTION = '本机协议转换 · 仅 127.0.0.1';
+export const BRIDGES_PAGE_DESCRIPTION_TIP =
+  '凭据在 Connections，不展示不复制。多数连接不需要本机转发。需保持托盘运行。日志不记请求正文。';
+export const BRIDGES_EMPTY_TITLE = '没有本机桥';
+export const BRIDGES_EMPTY_DESCRIPTION =
+  '多数连接不需要本机转发。只有协议对不上时才会在这台电脑上开一层转换。若刚完成需要转发的绑定，到 Dashboard 看对应工具上的桥状态。';
+export const BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE = '钱包里有本机桥绑定，但找不到运行时';
+export const BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION = '可重试读取。不是「没有本机桥」。';
+export const BRIDGES_NAV_LABEL = 'Bridges';
+export const BRIDGES_PATH = '/bridges';
+
+/** Drop leftover `?tab=` from `/adapter` / `/router` bookmarks. */
+export function legacyBridgesRedirectTo(search: string): string {
+  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+  params.delete('tab');
+  const qs = params.toString();
+  return qs ? `${BRIDGES_PATH}?${qs}` : BRIDGES_PATH;
+}
+
+export function bridgesHrefForProfile(profileId: string | null | undefined): string {
+  return profileId ? `${BRIDGES_PATH}?profile=${encodeURIComponent(profileId)}` : BRIDGES_PATH;
+}
+
+/** Unknown or missing `?profile=` stays on the list; do not toast. */
+export function resolveBridgesProfileQuery(
+  profileId: string | null | undefined,
+  profiles: readonly { id: string }[],
+): string | null {
+  if (!profileId) return null;
+  return profiles.some((profile) => profile.id === profileId) ? profileId : null;
+}
+export const BRIDGES_MUTATION_FAILURE = '本机桥操作失败';
+
 export function adapterPageDescription(): string {
-  return '本页只管理已绑定的本机桥运行时（端口、启停、恢复）。创建绑定请走 Dashboard「连接/切换」或 Connections「接到…」。';
+  return BRIDGES_PAGE_DESCRIPTION;
 }
 
 export function adapterTabDescription(_tab?: AdapterTab | AdapterCredentialFilter): string {
@@ -169,14 +203,18 @@ function unavailableBridgeStatus(profile: AdapterProfile): AdapterBridgeRuntimeS
   };
 }
 
-/** A later poll/read failure must not invent connectivity or erase the last known port. */
+/**
+ * A later poll/read failure must not invent connectivity or erase the last
+ * known port / state. `error` is only a placeholder when the runtime was never
+ * observed — it is not a start failure.
+ */
 export function unavailableBridgeStatusForPoll(
   profile: AdapterProfile,
   previous?: AdapterBridgeRuntimeStatus,
 ): AdapterBridgeRuntimeStatus {
   return {
     profileId: profile.id,
-    state: 'error',
+    state: previous?.state ?? 'error',
     port: previous?.port ?? profile.localPort ?? null,
     endpoint: previous?.endpoint ?? null,
     startedAt: previous?.startedAt ?? null,
@@ -664,6 +702,21 @@ export function adapterErrorDetails(error: unknown): string | null {
 
 export function adapterErrorRetryHint(error: unknown): string | null {
   return isAdapterErrorRetryable(error) ? '此错误可重试。' : null;
+}
+
+export function adapterFailurePresentation(error: unknown, fallback: string): {
+  message: string;
+  retryable: boolean;
+  hint: string;
+} {
+  const retryable = isAdapterErrorRetryable(error);
+  return {
+    message: errorMessage(error, fallback),
+    retryable,
+    hint: retryable
+      ? '可重试；不会自动反复重试。'
+      : '不可重试。检查来源连接，或删除后重建。',
+  };
 }
 
 export type AdapterPageViewState = 'loading' | 'error' | 'empty' | 'choose' | 'preview';

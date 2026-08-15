@@ -174,7 +174,7 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 | Dashboard 卡片 | 这个 Agent 用哪张票？ | `bind`，target 固定，选票 |
 | Connections 钱包 | 这张票再接到谁？ | `bind`，ticket 固定，选 Agent |
 
-不再要求用户理解 Adapter。`/adapter` 只管理桥进程：端口、启停、自动恢复、失败详情。创建绑定不在本页。
+不再要求用户理解 Adapter。`/bridges` 只管理本机桥运行时：端口、启停、自动恢复、失败详情、解绑。创建绑定不在本页。`/adapter`、`/router` 永久跳过来。
 
 ### 5.2 Connections = 全局钱包
 
@@ -214,7 +214,7 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 - 主动作仍是打开同一套 bind 对话框（target 固定）。
 - 来源不再按「本 Agent 表里的行 / 别人表里的行」分组，而按 **native 候选** 与 **可规划的其他票** 分组。
 - 不可行票留在列表里，置灰 + 原因。
-- 桥徽标点进「桥与适配」，管的是这条绑定的 runtime，不是再创建一条投影。
+- 桥徽标**只服务当前生效的 ③**：点进 `/bridges?profile=`（无 id 则 `/bridges`），tip「管理本机桥」。管的是这条绑定的 runtime，不是再创建一条投影，也不是孤立回收通道。孤立 / 非当前桥没有徽标。
 
 ### 5.4 对话框
 
@@ -227,9 +227,13 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 
 OAuth 未完成：引导去补登录，不在对话框里发起新授权。空钱包：引导添加票。资源加载失败：错误 + 重试，不得当成空池，也不得整页藏「接到…」。
 
-### 5.5 桥与适配页
+### 5.5 Bridges（本机桥）
 
-只列出 **`route=bridge` 且已 bind 的运行时**：来源票名称、目标 Agent、端口、健康、start/stop/retry。没有「选来源 → 分析 → apply」创建区。删绑定走 `unbind`，不要只删投影行而留下指向死端口的 live。
+规范路由 `/bridges`。侧栏英文 Bridges，有桥才出现；Settings → 数据永远有「本机桥」入口。
+
+列出全部 `route=local_bridge`（`partitionLocalBridgeRuntimes`）：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进孤立分区。行与详情都是**单层**进程健康 + 端口，不画「配置已生效 / 桥接运行中」。来源/目标是纯文字，**禁止**链到 `/connections?agent=`（生成投影不得出现在钱包）。
+
+没有「选来源 → 分析 → apply」创建区。解绑只走 `unbindTicket`，不要只删投影行而留下指向死端口的 live，也不走 `removeAdapter`。Connections「本机桥」点进对应 runtime（`/bridges?profile=`）。
 
 ## 6. 扩大在本模型里怎么做
 

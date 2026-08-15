@@ -1,12 +1,15 @@
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { TicketWallet } from '@/lib/backend/contracts/ticket';
 import { TicketDetailPanel, TicketWalletList } from './TicketWalletList';
 
 function renderWithTooltip(node: ReactElement): string {
-  return renderToStaticMarkup(createElement(TooltipProvider, null, node));
+  return renderToStaticMarkup(
+    createElement(MemoryRouter, null, createElement(TooltipProvider, null, node)),
+  );
 }
 
 function sampleWallet(): TicketWallet {
@@ -53,6 +56,29 @@ describe('TicketWalletList details', () => {
     expect(markup).not.toContain('移入回收站');
     expect(markup).not.toContain('编辑配置');
     expect(markup).not.toContain('编辑 API Key');
+  });
+
+  it('links 本机桥 usage to /bridges without opening ConnectFlow', () => {
+    const wallet = sampleWallet();
+    wallet.bindings = [{
+      ticketId: 'provider:kimi-1',
+      agentId: 'codex',
+      route: 'bridge',
+      active: true,
+      profileId: 'bridge-1',
+      bridge: { port: 43121, running: true },
+    }];
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        onConnectTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('href="/bridges?profile=bridge-1"');
+    expect(markup).toContain('本机桥');
+    expect(markup).toContain('接到…');
   });
 });
 

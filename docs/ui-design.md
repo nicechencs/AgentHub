@@ -6,16 +6,16 @@
 > v1.1：Usage 模型筛选语义、Backups 流程、Dashboard/侧栏与当前 agent 集合对齐。  
 > v1.3：Agents / 首次引导增加 **「环境未就绪」** 态；安装链路先 Runtime 再 Agent。  
 > v1.4：环境条/安装预览按宿主平台分流——macOS 不展示 PowerShell；native 命令预览 Windows=`irm|iex`、macOS=`curl|bash`；Runtime 修复默认 winget/brew。  
-> 2026-08-14 Hub Phase 1：推荐入口为 Dashboard「连接/切换」与 Connections「接到…」，统一 `ConnectFlowDialog`；Adapter 页是桥的高级管理。  
-> 2026-08-15：Connections 全局钱包与真票「接到…」、Dashboard 当前绑定读模型已落地（见 [connection-binding-model.md](connection-binding-model.md) §5–§6 第 1 步）；ConnectFlow 确认步走 `bind`，Adapter 页删除走 `unbind`。下文 §4.1 / §4.3 为目标线框。  
+> 2026-08-14 Hub Phase 1：推荐入口为 Dashboard「连接/切换」与 Connections「接到…」，统一 `ConnectFlowDialog`。  
+> 2026-08-15：Connections 全局钱包与真票「接到…」、Dashboard 当前绑定读模型已落地（见 [connection-binding-model.md](connection-binding-model.md) §5–§6 第 1 步）；ConnectFlow 确认步走 `bind`，本机桥解绑走 `unbind`。用户表面是 **Bridges / 本机桥**（`/bridges`）；内部模块仍叫 Adapter。下文 §4.1 / §4.3 为目标线框。  
 > 把已有登录接到另一个工具的产品文案按三种做法（① 直接改配置 / ② 写进对方认的登录 / ③ 本机转发），见 [product-decisions.md](product-decisions.md)。预览不得把 ①② 写成「需要本机服务」。
 
 ## 1. 设计原则
 
-1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / 桥与适配 / Settings）；用量合并进 Dashboard，备份并入 Settings。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。**例外：Connections 目标态是跨工具钱包**（一份份登录），Agent 只作筛选/高亮，不作第一导航；见 §4.3 与 [connection-binding-model.md](connection-binding-model.md)。底层 accounts/providers 可继续分表，UI 与规划器谈的是登录和绑定。连接从 Agent 卡片或钱包「接到…」发起，`/adapter` 只做本机转发的运行时。
+1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / **Bridges**（有本机桥才出现） / Settings）；用量合并进 Dashboard，备份并入 Settings。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。**例外：Connections 目标态是跨工具钱包**（一份份登录），Agent 只作筛选/高亮，不作第一导航；见 §4.3 与 [connection-binding-model.md](connection-binding-model.md)。底层 accounts/providers 可继续分表，UI 与规划器谈的是登录和绑定。连接从 Agent 卡片或钱包「接到…」发起；`/bridges` 只做本机转发运行时（旧 `/adapter`、`/router` 永久跳过来）。
 2. **危险操作必有前置信息**：切换供应商/账号前展示 backfill 摘要、备份位置、运行中进程警告。
 3. **凭据永不明文回显**：SecretInput 组件统一脱敏（`sk-••••3f2a`），「显示」需二次确认且 10s 后自动遮蔽。
-4. **空状态给动作**：每个空列表都有明确的下一步按钮（添加供应商/导入账号/安装 Agent / 安装运行环境）。
+4. **空状态给动作**：每个空列表都有明确的下一步按钮（添加供应商/导入账号/安装 Agent / 安装运行环境）。**例外：Bridges 健康空态没有按钮**——多数连接不需要本机转发，空是常态，不是待转化漏斗。
 5. **能力不齐是常态**：Kimi 无技能目录、部分账号切换受限等，用 Tab 置灰 / 单元格 `—` / partial 态表达，禁止整页白屏。
 6. **先环境后 Agent**：未满足渠道前置（如缺 Node）时，主按钮是「安装环境 / 查看修复步骤」，不是假装可装 Agent；装完环境后自动「重新检测」再解锁 Agent 安装。
 
@@ -88,7 +88,7 @@ Agent 品牌色（logo 点、图表系列；改 tokens.ts 的 AGENT_COLORS）:
 │ │ Manage         │   │                                      │
 │ │ ▣ Dashboard    │   │                                      │
 │ │ ⇄ Connections  │   │                                      │
-│ │ ▦ 桥与适配      │   │                                      │
+│ │ ▦ Bridges      │   │  （有本机桥才出现；Settings 数据区常驻入口）│
 │ │ ⚙ Settings     │   │                                      │
 │ ├────────────────┤   │                                      │
 │ │ ● N/M agents   │   │   (侧栏底部:agent 在线状态迷你条)      │
@@ -139,7 +139,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - **主动作「连接/切换」**（点击卡片）：打开统一绑定对话框（现名 `ConnectFlowDialog`），目标固定为该编程工具，选一份登录。目标语义是 `bind(这份登录, 此工具)`，不是「在两套池里挑一行」。
 - 徽标（目标态按**当前绑定**展示，过渡期仍可用 profile 联结）：
   - **① 直接改配置 / ② 写进对方认的登录**：`route=reshape`（或命中生成投影）。文案用「只改配置」或「写进对方认的登录」，不要显示转发。
-  - **③ 本机转发**：`route=bridge` 时显示转发状态；查询失败显示「状态不可用」，不得静默隐藏。点击徽标进入「桥与适配」（`stopPropagation`）。
+  - **③ 本机转发**：仅当前生效的 ③ 显示桥徽标；查询失败显示「状态不可用」，不得静默隐藏。点击徽标进入 `/bridges?profile=`（无 id 则 `/bridges`），tip「管理本机桥」（`stopPropagation`）。孤立 / 非当前桥没有徽标。
 - **ConnectFlow（工具侧）**：两组来源——**本来就是给它的登录**（走切换）+ **其他登录**（`plan(ticket, agent)`）。可执行权威是 `plan()` 的 route / maturity / canApply / reason（`canApply` 表示现在能写入）。预览必须标出三种做法之一；② 不得出现「需要本机服务」或转发启停。接不上的登录**留在列表**，置灰 + 原因原文，不从 Connections 藏起来再让本页单独诊断。OAuth 未完成：引导去钱包补登录。空态与「导入登录态 / 新 API Key」走深链 `intent=import-login|add-key`；成功后回 `/?connect=` 重开。导入仍是读官方 CLI 已完成的登录。
 - **共享筛选**（时间 + Agent）驱动一套指标卡与趋势图；筛选变更时 `queryUsage` / `usageTrend` 各请求一次，上下共用 records。
 - 用量图：堆叠 Area，按 agent 分色。选中单 agent 时分布条下钻到**按模型**拆分。
@@ -263,21 +263,17 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - OAuth 添加：对话框展示进度三步——① 打开浏览器授权 ② **等待回调**（loopback 倒计时；**复制授权链接** + **手动粘贴回调 URL** 双降级） ③ 成功显示邮箱 + 订阅等级。
 - 不支持账号切换的 agent 在 mode=accounts 时 Tab 置灰，提示改用「API 配置」。
 
-#### 4.3.3 Adapter（桥与适配）
+#### 4.3.3 Bridges（本机桥）
 
-日常发起适配走 Dashboard / Connections 的 `ConnectFlowDialog`；本页只管理已绑定的本机桥 runtime（`route=local_bridge` 且来源仍在或钱包 binding.profileId 命中），不是日常创建入口，也不是空壳。路由 `/adapter` 完整保留，旧 `/router` 重定向到该页；侧栏 Manage 文案为「桥与适配」。页头主按钮「去 Dashboard 连接」，次按钮「去 Connections」。创建区（选来源 → 分析目标 → plan → apply）已收掉，不再渲染、不再发 analyze/plan。空态说明创建绑定不在本页。
+用户表面是 **本机桥运行时**：协议对不上时在这台电脑上开的一层转发。票在 Connections，绑定在 Dashboard / ConnectFlow；本页只服务 ③。内部模块仍叫 Adapter（`lib/api/adapter`），不得漏进侧栏、页标题、空态、确认框、徽标、托盘。
 
-首屏只列本机桥运行时：
+规范路由 `/bridges`。`/adapter`、`/router` 永久 `replace` 过来（丢弃遗留 `?tab=`）。侧栏英文 **Bridges**，仅当本机确有 `local_bridge`（含孤立）或钱包仍有 `route=bridge` 时出现；Settings → 数据有一条永远在的「本机桥运行时」回收链。页头无「去 Dashboard / 去 Connections」。创建区不在本页。
 
-- **本机转发运行时** — 来源登录、目标工具、端口、健康、start/stop/retry。`local_bridge` 是路径，不是 OAuth。只改配置 / 写进对方认的登录 不出现在本页。
+列出全部 `route=local_bridge`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机桥」。行与详情都是**单层**进程健康 + 端口，不画「配置已生效 / 桥接运行中」。解绑只走 `unbindTicket`，不提供 `removeAdapter`。健康空态（profile 与钱包均已结算且 `bound+orphan===0` 且 last-known 钱包桥数为 0）标题「没有本机桥」，**无按钮**——这是对 §1.4 的显式例外。
 
-OAuth 未完成时只引导去 Connections，不在本页发起登录。兼容性规则仍按来源独立判定；创建/apply 只走 ConnectFlow。
-
-- 与 ConnectFlow 两处 apply 同源（`lib/api/adapter`）；可执行权威是 `plan.canApply`，禁止以 `analysis.support` 推断可执行。页面不得根据 route 名称自行开放按钮。
-- 规则名称、route 和可执行状态以[当前实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)为准；应用后创建受管 profile 和目标 Provider。
-- `plan.canApply=false` 的规则不能从新建预览应用；可应用的实验 Bridge 由 Tauri 专用路径执行。已有 Bridge profile 可显示 start/stop/status 与 auto-start 控件，实验路径仍需完成端到端验收。
-- 预览只展示凭据引用和脱敏动作，不展示 Connection secret 或完整配置正文。
-- 厂商/API/OAuth 规则见 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)；页面与 Bridge 设计见 [adapter-design.md](adapter-design.md)。
+- 与 ConnectFlow 两处 bind 同源（`lib/api/adapter` / `lib/api/tickets`）；可执行权威是 `plan.canApply`，禁止以 `analysis.support` 推断可执行。
+- 规则名称、route 和可执行状态以[当前实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)为准。
+- 厂商/API/OAuth 规则见 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)；页面与 Bridge 设计见 [adapter-design.md](adapter-design.md)、[bridges-page-redesign.md](bridges-page-redesign.md)。
 
 ### 4.4 Chat（会话）
 

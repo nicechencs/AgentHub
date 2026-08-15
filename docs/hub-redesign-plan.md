@@ -1,6 +1,7 @@
 # Hub 重构 Phase 1 实施方案（Agent 优先信息架构）v2
 
 > 状态：**Phase 1 已实施**（2026-08-14），本文保留为当时的实施记录。  
+> **§3.2 过渡冻结已解除**（2026-08-15）：终态 IA 见 [bridges-page-redesign.md](bridges-page-redesign.md)——规范路由 `/bridges`，侧栏英文 Bridges（有桥才出现），页目录 `src/pages/bridges/`。下文 §3.2「不移除 `/adapter`、不改路由结构、侧栏改名『桥与适配』」是当时护栏，不是现行约束。  
 > **2026-08-15 起的领域与 UI 目标**改以 [connection-binding-model.md](connection-binding-model.md) 为准：票 / 绑定 / 协议图；Connections 改为全局钱包；真票常驻「接到…」；生成投影退出列表。**产品方向**以 [product-decisions.md](product-decisions.md) 为准（① API 直连 / ② 原生订阅 / ③ 本机桥）。下文「不改 OAuth 门禁」只约束当时 Phase 1 实施范围，不是「订阅一律不跨 Agent」。Phase 1 的对话框外壳仍可复用，**按 Agent tab 分页、行按钮白名单、诊断只放 Dashboard 不再是终态**，UI 允许按目标文档重做。
 > 验收：pnpm typecheck / typecheck:test / test（627 用例，含集成 bug 防回归）/ build 全绿；cargo test 79 用例全绿（Rust 未改动）；dev:mock 冒烟通过（空态引导、非空可行性置灰+原因、无控制台错误）。
 > 关联文档同步：docs/ui-design.md、docs/adapter-design.md 正文定位、docs/architecture.md §4.1 目录树（lib/connect-flow、components/connect）与 §4.6、README.md、docs/README.md、docs/agenthub-plan.md、docs/testing.md、docs/adapter-kimi-codex-dogfood.md。
@@ -47,7 +48,7 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
    - **原生切换同样有 capability 门禁**：复用 Connections 页现有判定（account switch 能力与 `providerCapabilityGate.canSwitch`），不可切换项状态为 `blocked_native(reason)`，置灰显示既有原因文本，不进入 preview/switch。
    - adapter 生成的 Provider（经 `AdapterProfile.generatedProviderId` 识别）在本组显示并标注"经兼容路由 · 来源 X"，切换到它同样走原生 provider 切换。
 2. **其他服务凭据（跨服务复用组，本期核心）**：钱包中排除以下项后的全部凭据：
-   - adapter 生成的 Provider（沿用 `src/pages/adapter/adapter-sources.ts` 的 `excludeAdapterGeneratedSources` 规则，避免二次投影链）；
+   - adapter 生成的 Provider（沿用 `src/lib/connect-flow/eligibility.ts` 的 `excludeAdapterGeneratedSources` 规则，避免二次投影链；历史 Phase 1 文件名：`src/pages/adapter/adapter-sources.ts`）；
    - 目标 Agent 自有凭据（已在组 1）。
    - **可行性权威：对每个候选 fan-out `planAdapter`（只读 Phase 0 预览），以 `plan.canApply` 决定可选/置灰**；路线摘要与原因取 `plan.analysis`。禁止以 `analysis.support` 推断可执行。
    - **两层门禁分离**：(a) 来源 OAuth 未完成 → 本地预检（沿用 adapter-sources.ts 既有识别），**不发起 fan-out**，该项显示"去 Connections 完成登录"；(b) OAuth 完成但能力矩阵关闭 → plan 返回的原因文本原样透传，置灰。
@@ -87,7 +88,7 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 - **不动 Rust 后端**：analyze/plan/apply/bridge/OAuth/switch 命令与能力矩阵原样使用。若实施中发现必须改后端才能达成目标，停下上报，不得绕过。
 - **不做 AdapterProfile 与 agent_active_bindings 的物理合并**（推迟 Phase 2；本期只做前端读模型聚合）。
 - **不改 OAuth 门禁**：`canApply=false` 的路线保持不可用，UI 呈现为置灰+原因。
-- **不移除 `/adapter` 页与侧栏入口**。过渡期职责定位：Dashboard/Connections 为推荐入口，Adapter 页为高级管理与兼容入口（profile 管理、桥控制细节）；两处 apply 行为同源（同一 lib/api 门面），不允许行为分叉。侧栏文案已改为「桥与适配」，创建区已收掉。
+- **不移除 `/adapter` 页与侧栏入口**（**2026-08-15 已解除**：现行规范路由 `/bridges`，侧栏英文 Bridges 有桥才出现；见 [bridges-page-redesign.md](bridges-page-redesign.md)）。过渡期职责定位：Dashboard/Connections 为推荐入口，本页只管理桥 runtime；两处 apply 行为同源（同一 lib/api 门面），不允许行为分叉。侧栏文案当时改为「桥与适配」，创建区已收掉。
 - **不重做 OAuth 授权 UI**、不做 ①② 引导跳转的自动弹窗与回跳闭环（Phase 2）。
 - **不重构 Connections 页 tab 信息架构**（全局钱包视图属 Phase 2）。
 - **不修改 `src/lib/api/adapter.ts` 既有行为**（含 apply 后连接池刷新异常被吞的既有语义——对话框通过 `onApplied` 自行补偿刷新并呈现刷新失败）。
@@ -96,7 +97,7 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 
 ## 4. 现状锚点（实施者必读，v2 已按评审核实修正）
 
-- 路由与页面：`src/App.tsx`（`/` Dashboard、`/connections`、`/adapter`；旧路由均已重定向）。侧栏 `src/components/layout/Sidebar.tsx`。
+- 路由与页面：`src/App.tsx`（`/` Dashboard、`/connections`、`/bridges`；`/adapter`、`/router` 永久跳到 `/bridges`）。侧栏 `src/components/layout/Sidebar.tsx`（英文 Bridges，有桥才出现）。
 - Dashboard 卡片：`src/pages/dashboard/AgentOverview.tsx` + `agentOverviewModel.ts`。**注意：AgentOverview 只渲染已安装 Agent**；`buildAgentCardView.target` 现为 URL 字符串且被测试断言（改动作模型时同步改测试）。
 - 生效连接解析：`src/lib/api/agent-connection.ts`（基于 accounts/providers 的 isCurrent）。**Dashboard 的 agents 状态来自页面自身的 `listAgents()` 加载，不随连接池自动刷新**——apply 后需显式触发重载。
 - 连接池 store：`src/app/runtime/connection-pool-store.ts`（accounts+providers 缓存与 `notifyConnectionPoolChanged`）。
@@ -104,9 +105,9 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 - Adapter 门面：`src/lib/api/adapter.ts`（analyze/plan/apply/remove/listProfiles/bridge 全套；**apply 内部的连接池刷新失败会被吞掉**，页面不得直接 invoke）。
 - 可执行权威：`src/lib/backend/contracts/adapter.ts` 中 `AdapterApplyPlan.canApply`；`analysis.support` 仅表示兼容性。存在 `support='stable'` 但 `canApply=false` 的真实路径。
 - **前端 `Provider` 类型无 `meta` 字段**（`src/lib/types.ts`；`provider-map.ts` 仅映射 preset/official）。adapter 生成 Provider 的唯一前端识别方式：`AdapterProfile.generatedProviderId ↔ Provider.id`。
-- 既有 fan-out 参照：`src/pages/adapter/use-adapter-target-analyses.ts`（缓存、generation 防竞态、单项 retry）。**已知局限需在新实现中修复：无并发上限、缓存无失效机制**。
-- 来源排除与 OAuth 预检参照：`src/pages/adapter/adapter-sources.ts`（`excludeAdapterGeneratedSources`、OAuth 未完成识别）。
-- 桥状态轮询参照：`src/pages/adapter/use-adapter-resources.ts`（4s 轮询、失败映射为不可用而非隐藏）与 `src/pages/adapter/index.test.tsx` 中可注入 helper 的测试模式。
+- 既有 fan-out 参照：`src/lib/connect-flow/`（`plan-fanout.ts` / `eligibility.ts`；缓存、generation 防竞态、单项 retry）。历史 Phase 1 文件名：`src/pages/adapter/use-adapter-target-analyses.ts`。**已知局限需在新实现中修复：无并发上限、缓存无失效机制**。
+- 来源排除与 OAuth 预检参照：`src/lib/connect-flow/eligibility.ts`（`excludeAdapterGeneratedSources`、OAuth 未完成识别）。历史 Phase 1 文件名：`src/pages/adapter/adapter-sources.ts`。
+- 桥状态轮询参照：`src/pages/bridges/use-bridge-resources.ts`（4s 轮询、失败映射为不可用而非隐藏）与 `src/pages/bridges/index.test.tsx` 中可注入 helper 的测试模式。历史 Phase 1 文件名：`src/pages/adapter/use-adapter-resources.ts`。
 - **后端 apply 语义**：直接路由与首次桥 apply 均会把生成/更新的 Provider 设为目标 Agent 当前连接（`adapter_apply_service.rs`、`adapter_bridge_controller.rs`）。
 - 测试环境：**vitest Node 环境，无 jsdom/RTL，不能直接渲染 hook**。逻辑必须抽成可注入的命令式 helper/controller，hook 只做薄封装（参照 `startAdapterBridgeStatusPoll` 的既有模式）。
 - Mock：`src/dev/mocks/` 已覆盖 adapter/account/provider 域门面；**初始 fixture 为空，backend factory 未重置 account 域**——本期需要的 fixture/reset 补在 dev/mocks（不得往生产 façade 加测试钩子）。
@@ -226,6 +227,6 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 4. 写入收成 `bind` / `unbind`；现有四条 apply 路径先改写成绑定实现。
 5. 再按协议图加边（Anthropic→Codex、Kimi→Grok、新 surface……）。
 
-仍有效、且已落地的 Phase 1 资产：ConnectFlow 双入口外壳、①② 深链、`/adapter` 不做日常创建。Adapter 页继续只管理桥 runtime。
+仍有效、且已落地的 Phase 1 资产：ConnectFlow 双入口外壳、①② 深链、本机桥页不做日常创建。现行表面是 `/bridges`（侧栏 Bridges，有桥才出现），只管理 ③ 运行时。
 
 OAuthFlowDialog 收编进 Connections 仍未做，可并进钱包「添加票」。

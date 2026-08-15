@@ -4,6 +4,7 @@
  * 「详情」is a read-only expand; edit/delete stay secondary actions inside it.
  */
 import * as React from 'react';
+import { Link } from 'react-router-dom';
 import { ChevronDown, KeyRound, Pencil, Plus, Share2, Search, Trash2 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { DetailRow } from '@/components/shared/DetailRow';
@@ -143,7 +144,7 @@ function TicketRow({
   onEdit: (ticket: TicketView) => void;
   onDelete: (ticket: TicketView) => void;
 }) {
-  const { ticket, usageText, highlighted } = row;
+  const { ticket, usageParts, highlighted } = row;
   const [expanded, setExpanded] = React.useState(false);
   const detailsId = React.useId();
   const editLabel = ticketDetailEditLabel(extras);
@@ -192,7 +193,22 @@ function TicketRow({
           </Button>
         </div>
       </div>
-      <p className="mt-1 pl-5 text-2xs text-secondary">{usageText}</p>
+      <p className="mt-1 pl-5 text-2xs text-secondary">
+        {usageParts.map((part, index) => (
+          part.kind === 'bridge' ? (
+            <Link
+              key={`${part.href}:${index}`}
+              to={part.href}
+              className="text-info underline"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {part.label}
+            </Link>
+          ) : (
+            <span key={`text:${index}`}>{part.text}</span>
+          )
+        ))}
+      </p>
       {expanded ? (
         <TicketDetailPanel
           id={detailsId}

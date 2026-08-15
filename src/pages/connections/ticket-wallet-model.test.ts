@@ -12,6 +12,7 @@ import {
   filterTickets,
   findTicketPoolSource,
   formatTicketBindingDetailLines,
+  formatTicketUsageParts,
   formatTicketUsageText,
   isUnrecognizedTicket,
   searchTickets,
@@ -144,6 +145,16 @@ describe('binding usage text', () => {
     expect(formatTicketUsageText(kimiBindings)).toContain('改配置');
     expect(formatTicketUsageText(kimiBindings)).toContain('本机桥 · 运行中');
     expect(formatTicketUsageText([])).toBe('未使用');
+    const parts = formatTicketUsageParts(kimiBindings);
+    expect(parts.some((part) => part.kind === 'bridge' && part.href === '/bridges?profile=p2')).toBe(true);
+    expect(formatTicketUsageParts([{
+      ticketId: 'provider:kimi-1',
+      agentId: 'codex',
+      route: 'bridge',
+      active: true,
+      profileId: null,
+      bridge: { port: 8123, running: true },
+    }]).some((part) => part.kind === 'bridge' && part.href === '/bridges')).toBe(true);
   });
 
   it('maps dashboard meta text', () => {

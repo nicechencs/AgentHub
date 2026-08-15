@@ -65,7 +65,7 @@ async function bindViaTicket(request: AdapterApplyRequest): Promise<AdapterApply
       && row.targetAgentId === request.targetAgentId
     ));
   if (!profile) {
-    throw new Error('绑定已生效，但未找到适配配置');
+    throw new Error('绑定已生效，但未找到对应的绑定配置');
   }
   const providers = await providerApi.listProviders(request.targetAgentId);
   const provider = profile.generatedProviderId

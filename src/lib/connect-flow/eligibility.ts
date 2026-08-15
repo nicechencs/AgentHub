@@ -13,11 +13,11 @@ import type {
   SourceOptionsInput,
 } from './types';
 
-/** Copied from src/pages/adapter/adapter-sources.ts (isOAuthAuthIncomplete). */
+/** Canonical in this module. */
 const INCOMPLETE_OAUTH_HEALTH = new Set(['needs_login', 'missing']);
 const INCOMPLETE_OAUTH_STATUS = new Set(['expired', 'none']);
 
-/** Copied from src/pages/adapter/adapter-sources.ts (oauthIncompleteAuthHint). */
+/** Canonical in this module. */
 export const OAUTH_INCOMPLETE_MESSAGE = '官方登录未完成，先到 Connections 授权。';
 
 /**
@@ -130,8 +130,8 @@ export function planToEligibility(plan: AdapterApplyPlan): PlanEligibility {
 }
 
 /**
- * Copied from src/pages/adapter/adapter-sources.ts (isOAuthAuthIncomplete),
- * applied to Account via the same authDisplay mapping Connections uses.
+ * Canonical in this module.
+ * Applied to Account via the same authDisplay mapping Connections uses.
  */
 export function isOauthIncomplete(account: Account): boolean {
   if (account.kind !== 'oauth') return false;
@@ -197,7 +197,7 @@ export function buildSourceOptions(input: SourceOptionsInput): SourceOption[] {
       pushNativeProvider(provider);
       continue;
     }
-    // Copied from adapter-sources.ts excludeAdapterGeneratedSources:
+    // Canonical in this module:
     // generated Providers must not be offered as nested cross-service sources.
     if (isGenerated) continue;
     cross.push({

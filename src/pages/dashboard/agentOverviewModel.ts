@@ -22,7 +22,7 @@ export interface AgentCardBadgeInput {
   /** 当前生效 provider.id 命中 AdapterProfile.generatedProviderId 时传入 */
   viaAdapter?: { sourceLabel?: string } | null;
   /** 命中的 profile 为 bridge 型时传入；查询失败传 unavailable，不得省略 */
-  bridge?: { state: AgentCardBridgeState } | null;
+  bridge?: { state: AgentCardBridgeState; profileId?: string | null } | null;
   /**
    * 当前绑定的票（钱包读模型）。有值时卡片主文案优先展示
    * 「票 label · 直连/改配置/本机桥」，不再只显示 Provider 行名。
@@ -93,7 +93,7 @@ export interface AgentCardView {
   /** 当前生效连接经 Adapter 投影时非空 */
   viaAdapter?: { sourceLabel?: string };
   /** 命中 bridge 型 profile 时非空；查询失败为 unavailable，不得省略 */
-  bridge?: { state: AgentCardBridgeState; label: string };
+  bridge?: { state: AgentCardBridgeState; label: string; profileId: string | null };
   /** 钱包读模型：当前绑定的票 */
   binding?: { ticketLabel: string; routeLabel: string };
 }
@@ -107,10 +107,14 @@ function mapViaAdapter(
 }
 
 function mapBridgeBadge(
-  input?: { state: AgentCardBridgeState } | null,
-): { state: AgentCardBridgeState; label: string } | undefined {
+  input?: { state: AgentCardBridgeState; profileId?: string | null } | null,
+): { state: AgentCardBridgeState; label: string; profileId: string | null } | undefined {
   if (!input) return undefined;
-  return { state: input.state, label: AGENT_CARD_BRIDGE_LABEL[input.state] };
+  return {
+    state: input.state,
+    label: AGENT_CARD_BRIDGE_LABEL[input.state],
+    profileId: input.profileId ?? null,
+  };
 }
 
 /** 按 AGENTS 定义顺序生成卡片视图模型（不排序） */

@@ -48,6 +48,7 @@ import type { AppSettings, LogLevel, SkillMarketSource } from '@/lib/types';
 import { applyTheme } from '@/lib/theme';
 import { notifyUsageSettingsChanged } from '@/lib/usage-sync';
 import { BackupsPanel } from './BackupsPanel';
+import { BRIDGES_PATH } from '@/pages/bridges/adapter-model';
 
 /** Project homepage on GitHub (releases, issues, source). */
 const GITHUB_REPO_URL = 'https://github.com/nicechencs/AgentHub';
@@ -457,6 +458,18 @@ export default function SettingsPage({
         <TabsContent value="data">
           <Card>
             <CardContent className="divide-y divide-border pt-1">
+              <Row
+                label="本机桥运行时"
+                description="永远可打开"
+                descriptionTip="管本机转发进程。侧栏只在有桥时出现；这里始终可找回。"
+              >
+                <Link
+                  to={BRIDGES_PATH}
+                  className="inline-flex h-7 items-center justify-center rounded-btn border border-border bg-transparent px-2.5 text-xs font-medium text-secondary transition-colors hover:bg-hover hover:text-primary"
+                >
+                  打开
+                </Link>
+              </Row>
               <Row
                 label="数据目录"
                 description="只读"
