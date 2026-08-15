@@ -100,7 +100,7 @@ Hub Phase 1 统一连接流程的测试分文件存放（遵守 §1）；前端 
 | 逻辑 | `src/lib/connect-flow/plan-fanout.test.ts` | plan fan-out |
 | 逻辑 | `src/lib/connect-flow/connection-usage.test.ts` | 用途聚合 |
 | 逻辑 | `src/lib/connect-flow/default-deps.test.ts` | 默认依赖组装 |
-| 逻辑 | `src/lib/connect-flow/reuse-offer.test.ts` | 当前：行按钮白名单（Kimi 会员 / Anthropic Provider，隐藏 account 与生成投影）。目标：真票常驻「接到…」，只排除生成投影与非票行，见 [connection-binding-model.md](connection-binding-model.md)。改 UI 时同步改本用例 |
+| 逻辑 | `src/lib/connect-flow/reuse-offer.test.ts` | 真票常驻「接到…」，只排除生成投影与非票行；不可行在 ConnectFlow 置灰 + 原因，见 [connection-binding-model.md](connection-binding-model.md) |
 | 逻辑 | `src/lib/connect-flow/connect-intent.test.ts` | ①② 引导深链（intent/resume/`/?connect=` 的 parse/build/consume） |
 | 状态机 | `src/components/connect/connect-flow-state.test.ts` | 对话框状态机 |
 

@@ -3,6 +3,7 @@
 use agenthub_core::models::{
     AdapterApplyPlan, AdapterApplyRequest, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind,
+    TicketBindingRoute, TicketPlanRequest, TicketWallet,
 };
 use tauri::State;
 
@@ -57,6 +58,48 @@ pub async fn plan_adapter(
                 target_agent_id,
             })
             .map_err(|err| map_err_string("plan_adapter", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// List the read-only Ticket / Binding wallet (generated projections excluded).
+#[tauri::command]
+pub async fn list_ticket_wallet(
+    state: State<'_, AppState>,
+) -> Result<TicketWallet, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    let host = state.bridge_host();
+    with_hub_blocking(hub, move |hub| {
+        let mut wallet = hub
+            .tickets
+            .list_wallet()
+            .map_err(|err| map_err_string("list_ticket_wallet", err))?;
+        enrich_bridge_running(&host, &mut wallet);
+        Ok(wallet)
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Plan an adapter route from a ticket id (`account:<id>` / `provider:<id>`).
+///
+/// Wire shape matches [`plan_adapter`] exactly.
+#[tauri::command]
+pub async fn plan_ticket(
+    state: State<'_, AppState>,
+    ticket_id: String,
+    target_agent_id: String,
+) -> Result<AdapterApplyPlan, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let target_agent_id = parse_agent(&target_agent_id)?;
+        hub.tickets
+            .plan(&TicketPlanRequest {
+                ticket_id,
+                target_agent_id,
+            })
+            .map_err(|err| map_err_string("plan_ticket", err))
     })
     .await
     .map_err(adapter_error_from_string)
@@ -283,6 +326,32 @@ fn parse_route(route: &str) -> Result<AdapterRoute, String> {
 
 fn parse_route_opt(route: Option<&str>) -> Result<Option<AdapterRoute>, String> {
     route.map(parse_route).transpose()
+}
+
+/// Best-effort fill of `bridge.running` from the process-local listener host.
+/// Core leaves `running=false`; this stays in the GUI command layer to avoid
+/// a core → host dependency.
+fn enrich_bridge_running(
+    host: &agenthub_core::bridge::BridgeRuntimeHost,
+    wallet: &mut TicketWallet,
+) {
+    for binding in &mut wallet.bindings {
+        if binding.route != TicketBindingRoute::Bridge {
+            continue;
+        }
+        let Some(profile_id) = binding.profile_id.as_deref() else {
+            continue;
+        };
+        let Ok(Some(status)) = host.status(profile_id) else {
+            continue;
+        };
+        if let Some(bridge) = binding.bridge.as_mut() {
+            bridge.running = status.running;
+            if status.running {
+                bridge.port = Some(status.port);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

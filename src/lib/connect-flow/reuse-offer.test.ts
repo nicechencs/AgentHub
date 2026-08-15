@@ -77,29 +77,8 @@ describe('isAnthropicApiProvider', () => {
   });
 });
 
-describe('connectionCanReuseToOtherAgents', () => {
-  it('offers Kimi membership providers', () => {
-    const kimi = provider({ id: 'kimi-1', preset: 'kimi-code-membership' });
-    expect(connectionCanReuseToOtherAgents({
-      source: 'provider',
-      id: kimi.id,
-      agentId: kimi.agentId,
-      provider: kimi,
-    })).toBe(true);
-  });
-
-  it('offers Claude Anthropic API providers', () => {
-    const anthropic = provider({ id: 'ant-1', agentId: 'claude', preset: 'anthropic' });
-    expect(connectionCanReuseToOtherAgents({
-      source: 'provider',
-      id: anthropic.id,
-      agentId: anthropic.agentId,
-      provider: anthropic,
-    })).toBe(true);
-  });
-
-  it('hides every account source — implemented_apply_whitelist closes non-Provider', () => {
-    // adapter_route_service.rs: if request.source_kind != Provider { return false; }
+describe('connectionCanReuseToOtherAgents (true tickets always)', () => {
+  it('offers every account ticket including OAuth and API Key', () => {
     const cases: Account[] = [
       account({ id: 'claude-oauth', kind: 'oauth', agentId: 'claude' }),
       account({ id: 'codex-oauth', kind: 'oauth', agentId: 'codex' }),
@@ -111,40 +90,37 @@ describe('connectionCanReuseToOtherAgents', () => {
         source: 'account',
         id: row.id,
         agentId: row.agentId,
-      })).toBe(false);
+      })).toBe(true);
     }
   });
 
-  it('rejects Claude official-login shaped providers without Anthropic API', () => {
-    const official = provider({
-      id: 'claude-official',
-      agentId: 'claude',
-      preset: 'custom',
-      configText: '{}',
-    });
-    expect(connectionCanReuseToOtherAgents({
-      source: 'provider',
-      id: official.id,
-      agentId: official.agentId,
-      provider: official,
-    })).toBe(false);
+  it('offers Kimi membership, Anthropic, moonshot, and unknown providers alike', () => {
+    const rows = [
+      provider({ id: 'kimi-1', preset: 'kimi-code-membership' }),
+      provider({ id: 'ant-1', agentId: 'claude', preset: 'anthropic' }),
+      provider({ id: 'kimi-open', preset: 'moonshot' }),
+      provider({
+        id: 'claude-official',
+        agentId: 'claude',
+        preset: 'custom',
+        configText: '{}',
+      }),
+    ];
+    for (const row of rows) {
+      expect(connectionCanReuseToOtherAgents({
+        source: 'provider',
+        id: row.id,
+        agentId: row.agentId,
+        provider: row,
+      })).toBe(true);
+    }
   });
 
-  it('rejects provider source without a provider field', () => {
+  it('rejects provider source without an id', () => {
     expect(connectionCanReuseToOtherAgents({
       source: 'provider',
-      id: 'missing-provider',
+      id: '',
       agentId: 'claude',
-    })).toBe(false);
-  });
-
-  it('hides moonshot Kimi providers', () => {
-    const moonshot = provider({ id: 'kimi-open', preset: 'moonshot' });
-    expect(connectionCanReuseToOtherAgents({
-      source: 'provider',
-      id: moonshot.id,
-      agentId: moonshot.agentId,
-      provider: moonshot,
     })).toBe(false);
   });
 });
@@ -162,7 +138,7 @@ describe('shouldShowReuseAction', () => {
     expect(shouldShowReuseAction(kimiEntry, { reuseEnabled: false })).toBe(false);
   });
 
-  it('hides adapter-generated providers even if they look reusable', () => {
+  it('hides adapter-generated providers (projections are not tickets)', () => {
     expect(shouldShowReuseAction(kimiEntry, {
       reuseEnabled: true,
       adapterGeneratedProviderIds: new Set(['kimi-1']),
@@ -173,13 +149,13 @@ describe('shouldShowReuseAction', () => {
     expect(shouldShowReuseAction(kimiEntry, { reuseEnabled: true })).toBe(true);
   });
 
-  it('hides account rows even when reuse is wired', () => {
+  it('shows account rows when reuse is wired (true tickets)', () => {
     const oauth = account({ id: 'claude-oauth', kind: 'oauth' });
     expect(shouldShowReuseAction({
       source: 'account',
       id: oauth.id,
       agentId: oauth.agentId,
-    }, { reuseEnabled: true })).toBe(false);
+    }, { reuseEnabled: true })).toBe(true);
   });
 
   it('shows Claude Anthropic providers when reuse is wired', () => {
@@ -189,6 +165,21 @@ describe('shouldShowReuseAction', () => {
       id: anthropic.id,
       agentId: anthropic.agentId,
       provider: anthropic,
+    }, { reuseEnabled: true })).toBe(true);
+  });
+
+  it('shows unknown / non-whitelist providers when reuse is wired', () => {
+    const unknown = provider({
+      id: 'relay-1',
+      agentId: 'claude',
+      preset: 'custom',
+      configText: '{}',
+    });
+    expect(shouldShowReuseAction({
+      source: 'provider',
+      id: unknown.id,
+      agentId: unknown.agentId,
+      provider: unknown,
     }, { reuseEnabled: true })).toBe(true);
   });
 });

@@ -181,7 +181,7 @@ export function ConnectionCard({
               disabled={switching}
               onClick={() => onReuseRequest?.(entry)}
             >
-              <Share2 className="h-3.5 w-3.5" /> 用于其他 Agent
+              <Share2 className="h-3.5 w-3.5" /> 接到…
             </Button>
           )}
           {entry.source === 'provider' && canEditProvider && (

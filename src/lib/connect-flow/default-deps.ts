@@ -2,8 +2,10 @@
  * ConnectFlow 默认依赖：组装既有 lib/api 门面与本目录纯函数实现。
  */
 import { switchAccount } from '@/lib/api/account';
-import { applyAdapter, listAdapterProfiles, planAdapter } from '@/lib/api/adapter';
+import { applyAdapter, listAdapterProfiles } from '@/lib/api/adapter';
+import { planTicket } from '@/lib/api/tickets';
 import * as providerApi from '@/lib/api/provider';
+import type { AdapterApplyPlan, AdapterRouteRequest } from '@/lib/backend/contracts/adapter';
 import { buildSourceOptions, isOauthIncomplete } from './eligibility';
 import { createPlanFanout } from './plan-fanout';
 import type { ConnectFlowDeps, PlanFanoutDeps, SourceOption } from './types';
@@ -29,9 +31,14 @@ async function previewNative(option: SourceOption) {
   return providerApi.switchPreview(option.agentId, option.ref.id);
 }
 
+/** plan(ticket, agent) via ticket façade; request still uses source kind/id. */
+async function planViaTicket(request: AdapterRouteRequest): Promise<AdapterApplyPlan> {
+  return planTicket(`${request.sourceKind}:${request.sourceId}`, request.targetAgentId);
+}
+
 export function createDefaultConnectFlowDeps(): ConnectFlowDeps {
   return {
-    plan: planAdapter,
+    plan: planViaTicket,
     apply: applyAdapter,
     listProfiles: listAdapterProfiles,
     switchNative,
@@ -40,7 +47,7 @@ export function createDefaultConnectFlowDeps(): ConnectFlowDeps {
     isOauthIncomplete,
     createPlanFanout(overrides?: Partial<PlanFanoutDeps>) {
       return createPlanFanout({
-        plan: overrides?.plan ?? planAdapter,
+        plan: overrides?.plan ?? planViaTicket,
         concurrency: overrides?.concurrency,
         isOauthIncomplete: overrides?.isOauthIncomplete ?? isOauthIncomplete,
       });

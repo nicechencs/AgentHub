@@ -6,8 +6,8 @@
 > v1.1：Usage 模型筛选语义、Backups 流程、Dashboard/侧栏与当前 agent 集合对齐。  
 > v1.3：Agents / 首次引导增加 **「环境未就绪」** 态；安装链路先 Runtime 再 Agent。  
 > v1.4：环境条/安装预览按宿主平台分流——macOS 不展示 PowerShell；native 命令预览 Windows=`irm|iex`、macOS=`curl|bash`；Runtime 修复默认 winget/brew。  
-> 2026-08-14 Hub Phase 1：推荐入口为 Dashboard「连接/切换」与 Connections「用于其他 Agent」，统一 `ConnectFlowDialog`；Adapter 页是桥的高级管理。  
-> 2026-08-15：**目标 UI** 按 [connection-binding-model.md](connection-binding-model.md) 重做——Connections 是全局钱包，真票都有「接到…」，生成投影不进列表；Dashboard 展示当前绑定。下文 §4.1 / §4.3 先写目标线框，并注明与当前实现的差异。现有按 Agent tab 分页、行按钮白名单**不是终态**。
+> 2026-08-14 Hub Phase 1：推荐入口为 Dashboard「连接/切换」与 Connections「接到…」，统一 `ConnectFlowDialog`；Adapter 页是桥的高级管理。  
+> 2026-08-15：Connections 全局钱包与真票「接到…」、Dashboard 当前绑定读模型已落地（见 [connection-binding-model.md](connection-binding-model.md) §5–§6 第 1 步）；`bind`/`unbind` 写入仍未改。下文 §4.1 / §4.3 为目标线框。
 
 ## 1. 设计原则
 
@@ -210,8 +210,8 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - **每一张真票都有「接到…」**，打开同一绑定对话框（票固定，选 Agent）。无边、无 writer、未识别：对话框内置灰 + 原因，不在行上隐藏动作。
 - 「切换」只用于该票对原生 Agent 的 native 绑定。接到其他 Agent 一律走 `bind`。
 - 添加票时写下 `surface`。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意 Agent）。
-- **当前实现（对照）**：仍按 AgentTabStrip 分页；「用于其他 Agent」仅 Kimi 会员 Provider 与 Claude Anthropic Provider 显示；account 行与生成 Provider 不显示。改 UI 时以本节目的线框为准，不必兼容旧分页为终态。
-- 实现落点（过渡）：现有 `ConnectionList` / `connection-model` / `ProviderEditDialog` 可逐步改成票列表；新逻辑对 `reuse-offer` 应变为「真票常驻，生成物除外」。
+- **已落地（读模型）**：跨 Agent 钱包列表 + 真票常驻「接到…」+ Dashboard 当前绑定；生成投影不进钱包。写入仍走既有 apply，见 [connection-binding-model.md](connection-binding-model.md) §6。
+- 实现落点：`TicketWalletList` / `ticket-wallet-model` / `lib/api/tickets`；`reuse-offer` 为真票常驻语义。
 
 #### 4.3.1 mode=providers — API 配置
 

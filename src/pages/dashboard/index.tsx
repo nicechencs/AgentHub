@@ -56,6 +56,8 @@ import {
   type UsageAvailability,
 } from '@/lib/api/usage';
 import { createBackup } from '@/lib/api/backup';
+import { listTicketWallet, type TicketWallet } from '@/lib/api/tickets';
+import { bindingRouteDashboardLabel } from '@/lib/backend/contracts/ticket';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
 import { consumeConnectResume, parseConnectResumeParam } from '@/lib/connect-flow/connect-intent';
 import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
@@ -103,6 +105,14 @@ function mapBridgeState(state: AdapterBridgeRuntimeState): AgentCardBridgeState 
   if (state === 'running' || state === 'starting') return 'running';
   if (state === 'degraded' || state === 'error') return 'degraded';
   return 'stopped';
+}
+
+function activeWalletBinding(wallet: TicketWallet, agentId: AgentId) {
+  const binding = wallet.bindings.find((b) => b.agentId === agentId && b.active);
+  if (!binding) return null;
+  const ticket = wallet.tickets.find((t) => t.id === binding.ticketId);
+  if (!ticket) return null;
+  return { ticket, binding };
 }
 
 /** 桥状态轮询间隔，与 Adapter 页 use-adapter-resources 一致 */
@@ -167,6 +177,7 @@ export default function DashboardPage() {
   // —— 连接流程（Hub 主入口）：卡片徽标数据 + ConnectFlowDialog 接线 ——
   const pool = useConnectionPool();
   const [profiles, setProfiles] = useState<AdapterProfile[]>([]);
+  const [wallet, setWallet] = useState<TicketWallet | null>(null);
   const [connectEntry, setConnectEntry] = useState<ConnectFlowEntry | null>(null);
   const [bridgeStates, setBridgeStates] = useState<Record<string, AgentCardBridgeState>>({});
   const connectDeps = useMemo(() => createDefaultConnectFlowDeps(), []);
@@ -189,6 +200,19 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const walletGeneration = useRef(0);
+  const loadWallet = useCallback(async (): Promise<boolean> => {
+    const generation = ++walletGeneration.current;
+    try {
+      const next = await listTicketWallet();
+      if (walletGeneration.current === generation) setWallet(next);
+      return true;
+    } catch {
+      if (walletGeneration.current === generation) setWallet(null);
+      return false;
+    }
+  }, []);
+
   useEffect(() => {
     if (poolState === 'idle') void poolEnsureLoaded();
   }, [poolState, poolEnsureLoaded]);
@@ -196,6 +220,10 @@ export default function DashboardPage() {
   useEffect(() => {
     void loadProfiles();
   }, [loadProfiles]);
+
+  useEffect(() => {
+    void loadWallet();
+  }, [loadWallet]);
 
   /** 生效 provider 命中 adapter 生成投影 → 「经兼容路由」徽标（profile 联结，不读 provider.meta） */
   const adapterBadgeHits = useMemo(() => {
@@ -252,16 +280,26 @@ export default function DashboardPage() {
 
   const badgeInputs = useMemo(() => {
     const inputs: Partial<Record<AgentId, AgentCardBadgeInput>> = {};
-    for (const [agentId, hit] of adapterBadgeHits) {
+    for (const meta of AGENTS) {
+      const hit = adapterBadgeHits.get(meta.id);
       const bridgeState =
-        hit.profile.route === 'local_bridge' ? bridgeStates[hit.profile.id] : undefined;
-      inputs[agentId] = {
-        viaAdapter: { sourceLabel: hit.sourceLabel },
+        hit?.profile.route === 'local_bridge' ? bridgeStates[hit.profile.id] : undefined;
+      const active = wallet ? activeWalletBinding(wallet, meta.id) : null;
+      const binding = active
+        ? {
+            ticketLabel: active.ticket.label,
+            routeLabel: bindingRouteDashboardLabel(active.binding.route),
+          }
+        : null;
+      if (!hit && !binding) continue;
+      inputs[meta.id] = {
+        ...(hit ? { viaAdapter: { sourceLabel: hit.sourceLabel } } : {}),
         ...(bridgeState ? { bridge: { state: bridgeState } } : {}),
+        ...(binding ? { binding } : {}),
       };
     }
     return inputs;
-  }, [adapterBadgeHits, bridgeStates]);
+  }, [adapterBadgeHits, bridgeStates, wallet]);
 
   const handleConnectRequest = useCallback((agentId: AgentId) => {
     setConnectEntry({ mode: 'for-agent', targetAgentId: agentId });
@@ -294,16 +332,20 @@ export default function DashboardPage() {
    * partial/error 也正常 resolve——必须查返回值与 store 快照，不能依赖 reject。
    */
   const handleConnectionChanged = useCallback(async () => {
-    const [agentsOk, profilesOk] = await Promise.all([loadAgents(), loadProfiles()]);
+    const [agentsOk, profilesOk, walletOk] = await Promise.all([
+      loadAgents(),
+      loadProfiles(),
+      loadWallet(),
+    ]);
     await poolReload().catch(() => {});
     // 双侧刷新失败时 store 保留旧 state:'ready' 并写入 errors，必须一并检查
     const poolSnapshot = getConnectionPoolSnapshot();
     const poolOk =
       poolSnapshot.state === 'ready' && !poolSnapshot.errors.accounts && !poolSnapshot.errors.providers;
-    if (!agentsOk || !profilesOk || !poolOk) {
+    if (!agentsOk || !profilesOk || !walletOk || !poolOk) {
       throw new Error('页面数据刷新失败，可手动刷新查看最新状态');
     }
-  }, [loadAgents, poolReload, loadProfiles]);
+  }, [loadAgents, poolReload, loadProfiles, loadWallet]);
 
   /** days / agentFilter 变化时各请求一次，上下共用 */
   const loadUsage = useCallback(

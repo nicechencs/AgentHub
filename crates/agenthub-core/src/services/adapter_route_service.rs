@@ -118,116 +118,20 @@ impl AdapterRouteService {
         })
     }
 
+    /// Classify a connection row into an [`AdapterSourceProduct`] without routing.
+    ///
+    /// Used by the Ticket wallet read model so surface labels stay aligned with
+    /// analyze/plan. Does not inspect or return credentials.
+    pub fn classify_source_product(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<AdapterSourceProduct> {
+        Ok(self.identify_source(source_kind, source_id)?.product)
+    }
+
     fn classify(&self, request: &AdapterRouteRequest) -> Result<ClassifiedRoute> {
-        let source_id = request.source_id.trim();
-        if source_id.is_empty() {
-            return Err(AppError::InvalidArg(
-                "adapter source id must not be empty".into(),
-            ));
-        }
-
-        let identity = match request.source_kind {
-            AdapterSourceKind::Provider => {
-                let provider = self.providers.get_by_id(source_id)?.ok_or_else(|| {
-                    AppError::NotFound(format!("provider not found: {source_id}"))
-                })?;
-                let preset = json_string(&provider.meta, "preset");
-                // Membership is explicit preset *or* official Kimi coding endpoint in config.
-                // Do not invent membership from agent_id alone (moonshot / custom stay closed).
-                if is_kimi_code_membership_source(
-                    provider.agent_id,
-                    &provider.meta,
-                    &provider.settings_config,
-                ) {
-                    SourceIdentity {
-                        product: AdapterSourceProduct::KimiCodeMembership,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::KimiMembership,
-                        reason_hint: None,
-                    }
-                } else if provider.agent_id == AgentId::Claude
-                    && (preset == Some("anthropic")
-                        || settings_contain_anthropic_api_endpoint(&provider.settings_config))
-                {
-                    SourceIdentity {
-                        product: AdapterSourceProduct::AnthropicApi,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::AnthropicApiKey,
-                        reason_hint: None,
-                    }
-                } else if provider.agent_id == AgentId::Kimi {
-                    SourceIdentity {
-                        product: AdapterSourceProduct::Other,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::Other,
-                        reason_hint: Some(KIMI_NON_MEMBERSHIP_REASON),
-                    }
-                } else {
-                    SourceIdentity {
-                        product: AdapterSourceProduct::Other,
-                        credential: AdapterCredentialClass::Unknown,
-                        label: RouteSourceLabel::Other,
-                        reason_hint: None,
-                    }
-                }
-            }
-            AdapterSourceKind::Account => {
-                let account = self
-                    .accounts
-                    .get_by_id(source_id)?
-                    .ok_or_else(|| AppError::NotFound(format!("account not found: {source_id}")))?;
-                let explicit_provider = json_string(&account.extra, "provider")
-                    .or_else(|| json_string(&account.credentials, "provider"));
-                let credential_format = json_string(&account.credentials, "format")
-                    .or_else(|| json_string(&account.extra, "format"));
-
-                if account.kind == AccountKind::ApiKey
-                    && (explicit_provider
-                        .is_some_and(|value| value.eq_ignore_ascii_case("anthropic"))
-                        || settings_contain_anthropic_api_endpoint(&account.credentials)
-                        || settings_contain_anthropic_api_endpoint(&account.extra))
-                {
-                    SourceIdentity {
-                        product: AdapterSourceProduct::AnthropicApi,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::AnthropicApiKey,
-                        reason_hint: None,
-                    }
-                } else if account.agent_id == AgentId::Codex
-                    && account.kind == AccountKind::Oauth
-                    && is_codex_auth_json(credential_format, &account.credentials)
-                {
-                    // Explicit Codex / ChatGPT subscription (`format=auth_json` or tokens blob).
-                    // Matrix cell exists and stays fully gated closed.
-                    SourceIdentity {
-                        product: AdapterSourceProduct::CodexChatGptSubscription,
-                        credential: AdapterCredentialClass::OauthAuthJson,
-                        label: RouteSourceLabel::CodexSubscription,
-                        reason_hint: None,
-                    }
-                } else if account.agent_id == AgentId::Codex && account.kind == AccountKind::Oauth {
-                    // Codex OAuth without auth_json shape: same product messaging, but do not
-                    // pretend the closed auth_json matrix cell matched. Fail closed via empty
-                    // candidate → subscription_candidate unsupported surface for Claude.
-                    SourceIdentity {
-                        product: AdapterSourceProduct::CodexChatGptSubscription,
-                        credential: AdapterCredentialClass::OauthOther,
-                        label: RouteSourceLabel::CodexSubscription,
-                        reason_hint: None,
-                    }
-                } else {
-                    SourceIdentity {
-                        product: AdapterSourceProduct::Other,
-                        credential: match account.kind {
-                            AccountKind::ApiKey => AdapterCredentialClass::ApiKey,
-                            AccountKind::Oauth => AdapterCredentialClass::OauthOther,
-                        },
-                        label: RouteSourceLabel::Other,
-                        reason_hint: None,
-                    }
-                }
-            }
-        };
+        let identity = self.identify_source(request.source_kind, &request.source_id)?;
 
         let mut decision = decide_adapter_capability(
             identity.product,
@@ -246,6 +150,122 @@ impl AdapterRouteService {
             source: identity.label,
             decision,
         })
+    }
+
+    fn identify_source(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<SourceIdentity> {
+        let source_id = source_id.trim();
+        if source_id.is_empty() {
+            return Err(AppError::InvalidArg(
+                "adapter source id must not be empty".into(),
+            ));
+        }
+
+        match source_kind {
+            AdapterSourceKind::Provider => {
+                let provider = self.providers.get_by_id(source_id)?.ok_or_else(|| {
+                    AppError::NotFound(format!("provider not found: {source_id}"))
+                })?;
+                let preset = json_string(&provider.meta, "preset");
+                // Membership is explicit preset *or* official Kimi coding endpoint in config.
+                // Do not invent membership from agent_id alone (moonshot / custom stay closed).
+                if is_kimi_code_membership_source(
+                    provider.agent_id,
+                    &provider.meta,
+                    &provider.settings_config,
+                ) {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::KimiCodeMembership,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::KimiMembership,
+                        reason_hint: None,
+                    })
+                } else if provider.agent_id == AgentId::Claude
+                    && (preset == Some("anthropic")
+                        || settings_contain_anthropic_api_endpoint(&provider.settings_config))
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::AnthropicApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::AnthropicApiKey,
+                        reason_hint: None,
+                    })
+                } else if provider.agent_id == AgentId::Kimi {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::Other,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::Other,
+                        reason_hint: Some(KIMI_NON_MEMBERSHIP_REASON),
+                    })
+                } else {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::Other,
+                        credential: AdapterCredentialClass::Unknown,
+                        label: RouteSourceLabel::Other,
+                        reason_hint: None,
+                    })
+                }
+            }
+            AdapterSourceKind::Account => {
+                let account = self
+                    .accounts
+                    .get_by_id(source_id)?
+                    .ok_or_else(|| AppError::NotFound(format!("account not found: {source_id}")))?;
+                let explicit_provider = json_string(&account.extra, "provider")
+                    .or_else(|| json_string(&account.credentials, "provider"));
+                let credential_format = json_string(&account.credentials, "format")
+                    .or_else(|| json_string(&account.extra, "format"));
+
+                if account.kind == AccountKind::ApiKey
+                    && (explicit_provider
+                        .is_some_and(|value| value.eq_ignore_ascii_case("anthropic"))
+                        || settings_contain_anthropic_api_endpoint(&account.credentials)
+                        || settings_contain_anthropic_api_endpoint(&account.extra))
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::AnthropicApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::AnthropicApiKey,
+                        reason_hint: None,
+                    })
+                } else if account.agent_id == AgentId::Codex
+                    && account.kind == AccountKind::Oauth
+                    && is_codex_auth_json(credential_format, &account.credentials)
+                {
+                    // Explicit Codex / ChatGPT subscription (`format=auth_json` or tokens blob).
+                    // Matrix cell exists and stays fully gated closed.
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::CodexChatGptSubscription,
+                        credential: AdapterCredentialClass::OauthAuthJson,
+                        label: RouteSourceLabel::CodexSubscription,
+                        reason_hint: None,
+                    })
+                } else if account.agent_id == AgentId::Codex && account.kind == AccountKind::Oauth {
+                    // Codex OAuth without auth_json shape: same product messaging, but do not
+                    // pretend the closed auth_json matrix cell matched. Fail closed via empty
+                    // candidate → subscription_candidate unsupported surface for Claude.
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::CodexChatGptSubscription,
+                        credential: AdapterCredentialClass::OauthOther,
+                        label: RouteSourceLabel::CodexSubscription,
+                        reason_hint: None,
+                    })
+                } else {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::Other,
+                        credential: match account.kind {
+                            AccountKind::ApiKey => AdapterCredentialClass::ApiKey,
+                            AccountKind::Oauth => AdapterCredentialClass::OauthOther,
+                        },
+                        label: RouteSourceLabel::Other,
+                        reason_hint: None,
+                    })
+                }
+            }
+        }
     }
 }
 

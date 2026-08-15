@@ -35,6 +35,49 @@ export function resetMockAdapters(): void {
   });
 }
 
+/** Snapshot of profiles across all mock adapter ports (ticket wallet). */
+export function listMockAdapterProfiles(): AdapterProfile[] {
+  const out: AdapterProfile[] = [];
+  for (const state of adapterStates) {
+    for (const profile of state.profiles) {
+      out.push({ ...profile });
+    }
+  }
+  return out;
+}
+
+/** Sync bridge status lookup for ticket wallet bindings. */
+export function getMockBridgeStatusSync(profileId: string): AdapterBridgeRuntimeStatus | undefined {
+  for (const state of adapterStates) {
+    const status = state.bridgeStatuses.get(profileId);
+    if (status) return { ...status };
+  }
+  return undefined;
+}
+
+/**
+ * Test / fixture helper: insert profiles + optional bridge statuses into every
+ * live mock adapter port (normally one per createBackend()).
+ */
+export function seedMockAdapterProfiles(
+  profiles: readonly AdapterProfile[],
+  bridges?: ReadonlyMap<string, AdapterBridgeRuntimeStatus> | Record<string, AdapterBridgeRuntimeStatus>,
+): void {
+  const bridgeEntries = bridges instanceof Map
+    ? [...bridges.entries()]
+    : Object.entries(bridges ?? {});
+  for (const state of adapterStates) {
+    for (const profile of profiles) {
+      const existing = state.profiles.findIndex((item) => item.id === profile.id);
+      if (existing >= 0) state.profiles[existing] = { ...profile };
+      else state.profiles.push({ ...profile });
+    }
+    for (const [id, status] of bridgeEntries) {
+      state.bridgeStatuses.set(id, { ...status });
+    }
+  }
+}
+
 /** Resolver is injected so the mock classifies the actual saved rows, never fixture ids. */
 export interface MockAdapterSourceResolver {
   getAccountById(id: string): Account | undefined;

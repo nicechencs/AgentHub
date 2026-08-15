@@ -354,7 +354,7 @@ export function ConnectFlowDialog({
     ? '连接'
     : entry.mode === 'for-agent'
       ? `连接 ${agentDisplayName(entry.targetAgentId)}`
-      : '用于其他 Agent';
+      : '接到…';
 
   return (
     <Dialog
@@ -517,7 +517,7 @@ function FixedSourceSummary({
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       {agentId ? <AgentDot agentId={agentId} size="sm" title={null} /> : null}
-      <span>将来源「{label}」用于其他 Agent</span>
+      <span>将「{label}」接到其他 Agent</span>
     </span>
   );
 }

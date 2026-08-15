@@ -102,6 +102,8 @@ pub fn run() {
             // Adapter route preview (read-only)
             commands::adapter::analyze_adapter,
             commands::adapter::plan_adapter,
+            commands::adapter::list_ticket_wallet,
+            commands::adapter::plan_ticket,
             commands::adapter::list_adapter_profiles,
             commands::adapter::apply_adapter,
             commands::adapter::start_adapter_bridge,

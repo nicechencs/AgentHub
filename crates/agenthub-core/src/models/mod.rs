@@ -17,6 +17,7 @@ mod run;
 mod runtime;
 mod settings;
 mod skill;
+mod ticket;
 mod update;
 mod usage;
 
@@ -40,5 +41,6 @@ pub use run::*;
 pub use runtime::*;
 pub use settings::*;
 pub use skill::*;
+pub use ticket::*;
 pub use update::*;
 pub use usage::*;

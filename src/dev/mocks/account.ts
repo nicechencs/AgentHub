@@ -48,6 +48,13 @@ export function getMockAccountById(accountId: string): Account | undefined {
   return found ? { ...found } : undefined;
 }
 
+/** Snapshot of all mock accounts (ticket wallet aggregation). */
+export function listMockAccounts(): Account[] {
+  return (Object.keys(mockState) as AgentId[]).flatMap((agentId) =>
+    (mockState[agentId] ?? []).map((account) => ({ ...account })),
+  );
+}
+
 export function createMockAccountPort(): AccountPort {
   return {
     async listAccounts(agentId) {
