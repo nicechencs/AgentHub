@@ -1,23 +1,26 @@
 //! ProjectSource contributions — agent-specific discovery only.
 //!
-//! Scan helpers live in the parent module; this file only wires the port.
-//! TODO(P13): relocate under integrations/agents/<key>/.
+//! Scan helpers currently live in [`crate::services::project_service`] (`scan`);
+//! this file wires the [`ProjectSource`] port and the builtin registry.
+//! TODO(P2-1): relocate under integrations/agents/<key>/.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
+use crate::catalog::limits::PROJECT_MAX_PER_AGENT as MAX_PER_AGENT;
 use crate::error::Result;
 use crate::models::{AgentId, AgentProject, AgentSession};
-use crate::platform::projects::{ProjectScanContext, ProjectSource, ProjectSourceRegistry};
 use crate::platform::AgentKey;
-
-use super::finish_sessions;
-use super::scan::{
+use crate::services::project_service::{
     aggregate_projects, grok_session_dir_for_delete, kimi_session_dir_for_delete,
     list_claude_workbuddy_sessions, list_codex_sessions, list_cursor_projects, list_dsh_sessions,
     list_grok_sessions, list_kimi_sessions, list_pi_sessions,
 };
 
+use super::registry::ProjectSourceRegistry;
+use super::source::{ProjectScanContext, ProjectSource};
+
+/// Process-wide builtin project sources (product AgentId::ALL order).
 pub fn builtin_project_registry() -> &'static ProjectSourceRegistry {
     static REG: OnceLock<ProjectSourceRegistry> = OnceLock::new();
     REG.get_or_init(build_registry)
@@ -51,6 +54,14 @@ fn builtin_key(key: &'static str) -> AgentKey {
 
 fn empty_if_missing(home: &Path) -> bool {
     !home.exists()
+}
+
+fn finish_sessions(mut rows: Vec<AgentSession>) -> Vec<AgentSession> {
+    rows.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    if rows.len() > MAX_PER_AGENT {
+        rows.truncate(MAX_PER_AGENT);
+    }
+    rows
 }
 
 // --- Claude / WorkBuddy (shared layout) ------------------------------------
