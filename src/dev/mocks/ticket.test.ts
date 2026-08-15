@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getBackend } from '@/app/runtime';
 import type { AdapterProfile } from '@/lib/backend/contracts';
+import type { Account, Provider } from '@/lib/types';
 import { upsertMockAccount } from './account';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
@@ -210,5 +211,58 @@ describe('mock ticket wallet', () => {
     expect(relay?.speaks).toEqual([]);
     expect(relay?.credentialClass).toBe('api_key');
     expect(relay?.importedFrom).toBe('claude');
+  });
+
+  it('uses persisted extra.surface / meta.surface when fixture provides them', () => {
+    const wallet = buildMockTicketWallet({
+      listAccounts: () => [
+        {
+          id: 'stamped-acct',
+          agentId: 'grok',
+          kind: 'apikey',
+          label: 'xai',
+          isCurrent: false,
+          tokenValid: true,
+          extra: { surface: 'anthropic-api' },
+        } as Account,
+      ],
+      listProviders: () => [
+        {
+          id: 'stamped-prov',
+          agentId: 'claude',
+          name: 'Custom but stamped',
+          preset: 'openai-compatible',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: false,
+          meta: { surface: 'kimi-code-membership' },
+        } as Provider,
+      ],
+      listProfiles: () => [],
+      getBridgeStatus: () => undefined,
+      planAdapter: async () => {
+        throw new Error('not used');
+      },
+    });
+
+    expect(wallet.tickets.find((t) => t.id === 'account:stamped-acct')?.surface).toBe(
+      'anthropic-api',
+    );
+    expect(wallet.tickets.find((t) => t.id === 'provider:stamped-prov')?.surface).toBe(
+      'kimi-code-membership',
+    );
+    expect(wallet.tickets.find((t) => t.id === 'provider:stamped-prov')?.speaks).toEqual([
+      'anthropic-messages',
+      'openai-chat',
+    ]);
+  });
+
+  it('plan_ticket rejects generated projection providers', async () => {
+    getBackend();
+    seedConnectFlowAdapterFixtures({ seedBindings: true });
+    const generatedId = `claude-kimi-adapter-${CONNECT_FLOW_FIXTURE_IDS.kimiMembership}`;
+    await expect(getBackend().ticket.plan(`provider:${generatedId}`, 'pi')).rejects.toThrow(
+      '投影不是票 / 禁止二次投影',
+    );
   });
 });

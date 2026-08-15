@@ -27,6 +27,7 @@ import { AGENT_IDS, agentDisplayName } from '@/config/agents';
 import { resolveEffectiveConnection } from '@/lib/api/agent-connection';
 import type { AdapterProfile } from '@/lib/api/adapter';
 import { buildConnectionsGuideUrl } from '@/lib/connect-flow/connect-intent';
+import { planMaturityLabel } from '@/lib/connect-flow/eligibility';
 import {
   AGENT_ALL_INFEASIBLE_MESSAGE,
   SOURCE_ALL_INFEASIBLE_MESSAGE,
@@ -922,10 +923,14 @@ function EligibilityBody({
       </p>
     );
   }
+  const maturity = planMaturityLabel(eligibility.plan.maturity);
+  const routeLine = maturity
+    ? `${eligibility.routeSummary} · ${maturity}`
+    : eligibility.routeSummary;
   if (eligibility.canApply) {
-    return <p className="mt-1 text-xs text-secondary">{eligibility.routeSummary}</p>;
+    return <p className="mt-1 text-xs text-secondary">{routeLine}</p>;
   }
-  return <p className="mt-1 text-xs text-warning">{eligibility.reason ?? eligibility.routeSummary}</p>;
+  return <p className="mt-1 text-xs text-warning">{eligibility.reason ?? routeLine}</p>;
 }
 
 function GuideActions({

@@ -95,28 +95,44 @@ export function filterTickets(
   return tickets.filter((t) => t.credentialClass === filter);
 }
 
+function ticketSearchHaystack(
+  ticket: TicketView,
+  bindings: readonly BindingView[],
+): string {
+  const own = bindings.filter((binding) => binding.ticketId === ticket.id);
+  const usageText = formatTicketUsageText(own);
+  const bindingBits = own.flatMap((binding) => [
+    binding.agentId,
+    agentDisplayName(binding.agentId),
+    bindingRouteUsageLabel(binding.route),
+    bindingRouteDashboardLabel(binding.route),
+  ]);
+  return [
+    ticket.label,
+    ticket.id,
+    ticket.agentId,
+    ticket.surface,
+    ticket.credentialClass,
+    ticketCredentialClassLabel(ticket.credentialClass),
+    ticketSurfaceLabel(ticket.surface),
+    agentDisplayName(ticket.agentId),
+    ...(ticket.speaks ?? []),
+    usageText,
+    ...bindingBits,
+  ]
+    .join(' ')
+    .toLowerCase();
+}
+
+/** Matches ticket fields and「正用于」bindings (agent / route label / usageText). */
 export function searchTickets(
   tickets: readonly TicketView[],
   query: string,
+  bindings: readonly BindingView[] = [],
 ): TicketView[] {
   const q = query.trim().toLowerCase();
   if (!q) return [...tickets];
-  return tickets.filter((ticket) => {
-    const hay = [
-      ticket.label,
-      ticket.id,
-      ticket.agentId,
-      ticket.surface,
-      ticket.credentialClass,
-      ticketCredentialClassLabel(ticket.credentialClass),
-      ticketSurfaceLabel(ticket.surface),
-      agentDisplayName(ticket.agentId),
-      ...(ticket.speaks ?? []),
-    ]
-      .join(' ')
-      .toLowerCase();
-    return hay.includes(q);
-  });
+  return tickets.filter((ticket) => ticketSearchHaystack(ticket, bindings).includes(q));
 }
 
 /** Soft agent filter: tickets that belong to or bind to the agent. */
@@ -149,7 +165,7 @@ export function buildTicketWalletRows(
   const agentFilterId = options.agentFilterId ?? null;
 
   let tickets = filterTickets(wallet.tickets, filter);
-  tickets = searchTickets(tickets, query);
+  tickets = searchTickets(tickets, query, wallet.bindings);
   if (agentFilterId) {
     tickets = filterTicketsByAgentUsage(wallet, tickets, agentFilterId);
   }

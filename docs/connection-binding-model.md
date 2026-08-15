@@ -1,6 +1,6 @@
 # 连接：票、绑定与协议图
 
-> 状态：**§6 第 1 步读模型已落地；bind/unbind 与后续步骤未实施**。  
+> 状态：**§6 第 1–2 步已落地（读模型、进口打标、plan 收口、拒投影）；bind/unbind 未实施**。  
 > 日期：2026-08-15。  
 > 本文是跨 Agent「把已有凭据接到另一个 Agent」的领域真源。页面、Hub 入口、Adapter、厂商规则文档以本文为准改表述；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
 > 关联：[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[adapter-design.md](adapter-design.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[account-authorization-pool.md](account-authorization-pool.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)。
@@ -78,7 +78,7 @@ AgentHub 不「共享链接」，它**绑定票**。直连、改配置、本机�
 |---|---|---|
 | Ticket | `accounts` + `providers` 两行模型 | 先做只读聚合；进口打 `surface`；生成 Provider 从钱包剔除 |
 | Binding | `is_current` + `AdapterProfile` + 生成 Provider | 先做读模型；再 `bind`/`unbind` 成为唯一写入 |
-| 规划器 | 矩阵格 ∩ apply 白名单 ∩ 前端 `reuse-offer` | 收成一个 `plan(ticket, agent)` |
+| 规划器 | `plan()` 唯一出口；内部矩阵 ∩ 私有 write_gate（Account 暂不可写） | `plan(ticket, agent)` 为唯一真理；bind 打通 Account |
 
 Account / Provider / live 事务仍由 core service 单点负责，不建设 `connectionsd`。`local_bridge` 的 listener 仍按 [sidecar 契约](adapter-sidecar-design.md) 走用户级进程。
 
@@ -245,7 +245,7 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 |---|---|---|
 | 用户对象 | account / provider 两行 | Ticket |
 | 谁在用 | `is_current` + profile 反查 | Binding |
-| 规划 | 前端走 `plan_ticket`；内部仍是矩阵 ∩ apply 白名单 | `plan(ticket, agent)` 为唯一真理 |
+| 规划 | 前端走 `plan_ticket`；`plan()` 唯一出口；write_gate 仍拒 Account | `plan(ticket, agent)` 为唯一真理 |
 | 写入 | apply 特例 + 生成 Provider（不进钱包） | `bind` / `unbind` |
 | Connections | 全局钱包；真票都有「接到…」；写入仍是 apply | 全局钱包；真票都有「接到…」 |
 | 诊断 | 同一对话框里置灰 + plan 原因 | 同一对话框里置灰 + 原因 |

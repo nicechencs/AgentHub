@@ -2,7 +2,7 @@ use super::*;
 use crate::models::{
     AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterSourceKind,
     AdapterSupport, AgentId, TicketBindingRoute, TicketCredentialClass, TicketProtocol,
-    TicketSurface,
+    TicketSurface, PROJECTION_NOT_A_TICKET,
 };
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
 
@@ -489,4 +489,171 @@ fn ticket_surface_serde_matches_wire() {
         serde_json::to_value(TicketBindingRoute::Reshape).unwrap(),
         serde_json::json!("reshape")
     );
+    assert_eq!(
+        TicketSurface::parse("kimi-code-membership"),
+        Some(TicketSurface::KimiCodeMembership)
+    );
+    assert_eq!(TicketSurface::parse("not-a-surface"), None);
+}
+
+#[test]
+fn list_wallet_backfills_missing_surface_and_rereads_persisted() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "anth",
+            AgentId::Claude,
+            "Anthropic",
+            "anthropic",
+            false,
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "codex-oauth",
+            AgentId::Codex,
+            AccountKind::Oauth,
+            "me@example.com",
+            false,
+        ))
+        .unwrap();
+
+    let service = TicketReadService::new(db.clone());
+    let first = service.list_wallet().unwrap();
+    let anth = first
+        .tickets
+        .iter()
+        .find(|t| t.id == "provider:anth")
+        .unwrap();
+    assert_eq!(anth.surface, TicketSurface::AnthropicApi);
+    let oauth = first
+        .tickets
+        .iter()
+        .find(|t| t.id == "account:codex-oauth")
+        .unwrap();
+    assert_eq!(oauth.surface, TicketSurface::CodexChatgptSubscription);
+
+    let stored_provider = ProviderRepo::new(db.clone())
+        .get_by_id("anth")
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored_provider.meta["surface"], "anthropic-api");
+    let stored_account = AccountRepo::new(db.clone())
+        .get_by_id("codex-oauth")
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored_account.extra["surface"], "codex-chatgpt-subscription");
+
+    let second = TicketReadService::new(db).list_wallet().unwrap();
+    assert!(second
+        .tickets
+        .iter()
+        .any(|t| t.id == "provider:anth" && t.surface == TicketSurface::AnthropicApi));
+    assert!(second.tickets.iter().any(|t| {
+        t.id == "account:codex-oauth" && t.surface == TicketSurface::CodexChatgptSubscription
+    }));
+}
+
+#[test]
+fn list_wallet_prefers_persisted_surface_over_classify() {
+    let (_dir, db) = test_db();
+    let mut row = provider(
+        "relay",
+        AgentId::Claude,
+        "Custom relay",
+        "openai-compatible",
+        false,
+    );
+    row.meta = serde_json::json!({
+        "preset": "openai-compatible",
+        "surface": "kimi-code-membership"
+    });
+    ProviderRepo::new(db.clone()).create(&row).unwrap();
+
+    let wallet = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    let ticket = wallet
+        .tickets
+        .iter()
+        .find(|t| t.id == "provider:relay")
+        .unwrap();
+    assert_eq!(ticket.surface, TicketSurface::KimiCodeMembership);
+    assert_eq!(
+        ticket.speaks,
+        vec![TicketProtocol::AnthropicMessages, TicketProtocol::OpenaiChat]
+    );
+    let stored = ProviderRepo::new(db)
+        .get_by_id("relay")
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.meta["surface"], "kimi-code-membership");
+}
+
+#[test]
+fn plan_ticket_rejects_generated_projection_provider() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "kimi-src",
+            AgentId::Kimi,
+            "Kimi",
+            "kimi-code-membership",
+            false,
+        ))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "proj-claude",
+            AgentId::Claude,
+            "Generated",
+            "custom",
+            false,
+        ))
+        .unwrap();
+    AdapterProfileRepo::new(db.clone())
+        .create(&profile(
+            "p1",
+            AdapterSourceKind::Provider,
+            "kimi-src",
+            AgentId::Claude,
+            AdapterRoute::NativeEndpoint,
+            Some("proj-claude"),
+            None,
+        ))
+        .unwrap();
+
+    let service = TicketReadService::new(db);
+    let err = service
+        .plan(&TicketPlanRequest {
+            ticket_id: "provider:proj-claude".into(),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap_err();
+    assert!(matches!(err, AppError::InvalidArg(_)));
+    assert!(err.to_string().contains(PROJECTION_NOT_A_TICKET));
+}
+
+#[test]
+fn plan_ticket_rejects_generated_by_adapter_meta() {
+    let (_dir, db) = test_db();
+    let mut generated = provider(
+        "orphan-gen",
+        AgentId::Claude,
+        "Orphan generated",
+        "custom",
+        false,
+    );
+    generated.meta = serde_json::json!({
+        "preset": "custom",
+        "generatedBy": "adapter"
+    });
+    ProviderRepo::new(db.clone()).create(&generated).unwrap();
+
+    let err = TicketReadService::new(db)
+        .plan(&TicketPlanRequest {
+            ticket_id: "provider:orphan-gen".into(),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap_err();
+    assert!(matches!(err, AppError::InvalidArg(_)));
+    assert!(err.to_string().contains(PROJECTION_NOT_A_TICKET));
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Account, AgentStatus, Provider } from '@/lib/types';
 import type { AdapterApplyPlan, AdapterProfile, AdapterRouteAnalysis } from '@/lib/api/adapter';
-import { buildSourceOptions, isOauthIncomplete, planToEligibility } from './eligibility';
+import { buildSourceOptions, isOauthIncomplete, planMaturityLabel, planToEligibility } from './eligibility';
 
 function analysis(overrides: Partial<AdapterRouteAnalysis> = {}): AdapterRouteAnalysis {
   return {
@@ -82,6 +82,16 @@ function profile(overrides: Partial<AdapterProfile> = {}): AdapterProfile {
   };
 }
 
+describe('planMaturityLabel', () => {
+  it('maps the four planner maturity tiers', () => {
+    expect(planMaturityLabel('stable')).toBe('稳定');
+    expect(planMaturityLabel('experimental')).toBe('实验');
+    expect(planMaturityLabel('preview')).toBe('可预览');
+    expect(planMaturityLabel('none')).toBe('无边');
+    expect(planMaturityLabel(undefined)).toBe('');
+  });
+});
+
 describe('planToEligibility', () => {
   it('maps canApply=true to a ready selectable branch', () => {
     const ready = planToEligibility(plan({ canApply: true }));
@@ -114,6 +124,20 @@ describe('planToEligibility', () => {
       reason,
     });
     expect(ready.kind === 'ready' && ready.reason).toBe(reason);
+  });
+
+  it('prefers plan.reason over analysis.reason when canApply is false', () => {
+    const ready = planToEligibility(plan({
+      canApply: false,
+      reason: '同边但暂不可写：写入仍只接受 Provider 行，下一步 bind 打通。',
+      analysis: analysis({
+        route: 'config_sync',
+        support: 'stable',
+        reason: '显式 Anthropic API Key 可预览为 Pi 的配置同步。',
+      }),
+    }));
+    expect(ready.kind === 'ready' && ready.reason).toContain('Provider');
+    expect(ready.kind === 'ready' && ready.reason).toContain('写入');
   });
 
   it('extracts human route summaries from AdapterRoute', () => {

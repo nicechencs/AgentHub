@@ -380,19 +380,37 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
           secretChange('pi', 'apiKey'),
         ]
       : [];
-  const canApply = request.sourceKind === 'provider'
+  const writeGate = request.sourceKind === 'provider'
     && (
       (analysis.route === 'native_endpoint' && analysis.support === 'stable' && request.targetAgentId === 'claude')
       || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
       || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'pi')
     );
+  const canApply = writeGate;
+  const maturity = mockPlanMaturity(analysis);
+  const reason = !canApply && request.sourceKind === 'account' && analysis.route !== 'unsupported'
+    ? `${analysis.reason} 写入仍只接受 Provider 行，下一步 bind 打通。`
+    : analysis.reason;
   return {
     analysis,
     targetAgentId: request.targetAgentId,
     canApply,
+    maturity,
+    reason,
     serviceImpact: analysis.route === 'local_bridge' ? 'requires_local_bridge' : 'none',
     changes,
   };
+}
+
+/** Mirror of core `adapter_maturity_from_decision` on the public analysis surface. */
+function mockPlanMaturity(analysis: AdapterRouteAnalysis): AdapterApplyPlan['maturity'] {
+  const matrixOpen = analysis.route !== 'unsupported' && analysis.support !== 'unsupported';
+  if (matrixOpen && analysis.support === 'stable') return 'stable';
+  if (matrixOpen && analysis.support === 'experimental') return 'experimental';
+  if (analysis.gateKind === 'subscription_candidate' || analysis.gateKind === 'preview_only') {
+    return 'preview';
+  }
+  return 'none';
 }
 
 /** Browser-only mirror of the core's explicit routing rules. */

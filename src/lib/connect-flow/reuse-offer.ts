@@ -6,7 +6,8 @@
  * - 生成投影与非票行不展示入口
  * - 不可行目标在 ConnectFlow 对话框内置灰 + 原因，不在列表隐藏入口
  *
- * 可行性权威是 `plan.canApply`（现在能否写入），本文件不再镜像商品白名单。
+ * 可行性权威是 `plan()` 的 route / maturity / canApply / reason。
+ * `isKimiMembershipProvider` / `isAnthropicApiProvider` 仅作表面诊断，已废弃为门禁。
  */
 import type { Provider } from '@/lib/types';
 
@@ -31,13 +32,14 @@ function textHasNeedle(text: string | undefined, needle: string): boolean {
   return typeof text === 'string' && text.toLowerCase().includes(needle.toLowerCase());
 }
 
-/** Surface helpers kept for tests / diagnostics; no longer gate the row button. */
+/** @deprecated Surface diagnostic only; not a ConnectFlow / write gate. */
 export function isKimiMembershipProvider(provider: Pick<Provider, 'agentId' | 'preset' | 'configText'>): boolean {
   if (provider.agentId !== 'kimi') return false;
   return provider.preset === KIMI_MEMBERSHIP_PRESET
     || textHasNeedle(provider.configText, KIMI_CODING_ENDPOINT_NEEDLE);
 }
 
+/** @deprecated Surface diagnostic only; not a ConnectFlow / write gate. */
 export function isAnthropicApiProvider(provider: Pick<Provider, 'agentId' | 'preset' | 'configText'>): boolean {
   if (provider.agentId !== 'claude') return false;
   return provider.preset === 'anthropic'

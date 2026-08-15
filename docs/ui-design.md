@@ -139,7 +139,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - 徽标（目标态按**当前绑定**展示，过渡期仍可用 profile 联结）：
   - **改配置 / 经兼容路由**：active 绑定的 `route` 为 `reshape`（或命中生成投影）。
   - **桥状态**：`route=bridge` 时显示；查询失败显示「状态不可用」，不得静默隐藏。点击徽标进入「桥与适配」（`stopPropagation`）。
-- **ConnectFlow（Agent 侧）**：两组来源——**native 候选**（这张票本来就是给该 Agent 的，走切换）+ **其他票**（`plan(ticket, agent)`）。可执行权威是 `plan.canApply`（表示现在能写入）。不可行票**留在列表**，置灰 + 原因原文，不从 Connections 藏起来再让本页单独诊断。OAuth 未完成：引导去钱包补登录。空态与「导入登录态 / 新 API Key」走深链 `intent=import-login|add-key`；成功后回 `/?connect=` 重开。导入仍是读官方 CLI 已完成的登录。
+- **ConnectFlow（Agent 侧）**：两组来源——**native 候选**（这张票本来就是给该 Agent 的，走切换）+ **其他票**（`plan(ticket, agent)`）。可执行权威是 `plan()` 的 route / maturity / canApply / reason（`canApply` 表示现在能写入）。不可行票**留在列表**，置灰 + 原因原文，不从 Connections 藏起来再让本页单独诊断。OAuth 未完成：引导去钱包补登录。空态与「导入登录态 / 新 API Key」走深链 `intent=import-login|add-key`；成功后回 `/?connect=` 重开。导入仍是读官方 CLI 已完成的登录。
 - **共享筛选**（时间 + Agent）驱动一套指标卡与趋势图；筛选变更时 `queryUsage` / `usageTrend` 各请求一次，上下共用 records。
 - 用量图：堆叠 Area，按 agent 分色。选中单 agent 时分布条下钻到**按模型**拆分。
 - Agent 总览与用量分区处理 loading/error：用量失败不白屏上半。
@@ -264,11 +264,11 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 #### 4.3.3 Adapter（桥与适配）
 
-日常发起适配走 Dashboard / Connections 的 `ConnectFlowDialog`；本页是高级管理入口（profile 列表、桥 start/stop/retry、autoStart、详情），不是日常创建入口，也不是空壳。路由 `/adapter` 完整保留，旧 `/router` 重定向到该页；侧栏 Manage 文案为「桥与适配」。页头主按钮「去 Dashboard 连接」，次按钮「去 Connections」。创建区（选来源 → 分析目标 → plan → apply）已收掉，不再渲染、不再发 analyze/plan。
+日常发起适配走 Dashboard / Connections 的 `ConnectFlowDialog`；本页只管理已绑定的本机桥 runtime（`route=local_bridge` 且来源仍在或钱包 binding.profileId 命中），不是日常创建入口，也不是空壳。路由 `/adapter` 完整保留，旧 `/router` 重定向到该页；侧栏 Manage 文案为「桥与适配」。页头主按钮「去 Dashboard 连接」，次按钮「去 Connections」。创建区（选来源 → 分析目标 → plan → apply）已收掉，不再渲染、不再发 analyze/plan。空态说明创建绑定不在本页。
 
-首屏列出已创建适配：
+首屏只列本机桥运行时：
 
-- **已创建的适配** — 列出来源、目标、凭据类型、路径、状态与操作。`local_bridge` 是路径，不是 OAuth。
+- **本机桥运行时** — 来源票、目标 Agent、端口、健康、start/stop/retry。`local_bridge` 是路径，不是 OAuth。直连 / 改配置 profile 不出现在本页。
 
 OAuth 未完成时只引导去 Connections，不在本页发起登录。兼容性规则仍按来源独立判定；创建/apply 只走 ConnectFlow。
 

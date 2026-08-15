@@ -41,7 +41,8 @@ export interface TicketView {
 
 /** Optional bridge runtime snapshot on an active bridge binding. */
 export interface BindingBridgeRuntime {
-  port: number;
+  /** Bound loopback port; null when the listener has no valid port yet. */
+  port: number | null;
   running: boolean;
 }
 
@@ -74,7 +75,7 @@ export interface TicketViewWire {
 }
 
 export interface BindingBridgeRuntimeWire {
-  port: number;
+  port: number | null;
   running: boolean;
 }
 
@@ -130,8 +131,8 @@ function isLoopbackPort(value: number): boolean {
 
 function mapBridge(wire: BindingBridgeRuntimeWire | null | undefined): BindingBridgeRuntime | null {
   if (wire == null) return null;
-  if (!isLoopbackPort(wire.port)) return null;
-  return { port: wire.port, running: wire.running === true };
+  const port = typeof wire.port === 'number' && isLoopbackPort(wire.port) ? wire.port : null;
+  return { port, running: wire.running === true };
 }
 
 export function mapTicketView(wire: TicketViewWire): TicketView {

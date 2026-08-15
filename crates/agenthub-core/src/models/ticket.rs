@@ -4,8 +4,12 @@
 //! pure serde wire shapes — no business logic.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::{AdapterSourceKind, AdapterSourceProduct, AgentId};
+
+/// `plan_ticket` rejects generated projection providers (not tickets).
+pub const PROJECTION_NOT_A_TICKET: &str = "投影不是票 / 禁止二次投影";
 
 /// Wallet list payload for `list_ticket_wallet`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,6 +63,24 @@ impl TicketSurface {
             AdapterSourceProduct::CodexChatGptSubscription => Self::CodexChatgptSubscription,
             AdapterSourceProduct::Other => Self::Unknown,
         }
+    }
+
+    /// Parse a persisted `extra.surface` / `meta.surface` wire value.
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim() {
+            "kimi-code-membership" => Some(Self::KimiCodeMembership),
+            "anthropic-api" => Some(Self::AnthropicApi),
+            "codex-chatgpt-subscription" => Some(Self::CodexChatgptSubscription),
+            "unknown" => Some(Self::Unknown),
+            _ => None,
+        }
+    }
+
+    /// Read a valid persisted `surface` field from account extra or provider meta.
+    pub fn from_persisted_json(blob: &Value) -> Option<Self> {
+        blob.get("surface")
+            .and_then(Value::as_str)
+            .and_then(Self::parse)
     }
 
     pub fn speaks(self) -> &'static [TicketProtocol] {
@@ -158,6 +180,16 @@ pub struct TicketBridgeRuntime {
 pub struct TicketPlanRequest {
     pub ticket_id: String,
     pub target_agent_id: AgentId,
+}
+
+/// Write `surface` into an extra/meta JSON object (creates an object if needed).
+pub fn attach_persisted_surface(blob: &mut Value, surface: TicketSurface) {
+    let encoded = Value::String(surface.as_str().to_owned());
+    if let Some(obj) = blob.as_object_mut() {
+        obj.insert("surface".into(), encoded);
+        return;
+    }
+    *blob = serde_json::json!({ "surface": surface.as_str() });
 }
 
 /// Format a stable ticket id from table origin + row id.

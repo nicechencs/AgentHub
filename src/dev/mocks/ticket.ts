@@ -39,6 +39,26 @@ type ClassifiableAccount = Account & {
   credentials?: Record<string, unknown>;
 };
 
+/** Optional persisted meta mirroring core Provider.meta. */
+type ClassifiableProvider = Provider & {
+  meta?: Record<string, unknown>;
+};
+
+const TICKET_SURFACES: readonly TicketSurface[] = [
+  'kimi-code-membership',
+  'anthropic-api',
+  'codex-chatgpt-subscription',
+  'unknown',
+];
+
+const PROJECTION_NOT_A_TICKET = '投影不是票 / 禁止二次投影';
+
+function persistedSurface(blob: unknown): TicketSurface | undefined {
+  const raw = jsonString(blob, 'surface');
+  if (!raw) return undefined;
+  return TICKET_SURFACES.find((surface) => surface === raw);
+}
+
 function adapterRouteToBinding(route: Exclude<AdapterRoute, 'unsupported'>): BindingRoute {
   if (route === 'local_bridge') return 'bridge';
   // config_sync + native_endpoint are reshape (same protocol, different config shape).
@@ -154,7 +174,8 @@ function parseTicketId(ticketIdValue: string): { sourceKind: 'account' | 'provid
 }
 
 function accountToTicket(account: Account): TicketView {
-  const surface = classifyAccountSurface(account);
+  const row = account as ClassifiableAccount;
+  const surface = persistedSurface(row.extra) ?? classifyAccountSurface(account);
   return {
     id: ticketId('account', account.id),
     sourceKind: 'account',
@@ -169,7 +190,8 @@ function accountToTicket(account: Account): TicketView {
 }
 
 function providerToTicket(provider: Provider): TicketView {
-  const surface = classifyProviderSurface(provider);
+  const row = provider as ClassifiableProvider;
+  const surface = persistedSurface(row.meta) ?? classifyProviderSurface(provider);
   return {
     id: ticketId('provider', provider.id),
     sourceKind: 'provider',
@@ -331,6 +353,15 @@ export function createMockTicketPort(resolver: MockTicketSourceResolver): Ticket
     async plan(ticketIdValue, targetAgentId) {
       await delay(15);
       const { sourceKind, sourceId } = parseTicketId(ticketIdValue);
+      if (sourceKind === 'provider') {
+        const generated = generatedProviderIds(resolver.listProfiles());
+        const provider = resolver.listProviders().find((row) => row.id === sourceId) as
+          | ClassifiableProvider
+          | undefined;
+        if (generated.has(sourceId) || provider?.meta?.generatedBy === 'adapter') {
+          throw new Error(`${PROJECTION_NOT_A_TICKET}: ${ticketIdValue}`);
+        }
+      }
       if (sourceKind === 'account' && !getMockAccountById(sourceId)) {
         throw new Error(`account not found: ${sourceId}`);
       }

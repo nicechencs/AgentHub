@@ -1,6 +1,7 @@
 use super::*;
 use crate::models::{
-    Account, AccountKind, AdapterRoute, AdapterServiceImpact, AdapterSupport, Provider,
+    Account, AccountKind, AdapterMaturity, AdapterRoute, AdapterServiceImpact, AdapterSupport,
+    Provider,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -72,6 +73,7 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
         .unwrap();
     assert_eq!(claude.analysis.route, AdapterRoute::NativeEndpoint);
     assert_eq!(claude.analysis.support, AdapterSupport::Stable);
+    assert_eq!(claude.maturity, AdapterMaturity::Stable);
     assert_eq!(claude.service_impact, AdapterServiceImpact::None);
     assert!(claude.can_apply);
     assert_eq!(claude.changes[0].field, "baseUrl");
@@ -98,6 +100,7 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
         .unwrap();
     assert_eq!(codex.analysis.route, AdapterRoute::LocalBridge);
     assert_eq!(codex.analysis.support, AdapterSupport::Experimental);
+    assert_eq!(codex.maturity, AdapterMaturity::Experimental);
     assert_eq!(
         codex.service_impact,
         AdapterServiceImpact::RequiresLocalBridge
@@ -126,6 +129,7 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
         .unwrap();
     assert_eq!(pi.analysis.route, AdapterRoute::ConfigSync);
     assert_eq!(pi.analysis.support, AdapterSupport::Stable);
+    assert_eq!(pi.maturity, AdapterMaturity::Stable);
     assert!(pi.can_apply);
     assert_eq!(pi.changes[0].field, "provider");
     assert_eq!(pi.changes[0].value.as_deref(), Some("kimi-for-coding"));
@@ -169,32 +173,54 @@ fn anthropic_provider_and_explicit_api_key_account_plan_for_pi() {
         .unwrap();
     let service = AdapterRouteService::new(db);
 
-    let provider_plan = service
-        .plan(&request(
-            AdapterSourceKind::Provider,
-            "anthropic-provider",
-            AgentId::Pi,
-        ))
-        .unwrap();
+    let provider_req = request(
+        AdapterSourceKind::Provider,
+        "anthropic-provider",
+        AgentId::Pi,
+    );
+    let account_req = request(
+        AdapterSourceKind::Account,
+        "anthropic-account",
+        AgentId::Pi,
+    );
+    let provider_analysis = service.analyze(&provider_req).unwrap();
+    let account_analysis = service.analyze(&account_req).unwrap();
+    assert_eq!(account_analysis.route, provider_analysis.route);
+    assert_eq!(account_analysis.support, provider_analysis.support);
+    assert_eq!(account_analysis.reason, provider_analysis.reason);
+
+    let provider_plan = service.plan(&provider_req).unwrap();
     assert_eq!(provider_plan.analysis.route, AdapterRoute::ConfigSync);
     assert_eq!(provider_plan.analysis.support, AdapterSupport::Stable);
+    assert_eq!(provider_plan.maturity, AdapterMaturity::Stable);
     assert!(provider_plan.can_apply);
     assert_eq!(provider_plan.changes[0].value.as_deref(), Some("anthropic"));
     assert!(provider_plan.changes[1].secret);
     assert!(provider_plan.changes[1].value.is_none());
 
-    let account_plan = service
-        .plan(&request(
-            AdapterSourceKind::Account,
-            "anthropic-account",
-            AgentId::Pi,
-        ))
-        .unwrap();
-    assert_eq!(account_plan.analysis.route, AdapterRoute::ConfigSync);
-    assert_eq!(account_plan.analysis.support, AdapterSupport::Stable);
+    let account_plan = service.plan(&account_req).unwrap();
+    assert_eq!(account_plan.analysis.route, provider_plan.analysis.route);
+    assert_eq!(
+        account_plan.analysis.support,
+        provider_plan.analysis.support
+    );
+    assert_eq!(
+        account_plan.analysis.reason, provider_plan.analysis.reason,
+        "Account and same-surface Provider share the matrix reason gist"
+    );
+    assert_eq!(account_plan.maturity, provider_plan.maturity);
     assert!(
         !account_plan.can_apply,
-        "account-sourced Anthropic → Pi stays preview-only"
+        "account-sourced Anthropic → Pi stays write-gated"
+    );
+    assert!(
+        account_plan.reason.contains("Provider") || account_plan.reason.contains("写入"),
+        "same-edge unwritable reason must mention Provider or 写入: {}",
+        account_plan.reason
+    );
+    assert!(
+        account_plan.reason.contains(&account_plan.analysis.reason),
+        "planner reason must keep the matrix gist"
     );
     assert_eq!(account_plan.changes[0].value.as_deref(), Some("anthropic"));
     assert!(account_plan.changes[1].secret);
@@ -275,6 +301,7 @@ fn unsupported_and_missing_sources_have_no_changes() {
         .unwrap();
     assert_eq!(unsupported.analysis.route, AdapterRoute::Unsupported);
     assert_eq!(unsupported.analysis.support, AdapterSupport::Unsupported);
+    assert_eq!(unsupported.maturity, AdapterMaturity::None);
     assert!(!unsupported.can_apply);
     assert!(unsupported.changes.is_empty());
     assert_eq!(unsupported.service_impact, AdapterServiceImpact::None);
@@ -355,6 +382,7 @@ fn codex_auth_json_account_to_claude_is_matrix_closed() {
         .unwrap();
     assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
     assert_eq!(plan.analysis.support, AdapterSupport::Unsupported);
+    assert_eq!(plan.maturity, AdapterMaturity::Preview);
     assert!(
         !plan.can_apply,
         "Codex OAuth → Claude must keep can_apply=false"

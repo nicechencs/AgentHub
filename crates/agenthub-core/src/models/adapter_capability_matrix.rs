@@ -9,7 +9,7 @@
 //! experimental *candidate* with every gate closed, so analyze/plan stay
 //! unsupported and Apply/Start/Bridge remain forbidden.
 
-use super::{AdapterGateKind, AdapterRoute, AdapterSupport, AgentId};
+use super::{AdapterGateKind, AdapterMaturity, AdapterRoute, AdapterSupport, AgentId};
 
 /// Shared public reason for Codex / ChatGPT subscription → Claude Code (closed).
 /// Mock UI and core analyze must keep this string in lockstep.
@@ -493,6 +493,31 @@ pub fn decide_adapter_capability(
     AdapterCapabilityDecision::from_cell(candidates[0])
 }
 
+/// Map a capability decision onto planner maturity.
+///
+/// Does not authorize writes. `can_apply` remains matrix-open ∩ plan `write_gate`.
+pub fn adapter_maturity_from_decision(decision: &AdapterCapabilityDecision) -> AdapterMaturity {
+    if decision.can_apply {
+        return match decision.support {
+            AdapterSupport::Stable => AdapterMaturity::Stable,
+            AdapterSupport::Experimental => AdapterMaturity::Experimental,
+            AdapterSupport::Unsupported => AdapterMaturity::None,
+        };
+    }
+
+    // Recorded cell (rule id) or explain-only subscription / preview-only gate.
+    if decision.rule_id.is_some()
+        || matches!(
+            decision.gate_kind,
+            AdapterGateKind::SubscriptionCandidate | AdapterGateKind::PreviewOnly
+        )
+    {
+        return AdapterMaturity::Preview;
+    }
+
+    AdapterMaturity::None
+}
+
 /// Normalize gated experimental candidates to the public unsupported surface.
 impl AdapterCapabilityDecision {
     /// Public analyze/plan surface: gated candidates always appear as unsupported.
@@ -618,6 +643,60 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn maturity_maps_open_stable_experimental_preview_and_none() {
+        let kimi_claude = decide_adapter_capability(
+            AdapterSourceProduct::KimiCodeMembership,
+            AdapterCredentialClass::ApiKey,
+            AgentId::Claude,
+        );
+        assert_eq!(
+            adapter_maturity_from_decision(&kimi_claude),
+            AdapterMaturity::Stable
+        );
+
+        let kimi_codex = decide_adapter_capability(
+            AdapterSourceProduct::KimiCodeMembership,
+            AdapterCredentialClass::ApiKey,
+            AgentId::Codex,
+        );
+        assert_eq!(
+            adapter_maturity_from_decision(&kimi_codex),
+            AdapterMaturity::Experimental
+        );
+
+        let codex_claude = decide_adapter_capability(
+            AdapterSourceProduct::CodexChatGptSubscription,
+            AdapterCredentialClass::OauthAuthJson,
+            AgentId::Claude,
+        )
+        .public_surface();
+        assert_eq!(
+            adapter_maturity_from_decision(&codex_claude),
+            AdapterMaturity::Preview
+        );
+        assert!(!codex_claude.can_apply);
+
+        let no_edge = decide_adapter_capability(
+            AdapterSourceProduct::AnthropicApi,
+            AdapterCredentialClass::ApiKey,
+            AgentId::Codex,
+        )
+        .public_surface();
+        assert_eq!(
+            adapter_maturity_from_decision(&no_edge),
+            AdapterMaturity::None
+        );
+
+        let other = decide_adapter_capability(
+            AdapterSourceProduct::Other,
+            AdapterCredentialClass::Unknown,
+            AgentId::Claude,
+        )
+        .public_surface();
+        assert_eq!(adapter_maturity_from_decision(&other), AdapterMaturity::None);
     }
 
     #[test]

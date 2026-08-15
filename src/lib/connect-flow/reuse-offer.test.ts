@@ -32,7 +32,7 @@ function account(overrides: Partial<Account> = {}): Account {
   };
 }
 
-describe('isKimiMembershipProvider', () => {
+describe('isKimiMembershipProvider (deprecated surface helper, not a gate)', () => {
   it('accepts the membership preset', () => {
     expect(isKimiMembershipProvider(provider({ preset: 'kimi-code-membership' }))).toBe(true);
   });
@@ -52,7 +52,7 @@ describe('isKimiMembershipProvider', () => {
   });
 });
 
-describe('isAnthropicApiProvider', () => {
+describe('isAnthropicApiProvider (deprecated surface helper, not a gate)', () => {
   it('accepts the anthropic preset on Claude', () => {
     expect(isAnthropicApiProvider(provider({
       agentId: 'claude',

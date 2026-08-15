@@ -75,10 +75,10 @@ UI 组件（`MarkdownView` / 预览对话框）以库 `@uiw/react-markdown-previ
 
 | 字段 | 含义 |
 |---|---|
-| `route` / `support` / `canApply` / `ruleId` / `gateKind` / `reason` | analyze/plan 对外表面 |
+| `route` / `support` / `canApply` / `maturity` / `ruleId` / `gateKind` / `reason` | `plan()` 是唯一规划出口；analyze 仍给 route/support/reason 主旨。`canApply` = 矩阵开放 ∩ write_gate |
 | `applyPath` | 生产执行入口：`native`（`AdapterApplyService`）/ `local_bridge`（Tauri bridge controller）/ `rejected`（禁止 apply） |
 
-**改矩阵 / reason / 白名单时必须先改或同步此 JSON**，再改：
+**改矩阵 / reason / write_gate 可写路径时必须先改或同步此 JSON**，再改：
 
 1. `crates/agenthub-core` 的 `ADAPTER_CAPABILITY_MATRIX` / route service  
 2. `src/dev/mocks/adapter.ts`  
@@ -104,7 +104,7 @@ Hub Phase 1 统一连接流程的测试分文件存放（遵守 §1）；前端 
 | 逻辑 | `src/lib/connect-flow/connect-intent.test.ts` | ①② 引导深链（intent/resume/`/?connect=` 的 parse/build/consume） |
 | 状态机 | `src/components/connect/connect-flow-state.test.ts` | 对话框状态机 |
 
-可行性权威为 `plan.canApply`（表示**现在能写入**），禁止只测 `analysis.support`。不可行组合仍应覆盖「原因原文可见」，不要用「按钮不存在」代替规划结果。
+可行性权威为 `plan()` 的 route / maturity / canApply / reason。`canApply` 表示**现在能写入**，禁止只测 `analysis.support`，也不要恢复商品白名单。不可行组合仍应覆盖「原因原文可见」，不要用「按钮不存在」代替规划结果。Account 与同表面 Provider 应断言相同 route/support/reason 主旨，且 Account `canApply=false` 的原因含写入/Provider 说明。
 
 ## 8. 分层边界护栏
 

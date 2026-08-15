@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
@@ -9,6 +9,7 @@ import {
   startAdapterBridge,
   stopAdapterBridge,
 } from '@/lib/api/adapter';
+import { listTicketWallet } from '@/lib/api/tickets';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import { AdapterErrorLines, AdapterProfiles } from './adapter-components';
 import { AdapterProfileDetailDialog } from './AdapterProfileDetailDialog';
@@ -19,6 +20,7 @@ import {
 import {
   adapterBridgeFleetSummary,
   adapterProfileFlowLabel,
+  filterBoundLocalBridgeRuntimes,
 } from './adapter-view-model';
 import { useAdapterResources } from './use-adapter-resources';
 import {
@@ -88,6 +90,7 @@ export {
   adapterServiceStatusView,
   adapterTargetBadge,
   adapterTargetCacheKey,
+  filterBoundLocalBridgeRuntimes,
   resolveAdapterProfileSource,
 } from './adapter-view-model';
 
@@ -97,8 +100,8 @@ export {
 } from '@/components/shared/busy-confirmation';
 
 /**
- * Adapter page: advanced management for existing profiles and local bridges.
- * Daily create / apply lives in Dashboard and Connections ConnectFlow.
+ * Adapter page: bound local-bridge runtimes only.
+ * Creating bindings lives in Dashboard and Connections ConnectFlow.
  * Do not mount analyze fan-out, plan, or apply-confirm hooks here.
  */
 export default function AdapterPage() {
@@ -116,6 +119,7 @@ export default function AdapterPage() {
     updateProfile,
     removeProfile,
   } = useAdapterResources();
+  const [bindingProfileIds, setBindingProfileIds] = useState<ReadonlySet<string>>(new Set());
   const [removeConfirm, setRemoveConfirm] = useState<AdapterProfile | null>(null);
   const [stopConfirm, setStopConfirm] = useState<AdapterProfile | null>(null);
   const [detailProfileId, setDetailProfileId] = useState<string | null>(null);
@@ -200,12 +204,36 @@ export default function AdapterPage() {
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    void listTicketWallet()
+      .then((wallet) => {
+        if (cancelled) return;
+        setBindingProfileIds(new Set(
+          wallet.bindings
+            .map((binding) => binding.profileId)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0),
+        ));
+      })
+      .catch(() => {
+        if (!cancelled) setBindingProfileIds(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profiles]);
+
+  const boundBridgeProfiles = useMemo(
+    () => filterBoundLocalBridgeRuntimes(profiles, { entries, bindingProfileIds }),
+    [bindingProfileIds, entries, profiles],
+  );
+
   const connectionWarning = resourceFailureMessage(resourceErrors);
   const stopError = stopConfirm ? profileErrors[stopConfirm.id] : null;
   const removeError = removeConfirm ? profileErrors[removeConfirm.id] : null;
   const stopDialogBusy = Boolean(stopConfirm && busyProfileIds[stopConfirm.id]);
   const removeDialogBusy = removingProfileId !== null;
-  const fleetSummary = adapterBridgeFleetSummary(profiles, bridgeStatuses);
+  const fleetSummary = adapterBridgeFleetSummary(boundBridgeProfiles, bridgeStatuses);
 
   const detailProfile = detailProfileId
     ? profiles.find((profile) => profile.id === detailProfileId) ?? null
@@ -230,8 +258,8 @@ export default function AdapterPage() {
       {connectionWarning && <p className="mb-3 text-sm text-warning" role="alert">{connectionWarning}</p>}
 
       <PageSection
-        title="已创建的适配"
-        description="管理已生效的接入与本地桥接。"
+        title="本机桥运行时"
+        description="只列出已绑定的本机桥。创建绑定不在本页，请走 Dashboard 或 Connections。"
       >
         {fleetSummary ? (
           <p className="mb-3 text-xs text-secondary">
@@ -239,7 +267,7 @@ export default function AdapterPage() {
           </p>
         ) : null}
         <AdapterProfiles
-          profiles={profiles}
+          profiles={boundBridgeProfiles}
           bridgeStatuses={bridgeStatuses}
           statusErrors={resourceErrors.bridgeStatuses}
           entries={entries}

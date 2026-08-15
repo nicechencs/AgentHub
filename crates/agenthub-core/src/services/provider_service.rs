@@ -10,14 +10,16 @@ use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    AgentConfig, AgentId, BackupKind, Capability, Provider, ProviderInput, ProviderSwitchResult,
+    attach_persisted_surface, AdapterSourceKind, AgentConfig, AgentId, BackupKind, Capability,
+    Provider, ProviderInput, ProviderSwitchResult, TicketSurface,
 };
 use crate::services::switch_undo::{
     clear_switch_undo, extract_probe_url, peek_switch_undo, probe_url_latency_ms,
     record_switch_undo, PROVIDER_UNDO_PREFIX,
 };
 use crate::services::{
-    AdapterSecretResolver, BackupService, ConnectionService, LiveWriteAuthority, LiveWriteGuard,
+    AdapterRouteService, AdapterSecretResolver, BackupService, ConnectionService,
+    LiveWriteAuthority, LiveWriteGuard,
 };
 use crate::storage::{Database, ProviderRepo};
 use crate::utils::redact::redact_text;
@@ -315,10 +317,11 @@ impl ProviderService {
         };
         if row.is_current {
             let (upserted, _binding) = self.connections.upsert_and_activate_provider(&row)?;
-            Ok(upserted)
+            self.stamp_provider_surface(upserted)
         } else {
             // Demote / plain upsert: clear binding only if it references this id.
-            self.connections.upsert_provider_non_current(&row)
+            let upserted = self.connections.upsert_provider_non_current(&row)?;
+            self.stamp_provider_surface(upserted)
         }
     }
 
@@ -449,7 +452,7 @@ impl ProviderService {
                 && existing.name == desired_name
                 && existing.is_current
             {
-                return Ok(existing);
+                return self.stamp_provider_surface(existing);
             }
 
             let input = ProviderInput {
@@ -460,7 +463,8 @@ impl ProviderService {
                 meta: existing.meta,
                 is_current: true,
             };
-            return self.update_inner(&input);
+            let updated = self.update_inner(&input)?;
+            return self.stamp_provider_surface(updated);
         }
 
         let input = ProviderInput {
@@ -472,7 +476,23 @@ impl ProviderService {
             is_current: true,
         };
         // Use inner create so import is a single log op (not create + import).
-        self.create_inner(&input)
+        let created = self.create_inner(&input)?;
+        self.stamp_provider_surface(created)
+    }
+
+    /// Classify the persisted row and write `meta.surface` before upsert /
+    /// import_live returns. `classify_source_product` reads the stored row.
+    fn stamp_provider_surface(&self, provider: Provider) -> Result<Provider> {
+        let product = AdapterRouteService::new(self.db.clone())
+            .classify_source_product(AdapterSourceKind::Provider, &provider.id)?;
+        let surface = TicketSurface::from_product(product);
+        if TicketSurface::from_persisted_json(&provider.meta) == Some(surface) {
+            return Ok(provider);
+        }
+        let mut stamped = provider;
+        attach_persisted_surface(&mut stamped.meta, surface);
+        stamped.updated_at = now_ts();
+        self.repo.update(&stamped)
     }
 
     /// Locate the canonical live-import row for one agent. Older databases may

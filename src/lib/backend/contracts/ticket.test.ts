@@ -131,7 +131,7 @@ describe('Ticket Rust wire mappers', () => {
     ).toThrow(/sourceKind/);
   });
 
-  it('drops invalid bridge ports', () => {
+  it('keeps the bridge when port is invalid or null (does not drop running)', () => {
     expect(
       mapBindingView({
         ticketId: 'provider:x',
@@ -140,7 +140,17 @@ describe('Ticket Rust wire mappers', () => {
         active: true,
         bridge: { port: 0, running: true },
       }).bridge,
-    ).toBeNull();
+    ).toEqual({ port: null, running: true });
+
+    expect(
+      mapBindingView({
+        ticketId: 'provider:x',
+        agentId: 'codex',
+        route: 'bridge',
+        active: true,
+        bridge: { port: null, running: false },
+      }).bridge,
+    ).toEqual({ port: null, running: false });
   });
 
   it('reuses adapter apply-plan mapping for plan_ticket', () => {

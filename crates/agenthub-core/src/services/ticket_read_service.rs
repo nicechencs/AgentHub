@@ -1,15 +1,20 @@
-//! Read-only Ticket / Binding wallet aggregation (connection-binding-model §6 step 1).
+//! Ticket / Binding wallet aggregation (connection-binding-model §6 steps 1–2).
 //!
-//! Builds a wallet from accounts + providers + adapter profiles. Never writes.
+//! Builds a wallet from accounts + providers + adapter profiles. Prefers
+//! persisted `extra.surface` / `meta.surface`; missing values are classified
+//! and best-effort written back. `plan` rejects generated projection providers.
 
 use std::collections::{HashMap, HashSet};
 
+use chrono::Utc;
+
 use crate::error::{AppError, Result};
+use crate::logging::targets;
 use crate::models::{
-    parse_ticket_id, ticket_id, Account, AccountKind, AdapterApplyPlan, AdapterProfile,
-    AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AgentId, Provider, Ticket,
-    TicketBinding, TicketBindingRoute, TicketBridgeRuntime, TicketCredentialClass,
-    TicketPlanRequest, TicketSurface, TicketWallet,
+    attach_persisted_surface, parse_ticket_id, ticket_id, Account, AccountKind, AdapterApplyPlan,
+    AdapterProfile, AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AgentId, Provider,
+    Ticket, TicketBinding, TicketBindingRoute, TicketBridgeRuntime, TicketCredentialClass,
+    TicketPlanRequest, TicketSurface, TicketWallet, PROJECTION_NOT_A_TICKET,
 };
 use crate::services::AdapterRouteService;
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
@@ -63,9 +68,17 @@ impl TicketReadService {
     }
 
     /// Resolve `ticketId` and delegate to [`AdapterRouteService::plan`].
+    ///
+    /// Generated projection providers are not tickets: refuse before routing.
     pub fn plan(&self, request: &TicketPlanRequest) -> Result<AdapterApplyPlan> {
         let (source_kind, source_id) = parse_ticket_id(&request.ticket_id)
             .map_err(AppError::InvalidArg)?;
+        if source_kind == AdapterSourceKind::Provider && self.is_projection_provider(&source_id)? {
+            return Err(AppError::InvalidArg(format!(
+                "{PROJECTION_NOT_A_TICKET}: {}",
+                request.ticket_id
+            )));
+        }
         self.routes.plan(&AdapterRouteRequest {
             source_kind,
             source_id,
@@ -73,11 +86,26 @@ impl TicketReadService {
         })
     }
 
+    fn is_projection_provider(&self, provider_id: &str) -> Result<bool> {
+        let profiles = self.profiles.list_filtered(&Default::default())?;
+        if profiles
+            .iter()
+            .any(|profile| profile.generated_provider_id.as_deref() == Some(provider_id))
+        {
+            return Ok(true);
+        }
+        let Some(provider) = self.providers.get_by_id(provider_id)? else {
+            return Ok(false);
+        };
+        Ok(provider
+            .meta
+            .get("generatedBy")
+            .and_then(|value| value.as_str())
+            == Some("adapter"))
+    }
+
     fn ticket_from_account(&self, account: &Account) -> Result<Ticket> {
-        let product = self
-            .routes
-            .classify_source_product(AdapterSourceKind::Account, &account.id)?;
-        let surface = TicketSurface::from_product(product);
+        let surface = self.resolve_account_surface(account)?;
         Ok(Ticket {
             id: ticket_id(AdapterSourceKind::Account, &account.id),
             source_kind: AdapterSourceKind::Account,
@@ -95,10 +123,7 @@ impl TicketReadService {
     }
 
     fn ticket_from_provider(&self, provider: &Provider) -> Result<Ticket> {
-        let product = self
-            .routes
-            .classify_source_product(AdapterSourceKind::Provider, &provider.id)?;
-        let surface = TicketSurface::from_product(product);
+        let surface = self.resolve_provider_surface(provider)?;
         Ok(Ticket {
             id: ticket_id(AdapterSourceKind::Provider, &provider.id),
             source_kind: AdapterSourceKind::Provider,
@@ -111,6 +136,68 @@ impl TicketReadService {
             imported_from: Some(provider.agent_id),
         })
     }
+
+    fn resolve_account_surface(&self, account: &Account) -> Result<TicketSurface> {
+        if let Some(surface) = TicketSurface::from_persisted_json(&account.extra) {
+            return Ok(surface);
+        }
+        let product = self
+            .routes
+            .classify_source_product(AdapterSourceKind::Account, &account.id)?;
+        let surface = TicketSurface::from_product(product);
+        self.best_effort_writeback_account_surface(account, surface);
+        Ok(surface)
+    }
+
+    fn resolve_provider_surface(&self, provider: &Provider) -> Result<TicketSurface> {
+        if let Some(surface) = TicketSurface::from_persisted_json(&provider.meta) {
+            return Ok(surface);
+        }
+        let product = self
+            .routes
+            .classify_source_product(AdapterSourceKind::Provider, &provider.id)?;
+        let surface = TicketSurface::from_product(product);
+        self.best_effort_writeback_provider_surface(provider, surface);
+        Ok(surface)
+    }
+
+    fn best_effort_writeback_account_surface(&self, account: &Account, surface: TicketSurface) {
+        let mut extra = account.extra.clone();
+        attach_persisted_surface(&mut extra, surface);
+        let mut row = account.clone();
+        row.extra = extra;
+        if let Err(error) =
+            self.accounts
+                .update_healed_fields(&row, &account.updated_at, &now_ts())
+        {
+            tracing::warn!(
+                module = targets::ACCOUNT,
+                account_id = %account.id,
+                error = %error,
+                "ticket surface backfill failed; list_wallet continues"
+            );
+        }
+    }
+
+    fn best_effort_writeback_provider_surface(&self, provider: &Provider, surface: TicketSurface) {
+        let mut meta = provider.meta.clone();
+        attach_persisted_surface(&mut meta, surface);
+        let mut row = provider.clone();
+        row.meta = meta;
+        row.updated_at = now_ts();
+        if let Err(error) = self.providers.update(&row) {
+            tracing::warn!(
+                module = targets::PROVIDER,
+                provider_id = %provider.id,
+                error = %error,
+                "ticket surface backfill failed; list_wallet continues"
+            );
+        }
+    }
+}
+
+fn now_ts() -> String {
+    Utc::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string()
 }
 
 fn derive_bindings(

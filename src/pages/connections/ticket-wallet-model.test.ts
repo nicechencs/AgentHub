@@ -115,6 +115,18 @@ describe('ticket wallet filter / search', () => {
       'account:oauth-1',
     ]);
   });
+
+  it('matches「正用于」agent and route labels (Codex / 本机桥)', () => {
+    const wallet = sampleWallet();
+    expect(searchTickets(wallet.tickets, 'Codex', wallet.bindings).map((t) => t.id))
+      .toEqual(['provider:kimi-1']);
+    expect(searchTickets(wallet.tickets, '本机桥', wallet.bindings).map((t) => t.id))
+      .toEqual(['provider:kimi-1']);
+    expect(searchTickets(wallet.tickets, '改配置', wallet.bindings).map((t) => t.id))
+      .toEqual(['provider:kimi-1']);
+    expect(buildTicketWalletRows(wallet, { query: 'Codex' }).map((r) => r.ticket.id))
+      .toEqual(['provider:kimi-1']);
+  });
 });
 
 describe('binding usage text', () => {

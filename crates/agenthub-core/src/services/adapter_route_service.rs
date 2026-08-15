@@ -3,16 +3,18 @@
 //! Route presentation is sourced from the compile-time
 //! [`crate::models::ADAPTER_CAPABILITY_MATRIX`]. Missing cells fail closed.
 //!
-//! `plan.can_apply` is **matrix open ∩ implemented apply whitelist** — the matrix
-//! alone never authorizes writes.
+//! `plan()` is the only public planner exit: it computes route, maturity,
+//! `can_apply`, and reason. `can_apply` is **matrix open ∩ write_gate**.
+//! The matrix is the graph; `write_gate` is a private helper, not a third
+//! public truth. The matrix alone never authorizes writes.
 
 use serde_json::Value;
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    decide_adapter_capability, AccountKind, AdapterAction, AdapterApplyPlan,
-    AdapterCapabilityDecision, AdapterCredentialClass, AdapterEvidence, AdapterGateKind,
-    AdapterPlanChange, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
+    adapter_maturity_from_decision, decide_adapter_capability, AccountKind, AdapterAction,
+    AdapterApplyPlan, AdapterCapabilityDecision, AdapterCredentialClass, AdapterEvidence,
+    AdapterGateKind, AdapterPlanChange, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
     AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
 };
 use crate::services::adapter_route_constants::{
@@ -49,13 +51,10 @@ impl AdapterRouteService {
 
     /// Build a safe representation of an eventual configuration change.
     ///
-    /// Write permission is the intersection of:
-    /// 1. capability matrix (`decision.can_apply`: cell flag + all gates), and
-    /// 2. [`implemented_apply_whitelist`] for paths that actually have an apply service.
-    ///
-    /// Today that whitelist is provider-sourced Kimi → Claude (native),
-    /// Kimi / Anthropic → Pi (config sync), and Kimi → Codex (local bridge).
-    /// Matrix-open account sources stay preview-only.
+    /// This is the only public place that computes `can_apply`, maturity, route,
+    /// and the planner reason. Write permission is matrix-open ∩ [`write_gate`].
+    /// Account rows share the same edge as the matching Provider surface but
+    /// stay unwritable until bind lands.
     pub fn plan(&self, request: &AdapterRouteRequest) -> Result<AdapterApplyPlan> {
         let classified = self.classify(request)?;
         let analysis = analysis_from_decision(&classified.decision, &classified.source, request);
@@ -106,13 +105,20 @@ impl AdapterRouteService {
             }
         };
 
-        let can_apply =
-            implemented_apply_whitelist(classified.decision.can_apply, request, &analysis);
+        let gate = write_gate(classified.decision.can_apply, request, &analysis);
+        let maturity = adapter_maturity_from_decision(&classified.decision);
+        let reason = if gate.same_edge_unwritable {
+            format!("{} {SAME_EDGE_UNWRITABLE_REASON}", analysis.reason)
+        } else {
+            analysis.reason.clone()
+        };
 
         Ok(AdapterApplyPlan {
             analysis,
             target_agent_id: request.target_agent_id,
-            can_apply,
+            can_apply: gate.can_apply,
+            maturity,
+            reason,
             service_impact,
             changes,
         })
@@ -313,22 +319,32 @@ fn is_codex_auth_json(format: Option<&str>, credentials: &Value) -> bool {
         })
 }
 
-/// Paths that have a real apply/bridge implementation today.
+/// Same-edge Account (or other non-Provider) rows keep the matrix route but
+/// cannot be written until bind accepts ticket sources.
+const SAME_EDGE_UNWRITABLE_REASON: &str =
+    "同边但暂不可写：写入仍只接受 Provider 行，下一步 bind 打通。";
+
+/// Private write gate for `plan()`. Not a public third source of truth.
 ///
-/// Matrix `can_apply` is necessary but not sufficient: account sources and
-/// not-yet-implemented routes stay closed even if a future matrix cell opens.
-fn implemented_apply_whitelist(
+/// Matrix `can_apply` is necessary but not sufficient: Account sources on an
+/// open edge stay closed (`can_apply=false`) with an explicit same-edge reason.
+struct WriteGate {
+    can_apply: bool,
+    same_edge_unwritable: bool,
+}
+
+fn write_gate(
     matrix_can_apply: bool,
     request: &AdapterRouteRequest,
     analysis: &AdapterRouteAnalysis,
-) -> bool {
+) -> WriteGate {
     if !matrix_can_apply {
-        return false;
+        return WriteGate {
+            can_apply: false,
+            same_edge_unwritable: false,
+        };
     }
-    if request.source_kind != AdapterSourceKind::Provider {
-        return false;
-    }
-    matches!(
+    let implemented_path = matches!(
         (analysis.route, analysis.support, request.target_agent_id),
         (
             AdapterRoute::NativeEndpoint,
@@ -343,7 +359,23 @@ fn implemented_apply_whitelist(
             AdapterSupport::Experimental,
             AgentId::Codex
         )
-    )
+    );
+    if !implemented_path {
+        return WriteGate {
+            can_apply: false,
+            same_edge_unwritable: false,
+        };
+    }
+    if request.source_kind != AdapterSourceKind::Provider {
+        return WriteGate {
+            can_apply: false,
+            same_edge_unwritable: true,
+        };
+    }
+    WriteGate {
+        can_apply: true,
+        same_edge_unwritable: false,
+    }
 }
 
 fn json_string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
