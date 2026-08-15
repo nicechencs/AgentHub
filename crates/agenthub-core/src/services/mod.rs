@@ -52,7 +52,9 @@ pub use project_service::ProjectService;
 pub use provider_service::{ProviderLiveConfigSnapshot, ProviderLiveSagaGuard, ProviderService};
 pub use run_service::RunService;
 pub use settings_service::SettingsService;
-pub use skill_market::{BuiltinSkillMarket, SkillMarket, SkillMarketRegistry};
+pub use skill_market::{
+    install_market_listing, search_market, BuiltinSkillMarket, SkillMarket, SkillMarketRegistry,
+};
 pub use skill_service::SkillService;
 pub use skillhub_market::{
     install_skillhub_listing, is_skillhub_listing_id, local_skill_id_from_skillhub_id,

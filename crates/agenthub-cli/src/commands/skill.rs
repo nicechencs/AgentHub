@@ -2,7 +2,6 @@
 
 use agenthub_core::error::{AppError, Result};
 use agenthub_core::models::{AgentId, Skill, SkillProjectMode, SkillSyncReport};
-use agenthub_core::services::SkillMarketRegistry;
 use agenthub_core::AgentHub;
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
@@ -288,21 +287,7 @@ pub fn project(
 }
 
 pub fn market(hub: &AgentHub, query: &str, format: OutputFormat) -> Result<()> {
-    let source = hub
-        .settings
-        .load()
-        .map(|s| s.skill_market_source_parsed())
-        .unwrap_or_default();
-    let registry = SkillMarketRegistry::from_source(source);
-    let mut items = registry.search_configured(query)?;
-    // Mark installed against shared source when possible.
-    if let Ok(installed) = hub.skills.list() {
-        let ids: std::collections::HashSet<_> = installed.iter().map(|s| s.id.as_str()).collect();
-        for item in &mut items {
-            let local_id = agenthub_core::services::local_skill_id_from_market_id(&item.id);
-            item.installed = ids.contains(item.id.as_str()) || ids.contains(local_id.as_str());
-        }
-    }
+    let items = hub.search_skill_market(query)?;
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => print_json(&items),
