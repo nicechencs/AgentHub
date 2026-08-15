@@ -114,7 +114,10 @@ export function OnboardingDialog() {
     let count = 0;
     try {
       const targets = agents.filter(
-        (a) => a.installed && !isCapabilityBlocked(a.capabilities?.accountSwitch),
+        (a) =>
+          a.installed &&
+          !a.hidden &&
+          !isCapabilityBlocked(a.capabilities?.accountSwitch),
       );
       for (const a of targets) {
         try {
@@ -136,7 +139,10 @@ export function OnboardingDialog() {
     }
   };
 
-  const installed = agents?.filter((a) => a.installed) ?? [];
+  const installed = agents?.filter((a) => a.installed && !a.hidden) ?? [];
+  const visibleMetas = AGENTS.filter(
+    (m) => !agents?.some((a) => a.agentId === m.id && a.hidden),
+  );
   const envIssues = runtimes ? hasEnvIssues(runtimes) : false;
   const noAgents = agents != null && installed.length === 0;
 
@@ -220,10 +226,10 @@ export function OnboardingDialog() {
             )}
             <div>
               <p className="mb-2 text-sm text-secondary">
-                检测到 {installed.length}/{AGENTS.length} 个已安装
+                检测到 {installed.length}/{visibleMetas.length} 个已安装
               </p>
               <ul className="divide-y divide-border rounded-card border border-border">
-                {AGENTS.map((agentMeta) => {
+                {visibleMetas.map((agentMeta) => {
                   const status = agents.find((a) => a.agentId === agentMeta.id);
                   const missing = !status?.installed;
                   const envBad = missing && status && status.envReady === false;

@@ -163,7 +163,12 @@ export function Sidebar() {
     item.to !== BRIDGES_PATH || shouldShowBridgesNav(bridgePresence)
   ));
 
-  const installed = agents.filter((a) => a.installed).length;
+  const hiddenIds = React.useMemo(
+    () => new Set(agents.filter((a) => a.hidden).map((a) => a.agentId)),
+    [agents],
+  );
+  const installed = agents.filter((a) => a.installed && !a.hidden).length;
+  const visibleTotal = AGENTS.filter((meta) => !hiddenIds.has(meta.id)).length;
 
   const itemClass = (isActive: boolean) =>
     cn(
@@ -257,10 +262,10 @@ export function Sidebar() {
       {/* agent 在线状态迷你条：最底部 */}
       <div className={cn('shrink-0 border-t border-border', collapsed ? 'px-1.5 py-2.5' : 'px-3 py-2.5')}>
         {collapsed ? (
-          <Hint label={`${installed}/${AGENTS.length} agents 已安装`} side="right">
+          <Hint label={`${installed}/${visibleTotal} agents 已安装`} side="right">
             <div
               className="flex cursor-default flex-wrap items-center justify-center gap-1.5 rounded-btn py-0.5"
-              aria-label={`${installed}/${AGENTS.length} agents 已安装`}
+              aria-label={`${installed}/${visibleTotal} agents 已安装`}
             >
               {installedMetas.map((meta) => {
                 const status = agents.find((a) => a.agentId === meta.id);
@@ -307,7 +312,7 @@ export function Sidebar() {
               <span className="text-xs text-muted">未安装 Agent</span>
             )}
             <span className="ml-auto shrink-0 text-xs text-muted">
-              {installed}/{AGENTS.length}
+              {installed}/{visibleTotal}
             </span>
           </div>
         )}

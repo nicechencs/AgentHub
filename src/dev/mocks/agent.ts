@@ -22,6 +22,19 @@ import { MOCK_CAPABILITIES } from './capabilities';
 
 const log = logger.scope('dev:mock:agent');
 
+const hiddenAgentIds = new Set<AgentId>();
+
+export function resetMockAgentVisibility(): void {
+  hiddenAgentIds.clear();
+}
+
+function stampHidden(agents: AgentStatus[]): AgentStatus[] {
+  return agents.map((agent) => ({
+    ...agent,
+    hidden: hiddenAgentIds.has(agent.agentId),
+  }));
+}
+
 export { EnvNotReadyError, InstallFailedError, mergeAgentListWithCatalog };
 
 /**
@@ -199,13 +212,15 @@ export function createMockAgentPort(backend: Backend): AgentPort {
           envMissing: check.missing.length ? check.missing : undefined,
         };
       });
-      const merged = mergeAgentListWithCatalog(mockRows, AGENTS).map((s) => ({
-        ...s,
-        capabilities:
-          s.capabilities ??
-          AGENT_MAP[s.agentId]?.capabilities ??
-          MOCK_CAPABILITIES[s.agentId],
-      }));
+      const merged = stampHidden(
+        mergeAgentListWithCatalog(mockRows, AGENTS).map((s) => ({
+          ...s,
+          capabilities:
+            s.capabilities ??
+            AGENT_MAP[s.agentId]?.capabilities ??
+            MOCK_CAPABILITIES[s.agentId],
+        })),
+      );
       return withConnectionEnrichment(backend, merged);
     },
 
@@ -221,7 +236,7 @@ export function createMockAgentPort(backend: Backend): AgentPort {
         base.capabilities ??
         AGENT_MAP[agentId]?.capabilities ??
         MOCK_CAPABILITIES[agentId];
-      const [enriched] = await withConnectionEnrichment(backend, [base]);
+      const [enriched] = await withConnectionEnrichment(backend, stampHidden([base]));
       return enriched!;
     },
 
@@ -333,6 +348,12 @@ export function createMockAgentPort(backend: Backend): AgentPort {
         ? agentIds
         : (Object.keys(state) as AgentId[]);
       return ids.map((id) => mockUpdateInfo(id));
+    },
+
+    async setAgentHidden(agentId, hidden) {
+      await delay(randomLatency());
+      if (hidden) hiddenAgentIds.add(agentId);
+      else hiddenAgentIds.delete(agentId);
     },
   };
 }

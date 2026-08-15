@@ -24,4 +24,6 @@ export interface AgentPort {
    * Empty / omitted agentIds → all agents. force bypasses TTL cache.
    */
   checkAgentUpdates(agentIds?: AgentId[], force?: boolean): Promise<AgentUpdateInfo[]>;
+  /** Soft-hide / unhide. Does not uninstall or delete credentials. */
+  setAgentHidden(agentId: AgentId, hidden: boolean): Promise<void>;
 }

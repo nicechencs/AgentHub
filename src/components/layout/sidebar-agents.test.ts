@@ -30,4 +30,12 @@ describe('installedCatalogAgents', () => {
     ]);
     expect(after.map((row) => row.id)).toEqual(['claude', 'dsh']);
   });
+
+  it('omits hidden installed agents', () => {
+    const installed = installedCatalogAgents(catalog, [
+      { agentId: 'claude', installed: true, hidden: true },
+      { agentId: 'dsh', installed: true },
+    ]);
+    expect(installed.map((row) => row.id)).toEqual(['dsh']);
+  });
 });

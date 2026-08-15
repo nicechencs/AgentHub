@@ -25,6 +25,25 @@ function missingAgentStatus(id: AgentId): AgentStatus {
   };
 }
 
+async function loadHiddenAgentIds(): Promise<Set<AgentId>> {
+  try {
+    const ids = await invoke<string[]>('list_hidden_agents');
+    return new Set(ids);
+  } catch (e) {
+    log.warn('list_hidden_agents failed; treating none as hidden', {
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return new Set();
+  }
+}
+
+function stampHidden(agents: AgentStatus[], hiddenIds: Set<string>): AgentStatus[] {
+  return agents.map((agent) => ({
+    ...agent,
+    hidden: hiddenIds.has(agent.agentId),
+  }));
+}
+
 async function withConnectionEnrichment(
   backend: Backend,
   agents: AgentStatus[],
@@ -55,16 +74,22 @@ async function withConnectionEnrichment(
 export function createTauriAgentPort(backend: Backend): AgentPort {
   return {
     async listAgents() {
-      const doctor = await backend.doctor.loadDoctorMapped();
+      const [doctor, hiddenIds] = await Promise.all([
+        backend.doctor.loadDoctorMapped(),
+        loadHiddenAgentIds(),
+      ]);
       return withConnectionEnrichment(
         backend,
         // AGENTS is catalog-driven (boot / mock seed); empty → detected-only.
-        mergeAgentListWithCatalog(doctor.agents, AGENTS),
+        stampHidden(mergeAgentListWithCatalog(doctor.agents, AGENTS), hiddenIds),
       );
     },
 
     async getAgent(agentId) {
-      const doctor = await backend.doctor.loadDoctorMapped();
+      const [doctor, hiddenIds] = await Promise.all([
+        backend.doctor.loadDoctorMapped(),
+        loadHiddenAgentIds(),
+      ]);
       const found = doctor.agents.find((a) => a.agentId === agentId);
       const inCatalog = Boolean(AGENT_MAP[agentId]);
       const base = found
@@ -76,7 +101,10 @@ export function createTauriAgentPort(backend: Backend): AgentPort {
       if (!base.capabilities && AGENT_MAP[agentId]?.capabilities) {
         base.capabilities = AGENT_MAP[agentId].capabilities;
       }
-      const [enriched] = await withConnectionEnrichment(backend, [base]);
+      const [enriched] = await withConnectionEnrichment(
+        backend,
+        stampHidden([base], hiddenIds),
+      );
       return enriched!;
     },
 
@@ -158,6 +186,15 @@ export function createTauriAgentPort(backend: Backend): AgentPort {
         });
       } catch (e) {
         log.error('checkAgentUpdates failed', { agentIds, force }, e);
+        throw e;
+      }
+    },
+
+    async setAgentHidden(agentId, hidden) {
+      try {
+        await invoke<void>('set_agent_hidden', { agentId, hidden });
+      } catch (e) {
+        log.error('setAgentHidden failed', { agentId, hidden }, e);
         throw e;
       }
     },
