@@ -440,6 +440,70 @@ describe('mock ticket wallet', () => {
     });
   });
 
+  it('plan/bind GLM Provider and DeepSeek Account → Claude, and rejects unknown relays', async () => {
+    getBackend();
+    upsertMockProvider({
+      id: 'glm-prov-bind',
+      agentId: 'claude',
+      name: 'GLM',
+      preset: 'glm-coding-plan',
+      configText: '{}',
+      configFormat: 'json',
+      isCurrent: false,
+    });
+    const glmPlan = await getBackend().ticket.plan('provider:glm-prov-bind', 'claude');
+    expect(glmPlan.canApply).toBe(true);
+    expect(glmPlan.analysis.ruleId).toBe('glm-coding-plan-to-claude-v1');
+    expect(glmPlan.changes[0].value).toBe('https://open.bigmodel.cn/api/anthropic');
+    const glmBind = await getBackend().ticket.bind('provider:glm-prov-bind', 'claude');
+    expect(glmBind.binding.active).toBe(true);
+    expect(glmBind.binding.route).toBe('reshape');
+    await getBackend().ticket.unbind('provider:glm-prov-bind', 'claude');
+
+    upsertMockAccount({
+      id: 'deepseek-acc-bind',
+      agentId: 'claude',
+      kind: 'apikey',
+      label: 'DeepSeek',
+      isCurrent: false,
+      tokenValid: true,
+      extra: { provider: 'deepseek-api' },
+      credentials: { format: 'api_key', api_key: 'sk-deepseek' },
+    } as Account);
+    const dsPlan = await getBackend().ticket.plan('account:deepseek-acc-bind', 'claude');
+    expect(dsPlan.canApply).toBe(true);
+    expect(dsPlan.analysis.ruleId).toBe('deepseek-api-to-claude-v1');
+    const dsBind = await getBackend().ticket.bind('account:deepseek-acc-bind', 'claude');
+    expect(dsBind.binding.active).toBe(true);
+    expect(dsBind.binding.ticketId).toBe('account:deepseek-acc-bind');
+
+    upsertMockProvider({
+      id: 'kimi-still-kimi-url',
+      agentId: 'kimi',
+      name: 'Kimi',
+      preset: 'kimi-code-membership',
+      configText: 'api_key = "kimi-secret"',
+      configFormat: 'toml',
+      isCurrent: false,
+    });
+    const kimiPlan = await getBackend().ticket.plan('provider:kimi-still-kimi-url', 'claude');
+    expect(kimiPlan.canApply).toBe(true);
+    expect(kimiPlan.changes[0].value).toBe('https://api.kimi.com/coding/');
+
+    upsertMockProvider({
+      id: 'relay-no-claude',
+      agentId: 'claude',
+      name: 'Relay',
+      preset: 'openai-compatible',
+      configText: '{"baseUrl":"https://relay.example/v1"}',
+      configFormat: 'json',
+      isCurrent: false,
+    });
+    await expect(getBackend().ticket.bind('provider:relay-no-claude', 'claude')).rejects.toMatchObject({
+      code: 'unsupported',
+    });
+  });
+
   it('unbind_ticket removes the binding even when the projection is current', async () => {
     getBackend();
     const { kimiMembership } = seedConnectFlowAdapterFixtures({ includeAnthropic: false });

@@ -1,6 +1,9 @@
 use super::*;
 use crate::adapters::AgentAdapter;
 use crate::models::Provider;
+use crate::services::adapter_route_constants::{
+    DEEPSEEK_CLAUDE_BASE_URL, GLM_CLAUDE_BASE_URL, KIMI_CLAUDE_BASE_URL,
+};
 use crate::models::{
     AgentConfig, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
     InstallChannel, RunOptions, RunSpec,
@@ -1428,4 +1431,195 @@ fn pi_openai_and_xai_apply_sets_slot_and_keeps_secret_out() {
     assert!(!serde_json::to_string(&xai)
         .unwrap()
         .contains("xai-account-secret"));
+}
+
+#[test]
+fn glm_and_deepseek_claude_apply_writes_rule_base_url_and_keeps_kimi_url() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "glm-source",
+            "glm-coding-plan",
+            ANTHROPIC_AUTH_TOKEN_ENV,
+            "glm-secret",
+        ))
+        .unwrap();
+    crate::storage::AccountRepo::new(db.clone())
+        .create(&crate::models::Account {
+            id: "deepseek-account".into(),
+            agent_id: AgentId::Claude,
+            kind: crate::models::AccountKind::ApiKey,
+            label: "DeepSeek key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "deepseek-account-secret"
+            }),
+            extra: json!({"provider": "deepseek-api"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source("kimi-source", "test-kimi-secret"))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "relay-source".into(),
+            agent_id: AgentId::Claude,
+            name: "Custom relay".into(),
+            settings_config: json!({"apiKey": "relay-secret", "baseUrl": "https://relay.example/v1"}),
+            meta: json!({"preset": "openai-compatible"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let fake = Arc::new(FakeClaudeAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
+
+    let glm = service
+        .apply(&request("glm-source", AgentId::Claude))
+        .unwrap();
+    assert_eq!(glm.profile.rule_id, GLM_CLAUDE_RULE_ID);
+    let glm_stored = ProviderRepo::new(db.clone())
+        .get_by_id(&glm.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        glm_stored.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        GLM_CLAUDE_BASE_URL
+    );
+    assert_eq!(
+        glm_stored.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(
+        fake.read_config().unwrap().raw["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "glm-secret"
+    );
+    assert!(!serde_json::to_string(&glm).unwrap().contains("glm-secret"));
+
+    let deepseek = service
+        .apply(&AdapterApplyRequest {
+            source_kind: AdapterSourceKind::Account,
+            source_id: "deepseek-account".into(),
+            target_agent_id: AgentId::Claude,
+        })
+        .unwrap();
+    assert_eq!(deepseek.profile.rule_id, DEEPSEEK_CLAUDE_RULE_ID);
+    assert_eq!(deepseek.profile.source_kind, AdapterSourceKind::Account);
+    let deepseek_stored = ProviderRepo::new(db.clone())
+        .get_by_id(&deepseek.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        deepseek_stored.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        DEEPSEEK_CLAUDE_BASE_URL
+    );
+    assert_eq!(deepseek_stored.meta["adapterSourceRef"]["kind"], "account");
+    assert!(!serde_json::to_string(&deepseek)
+        .unwrap()
+        .contains("deepseek-account-secret"));
+
+    let kimi = service
+        .apply(&request("kimi-source", AgentId::Claude))
+        .unwrap();
+    assert_eq!(kimi.profile.rule_id, RULE_ID);
+    let kimi_stored = ProviderRepo::new(db.clone())
+        .get_by_id(&kimi.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        kimi_stored.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        KIMI_CLAUDE_BASE_URL
+    );
+
+    assert!(service
+        .apply(&request("relay-source", AgentId::Claude))
+        .is_err());
+}
+
+#[test]
+fn glm_claude_finalize_failure_restores_previous_current() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "glm-source",
+            "glm-coding-plan",
+            ANTHROPIC_AUTH_TOKEN_ENV,
+            "glm-secret",
+        ))
+        .unwrap();
+    let previous = Provider {
+        id: "previous-claude".into(),
+        agent_id: AgentId::Claude,
+        name: "Previous Claude".into(),
+        settings_config: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "previous-secret"}}),
+        meta: json!({}),
+        is_current: true,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    };
+    ProviderRepo::new(db.clone()).create(&previous).unwrap();
+    ActiveBindingRepo::new(db.clone())
+        .set_refs(
+            "claude",
+            None,
+            Some(previous.id.clone()),
+            None,
+            "before-glm-apply",
+        )
+        .unwrap();
+    db.with_conn(|conn| {
+        conn.execute_batch(
+            r#"
+            CREATE TRIGGER fail_adapter_profile_finalize_glm
+            BEFORE UPDATE OF status ON adapter_profiles
+            WHEN NEW.status = 'active'
+            BEGIN
+                SELECT RAISE(ABORT, 'injected adapter profile finalization failure');
+            END;
+            "#,
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    let fake = Arc::new(FakeClaudeAdapter::new());
+    fake.write_config(&crate::models::AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "previous-secret"}}),
+    })
+    .unwrap();
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
+
+    let error = service
+        .apply(&request("glm-source", AgentId::Claude))
+        .unwrap_err();
+    assert_eq!(error.code(), "adapter.profile_finalize");
+    assert_eq!(
+        ActiveBindingRepo::new(db.clone())
+            .get("claude")
+            .unwrap()
+            .unwrap()
+            .provider_id
+            .as_deref(),
+        Some(previous.id.as_str())
+    );
+    assert!(
+        ProviderRepo::new(db)
+            .get_by_id(&previous.id)
+            .unwrap()
+            .unwrap()
+            .is_current
+    );
+    assert_eq!(
+        fake.read_config().unwrap().raw["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "previous-secret"
+    );
 }

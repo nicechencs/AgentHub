@@ -445,6 +445,75 @@ describe('mock adapter route preview', () => {
     expect((await createMockProviderPort().listProviders('pi'))).toEqual([]);
   });
 
+  it('plans and applies GLM / DeepSeek → Claude with rule-specific URLs', async () => {
+    await createMockProviderPort().upsertProvider({
+      id: 'glm-src',
+      agentId: 'claude',
+      name: 'GLM',
+      preset: 'glm-coding-plan',
+      configText: '{"apiKey":"must-not-leak"}',
+      configFormat: 'json',
+      isCurrent: false,
+    });
+    const adapter = createMockAdapterPort({
+      getAccountById: (id) => (id === 'deepseek-acc'
+        ? {
+            id: 'deepseek-acc',
+            agentId: 'claude',
+            kind: 'apikey',
+            label: 'DeepSeek',
+            isCurrent: false,
+            tokenValid: true,
+            extra: { provider: 'deepseek-api' },
+            credentials: { format: 'api_key', api_key: 'must-not-leak' },
+          } as Account
+        : getMockAccountById(id)),
+      getProviderById: getMockProviderById,
+      upsertGeneratedProvider: upsertMockProvider,
+      removeGeneratedProvider: removeMockProvider,
+    });
+
+    const glmPlan = await adapter.plan({
+      sourceKind: 'provider',
+      sourceId: 'glm-src',
+      targetAgentId: 'claude',
+    });
+    expect(glmPlan.canApply).toBe(true);
+    expect(glmPlan.analysis.ruleId).toBe('glm-coding-plan-to-claude-v1');
+    expect(glmPlan.changes[0].value).toBe('https://open.bigmodel.cn/api/anthropic');
+    const glmApplied = await adapter.apply({
+      sourceKind: 'provider',
+      sourceId: 'glm-src',
+      targetAgentId: 'claude',
+    });
+    expect(glmApplied.profile.ruleId).toBe('glm-coding-plan-to-claude-v1');
+    expect(JSON.parse(glmApplied.provider.configText)).toEqual({
+      env: {
+        ANTHROPIC_BASE_URL: 'https://open.bigmodel.cn/api/anthropic',
+        ANTHROPIC_AUTH_TOKEN: '$AGENTHUB_CONNECTION_SECRET$',
+      },
+    });
+
+    const deepseekPlan = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: 'deepseek-acc',
+      targetAgentId: 'claude',
+    });
+    expect(deepseekPlan.canApply).toBe(true);
+    expect(deepseekPlan.analysis.ruleId).toBe('deepseek-api-to-claude-v1');
+    expect(deepseekPlan.changes[0].value).toBe('https://api.deepseek.com/anthropic');
+    const deepseekApplied = await adapter.apply({
+      sourceKind: 'account',
+      sourceId: 'deepseek-acc',
+      targetAgentId: 'claude',
+    });
+    expect(deepseekApplied.profile.ruleId).toBe('deepseek-api-to-claude-v1');
+    expect(JSON.parse(deepseekApplied.provider.configText).env.ANTHROPIC_BASE_URL)
+      .toBe('https://api.deepseek.com/anthropic');
+    expect(JSON.stringify({ glmPlan, deepseekPlan, glmApplied, deepseekApplied }))
+      .not.toContain('must-not-leak');
+  });
+
   it('allows removing a current Pi generated Connection', async () => {
     const { kimiMembership } = seedConnectFlowAdapterFixtures({ includeAnthropic: false });
     const adapter = createMockAdapterPort(resolver);

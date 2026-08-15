@@ -20,9 +20,11 @@ use crate::models::{
     AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
 };
 use crate::services::adapter_route_constants::{
-    is_deepseek_api_marker, is_glm_coding_plan_marker, is_kimi_code_membership_source,
-    is_openai_api_marker, is_xai_api_marker, settings_contain_anthropic_api_endpoint,
-    ANTHROPIC_AUTH_TOKEN_ENV, KIMI_CLAUDE_BASE_URL,
+    claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
+    is_kimi_code_membership_source, is_openai_api_marker, is_xai_api_marker,
+    settings_contain_anthropic_api_endpoint, ANTHROPIC_AUTH_TOKEN_ENV, DEEPSEEK_CLAUDE_BASE_URL,
+    DEEPSEEK_CLAUDE_RULE_ID, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID, KIMI_CLAUDE_BASE_URL,
+    KIMI_CLAUDE_RULE_ID,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -61,19 +63,23 @@ impl AdapterRouteService {
         let classified = self.classify(request)?;
         let analysis = analysis_from_decision(&classified.decision, &classified.source, request);
         let (service_impact, changes) = match analysis.route {
-            AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Claude => (
-                AdapterServiceImpact::None,
-                vec![
-                    change("claude", "baseUrl", Some(KIMI_CLAUDE_BASE_URL), false),
-                    change(
-                        "claude",
-                        "claudeAuthEnv",
-                        Some(ANTHROPIC_AUTH_TOKEN_ENV),
-                        false,
-                    ),
-                    change("claude", "apiKey", None, true),
-                ],
-            ),
+            AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Claude => {
+                let base_url = claude_native_base_url(analysis.rule_id.as_deref().unwrap_or(""))
+                    .unwrap_or(KIMI_CLAUDE_BASE_URL);
+                (
+                    AdapterServiceImpact::None,
+                    vec![
+                        change("claude", "baseUrl", Some(base_url), false),
+                        change(
+                            "claude",
+                            "claudeAuthEnv",
+                            Some(ANTHROPIC_AUTH_TOKEN_ENV),
+                            false,
+                        ),
+                        change("claude", "apiKey", None, true),
+                    ],
+                )
+            }
             AdapterRoute::ConfigSync if request.target_agent_id == AgentId::Pi => {
                 let provider = analysis
                     .actions
@@ -412,8 +418,8 @@ fn write_gate(
 }
 
 /// Bind implementations opened in this step. Kimi membership secrets stay
-/// Provider-only; Anthropic / OpenAI / xAI API secrets also resolve from an
-/// Account row (`credentials.api_key`).
+/// Provider-only; Anthropic / OpenAI / xAI / GLM / DeepSeek API secrets also
+/// resolve from an Account row (`credentials.api_key`).
 fn bind_implementation_open(
     request: &AdapterRouteRequest,
     analysis: &AdapterRouteAnalysis,
@@ -426,11 +432,18 @@ fn bind_implementation_open(
         analysis.support,
     ) {
         (
-            Some("kimi-membership-to-claude-v1"),
+            Some(KIMI_CLAUDE_RULE_ID),
             AdapterSourceKind::Provider,
             AgentId::Claude,
             AdapterRoute::NativeEndpoint,
             AdapterSupport::Stable,
+        )
+        | (
+            Some(GLM_CLAUDE_RULE_ID) | Some(DEEPSEEK_CLAUDE_RULE_ID),
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            AgentId::Claude,
+            AdapterRoute::NativeEndpoint,
+            AdapterSupport::Experimental,
         )
         | (
             Some("kimi-membership-to-pi-v1"),
@@ -538,7 +551,7 @@ fn actions_for(
                     "set_config",
                     "Claude Code",
                     "设置 Kimi Code 官方 Anthropic-compatible Base URL。",
-                    Some("https://api.kimi.com/coding/"),
+                    Some(KIMI_CLAUDE_BASE_URL),
                     false,
                 ),
                 action(
@@ -639,6 +652,56 @@ fn actions_for(
                 true,
             ),
         ],
+        (RouteSourceLabel::GlmCodingPlan, AgentId::Claude, AdapterRoute::NativeEndpoint) => {
+            vec![
+                action(
+                    "set_config",
+                    "Claude Code",
+                    "设置 GLM Coding Plan 官方 Anthropic-compatible Base URL。",
+                    Some(GLM_CLAUDE_BASE_URL),
+                    false,
+                ),
+                action(
+                    "set_env",
+                    "Claude Code",
+                    "使用 Claude Code 的认证环境变量名。",
+                    Some(ANTHROPIC_AUTH_TOKEN_ENV),
+                    false,
+                ),
+                action(
+                    "reference_connection_secret",
+                    "Claude Code",
+                    "从已选 Connection 引用 API Key；不会读取或显示它。",
+                    None,
+                    true,
+                ),
+            ]
+        }
+        (RouteSourceLabel::DeepseekApi, AgentId::Claude, AdapterRoute::NativeEndpoint) => {
+            vec![
+                action(
+                    "set_config",
+                    "Claude Code",
+                    "设置 DeepSeek 官方 Anthropic-compatible Base URL。",
+                    Some(DEEPSEEK_CLAUDE_BASE_URL),
+                    false,
+                ),
+                action(
+                    "set_env",
+                    "Claude Code",
+                    "使用 Claude Code 的认证环境变量名。",
+                    Some(ANTHROPIC_AUTH_TOKEN_ENV),
+                    false,
+                ),
+                action(
+                    "reference_connection_secret",
+                    "Claude Code",
+                    "从已选 Connection 引用 API Key；不会读取或显示它。",
+                    None,
+                    true,
+                ),
+            ]
+        }
         _ => vec![],
     }
 }
@@ -658,6 +721,8 @@ fn evidence_for(
         (RouteSourceLabel::OpenaiApiKey | RouteSourceLabel::XaiApiKey, _) => {
             vec![anthropic_pi_evidence()]
         }
+        (RouteSourceLabel::GlmCodingPlan, AgentId::Claude) => vec![glm_claude_evidence()],
+        (RouteSourceLabel::DeepseekApi, AgentId::Claude) => vec![deepseek_claude_evidence()],
         (
             RouteSourceLabel::GlmCodingPlan
             | RouteSourceLabel::DeepseekApi
@@ -732,6 +797,22 @@ fn anthropic_codex_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "Anthropic Messages API".into(),
         url: "https://docs.anthropic.com/en/api/messages".into(),
+        verified_at: VERIFIED_AT.into(),
+    }
+}
+
+fn glm_claude_evidence() -> AdapterEvidence {
+    AdapterEvidence {
+        label: "GLM Coding Plan 接入工具与双协议端点".into(),
+        url: "https://docs.bigmodel.cn/cn/coding-plan/tool/others".into(),
+        verified_at: VERIFIED_AT.into(),
+    }
+}
+
+fn deepseek_claude_evidence() -> AdapterEvidence {
+    AdapterEvidence {
+        label: "DeepSeek 接入 Claude Code".into(),
+        url: "https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code/".into(),
         verified_at: VERIFIED_AT.into(),
     }
 }

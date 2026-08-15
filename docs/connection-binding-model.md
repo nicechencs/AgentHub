@@ -1,6 +1,6 @@
 # 连接：票、绑定与协议图
 
-> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（OpenAI/xAI API → Pi reshape；Anthropic API Key → Codex 本地桥）；Grok 边仍不可行；§6.5 GLM/DeepSeek 仅登记票面；§6.6 未做**。  
+> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（OpenAI/xAI API → Pi reshape；Anthropic API Key → Codex 本地桥）；Grok 边仍不可行；§6.5 Claude bind 已开（GLM/DeepSeek → Claude experimental native_endpoint），Grok/订阅仍关；§6.6 未做**。  
 > 日期：2026-08-15。  
 > 本文是跨 Agent「把已有凭据接到另一个 Agent」的领域真源。页面、Hub 入口、Adapter、厂商规则文档以本文为准改表述；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
 > 关联：[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[adapter-design.md](adapter-design.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[account-authorization-pool.md](account-authorization-pool.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)。

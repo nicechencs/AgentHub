@@ -507,3 +507,97 @@ fn unbind_current_restores_previous_and_keeps_source_ticket_out_of_wallet_projec
         .unwrap()
         .is_empty());
 }
+
+#[test]
+fn bind_glm_and_deepseek_to_claude_then_unbind_rejects_unknown_relay() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "glm-source",
+            "glm-coding-plan",
+            "ANTHROPIC_AUTH_TOKEN",
+            "glm-secret",
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&explicit_api_account(
+            "deepseek-account",
+            "deepseek-api",
+            "deepseek-account-secret",
+        ))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "relay-source".into(),
+            agent_id: AgentId::Claude,
+            name: "Custom relay".into(),
+            settings_config: json!({"apiKey": "relay-secret", "baseUrl": "https://relay.example/v1"}),
+            meta: json!({"preset": "openai-compatible"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let tickets = TicketReadService::new(db.clone());
+    assert!(tickets
+        .plan(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Provider, "glm-source"),
+            target_agent_id: AgentId::Claude,
+        })
+        .unwrap()
+        .can_apply);
+    assert!(tickets
+        .plan(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "deepseek-account"),
+            target_agent_id: AgentId::Claude,
+        })
+        .unwrap()
+        .can_apply);
+
+    let service = bind_service(
+        db.clone(),
+        dir.path().join("backups"),
+        vec![Arc::new(FakeClaudeAdapter::new())],
+    );
+    let glm = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Provider, "glm-source"),
+            target_agent_id: AgentId::Claude,
+        })
+        .unwrap();
+    assert!(glm.active);
+    assert_eq!(glm.route, TicketBindingRoute::Reshape);
+    let glm_profile = AdapterProfileRepo::new(db.clone())
+        .get(glm.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(glm_profile.rule_id, "glm-coding-plan-to-claude-v1");
+
+    service
+        .unbind(&TicketUnbindRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Provider, "glm-source"),
+            agent_id: AgentId::Claude,
+        })
+        .unwrap();
+
+    let deepseek = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "deepseek-account"),
+            target_agent_id: AgentId::Claude,
+        })
+        .unwrap();
+    assert!(deepseek.active);
+    assert_eq!(deepseek.ticket_id, "account:deepseek-account");
+    let deepseek_profile = AdapterProfileRepo::new(db.clone())
+        .get(deepseek.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(deepseek_profile.rule_id, "deepseek-api-to-claude-v1");
+    assert_eq!(deepseek_profile.source_kind, AdapterSourceKind::Account);
+
+    let relay = service.bind(&TicketPlanRequest {
+        ticket_id: ticket_id(AdapterSourceKind::Provider, "relay-source"),
+        target_agent_id: AgentId::Claude,
+    });
+    assert!(relay.is_err(), "unknown custom relay must not bind");
+}

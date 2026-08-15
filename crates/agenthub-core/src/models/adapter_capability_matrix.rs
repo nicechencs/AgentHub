@@ -9,7 +9,11 @@
 //! experimental *candidate* with every gate closed, so analyze/plan stay
 //! unsupported and Apply/Start/Bridge remain forbidden.
 
-use super::{AdapterGateKind, AdapterMaturity, AdapterRoute, AdapterSupport, AgentId};
+use super::{
+    agent_bind_capability, speaks_intersect_accepts, AdapterGateKind, AdapterMaturity,
+    AdapterRoute, AdapterSupport, AgentId, TicketSurface, AGENT_NO_WRITER_REASON,
+    PROTOCOL_MISMATCH_REASON, SAME_PROTOCOL_NO_EDGE_REASON,
+};
 
 /// Shared public reason for Codex / ChatGPT subscription → Claude Code (closed).
 /// Mock UI and core analyze must keep this string in lockstep.
@@ -32,9 +36,9 @@ pub enum AdapterSourceProduct {
     OpenaiApi,
     /// Explicit xAI API Key (preset / extra.provider / official host).
     XaiApi,
-    /// GLM Coding Plan (registered surface only; no writable matrix cell).
+    /// GLM Coding Plan (Claude native_endpoint is experimental and writable).
     GlmCodingPlan,
-    /// DeepSeek API (registered surface only; no writable matrix cell).
+    /// DeepSeek API (Claude native_endpoint is experimental and writable).
     DeepseekApi,
     /// Codex / ChatGPT subscription account (`auth_json` OAuth shape).
     CodexChatGptSubscription,
@@ -327,6 +331,18 @@ const XAI_PI_LIMITS: &[&str] = &[
     "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
 ];
 
+const GLM_CLAUDE_LIMITS: &[&str] = &[
+    "将写入 Claude 的 GLM Coding Plan Anthropic 兼容 Base URL 与凭据引用标记；不会在预览中传输明文 Key。",
+    "应用后会切换当前 Claude Connection；请确认无其他进行中的配置写入。",
+    "实验性：官方 Anthropic 兼容入口；部分扩展字段可能被忽略或不支持。",
+];
+
+const DEEPSEEK_CLAUDE_LIMITS: &[&str] = &[
+    "将写入 Claude 的 DeepSeek Anthropic 兼容 Base URL 与凭据引用标记；不会在预览中传输明文 Key。",
+    "应用后会切换当前 Claude Connection；请确认无其他进行中的配置写入。",
+    "实验性：官方 Anthropic 兼容入口；部分扩展字段可能被忽略或不支持。",
+];
+
 const CODEX_CLAUDE_LIMITS: &[&str] = &[
     "当前不支持此组合；尚未通过上游授权、条款与协议兼容性门禁。",
     "plan.canApply=false：不会创建 adapter profile、启动 Bridge 或写入 Claude 配置。",
@@ -462,6 +478,42 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
     },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::GlmCodingPlan,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Claude,
+            protocol: AdapterTargetProtocol::AnthropicMessages,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::NativeEndpoint,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: "GLM Coding Plan 可实验预览为 Claude 的原生 Anthropic Messages 端点。",
+        limitations: GLM_CLAUDE_LIMITS,
+        rule_id: "glm-coding-plan-to-claude-v1",
+        verified_at: VERIFIED_AT,
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::DeepseekApi,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Claude,
+            protocol: AdapterTargetProtocol::AnthropicMessages,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::NativeEndpoint,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: "DeepSeek API 可实验预览为 Claude 的原生 Anthropic Messages 端点。",
+        limitations: DEEPSEEK_CLAUDE_LIMITS,
+        rule_id: "deepseek-api-to-claude-v1",
+        verified_at: VERIFIED_AT,
+        gates: AdapterCapabilityGates::all_open(),
+    },
     // Codex OAuth Account → Claude Code: recorded candidate, every gate closed.
     // Decision surface remains unsupported / can_apply=false (both transports).
     AdapterCapabilityCell {
@@ -521,6 +573,12 @@ pub fn decide_adapter_capability(
     credential: AdapterCredentialClass,
     target: AgentId,
 ) -> AdapterCapabilityDecision {
+    // Bind-entry table first: no writer → infeasible. Never opens can_apply.
+    // Cursor must take this path; do not fall through to source-product copy.
+    if !agent_bind_capability(target).writer {
+        return AdapterCapabilityDecision::unsupported(AGENT_NO_WRITER_REASON);
+    }
+
     if matches!(source, AdapterSourceProduct::Other)
         || matches!(credential, AdapterCredentialClass::Unknown)
     {
@@ -539,39 +597,26 @@ pub fn decide_adapter_capability(
         .collect();
 
     if candidates.is_empty() {
-        return match (source, target) {
-            (AdapterSourceProduct::KimiCodeMembership, _) => AdapterCapabilityDecision::unsupported(
-                "Kimi Code 会员当前仅支持预览到 Claude、Codex 或 Pi。",
-            ),
-            (AdapterSourceProduct::AnthropicApi, _) => AdapterCapabilityDecision::unsupported(
-                "Anthropic API Key 当前仅支持预览到 Pi 或 Codex。",
-            ),
-            (AdapterSourceProduct::OpenaiApi, _) => AdapterCapabilityDecision::unsupported(
-                "OpenAI API Key 当前仅支持预览到 Pi。",
-            ),
-            (AdapterSourceProduct::XaiApi, _) => AdapterCapabilityDecision::unsupported(
-                "xAI API Key 当前仅支持预览到 Pi。xAI → Grok 是原生切换，不进适配矩阵。",
-            ),
-            (AdapterSourceProduct::GlmCodingPlan, _) => AdapterCapabilityDecision::unsupported(
-                "GLM Coding Plan 当前仅登记票面，尚无跨 Agent 适配规则。",
-            ),
-            (AdapterSourceProduct::DeepseekApi, _) => AdapterCapabilityDecision::unsupported(
-                "DeepSeek API 当前仅登记票面，尚无跨 Agent 适配规则。",
-            ),
-            (AdapterSourceProduct::CodexChatGptSubscription, AgentId::Claude) => {
-                AdapterCapabilityDecision::unsupported_subscription_candidate(
-                    CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
-                )
-            }
-            (AdapterSourceProduct::CodexChatGptSubscription, _) => {
-                AdapterCapabilityDecision::unsupported(
-                    "AgentHub 暂未提供从 Codex 账户到所选目标的适配规则。当前不支持不等于连接失效。",
-                )
-            }
-            (AdapterSourceProduct::Other, _) => AdapterCapabilityDecision::unsupported(
-                "AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。",
-            ),
+        // Recorded gated candidate: keep subscription messaging if the cell is absent.
+        if matches!(
+            (source, target),
+            (
+                AdapterSourceProduct::CodexChatGptSubscription,
+                AgentId::Claude
+            )
+        ) {
+            return AdapterCapabilityDecision::unsupported_subscription_candidate(
+                CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
+            );
+        }
+        // 票.speaks ∩ agent.accepts — protocol graph, not a product whitelist.
+        let speaks = TicketSurface::from_product(source).speaks();
+        let reason = if speaks_intersect_accepts(speaks, agent_bind_capability(target).accepts) {
+            SAME_PROTOCOL_NO_EDGE_REASON
+        } else {
+            PROTOCOL_MISMATCH_REASON
         };
+        return AdapterCapabilityDecision::unsupported(reason);
     }
 
     // Prefer an open, applicable cell; otherwise keep the first recorded candidate
@@ -792,7 +837,10 @@ mod tests {
             AgentId::Claude,
         )
         .public_surface();
-        assert_eq!(adapter_maturity_from_decision(&other), AdapterMaturity::None);
+        assert_eq!(
+            adapter_maturity_from_decision(&other),
+            AdapterMaturity::None
+        );
     }
 
     #[test]
@@ -837,17 +885,42 @@ mod tests {
     }
 
     #[test]
+    fn glm_and_deepseek_claude_cells_are_experimental_and_applicable() {
+        let glm = decide_adapter_capability(
+            AdapterSourceProduct::GlmCodingPlan,
+            AdapterCredentialClass::ApiKey,
+            AgentId::Claude,
+        );
+        assert_eq!(glm.route, AdapterRoute::NativeEndpoint);
+        assert_eq!(glm.support, AdapterSupport::Experimental);
+        assert!(glm.can_apply);
+        assert_eq!(glm.rule_id, Some("glm-coding-plan-to-claude-v1"));
+        assert!(glm.gates.expect("glm cell keeps gates").all_passed());
+
+        let deepseek = decide_adapter_capability(
+            AdapterSourceProduct::DeepseekApi,
+            AdapterCredentialClass::ApiKey,
+            AgentId::Claude,
+        );
+        assert_eq!(deepseek.route, AdapterRoute::NativeEndpoint);
+        assert_eq!(deepseek.support, AdapterSupport::Experimental);
+        assert!(deepseek.can_apply);
+        assert_eq!(deepseek.rule_id, Some("deepseek-api-to-claude-v1"));
+        assert!(deepseek
+            .gates
+            .expect("deepseek cell keeps gates")
+            .all_passed());
+    }
+
+    #[test]
     fn registered_surfaces_have_no_writable_cells() {
         for source in [
             AdapterSourceProduct::GlmCodingPlan,
             AdapterSourceProduct::DeepseekApi,
         ] {
-            let decision = decide_adapter_capability(
-                source,
-                AdapterCredentialClass::ApiKey,
-                AgentId::Pi,
-            )
-            .public_surface();
+            let decision =
+                decide_adapter_capability(source, AdapterCredentialClass::ApiKey, AgentId::Pi)
+                    .public_surface();
             assert_eq!(decision.route, AdapterRoute::Unsupported);
             assert!(!decision.can_apply);
             assert!(decision.rule_id.is_none());
@@ -870,6 +943,54 @@ mod tests {
         .public_surface();
         assert_eq!(xai_grok.route, AdapterRoute::Unsupported);
         assert!(!xai_grok.can_apply);
-        assert!(xai_grok.reason.contains("不进适配矩阵"));
+        assert_eq!(xai_grok.reason, SAME_PROTOCOL_NO_EDGE_REASON);
+        assert!(xai_grok.reason.contains("同协议但无已验证的边"));
+        assert!(!xai_grok.reason.contains("仅支持预览"));
+    }
+
+    #[test]
+    fn cursor_target_uses_no_writer_reason_not_source_copy() {
+        for source in [
+            AdapterSourceProduct::KimiCodeMembership,
+            AdapterSourceProduct::AnthropicApi,
+            AdapterSourceProduct::OpenaiApi,
+            AdapterSourceProduct::XaiApi,
+            AdapterSourceProduct::GlmCodingPlan,
+            AdapterSourceProduct::DeepseekApi,
+            AdapterSourceProduct::CodexChatGptSubscription,
+            AdapterSourceProduct::Other,
+        ] {
+            let credential = match source {
+                AdapterSourceProduct::CodexChatGptSubscription => {
+                    AdapterCredentialClass::OauthAuthJson
+                }
+                AdapterSourceProduct::Other => AdapterCredentialClass::Unknown,
+                _ => AdapterCredentialClass::ApiKey,
+            };
+            let decision =
+                decide_adapter_capability(source, credential, AgentId::Cursor).public_surface();
+            assert_eq!(decision.route, AdapterRoute::Unsupported, "{source:?}");
+            assert!(!decision.can_apply, "{source:?}");
+            assert_eq!(decision.reason, AGENT_NO_WRITER_REASON, "{source:?}");
+            assert!(
+                !decision.reason.contains("仅支持预览"),
+                "Cursor must not use source-product copy: {}",
+                decision.reason
+            );
+        }
+    }
+
+    #[test]
+    fn kimi_to_grok_reason_comes_from_protocol_graph() {
+        let decision = decide_adapter_capability(
+            AdapterSourceProduct::KimiCodeMembership,
+            AdapterCredentialClass::ApiKey,
+            AgentId::Grok,
+        )
+        .public_surface();
+        assert_eq!(decision.route, AdapterRoute::Unsupported);
+        assert!(!decision.can_apply);
+        assert_eq!(decision.reason, SAME_PROTOCOL_NO_EDGE_REASON);
+        assert!(!decision.reason.contains("仅支持预览到 Claude"));
     }
 }

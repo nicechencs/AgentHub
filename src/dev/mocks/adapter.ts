@@ -150,6 +150,68 @@ export const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON = [
   '替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。',
 ].join('');
 
+/** Keep in lockstep with `AGENT_NO_WRITER_REASON` in agenthub-core. */
+export const AGENT_NO_WRITER_REASON = '该 Agent 无配置写入能力，不能作为绑定落点';
+
+/** Keep in lockstep with `PROTOCOL_MISMATCH_REASON` in agenthub-core. */
+export const PROTOCOL_MISMATCH_REASON =
+  '协议不通：票所说的上游协议与该 Agent 所听的入口没有交集。';
+
+/** Keep in lockstep with `SAME_PROTOCOL_NO_EDGE_REASON` in agenthub-core. */
+export const SAME_PROTOCOL_NO_EDGE_REASON =
+  '同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。';
+
+type TicketProtocol = 'anthropic-messages' | 'openai-chat' | 'openai-responses';
+
+/** Keep in lockstep with `agent_bind_capability` in agenthub-core. */
+function agentBindCapability(id: string): { accepts: TicketProtocol[]; writer: boolean } {
+  switch (id) {
+    case 'claude':
+      return { accepts: ['anthropic-messages'], writer: true };
+    case 'codex':
+      return { accepts: ['openai-responses'], writer: true };
+    case 'pi':
+      return { accepts: ['anthropic-messages', 'openai-chat'], writer: true };
+    case 'grok':
+      return { accepts: ['openai-chat'], writer: true };
+    case 'kimi':
+      return { accepts: ['openai-chat'], writer: true };
+    case 'workbuddy':
+      return { accepts: [], writer: true };
+    case 'cursor':
+      return { accepts: [], writer: false };
+    default:
+      return { accepts: [], writer: false };
+  }
+}
+
+function sourceSpeaks(source: RouteSourceLabel): TicketProtocol[] {
+  switch (source) {
+    case 'kimi_membership':
+    case 'glm_coding_plan':
+    case 'deepseek_api':
+      return ['anthropic-messages', 'openai-chat'];
+    case 'anthropic_api_key':
+      return ['anthropic-messages'];
+    case 'openai_api_key':
+    case 'xai_api_key':
+      return ['openai-chat'];
+    case 'codex_subscription':
+    case 'codex_subscription_oauth_other':
+      return ['openai-responses'];
+    default:
+      return [];
+  }
+}
+
+function unsupportedReasonFromGraph(source: RouteSourceLabel, targetAgentId: string): string {
+  const cap = agentBindCapability(targetAgentId);
+  if (!cap.writer) return AGENT_NO_WRITER_REASON;
+  const speaks = sourceSpeaks(source);
+  const overlap = speaks.some((protocol) => cap.accepts.includes(protocol));
+  return overlap ? SAME_PROTOCOL_NO_EDGE_REASON : PROTOCOL_MISMATCH_REASON;
+}
+
 function unsupported(
   reason: string,
   evidenceItems: AdapterEvidence[],
@@ -205,6 +267,15 @@ const XAI_API_ENDPOINT_NEEDLE = 'api.x.ai';
 const GLM_CODING_ANTHROPIC_NEEDLE = 'open.bigmodel.cn/api/anthropic';
 const GLM_CODING_CHAT_NEEDLE = 'open.bigmodel.cn/api/coding';
 const DEEPSEEK_API_ENDPOINT_NEEDLE = 'api.deepseek.com';
+const KIMI_CLAUDE_BASE_URL = 'https://api.kimi.com/coding/';
+const GLM_CLAUDE_BASE_URL = 'https://open.bigmodel.cn/api/anthropic';
+const DEEPSEEK_CLAUDE_BASE_URL = 'https://api.deepseek.com/anthropic';
+const GLM_CLAUDE_RULE_ID = 'glm-coding-plan-to-claude-v1';
+const DEEPSEEK_CLAUDE_RULE_ID = 'deepseek-api-to-claude-v1';
+const CLAUDE_NATIVE_EXPERIMENTAL_RULES = new Set([
+  GLM_CLAUDE_RULE_ID,
+  DEEPSEEK_CLAUDE_RULE_ID,
+]);
 const EXPLICIT_API_TO_PI_RULES = new Set([
   'anthropic-api-to-pi-v1',
   'openai-api-to-pi-v1',
@@ -375,6 +446,14 @@ function analyze(
       retryable: false,
     });
   }
+  const compatibilityEvidence = [evidence(
+    'AgentHub：厂商、API 与 OAuth 适配规则',
+    'https://github.com/nicechencs/AgentHub/blob/release/docs/provider-api-oauth-adaptation.md',
+  )];
+  // Bind-entry table first: no writer → infeasible. Cursor must take this path.
+  if (!agentBindCapability(request.targetAgentId).writer) {
+    return unsupported(AGENT_NO_WRITER_REASON, compatibilityEvidence);
+  }
   if (source === 'kimi_membership' && request.targetAgentId === 'claude') {
     return {
       route: 'native_endpoint',
@@ -391,6 +470,46 @@ function analyze(
       ],
       evidence: [evidence('Kimi Code: Claude Code integration', 'https://www.kimi.com/code/docs/en/third-party-tools/claude-code.html')],
       ruleId: 'kimi-membership-to-claude-v1',
+      gateKind: 'none',
+    };
+  }
+  if (source === 'glm_coding_plan' && request.targetAgentId === 'claude') {
+    return {
+      route: 'native_endpoint',
+      support: 'experimental',
+      reason: 'GLM Coding Plan 可实验预览为 Claude 的原生 Anthropic Messages 端点。',
+      actions: [
+        action('set_config', 'Claude Code', '设置 GLM Coding Plan 官方 Anthropic-compatible Base URL。', GLM_CLAUDE_BASE_URL),
+        action('set_env', 'Claude Code', '使用 Claude Code 的认证环境变量名。', 'ANTHROPIC_AUTH_TOKEN'),
+        secretAction('Claude Code', '从已选 Connection 引用 API Key；不会读取或显示它。'),
+      ],
+      limitations: [
+        '将写入 Claude 的 GLM Coding Plan Anthropic 兼容 Base URL 与凭据引用标记；不会在预览中传输明文 Key。',
+        '应用后会切换当前 Claude Connection；请确认无其他进行中的配置写入。',
+        '实验性：官方 Anthropic 兼容入口；部分扩展字段可能被忽略或不支持。',
+      ],
+      evidence: [evidence('GLM Coding Plan 接入工具与双协议端点', 'https://docs.bigmodel.cn/cn/coding-plan/tool/others')],
+      ruleId: GLM_CLAUDE_RULE_ID,
+      gateKind: 'none',
+    };
+  }
+  if (source === 'deepseek_api' && request.targetAgentId === 'claude') {
+    return {
+      route: 'native_endpoint',
+      support: 'experimental',
+      reason: 'DeepSeek API 可实验预览为 Claude 的原生 Anthropic Messages 端点。',
+      actions: [
+        action('set_config', 'Claude Code', '设置 DeepSeek 官方 Anthropic-compatible Base URL。', DEEPSEEK_CLAUDE_BASE_URL),
+        action('set_env', 'Claude Code', '使用 Claude Code 的认证环境变量名。', 'ANTHROPIC_AUTH_TOKEN'),
+        secretAction('Claude Code', '从已选 Connection 引用 API Key；不会读取或显示它。'),
+      ],
+      limitations: [
+        '将写入 Claude 的 DeepSeek Anthropic 兼容 Base URL 与凭据引用标记；不会在预览中传输明文 Key。',
+        '应用后会切换当前 Claude Connection；请确认无其他进行中的配置写入。',
+        '实验性：官方 Anthropic 兼容入口；部分扩展字段可能被忽略或不支持。',
+      ],
+      evidence: [evidence('DeepSeek 接入 Claude Code', 'https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code/')],
+      ruleId: DEEPSEEK_CLAUDE_RULE_ID,
       gateKind: 'none',
     };
   }
@@ -501,10 +620,6 @@ function analyze(
     };
   }
 
-  const compatibilityEvidence = [evidence(
-    'AgentHub：厂商、API 与 OAuth 适配规则',
-    'https://github.com/nicechencs/AgentHub/blob/release/docs/provider-api-oauth-adaptation.md',
-  )];
   // Codex / ChatGPT subscription → Claude is a gated experimental candidate only.
   // auth_json matches the closed matrix cell (ruleId present). Bare Codex OAuth
   // still uses the closed subscription surface but does not pretend the cell matched.
@@ -519,33 +634,30 @@ function analyze(
         : null,
     });
   }
-  const reason = source === 'kimi_membership'
-    ? 'Kimi Code 会员当前仅支持预览到 Claude、Codex 或 Pi。'
-    : source === 'kimi_non_membership'
-      ? KIMI_NON_MEMBERSHIP_REASON
-    : source === 'anthropic_api_key'
-      ? 'Anthropic API Key 当前仅支持预览到 Pi 或 Codex。'
-      : source === 'openai_api_key'
-        ? 'OpenAI API Key 当前仅支持预览到 Pi。'
-        : source === 'xai_api_key'
-          ? 'xAI API Key 当前仅支持预览到 Pi。xAI → Grok 是原生切换，不进适配矩阵。'
-          : source === 'glm_coding_plan'
-            ? 'GLM Coding Plan 当前仅登记票面，尚无跨 Agent 适配规则。'
-            : source === 'deepseek_api'
-              ? 'DeepSeek API 当前仅登记票面，尚无跨 Agent 适配规则。'
-              : source === 'codex_subscription' || source === 'codex_subscription_oauth_other'
-                ? 'AgentHub 暂未提供从 Codex 账户到所选目标的适配规则。当前不支持不等于连接失效。'
-                : 'AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。';
-  return unsupported(reason, compatibilityEvidence);
+  if (source === 'kimi_non_membership') {
+    return unsupported(KIMI_NON_MEMBERSHIP_REASON, compatibilityEvidence);
+  }
+  if (source === 'other') {
+    return unsupported(
+      'AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。',
+      compatibilityEvidence,
+    );
+  }
+  return unsupported(unsupportedReasonFromGraph(source, request.targetAgentId), compatibilityEvidence);
 }
 
 function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis): AdapterApplyPlan {
   const configuredProvider = analysis.actions.find(
     (item) => item.kind === 'set_config' && item.target === 'Pi',
   )?.value;
+  const claudeBaseUrl = analysis.ruleId === GLM_CLAUDE_RULE_ID
+    ? GLM_CLAUDE_BASE_URL
+    : analysis.ruleId === DEEPSEEK_CLAUDE_RULE_ID
+      ? DEEPSEEK_CLAUDE_BASE_URL
+      : KIMI_CLAUDE_BASE_URL;
   const changes = analysis.route === 'native_endpoint' && request.targetAgentId === 'claude'
     ? [
-        change('claude', 'baseUrl', 'https://api.kimi.com/coding/'),
+        change('claude', 'baseUrl', claudeBaseUrl),
         change('claude', 'claudeAuthEnv', 'ANTHROPIC_AUTH_TOKEN'),
         secretChange('claude', 'apiKey'),
       ]
@@ -568,6 +680,8 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
       : [];
   const implementedPath =
     (analysis.route === 'native_endpoint' && analysis.support === 'stable' && request.targetAgentId === 'claude')
+    || (analysis.route === 'native_endpoint' && analysis.support === 'experimental' && request.targetAgentId === 'claude'
+      && !!analysis.ruleId && CLAUDE_NATIVE_EXPERIMENTAL_RULES.has(analysis.ruleId))
     || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
     || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'pi');
   const accountExplicitApiToPi = request.sourceKind === 'account'
@@ -580,15 +694,22 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
     && request.targetAgentId === 'codex'
     && !!analysis.ruleId
     && EXPLICIT_API_TO_CODEX_RULES.has(analysis.ruleId);
+  const accountClaudeNative = request.sourceKind === 'account'
+    && implementedPath
+    && request.targetAgentId === 'claude'
+    && !!analysis.ruleId
+    && CLAUDE_NATIVE_EXPERIMENTAL_RULES.has(analysis.ruleId);
   const writeGate = (request.sourceKind === 'provider' && implementedPath)
     || accountExplicitApiToPi
-    || accountExplicitApiToCodex;
+    || accountExplicitApiToCodex
+    || accountClaudeNative;
   const canApply = writeGate;
   const maturity = mockPlanMaturity(analysis);
   // Same-edge Account stays closed except explicit API → Pi / Anthropic → Codex.
   const reason = implementedPath && request.sourceKind !== 'provider'
     && !accountExplicitApiToPi
     && !accountExplicitApiToCodex
+    && !accountClaudeNative
     ? `${analysis.reason} ${SAME_EDGE_UNWRITABLE_REASON}`
     : analysis.reason;
   return {
@@ -736,18 +857,23 @@ function materializeApply(
     };
   }
 
+  const claudeLayout = plan.analysis.ruleId === GLM_CLAUDE_RULE_ID
+    ? { prefix: 'glm', display: 'GLM', baseUrl: GLM_CLAUDE_BASE_URL, ruleId: GLM_CLAUDE_RULE_ID }
+    : plan.analysis.ruleId === DEEPSEEK_CLAUDE_RULE_ID
+      ? { prefix: 'deepseek', display: 'DeepSeek', baseUrl: DEEPSEEK_CLAUDE_BASE_URL, ruleId: DEEPSEEK_CLAUDE_RULE_ID }
+      : { prefix: 'kimi', display: 'Kimi', baseUrl: KIMI_CLAUDE_BASE_URL, ruleId: 'kimi-membership-to-claude-v1' };
   const profile: AdapterProfile = existing ?? {
-    id: `adapter-kimi-claude-${safeId}`,
-    name: `Kimi → Claude (${safeId})`,
+    id: `adapter-${claudeLayout.prefix}-claude-${safeId}`,
+    name: `${claudeLayout.display} → Claude (${safeId})`,
     sourceKind: request.sourceKind,
     sourceId: request.sourceId,
     targetAgentId: request.targetAgentId,
     route: 'native_endpoint',
     mode: 'api',
     status: 'active',
-    ruleId: 'kimi-membership-to-claude-v1',
+    ruleId: claudeLayout.ruleId,
     ruleVersion: '1',
-    generatedProviderId: `claude-kimi-adapter-${safeId}`,
+    generatedProviderId: `claude-${claudeLayout.prefix}-adapter-${safeId}`,
     localPort: null,
     autoStart: false,
     createdAt: now,
@@ -762,7 +888,7 @@ function materializeApply(
       preset: 'anthropic-compatible',
       configText: JSON.stringify({
         env: {
-          ANTHROPIC_BASE_URL: 'https://api.kimi.com/coding/',
+          ANTHROPIC_BASE_URL: claudeLayout.baseUrl,
           ANTHROPIC_AUTH_TOKEN: CONNECTION_SECRET_MARKER,
         },
       }),

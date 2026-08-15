@@ -18,9 +18,10 @@ use crate::models::{
     AdapterSupport, AgentId, Provider, ProviderInput,
 };
 use crate::services::adapter_route_constants::{
-    ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT,
-    CONNECTION_SECRET_MARKER, KIMI_CLAUDE_BASE_URL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
-    OPENAI_PI_PROVIDER_SLOT, XAI_PI_PROVIDER_SLOT,
+    claude_native_base_url, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV,
+    ANTHROPIC_PI_PROVIDER_SLOT, CONNECTION_SECRET_MARKER, DEEPSEEK_CLAUDE_RULE_ID,
+    GLM_CLAUDE_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL,
+    KIMI_PI_PROVIDER_SLOT, OPENAI_PI_PROVIDER_SLOT, XAI_PI_PROVIDER_SLOT,
 };
 use crate::services::{
     AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
@@ -28,18 +29,22 @@ use crate::services::{
 };
 use crate::storage::{AdapterProfileRepo, Database};
 
-const RULE_ID: &str = "kimi-membership-to-claude-v1";
+const RULE_ID: &str = KIMI_CLAUDE_RULE_ID;
 const KIMI_PI_RULE_ID: &str = "kimi-membership-to-pi-v1";
 const ANTHROPIC_PI_RULE_ID: &str = "anthropic-api-to-pi-v1";
 const OPENAI_PI_RULE_ID: &str = "openai-api-to-pi-v1";
 const XAI_PI_RULE_ID: &str = "xai-api-to-pi-v1";
 const RULE_VERSION: &str = "1";
 const CLAUDE_PROVIDER_PREFIX: &str = "claude-kimi-adapter";
+const CLAUDE_GLM_PROVIDER_PREFIX: &str = "claude-glm-adapter";
+const CLAUDE_DEEPSEEK_PROVIDER_PREFIX: &str = "claude-deepseek-adapter";
 const PI_KIMI_PROVIDER_PREFIX: &str = "pi-kimi-adapter";
 const PI_ANTHROPIC_PROVIDER_PREFIX: &str = "pi-anthropic-adapter";
 const PI_OPENAI_PROVIDER_PREFIX: &str = "pi-openai-adapter";
 const PI_XAI_PROVIDER_PREFIX: &str = "pi-xai-adapter";
 const CLAUDE_PROFILE_PREFIX: &str = "adapter-kimi-claude";
+const CLAUDE_GLM_PROFILE_PREFIX: &str = "adapter-glm-claude";
+const CLAUDE_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-claude";
 const PI_KIMI_PROFILE_PREFIX: &str = "adapter-kimi-pi";
 const PI_ANTHROPIC_PROFILE_PREFIX: &str = "adapter-anthropic-pi";
 const PI_OPENAI_PROFILE_PREFIX: &str = "adapter-openai-pi";
@@ -88,11 +93,26 @@ impl AdapterApplyService {
         let analysis = self.ensure_supported(request)?;
         let source_id = request.source_id.trim();
         match (request.source_kind, request.target_agent_id, analysis.route) {
-            (AdapterSourceKind::Provider, AgentId::Claude, AdapterRoute::NativeEndpoint) => {
-                // Validate before creating a profile or provider: a dangling/masked
-                // source must be a completely side-effect-free failure.
-                self.secrets.validate_kimi_membership_source(source_id)?;
-                self.apply_generated(claude_kimi_spec(source_id))
+            (source_kind, AgentId::Claude, AdapterRoute::NativeEndpoint) => {
+                match analysis.rule_id.as_deref() {
+                    Some(RULE_ID) if source_kind == AdapterSourceKind::Provider => {
+                        // Validate before creating a profile or provider: a dangling/masked
+                        // source must be a completely side-effect-free failure.
+                        self.secrets.validate_kimi_membership_source(source_id)?;
+                        self.apply_generated(claude_native_spec(
+                            AdapterSourceKind::Provider,
+                            source_id,
+                            RULE_ID,
+                        )?)
+                    }
+                    Some(rule) if is_claude_native_explicit_rule(rule) => {
+                        self.secrets.validate_explicit_api_source(rule, source_kind, source_id)?;
+                        self.apply_generated(claude_native_spec(source_kind, source_id, rule)?)
+                    }
+                    _ => Err(AppError::Unsupported(
+                        "adapter apply currently supports Kimi membership provider or GLM/DeepSeek ticket -> Claude".into(),
+                    )),
+                }
             }
             (AdapterSourceKind::Provider, AgentId::Pi, AdapterRoute::ConfigSync) => {
                 match analysis.rule_id.as_deref() {
@@ -136,7 +156,7 @@ impl AdapterApplyService {
                 )?)
             }
             _ => Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership provider -> Claude/Pi and explicit API ticket -> Pi".into(),
+                "adapter apply currently supports Kimi membership provider -> Claude/Pi, GLM/DeepSeek ticket -> Claude, and explicit API ticket -> Pi".into(),
             )),
         }
     }
@@ -388,34 +408,28 @@ impl AdapterApplyService {
             source_id: request.source_id.clone(),
             target_agent_id: request.target_agent_id,
         })?;
-        let supported = match request.source_kind {
-            AdapterSourceKind::Provider => matches!(
-                (request.target_agent_id, analysis.route, analysis.support),
-                (
-                    AgentId::Claude,
-                    AdapterRoute::NativeEndpoint,
-                    AdapterSupport::Stable
-                ) | (
-                    AgentId::Pi,
-                    AdapterRoute::ConfigSync,
-                    AdapterSupport::Stable
-                )
-            ),
-            AdapterSourceKind::Account => {
-                request.target_agent_id == AgentId::Pi
-                    && analysis.route == AdapterRoute::ConfigSync
-                    && analysis.support == AdapterSupport::Stable
+        let supported = match (request.source_kind, request.target_agent_id, analysis.route) {
+            (source_kind, AgentId::Claude, AdapterRoute::NativeEndpoint) => analysis
+                .rule_id
+                .as_deref()
+                .is_some_and(|rule| is_claude_native_apply_rule(rule, source_kind)),
+            (AdapterSourceKind::Provider, AgentId::Pi, AdapterRoute::ConfigSync) => {
+                analysis.support == AdapterSupport::Stable
+            }
+            (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync) => {
+                analysis.support == AdapterSupport::Stable
                     && analysis
                         .rule_id
                         .as_deref()
                         .is_some_and(is_explicit_api_to_pi_rule)
             }
+            _ => false,
         };
         if supported {
             Ok(analysis)
         } else {
             Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership provider -> Claude/Pi and explicit API ticket -> Pi".into(),
+                "adapter apply currently supports Kimi membership provider -> Claude/Pi, GLM/DeepSeek ticket -> Claude, and explicit API ticket -> Pi".into(),
             ))
         }
     }
@@ -574,6 +588,12 @@ fn generated_provider_prefix(profile: &AdapterProfile) -> Option<&'static str> {
         profile.rule_id.as_str(),
     ) {
         (AgentId::Claude, AdapterRoute::NativeEndpoint, RULE_ID) => Some(CLAUDE_PROVIDER_PREFIX),
+        (AgentId::Claude, AdapterRoute::NativeEndpoint, GLM_CLAUDE_RULE_ID) => {
+            Some(CLAUDE_GLM_PROVIDER_PREFIX)
+        }
+        (AgentId::Claude, AdapterRoute::NativeEndpoint, DEEPSEEK_CLAUDE_RULE_ID) => {
+            Some(CLAUDE_DEEPSEEK_PROVIDER_PREFIX)
+        }
         (AgentId::Pi, AdapterRoute::ConfigSync, KIMI_PI_RULE_ID) => Some(PI_KIMI_PROVIDER_PREFIX),
         (AgentId::Pi, AdapterRoute::ConfigSync, ANTHROPIC_PI_RULE_ID) => {
             Some(PI_ANTHROPIC_PROVIDER_PREFIX)
@@ -631,23 +651,71 @@ fn provider_owned_by(provider: &crate::models::Provider, profile: &AdapterProfil
             == Some(profile.source_id.as_str())
 }
 
-fn claude_kimi_spec(source_id: &str) -> GeneratedApplySpec {
-    let profile_id = stable_id(CLAUDE_PROFILE_PREFIX, source_id);
-    let provider_id = stable_id(CLAUDE_PROVIDER_PREFIX, source_id);
+fn is_claude_native_explicit_rule(rule_id: &str) -> bool {
+    matches!(rule_id, GLM_CLAUDE_RULE_ID | DEEPSEEK_CLAUDE_RULE_ID)
+}
+
+fn is_claude_native_apply_rule(rule_id: &str, source_kind: AdapterSourceKind) -> bool {
+    match (rule_id, source_kind) {
+        (RULE_ID, AdapterSourceKind::Provider) => true,
+        (GLM_CLAUDE_RULE_ID | DEEPSEEK_CLAUDE_RULE_ID, _) => true,
+        _ => false,
+    }
+}
+
+fn claude_native_layout(
+    rule_id: &str,
+) -> Result<(&'static str, &'static str, &'static str, &'static str)> {
+    let base_url = claude_native_base_url(rule_id).ok_or_else(|| {
+        AppError::Unsupported("adapter apply currently supports Kimi / GLM / DeepSeek -> Claude".into())
+    })?;
+    match rule_id {
+        RULE_ID => Ok((
+            CLAUDE_PROFILE_PREFIX,
+            CLAUDE_PROVIDER_PREFIX,
+            "Kimi",
+            base_url,
+        )),
+        GLM_CLAUDE_RULE_ID => Ok((
+            CLAUDE_GLM_PROFILE_PREFIX,
+            CLAUDE_GLM_PROVIDER_PREFIX,
+            "GLM",
+            base_url,
+        )),
+        DEEPSEEK_CLAUDE_RULE_ID => Ok((
+            CLAUDE_DEEPSEEK_PROFILE_PREFIX,
+            CLAUDE_DEEPSEEK_PROVIDER_PREFIX,
+            "DeepSeek",
+            base_url,
+        )),
+        _ => Err(AppError::Unsupported(
+            "adapter apply currently supports Kimi / GLM / DeepSeek -> Claude".into(),
+        )),
+    }
+}
+
+fn claude_native_spec(
+    source_kind: AdapterSourceKind,
+    source_id: &str,
+    rule_id: &str,
+) -> Result<GeneratedApplySpec> {
+    let (profile_prefix, provider_prefix, display, base_url) = claude_native_layout(rule_id)?;
+    let profile_id = stable_id(profile_prefix, source_id);
+    let provider_id = stable_id(provider_prefix, source_id);
     let created_at = now();
-    GeneratedApplySpec {
+    Ok(GeneratedApplySpec {
         target_agent: AgentId::Claude,
         provider_id: provider_id.clone(),
         proposed: AdapterProfile {
             id: profile_id.clone(),
-            name: format!("Kimi → Claude ({})", safe_label(source_id)),
-            source_kind: AdapterSourceKind::Provider,
+            name: format!("{display} → Claude ({})", safe_label(source_id)),
+            source_kind,
             source_id: source_id.into(),
             target_agent_id: AgentId::Claude,
             route: AdapterRoute::NativeEndpoint,
             mode: AdapterProfileMode::Api,
             status: AdapterProfileStatus::Applying,
-            rule_id: RULE_ID.into(),
+            rule_id: rule_id.into(),
             rule_version: RULE_VERSION.into(),
             generated_provider_id: Some(provider_id.clone()),
             local_port: None,
@@ -659,21 +727,21 @@ fn claude_kimi_spec(source_id: &str) -> GeneratedApplySpec {
         provider: ProviderInput {
             id: provider_id,
             agent_id: AgentId::Claude,
-            name: format!("Kimi Code ({})", safe_label(source_id)),
+            name: format!("{display} ({})", safe_label(source_id)),
             settings_config: json!({"env": {
-                ANTHROPIC_BASE_URL_ENV: KIMI_CLAUDE_BASE_URL,
+                ANTHROPIC_BASE_URL_ENV: base_url,
                 ANTHROPIC_AUTH_TOKEN_ENV: CONNECTION_SECRET_MARKER,
             }}),
             meta: generated_meta(
-                RULE_ID,
+                rule_id,
                 &profile_id,
-                AdapterSourceKind::Provider,
+                source_kind,
                 source_id,
                 Some("anthropic-compatible"),
             ),
             is_current: false,
         },
-    }
+    })
 }
 
 fn pi_kimi_spec(source_id: &str) -> GeneratedApplySpec {

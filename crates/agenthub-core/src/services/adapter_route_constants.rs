@@ -11,6 +11,17 @@ use crate::models::AgentId;
 /// Official Kimi coding Anthropic-compatible endpoint projected into Claude.
 pub const KIMI_CLAUDE_BASE_URL: &str = "https://api.kimi.com/coding/";
 
+/// Official GLM Coding Plan Anthropic-compatible endpoint projected into Claude.
+pub const GLM_CLAUDE_BASE_URL: &str = "https://open.bigmodel.cn/api/anthropic";
+
+/// Official DeepSeek Anthropic-compatible endpoint projected into Claude.
+pub const DEEPSEEK_CLAUDE_BASE_URL: &str = "https://api.deepseek.com/anthropic";
+
+/// Claude native_endpoint rule ids that write an Anthropic-compatible base URL.
+pub const KIMI_CLAUDE_RULE_ID: &str = "kimi-membership-to-claude-v1";
+pub const GLM_CLAUDE_RULE_ID: &str = "glm-coding-plan-to-claude-v1";
+pub const DEEPSEEK_CLAUDE_RULE_ID: &str = "deepseek-api-to-claude-v1";
+
 /// Substring that identifies the official Kimi Code membership HTTP host.
 pub const KIMI_CODING_ENDPOINT_NEEDLE: &str = "api.kimi.com/coding";
 
@@ -66,10 +77,10 @@ pub const OPENAI_API_PRESET: &str = "openai";
 /// Connections preset / extra.provider for an official xAI API Key.
 pub const XAI_API_PRESET: &str = "xai";
 
-/// Connections preset / extra.provider for GLM Coding Plan (surface only).
+/// Connections preset / extra.provider for GLM Coding Plan.
 pub const GLM_CODING_PLAN_PRESET: &str = "glm-coding-plan";
 
-/// Connections preset / extra.provider for DeepSeek API (surface only).
+/// Connections preset / extra.provider for DeepSeek API.
 pub const DEEPSEEK_API_PRESET: &str = "deepseek-api";
 
 /// Official OpenAI HTTP host. Custom OpenAI-compatible relays must not match.
@@ -92,6 +103,19 @@ pub const OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
 
 /// xAI env key accepted when reading a source provider.
 pub const XAI_API_KEY_ENV: &str = "XAI_API_KEY";
+
+/// DeepSeek env key accepted when reading a source provider.
+pub const DEEPSEEK_API_KEY_ENV: &str = "DEEPSEEK_API_KEY";
+
+/// Claude native_endpoint base URL for a writable rule. Unknown rules stay closed.
+pub(crate) fn claude_native_base_url(rule_id: &str) -> Option<&'static str> {
+    match rule_id {
+        KIMI_CLAUDE_RULE_ID => Some(KIMI_CLAUDE_BASE_URL),
+        GLM_CLAUDE_RULE_ID => Some(GLM_CLAUDE_BASE_URL),
+        DEEPSEEK_CLAUDE_RULE_ID => Some(DEEPSEEK_CLAUDE_BASE_URL),
+        _ => None,
+    }
+}
 
 /// Membership = Kimi agent **and** (`kimi-code-membership` preset **or** official
 /// coding endpoint). Never upgrade from `agent_id` alone (moonshot / custom stay closed).

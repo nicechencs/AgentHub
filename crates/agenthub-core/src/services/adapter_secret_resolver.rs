@@ -14,9 +14,11 @@ use crate::bridge::ResolvedAuth;
 use crate::error::{AppError, Result};
 use crate::models::{AdapterSourceKind, AgentId, Provider};
 use crate::services::adapter_route_constants::{
+    claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
     is_kimi_code_membership_source, is_openai_api_marker, is_xai_api_marker,
     settings_contain_anthropic_api_endpoint, ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV,
-    ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT, KIMI_CLAUDE_BASE_URL, KIMI_PI_BASE_URL,
+    ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT, DEEPSEEK_API_KEY_ENV,
+    DEEPSEEK_CLAUDE_RULE_ID, GLM_CLAUDE_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL,
     KIMI_PI_PROVIDER_SLOT, OPENAI_API_KEY_ENV, OPENAI_PI_PROVIDER_SLOT, XAI_API_KEY_ENV,
     XAI_PI_PROVIDER_SLOT,
 };
@@ -26,7 +28,9 @@ use crate::storage::{AccountRepo, Database, ProviderRepo};
 pub use crate::services::adapter_route_constants::CONNECTION_SECRET_MARKER;
 
 const GENERATED_BY: &str = "adapter";
-const KIMI_TO_CLAUDE_RULE: &str = "kimi-membership-to-claude-v1";
+const KIMI_TO_CLAUDE_RULE: &str = KIMI_CLAUDE_RULE_ID;
+const GLM_TO_CLAUDE_RULE: &str = GLM_CLAUDE_RULE_ID;
+const DEEPSEEK_TO_CLAUDE_RULE: &str = DEEPSEEK_CLAUDE_RULE_ID;
 const KIMI_TO_CODEX_BRIDGE_RULE: &str = "kimi-membership-to-codex-v1";
 const ANTHROPIC_TO_CODEX_BRIDGE_RULE: &str = "anthropic-api-to-codex-v1";
 const KIMI_TO_PI_RULE: &str = "kimi-membership-to-pi-v1";
@@ -245,7 +249,9 @@ impl AdapterSecretResolver {
                 .get_mut("env")
                 .and_then(Value::as_object_mut)
                 .ok_or_else(invalid_reference)?;
-            if env.get(ANTHROPIC_BASE_URL_ENV).and_then(Value::as_str) != Some(KIMI_CLAUDE_BASE_URL)
+            let expected_base = claude_native_base_url(adapter_rule_id(provider).unwrap_or(""))
+                .ok_or_else(invalid_reference)?;
+            if env.get(ANTHROPIC_BASE_URL_ENV).and_then(Value::as_str) != Some(expected_base)
             {
                 return Err(invalid_reference());
             }
@@ -288,7 +294,11 @@ impl AdapterSecretResolver {
                 self.resolve_kimi_membership_api_key(source_id)
             }
             (
-                ANTHROPIC_TO_PI_RULE | OPENAI_TO_PI_RULE | XAI_TO_PI_RULE,
+                ANTHROPIC_TO_PI_RULE
+                | OPENAI_TO_PI_RULE
+                | XAI_TO_PI_RULE
+                | GLM_TO_CLAUDE_RULE
+                | DEEPSEEK_TO_CLAUDE_RULE,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account,
             ) => self.resolve_explicit_api_key(rule, kind, source_id),
             _ => Err(invalid_reference()),
@@ -332,9 +342,11 @@ impl AdapterSecretResolver {
             .get("env")
             .and_then(Value::as_object)
             .ok_or_else(invalid_reference)?;
+        let expected_base = claude_native_base_url(adapter_rule_id(target).unwrap_or(""))
+            .ok_or_else(invalid_reference)?;
         if env.get(ANTHROPIC_AUTH_TOKEN_ENV).and_then(Value::as_str)
             != Some(CONNECTION_SECRET_MARKER)
-            || env.get(ANTHROPIC_BASE_URL_ENV).and_then(Value::as_str) != Some(KIMI_CLAUDE_BASE_URL)
+            || env.get(ANTHROPIC_BASE_URL_ENV).and_then(Value::as_str) != Some(expected_base)
         {
             return Err(invalid_reference());
         }
@@ -402,7 +414,10 @@ impl AdapterSecretResolver {
 
 fn is_claude_source_reference(provider: &Provider) -> bool {
     provider.agent_id == AgentId::Claude
-        && adapter_rule_id(provider) == Some(KIMI_TO_CLAUDE_RULE)
+        && matches!(
+            adapter_rule_id(provider),
+            Some(KIMI_TO_CLAUDE_RULE) | Some(GLM_TO_CLAUDE_RULE) | Some(DEEPSEEK_TO_CLAUDE_RULE)
+        )
         && provider
             .meta
             .get("adapterRuleVersion")
@@ -502,11 +517,21 @@ fn is_xai_api_source(source: &Provider) -> bool {
     is_xai_api_marker(provider_explicit_tag(source), &source.settings_config)
 }
 
+fn is_glm_coding_plan_source(source: &Provider) -> bool {
+    is_glm_coding_plan_marker(provider_explicit_tag(source), &source.settings_config)
+}
+
+fn is_deepseek_api_source(source: &Provider) -> bool {
+    is_deepseek_api_marker(provider_explicit_tag(source), &source.settings_config)
+}
+
 fn provider_matches_explicit_api_rule(rule_id: &str, source: &Provider) -> bool {
     match rule_id {
         ANTHROPIC_TO_PI_RULE => is_anthropic_api_source(source),
         OPENAI_TO_PI_RULE => is_openai_api_source(source),
         XAI_TO_PI_RULE => is_xai_api_source(source),
+        GLM_TO_CLAUDE_RULE => is_glm_coding_plan_source(source),
+        DEEPSEEK_TO_CLAUDE_RULE => is_deepseek_api_source(source),
         _ => false,
     }
 }
@@ -530,9 +555,16 @@ fn extract_account_api_key(credentials: &Value) -> Result<String> {
 fn extract_explicit_provider_api_key(rule_id: &str, settings: &Value) -> Result<String> {
     let env = settings.get("env");
     let env_keys: &[&str] = match rule_id {
-        ANTHROPIC_TO_PI_RULE => &[ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV],
+        ANTHROPIC_TO_PI_RULE | GLM_TO_CLAUDE_RULE => {
+            &[ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV]
+        }
         OPENAI_TO_PI_RULE => &[OPENAI_API_KEY_ENV],
         XAI_TO_PI_RULE => &[XAI_API_KEY_ENV],
+        DEEPSEEK_TO_CLAUDE_RULE => &[
+            ANTHROPIC_AUTH_TOKEN_ENV,
+            ANTHROPIC_API_KEY_ENV,
+            DEEPSEEK_API_KEY_ENV,
+        ],
         _ => return Err(invalid_reference()),
     };
     let mut candidates = Vec::new();

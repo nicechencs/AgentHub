@@ -267,7 +267,10 @@ mod tests {
             None
         );
 
-        for source in [AdapterSourceProduct::OpenaiApi, AdapterSourceProduct::XaiApi] {
+        for source in [
+            AdapterSourceProduct::OpenaiApi,
+            AdapterSourceProduct::XaiApi,
+        ] {
             let table = find_adapter_model_mapping(source, AgentId::Pi).expect("passthrough table");
             assert!(table.allow_passthrough);
             assert!(table.default_target_model.is_none());

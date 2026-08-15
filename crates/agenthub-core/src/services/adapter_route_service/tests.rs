@@ -255,17 +255,33 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
         })
         .unwrap();
     providers
-        .create(&provider("relay-provider", AgentId::Claude, "openai-compatible"))
+        .create(&provider(
+            "relay-provider",
+            AgentId::Claude,
+            "openai-compatible",
+        ))
         .unwrap();
     providers
-        .create(&provider("glm-provider", AgentId::Claude, "glm-coding-plan"))
+        .create(&provider(
+            "glm-provider",
+            AgentId::Claude,
+            "glm-coding-plan",
+        ))
         .unwrap();
     providers
-        .create(&provider("deepseek-provider", AgentId::Claude, "deepseek-api"))
+        .create(&provider(
+            "deepseek-provider",
+            AgentId::Claude,
+            "deepseek-api",
+        ))
         .unwrap();
     let accounts = AccountRepo::new(db.clone());
-    accounts.create(&api_key_account("openai-account", "openai")).unwrap();
-    accounts.create(&api_key_account("xai-account", "xai")).unwrap();
+    accounts
+        .create(&api_key_account("openai-account", "openai"))
+        .unwrap();
+    accounts
+        .create(&api_key_account("xai-account", "xai"))
+        .unwrap();
     let service = AdapterRouteService::new(db);
 
     for (source_kind, source_id, slot, rule) in [
@@ -308,7 +324,9 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
         assert_eq!(plan.analysis.rule_id.as_deref(), Some(rule), "{source_id}");
         assert_eq!(plan.changes[0].value.as_deref(), Some(slot), "{source_id}");
         assert!(plan.changes[1].secret, "{source_id}");
-        assert!(!serde_json::to_string(&plan).unwrap().contains("must-not-leak"));
+        assert!(!serde_json::to_string(&plan)
+            .unwrap()
+            .contains("must-not-leak"));
     }
 
     let relay = service
@@ -343,7 +361,11 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
     );
     assert!(!glm.can_apply);
     assert_eq!(glm.analysis.route, AdapterRoute::Unsupported);
-    assert!(glm.analysis.reason.contains("仅登记票面"));
+    assert!(
+        glm.analysis.reason.contains("同协议但无已验证的边"),
+        "GLM → Pi reason must come from the protocol graph: {}",
+        glm.analysis.reason
+    );
 
     let deepseek = service
         .plan(&request(
@@ -359,6 +381,73 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
         crate::models::AdapterSourceProduct::DeepseekApi
     );
     assert!(!deepseek.can_apply);
+
+    accounts
+        .create(&api_key_account("glm-account", "glm-coding-plan"))
+        .unwrap();
+    accounts
+        .create(&api_key_account("deepseek-account", "deepseek-api"))
+        .unwrap();
+    for (source_kind, source_id, rule, base_url) in [
+        (
+            AdapterSourceKind::Provider,
+            "glm-provider",
+            "glm-coding-plan-to-claude-v1",
+            crate::services::adapter_route_constants::GLM_CLAUDE_BASE_URL,
+        ),
+        (
+            AdapterSourceKind::Account,
+            "glm-account",
+            "glm-coding-plan-to-claude-v1",
+            crate::services::adapter_route_constants::GLM_CLAUDE_BASE_URL,
+        ),
+        (
+            AdapterSourceKind::Provider,
+            "deepseek-provider",
+            "deepseek-api-to-claude-v1",
+            crate::services::adapter_route_constants::DEEPSEEK_CLAUDE_BASE_URL,
+        ),
+        (
+            AdapterSourceKind::Account,
+            "deepseek-account",
+            "deepseek-api-to-claude-v1",
+            crate::services::adapter_route_constants::DEEPSEEK_CLAUDE_BASE_URL,
+        ),
+    ] {
+        let plan = service
+            .plan(&request(source_kind, source_id, AgentId::Claude))
+            .unwrap();
+        assert_eq!(
+            plan.analysis.route,
+            AdapterRoute::NativeEndpoint,
+            "{source_id}"
+        );
+        assert_eq!(
+            plan.analysis.support,
+            AdapterSupport::Experimental,
+            "{source_id}"
+        );
+        assert!(plan.can_apply, "{source_id}");
+        assert_eq!(plan.analysis.rule_id.as_deref(), Some(rule), "{source_id}");
+        assert_eq!(
+            plan.changes[0].value.as_deref(),
+            Some(base_url),
+            "{source_id}"
+        );
+        assert!(plan.changes[2].secret, "{source_id}");
+        assert!(!serde_json::to_string(&plan)
+            .unwrap()
+            .contains("must-not-leak"));
+    }
+
+    let kimi_claude = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "relay-provider",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert!(!kimi_claude.can_apply, "unknown relay must not bind Claude");
 
     let openai_grok = service
         .plan(&request(
@@ -378,7 +467,12 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
         ))
         .unwrap();
     assert!(!xai_grok.can_apply);
-    assert!(xai_grok.analysis.reason.contains("不进适配矩阵"));
+    assert_eq!(
+        xai_grok.analysis.reason,
+        crate::models::SAME_PROTOCOL_NO_EDGE_REASON
+    );
+    assert!(xai_grok.analysis.reason.contains("同协议但无已验证的边"));
+    assert!(!xai_grok.analysis.reason.contains("仅支持预览"));
 }
 
 #[test]
@@ -461,7 +555,11 @@ fn anthropic_provider_and_account_plan_for_codex_and_stay_closed_for_claude() {
         let plan = service
             .plan(&request(source_kind, source_id, AgentId::Codex))
             .unwrap();
-        assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge, "{source_id}");
+        assert_eq!(
+            plan.analysis.route,
+            AdapterRoute::LocalBridge,
+            "{source_id}"
+        );
         assert_eq!(
             plan.analysis.support,
             AdapterSupport::Experimental,
@@ -537,6 +635,98 @@ fn kimi_coding_endpoint_without_preset_classifies_as_membership() {
         .unwrap();
     assert_eq!(pi.analysis.route, AdapterRoute::ConfigSync);
     assert!(pi.can_apply);
+}
+
+#[test]
+fn plan_any_ticket_to_cursor_uses_no_writer_reason() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "kimi-membership",
+            AgentId::Kimi,
+            "kimi-code-membership",
+        ))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "anthropic-provider",
+            AgentId::Claude,
+            "anthropic",
+        ))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider("openai-provider", AgentId::Codex, "openai"))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider("xai-provider", AgentId::Grok, "xai"))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    for source_id in [
+        "kimi-membership",
+        "anthropic-provider",
+        "openai-provider",
+        "xai-provider",
+    ] {
+        let plan = service
+            .plan(&request(
+                AdapterSourceKind::Provider,
+                source_id,
+                AgentId::Cursor,
+            ))
+            .unwrap();
+        assert!(!plan.can_apply, "{source_id}");
+        assert_eq!(
+            plan.analysis.route,
+            AdapterRoute::Unsupported,
+            "{source_id}"
+        );
+        assert!(
+            plan.reason.contains("无配置写入"),
+            "{source_id}: {}",
+            plan.reason
+        );
+        assert_eq!(
+            plan.reason,
+            crate::models::AGENT_NO_WRITER_REASON,
+            "{source_id}"
+        );
+        assert!(
+            !plan.reason.contains("仅支持预览"),
+            "Cursor must not use source-product copy: {}",
+            plan.reason
+        );
+    }
+}
+
+#[test]
+fn plan_kimi_ticket_to_grok_uses_protocol_graph_reason() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "kimi-membership",
+            AgentId::Kimi,
+            "kimi-code-membership",
+        ))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    let plan = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "kimi-membership",
+            AgentId::Grok,
+        ))
+        .unwrap();
+    assert!(!plan.can_apply);
+    assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
+    assert_eq!(plan.reason, crate::models::SAME_PROTOCOL_NO_EDGE_REASON);
+    assert!(plan.reason.contains("同协议但无已验证的边"));
+    assert!(
+        !plan.reason.contains("仅支持预览到 Claude"),
+        "Kimi → Grok must not use the product whitelist: {}",
+        plan.reason
+    );
 }
 
 #[test]

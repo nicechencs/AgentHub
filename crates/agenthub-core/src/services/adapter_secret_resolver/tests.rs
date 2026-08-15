@@ -1,6 +1,8 @@
 use super::*;
 use crate::models::{Account, AccountKind};
-use crate::services::adapter_route_constants::KIMI_MEMBERSHIP_PRESET;
+use crate::services::adapter_route_constants::{
+    DEEPSEEK_CLAUDE_BASE_URL, GLM_CLAUDE_BASE_URL, KIMI_CLAUDE_BASE_URL, KIMI_MEMBERSHIP_PRESET,
+};
 use crate::storage::AccountRepo;
 use serde_json::json;
 
@@ -721,4 +723,111 @@ fn membership_requires_kimi_agent_and_preset_or_coding_endpoint() {
             assert_eq!(result.unwrap_err().code(), "invalid_arg", "{id}");
         }
     }
+}
+
+fn claude_native_target(source_id: &str, rule_id: &str, base_url: &str, kind: &str) -> Provider {
+    provider(
+        "generated-claude-native",
+        AgentId::Claude,
+        json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": base_url,
+                "ANTHROPIC_AUTH_TOKEN": CONNECTION_SECRET_MARKER,
+            }
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": rule_id,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": SOURCE_REFERENCE_MODE,
+            "adapterSourceRef": { "kind": kind, "id": source_id },
+        }),
+    )
+}
+
+#[test]
+fn glm_provider_and_deepseek_account_materialize_and_scrub_by_rule_url() {
+    let source = provider(
+        "glm-source",
+        AgentId::Claude,
+        json!({"env": { ANTHROPIC_AUTH_TOKEN_ENV: "glm-secret" }}),
+        json!({"preset": "glm-coding-plan"}),
+    );
+    let (_dir, resolver) = resolver_with(source.clone());
+    resolver
+        .validate_explicit_api_source(
+            GLM_TO_CLAUDE_RULE,
+            AdapterSourceKind::Provider,
+            "glm-source",
+        )
+        .unwrap();
+    let target = claude_native_target(&source.id, GLM_TO_CLAUDE_RULE, GLM_CLAUDE_BASE_URL, "provider");
+    let materialized = resolver.materialize_for_live(&target).unwrap();
+    assert_eq!(
+        materialized.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "glm-secret"
+    );
+    assert_eq!(
+        materialized.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        GLM_CLAUDE_BASE_URL
+    );
+    let scrubbed = resolver
+        .scrub_for_backfill(&target, &materialized.settings_config)
+        .unwrap();
+    assert_eq!(
+        scrubbed["env"]["ANTHROPIC_AUTH_TOKEN"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(scrubbed["env"]["ANTHROPIC_BASE_URL"], GLM_CLAUDE_BASE_URL);
+    assert!(!serde_json::to_string(&scrubbed).unwrap().contains("glm-secret"));
+
+    let mut wrong_url = target.clone();
+    wrong_url.settings_config["env"]["ANTHROPIC_BASE_URL"] = json!(KIMI_CLAUDE_BASE_URL);
+    assert_eq!(
+        resolver.materialize_for_live(&wrong_url).unwrap_err().code(),
+        "invalid_arg"
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("adapter-secret-resolver.db")).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "deepseek-account".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::ApiKey,
+            label: "DeepSeek key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "deepseek-account-secret"
+            }),
+            extra: json!({"provider": "deepseek-api"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let resolver = AdapterSecretResolver::new(db);
+    resolver
+        .validate_explicit_api_source(
+            DEEPSEEK_TO_CLAUDE_RULE,
+            AdapterSourceKind::Account,
+            "deepseek-account",
+        )
+        .unwrap();
+    let target = claude_native_target(
+        "deepseek-account",
+        DEEPSEEK_TO_CLAUDE_RULE,
+        DEEPSEEK_CLAUDE_BASE_URL,
+        "account",
+    );
+    let materialized = resolver.materialize_for_live(&target).unwrap();
+    assert_eq!(
+        materialized.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "deepseek-account-secret"
+    );
+    assert_eq!(
+        materialized.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        DEEPSEEK_CLAUDE_BASE_URL
+    );
 }
