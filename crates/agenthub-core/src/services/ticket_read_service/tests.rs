@@ -498,6 +498,30 @@ fn ticket_surface_serde_matches_wire() {
         TicketSurface::parse("kimi-code-membership"),
         Some(TicketSurface::KimiCodeMembership)
     );
+    assert_eq!(
+        TicketSurface::parse("openai-api"),
+        Some(TicketSurface::OpenaiApi)
+    );
+    assert_eq!(TicketSurface::parse("xai-api"), Some(TicketSurface::XaiApi));
+    assert_eq!(
+        TicketSurface::parse("glm-coding-plan"),
+        Some(TicketSurface::GlmCodingPlan)
+    );
+    assert_eq!(
+        TicketSurface::parse("deepseek-api"),
+        Some(TicketSurface::DeepseekApi)
+    );
+    assert_eq!(
+        TicketSurface::OpenaiApi.speaks(),
+        &[TicketProtocol::OpenaiChat]
+    );
+    assert_eq!(
+        TicketSurface::GlmCodingPlan.speaks(),
+        &[
+            TicketProtocol::AnthropicMessages,
+            TicketProtocol::OpenaiChat
+        ]
+    );
     assert_eq!(TicketSurface::parse("not-a-surface"), None);
     assert_eq!(
         TicketSurface::from_persisted_json(&serde_json::json!({})),

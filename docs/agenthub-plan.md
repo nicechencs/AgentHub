@@ -367,7 +367,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | Dashboard **生产告警** | 🟡 | 生产从 doctor 派生 auth/env/update 告警（本地 dismiss）；无独立告警总线。mock 可演示额外样例 |
 | Tauri **事件桥** | ❌ | 文档目标；现以前端 refetch 为主 |
 | MCP **管理 / 注入**、`ModelSelect`、`SessionResume` | Planned | `Mcp` 矩阵仍表示管理/注入能力；独立的只读 MCP inventory 已落地，不改变矩阵状态 |
-| 票 / 绑定读模型与钱包重做 | ✅ 读模型、进口打标、`plan` 收口、拒投影、`bind`/`unbind` 写入已落地；§6.4–6.6 加边未做 | [connection-binding-model.md](connection-binding-model.md)：`list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`。`canApply` = 现在 bind 会成功（有实现且 secret 可按票 `source_kind` 解析）。本步打开 Anthropic API Account → Pi；Kimi 会员 Account 仍无分类规则。写入走 bind，apply 为薄兼容委托 |
+| 票 / 绑定读模型与钱包重做 | ✅ 读模型、进口打标、`plan` 收口、拒投影、`bind`/`unbind` 写入已落地；§6.4 部分落地（OpenAI/xAI API → Pi）；Grok 边仍不可行；§6.5 GLM/DeepSeek 仅登记；§6.6 未做 | [connection-binding-model.md](connection-binding-model.md)：`list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`。`canApply` = 现在 bind 会成功（有实现且 secret 可按票 `source_kind` 解析）。可写边：Kimi 会员 Provider → Claude/Pi/Codex，Anthropic / OpenAI / xAI API（Provider 与 Account）→ Pi，Anthropic API（Provider 与 Account）→ Codex。Kimi 会员 Account 仍无分类规则。GLM/DeepSeek 只认显式标记、不可 bind。写入走 bind，apply 为薄兼容委托 |
 | Adapter 本地 Bridge 产品接线 | 🟡 部分实现 | core host、协议转换、Tauri controller、UI 控件、auto-start 恢复与退出 drain 已进入当前工作区；具体可执行状态见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)，端到端验收尚未收口 |
 | Adapter 用户级 sidecar | 🎯 目标已决策 / 未实现 | 当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有；待完成 Tauri-neutral control contract、`agenthub-adapterd`、本地 IPC、单实例/版本+schema 握手、SQLite shared/exclusive schema lease、更新/卸载 saga 和分阶段切换，见 [adapter-sidecar-design.md](adapter-sidecar-design.md) |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |

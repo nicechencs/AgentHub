@@ -54,6 +54,10 @@ pub enum PersistedTicketSurface {
 pub enum TicketSurface {
     KimiCodeMembership,
     AnthropicApi,
+    OpenaiApi,
+    XaiApi,
+    GlmCodingPlan,
+    DeepseekApi,
     CodexChatgptSubscription,
     Unknown,
 }
@@ -63,6 +67,10 @@ impl TicketSurface {
         match self {
             Self::KimiCodeMembership => "kimi-code-membership",
             Self::AnthropicApi => "anthropic-api",
+            Self::OpenaiApi => "openai-api",
+            Self::XaiApi => "xai-api",
+            Self::GlmCodingPlan => "glm-coding-plan",
+            Self::DeepseekApi => "deepseek-api",
             Self::CodexChatgptSubscription => "codex-chatgpt-subscription",
             Self::Unknown => "unknown",
         }
@@ -72,6 +80,10 @@ impl TicketSurface {
         match product {
             AdapterSourceProduct::KimiCodeMembership => Self::KimiCodeMembership,
             AdapterSourceProduct::AnthropicApi => Self::AnthropicApi,
+            AdapterSourceProduct::OpenaiApi => Self::OpenaiApi,
+            AdapterSourceProduct::XaiApi => Self::XaiApi,
+            AdapterSourceProduct::GlmCodingPlan => Self::GlmCodingPlan,
+            AdapterSourceProduct::DeepseekApi => Self::DeepseekApi,
             AdapterSourceProduct::CodexChatGptSubscription => Self::CodexChatgptSubscription,
             AdapterSourceProduct::Other => Self::Unknown,
         }
@@ -82,6 +94,10 @@ impl TicketSurface {
         match raw.trim() {
             "kimi-code-membership" => Some(Self::KimiCodeMembership),
             "anthropic-api" => Some(Self::AnthropicApi),
+            "openai-api" => Some(Self::OpenaiApi),
+            "xai-api" => Some(Self::XaiApi),
+            "glm-coding-plan" => Some(Self::GlmCodingPlan),
+            "deepseek-api" => Some(Self::DeepseekApi),
             "codex-chatgpt-subscription" => Some(Self::CodexChatgptSubscription),
             "unknown" => Some(Self::Unknown),
             _ => None,
@@ -110,6 +126,11 @@ impl TicketSurface {
                 TicketProtocol::OpenaiChat,
             ],
             Self::AnthropicApi => &[TicketProtocol::AnthropicMessages],
+            Self::OpenaiApi | Self::XaiApi => &[TicketProtocol::OpenaiChat],
+            Self::GlmCodingPlan | Self::DeepseekApi => &[
+                TicketProtocol::AnthropicMessages,
+                TicketProtocol::OpenaiChat,
+            ],
             Self::CodexChatgptSubscription => &[TicketProtocol::OpenaiResponses],
             Self::Unknown => &[],
         }

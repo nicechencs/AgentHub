@@ -97,7 +97,7 @@ describe('mock adapter route preview', () => {
     expect(JSON.stringify({ plan, applied, visible })).not.toContain('token');
   });
 
-  it('refuses to remove the active generated Connection, then removes an inactive projection and its provider', async () => {
+  it('removes the active generated Connection and its provider', async () => {
     const sourceId = `kimi-remove-${Date.now()}-${Math.random()}`;
     await createMockProviderPort().upsertProvider({
       id: sourceId,
@@ -110,12 +110,8 @@ describe('mock adapter route preview', () => {
     });
     const adapter = createMockAdapterPort(resolver);
     const applied = await adapter.apply({ sourceKind: 'provider', sourceId, targetAgentId: 'codex' });
-
-    await expect(adapter.remove(applied.profile.id)).rejects.toThrow('切换到其他连接');
-    expect(await adapter.listProfiles()).toHaveLength(1);
     expect(getMockProviderById(applied.provider.id)).toMatchObject({ isCurrent: true });
 
-    upsertMockProvider({ ...applied.provider, isCurrent: false });
     await adapter.remove(applied.profile.id);
 
     expect(await adapter.listProfiles()).toEqual([]);
@@ -236,6 +232,17 @@ describe('mock adapter route preview', () => {
     expect(applied.profile.ruleId).toBe('anthropic-api-to-pi-v1');
     expect(applied.provider.agentId).toBe('pi');
     expect(applied.provider.isCurrent).toBe(true);
+
+    const codex = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: accountId,
+      targetAgentId: 'codex',
+    });
+    expect(codex.canApply).toBe(true);
+    expect(codex.analysis.route).toBe('local_bridge');
+    expect(codex.analysis.ruleId).toBe('anthropic-api-to-codex-v1');
+    expect(codex.changes[0].value).toBe('AgentHub Anthropic 本地桥接');
+    expect(codex.reason).not.toContain('同边但暂不可写');
   });
 
   it('throws AdapterCommandError with a structured not-retryable shape', async () => {
@@ -464,7 +471,11 @@ function contractAccount(id: string, source: ContractCase['source']): Account {
     tokenValid: true,
     credentialFormat: 'credentialFormat' in source ? source.credentialFormat : undefined,
     credentials: 'credentials' in source ? source.credentials : undefined,
-  } as Account & { credentials?: Record<string, unknown> };
+    extra: 'extra' in source ? source.extra : undefined,
+  } as Account & {
+    credentials?: Record<string, unknown>;
+    extra?: Record<string, unknown>;
+  };
 }
 
 describe('shared adapter capability contract', () => {

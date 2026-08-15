@@ -1,6 +1,6 @@
 # 连接：票、绑定与协议图
 
-> 状态：**§6 第 1–3 步已落地（读模型、进口打标、plan 收口、拒投影、bind/unbind 写入收口）；§6.4–6.6 加边未做**。  
+> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（OpenAI/xAI API → Pi reshape；Anthropic API Key → Codex 本地桥）；Grok 边仍不可行；§6.5 GLM/DeepSeek 仅登记票面；§6.6 未做**。  
 > 日期：2026-08-15。  
 > 本文是跨 Agent「把已有凭据接到另一个 Agent」的领域真源。页面、Hub 入口、Adapter、厂商规则文档以本文为准改表述；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
 > 关联：[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[adapter-design.md](adapter-design.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[account-authorization-pool.md](account-authorization-pool.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)。
@@ -78,7 +78,7 @@ AgentHub 不「共享链接」，它**绑定票**。直连、改配置、本机�
 |---|---|---|
 | Ticket | `accounts` + `providers` 两行模型 | 先做只读聚合；进口打 `surface`；生成 Provider 从钱包剔除 |
 | Binding | `is_current` + `AdapterProfile` + 生成 Provider | 先做读模型；再 `bind`/`unbind` 成为唯一写入 |
-| 规划器 | `plan()` 唯一出口；内部矩阵 ∩ 私有 write_gate（有 bind 实现且 secret 可按 `source_kind` 解析） | `plan(ticket, agent)` 为唯一真理；Anthropic API Account → Pi 可写 |
+| 规划器 | `plan()` 唯一出口；内部矩阵 ∩ 私有 write_gate（有 bind 实现且 secret 可按 `source_kind` 解析） | `plan(ticket, agent)` 为唯一真理；Anthropic / OpenAI / xAI API Account → Pi 可写 |
 
 Account / Provider / live 事务仍由 core service 单点负责，不建设 `connectionsd`。`local_bridge` 的 listener 仍按 [sidecar 契约](adapter-sidecar-design.md) 走用户级进程。
 
@@ -233,7 +233,7 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 1. 读模型：Ticket / Binding 聚合；钱包去掉生成投影；「接到…」对真票常驻。
 2. 进口打标；规划器收口。
 3. 现有四条可 apply 路径改写成 `bind` 实现（Kimi→Claude/Pi reshape，Kimi→Codex bridge，Anthropic→Pi reshape）。
-4. 加边：Anthropic→Codex 桥、Kimi→Grok reshape、OpenAI/xAI Key → Pi/Grok。
+4. 加边：Anthropic→Codex 桥（协议腿 + experimental bind 已开）、Kimi→Grok reshape、OpenAI/xAI Key → Pi/Grok。
 5. 新 surface：GLM / DeepSeek 按双协议入口登记。
 6. 能当 HTTP 上游的订阅（如 Codex 订阅→Claude）接执行器后打开那条边。
 

@@ -173,6 +173,34 @@ fn anthropic_source(id: &str, api_key: &str) -> Provider {
     }
 }
 
+fn explicit_api_source(id: &str, preset: &str, env_key: &str, api_key: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        name: format!("{preset} API"),
+        settings_config: json!({"env": { env_key: api_key }}),
+        meta: json!({"preset": preset}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+fn explicit_api_account(id: &str, provider: &str, api_key: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        label: format!("{provider} key"),
+        credentials: json!({"format": "api_key", "api_key": api_key}),
+        extra: json!({"provider": provider}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
 fn anthropic_account(id: &str, api_key: &str) -> Account {
     Account {
         id: id.into(),
@@ -296,6 +324,85 @@ fn bind_anthropic_account_to_pi_requires_can_apply_and_keeps_account_source_ref(
     assert!(!serde_json::to_string(&generated)
         .unwrap()
         .contains("sk-account-secret"));
+}
+
+#[test]
+fn bind_openai_and_xai_provider_and_account_to_pi_then_unbind() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "openai-source",
+            "openai",
+            "OPENAI_API_KEY",
+            "sk-openai-secret",
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&explicit_api_account(
+            "xai-account",
+            "xai",
+            "xai-account-secret",
+        ))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "relay-source".into(),
+            agent_id: AgentId::Claude,
+            name: "Custom relay".into(),
+            settings_config: json!({"apiKey": "relay-secret", "baseUrl": "https://relay.example/v1"}),
+            meta: json!({"preset": "openai-compatible"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = bind_service(
+        db.clone(),
+        dir.path().join("backups"),
+        vec![Arc::new(FakePiAdapter::new())],
+    );
+
+    let openai = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Provider, "openai-source"),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap();
+    assert!(openai.active);
+    assert_eq!(openai.route, TicketBindingRoute::Reshape);
+    let openai_profile = AdapterProfileRepo::new(db.clone())
+        .get(openai.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(openai_profile.rule_id, "openai-api-to-pi-v1");
+
+    service
+        .unbind(&TicketUnbindRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Provider, "openai-source"),
+            agent_id: AgentId::Pi,
+        })
+        .unwrap();
+
+    let xai = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "xai-account"),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap();
+    assert!(xai.active);
+    assert_eq!(xai.ticket_id, "account:xai-account");
+    let xai_profile = AdapterProfileRepo::new(db.clone())
+        .get(xai.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(xai_profile.rule_id, "xai-api-to-pi-v1");
+    assert_eq!(xai_profile.source_kind, AdapterSourceKind::Account);
+
+    let relay = service.bind(&TicketPlanRequest {
+        ticket_id: ticket_id(AdapterSourceKind::Provider, "relay-source"),
+        target_agent_id: AgentId::Pi,
+    });
+    assert!(relay.is_err(), "unknown custom relay must not bind");
 }
 
 #[test]

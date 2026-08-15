@@ -180,6 +180,10 @@ type RouteSourceLabel =
   | 'kimi_membership'
   | 'kimi_non_membership'
   | 'anthropic_api_key'
+  | 'openai_api_key'
+  | 'xai_api_key'
+  | 'glm_coding_plan'
+  | 'deepseek_api'
   | 'codex_subscription'
   | 'codex_subscription_oauth_other'
   | 'other'
@@ -196,6 +200,19 @@ const KIMI_NON_MEMBERSHIP_REASON =
 /** Keep lockstep with core `KIMI_MEMBERSHIP_PRESET` / `KIMI_CODING_ENDPOINT_NEEDLE`. */
 const KIMI_MEMBERSHIP_PRESET = 'kimi-code-membership';
 const KIMI_CODING_ENDPOINT_NEEDLE = 'api.kimi.com/coding';
+const OPENAI_API_ENDPOINT_NEEDLE = 'api.openai.com';
+const XAI_API_ENDPOINT_NEEDLE = 'api.x.ai';
+const GLM_CODING_ANTHROPIC_NEEDLE = 'open.bigmodel.cn/api/anthropic';
+const GLM_CODING_CHAT_NEEDLE = 'open.bigmodel.cn/api/coding';
+const DEEPSEEK_API_ENDPOINT_NEEDLE = 'api.deepseek.com';
+const EXPLICIT_API_TO_PI_RULES = new Set([
+  'anthropic-api-to-pi-v1',
+  'openai-api-to-pi-v1',
+  'xai-api-to-pi-v1',
+]);
+const EXPLICIT_API_TO_CODEX_RULES = new Set([
+  'anthropic-api-to-codex-v1',
+]);
 const KIMI_MEMBERSHIP_RULE_IDS = new Set([
   'kimi-membership-to-claude-v1',
   'kimi-membership-to-codex-v1',
@@ -250,6 +267,37 @@ function classify(
     ) {
       return 'anthropic_api_key';
     }
+    const tag = provider.preset
+      ?? jsonString((provider as { meta?: Record<string, unknown> }).meta, 'provider');
+    const config = provider.configText ?? '';
+    if (
+      tag?.toLowerCase() === 'openai'
+      || tag?.toLowerCase() === 'openai-api'
+      || config.toLowerCase().includes(OPENAI_API_ENDPOINT_NEEDLE)
+    ) {
+      return 'openai_api_key';
+    }
+    if (
+      tag?.toLowerCase() === 'xai'
+      || tag?.toLowerCase() === 'xai-api'
+      || config.toLowerCase().includes(XAI_API_ENDPOINT_NEEDLE)
+    ) {
+      return 'xai_api_key';
+    }
+    if (
+      tag?.toLowerCase() === 'glm-coding-plan'
+      || config.toLowerCase().includes(GLM_CODING_ANTHROPIC_NEEDLE)
+      || config.toLowerCase().includes(GLM_CODING_CHAT_NEEDLE)
+    ) {
+      return 'glm_coding_plan';
+    }
+    if (
+      tag?.toLowerCase() === 'deepseek-api'
+      || tag?.toLowerCase() === 'deepseek'
+      || config.toLowerCase().includes(DEEPSEEK_API_ENDPOINT_NEEDLE)
+    ) {
+      return 'deepseek_api';
+    }
     if (provider.agentId === 'kimi') return 'kimi_non_membership';
     return 'other';
   }
@@ -267,6 +315,45 @@ function classify(
 
   if (account.kind === 'apikey' && explicitProvider?.toLowerCase() === 'anthropic') {
     return 'anthropic_api_key';
+  }
+  const credentialsText = JSON.stringify(account.credentials ?? {});
+  const extraText = JSON.stringify(account.extra ?? {});
+  if (
+    account.kind === 'apikey'
+    && (explicitProvider?.toLowerCase() === 'openai'
+      || explicitProvider?.toLowerCase() === 'openai-api'
+      || credentialsText.toLowerCase().includes(OPENAI_API_ENDPOINT_NEEDLE)
+      || extraText.toLowerCase().includes(OPENAI_API_ENDPOINT_NEEDLE))
+  ) {
+    return 'openai_api_key';
+  }
+  if (
+    account.kind === 'apikey'
+    && (explicitProvider?.toLowerCase() === 'xai'
+      || explicitProvider?.toLowerCase() === 'xai-api'
+      || credentialsText.toLowerCase().includes(XAI_API_ENDPOINT_NEEDLE)
+      || extraText.toLowerCase().includes(XAI_API_ENDPOINT_NEEDLE))
+  ) {
+    return 'xai_api_key';
+  }
+  if (
+    account.kind === 'apikey'
+    && (explicitProvider?.toLowerCase() === 'glm-coding-plan'
+      || credentialsText.toLowerCase().includes(GLM_CODING_ANTHROPIC_NEEDLE)
+      || credentialsText.toLowerCase().includes(GLM_CODING_CHAT_NEEDLE)
+      || extraText.toLowerCase().includes(GLM_CODING_ANTHROPIC_NEEDLE)
+      || extraText.toLowerCase().includes(GLM_CODING_CHAT_NEEDLE))
+  ) {
+    return 'glm_coding_plan';
+  }
+  if (
+    account.kind === 'apikey'
+    && (explicitProvider?.toLowerCase() === 'deepseek-api'
+      || explicitProvider?.toLowerCase() === 'deepseek'
+      || credentialsText.toLowerCase().includes(DEEPSEEK_API_ENDPOINT_NEEDLE)
+      || extraText.toLowerCase().includes(DEEPSEEK_API_ENDPOINT_NEEDLE))
+  ) {
+    return 'deepseek_api';
   }
   if (account.agentId === 'codex' && account.kind === 'oauth') {
     return isCodexAuthJson(credentialFormat, account.credentials ?? {})
@@ -342,6 +429,23 @@ function analyze(
       gateKind: 'none',
     };
   }
+  if (source === 'anthropic_api_key' && request.targetAgentId === 'codex') {
+    return {
+      route: 'local_bridge',
+      support: 'experimental',
+      reason: '显式 Anthropic API Key 到 Codex 需要本地协议桥接。',
+      actions: [action('requires_local_bridge', 'Codex', 'Codex Responses 与 Anthropic Messages 需要本地双向协议转换。')],
+      limitations: [
+        '将在本机 loopback 启动协议桥接，并切换 Codex 到该本地端点。',
+        'AgentHub 需保持在托盘运行；退出前会尝试排空监听。',
+        '桥接为实验性协议覆盖：下游 Responses，上游 Anthropic Messages。',
+        '固定端口被占用时会尝试重新分配端口并写回配置。',
+      ],
+      evidence: [evidence('Anthropic Messages API', 'https://docs.anthropic.com/en/api/messages')],
+      ruleId: 'anthropic-api-to-codex-v1',
+      gateKind: 'none',
+    };
+  }
   if (source === 'anthropic_api_key' && request.targetAgentId === 'pi') {
     return {
       route: 'config_sync',
@@ -357,6 +461,42 @@ function analyze(
       ],
       evidence: [evidence('Pi custom provider and model configuration', 'https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md')],
       ruleId: 'anthropic-api-to-pi-v1',
+      gateKind: 'none',
+    };
+  }
+  if (source === 'openai_api_key' && request.targetAgentId === 'pi') {
+    return {
+      route: 'config_sync',
+      support: 'stable',
+      reason: '显式 OpenAI API Key 可预览为 Pi 的配置同步。',
+      actions: [
+        action('set_config', 'Pi', '选择 Pi 的 OpenAI provider。', 'openai'),
+        secretAction('Pi', '从已选 Connection 引用 API Key；不会读取或显示它。'),
+      ],
+      limitations: [
+        '将写入 Pi models.json 的 openai 槽与凭据引用标记；不会在预览中传输明文 Key。',
+        '应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。',
+      ],
+      evidence: [evidence('Pi custom provider and model configuration', 'https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md')],
+      ruleId: 'openai-api-to-pi-v1',
+      gateKind: 'none',
+    };
+  }
+  if (source === 'xai_api_key' && request.targetAgentId === 'pi') {
+    return {
+      route: 'config_sync',
+      support: 'stable',
+      reason: '显式 xAI API Key 可预览为 Pi 的配置同步。',
+      actions: [
+        action('set_config', 'Pi', '选择 Pi 的 xAI provider。', 'xai'),
+        secretAction('Pi', '从已选 Connection 引用 API Key；不会读取或显示它。'),
+      ],
+      limitations: [
+        '将写入 Pi models.json 的 xai 槽与凭据引用标记；不会在预览中传输明文 Key。',
+        '应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。',
+      ],
+      evidence: [evidence('Pi custom provider and model configuration', 'https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md')],
+      ruleId: 'xai-api-to-pi-v1',
       gateKind: 'none',
     };
   }
@@ -384,10 +524,18 @@ function analyze(
     : source === 'kimi_non_membership'
       ? KIMI_NON_MEMBERSHIP_REASON
     : source === 'anthropic_api_key'
-      ? 'Anthropic API Key 当前仅支持预览到 Pi。'
-      : source === 'codex_subscription' || source === 'codex_subscription_oauth_other'
-        ? 'AgentHub 暂未提供从 Codex 账户到所选目标的适配规则。当前不支持不等于连接失效。'
-        : 'AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。';
+      ? 'Anthropic API Key 当前仅支持预览到 Pi 或 Codex。'
+      : source === 'openai_api_key'
+        ? 'OpenAI API Key 当前仅支持预览到 Pi。'
+        : source === 'xai_api_key'
+          ? 'xAI API Key 当前仅支持预览到 Pi。xAI → Grok 是原生切换，不进适配矩阵。'
+          : source === 'glm_coding_plan'
+            ? 'GLM Coding Plan 当前仅登记票面，尚无跨 Agent 适配规则。'
+            : source === 'deepseek_api'
+              ? 'DeepSeek API 当前仅登记票面，尚无跨 Agent 适配规则。'
+              : source === 'codex_subscription' || source === 'codex_subscription_oauth_other'
+                ? 'AgentHub 暂未提供从 Codex 账户到所选目标的适配规则。当前不支持不等于连接失效。'
+                : 'AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。';
   return unsupported(reason, compatibilityEvidence);
 }
 
@@ -403,7 +551,13 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
       ]
       : analysis.route === 'local_bridge' && request.targetAgentId === 'codex'
         ? [
-            change('codex', 'provider', 'AgentHub Kimi 本地桥接'),
+            change(
+              'codex',
+              'provider',
+              analysis.ruleId === 'anthropic-api-to-codex-v1'
+                ? 'AgentHub Anthropic 本地桥接'
+                : 'AgentHub Kimi 本地桥接',
+            ),
             change('codex', 'baseUrl', 'http://127.0.0.1:<本机端口>/v1'),
           ]
         : analysis.route === 'config_sync' && request.targetAgentId === 'pi'
@@ -416,15 +570,25 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
     (analysis.route === 'native_endpoint' && analysis.support === 'stable' && request.targetAgentId === 'claude')
     || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
     || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'pi');
-  const accountAnthropicToPi = request.sourceKind === 'account'
+  const accountExplicitApiToPi = request.sourceKind === 'account'
     && implementedPath
     && request.targetAgentId === 'pi'
-    && analysis.ruleId === 'anthropic-api-to-pi-v1';
-  const writeGate = (request.sourceKind === 'provider' && implementedPath) || accountAnthropicToPi;
+    && !!analysis.ruleId
+    && EXPLICIT_API_TO_PI_RULES.has(analysis.ruleId);
+  const accountExplicitApiToCodex = request.sourceKind === 'account'
+    && implementedPath
+    && request.targetAgentId === 'codex'
+    && !!analysis.ruleId
+    && EXPLICIT_API_TO_CODEX_RULES.has(analysis.ruleId);
+  const writeGate = (request.sourceKind === 'provider' && implementedPath)
+    || accountExplicitApiToPi
+    || accountExplicitApiToCodex;
   const canApply = writeGate;
   const maturity = mockPlanMaturity(analysis);
-  // Same-edge Account stays closed except Anthropic API → Pi (bind-era write).
-  const reason = implementedPath && request.sourceKind !== 'provider' && !accountAnthropicToPi
+  // Same-edge Account stays closed except explicit API → Pi / Anthropic → Codex.
+  const reason = implementedPath && request.sourceKind !== 'provider'
+    && !accountExplicitApiToPi
+    && !accountExplicitApiToCodex
     ? `${analysis.reason} ${SAME_EDGE_UNWRITABLE_REASON}`
     : analysis.reason;
   return {
@@ -470,18 +634,25 @@ function materializeApply(
 ): { profile: AdapterProfile; provider: Provider } {
   const safeId = safeSourceId(request.sourceId);
   if (plan.analysis.route === 'local_bridge') {
+    const anthropicBridge = plan.analysis.ruleId === 'anthropic-api-to-codex-v1';
     const profile: AdapterProfile = existing ?? {
-      id: `adapter-kimi-codex-bridge-${safeId}`,
-      name: `Kimi → Codex 本地桥接 (${safeId})`,
+      id: anthropicBridge
+        ? `adapter-anthropic-codex-bridge-${safeId}`
+        : `adapter-kimi-codex-bridge-${safeId}`,
+      name: anthropicBridge
+        ? `Anthropic → Codex 本地桥接 (${safeId})`
+        : `Kimi → Codex 本地桥接 (${safeId})`,
       sourceKind: request.sourceKind,
       sourceId: request.sourceId,
       targetAgentId: request.targetAgentId,
       route: 'local_bridge',
       mode: 'api',
       status: 'active',
-      ruleId: 'kimi-membership-to-codex-v1',
+      ruleId: anthropicBridge ? 'anthropic-api-to-codex-v1' : 'kimi-membership-to-codex-v1',
       ruleVersion: '1',
-      generatedProviderId: `codex-kimi-bridge-${safeId}`,
+      generatedProviderId: anthropicBridge
+        ? `codex-anthropic-bridge-${safeId}`
+        : `codex-kimi-bridge-${safeId}`,
       localPort: 32123,
       autoStart: false,
       createdAt: now,
@@ -496,7 +667,7 @@ function materializeApply(
         preset: 'openai-compatible',
         configText: JSON.stringify({
           baseUrl: `http://127.0.0.1:${profile.localPort ?? 32123}/v1`,
-          model: 'kimi-k2.5',
+          model: anthropicBridge ? 'claude-sonnet-4-20250514' : 'kimi-k2.5',
         }),
         configFormat: 'json',
         isCurrent: true,
@@ -505,12 +676,35 @@ function materializeApply(
   }
 
   if (plan.analysis.route === 'config_sync' && request.targetAgentId === 'pi') {
-    const isAnthropic = plan.analysis.ruleId === 'anthropic-api-to-pi-v1';
-    const ruleId = isAnthropic ? 'anthropic-api-to-pi-v1' : 'kimi-membership-to-pi-v1';
-    const slot = piSlotFromPlan(plan, isAnthropic ? 'anthropic' : 'kimi-for-coding');
+    const ruleId = plan.analysis.ruleId
+      ?? (plan.analysis.actions.find((item) => item.kind === 'set_config')?.value === 'anthropic'
+        ? 'anthropic-api-to-pi-v1'
+        : 'kimi-membership-to-pi-v1');
+    const slotFallback = ruleId === 'openai-api-to-pi-v1'
+      ? 'openai'
+      : ruleId === 'xai-api-to-pi-v1'
+        ? 'xai'
+        : ruleId === 'anthropic-api-to-pi-v1'
+          ? 'anthropic'
+          : 'kimi-for-coding';
+    const display = ruleId === 'openai-api-to-pi-v1'
+      ? 'OpenAI'
+      : ruleId === 'xai-api-to-pi-v1'
+        ? 'xAI'
+        : ruleId === 'anthropic-api-to-pi-v1'
+          ? 'Anthropic'
+          : 'Kimi';
+    const prefix = ruleId === 'openai-api-to-pi-v1'
+      ? 'openai'
+      : ruleId === 'xai-api-to-pi-v1'
+        ? 'xai'
+        : ruleId === 'anthropic-api-to-pi-v1'
+          ? 'anthropic'
+          : 'kimi';
+    const slot = piSlotFromPlan(plan, slotFallback);
     const profile: AdapterProfile = existing ?? {
-      id: isAnthropic ? `adapter-anthropic-pi-${safeId}` : `adapter-kimi-pi-${safeId}`,
-      name: `${isAnthropic ? 'Anthropic' : 'Kimi'} → Pi (${safeId})`,
+      id: `adapter-${prefix}-pi-${safeId}`,
+      name: `${display} → Pi (${safeId})`,
       sourceKind: request.sourceKind,
       sourceId: request.sourceId,
       targetAgentId: request.targetAgentId,
@@ -519,9 +713,7 @@ function materializeApply(
       status: 'active',
       ruleId,
       ruleVersion: '1',
-      generatedProviderId: isAnthropic
-        ? `pi-anthropic-adapter-${safeId}`
-        : `pi-kimi-adapter-${safeId}`,
+      generatedProviderId: `pi-${prefix}-adapter-${safeId}`,
       localPort: null,
       autoStart: false,
       createdAt: now,
@@ -671,6 +863,13 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         throw adapterCommandError({
           code: 'not_found',
           message: '适配生成的 Connection 不存在，无法安全删除',
+          retryable: false,
+        });
+      }
+      if (profile.route === 'local_bridge' && generated.isCurrent) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: '先在 Connections 切换到其他连接后再移除此适配器',
           retryable: false,
         });
       }

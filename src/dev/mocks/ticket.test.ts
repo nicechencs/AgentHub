@@ -3,6 +3,7 @@ import { getBackend } from '@/app/runtime';
 import type { AdapterProfile } from '@/lib/backend/contracts';
 import type { Account, Provider } from '@/lib/types';
 import { upsertMockAccount } from './account';
+import { upsertMockProvider } from './provider';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
   seedConnectFlowAdapterFixtures,
@@ -213,6 +214,96 @@ describe('mock ticket wallet', () => {
     expect(relay?.importedFrom).toBe('claude');
   });
 
+  it('classifies openai/xai/glm/deepseek by explicit markers and leaves custom relays unknown', () => {
+    const wallet = buildMockTicketWallet({
+      listAccounts: () => [
+        {
+          id: 'openai-acc',
+          agentId: 'codex',
+          kind: 'apikey',
+          label: 'OpenAI',
+          isCurrent: false,
+          tokenValid: true,
+          extra: { provider: 'openai' },
+        } as Account,
+        {
+          id: 'glm-acc',
+          agentId: 'claude',
+          kind: 'apikey',
+          label: 'GLM',
+          isCurrent: false,
+          tokenValid: true,
+          extra: { provider: 'glm-coding-plan' },
+        } as Account,
+      ],
+      listProviders: () => [
+        {
+          id: 'openai-src',
+          agentId: 'codex',
+          name: 'OpenAI',
+          preset: 'openai',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: false,
+        },
+        {
+          id: 'xai-host',
+          agentId: 'grok',
+          name: 'xAI host',
+          preset: 'custom',
+          configText: '{"baseUrl":"https://api.x.ai/v1"}',
+          configFormat: 'json',
+          isCurrent: false,
+        },
+        {
+          id: 'deepseek-src',
+          agentId: 'claude',
+          name: 'DeepSeek',
+          preset: 'deepseek-api',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: false,
+        },
+        {
+          id: 'relay',
+          agentId: 'claude',
+          name: 'Custom relay',
+          preset: 'openai-compatible',
+          configText: '{"baseUrl":"https://relay.example/v1"}',
+          configFormat: 'json',
+          isCurrent: false,
+        },
+      ],
+      listProfiles: () => [],
+      getBridgeStatus: () => undefined,
+      planAdapter: async () => {
+        throw new Error('not used');
+      },
+    });
+
+    expect(wallet.tickets.find((t) => t.id === 'provider:openai-src')).toMatchObject({
+      surface: 'openai-api',
+      speaks: ['openai-chat'],
+    });
+    expect(wallet.tickets.find((t) => t.id === 'account:openai-acc')).toMatchObject({
+      surface: 'openai-api',
+      speaks: ['openai-chat'],
+    });
+    expect(wallet.tickets.find((t) => t.id === 'provider:xai-host')).toMatchObject({
+      surface: 'xai-api',
+      speaks: ['openai-chat'],
+    });
+    expect(wallet.tickets.find((t) => t.id === 'account:glm-acc')).toMatchObject({
+      surface: 'glm-coding-plan',
+      speaks: ['anthropic-messages', 'openai-chat'],
+    });
+    expect(wallet.tickets.find((t) => t.id === 'provider:deepseek-src')).toMatchObject({
+      surface: 'deepseek-api',
+      speaks: ['anthropic-messages', 'openai-chat'],
+    });
+    expect(wallet.tickets.find((t) => t.id === 'provider:relay')?.surface).toBe('unknown');
+  });
+
   it('uses persisted extra.surface / meta.surface when fixture provides them', () => {
     const wallet = buildMockTicketWallet({
       listAccounts: () => [
@@ -303,6 +394,49 @@ describe('mock ticket wallet', () => {
     await expect(getBackend().ticket.bind(`provider:${generatedId}`, 'pi')).rejects.toMatchObject({
       code: 'invalid_arg',
       message: expect.stringContaining('投影不是票'),
+    });
+  });
+
+  it('bind_ticket allows OpenAI / xAI Provider+Account → Pi and rejects unknown relays', async () => {
+    getBackend();
+    upsertMockAccount({
+      id: 'openai-acc-bind',
+      agentId: 'codex',
+      kind: 'apikey',
+      label: 'OpenAI key',
+      isCurrent: false,
+      tokenValid: true,
+      extra: { provider: 'openai' },
+    } as Account);
+    const { binding } = await getBackend().ticket.bind('account:openai-acc-bind', 'pi');
+    expect(binding.active).toBe(true);
+    expect(binding.agentId).toBe('pi');
+    expect(binding.route).toBe('reshape');
+
+    upsertMockProvider({
+      id: 'xai-prov-bind',
+      agentId: 'grok',
+      name: 'xAI',
+      preset: 'xai',
+      configText: '{}',
+      configFormat: 'json',
+      isCurrent: false,
+    });
+    const xaiBind = await getBackend().ticket.bind('provider:xai-prov-bind', 'pi');
+    expect(xaiBind.binding.active).toBe(true);
+    await getBackend().ticket.unbind('provider:xai-prov-bind', 'pi');
+
+    upsertMockProvider({
+      id: 'relay-no-bind',
+      agentId: 'claude',
+      name: 'Relay',
+      preset: 'openai-compatible',
+      configText: '{"baseUrl":"https://relay.example/v1"}',
+      configFormat: 'json',
+      isCurrent: false,
+    });
+    await expect(getBackend().ticket.bind('provider:relay-no-bind', 'pi')).rejects.toMatchObject({
+      code: 'unsupported',
     });
   });
 

@@ -27,7 +27,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use toml_edit::DocumentMut;
 
-use crate::bridge::{BridgeStartSpec, BridgeUpstreamConfig, ResolvedAuth};
+use crate::bridge::{
+    BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamProtocol, ResolvedAuth,
+};
 use crate::error::{AppError, Result};
 use crate::models::{
     AdapterProfile, AdapterProfileFilter, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
@@ -37,14 +39,68 @@ use crate::services::{AdapterRouteService, AdapterSecretResolver};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
 
 const RULE_ID: &str = "kimi-membership-to-codex-v1";
+const ANTHROPIC_RULE_ID: &str = "anthropic-api-to-codex-v1";
 const RULE_VERSION: &str = "1";
 const KIMI_CHAT_BASE_URL: &str = "https://api.kimi.com/coding/v1";
+const ANTHROPIC_MESSAGES_BASE_URL: &str = "https://api.anthropic.com/v1";
 const DEFAULT_MODEL: &str = "kimi-k2.5";
+const ANTHROPIC_DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
 const PROVIDER_SLUG: &str = "agenthub_kimi_bridge";
+const ANTHROPIC_PROVIDER_SLUG: &str = "agenthub_anthropic_bridge";
 const GENERATED_BY: &str = "adapter";
-const SOURCE_KIND_PROVIDER: &str = "provider";
 const BRIDGE_HEALTH_TIMEOUT: Duration = Duration::from_secs(4);
 const RETRYABLE_ERROR_PREFIX: &str = "retryable:";
+
+#[derive(Clone, Copy)]
+struct CodexBridgeRule {
+    rule_id: &'static str,
+    profile_prefix: &'static str,
+    provider_prefix: &'static str,
+    profile_name: &'static str,
+    provider_name: &'static str,
+    toml_name: &'static str,
+    provider_slug: &'static str,
+    upstream_base_url: &'static str,
+    default_model: &'static str,
+    protocol: BridgeUpstreamProtocol,
+    bridge_kind: &'static str,
+}
+
+const KIMI_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: RULE_ID,
+    profile_prefix: "adapter-kimi-codex-bridge",
+    provider_prefix: "codex-kimi-adapter-bridge",
+    profile_name: "Kimi → Codex Bridge",
+    provider_name: "Kimi Code Bridge",
+    toml_name: "AgentHub Kimi Bridge",
+    provider_slug: PROVIDER_SLUG,
+    upstream_base_url: KIMI_CHAT_BASE_URL,
+    default_model: DEFAULT_MODEL,
+    protocol: BridgeUpstreamProtocol::KimiChatCompletions,
+    bridge_kind: "responses_to_chat_completions",
+};
+
+const ANTHROPIC_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: ANTHROPIC_RULE_ID,
+    profile_prefix: "adapter-anthropic-codex-bridge",
+    provider_prefix: "codex-anthropic-adapter-bridge",
+    profile_name: "Anthropic → Codex Bridge",
+    provider_name: "Anthropic Bridge",
+    toml_name: "AgentHub Anthropic Bridge",
+    provider_slug: ANTHROPIC_PROVIDER_SLUG,
+    upstream_base_url: ANTHROPIC_MESSAGES_BASE_URL,
+    default_model: ANTHROPIC_DEFAULT_MODEL,
+    protocol: BridgeUpstreamProtocol::AnthropicMessages,
+    bridge_kind: "responses_to_anthropic_messages",
+};
+
+fn rule_for_id(rule_id: &str) -> Option<CodexBridgeRule> {
+    match rule_id {
+        RULE_ID => Some(KIMI_CODEX_RULE),
+        ANTHROPIC_RULE_ID => Some(ANTHROPIC_CODEX_RULE),
+        _ => None,
+    }
+}
 
 /// Safe input for beginning a local bridge saga. It contains no credentials.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,6 +130,8 @@ pub struct AdapterBridgeRuntimeMaterial {
     source_connection_id: String,
     preferred_port: Option<u16>,
     upstream_base_url: String,
+    upstream_model: String,
+    protocol: BridgeUpstreamProtocol,
     upstream_auth: ResolvedAuth,
     local_bearer: String,
 }
@@ -86,6 +144,8 @@ impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
             .field("source_connection_id", &self.source_connection_id)
             .field("preferred_port", &self.preferred_port)
             .field("upstream_base_url", &self.upstream_base_url)
+            .field("upstream_model", &self.upstream_model)
+            .field("protocol", &self.protocol)
             .field("upstream_auth", &self.upstream_auth)
             .field("local_bearer", &"REDACTED")
             .finish()
@@ -114,6 +174,8 @@ impl AdapterBridgeRuntimeMaterial {
             source_connection_id: "test-source".into(),
             preferred_port,
             upstream_base_url: KIMI_CHAT_BASE_URL.into(),
+            upstream_model: DEFAULT_MODEL.into(),
+            protocol: BridgeUpstreamProtocol::KimiChatCompletions,
             upstream_auth: ResolvedAuth::bearer(upstream_token),
             local_bearer: local_bearer.into(),
         }
@@ -129,9 +191,10 @@ impl AdapterBridgeRuntimeMaterial {
             self.local_bearer.clone(),
             BridgeUpstreamConfig {
                 base_url: self.upstream_base_url.clone(),
-                model: Some(DEFAULT_MODEL.into()),
+                model: Some(self.upstream_model.clone()),
                 source_connection_id: Some(self.source_connection_id.clone()),
                 auth: self.upstream_auth.clone(),
+                protocol: self.protocol,
             },
         )
     }
@@ -173,17 +236,24 @@ impl AdapterBridgeRuntimeMaterial {
         }
 
         let upstream_url = format!("{}/models", self.upstream_base_url.trim_end_matches('/'));
-        let upstream = client
-            .get(upstream_url)
-            .bearer_auth(self.upstream_auth.token())
-            .send()
-            .await
-            .map_err(|_| {
-                AppError::message(
-                    "adapter.bridge_health_upstream",
-                    "upstream health probe failed",
-                )
-            })?;
+        let mut upstream_req = client.get(upstream_url);
+        upstream_req = match self.protocol {
+            BridgeUpstreamProtocol::KimiChatCompletions => {
+                upstream_req.bearer_auth(self.upstream_auth.token())
+            }
+            BridgeUpstreamProtocol::AnthropicMessages => upstream_req
+                .header("x-api-key", self.upstream_auth.token())
+                .header(
+                    "anthropic-version",
+                    crate::services::adapter_route_constants::ANTHROPIC_API_VERSION,
+                ),
+        };
+        let upstream = upstream_req.send().await.map_err(|_| {
+            AppError::message(
+                "adapter.bridge_health_upstream",
+                "upstream health probe failed",
+            )
+        })?;
         if upstream.status().is_success() {
             return Ok(());
         }
@@ -383,34 +453,38 @@ impl AdapterBridgeService {
     /// saga lock. This has no side effects and lets every lifecycle operation
     /// (apply/start/stop/restore/remove) use the same per-profile authority.
     pub fn profile_id_for_request(&self, request: &AdapterBridgePrepareRequest) -> Result<String> {
-        self.ensure_supported(request)?;
-        Ok(stable_id(
-            "adapter-kimi-codex-bridge",
-            request.source_id.trim(),
-        ))
+        let rule = self.ensure_supported(request)?;
+        Ok(stable_id(rule.profile_prefix, request.source_id.trim()))
     }
 
     /// Begin an idempotent local-bridge saga without starting a listener or
     /// writing any live agent configuration.
     pub fn prepare(&self, request: &AdapterBridgePrepareRequest) -> Result<AdapterBridgePrepared> {
-        self.ensure_supported(request)?;
+        let rule = self.ensure_supported(request)?;
         let source_id = request.source_id.trim();
         // Validate/retrieve the source before any profile row is written. The
         // token stays only in the returned in-memory material.
-        let upstream_auth = self.secrets.resolve_kimi_membership_auth(source_id)?;
-        let profile_id = stable_id("adapter-kimi-codex-bridge", source_id);
-        let provider_id = stable_id("codex-kimi-adapter-bridge", source_id);
+        let upstream_auth = match rule.protocol {
+            BridgeUpstreamProtocol::KimiChatCompletions => {
+                self.secrets.resolve_kimi_membership_auth(source_id)?
+            }
+            BridgeUpstreamProtocol::AnthropicMessages => self
+                .secrets
+                .resolve_anthropic_auth(request.source_kind, source_id)?,
+        };
+        let profile_id = stable_id(rule.profile_prefix, source_id);
+        let provider_id = stable_id(rule.provider_prefix, source_id);
         let stamp = now();
         let proposed = AdapterProfile {
             id: profile_id,
-            name: format!("Kimi → Codex Bridge ({})", safe_label(source_id)),
-            source_kind: AdapterSourceKind::Provider,
+            name: format!("{} ({})", rule.profile_name, safe_label(source_id)),
+            source_kind: request.source_kind,
             source_id: source_id.into(),
             target_agent_id: AgentId::Codex,
             route: AdapterRoute::LocalBridge,
             mode: AdapterProfileMode::Api,
             status: AdapterProfileStatus::Applying,
-            rule_id: RULE_ID.into(),
+            rule_id: rule.rule_id.into(),
             rule_version: RULE_VERSION.into(),
             generated_provider_id: Some(provider_id.clone()),
             local_port: None,
@@ -463,7 +537,9 @@ impl AdapterBridgeService {
                 profile_id: profile.id.clone(),
                 source_connection_id: profile.source_id.clone(),
                 preferred_port: profile.local_port,
-                upstream_base_url: KIMI_CHAT_BASE_URL.into(),
+                upstream_base_url: rule.upstream_base_url.into(),
+                upstream_model: rule.default_model.into(),
+                protocol: rule.protocol,
                 upstream_auth,
                 local_bearer,
             },
@@ -705,7 +781,10 @@ impl AdapterBridgeService {
     /// preflight and [`Self::complete_remove`].
     pub fn preflight_remove(&self, profile_id: &str) -> Result<AdapterBridgeRemoval> {
         let profile = self.bridge_profile(profile_id)?;
-        let expected_provider_id = stable_id("codex-kimi-adapter-bridge", &profile.source_id);
+        let rule = rule_for_id(&profile.rule_id).ok_or_else(|| {
+            AppError::InvalidArg("adapter profile is not a supported Codex bridge".into())
+        })?;
+        let expected_provider_id = stable_id(rule.provider_prefix, &profile.source_id);
         if profile.generated_provider_id.as_deref() != Some(expected_provider_id.as_str()) {
             return Err(AppError::message(
                 "adapter.provider_conflict",
@@ -816,15 +895,25 @@ impl AdapterBridgeService {
             )
         })?;
         validate_generated_provider(&provider, &profile, Some(local_port))?;
-        let upstream_auth = self
-            .secrets
-            .resolve_kimi_membership_auth(&profile.source_id)?;
+        let rule = rule_for_id(&profile.rule_id).ok_or_else(|| {
+            AppError::InvalidArg("adapter profile is not a supported Codex bridge".into())
+        })?;
+        let upstream_auth = match rule.protocol {
+            BridgeUpstreamProtocol::KimiChatCompletions => {
+                self.secrets.resolve_kimi_membership_auth(&profile.source_id)?
+            }
+            BridgeUpstreamProtocol::AnthropicMessages => self
+                .secrets
+                .resolve_anthropic_auth(profile.source_kind, &profile.source_id)?,
+        };
         Ok(AdapterBridgeRestoreMaterial {
             material: AdapterBridgeRuntimeMaterial {
                 profile_id: profile.id.clone(),
                 source_connection_id: profile.source_id.clone(),
                 preferred_port: Some(local_port),
-                upstream_base_url: KIMI_CHAT_BASE_URL.into(),
+                upstream_base_url: rule.upstream_base_url.into(),
+                upstream_model: rule.default_model.into(),
+                protocol: rule.protocol,
                 upstream_auth,
                 local_bearer: local_bearer_from_provider(&provider)?,
             },
@@ -832,21 +921,40 @@ impl AdapterBridgeService {
         })
     }
 
-    fn ensure_supported(&self, request: &AdapterBridgePrepareRequest) -> Result<()> {
+    fn ensure_supported(&self, request: &AdapterBridgePrepareRequest) -> Result<CodexBridgeRule> {
         let analysis = self.routes.analyze(&AdapterRouteRequest {
             source_kind: request.source_kind,
             source_id: request.source_id.clone(),
             target_agent_id: request.target_agent_id,
         })?;
-        if request.source_kind == AdapterSourceKind::Provider
+        let rule = analysis
+            .rule_id
+            .as_deref()
+            .and_then(rule_for_id)
+            .ok_or_else(|| {
+                AppError::Unsupported(
+                    "adapter bridge currently supports Kimi membership or Anthropic API → Codex"
+                        .into(),
+                )
+            })?;
+        let source_ok = match rule.protocol {
+            BridgeUpstreamProtocol::KimiChatCompletions => {
+                request.source_kind == AdapterSourceKind::Provider
+            }
+            BridgeUpstreamProtocol::AnthropicMessages => matches!(
+                request.source_kind,
+                AdapterSourceKind::Provider | AdapterSourceKind::Account
+            ),
+        };
+        if source_ok
             && request.target_agent_id == AgentId::Codex
             && analysis.route == AdapterRoute::LocalBridge
             && analysis.support == AdapterSupport::Experimental
         {
-            Ok(())
+            Ok(rule)
         } else {
             Err(AppError::Unsupported(
-                "adapter bridge currently supports only Kimi membership provider -> Codex".into(),
+                "adapter bridge currently supports Kimi membership or Anthropic API → Codex".into(),
             ))
         }
     }
@@ -861,14 +969,22 @@ impl AdapterBridgeService {
         let profile = self.profiles.get(profile_id)?.ok_or_else(|| {
             AppError::NotFound(format!("adapter profile not found: {profile_id}"))
         })?;
-        if profile.source_kind != AdapterSourceKind::Provider
+        let supported_source = match profile.rule_id.as_str() {
+            RULE_ID => profile.source_kind == AdapterSourceKind::Provider,
+            ANTHROPIC_RULE_ID => matches!(
+                profile.source_kind,
+                AdapterSourceKind::Provider | AdapterSourceKind::Account
+            ),
+            _ => false,
+        };
+        if !supported_source
             || profile.target_agent_id != AgentId::Codex
             || profile.route != AdapterRoute::LocalBridge
-            || profile.rule_id != RULE_ID
+            || rule_for_id(&profile.rule_id).is_none()
             || profile.rule_version != RULE_VERSION
         {
             return Err(AppError::InvalidArg(
-                "adapter profile is not a supported Kimi Codex bridge".into(),
+                "adapter profile is not a supported Codex bridge".into(),
             ));
         }
         Ok(profile)
@@ -881,6 +997,9 @@ fn projected_provider_input(
     port: u16,
 ) -> Result<ProviderInput> {
     validate_bound_port(port)?;
+    let rule = rule_for_id(&profile.rule_id).ok_or_else(|| {
+        AppError::InvalidArg("adapter profile is not a supported Codex bridge".into())
+    })?;
     let provider_id = profile.generated_provider_id.as_deref().ok_or_else(|| {
         AppError::message(
             "adapter.provider_conflict",
@@ -897,36 +1016,39 @@ fn projected_provider_input(
     Ok(ProviderInput {
         id: provider_id.into(),
         agent_id: AgentId::Codex,
-        name: format!("Kimi Code Bridge ({})", safe_label(&profile.source_id)),
+        name: format!("{} ({})", rule.provider_name, safe_label(&profile.source_id)),
         settings_config: json!({
             "format": "toml",
-            "content": codex_bridge_toml(port),
+            "content": codex_bridge_toml(&rule, port),
             "auth": { "OPENAI_API_KEY": local_bearer },
         }),
-        meta: generated_provider_meta(profile),
+        meta: generated_provider_meta(profile, &rule),
         is_current: false,
     })
 }
 
-fn generated_provider_meta(profile: &AdapterProfile) -> Value {
+fn generated_provider_meta(profile: &AdapterProfile, rule: &CodexBridgeRule) -> Value {
     json!({
         "preset": "openai-compatible",
         "generatedBy": GENERATED_BY,
-        "adapterRuleId": RULE_ID,
+        "adapterRuleId": rule.rule_id,
         "adapterRuleVersion": 1,
         "adapterSecretMode": "local_token",
         "adapterProfileId": profile.id,
-        "adapterSourceRef": {"kind": SOURCE_KIND_PROVIDER, "id": profile.source_id},
+        "adapterSourceRef": {"kind": profile.source_kind.as_str(), "id": profile.source_id},
         "adapterBridge": {
-            "kind": "responses_to_chat_completions",
+            "kind": rule.bridge_kind,
             "loopbackOnly": true,
         },
     })
 }
 
-fn codex_bridge_toml(port: u16) -> String {
+fn codex_bridge_toml(rule: &CodexBridgeRule, port: u16) -> String {
     format!(
-        "model_provider = \"{PROVIDER_SLUG}\"\nmodel = \"{DEFAULT_MODEL}\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\npreferred_auth_method = \"apikey\"\n\n[model_providers.{PROVIDER_SLUG}]\nname = \"AgentHub Kimi Bridge\"\nbase_url = \"http://127.0.0.1:{port}/v1\"\nwire_api = \"responses\"\n"
+        "model_provider = \"{slug}\"\nmodel = \"{model}\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\npreferred_auth_method = \"apikey\"\n\n[model_providers.{slug}]\nname = \"{name}\"\nbase_url = \"http://127.0.0.1:{port}/v1\"\nwire_api = \"responses\"\n",
+        slug = rule.provider_slug,
+        model = rule.default_model,
+        name = rule.toml_name,
     )
 }
 
@@ -941,6 +1063,7 @@ fn validate_generated_provider(
             "generated provider does not belong to adapter bridge profile",
         ));
     }
+    let rule = rule_for_id(&profile.rule_id).ok_or_else(invalid_projection)?;
     let _ = local_bearer_from_provider(provider)?;
     let content = provider
         .settings_config
@@ -953,13 +1076,13 @@ fn validate_generated_provider(
     let codex_provider = document
         .get("model_providers")
         .and_then(|item| item.as_table())
-        .and_then(|providers| providers.get(PROVIDER_SLUG))
+        .and_then(|providers| providers.get(rule.provider_slug))
         .and_then(|item| item.as_table())
         .ok_or_else(invalid_projection)?;
     if document
         .get("model_provider")
         .and_then(|item| item.as_str())
-        != Some(PROVIDER_SLUG)
+        != Some(rule.provider_slug)
         || codex_provider
             .get("wire_api")
             .and_then(|item| item.as_str())
@@ -972,7 +1095,7 @@ fn validate_generated_provider(
         return Err(invalid_projection());
     }
     if let Some(port) = expected_port {
-        if content != codex_bridge_toml(port) {
+        if content != codex_bridge_toml(&rule, port) {
             return Err(AppError::message(
                 "adapter.provider_conflict",
                 "generated bridge provider does not match the bound port",
@@ -1004,11 +1127,14 @@ fn local_bearer_from_provider(provider: &Provider) -> Result<String> {
 }
 
 fn provider_owned_by(provider: &Provider, profile: &AdapterProfile) -> bool {
-    provider.id == stable_id("codex-kimi-adapter-bridge", &profile.source_id)
+    let Some(rule) = rule_for_id(&profile.rule_id) else {
+        return false;
+    };
+    provider.id == stable_id(rule.provider_prefix, &profile.source_id)
         && provider.agent_id == AgentId::Codex
         && provider.meta.get("preset").and_then(Value::as_str) == Some("openai-compatible")
         && provider.meta.get("generatedBy").and_then(Value::as_str) == Some(GENERATED_BY)
-        && provider.meta.get("adapterRuleId").and_then(Value::as_str) == Some(RULE_ID)
+        && provider.meta.get("adapterRuleId").and_then(Value::as_str) == Some(rule.rule_id)
         && provider
             .meta
             .get("adapterRuleVersion")
@@ -1041,7 +1167,7 @@ fn provider_owned_by(provider: &Provider, profile: &AdapterProfile) -> bool {
             .get("adapterBridge")
             .and_then(|value| value.get("kind"))
             .and_then(Value::as_str)
-            == Some("responses_to_chat_completions")
+            == Some(rule.bridge_kind)
         && provider
             .meta
             .get("adapterBridge")

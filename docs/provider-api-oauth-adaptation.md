@@ -58,12 +58,12 @@
 | 厂商 / 产品 | 常见凭据 | 协议或客户端约束 | AgentHub 当前结论 |
 |---|---|---|---|
 | Anthropic API / Claude Code | Anthropic API Key；Claude 官方登录 | Claude Code 可连接 Anthropic Messages 兼容网关 | 仅 Anthropic API Key → Pi 有预览规则；Claude OAuth 不跨 Agent 复用 |
-| OpenAI API / ChatGPT / Codex | OpenAI API Key；ChatGPT subscription 登录 | Codex 支持 ChatGPT subscription 登录；自定义 Provider 仍要求 Responses | 普通 OpenAI API Key 尚无 Adapter 规则；ChatGPT/Codex OAuth 只用于明确支持的登录路径。Codex subscription → Claude Code 是受限实验候选，**当前 unsupported** |
+| OpenAI API / ChatGPT / Codex | OpenAI API Key；ChatGPT subscription 登录 | Codex 支持 ChatGPT subscription 登录；自定义 Provider 仍要求 Responses | 显式 OpenAI API Key → Pi 可 bind；ChatGPT/Codex OAuth 只用于明确支持的登录路径。Codex subscription → Claude Code 是受限实验候选，**当前 unsupported**。OpenAI → Grok 不造边 |
 | Kimi Code 会员平台 | 会员 API Key，**不是 OAuth** | 同一产品提供 Anthropic Messages 与 OpenAI Chat Completions 兼容入口 | 已有 Claude 直连、Codex 实验 Bridge、Pi 预览规则 |
 | Kimi 开放平台 | 开放平台 API Key | 使用独立 Base URL、额度和产品契约 | 不与 Kimi Code 会员 Key 混用；当前无 Adapter 路由 |
-| 智谱 GLM Coding Plan | Coding Plan API Key，**不是 OAuth** | 提供 Anthropic Messages 与 OpenAI Chat Completions 入口；套餐仅限官方支持的工具环境 | 当前无 Adapter 路由；不能由双协议入口推导 Codex Responses 直连 |
-| DeepSeek API | DeepSeek API Key，**不是 OAuth** | 提供 Anthropic Messages 与 OpenAI Chat Completions 兼容入口；部分 Anthropic 字段会被忽略或不支持 | 当前无 Adapter 路由；官方支持 Claude Code 配置，但不能推导 Codex Responses 直连 |
-| xAI / Grok | xAI API Key；xAI 登录 | API 与账号授权是不同入口 | 当前无跨 Agent Adapter 路由 |
+| 智谱 GLM Coding Plan | Coding Plan API Key，**不是 OAuth** | 提供 Anthropic Messages 与 OpenAI Chat Completions 入口；套餐仅限官方支持的工具环境 | 已登记票面；classify 只认显式标记；无 bind / 矩阵可写格 |
+| DeepSeek API | DeepSeek API Key，**不是 OAuth** | 提供 Anthropic Messages 与 OpenAI Chat Completions 兼容入口；部分 Anthropic 字段会被忽略或不支持 | 已登记票面；classify 只认显式标记；无 bind / 矩阵可写格 |
+| xAI / Grok | xAI API Key；xAI 登录 | API 与账号授权是不同入口 | 显式 xAI API Key → Pi 可 bind；xAI → Grok 是原生切换，不进矩阵 |
 | Google Gemini | Gemini API Key 或 Google 授权 | 原生 API 与 OpenAI 兼容入口需分别声明 | 仅作为候选来源；当前无 Adapter 路由 |
 
 ### 2.1 Kimi Code 会员双协议入口
@@ -101,7 +101,7 @@ GLM Coding Plan 的凭据和使用范围必须单独识别：
 - 个人版和团队版均使用 Coding Plan API Key；官方明确说明团队套餐 Key 与平台其他 API Key 不通用。
 - 套餐额度仅限官方列出的工具与产品环境，新增规则前必须确认目标工具仍在支持列表中。
 - 官方 Coding Tool Helper 当前可管理 Claude Code、OpenCode、Crush 和 Factory Droid；它只能证明这些工具存在官方配置路径，不代表 AgentHub 已实现适配。
-- 当前没有 GLM Adapter 规则。即使目标客户端支持相同协议，也必须补齐显式来源标记、规则代码和测试后才能开放。
+- GLM Coding Plan 已登记票面；当前没有可写 Adapter 规则。即使目标客户端支持相同协议，也必须补齐规则代码和测试后才能开放 bind。
 
 ### 2.4 DeepSeek API
 
@@ -110,7 +110,7 @@ GLM Coding Plan 的凭据和使用范围必须单独识别：
 | OpenAI Chat Completions | `https://api.deepseek.com` | Base URL 不追加 `/v1`；不代表 Codex Responses |
 | Anthropic Messages | `https://api.deepseek.com/anthropic` | 官方支持 Anthropic SDK 与 Claude Code，但不保证所有 Anthropic 扩展字段无损 |
 
-DeepSeek 使用平台签发的 API Key，不是 OAuth。官方 Anthropic 兼容表中存在“忽略”或“不支持”的字段，因此新增规则时必须按目标 Agent 实测文本、流式输出、thinking、工具调用、停止原因和用量，不能只验证请求成功。当前 AgentHub 尚无 DeepSeek Adapter 规则。
+DeepSeek 使用平台签发的 API Key，不是 OAuth。官方 Anthropic 兼容表中存在“忽略”或“不支持”的字段，因此新增规则时必须按目标 Agent 实测文本、流式输出、thinking、工具调用、停止原因和用量，不能只验证请求成功。DeepSeek API 已登记票面；当前 AgentHub 尚无 DeepSeek 可写 Adapter 规则。
 
 ## 3. 路由类型
 
@@ -127,7 +127,7 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 
 下表是**现在能写入的边**，不是产品上限。目标扩大方式见 [connection-binding-model.md §6](connection-binding-model.md#6-扩大在本模型里怎么做)。
 
-`plan()` 是**唯一规划出口**：route / maturity / canApply / reason 只在这里计算。矩阵仍是图；`canApply` = 矩阵开放 ∩ plan 私有 `write_gate`。`write_gate` 表示「有 bind 实现 ∧ secret 可按该票 `source_kind` 解析」。Account 与同表面 Provider 走同一条边（相同 route / support / reason 主旨）。本步可写的 Account 同边只有 **Anthropic API Key account → Pi**；写入入口是 `bind`（`apply_adapter` 为薄兼容委托）。不要把「无规则」当成 Account 不可写的原因。
+`plan()` 是**唯一规划出口**：route / maturity / canApply / reason 只在这里计算。矩阵仍是图；`canApply` = 矩阵开放 ∩ plan 私有 `write_gate`。`write_gate` 表示「有 bind 实现 ∧ secret 可按该票 `source_kind` 解析」。Account 与同表面 Provider 走同一条边（相同 route / support / reason 主旨）。本步可写的 Account 同边是 **Anthropic / OpenAI / xAI API Key account → Pi**，以及 **Anthropic API Key account → Codex**；写入入口是 `bind`（`apply_adapter` 为薄兼容委托）。不要把「无规则」当成 Account 不可写的原因。
 
 | 显式来源 | 目标 | 分析结果 | 当前可执行状态 |
 |---|---|---|---|
@@ -136,6 +136,10 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 | 同上 | Pi | stable `config_sync` | **可应用**；写入 Pi `models.json` 的 `kimi-for-coding` 槽，凭据只引用 |
 | Anthropic Provider（显式 Anthropic API Key） | Pi | stable `config_sync` | **可 bind**；写入 Pi `models.json` 的 `anthropic` 槽，凭据只引用 |
 | Anthropic Account（`credentials.format=api_key`） | Pi | stable `config_sync` | **可 bind**；与上一行同边；`adapterSourceRef.kind=account`，不先复制成 Provider 票 |
+| Anthropic Provider（显式 Anthropic API Key） | Codex | experimental `local_bridge` | **可实验应用**；`plan.canApply=true`，下游 Responses → 上游 Anthropic Messages（`x-api-key` + `anthropic-version`），由 Tauri 专用 Bridge 路径执行，尚未完成端到端验收 |
+| Anthropic Account（`credentials.format=api_key`） | Codex | experimental `local_bridge` | **可实验应用**；与上一行同边；`adapterSourceRef.kind=account`，不先复制成 Provider 票 |
+| OpenAI Provider / Account（preset / extra.provider / `api.openai.com`） | Pi | stable `config_sync` | **可 bind**；写入 Pi `models.json` 的 `openai` 槽（API Key 槽，不是 `openai-codex` OAuth），凭据只引用 |
+| xAI Provider / Account（preset / extra.provider / `api.x.ai`） | Pi | stable `config_sync` | **可 bind**；写入 Pi `models.json` 的 `xai` 槽，凭据只引用。xAI → Grok 是原生切换，不进矩阵 |
 | Codex OAuth Account，`credentials.format=auth_json`（ChatGPT subscription） | Claude Code | 受限实验候选 | **maturity=preview**；可解释门禁，`plan.canApply=false`，不得创建 profile、启动 bridge 或写入 Claude 配置。Phase 1 **纯协议内核**（Messages↔IR↔Responses + RetryGate fixtures）已在 `agenthub-core` 落地，**不改变**本行可执行状态 |
 | 其他来源、目标或未标记记录 | 任意 | `unsupported` | 不产生写操作 |
 
@@ -143,10 +147,12 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 
 - Kimi managed OAuth 不会被识别为 Kimi Code 会员 API Key。
 - Kimi Code 会员识别：**`meta.preset=kimi-code-membership`**，或配置中出现官方端点 **`api.kimi.com/coding`**（无 preset 的 live import 仍可识别）。仅 `agent_id=kimi` 或 Moonshot 开放平台 **不会**升为会员。
-- 普通 OpenAI、xAI、Gemini、Kimi 开放平台、GLM Coding Plan、DeepSeek API 或任意“兼容 API”目前都不会自动升级为 Adapter 规则。
+- 普通 OpenAI、xAI 只认显式标记（preset / extra.provider / 官方 host）；自定义中转保持 `unknown`，不可 bind。OpenAI/xAI → Pi 已可 bind；Kimi→Grok、OpenAI→Grok 不造边；xAI→Grok 不进矩阵（native）。
+- GLM Coding Plan、DeepSeek API 已登记票面（speaks 可双协议），classify 只认显式标记；**尚未**开放 bind / write_gate / 矩阵可写格。
+- Gemini、Kimi 开放平台或任意“兼容 API”目前都不会自动升级为 Adapter 规则。
 - `stable` / `experimental` / `preview` / `none` 是 `plan.maturity`：矩阵开放+Stable → `stable`；矩阵开放+Experimental → `experimental`；有 cell 但 gates 关或仅可解释 → `preview`；无边 / Other → `none`。`canApply` 仍只表示现在能写入。
-- Kimi → Codex 目前是唯一 Bridge 可写路径，不代表已经提供通用协议网关。
-- 当前 Bridge 数据面只实现**下游** `POST /v1/responses` 到**上游** Kimi Chat Completions 的转换；它不是 Codex OAuth 上游、Anthropic Messages 下游或通用 Responses 网关。
+- Kimi → Codex 与 Anthropic API Key → Codex 是当前两条 Bridge 可写路径，不代表已经提供通用协议网关。
+- 当前 Bridge 数据面按 profile/route 选择上游：Kimi 走 Chat Completions + bearer；Anthropic 走 Messages + `x-api-key` / `anthropic-version`。它不是 Codex OAuth 上游、Anthropic Messages 下游或通用 Responses 网关。
 
 ## 5. OAuth 边界
 

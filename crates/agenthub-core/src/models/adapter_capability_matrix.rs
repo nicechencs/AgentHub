@@ -28,6 +28,14 @@ pub enum AdapterSourceProduct {
     KimiCodeMembership,
     /// Explicit Anthropic API Key (provider preset or account.extra.provider).
     AnthropicApi,
+    /// Explicit OpenAI API Key (preset / extra.provider / official host).
+    OpenaiApi,
+    /// Explicit xAI API Key (preset / extra.provider / official host).
+    XaiApi,
+    /// GLM Coding Plan (registered surface only; no writable matrix cell).
+    GlmCodingPlan,
+    /// DeepSeek API (registered surface only; no writable matrix cell).
+    DeepseekApi,
     /// Codex / ChatGPT subscription account (`auth_json` OAuth shape).
     CodexChatGptSubscription,
     /// Anything else; never upgraded by name guessing.
@@ -55,6 +63,8 @@ pub enum AdapterUpstreamTransport {
     NativeHttp,
     /// Existing Kimi path: local bridge with Chat Completions upstream.
     LocalBridgeChatCompletions,
+    /// Anthropic API Key → Codex: local bridge with Messages upstream.
+    LocalBridgeAnthropicMessages,
     /// Future Codex → Claude candidate: App Server transport (gate closed).
     CodexAppServer,
     /// Future Codex → Claude candidate: approved Responses + OAuth (gate closed).
@@ -300,6 +310,23 @@ const ANTHROPIC_PI_LIMITS: &[&str] = &[
     "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
 ];
 
+const ANTHROPIC_CODEX_LIMITS: &[&str] = &[
+    "将在本机 loopback 启动协议桥接，并切换 Codex 到该本地端点。",
+    "AgentHub 需保持在托盘运行；退出前会尝试排空监听。",
+    "桥接为实验性协议覆盖：下游 Responses，上游 Anthropic Messages。",
+    "固定端口被占用时会尝试重新分配端口并写回配置。",
+];
+
+const OPENAI_PI_LIMITS: &[&str] = &[
+    "将写入 Pi models.json 的 openai 槽与凭据引用标记；不会在预览中传输明文 Key。",
+    "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
+];
+
+const XAI_PI_LIMITS: &[&str] = &[
+    "将写入 Pi models.json 的 xai 槽与凭据引用标记；不会在预览中传输明文 Key。",
+    "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
+];
+
 const CODEX_CLAUDE_LIMITS: &[&str] = &[
     "当前不支持此组合；尚未通过上游授权、条款与协议兼容性门禁。",
     "plan.canApply=false：不会创建 adapter profile、启动 Bridge 或写入 Claude 配置。",
@@ -378,6 +405,60 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         reason: "显式 Anthropic API Key 可预览为 Pi 的配置同步。",
         limitations: ANTHROPIC_PI_LIMITS,
         rule_id: "anthropic-api-to-pi-v1",
+        verified_at: VERIFIED_AT,
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::AnthropicApi,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::LocalBridgeAnthropicMessages,
+            target: AgentId::Codex,
+            protocol: AdapterTargetProtocol::OpenAiResponses,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::LocalBridge,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: "显式 Anthropic API Key 到 Codex 需要本地协议桥接。",
+        limitations: ANTHROPIC_CODEX_LIMITS,
+        rule_id: "anthropic-api-to-codex-v1",
+        verified_at: VERIFIED_AT,
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::OpenaiApi,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Pi,
+            protocol: AdapterTargetProtocol::PiProviderConfig,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::ConfigSync,
+        support: AdapterSupport::Stable,
+        can_apply: true,
+        reason: "显式 OpenAI API Key 可预览为 Pi 的配置同步。",
+        limitations: OPENAI_PI_LIMITS,
+        rule_id: "openai-api-to-pi-v1",
+        verified_at: VERIFIED_AT,
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::XaiApi,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Pi,
+            protocol: AdapterTargetProtocol::PiProviderConfig,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::ConfigSync,
+        support: AdapterSupport::Stable,
+        can_apply: true,
+        reason: "显式 xAI API Key 可预览为 Pi 的配置同步。",
+        limitations: XAI_PI_LIMITS,
+        rule_id: "xai-api-to-pi-v1",
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
     },
@@ -463,7 +544,19 @@ pub fn decide_adapter_capability(
                 "Kimi Code 会员当前仅支持预览到 Claude、Codex 或 Pi。",
             ),
             (AdapterSourceProduct::AnthropicApi, _) => AdapterCapabilityDecision::unsupported(
-                "Anthropic API Key 当前仅支持预览到 Pi。",
+                "Anthropic API Key 当前仅支持预览到 Pi 或 Codex。",
+            ),
+            (AdapterSourceProduct::OpenaiApi, _) => AdapterCapabilityDecision::unsupported(
+                "OpenAI API Key 当前仅支持预览到 Pi。",
+            ),
+            (AdapterSourceProduct::XaiApi, _) => AdapterCapabilityDecision::unsupported(
+                "xAI API Key 当前仅支持预览到 Pi。xAI → Grok 是原生切换，不进适配矩阵。",
+            ),
+            (AdapterSourceProduct::GlmCodingPlan, _) => AdapterCapabilityDecision::unsupported(
+                "GLM Coding Plan 当前仅登记票面，尚无跨 Agent 适配规则。",
+            ),
+            (AdapterSourceProduct::DeepseekApi, _) => AdapterCapabilityDecision::unsupported(
+                "DeepSeek API 当前仅登记票面，尚无跨 Agent 适配规则。",
             ),
             (AdapterSourceProduct::CodexChatGptSubscription, AgentId::Claude) => {
                 AdapterCapabilityDecision::unsupported_subscription_candidate(
@@ -565,8 +658,10 @@ mod tests {
             AgentId::Codex,
         )
         .public_surface();
-        assert_eq!(decision.route, AdapterRoute::Unsupported);
-        assert!(!decision.can_apply);
+        assert_eq!(decision.route, AdapterRoute::LocalBridge);
+        assert_eq!(decision.support, AdapterSupport::Experimental);
+        assert!(decision.can_apply);
+        assert_eq!(decision.rule_id, Some("anthropic-api-to-codex-v1"));
     }
 
     #[test]
@@ -679,16 +774,17 @@ mod tests {
         );
         assert!(!codex_claude.can_apply);
 
-        let no_edge = decide_adapter_capability(
+        let anthropic_codex = decide_adapter_capability(
             AdapterSourceProduct::AnthropicApi,
             AdapterCredentialClass::ApiKey,
             AgentId::Codex,
         )
         .public_surface();
         assert_eq!(
-            adapter_maturity_from_decision(&no_edge),
-            AdapterMaturity::None
+            adapter_maturity_from_decision(&anthropic_codex),
+            AdapterMaturity::Experimental
         );
+        assert!(anthropic_codex.can_apply);
 
         let other = decide_adapter_capability(
             AdapterSourceProduct::Other,
@@ -720,5 +816,60 @@ mod tests {
         assert!(anthropic_pi.can_apply);
         assert_eq!(anthropic_pi.gate_kind, AdapterGateKind::None);
         assert_eq!(anthropic_pi.rule_id, Some("anthropic-api-to-pi-v1"));
+
+        let openai_pi = decide_adapter_capability(
+            AdapterSourceProduct::OpenaiApi,
+            AdapterCredentialClass::ApiKey,
+            AgentId::Pi,
+        );
+        assert_eq!(openai_pi.route, AdapterRoute::ConfigSync);
+        assert!(openai_pi.can_apply);
+        assert_eq!(openai_pi.rule_id, Some("openai-api-to-pi-v1"));
+
+        let xai_pi = decide_adapter_capability(
+            AdapterSourceProduct::XaiApi,
+            AdapterCredentialClass::ApiKey,
+            AgentId::Pi,
+        );
+        assert_eq!(xai_pi.route, AdapterRoute::ConfigSync);
+        assert!(xai_pi.can_apply);
+        assert_eq!(xai_pi.rule_id, Some("xai-api-to-pi-v1"));
+    }
+
+    #[test]
+    fn registered_surfaces_have_no_writable_cells() {
+        for source in [
+            AdapterSourceProduct::GlmCodingPlan,
+            AdapterSourceProduct::DeepseekApi,
+        ] {
+            let decision = decide_adapter_capability(
+                source,
+                AdapterCredentialClass::ApiKey,
+                AgentId::Pi,
+            )
+            .public_surface();
+            assert_eq!(decision.route, AdapterRoute::Unsupported);
+            assert!(!decision.can_apply);
+            assert!(decision.rule_id.is_none());
+        }
+
+        let openai_grok = decide_adapter_capability(
+            AdapterSourceProduct::OpenaiApi,
+            AdapterCredentialClass::ApiKey,
+            AgentId::Grok,
+        )
+        .public_surface();
+        assert_eq!(openai_grok.route, AdapterRoute::Unsupported);
+        assert!(!openai_grok.can_apply);
+
+        let xai_grok = decide_adapter_capability(
+            AdapterSourceProduct::XaiApi,
+            AdapterCredentialClass::ApiKey,
+            AgentId::Grok,
+        )
+        .public_surface();
+        assert_eq!(xai_grok.route, AdapterRoute::Unsupported);
+        assert!(!xai_grok.can_apply);
+        assert!(xai_grok.reason.contains("不进适配矩阵"));
     }
 }

@@ -57,6 +57,7 @@ fn start_spec(profile_id: &str) -> BridgeStartSpec {
             model: Some("kimi-k2.5".into()),
             source_connection_id: Some("kimi-connection".into()),
             auth: ResolvedAuth::bearer("upstream-bearer-that-must-never-serialize"),
+            protocol: agenthub_core::bridge::BridgeUpstreamProtocol::KimiChatCompletions,
         },
     )
 }

@@ -1342,3 +1342,90 @@ fn pi_anthropic_account_apply_sets_source_ref_account_and_keeps_secret_out() {
         .unwrap()
         .contains("sk-anthropic-secret"));
 }
+
+fn explicit_api_source(id: &str, preset: &str, env_key: &str, api_key: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        name: format!("{preset} API"),
+        settings_config: json!({"env": { env_key: api_key }}),
+        meta: json!({"preset": preset}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+#[test]
+fn pi_openai_and_xai_apply_sets_slot_and_keeps_secret_out() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "openai-source",
+            "openai",
+            "OPENAI_API_KEY",
+            "sk-openai-secret",
+        ))
+        .unwrap();
+    crate::storage::AccountRepo::new(db.clone())
+        .create(&crate::models::Account {
+            id: "xai-account".into(),
+            agent_id: AgentId::Grok,
+            kind: crate::models::AccountKind::ApiKey,
+            label: "xAI key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "xai-account-secret"
+            }),
+            extra: json!({"provider": "xai"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let fake = Arc::new(FakePiAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
+
+    let openai = service.apply(&request("openai-source", AgentId::Pi)).unwrap();
+    assert_eq!(openai.profile.rule_id, OPENAI_PI_RULE_ID);
+    let openai_stored = ProviderRepo::new(db.clone())
+        .get_by_id(&openai.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        openai_stored.settings_config["models"]["providers"][OPENAI_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(
+        fake.read_config().unwrap().raw["models"]["providers"][OPENAI_PI_PROVIDER_SLOT]["apiKey"],
+        "sk-openai-secret"
+    );
+
+    let xai = service
+        .apply(&AdapterApplyRequest {
+            source_kind: AdapterSourceKind::Account,
+            source_id: "xai-account".into(),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap();
+    assert_eq!(xai.profile.rule_id, XAI_PI_RULE_ID);
+    assert_eq!(xai.profile.source_kind, AdapterSourceKind::Account);
+    let xai_stored = ProviderRepo::new(db)
+        .get_by_id(&xai.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(xai_stored.meta["adapterSourceRef"]["kind"], "account");
+    assert_eq!(
+        xai_stored.settings_config["models"]["providers"][XAI_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert!(!serde_json::to_string(&openai)
+        .unwrap()
+        .contains("sk-openai-secret"));
+    assert!(!serde_json::to_string(&xai)
+        .unwrap()
+        .contains("xai-account-secret"));
+}

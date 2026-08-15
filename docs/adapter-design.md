@@ -1,6 +1,6 @@
 # Adapter 页面与本地协议桥接设计
 
-> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi → Codex 实验性本地桥接 + Pi 配置同步）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）。ChatGPT/Codex subscription → Claude Code 是单独受门禁约束的实验候选，当前仍为 `unsupported` / `plan.canApply=false`。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。Kimi → Codex 发布前仍需实机 dogfood。
+> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi / Anthropic → Codex 实验性本地桥接 + Pi 配置同步）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）。Anthropic API Key → Codex 的 `local_bridge` 已开放 experimental bind。ChatGPT/Codex subscription → Claude Code 是单独受门禁约束的实验候选，当前仍为 `unsupported` / `plan.canApply=false`。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。Kimi / Anthropic → Codex 发布前仍需实机 dogfood。
 > 2026-08-15：跨 Agent 复用的**目标领域**改为票 / 绑定 / 协议图（[connection-binding-model.md](connection-binding-model.md)）。ConnectFlow 确认步与 Adapter 页删除已改走 `bind`/`unbind`；内部仍可复用 apply 实现 reshape/bridge 运行时。生成物是绑定的私有 runtime，不是钱包里的新票。
 > 调研日期：2026-08-12（进度同步：2026-08-12）
 > 重点参考：`D:\demo_github\AgentHub_Ref\Cli-Proxy-API-Management-Center`
@@ -14,7 +14,7 @@
 | 规则分析与预览 | ✅ | contracts、mock、`analyze`、`plan`、ConnectFlowDialog 已接线；Adapter 页只列已绑定的本机桥 runtime；limitations 与 `canApply` 对齐真实能力 |
 | 稳定规则应用 | ✅ | Kimi Code 会员 Provider → Claude Code `native_endpoint` 可 apply；finalize 失败会回滚 live/current；返回值脱敏 |
 | 其它直连 / 配置同步规则 | ✅ | Kimi 会员 / Anthropic API Key → Pi `config_sync` 可 apply；未显式 `canApply=true` 的组合一律不可写 |
-| Bridge core | ✅ | `BridgeRuntimeHost`（per-profile gate、admission、超时与 cancellation-safe drain）、Responses ↔ Chat 协议与 fixtures |
+| Bridge core | ✅ | `BridgeRuntimeHost`（per-profile gate、admission、超时与 cancellation-safe drain）、Responses ↔ Chat / Responses ↔ Anthropic Messages 协议与 fixtures |
 | Bridge 产品接线 | ✅ | Codex `local_bridge` 的 `canApply`、Tauri apply/start/stop/status、健康检查、失败补偿、凭证轮转 stop→restart、端口 rebind、opt-in auto-start 恢复、退出 drain；UI 已拆分 wire/model/components |
 | Bridge 进程边界 | 🎯 已决策 / 未迁移 | 目标为同包用户级 `agenthub-adapterd`；当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有，详细契约见 [Adapter Sidecar 目标架构](adapter-sidecar-design.md) |
 

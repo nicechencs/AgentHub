@@ -2,7 +2,7 @@
 //!
 //! Supported generated-provider modes:
 //! - Claude Kimi membership and Pi config_sync: `source_reference`
-//! - Codex Kimi bridge: `local_token` (pass through unchanged)
+//! - Codex Kimi / Anthropic bridges: `local_token` (pass through unchanged)
 //!
 //! This module never mutates a provider row: callers receive a clone suitable
 //! for a live write, and must scrub live state before any database backfill.
@@ -14,9 +14,11 @@ use crate::bridge::ResolvedAuth;
 use crate::error::{AppError, Result};
 use crate::models::{AdapterSourceKind, AgentId, Provider};
 use crate::services::adapter_route_constants::{
-    is_kimi_code_membership_source, settings_contain_anthropic_api_endpoint, ANTHROPIC_API_KEY_ENV,
-    ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT,
-    KIMI_CLAUDE_BASE_URL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
+    is_kimi_code_membership_source, is_openai_api_marker, is_xai_api_marker,
+    settings_contain_anthropic_api_endpoint, ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV,
+    ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT, KIMI_CLAUDE_BASE_URL, KIMI_PI_BASE_URL,
+    KIMI_PI_PROVIDER_SLOT, OPENAI_API_KEY_ENV, OPENAI_PI_PROVIDER_SLOT, XAI_API_KEY_ENV,
+    XAI_PI_PROVIDER_SLOT,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -26,8 +28,11 @@ pub use crate::services::adapter_route_constants::CONNECTION_SECRET_MARKER;
 const GENERATED_BY: &str = "adapter";
 const KIMI_TO_CLAUDE_RULE: &str = "kimi-membership-to-claude-v1";
 const KIMI_TO_CODEX_BRIDGE_RULE: &str = "kimi-membership-to-codex-v1";
+const ANTHROPIC_TO_CODEX_BRIDGE_RULE: &str = "anthropic-api-to-codex-v1";
 const KIMI_TO_PI_RULE: &str = "kimi-membership-to-pi-v1";
 const ANTHROPIC_TO_PI_RULE: &str = "anthropic-api-to-pi-v1";
+const OPENAI_TO_PI_RULE: &str = "openai-api-to-pi-v1";
+const XAI_TO_PI_RULE: &str = "xai-api-to-pi-v1";
 const SOURCE_REFERENCE_MODE: &str = "source_reference";
 const LOCAL_TOKEN_MODE: &str = "local_token";
 const SOURCE_KIND_PROVIDER: &str = "provider";
@@ -74,6 +79,17 @@ impl AdapterSecretResolver {
         Ok(())
     }
 
+    /// Read-only preflight for an explicit API Key ticket (Anthropic / OpenAI / xAI).
+    pub fn validate_explicit_api_source(
+        &self,
+        rule_id: &str,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<()> {
+        let _ = self.resolve_explicit_api_key(rule_id, source_kind, source_id)?;
+        Ok(())
+    }
+
     /// Resolve a Kimi Code membership API key for an in-process adapter
     /// runtime. The returned value is intentionally not serializable and must
     /// be passed directly to the runtime; callers must never persist or log it.
@@ -99,6 +115,15 @@ impl AdapterSecretResolver {
         source_kind: AdapterSourceKind,
         source_id: &str,
     ) -> Result<String> {
+        self.resolve_explicit_api_key(ANTHROPIC_TO_PI_RULE, source_kind, source_id)
+    }
+
+    fn resolve_explicit_api_key(
+        &self,
+        rule_id: &str,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<String> {
         let source_id = source_id.trim();
         if source_id.is_empty() {
             return Err(invalid_reference());
@@ -109,17 +134,17 @@ impl AdapterSecretResolver {
                     .providers
                     .get_by_id(source_id)?
                     .ok_or_else(invalid_reference)?;
-                if !is_anthropic_api_source(&source) {
+                if !provider_matches_explicit_api_rule(rule_id, &source) {
                     return Err(invalid_reference());
                 }
-                extract_anthropic_api_key(&source.settings_config)
+                extract_explicit_provider_api_key(rule_id, &source.settings_config)
             }
             AdapterSourceKind::Account => {
                 let account = self
                     .accounts
                     .get_by_id(source_id)?
                     .ok_or_else(invalid_reference)?;
-                extract_anthropic_account_api_key(&account.credentials)
+                extract_account_api_key(&account.credentials)
             }
         }
     }
@@ -128,6 +153,17 @@ impl AdapterSecretResolver {
     /// plaintext key to GUI/Tauri DTO layers.
     pub(crate) fn resolve_kimi_membership_auth(&self, source_id: &str) -> Result<ResolvedAuth> {
         self.resolve_kimi_membership_api_key(source_id)
+            .map(ResolvedAuth::bearer)
+    }
+
+    /// Internal bridge boundary: resolve an Anthropic API key without exposing
+    /// the plaintext to GUI/Tauri DTO layers.
+    pub(crate) fn resolve_anthropic_auth(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<ResolvedAuth> {
+        self.resolve_anthropic_api_key(source_kind, source_id)
             .map(ResolvedAuth::bearer)
     }
 
@@ -251,9 +287,10 @@ impl AdapterSecretResolver {
             (KIMI_TO_CLAUDE_RULE | KIMI_TO_PI_RULE, AdapterSourceKind::Provider) => {
                 self.resolve_kimi_membership_api_key(source_id)
             }
-            (ANTHROPIC_TO_PI_RULE, AdapterSourceKind::Provider | AdapterSourceKind::Account) => {
-                self.resolve_anthropic_api_key(kind, source_id)
-            }
+            (
+                ANTHROPIC_TO_PI_RULE | OPENAI_TO_PI_RULE | XAI_TO_PI_RULE,
+                AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            ) => self.resolve_explicit_api_key(rule, kind, source_id),
             _ => Err(invalid_reference()),
         }
     }
@@ -334,13 +371,15 @@ impl AdapterSecretResolver {
                 .get("adapterSourceRef")
                 .and_then(Value::as_object)
                 .is_none_or(|source| {
-                    source.get("kind").and_then(Value::as_str) != Some(SOURCE_KIND_PROVIDER)
-                        || source
-                            .get("id")
-                            .and_then(Value::as_str)
-                            .map(str::trim)
-                            .filter(|id| !id.is_empty())
-                            .is_none()
+                    !matches!(
+                        source.get("kind").and_then(Value::as_str),
+                        Some(SOURCE_KIND_PROVIDER) | Some(SOURCE_KIND_ACCOUNT)
+                    ) || source
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|id| !id.is_empty())
+                        .is_none()
                 })
             || target.settings_config.get("format").and_then(Value::as_str) != Some("toml")
             || target
@@ -380,7 +419,10 @@ fn is_pi_source_reference(provider: &Provider) -> bool {
     provider.agent_id == AgentId::Pi
         && matches!(
             adapter_rule_id(provider),
-            Some(KIMI_TO_PI_RULE) | Some(ANTHROPIC_TO_PI_RULE)
+            Some(KIMI_TO_PI_RULE)
+                | Some(ANTHROPIC_TO_PI_RULE)
+                | Some(OPENAI_TO_PI_RULE)
+                | Some(XAI_TO_PI_RULE)
         )
         && provider
             .meta
@@ -402,6 +444,8 @@ fn pi_slot_name(provider: &Provider) -> Result<&'static str> {
     match adapter_rule_id(provider) {
         Some(KIMI_TO_PI_RULE) => Ok(KIMI_PI_PROVIDER_SLOT),
         Some(ANTHROPIC_TO_PI_RULE) => Ok(ANTHROPIC_PI_PROVIDER_SLOT),
+        Some(OPENAI_TO_PI_RULE) => Ok(OPENAI_PI_PROVIDER_SLOT),
+        Some(XAI_TO_PI_RULE) => Ok(XAI_PI_PROVIDER_SLOT),
         _ => Err(invalid_reference()),
     }
 }
@@ -427,13 +471,47 @@ fn set_pi_slot_api_key(settings: &mut Value, slot: &str, api_key: &str) -> Resul
     Ok(())
 }
 
+fn provider_explicit_tag(source: &Provider) -> Option<&str> {
+    source
+        .meta
+        .get("preset")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            source
+                .meta
+                .get("provider")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        })
+}
+
 fn is_anthropic_api_source(source: &Provider) -> bool {
     source.agent_id == AgentId::Claude
         && (source.meta.get("preset").and_then(Value::as_str) == Some(ANTHROPIC_PRESET)
             || settings_contain_anthropic_api_endpoint(&source.settings_config))
 }
 
-fn extract_anthropic_account_api_key(credentials: &Value) -> Result<String> {
+fn is_openai_api_source(source: &Provider) -> bool {
+    is_openai_api_marker(provider_explicit_tag(source), &source.settings_config)
+}
+
+fn is_xai_api_source(source: &Provider) -> bool {
+    is_xai_api_marker(provider_explicit_tag(source), &source.settings_config)
+}
+
+fn provider_matches_explicit_api_rule(rule_id: &str, source: &Provider) -> bool {
+    match rule_id {
+        ANTHROPIC_TO_PI_RULE => is_anthropic_api_source(source),
+        OPENAI_TO_PI_RULE => is_openai_api_source(source),
+        XAI_TO_PI_RULE => is_xai_api_source(source),
+        _ => false,
+    }
+}
+
+fn extract_account_api_key(credentials: &Value) -> Result<String> {
     let format = credentials
         .get("format")
         .and_then(Value::as_str)
@@ -449,18 +527,27 @@ fn extract_anthropic_account_api_key(credentials: &Value) -> Result<String> {
         .ok_or_else(invalid_reference)
 }
 
-fn extract_anthropic_api_key(settings: &Value) -> Result<String> {
+fn extract_explicit_provider_api_key(rule_id: &str, settings: &Value) -> Result<String> {
     let env = settings.get("env");
-    for candidate in [
-        env.and_then(|value| value.get(ANTHROPIC_AUTH_TOKEN_ENV))
-            .and_then(Value::as_str),
-        env.and_then(|value| value.get(ANTHROPIC_API_KEY_ENV))
-            .and_then(Value::as_str),
-        settings.get("apiKey").and_then(Value::as_str),
-    ]
-    .into_iter()
-    .flatten()
-    {
+    let env_keys: &[&str] = match rule_id {
+        ANTHROPIC_TO_PI_RULE => &[ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV],
+        OPENAI_TO_PI_RULE => &[OPENAI_API_KEY_ENV],
+        XAI_TO_PI_RULE => &[XAI_API_KEY_ENV],
+        _ => return Err(invalid_reference()),
+    };
+    let mut candidates = Vec::new();
+    for key in env_keys {
+        if let Some(value) = env.and_then(|env| env.get(*key)).and_then(Value::as_str) {
+            candidates.push(value);
+        }
+    }
+    if let Some(value) = settings.get("apiKey").and_then(Value::as_str) {
+        candidates.push(value);
+    }
+    if let Some(value) = settings.get("api_key").and_then(Value::as_str) {
+        candidates.push(value);
+    }
+    for candidate in candidates {
         if let Some(key) = usable_secret(candidate) {
             return Ok(key.to_owned());
         }
@@ -479,8 +566,10 @@ fn usable_secret(value: &str) -> Option<&str> {
 
 fn is_codex_local_token(provider: &Provider) -> bool {
     provider.agent_id == AgentId::Codex
-        && provider.meta.get("adapterRuleId").and_then(Value::as_str)
-            == Some(KIMI_TO_CODEX_BRIDGE_RULE)
+        && matches!(
+            provider.meta.get("adapterRuleId").and_then(Value::as_str),
+            Some(KIMI_TO_CODEX_BRIDGE_RULE) | Some(ANTHROPIC_TO_CODEX_BRIDGE_RULE)
+        )
         && provider
             .meta
             .get("adapterRuleVersion")

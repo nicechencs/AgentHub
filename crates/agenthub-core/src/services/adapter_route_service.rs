@@ -20,7 +20,8 @@ use crate::models::{
     AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
 };
 use crate::services::adapter_route_constants::{
-    is_kimi_code_membership_source, settings_contain_anthropic_api_endpoint,
+    is_deepseek_api_marker, is_glm_coding_plan_marker, is_kimi_code_membership_source,
+    is_openai_api_marker, is_xai_api_marker, settings_contain_anthropic_api_endpoint,
     ANTHROPIC_AUTH_TOKEN_ENV, KIMI_CLAUDE_BASE_URL,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
@@ -88,18 +89,26 @@ impl AdapterRouteService {
                     ],
                 )
             }
-            AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Codex => (
-                AdapterServiceImpact::RequiresLocalBridge,
-                vec![
-                    change("codex", "provider", Some("AgentHub Kimi 本地桥接"), false),
-                    change(
-                        "codex",
-                        "baseUrl",
-                        Some("http://127.0.0.1:<本机端口>/v1"),
-                        false,
-                    ),
-                ],
-            ),
+            AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Codex => {
+                let provider = if analysis.rule_id.as_deref() == Some("anthropic-api-to-codex-v1")
+                {
+                    "AgentHub Anthropic 本地桥接"
+                } else {
+                    "AgentHub Kimi 本地桥接"
+                };
+                (
+                    AdapterServiceImpact::RequiresLocalBridge,
+                    vec![
+                        change("codex", "provider", Some(provider), false),
+                        change(
+                            "codex",
+                            "baseUrl",
+                            Some("http://127.0.0.1:<本机端口>/v1"),
+                            false,
+                        ),
+                    ],
+                )
+            }
             AdapterRoute::LocalBridge => (AdapterServiceImpact::RequiresLocalBridge, vec![]),
             AdapterRoute::Unsupported | AdapterRoute::ConfigSync | AdapterRoute::NativeEndpoint => {
                 (AdapterServiceImpact::None, vec![])
@@ -173,6 +182,7 @@ impl AdapterRouteService {
                     AppError::NotFound(format!("provider not found: {source_id}"))
                 })?;
                 let preset = json_string(&provider.meta, "preset");
+                let explicit_tag = preset.or_else(|| json_string(&provider.meta, "provider"));
                 // Membership is explicit preset *or* official Kimi coding endpoint in config.
                 // Do not invent membership from agent_id alone (moonshot / custom stay closed).
                 if is_kimi_code_membership_source(
@@ -194,6 +204,34 @@ impl AdapterRouteService {
                         product: AdapterSourceProduct::AnthropicApi,
                         credential: AdapterCredentialClass::ApiKey,
                         label: RouteSourceLabel::AnthropicApiKey,
+                        reason_hint: None,
+                    })
+                } else if is_openai_api_marker(explicit_tag, &provider.settings_config) {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::OpenaiApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::OpenaiApiKey,
+                        reason_hint: None,
+                    })
+                } else if is_xai_api_marker(explicit_tag, &provider.settings_config) {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::XaiApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::XaiApiKey,
+                        reason_hint: None,
+                    })
+                } else if is_glm_coding_plan_marker(explicit_tag, &provider.settings_config) {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::GlmCodingPlan,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::GlmCodingPlan,
+                        reason_hint: None,
+                    })
+                } else if is_deepseek_api_marker(explicit_tag, &provider.settings_config) {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::DeepseekApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::DeepseekApi,
                         reason_hint: None,
                     })
                 } else if provider.agent_id == AgentId::Kimi {
@@ -232,6 +270,46 @@ impl AdapterRouteService {
                         product: AdapterSourceProduct::AnthropicApi,
                         credential: AdapterCredentialClass::ApiKey,
                         label: RouteSourceLabel::AnthropicApiKey,
+                        reason_hint: None,
+                    })
+                } else if account.kind == AccountKind::ApiKey
+                    && (is_openai_api_marker(explicit_provider, &account.credentials)
+                        || is_openai_api_marker(explicit_provider, &account.extra))
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::OpenaiApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::OpenaiApiKey,
+                        reason_hint: None,
+                    })
+                } else if account.kind == AccountKind::ApiKey
+                    && (is_xai_api_marker(explicit_provider, &account.credentials)
+                        || is_xai_api_marker(explicit_provider, &account.extra))
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::XaiApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::XaiApiKey,
+                        reason_hint: None,
+                    })
+                } else if account.kind == AccountKind::ApiKey
+                    && (is_glm_coding_plan_marker(explicit_provider, &account.credentials)
+                        || is_glm_coding_plan_marker(explicit_provider, &account.extra))
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::GlmCodingPlan,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::GlmCodingPlan,
+                        reason_hint: None,
+                    })
+                } else if account.kind == AccountKind::ApiKey
+                    && (is_deepseek_api_marker(explicit_provider, &account.credentials)
+                        || is_deepseek_api_marker(explicit_provider, &account.extra))
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::DeepseekApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::DeepseekApi,
                         reason_hint: None,
                     })
                 } else if account.agent_id == AgentId::Codex
@@ -289,6 +367,10 @@ struct SourceIdentity {
 enum RouteSourceLabel {
     KimiMembership,
     AnthropicApiKey,
+    OpenaiApiKey,
+    XaiApiKey,
+    GlmCodingPlan,
+    DeepseekApi,
     CodexSubscription,
     Other,
 }
@@ -330,7 +412,8 @@ fn write_gate(
 }
 
 /// Bind implementations opened in this step. Kimi membership secrets stay
-/// Provider-only; Anthropic API secrets also resolve from an Account row.
+/// Provider-only; Anthropic / OpenAI / xAI API secrets also resolve from an
+/// Account row (`credentials.api_key`).
 fn bind_implementation_open(
     request: &AdapterRouteRequest,
     analysis: &AdapterRouteAnalysis,
@@ -364,11 +447,20 @@ fn bind_implementation_open(
             AdapterSupport::Experimental,
         )
         | (
-            Some("anthropic-api-to-pi-v1"),
+            Some("anthropic-api-to-pi-v1")
+            | Some("openai-api-to-pi-v1")
+            | Some("xai-api-to-pi-v1"),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Pi,
             AdapterRoute::ConfigSync,
             AdapterSupport::Stable,
+        )
+        | (
+            Some("anthropic-api-to-codex-v1"),
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            AgentId::Codex,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
         ) => true,
         _ => false,
     }
@@ -474,6 +566,15 @@ fn actions_for(
                 false,
             )]
         }
+        (RouteSourceLabel::AnthropicApiKey, AgentId::Codex, AdapterRoute::LocalBridge) => {
+            vec![action(
+                "requires_local_bridge",
+                "Codex",
+                "Codex Responses 与 Anthropic Messages 需要本地双向协议转换。",
+                None,
+                false,
+            )]
+        }
         (RouteSourceLabel::KimiMembership, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
             action(
                 "set_config",
@@ -506,6 +607,38 @@ fn actions_for(
                 true,
             ),
         ],
+        (RouteSourceLabel::OpenaiApiKey, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
+            action(
+                "set_config",
+                "Pi",
+                "选择 Pi 的 OpenAI provider。",
+                Some("openai"),
+                false,
+            ),
+            action(
+                "reference_connection_secret",
+                "Pi",
+                "从已选 Connection 引用 API Key；不会读取或显示它。",
+                None,
+                true,
+            ),
+        ],
+        (RouteSourceLabel::XaiApiKey, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
+            action(
+                "set_config",
+                "Pi",
+                "选择 Pi 的 xAI provider。",
+                Some("xai"),
+                false,
+            ),
+            action(
+                "reference_connection_secret",
+                "Pi",
+                "从已选 Connection 引用 API Key；不会读取或显示它。",
+                None,
+                true,
+            ),
+        ],
         _ => vec![],
     }
 }
@@ -520,9 +653,18 @@ fn evidence_for(
         (RouteSourceLabel::KimiMembership, AgentId::Codex) => vec![kimi_codex_evidence()],
         (RouteSourceLabel::KimiMembership, AgentId::Pi) => vec![kimi_pi_evidence()],
         (RouteSourceLabel::KimiMembership, _) => vec![kimi_pi_evidence()],
+        (RouteSourceLabel::AnthropicApiKey, AgentId::Codex) => vec![anthropic_codex_evidence()],
         (RouteSourceLabel::AnthropicApiKey, _) => vec![anthropic_pi_evidence()],
-        (RouteSourceLabel::CodexSubscription, _) => vec![adapter_compatibility_evidence()],
-        (RouteSourceLabel::Other, _) => vec![adapter_compatibility_evidence()],
+        (RouteSourceLabel::OpenaiApiKey | RouteSourceLabel::XaiApiKey, _) => {
+            vec![anthropic_pi_evidence()]
+        }
+        (
+            RouteSourceLabel::GlmCodingPlan
+            | RouteSourceLabel::DeepseekApi
+            | RouteSourceLabel::CodexSubscription
+            | RouteSourceLabel::Other,
+            _,
+        ) => vec![adapter_compatibility_evidence()],
     }
 }
 
@@ -582,6 +724,14 @@ fn anthropic_pi_evidence() -> AdapterEvidence {
         label: "Pi custom provider and model configuration".into(),
         url: "https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md"
             .into(),
+        verified_at: VERIFIED_AT.into(),
+    }
+}
+
+fn anthropic_codex_evidence() -> AdapterEvidence {
+    AdapterEvidence {
+        label: "Anthropic Messages API".into(),
+        url: "https://docs.anthropic.com/en/api/messages".into(),
         verified_at: VERIFIED_AT.into(),
     }
 }

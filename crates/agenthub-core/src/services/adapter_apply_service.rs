@@ -20,6 +20,7 @@ use crate::models::{
 use crate::services::adapter_route_constants::{
     ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT,
     CONNECTION_SECRET_MARKER, KIMI_CLAUDE_BASE_URL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
+    OPENAI_PI_PROVIDER_SLOT, XAI_PI_PROVIDER_SLOT,
 };
 use crate::services::{
     AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
@@ -30,13 +31,19 @@ use crate::storage::{AdapterProfileRepo, Database};
 const RULE_ID: &str = "kimi-membership-to-claude-v1";
 const KIMI_PI_RULE_ID: &str = "kimi-membership-to-pi-v1";
 const ANTHROPIC_PI_RULE_ID: &str = "anthropic-api-to-pi-v1";
+const OPENAI_PI_RULE_ID: &str = "openai-api-to-pi-v1";
+const XAI_PI_RULE_ID: &str = "xai-api-to-pi-v1";
 const RULE_VERSION: &str = "1";
 const CLAUDE_PROVIDER_PREFIX: &str = "claude-kimi-adapter";
 const PI_KIMI_PROVIDER_PREFIX: &str = "pi-kimi-adapter";
 const PI_ANTHROPIC_PROVIDER_PREFIX: &str = "pi-anthropic-adapter";
+const PI_OPENAI_PROVIDER_PREFIX: &str = "pi-openai-adapter";
+const PI_XAI_PROVIDER_PREFIX: &str = "pi-xai-adapter";
 const CLAUDE_PROFILE_PREFIX: &str = "adapter-kimi-claude";
 const PI_KIMI_PROFILE_PREFIX: &str = "adapter-kimi-pi";
 const PI_ANTHROPIC_PROFILE_PREFIX: &str = "adapter-anthropic-pi";
+const PI_OPENAI_PROFILE_PREFIX: &str = "adapter-openai-pi";
+const PI_XAI_PROFILE_PREFIX: &str = "adapter-xai-pi";
 const PREVIOUS_CURRENT_ID: &str = "previousCurrentId";
 const PREVIOUS_BACKUP_ID: &str = "previousBackupId";
 
@@ -93,30 +100,43 @@ impl AdapterApplyService {
                         self.secrets.validate_kimi_membership_source(source_id)?;
                         self.apply_generated(pi_kimi_spec(source_id))
                     }
-                    Some(ANTHROPIC_PI_RULE_ID) => {
-                        self.secrets.validate_anthropic_source(
+                    Some(rule) if is_explicit_api_to_pi_rule(rule) => {
+                        self.secrets.validate_explicit_api_source(
+                            rule,
                             AdapterSourceKind::Provider,
                             source_id,
                         )?;
-                        self.apply_generated(pi_anthropic_spec(
+                        self.apply_generated(pi_explicit_api_spec(
                             AdapterSourceKind::Provider,
                             source_id,
-                        ))
+                            rule,
+                        )?)
                     }
                     _ => Err(AppError::Unsupported(
-                        "adapter apply currently supports only Kimi membership or Anthropic API provider -> Pi".into(),
+                        "adapter apply currently supports Kimi membership or explicit API provider -> Pi".into(),
                     )),
                 }
             }
             (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync)
-                if analysis.rule_id.as_deref() == Some(ANTHROPIC_PI_RULE_ID) =>
+                if analysis
+                    .rule_id
+                    .as_deref()
+                    .is_some_and(is_explicit_api_to_pi_rule) =>
             {
-                self.secrets
-                    .validate_anthropic_source(AdapterSourceKind::Account, source_id)?;
-                self.apply_generated(pi_anthropic_spec(AdapterSourceKind::Account, source_id))
+                let rule = analysis.rule_id.as_deref().expect("checked above");
+                self.secrets.validate_explicit_api_source(
+                    rule,
+                    AdapterSourceKind::Account,
+                    source_id,
+                )?;
+                self.apply_generated(pi_explicit_api_spec(
+                    AdapterSourceKind::Account,
+                    source_id,
+                    rule,
+                )?)
             }
             _ => Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership provider -> Claude/Pi and Anthropic API ticket -> Pi".into(),
+                "adapter apply currently supports Kimi membership provider -> Claude/Pi and explicit API ticket -> Pi".into(),
             )),
         }
     }
@@ -385,14 +405,17 @@ impl AdapterApplyService {
                 request.target_agent_id == AgentId::Pi
                     && analysis.route == AdapterRoute::ConfigSync
                     && analysis.support == AdapterSupport::Stable
-                    && analysis.rule_id.as_deref() == Some(ANTHROPIC_PI_RULE_ID)
+                    && analysis
+                        .rule_id
+                        .as_deref()
+                        .is_some_and(is_explicit_api_to_pi_rule)
             }
         };
         if supported {
             Ok(analysis)
         } else {
             Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership provider -> Claude/Pi and Anthropic API ticket -> Pi".into(),
+                "adapter apply currently supports Kimi membership provider -> Claude/Pi and explicit API ticket -> Pi".into(),
             ))
         }
     }
@@ -555,6 +578,10 @@ fn generated_provider_prefix(profile: &AdapterProfile) -> Option<&'static str> {
         (AgentId::Pi, AdapterRoute::ConfigSync, ANTHROPIC_PI_RULE_ID) => {
             Some(PI_ANTHROPIC_PROVIDER_PREFIX)
         }
+        (AgentId::Pi, AdapterRoute::ConfigSync, OPENAI_PI_RULE_ID) => {
+            Some(PI_OPENAI_PROVIDER_PREFIX)
+        }
+        (AgentId::Pi, AdapterRoute::ConfigSync, XAI_PI_RULE_ID) => Some(PI_XAI_PROVIDER_PREFIX),
         _ => None,
     }
 }
@@ -704,23 +731,63 @@ fn pi_kimi_spec(source_id: &str) -> GeneratedApplySpec {
     }
 }
 
-fn pi_anthropic_spec(source_kind: AdapterSourceKind, source_id: &str) -> GeneratedApplySpec {
-    let profile_id = stable_id(PI_ANTHROPIC_PROFILE_PREFIX, source_id);
-    let provider_id = stable_id(PI_ANTHROPIC_PROVIDER_PREFIX, source_id);
+fn is_explicit_api_to_pi_rule(rule_id: &str) -> bool {
+    matches!(
+        rule_id,
+        ANTHROPIC_PI_RULE_ID | OPENAI_PI_RULE_ID | XAI_PI_RULE_ID
+    )
+}
+
+fn pi_explicit_api_layout(
+    rule_id: &str,
+) -> Result<(&'static str, &'static str, &'static str, &'static str)> {
+    match rule_id {
+        ANTHROPIC_PI_RULE_ID => Ok((
+            PI_ANTHROPIC_PROFILE_PREFIX,
+            PI_ANTHROPIC_PROVIDER_PREFIX,
+            "Anthropic",
+            ANTHROPIC_PI_PROVIDER_SLOT,
+        )),
+        OPENAI_PI_RULE_ID => Ok((
+            PI_OPENAI_PROFILE_PREFIX,
+            PI_OPENAI_PROVIDER_PREFIX,
+            "OpenAI",
+            OPENAI_PI_PROVIDER_SLOT,
+        )),
+        XAI_PI_RULE_ID => Ok((
+            PI_XAI_PROFILE_PREFIX,
+            PI_XAI_PROVIDER_PREFIX,
+            "xAI",
+            XAI_PI_PROVIDER_SLOT,
+        )),
+        _ => Err(AppError::Unsupported(
+            "adapter apply currently supports only Anthropic / OpenAI / xAI API -> Pi".into(),
+        )),
+    }
+}
+
+fn pi_explicit_api_spec(
+    source_kind: AdapterSourceKind,
+    source_id: &str,
+    rule_id: &str,
+) -> Result<GeneratedApplySpec> {
+    let (profile_prefix, provider_prefix, display, slot) = pi_explicit_api_layout(rule_id)?;
+    let profile_id = stable_id(profile_prefix, source_id);
+    let provider_id = stable_id(provider_prefix, source_id);
     let created_at = now();
-    GeneratedApplySpec {
+    Ok(GeneratedApplySpec {
         target_agent: AgentId::Pi,
         provider_id: provider_id.clone(),
         proposed: AdapterProfile {
             id: profile_id.clone(),
-            name: format!("Anthropic → Pi ({})", safe_label(source_id)),
+            name: format!("{display} → Pi ({})", safe_label(source_id)),
             source_kind,
             source_id: source_id.into(),
             target_agent_id: AgentId::Pi,
             route: AdapterRoute::ConfigSync,
             mode: AdapterProfileMode::Api,
             status: AdapterProfileStatus::Applying,
-            rule_id: ANTHROPIC_PI_RULE_ID.into(),
+            rule_id: rule_id.into(),
             rule_version: RULE_VERSION.into(),
             generated_provider_id: Some(provider_id.clone()),
             local_port: None,
@@ -732,26 +799,20 @@ fn pi_anthropic_spec(source_kind: AdapterSourceKind, source_id: &str) -> Generat
         provider: ProviderInput {
             id: provider_id,
             agent_id: AgentId::Pi,
-            name: format!("Anthropic ({})", safe_label(source_id)),
+            name: format!("{display} ({})", safe_label(source_id)),
             settings_config: json!({
                 "models": {
                     "providers": {
-                        ANTHROPIC_PI_PROVIDER_SLOT: {
+                        slot: {
                             "apiKey": CONNECTION_SECRET_MARKER,
                         }
                     }
                 }
             }),
-            meta: generated_meta(
-                ANTHROPIC_PI_RULE_ID,
-                &profile_id,
-                source_kind,
-                source_id,
-                None,
-            ),
+            meta: generated_meta(rule_id, &profile_id, source_kind, source_id, None),
             is_current: false,
         },
-    }
+    })
 }
 
 fn generated_meta(

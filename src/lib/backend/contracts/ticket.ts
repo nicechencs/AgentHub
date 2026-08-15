@@ -13,6 +13,10 @@ import {
 export type TicketSurface =
   | 'kimi-code-membership'
   | 'anthropic-api'
+  | 'openai-api'
+  | 'xai-api'
+  | 'glm-coding-plan'
+  | 'deepseek-api'
   | 'codex-chatgpt-subscription'
   | 'unknown';
 
@@ -106,6 +110,10 @@ function mapSurface(value: string): TicketSurface {
   if (
     value === 'kimi-code-membership'
     || value === 'anthropic-api'
+    || value === 'openai-api'
+    || value === 'xai-api'
+    || value === 'glm-coding-plan'
+    || value === 'deepseek-api'
     || value === 'codex-chatgpt-subscription'
     || value === 'unknown'
   ) {
@@ -252,6 +260,10 @@ export function ticketCredentialClassLabel(cls: TicketCredentialClass): string {
 export function ticketSurfaceLabel(surface: TicketSurface): string {
   if (surface === 'kimi-code-membership') return '会员';
   if (surface === 'anthropic-api') return '官方';
+  if (surface === 'openai-api') return 'OpenAI';
+  if (surface === 'xai-api') return 'xAI';
+  if (surface === 'glm-coding-plan') return 'GLM';
+  if (surface === 'deepseek-api') return 'DeepSeek';
   if (surface === 'codex-chatgpt-subscription') return '订阅';
   return '未识别';
 }

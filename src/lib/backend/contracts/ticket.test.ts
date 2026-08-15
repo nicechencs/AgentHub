@@ -234,6 +234,10 @@ describe('ticket / binding display labels', () => {
     expect(ticketCredentialClassLabel('unknown')).toBe('未识别');
     expect(ticketSurfaceLabel('kimi-code-membership')).toBe('会员');
     expect(ticketSurfaceLabel('anthropic-api')).toBe('官方');
+    expect(ticketSurfaceLabel('openai-api')).toBe('OpenAI');
+    expect(ticketSurfaceLabel('xai-api')).toBe('xAI');
+    expect(ticketSurfaceLabel('glm-coding-plan')).toBe('GLM');
+    expect(ticketSurfaceLabel('deepseek-api')).toBe('DeepSeek');
     expect(ticketSurfaceLabel('codex-chatgpt-subscription')).toBe('订阅');
     expect(ticketSurfaceLabel('unknown')).toBe('未识别');
   });

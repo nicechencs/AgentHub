@@ -53,9 +53,29 @@ type ClassifiableProvider = Provider & {
 const TICKET_SURFACES: readonly TicketSurface[] = [
   'kimi-code-membership',
   'anthropic-api',
+  'openai-api',
+  'xai-api',
+  'glm-coding-plan',
+  'deepseek-api',
   'codex-chatgpt-subscription',
   'unknown',
 ];
+
+const OPENAI_API_ENDPOINT_NEEDLE = 'api.openai.com';
+const XAI_API_ENDPOINT_NEEDLE = 'api.x.ai';
+const GLM_CODING_ANTHROPIC_NEEDLE = 'open.bigmodel.cn/api/anthropic';
+const GLM_CODING_CHAT_NEEDLE = 'open.bigmodel.cn/api/coding';
+const DEEPSEEK_API_ENDPOINT_NEEDLE = 'api.deepseek.com';
+
+function blobContains(value: unknown, needle: string): boolean {
+  if (typeof value === 'string') return value.toLowerCase().includes(needle);
+  if (!value || typeof value !== 'object') return false;
+  return JSON.stringify(value).toLowerCase().includes(needle);
+}
+
+function explicitTagMatches(tag: string | undefined, accepted: readonly string[]): boolean {
+  return !!tag && accepted.some((item) => item.toLowerCase() === tag.toLowerCase());
+}
 
 const PROJECTION_NOT_A_TICKET = '投影不是票';
 
@@ -108,6 +128,33 @@ function classifyProviderSurface(provider: Provider): TicketSurface {
   ) {
     return 'anthropic-api';
   }
+  const tag = provider.preset
+    ?? jsonString((provider as ClassifiableProvider).meta, 'provider');
+  if (
+    explicitTagMatches(tag, ['openai', 'openai-api'])
+    || blobContains(provider.configText, OPENAI_API_ENDPOINT_NEEDLE)
+  ) {
+    return 'openai-api';
+  }
+  if (
+    explicitTagMatches(tag, ['xai', 'xai-api'])
+    || blobContains(provider.configText, XAI_API_ENDPOINT_NEEDLE)
+  ) {
+    return 'xai-api';
+  }
+  if (
+    explicitTagMatches(tag, ['glm-coding-plan'])
+    || blobContains(provider.configText, GLM_CODING_ANTHROPIC_NEEDLE)
+    || blobContains(provider.configText, GLM_CODING_CHAT_NEEDLE)
+  ) {
+    return 'glm-coding-plan';
+  }
+  if (
+    explicitTagMatches(tag, ['deepseek-api', 'deepseek'])
+    || blobContains(provider.configText, DEEPSEEK_API_ENDPOINT_NEEDLE)
+  ) {
+    return 'deepseek-api';
+  }
   return 'unknown';
 }
 
@@ -132,6 +179,40 @@ function classifyAccountSurface(account: Account): TicketSurface {
         && JSON.stringify(row.extra).toLowerCase().includes('api.anthropic.com')))
   ) {
     return 'anthropic-api';
+  }
+  if (
+    account.kind === 'apikey'
+    && (explicitTagMatches(explicitProvider, ['openai', 'openai-api'])
+      || blobContains(row.credentials, OPENAI_API_ENDPOINT_NEEDLE)
+      || blobContains(row.extra, OPENAI_API_ENDPOINT_NEEDLE))
+  ) {
+    return 'openai-api';
+  }
+  if (
+    account.kind === 'apikey'
+    && (explicitTagMatches(explicitProvider, ['xai', 'xai-api'])
+      || blobContains(row.credentials, XAI_API_ENDPOINT_NEEDLE)
+      || blobContains(row.extra, XAI_API_ENDPOINT_NEEDLE))
+  ) {
+    return 'xai-api';
+  }
+  if (
+    account.kind === 'apikey'
+    && (explicitTagMatches(explicitProvider, ['glm-coding-plan'])
+      || blobContains(row.credentials, GLM_CODING_ANTHROPIC_NEEDLE)
+      || blobContains(row.credentials, GLM_CODING_CHAT_NEEDLE)
+      || blobContains(row.extra, GLM_CODING_ANTHROPIC_NEEDLE)
+      || blobContains(row.extra, GLM_CODING_CHAT_NEEDLE))
+  ) {
+    return 'glm-coding-plan';
+  }
+  if (
+    account.kind === 'apikey'
+    && (explicitTagMatches(explicitProvider, ['deepseek-api', 'deepseek'])
+      || blobContains(row.credentials, DEEPSEEK_API_ENDPOINT_NEEDLE)
+      || blobContains(row.extra, DEEPSEEK_API_ENDPOINT_NEEDLE))
+  ) {
+    return 'deepseek-api';
   }
 
   // Lockstep with adapter_route_service identify_source Account arm:
@@ -158,6 +239,10 @@ function speaksOf(surface: TicketSurface): string[] {
     return ['anthropic-messages', 'openai-chat'];
   }
   if (surface === 'anthropic-api') return ['anthropic-messages'];
+  if (surface === 'openai-api' || surface === 'xai-api') return ['openai-chat'];
+  if (surface === 'glm-coding-plan' || surface === 'deepseek-api') {
+    return ['anthropic-messages', 'openai-chat'];
+  }
   if (surface === 'codex-chatgpt-subscription') return ['openai-responses'];
   return [];
 }

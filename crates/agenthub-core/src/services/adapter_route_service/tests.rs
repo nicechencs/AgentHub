@@ -215,6 +215,172 @@ fn anthropic_provider_and_explicit_api_key_account_plan_for_pi() {
     assert!(account_plan.changes[1].value.is_none());
 }
 
+fn api_key_account(id: &str, provider: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        label: format!("{provider} key"),
+        credentials: serde_json::json!({"api_key": "must-not-leak"}),
+        extra: serde_json::json!({"provider": provider}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+#[test]
+fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
+    let (_dir, db) = test_db();
+    let providers = ProviderRepo::new(db.clone());
+    providers
+        .create(&provider("openai-provider", AgentId::Codex, "openai"))
+        .unwrap();
+    providers
+        .create(&provider("xai-provider", AgentId::Grok, "xai"))
+        .unwrap();
+    providers
+        .create(&Provider {
+            id: "openai-host".into(),
+            agent_id: AgentId::Claude,
+            name: "OpenAI host import".into(),
+            settings_config: serde_json::json!({
+                "baseUrl": "https://api.openai.com/v1"
+            }),
+            meta: serde_json::json!({}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    providers
+        .create(&provider("relay-provider", AgentId::Claude, "openai-compatible"))
+        .unwrap();
+    providers
+        .create(&provider("glm-provider", AgentId::Claude, "glm-coding-plan"))
+        .unwrap();
+    providers
+        .create(&provider("deepseek-provider", AgentId::Claude, "deepseek-api"))
+        .unwrap();
+    let accounts = AccountRepo::new(db.clone());
+    accounts.create(&api_key_account("openai-account", "openai")).unwrap();
+    accounts.create(&api_key_account("xai-account", "xai")).unwrap();
+    let service = AdapterRouteService::new(db);
+
+    for (source_kind, source_id, slot, rule) in [
+        (
+            AdapterSourceKind::Provider,
+            "openai-provider",
+            "openai",
+            "openai-api-to-pi-v1",
+        ),
+        (
+            AdapterSourceKind::Account,
+            "openai-account",
+            "openai",
+            "openai-api-to-pi-v1",
+        ),
+        (
+            AdapterSourceKind::Provider,
+            "openai-host",
+            "openai",
+            "openai-api-to-pi-v1",
+        ),
+        (
+            AdapterSourceKind::Provider,
+            "xai-provider",
+            "xai",
+            "xai-api-to-pi-v1",
+        ),
+        (
+            AdapterSourceKind::Account,
+            "xai-account",
+            "xai",
+            "xai-api-to-pi-v1",
+        ),
+    ] {
+        let plan = service
+            .plan(&request(source_kind, source_id, AgentId::Pi))
+            .unwrap();
+        assert_eq!(plan.analysis.route, AdapterRoute::ConfigSync, "{source_id}");
+        assert!(plan.can_apply, "{source_id}");
+        assert_eq!(plan.analysis.rule_id.as_deref(), Some(rule), "{source_id}");
+        assert_eq!(plan.changes[0].value.as_deref(), Some(slot), "{source_id}");
+        assert!(plan.changes[1].secret, "{source_id}");
+        assert!(!serde_json::to_string(&plan).unwrap().contains("must-not-leak"));
+    }
+
+    let relay = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "relay-provider",
+            AgentId::Pi,
+        ))
+        .unwrap();
+    assert_eq!(relay.analysis.route, AdapterRoute::Unsupported);
+    assert!(!relay.can_apply);
+    assert!(relay.analysis.rule_id.is_none());
+    assert_eq!(
+        service
+            .classify_source_product(AdapterSourceKind::Provider, "relay-provider")
+            .unwrap(),
+        crate::models::AdapterSourceProduct::Other
+    );
+
+    let glm = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "glm-provider",
+            AgentId::Pi,
+        ))
+        .unwrap();
+    assert_eq!(
+        service
+            .classify_source_product(AdapterSourceKind::Provider, "glm-provider")
+            .unwrap(),
+        crate::models::AdapterSourceProduct::GlmCodingPlan
+    );
+    assert!(!glm.can_apply);
+    assert_eq!(glm.analysis.route, AdapterRoute::Unsupported);
+    assert!(glm.analysis.reason.contains("仅登记票面"));
+
+    let deepseek = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "deepseek-provider",
+            AgentId::Pi,
+        ))
+        .unwrap();
+    assert_eq!(
+        service
+            .classify_source_product(AdapterSourceKind::Provider, "deepseek-provider")
+            .unwrap(),
+        crate::models::AdapterSourceProduct::DeepseekApi
+    );
+    assert!(!deepseek.can_apply);
+
+    let openai_grok = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "openai-provider",
+            AgentId::Grok,
+        ))
+        .unwrap();
+    assert!(!openai_grok.can_apply);
+    assert_eq!(openai_grok.analysis.route, AdapterRoute::Unsupported);
+
+    let xai_grok = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "xai-provider",
+            AgentId::Grok,
+        ))
+        .unwrap();
+    assert!(!xai_grok.can_apply);
+    assert!(xai_grok.analysis.reason.contains("不进适配矩阵"));
+}
+
 #[test]
 fn account_that_is_not_anthropic_to_pi_stays_unwritable() {
     let (_dir, db) = test_db();
@@ -271,6 +437,63 @@ fn account_that_is_not_anthropic_to_pi_stays_unwritable() {
         !anthropic_to_claude.can_apply,
         "Anthropic account → Claude has no bind implementation"
     );
+}
+
+#[test]
+fn anthropic_provider_and_account_plan_for_codex_and_stay_closed_for_claude() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "anthropic-provider",
+            AgentId::Claude,
+            "anthropic",
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&api_key_account("anthropic-account", "anthropic"))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    for (source_kind, source_id) in [
+        (AdapterSourceKind::Provider, "anthropic-provider"),
+        (AdapterSourceKind::Account, "anthropic-account"),
+    ] {
+        let plan = service
+            .plan(&request(source_kind, source_id, AgentId::Codex))
+            .unwrap();
+        assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge, "{source_id}");
+        assert_eq!(
+            plan.analysis.support,
+            AdapterSupport::Experimental,
+            "{source_id}"
+        );
+        assert_eq!(plan.maturity, AdapterMaturity::Experimental, "{source_id}");
+        assert!(plan.can_apply, "{source_id}");
+        assert_eq!(
+            plan.analysis.rule_id.as_deref(),
+            Some("anthropic-api-to-codex-v1"),
+            "{source_id}"
+        );
+        assert_eq!(
+            plan.changes[0].value.as_deref(),
+            Some("AgentHub Anthropic 本地桥接"),
+            "{source_id}"
+        );
+        assert_eq!(
+            plan.service_impact,
+            AdapterServiceImpact::RequiresLocalBridge,
+            "{source_id}"
+        );
+        assert!(!serde_json::to_string(&plan)
+            .unwrap()
+            .contains("must-not-leak"));
+
+        let claude = service
+            .plan(&request(source_kind, source_id, AgentId::Claude))
+            .unwrap();
+        assert!(!claude.can_apply, "{source_id} → Claude stays closed");
+        assert_eq!(claude.analysis.route, AdapterRoute::Unsupported);
+    }
 }
 
 #[test]

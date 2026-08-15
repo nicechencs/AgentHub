@@ -391,6 +391,29 @@ fn local_token_bridge_passes_through_but_unknown_generated_metadata_fails_closed
         bridge.settings_config
     );
 
+    let anthropic_bridge = provider(
+        "generated-codex-anthropic",
+        AgentId::Codex,
+        json!({
+            "format": "toml",
+            "content": "model_provider = 'agenthub_anthropic_bridge'\n",
+            "auth": { "OPENAI_API_KEY": "local-anthropic-bridge-token" },
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": ANTHROPIC_TO_CODEX_BRIDGE_RULE,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": LOCAL_TOKEN_MODE,
+            "adapterProfileId": "anthropic-bridge-profile",
+            "adapterSourceRef": { "kind": SOURCE_KIND_ACCOUNT, "id": "anthropic-account" },
+        }),
+    );
+    assert!(!resolver.is_reference_provider(&anthropic_bridge).unwrap());
+    assert_eq!(
+        resolver.materialize_for_live(&anthropic_bridge).unwrap(),
+        anthropic_bridge
+    );
+
     for mutation in [
         json!({"adapterRuleVersion": 2}),
         json!({"adapterRuleVersion": "1"}),
@@ -500,6 +523,115 @@ fn anthropic_account_source_materializes_and_scrubs_without_plaintext() {
     assert!(!serde_json::to_string(&scrubbed)
         .unwrap()
         .contains("sk-account-secret"));
+}
+
+fn pi_openai_target(source_id: &str) -> Provider {
+    provider(
+        "generated-pi-openai",
+        AgentId::Pi,
+        json!({
+            "models": {
+                "providers": {
+                    OPENAI_PI_PROVIDER_SLOT: {
+                        "apiKey": CONNECTION_SECRET_MARKER
+                    }
+                }
+            }
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": OPENAI_TO_PI_RULE,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": SOURCE_REFERENCE_MODE,
+            "adapterSourceRef": { "kind": SOURCE_KIND_PROVIDER, "id": source_id },
+        }),
+    )
+}
+
+fn pi_xai_target(source_id: &str) -> Provider {
+    provider(
+        "generated-pi-xai",
+        AgentId::Pi,
+        json!({
+            "models": {
+                "providers": {
+                    XAI_PI_PROVIDER_SLOT: {
+                        "apiKey": CONNECTION_SECRET_MARKER
+                    }
+                }
+            }
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": XAI_TO_PI_RULE,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": SOURCE_REFERENCE_MODE,
+            "adapterSourceRef": { "kind": SOURCE_KIND_ACCOUNT, "id": source_id },
+        }),
+    )
+}
+
+#[test]
+fn openai_provider_and_xai_account_materialize_and_scrub() {
+    let source = provider(
+        "openai-source",
+        AgentId::Codex,
+        json!({"env": { OPENAI_API_KEY_ENV: "sk-openai-secret" }}),
+        json!({"preset": "openai"}),
+    );
+    let (_dir, resolver) = resolver_with(source.clone());
+    resolver
+        .validate_explicit_api_source(OPENAI_TO_PI_RULE, AdapterSourceKind::Provider, "openai-source")
+        .unwrap();
+    let target = pi_openai_target(&source.id);
+    let materialized = resolver.materialize_for_live(&target).unwrap();
+    assert_eq!(
+        materialized.settings_config["models"]["providers"][OPENAI_PI_PROVIDER_SLOT]["apiKey"],
+        "sk-openai-secret"
+    );
+    let scrubbed = resolver
+        .scrub_for_backfill(
+            &target,
+            &json!({"models": {"providers": { OPENAI_PI_PROVIDER_SLOT: { "apiKey": "sk-openai-secret" } }}}),
+        )
+        .unwrap();
+    assert_eq!(
+        scrubbed["models"]["providers"][OPENAI_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert!(!serde_json::to_string(&scrubbed)
+        .unwrap()
+        .contains("sk-openai-secret"));
+
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("adapter-secret-resolver.db")).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "xai-account".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::ApiKey,
+            label: "xAI key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "xai-account-secret"
+            }),
+            extra: json!({"provider": "xai"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let resolver = AdapterSecretResolver::new(db);
+    resolver
+        .validate_explicit_api_source(XAI_TO_PI_RULE, AdapterSourceKind::Account, "xai-account")
+        .unwrap();
+    let target = pi_xai_target("xai-account");
+    let materialized = resolver.materialize_for_live(&target).unwrap();
+    assert_eq!(
+        materialized.settings_config["models"]["providers"][XAI_PI_PROVIDER_SLOT]["apiKey"],
+        "xai-account-secret"
+    );
 }
 
 #[test]
