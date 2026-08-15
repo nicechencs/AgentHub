@@ -30,6 +30,7 @@ pub const MAX_PROVIDER_ID_LEN: usize = 128;
 pub const MAX_PROVIDER_NAME_LEN: usize = 256;
 
 /// Business facade over [`ProviderRepo`].
+#[derive(Clone)]
 pub struct ProviderService {
     db: Database,
     repo: ProviderRepo,
