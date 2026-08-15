@@ -34,7 +34,7 @@ import {
   bridgesPageViewState,
   partitionLocalBridgeRuntimes,
 } from './adapter-view-model';
-import { useAdapterResources } from './use-adapter-resources';
+import { useAdapterResources } from './use-bridge-resources';
 import {
   closeConfirmationOnOpenChange,
   preventBusyConfirmationDismissal,
@@ -48,85 +48,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
-export {
-  adapterActionLabel,
-  adapterAgentBadgeStyle,
-  adapterApplyCommit,
-  adapterBridgeEndpointLabel,
-  adapterBridgeStateLabel,
-  adapterBridgeUpstreamLabel,
-  adapterCredentialFilterLabel,
-  adapterCredentialKindLabel,
-  adapterPageDescription,
-  BRIDGES_EMPTY_DESCRIPTION,
-  BRIDGES_EMPTY_TITLE,
-  BRIDGES_MUTATION_FAILURE,
-  BRIDGES_NAV_LABEL,
-  BRIDGES_PAGE_DESCRIPTION,
-  BRIDGES_PAGE_DESCRIPTION_TIP,
-  BRIDGES_PAGE_TITLE,
-  BRIDGES_PATH,
-  BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION,
-  BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE,
-  bridgesHrefForProfile,
-  legacyBridgesRedirectTo,
-  resolveBridgesProfileQuery,
-  adapterPageViewState,
-  adapterPlanChangeLabel,
-  adapterPlanRequestSignature,
-  adapterPreviewOutcome,
-  adapterProfileRecordLabel,
-  adapterProfileStatusLabel,
-  adapterServiceImpactLabel,
-  adapterTabDescription,
-  adapterTabLabel,
-  adapterTableRouteLabel,
-  canApplyAdapterPlan,
-  canApplyAdapterSelection,
-  canConfirmAdapterApply,
-  canRequestAdapterPlan,
-  connectionKindForFilter,
-  connectionKindForTab,
-  filterProfilesByCredential,
-  filterProfilesByMode,
-  isAdapterPlanMatchedToSelection,
-  isCurrentAdapterPreviewRequest,
-  isSameAdapterPlanRequestSignature,
-  isSubscriptionGateUnsupported,
-  maskedIdSuffix,
-  parseAdapterCredentialFilter,
-  parseAdapterTab,
-  resolveAdapterTargetAgentId,
-  resolveAdapterVisibleSourceKey,
-  routeLabel,
-  sourceLabel,
-  sourceStatusHint,
-  unsupportedPresentation,
-} from './adapter-model';
-
-export {
-  adapterApplySummaryLine,
-  adapterBridgeFleetSummary,
-  adapterConfigStatusView,
-  adapterProfileFlowLabel,
-  adapterProfilePrimaryAction,
-  adapterProfileRecoveryGuide,
-  adapterRoutePipelineModel,
-  adapterServiceStatusView,
-  adapterTargetBadge,
-  adapterTargetCacheKey,
-  bridgesPageViewState,
-  bridgeRuntimeStatusView,
-  filterBoundLocalBridgeRuntimes,
-  partitionLocalBridgeRuntimes,
-  resolveAdapterProfileSource,
-} from './adapter-view-model';
-
-export {
-  closeConfirmationOnOpenChange,
-  preventBusyConfirmationDismissal,
-} from '@/components/shared/busy-confirmation';
-
 type WalletSnapshot = {
   settled: boolean;
   lastWalletBridgeCount: number;
@@ -137,7 +58,7 @@ type WalletSnapshot = {
  * Local-bridge runtime ops page. Creating bindings lives in Dashboard and
  * Connections ConnectFlow. Do not mount analyze fan-out, plan, or apply here.
  */
-export default function AdapterPage() {
+export default function BridgesPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const {

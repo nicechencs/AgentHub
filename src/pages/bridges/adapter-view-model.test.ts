@@ -1,20 +1,11 @@
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
-import { AdapterRoutePipeline } from './AdapterRoutePipeline';
-import { AdapterTargetGrid } from './AdapterTargetGrid';
 import {
-  adapterApplySummaryLine,
   adapterBridgeFleetSummary,
-  adapterConfigStatusView,
   adapterProfileFlowLabel,
   adapterProfilePrimaryAction,
   adapterProfileRecoveryGuide,
-  adapterRoutePipelineModel,
   adapterServiceStatusView,
-  adapterTargetBadge,
-  adapterTargetCacheKey,
   bridgesPageViewState,
   bridgeRuntimeStatusView,
   filterBoundLocalBridgeRuntimes,
@@ -141,56 +132,7 @@ describe('bridges page view state', () => {
   });
 });
 
-describe('adapter target panorama view model', () => {
-  it('maps analyze conclusions onto route badges without claiming write access', () => {
-    expect(adapterTargetBadge({ route: 'native_endpoint', support: 'stable' }))
-      .toEqual({ label: '直连', variant: 'success' });
-    expect(adapterTargetBadge({ route: 'local_bridge', support: 'experimental' }))
-      .toEqual({ label: '桥接 · 实验', variant: 'warning' });
-    expect(adapterTargetBadge({ route: 'local_bridge', support: 'stable' }))
-      .toEqual({ label: '本地桥接', variant: 'warning' });
-    expect(adapterTargetBadge({ route: 'config_sync', support: 'stable' }))
-      .toEqual({ label: '配置同步', variant: 'info' });
-    // Unsupported stays a neutral chip, never a red fault.
-    expect(adapterTargetBadge({ route: 'unsupported', support: 'unsupported' }))
-      .toEqual({ label: '暂不支持', variant: 'default' });
-  });
-
-  it('keys the analysis cache by source kind, source id, and target', () => {
-    const key = adapterTargetCacheKey({ sourceKind: 'provider', sourceId: 'kimi-1', targetAgentId: 'codex' });
-    expect(key).toBe('provider:kimi-1:codex');
-    expect(key).not.toBe(adapterTargetCacheKey({ sourceKind: 'account', sourceId: 'kimi-1', targetAgentId: 'codex' }));
-  });
-
-  it('renders unconfigurable targets disabled and failed cards with a retry hint', () => {
-    const markup = renderToStaticMarkup(
-      createElement(AdapterTargetGrid, {
-        agentIds: ['claude', 'codex', 'kimi'],
-        configurableIds: new Set(['claude', 'codex']),
-        analyses: {
-          claude: { kind: 'ready', analysis: { route: 'native_endpoint', support: 'stable', reason: '', actions: [], limitations: [], evidence: [] } },
-          codex: { kind: 'error', error: new Error('boom') },
-        },
-        selectedAgentId: 'claude',
-        onSelect: vi.fn(),
-        onRetry: vi.fn(),
-      }),
-    );
-    expect(markup).toContain('直连');
-    expect(markup).toContain('分析失败 · 点击重试');
-    expect(markup).toContain('未安装或不可配置');
-    expect(markup).toContain('disabled');
-    expect(markup).toContain('aria-selected="true"');
-  });
-});
-
-describe('adapter two-layer profile status', () => {
-  it('maps the durable configuration lifecycle and pulses only transient states', () => {
-    expect(adapterConfigStatusView('active')).toEqual({ label: '配置已生效', tone: 'success' });
-    expect(adapterConfigStatusView('applying')).toEqual({ label: '应用中', tone: 'info', pulse: true });
-    expect(adapterConfigStatusView('needs_attention')).toEqual({ label: '需要处理', tone: 'warning' });
-  });
-
+describe('bridge runtime status view', () => {
   it('keeps runtime state separate and never renders one for direct routes', () => {
     expect(bridgeRuntimeStatusView({ route: 'native_endpoint' })).toBeNull();
     expect(adapterServiceStatusView({ route: 'config_sync' })).toBeNull();
@@ -239,63 +181,6 @@ describe('adapter profile source resolution', () => {
   });
 });
 
-describe('adapter route pipeline', () => {
-  it('adds the bridge node only for local_bridge and marks unsupported as broken', () => {
-    const bridge = adapterRoutePipelineModel({
-      sourceTitle: 'Kimi 会员 Key',
-      sourceAgentId: 'kimi',
-      credentialLabel: 'API Key',
-      targetAgentId: 'codex',
-      route: 'local_bridge',
-    });
-    expect(bridge.nodes.map((node) => node.kind)).toEqual(['source', 'bridge', 'target']);
-    expect(bridge.nodes[1].subtitle).toContain('127.0.0.1');
-    expect(bridge.broken).toBe(false);
-
-    const direct = adapterRoutePipelineModel({
-      sourceTitle: 'Kimi 会员 Key',
-      sourceAgentId: 'kimi',
-      credentialLabel: 'API Key',
-      targetAgentId: 'claude',
-      route: 'native_endpoint',
-    });
-    expect(direct.nodes.map((node) => node.kind)).toEqual(['source', 'target']);
-    expect(direct.connectorLabel).toContain('直连');
-
-    const unsupported = adapterRoutePipelineModel({
-      sourceTitle: 'Some key',
-      credentialLabel: 'API Key',
-      targetAgentId: 'grok',
-      route: 'unsupported',
-    });
-    expect(unsupported.broken).toBe(true);
-  });
-
-  it('renders pipeline nodes and connector annotation', () => {
-    const markup = renderToStaticMarkup(
-      createElement(AdapterRoutePipeline, {
-        model: adapterRoutePipelineModel({
-          sourceTitle: 'Kimi 会员 Key',
-          sourceAgentId: 'kimi',
-          credentialLabel: 'API Key',
-          targetAgentId: 'claude',
-          route: 'native_endpoint',
-        }),
-      }),
-    );
-    expect(markup).toContain('Kimi 会员 Key');
-    expect(markup).toContain('Claude');
-    expect(markup).toContain('直连 · 原生端点');
-  });
-
-  it('summarizes the path in one line for the confirm dialog', () => {
-    expect(adapterApplySummaryLine({ sourceTitle: 'Kimi Key', targetAgentId: 'codex', route: 'local_bridge' }))
-      .toBe('Kimi Key → 本地桥接（127.0.0.1） → Codex');
-    expect(adapterApplySummaryLine({ sourceTitle: 'Kimi Key', targetAgentId: 'claude', route: 'native_endpoint' }))
-      .toBe('Kimi Key → Claude Code');
-  });
-});
-
 describe('managed adapter profiles view model', () => {
   it('summarizes the bridge fleet and counts degraded listeners as running', () => {
     expect(adapterBridgeFleetSummary([bridgeProfile({ route: 'native_endpoint', localPort: null })], {})).toBeNull();
@@ -311,11 +196,10 @@ describe('managed adapter profiles view model', () => {
     expect(adapterBridgeFleetSummary([bridgeProfile()], { 'bridge-1': { state: 'running' } })).toBeNull();
   });
 
-  it('derives the state-matched primary action', () => {
+  it('derives the state-matched primary action including statusUnavailable', () => {
     expect(adapterProfilePrimaryAction({ route: 'native_endpoint' })).toBeNull();
     expect(adapterProfilePrimaryAction({ route: 'local_bridge', bridgeState: 'running' }))
       .toEqual({ kind: 'stop', label: '停止' });
-    // A degraded bridge still owns its listener: stop, never start again.
     expect(adapterProfilePrimaryAction({ route: 'local_bridge', bridgeState: 'degraded' }))
       .toEqual({ kind: 'stop', label: '停止' });
     expect(adapterProfilePrimaryAction({ route: 'local_bridge', bridgeState: 'stopped' }))

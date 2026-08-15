@@ -22,7 +22,7 @@ import {
   ticketSurfaceLabel,
 } from '@/lib/backend/contracts/ticket';
 import { accountToEntry, providerToEntry } from './connection-model';
-import { bridgesHrefForProfile } from '@/pages/adapter/adapter-model';
+import { bridgesHrefForProfile } from '@/pages/bridges/adapter-model';
 
 export type TicketWalletFilter = 'all' | TicketCredentialClass;
 

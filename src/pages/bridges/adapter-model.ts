@@ -704,6 +704,21 @@ export function adapterErrorRetryHint(error: unknown): string | null {
   return isAdapterErrorRetryable(error) ? '此错误可重试。' : null;
 }
 
+export function adapterFailurePresentation(error: unknown, fallback: string): {
+  message: string;
+  retryable: boolean;
+  hint: string;
+} {
+  const retryable = isAdapterErrorRetryable(error);
+  return {
+    message: errorMessage(error, fallback),
+    retryable,
+    hint: retryable
+      ? '可重试；不会自动反复重试。'
+      : '不可重试。检查来源连接，或删除后重建。',
+  };
+}
+
 export type AdapterPageViewState = 'loading' | 'error' | 'empty' | 'choose' | 'preview';
 
 /** Pure page-state mapping keeps the empty/error path testable without a DOM. */

@@ -1,84 +1,19 @@
 /**
- * Pure view-model helpers for the redesigned Adapter page:
- * target fan-out cards, two-layer profile status, source resolution,
- * and the route pipeline. No IO, no React.
+ * Pure view-model helpers for the Bridges page: partition, single-layer
+ * runtime status, source resolution, fleet, and recovery. No IO, no React.
  */
 import { agentDisplayName } from '@/config/agents';
 import type {
   AdapterBridgeRuntimeState,
   AdapterProfile,
-  AdapterProfileStatus,
-  AdapterRoute,
-  AdapterRouteAnalysis,
-  AdapterSourceKind,
 } from '@/lib/backend/contracts/adapter';
 import type { AgentId } from '@/lib/types';
 import type { ConnectionEntry } from '@/pages/connections/connection-model';
 
-// ---------- Onboarding ----------
-
-/**
- * Static quick-start examples for the "nothing selected yet" pane.
- * Product guidance only — the capability matrix in core stays the sole
- * authority; every real conclusion still comes from `analyze`.
- */
-export const ADAPTER_SUPPORTED_PATH_EXAMPLES: ReadonlyArray<{
-  source: string;
-  targetAgentId: AgentId;
-  badge: { label: string; variant: 'success' | 'warning' };
-}> = [
-  { source: 'Kimi Code 会员', targetAgentId: 'claude', badge: { label: '直连', variant: 'success' } },
-  { source: 'Kimi Code 会员', targetAgentId: 'codex', badge: { label: '桥接 · 实验', variant: 'warning' } },
-];
-
-// ---------- Target fan-out ----------
-
-/** One target card. `unconfigurable` means detect says not installed / not writable. */
-export type AdapterTargetAnalysisState =
-  | { kind: 'unconfigurable' }
-  | { kind: 'loading' }
-  | { kind: 'ready'; analysis: AdapterRouteAnalysis }
-  | { kind: 'error'; error: unknown };
-
-/** Session cache key for one analyzed source × target pair. */
-export function adapterTargetCacheKey(input: {
-  sourceKind: AdapterSourceKind;
-  sourceId: string;
-  targetAgentId: AgentId;
-}): string {
-  return `${input.sourceKind}:${input.sourceId}:${input.targetAgentId}`;
-}
-
-/**
- * Route conclusion badge for one target card. This mirrors `analyze` only —
- * it never implies write access; Apply is still gated by `plan.canApply`.
- */
-export function adapterTargetBadge(
-  analysis: Pick<AdapterRouteAnalysis, 'route' | 'support'>,
-): { label: string; variant: 'success' | 'warning' | 'info' | 'default' } {
-  if (analysis.route === 'native_endpoint') return { label: '直连', variant: 'success' };
-  if (analysis.route === 'local_bridge') {
-    return analysis.support === 'experimental'
-      ? { label: '桥接 · 实验', variant: 'warning' }
-      : { label: '本地桥接', variant: 'warning' };
-  }
-  if (analysis.route === 'config_sync') return { label: '配置同步', variant: 'info' };
-  return { label: '暂不支持', variant: 'default' };
-}
-
-// ---------- Two-layer profile status ----------
-
 export type AdapterStatusTone = 'success' | 'warning' | 'danger' | 'info' | 'muted';
 
-/** `pulse` marks transient states (applying/starting/stopping) for a breathing dot. */
+/** `pulse` marks transient states (starting/stopping) for a breathing dot. */
 export type AdapterStatusView = { label: string; tone: AdapterStatusTone; pulse?: boolean };
-
-/** Durable configuration lifecycle. Never mixed with bridge runtime. */
-export function adapterConfigStatusView(status: AdapterProfileStatus): AdapterStatusView {
-  if (status === 'active') return { label: '配置已生效', tone: 'success' };
-  if (status === 'applying') return { label: '应用中', tone: 'info', pulse: true };
-  return { label: '需要处理', tone: 'warning' };
-}
 
 /**
  * Single-layer local-bridge runtime status. A failed status read is
@@ -244,80 +179,6 @@ export function bridgesPageViewState(input: {
   return 'healthy_empty';
 }
 
-// ---------- Route pipeline ----------
-
-export type AdapterPipelineNode = {
-  kind: 'source' | 'bridge' | 'target';
-  title: string;
-  subtitle: string;
-  agentId?: AgentId;
-};
-
-export type AdapterPipelineModel = {
-  nodes: AdapterPipelineNode[];
-  /** Annotation on the connector; only rendered for two-node pipelines. */
-  connectorLabel: string;
-  /** True when there is no viable path (unsupported). */
-  broken: boolean;
-};
-
-/** Data-flow topology of the selected route: source → (bridge?) → target. */
-export function adapterRoutePipelineModel(input: {
-  sourceTitle: string;
-  sourceAgentId?: AgentId | null;
-  credentialLabel: string;
-  targetAgentId: AgentId;
-  route: AdapterRoute;
-  bridgeEndpoint?: string | null;
-}): AdapterPipelineModel {
-  const source: AdapterPipelineNode = {
-    kind: 'source',
-    title: input.sourceTitle,
-    subtitle: input.credentialLabel,
-    agentId: input.sourceAgentId ?? undefined,
-  };
-  const target: AdapterPipelineNode = {
-    kind: 'target',
-    title: agentDisplayName(input.targetAgentId),
-    subtitle: '目标 Agent',
-    agentId: input.targetAgentId,
-  };
-  if (input.route === 'local_bridge') {
-    return {
-      nodes: [
-        source,
-        {
-          kind: 'bridge',
-          title: '本地桥接',
-          subtitle: input.bridgeEndpoint ?? '127.0.0.1 · 端口自动分配',
-        },
-        target,
-      ],
-      connectorLabel: '协议转换',
-      broken: false,
-    };
-  }
-  if (input.route === 'native_endpoint') {
-    return { nodes: [source, target], connectorLabel: '直连 · 原生端点', broken: false };
-  }
-  if (input.route === 'config_sync') {
-    return { nodes: [source, target], connectorLabel: '配置同步', broken: false };
-  }
-  return { nodes: [source, target], connectorLabel: '暂无可用路径', broken: true };
-}
-
-/** One-line path summary for the apply confirmation dialog. */
-export function adapterApplySummaryLine(input: {
-  sourceTitle: string;
-  targetAgentId: AgentId;
-  route: AdapterRoute;
-}): string {
-  const target = agentDisplayName(input.targetAgentId);
-  return input.route === 'local_bridge'
-    ? `${input.sourceTitle} → 本地桥接（127.0.0.1） → ${target}`
-    : `${input.sourceTitle} → ${target}`;
-}
-
 // ---------- Managed profiles ----------
 
 /** Fleet one-liner when there are at least two local bridges; `running` includes degraded. */
@@ -342,6 +203,13 @@ export type AdapterProfilePrimaryAction =
   | { kind: 'stop'; label: string }
   | { kind: 'start'; label: string };
 
+/** A degraded bridge still owns its local listener and must be stopped, not started again. */
+export function isBridgeStopCapable(
+  state: AdapterBridgeRuntimeState | undefined,
+): boolean {
+  return state === 'running' || state === 'degraded';
+}
+
 /**
  * Row-level primary action. Direct routes have none. A degraded bridge still
  * owns its listener and must be stopped, not started again. A status-read
@@ -354,7 +222,7 @@ export function adapterProfilePrimaryAction(input: {
   statusUnavailable?: boolean;
 }): AdapterProfilePrimaryAction | null {
   if (input.route !== 'local_bridge') return null;
-  const ownsListener = input.bridgeState === 'running' || input.bridgeState === 'degraded';
+  const ownsListener = isBridgeStopCapable(input.bridgeState);
   if (input.statusUnavailable) {
     return ownsListener
       ? { kind: 'stop', label: '停止' }

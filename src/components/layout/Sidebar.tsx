@@ -29,7 +29,7 @@ import { Hint } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/layout/SidebarContext';
 import { installedCatalogAgents } from '@/components/layout/sidebar-agents';
 import { cn } from '@/lib/utils';
-import { BRIDGES_NAV_LABEL, BRIDGES_PATH } from '@/pages/adapter/adapter-model';
+import { BRIDGES_NAV_LABEL, BRIDGES_PATH } from '@/pages/bridges/adapter-model';
 
 /** 工作区 */
 const NAV_WORKSPACE = [

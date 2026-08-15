@@ -15,11 +15,11 @@ import type { ConnectionEntry } from '@/pages/connections/connection-model';
 import { AdapterErrorLines } from './adapter-components';
 import {
   adapterBridgeEndpointLabel,
+  adapterFailurePresentation,
   BRIDGES_EMPTY_DESCRIPTION,
   BRIDGES_EMPTY_TITLE,
   BRIDGES_MUTATION_FAILURE,
 } from './adapter-model';
-import { adapterFailurePresentation } from './adapter-sources';
 import {
   adapterProfilePrimaryAction,
   adapterProfileRecoveryGuide,

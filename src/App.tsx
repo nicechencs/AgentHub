@@ -10,12 +10,12 @@ import DashboardPage from '@/pages/dashboard';
 import ChatPage from '@/pages/chat';
 import AgentsPage from '@/pages/agents';
 import ConnectionsPage from '@/pages/connections';
-import AdapterPage from '@/pages/adapter';
+import BridgesPage from '@/pages/bridges';
 import SkillsPage from '@/pages/skills';
 import McpPage from '@/pages/mcp';
 import ProjectsPage from '@/pages/projects';
 import SettingsPage from '@/pages/settings';
-import { legacyBridgesRedirectTo } from '@/pages/adapter/adapter-model';
+import { legacyBridgesRedirectTo } from '@/pages/bridges/adapter-model';
 import {
   checkForUpdate,
   isUpdateAvailable,
@@ -88,7 +88,7 @@ export default function App() {
                 <Route path="/chat" element={<ChatPage />} />
                 <Route path="/agents" element={<AgentsPage />} />
                 <Route path="/connections" element={<ConnectionsPage />} />
-                <Route path="/bridges" element={<AdapterPage />} />
+                <Route path="/bridges" element={<BridgesPage />} />
                 <Route path="/adapter" element={<LegacyBridgesRedirect />} />
                 <Route path="/router" element={<LegacyBridgesRedirect />} />
                 {/* 兼容旧路由与深链 */}
