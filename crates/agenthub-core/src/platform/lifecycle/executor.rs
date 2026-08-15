@@ -9,13 +9,11 @@ use crate::services::{BackupService, LiveWriteAuthority};
 use crate::storage::Database;
 use crate::utils::command_exec::CommandExecutor;
 
-use super::{LifecycleError, OperationKind};
-
 /// Executes lifecycle mutations after key-native resolve/capability checks.
 ///
-/// Production currently delegates only the seven built-in agents to the
-/// existing InstallService. Tests and future integrations can inject a narrow
-/// implementation without requiring a full legacy AgentAdapter.
+/// Production consumes [`InstallContribution`] allowlists for npm / native URLs /
+/// flags / uninstallers. Built-in agents still redetect via adapters; unknown
+/// keys execute contribution-driven allowlists without requiring `AgentId`.
 pub trait LifecycleInstallExecutor: Send + Sync {
     fn install(
         &self,
@@ -73,24 +71,41 @@ pub(super) fn legacy_builtin_agent_id(key: &AgentKey) -> Option<AgentId> {
         .find(|agent| agent.as_str() == key.as_str())
 }
 
-fn require_builtin(key: &AgentKey, kind: OperationKind) -> Result<AgentId> {
-    legacy_builtin_agent_id(key)
-        .ok_or_else(|| AppError::from(LifecycleError::unsupported(key, kind)))
+fn require_contribution_matches(key: &AgentKey, contribution: &dyn InstallContribution) -> Result<()> {
+    if contribution.agent_key() != *key {
+        return Err(AppError::InvalidArg(format!(
+            "install contribution key mismatch: expected {}, got {}",
+            key.as_str(),
+            contribution.agent_key().as_str()
+        )));
+    }
+    Ok(())
 }
 
 impl LifecycleInstallExecutor for BuiltinLifecycleInstallExecutor {
     fn install(
         &self,
         key: &AgentKey,
-        _contribution: &dyn InstallContribution,
+        contribution: &dyn InstallContribution,
         channel: &str,
         install_deps: bool,
         command_executor: &dyn CommandExecutor,
     ) -> Result<InstallOutcome> {
-        let agent = require_builtin(key, OperationKind::Install)?;
-        crate::services::install_service::install_agent(
-            &self.adapters,
-            agent,
+        require_contribution_matches(key, contribution)?;
+        if let Some(agent) = legacy_builtin_agent_id(key) {
+            return crate::services::install_service::install_agent_with_contribution(
+                &self.adapters,
+                agent,
+                contribution,
+                channel,
+                install_deps,
+                command_executor,
+            );
+        }
+        // Non-AgentId keys: contribution is the sole allowlist source.
+        crate::services::install_service::install_from_contribution(
+            key,
+            contribution,
             channel,
             install_deps,
             command_executor,
@@ -100,45 +115,67 @@ impl LifecycleInstallExecutor for BuiltinLifecycleInstallExecutor {
     fn upgrade(
         &self,
         key: &AgentKey,
-        _contribution: &dyn InstallContribution,
+        contribution: &dyn InstallContribution,
         command_executor: &dyn CommandExecutor,
     ) -> Result<InstallOutcome> {
-        let agent = require_builtin(key, OperationKind::Upgrade)?;
-        crate::services::install_service::upgrade_agent(&self.adapters, agent, command_executor)
+        require_contribution_matches(key, contribution)?;
+        if let Some(agent) = legacy_builtin_agent_id(key) {
+            return crate::services::install_service::upgrade_agent_with_contribution(
+                &self.adapters,
+                agent,
+                contribution,
+                command_executor,
+            );
+        }
+        crate::services::install_service::upgrade_from_contribution(
+            key,
+            contribution,
+            command_executor,
+        )
     }
 
     fn uninstall(
         &self,
         key: &AgentKey,
-        _contribution: &dyn InstallContribution,
+        contribution: &dyn InstallContribution,
         purge_config: bool,
         command_executor: &dyn CommandExecutor,
     ) -> Result<InstallOutcome> {
-        let agent = require_builtin(key, OperationKind::Uninstall)?;
-        if purge_config {
-            let guard = self.authority.acquire(agent)?;
-            match self.backups.snapshot_with_guard(
-                &guard,
-                agent,
-                BackupKind::PreUninstall,
-                Some("pre-uninstall"),
-            ) {
-                Ok(_) | Err(crate::error::AppError::NotFound(_)) => {}
-                Err(error) => return Err(error),
+        require_contribution_matches(key, contribution)?;
+        if let Some(agent) = legacy_builtin_agent_id(key) {
+            if purge_config {
+                let guard = self.authority.acquire(agent)?;
+                match self.backups.snapshot_with_guard(
+                    &guard,
+                    agent,
+                    BackupKind::PreUninstall,
+                    Some("pre-uninstall"),
+                ) {
+                    Ok(_) | Err(crate::error::AppError::NotFound(_)) => {}
+                    Err(error) => return Err(error),
+                }
+                return crate::services::install_service::uninstall_agent_with_contribution_and_guard(
+                    &self.adapters,
+                    &self.authority,
+                    &guard,
+                    agent,
+                    contribution,
+                    true,
+                    command_executor,
+                );
             }
-            return crate::services::install_service::uninstall_agent_with_guard(
+            return crate::services::install_service::uninstall_agent_with_contribution_and_authority(
                 &self.adapters,
                 &self.authority,
-                &guard,
                 agent,
-                true,
+                contribution,
+                purge_config,
                 command_executor,
             );
         }
-        crate::services::install_service::uninstall_agent_with_authority(
-            &self.adapters,
-            &self.authority,
-            agent,
+        crate::services::install_service::uninstall_from_contribution(
+            key,
+            contribution,
             purge_config,
             command_executor,
         )
