@@ -145,11 +145,11 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 
 - `reshape` / `native`：不常驻进程
 - `bridge`：只听 loopback；目标只持短寿命本地 bearer；上游 secret 留在 Hub / sidecar
-- 不监听公网，不做号池换号，不把一张票拆成多人 Key
+- 不监听公网，不多账号轮换，不把一张票拆成多人 Key
 - refresh single-flight 发生在**票**这一层，所有绑定共享同一次刷新
 - 流式：首字节前可换路线/重试，写出后禁止重放
 
-参考实现（cc-switch、CLIProxyAPI、Management Center、sub2api）**借鉴产品能力**：三路复用、协议成图、下游身份与上游 secret 分离、首字节边界、按账号 refresh、管理面的登录/配额/探测。**不借鉴运营形态**：拼车、公网入口、永远起代理、把投影再当票。许可边界仍要单独审；优先重写，不混入参考项目源码。凭据落盘加密仍为项目范围外。产品真源：[product-decisions.md](product-decisions.md)。
+产品能力：三路复用、协议成图、下游身份与上游 secret 分离、首字节边界、按账号 refresh、管理面的登录/配额/探测。本产品不做公网入口、多账号拼车、默认常驻代理，也不把桥的生成配置再当作钱包里的票。凭据落盘加密仍为项目范围外。产品真源：[product-decisions.md](product-decisions.md)。
 
 ## 5. 界面（目标态，允许重做）
 
@@ -240,7 +240,7 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 6. 新 Agent writer：DeepSeek Harness（`dsh`）已接入；**DeepSeek API → `dsh` `config_sync`** 与 **DeepSeek API → Claude experimental `native_endpoint`** 都走现有 `AdapterCapabilityMatrix` / `AdapterApplyService`。不要把 Harness 当协议桥。
 7. **跨 Agent 复用三路**（产品已定，见 [product-decisions.md](product-decisions.md)）：先补 ①（双协议 / 单协议 Key 直连），再接 ②（Claude / Codex / Grok 订阅 → Pi 等已有契约槽；当前三条 Pi 槽已可 experimental bind），③ Codex `auth_json` 订阅 → Claude Responses 的本机桥已可 experimental bind，App Server/OauthOther 仍关闭。实现未开只表示缺执行器 / fixtures，不表示产品关闭。
 
-做不到、且应看得见的上限：Cursor 当目标（无 writer）、未标记的自定义中转、二次投影、公网号池。暂时不能当 HTTP 上游的登录态要写明缺哪一跳，不能写成「订阅一律不做」。
+做不到、且应看得见的上限：Cursor 当目标（无 writer）、未标记的自定义中转、二次投影、公网多账号共享。暂时不能当 HTTP 上游的登录态要写明缺哪一跳，不能写成「订阅一律不做」。
 
 ## 7. 现状对照（防止倒读）
 

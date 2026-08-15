@@ -3,7 +3,6 @@
 > 状态：**可应用路径已接线（Claude 稳定直连 + Kimi / Anthropic / Codex subscription → Codex/Claude 实验性本地桥接 + Pi 配置同步）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）；Claude/Codex/Grok 订阅 → Pi 的 ② `config_sync` 已开放 experimental bind（写入 `auth.json`，刷新由 Pi 拥有）。Anthropic API Key → Codex 与 Codex Responses `auth_json` → Claude 的 `local_bridge` 已开放 experimental bind。Codex 订阅 → Claude 只开放 Responses 格，App Server 仍关闭；Codex 订阅 → Pi 是 ②，不走本页桥。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。Kimi / Anthropic / Codex → Claude 发布前仍需实机 dogfood。
 > 2026-08-15：跨 Agent 复用的**目标领域**改为票 / 绑定 / 协议图（[connection-binding-model.md](connection-binding-model.md)）。ConnectFlow 确认步与 Adapter 页删除已改走 `bind`/`unbind`；内部仍可复用 apply 实现 reshape/bridge 运行时。生成物是绑定的私有 runtime，不是钱包里的新票。
 > 调研日期：2026-08-12（进度同步：2026-08-12）
-> 重点参考：`D:\demo_github\AgentHub_Ref\Cli-Proxy-API-Management-Center`
 > 关联文档：[product-decisions.md](product-decisions.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
 > 2026-08-14 同步：Hub 重构 Phase 1 落地（[hub-redesign-plan.md](hub-redesign-plan.md)）——Dashboard Agent 卡片与 Connections 行新增统一连接流程 `ConnectFlowDialog`（复用同一 `lib/api/adapter` 门面与 `plan.canApply` 门禁）。Adapter 页（侧栏「桥与适配」）只管理已绑定的本机桥 runtime，不是日常创建入口；创建绑定不在本页。
 
@@ -67,7 +66,7 @@ Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变�
 - 不把 ChatGPT、Claude 等订阅 OAuth **导出成可复制的通用 API Key**，也不转售、不共享给其他人。
 - 不承诺「任意 OAuth 自动能接到任意 Agent」。每条边仍要分类 + fixtures；未就绪的边 `canApply=false`。产品方向是三路复用（能直连或写原生槽就不起桥），见 [product-decisions.md](product-decisions.md)。
 - 不建设公网网关、团队租户、计费、多号轮询/权重/冷却池或配额调度平台。
-- 不在 Adapter 首屏建设完整协议矩阵、监控大盘、日志控制台或 Provider 多栏工作台（管理动作可对齐 Management Center，页面不抄）。
+- 不在 Adapter 首屏建设完整协议矩阵、监控大盘、日志控制台或 Provider 多栏工作台。
 - 不记录请求/响应正文，不展示或复制完整 Token。
 - 不把凭据落盘加密列为本功能任务；按项目既有决策继续沿用当前存储方案。
 - 不在 MVP 转换厂商专属原生工具、加密思考块、视频通道或无法无损表达的扩展字段。
@@ -141,7 +140,7 @@ type CompatibilityRule = {
 - PageHeader 右侧：主按钮「去 Dashboard 连接」→ `/`；次按钮「去 Connections」。
 - 本页不再渲染选来源 → 分析目标 → plan → apply 创建区。
 
-页面沿用 `pageRhythm.pageShell`、`PageHeader`、`PageSection`、`TableShell`、`SegmentedControl`、`Card`、`Badge`、`Dialog`、`EmptyState`、`ErrorState` 和现有 Tailwind 语义 token。不引入参考项目的 SCSS token、Sheet primitive 或新的视觉系统。
+页面沿用 `pageRhythm.pageShell`、`PageHeader`、`PageSection`、`TableShell`、`SegmentedControl`、`Card`、`Badge`、`Dialog`、`EmptyState`、`ErrorState` 和现有 Tailwind 语义 token。不另起一套视觉系统。
 
 ### 4.2 首屏信息架构
 
@@ -326,7 +325,7 @@ adapter_service
 
 ### 5.3 应用事务
 
-延续现有 Provider 安全切换，不使用参考项目“多段写入后仅 refetch”的弱补偿方式。事务边界分为两层：`adapter_service` 负责完整操作的 saga；目标 Agent live 配置事务仍由 `ProviderService` 作为唯一 owner。当前 saga 接线位于 Tauri controller；迁移完成后由 sidecar 内的 Tauri-neutral application service 成为 `local_bridge` 唯一编排者，GUI 不得跨 IPC 继续执行后半段。`adapter_service` 不在外层持有 agent lock 后调用公开 `ProviderService::switch`，也不重复调用 `ConfigurationService.apply`：
+延续现有 Provider 安全切换，不使用“多段写入后仅 refetch”的弱补偿方式。事务边界分为两层：`adapter_service` 负责完整操作的 saga；目标 Agent live 配置事务仍由 `ProviderService` 作为唯一 owner。当前 saga 接线位于 Tauri controller；迁移完成后由 sidecar 内的 Tauri-neutral application service 成为 `local_bridge` 唯一编排者，GUI 不得跨 IPC 继续执行后半段。`adapter_service` 不在外层持有 agent lock 后调用公开 `ProviderService::switch`，也不重复调用 `ConfigurationService.apply`：
 
 ```text
 analyze
@@ -536,39 +535,13 @@ Adapter 详情只展示最近 5 条结构化事件：时间、阶段、结果、
 - `打开日志目录`；
 - `重新测试`。
 
-MVP 不做全文搜索、自动滚动、错误文件下载、方法/路径筛选和清空日志。后续若建设全局 Logs 页面，再复用参考项目的 cursor 分页、8 秒轮询、`cursorReset` 恢复和“接近底部才自动跟随”等交互。
+MVP 不做全文搜索、自动滚动、错误文件下载、方法/路径筛选和清空日志。后续若建设全局 Logs 页面，再补 cursor 分页、轮询恢复和接近底部才自动跟随。
 
-## 9. 对重点参考项目的取舍
+## 9. 管理面取舍
 
-`Cli-Proxy-API-Management-Center` 是 CLIProxyAPI 的管理面（OAuth、凭据、配额、探测、日志），不是代理本体。产品上要对齐这些**管理动作**；协议转发对齐 CLIProxyAPI / cc-switch。其 `/api-call` 只是管理端代发最小测试请求，不能当成代理 runtime。取舍见 [product-decisions.md](product-decisions.md)。
+本页只做本机桥 runtime 的管理：OAuth 等待态、字段旁探测、保存前冲突检测、最近事件与 request id。最小探测请求不是代理 runtime。
 
-重点阅读的参考源：
-
-| 文件/模块 | 参考内容 |
-|---|---|
-| `src/pages/OAuthPage.tsx`、`features/authFiles/hooks/useAuthFilesOauth.tsx` | OAuth 卡内状态、轮询、手动回调 fallback、不支持与故障的区分 |
-| `features/providers/components/ProviderSheet.tsx` | detail/create/edit 三态、dirty 保存和未保存离开保护 |
-| `features/providers/sheets/forms/BaseProviderForm.tsx` | 字段附近的连接测试反馈 |
-| `services/api/providers.ts` | 保存前读取最新配置、稳定身份冲突检测、保留未知字段 |
-| `features/providers/sheets/forms/useConnectivityTest.ts` | 按 Chat/Responses/Messages 等目标协议发送最小探测请求 |
-| `services/api/apiCall.ts` | 管理端测试代发的请求/响应 envelope；明确不是 proxy runtime |
-| `services/api/logs.ts`、`pages/LogsPage.tsx` | cursor/after 增量日志、request id 下钻、轮询恢复 |
-| `features/providers/useProviderWorkbench.ts` | mutation guard、完成后 refetch；其多 Provider 联动只作反例，不复制到 MVP |
-
-| 参考能力 | 决策 | AgentHub 落法 |
-|---|---|---|
-| Provider 详情/创建/编辑 Sheet，dirty 才保存 | 采用其状态模型 | Adapter 使用现有 Dialog 承载详情/编辑，保留 dirty 与未保存离开确认 |
-| OAuth 卡内 URL、等待、回调、成功/失败状态 | 简化采用 | 只在来源连接尚未完成时原位显示；成功后继续创建或回 Connections |
-| 字段旁连接测试状态 | 采用 | 上游/目标格式分开测试，输入变化清除旧结果 |
-| 保存前 DiffModal | 简化采用 | 先摘要，按需展开结构化 diff，不引入全屏编辑器 |
-| 先取最新配置、保留未知字段、目标变更时报冲突 | 采用并加强 | 前端经 ConfigPort 展示 plan；core 由 ConfigurationService 规划、ProviderService 单次事务应用并负责备份/验证，外层 saga 负责补偿 |
-| 协议化最小探测和模型发现 | 采用 | 非流式小请求；模型发现失败不阻断手工配置 |
-| 日志 cursor、request id drilldown | 延后采用 | MVP 仅最近事件；全局 Logs 页面再做 cursor/过滤 |
-| Providers 多栏工作台、240px 分类左栏 | 不采用 | Adapter 单列列表 + 现有 Dialog |
-| AuthFiles 340px 卡片网格、批量操作 | 不采用 | 复用 Connections 紧凑 ListRow |
-| Provider priority/weight/cooling/赞助商多协议联动 | 不采用 | 超出个人本地 Adapter MVP |
-| 自定义 SCSS token 与成功率色谱 | 不采用 | 沿用 AgentHub Tailwind token、StatusDot、Badge |
-| `/api-call` 视为代理服务 | 明确拒绝 | 新增真实 loopback BridgeRuntime 和 protocol 层 |
+不做：多栏 Provider 工作台、批量账号网格、权重/冷却池、另一套视觉系统。产品边界见 [product-decisions.md](product-decisions.md)。
 
 ## 10. 实施顺序
 
