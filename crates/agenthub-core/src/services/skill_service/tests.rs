@@ -1953,3 +1953,74 @@ fn list_catalog_omits_agent_copy_when_shared_has_same_id() {
         .expect("list_installed still shows Claude other");
     assert_eq!(other_agent.map_status, SkillMapStatus::Conflict);
 }
+
+#[test]
+fn sync_targets_empty_list_is_empty_report() {
+    let root = real_tempdir();
+    let missing = root.path().join("nope");
+    let reg = make_registry(
+        root.path().join("c"),
+        root.path().join("x"),
+        root.path().join("g"),
+    );
+    let svc = SkillService::new(missing, reg);
+    let report = svc.sync_targets(&AgentId::ALL, false, true).unwrap();
+    assert!(report.synced.is_empty());
+    assert!(report.skipped.is_empty());
+    assert!(report.failed.is_empty());
+}
+
+#[test]
+fn sync_targets_skips_unsupported_when_requested() {
+    let (_tmp, source, claude, _codex, _grok, svc) = setup_write_fixture();
+    write_file(
+        &source.join("demo").join("SKILL.md"),
+        &skill_md("Demo", "d"),
+    );
+    write_file(&source.join("demo").join("nested").join("a.txt"), "alpha");
+
+    let report = svc.sync_targets(&AgentId::ALL, false, true).unwrap();
+
+    assert!(report
+        .synced
+        .iter()
+        .any(|a| a.skill == "demo" && a.agent == AgentId::Claude));
+    assert!(report
+        .synced
+        .iter()
+        .any(|a| a.skill == "demo" && a.agent == AgentId::Codex));
+    assert!(report
+        .synced
+        .iter()
+        .any(|a| a.skill == "demo" && a.agent == AgentId::Grok));
+    assert!(report.skipped.iter().any(|a| a.agent == AgentId::Kimi));
+    assert!(!report.synced.iter().any(|a| a.agent == AgentId::Kimi));
+    assert!(!report.failed.iter().any(|a| a.agent == AgentId::Kimi));
+    for agent in [
+        AgentId::Pi,
+        AgentId::WorkBuddy,
+        AgentId::Cursor,
+        AgentId::Dsh,
+    ] {
+        assert!(
+            report.skipped.iter().any(|a| a.agent == agent),
+            "expected {agent} skipped as unsupported"
+        );
+    }
+    assert!(report.failed.is_empty());
+    assert!(claude.join("demo").is_dir());
+}
+
+#[test]
+fn sync_targets_single_agent_does_not_skip_unsupported() {
+    let (_tmp, source, _c, _x, _g, svc) = setup_write_fixture();
+    write_file(&source.join("demo").join("SKILL.md"), &skill_md("D", "d"));
+
+    let report = svc.sync_targets(&[AgentId::Kimi], false, false).unwrap();
+    assert!(report.skipped.is_empty());
+    assert!(report.synced.is_empty());
+    assert_eq!(report.failed.len(), 1);
+    assert_eq!(report.failed[0].skill, "demo");
+    assert_eq!(report.failed[0].agent, AgentId::Kimi);
+    assert_eq!(report.failed[0].code, "unsupported");
+}

@@ -66,6 +66,12 @@ fn sync_all_report_shape() {
     assert!(v["synced"].is_array());
     assert!(v["skipped"].is_array());
     assert!(v["failed"].is_array());
+
+    let all = sync_all_skills_inner(&hub, None, false).unwrap();
+    let all_v = serde_json::to_value(&all).unwrap();
+    assert!(all_v["synced"].is_array());
+    assert!(all_v["skipped"].is_array());
+    assert!(all_v["failed"].is_array());
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use agenthub_core::error::{AppError, Result};
-use agenthub_core::models::{AgentId, AgentUpdateState, BackupKind};
+use agenthub_core::models::{AgentId, AgentUpdateState};
 use agenthub_core::{AgentHub, AgentKey};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
@@ -25,13 +25,6 @@ fn parse_lifecycle_agent_key(value: &str) -> Result<AgentKey> {
             }
         }
     }
-}
-
-fn legacy_builtin_agent_id(key: &AgentKey) -> Option<AgentId> {
-    AgentId::ALL
-        .iter()
-        .copied()
-        .find(|agent| agent.as_str() == key.as_str())
 }
 
 fn update_state_label(state: AgentUpdateState) -> &'static str {
@@ -90,7 +83,7 @@ pub fn capabilities(
         "print capability matrix"
     );
 
-    if markdown {
+    if should_print_capabilities_markdown(markdown, format) {
         let agents: Vec<AgentId> = matrix.keys().copied().collect();
         print!("| Capability |");
         for a in &agents {
@@ -145,6 +138,10 @@ pub fn capabilities(
             Ok(())
         }
     }
+}
+
+fn should_print_capabilities_markdown(markdown: bool, format: OutputFormat) -> bool {
+    markdown && format != OutputFormat::Quiet && format != OutputFormat::Json
 }
 
 fn print_outcome(
@@ -280,18 +277,6 @@ pub fn uninstall(
             ),
             yes,
         )?;
-    }
-    // Best-effort pre-uninstall backup when purging config.
-    if purge_config {
-        if let Some(agent) = legacy_builtin_agent_id(&key) {
-            match hub
-                .backups
-                .snapshot(agent, BackupKind::PreUninstall, Some("pre-uninstall"))
-            {
-                Ok(rec) => eprintln!("pre-uninstall backup: {}", rec.id),
-                Err(e) => eprintln!("pre-uninstall backup skipped: {e}"),
-            }
-        }
     }
     let outcome = hub.uninstall_agent_key(&key, purge_config)?;
     print_outcome(&outcome, format)

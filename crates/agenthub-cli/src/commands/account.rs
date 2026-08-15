@@ -160,7 +160,9 @@ pub fn oauth_url(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str
             println!("redirect_uri: {}", start.redirect_uri);
             println!("authorize_url:\n{}", start.authorize_url);
             println!();
-            println!("Open the URL, complete login, then finish in GUI or wait for callback.");
+            println!(
+                "This process exits after printing the URL; the loopback callback dies with it. Complete login in the GUI."
+            );
             Ok(())
         }
     }

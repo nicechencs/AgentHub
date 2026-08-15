@@ -45,8 +45,10 @@ fn render_error(err: &AppError, format: OutputFormat) -> Option<String> {
 
 /// Map an install-family outcome to CLI success / structured failure.
 pub fn emit_install_outcome(outcome: &InstallOutcome, format: OutputFormat) -> Result<()> {
-    for line in &outcome.logs {
-        eprintln!("{line}");
+    if format != OutputFormat::Quiet {
+        for line in &outcome.logs {
+            eprintln!("{line}");
+        }
     }
     match format {
         OutputFormat::Quiet => {}

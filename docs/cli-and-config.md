@@ -1,4 +1,4 @@
-# AgentHub CLI 命令规范与配置契约 v1.2
+# AgentHub CLI 命令规范与配置契约 v1.4
 
 > 对应《项目方案》GUI + CLI 双端与《架构拆分》`agenthub-cli` / 数据目录。  
 > 本文是**可验收契约**：实现 CLI 与配置读写时以本文为准；与 GUI 冲突时以 **core service 行为一致** 为最高原则。  
@@ -172,7 +172,7 @@ agenthub
 | `list` | | `env_service.detect_all` | 否 | 与 doctor 的 runtimes 段同源；**仅宿主相关 Runtime**（macOS/Linux 不含 `powershell`） |
 | `install` | `<runtime> [--channel]` | `env_service.install_runtime` | 中 | P2；`runtime`：`nodejs`/`git` 等；channel 默认 **Windows=`winget`、macOS=`brew`**；`powershell` **永不**一键安装；流式日志 stderr；成功后 invalidate 缓存 |
 
-- `install` 在无自动渠道时打印 remediations（命令 + URL）并以退出码 `3`（业务失败）结束，**不**假装成功。
+- `install` 在无自动渠道时打印 remediations（命令 + URL）并以退出码 `3`（业务失败）结束，**不**假装成功。无包管理器（brew/winget 未找到）或不支持的安装渠道 → 退出码 `3`（`env.not_ready` / `unsupported`），`--output json` 的 `details` 含 `remediations`（已按宿主平台过滤）。命令已执行但重新检测未就绪仍为 `install.failed`（退出码 `1`）。
 - **不提供** `env uninstall`（避免误伤系统 Node）。
 - 平台环境差异硬约束见 [agenthub-plan.md §5.7.5](agenthub-plan.md)。
 
@@ -237,7 +237,7 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 
 文件型账号池：仅导入 adapter 声明支持的 live 凭据形态。无法在公开配置中可靠定位的官方登录态，import 返回 `unsupported`（退出码 `3`），不猜测路径。可入池但写回契约未锁定的 API Key，apply 到 live 仍 `unsupported`。
 
-**OAuth**：GUI 完成已配置平台的 loopback PKCE；CLI 提供 `account oauth-url`（只出 URL）与 `account refresh`（用 refresh 换新），**不**把完整浏览器 PKCE 作为 CLI 主路径。
+**OAuth**：GUI 完成已配置平台的 loopback PKCE；CLI 提供 `account oauth-url`（只出 URL）与 `account refresh`（用 refresh 换新），**不**把完整浏览器 PKCE 作为 CLI 主路径。CLI `oauth-url` 只打印 URL，进程退出后 loopback 失效。
 
 ### 4.6 `skill`
 
@@ -483,4 +483,6 @@ L3 内置    →  只读模板；不是用户状态
 |---|---|---|
 | v1.0 | 2026-07-27 | 初版：命令树 freeze、退出码、GUI 矩阵、L0–L3 配置契约、验收清单 |
 | v1.1 | 2026-07-27 | 前置环境：`env` 资源、doctor runtimes、`agent install --install-deps`、EnvNotReady 契约 |
+| v1.2 | 2026-07-27 | 平台环境差异：`doctor`/`env list` 仅返回宿主相关 Runtime；`env install` 默认 channel 与 native 底层命令按 Windows/macOS 分流 |
 | v1.3 | 2026-08-15 | 命令树补齐 `agent outdated` / `backup delete` / `provider undo|test-latency` / `account undo`；doctor ⑤ Locks；`config get` 全白名单 + 只读 `app_version`；JSON 错误带 details；EnvNotReady 退出码 3 |
+| v1.4 | 2026-08-15 | `agent uninstall --purge-config` 只走 core 一次 PreUninstall 备份；`env install` 无 brew/winget → `env.not_ready`（退出码 3）；`skill sync` 下沉 `SkillService::sync_targets`；`--quiet` 不再泄漏 capabilities markdown / install logs；`oauth-url` 标明 loopback 随进程退出 |

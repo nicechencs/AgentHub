@@ -20,7 +20,9 @@ use crate::catalog::limits::{
 };
 use crate::error::{AppError, Result};
 use crate::logging::{self, targets};
-use crate::models::{AgentId, DetectStatus, EnvStatusKind, InstallOutcome, RuntimeId};
+use crate::models::{
+    AgentId, DetectStatus, EnvNotReady, EnvStatusKind, InstallOutcome, Remediation, RuntimeId,
+};
 use crate::platform::install::builtin_install_registry;
 use crate::runtime;
 use crate::services::{LiveWriteAuthority, LiveWriteGuard};
@@ -297,6 +299,81 @@ fn resolve_brew() -> Result<String> {
     })
 }
 
+/// Drop package-manager remediations that do not apply on this host.
+/// Windows never surfaces `brew`; macOS/Linux never surface `winget`.
+fn filter_host_remediations(items: Vec<Remediation>) -> Vec<Remediation> {
+    items
+        .into_iter()
+        .filter(|r| {
+            if cfg!(windows) {
+                r.kind != "brew"
+            } else {
+                r.kind != "winget"
+            }
+        })
+        .collect()
+}
+
+fn host_remediations(id: RuntimeId) -> Vec<Remediation> {
+    filter_host_remediations(vec![runtime::remediation_for(id)])
+}
+
+fn push_remediation_logs(logs: &mut Vec<String>, remediations: &[Remediation]) {
+    for rem in remediations {
+        if let Some(command) = &rem.command {
+            push_log(logs, format!("remediation: {command}"));
+        }
+        if let Some(url) = &rem.url {
+            push_log(logs, format!("remediation url: {url}"));
+        }
+    }
+}
+
+/// brew/winget missing: coded `env.not_ready` so CLI exits 3 with remediations.
+fn missing_package_manager_outcome(
+    action: &str,
+    mut logs: Vec<String>,
+    channel: &str,
+    missing: RuntimeId,
+    message: impl Into<String>,
+) -> InstallOutcome {
+    let message = message.into();
+    let remediations = host_remediations(missing);
+    push_remediation_logs(&mut logs, &remediations);
+    let details = serde_json::to_value(EnvNotReady {
+        agent: None,
+        channel: Some(channel.into()),
+        missing: vec![missing],
+        remediations,
+        hint: Some(message.clone()),
+    })
+    .ok();
+    InstallOutcome::failure(action, logs, message).with_code("env.not_ready", details)
+}
+
+fn unsupported_channel_outcome(action: &str, logs: Vec<String>, channel: &str) -> InstallOutcome {
+    #[cfg(target_os = "macos")]
+    let platform_hint = "macOS 默认使用 brew；可传 --channel brew";
+    #[cfg(windows)]
+    let platform_hint = "Windows 默认使用 winget";
+    #[cfg(all(not(target_os = "macos"), not(windows)))]
+    let platform_hint = "当前平台仅支持 --channel winget";
+
+    #[cfg(target_os = "macos")]
+    let suffix = "（macOS 默认使用 brew；可传 --channel brew）";
+    #[cfg(not(target_os = "macos"))]
+    let suffix = "";
+
+    let message = format!("不支持的安装渠道 '{channel}'（当前仅 winget{suffix}）");
+    InstallOutcome::failure(action, logs, message).with_code(
+        "unsupported",
+        Some(serde_json::json!({
+            "channel": channel,
+            "hint": platform_hint,
+        })),
+    )
+}
+
 /// Complete an environment install by invalidating detection caches and
 /// checking the exact requested runtime (plus Node.js for an npm request).
 fn finalize_runtime_install(
@@ -422,9 +499,11 @@ fn install_runtime_inner(
                 Ok(path) => path,
                 Err(e) => {
                     logs.push(e.to_string());
-                    return Ok(InstallOutcome::failure(
+                    return Ok(missing_package_manager_outcome(
                         action,
                         logs,
+                        "brew",
+                        target,
                         "未找到 Homebrew。请先安装 Homebrew（https://brew.sh/）后重试。",
                     ));
                 }
@@ -441,15 +520,7 @@ fn install_runtime_inner(
         }
 
         if channel != "winget" {
-            #[cfg(target_os = "macos")]
-            let hint = "（macOS 默认使用 brew；可传 --channel brew）";
-            #[cfg(not(target_os = "macos"))]
-            let hint = "";
-            return Ok(InstallOutcome::failure(
-                action,
-                logs,
-                format!("不支持的安装渠道 '{channel}'（当前仅 winget{hint}）"),
-            ));
+            return Ok(unsupported_channel_outcome(action, logs, channel));
         }
 
         logs.push(format!(
@@ -465,9 +536,11 @@ fn install_runtime_inner(
                     RuntimeId::Git => "请手动安装 Git 后重新检测。",
                     _ => "请手动安装 Node.js LTS 后重新检测。",
                 };
-                return Ok(InstallOutcome::failure(
+                return Ok(missing_package_manager_outcome(
                     action,
                     logs,
+                    "winget",
+                    target,
                     format!("未找到 winget。{manual}"),
                 ));
             }
