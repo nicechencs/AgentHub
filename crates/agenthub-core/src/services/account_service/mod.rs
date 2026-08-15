@@ -14,16 +14,33 @@ mod switch_saga;
 #[cfg(test)]
 mod tests;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
+
+use chrono::Utc;
+use serde_json::{json, Value};
+use uuid::Uuid;
 
 use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::{AppError, Result};
 use crate::logging::targets;
-use crate::models::{AgentId, BackupKind};
-use crate::services::{BackupService, ConnectionService};
+use crate::models::{
+    attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult,
+    AdapterSourceKind, AgentId, BackupKind, Capability, LiveAccount, PersistedTicketSurface,
+    TicketSurface,
+};
+use crate::services::switch_undo::{
+    clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
+};
+use crate::services::{AdapterRouteService, BackupService, ConnectionService};
 use crate::storage::{AccountRepo, Database};
 use crate::utils::agent_lock::AgentWriteLock;
+use crate::utils::redact::mask_secret_preview;
+
+// Re-export helpers so `tests` (`use super::*`) keep seeing them.
+pub(super) use surface::*;
 
 pub const MAX_ACCOUNT_ID_LEN: usize = 128;
 pub const MAX_ACCOUNT_LABEL_LEN: usize = 256;

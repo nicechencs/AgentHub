@@ -143,6 +143,7 @@ mod removal;
 mod rules;
 
 use rules::*;
+pub(super) use rules::*;
 
 #[cfg(test)]
 mod tests;

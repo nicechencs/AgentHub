@@ -10,10 +10,20 @@ mod plan;
 #[cfg(test)]
 mod tests;
 
-use crate::models::{AdapterCapabilityDecision, AdapterCredentialClass};
+use crate::error::{AppError, Result};
+use crate::models::{
+    adapter_maturity_from_decision, decide_adapter_capability, AccountKind, AdapterAction,
+    AdapterApplyPlan, AdapterCapabilityDecision, AdapterCredentialClass, AdapterEvidence,
+    AdapterPlanChange, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
+    AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
+};
+use crate::services::adapter_route_constants::*;
 use crate::storage::{AccountRepo, Database, ProviderRepo};
+use serde_json::Value;
 
 use actions::RouteSourceLabel;
+
+pub(super) use actions::*;
 
 /// Determines whether one saved connection has a supported preview route to an agent.
 ///

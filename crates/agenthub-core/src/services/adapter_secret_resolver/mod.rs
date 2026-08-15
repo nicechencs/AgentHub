@@ -7,10 +7,17 @@ mod helpers;
 mod materialize;
 mod validate;
 
+pub(super) use helpers::*;
+
 #[cfg(test)]
 mod tests;
 
+use crate::error::{AppError, Result};
+use crate::models::{AdapterSourceKind, AgentId, Provider};
+use crate::services::adapter_route_constants::*;
 use crate::storage::{AccountRepo, Database, ProviderRepo};
+use serde_json::{json, Value};
+use toml_edit::DocumentMut;
 
 // Re-export so existing `adapter_secret_resolver::CONNECTION_SECRET_MARKER` paths keep working.
 pub use crate::services::adapter_route_constants::CONNECTION_SECRET_MARKER;

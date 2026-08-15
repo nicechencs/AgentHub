@@ -6,6 +6,8 @@
 mod saga;
 mod specs;
 
+pub(crate) use specs::apply_request_supported;
+
 #[cfg(test)]
 mod tests;
 
@@ -16,7 +18,19 @@ use crate::services::{
     AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderService,
 };
 use crate::storage::{AdapterProfileRepo, Database};
-use crate::models::{AdapterProfile, AgentId, Provider, ProviderInput};
+use crate::error::{AppError, Result};
+use crate::models::{
+    AdapterApplyRequest, AdapterApplyResult, AdapterGateKind, AdapterProfile, AdapterProfileFilter,
+    AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteAnalysis,
+    AdapterRouteRequest, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
+    Provider, ProviderInput,
+};
+use crate::services::adapter_route_constants::*;
+use crate::services::ProviderLiveSagaGuard;
+use chrono::Utc;
+use serde_json::json;
+
+pub(super) use specs::*;
 
 /// Pre-switch snapshot used to reverse a successful live switch when profile
 /// finalization (or the switch itself) fails. Deliberately private and
