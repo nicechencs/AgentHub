@@ -3,16 +3,13 @@ import type {
   AdapterRouteAnalysis,
   AdapterRouteRequest,
 } from '@/lib/backend/contracts/adapter';
+import { getRuleFixtureById } from './rule-fixtures';
 import {
   CLAUDE_NATIVE_EXPERIMENTAL_RULES,
   CODEX_CLAUDE_RULE_ID,
-  DEEPSEEK_CLAUDE_BASE_URL,
-  DEEPSEEK_CLAUDE_RULE_ID,
   DEEPSEEK_CODEX_BASE_URL,
   EXPLICIT_API_TO_CODEX_RULES,
   EXPLICIT_API_TO_PI_RULES,
-  GLM_CLAUDE_BASE_URL,
-  GLM_CLAUDE_RULE_ID,
   GLM_CODEX_BASE_URL,
   GLM_CODEX_RULE_ID,
   GROK_CLAUDE_RULE_ID,
@@ -32,6 +29,33 @@ import {
   type MockAdapterSourceResolver,
 } from './types';
 
+function claudeBaseUrlFromRule(ruleId: string | null | undefined): string {
+  const fixture = ruleId ? getRuleFixtureById(ruleId) : undefined;
+  if (fixture?.materialize.kind === 'claude_native') {
+    return fixture.materialize.baseUrl;
+  }
+  return KIMI_CLAUDE_BASE_URL;
+}
+
+function grokPlanFields(ruleId: string | null | undefined): { baseUrl: string; model: string } {
+  const fixture = ruleId ? getRuleFixtureById(ruleId) : undefined;
+  if (fixture?.materialize.kind === 'grok_chat') {
+    return { baseUrl: fixture.materialize.baseUrl, model: fixture.materialize.model };
+  }
+  return {
+    baseUrl: ruleId === KIMI_GROK_RULE_ID ? KIMI_GROK_BASE_URL : OPENAI_GROK_BASE_URL,
+    model: ruleId === KIMI_GROK_RULE_ID ? 'kimi-k2.5' : 'gpt-4o',
+  };
+}
+
+function codexBaseUrlFromRule(ruleId: string | null | undefined): string {
+  const fixture = ruleId ? getRuleFixtureById(ruleId) : undefined;
+  if (fixture?.materialize.kind === 'codex_responses') {
+    return fixture.materialize.baseUrl;
+  }
+  return ruleId === GLM_CODEX_RULE_ID ? GLM_CODEX_BASE_URL : DEEPSEEK_CODEX_BASE_URL;
+}
+
 export function buildPlan(
   resolver: MockAdapterSourceResolver,
   request: AdapterRouteRequest,
@@ -40,19 +64,14 @@ export function buildPlan(
   const configuredProvider = analysis.actions.find(
     (item) => item.kind === 'set_config' && item.target === 'Pi',
   )?.value;
-  const claudeBaseUrl = analysis.ruleId === GLM_CLAUDE_RULE_ID
-    ? GLM_CLAUDE_BASE_URL
-    : analysis.ruleId === DEEPSEEK_CLAUDE_RULE_ID
-      ? DEEPSEEK_CLAUDE_BASE_URL
-      : KIMI_CLAUDE_BASE_URL;
+  const claudeBaseUrl = claudeBaseUrlFromRule(analysis.ruleId);
+  const grok = grokPlanFields(analysis.ruleId);
+  const codexBaseUrl = codexBaseUrlFromRule(analysis.ruleId);
+
   const changes = analysis.route === 'native_endpoint' && request.targetAgentId === 'grok'
     ? [
-        change(
-          'grok',
-          'baseUrl',
-          analysis.ruleId === KIMI_GROK_RULE_ID ? KIMI_GROK_BASE_URL : OPENAI_GROK_BASE_URL,
-        ),
-        change('grok', 'model', analysis.ruleId === KIMI_GROK_RULE_ID ? 'kimi-k2.5' : 'gpt-4o'),
+        change('grok', 'baseUrl', grok.baseUrl),
+        change('grok', 'model', grok.model),
         change('grok', 'apiBackend', 'chat_completions'),
         secretChange('grok', 'apiKey'),
       ]
@@ -80,8 +99,12 @@ export function buildPlan(
             ]
         : analysis.route === 'native_endpoint' && request.targetAgentId === 'codex'
           ? [
-              change('codex', 'provider', analysis.ruleId === GLM_CODEX_RULE_ID ? 'GLM Coding Plan' : 'DeepSeek API'),
-              change('codex', 'baseUrl', analysis.ruleId === GLM_CODEX_RULE_ID ? GLM_CODEX_BASE_URL : DEEPSEEK_CODEX_BASE_URL),
+              change(
+                'codex',
+                'provider',
+                analysis.ruleId === GLM_CODEX_RULE_ID ? 'GLM Coding Plan' : 'DeepSeek API',
+              ),
+              change('codex', 'baseUrl', codexBaseUrl),
               change('codex', 'wireApi', 'responses'),
             ]
         : analysis.route === 'config_sync' && request.targetAgentId === 'pi'
