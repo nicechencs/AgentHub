@@ -25,13 +25,33 @@ fn listing(id: &str) -> SkillListing {
 
 #[test]
 fn mark_listings_installed_matches_shared_or_local_id() {
-    let (_dir, skills) = test_skills();
+    let (dir, skills) = test_skills();
     let shared = skills.list_shared_ids().unwrap();
     assert!(shared.is_empty());
 
     let mut items = vec![listing("owner/repo/hello"), listing("plain")];
     mark_listings_installed(&mut items, &skills);
     assert!(items.iter().all(|item| !item.installed));
+
+    let hello = dir.path().join("skills").join("hello");
+    std::fs::create_dir_all(&hello).unwrap();
+    std::fs::write(hello.join("SKILL.md"), "---\nname: Hello\n---\nbody\n").unwrap();
+    skills.invalidate_list_cache();
+
+    let mut items = vec![
+        listing("owner/repo/hello"),
+        listing("hello"),
+        listing("owner/repo/other"),
+        listing("skillhub:hello"),
+    ];
+    mark_listings_installed(&mut items, &skills);
+    assert!(items[0].installed, "skills.sh listing should match local slug");
+    assert!(items[1].installed, "exact shared id should match");
+    assert!(!items[2].installed, "unrelated listing must stay unmarked");
+    assert!(
+        items[3].installed,
+        "skillhub listing with same slug should match local id"
+    );
 }
 
 #[test]

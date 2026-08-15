@@ -1,8 +1,10 @@
 use super::*;
 use crate::models::{
-    Account, AccountKind, AdapterGateKind, AdapterMaturity, AdapterRoute, AdapterRouteAnalysis,
-    AdapterServiceImpact, AdapterSupport, Provider, ADAPTER_CAPABILITY_MATRIX,
+    Account, AccountKind, AdapterCapabilityDecision, AdapterGateKind, AdapterMaturity,
+    AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSupport, Provider,
+    ADAPTER_CAPABILITY_MATRIX,
 };
+use crate::services::adapter_apply_service::apply_request_supported;
 use crate::services::AdapterApplyService;
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -1614,15 +1616,16 @@ fn shared_capability_contract_matches_classify_and_plan() {
 fn analysis_from_cell(
     cell: &crate::models::AdapterCapabilityCell,
 ) -> AdapterRouteAnalysis {
+    let decision = AdapterCapabilityDecision::from_cell(cell);
     AdapterRouteAnalysis {
-        route: cell.route,
-        support: cell.support,
+        route: decision.route,
+        support: decision.support,
         reason: cell.reason.into(),
         actions: vec![],
         limitations: vec![],
         evidence: vec![],
         rule_id: Some(cell.rule_id.to_string()),
-        gate_kind: AdapterGateKind::None,
+        gate_kind: decision.gate_kind,
     }
 }
 
@@ -1656,25 +1659,88 @@ fn open_matrix_cells_have_bind_and_apply_arms() {
                 continue;
             }
             any_open = true;
-            if cell.route != AdapterRoute::LocalBridge {
+            if cell.route == AdapterRoute::LocalBridge {
                 assert!(
-                    AdapterApplyService::apply_has_arm(
+                    !AdapterApplyService::apply_has_arm(
                         cell.rule_id,
                         kind,
                         cell.key.target,
                         cell.route,
                     ),
-                    "open cell {} ({:?} -> {:?}) has bind but no apply arm",
+                    "LocalBridge cell {} must not have an apply arm (host saga)",
+                    cell.rule_id
+                );
+                assert!(
+                    !apply_request_supported(
+                        kind,
+                        cell.key.target,
+                        cell.route,
+                        Some(cell.rule_id),
+                        cell.support,
+                        analysis.gate_kind,
+                    ),
+                    "LocalBridge cell {} must fail ensure_supported",
+                    cell.rule_id
+                );
+                continue;
+            }
+            assert!(
+                AdapterApplyService::apply_has_arm(
                     cell.rule_id,
                     kind,
-                    cell.key.target
-                );
-            }
+                    cell.key.target,
+                    cell.route,
+                ),
+                "open cell {} ({:?} -> {:?}) has bind but no apply arm",
+                cell.rule_id,
+                kind,
+                cell.key.target
+            );
+            assert!(
+                apply_request_supported(
+                    kind,
+                    cell.key.target,
+                    cell.route,
+                    Some(cell.rule_id),
+                    cell.support,
+                    analysis.gate_kind,
+                ),
+                "open cell {} ({:?} -> {:?}) has bind/apply arm but ensure_supported is closed",
+                cell.rule_id,
+                kind,
+                cell.key.target
+            );
         }
         assert!(
             any_open,
             "open cell {} has no bind_implementation_open source kind",
             cell.rule_id
         );
+    }
+}
+
+#[test]
+fn closed_or_preview_cells_fail_apply_request_supported() {
+    for cell in ADAPTER_CAPABILITY_MATRIX {
+        if cell.can_apply && cell.gates.all_passed() {
+            continue;
+        }
+        let decision = AdapterCapabilityDecision::from_cell(cell);
+        for &kind in source_kinds_for_rule(cell.rule_id) {
+            assert!(
+                !apply_request_supported(
+                    kind,
+                    cell.key.target,
+                    decision.route,
+                    decision.rule_id,
+                    decision.support,
+                    decision.gate_kind,
+                ),
+                "closed/preview cell {} ({:?} -> {:?}) must fail ensure_supported",
+                cell.rule_id,
+                kind,
+                cell.key.target
+            );
+        }
     }
 }

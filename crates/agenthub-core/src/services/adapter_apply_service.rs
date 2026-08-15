@@ -1,5 +1,5 @@
-//! Write-side adapter apply for Kimi membership → Claude native, Pi config_sync,
-//! GLM/DeepSeek ticket → Claude, explicit API → Pi, and DeepSeek API → DSH config_sync.
+//! Write-side adapter apply for Kimi membership → Claude/Pi/Grok, OpenAI API → Grok,
+//! GLM/DeepSeek ticket → Claude/Codex, explicit API → Pi, and DeepSeek API → DSH.
 //!
 //! The generated provider deliberately stores only a reference marker.  The
 //! secret is materialized in memory by `AdapterSecretResolver` at ProviderService's
@@ -13,7 +13,7 @@ use serde_json::json;
 use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
 use crate::models::{
-    map_adapter_model, AdapterApplyRequest, AdapterApplyResult, AdapterProfile,
+    map_adapter_model, AdapterApplyRequest, AdapterApplyResult, AdapterGateKind, AdapterProfile,
     AdapterProfileFilter, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
     AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind, AdapterSourceProduct,
     AdapterSupport, AgentId, Provider, ProviderInput,
@@ -523,59 +523,18 @@ impl AdapterApplyService {
             source_id: request.source_id.clone(),
             target_agent_id: request.target_agent_id,
         })?;
-        let supported = match (request.source_kind, request.target_agent_id, analysis.route) {
-            (source_kind, AgentId::Claude, AdapterRoute::NativeEndpoint) => analysis
-                .rule_id
-                .as_deref()
-                .is_some_and(|rule| is_claude_native_apply_rule(rule, source_kind)),
-            (source_kind, AgentId::Codex, AdapterRoute::NativeEndpoint) => analysis
-                .rule_id
-                .as_deref()
-                .is_some_and(|rule| is_codex_native_rule(rule) && is_api_source_kind(source_kind)),
-            (AdapterSourceKind::Provider, AgentId::Pi, AdapterRoute::ConfigSync) => {
-                (analysis.support == AdapterSupport::Stable
-                    && analysis.rule_id.as_deref() == Some(KIMI_PI_RULE_ID))
-                    || (analysis.support == AdapterSupport::Stable
-                        && analysis
-                            .rule_id
-                            .as_deref()
-                            .is_some_and(is_explicit_api_to_pi_rule))
-                    || (analysis.support == AdapterSupport::Experimental
-                        && analysis
-                            .rule_id
-                            .as_deref()
-                            .is_some_and(is_explicit_api_to_pi_rule))
-            }
-            (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync) => {
-                (analysis.support == AdapterSupport::Stable
-                    && analysis.rule_id.as_deref() == Some(KIMI_PI_RULE_ID))
-                    || (analysis.support == AdapterSupport::Stable
-                        && analysis
-                            .rule_id
-                            .as_deref()
-                            .is_some_and(is_explicit_api_to_pi_rule))
-                    || (analysis.support == AdapterSupport::Experimental
-                        && analysis
-                            .rule_id
-                            .as_deref()
-                            .is_some_and(is_explicit_api_to_pi_rule))
-                    || (analysis.support == AdapterSupport::Experimental
-                        && analysis
-                            .rule_id
-                            .as_deref()
-                            .is_some_and(is_subscription_pi_rule))
-            }
-            (AdapterSourceKind::Provider, AgentId::Dsh, AdapterRoute::ConfigSync) => {
-                analysis.support == AdapterSupport::Stable
-                    && analysis.rule_id.as_deref() == Some(DEEPSEEK_DSH_RULE_ID)
-            }
-            _ => false,
-        };
-        if supported {
+        if apply_request_supported(
+            request.source_kind,
+            request.target_agent_id,
+            analysis.route,
+            analysis.rule_id.as_deref(),
+            analysis.support,
+            analysis.gate_kind,
+        ) {
             Ok(analysis)
         } else {
             Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership Provider/Account -> Claude/Pi, GLM/DeepSeek ticket -> Claude, API or subscription Account -> Pi, and DeepSeek API provider -> DSH".into(),
+                "adapter apply currently supports Kimi membership Provider/Account -> Claude/Pi/Grok, OpenAI API -> Grok, GLM/DeepSeek ticket -> Claude/Codex, API or subscription Account -> Pi, and DeepSeek API provider -> DSH".into(),
             ))
         }
     }
@@ -843,6 +802,53 @@ fn provider_owned_by(provider: &crate::models::Provider, profile: &AdapterProfil
             == Some(profile.source_id.as_str())
 }
 
+/// Same gate as `ensure_supported` — used by matrix consistency tests.
+pub(crate) fn apply_request_supported(
+    source_kind: AdapterSourceKind,
+    target: AgentId,
+    route: AdapterRoute,
+    rule_id: Option<&str>,
+    support: AdapterSupport,
+    gate_kind: AdapterGateKind,
+) -> bool {
+    if gate_kind != AdapterGateKind::None {
+        return false;
+    }
+    match (source_kind, target, route) {
+        (source_kind, AgentId::Claude, AdapterRoute::NativeEndpoint) => match (rule_id, support) {
+            (Some(RULE_ID), AdapterSupport::Stable) => is_api_source_kind(source_kind),
+            (Some(rule), AdapterSupport::Experimental) if is_claude_native_explicit_rule(rule) => {
+                true
+            }
+            _ => false,
+        },
+        (source_kind, AgentId::Codex, AdapterRoute::NativeEndpoint) => {
+            support == AdapterSupport::Experimental
+                && rule_id.is_some_and(|rule| is_codex_native_rule(rule) && is_api_source_kind(source_kind))
+        }
+        (source_kind, AgentId::Grok, AdapterRoute::NativeEndpoint) => {
+            support == AdapterSupport::Experimental
+                && rule_id.is_some_and(|rule| is_grok_native_rule(rule) && is_api_source_kind(source_kind))
+        }
+        (AdapterSourceKind::Provider, AgentId::Pi, AdapterRoute::ConfigSync) => {
+            (support == AdapterSupport::Stable && rule_id == Some(KIMI_PI_RULE_ID))
+                || ((support == AdapterSupport::Stable || support == AdapterSupport::Experimental)
+                    && rule_id.is_some_and(is_explicit_api_to_pi_rule))
+        }
+        (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync) => {
+            (support == AdapterSupport::Stable && rule_id == Some(KIMI_PI_RULE_ID))
+                || ((support == AdapterSupport::Stable || support == AdapterSupport::Experimental)
+                    && rule_id.is_some_and(is_explicit_api_to_pi_rule))
+                || (support == AdapterSupport::Experimental
+                    && rule_id.is_some_and(is_subscription_pi_rule))
+        }
+        (AdapterSourceKind::Provider, AgentId::Dsh, AdapterRoute::ConfigSync) => {
+            support == AdapterSupport::Stable && rule_id == Some(DEEPSEEK_DSH_RULE_ID)
+        }
+        _ => false,
+    }
+}
+
 fn is_claude_native_explicit_rule(rule_id: &str) -> bool {
     matches!(rule_id, GLM_CLAUDE_RULE_ID | DEEPSEEK_CLAUDE_RULE_ID)
 }
@@ -860,14 +866,6 @@ fn is_api_source_kind(source_kind: AdapterSourceKind) -> bool {
         source_kind,
         AdapterSourceKind::Provider | AdapterSourceKind::Account
     )
-}
-
-fn is_claude_native_apply_rule(rule_id: &str, source_kind: AdapterSourceKind) -> bool {
-    match (rule_id, source_kind) {
-        (RULE_ID, AdapterSourceKind::Provider | AdapterSourceKind::Account) => true,
-        (GLM_CLAUDE_RULE_ID | DEEPSEEK_CLAUDE_RULE_ID, _) => true,
-        _ => false,
-    }
 }
 
 fn claude_native_layout(
