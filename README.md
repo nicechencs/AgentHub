@@ -17,7 +17,7 @@ AgentHub 是一个本地运行的多 Agent 桌面管理工具。它用统一的 
 | **Dashboard** | 查看 Agent 状态、Token 趋势、成本估算与解析健康度；已安装 Agent 可直接连接/切换 |
 | **Agents** | 检测 Node/npm/Git 等运行环境，安装、升级或卸载 Agent |
 | **Connections** | 登录钱包：管理官方登录与 API Key，查看一份登录正用于哪些编程工具，并接到其他工具。白话说明见 [产品决策](docs/product-decisions.md)；领域模型见 [连接绑定](docs/connection-binding-model.md)。切换前自动备份 live |
-| **Adapter** | 桥运行时（端口、启停、恢复）；侧栏「桥与适配」。日常绑定走 Dashboard / Connections；规则见[厂商、API 与 OAuth 规则](docs/provider-api-oauth-adaptation.md) |
+| **Bridges** | 本机桥运行时（端口、启停、恢复）；侧栏英文 Bridges，有桥才出现。日常绑定走 Dashboard / Connections；规则见[厂商、API 与 OAuth 规则](docs/provider-api-oauth-adaptation.md) |
 | **Skills** | 以 `~/.agents/skills/` 为共享真源，向各 Agent 投影和同步技能 |
 | **MCP** | 只读汇总各 Agent 的本机 MCP 配置；管理与注入仍在规划中 |
 | **Chat** | 在桌面端调用一个或多个本机 Agent，并展示流式过程 |
