@@ -494,7 +494,7 @@ describe('mock adapter route preview', () => {
         isCurrent: false,
         tokenValid: true,
         credentials: { access_token: 'must-not-leak' },
-      }],
+      } as Account & { credentials: Record<string, unknown> }],
     ]);
     const adapter = createMockAdapterPort({
       getAccountById: (id) => accounts.get(id),
@@ -510,6 +510,20 @@ describe('mock adapter route preview', () => {
       canApply: true,
       reusePath: 'local_bridge',
     });
+    accounts.set('grok-subscription-no-token', {
+      id: 'grok-subscription-no-token',
+      agentId: 'grok',
+      kind: 'oauth',
+      label: 'Grok subscription without token',
+      isCurrent: false,
+      tokenValid: false,
+    });
+    const noToken = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: 'grok-subscription-no-token',
+      targetAgentId: 'claude',
+    });
+    expect(noToken.canApply).toBe(false);
   });
 
   it('Account Anthropic → Pi is writable on the implemented bind path', async () => {
