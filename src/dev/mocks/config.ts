@@ -80,6 +80,30 @@ const SCHEMAS: Record<string, AgentConfigSchemaDto> = {
       { key: 'apiKey', label: 'API Key', valueType: { kind: 'secret' }, secret: true },
     ],
   },
+  dsh: {
+    agentKey: 'dsh',
+    schemaVersion: 1,
+    nativeFormat: 'json',
+    relativePath: 'cordis.patch.yml',
+    fields: [
+      { key: 'provider', label: 'Provider', valueType: { kind: 'string' } },
+      { key: 'model', label: 'Model', valueType: { kind: 'string' } },
+      { key: 'baseUrl', label: 'Base URL', valueType: { kind: 'string' } },
+      {
+        key: 'thinking',
+        label: 'Thinking',
+        valueType: { kind: 'enum', options: ['enabled', 'disabled'] },
+      },
+      {
+        key: 'reasoningEffort',
+        label: 'Reasoning effort',
+        valueType: { kind: 'enum', options: ['off', 'low', 'high', 'max'] },
+      },
+      { key: 'maxTokens', label: 'Max tokens', valueType: { kind: 'number' } },
+      { key: 'apiKeyEnv', label: 'API key env name', valueType: { kind: 'string' } },
+      { key: 'apiKey', label: 'API Key', valueType: { kind: 'secret' }, secret: true },
+    ],
+  },
 };
 
 let mockValues: Record<string, Record<string, unknown>> = {

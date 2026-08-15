@@ -2,6 +2,7 @@
 
 mod claude;
 mod codex;
+mod dsh;
 mod grok;
 mod kimi;
 mod util;
@@ -16,5 +17,7 @@ pub(super) fn register_all(reg: &mut ConfigProjectorRegistry) {
     reg.register(std::sync::Arc::new(kimi::KimiConfigProjector))
         .expect("builtin config projector keys must be unique");
     reg.register(std::sync::Arc::new(grok::GrokConfigProjector))
+        .expect("builtin config projector keys must be unique");
+    reg.register(std::sync::Arc::new(dsh::DshConfigProjector))
         .expect("builtin config projector keys must be unique");
 }

@@ -25,6 +25,7 @@ export const TOKEN_AGENT_IDS = [
   'pi',
   'workbuddy',
   'cursor',
+  'dsh',
 ] as const;
 
 export type TokenAgentId = (typeof TOKEN_AGENT_IDS)[number];
@@ -81,6 +82,7 @@ export const AGENT_COLORS = {
   pi: { light: '#0ea5e9', dark: '#38bdf8' },
   workbuddy: { light: '#0052d9', dark: '#3b82f6' },
   cursor: { light: '#f54e00', dark: '#ff6b2c' },
+  dsh: { light: '#4d6bfe', dark: '#6b8cff' },
 } as const satisfies Record<TokenAgentId, { light: string; dark: string }>;
 
 /** Radii → `--radius-sm` / `--radius` / `--radius-lg` */

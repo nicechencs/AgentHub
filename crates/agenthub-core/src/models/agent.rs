@@ -16,10 +16,12 @@ pub enum AgentId {
     WorkBuddy,
     /// Cursor Agent CLI (half-surface: install/detect/run/skills/projects; no vscdb account pool).
     Cursor,
+    /// DeepSeek Harness (`dsh`) — npm coding agent, not the DeepSeek API ticket.
+    Dsh,
 }
 
 impl AgentId {
-    pub const ALL: [AgentId; 7] = [
+    pub const ALL: [AgentId; 8] = [
         AgentId::Claude,
         AgentId::Codex,
         AgentId::Kimi,
@@ -27,6 +29,7 @@ impl AgentId {
         AgentId::Pi,
         AgentId::WorkBuddy,
         AgentId::Cursor,
+        AgentId::Dsh,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -38,6 +41,7 @@ impl AgentId {
             Self::Pi => "pi",
             Self::WorkBuddy => "workbuddy",
             Self::Cursor => "cursor",
+            Self::Dsh => "dsh",
         }
     }
 
@@ -51,6 +55,7 @@ impl AgentId {
             "workbuddy" => Some(Self::WorkBuddy),
             // Alias: historical docs sometimes say cursor-agent; serialize id stays `cursor`.
             "cursor" | "cursor-agent" => Some(Self::Cursor),
+            "dsh" | "deepseek-harness" => Some(Self::Dsh),
             _ => None,
         }
     }
@@ -85,6 +90,7 @@ impl AgentId {
             Self::Pi => "Pi",
             Self::WorkBuddy => "WorkBuddy",
             Self::Cursor => "Cursor Agent",
+            Self::Dsh => "DeepSeek Harness",
         }
     }
 

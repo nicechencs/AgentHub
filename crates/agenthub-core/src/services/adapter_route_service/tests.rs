@@ -444,6 +444,104 @@ fn provider_and_oauth_misclassification_is_rejected() {
     }
 }
 
+fn deepseek_host_provider(id: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        name: "DeepSeek host import".into(),
+        settings_config: serde_json::json!({
+            "apiKey": "must-not-leak",
+            "baseUrl": "https://api.deepseek.com",
+        }),
+        meta: serde_json::json!({}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+#[test]
+fn deepseek_preset_plans_dsh_without_secret() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider("ds-preset", AgentId::Claude, "deepseek"))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+    let plan = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "ds-preset",
+            AgentId::Dsh,
+        ))
+        .unwrap();
+    assert_eq!(plan.analysis.route, AdapterRoute::ConfigSync);
+    assert!(plan.can_apply);
+    assert_eq!(plan.analysis.rule_id.as_deref(), Some("deepseek-api-to-dsh-v1"));
+    assert_eq!(plan.changes[0].field, "provider");
+    assert_eq!(plan.changes[0].value.as_deref(), Some("deepseek-official"));
+    assert_eq!(plan.changes[1].field, "apiKeyEnv");
+    assert_eq!(plan.changes[2].field, "apiKey");
+    assert!(plan.changes[2].secret);
+    assert!(plan.changes[2].value.is_none());
+    assert!(!serde_json::to_string(&plan).unwrap().contains("must-not-leak"));
+}
+
+#[test]
+fn deepseek_official_host_without_preset_plans_dsh() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&deepseek_host_provider("ds-host"))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+    let plan = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "ds-host",
+            AgentId::Dsh,
+        ))
+        .unwrap();
+    assert_eq!(plan.analysis.route, AdapterRoute::ConfigSync);
+    assert!(plan.can_apply);
+    assert_eq!(plan.analysis.rule_id.as_deref(), Some("deepseek-api-to-dsh-v1"));
+}
+
+#[test]
+fn dsh_agent_id_alone_does_not_classify_as_deepseek_api() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider("dsh-only", AgentId::Dsh, "default"))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+    let plan = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "dsh-only",
+            AgentId::Dsh,
+        ))
+        .unwrap();
+    assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
+    assert!(!plan.can_apply);
+}
+
+#[test]
+fn deepseek_to_claude_plan_is_unsupported() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider("ds-preset", AgentId::Claude, "deepseek"))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+    let plan = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "ds-preset",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
+    assert!(!plan.can_apply);
+    assert!(plan.analysis.reason.contains("另立项"));
+}
+
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SharedContractFile {

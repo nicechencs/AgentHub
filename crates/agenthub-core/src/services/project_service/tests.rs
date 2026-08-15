@@ -997,6 +997,44 @@ fn project_registry_covers_all_agents() {
 }
 
 #[test]
+fn list_dsh_sessions_from_home_and_profiles_not_cwd_dot_sessions() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".dsh");
+    write_session(
+        &home.join("sessions/sess-home.jsonl"),
+        &[
+            r#"{"type":"session","id":"sess-home","cwd":"/tmp/dsh-home-proj"}"#,
+            r#"{"type":"assistant/message","text":"from home"}"#,
+        ],
+    );
+    write_session(
+        &home.join("profiles/headless/sessions/sess-profile.jsonl"),
+        &[
+            r#"{"type":"session","id":"sess-profile","cwd":"/tmp/dsh-profile-proj"}"#,
+            r#"{"type":"assistant/message","text":"from profile"}"#,
+        ],
+    );
+    write_session(
+        &dir.path().join(".sessions/random.jsonl"),
+        &[r#"{"type":"session","id":"should-not-appear","cwd":"/tmp/noise"}"#],
+    );
+
+    let sessions = list_sessions_for_agent_home(AgentId::Dsh, &home, None).unwrap();
+    let ids: Vec<_> = sessions
+        .iter()
+        .filter_map(|s| s.session_id.as_deref())
+        .collect();
+    assert!(ids.contains(&"sess-home"), "{ids:?}");
+    assert!(ids.contains(&"sess-profile"), "{ids:?}");
+    assert!(!ids.contains(&"should-not-appear"), "{ids:?}");
+    assert_eq!(sessions.len(), 2);
+
+    let projects = list_projects_for_agent_home(AgentId::Dsh, &home, None).unwrap();
+    assert_eq!(projects.len(), 2);
+    assert!(projects.iter().all(|p| p.session_count == 1));
+}
+
+#[test]
 fn session_index_roundtrip_and_freshness() {
     use super::session_index::{IndexEntry, SessionIndexStore};
 

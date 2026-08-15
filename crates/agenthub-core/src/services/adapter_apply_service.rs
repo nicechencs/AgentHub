@@ -1,4 +1,5 @@
-//! Write-side adapter apply for Kimi membership → Claude native and Pi config_sync.
+//! Write-side adapter apply for Kimi membership → Claude native, Pi config_sync,
+//! and DeepSeek API → DSH config_sync.
 //!
 //! The generated provider deliberately stores only a reference marker.  The
 //! secret is materialized in memory by `AdapterSecretResolver` at ProviderService's
@@ -19,7 +20,8 @@ use crate::models::{
 };
 use crate::services::adapter_route_constants::{
     ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT,
-    CONNECTION_SECRET_MARKER, KIMI_CLAUDE_BASE_URL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
+    CONNECTION_SECRET_MARKER, DEEPSEEK_API_BASE_URL, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT,
+    DSH_DEFAULT_MODEL, KIMI_CLAUDE_BASE_URL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
 };
 use crate::services::{
     AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
@@ -30,13 +32,16 @@ use crate::storage::{AdapterProfileRepo, Database};
 const RULE_ID: &str = "kimi-membership-to-claude-v1";
 const KIMI_PI_RULE_ID: &str = "kimi-membership-to-pi-v1";
 const ANTHROPIC_PI_RULE_ID: &str = "anthropic-api-to-pi-v1";
+const DEEPSEEK_DSH_RULE_ID: &str = "deepseek-api-to-dsh-v1";
 const RULE_VERSION: &str = "1";
 const CLAUDE_PROVIDER_PREFIX: &str = "claude-kimi-adapter";
 const PI_KIMI_PROVIDER_PREFIX: &str = "pi-kimi-adapter";
 const PI_ANTHROPIC_PROVIDER_PREFIX: &str = "pi-anthropic-adapter";
+const DSH_DEEPSEEK_PROVIDER_PREFIX: &str = "dsh-deepseek-adapter";
 const CLAUDE_PROFILE_PREFIX: &str = "adapter-kimi-claude";
 const PI_KIMI_PROFILE_PREFIX: &str = "adapter-kimi-pi";
 const PI_ANTHROPIC_PROFILE_PREFIX: &str = "adapter-anthropic-pi";
+const DSH_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-dsh";
 
 /// Applies supported write-side routes and owns their generated profiles.
 pub struct AdapterApplyService {
@@ -98,8 +103,17 @@ impl AdapterApplyService {
                     "adapter apply currently supports only Kimi membership or Anthropic API provider -> Pi".into(),
                 )),
             },
+            (AgentId::Dsh, AdapterRoute::ConfigSync) => match analysis.rule_id.as_deref() {
+                Some(DEEPSEEK_DSH_RULE_ID) => {
+                    self.secrets.validate_deepseek_api_source(source_id)?;
+                    self.apply_generated(dsh_deepseek_spec(source_id))
+                }
+                _ => Err(AppError::Unsupported(
+                    "adapter apply currently supports only DeepSeek API provider -> DSH".into(),
+                )),
+            },
             _ => Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership provider -> Claude and provider -> Pi config_sync".into(),
+                "adapter apply currently supports Kimi membership provider -> Claude, provider -> Pi config_sync, and DeepSeek API -> DSH".into(),
             )),
         }
     }
@@ -286,7 +300,7 @@ impl AdapterApplyService {
         })?;
         if !owns_apply_profile(&profile) {
             return Err(AppError::Unsupported(
-                "adapter apply remove supports Claude native and Pi config_sync profiles".into(),
+                "adapter apply remove supports Claude native, Pi config_sync, and DSH config_sync profiles".into(),
             ));
         }
         let saga_guard = self.providers.begin_live_saga(profile.target_agent_id)?;
@@ -341,13 +355,17 @@ impl AdapterApplyService {
                     AgentId::Pi,
                     AdapterRoute::ConfigSync,
                     AdapterSupport::Stable
+                ) | (
+                    AgentId::Dsh,
+                    AdapterRoute::ConfigSync,
+                    AdapterSupport::Stable
                 )
             );
         if supported {
             Ok(analysis)
         } else {
             Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership provider -> Claude and provider -> Pi config_sync".into(),
+                "adapter apply currently supports Kimi membership provider -> Claude, provider -> Pi config_sync, and DeepSeek API -> DSH".into(),
             ))
         }
     }
@@ -445,7 +463,9 @@ fn same_profile_contract(existing: &AdapterProfile, proposed: &AdapterProfile) -
 fn owns_apply_profile(profile: &AdapterProfile) -> bool {
     matches!(
         (profile.target_agent_id, profile.route),
-        (AgentId::Claude, AdapterRoute::NativeEndpoint) | (AgentId::Pi, AdapterRoute::ConfigSync)
+        (AgentId::Claude, AdapterRoute::NativeEndpoint)
+            | (AgentId::Pi, AdapterRoute::ConfigSync)
+            | (AgentId::Dsh, AdapterRoute::ConfigSync)
     )
 }
 
@@ -459,6 +479,9 @@ fn generated_provider_prefix(profile: &AdapterProfile) -> Option<&'static str> {
         (AgentId::Pi, AdapterRoute::ConfigSync, KIMI_PI_RULE_ID) => Some(PI_KIMI_PROVIDER_PREFIX),
         (AgentId::Pi, AdapterRoute::ConfigSync, ANTHROPIC_PI_RULE_ID) => {
             Some(PI_ANTHROPIC_PROVIDER_PREFIX)
+        }
+        (AgentId::Dsh, AdapterRoute::ConfigSync, DEEPSEEK_DSH_RULE_ID) => {
+            Some(DSH_DEEPSEEK_PROVIDER_PREFIX)
         }
         _ => None,
     }
@@ -641,6 +664,50 @@ fn pi_anthropic_spec(source_id: &str) -> GeneratedApplySpec {
                 }
             }),
             meta: generated_meta(ANTHROPIC_PI_RULE_ID, &profile_id, source_id, None),
+            is_current: false,
+        },
+    }
+}
+
+fn dsh_deepseek_spec(source_id: &str) -> GeneratedApplySpec {
+    let profile_id = stable_id(DSH_DEEPSEEK_PROFILE_PREFIX, source_id);
+    let provider_id = stable_id(DSH_DEEPSEEK_PROVIDER_PREFIX, source_id);
+    let created_at = now();
+    let model = map_adapter_model(AdapterSourceProduct::DeepSeekApi, AgentId::Dsh, "")
+        .unwrap_or(DSH_DEFAULT_MODEL);
+    GeneratedApplySpec {
+        target_agent: AgentId::Dsh,
+        provider_id: provider_id.clone(),
+        proposed: AdapterProfile {
+            id: profile_id.clone(),
+            name: format!("DeepSeek → DSH ({})", safe_label(source_id)),
+            source_kind: AdapterSourceKind::Provider,
+            source_id: source_id.into(),
+            target_agent_id: AgentId::Dsh,
+            route: AdapterRoute::ConfigSync,
+            mode: AdapterProfileMode::Api,
+            status: AdapterProfileStatus::Applying,
+            rule_id: DEEPSEEK_DSH_RULE_ID.into(),
+            rule_version: RULE_VERSION.into(),
+            generated_provider_id: Some(provider_id.clone()),
+            local_port: None,
+            auto_start: false,
+            last_error_code: None,
+            created_at: created_at.clone(),
+            updated_at: created_at,
+        },
+        provider: ProviderInput {
+            id: provider_id,
+            agent_id: AgentId::Dsh,
+            name: format!("DeepSeek API ({})", safe_label(source_id)),
+            settings_config: json!({
+                "provider": DSH_DEEPSEEK_PROVIDER_SLOT,
+                "model": model,
+                "apiKeyEnv": DSH_API_KEY_ENV,
+                "baseURL": DEEPSEEK_API_BASE_URL,
+                "api_key": CONNECTION_SECRET_MARKER,
+            }),
+            meta: generated_meta(DEEPSEEK_DSH_RULE_ID, &profile_id, source_id, Some("deepseek")),
             is_current: false,
         },
     }

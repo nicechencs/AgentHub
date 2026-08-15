@@ -183,7 +183,7 @@ fn source_locations(agent: AgentId) -> Vec<SourceLoc> {
                 });
             }
         }
-        AgentId::Grok | AgentId::Kimi => {
+        AgentId::Grok | AgentId::Kimi | AgentId::Dsh => {
             // No stable public MCP config path verified yet — still surface
             // agent home probe so UI can show "未发现已知配置文件".
             if let Ok(dir) = agent_home(agent) {

@@ -17,11 +17,15 @@ fn agent_id_parse_as_str_roundtrip() {
     assert_eq!(AgentId::parse("cursor"), Some(AgentId::Cursor));
     assert_eq!(AgentId::parse("  Cursor  "), Some(AgentId::Cursor));
     assert_eq!(AgentId::parse("cursor-agent"), Some(AgentId::Cursor));
+    assert_eq!(AgentId::parse("dsh"), Some(AgentId::Dsh));
+    assert_eq!(AgentId::parse("  DSH  "), Some(AgentId::Dsh));
+    assert_eq!(AgentId::parse("deepseek-harness"), Some(AgentId::Dsh));
     let expected = AgentId::expected_list();
     assert!(expected.contains("pi"));
     assert!(expected.contains("workbuddy"));
     assert!(expected.contains("cursor"));
-    assert_eq!(expected, "claude|codex|kimi|grok|pi|workbuddy|cursor");
+    assert!(expected.contains("dsh"));
+    assert_eq!(expected, "claude|codex|kimi|grok|pi|workbuddy|cursor|dsh");
 }
 
 #[test]

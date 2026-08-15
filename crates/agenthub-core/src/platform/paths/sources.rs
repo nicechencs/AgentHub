@@ -16,6 +16,7 @@ struct GrokPaths;
 struct PiPaths;
 struct WorkBuddyPaths;
 struct CursorPaths;
+struct DshPaths;
 
 impl AgentPathContribution for ClaudePaths {
     fn agent_id(&self) -> AgentId {
@@ -108,6 +109,15 @@ impl AgentPathContribution for CursorPaths {
     }
 }
 
+impl AgentPathContribution for DshPaths {
+    fn agent_id(&self) -> AgentId {
+        AgentId::Dsh
+    }
+    fn home_dir(&self) -> Result<PathBuf> {
+        crate::adapters::dsh::resolve_dsh_home()
+    }
+}
+
 pub fn build_registry() -> AgentPathRegistry {
     let mut reg = AgentPathRegistry::new();
     reg.register(Arc::new(ClaudePaths));
@@ -117,5 +127,6 @@ pub fn build_registry() -> AgentPathRegistry {
     reg.register(Arc::new(PiPaths));
     reg.register(Arc::new(WorkBuddyPaths));
     reg.register(Arc::new(CursorPaths));
+    reg.register(Arc::new(DshPaths));
     reg
 }

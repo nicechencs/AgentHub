@@ -41,6 +41,24 @@ pub const CONNECTION_SECRET_MARKER: &str = "$AGENTHUB_CONNECTION_SECRET$";
 /// Substring that identifies Anthropic's public API host.
 pub const ANTHROPIC_API_ENDPOINT_NEEDLE: &str = "api.anthropic.com";
 
+/// Connections preset id for DeepSeek official API.
+pub const DEEPSEEK_API_PRESET: &str = "deepseek";
+
+/// Official DeepSeek API host (Chat Completions; do not append `/v1` here).
+pub const DEEPSEEK_API_BASE_URL: &str = "https://api.deepseek.com";
+
+/// Substring that identifies DeepSeek's public API host.
+pub const DEEPSEEK_API_ENDPOINT_NEEDLE: &str = "api.deepseek.com";
+
+/// DSH official provider slot written by config_sync apply.
+pub const DSH_DEEPSEEK_PROVIDER_SLOT: &str = "deepseek-official";
+
+/// Default DSH model id when the source does not pin one.
+pub const DSH_DEFAULT_MODEL: &str = "deepseek-v4-flash";
+
+/// Env / credentials reference name written into the DSH home patch.
+pub const DSH_API_KEY_ENV: &str = "DEEPSEEK_API_KEY";
+
 /// Membership = Kimi agent **and** (`kimi-code-membership` preset **or** official
 /// coding endpoint). Never upgrade from `agent_id` alone (moonshot / custom stay closed).
 pub(crate) fn is_kimi_code_membership_source(
@@ -61,6 +79,18 @@ pub(crate) fn settings_contain_kimi_coding_endpoint(value: &Value) -> bool {
 /// True when config points at Anthropic's public API host (not a third-party relay alone).
 pub(crate) fn settings_contain_anthropic_api_endpoint(value: &Value) -> bool {
     value_contains_needle(value, ANTHROPIC_API_ENDPOINT_NEEDLE)
+}
+
+/// DeepSeek API ticket = explicit `deepseek` preset **or** official API host.
+/// Never upgrade from `agent_id=dsh` alone.
+pub(crate) fn is_deepseek_api_source(preset: Option<&str>, settings: &Value) -> bool {
+    preset.is_some_and(|value| value.eq_ignore_ascii_case(DEEPSEEK_API_PRESET))
+        || settings_contain_deepseek_api_endpoint(settings)
+}
+
+/// True when config text/JSON contains the official DeepSeek API host.
+pub(crate) fn settings_contain_deepseek_api_endpoint(value: &Value) -> bool {
+    value_contains_needle(value, DEEPSEEK_API_ENDPOINT_NEEDLE)
 }
 
 fn meta_preset(meta: &Value) -> Option<&str> {

@@ -494,3 +494,88 @@ fn membership_requires_kimi_agent_and_preset_or_coding_endpoint() {
         }
     }
 }
+
+fn dsh_target(source_id: &str) -> Provider {
+    provider(
+        "generated-dsh",
+        AgentId::Dsh,
+        json!({
+            "provider": DSH_DEEPSEEK_PROVIDER_SLOT,
+            "model": "deepseek-v4-flash",
+            "apiKeyEnv": DSH_API_KEY_ENV,
+            "baseURL": DEEPSEEK_API_BASE_URL,
+            "api_key": CONNECTION_SECRET_MARKER,
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": DEEPSEEK_TO_DSH_RULE,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": SOURCE_REFERENCE_MODE,
+            "adapterSourceRef": { "kind": SOURCE_KIND_PROVIDER, "id": source_id },
+        }),
+    )
+}
+
+#[test]
+fn dsh_source_reference_materializes_and_scrubs() {
+    let source = provider(
+        "ds-source",
+        AgentId::Claude,
+        json!({"apiKey": "sk-deepseek-secret"}),
+        json!({"preset": "deepseek"}),
+    );
+    let (_dir, resolver) = resolver_with(source.clone());
+    let target = dsh_target(&source.id);
+
+    assert!(resolver.is_reference_provider(&target).unwrap());
+    let materialized = resolver.materialize_for_live(&target).unwrap();
+    assert_eq!(materialized.settings_config["api_key"], "sk-deepseek-secret");
+    assert_eq!(target.settings_config["api_key"], CONNECTION_SECRET_MARKER);
+
+    let live_raw = json!({
+        "provider": DSH_DEEPSEEK_PROVIDER_SLOT,
+        "apiKeyEnv": DSH_API_KEY_ENV,
+        "baseURL": DEEPSEEK_API_BASE_URL,
+        "api_key": "sk-deepseek-secret",
+        "keep": "other-live"
+    });
+    let scrubbed = resolver.scrub_for_backfill(&target, &live_raw).unwrap();
+    assert_eq!(scrubbed["api_key"], CONNECTION_SECRET_MARKER);
+    assert_eq!(scrubbed["keep"], "other-live");
+    assert!(!serde_json::to_string(&scrubbed)
+        .unwrap()
+        .contains("sk-deepseek-secret"));
+}
+
+#[test]
+fn dsh_rejects_agent_id_only_source_and_missing_secret() {
+    let bare = provider(
+        "dsh-only",
+        AgentId::Dsh,
+        json!({"apiKey": "sk-not-a-ticket"}),
+        json!({}),
+    );
+    let (_dir, resolver) = resolver_with(bare);
+    assert_eq!(
+        resolver
+            .materialize_for_live(&dsh_target("dsh-only"))
+            .unwrap_err()
+            .code(),
+        "invalid_arg"
+    );
+
+    let empty = provider(
+        "ds-empty",
+        AgentId::Claude,
+        json!({"apiKey": ""}),
+        json!({"preset": "deepseek"}),
+    );
+    let (_dir, resolver) = resolver_with(empty);
+    assert_eq!(
+        resolver
+            .materialize_for_live(&dsh_target("ds-empty"))
+            .unwrap_err()
+            .code(),
+        "invalid_arg"
+    );
+}

@@ -5,6 +5,7 @@
 
 mod claude_like;
 mod codex;
+mod dsh;
 mod grok;
 mod kimi;
 mod pi;
@@ -26,6 +27,8 @@ pub fn build_registry() -> UsageSourceRegistry {
     reg.register(Arc::new(kimi::KimiUsageSource))
         .expect("builtin usage source keys must be unique");
     reg.register(Arc::new(pi::PiUsageSource))
+        .expect("builtin usage source keys must be unique");
+    reg.register(Arc::new(dsh::DshUsageSource))
         .expect("builtin usage source keys must be unique");
     // Cursor intentionally omitted → unsupported / empty collect.
     reg

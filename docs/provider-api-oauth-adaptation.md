@@ -110,7 +110,17 @@ GLM Coding Plan 的凭据和使用范围必须单独识别：
 | OpenAI Chat Completions | `https://api.deepseek.com` | Base URL 不追加 `/v1`；不代表 Codex Responses |
 | Anthropic Messages | `https://api.deepseek.com/anthropic` | 官方支持 Anthropic SDK 与 Claude Code，但不保证所有 Anthropic 扩展字段无损 |
 
-DeepSeek 使用平台签发的 API Key，不是 OAuth。官方 Anthropic 兼容表中存在“忽略”或“不支持”的字段，因此新增规则时必须按目标 Agent 实测文本、流式输出、thinking、工具调用、停止原因和用量，不能只验证请求成功。当前 AgentHub 尚无 DeepSeek Adapter 规则。
+DeepSeek 使用平台签发的 API Key，不是 OAuth。官方 Anthropic 兼容表中存在“忽略”或“不支持”的字段，因此新增规则时必须按目标 Agent 实测文本、流式输出、thinking、工具调用、停止原因和用量，不能只验证请求成功。
+
+DeepSeek API 票和 DeepSeek Harness（Agent `dsh`）不是同一对象：
+
+| 目标 | 预期路线 | 当前状态 |
+|---|---|---|
+| DeepSeek Harness（`dsh`） | `config_sync`：凭据引用 + 官方 provider 槽（常见 `deepseek-official`） | **可应用**；`rule_id=deepseek-api-to-dsh-v1`。识别靠 preset `deepseek` 或 host `api.deepseek.com`，**不要**仅凭 `agent_id=dsh` 升级 |
+| Claude Code | `native_endpoint`：Anthropic 兼容入口 | **规则未开放**；须按上表实测，不能只验证 HTTP 200 |
+| Codex | 默认 `unsupported` | Chat Completions 不代表 Responses |
+
+接到 `dsh` 时走对方官方 LLM adapter，不把 Harness 当 Messages↔Responses 桥，也不把 OAuth 票写入其凭据缝。
 
 ## 3. 路由类型
 
@@ -133,6 +143,7 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 | 同上 | Codex | experimental `local_bridge` | **可实验应用**；`plan.canApply=true`，由 Tauri 专用 Bridge 路径执行，尚未完成端到端验收 |
 | 同上 | Pi | stable `config_sync` | **可应用**；写入 Pi `models.json` 的 `kimi-for-coding` 槽，凭据只引用 |
 | Anthropic Provider（显式 Anthropic API Key） | Pi | stable `config_sync` | **可应用**；写入 Pi `models.json` 的 `anthropic` 槽，凭据只引用 |
+| DeepSeek API Provider（preset `deepseek` 或 host `api.deepseek.com`） | DeepSeek Harness（`dsh`） | stable `config_sync` | **可应用**；写入 home 级官方 provider 引用，Key 只进 `.credentials.yaml`，不进 `cordis.patch.yml` |
 | Codex OAuth Account，`credentials.format=auth_json`（ChatGPT subscription） | Claude Code | 受限实验候选 | **unsupported**；可解释门禁，`plan.canApply=false`，不得创建 profile、启动 bridge 或写入 Claude 配置。Phase 1 **纯协议内核**（Messages↔IR↔Responses + RetryGate fixtures）已在 `agenthub-core` 落地，**不改变**本行可执行状态 |
 | 其他来源、目标或未标记记录 | 任意 | `unsupported` | 不产生写操作 |
 
@@ -140,7 +151,7 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 
 - Kimi managed OAuth 不会被识别为 Kimi Code 会员 API Key。
 - Kimi Code 会员识别：**`meta.preset=kimi-code-membership`**，或配置中出现官方端点 **`api.kimi.com/coding`**（无 preset 的 live import 仍可识别）。仅 `agent_id=kimi` 或 Moonshot 开放平台 **不会**升为会员。
-- 普通 OpenAI、xAI、Gemini、Kimi 开放平台、GLM Coding Plan、DeepSeek API 或任意“兼容 API”目前都不会自动升级为 Adapter 规则。
+- 普通 OpenAI、xAI、Gemini、Kimi 开放平台、GLM Coding Plan 或任意“兼容 API”目前都不会自动升级为 Adapter 规则。DeepSeek API 仅在 preset / 官方 host 命中时接到 `dsh`，不会升到 Claude。
 - `stable` 表示规则结论稳定，不等于已经开放写入；是否可写还要看 Apply 白名单。
 - Kimi → Codex 目前是唯一 Bridge 白名单，不代表已经提供通用协议网关。
 - 当前 Bridge 数据面只实现**下游** `POST /v1/responses` 到**上游** Kimi Chat Completions 的转换；它不是 Codex OAuth 上游、Anthropic Messages 下游或通用 Responses 网关。
@@ -290,5 +301,8 @@ Claude Code
 - [DeepSeek Anthropic API compatibility](https://api-docs.deepseek.com/guides/anthropic_api)
 - [DeepSeek 接入 Claude Code](https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code/)
 - [DeepSeek Models & Pricing（双协议 Base URL）](https://api-docs.deepseek.com/quick_start/pricing/)
+- [DeepSeek Harness 产品页](https://deepseek.com/harness/en/)
+- [DeepSeek Harness 架构](https://deepseek-harness.github.io/deepseek-harness/en/reference/)
+- AgentHub 侧 DSH 接入方案：[deepseek-harness-integration.md](deepseek-harness-integration.md)
 - [Pi AI providers 与 OAuth](https://github.com/earendil-works/pi/blob/main/packages/ai/README.md)
 - [Gemini API OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai)

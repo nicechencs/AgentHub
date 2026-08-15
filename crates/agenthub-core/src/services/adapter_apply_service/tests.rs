@@ -1312,3 +1312,228 @@ fn pi_account_source_apply_is_rejected_without_side_effects() {
         .is_empty());
     assert_eq!(ProviderRepo::new(db).list(None).unwrap().len(), 0);
 }
+
+struct FakeDshAdapter {
+    config: Mutex<AgentConfig>,
+}
+
+impl FakeDshAdapter {
+    fn new() -> Self {
+        Self {
+            config: Mutex::new(AgentConfig {
+                agent: AgentId::Dsh,
+                raw: json!({}),
+            }),
+        }
+    }
+}
+
+impl AgentAdapter for FakeDshAdapter {
+    fn id(&self) -> AgentId {
+        AgentId::Dsh
+    }
+    fn detect(&self) -> DetectResult {
+        DetectResult {
+            agent: AgentId::Dsh,
+            status: DetectStatus::NotFound,
+            version: None,
+            binary_path: None,
+            channel: None,
+            env_ready: true,
+            notes: vec![],
+        }
+    }
+    fn install_channels(&self) -> Vec<InstallChannel> {
+        vec![]
+    }
+    fn read_config(&self) -> Result<AgentConfig> {
+        Ok(self.config.lock().unwrap().clone())
+    }
+    fn write_config(&self, config: &AgentConfig) -> Result<()> {
+        *self.config.lock().unwrap() = config.clone();
+        Ok(())
+    }
+    fn read_auth(&self) -> Result<AuthState> {
+        Err(AppError::Unsupported("fake".into()))
+    }
+    fn capability(&self, capability: Capability) -> CapabilityState {
+        match capability {
+            Capability::ConfigWrite | Capability::LiveBackup => CapabilityState::full(),
+            _ => CapabilityState::unsupported("fake"),
+        }
+    }
+    fn skills_dir(&self) -> Option<PathBuf> {
+        None
+    }
+    fn live_backup_paths(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+    fn build_run_spec(
+        &self,
+        _binary: &Path,
+        _prompt: &str,
+        _options: &RunOptions,
+    ) -> Result<RunSpec> {
+        Err(AppError::Unsupported("fake".into()))
+    }
+}
+
+fn deepseek_api_source(id: &str, api_key: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        name: "DeepSeek API".into(),
+        settings_config: json!({"apiKey": api_key}),
+        meta: json!({"preset": "deepseek"}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+fn dsh_home_only_source(id: &str, api_key: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Dsh,
+        name: "DSH row without DeepSeek ticket marks".into(),
+        settings_config: json!({"apiKey": api_key}),
+        meta: json!({}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+#[test]
+fn dsh_deepseek_apply_sets_current_and_keeps_secret_out_of_dto() {
+    let (dir, db) = test_db();
+    let source = deepseek_api_source("ds-source", "sk-deepseek-secret");
+    ProviderRepo::new(db.clone()).create(&source).unwrap();
+    let fake = Arc::new(FakeDshAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
+
+    let result = service.apply(&request(&source.id, AgentId::Dsh)).unwrap();
+    let stored = ProviderRepo::new(db.clone())
+        .get_by_id(&result.provider.id)
+        .unwrap()
+        .unwrap();
+    let profile = AdapterProfileRepo::new(db)
+        .get(&result.profile.id)
+        .unwrap()
+        .unwrap();
+    let live = fake.read_config().unwrap();
+
+    assert!(result.provider.is_current);
+    assert!(stored.is_current);
+    assert_eq!(profile.status, AdapterProfileStatus::Active);
+    assert_eq!(profile.route, AdapterRoute::ConfigSync);
+    assert_eq!(profile.rule_id, DEEPSEEK_DSH_RULE_ID);
+    assert_eq!(live.raw["api_key"], "sk-deepseek-secret");
+    assert_eq!(live.raw["provider"], DSH_DEEPSEEK_PROVIDER_SLOT);
+    assert_eq!(live.raw["apiKeyEnv"], DSH_API_KEY_ENV);
+    assert_eq!(stored.settings_config["api_key"], CONNECTION_SECRET_MARKER);
+    assert!(!serde_json::to_string(&result)
+        .unwrap()
+        .contains("sk-deepseek-secret"));
+    assert!(!serde_json::to_string(&stored)
+        .unwrap()
+        .contains("sk-deepseek-secret"));
+    assert!(!serde_json::to_string(&profile)
+        .unwrap()
+        .contains("sk-deepseek-secret"));
+}
+
+#[test]
+fn dsh_missing_secret_creates_no_profile() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&deepseek_api_source("ds-source", ""))
+        .unwrap();
+    let service = AdapterApplyService::new(
+        db.clone(),
+        AdapterRegistry::new(),
+        dir.path().join("backups"),
+    );
+
+    assert!(service
+        .apply(&request("ds-source", AgentId::Dsh))
+        .is_err());
+    assert!(AdapterProfileRepo::new(db.clone())
+        .list(None, None, None)
+        .unwrap()
+        .is_empty());
+    assert_eq!(ProviderRepo::new(db).list(None).unwrap().len(), 1);
+}
+
+#[test]
+fn dsh_agent_id_alone_does_not_apply() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&dsh_home_only_source("dsh-only", "sk-not-a-ticket"))
+        .unwrap();
+    let service = AdapterApplyService::new(
+        db.clone(),
+        AdapterRegistry::new(),
+        dir.path().join("backups"),
+    );
+
+    assert!(service
+        .apply(&request("dsh-only", AgentId::Dsh))
+        .is_err());
+    assert!(AdapterProfileRepo::new(db.clone())
+        .list(None, None, None)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn deepseek_host_without_preset_applies_to_dsh() {
+    let (dir, db) = test_db();
+    let source = Provider {
+        id: "ds-host".into(),
+        agent_id: AgentId::Claude,
+        name: "DeepSeek host".into(),
+        settings_config: json!({
+            "apiKey": "sk-from-host",
+            "baseUrl": "https://api.deepseek.com",
+        }),
+        meta: json!({}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    };
+    ProviderRepo::new(db.clone()).create(&source).unwrap();
+    let fake = Arc::new(FakeDshAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db, registry, dir.path().join("backups"));
+
+    let result = service.apply(&request(&source.id, AgentId::Dsh)).unwrap();
+    assert_eq!(result.profile.rule_id, DEEPSEEK_DSH_RULE_ID);
+    assert_eq!(fake.read_config().unwrap().raw["api_key"], "sk-from-host");
+    assert!(!serde_json::to_string(&result).unwrap().contains("sk-from-host"));
+}
+
+#[test]
+fn deepseek_api_to_claude_apply_is_rejected() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&deepseek_api_source("ds-source", "sk-deepseek-secret"))
+        .unwrap();
+    let service = AdapterApplyService::new(
+        db.clone(),
+        AdapterRegistry::new(),
+        dir.path().join("backups"),
+    );
+
+    let error = service
+        .apply(&request("ds-source", AgentId::Claude))
+        .unwrap_err();
+    assert_eq!(error.code(), "unsupported");
+    assert!(AdapterProfileRepo::new(db.clone())
+        .list(None, None, None)
+        .unwrap()
+        .is_empty());
+}

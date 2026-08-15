@@ -2,7 +2,7 @@
 
 > 对应《架构拆分》§4。技术：React 18 + TS + Vite + Tailwind + shadcn/Radix（唯一 UI 体系）+ CodeMirror 6 + recharts + react-router。  
 > **实际依赖**以根目录 `package.json` 为准：**未**引入 TanStack Query / i18next / react-hook-form / zod；页面用本地 state + `lib/api`。  
-> 范围：**七家** Agent（Claude / Codex / Kimi / Grok / Pi / WorkBuddy / **Cursor Agent** 半套 CLI）；**不支持基于 Cursor IDE 私有库的账号池**。Dashboard 与侧栏按 `AGENTS` 自适应，不写死数量。  
+> 范围：**八家** Agent（Claude / Codex / Kimi / Grok / Pi / WorkBuddy / **Cursor Agent** 半套 CLI / **DeepSeek Harness**）；**不支持基于 Cursor IDE 私有库的账号池**。Dashboard 与侧栏按 `AGENTS` 自适应，不写死数量。  
 > v1.1：Usage 模型筛选语义、Backups 流程、Dashboard/侧栏与当前 agent 集合对齐。  
 > v1.3：Agents / 首次引导增加 **「环境未就绪」** 态；安装链路先 Runtime 再 Agent。  
 > v1.4：环境条/安装预览按宿主平台分流——macOS 不展示 PowerShell；native 命令预览 Windows=`irm|iex`、macOS=`curl|bash`；Runtime 修复默认 winget/brew。  

@@ -99,6 +99,14 @@ function defaultMockAgentStatuses(): Record<AgentId, AgentStatus> {
       running: false,
       capabilities: MOCK_CAPABILITIES.cursor,
     },
+    dsh: {
+      agentId: 'dsh',
+      installed: false,
+      authStatus: 'none',
+      authLabel: '未配置',
+      running: false,
+      capabilities: MOCK_CAPABILITIES.dsh,
+    },
   };
 }
 

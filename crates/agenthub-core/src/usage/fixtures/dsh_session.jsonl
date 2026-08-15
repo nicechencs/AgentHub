@@ -1,0 +1,7 @@
+{"type":"session","id":"sess-dsh-demo","cwd":"/tmp/dsh-demo","createdAt":"2026-08-15T00:00:00Z"}
+{"type":"request/header","model":"deepseek-v4-flash","provider":"deepseek-official","createdAt":"2026-08-15T00:00:01Z"}
+{"type":"assistant/message","usage":{"input_tokens":12,"output_tokens":34,"cache_read_input_tokens":2},"createdAt":"2026-08-15T00:00:02Z"}
+{"type":"token-meter","surfaceTokens":999,"estimated":true,"totalTokens":999}
+{"type":"assistant/message","usage":{"surfaceTokens":80,"estimated":true}}
+{"type":"step/end","usage":{"input_tokens":3,"output_tokens":5,"costUSD":0.001},"createdAt":"2026-08-15T00:00:03Z"}
+{"type":"assistant/message","seed":true,"usage":{"input_tokens":100,"output_tokens":100}}

@@ -404,6 +404,91 @@ describe('mock adapter route preview', () => {
     expect(await adapter.listProfiles()).toHaveLength(1);
     expect(getMockProviderById(applied.provider.id)?.isCurrent).toBe(true);
   });
+
+  it('applies DeepSeek API to dsh by preset or host and keeps the secret out', async () => {
+    const presetId = `ds-preset-${Date.now()}`;
+    const hostId = `ds-host-${Date.now()}`;
+    await createMockProviderPort().upsertProvider({
+      id: presetId,
+      agentId: 'claude',
+      name: 'DeepSeek preset',
+      preset: 'deepseek',
+      configText: 'api_key = "must-not-leak"',
+      configFormat: 'json',
+      isCurrent: false,
+    });
+    await createMockProviderPort().upsertProvider({
+      id: hostId,
+      agentId: 'kimi',
+      name: 'DeepSeek host',
+      preset: 'default',
+      configText: '{"baseUrl":"https://api.deepseek.com","apiKey":"must-not-leak"}',
+      configFormat: 'json',
+      isCurrent: false,
+    });
+    const adapter = createMockAdapterPort(resolver);
+
+    const plan = await adapter.plan({
+      sourceKind: 'provider',
+      sourceId: presetId,
+      targetAgentId: 'dsh',
+    });
+    expect(plan.canApply).toBe(true);
+    expect(plan.analysis.route).toBe('config_sync');
+    expect(plan.analysis.ruleId).toBe('deepseek-api-to-dsh-v1');
+    expect(plan.changes).toEqual([
+      { target: 'dsh', field: 'provider', value: 'deepseek-official', secret: false },
+      { target: 'dsh', field: 'apiKeyEnv', value: 'DEEPSEEK_API_KEY', secret: false },
+      { target: 'dsh', field: 'apiKey', secret: true },
+    ]);
+    expect(JSON.stringify(plan)).not.toContain('must-not-leak');
+
+    const applied = await adapter.apply({
+      sourceKind: 'provider',
+      sourceId: presetId,
+      targetAgentId: 'dsh',
+    });
+    expect(applied.profile.ruleId).toBe('deepseek-api-to-dsh-v1');
+    expect(applied.provider.configText).toContain('$AGENTHUB_CONNECTION_SECRET$');
+    expect(JSON.stringify(applied)).not.toContain('must-not-leak');
+
+    const hostPlan = await adapter.plan({
+      sourceKind: 'provider',
+      sourceId: hostId,
+      targetAgentId: 'dsh',
+    });
+    expect(hostPlan.canApply).toBe(true);
+    expect(hostPlan.analysis.ruleId).toBe('deepseek-api-to-dsh-v1');
+
+    await expect(
+      adapter.apply({
+        sourceKind: 'provider',
+        sourceId: presetId,
+        targetAgentId: 'claude',
+      }),
+    ).rejects.toThrow(/不可应用|不支持|canApply/i);
+  });
+
+  it('does not treat agentId=dsh alone as a DeepSeek API ticket', async () => {
+    const sourceId = `dsh-only-${Date.now()}`;
+    await createMockProviderPort().upsertProvider({
+      id: sourceId,
+      agentId: 'dsh',
+      name: 'DSH row',
+      preset: 'default',
+      configText: '{"apiKey":"must-not-leak"}',
+      configFormat: 'json',
+      isCurrent: false,
+    });
+    const adapter = createMockAdapterPort(resolver);
+    const plan = await adapter.plan({
+      sourceKind: 'provider',
+      sourceId,
+      targetAgentId: 'dsh',
+    });
+    expect(plan.canApply).toBe(false);
+    expect(plan.analysis.route).toBe('unsupported');
+  });
 });
 
 type ContractCase = (typeof contract.cases)[number];

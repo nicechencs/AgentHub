@@ -22,7 +22,7 @@ describe('agent catalog façade', () => {
 
   it('applyAgentCatalog rebuilds product set from backend entries only', () => {
     expect(AGENTS.map((a) => a.id)).toEqual(MOCK_AGENT_CATALOG.map((e) => e.key));
-    expect(AGENTS).toHaveLength(7);
+    expect(AGENTS).toHaveLength(MOCK_AGENT_CATALOG.length);
     expect(AGENT_MAP.claude?.name).toBe('Claude Code');
     expect(AGENT_MAP.claude?.installChannels.length).toBeGreaterThan(0);
   });
