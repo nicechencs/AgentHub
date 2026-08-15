@@ -1,8 +1,7 @@
 use super::*;
 use crate::models::{
-    Account, AccountKind, AdapterCapabilityDecision, AdapterGateKind, AdapterMaturity,
-    AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSupport, Provider,
-    ADAPTER_CAPABILITY_MATRIX,
+    Account, AccountKind, AdapterCapabilityDecision, AdapterMaturity, AdapterRoute,
+    AdapterRouteAnalysis, AdapterServiceImpact, AdapterSupport, Provider, ADAPTER_CAPABILITY_MATRIX,
 };
 use crate::services::adapter_apply_service::apply_request_supported;
 use crate::services::AdapterApplyService;
