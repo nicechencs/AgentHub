@@ -1,17 +1,21 @@
-//! Agent skill projection targets (P12).
+//! Agent skill projection targets (P12 / P1-3).
 //!
 //! An [`AgentSkillTarget`] describes where a skill may be projected for one
-//! agent. Targets are registered from adapters that expose a usable Skills
-//! capability and a concrete `skills_dir`. Unsupported agents are omitted
-//! (no silent port). Unmanaged directories are never auto-deleted.
+//! agent. Production builtins register [`StaticSkillTarget`] from path roots
+//! without requiring a full [`crate::adapters::AdapterRegistry`]. Unsupported
+//! agents are omitted (no silent port). Unmanaged directories are never
+//! auto-deleted.
+//!
+//! [`AdapterSkillTarget`] remains available as a compatibility wrapper.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, Capability};
+use crate::platform::paths::{resolve_agent_config_dir, resolve_agent_home};
 use crate::platform::AgentKey;
 
 /// Describes one agent's skill projection root.
@@ -25,7 +29,7 @@ pub trait AgentSkillTarget: Send + Sync {
     fn supports_skills(&self) -> bool;
 }
 
-/// Adapter-backed skill target (production path).
+/// Adapter-backed skill target (compatibility / transition path).
 #[derive(Clone)]
 pub struct AdapterSkillTarget {
     adapter: Arc<dyn AgentAdapter>,
@@ -52,7 +56,7 @@ impl AgentSkillTarget for AdapterSkillTarget {
     }
 }
 
-/// Explicit target for tests / demos (no adapter required).
+/// Explicit target — production builtins, tests, and demos (no adapter required).
 #[derive(Debug, Clone)]
 pub struct StaticSkillTarget {
     pub agent_key: AgentKey,
@@ -117,7 +121,13 @@ impl SkillTargetRegistry {
         self.targets.contains_key(agent_key)
     }
 
+    pub fn supported_agent_keys(&self) -> Vec<AgentKey> {
+        self.registration_order.clone()
+    }
+
     /// Build from [`AdapterRegistry`]: only agents with usable Skills + skills_dir.
+    ///
+    /// Compatibility path — prefer [`builtin_skill_target_registry`] in production.
     pub fn from_adapter_registry(registry: &AdapterRegistry) -> Result<Self> {
         let mut out = Self::new();
         for agent in AgentId::ALL {
@@ -134,4 +144,87 @@ impl SkillTargetRegistry {
         }
         Ok(out)
     }
+}
+
+fn push_static(
+    out: &mut SkillTargetRegistry,
+    agent: AgentId,
+    skills_root: Option<PathBuf>,
+) -> Result<()> {
+    if skills_root.is_none() {
+        return Ok(());
+    }
+    out.register(Arc::new(StaticSkillTarget {
+        agent_key: AgentKey::from_agent_id(agent),
+        skills_root,
+        supports: true,
+    }))
+}
+
+/// Production skill targets from path contributions — no fat adapter registry.
+///
+/// Mirrors former `from_adapter_registry(register_all())` membership: agents with
+/// usable Skills + concrete skills root (Kimi omitted).
+pub fn build_builtin_skill_targets() -> Result<SkillTargetRegistry> {
+    let mut out = SkillTargetRegistry::new();
+    // AgentId::ALL order; skip agents without a skills root.
+    push_static(
+        &mut out,
+        AgentId::Claude,
+        resolve_agent_home(AgentId::Claude)
+            .ok()
+            .map(|h| h.join("skills")),
+    )?;
+    push_static(
+        &mut out,
+        AgentId::Codex,
+        resolve_agent_home(AgentId::Codex)
+            .ok()
+            .map(|h| h.join("skills")),
+    )?;
+    // Kimi: Skills unsupported — omit.
+    push_static(
+        &mut out,
+        AgentId::Grok,
+        resolve_agent_home(AgentId::Grok)
+            .ok()
+            .map(|h| h.join("skills")),
+    )?;
+    push_static(
+        &mut out,
+        AgentId::Pi,
+        resolve_agent_config_dir(AgentId::Pi)
+            .ok()
+            .map(|h| h.join("skills")),
+    )?;
+    push_static(
+        &mut out,
+        AgentId::WorkBuddy,
+        resolve_agent_config_dir(AgentId::WorkBuddy)
+            .ok()
+            .map(|h| h.join("skills")),
+    )?;
+    push_static(
+        &mut out,
+        AgentId::Cursor,
+        resolve_agent_home(AgentId::Cursor)
+            .ok()
+            .map(|h| h.join("skills-cursor")),
+    )?;
+    push_static(
+        &mut out,
+        AgentId::Dsh,
+        resolve_agent_home(AgentId::Dsh)
+            .ok()
+            .map(|h| h.join("skills")),
+    )?;
+    Ok(out)
+}
+
+/// Process-wide builtin skill target registry.
+pub fn builtin_skill_target_registry() -> &'static SkillTargetRegistry {
+    static REGISTRY: OnceLock<SkillTargetRegistry> = OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        build_builtin_skill_targets().expect("unique built-in skill target keys")
+    })
 }

@@ -18,25 +18,29 @@ use super::{
 
 pub struct CodexAdapter;
 
+/// Standalone install probe used by platform detectors (no full adapter required).
+pub(crate) fn detect_installation() -> DetectResult {
+    let requires = crate::catalog::install::adapter_install_channels(AgentId::Codex)
+        .first()
+        .map(|c| c.requires.clone())
+        .unwrap_or_default();
+    let env_ready = runtime::is_ready(&requires);
+    detect_binary(
+        AgentId::Codex,
+        &["codex"],
+        &["--version"],
+        Some("npm"),
+        env_ready,
+    )
+}
+
 impl AgentAdapter for CodexAdapter {
     fn id(&self) -> AgentId {
         AgentId::Codex
     }
 
     fn detect(&self) -> DetectResult {
-        let requires = self
-            .install_channels()
-            .first()
-            .map(|c| c.requires.clone())
-            .unwrap_or_default();
-        let env_ready = runtime::is_ready(&requires);
-        detect_binary(
-            AgentId::Codex,
-            &["codex"],
-            &["--version"],
-            Some("npm"),
-            env_ready,
-        )
+        detect_installation()
     }
 
     fn read_config(&self) -> Result<AgentConfig> {
