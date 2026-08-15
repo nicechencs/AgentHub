@@ -5,6 +5,7 @@ mod adapter_profile_repo;
 mod backup_repo;
 mod binding_repo;
 mod chat_repo;
+mod connection_trash_repo;
 mod migrations;
 mod operation_repo;
 mod provider_repo;
@@ -20,6 +21,7 @@ pub(crate) use binding_repo::ActiveBindingRepo;
 /// Row DTO is public for diagnostics; writes go through ConnectionService conn helpers.
 pub use binding_repo::ActiveBindingRow;
 pub use chat_repo::ChatRepo;
+pub use connection_trash_repo::ConnectionTrashRepo;
 pub use operation_repo::OperationRepo;
 pub use provider_repo::ProviderRepo;
 

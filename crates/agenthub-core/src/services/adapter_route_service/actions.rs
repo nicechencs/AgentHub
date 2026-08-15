@@ -1,15 +1,3 @@
-//! Read-only compatibility analysis for explicitly tagged connection records.
-//!
-//! Route presentation is sourced from the compile-time
-//! [`crate::models::ADAPTER_CAPABILITY_MATRIX`]. Missing cells fail closed.
-//!
-//! `plan()` is the only public planner exit: it computes route, maturity,
-//! `can_apply`, and reason. `can_apply` is **matrix open ∩ write_gate**.
-//! `write_gate` is true only when a bind implementation exists for this
-//! ticket `source_kind` and the secret can be resolved on that kind.
-//! The matrix is the graph; `write_gate` is a private helper, not a third
-//! public truth. The matrix alone never authorizes writes.
-
 use serde_json::Value;
 
 use crate::error::{AppError, Result};
@@ -32,456 +20,9 @@ use crate::services::adapter_route_constants::{
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
-/// Determines whether one saved connection has a supported preview route to an agent.
-///
-/// This service deliberately uses only explicit persisted fields. It does not inspect,
-/// infer, return, or copy credentials and it never writes a config or starts a bridge.
-pub struct AdapterRouteService {
-    accounts: AccountRepo,
-    providers: ProviderRepo,
-}
+use super::AdapterRouteService;
 
-impl AdapterRouteService {
-    pub fn new(db: Database) -> Self {
-        Self {
-            accounts: AccountRepo::new(db.clone()),
-            providers: ProviderRepo::new(db),
-        }
-    }
-
-    pub fn analyze(&self, request: &AdapterRouteRequest) -> Result<AdapterRouteAnalysis> {
-        let classified = self.classify(request)?;
-        Ok(analysis_from_decision(
-            &classified.decision,
-            &classified.source,
-            request,
-        ))
-    }
-
-    /// Build a safe representation of an eventual configuration change.
-    ///
-    /// This is the only public place that computes `can_apply`, maturity, route,
-    /// and the planner reason. Write permission is matrix-open ∩ [`write_gate`].
-    /// `can_apply` means bind would succeed now for this ticket `source_kind`.
-    pub fn plan(&self, request: &AdapterRouteRequest) -> Result<AdapterApplyPlan> {
-        let classified = self.classify(request)?;
-        let analysis = analysis_from_decision(&classified.decision, &classified.source, request);
-        let (service_impact, changes) = match analysis.route {
-            AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Claude => {
-                let base_url = claude_native_base_url(analysis.rule_id.as_deref().unwrap_or(""))
-                    .unwrap_or(KIMI_CLAUDE_BASE_URL);
-                (
-                    AdapterServiceImpact::None,
-                    vec![
-                        change("claude", "baseUrl", Some(base_url), false),
-                        change(
-                            "claude",
-                            "claudeAuthEnv",
-                            Some(ANTHROPIC_AUTH_TOKEN_ENV),
-                            false,
-                        ),
-                        change("claude", "apiKey", None, true),
-                    ],
-                )
-            }
-            AdapterRoute::ConfigSync if request.target_agent_id == AgentId::Pi => {
-                let provider = analysis
-                    .actions
-                    .iter()
-                    .find(|action| action.kind == "set_config" && action.target == "Pi")
-                    .and_then(|action| action.value.as_deref())
-                    .unwrap_or("anthropic");
-                let secret_field = if matches!(
-                    analysis.rule_id.as_deref(),
-                    Some(
-                        "claude-subscription-to-pi-v1"
-                            | "codex-subscription-to-pi-v1"
-                            | "grok-subscription-to-pi-v1"
-                    )
-                ) {
-                    "auth"
-                } else {
-                    "apiKey"
-                };
-                (
-                    AdapterServiceImpact::None,
-                    vec![
-                        change("pi", "provider", Some(provider), false),
-                        change("pi", secret_field, None, true),
-                    ],
-                )
-            }
-            AdapterRoute::ConfigSync if request.target_agent_id == AgentId::Dsh => (
-                AdapterServiceImpact::None,
-                vec![
-                    change("dsh", "provider", Some(DSH_DEEPSEEK_PROVIDER_SLOT), false),
-                    change("dsh", "apiKeyEnv", Some("DEEPSEEK_API_KEY"), false),
-                    change("dsh", "apiKey", None, true),
-                ],
-            ),
-            AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Codex => {
-                let provider = if analysis.rule_id.as_deref() == Some("anthropic-api-to-codex-v1") {
-                    "AgentHub Anthropic 本地桥接"
-                } else {
-                    "AgentHub Kimi 本地桥接"
-                };
-                (
-                    AdapterServiceImpact::RequiresLocalBridge,
-                    vec![
-                        change("codex", "provider", Some(provider), false),
-                        change(
-                            "codex",
-                            "baseUrl",
-                            Some("http://127.0.0.1:<本机端口>/v1"),
-                            false,
-                        ),
-                    ],
-                )
-            }
-            AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Codex => {
-                let (provider, base_url) = if analysis.rule_id.as_deref() == Some(GLM_CODEX_RULE_ID)
-                {
-                    ("GLM Coding Plan", GLM_CODEX_BASE_URL)
-                } else {
-                    ("DeepSeek API", DEEPSEEK_CODEX_BASE_URL)
-                };
-                (
-                    AdapterServiceImpact::None,
-                    vec![
-                        change("codex", "provider", Some(provider), false),
-                        change("codex", "baseUrl", Some(base_url), false),
-                        change("codex", "wireApi", Some("responses"), false),
-                    ],
-                )
-            }
-            AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Grok => {
-                let (base_url, model) =
-                    if analysis.rule_id.as_deref() == Some("kimi-membership-to-grok-v1") {
-                        (KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL)
-                    } else {
-                        (OPENAI_GROK_BASE_URL, OPENAI_GROK_DEFAULT_MODEL)
-                    };
-                (
-                    AdapterServiceImpact::None,
-                    vec![
-                        change("grok", "baseUrl", Some(base_url), false),
-                        change("grok", "model", Some(model), false),
-                        change("grok", "apiBackend", Some("chat_completions"), false),
-                        change("grok", "apiKey", None, true),
-                    ],
-                )
-            }
-            AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Claude => (
-                AdapterServiceImpact::RequiresLocalBridge,
-                vec![
-                    change(
-                        "claude",
-                        "ANTHROPIC_BASE_URL",
-                        Some("http://127.0.0.1:<本机端口>"),
-                        false,
-                    ),
-                    change("claude", "ANTHROPIC_AUTH_TOKEN", None, true),
-                ],
-            ),
-            AdapterRoute::LocalBridge => (AdapterServiceImpact::RequiresLocalBridge, vec![]),
-            AdapterRoute::Unsupported | AdapterRoute::ConfigSync | AdapterRoute::NativeEndpoint => {
-                (AdapterServiceImpact::None, vec![])
-            }
-        };
-
-        let can_apply = write_gate(
-            &self.accounts,
-            classified.decision.can_apply,
-            request,
-            &analysis,
-        );
-        let maturity = adapter_maturity_from_decision(&classified.decision);
-        let reason = analysis.reason.clone();
-        let reuse_path = reuse_path_for(classified.decision.route, classified.credential);
-
-        Ok(AdapterApplyPlan {
-            analysis,
-            target_agent_id: request.target_agent_id,
-            can_apply,
-            maturity,
-            reuse_path,
-            reason,
-            service_impact,
-            changes,
-        })
-    }
-
-    /// Classify a connection row into an [`AdapterSourceProduct`] without routing.
-    ///
-    /// Used by the Ticket wallet read model so surface labels stay aligned with
-    /// analyze/plan. Does not inspect or return credentials.
-    pub fn classify_source_product(
-        &self,
-        source_kind: AdapterSourceKind,
-        source_id: &str,
-    ) -> Result<AdapterSourceProduct> {
-        Ok(self.identify_source(source_kind, source_id)?.product)
-    }
-
-    fn classify(&self, request: &AdapterRouteRequest) -> Result<ClassifiedRoute> {
-        let identity = self.identify_source(request.source_kind, &request.source_id)?;
-
-        let mut decision = decide_adapter_capability(
-            identity.product,
-            identity.credential,
-            request.target_agent_id,
-        )
-        .public_surface();
-        // Replace the generic Other reason with an actionable product hint when we have one.
-        if matches!(identity.product, AdapterSourceProduct::Other) {
-            if let Some(hint) = identity.reason_hint {
-                decision = AdapterCapabilityDecision::unsupported(hint).public_surface();
-            }
-        }
-
-        Ok(ClassifiedRoute {
-            source: identity.label,
-            credential: identity.credential,
-            decision,
-        })
-    }
-
-    fn identify_source(
-        &self,
-        source_kind: AdapterSourceKind,
-        source_id: &str,
-    ) -> Result<SourceIdentity> {
-        let source_id = source_id.trim();
-        if source_id.is_empty() {
-            return Err(AppError::InvalidArg(
-                "adapter source id must not be empty".into(),
-            ));
-        }
-
-        match source_kind {
-            AdapterSourceKind::Provider => {
-                let provider = self.providers.get_by_id(source_id)?.ok_or_else(|| {
-                    AppError::NotFound(format!("provider not found: {source_id}"))
-                })?;
-                let preset = json_string(&provider.meta, "preset");
-                let explicit_tag = preset.or_else(|| json_string(&provider.meta, "provider"));
-                // Membership is explicit preset *or* official Kimi coding endpoint in config.
-                // Do not invent membership from agent_id alone (moonshot / custom stay closed).
-                if is_kimi_code_membership_source(
-                    provider.agent_id,
-                    &provider.meta,
-                    &provider.settings_config,
-                ) {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::KimiCodeMembership,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::KimiMembership,
-                        reason_hint: None,
-                    })
-                } else if provider.agent_id == AgentId::Claude
-                    && (preset == Some("anthropic")
-                        || settings_contain_anthropic_api_endpoint(&provider.settings_config))
-                {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::AnthropicApi,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::AnthropicApiKey,
-                        reason_hint: None,
-                    })
-                } else if is_openai_api_marker(explicit_tag, &provider.settings_config) {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::OpenaiApi,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::OpenaiApiKey,
-                        reason_hint: None,
-                    })
-                } else if is_xai_api_marker(explicit_tag, &provider.settings_config) {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::XaiApi,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::XaiApiKey,
-                        reason_hint: None,
-                    })
-                } else if is_glm_coding_plan_marker(explicit_tag, &provider.settings_config) {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::GlmCodingPlan,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::GlmCodingPlan,
-                        reason_hint: None,
-                    })
-                } else if is_deepseek_api_marker(explicit_tag, &provider.settings_config) {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::DeepseekApi,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::DeepseekApi,
-                        reason_hint: None,
-                    })
-                } else if provider.agent_id == AgentId::Kimi {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::Other,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::Other,
-                        reason_hint: Some(KIMI_NON_MEMBERSHIP_REASON),
-                    })
-                } else {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::Other,
-                        credential: AdapterCredentialClass::Unknown,
-                        label: RouteSourceLabel::Other,
-                        reason_hint: None,
-                    })
-                }
-            }
-            AdapterSourceKind::Account => {
-                let account = self
-                    .accounts
-                    .get_by_id(source_id)?
-                    .ok_or_else(|| AppError::NotFound(format!("account not found: {source_id}")))?;
-                let explicit_provider = json_string(&account.extra, "provider")
-                    .or_else(|| json_string(&account.credentials, "provider"));
-                let credential_format = json_string(&account.credentials, "format")
-                    .or_else(|| json_string(&account.extra, "format"));
-
-                if account.kind == AccountKind::ApiKey
-                    && (explicit_provider
-                        .is_some_and(|value| value.eq_ignore_ascii_case("anthropic"))
-                        || settings_contain_anthropic_api_endpoint(&account.credentials)
-                        || settings_contain_anthropic_api_endpoint(&account.extra))
-                {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::AnthropicApi,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::AnthropicApiKey,
-                        reason_hint: None,
-                    })
-                } else if account.kind == AccountKind::ApiKey
-                    && (is_openai_api_marker(explicit_provider, &account.credentials)
-                        || is_openai_api_marker(explicit_provider, &account.extra))
-                {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::OpenaiApi,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::OpenaiApiKey,
-                        reason_hint: None,
-                    })
-                } else if account.kind == AccountKind::ApiKey
-                    && (is_xai_api_marker(explicit_provider, &account.credentials)
-                        || is_xai_api_marker(explicit_provider, &account.extra))
-                {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::XaiApi,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::XaiApiKey,
-                        reason_hint: None,
-                    })
-                } else if account.kind == AccountKind::ApiKey
-                    && (is_glm_coding_plan_marker(explicit_provider, &account.credentials)
-                        || is_glm_coding_plan_marker(explicit_provider, &account.extra))
-                {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::GlmCodingPlan,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::GlmCodingPlan,
-                        reason_hint: None,
-                    })
-                } else if account.kind == AccountKind::ApiKey
-                    && (is_deepseek_api_marker(explicit_provider, &account.credentials)
-                        || is_deepseek_api_marker(explicit_provider, &account.extra))
-                {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::DeepseekApi,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::DeepseekApi,
-                        reason_hint: None,
-                    })
-                } else if account.kind == AccountKind::ApiKey
-                    && is_kimi_code_membership_account(
-                        account.agent_id,
-                        &account.extra,
-                        &account.credentials,
-                    )
-                {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::KimiCodeMembership,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::KimiMembership,
-                        reason_hint: None,
-                    })
-                } else if account.kind == AccountKind::ApiKey && account.agent_id == AgentId::Kimi {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::Other,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::Other,
-                        reason_hint: Some(KIMI_NON_MEMBERSHIP_REASON),
-                    })
-                } else if account.agent_id == AgentId::Codex
-                    && account.kind == AccountKind::Oauth
-                    && is_codex_auth_json(credential_format, &account.credentials)
-                {
-                    // Explicit Codex / ChatGPT subscription (`format=auth_json` or tokens blob).
-                    // The Responses → Claude cell is open, subject to the Account secret gate.
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::CodexChatGptSubscription,
-                        credential: AdapterCredentialClass::OauthAuthJson,
-                        label: RouteSourceLabel::CodexSubscription,
-                        reason_hint: None,
-                    })
-                } else if account.agent_id == AgentId::Codex && account.kind == AccountKind::Oauth {
-                    // Codex OAuth without auth_json shape: same product messaging, but do not
-                    // pretend the closed auth_json matrix cell matched. Fail closed via empty
-                    // candidate → subscription_candidate unsupported surface for Claude.
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::CodexChatGptSubscription,
-                        credential: AdapterCredentialClass::OauthOther,
-                        label: RouteSourceLabel::CodexSubscription,
-                        reason_hint: None,
-                    })
-                } else if account.agent_id == AgentId::Claude && account.kind == AccountKind::Oauth
-                {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::ClaudeSubscription,
-                        credential: AdapterCredentialClass::OauthOther,
-                        label: RouteSourceLabel::ClaudeSubscription,
-                        reason_hint: None,
-                    })
-                } else if account.agent_id == AgentId::Grok && account.kind == AccountKind::Oauth {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::XaiGrokSubscription,
-                        credential: AdapterCredentialClass::OauthOther,
-                        label: RouteSourceLabel::XaiGrokSubscription,
-                        reason_hint: None,
-                    })
-                } else {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::Other,
-                        credential: match account.kind {
-                            AccountKind::ApiKey => AdapterCredentialClass::ApiKey,
-                            AccountKind::Oauth => AdapterCredentialClass::OauthOther,
-                        },
-                        label: RouteSourceLabel::Other,
-                        reason_hint: None,
-                    })
-                }
-            }
-        }
-    }
-}
-
-struct ClassifiedRoute {
-    source: RouteSourceLabel,
-    credential: AdapterCredentialClass,
-    decision: AdapterCapabilityDecision,
-}
-
-struct SourceIdentity {
-    product: AdapterSourceProduct,
-    credential: AdapterCredentialClass,
-    label: RouteSourceLabel,
-    /// Optional replace for the generic Other unsupported reason (never secrets).
-    reason_hint: Option<&'static str>,
-}
-
-fn reuse_path_for(route: AdapterRoute, credential: AdapterCredentialClass) -> AdapterReusePath {
+pub(super) fn reuse_path_for(route: AdapterRoute, credential: AdapterCredentialClass) -> AdapterReusePath {
     match route {
         AdapterRoute::Unsupported => AdapterReusePath::None,
         AdapterRoute::LocalBridge => AdapterReusePath::LocalBridge,
@@ -496,7 +37,7 @@ fn reuse_path_for(route: AdapterRoute, credential: AdapterCredentialClass) -> Ad
 }
 
 #[derive(Debug, Clone, Copy)]
-enum RouteSourceLabel {
+pub(super) enum RouteSourceLabel {
     KimiMembership,
     AnthropicApiKey,
     OpenaiApiKey,
@@ -510,7 +51,7 @@ enum RouteSourceLabel {
 }
 
 /// Kimi agent pool row that is not membership (open platform / custom compatible).
-const KIMI_NON_MEMBERSHIP_REASON: &str = concat!(
+pub(super) const KIMI_NON_MEMBERSHIP_REASON: &str = concat!(
     "当前 Kimi 连接不是「Kimi Code 会员」来源。",
     "跨 Agent 适配仅支持会员：Connections 中选择 preset「Kimi Code 会员」，",
     "或配置端点包含 api.kimi.com/coding。",
@@ -518,7 +59,7 @@ const KIMI_NON_MEMBERSHIP_REASON: &str = concat!(
     "当前不支持不等于连接失效。",
 );
 
-fn is_codex_auth_json(format: Option<&str>, credentials: &Value) -> bool {
+pub(super) fn is_codex_auth_json(format: Option<&str>, credentials: &Value) -> bool {
     if format.is_some_and(|value| value.eq_ignore_ascii_case("auth_json")) {
         return true;
     }
@@ -537,7 +78,7 @@ fn is_codex_auth_json(format: Option<&str>, credentials: &Value) -> bool {
 /// Matrix `can_apply` is necessary but not sufficient. A write is open only
 /// when a bind implementation exists for this `(rule, source_kind, target)`
 /// and the secret resolver can take that ticket's `source_kind`.
-fn write_gate(
+pub(super) fn write_gate(
     accounts: &AccountRepo,
     matrix_can_apply: bool,
     request: &AdapterRouteRequest,
@@ -548,7 +89,7 @@ fn write_gate(
         && subscription_account_secret_open(accounts, request, analysis)
 }
 
-fn subscription_account_secret_open(
+pub(super) fn subscription_account_secret_open(
     accounts: &AccountRepo,
     request: &AdapterRouteRequest,
     analysis: &AdapterRouteAnalysis,
@@ -690,7 +231,7 @@ pub(crate) fn bind_implementation_open(
     }
 }
 
-fn json_string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+pub(super) fn json_string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value
         .get(key)?
         .as_str()
@@ -698,9 +239,9 @@ fn json_string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
         .filter(|value| !value.is_empty())
 }
 
-const VERIFIED_AT: &str = "2026-08-12";
+pub(super) const VERIFIED_AT: &str = "2026-08-12";
 
-fn analysis_from_decision(
+pub(super) fn analysis_from_decision(
     decision: &AdapterCapabilityDecision,
     source: &RouteSourceLabel,
     request: &AdapterRouteRequest,
@@ -738,11 +279,11 @@ fn analysis_from_decision(
     }
 }
 
-fn decision_actions_allowed(decision: &AdapterCapabilityDecision) -> bool {
+pub(super) fn decision_actions_allowed(decision: &AdapterCapabilityDecision) -> bool {
     !matches!(decision.route, AdapterRoute::Unsupported)
 }
 
-fn actions_for(
+pub(super) fn actions_for(
     source: &RouteSourceLabel,
     target: AgentId,
     decision: &AdapterCapabilityDecision,
@@ -1133,7 +674,7 @@ fn actions_for(
     }
 }
 
-fn evidence_for(
+pub(super) fn evidence_for(
     source: &RouteSourceLabel,
     target: AgentId,
     _decision: &AdapterCapabilityDecision,
@@ -1180,7 +721,7 @@ fn evidence_for(
     }
 }
 
-fn action(
+pub(super) fn action(
     kind: &str,
     target: &str,
     description: &str,
@@ -1197,7 +738,7 @@ fn action(
     }
 }
 
-fn change(target: &str, field: &str, value: Option<&str>, secret: bool) -> AdapterPlanChange {
+pub(super) fn change(target: &str, field: &str, value: Option<&str>, secret: bool) -> AdapterPlanChange {
     debug_assert!(!secret || value.is_none());
     AdapterPlanChange {
         target: target.into(),
@@ -1207,7 +748,7 @@ fn change(target: &str, field: &str, value: Option<&str>, secret: bool) -> Adapt
     }
 }
 
-fn kimi_claude_evidence() -> AdapterEvidence {
+pub(super) fn kimi_claude_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "Kimi Code: Claude Code integration".into(),
         url: "https://www.kimi.com/code/docs/en/third-party-tools/claude-code.html".into(),
@@ -1215,7 +756,7 @@ fn kimi_claude_evidence() -> AdapterEvidence {
     }
 }
 
-fn kimi_codex_evidence() -> AdapterEvidence {
+pub(super) fn kimi_codex_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "Kimi Code: Codex local routing".into(),
         url: "https://www.kimi.com/code/docs/third-party-tools/codex.html".into(),
@@ -1223,7 +764,7 @@ fn kimi_codex_evidence() -> AdapterEvidence {
     }
 }
 
-fn kimi_pi_evidence() -> AdapterEvidence {
+pub(super) fn kimi_pi_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "Kimi Code CLI provider configuration".into(),
         url: "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/providers.html".into(),
@@ -1231,7 +772,7 @@ fn kimi_pi_evidence() -> AdapterEvidence {
     }
 }
 
-fn anthropic_pi_evidence() -> AdapterEvidence {
+pub(super) fn anthropic_pi_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "Pi custom provider and model configuration".into(),
         url: "https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md"
@@ -1240,7 +781,7 @@ fn anthropic_pi_evidence() -> AdapterEvidence {
     }
 }
 
-fn pi_api_evidence() -> AdapterEvidence {
+pub(super) fn pi_api_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "Pi custom provider and model configuration".into(),
         url: "https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md"
@@ -1249,7 +790,7 @@ fn pi_api_evidence() -> AdapterEvidence {
     }
 }
 
-fn anthropic_codex_evidence() -> AdapterEvidence {
+pub(super) fn anthropic_codex_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "Anthropic Messages API".into(),
         url: "https://docs.anthropic.com/en/api/messages".into(),
@@ -1257,7 +798,7 @@ fn anthropic_codex_evidence() -> AdapterEvidence {
     }
 }
 
-fn glm_claude_evidence() -> AdapterEvidence {
+pub(super) fn glm_claude_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "GLM Coding Plan 接入工具与双协议端点".into(),
         url: "https://docs.bigmodel.cn/cn/coding-plan/tool/others".into(),
@@ -1265,7 +806,7 @@ fn glm_claude_evidence() -> AdapterEvidence {
     }
 }
 
-fn deepseek_claude_evidence() -> AdapterEvidence {
+pub(super) fn deepseek_claude_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "DeepSeek 接入 Claude Code".into(),
         url: "https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code/".into(),
@@ -1273,7 +814,7 @@ fn deepseek_claude_evidence() -> AdapterEvidence {
     }
 }
 
-fn glm_codex_evidence() -> AdapterEvidence {
+pub(super) fn glm_codex_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "GLM Coding Plan Codex Responses integration".into(),
         url: "https://docs.bigmodel.cn/cn/coding-plan/tool/codex".into(),
@@ -1281,7 +822,7 @@ fn glm_codex_evidence() -> AdapterEvidence {
     }
 }
 
-fn deepseek_codex_evidence() -> AdapterEvidence {
+pub(super) fn deepseek_codex_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "DeepSeek API Codex Responses integration".into(),
         url: "https://api-docs.deepseek.com/quick_start/agent_integrations/codex/".into(),
@@ -1289,7 +830,7 @@ fn deepseek_codex_evidence() -> AdapterEvidence {
     }
 }
 
-fn deepseek_dsh_evidence() -> AdapterEvidence {
+pub(super) fn deepseek_dsh_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "DeepSeek Harness LLM / credentials".into(),
         url: "https://deepseek-harness.github.io/deepseek-harness/en/reference/subsystems/credentials"
@@ -1298,7 +839,7 @@ fn deepseek_dsh_evidence() -> AdapterEvidence {
     }
 }
 
-fn adapter_compatibility_evidence() -> AdapterEvidence {
+pub(super) fn adapter_compatibility_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "AgentHub：厂商、API 与 OAuth 适配规则".into(),
         url:
@@ -1308,5 +849,3 @@ fn adapter_compatibility_evidence() -> AdapterEvidence {
     }
 }
 
-#[cfg(test)]
-mod tests;
