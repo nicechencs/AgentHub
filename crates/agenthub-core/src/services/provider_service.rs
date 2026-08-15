@@ -21,7 +21,7 @@ use crate::services::{
     AdapterRouteService, AdapterSecretResolver, BackupService, ConnectionService,
     LiveWriteAuthority, LiveWriteGuard,
 };
-use crate::storage::{Database, ProviderRepo};
+use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
 use crate::utils::redact::redact_text;
 
 /// Maximum Unicode scalar values allowed in a provider id.
@@ -484,7 +484,13 @@ impl ProviderService {
 
     /// Classify the persisted row and write `meta.surface` before upsert /
     /// import_live returns. `classify_source_product` reads the stored row.
+    ///
+    /// Adapter-generated projections are not tickets: skip them even when
+    /// classify would return `unknown`.
     fn stamp_provider_surface(&self, provider: Provider) -> Result<Provider> {
+        if self.is_generated_projection(&provider)? {
+            return Ok(provider);
+        }
         let product = AdapterRouteService::new(self.db.clone())
             .classify_source_product(AdapterSourceKind::Provider, &provider.id)?;
         let surface = TicketSurface::from_product(product);
@@ -499,6 +505,23 @@ impl ProviderService {
         stamped.updated_at = now_ts();
         self.repo
             .update_healed_fields(&stamped, &expected_updated_at, &stamped.updated_at)
+    }
+
+    /// Projections are not tickets. Match `generatedBy=adapter` or an existing
+    /// profile that already points at this row as `generated_provider_id`.
+    fn is_generated_projection(&self, provider: &Provider) -> Result<bool> {
+        if provider
+            .meta
+            .get("generatedBy")
+            .and_then(|value| value.as_str())
+            == Some("adapter")
+        {
+            return Ok(true);
+        }
+        Ok(AdapterProfileRepo::new(self.db.clone())
+            .list_filtered(&Default::default())?
+            .iter()
+            .any(|profile| profile.generated_provider_id.as_deref() == Some(provider.id.as_str())))
     }
 
     /// Locate the canonical live-import row for one agent. Older databases may

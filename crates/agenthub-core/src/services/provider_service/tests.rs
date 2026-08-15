@@ -1256,6 +1256,42 @@ fn updating_non_current_provider_does_not_touch_live() {
 }
 
 #[test]
+fn create_skips_surface_for_adapter_generated_projection() {
+    let (_dir, svc) = svc();
+    let created = svc
+        .create(&ProviderInput {
+            id: "claude-kimi-adapter".into(),
+            agent_id: AgentId::Claude,
+            name: "Kimi Code (kimi-source)".into(),
+            settings_config: json!({"env": {
+                "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+                "ANTHROPIC_AUTH_TOKEN": "$AGENTHUB_CONNECTION_SECRET$"
+            }}),
+            meta: json!({
+                "preset": "anthropic-compatible",
+                "generatedBy": "adapter",
+                "adapterRuleId": "kimi-membership-to-claude-v1",
+                "adapterRuleVersion": 1,
+                "adapterSecretMode": "source_reference",
+                "adapterProfileId": "adapter-kimi-claude",
+                "adapterSourceRef": {"kind": "provider", "id": "kimi-source"},
+            }),
+            is_current: false,
+        })
+        .unwrap();
+    assert!(
+        created.meta.get("surface").is_none(),
+        "projection create must not stamp surface: {}",
+        created.meta
+    );
+    assert_eq!(created.meta["generatedBy"], "adapter");
+    let stored = svc
+        .get("claude-kimi-adapter", Some(AgentId::Claude))
+        .unwrap();
+    assert!(stored.meta.get("surface").is_none());
+}
+
+#[test]
 fn create_writes_classified_surface() {
     let (_dir, svc) = svc();
     let created = svc
