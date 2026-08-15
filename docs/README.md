@@ -6,16 +6,16 @@
 
 | 文档 | 内容 |
 |---|---|
-| [product-decisions.md](product-decisions.md) | **跨 Agent 复用三路**的产品真源：① API 直连 ② 原生订阅复用 ③ 本机桥；未实现 ≠ 产品不做 |
+| [product-decisions.md](product-decisions.md) | 把已有登录接到另一个编程工具：三种接法、白话图、能接 / 接不上；后半是给实现的对照 |
 | [agenthub-plan.md](agenthub-plan.md) | 产品方案、决策、适配矩阵、模块、路线图、风险（当前 **v1.5**；含平台环境差异与 Adapter sidecar 目标决策） |
 | [architecture.md](architecture.md) | cargo workspace 目录、core/gui/cli 拆分、Service/Adapter；原则 12 按三路解释 `plan()` |
 | [platform-capability-refactor.md](platform-capability-refactor.md) | **平台能力架构改造方案**：解耦边界、稀疏端口、生命周期/Skills/连接/用量；P01-P13 与 R00-R08 已完成 |
 | [platform-capability-remediation.md](platform-capability-remediation.md) | **2026-08-07 审查修正方案**：Active Binding、配置 fail-closed、Skills 安全/原子性、Lifecycle 审计与 AgentKey/OCP 真验证 |
 | [testing.md](testing.md) | **测试约定**：测试与生产分文件、vitest/cargo 命令、mock 边界、Markdown 预览用例索引 |
-| [ui-design.md](ui-design.md) | 前端布局、页面线框、交互与组件；ConnectFlow 预览按 ①②③ 标路线，② 不显示本机服务 |
-| [connection-binding-model.md](connection-binding-model.md) | **票 / 绑定 / 协议图**：跨 Agent 复用的领域真源；`bind`/`unbind` 已落地。用户三路由 [product-decisions.md](product-decisions.md) 解释 |
+| [ui-design.md](ui-design.md) | 前端布局、页面线框、交互与组件；「接到…」预览标 ① 只改配置 / ② 写进对方认的登录 / ③ 本机转发，② 不显示本机服务 |
+| [connection-binding-model.md](connection-binding-model.md) | 实现用的领域模型（一份登录 / 绑定 / 规划器）。读者向说明见 [product-decisions.md](product-decisions.md) |
 | [hub-redesign-plan.md](hub-redesign-plan.md) | **Hub 重构 Phase 1 已实施**（历史）：ConnectFlowDialog；后续以 [connection-binding-model.md](connection-binding-model.md) 为 UI 与领域目标 |
-| [adapter-design.md](adapter-design.md) | **Adapter 设计与进度**：页面与桥 runtime 只服务 ③；①② 不起桥；创建绑定走 Hub |
+| [adapter-design.md](adapter-design.md) | **Adapter 设计与进度**：页面与本机转发只服务 ③；①② 不另开程序；创建绑定走 Hub |
 | [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | **真机 dogfood**：① Kimi→Claude / Anthropic→Pi；③ Kimi→Codex。禁止记录密钥 / prompt / 正文 |
 | [adapter-sidecar-design.md](adapter-sidecar-design.md) | **Adapter Sidecar 目标架构**：`agenthub-adapterd` 所有权、IPC、状态机、单主/并发、升级恢复与三阶段迁移（目标已决策，当前未迁移） |
 | [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | **厂商 / API / OAuth 适配规则**：产品与协议边界、Kimi 双端点、当前路由矩阵和维护方法 |
@@ -36,9 +36,9 @@
 - 项目实现状态、未实现清单和风险以 [agenthub-plan.md §8](agenthub-plan.md) 为唯一真源。
 - 平台能力改造的最终约束、暂缓项和验证证据以 [platform-capability-remediation.md](platform-capability-remediation.md) 为唯一真源。
 - 对外发布、截图与凭据相关表述遵守 [privacy.md](privacy.md)。
-- 跨 Agent 复用的**产品方向**（① API 直连 / ② 原生订阅复用 / ③ 本机桥）以 [product-decisions.md](product-decisions.md) 为唯一真源。旧句「订阅 = 本机路由」「消费订阅不是产品」作废。
-- 跨 Agent「把已有凭据接到另一个 Agent」的领域模型（票 / 绑定 / 协议图 / 目标 UI）以 [connection-binding-model.md](connection-binding-model.md) 为唯一真源。该文是目标架构，未落地前实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
-- 厂商端点、凭据类型与协议图上的边以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。日常 UI 目标见 [ui-design.md](ui-design.md)，Phase 1 实施记录见 [hub-redesign-plan.md](hub-redesign-plan.md)。该文的实现矩阵描述**当前能否 bind**，不表示产品否决某一路。
+- 把已有登录接到另一个编程工具的**产品方向**（① 直接改配置 / ② 写进对方认的登录 / ③ 本机转发）以 [product-decisions.md](product-decisions.md) 为唯一真源。旧句「订阅 = 必须转发」「消费订阅不是产品」作废。
+- 「把已有登录接到另一个工具」的领域模型（实现里仍叫票 / 绑定 / 协议图）以 [connection-binding-model.md](connection-binding-model.md) 为唯一真源。该文是目标架构，未落地前实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
+- 各家接口、凭据类型与现在能不能写上去以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。日常 UI 目标见 [ui-design.md](ui-design.md)，Phase 1 实施记录见 [hub-redesign-plan.md](hub-redesign-plan.md)。该文的实现矩阵描述**当前能否写入**，不表示产品否决某一种做法。
 - DeepSeek Harness（Agent `dsh`）的安装、会话、用量、Skills 与模型配置以 [deepseek-harness-integration.md](deepseek-harness-integration.md) 为设计真源；未实现前不得把该文能力表抄进 CLI 矩阵快照。
 - `local_bridge` 的进程所有权、控制面和 sidecar 迁移契约以 [adapter-sidecar-design.md](adapter-sidecar-design.md) 为唯一真源；当前实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
 - 新的一次性任务可以临时创建提示词文件；任务完成后删除提示词和任务拆分，并同步更新对应稳定文档。

@@ -2,7 +2,7 @@
 
 > 状态：**当前工作区规则**，不代表已发布版本。
 > 最近核对：2026-08-15。
-> 本文是厂商入口、凭据类型和**协议图上的边**的规则真源。**产品方向**（① API 直连 / ② 原生订阅复用 / ③ 本机桥）以 [product-decisions.md](product-decisions.md) 为准。领域对象（票 / 绑定 / 规划器）见 [connection-binding-model.md](connection-binding-model.md)；页面与运行时见 [adapter-design.md](adapter-design.md)、[ui-design.md](ui-design.md)。§4 是**当前可执行矩阵**，不是 UI 白名单，也不是产品终点。
+> 本文是厂商入口、凭据类型和**现在能不能写上去**的规则真源。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。实现用的对象名见 [connection-binding-model.md](connection-binding-model.md)；页面与运行时见 [adapter-design.md](adapter-design.md)、[ui-design.md](ui-design.md)。日常说法：① = 直接改配置，② = 写进对方认的登录，③ = 本机转发。§4 是**当前可执行矩阵**，不是 UI 白名单，也不是产品终点。
 
 ## 1. 先看结论
 
