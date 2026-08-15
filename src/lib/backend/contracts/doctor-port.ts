@@ -8,3 +8,11 @@ export interface DoctorMapped {
   runtimes: RuntimeDetect[];
   agents: AgentStatus[];
 }
+
+export interface DoctorPort {
+  getDoctorReport(force?: boolean): Promise<DoctorReport>;
+  loadDoctorMapped(): Promise<DoctorMapped>;
+  refreshDoctor(): Promise<DoctorMapped>;
+  tryLoadDoctorMapped(): Promise<DoctorMapped | null>;
+  tryRefreshDoctor(): Promise<DoctorMapped | null>;
+}
