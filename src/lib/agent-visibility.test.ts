@@ -108,6 +108,10 @@ describe('agent-visibility', () => {
     );
   });
 
+  it('does not invent a hidden default when the allowed list is empty', () => {
+    expect(firstVisibleAgentId('claude', [])).toBe('claude');
+  });
+
   it('falls back when preferred agent is hidden or missing', () => {
     expect(firstVisibleAgentId('claude', ['codex', 'grok'])).toBe('codex');
     expect(firstVisibleAgentId('codex', ['codex', 'grok'])).toBe('codex');

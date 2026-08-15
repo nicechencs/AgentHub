@@ -245,6 +245,7 @@ export default function AdapterPage() {
   };
 
   const handleStartBridge = async (profile: AdapterProfile) => {
+    if (hiddenSet.has(profile.targetAgentId)) return;
     setProfileBusy(profile.id, true);
     clearProfileError(profile.id);
     try {
@@ -274,6 +275,7 @@ export default function AdapterPage() {
   };
 
   const handleSetBridgeAutoStart = async (profile: AdapterProfile, autoStart: boolean) => {
+    if (hiddenSet.has(profile.targetAgentId)) return;
     setProfileBusy(profile.id, true);
     clearProfileError(profile.id);
     try {
@@ -287,7 +289,7 @@ export default function AdapterPage() {
   };
 
   const confirmRemove = async () => {
-    if (!removeConfirm) return;
+    if (!removeConfirm || hiddenSet.has(removeConfirm.targetAgentId)) return;
     const profileId = removeConfirm.id;
     setRemovingProfileId(profileId);
     clearProfileError(profileId);
@@ -409,6 +411,7 @@ export default function AdapterPage() {
           onRequestStopBridge={setStopConfirm}
           onSetBridgeAutoStart={handleSetBridgeAutoStart}
           onRetry={() => void reload()}
+          hiddenTargetIds={hiddenSet}
         />
       </div>
 

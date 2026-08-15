@@ -1069,6 +1069,7 @@ export default function SkillsPage() {
             <AgentWorkspace
               installed={installedQuery.data ?? []}
               installedAgents={matrixAgents}
+              hiddenIds={hiddenIds}
               importingIds={importingIds}
               batchAdopting={batchAdopting}
               onOpenDir={(path) => void handleOpenDir(path)}

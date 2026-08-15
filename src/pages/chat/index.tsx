@@ -522,7 +522,12 @@ function ChatComposer({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  disabled={!primaryAgent || sending || switchingProvider}
+                  disabled={
+                    !primaryAgent ||
+                    sending ||
+                    switchingProvider ||
+                    Boolean(primaryAgent && hiddenIds.has(primaryAgent))
+                  }
                   className="inline-flex h-7 max-w-44 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-xs text-secondary hover:bg-hover disabled:opacity-50"
                   aria-label={
                     active.agentIds.length > 1
@@ -662,7 +667,7 @@ export default function ChatPage() {
         .filter((a) => a.installed && !a.hidden)
         .map((a) => a.agentId);
       if (installedIds.length > 0) return [installedIds[0]];
-      return ['claude'];
+      return [];
     },
     [],
   );
@@ -671,7 +676,9 @@ export default function ChatPage() {
   const ensureConversation = useCallback(
     async (convs: Conversation[], agents: AgentStatus[], cwd?: string | null) => {
       if (convs.length > 0) return convs;
-      const created = await createConversation(defaultAgents(agents), cwd ?? null);
+      const ids = defaultAgents(agents);
+      if (ids.length === 0) return convs;
+      const created = await createConversation(ids, cwd ?? null);
       return [created];
     },
     [defaultAgents],
@@ -873,7 +880,7 @@ export default function ChatPage() {
   }
 
   async function handleSwitchProvider(providerId: string) {
-    if (!primaryAgent || switchingProvider) return;
+    if (!primaryAgent || switchingProvider || hiddenIds.has(primaryAgent)) return;
     setSwitchingProvider(true);
     try {
       await switchProvider(primaryAgent, providerId);

@@ -602,7 +602,7 @@ export function AgentCard({
                     (officialSetupUrl ? (
                       <button
                         type="button"
-                        disabled={busy}
+                        disabled={busy || hidden}
                         onClick={openOfficialSetup}
                         className="cursor-pointer text-xs text-accent underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
                         title={`打开官网下载：${officialSetupUrl}`}

@@ -98,7 +98,7 @@ export default function McpPage() {
       filterAgent === 'all' ? visible : visible.filter((s) => s.agent === filterAgent);
     // Prefer existing / errored first for the "sources" strip
     return [...list].sort((a, b) => Number(b.exists) - Number(a.exists));
-  }, [data, filterAgent]);
+  }, [data, filterAgent, hiddenSet]);
 
   const existingSources = sources.filter((s) => s.exists);
 

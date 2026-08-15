@@ -5,6 +5,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, AgentVisibilityFile};
@@ -14,19 +15,28 @@ const VISIBILITY_FILE: &str = "agent_visibility.json";
 
 pub struct AgentVisibilityService {
     data_dir: PathBuf,
+    lock: Mutex<()>,
 }
 
 impl AgentVisibilityService {
     pub fn new(data_dir: PathBuf) -> Self {
-        Self { data_dir }
+        Self {
+            data_dir,
+            lock: Mutex::new(()),
+        }
     }
 
     fn path(&self) -> PathBuf {
         self.data_dir.join(VISIBILITY_FILE)
     }
 
+    fn with_lock<T>(&self, f: impl FnOnce() -> Result<T>) -> Result<T> {
+        let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        f()
+    }
+
     pub fn get_document(&self) -> Result<AgentVisibilityFile> {
-        load_visibility(&self.path())
+        self.with_lock(|| load_visibility(&self.path()))
     }
 
     pub fn list_hidden_agents(&self) -> Result<Vec<String>> {
@@ -43,17 +53,19 @@ impl AgentVisibilityService {
     }
 
     pub fn set_agent_hidden(&self, agent_id: AgentId, hidden: bool) -> Result<()> {
-        let key = agent_id.as_str().to_string();
-        let mut doc = self.get_document()?;
-        let idx = doc.hidden_agent_ids.iter().position(|item| item == &key);
-        if hidden {
-            if idx.is_none() {
-                doc.hidden_agent_ids.push(key);
+        self.with_lock(|| {
+            let key = agent_id.as_str().to_string();
+            let mut doc = load_visibility(&self.path())?;
+            let idx = doc.hidden_agent_ids.iter().position(|item| item == &key);
+            if hidden {
+                if idx.is_none() {
+                    doc.hidden_agent_ids.push(key);
+                }
+            } else if let Some(i) = idx {
+                doc.hidden_agent_ids.remove(i);
             }
-        } else if let Some(i) = idx {
-            doc.hidden_agent_ids.remove(i);
-        }
-        save_visibility(&self.path(), &doc)
+            save_visibility(&self.path(), &doc)
+        })
     }
 }
 

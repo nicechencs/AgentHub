@@ -236,6 +236,8 @@ export default function ProjectsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- URL write is a one-shot fallback
   }, [agentsLoading, tabAgents, agentId]);
 
+  const agentVisible = tabAgents.some((a) => a.id === agentId);
+
   const resetTree = useCallback(() => {
     setExpanded(new Set());
     setSessionsByProject({});
@@ -282,8 +284,14 @@ export default function ProjectsPage() {
   }, []);
 
   useEffect(() => {
+    if (agentsLoading) return;
+    if (!agentVisible) {
+      setProjects([]);
+      setPhase(tabAgents.length === 0 ? 'ready' : 'loading');
+      return;
+    }
     void loadProjects(agentId, showHidden);
-  }, [agentId, showHidden, loadProjects]);
+  }, [agentId, showHidden, loadProjects, agentsLoading, agentVisible, tabAgents.length]);
 
   /** 拉取全部 agent 项目数，角标与 Skills 工具条一致 */
   useEffect(() => {

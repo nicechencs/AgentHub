@@ -81,6 +81,25 @@ fn invalid_json_is_invalid_arg() {
 }
 
 #[test]
+fn concurrent_hides_do_not_drop_ids() {
+    let dir = tempdir().unwrap();
+    let svc = std::sync::Arc::new(AgentVisibilityService::new(dir.path().to_path_buf()));
+    let a = std::thread::spawn({
+        let svc = svc.clone();
+        move || svc.set_agent_hidden(AgentId::Claude, true)
+    });
+    let b = std::thread::spawn({
+        let svc = svc.clone();
+        move || svc.set_agent_hidden(AgentId::Grok, true)
+    });
+    a.join().unwrap().unwrap();
+    b.join().unwrap().unwrap();
+    let mut ids = svc.list_hidden_agents().unwrap();
+    ids.sort();
+    assert_eq!(ids, vec!["claude", "grok"]);
+}
+
+#[test]
 fn empty_file_defaults() {
     let dir = tempdir().unwrap();
     std::fs::write(dir.path().join("agent_visibility.json"), "  \n").unwrap();
