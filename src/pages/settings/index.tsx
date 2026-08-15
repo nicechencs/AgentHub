@@ -48,7 +48,7 @@ import type { AppSettings, LogLevel, SkillMarketSource } from '@/lib/types';
 import { applyTheme } from '@/lib/theme';
 import { notifyUsageSettingsChanged } from '@/lib/usage-sync';
 import { BackupsPanel } from './BackupsPanel';
-import { BRIDGES_PATH } from '@/pages/bridges/adapter-model';
+import { BRIDGES_PATH } from '@/lib/bridges-path';
 
 /** Project homepage on GitHub (releases, issues, source). */
 const GITHUB_REPO_URL = 'https://github.com/nicechencs/AgentHub';

@@ -58,6 +58,7 @@ import {
 import { createBackup } from '@/lib/api/backup';
 import { listTicketWallet, type TicketWallet } from '@/lib/api/tickets';
 import { bindingRouteDashboardLabel } from '@/lib/backend/contracts/ticket';
+import { activeBindingForAgent } from '@/lib/ticket-wallet';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
 import { consumeConnectResume, parseConnectResumeParam } from '@/lib/connect-flow/connect-intent';
 import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
@@ -105,14 +106,6 @@ function mapBridgeState(state: AdapterBridgeRuntimeState): AgentCardBridgeState 
   if (state === 'running' || state === 'starting') return 'running';
   if (state === 'degraded' || state === 'error') return 'degraded';
   return 'stopped';
-}
-
-function activeWalletBinding(wallet: TicketWallet, agentId: AgentId) {
-  const binding = wallet.bindings.find((b) => b.agentId === agentId && b.active);
-  if (!binding) return null;
-  const ticket = wallet.tickets.find((t) => t.id === binding.ticketId);
-  if (!ticket) return null;
-  return { ticket, binding };
 }
 
 /** 桥状态轮询间隔，与 Adapter 页 use-adapter-resources 一致 */
@@ -289,7 +282,7 @@ export default function DashboardPage() {
       const hit = adapterBadgeHits.get(meta.id);
       const bridgeState =
         hit?.profile.route === 'local_bridge' ? bridgeStates[hit.profile.id] : undefined;
-      const active = wallet ? activeWalletBinding(wallet, meta.id) : null;
+      const active = wallet ? activeBindingForAgent(wallet, meta.id) : null;
       const binding = active
         ? {
             ticketLabel: active.ticket.label,

@@ -55,7 +55,11 @@ async function refreshConnectionPoolAfterAdapterMutation(): Promise<void> {
   }
 }
 
-/** Applies only a stable adapter route supported by the active backend. */
+/**
+ * Host-only apply transport. Product writes go through `bindTicket`.
+ *
+ * @deprecated Use `bindTicket` from `@/lib/api/tickets`. Pages must not call this.
+ */
 export async function applyAdapter(request: AdapterApplyRequest): Promise<AdapterApplyResult> {
   const result = await getBackend().adapter.apply(request);
   await refreshConnectionPoolAfterAdapterMutation();

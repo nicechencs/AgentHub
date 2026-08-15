@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConnectionPool } from '@/app/runtime';
 import { getAdapterBridgeStatus, listAdapterProfiles } from '@/lib/api/adapter';
-import { mergeConnectionEntries } from '@/pages/connections/connection-model';
+import { mergeConnectionEntries } from '@/lib/connection-entry';
 import {
   ADAPTER_BRIDGE_STATUS_POLL_MS,
   adapterBridgeProfilesToPoll,

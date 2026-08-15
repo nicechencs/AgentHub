@@ -135,4 +135,43 @@ describe('production module graph boundary (full src scan)', () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  it('lib/backend/tauri never imports @/lib/api (contracts/runtime only)', () => {
+    const apiImportRe = /from\s+['"]@\/lib\/api(?:\/[^'"]*)?['"]/;
+    const offenders: string[] = [];
+    for (const rel of productionFiles) {
+      if (!rel.startsWith('lib/backend/tauri/')) continue;
+      if (apiImportRe.test(sourceOf(rel))) offenders.push(rel);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('pages do not import applyAdapter (bindTicket is the product write path)', () => {
+    const applyAdapterIdent = /(?<![A-Za-z])applyAdapter(?![A-Za-z])/;
+    const offenders: string[] = [];
+    for (const rel of productionFiles) {
+      if (!rel.startsWith('pages/')) continue;
+      if (applyAdapterIdent.test(sourceOf(rel))) offenders.push(rel);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('pages/bridges does not import pages/connections, and layout does not import bridges models', () => {
+    const bridgesToConnections = /from\s+['"]@\/pages\/connections(?:\/[^'"]*)?['"]/;
+    const layoutToBridgesModel = /from\s+['"]@\/pages\/bridges\/[^'"]+['"]/;
+    const offenders: string[] = [];
+    for (const rel of productionFiles) {
+      const src = sourceOf(rel);
+      if (rel.startsWith('pages/bridges/') && bridgesToConnections.test(src)) {
+        offenders.push(rel);
+      }
+      if (
+        (rel === 'App.tsx' || rel.startsWith('components/layout/'))
+        && layoutToBridgesModel.test(src)
+      ) {
+        offenders.push(rel);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 });

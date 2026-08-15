@@ -15,7 +15,7 @@ import SkillsPage from '@/pages/skills';
 import McpPage from '@/pages/mcp';
 import ProjectsPage from '@/pages/projects';
 import SettingsPage from '@/pages/settings';
-import { legacyBridgesRedirectTo } from '@/pages/bridges/adapter-model';
+import { legacyBridgesRedirectTo } from '@/lib/bridges-path';
 import {
   checkForUpdate,
   isUpdateAvailable,

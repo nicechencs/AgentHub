@@ -9,7 +9,13 @@ import {
   type ConnectionKindFilter,
 } from '@/lib/connection-kind';
 import { authHealthLabel } from '@/lib/backend/contracts/auth-state';
-import { mergeConnectionEntries, type ConnectionEntry } from '@/pages/connections/connection-model';
+import { mergeConnectionEntries, type ConnectionEntry } from '@/lib/connection-entry';
+import {
+  BRIDGES_NAV_LABEL,
+  BRIDGES_PATH,
+  bridgesHrefForProfile,
+  legacyBridgesRedirectTo,
+} from '@/lib/bridges-path';
 import type {
   Account,
   AgentId,
@@ -70,20 +76,7 @@ export const BRIDGES_EMPTY_DESCRIPTION =
   '多数连接不需要本机转发。只有协议对不上时才会在这台电脑上开一层转换。若刚完成需要转发的绑定，到 Dashboard 看对应工具上的桥状态。';
 export const BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE = '钱包里有本机桥绑定，但找不到运行时';
 export const BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION = '可重试读取。不是「没有本机桥」。';
-export const BRIDGES_NAV_LABEL = 'Bridges';
-export const BRIDGES_PATH = '/bridges';
-
-/** Drop leftover `?tab=` from `/adapter` / `/router` bookmarks. */
-export function legacyBridgesRedirectTo(search: string): string {
-  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-  params.delete('tab');
-  const qs = params.toString();
-  return qs ? `${BRIDGES_PATH}?${qs}` : BRIDGES_PATH;
-}
-
-export function bridgesHrefForProfile(profileId: string | null | undefined): string {
-  return profileId ? `${BRIDGES_PATH}?profile=${encodeURIComponent(profileId)}` : BRIDGES_PATH;
-}
+export { BRIDGES_NAV_LABEL, BRIDGES_PATH, bridgesHrefForProfile, legacyBridgesRedirectTo };
 
 /** Unknown or missing `?profile=` stays on the list; do not toast. */
 export function resolveBridgesProfileQuery(

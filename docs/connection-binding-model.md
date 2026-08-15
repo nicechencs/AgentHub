@@ -89,7 +89,8 @@ AgentHub 不「共享链接」，它把**一份登录**接到一个编程工具�
 | 目标对象 | 当前落点 | 过渡策略 |
 |---|---|---|
 | Ticket | `accounts` + `providers` 两行模型 | 先做只读聚合；进口打 `surface`；生成 Provider 从钱包剔除 |
-| Binding | `is_current` + `AdapterProfile` + 生成 Provider | 先做读模型；再 `bind`/`unbind` 成为唯一写入 |
+| Binding（`TicketBinding`） | `is_current` + `AdapterProfile` + 生成 Provider | 先做读模型；再 `bind`/`unbind` 成为唯一写入 |
+| ActiveBinding（勿简称 Binding） | `ConnectionService` 的 Agent 当前行指针 | 与产品 Binding 同词不同物；改 current 不得误伤钱包绑定 |
 | 规划器 | `plan()` 唯一出口；内部矩阵 ∩ 私有 write_gate（有 bind 实现且 secret 可按 `source_kind` 解析） | `plan(ticket, agent)` 为唯一真理；Anthropic / OpenAI / xAI API Account → Pi 可写 |
 
 Account / Provider / live 事务仍由 core service 单点负责，不建设 `connectionsd`。`local_bridge` 的 listener 仍按 [sidecar 契约](adapter-sidecar-design.md) 走用户级进程。
