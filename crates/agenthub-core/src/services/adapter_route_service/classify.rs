@@ -1,0 +1,286 @@
+use serde_json::Value;
+
+use crate::error::{AppError, Result};
+use crate::models::{
+    adapter_maturity_from_decision, decide_adapter_capability, AccountKind, AdapterAction,
+    AdapterApplyPlan, AdapterCapabilityDecision, AdapterCredentialClass, AdapterEvidence,
+    AdapterPlanChange, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
+    AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
+};
+use crate::services::adapter_route_constants::{
+    claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
+    is_kimi_code_membership_account, is_kimi_code_membership_source, is_openai_api_marker,
+    is_xai_api_marker, settings_contain_anthropic_api_endpoint, ANTHROPIC_AUTH_TOKEN_ENV,
+    DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_CODEX_BASE_URL,
+    DEEPSEEK_CODEX_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID,
+    DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID, GLM_CODEX_BASE_URL,
+    GLM_CODEX_RULE_ID, GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_BASE_URL,
+    KIMI_CLAUDE_RULE_ID, KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL,
+    OPENAI_GROK_BASE_URL, OPENAI_GROK_DEFAULT_MODEL,
+};
+use crate::storage::{AccountRepo, Database, ProviderRepo};
+
+use super::actions::*;
+use super::{AdapterRouteService, ClassifiedRoute};
+
+impl AdapterRouteService {
+    /// analyze/plan. Does not inspect or return credentials.
+    pub fn classify_source_product(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<AdapterSourceProduct> {
+        Ok(self.identify_source(source_kind, source_id)?.product)
+    }
+
+    pub(super) fn classify(&self, request: &AdapterRouteRequest) -> Result<ClassifiedRoute> {
+        let identity = self.identify_source(request.source_kind, &request.source_id)?;
+
+        let mut decision = decide_adapter_capability(
+            identity.product,
+            identity.credential,
+            request.target_agent_id,
+        )
+        .public_surface();
+        // Replace the generic Other reason with an actionable product hint when we have one.
+        if matches!(identity.product, AdapterSourceProduct::Other) {
+            if let Some(hint) = identity.reason_hint {
+                decision = AdapterCapabilityDecision::unsupported(hint).public_surface();
+            }
+        }
+
+        Ok(ClassifiedRoute {
+            source: identity.label,
+            credential: identity.credential,
+            decision,
+        })
+    }
+
+    pub(super) fn identify_source(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<SourceIdentity> {
+        let source_id = source_id.trim();
+        if source_id.is_empty() {
+            return Err(AppError::InvalidArg(
+                "adapter source id must not be empty".into(),
+            ));
+        }
+
+        match source_kind {
+            AdapterSourceKind::Provider => {
+                let provider = self.providers.get_by_id(source_id)?.ok_or_else(|| {
+                    AppError::NotFound(format!("provider not found: {source_id}"))
+                })?;
+                let preset = json_string(&provider.meta, "preset");
+                let explicit_tag = preset.or_else(|| json_string(&provider.meta, "provider"));
+                // Membership is explicit preset *or* official Kimi coding endpoint in config.
+                // Do not invent membership from agent_id alone (moonshot / custom stay closed).
+                if is_kimi_code_membership_source(
+                    provider.agent_id,
+                    &provider.meta,
+                    &provider.settings_config,
+                ) {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::KimiCodeMembership,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::KimiMembership,
+                        reason_hint: None,
+                    })
+                } else if provider.agent_id == AgentId::Claude
+                    && (preset == Some("anthropic")
+                        || settings_contain_anthropic_api_endpoint(&provider.settings_config))
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::AnthropicApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::AnthropicApiKey,
+                        reason_hint: None,
+                    })
+                } else if is_openai_api_marker(explicit_tag, &provider.settings_config) {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::OpenaiApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::OpenaiApiKey,
+                        reason_hint: None,
+                    })
+                } else if is_xai_api_marker(explicit_tag, &provider.settings_config) {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::XaiApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::XaiApiKey,
+                        reason_hint: None,
+                    })
+                } else if is_glm_coding_plan_marker(explicit_tag, &provider.settings_config) {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::GlmCodingPlan,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::GlmCodingPlan,
+                        reason_hint: None,
+                    })
+                } else if is_deepseek_api_marker(explicit_tag, &provider.settings_config) {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::DeepseekApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::DeepseekApi,
+                        reason_hint: None,
+                    })
+                } else if provider.agent_id == AgentId::Kimi {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::Other,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::Other,
+                        reason_hint: Some(KIMI_NON_MEMBERSHIP_REASON),
+                    })
+                } else {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::Other,
+                        credential: AdapterCredentialClass::Unknown,
+                        label: RouteSourceLabel::Other,
+                        reason_hint: None,
+                    })
+                }
+            }
+            AdapterSourceKind::Account => {
+                let account = self
+                    .accounts
+                    .get_by_id(source_id)?
+                    .ok_or_else(|| AppError::NotFound(format!("account not found: {source_id}")))?;
+                let explicit_provider = json_string(&account.extra, "provider")
+                    .or_else(|| json_string(&account.credentials, "provider"));
+                let credential_format = json_string(&account.credentials, "format")
+                    .or_else(|| json_string(&account.extra, "format"));
+
+                if account.kind == AccountKind::ApiKey
+                    && (explicit_provider
+                        .is_some_and(|value| value.eq_ignore_ascii_case("anthropic"))
+                        || settings_contain_anthropic_api_endpoint(&account.credentials)
+                        || settings_contain_anthropic_api_endpoint(&account.extra))
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::AnthropicApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::AnthropicApiKey,
+                        reason_hint: None,
+                    })
+                } else if account.kind == AccountKind::ApiKey
+                    && (is_openai_api_marker(explicit_provider, &account.credentials)
+                        || is_openai_api_marker(explicit_provider, &account.extra))
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::OpenaiApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::OpenaiApiKey,
+                        reason_hint: None,
+                    })
+                } else if account.kind == AccountKind::ApiKey
+                    && (is_xai_api_marker(explicit_provider, &account.credentials)
+                        || is_xai_api_marker(explicit_provider, &account.extra))
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::XaiApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::XaiApiKey,
+                        reason_hint: None,
+                    })
+                } else if account.kind == AccountKind::ApiKey
+                    && (is_glm_coding_plan_marker(explicit_provider, &account.credentials)
+                        || is_glm_coding_plan_marker(explicit_provider, &account.extra))
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::GlmCodingPlan,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::GlmCodingPlan,
+                        reason_hint: None,
+                    })
+                } else if account.kind == AccountKind::ApiKey
+                    && (is_deepseek_api_marker(explicit_provider, &account.credentials)
+                        || is_deepseek_api_marker(explicit_provider, &account.extra))
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::DeepseekApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::DeepseekApi,
+                        reason_hint: None,
+                    })
+                } else if account.kind == AccountKind::ApiKey
+                    && is_kimi_code_membership_account(
+                        account.agent_id,
+                        &account.extra,
+                        &account.credentials,
+                    )
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::KimiCodeMembership,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::KimiMembership,
+                        reason_hint: None,
+                    })
+                } else if account.kind == AccountKind::ApiKey && account.agent_id == AgentId::Kimi {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::Other,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::Other,
+                        reason_hint: Some(KIMI_NON_MEMBERSHIP_REASON),
+                    })
+                } else if account.agent_id == AgentId::Codex
+                    && account.kind == AccountKind::Oauth
+                    && is_codex_auth_json(credential_format, &account.credentials)
+                {
+                    // Explicit Codex / ChatGPT subscription (`format=auth_json` or tokens blob).
+                    // The Responses → Claude cell is open, subject to the Account secret gate.
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::CodexChatGptSubscription,
+                        credential: AdapterCredentialClass::OauthAuthJson,
+                        label: RouteSourceLabel::CodexSubscription,
+                        reason_hint: None,
+                    })
+                } else if account.agent_id == AgentId::Codex && account.kind == AccountKind::Oauth {
+                    // Codex OAuth without auth_json shape: same product messaging, but do not
+                    // pretend the closed auth_json matrix cell matched. Fail closed via empty
+                    // candidate → subscription_candidate unsupported surface for Claude.
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::CodexChatGptSubscription,
+                        credential: AdapterCredentialClass::OauthOther,
+                        label: RouteSourceLabel::CodexSubscription,
+                        reason_hint: None,
+                    })
+                } else if account.agent_id == AgentId::Claude && account.kind == AccountKind::Oauth
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::ClaudeSubscription,
+                        credential: AdapterCredentialClass::OauthOther,
+                        label: RouteSourceLabel::ClaudeSubscription,
+                        reason_hint: None,
+                    })
+                } else if account.agent_id == AgentId::Grok && account.kind == AccountKind::Oauth {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::XaiGrokSubscription,
+                        credential: AdapterCredentialClass::OauthOther,
+                        label: RouteSourceLabel::XaiGrokSubscription,
+                        reason_hint: None,
+                    })
+                } else {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::Other,
+                        credential: match account.kind {
+                            AccountKind::ApiKey => AdapterCredentialClass::ApiKey,
+                            AccountKind::Oauth => AdapterCredentialClass::OauthOther,
+                        },
+                        label: RouteSourceLabel::Other,
+                        reason_hint: None,
+                    })
+                }
+            }
+        }
+    }
+}
+
+struct SourceIdentity {
+    product: AdapterSourceProduct,
+    credential: AdapterCredentialClass,
+    label: RouteSourceLabel,
+    /// Optional replace for the generic Other unsupported reason (never secrets).
+    reason_hint: Option<&'static str>,
+}
