@@ -13,6 +13,7 @@ import { Tip } from '@/components/ui/tooltip';
 import { AGENTS } from '@/config/agents';
 import type { AgentId, AgentStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { bridgesHrefForProfile } from '@/pages/adapter/adapter-model';
 
 import {
   AGENT_OVERVIEW_GRID,
@@ -156,13 +157,13 @@ export function AgentOverview({
                     </Tip>
                   ) : null}
                   {view.bridge ? (
-                    <Tip className="shrink-0" label="管理桥与适配">
+                    <Tip className="shrink-0" label="管理本机桥">
                       <Badge
                         variant={bridgeBadgeVariant(view.bridge.state)}
                         className="h-5 cursor-pointer px-1.5 text-2xs"
                         onClick={(event) => {
                           event.stopPropagation();
-                          navigate('/adapter');
+                          navigate(bridgesHrefForProfile(view.bridge?.profileId));
                         }}
                       >
                         <StatusPin tone={bridgePinTone(view.bridge.state)} />

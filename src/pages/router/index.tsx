@@ -1,6 +1,8 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
+import { legacyBridgesRedirectTo } from '@/pages/adapter/adapter-model';
 
-/** 兼容旧路径：Router 已更名为 Adapter */
+/** 兼容旧路径：/router → /bridges */
 export default function RouterToAdapterRedirect() {
-  return <Navigate to="/adapter" replace />;
+  const { search } = useLocation();
+  return <Navigate to={legacyBridgesRedirectTo(search)} replace />;
 }

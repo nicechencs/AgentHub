@@ -58,6 +58,8 @@ import {
   ADAPTER_BRIDGE_STATUS_POLL_MS,
   BRIDGES_EMPTY_DESCRIPTION,
   BRIDGES_EMPTY_TITLE,
+  legacyBridgesRedirectTo,
+  resolveBridgesProfileQuery,
   adapterBridgeProfilesToPoll,
   adapterErrorDetails,
   applyAdapterBridgeStatusPoll,
@@ -101,6 +103,19 @@ function plan(route: AdapterRouteAnalysis['route'], changes: AdapterPlanChange[]
 describe('Adapter page view model', () => {
   it('describes the page as local-bridge runtime ops', () => {
     expect(adapterPageDescription()).toBe('本机协议转换 · 仅 127.0.0.1');
+  });
+
+  it('rewrites /adapter and /router bookmarks onto /bridges and drops ?tab=', () => {
+    expect(legacyBridgesRedirectTo('')).toBe('/bridges');
+    expect(legacyBridgesRedirectTo('?tab=oauth')).toBe('/bridges');
+    expect(legacyBridgesRedirectTo('?tab=api&profile=bridge-1')).toBe('/bridges?profile=bridge-1');
+    expect(legacyBridgesRedirectTo('?profile=bridge-1')).toBe('/bridges?profile=bridge-1');
+  });
+
+  it('opens ?profile= only when the runtime exists', () => {
+    expect(resolveBridgesProfileQuery('bridge-1', [{ id: 'bridge-1' }])).toBe('bridge-1');
+    expect(resolveBridgesProfileQuery('missing', [{ id: 'bridge-1' }])).toBeNull();
+    expect(resolveBridgesProfileQuery(null, [{ id: 'bridge-1' }])).toBeNull();
   });
 
   it('renders a healthy empty list without leaving-the-page CTAs', () => {

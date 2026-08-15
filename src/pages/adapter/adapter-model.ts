@@ -71,8 +71,28 @@ export const BRIDGES_EMPTY_DESCRIPTION =
 export const BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE = '钱包里有本机桥绑定，但找不到运行时';
 export const BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION = '可重试读取。不是「没有本机桥」。';
 export const BRIDGES_NAV_LABEL = 'Bridges';
-/** PR 1 深链仍用旧 path；PR 2 起改为 `/bridges`。 */
-export const BRIDGES_PATH = '/adapter';
+export const BRIDGES_PATH = '/bridges';
+
+/** Drop leftover `?tab=` from `/adapter` / `/router` bookmarks. */
+export function legacyBridgesRedirectTo(search: string): string {
+  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+  params.delete('tab');
+  const qs = params.toString();
+  return qs ? `${BRIDGES_PATH}?${qs}` : BRIDGES_PATH;
+}
+
+export function bridgesHrefForProfile(profileId: string | null | undefined): string {
+  return profileId ? `${BRIDGES_PATH}?profile=${encodeURIComponent(profileId)}` : BRIDGES_PATH;
+}
+
+/** Unknown or missing `?profile=` stays on the list; do not toast. */
+export function resolveBridgesProfileQuery(
+  profileId: string | null | undefined,
+  profiles: readonly { id: string }[],
+): string | null {
+  if (!profileId) return null;
+  return profiles.some((profile) => profile.id === profileId) ? profileId : null;
+}
 export const BRIDGES_MUTATION_FAILURE = '本机桥操作失败';
 
 export function adapterPageDescription(): string {

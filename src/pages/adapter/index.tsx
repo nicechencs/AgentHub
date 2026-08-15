@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -21,7 +22,9 @@ import {
   BRIDGES_PAGE_DESCRIPTION,
   BRIDGES_PAGE_DESCRIPTION_TIP,
   BRIDGES_PAGE_TITLE,
+  BRIDGES_PATH,
   BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION,
+  resolveBridgesProfileQuery,
   BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE,
   resourceFailureMessage,
 } from './adapter-model';
@@ -65,6 +68,9 @@ export {
   BRIDGES_PATH,
   BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION,
   BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE,
+  bridgesHrefForProfile,
+  legacyBridgesRedirectTo,
+  resolveBridgesProfileQuery,
   adapterPageViewState,
   adapterPlanChangeLabel,
   adapterPlanRequestSignature,
@@ -132,6 +138,8 @@ type WalletSnapshot = {
  * Connections ConnectFlow. Do not mount analyze fan-out, plan, or apply here.
  */
 export default function AdapterPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const {
     entries,
     profiles,
@@ -278,6 +286,7 @@ export default function AdapterPage() {
   const removeDialogBusy = removingProfileId !== null;
   const listedBridges = useMemo(() => [...bound, ...orphan], [bound, orphan]);
   const fleetSummary = adapterBridgeFleetSummary(listedBridges, bridgeStatuses);
+  const profileQuery = searchParams.get('profile');
   const pageView = bridgesPageViewState({
     profileState: loading && profileState !== 'error' ? 'loading' : profileState,
     bound,
@@ -287,6 +296,12 @@ export default function AdapterPage() {
       lastWalletBridgeCount: wallet.lastWalletBridgeCount,
     },
   });
+
+  useEffect(() => {
+    if (pageView !== 'list') return;
+    const resolved = resolveBridgesProfileQuery(profileQuery, listedBridges);
+    if (resolved) setDetailProfileId(resolved);
+  }, [listedBridges, pageView, profileQuery]);
   const removeConfirmIsOrphan = Boolean(
     removeConfirm && orphan.some((profile) => profile.id === removeConfirm.id),
   );
@@ -388,7 +403,10 @@ export default function AdapterPage() {
           ? busyProfileIds[detailProfile.id] === true || removingProfileId === detailProfile.id
           : false}
         error={detailProfile ? profileErrors[detailProfile.id] : null}
-        onClose={() => setDetailProfileId(null)}
+        onClose={() => {
+          setDetailProfileId(null);
+          if (profileQuery) navigate(BRIDGES_PATH, { replace: true });
+        }}
         onSetAutoStart={handleSetBridgeAutoStart}
         onRequestRemove={(profile) => {
           setDetailProfileId(null);

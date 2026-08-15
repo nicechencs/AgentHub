@@ -6,7 +6,7 @@ import {
   Bot,
   Key,
   Blocks,
-  Boxes,
+  Cable,
   Plug,
   FolderKanban,
   Settings2,
@@ -23,6 +23,7 @@ import { Hint } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/layout/SidebarContext';
 import { installedCatalogAgents } from '@/components/layout/sidebar-agents';
 import { cn } from '@/lib/utils';
+import { BRIDGES_NAV_LABEL, BRIDGES_PATH } from '@/pages/adapter/adapter-model';
 
 /** 工作区 */
 const NAV_WORKSPACE = [
@@ -37,7 +38,7 @@ const NAV_WORKSPACE = [
 const NAV_MANAGE = [
   { to: '/', label: 'Dashboard', icon: Gauge },
   { to: '/connections', label: 'Connections', icon: Key },
-  { to: '/adapter', label: '桥与适配', icon: Boxes },
+  { to: BRIDGES_PATH, label: BRIDGES_NAV_LABEL, icon: Cable },
   { to: '/settings', label: 'Settings', icon: Settings2 },
 ] as const;
 

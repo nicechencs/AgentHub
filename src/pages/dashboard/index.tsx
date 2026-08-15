@@ -299,7 +299,7 @@ export default function DashboardPage() {
       if (!hit && !binding) continue;
       inputs[meta.id] = {
         ...(hit ? { viaAdapter: { sourceLabel: hit.sourceLabel } } : {}),
-        ...(bridgeState ? { bridge: { state: bridgeState } } : {}),
+        ...(bridgeState ? { bridge: { state: bridgeState, profileId: hit?.profile.id ?? null } } : {}),
         ...(binding ? { binding } : {}),
       };
     }
