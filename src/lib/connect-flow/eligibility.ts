@@ -1,9 +1,11 @@
 /**
  * ConnectFlow 来源分组、可行性映射与 OAuth 预检（纯函数）。
+ * 行标题 / agentId / isCurrent 等稳定字段来自 `toCredentialRow`（P2-7）。
  */
 import { resolveAgentMeta } from '@/config/agents';
 import { authDisplayForAccount } from '@/lib/backend/contracts/auth-state';
 import { isCapabilityBlocked, providerCapabilityGate } from '@/lib/capability';
+import { toCredentialRow } from '@/lib/credential-row';
 import type { Account, Provider } from '@/lib/types';
 import type { AdapterApplyPlan, AdapterProfile, AdapterRoute } from '@/lib/api/adapter';
 import type { AdapterMaturity, AdapterReusePath } from '@/lib/backend/contracts/adapter';
@@ -151,24 +153,26 @@ export function buildSourceOptions(input: SourceOptionsInput): SourceOption[] {
   const cross: SourceOption[] = [];
 
   const pushNativeAccount = (account: Account) => {
+    const row = toCredentialRow({ source: 'account', account });
     native.push({
-      ref: { kind: 'account', id: account.id },
+      ref: { kind: 'account', id: row.id },
       group: 'native',
-      agentId: account.agentId,
-      label: account.label,
-      sublabel: resolveAgentMeta(account.agentId).name,
+      agentId: row.agentId,
+      label: row.title,
+      sublabel: resolveAgentMeta(row.agentId).name,
       state: nativeAccountState(account, capabilities),
       account,
     });
   };
 
   const pushNativeProvider = (provider: Provider) => {
+    const row = toCredentialRow({ source: 'provider', provider });
     native.push({
-      ref: { kind: 'provider', id: provider.id },
+      ref: { kind: 'provider', id: row.id },
       group: 'native',
-      agentId: provider.agentId,
-      label: provider.name,
-      sublabel: resolveAgentMeta(provider.agentId).name,
+      agentId: row.agentId,
+      label: row.title,
+      sublabel: resolveAgentMeta(row.agentId).name,
       state: nativeProviderState(provider, capabilities),
       viaAdapter: viaAdapterForProvider(provider, profiles, accounts, providers),
       provider,
@@ -180,12 +184,13 @@ export function buildSourceOptions(input: SourceOptionsInput): SourceOption[] {
       pushNativeAccount(account);
       continue;
     }
+    const row = toCredentialRow({ source: 'account', account });
     cross.push({
-      ref: { kind: 'account', id: account.id },
+      ref: { kind: 'account', id: row.id },
       group: 'cross',
-      agentId: account.agentId,
-      label: account.label,
-      sublabel: resolveAgentMeta(account.agentId).name,
+      agentId: row.agentId,
+      label: row.title,
+      sublabel: resolveAgentMeta(row.agentId).name,
       state: { kind: 'plannable' },
       account,
     });
@@ -200,12 +205,13 @@ export function buildSourceOptions(input: SourceOptionsInput): SourceOption[] {
     // Canonical in this module:
     // generated Providers must not be offered as nested cross-service sources.
     if (isGenerated) continue;
+    const row = toCredentialRow({ source: 'provider', provider });
     cross.push({
-      ref: { kind: 'provider', id: provider.id },
+      ref: { kind: 'provider', id: row.id },
       group: 'cross',
-      agentId: provider.agentId,
-      label: provider.name,
-      sublabel: resolveAgentMeta(provider.agentId).name,
+      agentId: row.agentId,
+      label: row.title,
+      sublabel: resolveAgentMeta(row.agentId).name,
       state: { kind: 'plannable' },
       provider,
     });
