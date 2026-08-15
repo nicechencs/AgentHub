@@ -620,6 +620,7 @@ pub(crate) fn bootstrap_kimi_model(path: &Path, up_to: u64) -> Option<String> {
 /// Scan `[0, up_to)` of a Codex session file for the latest `turn_context` model.
 /// Used when incremental cursor resumes mid-file so subsequent token_count rows
 /// still inherit the active model (ccusage carries `current_model` across the whole file).
+#[cfg(test)]
 pub(crate) fn bootstrap_codex_model(path: &Path, up_to: u64) -> Option<String> {
     bootstrap_codex_prefix(path, up_to).0
 }
@@ -1158,6 +1159,7 @@ enum CodexReplaySkip {
 const CODEX_REWRITTEN_BURST_PAUSE_MS: i64 = 1_000;
 
 impl CodexParseState {
+    #[cfg(test)]
     pub fn with_model(model: Option<String>) -> Self {
         Self {
             model,

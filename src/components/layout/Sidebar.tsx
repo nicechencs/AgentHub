@@ -21,6 +21,7 @@ import { useAgentStatusesOptional, useAppUpdateAvailable } from '@/app/runtime';
 import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/layout/SidebarContext';
+import { installedCatalogAgents } from '@/components/layout/sidebar-agents';
 import { cn } from '@/lib/utils';
 
 /** 工作区 */
@@ -158,9 +159,7 @@ export function Sidebar() {
         : 'text-secondary hover:bg-hover/70 hover:text-primary',
     );
 
-  const installedMetas = AGENTS.filter((meta) =>
-    agents.some((a) => a.agentId === meta.id && a.installed),
-  );
+  const installedMetas = installedCatalogAgents(AGENTS, agents);
 
   return (
     <aside

@@ -1348,3 +1348,63 @@ fn merge_dedup_delete_failure_is_not_reported_as_success() {
     );
     let _ = first;
 }
+
+#[test]
+fn persist_healed_fields_uses_latest_row_on_cas_conflict() {
+    let root = tempdir().unwrap();
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let path = root.path().join("live").join("auth.json");
+    let adapter = Arc::new(FakeAdapter::new(AgentId::Codex, path));
+    let mut registry = AdapterRegistry::new();
+    registry.register(adapter);
+    let repo = crate::storage::AccountRepo::new(db.clone());
+    let svc = AccountService::with_registry(db, registry);
+
+    let created = svc
+        .create(AccountInput {
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "original".into(),
+            credentials: json!({"format": "oauth", "access_token": "tok"}),
+            extra: json!({}),
+            is_current: true,
+        })
+        .unwrap();
+
+    let mut winner = created.clone();
+    winner.label = "winner".into();
+    repo.update_healed_fields(&winner, &created.updated_at, "2026-08-15 00:00:01")
+        .unwrap();
+
+    let mut stale = created.clone();
+    stale.label = "stale-writer".into();
+    let resolved = svc
+        .persist_healed_fields(&stale, &created.updated_at)
+        .unwrap();
+    assert_eq!(resolved.label, "winner");
+    assert_eq!(resolved.updated_at, "2026-08-15 00:00:01");
+}
+
+#[test]
+fn live_api_key_without_identity_is_not_imported() {
+    let root = tempdir().unwrap();
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let path = root.path().join("live").join("settings.json");
+    let adapter = Arc::new(FakeAdapter::new(AgentId::Claude, path));
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials: json!({"format": "api_key", "api_key": "sk-no-identity"}),
+        label_hint: None,
+        extra: json!({}),
+    });
+    let mut registry = AdapterRegistry::new();
+    registry.register(adapter);
+    let svc = AccountService::with_registry(db, registry);
+
+    let rows = svc.list(Some(AgentId::Claude)).unwrap();
+    assert!(
+        rows.is_empty(),
+        "API key live snapshots without a stable identity stay fail-closed"
+    );
+}

@@ -590,8 +590,7 @@ fn well_known_cursor_agent_bins() -> Vec<(PathBuf, &'static str)> {
 
 fn cursor_agent_path_names() -> Vec<String> {
     let mut names = vec!["cursor-agent".into()];
-    #[cfg(windows)]
-    {
+    if cfg!(windows) {
         names.push("cursor-agent.exe".into());
         names.push("cursor-agent.cmd".into());
         names.push("cursor-agent.ps1".into());
@@ -601,8 +600,7 @@ fn cursor_agent_path_names() -> Vec<String> {
 
 fn expand_agent_names() -> Vec<String> {
     let mut names = vec!["agent".into()];
-    #[cfg(windows)]
-    {
+    if cfg!(windows) {
         names.push("agent.exe".into());
         names.push("agent.cmd".into());
         names.push("agent.ps1".into());
