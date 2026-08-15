@@ -1,4 +1,4 @@
-import { mapDoctorReport } from '@/lib/api/doctor-map';
+import { mapDoctorReport } from '@/lib/backend/contracts/doctor-map';
 import type { DoctorMapped, DoctorPort } from '@/lib/backend/contracts';
 import type { DoctorReport } from '@/lib/backend/contracts/doctor-types';
 import { invoke } from './invoke';

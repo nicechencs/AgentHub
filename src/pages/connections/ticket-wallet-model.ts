@@ -21,8 +21,10 @@ import {
   ticketCredentialClassLabel,
   ticketSurfaceLabel,
 } from '@/lib/backend/contracts/ticket';
-import { accountToEntry, providerToEntry } from './connection-model';
-import { bridgesHrefForProfile } from '@/pages/bridges/adapter-model';
+import { accountToEntry, providerToEntry } from '@/lib/connection-entry';
+import { bridgesHrefForProfile } from '@/lib/bridges-path';
+
+export { activeBindingForAgent } from '@/lib/ticket-wallet';
 
 export type TicketWalletFilter = 'all' | TicketCredentialClass;
 
@@ -218,18 +220,6 @@ export function buildTicketWalletRows(
       usageParts: formatTicketUsageParts(bindings),
     };
   });
-}
-
-/** Active binding for a Dashboard agent card. */
-export function activeBindingForAgent(
-  wallet: TicketWallet,
-  agentId: AgentId,
-): { ticket: TicketView; binding: BindingView } | null {
-  const binding = wallet.bindings.find((b) => b.agentId === agentId && b.active);
-  if (!binding) return null;
-  const ticket = wallet.tickets.find((t) => t.id === binding.ticketId);
-  if (!ticket) return null;
-  return { ticket, binding };
 }
 
 export function dashboardBindingMetaText(

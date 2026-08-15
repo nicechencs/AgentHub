@@ -1,4 +1,9 @@
-//! ConnectionService — unique active binding write entry (P10 cleanup B1 / R01).
+//! ConnectionService — unique **ActiveBinding** write entry (P10 cleanup B1 / R01).
+//!
+//! `ActiveBinding` is the Agent's current account/provider pointer
+//! (`accounts`/`providers`.`is_current` + `agent_active_bindings`).
+//! It is **not** the product Binding (`TicketBinding`: ticket → Agent route).
+//! Do not shorten either type to "Binding" in new code.
 //!
 //! Single DB transaction dual-writes:
 //! - legacy `accounts` / `providers`.`is_current`
@@ -34,6 +39,7 @@ use crate::storage::{
 #[cfg(test)]
 use crate::storage::AccountRepo;
 
+/// Agent → current account/provider pointer. Not [`crate::models::TicketBinding`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveBinding {
