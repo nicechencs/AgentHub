@@ -752,6 +752,62 @@ describe('mock adapter route preview', () => {
       .not.toContain('must-not-leak');
   });
 
+  it('applies GLM / DeepSeek → Pi as custom providers with endpoint contracts', async () => {
+    await createMockProviderPort().upsertProvider({
+      id: 'glm-pi-src',
+      agentId: 'claude',
+      name: 'GLM Pi',
+      preset: 'glm-coding-plan',
+      configText: '{"apiKey":"must-not-leak"}',
+      configFormat: 'json',
+      isCurrent: false,
+    });
+    await createMockProviderPort().upsertProvider({
+      id: 'deepseek-pi-src',
+      agentId: 'claude',
+      name: 'DeepSeek Pi',
+      preset: 'deepseek-api',
+      configText: '{"apiKey":"must-not-leak"}',
+      configFormat: 'json',
+      isCurrent: false,
+    });
+    const adapter = createMockAdapterPort({
+      getAccountById: getMockAccountById,
+      getProviderById: getMockProviderById,
+      upsertGeneratedProvider: upsertMockProvider,
+      removeGeneratedProvider: removeMockProvider,
+    });
+
+    const glm = await adapter.apply({
+      sourceKind: 'provider',
+      sourceId: 'glm-pi-src',
+      targetAgentId: 'pi',
+    });
+    const glmConfig = JSON.parse(glm.provider.configText);
+    expect(glm.profile.ruleId).toBe('glm-coding-plan-to-pi-v1');
+    expect(glmConfig.models.providers['glm-coding-plan']).toEqual({
+      baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+      api: 'openai-completions',
+      models: [{ id: 'glm-4.6' }],
+      apiKey: '$AGENTHUB_CONNECTION_SECRET$',
+    });
+
+    const deepseek = await adapter.apply({
+      sourceKind: 'provider',
+      sourceId: 'deepseek-pi-src',
+      targetAgentId: 'pi',
+    });
+    const deepseekConfig = JSON.parse(deepseek.provider.configText);
+    expect(deepseek.profile.ruleId).toBe('deepseek-api-to-pi-v1');
+    expect(deepseekConfig.models.providers.deepseek).toEqual({
+      baseUrl: 'https://api.deepseek.com',
+      api: 'openai-completions',
+      models: [{ id: 'deepseek-chat' }],
+      apiKey: '$AGENTHUB_CONNECTION_SECRET$',
+    });
+    expect(JSON.stringify({ glm, deepseek })).not.toContain('must-not-leak');
+  });
+
   it('allows removing a current Pi generated Connection', async () => {
     const { kimiMembership } = seedConnectFlowAdapterFixtures({ includeAnthropic: false });
     const adapter = createMockAdapterPort(resolver);

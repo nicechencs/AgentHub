@@ -439,6 +439,70 @@ fn bind_openai_and_xai_provider_and_account_to_pi_then_unbind() {
 }
 
 #[test]
+fn bind_glm_provider_and_deepseek_account_to_pi_then_unbind() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "glm-source",
+            "glm-coding-plan",
+            "ANTHROPIC_AUTH_TOKEN",
+            "glm-bind-secret",
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&explicit_api_account(
+            "deepseek-account",
+            "deepseek-api",
+            "deepseek-bind-secret",
+        ))
+        .unwrap();
+    let service = bind_service(
+        db.clone(),
+        dir.path().join("backups"),
+        vec![Arc::new(FakePiAdapter::new())],
+    );
+
+    let glm = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Provider, "glm-source"),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap();
+    assert!(glm.active);
+    let glm_profile = AdapterProfileRepo::new(db.clone())
+        .get(glm.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(glm_profile.rule_id, "glm-coding-plan-to-pi-v1");
+    service
+        .unbind(&TicketUnbindRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Provider, "glm-source"),
+            agent_id: AgentId::Pi,
+        })
+        .unwrap();
+
+    let deepseek = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "deepseek-account"),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap();
+    assert!(deepseek.active);
+    let deepseek_profile = AdapterProfileRepo::new(db.clone())
+        .get(deepseek.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(deepseek_profile.rule_id, "deepseek-api-to-pi-v1");
+    assert_eq!(deepseek_profile.source_kind, AdapterSourceKind::Account);
+    service
+        .unbind(&TicketUnbindRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "deepseek-account"),
+            agent_id: AgentId::Pi,
+        })
+        .unwrap();
+}
+
+#[test]
 fn bind_claude_codex_and_grok_subscriptions_to_pi_then_unbind() {
     let (dir, db) = test_db();
     let accounts = AccountRepo::new(db.clone());

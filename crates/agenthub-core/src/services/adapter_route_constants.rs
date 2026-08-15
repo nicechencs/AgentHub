@@ -34,6 +34,18 @@ pub const KIMI_PI_BASE_URL: &str = "https://api.kimi.com/coding/v1";
 /// Pi `models.json` provider slot for Kimi Code membership.
 pub const KIMI_PI_PROVIDER_SLOT: &str = "kimi-for-coding";
 
+/// Official GLM Coding Plan OpenAI Chat Completions endpoint projected into Pi.
+pub const GLM_PI_BASE_URL: &str = "https://open.bigmodel.cn/api/coding/paas/v4";
+
+/// Pi custom provider slot for GLM Coding Plan.
+pub const GLM_PI_PROVIDER_SLOT: &str = "glm-coding-plan";
+
+/// Pi custom provider slot for DeepSeek API.
+pub const DEEPSEEK_PI_PROVIDER_SLOT: &str = "deepseek";
+
+pub const GLM_PI_RULE_ID: &str = "glm-coding-plan-to-pi-v1";
+pub const DEEPSEEK_PI_RULE_ID: &str = "deepseek-api-to-pi-v1";
+
 /// Pi `models.json` provider slot for an explicit Anthropic API key.
 pub const ANTHROPIC_PI_PROVIDER_SLOT: &str = "anthropic";
 

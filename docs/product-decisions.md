@@ -142,7 +142,7 @@ plan(ticket, agent):
 
 ## 7. 工程顺序（不再讨论方向）
 
-1. **① 补齐**：双协议 Key 接到更多已登记 Agent（GLM/DeepSeek → Pi 等）；单协议 Key 的 reshape 继续按图补。
+1. **① 补齐**：双协议 Key 接到更多已登记 Agent；GLM/DeepSeek → Pi 已可 experimental bind（自定义 provider 槽）；单协议 Key 的 reshape 继续按图补。
 2. **② 先用已有槽**：Claude / Codex / Grok 订阅 → Pi（目标已声明契约）。**当前实现**：这三条边已可 experimental bind（写入 Pi `auth.json` 对应槽，Pi 拥有刷新）。再评估其他 Agent 有没有同类槽。
 3. **③ 旗舰桥**：Codex 订阅 → Claude Code（cc-switch 已有）。再评估 Claude 订阅 → Codex、Grok 订阅 → Claude。
 4. 管理面：OAuth 状态、配额、最小探测、桥启停（对齐 Management Center 的职责，不抄页面）。

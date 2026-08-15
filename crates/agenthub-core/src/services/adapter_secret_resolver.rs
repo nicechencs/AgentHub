@@ -20,9 +20,11 @@ use crate::services::adapter_route_constants::{
     is_kimi_code_membership_source, is_openai_api_marker, is_xai_api_marker,
     settings_contain_anthropic_api_endpoint, ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV,
     ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT, DEEPSEEK_API_BASE_URL,
-    DEEPSEEK_API_KEY_ENV, DEEPSEEK_CLAUDE_RULE_ID, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT,
-    GLM_CLAUDE_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
-    OPENAI_API_KEY_ENV, OPENAI_PI_PROVIDER_SLOT, XAI_API_KEY_ENV, XAI_PI_PROVIDER_SLOT,
+    DEEPSEEK_API_KEY_ENV, DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID,
+    DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_RULE_ID, GLM_PI_BASE_URL,
+    GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL,
+    KIMI_PI_PROVIDER_SLOT, OPENAI_API_KEY_ENV, OPENAI_PI_PROVIDER_SLOT, XAI_API_KEY_ENV,
+    XAI_PI_PROVIDER_SLOT,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -40,6 +42,8 @@ const KIMI_TO_PI_RULE: &str = "kimi-membership-to-pi-v1";
 const ANTHROPIC_TO_PI_RULE: &str = "anthropic-api-to-pi-v1";
 const OPENAI_TO_PI_RULE: &str = "openai-api-to-pi-v1";
 const XAI_TO_PI_RULE: &str = "xai-api-to-pi-v1";
+const GLM_TO_PI_RULE: &str = GLM_PI_RULE_ID;
+const DEEPSEEK_TO_PI_RULE: &str = DEEPSEEK_PI_RULE_ID;
 const CLAUDE_SUBSCRIPTION_PI_RULE: &str = "claude-subscription-to-pi-v1";
 const CODEX_SUBSCRIPTION_PI_RULE: &str = "codex-subscription-to-pi-v1";
 const GROK_SUBSCRIPTION_PI_RULE: &str = "grok-subscription-to-pi-v1";
@@ -428,10 +432,10 @@ impl AdapterSecretResolver {
         let slot = pi_slot_name(provider)?;
         let mut scrubbed = strip_pi_auth_for_persist(provider, live_raw);
         let live_slot = pi_slot_object(&scrubbed, slot).ok_or_else(invalid_reference)?;
-        if slot == KIMI_PI_PROVIDER_SLOT
-            && live_slot.get("baseUrl").and_then(Value::as_str) != Some(KIMI_PI_BASE_URL)
-        {
-            return Err(invalid_reference());
+        if let Some(expected_base) = pi_base_url_for_rule(adapter_rule_id(provider).unwrap_or("")) {
+            if live_slot.get("baseUrl").and_then(Value::as_str) != Some(expected_base) {
+                return Err(invalid_reference());
+            }
         }
         if !live_slot
             .get("apiKey")
@@ -455,6 +459,8 @@ impl AdapterSecretResolver {
                 ANTHROPIC_TO_PI_RULE
                 | OPENAI_TO_PI_RULE
                 | XAI_TO_PI_RULE
+                | GLM_TO_PI_RULE
+                | DEEPSEEK_TO_PI_RULE
                 | GLM_TO_CLAUDE_RULE
                 | DEEPSEEK_TO_CLAUDE_RULE,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account,
@@ -601,8 +607,16 @@ impl AdapterSecretResolver {
         if slot_obj.get("apiKey").and_then(Value::as_str) != Some(CONNECTION_SECRET_MARKER) {
             return Err(invalid_reference());
         }
-        if slot == KIMI_PI_PROVIDER_SLOT
-            && slot_obj.get("baseUrl").and_then(Value::as_str) != Some(KIMI_PI_BASE_URL)
+        if let Some(expected_base) = pi_base_url_for_rule(adapter_rule_id(target).unwrap_or("")) {
+            if slot_obj.get("baseUrl").and_then(Value::as_str) != Some(expected_base) {
+                return Err(invalid_reference());
+            }
+        }
+        if matches!(
+            adapter_rule_id(target),
+            Some(GLM_TO_PI_RULE) | Some(DEEPSEEK_TO_PI_RULE)
+        ) && (slot_obj.get("api").and_then(Value::as_str) != Some("openai-completions")
+            || slot_obj.get("models").and_then(Value::as_array).is_none())
         {
             return Err(invalid_reference());
         }
@@ -705,6 +719,8 @@ fn is_pi_source_reference(provider: &Provider) -> bool {
                 | Some(ANTHROPIC_TO_PI_RULE)
                 | Some(OPENAI_TO_PI_RULE)
                 | Some(XAI_TO_PI_RULE)
+                | Some(GLM_TO_PI_RULE)
+                | Some(DEEPSEEK_TO_PI_RULE)
                 | Some(CLAUDE_SUBSCRIPTION_PI_RULE)
                 | Some(CODEX_SUBSCRIPTION_PI_RULE)
                 | Some(GROK_SUBSCRIPTION_PI_RULE)
@@ -747,10 +763,21 @@ fn pi_slot_name(provider: &Provider) -> Result<&'static str> {
         Some(ANTHROPIC_TO_PI_RULE) => Ok(ANTHROPIC_PI_PROVIDER_SLOT),
         Some(OPENAI_TO_PI_RULE) => Ok(OPENAI_PI_PROVIDER_SLOT),
         Some(XAI_TO_PI_RULE) => Ok(XAI_PI_PROVIDER_SLOT),
+        Some(GLM_TO_PI_RULE) => Ok(GLM_PI_PROVIDER_SLOT),
+        Some(DEEPSEEK_TO_PI_RULE) => Ok(DEEPSEEK_PI_PROVIDER_SLOT),
         Some(CLAUDE_SUBSCRIPTION_PI_RULE) => Ok(ANTHROPIC_PI_PROVIDER_SLOT),
         Some(CODEX_SUBSCRIPTION_PI_RULE) => Ok("openai-codex"),
         Some(GROK_SUBSCRIPTION_PI_RULE) => Ok(XAI_PI_PROVIDER_SLOT),
         _ => Err(invalid_reference()),
+    }
+}
+
+fn pi_base_url_for_rule(rule_id: &str) -> Option<&'static str> {
+    match rule_id {
+        KIMI_TO_PI_RULE => Some(KIMI_PI_BASE_URL),
+        GLM_TO_PI_RULE => Some(GLM_PI_BASE_URL),
+        DEEPSEEK_TO_PI_RULE => Some(DEEPSEEK_API_BASE_URL),
+        _ => None,
     }
 }
 
@@ -856,8 +883,8 @@ fn provider_matches_explicit_api_rule(rule_id: &str, source: &Provider) -> bool 
         ANTHROPIC_TO_PI_RULE => is_anthropic_api_source(source),
         OPENAI_TO_PI_RULE => is_openai_api_source(source),
         XAI_TO_PI_RULE => is_xai_api_source(source),
-        GLM_TO_CLAUDE_RULE => is_glm_coding_plan_source(source),
-        DEEPSEEK_TO_CLAUDE_RULE => is_deepseek_api_source(source),
+        GLM_TO_CLAUDE_RULE | GLM_TO_PI_RULE => is_glm_coding_plan_source(source),
+        DEEPSEEK_TO_CLAUDE_RULE | DEEPSEEK_TO_PI_RULE => is_deepseek_api_source(source),
         _ => false,
     }
 }
@@ -881,12 +908,12 @@ fn extract_account_api_key(credentials: &Value) -> Result<String> {
 fn extract_explicit_provider_api_key(rule_id: &str, settings: &Value) -> Result<String> {
     let env = settings.get("env");
     let env_keys: &[&str] = match rule_id {
-        ANTHROPIC_TO_PI_RULE | GLM_TO_CLAUDE_RULE => {
+        ANTHROPIC_TO_PI_RULE | GLM_TO_CLAUDE_RULE | GLM_TO_PI_RULE => {
             &[ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV]
         }
         OPENAI_TO_PI_RULE => &[OPENAI_API_KEY_ENV],
         XAI_TO_PI_RULE => &[XAI_API_KEY_ENV],
-        DEEPSEEK_TO_CLAUDE_RULE => &[
+        DEEPSEEK_TO_CLAUDE_RULE | DEEPSEEK_TO_PI_RULE => &[
             ANTHROPIC_AUTH_TOKEN_ENV,
             ANTHROPIC_API_KEY_ENV,
             DEEPSEEK_API_KEY_ENV,

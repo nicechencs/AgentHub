@@ -6,7 +6,8 @@ use crate::models::{
     InstallChannel, RunOptions, RunSpec,
 };
 use crate::services::adapter_route_constants::{
-    DEEPSEEK_CLAUDE_BASE_URL, GLM_CLAUDE_BASE_URL, KIMI_CLAUDE_BASE_URL,
+    DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_PI_PROVIDER_SLOT,
+    GLM_CLAUDE_BASE_URL, GLM_PI_BASE_URL, GLM_PI_PROVIDER_SLOT, KIMI_CLAUDE_BASE_URL,
 };
 use crate::storage::{ActiveBindingRepo, ProviderRepo};
 use serde_json::json;
@@ -1561,6 +1562,114 @@ fn pi_openai_and_xai_apply_sets_slot_and_keeps_secret_out() {
     assert!(!serde_json::to_string(&xai)
         .unwrap()
         .contains("xai-account-secret"));
+}
+
+#[test]
+fn pi_glm_and_deepseek_apply_sets_custom_provider_contract_and_keeps_secret_out() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "glm-source",
+            "glm-coding-plan",
+            ANTHROPIC_AUTH_TOKEN_ENV,
+            "glm-pi-secret",
+        ))
+        .unwrap();
+    crate::storage::AccountRepo::new(db.clone())
+        .create(&crate::models::Account {
+            id: "deepseek-account".into(),
+            agent_id: AgentId::Claude,
+            kind: crate::models::AccountKind::ApiKey,
+            label: "DeepSeek key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "deepseek-pi-secret"
+            }),
+            extra: json!({"provider": "deepseek-api"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let fake = Arc::new(FakePiAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
+
+    let glm = service
+        .apply(&AdapterApplyRequest {
+            source_kind: AdapterSourceKind::Provider,
+            source_id: "glm-source".into(),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap();
+    let glm_stored = ProviderRepo::new(db.clone())
+        .get_by_id(&glm.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(glm.profile.rule_id, "glm-coding-plan-to-pi-v1");
+    assert_eq!(
+        glm_stored.settings_config["models"]["providers"][GLM_PI_PROVIDER_SLOT]["baseUrl"],
+        GLM_PI_BASE_URL
+    );
+    assert_eq!(
+        glm_stored.settings_config["models"]["providers"][GLM_PI_PROVIDER_SLOT]["api"],
+        "openai-completions"
+    );
+    assert_eq!(
+        glm_stored.settings_config["models"]["providers"][GLM_PI_PROVIDER_SLOT]["models"][0]["id"],
+        "glm-4.6"
+    );
+    assert_eq!(
+        glm_stored.settings_config["models"]["providers"][GLM_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(
+        fake.read_config().unwrap().raw["models"]["providers"][GLM_PI_PROVIDER_SLOT]["apiKey"],
+        "glm-pi-secret"
+    );
+
+    let deepseek = service
+        .apply(&AdapterApplyRequest {
+            source_kind: AdapterSourceKind::Account,
+            source_id: "deepseek-account".into(),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap();
+    let deepseek_stored = ProviderRepo::new(db)
+        .get_by_id(&deepseek.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(deepseek.profile.rule_id, "deepseek-api-to-pi-v1");
+    assert_eq!(
+        deepseek_stored.settings_config["models"]["providers"][DEEPSEEK_PI_PROVIDER_SLOT]
+            ["baseUrl"],
+        DEEPSEEK_API_BASE_URL
+    );
+    assert_eq!(
+        deepseek_stored.settings_config["models"]["providers"][DEEPSEEK_PI_PROVIDER_SLOT]["api"],
+        "openai-completions"
+    );
+    assert_eq!(
+        deepseek_stored.settings_config["models"]["providers"][DEEPSEEK_PI_PROVIDER_SLOT]["models"]
+            [0]["id"],
+        "deepseek-chat"
+    );
+    assert_eq!(
+        deepseek_stored.settings_config["models"]["providers"][DEEPSEEK_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(
+        fake.read_config().unwrap().raw["models"]["providers"][DEEPSEEK_PI_PROVIDER_SLOT]["apiKey"],
+        "deepseek-pi-secret"
+    );
+    assert!(!serde_json::to_string(&glm)
+        .unwrap()
+        .contains("glm-pi-secret"));
+    assert!(!serde_json::to_string(&deepseek)
+        .unwrap()
+        .contains("deepseek-pi-secret"));
 }
 
 #[test]

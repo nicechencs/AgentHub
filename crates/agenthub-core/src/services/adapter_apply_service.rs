@@ -21,9 +21,10 @@ use crate::models::{
 use crate::services::adapter_route_constants::{
     claude_native_base_url, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV,
     ANTHROPIC_PI_PROVIDER_SLOT, CONNECTION_SECRET_MARKER, DEEPSEEK_API_BASE_URL,
-    DEEPSEEK_CLAUDE_RULE_ID, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT, DSH_DEFAULT_MODEL,
-    GLM_CLAUDE_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
-    OPENAI_PI_PROVIDER_SLOT, XAI_PI_PROVIDER_SLOT,
+    DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID, DSH_API_KEY_ENV,
+    DSH_DEEPSEEK_PROVIDER_SLOT, DSH_DEFAULT_MODEL, GLM_CLAUDE_RULE_ID, GLM_PI_BASE_URL,
+    GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL,
+    KIMI_PI_PROVIDER_SLOT, OPENAI_PI_PROVIDER_SLOT, XAI_PI_PROVIDER_SLOT,
 };
 use crate::services::{
     AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
@@ -48,6 +49,8 @@ const PI_KIMI_PROVIDER_PREFIX: &str = "pi-kimi-adapter";
 const PI_ANTHROPIC_PROVIDER_PREFIX: &str = "pi-anthropic-adapter";
 const PI_OPENAI_PROVIDER_PREFIX: &str = "pi-openai-adapter";
 const PI_XAI_PROVIDER_PREFIX: &str = "pi-xai-adapter";
+const PI_GLM_PROVIDER_PREFIX: &str = "pi-glm-adapter";
+const PI_DEEPSEEK_PROVIDER_PREFIX: &str = "pi-deepseek-adapter";
 const PI_CLAUDE_OAUTH_PROVIDER_PREFIX: &str = "pi-claude-oauth-adapter";
 const PI_CODEX_OAUTH_PROVIDER_PREFIX: &str = "pi-codex-oauth-adapter";
 const PI_GROK_OAUTH_PROVIDER_PREFIX: &str = "pi-grok-oauth-adapter";
@@ -59,6 +62,8 @@ const PI_KIMI_PROFILE_PREFIX: &str = "adapter-kimi-pi";
 const PI_ANTHROPIC_PROFILE_PREFIX: &str = "adapter-anthropic-pi";
 const PI_OPENAI_PROFILE_PREFIX: &str = "adapter-openai-pi";
 const PI_XAI_PROFILE_PREFIX: &str = "adapter-xai-pi";
+const PI_GLM_PROFILE_PREFIX: &str = "adapter-glm-pi";
+const PI_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-pi";
 const DSH_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-dsh";
 const PREVIOUS_CURRENT_ID: &str = "previousCurrentId";
 const PREVIOUS_BACKUP_ID: &str = "previousBackupId";
@@ -450,7 +455,18 @@ impl AdapterApplyService {
                 .as_deref()
                 .is_some_and(|rule| is_claude_native_apply_rule(rule, source_kind)),
             (AdapterSourceKind::Provider, AgentId::Pi, AdapterRoute::ConfigSync) => {
-                analysis.support == AdapterSupport::Stable
+                (analysis.support == AdapterSupport::Stable
+                    && analysis.rule_id.as_deref() == Some(KIMI_PI_RULE_ID))
+                    || (analysis.support == AdapterSupport::Stable
+                        && analysis
+                            .rule_id
+                            .as_deref()
+                            .is_some_and(is_explicit_api_to_pi_rule))
+                    || (analysis.support == AdapterSupport::Experimental
+                        && analysis
+                            .rule_id
+                            .as_deref()
+                            .is_some_and(is_explicit_api_to_pi_rule))
             }
             (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync) => {
                 (analysis.support == AdapterSupport::Stable
@@ -458,6 +474,11 @@ impl AdapterApplyService {
                         .rule_id
                         .as_deref()
                         .is_some_and(is_explicit_api_to_pi_rule))
+                    || (analysis.support == AdapterSupport::Experimental
+                        && analysis
+                            .rule_id
+                            .as_deref()
+                            .is_some_and(is_explicit_api_to_pi_rule))
                     || (analysis.support == AdapterSupport::Experimental
                         && analysis
                             .rule_id
@@ -663,6 +684,10 @@ fn generated_provider_prefix(profile: &AdapterProfile) -> Option<&'static str> {
             Some(PI_OPENAI_PROVIDER_PREFIX)
         }
         (AgentId::Pi, AdapterRoute::ConfigSync, XAI_PI_RULE_ID) => Some(PI_XAI_PROVIDER_PREFIX),
+        (AgentId::Pi, AdapterRoute::ConfigSync, GLM_PI_RULE_ID) => Some(PI_GLM_PROVIDER_PREFIX),
+        (AgentId::Pi, AdapterRoute::ConfigSync, DEEPSEEK_PI_RULE_ID) => {
+            Some(PI_DEEPSEEK_PROVIDER_PREFIX)
+        }
         (AgentId::Pi, AdapterRoute::ConfigSync, CLAUDE_SUBSCRIPTION_PI_RULE_ID) => {
             Some(PI_CLAUDE_OAUTH_PROVIDER_PREFIX)
         }
@@ -877,7 +902,11 @@ fn pi_kimi_spec(source_id: &str) -> GeneratedApplySpec {
 fn is_explicit_api_to_pi_rule(rule_id: &str) -> bool {
     matches!(
         rule_id,
-        ANTHROPIC_PI_RULE_ID | OPENAI_PI_RULE_ID | XAI_PI_RULE_ID
+        ANTHROPIC_PI_RULE_ID
+            | OPENAI_PI_RULE_ID
+            | XAI_PI_RULE_ID
+            | GLM_PI_RULE_ID
+            | DEEPSEEK_PI_RULE_ID
     )
 }
 
@@ -986,8 +1015,21 @@ fn pi_explicit_api_layout(
             "xAI",
             XAI_PI_PROVIDER_SLOT,
         )),
+        GLM_PI_RULE_ID => Ok((
+            PI_GLM_PROFILE_PREFIX,
+            PI_GLM_PROVIDER_PREFIX,
+            "GLM Coding Plan",
+            GLM_PI_PROVIDER_SLOT,
+        )),
+        DEEPSEEK_PI_RULE_ID => Ok((
+            PI_DEEPSEEK_PROFILE_PREFIX,
+            PI_DEEPSEEK_PROVIDER_PREFIX,
+            "DeepSeek",
+            DEEPSEEK_PI_PROVIDER_SLOT,
+        )),
         _ => Err(AppError::Unsupported(
-            "adapter apply currently supports only Anthropic / OpenAI / xAI API -> Pi".into(),
+            "adapter apply currently supports Anthropic / OpenAI / xAI / GLM / DeepSeek API -> Pi"
+                .into(),
         )),
     }
 }
@@ -998,6 +1040,17 @@ fn pi_explicit_api_spec(
     rule_id: &str,
 ) -> Result<GeneratedApplySpec> {
     let (profile_prefix, provider_prefix, display, slot) = pi_explicit_api_layout(rule_id)?;
+    let (base_url, model) = match rule_id {
+        GLM_PI_RULE_ID => (GLM_PI_BASE_URL, "glm-4.6"),
+        DEEPSEEK_PI_RULE_ID => (DEEPSEEK_API_BASE_URL, "deepseek-chat"),
+        _ => ("", ""),
+    };
+    let mut pi_provider = json!({"apiKey": CONNECTION_SECRET_MARKER});
+    if !base_url.is_empty() {
+        pi_provider["baseUrl"] = json!(base_url);
+        pi_provider["api"] = json!("openai-completions");
+        pi_provider["models"] = json!([{ "id": model }]);
+    }
     let profile_id = stable_id(profile_prefix, source_id);
     let provider_id = stable_id(provider_prefix, source_id);
     let created_at = now();
@@ -1029,9 +1082,7 @@ fn pi_explicit_api_spec(
             settings_config: json!({
                 "models": {
                     "providers": {
-                        slot: {
-                            "apiKey": CONNECTION_SECRET_MARKER,
-                        }
+                        (slot): pi_provider
                     }
                 }
             }),

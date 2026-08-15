@@ -23,8 +23,9 @@ use crate::services::adapter_route_constants::{
     claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
     is_kimi_code_membership_source, is_openai_api_marker, is_xai_api_marker,
     settings_contain_anthropic_api_endpoint, ANTHROPIC_AUTH_TOKEN_ENV, DEEPSEEK_CLAUDE_BASE_URL,
-    DEEPSEEK_CLAUDE_RULE_ID, DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID,
-    KIMI_CLAUDE_BASE_URL, KIMI_CLAUDE_RULE_ID,
+    DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID,
+    DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID, GLM_PI_PROVIDER_SLOT,
+    GLM_PI_RULE_ID, KIMI_CLAUDE_BASE_URL, KIMI_CLAUDE_RULE_ID,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -572,6 +573,13 @@ fn bind_implementation_open(
             AdapterSupport::Stable,
         )
         | (
+            Some(GLM_PI_RULE_ID) | Some(DEEPSEEK_PI_RULE_ID),
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            AgentId::Pi,
+            AdapterRoute::ConfigSync,
+            AdapterSupport::Experimental,
+        )
+        | (
             Some("claude-subscription-to-pi-v1")
             | Some("codex-subscription-to-pi-v1")
             | Some("grok-subscription-to-pi-v1"),
@@ -786,6 +794,38 @@ fn actions_for(
                 true,
             ),
         ],
+        (RouteSourceLabel::GlmCodingPlan, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
+            action(
+                "set_config",
+                "Pi",
+                "写入 Pi 的 GLM Coding Plan 自定义 provider 槽。",
+                Some(GLM_PI_PROVIDER_SLOT),
+                false,
+            ),
+            action(
+                "reference_connection_secret",
+                "Pi",
+                "从已选 Connection 引用 API Key；不会读取或显示它。",
+                None,
+                true,
+            ),
+        ],
+        (RouteSourceLabel::DeepseekApi, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
+            action(
+                "set_config",
+                "Pi",
+                "写入 Pi 的 DeepSeek 自定义 provider 槽。",
+                Some(DEEPSEEK_PI_PROVIDER_SLOT),
+                false,
+            ),
+            action(
+                "reference_connection_secret",
+                "Pi",
+                "从已选 Connection 引用 API Key；不会读取或显示它。",
+                None,
+                true,
+            ),
+        ],
         (RouteSourceLabel::ClaudeSubscription, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
             action(
                 "set_config",
@@ -920,7 +960,9 @@ fn evidence_for(
             vec![anthropic_pi_evidence()]
         }
         (RouteSourceLabel::GlmCodingPlan, AgentId::Claude) => vec![glm_claude_evidence()],
+        (RouteSourceLabel::GlmCodingPlan, AgentId::Pi) => vec![pi_api_evidence()],
         (RouteSourceLabel::DeepseekApi, AgentId::Claude) => vec![deepseek_claude_evidence()],
+        (RouteSourceLabel::DeepseekApi, AgentId::Pi) => vec![pi_api_evidence()],
         (RouteSourceLabel::DeepseekApi, AgentId::Dsh) => vec![deepseek_dsh_evidence()],
         (
             RouteSourceLabel::ClaudeSubscription
@@ -997,6 +1039,15 @@ fn anthropic_pi_evidence() -> AdapterEvidence {
         url: "https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md"
             .into(),
         verified_at: VERIFIED_AT.into(),
+    }
+}
+
+fn pi_api_evidence() -> AdapterEvidence {
+    AdapterEvidence {
+        label: "Pi custom provider and model configuration".into(),
+        url: "https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md"
+            .into(),
+        verified_at: "2026-08-15".into(),
     }
 }
 

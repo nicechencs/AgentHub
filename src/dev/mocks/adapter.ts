@@ -297,6 +297,8 @@ const DEEPSEEK_API_ENDPOINT_NEEDLE = 'api.deepseek.com';
 const KIMI_CLAUDE_BASE_URL = 'https://api.kimi.com/coding/';
 const GLM_CLAUDE_BASE_URL = 'https://open.bigmodel.cn/api/anthropic';
 const DEEPSEEK_CLAUDE_BASE_URL = 'https://api.deepseek.com/anthropic';
+const GLM_PI_BASE_URL = 'https://open.bigmodel.cn/api/coding/paas/v4';
+const DEEPSEEK_PI_BASE_URL = 'https://api.deepseek.com';
 const GLM_CLAUDE_RULE_ID = 'glm-coding-plan-to-claude-v1';
 const DEEPSEEK_CLAUDE_RULE_ID = 'deepseek-api-to-claude-v1';
 const CLAUDE_NATIVE_EXPERIMENTAL_RULES = new Set([
@@ -307,6 +309,8 @@ const EXPLICIT_API_TO_PI_RULES = new Set([
   'anthropic-api-to-pi-v1',
   'openai-api-to-pi-v1',
   'xai-api-to-pi-v1',
+  'glm-coding-plan-to-pi-v1',
+  'deepseek-api-to-pi-v1',
 ]);
 const EXPLICIT_API_TO_CODEX_RULES = new Set([
   'anthropic-api-to-codex-v1',
@@ -683,6 +687,35 @@ function analyze(
     };
   }
   if (
+    (source === 'glm_coding_plan' || source === 'deepseek_api')
+    && request.targetAgentId === 'pi'
+  ) {
+    const glm = source === 'glm_coding_plan';
+    const slot = glm ? 'glm-coding-plan' : 'deepseek';
+    const ruleId = glm ? 'glm-coding-plan-to-pi-v1' : 'deepseek-api-to-pi-v1';
+    return {
+      route: 'config_sync',
+      support: 'experimental',
+      reason: `${glm ? 'GLM Coding Plan' : 'DeepSeek API'} 可实验预览为 Pi 的配置同步。`,
+      actions: [
+        action(
+          'set_config',
+          'Pi',
+          `写入 Pi 的 ${glm ? 'GLM Coding Plan' : 'DeepSeek'} 自定义 provider 槽。`,
+          slot,
+        ),
+        secretAction('Pi', '从已选 Connection 引用 API Key；不会读取或显示它。'),
+      ],
+      limitations: [
+        `将写入 Pi models.json 的 ${slot} 自定义槽（baseUrl、api、models）与凭据引用标记；不会在预览中传输明文 Key。`,
+        '生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。',
+      ],
+      evidence: [evidence('Pi custom provider and model configuration', 'https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md')],
+      ruleId,
+      gateKind: 'none',
+    };
+  }
+  if (
     (source === 'claude_subscription'
       || source === 'codex_subscription'
       || source === 'codex_subscription_oauth_other'
@@ -840,6 +873,10 @@ function buildPlan(
       && analysis.ruleId === CODEX_CLAUDE_RULE_ID
       && hasCodexAccessToken(resolver, request.sourceId))
     || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'pi')
+    || (analysis.route === 'config_sync' && analysis.support === 'experimental'
+      && request.targetAgentId === 'pi'
+      && !!analysis.ruleId
+      && EXPLICIT_API_TO_PI_RULES.has(analysis.ruleId))
     || (analysis.route === 'config_sync' && analysis.support === 'experimental'
       && request.targetAgentId === 'pi'
       && !!analysis.ruleId
@@ -1068,6 +1105,10 @@ function materializeApply(
       ? 'openai'
       : ruleId === 'xai-api-to-pi-v1'
         ? 'xai'
+        : ruleId === 'glm-coding-plan-to-pi-v1'
+          ? 'glm-coding-plan'
+          : ruleId === 'deepseek-api-to-pi-v1'
+            ? 'deepseek'
         : ruleId === 'anthropic-api-to-pi-v1'
           ? 'anthropic'
           : 'kimi-for-coding';
@@ -1075,6 +1116,10 @@ function materializeApply(
       ? 'OpenAI'
       : ruleId === 'xai-api-to-pi-v1'
         ? 'xAI'
+        : ruleId === 'glm-coding-plan-to-pi-v1'
+          ? 'GLM Coding Plan'
+          : ruleId === 'deepseek-api-to-pi-v1'
+            ? 'DeepSeek'
         : ruleId === 'anthropic-api-to-pi-v1'
           ? 'Anthropic'
           : 'Kimi';
@@ -1094,10 +1139,17 @@ function materializeApply(
       ? 'openai'
       : ruleId === 'xai-api-to-pi-v1'
         ? 'xai'
+      : ruleId === 'glm-coding-plan-to-pi-v1'
+        ? 'glm'
+        : ruleId === 'deepseek-api-to-pi-v1'
+          ? 'deepseek'
         : ruleId === 'anthropic-api-to-pi-v1'
           ? 'anthropic'
           : 'kimi';
     const slot = piSlotFromPlan(plan, slotFallback);
+    const piCustom = ruleId === 'glm-coding-plan-to-pi-v1' || ruleId === 'deepseek-api-to-pi-v1';
+    const piBaseUrl = ruleId === 'glm-coding-plan-to-pi-v1' ? GLM_PI_BASE_URL : DEEPSEEK_PI_BASE_URL;
+    const piModel = ruleId === 'glm-coding-plan-to-pi-v1' ? 'glm-4.6' : 'deepseek-chat';
     const profile: AdapterProfile = existing ?? {
       id: `adapter-${prefix}-pi-${safeId}`,
       name: `${subscription ? subscriptionDisplay : display} → Pi (${safeId})`,
@@ -1132,10 +1184,23 @@ function materializeApply(
                 },
               },
             }
-          : {
-              slot,
-              apiKey: CONNECTION_SECRET_MARKER,
-            }),
+          : piCustom
+            ? {
+                models: {
+                  providers: {
+                    [slot]: {
+                      baseUrl: piBaseUrl,
+                      api: 'openai-completions',
+                      models: [{ id: piModel }],
+                      apiKey: CONNECTION_SECRET_MARKER,
+                    },
+                  },
+                },
+              }
+            : {
+                slot,
+                apiKey: CONNECTION_SECRET_MARKER,
+              }),
         configFormat: 'json',
         isCurrent: true,
       },

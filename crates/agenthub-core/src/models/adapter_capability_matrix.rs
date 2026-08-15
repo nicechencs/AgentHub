@@ -352,6 +352,16 @@ const XAI_PI_LIMITS: &[&str] = &[
     "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
 ];
 
+const GLM_PI_LIMITS: &[&str] = &[
+    "将写入 Pi models.json 的 glm-coding-plan 自定义槽（baseUrl、api、models）与凭据引用标记；不会在预览中传输明文 Key。",
+    "生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。",
+];
+
+const DEEPSEEK_PI_LIMITS: &[&str] = &[
+    "将写入 Pi models.json 的 deepseek 自定义槽（baseUrl、api、models）与凭据引用标记；不会在预览中传输明文 Key。",
+    "生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。",
+];
+
 const GLM_CLAUDE_LIMITS: &[&str] = &[
     "将写入 Claude 的 GLM Coding Plan Anthropic 兼容 Base URL 与凭据引用标记；不会在预览中传输明文 Key。",
     "应用后会切换当前 Claude Connection；请确认无其他进行中的配置写入。",
@@ -502,6 +512,42 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         limitations: XAI_PI_LIMITS,
         rule_id: "xai-api-to-pi-v1",
         verified_at: VERIFIED_AT,
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::GlmCodingPlan,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Pi,
+            protocol: AdapterTargetProtocol::PiProviderConfig,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::ConfigSync,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: "GLM Coding Plan 可实验预览为 Pi 的配置同步。",
+        limitations: GLM_PI_LIMITS,
+        rule_id: "glm-coding-plan-to-pi-v1",
+        verified_at: "2026-08-15",
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::DeepseekApi,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Pi,
+            protocol: AdapterTargetProtocol::PiProviderConfig,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::ConfigSync,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: "DeepSeek API 可实验预览为 Pi 的配置同步。",
+        limitations: DEEPSEEK_PI_LIMITS,
+        rule_id: "deepseek-api-to-pi-v1",
+        verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
     },
     AdapterCapabilityCell {

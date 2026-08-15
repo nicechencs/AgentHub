@@ -368,13 +368,13 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
             .unwrap(),
         crate::models::AdapterSourceProduct::GlmCodingPlan
     );
-    assert!(!glm.can_apply);
-    assert_eq!(glm.analysis.route, AdapterRoute::Unsupported);
-    assert!(
-        glm.analysis.reason.contains("同协议但无已验证的边"),
-        "GLM → Pi reason must come from the protocol graph: {}",
-        glm.analysis.reason
+    assert!(glm.can_apply);
+    assert_eq!(glm.analysis.route, AdapterRoute::ConfigSync);
+    assert_eq!(
+        glm.analysis.rule_id.as_deref(),
+        Some("glm-coding-plan-to-pi-v1")
     );
+    assert_eq!(glm.changes[0].value.as_deref(), Some("glm-coding-plan"));
 
     let deepseek = service
         .plan(&request(
@@ -389,7 +389,13 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
             .unwrap(),
         crate::models::AdapterSourceProduct::DeepseekApi
     );
-    assert!(!deepseek.can_apply);
+    assert!(deepseek.can_apply);
+    assert_eq!(deepseek.analysis.route, AdapterRoute::ConfigSync);
+    assert_eq!(
+        deepseek.analysis.rule_id.as_deref(),
+        Some("deepseek-api-to-pi-v1")
+    );
+    assert_eq!(deepseek.changes[0].value.as_deref(), Some("deepseek"));
 
     accounts
         .create(&api_key_account("glm-account", "glm-coding-plan"))
@@ -397,6 +403,18 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
     accounts
         .create(&api_key_account("deepseek-account", "deepseek-api"))
         .unwrap();
+    for (source_id, rule, slot) in [
+        ("glm-account", "glm-coding-plan-to-pi-v1", "glm-coding-plan"),
+        ("deepseek-account", "deepseek-api-to-pi-v1", "deepseek"),
+    ] {
+        let plan = service
+            .plan(&request(AdapterSourceKind::Account, source_id, AgentId::Pi))
+            .unwrap();
+        assert!(plan.can_apply, "{source_id}");
+        assert_eq!(plan.analysis.rule_id.as_deref(), Some(rule));
+        assert_eq!(plan.changes[0].value.as_deref(), Some(slot));
+        assert!(plan.changes[1].secret);
+    }
     for (source_kind, source_id, rule, base_url) in [
         (
             AdapterSourceKind::Provider,

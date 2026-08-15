@@ -475,14 +475,14 @@
       },
       "target": "pi",
       "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": null,
-        "gateKind": "unsupported",
-        "reason": "同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。",
-        "reusePath": "none"
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "glm-coding-plan-to-pi-v1",
+        "gateKind": "none",
+        "reason": "GLM Coding Plan 可实验预览为 Pi 的配置同步。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -494,14 +494,66 @@
       },
       "target": "pi",
       "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": null,
-        "gateKind": "unsupported",
-        "reason": "同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。",
-        "reusePath": "none"
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "deepseek-api-to-pi-v1",
+        "gateKind": "none",
+        "reason": "DeepSeek API 可实验预览为 Pi 的配置同步。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "glm-coding-plan-account-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "apikey",
+        "extra": {
+          "provider": "glm-coding-plan"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "glm-coding-plan-to-pi-v1",
+        "gateKind": "none",
+        "reason": "GLM Coding Plan 可实验预览为 Pi 的配置同步。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "deepseek-api-account-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "apikey",
+        "extra": {
+          "provider": "deepseek-api"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "deepseek-api-to-pi-v1",
+        "gateKind": "none",
+        "reason": "DeepSeek API 可实验预览为 Pi 的配置同步。",
+        "reusePath": "api_endpoint"
       }
     },
     {
