@@ -103,6 +103,30 @@ pub fn run(hub: &AgentHub, format: OutputFormat) -> Result<()> {
             println!("{t}");
             println!();
 
+            // ⑤ Locks
+            println!("⑤ Locks");
+            if report.locks.is_empty() {
+                println!("  (no live-write locks held)");
+            } else {
+                let mut t = Table::new();
+                t.load_preset(UTF8_FULL);
+                t.set_header(vec!["Agent", "Status", "PID", "Note"]);
+                for lock in &report.locks {
+                    t.add_row(vec![
+                        Cell::new(&lock.agent),
+                        Cell::new(&lock.status),
+                        Cell::new(
+                            lock.pid
+                                .map(|p| p.to_string())
+                                .unwrap_or_else(|| "-".into()),
+                        ),
+                        Cell::new(lock.note.as_deref().unwrap_or("-")),
+                    ]);
+                }
+                println!("{t}");
+            }
+            println!();
+
             if !report.warnings.is_empty() {
                 println!("Warnings:");
                 for w in &report.warnings {
@@ -121,8 +145,11 @@ pub fn run(hub: &AgentHub, format: OutputFormat) -> Result<()> {
     doctor_result(ok)
 }
 
+#[cfg(test)]
+mod tests;
+
 /// Contract: warnings stay exit 0; hard failures (e.g. db) exit 1.
-fn doctor_result(ok: bool) -> Result<()> {
+pub(crate) fn doctor_result(ok: bool) -> Result<()> {
     if ok {
         Ok(())
     } else {

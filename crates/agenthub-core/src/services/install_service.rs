@@ -329,6 +329,7 @@ fn finalize_runtime_install(
             ),
             agent: None,
             runtime: Some(status),
+            ..Default::default()
         }
     } else {
         logs.push(format!("重新检测: {} => {:?}", id.as_str(), status.status));
@@ -346,6 +347,7 @@ fn finalize_runtime_install(
             ),
             agent: None,
             runtime: Some(status),
+            ..Default::default()
         }
     }
 }
@@ -389,7 +391,7 @@ fn install_runtime_inner(
             } else {
                 "macOS/Linux 不需要 PowerShell：native 安装使用官方 bash/sh 脚本。AgentHub 不会在此平台检测或安装 PowerShell。"
             };
-            return Ok(InstallOutcome::failure(action, logs, msg));
+            return Ok(InstallOutcome::failure(action, logs, msg).with_code("unsupported", None));
         }
 
         let Some(package_id) = winget_package_id(target) else {
@@ -397,7 +399,8 @@ fn install_runtime_inner(
                 action,
                 logs,
                 format!("runtime {} 暂不支持自动安装", id.as_str()),
-            ));
+            )
+            .with_code("unsupported", None));
         };
 
         let channel = if channel.is_empty() {
@@ -535,10 +538,12 @@ pub fn install_agent(
         ));
 
         let requires = channel_requires(registry, agent, &channel)?;
-        if let Err(env_err) = runtime::ensure(&requires) {
+        if let Err(mut env_err) = runtime::ensure(&requires) {
             if !install_deps {
+                env_err.agent = Some(agent.as_str().into());
+                env_err.channel = Some(channel.clone());
                 let msg = format!(
-                    "环境未就绪: 缺少 {}。请先安装运行环境或使用 installDeps。",
+                    "环境未就绪: 缺少 {}。请先安装运行环境或使用 --install-deps。",
                     env_err
                         .missing
                         .iter()
@@ -547,7 +552,10 @@ pub fn install_agent(
                         .join(", ")
                 );
                 logs.push(msg.clone());
-                return Ok(InstallOutcome::failure(action, logs, msg));
+                let details = serde_json::to_value(&env_err).ok();
+                return Ok(
+                    InstallOutcome::failure(action, logs, msg).with_code("env.not_ready", details)
+                );
             }
             // Bootstrap missing runtimes that we can auto-install (nodejs / git).
             for missing in &env_err.missing {
@@ -632,6 +640,7 @@ pub fn install_agent(
                 ),
                 agent: Some(detect),
                 runtime: None,
+                ..Default::default()
             })
         } else {
             logs.push("重新检测: not_found".into());
@@ -653,6 +662,7 @@ pub fn install_agent(
                 ),
                 agent: Some(detect),
                 runtime: None,
+                ..Default::default()
             })
         }
     })();
@@ -772,6 +782,7 @@ pub fn upgrade_agent(
             },
             agent: Some(detect),
             runtime: None,
+            ..Default::default()
         })
     })();
 
@@ -1027,6 +1038,7 @@ fn uninstall_agent_inner(
             },
             agent: Some(detect),
             runtime: None,
+            ..Default::default()
         })
     })();
 
@@ -1170,64 +1182,63 @@ fn run_native_ps1(
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<ExecResult> {
-        let url = native_ps1_url(agent).ok_or_else(|| {
-            AppError::Unsupported(format!("{} 无 Windows native 安装脚本", agent.as_str()))
+    let url = native_ps1_url(agent).ok_or_else(|| {
+        AppError::Unsupported(format!("{} 无 Windows native 安装脚本", agent.as_str()))
+    })?;
+    // Allowlist: only fixed https URLs from native_ps1_url.
+    if !url.starts_with("https://") {
+        return Err(AppError::InvalidArg("install URL must be https".into()));
+    }
+    // Prefer PowerShell 7; fall back to 5.1 / System32.
+    let ps = runtime::resolve_powershell_for_native()
+        .map(|p| p.to_string_lossy().into_owned())
+        .ok_or_else(|| {
+            AppError::NotFound(
+                "PowerShell not found (need Windows PowerShell 5.1 or PowerShell 7 pwsh)".into(),
+            )
         })?;
-        // Allowlist: only fixed https URLs from native_ps1_url.
-        if !url.starts_with("https://") {
-            return Err(AppError::InvalidArg("install URL must be https".into()));
-        }
-        // Prefer PowerShell 7; fall back to 5.1 / System32.
-        let ps = runtime::resolve_powershell_for_native()
-            .map(|p| p.to_string_lossy().into_owned())
-            .ok_or_else(|| {
-                AppError::NotFound(
-                    "PowerShell not found (need Windows PowerShell 5.1 or PowerShell 7 pwsh)"
-                        .into(),
-                )
-            })?;
-        // Log interpreter identity for supportability.
-        if let Ok(ver_out) = crate::utils::process::run_capture(
-            std::path::Path::new(&ps),
-            &[
-                "-NoProfile",
-                "-Command",
-                "$PSVersionTable.PSVersion.ToString()",
-            ],
-        ) {
-            if let Some(v) = crate::utils::process::stdout_first_line(&ver_out) {
-                push_log(logs, format!("using PowerShell: {ps} (version {v})"));
-            } else {
-                push_log(logs, format!("using PowerShell: {ps}"));
-            }
+    // Log interpreter identity for supportability.
+    if let Ok(ver_out) = crate::utils::process::run_capture(
+        std::path::Path::new(&ps),
+        &[
+            "-NoProfile",
+            "-Command",
+            "$PSVersionTable.PSVersion.ToString()",
+        ],
+    ) {
+        if let Some(v) = crate::utils::process::stdout_first_line(&ver_out) {
+            push_log(logs, format!("using PowerShell: {ps} (version {v})"));
         } else {
             push_log(logs, format!("using PowerShell: {ps}"));
         }
-        // Force unbuffered host output so download progress streams when piped.
-        let script = format!(
-            "$ProgressPreference='Continue'; $InformationPreference='Continue'; irm '{url}' | iex"
-        );
-        push_log(logs, format!("# 官方安装脚本: {url}"));
-        push_log(
-            logs,
-            "# 正在下载并执行官方安装脚本（下载大文件时可能数分钟无新输出，请耐心等待）…",
-        );
-        push_log(logs, format!("# {ps} -Command {script}"));
-        let req = ExecRequest {
-            program: ps,
-            args: vec![
-                "-NoProfile".into(),
-                "-ExecutionPolicy".into(),
-                "Bypass".into(),
-                "-Command".into(),
-                script,
-            ],
-            timeout: AGENT_TIMEOUT,
-            max_output_bytes: MAX_OUTPUT,
-        };
-        let res = executor.run(&req);
-        push_exec_logs(logs, &res, AGENT_TIMEOUT.as_secs());
-        Ok(res)
+    } else {
+        push_log(logs, format!("using PowerShell: {ps}"));
+    }
+    // Force unbuffered host output so download progress streams when piped.
+    let script = format!(
+        "$ProgressPreference='Continue'; $InformationPreference='Continue'; irm '{url}' | iex"
+    );
+    push_log(logs, format!("# 官方安装脚本: {url}"));
+    push_log(
+        logs,
+        "# 正在下载并执行官方安装脚本（下载大文件时可能数分钟无新输出，请耐心等待）…",
+    );
+    push_log(logs, format!("# {ps} -Command {script}"));
+    let req = ExecRequest {
+        program: ps,
+        args: vec![
+            "-NoProfile".into(),
+            "-ExecutionPolicy".into(),
+            "Bypass".into(),
+            "-Command".into(),
+            script,
+        ],
+        timeout: AGENT_TIMEOUT,
+        max_output_bytes: MAX_OUTPUT,
+    };
+    let res = executor.run(&req);
+    push_exec_logs(logs, &res, AGENT_TIMEOUT.as_secs());
+    Ok(res)
 }
 
 #[cfg(not(windows))]

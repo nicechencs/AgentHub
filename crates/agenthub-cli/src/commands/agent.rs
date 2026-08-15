@@ -3,7 +3,7 @@ use agenthub_core::models::{AgentId, AgentUpdateState, BackupKind};
 use agenthub_core::{AgentHub, AgentKey};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
-use crate::output::{print_json, OutputFormat};
+use crate::output::{confirm, emit_install_outcome, print_json, OutputFormat};
 
 fn parse_agent(s: &str) -> Result<AgentId> {
     AgentId::parse_required(s)
@@ -151,38 +151,7 @@ fn print_outcome(
     outcome: &agenthub_core::models::InstallOutcome,
     format: OutputFormat,
 ) -> Result<()> {
-    for line in &outcome.logs {
-        eprintln!("{line}");
-    }
-    match format {
-        OutputFormat::Quiet => {
-            if outcome.ok {
-                Ok(())
-            } else {
-                Err(AppError::message("install.failed", outcome.message.clone()))
-            }
-        }
-        OutputFormat::Json => {
-            print_json(outcome)?;
-            if outcome.ok {
-                Ok(())
-            } else {
-                Err(AppError::message("install.failed", outcome.message.clone()))
-            }
-        }
-        OutputFormat::Table => {
-            println!(
-                "{} — {}",
-                if outcome.ok { "OK" } else { "FAILED" },
-                outcome.message
-            );
-            if outcome.ok {
-                Ok(())
-            } else {
-                Err(AppError::message("install.failed", outcome.message.clone()))
-            }
-        }
-    }
+    emit_install_outcome(outcome, format)
 }
 
 pub fn list(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
@@ -303,10 +272,14 @@ pub fn uninstall(
     format: OutputFormat,
 ) -> Result<()> {
     let key = parse_lifecycle_agent_key(agent)?;
-    if purge_config && !yes {
-        return Err(AppError::InvalidArg(
-            "uninstall --purge-config requires -y / --yes confirmation".into(),
-        ));
+    if purge_config {
+        confirm(
+            &format!(
+                "Uninstall {} and delete its config directory? Shared runtimes (Node/npm/git) are kept.",
+                key.as_str()
+            ),
+            yes,
+        )?;
     }
     // Best-effort pre-uninstall backup when purging config.
     if purge_config {
