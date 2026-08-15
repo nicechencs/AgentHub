@@ -1,0 +1,11 @@
+{
+  "name": "AgentHub",
+  "user": "ubuntu",
+  "install": "rustup toolchain install stable --no-self-update && rustup default stable && pnpm install --frozen-lockfile && cargo fetch && cargo build -p agenthub-core -p agenthub-cli",
+  "terminals": [
+    {
+      "name": "web-mock",
+      "command": "pnpm dev:mock"
+    }
+  ]
+}
