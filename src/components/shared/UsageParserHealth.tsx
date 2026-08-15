@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { AlertTriangle, Check } from 'lucide-react';
 import { AGENT_MAP } from '@/config/agents';
+import { toHiddenIdSet } from '@/lib/agent-visibility';
 import { tryLoadDoctorMapped } from '@/lib/api/doctor';
 import { missingPricingModels, parserHealth } from '@/lib/api/usage';
 import type { AgentId, ParserHealth } from '@/lib/types';
@@ -67,10 +68,12 @@ export function UsageParserHealth({
   variant = 'dashboard',
   refreshKey = 0,
   className,
+  hiddenAgentIds,
 }: {
   variant?: 'dashboard' | 'compact';
   refreshKey?: number;
   className?: string;
+  hiddenAgentIds?: Iterable<string>;
 }) {
   const [rows, setRows] = React.useState<Row[] | null>(null);
   const [missing, setMissing] = React.useState<string[]>([]);
@@ -122,9 +125,12 @@ export function UsageParserHealth({
     };
   }, [refreshKey, variant]);
 
+  const hidden = toHiddenIdSet(hiddenAgentIds ?? []);
+  const visibleRows = (rows ?? []).filter((r) => !hidden.has(r.agentId));
+
   if (variant === 'compact') {
     if (!rows) return null;
-    const supported = rows.filter((r) => r.supported);
+    const supported = visibleRows.filter((r) => r.supported);
     const withData = supported.filter((r) => r.records > 0);
     const totalRecords = supported.reduce((s, r) => s + r.records, 0);
 
@@ -142,7 +148,7 @@ export function UsageParserHealth({
           </span>
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {rows.map((h) => {
+          {visibleRows.map((h) => {
             const name = AGENT_MAP[h.agentId]?.name ?? h.agentId;
             if (!h.supported) {
               return (
@@ -195,7 +201,7 @@ export function UsageParserHealth({
     <div className={cn('mt-4 space-y-1.5', className)}>
       <p className="text-xs text-secondary">
         <span className="text-muted">解析：</span>{' '}
-        {rows.map((h, i) => (
+        {visibleRows.map((h, i) => (
           <span key={h.agentId}>
             {i > 0 && <span className="mx-1.5 text-muted">·</span>}
             <DashboardItem h={h} />

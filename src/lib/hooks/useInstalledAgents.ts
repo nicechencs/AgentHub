@@ -1,10 +1,15 @@
 /**
  * 已安装 Agent 列表 hook。
- * Agents 页展示全量候选；其它页面应只展示 detect 结果为 installed 的 Agent。
+ * Agents 页展示全量候选；其它页面应只展示 detect 结果为 installed 且未隐藏的 Agent。
  */
 import { useMemo } from 'react';
 import { useAgentStatuses } from '@/app/runtime';
 import { AGENTS, type AgentMeta } from '@/config/agents';
+import {
+  hiddenAgentIdSet,
+  visibleCatalogIds,
+  visibleInstalledIds,
+} from '@/lib/agent-visibility';
 import type { AgentCapabilities } from '@/lib/capability';
 import type { AgentId } from '@/lib/types';
 
@@ -17,9 +22,19 @@ export function useInstalledAgents() {
 
   // 稳定引用：避免下游 useCallback/useEffect 因每 render 新数组而反复触发
   // （Connections 子页 load → onPoolChanged → setState 会形成加载死循环）
-  const installedIds = useMemo<AgentId[]>(
-    () => statuses.filter((s) => s.installed).map((s) => s.agentId),
+  const hiddenIds = useMemo<AgentId[]>(
+    () => [...hiddenAgentIdSet(statuses)],
     [statuses],
+  );
+
+  const installedIds = useMemo<AgentId[]>(
+    () => visibleInstalledIds(statuses),
+    [statuses],
+  );
+
+  const visibleIds = useMemo<AgentId[]>(
+    () => visibleCatalogIds(hiddenIds),
+    [hiddenIds],
   );
 
   const installedAgents = useMemo<AgentColumn[]>(
@@ -37,6 +52,8 @@ export function useInstalledAgents() {
     state,
     error,
     statuses,
+    hiddenIds,
+    visibleIds,
     installedIds,
     installedAgents,
     reload,

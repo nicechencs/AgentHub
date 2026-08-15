@@ -8,6 +8,7 @@ import { EnvStatusBar } from '@/components/shared/EnvStatusBar';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { Tip } from '@/components/ui/tooltip';
+import { sortAgentsForManagePage } from '@/lib/agent-visibility';
 import {
   applyAgentUpdates,
   checkAgentUpdates,
@@ -156,6 +157,7 @@ export default function AgentsPage() {
     : runtimes.find((r) => r.status !== 'ok');
 
   const showPagePanel = pageFix != null && hasEnvIssues(runtimes);
+  const orderedAgents = React.useMemo(() => sortAgentsForManagePage(agents), [agents]);
 
   return (
     <div>
@@ -217,7 +219,7 @@ export default function AgentsPage() {
         />
       ) : (
         <div className={pageRhythm.stack}>
-          {agents.map((a) => (
+          {orderedAgents.map((a) => (
             <AgentCard
               key={a.agentId}
               agent={a}

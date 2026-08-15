@@ -133,6 +133,11 @@ export interface AgentStatus {
   capabilities?: import('@/lib/capability').AgentCapabilities;
   /** Async update probe (filled by checkAgentUpdates). */
   update?: AgentUpdateInfo;
+  /**
+   * Soft-hidden by the user. Management page still lists the row (greyed);
+   * every other surface omits it. Optional for older backends.
+   */
+  hidden?: boolean;
 }
 
 export interface Provider {

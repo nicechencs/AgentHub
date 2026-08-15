@@ -3,6 +3,8 @@ import {
   ArrowUpCircle,
   ChevronDown,
   Copy,
+  Eye,
+  EyeOff,
   FolderOpen,
   Wrench,
   X,
@@ -37,6 +39,7 @@ import {
   installAgentDetailed,
   InstallFailedError,
   openAgentConfig,
+  setAgentHidden,
   uninstallAgentDetailed,
   upgradeAgentDetailed,
 } from '@/lib/api/agent';
@@ -136,6 +139,8 @@ export function AgentCard({
   const [uninstalling, setUninstalling] = React.useState(false);
   const [showEnvPanel, setShowEnvPanel] = React.useState(false);
   const [envAutoStart, setEnvAutoStart] = React.useState(false);
+  const [hiding, setHiding] = React.useState(false);
+  const hidden = Boolean(agent.hidden);
 
   React.useEffect(() => {
     return () => {
@@ -233,7 +238,30 @@ export function AgentCard({
       ? 'ready_to_install'
       : 'env_missing';
 
-  const busy = task?.status === 'running' || uninstalling;
+  const busy = task?.status === 'running' || uninstalling || hiding;
+
+  const toggleHidden = async () => {
+    setHiding(true);
+    try {
+      await setAgentHidden(agent.agentId, !hidden);
+      toast({
+        title: hidden ? '已取消隐藏' : '已隐藏',
+        description: hidden
+          ? `${meta?.name ?? agent.agentId} 已恢复显示`
+          : `${meta?.name ?? agent.agentId} 已从其他页面隐藏`,
+        variant: 'success',
+      });
+      onChanged();
+    } catch (e) {
+      toast({
+        title: hidden ? '取消隐藏失败' : '隐藏失败',
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
+    } finally {
+      setHiding(false);
+    }
+  };
 
   /** 统一走 *Detailed port：Tauri 与 Mock 返回同一 InstallOutcome 契约 */
   const runInstallOutcome = async (
@@ -543,7 +571,8 @@ export function AgentCard({
     <Card
       className={cn(
         'min-h-20 p-3',
-        cardState === 'env_missing' && 'border-warning/35',
+        cardState === 'env_missing' && !hidden && 'border-warning/35',
+        hidden && 'opacity-60 grayscale',
       )}
     >
       <div className="flex items-start justify-between gap-4">
@@ -552,6 +581,7 @@ export function AgentCard({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{meta.name}</span>
+              {hidden && <Badge>已隐藏</Badge>}
               {agent.installed ? (
                 <>
                   {versionLabel && (
@@ -572,7 +602,7 @@ export function AgentCard({
                     (officialSetupUrl ? (
                       <button
                         type="button"
-                        disabled={busy}
+                        disabled={busy || hidden}
                         onClick={openOfficialSetup}
                         className="cursor-pointer text-xs text-accent underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
                         title={`打开官网下载：${officialSetupUrl}`}
@@ -622,7 +652,7 @@ export function AgentCard({
                         >
                           <button
                             type="button"
-                            disabled={busy}
+                            disabled={busy || hidden}
                             onClick={() => {
                               setSelectedChannelId(ch.id);
                               setShowEnvPanel(false);
@@ -664,7 +694,19 @@ export function AgentCard({
         </div>
 
         <div className="flex shrink-0 items-center justify-end gap-1.5">
-          {agent.installed ? (
+          {hidden ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={hiding}
+              aria-label="取消隐藏"
+              title="取消隐藏后恢复显示与操作"
+              onClick={() => void toggleHidden()}
+            >
+              <Eye className="h-3.5 w-3.5" />
+              取消隐藏
+            </Button>
+          ) : agent.installed ? (
             <>
               <Button
                 size="icon"
@@ -707,6 +749,16 @@ export function AgentCard({
                 onClick={openConfigDir}
               >
                 <FolderOpen className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                size="icon"
+                variant="outline"
+                disabled={busy}
+                aria-label="隐藏"
+                title="隐藏后其他页面不再显示此 Agent"
+                onClick={() => void toggleHidden()}
+              >
+                <EyeOff className="h-3.5 w-3.5" />
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -752,6 +804,16 @@ export function AgentCard({
                 <Zap className="h-3.5 w-3.5" />
                 {canOneClickEnv ? '修复并安装' : '修环境'}
               </Button>
+              <Button
+                size="icon"
+                variant="outline"
+                disabled={busy}
+                aria-label="隐藏"
+                title="隐藏后其他页面不再显示此 Agent"
+                onClick={() => void toggleHidden()}
+              >
+                <EyeOff className="h-3.5 w-3.5" />
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="icon" variant="outline" disabled={busy} aria-label="更多">
@@ -789,6 +851,16 @@ export function AgentCard({
                 <Zap className="h-3.5 w-3.5" />
                 安装
               </Button>
+              <Button
+                size="icon"
+                variant="outline"
+                disabled={busy}
+                aria-label="隐藏"
+                title="隐藏后其他页面不再显示此 Agent"
+                onClick={() => void toggleHidden()}
+              >
+                <EyeOff className="h-3.5 w-3.5" />
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="sm" variant="outline" disabled={busy}>
@@ -818,7 +890,7 @@ export function AgentCard({
         </div>
       </div>
 
-      {showEnvPanel && cardState === 'env_missing' && (
+      {showEnvPanel && cardState === 'env_missing' && !hidden && (
         <div className="mt-3">
           <EnvRemediationPanel
             key={`card-env-${agent.agentId}-${envAutoStart}`}

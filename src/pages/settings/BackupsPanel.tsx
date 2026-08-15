@@ -54,6 +54,7 @@ export function BackupsPanel() {
     loading: agentsLoading,
     error: agentsError,
     installedIds,
+    hiddenIds,
     reload: reloadAgents,
   } = useInstalledAgents();
 
@@ -96,8 +97,11 @@ export function BackupsPanel() {
       (backups ?? []).map((b) => b.agentId).filter(Boolean) as AgentId[],
     );
     const installed = new Set(installedIds);
-    return AGENTS.filter((a) => installed.has(a.id) || withBackups.has(a.id));
-  }, [backups, installedIds]);
+    return AGENTS.filter(
+      (a) =>
+        !hiddenIds.includes(a.id) && (installed.has(a.id) || withBackups.has(a.id)),
+    );
+  }, [backups, installedIds, hiddenIds]);
 
   // 当前选中不在可见列表时，落到第一个可见 Agent
   useEffect(() => {

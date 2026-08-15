@@ -6,6 +6,7 @@ pub mod adapter_bridge_service;
 pub mod adapter_route_service;
 pub mod adapter_secret_resolver;
 pub mod agent_service;
+pub mod agent_visibility_service;
 pub mod backup_service;
 pub mod chat_service;
 pub mod connection_service;
@@ -34,6 +35,7 @@ pub use adapter_bridge_service::{
 pub use adapter_route_service::AdapterRouteService;
 pub use adapter_secret_resolver::AdapterSecretResolver;
 pub use agent_service::{invalidate_detect_cache, AgentService};
+pub use agent_visibility_service::AgentVisibilityService;
 pub use backup_service::{BackupService, RestoreResult};
 pub use chat_service::ChatService;
 pub use connection_service::{ActiveBinding, ConnectionService};

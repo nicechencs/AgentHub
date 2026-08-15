@@ -139,6 +139,7 @@ export function AdapterProfiles({
   onRequestStopBridge,
   onSetBridgeAutoStart,
   onRetry,
+  hiddenTargetIds,
 }: {
   profiles: AdapterProfile[];
   bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus>;
@@ -152,6 +153,7 @@ export function AdapterProfiles({
   onRequestStopBridge: (profile: AdapterProfile) => void;
   onSetBridgeAutoStart: (profile: AdapterProfile, autoStart: boolean) => void;
   onRetry: () => void;
+  hiddenTargetIds?: ReadonlySet<string>;
 }) {
   return (
     <Card>
@@ -177,6 +179,7 @@ export function AdapterProfiles({
           const bridgeEndpoint = adapterBridgeEndpointLabel(profile, bridgeStatus);
           const busy = busyProfileIds[profile.id] === true;
           const bridgeTransitioning = bridgeStatus?.state === 'starting' || bridgeStatus?.state === 'stopping';
+          const targetHidden = hiddenTargetIds?.has(profile.targetAgentId) === true;
           return (
             <div key={profile.id} className="rounded-btn border border-border px-3 py-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -195,7 +198,13 @@ export function AdapterProfiles({
                 <div className="flex items-center gap-2">
                   <Badge variant={status.variant}>{status.label}</Badge>
                   {profile.route === 'local_bridge' && <Badge variant={bridgeBadge.variant}>{bridgeBadge.label}</Badge>}
-                  <Button variant="dangerOutline" size="sm" disabled={removing || busy} onClick={() => onRemove(profile)}>
+                  <Button
+                    variant="dangerOutline"
+                    size="sm"
+                    disabled={removing || busy || targetHidden}
+                    title={targetHidden ? '目标 Agent 已隐藏，仅可停止运行中的桥接' : undefined}
+                    onClick={() => onRemove(profile)}
+                  >
                     {removing ? '删除中…' : '删除'}
                   </Button>
                 </div>
@@ -205,7 +214,7 @@ export function AdapterProfiles({
                   <label className="flex items-center gap-2 text-secondary">
                     <Switch
                       checked={profile.autoStart}
-                      disabled={busy}
+                      disabled={busy || targetHidden}
                       aria-label={`${adapterProfileRecordLabel(profile)} 自动启动`}
                       onCheckedChange={(autoStart) => onSetBridgeAutoStart(profile, autoStart)}
                     />
@@ -224,7 +233,7 @@ export function AdapterProfiles({
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={busy || bridgeTransitioning}
+                      disabled={busy || bridgeTransitioning || targetHidden}
                       onClick={() => onStartBridge(profile)}
                     >
                       {busy ? '处理中…' : '启动'}

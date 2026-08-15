@@ -179,7 +179,7 @@ export default function SkillsPage() {
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = parseSkillTab(searchParams.get('tab'));
-  const { installedAgents, loading: agentsLoading } = useInstalledAgents();
+  const { installedAgents, hiddenIds, loading: agentsLoading } = useInstalledAgents();
   const [marketQuery, setMarketQuery] = useState('');
   const [installingMarketId, setInstallingMarketId] = useState<string | null>(null);
   const [skillMarketSource, setSkillMarketSource] = useState<SkillMarketSource>('auto');
@@ -668,7 +668,9 @@ export default function SkillsPage() {
   // 最优列集：仅已安装 Agent（含 Kimi 等无 skills 能力），用后端 mapStatus 解释灰色格
   // doctor 未完成时先用全量列，避免矩阵空列等待；detect 完成后未安装不占列
   const matrixAgents: AgentColumn[] =
-    installedAgents.length > 0 || !agentsLoading ? installedAgents : AGENTS;
+    installedAgents.length > 0 || !agentsLoading
+      ? installedAgents
+      : AGENTS.filter((a) => !hiddenIds.includes(a.id));
   const installedAgentIds = matrixAgents.map((a) => a.id);
 
   const goLibraryAndHighlight = useCallback(() => {
@@ -1067,6 +1069,7 @@ export default function SkillsPage() {
             <AgentWorkspace
               installed={installedQuery.data ?? []}
               installedAgents={matrixAgents}
+              hiddenIds={hiddenIds}
               importingIds={importingIds}
               batchAdopting={batchAdopting}
               onOpenDir={(path) => void handleOpenDir(path)}

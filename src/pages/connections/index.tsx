@@ -34,8 +34,12 @@ function parseAgentParam(raw: string | null, allowed: AgentId[]): AgentId {
   return allowed[0] ?? 'claude';
 }
 
-function pickInstalledAgent(preferred: AgentId, installed: AgentId[]): AgentId {
-  const pool = installed.length ? installed : AGENT_IDS;
+function pickInstalledAgent(
+  preferred: AgentId,
+  installed: AgentId[],
+  visible: AgentId[],
+): AgentId {
+  const pool = installed.length ? installed : visible.length ? visible : AGENT_IDS;
   if (pool.includes(preferred)) return preferred;
   return pool[0] ?? 'claude';
 }
@@ -56,27 +60,33 @@ function effectiveKindLabel(kind: EffectiveConnectionKind): string {
 }
 
 export default function ConnectionsPage() {
-  const { installedIds, installedAgents, statuses, loading, state, error, reload } =
+  const { installedIds, installedAgents, visibleIds, statuses, loading, state, error, reload } =
     useInstalledAgents();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const rawAgent = parseAgentParam(searchParams.get('agent'), installedIds);
   const agentId = useMemo(
-    () => pickInstalledAgent(rawAgent, installedIds),
-    [rawAgent, installedIds],
+    () => pickInstalledAgent(rawAgent, installedIds, visibleIds),
+    [rawAgent, installedIds, visibleIds],
   );
   const focusFilter = parseFocusFilter(searchParams.get('mode'));
 
   const installedIdsKey = installedIds.join(',');
   const installedIdsRef = useRef(installedIds);
   installedIdsRef.current = installedIds;
+  const visibleIdsRef = useRef(visibleIds);
+  visibleIdsRef.current = visibleIds;
 
   const [poolCounts, setPoolCounts] = useState<Partial<Record<AgentId, number>>>({});
   /** 列表切换后即时摘要；避免只读陈旧 listAgents 的 effectiveKind */
   const [liveSnap, setLiveSnap] = useState<ConnectionPoolSnapshot | null>(null);
 
   const refreshCounts = useCallback(async () => {
-    const ids = installedIdsRef.current.length ? installedIdsRef.current : [...AGENT_IDS];
+    const ids = installedIdsRef.current.length
+      ? installedIdsRef.current
+      : visibleIdsRef.current.length
+        ? [...visibleIdsRef.current]
+        : [...AGENT_IDS];
     try {
       const [accs, provs] = await Promise.all([listAccounts(), listProviders()]);
       const totals = emptyCounts(ids);

@@ -3,6 +3,7 @@
 pub mod account;
 pub mod adapter;
 pub mod agent_catalog;
+pub mod agent_visibility;
 pub mod backup;
 pub mod chat;
 pub mod configuration;

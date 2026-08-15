@@ -32,6 +32,7 @@ export function buildAlertsFromAgents(agents: AgentStatus[]): DashboardAlert[] {
   const out: DashboardAlert[] = [];
 
   for (const a of agents) {
+    if (a.hidden) continue;
     const name = agentName(a.agentId);
 
     if (a.installed && a.authStatus === 'expired') {

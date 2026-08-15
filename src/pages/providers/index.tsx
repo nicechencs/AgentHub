@@ -2,7 +2,7 @@
 // 卡片列表 + 弹窗编辑：智能识别 URL / API Key，不依赖预设列表。
 // 切换走 switchPreview → SwitchConfirmDialog → switchProvider → toast(可撤销)。
 // 可独立路由,也可嵌入 Connections(embedded=true,agent 由父级控制)。
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Cable, FolderOpen, Import, Pencil, Plus, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -16,7 +16,9 @@ import { Card } from '@/components/ui/card';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/toast';
-import { AGENT_IDS, AGENT_MAP } from '@/config/agents';
+import { AGENT_IDS, AGENT_MAP, AGENTS } from '@/config/agents';
+import { firstVisibleAgentId } from '@/lib/agent-visibility';
+import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { openAgentConfigDir } from '@/lib/api/install';
 import {
   deleteProvider,
@@ -32,9 +34,8 @@ import type { AgentId, Provider, SwitchPreview } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { ProviderEditDialog } from './ProviderEditDialog';
 
-function parseAgentParam(raw: string | null): AgentId {
-  if (raw && (AGENT_IDS as string[]).includes(raw)) return raw as AgentId;
-  return 'claude';
+function parseAgentParam(raw: string | null, allowed: AgentId[]): AgentId {
+  return firstVisibleAgentId(raw, allowed.length ? allowed : AGENT_IDS);
 }
 
 export interface ProvidersPanelProps {
@@ -56,9 +57,15 @@ export default function ProvidersPage({
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const controlled = controlledAgentId !== undefined;
+  const { installedAgents, visibleIds } = useInstalledAgents();
+  const tabAgents = useMemo(
+    () => (installedAgents.length ? installedAgents : AGENTS.filter((a) => visibleIds.includes(a.id))),
+    [installedAgents, visibleIds],
+  );
+  const tabIds = useMemo(() => tabAgents.map((a) => a.id), [tabAgents]);
 
   const [internalAgentId, setInternalAgentId] = useState<AgentId>(() =>
-    parseAgentParam(searchParams.get('agent')),
+    parseAgentParam(searchParams.get('agent'), tabIds),
   );
   const agentId = controlled ? controlledAgentId : internalAgentId;
 
@@ -84,10 +91,15 @@ export default function ProvidersPage({
   // 独立页:Dashboard 深链 /providers?agent=xxx 同步 tab
   useEffect(() => {
     if (controlled) return;
-    const fromUrl = parseAgentParam(searchParams.get('agent'));
-    if (fromUrl !== internalAgentId) setInternalAgentId(fromUrl);
+    const fromUrl = parseAgentParam(searchParams.get('agent'), tabIds);
+    if (fromUrl !== internalAgentId) {
+      setInternalAgentId(fromUrl);
+      if (searchParams.get('agent') && fromUrl !== searchParams.get('agent')) {
+        setSearchParams(fromUrl === 'claude' ? {} : { agent: fromUrl }, { replace: true });
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, controlled]);
+  }, [searchParams, controlled, tabIds.join(',')]);
 
   const handleAgentChange = (id: AgentId) => {
     if (controlled) {
@@ -368,7 +380,11 @@ export default function ProvidersPage({
             actions={addProviderActions}
           />
           <div className={pageRhythm.chrome}>
-            <AgentTabStrip value={agentId} onChange={handleAgentChange} />
+            <AgentTabStrip
+              value={agentId}
+              onChange={handleAgentChange}
+              agents={tabAgents}
+            />
           </div>
         </>
       ) : !loading ? (
