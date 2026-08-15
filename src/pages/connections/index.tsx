@@ -23,9 +23,7 @@ import {
 import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
 import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
 import {
-  accountsForAgent,
   getConnectionPoolSnapshot,
-  providersForAgent,
   useConnectionPool,
 } from '@/app/runtime';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
@@ -35,7 +33,15 @@ import { ApiKeyAccountDialog } from '@/pages/accounts/ApiKeyAccountDialog';
 import { ProviderEditDialog } from '@/pages/providers/ProviderEditDialog';
 import { ConnectionTrashButton } from './ConnectionTrashButton';
 import { TicketWalletList } from './TicketWalletList';
-import type { TicketWalletFilter } from './ticket-wallet-model';
+import {
+  extrasFromPoolSource,
+  findTicketPoolSource,
+  type TicketWalletFilter,
+} from './ticket-wallet-model';
+import {
+  deleteConnectionDialogDescription,
+  deleteConnectionToastDescription,
+} from './connection-model';
 import {
   closeConfirmationOnOpenChange,
   preventBusyConfirmationDismissal,
@@ -96,7 +102,7 @@ export default function ConnectionsPage() {
   const [editAccountKey, setEditAccountKey] = useState<Account | null>(null);
   const [loginImportOpen, setLoginImportOpen] = useState(false);
   const [importingAccount, setImportingAccount] = useState(false);
-  const [detailTicket, setDetailTicket] = useState<TicketView | null>(null);
+  const [deleteTicket, setDeleteTicket] = useState<TicketView | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const guideOpenedApiKeyRef = useRef(false);
 
@@ -202,34 +208,25 @@ export default function ConnectionsPage() {
     });
   }, []);
 
-  const handleDetailTicket = useCallback(
+  const extrasForTicket = useCallback(
+    (ticket: TicketView) =>
+      extrasFromPoolSource(ticket, findTicketPoolSource(ticket, pool.accounts, pool.providers)),
+    [pool.accounts, pool.providers],
+  );
+
+  const handleEditTicket = useCallback(
     (ticket: TicketView) => {
-      setDetailTicket(ticket);
-      if (ticket.sourceKind === 'provider') {
-        const provider = providersForAgent(pool.providers, ticket.agentId).find(
-          (p) => p.id === ticket.sourceId,
-        ) ?? pool.providers.find((p) => p.id === ticket.sourceId);
-        if (provider) {
-          setEditProvider(provider);
-          setApiKeyDialogOpen(true);
-          return;
-        }
+      const source = findTicketPoolSource(ticket, pool.accounts, pool.providers);
+      if (source.provider) {
+        setEditProvider(source.provider);
+        setApiKeyDialogOpen(true);
+        return;
       }
-      if (ticket.sourceKind === 'account') {
-        const account = accountsForAgent(pool.accounts, ticket.agentId).find(
-          (a) => a.id === ticket.sourceId,
-        ) ?? pool.accounts.find((a) => a.id === ticket.sourceId);
-        if (account?.kind === 'apikey') {
-          setEditAccountKey(account);
-          return;
-        }
+      if (source.account?.kind === 'apikey') {
+        setEditAccountKey(source.account);
       }
-      toast({
-        title: ticket.label,
-        description: `${ticketCredentialHint(ticket)} · 所属 ${agentDisplayName(ticket.agentId)}`,
-      });
     },
-    [pool.accounts, pool.providers, toast],
+    [pool.accounts, pool.providers],
   );
 
   const confirmImportLogin = async () => {
@@ -256,17 +253,22 @@ export default function ConnectionsPage() {
     }
   };
 
-  const confirmDeleteDetail = async () => {
-    if (!detailTicket) return;
+  const confirmDeleteTicket = async () => {
+    if (!deleteTicket) return;
+    const extras = extrasForTicket(deleteTicket);
     setDeleteBusy(true);
     try {
-      if (detailTicket.sourceKind === 'account') {
-        await deleteAccount(detailTicket.agentId, detailTicket.sourceId);
+      if (deleteTicket.sourceKind === 'account') {
+        await deleteAccount(deleteTicket.agentId, deleteTicket.sourceId);
       } else {
-        await deleteProvider(detailTicket.agentId, detailTicket.sourceId);
+        await deleteProvider(deleteTicket.agentId, deleteTicket.sourceId);
       }
-      setDetailTicket(null);
-      toast({ title: '已移入回收站', variant: 'success' });
+      setDeleteTicket(null);
+      toast({
+        title: '已移入回收站',
+        description: deleteConnectionToastDescription({ isCurrent: extras.isCurrent === true }),
+        variant: 'success',
+      });
       await loadWallet();
       await poolReload().catch(() => {});
     } catch (e) {
@@ -363,7 +365,9 @@ export default function ConnectionsPage() {
             highlightAgentId={highlightAgentId}
             initialFilter={initialFilter}
             onConnectTicket={handleConnectTicket}
-            onDetailTicket={handleDetailTicket}
+            extrasForTicket={extrasForTicket}
+            onEditTicket={handleEditTicket}
+            onDeleteTicket={setDeleteTicket}
             addAgentId={addAgentId}
             installedAgentIds={allowedAgents}
             onPickAddAgent={setAddAgentId}
@@ -423,28 +427,36 @@ export default function ConnectionsPage() {
       </Dialog>
 
       <Dialog
-        open={Boolean(detailTicket) && !apiKeyDialogOpen && !editAccountKey}
+        open={Boolean(deleteTicket)}
         onOpenChange={(open) => {
-          if (!open && !deleteBusy) setDetailTicket(null);
+          if (!open && !deleteBusy) setDeleteTicket(null);
         }}
       >
-        <DialogContent className="max-w-sm" hideClose={deleteBusy}>
+        <DialogContent
+          className="max-w-sm"
+          hideClose={deleteBusy}
+          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(deleteBusy, event)}
+          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(deleteBusy, event)}
+          onInteractOutside={(event) => preventBusyConfirmationDismissal(deleteBusy, event)}
+        >
           <DialogHeader>
-            <DialogTitle>{detailTicket?.label}</DialogTitle>
+            <DialogTitle>移入回收站？</DialogTitle>
             <DialogDescription>
-              {detailTicket
-                ? `${ticketCredentialHint(detailTicket)} · 所属 ${agentDisplayName(detailTicket.agentId)}`
+              {deleteTicket
+                ? `${deleteTicket.label} · ${deleteConnectionDialogDescription({
+                    isCurrent: extrasForTicket(deleteTicket).isCurrent === true,
+                  })}`
                 : ''}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" disabled={deleteBusy} onClick={() => setDetailTicket(null)}>
-              关闭
+            <Button variant="outline" disabled={deleteBusy} onClick={() => setDeleteTicket(null)}>
+              取消
             </Button>
             <Button
               variant="danger"
               disabled={deleteBusy}
-              onClick={() => void confirmDeleteDetail()}
+              onClick={() => void confirmDeleteTicket()}
             >
               {deleteBusy ? '删除中…' : '移入回收站'}
             </Button>
@@ -453,7 +465,7 @@ export default function ConnectionsPage() {
       </Dialog>
 
       <ApiKeyAccountDialog
-        agentId={addAgentId}
+        agentId={editAccountKey?.agentId ?? addAgentId}
         mode="edit"
         account={editAccountKey}
         open={!!editAccountKey}
@@ -488,10 +500,4 @@ export default function ConnectionsPage() {
       />
     </div>
   );
-}
-
-function ticketCredentialHint(ticket: TicketView): string {
-  if (ticket.credentialClass === 'oauth') return '官方登录';
-  if (ticket.credentialClass === 'api_key') return 'API Key';
-  return '未识别';
 }

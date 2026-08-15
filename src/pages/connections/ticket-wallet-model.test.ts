@@ -1,14 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import type { TicketWallet } from '@/lib/backend/contracts/ticket';
+import { agentDisplayName } from '@/config/agents';
+import type { Account, Provider } from '@/lib/types';
+import type { TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
 import {
   activeBindingForAgent,
+  buildTicketDetailFields,
   buildTicketWalletRows,
   countTicketsByFilter,
   dashboardBindingMetaText,
+  extrasFromPoolSource,
   filterTickets,
+  findTicketPoolSource,
+  formatTicketBindingDetailLines,
   formatTicketUsageText,
   isUnrecognizedTicket,
   searchTickets,
+  ticketDetailEditLabel,
 } from './ticket-wallet-model';
 
 function sampleWallet(): TicketWallet {
@@ -163,5 +170,115 @@ describe('buildTicketWalletRows', () => {
     expect(hit?.ticket.label).toBe('Kimi 会员');
     expect(hit?.binding.route).toBe('bridge');
     expect(activeBindingForAgent(wallet, 'pi')).toBeNull();
+  });
+});
+
+function ticket(partial: Partial<TicketView> & Pick<TicketView, 'id'>): TicketView {
+  return {
+    sourceKind: 'provider',
+    sourceId: 'kimi-1',
+    agentId: 'kimi',
+    label: 'Kimi 会员',
+    surface: 'kimi-code-membership',
+    credentialClass: 'api_key',
+    speaks: ['anthropic-messages'],
+    importedFrom: 'kimi',
+    ...partial,
+  };
+}
+
+function account(partial: Partial<Account> & Pick<Account, 'id' | 'kind' | 'label'>): Account {
+  return {
+    agentId: 'claude',
+    isCurrent: false,
+    tokenValid: true,
+    ...partial,
+  };
+}
+
+function provider(partial: Partial<Provider> & Pick<Provider, 'id' | 'name'>): Provider {
+  return {
+    agentId: 'claude',
+    preset: 'custom',
+    configText: JSON.stringify({
+      env: {
+        ANTHROPIC_BASE_URL: 'https://relay.example.com',
+        ANTHROPIC_AUTH_TOKEN: '***',
+      },
+    }),
+    configFormat: 'json',
+    isCurrent: false,
+    ...partial,
+  };
+}
+
+describe('ticket detail fields', () => {
+  it('shows ticket identity without opening an edit form', () => {
+    const fields = buildTicketDetailFields(ticket({ id: 'provider:kimi-1' }), {
+      endpointMode: 'custom',
+      endpointHost: 'relay.example.com',
+    });
+    expect(fields).toEqual(expect.arrayContaining([
+      { label: '类型', value: 'API Key' },
+      { label: '票面', value: '会员' },
+      { label: '所属', value: agentDisplayName('kimi') },
+      { label: '导入自', value: agentDisplayName('kimi') },
+      { label: '端点', value: '自定义' },
+      { label: 'Endpoint', value: 'relay.example.com', mono: true },
+      { label: '协议', value: 'anthropic-messages' },
+    ]));
+  });
+
+  it('lists bindings including inactive and stopped bridges', () => {
+    const wallet = sampleWallet();
+    expect(formatTicketBindingDetailLines(
+      wallet.bindings.filter((binding) => binding.ticketId === 'provider:kimi-1'),
+    )).toEqual([
+      `${agentDisplayName('claude')} · 改配置 · 当前`,
+      `${agentDisplayName('codex')} · 本机桥 · 当前 · 运行中 · 端口 8123`,
+    ]);
+    expect(formatTicketBindingDetailLines(
+      wallet.bindings.filter((binding) => binding.ticketId === 'account:oauth-1'),
+    )).toEqual([`${agentDisplayName('claude')} · 切换`]);
+  });
+
+  it('joins pool extras so OAuth can be inspected and API Key can be edited', () => {
+    const oauth = ticket({
+      id: 'account:oauth-1',
+      sourceKind: 'account',
+      sourceId: 'oauth-1',
+      agentId: 'claude',
+      label: 'me@example.com',
+      surface: 'claude-subscription',
+      credentialClass: 'oauth',
+      speaks: [],
+      importedFrom: 'claude',
+    });
+    const source = findTicketPoolSource(oauth, [
+      account({
+        id: 'oauth-1',
+        kind: 'oauth',
+        label: 'me@example.com',
+        email: 'me@example.com',
+        subscription: 'Pro',
+        quota5hPct: 40,
+      }),
+    ], []);
+    const extras = extrasFromPoolSource(oauth, source);
+    expect(extras.identity).toBe('me@example.com');
+    expect(extras.canEditKey).toBe(false);
+    expect(extras.canEditConfig).toBe(false);
+    expect(ticketDetailEditLabel(extras)).toBeNull();
+
+    const keyTicket = ticket({ id: 'provider:kimi-1' });
+    const keyExtras = extrasFromPoolSource(
+      keyTicket,
+      findTicketPoolSource(keyTicket, [], [
+        provider({ id: 'kimi-1', agentId: 'kimi', name: 'Kimi 会员' }),
+      ]),
+    );
+    expect(keyExtras.canEditConfig).toBe(true);
+    expect(keyExtras.endpointHost).toBe('relay.example.com');
+    expect(ticketDetailEditLabel(keyExtras)).toBe('编辑配置');
   });
 });
