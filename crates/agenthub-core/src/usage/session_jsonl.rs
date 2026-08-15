@@ -2283,4 +2283,58 @@ mod tests {
         assert_eq!(batch.events[1].cost_usd, Some(0.001));
         assert!(batch.events.iter().all(|e| e.input_tokens < 50));
     }
+
+    #[test]
+    fn discover_dsh_files_only_known_roots() {
+        use std::sync::Mutex;
+        static ENV_LOCK: Mutex<()> = Mutex::new(());
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempdir().unwrap();
+        let home = dir.path().join("dsh-home");
+        let extra = dir.path().join("session-root");
+        let cwd_sessions = dir.path().join(".sessions");
+        std::fs::create_dir_all(home.join("sessions/node_modules")).unwrap();
+        std::fs::create_dir_all(home.join("sessions/cache.db")).unwrap();
+        std::fs::create_dir_all(home.join("profiles/headless/sessions")).unwrap();
+        std::fs::create_dir_all(&extra).unwrap();
+        std::fs::create_dir_all(&cwd_sessions).unwrap();
+        std::fs::write(home.join("sessions/keep.jsonl"), "{}\n").unwrap();
+        std::fs::write(
+            home.join("profiles/headless/sessions/profile.jsonl"),
+            "{}\n",
+        )
+        .unwrap();
+        std::fs::write(home.join("sessions/node_modules/skip.jsonl"), "{}\n").unwrap();
+        std::fs::write(home.join("sessions/cache.db/skip.jsonl"), "{}\n").unwrap();
+        std::fs::write(extra.join("extra.jsonl"), "{}\n").unwrap();
+        std::fs::write(cwd_sessions.join("random.jsonl"), "{}\n").unwrap();
+
+        let prev_home = std::env::var_os("DSH_HOME");
+        let prev_root = std::env::var_os("DSH_SESSION_ROOT");
+        std::env::set_var("DSH_HOME", &home);
+        std::env::set_var("DSH_SESSION_ROOT", &extra);
+        let files = discover_dsh_files().expect("discover");
+        match prev_home {
+            Some(v) => std::env::set_var("DSH_HOME", v),
+            None => std::env::remove_var("DSH_HOME"),
+        }
+        match prev_root {
+            Some(v) => std::env::set_var("DSH_SESSION_ROOT", v),
+            None => std::env::remove_var("DSH_SESSION_ROOT"),
+        }
+
+        let names: Vec<String> = files
+            .iter()
+            .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(str::to_string))
+            .collect();
+        assert!(names.contains(&"keep.jsonl".into()), "{names:?}");
+        assert!(names.contains(&"profile.jsonl".into()), "{names:?}");
+        assert!(names.contains(&"extra.jsonl".into()), "{names:?}");
+        assert!(!names.contains(&"skip.jsonl".into()), "{names:?}");
+        assert!(!names.contains(&"random.jsonl".into()), "{names:?}");
+        assert!(files.iter().all(|p| {
+            let s = p.to_string_lossy();
+            !s.contains("node_modules") && !s.contains(".db") && !s.contains(".sessions")
+        }));
+    }
 }

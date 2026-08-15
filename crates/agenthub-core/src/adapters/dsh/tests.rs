@@ -1,5 +1,5 @@
 use super::*;
-use crate::models::{AccountKind, AgentId, Capability, CapabilityLevel};
+use crate::models::{AccountKind, AgentId, AuthHealth, Capability, CapabilityLevel};
 use crate::utils::paths::home_dir;
 use serde_json::json;
 use std::sync::Mutex;
@@ -46,23 +46,14 @@ fn capability_is_exhaustive_and_honest() {
         adapter.capability(Capability::Usage).level,
         CapabilityLevel::Full
     );
-    for cap in [
-        Capability::ConfigWrite,
-        Capability::AccountSwitch,
-        Capability::ApiKeyAccount,
-        Capability::Skills,
-        Capability::LiveBackup,
-        Capability::StructuredStream,
-        Capability::DangerousMode,
-        Capability::ProjectHistory,
-        Capability::ProjectDelete,
-        Capability::ProviderPresets,
-        Capability::Usage,
-        Capability::Mcp,
-        Capability::ModelSelect,
-        Capability::SessionResume,
-    ] {
-        let _ = adapter.capability(cap);
+    for cap in Capability::ALL {
+        let state = adapter.capability(cap);
+        if state.level != CapabilityLevel::Full {
+            assert!(
+                state.reason.is_some(),
+                "{cap:?} non-full cell must explain itself"
+            );
+        }
     }
 }
 
@@ -161,21 +152,134 @@ fn write_config_peels_api_key_into_credentials() {
 
 #[test]
 fn build_run_spec_uses_headless_profile() {
-    let spec = DshAdapter
-        .build_run_spec(
-            std::path::Path::new("/usr/bin/dsh"),
-            "fix tests",
-            &RunOptions {
-                allow_dangerous: true,
-                ..RunOptions::default()
-            },
+    let dir = tempfile::tempdir().unwrap();
+    with_dsh_home(dir.path(), || {
+        let spec = DshAdapter
+            .build_run_spec(
+                std::path::Path::new("/usr/bin/dsh"),
+                "fix tests",
+                &RunOptions {
+                    allow_dangerous: true,
+                    ..RunOptions::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(spec.args, vec!["--profile", "headless", "fix tests"]);
+        assert!(
+            !spec
+                .args
+                .iter()
+                .any(|a| a.contains("yolo") || a.contains("danger")),
+            "must not invent danger flags"
+        );
+        assert!(
+            spec.env
+                .iter()
+                .any(|(k, v)| k == "DSH_HOME" && v == &dir.path().to_string_lossy()),
+            "run spec must pin DSH_HOME: {:?}",
+            spec.env
+        );
+    });
+}
+
+#[test]
+fn write_config_skips_connection_secret_marker() {
+    let dir = tempfile::tempdir().unwrap();
+    with_dsh_home(dir.path(), || {
+        write_dsh_config(&AgentConfig {
+            agent: AgentId::Dsh,
+            raw: json!({ "apiKey": "$AGENTHUB_CONNECTION_SECRET$" }),
+        })
+        .unwrap();
+        let creds = dir.path().join(CREDENTIALS_FILE);
+        if creds.exists() {
+            let text = std::fs::read_to_string(&creds).unwrap();
+            assert!(
+                !text.contains("$AGENTHUB_CONNECTION_SECRET$"),
+                "marker must not land in credentials: {text}"
+            );
+        }
+        let patch = std::fs::read_to_string(dir.path().join(HOME_PATCH_FILE)).unwrap();
+        assert!(!patch.contains("$AGENTHUB_CONNECTION_SECRET$"));
+        assert!(!patch.to_ascii_lowercase().contains("sk-"));
+    });
+}
+
+#[test]
+fn write_config_rejects_wrong_agent_and_embedded_secret_patch() {
+    let err = write_dsh_config(&AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({ "model": "x" }),
+    })
+    .unwrap_err();
+    assert_eq!(err.code(), "invalid_arg");
+
+    let dir = tempfile::tempdir().unwrap();
+    with_dsh_home(dir.path(), || {
+        std::fs::write(
+            dir.path().join(HOME_PATCH_FILE),
+            "- id: @deepseek-ai/dsh-llm-deepseek\n  config:\n    apiKey: sk-already-in-patch\n",
         )
         .unwrap();
-    assert_eq!(spec.args, vec!["--profile", "headless", "fix tests"]);
-    assert!(
-        !spec.args.iter().any(|a| a.contains("yolo") || a.contains("danger")),
-        "must not invent danger flags"
-    );
+        let err = write_dsh_config(&AgentConfig {
+            agent: AgentId::Dsh,
+            raw: json!({ "model": "deepseek-v4-flash" }),
+        })
+        .unwrap_err();
+        assert_eq!(err.code(), "invalid_arg");
+        let patch = std::fs::read_to_string(dir.path().join(HOME_PATCH_FILE)).unwrap();
+        assert!(patch.contains("sk-already-in-patch"));
+    });
+}
+
+#[test]
+fn read_auth_reports_missing_file_and_env() {
+    let dir = tempfile::tempdir().unwrap();
+    with_dsh_home(dir.path(), || {
+        let missing = DshAdapter.read_auth().unwrap();
+        assert!(!missing.has_credentials);
+        assert_eq!(missing.health, AuthHealth::Missing);
+
+        write_credential_value(
+            &dir.path().join(CREDENTIALS_FILE),
+            DEFAULT_API_KEY_ENV,
+            "sk-file-only",
+        )
+        .unwrap();
+        let file = DshAdapter.read_auth().unwrap();
+        assert!(file.has_credentials);
+        assert_eq!(file.source.as_deref(), Some("dsh:credentials"));
+    });
+}
+
+#[test]
+fn live_backup_paths_cover_patch_and_credentials() {
+    let dir = tempfile::tempdir().unwrap();
+    with_dsh_home(dir.path(), || {
+        let paths = DshAdapter.live_backup_paths();
+        assert!(paths.iter().any(|p| p.ends_with(HOME_PATCH_FILE)));
+        assert!(paths.iter().any(|p| p.ends_with(CREDENTIALS_FILE)));
+    });
+}
+
+#[test]
+fn read_config_does_not_surface_credential_value() {
+    let dir = tempfile::tempdir().unwrap();
+    with_dsh_home(dir.path(), || {
+        write_dsh_config(&AgentConfig {
+            agent: AgentId::Dsh,
+            raw: json!({
+                "model": "deepseek-v4-pro",
+                "apiKey": "sk-hidden-from-read"
+            }),
+        })
+        .unwrap();
+        let cfg = DshAdapter.read_config().unwrap();
+        let dumped = serde_json::to_string(&cfg.raw).unwrap();
+        assert!(!dumped.contains("sk-hidden-from-read"));
+        assert_eq!(cfg.raw["model"], "deepseek-v4-pro");
+        assert_eq!(cfg.raw["apiKeyEnv"], DEFAULT_API_KEY_ENV);
+    });
 }
 
 #[test]

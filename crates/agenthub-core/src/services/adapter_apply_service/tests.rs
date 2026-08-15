@@ -1489,6 +1489,34 @@ fn dsh_agent_id_alone_does_not_apply() {
 }
 
 #[test]
+fn deepseek_host_without_preset_applies_to_dsh() {
+    let (dir, db) = test_db();
+    let source = Provider {
+        id: "ds-host".into(),
+        agent_id: AgentId::Claude,
+        name: "DeepSeek host".into(),
+        settings_config: json!({
+            "apiKey": "sk-from-host",
+            "baseUrl": "https://api.deepseek.com",
+        }),
+        meta: json!({}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    };
+    ProviderRepo::new(db.clone()).create(&source).unwrap();
+    let fake = Arc::new(FakeDshAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db, registry, dir.path().join("backups"));
+
+    let result = service.apply(&request(&source.id, AgentId::Dsh)).unwrap();
+    assert_eq!(result.profile.rule_id, DEEPSEEK_DSH_RULE_ID);
+    assert_eq!(fake.read_config().unwrap().raw["api_key"], "sk-from-host");
+    assert!(!serde_json::to_string(&result).unwrap().contains("sk-from-host"));
+}
+
+#[test]
 fn deepseek_api_to_claude_apply_is_rejected() {
     let (dir, db) = test_db();
     ProviderRepo::new(db.clone())
