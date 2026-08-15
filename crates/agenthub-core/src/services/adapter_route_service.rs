@@ -5,6 +5,8 @@
 //!
 //! `plan()` is the only public planner exit: it computes route, maturity,
 //! `can_apply`, and reason. `can_apply` is **matrix open ∩ write_gate**.
+//! `write_gate` is true only when a bind implementation exists for this
+//! ticket `source_kind` and the secret can be resolved on that kind.
 //! The matrix is the graph; `write_gate` is a private helper, not a third
 //! public truth. The matrix alone never authorizes writes.
 
@@ -53,8 +55,7 @@ impl AdapterRouteService {
     ///
     /// This is the only public place that computes `can_apply`, maturity, route,
     /// and the planner reason. Write permission is matrix-open ∩ [`write_gate`].
-    /// Account rows share the same edge as the matching Provider surface but
-    /// stay unwritable until bind lands.
+    /// `can_apply` means bind would succeed now for this ticket `source_kind`.
     pub fn plan(&self, request: &AdapterRouteRequest) -> Result<AdapterApplyPlan> {
         let classified = self.classify(request)?;
         let analysis = analysis_from_decision(&classified.decision, &classified.source, request);
@@ -105,18 +106,14 @@ impl AdapterRouteService {
             }
         };
 
-        let gate = write_gate(classified.decision.can_apply, request, &analysis);
+        let can_apply = write_gate(classified.decision.can_apply, request, &analysis);
         let maturity = adapter_maturity_from_decision(&classified.decision);
-        let reason = if gate.same_edge_unwritable {
-            format!("{} {SAME_EDGE_UNWRITABLE_REASON}", analysis.reason)
-        } else {
-            analysis.reason.clone()
-        };
+        let reason = analysis.reason.clone();
 
         Ok(AdapterApplyPlan {
             analysis,
             target_agent_id: request.target_agent_id,
-            can_apply: gate.can_apply,
+            can_apply,
             maturity,
             reason,
             service_impact,
@@ -319,62 +316,61 @@ fn is_codex_auth_json(format: Option<&str>, credentials: &Value) -> bool {
         })
 }
 
-/// Same-edge Account (or other non-Provider) rows keep the matrix route but
-/// cannot be written until bind accepts ticket sources.
-const SAME_EDGE_UNWRITABLE_REASON: &str =
-    "同边但暂不可写：写入仍只接受 Provider 行，下一步 bind 打通。";
-
 /// Private write gate for `plan()`. Not a public third source of truth.
 ///
-/// Matrix `can_apply` is necessary but not sufficient: Account sources on an
-/// open edge stay closed (`can_apply=false`) with an explicit same-edge reason.
-struct WriteGate {
-    can_apply: bool,
-    same_edge_unwritable: bool,
-}
-
+/// Matrix `can_apply` is necessary but not sufficient. A write is open only
+/// when a bind implementation exists for this `(rule, source_kind, target)`
+/// and the secret resolver can take that ticket's `source_kind`.
 fn write_gate(
     matrix_can_apply: bool,
     request: &AdapterRouteRequest,
     analysis: &AdapterRouteAnalysis,
-) -> WriteGate {
-    if !matrix_can_apply {
-        return WriteGate {
-            can_apply: false,
-            same_edge_unwritable: false,
-        };
-    }
-    let implemented_path = matches!(
-        (analysis.route, analysis.support, request.target_agent_id),
+) -> bool {
+    matrix_can_apply && bind_implementation_open(request, analysis)
+}
+
+/// Bind implementations opened in this step. Kimi membership secrets stay
+/// Provider-only; Anthropic API secrets also resolve from an Account row.
+fn bind_implementation_open(
+    request: &AdapterRouteRequest,
+    analysis: &AdapterRouteAnalysis,
+) -> bool {
+    match (
+        analysis.rule_id.as_deref(),
+        request.source_kind,
+        request.target_agent_id,
+        analysis.route,
+        analysis.support,
+    ) {
         (
+            Some("kimi-membership-to-claude-v1"),
+            AdapterSourceKind::Provider,
+            AgentId::Claude,
             AdapterRoute::NativeEndpoint,
             AdapterSupport::Stable,
-            AgentId::Claude
-        ) | (
+        )
+        | (
+            Some("kimi-membership-to-pi-v1"),
+            AdapterSourceKind::Provider,
+            AgentId::Pi,
             AdapterRoute::ConfigSync,
             AdapterSupport::Stable,
-            AgentId::Pi
-        ) | (
+        )
+        | (
+            Some("kimi-membership-to-codex-v1"),
+            AdapterSourceKind::Provider,
+            AgentId::Codex,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
-            AgentId::Codex
         )
-    );
-    if !implemented_path {
-        return WriteGate {
-            can_apply: false,
-            same_edge_unwritable: false,
-        };
-    }
-    if request.source_kind != AdapterSourceKind::Provider {
-        return WriteGate {
-            can_apply: false,
-            same_edge_unwritable: true,
-        };
-    }
-    WriteGate {
-        can_apply: true,
-        same_edge_unwritable: false,
+        | (
+            Some("anthropic-api-to-pi-v1"),
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            AgentId::Pi,
+            AdapterRoute::ConfigSync,
+            AdapterSupport::Stable,
+        ) => true,
+        _ => false,
     }
 }
 

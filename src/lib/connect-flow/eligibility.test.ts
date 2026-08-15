@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { getBackend } from '@/app/runtime';
+import { planTicket } from '@/lib/api/tickets';
+import { upsertMockAccount } from '@/dev/mocks/account';
 import type { Account, AgentStatus, Provider } from '@/lib/types';
 import type { AdapterApplyPlan, AdapterProfile, AdapterRouteAnalysis } from '@/lib/api/adapter';
 import { buildSourceOptions, isOauthIncomplete, planMaturityLabel, planToEligibility } from './eligibility';
@@ -124,6 +127,29 @@ describe('planToEligibility', () => {
       reason,
     });
     expect(ready.kind === 'ready' && ready.reason).toBe(reason);
+  });
+
+  it('Account Anthropic → Pi is writable from plan.canApply', async () => {
+    getBackend();
+    upsertMockAccount({
+      id: 'anth-acc-elig',
+      agentId: 'claude',
+      kind: 'apikey',
+      label: 'Anthropic key',
+      isCurrent: false,
+      tokenValid: true,
+      extra: { provider: 'anthropic' },
+    } as Account);
+    const planned = await planTicket('account:anth-acc-elig', 'pi');
+    expect(planned.canApply).toBe(true);
+    expect(planned.analysis.route).toBe('config_sync');
+    const eligibility = planToEligibility(planned);
+    expect(eligibility).toMatchObject({
+      kind: 'ready',
+      canApply: true,
+      routeSummary: '直接同步',
+    });
+    expect(eligibility.kind === 'ready' && eligibility.reason).toBeUndefined();
   });
 
   it('prefers plan.reason over analysis.reason when canApply is false', () => {

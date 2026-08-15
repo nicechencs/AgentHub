@@ -1,7 +1,15 @@
-import type { AdapterApplyPlan, TicketPort, TicketWallet } from '@/lib/backend/contracts';
+import type {
+  AdapterApplyPlan,
+  BindTicketResult,
+  TicketPort,
+  TicketWallet,
+} from '@/lib/backend/contracts';
 import {
+  mapBindTicketResult,
   mapPlanTicketResult,
   mapTicketWallet,
+  mapUnbindTicketResult,
+  type BindTicketResultWire,
   type TicketWalletWire,
 } from '@/lib/backend/contracts/ticket';
 import type { AdapterApplyPlanWire } from '@/lib/backend/contracts/adapter-wire';
@@ -17,7 +25,7 @@ async function invokeTicket<T>(cmd: string, args?: Record<string, unknown>): Pro
   }
 }
 
-/** Tauri ticket-wallet read model + plan_ticket transport. */
+/** Tauri ticket-wallet + plan/bind/unbind transport. */
 export function createTauriTicketPort(): TicketPort {
   return {
     async listWallet(): Promise<TicketWallet> {
@@ -30,6 +38,20 @@ export function createTauriTicketPort(): TicketPort {
         targetAgentId,
       });
       return mapPlanTicketResult(wire);
+    },
+    async bind(ticketId: string, targetAgentId: AgentId): Promise<BindTicketResult> {
+      const wire = await invokeTicket<BindTicketResultWire>('bind_ticket', {
+        ticketId,
+        targetAgentId,
+      });
+      return mapBindTicketResult(wire);
+    },
+    async unbind(ticketId: string, agentId: AgentId): Promise<void> {
+      const wire = await invokeTicket<unknown>('unbind_ticket', {
+        ticketId,
+        agentId,
+      });
+      mapUnbindTicketResult(wire);
     },
   };
 }

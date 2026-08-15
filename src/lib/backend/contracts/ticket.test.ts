@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   bindingRouteDashboardLabel,
   bindingRouteUsageLabel,
+  isActiveBindingForAgent,
+  mapBindTicketResult,
   mapBindingView,
   mapPlanTicketResult,
   mapTicketView,
   mapTicketWallet,
+  mapUnbindTicketResult,
   ticketCredentialClassLabel,
+  ticketIdFor,
   ticketSurfaceLabel,
 } from './ticket';
 
@@ -175,6 +179,42 @@ describe('Ticket Rust wire mappers', () => {
       analysis: { route: 'config_sync' },
       targetAgentId: 'claude',
     });
+  });
+
+  it('maps bind_ticket { binding } with the same BindingView fields as list_ticket_wallet', () => {
+    const result = mapBindTicketResult({
+      binding: {
+        ticketId: 'account:anth-1',
+        agentId: 'pi',
+        route: 'reshape',
+        active: true,
+        profileId: 'prof-pi',
+        bridge: null,
+      },
+    });
+    expect(result.binding).toEqual({
+      ticketId: 'account:anth-1',
+      agentId: 'pi',
+      route: 'reshape',
+      active: true,
+      profileId: 'prof-pi',
+      bridge: null,
+    });
+    expect(isActiveBindingForAgent(result.binding, 'pi')).toBe(true);
+    expect(isActiveBindingForAgent(result.binding, 'claude')).toBe(false);
+  });
+
+  it('rejects bind_ticket wire without binding, and accepts empty unbind_ticket', () => {
+    expect(() => mapBindTicketResult({} as never)).toThrow(/binding/);
+    expect(() => mapUnbindTicketResult('nope')).toThrow(/unbind_ticket/);
+    expect(mapUnbindTicketResult({})).toBeUndefined();
+    expect(mapUnbindTicketResult({ tickets: [], bindings: [] })).toBeUndefined();
+    expect(mapUnbindTicketResult(null)).toBeUndefined();
+  });
+
+  it('builds ticket ids from source kind + row id', () => {
+    expect(ticketIdFor('account', 'anth-1')).toBe('account:anth-1');
+    expect(ticketIdFor('provider', 'kimi-1')).toBe('provider:kimi-1');
   });
 });
 

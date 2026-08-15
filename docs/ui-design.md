@@ -7,7 +7,7 @@
 > v1.3：Agents / 首次引导增加 **「环境未就绪」** 态；安装链路先 Runtime 再 Agent。  
 > v1.4：环境条/安装预览按宿主平台分流——macOS 不展示 PowerShell；native 命令预览 Windows=`irm|iex`、macOS=`curl|bash`；Runtime 修复默认 winget/brew。  
 > 2026-08-14 Hub Phase 1：推荐入口为 Dashboard「连接/切换」与 Connections「接到…」，统一 `ConnectFlowDialog`；Adapter 页是桥的高级管理。  
-> 2026-08-15：Connections 全局钱包与真票「接到…」、Dashboard 当前绑定读模型已落地（见 [connection-binding-model.md](connection-binding-model.md) §5–§6 第 1 步）；`bind`/`unbind` 写入仍未改。下文 §4.1 / §4.3 为目标线框。
+> 2026-08-15：Connections 全局钱包与真票「接到…」、Dashboard 当前绑定读模型已落地（见 [connection-binding-model.md](connection-binding-model.md) §5–§6 第 1 步）；ConnectFlow 确认步走 `bind`，Adapter 页删除走 `unbind`。下文 §4.1 / §4.3 为目标线框。
 
 ## 1. 设计原则
 
@@ -210,7 +210,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - **每一张真票都有「接到…」**，打开同一绑定对话框（票固定，选 Agent）。无边、无 writer、未识别：对话框内置灰 + 原因，不在行上隐藏动作。
 - 「切换」只用于该票对原生 Agent 的 native 绑定。接到其他 Agent 一律走 `bind`。
 - 添加票时写下 `surface`。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意 Agent）。
-- **已落地（读模型）**：跨 Agent 钱包列表 + 真票常驻「接到…」+ Dashboard 当前绑定；生成投影不进钱包。写入仍走既有 apply，见 [connection-binding-model.md](connection-binding-model.md) §6。
+- **已落地（读模型 + 写入）**：跨 Agent 钱包列表 + 真票常驻「接到…」+ Dashboard 当前绑定；生成投影不进钱包。确认步走 `bind`，成功以该 Agent 的 active 绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
 - 实现落点：`TicketWalletList` / `ticket-wallet-model` / `lib/api/tickets`；`reuse-offer` 为真票常驻语义。
 
 #### 4.3.1 mode=providers — API 配置

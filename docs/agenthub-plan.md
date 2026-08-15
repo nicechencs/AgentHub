@@ -351,7 +351,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 前端 backend 分层（tauri / mocks / contracts / api façade） | ✅；`pnpm build` 强制 Tauri + 护栏 |
 | CLI `run` 多 Agent headless | ✅ |
 | 日志 tracing 文件 + 脱敏 | ✅ 见 logging.md |
-| Adapter 规则分析 / 预览 / profile 管理 | ✅ 当前可写入：Kimi→Claude reshape、Kimi→Codex bridge、Kimi/Anthropic→Pi reshape；其余见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。目标：`plan`/`bind`，投影不进钱包，见 [connection-binding-model.md](connection-binding-model.md) |
+| Adapter 规则分析 / 预览 / profile 管理 | ✅ 当前可 bind：Kimi Provider→Claude/Pi reshape、Kimi Provider→Codex bridge、Anthropic Provider/Account→Pi reshape；其余见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。写入入口 `bind`/`unbind`，投影不进钱包，见 [connection-binding-model.md](connection-binding-model.md) |
 | Hub 统一连接流程 ConnectFlowDialog | ✅ Phase 1 外壳已落地。目标 UI：全局钱包 + 真票「接到…」。`plan.canApply` 只表示现在能写入 |
 | MCP 本机配置清单 | ✅ core 只读扫描 + Tauri command + 前端页面；不修改或注入配置；管理/注入仍 Planned，无假 UI |
 | Settings 持久化 | ✅ L1 SQLite 白名单（`SETTINGS_WHITELIST`）：`theme` / `language` / `log_level` / `log_retention_days` / `skill_market_source` / `close_to_tray` / `usage_collect_interval_min`。用量间隔：`None`=从未写入（前端默认 30）、`0`=仅手动、上限 1440。主题以 core 为准：Settings Select 预览、Save 落盘，启动 `getSettings` 对账。`autoStart` 为 OS 登录项；`closeToTray` 写 core 并同步 AppState |
@@ -367,7 +367,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | Dashboard **生产告警** | 🟡 | 生产从 doctor 派生 auth/env/update 告警（本地 dismiss）；无独立告警总线。mock 可演示额外样例 |
 | Tauri **事件桥** | ❌ | 文档目标；现以前端 refetch 为主 |
 | MCP **管理 / 注入**、`ModelSelect`、`SessionResume` | Planned | `Mcp` 矩阵仍表示管理/注入能力；独立的只读 MCP inventory 已落地，不改变矩阵状态 |
-| 票 / 绑定读模型与钱包重做 | ✅ 读模型、进口打标、`plan` 收口、拒投影已落地；`bind`/`unbind` 写入仍未改 | [connection-binding-model.md](connection-binding-model.md)：`list_ticket_wallet` / `plan_ticket`、全局钱包、「接到…」常驻、生成投影退出列表。`canApply` 仍受私有 write_gate（Account 暂不可写）。写入仍走既有 apply |
+| 票 / 绑定读模型与钱包重做 | ✅ 读模型、进口打标、`plan` 收口、拒投影、`bind`/`unbind` 写入已落地；§6.4–6.6 加边未做 | [connection-binding-model.md](connection-binding-model.md)：`list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`。`canApply` = 现在 bind 会成功（有实现且 secret 可按票 `source_kind` 解析）。本步打开 Anthropic API Account → Pi；Kimi 会员 Account 仍无分类规则。写入走 bind，apply 为薄兼容委托 |
 | Adapter 本地 Bridge 产品接线 | 🟡 部分实现 | core host、协议转换、Tauri controller、UI 控件、auto-start 恢复与退出 drain 已进入当前工作区；具体可执行状态见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)，端到端验收尚未收口 |
 | Adapter 用户级 sidecar | 🎯 目标已决策 / 未实现 | 当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有；待完成 Tauri-neutral control contract、`agenthub-adapterd`、本地 IPC、单实例/版本+schema 握手、SQLite shared/exclusive schema lease、更新/卸载 saga 和分阶段切换，见 [adapter-sidecar-design.md](adapter-sidecar-design.md) |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |

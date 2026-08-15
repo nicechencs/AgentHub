@@ -402,6 +402,29 @@ impl ProviderService {
         self.restore_live_config_snapshot_with_guard(&guard, snapshot)
     }
 
+    /// Restore a named live backup while an existing provider saga guard is held.
+    pub fn restore_named_backup_with_guard(
+        &self,
+        guard: &ProviderLiveSagaGuard<'_>,
+        backup_id: &str,
+    ) -> Result<()> {
+        let backup = self.backup.as_ref().ok_or_else(|| {
+            AppError::Unsupported(
+                "provider live restore requires an explicitly configured backup root".into(),
+            )
+        })?;
+        let record = backup.get_by_id(backup_id)?;
+        let agent = record.agent_id.ok_or_else(|| {
+            AppError::InvalidArg(format!(
+                "backup {backup_id} has no agent_id; cannot restore live files"
+            ))
+        })?;
+        self.validate_live_saga_guard(guard, agent)?;
+        backup
+            .restore_with_guard(guard.as_live_write_guard(), backup_id)
+            .map(|_| ())
+    }
+
     /// Restore a live config while an existing saga guard remains held.
     pub fn restore_live_config_snapshot_with_guard(
         &self,

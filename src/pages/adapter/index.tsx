@@ -4,12 +4,11 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { Button } from '@/components/ui/button';
 import {
-  removeAdapter,
   setAdapterBridgeAutoStart,
   startAdapterBridge,
   stopAdapterBridge,
 } from '@/lib/api/adapter';
-import { listTicketWallet } from '@/lib/api/tickets';
+import { listTicketWallet, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import { AdapterErrorLines, AdapterProfiles } from './adapter-components';
 import { AdapterProfileDetailDialog } from './AdapterProfileDetailDialog';
@@ -189,11 +188,16 @@ export default function AdapterPage() {
 
   const confirmRemove = async () => {
     if (!removeConfirm) return;
-    const profileId = removeConfirm.id;
+    const profile = removeConfirm;
+    const profileId = profile.id;
     setRemovingProfileId(profileId);
     clearProfileError(profileId);
     try {
-      await removeAdapter(profileId);
+      const wallet = await listTicketWallet();
+      const binding = wallet.bindings.find((row) => row.profileId === profile.id);
+      const ticketId = binding?.ticketId ?? ticketIdFor(profile.sourceKind, profile.sourceId);
+      const agentId = binding?.agentId ?? profile.targetAgentId;
+      await unbindTicket(ticketId, agentId);
       removeProfile(profileId);
       setRemoveConfirm(null);
       reloadThenClearProfileErrors();
@@ -343,7 +347,7 @@ export default function AdapterPage() {
           <DialogHeader className="shrink-0">
             <DialogTitle>删除此适配？</DialogTitle>
             <DialogDescription>
-              会移除适配配置。若仍是当前 Connection，删除会被拒绝。
+              会解除这条绑定并停桥。来源票仍留在钱包。
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">

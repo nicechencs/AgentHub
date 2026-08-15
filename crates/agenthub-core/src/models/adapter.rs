@@ -359,7 +359,8 @@ pub struct AdapterPlanChange {
 ///
 /// `can_apply` is true only when **both** hold:
 /// 1. the capability matrix cell is open (`can_apply` + all gates), and
-/// 2. plan's private `write_gate` allows a write *now* (Account stays closed).
+/// 2. plan's private `write_gate` allows a write *now* (bind implementation
+///    exists and the secret is resolvable for this ticket `source_kind`).
 /// The matrix alone never authorizes writes. Maturity describes the edge;
 /// `can_apply` describes today's write path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -371,8 +372,7 @@ pub struct AdapterApplyPlan {
     /// Four-tier edge maturity. Independent of `can_apply`.
     #[serde(default)]
     pub maturity: AdapterMaturity,
-    /// Planner-facing reason. Same gist as `analysis.reason`; write-gate
-    /// closures (same-edge Account) add an explicit unwritable explanation.
+    /// Planner-facing reason. Same gist as `analysis.reason`.
     #[serde(default)]
     pub reason: String,
     pub service_impact: AdapterServiceImpact,

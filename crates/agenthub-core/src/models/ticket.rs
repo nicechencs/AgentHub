@@ -202,6 +202,17 @@ pub struct TicketPlanRequest {
     pub target_agent_id: AgentId,
 }
 
+/// Input for `bind_ticket` / [`crate::services::TicketBindService::bind`].
+pub type TicketBindRequest = TicketPlanRequest;
+
+/// Input for `unbind_ticket` / [`crate::services::TicketBindService::unbind`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TicketUnbindRequest {
+    pub ticket_id: String,
+    pub agent_id: AgentId,
+}
+
 /// Write `surface` into an extra/meta JSON object (creates an object if needed).
 pub fn attach_persisted_surface(blob: &mut Value, surface: TicketSurface) {
     let encoded = Value::String(surface.as_str().to_owned());

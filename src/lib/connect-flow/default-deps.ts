@@ -2,10 +2,20 @@
  * ConnectFlow 默认依赖：组装既有 lib/api 门面与本目录纯函数实现。
  */
 import { switchAccount } from '@/lib/api/account';
-import { applyAdapter, listAdapterProfiles } from '@/lib/api/adapter';
-import { planTicket } from '@/lib/api/tickets';
+import { listAdapterProfiles } from '@/lib/api/adapter';
 import * as providerApi from '@/lib/api/provider';
-import type { AdapterApplyPlan, AdapterRouteRequest } from '@/lib/backend/contracts/adapter';
+import {
+  bindTicket,
+  isActiveBindingForAgent,
+  planTicket,
+  ticketIdFor,
+} from '@/lib/api/tickets';
+import type {
+  AdapterApplyPlan,
+  AdapterApplyRequest,
+  AdapterApplyResult,
+  AdapterRouteRequest,
+} from '@/lib/backend/contracts/adapter';
 import { buildSourceOptions, isOauthIncomplete } from './eligibility';
 import { createPlanFanout } from './plan-fanout';
 import type { ConnectFlowDeps, PlanFanoutDeps, SourceOption } from './types';
@@ -33,13 +43,44 @@ async function previewNative(option: SourceOption) {
 
 /** plan(ticket, agent) via ticket façade; request still uses source kind/id. */
 async function planViaTicket(request: AdapterRouteRequest): Promise<AdapterApplyPlan> {
-  return planTicket(`${request.sourceKind}:${request.sourceId}`, request.targetAgentId);
+  return planTicket(ticketIdFor(request.sourceKind, request.sourceId), request.targetAgentId);
+}
+
+/**
+ * Confirm step writes via bind. Success is the Agent's active binding,
+ * not "go switch the generated provider in the wallet again".
+ */
+async function bindViaTicket(request: AdapterApplyRequest): Promise<AdapterApplyResult> {
+  const ticketId = ticketIdFor(request.sourceKind, request.sourceId);
+  const { binding } = await bindTicket(ticketId, request.targetAgentId);
+  if (!isActiveBindingForAgent(binding, request.targetAgentId)) {
+    throw new Error('绑定未成为该 Agent 的当前连接');
+  }
+  const profiles = await listAdapterProfiles();
+  const profile = binding.profileId
+    ? profiles.find((row) => row.id === binding.profileId)
+    : profiles.find((row) => (
+      row.sourceKind === request.sourceKind
+      && row.sourceId === request.sourceId
+      && row.targetAgentId === request.targetAgentId
+    ));
+  if (!profile) {
+    throw new Error('绑定已生效，但未找到适配配置');
+  }
+  const providers = await providerApi.listProviders(request.targetAgentId);
+  const provider = profile.generatedProviderId
+    ? providers.find((row) => row.id === profile.generatedProviderId)
+    : undefined;
+  if (!provider) {
+    throw new Error('绑定已生效，但未找到生成连接');
+  }
+  return { profile, provider };
 }
 
 export function createDefaultConnectFlowDeps(): ConnectFlowDeps {
   return {
     plan: planViaTicket,
-    apply: applyAdapter,
+    apply: bindViaTicket,
     listProfiles: listAdapterProfiles,
     switchNative,
     previewNative,

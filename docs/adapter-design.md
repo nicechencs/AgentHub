@@ -1,7 +1,7 @@
 # Adapter 页面与本地协议桥接设计
 
 > 状态：**可应用路径已接线（Claude 稳定直连 + Kimi → Codex 实验性本地桥接 + Pi 配置同步）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）。ChatGPT/Codex subscription → Claude Code 是单独受门禁约束的实验候选，当前仍为 `unsupported` / `plan.canApply=false`。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。Kimi → Codex 发布前仍需实机 dogfood。
-> 2026-08-15：跨 Agent 复用的**目标领域**改为票 / 绑定 / 协议图（[connection-binding-model.md](connection-binding-model.md)）。本文描述的 apply / 生成 Provider / 行按钮白名单是**当前实现**；目标写入是 `bind`/`unbind`，生成物是绑定的私有 runtime，不是钱包里的新票。
+> 2026-08-15：跨 Agent 复用的**目标领域**改为票 / 绑定 / 协议图（[connection-binding-model.md](connection-binding-model.md)）。ConnectFlow 确认步与 Adapter 页删除已改走 `bind`/`unbind`；内部仍可复用 apply 实现 reshape/bridge 运行时。生成物是绑定的私有 runtime，不是钱包里的新票。
 > 调研日期：2026-08-12（进度同步：2026-08-12）
 > 重点参考：`D:\demo_github\AgentHub_Ref\Cli-Proxy-API-Management-Center`
 > 关联文档：[adapter-sidecar-design.md](adapter-sidecar-design.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
@@ -22,13 +22,13 @@
 
 ## 1. 结论
 
-Adapter 负责把 **钱包里已有的票** 接到另一个 Agent。机制不变：只引用票，不复制凭据，不另建一套账号池，也不是通用 API 网关。目标对象是 **绑定**：`plan(票, Agent)` 在 native / reshape / bridge / 不可行 中择一，`bind` 写入。当前代码仍以 apply + 生成 Provider 实现 reshape/bridge，见 [connection-binding-model.md](connection-binding-model.md)。
+Adapter 负责把 **钱包里已有的票** 接到另一个 Agent。机制不变：只引用票，不复制凭据，不另建一套账号池，也不是通用 API 网关。目标对象是 **绑定**：`plan(票, Agent)` 在 native / reshape / bridge / 不可行 中择一，`bind` 写入。前端写入入口已是 `bind`/`unbind`；mock/内部仍可复用 apply 生成运行时，见 [connection-binding-model.md](connection-binding-model.md)。
 
 **入口定位（Adapter 页降级已落地）**：日常发起适配走 Hub 对话框，不必打开本页。`/adapter` 与侧栏「桥与适配」保留，只管理已绑定的本机桥 runtime，不再提供选来源→分析→plan→apply 创建区。入口与信息架构见 [hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)。
 
 - 推荐：Dashboard「连接/切换」、Connections「接到…」（当前文案仍为「用于其他 Agent」）→ 同一绑定对话框。
-- 保留：`/adapter` 只列出 `bridge` 运行时（start/stop/retry、autoStart、详情、删除投影/停桥）。
-- 创建绑定只走 Hub：经 `lib/api/adapter`；`plan.canApply` 表示现在能写入。目标 UI 见 [ui-design.md §4.3](ui-design.md)。
+- 保留：`/adapter` 只列出 `bridge` 运行时（start/stop/retry、autoStart、详情、删除走 `unbind`）。
+- 创建绑定只走 Hub：经 `lib/api/tickets` 的 `bind`；`plan.canApply` 表示现在能写入。目标 UI 见 [ui-design.md §4.3](ui-design.md)。
 
 一次规划只产生以下四种结果之一（括号内为当前实现名）：
 

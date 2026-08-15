@@ -37,6 +37,8 @@ const PI_ANTHROPIC_PROVIDER_PREFIX: &str = "pi-anthropic-adapter";
 const CLAUDE_PROFILE_PREFIX: &str = "adapter-kimi-claude";
 const PI_KIMI_PROFILE_PREFIX: &str = "adapter-kimi-pi";
 const PI_ANTHROPIC_PROFILE_PREFIX: &str = "adapter-anthropic-pi";
+const PREVIOUS_CURRENT_ID: &str = "previousCurrentId";
+const PREVIOUS_BACKUP_ID: &str = "previousBackupId";
 
 /// Applies supported write-side routes and owns their generated profiles.
 pub struct AdapterApplyService {
@@ -78,33 +80,48 @@ impl AdapterApplyService {
     pub fn apply(&self, request: &AdapterApplyRequest) -> Result<AdapterApplyResult> {
         let analysis = self.ensure_supported(request)?;
         let source_id = request.source_id.trim();
-        match (request.target_agent_id, analysis.route) {
-            (AgentId::Claude, AdapterRoute::NativeEndpoint) => {
+        match (request.source_kind, request.target_agent_id, analysis.route) {
+            (AdapterSourceKind::Provider, AgentId::Claude, AdapterRoute::NativeEndpoint) => {
                 // Validate before creating a profile or provider: a dangling/masked
                 // source must be a completely side-effect-free failure.
                 self.secrets.validate_kimi_membership_source(source_id)?;
                 self.apply_generated(claude_kimi_spec(source_id))
             }
-            (AgentId::Pi, AdapterRoute::ConfigSync) => match analysis.rule_id.as_deref() {
-                Some(KIMI_PI_RULE_ID) => {
-                    self.secrets.validate_kimi_membership_source(source_id)?;
-                    self.apply_generated(pi_kimi_spec(source_id))
+            (AdapterSourceKind::Provider, AgentId::Pi, AdapterRoute::ConfigSync) => {
+                match analysis.rule_id.as_deref() {
+                    Some(KIMI_PI_RULE_ID) => {
+                        self.secrets.validate_kimi_membership_source(source_id)?;
+                        self.apply_generated(pi_kimi_spec(source_id))
+                    }
+                    Some(ANTHROPIC_PI_RULE_ID) => {
+                        self.secrets.validate_anthropic_source(
+                            AdapterSourceKind::Provider,
+                            source_id,
+                        )?;
+                        self.apply_generated(pi_anthropic_spec(
+                            AdapterSourceKind::Provider,
+                            source_id,
+                        ))
+                    }
+                    _ => Err(AppError::Unsupported(
+                        "adapter apply currently supports only Kimi membership or Anthropic API provider -> Pi".into(),
+                    )),
                 }
-                Some(ANTHROPIC_PI_RULE_ID) => {
-                    self.secrets.validate_anthropic_api_source(source_id)?;
-                    self.apply_generated(pi_anthropic_spec(source_id))
-                }
-                _ => Err(AppError::Unsupported(
-                    "adapter apply currently supports only Kimi membership or Anthropic API provider -> Pi".into(),
-                )),
-            },
+            }
+            (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync)
+                if analysis.rule_id.as_deref() == Some(ANTHROPIC_PI_RULE_ID) =>
+            {
+                self.secrets
+                    .validate_anthropic_source(AdapterSourceKind::Account, source_id)?;
+                self.apply_generated(pi_anthropic_spec(AdapterSourceKind::Account, source_id))
+            }
             _ => Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership provider -> Claude and provider -> Pi config_sync".into(),
+                "adapter apply currently supports Kimi membership provider -> Claude/Pi and Anthropic API ticket -> Pi".into(),
             )),
         }
     }
 
-    fn apply_generated(&self, spec: GeneratedApplySpec) -> Result<AdapterApplyResult> {
+    fn apply_generated(&self, mut spec: GeneratedApplySpec) -> Result<AdapterApplyResult> {
         // Acquire before reading or creating any generated-provider/profile
         // state. The guard covers every compensation input and mutation below.
         let saga_guard = self.providers.begin_live_saga(spec.target_agent)?;
@@ -169,10 +186,16 @@ impl AdapterApplyService {
         let created = existing.is_none();
         let snapshot = ApplySnapshot {
             generated_before,
-            previous_current,
+            previous_current: previous_current.clone(),
             live_config,
             created,
         };
+        stamp_previous_restore_meta(
+            &mut spec.provider.meta,
+            previous_current.as_ref(),
+            &spec.provider_id,
+            existing.as_ref(),
+        );
 
         // Create/repair the pool row before switch; the switched provider is
         // returned from switch_with_guard below.
@@ -203,7 +226,24 @@ impl AdapterApplyService {
             &spec.provider_id,
             spec.target_agent,
         ) {
-            Ok(result) => result.provider,
+            Ok(result) => {
+                if let Some(backup_id) = result.backup.as_ref().map(|backup| backup.id.as_str()) {
+                    if let Err(error) =
+                        self.persist_previous_backup_id(&saga_guard, &result.provider, backup_id)
+                    {
+                        if let Err(restore_error) = self.compensate_apply(
+                            &saga_guard,
+                            &spec.provider_id,
+                            spec.target_agent,
+                            &snapshot,
+                        ) {
+                            return Err(self.fail_profile(profile, &restore_error));
+                        }
+                        return Err(self.fail_profile(profile, &error));
+                    }
+                }
+                result.provider
+            }
             Err(error) => {
                 if let Err(restore_error) = self.compensate_apply(
                     &saga_guard,
@@ -310,9 +350,7 @@ impl AdapterApplyService {
                     ));
                 }
                 if provider.is_current {
-                    return Err(AppError::Unsupported(
-                        "先在 Connections 切换后再移除此适配器".into(),
-                    ));
+                    self.restore_previous_binding(&saga_guard, &provider, profile.target_agent_id)?;
                 }
                 self.providers.delete_with_guard(
                     &saga_guard,
@@ -330,8 +368,8 @@ impl AdapterApplyService {
             source_id: request.source_id.clone(),
             target_agent_id: request.target_agent_id,
         })?;
-        let supported = request.source_kind == AdapterSourceKind::Provider
-            && matches!(
+        let supported = match request.source_kind {
+            AdapterSourceKind::Provider => matches!(
                 (request.target_agent_id, analysis.route, analysis.support),
                 (
                     AgentId::Claude,
@@ -342,14 +380,71 @@ impl AdapterApplyService {
                     AdapterRoute::ConfigSync,
                     AdapterSupport::Stable
                 )
-            );
+            ),
+            AdapterSourceKind::Account => {
+                request.target_agent_id == AgentId::Pi
+                    && analysis.route == AdapterRoute::ConfigSync
+                    && analysis.support == AdapterSupport::Stable
+                    && analysis.rule_id.as_deref() == Some(ANTHROPIC_PI_RULE_ID)
+            }
+        };
         if supported {
             Ok(analysis)
         } else {
             Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership provider -> Claude and provider -> Pi config_sync".into(),
+                "adapter apply currently supports Kimi membership provider -> Claude/Pi and Anthropic API ticket -> Pi".into(),
             ))
         }
+    }
+
+    fn persist_previous_backup_id(
+        &self,
+        saga_guard: &ProviderLiveSagaGuard<'_>,
+        provider: &Provider,
+        backup_id: &str,
+    ) -> Result<Provider> {
+        let mut input = provider_input(provider);
+        let Some(meta) = input.meta.as_object_mut() else {
+            return Ok(provider.clone());
+        };
+        meta.insert(PREVIOUS_BACKUP_ID.into(), json!(backup_id));
+        self.providers.update_with_guard(saga_guard, &input)
+    }
+
+    fn restore_previous_binding(
+        &self,
+        saga_guard: &ProviderLiveSagaGuard<'_>,
+        generated: &Provider,
+        target_agent: AgentId,
+    ) -> Result<()> {
+        let previous_id = generated
+            .meta
+            .get(PREVIOUS_CURRENT_ID)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|id| !id.is_empty() && *id != generated.id);
+        if let Some(previous_id) = previous_id {
+            match self.providers.get(previous_id, Some(target_agent)) {
+                Ok(_) => {
+                    self.providers
+                        .switch_with_guard(saga_guard, previous_id, target_agent)?;
+                    return Ok(());
+                }
+                Err(AppError::NotFound(_)) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        if let Some(backup_id) = generated
+            .meta
+            .get(PREVIOUS_BACKUP_ID)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+        {
+            self.providers
+                .restore_named_backup_with_guard(saga_guard, backup_id)?;
+        }
+        Ok(())
     }
 
     fn fail_profile(&self, mut profile: AdapterProfile, error: &AppError) -> AppError {
@@ -545,6 +640,7 @@ fn claude_kimi_spec(source_id: &str) -> GeneratedApplySpec {
             meta: generated_meta(
                 RULE_ID,
                 &profile_id,
+                AdapterSourceKind::Provider,
                 source_id,
                 Some("anthropic-compatible"),
             ),
@@ -596,13 +692,19 @@ fn pi_kimi_spec(source_id: &str) -> GeneratedApplySpec {
                     }
                 }
             }),
-            meta: generated_meta(KIMI_PI_RULE_ID, &profile_id, source_id, None),
+            meta: generated_meta(
+                KIMI_PI_RULE_ID,
+                &profile_id,
+                AdapterSourceKind::Provider,
+                source_id,
+                None,
+            ),
             is_current: false,
         },
     }
 }
 
-fn pi_anthropic_spec(source_id: &str) -> GeneratedApplySpec {
+fn pi_anthropic_spec(source_kind: AdapterSourceKind, source_id: &str) -> GeneratedApplySpec {
     let profile_id = stable_id(PI_ANTHROPIC_PROFILE_PREFIX, source_id);
     let provider_id = stable_id(PI_ANTHROPIC_PROVIDER_PREFIX, source_id);
     let created_at = now();
@@ -612,7 +714,7 @@ fn pi_anthropic_spec(source_id: &str) -> GeneratedApplySpec {
         proposed: AdapterProfile {
             id: profile_id.clone(),
             name: format!("Anthropic → Pi ({})", safe_label(source_id)),
-            source_kind: AdapterSourceKind::Provider,
+            source_kind,
             source_id: source_id.into(),
             target_agent_id: AgentId::Pi,
             route: AdapterRoute::ConfigSync,
@@ -640,7 +742,13 @@ fn pi_anthropic_spec(source_id: &str) -> GeneratedApplySpec {
                     }
                 }
             }),
-            meta: generated_meta(ANTHROPIC_PI_RULE_ID, &profile_id, source_id, None),
+            meta: generated_meta(
+                ANTHROPIC_PI_RULE_ID,
+                &profile_id,
+                source_kind,
+                source_id,
+                None,
+            ),
             is_current: false,
         },
     }
@@ -649,6 +757,7 @@ fn pi_anthropic_spec(source_id: &str) -> GeneratedApplySpec {
 fn generated_meta(
     rule_id: &str,
     profile_id: &str,
+    source_kind: AdapterSourceKind,
     source_id: &str,
     preset: Option<&str>,
 ) -> serde_json::Value {
@@ -663,7 +772,7 @@ fn generated_meta(
     meta.insert("adapterProfileId".into(), json!(profile_id));
     meta.insert(
         "adapterSourceRef".into(),
-        json!({"kind": "provider", "id": source_id}),
+        json!({"kind": source_kind.as_str(), "id": source_id}),
     );
     serde_json::Value::Object(meta)
 }
@@ -676,7 +785,49 @@ fn provider_matches_projection(
         && provider.agent_id == projection.agent_id
         && provider.name == projection.name
         && provider.settings_config == projection.settings_config
-        && provider.meta == projection.meta
+        && projection_contract_meta(&provider.meta) == projection_contract_meta(&projection.meta)
+}
+
+fn projection_contract_meta(meta: &serde_json::Value) -> serde_json::Value {
+    let mut cloned = meta.clone();
+    if let Some(object) = cloned.as_object_mut() {
+        object.remove(PREVIOUS_CURRENT_ID);
+        object.remove(PREVIOUS_BACKUP_ID);
+    }
+    cloned
+}
+
+fn stamp_previous_restore_meta(
+    meta: &mut serde_json::Value,
+    previous_current: Option<&Provider>,
+    generated_id: &str,
+    existing: Option<&Provider>,
+) {
+    let Some(object) = meta.as_object_mut() else {
+        return;
+    };
+    let previous_id = previous_current
+        .map(|provider| provider.id.as_str())
+        .filter(|id| *id != generated_id);
+    match previous_id {
+        Some(id) => {
+            object.insert(PREVIOUS_CURRENT_ID.into(), json!(id));
+        }
+        None => {
+            if let Some(existing_id) = existing
+                .and_then(|provider| provider.meta.get(PREVIOUS_CURRENT_ID))
+                .cloned()
+            {
+                object.insert(PREVIOUS_CURRENT_ID.into(), existing_id);
+            }
+        }
+    }
+    if let Some(existing_backup) = existing
+        .and_then(|provider| provider.meta.get(PREVIOUS_BACKUP_ID))
+        .cloned()
+    {
+        object.insert(PREVIOUS_BACKUP_ID.into(), existing_backup);
+    }
 }
 
 fn provider_input(provider: &Provider) -> ProviderInput {

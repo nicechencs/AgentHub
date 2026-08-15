@@ -261,8 +261,60 @@ describe('mock ticket wallet', () => {
     getBackend();
     seedConnectFlowAdapterFixtures({ seedBindings: true });
     const generatedId = `claude-kimi-adapter-${CONNECT_FLOW_FIXTURE_IDS.kimiMembership}`;
-    await expect(getBackend().ticket.plan(`provider:${generatedId}`, 'pi')).rejects.toThrow(
-      '投影不是票 / 禁止二次投影',
-    );
+    await expect(getBackend().ticket.plan(`provider:${generatedId}`, 'pi')).rejects.toMatchObject({
+      code: 'invalid_arg',
+      message: expect.stringContaining('投影不是票'),
+    });
+  });
+
+  it('bind_ticket reuses apply and returns the active binding for the target Agent', async () => {
+    getBackend();
+    const { kimiMembership } = seedConnectFlowAdapterFixtures({ includeAnthropic: false });
+    const ticketId = `provider:${kimiMembership.id}`;
+    const { binding } = await getBackend().ticket.bind(ticketId, 'pi');
+    expect(binding.active).toBe(true);
+    expect(binding.agentId).toBe('pi');
+    expect(binding.ticketId).toBe(ticketId);
+    expect(binding.route).toBe('reshape');
+    const wallet = await getBackend().ticket.listWallet();
+    expect(wallet.bindings.some((row) => (
+      row.active && row.agentId === 'pi' && row.ticketId === ticketId
+    ))).toBe(true);
+  });
+
+  it('bind_ticket allows Account Anthropic → Pi and rejects generated projections', async () => {
+    getBackend();
+    seedConnectFlowAdapterFixtures({ includeAnthropic: false, seedBindings: true });
+    upsertMockAccount({
+      id: 'anth-acc-bind',
+      agentId: 'claude',
+      kind: 'apikey',
+      label: 'Anthropic key',
+      isCurrent: false,
+      tokenValid: true,
+      extra: { provider: 'anthropic' },
+    } as Account);
+    const { binding } = await getBackend().ticket.bind('account:anth-acc-bind', 'pi');
+    expect(binding.active).toBe(true);
+    expect(binding.agentId).toBe('pi');
+    expect(binding.ticketId).toBe('account:anth-acc-bind');
+
+    const generatedId = `claude-kimi-adapter-${CONNECT_FLOW_FIXTURE_IDS.kimiMembership}`;
+    await expect(getBackend().ticket.bind(`provider:${generatedId}`, 'pi')).rejects.toMatchObject({
+      code: 'invalid_arg',
+      message: expect.stringContaining('投影不是票'),
+    });
+  });
+
+  it('unbind_ticket removes the binding even when the projection is current', async () => {
+    getBackend();
+    const { kimiMembership } = seedConnectFlowAdapterFixtures({ includeAnthropic: false });
+    const ticketId = `provider:${kimiMembership.id}`;
+    const { binding } = await getBackend().ticket.bind(ticketId, 'pi');
+    expect(binding.active).toBe(true);
+    await getBackend().ticket.unbind(ticketId, 'pi');
+    const wallet = await getBackend().ticket.listWallet();
+    expect(wallet.tickets.some((row) => row.id === ticketId)).toBe(true);
+    expect(wallet.bindings.some((row) => row.ticketId === ticketId && row.agentId === 'pi')).toBe(false);
   });
 });

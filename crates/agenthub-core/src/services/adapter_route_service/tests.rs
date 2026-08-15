@@ -178,11 +178,7 @@ fn anthropic_provider_and_explicit_api_key_account_plan_for_pi() {
         "anthropic-provider",
         AgentId::Pi,
     );
-    let account_req = request(
-        AdapterSourceKind::Account,
-        "anthropic-account",
-        AgentId::Pi,
-    );
+    let account_req = request(AdapterSourceKind::Account, "anthropic-account", AgentId::Pi);
     let provider_analysis = service.analyze(&provider_req).unwrap();
     let account_analysis = service.analyze(&account_req).unwrap();
     assert_eq!(account_analysis.route, provider_analysis.route);
@@ -210,21 +206,71 @@ fn anthropic_provider_and_explicit_api_key_account_plan_for_pi() {
     );
     assert_eq!(account_plan.maturity, provider_plan.maturity);
     assert!(
-        !account_plan.can_apply,
-        "account-sourced Anthropic → Pi stays write-gated"
+        account_plan.can_apply,
+        "Anthropic API account → Pi is a bind implementation"
     );
-    assert!(
-        account_plan.reason.contains("Provider") || account_plan.reason.contains("写入"),
-        "same-edge unwritable reason must mention Provider or 写入: {}",
-        account_plan.reason
-    );
-    assert!(
-        account_plan.reason.contains(&account_plan.analysis.reason),
-        "planner reason must keep the matrix gist"
-    );
+    assert_eq!(account_plan.reason, account_plan.analysis.reason);
     assert_eq!(account_plan.changes[0].value.as_deref(), Some("anthropic"));
     assert!(account_plan.changes[1].secret);
     assert!(account_plan.changes[1].value.is_none());
+}
+
+#[test]
+fn account_that_is_not_anthropic_to_pi_stays_unwritable() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "claude-oauth".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::Oauth,
+            label: "Claude login".into(),
+            credentials: serde_json::json!({"format": "credentials_json"}),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "anthropic-account".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::ApiKey,
+            label: "Anthropic key".into(),
+            credentials: serde_json::json!({
+                "format": "api_key",
+                "api_key": "must-not-leak"
+            }),
+            extra: serde_json::json!({"provider": "anthropic"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    let other = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "claude-oauth",
+            AgentId::Pi,
+        ))
+        .unwrap();
+    assert!(!other.can_apply, "non-Anthropic account → Pi stays closed");
+
+    let anthropic_to_claude = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "anthropic-account",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert!(
+        !anthropic_to_claude.can_apply,
+        "Anthropic account → Claude has no bind implementation"
+    );
 }
 
 #[test]

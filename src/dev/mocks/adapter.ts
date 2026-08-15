@@ -46,6 +46,34 @@ export function listMockAdapterProfiles(): AdapterProfile[] {
   return out;
 }
 
+/**
+ * Unbind helper: stop bridge + drop generated projection even when it is current.
+ * Ticket source rows stay in the wallet.
+ */
+export function removeMockAdapterBinding(profileId: string): void {
+  for (const state of adapterStates) {
+    const index = state.profiles.findIndex((profile) => profile.id === profileId);
+    if (index < 0) continue;
+    const profile = state.profiles[index];
+    const providerId = profile.generatedProviderId;
+    const generated = providerId
+      ? state.generatedProviders.get(providerId)
+      : undefined;
+    if (generated) {
+      state.removeGeneratedProvider?.(generated);
+      state.generatedProviders.delete(generated.id);
+    }
+    state.bridgeStatuses.delete(profileId);
+    state.profiles.splice(index, 1);
+    return;
+  }
+  throw adapterCommandError({
+    code: 'not_found',
+    message: `adapter profile not found: ${profileId}`,
+    retryable: false,
+  });
+}
+
 /** Sync bridge status lookup for ticket wallet bindings. */
 export function getMockBridgeStatusSync(profileId: string): AdapterBridgeRuntimeStatus | undefined {
   for (const state of adapterStates) {
@@ -388,11 +416,15 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
     (analysis.route === 'native_endpoint' && analysis.support === 'stable' && request.targetAgentId === 'claude')
     || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
     || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'pi');
-  const writeGate = request.sourceKind === 'provider' && implementedPath;
+  const accountAnthropicToPi = request.sourceKind === 'account'
+    && implementedPath
+    && request.targetAgentId === 'pi'
+    && analysis.ruleId === 'anthropic-api-to-pi-v1';
+  const writeGate = (request.sourceKind === 'provider' && implementedPath) || accountAnthropicToPi;
   const canApply = writeGate;
   const maturity = mockPlanMaturity(analysis);
-  // Same condition as core `write_gate`: matrix-open implemented path ∩ non-Provider.
-  const reason = implementedPath && request.sourceKind !== 'provider'
+  // Same-edge Account stays closed except Anthropic API → Pi (bind-era write).
+  const reason = implementedPath && request.sourceKind !== 'provider' && !accountAnthropicToPi
     ? `${analysis.reason} ${SAME_EDGE_UNWRITABLE_REASON}`
     : analysis.reason;
   return {

@@ -1,5 +1,7 @@
 use super::*;
+use crate::models::{Account, AccountKind};
 use crate::services::adapter_route_constants::KIMI_MEMBERSHIP_PRESET;
+use crate::storage::AccountRepo;
 use serde_json::json;
 
 fn provider(id: &str, agent_id: AgentId, settings_config: Value, meta: Value) -> Provider {
@@ -441,6 +443,100 @@ fn coding_endpoint_without_preset_resolves_and_materializes() {
     assert_eq!(
         target(&source.id).settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
         CONNECTION_SECRET_MARKER
+    );
+}
+
+#[test]
+fn anthropic_account_source_materializes_and_scrubs_without_plaintext() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("adapter-secret-resolver.db")).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "anthropic-account".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::ApiKey,
+            label: "Anthropic key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "sk-account-secret"
+            }),
+            extra: json!({"provider": "anthropic"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let resolver = AdapterSecretResolver::new(db);
+    resolver
+        .validate_anthropic_source(AdapterSourceKind::Account, "anthropic-account")
+        .unwrap();
+
+    let mut target = pi_anthropic_target("anthropic-account");
+    target.meta["adapterSourceRef"] = json!({"kind": "account", "id": "anthropic-account"});
+    assert!(resolver.is_reference_provider(&target).unwrap());
+    let materialized = resolver.materialize_for_live(&target).unwrap();
+    assert_eq!(
+        materialized.settings_config["models"]["providers"][ANTHROPIC_PI_PROVIDER_SLOT]["apiKey"],
+        "sk-account-secret"
+    );
+    assert_eq!(
+        target.settings_config["models"]["providers"][ANTHROPIC_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+
+    let live_raw = json!({
+        "models": {
+            "providers": {
+                ANTHROPIC_PI_PROVIDER_SLOT: { "apiKey": "sk-account-secret" }
+            }
+        }
+    });
+    let scrubbed = resolver.scrub_for_backfill(&target, &live_raw).unwrap();
+    assert_eq!(
+        scrubbed["models"]["providers"][ANTHROPIC_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert!(!serde_json::to_string(&scrubbed)
+        .unwrap()
+        .contains("sk-account-secret"));
+}
+
+#[test]
+fn anthropic_account_rejects_missing_format_or_key_and_kimi_account_kind() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("adapter-secret-resolver.db")).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "no-format".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::ApiKey,
+            label: "Anthropic key".into(),
+            credentials: json!({"api_key": "sk-account-secret"}),
+            extra: json!({"provider": "anthropic"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let resolver = AdapterSecretResolver::new(db);
+    assert_eq!(
+        resolver
+            .validate_anthropic_source(AdapterSourceKind::Account, "no-format")
+            .unwrap_err()
+            .code(),
+        "invalid_arg"
+    );
+
+    let mut kimi_target = pi_kimi_target("no-format");
+    kimi_target.meta["adapterSourceRef"] = json!({"kind": "account", "id": "no-format"});
+    assert_eq!(
+        resolver
+            .materialize_for_live(&kimi_target)
+            .unwrap_err()
+            .code(),
+        "invalid_arg"
     );
 }
 

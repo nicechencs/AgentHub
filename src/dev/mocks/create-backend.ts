@@ -11,6 +11,7 @@ import {
   createMockAdapterPort,
   getMockBridgeStatusSync,
   listMockAdapterProfiles,
+  removeMockAdapterBinding,
   resetMockAdapters,
 } from './adapter';
 import { createMockAgentPort, resetMockAgentStatuses } from './agent';
@@ -86,6 +87,8 @@ export const createBackend: CreateBackend = () => {
     listProfiles: listMockAdapterProfiles,
     getBridgeStatus: getMockBridgeStatusSync,
     planAdapter: (request) => adapter.plan(request),
+    applyAdapter: (request) => adapter.apply(request),
+    removeBinding: (profileId) => removeMockAdapterBinding(profileId),
   });
 
   if (!import.meta.env.VITEST && import.meta.env.MODE !== 'test') {

@@ -3,18 +3,22 @@
  * is_current + profiles → bindings. Generated providers are excluded.
  * Keep lockstep with crates/agenthub-core TicketReadService derive rules.
  */
-import type {
-  AdapterApplyPlan,
-  AdapterBridgeRuntimeStatus,
-  AdapterProfile,
-  AdapterRoute,
-  BindingRoute,
-  TicketCredentialClass,
-  TicketPort,
-  TicketSurface,
-  TicketView,
-  TicketWallet,
-  BindingView,
+import {
+  adapterCommandError,
+  type AdapterApplyPlan,
+  type AdapterApplyRequest,
+  type AdapterApplyResult,
+  type AdapterBridgeRuntimeStatus,
+  type AdapterProfile,
+  type AdapterRoute,
+  type BindingRoute,
+  type BindTicketResult,
+  type TicketCredentialClass,
+  type TicketPort,
+  type TicketSurface,
+  type TicketView,
+  type TicketWallet,
+  type BindingView,
 } from '@/lib/backend/contracts';
 import type { Account, AgentId, Provider } from '@/lib/types';
 import { delay } from './delay';
@@ -31,6 +35,8 @@ export interface MockTicketSourceResolver {
     sourceId: string;
     targetAgentId: AgentId;
   }): Promise<AdapterApplyPlan>;
+  applyAdapter?(request: AdapterApplyRequest): Promise<AdapterApplyResult>;
+  removeBinding?(profileId: string): void;
 }
 
 /** Optional classify fields mirroring core Account.extra / credentials. */
@@ -51,7 +57,7 @@ const TICKET_SURFACES: readonly TicketSurface[] = [
   'unknown',
 ];
 
-const PROJECTION_NOT_A_TICKET = '投影不是票 / 禁止二次投影';
+const PROJECTION_NOT_A_TICKET = '投影不是票';
 
 function persistedSurface(blob: unknown): TicketSurface | undefined {
   const raw = jsonString(blob, 'surface');
@@ -158,6 +164,43 @@ function speaksOf(surface: TicketSurface): string[] {
 
 function ticketId(kind: 'account' | 'provider', id: string): string {
   return `${kind}:${id}`;
+}
+
+function rejectIfProjection(
+  ticketIdValue: string,
+  sourceKind: 'account' | 'provider',
+  sourceId: string,
+  resolver: MockTicketSourceResolver,
+): void {
+  if (sourceKind !== 'provider') return;
+  const generated = generatedProviderIds(resolver.listProfiles());
+  const provider = resolver.listProviders().find((row) => row.id === sourceId) as
+    | ClassifiableProvider
+    | undefined;
+  if (generated.has(sourceId) || provider?.meta?.generatedBy === 'adapter') {
+    throw adapterCommandError({
+      code: 'invalid_arg',
+      message: `${PROJECTION_NOT_A_TICKET}: ${ticketIdValue}`,
+      retryable: false,
+    });
+  }
+}
+
+function requireTicketSource(sourceKind: 'account' | 'provider', sourceId: string): void {
+  if (sourceKind === 'account' && !getMockAccountById(sourceId)) {
+    throw adapterCommandError({
+      code: 'not_found',
+      message: `account not found: ${sourceId}`,
+      retryable: false,
+    });
+  }
+  if (sourceKind === 'provider' && !getMockProviderById(sourceId)) {
+    throw adapterCommandError({
+      code: 'not_found',
+      message: `provider not found: ${sourceId}`,
+      retryable: false,
+    });
+  }
 }
 
 function parseTicketId(ticketIdValue: string): { sourceKind: 'account' | 'provider'; sourceId: string } {
@@ -353,22 +396,72 @@ export function createMockTicketPort(resolver: MockTicketSourceResolver): Ticket
     async plan(ticketIdValue, targetAgentId) {
       await delay(15);
       const { sourceKind, sourceId } = parseTicketId(ticketIdValue);
-      if (sourceKind === 'provider') {
-        const generated = generatedProviderIds(resolver.listProfiles());
-        const provider = resolver.listProviders().find((row) => row.id === sourceId) as
-          | ClassifiableProvider
-          | undefined;
-        if (generated.has(sourceId) || provider?.meta?.generatedBy === 'adapter') {
-          throw new Error(`${PROJECTION_NOT_A_TICKET}: ${ticketIdValue}`);
-        }
-      }
-      if (sourceKind === 'account' && !getMockAccountById(sourceId)) {
-        throw new Error(`account not found: ${sourceId}`);
-      }
-      if (sourceKind === 'provider' && !getMockProviderById(sourceId)) {
-        throw new Error(`provider not found: ${sourceId}`);
-      }
+      rejectIfProjection(ticketIdValue, sourceKind, sourceId, resolver);
+      requireTicketSource(sourceKind, sourceId);
       return resolver.planAdapter({ sourceKind, sourceId, targetAgentId });
+    },
+    async bind(ticketIdValue, targetAgentId): Promise<BindTicketResult> {
+      await delay(15);
+      const { sourceKind, sourceId } = parseTicketId(ticketIdValue);
+      rejectIfProjection(ticketIdValue, sourceKind, sourceId, resolver);
+      requireTicketSource(sourceKind, sourceId);
+      const plan = await resolver.planAdapter({ sourceKind, sourceId, targetAgentId });
+      if (!plan.canApply) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: '当前适配路径尚不可应用',
+          retryable: false,
+        });
+      }
+      if (!resolver.applyAdapter) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'ticket bind is not wired',
+          retryable: false,
+        });
+      }
+      await resolver.applyAdapter({ sourceKind, sourceId, targetAgentId });
+      const wallet = buildWallet(resolver);
+      const binding = wallet.bindings.find(
+        (row) => row.ticketId === ticketIdValue && row.agentId === targetAgentId && row.active,
+      );
+      if (!binding) {
+        throw adapterCommandError({
+          code: 'invalid_arg',
+          message: '绑定未成为该 Agent 的当前连接',
+          retryable: false,
+        });
+      }
+      return { binding };
+    },
+    async unbind(ticketIdValue, agentId) {
+      await delay(15);
+      const { sourceKind, sourceId } = parseTicketId(ticketIdValue);
+      const profile = resolver.listProfiles().find(
+        (row) =>
+          row.sourceKind === sourceKind
+          && row.sourceId === sourceId
+          && row.targetAgentId === agentId,
+      );
+      const walletBinding = buildWallet(resolver).bindings.find(
+        (row) => row.ticketId === ticketIdValue && row.agentId === agentId,
+      );
+      const profileId = profile?.id ?? walletBinding?.profileId;
+      if (!profileId) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: `binding not found: ${ticketIdValue} → ${agentId}`,
+          retryable: false,
+        });
+      }
+      if (!resolver.removeBinding) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'ticket unbind is not wired',
+          retryable: false,
+        });
+      }
+      resolver.removeBinding(profileId);
     },
   };
 }

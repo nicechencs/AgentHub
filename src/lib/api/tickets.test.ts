@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getBackend } from '@/app/runtime';
-import { listTicketWallet, planTicket } from '@/lib/api/tickets';
+import { bindTicket, listTicketWallet, planTicket, unbindTicket } from '@/lib/api/tickets';
 import { seedConnectFlowAdapterFixtures } from '@/dev/mocks/connect-flow-fixtures';
 
 describe('tickets API façade', () => {
@@ -18,5 +18,18 @@ describe('tickets API façade', () => {
     const plan = await planTicket(`provider:${kimiMembership.id}`, 'pi');
     expect(plan.canApply).toBe(true);
     expect(plan.analysis.route).toBe('config_sync');
+  });
+
+  it('bindTicket returns the active binding and unbindTicket clears it', async () => {
+    getBackend();
+    const { kimiMembership } = seedConnectFlowAdapterFixtures({ includeAnthropic: false });
+    const ticketId = `provider:${kimiMembership.id}`;
+    const { binding } = await bindTicket(ticketId, 'pi');
+    expect(binding.active).toBe(true);
+    expect(binding.agentId).toBe('pi');
+    expect(binding.ticketId).toBe(ticketId);
+    await unbindTicket(ticketId, 'pi');
+    const wallet = await listTicketWallet();
+    expect(wallet.bindings.some((row) => row.ticketId === ticketId && row.agentId === 'pi')).toBe(false);
   });
 });

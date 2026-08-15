@@ -12,13 +12,13 @@ use toml_edit::DocumentMut;
 
 use crate::bridge::ResolvedAuth;
 use crate::error::{AppError, Result};
-use crate::models::{AgentId, Provider};
+use crate::models::{AdapterSourceKind, AgentId, Provider};
 use crate::services::adapter_route_constants::{
     is_kimi_code_membership_source, settings_contain_anthropic_api_endpoint, ANTHROPIC_API_KEY_ENV,
     ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT,
     KIMI_CLAUDE_BASE_URL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
 };
-use crate::storage::{Database, ProviderRepo};
+use crate::storage::{AccountRepo, Database, ProviderRepo};
 
 // Re-export so existing `adapter_secret_resolver::CONNECTION_SECRET_MARKER` paths keep working.
 pub use crate::services::adapter_route_constants::CONNECTION_SECRET_MARKER;
@@ -31,19 +31,23 @@ const ANTHROPIC_TO_PI_RULE: &str = "anthropic-api-to-pi-v1";
 const SOURCE_REFERENCE_MODE: &str = "source_reference";
 const LOCAL_TOKEN_MODE: &str = "local_token";
 const SOURCE_KIND_PROVIDER: &str = "provider";
+const SOURCE_KIND_ACCOUNT: &str = "account";
 const ANTHROPIC_PRESET: &str = "anthropic";
+const ACCOUNT_API_KEY_FORMAT: &str = "api_key";
 
 /// Resolves generated-provider secret references at the live boundary.
 /// The repository is shared with ProviderService, but resolver work
 /// itself is read-only.
 pub struct AdapterSecretResolver {
     providers: ProviderRepo,
+    accounts: AccountRepo,
 }
 
 impl AdapterSecretResolver {
     pub fn new(db: Database) -> Self {
         Self {
-            providers: ProviderRepo::new(db),
+            providers: ProviderRepo::new(db.clone()),
+            accounts: AccountRepo::new(db),
         }
     }
 
@@ -57,7 +61,16 @@ impl AdapterSecretResolver {
 
     /// Read-only preflight for an explicit Anthropic API Key Claude provider.
     pub fn validate_anthropic_api_source(&self, source_id: &str) -> Result<()> {
-        let _ = self.resolve_anthropic_api_key(source_id)?;
+        self.validate_anthropic_source(AdapterSourceKind::Provider, source_id)
+    }
+
+    /// Read-only preflight for an Anthropic API Key ticket (Provider or Account).
+    pub fn validate_anthropic_source(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<()> {
+        let _ = self.resolve_anthropic_api_key(source_kind, source_id)?;
         Ok(())
     }
 
@@ -81,19 +94,34 @@ impl AdapterSecretResolver {
         extract_kimi_api_key(&source.settings_config)
     }
 
-    fn resolve_anthropic_api_key(&self, source_id: &str) -> Result<String> {
+    fn resolve_anthropic_api_key(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<String> {
         let source_id = source_id.trim();
         if source_id.is_empty() {
             return Err(invalid_reference());
         }
-        let source = self
-            .providers
-            .get_by_id(source_id)?
-            .ok_or_else(invalid_reference)?;
-        if !is_anthropic_api_source(&source) {
-            return Err(invalid_reference());
+        match source_kind {
+            AdapterSourceKind::Provider => {
+                let source = self
+                    .providers
+                    .get_by_id(source_id)?
+                    .ok_or_else(invalid_reference)?;
+                if !is_anthropic_api_source(&source) {
+                    return Err(invalid_reference());
+                }
+                extract_anthropic_api_key(&source.settings_config)
+            }
+            AdapterSourceKind::Account => {
+                let account = self
+                    .accounts
+                    .get_by_id(source_id)?
+                    .ok_or_else(invalid_reference)?;
+                extract_anthropic_account_api_key(&account.credentials)
+            }
         }
-        extract_anthropic_api_key(&source.settings_config)
     }
 
     /// Internal bridge boundary: resolve membership auth without exposing the
@@ -143,8 +171,7 @@ impl AdapterSecretResolver {
 
         if is_claude_source_reference(target) {
             self.validate_claude_reference_target(target)?;
-            let source = self.reference_source(target)?;
-            let api_key = extract_kimi_api_key(&source.settings_config)?;
+            let api_key = self.resolve_referenced_api_key(target)?;
             let mut materialized = target.clone();
             let env = materialized
                 .settings_config
@@ -156,8 +183,7 @@ impl AdapterSecretResolver {
         }
 
         self.validate_pi_reference_target(target)?;
-        let source = self.reference_source(target)?;
-        let api_key = extract_source_api_key(target, &source)?;
+        let api_key = self.resolve_referenced_api_key(target)?;
         let slot = pi_slot_name(target)?;
         let mut materialized = target.clone();
         set_pi_slot_api_key(&mut materialized.settings_config, slot, &api_key)?;
@@ -176,8 +202,7 @@ impl AdapterSecretResolver {
             self.validate_claude_reference_target(provider)?;
             // A deleted or invalid source must not cause us to persist a live secret
             // into a row which we can no longer safely re-materialize.
-            let source = self.reference_source(provider)?;
-            let _ = extract_kimi_api_key(&source.settings_config)?;
+            let _ = self.resolve_referenced_api_key(provider)?;
 
             let mut scrubbed = live_raw.clone();
             let env = scrubbed
@@ -199,8 +224,7 @@ impl AdapterSecretResolver {
         }
 
         self.validate_pi_reference_target(provider)?;
-        let source = self.reference_source(provider)?;
-        let _ = extract_source_api_key(provider, &source)?;
+        let _ = self.resolve_referenced_api_key(provider)?;
         let slot = pi_slot_name(provider)?;
         let mut scrubbed = live_raw.clone();
         let live_slot = pi_slot_object(&scrubbed, slot).ok_or_else(invalid_reference)?;
@@ -220,24 +244,28 @@ impl AdapterSecretResolver {
         Ok(scrubbed)
     }
 
-    fn reference_source(&self, target: &Provider) -> Result<Provider> {
-        let source_id = self.reference_source_id(target)?;
+    fn resolve_referenced_api_key(&self, target: &Provider) -> Result<String> {
+        let (kind, source_id) = self.reference_source_ref(target)?;
         let rule = adapter_rule_id(target).ok_or_else(invalid_reference)?;
-        match rule {
-            KIMI_TO_CLAUDE_RULE | KIMI_TO_PI_RULE => {
-                self.validate_kimi_membership_source(source_id)?;
+        match (rule, kind) {
+            (KIMI_TO_CLAUDE_RULE | KIMI_TO_PI_RULE, AdapterSourceKind::Provider) => {
+                self.resolve_kimi_membership_api_key(source_id)
             }
-            ANTHROPIC_TO_PI_RULE => {
-                self.validate_anthropic_api_source(source_id)?;
+            (ANTHROPIC_TO_PI_RULE, AdapterSourceKind::Provider | AdapterSourceKind::Account) => {
+                self.resolve_anthropic_api_key(kind, source_id)
             }
-            _ => return Err(invalid_reference()),
+            _ => Err(invalid_reference()),
         }
-        self.providers
-            .get_by_id(source_id)?
-            .ok_or_else(invalid_reference)
     }
 
     fn reference_source_id<'a>(&self, target: &'a Provider) -> Result<&'a str> {
+        self.reference_source_ref(target).map(|(_, id)| id)
+    }
+
+    fn reference_source_ref<'a>(
+        &self,
+        target: &'a Provider,
+    ) -> Result<(AdapterSourceKind, &'a str)> {
         if !is_claude_source_reference(target) && !is_pi_source_reference(target) {
             return Err(invalid_reference());
         }
@@ -246,15 +274,18 @@ impl AdapterSecretResolver {
             .get("adapterSourceRef")
             .and_then(Value::as_object)
             .ok_or_else(invalid_reference)?;
-        if source.get("kind").and_then(Value::as_str) != Some(SOURCE_KIND_PROVIDER) {
-            return Err(invalid_reference());
-        }
-        source
+        let kind = match source.get("kind").and_then(Value::as_str) {
+            Some(SOURCE_KIND_PROVIDER) => AdapterSourceKind::Provider,
+            Some(SOURCE_KIND_ACCOUNT) => AdapterSourceKind::Account,
+            _ => return Err(invalid_reference()),
+        };
+        let id = source
             .get("id")
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|id| !id.is_empty())
-            .ok_or_else(invalid_reference)
+            .ok_or_else(invalid_reference)?;
+        Ok((kind, id))
     }
 
     fn validate_claude_reference_target(&self, target: &Provider) -> Result<()> {
@@ -402,14 +433,20 @@ fn is_anthropic_api_source(source: &Provider) -> bool {
             || settings_contain_anthropic_api_endpoint(&source.settings_config))
 }
 
-fn extract_source_api_key(target: &Provider, source: &Provider) -> Result<String> {
-    match adapter_rule_id(target) {
-        Some(KIMI_TO_CLAUDE_RULE) | Some(KIMI_TO_PI_RULE) => {
-            extract_kimi_api_key(&source.settings_config)
-        }
-        Some(ANTHROPIC_TO_PI_RULE) => extract_anthropic_api_key(&source.settings_config),
-        _ => Err(invalid_reference()),
+fn extract_anthropic_account_api_key(credentials: &Value) -> Result<String> {
+    let format = credentials
+        .get("format")
+        .and_then(Value::as_str)
+        .map(str::trim);
+    if format != Some(ACCOUNT_API_KEY_FORMAT) {
+        return Err(invalid_reference());
     }
+    credentials
+        .get("api_key")
+        .and_then(Value::as_str)
+        .and_then(usable_secret)
+        .map(str::to_owned)
+        .ok_or_else(invalid_reference)
 }
 
 fn extract_anthropic_api_key(settings: &Value) -> Result<String> {

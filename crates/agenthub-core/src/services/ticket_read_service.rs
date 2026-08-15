@@ -73,19 +73,27 @@ impl TicketReadService {
     ///
     /// Generated projection providers are not tickets: refuse before routing.
     pub fn plan(&self, request: &TicketPlanRequest) -> Result<AdapterApplyPlan> {
-        let (source_kind, source_id) =
-            parse_ticket_id(&request.ticket_id).map_err(AppError::InvalidArg)?;
-        if source_kind == AdapterSourceKind::Provider && self.is_projection_provider(&source_id)? {
-            return Err(AppError::InvalidArg(format!(
-                "{PROJECTION_NOT_A_TICKET}: {}",
-                request.ticket_id
-            )));
-        }
+        let (source_kind, source_id) = self.parse_bindable_ticket(&request.ticket_id)?;
         self.routes.plan(&AdapterRouteRequest {
             source_kind,
             source_id,
             target_agent_id: request.target_agent_id,
         })
+    }
+
+    /// Parse `account:<id>` / `provider:<id>` and reject generated projections.
+    pub fn parse_bindable_ticket(
+        &self,
+        ticket_id: &str,
+    ) -> Result<(AdapterSourceKind, String)> {
+        let (source_kind, source_id) =
+            parse_ticket_id(ticket_id).map_err(AppError::InvalidArg)?;
+        if source_kind == AdapterSourceKind::Provider && self.is_projection_provider(&source_id)? {
+            return Err(AppError::InvalidArg(format!(
+                "{PROJECTION_NOT_A_TICKET}: {ticket_id}"
+            )));
+        }
+        Ok((source_kind, source_id))
     }
 
     fn is_projection_provider(&self, provider_id: &str) -> Result<bool> {

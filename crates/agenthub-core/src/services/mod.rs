@@ -24,6 +24,7 @@ pub mod skill_service;
 pub mod skillhub_market;
 pub mod skillssh_market;
 pub mod switch_undo;
+pub mod ticket_bind_service;
 pub mod ticket_read_service;
 pub mod update_check_service;
 pub mod usage_service;
@@ -60,6 +61,7 @@ pub use skillhub_market::{
 pub use skillssh_market::{
     install_skills_sh_listing, local_skill_id_from_market_id, SkillsShMarket,
 };
+pub use ticket_bind_service::{ticket_binding_from_apply, TicketBindService};
 pub use ticket_read_service::TicketReadService;
 pub use update_check_service::{check_agent_updates, invalidate_latest_cache, DEFAULT_LATEST_TTL};
 pub use usage_service::UsageService;

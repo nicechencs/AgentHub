@@ -102,9 +102,8 @@ fn status_dto_maps_observed_upstream_and_missing_instance_to_stopped() {
             "degraded"
         );
 
-        let stopped = AdapterBridgeStatusDto::from_runtime(
-            host.stop("profile-upstream").await.unwrap(),
-        );
+        let stopped =
+            AdapterBridgeStatusDto::from_runtime(host.stop("profile-upstream").await.unwrap());
         assert_eq!(stopped.state, "stopped");
         assert_eq!(stopped.upstream_status, "stopped");
 
@@ -524,7 +523,12 @@ fn seed_active_bridge(hub: &AgentHub, source_id: &str, old_port: u16) -> Adapter
 }
 
 fn provider_content_contains(hub: &AgentHub, provider_id: &str, needle: &str) -> bool {
-    let stored = hub.providers.repo().get_by_id(provider_id).unwrap().unwrap();
+    let stored = hub
+        .providers
+        .repo()
+        .get_by_id(provider_id)
+        .unwrap()
+        .unwrap();
     stored.settings_config["content"]
         .as_str()
         .unwrap_or_default()
@@ -586,10 +590,7 @@ fn realign_restored_bridge_port_rolls_back_when_provider_update_fails() {
     );
 
     let error = realign_restored_bridge_port(&hub, &profile.id, 43155).unwrap_err();
-    assert!(
-        error.contains("injected restore update failure"),
-        "{error}"
-    );
+    assert!(error.contains("injected restore update failure"), "{error}");
     assert!(
         !error.contains("adapter.bridge_rollback"),
         "update-stage failure must not need compensation: {error}"
@@ -754,11 +755,7 @@ impl AgentAdapter for IsolatedCodexAdapter {
 
 fn isolated_restore_hub(
     live: AgentConfig,
-) -> (
-    tempfile::TempDir,
-    AgentHub,
-    Arc<IsolatedCodexAdapter>,
-) {
+) -> (tempfile::TempDir, AgentHub, Arc<IsolatedCodexAdapter>) {
     let dir = tempfile::tempdir().unwrap();
     let mut hub = AgentHub::open(Some(dir.path())).unwrap();
     let adapter = Arc::new(IsolatedCodexAdapter::new(
@@ -776,7 +773,12 @@ fn isolated_restore_hub(
 }
 
 fn mark_generated_current(hub: &AgentHub, provider_id: &str) {
-    let mut stored = hub.providers.repo().get_by_id(provider_id).unwrap().unwrap();
+    let mut stored = hub
+        .providers
+        .repo()
+        .get_by_id(provider_id)
+        .unwrap()
+        .unwrap();
     stored.is_current = true;
     hub.providers.repo().update(&stored).unwrap();
 }
@@ -799,10 +801,7 @@ fn realign_restored_bridge_port_rolls_back_when_switch_fails() {
     adapter.fail_on_write(1);
 
     let error = realign_restored_bridge_port(&hub, &profile.id, 43155).unwrap_err();
-    assert!(
-        error.contains("injected live write failure"),
-        "{error}"
-    );
+    assert!(error.contains("injected live write failure"), "{error}");
     assert!(
         !error.contains("adapter.bridge_rollback"),
         "successful compensation must not report adapter.bridge_rollback: {error}"

@@ -1,6 +1,6 @@
 /**
- * Ticket / Binding read model (docs/connection-binding-model.md §2 / §5–§6 step 1).
- * Wire shapes match Tauri `list_ticket_wallet` / `plan_ticket`.
+ * Ticket / Binding read model + bind/unbind write (docs/connection-binding-model.md §2 / §4).
+ * Wire shapes match Tauri `list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`.
  */
 import type { AgentId } from '@/lib/types';
 import type { AdapterApplyPlan } from './adapter';
@@ -176,11 +176,55 @@ export function mapPlanTicketResult(wire: AdapterApplyPlanWire): AdapterApplyPla
   return mapAdapterApplyPlan(wire);
 }
 
+/** Exact camelCase shape from Rust `bind_ticket`. */
+export interface BindTicketResultWire {
+  binding: BindingViewWire;
+}
+
+export interface BindTicketResult {
+  binding: BindingView;
+}
+
+export function mapBindTicketResult(wire: BindTicketResultWire): BindTicketResult {
+  if (!wire || typeof wire !== 'object' || wire.binding == null) {
+    throw new Error('Invalid bind_ticket wire: missing binding');
+  }
+  return { binding: mapBindingView(wire.binding) };
+}
+
+/**
+ * `unbind_ticket` may return `{}` or an updated wallet.
+ * Callers that need the wallet should `listWallet()` after unbind.
+ */
+export function mapUnbindTicketResult(wire: unknown): void {
+  if (wire == null) return;
+  if (typeof wire !== 'object') {
+    throw new Error(`Invalid unbind_ticket wire: ${String(wire)}`);
+  }
+}
+
+/** Stable ticket id: `account:<row-id>` / `provider:<row-id>`. */
+export function ticketIdFor(sourceKind: TicketSourceKind, sourceId: string): string {
+  return `${sourceKind}:${sourceId}`;
+}
+
+/** Success criterion for bind: this Agent's active binding. */
+export function isActiveBindingForAgent(
+  binding: BindingView,
+  targetAgentId: AgentId,
+): boolean {
+  return binding.active === true && binding.agentId === targetAgentId;
+}
+
 export interface TicketPort {
   /** Global ticket wallet + bindings (read-only aggregation). */
   listWallet(): Promise<TicketWallet>;
   /** Plan bind(ticket, agent); same surface as adapter.plan. */
   plan(ticketId: string, targetAgentId: AgentId): Promise<AdapterApplyPlan>;
+  /** Bind ticket → agent. Success is the returned active binding. */
+  bind(ticketId: string, targetAgentId: AgentId): Promise<BindTicketResult>;
+  /** Unbind ticket from agent. Ticket remains; caller may listWallet. */
+  unbind(ticketId: string, agentId: AgentId): Promise<void>;
 }
 
 /** Route label for Connections「正用于」line. */

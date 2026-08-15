@@ -452,7 +452,7 @@ export interface Backend {
   account: AccountPort;
   /** Read-only route compatibility preview; does not apply or start anything. */
   adapter: AdapterPort;
-  /** Ticket / Binding read model (global wallet + plan_ticket). */
+  /** Ticket / Binding wallet + plan_ticket / bind_ticket / unbind_ticket. */
   ticket: TicketPort;
   agent: AgentPort;
   /** Read-only agent directory (keys, capabilities, install channels). */
