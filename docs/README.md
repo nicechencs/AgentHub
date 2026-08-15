@@ -16,6 +16,7 @@
 | [connection-binding-model.md](connection-binding-model.md) | 实现用的领域模型（一份登录 / 绑定 / 规划器）。读者向说明见 [product-decisions.md](product-decisions.md) |
 | [hub-redesign-plan.md](hub-redesign-plan.md) | **Hub 重构 Phase 1 已实施**（历史）：ConnectFlowDialog；后续以 [connection-binding-model.md](connection-binding-model.md) 为 UI 与领域目标 |
 | [adapter-design.md](adapter-design.md) | **Adapter 设计与进度**：页面与本机转发只服务 ③；①② 不另开程序；创建绑定走 Hub |
+| [bridges-page-redesign.md](bridges-page-redesign.md) | **本机桥页终态 IA**（待按 PR 落地）：对象是 loopback 进程；`/bridges`；侧栏 Bridges 有桥才出现；单层健康+端口。实施时以本文为准，落地后回写 ui-design / adapter-design |
 | [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | **真机 dogfood**：① Kimi→Claude / Anthropic→Pi；③ Kimi→Codex。禁止记录密钥 / prompt / 正文 |
 | [adapter-sidecar-design.md](adapter-sidecar-design.md) | **Adapter Sidecar 目标架构**：`agenthub-adapterd` 所有权、IPC、状态机、单主/并发、升级恢复与三阶段迁移（目标已决策，当前未迁移） |
 | [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | **厂商 / API / OAuth 适配规则**：产品与协议边界、Kimi 双端点、当前路由矩阵和维护方法 |

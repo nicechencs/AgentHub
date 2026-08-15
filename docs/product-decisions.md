@@ -96,6 +96,7 @@ Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口
 | 组合 | 实际 | 原因 |
 |---|---|---|
 | Claude 订阅 → Codex | **产品不做** | Codex 不会用 Claude 这套登录，本产品不走这条 |
+| 任一国产 OAuth（Kimi `/login`、GLM / DeepSeek 登录等）→ 任意工具 | **产品不做** | 不为中国产 OAuth 开边，也不把它转成 API |
 | Grok 订阅 → Claude | **③** | Claude 听的话和 Grok 说的话不同，要本机转发 |
 | Codex 订阅 → Claude | **③** | Claude 只听自己那套接口；这是本机转发，不是写 Claude 官方登录 |
 
@@ -146,7 +147,8 @@ flowchart LR
   subs["Codex / Grok 订阅"] --> fwd2["本机转发"] --> claude["Claude"]
 ```
 
-Claude 订阅接到 Codex：**产品不做**（不是「以后再转发」）。
+Claude 订阅接到 Codex：**产品不做**（不是「以后再转发」）。  
+中国产 AI 的 OAuth（含 Kimi CLI managed OAuth）接到任何工具：**产品不做**（不开边，也不转成 API）。现有国产路由只认官方 API Key。
 
 ## 3. 同一份登录，接到谁，做法可以不同
 
@@ -192,8 +194,8 @@ Claude 订阅 → Codex 是**产品不做**，不是「以后再转发」。
 | ③ 协议转换 | 只在 ①② 都走不通时才本机转发 |
 | 管理面 | 用现有页面做登录、额度、探测、转发启停，不另做多栏工作台 |
 
-本产品不做：公网入口、多人共用一份登录、转售、把转发生成的配置再当成一份新登录、默认一直挂着的兼容服务。  
-公开致谢见根 [README.md](../README.md)。把登录存盘后再加密，仍是项目范围外。
+本产品不做：公网入口、多人共用一份登录、转售、把转发生成的配置再当成一份新登录、默认一直挂着的兼容服务、**中国产 AI 的 OAuth 开边或转成 API**。  
+公开致谢见根 [README.md](../README.md)。把登录存盘后再加密，仍是项目范围外。国产 OAuth 关闭项见根 [AGENTS.md](../AGENTS.md)。
 
 ## 5. 产品要做，实现可以暂时写不上去
 
@@ -209,7 +211,7 @@ Claude 订阅 → Codex 是**产品不做**，不是「以后再转发」。
 
 1. **① 补齐**：一把 Key 接到更多已登记的工具；GLM / DeepSeek → Pi、→ Codex 已可试写。单接口 Key 按图继续补。
 2. **② 先用已有的**：Claude / Codex / Grok 订阅 → Pi。**当前**：这三条已可试写（写进 Pi 自己的登录，之后由 Pi 刷新）。再看别的工具有没有同类位置。
-3. **③ 旗舰转发**：Codex 订阅 → Claude Code；Grok 订阅 → Claude。Claude 订阅 → Codex 明确产品不做。
+3. **③ 旗舰转发**：Codex 订阅 → Claude Code；Grok 订阅 → Claude。Claude 订阅 → Codex 明确产品不做。国产 OAuth 不开边、不转 API，不是待评估候选。
 4. 管理面：登录状态、额度、最小探测、转发启停放在现有页面，不另做工作台。
 
 ## 7. 给实现的对照

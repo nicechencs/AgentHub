@@ -37,6 +37,7 @@
 4. **只认显式来源标记**：进口写下 `surface`；不能根据名称、标签或 URL 猜测。未识别标 `unknown`，规划结果是不可行，而不是把「接到…」藏掉。
 5. **默认拒绝写入**：没有代码规则和测试的组合一律不能 `bind`。用户仍看得到原因。
 6. **不复制凭据**：绑定只引用票；真实凭据只在写入 live 或请求上游时短暂解析。生成投影不是新票。
+7. **国产 OAuth 产品不做**：不为中国产 AI 的 OAuth 开 Adapter 边（① `native_endpoint` / ② `config_sync` / ③ `local_bridge` 都不开），也不把这类 OAuth 转成 API Key 或 to-api。现有国产边只认官方 API Key。见 [product-decisions.md](product-decisions.md) 与根 [AGENTS.md](../AGENTS.md)。
 
 ### 1.1 跨 Agent 复用：三路，订阅不等于要起桥
 
@@ -93,7 +94,7 @@
 | 额度 | Kimi Code 会员编程权益 | 开放平台计费与额度 |
 | 是否可混用 | 否 | 否 |
 
-Kimi CLI `/login` 生成的 managed OAuth 又是第三种来源，不能伪装成上述任一 API Key。
+Kimi CLI `/login` 生成的 managed OAuth 又是第三种来源，不能伪装成上述任一 API Key。**产品不做**：不为该 OAuth 开 Adapter 边，也不把它转成 API。
 
 ### 2.3 GLM Coding Plan
 
@@ -184,7 +185,7 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 
 补充边界：
 
-- Kimi managed OAuth 不会被识别为 Kimi Code 会员 API Key。
+- Kimi managed OAuth 不会被识别为 Kimi Code 会员 API Key；国产 OAuth **产品不做**开边或转 API（含 Pi `kimi-coding` 残件）。
 - Kimi Code 会员识别：Provider 认 **`meta.preset=kimi-code-membership`** 或配置中的官方端点 **`api.kimi.com/coding`**；Account 只认 **`extra.provider` / `extra.preset` / `credentials.provider=kimi-code-membership`** 或 `credentials` / `extra` 中的官方端点，且必须是 `kind=apikey`。仅 `agent_id=kimi` 或 Moonshot 开放平台 **不会**升为会员。
 - 普通 OpenAI、xAI 只认显式标记（preset / extra.provider / 官方 host）；自定义中转保持 `unknown`，不可 bind。OpenAI/xAI → Pi 已可 bind；Kimi/OpenAI → Grok 已开 ① 官方 Chat TOML；xAI→Grok 不进矩阵（native）。
 - GLM Coding Plan、DeepSeek API 已登记票面（speaks 含 Responses），classify 只认显式标记；**Claude / Codex bind 已开**（①，experimental `native_endpoint`，Provider 与 Account）；DeepSeek → DSH **已可应用**（①，Provider，`deepseek-api-to-dsh-v1`）；GLM/DeepSeek → Pi **已可 experimental `config_sync` bind**（Provider 与 Account，自定义 provider 槽）。② → Pi 的 Claude/Codex/Grok 订阅 Account 已可 experimental bind；Pi 拥有写入槽的刷新，Hub 不双刷同一 refresh token。③ Codex→Claude 的 Responses `auth_json` 边已可 experimental bind；App Server 仍关闭，OauthOther / 缺 access token 仍不可写，见 [product-decisions.md](product-decisions.md)。
@@ -203,7 +204,8 @@ AgentHub 当前可发起的登录与跨 Agent 适配是两套能力：
 | Codex / ChatGPT | PKCE | ② → Pi `openai-codex` 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → Claude Responses 本机桥（已可 experimental bind；Hub 本轮不自动 refresh，过期需重新同步 Codex 登录） |
 | Grok / xAI | PKCE | ② → Pi xAI 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → Claude xAI Chat 本机桥（experimental bind） |
 | Pi | Anthropic PKCE、OpenAI Codex PKCE、xAI device code | **第 2 路的标准落点**：只写入 Pi 对应槽；不能推导其他 Agent 也有这些槽 |
-| Kimi | 当前没有 AgentHub OAuth 登录入口 | 会员 API Key 走 ①/③，与 Kimi CLI managed OAuth 必须分开 |
+| Kimi | 当前没有 AgentHub OAuth 登录入口 | **产品不做**国产 OAuth 开边或转 API。会员 API Key 走 ①/③；Kimi CLI managed OAuth / Pi `kimi-coding` 不得升成会员 Key，也不得登记 Adapter 边 |
+| 其他国产登录（GLM / DeepSeek / 通义 / 豆包等） | 无 AgentHub OAuth 入口 | **产品不做**。已登记的只有官方 API Key 票面；OAuth 不进矩阵 |
 
 OAuth access/refresh token 带有客户端、受众、范围和刷新语义。只有目标客户端公开支持相同契约，并且 AgentHub 增加显式规则与测试后，才允许 `config_sync`；否则应引导用户使用目标客户端自己的登录流程。
 

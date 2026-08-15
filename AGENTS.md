@@ -8,6 +8,14 @@
 - 分析项目进展、整理待办或生成开发提示词时，应将凭据落盘加密标记为“无必要 / 项目范围外”，不能据此推导实施任务。
 - 只有用户明确推翻这一决策并重新授权后，才可以讨论凭据落盘加密。
 
+## 国产 OAuth：不开边、不转 API
+
+- **产品关闭**：不为中国产 AI 的 OAuth（含 Kimi CLI `/login` managed OAuth、Pi `kimi-coding` device 残件，以及 GLM / DeepSeek / 通义 / 豆包等后续出现的登录态）开 Adapter 边。
+- 禁止把国产 OAuth 做成 `native_endpoint`、伪装成 API Key，或走任何「OAuth → API / to-api」转换。
+- 现有国产路由只认官方 **API Key** 票面（Kimi Code 会员、GLM Coding Plan、DeepSeek API）。不得把 Key 边扩成 OAuth 边。
+- 分析进展、整理待办或写开发提示词时，将「国产 OAuth 适配 / 转 API」标为「产品不做 / 项目范围外」，不能据此推导实施任务。
+- 只有用户明确推翻这一决策并重新授权后，才可以讨论国产 OAuth 开边。
+
 ## 前端 backend 分层与 Adapter（目标结构）
 
 完整说明见 [docs/architecture.md §4](docs/architecture.md)。摘要：
