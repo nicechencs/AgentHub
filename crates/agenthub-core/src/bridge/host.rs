@@ -941,6 +941,7 @@ async fn non_stream_response(
             Json(value).into_response()
         }
         Err(error) => {
+            state.record_upstream_failure();
             log_protocol_error(&state, &request_id, started, &error);
             protocol_error_response(error)
         }

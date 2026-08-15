@@ -870,3 +870,31 @@ async fn upstream_429_and_5xx_are_generic_and_mark_degraded() {
         upstream_task.abort();
     }
 }
+
+#[tokio::test]
+async fn translate_failure_on_http_200_marks_upstream_degraded() {
+    let (upstream_port, upstream_task) = status_upstream(StatusCode::OK).await;
+    let host = BridgeRuntimeHost::new();
+    let started = host
+        .start(spec("translate-fail", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", started.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"test","input":"hello"}))
+        .send()
+        .await
+        .expect("translate failure request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        host.status("translate-fail")
+            .expect("status")
+            .expect("instance")
+            .upstream_status,
+        BridgeUpstreamStatus::Degraded
+    );
+    host.stop("translate-fail").await.expect("stop");
+    upstream_task.abort();
+}
