@@ -35,6 +35,7 @@ import {
   partitionLocalBridgeRuntimes,
 } from './adapter-view-model';
 import { useAdapterResources } from './use-bridge-resources';
+import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
   closeConfirmationOnOpenChange,
   preventBusyConfirmationDismissal,
@@ -74,6 +75,8 @@ export default function BridgesPage() {
     updateProfile,
     removeProfile,
   } = useAdapterResources();
+  const { hiddenIds } = useInstalledAgents();
+  const hiddenTargetIds = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const [wallet, setWallet] = useState<WalletSnapshot>({
     settled: false,
     lastWalletBridgeCount: 0,
@@ -105,6 +108,7 @@ export default function BridgesPage() {
   };
 
   const handleStartBridge = async (profile: AdapterProfile) => {
+    if (hiddenTargetIds.has(profile.targetAgentId)) return;
     setProfileBusy(profile.id, true);
     clearProfileError(profile.id);
     try {
@@ -134,6 +138,7 @@ export default function BridgesPage() {
   };
 
   const handleSetBridgeAutoStart = async (profile: AdapterProfile, autoStart: boolean) => {
+    if (hiddenTargetIds.has(profile.targetAgentId)) return;
     setProfileBusy(profile.id, true);
     clearProfileError(profile.id);
     try {
@@ -147,7 +152,7 @@ export default function BridgesPage() {
   };
 
   const confirmRemove = async () => {
-    if (!removeConfirm) return;
+    if (!removeConfirm || hiddenTargetIds.has(removeConfirm.targetAgentId)) return;
     const profile = removeConfirm;
     const profileId = profile.id;
     setRemovingProfileId(profileId);
@@ -242,6 +247,7 @@ export default function BridgesPage() {
     onRequestStopBridge: setStopConfirm,
     onShowDetail: (profile: AdapterProfile) => setDetailProfileId(profile.id),
     onRetry: () => { void reload(); },
+    hiddenTargetIds,
   };
 
   return (
@@ -333,6 +339,7 @@ export default function BridgesPage() {
           setDetailProfileId(null);
           setRemoveConfirm(profile);
         }}
+        targetHidden={detailProfile ? hiddenTargetIds.has(detailProfile.targetAgentId) : false}
       />
 
       <Dialog

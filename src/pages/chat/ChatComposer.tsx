@@ -47,6 +47,7 @@ export function ChatComposer({
   onCancel,
   onToggleAgent,
   onSwitchProvider,
+  hiddenIds,
 }: {
   draft: string;
   setDraft: (v: string) => void;
@@ -63,8 +64,15 @@ export function ChatComposer({
   onCancel: () => void;
   onToggleAgent: (id: AgentId) => void;
   onSwitchProvider: (id: string) => void;
+  hiddenIds: Set<AgentId>;
 }) {
-  const canSend = Boolean(draft.trim());
+  const activeHasHidden = active.agentIds.some((id) => hiddenIds.has(id));
+  const canSend = Boolean(draft.trim()) && !activeHasHidden;
+  const pickerIds = AGENT_IDS.filter((id) => {
+    if (installed.get(id) === false) return false;
+    if (hiddenIds.has(id)) return active.agentIds.includes(id);
+    return true;
+  });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const syncTextareaHeight = useCallback(() => {
@@ -100,10 +108,14 @@ export function ChatComposer({
             'disabled:cursor-not-allowed disabled:opacity-60',
           )}
           style={{ minHeight: COMPOSER_MIN_PX, maxHeight: COMPOSER_MAX_PX }}
-          placeholder="发送消息给 Agent…（Shift+Enter 换行）"
+          placeholder={
+            activeHasHidden
+              ? '当前会话包含已隐藏 Agent，请先取消隐藏'
+              : '发送消息给 Agent…（Shift+Enter 换行）'
+          }
           rows={1}
           value={draft}
-          disabled={sending}
+          disabled={sending || activeHasHidden}
           onChange={(e) => setDraft(e.target.value)}
           onInput={syncTextareaHeight}
           onKeyDown={(e) => {
@@ -130,20 +142,23 @@ export function ChatComposer({
             <DropdownMenuContent align="start" className="w-56">
               <DropdownMenuLabel>选择 Agent（可多选）</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {AGENT_IDS.filter((id) => installed.get(id) !== false).map((id) => (
+              {pickerIds.map((id) => (
                 <DropdownMenuCheckboxItem
                   key={id}
                   checked={active.agentIds.includes(id)}
-                  disabled={sending}
+                  disabled={sending || (hiddenIds.has(id) && !active.agentIds.includes(id))}
                   onCheckedChange={() => onToggleAgent(id)}
                 >
                   <span className="flex items-center gap-2">
                     <AgentLogo agentId={id} size="sm" />
                     {agentDisplayName(id)}
+                    {hiddenIds.has(id) && (
+                      <span className="text-xs text-muted">已隐藏</span>
+                    )}
                   </span>
                 </DropdownMenuCheckboxItem>
               ))}
-              {AGENT_IDS.every((id) => installed.get(id) === false) && (
+              {pickerIds.length === 0 && (
                 <div className="px-2 py-1.5 text-xs text-muted">尚未安装任何 Agent</div>
               )}
             </DropdownMenuContent>
@@ -160,7 +175,12 @@ export function ChatComposer({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  disabled={!primaryAgent || sending || switchingProvider}
+                  disabled={
+                    !primaryAgent ||
+                    sending ||
+                    switchingProvider ||
+                    Boolean(primaryAgent && hiddenIds.has(primaryAgent))
+                  }
                   className="inline-flex h-7 max-w-44 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-xs text-secondary hover:bg-hover disabled:opacity-50"
                   aria-label={
                     active.agentIds.length > 1

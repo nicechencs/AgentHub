@@ -12,6 +12,7 @@ import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
 import { resolveAgentMeta, agentDisplayName, type AgentMeta } from '@/config/agents';
+import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { listMcpInventory } from '@/lib/api/mcp';
 import { openPathInFileManager } from '@/lib/api/skill';
 import type { McpInventory, McpServerEntry, McpSourceFile } from '@/lib/backend/contracts/mcp-types';
@@ -43,6 +44,8 @@ function parentDir(path: string): string {
 
 export default function McpPage() {
   const { toast } = useToast();
+  const { hiddenIds } = useInstalledAgents();
+  const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const [data, setData] = useState<McpInventory | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | string | null>(null);
@@ -74,34 +77,43 @@ export default function McpPage() {
     }
     for (const s of data.servers) ids.add(s.agent);
     return [...ids]
+      .filter((id) => !hiddenSet.has(id))
       .sort((a, b) => a.localeCompare(b))
       .map((id) => resolveAgentMeta(id));
-  }, [data]);
+  }, [data, hiddenSet]);
+
+  useEffect(() => {
+    if (filterAgent !== 'all' && hiddenSet.has(filterAgent)) {
+      setFilterAgent('all');
+    }
+  }, [filterAgent, hiddenSet]);
 
   const agentCounts = useMemo(() => {
+    const visibleServers = data?.servers.filter((s) => !hiddenSet.has(s.agent)) ?? [];
     const counts: Partial<Record<AgentTabId, number>> = {
-      all: data?.servers.length ?? 0,
+      all: visibleServers.length,
     };
-    if (!data) return counts;
-    for (const s of data.servers) {
+    for (const s of visibleServers) {
       counts[s.agent] = (counts[s.agent] ?? 0) + 1;
     }
     return counts;
-  }, [data]);
+  }, [data, hiddenSet]);
 
   const servers = useMemo(() => {
     if (!data) return [] as McpServerEntry[];
-    if (filterAgent === 'all') return data.servers;
-    return data.servers.filter((s) => s.agent === filterAgent);
-  }, [data, filterAgent]);
+    const visible = data.servers.filter((s) => !hiddenSet.has(s.agent));
+    if (filterAgent === 'all') return visible;
+    return visible.filter((s) => s.agent === filterAgent);
+  }, [data, filterAgent, hiddenSet]);
 
   const sources = useMemo(() => {
     if (!data) return [] as McpSourceFile[];
+    const visible = data.sources.filter((s) => !hiddenSet.has(s.agent));
     const list =
-      filterAgent === 'all' ? data.sources : data.sources.filter((s) => s.agent === filterAgent);
+      filterAgent === 'all' ? visible : visible.filter((s) => s.agent === filterAgent);
     // Prefer existing / errored first for the "sources" strip
     return [...list].sort((a, b) => Number(b.exists) - Number(a.exists));
-  }, [data, filterAgent]);
+  }, [data, filterAgent, hiddenSet]);
 
   const existingSources = sources.filter((s) => s.exists);
 

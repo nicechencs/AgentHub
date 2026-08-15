@@ -113,6 +113,12 @@ export default function ChatPage() {
     return m;
   }, [agentStatus]);
 
+  const hiddenIds = useMemo(
+    () => new Set(agentStatus.filter((a) => a.hidden).map((a) => a.agentId)),
+    [agentStatus],
+  );
+  const activeHasHidden = Boolean(active?.agentIds.some((id) => hiddenIds.has(id)));
+
   const primaryAgent = active?.agentIds[0] ?? null;
 
   const currentProvider = useMemo(
@@ -122,9 +128,11 @@ export default function ChatPage() {
 
   const defaultAgents = useCallback(
     (agents: AgentStatus[]): AgentId[] => {
-      const installedIds = agents.filter((a) => a.installed).map((a) => a.agentId);
+      const installedIds = agents
+        .filter((a) => a.installed && !a.hidden)
+        .map((a) => a.agentId);
       if (installedIds.length > 0) return [installedIds[0]];
-      return ['claude'];
+      return [];
     },
     [],
   );
@@ -133,7 +141,9 @@ export default function ChatPage() {
   const ensureConversation = useCallback(
     async (convs: Conversation[], agents: AgentStatus[], cwd?: string | null) => {
       if (convs.length > 0) return convs;
-      const created = await createConversation(defaultAgents(agents), cwd ?? null);
+      const ids = defaultAgents(agents);
+      if (ids.length === 0) return convs;
+      const created = await createConversation(ids, cwd ?? null);
       return [created];
     },
     [defaultAgents],
@@ -270,6 +280,14 @@ export default function ChatPage() {
 
   async function handleNewChat() {
     const agents = defaultAgents(agentStatus);
+    if (agents.length === 0) {
+      toast({
+        title: '没有可对话的 Agent',
+        description: '请先安装或取消隐藏 Agent',
+        variant: 'danger',
+      });
+      return;
+    }
     try {
       const conv = await createConversation(agents, active?.cwd ?? null);
       setConversations((prev) => [conv, ...prev]);
@@ -289,7 +307,15 @@ export default function ChatPage() {
       await deleteConversation(id);
       const rest = conversations.filter((c) => c.id !== id);
       if (rest.length === 0) {
-        const created = await createConversation(defaultAgents(agentStatus), active?.cwd ?? null);
+        const ids = defaultAgents(agentStatus);
+        if (ids.length === 0) {
+          setConversations([]);
+          setActiveId(null);
+          setMessages([]);
+          setDraft('');
+          return;
+        }
+        const created = await createConversation(ids, active?.cwd ?? null);
         setConversations([created]);
         setActiveId(created.id);
         setMessages([]);
@@ -319,6 +345,7 @@ export default function ChatPage() {
   async function toggleConversationAgent(id: AgentId) {
     if (!active || sending) return;
     if (installed.get(id) === false) return;
+    if (hiddenIds.has(id) && !active.agentIds.includes(id)) return;
     const set = new Set(active.agentIds);
     if (set.has(id)) {
       if (set.size === 1) {
@@ -334,7 +361,7 @@ export default function ChatPage() {
   }
 
   async function handleSwitchProvider(providerId: string) {
-    if (!primaryAgent || switchingProvider) return;
+    if (!primaryAgent || switchingProvider || hiddenIds.has(primaryAgent)) return;
     setSwitchingProvider(true);
     try {
       await switchProvider(primaryAgent, providerId);
@@ -420,6 +447,14 @@ export default function ChatPage() {
 
   async function handleSend() {
     if (!active || sending) return;
+    if (active.agentIds.some((id) => hiddenIds.has(id))) {
+      toast({
+        title: '当前会话包含已隐藏 Agent',
+        description: '请到 Agents 页取消隐藏后再发送',
+        variant: 'danger',
+      });
+      return;
+    }
     const prompt = draft.trim();
     if (!prompt) return;
     if (!active.cwd) {
@@ -649,6 +684,9 @@ export default function ChatPage() {
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-sm font-semibold text-primary">
               {active?.title || (active ? '新对话' : '对话')}
+              {activeHasHidden && (
+                <span className="ml-2 text-xs font-normal text-muted">已隐藏</span>
+              )}
             </h1>
           </div>
           {active && (
@@ -773,6 +811,7 @@ export default function ChatPage() {
                   onCancel={() => void handleCancel()}
                   onToggleAgent={(id) => void toggleConversationAgent(id)}
                   onSwitchProvider={(id) => void handleSwitchProvider(id)}
+                  hiddenIds={hiddenIds}
                 />
               </div>
             </div>

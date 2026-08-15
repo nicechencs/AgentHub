@@ -10,7 +10,7 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { Notice } from '@/components/shared/Notice';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
-import { AGENT_IDS, agentDisplayName } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
 import { listTicketWallet, type TicketView, type TicketWallet } from '@/lib/api/tickets';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
 import {
@@ -73,13 +73,14 @@ function parseWalletFilter(raw: string | null): TicketWalletFilter {
 }
 
 export default function ConnectionsPage() {
-  const { installedIds, loading, state, error, reload } = useInstalledAgents();
+  const { installedIds, visibleIds, hiddenIds, loading, state, error, reload } = useInstalledAgents();
   const pool = useConnectionPool();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const allowedAgents = installedIds.length ? installedIds : AGENT_IDS;
+  const allowedAgents = installedIds.length ? installedIds : visibleIds;
+  const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const highlightAgentId = parseAgentParam(searchParams.get('agent'), allowedAgents);
   const initialFilter = parseWalletFilter(searchParams.get('mode'));
   const resumeAgentId = parseResumeAgentId(searchParams.get('resume'), allowedAgents);
@@ -140,6 +141,16 @@ export default function ConnectionsPage() {
     void loadWallet();
   }, [loadWallet]);
 
+  const visibleWallet = useMemo(() => {
+    if (!wallet) return null;
+    if (hiddenSet.size === 0) return wallet;
+    return {
+      ...wallet,
+      tickets: wallet.tickets.filter((ticket) => !hiddenSet.has(ticket.agentId)),
+      bindings: wallet.bindings.filter((binding) => !hiddenSet.has(binding.agentId)),
+    };
+  }, [hiddenSet, wallet]);
+
   const poolReload = pool.reload;
 
   const handleConnectionChanged = useCallback(async () => {
@@ -162,7 +173,7 @@ export default function ConnectionsPage() {
   }, [loadWallet, poolReload, reload]);
 
   useEffect(() => {
-    const allowed = installedIds.length ? installedIds : AGENT_IDS;
+    const allowed = installedIds.length ? installedIds : visibleIds;
     const guide = readConnectGuide(searchParams, allowed);
     if (!guide) {
       consumedGuideKeyRef.current = null;
@@ -177,7 +188,7 @@ export default function ConnectionsPage() {
     const agentFromUrl = parseAgentParam(searchParams.get('agent'), allowed);
     if (agentFromUrl) setAddAgentId(agentFromUrl);
     setSearchParams(consumeConnectIntent(searchParams), { replace: true });
-  }, [installedIds, searchParams, setSearchParams]);
+  }, [installedIds, visibleIds, searchParams, setSearchParams]);
 
   useEffect(() => {
     const intent = pendingGuide?.intent ?? null;
@@ -322,8 +333,8 @@ export default function ConnectionsPage() {
       <PageHeader
         title="连接"
         description={
-          wallet
-            ? `钱包 · ${wallet.tickets.length} 张票`
+          visibleWallet
+            ? `钱包 · ${visibleWallet.tickets.length} 张票`
             : '钱包 · 官方登录 / API Key'
         }
         descriptionTip="跨 Agent 的票列表。每张真票都可「接到…」其他 Agent；生成投影不出现在本页。"
@@ -360,7 +371,7 @@ export default function ConnectionsPage() {
             </Notice>
           ) : null}
           <TicketWalletList
-            wallet={wallet}
+            wallet={visibleWallet}
             loading={walletLoading}
             highlightAgentId={highlightAgentId}
             initialFilter={initialFilter}

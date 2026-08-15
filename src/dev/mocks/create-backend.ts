@@ -14,7 +14,7 @@ import {
   removeMockAdapterBinding,
   resetMockAdapters,
 } from './adapter';
-import { createMockAgentPort, resetMockAgentStatuses } from './agent';
+import { createMockAgentPort, resetMockAgentStatuses, resetMockAgentVisibility } from './agent';
 import { createMockBackupPort } from './backup';
 import { createMockCatalogPort, resetMockAgentCatalog } from './catalog';
 import { createMockChatPort, resetChatMock } from './chat';
@@ -71,6 +71,7 @@ export const createBackend: CreateBackend = () => {
   resetMockAccounts();
   resetMockProviders();
   resetMockAgentStatuses();
+  resetMockAgentVisibility();
   // Seed full agent catalog (ids / names / channels / capabilities).
   seedAgentCatalog(MOCK_AGENT_CATALOG);
 
