@@ -6,7 +6,7 @@ import { authDisplayForAccount } from '@/lib/backend/contracts/auth-state';
 import { isCapabilityBlocked, providerCapabilityGate } from '@/lib/capability';
 import type { Account, Provider } from '@/lib/types';
 import type { AdapterApplyPlan, AdapterProfile, AdapterRoute } from '@/lib/api/adapter';
-import type { AdapterMaturity } from '@/lib/backend/contracts/adapter';
+import type { AdapterMaturity, AdapterReusePath } from '@/lib/backend/contracts/adapter';
 import type {
   PlanEligibility,
   SourceOption,
@@ -28,11 +28,24 @@ const ACCOUNT_SWITCH_BLOCKED_FALLBACK = '该 Agent 不支持账号池切换';
 const PROVIDER_SWITCH_BLOCKED_FALLBACK = '当前 Agent 不支持 Provider 配置写入';
 
 const ROUTE_SUMMARY: Record<AdapterRoute, string> = {
-  native_endpoint: '直连端点映射',
-  local_bridge: '本地桥',
-  config_sync: '直接同步',
+  native_endpoint: '① API 端点直连',
+  local_bridge: '③ 本机协议桥',
+  config_sync: '① API 端点直连',
   unsupported: '当前不支持',
 };
+const REUSE_PATH_SUMMARY: Record<AdapterReusePath, string> = {
+  api_endpoint: '① API 端点直连',
+  native_subscription: '② 原生订阅复用',
+  local_bridge: '③ 本机协议桥',
+  none: '当前不支持',
+};
+
+function reusePathForPlan(plan: AdapterApplyPlan): AdapterReusePath {
+  if (plan.reusePath) return plan.reusePath;
+  if (plan.analysis.route === 'unsupported') return 'none';
+  if (plan.analysis.route === 'local_bridge') return 'local_bridge';
+  return 'api_endpoint';
+}
 
 function generatedProviderIds(profiles: readonly Pick<AdapterProfile, 'generatedProviderId'>[]): Set<string> {
   return new Set(
@@ -111,7 +124,7 @@ export function planToEligibility(plan: AdapterApplyPlan): PlanEligibility {
     kind: 'ready',
     plan,
     canApply: plan.canApply,
-    routeSummary: ROUTE_SUMMARY[plan.analysis.route],
+    routeSummary: REUSE_PATH_SUMMARY[reusePathForPlan(plan)] ?? ROUTE_SUMMARY[plan.analysis.route],
     ...(plan.canApply ? {} : { reason: plan.reason ?? plan.analysis.reason }),
   };
 }

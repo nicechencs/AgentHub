@@ -59,6 +59,8 @@ pub enum TicketSurface {
     GlmCodingPlan,
     DeepseekApi,
     CodexChatgptSubscription,
+    ClaudeSubscription,
+    GrokXaiSubscription,
     Unknown,
 }
 
@@ -72,6 +74,8 @@ impl TicketSurface {
             Self::GlmCodingPlan => "glm-coding-plan",
             Self::DeepseekApi => "deepseek-api",
             Self::CodexChatgptSubscription => "codex-chatgpt-subscription",
+            Self::ClaudeSubscription => "claude-subscription",
+            Self::GrokXaiSubscription => "grok-xai-subscription",
             Self::Unknown => "unknown",
         }
     }
@@ -85,6 +89,8 @@ impl TicketSurface {
             AdapterSourceProduct::GlmCodingPlan => Self::GlmCodingPlan,
             AdapterSourceProduct::DeepseekApi => Self::DeepseekApi,
             AdapterSourceProduct::CodexChatGptSubscription => Self::CodexChatgptSubscription,
+            AdapterSourceProduct::ClaudeSubscription => Self::ClaudeSubscription,
+            AdapterSourceProduct::XaiGrokSubscription => Self::GrokXaiSubscription,
             AdapterSourceProduct::Other => Self::Unknown,
         }
     }
@@ -99,6 +105,8 @@ impl TicketSurface {
             "glm-coding-plan" => Some(Self::GlmCodingPlan),
             "deepseek-api" => Some(Self::DeepseekApi),
             "codex-chatgpt-subscription" => Some(Self::CodexChatgptSubscription),
+            "claude-subscription" => Some(Self::ClaudeSubscription),
+            "grok-xai-subscription" => Some(Self::GrokXaiSubscription),
             "unknown" => Some(Self::Unknown),
             _ => None,
         }
@@ -131,7 +139,17 @@ impl TicketSurface {
                 TicketProtocol::AnthropicMessages,
                 TicketProtocol::OpenaiChat,
             ],
-            Self::CodexChatgptSubscription => &[TicketProtocol::OpenaiResponses],
+            Self::CodexChatgptSubscription => &[
+                TicketProtocol::OpenaiResponses,
+                TicketProtocol::OpenaiCodexPkce,
+            ],
+            Self::ClaudeSubscription => &[
+                TicketProtocol::AnthropicMessages,
+                TicketProtocol::AnthropicPkce,
+            ],
+            Self::GrokXaiSubscription => {
+                &[TicketProtocol::OpenaiChat, TicketProtocol::XaiDeviceCode]
+            }
             Self::Unknown => &[],
         }
     }
@@ -161,16 +179,22 @@ impl TicketCredentialClass {
 #[serde(rename_all = "kebab-case")]
 pub enum TicketProtocol {
     AnthropicMessages,
+    AnthropicPkce,
     OpenaiChat,
     OpenaiResponses,
+    OpenaiCodexPkce,
+    XaiDeviceCode,
 }
 
 impl TicketProtocol {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::AnthropicMessages => "anthropic-messages",
+            Self::AnthropicPkce => "anthropic-pkce",
             Self::OpenaiChat => "openai-chat",
             Self::OpenaiResponses => "openai-responses",
+            Self::OpenaiCodexPkce => "openai-codex-pkce",
+            Self::XaiDeviceCode => "xai-device-code",
         }
     }
 }

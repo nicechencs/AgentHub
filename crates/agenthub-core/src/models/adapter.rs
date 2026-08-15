@@ -290,6 +290,19 @@ impl AdapterGateKind {
     }
 }
 
+/// Product-facing reuse path derived from the public route and credential.
+///
+/// This is presentation only; the domain route remains [`AdapterRoute`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdapterReusePath {
+    ApiEndpoint,
+    NativeSubscription,
+    LocalBridge,
+    #[default]
+    None,
+}
+
 /// A safe, structured description of one required future action.
 ///
 /// `secret = true` is a reference to the selected Connection only. Such an
@@ -372,6 +385,9 @@ pub struct AdapterApplyPlan {
     /// Four-tier edge maturity. Independent of `can_apply`.
     #[serde(default)]
     pub maturity: AdapterMaturity,
+    /// Product-facing reuse path derived from the public route.
+    #[serde(default)]
+    pub reuse_path: AdapterReusePath,
     /// Planner-facing reason. Same gist as `analysis.reason`.
     #[serde(default)]
     pub reason: String,

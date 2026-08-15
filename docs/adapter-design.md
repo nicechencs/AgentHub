@@ -1,10 +1,10 @@
 # Adapter 页面与本地协议桥接设计
 
-> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi / Anthropic → Codex 实验性本地桥接 + Pi 配置同步）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）。Anthropic API Key → Codex 的 `local_bridge` 已开放 experimental bind。ChatGPT/Codex subscription → Claude Code 是单独受门禁约束的实验候选，当前仍为 `unsupported` / `plan.canApply=false`。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。Kimi / Anthropic → Codex 发布前仍需实机 dogfood。
+> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi / Anthropic → Codex 实验性本地桥接 + Pi 配置同步）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）。Anthropic API Key → Codex 的 `local_bridge` 已开放 experimental bind。ChatGPT/Codex subscription → Claude Code 是 **③ 本机桥** 的产品目标边，当前实现仍为 `plan.canApply=false`（见 [product-decisions.md](product-decisions.md)）。Codex 订阅 → Pi 是 ②，不走本页桥。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。Kimi / Anthropic → Codex 发布前仍需实机 dogfood。
 > 2026-08-15：跨 Agent 复用的**目标领域**改为票 / 绑定 / 协议图（[connection-binding-model.md](connection-binding-model.md)）。ConnectFlow 确认步与 Adapter 页删除已改走 `bind`/`unbind`；内部仍可复用 apply 实现 reshape/bridge 运行时。生成物是绑定的私有 runtime，不是钱包里的新票。
 > 调研日期：2026-08-12（进度同步：2026-08-12）
 > 重点参考：`D:\demo_github\AgentHub_Ref\Cli-Proxy-API-Management-Center`
-> 关联文档：[adapter-sidecar-design.md](adapter-sidecar-design.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
+> 关联文档：[product-decisions.md](product-decisions.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
 > 2026-08-14 同步：Hub 重构 Phase 1 落地（[hub-redesign-plan.md](hub-redesign-plan.md)）——Dashboard Agent 卡片与 Connections 行新增统一连接流程 `ConnectFlowDialog`（复用同一 `lib/api/adapter` 门面与 `plan.canApply` 门禁）。Adapter 页（侧栏「桥与适配」）只管理已绑定的本机桥 runtime，不是日常创建入口；创建绑定不在本页。
 
 ## 0. 当前落地状态
@@ -22,7 +22,7 @@
 
 ## 1. 结论
 
-Adapter 负责把 **钱包里已有的票** 接到另一个 Agent。机制不变：只引用票，不复制凭据，不另建一套账号池，也不是通用 API 网关。目标对象是 **绑定**：`plan(票, Agent)` 在 native / reshape / bridge / 不可行 中择一，`bind` 写入。前端写入入口已是 `bind`/`unbind`；mock/内部仍可复用 apply 生成运行时，见 [connection-binding-model.md](connection-binding-model.md)。
+Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变：只引用票，不复制凭据，不另建一套账号池，也不是公网/多租户网关。产品分三路（① API 直连 ② 原生订阅 ③ 本机桥），见 [product-decisions.md](product-decisions.md)；本页的桥 runtime 只服务 ③。目标对象是 **绑定**：`plan(票, Agent)` 在 native / reshape / bridge / 不可行 中择一，`bind` 写入。前端写入入口已是 `bind`/`unbind`；mock/内部仍可复用 apply 生成运行时，见 [connection-binding-model.md](connection-binding-model.md)。
 
 **入口定位（Adapter 页降级已落地）**：日常发起适配走 Hub 对话框，不必打开本页。`/adapter` 与侧栏「桥与适配」保留，只管理已绑定的本机桥 runtime，不再提供选来源→分析→plan→apply 创建区。入口与信息架构见 [hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)。
 
@@ -35,8 +35,8 @@ Adapter 负责把 **钱包里已有的票** 接到另一个 Agent。机制不变
 | 目标 `route` | 当前实现名 | 含义 | 用户看到的动作 |
 |---|---|---|---|
 | `native` | 账号/供应商切换 | 票本来就是给这个 Agent 的 | 切换，不起桥 |
-| `reshape` | `config_sync` / `native_endpoint` | 同协议，只改配置形状 | 写入配置，凭据只引用 |
-| `bridge` | `local_bridge` | 协议不同，图上有边 | 起 loopback，目标只持本地 token |
+| `reshape` | `config_sync` / `native_endpoint` | 共同协议（①）或共同 OAuth 契约槽（②），只改配置形状 | 写入配置，凭据只引用，不起桥 |
+| `bridge` | `local_bridge` | 协议/契约对不上，图上有边（③） | 起 loopback，目标只持本地 token |
 | 不可行 | `unsupported` | 无 writer / 无表面 / 无边 | 解释原因，不提供「强制转换」 |
 
 核心产品决策：
@@ -64,10 +64,10 @@ Adapter 负责把 **钱包里已有的票** 接到另一个 Agent。机制不变
 
 ### 2.2 明确不做
 
-- 不把 ChatGPT、Claude 等消费级订阅 OAuth 当作通用 API Key 导出、转售或共享。
-- 不承诺所有 OAuth 都能跨 Agent 使用。仅可研究“当前用户、本机 loopback、显式 opt-in、token 不可导出、不可公网/多租户”的供应商专属实验候选；未经专题门禁通过的组合一律为 `unsupported`。
-- 不建设公网网关、团队租户、计费、负载均衡、权重、冷却池或配额调度平台。
-- 不在 Adapter 首屏建设完整协议矩阵、监控大盘、日志控制台或 Provider 多栏工作台。
+- 不把 ChatGPT、Claude 等订阅 OAuth **导出成可复制的通用 API Key**，也不转售、不共享给其他人。
+- 不承诺「任意 OAuth 自动能接到任意 Agent」。每条边仍要分类 + fixtures；未就绪的边 `canApply=false`。产品方向是三路复用（能直连或写原生槽就不起桥），见 [product-decisions.md](product-decisions.md)。
+- 不建设公网网关、团队租户、计费、多号轮询/权重/冷却池或配额调度平台。
+- 不在 Adapter 首屏建设完整协议矩阵、监控大盘、日志控制台或 Provider 多栏工作台（管理动作可对齐 Management Center，页面不抄）。
 - 不记录请求/响应正文，不展示或复制完整 Token。
 - 不把凭据落盘加密列为本功能任务；按项目既有决策继续沿用当前存储方案。
 - 不在 MVP 转换厂商专属原生工具、加密思考块、视频通道或无法无损表达的扩展字段。
@@ -82,12 +82,12 @@ Adapter 负责把 **钱包里已有的票** 接到另一个 Agent。机制不变
 选择 Connection + 目标 Agent
   → 校验凭据产品/区域/授权范围
   → 读取目标 Agent 能力与版本
-  → 是否有目标原生配置映射？
-       是 → config_sync
-  → 上游是否原生提供目标协议端点？
-       是 → native_endpoint
-  → 是否存在已测试的协议转换器，且条款/授权允许？
-       是 → local_bridge
+  → OAuth 且目标有同一授权契约槽？
+       是 → config_sync（②，不起桥）
+  → 是否有目标原生配置映射 / 上游原生协议端点？
+       是 → config_sync / native_endpoint（①，不起桥）
+  → 是否存在已测试的协议转换器？
+       是 → local_bridge（③）
   → unsupported（给出原因与可行替代）
 ```
 
@@ -184,7 +184,7 @@ PageHeader                                             [去 Dashboard 连接] [�
 - 来源 OAuth 未完成时整体阻断：不 fan-out、不 plan，目标区只显示「先完成授权」Notice 与去 Connections 的 CTA。
 - 用户点选目标卡后才运行 `plan`，局部显示 skeleton，不锁住已有适配列表。
 - 分析结果按 `(sourceKind, sourceId, target)` 做会话级缓存；换来源或重试时按生成计数丢弃过期响应。
-- 对 subscription 实验候选，`不支持`还须显示“当前未通过上游/条款/协议门禁”，并链接[订阅桥接专题与门禁](provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code当前结论与前置门禁)；不得以 opt-in、测试按钮或隐藏开关绕开规则。
+- 对尚未 `canApply` 的边，按三路说明缺的工程项：② 写「目标有槽、写入未开」；③ 写「要起本机桥、实现未开」，并链接[第 3 路边](provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code第-3-路实现未开) 与 [产品决策](product-decisions.md)。不得对 ② 显示「需要本机服务」，也不得把原因写成「订阅不是产品」。
 
 #### 步骤 C：确认配置
 
@@ -252,7 +252,7 @@ PageHeader                                             [去 Dashboard 连接] [�
 | loading | 复用列表 skeleton，Dialog 分区局部 skeleton |
 | empty | 说明“把现有连接接入其他 Agent”，提供 `新建适配` |
 | disconnected | inline ErrorState；禁用新建和 mutation，已有信息可读 |
-| unsupported | 中性说明，不使用红色故障态；给出原因、专题证据与可用替代路径。对 subscription 候选明确显示 `当前不支持`、`plan.canApply=false`，不显示 Apply、启动 bridge 或“强制继续”入口 |
+| unsupported | 中性说明，不使用红色故障态；给出原因与可用替代路径。对尚未就绪的订阅边显示 `实现未开`、`plan.canApply=false`，不显示 Apply 或“强制继续”；文案不得写成「订阅不是产品」 |
 | starting/stopping | 当前行按钮 loading，其他行可操作 |
 | error | 行内短错误 + `查看诊断`；toast 只用于操作结果，不承载完整原因 |
 | status_unavailable | 桥接状态读取失败时第二层状态显示 `状态不可用`（中性），不改写为桥接故障，也不清空持久 profile 信息 |
@@ -540,7 +540,7 @@ MVP 不做全文搜索、自动滚动、错误文件下载、方法/路径筛选
 
 ## 9. 对重点参考项目的取舍
 
-`Cli-Proxy-API-Management-Center` 是 Management API WebUI，不是 CLIProxyAPI 或协议代理实现。其 `/api-call` 用于管理端代发最小测试请求和模型发现，不能证明它实现了 SSE 翻译、监听端口、协议路由或 OAuth 跨客户端复用。
+`Cli-Proxy-API-Management-Center` 是 CLIProxyAPI 的管理面（OAuth、凭据、配额、探测、日志），不是代理本体。产品上要对齐这些**管理动作**；协议转发对齐 CLIProxyAPI / cc-switch。其 `/api-call` 只是管理端代发最小测试请求，不能当成代理 runtime。取舍见 [product-decisions.md](product-decisions.md)。
 
 重点阅读的参考源：
 

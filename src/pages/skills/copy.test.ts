@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { skillsCopy } from './copy';
+import { PRIVATE_SKILL_ROW_HINT, skillsCopy } from './copy';
 
 describe('skillsCopy', () => {
   it('cell tips stay short and avoid L3 jargon', () => {
@@ -37,6 +37,14 @@ describe('skillsCopy', () => {
     expect(skillsCopy.filters.enableConflict).toBe('冲突');
     expect(skillsCopy.filters.enableMapped).toBe('已启用');
     expect(skillsCopy.filters.enableUnmapped).toBe('未启用');
+  });
+
+  it('private-source instructional copy is a hover hint, not list chrome', () => {
+    expect(skillsCopy.cell.tip('Claude', 'absent', 'private_source')).toBe(
+      PRIVATE_SKILL_ROW_HINT,
+    );
+    expect(PRIVATE_SKILL_ROW_HINT).toBe('只在本工具 · 先加入共享库');
+    expect(PRIVATE_SKILL_ROW_HINT).toContain('先加入共享库');
   });
 
   it('tabs are library + market only', () => {

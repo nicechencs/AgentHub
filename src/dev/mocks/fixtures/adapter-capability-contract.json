@@ -15,7 +15,8 @@
         "applyPath": "native",
         "ruleId": "kimi-membership-to-claude-v1",
         "gateKind": "none",
-        "reason": "Kimi Code 会员可预览为 Claude 的原生 Anthropic Messages 端点。"
+        "reason": "Kimi Code 会员可预览为 Claude 的原生 Anthropic Messages 端点。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -33,7 +34,8 @@
         "applyPath": "local_bridge",
         "ruleId": "kimi-membership-to-codex-v1",
         "gateKind": "none",
-        "reason": "Kimi Code 会员到 Codex 需要本地协议桥接。"
+        "reason": "Kimi Code 会员到 Codex 需要本地协议桥接。",
+        "reusePath": "local_bridge"
       }
     },
     {
@@ -51,7 +53,8 @@
         "applyPath": "config_sync",
         "ruleId": "kimi-membership-to-pi-v1",
         "gateKind": "none",
-        "reason": "Kimi Code 会员可预览为 Pi 的配置同步。"
+        "reason": "Kimi Code 会员可预览为 Pi 的配置同步。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -69,7 +72,8 @@
         "applyPath": "config_sync",
         "ruleId": "anthropic-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "显式 Anthropic API Key 可预览为 Pi 的配置同步。"
+        "reason": "显式 Anthropic API Key 可预览为 Pi 的配置同步。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -87,7 +91,8 @@
         "applyPath": "local_bridge",
         "ruleId": "anthropic-api-to-codex-v1",
         "gateKind": "none",
-        "reason": "显式 Anthropic API Key 到 Codex 需要本地协议桥接。"
+        "reason": "显式 Anthropic API Key 到 Codex 需要本地协议桥接。",
+        "reusePath": "local_bridge"
       }
     },
     {
@@ -96,8 +101,13 @@
         "kind": "account",
         "agentId": "claude",
         "accountKind": "apikey",
-        "extra": { "provider": "anthropic" },
-        "credentials": { "format": "api_key", "api_key": "must-not-leak" }
+        "extra": {
+          "provider": "anthropic"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
       },
       "target": "codex",
       "expect": {
@@ -107,7 +117,8 @@
         "applyPath": "local_bridge",
         "ruleId": "anthropic-api-to-codex-v1",
         "gateKind": "none",
-        "reason": "显式 Anthropic API Key 到 Codex 需要本地协议桥接。"
+        "reason": "显式 Anthropic API Key 到 Codex 需要本地协议桥接。",
+        "reusePath": "local_bridge"
       }
     },
     {
@@ -133,7 +144,8 @@
         "applyPath": "rejected",
         "ruleId": "codex-subscription-to-claude-app-server-v0",
         "gateKind": "subscription_candidate",
-        "reason": "Codex / ChatGPT 订阅 → Claude Code：当前不支持。尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。这只表示没有可执行规则，不代表连接失效。替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。"
+        "reason": "Codex / ChatGPT 订阅 → Claude Code：当前不支持。尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。这只表示没有可执行规则，不代表连接失效。替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。",
+        "reusePath": "none"
       }
     },
     {
@@ -156,7 +168,8 @@
         "applyPath": "rejected",
         "ruleId": "codex-subscription-to-claude-app-server-v0",
         "gateKind": "subscription_candidate",
-        "reason": "Codex / ChatGPT 订阅 → Claude Code：当前不支持。尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。这只表示没有可执行规则，不代表连接失效。替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。"
+        "reason": "Codex / ChatGPT 订阅 → Claude Code：当前不支持。尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。这只表示没有可执行规则，不代表连接失效。替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。",
+        "reusePath": "none"
       }
     },
     {
@@ -174,7 +187,8 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "subscription_candidate",
-        "reason": "Codex / ChatGPT 订阅 → Claude Code：当前不支持。尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。这只表示没有可执行规则，不代表连接失效。替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。"
+        "reason": "Codex / ChatGPT 订阅 → Claude Code：当前不支持。尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。这只表示没有可执行规则，不代表连接失效。替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。",
+        "reusePath": "none"
       }
     },
     {
@@ -192,7 +206,8 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。"
+        "reason": "AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。",
+        "reusePath": "none"
       }
     },
     {
@@ -210,7 +225,8 @@
         "applyPath": "config_sync",
         "ruleId": "deepseek-api-to-dsh-v1",
         "gateKind": "none",
-        "reason": "DeepSeek API Key 可预览为 DeepSeek Harness 的配置同步。"
+        "reason": "DeepSeek API Key 可预览为 DeepSeek Harness 的配置同步。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -228,7 +244,8 @@
         "applyPath": "native",
         "ruleId": "deepseek-api-to-claude-v1",
         "gateKind": "none",
-        "reason": "DeepSeek API 可实验预览为 Claude 的原生 Anthropic Messages 端点。"
+        "reason": "DeepSeek API 可实验预览为 Claude 的原生 Anthropic Messages 端点。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -246,7 +263,8 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "当前 Kimi 连接不是「Kimi Code 会员」来源。跨 Agent 适配仅支持会员：Connections 中选择 preset「Kimi Code 会员」，或配置端点包含 api.kimi.com/coding。开放平台（moonshot）与任意兼容 API 不会自动升级。当前不支持不等于连接失效。"
+        "reason": "当前 Kimi 连接不是「Kimi Code 会员」来源。跨 Agent 适配仅支持会员：Connections 中选择 preset「Kimi Code 会员」，或配置端点包含 api.kimi.com/coding。开放平台（moonshot）与任意兼容 API 不会自动升级。当前不支持不等于连接失效。",
+        "reusePath": "none"
       }
     },
     {
@@ -264,7 +282,8 @@
         "applyPath": "config_sync",
         "ruleId": "openai-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "显式 OpenAI API Key 可预览为 Pi 的配置同步。"
+        "reason": "显式 OpenAI API Key 可预览为 Pi 的配置同步。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -273,8 +292,13 @@
         "kind": "account",
         "agentId": "claude",
         "accountKind": "apikey",
-        "extra": { "provider": "openai" },
-        "credentials": { "format": "api_key", "api_key": "must-not-leak" }
+        "extra": {
+          "provider": "openai"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
       },
       "target": "pi",
       "expect": {
@@ -284,7 +308,8 @@
         "applyPath": "config_sync",
         "ruleId": "openai-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "显式 OpenAI API Key 可预览为 Pi 的配置同步。"
+        "reason": "显式 OpenAI API Key 可预览为 Pi 的配置同步。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -302,7 +327,8 @@
         "applyPath": "config_sync",
         "ruleId": "xai-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "显式 xAI API Key 可预览为 Pi 的配置同步。"
+        "reason": "显式 xAI API Key 可预览为 Pi 的配置同步。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -311,8 +337,13 @@
         "kind": "account",
         "agentId": "grok",
         "accountKind": "apikey",
-        "extra": { "provider": "xai" },
-        "credentials": { "format": "api_key", "api_key": "must-not-leak" }
+        "extra": {
+          "provider": "xai"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
       },
       "target": "pi",
       "expect": {
@@ -322,7 +353,8 @@
         "applyPath": "config_sync",
         "ruleId": "xai-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "显式 xAI API Key 可预览为 Pi 的配置同步。"
+        "reason": "显式 xAI API Key 可预览为 Pi 的配置同步。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -340,7 +372,8 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。"
+        "reason": "AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。",
+        "reusePath": "none"
       }
     },
     {
@@ -358,7 +391,8 @@
         "applyPath": "native",
         "ruleId": "glm-coding-plan-to-claude-v1",
         "gateKind": "none",
-        "reason": "GLM Coding Plan 可实验预览为 Claude 的原生 Anthropic Messages 端点。"
+        "reason": "GLM Coding Plan 可实验预览为 Claude 的原生 Anthropic Messages 端点。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -367,8 +401,13 @@
         "kind": "account",
         "agentId": "claude",
         "accountKind": "apikey",
-        "extra": { "provider": "glm-coding-plan" },
-        "credentials": { "format": "api_key", "api_key": "must-not-leak" }
+        "extra": {
+          "provider": "glm-coding-plan"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
       },
       "target": "claude",
       "expect": {
@@ -378,7 +417,8 @@
         "applyPath": "native",
         "ruleId": "glm-coding-plan-to-claude-v1",
         "gateKind": "none",
-        "reason": "GLM Coding Plan 可实验预览为 Claude 的原生 Anthropic Messages 端点。"
+        "reason": "GLM Coding Plan 可实验预览为 Claude 的原生 Anthropic Messages 端点。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -396,7 +436,8 @@
         "applyPath": "native",
         "ruleId": "deepseek-api-to-claude-v1",
         "gateKind": "none",
-        "reason": "DeepSeek API 可实验预览为 Claude 的原生 Anthropic Messages 端点。"
+        "reason": "DeepSeek API 可实验预览为 Claude 的原生 Anthropic Messages 端点。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -405,8 +446,13 @@
         "kind": "account",
         "agentId": "claude",
         "accountKind": "apikey",
-        "extra": { "provider": "deepseek-api" },
-        "credentials": { "format": "api_key", "api_key": "must-not-leak" }
+        "extra": {
+          "provider": "deepseek-api"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
       },
       "target": "claude",
       "expect": {
@@ -416,7 +462,8 @@
         "applyPath": "native",
         "ruleId": "deepseek-api-to-claude-v1",
         "gateKind": "none",
-        "reason": "DeepSeek API 可实验预览为 Claude 的原生 Anthropic Messages 端点。"
+        "reason": "DeepSeek API 可实验预览为 Claude 的原生 Anthropic Messages 端点。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -434,7 +481,8 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。"
+        "reason": "同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。",
+        "reusePath": "none"
       }
     },
     {
@@ -452,7 +500,8 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。"
+        "reason": "同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。",
+        "reusePath": "none"
       }
     },
     {
@@ -470,7 +519,8 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。"
+        "reason": "同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。",
+        "reusePath": "none"
       }
     },
     {
@@ -488,7 +538,8 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "该 Agent 无配置写入能力，不能作为绑定落点"
+        "reason": "该 Agent 无配置写入能力，不能作为绑定落点",
+        "reusePath": "none"
       }
     },
     {
@@ -506,7 +557,8 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "该 Agent 无配置写入能力，不能作为绑定落点"
+        "reason": "该 Agent 无配置写入能力，不能作为绑定落点",
+        "reusePath": "none"
       }
     },
     {
@@ -532,7 +584,8 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "该 Agent 无配置写入能力，不能作为绑定落点"
+        "reason": "该 Agent 无配置写入能力，不能作为绑定落点",
+        "reusePath": "none"
       }
     },
     {
@@ -550,7 +603,154 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。"
+        "reason": "同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。",
+        "reusePath": "none"
+      }
+    },
+    {
+      "id": "claude-oauth-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "oauth"
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": false,
+        "applyPath": "rejected",
+        "gateKind": "preview_only",
+        "reusePath": "native_subscription",
+        "ruleId": "claude-subscription-to-pi-v0",
+        "reason": "Claude 订阅可预览为 Pi 的 anthropic 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+      }
+    },
+    {
+      "id": "codex-oauth-auth-json-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentialFormat": "auth_json",
+        "credentials": {
+          "format": "auth_json",
+          "tokens": {
+            "access_token": "must-not-leak",
+            "refresh_token": "must-not-leak"
+          }
+        }
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": false,
+        "applyPath": "rejected",
+        "gateKind": "preview_only",
+        "reusePath": "native_subscription",
+        "ruleId": "codex-subscription-to-pi-v0",
+        "reason": "Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+      }
+    },
+    {
+      "id": "codex-oauth-tokens-blob-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentials": {
+          "tokens": {
+            "access_token": "must-not-leak"
+          }
+        }
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": false,
+        "applyPath": "rejected",
+        "gateKind": "preview_only",
+        "reusePath": "native_subscription",
+        "ruleId": "codex-subscription-to-pi-v0",
+        "reason": "Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+      }
+    },
+    {
+      "id": "codex-oauth-without-auth-json-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth"
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": false,
+        "applyPath": "rejected",
+        "gateKind": "preview_only",
+        "reusePath": "native_subscription",
+        "ruleId": "codex-subscription-to-pi-v0",
+        "reason": "Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+      }
+    },
+    {
+      "id": "grok-oauth-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "grok",
+        "accountKind": "oauth"
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": false,
+        "applyPath": "rejected",
+        "gateKind": "preview_only",
+        "reusePath": "native_subscription",
+        "ruleId": "grok-subscription-to-pi-v0",
+        "reason": "Grok / xAI 订阅可预览为 Pi 的 xai 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+      }
+    },
+    {
+      "id": "claude-oauth-to-codex",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "oauth"
+      },
+      "target": "codex",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reusePath": "none",
+        "reason": "协议不通：票所说的上游协议与该 Agent 所听的入口没有交集。"
+      }
+    },
+    {
+      "id": "grok-oauth-to-claude",
+      "source": {
+        "kind": "account",
+        "agentId": "grok",
+        "accountKind": "oauth"
+      },
+      "target": "claude",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reusePath": "none",
+        "reason": "协议不通：票所说的上游协议与该 Agent 所听的入口没有交集。"
       }
     }
   ]

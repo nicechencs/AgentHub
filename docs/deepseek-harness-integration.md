@@ -2,7 +2,7 @@
 
 > 状态：**P1–P5 已接入代码**（2026-08-15）  
 > 调研依据：官方站点、开发者文档、GitHub `deepseek-ai/deepseek-harness`（MIT，developer preview）。  
-> 真源关系：本文是 **DSH 接入** 的唯一设计真源。实施时按 [adding-an-agent.md](adding-an-agent.md) 走生产接入轨；能力声明按 [capability-matrix.md](capability-matrix.md)；票面与跨 Agent 边按 [connection-binding-model.md](connection-binding-model.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)。  
+> 真源关系：本文是 **DSH 接入** 的唯一设计真源。实施时按 [adding-an-agent.md](adding-an-agent.md) 走生产接入轨；能力声明按 [capability-matrix.md](capability-matrix.md)；票面与跨 Agent 边按 [product-decisions.md](product-decisions.md)、[connection-binding-model.md](connection-binding-model.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)。DeepSeek API 票走 **① API 直连**，不要把 DSH 当 ③ 协议桥。  
 > 实现状态以 adapter `capability()`、已注册的 `platform/*/sources` 与测试为准。本文保留设计约束；能力级别以代码声明为准。
 
 ---
@@ -14,7 +14,7 @@ DeepSeek Harness（产品命令 `dsh`）是 **第八个已接入 Agent**，不�
 | 对象 | 身份 | 现在做什么 |
 |---|---|---|
 | **DeepSeek Harness** | Agent，`AgentKey` / 兼容期 `AgentId` = `dsh`，展示名 **DeepSeek Harness** | 按稀疏端口接入：安装、配置、账号、Skills、用量、会话/项目、headless run |
-| **DeepSeek API** | 票面（API Key，双协议） | 接到 `dsh` 走现有矩阵的 `config_sync`（`deepseek-api-to-dsh-v1`）；接到 Claude 走 experimental `native_endpoint`（`deepseek-api-to-claude-v1`，已开） |
+| **DeepSeek API** | 票面（API Key，双协议，属 ①） | 接到 `dsh` 走 `config_sync`（`deepseek-api-to-dsh-v1`）；接到 Claude 走 experimental `native_endpoint`（`deepseek-api-to-claude-v1`，已开）。接到 Codex 属 ③（Chat ≠ Responses），当前未开 |
 
 不要用 `deepseek` 当 Agent id：它会和票面、模型名、官方 API 混在一起。命令与 npm 包都以 `dsh` 出现，和现有 `pi` / `claude` 一样用 CLI 名做 key。
 
@@ -423,7 +423,7 @@ P4 才做 `build_run_spec`，且必须先量：
 
 - DeepSeek API → `dsh`：`config_sync`，`canApply=true`，`rule_id=deepseek-api-to-dsh-v1`
 - DeepSeek API → Claude：experimental `native_endpoint` 已开（`deepseek-api-to-claude-v1`）
-- 不开放 Codex Responses、OAuth、二次投影
+- 不开放 Codex Responses（那是 ③，且 DSH 不是桥）、OAuth 写入 DSH 凭据缝、二次投影
 
 ---
 

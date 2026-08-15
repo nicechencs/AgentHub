@@ -326,7 +326,7 @@ credential rotation 以 source `connection_id` 变更事件或 revision 变化�
 
 工作：将 Tauri controller 中的 `local_bridge` 编排抽为 Tauri-neutral core application/control contract；明确 profile journal、request ID、revision/rule revalidation、状态 DTO 与 sidecar IPC 兼容版。当前 `BridgeRuntimeHost` **仍由 Tauri `AppState` 持有**，仅作为该 contract 的 in-process host adapter。
 
-**与协议内核的关系（2026-08-12）：** Codex→Claude 的 **纯协议内核**（Messages/IR/Responses、fixtures、`RetryGate`）可在本阶段并行落入 `agenthub-core::bridge::protocol`，且必须保持 `canApply=false`。该内核**不**等于 sidecar 控制面、不改变 `BridgeRuntimeHost` 宿主归属，也不授权创建 subscription bridge profile。控制面 envelope / handshake / mutation API 仍属本设计的目标契约，实现前 GUI 不得假装 sidecar 已存在。
+**与协议内核的关系（2026-08-12）：** Codex→Claude 是 **③ 本机桥** 的产品目标边（见 [product-decisions.md](product-decisions.md)）。①② 不依赖 sidecar。**纯协议内核**（Messages/IR/Responses、fixtures、`RetryGate`）可在本阶段并行落入 `agenthub-core::bridge::protocol`；仅有内核时仍保持 `canApply=false`（工程未接 transport / apply，不是产品否决）。该内核**不**等于 sidecar 控制面、不改变 `BridgeRuntimeHost` 宿主归属。控制面 envelope / handshake / mutation API 仍属本设计的目标契约，实现前 GUI 不得假装 sidecar 已存在。
 
 验收：现有 GUI 行为不变；所有 `local_bridge` mutation 经相同 application contract；`config_sync`/`native_endpoint` 无 sidecar 依赖；request-id 幂等、revision/rule conflict、saga 补偿有测试；协议内核单测通过且路由门禁仍拒绝 Codex→Claude Apply。
 

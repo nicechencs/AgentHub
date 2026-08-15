@@ -6,6 +6,9 @@
 import type { SkillMapStatus, SkillSyncState } from '@/lib/types';
 import { mapStatusLabel } from '@/lib/api/skill';
 
+/** Private-source row: keep the list quiet; this line lives on hover only. */
+export const PRIVATE_SKILL_ROW_HINT = '只在本工具 · 先加入共享库';
+
 export const skillsCopy = {
   page: {
     title: '技能',
@@ -77,7 +80,7 @@ export const skillsCopy = {
         case 'target_unavailable':
           return `${agentName}：目录不可用`;
         case 'private_source':
-          return '只在本工具 · 先加入共享库';
+          return PRIVATE_SKILL_ROW_HINT;
         case 'conflict':
           if (state === 'foreign') return '内容冲突 · 点击确认覆盖';
           if (state === 'conflict') return '状态不明 · 点击确认覆盖';

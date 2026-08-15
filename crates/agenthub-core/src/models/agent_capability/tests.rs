@@ -19,7 +19,15 @@ fn table_registers_every_agent_accepts_and_writer() {
     assert!(codex.writer);
 
     let pi = agent_bind_capability(AgentId::Pi);
-    assert_eq!(pi.accepts, &[AgentAccept::PiProviderSlot]);
+    assert_eq!(
+        pi.accepts,
+        &[
+            AgentAccept::PiProviderSlot,
+            AgentAccept::PiAnthropicOauthSlot,
+            AgentAccept::PiCodexOauthSlot,
+            AgentAccept::PiXaiOauthSlot,
+        ]
+    );
     assert!(pi.writer);
     assert_eq!(
         AgentAccept::PiProviderSlot.hears(),
@@ -27,6 +35,18 @@ fn table_registers_every_agent_accepts_and_writer() {
             TicketProtocol::AnthropicMessages,
             TicketProtocol::OpenaiChat
         ]
+    );
+    assert_eq!(
+        AgentAccept::PiAnthropicOauthSlot.hears(),
+        &[TicketProtocol::AnthropicPkce]
+    );
+    assert_eq!(
+        AgentAccept::PiCodexOauthSlot.hears(),
+        &[TicketProtocol::OpenaiCodexPkce]
+    );
+    assert_eq!(
+        AgentAccept::PiXaiOauthSlot.hears(),
+        &[TicketProtocol::XaiDeviceCode]
     );
 
     let grok = agent_bind_capability(AgentId::Grok);
@@ -77,6 +97,8 @@ fn cursor_reason_is_no_writer_for_any_ticket_speaks() {
         TicketSurface::GlmCodingPlan,
         TicketSurface::DeepseekApi,
         TicketSurface::CodexChatgptSubscription,
+        TicketSurface::ClaudeSubscription,
+        TicketSurface::GrokXaiSubscription,
         TicketSurface::Unknown,
     ] {
         let reason = unsupported_reason_for_target(AgentId::Cursor, surface.speaks());
@@ -124,6 +146,8 @@ fn capability_table_never_opens_can_apply() {
             AdapterSourceProduct::GlmCodingPlan,
             AdapterSourceProduct::DeepseekApi,
             AdapterSourceProduct::CodexChatGptSubscription,
+            AdapterSourceProduct::ClaudeSubscription,
+            AdapterSourceProduct::XaiGrokSubscription,
             AdapterSourceProduct::Other,
         ] {
             let reason =

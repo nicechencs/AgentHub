@@ -1421,7 +1421,7 @@ fn add_api_key_writes_unknown_surface() {
 }
 
 #[test]
-fn import_live_writes_anthropic_and_unknown_surface() {
+fn import_live_writes_anthropic_and_grok_subscription_surface() {
     let (_root, svc, adapter) = live_svc(AgentId::Claude);
     adapter.set_live(LiveAccount {
         agent: AgentId::Claude,
@@ -1448,8 +1448,8 @@ fn import_live_writes_anthropic_and_unknown_surface() {
         label_hint: Some("Grok live".into()),
         extra: json!({}),
     });
-    let unknown = grok_svc
+    let grok_imported = grok_svc
         .import_live(AgentId::Grok, Some("Grok live"))
         .unwrap();
-    assert_eq!(unknown.extra["surface"], "unknown");
+    assert_eq!(grok_imported.extra["surface"], "grok-xai-subscription");
 }

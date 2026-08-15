@@ -6,6 +6,7 @@
 pub mod host;
 pub mod protocol;
 pub mod runtime;
+pub mod session;
 pub mod types;
 
 pub use host::{BridgeHostError, BridgeRuntimeHost};

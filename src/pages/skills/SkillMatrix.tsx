@@ -173,15 +173,19 @@ function PrivateSkillPlaceholder({
   const agentMeta = AGENT_MAP[agentId];
   const agentName = agentDisplayName(agentId);
   const W = skillsCopy.workspace;
-  const status = skillsCopy.cell.tip(agentName, 'absent', 'private_source');
+  const hint = skillsCopy.cell.tip(agentName, 'absent', 'private_source');
   return (
     <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-      <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted">
-        {agentMeta ? <AgentDot agentId={agentId} size="sm" /> : null}
-        <span className="truncate">
-          {agentName} · {status}
+      <Hint label={hint}>
+        <span
+          tabIndex={0}
+          className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted"
+          aria-label={`${agentName}，${hint}`}
+        >
+          {agentMeta ? <AgentDot agentId={agentId} size="sm" /> : null}
+          <span className="truncate">{agentName}</span>
         </span>
-      </span>
+      </Hint>
       <div
         className="flex shrink-0 flex-wrap items-center gap-1"
         onClick={(e) => e.stopPropagation()}

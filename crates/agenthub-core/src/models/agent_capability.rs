@@ -27,6 +27,12 @@ pub enum AgentAccept {
     OpenAiResponses,
     /// Pi `models.json` provider slot (reshape target, not a wire protocol).
     PiProviderSlot,
+    /// Pi Anthropic OAuth / subscription login slot.
+    PiAnthropicOauthSlot,
+    /// Pi Codex OAuth / subscription login slot.
+    PiCodexOauthSlot,
+    /// Pi xAI OAuth / subscription login slot.
+    PiXaiOauthSlot,
     /// OpenAI Chat Completions via Grok `config.toml`.
     OpenAiChatToml,
     /// OpenAI Chat Completions (Kimi `config.toml`).
@@ -48,6 +54,9 @@ impl AgentAccept {
                 TicketProtocol::AnthropicMessages,
                 TicketProtocol::OpenaiChat,
             ],
+            Self::PiAnthropicOauthSlot => &[TicketProtocol::AnthropicPkce],
+            Self::PiCodexOauthSlot => &[TicketProtocol::OpenaiCodexPkce],
+            Self::PiXaiOauthSlot => &[TicketProtocol::XaiDeviceCode],
             Self::OpenAiChatToml | Self::OpenAiChat => &[TicketProtocol::OpenaiChat],
             // workbuddy.rs writes models.json; ProviderPresets is unsupported
             // and no ticket wire protocol is documented for that slot.
@@ -79,7 +88,12 @@ pub const fn agent_bind_capability(id: AgentId) -> AgentBindCapability {
             writer: true,
         },
         AgentId::Pi => AgentBindCapability {
-            accepts: &[AgentAccept::PiProviderSlot],
+            accepts: &[
+                AgentAccept::PiProviderSlot,
+                AgentAccept::PiAnthropicOauthSlot,
+                AgentAccept::PiCodexOauthSlot,
+                AgentAccept::PiXaiOauthSlot,
+            ],
             writer: true,
         },
         AgentId::Grok => AgentBindCapability {

@@ -16,6 +16,7 @@ import type {
   AdapterProfile,
   AdapterProfileMode,
   AdapterProfileStatus,
+  AdapterReusePath,
   AdapterRoute,
   AdapterRouteAnalysis,
   AdapterServiceImpact,
@@ -109,6 +110,7 @@ export interface AdapterApplyPlanWire {
   targetAgentId: AgentId;
   canApply: boolean;
   maturity?: string;
+  reusePath?: string;
   reason?: string;
   serviceImpact: string;
   changes: AdapterPlanChangeWire[];
@@ -148,6 +150,23 @@ function mapSupport(value: string): AdapterSupport {
 
 function mapMaturity(value: string | null | undefined): AdapterMaturity {
   if (value === 'stable' || value === 'experimental' || value === 'preview' || value === 'none') {
+    return value;
+  }
+  return 'none';
+}
+
+function mapReusePath(value: string | undefined, route: AdapterRoute): AdapterReusePath {
+  if (value === undefined) {
+    if (route === 'unsupported') return 'none';
+    if (route === 'local_bridge') return 'local_bridge';
+    return 'api_endpoint';
+  }
+  if (
+    value === 'api_endpoint'
+    || value === 'native_subscription'
+    || value === 'local_bridge'
+    || value === 'none'
+  ) {
     return value;
   }
   return 'none';
@@ -315,6 +334,7 @@ export function mapAdapterApplyPlan(wire: AdapterApplyPlanWire): AdapterApplyPla
     targetAgentId: wire.targetAgentId,
     canApply: wire.canApply,
     maturity: mapMaturity(wire.maturity),
+    reusePath: mapReusePath(wire.reusePath, analysis.route),
     reason,
     serviceImpact: mapServiceImpact(wire.serviceImpact),
     changes: wire.changes.map(mapPlanChange),

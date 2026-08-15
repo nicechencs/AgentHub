@@ -161,7 +161,13 @@ export const PROTOCOL_MISMATCH_REASON =
 export const SAME_PROTOCOL_NO_EDGE_REASON =
   '同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。';
 
-type TicketProtocol = 'anthropic-messages' | 'openai-chat' | 'openai-responses';
+type TicketProtocol =
+  | 'anthropic-messages'
+  | 'anthropic-pkce'
+  | 'openai-chat'
+  | 'openai-responses'
+  | 'openai-codex-pkce'
+  | 'xai-device-code';
 
 /** Keep in lockstep with `agent_bind_capability` in agenthub-core. */
 function agentBindCapability(id: string): { accepts: TicketProtocol[]; writer: boolean } {
@@ -171,7 +177,16 @@ function agentBindCapability(id: string): { accepts: TicketProtocol[]; writer: b
     case 'codex':
       return { accepts: ['openai-responses'], writer: true };
     case 'pi':
-      return { accepts: ['anthropic-messages', 'openai-chat'], writer: true };
+      return {
+        accepts: [
+          'anthropic-messages',
+          'openai-chat',
+          'anthropic-pkce',
+          'openai-codex-pkce',
+          'xai-device-code',
+        ],
+        writer: true,
+      };
     case 'grok':
       return { accepts: ['openai-chat'], writer: true };
     case 'kimi':
@@ -200,7 +215,11 @@ function sourceSpeaks(source: RouteSourceLabel): TicketProtocol[] {
       return ['openai-chat'];
     case 'codex_subscription':
     case 'codex_subscription_oauth_other':
-      return ['openai-responses'];
+      return ['openai-responses', 'openai-codex-pkce'];
+    case 'claude_subscription':
+      return ['anthropic-messages', 'anthropic-pkce'];
+    case 'grok_xai_subscription':
+      return ['openai-chat', 'xai-device-code'];
     default:
       return [];
   }
@@ -250,6 +269,8 @@ type RouteSourceLabel =
   | 'deepseek_api'
   | 'codex_subscription'
   | 'codex_subscription_oauth_other'
+  | 'claude_subscription'
+  | 'grok_xai_subscription'
   | 'other'
   | 'not_found';
 
@@ -290,6 +311,11 @@ const KIMI_MEMBERSHIP_RULE_IDS = new Set([
   'kimi-membership-to-claude-v1',
   'kimi-membership-to-codex-v1',
   'kimi-membership-to-pi-v1',
+]);
+const NATIVE_SUBSCRIPTION_PI_RULE_IDS = new Set([
+  'claude-subscription-to-pi-v0',
+  'codex-subscription-to-pi-v0',
+  'grok-subscription-to-pi-v0',
 ]);
 
 function jsonString(value: unknown, key: string): string | undefined {
@@ -386,6 +412,12 @@ function classify(
     ?? jsonString(account.extra, 'format')
     ?? account.credentialFormat?.trim();
 
+  if (account.agentId === 'claude' && account.kind === 'oauth') {
+    return 'claude_subscription';
+  }
+  if (account.agentId === 'grok' && account.kind === 'oauth') {
+    return 'grok_xai_subscription';
+  }
   if (account.kind === 'apikey' && explicitProvider?.toLowerCase() === 'anthropic') {
     return 'anthropic_api_key';
   }
@@ -432,6 +464,12 @@ function classify(
     return isCodexAuthJson(credentialFormat, account.credentials ?? {})
       ? 'codex_subscription'
       : 'codex_subscription_oauth_other';
+  }
+  if (account.agentId === 'claude' && account.kind === 'oauth') {
+    return 'claude_subscription';
+  }
+  if (account.agentId === 'grok' && account.kind === 'oauth') {
+    return 'grok_xai_subscription';
   }
   return 'other';
 }
@@ -639,6 +677,48 @@ function analyze(
       gateKind: 'none',
     };
   }
+  if (
+    (source === 'claude_subscription'
+      || source === 'codex_subscription'
+      || source === 'codex_subscription_oauth_other'
+      || source === 'grok_xai_subscription')
+    && request.targetAgentId === 'pi'
+  ) {
+    const subscription = source === 'claude_subscription'
+      ? {
+          value: 'anthropic',
+          ruleId: 'claude-subscription-to-pi-v0',
+          reason: 'Claude 订阅可预览为 Pi 的 anthropic 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。',
+        }
+      : source === 'grok_xai_subscription'
+        ? {
+            value: 'xai',
+            ruleId: 'grok-subscription-to-pi-v0',
+            reason: 'Grok / xAI 订阅可预览为 Pi 的 xai 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。',
+          }
+        : {
+            value: 'openai-codex',
+            ruleId: 'codex-subscription-to-pi-v0',
+            reason: 'Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。',
+          };
+    return {
+      route: 'config_sync',
+      support: 'experimental',
+      reason: subscription.reason,
+      actions: [
+        action('set_config', 'Pi', '选择 Pi 的订阅登录槽。', subscription.value),
+        secretAction('Pi', '从已选 Connection 引用授权（OAuth）；不会读取或显示 token。'),
+      ],
+      limitations: [
+        '仅预览：不会写入 Pi 配置，也不会导出、复制或转换 OAuth token。',
+        'plan.canApply=false：无 Apply、启动 Bridge 或强制继续入口。',
+        '打开 bind 前需逐边验证刷新语义（refresh token 单次轮换会互相打翻）。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId: subscription.ruleId,
+      gateKind: 'preview_only',
+    };
+  }
 
   // Codex / ChatGPT subscription → Claude is a gated experimental candidate only.
   // auth_json matches the closed matrix cell (ruleId present). Bare Codex OAuth
@@ -732,6 +812,13 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
     || accountClaudeNative;
   const canApply = writeGate;
   const maturity = mockPlanMaturity(analysis);
+  const reusePath = NATIVE_SUBSCRIPTION_PI_RULE_IDS.has(analysis.ruleId ?? '')
+    ? 'native_subscription' as const
+    : analysis.route === 'unsupported'
+      ? 'none' as const
+      : analysis.route === 'local_bridge'
+        ? 'local_bridge' as const
+        : 'api_endpoint' as const;
   // Same-edge Account stays closed except explicit API → Pi / Anthropic → Codex.
   const reason = implementedPath && request.sourceKind !== 'provider'
     && !accountExplicitApiToPi
@@ -744,6 +831,7 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
     targetAgentId: request.targetAgentId,
     canApply,
     maturity,
+    reusePath,
     reason,
     serviceImpact: analysis.route === 'local_bridge' ? 'requires_local_bridge' : 'none',
     changes,
@@ -753,9 +841,10 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
 /** Mirror of core `adapter_maturity_from_decision` on the public analysis surface. */
 function mockPlanMaturity(analysis: AdapterRouteAnalysis): AdapterApplyPlan['maturity'] {
   const matrixOpen = analysis.route !== 'unsupported' && analysis.support !== 'unsupported';
+  if (analysis.gateKind === 'preview_only') return 'preview';
   if (matrixOpen && analysis.support === 'stable') return 'stable';
   if (matrixOpen && analysis.support === 'experimental') return 'experimental';
-  if (analysis.gateKind === 'subscription_candidate' || analysis.gateKind === 'preview_only') {
+  if (analysis.gateKind === 'subscription_candidate') {
     return 'preview';
   }
   return 'none';

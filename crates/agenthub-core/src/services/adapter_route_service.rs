@@ -16,8 +16,9 @@ use crate::error::{AppError, Result};
 use crate::models::{
     adapter_maturity_from_decision, decide_adapter_capability, AccountKind, AdapterAction,
     AdapterApplyPlan, AdapterCapabilityDecision, AdapterCredentialClass, AdapterEvidence,
-    AdapterGateKind, AdapterPlanChange, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
-    AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
+    AdapterGateKind, AdapterPlanChange, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis,
+    AdapterRouteRequest, AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct,
+    AdapterSupport, AgentId,
 };
 use crate::services::adapter_route_constants::{
     claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
@@ -132,12 +133,14 @@ impl AdapterRouteService {
         let can_apply = write_gate(classified.decision.can_apply, request, &analysis);
         let maturity = adapter_maturity_from_decision(&classified.decision);
         let reason = analysis.reason.clone();
+        let reuse_path = reuse_path_for(classified.decision.route, classified.credential);
 
         Ok(AdapterApplyPlan {
             analysis,
             target_agent_id: request.target_agent_id,
             can_apply,
             maturity,
+            reuse_path,
             reason,
             service_impact,
             changes,
@@ -174,6 +177,7 @@ impl AdapterRouteService {
 
         Ok(ClassifiedRoute {
             source: identity.label,
+            credential: identity.credential,
             decision,
         })
     }
@@ -348,6 +352,21 @@ impl AdapterRouteService {
                         label: RouteSourceLabel::CodexSubscription,
                         reason_hint: None,
                     })
+                } else if account.agent_id == AgentId::Claude && account.kind == AccountKind::Oauth
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::ClaudeSubscription,
+                        credential: AdapterCredentialClass::OauthOther,
+                        label: RouteSourceLabel::ClaudeSubscription,
+                        reason_hint: None,
+                    })
+                } else if account.agent_id == AgentId::Grok && account.kind == AccountKind::Oauth {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::XaiGrokSubscription,
+                        credential: AdapterCredentialClass::OauthOther,
+                        label: RouteSourceLabel::XaiGrokSubscription,
+                        reason_hint: None,
+                    })
                 } else {
                     Ok(SourceIdentity {
                         product: AdapterSourceProduct::Other,
@@ -366,6 +385,7 @@ impl AdapterRouteService {
 
 struct ClassifiedRoute {
     source: RouteSourceLabel,
+    credential: AdapterCredentialClass,
     decision: AdapterCapabilityDecision,
 }
 
@@ -377,6 +397,20 @@ struct SourceIdentity {
     reason_hint: Option<&'static str>,
 }
 
+fn reuse_path_for(route: AdapterRoute, credential: AdapterCredentialClass) -> AdapterReusePath {
+    match route {
+        AdapterRoute::Unsupported => AdapterReusePath::None,
+        AdapterRoute::LocalBridge => AdapterReusePath::LocalBridge,
+        AdapterRoute::NativeEndpoint | AdapterRoute::ConfigSync => match credential {
+            AdapterCredentialClass::ApiKey => AdapterReusePath::ApiEndpoint,
+            AdapterCredentialClass::OauthAuthJson | AdapterCredentialClass::OauthOther => {
+                AdapterReusePath::NativeSubscription
+            }
+            AdapterCredentialClass::Unknown => AdapterReusePath::None,
+        },
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum RouteSourceLabel {
     KimiMembership,
@@ -386,6 +420,8 @@ enum RouteSourceLabel {
     GlmCodingPlan,
     DeepseekApi,
     CodexSubscription,
+    ClaudeSubscription,
+    XaiGrokSubscription,
     Other,
 }
 
@@ -667,6 +703,54 @@ fn actions_for(
                 true,
             ),
         ],
+        (RouteSourceLabel::ClaudeSubscription, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
+            action(
+                "set_config",
+                "Pi",
+                "选择 Pi 的 anthropic 登录槽。",
+                Some("anthropic"),
+                false,
+            ),
+            action(
+                "reference_connection_secret",
+                "Pi",
+                "从已选 Connection 引用授权（OAuth）；不会读取或显示 token。",
+                None,
+                true,
+            ),
+        ],
+        (RouteSourceLabel::CodexSubscription, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
+            action(
+                "set_config",
+                "Pi",
+                "选择 Pi 的 openai-codex 登录槽。",
+                Some("openai-codex"),
+                false,
+            ),
+            action(
+                "reference_connection_secret",
+                "Pi",
+                "从已选 Connection 引用授权（OAuth）；不会读取或显示 token。",
+                None,
+                true,
+            ),
+        ],
+        (RouteSourceLabel::XaiGrokSubscription, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
+            action(
+                "set_config",
+                "Pi",
+                "选择 Pi 的 xai 登录槽。",
+                Some("xai"),
+                false,
+            ),
+            action(
+                "reference_connection_secret",
+                "Pi",
+                "从已选 Connection 引用授权（OAuth）；不会读取或显示 token。",
+                None,
+                true,
+            ),
+        ],
         (RouteSourceLabel::GlmCodingPlan, AgentId::Claude, AdapterRoute::NativeEndpoint) => {
             vec![
                 action(
@@ -756,9 +840,17 @@ fn evidence_for(
         (RouteSourceLabel::DeepseekApi, AgentId::Claude) => vec![deepseek_claude_evidence()],
         (RouteSourceLabel::DeepseekApi, AgentId::Dsh) => vec![deepseek_dsh_evidence()],
         (
+            RouteSourceLabel::ClaudeSubscription
+            | RouteSourceLabel::CodexSubscription
+            | RouteSourceLabel::XaiGrokSubscription,
+            AgentId::Pi,
+        ) => vec![anthropic_pi_evidence()],
+        (
             RouteSourceLabel::GlmCodingPlan
             | RouteSourceLabel::DeepseekApi
             | RouteSourceLabel::CodexSubscription
+            | RouteSourceLabel::ClaudeSubscription
+            | RouteSourceLabel::XaiGrokSubscription
             | RouteSourceLabel::Other,
             _,
         ) => vec![adapter_compatibility_evidence()],

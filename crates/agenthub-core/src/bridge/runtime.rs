@@ -36,6 +36,8 @@ pub enum BridgeUpstreamProtocol {
     KimiChatCompletions,
     /// Anthropic API Key → Codex: Messages + `x-api-key` / `anthropic-version`.
     AnthropicMessages,
+    /// Codex subscription OAuth → Claude Code: Messages downstream, Responses upstream.
+    CodexResponsesOauth,
 }
 
 impl Default for BridgeUpstreamProtocol {

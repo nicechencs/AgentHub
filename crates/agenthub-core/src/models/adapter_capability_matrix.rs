@@ -25,6 +25,19 @@ pub const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON: &str = concat!(
     "替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。",
 );
 
+pub const SUBSCRIPTION_PI_PREVIEW_LIMITS: &[&str] = &[
+    "仅预览：不会写入 Pi 配置，也不会导出、复制或转换 OAuth token。",
+    "plan.canApply=false：无 Apply、启动 Bridge 或强制继续入口。",
+    "打开 bind 前需逐边验证刷新语义（refresh token 单次轮换会互相打翻）。",
+];
+
+pub const CLAUDE_SUBSCRIPTION_TO_PI_REASON: &str =
+    "Claude 订阅可预览为 Pi 的 anthropic 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。";
+pub const CODEX_SUBSCRIPTION_TO_PI_REASON: &str =
+    "Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。";
+pub const GROK_SUBSCRIPTION_TO_PI_REASON: &str =
+    "Grok / xAI 订阅可预览为 Pi 的 xai 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。";
+
 /// Product / origin that owns the selected Connection credentials.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AdapterSourceProduct {
@@ -42,6 +55,10 @@ pub enum AdapterSourceProduct {
     DeepseekApi,
     /// Codex / ChatGPT subscription account (`auth_json` OAuth shape).
     CodexChatGptSubscription,
+    /// Claude subscription OAuth account.
+    ClaudeSubscription,
+    /// Grok / xAI subscription OAuth account.
+    XaiGrokSubscription,
     /// Anything else; never upgraded by name guessing.
     Other,
 }
@@ -274,13 +291,10 @@ fn surface_from_cell(
         );
     }
 
-    // Recorded experimental candidate with can_apply=false (non-subscription) → unsupported.
+    // Recorded experimental candidate with can_apply=false (non-subscription) is
+    // still a visible preview of its recorded route.
     if !cell.can_apply && cell.support == AdapterSupport::Experimental {
-        return (
-            AdapterRoute::Unsupported,
-            AdapterSupport::Unsupported,
-            AdapterGateKind::Unsupported,
-        );
+        return (cell.route, cell.support, AdapterGateKind::PreviewOnly);
     }
 
     let gate_kind = if can_apply {
@@ -539,6 +553,78 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
     },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::ClaudeSubscription,
+            credential: AdapterCredentialClass::OauthOther,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Pi,
+            protocol: AdapterTargetProtocol::PiProviderConfig,
+            version: "0",
+        },
+        route: AdapterRoute::ConfigSync,
+        support: AdapterSupport::Experimental,
+        can_apply: false,
+        reason: CLAUDE_SUBSCRIPTION_TO_PI_REASON,
+        limitations: SUBSCRIPTION_PI_PREVIEW_LIMITS,
+        rule_id: "claude-subscription-to-pi-v0",
+        verified_at: "2026-08-15",
+        gates: AdapterCapabilityGates::all_closed(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::CodexChatGptSubscription,
+            credential: AdapterCredentialClass::OauthAuthJson,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Pi,
+            protocol: AdapterTargetProtocol::PiProviderConfig,
+            version: "0",
+        },
+        route: AdapterRoute::ConfigSync,
+        support: AdapterSupport::Experimental,
+        can_apply: false,
+        reason: CODEX_SUBSCRIPTION_TO_PI_REASON,
+        limitations: SUBSCRIPTION_PI_PREVIEW_LIMITS,
+        rule_id: "codex-subscription-to-pi-v0",
+        verified_at: "2026-08-15",
+        gates: AdapterCapabilityGates::all_closed(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::CodexChatGptSubscription,
+            credential: AdapterCredentialClass::OauthOther,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Pi,
+            protocol: AdapterTargetProtocol::PiProviderConfig,
+            version: "0",
+        },
+        route: AdapterRoute::ConfigSync,
+        support: AdapterSupport::Experimental,
+        can_apply: false,
+        reason: CODEX_SUBSCRIPTION_TO_PI_REASON,
+        limitations: SUBSCRIPTION_PI_PREVIEW_LIMITS,
+        rule_id: "codex-subscription-to-pi-v0",
+        verified_at: "2026-08-15",
+        gates: AdapterCapabilityGates::all_closed(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::XaiGrokSubscription,
+            credential: AdapterCredentialClass::OauthOther,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Pi,
+            protocol: AdapterTargetProtocol::PiProviderConfig,
+            version: "0",
+        },
+        route: AdapterRoute::ConfigSync,
+        support: AdapterSupport::Experimental,
+        can_apply: false,
+        reason: GROK_SUBSCRIPTION_TO_PI_REASON,
+        limitations: SUBSCRIPTION_PI_PREVIEW_LIMITS,
+        rule_id: "grok-subscription-to-pi-v0",
+        verified_at: "2026-08-15",
+        gates: AdapterCapabilityGates::all_closed(),
+    },
     // Codex OAuth Account → Claude Code: recorded candidate, every gate closed.
     // Decision surface remains unsupported / can_apply=false (both transports).
     AdapterCapabilityCell {
@@ -708,327 +794,4 @@ impl AdapterCapabilityDecision {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn missing_key_is_fail_closed() {
-        let key = AdapterCapabilityKey {
-            source: AdapterSourceProduct::AnthropicApi,
-            credential: AdapterCredentialClass::ApiKey,
-            transport: AdapterUpstreamTransport::NativeHttp,
-            target: AgentId::Codex,
-            protocol: AdapterTargetProtocol::OpenAiResponses,
-            version: MATRIX_VERSION,
-        };
-        assert!(lookup_adapter_capability(&key).is_none());
-        let decision = decide_adapter_capability(
-            AdapterSourceProduct::AnthropicApi,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Codex,
-        )
-        .public_surface();
-        assert_eq!(decision.route, AdapterRoute::LocalBridge);
-        assert_eq!(decision.support, AdapterSupport::Experimental);
-        assert!(decision.can_apply);
-        assert_eq!(decision.rule_id, Some("anthropic-api-to-codex-v1"));
-    }
-
-    #[test]
-    fn kimi_claude_and_codex_cells_are_applicable() {
-        let claude = decide_adapter_capability(
-            AdapterSourceProduct::KimiCodeMembership,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Claude,
-        );
-        assert_eq!(claude.route, AdapterRoute::NativeEndpoint);
-        assert!(claude.can_apply);
-        assert_eq!(claude.rule_id, Some("kimi-membership-to-claude-v1"));
-
-        let codex = decide_adapter_capability(
-            AdapterSourceProduct::KimiCodeMembership,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Codex,
-        );
-        assert_eq!(codex.route, AdapterRoute::LocalBridge);
-        assert!(codex.can_apply);
-        assert_eq!(codex.support, AdapterSupport::Experimental);
-    }
-
-    #[test]
-    fn codex_oauth_to_claude_is_unsupported_and_cannot_apply() {
-        let decision = decide_adapter_capability(
-            AdapterSourceProduct::CodexChatGptSubscription,
-            AdapterCredentialClass::OauthAuthJson,
-            AgentId::Claude,
-        )
-        .public_surface();
-        assert_eq!(decision.route, AdapterRoute::Unsupported);
-        assert_eq!(decision.support, AdapterSupport::Unsupported);
-        assert!(!decision.can_apply);
-        assert_eq!(decision.reason, CODEX_SUBSCRIPTION_TO_CLAUDE_REASON);
-        assert_eq!(decision.gate_kind, AdapterGateKind::SubscriptionCandidate);
-        assert!(decision.reason.contains("当前不支持"));
-        assert!(decision.reason.contains("门禁"));
-        let gates = decision.gates.expect("candidate retains gate record");
-        assert!(!gates.all_passed());
-
-        // Both transport candidates exist in the matrix and stay closed.
-        for transport in [
-            AdapterUpstreamTransport::CodexAppServer,
-            AdapterUpstreamTransport::CodexResponsesOauth,
-        ] {
-            let cell = lookup_adapter_capability(&AdapterCapabilityKey {
-                source: AdapterSourceProduct::CodexChatGptSubscription,
-                credential: AdapterCredentialClass::OauthAuthJson,
-                transport,
-                target: AgentId::Claude,
-                protocol: AdapterTargetProtocol::AnthropicMessages,
-                version: "0",
-            })
-            .expect("candidate cell");
-            assert!(!cell.can_apply);
-            assert!(!cell.gates.all_passed());
-            assert!(!AdapterCapabilityDecision::from_cell(cell).can_apply);
-        }
-    }
-
-    #[test]
-    fn every_matrix_cell_has_reason_and_version() {
-        for cell in ADAPTER_CAPABILITY_MATRIX {
-            assert!(!cell.reason.is_empty());
-            assert!(!cell.key.version.is_empty());
-            assert!(!cell.rule_id.is_empty());
-            assert!(!cell.verified_at.is_empty());
-            if cell.can_apply {
-                assert!(
-                    cell.gates.all_passed(),
-                    "{} claims can_apply with closed gates",
-                    cell.rule_id
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn maturity_maps_open_stable_experimental_preview_and_none() {
-        let kimi_claude = decide_adapter_capability(
-            AdapterSourceProduct::KimiCodeMembership,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Claude,
-        );
-        assert_eq!(
-            adapter_maturity_from_decision(&kimi_claude),
-            AdapterMaturity::Stable
-        );
-
-        let kimi_codex = decide_adapter_capability(
-            AdapterSourceProduct::KimiCodeMembership,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Codex,
-        );
-        assert_eq!(
-            adapter_maturity_from_decision(&kimi_codex),
-            AdapterMaturity::Experimental
-        );
-
-        let codex_claude = decide_adapter_capability(
-            AdapterSourceProduct::CodexChatGptSubscription,
-            AdapterCredentialClass::OauthAuthJson,
-            AgentId::Claude,
-        )
-        .public_surface();
-        assert_eq!(
-            adapter_maturity_from_decision(&codex_claude),
-            AdapterMaturity::Preview
-        );
-        assert!(!codex_claude.can_apply);
-
-        let anthropic_codex = decide_adapter_capability(
-            AdapterSourceProduct::AnthropicApi,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Codex,
-        )
-        .public_surface();
-        assert_eq!(
-            adapter_maturity_from_decision(&anthropic_codex),
-            AdapterMaturity::Experimental
-        );
-        assert!(anthropic_codex.can_apply);
-
-        let other = decide_adapter_capability(
-            AdapterSourceProduct::Other,
-            AdapterCredentialClass::Unknown,
-            AgentId::Claude,
-        )
-        .public_surface();
-        assert_eq!(
-            adapter_maturity_from_decision(&other),
-            AdapterMaturity::None
-        );
-    }
-
-    #[test]
-    fn pi_config_sync_rules_can_apply() {
-        let kimi_pi = decide_adapter_capability(
-            AdapterSourceProduct::KimiCodeMembership,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Pi,
-        );
-        assert_eq!(kimi_pi.route, AdapterRoute::ConfigSync);
-        assert!(kimi_pi.can_apply);
-        assert_eq!(kimi_pi.gate_kind, AdapterGateKind::None);
-        assert_eq!(kimi_pi.rule_id, Some("kimi-membership-to-pi-v1"));
-
-        let anthropic_pi = decide_adapter_capability(
-            AdapterSourceProduct::AnthropicApi,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Pi,
-        );
-        assert_eq!(anthropic_pi.route, AdapterRoute::ConfigSync);
-        assert!(anthropic_pi.can_apply);
-        assert_eq!(anthropic_pi.gate_kind, AdapterGateKind::None);
-        assert_eq!(anthropic_pi.rule_id, Some("anthropic-api-to-pi-v1"));
-
-        let openai_pi = decide_adapter_capability(
-            AdapterSourceProduct::OpenaiApi,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Pi,
-        );
-        assert_eq!(openai_pi.route, AdapterRoute::ConfigSync);
-        assert!(openai_pi.can_apply);
-        assert_eq!(openai_pi.rule_id, Some("openai-api-to-pi-v1"));
-
-        let xai_pi = decide_adapter_capability(
-            AdapterSourceProduct::XaiApi,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Pi,
-        );
-        assert_eq!(xai_pi.route, AdapterRoute::ConfigSync);
-        assert!(xai_pi.can_apply);
-        assert_eq!(xai_pi.rule_id, Some("xai-api-to-pi-v1"));
-    }
-
-    #[test]
-    fn glm_and_deepseek_claude_cells_are_experimental_and_applicable() {
-        let glm = decide_adapter_capability(
-            AdapterSourceProduct::GlmCodingPlan,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Claude,
-        );
-        assert_eq!(glm.route, AdapterRoute::NativeEndpoint);
-        assert_eq!(glm.support, AdapterSupport::Experimental);
-        assert!(glm.can_apply);
-        assert_eq!(glm.rule_id, Some("glm-coding-plan-to-claude-v1"));
-        assert!(glm.gates.expect("glm cell keeps gates").all_passed());
-
-        let deepseek = decide_adapter_capability(
-            AdapterSourceProduct::DeepseekApi,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Claude,
-        );
-        assert_eq!(deepseek.route, AdapterRoute::NativeEndpoint);
-        assert_eq!(deepseek.support, AdapterSupport::Experimental);
-        assert!(deepseek.can_apply);
-        assert_eq!(deepseek.rule_id, Some("deepseek-api-to-claude-v1"));
-        assert!(deepseek
-            .gates
-            .expect("deepseek cell keeps gates")
-            .all_passed());
-    }
-
-    #[test]
-    fn deepseek_api_to_dsh_can_apply() {
-        let dsh = decide_adapter_capability(
-            AdapterSourceProduct::DeepseekApi,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Dsh,
-        );
-        assert_eq!(dsh.route, AdapterRoute::ConfigSync);
-        assert_eq!(dsh.support, AdapterSupport::Stable);
-        assert!(dsh.can_apply);
-        assert_eq!(dsh.rule_id, Some("deepseek-api-to-dsh-v1"));
-    }
-
-    #[test]
-    fn registered_surfaces_have_no_writable_cells() {
-        for source in [
-            AdapterSourceProduct::GlmCodingPlan,
-            AdapterSourceProduct::DeepseekApi,
-        ] {
-            let decision =
-                decide_adapter_capability(source, AdapterCredentialClass::ApiKey, AgentId::Pi)
-                    .public_surface();
-            assert_eq!(decision.route, AdapterRoute::Unsupported);
-            assert!(!decision.can_apply);
-            assert!(decision.rule_id.is_none());
-        }
-
-        let openai_grok = decide_adapter_capability(
-            AdapterSourceProduct::OpenaiApi,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Grok,
-        )
-        .public_surface();
-        assert_eq!(openai_grok.route, AdapterRoute::Unsupported);
-        assert!(!openai_grok.can_apply);
-
-        let xai_grok = decide_adapter_capability(
-            AdapterSourceProduct::XaiApi,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Grok,
-        )
-        .public_surface();
-        assert_eq!(xai_grok.route, AdapterRoute::Unsupported);
-        assert!(!xai_grok.can_apply);
-        assert_eq!(xai_grok.reason, SAME_PROTOCOL_NO_EDGE_REASON);
-        assert!(xai_grok.reason.contains("同协议但无已验证的边"));
-        assert!(!xai_grok.reason.contains("仅支持预览"));
-    }
-
-    #[test]
-    fn cursor_target_uses_no_writer_reason_not_source_copy() {
-        for source in [
-            AdapterSourceProduct::KimiCodeMembership,
-            AdapterSourceProduct::AnthropicApi,
-            AdapterSourceProduct::OpenaiApi,
-            AdapterSourceProduct::XaiApi,
-            AdapterSourceProduct::GlmCodingPlan,
-            AdapterSourceProduct::DeepseekApi,
-            AdapterSourceProduct::CodexChatGptSubscription,
-            AdapterSourceProduct::Other,
-        ] {
-            let credential = match source {
-                AdapterSourceProduct::CodexChatGptSubscription => {
-                    AdapterCredentialClass::OauthAuthJson
-                }
-                AdapterSourceProduct::Other => AdapterCredentialClass::Unknown,
-                _ => AdapterCredentialClass::ApiKey,
-            };
-            let decision =
-                decide_adapter_capability(source, credential, AgentId::Cursor).public_surface();
-            assert_eq!(decision.route, AdapterRoute::Unsupported, "{source:?}");
-            assert!(!decision.can_apply, "{source:?}");
-            assert_eq!(decision.reason, AGENT_NO_WRITER_REASON, "{source:?}");
-            assert!(
-                !decision.reason.contains("仅支持预览"),
-                "Cursor must not use source-product copy: {}",
-                decision.reason
-            );
-        }
-    }
-
-    #[test]
-    fn kimi_to_grok_reason_comes_from_protocol_graph() {
-        let decision = decide_adapter_capability(
-            AdapterSourceProduct::KimiCodeMembership,
-            AdapterCredentialClass::ApiKey,
-            AgentId::Grok,
-        )
-        .public_surface();
-        assert_eq!(decision.route, AdapterRoute::Unsupported);
-        assert!(!decision.can_apply);
-        assert_eq!(decision.reason, SAME_PROTOCOL_NO_EDGE_REASON);
-        assert!(!decision.reason.contains("仅支持预览到 Claude"));
-    }
-}
+mod tests;

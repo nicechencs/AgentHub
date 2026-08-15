@@ -239,6 +239,8 @@ describe('ticket / binding display labels', () => {
     expect(ticketSurfaceLabel('glm-coding-plan')).toBe('GLM');
     expect(ticketSurfaceLabel('deepseek-api')).toBe('DeepSeek');
     expect(ticketSurfaceLabel('codex-chatgpt-subscription')).toBe('订阅');
+    expect(ticketSurfaceLabel('claude-subscription')).toBe('订阅');
+    expect(ticketSurfaceLabel('grok-xai-subscription')).toBe('订阅');
     expect(ticketSurfaceLabel('unknown')).toBe('未识别');
   });
 });

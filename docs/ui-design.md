@@ -7,7 +7,8 @@
 > v1.3：Agents / 首次引导增加 **「环境未就绪」** 态；安装链路先 Runtime 再 Agent。  
 > v1.4：环境条/安装预览按宿主平台分流——macOS 不展示 PowerShell；native 命令预览 Windows=`irm|iex`、macOS=`curl|bash`；Runtime 修复默认 winget/brew。  
 > 2026-08-14 Hub Phase 1：推荐入口为 Dashboard「连接/切换」与 Connections「接到…」，统一 `ConnectFlowDialog`；Adapter 页是桥的高级管理。  
-> 2026-08-15：Connections 全局钱包与真票「接到…」、Dashboard 当前绑定读模型已落地（见 [connection-binding-model.md](connection-binding-model.md) §5–§6 第 1 步）；ConnectFlow 确认步走 `bind`，Adapter 页删除走 `unbind`。下文 §4.1 / §4.3 为目标线框。
+> 2026-08-15：Connections 全局钱包与真票「接到…」、Dashboard 当前绑定读模型已落地（见 [connection-binding-model.md](connection-binding-model.md) §5–§6 第 1 步）；ConnectFlow 确认步走 `bind`，Adapter 页删除走 `unbind`。下文 §4.1 / §4.3 为目标线框。  
+> 跨 Agent 复用的产品文案按三路（① API 直连 / ② 原生订阅 / ③ 本机桥），见 [product-decisions.md](product-decisions.md)。预览不得把 ①② 写成「需要本机服务」。
 
 ## 1. 设计原则
 
@@ -137,9 +138,9 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - Agent 卡片**只渲染已安装 Agent**（未安装去 Agents 页；未装卡不出「连接/切换」）。两行紧凑：第一行 logo + 名称 + 版本 + 右侧认证状态点（绿=已认证/黄=即将过期/红=失效/灰=未配置）；第二行当前连接 meta。顺序固定为 `AGENTS` 定义序，不按状态重排。
 - **主动作「连接/切换」**（点击卡片）：打开统一绑定对话框（现名 `ConnectFlowDialog`），target 固定为该 Agent，选票。目标语义是 `bind(票, 此 Agent)`，不是「在两套池里挑一行」。
 - 徽标（目标态按**当前绑定**展示，过渡期仍可用 profile 联结）：
-  - **改配置 / 经兼容路由**：active 绑定的 `route` 为 `reshape`（或命中生成投影）。
-  - **桥状态**：`route=bridge` 时显示；查询失败显示「状态不可用」，不得静默隐藏。点击徽标进入「桥与适配」（`stopPropagation`）。
-- **ConnectFlow（Agent 侧）**：两组来源——**native 候选**（这张票本来就是给该 Agent 的，走切换）+ **其他票**（`plan(ticket, agent)`）。可执行权威是 `plan()` 的 route / maturity / canApply / reason（`canApply` 表示现在能写入）。不可行票**留在列表**，置灰 + 原因原文，不从 Connections 藏起来再让本页单独诊断。OAuth 未完成：引导去钱包补登录。空态与「导入登录态 / 新 API Key」走深链 `intent=import-login|add-key`；成功后回 `/?connect=` 重开。导入仍是读官方 CLI 已完成的登录。
+  - **① API 直连 / ② 原生订阅**：`route=reshape`（或命中生成投影）。文案用「直连」或「写原生槽」，不要显示桥。
+  - **③ 本机桥**：`route=bridge` 时显示桥状态；查询失败显示「状态不可用」，不得静默隐藏。点击徽标进入「桥与适配」（`stopPropagation`）。
+- **ConnectFlow（Agent 侧）**：两组来源——**native 候选**（这张票本来就是给该 Agent 的，走切换）+ **其他票**（`plan(ticket, agent)`）。可执行权威是 `plan()` 的 route / maturity / canApply / reason（`canApply` 表示现在能写入）。预览必须标出三路之一；② 不得出现「需要本机服务」或桥启停。不可行票**留在列表**，置灰 + 原因原文，不从 Connections 藏起来再让本页单独诊断。OAuth 未完成：引导去钱包补登录。空态与「导入登录态 / 新 API Key」走深链 `intent=import-login|add-key`；成功后回 `/?connect=` 重开。导入仍是读官方 CLI 已完成的登录。
 - **共享筛选**（时间 + Agent）驱动一套指标卡与趋势图；筛选变更时 `queryUsage` / `usageTrend` 各请求一次，上下共用 records。
 - 用量图：堆叠 Area，按 agent 分色。选中单 agent 时分布条下钻到**按模型**拆分。
 - Agent 总览与用量分区处理 loading/error：用量失败不白屏上半。
@@ -207,7 +208,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 ```
 
 - 「正用于」来自绑定：native / reshape / bridge，不是手写 account/provider 出身。
-- **每一张真票都有「接到…」**，打开同一绑定对话框（票固定，选 Agent）。无边、无 writer、未识别：对话框内置灰 + 原因，不在行上隐藏动作。
+- **每一张真票都有「接到…」**，打开同一绑定对话框（票固定，选 Agent）。无边、无 writer、未识别：对话框内置灰 + 原因，不在行上隐藏动作。选目标后预览标 ① 直连 / ② 原生订阅 / ③ 本机桥，不要把订阅默认写成桥。
 - 「切换」只用于该票对原生 Agent 的 native 绑定。接到其他 Agent 一律走 `bind`。
 - 添加票时写下 `surface`。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意 Agent）。
 - **已落地（读模型 + 写入）**：跨 Agent 钱包列表 + 真票常驻「接到…」+ Dashboard 当前绑定；生成投影不进钱包。确认步走 `bind`，成功以该 Agent 的 active 绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
@@ -412,7 +413,7 @@ Tab 与 URL `?tab=` 同步（`general` / `security` / `data` / `backups` / `abou
 |---|---|
 | `AgentTabStrip` | 页内 agent 切换条，能力位置灰（如 Kimi 不支持账号切换/技能） |
 | `AgentCard` | Dashboard/Agents 页卡片，状态点 + 版本 + 当前配置；Dashboard 已装卡主动作打开 ConnectFlowDialog |
-| `ConnectFlowDialog` | 绑定对话框：Dashboard（Agent 固定，选票）与 Connections「接到…」（票固定，选 Agent）；目标语义 `bind`；`plan.canApply` 只表示现在能写入 |
+| `ConnectFlowDialog` | 绑定对话框：Dashboard（Agent 固定，选票）与 Connections「接到…」（票固定，选 Agent）；目标语义 `bind`；预览标 ①②③；`plan.canApply` 只表示现在能写入 |
 | `AgentDot` | Agent 品牌色圆点（侧栏/列表等轻量标识） |
 | `StatusDot` | 四态认证状态（有效/临期/失效/未配置） |
 | `SearchField` | 统一搜索输入（图标 + 清空），列表页筛选条复用 |
