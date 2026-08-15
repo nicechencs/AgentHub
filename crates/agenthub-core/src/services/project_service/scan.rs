@@ -1,7 +1,8 @@
 //! Agent-specific project/session filesystem scanners.
 //!
-//! Owned by ProjectSource implementations ([super::sources]) and unit tests.
-//! ProjectService orchestration must not grow new AgentId match arms here.
+//! Owned by [`crate::platform::projects`] ProjectSource implementations and unit tests.
+//! Still housed under project_service until a later split; do not grow new
+//! AgentId match arms in ProjectService orchestration.
 
 use chrono::Utc;
 use std::collections::{BTreeMap, HashSet};
