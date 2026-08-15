@@ -77,15 +77,66 @@ pub fn switch(
     assume_yes: bool,
 ) -> Result<()> {
     let agent = require_agent(agent_filter, "switch")?;
+    confirm(&switch_confirm_prompt(hub, agent, id_or_label), assume_yes)?;
+    let result = hub.accounts.switch(id_or_label, agent)?;
+    emit_switch(&result, format)
+}
+
+/// Undo the last account switch for `--agent` (one-shot).
+pub fn undo(
+    hub: &AgentHub,
+    format: OutputFormat,
+    agent_filter: Option<&str>,
+    assume_yes: bool,
+) -> Result<()> {
+    let agent = require_agent(agent_filter, "undo")?;
     confirm(
         &format!(
-            "Switch {} to account {id_or_label}? Current live credentials will be backfilled and backed up.",
+            "Undo the last account switch for {}? Live credentials will be backfilled and backed up.",
             agent.as_str()
         ),
         assume_yes,
     )?;
-    let result = hub.accounts.switch(id_or_label, agent)?;
-    emit_switch(&result, format)
+    let undone = hub.accounts.undo_switch(agent)?;
+    match format {
+        OutputFormat::Quiet => Ok(()),
+        OutputFormat::Json => print_json(&serde_json::json!({
+            "undone": undone,
+            "agent": agent.as_str(),
+        })),
+        OutputFormat::Table => {
+            if undone {
+                println!("undid last account switch for {}", agent.as_str());
+            } else {
+                println!("no account switch to undo for {}", agent.as_str());
+            }
+            Ok(())
+        }
+    }
+}
+
+pub fn switch_confirm_prompt(hub: &AgentHub, agent: AgentId, id_or_label: &str) -> String {
+    let current = hub
+        .accounts
+        .list(Some(agent))
+        .ok()
+        .and_then(|items| items.into_iter().find(|a| a.is_current));
+    let backfill = match current {
+        Some(c) => format!("backfill: current live will be saved as 「{}」", c.label),
+        None => "backfill: no current account; live will be written directly".into(),
+    };
+    let backup = format!(
+        "backup: {}",
+        hub.backups
+            .backups_root()
+            .join("live")
+            .join(agent.as_str())
+            .display()
+    );
+    format!(
+        "Switch {} to account {id_or_label}?\n  {backfill}\n  {backup}\n  process: running agent processes are not stopped",
+        agent.as_str()
+    )
 }
 
 /// Print OAuth authorize URL for --agent (does not wait for callback).
@@ -109,7 +160,9 @@ pub fn oauth_url(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str
             println!("redirect_uri: {}", start.redirect_uri);
             println!("authorize_url:\n{}", start.authorize_url);
             println!();
-            println!("Open the URL, complete login, then finish in GUI or wait for callback.");
+            println!(
+                "This process exits after printing the URL; the loopback callback dies with it. Complete login in the GUI."
+            );
             Ok(())
         }
     }
@@ -250,33 +303,4 @@ pub fn emit_switch(result: &AccountSwitchResult, format: OutputFormat) -> Result
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use agenthub_core::models::AccountKind;
-    use serde_json::json;
-
-    fn sample() -> Account {
-        Account {
-            id: "a1".into(),
-            agent_id: AgentId::Grok,
-            kind: AccountKind::ApiKey,
-            label: "xai-••••1234".into(),
-            credentials: json!({"format": "api_key", "api_key": "secret-should-not-leak"}),
-            extra: json!({}),
-            status: "active".into(),
-            is_current: true,
-            created_at: "t0".into(),
-            updated_at: "t1".into(),
-        }
-    }
-
-    #[test]
-    fn emit_list_json_redacts_secrets() {
-        let items = vec![sample()];
-        // ensure redacted path does not contain raw secret
-        let redacted = items[0].redacted();
-        let s = serde_json::to_string(&redacted).unwrap();
-        assert!(!s.contains("secret-should-not-leak"));
-        assert!(s.contains("***"));
-    }
-}
+mod tests;

@@ -224,3 +224,6 @@ fn print_missing_pricing_warnings(models: &[String]) {
         );
     }
 }
+
+#[cfg(test)]
+mod tests;

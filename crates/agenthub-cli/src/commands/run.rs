@@ -86,7 +86,7 @@ pub fn run(hub: &AgentHub, args: RunArgs, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-fn resolve_agents(args: &RunArgs, hub: &AgentHub) -> Result<Vec<AgentId>> {
+pub(crate) fn resolve_agents(args: &RunArgs, hub: &AgentHub) -> Result<Vec<AgentId>> {
     let mut ids: Vec<AgentId> = Vec::new();
 
     if args.all {
@@ -186,7 +186,7 @@ fn print_report(report: &MultiRunReport, format: OutputFormat) -> Result<()> {
     }
 }
 
-fn truncate(s: &str, max: usize) -> String {
+pub(crate) fn truncate(s: &str, max: usize) -> String {
     let s = s.replace('\n', " ");
     if s.chars().count() <= max {
         return s;
@@ -194,3 +194,6 @@ fn truncate(s: &str, max: usize) -> String {
     let t: String = s.chars().take(max.saturating_sub(1)).collect();
     format!("{t}…")
 }
+
+#[cfg(test)]
+mod tests;

@@ -140,6 +140,7 @@ impl LifecycleInstallExecutor for FakeLifecycleExecutor {
             message: format!("{} installed", key.as_str()),
             agent: None,
             runtime: None,
+            ..Default::default()
         })
     }
 
@@ -172,6 +173,7 @@ impl LifecycleInstallExecutor for FakeLifecycleExecutor {
             message: format!("{} uninstalled", key.as_str()),
             agent: None,
             runtime: None,
+            ..Default::default()
         })
     }
 }
@@ -199,6 +201,7 @@ impl LifecycleInstallExecutor for BlockingLifecycleExecutor {
             message: format!("{} installed", key.as_str()),
             agent: None,
             runtime: None,
+            ..Default::default()
         })
     }
 
@@ -225,6 +228,7 @@ impl LifecycleInstallExecutor for BlockingLifecycleExecutor {
             message: format!("{} uninstalled", key.as_str()),
             agent: None,
             runtime: None,
+            ..Default::default()
         })
     }
 }

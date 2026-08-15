@@ -180,6 +180,8 @@ enum AccountCommands {
         /// Account id or exact label
         id_or_label: String,
     },
+    /// Undo the last account switch for --agent
+    Undo,
 }
 
 #[derive(Debug, Subcommand)]
@@ -278,6 +280,13 @@ enum ProviderCommands {
     },
     /// Safely apply a saved provider to --agent
     Switch {
+        /// Provider id or exact name
+        id_or_name: String,
+    },
+    /// Undo the last provider switch for --agent
+    Undo,
+    /// Probe a saved provider Base URL RTT (milliseconds)
+    TestLatency {
         /// Provider id or exact name
         id_or_name: String,
     },
@@ -459,6 +468,12 @@ fn main() -> ExitCode {
             ProviderCommands::Switch { id_or_name } => {
                 provider::switch(&hub, &id_or_name, cli.output, cli.agent.as_deref(), cli.yes)
             }
+            ProviderCommands::Undo => {
+                provider::undo(&hub, cli.output, cli.agent.as_deref(), cli.yes)
+            }
+            ProviderCommands::TestLatency { id_or_name } => {
+                provider::test_latency(&hub, &id_or_name, cli.output, cli.agent.as_deref())
+            }
         },
         Commands::Backup { action } => match action {
             BackupCommands::List => backup::list(&hub, cli.output, cli.agent.as_deref()),
@@ -563,6 +578,7 @@ fn main() -> ExitCode {
                 cli.agent.as_deref(),
                 cli.yes,
             ),
+            AccountCommands::Undo => account::undo(&hub, cli.output, cli.agent.as_deref(), cli.yes),
         },
         Commands::Usage { action } => match action {
             UsageCommands::Collect => usage::collect(&hub, cli.output, cli.agent.as_deref()),
@@ -619,28 +635,4 @@ fn map_exit(err: &AppError) -> ExitCode {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn provider_write_commands_parse_global_agent_and_yes() {
-        for args in [
-            vec![
-                "agenthub",
-                "provider",
-                "import-live",
-                "--agent",
-                "claude",
-                "-y",
-            ],
-            vec![
-                "agenthub", "provider", "switch", "target", "--agent", "codex", "--yes",
-            ],
-        ] {
-            let cli = Cli::try_parse_from(args).unwrap();
-            assert!(cli.yes);
-            assert!(matches!(cli.agent.as_deref(), Some("claude" | "codex")));
-            assert!(matches!(cli.command, Commands::Provider { .. }));
-        }
-    }
-}
+mod tests;

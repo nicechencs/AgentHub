@@ -8,6 +8,10 @@ export interface InstallOutcome {
   message: string;
   agent?: DoctorDetectResult | null;
   runtime?: DoctorEnvStatus | null;
+  /** Stable machine code for CLI/GUI mapping (`env.not_ready`, `unsupported`, …). */
+  code?: string | null;
+  /** Structured details (no secrets). */
+  details?: unknown;
 }
 
 /** Live install/upgrade/uninstall log line from the desktop event stream. */

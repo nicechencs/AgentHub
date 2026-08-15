@@ -1,9 +1,9 @@
 use agenthub_core::error::{AppError, Result};
-use agenthub_core::models::{AgentId, AgentUpdateState, BackupKind};
+use agenthub_core::models::{AgentId, AgentUpdateState};
 use agenthub_core::{AgentHub, AgentKey};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
-use crate::output::{print_json, OutputFormat};
+use crate::output::{confirm, emit_install_outcome, print_json, OutputFormat};
 
 fn parse_agent(s: &str) -> Result<AgentId> {
     AgentId::parse_required(s)
@@ -25,13 +25,6 @@ fn parse_lifecycle_agent_key(value: &str) -> Result<AgentKey> {
             }
         }
     }
-}
-
-fn legacy_builtin_agent_id(key: &AgentKey) -> Option<AgentId> {
-    AgentId::ALL
-        .iter()
-        .copied()
-        .find(|agent| agent.as_str() == key.as_str())
 }
 
 fn update_state_label(state: AgentUpdateState) -> &'static str {
@@ -90,7 +83,7 @@ pub fn capabilities(
         "print capability matrix"
     );
 
-    if markdown {
+    if should_print_capabilities_markdown(markdown, format) {
         let agents: Vec<AgentId> = matrix.keys().copied().collect();
         print!("| Capability |");
         for a in &agents {
@@ -147,42 +140,15 @@ pub fn capabilities(
     }
 }
 
+fn should_print_capabilities_markdown(markdown: bool, format: OutputFormat) -> bool {
+    markdown && format != OutputFormat::Quiet && format != OutputFormat::Json
+}
+
 fn print_outcome(
     outcome: &agenthub_core::models::InstallOutcome,
     format: OutputFormat,
 ) -> Result<()> {
-    for line in &outcome.logs {
-        eprintln!("{line}");
-    }
-    match format {
-        OutputFormat::Quiet => {
-            if outcome.ok {
-                Ok(())
-            } else {
-                Err(AppError::message("install.failed", outcome.message.clone()))
-            }
-        }
-        OutputFormat::Json => {
-            print_json(outcome)?;
-            if outcome.ok {
-                Ok(())
-            } else {
-                Err(AppError::message("install.failed", outcome.message.clone()))
-            }
-        }
-        OutputFormat::Table => {
-            println!(
-                "{} — {}",
-                if outcome.ok { "OK" } else { "FAILED" },
-                outcome.message
-            );
-            if outcome.ok {
-                Ok(())
-            } else {
-                Err(AppError::message("install.failed", outcome.message.clone()))
-            }
-        }
-    }
+    emit_install_outcome(outcome, format)
 }
 
 pub fn list(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
@@ -303,22 +269,14 @@ pub fn uninstall(
     format: OutputFormat,
 ) -> Result<()> {
     let key = parse_lifecycle_agent_key(agent)?;
-    if purge_config && !yes {
-        return Err(AppError::InvalidArg(
-            "uninstall --purge-config requires -y / --yes confirmation".into(),
-        ));
-    }
-    // Best-effort pre-uninstall backup when purging config.
     if purge_config {
-        if let Some(agent) = legacy_builtin_agent_id(&key) {
-            match hub
-                .backups
-                .snapshot(agent, BackupKind::PreUninstall, Some("pre-uninstall"))
-            {
-                Ok(rec) => eprintln!("pre-uninstall backup: {}", rec.id),
-                Err(e) => eprintln!("pre-uninstall backup skipped: {e}"),
-            }
-        }
+        confirm(
+            &format!(
+                "Uninstall {} and delete its config directory? Shared runtimes (Node/npm/git) are kept.",
+                key.as_str()
+            ),
+            yes,
+        )?;
     }
     let outcome = hub.uninstall_agent_key(&key, purge_config)?;
     print_outcome(&outcome, format)

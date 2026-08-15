@@ -1,37 +1,12 @@
 //! `agenthub skill` — inspect and manage shared-skill projections.
 
 use agenthub_core::error::{AppError, Result};
-use agenthub_core::models::{AgentId, Skill, SkillProjectMode, SkillSyncState};
+use agenthub_core::models::{AgentId, Skill, SkillProjectMode, SkillSyncReport};
 use agenthub_core::services::SkillMarketRegistry;
 use agenthub_core::AgentHub;
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
-use serde::Serialize;
 
 use crate::output::{confirm, print_json, OutputFormat};
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SkillAction {
-    skill: String,
-    agent: AgentId,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SkillFailure {
-    skill: String,
-    agent: AgentId,
-    code: String,
-    error: String,
-}
-
-#[derive(Debug, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SkillSyncReport {
-    synced: Vec<SkillAction>,
-    skipped: Vec<SkillAction>,
-    failed: Vec<SkillFailure>,
-}
 
 pub fn parse_agent_filter(agent_filter: Option<&str>) -> Result<Option<AgentId>> {
     AgentId::parse_optional(agent_filter)
@@ -88,30 +63,7 @@ pub fn sync(
     } else {
         vec![selected.expect("validated selected agent")]
     };
-    let skills = hub.skills.list()?;
-    let mut report = SkillSyncReport::default();
-
-    for skill in &skills {
-        for &agent in &targets {
-            let action = SkillAction {
-                skill: skill.id.clone(),
-                agent,
-            };
-            if all && skill.state_for(agent) == Some(SkillSyncState::Unsupported) {
-                report.skipped.push(action);
-                continue;
-            }
-            match hub.skills.sync(&skill.id, agent, force) {
-                Ok(()) => report.synced.push(action),
-                Err(error) => report.failed.push(SkillFailure {
-                    skill: action.skill,
-                    agent,
-                    code: error.code().to_string(),
-                    error: error.to_string(),
-                }),
-            }
-        }
-    }
+    let report = hub.skills.sync_targets(&targets, force, all)?;
 
     let failures = report.failed.len();
     emit_sync_report(&report, format)?;

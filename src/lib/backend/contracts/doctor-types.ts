@@ -65,6 +65,16 @@ export interface DoctorParserHealth {
   skipped?: number | null;
 }
 
+export interface DoctorLockInspection {
+  agent: string;
+  path: string;
+  /** `held` | `stale` | `malformed` */
+  status: string;
+  pid?: number | null;
+  createdUnixMs?: number | null;
+  note?: string | null;
+}
+
 export interface DoctorReport {
   dataDir: string;
   runtimes: DoctorEnvStatus[];
@@ -77,4 +87,6 @@ export interface DoctorReport {
   ok: boolean;
   warnings: string[];
   version: string;
+  /** Live-write lock files under `{dataDir}/locks` */
+  locks?: DoctorLockInspection[];
 }

@@ -1,6 +1,7 @@
 use std::io::{self, IsTerminal, Write};
 
-use agenthub_core::error::AppError;
+use agenthub_core::error::{AppError, Result};
+use agenthub_core::models::InstallOutcome;
 use clap::ValueEnum;
 use serde::Serialize;
 
@@ -11,7 +12,7 @@ pub enum OutputFormat {
     Quiet,
 }
 
-pub fn print_json<T: Serialize + ?Sized>(value: &T) -> Result<(), AppError> {
+pub fn print_json<T: Serialize + ?Sized>(value: &T) -> Result<()> {
     let s = serde_json::to_string_pretty(value)?;
     println!("{s}");
     Ok(())
@@ -29,7 +30,7 @@ fn render_error(err: &AppError, format: OutputFormat) -> Option<String> {
             serde_json::json!({
                 "error": format!("operation failed ({})", err.code()),
                 "code": err.code(),
-                "details": {}
+                "details": err.details()
             })
             .to_string(),
         ),
@@ -42,9 +43,48 @@ fn render_error(err: &AppError, format: OutputFormat) -> Option<String> {
     }
 }
 
+/// Map an install-family outcome to CLI success / structured failure.
+pub fn emit_install_outcome(outcome: &InstallOutcome, format: OutputFormat) -> Result<()> {
+    if format != OutputFormat::Quiet {
+        for line in &outcome.logs {
+            eprintln!("{line}");
+        }
+    }
+    match format {
+        OutputFormat::Quiet => {}
+        OutputFormat::Json => print_json(outcome)?,
+        OutputFormat::Table => {
+            println!(
+                "{} — {}",
+                if outcome.ok { "OK" } else { "FAILED" },
+                outcome.message
+            );
+        }
+    }
+    if outcome.ok {
+        Ok(())
+    } else {
+        Err(map_install_failure(outcome))
+    }
+}
+
+pub fn map_install_failure(outcome: &InstallOutcome) -> AppError {
+    match outcome.code.as_deref() {
+        Some("env.not_ready") => {
+            let payload = outcome
+                .details
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({ "message": outcome.message }));
+            AppError::EnvNotReady(payload.to_string())
+        }
+        Some("unsupported") => AppError::Unsupported(outcome.message.clone()),
+        _ => AppError::message("install.failed", outcome.message.clone()),
+    }
+}
+
 /// Confirm a destructive CLI action. Non-interactive callers must pass
 /// `--yes`, so CI never blocks waiting for stdin.
-pub fn confirm(prompt: &str, assume_yes: bool) -> Result<(), AppError> {
+pub fn confirm(prompt: &str, assume_yes: bool) -> Result<()> {
     if assume_yes {
         return Ok(());
     }
@@ -67,25 +107,4 @@ pub fn confirm(prompt: &str, assume_yes: bool) -> Result<(), AppError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn json_and_quiet_errors_do_not_expose_arbitrary_messages() {
-        let error = AppError::message("provider.switch.apply", "secret=sk-sensitive");
-
-        let json = render_error(&error, OutputFormat::Json).unwrap();
-        assert!(!json.contains("sk-sensitive"));
-        assert!(json.contains("provider.switch.apply"));
-        assert_eq!(render_error(&error, OutputFormat::Quiet), None);
-        let table = render_error(&error, OutputFormat::Table).unwrap();
-        assert!(!table.contains("sk-sensitive"));
-        assert!(table.contains("sk-***") || table.contains("***"));
-        assert!(table.contains("provider.switch.apply"));
-    }
-
-    #[test]
-    fn assume_yes_skips_terminal_prompt() {
-        confirm("provider write", true).unwrap();
-    }
-}
+mod tests;

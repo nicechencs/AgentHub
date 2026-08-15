@@ -582,13 +582,25 @@ describe('mock adapter route preview', () => {
     expect(hostPlan.canApply).toBe(true);
     expect(hostPlan.analysis.ruleId).toBe('deepseek-api-to-dsh-v1');
 
-    await expect(
-      adapter.apply({
-        sourceKind: 'provider',
-        sourceId: presetId,
-        targetAgentId: 'claude',
-      }),
-    ).rejects.toThrow(/不可应用|不支持|canApply/i);
+    const claudePlan = await adapter.plan({
+      sourceKind: 'provider',
+      sourceId: presetId,
+      targetAgentId: 'claude',
+    });
+    expect(claudePlan.canApply).toBe(true);
+    expect(claudePlan.analysis.route).toBe('native_endpoint');
+    expect(claudePlan.analysis.support).toBe('experimental');
+    expect(claudePlan.analysis.ruleId).toBe('deepseek-api-to-claude-v1');
+
+    const claudeApplied = await adapter.apply({
+      sourceKind: 'provider',
+      sourceId: presetId,
+      targetAgentId: 'claude',
+    });
+    expect(claudeApplied.profile.ruleId).toBe('deepseek-api-to-claude-v1');
+    expect(JSON.parse(claudeApplied.provider.configText).env.ANTHROPIC_BASE_URL)
+      .toBe('https://api.deepseek.com/anthropic');
+    expect(JSON.stringify(claudeApplied)).not.toContain('must-not-leak');
   });
 
   it('does not treat agentId=dsh alone as a DeepSeek API ticket', async () => {

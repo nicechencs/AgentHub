@@ -12,6 +12,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
@@ -26,6 +27,80 @@ const LOCK_TTL: Duration = Duration::from_secs(30 * 60);
 
 /// How many create/reclaim attempts after observing an existing lock file.
 const LOCK_ACQUIRE_ATTEMPTS: usize = 3;
+
+/// Doctor / CLI view of one live-write lock file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LockInspection {
+    pub agent: String,
+    pub path: String,
+    /// `held` | `stale` | `malformed`
+    pub status: String,
+    pub pid: Option<u32>,
+    pub created_unix_ms: Option<u64>,
+    pub note: Option<String>,
+}
+
+/// Scan `{data_dir}/locks/provider-*.lock` without acquiring them.
+pub fn inspect_locks(lock_dir: &Path) -> Vec<LockInspection> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(lock_dir) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some(agent) = name
+            .strip_prefix("provider-")
+            .and_then(|rest| rest.strip_suffix(".lock"))
+        else {
+            continue;
+        };
+        out.push(inspect_one(&path, agent));
+    }
+    out.sort_by(|a, b| a.agent.cmp(&b.agent));
+    out
+}
+
+fn inspect_one(path: &Path, agent: &str) -> LockInspection {
+    let display = path.display().to_string();
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(error) => {
+            return LockInspection {
+                agent: agent.to_string(),
+                path: display,
+                status: "malformed".into(),
+                pid: None,
+                created_unix_ms: None,
+                note: Some(error.to_string()),
+            };
+        }
+    };
+    match LockOwner::parse(&raw) {
+        Some(owner) => {
+            let stale = owner.is_stale();
+            LockInspection {
+                agent: agent.to_string(),
+                path: display,
+                status: if stale { "stale" } else { "held" }.into(),
+                pid: Some(owner.pid),
+                created_unix_ms: Some(owner.created_unix_ms),
+                note: stale.then(|| "owner process gone or lock older than TTL".into()),
+            }
+        }
+        None => LockInspection {
+            agent: agent.to_string(),
+            path: display,
+            status: "malformed".into(),
+            pid: None,
+            created_unix_ms: None,
+            note: Some("lock file missing required pid/created_unix_ms/token".into()),
+        },
+    }
+}
 
 /// Per-agent exclusive live-write lock with owner metadata and stale recovery.
 #[derive(Debug)]
@@ -375,5 +450,21 @@ mod tests {
         .unwrap();
         let err = AgentWriteLock::acquire(dir.path(), AgentId::Grok).unwrap_err();
         assert_eq!(err.code(), "agent.lock");
+    }
+
+    #[test]
+    fn inspect_locks_reports_held_and_malformed() {
+        let dir = tempdir().unwrap();
+        let _held = AgentWriteLock::acquire(dir.path(), AgentId::Claude).unwrap();
+        std::fs::write(dir.path().join("provider-grok.lock"), b"not-a-lock").unwrap();
+        std::fs::write(dir.path().join("readme.txt"), b"ignore").unwrap();
+
+        let rows = inspect_locks(dir.path());
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].agent, "claude");
+        assert_eq!(rows[0].status, "held");
+        assert_eq!(rows[0].pid, Some(std::process::id()));
+        assert_eq!(rows[1].agent, "grok");
+        assert_eq!(rows[1].status, "malformed");
     }
 }

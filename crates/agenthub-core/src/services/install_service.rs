@@ -20,7 +20,9 @@ use crate::catalog::limits::{
 };
 use crate::error::{AppError, Result};
 use crate::logging::{self, targets};
-use crate::models::{AgentId, DetectStatus, EnvStatusKind, InstallOutcome, RuntimeId};
+use crate::models::{
+    AgentId, DetectStatus, EnvNotReady, EnvStatusKind, InstallOutcome, Remediation, RuntimeId,
+};
 use crate::platform::install::builtin_install_registry;
 use crate::runtime;
 use crate::services::{LiveWriteAuthority, LiveWriteGuard};
@@ -297,6 +299,81 @@ fn resolve_brew() -> Result<String> {
     })
 }
 
+/// Drop package-manager remediations that do not apply on this host.
+/// Windows never surfaces `brew`; macOS/Linux never surface `winget`.
+fn filter_host_remediations(items: Vec<Remediation>) -> Vec<Remediation> {
+    items
+        .into_iter()
+        .filter(|r| {
+            if cfg!(windows) {
+                r.kind != "brew"
+            } else {
+                r.kind != "winget"
+            }
+        })
+        .collect()
+}
+
+fn host_remediations(id: RuntimeId) -> Vec<Remediation> {
+    filter_host_remediations(vec![runtime::remediation_for(id)])
+}
+
+fn push_remediation_logs(logs: &mut Vec<String>, remediations: &[Remediation]) {
+    for rem in remediations {
+        if let Some(command) = &rem.command {
+            push_log(logs, format!("remediation: {command}"));
+        }
+        if let Some(url) = &rem.url {
+            push_log(logs, format!("remediation url: {url}"));
+        }
+    }
+}
+
+/// brew/winget missing: coded `env.not_ready` so CLI exits 3 with remediations.
+fn missing_package_manager_outcome(
+    action: &str,
+    mut logs: Vec<String>,
+    channel: &str,
+    missing: RuntimeId,
+    message: impl Into<String>,
+) -> InstallOutcome {
+    let message = message.into();
+    let remediations = host_remediations(missing);
+    push_remediation_logs(&mut logs, &remediations);
+    let details = serde_json::to_value(EnvNotReady {
+        agent: None,
+        channel: Some(channel.into()),
+        missing: vec![missing],
+        remediations,
+        hint: Some(message.clone()),
+    })
+    .ok();
+    InstallOutcome::failure(action, logs, message).with_code("env.not_ready", details)
+}
+
+fn unsupported_channel_outcome(action: &str, logs: Vec<String>, channel: &str) -> InstallOutcome {
+    #[cfg(target_os = "macos")]
+    let platform_hint = "macOS 默认使用 brew；可传 --channel brew";
+    #[cfg(windows)]
+    let platform_hint = "Windows 默认使用 winget";
+    #[cfg(all(not(target_os = "macos"), not(windows)))]
+    let platform_hint = "当前平台仅支持 --channel winget";
+
+    #[cfg(target_os = "macos")]
+    let suffix = "（macOS 默认使用 brew；可传 --channel brew）";
+    #[cfg(not(target_os = "macos"))]
+    let suffix = "";
+
+    let message = format!("不支持的安装渠道 '{channel}'（当前仅 winget{suffix}）");
+    InstallOutcome::failure(action, logs, message).with_code(
+        "unsupported",
+        Some(serde_json::json!({
+            "channel": channel,
+            "hint": platform_hint,
+        })),
+    )
+}
+
 /// Complete an environment install by invalidating detection caches and
 /// checking the exact requested runtime (plus Node.js for an npm request).
 fn finalize_runtime_install(
@@ -329,6 +406,7 @@ fn finalize_runtime_install(
             ),
             agent: None,
             runtime: Some(status),
+            ..Default::default()
         }
     } else {
         logs.push(format!("重新检测: {} => {:?}", id.as_str(), status.status));
@@ -346,6 +424,7 @@ fn finalize_runtime_install(
             ),
             agent: None,
             runtime: Some(status),
+            ..Default::default()
         }
     }
 }
@@ -389,7 +468,7 @@ fn install_runtime_inner(
             } else {
                 "macOS/Linux 不需要 PowerShell：native 安装使用官方 bash/sh 脚本。AgentHub 不会在此平台检测或安装 PowerShell。"
             };
-            return Ok(InstallOutcome::failure(action, logs, msg));
+            return Ok(InstallOutcome::failure(action, logs, msg).with_code("unsupported", None));
         }
 
         let Some(package_id) = winget_package_id(target) else {
@@ -397,7 +476,8 @@ fn install_runtime_inner(
                 action,
                 logs,
                 format!("runtime {} 暂不支持自动安装", id.as_str()),
-            ));
+            )
+            .with_code("unsupported", None));
         };
 
         let channel = if channel.is_empty() {
@@ -419,9 +499,11 @@ fn install_runtime_inner(
                 Ok(path) => path,
                 Err(e) => {
                     logs.push(e.to_string());
-                    return Ok(InstallOutcome::failure(
+                    return Ok(missing_package_manager_outcome(
                         action,
                         logs,
+                        "brew",
+                        target,
                         "未找到 Homebrew。请先安装 Homebrew（https://brew.sh/）后重试。",
                     ));
                 }
@@ -438,15 +520,7 @@ fn install_runtime_inner(
         }
 
         if channel != "winget" {
-            #[cfg(target_os = "macos")]
-            let hint = "（macOS 默认使用 brew；可传 --channel brew）";
-            #[cfg(not(target_os = "macos"))]
-            let hint = "";
-            return Ok(InstallOutcome::failure(
-                action,
-                logs,
-                format!("不支持的安装渠道 '{channel}'（当前仅 winget{hint}）"),
-            ));
+            return Ok(unsupported_channel_outcome(action, logs, channel));
         }
 
         logs.push(format!(
@@ -462,9 +536,11 @@ fn install_runtime_inner(
                     RuntimeId::Git => "请手动安装 Git 后重新检测。",
                     _ => "请手动安装 Node.js LTS 后重新检测。",
                 };
-                return Ok(InstallOutcome::failure(
+                return Ok(missing_package_manager_outcome(
                     action,
                     logs,
+                    "winget",
+                    target,
                     format!("未找到 winget。{manual}"),
                 ));
             }
@@ -535,10 +611,12 @@ pub fn install_agent(
         ));
 
         let requires = channel_requires(registry, agent, &channel)?;
-        if let Err(env_err) = runtime::ensure(&requires) {
+        if let Err(mut env_err) = runtime::ensure(&requires) {
             if !install_deps {
+                env_err.agent = Some(agent.as_str().into());
+                env_err.channel = Some(channel.clone());
                 let msg = format!(
-                    "环境未就绪: 缺少 {}。请先安装运行环境或使用 installDeps。",
+                    "环境未就绪: 缺少 {}。请先安装运行环境或使用 --install-deps。",
                     env_err
                         .missing
                         .iter()
@@ -547,7 +625,10 @@ pub fn install_agent(
                         .join(", ")
                 );
                 logs.push(msg.clone());
-                return Ok(InstallOutcome::failure(action, logs, msg));
+                let details = serde_json::to_value(&env_err).ok();
+                return Ok(
+                    InstallOutcome::failure(action, logs, msg).with_code("env.not_ready", details)
+                );
             }
             // Bootstrap missing runtimes that we can auto-install (nodejs / git).
             for missing in &env_err.missing {
@@ -632,6 +713,7 @@ pub fn install_agent(
                 ),
                 agent: Some(detect),
                 runtime: None,
+                ..Default::default()
             })
         } else {
             logs.push("重新检测: not_found".into());
@@ -653,6 +735,7 @@ pub fn install_agent(
                 ),
                 agent: Some(detect),
                 runtime: None,
+                ..Default::default()
             })
         }
     })();
@@ -772,6 +855,7 @@ pub fn upgrade_agent(
             },
             agent: Some(detect),
             runtime: None,
+            ..Default::default()
         })
     })();
 
@@ -1027,6 +1111,7 @@ fn uninstall_agent_inner(
             },
             agent: Some(detect),
             runtime: None,
+            ..Default::default()
         })
     })();
 
@@ -1170,64 +1255,63 @@ fn run_native_ps1(
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<ExecResult> {
-        let url = native_ps1_url(agent).ok_or_else(|| {
-            AppError::Unsupported(format!("{} 无 Windows native 安装脚本", agent.as_str()))
+    let url = native_ps1_url(agent).ok_or_else(|| {
+        AppError::Unsupported(format!("{} 无 Windows native 安装脚本", agent.as_str()))
+    })?;
+    // Allowlist: only fixed https URLs from native_ps1_url.
+    if !url.starts_with("https://") {
+        return Err(AppError::InvalidArg("install URL must be https".into()));
+    }
+    // Prefer PowerShell 7; fall back to 5.1 / System32.
+    let ps = runtime::resolve_powershell_for_native()
+        .map(|p| p.to_string_lossy().into_owned())
+        .ok_or_else(|| {
+            AppError::NotFound(
+                "PowerShell not found (need Windows PowerShell 5.1 or PowerShell 7 pwsh)".into(),
+            )
         })?;
-        // Allowlist: only fixed https URLs from native_ps1_url.
-        if !url.starts_with("https://") {
-            return Err(AppError::InvalidArg("install URL must be https".into()));
-        }
-        // Prefer PowerShell 7; fall back to 5.1 / System32.
-        let ps = runtime::resolve_powershell_for_native()
-            .map(|p| p.to_string_lossy().into_owned())
-            .ok_or_else(|| {
-                AppError::NotFound(
-                    "PowerShell not found (need Windows PowerShell 5.1 or PowerShell 7 pwsh)"
-                        .into(),
-                )
-            })?;
-        // Log interpreter identity for supportability.
-        if let Ok(ver_out) = crate::utils::process::run_capture(
-            std::path::Path::new(&ps),
-            &[
-                "-NoProfile",
-                "-Command",
-                "$PSVersionTable.PSVersion.ToString()",
-            ],
-        ) {
-            if let Some(v) = crate::utils::process::stdout_first_line(&ver_out) {
-                push_log(logs, format!("using PowerShell: {ps} (version {v})"));
-            } else {
-                push_log(logs, format!("using PowerShell: {ps}"));
-            }
+    // Log interpreter identity for supportability.
+    if let Ok(ver_out) = crate::utils::process::run_capture(
+        std::path::Path::new(&ps),
+        &[
+            "-NoProfile",
+            "-Command",
+            "$PSVersionTable.PSVersion.ToString()",
+        ],
+    ) {
+        if let Some(v) = crate::utils::process::stdout_first_line(&ver_out) {
+            push_log(logs, format!("using PowerShell: {ps} (version {v})"));
         } else {
             push_log(logs, format!("using PowerShell: {ps}"));
         }
-        // Force unbuffered host output so download progress streams when piped.
-        let script = format!(
-            "$ProgressPreference='Continue'; $InformationPreference='Continue'; irm '{url}' | iex"
-        );
-        push_log(logs, format!("# 官方安装脚本: {url}"));
-        push_log(
-            logs,
-            "# 正在下载并执行官方安装脚本（下载大文件时可能数分钟无新输出，请耐心等待）…",
-        );
-        push_log(logs, format!("# {ps} -Command {script}"));
-        let req = ExecRequest {
-            program: ps,
-            args: vec![
-                "-NoProfile".into(),
-                "-ExecutionPolicy".into(),
-                "Bypass".into(),
-                "-Command".into(),
-                script,
-            ],
-            timeout: AGENT_TIMEOUT,
-            max_output_bytes: MAX_OUTPUT,
-        };
-        let res = executor.run(&req);
-        push_exec_logs(logs, &res, AGENT_TIMEOUT.as_secs());
-        Ok(res)
+    } else {
+        push_log(logs, format!("using PowerShell: {ps}"));
+    }
+    // Force unbuffered host output so download progress streams when piped.
+    let script = format!(
+        "$ProgressPreference='Continue'; $InformationPreference='Continue'; irm '{url}' | iex"
+    );
+    push_log(logs, format!("# 官方安装脚本: {url}"));
+    push_log(
+        logs,
+        "# 正在下载并执行官方安装脚本（下载大文件时可能数分钟无新输出，请耐心等待）…",
+    );
+    push_log(logs, format!("# {ps} -Command {script}"));
+    let req = ExecRequest {
+        program: ps,
+        args: vec![
+            "-NoProfile".into(),
+            "-ExecutionPolicy".into(),
+            "Bypass".into(),
+            "-Command".into(),
+            script,
+        ],
+        timeout: AGENT_TIMEOUT,
+        max_output_bytes: MAX_OUTPUT,
+    };
+    let res = executor.run(&req);
+    push_exec_logs(logs, &res, AGENT_TIMEOUT.as_secs());
+    Ok(res)
 }
 
 #[cfg(not(windows))]

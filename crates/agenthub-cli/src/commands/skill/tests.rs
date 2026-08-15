@@ -1,5 +1,7 @@
 use super::*;
-use agenthub_core::models::{Skill, SkillLinkKind, SkillProjection, SkillSyncState};
+use agenthub_core::models::{
+    Skill, SkillLinkKind, SkillProjection, SkillSyncReport, SkillSyncState,
+};
 
 fn sample_skill() -> Skill {
     Skill {

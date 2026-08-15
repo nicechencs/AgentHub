@@ -1852,23 +1852,29 @@ fn deepseek_host_without_preset_applies_to_dsh() {
 }
 
 #[test]
-fn deepseek_api_to_claude_apply_is_rejected() {
+fn deepseek_preset_alias_applies_to_claude() {
     let (dir, db) = test_db();
     ProviderRepo::new(db.clone())
         .create(&deepseek_api_source("ds-source", "sk-deepseek-secret"))
         .unwrap();
-    let service = AdapterApplyService::new(
-        db.clone(),
-        AdapterRegistry::new(),
-        dir.path().join("backups"),
-    );
+    let fake = Arc::new(FakeClaudeAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db, registry, dir.path().join("backups"));
 
-    let error = service
+    let result = service
         .apply(&request("ds-source", AgentId::Claude))
-        .unwrap_err();
-    assert_eq!(error.code(), "unsupported");
-    assert!(AdapterProfileRepo::new(db.clone())
-        .list(None, None, None)
+        .unwrap();
+    assert_eq!(result.profile.rule_id, DEEPSEEK_CLAUDE_RULE_ID);
+    assert_eq!(
+        fake.read_config().unwrap().raw["env"]["ANTHROPIC_BASE_URL"],
+        DEEPSEEK_CLAUDE_BASE_URL
+    );
+    assert_eq!(
+        fake.read_config().unwrap().raw["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "sk-deepseek-secret"
+    );
+    assert!(!serde_json::to_string(&result)
         .unwrap()
-        .is_empty());
+        .contains("sk-deepseek-secret"));
 }

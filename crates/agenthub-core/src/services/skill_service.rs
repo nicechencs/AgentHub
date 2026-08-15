@@ -18,9 +18,9 @@ use crate::catalog::limits::SKILL_MARKDOWN_PREVIEW_CHARS;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    AgentId, Capability, InstalledSkill, Skill, SkillLinkKind, SkillMapStatus,
-    SkillMarkdownPreview, SkillProjectMode, SkillProjectResult, SkillProjection, SkillSourceRecord,
-    SkillSyncState,
+    AgentId, Capability, InstalledSkill, Skill, SkillAction, SkillFailure, SkillLinkKind,
+    SkillMapStatus, SkillMarkdownPreview, SkillProjectMode, SkillProjectResult, SkillProjection,
+    SkillSourceRecord, SkillSyncReport, SkillSyncState,
 };
 use crate::platform::skills::{
     bootstrap_skill_assignments, clear_managed_target_for_reproject, collect_regular_files,
@@ -467,6 +467,49 @@ impl SkillService {
             ),
         }
         result
+    }
+
+    /// Sync every listed skill onto `targets`.
+    ///
+    /// Individual `sync` errors are collected into [`SkillSyncReport::failed`]
+    /// rather than aborting the batch. `list()` failures still propagate.
+    ///
+    /// When `skip_unsupported` is true, a skill whose projection state for that
+    /// agent is [`SkillSyncState::Unsupported`] is recorded as skipped instead
+    /// of calling `sync`. CLI `--all` and GUI "all agents" pass `true`; a
+    /// single-agent target passes `false` so unsupported still surfaces as
+    /// `failed`.
+    pub fn sync_targets(
+        &self,
+        targets: &[AgentId],
+        force: bool,
+        skip_unsupported: bool,
+    ) -> Result<SkillSyncReport> {
+        let skills = self.list()?;
+        let mut report = SkillSyncReport::default();
+
+        for skill in &skills {
+            for &agent in targets {
+                let action = SkillAction {
+                    skill: skill.id.clone(),
+                    agent,
+                };
+                if skip_unsupported && skill.state_for(agent) == Some(SkillSyncState::Unsupported) {
+                    report.skipped.push(action);
+                    continue;
+                }
+                match self.sync(&skill.id, agent, force) {
+                    Ok(()) => report.synced.push(action),
+                    Err(error) => report.failed.push(SkillFailure {
+                        skill: action.skill,
+                        agent,
+                        code: error.code().to_string(),
+                        error: error.to_string(),
+                    }),
+                }
+            }
+        }
+        Ok(report)
     }
 
     /// Remove the projected skill directory for one agent.

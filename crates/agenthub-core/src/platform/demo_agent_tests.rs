@@ -229,6 +229,7 @@ impl LifecycleInstallExecutor for FakeLifecycleInstallExecutor {
             message: format!("{} installed", key.as_str()),
             agent: None,
             runtime: None,
+            ..Default::default()
         })
     }
 
@@ -256,6 +257,7 @@ impl LifecycleInstallExecutor for FakeLifecycleInstallExecutor {
             message: format!("{} uninstalled", key.as_str()),
             agent: None,
             runtime: None,
+            ..Default::default()
         })
     }
 }

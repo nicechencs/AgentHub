@@ -3,7 +3,7 @@ use agenthub_core::models::RuntimeId;
 use agenthub_core::AgentHub;
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
-use crate::output::{print_json, OutputFormat};
+use crate::output::{emit_install_outcome, print_json, OutputFormat};
 
 pub fn list(hub: &AgentHub, format: OutputFormat) -> Result<()> {
     let runtimes = hub.env.detect_all();
@@ -59,36 +59,8 @@ pub fn install(hub: &AgentHub, runtime: &str, channel: &str, format: OutputForma
         ))
     })?;
     let outcome = hub.install_runtime(id, channel)?;
-    for line in &outcome.logs {
-        eprintln!("{line}");
-    }
-    match format {
-        OutputFormat::Quiet => {
-            if outcome.ok {
-                Ok(())
-            } else {
-                Err(AppError::message("install.failed", outcome.message))
-            }
-        }
-        OutputFormat::Json => {
-            print_json(&outcome)?;
-            if outcome.ok {
-                Ok(())
-            } else {
-                Err(AppError::message("install.failed", outcome.message))
-            }
-        }
-        OutputFormat::Table => {
-            println!(
-                "{} — {}",
-                if outcome.ok { "OK" } else { "FAILED" },
-                outcome.message
-            );
-            if outcome.ok {
-                Ok(())
-            } else {
-                Err(AppError::message("install.failed", outcome.message))
-            }
-        }
-    }
+    emit_install_outcome(&outcome, format)
 }
+
+#[cfg(test)]
+mod tests;

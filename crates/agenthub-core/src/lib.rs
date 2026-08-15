@@ -348,6 +348,9 @@ pub struct DoctorReport {
     pub ok: bool,
     pub warnings: Vec<String>,
     pub version: String,
+    /// Live-write lock files under `{data_dir}/locks` (`held` / `stale` / `malformed`).
+    #[serde(default)]
+    pub locks: Vec<utils::agent_lock::LockInspection>,
 }
 
 impl AgentHub {
@@ -376,6 +379,31 @@ impl AgentHub {
         }
         if !db_ok {
             warnings.push("database not writable/readable".into());
+        }
+        let locks = utils::agent_lock::inspect_locks(&self.data_dir.join("locks"));
+        for lock in &locks {
+            match lock.status.as_str() {
+                "stale" => warnings.push(format!(
+                    "stale live-write lock for {} (pid={})",
+                    lock.agent,
+                    lock.pid
+                        .map(|p| p.to_string())
+                        .unwrap_or_else(|| "-".into())
+                )),
+                "malformed" => warnings.push(format!(
+                    "malformed live-write lock for {} ({})",
+                    lock.agent,
+                    lock.note.as_deref().unwrap_or("unreadable")
+                )),
+                "held" => warnings.push(format!(
+                    "live-write lock held for {} (pid={})",
+                    lock.agent,
+                    lock.pid
+                        .map(|p| p.to_string())
+                        .unwrap_or_else(|| "-".into())
+                )),
+                _ => {}
+            }
         }
         // Soft usage notes (never fail doctor)
         let supported = usage_health.iter().filter(|h| h.supported).count();
@@ -430,6 +458,7 @@ impl AgentHub {
             ok,
             warnings,
             version: Self::version().into(),
+            locks,
         }
     }
 }
