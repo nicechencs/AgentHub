@@ -13,6 +13,7 @@ import type {
   SourceOption,
 } from '@/lib/connect-flow/types';
 import { connectSourceKey, planFanoutKey } from '@/lib/connect-flow/types';
+import type { AdapterReusePath } from '@/lib/backend/contracts/adapter';
 
 export type ConnectFlowStep = 'select' | 'preview' | 'result';
 export type ConnectFlowBusy = 'idle' | 'applying' | 'switching';
@@ -495,28 +496,37 @@ export interface PlanPreviewView {
   reason: string;
 }
 
+function reusePathForPlan(plan: AdapterApplyPlan): AdapterReusePath {
+  if (plan.reusePath) return plan.reusePath;
+  if (plan.analysis.route === 'unsupported') return 'none';
+  if (plan.analysis.route === 'local_bridge') return 'local_bridge';
+  return 'api_endpoint';
+}
+
 export function describePlanPreview(plan: AdapterApplyPlan): PlanPreviewView {
-  const route = plan.analysis.route;
-  const routeLabel = route === 'native_endpoint'
-    ? '直连端点映射'
-    : route === 'local_bridge'
-      ? '本地桥'
-      : route === 'config_sync'
-        ? '配置同步'
+  const reusePath = reusePathForPlan(plan);
+  const routeLabel = reusePath === 'api_endpoint'
+    ? '① API 端点直连'
+    : reusePath === 'native_subscription'
+      ? '② 原生订阅复用'
+      : reusePath === 'local_bridge'
+        ? '③ 本机协议桥'
         : '当前不支持';
-  const startsBridge = plan.serviceImpact === 'requires_local_bridge' || route === 'local_bridge';
+  const startsBridge = reusePath === 'local_bridge';
   const writes = plan.changes.map((change) => (
     change.secret
       ? `${change.target} · ${change.field}：使用已保存的密钥`
       : `${change.target} · ${change.field}：${change.value ?? '保持默认'}`
   ));
-  const portNotes = plan.changes
-    .filter((change) => /port|端口/i.test(change.field) || (change.value != null && /:\d{2,5}|127\.0\.0\.1/i.test(change.value)))
-    .map((change) => (
-      change.secret
-        ? `${change.field}：使用已保存的值`
-        : `${change.field}：${change.value ?? '待分配'}`
-    ));
+  const portNotes = startsBridge
+    ? plan.changes
+      .filter((change) => /port|端口/i.test(change.field) || (change.value != null && /:\d{2,5}|127\.0\.0\.1/i.test(change.value)))
+      .map((change) => (
+        change.secret
+          ? `${change.field}：使用已保存的值`
+          : `${change.field}：${change.value ?? '待分配'}`
+      ))
+    : [];
   if (startsBridge && portNotes.length === 0) {
     portNotes.push('将启动本机桥并分配端口');
   }

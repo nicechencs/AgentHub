@@ -1,9 +1,9 @@
 # 连接：票、绑定与协议图
 
-> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（OpenAI/xAI API → Pi reshape；Anthropic API Key → Codex 本地桥）；Grok 边仍不可行；§6.5 Claude bind 已开（GLM/DeepSeek → Claude experimental native_endpoint），Grok/订阅仍关；§6.6 未做**。  
+> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（OpenAI/xAI API → Pi 属 ①；Anthropic API Key → Codex 属 ③）；Grok 边仍不可行；§6.5 Claude bind 已开（GLM/DeepSeek → Claude 属 ①），②③ 订阅跨 Agent 实现未开；§6.6 未做**。  
 > 日期：2026-08-15。  
-> 本文是跨 Agent「把已有凭据接到另一个 Agent」的领域真源。页面、Hub 入口、Adapter、厂商规则文档以本文为准改表述；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
-> 关联：[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[adapter-design.md](adapter-design.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[account-authorization-pool.md](account-authorization-pool.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)。
+> 本文是跨 Agent「把已有凭据接到另一个 Agent」的领域真源。**产品方向**（① API 直连 / ② 原生订阅复用 / ③ 本机桥）以 [product-decisions.md](product-decisions.md) 为准。页面、Hub 入口、Adapter、厂商规则文档以本文为准改表述；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
+> 关联：[product-decisions.md](product-decisions.md)、[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[adapter-design.md](adapter-design.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[account-authorization-pool.md](account-authorization-pool.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)。
 
 ## 0. 一句话
 
@@ -48,7 +48,7 @@ AgentHub 不「共享链接」，它**绑定票**。直连、改配置、本机�
 | 字段 | 含义 |
 |---|---|
 | `id` | `claude` / `codex` / …… |
-| `accepts[]` | 这个客户端听什么协议或配置槽 |
+| `accepts[]` | 这个客户端听什么 **wire 协议** 和 **OAuth 契约槽**（两者都要登记，否则判不出第 2 路） |
 | `writer` | 能否写 live。Cursor 当前为无，不能当绑定落点 |
 | `constraints` | 例如官方登录不能被桥冒充成另一家授权 |
 
@@ -94,14 +94,16 @@ Account / Provider / live 事务仍由 core service 单点负责，不建设 `co
 
 ### 3.1 四种路线（有优先级）
 
-| `route` | 何时 | 现有实现名 | 用户感知 |
-|---|---|---|---|
-| `native` | 票本来就是给这个 Agent 的 | 账号/供应商切换 | 切换，不起桥 |
-| `reshape` | 票说的和 Agent 听的是同一种协议，只是配置形状不同 | `config_sync` / `native_endpoint` | 写配置，凭据只引用 |
-| `bridge` | 协议不同，图上有边 | `local_bridge` | 起本机 loopback，目标只持本地 token |
-| 不可行 | 无 writer、无表面、无边、OAuth 不是 HTTP 上游 | `unsupported` | 说明原因和替代，不提供「强制转换」 |
+| `route` | 何时 | 现有实现名 | 用户三路 | 用户感知 |
+|---|---|---|---|---|
+| `native` | 票本来就是给这个 Agent 的 | 账号/供应商切换 | ② 的本 Agent 情形 | 切换，不起桥 |
+| `reshape` | 共同协议或共同 OAuth 契约槽，只改配置形状 | `config_sync` / `native_endpoint` | ① API 直连 或 ② 原生订阅 | 写配置，凭据只引用，不起桥 |
+| `bridge` | 协议/契约对不上，图上有边 | `local_bridge` | ③ 本机协议桥 | 起 loopback，目标只持本地 token |
+| 不可行 | 无 writer、无表面、无边、登录态不能当 HTTP 上游 | `unsupported` | —— | 说明原因和替代，不提供「强制转换」 |
 
-优先直连/改配置，桥是兜底。OAuth 与 API Key 分开判：OAuth 只有能稳定当成某种上游协议时才进入图，否则只给签发它的那个 Agent 做 `native`。
+优先 ①②，对不上再 ③。桥只是第 3 路的手段，不是订阅的默认。OAuth 先看目标有没有同一授权契约槽（②）；没有且存在转换边才进 ③。API Key 与 OAuth 分开判。三路是用户说明，不新增领域枚举。见 [product-decisions.md](product-decisions.md)。
+
+`plan.reusePath` 是派生展示字段，非第五个 route；领域 route 仍是 `native` | `reshape` | `bridge` | 不可行。
 
 ### 3.2 协议图
 
@@ -147,7 +149,7 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 - refresh single-flight 发生在**票**这一层，所有绑定共享同一次刷新
 - 流式：首字节前可换路线/重试，写出后禁止重放
 
-参考实现（cc-switch、CLIProxyAPI、sub2api）只借鉴方法：协议成图、下游身份与上游 secret 分离、首字节边界、按账号 refresh。不借鉴产品：拼车、公网入口、把投影再当票。许可边界仍要单独审；优先重写，不混入参考项目源码。凭据落盘加密仍为项目范围外。
+参考实现（cc-switch、CLIProxyAPI、Management Center、sub2api）**借鉴产品能力**：三路复用、协议成图、下游身份与上游 secret 分离、首字节边界、按账号 refresh、管理面的登录/配额/探测。**不借鉴运营形态**：拼车、公网入口、永远起代理、把投影再当票。许可边界仍要单独审；优先重写，不混入参考项目源码。凭据落盘加密仍为项目范围外。产品真源：[product-decisions.md](product-decisions.md)。
 
 ## 5. 界面（目标态，允许重做）
 
@@ -188,14 +190,14 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 规则：
 
 - 每一张**真票**都有「接到…」。未识别、无边、目标无 writer，都在对话框里置灰 + 原因，不在列表上假装这件事不存在。
-- 生成投影**不出现**在钱包。已有「经兼容路由」的用途记在源票的「正用于」上。
+- 生成投影**不出现**在钱包。已有用途记在源票的「正用于」上，并标 ① 直连 / ② 原生订阅 / ③ 本机桥（过渡期「经兼容路由」只表示 reshape，不要当成桥）。
 - 「切换」只用于该票与其 `importedFrom` / 原生 Agent 的 `native` 绑定。接到别的 Agent 一律叫「接到…」（文案可再打磨，语义是 bind）。
 - 深链 `?agent=` 仍可用：打开钱包并高亮该 Agent 的 active 绑定，而不是把整个钱包切成该 Agent 的私有列表。
 - 添加票：导入登录态、新 API Key。进口必须写下 `surface`。
 
 ### 5.3 Dashboard = Agent 的绑定
 
-卡片展示：**当前绑定的票**（不是「当前 Provider 行」）、路线（直连 / 改配置 / 本机桥）、桥是否在跑。
+卡片展示：**当前绑定的票**（不是「当前 Provider 行」）、路线（① 直连 / ② 原生订阅 / ③ 本机桥）、仅 ③ 显示桥是否在跑。
 
 - 主动作仍是打开同一套 bind 对话框（target 固定）。
 - 来源不再按「本 Agent 表里的行 / 别人表里的行」分组，而按 **native 候选** 与 **可规划的其他票** 分组。
@@ -236,9 +238,9 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 4. 加边：Anthropic→Codex 桥（协议腿 + experimental bind 已开）、Kimi→Grok reshape、OpenAI/xAI Key → Pi/Grok。
 5. 新 surface：GLM / DeepSeek 按双协议入口登记。
 6. 新 Agent writer：DeepSeek Harness（`dsh`）已接入；**DeepSeek API → `dsh` `config_sync`** 与 **DeepSeek API → Claude experimental `native_endpoint`** 都走现有 `AdapterCapabilityMatrix` / `AdapterApplyService`。不要把 Harness 当协议桥。
-7. 能当 HTTP 上游的订阅（如 Codex 订阅→Claude）接执行器后打开那条边。
+7. **跨 Agent 复用三路**（产品已定，见 [product-decisions.md](product-decisions.md)）：先补 ①（双协议 / 单协议 Key 直连），再接 ②（Claude / Codex / Grok 订阅 → Pi 等已有契约槽），最后做 ③（Codex 订阅 → Claude 本机桥）。实现未开只表示缺执行器 / fixtures，不表示产品关闭。
 
-做不到、且应看得见的上限：Cursor 当目标（无 writer）、未标记的自定义中转、不能当 HTTP 上游的官方登录、二次投影、公网号池。
+做不到、且应看得见的上限：Cursor 当目标（无 writer）、未标记的自定义中转、二次投影、公网号池。暂时不能当 HTTP 上游的登录态要写明缺哪一跳，不能写成「订阅一律不做」。
 
 ## 7. 现状对照（防止倒读）
 

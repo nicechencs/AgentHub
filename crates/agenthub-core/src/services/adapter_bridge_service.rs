@@ -247,6 +247,9 @@ impl AdapterBridgeRuntimeMaterial {
                     "anthropic-version",
                     crate::services::adapter_route_constants::ANTHROPIC_API_VERSION,
                 ),
+            BridgeUpstreamProtocol::CodexResponsesOauth => {
+                upstream_req.bearer_auth(self.upstream_auth.token())
+            }
         };
         let upstream = upstream_req.send().await.map_err(|_| {
             AppError::message(
@@ -471,6 +474,9 @@ impl AdapterBridgeService {
             BridgeUpstreamProtocol::AnthropicMessages => self
                 .secrets
                 .resolve_anthropic_auth(request.source_kind, source_id)?,
+            BridgeUpstreamProtocol::CodexResponsesOauth => {
+                unreachable!("Codex Responses OAuth is not an apply route")
+            }
         };
         let profile_id = stable_id(rule.profile_prefix, source_id);
         let provider_id = stable_id(rule.provider_prefix, source_id);
@@ -905,6 +911,9 @@ impl AdapterBridgeService {
             BridgeUpstreamProtocol::AnthropicMessages => self
                 .secrets
                 .resolve_anthropic_auth(profile.source_kind, &profile.source_id)?,
+            BridgeUpstreamProtocol::CodexResponsesOauth => {
+                unreachable!("Codex Responses OAuth is not an apply route")
+            }
         };
         Ok(AdapterBridgeRestoreMaterial {
             material: AdapterBridgeRuntimeMaterial {
@@ -945,6 +954,7 @@ impl AdapterBridgeService {
                 request.source_kind,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account
             ),
+            BridgeUpstreamProtocol::CodexResponsesOauth => false,
         };
         if source_ok
             && request.target_agent_id == AgentId::Codex

@@ -77,10 +77,10 @@ UI 组件（`MarkdownView` / 预览对话框）以库 `@uiw/react-markdown-previ
 
 | 字段 | 含义 |
 |---|---|
-| `route` / `support` / `canApply` / `maturity` / `ruleId` / `gateKind` / `reason` | `plan()` 是唯一规划出口；analyze 仍给 route/support/reason 主旨。`canApply` = 矩阵开放 ∩ write_gate |
+| `route` / `support` / `canApply` / `maturity` / `ruleId` / `gateKind` / `reason` / `reusePath` | `plan()` 是唯一规划出口；analyze 仍给 route/support/reason 主旨。`canApply` = 矩阵开放 ∩ write_gate。`reusePath` 由 `plan()` 派生，是用户三路的展示字段；三路不是领域枚举，展示走 `plan.reusePath` |
 | `applyPath` | 生产执行入口：`native`（`AdapterApplyService`）/ `local_bridge`（Tauri bridge controller）/ `rejected`（禁止 apply） |
 
-**改矩阵 / reason / write_gate 可写路径时必须先改或同步此 JSON**，再改：
+**改矩阵 / reason / write_gate / `reusePath` 可写路径时必须先改或同步此 JSON（JSON 也要带 `reusePath`）**，再改：
 
 1. `crates/agenthub-core` 的 `ADAPTER_CAPABILITY_MATRIX` / route service  
 2. `src/dev/mocks/adapter.ts`  

@@ -155,6 +155,30 @@ describe('mock ticket wallet', () => {
           tokenValid: true,
           credentialFormat: 'auth_json',
         },
+        {
+          id: 'claude-oauth',
+          agentId: 'claude',
+          kind: 'oauth',
+          label: 'Claude subscription',
+          isCurrent: false,
+          tokenValid: true,
+        },
+        {
+          id: 'grok-oauth',
+          agentId: 'grok',
+          kind: 'oauth',
+          label: 'Grok subscription',
+          isCurrent: false,
+          tokenValid: true,
+        },
+        {
+          id: 'pi-oauth',
+          agentId: 'pi',
+          kind: 'oauth',
+          label: 'Pi OAuth',
+          isCurrent: false,
+          tokenValid: true,
+        },
       ],
       listProviders: () => [
         {
@@ -204,8 +228,23 @@ describe('mock ticket wallet', () => {
 
     const codex = wallet.tickets.find((t) => t.id === 'account:codex-oauth');
     expect(codex?.surface).toBe('codex-chatgpt-subscription');
-    expect(codex?.speaks).toEqual(['openai-responses']);
+    expect(codex?.speaks).toEqual(['openai-responses', 'openai-codex-pkce']);
     expect(codex?.importedFrom).toBe('codex');
+
+    const claude = wallet.tickets.find((t) => t.id === 'account:claude-oauth');
+    expect(claude?.surface).toBe('claude-subscription');
+    expect(claude?.speaks).toEqual(['anthropic-messages', 'anthropic-pkce']);
+    expect(claude?.importedFrom).toBe('claude');
+
+    const grok = wallet.tickets.find((t) => t.id === 'account:grok-oauth');
+    expect(grok?.surface).toBe('grok-xai-subscription');
+    expect(grok?.speaks).toEqual(['openai-chat', 'xai-device-code']);
+    expect(grok?.importedFrom).toBe('grok');
+
+    const pi = wallet.tickets.find((t) => t.id === 'account:pi-oauth');
+    expect(pi?.surface).toBe('unknown');
+    expect(pi?.speaks).toEqual([]);
+    expect(pi?.importedFrom).toBe('pi');
 
     const relay = wallet.tickets.find((t) => t.id === 'provider:relay');
     expect(relay?.surface).toBe('unknown');
@@ -346,6 +385,41 @@ describe('mock ticket wallet', () => {
       'anthropic-messages',
       'openai-chat',
     ]);
+  });
+
+  it('reclassifies persisted unknown OAuth surfaces without writing unknown back', () => {
+    const wallet = buildMockTicketWallet({
+      listAccounts: () => [
+        {
+          id: 'unknown-claude',
+          agentId: 'claude',
+          kind: 'oauth',
+          label: 'Claude OAuth',
+          isCurrent: false,
+          tokenValid: true,
+          extra: { surface: 'unknown' },
+        } as Account,
+        {
+          id: 'unknown-pi',
+          agentId: 'pi',
+          kind: 'oauth',
+          label: 'Pi OAuth',
+          isCurrent: false,
+          tokenValid: true,
+          extra: { surface: 'unknown' },
+        } as Account,
+      ],
+      listProviders: () => [],
+      listProfiles: () => [],
+      getBridgeStatus: () => undefined,
+      planAdapter: async () => {
+        throw new Error('not used');
+      },
+    });
+
+    expect(wallet.tickets.find((t) => t.id === 'account:unknown-claude')?.surface)
+      .toBe('claude-subscription');
+    expect(wallet.tickets.find((t) => t.id === 'account:unknown-pi')?.surface).toBe('unknown');
   });
 
   it('plan_ticket rejects generated projection providers', async () => {

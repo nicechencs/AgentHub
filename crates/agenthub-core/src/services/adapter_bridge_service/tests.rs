@@ -611,7 +611,10 @@ fn anthropic_account(id: &str, api_key: &str) -> Account {
     }
 }
 
-fn anthropic_request(source_kind: AdapterSourceKind, source_id: &str) -> AdapterBridgePrepareRequest {
+fn anthropic_request(
+    source_kind: AdapterSourceKind,
+    source_id: &str,
+) -> AdapterBridgePrepareRequest {
     AdapterBridgePrepareRequest {
         source_kind,
         source_id: source_id.into(),
@@ -638,7 +641,10 @@ fn prepare_anthropic_provider_projects_messages_bridge_not_kimi() {
     assert_eq!(prepared.profile().source_kind, AdapterSourceKind::Provider);
     let start = prepared.runtime_material().start_spec(None);
     assert_eq!(start.upstream.base_url, ANTHROPIC_MESSAGES_BASE_URL);
-    assert_eq!(start.upstream.protocol, BridgeUpstreamProtocol::AnthropicMessages);
+    assert_eq!(
+        start.upstream.protocol,
+        BridgeUpstreamProtocol::AnthropicMessages
+    );
     assert_eq!(
         start.upstream.model.as_deref(),
         Some(ANTHROPIC_DEFAULT_MODEL)
@@ -680,21 +686,32 @@ fn prepare_anthropic_account_reuses_secret_resolver_and_projects_account_ref() {
     assert_eq!(prepared.profile().rule_id, ANTHROPIC_RULE_ID);
     assert_eq!(prepared.profile().source_kind, AdapterSourceKind::Account);
     assert_eq!(
-        prepared.runtime_material().start_spec(None).upstream.protocol,
+        prepared
+            .runtime_material()
+            .start_spec(None)
+            .upstream
+            .protocol,
         BridgeUpstreamProtocol::AnthropicMessages
     );
     assert!(!format!("{prepared:?}").contains("sk-ant-account"));
 
     let generated = create_projection(&db, &prepared, 43132);
     assert_eq!(generated.meta["adapterSourceRef"]["kind"], "account");
-    assert_eq!(generated.meta["adapterSourceRef"]["id"], "anthropic-account");
+    assert_eq!(
+        generated.meta["adapterSourceRef"]["id"],
+        "anthropic-account"
+    );
     assert_eq!(generated.meta["adapterRuleId"], ANTHROPIC_RULE_ID);
     service.finalize(&prepared, 43132).unwrap();
     let restored = service
         .resolve_restore_material(prepared.profile().id.as_str())
         .unwrap();
     assert_eq!(
-        restored.runtime_material().start_spec(None).upstream.protocol,
+        restored
+            .runtime_material()
+            .start_spec(None)
+            .upstream
+            .protocol,
         BridgeUpstreamProtocol::AnthropicMessages
     );
     assert!(!format!("{restored:?}").contains("sk-ant-account"));

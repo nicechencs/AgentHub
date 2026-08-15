@@ -149,29 +149,35 @@ impl TicketReadService {
 
     fn resolve_account_surface(&self, account: &Account) -> Result<TicketSurface> {
         match TicketSurface::from_persisted_json(&account.extra) {
+            PersistedTicketSurface::Known(TicketSurface::Unknown)
+            | PersistedTicketSurface::Missing => {}
             PersistedTicketSurface::Known(surface) => return Ok(surface),
             PersistedTicketSurface::Unrecognized => return Ok(TicketSurface::Unknown),
-            PersistedTicketSurface::Missing => {}
         }
         let product = self
             .routes
             .classify_source_product(AdapterSourceKind::Account, &account.id)?;
         let surface = TicketSurface::from_product(product);
-        self.best_effort_writeback_account_surface(account, surface);
+        if surface != TicketSurface::Unknown {
+            self.best_effort_writeback_account_surface(account, surface);
+        }
         Ok(surface)
     }
 
     fn resolve_provider_surface(&self, provider: &Provider) -> Result<TicketSurface> {
         match TicketSurface::from_persisted_json(&provider.meta) {
+            PersistedTicketSurface::Known(TicketSurface::Unknown)
+            | PersistedTicketSurface::Missing => {}
             PersistedTicketSurface::Known(surface) => return Ok(surface),
             PersistedTicketSurface::Unrecognized => return Ok(TicketSurface::Unknown),
-            PersistedTicketSurface::Missing => {}
         }
         let product = self
             .routes
             .classify_source_product(AdapterSourceKind::Provider, &provider.id)?;
         let surface = TicketSurface::from_product(product);
-        self.best_effort_writeback_provider_surface(provider, surface);
+        if surface != TicketSurface::Unknown {
+            self.best_effort_writeback_provider_surface(provider, surface);
+        }
         Ok(surface)
     }
 

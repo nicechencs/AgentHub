@@ -58,6 +58,8 @@ const TICKET_SURFACES: readonly TicketSurface[] = [
   'glm-coding-plan',
   'deepseek-api',
   'codex-chatgpt-subscription',
+  'claude-subscription',
+  'grok-xai-subscription',
   'unknown',
 ];
 
@@ -82,6 +84,7 @@ const PROJECTION_NOT_A_TICKET = '投影不是票';
 function persistedSurface(blob: unknown): TicketSurface | undefined {
   const raw = jsonString(blob, 'surface');
   if (!raw) return undefined;
+  if (raw === 'unknown') return undefined;
   return TICKET_SURFACES.find((surface) => surface === raw);
 }
 
@@ -170,6 +173,12 @@ function classifyAccountSurface(account: Account): TicketSurface {
     ?? account.credentialFormat?.trim();
   const credentialsBlob = row.credentials ?? {};
 
+  if (account.agentId === 'claude' && account.kind === 'oauth') {
+    return 'claude-subscription';
+  }
+  if (account.agentId === 'grok' && account.kind === 'oauth') {
+    return 'grok-xai-subscription';
+  }
   if (
     account.kind === 'apikey'
     && (explicitProvider?.toLowerCase() === 'anthropic'
@@ -243,7 +252,9 @@ function speaksOf(surface: TicketSurface): string[] {
   if (surface === 'glm-coding-plan' || surface === 'deepseek-api') {
     return ['anthropic-messages', 'openai-chat'];
   }
-  if (surface === 'codex-chatgpt-subscription') return ['openai-responses'];
+  if (surface === 'codex-chatgpt-subscription') return ['openai-responses', 'openai-codex-pkce'];
+  if (surface === 'claude-subscription') return ['anthropic-messages', 'anthropic-pkce'];
+  if (surface === 'grok-xai-subscription') return ['openai-chat', 'xai-device-code'];
   return [];
 }
 

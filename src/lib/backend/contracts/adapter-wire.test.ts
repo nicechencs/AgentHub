@@ -233,6 +233,7 @@ describe('Adapter Rust wire mappers', () => {
       targetAgentId: 'claude',
       canApply: false,
       maturity: 'preview',
+      reusePath: 'none',
       reason: 'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
       serviceImpact: 'none',
       changes: [],
@@ -240,6 +241,7 @@ describe('Adapter Rust wire mappers', () => {
     expect(preview.maturity).toBe('preview');
     expect(preview.canApply).toBe(false);
     expect(preview.reason).toContain('当前不支持');
+    expect(preview.reusePath).toBe('none');
 
     const legacy = mapAdapterApplyPlan({
       analysis: {
@@ -257,5 +259,74 @@ describe('Adapter Rust wire mappers', () => {
     });
     expect(legacy.maturity).toBe('none');
     expect(legacy.reason).toBe('显式 Anthropic API Key 可预览为 Pi 的配置同步。');
+    expect(legacy.reusePath).toBe('api_endpoint');
+  });
+
+  it('maps explicit reuse paths and fails closed for unknown values', () => {
+    const legacyLocal = mapAdapterApplyPlan({
+      analysis: {
+        route: 'local_bridge',
+        support: 'experimental',
+        reason: 'bridge',
+        actions: [],
+        limitations: [],
+        evidence: [],
+      },
+      targetAgentId: 'codex',
+      canApply: true,
+      serviceImpact: 'requires_local_bridge',
+      changes: [],
+    });
+    expect(legacyLocal.reusePath).toBe('local_bridge');
+
+    const legacyUnsupported = mapAdapterApplyPlan({
+      analysis: {
+        route: 'unsupported',
+        support: 'unsupported',
+        reason: 'unsupported',
+        actions: [],
+        limitations: [],
+        evidence: [],
+      },
+      targetAgentId: 'claude',
+      canApply: false,
+      serviceImpact: 'none',
+      changes: [],
+    });
+    expect(legacyUnsupported.reusePath).toBe('none');
+
+    const nativeSubscription = mapAdapterApplyPlan({
+      analysis: {
+        route: 'config_sync',
+        support: 'experimental',
+        reason: 'preview',
+        actions: [],
+        limitations: [],
+        evidence: [],
+      },
+      targetAgentId: 'pi',
+      canApply: false,
+      reusePath: 'native_subscription',
+      serviceImpact: 'none',
+      changes: [],
+    });
+    expect(nativeSubscription.reusePath).toBe('native_subscription');
+
+    const unknown = mapAdapterApplyPlan({
+      analysis: {
+        route: 'native_endpoint',
+        support: 'stable',
+        reason: 'ok',
+        actions: [],
+        limitations: [],
+        evidence: [],
+      },
+      targetAgentId: 'claude',
+      canApply: true,
+      reusePath: 'future_path',
+      serviceImpact: 'none',
+      changes: [],
+    });
+    expect(unknown.reusePath).toBe('none');
   });
 });

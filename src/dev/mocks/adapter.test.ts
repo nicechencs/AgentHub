@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AdapterCommandError } from '@/lib/backend/contracts/adapter';
 import type { Account, AgentId, Provider } from '@/lib/types';
-import { createMockAdapterPort, resetMockAdapters } from './adapter';
+import { createMockAdapterPort, PROTOCOL_MISMATCH_REASON, resetMockAdapters } from './adapter';
 import { getMockAccountById } from './account';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
@@ -177,6 +177,7 @@ describe('mock adapter route preview', () => {
     expect(analysis.reason).toMatch(/Claude/);
     expect(analysis.reason).toMatch(/API Key|官方登录/);
     expect(plan.canApply).toBe(false);
+    expect(plan.reusePath).toBe('none');
     expect(plan.changes).toEqual([]);
     await expect(adapter.apply({
       sourceKind: 'account',
@@ -185,6 +186,169 @@ describe('mock adapter route preview', () => {
     })).rejects.toThrow(/不可应用|不支持|canApply/i);
     expect(JSON.stringify({ analysis, plan })).not.toMatch(/sk-|access_token|refresh_token|bearer/i);
     expect(plan.reason).not.toContain('同边但暂不可写');
+  });
+
+  it('previews Claude, Codex, and Grok OAuth reuse into Pi without opening bind', async () => {
+    const accounts = new Map<string, Account>([
+      ['claude-subscription', {
+        id: 'claude-subscription',
+        agentId: 'claude',
+        kind: 'oauth',
+        label: 'Claude subscription',
+        isCurrent: false,
+        tokenValid: true,
+      }],
+      ['codex-auth-json', {
+        id: 'codex-auth-json',
+        agentId: 'codex',
+        kind: 'oauth',
+        label: 'Codex auth.json',
+        isCurrent: false,
+        tokenValid: true,
+        credentialFormat: 'auth_json',
+      }],
+      ['codex-oauth-other', {
+        id: 'codex-oauth-other',
+        agentId: 'codex',
+        kind: 'oauth',
+        label: 'Codex OAuth',
+        isCurrent: false,
+        tokenValid: true,
+      }],
+      ['grok-subscription', {
+        id: 'grok-subscription',
+        agentId: 'grok',
+        kind: 'oauth',
+        label: 'Grok subscription',
+        isCurrent: false,
+        tokenValid: true,
+      }],
+    ]);
+    const adapter = createMockAdapterPort({
+      getAccountById: (id) => accounts.get(id),
+      getProviderById: getMockProviderById,
+    });
+    const cases = [
+      {
+        sourceId: 'claude-subscription',
+        value: 'anthropic',
+        ruleId: 'claude-subscription-to-pi-v0',
+        reason: 'Claude 订阅可预览为 Pi 的 anthropic 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。',
+      },
+      {
+        sourceId: 'codex-auth-json',
+        value: 'openai-codex',
+        ruleId: 'codex-subscription-to-pi-v0',
+        reason: 'Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。',
+      },
+      {
+        sourceId: 'codex-oauth-other',
+        value: 'openai-codex',
+        ruleId: 'codex-subscription-to-pi-v0',
+        reason: 'Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。',
+      },
+      {
+        sourceId: 'grok-subscription',
+        value: 'xai',
+        ruleId: 'grok-subscription-to-pi-v0',
+        reason: 'Grok / xAI 订阅可预览为 Pi 的 xai 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。',
+      },
+    ] as const;
+
+    for (const item of cases) {
+      const plan = await adapter.plan({
+        sourceKind: 'account',
+        sourceId: item.sourceId,
+        targetAgentId: 'pi',
+      });
+      expect(plan).toMatchObject({
+        analysis: {
+          route: 'config_sync',
+          support: 'experimental',
+          gateKind: 'preview_only',
+          ruleId: item.ruleId,
+          reason: item.reason,
+          actions: [
+            {
+              kind: 'set_config',
+              target: 'Pi',
+              value: item.value,
+              secret: false,
+            },
+            {
+              kind: 'reference_connection_secret',
+              target: 'Pi',
+              description: '从已选 Connection 引用授权（OAuth）；不会读取或显示 token。',
+              secret: true,
+            },
+          ],
+          limitations: [
+            '仅预览：不会写入 Pi 配置，也不会导出、复制或转换 OAuth token。',
+            'plan.canApply=false：无 Apply、启动 Bridge 或强制继续入口。',
+            '打开 bind 前需逐边验证刷新语义（refresh token 单次轮换会互相打翻）。',
+          ],
+        },
+        canApply: false,
+        maturity: 'preview',
+        reusePath: 'native_subscription',
+        serviceImpact: 'none',
+        changes: [
+          { target: 'pi', field: 'provider', value: item.value, secret: false },
+          { target: 'pi', field: 'apiKey', secret: true },
+        ],
+      });
+      await expect(adapter.apply({
+        sourceKind: 'account',
+        sourceId: item.sourceId,
+        targetAgentId: 'pi',
+      })).rejects.toThrow(/不可应用|不支持|canApply/i);
+    }
+    expect(await adapter.listProfiles()).toEqual([]);
+  });
+
+  it('keeps subscription protocol mismatches unsupported', async () => {
+    const accounts = new Map<string, Account>([
+      ['claude-subscription', {
+        id: 'claude-subscription',
+        agentId: 'claude',
+        kind: 'oauth',
+        label: 'Claude subscription',
+        isCurrent: false,
+        tokenValid: true,
+      }],
+      ['grok-subscription', {
+        id: 'grok-subscription',
+        agentId: 'grok',
+        kind: 'oauth',
+        label: 'Grok subscription',
+        isCurrent: false,
+        tokenValid: true,
+      }],
+    ]);
+    const adapter = createMockAdapterPort({
+      getAccountById: (id) => accounts.get(id),
+      getProviderById: getMockProviderById,
+    });
+    const claudeToCodex = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: 'claude-subscription',
+      targetAgentId: 'codex',
+    });
+    const grokToClaude = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: 'grok-subscription',
+      targetAgentId: 'claude',
+    });
+    expect(claudeToCodex).toMatchObject({
+      analysis: { route: 'unsupported', reason: PROTOCOL_MISMATCH_REASON },
+      canApply: false,
+      reusePath: 'none',
+    });
+    expect(grokToClaude).toMatchObject({
+      analysis: { route: 'unsupported', reason: PROTOCOL_MISMATCH_REASON },
+      canApply: false,
+      reusePath: 'none',
+    });
   });
 
   it('Account Anthropic → Pi is writable on the implemented bind path', async () => {
@@ -683,6 +847,7 @@ describe('shared adapter capability contract', () => {
     expect(analysis.gateKind).toBe(item.expect.gateKind);
     expect(analysis.reason).toBe(item.expect.reason);
     expect(plan.canApply).toBe(item.expect.canApply);
+    expect(plan.reusePath).toBe(item.expect.reusePath);
 
     // applyPath is the production entry surface (native / local_bridge / config_sync / closed).
     expect(item.expect.applyPath).toBeDefined();

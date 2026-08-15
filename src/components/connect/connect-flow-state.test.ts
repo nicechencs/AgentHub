@@ -652,13 +652,34 @@ describe('plan 预览人话化', () => {
         { target: 'codex', field: 'apiKey', secret: true },
       ],
     }));
-    expect(view.routeLabel).toBe('本地桥');
+    expect(view.routeLabel).toBe('③ 本机协议桥');
     expect(view.startsBridge).toBe(true);
     expect(view.serviceImpact).toBe('将启动本机桥');
     expect(view.writes.some((line) => line.includes('使用已保存的密钥'))).toBe(true);
     expect(view.portNotes.length).toBeGreaterThan(0);
     expect(view.modelMappings).toEqual(['model：kimi-k2']);
     expect(view.limitations).toEqual(['需保持托盘运行']);
+  });
+
+  it('renders native subscription reuse without starting a local bridge', () => {
+    const view = describePlanPreview(plan({
+      analysis: analysis({
+        route: 'config_sync',
+        gateKind: 'preview_only',
+        reason: '原生订阅预览',
+      }),
+      canApply: false,
+      reusePath: 'native_subscription',
+      serviceImpact: 'none',
+      changes: [
+        { target: 'pi', field: 'provider', value: 'openai-codex', secret: false },
+        { target: 'pi', field: 'apiKey', secret: true },
+      ],
+    }));
+    expect(view.routeLabel).toBe('② 原生订阅复用');
+    expect(view.startsBridge).toBe(false);
+    expect(view.serviceImpact).toBe('无需本地服务');
+    expect(view.portNotes).toEqual([]);
   });
 });
 

@@ -22,16 +22,18 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::bridge::protocol::anthropic_messages::{
-    anthropic_message_to_ir, to_anthropic_messages_request, AnthropicStreamToIr,
+    anthropic_message_to_ir, encode_anthropic_message, encode_anthropic_sse,
+    parse_messages_request, to_anthropic_messages_request, AnthropicStreamToIr,
 };
 use crate::bridge::protocol::responses::{
-    encode_responses_from_ir, parse_responses_request, to_kimi_chat_request, IrToResponsesSse,
+    encode_responses_from_ir, parse_responses_request, responses_output_to_ir,
+    to_kimi_chat_request, to_responses_request, IrToResponsesSse, ResponsesStreamToIr,
 };
 use crate::bridge::runtime::{
     BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamProtocol,
     BridgeUpstreamStatus,
 };
-use crate::bridge::types::{BridgeEvent, ProtocolError};
+use crate::bridge::types::{BridgeEvent, IrEvent, ProtocolError};
 
 const ANTHROPIC_API_VERSION: &str = "2023-06-01";
 
@@ -706,6 +708,7 @@ fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/v1/responses", post(responses))
+        .route("/v1/messages", post(messages))
         .layer(axum::extract::DefaultBodyLimit::max(BODY_LIMIT_BYTES))
         .with_state(state)
 }
@@ -734,7 +737,7 @@ impl AppState {
 }
 
 async fn health(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    if !has_valid_bearer(&headers, &state.local_token) {
+    if !has_valid_local_auth(&headers, &state.local_token) {
         tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, op = "health", code = "unauthorized", status = 401_u16, "bridge health request rejected");
         return error_response(
             StatusCode::UNAUTHORIZED,
@@ -757,11 +760,25 @@ async fn health(State(state): State<AppState>, headers: HeaderMap) -> Response {
 }
 
 async fn responses(State(state): State<AppState>, request: Request) -> Response {
+    if state.upstream.protocol == BridgeUpstreamProtocol::CodexResponsesOauth {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    handle_responses(state, request).await
+}
+
+async fn messages(State(state): State<AppState>, request: Request) -> Response {
+    if state.upstream.protocol != BridgeUpstreamProtocol::CodexResponsesOauth {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    handle_messages(state, request).await
+}
+
+async fn handle_responses(state: AppState, request: Request) -> Response {
     let request_id = uuid::Uuid::new_v4().to_string();
     let started = Instant::now();
     // Do this before extracting JSON. Axum's Json extractor would otherwise read a potentially
     // slow or oversized body for an unauthenticated peer.
-    if !has_valid_bearer(request.headers(), &state.local_token) {
+    if !has_valid_local_auth(request.headers(), &state.local_token) {
         tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "responses", code = "unauthorized", status = 401_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge request rejected");
         return error_response(
             StatusCode::UNAUTHORIZED,
@@ -785,40 +802,9 @@ async fn responses(State(state): State<AppState>, request: Request) -> Response 
             );
         }
     };
-    let body = match tokio::time::timeout(
-        REQUEST_BODY_TIMEOUT,
-        axum::body::to_bytes(request.into_body(), BODY_LIMIT_BYTES),
-    )
-    .await
-    {
-        Ok(Ok(body)) => body,
-        Ok(Err(_)) => {
-            return error_response(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "The request body is invalid or too large.",
-                None,
-            )
-        }
-        Err(_) => {
-            return error_response(
-                StatusCode::REQUEST_TIMEOUT,
-                "request_timeout",
-                "The request body timed out.",
-                None,
-            )
-        }
-    };
-    let body = match serde_json::from_slice::<Value>(&body) {
+    let body = match read_request_json(request).await {
         Ok(body) => body,
-        Err(_) => {
-            return error_response(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "The request body must be valid JSON.",
-                None,
-            )
-        }
+        Err(response) => return response,
     };
 
     let request = match parse_responses_request(&body) {
@@ -833,6 +819,9 @@ async fn responses(State(state): State<AppState>, request: Request) -> Response 
     let mut upstream_body = match protocol {
         BridgeUpstreamProtocol::KimiChatCompletions => to_kimi_chat_request(&request),
         BridgeUpstreamProtocol::AnthropicMessages => to_anthropic_messages_request(&request),
+        BridgeUpstreamProtocol::CodexResponsesOauth => {
+            unreachable!("messages handler owns Codex Responses OAuth")
+        }
     };
     if let Some(model) = &state.upstream.model {
         upstream_body["model"] = Value::String(model.clone());
@@ -840,6 +829,9 @@ async fn responses(State(state): State<AppState>, request: Request) -> Response 
     let path = match protocol {
         BridgeUpstreamProtocol::KimiChatCompletions => "chat/completions",
         BridgeUpstreamProtocol::AnthropicMessages => "messages",
+        BridgeUpstreamProtocol::CodexResponsesOauth => {
+            unreachable!("messages handler owns Codex Responses OAuth")
+        }
     };
     let url = match state.upstream_url.join(path) {
         Ok(url) => url,
@@ -861,6 +853,9 @@ async fn responses(State(state): State<AppState>, request: Request) -> Response 
         BridgeUpstreamProtocol::AnthropicMessages => builder
             .header("x-api-key", state.upstream.auth.token())
             .header("anthropic-version", ANTHROPIC_API_VERSION),
+        BridgeUpstreamProtocol::CodexResponsesOauth => {
+            unreachable!("messages handler owns Codex Responses OAuth")
+        }
     };
     let upstream_request = builder.send();
     let upstream = tokio::select! {
@@ -934,6 +929,210 @@ async fn responses(State(state): State<AppState>, request: Request) -> Response 
     }
 }
 
+async fn handle_messages(state: AppState, request: Request) -> Response {
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let started = Instant::now();
+    if !has_valid_local_auth(request.headers(), &state.local_token) {
+        tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "messages", code = "unauthorized", status = 401_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge request rejected");
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "invalid_api_key",
+            "Invalid local bearer token.",
+            None,
+        );
+    }
+    if state.force_shutdown.is_cancelled() {
+        return stopping_response();
+    }
+    let permit = match state.admission.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "messages", code = "overloaded", status = 429_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge profile is at request capacity");
+            return error_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                "bridge_overloaded",
+                "The local bridge is temporarily busy.",
+                None,
+            );
+        }
+    };
+    let body = match read_request_json(request).await {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let request = match parse_messages_request(&body) {
+        Ok(request) => request,
+        Err(error) => {
+            log_protocol_error(&state, &request_id, started, &error);
+            return protocol_error_response(error);
+        }
+    };
+    let stream_requested = request.stream;
+    let mut upstream_body = to_responses_request(&request);
+    if let Some(model) = &state.upstream.model {
+        upstream_body["model"] = Value::String(model.clone());
+    }
+    let url = match state.upstream_url.join("responses") {
+        Ok(url) => url,
+        Err(_) => {
+            state.record_upstream_failure();
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "upstream_error",
+                "The upstream model provider is unavailable.",
+                None,
+            );
+        }
+    };
+    let upstream = tokio::select! {
+        _ = state.force_shutdown.cancelled() => return stopping_response(),
+        result = tokio::time::timeout(
+            UPSTREAM_RESPONSE_HEADER_TIMEOUT,
+            state.client
+                .post(url)
+                .bearer_auth(state.upstream.auth.token())
+                .json(&upstream_body)
+                .send(),
+        ) => match result {
+            Ok(result) => result,
+            Err(_) => {
+                tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "header_timeout", status = 504_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream response headers timed out");
+                state.record_upstream_failure();
+                return error_response(
+                    StatusCode::GATEWAY_TIMEOUT,
+                    "upstream_timeout",
+                    "The upstream model provider timed out.",
+                    None,
+                );
+            }
+        },
+    };
+    let response = match upstream {
+        Ok(response) => response,
+        Err(_) => {
+            tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "unavailable", status = 502_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream unavailable");
+            state.record_upstream_failure();
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "upstream_unavailable",
+                "The upstream model provider is unavailable.",
+                None,
+            );
+        }
+    };
+    if !response.status().is_success() {
+        let status = response.status();
+        let retry_after = response.headers().get(header::RETRY_AFTER).cloned();
+        let local_status = if status == StatusCode::TOO_MANY_REQUESTS {
+            StatusCode::TOO_MANY_REQUESTS
+        } else {
+            StatusCode::BAD_GATEWAY
+        };
+        tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "upstream_status", status = status.as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream returned an error");
+        state.record_upstream_failure();
+        return error_response(
+            local_status,
+            "upstream_error",
+            "The upstream model provider returned an error.",
+            retry_after,
+        );
+    }
+    if stream_requested {
+        messages_stream_response(state, response, request_id, started, permit)
+    } else {
+        let force_shutdown = state.force_shutdown.clone();
+        tokio::select! {
+            _ = force_shutdown.cancelled() => stopping_response(),
+            result = tokio::time::timeout(
+                UPSTREAM_NON_STREAM_TIMEOUT,
+                messages_non_stream_response(state.clone(), response, request_id, started, permit),
+            ) => match result {
+                Ok(response) => response,
+                Err(_) => {
+                    state.record_upstream_failure();
+                    error_response(
+                        StatusCode::GATEWAY_TIMEOUT,
+                        "upstream_timeout",
+                        "The upstream model provider timed out.",
+                        None,
+                    )
+                }
+            },
+        }
+    }
+}
+
+async fn read_request_json(request: Request) -> Result<Value, Response> {
+    let body = match tokio::time::timeout(
+        REQUEST_BODY_TIMEOUT,
+        axum::body::to_bytes(request.into_body(), BODY_LIMIT_BYTES),
+    )
+    .await
+    {
+        Ok(Ok(body)) => body,
+        Ok(Err(_)) => {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "The request body is invalid or too large.",
+                None,
+            ))
+        }
+        Err(_) => {
+            return Err(error_response(
+                StatusCode::REQUEST_TIMEOUT,
+                "request_timeout",
+                "The request body timed out.",
+                None,
+            ))
+        }
+    };
+    serde_json::from_slice::<Value>(&body).map_err(|_| {
+        error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "The request body must be valid JSON.",
+            None,
+        )
+    })
+}
+
+async fn messages_non_stream_response(
+    state: AppState,
+    response: reqwest::Response,
+    request_id: String,
+    started: Instant,
+    _permit: OwnedSemaphorePermit,
+) -> Response {
+    let upstream_body = match read_bounded_upstream_json(response, &state.force_shutdown).await {
+        Ok(value) => value,
+        Err(UpstreamBodyError::Stopping) => return stopping_response(),
+        Err(UpstreamBodyError::InvalidOrTooLarge) => {
+            state.record_upstream_failure();
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "upstream_error",
+                "The upstream model provider returned an invalid response.",
+                None,
+            );
+        }
+    };
+    let translated =
+        responses_output_to_ir(&upstream_body).and_then(|ir| encode_anthropic_message(&ir));
+    match translated {
+        Ok(value) => {
+            state.record_upstream_success();
+            tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, op = "messages", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
+            Json(value).into_response()
+        }
+        Err(error) => {
+            state.record_upstream_failure();
+            log_protocol_error(&state, &request_id, started, &error);
+            protocol_error_response(error)
+        }
+    }
+}
+
 async fn non_stream_response(
     state: AppState,
     response: reqwest::Response,
@@ -956,10 +1155,16 @@ async fn non_stream_response(
     };
     let translated = match state.upstream.protocol {
         BridgeUpstreamProtocol::KimiChatCompletions => {
-            crate::bridge::protocol::chat::translate_chat_response(&upstream_body, Some(&request_id))
+            crate::bridge::protocol::chat::translate_chat_response(
+                &upstream_body,
+                Some(&request_id),
+            )
         }
         BridgeUpstreamProtocol::AnthropicMessages => anthropic_message_to_ir(&upstream_body)
             .and_then(|ir| encode_responses_from_ir(&ir, Some(&request_id))),
+        BridgeUpstreamProtocol::CodexResponsesOauth => {
+            unreachable!("messages handler owns Codex Responses OAuth")
+        }
     };
     match translated {
         Ok(value) => {
@@ -1026,6 +1231,9 @@ impl StreamCodec {
                 ir: AnthropicStreamToIr::new(),
                 out: IrToResponsesSse::new(request_id, model),
             },
+            BridgeUpstreamProtocol::CodexResponsesOauth => {
+                unreachable!("messages handler owns Codex Responses OAuth")
+            }
         }
     }
 
@@ -1211,6 +1419,147 @@ fn stream_response(
     (StatusCode::OK, headers, Body::from_stream(output)).into_response()
 }
 
+fn messages_stream_response(
+    state: AppState,
+    response: reqwest::Response,
+    request_id: String,
+    started: Instant,
+    permit: OwnedSemaphorePermit,
+) -> Response {
+    let profile_id = state.profile_id.clone();
+    let force_shutdown = state.force_shutdown.clone();
+    let observed = state.clone();
+    let bytes = response.bytes_stream();
+    let output = stream! {
+        let mut translator = ResponsesStreamToIr::new();
+        let mut ir_events: Vec<IrEvent> = Vec::new();
+        let mut emitted_frames = 0usize;
+        let mut buffer = std::collections::VecDeque::new();
+        let mut upstream_bytes = 0usize;
+        let mut output_bytes = 0usize;
+        let _permit = permit;
+        let mut saw_done = false;
+        futures_util::pin_mut!(bytes);
+        'upstream: loop {
+            let next = tokio::select! {
+                _ = force_shutdown.cancelled() => {
+                    yield Ok::<_, Infallible>(stream_error_frame());
+                    return;
+                }
+                next = tokio::time::timeout(UPSTREAM_STREAM_IDLE_TIMEOUT, bytes.next()) => match next {
+                    Ok(next) => next,
+                    Err(_) => {
+                        observed.record_upstream_failure();
+                        yield Ok::<_, Infallible>(stream_error_frame());
+                        return;
+                    }
+                },
+            };
+            let Some(chunk) = next else { break; };
+            let Ok(chunk) = chunk else {
+                observed.record_upstream_failure();
+                yield Ok::<_, Infallible>(stream_error_frame());
+                return;
+            };
+            if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
+                observed.record_upstream_failure();
+                yield Ok::<_, Infallible>(stream_error_frame());
+                return;
+            }
+            upstream_bytes += chunk.len();
+            buffer.extend(chunk.iter().copied());
+            while let Some((frame_end, delimiter_len)) = sse_frame_end_deque(&buffer) {
+                let frame = buffer.drain(..frame_end).collect::<Vec<_>>();
+                for _ in 0..delimiter_len {
+                    let _ = buffer.pop_front();
+                }
+                let payload = match sse_data_payload(&frame) {
+                    Ok(payload) => payload,
+                    Err(()) => {
+                        observed.record_upstream_failure();
+                        yield Ok::<_, Infallible>(stream_error_frame());
+                        return;
+                    }
+                };
+                let Some(payload) = payload else { continue; };
+                if payload.is_empty() || payload == "[DONE]" { continue; }
+                let Ok(value) = serde_json::from_str::<Value>(&payload) else {
+                    observed.record_upstream_failure();
+                    yield Ok::<_, Infallible>(stream_error_frame());
+                    return;
+                };
+                let events = match translator.push_event(&value) {
+                    Ok(events) => events,
+                    Err(_) => {
+                        observed.record_upstream_failure();
+                        yield Ok::<_, Infallible>(stream_error_frame());
+                        return;
+                    }
+                };
+                let completed = events
+                    .iter()
+                    .any(|event| matches!(event, IrEvent::MessageEnd { .. }));
+                ir_events.extend(events);
+                let frames = match encode_anthropic_sse(&ir_events) {
+                    Ok(frames) => frames,
+                    Err(_) => {
+                        observed.record_upstream_failure();
+                        yield Ok::<_, Infallible>(stream_error_frame());
+                        return;
+                    }
+                };
+                for frame in frames.iter().skip(emitted_frames) {
+                    if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
+                        observed.record_upstream_failure();
+                        yield Ok::<_, Infallible>(stream_error_frame());
+                        return;
+                    }
+                    output_bytes += frame.len();
+                    yield Ok::<_, Infallible>(axum::body::Bytes::from(frame.clone()));
+                }
+                emitted_frames = frames.len();
+                if completed {
+                    saw_done = true;
+                    break 'upstream;
+                }
+            }
+        }
+        if !saw_done || !buffer.is_empty() {
+            observed.record_upstream_failure();
+            yield Ok::<_, Infallible>(stream_error_frame());
+            return;
+        }
+        ir_events.extend(translator.finish());
+        let frames = match encode_anthropic_sse(&ir_events) {
+            Ok(frames) => frames,
+            Err(_) => {
+                observed.record_upstream_failure();
+                yield Ok::<_, Infallible>(stream_error_frame());
+                return;
+            }
+        };
+        for frame in frames.iter().skip(emitted_frames) {
+            if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
+                observed.record_upstream_failure();
+                yield Ok::<_, Infallible>(stream_error_frame());
+                return;
+            }
+            output_bytes += frame.len();
+            yield Ok::<_, Infallible>(axum::body::Bytes::from(frame.clone()));
+        }
+        observed.record_upstream_success();
+        tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, op = "messages_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
+    };
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/event-stream"),
+    );
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    headers.insert(header::CONNECTION, HeaderValue::from_static("keep-alive"));
+    (StatusCode::OK, headers, Body::from_stream(output)).into_response()
+}
+
 #[cfg(test)]
 pub(super) fn sse_frame_end(buffer: &[u8]) -> Option<(usize, usize)> {
     let deque: std::collections::VecDeque<u8> = buffer.iter().copied().collect();
@@ -1281,17 +1630,17 @@ fn stopping_response() -> Response {
     )
 }
 
-fn has_valid_bearer(headers: &HeaderMap, expected: &str) -> bool {
-    let Some(value) = headers
+fn has_valid_local_auth(headers: &HeaderMap, expected: &str) -> bool {
+    let bearer = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-    else {
-        return false;
-    };
-    let Some(token) = value.strip_prefix("Bearer ") else {
-        return false;
-    };
-    constant_time_eq(token.as_bytes(), expected.as_bytes())
+        .and_then(|value| value.strip_prefix("Bearer "));
+    let api_key = headers
+        .get("x-api-key")
+        .and_then(|value| value.to_str().ok());
+    bearer
+        .or(api_key)
+        .is_some_and(|token| constant_time_eq(token.as_bytes(), expected.as_bytes()))
 }
 
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
