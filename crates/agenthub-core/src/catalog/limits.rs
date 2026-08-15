@@ -67,6 +67,10 @@ pub const PROJECT_SCAN_BYTES: u64 = 256 * 1024;
 pub const NODE_MIN_MAJOR: u64 = 18;
 /// Default log file retention days.
 pub const DEFAULT_LOG_RETENTION_DAYS: u32 = 14;
+/// Default foreground usage collect interval (minutes). `0` = manual only.
+pub const DEFAULT_USAGE_COLLECT_INTERVAL_MIN: u32 = 30;
+/// Max allowed usage collect interval (minutes) — matches frontend `normalizeIntervalMin`.
+pub const MAX_USAGE_COLLECT_INTERVAL_MIN: u32 = 24 * 60;
 /// Debounce for skills filesystem watcher (GUI).
 pub const SKILL_FS_DEBOUNCE: Duration = Duration::from_millis(450);
 

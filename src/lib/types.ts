@@ -343,6 +343,7 @@ export interface AppSettings {
    * - `skills.sh` / `skillhub.cn`：固定源
    */
   skillMarketSource: SkillMarketSource;
+  /** Foreground usage collect interval (minutes). 0 = manual only. Persisted in SQLite. */
   usageCollectIntervalMin: number;
   appVersion: string;
 }

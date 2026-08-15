@@ -48,8 +48,8 @@ function mapTheme(raw: string): ThemeMode {
 
 function loadState(): AppSettings {
   const stored = loadJson<Partial<AppSettings>>(SETTINGS_KEY, {});
-  const themeRaw = loadString(StorageKey.theme, stored.theme ?? DEFAULTS.theme);
-  const theme = mapTheme(themeRaw);
+  // Blob is the mock's durable store (core analogue); StorageKey.theme is cache.
+  const theme = mapTheme(stored.theme ?? loadString(StorageKey.theme, DEFAULTS.theme));
   const logLevel = parseLogLevel(stored.logLevel ?? DEFAULTS.logLevel);
   const logRetentionDays =
     typeof stored.logRetentionDays === 'number' && stored.logRetentionDays >= 1
@@ -94,6 +94,8 @@ export function createMockSettingsPort(): SettingsPort {
     async getSettings() {
       await delay(randomLatency(200, 300));
       state = loadState();
+      saveString(StorageKey.theme, state.theme);
+      applyTheme(state.theme);
       return { ...state };
     },
 

@@ -353,8 +353,9 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 日志 tracing 文件 + 脱敏 | ✅ 见 logging.md |
 | Adapter 规则分析 / 预览 / profile 管理 | ✅；白名单可应用：Kimi→Claude 直连、Kimi→Codex 桥、Kimi/Anthropic→Pi 配置同步；其余见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)；`/adapter` 与侧栏「桥与适配」保留为 profile / 桥高级管理，日常创建走 ConnectFlow |
 | Hub 统一连接流程 ConnectFlowDialog | ✅；推荐发起入口：Dashboard「连接/切换」、Connections「用于其他 Agent」；apply 同源 `lib/api/adapter`，`plan.canApply` 权威 |
-| MCP 本机配置清单 | ✅ core 只读扫描 + Tauri command + 前端页面；不修改或注入配置 |
-| 凭据落盘加密 | **范围外**（不实现） |
+| MCP 本机配置清单 | ✅ core 只读扫描 + Tauri command + 前端页面；不修改或注入配置；管理/注入仍 Planned，无假 UI |
+| Settings 持久化 | ✅ L1 SQLite 白名单（`SETTINGS_WHITELIST`）：`theme` / `language` / `log_level` / `log_retention_days` / `skill_market_source` / `close_to_tray` / `usage_collect_interval_min`。用量间隔：`None`=从未写入（前端默认 30）、`0`=仅手动、上限 1440。主题以 core 为准：Settings Select 预览、Save 落盘，启动 `getSettings` 对账。`autoStart` 为 OS 登录项；`closeToTray` 写 core 并同步 AppState |
+| 凭据落盘加密 | **范围外**（不实现，非待办） |
 
 ### 8.2 未实现 / 仅部分 / 范围外
 
@@ -370,7 +371,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | Adapter 用户级 sidecar | 🎯 目标已决策 / 未实现 | 当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有；待完成 Tauri-neutral control contract、`agenthub-adapterd`、本地 IPC、单实例/版本+schema 握手、SQLite shared/exclusive schema lease、更新/卸载 saga 和分阶段切换，见 [adapter-sidecar-design.md](adapter-sidecar-design.md) |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |
 | Token **后台自动刷新守护** | ❌ | 有手动 refresh |
-| Settings 部分开关真实生效 | 🟡 | 主题/托盘/自启/日志/用量采集已接线；语言仅为中文只读说明，无 i18n |
+| Settings 语言切换 / i18n | ❌ | `language` 可写入 L1，UI 仅为中文只读说明，无 i18next |
 | Usage **后台守护 / 文件监听** | ❌ | 仅前台 interval + 手动 |
 | 官方模型商店 / 账号可用模型探测 | ❌ | 明确非目标（用量去重模型列表除外） |
 | WebDAV / 代理模式 / macOS·Linux 一等公民 | P4 候选 | 未开工 |

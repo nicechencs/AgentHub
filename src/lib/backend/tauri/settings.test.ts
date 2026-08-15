@@ -5,6 +5,7 @@ import {
   createTauriSettingsPort,
   isAlreadyDisabledAutostartError,
   resolveCloseToTray,
+  resolveUsageCollectIntervalMin,
 } from './settings';
 
 const invokeMock = vi.fn();
@@ -193,8 +194,12 @@ describe('createTauriSettingsPort closeToTray', () => {
     };
     expect(stored.closeToTray).toBe(false);
 
-    // Theme local key is unrelated; ensure we did not require it.
-    expect(localStorage.getItem(StorageKey.theme)).toBeNull();
+    // closeToTray patch must not write theme to core; cache may sync from getSettings.
+    const themeSets = invokeMock.mock.calls.filter(
+      (c) => c[0] === 'set_setting' && (c[1] as { key?: string } | undefined)?.key === 'theme',
+    );
+    expect(themeSets).toHaveLength(0);
+    expect(localStorage.getItem(StorageKey.theme)).toBe('system');
   });
 
   it('reads autoStart from OS login item when plugin is available', async () => {
@@ -410,6 +415,123 @@ describe('createTauriSettingsPort leftover keys', () => {
     expect(stored).not.toHaveProperty('hasMasterPassword');
     expect(stored).not.toHaveProperty('credentialStore');
     expect(stored).not.toHaveProperty('autoBackup');
+  });
+});
+
+describe('resolveUsageCollectIntervalMin', () => {
+  it('prefers core over local over default', () => {
+    expect(resolveUsageCollectIntervalMin(45, 15)).toBe(45);
+    expect(resolveUsageCollectIntervalMin(0, 15)).toBe(0);
+    expect(resolveUsageCollectIntervalMin(undefined, 15)).toBe(15);
+    expect(resolveUsageCollectIntervalMin(undefined, undefined)).toBe(30);
+  });
+});
+
+describe('createTauriSettingsPort usage interval and theme', () => {
+  const settingsKey = 'agenthub:settings';
+  let memory: ReturnType<typeof installMemoryLocalStorage>;
+
+  function stubCore(overrides: Record<string, unknown> = {}) {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'set_setting') return;
+      if (cmd === 'get_app_settings') {
+        return {
+          theme: 'system',
+          language: 'zh-CN',
+          logLevel: 'info',
+          logRetentionDays: 14,
+          closeToTray: true,
+          ...overrides,
+        };
+      }
+      if (cmd === 'get_path_info') {
+        return {
+          dataDir: 'D:/data',
+          dbPath: 'D:/data/agenthub.db',
+          backupsDir: 'D:/data/backups',
+          logsDir: 'D:/data/logs',
+        };
+      }
+      throw new Error(`unexpected invoke: ${cmd}`);
+    });
+  }
+
+  beforeEach(() => {
+    tauriRuntime = true;
+    invokeMock.mockReset();
+    autostartIsEnabled.mockReset().mockResolvedValue(false);
+    autostartEnable.mockReset().mockResolvedValue(undefined);
+    autostartDisable.mockReset().mockResolvedValue(undefined);
+    memory = installMemoryLocalStorage();
+  });
+
+  afterEach(() => {
+    memory.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it('reads usageCollectIntervalMin from core over local', async () => {
+    stubCore({ usageCollectIntervalMin: 45 });
+    localStorage.setItem(settingsKey, JSON.stringify({ usageCollectIntervalMin: 15 }));
+
+    const port = createTauriSettingsPort();
+    const s = await port.getSettings();
+    expect(s.usageCollectIntervalMin).toBe(45);
+
+    const intervalSets = invokeMock.mock.calls.filter(
+      (c) =>
+        c[0] === 'set_setting' &&
+        (c[1] as { key?: string } | undefined)?.key === 'usage_collect_interval_min',
+    );
+    expect(intervalSets).toHaveLength(0);
+  });
+
+  it('treats core interval 0 as authoritative (manual only)', async () => {
+    stubCore({ usageCollectIntervalMin: 0 });
+    localStorage.setItem(settingsKey, JSON.stringify({ usageCollectIntervalMin: 30 }));
+
+    const port = createTauriSettingsPort();
+    const s = await port.getSettings();
+    expect(s.usageCollectIntervalMin).toBe(0);
+  });
+
+  it('writes usageCollectIntervalMin via set_setting', async () => {
+    stubCore({ usageCollectIntervalMin: 20 });
+    const port = createTauriSettingsPort();
+    await port.updateSettings({ usageCollectIntervalMin: 60 });
+
+    expect(invokeMock).toHaveBeenCalledWith('set_setting', {
+      key: 'usage_collect_interval_min',
+      value: '60',
+    });
+
+    const stored = JSON.parse(localStorage.getItem(settingsKey) ?? '{}') as {
+      usageCollectIntervalMin?: number;
+    };
+    expect(stored.usageCollectIntervalMin).toBe(60);
+  });
+
+  it('prefers core theme over localStorage and caches it', async () => {
+    stubCore({ theme: 'dark' });
+    localStorage.setItem(StorageKey.theme, 'light');
+
+    const port = createTauriSettingsPort();
+    const s = await port.getSettings();
+    expect(s.theme).toBe('dark');
+    expect(localStorage.getItem(StorageKey.theme)).toBe('dark');
+  });
+
+  it('migrates local interval to core when the field is omitted', async () => {
+    stubCore();
+    localStorage.setItem(settingsKey, JSON.stringify({ usageCollectIntervalMin: 15 }));
+
+    const port = createTauriSettingsPort();
+    const s = await port.getSettings();
+    expect(s.usageCollectIntervalMin).toBe(15);
+    expect(invokeMock).toHaveBeenCalledWith('set_setting', {
+      key: 'usage_collect_interval_min',
+      value: '15',
+    });
   });
 });
 

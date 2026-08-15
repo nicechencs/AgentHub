@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { loadBool, saveBool, StorageKey } from '@/lib/storage';
+import { loadBool, saveBool, StorageKey } from '@/lib/ui-preferences';
 
 interface SidebarContextValue {
   collapsed: boolean;

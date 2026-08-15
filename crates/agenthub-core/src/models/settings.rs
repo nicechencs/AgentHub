@@ -14,6 +14,11 @@ pub struct AppSettings {
     pub skill_market_source: String,
     /// When true, the main window close button hides to the system tray.
     pub close_to_tray: bool,
+    /// Foreground usage collect interval in minutes. `0` = manual only.
+    /// `None` when the SQLite key was never written (legacy clients may still
+    /// have the value only in webview localStorage).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_collect_interval_min: Option<u32>,
 }
 
 impl Default for AppSettings {
@@ -25,6 +30,7 @@ impl Default for AppSettings {
             log_retention_days: crate::catalog::limits::DEFAULT_LOG_RETENTION_DAYS,
             skill_market_source: SkillMarketSource::DEFAULT.as_str().into(),
             close_to_tray: true,
+            usage_collect_interval_min: None,
         }
     }
 }

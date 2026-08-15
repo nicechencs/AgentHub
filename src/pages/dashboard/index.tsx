@@ -63,7 +63,7 @@ import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
 import { getConnectionPoolSnapshot, providersForAgent, useConnectionPool } from '@/app/runtime';
 import { AGENTS, AGENT_MAP, agentDisplayName } from '@/config/agents';
 import { hasEnvIssues } from '@/lib/env';
-import { loadBool, saveBool, StorageKey } from '@/lib/storage';
+import { loadBool, saveBool, StorageKey } from '@/lib/ui-preferences';
 import type { AgentId, AgentStatus, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
 import { usageTokenParts } from '@/lib/usage-tokens';

@@ -182,7 +182,7 @@ export function buildAgentCardView(
   };
 }
 
-/** index 未接线 onConnectRequest 时，connect 退化为 Connections 页 */
+/** Dashboard index 已接线 onConnectRequest；未传回调时 connect 退化为 Connections 页 */
 export function agentCardConnectFallback(agentId: AgentId): string {
   return `/connections?agent=${agentId}`;
 }
