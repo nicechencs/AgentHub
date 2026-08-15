@@ -100,11 +100,11 @@ Hub Phase 1 统一连接流程的测试分文件存放（遵守 §1）；前端 
 | 逻辑 | `src/lib/connect-flow/plan-fanout.test.ts` | plan fan-out |
 | 逻辑 | `src/lib/connect-flow/connection-usage.test.ts` | 用途聚合 |
 | 逻辑 | `src/lib/connect-flow/default-deps.test.ts` | 默认依赖组装 |
-| 逻辑 | `src/lib/connect-flow/reuse-offer.test.ts` | Connections 行「用于其他 Agent」可见性（Provider 白名单 / account 隐藏 / 生成 Provider 隐藏） |
+| 逻辑 | `src/lib/connect-flow/reuse-offer.test.ts` | 当前：行按钮白名单（Kimi 会员 / Anthropic Provider，隐藏 account 与生成投影）。目标：真票常驻「接到…」，只排除生成投影与非票行，见 [connection-binding-model.md](connection-binding-model.md)。改 UI 时同步改本用例 |
 | 逻辑 | `src/lib/connect-flow/connect-intent.test.ts` | ①② 引导深链（intent/resume/`/?connect=` 的 parse/build/consume） |
 | 状态机 | `src/components/connect/connect-flow-state.test.ts` | 对话框状态机 |
 
-可行性权威为 `plan.canApply`，禁止只测 `analysis.support`。
+可行性权威为 `plan.canApply`（表示**现在能写入**），禁止只测 `analysis.support`。不可行组合仍应覆盖「原因原文可见」，不要用「按钮不存在」代替规划结果。
 
 ## 8. 分层边界护栏
 

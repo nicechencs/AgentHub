@@ -6,11 +6,12 @@
 > v1.1：Usage 模型筛选语义、Backups 流程、Dashboard/侧栏与当前 agent 集合对齐。  
 > v1.3：Agents / 首次引导增加 **「环境未就绪」** 态；安装链路先 Runtime 再 Agent。  
 > v1.4：环境条/安装预览按宿主平台分流——macOS 不展示 PowerShell；native 命令预览 Windows=`irm|iex`、macOS=`curl|bash`；Runtime 修复默认 winget/brew。  
-> 2026-08-14 Hub Phase 1：推荐入口为 Dashboard Agent 卡片「连接/切换」与 Connections 行「用于其他 Agent」，统一对话框 `ConnectFlowDialog`；Adapter 页（侧栏「桥与适配」）是高级管理（profile / 桥），不是日常创建入口。
+> 2026-08-14 Hub Phase 1：推荐入口为 Dashboard「连接/切换」与 Connections「用于其他 Agent」，统一 `ConnectFlowDialog`；Adapter 页是桥的高级管理。  
+> 2026-08-15：**目标 UI** 按 [connection-binding-model.md](connection-binding-model.md) 重做——Connections 是全局钱包，真票都有「接到…」，生成投影不进列表；Dashboard 展示当前绑定。下文 §4.1 / §4.3 先写目标线框，并注明与当前实现的差异。现有按 Agent tab 分页、行按钮白名单**不是终态**。
 
 ## 1. 设计原则
 
-1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / 桥与适配 / Settings）；用量合并进 Dashboard，备份并入 Settings。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换——账号池、统计这类跨 agent 视图需要同屏对比。Connections 按 **Agent** 为第一导航，**一个列表**聚合官方登录 (OAuth) 与 **API Key**（含官方端点 / 自定义端点；原「供应商」已并入）。`?mode=` 映射初始筛选。底层 accounts/providers 表与 service 仍分离。连接/切换从 Agent 卡片发起，`/adapter`（桥与适配）只做 profile / 桥的高级管理。
+1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / 桥与适配 / Settings）；用量合并进 Dashboard，备份并入 Settings。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。**例外：Connections 目标态是跨 Agent 钱包**（票列表），Agent 只作筛选/高亮，不作第一导航；见 §4.3 与 [connection-binding-model.md](connection-binding-model.md)。底层 accounts/providers 可继续分表，UI 与规划器谈的是票和绑定。连接从 Agent 卡片或钱包「接到…」发起，`/adapter` 只做桥 runtime。
 2. **危险操作必有前置信息**：切换供应商/账号前展示 backfill 摘要、备份位置、运行中进程警告。
 3. **凭据永不明文回显**：SecretInput 组件统一脱敏（`sk-••••3f2a`），「显示」需二次确认且 10s 后自动遮蔽。
 4. **空状态给动作**：每个空列表都有明确的下一步按钮（添加供应商/导入账号/安装 Agent / 安装运行环境）。
@@ -134,11 +135,11 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 ```
 
 - Agent 卡片**只渲染已安装 Agent**（未安装去 Agents 页；未装卡不出「连接/切换」）。两行紧凑：第一行 logo + 名称 + 版本 + 右侧认证状态点（绿=已认证/黄=即将过期/红=失效/灰=未配置）；第二行当前连接 meta。顺序固定为 `AGENTS` 定义序，不按状态重排。
-- **主动作「连接/切换」**（点击卡片）：打开统一对话框 `ConnectFlowDialog`（`src/components/connect/ConnectFlowDialog.tsx`），target 固定为该 Agent。
-- 徽标：
-  - **经兼容路由**：当前生效 provider id 命中某 `AdapterProfile.generatedProviderId`（有来源标签时为「经兼容路由 · {来源}」）。
-  - **桥状态**：命中的 profile 为 bridge 型时显示；查询失败显示「状态不可用」，不得静默隐藏。点击徽标进入「桥与适配」页（`stopPropagation`，卡片本身仍打开 ConnectFlow）。
-- **ConnectFlow（Agent 侧）**：两组来源——本 Agent 自有凭据（原生切换）+ 其他服务凭据（跨服务复用，fan-out `plan`）。两处 apply 同源 `lib/api/adapter`，可执行权威是 `plan.canApply`，禁止以 `analysis.support` 推断可执行。OAuth 未完成：引导去 Connections 完成登录，不在对话框发起登录。不可行项置灰 + 原因原文。空态与「导入登录态 / 新 API Key」走深链 `intent=import-login|add-key`：Connections 自动打开确认或添加框（不静默写入）；成功后回 `/?connect=` 重开本对话框。导入仍是读官方 CLI 已完成的登录，不在此发起新授权。
+- **主动作「连接/切换」**（点击卡片）：打开统一绑定对话框（现名 `ConnectFlowDialog`），target 固定为该 Agent，选票。目标语义是 `bind(票, 此 Agent)`，不是「在两套池里挑一行」。
+- 徽标（目标态按**当前绑定**展示，过渡期仍可用 profile 联结）：
+  - **改配置 / 经兼容路由**：active 绑定的 `route` 为 `reshape`（或命中生成投影）。
+  - **桥状态**：`route=bridge` 时显示；查询失败显示「状态不可用」，不得静默隐藏。点击徽标进入「桥与适配」（`stopPropagation`）。
+- **ConnectFlow（Agent 侧）**：两组来源——**native 候选**（这张票本来就是给该 Agent 的，走切换）+ **其他票**（`plan(ticket, agent)`）。可执行权威是 `plan.canApply`（表示现在能写入）。不可行票**留在列表**，置灰 + 原因原文，不从 Connections 藏起来再让本页单独诊断。OAuth 未完成：引导去钱包补登录。空态与「导入登录态 / 新 API Key」走深链 `intent=import-login|add-key`；成功后回 `/?connect=` 重开。导入仍是读官方 CLI 已完成的登录。
 - **共享筛选**（时间 + Agent）驱动一套指标卡与趋势图；筛选变更时 `queryUsage` / `usageTrend` 各请求一次，上下共用 records。
 - 用量图：堆叠 Area，按 agent 分色。选中单 agent 时分布条下钻到**按模型**拆分。
 - Agent 总览与用量分区处理 loading/error：用量失败不白屏上半。
@@ -181,30 +182,36 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - PATH 刚刷新场景：检测仍失败时 toast/横幅提示「请完全退出并重启 AgentHub 后再检测」（GUI 进程继承旧 PATH）。
 - 卸载：DropdownMenu 二级——「仅卸载程序」/「卸载并删除配置」（后者红字 + 输入 agent 名确认 + **自动 pre-uninstall 备份**）。**不提供「卸载 Node」**（共享运行时）。
 
-### 4.3 Connections（连接与账号）
+### 4.3 Connections（连接 = 钱包）
 
-侧栏只保留一个入口。运行时鉴权路径二选一，两套池可共存且 `is_current` 跨池互斥；**UI 合成一条连接列表**，数据模型/服务仍分离。
+侧栏只保留一个入口。目标态：**跨 Agent 的票列表**，不是按 Agent 切开的两套池。底层 accounts/providers 可继续分表；UI 谈票和「正用于」哪些绑定。生成投影不进本页。完整规则见 [connection-binding-model.md §5](connection-binding-model.md#51-两个入口一个对象)。
 
-路由：`/connections`；`/connections?agent=codex`；`/connections?mode=providers`（筛到 API Key）。旧 `/providers`、`/accounts` 重定向至此。
+路由：`/connections`；`/connections?agent=codex` 高亮该 Agent 的 active 绑定（**不**再把整页收成该 Agent 私有列表）；`?mode=` 仍可筛到 API Key。旧 `/providers`、`/accounts` 重定向至此。
+
+**目标线框：**
 
 ```
-┌─ Connections ──────────────────────────────────────────────┐
-│ AgentTabStrip: [Claude●3] Codex …                           │
-│ 当前生效：官方登录 · me@… / API Key · …                     │
-│ 筛选 [全部] [官方登录] [API Key]              [+ 添加连接] │
-│ ● me@gmail.com  [官方登录] [当前]              [详情]      │
-│   正用于：Claude（直接）                                    │
-│ ○ Anthropic     [API Key] [官方]  [切换][用于其他 Agent][编辑]│
-│ ○ Kimi 会员     [API Key]         [切换][用于其他 Agent][编辑]│
-│ ○ xx云          [API Key] [自定义] [切换][编辑]            │
+┌─ 连接 ─────────────────────────────────────────────────────┐
+│ 钱包 · n 张票                                 [+ 添加]     │
+│ 筛选 [全部] [官方登录] [API Key] [未识别]                   │
+│ ● Kimi 会员     [API Key] [会员]                           │
+│   正用于：Claude（改配置）· Codex（本机桥 · 运行中）         │
+│   [接到…] [详情]                                           │
+│ ○ Anthropic     [API Key] [官方]                           │
+│   正用于：Pi（改配置）                                     │
+│   [接到…] [详情]                                           │
+│ ○ me@…          [官方登录]                                 │
+│   正用于：Claude（切换）                                   │
+│   [接到…]  → 不可行目标在对话框置灰 + 原因                 │
 └────────────────────────────────────────────────────────────┘
 ```
 
-- 每行可显示「正用于」哪些 Agent：直接用途（自身 `isCurrent`）+ 兼容路由用途。
-- 「用于其他 Agent」打开同一 `ConnectFlowDialog`（来源预选）。行按钮只做可行动作入口：仅 Kimi Code 会员 Provider（→ Claude/Codex/Pi）与 Claude 的 Anthropic Provider（→ Pi）显示；account 来源（含 apikey）因后端 apply 白名单未开放一律不显示；adapter 生成的 Provider、Kimi 非会员等亦不显示。不可行来源的原因诊断由 Dashboard「连接/切换」对话框内置灰 + 原因原文承担（如 Kimi 非会员的升级指引）。行为同 §4.1（OAuth 未完成引导去本页完成登录、不可行置灰 + 原因原文、空态引导添加）。
-- 不改现有 Agent tab 过滤结构（全局钱包默认视图属 Phase 2，未做）。
-- API Key 设置默认勾选「使用官方端点」→ 带出官方 URL + 官方模型；取消勾选后可填中转。
-- 实现：`ConnectionList` + `connection-model` + `ProviderEditDialog`（产品文案为 API Key）+ `config/official-api.ts`。
+- 「正用于」来自绑定：native / reshape / bridge，不是手写 account/provider 出身。
+- **每一张真票都有「接到…」**，打开同一绑定对话框（票固定，选 Agent）。无边、无 writer、未识别：对话框内置灰 + 原因，不在行上隐藏动作。
+- 「切换」只用于该票对原生 Agent 的 native 绑定。接到其他 Agent 一律走 `bind`。
+- 添加票时写下 `surface`。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意 Agent）。
+- **当前实现（对照）**：仍按 AgentTabStrip 分页；「用于其他 Agent」仅 Kimi 会员 Provider 与 Claude Anthropic Provider 显示；account 行与生成 Provider 不显示。改 UI 时以本节目的线框为准，不必兼容旧分页为终态。
+- 实现落点（过渡）：现有 `ConnectionList` / `connection-model` / `ProviderEditDialog` 可逐步改成票列表；新逻辑对 `reuse-offer` 应变为「真票常驻，生成物除外」。
 
 #### 4.3.1 mode=providers — API 配置
 
@@ -405,7 +412,7 @@ Tab 与 URL `?tab=` 同步（`general` / `security` / `data` / `backups` / `abou
 |---|---|
 | `AgentTabStrip` | 页内 agent 切换条，能力位置灰（如 Kimi 不支持账号切换/技能） |
 | `AgentCard` | Dashboard/Agents 页卡片，状态点 + 版本 + 当前配置；Dashboard 已装卡主动作打开 ConnectFlowDialog |
-| `ConnectFlowDialog` | 统一连接/切换对话框（`src/components/connect/ConnectFlowDialog.tsx`）：Dashboard（target 固定）与 Connections「用于其他 Agent」（来源预选）；apply 走 `lib/api/adapter`，门禁 `plan.canApply` |
+| `ConnectFlowDialog` | 绑定对话框：Dashboard（Agent 固定，选票）与 Connections「接到…」（票固定，选 Agent）；目标语义 `bind`；`plan.canApply` 只表示现在能写入 |
 | `AgentDot` | Agent 品牌色圆点（侧栏/列表等轻量标识） |
 | `StatusDot` | 四态认证状态（有效/临期/失效/未配置） |
 | `SearchField` | 统一搜索输入（图标 + 清空），列表页筛选条复用 |

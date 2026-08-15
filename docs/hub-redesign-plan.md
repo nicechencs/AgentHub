@@ -1,6 +1,7 @@
 # Hub 重构 Phase 1 实施方案（Agent 优先信息架构）v2
 
-> 状态：**已实施**（2026-08-14）。v1 经 5 维度评审（需求 FAIL / 架构 PWC / 风险 PWC / 边界 FAIL / 测试 PWC）后修订为 v2，复核通过后按 §6 分工完成实施与集成。
+> 状态：**Phase 1 已实施**（2026-08-14），本文保留为当时的实施记录。  
+> **2026-08-15 起的领域与 UI 目标**改以 [connection-binding-model.md](connection-binding-model.md) 为准：票 / 绑定 / 协议图；Connections 改为全局钱包；真票常驻「接到…」；生成投影退出列表。Phase 1 的对话框外壳仍可复用，**按 Agent tab 分页、行按钮白名单、诊断只放 Dashboard 不再是终态**，UI 允许按目标文档重做。
 > 验收：pnpm typecheck / typecheck:test / test（627 用例，含集成 bug 防回归）/ build 全绿；cargo test 79 用例全绿（Rust 未改动）；dev:mock 冒烟通过（空态引导、非空可行性置灰+原因、无控制台错误）。
 > 关联文档同步：docs/ui-design.md、docs/adapter-design.md 正文定位、docs/architecture.md §4.1 目录树（lib/connect-flow、components/connect）与 §4.6、README.md、docs/README.md、docs/agenthub-plan.md、docs/testing.md、docs/adapter-kimi-codex-dogfood.md。
 > v2 修订要点：plan.canApply 为可执行权威；补同 Agent 原生切换分流；用途/徽标改用 profile 联结（不读 provider.meta）；apply 自动切换语义如实；排除 adapter 生成 Provider 作为来源；两层 OAuth 门禁；可注入 helper 保证 Node 环境可测。
@@ -24,7 +25,8 @@
 绑定域（bindings）           = "谁用谁"（Phase 1 仅做读模型聚合，不做物理合并）
 ```
 
-UI 目标形态：**Dashboard 的 Agent 卡片区 = Hub 主入口**（每个 Agent 显示当前连接与健康状态，可直接发起"连接/切换"）；**Connections = 钱包**（凭据列表 + 每条凭据"正用于哪些 Agent" + "用于其他 Agent"快捷动作）；路由转换机制对用户不可见，体现为连接流程中"可选项/置灰+原因"。
+Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 仍按 Agent tab，行按钮只给可 apply 的 Provider。  
+**此后的目标形态**见 [connection-binding-model.md](connection-binding-model.md) / [ui-design.md](ui-design.md)：全局钱包、真票常驻「接到…」、不可行在同一对话框说明。下文 §3 是 Phase 1 冻结范围，不是下一轮 UI 约束。
 
 ## 3. Phase 1 范围
 
@@ -70,7 +72,7 @@ UI 目标形态：**Dashboard 的 Agent 卡片区 = Hub 主入口**（每个 Age
   - 桥状态：命中的 profile 为 bridge 型时显示；**沿用 `use-adapter-resources.ts` 的既有轮询模式**（运行/降级态轮询 + generation 防竞态），查询失败显示"状态不可用"，不得静默隐藏。
 - profiles 由页面挂载时一次 `listAdapterProfiles()` 全量拉取后前端归并；桥状态仅对命中的 profile 查询。
 
-#### C. Connections 钱包化增量
+#### C. Connections 钱包化增量（Phase 1 已做；全局钱包与常驻「接到…」见目标文档）
 
 - 每行增加"用途"：该凭据正被哪些 Agent 使用。算法（纯函数）：
   - 直接用途：该 account/provider 自身 `isCurrent=true` → 用于其 agentId。
@@ -212,9 +214,18 @@ UI 目标形态：**Dashboard 的 Agent 卡片区 = Hub 主入口**（每个 Age
 6. **原生切换预览为简化版**：对话框内原生切换（`switchNative`）的 provider 路径按既有链路先 `switchPreview` 再 `switchProvider`，流程安全等价，但 preview 返回的细节（备份/回填提示等）未在对话框呈现，仅显示确认文案；Connections 页的完整切换预览对话框不受影响。如需对齐信息量，Phase 2 扩 `ConnectFlowDeps` 暴露 preview DTO。
 7. **代码评审轮（2026-08-14 下午）**：4 维度独立代码评审（逻辑层/对话框/页面集成/合规测试）经两轮修复后全部收敛（终核 PASS）。修复项：刷新失败契约被内部 catch 吞掉（改为返回成败 + store 快照判定，含 pool `ready+errors` 双侧失败与 statuses reload 的 promise 结果判定）、profiles 未就绪窗口内生成 Provider 复用入口 fail-open（页面与对话框双侧 fail-closed）、对话框关闭/卸载时在途会话未失效（session 于 effect cleanup 同步作废）、首帧旧状态闪现（entry 同步 guard）、preview 失效的确认窗口（`isPreviewInvalid` 同步禁用 + 确认原子锁 + 采用 `beginConfirm().next`）、fan-out 幂等签名未纳入 OAuth 门禁变化（签名含 blocked 集合）、跨 start/retry 在途请求去重（per-key token 语义）、桥轮询重叠（改链式）、profiles 并发加载竞态（generation）。测试由 627 增至 642。依赖说明：`lib/connect-flow` 除 contracts/lib/api/types 外还引用 `config/agents`（静态元数据）与 `lib/capability`（判定函数），组件直接使用 runtime 连接池 hook——与仓库既有页面惯例一致，视为允许。
 
-## 10. Phase 2 展望（本期不做）
+## 10. 后续：票 / 绑定（取代原 Phase 2 展望）
 
-- AdapterProfile 与 agent_active_bindings 物理合并为统一 binding。
-- Adapter 页降级 **已落地**：创建/apply 收进 ConnectFlow；路由 `/adapter` 与侧栏「桥与适配」保留，只管理已创建 profile 与本地桥。本页不再渲染选来源→分析→plan→apply 创建区。
-- OAuthFlowDialog 收编进 Connections（仍未做）。①② 引导自动弹窗与回跳已落地：深链见 `src/lib/connect-flow/connect-intent.ts`（`intent=import-login|add-key`，成功回 `/?connect=`）；不发起新 OAuth 授权。
-- Connections 全局钱包视图（跨 Agent 凭据清单为默认视图）。
+原「Phase 2 再合并 binding / 再做全局钱包」已升格为已决策的目标架构，细节见 [connection-binding-model.md](connection-binding-model.md)。不再把全局钱包和常驻「接到…」当成可选项。
+
+实施顺序（与目标文档 §6、§8 一致）：
+
+1. 读模型：accounts+providers 聚成票；`is_current`+profile 聚成绑定；钱包不展示生成投影。
+2. 进口打 `surface`；`plan(ticket, agent)` 收口，废掉前端第二份白名单。
+3. UI 重做：Connections 默认跨 Agent 钱包；行上真票都有「接到…」；不可行在对话框置灰 + 原因；Dashboard 展示当前绑定而非「当前 Provider 行」。
+4. 写入收成 `bind` / `unbind`；现有四条 apply 路径先改写成绑定实现。
+5. 再按协议图加边（Anthropic→Codex、Kimi→Grok、新 surface……）。
+
+仍有效、且已落地的 Phase 1 资产：ConnectFlow 双入口外壳、①② 深链、`/adapter` 不做日常创建。Adapter 页继续只管理桥 runtime。
+
+OAuthFlowDialog 收编进 Connections 仍未做，可并进钱包「添加票」。
