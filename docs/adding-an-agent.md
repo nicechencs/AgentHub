@@ -4,7 +4,7 @@
 
 > 更新：2026-08-15（补登记 `accepts` / `writer`，供票绑定规划器使用；并指向 DSH 接入方案）
 > 真源：`docs/platform-capability-refactor.md`、[platform-capability-remediation.md](platform-capability-remediation.md)、[connection-binding-model.md](connection-binding-model.md) 与本文件。
-> **下一生产候选**：DeepSeek Harness（`dsh`）设计见 [deepseek-harness-integration.md](deepseek-harness-integration.md)；本文仍是通用清单，该文是 DSH 专项方案。代码未开工前不要把 `dsh` 写进 `register_all()` / `AgentId::ALL`。
+> **DeepSeek Harness（`dsh`）**：专项方案见 [deepseek-harness-integration.md](deepseek-harness-integration.md)；生产接入已按本文 §1.1 落地（`AgentId::Dsh` / `register_all` / 稀疏端口）。本文仍是通用清单。
 > **开闭验证（test-only）**：`crates/agenthub-core/src/platform/demo_agent_tests.rs` 使用独立 `AgentKey("demo-agent")`，不进入生产 registry，也不借用真实 AgentId。
 
 本阶段目标：新增普通 Agent 时，**优先增加集成代码与稀疏端口**，而不是在平台 service / 页面里再写 `match` 分支。新增 Agent 采用生产接入与 test-only 验证双轨；两条轨都以 `AgentKey` 作为平台端口身份，但生产端在兼容期仍可由 `AgentAdapter`/`AgentId` façade 承接旧入口。
@@ -125,7 +125,7 @@
 | Bootstrap 扫描真实 `~/.agents` 于 open | **故意不**自动扫描用户目录 |
 | 前后端契约 codegen / xtask new-agent | 未授权，不做 |
 | 凭据落盘加密 | **无必要 / 范围外** |
-| DeepSeek Harness（`dsh`）生产接入 | **方案已决策 / 代码未开工** | 见 [deepseek-harness-integration.md](deepseek-harness-integration.md)；按本文 §1.1 分阶段做，勿一次改完枚举+用量+绑定 |
+| DeepSeek Harness（`dsh`）生产接入 | **P1–P5 已落地** | 见 [deepseek-harness-integration.md](deepseek-harness-integration.md)；`AgentId::Dsh` / adapter / 稀疏端口 / DeepSeek API → `dsh` `config_sync`。StructuredStream 与 DeepSeek→Claude 仍 Planned / 另立项 |
 
 ## 9. 建议后续 cleanup PR（勿在本阶段执行）
 

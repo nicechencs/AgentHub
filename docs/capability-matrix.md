@@ -16,7 +16,7 @@
 - 真源 = 各 adapter 的穷尽 `match` on `Capability`
 - 服务层经 `registry.require(...)` 闸门
 - 前端 `src/config/agents.ts` **仅展示元数据**（无 capabilities 镜像）；生产能力来自 doctor / agent 列表下发
-- Usage 已实现：六家 Full，Cursor Unsupported（见 §5）
+- Usage 已实现：七家 Full（含 `dsh`），Cursor Unsupported（见 §5）
 
 仍用四级状态表达：**Partial**（可放行须提示）、**Unsupported**（对方边界）、**Planned**（我们未接）。
 
@@ -24,7 +24,7 @@
 
 1. **能力是代码事实，不是用户配置。** 真源在 adapter 源码里，随实现一起改；不外部化成 JSON/TOML。
 2. **区分「能不能」与「怎么做」。** 见 §3，这是避免矩阵膨胀成上帝表的关键。
-3. **编译期穷尽优于运行时查表。** 能力键用 enum，adapter 用不带 `_ =>` 的 `match` 应答；新增能力时 7 个 adapter 全部编译失败，逼出逐家决策。
+3. **编译期穷尽优于运行时查表。** 能力键用 enum，adapter 用不带 `_ =>` 的 `match` 应答；新增能力时全部 adapter 编译失败，逼出逐家决策。
 4. **声明必须被测试绑死。** 没有一致性测试的声明只是第 6 份会漂移的注释。
 
 ## 3. 关键判断：什么该进矩阵
@@ -97,28 +97,28 @@ pub struct CapabilityState {
 - `Unsupported` 与 `Planned` 语义完全不同——前者是**对方 CLI 的边界**（永久），后者是**我们的待办**（会变）。合并二者会让 UI 无法区分"做不到"和"还没做"，也会让矩阵失去当路线图的价值；
 - `reason` 让所有拒绝都自带解释。现在 `skill_service.rs:382` 给用户的是 `skills are not supported for kimi`，矩阵化后能给出"Kimi CLI 无技能目录模型"。
 
-## 5. 现状矩阵（7 家 × 14 项；CLI 快照 2026-08-03）
+## 5. 现状矩阵（8 家 × 14 项；`dsh` 列按 adapter `capability()` 2026-08-15）
 
-DeepSeek Harness（`dsh`）是下一生产候选，**尚未**进入本快照。目标级别与 reason 见 [deepseek-harness-integration.md](deepseek-harness-integration.md) §11；无 adapter、无本地样例前不得把该列抄进 CLI 矩阵。
+DeepSeek Harness（`dsh`）已进生产 registry。其余七列仍是 2026-08-03 CLI 快照；以 `agenthub agent capabilities --markdown` 与 adapter 源码为准。
 
 > 生成：`cargo run -p agenthub-cli -- agent capabilities --markdown`
 
-| Capability | claude | codex | kimi | grok | pi | workbuddy | cursor |
-|---|---|---|---|---|---|---|---|
-| ConfigWrite | Full | Full | Full | Full | Full | Full | **Unsup** |
-| AccountSwitch | Full | Full | Full | Full | Full | **Unsup** | **Unsup** |
-| ApiKeyAccount | Full | **Partial** | Full | Full | **Partial** | **Unsup** | **Partial** |
-| Skills | Full | Full | **Unsup** | Full | Full | Full | Full |
-| LiveBackup | Full | Full | Full | Full | Full | Full | **Unsup** |
-| StructuredStream | Full | Full | Full | Full | Full | **Unsup** | **Unsup** |
-| DangerousMode | Full | Full | **Partial** | Full | **Partial** | Full | Full |
-| ProjectHistory | Full | Full | Full | Full | Full | Full | **Partial** |
-| ProjectDelete | Full | Full | Full | Full | Full | Full | **Unsup** |
-| ProviderPresets | Full | Full | Full | Full | **Unsup** | **Unsup** | **Unsup** |
-| Usage | Full | Full | Full | Full | Full | Full | **Unsup** |
-| Mcp | Planned | Planned | Planned | Planned | Planned | Planned | Planned |
-| ModelSelect | Planned | Planned | Planned | Planned | Planned | Planned | Planned |
-| SessionResume | Planned | Planned | Planned | Planned | Planned | Planned | Planned |
+| Capability | claude | codex | kimi | grok | pi | workbuddy | cursor | dsh |
+|---|---|---|---|---|---|---|---|---|
+| ConfigWrite | Full | Full | Full | Full | Full | Full | **Unsup** | **Partial** |
+| AccountSwitch | Full | Full | Full | Full | Full | **Unsup** | **Unsup** | **Partial** |
+| ApiKeyAccount | Full | **Partial** | Full | Full | **Partial** | **Unsup** | **Partial** | Full |
+| Skills | Full | Full | **Unsup** | Full | Full | Full | Full | Full |
+| LiveBackup | Full | Full | Full | Full | Full | Full | **Unsup** | Full |
+| StructuredStream | Full | Full | Full | Full | Full | **Unsup** | **Unsup** | **Planned** |
+| DangerousMode | Full | Full | **Partial** | Full | **Partial** | Full | Full | **Partial** |
+| ProjectHistory | Full | Full | Full | Full | Full | Full | **Partial** | Full |
+| ProjectDelete | Full | Full | Full | Full | Full | Full | **Unsup** | **Partial** |
+| ProviderPresets | Full | Full | Full | Full | **Unsup** | **Unsup** | **Unsup** | **Partial** |
+| Usage | Full | Full | Full | Full | Full | Full | **Unsup** | Full |
+| Mcp | Planned | Planned | Planned | Planned | Planned | Planned | Planned | Planned |
+| ModelSelect | Planned | Planned | Planned | Planned | Planned | Planned | Planned | Planned |
+| SessionResume | Planned | Planned | Planned | Planned | Planned | Planned | Planned | Planned |
 
 非 Full 单元格的依据与拟定 `reason`（路径/解析细节以 adapter 与 `project_service` 源码为准，不在此展开）：
 
@@ -140,6 +140,12 @@ DeepSeek Harness（`dsh`）是下一生产候选，**尚未**进入本快照。�
 | ProjectHistory / 各支持家 | 只读扫描 agent home 下已知会话/项目布局；mtime 索引可加速 |
 | ProviderPresets / pi·workbuddy | 暂无内置 provider 模板（手工 Provider 仍可写回） |
 | ProviderPresets / cursor | 无 provider 配置契约 |
+| ConfigWrite / dsh | 只合并 home 级 DeepSeek LLM 插件行；整棵 Cordis 树 fail-closed |
+| AccountSwitch / dsh | 仅 API Key 引用切换，无 OAuth |
+| DangerousMode / dsh | 存在 danger composition；未验证官方非交互 flag |
+| ProjectDelete / dsh | 仅删除单会话 JSONL，不删 SQLite 整库 |
+| ProviderPresets / dsh | 内置 deepseek-official，不是通用预设商店 |
+| StructuredStream / dsh | headless 事件契约未验证，保持 Planned |
 
 **注意**：`Skills` 与 `ProviderPresets` 之外，本矩阵不重复 `install_channels()` 已返回的结构化数据——安装渠道是数据不是能力（§3）。
 
@@ -147,7 +153,7 @@ DeepSeek Harness（`dsh`）是下一生产候选，**尚未**进入本快照。�
 
 | Capability | 说明 | 当前事实（2026-08-03） |
 |---|---|---|
-| `Usage` | token / 计费统计 | **已实现**：`UsageService` + session 日志解析；六家 Full。Cursor **Unsupported**（IDE 内部用量库，范围外）。矩阵声明须与 `usage::supports_usage` 一致。 |
+| `Usage` | token / 计费统计 | **已实现**：`UsageService` + session 日志解析；七家 Full（含 `dsh`）。Cursor **Unsupported**（IDE 内部用量库，范围外）。矩阵声明须与 `usage::supports_usage` 一致。 |
 | `Mcp` | MCP server 管理 / 注入 | **全 Planned**。当前已有独立的只读 MCP inventory（core scanner + Tauri command + 页面），只汇总本机配置，不管理或注入 server；因此不改变本矩阵状态。 |
 | `ModelSelect` | 运行时指定模型 | **全 Planned**。模型经 live config / provider 池切换，非独立运行时目录。 |
 | `SessionResume` | 续接历史会话 | **全 Planned**。Chat 不用各 CLI 原生续会话能力。 |
@@ -345,7 +351,7 @@ UI 侧的具体变化：
 
 | 阶段 | 内容 | 影响面 | 风险 |
 |---|---|---|---|
-| **P0** | `models/capability.rs` + trait `capability()` + 7 家 adapter 声明 + §7.3 一致性测试 | 纯新增，无调用点改动 | 无 |
+| **P0** | `models/capability.rs` + trait `capability()` + 全量 adapter 声明 + §7.3 一致性测试 | 纯新增，无调用点改动 | 无 |
 | **P1** | 服务层换 `registry.require(...)`；删除 `supports_account_switch` / `supports_skills` | `account_service` / `skill_service` / `project_service` | 中：错误文案变化，需同步测试断言 |
 | **P2** | `wants_structured_for` 白名单迁入矩阵；`stream_parse` 的 `match` 加矩阵断言守卫 | `models/run.rs`、`utils/stream_parse` | 中：触及 Chat 主链路 |
 | **P3** | 矩阵下发 GUI/CLI；前端删除 capabilities 镜像；`partial` 态 UI | Tauri command + 前端多页 | 低 |

@@ -1,20 +1,20 @@
 # DeepSeek Harness 接入方案
 
-> 状态：**设计已决策 / 代码未开工**（2026-08-15）  
+> 状态：**P1–P5 已接入代码**（2026-08-15）  
 > 调研依据：官方站点、开发者文档、GitHub `deepseek-ai/deepseek-harness`（MIT，developer preview）。  
 > 真源关系：本文是 **DSH 接入** 的唯一设计真源。实施时按 [adding-an-agent.md](adding-an-agent.md) 走生产接入轨；能力声明按 [capability-matrix.md](capability-matrix.md)；票面与跨 Agent 边按 [connection-binding-model.md](connection-binding-model.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)。  
-> 实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准——本文不把任何能力写成已落地。
+> 实现状态以 adapter `capability()`、已注册的 `platform/*/sources` 与测试为准。本文保留设计约束；能力级别以代码声明为准。
 
 ---
 
 ## 0. 结论（先读）
 
-DeepSeek Harness（产品命令 `dsh`）是 **第八个待接入 Agent**，不是「DeepSeek API 票」本身，也不是通用协议桥。
+DeepSeek Harness（产品命令 `dsh`）是 **第八个已接入 Agent**，不是「DeepSeek API 票」本身，也不是通用协议桥。
 
 | 对象 | 身份 | 现在做什么 |
 |---|---|---|
 | **DeepSeek Harness** | Agent，`AgentKey` / 兼容期 `AgentId` = `dsh`，展示名 **DeepSeek Harness** | 按稀疏端口接入：安装、配置、账号、Skills、用量、会话/项目、headless run |
-| **DeepSeek API** | 票面（API Key，双协议） | 已有调研，**尚无** Adapter 规则。接到 `dsh` 走 native / `config_sync`；接到 Claude 走 `native_endpoint`（另立项，见适配规则文） |
+| **DeepSeek API** | 票面（API Key，双协议） | 接到 `dsh` 走现有矩阵的 `config_sync`（`deepseek-api-to-dsh-v1`）；接到 Claude 走 `native_endpoint`（**另立项，未开放**） |
 
 不要用 `deepseek` 当 Agent id：它会和票面、模型名、官方 API 混在一起。命令与 npm 包都以 `dsh` 出现，和现有 `pi` / `claude` 一样用 CLI 名做 key。
 
@@ -122,7 +122,7 @@ AgentHub 以 Windows 为交付重点。官方事实：
 | `platform/lifecycle` | 随 install | 复用 coordinator | 不改 runtime start/stop |
 | Adapter 规则 | P5 | DeepSeek API → `dsh` native | 不把 DSH 当协议网关 |
 
-`accepts` / `writer`：`dsh` **有 writer**。听 DeepSeek 官方 provider 槽，以及（P5+ 另证）OpenAI Chat Completions 兼容槽。无 writer 的 Agent（如 Cursor）不能当 bind 落点；`dsh` 可以。
+绑定入口走现有 `AdapterCapabilityMatrix` + `AdapterApplyService`（**不**另建 `accepts`/`writer` 模型）。`dsh` 可写 live：DeepSeek API Key → 官方 provider 槽 + `.credentials.yaml`。无 writer 的 Agent（如 Cursor）不能当 bind 落点。
 
 ---
 
@@ -392,18 +392,18 @@ P4 才做 `build_run_spec`，且必须先量：
 - `adapters/dsh.rs`：detect、npm channel、诚实 `capability()`、`skills_dir`、`live_backup_paths`、`build_run_spec` 先 Unsupported 或最小 text
 - `register_all()` + paths + install contribution
 - 前端 `AGENT_DISPLAY` + `TOKEN_AGENT_IDS` 品牌色
-- `accepts` / `writer` 登记
+- 绑定入口：现有矩阵 cell（不是新的 `accepts`/`writer` 模型）
 - 测试：detect fixture、catalog 含 `dsh`、capability 穷尽、install allowlist
 
 **验收**：`doctor` 能报未安装/已安装；Agents 页能装 npm 渠道；未安装时其它页不假成功。
 
-### P2 — 配置只读 + API Key 入池
+### P2 — 配置投影 + API Key 入池
 
-- config projector 只读：provider / model / maxTokens / thinking
-- `read_auth` / `build_api_key_account` / 有证据后的 `apply_account`（只写引用）
-- write 仍 fail-closed，直到 patch 整行 merge 有测试
+- config projector：provider / model / maxTokens / thinking / apiKeyEnv
+- `read_auth` / API Key 入池；apply 把 Key **剥进** `.credentials.yaml`，patch 只留引用
+- 整棵 Cordis 树仍 fail-closed（`ConfigWrite=Partial`）
 
-**验收**：Connections 可入 DeepSeek Key；apply 不把密钥写入 patch；无 round-trip 测试不开放 ConfigWrite=Full。
+**验收**：Connections 可入 DeepSeek Key；apply 不把密钥写入 patch；无整树 round-trip 不开放 ConfigWrite=Full。
 
 ### P3 — Skills / Usage / Projects
 
@@ -415,14 +415,14 @@ P4 才做 `build_run_spec`，且必须先量：
 
 ### P4 — headless / Chat
 
-- 本机验证 `dsh --profile headless`
-- 有 NDJSON 再注册 stream parser
-- Windows 失败则 Chat 保持 text / unavailable，不标 Full
+- `build_run_spec`：`dsh --profile headless "<prompt>"`，设 `DSH_HOME`
+- 未验证 NDJSON：**不**注册 stream parser，`StructuredStream=Planned`
+- 不发明 `--yolo` / 未验证 danger flag
 
 ### P5 — 票绑定
 
-- DeepSeek API → `dsh`：`config_sync`，`canApply` 仅在 P2 写入路径稳定后为 true
-- DeepSeek API → Claude：仍按适配规则文单独取证
+- DeepSeek API → `dsh`：`config_sync`，`canApply=true`，`rule_id=deepseek-api-to-dsh-v1`
+- DeepSeek API → Claude：仍按适配规则文单独取证（unsupported）
 - 不开放 Codex Responses、OAuth、二次投影
 
 ---
@@ -453,7 +453,7 @@ P4 才做 `build_run_spec`，且必须先量：
 
 ---
 
-## 15. 实施时要改的位置（清单，本 PR 不改代码）
+## 15. 实施位置（已按清单落地）
 
 按 [adding-an-agent.md](adding-an-agent.md) §1.1：
 
@@ -466,8 +466,8 @@ P4 才做 `build_run_spec`，且必须先量：
 | 配置 | `platform/config/sources/dsh.rs`（P2） |
 | Usage | `platform/usage/sources/dsh.rs` + `usage/session_jsonl.rs` 发现函数（P3） |
 | Projects | `platform/projects` source（P3） |
-| Stream | `platform/stream/sources`（P4） |
-| 绑定 | `accepts` / `writer` + 适配规则（P5） |
+| Stream | **未注册** parser；`StructuredStream=Planned`，headless 仅 text run spec |
+| 绑定 | `AdapterCapabilityMatrix` `deepseek-api-to-dsh-v1` + apply 白名单（P5） |
 | 前端装饰 | `src/config/agents.ts`、`src/styles/tokens.ts`、`src/lib/types.ts` `KNOWN_AGENT_IDS` |
 | CLI 帮助 | `cli-and-config.md` 的 agent id 列表随代码改 |
 | 能力快照 | 实现后重跑 `agenthub agent capabilities --markdown` |

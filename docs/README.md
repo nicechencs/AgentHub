@@ -25,7 +25,7 @@
 | [capability-matrix.md](capability-matrix.md) | **能力矩阵**：`Capability` 枚举 + 四级状态、现状矩阵、防漂移测试、P0–P4（**v1.0 已落地**） |
 | [account-authorization-pool.md](account-authorization-pool.md) | **账号池身份×授权**：同人可多授权并存；去重仅限同授权票；与能力矩阵边界（**已落地**） |
 | [adding-an-agent.md](adding-an-agent.md) | 新增 Agent 适配器清单与调研步骤 |
-| [deepseek-harness-integration.md](deepseek-harness-integration.md) | **DeepSeek Harness（`dsh`）接入方案**：安装、会话、用量、Skills、模型路由与配置；设计已决策，代码未开工 |
+| [deepseek-harness-integration.md](deepseek-harness-integration.md) | **DeepSeek Harness（`dsh`）接入方案**：安装、会话、用量、Skills、模型路由与配置；P1–P5 已落地，StructuredStream / DeepSeek→Claude 仍 Planned / 另立项 |
 | [privacy.md](privacy.md) | **发布与隐私边界**：禁止提交项、截图规范、OAuth 常量勿外泄、docs 写法 |
 
 ## 文档管理规则
