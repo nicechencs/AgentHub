@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getBackend } from '@/app/runtime';
 import { listAccounts } from '@/lib/api/account';
+import * as adapterApi from '@/lib/api/adapter';
 import { listAdapterProfiles, planAdapter } from '@/lib/api/adapter';
 import * as providerApi from '@/lib/api/provider';
+import * as ticketsApi from '@/lib/api/tickets';
+import { listTicketWallet } from '@/lib/api/tickets';
 import { upsertMockAccount } from '@/dev/mocks/account';
 import { seedConnectFlowAdapterFixtures } from '@/dev/mocks/connect-flow-fixtures';
 import { createMockProviderPort, upsertMockProvider } from '@/dev/mocks/provider';
@@ -39,7 +42,7 @@ describe('createDefaultConnectFlowDeps', () => {
     );
   });
 
-  it('plans and applies Kimi membership → installed Pi through the adapter façade', async () => {
+  it('plans and binds Kimi membership → installed Pi through the ticket façade', async () => {
     seedAfterBackend();
     const { kimiMembership } = seedConnectFlowAdapterFixtures({ includeAnthropic: false });
     const deps = createDefaultConnectFlowDeps();
@@ -48,6 +51,8 @@ describe('createDefaultConnectFlowDeps', () => {
       sourceId: kimiMembership.id,
       targetAgentId: 'pi' as const,
     };
+    const bindSpy = vi.spyOn(ticketsApi, 'bindTicket');
+    const applySpy = vi.spyOn(adapterApi, 'applyAdapter');
     const planned = await deps.plan(request);
     const viaFacade = await planAdapter(request);
     expect(planned.canApply).toBe(true);
@@ -55,13 +60,18 @@ describe('createDefaultConnectFlowDeps', () => {
     expect(planned.analysis.route).toBe('config_sync');
 
     const applied = await deps.apply(request);
+    expect(bindSpy).toHaveBeenCalledWith(`provider:${kimiMembership.id}`, 'pi');
+    expect(applySpy).not.toHaveBeenCalled();
     expect(applied.profile.route).toBe('config_sync');
     expect(applied.provider.agentId).toBe('pi');
-    expect(applied.provider.isCurrent).toBe(true);
+    const wallet = await listTicketWallet();
+    expect(wallet.bindings.some((row) => (
+      row.active && row.agentId === 'pi' && row.ticketId === `provider:${kimiMembership.id}`
+    ))).toBe(true);
     expect(JSON.stringify(applied)).not.toContain('must-not-leak');
   });
 
-  it('plans and applies Anthropic API → installed Pi through the adapter façade', async () => {
+  it('plans and binds Anthropic API → installed Pi through the ticket façade', async () => {
     seedAfterBackend();
     const { anthropic } = seedConnectFlowAdapterFixtures();
     expect(anthropic).toBeDefined();
@@ -71,15 +81,22 @@ describe('createDefaultConnectFlowDeps', () => {
       sourceId: anthropic!.id,
       targetAgentId: 'pi' as const,
     };
+    const bindSpy = vi.spyOn(ticketsApi, 'bindTicket');
+    const applySpy = vi.spyOn(adapterApi, 'applyAdapter');
     const planned = await deps.plan(request);
     expect(planned.canApply).toBe(true);
     expect(planned.analysis.route).toBe('config_sync');
     expect(planned.analysis.ruleId).toBe('anthropic-api-to-pi-v1');
 
     const applied = await deps.apply(request);
+    expect(bindSpy).toHaveBeenCalledWith(`provider:${anthropic!.id}`, 'pi');
+    expect(applySpy).not.toHaveBeenCalled();
     expect(applied.profile.route).toBe('config_sync');
     expect(applied.provider.agentId).toBe('pi');
-    expect(applied.provider.isCurrent).toBe(true);
+    const wallet = await listTicketWallet();
+    expect(wallet.bindings.some((row) => (
+      row.active && row.agentId === 'pi' && row.ticketId === `provider:${anthropic!.id}`
+    ))).toBe(true);
     expect(JSON.parse(applied.provider.configText)).toEqual({
       slot: 'anthropic',
       apiKey: '$AGENTHUB_CONNECTION_SECRET$',
@@ -87,7 +104,7 @@ describe('createDefaultConnectFlowDeps', () => {
     expect(JSON.stringify(applied)).not.toContain('must-not-leak');
   });
 
-  it('wires plan / apply / listProfiles to the adapter façade', async () => {
+  it('wires plan / bind / listProfiles to the ticket façade', async () => {
     seedAfterBackend();
     upsertMockProvider({
       id: 'kimi-member',
@@ -104,13 +121,20 @@ describe('createDefaultConnectFlowDeps', () => {
       sourceId: 'kimi-member',
       targetAgentId: 'claude' as const,
     };
+    const bindSpy = vi.spyOn(ticketsApi, 'bindTicket');
+    const applySpy = vi.spyOn(adapterApi, 'applyAdapter');
     const planned = await deps.plan(request);
     const viaFacade = await planAdapter(request);
     expect(planned.canApply).toBe(true);
     expect(planned.analysis.route).toBe(viaFacade.analysis.route);
 
     const applied = await deps.apply(request);
-    expect(applied.provider.isCurrent).toBe(true);
+    expect(bindSpy).toHaveBeenCalledWith('provider:kimi-member', 'claude');
+    expect(applySpy).not.toHaveBeenCalled();
+    const wallet = await listTicketWallet();
+    expect(wallet.bindings.some((row) => (
+      row.active && row.agentId === 'claude' && row.ticketId === 'provider:kimi-member'
+    ))).toBe(true);
     expect(applied.profile.generatedProviderId).toBe(applied.provider.id);
 
     const profiles = await deps.listProfiles();

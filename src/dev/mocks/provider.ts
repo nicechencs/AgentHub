@@ -37,6 +37,13 @@ export function getMockProviderById(providerId: string): Provider | undefined {
   return found ? { ...found } : undefined;
 }
 
+/** Snapshot of all mock providers (ticket wallet aggregation). */
+export function listMockProviders(): Provider[] {
+  return (Object.keys(mockState) as AgentId[]).flatMap((agentId) =>
+    (mockState[agentId] ?? []).map((provider) => ({ ...provider })),
+  );
+}
+
 /** Synchronous test-only insertion used when the mock Adapter generates a Connection. */
 export function upsertMockProvider(provider: Provider): Provider {
   const list = mockState[provider.agentId] ?? (mockState[provider.agentId] = []);

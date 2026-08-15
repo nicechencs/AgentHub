@@ -14,7 +14,7 @@ DeepSeek Harness（产品命令 `dsh`）是 **第八个已接入 Agent**，不�
 | 对象 | 身份 | 现在做什么 |
 |---|---|---|
 | **DeepSeek Harness** | Agent，`AgentKey` / 兼容期 `AgentId` = `dsh`，展示名 **DeepSeek Harness** | 按稀疏端口接入：安装、配置、账号、Skills、用量、会话/项目、headless run |
-| **DeepSeek API** | 票面（API Key，双协议） | 接到 `dsh` 走现有矩阵的 `config_sync`（`deepseek-api-to-dsh-v1`）；接到 Claude 走 `native_endpoint`（**另立项，未开放**） |
+| **DeepSeek API** | 票面（API Key，双协议） | 接到 `dsh` 走现有矩阵的 `config_sync`（`deepseek-api-to-dsh-v1`）；接到 Claude 走 experimental `native_endpoint`（`deepseek-api-to-claude-v1`，已开） |
 
 不要用 `deepseek` 当 Agent id：它会和票面、模型名、官方 API 混在一起。命令与 npm 包都以 `dsh` 出现，和现有 `pi` / `claude` 一样用 CLI 名做 key。
 
@@ -291,7 +291,7 @@ AgentHub **不**在 DSH 里再挂一个自研 LLM adapter，也不把 DSH 当 lo
 | 票面 | 目标 | 路线 | 何时开放 |
 |---|---|---|---|
 | DeepSeek API Key | `dsh` | `native` / `config_sync` | P5：写入凭据引用 + `deepseek-official` + 模型 id |
-| DeepSeek API Key | Claude Code | `native_endpoint` | 独立规则；要实测 Anthropic 兼容字段，见适配规则文 §2.4 |
+| DeepSeek API Key | Claude Code | experimental `native_endpoint` | 已开（`deepseek-api-to-claude-v1`）；官方 Anthropic 兼容入口，见适配规则文 §2.4 |
 | DeepSeek API Key | Codex | 默认 `unsupported` | 官方 Chat Completions **不是** Responses |
 | Kimi / OpenAI / 其它 Chat 兼容票 | `dsh` | 可能 `config_sync` 到 `dsh-llm-pi-ai` | **另证**；P5 不做 |
 | 任一家 OAuth | `dsh` | `unsupported` | DSH 凭据缝是 API Key 引用，不是 OAuth |
@@ -422,7 +422,7 @@ P4 才做 `build_run_spec`，且必须先量：
 ### P5 — 票绑定
 
 - DeepSeek API → `dsh`：`config_sync`，`canApply=true`，`rule_id=deepseek-api-to-dsh-v1`
-- DeepSeek API → Claude：仍按适配规则文单独取证（unsupported）
+- DeepSeek API → Claude：experimental `native_endpoint` 已开（`deepseek-api-to-claude-v1`）
 - 不开放 Codex Responses、OAuth、二次投影
 
 ---
@@ -448,7 +448,7 @@ P4 才做 `build_run_spec`，且必须先量：
 3. **双 Skills 根**：DSH 已读 `~/.agents/skills`。只投影到 `$DSH_HOME/skills`，避免双写。
 4. **会话后端分叉**：JSONL vs SQLite vs 压缩。发现逻辑按 backend kind 分支，禁止当一种文件扫。
 5. **Windows headless**：PTY / danger composition 可能不可用。安装成功 ≠ Chat 可用。
-6. **双协议票面**：DeepSeek API 的 Chat Completions 与 Anthropic 入口不是同一条边。接到 `dsh` 用官方 provider；接到 Claude 另证。
+6. **双协议票面**：DeepSeek API 的 Chat Completions 与 Anthropic 入口不是同一条边。接到 `dsh` 用官方 provider；接到 Claude 走 Anthropic 兼容入口。
 7. **用量字段漂移**：无 fixtures 不标 Full。
 
 ---

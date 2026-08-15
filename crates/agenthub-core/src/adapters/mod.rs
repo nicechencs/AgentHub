@@ -894,14 +894,15 @@ pub(crate) const NOT_FOUND_FIREFIGHTING_NOTE: &str =
 /// Expand a base command name with platform-typical suffixes.
 fn expand_binary_names(base: &str) -> Vec<String> {
     let mut out = vec![base.to_string()];
-    #[cfg(windows)]
+    if cfg!(windows)
+        && !base.ends_with(".cmd")
+        && !base.ends_with(".exe")
+        && !base.ends_with(".ps1")
     {
         // npm global shims are often `name.cmd`; native bins are `name.exe`.
-        if !base.ends_with(".cmd") && !base.ends_with(".exe") && !base.ends_with(".ps1") {
-            out.push(format!("{base}.cmd"));
-            out.push(format!("{base}.exe"));
-            out.push(format!("{base}.ps1"));
-        }
+        out.push(format!("{base}.cmd"));
+        out.push(format!("{base}.exe"));
+        out.push(format!("{base}.ps1"));
     }
     out
 }

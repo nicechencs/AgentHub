@@ -29,6 +29,8 @@
 
 ## 2. 运行命令
 
+Agent 协作：跑测试、汇总日志等机械步骤由 subagent 执行，主 Agent 只看结论并验收。见 [AGENTS.md § Agent 协作规则](../AGENTS.md#机械任务必须交给其他 Agent)。
+
 ```bash
 # 前端（始终走 mock backend：vitest `#backend` alias）
 pnpm test
@@ -75,10 +77,10 @@ UI 组件（`MarkdownView` / 预览对话框）以库 `@uiw/react-markdown-previ
 
 | 字段 | 含义 |
 |---|---|
-| `route` / `support` / `canApply` / `ruleId` / `gateKind` / `reason` | analyze/plan 对外表面 |
+| `route` / `support` / `canApply` / `maturity` / `ruleId` / `gateKind` / `reason` | `plan()` 是唯一规划出口；analyze 仍给 route/support/reason 主旨。`canApply` = 矩阵开放 ∩ write_gate |
 | `applyPath` | 生产执行入口：`native`（`AdapterApplyService`）/ `local_bridge`（Tauri bridge controller）/ `rejected`（禁止 apply） |
 
-**改矩阵 / reason / 白名单时必须先改或同步此 JSON**，再改：
+**改矩阵 / reason / write_gate 可写路径时必须先改或同步此 JSON**，再改：
 
 1. `crates/agenthub-core` 的 `ADAPTER_CAPABILITY_MATRIX` / route service  
 2. `src/dev/mocks/adapter.ts`  
@@ -100,11 +102,11 @@ Hub Phase 1 统一连接流程的测试分文件存放（遵守 §1）；前端 
 | 逻辑 | `src/lib/connect-flow/plan-fanout.test.ts` | plan fan-out |
 | 逻辑 | `src/lib/connect-flow/connection-usage.test.ts` | 用途聚合 |
 | 逻辑 | `src/lib/connect-flow/default-deps.test.ts` | 默认依赖组装 |
-| 逻辑 | `src/lib/connect-flow/reuse-offer.test.ts` | 当前：行按钮白名单（Kimi 会员 / Anthropic Provider，隐藏 account 与生成投影）。目标：真票常驻「接到…」，只排除生成投影与非票行，见 [connection-binding-model.md](connection-binding-model.md)。改 UI 时同步改本用例 |
+| 逻辑 | `src/lib/connect-flow/reuse-offer.test.ts` | 真票常驻「接到…」，只排除生成投影与非票行；不可行在 ConnectFlow 置灰 + 原因，见 [connection-binding-model.md](connection-binding-model.md) |
 | 逻辑 | `src/lib/connect-flow/connect-intent.test.ts` | ①② 引导深链（intent/resume/`/?connect=` 的 parse/build/consume） |
 | 状态机 | `src/components/connect/connect-flow-state.test.ts` | 对话框状态机 |
 
-可行性权威为 `plan.canApply`（表示**现在能写入**），禁止只测 `analysis.support`。不可行组合仍应覆盖「原因原文可见」，不要用「按钮不存在」代替规划结果。
+可行性权威为 `plan()` 的 route / maturity / canApply / reason。`canApply` 表示**现在能写入**（有 bind 实现且 secret 可按票 `source_kind` 解析），禁止只测 `analysis.support`，也不要恢复商品白名单。不可行组合仍应覆盖「原因原文可见」，不要用「按钮不存在」代替规划结果。Account 与同表面 Provider 应断言相同 route/support/reason 主旨。Anthropic API Account → Pi / Codex、GLM Coding Plan / DeepSeek API Account → Claude 的 `canApply` 与同表面 Provider 相同且可写；其它 Account 仍为 false。确认步测 `bind`（成功判据为该 Agent 的 active 绑定），不要再断言 `applyAdapter`。
 
 ## 8. 分层边界护栏
 

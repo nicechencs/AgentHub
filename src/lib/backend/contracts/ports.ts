@@ -39,6 +39,7 @@ import type { UsageAvailability, UsageQuery } from './usage-types';
 import type { ConfigPort } from './config-types';
 import type { UpdatePort } from './update-types';
 import type { AdapterPort } from './adapter';
+import type { TicketPort } from './ticket';
 import { normalizeAuthHealth } from './auth-state';
 
 /** PKCE start result from backend. */
@@ -451,6 +452,8 @@ export interface Backend {
   account: AccountPort;
   /** Read-only route compatibility preview; does not apply or start anything. */
   adapter: AdapterPort;
+  /** Ticket / Binding wallet + plan_ticket / bind_ticket / unbind_ticket. */
+  ticket: TicketPort;
   agent: AgentPort;
   /** Read-only agent directory (keys, capabilities, install channels). */
   catalog: AgentCatalogPort;

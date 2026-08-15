@@ -17,11 +17,11 @@ import { AgentDot } from '@/components/shared/AgentDot';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { AGENTS } from '@/config/agents';
-import { useAppUpdateAvailable } from '@/app/runtime';
-import { listAgents } from '@/lib/api/agent';
+import { useAgentStatusesOptional, useAppUpdateAvailable } from '@/app/runtime';
 import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/layout/SidebarContext';
+import { installedCatalogAgents } from '@/components/layout/sidebar-agents';
 import { cn } from '@/lib/utils';
 
 /** 工作区 */
@@ -141,15 +141,11 @@ function agentDotLabel(
 /** 侧边导航:可折叠;底部为 agent 在线状态迷你条 */
 export function Sidebar() {
   const { collapsed, toggle } = useSidebar();
-  const [agents, setAgents] = React.useState<AgentStatus[]>([]);
+  const { statuses: agents } = useAgentStatusesOptional();
   const appUpdate = useAppUpdateAvailable();
   const settingsNotice = appUpdate
     ? { label: `有可用更新 v${appUpdate.version}` }
     : null;
-
-  React.useEffect(() => {
-    listAgents().then(setAgents).catch(() => {});
-  }, []);
 
   const installed = agents.filter((a) => a.installed).length;
 
@@ -163,9 +159,7 @@ export function Sidebar() {
         : 'text-secondary hover:bg-hover/70 hover:text-primary',
     );
 
-  const installedMetas = AGENTS.filter((meta) =>
-    agents.some((a) => a.agentId === meta.id && a.installed),
-  );
+  const installedMetas = installedCatalogAgents(AGENTS, agents);
 
   return (
     <aside

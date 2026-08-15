@@ -388,6 +388,31 @@ fn emit_action(action: &str, skill: &str, agent: AgentId, format: OutputFormat) 
     }
 }
 
+fn skill_list_column_ids() -> &'static [AgentId] {
+    &AgentId::ALL
+}
+
+fn skill_list_table_headers() -> Vec<String> {
+    let mut headers = vec!["Skill".into(), "Name".into()];
+    headers.extend(
+        skill_list_column_ids()
+            .iter()
+            .map(|agent| agent.as_str().to_string()),
+    );
+    headers
+}
+
+fn skill_list_table_cells(skill: &Skill) -> Vec<String> {
+    let mut cells = vec![skill.id.clone(), skill.name.clone()];
+    cells.extend(skill_list_column_ids().iter().map(|agent| {
+        skill
+            .state_for(*agent)
+            .map(|value| value.as_str().to_string())
+            .unwrap_or_else(|| "-".into())
+    }));
+    cells
+}
+
 fn emit_list(skills: &[Skill], format: OutputFormat) -> Result<()> {
     match format {
         OutputFormat::Quiet => Ok(()),
@@ -395,22 +420,9 @@ fn emit_list(skills: &[Skill], format: OutputFormat) -> Result<()> {
         OutputFormat::Table => {
             let mut table = Table::new();
             table.load_preset(UTF8_FULL);
-            table.set_header(vec!["Skill", "Name", "Claude", "Codex", "Kimi", "Grok"]);
+            table.set_header(skill_list_table_headers());
             for skill in skills {
-                let state = |agent| {
-                    skill
-                        .state_for(agent)
-                        .map(|value| value.as_str())
-                        .unwrap_or("-")
-                };
-                table.add_row(vec![
-                    Cell::new(&skill.id),
-                    Cell::new(&skill.name),
-                    Cell::new(state(AgentId::Claude)),
-                    Cell::new(state(AgentId::Codex)),
-                    Cell::new(state(AgentId::Kimi)),
-                    Cell::new(state(AgentId::Grok)),
-                ]);
+                table.add_row(skill_list_table_cells(skill));
             }
             println!("{table}");
             Ok(())
@@ -457,30 +469,4 @@ fn emit_sync_report(report: &SkillSyncReport, format: OutputFormat) -> Result<()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_agent_filter_and_requires_agent() {
-        assert_eq!(parse_agent_filter(None).unwrap(), None);
-        assert_eq!(
-            parse_agent_filter(Some("GROK")).unwrap(),
-            Some(AgentId::Grok)
-        );
-        assert_eq!(
-            parse_agent_filter(Some("bad")).unwrap_err().code(),
-            "invalid_arg"
-        );
-        assert_eq!(require_agent(None).unwrap_err().code(), "invalid_arg");
-    }
-
-    #[test]
-    fn empty_outputs_are_valid() {
-        emit_list(&[], OutputFormat::Quiet).unwrap();
-        emit_sync_report(&SkillSyncReport::default(), OutputFormat::Quiet).unwrap();
-        let value = serde_json::to_value(SkillSyncReport::default()).unwrap();
-        assert_eq!(value["synced"], serde_json::json!([]));
-        assert_eq!(value["skipped"], serde_json::json!([]));
-        assert_eq!(value["failed"], serde_json::json!([]));
-    }
-}
+mod tests;

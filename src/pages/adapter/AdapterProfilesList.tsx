@@ -94,8 +94,8 @@ export function AdapterProfilesList({
     return (
       <EmptyState
         icon={Boxes}
-        title="尚未创建适配"
-        description="日常连接请走 Dashboard「连接/切换」或 Connections「用于其他 Agent」。"
+        title="没有已绑定的本机桥"
+        description="创建绑定不在本页。请走 Dashboard「连接/切换」或 Connections「接到…」。"
         actionLabel="去 Dashboard 连接"
         onAction={onStartCreate}
       />

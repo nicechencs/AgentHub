@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { Button } from '@/components/ui/button';
 import {
-  removeAdapter,
   setAdapterBridgeAutoStart,
   startAdapterBridge,
   stopAdapterBridge,
 } from '@/lib/api/adapter';
+import { listTicketWallet, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import { AdapterErrorLines, AdapterProfiles } from './adapter-components';
 import { AdapterProfileDetailDialog } from './AdapterProfileDetailDialog';
@@ -19,6 +19,7 @@ import {
 import {
   adapterBridgeFleetSummary,
   adapterProfileFlowLabel,
+  filterBoundLocalBridgeRuntimes,
 } from './adapter-view-model';
 import { useAdapterResources } from './use-adapter-resources';
 import {
@@ -88,6 +89,7 @@ export {
   adapterServiceStatusView,
   adapterTargetBadge,
   adapterTargetCacheKey,
+  filterBoundLocalBridgeRuntimes,
   resolveAdapterProfileSource,
 } from './adapter-view-model';
 
@@ -97,8 +99,8 @@ export {
 } from '@/components/shared/busy-confirmation';
 
 /**
- * Adapter page: advanced management for existing profiles and local bridges.
- * Daily create / apply lives in Dashboard and Connections ConnectFlow.
+ * Adapter page: bound local-bridge runtimes only.
+ * Creating bindings lives in Dashboard and Connections ConnectFlow.
  * Do not mount analyze fan-out, plan, or apply-confirm hooks here.
  */
 export default function AdapterPage() {
@@ -116,6 +118,7 @@ export default function AdapterPage() {
     updateProfile,
     removeProfile,
   } = useAdapterResources();
+  const [bindingProfileIds, setBindingProfileIds] = useState<ReadonlySet<string>>(new Set());
   const [removeConfirm, setRemoveConfirm] = useState<AdapterProfile | null>(null);
   const [stopConfirm, setStopConfirm] = useState<AdapterProfile | null>(null);
   const [detailProfileId, setDetailProfileId] = useState<string | null>(null);
@@ -185,11 +188,16 @@ export default function AdapterPage() {
 
   const confirmRemove = async () => {
     if (!removeConfirm) return;
-    const profileId = removeConfirm.id;
+    const profile = removeConfirm;
+    const profileId = profile.id;
     setRemovingProfileId(profileId);
     clearProfileError(profileId);
     try {
-      await removeAdapter(profileId);
+      const wallet = await listTicketWallet();
+      const binding = wallet.bindings.find((row) => row.profileId === profile.id);
+      const ticketId = binding?.ticketId ?? ticketIdFor(profile.sourceKind, profile.sourceId);
+      const agentId = binding?.agentId ?? profile.targetAgentId;
+      await unbindTicket(ticketId, agentId);
       removeProfile(profileId);
       setRemoveConfirm(null);
       reloadThenClearProfileErrors();
@@ -200,12 +208,36 @@ export default function AdapterPage() {
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    void listTicketWallet()
+      .then((wallet) => {
+        if (cancelled) return;
+        setBindingProfileIds(new Set(
+          wallet.bindings
+            .map((binding) => binding.profileId)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0),
+        ));
+      })
+      .catch(() => {
+        if (!cancelled) setBindingProfileIds(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profiles]);
+
+  const boundBridgeProfiles = useMemo(
+    () => filterBoundLocalBridgeRuntimes(profiles, { entries, bindingProfileIds }),
+    [bindingProfileIds, entries, profiles],
+  );
+
   const connectionWarning = resourceFailureMessage(resourceErrors);
   const stopError = stopConfirm ? profileErrors[stopConfirm.id] : null;
   const removeError = removeConfirm ? profileErrors[removeConfirm.id] : null;
   const stopDialogBusy = Boolean(stopConfirm && busyProfileIds[stopConfirm.id]);
   const removeDialogBusy = removingProfileId !== null;
-  const fleetSummary = adapterBridgeFleetSummary(profiles, bridgeStatuses);
+  const fleetSummary = adapterBridgeFleetSummary(boundBridgeProfiles, bridgeStatuses);
 
   const detailProfile = detailProfileId
     ? profiles.find((profile) => profile.id === detailProfileId) ?? null
@@ -230,8 +262,8 @@ export default function AdapterPage() {
       {connectionWarning && <p className="mb-3 text-sm text-warning" role="alert">{connectionWarning}</p>}
 
       <PageSection
-        title="已创建的适配"
-        description="管理已生效的接入与本地桥接。"
+        title="本机桥运行时"
+        description="只列出已绑定的本机桥。创建绑定不在本页，请走 Dashboard 或 Connections。"
       >
         {fleetSummary ? (
           <p className="mb-3 text-xs text-secondary">
@@ -239,7 +271,7 @@ export default function AdapterPage() {
           </p>
         ) : null}
         <AdapterProfiles
-          profiles={profiles}
+          profiles={boundBridgeProfiles}
           bridgeStatuses={bridgeStatuses}
           statusErrors={resourceErrors.bridgeStatuses}
           entries={entries}
@@ -315,7 +347,7 @@ export default function AdapterPage() {
           <DialogHeader className="shrink-0">
             <DialogTitle>删除此适配？</DialogTitle>
             <DialogDescription>
-              会移除适配配置。若仍是当前 Connection，删除会被拒绝。
+              会解除这条绑定并停桥。来源票仍留在钱包。
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
