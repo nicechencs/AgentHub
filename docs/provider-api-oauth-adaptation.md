@@ -198,16 +198,16 @@ OAuth access/refresh token 带有客户端、受众、范围和刷新语义。�
 
 ### 5.1 Codex / ChatGPT subscription → Claude Code：第 3 路，Responses experimental bind
 
-该组合是 **③ 本机协议桥** 的旗舰边（对齐 cc-switch 的 Codex OAuth 反代、CLIProxyAPI 的 Codex 兼容口），**不是** ②：Claude Code 没有 ChatGPT 订阅槽。目标：Claude Code 通过 `ANTHROPIC_BASE_URL` 与 `ANTHROPIC_AUTH_TOKEN` 调用**本机** bridge，而不是把 ChatGPT OAuth token 写入 Claude Code。Codex 订阅 → Pi 走 ②，不要和本条混写。
+该组合是 **③ 本机协议桥** 的旗舰边，**不是** ②：Claude Code 没有 ChatGPT 订阅槽。目标：Claude Code 通过 `ANTHROPIC_BASE_URL` 与 `ANTHROPIC_AUTH_TOKEN` 调用**本机** bridge，而不是把 ChatGPT OAuth token 写入 Claude Code。Codex 订阅 → Pi 走 ②，不要和本条混写。
 
 **当前实现**已可 bind Responses `auth_json` Account：`canApply=true`，创建 `local_bridge` profile、启动 loopback，并写入 Claude 的 `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`。仅 access token 在进程内注入上游；ChatGPT OAuth token 不进入 Claude 配置、IPC 或日志。Hub 本轮不做 single-flight refresh，过期需重新同步 Codex 登录。见 [product-decisions.md](product-decisions.md)。
 
-Responses 已选为本轮上游 transport，并用 fixtures / host health 验证本地闭环。参考项目能跑是产品证据，不是可以把对方源码贴进仓库的许可。App Server 继续保持关闭：
+Responses 已选为本轮上游 transport，并用 fixtures / host health 验证本地闭环。App Server 继续保持关闭：
 
 | 候选 | 必须回答的问题 | 未通过时 |
 |---|---|---|
 | Codex App Server transport | 请求/流式事件语义是否足以承载 Claude Code 回合；工具、上下文与取消如何映射；是否会造成双 Agent、双工具执行或意外副作用 | 继续 `canApply=false`；记下缺口，换下一条候选 |
-| Codex Responses transport（含参考项目已走通的本机反代通道） | OAuth + Responses 流式/工具/取消闭环、失败补偿与 secret 隔离 | `codex-subscription-to-claude-responses-v1` 已开放为 experimental；本轮不实现自动 refresh |
+| Codex Responses transport（含本机 Responses 反代） | OAuth + Responses 流式/工具/取消闭环、失败补偿与 secret 隔离 | `codex-subscription-to-claude-responses-v1` 已开放为 experimental；本轮不实现自动 refresh |
 
 被选定的 transport 必须证明：身份只用于当前用户，token 不跨 IPC 泄露，刷新不导致并发风暴，协议闭环正确，且失败不会留下可用的 Claude Code loopback 配置。两条都未就绪时，UI 仍展示这条产品边为可预览，并给出 Claude 自身登录或已支持 API Key 作为临时替代。
 
@@ -293,7 +293,7 @@ Claude Code
 
 | 阶段 | 交付与门禁 | `canApply` | 当前进度（2026-08-15） |
 |---|---|---|---|
-| 0. 证据与 fixtures | 固化身份分类样例、Messages/IR/Responses/SSE 正反例 fixtures；确认参考实现许可边界与选定 transport | `true`（Responses） | **已落地**：transport 选定为 Responses；App Server 候选仍关闭 |
+| 0. 证据与 fixtures | 固化身份分类样例、Messages/IR/Responses/SSE 正反例 fixtures；确认选定 transport | `true`（Responses） | **已落地**：transport 选定为 Responses；App Server 候选仍关闭 |
 | 1. 纯协议内核 | 无网络、无 secret 的 Anthropic Messages ↔ IR ↔ Responses 转换及状态机测试 | `true`（Responses） | **已落地**：`IrEvent`、Responses/Messages 转换、SSE、工具、usage、错误与取消测试在 core |
 | 2. 认证 / transport spike | 验证 Responses OAuth 的请求/取消/不泄露 secret；本轮不自动 refresh；App Server 继续关闭 | `true`（有 access token） | **Responses experimental bind 已接线**：`BridgeUpstreamProtocol::CodexResponsesOauth` 仅用 loopback `/health`，首次真实请求验证上游；过期需重新同步 Codex 登录 |
 | 3. profile 与 Apply saga | 实现 loopback bearer、profile、目标配置写入和完整失败回滚；sidecar 迁移另行推进 | `true`（Responses） | **Tauri 进程内 saga 已落地**：Claude 目标通过 `bind` 走 `apply_local_bridge`；目标配置只写 loopback URL + local bearer；sidecar IPC 仍未迁移 |
@@ -304,11 +304,9 @@ Claude Code
 
 验收要求是：Claude Code 只通过 `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` 访问 loopback；上游 token 从未写入 Claude 配置、日志或 IPC 响应；一轮文本流和至少一轮工具闭环没有双执行；输出后没有重放；任一失败不会遗留 active profile 或指向失效 listener 的 live 配置；所有门禁、fixture 和端到端 dogfood 证据可追溯到 capability matrix。
 
-### 7.2 参考实现与许可证
+### 7.2 实现边界
 
-`cc-switch`、`CLIProxyAPI` 与 Management Center 是**产品对齐对象**：① 官方兼容入口直连、② 订阅写进目标槽、③ 协议转换 / 订阅反代、管理面登录/配额/探测。它们也是协议与 refresh 的设计证据，但不是上游官方契约，也不能把对方源码贴进本仓库。不学 CLIProxyAPI「永远起代理」。`sub2api` 可作为完整 Anthropic ↔ Responses 状态机、首事件前重试、输出后禁止重放和账号失效隔离的测试参考；`AionUi` 仅可作为轻量非流式转换参考。
-
-在复制或改编任何代码前必须单独审查许可证与边界：cc-switch 为 MIT、sub2api 为 LGPL、AionUi 为 Apache-2.0。优先重写协议实现与 fixtures；未经审查不得把参考项目代码混入本仓库。产品取舍见 [product-decisions.md](product-decisions.md)。
+协议转换、refresh 与管理面动作按 [product-decisions.md](product-decisions.md) 的三路取舍实现：能直连或写原生槽就不起桥，不默认常驻兼容代理。协议内核与 fixtures 在本仓库独立维护。公开致谢见根 [README.md](../README.md)。
 
 ## 8. 官方资料
 

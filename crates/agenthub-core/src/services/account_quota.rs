@@ -1,6 +1,5 @@
 //! Upstream subscription quota windows (5h / 7d) for OAuth accounts.
 //!
-//! Inspired by sub2api's AccountUsageService:
 //! - OpenAI Codex / ChatGPT: `GET https://chatgpt.com/backend-api/wham/usage`
 //! - Claude OAuth: `GET https://api.anthropic.com/api/oauth/usage`
 //!
@@ -20,11 +19,10 @@ use crate::models::{Account, AccountKind, AgentId};
 use crate::oauth::decode_jwt_payload;
 
 const CHATGPT_USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
-/// Codex desktop probe — rate limits arrive in `x-codex-*` response headers
-/// (same path sub2api uses in probeOpenAICodexSnapshot).
+/// Codex desktop probe — rate limits arrive in `x-codex-*` response headers.
 const CHATGPT_CODEX_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
-/// Keep loosely aligned with sub2api codexCLIVersion (identity for upstream).
+/// User-Agent identity sent with the Codex probe.
 const CODEX_PROBE_VERSION: &str = "0.146.0";
 const CODEX_PROBE_ORIGINATOR: &str = "codex-tui";
 
@@ -272,7 +270,7 @@ fn fetch_codex_quota(account: &Account) -> Result<QuotaSnapshot> {
     })?;
     let now = Utc::now();
 
-    // 1) Preferred: Codex /responses probe → x-codex-* headers (sub2api path).
+    // 1) Preferred: Codex /responses probe → x-codex-* headers.
     match probe_codex_rate_limit_headers(&access, &account_id, now) {
         Ok(snap) if !snap.is_empty() => return Ok(snap),
         Ok(_) => {
@@ -401,7 +399,7 @@ fn fetch_claude_quota(account: &Account) -> Result<QuotaSnapshot> {
     Ok(parse_claude_oauth_usage(&body, Utc::now()))
 }
 
-// ── Grok / xAI billing (sub2api ProbeBilling) ───────────────────────────────
+// ── Grok / xAI billing ──────────────────────────────────────────────────────
 // Weekly:  GET https://cli-chat-proxy.grok.com/v1/billing?format=credits
 // Monthly: GET https://cli-chat-proxy.grok.com/v1/billing
 // Does not consume model tokens (list-safe).
@@ -409,7 +407,7 @@ fn fetch_claude_quota(account: &Account) -> Result<QuotaSnapshot> {
 const GROK_CLI_BASE: &str = "https://cli-chat-proxy.grok.com/v1";
 const GROK_BILLING_WEEKLY: &str = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
 const GROK_BILLING_MONTHLY: &str = "https://cli-chat-proxy.grok.com/v1/billing";
-/// Keep loosely aligned with sub2api xai.CLIClientVersion.
+/// User-Agent identity sent with the Grok billing probe.
 const GROK_CLI_VERSION: &str = "0.2.114";
 
 fn fetch_grok_quota(account: &Account) -> Result<QuotaSnapshot> {
@@ -541,7 +539,7 @@ pub fn parse_grok_billing(
                     snap.quota7d_pct = Some(pct);
                 }
             }
-            // Plan from monthly limit (sub2api resolvePlan).
+            // Infer plan name from the monthly credit limit.
             snap.plan_type = resolve_grok_plan(lim);
         }
         if snap.reset_7d_at.is_none() {
@@ -590,7 +588,7 @@ fn cent_value(v: Option<&Value>) -> Option<f64> {
 }
 
 fn resolve_grok_plan(monthly_limit_cents: f64) -> Option<String> {
-    // sub2api: SuperGrok 15000, SuperGrok Heavy 150000
+    // Known Grok monthly credit limits (cents).
     if (monthly_limit_cents - 150_000.0).abs() < 1.0 {
         return Some("SuperGrok Heavy".into());
     }
@@ -654,8 +652,8 @@ struct CodexNormalized {
     window_mins_7d: Option<i64>,
 }
 
-/// Port of sub2api `OpenAICodexUsageSnapshot.Normalize`.
-/// Smaller window → 5h, larger → 7d; fallback primary=7d / secondary=5h.
+/// Classify Codex windows by duration: smaller → 5h, larger → 7d;
+/// if only one window exists, fall back to primary=7d / secondary=5h.
 fn normalize_codex_windows(raw: &CodexRawSnapshot) -> CodexNormalized {
     let mut out = CodexNormalized::default();
     let has_p = raw.primary_window_mins.is_some();
@@ -663,7 +661,7 @@ fn normalize_codex_windows(raw: &CodexRawSnapshot) -> CodexNormalized {
     let p_mins = raw.primary_window_mins.unwrap_or(0);
     let s_mins = raw.secondary_window_mins.unwrap_or(0);
 
-    // use5hFromPrimary / use7dFromPrimary — same boolean logic as sub2api.
+    // Prefer the shorter declared window as 5h, the longer as 7d.
     let (use_5h_from_primary, use_7d_from_primary) = if has_p && has_s {
         if p_mins < s_mins {
             (true, false)
@@ -856,7 +854,7 @@ fn window_minutes_from_json(w: &Value) -> Option<i64> {
     }
     if let Some(s) = w.get("limit_window_seconds").and_then(|v| v.as_i64()) {
         if s > 0 {
-            return Some((s + 59) / 60); // ceil to minutes, matches sub2api int division intent
+            return Some((s + 59) / 60); // ceil seconds to minutes
         }
     }
     None
@@ -1288,7 +1286,7 @@ mod tests {
     #[test]
     fn parse_wham_classifies_by_window_length_not_primary_name() {
         let now = Utc::now();
-        // Real Codex/ChatGPT shape: primary = 7d, secondary = 5h (sub2api fixtures).
+        // Real Codex/ChatGPT shape: primary = 7d, secondary = 5h.
         let body = json!({
             "plan_type": "prolite",
             "rate_limit": {

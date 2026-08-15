@@ -15,22 +15,22 @@
 | 决策点 | 结论 |
 |---|---|
 | 平台范围 | Windows 为主交付；macOS 已支持源码运行与本机构建；Linux 仅路径/命令抽象预留。**共享 Runtime 与 native 安装命令按宿主平台分流**（见 §5.7.2 / §5.7.5） |
-| 复用策略 | 配置切换借鉴 cc-switch；跨 Agent 复用分三路（① API 直连 ② 原生订阅 ③ 本机桥），对齐 cc-switch / CLIProxyAPI / Management Center 的对应能力（见 [product-decisions.md](product-decisions.md)）。实现从零自研，不混入参考项目源码 |
+| 复用策略 | 配置切换按「路径 + 读取 + 校验 + 原子写」；跨 Agent 复用分三路（① API 直连 ② 原生订阅 ③ 本机桥），见 [product-decisions.md](product-decisions.md)。实现从零自研 |
 | MVP 范围 | Agent 安装/卸载（含**前置运行时检测与引导**）、API 配置管理、技能/插件管理、Token 统计、**票接到其他 Agent（直连 / 原生订阅 / 本机桥）** |
 | 产品形态 | GUI + CLI 双端，核心逻辑抽成 `agenthub-core` crate 共享 |
 | OAuth 账号管理 | 支持多账号池 + 一键切换；订阅先走目标原生槽（②），对不上再本机桥（③） |
-| 跨 Agent 复用 | **核心产品**，三路都要做。能直连就直连，不学「永远起代理」。实现未开 ≠ 产品不做。不做公网入口、号池拼车、转售 |
+| 跨 Agent 复用 | **核心产品**，三路都要做。能直连就直连，不默认常驻代理。实现未开 ≠ 产品不做。不做公网入口、多账号拼车、转售 |
 | Token 统计来源 | **零侵入**：解析各 agent 本地日志/会话文件。这只约束 Usage，**不禁止** ③ 的本机桥 |
 | Agent 范围 | **当前八家**：Claude / Codex / Kimi / Grok / Pi / WorkBuddy / **Cursor Agent**（半套 CLI）/ **DeepSeek Harness（`dsh`）**；不支持 Cursor IDE 私有库账号池。`dsh` 专项约束见 [deepseek-harness-integration.md](deepseek-harness-integration.md) |
 | 分层原则 | **Service 管编排**（备份/锁/backfill/投影/聚合）；**Adapter 管差异**（路径、读写格式、解析器挂接） |
 | Adapter 进程边界 | `local_bridge` 目标由同包用户级 `agenthub-adapterd` 托管；GUI/CLI 是控制客户端。Connections 不拆进程，OS 系统服务不在当前范围 |
 
-## 2. 参考项目结论
+## 2. 同类工具结论
 
 ### 配置与状态管理类工具 — 最直接参照系
 - **借鉴**：按应用封装「路径 + 读取 + 校验 + 原子写」；供应商配置用灵活 JSON/`Value`，由前端预设模板决定；SQLite 存自身状态（带 schema 迁移）；backfill 机制（切换前把用户手改的 live 配置回存）；原子写（tempfile+rename）、TOML 编辑保留注释格式；前端 API 封装层。AgentHub **实际**为 `lib/backend` 分层 + 页面本地 state。
 - **避坑**：Windows 下不要用 `HOME` 环境变量取 home dir（Git Bash 会注入错误值），用 `dirs::home_dir()`；巨型 `match` 分支散布多处（我们用 trait + 注册表替代）；官方 OAuth 登录态不能被配置切换覆盖，需识别保护。
-- **差异化空间**：多 Agent 钱包 + 三路复用（直连 / 原生订阅 / 本机桥），而不是只做单一 CLI 的供应商预设，也不学 CLIProxyAPI 永远起代理。不抄公网网关、号池拼车或参考项目源码。产品取舍见 [product-decisions.md](product-decisions.md)。
+- **差异化空间**：多 Agent 钱包 + 三路复用（直连 / 原生订阅 / 本机桥），而不是只做单一 CLI 的供应商预设，也不默认常驻代理。不做公网网关或多账号拼车。产品取舍见 [product-decisions.md](product-decisions.md)。
 
 ### 账号管理与工程实践类工具
 - **借鉴**：后端分层（commands 薄层 → models → modules → utils）；索引 + 分文件 + SQLite 统计库的混合存储；OAuth loopback 回调（双栈监听、ephemeral 端口、state 校验）；token 提前刷新 + 每账号互斥锁防并发重复刷新；写第三方配置前必备份 + 原子写 + 路径白名单校验。
@@ -38,7 +38,7 @@
 
 ### OAuth 协议与凭据语义类工具
 - **借鉴**：各平台 OAuth 的 PKCE 流程与 TokenProvider 模式（缓存 → 过期偏移检查 → 锁内单飞刷新）；账号模型 `platform + type + credentials + extra`；敏感字段集中脱敏，合并配置时不抹掉前端看不见的密钥。
-- **不抄**：多租户服务端机制（用户/支付/调度/Redis/Postgres）对单机桌面工具全是负担。无公开 OAuth 先例的平台走 API Key 或自研接入。
+- **不做**：多租户服务端机制（用户/支付/调度/Redis/Postgres）对单机桌面工具全是负担。无公开 OAuth 先例的平台走 API Key 或自研接入。
 
 ## 3. 各 Agent 适配矩阵（概要）
 
@@ -403,7 +403,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 1. **官方凭据落点随版本变化**：部分 Agent 的主登录态未必落在公开配置文件中。账号切换以文件型凭据导入/备份为先，未确认的路径不强行写入。
 2. **日志格式漂移**：各家 sessions 格式会随版本变。UsageParser 设计为容错（跳过失配记录 + 统计失败率 + 按 agent 版本选择解析器）。
-3. **合规边界**：定位是个人本机工具，默认不提供公网分发/号池。三路复用是产品能力；③ 的非官方通道风险对用户可见。用户须遵守各上游服务条款。
+3. **合规边界**：定位是个人本机工具，默认不提供公网分发或多账号共享。三路复用是产品能力；③ 的非官方通道风险对用户可见。用户须遵守各上游服务条款。
 4. **写第三方配置的跟进成本**：各家配置格式都会变，适配层需要持续维护。本机桥只服务 ③，按 fixtures 与回滚开放边；①② 不起桥。
 5. **Skills 真源假设**：以 `~/.agents/skills` 为唯一真源；若用户长期只在 Agent 目录改 skill，需补导入/回收，否则仅是单向投影器。
 6. **前置环境安装的权限与策略**：公司机可能禁用 winget/MSI、Node 装完但 GUI 进程 PATH 未刷新、需要「新开终端/重启 AgentHub」才能看到 `node`。产品文案与 `doctor` 需覆盖 **PATH 刷新 / 重启提示**；自动装 Runtime 失败必须降级为可复制命令，禁止假成功。
