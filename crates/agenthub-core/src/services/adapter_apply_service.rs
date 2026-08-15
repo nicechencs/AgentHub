@@ -118,6 +118,35 @@ impl AdapterApplyService {
         }
     }
 
+    /// Whether `apply` has a write arm for this matrix cell (not LocalBridge).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn apply_has_arm(
+        rule_id: &str,
+        source_kind: AdapterSourceKind,
+        target: AgentId,
+        route: AdapterRoute,
+    ) -> bool {
+        match (source_kind, target, route) {
+            (_, AgentId::Claude, AdapterRoute::NativeEndpoint) => {
+                rule_id == RULE_ID || is_claude_native_explicit_rule(rule_id)
+            }
+            (_, AgentId::Codex, AdapterRoute::NativeEndpoint) => is_codex_native_rule(rule_id),
+            (_, AgentId::Grok, AdapterRoute::NativeEndpoint) => is_grok_native_rule(rule_id),
+            (sk, AgentId::Pi, AdapterRoute::ConfigSync)
+                if sk == AdapterSourceKind::Provider || rule_id == KIMI_PI_RULE_ID =>
+            {
+                rule_id == KIMI_PI_RULE_ID || is_explicit_api_to_pi_rule(rule_id)
+            }
+            (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync) => {
+                is_explicit_api_to_pi_rule(rule_id) || is_subscription_pi_rule(rule_id)
+            }
+            (AdapterSourceKind::Provider, AgentId::Dsh, AdapterRoute::ConfigSync) => {
+                rule_id == DEEPSEEK_DSH_RULE_ID
+            }
+            _ => false,
+        }
+    }
+
     pub fn apply(&self, request: &AdapterApplyRequest) -> Result<AdapterApplyResult> {
         let analysis = self.ensure_supported(request)?;
         let source_id = request.source_id.trim();
