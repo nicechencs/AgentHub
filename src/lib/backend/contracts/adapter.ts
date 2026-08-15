@@ -13,6 +13,9 @@ export interface AdapterRouteRequest {
 /** Closed compatibility routes; unknown wire values are rejected at the adapter boundary. */
 export type AdapterRoute = 'native_endpoint' | 'local_bridge' | 'config_sync' | 'unsupported';
 
+/** User-facing reuse family derived from the planner route. */
+export type AdapterReusePath = 'api_endpoint' | 'native_subscription' | 'local_bridge' | 'none';
+
 /**
  * Persisted credential family for a profile. Orthogonal to `sourceKind` (table) and `route`
  * (projection). API Key conversions stay `api` even when they use a local protocol bridge.
@@ -101,6 +104,8 @@ export interface AdapterApplyPlan {
   canApply: boolean;
   /** Four-tier edge maturity. Missing on older wires → treat as `none`. */
   maturity?: AdapterMaturity;
+  /** Planner-derived presentation path. Missing on older wires → derive from route. */
+  reusePath?: AdapterReusePath;
   /**
    * Planner-facing reason. Prefer this over `analysis.reason` when
    * `canApply` is false (same-edge Account adds an explicit write-gate note).

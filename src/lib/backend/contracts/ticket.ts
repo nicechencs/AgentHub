@@ -18,6 +18,8 @@ export type TicketSurface =
   | 'glm-coding-plan'
   | 'deepseek-api'
   | 'codex-chatgpt-subscription'
+  | 'claude-subscription'
+  | 'grok-xai-subscription'
   | 'unknown';
 
 /** Credential family on the ticket (UI filter chips). */
@@ -115,6 +117,8 @@ function mapSurface(value: string): TicketSurface {
     || value === 'glm-coding-plan'
     || value === 'deepseek-api'
     || value === 'codex-chatgpt-subscription'
+    || value === 'claude-subscription'
+    || value === 'grok-xai-subscription'
     || value === 'unknown'
   ) {
     return value;
@@ -265,5 +269,6 @@ export function ticketSurfaceLabel(surface: TicketSurface): string {
   if (surface === 'glm-coding-plan') return 'GLM';
   if (surface === 'deepseek-api') return 'DeepSeek';
   if (surface === 'codex-chatgpt-subscription') return '订阅';
+  if (surface === 'claude-subscription' || surface === 'grok-xai-subscription') return '订阅';
   return '未识别';
 }
