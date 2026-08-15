@@ -438,7 +438,7 @@ describe('mock adapter route preview', () => {
     expect((await createMockProviderPort().listProviders('pi'))).toEqual([]);
   });
 
-  it('refuses to remove a current Pi generated Connection', async () => {
+  it('allows removing a current Pi generated Connection', async () => {
     const { kimiMembership } = seedConnectFlowAdapterFixtures({ includeAnthropic: false });
     const adapter = createMockAdapterPort(resolver);
     const applied = await adapter.apply({
@@ -446,11 +446,9 @@ describe('mock adapter route preview', () => {
       sourceId: kimiMembership.id,
       targetAgentId: 'pi',
     });
-    await expect(adapter.remove(applied.profile.id)).rejects.toMatchObject({
-      code: 'unsupported',
-    });
-    expect(await adapter.listProfiles()).toHaveLength(1);
-    expect(getMockProviderById(applied.provider.id)?.isCurrent).toBe(true);
+    await adapter.remove(applied.profile.id);
+    expect(await adapter.listProfiles()).toHaveLength(0);
+    expect(getMockProviderById(applied.provider.id)).toBeUndefined();
   });
 });
 
