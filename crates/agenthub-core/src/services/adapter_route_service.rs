@@ -582,7 +582,7 @@ fn subscription_account_secret_open(
 
 /// Bind implementations opened in this step. API secrets resolve from either
 /// a Provider or an Account row (`credentials.api_key`).
-fn bind_implementation_open(
+pub(crate) fn bind_implementation_open(
     request: &AdapterRouteRequest,
     analysis: &AdapterRouteAnalysis,
 ) -> bool {

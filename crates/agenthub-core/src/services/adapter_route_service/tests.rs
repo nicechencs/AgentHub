@@ -1,8 +1,9 @@
 use super::*;
 use crate::models::{
-    Account, AccountKind, AdapterMaturity, AdapterRoute, AdapterServiceImpact, AdapterSupport,
-    Provider,
+    Account, AccountKind, AdapterGateKind, AdapterMaturity, AdapterRoute, AdapterRouteAnalysis,
+    AdapterServiceImpact, AdapterSupport, Provider, ADAPTER_CAPABILITY_MATRIX,
 };
+use crate::services::AdapterApplyService;
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
 fn test_db() -> (tempfile::TempDir, Database) {
@@ -1607,5 +1608,73 @@ fn shared_capability_contract_matches_classify_and_plan() {
                 assert!(!plan.can_apply, "{}", case.id);
             }
         }
+    }
+}
+
+fn analysis_from_cell(
+    cell: &crate::models::AdapterCapabilityCell,
+) -> AdapterRouteAnalysis {
+    AdapterRouteAnalysis {
+        route: cell.route,
+        support: cell.support,
+        reason: cell.reason.into(),
+        actions: vec![],
+        limitations: vec![],
+        evidence: vec![],
+        rule_id: Some(cell.rule_id.to_string()),
+        gate_kind: AdapterGateKind::None,
+    }
+}
+
+fn source_kinds_for_rule(rule_id: &str) -> &'static [AdapterSourceKind] {
+    match rule_id {
+        "claude-subscription-to-pi-v1"
+        | "codex-subscription-to-pi-v1"
+        | "grok-subscription-to-pi-v1"
+        | "codex-subscription-to-claude-responses-v1"
+        | "grok-subscription-to-claude-v1" => &[AdapterSourceKind::Account],
+        "deepseek-api-to-dsh-v1" => &[AdapterSourceKind::Provider],
+        _ => &[AdapterSourceKind::Provider, AdapterSourceKind::Account],
+    }
+}
+
+#[test]
+fn open_matrix_cells_have_bind_and_apply_arms() {
+    for cell in ADAPTER_CAPABILITY_MATRIX {
+        if !(cell.can_apply && cell.gates.all_passed()) {
+            continue;
+        }
+        let analysis = analysis_from_cell(cell);
+        let mut any_open = false;
+        for &kind in source_kinds_for_rule(cell.rule_id) {
+            let req = AdapterRouteRequest {
+                source_kind: kind,
+                source_id: "consistency".into(),
+                target_agent_id: cell.key.target,
+            };
+            if !bind_implementation_open(&req, &analysis) {
+                continue;
+            }
+            any_open = true;
+            if cell.route != AdapterRoute::LocalBridge {
+                assert!(
+                    AdapterApplyService::apply_has_arm(
+                        cell.rule_id,
+                        kind,
+                        cell.key.target,
+                        cell.route,
+                    ),
+                    "open cell {} ({:?} -> {:?}) has bind but no apply arm",
+                    cell.rule_id,
+                    kind,
+                    cell.key.target
+                );
+            }
+        }
+        assert!(
+            any_open,
+            "open cell {} has no bind_implementation_open source kind",
+            cell.rule_id
+        );
     }
 }
