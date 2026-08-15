@@ -8,7 +8,7 @@
 > - 协议数据面内核（Codex subscription → Claude Code 候选）：`agenthub-core` 已有纯函数 Messages ↔ IR ↔ Responses 与 `RetryGate` 单测；**无网络、无 secret、无 listener**。  
 > - 路由门禁：`adapter_route_service` 对 Codex OAuth Account → Claude 仍为 `unsupported` / `canApply=false`。  
 > - 控制面 IPC、`agenthub-adapterd` binary、profile saga 迁移：**尚未实现**。  
-> - Connections / Account / Provider / ActiveBinding：**始终由 core services owner**，不迁入 sidecar。
+> - 票、绑定、Connections / Account / Provider / ActiveBinding：**始终由 core services owner**，不迁入 sidecar。生成 Provider 是绑定的私有投影，不是第二套钱包。
 
 ## 1. 决策摘要与现状边界
 
@@ -33,7 +33,7 @@
 | `AgentAdapter` | 每个 Agent 的配置路径、格式与能力差异实现；不是一个常驻进程。 |
 | Adapter 产品功能 | 复用已有 Connection，为目标 Agent 规划并应用 `config_sync`、`native_endpoint` 或 `local_bridge`。 |
 | `local_bridge` | 上下游协议不一致时，以 loopback listener 转换请求/流响应的 Adapter route。 |
-| profile | 持久化的 `local_bridge` 配置及其生成 Provider 的关联；以 `profile_id` 标识。 |
+| profile | 一条 `bridge` 绑定的运行时材料：loopback、本地 bearer、与目标 live 的关联；以 `profile_id` 标识。目标态不是钱包里的新票，见 [connection-binding-model.md](connection-binding-model.md)。 |
 | sidecar | `agenthub-adapterd` 用户级进程，唯一持有目标架构中的 listener 与观测运行状态。 |
 | 控制面 | GUI/CLI 到 sidecar 的管理 IPC，例如 apply、start、stop、status。 |
 | 数据面 | 每个 profile 的 loopback HTTP listener 与目标 Agent 之间的真实请求/流式响应。 |

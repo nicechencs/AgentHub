@@ -1,7 +1,7 @@
 # 账号池：身份 × 授权 与去重方案
 
 > 状态：**产品决策已定；PR-A/B/C 已落地（2026-08-03）**。  
-> 关联：[capability-matrix.md](capability-matrix.md)（Agent 原生能力）、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)（跨 Agent API/OAuth 规则）、[architecture.md](architecture.md)（Service/Adapter）、[cli-and-config.md](cli-and-config.md)（account 命令）。
+> 关联：[capability-matrix.md](capability-matrix.md)（Agent 原生能力）、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)（协议图上的边）、[connection-binding-model.md](connection-binding-model.md)（票 / 绑定）、[architecture.md](architecture.md)、[cli-and-config.md](cli-and-config.md)（account 命令）。
 > **废止**：此前「同 email/user_id 必合并为一条」的草案；以本文为准。
 
 ## 1. 产品决策（硬约束）
@@ -31,6 +31,8 @@
 
 > **身份可以重复出现在列表里；只有「同一张授权票」才去重。  
 > 多枚仍有效的 token = 多条池记录；本机 live 仍只有一个 current。**
+
+跨 Agent 复用时，这里的「授权」就是 [票（Ticket）](connection-binding-model.md)。`agent_id` / 从哪个 Agent 导入只表示出身，**不**决定能不能 `bind` 到别的 Agent。每个 Agent 的 active 绑定至多一条，对应本节的 live 生效位。
 
 ---
 

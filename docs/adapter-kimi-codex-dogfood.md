@@ -2,16 +2,17 @@
 
 > 关联：[adapter-design.md](adapter-design.md) Phase 1 / §11.4。  
 > 自动验收（bridge / restore / 退出协调器）已在工作区通过；**本清单只覆盖必须用桌面应用 + 真实连接完成的项**。  
-> 创建/应用桥的日常入口可以是 Dashboard 卡片「连接/切换」或 Connections「用于其他 Agent」（ConnectFlow）；Adapter 页仍可用于完整预览与桥控件。  
+> 创建/应用桥的日常入口可以是 Dashboard 卡片「连接/切换」或 Connections「用于其他 Agent」（ConnectFlow）；Adapter 页只用于桥控件。  
+> 本清单验收**当前实现**（行按钮仍仅 Kimi 会员 / Claude Anthropic Provider）。目标钱包与「接到…」见 [connection-binding-model.md](connection-binding-model.md)，改 UI 后同步改本节入口描述。  
 > **禁止**把密钥、Authorization、prompt、工具参数或响应正文写入本文件或任何报告。只记 `profile_id`、端口、错误码、耗时、是否完成。
 
 ## Hub ConnectFlow 真机验收（最短）
 
 mock 下 apply 正向链路不可达，必须 `pnpm tauri:dev` + 真实凭据。下列勾选框保持未勾。
 
-入口：Dashboard「连接/切换」与 Connections「用于其他 Agent」（仅 Kimi 会员 Provider、Claude Anthropic Provider 显示该按钮）。
+入口（当前实现）：Dashboard「连接/切换」与 Connections「用于其他 Agent」（仅 Kimi 会员 Provider、Claude Anthropic Provider 显示该按钮）。
 
-反例：OAuth / 普通 apikey / 非会员 Kimi 行不应出现「用于其他 Agent」；Dashboard 对话框内这些来源置灰 + 原因原文。
+反例（当前实现）：OAuth / 普通 apikey / 非会员 Kimi 行不应出现该按钮；Dashboard 对话框内这些来源置灰 + 原因原文。目标态改为真票都有「接到…」，不可行只在对话框置灰——改完 UI 后本反例作废。
 
 ### 1. Kimi 会员 Provider → Claude（直连）
 

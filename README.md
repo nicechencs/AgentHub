@@ -16,8 +16,8 @@ AgentHub 是一个本地运行的多 Agent 桌面管理工具。它用统一的 
 |---|---|
 | **Dashboard** | 查看 Agent 状态、Token 趋势、成本估算与解析健康度；已安装 Agent 可直接连接/切换 |
 | **Agents** | 检测 Node/npm/Git 等运行环境，安装、升级或卸载 Agent |
-| **Connections** | 统一管理官方账号与 API Provider；可看凭据正用于哪些 Agent，并用于其他 Agent；切换前自动备份 live 配置 |
-| **Adapter** | 高级管理（profile、本地桥）；侧栏「桥与适配」。日常创建走 Dashboard / Connections 的 ConnectFlow；规则见[厂商、API 与 OAuth 规则](docs/provider-api-oauth-adaptation.md) |
+| **Connections** | 凭据钱包：管理官方登录与 API Key，查看票正用于哪些 Agent，并接到其他 Agent。目标 UI 为跨 Agent 钱包，见 [票 / 绑定](docs/connection-binding-model.md)；切换前自动备份 live |
+| **Adapter** | 桥运行时（端口、启停、恢复）；侧栏「桥与适配」。日常绑定走 Dashboard / Connections；规则见[厂商、API 与 OAuth 规则](docs/provider-api-oauth-adaptation.md) |
 | **Skills** | 以 `~/.agents/skills/` 为共享真源，向各 Agent 投影和同步技能 |
 | **MCP** | 只读汇总各 Agent 的本机 MCP 配置；管理与注入仍在规划中 |
 | **Chat** | 在桌面端调用一个或多个本机 Agent，并展示流式过程 |
@@ -31,7 +31,7 @@ AgentHub 是一个本地运行的多 Agent 桌面管理工具。它用统一的 
 cargo run -p agenthub-cli -- agent capabilities
 ```
 
-> Adapter 的普通配置写入只开放稳定白名单；本地协议 Bridge 已有实验路径，尚未完成端到端验收。Cursor 仅支持公开的 Agent CLI 能力，不读写 Cursor IDE 私有账号库。
+> 跨 Agent 复用的目标模型是「绑定票」，不是商品白名单；当前可写入路径仍见[适配规则矩阵](docs/provider-api-oauth-adaptation.md#4-当前实现矩阵)。本地协议桥有实验路径，端到端验收未收口。Cursor 仅支持公开的 Agent CLI 能力，不能作为绑定落点（无 live 写入合同）。
 
 ## 快速开始
 
