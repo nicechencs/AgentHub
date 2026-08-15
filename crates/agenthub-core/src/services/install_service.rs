@@ -11,9 +11,6 @@ use std::time::{Duration, Instant};
 use std::path::{Path, PathBuf};
 
 use crate::adapters::AdapterRegistry;
-use crate::catalog::install::{
-    native_ps1_url, native_setup_url, native_sh_url, npm_install_extra_flags, npm_package,
-};
 use crate::catalog::limits::{
     INSTALL_AGENT_TIMEOUT as AGENT_TIMEOUT, INSTALL_ENV_TIMEOUT as ENV_TIMEOUT,
     INSTALL_MAX_OUTPUT_BYTES as MAX_OUTPUT,
@@ -23,7 +20,8 @@ use crate::logging::{self, targets};
 use crate::models::{
     AgentId, DetectStatus, EnvNotReady, EnvStatusKind, InstallOutcome, Remediation, RuntimeId,
 };
-use crate::platform::install::builtin_install_registry;
+use crate::platform::install::{builtin_install_registry, InstallContribution};
+use crate::platform::AgentKey;
 use crate::runtime;
 use crate::services::{LiveWriteAuthority, LiveWriteGuard};
 use crate::storage::Database;
@@ -121,24 +119,85 @@ fn resolve_bin(names: &[&str]) -> Result<String> {
 }
 
 /// Allowlisted binary paths that may be deleted on native uninstall (never arbitrary dirs).
-fn native_uninstall_bin_paths(agent: AgentId) -> Vec<std::path::PathBuf> {
-    builtin_install_registry()
-        .get_agent_id(agent)
-        .map(|c| c.native_uninstall_bin_paths())
-        .unwrap_or_default()
+fn native_uninstall_bin_paths(contribution: &dyn InstallContribution) -> Vec<std::path::PathBuf> {
+    contribution.native_uninstall_bin_paths()
 }
 
 /// Allowlisted external uninstallers: (program, args). Never run arbitrary paths.
-fn native_uninstaller_specs(agent: AgentId) -> Vec<(std::path::PathBuf, Vec<String>)> {
-    builtin_install_registry()
-        .get_agent_id(agent)
-        .map(|c| {
-            c.native_uninstaller_specs()
-                .into_iter()
-                .map(|s| (s.program, s.args))
-                .collect()
-        })
-        .unwrap_or_default()
+fn native_uninstaller_specs(
+    contribution: &dyn InstallContribution,
+) -> Vec<(std::path::PathBuf, Vec<String>)> {
+    contribution
+        .native_uninstaller_specs()
+        .into_iter()
+        .map(|s| (s.program, s.args))
+        .collect()
+}
+
+fn require_contribution_key(
+    key: &AgentKey,
+    contribution: &dyn InstallContribution,
+) -> Result<()> {
+    if contribution.agent_key() != *key {
+        return Err(AppError::InvalidArg(format!(
+            "install contribution key mismatch: expected {}, got {}",
+            key.as_str(),
+            contribution.agent_key().as_str()
+        )));
+    }
+    Ok(())
+}
+
+fn default_channel_from_contribution(contribution: &dyn InstallContribution) -> String {
+    let has_npm = contribution.npm_package().is_some();
+    let has_native = contribution.native_ps1_url().is_some()
+        || contribution.native_sh_url().is_some()
+        || contribution.native_setup_url().is_some();
+    if contribution.prefer_npm_channel_first() && has_npm {
+        "npm".into()
+    } else if has_native {
+        "native".into()
+    } else if has_npm {
+        "npm".into()
+    } else {
+        "native".into()
+    }
+}
+
+fn channel_requires_from_contribution(
+    contribution: &dyn InstallContribution,
+    channel: &str,
+) -> Result<Vec<RuntimeId>> {
+    match channel {
+        "npm" => {
+            if contribution.npm_package().is_none() {
+                return Err(AppError::Unsupported(
+                    "contribution has no npm package for channel 'npm'".into(),
+                ));
+            }
+            Ok(vec![RuntimeId::NodeJs, RuntimeId::Npm])
+        }
+        "native" => {
+            let has_native = contribution.native_ps1_url().is_some()
+                || contribution.native_sh_url().is_some()
+                || contribution.native_setup_url().is_some();
+            if !has_native {
+                return Err(AppError::Unsupported(
+                    "contribution has no native install material for channel 'native'".into(),
+                ));
+            }
+            // POSIX shell installers do not need PowerShell; Windows ps1 does.
+            #[cfg(windows)]
+            if contribution.native_ps1_url().is_some() {
+                return Ok(vec![RuntimeId::PowerShell]);
+            }
+            let _ = contribution;
+            Ok(Vec::new())
+        }
+        other => Err(AppError::InvalidArg(format!(
+            "channel '{other}' is unsupported"
+        ))),
+    }
 }
 
 fn push_log(logs: &mut Vec<String>, line: impl Into<String>) {
@@ -578,6 +637,38 @@ pub fn install_agent(
     install_deps: bool,
     executor: &dyn CommandExecutor,
 ) -> Result<InstallOutcome> {
+    let contribution = builtin_install_registry()
+        .get_agent_id(agent)
+        .ok_or_else(|| {
+            AppError::NotFound(format!(
+                "no install contribution for agent {}",
+                agent.as_str()
+            ))
+        })?;
+    install_agent_with_contribution(
+        registry,
+        agent,
+        contribution.as_ref(),
+        channel,
+        install_deps,
+        executor,
+    )
+}
+
+/// Install using an explicit [`InstallContribution`] allowlist (builtin AgentId path).
+///
+/// Package ids / URLs / flags come from `contribution`; adapter detect remains the
+/// post-install source of truth for built-in agents.
+pub fn install_agent_with_contribution(
+    registry: &AdapterRegistry,
+    agent: AgentId,
+    contribution: &dyn InstallContribution,
+    channel: &str,
+    install_deps: bool,
+    executor: &dyn CommandExecutor,
+) -> Result<InstallOutcome> {
+    let key = AgentKey::from_agent_id(agent);
+    require_contribution_key(&key, contribution)?;
     let started = Instant::now();
     let channel_hint = if channel.is_empty() {
         "(default)"
@@ -600,7 +691,7 @@ pub fn install_agent(
             registry
                 .get(agent)
                 .and_then(|a| a.install_channels().into_iter().next().map(|c| c.id))
-                .unwrap_or_else(|| "native".into())
+                .unwrap_or_else(|| default_channel_from_contribution(contribution))
         } else {
             channel.to_string()
         };
@@ -666,8 +757,10 @@ pub fn install_agent(
         }
 
         let res = match channel.as_str() {
-            "npm" => run_npm_install(agent, false, executor, &mut logs)?,
-            "native" => run_native_install(agent, executor, &mut logs)?,
+            "npm" => run_npm_install(contribution, agent.as_str(), false, executor, &mut logs)?,
+            "native" => {
+                run_native_install(contribution, agent.as_str(), Some(agent), executor, &mut logs)?
+            }
             other => {
                 return Ok(InstallOutcome::failure(
                     action,
@@ -750,12 +843,174 @@ pub fn install_agent(
     result
 }
 
+/// Contribution-driven install for agents without a closed [`AgentId`].
+///
+/// Allowlist material comes solely from `contribution`. Success is based on the
+/// allowlisted command exit status; lifecycle coordinator redetect remains the
+/// observed-install source of truth via its detector registry.
+pub fn install_from_contribution(
+    key: &AgentKey,
+    contribution: &dyn InstallContribution,
+    channel: &str,
+    install_deps: bool,
+    executor: &dyn CommandExecutor,
+) -> Result<InstallOutcome> {
+    require_contribution_key(key, contribution)?;
+    let started = Instant::now();
+    let channel_hint = if channel.is_empty() {
+        "(default)"
+    } else {
+        channel
+    };
+    tracing::info!(
+        module = targets::INSTALL,
+        op = "install_from_contribution",
+        agent = key.as_str(),
+        channel = channel_hint,
+        install_deps = install_deps,
+        "start"
+    );
+
+    let result = (|| {
+        let mut logs = Vec::new();
+        let action = "agent_install";
+        let channel = if channel.is_empty() {
+            default_channel_from_contribution(contribution)
+        } else {
+            channel.to_string()
+        };
+
+        logs.push(format!(
+            "# install {} channel={channel} install_deps={install_deps} (contribution)",
+            key.as_str()
+        ));
+
+        let requires = channel_requires_from_contribution(contribution, &channel)?;
+        if let Err(mut env_err) = runtime::ensure(&requires) {
+            if !install_deps {
+                env_err.agent = Some(key.as_str().into());
+                env_err.channel = Some(channel.clone());
+                let msg = format!(
+                    "环境未就绪: 缺少 {}。请先安装运行环境或使用 --install-deps。",
+                    env_err
+                        .missing
+                        .iter()
+                        .map(|r| r.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                logs.push(msg.clone());
+                let details = serde_json::to_value(&env_err).ok();
+                return Ok(
+                    InstallOutcome::failure(action, logs, msg).with_code("env.not_ready", details)
+                );
+            }
+            for missing in &env_err.missing {
+                if matches!(missing, RuntimeId::NodeJs | RuntimeId::Npm | RuntimeId::Git) {
+                    logs.push(format!("# auto install runtime {}", missing.as_str()));
+                    let env_out =
+                        install_runtime_inner(*missing, default_runtime_channel(), executor)?;
+                    logs.extend(env_out.logs);
+                    if !env_out.ok {
+                        return Ok(InstallOutcome::failure(
+                            action,
+                            logs,
+                            format!(
+                                "依赖 runtime {} 安装失败: {}",
+                                missing.as_str(),
+                                env_out.message
+                            ),
+                        ));
+                    }
+                }
+            }
+            if let Err(still) = runtime::ensure(&requires) {
+                let msg = format!(
+                    "环境仍未就绪: {}",
+                    still
+                        .missing
+                        .iter()
+                        .map(|r| r.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                logs.push(msg.clone());
+                return Ok(InstallOutcome::failure(action, logs, msg));
+            }
+        }
+
+        let res = match channel.as_str() {
+            "npm" => run_npm_install(contribution, key.as_str(), false, executor, &mut logs)?,
+            "native" => {
+                run_native_install(contribution, key.as_str(), None, executor, &mut logs)?
+            }
+            other => {
+                return Ok(InstallOutcome::failure(
+                    action,
+                    logs,
+                    format!("不支持的安装渠道 '{other}'"),
+                ));
+            }
+        };
+
+        // No adapter redetect here — coordinator observes via DetectorRegistry.
+        // Setup-guide channels intentionally return non-zero; treat command
+        // success as the execute-layer result for allowlisted npm/script installs.
+        let ok = res.success();
+        if !ok {
+            logs.push("安装命令未成功退出（lifecycle 将仍执行 redetect）".into());
+        }
+        Ok(InstallOutcome {
+            ok,
+            action: action.into(),
+            logs,
+            message: if ok {
+                format!("{} 安装命令已成功执行", key.as_str())
+            } else {
+                format!("{} 安装命令未成功", key.as_str())
+            },
+            agent: None,
+            runtime: None,
+            ..Default::default()
+        })
+    })();
+
+    log_install_result(
+        "install_from_contribution",
+        started,
+        Some(key.as_str()),
+        None,
+        &result,
+    );
+    result
+}
+
 /// Upgrade an installed agent (npm → reinstall latest; native → re-run install.ps1).
 pub fn upgrade_agent(
     registry: &AdapterRegistry,
     agent: AgentId,
     executor: &dyn CommandExecutor,
 ) -> Result<InstallOutcome> {
+    let contribution = builtin_install_registry()
+        .get_agent_id(agent)
+        .ok_or_else(|| {
+            AppError::NotFound(format!(
+                "no install contribution for agent {}",
+                agent.as_str()
+            ))
+        })?;
+    upgrade_agent_with_contribution(registry, agent, contribution.as_ref(), executor)
+}
+
+/// Upgrade using an explicit [`InstallContribution`] allowlist (builtin AgentId path).
+pub fn upgrade_agent_with_contribution(
+    registry: &AdapterRegistry,
+    agent: AgentId,
+    contribution: &dyn InstallContribution,
+    executor: &dyn CommandExecutor,
+) -> Result<InstallOutcome> {
+    let key = AgentKey::from_agent_id(agent);
+    require_contribution_key(&key, contribution)?;
     let started = Instant::now();
     tracing::info!(
         module = targets::INSTALL,
@@ -811,8 +1066,8 @@ pub fn upgrade_agent(
         );
 
         let res = match channel {
-            "npm" => run_npm_install(agent, true, executor, &mut logs)?,
-            _ => run_native_install(agent, executor, &mut logs)?,
+            "npm" => run_npm_install(contribution, agent.as_str(), true, executor, &mut logs)?,
+            _ => run_native_install(contribution, agent.as_str(), Some(agent), executor, &mut logs)?,
         };
         // A redetected old binary is not evidence that an upgrade succeeded:
         // setup-only channels (for example WorkBuddy) and failed installers
@@ -869,6 +1124,63 @@ pub fn upgrade_agent(
     result
 }
 
+/// Contribution-driven upgrade for agents without a closed [`AgentId`].
+pub fn upgrade_from_contribution(
+    key: &AgentKey,
+    contribution: &dyn InstallContribution,
+    executor: &dyn CommandExecutor,
+) -> Result<InstallOutcome> {
+    require_contribution_key(key, contribution)?;
+    let started = Instant::now();
+    tracing::info!(
+        module = targets::INSTALL,
+        op = "upgrade_from_contribution",
+        agent = key.as_str(),
+        "start"
+    );
+
+    let result = (|| {
+        let mut logs = Vec::new();
+        let action = "agent_upgrade";
+        let channel = default_channel_from_contribution(contribution);
+        push_log(
+            &mut logs,
+            format!("# upgrade {} via {channel} (contribution)", key.as_str()),
+        );
+
+        let res = match channel.as_str() {
+            "npm" => run_npm_install(contribution, key.as_str(), true, executor, &mut logs)?,
+            _ => run_native_install(contribution, key.as_str(), None, executor, &mut logs)?,
+        };
+        let ok = res.success();
+        if !ok {
+            logs.push("升级命令未成功退出".into());
+        }
+        Ok(InstallOutcome {
+            ok,
+            action: action.into(),
+            logs,
+            message: if ok {
+                format!("{} 升级命令已成功执行", key.as_str())
+            } else {
+                format!("{} 升级命令未成功", key.as_str())
+            },
+            agent: None,
+            runtime: None,
+            ..Default::default()
+        })
+    })();
+
+    log_install_result(
+        "upgrade_from_contribution",
+        started,
+        Some(key.as_str()),
+        None,
+        &result,
+    );
+    result
+}
+
 fn upgrade_succeeded(command_ok: bool, detected: &DetectStatus) -> bool {
     command_ok && *detected == DetectStatus::Installed
 }
@@ -899,11 +1211,48 @@ pub fn uninstall_agent_with_authority(
     purge_config: bool,
     executor: &dyn CommandExecutor,
 ) -> Result<InstallOutcome> {
+    let contribution = builtin_install_registry()
+        .get_agent_id(agent)
+        .ok_or_else(|| {
+            AppError::NotFound(format!(
+                "no install contribution for agent {}",
+                agent.as_str()
+            ))
+        })?;
+    uninstall_agent_with_contribution_and_authority(
+        registry,
+        authority,
+        agent,
+        contribution.as_ref(),
+        purge_config,
+        executor,
+    )
+}
+
+/// Uninstall with an explicit contribution allowlist (builtin AgentId path).
+pub fn uninstall_agent_with_contribution_and_authority(
+    registry: &AdapterRegistry,
+    authority: &LiveWriteAuthority,
+    agent: AgentId,
+    contribution: &dyn InstallContribution,
+    purge_config: bool,
+    executor: &dyn CommandExecutor,
+) -> Result<InstallOutcome> {
+    let key = AgentKey::from_agent_id(agent);
+    require_contribution_key(&key, contribution)?;
     if purge_config {
         let guard = authority.acquire(agent)?;
-        return uninstall_agent_with_guard(registry, authority, &guard, agent, true, executor);
+        return uninstall_agent_with_contribution_and_guard(
+            registry,
+            authority,
+            &guard,
+            agent,
+            contribution,
+            true,
+            executor,
+        );
     }
-    uninstall_agent_inner(registry, agent, false, executor)
+    uninstall_agent_inner(registry, agent, contribution, false, executor)
 }
 
 /// Guarded purge counterpart for an enclosing Core lifecycle saga that has
@@ -916,18 +1265,50 @@ pub fn uninstall_agent_with_guard(
     purge_config: bool,
     executor: &dyn CommandExecutor,
 ) -> Result<InstallOutcome> {
+    let contribution = builtin_install_registry()
+        .get_agent_id(agent)
+        .ok_or_else(|| {
+            AppError::NotFound(format!(
+                "no install contribution for agent {}",
+                agent.as_str()
+            ))
+        })?;
+    uninstall_agent_with_contribution_and_guard(
+        registry,
+        authority,
+        guard,
+        agent,
+        contribution.as_ref(),
+        purge_config,
+        executor,
+    )
+}
+
+/// Guarded purge with an explicit contribution allowlist.
+pub fn uninstall_agent_with_contribution_and_guard(
+    registry: &AdapterRegistry,
+    authority: &LiveWriteAuthority,
+    guard: &LiveWriteGuard,
+    agent: AgentId,
+    contribution: &dyn InstallContribution,
+    purge_config: bool,
+    executor: &dyn CommandExecutor,
+) -> Result<InstallOutcome> {
+    let key = AgentKey::from_agent_id(agent);
+    require_contribution_key(&key, contribution)?;
     if !purge_config {
         return Err(AppError::InvalidArg(
             "live-write guard is only valid for config purge".into(),
         ));
     }
     authority.validate_guard(guard, agent)?;
-    uninstall_agent_inner(registry, agent, true, executor)
+    uninstall_agent_inner(registry, agent, contribution, true, executor)
 }
 
 fn uninstall_agent_inner(
     registry: &AdapterRegistry,
     agent: AgentId,
+    contribution: &dyn InstallContribution,
     purge_config: bool,
     executor: &dyn CommandExecutor,
 ) -> Result<InstallOutcome> {
@@ -966,7 +1347,7 @@ fn uninstall_agent_inner(
 
         let mut removed_program = false;
         if is_npm {
-            if let Some(pkg) = npm_package(agent) {
+            if let Some(pkg) = contribution.npm_package() {
                 logs.push(format!("# npm uninstall -g {pkg}"));
                 let npm = resolve_bin(&["npm", "npm.cmd"])?;
                 let req = ExecRequest {
@@ -983,7 +1364,7 @@ fn uninstall_agent_inner(
             // 1) Prefer official silent uninstaller when allowlisted (e.g. WorkBuddy).
             let mut any_removed = false;
             let mut any_found = false;
-            for (program, args) in native_uninstaller_specs(agent) {
+            for (program, args) in native_uninstaller_specs(contribution) {
                 if !program.is_file() {
                     continue;
                 }
@@ -1015,7 +1396,7 @@ fn uninstall_agent_inner(
             }
 
             // 2) Otherwise only delete allowlisted binary files (never rm -rf user trees).
-            let candidates = native_uninstall_bin_paths(agent);
+            let candidates = native_uninstall_bin_paths(contribution);
             for p in &candidates {
                 if p.is_file() {
                     any_found = true;
@@ -1125,17 +1506,135 @@ fn uninstall_agent_inner(
     result
 }
 
+/// Contribution-driven uninstall for agents without a closed [`AgentId`].
+///
+/// Config purge requires a builtin [`AgentId`] home path and is rejected here.
+pub fn uninstall_from_contribution(
+    key: &AgentKey,
+    contribution: &dyn InstallContribution,
+    purge_config: bool,
+    executor: &dyn CommandExecutor,
+) -> Result<InstallOutcome> {
+    require_contribution_key(key, contribution)?;
+    if purge_config {
+        return Err(AppError::Unsupported(format!(
+            "purge_config is unsupported for non-builtin agent key {}",
+            key.as_str()
+        )));
+    }
+
+    let started = Instant::now();
+    tracing::info!(
+        module = targets::INSTALL,
+        op = "uninstall_from_contribution",
+        agent = key.as_str(),
+        "start"
+    );
+
+    let result = (|| {
+        let mut logs = Vec::new();
+        let action = "agent_uninstall";
+        logs.push(
+            "# note: shared runtimes (nodejs/npm/powershell/git) are never uninstalled".into(),
+        );
+
+        let removed_program;
+        if let Some(pkg) = contribution.npm_package() {
+            logs.push(format!("# npm uninstall -g {pkg}"));
+            let npm = resolve_bin(&["npm", "npm.cmd"])?;
+            let req = ExecRequest {
+                program: npm,
+                args: vec!["uninstall".into(), "-g".into(), pkg.into()],
+                timeout: AGENT_TIMEOUT,
+                max_output_bytes: MAX_OUTPUT,
+            };
+            let res = executor.run(&req);
+            push_exec_logs(&mut logs, &res, AGENT_TIMEOUT.as_secs());
+            removed_program = res.success();
+        } else {
+            let mut any_removed = false;
+            let mut any_found = false;
+            for (program, args) in native_uninstaller_specs(contribution) {
+                if !program.is_file() {
+                    continue;
+                }
+                any_found = true;
+                logs.push(format!(
+                    "# run allowlisted uninstaller {} {}",
+                    program.display(),
+                    args.join(" ")
+                ));
+                let req = ExecRequest {
+                    program: program.to_string_lossy().into_owned(),
+                    args: args.clone(),
+                    timeout: AGENT_TIMEOUT,
+                    max_output_bytes: MAX_OUTPUT,
+                };
+                let res = executor.run(&req);
+                push_exec_logs(&mut logs, &res, AGENT_TIMEOUT.as_secs());
+                if res.success() {
+                    any_removed = true;
+                }
+            }
+            for p in native_uninstall_bin_paths(contribution) {
+                if p.is_file() {
+                    any_found = true;
+                    logs.push(format!("# remove allowlisted binary {}", p.display()));
+                    match std::fs::remove_file(&p) {
+                        Ok(()) => {
+                            logs.push(format!("✓ removed {}", p.display()));
+                            any_removed = true;
+                        }
+                        Err(e) => logs.push(format!("✗ remove failed {}: {e}", p.display())),
+                    }
+                }
+            }
+            if !any_found {
+                logs.push(
+                    "no allowlisted native binary/uninstaller found for contribution".into(),
+                );
+            }
+            removed_program = any_removed;
+        }
+
+        Ok(InstallOutcome {
+            ok: removed_program,
+            action: action.into(),
+            logs,
+            message: if removed_program {
+                format!("{} 卸载命令已成功执行", key.as_str())
+            } else {
+                format!("{} 未能自动卸载程序本体", key.as_str())
+            },
+            agent: None,
+            runtime: None,
+            ..Default::default()
+        })
+    })();
+
+    log_install_result(
+        "uninstall_from_contribution",
+        started,
+        Some(key.as_str()),
+        None,
+        &result,
+    );
+    result
+}
+
 fn run_npm_install(
-    agent: AgentId,
+    contribution: &dyn InstallContribution,
+    agent_label: &str,
     upgrade: bool,
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<ExecResult> {
-    let pkg = npm_package(agent)
-        .ok_or_else(|| AppError::Unsupported(format!("{} 无 npm 安装包", agent.as_str())))?;
+    let pkg = contribution.npm_package().ok_or_else(|| {
+        AppError::Unsupported(format!("{agent_label} 无 npm 安装包"))
+    })?;
     let npm = resolve_bin(&["npm", "npm.cmd", "npm.exe"])?;
     let label = if upgrade { "upgrade" } else { "install" };
-    let extra = npm_install_extra_flags(agent);
+    let extra = contribution.npm_install_extra_flags();
     let extra_note = if extra.is_empty() {
         String::new()
     } else {
@@ -1165,48 +1664,55 @@ fn run_npm_install(
 
 /// Platform-aware native installer: Windows → allowlisted ps1; macOS/Linux → allowlisted sh.
 /// Agents with only a Setup website (e.g. WorkBuddy) open the official page instead.
+///
+/// `builtin_agent` is only used to select the historical bash vs posix shell policy for
+/// built-in agents; contribution-only installs default to bash when a sh URL is present.
 fn run_native_install(
-    agent: AgentId,
+    contribution: &dyn InstallContribution,
+    agent_label: &str,
+    builtin_agent: Option<AgentId>,
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<ExecResult> {
-    if native_setup_url(agent).is_some()
-        && native_ps1_url(agent).is_none()
-        && native_sh_url(agent).is_none()
+    if contribution.native_setup_url().is_some()
+        && contribution.native_ps1_url().is_none()
+        && contribution.native_sh_url().is_none()
     {
-        return run_native_setup_guide(agent, executor, logs);
+        return run_native_setup_guide(contribution, agent_label, executor, logs);
     }
     #[cfg(windows)]
     {
-        return run_native_ps1(agent, executor, logs);
+        let _ = builtin_agent;
+        return run_native_ps1(contribution, agent_label, executor, logs);
     }
     #[cfg(not(windows))]
     {
-        return run_native_sh(agent, executor, logs);
+        return run_native_sh(contribution, agent_label, builtin_agent, executor, logs);
     }
 }
 
 /// Open official Setup page and return a non-success result so callers redetect honestly.
 fn run_native_setup_guide(
-    agent: AgentId,
+    contribution: &dyn InstallContribution,
+    agent_label: &str,
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<ExecResult> {
-    let url = native_setup_url(agent)
-        .ok_or_else(|| AppError::Unsupported(format!("{} has no setup URL", agent.as_str())))?;
+    let url = contribution.native_setup_url().ok_or_else(|| {
+        AppError::Unsupported(format!("{agent_label} has no setup URL"))
+    })?;
     if !url.starts_with("https://") {
         return Err(AppError::InvalidArg("setup URL must be https".into()));
     }
     logs.push(format!(
-        "# {} has no scripted installer — open official Setup page",
-        agent.as_str()
+        "# {agent_label} has no scripted installer — open official Setup page"
     ));
     logs.push(format!("# setup url: {url}"));
     tracing::info!(
         target: crate::logging::targets::INSTALL,
         module = crate::logging::targets::INSTALL,
         op = "setup_guide",
-        agent = agent.as_str(),
+        agent = agent_label,
         url = url,
         "opening official Setup page for native install"
     );
@@ -1251,14 +1757,15 @@ fn run_native_setup_guide(
 
 #[cfg(windows)]
 fn run_native_ps1(
-    agent: AgentId,
+    contribution: &dyn InstallContribution,
+    agent_label: &str,
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<ExecResult> {
-    let url = native_ps1_url(agent).ok_or_else(|| {
-        AppError::Unsupported(format!("{} 无 Windows native 安装脚本", agent.as_str()))
+    let url = contribution.native_ps1_url().ok_or_else(|| {
+        AppError::Unsupported(format!("{agent_label} 无 Windows native 安装脚本"))
     })?;
-    // Allowlist: only fixed https URLs from native_ps1_url.
+    // Allowlist: only fixed https URLs from contribution.native_ps1_url.
     if !url.starts_with("https://") {
         return Err(AppError::InvalidArg("install URL must be https".into()));
     }
@@ -1322,16 +1829,17 @@ enum NativeShellRequirement {
 }
 
 #[cfg(not(windows))]
-fn native_sh_shell_requirement(agent: AgentId) -> NativeShellRequirement {
+fn native_sh_shell_requirement(builtin_agent: Option<AgentId>) -> NativeShellRequirement {
     // The current allowlisted CLI setup guides publish `curl ... | bash`.
     // Keep an explicit Posix variant so a future documented sh-compatible
     // script can use the resolved shell without falling back to a hardcoded
     // `bash` inside the pipeline.
-    match agent {
-        AgentId::Claude | AgentId::Kimi | AgentId::Grok | AgentId::Cursor => {
+    // Contribution-only (non-AgentId) installs default to Bash.
+    match builtin_agent {
+        Some(AgentId::Claude | AgentId::Kimi | AgentId::Grok | AgentId::Cursor) | None => {
             NativeShellRequirement::Bash
         }
-        _ => NativeShellRequirement::Posix,
+        Some(_) => NativeShellRequirement::Posix,
     }
 }
 
@@ -1391,20 +1899,21 @@ fn quote_posix_shell_word(word: &str) -> String {
 
 #[cfg(not(windows))]
 fn run_native_sh(
-    agent: AgentId,
+    contribution: &dyn InstallContribution,
+    agent_label: &str,
+    builtin_agent: Option<AgentId>,
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<ExecResult> {
-    let url = native_sh_url(agent).ok_or_else(|| {
+    let url = contribution.native_sh_url().ok_or_else(|| {
         AppError::Unsupported(format!(
-            "{} 在此平台无 allowlisted native sh 安装脚本；请使用 npm 渠道或手动安装",
-            agent.as_str()
+            "{agent_label} 在此平台无 allowlisted native sh 安装脚本；请使用 npm 渠道或手动安装"
         ))
     })?;
     if !url.starts_with("https://") {
         return Err(AppError::InvalidArg("install URL must be https".into()));
     }
-    let requirement = native_sh_shell_requirement(agent);
+    let requirement = native_sh_shell_requirement(builtin_agent);
     let shell = resolve_native_shell(requirement)?;
     let (args, shell_program) = native_shell_invocation(&shell, url);
     push_log(logs, format!("using shell: {shell_program}"));

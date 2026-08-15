@@ -3,6 +3,7 @@ use crate::adapters::register_all;
 use crate::catalog::install::{
     native_ps1_url, native_setup_url, native_sh_url, npm_install_extra_flags, npm_package,
 };
+use crate::platform::install::builtin_install_registry;
 use crate::services::ProviderService;
 use crate::utils::command_exec::ExecRequest;
 use std::sync::{Arc, Mutex};
@@ -127,6 +128,105 @@ fn install_agent_env_not_ready_without_deps() {
 }
 
 #[test]
+fn install_from_contribution_uses_npm_allowlist_without_agent_id() {
+    use crate::platform::AgentKey;
+    use crate::platform::install::InstallContribution;
+
+    struct FakeContrib;
+    impl InstallContribution for FakeContrib {
+        fn agent_key(&self) -> AgentKey {
+            AgentKey::parse("p1-2-fake-npm").unwrap()
+        }
+        fn npm_package(&self) -> Option<&'static str> {
+            Some("@agenthub/p1-2-fake-npm")
+        }
+        fn npm_install_extra_flags(&self) -> &'static [&'static str] {
+            &["--ignore-scripts"]
+        }
+    }
+
+    let key = AgentKey::parse("p1-2-fake-npm").unwrap();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+    };
+
+    if !runtime::is_ready(&[RuntimeId::NodeJs, RuntimeId::Npm]) {
+        let out = install_from_contribution(&key, &FakeContrib, "npm", false, &ex).unwrap();
+        assert!(!out.ok);
+        assert_eq!(out.code.as_deref(), Some("env.not_ready"));
+        assert!(calls.lock().unwrap().is_empty());
+        return;
+    }
+
+    let out = install_from_contribution(&key, &FakeContrib, "npm", false, &ex).unwrap();
+    assert!(out.ok, "msg={}", out.message);
+    let commands = calls.lock().unwrap();
+    assert!(
+        commands.iter().any(|c| {
+            c.contains("install")
+                && c.contains("-g")
+                && c.contains("--ignore-scripts")
+                && c.contains("@agenthub/p1-2-fake-npm")
+        }),
+        "expected contribution npm install command, got {commands:?}"
+    );
+}
+
+#[test]
+fn install_agent_with_contribution_prefers_passed_npm_package() {
+    use crate::platform::AgentKey;
+    use crate::platform::install::InstallContribution;
+
+    struct OverrideClaude;
+    impl InstallContribution for OverrideClaude {
+        fn agent_key(&self) -> AgentKey {
+            AgentKey::parse("claude").unwrap()
+        }
+        fn npm_package(&self) -> Option<&'static str> {
+            Some("@agenthub/override-claude-pkg")
+        }
+    }
+
+    let registry = register_all();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+    };
+
+    if !runtime::is_ready(&[RuntimeId::NodeJs, RuntimeId::Npm]) {
+        return;
+    }
+
+    let _ = install_agent_with_contribution(
+        &registry,
+        AgentId::Claude,
+        &OverrideClaude,
+        "npm",
+        false,
+        &ex,
+    )
+    .unwrap();
+    let commands = calls.lock().unwrap();
+    assert!(
+        commands
+            .iter()
+            .any(|c| c.contains("@agenthub/override-claude-pkg")),
+        "must use contribution package, not catalog default; got {commands:?}"
+    );
+    assert!(
+        commands
+            .iter()
+            .all(|c| !c.contains("@anthropic-ai/claude-code")),
+        "must not fall back to catalog npm package; got {commands:?}"
+    );
+}
+
+#[test]
 fn npm_and_native_plans_are_defined_for_all_agents() {
     for agent in AgentId::ALL {
         // npm package is optional (WorkBuddy is Setup-only).
@@ -192,8 +292,12 @@ fn npm_and_native_plans_are_defined_for_all_agents() {
 #[test]
 fn native_uninstall_paths_are_under_home_allowlist() {
     let home = crate::utils::paths::home_dir().unwrap();
+    let registry = builtin_install_registry();
     for agent in AgentId::ALL {
-        for p in native_uninstall_bin_paths(agent) {
+        let contribution = registry
+            .get_agent_id(agent)
+            .expect("builtin install contribution");
+        for p in native_uninstall_bin_paths(contribution.as_ref()) {
             assert!(
                 p.starts_with(&home),
                 "uninstall path must be under home: {}",
@@ -201,7 +305,7 @@ fn native_uninstall_paths_are_under_home_allowlist() {
             );
         }
         // External uninstallers (WorkBuddy) are path-allowlisted separately.
-        for (program, args) in native_uninstaller_specs(agent) {
+        for (program, args) in native_uninstaller_specs(contribution.as_ref()) {
             assert!(
                 !args.is_empty() || program.as_os_str().len() > 0,
                 "uninstaller entry must be non-empty"
@@ -311,7 +415,17 @@ fn workbuddy_setup_channel_never_reports_success() {
     // installer.  The helper must force a non-success result even when opening
     // the page itself succeeds, so upgrade cannot claim the old binary was
     // upgraded.
-    let result = run_native_install(AgentId::WorkBuddy, &ex, &mut logs).unwrap();
+    let contribution = builtin_install_registry()
+        .get_agent_id(AgentId::WorkBuddy)
+        .expect("workbuddy contribution");
+    let result = run_native_install(
+        contribution.as_ref(),
+        AgentId::WorkBuddy.as_str(),
+        Some(AgentId::WorkBuddy),
+        &ex,
+        &mut logs,
+    )
+    .unwrap();
     assert!(!result.success());
     assert!(logs.iter().any(|line| line.contains("Setup")));
     assert_eq!(calls.lock().unwrap().len(), 1);
