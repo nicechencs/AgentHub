@@ -8,18 +8,19 @@
 > v1.4：**平台环境差异**：PowerShell 仅 Windows 共享 Runtime；macOS/Linux native 安装/升级走官方 sh + bash，不得检测或要求 PowerShell；包管理引导 Windows=`winget`、macOS=`brew`。
 > v1.5：**Adapter sidecar 目标架构**：`local_bridge` 的长驻 Runtime 与完整 saga 迁入用户级 `agenthub-adapterd`；Connections 与 live 配置事务继续由 core service 管理。当前实现仍为 Tauri 进程内宿主，按三阶段迁移。
 
-系列文档：[目录结构与模块拆分](architecture.md) · [票 / 绑定 / 协议图](connection-binding-model.md) · [Adapter Sidecar 目标架构](adapter-sidecar-design.md) · [前端 UI 设计](ui-design.md) · [CLI 与配置契约](cli-and-config.md) · [Hub 重构 Phase 1 记录](hub-redesign-plan.md) · [DeepSeek Harness 接入](deepseek-harness-integration.md)
+系列文档：[产品决策（订阅本机路由）](product-decisions.md) · [目录结构与模块拆分](architecture.md) · [票 / 绑定 / 协议图](connection-binding-model.md) · [Adapter Sidecar 目标架构](adapter-sidecar-design.md) · [前端 UI 设计](ui-design.md) · [CLI 与配置契约](cli-and-config.md) · [Hub 重构 Phase 1 记录](hub-redesign-plan.md) · [DeepSeek Harness 接入](deepseek-harness-integration.md)
 
 ## 1. 已确认决策
 
 | 决策点 | 结论 |
 |---|---|
 | 平台范围 | Windows 为主交付；macOS 已支持源码运行与本机构建；Linux 仅路径/命令抽象预留。**共享 Runtime 与 native 安装命令按宿主平台分流**（见 §5.7.2 / §5.7.5） |
-| 复用策略 | 借鉴同类开源桌面工具的分层与配置管理实践，从零自研 |
-| MVP 范围 | Agent 安装/卸载（含**前置运行时检测与引导**）、API 配置管理、技能/插件管理、Token 统计 |
+| 复用策略 | 配置切换借鉴 cc-switch 一类桌面工具；**订阅本机路由对齐 cc-switch / CLIProxyAPI / Management Center 的产品能力**（见 [product-decisions.md](product-decisions.md)）。实现从零自研，不混入参考项目源码 |
+| MVP 范围 | Agent 安装/卸载（含**前置运行时检测与引导**）、API 配置管理、技能/插件管理、Token 统计、**订阅/账号接到其他 Agent（本机协议转换）** |
 | 产品形态 | GUI + CLI 双端，核心逻辑抽成 `agenthub-core` crate 共享 |
-| OAuth 账号管理 | 支持多账号池 + 一键切换 |
-| Token 统计来源 | **零侵入**：解析各 agent 本地日志/会话文件，不做本地代理 |
+| OAuth 账号管理 | 支持多账号池 + 一键切换；订阅票可经本机桥给其他 Agent 用 |
+| 订阅本机路由 | **核心产品**，不是实验非目标。实现未开 ≠ 产品不做。不做公网入口、号池拼车、转售 |
+| Token 统计来源 | **零侵入**：解析各 agent 本地日志/会话文件。这只约束 Usage，**不禁止** Adapter 本机桥做订阅路由 |
 | Agent 范围 | **当前八家**：Claude / Codex / Kimi / Grok / Pi / WorkBuddy / **Cursor Agent**（半套 CLI）/ **DeepSeek Harness（`dsh`）**；不支持 Cursor IDE 私有库账号池。`dsh` 专项约束见 [deepseek-harness-integration.md](deepseek-harness-integration.md) |
 | 分层原则 | **Service 管编排**（备份/锁/backfill/投影/聚合）；**Adapter 管差异**（路径、读写格式、解析器挂接） |
 | Adapter 进程边界 | `local_bridge` 目标由同包用户级 `agenthub-adapterd` 托管；GUI/CLI 是控制客户端。Connections 不拆进程，OS 系统服务不在当前范围 |
@@ -28,8 +29,8 @@
 
 ### 配置与状态管理类工具 — 最直接参照系
 - **借鉴**：按应用封装「路径 + 读取 + 校验 + 原子写」；供应商配置用灵活 JSON/`Value`，由前端预设模板决定；SQLite 存自身状态（带 schema 迁移）；backfill 机制（切换前把用户手改的 live 配置回存）；原子写（tempfile+rename）、TOML 编辑保留注释格式；前端 API 封装层。AgentHub **实际**为 `lib/backend` 分层 + 页面本地 state。
-- **避坑**：Windows 下不要用 `HOME` 环境变量取 home dir（Git Bash 会注入错误值），用 `dirs::home_dir()`；巨型 `match` 分支散布多处（我们用 trait + 注册表替代）；官方 OAuth 登录态不能被配置切换覆盖，需识别保护；功能膨胀（代理/同步/市场全塞一个 app），AgentHub 要克制。
-- **差异化空间**：多 agent + 账号池，而非仅作为单一 CLI 的供应商预设。
+- **避坑**：Windows 下不要用 `HOME` 环境变量取 home dir（Git Bash 会注入错误值），用 `dirs::home_dir()`；巨型 `match` 分支散布多处（我们用 trait + 注册表替代）；官方 OAuth 登录态不能被配置切换覆盖，需识别保护。
+- **差异化空间**：多 Agent 钱包 + 订阅本机路由（对齐 cc-switch / CLIProxyAPI），而不是只做单一 CLI 的供应商预设。不抄公网网关、号池拼车或参考项目源码。产品取舍见 [product-decisions.md](product-decisions.md)。
 
 ### 账号管理与工程实践类工具
 - **借鉴**：后端分层（commands 薄层 → models → modules → utils）；索引 + 分文件 + SQLite 统计库的混合存储；OAuth loopback 回调（双栈监听、ephemeral 端口、state 校验）；token 提前刷新 + 每账号互斥锁防并发重复刷新；写第三方配置前必备份 + 原子写 + 路径白名单校验。
@@ -182,7 +183,7 @@ trait AgentAdapter {
 ### 5.5 Token 统计（零侵入）与模型列表
 
 #### Token 统计
-- **不做**本地代理、**不**劫持请求；只读解析各 Agent 已有会话/日志。
+- **Usage 不做**本地代理、**不**劫持请求；只读解析各 Agent 已有会话/日志。订阅路由的本机桥是另一条产品线，见 [product-decisions.md](product-decisions.md)。
 - 每 agent 一个 `UsageParser`（独立 `usage/` 目录，经 Adapter `usage_source()` 挂接）→ 统一  
   `UsageRecord { agent, account?, model, input/output/cache tokens, cost?, ts, session_id }`  
   → 增量入库（文件 offset / 哈希去重）。
@@ -374,7 +375,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | Dashboard **生产告警** | 🟡 | 生产从 doctor 派生 auth/env/update 告警（本地 dismiss）；无独立告警总线。mock 可演示额外样例 |
 | Tauri **事件桥** | ❌ | 文档目标；现以前端 refetch 为主 |
 | MCP **管理 / 注入**、`ModelSelect`、`SessionResume` | Planned | `Mcp` 矩阵仍表示管理/注入能力；独立的只读 MCP inventory 已落地，不改变矩阵状态 |
-| 票 / 绑定读模型与钱包重做 | ✅ 读模型、进口打标、`plan` 收口、拒投影、`bind`/`unbind` 写入已落地；§6.4 部分落地（OpenAI/xAI API → Pi）；Grok 边仍不可行；§6.5 Claude bind 已开（GLM/DeepSeek → Claude），Grok/订阅仍关；§6.6 未做 | [connection-binding-model.md](connection-binding-model.md)：`list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`。`canApply` = 现在 bind 会成功（有实现且 secret 可按票 `source_kind` 解析）。可写边：Kimi 会员 Provider → Claude/Pi/Codex，Anthropic / OpenAI / xAI API（Provider 与 Account）→ Pi，Anthropic API（Provider 与 Account）→ Codex，GLM Coding Plan / DeepSeek API（Provider 与 Account）→ Claude。Kimi 会员 Account 仍无分类规则。GLM/DeepSeek → Pi 未开。写入走 bind，apply 为薄兼容委托 |
+| 票 / 绑定读模型与钱包重做 | ✅ 读模型、进口打标、`plan` 收口、拒投影、`bind`/`unbind` 写入已落地；§6.4 部分落地（OpenAI/xAI API → Pi）；Grok 边仍不可行；§6.5 Claude bind 已开（GLM/DeepSeek → Claude），Grok/订阅**实现未开**（产品要做，见 [product-decisions.md](product-decisions.md)）；§6.6 未做 | [connection-binding-model.md](connection-binding-model.md)：`list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`。`canApply` = 现在 bind 会成功（有实现且 secret 可按票 `source_kind` 解析）。可写边：Kimi 会员 Provider → Claude/Pi/Codex，Anthropic / OpenAI / xAI API（Provider 与 Account）→ Pi，Anthropic API（Provider 与 Account）→ Codex，GLM Coding Plan / DeepSeek API（Provider 与 Account）→ Claude。Kimi 会员 Account 仍无分类规则。GLM/DeepSeek → Pi 未开。写入走 bind，apply 为薄兼容委托 |
 | Adapter 本地 Bridge 产品接线 | 🟡 部分实现 | core host、协议转换、Tauri controller、UI 控件、auto-start 恢复与退出 drain 已进入当前工作区；具体可执行状态见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)，端到端验收尚未收口 |
 | Adapter 用户级 sidecar | 🎯 目标已决策 / 未实现 | 当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有；待完成 Tauri-neutral control contract、`agenthub-adapterd`、本地 IPC、单实例/版本+schema 握手、SQLite shared/exclusive schema lease、更新/卸载 saga 和分阶段切换，见 [adapter-sidecar-design.md](adapter-sidecar-design.md) |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |
@@ -402,8 +403,8 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 1. **官方凭据落点随版本变化**：部分 Agent 的主登录态未必落在公开配置文件中。账号切换以文件型凭据导入/备份为先，未确认的路径不强行写入。
 2. **日志格式漂移**：各家 sessions 格式会随版本变。UsageParser 设计为容错（跳过失配记录 + 统计失败率 + 按 agent 版本选择解析器）。
-3. **合规边界**：定位是个人本地管理工具，不提供分发/网关能力；用户须遵守各上游服务条款。
-4. **写第三方配置的跟进成本**：各家配置格式都会变，适配层需要持续维护。项目不建设通用代理平台；Adapter 只按有证据、有 fixtures 的规则开放本地协议桥接。
+3. **合规边界**：定位是个人本机工具，默认不提供公网分发/号池。订阅本机路由是产品能力；非官方通道的账号风险对用户可见。用户须遵守各上游服务条款。
+4. **写第三方配置的跟进成本**：各家配置格式都会变，适配层需要持续维护。本机协议桥是订阅路由的实现手段，按 fixtures 与回滚开放边；不是「不做代理平台」的借口。
 5. **Skills 真源假设**：以 `~/.agents/skills` 为唯一真源；若用户长期只在 Agent 目录改 skill，需补导入/回收，否则仅是单向投影器。
 6. **前置环境安装的权限与策略**：公司机可能禁用 winget/MSI、Node 装完但 GUI 进程 PATH 未刷新、需要「新开终端/重启 AgentHub」才能看到 `node`。产品文案与 `doctor` 需覆盖 **PATH 刷新 / 重启提示**；自动装 Runtime 失败必须降级为可复制命令，禁止假成功。
 7. **不替官方背锅**：Runtime/Agent 安装脚本来自上游；AgentHub 只编排与展示。网络失败、镜像源、证书问题在 UI 中归类为「环境/网络」并给出官方文档入口。

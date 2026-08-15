@@ -31,7 +31,7 @@ AgentHub 是一个本地运行的多 Agent 桌面管理工具。它用统一的 
 cargo run -p agenthub-cli -- agent capabilities
 ```
 
-> 跨 Agent 复用的目标模型是「绑定票」，不是商品白名单；当前可写入路径仍见[适配规则矩阵](docs/provider-api-oauth-adaptation.md#4-当前实现矩阵)。本地协议桥有实验路径，端到端验收未收口。Cursor 仅支持公开的 Agent CLI 能力，不能作为绑定落点（无 live 写入合同）。
+> 跨 Agent 复用的目标模型是「绑定票」。**产品方向**是订阅/账号经本机协议转换后给其他 Agent 用，对齐 cc-switch / CLIProxyAPI，见 [产品决策](docs/product-decisions.md)。当前可写入路径仍见[适配规则矩阵](docs/provider-api-oauth-adaptation.md#4-当前实现矩阵)。本地协议桥有实验路径，端到端验收未收口。Cursor 仅支持公开的 Agent CLI 能力，不能作为绑定落点（无 live 写入合同）。
 
 ## 快速开始
 
@@ -123,6 +123,7 @@ scripts/                构建与发布脚本
 ## 文档与贡献
 
 - [文档索引](docs/README.md)
+- [产品决策（订阅本机路由）](docs/product-decisions.md)
 - [当前实现状态](docs/agenthub-plan.md#8-当前实现状态以代码与测试为准)
 - [架构说明](docs/architecture.md)
 - [Adapter Sidecar 目标架构](docs/adapter-sidecar-design.md)

@@ -2,7 +2,7 @@
 
 > 状态：**当前工作区规则**，不代表已发布版本。
 > 最近核对：2026-08-15。
-> 本文是厂商入口、凭据类型和**协议图上的边**的规则真源。领域对象（票 / 绑定 / 规划器）见 [connection-binding-model.md](connection-binding-model.md)；页面与运行时见 [adapter-design.md](adapter-design.md)、[ui-design.md](ui-design.md)。§4 是**当前可执行矩阵**，不是 UI 白名单，也不是扩大的终点。
+> 本文是厂商入口、凭据类型和**协议图上的边**的规则真源。**产品方向**（订阅本机路由要做）以 [product-decisions.md](product-decisions.md) 为准。领域对象（票 / 绑定 / 规划器）见 [connection-binding-model.md](connection-binding-model.md)；页面与运行时见 [adapter-design.md](adapter-design.md)、[ui-design.md](ui-design.md)。§4 是**当前可执行矩阵**，不是 UI 白名单，也不是产品终点。
 
 ## 1. 先看结论
 
@@ -38,18 +38,20 @@
 5. **默认拒绝写入**：没有代码规则和测试的组合一律不能 `bind`。用户仍看得到原因。
 6. **不复制凭据**：绑定只引用票；真实凭据只在写入 live 或请求上游时短暂解析。生成投影不是新票。
 
-### 1.1 消费级订阅的受限实验边界
+### 1.1 消费级订阅：产品要做，实现按边打开
 
-旧的“消费订阅一律不做”不再是绝对表述：可以评估**当前用户、本机 loopback、用户显式 opt-in** 的实验候选；但这不是把订阅变成通用 API，也不是承诺任何订阅都可被任意客户端使用。
+产品目标与 cc-switch / CLIProxyAPI 对齐：**订阅或 CLI 登录态经本机协议转换后，给其他 Agent 当客户端用**。详见 [product-decisions.md](product-decisions.md)。
 
-实验候选必须同时满足以下边界：
+这就是本机兼容面，不是公网通用网关。旧句「消费订阅一律不做 / 不是把订阅变成通用 API」作废。
+
+安全与运营边界（约束部署形态，不否决产品）：
 
 - 上游 token 不可导出、不可显示、不可复制到目标 Agent；目标只得到本地 loopback bearer。
 - 不监听公网地址，不作为远程服务、团队共享端点、多租户网关、转售或额度池。
-- 每个供应商、产品、OAuth client、上游通道和目标 Agent 组合独立审核；不能从“同为订阅”或某个参考项目可运行推导通用许可。
-- 只有官方契约、条款、端点稳定性、认证刷新、协议转换、隔离与端到端测试全部通过后，规则才可从「可预览」进入实验性 `bridge` 并允许 `bind`；此前 `plan.canApply=false`，但规划结果应对用户可见。
+- 每条边仍要单独做分类、refresh、协议 fixtures 与回滚；不能因为「同为订阅」就自动 `canApply=true`。
+- 打开 `bind` 的条件是工程就绪（secret 可解析、转换器有测试、写入可回滚）。条款与非官方通道风险对用户可见并需 opt-in，**不再**当作「未获官方书面批准就不能做这条产品」。
 
-本节定义订阅桥的实验范围，不是「任意订阅变通用 API」。产品不做公网中转、号池或多人拆票。
+§4 里「订阅仍关 / canApply=false」只描述**当前实现**，不描述产品方向。规划结果应对用户可见。
 
 ## 2. 厂商与产品入口
 
@@ -58,11 +60,11 @@
 | 厂商 / 产品 | 常见凭据 | 协议或客户端约束 | AgentHub 当前结论 |
 |---|---|---|---|
 | Anthropic API / Claude Code | Anthropic API Key；Claude 官方登录 | Claude Code 可连接 Anthropic Messages 兼容网关 | 仅 Anthropic API Key → Pi 有预览规则；Claude OAuth 不跨 Agent 复用 |
-| OpenAI API / ChatGPT / Codex | OpenAI API Key；ChatGPT subscription 登录 | Codex 支持 ChatGPT subscription 登录；自定义 Provider 仍要求 Responses | 显式 OpenAI API Key → Pi 可 bind；ChatGPT/Codex OAuth 只用于明确支持的登录路径。Codex subscription → Claude Code 是受限实验候选，**当前 unsupported**。OpenAI → Grok 不造边 |
+| OpenAI API / ChatGPT / Codex | OpenAI API Key；ChatGPT subscription 登录 | Codex 支持 ChatGPT subscription 登录；自定义 Provider 仍要求 Responses | 显式 OpenAI API Key → Pi 可 bind。**产品要做** Codex 订阅 → Claude（本机桥）；**当前实现**仍 `canApply=false`。OpenAI → Grok 不造边 |
 | Kimi Code 会员平台 | 会员 API Key，**不是 OAuth** | 同一产品提供 Anthropic Messages 与 OpenAI Chat Completions 兼容入口 | 已有 Claude 直连、Codex 实验 Bridge、Pi 预览规则 |
 | Kimi 开放平台 | 开放平台 API Key | 使用独立 Base URL、额度和产品契约 | 不与 Kimi Code 会员 Key 混用；当前无 Adapter 路由 |
-| 智谱 GLM Coding Plan | Coding Plan API Key，**不是 OAuth** | 提供 Anthropic Messages 与 OpenAI Chat Completions 入口；套餐仅限官方支持的工具环境 | 已登记票面；classify 只认显式标记；**Claude bind 已开**（experimental `native_endpoint`）；Grok / 订阅仍关 |
-| DeepSeek API | DeepSeek API Key，**不是 OAuth** | 提供 Anthropic Messages 与 OpenAI Chat Completions 兼容入口；部分 Anthropic 字段会被忽略或不支持 | 已登记票面；classify 只认显式标记；**Claude bind 已开**（experimental `native_endpoint`）；Grok / 订阅仍关 |
+| 智谱 GLM Coding Plan | Coding Plan API Key，**不是 OAuth** | 提供 Anthropic Messages 与 OpenAI Chat Completions 入口；套餐仅限官方支持的工具环境 | 已登记票面；classify 只认显式标记；**Claude bind 已开**（experimental `native_endpoint`）；Grok / 订阅实现未开 |
+| DeepSeek API | DeepSeek API Key，**不是 OAuth** | 提供 Anthropic Messages 与 OpenAI Chat Completions 兼容入口；部分 Anthropic 字段会被忽略或不支持 | 已登记票面；classify 只认显式标记；**Claude bind 已开**（experimental `native_endpoint`）；Grok / 订阅实现未开 |
 | xAI / Grok | xAI API Key；xAI 登录 | API 与账号授权是不同入口 | 显式 xAI API Key → Pi 可 bind；xAI → Grok 是原生切换，不进矩阵 |
 | Google Gemini | Gemini API Key 或 Google 授权 | 原生 API 与 OpenAI 兼容入口需分别声明 | 仅作为候选来源；当前无 Adapter 路由 |
 
@@ -101,7 +103,7 @@ GLM Coding Plan 的凭据和使用范围必须单独识别：
 - 个人版和团队版均使用 Coding Plan API Key；官方明确说明团队套餐 Key 与平台其他 API Key 不通用。
 - 套餐额度仅限官方列出的工具与产品环境，新增规则前必须确认目标工具仍在支持列表中。
 - 官方 Coding Tool Helper 当前可管理 Claude Code、OpenCode、Crush 和 Factory Droid；它只能证明这些工具存在官方配置路径，不代表 AgentHub 已实现适配。
-- GLM Coding Plan 已登记票面；**Claude bind 已开**（experimental `native_endpoint`）。Grok / 订阅仍关；GLM → Pi 未开。
+- GLM Coding Plan 已登记票面；**Claude bind 已开**（experimental `native_endpoint`）。Grok / 订阅实现未开；GLM → Pi 未开。
 
 ### 2.4 DeepSeek API
 
@@ -120,7 +122,7 @@ DeepSeek API 票和 DeepSeek Harness（Agent `dsh`）不是同一对象：
 | DeepSeek Harness（`dsh`） | `config_sync`：凭据引用 + 官方 provider 槽（常见 `deepseek-official`） | **可应用**；`rule_id=deepseek-api-to-dsh-v1`。识别靠 preset `deepseek-api` / `deepseek` 或 host `api.deepseek.com`，**不要**仅凭 `agent_id=dsh` 升级 |
 | Codex | 默认 `unsupported` | Chat Completions 不代表 Responses |
 
-DeepSeek API 已登记票面；**Claude bind 已开**（experimental `native_endpoint`）。Grok / 订阅仍关；DeepSeek → Pi 未开。接到 `dsh` 时走对方官方 LLM adapter，不把 Harness 当 Messages↔Responses 桥，也不把 OAuth 票写入其凭据缝。
+DeepSeek API 已登记票面；**Claude bind 已开**（experimental `native_endpoint`）。Grok / 订阅实现未开；DeepSeek → Pi 未开。接到 `dsh` 时走对方官方 LLM adapter，不把 Harness 当 Messages↔Responses 桥，也不把 OAuth 票写入其凭据缝。
 
 ## 3. 路由类型
 
@@ -153,7 +155,7 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 | GLM Coding Plan Provider / Account（preset / extra.provider / 官方 host） | Claude Code | experimental `native_endpoint` | **可实验应用**；写入 `https://open.bigmodel.cn/api/anthropic`，凭据只引用 |
 | DeepSeek API Provider / Account（preset `deepseek-api` / `deepseek` / 官方 host） | Claude Code | experimental `native_endpoint` | **可实验应用**；写入 `https://api.deepseek.com/anthropic`，凭据只引用 |
 | DeepSeek API Provider（preset `deepseek-api` / `deepseek` 或 host `api.deepseek.com`） | DeepSeek Harness（`dsh`） | stable `config_sync` | **可应用**；写入 home 级官方 provider 引用，Key 只进 `.credentials.yaml`，不进 `cordis.patch.yml` |
-| Codex OAuth Account，`credentials.format=auth_json`（ChatGPT subscription） | Claude Code | 受限实验候选 | **maturity=preview**；可解释门禁，`plan.canApply=false`，不得创建 profile、启动 bridge 或写入 Claude 配置。Phase 1 **纯协议内核**（Messages↔IR↔Responses + RetryGate fixtures）已在 `agenthub-core` 落地，**不改变**本行可执行状态 |
+| Codex OAuth Account，`credentials.format=auth_json`（ChatGPT subscription） | Claude Code | **产品目标边**（本机桥） | **当前实现** `maturity=preview`，`plan.canApply=false`：还不能创建 profile、启动 bridge 或写入 Claude。Phase 1 纯协议内核已在 core；缺的是 transport / session / apply，不是产品否决。见 [product-decisions.md](product-decisions.md) |
 | 其他来源、目标或未标记记录 | 任意 | `unsupported` | 不产生写操作 |
 
 补充边界：
@@ -161,7 +163,7 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 - Kimi managed OAuth 不会被识别为 Kimi Code 会员 API Key。
 - Kimi Code 会员识别：**`meta.preset=kimi-code-membership`**，或配置中出现官方端点 **`api.kimi.com/coding`**（无 preset 的 live import 仍可识别）。仅 `agent_id=kimi` 或 Moonshot 开放平台 **不会**升为会员。
 - 普通 OpenAI、xAI 只认显式标记（preset / extra.provider / 官方 host）；自定义中转保持 `unknown`，不可 bind。OpenAI/xAI → Pi 已可 bind；Kimi→Grok、OpenAI→Grok 不造边；xAI→Grok 不进矩阵（native）。
-- GLM Coding Plan、DeepSeek API 已登记票面（speaks 可双协议），classify 只认显式标记；**Claude bind 已开**（experimental `native_endpoint`，Provider 与 Account）；DeepSeek → DSH **已可应用**（Provider，`deepseek-api-to-dsh-v1`）；Grok / 订阅仍关。GLM/DeepSeek → Pi 未开。
+- GLM Coding Plan、DeepSeek API 已登记票面（speaks 可双协议），classify 只认显式标记；**Claude bind 已开**（experimental `native_endpoint`，Provider 与 Account）；DeepSeek → DSH **已可应用**（Provider，`deepseek-api-to-dsh-v1`）；Grok / 订阅**实现未开**（产品要做，见 [product-decisions.md](product-decisions.md)）。GLM/DeepSeek → Pi 未开。
 - Gemini、Kimi 开放平台或任意“兼容 API”目前都不会自动升级为 Adapter 规则。
 - `stable` / `experimental` / `preview` / `none` 是 `plan.maturity`：矩阵开放+Stable → `stable`；矩阵开放+Experimental → `experimental`；有 cell 但 gates 关或仅可解释 → `preview`；无边 / Other → `none`。`canApply` 仍只表示现在能写入。
 - Kimi → Codex 与 Anthropic API Key → Codex 是当前两条 Bridge 可写路径，不代表已经提供通用协议网关。
@@ -174,27 +176,27 @@ AgentHub 当前可发起的登录与跨 Agent 适配是两套能力：
 | 登录目标 | AgentHub 当前入口 | 能否据此跨 Agent 复用 |
 |---|---|---|
 | Claude | PKCE | 否；当前没有 OAuth Adapter 规则 |
-| Codex / ChatGPT | PKCE | 否；仅用于明确支持该授权的客户端 |
+| Codex / ChatGPT | PKCE | **产品要做**跨 Agent 本机桥；**当前实现**仅用于明确支持该授权的客户端 |
 | Grok / xAI | PKCE | 否；当前没有 OAuth Adapter 规则 |
 | Pi | Anthropic PKCE、OpenAI Codex PKCE、xAI device code | 仅写入 Pi 对应的 provider 槽位；不能推导其他 Agent 可用 |
 | Kimi | 当前没有 AgentHub OAuth 登录入口 | 会员 API Key 与 Kimi CLI managed OAuth 必须分开 |
 
 OAuth access/refresh token 带有客户端、受众、范围和刷新语义。只有目标客户端公开支持相同契约，并且 AgentHub 增加显式规则与测试后，才允许 `config_sync`；否则应引导用户使用目标客户端自己的登录流程。
 
-### 5.1 Codex / ChatGPT subscription → Claude Code：当前结论与前置门禁
+### 5.1 Codex / ChatGPT subscription → Claude Code：产品要做，实现未开
 
-该组合的目标是让 Claude Code 通过官方 LLM gateway 配置的 `ANTHROPIC_BASE_URL` 与 `ANTHROPIC_AUTH_TOKEN` 调用**本机** bridge，而非把 ChatGPT OAuth token 写入 Claude Code。它当前没有可执行规则：`unsupported`、`canApply=false`、不创建 profile、不调用 sidecar mutation。
+该组合是订阅本机路由的**第一条产品边**（对齐 cc-switch 的 Codex OAuth 反代、CLIProxyAPI 的 Codex 兼容口）。目标：Claude Code 通过 `ANTHROPIC_BASE_URL` 与 `ANTHROPIC_AUTH_TOKEN` 调用**本机** bridge，而不是把 ChatGPT OAuth token 写入 Claude Code。
 
-OpenAI Codex 支持 ChatGPT subscription 登录；官方 Codex App Server 面向 rich-client integration，并管理 ChatGPT OAuth 与 token refresh。但 App Server 不是标准模型 API，是否能作为安全、语义匹配的“模型上游”尚未被证明。不得把“能登录 Codex”或参考代理“能跑”视为模型请求通道已经获得批准。
+**当前实现**仍不能 bind：`canApply=false`、不创建 profile、不启动 bridge。这是工程缺口，不是产品否决。见 [product-decisions.md](product-decisions.md)。
 
-在判断能否进入可应用状态前，必须对上游候选分别执行独立 spike。最终至少一条候选的技术、官方契约与条款门禁完整通过并被明确选定；其他候选可以在留下结论与证据后明确淘汰：
+打开 `canApply` 前必须选定一条可工作的上游 transport，并用 fixtures 证明协议闭环。参考项目能跑是产品证据，不是可以把对方源码贴进仓库的许可。官方 App Server 与 Responses 通道都要做 spike；**不再**要求「官方契约 / 条款书面批准」才允许把这条边当产品：
 
 | 候选 | 必须回答的问题 | 未通过时 |
 |---|---|---|
-| Codex App Server transport | 请求/流式事件语义是否足以承载 Claude Code 回合；工具、上下文与取消如何映射；是否会造成双 Agent、双工具执行或意外副作用 | 保持 `unsupported`；不把 App Server 当作通用模型 HTTP endpoint |
-| 经批准的 Codex Responses transport | OAuth 结合 Responses 的官方支持、适用条款、端点稳定性、授权范围和刷新契约是否明确 | 保持 `unsupported`；不从非官方/反向工程端点推导生产路径 |
+| Codex App Server transport | 请求/流式事件语义是否足以承载 Claude Code 回合；工具、上下文与取消如何映射；是否会造成双 Agent、双工具执行或意外副作用 | 继续 `canApply=false`；记下缺口，换下一条候选 |
+| Codex Responses transport（含参考项目已走通的本机反代通道） | OAuth + Responses 能否稳定刷新、流式/工具/取消能否闭环、失败会不会留下死 loopback | 继续 `canApply=false`；不把未测通道标成已开放 |
 
-被选定的 transport 必须证明：身份只用于当前用户，token 不跨 IPC 泄露，刷新不导致并发风暴，协议闭环正确，且失败不会留下可用的 Claude Code loopback 配置。没有任何候选通过时，UI 只能提供“使用 Claude 自身登录或已支持 API Key”的替代路径。
+被选定的 transport 必须证明：身份只用于当前用户，token 不跨 IPC 泄露，刷新不导致并发风暴，协议闭环正确，且失败不会留下可用的 Claude Code loopback 配置。两条都未就绪时，UI 仍展示这条产品边为可预览，并给出 Claude 自身登录或已支持 API Key 作为临时替代。
 
 ### 5.2 订阅桥接的分层契约（设计目标，未实现）
 
@@ -259,7 +261,7 @@ Claude Code
 
 规则分析、计划与执行必须使用同一规则版本。`bridge` 由专用 Bridge 服务执行。新增边不得只在 UI 绕过 `plan`。`plan.canApply=false` 时用户仍应看见原因。
 
-对于 subscription 实验候选，流程在“是否有已测试的转换器”前还必须检查 capability matrix 的全部门禁；任一门禁缺失则不能 `bind`，但规划结果应对用户可见。显式 opt-in 不能替代这些门禁。
+对于订阅边，流程在“是否有已测试的转换器”前还必须检查 capability matrix 的工程门禁（分类、secret、fixtures、回滚）；任一门禁缺失则不能 `bind`，但规划结果应对用户可见。opt-in 不能替代这些工程门禁，也**不能**再被理解成「产品上不做订阅」。
 
 ## 7. 新增或更新规则
 
@@ -277,10 +279,10 @@ Claude Code
 
 | 阶段 | 交付与门禁 | `canApply` | 当前进度（2026-08-12） |
 |---|---|---|---|
-| 0. 证据与 fixtures | 固化官方依据、条款结论、身份分类样例、Messages/IR/Responses/SSE 正反例 fixtures；确认参考实现许可边界 | `false` | **进行中**：`crates/agenthub-core/src/bridge/protocol/fixtures/` 已有 Messages / Responses / SSE 正反例；官方条款与 transport 选定证据仍未闭环 |
+| 0. 证据与 fixtures | 固化身份分类样例、Messages/IR/Responses/SSE 正反例 fixtures；确认参考实现许可边界与选定 transport | `false` | **进行中**：`crates/agenthub-core/src/bridge/protocol/fixtures/` 已有 Messages / Responses / SSE 正反例；transport 选定证据仍未闭环 |
 | 1. 纯协议内核 | 无网络、无 secret 的 Anthropic Messages ↔ IR ↔ Responses 转换及状态机测试 | `false` | **内核已落地、门禁仍关闭**：`IrEvent` / `RetryGate`、`parse_messages_request`、`to_responses_request`、`responses_output_to_ir`、`ResponsesStreamToIr`、`encode_anthropic_sse` 与协议单测已在 core；**不得**据此开放 Apply |
-| 2. 认证 / transport spike | 分别验证 App Server 与经批准 Responses 候选；验证 OAuth refresh、single-flight、取消、工具副作用与不泄露 secret | `false` | **未开始**（或未完成证据）；Account OAuth refresh 能力存在 ≠ 已批准上游 transport |
-| 3. sidecar profile 与 Apply saga | 至少一个 transport 候选的技术、官方契约与条款门禁完整通过并被明确选定后，实现 loopback bearer、profile、core-owner IPC、目标配置写入和完整失败回滚；其他候选可明确淘汰 | 仅受控实验规则可为 `true` | **未开始**；控制面 IPC 与 Connections 领域仍见 sidecar 设计文档；**不得**跳过 phase 2 |
+| 2. 认证 / transport spike | 分别验证 App Server 与 Responses（含参考项目已走通的本机反代通道）；验证 OAuth refresh、single-flight、取消、工具副作用与不泄露 secret | `false` | **未开始**（或未完成证据）；Account OAuth refresh 能力存在 ≠ 已选定上游 transport |
+| 3. sidecar profile 与 Apply saga | 至少一条 transport 在协议/refresh/回滚上通过后，实现 loopback bearer、profile、core-owner IPC、目标配置写入和完整失败回滚；其他候选可明确淘汰 | 工程就绪后可为 `true` | **未开始**；控制面 IPC 与 Connections 领域仍见 sidecar 设计文档；**不得**跳过 phase 2 |
 | 4. dogfood / experimental rollout | 当前用户、本机、显式 opt-in 的小范围验证与持续回归；发现上游/条款/语义漂移立即降级 | 受控且可撤销 | **未开始** |
 | 以后 | 每个供应商/产品/目标组合重新取证 | 默认 `false` | 默认拒绝 |
 
@@ -290,9 +292,9 @@ Claude Code
 
 ### 7.2 参考实现与许可证
 
-`cc-switch` 可作为本机代理、Codex OAuth single-flight refresh、Responses ↔ Anthropic（非流式/SSE）转换的设计证据；`sub2api` 可作为完整 Anthropic ↔ Responses 状态机、首事件前重试、输出后禁止重放和账号失效隔离的测试参考；`AionUi` 仅可作为轻量非流式转换参考。它们都不是上游官方契约，也不构成开放本方案的依据。
+`cc-switch`、`CLIProxyAPI` 与 Management Center 是**产品对齐对象**：订阅本机路由、协议转换、管理面登录/配额/探测。它们也是协议与 refresh 的设计证据，但不是上游官方契约，也不能把对方源码贴进本仓库。`sub2api` 可作为完整 Anthropic ↔ Responses 状态机、首事件前重试、输出后禁止重放和账号失效隔离的测试参考；`AionUi` 仅可作为轻量非流式转换参考。
 
-在复制或改编任何代码前必须单独审查许可证与边界：cc-switch 为 MIT、sub2api 为 LGPL、AionUi 为 Apache-2.0。优先重写协议实现与 fixtures；未经审查不得把参考项目代码混入本仓库。
+在复制或改编任何代码前必须单独审查许可证与边界：cc-switch 为 MIT、sub2api 为 LGPL、AionUi 为 Apache-2.0。优先重写协议实现与 fixtures；未经审查不得把参考项目代码混入本仓库。产品取舍见 [product-decisions.md](product-decisions.md)。
 
 ## 8. 官方资料
 
