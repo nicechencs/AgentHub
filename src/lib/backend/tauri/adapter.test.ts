@@ -157,14 +157,14 @@ describe('mapAdapterInvokeError', () => {
   it('keeps a structured GuiError payload including retryable and details', () => {
     expect(() => mapAdapterInvokeError({
       code: 'adapter.port_in_use',
-      message: '本地适配服务无法启动或停止',
+      message: '本机桥无法启动或停止',
       details: '127.0.0.1:32123 already bound',
       retryable: true,
     })).toThrow(AdapterCommandError);
     try {
       mapAdapterInvokeError({
         code: 'adapter.port_in_use',
-        message: '本地适配服务无法启动或停止',
+        message: '本机桥无法启动或停止',
         details: '127.0.0.1:32123 already bound',
         retryable: true,
       });
@@ -172,7 +172,7 @@ describe('mapAdapterInvokeError', () => {
       expect(error).toMatchObject({
         name: 'AdapterCommandError',
         code: 'adapter.port_in_use',
-        message: '本地适配服务无法启动或停止',
+        message: '本机桥无法启动或停止',
         details: '127.0.0.1:32123 already bound',
         retryable: true,
       });

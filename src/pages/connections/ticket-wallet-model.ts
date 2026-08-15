@@ -22,6 +22,7 @@ import {
   ticketSurfaceLabel,
 } from '@/lib/backend/contracts/ticket';
 import { accountToEntry, providerToEntry } from './connection-model';
+import { bridgesHrefForProfile } from '@/pages/bridges/adapter-model';
 
 export type TicketWalletFilter = 'all' | TicketCredentialClass;
 
@@ -37,12 +38,17 @@ export function isUnrecognizedTicket(ticket: Pick<TicketView, 'surface' | 'crede
   return ticket.surface === 'unknown' || ticket.credentialClass === 'unknown';
 }
 
+export type TicketUsagePart =
+  | { kind: 'text'; text: string }
+  | { kind: 'bridge'; label: string; href: string };
+
 export interface TicketWalletRow {
   ticket: TicketView;
   bindings: BindingView[];
   /** Active bindings for highlightAgent (deep-link ?agent=). */
   highlighted: boolean;
   usageText: string;
+  usageParts: TicketUsagePart[];
 }
 
 export function bindingsForTicket(
@@ -52,22 +58,45 @@ export function bindingsForTicket(
   return wallet.bindings.filter((b) => b.ticketId === ticketId);
 }
 
-export function formatBindingUsagePart(binding: BindingView): string {
+export function formatBindingUsageParts(binding: BindingView): TicketUsagePart[] {
   const route = bindingRouteUsageLabel(binding.route);
   const name = agentDisplayName(binding.agentId);
-  if (binding.route === 'bridge' && binding.bridge?.running) {
-    return `${name}（${route} · 运行中）`;
+  if (binding.route === 'bridge') {
+    const suffix = binding.bridge?.running
+      ? ' · 运行中'
+      : binding.bridge && !binding.bridge.running
+        ? ' · 已停止'
+        : '';
+    return [
+      { kind: 'text', text: `${name}（` },
+      { kind: 'bridge', label: route, href: bridgesHrefForProfile(binding.profileId) },
+      { kind: 'text', text: `${suffix}）` },
+    ];
   }
-  if (binding.route === 'bridge' && binding.bridge && !binding.bridge.running) {
-    return `${name}（${route} · 已停止）`;
-  }
-  return `${name}（${route}）`;
+  return [{ kind: 'text', text: `${name}（${route}）` }];
+}
+
+export function formatBindingUsagePart(binding: BindingView): string {
+  return formatBindingUsageParts(binding)
+    .map((part) => (part.kind === 'bridge' ? part.label : part.text))
+    .join('');
+}
+
+export function formatTicketUsageParts(bindings: readonly BindingView[]): TicketUsagePart[] {
+  const active = bindings.filter((b) => b.active);
+  if (active.length === 0) return [{ kind: 'text', text: '未使用' }];
+  const parts: TicketUsagePart[] = [{ kind: 'text', text: '正用于：' }];
+  active.forEach((binding, index) => {
+    if (index > 0) parts.push({ kind: 'text', text: ' · ' });
+    parts.push(...formatBindingUsageParts(binding));
+  });
+  return parts;
 }
 
 export function formatTicketUsageText(bindings: readonly BindingView[]): string {
-  const active = bindings.filter((b) => b.active);
-  if (active.length === 0) return '未使用';
-  return `正用于：${active.map(formatBindingUsagePart).join(' · ')}`;
+  return formatTicketUsageParts(bindings)
+    .map((part) => (part.kind === 'bridge' ? part.label : part.text))
+    .join('');
 }
 
 export function countTicketsByFilter(
@@ -186,6 +215,7 @@ export function buildTicketWalletRows(
       bindings,
       highlighted,
       usageText: formatTicketUsageText(bindings),
+      usageParts: formatTicketUsageParts(bindings),
     };
   });
 }

@@ -316,7 +316,7 @@ describe('buildAgentCardView', () => {
     ['unavailable', '状态不可用'],
   ] as const)('maps bridge state %s to label %s', (state, label) => {
     const view = buildAgentCardView(claude, status('claude'), { bridge: { state } });
-    expect(view.bridge).toEqual({ state, label });
+    expect(view.bridge).toEqual({ state, label, profileId: null });
     expect(view.ariaLabel).toContain(label);
     expect(AGENT_CARD_BRIDGE_LABEL[state]).toBe(label);
   });
@@ -325,7 +325,14 @@ describe('buildAgentCardView', () => {
     const view = buildAgentCardView(claude, status('claude'), {
       bridge: { state: 'unavailable' },
     });
-    expect(view.bridge).toEqual({ state: 'unavailable', label: '状态不可用' });
+    expect(view.bridge).toEqual({ state: 'unavailable', label: '状态不可用', profileId: null });
+  });
+
+  it('forwards the current-bridge profileId for /bridges deep links', () => {
+    const view = buildAgentCardView(claude, status('claude'), {
+      bridge: { state: 'running', profileId: 'bridge-1' },
+    });
+    expect(view.bridge).toEqual({ state: 'running', label: '运行中', profileId: 'bridge-1' });
   });
 
   it('treats null badge fields as absent', () => {
@@ -394,7 +401,7 @@ describe('mergeAgentsInOrder', () => {
     });
     expect(merged.map((c) => c.meta.id)).toEqual(METAS.map((m) => m.id));
     expect(merged[0]!.view.viaAdapter).toEqual({ sourceLabel: 'Kimi 会员' });
-    expect(merged[0]!.view.bridge).toEqual({ state: 'running', label: '运行中' });
+    expect(merged[0]!.view.bridge).toEqual({ state: 'running', label: '运行中', profileId: null });
     expect(merged[2]!.view.viaAdapter).toBeUndefined();
     expect(merged[2]!.view.bridge).toBeUndefined();
   });

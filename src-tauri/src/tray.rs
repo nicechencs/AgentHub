@@ -132,8 +132,8 @@ fn show_bridge_impact_prompt<R: Runtime>(
     action: CoordinatedShutdownAction,
 ) {
     let bridge_text = match preparation.active_bridge_count {
-        Some(count) => format!("{count} 个本地适配服务正在运行。"),
-        None => "本地适配服务状态暂时无法读取。".to_owned(),
+        Some(count) => format!("{count} 个本机桥正在运行。"),
+        None => "本机桥状态暂时无法读取。".to_owned(),
     };
     let (action_label, impact_label) = match action {
         CoordinatedShutdownAction::Exit => ("停止服务并退出", "停止服务并退出会中断"),
@@ -144,7 +144,7 @@ fn show_bridge_impact_prompt<R: Runtime>(
         .message(format!(
             "{bridge_text}\n{impact_label}这些本地 Connections。也可以让它们继续在托盘中运行，或取消本次操作。"
         ))
-        .title("本地适配服务正在运行")
+        .title("本机桥正在运行")
         .kind(MessageDialogKind::Warning)
         .buttons(MessageDialogButtons::OkCancelCustom(
             action_label.to_owned(),
@@ -166,16 +166,16 @@ fn show_bridge_impact_prompt<R: Runtime>(
 fn show_continue_running_prompt<R: Runtime>(app: AppHandle<R>, action: CoordinatedShutdownAction) {
     let message = match action {
         CoordinatedShutdownAction::Exit => {
-            "选择“隐藏到托盘”会保留正在运行的本地适配服务和 Connections；也可以取消本次退出。"
+            "选择“隐藏到托盘”会保留正在运行的本机桥和 Connections；也可以取消本次退出。"
         }
         CoordinatedShutdownAction::Restart => {
-            "选择“隐藏到托盘”会保留正在运行的本地适配服务和 Connections，并暂不重启；也可以取消本次重启。"
+            "选择“隐藏到托盘”会保留正在运行的本机桥和 Connections，并暂不重启；也可以取消本次重启。"
         }
     };
     let callback_app = app.clone();
     app.dialog()
         .message(message)
-        .title("继续运行本地适配服务？")
+        .title("继续运行本机桥？")
         .kind(MessageDialogKind::Info)
         .buttons(MessageDialogButtons::OkCancelCustom(
             "隐藏到托盘".to_owned(),

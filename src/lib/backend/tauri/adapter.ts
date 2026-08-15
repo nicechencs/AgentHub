@@ -58,7 +58,7 @@ export function mapAdapterInvokeError(error: unknown): never {
   }
   throw adapterCommandError({
     code: 'adapter.command',
-    message: error instanceof Error ? error.message : '适配操作失败',
+    message: error instanceof Error ? error.message : '操作失败',
     retryable: false,
   });
 }

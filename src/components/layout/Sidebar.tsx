@@ -6,7 +6,7 @@ import {
   Bot,
   Key,
   Blocks,
-  Boxes,
+  Cable,
   Plug,
   FolderKanban,
   Settings2,
@@ -17,12 +17,19 @@ import { AgentDot } from '@/components/shared/AgentDot';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { AGENTS } from '@/config/agents';
-import { useAgentStatusesOptional, useAppUpdateAvailable } from '@/app/runtime';
+import {
+  loadBridgePresence,
+  shouldShowBridgesNav,
+  useAgentStatusesOptional,
+  useAppUpdateAvailable,
+  useBridgePresence,
+} from '@/app/runtime';
 import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/layout/SidebarContext';
 import { installedCatalogAgents } from '@/components/layout/sidebar-agents';
 import { cn } from '@/lib/utils';
+import { BRIDGES_NAV_LABEL, BRIDGES_PATH } from '@/pages/bridges/adapter-model';
 
 /** 工作区 */
 const NAV_WORKSPACE = [
@@ -37,7 +44,7 @@ const NAV_WORKSPACE = [
 const NAV_MANAGE = [
   { to: '/', label: 'Dashboard', icon: Gauge },
   { to: '/connections', label: 'Connections', icon: Key },
-  { to: '/adapter', label: '桥与适配', icon: Boxes },
+  { to: BRIDGES_PATH, label: BRIDGES_NAV_LABEL, icon: Cable },
   { to: '/settings', label: 'Settings', icon: Settings2 },
 ] as const;
 
@@ -143,9 +150,18 @@ export function Sidebar() {
   const { collapsed, toggle } = useSidebar();
   const { statuses: agents } = useAgentStatusesOptional();
   const appUpdate = useAppUpdateAvailable();
+  const bridgePresence = useBridgePresence();
   const settingsNotice = appUpdate
     ? { label: `有可用更新 v${appUpdate.version}` }
     : null;
+
+  React.useEffect(() => {
+    void loadBridgePresence();
+  }, []);
+
+  const manageItems = NAV_MANAGE.filter((item) => (
+    item.to !== BRIDGES_PATH || shouldShowBridgesNav(bridgePresence)
+  ));
 
   const installed = agents.filter((a) => a.installed).length;
 
@@ -226,7 +242,7 @@ export function Sidebar() {
           ))}
         </NavGroup>
         <NavGroup label="管理" collapsed={collapsed} className="mt-auto pb-2">
-          {NAV_MANAGE.map((item) => (
+          {manageItems.map((item) => (
             <SidebarNavLink
               key={item.to}
               item={item}
