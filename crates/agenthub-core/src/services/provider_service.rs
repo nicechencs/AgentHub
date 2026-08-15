@@ -10,16 +10,18 @@ use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    AgentConfig, AgentId, BackupKind, Capability, Provider, ProviderInput, ProviderSwitchResult,
+    attach_persisted_surface, AdapterSourceKind, AgentConfig, AgentId, BackupKind, Capability,
+    PersistedTicketSurface, Provider, ProviderInput, ProviderSwitchResult, TicketSurface,
 };
 use crate::services::switch_undo::{
     clear_switch_undo, extract_probe_url, peek_switch_undo, probe_url_latency_ms,
     record_switch_undo, PROVIDER_UNDO_PREFIX,
 };
 use crate::services::{
-    AdapterSecretResolver, BackupService, ConnectionService, LiveWriteAuthority, LiveWriteGuard,
+    AdapterRouteService, AdapterSecretResolver, BackupService, ConnectionService,
+    LiveWriteAuthority, LiveWriteGuard,
 };
-use crate::storage::{Database, ProviderRepo};
+use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
 use crate::utils::redact::redact_text;
 
 /// Maximum Unicode scalar values allowed in a provider id.
@@ -210,12 +212,13 @@ impl ProviderService {
             created_at: now.clone(),
             updated_at: now,
         };
-        if row.is_current {
+        let created = if row.is_current {
             let (created, _binding) = self.connections.create_and_activate_provider(&row)?;
-            Ok(created)
+            created
         } else {
-            self.repo.create(&row)
-        }
+            self.repo.create(&row)?
+        };
+        self.stamp_provider_surface(created)
     }
 
     /// Update an existing provider by id. Core owns `updated_at`; preserves `created_at`.
@@ -262,13 +265,14 @@ impl ProviderService {
             created_at: String::new(),
             updated_at: now_ts(),
         };
-        if row.is_current {
+        let updated = if row.is_current {
             let (updated, _binding) = self.connections.update_and_activate_provider(&row)?;
-            Ok(updated)
+            updated
         } else {
             // Demote path: update + clear binding when this row was active.
-            self.connections.update_provider_non_current(&row)
-        }
+            self.connections.update_provider_non_current(&row)?
+        };
+        self.stamp_provider_surface(updated)
     }
 
     /// Insert or update. On existing rows: preserve `created_at`, reject `agent_id` change.
@@ -315,10 +319,11 @@ impl ProviderService {
         };
         if row.is_current {
             let (upserted, _binding) = self.connections.upsert_and_activate_provider(&row)?;
-            Ok(upserted)
+            self.stamp_provider_surface(upserted)
         } else {
             // Demote / plain upsert: clear binding only if it references this id.
-            self.connections.upsert_provider_non_current(&row)
+            let upserted = self.connections.upsert_provider_non_current(&row)?;
+            self.stamp_provider_surface(upserted)
         }
     }
 
@@ -397,6 +402,29 @@ impl ProviderService {
         self.restore_live_config_snapshot_with_guard(&guard, snapshot)
     }
 
+    /// Restore a named live backup while an existing provider saga guard is held.
+    pub fn restore_named_backup_with_guard(
+        &self,
+        guard: &ProviderLiveSagaGuard<'_>,
+        backup_id: &str,
+    ) -> Result<()> {
+        let backup = self.backup.as_ref().ok_or_else(|| {
+            AppError::Unsupported(
+                "provider live restore requires an explicitly configured backup root".into(),
+            )
+        })?;
+        let record = backup.get_by_id(backup_id)?;
+        let agent = record.agent_id.ok_or_else(|| {
+            AppError::InvalidArg(format!(
+                "backup {backup_id} has no agent_id; cannot restore live files"
+            ))
+        })?;
+        self.validate_live_saga_guard(guard, agent)?;
+        backup
+            .restore_with_guard(guard.as_live_write_guard(), backup_id)
+            .map(|_| ())
+    }
+
     /// Restore a live config while an existing saga guard remains held.
     pub fn restore_live_config_snapshot_with_guard(
         &self,
@@ -449,7 +477,7 @@ impl ProviderService {
                 && existing.name == desired_name
                 && existing.is_current
             {
-                return Ok(existing);
+                return self.stamp_provider_surface(existing);
             }
 
             let input = ProviderInput {
@@ -460,7 +488,8 @@ impl ProviderService {
                 meta: existing.meta,
                 is_current: true,
             };
-            return self.update_inner(&input);
+            let updated = self.update_inner(&input)?;
+            return self.stamp_provider_surface(updated);
         }
 
         let input = ProviderInput {
@@ -472,7 +501,50 @@ impl ProviderService {
             is_current: true,
         };
         // Use inner create so import is a single log op (not create + import).
-        self.create_inner(&input)
+        let created = self.create_inner(&input)?;
+        self.stamp_provider_surface(created)
+    }
+
+    /// Classify the persisted row and write `meta.surface` before upsert /
+    /// import_live returns. `classify_source_product` reads the stored row.
+    ///
+    /// Adapter-generated projections are not tickets: skip them even when
+    /// classify would return `unknown`.
+    fn stamp_provider_surface(&self, provider: Provider) -> Result<Provider> {
+        if self.is_generated_projection(&provider)? {
+            return Ok(provider);
+        }
+        let product = AdapterRouteService::new(self.db.clone())
+            .classify_source_product(AdapterSourceKind::Provider, &provider.id)?;
+        let surface = TicketSurface::from_product(product);
+        if TicketSurface::from_persisted_json(&provider.meta)
+            == PersistedTicketSurface::Known(surface)
+        {
+            return Ok(provider);
+        }
+        let expected_updated_at = provider.updated_at.clone();
+        let mut stamped = provider;
+        attach_persisted_surface(&mut stamped.meta, surface);
+        stamped.updated_at = now_ts();
+        self.repo
+            .update_healed_fields(&stamped, &expected_updated_at, &stamped.updated_at)
+    }
+
+    /// Projections are not tickets. Match `generatedBy=adapter` or an existing
+    /// profile that already points at this row as `generated_provider_id`.
+    fn is_generated_projection(&self, provider: &Provider) -> Result<bool> {
+        if provider
+            .meta
+            .get("generatedBy")
+            .and_then(|value| value.as_str())
+            == Some("adapter")
+        {
+            return Ok(true);
+        }
+        Ok(AdapterProfileRepo::new(self.db.clone())
+            .list_filtered(&Default::default())?
+            .iter()
+            .any(|profile| profile.generated_provider_id.as_deref() == Some(provider.id.as_str())))
     }
 
     /// Locate the canonical live-import row for one agent. Older databases may

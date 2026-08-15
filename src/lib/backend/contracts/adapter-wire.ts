@@ -11,6 +11,7 @@ import type {
   AdapterBridgeRuntimeStatus,
   AdapterEvidence,
   AdapterGateKind,
+  AdapterMaturity,
   AdapterPlanChange,
   AdapterProfile,
   AdapterProfileMode,
@@ -107,6 +108,8 @@ export interface AdapterApplyPlanWire {
   analysis: AdapterRouteAnalysisWire;
   targetAgentId: AgentId;
   canApply: boolean;
+  maturity?: string;
+  reason?: string;
   serviceImpact: string;
   changes: AdapterPlanChangeWire[];
 }
@@ -141,6 +144,13 @@ function mapProfileMode(value: string): AdapterProfileMode {
 function mapSupport(value: string): AdapterSupport {
   if (value === 'stable' || value === 'experimental' || value === 'unsupported') return value;
   return invalidWireValue('support', value);
+}
+
+function mapMaturity(value: string | null | undefined): AdapterMaturity {
+  if (value === 'stable' || value === 'experimental' || value === 'preview' || value === 'none') {
+    return value;
+  }
+  return 'none';
 }
 
 function mapGateKind(value: string | null | undefined): AdapterGateKind {
@@ -296,10 +306,16 @@ export function mapAdapterRouteAnalysis(wire: AdapterRouteAnalysisWire): Adapter
 }
 
 export function mapAdapterApplyPlan(wire: AdapterApplyPlanWire): AdapterApplyPlan {
+  const analysis = mapAdapterRouteAnalysis(wire.analysis);
+  const reason = typeof wire.reason === 'string' && wire.reason.trim()
+    ? wire.reason
+    : analysis.reason;
   return {
-    analysis: mapAdapterRouteAnalysis(wire.analysis),
+    analysis,
     targetAgentId: wire.targetAgentId,
     canApply: wire.canApply,
+    maturity: mapMaturity(wire.maturity),
+    reason,
     serviceImpact: mapServiceImpact(wire.serviceImpact),
     changes: wire.changes.map(mapPlanChange),
   };

@@ -278,8 +278,7 @@ pub(crate) async fn start_local_bridge(
         auto_start: profile.auto_start,
     };
     // Manual start must not steal Codex current if the user already switched away.
-    let applied =
-        apply_local_bridge_locked(hub, host.clone(), coordinator, request, false).await?;
+    let applied = apply_local_bridge_locked(hub, host.clone(), coordinator, request, false).await?;
     let status = host
         .status(&applied.profile.id)
         .map_err(map_bridge_host_error)?
@@ -333,9 +332,8 @@ pub(crate) async fn set_local_bridge_auto_start(
     .await
 }
 
-/// Remove an adapter profile, stopping a local bridge only after a strict
-/// bridge-specific preflight. Local bridges cannot use the Claude-only
-/// `AdapterApplyService::remove` ownership validator.
+/// Remove an adapter profile. Local bridges stop first, then `unbind`
+/// restores previous live (including current) and deletes the projection.
 pub(crate) async fn remove_adapter_with_bridge_cleanup(
     hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
@@ -359,56 +357,19 @@ pub(crate) async fn remove_adapter_with_bridge_cleanup(
         .await;
     }
 
-    // Preflight and stop outside the Core live-saga critical section so listener
-    // drain does not hold the cross-process provider lock.
-    let preflight_profile = with_hub_blocking(hub.clone(), {
-        let profile_id = profile_id.clone();
-        move |hub| {
-            hub.adapter_bridge
-                .preflight_remove(&profile_id)
-                .map(|removal| removal.profile().clone())
-                .map_err(|error| map_err_string("preflight_remove_adapter_bridge", error))
-        }
-    })
-    .await?;
-    let _ = stop_bridge_runtime(&host, &preflight_profile).await?;
-
-    // Revalidate, delete provider, and complete profile removal under the same
-    // target authority and Core live-saga guard as bridge apply.
+    // Stop outside the Core live-saga critical section so listener drain does
+    // not hold the cross-process provider lock. Current bindings are allowed:
+    // unbind restores previous live before deleting the projection.
+    let _ = stop_bridge_runtime(&host, &profile).await?;
+    let ticket_id = agenthub_core::models::ticket_id(profile.source_kind, &profile.source_id);
+    let agent_id = profile.target_agent_id;
     with_hub_blocking(hub, move |hub| {
-        let core_guard = hub
-            .providers
-            .begin_live_saga(AgentId::Codex)
-            .map_err(|error| map_err_string("begin_adapter_bridge_remove_saga", error))?;
-        let removal = hub
-            .adapter_bridge
-            .preflight_remove(&profile_id)
-            .map_err(|error| map_err_string("remove_adapter_bridge", error))?;
-        let recovery = removal.recovery_input();
-        if let Some(provider_id) = removal.generated_provider_id() {
-            hub.providers
-                .delete_with_guard(&core_guard, provider_id, AgentId::Codex)
-                .map_err(|error| map_err_string("remove_adapter_bridge_provider", error))?;
-        }
-        if let Err(_error) = hub.adapter_bridge.complete_remove(&removal) {
-            let restored = recovery
-                .as_ref()
-                .is_some_and(|input| hub.providers.create_with_guard(&core_guard, input).is_ok());
-            let code = if restored {
-                "adapter.bridge_remove_profile_restored"
-            } else {
-                "adapter.bridge_remove_incomplete"
-            };
-            return Err(format!(
-                "本地适配器删除未完成；{} [{code}]",
-                if restored {
-                    "已恢复 generated Connection"
-                } else {
-                    "generated Connection 已移除，请重试删除"
-                }
-            ));
-        }
-        Ok(())
+        hub.ticket_bind
+            .unbind(&agenthub_core::models::TicketUnbindRequest {
+                ticket_id,
+                agent_id,
+            })
+            .map_err(|error| map_err_string("unbind_ticket", error))
     })
     .await
 }
@@ -501,13 +462,12 @@ pub(crate) fn restore_adapter_bridges(
                 if let Err(error) = with_hub_blocking(hub.clone(), {
                     let profile_id = profile.id.clone();
                     let port = runtime.status.port;
-                    move |hub| {
-                        realign_restored_bridge_port(hub, &profile_id, port)
-                    }
+                    move |hub| realign_restored_bridge_port(hub, &profile_id, port)
                 })
                 .await
                 {
-                    let _ = compensate_started_bridge(&host, &profile.id, runtime.owned_by_saga).await;
+                    let _ =
+                        compensate_started_bridge(&host, &profile.id, runtime.owned_by_saga).await;
                     mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_PROJECTION).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "bridge rebound to a new port but provider projection could not be realigned");
                     continue;
@@ -901,8 +861,7 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
     let provider_id = input.id.clone();
 
     if let Err(error) = hub.providers.update_with_guard(&core_guard, &input) {
-        let rollback =
-            rollback_bridge_projection(hub, &core_guard, &provider_id, &snapshot, false);
+        let rollback = rollback_bridge_projection(hub, &core_guard, &provider_id, &snapshot, false);
         return Err(composite_saga_error(
             "update_adapter_bridge_restore_port",
             map_err_string("update_adapter_bridge_restore_port", error),
@@ -927,8 +886,7 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
         // persist_restored_port is last and transactional, so a failure leaves
         // profile.local_port on the old preferred port. Compensate provider and
         // live config so restore can stop the rebound listener safely.
-        let rollback =
-            rollback_bridge_projection(hub, &core_guard, &provider_id, &snapshot, false);
+        let rollback = rollback_bridge_projection(hub, &core_guard, &provider_id, &snapshot, false);
         return Err(composite_saga_error(
             "persist_adapter_bridge_restore_port",
             map_err_string("persist_adapter_bridge_restore_port", error),

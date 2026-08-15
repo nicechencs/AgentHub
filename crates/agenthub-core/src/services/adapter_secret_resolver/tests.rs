@@ -1,5 +1,10 @@
 use super::*;
-use crate::services::adapter_route_constants::KIMI_MEMBERSHIP_PRESET;
+use crate::models::{Account, AccountKind};
+use crate::services::adapter_route_constants::{
+    DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, GLM_CLAUDE_BASE_URL, KIMI_CLAUDE_BASE_URL,
+    KIMI_MEMBERSHIP_PRESET, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT,
+};
+use crate::storage::AccountRepo;
 use serde_json::json;
 
 fn provider(id: &str, agent_id: AgentId, settings_config: Value, meta: Value) -> Provider {
@@ -389,6 +394,29 @@ fn local_token_bridge_passes_through_but_unknown_generated_metadata_fails_closed
         bridge.settings_config
     );
 
+    let anthropic_bridge = provider(
+        "generated-codex-anthropic",
+        AgentId::Codex,
+        json!({
+            "format": "toml",
+            "content": "model_provider = 'agenthub_anthropic_bridge'\n",
+            "auth": { "OPENAI_API_KEY": "local-anthropic-bridge-token" },
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": ANTHROPIC_TO_CODEX_BRIDGE_RULE,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": LOCAL_TOKEN_MODE,
+            "adapterProfileId": "anthropic-bridge-profile",
+            "adapterSourceRef": { "kind": SOURCE_KIND_ACCOUNT, "id": "anthropic-account" },
+        }),
+    );
+    assert!(!resolver.is_reference_provider(&anthropic_bridge).unwrap());
+    assert_eq!(
+        resolver.materialize_for_live(&anthropic_bridge).unwrap(),
+        anthropic_bridge
+    );
+
     for mutation in [
         json!({"adapterRuleVersion": 2}),
         json!({"adapterRuleVersion": "1"}),
@@ -441,6 +469,209 @@ fn coding_endpoint_without_preset_resolves_and_materializes() {
     assert_eq!(
         target(&source.id).settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
         CONNECTION_SECRET_MARKER
+    );
+}
+
+#[test]
+fn anthropic_account_source_materializes_and_scrubs_without_plaintext() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("adapter-secret-resolver.db")).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "anthropic-account".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::ApiKey,
+            label: "Anthropic key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "sk-account-secret"
+            }),
+            extra: json!({"provider": "anthropic"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let resolver = AdapterSecretResolver::new(db);
+    resolver
+        .validate_anthropic_source(AdapterSourceKind::Account, "anthropic-account")
+        .unwrap();
+
+    let mut target = pi_anthropic_target("anthropic-account");
+    target.meta["adapterSourceRef"] = json!({"kind": "account", "id": "anthropic-account"});
+    assert!(resolver.is_reference_provider(&target).unwrap());
+    let materialized = resolver.materialize_for_live(&target).unwrap();
+    assert_eq!(
+        materialized.settings_config["models"]["providers"][ANTHROPIC_PI_PROVIDER_SLOT]["apiKey"],
+        "sk-account-secret"
+    );
+    assert_eq!(
+        target.settings_config["models"]["providers"][ANTHROPIC_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+
+    let live_raw = json!({
+        "models": {
+            "providers": {
+                ANTHROPIC_PI_PROVIDER_SLOT: { "apiKey": "sk-account-secret" }
+            }
+        }
+    });
+    let scrubbed = resolver.scrub_for_backfill(&target, &live_raw).unwrap();
+    assert_eq!(
+        scrubbed["models"]["providers"][ANTHROPIC_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert!(!serde_json::to_string(&scrubbed)
+        .unwrap()
+        .contains("sk-account-secret"));
+}
+
+fn pi_openai_target(source_id: &str) -> Provider {
+    provider(
+        "generated-pi-openai",
+        AgentId::Pi,
+        json!({
+            "models": {
+                "providers": {
+                    OPENAI_PI_PROVIDER_SLOT: {
+                        "apiKey": CONNECTION_SECRET_MARKER
+                    }
+                }
+            }
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": OPENAI_TO_PI_RULE,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": SOURCE_REFERENCE_MODE,
+            "adapterSourceRef": { "kind": SOURCE_KIND_PROVIDER, "id": source_id },
+        }),
+    )
+}
+
+fn pi_xai_target(source_id: &str) -> Provider {
+    provider(
+        "generated-pi-xai",
+        AgentId::Pi,
+        json!({
+            "models": {
+                "providers": {
+                    XAI_PI_PROVIDER_SLOT: {
+                        "apiKey": CONNECTION_SECRET_MARKER
+                    }
+                }
+            }
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": XAI_TO_PI_RULE,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": SOURCE_REFERENCE_MODE,
+            "adapterSourceRef": { "kind": SOURCE_KIND_ACCOUNT, "id": source_id },
+        }),
+    )
+}
+
+#[test]
+fn openai_provider_and_xai_account_materialize_and_scrub() {
+    let source = provider(
+        "openai-source",
+        AgentId::Codex,
+        json!({"env": { OPENAI_API_KEY_ENV: "sk-openai-secret" }}),
+        json!({"preset": "openai"}),
+    );
+    let (_dir, resolver) = resolver_with(source.clone());
+    resolver
+        .validate_explicit_api_source(OPENAI_TO_PI_RULE, AdapterSourceKind::Provider, "openai-source")
+        .unwrap();
+    let target = pi_openai_target(&source.id);
+    let materialized = resolver.materialize_for_live(&target).unwrap();
+    assert_eq!(
+        materialized.settings_config["models"]["providers"][OPENAI_PI_PROVIDER_SLOT]["apiKey"],
+        "sk-openai-secret"
+    );
+    let scrubbed = resolver
+        .scrub_for_backfill(
+            &target,
+            &json!({"models": {"providers": { OPENAI_PI_PROVIDER_SLOT: { "apiKey": "sk-openai-secret" } }}}),
+        )
+        .unwrap();
+    assert_eq!(
+        scrubbed["models"]["providers"][OPENAI_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert!(!serde_json::to_string(&scrubbed)
+        .unwrap()
+        .contains("sk-openai-secret"));
+
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("adapter-secret-resolver.db")).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "xai-account".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::ApiKey,
+            label: "xAI key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "xai-account-secret"
+            }),
+            extra: json!({"provider": "xai"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let resolver = AdapterSecretResolver::new(db);
+    resolver
+        .validate_explicit_api_source(XAI_TO_PI_RULE, AdapterSourceKind::Account, "xai-account")
+        .unwrap();
+    let target = pi_xai_target("xai-account");
+    let materialized = resolver.materialize_for_live(&target).unwrap();
+    assert_eq!(
+        materialized.settings_config["models"]["providers"][XAI_PI_PROVIDER_SLOT]["apiKey"],
+        "xai-account-secret"
+    );
+}
+
+#[test]
+fn anthropic_account_rejects_missing_format_or_key_and_kimi_account_kind() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("adapter-secret-resolver.db")).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "no-format".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::ApiKey,
+            label: "Anthropic key".into(),
+            credentials: json!({"api_key": "sk-account-secret"}),
+            extra: json!({"provider": "anthropic"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let resolver = AdapterSecretResolver::new(db);
+    assert_eq!(
+        resolver
+            .validate_anthropic_source(AdapterSourceKind::Account, "no-format")
+            .unwrap_err()
+            .code(),
+        "invalid_arg"
+    );
+
+    let mut kimi_target = pi_kimi_target("no-format");
+    kimi_target.meta["adapterSourceRef"] = json!({"kind": "account", "id": "no-format"});
+    assert_eq!(
+        resolver
+            .materialize_for_live(&kimi_target)
+            .unwrap_err()
+            .code(),
+        "invalid_arg"
     );
 }
 
@@ -516,6 +747,26 @@ fn dsh_target(source_id: &str) -> Provider {
     )
 }
 
+fn claude_native_target(source_id: &str, rule_id: &str, base_url: &str, kind: &str) -> Provider {
+    provider(
+        "generated-claude-native",
+        AgentId::Claude,
+        json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": base_url,
+                "ANTHROPIC_AUTH_TOKEN": CONNECTION_SECRET_MARKER,
+            }
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": rule_id,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": SOURCE_REFERENCE_MODE,
+            "adapterSourceRef": { "kind": kind, "id": source_id },
+        }),
+    )
+}
+
 #[test]
 fn dsh_source_reference_materializes_and_scrubs() {
     let source = provider(
@@ -577,5 +828,92 @@ fn dsh_rejects_agent_id_only_source_and_missing_secret() {
             .unwrap_err()
             .code(),
         "invalid_arg"
+    );
+}
+
+#[test]
+fn glm_provider_and_deepseek_account_materialize_and_scrub_by_rule_url() {
+    let source = provider(
+        "glm-source",
+        AgentId::Claude,
+        json!({"env": { ANTHROPIC_AUTH_TOKEN_ENV: "glm-secret" }}),
+        json!({"preset": "glm-coding-plan"}),
+    );
+    let (_dir, resolver) = resolver_with(source.clone());
+    resolver
+        .validate_explicit_api_source(
+            GLM_TO_CLAUDE_RULE,
+            AdapterSourceKind::Provider,
+            "glm-source",
+        )
+        .unwrap();
+    let target = claude_native_target(&source.id, GLM_TO_CLAUDE_RULE, GLM_CLAUDE_BASE_URL, "provider");
+    let materialized = resolver.materialize_for_live(&target).unwrap();
+    assert_eq!(
+        materialized.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "glm-secret"
+    );
+    assert_eq!(
+        materialized.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        GLM_CLAUDE_BASE_URL
+    );
+    let scrubbed = resolver
+        .scrub_for_backfill(&target, &materialized.settings_config)
+        .unwrap();
+    assert_eq!(
+        scrubbed["env"]["ANTHROPIC_AUTH_TOKEN"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(scrubbed["env"]["ANTHROPIC_BASE_URL"], GLM_CLAUDE_BASE_URL);
+    assert!(!serde_json::to_string(&scrubbed).unwrap().contains("glm-secret"));
+
+    let mut wrong_url = target.clone();
+    wrong_url.settings_config["env"]["ANTHROPIC_BASE_URL"] = json!(KIMI_CLAUDE_BASE_URL);
+    assert_eq!(
+        resolver.materialize_for_live(&wrong_url).unwrap_err().code(),
+        "invalid_arg"
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("adapter-secret-resolver.db")).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "deepseek-account".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::ApiKey,
+            label: "DeepSeek key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "deepseek-account-secret"
+            }),
+            extra: json!({"provider": "deepseek-api"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let resolver = AdapterSecretResolver::new(db);
+    resolver
+        .validate_explicit_api_source(
+            DEEPSEEK_TO_CLAUDE_RULE,
+            AdapterSourceKind::Account,
+            "deepseek-account",
+        )
+        .unwrap();
+    let target = claude_native_target(
+        "deepseek-account",
+        DEEPSEEK_TO_CLAUDE_RULE,
+        DEEPSEEK_CLAUDE_BASE_URL,
+        "account",
+    );
+    let materialized = resolver.materialize_for_live(&target).unwrap();
+    assert_eq!(
+        materialized.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "deepseek-account-secret"
+    );
+    assert_eq!(
+        materialized.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        DEEPSEEK_CLAUDE_BASE_URL
     );
 }

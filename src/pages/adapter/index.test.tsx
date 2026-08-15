@@ -98,7 +98,7 @@ function plan(route: AdapterRouteAnalysis['route'], changes: AdapterPlanChange[]
 describe('Adapter page view model', () => {
   it('describes the page as profile and bridge management', () => {
     expect(adapterPageDescription()).toBe(
-      '日常连接与跨服务复用请走 Dashboard「连接/切换」或 Connections「用于其他 Agent」。本页管理已创建的适配与本地桥。',
+      '本页只管理已绑定的本机桥运行时（端口、启停、恢复）。创建绑定请走 Dashboard「连接/切换」或 Connections「接到…」。',
     );
   });
 

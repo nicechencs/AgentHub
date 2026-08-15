@@ -367,7 +367,8 @@ fn create_update_upsert_delete_crud_and_errors() {
     assert_eq!(created.id, "p1");
     assert_eq!(created.name, "Alpha");
     assert!(!created.created_at.is_empty());
-    assert_eq!(created.created_at, created.updated_at);
+    assert!(created.updated_at >= created.created_at);
+    assert_eq!(created.meta["surface"], "unknown");
     // Secrets remain unredacted at service boundary (CLI redacts).
     assert_eq!(created.settings_config["api_key"], "sk-live-secret");
 
@@ -557,7 +558,8 @@ fn import_live_preserves_full_secrets_and_marks_new_row_current() {
     assert!(imported.id.starts_with("claude-live-"));
     assert!(imported.is_current);
     assert_eq!(imported.settings_config, live.raw);
-    assert_eq!(imported.meta, json!({"source": "live"}));
+    assert_eq!(imported.meta["source"], "live");
+    assert_eq!(imported.meta["surface"], "unknown");
     assert_eq!(
         imported.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
         "live-secret"
@@ -1251,4 +1253,101 @@ fn updating_non_current_provider_does_not_touch_live() {
     );
     assert_eq!(adapter.config(), live);
     assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), writes_before);
+}
+
+#[test]
+fn create_skips_surface_for_adapter_generated_projection() {
+    let (_dir, svc) = svc();
+    let created = svc
+        .create(&ProviderInput {
+            id: "claude-kimi-adapter".into(),
+            agent_id: AgentId::Claude,
+            name: "Kimi Code (kimi-source)".into(),
+            settings_config: json!({"env": {
+                "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+                "ANTHROPIC_AUTH_TOKEN": "$AGENTHUB_CONNECTION_SECRET$"
+            }}),
+            meta: json!({
+                "preset": "anthropic-compatible",
+                "generatedBy": "adapter",
+                "adapterRuleId": "kimi-membership-to-claude-v1",
+                "adapterRuleVersion": 1,
+                "adapterSecretMode": "source_reference",
+                "adapterProfileId": "adapter-kimi-claude",
+                "adapterSourceRef": {"kind": "provider", "id": "kimi-source"},
+            }),
+            is_current: false,
+        })
+        .unwrap();
+    assert!(
+        created.meta.get("surface").is_none(),
+        "projection create must not stamp surface: {}",
+        created.meta
+    );
+    assert_eq!(created.meta["generatedBy"], "adapter");
+    let stored = svc
+        .get("claude-kimi-adapter", Some(AgentId::Claude))
+        .unwrap();
+    assert!(stored.meta.get("surface").is_none());
+}
+
+#[test]
+fn create_writes_classified_surface() {
+    let (_dir, svc) = svc();
+    let created = svc
+        .create(&ProviderInput {
+            id: "kimi-mem".into(),
+            agent_id: AgentId::Kimi,
+            name: "Kimi membership".into(),
+            settings_config: json!({}),
+            meta: json!({"preset": "kimi-code-membership"}),
+            is_current: false,
+        })
+        .unwrap();
+    assert_eq!(created.meta["surface"], "kimi-code-membership");
+    assert_eq!(created.meta["preset"], "kimi-code-membership");
+}
+
+#[test]
+fn upsert_writes_kimi_and_unknown_surface() {
+    let (_dir, svc) = svc();
+    let kimi = svc
+        .upsert(&ProviderInput {
+            id: "kimi-mem".into(),
+            agent_id: AgentId::Kimi,
+            name: "Kimi membership".into(),
+            settings_config: json!({}),
+            meta: json!({"preset": "kimi-code-membership"}),
+            is_current: false,
+        })
+        .unwrap();
+    assert_eq!(kimi.meta["surface"], "kimi-code-membership");
+    assert_eq!(kimi.meta["preset"], "kimi-code-membership");
+
+    let unknown = svc
+        .upsert(&ProviderInput {
+            id: "relay".into(),
+            agent_id: AgentId::Claude,
+            name: "Custom relay".into(),
+            settings_config: json!({"base_url": "https://relay.example.com"}),
+            meta: json!({"preset": "openai-compatible"}),
+            is_current: false,
+        })
+        .unwrap();
+    assert_eq!(unknown.meta["surface"], "unknown");
+}
+
+#[test]
+fn import_live_writes_kimi_membership_surface() {
+    let live = AgentConfig {
+        agent: AgentId::Kimi,
+        raw: json!({
+            "base_url": "https://api.kimi.com/coding/v1",
+            "api_key": "kimi-live-key"
+        }),
+    };
+    let (_root, _db, svc, _adapter, _backups) = live_svc(AgentId::Kimi, live);
+    let imported = svc.import_live(AgentId::Kimi, Some("Kimi live")).unwrap();
+    assert_eq!(imported.meta["source"], "live");
+    assert_eq!(imported.meta["surface"], "kimi-code-membership");
 }

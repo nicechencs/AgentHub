@@ -102,8 +102,10 @@ const KIMI_PI_MODELS: &[AdapterModelMapEntry] = &[AdapterModelMapEntry {
     notes: Some("Pi kimi-for-coding provider model slot"),
 }];
 
-/// Anthropic → Pi does not rewrite model ids; callers may passthrough or omit.
+/// Anthropic / OpenAI / xAI → Pi do not rewrite model ids; callers may passthrough or omit.
 const ANTHROPIC_PI_MODELS: &[AdapterModelMapEntry] = &[];
+const OPENAI_PI_MODELS: &[AdapterModelMapEntry] = &[];
+const XAI_PI_MODELS: &[AdapterModelMapEntry] = &[];
 
 const DEEPSEEK_DSH_MODELS: &[AdapterModelMapEntry] = &[
     AdapterModelMapEntry {
@@ -160,6 +162,24 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
         allow_passthrough: true,
     },
     AdapterModelMappingTable {
+        id: "openai-api-pi-v1",
+        source: AdapterSourceProduct::OpenaiApi,
+        target: AgentId::Pi,
+        target_protocol: AdapterTargetProtocol::PiProviderConfig,
+        default_target_model: None,
+        entries: OPENAI_PI_MODELS,
+        allow_passthrough: true,
+    },
+    AdapterModelMappingTable {
+        id: "xai-api-pi-v1",
+        source: AdapterSourceProduct::XaiApi,
+        target: AgentId::Pi,
+        target_protocol: AdapterTargetProtocol::PiProviderConfig,
+        default_target_model: None,
+        entries: XAI_PI_MODELS,
+        allow_passthrough: true,
+    },
+    AdapterModelMappingTable {
         id: "codex-subscription-claude-v0",
         source: AdapterSourceProduct::CodexChatGptSubscription,
         target: AgentId::Claude,
@@ -170,7 +190,7 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
     },
     AdapterModelMappingTable {
         id: "deepseek-api-dsh-v1",
-        source: AdapterSourceProduct::DeepSeekApi,
+        source: AdapterSourceProduct::DeepseekApi,
         target: AgentId::Dsh,
         target_protocol: AdapterTargetProtocol::DshProviderConfig,
         default_target_model: Some("deepseek-v4-flash"),
@@ -268,6 +288,15 @@ mod tests {
             ),
             None
         );
+
+        for source in [
+            AdapterSourceProduct::OpenaiApi,
+            AdapterSourceProduct::XaiApi,
+        ] {
+            let table = find_adapter_model_mapping(source, AgentId::Pi).expect("passthrough table");
+            assert!(table.allow_passthrough);
+            assert!(table.default_target_model.is_none());
+        }
     }
 
     #[test]
@@ -297,7 +326,7 @@ mod tests {
 
     #[test]
     fn deepseek_to_dsh_has_default_and_passthrough() {
-        let table = find_adapter_model_mapping(AdapterSourceProduct::DeepSeekApi, AgentId::Dsh)
+        let table = find_adapter_model_mapping(AdapterSourceProduct::DeepseekApi, AgentId::Dsh)
             .expect("deepseek→dsh table");
         assert_eq!(
             table.map_model(""),

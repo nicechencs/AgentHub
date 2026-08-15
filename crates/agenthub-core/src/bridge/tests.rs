@@ -20,7 +20,7 @@ use tokio::{
 use super::host::CleanupCompletion;
 use super::{
     BridgeHostError, BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec, BridgeUpstreamConfig,
-    BridgeUpstreamStatus, ResolvedAuth,
+    BridgeUpstreamProtocol, BridgeUpstreamStatus, ResolvedAuth,
 };
 
 fn spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
@@ -33,8 +33,15 @@ fn spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
             model: None,
             source_connection_id: Some("connection-test".to_owned()),
             auth: ResolvedAuth::bearer("upstream-test-token"),
+            protocol: BridgeUpstreamProtocol::KimiChatCompletions,
         },
     )
+}
+
+fn anthropic_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
+    let mut spec = spec(profile_id, port, upstream_port);
+    spec.upstream.protocol = BridgeUpstreamProtocol::AnthropicMessages;
+    spec
 }
 
 async fn upstream() -> (u16, tokio::task::JoinHandle<()>) {
@@ -896,5 +903,73 @@ async fn translate_failure_on_http_200_marks_upstream_degraded() {
         BridgeUpstreamStatus::Degraded
     );
     host.stop("translate-fail").await.expect("stop");
+    upstream_task.abort();
+}
+
+async fn anthropic_upstream() -> (u16, tokio::task::JoinHandle<()>) {
+    async fn messages(headers: axum::http::HeaderMap, Json(body): Json<Value>) -> impl IntoResponse {
+        let key = headers
+            .get("x-api-key")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        let version = headers
+            .get("anthropic-version")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        if key != "upstream-test-token" || version != "2023-06-01" {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": { "type": "authentication_error", "message": "bad key" } })),
+            );
+        }
+        assert_eq!(body["messages"][0]["content"][0]["text"], "hello");
+        (
+            StatusCode::OK,
+            Json(json!({
+                "id": "msg_host",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-sonnet-4-20250514",
+                "content": [{ "type": "text", "text": "你好" }],
+                "stop_reason": "end_turn",
+                "usage": { "input_tokens": 2, "output_tokens": 1 }
+            })),
+        )
+    }
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind anthropic upstream");
+    let port = listener.local_addr().expect("addr").port();
+    let task = tokio::spawn(async move {
+        axum::serve(listener, Router::new().route("/messages", post(messages)))
+            .await
+            .expect("serve anthropic upstream");
+    });
+    (port, task)
+}
+
+#[tokio::test]
+async fn anthropic_protocol_uses_messages_and_x_api_key() {
+    let (upstream_port, upstream_task) = anthropic_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(anthropic_spec("anthropic-host", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"test","input":"hello"}))
+        .send()
+        .await
+        .expect("responses request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.json::<Value>().await.expect("json");
+    assert_eq!(body["object"], "response");
+    assert_eq!(body["output"][0]["content"][0]["text"], "你好");
+    assert_eq!(body["usage"]["input_tokens"], 2);
+    host.stop("anthropic-host").await.expect("stop");
     upstream_task.abort();
 }

@@ -1,8 +1,8 @@
 use super::*;
 
-use crate::models::Provider;
+use crate::models::{Account, AccountKind, Provider};
 use crate::services::ProviderService;
-use crate::storage::{AdapterProfileRepo, ProviderRepo};
+use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::Router;
@@ -433,6 +433,8 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         source_connection_id: "kimi-membership".into(),
         preferred_port: None,
         upstream_base_url: format!("http://127.0.0.1:{upstream_port}"),
+        upstream_model: "kimi-k2.5".into(),
+        protocol: crate::bridge::BridgeUpstreamProtocol::KimiChatCompletions,
         upstream_auth: ResolvedAuth::bearer("upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -579,4 +581,121 @@ fn prepare_accepts_coding_endpoint_without_preset() {
     assert_eq!(prepared.profile().route, AdapterRoute::LocalBridge);
     assert_eq!(prepared.profile().status, AdapterProfileStatus::Applying);
     assert!(!format!("{prepared:?}").contains("upstream-membership-secret"));
+}
+
+fn anthropic_source(id: &str, api_key: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        name: "Anthropic API".into(),
+        settings_config: json!({"apiKey": api_key}),
+        meta: json!({"preset": "anthropic"}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+fn anthropic_account(id: &str, api_key: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        label: "Anthropic key".into(),
+        credentials: json!({"format": "api_key", "api_key": api_key}),
+        extra: json!({"provider": "anthropic"}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+fn anthropic_request(source_kind: AdapterSourceKind, source_id: &str) -> AdapterBridgePrepareRequest {
+    AdapterBridgePrepareRequest {
+        source_kind,
+        source_id: source_id.into(),
+        target_agent_id: AgentId::Codex,
+        auto_start: true,
+    }
+}
+
+#[test]
+fn prepare_anthropic_provider_projects_messages_bridge_not_kimi() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&anthropic_source("anthropic-key", "sk-ant-secret"))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+
+    let prepared = service
+        .prepare(&anthropic_request(
+            AdapterSourceKind::Provider,
+            "anthropic-key",
+        ))
+        .unwrap();
+    assert_eq!(prepared.profile().rule_id, ANTHROPIC_RULE_ID);
+    assert_eq!(prepared.profile().source_kind, AdapterSourceKind::Provider);
+    let start = prepared.runtime_material().start_spec(None);
+    assert_eq!(start.upstream.base_url, ANTHROPIC_MESSAGES_BASE_URL);
+    assert_eq!(start.upstream.protocol, BridgeUpstreamProtocol::AnthropicMessages);
+    assert_eq!(
+        start.upstream.model.as_deref(),
+        Some(ANTHROPIC_DEFAULT_MODEL)
+    );
+    assert!(!format!("{prepared:?}").contains("sk-ant-secret"));
+
+    let generated = create_projection(&db, &prepared, 43131);
+    assert_eq!(generated.meta["adapterRuleId"], ANTHROPIC_RULE_ID);
+    assert_eq!(
+        generated.meta["adapterBridge"]["kind"],
+        "responses_to_anthropic_messages"
+    );
+    assert_eq!(generated.meta["adapterSourceRef"]["kind"], "provider");
+    let content = generated.settings_config["content"].as_str().unwrap();
+    assert!(content.contains(ANTHROPIC_PROVIDER_SLUG));
+    assert!(content.contains("AgentHub Anthropic Bridge"));
+    assert!(content.contains(ANTHROPIC_DEFAULT_MODEL));
+    assert!(!content.contains(PROVIDER_SLUG));
+    assert!(!content.contains("kimi-k2.5"));
+    assert!(!serde_json::to_string(&generated)
+        .unwrap()
+        .contains("sk-ant-secret"));
+}
+
+#[test]
+fn prepare_anthropic_account_reuses_secret_resolver_and_projects_account_ref() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&anthropic_account("anthropic-account", "sk-ant-account"))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+
+    let prepared = service
+        .prepare(&anthropic_request(
+            AdapterSourceKind::Account,
+            "anthropic-account",
+        ))
+        .unwrap();
+    assert_eq!(prepared.profile().rule_id, ANTHROPIC_RULE_ID);
+    assert_eq!(prepared.profile().source_kind, AdapterSourceKind::Account);
+    assert_eq!(
+        prepared.runtime_material().start_spec(None).upstream.protocol,
+        BridgeUpstreamProtocol::AnthropicMessages
+    );
+    assert!(!format!("{prepared:?}").contains("sk-ant-account"));
+
+    let generated = create_projection(&db, &prepared, 43132);
+    assert_eq!(generated.meta["adapterSourceRef"]["kind"], "account");
+    assert_eq!(generated.meta["adapterSourceRef"]["id"], "anthropic-account");
+    assert_eq!(generated.meta["adapterRuleId"], ANTHROPIC_RULE_ID);
+    service.finalize(&prepared, 43132).unwrap();
+    let restored = service
+        .resolve_restore_material(prepared.profile().id.as_str())
+        .unwrap();
+    assert_eq!(
+        restored.runtime_material().start_spec(None).upstream.protocol,
+        BridgeUpstreamProtocol::AnthropicMessages
+    );
+    assert!(!format!("{restored:?}").contains("sk-ant-account"));
 }

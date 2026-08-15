@@ -23,6 +23,11 @@ export interface AgentCardBadgeInput {
   viaAdapter?: { sourceLabel?: string } | null;
   /** 命中的 profile 为 bridge 型时传入；查询失败传 unavailable，不得省略 */
   bridge?: { state: AgentCardBridgeState } | null;
+  /**
+   * 当前绑定的票（钱包读模型）。有值时卡片主文案优先展示
+   * 「票 label · 直连/改配置/本机桥」，不再只显示 Provider 行名。
+   */
+  binding?: { ticketLabel: string; routeLabel: string } | null;
 }
 
 export const AGENT_CARD_BRIDGE_LABEL: Record<AgentCardBridgeState, string> = {
@@ -89,6 +94,8 @@ export interface AgentCardView {
   viaAdapter?: { sourceLabel?: string };
   /** 命中 bridge 型 profile 时非空；查询失败为 unavailable，不得省略 */
   bridge?: { state: AgentCardBridgeState; label: string };
+  /** 钱包读模型：当前绑定的票 */
+  binding?: { ticketLabel: string; routeLabel: string };
 }
 
 function mapViaAdapter(
@@ -137,11 +144,17 @@ export function buildAgentCardView(
     } else {
       metaText = '未安装 · 点击安装';
     }
+  } else if (badges?.binding?.ticketLabel) {
+    metaText = `${badges.binding.ticketLabel} · ${badges.binding.routeLabel}`;
   } else {
     metaText = effective;
   }
 
-  const titleFull = missing ? metaText : `${effective} · ${authLabel}`;
+  const titleFull = missing
+    ? metaText
+    : badges?.binding?.ticketLabel
+      ? `${badges.binding.ticketLabel} · ${badges.binding.routeLabel} · ${authLabel}`
+      : `${effective} · ${authLabel}`;
 
   const connectionHint =
     kind === 'account' ? '当前账号/密钥' : kind === 'api' ? '当前 API 配置' : '当前连接';
@@ -153,10 +166,19 @@ export function buildAgentCardView(
 
   const viaAdapter = mapViaAdapter(badges?.viaAdapter);
   const bridge = mapBridgeBadge(badges?.bridge);
+  const binding = badges?.binding?.ticketLabel
+    ? {
+        ticketLabel: badges.binding.ticketLabel,
+        routeLabel: badges.binding.routeLabel,
+      }
+    : undefined;
   if (viaAdapter) {
     ariaLabel += viaAdapter.sourceLabel
       ? `，经兼容路由 · ${viaAdapter.sourceLabel}`
       : '，经兼容路由';
+  }
+  if (binding) {
+    ariaLabel += `，当前绑定 ${binding.ticketLabel}（${binding.routeLabel}）`;
   }
   if (bridge) {
     ariaLabel += `，${bridge.label}`;
@@ -178,6 +200,7 @@ export function buildAgentCardView(
     authHealth: authDisplay.health,
     twoLineLayout: true,
     ...(viaAdapter ? { viaAdapter } : {}),
+    ...(binding ? { binding } : {}),
     ...(bridge ? { bridge } : {}),
   };
 }

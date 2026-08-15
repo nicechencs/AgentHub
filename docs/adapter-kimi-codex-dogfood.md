@@ -2,23 +2,23 @@
 
 > 关联：[adapter-design.md](adapter-design.md) Phase 1 / §11.4。  
 > 自动验收（bridge / restore / 退出协调器）已在工作区通过；**本清单只覆盖必须用桌面应用 + 真实连接完成的项**。  
-> 创建/应用桥的日常入口可以是 Dashboard 卡片「连接/切换」或 Connections「用于其他 Agent」（ConnectFlow）；Adapter 页只用于桥控件。  
-> 本清单验收**当前实现**（行按钮仍仅 Kimi 会员 / Claude Anthropic Provider）。目标钱包与「接到…」见 [connection-binding-model.md](connection-binding-model.md)，改 UI 后同步改本节入口描述。  
+> 创建/应用桥的日常入口可以是 Dashboard 卡片「连接/切换」或 Connections「接到…」（ConnectFlow）；Adapter 页只用于桥控件。  
+> 入口：Dashboard「连接/切换」与 Connections 全局钱包「接到…」（真票常驻；不可行目标在对话框置灰 + 原因）。生成投影不进钱包。见 [connection-binding-model.md](connection-binding-model.md)。  
 > **禁止**把密钥、Authorization、prompt、工具参数或响应正文写入本文件或任何报告。只记 `profile_id`、端口、错误码、耗时、是否完成。
 
 ## Hub ConnectFlow 真机验收（最短）
 
 mock 下 apply 正向链路不可达，必须 `pnpm tauri:dev` + 真实凭据。下列勾选框保持未勾。
 
-入口（当前实现）：Dashboard「连接/切换」与 Connections「用于其他 Agent」（仅 Kimi 会员 Provider、Claude Anthropic Provider 显示该按钮）。
+入口：Dashboard「连接/切换」与 Connections「接到…」（钱包内每张真票常驻该按钮）。
 
-反例（当前实现）：OAuth / 普通 apikey / 非会员 Kimi 行不应出现该按钮；Dashboard 对话框内这些来源置灰 + 原因原文。目标态改为真票都有「接到…」，不可行只在对话框置灰——改完 UI 后本反例作废。
+反例：生成投影不出现在钱包，故无「接到…」。OAuth / 未识别 / 无边等真票仍显示「接到…」，对话框内不可行目标置灰 + 原因原文。
 
 ### 1. Kimi 会员 Provider → Claude（直连）
 
 步骤：
 
-1. 从 Dashboard Claude 卡片「连接/切换」，或从 Connections 的 Kimi 会员行「用于其他 Agent」进入。
+1. 从 Dashboard Claude 卡片「连接/切换」，或从 Connections 的 Kimi 会员行「接到…」进入。
 2. 选该 Kimi 会员为来源、Claude 为目标，预览后 apply。
 3. 核对 Claude 当前连接经兼容路由生效（只记 profile / provider id 后缀）。
 
@@ -30,7 +30,7 @@ mock 下 apply 正向链路不可达，必须 `pnpm tauri:dev` + 真实凭据。
 
 步骤：
 
-1. 从 Dashboard Codex 卡片「连接/切换」，或从 Connections 的 Kimi 会员行「用于其他 Agent」进入。
+1. 从 Dashboard Codex 卡片「连接/切换」，或从 Connections 的 Kimi 会员行「接到…」进入。
 2. 选该 Kimi 会员为来源、Codex 为目标，预览后 apply（本地桥）。
 3. 核对桥已创建/可启动，Codex 当前连接指向生成 Provider（只记 `profile_id`、端口）。
 
@@ -42,7 +42,7 @@ mock 下 apply 正向链路不可达，必须 `pnpm tauri:dev` + 真实凭据。
 
 步骤：
 
-1. 从 Dashboard Pi 卡片「连接/切换」，或从 Connections 的 Claude Anthropic 行「用于其他 Agent」进入。
+1. 从 Dashboard Pi 卡片「连接/切换」，或从 Connections 的 Claude Anthropic 行「接到…」进入。
 2. 选该 Anthropic Provider 为来源、Pi 为目标，预览后 apply。
 3. 核对 Pi 当前连接已同步（只记 profile / provider id 后缀）。
 

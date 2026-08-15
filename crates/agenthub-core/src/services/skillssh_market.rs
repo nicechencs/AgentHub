@@ -14,8 +14,10 @@ use serde_json::Value;
 use super::skill_market::SkillMarket;
 use crate::catalog::limits::{
     SKILLS_SH_CONNECT_TIMEOUT, SKILLS_SH_CURL_CONNECT_SECS, SKILLS_SH_CURL_MAX_SECS,
-    SKILLS_SH_POWERSHELL_TIMEOUT_SECS, SKILLS_SH_READ_TIMEOUT,
+    SKILLS_SH_READ_TIMEOUT,
 };
+#[cfg(windows)]
+use crate::catalog::limits::SKILLS_SH_POWERSHELL_TIMEOUT_SECS;
 use crate::catalog::market::{
     skills_sh_detail_url, skills_sh_home_url, skills_sh_search_url, skills_sh_user_agent,
     DEFAULT_SKILLS_SH_LIMIT,

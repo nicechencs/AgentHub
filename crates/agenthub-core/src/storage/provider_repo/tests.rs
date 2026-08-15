@@ -312,6 +312,44 @@ fn switch_current_rolls_back_backfill_and_flags_on_sql_failure() {
 }
 
 #[test]
+fn healed_field_update_writes_only_meta_and_is_cas() {
+    let (_dir, repo) = repo();
+    let mut stored = sample("p1", AgentId::Claude, "KeepName", true);
+    stored.settings_config = json!({"api_key": "original", "keep": true});
+    stored.meta = json!({"preset": "anthropic"});
+    let stored = repo.create(&stored).unwrap();
+
+    let mut healed = stored.clone();
+    healed.is_current = false;
+    healed.name = "Hijacked".into();
+    healed.settings_config = json!({"api_key": "stolen"});
+    healed.meta = json!({"preset": "anthropic", "surface": "anthropic-api"});
+
+    let updated = repo
+        .update_healed_fields(&healed, &stored.updated_at, "2026-02-01 00:00:00")
+        .unwrap();
+    assert!(updated.is_current);
+    assert_eq!(updated.name, "KeepName");
+    assert_eq!(
+        updated.settings_config,
+        json!({"api_key": "original", "keep": true})
+    );
+    assert_eq!(updated.meta["surface"], "anthropic-api");
+    assert_eq!(updated.updated_at, "2026-02-01 00:00:00");
+
+    let stale = repo
+        .update_healed_fields(&healed, &stored.updated_at, "2026-03-01 00:00:00")
+        .unwrap_err();
+    assert_eq!(stale.code(), "provider.conflict");
+    let again = repo.get_by_id("p1").unwrap().unwrap();
+    assert!(again.is_current);
+    assert_eq!(again.name, "KeepName");
+    assert_eq!(again.settings_config["api_key"], "original");
+    assert_eq!(again.meta["surface"], "anthropic-api");
+    assert_eq!(again.updated_at, "2026-02-01 00:00:00");
+}
+
+#[test]
 fn multiple_current_rows_fail_closed() {
     let (_dir, repo) = repo();
     repo.create(&sample("c1", AgentId::Claude, "One", true))

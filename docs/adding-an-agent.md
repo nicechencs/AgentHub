@@ -25,7 +25,7 @@
 | 4. 前端 id | `src/lib/types.ts` + catalog 驱动列表 | 产品列表以 runtime catalog 为准；静态 `AGENTS` 仅过渡 |
 | 5. key-native 端口 | `platform/*/registry.rs` | 以 `AgentKey` 注册 detector、install、config、skills、usage、stream、project 等实际支持的端口 |
 | 6. 测试 | `cargo test -p agenthub-core` | adapter fixture + 已注册端口契约；禁止写死 agent 数量 |
-| 7. 绑定入口 | `accepts[]` + `writer` | 该 Agent 听什么协议/槽位、能否写 live。无 writer（如 Cursor）不能当 `bind` 落点。登记后由协议图长路由，不要再加一张「某商品 × 本 Agent」白名单。见 [connection-binding-model.md](connection-binding-model.md) |
+| 7. 绑定入口 | `models/agent_capability.rs`：先登记 `accepts[]` + `writer` | 该 Agent 听什么协议/槽位、能否写 live。无 writer（如 Cursor）不能当 `bind` 落点。登记后由协议图长路由，不要再加一张「某商品 × 本 Agent」白名单。见 [connection-binding-model.md](connection-binding-model.md) |
 
 > **禁止**：在 `platform/*` service、通用 utils、页面业务里新增具体 Agent 名称分支。  
 > 差异只能进入：adapter / `platform/*/sources` 贡献 / descriptor / 明确兼容层。
@@ -125,7 +125,7 @@
 | Bootstrap 扫描真实 `~/.agents` 于 open | **故意不**自动扫描用户目录 |
 | 前后端契约 codegen / xtask new-agent | 未授权，不做 |
 | 凭据落盘加密 | **无必要 / 范围外** |
-| DeepSeek Harness（`dsh`）生产接入 | **P1–P5 已落地** | 见 [deepseek-harness-integration.md](deepseek-harness-integration.md)；`AgentId::Dsh` / adapter / 稀疏端口 / DeepSeek API → `dsh` `config_sync`。StructuredStream 与 DeepSeek→Claude 仍 Planned / 另立项 |
+| DeepSeek Harness（`dsh`）生产接入 | **P1–P5 已落地** | 见 [deepseek-harness-integration.md](deepseek-harness-integration.md)；`AgentId::Dsh` / adapter / 稀疏端口 / DeepSeek API → `dsh` `config_sync`。DeepSeek→Claude experimental `native_endpoint` 已开。StructuredStream 仍 Planned |
 
 ## 9. 建议后续 cleanup PR（勿在本阶段执行）
 

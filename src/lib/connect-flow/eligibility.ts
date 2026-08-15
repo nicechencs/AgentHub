@@ -6,6 +6,7 @@ import { authDisplayForAccount } from '@/lib/backend/contracts/auth-state';
 import { isCapabilityBlocked, providerCapabilityGate } from '@/lib/capability';
 import type { Account, Provider } from '@/lib/types';
 import type { AdapterApplyPlan, AdapterProfile, AdapterRoute } from '@/lib/api/adapter';
+import type { AdapterMaturity } from '@/lib/backend/contracts/adapter';
 import type {
   PlanEligibility,
   SourceOption,
@@ -20,8 +21,8 @@ const INCOMPLETE_OAUTH_STATUS = new Set(['expired', 'none']);
 export const OAUTH_INCOMPLETE_MESSAGE = '官方登录未完成，先到 Connections 授权。';
 
 /**
- * Copied from src/pages/connections/ConnectionList.tsx (~183-200, 328-364)
- * and ConnectionCard.tsx fallback. Phase 2 should unify with Connections.
+ * Native switch reasons come from agent capability gates
+ * (`accountSwitch` / `providerCapabilityGate`).
  */
 const ACCOUNT_SWITCH_BLOCKED_FALLBACK = '该 Agent 不支持账号池切换';
 const PROVIDER_SWITCH_BLOCKED_FALLBACK = '当前 Agent 不支持 Provider 配置写入';
@@ -58,7 +59,7 @@ function nativeAccountState(
   capabilities: ReturnType<typeof resolveAgentMeta>['capabilities'],
 ): SourceOption['state'] {
   if (account.isCurrent) return { kind: 'current' };
-  // Copied from ConnectionList.tsx: isCapabilityBlocked(accountSwitch) + reason.
+  // Capability catalog: isCapabilityBlocked(accountSwitch) + reason.
   if (isCapabilityBlocked(capabilities?.accountSwitch)) {
     return {
       kind: 'blocked_native',
@@ -73,7 +74,7 @@ function nativeProviderState(
   capabilities: ReturnType<typeof resolveAgentMeta>['capabilities'],
 ): SourceOption['state'] {
   if (provider.isCurrent) return { kind: 'current' };
-  // Copied from ConnectionList.tsx: providerCapabilityGate(caps).canSwitch + reason.
+  // Capability catalog: providerCapabilityGate(caps).canSwitch + reason.
   const gate = providerCapabilityGate(capabilities);
   if (!gate.canSwitch) {
     return {
@@ -97,13 +98,21 @@ function viaAdapterForProvider(
   };
 }
 
+export function planMaturityLabel(maturity: AdapterMaturity | undefined): string {
+  if (maturity === 'stable') return '稳定';
+  if (maturity === 'experimental') return '实验';
+  if (maturity === 'preview') return '可预览';
+  if (maturity === 'none') return '无边';
+  return '';
+}
+
 export function planToEligibility(plan: AdapterApplyPlan): PlanEligibility {
   return {
     kind: 'ready',
     plan,
     canApply: plan.canApply,
     routeSummary: ROUTE_SUMMARY[plan.analysis.route],
-    ...(plan.canApply ? {} : { reason: plan.analysis.reason }),
+    ...(plan.canApply ? {} : { reason: plan.reason ?? plan.analysis.reason }),
   };
 }
 
@@ -122,7 +131,7 @@ export function buildSourceOptions(input: SourceOptionsInput): SourceOption[] {
   const { targetAgentId, accounts, providers, profiles, agentStatuses } = input;
   const generatedIds = generatedProviderIds(profiles);
   // Prefer live doctor capabilities when the target status carries them
-  // (same fallback as ConnectionList: status.capabilities ?? meta.capabilities).
+  // Live doctor capabilities when present; otherwise catalog meta.
   const liveStatus = agentStatuses?.find((status) => status.agentId === targetAgentId);
   const capabilities = liveStatus?.capabilities ?? resolveAgentMeta(targetAgentId).capabilities;
   const native: SourceOption[] = [];

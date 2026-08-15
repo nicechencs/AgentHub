@@ -1164,21 +1164,12 @@ fn run_native_setup_guide(
     })
 }
 
+#[cfg(windows)]
 fn run_native_ps1(
     agent: AgentId,
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<ExecResult> {
-    #[cfg(not(windows))]
-    {
-        let _ = (agent, executor, logs);
-        return Err(AppError::Unsupported(
-            "native .ps1 installer is Windows-only; use npm channel or official sh install on this platform"
-                .into(),
-        ));
-    }
-    #[cfg(windows)]
-    {
         let url = native_ps1_url(agent).ok_or_else(|| {
             AppError::Unsupported(format!("{} 无 Windows native 安装脚本", agent.as_str()))
         })?;
@@ -1237,7 +1228,6 @@ fn run_native_ps1(
         let res = executor.run(&req);
         push_exec_logs(logs, &res, AGENT_TIMEOUT.as_secs());
         Ok(res)
-    }
 }
 
 #[cfg(not(windows))]

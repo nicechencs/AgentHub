@@ -1,0 +1,14 @@
+{
+  "id": "msg_stop_unknown",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-4-20250514",
+  "content": [
+    {
+      "type": "text",
+      "text": "ok"
+    }
+  ],
+  "stop_reason": "pause_turn",
+  "usage": { "input_tokens": 2, "output_tokens": 1 }
+}

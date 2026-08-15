@@ -14,13 +14,14 @@ use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    Account, AccountInput, AccountKind, AccountSwitchResult, AgentId, BackupKind, Capability,
-    LiveAccount,
+    attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult,
+    AdapterSourceKind, AgentId, BackupKind, Capability, LiveAccount, PersistedTicketSurface,
+    TicketSurface,
 };
 use crate::services::switch_undo::{
     clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
 };
-use crate::services::{BackupService, ConnectionService};
+use crate::services::{AdapterRouteService, BackupService, ConnectionService};
 use crate::storage::{AccountRepo, Database};
 use crate::utils::agent_lock::AgentWriteLock;
 use crate::utils::redact::mask_secret_preview;
@@ -105,11 +106,7 @@ impl AccountService {
                 dirty = true;
             }
             if dirty {
-                let updated_at = now_ts();
-                match self
-                    .repo
-                    .update_healed_fields(item, &expected_updated_at, &updated_at)
-                {
+                match self.persist_healed_fields(item, &expected_updated_at) {
                     Ok(updated) => *item = updated,
                     Err(e) => {
                         tracing::warn!(
@@ -257,7 +254,10 @@ impl AccountService {
 
         let Some(live_identity) = stable_live_identity(adapter, live.kind, &live.credentials)
         else {
-            tracing::warn!(
+            // API-key / file snapshots often have no email/sub. Exact
+            // authorization already matched above; anything else stays
+            // fail-closed instead of inventing a pool row.
+            tracing::debug!(
                 module = targets::ACCOUNT,
                 agent = agent.as_str(),
                 "live account identity is unknown; refusing non-exact reconcile"
@@ -368,6 +368,34 @@ impl AccountService {
         let _ = super::account_identity_heal::heal_account_identity(&mut row);
         let _ = super::account_quota::heal_token_expiry(&mut row);
         (row, true)
+    }
+
+    /// Persist identity/quota heals. A CAS conflict means another list/heal
+    /// already wrote; reload that row instead of warning on every GUI poll.
+    fn persist_healed_fields(
+        &self,
+        account: &Account,
+        expected_updated_at: &str,
+    ) -> Result<Account> {
+        let updated_at = now_ts();
+        match self
+            .repo
+            .update_healed_fields(account, expected_updated_at, &updated_at)
+        {
+            Ok(updated) => Ok(updated),
+            Err(error) if error.code() == "account.conflict" => {
+                tracing::debug!(
+                    module = targets::ACCOUNT,
+                    account_id = %account.id,
+                    agent = account.agent_id.as_str(),
+                    "heal lost the race; using latest row"
+                );
+                self.repo.get_by_id(&account.id)?.ok_or_else(|| {
+                    AppError::NotFound(format!("account not found: {}", account.id))
+                })
+            }
+            Err(error) => Err(error),
+        }
     }
 
     /// Persist a reconciled row and, for single-current agents, atomically
@@ -509,9 +537,7 @@ impl AccountService {
         if !dirty {
             return Ok(account);
         }
-        let updated_at = now_ts();
-        self.repo
-            .update_healed_fields(&account, &expected_updated_at, &updated_at)
+        self.persist_healed_fields(&account, &expected_updated_at)
     }
 
     /// Resolve by id first, then exact label (optionally scoped to agent).
@@ -650,7 +676,8 @@ impl AccountService {
             created_at: now.clone(),
             updated_at: now,
         };
-        self.repo.create(&row)
+        let created = self.repo.create(&row)?;
+        self.stamp_account_surface(created)
     }
 
     /// Update an existing API Key account (label and/or key).
@@ -843,9 +870,10 @@ impl AccountService {
         };
         if row.is_current {
             let (created, _binding) = self.connections.create_and_activate_account(&row)?;
-            Ok(created)
+            self.stamp_account_surface(created)
         } else {
-            self.repo.create(&row)
+            let created = self.repo.create(&row)?;
+            self.stamp_account_surface(created)
         }
     }
 
@@ -1021,8 +1049,7 @@ impl AccountService {
         if agent == AgentId::Pi {
             return self.persist_pi_oauth_account_update(&account, &expected_updated_at);
         }
-        self.repo
-            .update_healed_fields(&account, &expected_updated_at, &account.updated_at)
+        self.persist_healed_fields(&account, &expected_updated_at)
     }
 
     /// Import the agent's current live file credentials into the account pool.
@@ -1147,9 +1174,10 @@ impl AccountService {
         };
         if make_current {
             let (created, _binding) = self.connections.create_and_activate_account(&row)?;
-            Ok(created)
+            self.stamp_account_surface(created)
         } else {
-            self.repo.create(&row)
+            let created = self.repo.create(&row)?;
+            self.stamp_account_surface(created)
         }
     }
 
@@ -1216,7 +1244,25 @@ impl AccountService {
             }
         }
 
-        Ok(updated)
+        self.stamp_account_surface(updated)
+    }
+
+    /// Classify the persisted row and write `extra.surface` before the import
+    /// / add path returns. `classify_source_product` reads the stored row, so
+    /// this runs after the first successful persist.
+    fn stamp_account_surface(&self, account: Account) -> Result<Account> {
+        let product = AdapterRouteService::new(self.db.clone())
+            .classify_source_product(AdapterSourceKind::Account, &account.id)?;
+        let surface = TicketSurface::from_product(product);
+        if TicketSurface::from_persisted_json(&account.extra)
+            == PersistedTicketSurface::Known(surface)
+        {
+            return Ok(account);
+        }
+        let mut stamped = account;
+        attach_persisted_surface(&mut stamped.extra, surface);
+        stamped.updated_at = now_ts();
+        self.repo.update(&stamped)
     }
 
     /// Safe account switch: validate → lock → backfill → backup → apply → verify → DB.

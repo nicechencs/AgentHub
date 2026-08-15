@@ -11,7 +11,7 @@ pub mod types;
 pub use host::{BridgeHostError, BridgeRuntimeHost};
 pub use runtime::{
     BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamConfig,
-    BridgeUpstreamStatus, ResolvedAuth,
+    BridgeUpstreamProtocol, BridgeUpstreamStatus, ResolvedAuth,
 };
 
 #[cfg(test)]

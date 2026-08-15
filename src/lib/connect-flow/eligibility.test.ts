@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { getBackend } from '@/app/runtime';
+import { planTicket } from '@/lib/api/tickets';
+import { upsertMockAccount } from '@/dev/mocks/account';
 import type { Account, AgentStatus, Provider } from '@/lib/types';
 import type { AdapterApplyPlan, AdapterProfile, AdapterRouteAnalysis } from '@/lib/api/adapter';
-import { buildSourceOptions, isOauthIncomplete, planToEligibility } from './eligibility';
+import { buildSourceOptions, isOauthIncomplete, planMaturityLabel, planToEligibility } from './eligibility';
 
 function analysis(overrides: Partial<AdapterRouteAnalysis> = {}): AdapterRouteAnalysis {
   return {
@@ -82,6 +85,16 @@ function profile(overrides: Partial<AdapterProfile> = {}): AdapterProfile {
   };
 }
 
+describe('planMaturityLabel', () => {
+  it('maps the four planner maturity tiers', () => {
+    expect(planMaturityLabel('stable')).toBe('稳定');
+    expect(planMaturityLabel('experimental')).toBe('实验');
+    expect(planMaturityLabel('preview')).toBe('可预览');
+    expect(planMaturityLabel('none')).toBe('无边');
+    expect(planMaturityLabel(undefined)).toBe('');
+  });
+});
+
 describe('planToEligibility', () => {
   it('maps canApply=true to a ready selectable branch', () => {
     const ready = planToEligibility(plan({ canApply: true }));
@@ -114,6 +127,43 @@ describe('planToEligibility', () => {
       reason,
     });
     expect(ready.kind === 'ready' && ready.reason).toBe(reason);
+  });
+
+  it('Account Anthropic → Pi is writable from plan.canApply', async () => {
+    getBackend();
+    upsertMockAccount({
+      id: 'anth-acc-elig',
+      agentId: 'claude',
+      kind: 'apikey',
+      label: 'Anthropic key',
+      isCurrent: false,
+      tokenValid: true,
+      extra: { provider: 'anthropic' },
+    } as Account);
+    const planned = await planTicket('account:anth-acc-elig', 'pi');
+    expect(planned.canApply).toBe(true);
+    expect(planned.analysis.route).toBe('config_sync');
+    const eligibility = planToEligibility(planned);
+    expect(eligibility).toMatchObject({
+      kind: 'ready',
+      canApply: true,
+      routeSummary: '直接同步',
+    });
+    expect(eligibility.kind === 'ready' && eligibility.reason).toBeUndefined();
+  });
+
+  it('prefers plan.reason over analysis.reason when canApply is false', () => {
+    const ready = planToEligibility(plan({
+      canApply: false,
+      reason: '同边但暂不可写：写入仍只接受 Provider 行，下一步 bind 打通。',
+      analysis: analysis({
+        route: 'config_sync',
+        support: 'stable',
+        reason: '显式 Anthropic API Key 可预览为 Pi 的配置同步。',
+      }),
+    }));
+    expect(ready.kind === 'ready' && ready.reason).toContain('Provider');
+    expect(ready.kind === 'ready' && ready.reason).toContain('写入');
   });
 
   it('extracts human route summaries from AdapterRoute', () => {

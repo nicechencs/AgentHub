@@ -97,7 +97,7 @@ describe('mock adapter route preview', () => {
     expect(JSON.stringify({ plan, applied, visible })).not.toContain('token');
   });
 
-  it('refuses to remove the active generated Connection, then removes an inactive projection and its provider', async () => {
+  it('removes the active generated Connection and its provider', async () => {
     const sourceId = `kimi-remove-${Date.now()}-${Math.random()}`;
     await createMockProviderPort().upsertProvider({
       id: sourceId,
@@ -110,12 +110,8 @@ describe('mock adapter route preview', () => {
     });
     const adapter = createMockAdapterPort(resolver);
     const applied = await adapter.apply({ sourceKind: 'provider', sourceId, targetAgentId: 'codex' });
-
-    await expect(adapter.remove(applied.profile.id)).rejects.toThrow('切换到其他连接');
-    expect(await adapter.listProfiles()).toHaveLength(1);
     expect(getMockProviderById(applied.provider.id)).toMatchObject({ isCurrent: true });
 
-    upsertMockProvider({ ...applied.provider, isCurrent: false });
     await adapter.remove(applied.profile.id);
 
     expect(await adapter.listProfiles()).toEqual([]);
@@ -188,6 +184,65 @@ describe('mock adapter route preview', () => {
       targetAgentId: 'claude',
     })).rejects.toThrow(/不可应用|不支持|canApply/i);
     expect(JSON.stringify({ analysis, plan })).not.toMatch(/sk-|access_token|refresh_token|bearer/i);
+    expect(plan.reason).not.toContain('同边但暂不可写');
+  });
+
+  it('Account Anthropic → Pi is writable on the implemented bind path', async () => {
+    const accountId = 'anthropic-account-same-edge';
+    const adapter = createMockAdapterPort({
+      getAccountById: (id) => (id === accountId
+        ? {
+            id: accountId,
+            agentId: 'claude',
+            kind: 'apikey',
+            label: 'Anthropic key',
+            isCurrent: false,
+            tokenValid: true,
+            extra: { provider: 'anthropic' },
+          } as Account
+        : getMockAccountById(id)),
+      getProviderById: getMockProviderById,
+    });
+
+    const sameEdge = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: accountId,
+      targetAgentId: 'pi',
+    });
+    expect(sameEdge.canApply).toBe(true);
+    expect(sameEdge.analysis.route).toBe('config_sync');
+    expect(sameEdge.reason).toBe(sameEdge.analysis.reason);
+    expect(sameEdge.reason).not.toContain('同边但暂不可写');
+
+    const closed = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: accountId,
+      targetAgentId: 'claude',
+    });
+    expect(closed.canApply).toBe(false);
+    expect(closed.analysis.route).toBe('unsupported');
+    expect(closed.reason).toBe(closed.analysis.reason);
+    expect(closed.reason).not.toContain('同边但暂不可写');
+
+    const applied = await adapter.apply({
+      sourceKind: 'account',
+      sourceId: accountId,
+      targetAgentId: 'pi',
+    });
+    expect(applied.profile.ruleId).toBe('anthropic-api-to-pi-v1');
+    expect(applied.provider.agentId).toBe('pi');
+    expect(applied.provider.isCurrent).toBe(true);
+
+    const codex = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: accountId,
+      targetAgentId: 'codex',
+    });
+    expect(codex.canApply).toBe(true);
+    expect(codex.analysis.route).toBe('local_bridge');
+    expect(codex.analysis.ruleId).toBe('anthropic-api-to-codex-v1');
+    expect(codex.changes[0].value).toBe('AgentHub Anthropic 本地桥接');
+    expect(codex.reason).not.toContain('同边但暂不可写');
   });
 
   it('throws AdapterCommandError with a structured not-retryable shape', async () => {
@@ -390,7 +445,76 @@ describe('mock adapter route preview', () => {
     expect((await createMockProviderPort().listProviders('pi'))).toEqual([]);
   });
 
-  it('refuses to remove a current Pi generated Connection', async () => {
+  it('plans and applies GLM / DeepSeek → Claude with rule-specific URLs', async () => {
+    await createMockProviderPort().upsertProvider({
+      id: 'glm-src',
+      agentId: 'claude',
+      name: 'GLM',
+      preset: 'glm-coding-plan',
+      configText: '{"apiKey":"must-not-leak"}',
+      configFormat: 'json',
+      isCurrent: false,
+    });
+    const adapter = createMockAdapterPort({
+      getAccountById: (id) => (id === 'deepseek-acc'
+        ? {
+            id: 'deepseek-acc',
+            agentId: 'claude',
+            kind: 'apikey',
+            label: 'DeepSeek',
+            isCurrent: false,
+            tokenValid: true,
+            extra: { provider: 'deepseek-api' },
+            credentials: { format: 'api_key', api_key: 'must-not-leak' },
+          } as Account
+        : getMockAccountById(id)),
+      getProviderById: getMockProviderById,
+      upsertGeneratedProvider: upsertMockProvider,
+      removeGeneratedProvider: removeMockProvider,
+    });
+
+    const glmPlan = await adapter.plan({
+      sourceKind: 'provider',
+      sourceId: 'glm-src',
+      targetAgentId: 'claude',
+    });
+    expect(glmPlan.canApply).toBe(true);
+    expect(glmPlan.analysis.ruleId).toBe('glm-coding-plan-to-claude-v1');
+    expect(glmPlan.changes[0].value).toBe('https://open.bigmodel.cn/api/anthropic');
+    const glmApplied = await adapter.apply({
+      sourceKind: 'provider',
+      sourceId: 'glm-src',
+      targetAgentId: 'claude',
+    });
+    expect(glmApplied.profile.ruleId).toBe('glm-coding-plan-to-claude-v1');
+    expect(JSON.parse(glmApplied.provider.configText)).toEqual({
+      env: {
+        ANTHROPIC_BASE_URL: 'https://open.bigmodel.cn/api/anthropic',
+        ANTHROPIC_AUTH_TOKEN: '$AGENTHUB_CONNECTION_SECRET$',
+      },
+    });
+
+    const deepseekPlan = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: 'deepseek-acc',
+      targetAgentId: 'claude',
+    });
+    expect(deepseekPlan.canApply).toBe(true);
+    expect(deepseekPlan.analysis.ruleId).toBe('deepseek-api-to-claude-v1');
+    expect(deepseekPlan.changes[0].value).toBe('https://api.deepseek.com/anthropic');
+    const deepseekApplied = await adapter.apply({
+      sourceKind: 'account',
+      sourceId: 'deepseek-acc',
+      targetAgentId: 'claude',
+    });
+    expect(deepseekApplied.profile.ruleId).toBe('deepseek-api-to-claude-v1');
+    expect(JSON.parse(deepseekApplied.provider.configText).env.ANTHROPIC_BASE_URL)
+      .toBe('https://api.deepseek.com/anthropic');
+    expect(JSON.stringify({ glmPlan, deepseekPlan, glmApplied, deepseekApplied }))
+      .not.toContain('must-not-leak');
+  });
+
+  it('allows removing a current Pi generated Connection', async () => {
     const { kimiMembership } = seedConnectFlowAdapterFixtures({ includeAnthropic: false });
     const adapter = createMockAdapterPort(resolver);
     const applied = await adapter.apply({
@@ -398,11 +522,9 @@ describe('mock adapter route preview', () => {
       sourceId: kimiMembership.id,
       targetAgentId: 'pi',
     });
-    await expect(adapter.remove(applied.profile.id)).rejects.toMatchObject({
-      code: 'unsupported',
-    });
-    expect(await adapter.listProfiles()).toHaveLength(1);
-    expect(getMockProviderById(applied.provider.id)?.isCurrent).toBe(true);
+    await adapter.remove(applied.profile.id);
+    expect(await adapter.listProfiles()).toHaveLength(0);
+    expect(getMockProviderById(applied.provider.id)).toBeUndefined();
   });
 
   it('applies DeepSeek API to dsh by preset or host and keeps the secret out', async () => {
@@ -503,7 +625,11 @@ function contractAccount(id: string, source: ContractCase['source']): Account {
     tokenValid: true,
     credentialFormat: 'credentialFormat' in source ? source.credentialFormat : undefined,
     credentials: 'credentials' in source ? source.credentials : undefined,
-  } as Account & { credentials?: Record<string, unknown> };
+    extra: 'extra' in source ? source.extra : undefined,
+  } as Account & {
+    credentials?: Record<string, unknown>;
+    extra?: Record<string, unknown>;
+  };
 }
 
 describe('shared adapter capability contract', () => {

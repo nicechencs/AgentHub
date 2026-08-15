@@ -367,6 +367,553 @@ pub fn encode_anthropic_message(events: &[IrEvent]) -> ProtocolResult<Value> {
     }))
 }
 
+/// Render a neutral [`BridgeRequest`] as an Anthropic Messages request body.
+///
+/// Used by the Anthropic API Key → Codex local_bridge: Codex speaks Responses
+/// downstream; the host forwards this body to `POST /v1/messages` with
+/// `x-api-key` + `anthropic-version` (headers stay in the host).
+pub fn to_anthropic_messages_request(request: &BridgeRequest) -> Value {
+    let mut system = request.instructions.clone();
+    let mut messages = Vec::new();
+    let mut pending_tool_results = Vec::new();
+
+    for message in &request.input {
+        match message.role {
+            MessageRole::System | MessageRole::Developer => {
+                flush_tool_results(&mut messages, &mut pending_tool_results);
+                let text = collect_text(message);
+                if text.is_empty() {
+                    continue;
+                }
+                match &mut system {
+                    Some(existing) => {
+                        existing.push('\n');
+                        existing.push_str(&text);
+                    }
+                    None => system = Some(text),
+                }
+            }
+            MessageRole::Tool => {
+                for part in &message.content {
+                    if let BridgeContent::ToolResult { call_id, output } = part {
+                        pending_tool_results.push(json!({
+                            "type": "tool_result",
+                            "tool_use_id": call_id,
+                            "content": output,
+                        }));
+                    }
+                }
+            }
+            MessageRole::User => {
+                flush_tool_results(&mut messages, &mut pending_tool_results);
+                messages.push(anthropic_user_message(message));
+            }
+            MessageRole::Assistant => {
+                flush_tool_results(&mut messages, &mut pending_tool_results);
+                messages.push(anthropic_assistant_message(message));
+            }
+        }
+    }
+    flush_tool_results(&mut messages, &mut pending_tool_results);
+
+    let mut body = Map::new();
+    body.insert("model".to_owned(), Value::String(request.model.clone()));
+    body.insert("stream".to_owned(), Value::Bool(request.stream));
+    body.insert(
+        "max_tokens".to_owned(),
+        request
+            .passthrough
+            .get("max_output_tokens")
+            .cloned()
+            .unwrap_or(json!(4096)),
+    );
+    if let Some(system) = system {
+        body.insert("system".to_owned(), Value::String(system));
+    }
+    body.insert("messages".to_owned(), Value::Array(messages));
+
+    if !request.tools.is_empty() {
+        body.insert(
+            "tools".to_owned(),
+            Value::Array(
+                request
+                    .tools
+                    .iter()
+                    .map(|tool| {
+                        let mut object = Map::new();
+                        object.insert("name".to_owned(), Value::String(tool.name.clone()));
+                        object.insert("input_schema".to_owned(), tool.parameters.clone());
+                        if let Some(description) = &tool.description {
+                            object.insert(
+                                "description".to_owned(),
+                                Value::String(description.clone()),
+                            );
+                        }
+                        Value::Object(object)
+                    })
+                    .collect(),
+            ),
+        );
+    }
+
+    if let Some(tool_choice) = &request.tool_choice {
+        body.insert(
+            "tool_choice".to_owned(),
+            render_anthropic_tool_choice(tool_choice),
+        );
+    }
+
+    for key in ["temperature", "top_p", "top_k", "stop_sequences", "metadata"] {
+        if let Some(value) = request.passthrough.get(key) {
+            body.insert(key.to_owned(), value.clone());
+        }
+    }
+
+    Value::Object(body)
+}
+
+/// Convenience entry: Responses request → Anthropic Messages request.
+pub fn translate_responses_to_anthropic_request(
+    value: &Value,
+) -> ProtocolResult<(BridgeRequest, Value)> {
+    let request = crate::bridge::protocol::responses::parse_responses_request(value)?;
+    let anthropic = to_anthropic_messages_request(&request);
+    Ok((request, anthropic))
+}
+
+/// Convert a completed non-streaming Anthropic Messages object into [`IrEvent`]s.
+pub fn anthropic_message_to_ir(value: &Value) -> ProtocolResult<Vec<IrEvent>> {
+    if value.get("error").is_some() {
+        return Ok(vec![IrEvent::Error {
+            code: "upstream_error".to_owned(),
+            message: "The upstream model provider returned an error.".to_owned(),
+            retryable: false,
+        }]);
+    }
+
+    let object = value.as_object().ok_or_else(|| {
+        ProtocolError::invalid_request("Anthropic Messages body must be a JSON object.")
+    })?;
+    let id = object
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("msg_agenthub")
+        .to_owned();
+    let model = object
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown")
+        .to_owned();
+
+    let mut events = vec![IrEvent::MessageStart { id, model }];
+    let content = object
+        .get("content")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            ProtocolError::invalid_request("Anthropic Messages body requires a content array.")
+        })?;
+
+    for block in content {
+        let block_object = block.as_object().ok_or_else(|| {
+            ProtocolError::invalid_request("Each Anthropic content block must be an object.")
+        })?;
+        match block_object.get("type").and_then(Value::as_str) {
+            Some("text") => {
+                let text = block_object
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if !text.is_empty() {
+                    events.push(IrEvent::TextDelta {
+                        text: text.to_owned(),
+                    });
+                }
+            }
+            Some("tool_use") => {
+                let call_id = required_string(block_object, "id", "tool_use requires an id.")?;
+                let name = required_string(block_object, "name", "tool_use requires a name.")?;
+                events.push(IrEvent::ToolCallStart {
+                    id: call_id.clone(),
+                    name,
+                });
+                if let Some(input) = block_object.get("input") {
+                    let arguments = match input {
+                        Value::String(raw) => raw.clone(),
+                        other => serde_json::to_string(other).unwrap_or_else(|_| "{}".to_owned()),
+                    };
+                    if !arguments.is_empty() && arguments != "{}" {
+                        events.push(IrEvent::ToolCallDelta {
+                            id: call_id.clone(),
+                            arguments_delta: arguments,
+                        });
+                    }
+                }
+                events.push(IrEvent::ToolCallEnd { id: call_id });
+            }
+            Some("thinking") | Some("redacted_thinking") => {
+                return Err(ProtocolError::unsupported(
+                    "unsupported_thinking",
+                    "Thinking blocks are not supported by this bridge.",
+                ));
+            }
+            Some("image") => {
+                return Err(ProtocolError::unsupported(
+                    "unsupported_image_input",
+                    "Image input is not supported by this bridge.",
+                ));
+            }
+            Some(_) => {
+                return Err(ProtocolError::unsupported(
+                    "unsupported_output_content",
+                    "This Anthropic content type is not supported by this bridge.",
+                ));
+            }
+            None => {
+                return Err(ProtocolError::invalid_request(
+                    "Each Anthropic content block requires a type.",
+                ));
+            }
+        }
+    }
+
+    if let Some(usage) = object.get("usage").and_then(Usage::from_anthropic_usage) {
+        events.push(IrEvent::Usage {
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+            cached_input_tokens: usage.cached_input_tokens,
+        });
+    }
+
+    events.push(IrEvent::MessageEnd {
+        stop_reason: StopReason::from_anthropic_stop_reason(
+            object.get("stop_reason").and_then(Value::as_str),
+        ),
+    });
+    Ok(events)
+}
+
+/// Stateful Anthropic Messages SSE → IR translator for the Anthropic upstream stream.
+///
+/// Feed each decoded `data:` JSON object to [`Self::push_event`]. Call [`Self::finish`]
+/// if the upstream closes without `message_stop`.
+#[derive(Debug, Default)]
+pub struct AnthropicStreamToIr {
+    started: bool,
+    completed: bool,
+    message_id: String,
+    model: String,
+    open_tool: Option<OpenAnthropicTool>,
+    stop_reason: StopReason,
+    usage: Option<Usage>,
+    pending: Vec<IrEvent>,
+}
+
+#[derive(Debug, Clone)]
+struct OpenAnthropicTool {
+    id: String,
+    ended: bool,
+}
+
+impl AnthropicStreamToIr {
+    pub fn new() -> Self {
+        Self {
+            message_id: "msg_agenthub".to_owned(),
+            model: "unknown".to_owned(),
+            stop_reason: StopReason::Stop,
+            ..Self::default()
+        }
+    }
+
+    pub fn completed(&self) -> bool {
+        self.completed
+    }
+
+    pub fn push_event(&mut self, value: &Value) -> ProtocolResult<Vec<IrEvent>> {
+        if self.completed {
+            return Ok(Vec::new());
+        }
+        let object = value.as_object().ok_or_else(|| {
+            ProtocolError::invalid_request("Each Anthropic SSE event must be a JSON object.")
+        })?;
+        let event_type = object
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+
+        match event_type {
+            "message_start" => {
+                if let Some(message) = object.get("message").and_then(Value::as_object) {
+                    if let Some(id) = message.get("id").and_then(Value::as_str) {
+                        self.message_id = id.to_owned();
+                    }
+                    if let Some(model) = message.get("model").and_then(Value::as_str) {
+                        self.model = model.to_owned();
+                    }
+                    if let Some(usage) = message.get("usage").and_then(Usage::from_anthropic_usage)
+                    {
+                        self.usage = Some(usage);
+                    }
+                }
+                self.ensure_message_start();
+            }
+            "content_block_start" => {
+                self.ensure_message_start();
+                if let Some(block) = object.get("content_block").and_then(Value::as_object) {
+                    match block.get("type").and_then(Value::as_str) {
+                        Some("text") => {}
+                        Some("tool_use") => {
+                            self.close_open_tool();
+                            let call_id = block
+                                .get("id")
+                                .and_then(Value::as_str)
+                                .filter(|value| !value.is_empty())
+                                .unwrap_or("call_0");
+                            let name = block
+                                .get("name")
+                                .and_then(Value::as_str)
+                                .filter(|value| !value.is_empty())
+                                .unwrap_or("tool");
+                            self.open_tool = Some(OpenAnthropicTool {
+                                id: call_id.to_owned(),
+                                ended: false,
+                            });
+                            self.pending.push(IrEvent::ToolCallStart {
+                                id: call_id.to_owned(),
+                                name: name.to_owned(),
+                            });
+                            self.stop_reason = StopReason::ToolCalls;
+                        }
+                        Some("thinking") | Some("redacted_thinking") => {
+                            return Err(ProtocolError::unsupported(
+                                "unsupported_thinking",
+                                "Thinking blocks are not supported by this bridge.",
+                            ));
+                        }
+                        Some("image") => {
+                            return Err(ProtocolError::unsupported(
+                                "unsupported_image_input",
+                                "Image input is not supported by this bridge.",
+                            ));
+                        }
+                        Some(_) => {
+                            return Err(ProtocolError::unsupported(
+                                "unsupported_output_content",
+                                "This Anthropic content type is not supported by this bridge.",
+                            ));
+                        }
+                        None => {
+                            return Err(ProtocolError::invalid_request(
+                                "content_block_start requires a content_block type.",
+                            ));
+                        }
+                    }
+                }
+            }
+            "content_block_delta" => {
+                self.ensure_message_start();
+                if let Some(delta) = object.get("delta").and_then(Value::as_object) {
+                    match delta.get("type").and_then(Value::as_str) {
+                        Some("text_delta") => {
+                            if let Some(text) = delta.get("text").and_then(Value::as_str) {
+                                if !text.is_empty() {
+                                    self.pending.push(IrEvent::TextDelta {
+                                        text: text.to_owned(),
+                                    });
+                                }
+                            }
+                        }
+                        Some("input_json_delta") => {
+                            let Some(tool) = &self.open_tool else {
+                                return Err(ProtocolError::invalid_request(
+                                    "Tool call delta without an open tool block.",
+                                ));
+                            };
+                            let partial = delta
+                                .get("partial_json")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default();
+                            if !partial.is_empty() {
+                                self.pending.push(IrEvent::ToolCallDelta {
+                                    id: tool.id.clone(),
+                                    arguments_delta: partial.to_owned(),
+                                });
+                            }
+                        }
+                        Some("thinking_delta") => {
+                            return Err(ProtocolError::unsupported(
+                                "unsupported_thinking",
+                                "Thinking blocks are not supported by this bridge.",
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            "content_block_stop" => {
+                self.ensure_message_start();
+                self.close_open_tool();
+            }
+            "message_delta" => {
+                self.ensure_message_start();
+                if let Some(delta) = object.get("delta").and_then(Value::as_object) {
+                    if let Some(reason) = delta.get("stop_reason").and_then(Value::as_str) {
+                        self.stop_reason = StopReason::from_anthropic_stop_reason(Some(reason));
+                    }
+                }
+                if let Some(usage) = object.get("usage").and_then(Usage::from_anthropic_usage) {
+                    self.usage = Some(usage);
+                }
+            }
+            "message_stop" => {
+                self.ensure_message_start();
+                self.close_open_tool();
+                self.push_terminal();
+            }
+            "error" => {
+                self.completed = true;
+                self.pending.push(IrEvent::Error {
+                    code: "upstream_error".to_owned(),
+                    message: "The upstream model provider returned an error.".to_owned(),
+                    retryable: false,
+                });
+            }
+            "ping" => {}
+            _ => {}
+        }
+
+        Ok(std::mem::take(&mut self.pending))
+    }
+
+    pub fn finish(&mut self) -> Vec<IrEvent> {
+        if !self.completed {
+            self.ensure_message_start();
+            self.close_open_tool();
+            self.push_terminal();
+        }
+        std::mem::take(&mut self.pending)
+    }
+
+    fn ensure_message_start(&mut self) {
+        if !self.started {
+            self.started = true;
+            self.pending.push(IrEvent::MessageStart {
+                id: self.message_id.clone(),
+                model: self.model.clone(),
+            });
+        }
+    }
+
+    fn close_open_tool(&mut self) {
+        if let Some(tool) = self.open_tool.take() {
+            if !tool.ended {
+                self.pending.push(IrEvent::ToolCallEnd { id: tool.id });
+            }
+        }
+    }
+
+    fn push_terminal(&mut self) {
+        if self.completed {
+            return;
+        }
+        self.completed = true;
+        if let Some(usage) = self.usage.clone() {
+            self.pending.push(IrEvent::Usage {
+                input_tokens: usage.input_tokens,
+                output_tokens: usage.output_tokens,
+                cached_input_tokens: usage.cached_input_tokens,
+            });
+        }
+        self.pending.push(IrEvent::MessageEnd {
+            stop_reason: self.stop_reason.clone(),
+        });
+    }
+}
+
+fn flush_tool_results(messages: &mut Vec<Value>, pending: &mut Vec<Value>) {
+    if pending.is_empty() {
+        return;
+    }
+    messages.push(json!({
+        "role": "user",
+        "content": std::mem::take(pending),
+    }));
+}
+
+fn collect_text(message: &BridgeMessage) -> String {
+    message
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            BridgeContent::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn anthropic_user_message(message: &BridgeMessage) -> Value {
+    let mut content = Vec::new();
+    for part in &message.content {
+        match part {
+            BridgeContent::Text { text } if !text.is_empty() => {
+                content.push(json!({ "type": "text", "text": text }));
+            }
+            BridgeContent::ToolResult { call_id, output } => {
+                content.push(json!({
+                    "type": "tool_result",
+                    "tool_use_id": call_id,
+                    "content": output,
+                }));
+            }
+            _ => {}
+        }
+    }
+    if content.is_empty() {
+        content.push(json!({ "type": "text", "text": "" }));
+    }
+    json!({ "role": "user", "content": content })
+}
+
+fn anthropic_assistant_message(message: &BridgeMessage) -> Value {
+    let mut content = Vec::new();
+    for part in &message.content {
+        match part {
+            BridgeContent::Text { text } if !text.is_empty() => {
+                content.push(json!({ "type": "text", "text": text }));
+            }
+            BridgeContent::ToolCall {
+                id,
+                name,
+                arguments,
+                ..
+            } => {
+                let input = if arguments.trim().is_empty() {
+                    json!({})
+                } else {
+                    serde_json::from_str(arguments)
+                        .unwrap_or_else(|_| json!({ "raw": arguments }))
+                };
+                content.push(json!({
+                    "type": "tool_use",
+                    "id": id,
+                    "name": name,
+                    "input": input,
+                }));
+            }
+            _ => {}
+        }
+    }
+    json!({ "role": "assistant", "content": content })
+}
+
+fn render_anthropic_tool_choice(choice: &ToolChoice) -> Value {
+    match choice {
+        ToolChoice::Auto => json!({ "type": "auto" }),
+        ToolChoice::None => json!({ "type": "none" }),
+        ToolChoice::Required => json!({ "type": "any" }),
+        ToolChoice::Function { name } => json!({ "type": "tool", "name": name }),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OpenBlock {
     Text,

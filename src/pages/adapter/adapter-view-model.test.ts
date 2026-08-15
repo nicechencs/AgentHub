@@ -15,6 +15,7 @@ import {
   adapterServiceStatusView,
   adapterTargetBadge,
   adapterTargetCacheKey,
+  filterBoundLocalBridgeRuntimes,
   resolveAdapterProfileSource,
 } from './adapter-view-model';
 
@@ -38,6 +39,37 @@ function bridgeProfile(partial: Partial<AdapterProfile> = {}): AdapterProfile {
     ...partial,
   };
 }
+
+describe('bound local-bridge runtime filter', () => {
+  const entries = [
+    { source: 'provider' as const, id: 'kimi-1' },
+    { source: 'account' as const, id: 'acc-1' },
+  ];
+
+  it('keeps local_bridge profiles whose source still exists', () => {
+    const kept = filterBoundLocalBridgeRuntimes(
+      [bridgeProfile(), bridgeProfile({ id: 'direct', route: 'native_endpoint', sourceId: 'kimi-1' })],
+      { entries },
+    );
+    expect(kept.map((item) => item.id)).toEqual(['bridge-1']);
+  });
+
+  it('keeps a missing-source bridge when wallet binding.profileId hits', () => {
+    const orphan = bridgeProfile({ id: 'orphan', sourceId: 'deleted' });
+    expect(filterBoundLocalBridgeRuntimes([orphan], { entries })).toEqual([]);
+    expect(filterBoundLocalBridgeRuntimes([orphan], {
+      entries,
+      bindingProfileIds: new Set(['orphan']),
+    }).map((item) => item.id)).toEqual(['orphan']);
+  });
+
+  it('drops bridges with no source id', () => {
+    expect(filterBoundLocalBridgeRuntimes(
+      [bridgeProfile({ sourceId: '' })],
+      { entries, bindingProfileIds: new Set(['bridge-1']) },
+    )).toEqual([]);
+  });
+});
 
 describe('adapter target panorama view model', () => {
   it('maps analyze conclusions onto route badges without claiming write access', () => {

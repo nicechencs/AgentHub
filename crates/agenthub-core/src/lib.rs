@@ -27,7 +27,7 @@ use services::{
     check_agent_updates as probe_agent_updates, install_runtime_system, invalidate_latest_cache,
     AccountService, AdapterApplyService, AdapterBridgeService, AdapterRouteService, AgentService,
     BackupService, ChatService, ConnectionService, EnvService, ProjectService, ProviderService,
-    RunService, SettingsService, SkillService, UsageService,
+    RunService, SettingsService, SkillService, TicketBindService, TicketReadService, UsageService,
 };
 use storage::Database;
 use utils::command_exec::SystemCommandExecutor;
@@ -64,6 +64,10 @@ pub struct AgentHub {
     /// Prepares/persists the Kimi membership -> Codex bridge saga. The desktop
     /// host owns listener lifetime and live configuration switching.
     pub adapter_bridge: AdapterBridgeService,
+    /// Read-only Ticket / Binding wallet aggregation + plan(ticket, agent).
+    pub tickets: TicketReadService,
+    /// Ticket bind / unbind write API. Codex bridge bind stays on the host.
+    pub ticket_bind: TicketBindService,
     pub backups: BackupService,
     pub skills: SkillService,
     pub settings: SettingsService,
@@ -99,6 +103,9 @@ impl AgentHub {
         let adapter_apply =
             AdapterApplyService::new(db.clone(), registry.clone(), backups_dir(&data_dir));
         let adapter_bridge = AdapterBridgeService::new(db.clone());
+        let tickets = TicketReadService::new(db.clone());
+        let ticket_bind =
+            TicketBindService::new(db.clone(), registry.clone(), backups_dir(&data_dir));
         let backups = BackupService::new(db.clone(), registry.clone(), backups_dir(&data_dir));
         let skills = SkillService::with_db(
             home_dir()?.join(".agents").join("skills"),
@@ -130,6 +137,8 @@ impl AgentHub {
             adapter_routes,
             adapter_apply,
             adapter_bridge,
+            tickets,
+            ticket_bind,
             backups,
             skills,
             settings,

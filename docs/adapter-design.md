@@ -1,20 +1,20 @@
 # Adapter 页面与本地协议桥接设计
 
-> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi → Codex 实验性本地桥接 + Pi 配置同步）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）。ChatGPT/Codex subscription → Claude Code 是单独受门禁约束的实验候选，当前仍为 `unsupported` / `plan.canApply=false`。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。Kimi → Codex 发布前仍需实机 dogfood。
-> 2026-08-15：跨 Agent 复用的**目标领域**改为票 / 绑定 / 协议图（[connection-binding-model.md](connection-binding-model.md)）。本文描述的 apply / 生成 Provider / 行按钮白名单是**当前实现**；目标写入是 `bind`/`unbind`，生成物是绑定的私有 runtime，不是钱包里的新票。
+> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi / Anthropic → Codex 实验性本地桥接 + Pi 配置同步）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）。Anthropic API Key → Codex 的 `local_bridge` 已开放 experimental bind。ChatGPT/Codex subscription → Claude Code 是单独受门禁约束的实验候选，当前仍为 `unsupported` / `plan.canApply=false`。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。Kimi / Anthropic → Codex 发布前仍需实机 dogfood。
+> 2026-08-15：跨 Agent 复用的**目标领域**改为票 / 绑定 / 协议图（[connection-binding-model.md](connection-binding-model.md)）。ConnectFlow 确认步与 Adapter 页删除已改走 `bind`/`unbind`；内部仍可复用 apply 实现 reshape/bridge 运行时。生成物是绑定的私有 runtime，不是钱包里的新票。
 > 调研日期：2026-08-12（进度同步：2026-08-12）
 > 重点参考：`D:\demo_github\AgentHub_Ref\Cli-Proxy-API-Management-Center`
 > 关联文档：[adapter-sidecar-design.md](adapter-sidecar-design.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
-> 2026-08-14 同步：Hub 重构 Phase 1 落地（[hub-redesign-plan.md](hub-redesign-plan.md)）——Dashboard Agent 卡片与 Connections 行新增统一连接流程 `ConnectFlowDialog`（复用同一 `lib/api/adapter` 门面与 `plan.canApply` 门禁）。Adapter 页（侧栏「桥与适配」）是高级管理入口（profile / 本地桥），不是日常创建入口；创建/apply 只走 ConnectFlow。
+> 2026-08-14 同步：Hub 重构 Phase 1 落地（[hub-redesign-plan.md](hub-redesign-plan.md)）——Dashboard Agent 卡片与 Connections 行新增统一连接流程 `ConnectFlowDialog`（复用同一 `lib/api/adapter` 门面与 `plan.canApply` 门禁）。Adapter 页（侧栏「桥与适配」）只管理已绑定的本机桥 runtime，不是日常创建入口；创建绑定不在本页。
 
 ## 0. 当前落地状态
 
 | 范围 | 状态 | 当前边界 |
 |---|---|---|
-| 规则分析与预览 | ✅ | contracts、mock、`analyze`、`plan`、ConnectFlowDialog 和 Adapter 页 profile 列表已接线；limitations 与 `canApply` 对齐真实能力 |
+| 规则分析与预览 | ✅ | contracts、mock、`analyze`、`plan`、ConnectFlowDialog 已接线；Adapter 页只列已绑定的本机桥 runtime；limitations 与 `canApply` 对齐真实能力 |
 | 稳定规则应用 | ✅ | Kimi Code 会员 Provider → Claude Code `native_endpoint` 可 apply；finalize 失败会回滚 live/current；返回值脱敏 |
 | 其它直连 / 配置同步规则 | ✅ | Kimi 会员 / Anthropic API Key → Pi `config_sync` 可 apply；未显式 `canApply=true` 的组合一律不可写 |
-| Bridge core | ✅ | `BridgeRuntimeHost`（per-profile gate、admission、超时与 cancellation-safe drain）、Responses ↔ Chat 协议与 fixtures |
+| Bridge core | ✅ | `BridgeRuntimeHost`（per-profile gate、admission、超时与 cancellation-safe drain）、Responses ↔ Chat / Responses ↔ Anthropic Messages 协议与 fixtures |
 | Bridge 产品接线 | ✅ | Codex `local_bridge` 的 `canApply`、Tauri apply/start/stop/status、健康检查、失败补偿、凭证轮转 stop→restart、端口 rebind、opt-in auto-start 恢复、退出 drain；UI 已拆分 wire/model/components |
 | Bridge 进程边界 | 🎯 已决策 / 未迁移 | 目标为同包用户级 `agenthub-adapterd`；当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有，详细契约见 [Adapter Sidecar 目标架构](adapter-sidecar-design.md) |
 
@@ -22,13 +22,13 @@
 
 ## 1. 结论
 
-Adapter 负责把 **钱包里已有的票** 接到另一个 Agent。机制不变：只引用票，不复制凭据，不另建一套账号池，也不是通用 API 网关。目标对象是 **绑定**：`plan(票, Agent)` 在 native / reshape / bridge / 不可行 中择一，`bind` 写入。当前代码仍以 apply + 生成 Provider 实现 reshape/bridge，见 [connection-binding-model.md](connection-binding-model.md)。
+Adapter 负责把 **钱包里已有的票** 接到另一个 Agent。机制不变：只引用票，不复制凭据，不另建一套账号池，也不是通用 API 网关。目标对象是 **绑定**：`plan(票, Agent)` 在 native / reshape / bridge / 不可行 中择一，`bind` 写入。前端写入入口已是 `bind`/`unbind`；mock/内部仍可复用 apply 生成运行时，见 [connection-binding-model.md](connection-binding-model.md)。
 
-**入口定位（Adapter 页降级已落地）**：日常发起适配走 Hub 对话框，不必打开本页。`/adapter` 与侧栏「桥与适配」保留，只做已创建 profile 与本地桥的高级管理，不再提供选来源→分析→plan→apply 创建区。入口与信息架构见 [hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)。
+**入口定位（Adapter 页降级已落地）**：日常发起适配走 Hub 对话框，不必打开本页。`/adapter` 与侧栏「桥与适配」保留，只管理已绑定的本机桥 runtime，不再提供选来源→分析→plan→apply 创建区。入口与信息架构见 [hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)。
 
 - 推荐：Dashboard「连接/切换」、Connections「接到…」（当前文案仍为「用于其他 Agent」）→ 同一绑定对话框。
-- 保留：`/adapter` 只列出 `bridge` 运行时（start/stop/retry、autoStart、详情、unbind）。
-- 创建绑定只走 Hub：经 `lib/api/adapter`；`plan.canApply` 表示现在能写入。目标 UI 见 [ui-design.md §4.3](ui-design.md)。
+- 保留：`/adapter` 只列出 `bridge` 运行时（start/stop/retry、autoStart、详情、删除走 `unbind`）。
+- 创建绑定只走 Hub：经 `lib/api/tickets` 的 `bind`；`plan.canApply` 表示现在能写入。目标 UI 见 [ui-design.md §4.3](ui-design.md)。
 
 一次规划只产生以下四种结果之一（括号内为当前实现名）：
 
@@ -47,7 +47,7 @@ Adapter 负责把 **钱包里已有的票** 接到另一个 Agent。机制不变
 4. **不是 Token 格式互转**：OAuth access/refresh token 不能通过改字段名变成另一家授权。只有目标客户端明确支持同一授权和刷新语义时，才可做配置同步。
 5. **能力要可验证**：兼容性由版本化规则和真实探测共同决定，不依赖页面硬编码的宣传矩阵。
 6. **Provider 不是服务**：Provider/Connection 是持久化配置实体；需要后台运行的是 `BridgeRuntime`。当前由 AgentHub 托盘进程托管，目标迁移到用户级 `agenthub-adapterd`；无论部署形态如何，都不把页面组件、Connections 或 ProviderService 变成长驻 HTTP 服务。
-7. **入口分层，机制不分叉**：日常走 Dashboard / Connections 的 `ConnectFlowDialog`；`/adapter` 页是高级管理（profile / 桥），不是日常创建入口。创建/apply 共用 `lib/api/adapter` 与 `plan.canApply`。
+7. **入口分层，机制不分叉**：日常走 Dashboard / Connections 的 `ConnectFlowDialog`；`/adapter` 页只管理已绑定的本机桥 runtime，不是日常创建入口。创建/apply 共用 `lib/api/adapter` 与 `plan()`。
 
 ## 2. 范围与非目标
 
@@ -129,7 +129,7 @@ type CompatibilityRule = {
 | Dashboard Agent 卡片 | 「连接/切换」 | `ConnectFlowDialog`（固定目标 Agent） |
 | Connections 行 | 「接到…」（目标；当前文案仍为「用于其他 Agent」） | 绑定对话框（固定票） |
 
-本页是高级管理入口：已创建 profile 列表与本地桥控件（start/stop/retry、autoStart、详情、删除）。日常创建不在本页。`/adapter` 路由与侧栏「桥与适配」均保留。创建/apply 只走 `ConnectFlowDialog`，经 `lib/api/adapter`，以 `plan.canApply` 为权威。入口与信息架构见 [hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)。
+本页只管理已绑定的本机桥 runtime（`route=local_bridge` 且来源仍在或钱包 binding.profileId 命中）：端口、启停、自动恢复、失败详情。日常创建不在本页。`/adapter` 路由与侧栏「桥与适配」均保留。创建绑定只走 `ConnectFlowDialog`，经 `lib/api/adapter`，以 `plan()` 的 route / maturity / canApply / reason 为权威。入口与信息架构见 [hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)。
 
 以下描述本页（`/adapter`）自身，不是 `ConnectFlowDialog`：
 
@@ -703,7 +703,7 @@ src/pages/dashboard/index.tsx               # 已落地：挂载 ConnectFlowDial
 src/pages/connections/index.tsx             # 已落地：挂载 ConnectFlowDialog
 
 src/dev/mocks/adapter.ts
-src/pages/adapter/                          # 保留：高级管理（profile / 桥），不是日常创建入口
+src/pages/adapter/                          # 保留：只管理已绑定的本机桥 runtime，不是日常创建入口
 ├─ index.tsx
 └─ index.test.tsx
 ```

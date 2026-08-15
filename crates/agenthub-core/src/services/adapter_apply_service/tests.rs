@@ -1,6 +1,9 @@
 use super::*;
 use crate::adapters::AgentAdapter;
 use crate::models::Provider;
+use crate::services::adapter_route_constants::{
+    DEEPSEEK_CLAUDE_BASE_URL, GLM_CLAUDE_BASE_URL, KIMI_CLAUDE_BASE_URL,
+};
 use crate::models::{
     AgentConfig, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
     InstallChannel, RunOptions, RunSpec,
@@ -339,6 +342,30 @@ fn active_complete_projection_returns_existing_pair_without_switching() {
         .unwrap();
     assert_eq!(result.profile.status, AdapterProfileStatus::Active);
     assert_eq!(result.provider.id, profile.generated_provider_id.unwrap());
+}
+
+#[test]
+fn active_complete_projection_ignores_display_name_drift() {
+    let (dir, db) = test_db();
+    let source = kimi_source("kimi-source", "test-kimi-secret");
+    let mut profile = active_profile(&source.id);
+    profile.name = "legacy display → Claude".into();
+    let mut provider = generated_provider(&profile.id, &source.id, true);
+    provider.name = "legacy display".into();
+    ProviderRepo::new(db.clone()).create(&source).unwrap();
+    ProviderRepo::new(db.clone()).create(&provider).unwrap();
+    AdapterProfileRepo::new(db.clone())
+        .create(&profile)
+        .unwrap();
+    // Empty registry: a name-only mismatch must not fall through to switch.
+    let service = AdapterApplyService::new(db, AdapterRegistry::new(), dir.path().join("backups"));
+
+    let result = service
+        .apply(&request(&source.id, AgentId::Claude))
+        .unwrap();
+    assert_eq!(result.profile.status, AdapterProfileStatus::Active);
+    assert_eq!(result.provider.id, provider.id);
+    assert_eq!(result.provider.name, "legacy display");
 }
 
 #[test]
@@ -704,7 +731,7 @@ fn successful_apply_materializes_secret_only_in_live_config() {
 }
 
 #[test]
-fn remove_rejects_current_generated_provider_without_deleting_profile() {
+fn remove_current_generated_provider_without_previous_still_deletes() {
     let (_dir, db) = test_db();
     let source_id = "kimi-source";
     let profile = active_profile(source_id);
@@ -719,17 +746,15 @@ fn remove_rejects_current_generated_provider_without_deleting_profile() {
         tempfile::tempdir().unwrap().path().join("backups"),
     );
 
-    let error = service.remove(&profile.id).unwrap_err();
-    assert_eq!(error.code(), "unsupported");
-    assert!(error.to_string().contains("Connections"));
+    service.remove(&profile.id).unwrap();
     assert!(AdapterProfileRepo::new(db.clone())
         .get(&profile.id)
         .unwrap()
-        .is_some());
+        .is_none());
     assert!(ProviderRepo::new(db)
         .get_by_id(&provider.id)
         .unwrap()
-        .is_some());
+        .is_none());
 }
 
 #[test]
@@ -1158,32 +1183,46 @@ fn remove_uses_target_agent_lock_not_hardcoded_claude() {
 }
 
 #[test]
-fn pi_remove_rejects_current_generated_provider_without_deleting_profile() {
-    let (_dir, db) = test_db();
+fn pi_remove_current_restores_previous_and_deletes_projection() {
+    let (dir, db) = test_db();
     let source_id = "kimi-source";
+    let previous = Provider {
+        id: "pi-previous".into(),
+        agent_id: AgentId::Pi,
+        name: "Previous Pi".into(),
+        settings_config: json!({"models": {"providers": {}}}),
+        meta: json!({}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    };
     let profile = active_pi_kimi_profile(source_id);
-    let provider = generated_pi_kimi_provider(&profile.id, source_id, true);
+    let mut provider = generated_pi_kimi_provider(&profile.id, source_id, true);
+    provider.meta["previousCurrentId"] = json!(previous.id);
     AdapterProfileRepo::new(db.clone())
         .create(&profile)
         .unwrap();
+    ProviderRepo::new(db.clone()).create(&previous).unwrap();
     ProviderRepo::new(db.clone()).create(&provider).unwrap();
-    let service = AdapterApplyService::new(
-        db.clone(),
-        AdapterRegistry::new(),
-        tempfile::tempdir().unwrap().path().join("backups"),
-    );
+    let fake = Arc::new(FakePiAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake);
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
 
-    let error = service.remove(&profile.id).unwrap_err();
-    assert_eq!(error.code(), "unsupported");
-    assert!(error.to_string().contains("Connections"));
+    service.remove(&profile.id).unwrap();
     assert!(AdapterProfileRepo::new(db.clone())
         .get(&profile.id)
         .unwrap()
-        .is_some());
-    assert!(ProviderRepo::new(db)
+        .is_none());
+    assert!(ProviderRepo::new(db.clone())
         .get_by_id(&provider.id)
         .unwrap()
-        .is_some());
+        .is_none());
+    let restored = ProviderRepo::new(db)
+        .get_by_id(&previous.id)
+        .unwrap()
+        .unwrap();
+    assert!(restored.is_current);
 }
 
 #[test]
@@ -1276,7 +1315,7 @@ fn moonshot_and_bare_kimi_apply_creates_no_profile() {
 }
 
 #[test]
-fn pi_account_source_apply_is_rejected_without_side_effects() {
+fn pi_anthropic_account_apply_sets_source_ref_account_and_keeps_secret_out() {
     let (dir, db) = test_db();
     crate::storage::AccountRepo::new(db.clone())
         .create(&crate::models::Account {
@@ -1284,7 +1323,10 @@ fn pi_account_source_apply_is_rejected_without_side_effects() {
             agent_id: AgentId::Claude,
             kind: crate::models::AccountKind::ApiKey,
             label: "Anthropic key".into(),
-            credentials: json!({"api_key": "sk-anthropic-secret"}),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "sk-anthropic-secret"
+            }),
             extra: json!({"provider": "anthropic"}),
             status: "active".into(),
             is_current: false,
@@ -1292,25 +1334,318 @@ fn pi_account_source_apply_is_rejected_without_side_effects() {
             updated_at: "now".into(),
         })
         .unwrap();
-    let service = AdapterApplyService::new(
-        db.clone(),
-        AdapterRegistry::new(),
-        dir.path().join("backups"),
-    );
+    let fake = Arc::new(FakePiAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
 
-    let error = service
+    let result = service
         .apply(&AdapterApplyRequest {
             source_kind: AdapterSourceKind::Account,
             source_id: "anthropic-account".into(),
             target_agent_id: AgentId::Pi,
         })
-        .unwrap_err();
-    assert_eq!(error.code(), "unsupported");
-    assert!(AdapterProfileRepo::new(db.clone())
-        .list(None, None, None)
+        .unwrap();
+    let stored = ProviderRepo::new(db)
+        .get_by_id(&result.provider.id)
         .unwrap()
-        .is_empty());
-    assert_eq!(ProviderRepo::new(db).list(None).unwrap().len(), 0);
+        .unwrap();
+    let live = fake.read_config().unwrap();
+
+    assert!(result.provider.is_current);
+    assert_eq!(result.profile.source_kind, AdapterSourceKind::Account);
+    assert_eq!(result.profile.rule_id, ANTHROPIC_PI_RULE_ID);
+    assert_eq!(stored.meta["adapterSourceRef"]["kind"], "account");
+    assert_eq!(stored.meta["adapterSourceRef"]["id"], "anthropic-account");
+    assert_eq!(
+        live.raw["models"]["providers"][ANTHROPIC_PI_PROVIDER_SLOT]["apiKey"],
+        "sk-anthropic-secret"
+    );
+    assert_eq!(
+        stored.settings_config["models"]["providers"][ANTHROPIC_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert!(!serde_json::to_string(&result)
+        .unwrap()
+        .contains("sk-anthropic-secret"));
+}
+
+fn explicit_api_source(id: &str, preset: &str, env_key: &str, api_key: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        name: format!("{preset} API"),
+        settings_config: json!({"env": { env_key: api_key }}),
+        meta: json!({"preset": preset}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+#[test]
+fn pi_openai_and_xai_apply_sets_slot_and_keeps_secret_out() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "openai-source",
+            "openai",
+            "OPENAI_API_KEY",
+            "sk-openai-secret",
+        ))
+        .unwrap();
+    crate::storage::AccountRepo::new(db.clone())
+        .create(&crate::models::Account {
+            id: "xai-account".into(),
+            agent_id: AgentId::Grok,
+            kind: crate::models::AccountKind::ApiKey,
+            label: "xAI key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "xai-account-secret"
+            }),
+            extra: json!({"provider": "xai"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let fake = Arc::new(FakePiAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
+
+    let openai = service.apply(&request("openai-source", AgentId::Pi)).unwrap();
+    assert_eq!(openai.profile.rule_id, OPENAI_PI_RULE_ID);
+    let openai_stored = ProviderRepo::new(db.clone())
+        .get_by_id(&openai.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        openai_stored.settings_config["models"]["providers"][OPENAI_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(
+        fake.read_config().unwrap().raw["models"]["providers"][OPENAI_PI_PROVIDER_SLOT]["apiKey"],
+        "sk-openai-secret"
+    );
+
+    let xai = service
+        .apply(&AdapterApplyRequest {
+            source_kind: AdapterSourceKind::Account,
+            source_id: "xai-account".into(),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap();
+    assert_eq!(xai.profile.rule_id, XAI_PI_RULE_ID);
+    assert_eq!(xai.profile.source_kind, AdapterSourceKind::Account);
+    let xai_stored = ProviderRepo::new(db)
+        .get_by_id(&xai.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(xai_stored.meta["adapterSourceRef"]["kind"], "account");
+    assert_eq!(
+        xai_stored.settings_config["models"]["providers"][XAI_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert!(!serde_json::to_string(&openai)
+        .unwrap()
+        .contains("sk-openai-secret"));
+    assert!(!serde_json::to_string(&xai)
+        .unwrap()
+        .contains("xai-account-secret"));
+}
+
+#[test]
+fn glm_and_deepseek_claude_apply_writes_rule_base_url_and_keeps_kimi_url() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "glm-source",
+            "glm-coding-plan",
+            ANTHROPIC_AUTH_TOKEN_ENV,
+            "glm-secret",
+        ))
+        .unwrap();
+    crate::storage::AccountRepo::new(db.clone())
+        .create(&crate::models::Account {
+            id: "deepseek-account".into(),
+            agent_id: AgentId::Claude,
+            kind: crate::models::AccountKind::ApiKey,
+            label: "DeepSeek key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "deepseek-account-secret"
+            }),
+            extra: json!({"provider": "deepseek-api"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source("kimi-source", "test-kimi-secret"))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "relay-source".into(),
+            agent_id: AgentId::Claude,
+            name: "Custom relay".into(),
+            settings_config: json!({"apiKey": "relay-secret", "baseUrl": "https://relay.example/v1"}),
+            meta: json!({"preset": "openai-compatible"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let fake = Arc::new(FakeClaudeAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
+
+    let glm = service
+        .apply(&request("glm-source", AgentId::Claude))
+        .unwrap();
+    assert_eq!(glm.profile.rule_id, GLM_CLAUDE_RULE_ID);
+    let glm_stored = ProviderRepo::new(db.clone())
+        .get_by_id(&glm.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        glm_stored.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        GLM_CLAUDE_BASE_URL
+    );
+    assert_eq!(
+        glm_stored.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(
+        fake.read_config().unwrap().raw["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "glm-secret"
+    );
+    assert!(!serde_json::to_string(&glm).unwrap().contains("glm-secret"));
+
+    let deepseek = service
+        .apply(&AdapterApplyRequest {
+            source_kind: AdapterSourceKind::Account,
+            source_id: "deepseek-account".into(),
+            target_agent_id: AgentId::Claude,
+        })
+        .unwrap();
+    assert_eq!(deepseek.profile.rule_id, DEEPSEEK_CLAUDE_RULE_ID);
+    assert_eq!(deepseek.profile.source_kind, AdapterSourceKind::Account);
+    let deepseek_stored = ProviderRepo::new(db.clone())
+        .get_by_id(&deepseek.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        deepseek_stored.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        DEEPSEEK_CLAUDE_BASE_URL
+    );
+    assert_eq!(deepseek_stored.meta["adapterSourceRef"]["kind"], "account");
+    assert!(!serde_json::to_string(&deepseek)
+        .unwrap()
+        .contains("deepseek-account-secret"));
+
+    let kimi = service
+        .apply(&request("kimi-source", AgentId::Claude))
+        .unwrap();
+    assert_eq!(kimi.profile.rule_id, RULE_ID);
+    let kimi_stored = ProviderRepo::new(db.clone())
+        .get_by_id(&kimi.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        kimi_stored.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        KIMI_CLAUDE_BASE_URL
+    );
+
+    assert!(service
+        .apply(&request("relay-source", AgentId::Claude))
+        .is_err());
+}
+
+#[test]
+fn glm_claude_finalize_failure_restores_previous_current() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "glm-source",
+            "glm-coding-plan",
+            ANTHROPIC_AUTH_TOKEN_ENV,
+            "glm-secret",
+        ))
+        .unwrap();
+    let previous = Provider {
+        id: "previous-claude".into(),
+        agent_id: AgentId::Claude,
+        name: "Previous Claude".into(),
+        settings_config: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "previous-secret"}}),
+        meta: json!({}),
+        is_current: true,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    };
+    ProviderRepo::new(db.clone()).create(&previous).unwrap();
+    ActiveBindingRepo::new(db.clone())
+        .set_refs(
+            "claude",
+            None,
+            Some(previous.id.clone()),
+            None,
+            "before-glm-apply",
+        )
+        .unwrap();
+    db.with_conn(|conn| {
+        conn.execute_batch(
+            r#"
+            CREATE TRIGGER fail_adapter_profile_finalize_glm
+            BEFORE UPDATE OF status ON adapter_profiles
+            WHEN NEW.status = 'active'
+            BEGIN
+                SELECT RAISE(ABORT, 'injected adapter profile finalization failure');
+            END;
+            "#,
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    let fake = Arc::new(FakeClaudeAdapter::new());
+    fake.write_config(&crate::models::AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "previous-secret"}}),
+    })
+    .unwrap();
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
+
+    let error = service
+        .apply(&request("glm-source", AgentId::Claude))
+        .unwrap_err();
+    assert_eq!(error.code(), "adapter.profile_finalize");
+    assert_eq!(
+        ActiveBindingRepo::new(db.clone())
+            .get("claude")
+            .unwrap()
+            .unwrap()
+            .provider_id
+            .as_deref(),
+        Some(previous.id.as_str())
+    );
+    assert!(
+        ProviderRepo::new(db)
+            .get_by_id(&previous.id)
+            .unwrap()
+            .unwrap()
+            .is_current
+    );
+    assert_eq!(
+        fake.read_config().unwrap().raw["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "previous-secret"
+    );
 }
 
 struct FakeDshAdapter {

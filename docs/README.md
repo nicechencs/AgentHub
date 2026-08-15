@@ -12,7 +12,7 @@
 | [platform-capability-remediation.md](platform-capability-remediation.md) | **2026-08-07 审查修正方案**：Active Binding、配置 fail-closed、Skills 安全/原子性、Lifecycle 审计与 AgentKey/OCP 真验证 |
 | [testing.md](testing.md) | **测试约定**：测试与生产分文件、vitest/cargo 命令、mock 边界、Markdown 预览用例索引 |
 | [ui-design.md](ui-design.md) | 前端布局、页面线框、交互与组件（含环境未就绪态；含 Dashboard/Connections 连接流程） |
-| [connection-binding-model.md](connection-binding-model.md) | **票 / 绑定 / 协议图（目标架构）**：跨 Agent 复用的领域真源；Connections / Dashboard UI 按绑定重做；尚未按本文改代码 |
+| [connection-binding-model.md](connection-binding-model.md) | **票 / 绑定 / 协议图（目标架构）**：跨 Agent 复用的领域真源；§6 第 1–2 步已落地，bind 未实施 |
 | [hub-redesign-plan.md](hub-redesign-plan.md) | **Hub 重构 Phase 1 已实施**（历史）：ConnectFlowDialog；后续以 [connection-binding-model.md](connection-binding-model.md) 为 UI 与领域目标 |
 | [adapter-design.md](adapter-design.md) | **Adapter 设计与进度**：页面、运行时、Claude 直连与 Codex 本地桥接；创建绑定走 Hub；投影不是票 |
 | [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | **Kimi → Codex 实机 dogfood 清单**：七项发布前验收；禁止记录密钥 / prompt / 正文 |
@@ -25,7 +25,7 @@
 | [capability-matrix.md](capability-matrix.md) | **能力矩阵**：`Capability` 枚举 + 四级状态、现状矩阵、防漂移测试、P0–P4（**v1.0 已落地**） |
 | [account-authorization-pool.md](account-authorization-pool.md) | **账号池身份×授权**：同人可多授权并存；去重仅限同授权票；与能力矩阵边界（**已落地**） |
 | [adding-an-agent.md](adding-an-agent.md) | 新增 Agent 适配器清单与调研步骤 |
-| [deepseek-harness-integration.md](deepseek-harness-integration.md) | **DeepSeek Harness（`dsh`）接入方案**：安装、会话、用量、Skills、模型路由与配置；P1–P5 已落地，StructuredStream / DeepSeek→Claude 仍 Planned / 另立项 |
+| [deepseek-harness-integration.md](deepseek-harness-integration.md) | **DeepSeek Harness（`dsh`）接入方案**：安装、会话、用量、Skills、模型路由与配置；P1–P5 已落地。DeepSeek→Claude experimental `native_endpoint` 已开；StructuredStream 仍 Planned |
 | [privacy.md](privacy.md) | **发布与隐私边界**：禁止提交项、截图规范、OAuth 常量勿外泄、docs 写法 |
 
 ## 文档管理规则

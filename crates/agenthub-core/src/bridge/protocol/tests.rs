@@ -5,11 +5,16 @@ use crate::bridge::types::{
 };
 
 use super::{
-    anthropic_messages::{encode_anthropic_message, encode_anthropic_sse, parse_messages_request},
+    anthropic_messages::{
+        anthropic_message_to_ir, encode_anthropic_message, encode_anthropic_sse,
+        parse_messages_request, to_anthropic_messages_request, translate_responses_to_anthropic_request,
+        AnthropicStreamToIr,
+    },
     chat::{sse_frame, translate_chat_response, ResponsesSseTranslator},
     responses::{
-        parse_responses_request, responses_output_to_ir, to_kimi_chat_request,
-        to_responses_request, translate_responses_request, ResponsesStreamToIr,
+        encode_responses_from_ir, parse_responses_request, responses_output_to_ir,
+        to_kimi_chat_request, to_responses_request, translate_responses_request, IrToResponsesSse,
+        ResponsesStreamToIr,
     },
 };
 
@@ -44,6 +49,28 @@ fn fixture(name: &str) -> Value {
         "responses_upstream_tool" => include_str!("fixtures/responses_upstream_tool.json"),
         "responses_upstream_sse_text" => include_str!("fixtures/responses_upstream_sse_text.json"),
         "responses_upstream_sse_tool" => include_str!("fixtures/responses_upstream_sse_tool.json"),
+        "anthropic_upstream_text" => include_str!("fixtures/anthropic_upstream_text.json"),
+        "anthropic_upstream_tool" => include_str!("fixtures/anthropic_upstream_tool.json"),
+        "anthropic_upstream_stop_max_tokens" => {
+            include_str!("fixtures/anthropic_upstream_stop_max_tokens.json")
+        }
+        "anthropic_upstream_usage" => include_str!("fixtures/anthropic_upstream_usage.json"),
+        "anthropic_upstream_sse_text" => include_str!("fixtures/anthropic_upstream_sse_text.json"),
+        "anthropic_upstream_sse_tool" => include_str!("fixtures/anthropic_upstream_sse_tool.json"),
+        "anthropic_upstream_error" => include_str!("fixtures/anthropic_upstream_error.json"),
+        "anthropic_upstream_thinking" => include_str!("fixtures/anthropic_upstream_thinking.json"),
+        "anthropic_upstream_sse_truncated" => {
+            include_str!("fixtures/anthropic_upstream_sse_truncated.json")
+        }
+        "anthropic_upstream_sse_orphan_delta" => {
+            include_str!("fixtures/anthropic_upstream_sse_orphan_delta.json")
+        }
+        "anthropic_upstream_usage_malformed" => {
+            include_str!("fixtures/anthropic_upstream_usage_malformed.json")
+        }
+        "anthropic_upstream_stop_unknown" => {
+            include_str!("fixtures/anthropic_upstream_stop_unknown.json")
+        }
         _ => panic!("unknown fixture"),
     };
     serde_json::from_str(source).expect("fixture is valid JSON")
@@ -657,4 +684,300 @@ fn retry_gate_allows_transient_only_before_first_effective_event() {
     });
     assert_eq!(after_tool, EmissionState::Emitted);
     assert!(!gate.can_retry(after_tool, RetryClass::Transient, 0));
+}
+
+#[test]
+fn responses_request_maps_to_anthropic_messages_text_tools_and_unicode() {
+    let (bridge, anthropic) =
+        translate_responses_to_anthropic_request(&fixture("responses_text")).expect("translate");
+    assert_eq!(bridge.model, "kimi-k2.5");
+    assert_eq!(anthropic["model"], "kimi-k2.5");
+    assert_eq!(anthropic["system"], "Answer precisely.");
+    assert_eq!(anthropic["max_tokens"], 512);
+    assert_eq!(anthropic["messages"][0]["role"], "user");
+    assert_eq!(anthropic["messages"][0]["content"][0]["text"], "Hello, 世界");
+    assert_eq!(anthropic["tools"][0]["name"], "weather");
+    assert_eq!(anthropic["tools"][0]["input_schema"]["properties"]["city"]["type"], "string");
+    assert_eq!(anthropic["tool_choice"]["type"], "auto");
+    assert_eq!(anthropic["temperature"], json!(0.2));
+    assert!(anthropic.get("stream_options").is_none());
+}
+
+#[test]
+fn responses_tool_history_becomes_anthropic_tool_use_and_results() {
+    let request = parse_responses_request(&fixture("responses_parallel_tool_history"))
+        .expect("parse");
+    let anthropic = to_anthropic_messages_request(&request);
+    let messages = anthropic["messages"].as_array().expect("messages");
+    assert_eq!(messages[0]["role"], "user");
+    assert_eq!(messages[1]["role"], "assistant");
+    assert_eq!(messages[1]["content"][0]["type"], "tool_use");
+    assert_eq!(messages[1]["content"][0]["id"], "call_weather");
+    assert_eq!(messages[1]["content"][1]["id"], "call_calendar");
+    assert_eq!(messages[2]["role"], "user");
+    assert_eq!(messages[2]["content"][0]["type"], "tool_result");
+    assert_eq!(messages[2]["content"][0]["tool_use_id"], "call_weather");
+    assert_eq!(messages[2]["content"][0]["content"], "Sunny");
+    assert_eq!(messages[2]["content"][1]["tool_use_id"], "call_calendar");
+    assert_eq!(messages[2]["content"][1]["content"], "No meetings");
+}
+
+#[test]
+fn responses_to_anthropic_rejects_image_and_hosted_tools() {
+    let error = parse_responses_request(&fixture("unsupported_input")).expect_err("image");
+    assert_eq!(error.code, "unsupported_image_input");
+    let error = parse_responses_request(&fixture("unsupported_web_search")).expect_err("search");
+    assert_eq!(error.code, "unsupported_web_search");
+}
+
+#[test]
+fn anthropic_message_to_ir_to_responses_text_and_usage() {
+    let ir = anthropic_message_to_ir(&fixture("anthropic_upstream_text")).expect("to ir");
+    assert!(matches!(ir[0], IrEvent::MessageStart { .. }));
+    assert_eq!(
+        ir.iter()
+            .find_map(|event| match event {
+                IrEvent::TextDelta { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .expect("text"),
+        "你好，世界。"
+    );
+    assert!(matches!(
+        ir.iter().find(|event| matches!(event, IrEvent::Usage { .. })),
+        Some(IrEvent::Usage {
+            input_tokens: 8,
+            output_tokens: 4,
+            cached_input_tokens: Some(2)
+        })
+    ));
+    assert!(matches!(
+        ir.last(),
+        Some(IrEvent::MessageEnd {
+            stop_reason: StopReason::Stop
+        })
+    ));
+
+    let response = encode_responses_from_ir(&ir, Some("resp_text")).expect("responses");
+    assert_eq!(response["object"], "response");
+    assert_eq!(response["status"], "completed");
+    assert_eq!(response["output"][0]["content"][0]["text"], "你好，世界。");
+    assert_eq!(response["usage"]["input_tokens"], 8);
+    assert_eq!(response["usage"]["output_tokens"], 4);
+    assert_eq!(response["usage"]["input_tokens_details"]["cached_tokens"], 2);
+}
+
+#[test]
+fn anthropic_tool_use_becomes_responses_function_call() {
+    let ir = anthropic_message_to_ir(&fixture("anthropic_upstream_tool")).expect("to ir");
+    let response = encode_responses_from_ir(&ir, Some("resp_tool")).expect("responses");
+    assert_eq!(response["output"][0]["type"], "function_call");
+    assert_eq!(response["output"][0]["call_id"], "call_weather");
+    assert_eq!(response["output"][0]["name"], "weather");
+    assert_eq!(response["output"][0]["arguments"], "{\"city\":\"Tokyo\"}");
+    assert_eq!(response["status"], "completed");
+}
+
+#[test]
+fn anthropic_max_tokens_stop_becomes_responses_incomplete() {
+    let ir = anthropic_message_to_ir(&fixture("anthropic_upstream_stop_max_tokens")).expect("ir");
+    assert!(matches!(
+        ir.last(),
+        Some(IrEvent::MessageEnd {
+            stop_reason: StopReason::Length
+        })
+    ));
+    let response = encode_responses_from_ir(&ir, Some("resp_len")).expect("responses");
+    assert_eq!(response["status"], "incomplete");
+    assert_eq!(response["incomplete_details"]["reason"], "max_output_tokens");
+}
+
+#[test]
+fn anthropic_unknown_stop_reason_does_not_claim_length_or_filter() {
+    let ir = anthropic_message_to_ir(&fixture("anthropic_upstream_stop_unknown")).expect("ir");
+    assert!(matches!(
+        ir.last(),
+        Some(IrEvent::MessageEnd {
+            stop_reason: StopReason::Unknown
+        })
+    ));
+    let response = encode_responses_from_ir(&ir, Some("resp_unknown")).expect("responses");
+    assert_eq!(response["status"], "completed");
+    assert!(response["incomplete_details"].is_null());
+}
+
+#[test]
+fn anthropic_usage_maps_cache_tokens_and_malformed_usage_is_dropped() {
+    let ir = anthropic_message_to_ir(&fixture("anthropic_upstream_usage")).expect("ir");
+    let response = encode_responses_from_ir(&ir, Some("resp_usage")).expect("responses");
+    assert_eq!(response["usage"]["input_tokens"], 12);
+    assert_eq!(response["usage"]["output_tokens"], 2);
+    assert_eq!(response["usage"]["total_tokens"], 14);
+    assert_eq!(response["usage"]["input_tokens_details"]["cached_tokens"], 5);
+
+    let ir = anthropic_message_to_ir(&fixture("anthropic_upstream_usage_malformed")).expect("ir");
+    assert!(
+        ir.iter()
+            .all(|event| !matches!(event, IrEvent::Usage { .. })),
+        "malformed usage must not be invented"
+    );
+    let response = encode_responses_from_ir(&ir, Some("resp_bad_usage")).expect("responses");
+    assert!(response["usage"].is_null());
+}
+
+#[test]
+fn anthropic_thinking_and_error_fail_closed_without_leaking() {
+    let error =
+        anthropic_message_to_ir(&fixture("anthropic_upstream_thinking")).expect_err("thinking");
+    assert_eq!(error.code, "unsupported_thinking");
+    assert!(!error.message.contains("private chain"));
+
+    let ir = anthropic_message_to_ir(&fixture("anthropic_upstream_error")).expect("error ir");
+    assert_eq!(ir.len(), 1);
+    match &ir[0] {
+        IrEvent::Error { code, message, .. } => {
+            assert_eq!(code, "upstream_error");
+            assert_eq!(message, "The upstream model provider returned an error.");
+            assert!(!message.contains("sk-ant-secret"));
+            assert!(!message.contains("private input"));
+        }
+        other => panic!("expected Error, got {other:?}"),
+    }
+    let error = encode_responses_from_ir(&ir, Some("resp_err")).expect_err("error not encoded");
+    assert_eq!(error.code, "upstream_error");
+    assert!(!error.message.contains("sk-ant-secret"));
+}
+
+#[test]
+fn anthropic_sse_to_ir_to_responses_sse_text_chunks() {
+    let chunks = fixture("anthropic_upstream_sse_text")
+        .as_array()
+        .cloned()
+        .expect("array");
+    let mut translator = AnthropicStreamToIr::new();
+    let mut ir = chunks
+        .iter()
+        .flat_map(|chunk| translator.push_event(chunk).expect("event"))
+        .collect::<Vec<_>>();
+    assert!(translator.completed());
+    ir.extend(translator.finish());
+
+    let mut encoder = IrToResponsesSse::new("resp_stream", "requested-model");
+    let events = ir
+        .iter()
+        .flat_map(|event| encoder.push_event(event).expect("encode"))
+        .collect::<Vec<_>>();
+    let names = events
+        .iter()
+        .map(|event| event.event_name())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        vec![
+            "response.created",
+            "response.in_progress",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_text.delta",
+            "response.output_text.done",
+            "response.content_part.done",
+            "response.output_item.done",
+            "response.completed",
+        ]
+    );
+    let joined = events
+        .iter()
+        .map(sse_frame)
+        .collect::<String>();
+    assert!(joined.contains("\"delta\":\"你\""));
+    assert!(joined.contains("\"delta\":\"好\""));
+    assert!(joined.contains("\"text\":\"你好\""));
+    assert!(joined.contains("\"input_tokens\":3"));
+}
+
+#[test]
+fn anthropic_sse_to_ir_to_responses_sse_tool_chunks() {
+    let chunks = fixture("anthropic_upstream_sse_tool")
+        .as_array()
+        .cloned()
+        .expect("array");
+    let mut translator = AnthropicStreamToIr::new();
+    let mut ir = chunks
+        .iter()
+        .flat_map(|chunk| translator.push_event(chunk).expect("event"))
+        .collect::<Vec<_>>();
+    ir.extend(translator.finish());
+
+    let args = ir
+        .iter()
+        .filter_map(|event| match event {
+            IrEvent::ToolCallDelta {
+                id,
+                arguments_delta,
+            } if id == "call_weather" => Some(arguments_delta.as_str()),
+            _ => None,
+        })
+        .collect::<String>();
+    assert_eq!(args, "{\"city\":\"Tokyo\"}");
+
+    let mut encoder = IrToResponsesSse::new("resp_tool_stream", "claude-sonnet-4-20250514");
+    let events = ir
+        .iter()
+        .flat_map(|event| encoder.push_event(event).expect("encode"))
+        .collect::<Vec<_>>();
+    let joined = events.iter().map(sse_frame).collect::<String>();
+    assert!(joined.contains("\"type\":\"function_call\""));
+    assert!(joined.contains("\"call_id\":\"call_weather\""));
+    assert!(joined.contains("\"delta\":\"{\\\"city\\\":\""));
+    assert!(joined.contains("response.completed"));
+}
+
+#[test]
+fn anthropic_sse_truncated_and_orphan_delta_fail_closed() {
+    let chunks = fixture("anthropic_upstream_sse_truncated")
+        .as_array()
+        .cloned()
+        .expect("array");
+    let mut translator = AnthropicStreamToIr::new();
+    for chunk in &chunks {
+        translator.push_event(chunk).expect("partial is accepted");
+    }
+    assert!(
+        !translator.completed(),
+        "truncated stream must not look complete before finish"
+    );
+    let ir = translator.finish();
+    assert!(ir.iter().any(|event| matches!(
+        event,
+        IrEvent::MessageEnd {
+            stop_reason: StopReason::Stop
+        }
+    )));
+
+    let mut orphan = AnthropicStreamToIr::new();
+    let error = orphan
+        .push_event(&fixture("anthropic_upstream_sse_orphan_delta")[0])
+        .expect_err("orphan tool delta fails closed");
+    assert_eq!(error.code, "invalid_request");
+    assert!(!error.message.contains("secret"));
+    assert!(!error.message.contains("leaked"));
+}
+
+#[test]
+fn anthropic_stream_error_is_generic_and_never_leaks_upstream_body() {
+    let mut translator = AnthropicStreamToIr::new();
+    let events = translator
+        .push_event(&fixture("anthropic_upstream_error"))
+        .expect("error event maps");
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        IrEvent::Error { code, message, .. } => {
+            assert_eq!(code, "upstream_error");
+            assert_eq!(message, "The upstream model provider returned an error.");
+            assert!(!message.contains("sk-ant-secret"));
+            assert!(!message.contains("private input"));
+        }
+        other => panic!("expected Error, got {other:?}"),
+    }
 }

@@ -23,6 +23,12 @@ export type AdapterProfileMode = 'api' | 'oauth';
 export type AdapterSupport = 'stable' | 'experimental' | 'unsupported';
 
 /**
+ * Planner four-tier maturity of a graph edge.
+ * Distinct from `support` (matrix confidence) and `canApply` (write now).
+ */
+export type AdapterMaturity = 'stable' | 'experimental' | 'preview' | 'none';
+
+/**
  * Structured gate / presentation class from core analyze.
  * Prefer this over parsing `reason` text. Does not authorize writes.
  */
@@ -83,15 +89,23 @@ export type AdapterPlanChange =
   | { target: string; field: string; value?: string; secret: false }
   | { target: string; field: string; secret: true; value?: never };
 
-/** Safe preview of the eventual configuration mutation. */
+/** Safe preview of the eventual configuration mutation. `plan()` is the only planner exit. */
 export interface AdapterApplyPlan {
   analysis: AdapterRouteAnalysis;
   targetAgentId: AgentId;
   /**
-   * True only when the capability matrix is open **and** an apply implementation
-   * exists (provider-source whitelist). Matrix alone never authorizes writes.
+   * True only when the capability matrix is open **and** plan's private
+   * `write_gate` allows a write now (Account stays false). Matrix alone
+   * never authorizes writes.
    */
   canApply: boolean;
+  /** Four-tier edge maturity. Missing on older wires → treat as `none`. */
+  maturity?: AdapterMaturity;
+  /**
+   * Planner-facing reason. Prefer this over `analysis.reason` when
+   * `canApply` is false (same-edge Account adds an explicit write-gate note).
+   */
+  reason?: string;
   serviceImpact: AdapterServiceImpact;
   changes: AdapterPlanChange[];
 }

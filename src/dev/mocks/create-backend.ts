@@ -3,10 +3,17 @@ import type { Backend, BackendFeatures, CreateBackend } from '@/lib/backend/cont
 import {
   createMockAccountPort,
   getMockAccountById,
+  listMockAccounts,
   resetMockAccounts,
   restoreMockAccount,
 } from './account';
-import { createMockAdapterPort, resetMockAdapters } from './adapter';
+import {
+  createMockAdapterPort,
+  getMockBridgeStatusSync,
+  listMockAdapterProfiles,
+  removeMockAdapterBinding,
+  resetMockAdapters,
+} from './adapter';
 import { createMockAgentPort, resetMockAgentStatuses } from './agent';
 import { createMockBackupPort } from './backup';
 import { createMockCatalogPort, resetMockAgentCatalog } from './catalog';
@@ -22,6 +29,7 @@ import { createMockProjectPort, resetProjectMock } from './project';
 import {
   createMockProviderPort,
   getMockProviderById,
+  listMockProviders,
   removeMockProvider,
   resetMockProviders,
   restoreMockProvider,
@@ -32,6 +40,7 @@ import { createMockSkillPort } from './skill';
 import { createMockUpdatePort } from './update';
 import { createMockUsagePort } from './usage';
 import { createMockTrashPort, resetMockTrash } from './trash';
+import { createMockTicketPort } from './ticket';
 import { seedConnectFlowAdapterFixtures } from './connect-flow-fixtures';
 
 /** Mock implements switch undo + latency demos; export package stays closed. */
@@ -46,9 +55,10 @@ export const MOCK_BACKEND_FEATURES: BackendFeatures = {
  * Browser mock backend — never selected by production build.
  *
  * Interactive `pnpm dev:mock` seeds demo ConnectFlow credentials after reset
- * (Kimi membership + Anthropic API, Pi marked installed) so Adapter plan/apply
- * is reachable. The vitest factory stays an empty pool: no seed when
- * `import.meta.env.VITEST` is set or `import.meta.env.MODE === 'test'`.
+ * (Kimi membership + Anthropic API + unknown + OAuth account, Pi marked installed)
+ * so Adapter plan/apply and the ticket wallet are reachable. The vitest factory
+ * stays an empty pool: no seed when `import.meta.env.VITEST` is set or
+ * `import.meta.env.MODE === 'test'`.
  */
 export const createBackend: CreateBackend = () => {
   // Factory 创建干净状态（无需生产 port 上的 resetForTests）
@@ -63,19 +73,37 @@ export const createBackend: CreateBackend = () => {
   resetMockAgentStatuses();
   // Seed full agent catalog (ids / names / channels / capabilities).
   seedAgentCatalog(MOCK_AGENT_CATALOG);
+
+  const adapter = createMockAdapterPort({
+    getAccountById: getMockAccountById,
+    getProviderById: getMockProviderById,
+    upsertGeneratedProvider: upsertMockProvider,
+    removeGeneratedProvider: removeMockProvider,
+  });
+
+  const ticket = createMockTicketPort({
+    listAccounts: listMockAccounts,
+    listProviders: listMockProviders,
+    listProfiles: listMockAdapterProfiles,
+    getBridgeStatus: getMockBridgeStatusSync,
+    planAdapter: (request) => adapter.plan(request),
+    applyAdapter: (request) => adapter.apply(request),
+    removeBinding: (profileId) => removeMockAdapterBinding(profileId),
+  });
+
   if (!import.meta.env.VITEST && import.meta.env.MODE !== 'test') {
-    seedConnectFlowAdapterFixtures();
+    seedConnectFlowAdapterFixtures({
+      includeUnknown: true,
+      includeOauthAccount: true,
+      seedBindings: true,
+    });
   }
 
   const backend = {
     features: { ...MOCK_BACKEND_FEATURES },
     account: createMockAccountPort(),
-    adapter: createMockAdapterPort({
-      getAccountById: getMockAccountById,
-      getProviderById: getMockProviderById,
-      upsertGeneratedProvider: upsertMockProvider,
-      removeGeneratedProvider: removeMockProvider,
-    }),
+    adapter,
+    ticket,
     catalog: createMockCatalogPort(),
     config: createMockConfigPort(),
     backup: createMockBackupPort(),

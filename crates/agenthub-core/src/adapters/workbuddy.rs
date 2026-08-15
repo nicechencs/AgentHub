@@ -419,8 +419,7 @@ pub fn resolve_bundled_codebuddy(install_dir: &Path) -> Option<PathBuf> {
         .join("cli")
         .join("bin")
         .join("codebuddy")];
-    #[cfg(windows)]
-    {
+    if cfg!(windows) {
         candidates.push(
             install_dir
                 .join("resources")

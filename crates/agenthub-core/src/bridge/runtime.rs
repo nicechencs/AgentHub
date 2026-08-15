@@ -26,14 +26,33 @@ impl std::fmt::Debug for ResolvedAuth {
     }
 }
 
-/// Upstream Kimi configuration. `source_connection_id` is for status/audit correlation only;
-/// the host neither resolves it nor touches AgentHub configuration storage.
+/// Which upstream wire protocol the host should speak.
+///
+/// Selected from the adapter profile / route, never inferred from the
+/// downstream Responses request. Downstream identity stays the local bearer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BridgeUpstreamProtocol {
+    /// Existing Kimi membership path: Chat Completions + bearer auth.
+    KimiChatCompletions,
+    /// Anthropic API Key → Codex: Messages + `x-api-key` / `anthropic-version`.
+    AnthropicMessages,
+}
+
+impl Default for BridgeUpstreamProtocol {
+    fn default() -> Self {
+        Self::KimiChatCompletions
+    }
+}
+
+/// Upstream provider configuration. `source_connection_id` is for status/audit
+/// correlation only; the host neither resolves it nor touches AgentHub storage.
 #[derive(Debug, Clone)]
 pub struct BridgeUpstreamConfig {
     pub base_url: String,
     pub model: Option<String>,
     pub source_connection_id: Option<String>,
     pub auth: ResolvedAuth,
+    pub protocol: BridgeUpstreamProtocol,
 }
 
 /// Inputs required to start one independent local bridge instance.

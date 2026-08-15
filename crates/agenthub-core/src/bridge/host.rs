@@ -21,11 +21,19 @@ use tokio::sync::{watch, Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::bridge::protocol::responses::{parse_responses_request, to_kimi_chat_request};
-use crate::bridge::runtime::{
-    BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamStatus,
+use crate::bridge::protocol::anthropic_messages::{
+    anthropic_message_to_ir, to_anthropic_messages_request, AnthropicStreamToIr,
 };
-use crate::bridge::types::ProtocolError;
+use crate::bridge::protocol::responses::{
+    encode_responses_from_ir, parse_responses_request, to_kimi_chat_request, IrToResponsesSse,
+};
+use crate::bridge::runtime::{
+    BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamProtocol,
+    BridgeUpstreamStatus,
+};
+use crate::bridge::types::{BridgeEvent, ProtocolError};
+
+const ANTHROPIC_API_VERSION: &str = "2023-06-01";
 
 const BODY_LIMIT_BYTES: usize = 1_048_576;
 /// Streamed Completions/Responses traffic can exceed the request-body safety
@@ -691,6 +699,7 @@ fn same_spec(left: &BridgeStartSpec, right: &BridgeStartSpec) -> bool {
         && left.upstream.model == right.upstream.model
         && left.upstream.source_connection_id == right.upstream.source_connection_id
         && left.upstream.auth.token() == right.upstream.auth.token()
+        && left.upstream.protocol == right.upstream.protocol
 }
 
 fn router(state: AppState) -> Router {
@@ -820,11 +829,19 @@ async fn responses(State(state): State<AppState>, request: Request) -> Response 
         }
     };
     let stream_requested = request.stream;
-    let mut kimi_request = to_kimi_chat_request(&request);
+    let protocol = state.upstream.protocol;
+    let mut upstream_body = match protocol {
+        BridgeUpstreamProtocol::KimiChatCompletions => to_kimi_chat_request(&request),
+        BridgeUpstreamProtocol::AnthropicMessages => to_anthropic_messages_request(&request),
+    };
     if let Some(model) = &state.upstream.model {
-        kimi_request["model"] = Value::String(model.clone());
+        upstream_body["model"] = Value::String(model.clone());
     }
-    let url = match state.upstream_url.join("chat/completions") {
+    let path = match protocol {
+        BridgeUpstreamProtocol::KimiChatCompletions => "chat/completions",
+        BridgeUpstreamProtocol::AnthropicMessages => "messages",
+    };
+    let url = match state.upstream_url.join(path) {
         Ok(url) => url,
         Err(_) => {
             state.record_upstream_failure();
@@ -836,12 +853,16 @@ async fn responses(State(state): State<AppState>, request: Request) -> Response 
             );
         }
     };
-    let upstream_request = state
-        .client
-        .post(url)
-        .bearer_auth(state.upstream.auth.token())
-        .json(&kimi_request)
-        .send();
+    let mut builder = state.client.post(url).json(&upstream_body);
+    builder = match protocol {
+        BridgeUpstreamProtocol::KimiChatCompletions => {
+            builder.bearer_auth(state.upstream.auth.token())
+        }
+        BridgeUpstreamProtocol::AnthropicMessages => builder
+            .header("x-api-key", state.upstream.auth.token())
+            .header("anthropic-version", ANTHROPIC_API_VERSION),
+    };
+    let upstream_request = builder.send();
     let upstream = tokio::select! {
         _ = state.force_shutdown.cancelled() => return stopping_response(),
         result = tokio::time::timeout(UPSTREAM_RESPONSE_HEADER_TIMEOUT, upstream_request) => match result {
@@ -933,8 +954,14 @@ async fn non_stream_response(
             );
         }
     };
-    match crate::bridge::protocol::chat::translate_chat_response(&upstream_body, Some(&request_id))
-    {
+    let translated = match state.upstream.protocol {
+        BridgeUpstreamProtocol::KimiChatCompletions => {
+            crate::bridge::protocol::chat::translate_chat_response(&upstream_body, Some(&request_id))
+        }
+        BridgeUpstreamProtocol::AnthropicMessages => anthropic_message_to_ir(&upstream_body)
+            .and_then(|ir| encode_responses_from_ir(&ir, Some(&request_id))),
+    };
+    match translated {
         Ok(value) => {
             state.record_upstream_success();
             tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, op = "responses", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
@@ -981,6 +1008,68 @@ async fn read_bounded_upstream_json(
     serde_json::from_slice(&body).map_err(|_| UpstreamBodyError::InvalidOrTooLarge)
 }
 
+enum StreamCodec {
+    Kimi(crate::bridge::protocol::chat::ResponsesSseTranslator),
+    Anthropic {
+        ir: AnthropicStreamToIr,
+        out: IrToResponsesSse,
+    },
+}
+
+impl StreamCodec {
+    fn new(protocol: BridgeUpstreamProtocol, request_id: String, model: String) -> Self {
+        match protocol {
+            BridgeUpstreamProtocol::KimiChatCompletions => Self::Kimi(
+                crate::bridge::protocol::chat::ResponsesSseTranslator::new(request_id, model),
+            ),
+            BridgeUpstreamProtocol::AnthropicMessages => Self::Anthropic {
+                ir: AnthropicStreamToIr::new(),
+                out: IrToResponsesSse::new(request_id, model),
+            },
+        }
+    }
+
+    fn push(&mut self, value: &Value) -> Result<Vec<BridgeEvent>, ProtocolError> {
+        match self {
+            Self::Kimi(translator) => translator.push_chunk(value),
+            Self::Anthropic { ir, out } => {
+                let events = ir.push_event(value)?;
+                let mut frames = Vec::new();
+                for event in events {
+                    frames.extend(out.push_event(&event)?);
+                }
+                Ok(frames)
+            }
+        }
+    }
+
+    fn finish(&mut self) -> Result<Vec<BridgeEvent>, ProtocolError> {
+        match self {
+            Self::Kimi(translator) => Ok(translator.finish()),
+            Self::Anthropic { ir, out } => {
+                let events = ir.finish();
+                let mut frames = Vec::new();
+                for event in events {
+                    frames.extend(out.push_event(&event)?);
+                }
+                frames.extend(out.finish());
+                Ok(frames)
+            }
+        }
+    }
+
+    fn completed(&self) -> bool {
+        match self {
+            Self::Kimi(_) => false,
+            Self::Anthropic { ir, .. } => ir.completed(),
+        }
+    }
+
+    fn treats_done_marker(&self) -> bool {
+        matches!(self, Self::Kimi(_))
+    }
+}
+
 fn stream_response(
     state: AppState,
     response: reqwest::Response,
@@ -992,9 +1081,10 @@ fn stream_response(
     let profile_id = state.profile_id.clone();
     let force_shutdown = state.force_shutdown.clone();
     let observed = state.clone();
+    let protocol = state.upstream.protocol;
     let bytes = response.bytes_stream();
     let output = stream! {
-        let mut translator = crate::bridge::protocol::chat::ResponsesSseTranslator::new(request_id.clone(), model);
+        let mut translator = StreamCodec::new(protocol, request_id.clone(), model);
         // `VecDeque` lets us consume complete SSE frames from the front without repeatedly
         // moving the unread tail. The cap counts all upstream bytes, not merely the current
         // partial frame, and the output cap protects a pathological translator expansion.
@@ -1048,15 +1138,18 @@ fn stream_response(
                 let Some(payload) = payload else { continue; };
                 if payload.is_empty() { continue; }
                 if payload == "[DONE]" {
-                    saw_done = true;
-                    break 'upstream;
+                    if translator.treats_done_marker() {
+                        saw_done = true;
+                        break 'upstream;
+                    }
+                    continue;
                 }
                 let Ok(value) = serde_json::from_str::<Value>(&payload) else {
                     observed.record_upstream_failure();
                     yield Ok::<_, Infallible>(stream_error_frame());
                     return;
                 };
-                match translator.push_chunk(&value) {
+                match translator.push(&value) {
                     Ok(events) => for event in events {
                         let frame = crate::bridge::protocol::chat::sse_frame(&event);
                         if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
@@ -1073,6 +1166,10 @@ fn stream_response(
                         return;
                     }
                 }
+                if translator.completed() {
+                    saw_done = true;
+                    break 'upstream;
+                }
             }
         }
         // A clean EOF without the provider's terminal marker is not a completed response. This
@@ -1082,15 +1179,24 @@ fn stream_response(
             yield Ok::<_, Infallible>(stream_error_frame());
             return;
         }
-        for event in translator.finish() {
-            let frame = crate::bridge::protocol::chat::sse_frame(&event);
-            if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
+        match translator.finish() {
+            Ok(events) => {
+                for event in events {
+                    let frame = crate::bridge::protocol::chat::sse_frame(&event);
+                    if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
+                        observed.record_upstream_failure();
+                        yield Ok::<_, Infallible>(stream_error_frame());
+                        return;
+                    }
+                    output_bytes += frame.len();
+                    yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
+                }
+            }
+            Err(_) => {
                 observed.record_upstream_failure();
                 yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             }
-            output_bytes += frame.len();
-            yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, op = "stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");

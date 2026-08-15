@@ -212,6 +212,45 @@ pub enum AdapterSupport {
     Unsupported,
 }
 
+/// Planner-facing implementation maturity of a graph edge.
+///
+/// Distinct from [`AdapterSupport`] (matrix cell confidence) and from
+/// [`AdapterApplyPlan::can_apply`] (whether a write can happen *now*).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AdapterMaturity {
+    /// Matrix cell open + [`AdapterSupport::Stable`].
+    Stable,
+    /// Matrix cell open + [`AdapterSupport::Experimental`].
+    Experimental,
+    /// Recorded cell with gates closed, or explain-only (e.g. Codex → Claude).
+    Preview,
+    /// No edge / Other / unsupported fallback.
+    #[default]
+    None,
+}
+
+impl AdapterMaturity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stable => "stable",
+            Self::Experimental => "experimental",
+            Self::Preview => "preview",
+            Self::None => "none",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "stable" => Some(Self::Stable),
+            "experimental" => Some(Self::Experimental),
+            "preview" => Some(Self::Preview),
+            "none" => Some(Self::None),
+            _ => None,
+        }
+    }
+}
+
 /// Structured presentation / gate class for analyze UI (not a write authorization).
 ///
 /// UI must prefer this over parsing `reason` text. Write permission remains
@@ -316,18 +355,26 @@ pub struct AdapterPlanChange {
     pub secret: bool,
 }
 
-/// Safe apply preview.
+/// Safe apply preview. `plan()` is the only public planner exit.
 ///
 /// `can_apply` is true only when **both** hold:
 /// 1. the capability matrix cell is open (`can_apply` + all gates), and
-/// 2. a concrete apply implementation exists (provider-source whitelist).
-/// The matrix alone never authorizes writes.
+/// 2. plan's private `write_gate` allows a write *now* (bind implementation
+///    exists and the secret is resolvable for this ticket `source_kind`).
+/// The matrix alone never authorizes writes. Maturity describes the edge;
+/// `can_apply` describes today's write path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdapterApplyPlan {
     pub analysis: AdapterRouteAnalysis,
     pub target_agent_id: AgentId,
     pub can_apply: bool,
+    /// Four-tier edge maturity. Independent of `can_apply`.
+    #[serde(default)]
+    pub maturity: AdapterMaturity,
+    /// Planner-facing reason. Same gist as `analysis.reason`.
+    #[serde(default)]
+    pub reason: String,
     pub service_impact: AdapterServiceImpact,
     pub changes: Vec<AdapterPlanChange>,
 }
