@@ -1,12 +1,20 @@
 # 模型厂商、API 与 OAuth 适配规则
 
 > 状态：**当前工作区规则**，不代表已发布版本。
-> 最近核对：2026-08-12。
-> 本文是厂商入口、凭据类型和跨 Agent 适配规则的单一事实源；Adapter 的页面、运行时与协议桥架构见 [adapter-design.md](adapter-design.md)。日常 UI 入口见 [ui-design.md](ui-design.md) / ConnectFlow，本文件仍是规则真源。
+> 最近核对：2026-08-15。
+> 本文是厂商入口、凭据类型和**协议图上的边**的规则真源。领域对象（票 / 绑定 / 规划器）见 [connection-binding-model.md](connection-binding-model.md)；页面与运行时见 [adapter-design.md](adapter-design.md)、[ui-design.md](ui-design.md)。§4 是**当前可执行矩阵**，不是 UI 白名单，也不是扩大的终点。
 
 ## 1. 先看结论
 
-是否能够适配，由下面四项共同决定：
+是否能够接到某个 Agent，由票的表面和图上的边决定，而不是由「从哪个 Agent 导入」或「account 还是 provider」决定：
+
+```text
+票面（产品 + 凭据类 + 上游协议） × Agent 入口（accepts + writer） → native | reshape | bridge | 不可行
+```
+
+商品组合（如 Kimi 会员 → Claude）是图的一次求值。扩大靠登记新票面、声明 Agent `accepts`/`writer`、给图加边。见 [connection-binding-model.md](connection-binding-model.md)。
+
+是否能够适配，仍由下面四项共同决定：
 
 ```text
 来源产品 + 凭据类型 + 上游协议 + 目标客户端协议
@@ -26,9 +34,9 @@
 1. **API Key 与 OAuth 分开判断**：支持某厂商 API Key，不等于支持其订阅 OAuth。
 2. **协议必须写全名**：`OpenAI-compatible` 必须进一步区分 Chat Completions 与 Responses。
 3. **同厂商不同产品不得混用**：Base URL、Key、额度和授权范围都可能不同。
-4. **只认显式来源标记**：不能根据名称、标签或 URL 猜测凭据属于哪个产品。
-5. **默认拒绝**：没有代码规则和测试的组合一律为 `unsupported`。
-6. **不复制凭据**：Adapter 保存来源引用；真实凭据只在写入 live 配置或请求上游时短暂解析。
+4. **只认显式来源标记**：进口写下 `surface`；不能根据名称、标签或 URL 猜测。未识别标 `unknown`，规划结果是不可行，而不是把「接到…」藏掉。
+5. **默认拒绝写入**：没有代码规则和测试的组合一律不能 `bind`。用户仍看得到原因。
+6. **不复制凭据**：绑定只引用票；真实凭据只在写入 live 或请求上游时短暂解析。生成投影不是新票。
 
 ### 1.1 消费级订阅的受限实验边界
 
@@ -39,9 +47,9 @@
 - 上游 token 不可导出、不可显示、不可复制到目标 Agent；目标只得到本地 loopback bearer。
 - 不监听公网地址，不作为远程服务、团队共享端点、多租户网关、转售或额度池。
 - 每个供应商、产品、OAuth client、上游通道和目标 Agent 组合独立审核；不能从“同为订阅”或某个参考项目可运行推导通用许可。
-- 只有官方契约、条款、端点稳定性、认证刷新、协议转换、隔离与端到端测试全部通过后，规则才可从 `unsupported` 进入实验性 `local_bridge`；此前 `plan.canApply=false`。
+- 只有官方契约、条款、端点稳定性、认证刷新、协议转换、隔离与端到端测试全部通过后，规则才可从「可预览」进入实验性 `bridge` 并允许 `bind`；此前 `plan.canApply=false`，但规划结果应对用户可见。
 
-本节仅定义可研究的范围，不改变默认拒绝原则。
+本节定义订阅桥的实验范围，不是「任意订阅变通用 API」。产品不做公网中转、号池或多人拆票。
 
 ## 2. 厂商与产品入口
 
@@ -116,6 +124,8 @@ DeepSeek 使用平台签发的 API Key，不是 OAuth。官方 Anthropic 兼容�
 Bridge 转换的是请求、流式事件、工具调用、停止原因和用量字段，不会把 OAuth Token “转换”为另一家 API Key。
 
 ## 4. 当前实现矩阵
+
+下表是**现在能写入的边**，不是产品上限。目标扩大方式见 [connection-binding-model.md §6](connection-binding-model.md#6-扩大在本模型里怎么做)。Account 行与同表面 Provider 在目标态应走同一条边；当前 apply 白名单仍拒绝非 Provider，属实现缺口。
 
 | 显式来源 | 目标 | 分析结果 | 当前可执行状态 |
 |---|---|---|---|
@@ -217,18 +227,17 @@ Claude Code
 ## 6. 判定顺序
 
 ```text
-选择来源 + 目标 Agent
-  → 确认来源产品、凭据类型与区域
-  → 确认上游协议和目标客户端版本/协议
-  → 目标是否原生支持同一配置？           是：config_sync
-  → 上游是否原生提供目标协议？           是：native_endpoint
-  → 是否有已测试且授权允许的转换器？     是：local_bridge
-  → unsupported，并给出原因和替代路径
+选择票 + 目标 Agent
+  → 票面（产品、凭据类、speaks）与 Agent（accepts、writer）
+  → 票本来就是给这个 Agent？              是：native（切换）
+  → 目标是否原生支持同一协议、只改形状？  是：reshape（config_sync / native_endpoint）
+  → 图上是否有已测试的转换边？            是：bridge（local_bridge）
+  → 不可行，给出原因和替代路径
 ```
 
-规则分析、计划与执行必须使用同一规则版本。`local_bridge` 由专用 Bridge 服务执行，不进入普通 `AdapterApplyService`；新增规则不得只在 UI 或命令层绕过计划门禁。
+规则分析、计划与执行必须使用同一规则版本。`bridge` 由专用 Bridge 服务执行。新增边不得只在 UI 绕过 `plan`。`plan.canApply=false` 时用户仍应看见原因。
 
-对于 subscription 实验候选，流程在“是否有已测试且授权允许的转换器”前还必须检查 capability matrix 的全部门禁；任一门禁缺失或失效，分析结果固定为 `unsupported`，并且 `plan.canApply=false`。显式 opt-in 不能替代这些门禁。
+对于 subscription 实验候选，流程在“是否有已测试的转换器”前还必须检查 capability matrix 的全部门禁；任一门禁缺失则不能 `bind`，但规划结果应对用户可见。显式 opt-in 不能替代这些门禁。
 
 ## 7. 新增或更新规则
 
