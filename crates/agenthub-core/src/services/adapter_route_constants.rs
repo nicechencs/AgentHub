@@ -17,10 +17,32 @@ pub const GLM_CLAUDE_BASE_URL: &str = "https://open.bigmodel.cn/api/anthropic";
 /// Official DeepSeek Anthropic-compatible endpoint projected into Claude.
 pub const DEEPSEEK_CLAUDE_BASE_URL: &str = "https://api.deepseek.com/anthropic";
 
+/// Official GLM Coding Plan OpenAI Responses endpoint projected into Codex.
+pub const GLM_CODEX_BASE_URL: &str = "https://open.bigmodel.cn/api/v1";
+
+/// Official DeepSeek OpenAI Responses endpoint projected into Codex.
+pub const DEEPSEEK_CODEX_BASE_URL: &str = DEEPSEEK_API_BASE_URL;
+
 /// Claude native_endpoint rule ids that write an Anthropic-compatible base URL.
 pub const KIMI_CLAUDE_RULE_ID: &str = "kimi-membership-to-claude-v1";
 pub const GLM_CLAUDE_RULE_ID: &str = "glm-coding-plan-to-claude-v1";
 pub const DEEPSEEK_CLAUDE_RULE_ID: &str = "deepseek-api-to-claude-v1";
+pub const GLM_CODEX_RULE_ID: &str = "glm-coding-plan-to-codex-v1";
+pub const DEEPSEEK_CODEX_RULE_ID: &str = "deepseek-api-to-codex-v1";
+pub const KIMI_GROK_RULE_ID: &str = "kimi-membership-to-grok-v1";
+pub const OPENAI_GROK_RULE_ID: &str = "openai-api-to-grok-v1";
+pub const GROK_CLAUDE_RULE_ID: &str = "grok-subscription-to-claude-v1";
+
+pub const GLM_CODEX_DEFAULT_MODEL: &str = "glm-5.3";
+pub const DEEPSEEK_CODEX_DEFAULT_MODEL: &str = "deepseek-v4-flash";
+pub const GLM_CODEX_PROVIDER_PREFIX: &str = "codex-glm-adapter";
+pub const DEEPSEEK_CODEX_PROVIDER_PREFIX: &str = "codex-deepseek-adapter";
+pub const GLM_CODEX_PROVIDER_SLUG: &str = "agenthub_glm";
+pub const DEEPSEEK_CODEX_PROVIDER_SLUG: &str = "agenthub_deepseek";
+pub const KIMI_GROK_BASE_URL: &str = KIMI_PI_BASE_URL;
+pub const OPENAI_GROK_BASE_URL: &str = "https://api.openai.com/v1";
+pub const KIMI_GROK_DEFAULT_MODEL: &str = "kimi-k2.5";
+pub const OPENAI_GROK_DEFAULT_MODEL: &str = "gpt-4o";
 
 /// Substring that identifies the official Kimi Code membership HTTP host.
 pub const KIMI_CODING_ENDPOINT_NEEDLE: &str = "api.kimi.com/coding";
@@ -113,6 +135,9 @@ pub const GLM_CODING_ANTHROPIC_NEEDLE: &str = "open.bigmodel.cn/api/anthropic";
 /// Official GLM Coding Plan Chat Completions host path.
 pub const GLM_CODING_CHAT_NEEDLE: &str = "open.bigmodel.cn/api/coding";
 
+/// Official GLM Coding Plan Responses host path.
+pub const GLM_CODING_RESPONSES_NEEDLE: &str = "open.bigmodel.cn/api/v1";
+
 /// Official DeepSeek HTTP host.
 pub const DEEPSEEK_API_ENDPOINT_NEEDLE: &str = "api.deepseek.com";
 
@@ -195,6 +220,7 @@ pub(crate) fn settings_contain_xai_api_endpoint(value: &Value) -> bool {
 pub(crate) fn settings_contain_glm_coding_plan_endpoint(value: &Value) -> bool {
     value_contains_needle(value, GLM_CODING_ANTHROPIC_NEEDLE)
         || value_contains_needle(value, GLM_CODING_CHAT_NEEDLE)
+        || value_contains_needle(value, GLM_CODING_RESPONSES_NEEDLE)
 }
 
 /// True when config points at DeepSeek's public API host.

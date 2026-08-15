@@ -20,6 +20,10 @@ use super::{
 pub const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON: &str =
     concat!("Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。",);
 
+/// Product-closed reason for Claude subscription → Codex.
+pub const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON: &str =
+    "Claude 订阅 → Codex：产品不做。Codex 不吃 Anthropic PKCE，本产品不走这条边。";
+
 /// Closed fallback reason for Codex subscription shapes without the
 /// `OauthAuthJson` Responses cell.
 pub const CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON: &str = concat!(
@@ -325,6 +329,12 @@ const KIMI_CODEX_LIMITS: &[&str] = &[
     "固定端口被占用时会尝试重新分配端口并写回配置。",
 ];
 
+const CODEX_NATIVE_API_LIMITS: &[&str] = &[
+    "将把 Codex 配置为官方 Responses 端点；不会启动本机 loopback Bridge。",
+    "生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。",
+    "当前未写入官方 ~/.codex/models.json；使用默认 model 与显式 Provider 配置。",
+];
+
 const KIMI_PI_LIMITS: &[&str] = &[
     "将写入 Pi models.json 的 kimi-for-coding 槽与凭据引用标记；不会在预览中传输明文 Key。",
     "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
@@ -386,6 +396,19 @@ const CODEX_CLAUDE_LIMITS: &[&str] = &[
     "固定端口被占用时会尝试重新分配端口并写回配置。",
 ];
 
+const GROK_CLAUDE_LIMITS: &[&str] = &[
+    "会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 xAI OAuth token 不进 Claude。",
+    "实验性协议桥接：Claude Messages → xAI Chat Completions；AgentHub 需保持在托盘运行。",
+    "Grok access token 过期后需重新同步 Grok 登录；Hub 本轮不自动 refresh。",
+    "固定端口被占用时会尝试重新分配端口并写回配置。",
+];
+
+const GROK_NATIVE_LIMITS: &[&str] = &[
+    "将写入 Grok config.toml 的 OpenAI Chat Completions 模型槽；不会启动本机 loopback Bridge。",
+    "生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。",
+    "仅接受官方 Kimi Code / OpenAI API 标记；Moonshot、自定义中转与仅 agent_id 不会自动升级。",
+];
+
 /// Compile-time matrix. Order does not matter; lookup is by full key equality.
 pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
     AdapterCapabilityCell {
@@ -404,6 +427,42 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         limitations: KIMI_CLAUDE_LIMITS,
         rule_id: "kimi-membership-to-claude-v1",
         verified_at: VERIFIED_AT,
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::GlmCodingPlan,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Codex,
+            protocol: AdapterTargetProtocol::OpenAiResponses,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::NativeEndpoint,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: "GLM Coding Plan 官方 Responses 端点可实验直连 Codex。",
+        limitations: CODEX_NATIVE_API_LIMITS,
+        rule_id: "glm-coding-plan-to-codex-v1",
+        verified_at: "2026-08-15",
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::DeepseekApi,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Codex,
+            protocol: AdapterTargetProtocol::OpenAiResponses,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::NativeEndpoint,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: "DeepSeek API 官方 Responses 端点可实验直连 Codex。",
+        limitations: CODEX_NATIVE_API_LIMITS,
+        rule_id: "deepseek-api-to-codex-v1",
+        verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
     },
     AdapterCapabilityCell {
@@ -676,6 +735,60 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
     },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::KimiCodeMembership,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Grok,
+            protocol: AdapterTargetProtocol::OpenAiChatCompletions,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::NativeEndpoint,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: "Kimi Code 会员可实验写入 Grok 的 OpenAI Chat Completions 配置。",
+        limitations: GROK_NATIVE_LIMITS,
+        rule_id: "kimi-membership-to-grok-v1",
+        verified_at: "2026-08-15",
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::OpenaiApi,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Grok,
+            protocol: AdapterTargetProtocol::OpenAiChatCompletions,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::NativeEndpoint,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: "OpenAI API 可实验写入 Grok 的官方 OpenAI Chat Completions 配置。",
+        limitations: GROK_NATIVE_LIMITS,
+        rule_id: "openai-api-to-grok-v1",
+        verified_at: "2026-08-15",
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::XaiGrokSubscription,
+            credential: AdapterCredentialClass::OauthOther,
+            transport: AdapterUpstreamTransport::LocalBridgeChatCompletions,
+            target: AgentId::Claude,
+            protocol: AdapterTargetProtocol::AnthropicMessages,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::LocalBridge,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: "Grok 订阅可通过本机桥接到 Claude Code（Messages → xAI Chat Completions）。",
+        limitations: GROK_CLAUDE_LIMITS,
+        rule_id: "grok-subscription-to-claude-v1",
+        verified_at: "2026-08-15",
+        gates: AdapterCapabilityGates::all_open(),
+    },
     // Codex OAuth Account → Claude Code App Server remains a closed candidate.
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -760,6 +873,14 @@ pub fn decide_adapter_capability(
         .collect();
 
     if candidates.is_empty() {
+        if matches!(
+            (source, target),
+            (AdapterSourceProduct::ClaudeSubscription, AgentId::Codex)
+        ) {
+            return AdapterCapabilityDecision::unsupported(
+                CLAUDE_SUBSCRIPTION_TO_CODEX_REASON,
+            );
+        }
         // Recorded gated candidate: keep subscription messaging if the cell is absent.
         if matches!(
             (source, target),

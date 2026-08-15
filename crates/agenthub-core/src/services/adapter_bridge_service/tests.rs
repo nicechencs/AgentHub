@@ -92,6 +92,57 @@ fn account_request(source_id: &str) -> AdapterBridgePrepareRequest {
     }
 }
 
+fn grok_claude_account_request(source_id: &str) -> AdapterBridgePrepareRequest {
+    AdapterBridgePrepareRequest {
+        source_kind: AdapterSourceKind::Account,
+        source_id: source_id.into(),
+        target_agent_id: AgentId::Claude,
+        auto_start: true,
+    }
+}
+
+#[test]
+fn grok_subscription_prepare_uses_xai_chat_and_projects_only_loopback() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "grok-subscription".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "Grok subscription".into(),
+            credentials: json!({
+                "format": "oauth",
+                "access_token": "grok-upstream-secret",
+                "refresh_token": "grok-refresh-secret"
+            }),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterBridgeService::new(db);
+    let prepared = service
+        .prepare(&grok_claude_account_request("grok-subscription"))
+        .unwrap();
+    let spec = prepared.runtime_material().start_spec(Some(0));
+    assert_eq!(spec.upstream.base_url, "https://api.x.ai/v1");
+    assert_eq!(spec.upstream.model.as_deref(), Some("grok-4.5"));
+    assert_eq!(spec.upstream.protocol, BridgeUpstreamProtocol::KimiChatCompletions);
+    assert_eq!(spec.upstream.auth.token(), "grok-upstream-secret");
+
+    let projection = prepared.provider_projection(43123).unwrap();
+    let input = match projection {
+        AdapterBridgeProviderProjection::Create(input) => input,
+        other => panic!("expected create projection, got {other:?}"),
+    };
+    let serialized = serde_json::to_string(&input.settings_config).unwrap();
+    assert!(serialized.contains("127.0.0.1:43123"));
+    assert!(!serialized.contains("grok-upstream-secret"));
+    assert!(!serialized.contains("grok-refresh-secret"));
+}
+
 fn create_projection(db: &Database, prepared: &AdapterBridgePrepared, port: u16) -> Provider {
     let input = match prepared.provider_projection(port).unwrap() {
         AdapterBridgeProviderProjection::Create(input) => input,

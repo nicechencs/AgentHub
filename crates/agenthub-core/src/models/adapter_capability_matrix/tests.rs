@@ -338,6 +338,33 @@ fn glm_and_deepseek_claude_cells_are_experimental_and_applicable() {
 }
 
 #[test]
+fn glm_and_deepseek_codex_cells_are_experimental_native_responses() {
+    for (source, rule) in [
+        (
+            AdapterSourceProduct::GlmCodingPlan,
+            "glm-coding-plan-to-codex-v1",
+        ),
+        (
+            AdapterSourceProduct::DeepseekApi,
+            "deepseek-api-to-codex-v1",
+        ),
+    ] {
+        let decision =
+            decide_adapter_capability(source, AdapterCredentialClass::ApiKey, AgentId::Codex);
+        assert_eq!(decision.route, AdapterRoute::NativeEndpoint);
+        assert_eq!(decision.support, AdapterSupport::Experimental);
+        assert!(decision.can_apply);
+        assert_eq!(decision.rule_id, Some(rule));
+        assert_eq!(decision.transport, AdapterUpstreamTransport::NativeHttp);
+        assert_eq!(
+            decision.protocol,
+            Some(AdapterTargetProtocol::OpenAiResponses)
+        );
+        assert!(decision.gates.expect("native cell gates").all_passed());
+    }
+}
+
+#[test]
 fn deepseek_api_to_dsh_can_apply() {
     let dsh = decide_adapter_capability(
         AdapterSourceProduct::DeepseekApi,
@@ -370,8 +397,9 @@ fn registered_surfaces_have_writable_pi_cells() {
         AgentId::Grok,
     )
     .public_surface();
-    assert_eq!(openai_grok.route, AdapterRoute::Unsupported);
-    assert!(!openai_grok.can_apply);
+    assert_eq!(openai_grok.route, AdapterRoute::NativeEndpoint);
+    assert!(openai_grok.can_apply);
+    assert_eq!(openai_grok.rule_id, Some("openai-api-to-grok-v1"));
 
     let xai_grok = decide_adapter_capability(
         AdapterSourceProduct::XaiApi,
@@ -421,15 +449,14 @@ fn cursor_target_uses_no_writer_reason_not_source_copy() {
 }
 
 #[test]
-fn kimi_to_grok_reason_comes_from_protocol_graph() {
+fn kimi_to_grok_is_an_open_native_endpoint() {
     let decision = decide_adapter_capability(
         AdapterSourceProduct::KimiCodeMembership,
         AdapterCredentialClass::ApiKey,
         AgentId::Grok,
     )
     .public_surface();
-    assert_eq!(decision.route, AdapterRoute::Unsupported);
-    assert!(!decision.can_apply);
-    assert_eq!(decision.reason, SAME_PROTOCOL_NO_EDGE_REASON);
-    assert!(!decision.reason.contains("仅支持预览到 Claude"));
+    assert_eq!(decision.route, AdapterRoute::NativeEndpoint);
+    assert!(decision.can_apply);
+    assert_eq!(decision.rule_id, Some("kimi-membership-to-grok-v1"));
 }

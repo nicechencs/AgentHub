@@ -582,7 +582,16 @@ fn ticket_surface_serde_matches_wire() {
         TicketSurface::GlmCodingPlan.speaks(),
         &[
             TicketProtocol::AnthropicMessages,
-            TicketProtocol::OpenaiChat
+            TicketProtocol::OpenaiChat,
+            TicketProtocol::OpenaiResponses
+        ]
+    );
+    assert_eq!(
+        TicketSurface::DeepseekApi.speaks(),
+        &[
+            TicketProtocol::AnthropicMessages,
+            TicketProtocol::OpenaiChat,
+            TicketProtocol::OpenaiResponses
         ]
     );
     assert_eq!(TicketSurface::parse("not-a-surface"), None);
