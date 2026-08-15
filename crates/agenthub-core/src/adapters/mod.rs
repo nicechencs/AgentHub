@@ -32,7 +32,10 @@ use crate::utils::redact::{mask_secret_preview, redact_text};
 pub trait AgentAdapter: Send + Sync {
     fn id(&self) -> AgentId;
     fn detect(&self) -> DetectResult;
-    fn install_channels(&self) -> Vec<InstallChannel>;
+    /// Product install channels. Production adapters use the catalog contribution.
+    fn install_channels(&self) -> Vec<InstallChannel> {
+        crate::catalog::install::adapter_install_channels(self.id())
+    }
     fn read_config(&self) -> Result<AgentConfig>;
     /// Atomically replace the agent's live provider configuration.
     ///
