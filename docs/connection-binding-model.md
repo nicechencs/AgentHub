@@ -247,7 +247,7 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 | 谁在用 | `is_current` + profile 反查 | Binding |
 | 规划 | 前端走 `plan_ticket`；`plan()` 唯一出口；write_gate = 有 bind 实现 ∧ secret 可按 `source_kind` 解析 | `plan(ticket, agent)` 为唯一真理 |
 | 写入 | `bind_ticket` / `unbind_ticket`；`apply_adapter` 薄委托 bind | `bind` / `unbind` |
-| Connections | 全局钱包；真票都有「接到…」；写入仍是 apply | 全局钱包；真票都有「接到…」 |
+| Connections | 全局钱包；真票都有「接到…」；写入是 bind/unbind | 全局钱包；真票都有「接到…」 |
 | 诊断 | 同一对话框里置灰 + plan 原因 | 同一对话框里置灰 + 原因 |
 | 生成物 | 不进钱包；记在源票「正用于」 | 绑定的私有 runtime |
 | 扩大 | 加商品白名单 | 加 surface / writer / 图边 |

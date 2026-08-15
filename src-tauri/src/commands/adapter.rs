@@ -380,14 +380,14 @@ async fn unbind_ticket_inner(
     };
     if let Some(profile) = profile.as_ref() {
         if profile.route == AdapterRoute::LocalBridge {
-            let _ = stop_local_bridge(
+            stop_local_bridge(
                 hub.clone(),
                 host,
                 coordinator.clone(),
                 lifecycle_barrier,
                 profile.id.clone(),
             )
-            .await;
+            .await?;
         }
         let _target_guard = coordinator.lock_target(profile.target_agent_id).await;
     }

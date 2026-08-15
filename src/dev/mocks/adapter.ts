@@ -674,13 +674,6 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           retryable: false,
         });
       }
-      if (generated.isCurrent) {
-        throw adapterCommandError({
-          code: 'unsupported',
-          message: '请先在 Connections 切换到其他连接，再删除此适配',
-          retryable: false,
-        });
-      }
       resolver.removeGeneratedProvider?.(generated);
       state.generatedProviders.delete(generated.id);
       state.bridgeStatuses.delete(profileId);
