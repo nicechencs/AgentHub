@@ -118,11 +118,12 @@ describe('Bridges page', () => {
       createElement(AdapterProfiles, {
         ...emptyListProps,
         profiles: [profile],
+        bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
         hiddenTargetIds: new Set([profile.targetAgentId]),
       }),
     );
     expect(markup).toContain('目标已隐藏，仅可停止');
-    expect(markup).toContain('disabled');
+    expect(markup).toContain('停止');
   });
 
   it('renders a running bridge as single-layer health plus port', () => {
