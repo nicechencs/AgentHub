@@ -294,6 +294,8 @@ export interface AgentPort {
     agentIds?: AgentId[],
     force?: boolean,
   ): Promise<import('@/lib/types').AgentUpdateInfo[]>;
+  /** Soft-hide / unhide. Does not uninstall or delete credentials. */
+  setAgentHidden(agentId: AgentId, hidden: boolean): Promise<void>;
 }
 
 export interface SettingsPort {

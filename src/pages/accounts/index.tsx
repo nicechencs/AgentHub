@@ -37,6 +37,9 @@ import { groupAccountsByIdentity } from '@/lib/backend/contracts/account-map';
 import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
 import { attachLiveAgentAuth } from '@/lib/backend/contracts/auth-state';
 import { useAgentStatusesOptional } from '@/app/runtime';
+import { AGENTS } from '@/config/agents';
+import { firstVisibleAgentId } from '@/lib/agent-visibility';
+import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { openAgentConfigDir } from '@/lib/api/install';
 import { resolveAgentMeta } from '@/config/agents';
 import { isCapabilityBlocked } from '@/lib/capability';
@@ -79,7 +82,17 @@ export default function AccountsPage({
 }: AccountsPanelProps = {}) {
   const { toast } = useToast();
   const controlled = controlledAgentId !== undefined;
-  const [internalAgent, setInternalAgent] = React.useState<AgentId>('claude');
+  const { installedAgents, visibleIds } = useInstalledAgents();
+  const tabAgents = React.useMemo(
+    () =>
+      installedAgents.length
+        ? installedAgents
+        : AGENTS.filter((a) => visibleIds.includes(a.id)),
+    [installedAgents, visibleIds],
+  );
+  const [internalAgent, setInternalAgent] = React.useState<AgentId>(() =>
+    firstVisibleAgentId('claude', tabAgents.map((a) => a.id)),
+  );
   const agent = controlled ? controlledAgentId : internalAgent;
 
   const [accounts, setAccounts] = React.useState<Account[]>([]);
@@ -96,6 +109,14 @@ export default function AccountsPage({
   const [oauthOpen, setOauthOpen] = React.useState(false);
   const [apiKeyOpen, setApiKeyOpen] = React.useState(false);
   const [editTarget, setEditTarget] = React.useState<Account | null>(null);
+
+  React.useEffect(() => {
+    if (controlled) return;
+    const allowed = tabAgents.map((a) => a.id);
+    if (allowed.length && !allowed.includes(internalAgent)) {
+      setInternalAgent(firstVisibleAgentId(internalAgent, allowed));
+    }
+  }, [controlled, internalAgent, tabAgents]);
 
   const setAgent = (id: AgentId) => {
     if (controlled) {
@@ -344,6 +365,7 @@ export default function AccountsPage({
           <AgentTabStrip
             value={agent}
             onChange={setAgent}
+            agents={tabAgents}
             disabled={accountDisabledAgents(agentStatuses)}
             disabledReason={
               agentStatuses.find((s) => s.agentId === agent)?.capabilities?.accountSwitch

@@ -17,7 +17,7 @@ import { AgentDot } from '@/components/shared/AgentDot';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { AGENTS } from '@/config/agents';
 import { useAppUpdateAvailable } from '@/app/runtime';
-import { listAgents } from '@/lib/api/agent';
+import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/layout/SidebarContext';
@@ -151,17 +151,14 @@ function agentDotLabel(
 /** 侧边导航:可折叠;底部为 agent 在线状态迷你条 */
 export function Sidebar() {
   const { collapsed, toggle } = useSidebar();
-  const [agents, setAgents] = React.useState<AgentStatus[]>([]);
+  const { statuses: agents, installedIds, visibleIds } = useInstalledAgents();
   const appUpdate = useAppUpdateAvailable();
   const settingsNotice = appUpdate
     ? { label: `有可用更新 v${appUpdate.version}` }
     : null;
 
-  React.useEffect(() => {
-    listAgents().then(setAgents).catch(() => {});
-  }, []);
-
-  const installed = agents.filter((a) => a.installed).length;
+  const installed = installedIds.length;
+  const visibleTotal = visibleIds.length;
 
   const itemClass = (isActive: boolean) =>
     cn(
@@ -173,9 +170,7 @@ export function Sidebar() {
         : 'text-secondary hover:bg-hover/70 hover:text-primary',
     );
 
-  const installedMetas = AGENTS.filter((meta) =>
-    agents.some((a) => a.agentId === meta.id && a.installed),
-  );
+  const installedMetas = AGENTS.filter((meta) => installedIds.includes(meta.id));
 
   return (
     <aside
@@ -257,10 +252,10 @@ export function Sidebar() {
       {/* agent 在线状态迷你条：最底部 */}
       <div className={cn('shrink-0 border-t border-border', collapsed ? 'px-1.5 py-2.5' : 'px-3 py-2.5')}>
         {collapsed ? (
-          <Hint label={`${installed}/${AGENTS.length} agents 已安装`} side="right">
+          <Hint label={`${installed}/${visibleTotal} agents 已安装`} side="right">
             <div
               className="flex cursor-default flex-wrap items-center justify-center gap-1.5 rounded-btn py-0.5"
-              aria-label={`${installed}/${AGENTS.length} agents 已安装`}
+              aria-label={`${installed}/${visibleTotal} agents 已安装`}
             >
               {installedMetas.map((meta) => {
                 const status = agents.find((a) => a.agentId === meta.id);
@@ -305,7 +300,7 @@ export function Sidebar() {
               <span className="text-xs text-muted">未安装 Agent</span>
             )}
             <span className="ml-auto shrink-0 text-xs text-muted">
-              {installed}/{AGENTS.length}
+              {installed}/{visibleTotal}
             </span>
           </div>
         )}

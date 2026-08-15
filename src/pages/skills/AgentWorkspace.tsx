@@ -80,6 +80,7 @@ function presenceLabel(presence: ReturnType<typeof resolveWorkspacePresence>): s
 export interface AgentWorkspaceProps {
   installed: InstalledSkillDto[];
   installedAgents: AgentColumn[];
+  hiddenIds?: readonly string[];
   loading?: boolean;
   importingIds: Set<string>;
   onOpenDir: (path: string) => void;
@@ -101,6 +102,7 @@ export interface AgentWorkspaceProps {
 export function AgentWorkspace({
   installed,
   installedAgents,
+  hiddenIds = [],
   importingIds,
   onOpenDir,
   onPreview,
@@ -122,10 +124,21 @@ export function AgentWorkspace({
   } | null>(null);
   const { widths, onResizeStart, totalWidth } = useColumnWidths(WIDTH_SPECS);
 
-  /** Agent 工作区行（非 shared origin） */
+  const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+
+  useEffect(() => {
+    if (agentFilter !== 'all' && hiddenSet.has(agentFilter)) {
+      setAgentFilter('all');
+    }
+  }, [agentFilter, hiddenSet]);
+
+  /** Agent 工作区行（非 shared origin；隐藏 agent 不出现） */
   const workspaceSkills = useMemo(
-    () => installed.filter((s) => isPrivateInstalledOrigin(s.origin)),
-    [installed],
+    () =>
+      installed.filter(
+        (s) => isPrivateInstalledOrigin(s.origin) && !hiddenSet.has(s.origin),
+      ),
+    [installed, hiddenSet],
   );
 
   const counts = useMemo(() => {
