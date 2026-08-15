@@ -44,6 +44,14 @@ fn anthropic_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStar
     spec
 }
 
+fn codex_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
+    let mut spec = spec(profile_id, port, upstream_port);
+    spec.upstream.base_url = format!("http://127.0.0.1:{upstream_port}/v1/");
+    spec.upstream.protocol = BridgeUpstreamProtocol::CodexResponsesOauth;
+    spec.upstream.auth = ResolvedAuth::bearer("oauth-upstream-token");
+    spec
+}
+
 async fn upstream() -> (u16, tokio::task::JoinHandle<()>) {
     upstream_at("/chat/completions").await
 }
@@ -202,6 +210,14 @@ async fn health_requires_the_local_bearer_token() {
     assert_eq!(health["ok"], true);
     assert_eq!(health["listener_status"], "running");
     assert_eq!(health["upstream_status"], "unknown");
+    let api_key_health = client()
+        .await
+        .get(format!("http://127.0.0.1:{}/health", status.port))
+        .header("x-api-key", "local-test-token")
+        .send()
+        .await
+        .expect("x-api-key health request");
+    assert_eq!(api_key_health.status(), StatusCode::OK);
     assert_eq!(
         host.status("health")
             .expect("status")
@@ -907,7 +923,10 @@ async fn translate_failure_on_http_200_marks_upstream_degraded() {
 }
 
 async fn anthropic_upstream() -> (u16, tokio::task::JoinHandle<()>) {
-    async fn messages(headers: axum::http::HeaderMap, Json(body): Json<Value>) -> impl IntoResponse {
+    async fn messages(
+        headers: axum::http::HeaderMap,
+        Json(body): Json<Value>,
+    ) -> impl IntoResponse {
         let key = headers
             .get("x-api-key")
             .and_then(|value| value.to_str().ok())
@@ -949,6 +968,105 @@ async fn anthropic_upstream() -> (u16, tokio::task::JoinHandle<()>) {
     (port, task)
 }
 
+async fn codex_responses_upstream() -> (u16, tokio::task::JoinHandle<()>) {
+    async fn responses(
+        headers: axum::http::HeaderMap,
+        Json(body): Json<Value>,
+    ) -> impl IntoResponse {
+        let bearer = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        assert_eq!(bearer, "Bearer oauth-upstream-token");
+        assert!(headers.get("x-api-key").is_none());
+        assert!(headers.get("anthropic-version").is_none());
+        assert_eq!(body["input"][0]["content"][0]["text"], "hello");
+        (
+            StatusCode::OK,
+            Json(json!({
+                "id": "resp_codex",
+                "object": "response",
+                "created_at": 1,
+                "model": "gpt-5",
+                "status": "completed",
+                "output": [{
+                    "id": "msg_codex",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{ "type": "output_text", "text": "hello from codex" }]
+                }],
+                "usage": {
+                    "input_tokens": 2,
+                    "output_tokens": 3,
+                    "total_tokens": 5
+                }
+            })),
+        )
+    }
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind Codex Responses upstream");
+    let port = listener.local_addr().expect("addr").port();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new().route("/v1/responses", post(responses)),
+        )
+        .await
+        .expect("serve Codex Responses upstream");
+    });
+    (port, task)
+}
+
+async fn codex_responses_sse_upstream() -> (u16, tokio::task::JoinHandle<()>) {
+    async fn responses(headers: axum::http::HeaderMap) -> Response {
+        let bearer = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        assert_eq!(bearer, "Bearer oauth-upstream-token");
+        assert!(headers.get("x-api-key").is_none());
+        assert!(headers.get("anthropic-version").is_none());
+        let chunks: Vec<&'static [u8]> = vec![
+            br#"data: {"type":"response.created","response":{"id":"resp_stream","model":"gpt-5","status":"in_progress"}}
+
+"#,
+            br#"data: {"type":"response.output_text.delta","delta":"hello"}
+
+"#,
+            br#"data: {"type":"response.completed","response":{"id":"resp_stream","model":"gpt-5","status":"completed","output":[]}}
+
+"#,
+        ];
+        let output = stream! {
+            for chunk in chunks {
+                yield Ok::<_, Infallible>(axum::body::Bytes::from_static(chunk));
+            }
+        };
+        (
+            [(header::CONTENT_TYPE, "text/event-stream")],
+            Body::from_stream(output),
+        )
+            .into_response()
+    }
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind Codex Responses SSE upstream");
+    let port = listener.local_addr().expect("addr").port();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new().route("/v1/responses", post(responses)),
+        )
+        .await
+        .expect("serve Codex Responses SSE upstream");
+    });
+    (port, task)
+}
+
 #[tokio::test]
 async fn anthropic_protocol_uses_messages_and_x_api_key() {
     let (upstream_port, upstream_task) = anthropic_upstream().await;
@@ -971,5 +1089,119 @@ async fn anthropic_protocol_uses_messages_and_x_api_key() {
     assert_eq!(body["output"][0]["content"][0]["text"], "你好");
     assert_eq!(body["usage"]["input_tokens"], 2);
     host.stop("anthropic-host").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn codex_responses_oauth_messages_returns_anthropic_json_and_accepts_both_local_auth_headers()
+{
+    let (upstream_port, upstream_task) = codex_responses_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let configured = codex_spec("codex-messages", 0, upstream_port);
+    let configured_debug = format!("{configured:?}");
+    assert!(!configured_debug.contains("oauth-upstream-token"));
+    assert!(!configured_debug.contains("local-test-token"));
+    let status = host
+        .start(configured)
+        .await
+        .expect("start");
+    let url = format!("http://127.0.0.1:{}/v1/messages", status.port);
+    for auth_header in [
+        ("authorization", "Bearer local-test-token"),
+        ("x-api-key", "local-test-token"),
+    ] {
+        let response = client()
+            .await
+            .post(&url)
+            .header(auth_header.0, auth_header.1)
+            .json(&json!({
+                "model": "claude-test",
+                "max_tokens": 32,
+                "messages": [{ "role": "user", "content": "hello" }]
+            }))
+            .send()
+            .await
+            .expect("messages request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .json::<Value>()
+            .await
+            .expect("Anthropic message JSON");
+        assert_eq!(body["type"], "message");
+        assert_eq!(body["content"][0]["text"], "hello from codex");
+    }
+    host.stop("codex-messages").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn codex_responses_oauth_rejects_wrong_local_auth_and_responses_downstream() {
+    let (upstream_port, upstream_task) = codex_responses_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(codex_spec("codex-routing", 0, upstream_port))
+        .await
+        .expect("start");
+    let wrong = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header(header::AUTHORIZATION, "Bearer wrong-local-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("wrong auth request");
+    assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
+    let responses = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"test","input":"hello"}))
+        .send()
+        .await
+        .expect("responses route request");
+    assert_eq!(responses.status(), StatusCode::NOT_FOUND);
+    host.stop("codex-routing").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn codex_responses_oauth_messages_stream_is_anthropic_sse() {
+    let (upstream_port, upstream_task) = codex_responses_sse_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(codex_spec("codex-stream", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header("x-api-key", "local-test-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "stream": true,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("stream request");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("text/event-stream")
+    );
+    let body = response.text().await.expect("stream body");
+    assert!(body.contains("event: content_block_delta"));
+    assert!(body.contains("\"text\":\"hello\""));
+    assert!(body.contains("event: message_stop"));
+    assert!(!body.contains("response.output_text.delta"));
+    host.stop("codex-stream").await.expect("stop");
     upstream_task.abort();
 }
