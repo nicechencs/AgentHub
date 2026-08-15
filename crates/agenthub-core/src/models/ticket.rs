@@ -36,6 +36,18 @@ pub struct Ticket {
     pub imported_from: Option<AgentId>,
 }
 
+/// Outcome of reading a persisted `extra.surface` / `meta.surface` field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PersistedTicketSurface {
+    /// No `surface` key — classify and best-effort write back.
+    Missing,
+    /// Known wire value for this version.
+    Known(TicketSurface),
+    /// Key present but this version does not recognize it.
+    /// Display as [`TicketSurface::Unknown`]; do not overwrite the stored value.
+    Unrecognized,
+}
+
 /// Product surface recognized by classify (or `unknown`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -76,11 +88,19 @@ impl TicketSurface {
         }
     }
 
-    /// Read a valid persisted `surface` field from account extra or provider meta.
-    pub fn from_persisted_json(blob: &Value) -> Option<Self> {
-        blob.get("surface")
-            .and_then(Value::as_str)
-            .and_then(Self::parse)
+    /// Read a persisted `surface` field from account extra or provider meta.
+    ///
+    /// Distinguishes a missing key (classify + write back) from a key this
+    /// version does not recognize (display as [`TicketSurface::Unknown`], do
+    /// not overwrite).
+    pub fn from_persisted_json(blob: &Value) -> PersistedTicketSurface {
+        let Some(raw) = blob.get("surface") else {
+            return PersistedTicketSurface::Missing;
+        };
+        match raw.as_str().and_then(Self::parse) {
+            Some(surface) => PersistedTicketSurface::Known(surface),
+            None => PersistedTicketSurface::Unrecognized,
+        }
     }
 
     pub fn speaks(self) -> &'static [TicketProtocol] {

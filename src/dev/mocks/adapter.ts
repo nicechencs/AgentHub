@@ -157,6 +157,10 @@ type RouteSourceLabel =
   | 'other'
   | 'not_found';
 
+/** Keep lockstep with core `SAME_EDGE_UNWRITABLE_REASON`. */
+const SAME_EDGE_UNWRITABLE_REASON =
+  '同边但暂不可写：写入仍只接受 Provider 行，下一步 bind 打通。';
+
 /** Keep lockstep with core `KIMI_NON_MEMBERSHIP_REASON`. */
 const KIMI_NON_MEMBERSHIP_REASON =
   '当前 Kimi 连接不是「Kimi Code 会员」来源。跨 Agent 适配仅支持会员：Connections 中选择 preset「Kimi Code 会员」，或配置端点包含 api.kimi.com/coding。开放平台（moonshot）与任意兼容 API 不会自动升级。当前不支持不等于连接失效。';
@@ -380,16 +384,16 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
           secretChange('pi', 'apiKey'),
         ]
       : [];
-  const writeGate = request.sourceKind === 'provider'
-    && (
-      (analysis.route === 'native_endpoint' && analysis.support === 'stable' && request.targetAgentId === 'claude')
-      || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
-      || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'pi')
-    );
+  const implementedPath =
+    (analysis.route === 'native_endpoint' && analysis.support === 'stable' && request.targetAgentId === 'claude')
+    || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
+    || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'pi');
+  const writeGate = request.sourceKind === 'provider' && implementedPath;
   const canApply = writeGate;
   const maturity = mockPlanMaturity(analysis);
-  const reason = !canApply && request.sourceKind === 'account' && analysis.route !== 'unsupported'
-    ? `${analysis.reason} 写入仍只接受 Provider 行，下一步 bind 打通。`
+  // Same condition as core `write_gate`: matrix-open implemented path ∩ non-Provider.
+  const reason = implementedPath && request.sourceKind !== 'provider'
+    ? `${analysis.reason} ${SAME_EDGE_UNWRITABLE_REASON}`
     : analysis.reason;
   return {
     analysis,

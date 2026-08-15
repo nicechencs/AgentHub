@@ -367,7 +367,8 @@ fn create_update_upsert_delete_crud_and_errors() {
     assert_eq!(created.id, "p1");
     assert_eq!(created.name, "Alpha");
     assert!(!created.created_at.is_empty());
-    assert_eq!(created.created_at, created.updated_at);
+    assert!(created.updated_at >= created.created_at);
+    assert_eq!(created.meta["surface"], "unknown");
     // Secrets remain unredacted at service boundary (CLI redacts).
     assert_eq!(created.settings_config["api_key"], "sk-live-secret");
 
@@ -1252,6 +1253,23 @@ fn updating_non_current_provider_does_not_touch_live() {
     );
     assert_eq!(adapter.config(), live);
     assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), writes_before);
+}
+
+#[test]
+fn create_writes_classified_surface() {
+    let (_dir, svc) = svc();
+    let created = svc
+        .create(&ProviderInput {
+            id: "kimi-mem".into(),
+            agent_id: AgentId::Kimi,
+            name: "Kimi membership".into(),
+            settings_config: json!({}),
+            meta: json!({"preset": "kimi-code-membership"}),
+            is_current: false,
+        })
+        .unwrap();
+    assert_eq!(created.meta["surface"], "kimi-code-membership");
+    assert_eq!(created.meta["preset"], "kimi-code-membership");
 }
 
 #[test]

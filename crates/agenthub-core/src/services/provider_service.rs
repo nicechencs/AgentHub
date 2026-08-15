@@ -11,7 +11,7 @@ use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
     attach_persisted_surface, AdapterSourceKind, AgentConfig, AgentId, BackupKind, Capability,
-    Provider, ProviderInput, ProviderSwitchResult, TicketSurface,
+    PersistedTicketSurface, Provider, ProviderInput, ProviderSwitchResult, TicketSurface,
 };
 use crate::services::switch_undo::{
     clear_switch_undo, extract_probe_url, peek_switch_undo, probe_url_latency_ms,
@@ -212,12 +212,13 @@ impl ProviderService {
             created_at: now.clone(),
             updated_at: now,
         };
-        if row.is_current {
+        let created = if row.is_current {
             let (created, _binding) = self.connections.create_and_activate_provider(&row)?;
-            Ok(created)
+            created
         } else {
-            self.repo.create(&row)
-        }
+            self.repo.create(&row)?
+        };
+        self.stamp_provider_surface(created)
     }
 
     /// Update an existing provider by id. Core owns `updated_at`; preserves `created_at`.
@@ -264,13 +265,14 @@ impl ProviderService {
             created_at: String::new(),
             updated_at: now_ts(),
         };
-        if row.is_current {
+        let updated = if row.is_current {
             let (updated, _binding) = self.connections.update_and_activate_provider(&row)?;
-            Ok(updated)
+            updated
         } else {
             // Demote path: update + clear binding when this row was active.
-            self.connections.update_provider_non_current(&row)
-        }
+            self.connections.update_provider_non_current(&row)?
+        };
+        self.stamp_provider_surface(updated)
     }
 
     /// Insert or update. On existing rows: preserve `created_at`, reject `agent_id` change.
@@ -486,13 +488,17 @@ impl ProviderService {
         let product = AdapterRouteService::new(self.db.clone())
             .classify_source_product(AdapterSourceKind::Provider, &provider.id)?;
         let surface = TicketSurface::from_product(product);
-        if TicketSurface::from_persisted_json(&provider.meta) == Some(surface) {
+        if TicketSurface::from_persisted_json(&provider.meta)
+            == PersistedTicketSurface::Known(surface)
+        {
             return Ok(provider);
         }
+        let expected_updated_at = provider.updated_at.clone();
         let mut stamped = provider;
         attach_persisted_surface(&mut stamped.meta, surface);
         stamped.updated_at = now_ts();
-        self.repo.update(&stamped)
+        self.repo
+            .update_healed_fields(&stamped, &expected_updated_at, &stamped.updated_at)
     }
 
     /// Locate the canonical live-import row for one agent. Older databases may

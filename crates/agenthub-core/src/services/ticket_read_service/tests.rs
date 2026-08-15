@@ -1,8 +1,8 @@
 use super::*;
 use crate::models::{
     AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterSourceKind,
-    AdapterSupport, AgentId, TicketBindingRoute, TicketCredentialClass, TicketProtocol,
-    TicketSurface, PROJECTION_NOT_A_TICKET,
+    AdapterSupport, AgentId, PersistedTicketSurface, TicketBindingRoute, TicketCredentialClass,
+    TicketProtocol, TicketSurface, PROJECTION_NOT_A_TICKET,
 };
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
 
@@ -293,7 +293,10 @@ fn profile_with_missing_source_row_is_skipped() {
         .unwrap();
 
     let wallet = TicketReadService::new(db).list_wallet().unwrap();
-    assert!(wallet.tickets.is_empty(), "projection excluded and no source");
+    assert!(
+        wallet.tickets.is_empty(),
+        "projection excluded and no source"
+    );
     assert!(
         wallet.bindings.is_empty(),
         "must not synthesize ghost bindings: {:?}",
@@ -458,7 +461,9 @@ fn wallet_wire_shape_uses_camel_case_and_kebab_surfaces() {
         serde_json::json!(["anthropic-messages", "openai-chat"])
     );
     assert_eq!(ticket["importedFrom"], "kimi");
-    assert!(!serde_json::to_string(&wallet).unwrap().contains("must-not-leak"));
+    assert!(!serde_json::to_string(&wallet)
+        .unwrap()
+        .contains("must-not-leak"));
 }
 
 #[test]
@@ -494,6 +499,30 @@ fn ticket_surface_serde_matches_wire() {
         Some(TicketSurface::KimiCodeMembership)
     );
     assert_eq!(TicketSurface::parse("not-a-surface"), None);
+    assert_eq!(
+        TicketSurface::from_persisted_json(&serde_json::json!({})),
+        PersistedTicketSurface::Missing
+    );
+    assert_eq!(
+        TicketSurface::from_persisted_json(&serde_json::json!({"other": 1})),
+        PersistedTicketSurface::Missing
+    );
+    assert_eq!(
+        TicketSurface::from_persisted_json(&serde_json::json!({"surface": "anthropic-api"})),
+        PersistedTicketSurface::Known(TicketSurface::AnthropicApi)
+    );
+    assert_eq!(
+        TicketSurface::from_persisted_json(&serde_json::json!({"surface": "unknown"})),
+        PersistedTicketSurface::Known(TicketSurface::Unknown)
+    );
+    assert_eq!(
+        TicketSurface::from_persisted_json(&serde_json::json!({"surface": "future-surface-v2"})),
+        PersistedTicketSurface::Unrecognized
+    );
+    assert_eq!(
+        TicketSurface::from_persisted_json(&serde_json::json!({"surface": 1})),
+        PersistedTicketSurface::Unrecognized
+    );
 }
 
 #[test]
@@ -542,7 +571,10 @@ fn list_wallet_backfills_missing_surface_and_rereads_persisted() {
         .get_by_id("codex-oauth")
         .unwrap()
         .unwrap();
-    assert_eq!(stored_account.extra["surface"], "codex-chatgpt-subscription");
+    assert_eq!(
+        stored_account.extra["surface"],
+        "codex-chatgpt-subscription"
+    );
 
     let second = TicketReadService::new(db).list_wallet().unwrap();
     assert!(second
@@ -579,13 +611,93 @@ fn list_wallet_prefers_persisted_surface_over_classify() {
     assert_eq!(ticket.surface, TicketSurface::KimiCodeMembership);
     assert_eq!(
         ticket.speaks,
-        vec![TicketProtocol::AnthropicMessages, TicketProtocol::OpenaiChat]
+        vec![
+            TicketProtocol::AnthropicMessages,
+            TicketProtocol::OpenaiChat
+        ]
     );
-    let stored = ProviderRepo::new(db)
-        .get_by_id("relay")
-        .unwrap()
-        .unwrap();
+    let stored = ProviderRepo::new(db).get_by_id("relay").unwrap().unwrap();
     assert_eq!(stored.meta["surface"], "kimi-code-membership");
+}
+
+#[test]
+fn list_wallet_unrecognized_surface_displays_unknown_without_overwrite() {
+    let (_dir, db) = test_db();
+    let mut row = provider(
+        "relay",
+        AgentId::Claude,
+        "Custom relay",
+        "openai-compatible",
+        true,
+    );
+    row.settings_config = serde_json::json!({
+        "api_key": "must-not-leak",
+        "keep": true
+    });
+    row.meta = serde_json::json!({
+        "preset": "openai-compatible",
+        "surface": "future-surface-v2"
+    });
+    ProviderRepo::new(db.clone()).create(&row).unwrap();
+
+    let wallet = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    let ticket = wallet
+        .tickets
+        .iter()
+        .find(|t| t.id == "provider:relay")
+        .unwrap();
+    assert_eq!(ticket.surface, TicketSurface::Unknown);
+    assert!(ticket.speaks.is_empty());
+
+    let stored = ProviderRepo::new(db).get_by_id("relay").unwrap().unwrap();
+    assert_eq!(stored.meta["surface"], "future-surface-v2");
+    assert!(stored.is_current);
+    assert_eq!(stored.settings_config["keep"], true);
+    assert_eq!(stored.name, "Custom relay");
+}
+
+#[test]
+fn list_wallet_surface_backfill_does_not_touch_current_or_settings() {
+    let (_dir, db) = test_db();
+    let mut row = provider("anth", AgentId::Claude, "Anthropic", "anthropic", true);
+    row.settings_config = serde_json::json!({
+        "api_key": "must-not-leak",
+        "base_url": "https://keep.example"
+    });
+    ProviderRepo::new(db.clone()).create(&row).unwrap();
+
+    let _ = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    let stored = ProviderRepo::new(db).get_by_id("anth").unwrap().unwrap();
+    assert_eq!(stored.meta["surface"], "anthropic-api");
+    assert!(stored.is_current);
+    assert_eq!(stored.settings_config["base_url"], "https://keep.example");
+    assert_eq!(stored.name, "Anthropic");
+}
+
+#[test]
+fn list_wallet_unrecognized_account_surface_skips_writeback() {
+    let (_dir, db) = test_db();
+    let mut row = account(
+        "legacy",
+        AgentId::Codex,
+        AccountKind::Oauth,
+        "me@example.com",
+        true,
+    );
+    row.extra = serde_json::json!({"surface": "future-account-surface"});
+    AccountRepo::new(db.clone()).create(&row).unwrap();
+
+    let wallet = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    let ticket = wallet
+        .tickets
+        .iter()
+        .find(|t| t.id == "account:legacy")
+        .unwrap();
+    assert_eq!(ticket.surface, TicketSurface::Unknown);
+
+    let stored = AccountRepo::new(db).get_by_id("legacy").unwrap().unwrap();
+    assert_eq!(stored.extra["surface"], "future-account-surface");
+    assert!(stored.is_current);
 }
 
 #[test]

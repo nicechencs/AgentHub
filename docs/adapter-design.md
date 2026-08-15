@@ -27,7 +27,7 @@ Adapter 负责把 **钱包里已有的票** 接到另一个 Agent。机制不变
 **入口定位（Adapter 页降级已落地）**：日常发起适配走 Hub 对话框，不必打开本页。`/adapter` 与侧栏「桥与适配」保留，只管理已绑定的本机桥 runtime，不再提供选来源→分析→plan→apply 创建区。入口与信息架构见 [hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)。
 
 - 推荐：Dashboard「连接/切换」、Connections「接到…」（当前文案仍为「用于其他 Agent」）→ 同一绑定对话框。
-- 保留：`/adapter` 只列出 `bridge` 运行时（start/stop/retry、autoStart、详情、unbind）。
+- 保留：`/adapter` 只列出 `bridge` 运行时（start/stop/retry、autoStart、详情、删除投影/停桥）。
 - 创建绑定只走 Hub：经 `lib/api/adapter`；`plan.canApply` 表示现在能写入。目标 UI 见 [ui-design.md §4.3](ui-design.md)。
 
 一次规划只产生以下四种结果之一（括号内为当前实现名）：

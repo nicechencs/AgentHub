@@ -188,6 +188,46 @@ describe('mock adapter route preview', () => {
       targetAgentId: 'claude',
     })).rejects.toThrow(/不可应用|不支持|canApply/i);
     expect(JSON.stringify({ analysis, plan })).not.toMatch(/sk-|access_token|refresh_token|bearer/i);
+    expect(plan.reason).not.toContain('同边但暂不可写');
+  });
+
+  it('appends the core same-edge reason only on implemented Account paths', async () => {
+    const accountId = 'anthropic-account-same-edge';
+    const adapter = createMockAdapterPort({
+      getAccountById: (id) => (id === accountId
+        ? {
+            id: accountId,
+            agentId: 'claude',
+            kind: 'apikey',
+            label: 'Anthropic key',
+            isCurrent: false,
+            tokenValid: true,
+            extra: { provider: 'anthropic' },
+          } as Account
+        : getMockAccountById(id)),
+      getProviderById: getMockProviderById,
+    });
+
+    const sameEdge = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: accountId,
+      targetAgentId: 'pi',
+    });
+    expect(sameEdge.canApply).toBe(false);
+    expect(sameEdge.analysis.route).toBe('config_sync');
+    expect(sameEdge.reason).toBe(
+      `${sameEdge.analysis.reason} 同边但暂不可写：写入仍只接受 Provider 行，下一步 bind 打通。`,
+    );
+
+    const closed = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: accountId,
+      targetAgentId: 'claude',
+    });
+    expect(closed.canApply).toBe(false);
+    expect(closed.analysis.route).toBe('unsupported');
+    expect(closed.reason).toBe(closed.analysis.reason);
+    expect(closed.reason).not.toContain('同边但暂不可写');
   });
 
   it('throws AdapterCommandError with a structured not-retryable shape', async () => {

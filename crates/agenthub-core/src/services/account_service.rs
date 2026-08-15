@@ -15,7 +15,8 @@ use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
     attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult,
-    AdapterSourceKind, AgentId, BackupKind, Capability, LiveAccount, TicketSurface,
+    AdapterSourceKind, AgentId, BackupKind, Capability, LiveAccount, PersistedTicketSurface,
+    TicketSurface,
 };
 use crate::services::switch_undo::{
     clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
@@ -1229,7 +1230,9 @@ impl AccountService {
         let product = AdapterRouteService::new(self.db.clone())
             .classify_source_product(AdapterSourceKind::Account, &account.id)?;
         let surface = TicketSurface::from_product(product);
-        if TicketSurface::from_persisted_json(&account.extra) == Some(surface) {
+        if TicketSurface::from_persisted_json(&account.extra)
+            == PersistedTicketSurface::Known(surface)
+        {
             return Ok(account);
         }
         let mut stamped = account;

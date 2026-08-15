@@ -1,8 +1,9 @@
 //! Ticket / Binding wallet aggregation (connection-binding-model §6 steps 1–2).
 //!
 //! Builds a wallet from accounts + providers + adapter profiles. Prefers
-//! persisted `extra.surface` / `meta.surface`; missing values are classified
-//! and best-effort written back. `plan` rejects generated projection providers.
+//! persisted `extra.surface` / `meta.surface`. A missing key is classified and
+//! best-effort written back; an unrecognized value displays as `unknown` and
+//! is not overwritten. `plan` rejects generated projection providers.
 
 use std::collections::{HashMap, HashSet};
 
@@ -12,9 +13,10 @@ use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
     attach_persisted_surface, parse_ticket_id, ticket_id, Account, AccountKind, AdapterApplyPlan,
-    AdapterProfile, AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AgentId, Provider,
-    Ticket, TicketBinding, TicketBindingRoute, TicketBridgeRuntime, TicketCredentialClass,
-    TicketPlanRequest, TicketSurface, TicketWallet, PROJECTION_NOT_A_TICKET,
+    AdapterProfile, AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AgentId,
+    PersistedTicketSurface, Provider, Ticket, TicketBinding, TicketBindingRoute,
+    TicketBridgeRuntime, TicketCredentialClass, TicketPlanRequest, TicketSurface, TicketWallet,
+    PROJECTION_NOT_A_TICKET,
 };
 use crate::services::AdapterRouteService;
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
@@ -71,8 +73,8 @@ impl TicketReadService {
     ///
     /// Generated projection providers are not tickets: refuse before routing.
     pub fn plan(&self, request: &TicketPlanRequest) -> Result<AdapterApplyPlan> {
-        let (source_kind, source_id) = parse_ticket_id(&request.ticket_id)
-            .map_err(AppError::InvalidArg)?;
+        let (source_kind, source_id) =
+            parse_ticket_id(&request.ticket_id).map_err(AppError::InvalidArg)?;
         if source_kind == AdapterSourceKind::Provider && self.is_projection_provider(&source_id)? {
             return Err(AppError::InvalidArg(format!(
                 "{PROJECTION_NOT_A_TICKET}: {}",
@@ -138,8 +140,10 @@ impl TicketReadService {
     }
 
     fn resolve_account_surface(&self, account: &Account) -> Result<TicketSurface> {
-        if let Some(surface) = TicketSurface::from_persisted_json(&account.extra) {
-            return Ok(surface);
+        match TicketSurface::from_persisted_json(&account.extra) {
+            PersistedTicketSurface::Known(surface) => return Ok(surface),
+            PersistedTicketSurface::Unrecognized => return Ok(TicketSurface::Unknown),
+            PersistedTicketSurface::Missing => {}
         }
         let product = self
             .routes
@@ -150,8 +154,10 @@ impl TicketReadService {
     }
 
     fn resolve_provider_surface(&self, provider: &Provider) -> Result<TicketSurface> {
-        if let Some(surface) = TicketSurface::from_persisted_json(&provider.meta) {
-            return Ok(surface);
+        match TicketSurface::from_persisted_json(&provider.meta) {
+            PersistedTicketSurface::Known(surface) => return Ok(surface),
+            PersistedTicketSurface::Unrecognized => return Ok(TicketSurface::Unknown),
+            PersistedTicketSurface::Missing => {}
         }
         let product = self
             .routes
@@ -166,9 +172,9 @@ impl TicketReadService {
         attach_persisted_surface(&mut extra, surface);
         let mut row = account.clone();
         row.extra = extra;
-        if let Err(error) =
-            self.accounts
-                .update_healed_fields(&row, &account.updated_at, &now_ts())
+        if let Err(error) = self
+            .accounts
+            .update_healed_fields(&row, &account.updated_at, &now_ts())
         {
             tracing::warn!(
                 module = targets::ACCOUNT,
@@ -184,8 +190,10 @@ impl TicketReadService {
         attach_persisted_surface(&mut meta, surface);
         let mut row = provider.clone();
         row.meta = meta;
-        row.updated_at = now_ts();
-        if let Err(error) = self.providers.update(&row) {
+        if let Err(error) =
+            self.providers
+                .update_healed_fields(&row, &provider.updated_at, &now_ts())
+        {
             tracing::warn!(
                 module = targets::PROVIDER,
                 provider_id = %provider.id,
