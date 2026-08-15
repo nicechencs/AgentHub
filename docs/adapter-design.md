@@ -1,6 +1,6 @@
 # Adapter 页面与本地协议桥接设计
 
-> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi / Anthropic → Codex 实验性本地桥接 + Pi 配置同步）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）。Anthropic API Key → Codex 的 `local_bridge` 已开放 experimental bind。ChatGPT/Codex subscription → Claude Code 是**产品目标边**，当前实现仍为 `plan.canApply=false`（见 [product-decisions.md](product-decisions.md)）。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。Kimi / Anthropic → Codex 发布前仍需实机 dogfood。
+> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi / Anthropic → Codex 实验性本地桥接 + Pi 配置同步）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）。Anthropic API Key → Codex 的 `local_bridge` 已开放 experimental bind。ChatGPT/Codex subscription → Claude Code 是 **③ 本机桥** 的产品目标边，当前实现仍为 `plan.canApply=false`（见 [product-decisions.md](product-decisions.md)）。Codex 订阅 → Pi 是 ②，不走本页桥。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。Kimi / Anthropic → Codex 发布前仍需实机 dogfood。
 > 2026-08-15：跨 Agent 复用的**目标领域**改为票 / 绑定 / 协议图（[connection-binding-model.md](connection-binding-model.md)）。ConnectFlow 确认步与 Adapter 页删除已改走 `bind`/`unbind`；内部仍可复用 apply 实现 reshape/bridge 运行时。生成物是绑定的私有 runtime，不是钱包里的新票。
 > 调研日期：2026-08-12（进度同步：2026-08-12）
 > 重点参考：`D:\demo_github\AgentHub_Ref\Cli-Proxy-API-Management-Center`
@@ -22,7 +22,7 @@
 
 ## 1. 结论
 
-Adapter 负责把 **钱包里已有的票**（含订阅）接到另一个 Agent。机制不变：只引用票，不复制凭据，不另建一套账号池，也不是公网/多租户网关。本机兼容面（loopback + 协议转换）是产品能力，见 [product-decisions.md](product-decisions.md)。目标对象是 **绑定**：`plan(票, Agent)` 在 native / reshape / bridge / 不可行 中择一，`bind` 写入。前端写入入口已是 `bind`/`unbind`；mock/内部仍可复用 apply 生成运行时，见 [connection-binding-model.md](connection-binding-model.md)。
+Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变：只引用票，不复制凭据，不另建一套账号池，也不是公网/多租户网关。产品分三路（① API 直连 ② 原生订阅 ③ 本机桥），见 [product-decisions.md](product-decisions.md)；本页的桥 runtime 只服务 ③。目标对象是 **绑定**：`plan(票, Agent)` 在 native / reshape / bridge / 不可行 中择一，`bind` 写入。前端写入入口已是 `bind`/`unbind`；mock/内部仍可复用 apply 生成运行时，见 [connection-binding-model.md](connection-binding-model.md)。
 
 **入口定位（Adapter 页降级已落地）**：日常发起适配走 Hub 对话框，不必打开本页。`/adapter` 与侧栏「桥与适配」保留，只管理已绑定的本机桥 runtime，不再提供选来源→分析→plan→apply 创建区。入口与信息架构见 [hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)。
 
@@ -65,7 +65,7 @@ Adapter 负责把 **钱包里已有的票**（含订阅）接到另一个 Agent�
 ### 2.2 明确不做
 
 - 不把 ChatGPT、Claude 等订阅 OAuth **导出成可复制的通用 API Key**，也不转售、不共享给其他人。
-- 不承诺「任意 OAuth 自动能接到任意 Agent」。每条边仍要分类 + fixtures；未就绪的边 `canApply=false`，但产品方向是订阅本机路由，见 [product-decisions.md](product-decisions.md)。
+- 不承诺「任意 OAuth 自动能接到任意 Agent」。每条边仍要分类 + fixtures；未就绪的边 `canApply=false`。产品方向是三路复用（能直连或写原生槽就不起桥），见 [product-decisions.md](product-decisions.md)。
 - 不建设公网网关、团队租户、计费、多号轮询/权重/冷却池或配额调度平台。
 - 不在 Adapter 首屏建设完整协议矩阵、监控大盘、日志控制台或 Provider 多栏工作台（管理动作可对齐 Management Center，页面不抄）。
 - 不记录请求/响应正文，不展示或复制完整 Token。
@@ -184,7 +184,7 @@ PageHeader                                             [去 Dashboard 连接] [�
 - 来源 OAuth 未完成时整体阻断：不 fan-out、不 plan，目标区只显示「先完成授权」Notice 与去 Connections 的 CTA。
 - 用户点选目标卡后才运行 `plan`，局部显示 skeleton，不锁住已有适配列表。
 - 分析结果按 `(sourceKind, sourceId, target)` 做会话级缓存；换来源或重试时按生成计数丢弃过期响应。
-- 对尚未 `canApply` 的订阅边，说明「产品要做、实现未开」和缺的工程项，并链接[订阅边说明](provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code产品要做实现未开) 与 [产品决策](product-decisions.md)；不得用隐藏开关绕开工程门禁，也不得把原因写成「订阅不是产品」。
+- 对尚未 `canApply` 的边，按三路说明缺的工程项：② 写「目标有槽、写入未开」；③ 写「要起本机桥、实现未开」，并链接[第 3 路边](provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code第-3-路实现未开) 与 [产品决策](product-decisions.md)。不得对 ② 显示「需要本机服务」，也不得把原因写成「订阅不是产品」。
 
 #### 步骤 C：确认配置
 

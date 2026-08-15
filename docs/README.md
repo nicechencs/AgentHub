@@ -6,7 +6,7 @@
 
 | 文档 | 内容 |
 |---|---|
-| [product-decisions.md](product-decisions.md) | **订阅本机路由的产品真源**（2026-08-15 纠正）：对齐 cc-switch / CLIProxyAPI / Management Center；未实现 ≠ 产品不做 |
+| [product-decisions.md](product-decisions.md) | **跨 Agent 复用三路**的产品真源：① API 直连 ② 原生订阅复用 ③ 本机桥；未实现 ≠ 产品不做 |
 | [agenthub-plan.md](agenthub-plan.md) | 产品方案、决策、适配矩阵、模块、路线图、风险（当前 **v1.5**；含平台环境差异与 Adapter sidecar 目标决策） |
 | [architecture.md](architecture.md) | cargo workspace 目录、core/gui/cli 拆分、Service/Adapter、**runtime/env / host_runtimes**；**前端目标目录（`lib/backend` / `dev/mocks`）与 pnpm 命令 ↔ adapter** |
 | [platform-capability-refactor.md](platform-capability-refactor.md) | **平台能力架构改造方案**：解耦边界、稀疏端口、生命周期/Skills/连接/用量；P01-P13 与 R00-R08 已完成 |
@@ -36,9 +36,9 @@
 - 项目实现状态、未实现清单和风险以 [agenthub-plan.md §8](agenthub-plan.md) 为唯一真源。
 - 平台能力改造的最终约束、暂缓项和验证证据以 [platform-capability-remediation.md](platform-capability-remediation.md) 为唯一真源。
 - 对外发布、截图与凭据相关表述遵守 [privacy.md](privacy.md)。
-- 「订阅 / 账号 → 本机协议转换 → 其他 Agent 使用」的**产品方向**以 [product-decisions.md](product-decisions.md) 为唯一真源。旧句「只借鉴方法、不借鉴产品」「消费订阅不是产品」作废。
+- 跨 Agent 复用的**产品方向**（① API 直连 / ② 原生订阅复用 / ③ 本机桥）以 [product-decisions.md](product-decisions.md) 为唯一真源。旧句「订阅 = 本机路由」「只借鉴方法、不借鉴产品」「消费订阅不是产品」作废。
 - 跨 Agent「把已有凭据接到另一个 Agent」的领域模型（票 / 绑定 / 协议图 / 目标 UI）以 [connection-binding-model.md](connection-binding-model.md) 为唯一真源。该文是目标架构，未落地前实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
-- 厂商端点、凭据类型与协议图上的边以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。日常 UI 目标见 [ui-design.md](ui-design.md)，Phase 1 实施记录见 [hub-redesign-plan.md](hub-redesign-plan.md)。该文的实现矩阵描述**当前能否 bind**，不表示产品否决订阅路由。
+- 厂商端点、凭据类型与协议图上的边以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。日常 UI 目标见 [ui-design.md](ui-design.md)，Phase 1 实施记录见 [hub-redesign-plan.md](hub-redesign-plan.md)。该文的实现矩阵描述**当前能否 bind**，不表示产品否决某一路。
 - DeepSeek Harness（Agent `dsh`）的安装、会话、用量、Skills 与模型配置以 [deepseek-harness-integration.md](deepseek-harness-integration.md) 为设计真源；未实现前不得把该文能力表抄进 CLI 矩阵快照。
 - `local_bridge` 的进程所有权、控制面和 sidecar 迁移契约以 [adapter-sidecar-design.md](adapter-sidecar-design.md) 为唯一真源；当前实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
 - 新的一次性任务可以临时创建提示词文件；任务完成后删除提示词和任务拆分，并同步更新对应稳定文档。
