@@ -1,9 +1,22 @@
-import { createElement } from 'react';
+import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { AdapterBridgeRuntimeStatus } from '@/lib/backend/contracts/adapter';
 import { AdapterProfiles } from './adapter-components';
 import { AdapterProfileDetailDialog } from './AdapterProfileDetailDialog';
+
+vi.mock('@/components/ui/dialog', () => {
+  const passthrough = ({ children }: { children?: ReactNode }) => children ?? null;
+  return {
+    Dialog: ({ open, children }: { open?: boolean; children?: ReactNode }) =>
+      (open ? children : null),
+    DialogContent: passthrough,
+    DialogHeader: passthrough,
+    DialogFooter: passthrough,
+    DialogTitle: passthrough,
+    DialogDescription: passthrough,
+  };
+});
 import {
   ADAPTER_BRIDGE_STATUS_POLL_MS,
   BRIDGES_EMPTY_DESCRIPTION,
