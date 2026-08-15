@@ -1,6 +1,7 @@
 /**
  * Mock ticket wallet: aggregate accounts + providers → tickets;
  * is_current + profiles → bindings. Generated providers are excluded.
+ * Keep lockstep with crates/agenthub-core TicketReadService derive rules.
  */
 import type {
   AdapterApplyPlan,
@@ -32,11 +33,36 @@ export interface MockTicketSourceResolver {
   }): Promise<AdapterApplyPlan>;
 }
 
+/** Optional classify fields mirroring core Account.extra / credentials. */
+type ClassifiableAccount = Account & {
+  extra?: Record<string, unknown>;
+  credentials?: Record<string, unknown>;
+};
+
 function adapterRouteToBinding(route: Exclude<AdapterRoute, 'unsupported'>): BindingRoute {
   if (route === 'local_bridge') return 'bridge';
   // config_sync + native_endpoint are reshape (same protocol, different config shape).
   if (route === 'config_sync' || route === 'native_endpoint') return 'reshape';
   return 'native';
+}
+
+function jsonString(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = (value as Record<string, unknown>)[key];
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  return trimmed || undefined;
+}
+
+/** Mirror core `is_codex_auth_json`: format=auth_json OR nested tokens.access/refresh. */
+function isCodexAuthJson(format: string | undefined, credentials: unknown): boolean {
+  if (format?.toLowerCase() === 'auth_json') return true;
+  const tokens = credentials && typeof credentials === 'object'
+    ? (credentials as Record<string, unknown>).tokens
+    : undefined;
+  if (!tokens || typeof tokens !== 'object' || Array.isArray(tokens)) return false;
+  return Object.prototype.hasOwnProperty.call(tokens, 'access_token')
+    || Object.prototype.hasOwnProperty.call(tokens, 'refresh_token');
 }
 
 function classifyProviderSurface(provider: Provider): TicketSurface {
@@ -60,7 +86,35 @@ function classifyProviderSurface(provider: Provider): TicketSurface {
 }
 
 function classifyAccountSurface(account: Account): TicketSurface {
+  const row = account as ClassifiableAccount;
+  const explicitProvider =
+    jsonString(row.extra, 'provider')
+    ?? jsonString(row.credentials, 'provider')
+    ?? account.provider?.trim();
+  const credentialFormat =
+    jsonString(row.credentials, 'format')
+    ?? jsonString(row.extra, 'format')
+    ?? account.credentialFormat?.trim();
+  const credentialsBlob = row.credentials ?? {};
+
+  if (
+    account.kind === 'apikey'
+    && (explicitProvider?.toLowerCase() === 'anthropic'
+      || (typeof row.credentials === 'object'
+        && JSON.stringify(row.credentials).toLowerCase().includes('api.anthropic.com'))
+      || (typeof row.extra === 'object'
+        && JSON.stringify(row.extra).toLowerCase().includes('api.anthropic.com')))
+  ) {
+    return 'anthropic-api';
+  }
+
+  // Lockstep with adapter_route_service identify_source Account arm:
+  // Codex OAuth + auth_json → subscription; Codex OAuth without auth_json →
+  // same product surface (oauth_other credential class in matrix).
   if (account.agentId === 'codex' && account.kind === 'oauth') {
+    if (isCodexAuthJson(credentialFormat, credentialsBlob)) {
+      return 'codex-chatgpt-subscription';
+    }
     return 'codex-chatgpt-subscription';
   }
   return 'unknown';
@@ -70,6 +124,16 @@ function credentialClassOfAccount(account: Account): TicketCredentialClass {
   if (account.kind === 'oauth') return 'oauth';
   if (account.kind === 'apikey') return 'api_key';
   return 'unknown';
+}
+
+/** Lockstep with TicketSurface::speaks in agenthub-core. */
+function speaksOf(surface: TicketSurface): string[] {
+  if (surface === 'kimi-code-membership') {
+    return ['anthropic-messages', 'openai-chat'];
+  }
+  if (surface === 'anthropic-api') return ['anthropic-messages'];
+  if (surface === 'codex-chatgpt-subscription') return ['openai-responses'];
+  return [];
 }
 
 function ticketId(kind: 'account' | 'provider', id: string): string {
@@ -90,16 +154,17 @@ function parseTicketId(ticketIdValue: string): { sourceKind: 'account' | 'provid
 }
 
 function accountToTicket(account: Account): TicketView {
+  const surface = classifyAccountSurface(account);
   return {
     id: ticketId('account', account.id),
     sourceKind: 'account',
     sourceId: account.id,
     agentId: account.agentId,
     label: account.label,
-    surface: classifyAccountSurface(account),
+    surface,
     credentialClass: credentialClassOfAccount(account),
-    speaks: [],
-    importedFrom: null,
+    speaks: speaksOf(surface),
+    importedFrom: account.agentId,
   };
 }
 
@@ -113,10 +178,8 @@ function providerToTicket(provider: Provider): TicketView {
     label: provider.name,
     surface,
     credentialClass: 'api_key',
-    speaks: surface === 'kimi-code-membership' || surface === 'anthropic-api'
-      ? ['anthropic-messages']
-      : [],
-    importedFrom: null,
+    speaks: speaksOf(surface),
+    importedFrom: provider.agentId,
   };
 }
 
@@ -128,27 +191,73 @@ function generatedProviderIds(profiles: readonly AdapterProfile[]): Set<string> 
   return ids;
 }
 
+function bridgeFromProfile(
+  profile: AdapterProfile,
+  resolver: MockTicketSourceResolver,
+): BindingView['bridge'] {
+  if (profile.route !== 'local_bridge') return null;
+  const bridgeStatus = resolver.getBridgeStatus(profile.id);
+  const port = profile.localPort ?? bridgeStatus?.port ?? null;
+  if (typeof port !== 'number' || port <= 0) return null;
+  return {
+    port,
+    running: bridgeStatus?.state === 'running' || bridgeStatus?.state === 'starting',
+  };
+}
+
+/** Returns null when route unsupported or source ticket missing (no ghost binding). */
+function bindingFromProfile(
+  profile: AdapterProfile,
+  active: boolean,
+  ticketIds: ReadonlySet<string>,
+  resolver: MockTicketSourceResolver,
+): BindingView | null {
+  if (profile.route === 'unsupported') return null;
+  const tid = ticketId(profile.sourceKind, profile.sourceId);
+  if (!ticketIds.has(tid)) return null;
+  return {
+    ticketId: tid,
+    agentId: profile.targetAgentId,
+    route: adapterRouteToBinding(profile.route),
+    active,
+    profileId: profile.id,
+    bridge: bridgeFromProfile(profile, resolver),
+  };
+}
+
 function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
   const profiles = resolver.listProfiles();
   const generatedIds = generatedProviderIds(profiles);
   const accounts = resolver.listAccounts();
-  const providers = resolver.listProviders().filter((p) => !generatedIds.has(p.id));
+  const allProviders = resolver.listProviders();
+  const ticketProviders = allProviders.filter((p) => !generatedIds.has(p.id));
 
   const tickets: TicketView[] = [
     ...accounts.map(accountToTicket),
-    ...providers.map(providerToTicket),
+    ...ticketProviders.map(providerToTicket),
   ];
+  tickets.sort((a, b) => a.id.localeCompare(b.id));
 
-  const bindings: BindingView[] = [];
-  const seenActive = new Set<string>();
+  const ticketIds = new Set(tickets.map((t) => t.id));
+  const providerById = new Map(allProviders.map((p) => [p.id, p]));
+  const profileByGenerated = new Map<string, AdapterProfile>();
+  for (const profile of profiles) {
+    if (profile.generatedProviderId) {
+      profileByGenerated.set(profile.generatedProviderId, profile);
+    }
+  }
 
+  // agent → winning active candidate (provider current beats account current).
+  const activeByAgent = new Map<AgentId, BindingView>();
+  const activeProfileIds = new Set<string>();
+
+  // (a) current accounts → native active candidates (loses to provider current).
   for (const account of accounts) {
     if (!account.isCurrent) continue;
     const tid = ticketId('account', account.id);
-    const key = `${account.agentId}`;
-    if (seenActive.has(key)) continue;
-    seenActive.add(key);
-    bindings.push({
+    if (!ticketIds.has(tid)) continue;
+    if (activeByAgent.has(account.agentId)) continue;
+    activeByAgent.set(account.agentId, {
       ticketId: tid,
       agentId: account.agentId,
       route: 'native',
@@ -158,15 +267,21 @@ function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
     });
   }
 
-  for (const provider of providers) {
+  // (b) current providers — provider wins over any account candidate.
+  for (const provider of allProviders) {
     if (!provider.isCurrent) continue;
+    const profile = profileByGenerated.get(provider.id);
+    if (profile) {
+      const binding = bindingFromProfile(profile, true, ticketIds, resolver);
+      if (binding) {
+        if (binding.profileId) activeProfileIds.add(binding.profileId);
+        activeByAgent.set(binding.agentId, binding);
+      }
+      continue;
+    }
     const tid = ticketId('provider', provider.id);
-    const key = `${provider.agentId}`;
-    // Account current wins for demote semantics when both claim current —
-    // still record native binding only if no active binding for this agent yet.
-    if (seenActive.has(key)) continue;
-    seenActive.add(key);
-    bindings.push({
+    if (!ticketIds.has(tid)) continue;
+    activeByAgent.set(provider.agentId, {
       ticketId: tid,
       agentId: provider.agentId,
       route: 'native',
@@ -176,42 +291,33 @@ function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
     });
   }
 
+  const bindings: BindingView[] = [...activeByAgent.values()];
+
+  // (c) remaining profiles that are not the active current projection.
   for (const profile of profiles) {
-    if (profile.sourceKind === 'provider' && generatedIds.has(profile.sourceId)) continue;
-    const tid = ticketId(profile.sourceKind, profile.sourceId);
-    const generated = profile.generatedProviderId
-      ? resolver.listProviders().find((p) => p.id === profile.generatedProviderId)
-      : undefined;
-    const active = Boolean(generated?.isCurrent);
-    if (active) {
-      // Replace native binding for this agent if generated provider is current.
-      const idx = bindings.findIndex((b) => b.agentId === profile.targetAgentId && b.active);
-      if (idx >= 0) bindings.splice(idx, 1);
-      seenActive.add(profile.targetAgentId);
+    if (activeProfileIds.has(profile.id)) continue;
+    const generated = profile.generatedProviderId;
+    if (generated) {
+      const genProvider = providerById.get(generated);
+      if (genProvider?.isCurrent) {
+        // Current projection already handled in (b); if skipped (missing source),
+        // do not synthesize a ghost inactive binding.
+        continue;
+      }
     }
-    const bridgeStatus = profile.route === 'local_bridge'
-      ? resolver.getBridgeStatus(profile.id)
-      : undefined;
-    bindings.push({
-      ticketId: tid,
-      agentId: profile.targetAgentId,
-      route: adapterRouteToBinding(profile.route),
-      active,
-      profileId: profile.id,
-      bridge: profile.route === 'local_bridge'
-        ? (() => {
-            const port = profile.localPort
-              ?? bridgeStatus?.port
-              ?? null;
-            if (typeof port !== 'number' || port <= 0) return null;
-            return {
-              port,
-              running: bridgeStatus?.state === 'running' || bridgeStatus?.state === 'starting',
-            };
-          })()
-        : null,
-    });
+    const binding = bindingFromProfile(profile, false, ticketIds, resolver);
+    if (binding) bindings.push(binding);
   }
+
+  bindings.sort((a, b) => {
+    const agentCmp = a.agentId.localeCompare(b.agentId);
+    if (agentCmp !== 0) return agentCmp;
+    const ticketCmp = a.ticketId.localeCompare(b.ticketId);
+    if (ticketCmp !== 0) return ticketCmp;
+    const profileCmp = (a.profileId ?? '').localeCompare(b.profileId ?? '');
+    if (profileCmp !== 0) return profileCmp;
+    return Number(b.active) - Number(a.active);
+  });
 
   return { tickets, bindings };
 }

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { getBackend } from '@/app/runtime';
+import type { AdapterProfile } from '@/lib/backend/contracts';
 import { upsertMockAccount } from './account';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
   seedConnectFlowAdapterFixtures,
 } from './connect-flow-fixtures';
+import { buildMockTicketWallet } from './ticket';
 
 describe('mock ticket wallet', () => {
   it('lists Kimi / Anthropic / unknown / oauth tickets and excludes generated projections', async () => {
@@ -55,8 +57,158 @@ describe('mock ticket wallet', () => {
     const wallet = await getBackend().ticket.listWallet();
     const row = wallet.tickets.find((t) => t.id === 'account:acc-oauth');
     expect(row?.credentialClass).toBe('oauth');
+    expect(row?.importedFrom).toBe('claude');
     expect(
       wallet.bindings.some((b) => b.ticketId === 'account:acc-oauth' && b.route === 'native'),
     ).toBe(true);
+  });
+
+  it('provider current wins over account current for the same agent', () => {
+    const wallet = buildMockTicketWallet({
+      listAccounts: () => [
+        {
+          id: 'claude-acct',
+          agentId: 'claude',
+          kind: 'oauth',
+          label: 'oauth',
+          isCurrent: true,
+          tokenValid: true,
+        },
+      ],
+      listProviders: () => [
+        {
+          id: 'anth',
+          agentId: 'claude',
+          name: 'Anthropic',
+          preset: 'anthropic',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: true,
+        },
+      ],
+      listProfiles: () => [],
+      getBridgeStatus: () => undefined,
+      planAdapter: async () => {
+        throw new Error('not used');
+      },
+    });
+
+    const claudeActive = wallet.bindings.filter((b) => b.agentId === 'claude' && b.active);
+    expect(claudeActive).toHaveLength(1);
+    expect(claudeActive[0]?.ticketId).toBe('provider:anth');
+    expect(claudeActive[0]?.route).toBe('native');
+  });
+
+  it('skips profile bindings when source ticket row is missing (no ghost)', () => {
+    const orphanProfile: AdapterProfile = {
+      id: 'orphan-p',
+      name: 'Orphan',
+      sourceKind: 'provider',
+      sourceId: 'deleted-source',
+      targetAgentId: 'claude',
+      route: 'config_sync',
+      mode: 'api',
+      status: 'active',
+      ruleId: 'kimi-membership-to-claude-v1',
+      ruleVersion: '1',
+      generatedProviderId: 'orphan-proj',
+      localPort: null,
+      autoStart: false,
+      createdAt: '2026-08-15T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z',
+    };
+    const wallet = buildMockTicketWallet({
+      listAccounts: () => [],
+      listProviders: () => [
+        {
+          id: 'orphan-proj',
+          agentId: 'claude',
+          name: 'Orphan projection',
+          preset: 'custom',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: true,
+        },
+      ],
+      listProfiles: () => [orphanProfile],
+      getBridgeStatus: () => undefined,
+      planAdapter: async () => {
+        throw new Error('not used');
+      },
+    });
+
+    expect(wallet.tickets).toEqual([]);
+    expect(wallet.bindings).toEqual([]);
+  });
+
+  it('sets speaks and importedFrom lockstep with core TicketSurface rules', () => {
+    const wallet = buildMockTicketWallet({
+      listAccounts: () => [
+        {
+          id: 'codex-oauth',
+          agentId: 'codex',
+          kind: 'oauth',
+          label: 'me@example.com',
+          isCurrent: false,
+          tokenValid: true,
+          credentialFormat: 'auth_json',
+        },
+      ],
+      listProviders: () => [
+        {
+          id: 'kimi-src',
+          agentId: 'kimi',
+          name: 'Kimi',
+          preset: 'kimi-code-membership',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: false,
+        },
+        {
+          id: 'anth',
+          agentId: 'claude',
+          name: 'Anthropic',
+          preset: 'anthropic',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: false,
+        },
+        {
+          id: 'relay',
+          agentId: 'claude',
+          name: 'Custom relay',
+          preset: 'openai-compatible',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: false,
+        },
+      ],
+      listProfiles: () => [],
+      getBridgeStatus: () => undefined,
+      planAdapter: async () => {
+        throw new Error('not used');
+      },
+    });
+
+    const kimi = wallet.tickets.find((t) => t.id === 'provider:kimi-src');
+    expect(kimi?.surface).toBe('kimi-code-membership');
+    expect(kimi?.speaks).toEqual(['anthropic-messages', 'openai-chat']);
+    expect(kimi?.importedFrom).toBe('kimi');
+
+    const anth = wallet.tickets.find((t) => t.id === 'provider:anth');
+    expect(anth?.surface).toBe('anthropic-api');
+    expect(anth?.speaks).toEqual(['anthropic-messages']);
+    expect(anth?.importedFrom).toBe('claude');
+
+    const codex = wallet.tickets.find((t) => t.id === 'account:codex-oauth');
+    expect(codex?.surface).toBe('codex-chatgpt-subscription');
+    expect(codex?.speaks).toEqual(['openai-responses']);
+    expect(codex?.importedFrom).toBe('codex');
+
+    const relay = wallet.tickets.find((t) => t.id === 'provider:relay');
+    expect(relay?.surface).toBe('unknown');
+    expect(relay?.speaks).toEqual([]);
+    expect(relay?.credentialClass).toBe('api_key');
+    expect(relay?.importedFrom).toBe('claude');
   });
 });

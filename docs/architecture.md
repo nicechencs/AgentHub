@@ -10,7 +10,7 @@
 > 日志：core 统一 tracing（文件 + 可选 stderr）→ [logging.md](logging.md)。  
 > **前端 backend 分层（已落地）**：`lib/backend/{contracts,tauri,current}` + `dev/mocks` + `app/runtime`；命令与 adapter 选择见 **§4.1–§4.2**。
 > 2026-08-14：Hub 重构 Phase 1 入口（ConnectFlow）已落地，详见 [hub-redesign-plan.md](hub-redesign-plan.md) / [ui-design.md](ui-design.md)。
-> 2026-08-15：跨 Agent 复用的目标领域改为票 / 绑定 / 协议图，UI 可按钱包重做，见 [connection-binding-model.md](connection-binding-model.md)。当前代码仍是 accounts + providers + apply 白名单。
+> 2026-08-15：跨 Agent 复用的目标领域改为票 / 绑定 / 协议图，UI 可按钱包重做，见 [connection-binding-model.md](connection-binding-model.md)。当前实现：读模型 + 全局钱包 + plan_ticket；写入仍是 apply 白名单。
 
 ## 1. 顶层结构
 
@@ -479,7 +479,7 @@ DTO / mapper：`lib/backend/contracts/*-map.ts`。错误类型：`contracts/erro
 
 Connections 收拢凭据生命周期。目标领域是 **票（Ticket）+ 绑定（Binding）+ 协议图**，不是「account/provider 出身 × 商品白名单」；完整模型与可重做的 UI 见 [connection-binding-model.md](connection-binding-model.md)。
 
-当前实现仍是 accounts + providers 两表、`is_current` + AdapterProfile 反查用途、行按钮按 apply 白名单显示。日常入口仍是 Dashboard「连接/切换」与 Connections「用于其他 Agent」，走 `ConnectFlowDialog`（`lib/api/adapter`，`plan.canApply` 表示**现在能写入**）。目标态：同一对话框变为 `bind(票, Agent)`；钱包默认跨 Agent；真票都有「接到…」；生成投影退出钱包。`/adapter` 只管理桥运行时。厂商端点与图上的边仍以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
+当前实现：读模型 + 全局钱包 + `plan_ticket`；写入仍是 apply 白名单。日常入口仍是 Dashboard「连接/切换」与 Connections「接到…」，走 `ConnectFlowDialog`（`lib/api/adapter`，`plan.canApply` 表示**现在能写入**）。目标态：同一对话框变为 `bind(票, Agent)`；生成投影退出钱包。`/adapter` 只管理桥运行时。厂商端点与图上的边仍以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
 
 **未迁移 / 有意保留**：
 

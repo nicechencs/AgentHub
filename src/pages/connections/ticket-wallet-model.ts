@@ -27,6 +27,11 @@ export const TICKET_WALLET_FILTERS: Array<{ value: TicketWalletFilter; label: st
   { value: 'unknown', label: '未识别' },
 ];
 
+/** 「未识别」按 surface；可兼 credentialClass === 'unknown'。 */
+export function isUnrecognizedTicket(ticket: Pick<TicketView, 'surface' | 'credentialClass'>): boolean {
+  return ticket.surface === 'unknown' || ticket.credentialClass === 'unknown';
+}
+
 export interface TicketWalletRow {
   ticket: TicketView;
   bindings: BindingView[];
@@ -70,7 +75,11 @@ export function countTicketsByFilter(
     unknown: 0,
   };
   for (const ticket of tickets) {
-    counts[ticket.credentialClass] += 1;
+    if (isUnrecognizedTicket(ticket)) {
+      counts.unknown += 1;
+    }
+    if (ticket.credentialClass === 'oauth') counts.oauth += 1;
+    else if (ticket.credentialClass === 'api_key') counts.api_key += 1;
   }
   return counts;
 }
@@ -80,6 +89,9 @@ export function filterTickets(
   filter: TicketWalletFilter,
 ): TicketView[] {
   if (filter === 'all') return [...tickets];
+  if (filter === 'unknown') {
+    return tickets.filter((t) => isUnrecognizedTicket(t));
+  }
   return tickets.filter((t) => t.credentialClass === filter);
 }
 

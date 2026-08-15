@@ -1,8 +1,8 @@
 # 连接：票、绑定与协议图
 
-> 状态：**目标架构（已决策，尚未按本文改代码）**。  
+> 状态：**§6 第 1 步读模型已落地；bind/unbind 与后续步骤未实施**。  
 > 日期：2026-08-15。  
-> 本文是跨 Agent「把已有凭据接到另一个 Agent」的领域真源。页面、Hub 入口、Adapter、厂商规则文档以本文为准改表述；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准，不得把目标倒读为已落地。  
+> 本文是跨 Agent「把已有凭据接到另一个 Agent」的领域真源。页面、Hub 入口、Adapter、厂商规则文档以本文为准改表述；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
 > 关联：[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[adapter-design.md](adapter-design.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[account-authorization-pool.md](account-authorization-pool.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)。
 
 ## 0. 一句话
@@ -245,11 +245,9 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 |---|---|---|
 | 用户对象 | account / provider 两行 | Ticket |
 | 谁在用 | `is_current` + profile 反查 | Binding |
-| 规划 | 矩阵 ∩ 白名单 ∩ 前端名单 | `plan(ticket, agent)` |
-| 写入 | apply 特例 + 生成 Provider 进列表 | `bind` / `unbind` |
-| Connections | 按 Agent tab；按钮只给两家 Provider | 全局钱包；真票都有「接到…」 |
-| 诊断 | Dashboard 说原因，Connections 藏按钮 | 同一对话框里置灰 + 原因 |
-| 生成物 | 钱包里的一等行 | 绑定的私有 runtime |
+| 规划 | 前端走 `plan_ticket`；内部仍是矩阵 ∩ apply 白名单 | `plan(ticket, agent)` 为唯一真理 |
+| 写入 | apply 特例 + 生成 Provider（不进钱包） | `bind` / `unbind` |
+| Connections | 全局钱包；真票都有「接到…」；写入仍是 apply | 全局钱包；真票都有「接到…」 |
+| 诊断 | 同一对话框里置灰 + plan 原因 | 同一对话框里置灰 + 原因 |
+| 生成物 | 不进钱包；记在源票「正用于」 | 绑定的私有 runtime |
 | 扩大 | 加商品白名单 | 加 surface / writer / 图边 |
-
-在读模型落地前，dogfood 与测试仍按当前白名单验收，见 [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md)、[testing.md](testing.md)。改 UI / 改门禁时同步改那两份。

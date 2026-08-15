@@ -70,9 +70,9 @@ function TicketRow({
           <Badge variant={credentialBadgeVariant(ticket.credentialClass)}>
             {ticketCredentialClassLabel(ticket.credentialClass)}
           </Badge>
-          {ticket.surface !== 'unknown' ? (
-            <Badge variant="default">{ticketSurfaceLabel(ticket.surface)}</Badge>
-          ) : null}
+          <Badge variant={ticket.surface === 'unknown' ? 'accent' : 'default'}>
+            {ticketSurfaceLabel(ticket.surface)}
+          </Badge>
           <span className="truncate text-2xs text-muted">
             {agentDisplayName(ticket.agentId)}
           </span>

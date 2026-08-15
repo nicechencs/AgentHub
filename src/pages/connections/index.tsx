@@ -346,22 +346,34 @@ export default function ConnectionsPage() {
           onRetry={() => void loadWallet()}
         />
       ) : (
-        <TicketWalletList
-          wallet={wallet}
-          loading={walletLoading}
-          highlightAgentId={highlightAgentId}
-          initialFilter={initialFilter}
-          onConnectTicket={handleConnectTicket}
-          onDetailTicket={handleDetailTicket}
-          addAgentId={addAgentId}
-          installedAgentIds={allowedAgents}
-          onPickAddAgent={setAddAgentId}
-          onAddKey={() => {
-            setEditProvider(null);
-            setApiKeyDialogOpen(true);
-          }}
-          onImportLogin={() => setLoginImportOpen(true)}
-        />
+        <>
+          {walletError && wallet ? (
+            <Notice
+              className="mb-3 text-sm"
+              tone="warning"
+              actionLabel="重试"
+              onAction={() => void loadWallet()}
+            >
+              票钱包刷新失败，下方仍是上次成功加载的数据。
+            </Notice>
+          ) : null}
+          <TicketWalletList
+            wallet={wallet}
+            loading={walletLoading}
+            highlightAgentId={highlightAgentId}
+            initialFilter={initialFilter}
+            onConnectTicket={handleConnectTicket}
+            onDetailTicket={handleDetailTicket}
+            addAgentId={addAgentId}
+            installedAgentIds={allowedAgents}
+            onPickAddAgent={setAddAgentId}
+            onAddKey={() => {
+              setEditProvider(null);
+              setApiKeyDialogOpen(true);
+            }}
+            onImportLogin={() => setLoginImportOpen(true)}
+          />
+        </>
       )}
 
       <div className="mt-4">

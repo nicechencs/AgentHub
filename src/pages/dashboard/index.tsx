@@ -178,6 +178,7 @@ export default function DashboardPage() {
   const pool = useConnectionPool();
   const [profiles, setProfiles] = useState<AdapterProfile[]>([]);
   const [wallet, setWallet] = useState<TicketWallet | null>(null);
+  const [walletError, setWalletError] = useState<unknown>(null);
   const [connectEntry, setConnectEntry] = useState<ConnectFlowEntry | null>(null);
   const [bridgeStates, setBridgeStates] = useState<Record<string, AgentCardBridgeState>>({});
   const connectDeps = useMemo(() => createDefaultConnectFlowDeps(), []);
@@ -205,10 +206,14 @@ export default function DashboardPage() {
     const generation = ++walletGeneration.current;
     try {
       const next = await listTicketWallet();
-      if (walletGeneration.current === generation) setWallet(next);
+      if (walletGeneration.current === generation) {
+        setWallet(next);
+        setWalletError(null);
+      }
       return true;
-    } catch {
-      if (walletGeneration.current === generation) setWallet(null);
+    } catch (e) {
+      // Keep last good wallet; surface a visible degradation notice.
+      if (walletGeneration.current === generation) setWalletError(e);
       return false;
     }
   }, []);
@@ -304,6 +309,20 @@ export default function DashboardPage() {
   const handleConnectRequest = useCallback((agentId: AgentId) => {
     setConnectEntry({ mode: 'for-agent', targetAgentId: agentId });
   }, []);
+
+  /** 快捷操作：打开卡片同款 for-agent ConnectFlow（新钱包页无 mode=providers 切换）。 */
+  const openForAgentConnect = useCallback(() => {
+    const installed = agents?.filter((item) => item.installed).map((item) => item.agentId) ?? [];
+    const target =
+      agentFilter !== 'all' && installed.includes(agentFilter)
+        ? agentFilter
+        : installed[0] ?? null;
+    if (!target) {
+      toast({ title: '请先安装 Agent', variant: 'danger' });
+      return;
+    }
+    handleConnectRequest(target);
+  }, [agents, agentFilter, handleConnectRequest, toast]);
 
   /** 回跳 `/?connect=`：agents 就绪后打开对应 ConnectFlow，并 replace 掉 query，避免关窗后重开。 */
   const consumedConnectRef = useRef<string | null>(null);
@@ -553,6 +572,16 @@ export default function DashboardPage() {
               onConnectRequest={handleConnectRequest}
               badgeInputs={badgeInputs}
             />
+            {walletError ? (
+              <Notice
+                className="mt-3 text-sm"
+                tone="warning"
+                actionLabel="重试"
+                onAction={() => void loadWallet()}
+              >
+                票钱包刷新失败，卡片绑定信息可能不是最新。
+              </Notice>
+            ) : null}
           </div>
         ) : null}
       </PageSection>
@@ -749,14 +778,14 @@ export default function DashboardPage() {
                   <Button
                     variant="outline"
                     className="justify-start"
-                    onClick={() => navigate('/connections?mode=providers')}
+                    onClick={openForAgentConnect}
                   >
                     <ArrowLeftRight className="h-4 w-4" /> 切换供应商
                   </Button>
                   <Button
                     variant="outline"
                     className="justify-start"
-                    onClick={() => navigate('/connections')}
+                    onClick={openForAgentConnect}
                   >
                     <UserRound className="h-4 w-4" /> 切换账号
                   </Button>

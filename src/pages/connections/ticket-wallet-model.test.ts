@@ -7,6 +7,7 @@ import {
   dashboardBindingMetaText,
   filterTickets,
   formatTicketUsageText,
+  isUnrecognizedTicket,
   searchTickets,
 } from './ticket-wallet-model';
 
@@ -21,8 +22,8 @@ function sampleWallet(): TicketWallet {
         label: 'Kimi 会员',
         surface: 'kimi-code-membership',
         credentialClass: 'api_key',
-        speaks: ['anthropic-messages'],
-        importedFrom: null,
+        speaks: ['anthropic-messages', 'openai-chat'],
+        importedFrom: 'kimi',
       },
       {
         id: 'provider:ant-1',
@@ -33,7 +34,7 @@ function sampleWallet(): TicketWallet {
         surface: 'anthropic-api',
         credentialClass: 'api_key',
         speaks: ['anthropic-messages'],
-        importedFrom: null,
+        importedFrom: 'claude',
       },
       {
         id: 'provider:unk-1',
@@ -41,10 +42,11 @@ function sampleWallet(): TicketWallet {
         sourceId: 'unk-1',
         agentId: 'claude',
         label: '自定义中转',
+        // Production shape: unknown surface keeps real credential class.
         surface: 'unknown',
-        credentialClass: 'unknown',
+        credentialClass: 'api_key',
         speaks: [],
-        importedFrom: null,
+        importedFrom: 'claude',
       },
       {
         id: 'account:oauth-1',
@@ -88,22 +90,30 @@ function sampleWallet(): TicketWallet {
 }
 
 describe('ticket wallet filter / search', () => {
-  it('counts and filters by credential class including unknown', () => {
+  it('counts and filters 未识别 by surface (production unknown + api_key shape)', () => {
     const tickets = sampleWallet().tickets;
+    expect(isUnrecognizedTicket(tickets[2]!)).toBe(true);
     expect(countTicketsByFilter(tickets)).toEqual({
       all: 4,
       oauth: 1,
-      api_key: 2,
-      unknown: 1,
+      api_key: 3,
+      unknown: 2,
     });
     expect(filterTickets(tickets, 'oauth').map((t) => t.id)).toEqual(['account:oauth-1']);
-    expect(filterTickets(tickets, 'unknown').map((t) => t.id)).toEqual(['provider:unk-1']);
+    expect(filterTickets(tickets, 'unknown').map((t) => t.id)).toEqual([
+      'provider:unk-1',
+      'account:oauth-1',
+    ]);
   });
 
   it('searches by label and surface synonyms', () => {
     const tickets = sampleWallet().tickets;
     expect(searchTickets(tickets, '会员').map((t) => t.id)).toEqual(['provider:kimi-1']);
     expect(searchTickets(tickets, '官方登录').map((t) => t.id)).toEqual(['account:oauth-1']);
+    expect(searchTickets(tickets, '未识别').map((t) => t.id)).toEqual([
+      'provider:unk-1',
+      'account:oauth-1',
+    ]);
   });
 });
 
