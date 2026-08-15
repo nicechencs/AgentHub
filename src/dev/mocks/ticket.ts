@@ -355,14 +355,13 @@ function bridgeFromProfile(
   };
 }
 
-/** Returns null when route unsupported or source ticket missing (no ghost binding). */
+/** Returns null when the source ticket is missing (no ghost binding). */
 function bindingFromProfile(
   profile: AdapterProfile,
   active: boolean,
   ticketIds: ReadonlySet<string>,
   resolver: MockTicketSourceResolver,
 ): BindingView | null {
-  if (profile.route === 'unsupported') return null;
   const tid = ticketId(profile.sourceKind, profile.sourceId);
   if (!ticketIds.has(tid)) return null;
   return {
