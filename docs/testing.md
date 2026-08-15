@@ -29,6 +29,8 @@
 
 ## 2. 运行命令
 
+Agent 协作：跑测试、汇总日志等机械步骤由 subagent 执行，主 Agent 只看结论并验收。见 [AGENTS.md § Agent 协作规则](../AGENTS.md#机械任务必须交给其他 Agent)。
+
 ```bash
 # 前端（始终走 mock backend：vitest `#backend` alias）
 pnpm test
