@@ -345,6 +345,30 @@ fn active_complete_projection_returns_existing_pair_without_switching() {
 }
 
 #[test]
+fn active_complete_projection_ignores_display_name_drift() {
+    let (dir, db) = test_db();
+    let source = kimi_source("kimi-source", "test-kimi-secret");
+    let mut profile = active_profile(&source.id);
+    profile.name = "legacy display → Claude".into();
+    let mut provider = generated_provider(&profile.id, &source.id, true);
+    provider.name = "legacy display".into();
+    ProviderRepo::new(db.clone()).create(&source).unwrap();
+    ProviderRepo::new(db.clone()).create(&provider).unwrap();
+    AdapterProfileRepo::new(db.clone())
+        .create(&profile)
+        .unwrap();
+    // Empty registry: a name-only mismatch must not fall through to switch.
+    let service = AdapterApplyService::new(db, AdapterRegistry::new(), dir.path().join("backups"));
+
+    let result = service
+        .apply(&request(&source.id, AgentId::Claude))
+        .unwrap();
+    assert_eq!(result.profile.status, AdapterProfileStatus::Active);
+    assert_eq!(result.provider.id, provider.id);
+    assert_eq!(result.provider.name, "legacy display");
+}
+
+#[test]
 fn active_demoted_projection_is_switched_back_to_current() {
     let (dir, db) = test_db();
     let source = kimi_source("kimi-source", "test-kimi-secret");

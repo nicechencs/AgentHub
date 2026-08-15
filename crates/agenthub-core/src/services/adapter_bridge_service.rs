@@ -1176,9 +1176,10 @@ fn provider_owned_by(provider: &Provider, profile: &AdapterProfile) -> bool {
             == Some(true)
 }
 
+/// 幂等判定：已有桥投影是否已是当前规则的完整契约。
+/// 不比较 `name`：展示名随票 display 变化，不是契约。
 fn same_profile_contract(existing: &AdapterProfile, proposed: &AdapterProfile) -> bool {
     existing.id == proposed.id
-        && existing.name == proposed.name
         && existing.source_kind == proposed.source_kind
         && existing.source_id == proposed.source_id
         && existing.target_agent_id == proposed.target_agent_id

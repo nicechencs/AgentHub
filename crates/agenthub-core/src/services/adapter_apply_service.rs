@@ -561,9 +561,10 @@ impl AdapterApplyService {
     }
 }
 
+/// 幂等判定：已有投影是否已是当前规则的完整契约。
+/// 不比较 `name`：展示名随票 display 变化，不是契约。
 fn same_profile_contract(existing: &AdapterProfile, proposed: &AdapterProfile) -> bool {
     existing.id == proposed.id
-        && existing.name == proposed.name
         && existing.source_kind == proposed.source_kind
         && existing.source_id == proposed.source_id
         && existing.target_agent_id == proposed.target_agent_id
@@ -673,7 +674,7 @@ fn claude_native_layout(
         RULE_ID => Ok((
             CLAUDE_PROFILE_PREFIX,
             CLAUDE_PROVIDER_PREFIX,
-            "Kimi",
+            "Kimi Code",
             base_url,
         )),
         GLM_CLAUDE_RULE_ID => Ok((
@@ -906,13 +907,14 @@ fn generated_meta(
     serde_json::Value::Object(meta)
 }
 
+/// 投影契约：id / agent / settings / 合同 meta。
+/// 不比较 `name`：展示名随票 display 变化，重 bind 不得因此重写 live。
 fn provider_matches_projection(
     provider: &crate::models::Provider,
     projection: &ProviderInput,
 ) -> bool {
     provider.id == projection.id
         && provider.agent_id == projection.agent_id
-        && provider.name == projection.name
         && provider.settings_config == projection.settings_config
         && projection_contract_meta(&provider.meta) == projection_contract_meta(&projection.meta)
 }
