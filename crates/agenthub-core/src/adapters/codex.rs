@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use crate::error::{AppError, Result};
 use crate::models::{
     AccountKind, AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult,
-    InstallChannel, LiveAccount, RunOptions, RunSpec, RuntimeId,
+    LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
 use crate::utils::atomic::atomic_write;
@@ -37,24 +37,6 @@ impl AgentAdapter for CodexAdapter {
             Some("npm"),
             env_ready,
         )
-    }
-
-    fn install_channels(&self) -> Vec<InstallChannel> {
-        vec![
-            InstallChannel {
-                id: "npm".into(),
-                label: "npm (@openai/codex)".into(),
-                requires: vec![RuntimeId::NodeJs, RuntimeId::Npm],
-                min_runtime_notes: Some("Node.js >= 18".into()),
-            },
-            InstallChannel {
-                id: "native".into(),
-                label: "Official install script".into(),
-                // Windows-only native .ps1; catalog hides this channel on Unix.
-                requires: runtime::native_install_requires(),
-                min_runtime_notes: None,
-            },
-        ]
     }
 
     fn read_config(&self) -> Result<AgentConfig> {

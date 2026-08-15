@@ -139,6 +139,9 @@ impl InstallContribution for PiContrib {
     fn npm_install_extra_flags(&self) -> &'static [&'static str] {
         &["--ignore-scripts"]
     }
+    fn npm_min_runtime_notes(&self) -> Option<&'static str> {
+        Some("Node.js >= 18; install uses --ignore-scripts")
+    }
     fn native_uninstall_bin_paths(&self) -> Vec<PathBuf> {
         let mut paths = Vec::new();
         if let Ok(home) = home_dir() {
@@ -156,6 +159,11 @@ impl InstallContribution for WorkBuddyContrib {
     }
     fn native_setup_url(&self) -> Option<&'static str> {
         Some(crate::adapters::workbuddy::SETUP_URL)
+    }
+    fn native_min_runtime_notes(&self) -> Option<&'static str> {
+        Some(
+            "Download WorkBuddySetup.exe from https://www.codebuddy.cn/work/ (no Node/npm required)",
+        )
     }
     fn native_uninstaller_specs(&self) -> Vec<NativeUninstallerSpec> {
         let mut out = Vec::new();
@@ -176,6 +184,9 @@ impl InstallContribution for DshContrib {
     fn npm_package(&self) -> Option<&'static str> {
         Some(crate::adapters::dsh::NPM_PACKAGE)
     }
+    fn npm_min_runtime_notes(&self) -> Option<&'static str> {
+        Some("Node.js required; install uses the published dsh CLI")
+    }
     fn native_uninstall_bin_paths(&self) -> Vec<PathBuf> {
         let mut paths = Vec::new();
         if let Ok(home) = home_dir() {
@@ -195,6 +206,13 @@ impl InstallContribution for CursorContrib {
     }
     fn native_sh_url(&self) -> Option<&'static str> {
         Some(crate::adapters::cursor::NATIVE_SH_URL)
+    }
+    fn native_min_runtime_notes(&self) -> Option<&'static str> {
+        Some(
+            "Windows: irm 'https://cursor.com/install?win32=true' | iex; \
+             macOS/Linux: curl https://cursor.com/install -fsS | bash \
+             (installs Agent CLI, not Cursor IDE)",
+        )
     }
     fn official_version_probe(&self) -> Option<OfficialVersionProbe> {
         Some(OfficialVersionProbe::ScriptVersion {

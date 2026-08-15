@@ -21,7 +21,10 @@ use std::sync::Arc;
 
 use adapters::{register_all, AdapterRegistry};
 use error::Result;
-use models::{AgentId, AgentUpdateInfo, InstallOutcome, MultiRunReport, RunOptions, RuntimeId};
+use models::{
+    AgentId, AgentUpdateInfo, InstallOutcome, MultiRunReport, RunOptions, RuntimeId, Skill,
+    SkillListing,
+};
 use platform::{LifecycleCoordinator, LifecycleResult};
 use services::{
     check_agent_updates as probe_agent_updates, install_runtime_system, invalidate_latest_cache,
@@ -157,6 +160,21 @@ impl AgentHub {
         opts: &RunOptions,
     ) -> Result<MultiRunReport> {
         self.run.run(agents, prompt, opts)
+    }
+
+    /// Search the configured skill market and mark already-installed listings.
+    pub fn search_skill_market(&self, query: &str) -> Result<Vec<SkillListing>> {
+        let source = self
+            .settings
+            .load()
+            .map(|s| s.skill_market_source_parsed())
+            .unwrap_or_default();
+        crate::services::search_market(&self.skills, source, query)
+    }
+
+    /// Install a skills.sh / skillhub.cn listing into the shared library.
+    pub fn install_market_listing(&self, skill_id: &str, overwrite: bool) -> Result<Skill> {
+        crate::services::install_market_listing(&self.skills, skill_id, overwrite)
     }
 
     pub fn version() -> &'static str {

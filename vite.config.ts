@@ -13,7 +13,7 @@ const tauriBackend = path.resolve(rootDir, 'src/lib/backend/tauri/create-backend
 const mockBackend = path.resolve(rootDir, 'src/dev/mocks/create-backend.ts');
 const productionOAuthDialog = path.resolve(
   rootDir,
-  'src/components/shared/OAuthFlowDialog.tsx',
+  'src/components/connect/OAuthFlowDialog.tsx',
 );
 const mockOAuthDialog = path.resolve(rootDir, 'src/dev/mocks/OAuthFlowDialog.tsx');
 

@@ -44,19 +44,22 @@ function toPosixRel(abs: string): string {
 const TAURI_IMPORT_RE =
   /(?:from|import)\s+['"]@tauri-apps\/[^'"]+['"]|import\s*\(\s*['"]@tauri-apps\/[^'"]+['"]\s*\)/;
 const BACKEND_TAURI_IMPORT_RE =
-  /from\s+['"]@\/lib\/backend\/tauri(?:\/[^'"]*)?['"]|from\s+['"](?:\.\.\/)+backend\/tauri(?:\/[^'"]*)?['"]/;
+  /(?:from|import)\s*\(?\s*['"](?:@\/lib\/backend\/tauri|(?:\.\.\/)+backend\/tauri|\.\/backend\/tauri)(?:\/[^'"]*)?['"]/;
 const DEV_IMPORT_RE =
-  /from\s+['"]@\/dev\/|from\s+['"](?:\.\.\/)*dev\/|import\s*\(\s*['"]@\/dev\//;
+  /(?:from|import)\s*\(?\s*['"](?:@\/dev\/|(?:\.\.\/)*dev\/|\.\/dev\/)/;
 /** Direct core invoke import (must only live in tauri/invoke.ts). */
 const DIRECT_TAURI_CORE_INVOKE_RE =
   /import\s*\{[^}]*\binvoke\b[^}]*\}\s*from\s*['"]@tauri-apps\/api\/core['"]/;
 
 describe('pages/hooks façade patterns (spot checks)', () => {
-  it('agent-card uses the install façade, not tauri install-events', () => {
-    const src = sourceOf('pages/agents/agent-card.tsx');
-    expect(src).not.toMatch(/@\/lib\/backend\/tauri/);
-    expect(src).not.toMatch(/isTauriApp/);
-    expect(src).toMatch(/from '@\/lib\/api\/install'/);
+  it('agent-card lifecycle uses the install façade, not tauri install-events', () => {
+    const card = sourceOf('pages/agents/agent-card.tsx');
+    const life = sourceOf('pages/agents/use-agent-card-lifecycle.ts');
+    expect(card).not.toMatch(/@\/lib\/backend\/tauri/);
+    expect(card).not.toMatch(/isTauriApp/);
+    expect(life).not.toMatch(/@\/lib\/backend\/tauri/);
+    expect(life).not.toMatch(/isTauriApp/);
+    expect(life).toMatch(/from '@\/lib\/api\/install'/);
   });
 
   it('useSkills uses the skill façade, not tauri skill-events', () => {
@@ -132,6 +135,53 @@ describe('production module graph boundary (full src scan)', () => {
     for (const rel of productionFiles) {
       const src = sourceOf(rel);
       if (DEV_IMPORT_RE.test(src)) offenders.push(rel);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('lib/backend/tauri never imports @/lib/api (contracts/runtime only)', () => {
+    const apiImportRe = /from\s+['"]@\/lib\/api(?:\/[^'"]*)?['"]/;
+    const offenders: string[] = [];
+    for (const rel of productionFiles) {
+      if (!rel.startsWith('lib/backend/tauri/')) continue;
+      if (apiImportRe.test(sourceOf(rel))) offenders.push(rel);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('pages do not import applyAdapter (bindTicket is the product write path)', () => {
+    const applyAdapterIdent = /(?<![A-Za-z])applyAdapter(?![A-Za-z])/;
+    const offenders: string[] = [];
+    for (const rel of productionFiles) {
+      if (!rel.startsWith('pages/')) continue;
+      if (applyAdapterIdent.test(sourceOf(rel))) offenders.push(rel);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('pages/bridges does not import pages/connections, and layout does not import bridges models', () => {
+    const pageImport = (page: string) =>
+      new RegExp(
+        String.raw`(?:from|import)\s*\(?\s*['"](?:@/pages/${page}(?:/[^'"]*)?|(?:\.\./)+${page}(?:/[^'"]*)?)['"]`,
+      );
+    const bridgesToConnections = pageImport('connections');
+    const connectionsToBridges = pageImport('bridges');
+    const layoutToBridgesModel = /(?:from|import)\s*\(?\s*['"](?:@\/pages\/bridges\/[^'"]+|(?:\.\.\/)+bridges\/[^'"]+)['"]/;
+    const offenders: string[] = [];
+    for (const rel of productionFiles) {
+      const src = sourceOf(rel);
+      if (rel.startsWith('pages/bridges/') && bridgesToConnections.test(src)) {
+        offenders.push(rel);
+      }
+      if (rel.startsWith('pages/connections/') && connectionsToBridges.test(src)) {
+        offenders.push(rel);
+      }
+      if (
+        (rel === 'App.tsx' || rel.startsWith('components/layout/'))
+        && layoutToBridgesModel.test(src)
+      ) {
+        offenders.push(rel);
+      }
     }
     expect(offenders).toEqual([]);
   });

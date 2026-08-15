@@ -4,7 +4,6 @@ use agenthub_core::models::{
     AgentId, InstalledSkill, Skill, SkillListing, SkillMarkdownPreview, SkillProjectMode,
     SkillProjectResult,
 };
-use agenthub_core::services::SkillMarketRegistry;
 use agenthub_core::AgentHub;
 use tauri::State;
 
@@ -233,24 +232,8 @@ pub async fn search_skill_market(
 ) -> Result<Vec<SkillListing>, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        let source = hub
-            .settings
-            .load()
-            .map(|s| s.skill_market_source_parsed())
-            .unwrap_or_default();
-        let registry = SkillMarketRegistry::from_source(source);
-        let mut items = registry
-            .search_configured(query.as_deref().unwrap_or(""))
-            .map_err(|e| map_err_string("search_skill_market", e))?;
-        // Cheap shared-id set only — never rebuild the full projection matrix just
-        // to mark market rows as installed.
-        if let Ok(ids) = hub.skills.list_shared_ids() {
-            for item in &mut items {
-                let local_id = agenthub_core::services::local_skill_id_from_market_id(&item.id);
-                item.installed = ids.contains(item.id.as_str()) || ids.contains(&local_id);
-            }
-        }
-        Ok(items)
+        hub.search_skill_market(query.as_deref().unwrap_or(""))
+            .map_err(|e| map_err_string("search_skill_market", e))
     })
     .await
 }
@@ -265,28 +248,8 @@ pub async fn install_market_skill(
     let hub = state.hub_arc()?;
     let overwrite = overwrite.unwrap_or(false);
     with_hub_blocking(hub, move |hub| {
-        // skillhub.cn: skillhub:{slug}[@version]
-        if agenthub_core::services::is_skillhub_listing_id(&skill_id) {
-            return agenthub_core::services::install_skillhub_listing(
-                &hub.skills,
-                &skill_id,
-                overwrite,
-            )
-            .map_err(|e| map_err_string("install_market_skill", e));
-        }
-        // skills.sh listing id: owner/repo/skill
-        if skill_id.contains('/') {
-            return agenthub_core::services::install_skills_sh_listing(
-                &hub.skills,
-                &skill_id,
-                overwrite,
-            )
-            .map_err(|e| map_err_string("install_market_skill", e));
-        }
-        Err(format!(
-            "unsupported market skill id '{skill_id}' \
-             (expected owner/repo/skill from skills.sh, or skillhub:slug from skillhub.cn)"
-        ))
+        hub.install_market_listing(&skill_id, overwrite)
+            .map_err(|e| map_err_string("install_market_skill", e))
     })
     .await
 }

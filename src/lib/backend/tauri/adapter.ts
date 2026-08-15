@@ -87,6 +87,8 @@ export function createTauriAdapterPort(): AdapterPort {
       return wire.map(mapAdapterProfile);
     },
     async apply(request) {
+      // Thin host command: core `apply_adapter` delegates to bind_ticket_inner.
+      // Product UI must write via bindTicket, not this transport.
       const wire = await invokeAdapter<AdapterApplyResultWire>('apply_adapter', { ...request });
       return mapAdapterApplyResult(wire);
     },

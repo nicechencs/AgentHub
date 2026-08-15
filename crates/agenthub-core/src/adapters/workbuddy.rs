@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use crate::error::{AppError, Result};
 use crate::models::{
     AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
-    InstallChannel, RunOptions, RunSpec,
+    RunOptions, RunSpec,
 };
 use crate::utils::expiry::{is_expired, normalize_credential_key};
 use crate::utils::paths::home_dir;
@@ -103,19 +103,6 @@ impl AgentAdapter for WorkBuddyAdapter {
             env_ready,
             notes,
         }
-    }
-
-    fn install_channels(&self) -> Vec<InstallChannel> {
-        // Honest channel: desktop Setup only — no npm, no install.ps1 allowlist entry.
-        vec![InstallChannel {
-            id: "native".into(),
-            label: "WorkBuddy Setup（官网安装包）".into(),
-            requires: vec![],
-            min_runtime_notes: Some(
-                "Download WorkBuddySetup.exe from https://www.codebuddy.cn/work/ (no Node/npm required)"
-                    .into(),
-            ),
-        }]
     }
 
     fn read_config(&self) -> Result<AgentConfig> {

@@ -11,7 +11,7 @@ use super::{
 use crate::error::{AppError, Result};
 use crate::models::{
     AccountKind, AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult,
-    InstallChannel, LiveAccount, RunOptions, RunSpec, RuntimeId,
+    LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
 use crate::utils::atomic::atomic_write;
@@ -32,20 +32,6 @@ impl AgentAdapter for PiAdapter {
         let env_ready = runtime::is_ready(&requires);
         // Prefer PATH `pi` (npm global shim); channel inferred from path / well-known.
         detect_binary(AgentId::Pi, &["pi"], &["--version"], Some("npm"), env_ready)
-    }
-
-    fn install_channels(&self) -> Vec<InstallChannel> {
-        // npm only: upstream also documents `curl https://pi.dev/install.sh | sh`
-        // and Homebrew, but AgentHub's native channel is Windows ps1 / Unix sh
-        // allowlists. install.sh is Unix shell (not a Windows-native installer),
-        // and Homebrew/winget are outside the current Runtime/InstallChannel
-        // abstraction — keep channels honest rather than advertising dead paths.
-        vec![InstallChannel {
-            id: "npm".into(),
-            label: "npm (@earendil-works/pi-coding-agent)".into(),
-            requires: vec![RuntimeId::NodeJs, RuntimeId::Npm],
-            min_runtime_notes: Some("Node.js >= 18; install uses --ignore-scripts".into()),
-        }]
     }
 
     fn read_config(&self) -> Result<AgentConfig> {
@@ -524,6 +510,7 @@ fn merge_redacted_json(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::RuntimeId;
     use serde_json::json;
     use std::sync::Mutex;
 

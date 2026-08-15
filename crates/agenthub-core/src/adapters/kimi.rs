@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::error::{AppError, Result};
 use crate::models::{
     AccountKind, AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult,
-    InstallChannel, LiveAccount, RunOptions, RunSpec, RuntimeId,
+    LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
 use crate::utils::atomic::atomic_write;
@@ -37,23 +37,6 @@ impl AgentAdapter for KimiAdapter {
             Some("native"),
             env_ready,
         )
-    }
-
-    fn install_channels(&self) -> Vec<InstallChannel> {
-        vec![
-            InstallChannel {
-                id: "native".into(),
-                label: "Official native binary".into(),
-                requires: runtime::native_install_requires(),
-                min_runtime_notes: None,
-            },
-            InstallChannel {
-                id: "npm".into(),
-                label: "npm (@moonshot-ai/kimi-code)".into(),
-                requires: vec![RuntimeId::NodeJs, RuntimeId::Npm],
-                min_runtime_notes: Some("Node.js >= 18".into()),
-            },
-        ]
     }
 
     fn read_config(&self) -> Result<AgentConfig> {

@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use crate::error::{AppError, Result};
 use crate::models::{
     AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
-    InstallChannel, LiveAccount, RunOptions, RunSpec,
+    LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
 use crate::utils::paths::{agent_home, home_dir};
@@ -249,22 +249,6 @@ impl AgentAdapter for CursorAdapter {
             env_ready,
             notes,
         }
-    }
-
-    fn install_channels(&self) -> Vec<InstallChannel> {
-        // Native official script only — no npm package for Cursor Agent CLI.
-        // Windows: PowerShell irm|iex; macOS/Linux: curl|bash (no PowerShell).
-        vec![InstallChannel {
-            id: "native".into(),
-            label: "Cursor Agent CLI 官方脚本".into(),
-            requires: runtime::native_install_requires(),
-            min_runtime_notes: Some(
-                "Windows: irm 'https://cursor.com/install?win32=true' | iex; \
-                 macOS/Linux: curl https://cursor.com/install -fsS | bash \
-                 (installs Agent CLI, not Cursor IDE)"
-                    .into(),
-            ),
-        }]
     }
 
     fn read_config(&self) -> Result<AgentConfig> {

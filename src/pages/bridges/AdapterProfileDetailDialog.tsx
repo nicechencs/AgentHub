@@ -19,7 +19,7 @@ import type {
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
 } from '@/lib/backend/contracts/adapter';
-import type { ConnectionEntry } from '@/pages/connections/connection-model';
+import type { ConnectionEntry } from '@/lib/connection-entry';
 import { AdapterErrorLines } from './adapter-components';
 import {
   adapterBridgeEndpointLabel,

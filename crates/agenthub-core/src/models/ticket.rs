@@ -219,7 +219,10 @@ impl TicketBindingRoute {
     }
 }
 
-/// One ticket↔agent usage row (active or inactive).
+/// Product Binding: ticket → Agent route (`native` / `reshape` / `bridge`).
+///
+/// Distinct from [`crate::services::ActiveBinding`] (Agent → current row pointer).
+/// Do not shorten either type to "Binding" in new code.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TicketBinding {

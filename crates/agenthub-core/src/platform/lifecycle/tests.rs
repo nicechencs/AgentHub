@@ -106,6 +106,48 @@ impl InstallContribution for FakeInstallContribution {
     }
 }
 
+/// Contribution used to prove BuiltinLifecycleInstallExecutor consumes allowlist fields.
+struct NpmFakeInstallContribution {
+    key: AgentKey,
+    package: &'static str,
+    extra_flags: &'static [&'static str],
+}
+
+impl InstallContribution for NpmFakeInstallContribution {
+    fn agent_key(&self) -> AgentKey {
+        self.key.clone()
+    }
+
+    fn npm_package(&self) -> Option<&'static str> {
+        Some(self.package)
+    }
+
+    fn npm_install_extra_flags(&self) -> &'static [&'static str] {
+        self.extra_flags
+    }
+}
+
+/// Records commands and returns a configurable exit code (no real process).
+struct RecordingExecutor {
+    calls: Arc<std::sync::Mutex<Vec<String>>>,
+    exit_code: i32,
+}
+
+impl CommandExecutor for RecordingExecutor {
+    fn run(&self, req: &ExecRequest) -> ExecResult {
+        let cmd = format!("{} {}", req.program, req.args.join(" "));
+        self.calls.lock().unwrap().push(cmd.clone());
+        ExecResult {
+            command: cmd,
+            exit_code: Some(self.exit_code),
+            timed_out: false,
+            stdout: String::new(),
+            stderr: String::new(),
+            spawn_error: None,
+        }
+    }
+}
+
 struct FakeLifecycleExecutor {
     installed: Arc<AtomicBool>,
 }
@@ -279,6 +321,49 @@ fn open_hub_db() -> (tempfile::TempDir, Database, LifecycleCoordinator) {
     let reg = register_all();
     let lc = LifecycleCoordinator::new(db.clone(), reg);
     (dir, db, lc)
+}
+
+/// BuiltinLifecycleInstallExecutor + non-AgentId key + npm contribution.
+fn open_contribution_driven_lifecycle(
+    key_value: &str,
+    package: &'static str,
+    extra_flags: &'static [&'static str],
+) -> (
+    tempfile::TempDir,
+    LifecycleCoordinator,
+    AgentKey,
+    Arc<AtomicBool>,
+) {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("contrib-driven.db")).unwrap();
+    let key = AgentKey::parse(key_value).unwrap();
+    assert!(
+        super::executor::legacy_builtin_agent_id(&key).is_none(),
+        "contract key must not be a closed AgentId"
+    );
+    let installed = Arc::new(AtomicBool::new(false));
+    let mut detectors = DetectorRegistry::new();
+    detectors
+        .register(Arc::new(MutableDetector {
+            key: key.clone(),
+            installed: Arc::clone(&installed),
+        }))
+        .unwrap();
+    let mut installs = InstallContributionRegistry::new();
+    installs
+        .register(Arc::new(NpmFakeInstallContribution {
+            key: key.clone(),
+            package,
+            extra_flags,
+        }))
+        .unwrap();
+    let lifecycle = LifecycleCoordinator::with_registries(
+        db,
+        crate::adapters::AdapterRegistry::new(),
+        detectors,
+        installs,
+    );
+    (dir, lifecycle, key, installed)
 }
 
 #[test]
@@ -815,4 +900,86 @@ fn key_native_detailed_uninstall_clears_install_and_records_operation() {
     assert_eq!(uninstall_op.id, result.operation_id.as_str());
     assert_eq!(uninstall_op.status, OperationStatus::Succeeded);
     assert_eq!(uninstall_op.observed_status.as_deref(), Some("not_found"));
+}
+
+#[test]
+fn builtin_executor_installs_non_agent_id_via_contribution_allowlist() {
+    // P1-2 contract: BuiltinLifecycleInstallExecutor must consume InstallContribution
+    // (npm package + flags) for keys outside the closed AgentId set.
+    let (_dir, lifecycle, key, installed) = open_contribution_driven_lifecycle(
+        "future-contrib-agent",
+        "@agenthub/p1-2-contract-pkg",
+        &["--ignore-scripts"],
+    );
+    let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let executor = RecordingExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+    };
+    let mut sink = VecProgressSink::default();
+
+    let outcome = lifecycle
+        .install_agent_key(&key, "npm", false, &executor, Some(&mut sink))
+        .unwrap();
+
+    assert!(
+        outcome.ok,
+        "contribution-driven install must succeed when allowlisted command exits 0; msg={}",
+        outcome.message
+    );
+    assert!(outcome.logs.iter().any(|l| l.contains("@agenthub/p1-2-contract-pkg")));
+    assert!(outcome
+        .logs
+        .iter()
+        .any(|l| l.contains("--ignore-scripts")));
+
+    let commands = calls.lock().unwrap();
+    assert!(
+        commands.iter().any(|c| {
+            c.contains("install")
+                && c.contains("-g")
+                && c.contains("--ignore-scripts")
+                && c.contains("@agenthub/p1-2-contract-pkg")
+        }),
+        "executor must run npm install using contribution package/flags; got {commands:?}"
+    );
+
+    let ops = lifecycle.list_operations_key(&key, 5).unwrap();
+    assert_eq!(ops.len(), 1);
+    assert_eq!(ops[0].status, OperationStatus::Succeeded);
+    assert_eq!(ops[0].agent_key, key.as_str());
+    // Detector was not flipped by Builtin executor; observed stays not_found.
+    assert_eq!(ops[0].observed_status.as_deref(), Some("not_found"));
+    assert!(!installed.load(Ordering::SeqCst));
+    assert!(!sink.events.is_empty());
+    assert!(sink.events.iter().any(|e| e.step == "execute"));
+}
+
+#[test]
+fn builtin_executor_rejects_unknown_key_without_contribution_before_execute() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("no-contrib.db")).unwrap();
+    let key = AgentKey::parse("orphan-no-contrib").unwrap();
+    let mut detectors = DetectorRegistry::new();
+    detectors
+        .register(Arc::new(MutableDetector {
+            key: key.clone(),
+            installed: Arc::new(AtomicBool::new(false)),
+        }))
+        .unwrap();
+    let lifecycle = LifecycleCoordinator::with_registries(
+        db,
+        crate::adapters::AdapterRegistry::new(),
+        detectors,
+        InstallContributionRegistry::new(),
+    );
+    let executor = RecordingExecutor {
+        calls: Arc::new(std::sync::Mutex::new(Vec::new())),
+        exit_code: 0,
+    };
+    let err = lifecycle
+        .install_agent_key(&key, "npm", false, &executor, None)
+        .unwrap_err();
+    assert_eq!(err.code(), "lifecycle.unsupported");
+    assert!(executor.calls.lock().unwrap().is_empty());
 }

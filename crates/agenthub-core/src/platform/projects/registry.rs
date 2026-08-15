@@ -1,4 +1,4 @@
-//! ProjectSource registry (filled by service-layer builtin registration).
+//! ProjectSource registry (filled by platform builtin sources).
 
 use std::collections::HashMap;
 use std::sync::Arc;

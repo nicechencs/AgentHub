@@ -11,6 +11,7 @@
 > **前端 backend 分层（已落地）**：`lib/backend/{contracts,tauri,current}` + `dev/mocks` + `app/runtime`；命令与 adapter 选择见 **§4.1–§4.2**。
 > 2026-08-14：Hub 重构 Phase 1 入口（ConnectFlow）已落地，详见 [hub-redesign-plan.md](hub-redesign-plan.md) / [ui-design.md](ui-design.md)。
 > 2026-08-15：把已有登录接到另一个工具的领域对象仍是票 / 绑定 / 协议图，UI 可按钱包重做，见 [connection-binding-model.md](connection-binding-model.md)。**产品方向**（① 直接改配置 / ② 写进对方认的登录 / ③ 本机转发）见 [product-decisions.md](product-decisions.md)。当前实现：读模型 + 全局钱包 + `plan_ticket` / `bind` / `unbind`；`canApply` 仍按「现在能不能写上去」打开。
+> 2026-08-15：模块化审查结论与分阶段收口见 [modularity-improvement.md](modularity-improvement.md)。目录职责仍以本文为准；生产组合仍偏 Adapter-centric，改进按该文 P0/P1/P2，不另开微服务。
 
 ## 1. 顶层结构
 

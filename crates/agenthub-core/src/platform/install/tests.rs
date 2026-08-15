@@ -77,6 +77,20 @@ fn unknown_valid_key_registers_queries_and_serves_spec() {
 }
 
 #[test]
+fn contribution_npm_allowlist_is_readable_without_agent_id() {
+    // P1-2: non-AgentId contributions remain first-class allowlist sources.
+    let key = AgentKey::parse("future-install-agent").unwrap();
+    assert!(AgentId::ALL.iter().all(|id| id.as_str() != key.as_str()));
+    let contrib = test_contribution(key.as_str(), "@agenthub/future-install-agent");
+    assert_eq!(contrib.agent_key(), key);
+    assert_eq!(
+        contrib.npm_package(),
+        Some("@agenthub/future-install-agent")
+    );
+    assert!(contrib.native_ps1_url().is_none());
+}
+
+#[test]
 fn duplicate_contribution_is_rejected_without_overwrite() {
     let key = AgentKey::parse("demo-agent").unwrap();
     let mut registry = InstallContributionRegistry::new();

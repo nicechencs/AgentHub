@@ -1,5 +1,9 @@
 use super::*;
+use crate::error::AppError;
+use crate::models::{AccountKind, AgentConfig, AgentId, Capability, CapabilityLevel};
+use crate::utils::atomic::atomic_write;
 use serde_json::json;
+use std::path::PathBuf;
 
 #[test]
 fn expand_binary_names_adds_windows_suffixes() {

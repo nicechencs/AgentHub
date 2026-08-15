@@ -20,7 +20,7 @@
     "paths": {
       "@/*": ["./src/*"],
       "#backend": ["./src/lib/backend/tauri/create-backend.ts"],
-      "#oauth-flow-dialog": ["./src/components/shared/OAuthFlowDialog.tsx"]
+      "#oauth-flow-dialog": ["./src/components/connect/OAuthFlowDialog.tsx"]
     }
   },
   "include": ["src"],

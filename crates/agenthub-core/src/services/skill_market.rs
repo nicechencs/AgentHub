@@ -258,3 +258,49 @@ impl SkillMarketRegistry {
         Ok(all)
     }
 }
+
+/// Search the configured market and mark rows already present in the shared library.
+pub fn search_market(
+    skills: &super::SkillService,
+    source: SkillMarketSource,
+    query: &str,
+) -> Result<Vec<SkillListing>> {
+    let registry = SkillMarketRegistry::from_source(source);
+    let mut items = registry.search_configured(query)?;
+    mark_listings_installed(&mut items, skills);
+    Ok(items)
+}
+
+/// Fetch a market listing and install it into the shared skill library.
+pub fn install_market_listing(
+    skills: &super::SkillService,
+    skill_id: &str,
+    overwrite: bool,
+) -> Result<crate::models::Skill> {
+    if super::is_skillhub_listing_id(skill_id) {
+        return super::install_skillhub_listing(skills, skill_id, overwrite);
+    }
+    if skill_id.contains('/') {
+        return super::install_skills_sh_listing(skills, skill_id, overwrite);
+    }
+    Err(AppError::message(
+        "skill.market",
+        format!(
+            "unsupported market skill id '{skill_id}' \
+             (expected owner/repo/skill from skills.sh, or skillhub:slug from skillhub.cn)"
+        ),
+    ))
+}
+
+fn mark_listings_installed(items: &mut [SkillListing], skills: &super::SkillService) {
+    let Ok(ids) = skills.list_shared_ids() else {
+        return;
+    };
+    for item in items {
+        let local_id = super::local_skill_id_from_market_id(&item.id);
+        item.installed = ids.contains(item.id.as_str()) || ids.contains(&local_id);
+    }
+}
+
+#[cfg(test)]
+mod tests;

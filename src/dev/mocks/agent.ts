@@ -1,5 +1,5 @@
 import { AGENTS, AGENT_MAP, agentDisplayName } from '@/config/agents';
-import { enrichStatusesWithConnections } from '@/lib/api/agent-connection';
+import { enrichStatusesWithConnections } from '@/lib/backend/contracts/agent-connection';
 import type { Backend, AgentPort } from '@/lib/backend/contracts';
 import { mergeAgentListWithCatalog } from '@/lib/backend/contracts/agent-catalog';
 import {
