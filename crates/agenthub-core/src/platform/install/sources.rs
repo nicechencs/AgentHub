@@ -27,6 +27,7 @@ struct GrokContrib;
 struct PiContrib;
 struct WorkBuddyContrib;
 struct CursorContrib;
+struct DshContrib;
 
 impl InstallContribution for ClaudeContrib {
     fn agent_key(&self) -> AgentKey {
@@ -168,6 +169,23 @@ impl InstallContribution for WorkBuddyContrib {
     }
 }
 
+impl InstallContribution for DshContrib {
+    fn agent_key(&self) -> AgentKey {
+        AgentKey::parse("dsh").expect("valid built-in agent key")
+    }
+    fn npm_package(&self) -> Option<&'static str> {
+        Some(crate::adapters::dsh::NPM_PACKAGE)
+    }
+    fn native_uninstall_bin_paths(&self) -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        if let Ok(home) = home_dir() {
+            push_named_bins(&mut paths, home.join(".local").join("bin"), "dsh");
+            push_named_bins(&mut paths, home.join(".dsh").join("bin"), "dsh");
+        }
+        paths
+    }
+}
+
 impl InstallContribution for CursorContrib {
     fn agent_key(&self) -> AgentKey {
         AgentKey::parse("cursor").expect("valid built-in agent key")
@@ -211,6 +229,8 @@ pub fn build_registry() -> InstallContributionRegistry {
     reg.register(Arc::new(WorkBuddyContrib))
         .expect("unique built-in install contribution");
     reg.register(Arc::new(CursorContrib))
+        .expect("unique built-in install contribution");
+    reg.register(Arc::new(DshContrib))
         .expect("unique built-in install contribution");
     reg
 }

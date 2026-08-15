@@ -14,9 +14,10 @@ use crate::bridge::ResolvedAuth;
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, Provider};
 use crate::services::adapter_route_constants::{
-    is_kimi_code_membership_source, settings_contain_anthropic_api_endpoint, ANTHROPIC_API_KEY_ENV,
-    ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT,
-    KIMI_CLAUDE_BASE_URL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
+    is_deepseek_api_source, is_kimi_code_membership_source, settings_contain_anthropic_api_endpoint,
+    ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV,
+    ANTHROPIC_PI_PROVIDER_SLOT, DEEPSEEK_API_BASE_URL, DSH_API_KEY_ENV,
+    DSH_DEEPSEEK_PROVIDER_SLOT, KIMI_CLAUDE_BASE_URL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
 };
 use crate::storage::{Database, ProviderRepo};
 
@@ -28,6 +29,7 @@ const KIMI_TO_CLAUDE_RULE: &str = "kimi-membership-to-claude-v1";
 const KIMI_TO_CODEX_BRIDGE_RULE: &str = "kimi-membership-to-codex-v1";
 const KIMI_TO_PI_RULE: &str = "kimi-membership-to-pi-v1";
 const ANTHROPIC_TO_PI_RULE: &str = "anthropic-api-to-pi-v1";
+const DEEPSEEK_TO_DSH_RULE: &str = "deepseek-api-to-dsh-v1";
 const SOURCE_REFERENCE_MODE: &str = "source_reference";
 const LOCAL_TOKEN_MODE: &str = "local_token";
 const SOURCE_KIND_PROVIDER: &str = "provider";
@@ -58,6 +60,12 @@ impl AdapterSecretResolver {
     /// Read-only preflight for an explicit Anthropic API Key Claude provider.
     pub fn validate_anthropic_api_source(&self, source_id: &str) -> Result<()> {
         let _ = self.resolve_anthropic_api_key(source_id)?;
+        Ok(())
+    }
+
+    /// Read-only preflight for an explicit DeepSeek API Key provider.
+    pub fn validate_deepseek_api_source(&self, source_id: &str) -> Result<()> {
+        let _ = self.resolve_deepseek_api_key(source_id)?;
         Ok(())
     }
 
@@ -96,6 +104,22 @@ impl AdapterSecretResolver {
         extract_anthropic_api_key(&source.settings_config)
     }
 
+    fn resolve_deepseek_api_key(&self, source_id: &str) -> Result<String> {
+        let source_id = source_id.trim();
+        if source_id.is_empty() {
+            return Err(invalid_reference());
+        }
+        let source = self
+            .providers
+            .get_by_id(source_id)?
+            .ok_or_else(invalid_reference)?;
+        let preset = source.meta.get("preset").and_then(Value::as_str);
+        if !is_deepseek_api_source(preset, &source.settings_config) {
+            return Err(invalid_reference());
+        }
+        extract_deepseek_api_key(&source.settings_config)
+    }
+
     /// Internal bridge boundary: resolve membership auth without exposing the
     /// plaintext key to GUI/Tauri DTO layers.
     pub(crate) fn resolve_kimi_membership_auth(&self, source_id: &str) -> Result<ResolvedAuth> {
@@ -122,6 +146,10 @@ impl AdapterSecretResolver {
             }
             Some(GENERATED_BY) if is_pi_source_reference(provider) => {
                 self.validate_pi_reference_target(provider)?;
+                Ok(true)
+            }
+            Some(GENERATED_BY) if is_dsh_source_reference(provider) => {
+                self.validate_dsh_reference_target(provider)?;
                 Ok(true)
             }
             Some(GENERATED_BY) if is_codex_local_token(provider) => {
@@ -152,6 +180,19 @@ impl AdapterSecretResolver {
                 .and_then(Value::as_object_mut)
                 .ok_or_else(invalid_reference)?;
             env.insert(ANTHROPIC_AUTH_TOKEN_ENV.into(), Value::String(api_key));
+            return Ok(materialized);
+        }
+
+        if is_dsh_source_reference(target) {
+            self.validate_dsh_reference_target(target)?;
+            let source = self.reference_source(target)?;
+            let api_key = extract_deepseek_api_key(&source.settings_config)?;
+            let mut materialized = target.clone();
+            let obj = materialized
+                .settings_config
+                .as_object_mut()
+                .ok_or_else(invalid_reference)?;
+            obj.insert("api_key".into(), Value::String(api_key));
             return Ok(materialized);
         }
 
@@ -198,6 +239,30 @@ impl AdapterSecretResolver {
             return Ok(scrubbed);
         }
 
+        if is_dsh_source_reference(provider) {
+            self.validate_dsh_reference_target(provider)?;
+            let source = self.reference_source(provider)?;
+            let _ = extract_deepseek_api_key(&source.settings_config)?;
+            let mut scrubbed = live_raw.clone();
+            let obj = scrubbed
+                .as_object_mut()
+                .ok_or_else(invalid_reference)?;
+            if obj.get("baseURL").and_then(Value::as_str) != Some(DEEPSEEK_API_BASE_URL)
+                && obj.get("baseUrl").and_then(Value::as_str) != Some(DEEPSEEK_API_BASE_URL)
+            {
+                return Err(invalid_reference());
+            }
+            if obj.get("api_key").or_else(|| obj.get("apiKey")).is_none() {
+                return Err(invalid_reference());
+            }
+            obj.insert(
+                "api_key".into(),
+                Value::String(CONNECTION_SECRET_MARKER.into()),
+            );
+            obj.remove("apiKey");
+            return Ok(scrubbed);
+        }
+
         self.validate_pi_reference_target(provider)?;
         let source = self.reference_source(provider)?;
         let _ = extract_source_api_key(provider, &source)?;
@@ -230,6 +295,9 @@ impl AdapterSecretResolver {
             ANTHROPIC_TO_PI_RULE => {
                 self.validate_anthropic_api_source(source_id)?;
             }
+            DEEPSEEK_TO_DSH_RULE => {
+                self.validate_deepseek_api_source(source_id)?;
+            }
             _ => return Err(invalid_reference()),
         }
         self.providers
@@ -238,7 +306,10 @@ impl AdapterSecretResolver {
     }
 
     fn reference_source_id<'a>(&self, target: &'a Provider) -> Result<&'a str> {
-        if !is_claude_source_reference(target) && !is_pi_source_reference(target) {
+        if !is_claude_source_reference(target)
+            && !is_pi_source_reference(target)
+            && !is_dsh_source_reference(target)
+        {
             return Err(invalid_reference());
         }
         let source = target
@@ -289,6 +360,29 @@ impl AdapterSecretResolver {
         Ok(())
     }
 
+    fn validate_dsh_reference_target(&self, target: &Provider) -> Result<()> {
+        self.reference_source_id(target)?;
+        let obj = target
+            .settings_config
+            .as_object()
+            .ok_or_else(invalid_reference)?;
+        if obj.get("api_key").and_then(Value::as_str) != Some(CONNECTION_SECRET_MARKER) {
+            return Err(invalid_reference());
+        }
+        if obj.get("apiKeyEnv").and_then(Value::as_str) != Some(DSH_API_KEY_ENV) {
+            return Err(invalid_reference());
+        }
+        if obj.get("provider").and_then(Value::as_str) != Some(DSH_DEEPSEEK_PROVIDER_SLOT) {
+            return Err(invalid_reference());
+        }
+        if obj.get("baseURL").and_then(Value::as_str) != Some(DEEPSEEK_API_BASE_URL)
+            && obj.get("baseUrl").and_then(Value::as_str) != Some(DEEPSEEK_API_BASE_URL)
+        {
+            return Err(invalid_reference());
+        }
+        Ok(())
+    }
+
     fn validate_local_token_target(&self, target: &Provider) -> Result<()> {
         if !is_codex_local_token(target)
             || target
@@ -333,6 +427,21 @@ impl AdapterSecretResolver {
 fn is_claude_source_reference(provider: &Provider) -> bool {
     provider.agent_id == AgentId::Claude
         && adapter_rule_id(provider) == Some(KIMI_TO_CLAUDE_RULE)
+        && provider
+            .meta
+            .get("adapterRuleVersion")
+            .and_then(Value::as_u64)
+            == Some(1)
+        && provider
+            .meta
+            .get("adapterSecretMode")
+            .and_then(Value::as_str)
+            == Some(SOURCE_REFERENCE_MODE)
+}
+
+fn is_dsh_source_reference(provider: &Provider) -> bool {
+    provider.agent_id == AgentId::Dsh
+        && adapter_rule_id(provider) == Some(DEEPSEEK_TO_DSH_RULE)
         && provider
             .meta
             .get("adapterRuleVersion")
@@ -408,8 +517,35 @@ fn extract_source_api_key(target: &Provider, source: &Provider) -> Result<String
             extract_kimi_api_key(&source.settings_config)
         }
         Some(ANTHROPIC_TO_PI_RULE) => extract_anthropic_api_key(&source.settings_config),
+        Some(DEEPSEEK_TO_DSH_RULE) => extract_deepseek_api_key(&source.settings_config),
         _ => Err(invalid_reference()),
     }
+}
+
+fn extract_deepseek_api_key(settings: &Value) -> Result<String> {
+    let env = settings.get("env");
+    for candidate in [
+        settings.get("api_key").and_then(Value::as_str),
+        settings.get("apiKey").and_then(Value::as_str),
+        env.and_then(|value| value.get(DSH_API_KEY_ENV))
+            .and_then(Value::as_str),
+        settings
+            .get("credentials")
+            .and_then(|value| value.get("api_key"))
+            .and_then(Value::as_str),
+        env.and_then(|value| value.get(ANTHROPIC_AUTH_TOKEN_ENV))
+            .and_then(Value::as_str),
+        env.and_then(|value| value.get(ANTHROPIC_API_KEY_ENV))
+            .and_then(Value::as_str),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if let Some(key) = usable_secret(candidate) {
+            return Ok(key.to_owned());
+        }
+    }
+    Err(invalid_reference())
 }
 
 fn extract_anthropic_api_key(settings: &Value) -> Result<String> {

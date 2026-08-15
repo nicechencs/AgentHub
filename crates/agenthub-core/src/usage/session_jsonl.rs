@@ -11,7 +11,9 @@
 //! - Grok: `sessions/**/updates.jsonl` `turn_completed` only (ccusage adapter-grok).
 //!   OpenAI-style `inputTokens` includes cache; peel cachedRead/cacheCreation.
 //!   Prefer `costUsdTicks` (1e-10 USD). Do not add `reasoningTokens` to totals.
-//! - Paths: CLAUDE_CONFIG_DIR / XDG, KIMI_DATA_DIR, PI_AGENT_DIR, GROK_HOME.
+//! - DSH: provider usage on assistant/step events; inherit model from `request/header`.
+//!   Skip Token Meter heuristics (`surfaceTokens` / `estimated`). Do not scan cwd `.sessions`.
+//! - Paths: CLAUDE_CONFIG_DIR / XDG, KIMI_DATA_DIR, PI_AGENT_DIR, GROK_HOME, DSH_HOME / DSH_SESSION_ROOT.
 //! - Pricing: prefer log costUSD / Grok ticks (Auto), else token × rates.
 //!
 //! AgentHub adds SQLite incremental cursors (ccusage is primarily report-oriented).
@@ -89,6 +91,33 @@ pub(crate) fn discover_pi_files() -> Result<Vec<PathBuf>> {
     finish_files(out)
 }
 
+/// Known DSH persistence roots only — never walk a random cwd `.sessions`.
+pub(crate) fn discover_dsh_files() -> Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    let home = agent_home(AgentId::Dsh)?;
+    walk_jsonl(&home.join("sessions"), &mut out, None);
+    let profiles = home.join("profiles");
+    if let Ok(entries) = fs::read_dir(&profiles) {
+        for ent in entries.flatten() {
+            let path = ent.path();
+            if path.is_dir() {
+                walk_jsonl(&path.join("sessions"), &mut out, None);
+            }
+        }
+    }
+    if let Ok(raw) = std::env::var("DSH_SESSION_ROOT") {
+        let root = PathBuf::from(raw.trim());
+        if root.is_dir() {
+            walk_jsonl(&root, &mut out, None);
+        }
+    }
+    out.retain(|p| {
+        let s = p.to_string_lossy();
+        !s.contains("node_modules") && !s.contains(".db")
+    });
+    finish_files(out)
+}
+
 #[cfg(test)]
 pub(crate) use crate::usage::grok::discover_grok_files;
 
@@ -109,6 +138,7 @@ fn discover_usage_files(agent: AgentId) -> Result<Vec<PathBuf>> {
         AgentId::Pi => discover_pi_files(),
         AgentId::Grok => discover_grok_files(),
         AgentId::Cursor => Ok(Vec::new()),
+        AgentId::Dsh => discover_dsh_files(),
     }
 }
 
@@ -328,6 +358,33 @@ pub(crate) fn line_might_have_usage_codex(line: &str) -> bool {
         || line.contains("last_token_usage")
         || line.contains("turn_context")
         || line.contains("\"usage\"")
+}
+
+pub(crate) fn line_might_have_usage_dsh(line: &str) -> bool {
+    if line.contains("token-meter")
+        || line.contains("tokenMeter")
+        || line.contains("surfaceTokens")
+    {
+        return false;
+    }
+    (line.contains("\"usage\"")
+        || line.contains("\"input_tokens\"")
+        || line.contains("\"output_tokens\"")
+        || line.contains("\"inputTokens\"")
+        || line.contains("\"outputTokens\""))
+        && !line.contains("\"estimated\":true")
+}
+
+pub(crate) fn note_dsh_model_from_line(line: &str, model: &mut Option<String>) {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+        return;
+    };
+    let ty = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    if ty == "request/header" || ty == "session" || ty.ends_with("/header") {
+        if let Some(found) = find_model(&v) {
+            *model = Some(found);
+        }
+    }
 }
 
 /// Resolve kimi data root from a wire.jsonl path (ccusage layout).
@@ -836,6 +893,121 @@ pub(crate) fn extract_pi(
         raw_hash,
         cost_usd,
     }))
+}
+
+/// DeepSeek Harness session events: only explicit provider usage.
+/// Token Meter heuristics (`surfaceTokens` / `estimated`) are never billed.
+pub(crate) fn extract_dsh(
+    line: &str,
+    session_id: Option<&str>,
+    model_hint: Option<&str>,
+) -> std::result::Result<Option<ParsedUsageEvent>, ()> {
+    let v: serde_json::Value = serde_json::from_str(line).map_err(|_| ())?;
+    if is_dsh_heuristic_usage(&v) {
+        return Ok(None);
+    }
+    let ty = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    if ty == "request/header" || ty.ends_with("/header") || ty == "session" {
+        return Ok(None);
+    }
+    if v.get("seed").and_then(|s| s.as_bool()) == Some(true) || ty.contains("seed") {
+        return Ok(None);
+    }
+
+    let usage = v
+        .get("usage")
+        .or_else(|| v.pointer("/message/usage"))
+        .or_else(|| v.pointer("/response/usage"))
+        .or_else(|| v.pointer("/payload/usage"))
+        .filter(|u| u.is_object());
+    let Some(usage) = usage else {
+        return Ok(None);
+    };
+    if usage.get("estimated").and_then(|e| e.as_bool()) == Some(true) {
+        return Ok(None);
+    }
+    if usage.get("surfaceTokens").is_some()
+        && usage.get("input_tokens").is_none()
+        && usage.get("inputTokens").is_none()
+        && usage.get("output_tokens").is_none()
+        && usage.get("outputTokens").is_none()
+    {
+        return Ok(None);
+    }
+
+    let input = token_field(usage, &["input_tokens", "inputTokens", "prompt_tokens", "input"]);
+    let output = token_field(
+        usage,
+        &["output_tokens", "outputTokens", "completion_tokens", "output"],
+    );
+    let cache_read = token_field(
+        usage,
+        &[
+            "cache_read_input_tokens",
+            "cache_read_tokens",
+            "cacheRead",
+            "cached_input_tokens",
+        ],
+    );
+    let cache_create = token_field(
+        usage,
+        &[
+            "cache_creation_input_tokens",
+            "cache_creation_tokens",
+            "cacheWrite",
+            "cache_write",
+        ],
+    );
+    if input == 0 && output == 0 && cache_read == 0 && cache_create == 0 {
+        return Ok(None);
+    }
+
+    let model = find_model(&v)
+        .or_else(|| find_model_in(usage))
+        .or_else(|| {
+            model_hint
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "unknown".into());
+    let ts = find_ts(&v).unwrap_or_else(now_iso);
+    let cost_usd = usage
+        .get("costUSD")
+        .or_else(|| usage.get("cost_usd"))
+        .or_else(|| usage.pointer("/cost/total"))
+        .or_else(|| v.get("costUSD"))
+        .and_then(|c| c.as_f64())
+        .filter(|c| c.is_finite() && *c >= 0.0);
+    let sid = v
+        .get("sessionId")
+        .or_else(|| v.get("session_id"))
+        .or_else(|| v.pointer("/header/id"))
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| session_id.map(|s| s.to_string()));
+    let raw_hash = dedupe_hash(AgentId::Dsh, Some(&ts), Some(&model), line);
+    Ok(Some(ParsedUsageEvent {
+        agent_id: AgentId::Dsh,
+        model,
+        input_tokens: input,
+        output_tokens: output,
+        cache_creation_tokens: cache_create,
+        cache_read_tokens: cache_read,
+        session_id: sid,
+        ts,
+        raw_hash,
+        cost_usd,
+    }))
+}
+
+fn is_dsh_heuristic_usage(v: &serde_json::Value) -> bool {
+    let ty = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    ty.contains("token-meter")
+        || ty.contains("tokenMeter")
+        || v.get("estimated").and_then(|e| e.as_bool()) == Some(true)
+        || (v.get("surfaceTokens").is_some() && v.get("usage").is_none())
 }
 
 /// Claude / WorkBuddy generic assistant-log shape (ccusage UsageEntry).
@@ -2071,5 +2243,44 @@ mod tests {
             batch.events.iter().all(|e| e.model != "unknown"),
             "pi messages carry model or settings hint"
         );
+    }
+
+    #[test]
+    fn extract_dsh_takes_provider_usage_and_skips_token_meter() {
+        let header = r#"{"type":"request/header","model":"deepseek-v4-flash"}"#;
+        let billed = r#"{"type":"assistant/message","usage":{"input_tokens":12,"output_tokens":34,"cache_read_input_tokens":2}}"#;
+        let meter = r#"{"type":"token-meter","surfaceTokens":999,"estimated":true}"#;
+        let estimated = r#"{"type":"assistant/message","usage":{"surfaceTokens":80,"estimated":true}}"#;
+        let seed = r#"{"type":"assistant/message","seed":true,"usage":{"input_tokens":100,"output_tokens":100}}"#;
+        let mut model = None;
+        note_dsh_model_from_line(header, &mut model);
+        assert_eq!(model.as_deref(), Some("deepseek-v4-flash"));
+        let ev = extract_dsh(billed, Some("sess-dsh-demo"), model.as_deref())
+            .unwrap()
+            .expect("provider usage");
+        assert_eq!(ev.agent_id, AgentId::Dsh);
+        assert_eq!(ev.model, "deepseek-v4-flash");
+        assert_eq!(ev.input_tokens, 12);
+        assert_eq!(ev.output_tokens, 34);
+        assert_eq!(ev.cache_read_tokens, 2);
+        assert!(extract_dsh(meter, None, None).unwrap().is_none());
+        assert!(extract_dsh(estimated, None, None).unwrap().is_none());
+        assert!(extract_dsh(seed, None, None).unwrap().is_none());
+    }
+
+    #[test]
+    fn parse_dsh_fixture_collects_two_events() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("sess-dsh-demo.jsonl");
+        std::fs::write(path.clone(), include_str!("fixtures/dsh_session.jsonl")).unwrap();
+        let db = Database::open(&dir.path().join("t.db")).unwrap();
+        let repo = UsageRepo::new(db);
+        let batch = parse_file_for_agent_id(AgentId::Dsh, &path, &repo).expect("parse");
+        assert_eq!(batch.events.len(), 2);
+        assert!(batch.events.iter().all(|e| e.agent_id == AgentId::Dsh));
+        assert_eq!(batch.events[0].model, "deepseek-v4-flash");
+        assert_eq!(batch.events[1].output_tokens, 5);
+        assert_eq!(batch.events[1].cost_usd, Some(0.001));
+        assert!(batch.events.iter().all(|e| e.input_tokens < 50));
     }
 }

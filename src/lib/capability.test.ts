@@ -35,6 +35,7 @@ const AGENT_IDS: AgentId[] = [
   'pi',
   'workbuddy',
   'cursor',
+  'dsh',
 ];
 
 describe('isCapabilityUsable / isCapabilityBlocked', () => {

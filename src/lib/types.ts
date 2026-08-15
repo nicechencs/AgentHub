@@ -22,6 +22,7 @@ export const KNOWN_AGENT_IDS = [
   'pi',
   'workbuddy',
   'cursor',
+  'dsh',
 ] as const;
 
 export type KnownAgentId = (typeof KNOWN_AGENT_IDS)[number];

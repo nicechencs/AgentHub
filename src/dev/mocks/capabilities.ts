@@ -159,4 +159,29 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     modelSelect: { level: 'planned', reason: '待验证接入' },
     sessionResume: { level: 'planned', reason: '待验证接入' },
   },
+  dsh: {
+    configWrite: {
+      level: 'partial',
+      reason: '只合并 home 级 DeepSeek LLM 插件行；整棵 Cordis 树 fail-closed',
+    },
+    accountSwitch: { level: 'partial', reason: '仅 API Key 引用切换，无 OAuth' },
+    apiKeyAccount: { level: 'full' },
+    skills: { level: 'full' },
+    liveBackup: { level: 'full' },
+    structuredStream: { level: 'planned', reason: 'headless 事件契约未验证' },
+    dangerousMode: {
+      level: 'partial',
+      reason: '存在 danger composition；未验证官方非交互 flag',
+    },
+    projectHistory: { level: 'full' },
+    projectDelete: { level: 'partial', reason: '仅删除单会话 JSONL，不删 SQLite 整库' },
+    providerPresets: {
+      level: 'partial',
+      reason: '内置 deepseek-official，不是通用预设商店',
+    },
+    usage: { level: 'full' },
+    mcp: { level: 'planned', reason: '待验证接入' },
+    modelSelect: { level: 'planned', reason: '待验证接入' },
+    sessionResume: { level: 'planned', reason: '待验证接入' },
+  },
 };

@@ -105,6 +105,19 @@ const KIMI_PI_MODELS: &[AdapterModelMapEntry] = &[AdapterModelMapEntry {
 /// Anthropic → Pi does not rewrite model ids; callers may passthrough or omit.
 const ANTHROPIC_PI_MODELS: &[AdapterModelMapEntry] = &[];
 
+const DEEPSEEK_DSH_MODELS: &[AdapterModelMapEntry] = &[
+    AdapterModelMapEntry {
+        source_model: "deepseek-v4-flash",
+        target_model: "deepseek-v4-flash",
+        notes: Some("DSH official default"),
+    },
+    AdapterModelMapEntry {
+        source_model: "deepseek-chat",
+        target_model: "deepseek-chat",
+        notes: Some("Official Chat Completions alias"),
+    },
+];
+
 /// Future Codex → Claude table: structure only, no active mappings.
 const CODEX_CLAUDE_MODELS: &[AdapterModelMapEntry] = &[];
 
@@ -154,6 +167,15 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
         default_target_model: None,
         entries: CODEX_CLAUDE_MODELS,
         allow_passthrough: false,
+    },
+    AdapterModelMappingTable {
+        id: "deepseek-api-dsh-v1",
+        source: AdapterSourceProduct::DeepSeekApi,
+        target: AgentId::Dsh,
+        target_protocol: AdapterTargetProtocol::DshProviderConfig,
+        default_target_model: Some("deepseek-v4-flash"),
+        entries: DEEPSEEK_DSH_MODELS,
+        allow_passthrough: true,
     },
 ];
 
@@ -271,5 +293,19 @@ mod tests {
     #[test]
     fn unknown_source_has_no_table() {
         assert!(find_adapter_model_mapping(AdapterSourceProduct::Other, AgentId::Claude).is_none());
+    }
+
+    #[test]
+    fn deepseek_to_dsh_has_default_and_passthrough() {
+        let table = find_adapter_model_mapping(AdapterSourceProduct::DeepSeekApi, AgentId::Dsh)
+            .expect("deepseek→dsh table");
+        assert_eq!(
+            table.map_model(""),
+            AdapterModelMapResult::Mapped("deepseek-v4-flash")
+        );
+        assert_eq!(
+            table.map_model("deepseek-reasoner"),
+            AdapterModelMapResult::Passthrough
+        );
     }
 }

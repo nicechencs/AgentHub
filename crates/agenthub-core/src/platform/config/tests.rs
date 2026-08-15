@@ -216,10 +216,11 @@ fn registry_covers_supported_not_cursor() {
     assert!(reg.contains(AgentId::Codex));
     assert!(reg.contains(AgentId::Kimi));
     assert!(reg.contains(AgentId::Grok));
+    assert!(reg.contains(AgentId::Dsh));
     assert!(!reg.contains(AgentId::Cursor));
     assert!(!reg.contains(AgentId::Pi));
     assert!(!reg.contains(AgentId::WorkBuddy));
-    assert_eq!(reg.supported_agents().len(), 4);
+    assert_eq!(reg.supported_agents().len(), 5);
 }
 
 #[test]
@@ -442,6 +443,7 @@ fn projector_schema_versions_are_stable() {
         AgentId::Codex,
         AgentId::Kimi,
         AgentId::Grok,
+        AgentId::Dsh,
     ] {
         let p = reg.get_agent_id(agent).unwrap();
         let expected = if agent == AgentId::Grok { 2 } else { 1 };

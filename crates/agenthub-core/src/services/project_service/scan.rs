@@ -14,7 +14,7 @@ use crate::catalog::limits::{
 };
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, AgentProject, AgentProjectExcerpt, AgentSession};
-use crate::utils::paths::agent_home;
+use crate::utils::paths::{agent_home, first_env_path};
 use crate::utils::project_path::{
     cursor_actual_path, cwd_storage_key, decode_claude_project_dir, decode_pi_session_dir,
     verified_actual_path, UNGROUPED_KEY,
@@ -372,6 +372,66 @@ pub(crate) fn list_pi_sessions(home: &Path, only_key: Option<&str>) -> Result<Ve
                 build_session_from_meta(AgentId::Pi, home, &path, &project_id, meta, None)
             {
                 out.push(rec);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// DSH: known persistence roots only (`sessions/`, `profiles/*/sessions`, `DSH_SESSION_ROOT`).
+/// Never walks a random cwd `.sessions`.
+pub(crate) fn list_dsh_sessions(
+    home: &Path,
+    only_project_id: Option<&str>,
+    data_dir: Option<&Path>,
+) -> Result<Vec<AgentSession>> {
+    let mut out = list_sessions_tree(home, AgentId::Dsh, "sessions", only_project_id, data_dir)?;
+    let profiles = home.join("profiles");
+    if let Ok(entries) = fs::read_dir(&profiles) {
+        for ent in entries.flatten() {
+            let path = ent.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if name.is_empty() || name.starts_with('.') {
+                continue;
+            }
+            let sub = format!("profiles/{name}/sessions");
+            out.extend(list_sessions_tree(
+                home,
+                AgentId::Dsh,
+                &sub,
+                only_project_id,
+                data_dir,
+            )?);
+        }
+    }
+    if let Some(root) = first_env_path("DSH_SESSION_ROOT") {
+        if root.is_dir() {
+            if root.starts_with(home) {
+                if let Ok(rel) = root.strip_prefix(home) {
+                    let sub = rel.to_string_lossy().replace('\\', "/");
+                    if !sub.is_empty() && sub != "sessions" && !sub.starts_with("profiles/") {
+                        out.extend(list_sessions_tree(
+                            home,
+                            AgentId::Dsh,
+                            &sub,
+                            only_project_id,
+                            data_dir,
+                        )?);
+                    }
+                }
+            } else {
+                out.extend(list_sessions_tree(
+                    &root,
+                    AgentId::Dsh,
+                    "",
+                    only_project_id,
+                    data_dir,
+                )?);
             }
         }
     }
@@ -767,6 +827,11 @@ fn session_id_from_json_value(agent: AgentId, v: &serde_json::Value) -> Option<S
             None
         }
         AgentId::Kimi => None, // path `session_<uuid>` is the source of truth
+        AgentId::Dsh => v
+            .get("id")
+            .or_else(|| v.pointer("/header/id"))
+            .and_then(|x| x.as_str())
+            .and_then(non_empty),
         // Claude / WorkBuddy / default
         _ => v
             .pointer("/session/id")
@@ -858,6 +923,12 @@ fn native_session_id_from_path(agent: AgentId, path: &Path) -> Option<String> {
             None
         }
         AgentId::Cursor => None,
+        AgentId::Dsh => path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string()),
     }
 }
 
@@ -1319,7 +1390,7 @@ fn is_primary_session_file(agent: AgentId, path: &Path) -> bool {
         AgentId::Codex => ext == "jsonl",
         // Kimi primary is agents/main/wire.jsonl (dedicated lister); keep wire.jsonl recognized.
         AgentId::Kimi => name == "wire.jsonl",
-        AgentId::Pi => ext == "jsonl",
+        AgentId::Pi | AgentId::Dsh => ext == "jsonl",
         AgentId::Claude | AgentId::WorkBuddy => {
             (ext == "jsonl" || ext == "json")
                 && !matches!(

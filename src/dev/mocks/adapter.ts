@@ -109,6 +109,7 @@ type RouteSourceLabel =
   | 'kimi_membership'
   | 'kimi_non_membership'
   | 'anthropic_api_key'
+  | 'deepseek_api_key'
   | 'codex_subscription'
   | 'codex_subscription_oauth_other'
   | 'other'
@@ -175,6 +176,13 @@ function classify(
     ) {
       return 'anthropic_api_key';
     }
+    if (
+      provider.preset === 'deepseek'
+      || (typeof provider.configText === 'string'
+        && provider.configText.toLowerCase().includes('api.deepseek.com'))
+    ) {
+      return 'deepseek_api_key';
+    }
     if (provider.agentId === 'kimi') return 'kimi_non_membership';
     return 'other';
   }
@@ -192,6 +200,9 @@ function classify(
 
   if (account.kind === 'apikey' && explicitProvider?.toLowerCase() === 'anthropic') {
     return 'anthropic_api_key';
+  }
+  if (account.kind === 'apikey' && explicitProvider?.toLowerCase() === 'deepseek') {
+    return 'deepseek_api_key';
   }
   if (account.agentId === 'codex' && account.kind === 'oauth') {
     return isCodexAuthJson(credentialFormat, account.credentials ?? {})
@@ -267,6 +278,24 @@ function analyze(
       gateKind: 'none',
     };
   }
+  if (source === 'deepseek_api_key' && request.targetAgentId === 'dsh') {
+    return {
+      route: 'config_sync',
+      support: 'stable',
+      reason: 'DeepSeek API Key 可预览为 DeepSeek Harness 的配置同步。',
+      actions: [
+        action('set_config', 'DeepSeek Harness', '选择 DSH 的官方 DeepSeek provider。', 'deepseek-official'),
+        secretAction('DeepSeek Harness', '从已选 Connection 引用 API Key；不会读取或显示它。'),
+      ],
+      limitations: [
+        '将写入 DeepSeek Harness 的 home 级 provider 引用与凭据文件；不会把 API Key 写入 cordis.patch.yml。',
+        '应用后会把该生成 Provider 设为 DSH 当前连接；请确认无其他进行中的配置写入。',
+      ],
+      evidence: [evidence('DeepSeek Harness LLM / credentials', 'https://deepseek-harness.github.io/deepseek-harness/en/reference/subsystems/credentials')],
+      ruleId: 'deepseek-api-to-dsh-v1',
+      gateKind: 'none',
+    };
+  }
   if (source === 'anthropic_api_key' && request.targetAgentId === 'pi') {
     return {
       route: 'config_sync',
@@ -308,6 +337,10 @@ function analyze(
     ? 'Kimi Code 会员当前仅支持预览到 Claude、Codex 或 Pi。'
     : source === 'kimi_non_membership'
       ? KIMI_NON_MEMBERSHIP_REASON
+    : source === 'deepseek_api_key' && request.targetAgentId === 'claude'
+      ? 'DeepSeek API → Claude Code 走 Anthropic 兼容入口，另立项；当前仅支持接到 DeepSeek Harness。'
+    : source === 'deepseek_api_key'
+      ? 'DeepSeek API Key 当前仅支持预览到 DeepSeek Harness。'
     : source === 'anthropic_api_key'
       ? 'Anthropic API Key 当前仅支持预览到 Pi。'
       : source === 'codex_subscription' || source === 'codex_subscription_oauth_other'
@@ -336,12 +369,19 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
           change('pi', 'provider', configuredProvider ?? 'anthropic'),
           secretChange('pi', 'apiKey'),
         ]
+        : analysis.route === 'config_sync' && request.targetAgentId === 'dsh'
+      ? [
+          change('dsh', 'provider', 'deepseek-official'),
+          change('dsh', 'apiKeyEnv', 'DEEPSEEK_API_KEY'),
+          secretChange('dsh', 'apiKey'),
+        ]
       : [];
   const canApply = request.sourceKind === 'provider'
     && (
       (analysis.route === 'native_endpoint' && analysis.support === 'stable' && request.targetAgentId === 'claude')
       || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
       || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'pi')
+      || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'dsh')
     );
   return {
     analysis,
@@ -400,6 +440,42 @@ function materializeApply(
         configText: JSON.stringify({
           baseUrl: `http://127.0.0.1:${profile.localPort ?? 32123}/v1`,
           model: 'kimi-k2.5',
+        }),
+        configFormat: 'json',
+        isCurrent: true,
+      },
+    };
+  }
+
+  if (plan.analysis.route === 'config_sync' && request.targetAgentId === 'dsh') {
+    const profile: AdapterProfile = existing ?? {
+      id: `adapter-deepseek-dsh-${safeId}`,
+      name: `DeepSeek → DSH (${safeId})`,
+      sourceKind: request.sourceKind,
+      sourceId: request.sourceId,
+      targetAgentId: request.targetAgentId,
+      route: 'config_sync',
+      mode: 'api',
+      status: 'active',
+      ruleId: 'deepseek-api-to-dsh-v1',
+      ruleVersion: '1',
+      generatedProviderId: `dsh-deepseek-adapter-${safeId}`,
+      localPort: null,
+      autoStart: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    return {
+      profile,
+      provider: {
+        id: profile.generatedProviderId!,
+        agentId: 'dsh',
+        name: profile.name,
+        preset: 'deepseek',
+        configText: JSON.stringify({
+          provider: 'deepseek-official',
+          apiKeyEnv: 'DEEPSEEK_API_KEY',
+          apiKey: CONNECTION_SECRET_MARKER,
         }),
         configFormat: 'json',
         isCurrent: true,
