@@ -27,6 +27,7 @@ import { AGENT_IDS, agentDisplayName } from '@/config/agents';
 import { resolveEffectiveConnection } from '@/lib/api/agent-connection';
 import type { AdapterProfile } from '@/lib/api/adapter';
 import { buildConnectionsGuideUrl } from '@/lib/connect-flow/connect-intent';
+import { planMaturityLabel } from '@/lib/connect-flow/eligibility';
 import {
   AGENT_ALL_INFEASIBLE_MESSAGE,
   SOURCE_ALL_INFEASIBLE_MESSAGE,
@@ -354,7 +355,7 @@ export function ConnectFlowDialog({
     ? '连接'
     : entry.mode === 'for-agent'
       ? `连接 ${agentDisplayName(entry.targetAgentId)}`
-      : '用于其他 Agent';
+      : '接到…';
 
   return (
     <Dialog
@@ -517,7 +518,7 @@ function FixedSourceSummary({
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       {agentId ? <AgentDot agentId={agentId} size="sm" title={null} /> : null}
-      <span>将来源「{label}」用于其他 Agent</span>
+      <span>将「{label}」接到其他 Agent</span>
     </span>
   );
 }
@@ -922,10 +923,14 @@ function EligibilityBody({
       </p>
     );
   }
+  const maturity = planMaturityLabel(eligibility.plan.maturity);
+  const routeLine = maturity
+    ? `${eligibility.routeSummary} · ${maturity}`
+    : eligibility.routeSummary;
   if (eligibility.canApply) {
-    return <p className="mt-1 text-xs text-secondary">{eligibility.routeSummary}</p>;
+    return <p className="mt-1 text-xs text-secondary">{routeLine}</p>;
   }
-  return <p className="mt-1 text-xs text-warning">{eligibility.reason ?? eligibility.routeSummary}</p>;
+  return <p className="mt-1 text-xs text-warning">{eligibility.reason ?? routeLine}</p>;
 }
 
 function GuideActions({

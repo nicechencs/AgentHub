@@ -1,6 +1,7 @@
 use super::*;
 use crate::models::{
-    Account, AccountKind, AdapterRoute, AdapterServiceImpact, AdapterSupport, Provider,
+    Account, AccountKind, AdapterMaturity, AdapterRoute, AdapterServiceImpact, AdapterSupport,
+    Provider,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -72,6 +73,7 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
         .unwrap();
     assert_eq!(claude.analysis.route, AdapterRoute::NativeEndpoint);
     assert_eq!(claude.analysis.support, AdapterSupport::Stable);
+    assert_eq!(claude.maturity, AdapterMaturity::Stable);
     assert_eq!(claude.service_impact, AdapterServiceImpact::None);
     assert!(claude.can_apply);
     assert_eq!(claude.changes[0].field, "baseUrl");
@@ -98,6 +100,7 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
         .unwrap();
     assert_eq!(codex.analysis.route, AdapterRoute::LocalBridge);
     assert_eq!(codex.analysis.support, AdapterSupport::Experimental);
+    assert_eq!(codex.maturity, AdapterMaturity::Experimental);
     assert_eq!(
         codex.service_impact,
         AdapterServiceImpact::RequiresLocalBridge
@@ -126,6 +129,7 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
         .unwrap();
     assert_eq!(pi.analysis.route, AdapterRoute::ConfigSync);
     assert_eq!(pi.analysis.support, AdapterSupport::Stable);
+    assert_eq!(pi.maturity, AdapterMaturity::Stable);
     assert!(pi.can_apply);
     assert_eq!(pi.changes[0].field, "provider");
     assert_eq!(pi.changes[0].value.as_deref(), Some("kimi-for-coding"));
@@ -169,36 +173,425 @@ fn anthropic_provider_and_explicit_api_key_account_plan_for_pi() {
         .unwrap();
     let service = AdapterRouteService::new(db);
 
-    let provider_plan = service
-        .plan(&request(
-            AdapterSourceKind::Provider,
-            "anthropic-provider",
-            AgentId::Pi,
-        ))
-        .unwrap();
+    let provider_req = request(
+        AdapterSourceKind::Provider,
+        "anthropic-provider",
+        AgentId::Pi,
+    );
+    let account_req = request(AdapterSourceKind::Account, "anthropic-account", AgentId::Pi);
+    let provider_analysis = service.analyze(&provider_req).unwrap();
+    let account_analysis = service.analyze(&account_req).unwrap();
+    assert_eq!(account_analysis.route, provider_analysis.route);
+    assert_eq!(account_analysis.support, provider_analysis.support);
+    assert_eq!(account_analysis.reason, provider_analysis.reason);
+
+    let provider_plan = service.plan(&provider_req).unwrap();
     assert_eq!(provider_plan.analysis.route, AdapterRoute::ConfigSync);
     assert_eq!(provider_plan.analysis.support, AdapterSupport::Stable);
+    assert_eq!(provider_plan.maturity, AdapterMaturity::Stable);
     assert!(provider_plan.can_apply);
     assert_eq!(provider_plan.changes[0].value.as_deref(), Some("anthropic"));
     assert!(provider_plan.changes[1].secret);
     assert!(provider_plan.changes[1].value.is_none());
 
-    let account_plan = service
-        .plan(&request(
-            AdapterSourceKind::Account,
-            "anthropic-account",
-            AgentId::Pi,
-        ))
-        .unwrap();
-    assert_eq!(account_plan.analysis.route, AdapterRoute::ConfigSync);
-    assert_eq!(account_plan.analysis.support, AdapterSupport::Stable);
-    assert!(
-        !account_plan.can_apply,
-        "account-sourced Anthropic → Pi stays preview-only"
+    let account_plan = service.plan(&account_req).unwrap();
+    assert_eq!(account_plan.analysis.route, provider_plan.analysis.route);
+    assert_eq!(
+        account_plan.analysis.support,
+        provider_plan.analysis.support
     );
+    assert_eq!(
+        account_plan.analysis.reason, provider_plan.analysis.reason,
+        "Account and same-surface Provider share the matrix reason gist"
+    );
+    assert_eq!(account_plan.maturity, provider_plan.maturity);
+    assert!(
+        account_plan.can_apply,
+        "Anthropic API account → Pi is a bind implementation"
+    );
+    assert_eq!(account_plan.reason, account_plan.analysis.reason);
     assert_eq!(account_plan.changes[0].value.as_deref(), Some("anthropic"));
     assert!(account_plan.changes[1].secret);
     assert!(account_plan.changes[1].value.is_none());
+}
+
+fn api_key_account(id: &str, provider: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        label: format!("{provider} key"),
+        credentials: serde_json::json!({"api_key": "must-not-leak"}),
+        extra: serde_json::json!({"provider": provider}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+#[test]
+fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
+    let (_dir, db) = test_db();
+    let providers = ProviderRepo::new(db.clone());
+    providers
+        .create(&provider("openai-provider", AgentId::Codex, "openai"))
+        .unwrap();
+    providers
+        .create(&provider("xai-provider", AgentId::Grok, "xai"))
+        .unwrap();
+    providers
+        .create(&Provider {
+            id: "openai-host".into(),
+            agent_id: AgentId::Claude,
+            name: "OpenAI host import".into(),
+            settings_config: serde_json::json!({
+                "baseUrl": "https://api.openai.com/v1"
+            }),
+            meta: serde_json::json!({}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    providers
+        .create(&provider(
+            "relay-provider",
+            AgentId::Claude,
+            "openai-compatible",
+        ))
+        .unwrap();
+    providers
+        .create(&provider(
+            "glm-provider",
+            AgentId::Claude,
+            "glm-coding-plan",
+        ))
+        .unwrap();
+    providers
+        .create(&provider(
+            "deepseek-provider",
+            AgentId::Claude,
+            "deepseek-api",
+        ))
+        .unwrap();
+    let accounts = AccountRepo::new(db.clone());
+    accounts
+        .create(&api_key_account("openai-account", "openai"))
+        .unwrap();
+    accounts
+        .create(&api_key_account("xai-account", "xai"))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    for (source_kind, source_id, slot, rule) in [
+        (
+            AdapterSourceKind::Provider,
+            "openai-provider",
+            "openai",
+            "openai-api-to-pi-v1",
+        ),
+        (
+            AdapterSourceKind::Account,
+            "openai-account",
+            "openai",
+            "openai-api-to-pi-v1",
+        ),
+        (
+            AdapterSourceKind::Provider,
+            "openai-host",
+            "openai",
+            "openai-api-to-pi-v1",
+        ),
+        (
+            AdapterSourceKind::Provider,
+            "xai-provider",
+            "xai",
+            "xai-api-to-pi-v1",
+        ),
+        (
+            AdapterSourceKind::Account,
+            "xai-account",
+            "xai",
+            "xai-api-to-pi-v1",
+        ),
+    ] {
+        let plan = service
+            .plan(&request(source_kind, source_id, AgentId::Pi))
+            .unwrap();
+        assert_eq!(plan.analysis.route, AdapterRoute::ConfigSync, "{source_id}");
+        assert!(plan.can_apply, "{source_id}");
+        assert_eq!(plan.analysis.rule_id.as_deref(), Some(rule), "{source_id}");
+        assert_eq!(plan.changes[0].value.as_deref(), Some(slot), "{source_id}");
+        assert!(plan.changes[1].secret, "{source_id}");
+        assert!(!serde_json::to_string(&plan)
+            .unwrap()
+            .contains("must-not-leak"));
+    }
+
+    let relay = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "relay-provider",
+            AgentId::Pi,
+        ))
+        .unwrap();
+    assert_eq!(relay.analysis.route, AdapterRoute::Unsupported);
+    assert!(!relay.can_apply);
+    assert!(relay.analysis.rule_id.is_none());
+    assert_eq!(
+        service
+            .classify_source_product(AdapterSourceKind::Provider, "relay-provider")
+            .unwrap(),
+        crate::models::AdapterSourceProduct::Other
+    );
+
+    let glm = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "glm-provider",
+            AgentId::Pi,
+        ))
+        .unwrap();
+    assert_eq!(
+        service
+            .classify_source_product(AdapterSourceKind::Provider, "glm-provider")
+            .unwrap(),
+        crate::models::AdapterSourceProduct::GlmCodingPlan
+    );
+    assert!(!glm.can_apply);
+    assert_eq!(glm.analysis.route, AdapterRoute::Unsupported);
+    assert!(
+        glm.analysis.reason.contains("同协议但无已验证的边"),
+        "GLM → Pi reason must come from the protocol graph: {}",
+        glm.analysis.reason
+    );
+
+    let deepseek = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "deepseek-provider",
+            AgentId::Pi,
+        ))
+        .unwrap();
+    assert_eq!(
+        service
+            .classify_source_product(AdapterSourceKind::Provider, "deepseek-provider")
+            .unwrap(),
+        crate::models::AdapterSourceProduct::DeepseekApi
+    );
+    assert!(!deepseek.can_apply);
+
+    accounts
+        .create(&api_key_account("glm-account", "glm-coding-plan"))
+        .unwrap();
+    accounts
+        .create(&api_key_account("deepseek-account", "deepseek-api"))
+        .unwrap();
+    for (source_kind, source_id, rule, base_url) in [
+        (
+            AdapterSourceKind::Provider,
+            "glm-provider",
+            "glm-coding-plan-to-claude-v1",
+            crate::services::adapter_route_constants::GLM_CLAUDE_BASE_URL,
+        ),
+        (
+            AdapterSourceKind::Account,
+            "glm-account",
+            "glm-coding-plan-to-claude-v1",
+            crate::services::adapter_route_constants::GLM_CLAUDE_BASE_URL,
+        ),
+        (
+            AdapterSourceKind::Provider,
+            "deepseek-provider",
+            "deepseek-api-to-claude-v1",
+            crate::services::adapter_route_constants::DEEPSEEK_CLAUDE_BASE_URL,
+        ),
+        (
+            AdapterSourceKind::Account,
+            "deepseek-account",
+            "deepseek-api-to-claude-v1",
+            crate::services::adapter_route_constants::DEEPSEEK_CLAUDE_BASE_URL,
+        ),
+    ] {
+        let plan = service
+            .plan(&request(source_kind, source_id, AgentId::Claude))
+            .unwrap();
+        assert_eq!(
+            plan.analysis.route,
+            AdapterRoute::NativeEndpoint,
+            "{source_id}"
+        );
+        assert_eq!(
+            plan.analysis.support,
+            AdapterSupport::Experimental,
+            "{source_id}"
+        );
+        assert!(plan.can_apply, "{source_id}");
+        assert_eq!(plan.analysis.rule_id.as_deref(), Some(rule), "{source_id}");
+        assert_eq!(
+            plan.changes[0].value.as_deref(),
+            Some(base_url),
+            "{source_id}"
+        );
+        assert!(plan.changes[2].secret, "{source_id}");
+        assert!(!serde_json::to_string(&plan)
+            .unwrap()
+            .contains("must-not-leak"));
+    }
+
+    let kimi_claude = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "relay-provider",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert!(!kimi_claude.can_apply, "unknown relay must not bind Claude");
+
+    let openai_grok = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "openai-provider",
+            AgentId::Grok,
+        ))
+        .unwrap();
+    assert!(!openai_grok.can_apply);
+    assert_eq!(openai_grok.analysis.route, AdapterRoute::Unsupported);
+
+    let xai_grok = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "xai-provider",
+            AgentId::Grok,
+        ))
+        .unwrap();
+    assert!(!xai_grok.can_apply);
+    assert_eq!(
+        xai_grok.analysis.reason,
+        crate::models::SAME_PROTOCOL_NO_EDGE_REASON
+    );
+    assert!(xai_grok.analysis.reason.contains("同协议但无已验证的边"));
+    assert!(!xai_grok.analysis.reason.contains("仅支持预览"));
+}
+
+#[test]
+fn account_that_is_not_anthropic_to_pi_stays_unwritable() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "claude-oauth".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::Oauth,
+            label: "Claude login".into(),
+            credentials: serde_json::json!({"format": "credentials_json"}),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "anthropic-account".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::ApiKey,
+            label: "Anthropic key".into(),
+            credentials: serde_json::json!({
+                "format": "api_key",
+                "api_key": "must-not-leak"
+            }),
+            extra: serde_json::json!({"provider": "anthropic"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    let other = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "claude-oauth",
+            AgentId::Pi,
+        ))
+        .unwrap();
+    assert!(!other.can_apply, "non-Anthropic account → Pi stays closed");
+
+    let anthropic_to_claude = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "anthropic-account",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert!(
+        !anthropic_to_claude.can_apply,
+        "Anthropic account → Claude has no bind implementation"
+    );
+}
+
+#[test]
+fn anthropic_provider_and_account_plan_for_codex_and_stay_closed_for_claude() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "anthropic-provider",
+            AgentId::Claude,
+            "anthropic",
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&api_key_account("anthropic-account", "anthropic"))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    for (source_kind, source_id) in [
+        (AdapterSourceKind::Provider, "anthropic-provider"),
+        (AdapterSourceKind::Account, "anthropic-account"),
+    ] {
+        let plan = service
+            .plan(&request(source_kind, source_id, AgentId::Codex))
+            .unwrap();
+        assert_eq!(
+            plan.analysis.route,
+            AdapterRoute::LocalBridge,
+            "{source_id}"
+        );
+        assert_eq!(
+            plan.analysis.support,
+            AdapterSupport::Experimental,
+            "{source_id}"
+        );
+        assert_eq!(plan.maturity, AdapterMaturity::Experimental, "{source_id}");
+        assert!(plan.can_apply, "{source_id}");
+        assert_eq!(
+            plan.analysis.rule_id.as_deref(),
+            Some("anthropic-api-to-codex-v1"),
+            "{source_id}"
+        );
+        assert_eq!(
+            plan.changes[0].value.as_deref(),
+            Some("AgentHub Anthropic 本地桥接"),
+            "{source_id}"
+        );
+        assert_eq!(
+            plan.service_impact,
+            AdapterServiceImpact::RequiresLocalBridge,
+            "{source_id}"
+        );
+        assert!(!serde_json::to_string(&plan)
+            .unwrap()
+            .contains("must-not-leak"));
+
+        let claude = service
+            .plan(&request(source_kind, source_id, AgentId::Claude))
+            .unwrap();
+        assert!(!claude.can_apply, "{source_id} → Claude stays closed");
+        assert_eq!(claude.analysis.route, AdapterRoute::Unsupported);
+    }
 }
 
 #[test]
@@ -245,6 +638,98 @@ fn kimi_coding_endpoint_without_preset_classifies_as_membership() {
 }
 
 #[test]
+fn plan_any_ticket_to_cursor_uses_no_writer_reason() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "kimi-membership",
+            AgentId::Kimi,
+            "kimi-code-membership",
+        ))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "anthropic-provider",
+            AgentId::Claude,
+            "anthropic",
+        ))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider("openai-provider", AgentId::Codex, "openai"))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider("xai-provider", AgentId::Grok, "xai"))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    for source_id in [
+        "kimi-membership",
+        "anthropic-provider",
+        "openai-provider",
+        "xai-provider",
+    ] {
+        let plan = service
+            .plan(&request(
+                AdapterSourceKind::Provider,
+                source_id,
+                AgentId::Cursor,
+            ))
+            .unwrap();
+        assert!(!plan.can_apply, "{source_id}");
+        assert_eq!(
+            plan.analysis.route,
+            AdapterRoute::Unsupported,
+            "{source_id}"
+        );
+        assert!(
+            plan.reason.contains("无配置写入"),
+            "{source_id}: {}",
+            plan.reason
+        );
+        assert_eq!(
+            plan.reason,
+            crate::models::AGENT_NO_WRITER_REASON,
+            "{source_id}"
+        );
+        assert!(
+            !plan.reason.contains("仅支持预览"),
+            "Cursor must not use source-product copy: {}",
+            plan.reason
+        );
+    }
+}
+
+#[test]
+fn plan_kimi_ticket_to_grok_uses_protocol_graph_reason() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "kimi-membership",
+            AgentId::Kimi,
+            "kimi-code-membership",
+        ))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    let plan = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "kimi-membership",
+            AgentId::Grok,
+        ))
+        .unwrap();
+    assert!(!plan.can_apply);
+    assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
+    assert_eq!(plan.reason, crate::models::SAME_PROTOCOL_NO_EDGE_REASON);
+    assert!(plan.reason.contains("同协议但无已验证的边"));
+    assert!(
+        !plan.reason.contains("仅支持预览到 Claude"),
+        "Kimi → Grok must not use the product whitelist: {}",
+        plan.reason
+    );
+}
+
+#[test]
 fn unsupported_and_missing_sources_have_no_changes() {
     let (_dir, db) = test_db();
     ProviderRepo::new(db.clone())
@@ -275,6 +760,7 @@ fn unsupported_and_missing_sources_have_no_changes() {
         .unwrap();
     assert_eq!(unsupported.analysis.route, AdapterRoute::Unsupported);
     assert_eq!(unsupported.analysis.support, AdapterSupport::Unsupported);
+    assert_eq!(unsupported.maturity, AdapterMaturity::None);
     assert!(!unsupported.can_apply);
     assert!(unsupported.changes.is_empty());
     assert_eq!(unsupported.service_impact, AdapterServiceImpact::None);
@@ -355,6 +841,7 @@ fn codex_auth_json_account_to_claude_is_matrix_closed() {
         .unwrap();
     assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
     assert_eq!(plan.analysis.support, AdapterSupport::Unsupported);
+    assert_eq!(plan.maturity, AdapterMaturity::Preview);
     assert!(
         !plan.can_apply,
         "Codex OAuth → Claude must keep can_apply=false"
@@ -524,7 +1011,7 @@ fn dsh_agent_id_alone_does_not_classify_as_deepseek_api() {
 }
 
 #[test]
-fn deepseek_to_claude_plan_is_unsupported() {
+fn deepseek_to_claude_plan_is_experimental() {
     let (_dir, db) = test_db();
     ProviderRepo::new(db.clone())
         .create(&provider("ds-preset", AgentId::Claude, "deepseek"))
@@ -537,9 +1024,13 @@ fn deepseek_to_claude_plan_is_unsupported() {
             AgentId::Claude,
         ))
         .unwrap();
-    assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
-    assert!(!plan.can_apply);
-    assert!(plan.analysis.reason.contains("另立项"));
+    assert_eq!(plan.analysis.route, AdapterRoute::NativeEndpoint);
+    assert_eq!(plan.analysis.support, AdapterSupport::Experimental);
+    assert!(plan.can_apply);
+    assert_eq!(
+        plan.analysis.rule_id.as_deref(),
+        Some("deepseek-api-to-claude-v1")
+    );
 }
 
 #[derive(Debug, serde::Deserialize)]

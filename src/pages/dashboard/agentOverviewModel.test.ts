@@ -291,6 +291,17 @@ describe('buildAgentCardView', () => {
     expect(view.ariaLabel).toContain('经兼容路由 · Kimi 会员');
   });
 
+  it('prefers wallet binding meta text over effectiveLabel', () => {
+    const view = buildAgentCardView(
+      claude,
+      status('claude', { effectiveLabel: '官方' }),
+      { binding: { ticketLabel: 'Kimi 会员', routeLabel: '改配置' } },
+    );
+    expect(view.metaText).toBe('Kimi 会员 · 改配置');
+    expect(view.binding).toEqual({ ticketLabel: 'Kimi 会员', routeLabel: '改配置' });
+    expect(view.ariaLabel).toContain('当前绑定 Kimi 会员（改配置）');
+  });
+
   it('maps viaAdapter hit without sourceLabel', () => {
     const view = buildAgentCardView(claude, status('claude'), { viaAdapter: {} });
     expect(view.viaAdapter).toEqual({});

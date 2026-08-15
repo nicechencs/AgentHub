@@ -1,5 +1,5 @@
 //! Write-side adapter apply for Kimi membership → Claude native, Pi config_sync,
-//! and DeepSeek API → DSH config_sync.
+//! GLM/DeepSeek ticket → Claude, explicit API → Pi, and DeepSeek API → DSH config_sync.
 //!
 //! The generated provider deliberately stores only a reference marker.  The
 //! secret is materialized in memory by `AdapterSecretResolver` at ProviderService's
@@ -19,9 +19,11 @@ use crate::models::{
     AdapterSupport, AgentId, Provider, ProviderInput,
 };
 use crate::services::adapter_route_constants::{
-    ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT,
-    CONNECTION_SECRET_MARKER, DEEPSEEK_API_BASE_URL, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT,
-    DSH_DEFAULT_MODEL, KIMI_CLAUDE_BASE_URL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
+    claude_native_base_url, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV,
+    ANTHROPIC_PI_PROVIDER_SLOT, CONNECTION_SECRET_MARKER, DEEPSEEK_API_BASE_URL,
+    DEEPSEEK_CLAUDE_RULE_ID, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT, DSH_DEFAULT_MODEL,
+    GLM_CLAUDE_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
+    OPENAI_PI_PROVIDER_SLOT, XAI_PI_PROVIDER_SLOT,
 };
 use crate::services::{
     AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
@@ -29,19 +31,31 @@ use crate::services::{
 };
 use crate::storage::{AdapterProfileRepo, Database};
 
-const RULE_ID: &str = "kimi-membership-to-claude-v1";
+const RULE_ID: &str = KIMI_CLAUDE_RULE_ID;
 const KIMI_PI_RULE_ID: &str = "kimi-membership-to-pi-v1";
 const ANTHROPIC_PI_RULE_ID: &str = "anthropic-api-to-pi-v1";
+const OPENAI_PI_RULE_ID: &str = "openai-api-to-pi-v1";
+const XAI_PI_RULE_ID: &str = "xai-api-to-pi-v1";
 const DEEPSEEK_DSH_RULE_ID: &str = "deepseek-api-to-dsh-v1";
 const RULE_VERSION: &str = "1";
 const CLAUDE_PROVIDER_PREFIX: &str = "claude-kimi-adapter";
+const CLAUDE_GLM_PROVIDER_PREFIX: &str = "claude-glm-adapter";
+const CLAUDE_DEEPSEEK_PROVIDER_PREFIX: &str = "claude-deepseek-adapter";
 const PI_KIMI_PROVIDER_PREFIX: &str = "pi-kimi-adapter";
 const PI_ANTHROPIC_PROVIDER_PREFIX: &str = "pi-anthropic-adapter";
+const PI_OPENAI_PROVIDER_PREFIX: &str = "pi-openai-adapter";
+const PI_XAI_PROVIDER_PREFIX: &str = "pi-xai-adapter";
 const DSH_DEEPSEEK_PROVIDER_PREFIX: &str = "dsh-deepseek-adapter";
 const CLAUDE_PROFILE_PREFIX: &str = "adapter-kimi-claude";
+const CLAUDE_GLM_PROFILE_PREFIX: &str = "adapter-glm-claude";
+const CLAUDE_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-claude";
 const PI_KIMI_PROFILE_PREFIX: &str = "adapter-kimi-pi";
 const PI_ANTHROPIC_PROFILE_PREFIX: &str = "adapter-anthropic-pi";
+const PI_OPENAI_PROFILE_PREFIX: &str = "adapter-openai-pi";
+const PI_XAI_PROFILE_PREFIX: &str = "adapter-xai-pi";
 const DSH_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-dsh";
+const PREVIOUS_CURRENT_ID: &str = "previousCurrentId";
+const PREVIOUS_BACKUP_ID: &str = "previousBackupId";
 
 /// Applies supported write-side routes and owns their generated profiles.
 pub struct AdapterApplyService {
@@ -83,42 +97,87 @@ impl AdapterApplyService {
     pub fn apply(&self, request: &AdapterApplyRequest) -> Result<AdapterApplyResult> {
         let analysis = self.ensure_supported(request)?;
         let source_id = request.source_id.trim();
-        match (request.target_agent_id, analysis.route) {
-            (AgentId::Claude, AdapterRoute::NativeEndpoint) => {
-                // Validate before creating a profile or provider: a dangling/masked
-                // source must be a completely side-effect-free failure.
-                self.secrets.validate_kimi_membership_source(source_id)?;
-                self.apply_generated(claude_kimi_spec(source_id))
+        match (request.source_kind, request.target_agent_id, analysis.route) {
+            (source_kind, AgentId::Claude, AdapterRoute::NativeEndpoint) => {
+                match analysis.rule_id.as_deref() {
+                    Some(RULE_ID) if source_kind == AdapterSourceKind::Provider => {
+                        // Validate before creating a profile or provider: a dangling/masked
+                        // source must be a completely side-effect-free failure.
+                        self.secrets.validate_kimi_membership_source(source_id)?;
+                        self.apply_generated(claude_native_spec(
+                            AdapterSourceKind::Provider,
+                            source_id,
+                            RULE_ID,
+                        )?)
+                    }
+                    Some(rule) if is_claude_native_explicit_rule(rule) => {
+                        self.secrets.validate_explicit_api_source(rule, source_kind, source_id)?;
+                        self.apply_generated(claude_native_spec(source_kind, source_id, rule)?)
+                    }
+                    _ => Err(AppError::Unsupported(
+                        "adapter apply currently supports Kimi membership provider or GLM/DeepSeek ticket -> Claude".into(),
+                    )),
+                }
             }
-            (AgentId::Pi, AdapterRoute::ConfigSync) => match analysis.rule_id.as_deref() {
-                Some(KIMI_PI_RULE_ID) => {
-                    self.secrets.validate_kimi_membership_source(source_id)?;
-                    self.apply_generated(pi_kimi_spec(source_id))
+            (AdapterSourceKind::Provider, AgentId::Pi, AdapterRoute::ConfigSync) => {
+                match analysis.rule_id.as_deref() {
+                    Some(KIMI_PI_RULE_ID) => {
+                        self.secrets.validate_kimi_membership_source(source_id)?;
+                        self.apply_generated(pi_kimi_spec(source_id))
+                    }
+                    Some(rule) if is_explicit_api_to_pi_rule(rule) => {
+                        self.secrets.validate_explicit_api_source(
+                            rule,
+                            AdapterSourceKind::Provider,
+                            source_id,
+                        )?;
+                        self.apply_generated(pi_explicit_api_spec(
+                            AdapterSourceKind::Provider,
+                            source_id,
+                            rule,
+                        )?)
+                    }
+                    _ => Err(AppError::Unsupported(
+                        "adapter apply currently supports Kimi membership or explicit API provider -> Pi".into(),
+                    )),
                 }
-                Some(ANTHROPIC_PI_RULE_ID) => {
-                    self.secrets.validate_anthropic_api_source(source_id)?;
-                    self.apply_generated(pi_anthropic_spec(source_id))
+            }
+            (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync)
+                if analysis
+                    .rule_id
+                    .as_deref()
+                    .is_some_and(is_explicit_api_to_pi_rule) =>
+            {
+                let rule = analysis.rule_id.as_deref().expect("checked above");
+                self.secrets.validate_explicit_api_source(
+                    rule,
+                    AdapterSourceKind::Account,
+                    source_id,
+                )?;
+                self.apply_generated(pi_explicit_api_spec(
+                    AdapterSourceKind::Account,
+                    source_id,
+                    rule,
+                )?)
+            }
+            (AdapterSourceKind::Provider, AgentId::Dsh, AdapterRoute::ConfigSync) => {
+                match analysis.rule_id.as_deref() {
+                    Some(DEEPSEEK_DSH_RULE_ID) => {
+                        self.secrets.validate_deepseek_api_source(source_id)?;
+                        self.apply_generated(dsh_deepseek_spec(source_id))
+                    }
+                    _ => Err(AppError::Unsupported(
+                        "adapter apply currently supports only DeepSeek API provider -> DSH".into(),
+                    )),
                 }
-                _ => Err(AppError::Unsupported(
-                    "adapter apply currently supports only Kimi membership or Anthropic API provider -> Pi".into(),
-                )),
-            },
-            (AgentId::Dsh, AdapterRoute::ConfigSync) => match analysis.rule_id.as_deref() {
-                Some(DEEPSEEK_DSH_RULE_ID) => {
-                    self.secrets.validate_deepseek_api_source(source_id)?;
-                    self.apply_generated(dsh_deepseek_spec(source_id))
-                }
-                _ => Err(AppError::Unsupported(
-                    "adapter apply currently supports only DeepSeek API provider -> DSH".into(),
-                )),
-            },
+            }
             _ => Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership provider -> Claude, provider -> Pi config_sync, and DeepSeek API -> DSH".into(),
+                "adapter apply currently supports Kimi membership provider -> Claude/Pi, GLM/DeepSeek ticket -> Claude, explicit API ticket -> Pi, and DeepSeek API provider -> DSH".into(),
             )),
         }
     }
 
-    fn apply_generated(&self, spec: GeneratedApplySpec) -> Result<AdapterApplyResult> {
+    fn apply_generated(&self, mut spec: GeneratedApplySpec) -> Result<AdapterApplyResult> {
         // Acquire before reading or creating any generated-provider/profile
         // state. The guard covers every compensation input and mutation below.
         let saga_guard = self.providers.begin_live_saga(spec.target_agent)?;
@@ -183,10 +242,16 @@ impl AdapterApplyService {
         let created = existing.is_none();
         let snapshot = ApplySnapshot {
             generated_before,
-            previous_current,
+            previous_current: previous_current.clone(),
             live_config,
             created,
         };
+        stamp_previous_restore_meta(
+            &mut spec.provider.meta,
+            previous_current.as_ref(),
+            &spec.provider_id,
+            existing.as_ref(),
+        );
 
         // Create/repair the pool row before switch; the switched provider is
         // returned from switch_with_guard below.
@@ -217,7 +282,24 @@ impl AdapterApplyService {
             &spec.provider_id,
             spec.target_agent,
         ) {
-            Ok(result) => result.provider,
+            Ok(result) => {
+                if let Some(backup_id) = result.backup.as_ref().map(|backup| backup.id.as_str()) {
+                    if let Err(error) =
+                        self.persist_previous_backup_id(&saga_guard, &result.provider, backup_id)
+                    {
+                        if let Err(restore_error) = self.compensate_apply(
+                            &saga_guard,
+                            &spec.provider_id,
+                            spec.target_agent,
+                            &snapshot,
+                        ) {
+                            return Err(self.fail_profile(profile, &restore_error));
+                        }
+                        return Err(self.fail_profile(profile, &error));
+                    }
+                }
+                result.provider
+            }
             Err(error) => {
                 if let Err(restore_error) = self.compensate_apply(
                     &saga_guard,
@@ -324,9 +406,7 @@ impl AdapterApplyService {
                     ));
                 }
                 if provider.is_current {
-                    return Err(AppError::Unsupported(
-                        "先在 Connections 切换后再移除此适配器".into(),
-                    ));
+                    self.restore_previous_binding(&saga_guard, &provider, profile.target_agent_id)?;
                 }
                 self.providers.delete_with_guard(
                     &saga_guard,
@@ -344,30 +424,84 @@ impl AdapterApplyService {
             source_id: request.source_id.clone(),
             target_agent_id: request.target_agent_id,
         })?;
-        let supported = request.source_kind == AdapterSourceKind::Provider
-            && matches!(
-                (request.target_agent_id, analysis.route, analysis.support),
-                (
-                    AgentId::Claude,
-                    AdapterRoute::NativeEndpoint,
-                    AdapterSupport::Stable
-                ) | (
-                    AgentId::Pi,
-                    AdapterRoute::ConfigSync,
-                    AdapterSupport::Stable
-                ) | (
-                    AgentId::Dsh,
-                    AdapterRoute::ConfigSync,
-                    AdapterSupport::Stable
-                )
-            );
+        let supported = match (request.source_kind, request.target_agent_id, analysis.route) {
+            (source_kind, AgentId::Claude, AdapterRoute::NativeEndpoint) => analysis
+                .rule_id
+                .as_deref()
+                .is_some_and(|rule| is_claude_native_apply_rule(rule, source_kind)),
+            (AdapterSourceKind::Provider, AgentId::Pi, AdapterRoute::ConfigSync) => {
+                analysis.support == AdapterSupport::Stable
+            }
+            (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync) => {
+                analysis.support == AdapterSupport::Stable
+                    && analysis
+                        .rule_id
+                        .as_deref()
+                        .is_some_and(is_explicit_api_to_pi_rule)
+            }
+            (AdapterSourceKind::Provider, AgentId::Dsh, AdapterRoute::ConfigSync) => {
+                analysis.support == AdapterSupport::Stable
+                    && analysis.rule_id.as_deref() == Some(DEEPSEEK_DSH_RULE_ID)
+            }
+            _ => false,
+        };
         if supported {
             Ok(analysis)
         } else {
             Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership provider -> Claude, provider -> Pi config_sync, and DeepSeek API -> DSH".into(),
+                "adapter apply currently supports Kimi membership provider -> Claude/Pi, GLM/DeepSeek ticket -> Claude, explicit API ticket -> Pi, and DeepSeek API provider -> DSH".into(),
             ))
         }
+    }
+
+    fn persist_previous_backup_id(
+        &self,
+        saga_guard: &ProviderLiveSagaGuard<'_>,
+        provider: &Provider,
+        backup_id: &str,
+    ) -> Result<Provider> {
+        let mut input = provider_input(provider);
+        let Some(meta) = input.meta.as_object_mut() else {
+            return Ok(provider.clone());
+        };
+        meta.insert(PREVIOUS_BACKUP_ID.into(), json!(backup_id));
+        self.providers.update_with_guard(saga_guard, &input)
+    }
+
+    fn restore_previous_binding(
+        &self,
+        saga_guard: &ProviderLiveSagaGuard<'_>,
+        generated: &Provider,
+        target_agent: AgentId,
+    ) -> Result<()> {
+        let previous_id = generated
+            .meta
+            .get(PREVIOUS_CURRENT_ID)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|id| !id.is_empty() && *id != generated.id);
+        if let Some(previous_id) = previous_id {
+            match self.providers.get(previous_id, Some(target_agent)) {
+                Ok(_) => {
+                    self.providers
+                        .switch_with_guard(saga_guard, previous_id, target_agent)?;
+                    return Ok(());
+                }
+                Err(AppError::NotFound(_)) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        if let Some(backup_id) = generated
+            .meta
+            .get(PREVIOUS_BACKUP_ID)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+        {
+            self.providers
+                .restore_named_backup_with_guard(saga_guard, backup_id)?;
+        }
+        Ok(())
     }
 
     fn fail_profile(&self, mut profile: AdapterProfile, error: &AppError) -> AppError {
@@ -447,9 +581,10 @@ impl AdapterApplyService {
     }
 }
 
+/// 幂等判定：已有投影是否已是当前规则的完整契约。
+/// 不比较 `name`：展示名随票 display 变化，不是契约。
 fn same_profile_contract(existing: &AdapterProfile, proposed: &AdapterProfile) -> bool {
     existing.id == proposed.id
-        && existing.name == proposed.name
         && existing.source_kind == proposed.source_kind
         && existing.source_id == proposed.source_id
         && existing.target_agent_id == proposed.target_agent_id
@@ -476,10 +611,20 @@ fn generated_provider_prefix(profile: &AdapterProfile) -> Option<&'static str> {
         profile.rule_id.as_str(),
     ) {
         (AgentId::Claude, AdapterRoute::NativeEndpoint, RULE_ID) => Some(CLAUDE_PROVIDER_PREFIX),
+        (AgentId::Claude, AdapterRoute::NativeEndpoint, GLM_CLAUDE_RULE_ID) => {
+            Some(CLAUDE_GLM_PROVIDER_PREFIX)
+        }
+        (AgentId::Claude, AdapterRoute::NativeEndpoint, DEEPSEEK_CLAUDE_RULE_ID) => {
+            Some(CLAUDE_DEEPSEEK_PROVIDER_PREFIX)
+        }
         (AgentId::Pi, AdapterRoute::ConfigSync, KIMI_PI_RULE_ID) => Some(PI_KIMI_PROVIDER_PREFIX),
         (AgentId::Pi, AdapterRoute::ConfigSync, ANTHROPIC_PI_RULE_ID) => {
             Some(PI_ANTHROPIC_PROVIDER_PREFIX)
         }
+        (AgentId::Pi, AdapterRoute::ConfigSync, OPENAI_PI_RULE_ID) => {
+            Some(PI_OPENAI_PROVIDER_PREFIX)
+        }
+        (AgentId::Pi, AdapterRoute::ConfigSync, XAI_PI_RULE_ID) => Some(PI_XAI_PROVIDER_PREFIX),
         (AgentId::Dsh, AdapterRoute::ConfigSync, DEEPSEEK_DSH_RULE_ID) => {
             Some(DSH_DEEPSEEK_PROVIDER_PREFIX)
         }
@@ -532,23 +677,71 @@ fn provider_owned_by(provider: &crate::models::Provider, profile: &AdapterProfil
             == Some(profile.source_id.as_str())
 }
 
-fn claude_kimi_spec(source_id: &str) -> GeneratedApplySpec {
-    let profile_id = stable_id(CLAUDE_PROFILE_PREFIX, source_id);
-    let provider_id = stable_id(CLAUDE_PROVIDER_PREFIX, source_id);
+fn is_claude_native_explicit_rule(rule_id: &str) -> bool {
+    matches!(rule_id, GLM_CLAUDE_RULE_ID | DEEPSEEK_CLAUDE_RULE_ID)
+}
+
+fn is_claude_native_apply_rule(rule_id: &str, source_kind: AdapterSourceKind) -> bool {
+    match (rule_id, source_kind) {
+        (RULE_ID, AdapterSourceKind::Provider) => true,
+        (GLM_CLAUDE_RULE_ID | DEEPSEEK_CLAUDE_RULE_ID, _) => true,
+        _ => false,
+    }
+}
+
+fn claude_native_layout(
+    rule_id: &str,
+) -> Result<(&'static str, &'static str, &'static str, &'static str)> {
+    let base_url = claude_native_base_url(rule_id).ok_or_else(|| {
+        AppError::Unsupported("adapter apply currently supports Kimi / GLM / DeepSeek -> Claude".into())
+    })?;
+    match rule_id {
+        RULE_ID => Ok((
+            CLAUDE_PROFILE_PREFIX,
+            CLAUDE_PROVIDER_PREFIX,
+            "Kimi Code",
+            base_url,
+        )),
+        GLM_CLAUDE_RULE_ID => Ok((
+            CLAUDE_GLM_PROFILE_PREFIX,
+            CLAUDE_GLM_PROVIDER_PREFIX,
+            "GLM",
+            base_url,
+        )),
+        DEEPSEEK_CLAUDE_RULE_ID => Ok((
+            CLAUDE_DEEPSEEK_PROFILE_PREFIX,
+            CLAUDE_DEEPSEEK_PROVIDER_PREFIX,
+            "DeepSeek",
+            base_url,
+        )),
+        _ => Err(AppError::Unsupported(
+            "adapter apply currently supports Kimi / GLM / DeepSeek -> Claude".into(),
+        )),
+    }
+}
+
+fn claude_native_spec(
+    source_kind: AdapterSourceKind,
+    source_id: &str,
+    rule_id: &str,
+) -> Result<GeneratedApplySpec> {
+    let (profile_prefix, provider_prefix, display, base_url) = claude_native_layout(rule_id)?;
+    let profile_id = stable_id(profile_prefix, source_id);
+    let provider_id = stable_id(provider_prefix, source_id);
     let created_at = now();
-    GeneratedApplySpec {
+    Ok(GeneratedApplySpec {
         target_agent: AgentId::Claude,
         provider_id: provider_id.clone(),
         proposed: AdapterProfile {
             id: profile_id.clone(),
-            name: format!("Kimi → Claude ({})", safe_label(source_id)),
-            source_kind: AdapterSourceKind::Provider,
+            name: format!("{display} → Claude ({})", safe_label(source_id)),
+            source_kind,
             source_id: source_id.into(),
             target_agent_id: AgentId::Claude,
             route: AdapterRoute::NativeEndpoint,
             mode: AdapterProfileMode::Api,
             status: AdapterProfileStatus::Applying,
-            rule_id: RULE_ID.into(),
+            rule_id: rule_id.into(),
             rule_version: RULE_VERSION.into(),
             generated_provider_id: Some(provider_id.clone()),
             local_port: None,
@@ -560,20 +753,21 @@ fn claude_kimi_spec(source_id: &str) -> GeneratedApplySpec {
         provider: ProviderInput {
             id: provider_id,
             agent_id: AgentId::Claude,
-            name: format!("Kimi Code ({})", safe_label(source_id)),
+            name: format!("{display} ({})", safe_label(source_id)),
             settings_config: json!({"env": {
-                ANTHROPIC_BASE_URL_ENV: KIMI_CLAUDE_BASE_URL,
+                ANTHROPIC_BASE_URL_ENV: base_url,
                 ANTHROPIC_AUTH_TOKEN_ENV: CONNECTION_SECRET_MARKER,
             }}),
             meta: generated_meta(
-                RULE_ID,
+                rule_id,
                 &profile_id,
+                source_kind,
                 source_id,
                 Some("anthropic-compatible"),
             ),
             is_current: false,
         },
-    }
+    })
 }
 
 fn pi_kimi_spec(source_id: &str) -> GeneratedApplySpec {
@@ -619,29 +813,75 @@ fn pi_kimi_spec(source_id: &str) -> GeneratedApplySpec {
                     }
                 }
             }),
-            meta: generated_meta(KIMI_PI_RULE_ID, &profile_id, source_id, None),
+            meta: generated_meta(
+                KIMI_PI_RULE_ID,
+                &profile_id,
+                AdapterSourceKind::Provider,
+                source_id,
+                None,
+            ),
             is_current: false,
         },
     }
 }
 
-fn pi_anthropic_spec(source_id: &str) -> GeneratedApplySpec {
-    let profile_id = stable_id(PI_ANTHROPIC_PROFILE_PREFIX, source_id);
-    let provider_id = stable_id(PI_ANTHROPIC_PROVIDER_PREFIX, source_id);
+fn is_explicit_api_to_pi_rule(rule_id: &str) -> bool {
+    matches!(
+        rule_id,
+        ANTHROPIC_PI_RULE_ID | OPENAI_PI_RULE_ID | XAI_PI_RULE_ID
+    )
+}
+
+fn pi_explicit_api_layout(
+    rule_id: &str,
+) -> Result<(&'static str, &'static str, &'static str, &'static str)> {
+    match rule_id {
+        ANTHROPIC_PI_RULE_ID => Ok((
+            PI_ANTHROPIC_PROFILE_PREFIX,
+            PI_ANTHROPIC_PROVIDER_PREFIX,
+            "Anthropic",
+            ANTHROPIC_PI_PROVIDER_SLOT,
+        )),
+        OPENAI_PI_RULE_ID => Ok((
+            PI_OPENAI_PROFILE_PREFIX,
+            PI_OPENAI_PROVIDER_PREFIX,
+            "OpenAI",
+            OPENAI_PI_PROVIDER_SLOT,
+        )),
+        XAI_PI_RULE_ID => Ok((
+            PI_XAI_PROFILE_PREFIX,
+            PI_XAI_PROVIDER_PREFIX,
+            "xAI",
+            XAI_PI_PROVIDER_SLOT,
+        )),
+        _ => Err(AppError::Unsupported(
+            "adapter apply currently supports only Anthropic / OpenAI / xAI API -> Pi".into(),
+        )),
+    }
+}
+
+fn pi_explicit_api_spec(
+    source_kind: AdapterSourceKind,
+    source_id: &str,
+    rule_id: &str,
+) -> Result<GeneratedApplySpec> {
+    let (profile_prefix, provider_prefix, display, slot) = pi_explicit_api_layout(rule_id)?;
+    let profile_id = stable_id(profile_prefix, source_id);
+    let provider_id = stable_id(provider_prefix, source_id);
     let created_at = now();
-    GeneratedApplySpec {
+    Ok(GeneratedApplySpec {
         target_agent: AgentId::Pi,
         provider_id: provider_id.clone(),
         proposed: AdapterProfile {
             id: profile_id.clone(),
-            name: format!("Anthropic → Pi ({})", safe_label(source_id)),
-            source_kind: AdapterSourceKind::Provider,
+            name: format!("{display} → Pi ({})", safe_label(source_id)),
+            source_kind,
             source_id: source_id.into(),
             target_agent_id: AgentId::Pi,
             route: AdapterRoute::ConfigSync,
             mode: AdapterProfileMode::Api,
             status: AdapterProfileStatus::Applying,
-            rule_id: ANTHROPIC_PI_RULE_ID.into(),
+            rule_id: rule_id.into(),
             rule_version: RULE_VERSION.into(),
             generated_provider_id: Some(provider_id.clone()),
             local_port: None,
@@ -653,27 +893,27 @@ fn pi_anthropic_spec(source_id: &str) -> GeneratedApplySpec {
         provider: ProviderInput {
             id: provider_id,
             agent_id: AgentId::Pi,
-            name: format!("Anthropic ({})", safe_label(source_id)),
+            name: format!("{display} ({})", safe_label(source_id)),
             settings_config: json!({
                 "models": {
                     "providers": {
-                        ANTHROPIC_PI_PROVIDER_SLOT: {
+                        slot: {
                             "apiKey": CONNECTION_SECRET_MARKER,
                         }
                     }
                 }
             }),
-            meta: generated_meta(ANTHROPIC_PI_RULE_ID, &profile_id, source_id, None),
+            meta: generated_meta(rule_id, &profile_id, source_kind, source_id, None),
             is_current: false,
         },
-    }
+    })
 }
 
 fn dsh_deepseek_spec(source_id: &str) -> GeneratedApplySpec {
     let profile_id = stable_id(DSH_DEEPSEEK_PROFILE_PREFIX, source_id);
     let provider_id = stable_id(DSH_DEEPSEEK_PROVIDER_PREFIX, source_id);
     let created_at = now();
-    let model = map_adapter_model(AdapterSourceProduct::DeepSeekApi, AgentId::Dsh, "")
+    let model = map_adapter_model(AdapterSourceProduct::DeepseekApi, AgentId::Dsh, "")
         .unwrap_or(DSH_DEFAULT_MODEL);
     GeneratedApplySpec {
         target_agent: AgentId::Dsh,
@@ -707,7 +947,13 @@ fn dsh_deepseek_spec(source_id: &str) -> GeneratedApplySpec {
                 "baseURL": DEEPSEEK_API_BASE_URL,
                 "api_key": CONNECTION_SECRET_MARKER,
             }),
-            meta: generated_meta(DEEPSEEK_DSH_RULE_ID, &profile_id, source_id, Some("deepseek")),
+            meta: generated_meta(
+                DEEPSEEK_DSH_RULE_ID,
+                &profile_id,
+                AdapterSourceKind::Provider,
+                source_id,
+                Some("deepseek"),
+            ),
             is_current: false,
         },
     }
@@ -716,6 +962,7 @@ fn dsh_deepseek_spec(source_id: &str) -> GeneratedApplySpec {
 fn generated_meta(
     rule_id: &str,
     profile_id: &str,
+    source_kind: AdapterSourceKind,
     source_id: &str,
     preset: Option<&str>,
 ) -> serde_json::Value {
@@ -730,20 +977,63 @@ fn generated_meta(
     meta.insert("adapterProfileId".into(), json!(profile_id));
     meta.insert(
         "adapterSourceRef".into(),
-        json!({"kind": "provider", "id": source_id}),
+        json!({"kind": source_kind.as_str(), "id": source_id}),
     );
     serde_json::Value::Object(meta)
 }
 
+/// 投影契约：id / agent / settings / 合同 meta。
+/// 不比较 `name`：展示名随票 display 变化，重 bind 不得因此重写 live。
 fn provider_matches_projection(
     provider: &crate::models::Provider,
     projection: &ProviderInput,
 ) -> bool {
     provider.id == projection.id
         && provider.agent_id == projection.agent_id
-        && provider.name == projection.name
         && provider.settings_config == projection.settings_config
-        && provider.meta == projection.meta
+        && projection_contract_meta(&provider.meta) == projection_contract_meta(&projection.meta)
+}
+
+fn projection_contract_meta(meta: &serde_json::Value) -> serde_json::Value {
+    let mut cloned = meta.clone();
+    if let Some(object) = cloned.as_object_mut() {
+        object.remove(PREVIOUS_CURRENT_ID);
+        object.remove(PREVIOUS_BACKUP_ID);
+    }
+    cloned
+}
+
+fn stamp_previous_restore_meta(
+    meta: &mut serde_json::Value,
+    previous_current: Option<&Provider>,
+    generated_id: &str,
+    existing: Option<&Provider>,
+) {
+    let Some(object) = meta.as_object_mut() else {
+        return;
+    };
+    let previous_id = previous_current
+        .map(|provider| provider.id.as_str())
+        .filter(|id| *id != generated_id);
+    match previous_id {
+        Some(id) => {
+            object.insert(PREVIOUS_CURRENT_ID.into(), json!(id));
+        }
+        None => {
+            if let Some(existing_id) = existing
+                .and_then(|provider| provider.meta.get(PREVIOUS_CURRENT_ID))
+                .cloned()
+            {
+                object.insert(PREVIOUS_CURRENT_ID.into(), existing_id);
+            }
+        }
+    }
+    if let Some(existing_backup) = existing
+        .and_then(|provider| provider.meta.get(PREVIOUS_BACKUP_ID))
+        .cloned()
+    {
+        object.insert(PREVIOUS_BACKUP_ID.into(), existing_backup);
+    }
 }
 
 fn provider_input(provider: &Provider) -> ProviderInput {

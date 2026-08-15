@@ -1408,3 +1408,48 @@ fn live_api_key_without_identity_is_not_imported() {
         "API key live snapshots without a stable identity stay fail-closed"
     );
 }
+
+#[test]
+fn add_api_key_writes_unknown_surface() {
+    let (_root, svc, _) = live_svc(AgentId::Grok);
+    let added = svc
+        .add_api_key(AgentId::Grok, Some("work"), "xai-secret-key-1234")
+        .unwrap();
+    assert_eq!(added.extra["surface"], "unknown");
+    let stored = svc.get(&added.id, Some(AgentId::Grok)).unwrap();
+    assert_eq!(stored.extra["surface"], "unknown");
+}
+
+#[test]
+fn import_live_writes_anthropic_and_unknown_surface() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "sk-ant-live",
+            "base_url": "https://api.anthropic.com"
+        }),
+        label_hint: Some("Anthropic live".into()),
+        extra: json!({"provider": "anthropic"}),
+    });
+    let imported = svc
+        .import_live(AgentId::Claude, Some("Anthropic live"))
+        .unwrap();
+    assert_eq!(imported.extra["surface"], "anthropic-api");
+    assert_eq!(imported.extra["source"], "live");
+
+    let (_root, grok_svc, grok) = live_svc(AgentId::Grok);
+    grok.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({"refresh_token": "r", "access_token": "a"}),
+        label_hint: Some("Grok live".into()),
+        extra: json!({}),
+    });
+    let unknown = grok_svc
+        .import_live(AgentId::Grok, Some("Grok live"))
+        .unwrap();
+    assert_eq!(unknown.extra["surface"], "unknown");
+}

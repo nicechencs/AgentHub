@@ -141,6 +141,33 @@ export function resolveAdapterProfileSource(
   return { title: profile.name, agentId: null, missing: true };
 }
 
+/** Production Adapter list: bound `local_bridge` runtimes only. */
+export function isBoundLocalBridgeRuntime(
+  profile: Pick<AdapterProfile, 'id' | 'route' | 'sourceKind' | 'sourceId'>,
+  input: {
+    entries: readonly Pick<ConnectionEntry, 'source' | 'id'>[];
+    bindingProfileIds?: ReadonlySet<string>;
+  },
+): boolean {
+  if (profile.route !== 'local_bridge') return false;
+  if (!profile.sourceId.trim()) return false;
+  const sourceExists = input.entries.some(
+    (entry) => entry.source === profile.sourceKind && entry.id === profile.sourceId,
+  );
+  if (sourceExists) return true;
+  return input.bindingProfileIds?.has(profile.id) === true;
+}
+
+export function filterBoundLocalBridgeRuntimes<T extends AdapterProfile>(
+  profiles: readonly T[],
+  input: {
+    entries: readonly Pick<ConnectionEntry, 'source' | 'id'>[];
+    bindingProfileIds?: ReadonlySet<string>;
+  },
+): T[] {
+  return profiles.filter((profile) => isBoundLocalBridgeRuntime(profile, input));
+}
+
 // ---------- Route pipeline ----------
 
 export type AdapterPipelineNode = {

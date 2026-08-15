@@ -14,13 +14,14 @@ use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    Account, AccountInput, AccountKind, AccountSwitchResult, AgentId, BackupKind, Capability,
-    LiveAccount,
+    attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult,
+    AdapterSourceKind, AgentId, BackupKind, Capability, LiveAccount, PersistedTicketSurface,
+    TicketSurface,
 };
 use crate::services::switch_undo::{
     clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
 };
-use crate::services::{BackupService, ConnectionService};
+use crate::services::{AdapterRouteService, BackupService, ConnectionService};
 use crate::storage::{AccountRepo, Database};
 use crate::utils::agent_lock::AgentWriteLock;
 use crate::utils::redact::mask_secret_preview;
@@ -675,7 +676,8 @@ impl AccountService {
             created_at: now.clone(),
             updated_at: now,
         };
-        self.repo.create(&row)
+        let created = self.repo.create(&row)?;
+        self.stamp_account_surface(created)
     }
 
     /// Update an existing API Key account (label and/or key).
@@ -868,9 +870,10 @@ impl AccountService {
         };
         if row.is_current {
             let (created, _binding) = self.connections.create_and_activate_account(&row)?;
-            Ok(created)
+            self.stamp_account_surface(created)
         } else {
-            self.repo.create(&row)
+            let created = self.repo.create(&row)?;
+            self.stamp_account_surface(created)
         }
     }
 
@@ -1171,9 +1174,10 @@ impl AccountService {
         };
         if make_current {
             let (created, _binding) = self.connections.create_and_activate_account(&row)?;
-            Ok(created)
+            self.stamp_account_surface(created)
         } else {
-            self.repo.create(&row)
+            let created = self.repo.create(&row)?;
+            self.stamp_account_surface(created)
         }
     }
 
@@ -1240,7 +1244,25 @@ impl AccountService {
             }
         }
 
-        Ok(updated)
+        self.stamp_account_surface(updated)
+    }
+
+    /// Classify the persisted row and write `extra.surface` before the import
+    /// / add path returns. `classify_source_product` reads the stored row, so
+    /// this runs after the first successful persist.
+    fn stamp_account_surface(&self, account: Account) -> Result<Account> {
+        let product = AdapterRouteService::new(self.db.clone())
+            .classify_source_product(AdapterSourceKind::Account, &account.id)?;
+        let surface = TicketSurface::from_product(product);
+        if TicketSurface::from_persisted_json(&account.extra)
+            == PersistedTicketSurface::Known(surface)
+        {
+            return Ok(account);
+        }
+        let mut stamped = account;
+        attach_persisted_surface(&mut stamped.extra, surface);
+        stamped.updated_at = now_ts();
+        self.repo.update(&stamped)
     }
 
     /// Safe account switch: validate → lock → backfill → backup → apply → verify → DB.

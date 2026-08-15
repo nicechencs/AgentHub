@@ -195,6 +195,8 @@ describe('Adapter Rust wire mappers', () => {
       },
       targetAgentId: 'claude',
       canApply: true,
+      maturity: 'stable',
+      reason: 'ok',
       serviceImpact: 'none',
       changes: [
         { target: 'claude', field: 'apiKey', value: 'sk-must-not-leak', secret: true },
@@ -214,5 +216,46 @@ describe('Adapter Rust wire mappers', () => {
     expect(secretChange).toEqual({ target: 'claude', field: 'apiKey', secret: true });
     expect(secretChange).not.toHaveProperty('value');
     expect(JSON.stringify(plan)).not.toContain('sk-must-not-leak');
+    expect(plan.maturity).toBe('stable');
+    expect(plan.reason).toBe('ok');
+  });
+
+  it('maps planner maturity and falls back reason / maturity on older wires', () => {
+    const preview = mapAdapterApplyPlan({
+      analysis: {
+        route: 'unsupported',
+        support: 'unsupported',
+        reason: 'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
+        actions: [],
+        limitations: [],
+        evidence: [],
+      },
+      targetAgentId: 'claude',
+      canApply: false,
+      maturity: 'preview',
+      reason: 'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
+      serviceImpact: 'none',
+      changes: [],
+    });
+    expect(preview.maturity).toBe('preview');
+    expect(preview.canApply).toBe(false);
+    expect(preview.reason).toContain('当前不支持');
+
+    const legacy = mapAdapterApplyPlan({
+      analysis: {
+        route: 'config_sync',
+        support: 'stable',
+        reason: '显式 Anthropic API Key 可预览为 Pi 的配置同步。',
+        actions: [],
+        limitations: [],
+        evidence: [],
+      },
+      targetAgentId: 'pi',
+      canApply: false,
+      serviceImpact: 'none',
+      changes: [],
+    });
+    expect(legacy.maturity).toBe('none');
+    expect(legacy.reason).toBe('显式 Anthropic API Key 可预览为 Pi 的配置同步。');
   });
 });

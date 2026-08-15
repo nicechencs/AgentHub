@@ -1,19 +1,17 @@
-// Connections：按 Agent 管理「连接」——官方登录 / API Key / 供应商统一列表。
-// 存储仍为 accounts + providers 两表；本页做 UI 聚合与筛选，?mode= 仅深链提示筛选。
+// Connections：全局票钱包（docs/connection-binding-model.md §5.2）
+// Agent 只作筛选/高亮，不作第一导航；?agent= 高亮 active 绑定行。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Cable } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Notice } from '@/components/shared/Notice';
-import { StatusPin } from '@/components/shared/StatusPin';
 import { ListSkeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/components/ui/toast';
 import { AGENT_IDS, agentDisplayName } from '@/config/agents';
-import { resolveEffectiveConnection } from '@/lib/api/agent-connection';
-import { listAdapterProfiles, type AdapterProfile } from '@/lib/api/adapter';
+import { listTicketWallet, type TicketView, type TicketWallet } from '@/lib/api/tickets';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
 import {
   buildResumeConnectUrl,
@@ -22,137 +20,124 @@ import {
   readConnectGuide,
   type ConnectGuide,
 } from '@/lib/connect-flow/connect-intent';
-import { computeConnectionUsageMap } from '@/lib/connect-flow/connection-usage';
 import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
 import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
 import {
   accountsForAgent,
-  connectionCountsByAgent,
   getConnectionPoolSnapshot,
   providersForAgent,
   useConnectionPool,
 } from '@/app/runtime';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { connectionKindLabel, parseConnectionFocusFilter } from '@/lib/connection-kind';
-import type { AgentId, EffectiveConnectionKind } from '@/lib/types';
-import { ConnectionList } from './ConnectionList';
-import type { ConnectionEntry, ConnectionFilter } from './connection-model';
+import { parseConnectionFocusFilter } from '@/lib/connection-kind';
+import type { AgentId } from '@/lib/types';
+import { ApiKeyAccountDialog } from '@/pages/accounts/ApiKeyAccountDialog';
+import { ProviderEditDialog } from '@/pages/providers/ProviderEditDialog';
+import { ConnectionTrashButton } from './ConnectionTrashButton';
+import { TicketWalletList } from './TicketWalletList';
+import type { TicketWalletFilter } from './ticket-wallet-model';
+import {
+  closeConfirmationOnOpenChange,
+  preventBusyConfirmationDismissal,
+} from '@/components/shared/busy-confirmation';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { deleteAccount, importCurrentLogin } from '@/lib/api/account';
+import { deleteProvider } from '@/lib/api/provider';
+import type { Account, Provider } from '@/lib/types';
 
-export type ConnectionMode = 'accounts' | 'providers';
-
-function parseAgentParam(raw: string | null, allowed: AgentId[]): AgentId {
+function parseAgentParam(raw: string | null, allowed: AgentId[]): AgentId | null {
   if (raw && allowed.includes(raw as AgentId)) return raw as AgentId;
-  return allowed[0] ?? 'claude';
+  return null;
 }
 
-function pickInstalledAgent(preferred: AgentId, installed: AgentId[]): AgentId {
-  const pool = installed.length ? installed : AGENT_IDS;
-  if (pool.includes(preferred)) return preferred;
-  return pool[0] ?? 'claude';
-}
-
-/** 深链 ?mode= → 列表初始筛选（供应商已并入 API Key） */
-function parseFocusFilter(raw: string | null): ConnectionFilter | null {
-  return parseConnectionFocusFilter(raw);
-}
-
-function effectiveKindLabel(kind: EffectiveConnectionKind): string {
-  if (kind === 'account') return connectionKindLabel('oauth');
-  if (kind === 'api') return connectionKindLabel('apikey');
-  return '未配置';
+function parseWalletFilter(raw: string | null): TicketWalletFilter {
+  const focus = parseConnectionFocusFilter(raw);
+  if (focus === 'oauth') return 'oauth';
+  if (focus === 'apikey') return 'api_key';
+  if (raw?.trim().toLowerCase() === 'unknown') return 'unknown';
+  return 'all';
 }
 
 export default function ConnectionsPage() {
-  const { installedIds, installedAgents, statuses, loading, state, error, reload } =
-    useInstalledAgents();
+  const { installedIds, loading, state, error, reload } = useInstalledAgents();
   const pool = useConnectionPool();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const rawAgent = parseAgentParam(searchParams.get('agent'), installedIds);
-  const agentId = useMemo(
-    () => pickInstalledAgent(rawAgent, installedIds),
-    [rawAgent, installedIds],
-  );
-  const focusFilter = parseFocusFilter(searchParams.get('mode'));
   const allowedAgents = installedIds.length ? installedIds : AGENT_IDS;
+  const highlightAgentId = parseAgentParam(searchParams.get('agent'), allowedAgents);
+  const initialFilter = parseWalletFilter(searchParams.get('mode'));
+  const resumeAgentId = parseResumeAgentId(searchParams.get('resume'), allowedAgents);
+
   const [pendingGuide, setPendingGuide] = useState<ConnectGuide | null>(null);
   const consumedGuideKeyRef = useRef<string | null>(null);
-  const resumeAgentId = parseResumeAgentId(searchParams.get('resume'), allowedAgents);
+
+  const [wallet, setWallet] = useState<TicketWallet | null>(null);
+  const [walletError, setWalletError] = useState<unknown>(null);
+  const [walletLoading, setWalletLoading] = useState(true);
+  const [connectEntry, setConnectEntry] = useState<ConnectFlowEntry | null>(null);
+  const connectDeps = useMemo(() => createDefaultConnectFlowDeps(), []);
+
+  /** Agent context for add/import dialogs (deep-link or picker). */
+  const [addAgentId, setAddAgentId] = useState<AgentId>(
+    () => highlightAgentId ?? allowedAgents[0] ?? 'claude',
+  );
+  const [apiKeyDialogOpen, setApiKeyDialogOpen] = useState(false);
+  const [editProvider, setEditProvider] = useState<Provider | null>(null);
+  const [editAccountKey, setEditAccountKey] = useState<Account | null>(null);
+  const [loginImportOpen, setLoginImportOpen] = useState(false);
+  const [importingAccount, setImportingAccount] = useState(false);
+  const [detailTicket, setDetailTicket] = useState<TicketView | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const guideOpenedApiKeyRef = useRef(false);
 
   useEffect(() => {
     if (pool.state === 'idle') void pool.ensureLoaded();
   }, [pool.ensureLoaded, pool.state]);
 
-  const poolCounts = useMemo(() => {
-    const ids = installedIds.length ? installedIds : [...AGENT_IDS];
-    return connectionCountsByAgent(pool.accounts, pool.providers, ids);
-  }, [installedIds, pool.accounts, pool.providers]);
+  useEffect(() => {
+    if (highlightAgentId) setAddAgentId(highlightAgentId);
+  }, [highlightAgentId]);
 
-  // —— 钱包化增量：行用途反查 + 「用于其他 Agent」连接流程 ——
-  const [profiles, setProfiles] = useState<AdapterProfile[] | null>(null);
-  const [profilesFailed, setProfilesFailed] = useState(false);
-  const [connectEntry, setConnectEntry] = useState<ConnectFlowEntry | null>(null);
-  const connectDeps = useMemo(() => createDefaultConnectFlowDeps(), []);
-  const poolReload = pool.reload;
-
-  /** generation 防竞态：并发加载只让最新一次落盘；返回是否成功。 */
-  const profilesGeneration = useRef(0);
-  const loadProfiles = useCallback(async (): Promise<boolean> => {
-    const generation = ++profilesGeneration.current;
+  const walletGeneration = useRef(0);
+  const loadWallet = useCallback(async (): Promise<boolean> => {
+    const generation = ++walletGeneration.current;
+    setWalletLoading(true);
     try {
-      const list = await listAdapterProfiles();
-      if (profilesGeneration.current === generation) {
-        setProfiles(list);
-        setProfilesFailed(false);
+      const next = await listTicketWallet();
+      if (walletGeneration.current === generation) {
+        setWallet(next);
+        setWalletError(null);
       }
       return true;
-    } catch {
-      // 用途属增强信息：读取失败时保持 incomplete 语义（显示「用途未知」而非「未使用」）
-      if (profilesGeneration.current === generation) {
-        setProfilesFailed(true);
-        setProfiles((prev) => prev ?? []);
+    } catch (e) {
+      if (walletGeneration.current === generation) {
+        setWalletError(e);
+        setWallet((prev) => prev ?? null);
       }
       return false;
+    } finally {
+      if (walletGeneration.current === generation) setWalletLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadProfiles();
-  }, [loadProfiles]);
+    void loadWallet();
+  }, [loadWallet]);
 
-  const usageMap = useMemo(
-    () =>
-      computeConnectionUsageMap({
-        accounts: pool.accounts,
-        providers: pool.providers,
-        profiles: profiles ?? [],
-        poolComplete: pool.state === 'ready' && profiles !== null && !profilesFailed,
-      }),
-    [pool.accounts, pool.providers, pool.state, profiles, profilesFailed],
-  );
+  const poolReload = pool.reload;
 
-  const adapterGeneratedProviderIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const profile of profiles ?? []) {
-      if (profile.generatedProviderId) ids.add(profile.generatedProviderId);
-    }
-    return ids;
-  }, [profiles]);
-
-  const handleReuseRequest = useCallback((entry: ConnectionEntry) => {
-    setConnectEntry({ mode: 'for-source', source: { kind: entry.source, id: entry.id } });
-  }, []);
-
-  /**
-   * 连接变更后重载本页数据；任一失败则抛出，由对话框呈现刷新失败提示。
-   * loadProfiles 返回 boolean，pool/statuses 的 reload 对失败也正常 resolve，
-   * 必须查 store 快照的 state 判定成败。
-   */
   const handleConnectionChanged = useCallback(async () => {
-    const profilesOk = await loadProfiles();
-    // statuses 强制刷新失败会 reject 并回滚为此前的 ready 快照——必须用 promise 结果
-    // 判定；连接池刷新失败则保留旧 state:'ready' 并写 errors——必须查快照 errors。
+    const walletOk = await loadWallet();
     const [, statusesOk] = await Promise.all([
       poolReload().catch(() => {}),
       Promise.resolve(reload()).then(
@@ -162,22 +147,14 @@ export default function ConnectionsPage() {
     ]);
     const poolSnapshot = getConnectionPoolSnapshot();
     const poolOk =
-      poolSnapshot.state === 'ready' && !poolSnapshot.errors.accounts && !poolSnapshot.errors.providers;
-    if (!profilesOk || !poolOk || !statusesOk) {
+      poolSnapshot.state === 'ready'
+      && !poolSnapshot.errors.accounts
+      && !poolSnapshot.errors.providers;
+    if (!walletOk || !poolOk || !statusesOk) {
       throw new Error('列表刷新失败，可手动刷新查看最新状态');
     }
-  }, [poolReload, loadProfiles, reload]);
+  }, [loadWallet, poolReload, reload]);
 
-  useEffect(() => {
-    if (agentId === rawAgent) return;
-    const next = new URLSearchParams(searchParams);
-    if (agentId === 'claude') next.delete('agent');
-    else next.set('agent', agentId);
-    setSearchParams(next, { replace: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, rawAgent]);
-
-  /** 一次性消费 intent：写入 pendingGuide 后立刻从 URL 去掉，刷新不再弹窗。 */
   useEffect(() => {
     const allowed = installedIds.length ? installedIds : AGENT_IDS;
     const guide = readConnectGuide(searchParams, allowed);
@@ -185,51 +162,128 @@ export default function ConnectionsPage() {
       consumedGuideKeyRef.current = null;
       return;
     }
-
     const key = searchParams.toString();
     if (consumedGuideKeyRef.current === key) return;
-
     consumedGuideKeyRef.current = key;
     setPendingGuide(guide);
+    if (guide.resumeAgentId) setAddAgentId(guide.resumeAgentId);
+    // Prefer agent from URL when present
+    const agentFromUrl = parseAgentParam(searchParams.get('agent'), allowed);
+    if (agentFromUrl) setAddAgentId(agentFromUrl);
     setSearchParams(consumeConnectIntent(searchParams), { replace: true });
   }, [installedIds, searchParams, setSearchParams]);
 
-  const setAgent = (id: AgentId) => {
-    setPendingGuide(null);
-    const next = new URLSearchParams(searchParams);
-    if (id === 'claude') next.delete('agent');
-    else next.set('agent', id);
-    next.delete('mode');
-    next.delete('intent');
-    next.delete('resume');
-    setSearchParams(next, { replace: true });
-  };
+  useEffect(() => {
+    const intent = pendingGuide?.intent ?? null;
+    if (!intent) return;
+    if (intent === 'add-key') {
+      guideOpenedApiKeyRef.current = true;
+      setEditProvider(null);
+      setApiKeyDialogOpen(true);
+      setPendingGuide(null);
+      return;
+    }
+    if (intent === 'import-login') {
+      setLoginImportOpen(true);
+      setPendingGuide(null);
+    }
+  }, [pendingGuide]);
 
   const handleGuideSucceeded = useCallback(() => {
-    const resume = pendingGuide?.resumeAgentId;
+    const resume = pendingGuide?.resumeAgentId ?? resumeAgentId;
     setPendingGuide(null);
     if (resume) navigate(buildResumeConnectUrl(resume));
-  }, [navigate, pendingGuide]);
+  }, [navigate, pendingGuide, resumeAgentId]);
 
-  const agentStatus = statuses?.find((item) => item.agentId === agentId);
-  const liveEffective = resolveEffectiveConnection(
-    accountsForAgent(pool.accounts, agentId).find((account) => account.isCurrent),
-    providersForAgent(pool.providers, agentId).find((provider) => provider.isCurrent),
+  const handleConnectTicket = useCallback((ticket: TicketView) => {
+    setConnectEntry({
+      mode: 'for-source',
+      source: { kind: ticket.sourceKind, id: ticket.sourceId },
+    });
+  }, []);
+
+  const handleDetailTicket = useCallback(
+    (ticket: TicketView) => {
+      setDetailTicket(ticket);
+      if (ticket.sourceKind === 'provider') {
+        const provider = providersForAgent(pool.providers, ticket.agentId).find(
+          (p) => p.id === ticket.sourceId,
+        ) ?? pool.providers.find((p) => p.id === ticket.sourceId);
+        if (provider) {
+          setEditProvider(provider);
+          setApiKeyDialogOpen(true);
+          return;
+        }
+      }
+      if (ticket.sourceKind === 'account') {
+        const account = accountsForAgent(pool.accounts, ticket.agentId).find(
+          (a) => a.id === ticket.sourceId,
+        ) ?? pool.accounts.find((a) => a.id === ticket.sourceId);
+        if (account?.kind === 'apikey') {
+          setEditAccountKey(account);
+          return;
+        }
+      }
+      toast({
+        title: ticket.label,
+        description: `${ticketCredentialHint(ticket)} · 所属 ${agentDisplayName(ticket.agentId)}`,
+      });
+    },
+    [pool.accounts, pool.providers, toast],
   );
-  const effectiveKind: EffectiveConnectionKind =
-    liveEffective.kind !== 'none' ? liveEffective.kind : agentStatus?.effectiveKind ?? 'none';
-  const effectiveLabel =
-    liveEffective.kind !== 'none' ? liveEffective.label : agentStatus?.effectiveLabel;
-  const agentName = agentDisplayName(agentId);
+
+  const confirmImportLogin = async () => {
+    setImportingAccount(true);
+    try {
+      const acc = await importCurrentLogin(addAgentId);
+      setLoginImportOpen(false);
+      toast({
+        title: '已导入当前登录态',
+        description: `${acc.label} 已入库`,
+        variant: 'success',
+      });
+      await loadWallet();
+      await poolReload().catch(() => {});
+      handleGuideSucceeded();
+    } catch (e) {
+      toast({
+        title: '导入失败',
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
+    } finally {
+      setImportingAccount(false);
+    }
+  };
+
+  const confirmDeleteDetail = async () => {
+    if (!detailTicket) return;
+    setDeleteBusy(true);
+    try {
+      if (detailTicket.sourceKind === 'account') {
+        await deleteAccount(detailTicket.agentId, detailTicket.sourceId);
+      } else {
+        await deleteProvider(detailTicket.agentId, detailTicket.sourceId);
+      }
+      setDetailTicket(null);
+      toast({ title: '已移入回收站', variant: 'success' });
+      await loadWallet();
+      await poolReload().catch(() => {});
+    } catch (e) {
+      toast({
+        title: '删除失败',
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
 
   if (loading) {
     return (
       <div>
-        <PageHeader
-          title="连接"
-          description="官方登录 · API Key"
-          descriptionTip="正在检测已安装的 Agent。"
-        />
+        <PageHeader title="连接" description="钱包" descriptionTip="正在检测已安装的 Agent。" />
         <div className={pageRhythm.chrome}>
           <ListSkeleton rows={4} />
         </div>
@@ -240,16 +294,8 @@ export default function ConnectionsPage() {
   if (state === 'error') {
     return (
       <div>
-        <PageHeader
-          title="连接"
-          description="官方登录 · API Key"
-          descriptionTip="Agent 检测失败，请重试后再管理连接。"
-        />
-        <ErrorState
-          error={error}
-          title="无法读取 Agent 安装状态"
-          onRetry={() => void reload()}
-        />
+        <PageHeader title="连接" description="钱包" descriptionTip="Agent 检测失败，请重试后再管理连接。" />
+        <ErrorState error={error} title="无法读取 Agent 安装状态" onRetry={() => void reload()} />
       </div>
     );
   }
@@ -257,11 +303,7 @@ export default function ConnectionsPage() {
   if (!loading && installedIds.length === 0) {
     return (
       <div>
-        <PageHeader
-          title="连接"
-          description="官方登录 · API Key"
-          descriptionTip="先安装 Agent，再管理连接。"
-        />
+        <PageHeader title="连接" description="钱包" descriptionTip="先安装 Agent，再管理连接。" />
         <EmptyState
           icon={Cable}
           title="尚未安装 Agent"
@@ -278,40 +320,12 @@ export default function ConnectionsPage() {
       <PageHeader
         title="连接"
         description={
-          effectiveKind !== 'none' && effectiveLabel
-            ? `${agentName} · 当前生效：${effectiveKindLabel(effectiveKind)} · ${effectiveLabel}`
-            : `${agentName} · 当前生效：未配置`
+          wallet
+            ? `钱包 · ${wallet.tickets.length} 张票`
+            : '钱包 · 官方登录 / API Key'
         }
-        descriptionTip="官方登录与 API Key 在同一列表；可使用官方服务或自定义服务地址。同时只能有一条当前使用的连接。"
+        descriptionTip="跨 Agent 的票列表。每张真票都可「接到…」其他 Agent；生成投影不出现在本页。"
       />
-
-      <div className={pageRhythm.chrome}>
-        <AgentTabStrip
-          value={agentId}
-          onChange={setAgent}
-          agents={installedAgents}
-          aria-label="选择 Agent"
-          counts={poolCounts}
-          countMode="positive"
-          countTitle={(_id, n) => `${n} 条连接`}
-          renderEnd={(id) => {
-            if (id === 'all') return null;
-            const st = statuses?.find((s) => s.agentId === id);
-            const hasEffective = Boolean(st?.effectiveKind && st.effectiveKind !== 'none');
-            if (!hasEffective) return null;
-            return (
-              <StatusPin
-                tone="success"
-                label={
-                  st?.effectiveLabel
-                    ? `当前生效：${st.effectiveLabel}`
-                    : '已配置生效连接'
-                }
-              />
-            );
-          }}
-        />
-      </div>
 
       {resumeAgentId ? (
         <div className={pageRhythm.lead}>
@@ -325,19 +339,46 @@ export default function ConnectionsPage() {
         </div>
       ) : null}
 
-      {/* 当前生效只保留在 PageHeader description，避免与条下横幅重复 */}
-      <ConnectionList
-        agentId={agentId}
-        agentStatuses={statuses ?? []}
-        initialFilter={focusFilter ?? 'all'}
-        usageMap={usageMap}
-        adapterGeneratedProviderIds={adapterGeneratedProviderIds}
-        // fail-closed：profiles 未成功加载前无法识别 adapter 生成的 Provider，
-        // 复用入口整体隐藏，避免生成投影短暂出现「用于其他 Agent」形成二次投影链
-        onReuseRequest={profiles !== null && !profilesFailed ? handleReuseRequest : undefined}
-        guideIntent={pendingGuide?.intent ?? null}
-        onGuideSucceeded={handleGuideSucceeded}
-      />
+      {walletError && !wallet ? (
+        <ErrorState
+          error={walletError}
+          title="无法读取票钱包"
+          onRetry={() => void loadWallet()}
+        />
+      ) : (
+        <>
+          {walletError && wallet ? (
+            <Notice
+              className="mb-3 text-sm"
+              tone="warning"
+              actionLabel="重试"
+              onAction={() => void loadWallet()}
+            >
+              票钱包刷新失败，下方仍是上次成功加载的数据。
+            </Notice>
+          ) : null}
+          <TicketWalletList
+            wallet={wallet}
+            loading={walletLoading}
+            highlightAgentId={highlightAgentId}
+            initialFilter={initialFilter}
+            onConnectTicket={handleConnectTicket}
+            onDetailTicket={handleDetailTicket}
+            addAgentId={addAgentId}
+            installedAgentIds={allowedAgents}
+            onPickAddAgent={setAddAgentId}
+            onAddKey={() => {
+              setEditProvider(null);
+              setApiKeyDialogOpen(true);
+            }}
+            onImportLogin={() => setLoginImportOpen(true)}
+          />
+        </>
+      )}
+
+      <div className="mt-4">
+        <ConnectionTrashButton onChanged={() => void loadWallet()} />
+      </div>
 
       <ConnectFlowDialog
         entry={connectEntry}
@@ -346,6 +387,111 @@ export default function ConnectionsPage() {
         onConnectionChanged={handleConnectionChanged}
         onNavigate={(to) => navigate(to)}
       />
+
+      <Dialog
+        open={loginImportOpen}
+        onOpenChange={(open) =>
+          closeConfirmationOnOpenChange(open, importingAccount, () => setLoginImportOpen(false))
+        }
+      >
+        <DialogContent
+          className="max-w-sm"
+          hideClose={importingAccount}
+          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(importingAccount, event)}
+          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(importingAccount, event)}
+          onInteractOutside={(event) => preventBusyConfirmationDismissal(importingAccount, event)}
+        >
+          <DialogHeader>
+            <DialogTitle>导入当前登录态？</DialogTitle>
+            <DialogDescription>
+              将读取 {agentDisplayName(addAgentId)} 本机官方 CLI 已完成的登录；AgentHub 不会在此发起新的授权。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={importingAccount}
+              onClick={() => setLoginImportOpen(false)}
+            >
+              取消
+            </Button>
+            <Button disabled={importingAccount} onClick={() => void confirmImportLogin()}>
+              {importingAccount ? '导入中…' : '确认导入'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(detailTicket) && !apiKeyDialogOpen && !editAccountKey}
+        onOpenChange={(open) => {
+          if (!open && !deleteBusy) setDetailTicket(null);
+        }}
+      >
+        <DialogContent className="max-w-sm" hideClose={deleteBusy}>
+          <DialogHeader>
+            <DialogTitle>{detailTicket?.label}</DialogTitle>
+            <DialogDescription>
+              {detailTicket
+                ? `${ticketCredentialHint(detailTicket)} · 所属 ${agentDisplayName(detailTicket.agentId)}`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" disabled={deleteBusy} onClick={() => setDetailTicket(null)}>
+              关闭
+            </Button>
+            <Button
+              variant="danger"
+              disabled={deleteBusy}
+              onClick={() => void confirmDeleteDetail()}
+            >
+              {deleteBusy ? '删除中…' : '移入回收站'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ApiKeyAccountDialog
+        agentId={addAgentId}
+        mode="edit"
+        account={editAccountKey}
+        open={!!editAccountKey}
+        onOpenChange={(v) => !v && setEditAccountKey(null)}
+        onSaved={() => {
+          setEditAccountKey(null);
+          void loadWallet();
+          void poolReload();
+        }}
+      />
+      <ProviderEditDialog
+        agentId={editProvider?.agentId ?? addAgentId}
+        mode={editProvider ? 'edit' : 'add'}
+        provider={editProvider}
+        open={apiKeyDialogOpen}
+        onOpenChange={(v) => {
+          setApiKeyDialogOpen(v);
+          if (!v) {
+            setEditProvider(null);
+            guideOpenedApiKeyRef.current = false;
+          }
+        }}
+        onSaved={() => {
+          const fromGuide = guideOpenedApiKeyRef.current;
+          setApiKeyDialogOpen(false);
+          setEditProvider(null);
+          guideOpenedApiKeyRef.current = false;
+          void loadWallet();
+          void poolReload();
+          if (fromGuide) handleGuideSucceeded();
+        }}
+      />
     </div>
   );
+}
+
+function ticketCredentialHint(ticket: TicketView): string {
+  if (ticket.credentialClass === 'oauth') return '官方登录';
+  if (ticket.credentialClass === 'api_key') return 'API Key';
+  return '未识别';
 }

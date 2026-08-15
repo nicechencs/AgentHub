@@ -65,6 +65,47 @@ impl ProviderRepo {
         })
     }
 
+    /// Persist healed `meta` (ticket surface) without allowing a stale caller
+    /// to overwrite `is_current`, `settings_config`, or `name`.
+    ///
+    /// Narrower than [`AccountRepo::update_healed_fields`]: only `meta` and
+    /// `updated_at` are written. The expected `updated_at` is an optimistic
+    /// concurrency token.
+    pub fn update_healed_fields(
+        &self,
+        provider: &Provider,
+        expected_updated_at: &str,
+        updated_at: &str,
+    ) -> Result<Provider> {
+        self.mutate(|conn| {
+            let meta = serde_json::to_string(&provider.meta)?;
+            let changed = conn.execute(
+                r#"
+                UPDATE providers SET
+                    meta = ?2,
+                    updated_at = ?3
+                WHERE id = ?1 AND agent_id = ?4 AND updated_at = ?5
+                "#,
+                params![
+                    provider.id,
+                    meta,
+                    updated_at,
+                    provider.agent_id.as_str(),
+                    expected_updated_at,
+                ],
+            )?;
+            if changed != 1 {
+                return Err(AppError::message(
+                    "provider.conflict",
+                    format!("provider changed before field update: {}", provider.id),
+                ));
+            }
+            get_by_id_conn(conn, &provider.id)?.ok_or_else(|| {
+                AppError::message("db.provider", "provider missing after field update")
+            })
+        })
+    }
+
     /// Insert or update a full provider row.
     ///
     /// Existing-row path preserves `created_at` and rejects `agent_id` changes.
