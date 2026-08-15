@@ -2,9 +2,9 @@ use super::*;
 use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::Result;
 use crate::models::{
-    ticket_id, Account, AccountKind, AgentConfig, AgentId, AuthState, Capability, CapabilityState,
-    DetectResult, DetectStatus, InstallChannel, Provider, RunOptions, RunSpec, TicketBindingRoute,
-    TicketPlanRequest, TicketUnbindRequest, PROJECTION_NOT_A_TICKET,
+    ticket_id, Account, AccountKind, AdapterSupport, AgentConfig, AgentId, AuthState, Capability,
+    CapabilityState, DetectResult, DetectStatus, InstallChannel, Provider, RunOptions, RunSpec,
+    TicketBindingRoute, TicketPlanRequest, TicketUnbindRequest, PROJECTION_NOT_A_TICKET,
 };
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
 use serde_json::json;
@@ -12,14 +12,20 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 struct FakeClaudeAdapter {
+    agent: AgentId,
     config: Mutex<AgentConfig>,
 }
 
 impl FakeClaudeAdapter {
     fn new() -> Self {
+        Self::new_for(AgentId::Claude)
+    }
+
+    fn new_for(agent: AgentId) -> Self {
         Self {
+            agent,
             config: Mutex::new(AgentConfig {
-                agent: AgentId::Claude,
+                agent,
                 raw: json!({}),
             }),
         }
@@ -28,7 +34,7 @@ impl FakeClaudeAdapter {
 
 impl AgentAdapter for FakeClaudeAdapter {
     fn id(&self) -> AgentId {
-        AgentId::Claude
+        self.agent
     }
     fn detect(&self) -> DetectResult {
         DetectResult {
@@ -216,6 +222,25 @@ fn anthropic_account(id: &str, api_key: &str) -> Account {
     }
 }
 
+fn kimi_account(id: &str, api_key: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Kimi,
+        kind: AccountKind::ApiKey,
+        label: "Kimi Code membership".into(),
+        credentials: json!({
+            "format": "api_key",
+            "api_key": api_key,
+            "provider": "kimi-code-membership",
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
 fn subscription_account(
     id: &str,
     agent_id: AgentId,
@@ -360,6 +385,68 @@ fn bind_anthropic_account_to_pi_requires_can_apply_and_keeps_account_source_ref(
 }
 
 #[test]
+fn bind_kimi_account_to_claude_and_pi_then_unbind_keeps_source_ticket() {
+    let (dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&kimi_account("kimi-account", "kimi-account-secret"))
+        .unwrap();
+    let service = bind_service(
+        db.clone(),
+        dir.path().join("backups"),
+        vec![
+            Arc::new(FakeClaudeAdapter::new()),
+            Arc::new(FakePiAdapter::new()),
+        ],
+    );
+
+    let claude = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "kimi-account"),
+            target_agent_id: AgentId::Claude,
+        })
+        .unwrap();
+    assert!(claude.active);
+    let claude_profile = AdapterProfileRepo::new(db.clone())
+        .get(claude.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(claude_profile.source_kind, AdapterSourceKind::Account);
+    assert_eq!(claude_profile.rule_id, "kimi-membership-to-claude-v1");
+    service
+        .unbind(&TicketUnbindRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "kimi-account"),
+            agent_id: AgentId::Claude,
+        })
+        .unwrap();
+
+    let pi = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "kimi-account"),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap();
+    assert!(pi.active);
+    let pi_profile = AdapterProfileRepo::new(db.clone())
+        .get(pi.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(pi_profile.source_kind, AdapterSourceKind::Account);
+    assert_eq!(pi_profile.rule_id, "kimi-membership-to-pi-v1");
+    service
+        .unbind(&TicketUnbindRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "kimi-account"),
+            agent_id: AgentId::Pi,
+        })
+        .unwrap();
+
+    let source = AccountRepo::new(db)
+        .get_by_id("kimi-account")
+        .unwrap()
+        .expect("source account remains after unbind");
+    assert_eq!(source.credentials["api_key"], "kimi-account-secret");
+}
+
+#[test]
 fn bind_openai_and_xai_provider_and_account_to_pi_then_unbind() {
     let (dir, db) = test_db();
     ProviderRepo::new(db.clone())
@@ -436,6 +523,70 @@ fn bind_openai_and_xai_provider_and_account_to_pi_then_unbind() {
         target_agent_id: AgentId::Pi,
     });
     assert!(relay.is_err(), "unknown custom relay must not bind");
+}
+
+#[test]
+fn bind_glm_provider_and_deepseek_account_to_pi_then_unbind() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "glm-source",
+            "glm-coding-plan",
+            "ANTHROPIC_AUTH_TOKEN",
+            "glm-bind-secret",
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&explicit_api_account(
+            "deepseek-account",
+            "deepseek-api",
+            "deepseek-bind-secret",
+        ))
+        .unwrap();
+    let service = bind_service(
+        db.clone(),
+        dir.path().join("backups"),
+        vec![Arc::new(FakePiAdapter::new())],
+    );
+
+    let glm = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Provider, "glm-source"),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap();
+    assert!(glm.active);
+    let glm_profile = AdapterProfileRepo::new(db.clone())
+        .get(glm.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(glm_profile.rule_id, "glm-coding-plan-to-pi-v1");
+    service
+        .unbind(&TicketUnbindRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Provider, "glm-source"),
+            agent_id: AgentId::Pi,
+        })
+        .unwrap();
+
+    let deepseek = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "deepseek-account"),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap();
+    assert!(deepseek.active);
+    let deepseek_profile = AdapterProfileRepo::new(db.clone())
+        .get(deepseek.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(deepseek_profile.rule_id, "deepseek-api-to-pi-v1");
+    assert_eq!(deepseek_profile.source_kind, AdapterSourceKind::Account);
+    service
+        .unbind(&TicketUnbindRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "deepseek-account"),
+            agent_id: AgentId::Pi,
+        })
+        .unwrap();
 }
 
 #[test]
@@ -720,4 +871,72 @@ fn bind_glm_and_deepseek_to_claude_then_unbind_rejects_unknown_relay() {
         target_agent_id: AgentId::Claude,
     });
     assert!(relay.is_err(), "unknown custom relay must not bind");
+}
+
+#[test]
+fn bind_glm_provider_and_deepseek_account_to_codex_native_responses() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "glm-codex-source",
+            "glm-coding-plan",
+            "ANTHROPIC_AUTH_TOKEN",
+            "glm-codex-secret",
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&explicit_api_account(
+            "deepseek-codex-account",
+            "deepseek-api",
+            "deepseek-codex-secret",
+        ))
+        .unwrap();
+    let tickets = TicketReadService::new(db.clone());
+    for (kind, id, rule) in [
+        (
+            AdapterSourceKind::Provider,
+            "glm-codex-source",
+            "glm-coding-plan-to-codex-v1",
+        ),
+        (
+            AdapterSourceKind::Account,
+            "deepseek-codex-account",
+            "deepseek-api-to-codex-v1",
+        ),
+    ] {
+        let plan = tickets
+            .plan(&TicketPlanRequest {
+                ticket_id: ticket_id(kind, id),
+                target_agent_id: AgentId::Codex,
+            })
+            .unwrap();
+        assert!(plan.can_apply);
+        assert_eq!(plan.analysis.route, AdapterRoute::NativeEndpoint);
+        assert_eq!(plan.analysis.support, AdapterSupport::Experimental);
+        assert_eq!(
+            plan.reuse_path,
+            crate::models::AdapterReusePath::ApiEndpoint
+        );
+        assert_eq!(plan.analysis.rule_id.as_deref(), Some(rule));
+    }
+
+    let service = bind_service(
+        db.clone(),
+        dir.path().join("backups"),
+        vec![Arc::new(FakeClaudeAdapter::new_for(AgentId::Codex))],
+    );
+    let binding = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Provider, "glm-codex-source"),
+            target_agent_id: AgentId::Codex,
+        })
+        .unwrap();
+    assert!(binding.active);
+    assert_eq!(binding.route, TicketBindingRoute::Reshape);
+    let profile = AdapterProfileRepo::new(db)
+        .get(binding.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(profile.rule_id, "glm-coding-plan-to-codex-v1");
+    assert_eq!(profile.route, AdapterRoute::NativeEndpoint);
 }

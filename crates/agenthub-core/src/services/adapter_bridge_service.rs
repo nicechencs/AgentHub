@@ -501,7 +501,8 @@ impl AdapterBridgeService {
         // token stays only in the returned in-memory material.
         let upstream_auth = match rule.protocol {
             BridgeUpstreamProtocol::KimiChatCompletions => {
-                self.secrets.resolve_kimi_membership_auth(source_id)?
+                self.secrets
+                    .resolve_kimi_membership_auth(request.source_kind, source_id)?
             }
             BridgeUpstreamProtocol::AnthropicMessages => self
                 .secrets
@@ -939,7 +940,7 @@ impl AdapterBridgeService {
         let upstream_auth = match rule.protocol {
             BridgeUpstreamProtocol::KimiChatCompletions => self
                 .secrets
-                .resolve_kimi_membership_auth(&profile.source_id)?,
+                .resolve_kimi_membership_auth(profile.source_kind, &profile.source_id)?,
             BridgeUpstreamProtocol::AnthropicMessages => self
                 .secrets
                 .resolve_anthropic_auth(profile.source_kind, &profile.source_id)?,
@@ -980,7 +981,10 @@ impl AdapterBridgeService {
             })?;
         let source_ok = match rule.protocol {
             BridgeUpstreamProtocol::KimiChatCompletions => {
-                request.source_kind == AdapterSourceKind::Provider
+                matches!(
+                    request.source_kind,
+                    AdapterSourceKind::Provider | AdapterSourceKind::Account
+                )
             }
             BridgeUpstreamProtocol::AnthropicMessages => matches!(
                 request.source_kind,
@@ -1015,7 +1019,10 @@ impl AdapterBridgeService {
             AppError::NotFound(format!("adapter profile not found: {profile_id}"))
         })?;
         let supported_source = match profile.rule_id.as_str() {
-            RULE_ID => profile.source_kind == AdapterSourceKind::Provider,
+            RULE_ID => matches!(
+                profile.source_kind,
+                AdapterSourceKind::Provider | AdapterSourceKind::Account
+            ),
             ANTHROPIC_RULE_ID => matches!(
                 profile.source_kind,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account

@@ -137,7 +137,7 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 
 ## 6. 技术方案（文件级，v2）
 
-### 共享契约（Fable 骨架先行，实施者只依赖此契约与既有 lib/api）
+### 共享契约（类型骨架先行，实施者只依赖此契约与既有 lib/api）
 
 `src/lib/connect-flow/types.ts` 至少定义：
 
@@ -152,7 +152,7 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 
 | 文件 | 内容 | 所有权 |
 |---|---|---|
-| `src/lib/connect-flow/types.ts` | 上述共享契约 | Fable（骨架） |
+| `src/lib/connect-flow/types.ts` | 上述共享契约 | 类型骨架 |
 | `src/lib/connect-flow/eligibility.ts` | 纯函数：plan → `PlanEligibility` 映射；来源分组/排除（生成 Provider、目标自有）；OAuth 未完成预检 | C1 |
 | `src/lib/connect-flow/plan-fanout.ts` | 可注入命令式 fan-out controller（并发上限/去重/缓存失效/generation）+ 薄 hook | C1 |
 | `src/lib/connect-flow/connection-usage.ts` | 纯函数：用途反查（§3.1C 算法，含"未知/不完整"态） | C1 |
@@ -167,14 +167,14 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 |---|---|---|
 | `src/pages/dashboard/agentOverviewModel.ts` + `agentOverviewModel.test.ts` | `action` 判别联合替代 `target` 字符串；徽标字段（经兼容路由/桥状态，输入为 profiles+providers 联结结果）；测试同步更新 | C3 |
 | `src/pages/dashboard/AgentOverview.tsx` | 徽标渲染；点击/键盘统一走 `action`；`onConnectRequest(agentId)` 回调（不 import 对话框） | C3 |
-| `src/pages/dashboard/index.tsx` | 挂载 ConnectFlowDialog、接线 `onConnectRequest`/`onConnectionChanged`（重载 agents+profiles+连接池）、桥状态轮询接入 | Fable（集成） |
+| `src/pages/dashboard/index.tsx` | 挂载 ConnectFlowDialog、接线 `onConnectRequest`/`onConnectionChanged`（重载 agents+profiles+连接池）、桥状态轮询接入 | 页面集成 |
 | `src/pages/connections/connection-model.ts` + `connection-model.test.ts` | 行模型增加用途字段（消费 C1 的 connection-usage 输出） | C4 |
 | `src/pages/connections/ConnectionList.tsx`、`ConnectionCard.tsx` | 用途展示；"用于其他 Agent"动作 `onReuseRequest(entry)` 回调（生成 Provider 不显示入口） | C4 |
-| `src/pages/connections/index.tsx` | 挂载 ConnectFlowDialog、接线回调与刷新 | Fable（集成） |
+| `src/pages/connections/index.tsx` | 挂载 ConnectFlowDialog、接线回调与刷新 | 页面集成 |
 
 ### 依赖与并行规则（v2）
 
-- 依赖顺序：`types.ts`（Fable）→ C1（实现契约）与 C2/C3/C4（按契约并行，测试注入 fake 实现）→ Fable 集成接线。
+- 依赖顺序：`types.ts`（类型骨架）→ C1（实现契约）与 C2/C3/C4（按契约并行，测试注入 fake 实现）→ 页面集成接线。
 - C2/C3/C4 不 import 彼此与 C1 的实现文件，只 import `types.ts` 与既有 `lib/api`（C4 例外：可 import `connection-usage` 的**函数签名**，测试用 fake）。
 - 不新增依赖；不改 `package.json`、路由、侧栏；不改 `src/lib/api/adapter.ts`。
 

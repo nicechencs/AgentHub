@@ -40,6 +40,25 @@ fn kimi_coding_provider_without_preset(id: &str) -> Provider {
     }
 }
 
+fn kimi_membership_account(id: &str, kind: AccountKind, tagged: bool) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Kimi,
+        kind,
+        label: "Kimi Code membership".into(),
+        credentials: serde_json::json!({
+            "format": if kind == AccountKind::ApiKey { "api_key" } else { "oauth" },
+            "api_key": if kind == AccountKind::ApiKey { "must-not-leak" } else { "" },
+            "provider": if tagged { "kimi-code-membership" } else { "kimi" },
+        }),
+        extra: serde_json::json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
 fn request(
     source_kind: AdapterSourceKind,
     source_id: &str,
@@ -154,6 +173,70 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
         .iter()
         .filter(|action| action.secret)
         .all(|action| action.value.is_none()));
+}
+
+#[test]
+fn kimi_membership_account_uses_provider_edges_but_managed_oauth_stays_closed() {
+    let (_dir, db) = test_db();
+    let accounts = AccountRepo::new(db.clone());
+    accounts
+        .create(&kimi_membership_account(
+            "kimi-account",
+            AccountKind::ApiKey,
+            true,
+        ))
+        .unwrap();
+    accounts
+        .create(&kimi_membership_account(
+            "kimi-bare-account",
+            AccountKind::ApiKey,
+            false,
+        ))
+        .unwrap();
+    accounts
+        .create(&kimi_membership_account(
+            "kimi-oauth-account",
+            AccountKind::Oauth,
+            true,
+        ))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    for target in [AgentId::Claude, AgentId::Pi, AgentId::Codex] {
+        let plan = service
+            .plan(&request(AdapterSourceKind::Account, "kimi-account", target))
+            .unwrap();
+        assert!(plan.can_apply, "{target}");
+        assert_eq!(
+            plan.analysis.reason,
+            match target {
+                AgentId::Claude => "Kimi Code 会员可预览为 Claude 的原生 Anthropic Messages 端点。",
+                AgentId::Pi => "Kimi Code 会员可预览为 Pi 的配置同步。",
+                AgentId::Codex => "Kimi Code 会员到 Codex 需要本地协议桥接。",
+                _ => unreachable!(),
+            }
+        );
+    }
+
+    let bare = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "kimi-bare-account",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert!(!bare.can_apply);
+    assert!(bare.reason.contains("Kimi Code 会员"));
+
+    let oauth = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "kimi-oauth-account",
+            AgentId::Pi,
+        ))
+        .unwrap();
+    assert!(!oauth.can_apply);
+    assert_eq!(oauth.analysis.route, AdapterRoute::Unsupported);
 }
 
 #[test]
@@ -368,13 +451,13 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
             .unwrap(),
         crate::models::AdapterSourceProduct::GlmCodingPlan
     );
-    assert!(!glm.can_apply);
-    assert_eq!(glm.analysis.route, AdapterRoute::Unsupported);
-    assert!(
-        glm.analysis.reason.contains("同协议但无已验证的边"),
-        "GLM → Pi reason must come from the protocol graph: {}",
-        glm.analysis.reason
+    assert!(glm.can_apply);
+    assert_eq!(glm.analysis.route, AdapterRoute::ConfigSync);
+    assert_eq!(
+        glm.analysis.rule_id.as_deref(),
+        Some("glm-coding-plan-to-pi-v1")
     );
+    assert_eq!(glm.changes[0].value.as_deref(), Some("glm-coding-plan"));
 
     let deepseek = service
         .plan(&request(
@@ -389,7 +472,13 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
             .unwrap(),
         crate::models::AdapterSourceProduct::DeepseekApi
     );
-    assert!(!deepseek.can_apply);
+    assert!(deepseek.can_apply);
+    assert_eq!(deepseek.analysis.route, AdapterRoute::ConfigSync);
+    assert_eq!(
+        deepseek.analysis.rule_id.as_deref(),
+        Some("deepseek-api-to-pi-v1")
+    );
+    assert_eq!(deepseek.changes[0].value.as_deref(), Some("deepseek"));
 
     accounts
         .create(&api_key_account("glm-account", "glm-coding-plan"))
@@ -397,6 +486,18 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
     accounts
         .create(&api_key_account("deepseek-account", "deepseek-api"))
         .unwrap();
+    for (source_id, rule, slot) in [
+        ("glm-account", "glm-coding-plan-to-pi-v1", "glm-coding-plan"),
+        ("deepseek-account", "deepseek-api-to-pi-v1", "deepseek"),
+    ] {
+        let plan = service
+            .plan(&request(AdapterSourceKind::Account, source_id, AgentId::Pi))
+            .unwrap();
+        assert!(plan.can_apply, "{source_id}");
+        assert_eq!(plan.analysis.rule_id.as_deref(), Some(rule));
+        assert_eq!(plan.changes[0].value.as_deref(), Some(slot));
+        assert!(plan.changes[1].secret);
+    }
     for (source_kind, source_id, rule, base_url) in [
         (
             AdapterSourceKind::Provider,
@@ -1237,6 +1338,68 @@ fn deepseek_to_claude_plan_is_experimental() {
         plan.analysis.rule_id.as_deref(),
         Some("deepseek-api-to-claude-v1")
     );
+}
+
+#[test]
+fn glm_and_deepseek_codex_provider_and_account_plans_are_native_and_writable() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider("glm-codex", AgentId::Claude, "glm-coding-plan"))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "deepseek-codex".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::ApiKey,
+            label: "DeepSeek".into(),
+            credentials: serde_json::json!({
+                "format": "api_key",
+                "api_key": "must-not-leak"
+            }),
+            extra: serde_json::json!({ "provider": "deepseek-api" }),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    for (kind, id, rule, base_url) in [
+        (
+            AdapterSourceKind::Provider,
+            "glm-codex",
+            "glm-coding-plan-to-codex-v1",
+            "https://open.bigmodel.cn/api/v1",
+        ),
+        (
+            AdapterSourceKind::Account,
+            "deepseek-codex",
+            "deepseek-api-to-codex-v1",
+            "https://api.deepseek.com",
+        ),
+    ] {
+        let plan = service.plan(&request(kind, id, AgentId::Codex)).unwrap();
+        assert_eq!(plan.analysis.route, AdapterRoute::NativeEndpoint);
+        assert_eq!(plan.analysis.support, AdapterSupport::Experimental);
+        assert!(plan.can_apply);
+        assert_eq!(
+            plan.reuse_path,
+            crate::models::AdapterReusePath::ApiEndpoint
+        );
+        assert_eq!(plan.analysis.rule_id.as_deref(), Some(rule));
+        assert_eq!(plan.service_impact, AdapterServiceImpact::None);
+        assert!(plan.changes.iter().any(|change| {
+            change.field == "baseUrl" && change.value.as_deref() == Some(base_url)
+        }));
+        assert!(plan
+            .changes
+            .iter()
+            .all(|change| !change.secret || change.value.is_none()));
+        assert!(!serde_json::to_string(&plan)
+            .unwrap()
+            .contains("must-not-leak"));
+    }
 }
 
 #[derive(Debug, serde::Deserialize)]

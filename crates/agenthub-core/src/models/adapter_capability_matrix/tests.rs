@@ -205,6 +205,34 @@ fn pi_config_sync_rules_can_apply() {
     assert_eq!(xai_pi.route, AdapterRoute::ConfigSync);
     assert!(xai_pi.can_apply);
     assert_eq!(xai_pi.rule_id, Some("xai-api-to-pi-v1"));
+
+    for (source, rule) in [
+        (
+            AdapterSourceProduct::GlmCodingPlan,
+            "glm-coding-plan-to-pi-v1",
+        ),
+        (AdapterSourceProduct::DeepseekApi, "deepseek-api-to-pi-v1"),
+    ] {
+        let cell = ADAPTER_CAPABILITY_MATRIX
+            .iter()
+            .find(|cell| {
+                cell.key.source == source
+                    && cell.key.credential == AdapterCredentialClass::ApiKey
+                    && cell.key.target == AgentId::Pi
+            })
+            .expect("GLM/DeepSeek Pi cell");
+        assert_eq!(cell.key.transport, AdapterUpstreamTransport::NativeHttp);
+        assert_eq!(cell.key.protocol, AdapterTargetProtocol::PiProviderConfig);
+        assert_eq!(cell.key.version, MATRIX_VERSION);
+        assert_eq!(cell.verified_at, "2026-08-15");
+        assert_eq!(cell.gates, AdapterCapabilityGates::all_open());
+        let pi = decide_adapter_capability(source, AdapterCredentialClass::ApiKey, AgentId::Pi);
+        assert_eq!(pi.route, AdapterRoute::ConfigSync);
+        assert_eq!(pi.support, AdapterSupport::Experimental);
+        assert!(pi.can_apply);
+        assert_eq!(pi.rule_id, Some(rule));
+        assert_eq!(pi.gate_kind, AdapterGateKind::None);
+    }
 }
 
 #[test]
@@ -310,6 +338,33 @@ fn glm_and_deepseek_claude_cells_are_experimental_and_applicable() {
 }
 
 #[test]
+fn glm_and_deepseek_codex_cells_are_experimental_native_responses() {
+    for (source, rule) in [
+        (
+            AdapterSourceProduct::GlmCodingPlan,
+            "glm-coding-plan-to-codex-v1",
+        ),
+        (
+            AdapterSourceProduct::DeepseekApi,
+            "deepseek-api-to-codex-v1",
+        ),
+    ] {
+        let decision =
+            decide_adapter_capability(source, AdapterCredentialClass::ApiKey, AgentId::Codex);
+        assert_eq!(decision.route, AdapterRoute::NativeEndpoint);
+        assert_eq!(decision.support, AdapterSupport::Experimental);
+        assert!(decision.can_apply);
+        assert_eq!(decision.rule_id, Some(rule));
+        assert_eq!(decision.transport, AdapterUpstreamTransport::NativeHttp);
+        assert_eq!(
+            decision.protocol,
+            Some(AdapterTargetProtocol::OpenAiResponses)
+        );
+        assert!(decision.gates.expect("native cell gates").all_passed());
+    }
+}
+
+#[test]
 fn deepseek_api_to_dsh_can_apply() {
     let dsh = decide_adapter_capability(
         AdapterSourceProduct::DeepseekApi,
@@ -323,7 +378,7 @@ fn deepseek_api_to_dsh_can_apply() {
 }
 
 #[test]
-fn registered_surfaces_have_no_writable_cells() {
+fn registered_surfaces_have_writable_pi_cells() {
     for source in [
         AdapterSourceProduct::GlmCodingPlan,
         AdapterSourceProduct::DeepseekApi,
@@ -331,9 +386,9 @@ fn registered_surfaces_have_no_writable_cells() {
         let decision =
             decide_adapter_capability(source, AdapterCredentialClass::ApiKey, AgentId::Pi)
                 .public_surface();
-        assert_eq!(decision.route, AdapterRoute::Unsupported);
-        assert!(!decision.can_apply);
-        assert!(decision.rule_id.is_none());
+        assert_eq!(decision.route, AdapterRoute::ConfigSync);
+        assert!(decision.can_apply);
+        assert!(decision.rule_id.is_some());
     }
 
     let openai_grok = decide_adapter_capability(

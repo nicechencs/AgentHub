@@ -55,9 +55,37 @@ fn kimi_coding_live_import(id: &str, api_key: &str) -> Provider {
     }
 }
 
+fn kimi_account(id: &str, api_key: &str, kind: AccountKind) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Kimi,
+        kind,
+        label: "Kimi Code membership".into(),
+        credentials: json!({
+            "format": if kind == AccountKind::ApiKey { "api_key" } else { "oauth" },
+            "api_key": if kind == AccountKind::ApiKey { api_key } else { "" },
+            "provider": "kimi-code-membership",
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
 fn request(source_id: &str) -> AdapterBridgePrepareRequest {
     AdapterBridgePrepareRequest {
         source_kind: AdapterSourceKind::Provider,
+        source_id: source_id.into(),
+        target_agent_id: AgentId::Codex,
+        auto_start: true,
+    }
+}
+
+fn account_request(source_id: &str) -> AdapterBridgePrepareRequest {
+    AdapterBridgePrepareRequest {
+        source_kind: AdapterSourceKind::Account,
         source_id: source_id.into(),
         target_agent_id: AgentId::Codex,
         auto_start: true,
@@ -138,6 +166,48 @@ fn prepare_project_finalize_and_restore_keep_source_secret_out_of_persistence() 
     assert_eq!(restored.profile(), &finalized);
     assert_eq!(restored.runtime_material().start_spec(None).port, 43121);
     assert!(!format!("{restored:?}").contains("upstream-membership-secret"));
+}
+
+#[test]
+fn account_prepare_projects_without_plaintext_and_oauth_is_rejected() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&kimi_account(
+            "kimi-account",
+            "account-upstream-secret",
+            AccountKind::ApiKey,
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service.prepare(&account_request("kimi-account")).unwrap();
+    assert_eq!(prepared.profile().source_kind, AdapterSourceKind::Account);
+    assert!(!format!("{prepared:?}").contains("account-upstream-secret"));
+
+    let generated = create_projection(&db, &prepared, 43123);
+    assert_eq!(
+        generated.meta["adapterSourceRef"]["kind"],
+        "account"
+    );
+    assert!(!serde_json::to_string(&generated)
+        .unwrap()
+        .contains("account-upstream-secret"));
+
+    let (_oauth_dir, oauth_db) = test_db();
+    AccountRepo::new(oauth_db.clone())
+        .create(&kimi_account(
+            "kimi-oauth-account",
+            "oauth-secret",
+            AccountKind::Oauth,
+        ))
+        .unwrap();
+    let oauth_service = AdapterBridgeService::new(oauth_db);
+    assert_eq!(
+        oauth_service
+            .prepare(&account_request("kimi-oauth-account"))
+            .unwrap_err()
+            .code(),
+        "unsupported"
+    );
 }
 
 #[test]

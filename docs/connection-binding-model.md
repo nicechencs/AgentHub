@@ -1,6 +1,6 @@
 # 连接：票、绑定与协议图
 
-> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（OpenAI/xAI API → Pi 属 ①；Anthropic API Key → Codex 属 ③）；Grok 边仍不可行；§6.5 Claude bind 已开（GLM/DeepSeek → Claude 属 ①），② Claude/Codex/Grok 订阅 → Pi 已可 experimental bind（Pi 拥有写入槽刷新），③ Codex → Claude 仍未开；§6.6 未做**。
+> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（OpenAI/xAI/GLM/DeepSeek API → Pi 属 ①；GLM/DeepSeek API → Codex 属 ①；Anthropic API Key → Codex 属 ③）；Grok 边仍不可行；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex 属 ①），GLM/DeepSeek → Pi 已可 experimental bind，② Claude/Codex/Grok 订阅 → Pi 已可 experimental bind（Pi 拥有写入槽刷新），③ Codex `auth_json` → Claude Responses 已可 experimental bind，App Server/OauthOther 仍关闭；§6.6 未做**。
 > 日期：2026-08-15。  
 > 本文是跨 Agent「把已有凭据接到另一个 Agent」的领域真源。**产品方向**（① API 直连 / ② 原生订阅复用 / ③ 本机桥）以 [product-decisions.md](product-decisions.md) 为准。页面、Hub 入口、Adapter、厂商规则文档以本文为准改表述；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
 > 关联：[product-decisions.md](product-decisions.md)、[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[adapter-design.md](adapter-design.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[account-authorization-pool.md](account-authorization-pool.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)。
@@ -68,7 +68,7 @@ AgentHub 不「共享链接」，它**绑定票**。直连、改配置、本机�
 
 硬规则：
 
-1. **票不因被绑定而分裂。** 一把 Kimi 会员 Key 可以同时绑 Claude（reshape）和 Codex（bridge）。钱包里仍是一行。
+1. **票不因被绑定而分裂。** 一把 Kimi 会员 Provider 或 Account Key 可以同时绑 Claude（reshape）和 Codex（bridge）。钱包里仍是一行。
 2. **绑定可以很多，active 每个 Agent 只有一条。**
 3. **投影不是票。** 桥写出来的 localhost Provider / profile 是绑定的私有运行时材料，默认不进钱包，更不能再当 `bind` 的来源（禁止二次投影）。
 
@@ -145,11 +145,11 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 
 - `reshape` / `native`：不常驻进程
 - `bridge`：只听 loopback；目标只持短寿命本地 bearer；上游 secret 留在 Hub / sidecar
-- 不监听公网，不做号池换号，不把一张票拆成多人 Key
+- 不监听公网，不多账号轮换，不把一张票拆成多人 Key
 - refresh single-flight 发生在**票**这一层，所有绑定共享同一次刷新
 - 流式：首字节前可换路线/重试，写出后禁止重放
 
-参考实现（cc-switch、CLIProxyAPI、Management Center、sub2api）**借鉴产品能力**：三路复用、协议成图、下游身份与上游 secret 分离、首字节边界、按账号 refresh、管理面的登录/配额/探测。**不借鉴运营形态**：拼车、公网入口、永远起代理、把投影再当票。许可边界仍要单独审；优先重写，不混入参考项目源码。凭据落盘加密仍为项目范围外。产品真源：[product-decisions.md](product-decisions.md)。
+产品能力：三路复用、协议成图、下游身份与上游 secret 分离、首字节边界、按账号 refresh、管理面的登录/配额/探测。本产品不做公网入口、多账号拼车、默认常驻代理，也不把桥的生成配置再当作钱包里的票。凭据落盘加密仍为项目范围外。产品真源：[product-decisions.md](product-decisions.md)。
 
 ## 5. 界面（目标态，允许重做）
 
@@ -237,10 +237,10 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 3. 现有四条可 apply 路径改写成 `bind` 实现（Kimi→Claude/Pi reshape，Kimi→Codex bridge，Anthropic→Pi reshape）。
 4. 加边：Anthropic→Codex 桥（协议腿 + experimental bind 已开）、Kimi→Grok reshape、OpenAI/xAI Key → Pi/Grok。
 5. 新 surface：GLM / DeepSeek 按双协议入口登记。
-6. 新 Agent writer：DeepSeek Harness（`dsh`）已接入；**DeepSeek API → `dsh` `config_sync`** 与 **DeepSeek API → Claude experimental `native_endpoint`** 都走现有 `AdapterCapabilityMatrix` / `AdapterApplyService`。不要把 Harness 当协议桥。
-7. **跨 Agent 复用三路**（产品已定，见 [product-decisions.md](product-decisions.md)）：先补 ①（双协议 / 单协议 Key 直连），再接 ②（Claude / Codex / Grok 订阅 → Pi 等已有契约槽；当前三条 Pi 槽已可 experimental bind），③ Codex `auth_json` 订阅 → Claude Responses 的本机桥已可 experimental bind，App Server/OauthOther 仍关闭。实现未开只表示缺执行器 / fixtures，不表示产品关闭。
+6. 新 Agent writer：DeepSeek Harness（`dsh`）已接入；**DeepSeek API → `dsh` `config_sync`**、**DeepSeek API → Claude experimental `native_endpoint`** 与 **DeepSeek API → Codex experimental `native_endpoint`** 都走现有 `AdapterCapabilityMatrix` / `AdapterApplyService`。不要把 Harness 当协议桥。
+7. **跨 Agent 复用三路**（产品已定，见 [product-decisions.md](product-decisions.md)）：先补 ①（双协议 / 单协议 Key 直连），再接 ②（Claude / Codex / Grok 订阅 → Pi 等已有契约槽；当前三条 Pi 槽已可 experimental bind），③ Codex `auth_json` 订阅 → Claude Responses 的本机桥已可 experimental bind，App Server/OauthOther 仍关闭。GLM/DeepSeek → Pi 使用 Pi 自定义 provider 槽，GLM/DeepSeek → Codex 使用官方 Responses 端点，均已可 experimental bind。实现未开只表示缺执行器 / fixtures，不表示产品关闭。
 
-做不到、且应看得见的上限：Cursor 当目标（无 writer）、未标记的自定义中转、二次投影、公网号池。暂时不能当 HTTP 上游的登录态要写明缺哪一跳，不能写成「订阅一律不做」。
+做不到、且应看得见的上限：Cursor 当目标（无 writer）、未标记的自定义中转、二次投影、公网多账号共享。暂时不能当 HTTP 上游的登录态要写明缺哪一跳，不能写成「订阅一律不做」。
 
 ## 7. 现状对照（防止倒读）
 

@@ -82,12 +82,8 @@ impl TicketReadService {
     }
 
     /// Parse `account:<id>` / `provider:<id>` and reject generated projections.
-    pub fn parse_bindable_ticket(
-        &self,
-        ticket_id: &str,
-    ) -> Result<(AdapterSourceKind, String)> {
-        let (source_kind, source_id) =
-            parse_ticket_id(ticket_id).map_err(AppError::InvalidArg)?;
+    pub fn parse_bindable_ticket(&self, ticket_id: &str) -> Result<(AdapterSourceKind, String)> {
+        let (source_kind, source_id) = parse_ticket_id(ticket_id).map_err(AppError::InvalidArg)?;
         if source_kind == AdapterSourceKind::Provider && self.is_projection_provider(&source_id)? {
             return Err(AppError::InvalidArg(format!(
                 "{PROJECTION_NOT_A_TICKET}: {ticket_id}"

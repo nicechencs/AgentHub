@@ -164,12 +164,12 @@ describe('mapCoreAccount', () => {
         agentId: 'grok',
         label: 'grok-oauth',
         extra: {
-          email: 'alice@example.com',
-          identityLabel: 'alice@example.com',
+          email: 'user@example.com',
+          identityLabel: 'user@example.com',
         },
       }),
     );
-    expect(mapped.label).toBe('alice@example.com');
+    expect(mapped.label).toBe('user@example.com');
   });
 
   it('maps credential format / source / env_key for detail panel', () => {

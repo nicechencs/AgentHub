@@ -17,12 +17,16 @@ use crate::error::{AppError, Result};
 use crate::models::{AdapterSourceKind, AgentId, Provider};
 use crate::services::adapter_route_constants::{
     claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
-    is_kimi_code_membership_source, is_openai_api_marker, is_xai_api_marker,
-    settings_contain_anthropic_api_endpoint, ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV,
-    ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT, DEEPSEEK_API_BASE_URL,
-    DEEPSEEK_API_KEY_ENV, DEEPSEEK_CLAUDE_RULE_ID, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT,
-    GLM_CLAUDE_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
-    OPENAI_API_KEY_ENV, OPENAI_PI_PROVIDER_SLOT, XAI_API_KEY_ENV, XAI_PI_PROVIDER_SLOT,
+    is_kimi_code_membership_account, is_kimi_code_membership_source, is_openai_api_marker,
+    is_xai_api_marker, settings_contain_anthropic_api_endpoint, ANTHROPIC_API_KEY_ENV,
+    ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT,
+    DEEPSEEK_API_BASE_URL, DEEPSEEK_API_KEY_ENV, DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_CODEX_BASE_URL,
+    DEEPSEEK_CODEX_PROVIDER_SLUG, DEEPSEEK_CODEX_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT,
+    DEEPSEEK_PI_RULE_ID, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_RULE_ID,
+    GLM_CODEX_BASE_URL, GLM_CODEX_PROVIDER_SLUG, GLM_CODEX_RULE_ID, GLM_PI_BASE_URL,
+    GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL,
+    KIMI_PI_PROVIDER_SLOT, OPENAI_API_KEY_ENV, OPENAI_PI_PROVIDER_SLOT, XAI_API_KEY_ENV,
+    XAI_PI_PROVIDER_SLOT,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -33,6 +37,8 @@ const GENERATED_BY: &str = "adapter";
 const KIMI_TO_CLAUDE_RULE: &str = KIMI_CLAUDE_RULE_ID;
 const GLM_TO_CLAUDE_RULE: &str = GLM_CLAUDE_RULE_ID;
 const DEEPSEEK_TO_CLAUDE_RULE: &str = DEEPSEEK_CLAUDE_RULE_ID;
+const GLM_TO_CODEX_RULE: &str = GLM_CODEX_RULE_ID;
+const DEEPSEEK_TO_CODEX_RULE: &str = DEEPSEEK_CODEX_RULE_ID;
 const KIMI_TO_CODEX_BRIDGE_RULE: &str = "kimi-membership-to-codex-v1";
 const ANTHROPIC_TO_CODEX_BRIDGE_RULE: &str = "anthropic-api-to-codex-v1";
 const CODEX_TO_CLAUDE_BRIDGE_RULE: &str = "codex-subscription-to-claude-responses-v1";
@@ -40,6 +46,8 @@ const KIMI_TO_PI_RULE: &str = "kimi-membership-to-pi-v1";
 const ANTHROPIC_TO_PI_RULE: &str = "anthropic-api-to-pi-v1";
 const OPENAI_TO_PI_RULE: &str = "openai-api-to-pi-v1";
 const XAI_TO_PI_RULE: &str = "xai-api-to-pi-v1";
+const GLM_TO_PI_RULE: &str = GLM_PI_RULE_ID;
+const DEEPSEEK_TO_PI_RULE: &str = DEEPSEEK_PI_RULE_ID;
 const CLAUDE_SUBSCRIPTION_PI_RULE: &str = "claude-subscription-to-pi-v1";
 const CODEX_SUBSCRIPTION_PI_RULE: &str = "codex-subscription-to-pi-v1";
 const GROK_SUBSCRIPTION_PI_RULE: &str = "grok-subscription-to-pi-v1";
@@ -77,8 +85,12 @@ impl AdapterSecretResolver {
     /// Read-only preflight for the Kimi membership source used by adapter apply.
     /// This deliberately exposes only the normal validation error, never source
     /// configuration or a secret value.
-    pub fn validate_kimi_membership_source(&self, source_id: &str) -> Result<()> {
-        let _ = self.resolve_kimi_membership_api_key(source_id)?;
+    pub fn validate_kimi_membership_source(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<()> {
+        let _ = self.resolve_kimi_membership_api_key(source_kind, source_id)?;
         Ok(())
     }
 
@@ -128,21 +140,49 @@ impl AdapterSecretResolver {
     /// Resolve a Kimi Code membership API key for an in-process adapter
     /// runtime. The returned value is intentionally not serializable and must
     /// be passed directly to the runtime; callers must never persist or log it.
-    fn resolve_kimi_membership_api_key(&self, source_id: &str) -> Result<String> {
+    fn resolve_kimi_membership_api_key(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<String> {
         let source_id = source_id.trim();
         if source_id.is_empty() {
             return Err(invalid_reference());
         }
-        let source = self
-            .providers
-            .get_by_id(source_id)?
-            .ok_or_else(invalid_reference)?;
-        // Same rule as classify: preset or official coding endpoint. Never
-        // upgrade from agent_id=kimi alone.
-        if !is_kimi_code_membership_source(source.agent_id, &source.meta, &source.settings_config) {
-            return Err(invalid_reference());
+        match source_kind {
+            AdapterSourceKind::Provider => {
+                let source = self
+                    .providers
+                    .get_by_id(source_id)?
+                    .ok_or_else(invalid_reference)?;
+                // Same rule as classify: preset or official coding endpoint.
+                // Never upgrade from agent_id=kimi alone.
+                if !is_kimi_code_membership_source(
+                    source.agent_id,
+                    &source.meta,
+                    &source.settings_config,
+                ) {
+                    return Err(invalid_reference());
+                }
+                extract_kimi_api_key(&source.settings_config)
+            }
+            AdapterSourceKind::Account => {
+                let account = self
+                    .accounts
+                    .get_by_id(source_id)?
+                    .ok_or_else(invalid_reference)?;
+                if account.kind != crate::models::AccountKind::ApiKey
+                    || !is_kimi_code_membership_account(
+                        account.agent_id,
+                        &account.extra,
+                        &account.credentials,
+                    )
+                {
+                    return Err(invalid_reference());
+                }
+                extract_account_api_key(&account.credentials)
+            }
         }
-        extract_kimi_api_key(&source.settings_config)
     }
 
     fn resolve_anthropic_api_key(
@@ -201,8 +241,12 @@ impl AdapterSecretResolver {
 
     /// Internal bridge boundary: resolve membership auth without exposing the
     /// plaintext key to GUI/Tauri DTO layers.
-    pub(crate) fn resolve_kimi_membership_auth(&self, source_id: &str) -> Result<ResolvedAuth> {
-        self.resolve_kimi_membership_api_key(source_id)
+    pub(crate) fn resolve_kimi_membership_auth(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<ResolvedAuth> {
+        self.resolve_kimi_membership_api_key(source_kind, source_id)
             .map(ResolvedAuth::bearer)
     }
 
@@ -255,6 +299,10 @@ impl AdapterSecretResolver {
                 self.validate_claude_reference_target(provider)?;
                 Ok(true)
             }
+            Some(GENERATED_BY) if is_codex_source_reference(provider) => {
+                self.validate_codex_reference_target(provider)?;
+                Ok(true)
+            }
             Some(GENERATED_BY) if is_pi_source_reference(provider) => {
                 self.validate_pi_reference_target(provider)?;
                 Ok(true)
@@ -290,6 +338,26 @@ impl AdapterSecretResolver {
                 .and_then(Value::as_object_mut)
                 .ok_or_else(invalid_reference)?;
             env.insert(ANTHROPIC_AUTH_TOKEN_ENV.into(), Value::String(api_key));
+            return Ok(materialized);
+        }
+
+        if is_codex_source_reference(target) {
+            self.validate_codex_reference_target(target)?;
+            let api_key = self.resolve_referenced_api_key(target)?;
+            let mut materialized = target.clone();
+            let content = materialized
+                .settings_config
+                .get("content")
+                .and_then(Value::as_str)
+                .ok_or_else(invalid_reference)?
+                .parse::<DocumentMut>()
+                .map_err(|_| invalid_reference())?;
+            let mut document = content;
+            let slug = codex_provider_slug(adapter_rule_id(target).unwrap_or(""))?;
+            document["model_providers"][slug]["experimental_bearer_token"] =
+                toml_edit::value(api_key.as_str());
+            materialized.settings_config["content"] = Value::String(document.to_string());
+            materialized.settings_config["auth"]["OPENAI_API_KEY"] = Value::String(api_key);
             return Ok(materialized);
         }
 
@@ -364,6 +432,60 @@ impl AdapterSecretResolver {
             return Ok(scrubbed);
         }
 
+        if is_codex_source_reference(provider) {
+            self.validate_codex_reference_target(provider)?;
+            let _ = self.resolve_referenced_api_key(provider)?;
+            let mut scrubbed = live_raw.clone();
+            if scrubbed.get("format").and_then(Value::as_str) != Some("toml") {
+                return Err(invalid_reference());
+            }
+            let content = scrubbed
+                .get("content")
+                .and_then(Value::as_str)
+                .ok_or_else(invalid_reference)?
+                .to_owned();
+            let mut document = content
+                .parse::<DocumentMut>()
+                .map_err(|_| invalid_reference())?;
+            let (expected_base, slug) = codex_contract(adapter_rule_id(provider).unwrap_or(""))?;
+            let table = document["model_providers"]
+                .get(slug)
+                .and_then(|item| item.as_table())
+                .ok_or_else(invalid_reference)?;
+            if document
+                .get("model_provider")
+                .and_then(|item| item.as_str())
+                != Some(slug)
+                || table.get("base_url").and_then(|item| item.as_str()) != Some(expected_base)
+                || table.get("wire_api").and_then(|item| item.as_str()) != Some("responses")
+                || table
+                    .get("experimental_bearer_token")
+                    .and_then(|item| item.as_str())
+                    .is_none_or(|value| value.trim().is_empty())
+            {
+                return Err(invalid_reference());
+            }
+            document["model_providers"][slug]["experimental_bearer_token"] =
+                toml_edit::value(CONNECTION_SECRET_MARKER);
+            scrubbed["content"] = Value::String(document.to_string());
+            let auth = scrubbed
+                .get_mut("auth")
+                .and_then(Value::as_object_mut)
+                .ok_or_else(invalid_reference)?;
+            if auth
+                .get("OPENAI_API_KEY")
+                .and_then(Value::as_str)
+                .is_none_or(|value| value.trim().is_empty())
+            {
+                return Err(invalid_reference());
+            }
+            auth.insert(
+                "OPENAI_API_KEY".into(),
+                Value::String(CONNECTION_SECRET_MARKER.into()),
+            );
+            return Ok(scrubbed);
+        }
+
         if is_dsh_source_reference(provider) {
             self.validate_dsh_reference_target(provider)?;
             let _ = self.resolve_referenced_api_key(provider)?;
@@ -428,10 +550,10 @@ impl AdapterSecretResolver {
         let slot = pi_slot_name(provider)?;
         let mut scrubbed = strip_pi_auth_for_persist(provider, live_raw);
         let live_slot = pi_slot_object(&scrubbed, slot).ok_or_else(invalid_reference)?;
-        if slot == KIMI_PI_PROVIDER_SLOT
-            && live_slot.get("baseUrl").and_then(Value::as_str) != Some(KIMI_PI_BASE_URL)
-        {
-            return Err(invalid_reference());
+        if let Some(expected_base) = pi_base_url_for_rule(adapter_rule_id(provider).unwrap_or("")) {
+            if live_slot.get("baseUrl").and_then(Value::as_str) != Some(expected_base) {
+                return Err(invalid_reference());
+            }
         }
         if !live_slot
             .get("apiKey")
@@ -448,15 +570,22 @@ impl AdapterSecretResolver {
         let (kind, source_id) = self.reference_source_ref(target)?;
         let rule = adapter_rule_id(target).ok_or_else(invalid_reference)?;
         match (rule, kind) {
-            (KIMI_TO_CLAUDE_RULE | KIMI_TO_PI_RULE, AdapterSourceKind::Provider) => {
-                self.resolve_kimi_membership_api_key(source_id)
-            }
+            (
+                KIMI_TO_CLAUDE_RULE | KIMI_TO_PI_RULE,
+                AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            ) => self.resolve_kimi_membership_api_key(kind, source_id),
             (
                 ANTHROPIC_TO_PI_RULE
                 | OPENAI_TO_PI_RULE
                 | XAI_TO_PI_RULE
+                | GLM_TO_PI_RULE
+                | DEEPSEEK_TO_PI_RULE
                 | GLM_TO_CLAUDE_RULE
                 | DEEPSEEK_TO_CLAUDE_RULE,
+                AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            ) => self.resolve_explicit_api_key(rule, kind, source_id),
+            (
+                GLM_TO_CODEX_RULE | DEEPSEEK_TO_CODEX_RULE,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account,
             ) => self.resolve_explicit_api_key(rule, kind, source_id),
             (DEEPSEEK_TO_DSH_RULE, AdapterSourceKind::Provider) => {
@@ -538,6 +667,7 @@ impl AdapterSecretResolver {
         target: &'a Provider,
     ) -> Result<(AdapterSourceKind, &'a str)> {
         if !is_claude_source_reference(target)
+            && !is_codex_source_reference(target)
             && !is_pi_source_reference(target)
             && !is_dsh_source_reference(target)
         {
@@ -601,8 +731,16 @@ impl AdapterSecretResolver {
         if slot_obj.get("apiKey").and_then(Value::as_str) != Some(CONNECTION_SECRET_MARKER) {
             return Err(invalid_reference());
         }
-        if slot == KIMI_PI_PROVIDER_SLOT
-            && slot_obj.get("baseUrl").and_then(Value::as_str) != Some(KIMI_PI_BASE_URL)
+        if let Some(expected_base) = pi_base_url_for_rule(adapter_rule_id(target).unwrap_or("")) {
+            if slot_obj.get("baseUrl").and_then(Value::as_str) != Some(expected_base) {
+                return Err(invalid_reference());
+            }
+        }
+        if matches!(
+            adapter_rule_id(target),
+            Some(GLM_TO_PI_RULE) | Some(DEEPSEEK_TO_PI_RULE)
+        ) && (slot_obj.get("api").and_then(Value::as_str) != Some("openai-completions")
+            || slot_obj.get("models").and_then(Value::as_array).is_none())
         {
             return Err(invalid_reference());
         }
@@ -626,6 +764,48 @@ impl AdapterSecretResolver {
         }
         if obj.get("baseURL").and_then(Value::as_str) != Some(DEEPSEEK_API_BASE_URL)
             && obj.get("baseUrl").and_then(Value::as_str) != Some(DEEPSEEK_API_BASE_URL)
+        {
+            return Err(invalid_reference());
+        }
+        Ok(())
+    }
+
+    fn validate_codex_reference_target(&self, target: &Provider) -> Result<()> {
+        self.reference_source_id(target)?;
+        if target.settings_config.get("format").and_then(Value::as_str) != Some("toml") {
+            return Err(invalid_reference());
+        }
+        let content = target
+            .settings_config
+            .get("content")
+            .and_then(Value::as_str)
+            .ok_or_else(invalid_reference)?;
+        let document = content
+            .parse::<DocumentMut>()
+            .map_err(|_| invalid_reference())?;
+        let rule = adapter_rule_id(target).ok_or_else(invalid_reference)?;
+        let (expected_base, slug) = codex_contract(rule)?;
+        let table = document["model_providers"]
+            .get(slug)
+            .and_then(|item| item.as_table())
+            .ok_or_else(invalid_reference)?;
+        if document
+            .get("model_provider")
+            .and_then(|item| item.as_str())
+            != Some(slug)
+            || table.get("base_url").and_then(|item| item.as_str()) != Some(expected_base)
+            || table.get("wire_api").and_then(|item| item.as_str()) != Some("responses")
+            || table
+                .get("experimental_bearer_token")
+                .and_then(|item| item.as_str())
+                != Some(CONNECTION_SECRET_MARKER)
+            || target
+                .settings_config
+                .get("auth")
+                .and_then(Value::as_object)
+                .and_then(|auth| auth.get("OPENAI_API_KEY"))
+                .and_then(Value::as_str)
+                != Some(CONNECTION_SECRET_MARKER)
         {
             return Err(invalid_reference());
         }
@@ -682,6 +862,24 @@ fn is_claude_source_reference(provider: &Provider) -> bool {
             == Some(SOURCE_REFERENCE_MODE)
 }
 
+fn is_codex_source_reference(provider: &Provider) -> bool {
+    provider.agent_id == AgentId::Codex
+        && matches!(
+            adapter_rule_id(provider),
+            Some(GLM_TO_CODEX_RULE) | Some(DEEPSEEK_TO_CODEX_RULE)
+        )
+        && provider
+            .meta
+            .get("adapterRuleVersion")
+            .and_then(Value::as_u64)
+            == Some(1)
+        && provider
+            .meta
+            .get("adapterSecretMode")
+            .and_then(Value::as_str)
+            == Some(SOURCE_REFERENCE_MODE)
+}
+
 fn is_dsh_source_reference(provider: &Provider) -> bool {
     provider.agent_id == AgentId::Dsh
         && adapter_rule_id(provider) == Some(DEEPSEEK_TO_DSH_RULE)
@@ -705,6 +903,8 @@ fn is_pi_source_reference(provider: &Provider) -> bool {
                 | Some(ANTHROPIC_TO_PI_RULE)
                 | Some(OPENAI_TO_PI_RULE)
                 | Some(XAI_TO_PI_RULE)
+                | Some(GLM_TO_PI_RULE)
+                | Some(DEEPSEEK_TO_PI_RULE)
                 | Some(CLAUDE_SUBSCRIPTION_PI_RULE)
                 | Some(CODEX_SUBSCRIPTION_PI_RULE)
                 | Some(GROK_SUBSCRIPTION_PI_RULE)
@@ -741,16 +941,39 @@ fn adapter_rule_id(provider: &Provider) -> Option<&str> {
     provider.meta.get("adapterRuleId").and_then(Value::as_str)
 }
 
+fn codex_contract(rule_id: &str) -> Result<(&'static str, &'static str)> {
+    match rule_id {
+        GLM_TO_CODEX_RULE => Ok((GLM_CODEX_BASE_URL, GLM_CODEX_PROVIDER_SLUG)),
+        DEEPSEEK_TO_CODEX_RULE => Ok((DEEPSEEK_CODEX_BASE_URL, DEEPSEEK_CODEX_PROVIDER_SLUG)),
+        _ => Err(invalid_reference()),
+    }
+}
+
+fn codex_provider_slug(rule_id: &str) -> Result<&'static str> {
+    codex_contract(rule_id).map(|(_, slug)| slug)
+}
+
 fn pi_slot_name(provider: &Provider) -> Result<&'static str> {
     match adapter_rule_id(provider) {
         Some(KIMI_TO_PI_RULE) => Ok(KIMI_PI_PROVIDER_SLOT),
         Some(ANTHROPIC_TO_PI_RULE) => Ok(ANTHROPIC_PI_PROVIDER_SLOT),
         Some(OPENAI_TO_PI_RULE) => Ok(OPENAI_PI_PROVIDER_SLOT),
         Some(XAI_TO_PI_RULE) => Ok(XAI_PI_PROVIDER_SLOT),
+        Some(GLM_TO_PI_RULE) => Ok(GLM_PI_PROVIDER_SLOT),
+        Some(DEEPSEEK_TO_PI_RULE) => Ok(DEEPSEEK_PI_PROVIDER_SLOT),
         Some(CLAUDE_SUBSCRIPTION_PI_RULE) => Ok(ANTHROPIC_PI_PROVIDER_SLOT),
         Some(CODEX_SUBSCRIPTION_PI_RULE) => Ok("openai-codex"),
         Some(GROK_SUBSCRIPTION_PI_RULE) => Ok(XAI_PI_PROVIDER_SLOT),
         _ => Err(invalid_reference()),
+    }
+}
+
+fn pi_base_url_for_rule(rule_id: &str) -> Option<&'static str> {
+    match rule_id {
+        KIMI_TO_PI_RULE => Some(KIMI_PI_BASE_URL),
+        GLM_TO_PI_RULE => Some(GLM_PI_BASE_URL),
+        DEEPSEEK_TO_PI_RULE => Some(DEEPSEEK_API_BASE_URL),
+        _ => None,
     }
 }
 
@@ -856,8 +1079,12 @@ fn provider_matches_explicit_api_rule(rule_id: &str, source: &Provider) -> bool 
         ANTHROPIC_TO_PI_RULE => is_anthropic_api_source(source),
         OPENAI_TO_PI_RULE => is_openai_api_source(source),
         XAI_TO_PI_RULE => is_xai_api_source(source),
-        GLM_TO_CLAUDE_RULE => is_glm_coding_plan_source(source),
-        DEEPSEEK_TO_CLAUDE_RULE => is_deepseek_api_source(source),
+        GLM_TO_CLAUDE_RULE | GLM_TO_PI_RULE | GLM_TO_CODEX_RULE => {
+            is_glm_coding_plan_source(source)
+        }
+        DEEPSEEK_TO_CLAUDE_RULE | DEEPSEEK_TO_PI_RULE | DEEPSEEK_TO_CODEX_RULE => {
+            is_deepseek_api_source(source)
+        }
         _ => false,
     }
 }
@@ -881,12 +1108,12 @@ fn extract_account_api_key(credentials: &Value) -> Result<String> {
 fn extract_explicit_provider_api_key(rule_id: &str, settings: &Value) -> Result<String> {
     let env = settings.get("env");
     let env_keys: &[&str] = match rule_id {
-        ANTHROPIC_TO_PI_RULE | GLM_TO_CLAUDE_RULE => {
+        ANTHROPIC_TO_PI_RULE | GLM_TO_CLAUDE_RULE | GLM_TO_PI_RULE | GLM_TO_CODEX_RULE => {
             &[ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV]
         }
         OPENAI_TO_PI_RULE => &[OPENAI_API_KEY_ENV],
         XAI_TO_PI_RULE => &[XAI_API_KEY_ENV],
-        DEEPSEEK_TO_CLAUDE_RULE => &[
+        DEEPSEEK_TO_CLAUDE_RULE | DEEPSEEK_TO_PI_RULE | DEEPSEEK_TO_CODEX_RULE => &[
             ANTHROPIC_AUTH_TOKEN_ENV,
             ANTHROPIC_API_KEY_ENV,
             DEEPSEEK_API_KEY_ENV,

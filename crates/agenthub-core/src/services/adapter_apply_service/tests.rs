@@ -1,20 +1,22 @@
 use super::*;
 use crate::adapters::AgentAdapter;
-use crate::models::Provider;
+use crate::models::{Account, AccountKind, Provider};
 use crate::models::{
     AgentConfig, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
     InstallChannel, RunOptions, RunSpec,
 };
 use crate::services::adapter_route_constants::{
-    DEEPSEEK_CLAUDE_BASE_URL, GLM_CLAUDE_BASE_URL, KIMI_CLAUDE_BASE_URL,
+    DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_PI_PROVIDER_SLOT,
+    GLM_CLAUDE_BASE_URL, GLM_PI_BASE_URL, GLM_PI_PROVIDER_SLOT, KIMI_CLAUDE_BASE_URL,
 };
-use crate::storage::{ActiveBindingRepo, ProviderRepo};
+use crate::storage::{AccountRepo, ActiveBindingRepo, ProviderRepo};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 struct FakeClaudeAdapter {
+    agent: AgentId,
     config: Mutex<AgentConfig>,
     writes: AtomicUsize,
     fail_on_write: AtomicUsize,
@@ -23,9 +25,14 @@ struct FakeClaudeAdapter {
 
 impl FakeClaudeAdapter {
     fn new() -> Self {
+        Self::new_for(AgentId::Claude)
+    }
+
+    fn new_for(agent: AgentId) -> Self {
         Self {
+            agent,
             config: Mutex::new(AgentConfig {
-                agent: AgentId::Claude,
+                agent,
                 raw: json!({}),
             }),
             writes: AtomicUsize::new(0),
@@ -45,7 +52,7 @@ impl FakeClaudeAdapter {
 
 impl AgentAdapter for FakeClaudeAdapter {
     fn id(&self) -> AgentId {
-        AgentId::Claude
+        self.agent
     }
     fn detect(&self) -> DetectResult {
         DetectResult {
@@ -121,6 +128,25 @@ fn kimi_source(id: &str, api_key: &str) -> Provider {
     }
 }
 
+fn kimi_account(id: &str, api_key: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Kimi,
+        kind: AccountKind::ApiKey,
+        label: "Kimi Code membership".into(),
+        credentials: json!({
+            "format": "api_key",
+            "api_key": api_key,
+            "provider": "kimi-code-membership",
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
 fn kimi_coding_live_import(id: &str, api_key: &str) -> Provider {
     Provider {
         id: id.into(),
@@ -169,6 +195,14 @@ fn kimi_bare(id: &str, api_key: &str) -> Provider {
 fn request(source_id: &str, target_agent_id: AgentId) -> AdapterApplyRequest {
     AdapterApplyRequest {
         source_kind: AdapterSourceKind::Provider,
+        source_id: source_id.into(),
+        target_agent_id,
+    }
+}
+
+fn account_request(source_id: &str, target_agent_id: AgentId) -> AdapterApplyRequest {
+    AdapterApplyRequest {
+        source_kind: AdapterSourceKind::Account,
         source_id: source_id.into(),
         target_agent_id,
     }
@@ -1088,6 +1122,59 @@ fn pi_kimi_apply_sets_current_and_keeps_secret_out_of_dto() {
 }
 
 #[test]
+fn kimi_account_apply_writes_both_targets_with_account_source_ref() {
+    let (dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&kimi_account("kimi-account", "test-kimi-account-secret"))
+        .unwrap();
+    let fake_pi = Arc::new(FakePiAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake_pi.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
+
+    let pi = service
+        .apply(&account_request("kimi-account", AgentId::Pi))
+        .unwrap();
+    let pi_stored = ProviderRepo::new(db.clone())
+        .get_by_id(&pi.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(pi.profile.source_kind, AdapterSourceKind::Account);
+    assert_eq!(pi_stored.meta["adapterSourceRef"]["kind"], "account");
+    assert_eq!(
+        fake_pi.read_config().unwrap().raw["models"]["providers"][KIMI_PI_PROVIDER_SLOT]["apiKey"],
+        "test-kimi-account-secret"
+    );
+    assert!(!serde_json::to_string(&pi_stored)
+        .unwrap()
+        .contains("test-kimi-account-secret"));
+
+    let (_dir, claude_db) = test_db();
+    AccountRepo::new(claude_db.clone())
+        .create(&kimi_account("kimi-account", "test-kimi-account-secret"))
+        .unwrap();
+    let fake_claude = Arc::new(FakeClaudeAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake_claude.clone());
+    let claude_service = AdapterApplyService::new(
+        claude_db.clone(),
+        registry,
+        dir.path().join("claude-backups"),
+    );
+    let claude = claude_service
+        .apply(&account_request("kimi-account", AgentId::Claude))
+        .unwrap();
+    assert_eq!(claude.profile.source_kind, AdapterSourceKind::Account);
+    assert_eq!(
+        fake_claude.read_config().unwrap().raw["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "test-kimi-account-secret"
+    );
+    assert!(!serde_json::to_string(&claude.provider)
+        .unwrap()
+        .contains("test-kimi-account-secret"));
+}
+
+#[test]
 fn pi_anthropic_apply_sets_current_and_keeps_secret_out_of_dto() {
     let (dir, db) = test_db();
     let source = anthropic_source("anthropic-source", "sk-anthropic-secret");
@@ -1487,6 +1574,21 @@ fn explicit_api_source(id: &str, preset: &str, env_key: &str, api_key: &str) -> 
     }
 }
 
+fn explicit_api_account(id: &str, provider: &str, api_key: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        label: format!("{provider} key"),
+        credentials: json!({"format": "api_key", "api_key": api_key}),
+        extra: json!({"provider": provider}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
 #[test]
 fn pi_openai_and_xai_apply_sets_slot_and_keeps_secret_out() {
     let (dir, db) = test_db();
@@ -1561,6 +1663,114 @@ fn pi_openai_and_xai_apply_sets_slot_and_keeps_secret_out() {
     assert!(!serde_json::to_string(&xai)
         .unwrap()
         .contains("xai-account-secret"));
+}
+
+#[test]
+fn pi_glm_and_deepseek_apply_sets_custom_provider_contract_and_keeps_secret_out() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "glm-source",
+            "glm-coding-plan",
+            ANTHROPIC_AUTH_TOKEN_ENV,
+            "glm-pi-secret",
+        ))
+        .unwrap();
+    crate::storage::AccountRepo::new(db.clone())
+        .create(&crate::models::Account {
+            id: "deepseek-account".into(),
+            agent_id: AgentId::Claude,
+            kind: crate::models::AccountKind::ApiKey,
+            label: "DeepSeek key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "deepseek-pi-secret"
+            }),
+            extra: json!({"provider": "deepseek-api"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let fake = Arc::new(FakePiAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
+
+    let glm = service
+        .apply(&AdapterApplyRequest {
+            source_kind: AdapterSourceKind::Provider,
+            source_id: "glm-source".into(),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap();
+    let glm_stored = ProviderRepo::new(db.clone())
+        .get_by_id(&glm.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(glm.profile.rule_id, "glm-coding-plan-to-pi-v1");
+    assert_eq!(
+        glm_stored.settings_config["models"]["providers"][GLM_PI_PROVIDER_SLOT]["baseUrl"],
+        GLM_PI_BASE_URL
+    );
+    assert_eq!(
+        glm_stored.settings_config["models"]["providers"][GLM_PI_PROVIDER_SLOT]["api"],
+        "openai-completions"
+    );
+    assert_eq!(
+        glm_stored.settings_config["models"]["providers"][GLM_PI_PROVIDER_SLOT]["models"][0]["id"],
+        "glm-4.6"
+    );
+    assert_eq!(
+        glm_stored.settings_config["models"]["providers"][GLM_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(
+        fake.read_config().unwrap().raw["models"]["providers"][GLM_PI_PROVIDER_SLOT]["apiKey"],
+        "glm-pi-secret"
+    );
+
+    let deepseek = service
+        .apply(&AdapterApplyRequest {
+            source_kind: AdapterSourceKind::Account,
+            source_id: "deepseek-account".into(),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap();
+    let deepseek_stored = ProviderRepo::new(db)
+        .get_by_id(&deepseek.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(deepseek.profile.rule_id, "deepseek-api-to-pi-v1");
+    assert_eq!(
+        deepseek_stored.settings_config["models"]["providers"][DEEPSEEK_PI_PROVIDER_SLOT]
+            ["baseUrl"],
+        DEEPSEEK_API_BASE_URL
+    );
+    assert_eq!(
+        deepseek_stored.settings_config["models"]["providers"][DEEPSEEK_PI_PROVIDER_SLOT]["api"],
+        "openai-completions"
+    );
+    assert_eq!(
+        deepseek_stored.settings_config["models"]["providers"][DEEPSEEK_PI_PROVIDER_SLOT]["models"]
+            [0]["id"],
+        "deepseek-chat"
+    );
+    assert_eq!(
+        deepseek_stored.settings_config["models"]["providers"][DEEPSEEK_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(
+        fake.read_config().unwrap().raw["models"]["providers"][DEEPSEEK_PI_PROVIDER_SLOT]["apiKey"],
+        "deepseek-pi-secret"
+    );
+    assert!(!serde_json::to_string(&glm)
+        .unwrap()
+        .contains("glm-pi-secret"));
+    assert!(!serde_json::to_string(&deepseek)
+        .unwrap()
+        .contains("deepseek-pi-secret"));
 }
 
 #[test]
@@ -1953,6 +2163,72 @@ fn deepseek_host_without_preset_applies_to_dsh() {
     assert!(!serde_json::to_string(&result)
         .unwrap()
         .contains("sk-from-host"));
+}
+
+#[test]
+fn glm_and_deepseek_native_codex_apply_materializes_official_responses_config() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "glm-codex-source",
+            "glm-coding-plan",
+            ANTHROPIC_AUTH_TOKEN_ENV,
+            "glm-codex-secret",
+        ))
+        .unwrap();
+    crate::storage::AccountRepo::new(db.clone())
+        .create(&explicit_api_account(
+            "deepseek-codex-account",
+            "deepseek-api",
+            "deepseek-codex-secret",
+        ))
+        .unwrap();
+    let fake = Arc::new(FakeClaudeAdapter::new_for(AgentId::Codex));
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
+
+    let glm = service
+        .apply(&AdapterApplyRequest {
+            source_kind: AdapterSourceKind::Provider,
+            source_id: "glm-codex-source".into(),
+            target_agent_id: AgentId::Codex,
+        })
+        .unwrap();
+    let deepseek = service
+        .apply(&AdapterApplyRequest {
+            source_kind: AdapterSourceKind::Account,
+            source_id: "deepseek-codex-account".into(),
+            target_agent_id: AgentId::Codex,
+        })
+        .unwrap();
+
+    assert_eq!(glm.profile.rule_id, "glm-coding-plan-to-codex-v1");
+    assert_eq!(deepseek.profile.rule_id, "deepseek-api-to-codex-v1");
+    let live = fake.read_config().unwrap().raw;
+    let live_content = live["content"].as_str().unwrap();
+    assert!(live_content.contains("base_url = \"https://api.deepseek.com\""));
+    assert!(live_content.contains("model = \"deepseek-v4-flash\""));
+    assert!(live_content.contains("wire_api = \"responses\""));
+    assert!(live_content.contains("experimental_bearer_token = \"deepseek-codex-secret\""));
+    assert_eq!(live["auth"]["OPENAI_API_KEY"], "deepseek-codex-secret");
+
+    for result in [glm, deepseek] {
+        let stored = ProviderRepo::new(db.clone())
+            .get_by_id(&result.provider.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.settings_config["format"], "toml");
+        assert!(stored.settings_config["content"]
+            .as_str()
+            .unwrap()
+            .contains("wire_api = \"responses\""));
+        assert_eq!(
+            stored.settings_config["auth"]["OPENAI_API_KEY"],
+            CONNECTION_SECRET_MARKER
+        );
+        assert!(!serde_json::to_string(&stored).unwrap().contains("secret"));
+    }
 }
 
 #[test]

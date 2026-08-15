@@ -120,6 +120,10 @@ export default defineConfig(({ mode, command }) => {
       host: '127.0.0.1',
       port: 5173,
       strictPort: true,
+      // Windows: cargo locks target/*.exe during compile; Vite watching them throws EBUSY.
+      watch: {
+        ignored: ['**/src-tauri/**', '**/target/**', '**/crates/**/target/**'],
+      },
     },
     envPrefix: ['VITE_', 'TAURI_'],
     define: {
