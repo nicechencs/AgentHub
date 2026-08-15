@@ -8,7 +8,7 @@
 > v1.4：**平台环境差异**：PowerShell 仅 Windows 共享 Runtime；macOS/Linux native 安装/升级走官方 sh + bash，不得检测或要求 PowerShell；包管理引导 Windows=`winget`、macOS=`brew`。
 > v1.5：**Adapter sidecar 目标架构**：`local_bridge` 的长驻 Runtime 与完整 saga 迁入用户级 `agenthub-adapterd`；Connections 与 live 配置事务继续由 core service 管理。当前实现仍为 Tauri 进程内宿主，按三阶段迁移。
 
-系列文档：[产品决策（跨 Agent 复用三路）](product-decisions.md) · [目录结构与模块拆分](architecture.md) · [票 / 绑定 / 协议图](connection-binding-model.md) · [Adapter Sidecar 目标架构](adapter-sidecar-design.md) · [前端 UI 设计](ui-design.md) · [CLI 与配置契约](cli-and-config.md) · [Hub 重构 Phase 1 记录](hub-redesign-plan.md) · [DeepSeek Harness 接入](deepseek-harness-integration.md)
+系列文档：[产品决策（跨 Agent 复用三路）](product-decisions.md) · [目录结构与模块拆分](architecture.md) · [模块化改进方案](modularity-improvement.md) · [票 / 绑定 / 协议图](connection-binding-model.md) · [Adapter Sidecar 目标架构](adapter-sidecar-design.md) · [前端 UI 设计](ui-design.md) · [CLI 与配置契约](cli-and-config.md) · [Hub 重构 Phase 1 记录](hub-redesign-plan.md) · [DeepSeek Harness 接入](deepseek-harness-integration.md)
 
 ## 1. 已确认决策
 
@@ -378,6 +378,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 票 / 绑定读模型与钱包重做 | ✅ 读模型、进口打标、`plan` 收口、拒投影、`bind`/`unbind` 写入已落地；§6.4 部分落地（Kimi/OpenAI API → Grok，OpenAI/xAI/GLM/DeepSeek API → Pi，GLM/DeepSeek API → Codex）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex，属 ①）；② Claude/Codex/Grok 订阅 Account → Pi 已可 experimental bind；③ Codex Responses 与 Grok Chat 订阅→Claude 已可 experimental `local_bridge` bind，Claude 订阅→Codex 产品关闭，App Server/OauthOther 仍关闭；见 [product-decisions.md](product-decisions.md)；§6.6 未做 | [connection-binding-model.md](connection-binding-model.md)：`list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`。`canApply` = 现在 bind 会成功（有实现且 secret 可按票 `source_kind` 解析）。可写边：Kimi 会员 Provider / Account → Claude/Pi/Codex/Grok，OpenAI API Provider / Account → Grok/Pi，Anthropic / xAI API（Provider 与 Account）→ Pi，GLM Coding Plan / DeepSeek API（Provider 与 Account）→ Pi 自定义 provider 与 Codex 官方 Responses，Anthropic API（Provider 与 Account）→ Codex，GLM Coding Plan / DeepSeek API（Provider 与 Account）→ Claude，带 access token 的 Codex `auth_json` 或 Grok OAuth 订阅 → Claude Responses/Chat（③）。Claude 订阅 → Codex 产品不做。写入走 bind，apply 为薄兼容委托 |
 | Adapter 本地 Bridge 产品接线 | 🟡 部分实现 | core host、协议转换、Tauri controller、UI 控件、auto-start 恢复与退出 drain 已进入当前工作区；具体可执行状态见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)，端到端验收尚未收口 |
 | Adapter 用户级 sidecar | 🎯 目标已决策 / 未实现 | 当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有；待完成 Tauri-neutral control contract、`agenthub-adapterd`、本地 IPC、单实例/版本+schema 握手、SQLite shared/exclusive schema lease、更新/卸载 saga 和分阶段切换，见 [adapter-sidecar-design.md](adapter-sidecar-design.md) |
+| 模块化收口（双真源 / 上帝文件 / 写入入口） | 📋 方案已落地 / 代码未收口 | 生产组合仍偏 Adapter-centric；P0–P2 见 [modularity-improvement.md](modularity-improvement.md)。不拆微服务，凭据落盘加密仍范围外 |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |
 | Token **后台自动刷新守护** | ❌ | 有手动 refresh |
 | Settings 语言切换 / i18n | ❌ | `language` 可写入 L1，UI 仅为中文只读说明，无 i18next |

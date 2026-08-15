@@ -1,5 +1,5 @@
 use super::*;
-use crate::models::{AccountKind, AgentId, AuthHealth, Capability, CapabilityLevel};
+use crate::models::{AccountKind, AgentId, AuthHealth, Capability, CapabilityLevel, RuntimeId};
 use crate::utils::paths::home_dir;
 use serde_json::json;
 use std::sync::Mutex;

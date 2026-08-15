@@ -9,6 +9,7 @@
 | [product-decisions.md](product-decisions.md) | 把已有登录接到另一个编程工具：三种接法、白话图、能接 / 接不上；后半是给实现的对照 |
 | [agenthub-plan.md](agenthub-plan.md) | 产品方案、决策、适配矩阵、模块、路线图、风险（当前 **v1.5**；含平台环境差异与 Adapter sidecar 目标决策） |
 | [architecture.md](architecture.md) | cargo workspace 目录、core/gui/cli 拆分、Service/Adapter；原则 12 按三路解释 `plan()` |
+| [modularity-improvement.md](modularity-improvement.md) | **模块化审查与改进方案**（2026-08-15）：生产仍 Adapter-centric 的诊断、P0/P1/P2 收口、明确不做微服务/凭据加密 |
 | [platform-capability-refactor.md](platform-capability-refactor.md) | **平台能力架构改造方案**：解耦边界、稀疏端口、生命周期/Skills/连接/用量；P01-P13 与 R00-R08 已完成 |
 | [platform-capability-remediation.md](platform-capability-remediation.md) | **2026-08-07 审查修正方案**：Active Binding、配置 fail-closed、Skills 安全/原子性、Lifecycle 审计与 AgentKey/OCP 真验证 |
 | [testing.md](testing.md) | **测试约定**：测试与生产分文件、vitest/cargo 命令、mock 边界、Markdown 预览用例索引 |
@@ -36,6 +37,7 @@
 - 一次性派工提示词、阶段任务清单和已替代的审查快照在执行完成后删除；最终结论只回写到稳定文档。
 - 项目实现状态、未实现清单和风险以 [agenthub-plan.md §8](agenthub-plan.md) 为唯一真源。
 - 平台能力改造的最终约束、暂缓项和验证证据以 [platform-capability-remediation.md](platform-capability-remediation.md) 为唯一真源。
+- 模块化债、双真源收口与上帝文件拆分以 [modularity-improvement.md](modularity-improvement.md) 为改进方案真源；不替代 architecture / platform-capability / sidecar 既有决策。
 - 对外发布、截图与凭据相关表述遵守 [privacy.md](privacy.md)。
 - 把已有登录接到另一个编程工具的**产品方向**（① 直接改配置 / ② 写进对方认的登录 / ③ 本机转发）以 [product-decisions.md](product-decisions.md) 为唯一真源。旧句「订阅 = 必须转发」「消费订阅不是产品」作废。
 - 「把已有登录接到另一个工具」的领域模型（实现里仍叫票 / 绑定 / 协议图）以 [connection-binding-model.md](connection-binding-model.md) 为唯一真源。该文是目标架构，未落地前实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。

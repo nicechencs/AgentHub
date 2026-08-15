@@ -8,7 +8,7 @@ import type {
   AdapterProfile,
 } from '@/lib/backend/contracts/adapter';
 import type { AgentId } from '@/lib/types';
-import type { ConnectionEntry } from '@/pages/connections/connection-model';
+import type { ConnectionEntry } from '@/lib/connection-entry';
 
 export type AdapterStatusTone = 'success' | 'warning' | 'danger' | 'info' | 'muted';
 

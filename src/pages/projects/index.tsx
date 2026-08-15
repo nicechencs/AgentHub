@@ -1,27 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  ChevronDown,
-  ChevronRight,
-  Copy,
   EyeOff,
   FolderKanban,
-  FolderOpen,
   Loader2,
-  MessageSquarePlus,
-  Pencil,
   Sparkles,
   Trash2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
-import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { SearchField } from '@/components/shared/SearchField';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -33,7 +25,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
-import { Tip } from '@/components/ui/tooltip';
 import { AGENTS, AGENT_MAP } from '@/config/agents';
 import {
   deleteAgentProject,
@@ -52,121 +43,10 @@ import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { normalizeOpenPath, projectOpenCandidates } from '@/lib/path-open';
 import type { AgentId, AgentProject, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
-
-function displayTitle(p: AgentProject): string {
-  const a = p.alias?.trim();
-  return a || p.title;
-}
-
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function relativeTime(iso: string): string {
-  const t = Date.parse(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
-  if (Number.isNaN(t)) return '';
-  const diff = Date.now() - t;
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return '刚刚';
-  if (m < 60) return `${m} 分钟前`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} 小时前`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d} 天前`;
-  return new Date(t).toLocaleDateString();
-}
-
-function shortPath(p: string, max = 48): string {
-  if (p.length <= max) return p;
-  return `…${p.slice(-(max - 1))}`;
-}
-
-function buildSummaryPrompt(
-  agentName: string,
-  excerpts: { title: string; cwd?: string | null; updatedAt: string; excerpt: string }[],
-): string {
-  const blocks = excerpts.map((e, i) => {
-    const head = [
-      `### 记录 ${i + 1}: ${e.title}`,
-      e.cwd ? `工作目录: ${e.cwd}` : null,
-      `更新时间: ${e.updatedAt}`,
-      '',
-      e.excerpt || '（无正文摘录）',
-    ]
-      .filter(Boolean)
-      .join('\n');
-    return head;
-  });
-  return [
-    `请根据以下 ${excerpts.length} 条 ${agentName} 历史会话摘录，写一份结构化总结。`,
-    '',
-    '要求：',
-    '1. 每条记录的核心目标与结论',
-    '2. 跨记录的共同主题或重复问题',
-    '3. 未完成事项与建议下一步',
-    '4. 若信息不足请明确标出，不要编造',
-    '',
-    '---',
-    '',
-    blocks.join('\n\n---\n\n'),
-  ].join('\n');
-}
-
-function buildContinuePrompt(p: AgentSession): string {
-  const bits = [
-    '我想基于这条历史会话继续工作。',
-    p.cwd ? `工作目录：${p.cwd}` : null,
-    p.preview ? `上次话题预览：${p.preview}` : `标题：${p.title}`,
-    '',
-    '请先简要回顾你认为的上下文（若不确定请说明），然后问我下一步要做什么。',
-  ];
-  return bits.filter(Boolean).join('\n');
-}
-
-function sessionMatches(s: AgentSession, q: string): boolean {
-  if (!q) return true;
-  const hay = [
-    s.sessionId ?? '',
-    s.id,
-    s.title,
-    s.preview ?? '',
-    s.cwd ?? '',
-    s.path,
-    s.relativePath,
-  ]
-    .join('\n')
-    .toLowerCase();
-  return hay.includes(q);
-}
-
-/** 原生 CLI session id（无则 null） */
-function nativeSessionId(s: AgentSession): string | null {
-  const sid = s.sessionId?.trim();
-  return sid ? sid : null;
-}
-
-/** 展示用短 id */
-function shortSessionId(id: string, max = 36): string {
-  if (id.length <= max) return id;
-  return `${id.slice(0, max - 1)}…`;
-}
-
-function projectMatches(p: AgentProject, q: string): boolean {
-  if (!q) return true;
-  const hay = [
-    p.title,
-    p.alias ?? '',
-    p.preview ?? '',
-    p.actualPath ?? '',
-    p.storagePath,
-    p.relativePath,
-  ]
-    .join('\n')
-    .toLowerCase();
-  return hay.includes(q);
-}
+import { projectMatches, sessionMatches } from './project-filter';
+import { buildContinuePrompt, buildSummaryPrompt } from './project-prompts';
+import { nativeSessionId, shortSessionId } from './project-format';
+import { ProjectTree } from './ProjectTree';
 
 export default function ProjectsPage() {
   const { toast } = useToast();
@@ -771,280 +651,26 @@ export default function ProjectsPage() {
           }
         />
       ) : (
-        <div className={pageRhythm.stackDense}>
-          {visibleProjects.map((p) => {
-            const open = expanded.has(p.id);
-            const loadingKids = loadingProjectIds.has(p.id);
-            const kids = open ? visibleSessions(p.id) : [];
-            const canExpand = p.sessionCount > 0 || p.agentId !== 'cursor';
-            return (
-              <Card
-                key={p.id}
-                className={cn(
-                  'overflow-hidden transition-colors',
-                  p.hidden && 'opacity-70',
-                )}
-              >
-                <div
-                  className={cn(
-                    'flex items-start gap-2 px-3 py-3',
-                    canExpand && 'cursor-pointer hover:bg-hover/40',
-                  )}
-                  onClick={() => canExpand && void toggleExpand(p)}
-                  role={canExpand ? 'button' : undefined}
-                  aria-expanded={canExpand ? open : undefined}
-                >
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center text-muted">
-                    {!canExpand ? (
-                      <span className="w-3.5" />
-                    ) : loadingKids ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : open ? (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    )}
-                  </span>
-                  <AgentDot
-                    agentId={agentId}
-                    color={agentMeta?.color}
-                    size="lg"
-                    className="mt-1.5"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                      <span className="text-sm font-medium text-primary">{displayTitle(p)}</span>
-                      {p.alias?.trim() && (
-                        <span className="text-xs text-muted">({p.title})</span>
-                      )}
-                      {p.hidden && <span className="text-xs text-muted">已隐藏</span>}
-                      <span className="text-xs text-muted tabular-nums">
-                        {relativeTime(p.updatedAt)}
-                      </span>
-                      <span className="text-xs text-muted">·</span>
-                      <span className="text-xs text-muted tabular-nums">
-                        {p.sessionCount} 会话
-                      </span>
-                      <span className="text-xs text-muted">·</span>
-                      <span className="text-xs text-muted tabular-nums">
-                        {fmtBytes(p.sizeBytes)}
-                      </span>
-                    </div>
-                    {p.preview && (
-                      <p className="mt-1 line-clamp-2 text-xs text-secondary">{p.preview}</p>
-                    )}
-                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-2xs text-muted">
-                      {p.actualPath && (
-                        <Tip label={p.actualPath}>{shortPath(p.actualPath, 48)}</Tip>
-                      )}
-                      <Tip label={p.storagePath}>
-                        {shortPath(p.relativePath || p.storagePath, 40)}
-                      </Tip>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 gap-1" onClick={(e) => e.stopPropagation()}>
-                    {(() => {
-                      const openTargets = projectOpenCandidates({
-                        actualPath: p.actualPath,
-                        storagePath: p.storagePath,
-                      });
-                      // 路径格式修复后仍无法得到绝对路径 → 隐藏打开图标
-                      if (openTargets.length === 0) return null;
-                      const primary = openTargets[0];
-                      const isWorkspace =
-                        !!normalizeOpenPath(p.actualPath) &&
-                        normalizeOpenPath(p.actualPath) === primary;
-                      return (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          disabled={busy}
-                          aria-label={isWorkspace ? '打开工作区' : '打开存储目录'}
-                          title={
-                            isWorkspace
-                              ? `打开工作区：${primary}`
-                              : `打开存储目录：${primary}`
-                          }
-                          onClick={(e) => void openProjectDir(p, e)}
-                        >
-                          <FolderOpen className="h-3.5 w-3.5" />
-                        </Button>
-                      );
-                    })()}
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      disabled={busy}
-                      aria-label="设置别名"
-                      title="设置别名"
-                      onClick={(e) => openAliasDialog(p, e)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      disabled={busy}
-                      aria-label={p.hidden ? '取消隐藏' : '隐藏'}
-                      title={p.hidden ? '取消隐藏' : '隐藏'}
-                      onClick={(e) => void toggleHideProject(p, e)}
-                    >
-                      <EyeOff className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-
-                {open && (
-                  <div className="border-t border-border bg-subtle/40">
-                    {loadingKids ? (
-                      <div className="px-3 py-3 text-xs text-muted">加载会话…</div>
-                    ) : kids.length === 0 ? (
-                      <div className="px-3 py-3 text-xs text-muted">
-                        {p.sessionCount === 0 ? '该项目下没有会话文件' : '没有匹配的会话'}
-                      </div>
-                    ) : (
-                      <ul className="divide-y divide-border/60">
-                        {kids.map((s) => {
-                          const isSel = selected.has(s.id);
-                          return (
-                            <li
-                              key={s.id}
-                              className={cn(
-                                'flex items-start gap-2 px-3 py-2.5 pl-10',
-                                isSel && 'bg-accent/5',
-                              )}
-                            >
-                              {showDelete && (
-                                <input
-                                  type="checkbox"
-                                  className="mt-1 h-3.5 w-3.5 shrink-0 accent-[var(--accent)]"
-                                  checked={isSel}
-                                  onChange={() => toggleOne(s.id)}
-                                  aria-label={`选择 ${s.title}`}
-                                />
-                              )}
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                                  <span className="text-sm text-primary">{s.title}</span>
-                                  <span className="text-xs text-muted tabular-nums">
-                                    {relativeTime(s.updatedAt)}
-                                  </span>
-                                  <span className="text-xs text-muted">·</span>
-                                  <span className="text-xs text-muted tabular-nums">
-                                    {fmtBytes(s.sizeBytes)}
-                                  </span>
-                                  {s.messageCount != null && s.messageCount > 0 && (
-                                    <>
-                                      <span className="text-xs text-muted">·</span>
-                                      <span className="text-xs text-muted tabular-nums">
-                                        ~{s.messageCount} 行
-                                      </span>
-                                    </>
-                                  )}
-                                </div>
-                                {s.preview && (
-                                  <p className="mt-0.5 line-clamp-2 text-xs text-secondary">
-                                    {s.preview}
-                                  </p>
-                                )}
-                                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-2xs text-muted">
-                                  {(() => {
-                                    const sid = nativeSessionId(s);
-                                    if (!sid) return null;
-                                    return (
-                                      <Tip label={`原生 Session ID：${sid}`}>
-                                        <button
-                                          type="button"
-                                          className="inline-flex max-w-full items-center gap-1 rounded-sm text-left hover:text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-                                          aria-label={`复制 Session ID ${sid}`}
-                                          title="点击复制原生 Session ID"
-                                          onClick={(e) => void copySessionId(s, e)}
-                                        >
-                                          <span className="truncate">
-                                            id: {shortSessionId(sid)}
-                                          </span>
-                                          <Copy className="h-3 w-3 shrink-0 opacity-70" />
-                                        </button>
-                                      </Tip>
-                                    );
-                                  })()}
-                                  {s.cwd && (
-                                    <Tip label={s.cwd}>
-                                      cwd: {shortPath(s.cwd, 36)}
-                                    </Tip>
-                                  )}
-                                  <Tip label={s.path}>
-                                    {shortPath(s.relativePath || s.path, 48)}
-                                  </Tip>
-                                </div>
-                              </div>
-                              <div className="flex shrink-0 gap-1">
-                                {(() => {
-                                  const cwdOpen = normalizeOpenPath(s.cwd);
-                                  if (!cwdOpen) return null;
-                                  return (
-                                    <Button
-                                      size="icon"
-                                      variant="ghost"
-                                      disabled={busy}
-                                      aria-label="打开工作目录"
-                                      title={`打开工作目录：${cwdOpen}`}
-                                      onClick={(e) => void openSessionCwd(s, e)}
-                                    >
-                                      <FolderOpen className="h-3.5 w-3.5" />
-                                    </Button>
-                                  );
-                                })()}
-                                {(() => {
-                                  const sid = nativeSessionId(s);
-                                  if (!sid) return null;
-                                  return (
-                                    <Button
-                                      size="icon"
-                                      variant="ghost"
-                                      disabled={busy}
-                                      aria-label="复制 Session ID"
-                                      title={`复制 Session ID：${sid}`}
-                                      onClick={(e) => void copySessionId(s, e)}
-                                    >
-                                      <Copy className="h-3.5 w-3.5" />
-                                    </Button>
-                                  );
-                                })()}
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  disabled={busy}
-                                  onClick={() => goContinue(s)}
-                                >
-                                  <MessageSquarePlus className="h-3.5 w-3.5" />
-                                  继续
-                                </Button>
-                                {showDelete && (
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    disabled={busy}
-                                    className="text-danger hover:text-danger"
-                                    aria-label="删除会话"
-                                    title="删除会话"
-                                    onClick={() => setDeleteTarget(s)}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                )}
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                )}
-              </Card>
-            );
-          })}
-        </div>
+        <ProjectTree
+          agentId={agentId}
+          agentMeta={agentMeta}
+          projects={visibleProjects}
+          expanded={expanded}
+          loadingProjectIds={loadingProjectIds}
+          selected={selected}
+          busy={busy}
+          showDelete={showDelete}
+          visibleSessions={visibleSessions}
+          onToggleExpand={(p) => void toggleExpand(p)}
+          onOpenProjectDir={(p, e) => void openProjectDir(p, e)}
+          onOpenAliasDialog={openAliasDialog}
+          onToggleHideProject={(p, e) => void toggleHideProject(p, e)}
+          onToggleOne={toggleOne}
+          onCopySessionId={(s, e) => void copySessionId(s, e)}
+          onOpenSessionCwd={(s, e) => void openSessionCwd(s, e)}
+          onGoContinue={goContinue}
+          onRequestDelete={setDeleteTarget}
+        />
       )}
 
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>

@@ -46,6 +46,16 @@ pub trait InstallContribution: Send + Sync {
         false
     }
 
+    /// Detect / doctor note for the npm channel. Default matches historical adapters.
+    fn npm_min_runtime_notes(&self) -> Option<&'static str> {
+        Some("Node.js >= 18")
+    }
+
+    /// Detect / doctor note for the native channel.
+    fn native_min_runtime_notes(&self) -> Option<&'static str> {
+        None
+    }
+
     fn native_uninstall_bin_paths(&self) -> Vec<PathBuf> {
         Vec::new()
     }

@@ -25,7 +25,7 @@ use serde_json::{json, Map, Value};
 use crate::error::{AppError, Result};
 use crate::models::{
     AgentConfig, AgentId, AuthHealth, AuthState, Capability, CapabilityState, DetectResult,
-    InstallChannel, LiveAccount, RunOptions, RunSpec, RuntimeId,
+    LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
 use crate::utils::atomic::atomic_write;
@@ -65,15 +65,6 @@ impl AgentAdapter for DshAdapter {
             Some("npm"),
             env_ready,
         )
-    }
-
-    fn install_channels(&self) -> Vec<InstallChannel> {
-        vec![InstallChannel {
-            id: "npm".into(),
-            label: format!("npm ({NPM_PACKAGE})"),
-            requires: vec![RuntimeId::NodeJs, RuntimeId::Npm],
-            min_runtime_notes: Some("Node.js required; install uses the published dsh CLI".into()),
-        }]
     }
 
     fn read_config(&self) -> Result<AgentConfig> {

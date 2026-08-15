@@ -9,16 +9,12 @@ import {
   type TransitionEvent as ReactTransitionEvent,
 } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { PackageSearch, Plus, Store } from 'lucide-react';
+import { Plus, Store } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { EmptyState } from '@/components/shared/EmptyState';
-import { ErrorState } from '@/components/shared/ErrorState';
-import { SearchField } from '@/components/shared/SearchField';
-import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import {
   SkillMarkdownPreviewPanel,
   type SkillPreviewTarget,
-} from '@/components/shared/SkillMarkdownPreviewPanel';
+} from './SkillMarkdownPreviewPanel';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -29,9 +25,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { actionCountClass, segmentedCountClass } from '@/components/ui/segmented-styles';
+import { segmentedCountClass } from '@/components/ui/segmented-styles';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { TableSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
 import { AGENTS, agentDisplayName } from '@/config/agents';
@@ -62,116 +57,38 @@ import {
 } from '@/lib/hooks/useSkills';
 import { getSettings } from '@/lib/api/settings';
 import { usePrefersReducedMotion } from '@/lib/motion';
-import { openExternalLink } from '@/lib/open-external';
 import { FEATURE_NOT_WIRED } from '@/lib/platform';
-import type { AgentId, Skill, SkillMarketSource, SkillSyncState } from '@/lib/types';
+import type { AgentId, Skill, SkillMarketSource } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { pageEdgePx, pageRhythm } from '@/components/layout/page-rhythm';
+import { pageRhythm } from '@/components/layout/page-rhythm';
 import { skillsCopy } from './copy';
-import { SkillMarketTable } from './SkillMarketTable';
 import {
   catalogRowHasConflict,
   catalogRowHasMapped,
   isPrivateSourceRow,
   isSharedCatalogRow,
-  SkillMatrix,
   visibleCatalogRows,
 } from './SkillMatrix';
-
-const PREVIEW_WIDTH_DEFAULT = 440;
-/** 正常拖拽/记忆宽度下限 */
-const PREVIEW_WIDTH_MIN = 300;
-/** 视口极窄时允许压到的硬底（仍可横滑看文档） */
-const PREVIEW_WIDTH_FLOOR = 240;
-/** 预览打开时给左侧列表预留的舒适宽度 */
-const MAIN_WIDTH_MIN = 380;
-/** 极窄时左侧可再让一点，避免预览被裁到消失 */
-const MAIN_WIDTH_FLOOR = 280;
-/** 预览卡片与窗边：水平 24 与 pageShell/workbenchX 一致 */
-const PREVIEW_FRAME_PAD_RIGHT = pageEdgePx.x;
-const PREVIEW_FRAME_PAD_Y = pageEdgePx.previewY;
-const PREVIEW_SEPARATOR_W = pageEdgePx.separator;
-const PREVIEW_WIDTH_STORAGE_KEY = 'agenthub.skills.previewWidth';
-const PREVIEW_WIDTH_STEP = 16;
-const PREVIEW_WIDTH_STEP_LARGE = 48;
-
-function readStoredPreviewWidth(): number {
-  if (typeof window === 'undefined') return PREVIEW_WIDTH_DEFAULT;
-  try {
-    const raw = window.localStorage.getItem(PREVIEW_WIDTH_STORAGE_KEY);
-    const n = raw ? Number(raw) : NaN;
-    if (Number.isFinite(n) && n >= PREVIEW_WIDTH_MIN) return Math.round(n);
-  } catch {
-    // ignore
-  }
-  return PREVIEW_WIDTH_DEFAULT;
-}
-
-function marketSourceLabel(source: SkillMarketSource): string {
-  if (source === 'skillhub.cn') return 'skillhub.cn';
-  if (source === 'skills.sh') return 'skills.sh';
-  return '自动';
-}
-
-function marketHomeUrl(activeProvider: string | undefined, source: SkillMarketSource): string {
-  if (activeProvider === 'skillhub.cn' || source === 'skillhub.cn') return 'https://skillhub.cn/';
-  return 'https://skills.sh/';
-}
-
-/** 结果页展示的当前源名：优先实际 provider，否则用设置项 */
-function marketResultLabel(
-  activeProvider: string | undefined,
-  source: SkillMarketSource,
-): string {
-  if (activeProvider === 'skills.sh' || activeProvider === 'skillhub.cn') {
-    return activeProvider;
-  }
-  return marketSourceLabel(source);
-}
-
-/** library=本地表 · market=市场；workspace / installed 兼容旧 URL */
-const SKILL_TABS = ['library', 'market'] as const;
-type SkillTab = (typeof SKILL_TABS)[number];
-
-function parseSkillTab(raw: string | null): SkillTab {
-  if (raw === 'installed' || raw === 'workspace') return 'library';
-  if (raw && (SKILL_TABS as readonly string[]).includes(raw)) return raw as SkillTab;
-  return 'library';
-}
-
-type LocalFilter = 'all' | 'private' | 'mapped' | 'unmapped' | 'conflict';
-
-const FILTERS: { id: LocalFilter; label: string }[] = [
-  { id: 'all', label: skillsCopy.filters.enableAll },
-  { id: 'private', label: skillsCopy.filters.enablePrivate },
-  { id: 'mapped', label: skillsCopy.filters.enableMapped },
-  { id: 'unmapped', label: skillsCopy.filters.enableUnmapped },
-  { id: 'conflict', label: skillsCopy.filters.enableConflict },
-];
-
-const cellKey = (skillId: string, agentId: AgentId) => `${skillId}:${agentId}`;
-
-/** 按真实写操作结果更新共享 catalog 行的投影 */
-function applyCatalogCellState(
-  rows: InstalledSkillDto[],
-  skillId: string,
-  agentId: AgentId,
-  state: SkillSyncState,
-): InstalledSkillDto[] {
-  return rows.map((row) => {
-    if (row.origin !== 'shared' || row.id !== skillId) return row;
-    const projections = (row.projections ?? []).map((p) =>
-      p.agent === agentId
-        ? {
-            ...p,
-            state,
-            linkKind: state === 'linked' ? p.linkKind : 'none',
-          }
-        : p,
-    );
-    return { ...row, projections };
-  });
-}
+import { applyCatalogCellState, cellKey } from './skills-catalog-model';
+import {
+  MAIN_WIDTH_FLOOR,
+  MAIN_WIDTH_MIN,
+  parseSkillTab,
+  PREVIEW_FRAME_PAD_RIGHT,
+  PREVIEW_FRAME_PAD_Y,
+  PREVIEW_SEPARATOR_W,
+  PREVIEW_WIDTH_DEFAULT,
+  PREVIEW_WIDTH_FLOOR,
+  PREVIEW_WIDTH_MIN,
+  PREVIEW_WIDTH_STEP,
+  PREVIEW_WIDTH_STEP_LARGE,
+  PREVIEW_WIDTH_STORAGE_KEY,
+  readStoredPreviewWidth,
+  type LocalFilter,
+  type SkillTab,
+} from './skills-preview-model';
+import { SkillsLibraryPanel } from './SkillsLibraryPanel';
+import { SkillsMarketPanel } from './SkillsMarketPanel';
 
 export default function SkillsPage() {
   const { toast } = useToast();
@@ -869,205 +786,89 @@ export default function SkillsPage() {
         </TabsList>
 
         <TabsContent value="library" className="mt-3 space-y-3">
-          {error !== null ? (
-            <ErrorState error={error} onRetry={load} />
-          ) : loading ? (
-            <TableSkeleton rows={8} cols={6} />
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-3">
-                <SearchField
-                  className="w-64"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={skillsCopy.filters.searchPlaceholder}
-                />
-                <SegmentedControl
-                  value={filter}
-                  onChange={setFilter}
-                  options={FILTERS.map((f) =>
-                    f.id === 'private'
-                      ? {
-                          value: f.id,
-                          label: (
-                            <span className="inline-flex items-center gap-1.5">
-                              {f.label}
-                              {filterCounts.private > 0 ? (
-                                <Tip
-                                  className={actionCountClass}
-                                  label={skillsCopy.tabs.privateBadge(filterCounts.private)}
-                                >
-                                  {filterCounts.private}
-                                </Tip>
-                              ) : (
-                                <span className={segmentedCountClass}>0</span>
-                              )}
-                            </span>
-                          ),
-                        }
-                      : {
-                          value: f.id,
-                          label: f.label,
-                          count: filterCounts[f.id],
-                        },
-                  )}
-                  aria-label="启用状态过滤"
-                />
-                {selected.size > 0 ? (
-                  <div className="ml-auto flex flex-wrap items-center gap-2">
-                    <span className="text-xs text-muted">
-                      {skillsCopy.filters.selectedCount(selected.size)}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => void handleBatchEnable()}
-                      disabled={batchSyncing}
-                      title={skillsCopy.filters.batchEnableHint}
-                    >
-                      {batchSyncing
-                        ? skillsCopy.filters.batchEnableBusy
-                        : skillsCopy.filters.batchEnable}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-                      {skillsCopy.filters.clearSelection}
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
 
-              {filtered.length === 0 ? (
-                <EmptyState
-                  icon={PackageSearch}
-                  title={skillsCopy.empty.noMatchTitle}
-                  description={
-                    search || filter !== 'all'
-                      ? skillsCopy.empty.noMatchFilter
-                      : skillsCopy.empty.noMatchLibrary
-                  }
-                  actionLabel={
-                    search || filter !== 'all' ? skillsCopy.empty.clearFilter : undefined
-                  }
-                  onAction={
-                    search || filter !== 'all'
-                      ? () => {
-                          setSearch('');
-                          setFilter('all');
-                        }
-                      : undefined
-                  }
-                />
-              ) : (
-                <SkillMatrix
-                  rows={filtered}
-                  selected={selected}
-                  allSelected={allSelected}
-                  pendingCells={pendingCells}
-                  importingIds={importingIds}
-                  onToggleSelect={handleToggleSelect}
-                  onToggleSelectAll={handleToggleSelectAll}
-                  onCellClick={handleCellClick}
-                  onOpenDir={(path) => void handleOpenDir(path)}
-                  onPreview={openCatalogPreview}
-                  activeKey={activeKey}
-                  onAdopt={(skillId, agentId, name) => {
-                    void handleImportPrivate(skillId, agentId, name, false);
-                  }}
-                  onUninstall={(skillId, agentId, name, inLibrary) =>
-                    handleUninstallPrivate(skillId, agentId, name, inLibrary)
-                  }
-                  agents={matrixAgents}
-                  installedAgentIds={installedAgentIds}
-                />
-              )}
-            </>
-          )}
-        </TabsContent>
+          <SkillsLibraryPanel
+            error={error}
+            loading={loading}
+            onRetry={load}
+            search={search}
+            onSearchChange={setSearch}
+            filter={filter}
+            onFilterChange={setFilter}
+            filterCounts={filterCounts}
+            selected={selected}
+            onClearSelected={() => setSelected(new Set())}
+            batchSyncing={batchSyncing}
+            onBatchEnable={() => void handleBatchEnable()}
+            filtered={filtered}
+            allSelected={allSelected}
+            pendingCells={pendingCells}
+            importingIds={importingIds}
+            onToggleSelect={handleToggleSelect}
+            onToggleSelectAll={handleToggleSelectAll}
+            onCellClick={handleCellClick}
+            onOpenDir={(path) => void handleOpenDir(path)}
+            onPreview={openCatalogPreview}
+            activeKey={activeKey}
+            onAdopt={(skillId, agentId, name) => {
+              void handleImportPrivate(skillId, agentId, name, false);
+            }}
+            onUninstall={(skillId, agentId, name, inLibrary) =>
+              handleUninstallPrivate(skillId, agentId, name, inLibrary)
+            }
+            agents={matrixAgents}
+            installedAgentIds={installedAgentIds}
+          />
+</TabsContent>
 
         <TabsContent value="market" className="mt-3">
-          <div className="mb-3 flex flex-wrap items-center gap-3">
-            <SearchField
-              className="w-72"
-              value={marketQuery}
-              onChange={(e) => setMarketQuery(e.target.value)}
-              placeholder={skillsCopy.filters.marketSearchPlaceholder}
-            />
-            <p className="text-xs text-muted">
-              <button
-                type="button"
-                className="text-accent underline-offset-2 hover:underline"
-                onClick={() => {
-                  const url = marketHomeUrl(activeMarketProvider, skillMarketSource);
-                  void openExternalLink(url).catch((e) => {
+
+          <SkillsMarketPanel
+            marketQuery={marketQuery}
+            onMarketQueryChange={setMarketQuery}
+            skillMarketSource={skillMarketSource}
+            activeMarketProvider={activeMarketProvider}
+            loading={market.loading}
+            error={market.error}
+            onRetry={market.reload}
+            items={market.data}
+            installingId={installingMarketId}
+            onInstall={(item) => {
+              void (async () => {
+                setInstallingMarketId(item.id);
+                try {
+                  const skill = await runInstallMarketSkill(item.id, false);
+                  const t = skillsCopy.toast.marketInstallOk(skill.name);
+                  toast({
+                    title: t.title,
+                    description: t.description,
+                    variant: 'success',
+                    actionLabel: t.actionLabel,
+                    onAction: goLibraryAndHighlight,
+                    duration: 8000,
+                  });
+                  void market.reload();
+                  await load();
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : String(e);
+                  if (msg.toLowerCase().includes('already exists')) {
                     toast({
-                      title: '无法打开链接',
-                      description: e instanceof Error ? e.message : String(e),
+                      ...skillsCopy.toast.marketExists(msg),
                       variant: 'danger',
                     });
-                  });
-                }}
-              >
-                {marketResultLabel(activeMarketProvider, skillMarketSource)}
-              </button>
-              {' · '}
-              {skillsCopy.market.suffix(
-                skillMarketSource === 'auto' &&
-                  (activeMarketProvider === 'skills.sh' ||
-                    activeMarketProvider === 'skillhub.cn'),
-              )}
-            </p>
-          </div>
-          {market.loading ? (
-            <TableSkeleton rows={4} cols={3} />
-          ) : market.error ? (
-            <ErrorState error={market.error} onRetry={market.reload} />
-          ) : !market.data?.length ? (
-            <EmptyState
-              icon={Store}
-              title={skillsCopy.empty.marketNoneTitle}
-              description={skillsCopy.empty.marketNoneDesc}
-            />
-          ) : (
-            <SkillMarketTable
-              items={market.data}
-              installingId={installingMarketId}
-              onInstall={(item) => {
-                void (async () => {
-                  setInstallingMarketId(item.id);
-                  try {
-                    const skill = await runInstallMarketSkill(item.id, false);
-                    const t = skillsCopy.toast.marketInstallOk(skill.name);
+                  } else {
                     toast({
-                      title: t.title,
-                      description: t.description,
-                      variant: 'success',
-                      actionLabel: t.actionLabel,
-                      onAction: goLibraryAndHighlight,
-                      duration: 8000,
+                      ...skillsCopy.toast.installFailed(msg),
+                      variant: 'danger',
                     });
-                    void market.reload();
-                    await load();
-                  } catch (e) {
-                    const msg = e instanceof Error ? e.message : String(e);
-                    if (msg.toLowerCase().includes('already exists')) {
-                      toast({
-                        ...skillsCopy.toast.marketExists(msg),
-                        variant: 'danger',
-                      });
-                    } else {
-                      toast({
-                        ...skillsCopy.toast.installFailed(msg),
-                        variant: 'danger',
-                      });
-                    }
-                  } finally {
-                    setInstallingMarketId(null);
                   }
-                })();
-              }}
-            />
-          )}
-        </TabsContent>
+                } finally {
+                  setInstallingMarketId(null);
+                }
+              })();
+            }}
+          />
+</TabsContent>
           </Tabs>
         </div>
 

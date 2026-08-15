@@ -13,7 +13,7 @@ import { Tip } from '@/components/ui/tooltip';
 import { AGENTS } from '@/config/agents';
 import type { AgentId, AgentStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { bridgesHrefForProfile } from '@/pages/bridges/adapter-model';
+import { bridgesHrefForProfile } from '@/lib/bridges-path';
 
 import {
   AGENT_OVERVIEW_GRID,

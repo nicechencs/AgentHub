@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::models::{AgentId, RuntimeId};
+use crate::models::{AgentId, InstallChannel, RuntimeId};
 use crate::platform::install::builtin_install_registry;
 
 // Re-export types under catalog path for existing imports.
@@ -82,6 +82,30 @@ pub fn list_install_catalog() -> Vec<AgentInstallCatalogEntry> {
         .map(|agent_id| AgentInstallCatalogEntry {
             agent_id,
             channels: channels_for(agent_id),
+        })
+        .collect()
+}
+
+/// Adapter detect/doctor channels — same id order as [`channels_for`].
+///
+/// Labels and presence come from the install catalog; runtime notes come from
+/// [`crate::platform::install::InstallContribution`].
+pub fn adapter_install_channels(agent: AgentId) -> Vec<InstallChannel> {
+    let contrib = builtin_install_registry().get_agent_id(agent);
+    channels_for(agent)
+        .into_iter()
+        .map(|plan| {
+            let notes = match plan.id.as_str() {
+                "npm" => contrib.as_ref().and_then(|c| c.npm_min_runtime_notes()),
+                "native" => contrib.as_ref().and_then(|c| c.native_min_runtime_notes()),
+                _ => None,
+            };
+            InstallChannel {
+                id: plan.id,
+                label: plan.label,
+                requires: plan.requires,
+                min_runtime_notes: notes.map(str::to_string),
+            }
         })
         .collect()
 }
@@ -184,129 +208,4 @@ fn native_command_display(agent: AgentId) -> (&'static str, Option<String>) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn catalog_covers_every_agent_with_a_plan() {
-        for agent in AgentId::ALL {
-            let has_plan = npm_package(agent).is_some()
-                || native_ps1_url(agent).is_some()
-                || native_sh_url(agent).is_some()
-                || native_setup_url(agent).is_some();
-            assert!(has_plan, "agent {} has no install channel", agent.as_str());
-            assert!(
-                !channels_for(agent).is_empty(),
-                "agent {} has empty channel list",
-                agent.as_str()
-            );
-        }
-        assert_eq!(list_install_catalog().len(), AgentId::ALL.len());
-    }
-
-    #[test]
-    fn list_install_catalog_commands_reference_allowlist() {
-        for entry in list_install_catalog() {
-            for ch in &entry.channels {
-                assert!(
-                    !ch.command.trim().is_empty(),
-                    "{:?} empty command",
-                    entry.agent_id
-                );
-                if ch.id == "npm" {
-                    let pkg = npm_package(entry.agent_id).expect("npm channel needs package");
-                    assert!(ch.command.contains(pkg));
-                }
-                if ch.id == "native" {
-                    if let Some(url) = native_setup_url(entry.agent_id) {
-                        assert_eq!(ch.command, url);
-                    } else if let Some(url) = native_ps1_url(entry.agent_id) {
-                        assert!(
-                            ch.command.contains(url) || native_sh_url(entry.agent_id).is_some(),
-                            "command {} should reference allowlisted URL for {:?}",
-                            ch.command,
-                            entry.agent_id
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn pi_and_cursor_and_workbuddy_edges() {
-        assert_eq!(
-            npm_package(AgentId::Pi),
-            Some("@earendil-works/pi-coding-agent")
-        );
-        assert_eq!(npm_install_extra_flags(AgentId::Pi), &["--ignore-scripts"]);
-        assert!(npm_package(AgentId::WorkBuddy).is_none());
-        assert!(native_ps1_url(AgentId::WorkBuddy).is_none());
-        assert!(native_setup_url(AgentId::WorkBuddy).is_some());
-        assert!(npm_package(AgentId::Cursor).is_none());
-        assert_eq!(
-            native_ps1_url(AgentId::Cursor),
-            Some(crate::adapters::cursor::NATIVE_PS1_URL)
-        );
-        let cursor_probe = official_version_probe(AgentId::Cursor).expect("cursor install script");
-        assert!(matches!(
-            cursor_probe,
-            OfficialVersionProbe::ScriptVersion {
-                kind: ScriptVersionKind::CursorInstall,
-                ..
-            }
-        ));
-    }
-
-    #[cfg(not(windows))]
-    #[test]
-    fn unix_native_shell_channels_do_not_require_powershell() {
-        for agent in AgentId::ALL {
-            for channel in channels_for(agent) {
-                if channel.id == "native" && native_sh_url(agent).is_some() {
-                    assert!(!channel.requires.contains(&RuntimeId::PowerShell));
-                    assert!(!channel.command.contains("irm "));
-                    assert!(!channel.command.contains("PowerShell"));
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn kimi_and_grok_version_sources() {
-        assert_eq!(npm_package(AgentId::Kimi), Some("@moonshot-ai/kimi-code"));
-        assert!(npm_package(AgentId::Grok).is_none());
-        let kimi_probe = official_version_probe(AgentId::Kimi).expect("kimi cdn");
-        assert!(matches!(
-            kimi_probe,
-            OfficialVersionProbe::JsonVersion { .. }
-        ));
-        let grok_probe = official_version_probe(AgentId::Grok).expect("grok cdn");
-        assert!(matches!(
-            grok_probe,
-            OfficialVersionProbe::PlainVersion { .. }
-        ));
-        assert_eq!(
-            native_ps1_url(AgentId::Kimi),
-            Some("https://code.kimi.com/kimi-code/install.ps1")
-        );
-        assert!(!native_ps1_url(AgentId::Kimi).unwrap().contains("kimi-cli"));
-    }
-
-    #[test]
-    fn codex_orders_npm_before_native() {
-        let ch = channels_for(AgentId::Codex);
-        assert_eq!(ch[0].id, "npm");
-        #[cfg(windows)]
-        {
-            assert!(ch.len() >= 2);
-            assert_eq!(ch[1].id, "native");
-        }
-        #[cfg(not(windows))]
-        {
-            // Codex currently publishes only a Windows PowerShell script;
-            // don't expose that as a Unix/macOS native channel.
-            assert_eq!(ch.len(), 1);
-        }
-    }
-}
+mod tests;

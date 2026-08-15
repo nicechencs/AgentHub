@@ -667,7 +667,7 @@ impl AdapterSecretResolver {
         let rule = adapter_rule_id(target).ok_or_else(invalid_reference)?;
         match (rule, kind) {
             (
-                KIMI_TO_CLAUDE_RULE | KIMI_TO_PI_RULE,
+                KIMI_TO_CLAUDE_RULE | KIMI_TO_PI_RULE | KIMI_TO_GROK_RULE,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account,
             ) => self.resolve_kimi_membership_api_key(kind, source_id),
             (
@@ -681,7 +681,7 @@ impl AdapterSecretResolver {
                 AdapterSourceKind::Provider | AdapterSourceKind::Account,
             ) => self.resolve_explicit_api_key(rule, kind, source_id),
             (
-                KIMI_TO_GROK_RULE | OPENAI_TO_GROK_RULE,
+                OPENAI_TO_GROK_RULE,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account,
             ) => self.resolve_explicit_api_key(rule, kind, source_id),
             (
