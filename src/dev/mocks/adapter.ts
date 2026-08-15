@@ -331,6 +331,7 @@ const KIMI_MEMBERSHIP_RULE_IDS = new Set([
   'kimi-membership-to-claude-v1',
   'kimi-membership-to-codex-v1',
   'kimi-membership-to-pi-v1',
+  'kimi-membership-to-grok-v1',
 ]);
 const NATIVE_SUBSCRIPTION_PI_RULE_IDS = new Set([
   'claude-subscription-to-pi-v1',
@@ -569,6 +570,44 @@ function analyze(
       ],
       evidence: [evidence('Kimi Code: Claude Code integration', 'https://www.kimi.com/code/docs/en/third-party-tools/claude-code.html')],
       ruleId: 'kimi-membership-to-claude-v1',
+      gateKind: 'none',
+    };
+  }
+  if (source === 'kimi_membership' && request.targetAgentId === 'grok') {
+    return {
+      route: 'native_endpoint',
+      support: 'experimental',
+      reason: 'Kimi Code 会员可实验写入 Grok 的 OpenAI Chat Completions 配置。',
+      actions: [
+        action('set_config', 'Grok', '写入 Grok 官方 OpenAI Chat Completions TOML。', KIMI_GROK_BASE_URL),
+        action('set_config', 'Grok', '使用 Grok Chat Completions 与 kimi-k2.5。', 'api_backend=chat_completions; model=kimi-k2.5'),
+        secretAction('Grok', '从已选 Connection 引用 API Key；不会读取或显示它。'),
+      ],
+      limitations: [
+        '只修改 Grok ~/.grok/config.toml 的官方 TOML provider；不会启动本机桥接。',
+        '生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId: KIMI_GROK_RULE_ID,
+      gateKind: 'none',
+    };
+  }
+  if (source === 'openai_api_key' && request.targetAgentId === 'grok') {
+    return {
+      route: 'native_endpoint',
+      support: 'experimental',
+      reason: 'OpenAI API 可实验写入 Grok 的官方 OpenAI Chat Completions 配置。',
+      actions: [
+        action('set_config', 'Grok', '写入 Grok 官方 OpenAI Chat Completions TOML。', OPENAI_GROK_BASE_URL),
+        action('set_config', 'Grok', '使用 Grok Chat Completions 与 gpt-4o。', 'api_backend=chat_completions; model=gpt-4o'),
+        secretAction('Grok', '从已选 Connection 引用 API Key；不会读取或显示它。'),
+      ],
+      limitations: [
+        '只修改 Grok ~/.grok/config.toml 的官方 TOML provider；不会启动本机桥接。',
+        '生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId: OPENAI_GROK_RULE_ID,
       gateKind: 'none',
     };
   }

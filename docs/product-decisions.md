@@ -1,176 +1,258 @@
-# 产品决策（跨 Agent 复用三路）
+# 把已有登录接到另一个编程工具
 
-> 状态：**2026-08-15**。本文是跨 Agent 复用的**产品**真源。  
-> 领域对象与 `plan()` 仍以 [connection-binding-model.md](connection-binding-model.md) 为准。  
-> 厂商边与**当前能否 bind** 以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为准。  
+> 状态：**2026-08-15**。本文是跨工具复用的**产品**真源，前半用日常说法，后半给实现对照。  
+> 领域对象与规划器仍以 [connection-binding-model.md](connection-binding-model.md) 为准。  
+> 各家接口与**现在能不能写上去**以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为准。  
 > 实现清单以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
 
 ## 0. 一句话
 
-一张票接到另一个 Agent，只可能是下面三路之一。分类挂在 **(票, 目标 Agent)** 这条边上，不挂在票上。
+你在 AgentHub 里存的，是**一份登录**：一把 API Key，或一次订阅登录。  
+Claude、Codex、Grok、Pi 是四个**编程工具**。  
+同一份登录接到不同工具，做法可以不一样。只可能是下面三种之一。
 
-```text
-① API 端点直连     上游同一把 Key 已提供目标听的协议（常见：双协议 Key）
-② 原生订阅复用     目标 Agent 自己就认这套 OAuth / 订阅登录
-③ 本机协议桥       协议对不上，才起 loopback 做转换
+能直接改配置、或写进对方认的登录，就不做转发。转发是兜底，不是默认。  
+**现在还写不上去**只表示这条还没接到写入，不表示产品不做。
+
+做法挂在 **(这份登录, 那个工具)** 上，不挂在登录本身上。同一把 Key 接到 Claude 可能只改配置，接到 Codex 却要转发，这是常态。
+
+### 三种做法长什么样
+
+**① 直接改配置** — Key 已经会说那个工具听得懂的话，只填地址和模型，不另开程序。
+
+```mermaid
+flowchart LR
+  key["你的 Key"] --> fill["只改地址和模型"]
+  fill --> tool["工具直接连官方"]
 ```
 
-能走 ① 或 ② 就不起桥。③ 是兜底，不是默认。  
-**未实现**只表示这条边还没接到 `bind`，不表示产品不做。
+**② 写进对方认的登录** — 对方自己就会用这套订阅，只把登录写过去，不另开程序。
 
-## 1. 三路
+```mermaid
+flowchart LR
+  sub["你的订阅"] --> write["写进对方认的登录"]
+  write --> tool["对方自己去用"]
+```
 
-### 1.1 API 端点直连
+**③ 本机转发** — 两边说的话对不上，才在这台电脑上做一层转换。目标只连你家电脑，真正登录留在 AgentHub。
 
-上游同一把 API Key 已经提供目标 Agent 听的协议。典型是**双协议 Key**：同一产品同时给 Anthropic Messages 和 OpenAI Chat Completions。一把 Key 可以接到两种以上 Agent，只改 Base URL / 槽位，**不起桥**。
+```mermaid
+flowchart LR
+  login["你的登录"] --> fwd["本机转发"]
+  fwd --> tool["工具只连你家电脑"]
+```
 
-| 例子 | 目标 | 用户感知 |
+怎么选（顺序不能换）：
+
+```mermaid
+flowchart TB
+  start["接到另一个编程工具"]
+  start --> native{"本来就是给它的？"}
+  native -->|是| switch["换到这份登录"]
+  native -->|否| sub{"订阅，且对方认这套登录？"}
+  sub -->|是| r2["② 写进去，不转发"]
+  sub -->|否| key{"Key 已经会说对方听的话？"}
+  key -->|是| r1["① 只改配置，不转发"]
+  key -->|否| conv{"测过这种转换？"}
+  conv -->|是| r3["③ 本机转发"]
+  conv -->|否| no["接不上，写明缺什么"]
+```
+
+## 1. 三种做法
+
+### 1.1 直接改配置
+
+这份 API Key 本身就会说目标工具听得懂的话。AgentHub 只帮你填官方地址和模型，**不另开程序**。
+
+常见情况：同一产品同时提供两种接口（给 Claude 的一种，给普通 Chat 的一种）。一把 Key 可以接到两个以上工具。
+
+| 例子 | 接到 | 你看到的 |
 |---|---|---|
-| Kimi Code 会员 Key | Claude Code | 写 Anthropic 兼容入口 |
-| 同一把 Key | Pi | 写入 Pi 的对应槽 |
-| GLM Coding Plan / DeepSeek API | Claude Code | 写官方 Anthropic 兼容入口 |
-| GLM Coding Plan / DeepSeek API | Codex | 写官方 Responses 兼容入口 |
+| Kimi 会员 Key | Claude Code | 填 Claude 能用的官方地址 |
+| 同一把 Key | Pi | 写进 Pi 里 Kimi 那一家的位置 |
+| GLM / DeepSeek 的 Key | Claude Code | 填官方给 Claude 用的地址 |
+| GLM / DeepSeek 的 Key | Codex | 填官方给 Codex 用的地址 |
 
-同一机制也覆盖**单协议 Key**：Anthropic Key → Pi、OpenAI Key → Pi。它们不是「双协议」，但同样是直连、不起桥。
+Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口」，但同样只改配置、不转发。
 
-硬约束：
+必须写全名：名字里带「OpenAI 兼容」的，多半是 Chat 这种接口，**不是** Codex 要的那种（Responses）。  
+所以同一把「兼容」Key 接到 Codex，常常只能走 ③，不是「兼容就万能」。
 
-- `OpenAI 兼容`必须写全名。Chat Completions **不是** Codex 要的 Responses。
-- 所以同一把双协议 Key → Codex 常常掉进 **③**，不是「双协议 = 万能」。
+### 1.2 写进对方认的登录
 
-### 1.2 原生订阅复用
+目标工具**自己就会**用这套订阅登录（同一套登录方式、同一套刷新方式、有对应的登录位置）。AgentHub 只把授权写进对方认的位置，**不另开程序**，也不把订阅登录翻译成另一家的 Key。
 
-目标 Agent **公开支持**同一套订阅 / OAuth 契约（同一登录方式、同一刷新语义、有对应 provider 槽）。Hub 只把授权写进目标自己的槽，**不起桥**，也不把 OAuth token 翻译成另一家 Key。
-
-| 例子 | 目标 | 用户感知 |
+| 例子 | 接到 | 你看到的 |
 |---|---|---|
-| Claude 订阅 | Pi 的 Anthropic 槽 | 和在 Pi 里登录 Claude 同一回事 |
-| Codex / ChatGPT 订阅 | Pi 的 `openai-codex` 槽 | 写 Pi 的 Codex 登录槽 |
-| Grok / xAI 订阅 | Pi 的 xAI 槽 | 写 Pi 的 xAI 登录槽 |
-| 任一订阅 | 签发它的那个 Agent | 普通切换（`native`） |
+| Claude 订阅 | Pi 里 Claude 那一家 | 和在 Pi 里登录 Claude 同一回事 |
+| Codex / ChatGPT 订阅 | Pi 里 Codex 那一家 | 写进 Pi 自己的 Codex 登录 |
+| Grok / xAI 订阅 | Pi 里 Grok 那一家 | 写进 Pi 自己的 Grok 登录 |
+| 任一订阅 | 签发它的那个工具 | 普通切换到这份登录 |
 
-Pi 是当前已登记的跨 Agent 第 2 路落点。别的 Agent 必须逐个验证契约，不能因为「都是 OAuth」就推导。
+目前只有 Pi 登记了「把别人的订阅写进来」。别的工具必须一家一家核对，不能因为「都是订阅登录」就类推。
 
-不是第 2 路（常见误判）：
+不是第 2 种（常见误判）：
 
 | 组合 | 实际 | 原因 |
 |---|---|---|
-| Claude 订阅 → Codex | **产品不做** | Codex 不吃 Anthropic PKCE，本产品不走这条边 |
-| Grok 订阅 → Claude | **③** | Claude Messages 与 xAI Chat Completions 需要本机协议桥 |
-| Codex 订阅 → Claude | **③** | Claude 只听 Messages；这是本机桥，不是写 Claude 官方登录 |
+| Claude 订阅 → Codex | **产品不做** | Codex 不会用 Claude 这套登录，本产品不走这条 |
+| Grok 订阅 → Claude | **③** | Claude 听的话和 Grok 说的话不同，要本机转发 |
+| Codex 订阅 → Claude | **③** | Claude 只听自己那套接口；这是本机转发，不是写 Claude 官方登录 |
 
-第 2 路有工程门禁，不是改判成 ③ 的理由：若 refresh token 单次轮换，原 Agent 与目标各自刷新会互相打翻。逐边选「目标自己再登录」或「Hub 统一刷新 + 目标只持引用」。
+如果刷新令牌只能用一次，原来的工具和目标工具各自刷新会互相打翻。逐条选「目标自己再登录」或「由 AgentHub 统一刷新，目标只拿引用」。
 
-### 1.3 本机协议桥
+### 1.3 本机转发
 
-票能说的和 Agent 听的对不上，图上又有已测转换边。这时才起本机 loopback：目标只持本地 bearer，上游 secret 留在 Hub / sidecar。
+这份登录说的话，和目标工具听的话对不上，而我们又测过这种转换。这时才在这台电脑上开一层转发：目标工具只连你家电脑上的地址，真正的登录留在 AgentHub 里。
 
-| 例子 | 用户感知 |
+| 例子 | 你看到的 |
 |---|---|
-| Codex 订阅 → Claude Code | Claude 指到本机桥，额度来自 ChatGPT 订阅 |
-| Kimi / Anthropic API Key → Codex | Codex 听 Responses，上游是 Chat 或 Messages，要转换 |
-| Grok 订阅 → Claude Code | Claude 听 Messages，上游是 xAI Chat Completions |
+| Codex 订阅 → Claude Code | Claude 连到本机转发，额度来自 ChatGPT 订阅 |
+| Kimi / Anthropic 的 Key → Codex | Codex 要的接口和上游不同，要转换 |
+| Grok 订阅 → Claude Code | Claude 听一种接口，上游是 Grok 的另一种 |
 
-③ 只在协议对不上时起本机桥。  
-**不**默认先起一个常驻兼容 HTTP。
+③ 只在对不上时才转发。  
+**不**默认先开一个一直挂着的兼容服务。
 
-## 2. 和领域 route 的映射
+## 2. 图：三种做法分别接到谁
 
-领域模型不新增枚举。`plan()` 仍只返回 `native | reshape | bridge | 不可行`。三路是用户说明，由 `plan()` 派生，前端不得自己猜。
+下面只画「谁接到谁」。每种做法本身见文首三张小图。完整对照表在下一节。
 
-| 用户三路 | 判定 | 领域 `route` | 实现名 | 起桥 |
-|---|---|---|---|---|
-| ① API 端点直连 | API Key，且 `speaks ∩ accepts ≠ ∅` | 通常 `reshape`；发给本 Agent 时 `native` | `native_endpoint` / `config_sync` | 否 |
-| ② 原生订阅复用 | OAuth，且目标有**同一授权契约槽** | 跨 Agent 通常 `reshape`；本 Agent `native` | `config_sync` / 账号切换 | 否 |
-| ③ 本机协议桥 | 无共同协议或契约槽，图上有已测边 | `bridge` | `local_bridge` | 是，仅 loopback |
-| —— | 无 writer / 无边 / 登录态不能当 HTTP 上游 | 不可行 | `unsupported` | 否 |
+**① 只改配置**（不另开程序）
 
-`accepts[]` 要同时登记 **wire 协议** 和 **OAuth 契约槽**。OAuth 票的 `speaks` 除协议外要带契约身份（如 `openai-codex-pkce`），否则规划器判不出 ②。
-
-## 3. 判定顺序
-
-```text
-plan(ticket, agent):
-  if 无 writer:                              不可行（目标不可写）
-  if 票本来就签给这个 Agent:                 native          # 切换；② 的本 Agent 情形
-  if OAuth 且目标 accepts 含同一授权契约:    reshape         # ② 不起桥
-  if API Key 且 speaks ∩ accepts 非空:       reshape         # ① 不起桥
-  if 有可用上游 且 图上有 speaks→accepts 边:  bridge          # ③ 仅 loopback
-  不可行（写明缺的是：契约槽 / 共同协议 / 转换边 / HTTP 上游）
+```mermaid
+flowchart LR
+  kimi["Kimi 会员"] --> kTargets["Claude · Pi · Grok"]
+  glm["智谱 / DeepSeek"] --> gTargets["Claude · Pi · Codex"]
+  oai["OpenAI Key"] --> oTargets["Pi · Grok"]
+  anth["Anthropic Key"] --> pi1["Pi"]
+  xai["xAI Key"] --> pi2["Pi"]
 ```
 
-顺序不可交换：`native` > `reshape`（①②）> `bridge`（③）> 不可行。
+智谱 / DeepSeek 还可以直接接到 DeepSeek 自己的工具。
 
-## 4. 同票不同路（防「双协议 = 万能」）
+**② 写进对方认的登录**（目前只写进 Pi）
 
-三路不是票的字段。钱包只标这张票 **对上游能说什么**；走哪一路只出现在 bind 预览里。
+```mermaid
+flowchart LR
+  subs["Claude / Codex / Grok 订阅"] --> pi["Pi 里对应那一家"]
+```
 
-| 同一张票 | → Claude | → Pi | → Codex |
-|---|---|---|---|
-| Kimi Code 会员双协议 Key | ① 直连 Messages 入口 | ① 写槽 | ③ Chat ≠ Responses，要桥；→ Grok 走 ① Chat 配置 |
-| OpenAI API Key | — | ① 写槽 | ① 官方 Chat 配置写入 Grok |
-| GLM / DeepSeek API Key | ① 直连 Messages 入口 | ① 写槽 | ① 官方 Responses 端点直连 |
-| Anthropic API Key | native / ① | ① 写 Anthropic 槽 | ③ Messages → Responses |
-| Codex 订阅 | ③ 本机桥 | ② 写 `openai-codex` 槽 | native |
-| Claude 订阅 | native | ② 写 Anthropic 槽 | **产品不做** |
-| Grok 订阅 | ③ 本机桥 | ② 写 xAI 槽 | ③ 或暂不可行 |
+**③ 本机转发**（中间多一截，目标只连你家电脑）
+
+```mermaid
+flowchart LR
+  keys["Kimi / Anthropic 的 Key"] --> fwd1["本机转发"] --> codex["Codex"]
+  subs["Codex / Grok 订阅"] --> fwd2["本机转发"] --> claude["Claude"]
+```
+
+Claude 订阅接到 Codex：**产品不做**（不是「以后再转发」）。
+
+## 3. 同一份登录，接到谁，做法可以不同
+
+三种做法不是登录上的固定标签。钱包只标明这份登录**对上游能说什么**；走哪一种只出现在「接到…」的预览里。
+
+| 这份登录 | → Claude | → Pi | → Codex | → Grok |
+|---|---|---|---|---|
+| Kimi 会员 Key | ① 填 Claude 能用的地址 | ① 写进 Pi | ③ 要转发 | ① 写进 Grok 的 Chat 配置 |
+| OpenAI Key | — | ① 写进 Pi | ③ 要转发（还没做） | ① 写进 Grok 的 Chat 配置 |
+| GLM / DeepSeek Key | ① 填 Claude 能用的地址 | ① 写进 Pi | ① 官方有 Codex 要的接口 | — |
+| Anthropic Key | 换到这份登录 | ① 写进 Pi | ③ 要转发 | — |
+| Codex 订阅 | ③ 本机转发 | ② 写进 Pi 认的登录 | 换到这份登录 | — |
+| Claude 订阅 | 换到这份登录 | ② 写进 Pi 认的登录 | **产品不做** | — |
+| Grok 订阅 | ③ 本机转发 | ② 写进 Pi 认的登录 | — | 换到这份登录 |
+
+DeepSeek 还可以直接接到 DeepSeek 自己的工具（①）。
 
 固定句式：
 
-> 双协议指这把 Key 对**上游**能说 Messages 和 Chat Completions。能不能直连由**目标听什么**决定。Chat Completions 不是 Codex 的 Responses。
+> 「兼容两种接口」指这把 Key 对**上游**能说给 Claude 的那种，和普通 Chat 那种。能不能直接改配置，由**目标工具听什么**决定。普通 Chat 不是 Codex 要的那种接口。
 
-## 5. 和本产品的边界
+怎么判定（顺序不能换）：
 
-同类桌面/代理工具里常见「配置切换、本机桥、管理面」。AgentHub 的取舍是：
+```text
+这个工具能不能被写入？
+  → 这份登录本来就是给它的？     换到这份登录
+  → 订阅，且对方认这套登录？     ② 写进去，不转发
+  → Key 已经会说对方听的话？     ① 只改配置，不转发
+  → 测过这种转换？               ③ 本机转发
+  → 否则接不上（写明缺的是什么）
+```
+
+Claude 订阅 → Codex 是**产品不做**，不是「以后再转发」。
+
+## 4. 和本产品的边界
+
+同类桌面工具里常见「改配置、本机转发、管理面」。AgentHub 的取舍是：
 
 | | AgentHub |
 |---|---|
-| ① 双协议 / 官方兼容入口 | **优先直连**，能配官方端点就不启进程 |
-| ② 订阅写进目标自己的槽 | **能写槽就写槽**（Pi 三槽是范例） |
-| ③ 协议转换 | 只在 ①② 都走不通时起本机桥 |
-| 管理面 | 用现有页面做登录、配额、探测、桥启停，不另做多栏工作台 |
+| ① 官方已经给了对方听得懂的地址 | **优先直接改配置**，能配官方地址就不另开程序 |
+| ② 订阅写进对方认的登录 | **能写就写**（Pi 里三家是范例） |
+| ③ 协议转换 | 只在 ①② 都走不通时才本机转发 |
+| 管理面 | 用现有页面做登录、额度、探测、转发启停，不另做多栏工作台 |
 
-本产品不做：公网入口、多账号拼车、转售、把桥的生成配置再当作钱包里的票、默认常驻兼容代理。  
-公开致谢见根 [README.md](../README.md)。凭据落盘加密仍为项目范围外。
+本产品不做：公网入口、多人共用一份登录、转售、把转发生成的配置再当成一份新登录、默认一直挂着的兼容服务。  
+公开致谢见根 [README.md](../README.md)。把登录存盘后再加密，仍是项目范围外。
 
-## 6. 产品开，实现可以关
+## 5. 产品要做，实现可以暂时写不上去
 
 | 层 | 说什么 | 不说什么 |
 |---|---|---|
-| 产品 | 三路都要做；先直连和原生订阅，对不上再桥 | 「订阅 = 本机路由」「订阅不是产品」 |
-| 实现 | 这条边现在 `canApply=false` | 「用户不准问起」「入口藏掉」 |
-| 安全 | 本机、当前用户、③ 的 token 不进目标 Agent | 「未获官方书面批准就不能做 ③」 |
+| 产品 | 三种都要做；先直接改配置和写进对方认的登录，对不上再转发 | 「订阅 = 必须转发」「订阅不是产品」 |
+| 实现 | 这条现在还写不上去 | 「用户不准问起」「入口藏掉」 |
+| 安全 | 只在这台电脑、当前用户；③ 的登录不进目标工具 | 「没官方书面批准就不能做 ③」 |
 
-打开 `canApply` 的条件是工程就绪，不是再讨论「要不要做」。③ 的非官方通道风险写在预览里 opt-in。
+打开写入的条件是工程就绪，不是再讨论「要不要做」。③ 的非官方通道风险写在预览里，由你确认。
 
-## 7. 工程顺序（不再讨论方向）
+## 6. 工程顺序（不再讨论方向）
 
-1. **① 补齐**：双协议 Key 接到更多已登记 Agent；GLM/DeepSeek → Pi 已可 experimental bind（自定义 provider 槽）；单协议 Key 的 reshape 继续按图补。
-2. **② 先用已有槽**：Claude / Codex / Grok 订阅 → Pi（目标已声明契约）。**当前实现**：这三条边已可 experimental bind（写入 Pi `auth.json` 对应槽，Pi 拥有刷新）。再评估其他 Agent 有没有同类槽。
-3. **③ 旗舰桥**：Codex 订阅 → Claude Code；Grok 订阅 → Claude 走 xAI Chat Completions 本机桥。Claude 订阅 → Codex 明确产品不做。
-4. 管理面：OAuth 状态、配额、最小探测、桥启停放在现有页面，不另做工作台。
+1. **① 补齐**：一把 Key 接到更多已登记的工具；GLM / DeepSeek → Pi、→ Codex 已可试写。单接口 Key 按图继续补。
+2. **② 先用已有的**：Claude / Codex / Grok 订阅 → Pi。**当前**：这三条已可试写（写进 Pi 自己的登录，之后由 Pi 刷新）。再看别的工具有没有同类位置。
+3. **③ 旗舰转发**：Codex 订阅 → Claude Code；Grok 订阅 → Claude。Claude 订阅 → Codex 明确产品不做。
+4. 管理面：登录状态、额度、最小探测、转发启停放在现有页面，不另做工作台。
+
+## 7. 给实现的对照
+
+前半不用领域词。实现和测试仍用下面这套名字，**不要当成第五种路线**。
+
+| 日常说法 | 领域 / 代码 |
+|---|---|
+| 一份登录 | 票 `Ticket` |
+| 编程工具 | Agent |
+| 对方认的那一处配置或登录 | 槽 |
+| 某一份登录接到某一个工具的做法 | 边 |
+| 换到这份登录 | `route=native` |
+| ① 直接改配置 | 通常 `reshape`；实现名 `native_endpoint` / `config_sync` |
+| ② 写进对方认的登录 | 跨工具通常 `reshape`；实现名 `config_sync` |
+| ③ 本机转发 | `route=bridge`；实现名 `local_bridge` |
+| 现在能写上去 | `plan.canApply=true`（有写入实现，且能按这份登录解析密钥） |
+| 规划器 | `plan()`，只返回 `native \| reshape \| bridge \| 不可行` |
+
+三种做法是给用户看的说明，由 `plan()` 派生。前端不得自己猜。  
+目标工具要同时登记「听哪种接口」和「认哪套订阅登录」。订阅登录除了接口，还要带这套登录的身份，否则规划器判不出 ②。
 
 ## 8. 其他文档怎么读
 
 | 文档 | 怎么读 |
 |---|---|
-| 本文 | 三路的**产品**真源 |
-| [connection-binding-model.md](connection-binding-model.md) | 票 / 绑定 / `native·reshape·bridge`；三路是用户映射，不是第二套枚举 |
-| [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | 厂商边与当前能否 bind；订阅 ≠ 要起桥 |
-| [adapter-design.md](adapter-design.md) | 页面与桥 runtime；桥只服务 ③ |
-| [ui-design.md](ui-design.md) | ConnectFlow 预览标 ①②③；② 不显示本机服务 |
-| [adding-an-agent.md](adding-an-agent.md) | 新 Agent 必须登记 wire 协议 **和** OAuth 契约槽 |
-| [architecture.md](architecture.md) | 模块拆分；原则 12 按三路解释 `plan()` |
+| 本文 | 三种做法的**产品**真源；前半给读者，§7 给实现 |
+| [connection-binding-model.md](connection-binding-model.md) | 登录 / 绑定 / 规划器的领域名字（票、槽、边） |
+| [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | 各家接口与现在能不能写上去；订阅 ≠ 要转发 |
+| [adapter-design.md](adapter-design.md) | 页面与转发运行时；转发只服务 ③ |
+| [ui-design.md](ui-design.md) | 「接到…」预览标 ① 只改配置 / ② 写进对方认的登录 / ③ 本机转发；② 不显示本机服务 |
+| [adding-an-agent.md](adding-an-agent.md) | 新工具必须登记听哪种接口 **和** 认哪套订阅登录 |
+| [architecture.md](architecture.md) | 模块拆分；原则 12 按三种做法解释 `plan()` |
 | [agenthub-plan.md](agenthub-plan.md) | 总方案；§8 是实现清单 |
-| [adapter-sidecar-design.md](adapter-sidecar-design.md) | 只有 ③ 依赖 sidecar |
-| [hub-redesign-plan.md](hub-redesign-plan.md) | Phase 1 **历史记录**；「不改 OAuth 门禁」不是产品否决 |
-| [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | ① 与 ③ 的真机清单；同票不同路 |
-| [deepseek-harness-integration.md](deepseek-harness-integration.md) | DeepSeek API 属 ①；DSH 不是桥 |
-| [account-authorization-pool.md](account-authorization-pool.md) | 票的去重；不决定走哪一路 |
-| [capability-matrix.md](capability-matrix.md) | Agent **自己**能不能；不是复用三路 |
-| [testing.md](testing.md) | 契约仍是 `route`/`canApply`；三路由 plan 派生 |
+| [adapter-sidecar-design.md](adapter-sidecar-design.md) | 只有 ③ 依赖独立转发进程 |
+| [hub-redesign-plan.md](hub-redesign-plan.md) | Phase 1 **历史记录** |
+| [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | ① 与 ③ 的真机清单 |
+| [deepseek-harness-integration.md](deepseek-harness-integration.md) | DeepSeek API 属 ①；DeepSeek 自己的工具不是转发 |
+| [account-authorization-pool.md](account-authorization-pool.md) | 登录去重；不决定走哪一种 |
+| [capability-matrix.md](capability-matrix.md) | 工具**自己**能不能；不是复用三种做法 |
+| [testing.md](testing.md) | 契约仍是 `route` / `canApply`；三种做法由 plan 派生 |
 | [cli-and-config.md](cli-and-config.md) | CLI「代理模式」≠ ③ |
-| [privacy.md](privacy.md) / [logging.md](logging.md) | 脱敏与截图；与三路正交 |
+| [privacy.md](privacy.md) / [logging.md](logging.md) | 脱敏与截图 |
 | [platform-capability-*.md](platform-capability-refactor.md) | 平台端口历史；不定义复用产品 |
 
 旧句「订阅本机路由是唯一产品」「只借鉴方法不借鉴产品」「消费订阅不是产品」作废。
@@ -179,8 +261,8 @@ plan(ticket, agent):
 
 2026-08-15 评审后写入本文，不再另开讨论：
 
-- 三路是产品一等语言，**不**进领域模型当第五个 `route`。
-- 分类在边上，不在票上。同一把 Kimi Key → Claude 是 ①、→ Codex 是 ③，这是常态。
-- 反对「全部走本机桥」：①② 本可零进程；强行桥增加 sidecar、语义损失和条款暴露。双协议 Key 对听 Chat Completions 的目标应直连。
-- 反对「订阅一律 ③」：Pi 三个 OAuth 槽已经是 ② 的反例。不能当 API Key ≠ 目标不能原生吃同一契约。
-- 上一版把「订阅」几乎都写成 ③，风险是：先造桥、漏掉 Pi `config_sync`、UI 对原生订阅误显示「需要本机服务」。
+- 三种做法是产品一等语言，**不**进领域模型当第五个 `route`。
+- 分类在「这份登录 × 那个工具」上，不在登录上。同一把 Kimi Key → Claude 是 ①、→ Codex 是 ③，这是常态。
+- 反对「全部走本机转发」：①② 本来不必另开程序；强行转发增加进程、语义损失和条款暴露。对听普通 Chat 的工具，应直接改配置。
+- 反对「订阅一律 ③」：Pi 里三家订阅登录已经是 ② 的反例。不能当「不是 API Key」就等于目标不能原生用同一套登录。
+- 上一版把「订阅」几乎都写成 ③，风险是：先造转发、漏掉写进 Pi、界面误显示「需要本机服务」。
