@@ -1,9 +1,11 @@
 //! Kimi Chat Completions response and SSE translation to OpenAI Responses wire objects.
 
+use std::collections::BTreeMap;
+
 use serde_json::{json, Map, Value};
 
 use crate::bridge::types::{
-    BridgeEvent, ProtocolError, ProtocolResult, StopReason, ToolCallMap, Usage,
+    BridgeEvent, IrEvent, ProtocolError, ProtocolResult, StopReason, ToolCallMap, Usage,
 };
 
 /// Translate one non-streaming Kimi Chat Completions response to an OpenAI Responses object.
@@ -62,6 +64,196 @@ pub fn translate_chat_response(value: &Value, response_id: Option<&str>) -> Prot
         object.get("usage").and_then(Usage::from_chat_usage),
         true,
     ))
+}
+
+/// Stateful Chat Completions SSE → neutral IR translation for a Claude
+/// Messages downstream. It deliberately shares the same upstream Chat shape
+/// as the existing Kimi → Codex bridge but emits IR directly.
+#[derive(Debug)]
+pub struct ChatStreamToIr {
+    response_id: String,
+    model: String,
+    started: bool,
+    completed: bool,
+    tools: BTreeMap<usize, ChatIrToolState>,
+    usage: Option<Usage>,
+    stop_reason: StopReason,
+}
+
+#[derive(Debug, Clone)]
+struct ChatIrToolState {
+    id: String,
+    name: String,
+}
+
+impl ChatStreamToIr {
+    pub fn new(response_id: impl Into<String>, model: impl Into<String>) -> Self {
+        Self {
+            response_id: response_id.into(),
+            model: model.into(),
+            started: false,
+            completed: false,
+            tools: BTreeMap::new(),
+            usage: None,
+            stop_reason: StopReason::Unknown,
+        }
+    }
+
+    pub fn push_event(&mut self, value: &Value) -> ProtocolResult<Vec<IrEvent>> {
+        reject_upstream_error(value)?;
+        if self.completed {
+            return Ok(Vec::new());
+        }
+        let object = value.as_object().ok_or_else(ProtocolError::upstream)?;
+        if let Some(id) = object.get("id").and_then(Value::as_str) {
+            if !id.is_empty() {
+                self.response_id = id.to_owned();
+            }
+        }
+        if let Some(model) = object.get("model").and_then(Value::as_str) {
+            if !model.is_empty() {
+                self.model = model.to_owned();
+            }
+        }
+        if let Some(usage) = object.get("usage").and_then(Usage::from_chat_usage) {
+            self.usage = Some(usage);
+        }
+
+        let mut events = Vec::new();
+        if !self.started {
+            self.started = true;
+            events.push(IrEvent::MessageStart {
+                id: format!("msg_{}", self.response_id),
+                model: self.model.clone(),
+            });
+        }
+        let Some(choice) = object
+            .get("choices")
+            .and_then(Value::as_array)
+            .and_then(|choices| choices.first())
+            .and_then(Value::as_object)
+        else {
+            return Ok(events);
+        };
+        if let Some(delta) = choice.get("delta").and_then(Value::as_object) {
+            if let Some(text) = delta.get("content").and_then(Value::as_str) {
+                if !text.is_empty() {
+                    events.push(IrEvent::TextDelta {
+                        text: text.to_owned(),
+                    });
+                }
+            }
+            if let Some(tool_calls) = delta.get("tool_calls").and_then(Value::as_array) {
+                for (position, raw_tool) in tool_calls.iter().enumerate() {
+                    self.push_tool_delta(raw_tool, position, &mut events)?;
+                }
+            }
+            if let Some(function_call) = delta.get("function_call") {
+                self.push_tool_delta(
+                    &json!({ "index": 0, "function": function_call }),
+                    0,
+                    &mut events,
+                )?;
+            }
+        }
+        if let Some(reason) = choice.get("finish_reason").and_then(Value::as_str) {
+            self.stop_reason = StopReason::from_chat_finish_reason(Some(reason));
+        }
+        Ok(events)
+    }
+
+    pub fn finish(&mut self) -> Vec<IrEvent> {
+        if self.completed {
+            return Vec::new();
+        }
+        self.completed = true;
+        let mut events = Vec::new();
+        if !self.started {
+            self.started = true;
+            events.push(IrEvent::MessageStart {
+                id: format!("msg_{}", self.response_id),
+                model: self.model.clone(),
+            });
+        }
+        for tool in self.tools.values() {
+            events.push(IrEvent::ToolCallEnd {
+                id: tool.id.clone(),
+            });
+        }
+        if let Some(usage) = &self.usage {
+            events.push(IrEvent::Usage {
+                input_tokens: usage.input_tokens,
+                output_tokens: usage.output_tokens,
+                cached_input_tokens: usage.cached_input_tokens,
+            });
+        }
+        events.push(IrEvent::MessageEnd {
+            stop_reason: self.stop_reason.clone(),
+        });
+        events
+    }
+
+    fn push_tool_delta(
+        &mut self,
+        raw_tool: &Value,
+        fallback_index: usize,
+        events: &mut Vec<IrEvent>,
+    ) -> ProtocolResult<()> {
+        let object = raw_tool
+            .as_object()
+            .ok_or_else(ProtocolError::upstream)?;
+        let index = object
+            .get("index")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize)
+            .unwrap_or(fallback_index);
+        let function = object.get("function").and_then(Value::as_object);
+        let name = function
+            .and_then(|function| function.get("name"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let arguments = function
+            .and_then(|function| function.get("arguments"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if !self.tools.contains_key(&index) {
+            let id = object
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("")
+                .to_owned();
+            let id = if id.is_empty() {
+                format!("call_{index}")
+            } else {
+                id
+            };
+            self.tools.insert(
+                index,
+                ChatIrToolState {
+                    id: id.clone(),
+                    name: name.to_owned(),
+                },
+            );
+            events.push(IrEvent::ToolCallStart {
+                id,
+                name: name.to_owned(),
+            });
+        } else if !name.is_empty() {
+            self.tools
+                .get_mut(&index)
+                .expect("tool state exists")
+                .name = name.to_owned();
+        }
+        if !arguments.is_empty() {
+            let id = self.tools.get(&index).expect("tool state exists").id.clone();
+            events.push(IrEvent::ToolCallDelta {
+                id,
+                arguments_delta: arguments.to_owned(),
+            });
+        }
+        Ok(())
+    }
 }
 
 /// Stateful Kimi Chat Completions SSE chunk translator.

@@ -29,6 +29,9 @@ pub const GLM_CLAUDE_RULE_ID: &str = "glm-coding-plan-to-claude-v1";
 pub const DEEPSEEK_CLAUDE_RULE_ID: &str = "deepseek-api-to-claude-v1";
 pub const GLM_CODEX_RULE_ID: &str = "glm-coding-plan-to-codex-v1";
 pub const DEEPSEEK_CODEX_RULE_ID: &str = "deepseek-api-to-codex-v1";
+pub const KIMI_GROK_RULE_ID: &str = "kimi-membership-to-grok-v1";
+pub const OPENAI_GROK_RULE_ID: &str = "openai-api-to-grok-v1";
+pub const GROK_CLAUDE_RULE_ID: &str = "grok-subscription-to-claude-v1";
 
 pub const GLM_CODEX_DEFAULT_MODEL: &str = "glm-5.3";
 pub const DEEPSEEK_CODEX_DEFAULT_MODEL: &str = "deepseek-v4-flash";
@@ -36,6 +39,10 @@ pub const GLM_CODEX_PROVIDER_PREFIX: &str = "codex-glm-adapter";
 pub const DEEPSEEK_CODEX_PROVIDER_PREFIX: &str = "codex-deepseek-adapter";
 pub const GLM_CODEX_PROVIDER_SLUG: &str = "agenthub_glm";
 pub const DEEPSEEK_CODEX_PROVIDER_SLUG: &str = "agenthub_deepseek";
+pub const KIMI_GROK_BASE_URL: &str = KIMI_PI_BASE_URL;
+pub const OPENAI_GROK_BASE_URL: &str = "https://api.openai.com/v1";
+pub const KIMI_GROK_DEFAULT_MODEL: &str = "kimi-k2.5";
+pub const OPENAI_GROK_DEFAULT_MODEL: &str = "gpt-4o";
 
 /// Substring that identifies the official Kimi Code membership HTTP host.
 pub const KIMI_CODING_ENDPOINT_NEEDLE: &str = "api.kimi.com/coding";

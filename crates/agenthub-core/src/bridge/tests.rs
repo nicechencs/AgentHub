@@ -52,6 +52,12 @@ fn codex_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpe
     spec
 }
 
+fn grok_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
+    let mut spec = spec(profile_id, port, upstream_port);
+    spec.upstream.model = Some("grok-4.5".to_owned());
+    spec
+}
+
 async fn upstream() -> (u16, tokio::task::JoinHandle<()>) {
     upstream_at("/chat/completions").await
 }
@@ -1203,5 +1209,43 @@ async fn codex_responses_oauth_messages_stream_is_anthropic_sse() {
     assert!(body.contains("event: message_stop"));
     assert!(!body.contains("response.output_text.delta"));
     host.stop("codex-stream").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn grok_chat_protocol_accepts_messages_and_returns_anthropic_json() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_spec("grok-messages", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header("x-api-key", "local-test-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("messages request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("anthropic response");
+    assert_eq!(body["type"], "message");
+    assert_eq!(body["content"][0]["text"], "hello");
+
+    let responses = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header("authorization", "Bearer local-test-token")
+        .json(&json!({"model": "grok-4.5", "input": "hello"}))
+        .send()
+        .await
+        .expect("responses route request");
+    assert_eq!(responses.status(), StatusCode::NOT_FOUND);
+    host.stop("grok-messages").await.expect("stop");
     upstream_task.abort();
 }

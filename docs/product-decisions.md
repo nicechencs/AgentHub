@@ -55,8 +55,8 @@ Pi 是当前已登记的跨 Agent 第 2 路落点。别的 Agent 必须逐个验
 
 | 组合 | 实际 | 原因 |
 |---|---|---|
-| Claude 订阅 → Codex | ③ 或暂不可行 | Codex 不吃 Anthropic PKCE |
-| Grok 订阅 → Claude | ③ 或暂不可行 | Claude 不吃 xAI OAuth，也没有 Messages 兼容面 |
+| Claude 订阅 → Codex | **产品不做** | Codex 不吃 Anthropic PKCE，本产品不走这条边 |
+| Grok 订阅 → Claude | **③** | Claude Messages 与 xAI Chat Completions 需要本机协议桥 |
 | Codex 订阅 → Claude | **③** | Claude 只听 Messages；这是本机桥，不是写 Claude 官方登录 |
 
 第 2 路有工程门禁，不是改判成 ③ 的理由：若 refresh token 单次轮换，原 Agent 与目标各自刷新会互相打翻。逐边选「目标自己再登录」或「Hub 统一刷新 + 目标只持引用」。
@@ -69,7 +69,7 @@ Pi 是当前已登记的跨 Agent 第 2 路落点。别的 Agent 必须逐个验
 |---|---|
 | Codex 订阅 → Claude Code | Claude 指到本机桥，额度来自 ChatGPT 订阅 |
 | Kimi / Anthropic API Key → Codex | Codex 听 Responses，上游是 Chat 或 Messages，要转换 |
-| Claude 订阅 → Codex（若 transport 成立） | Codex 听 Responses，上游是 Anthropic OAuth |
+| Grok 订阅 → Claude Code | Claude 听 Messages，上游是 xAI Chat Completions |
 
 ③ 只在协议对不上时起本机桥。  
 **不**默认先起一个常驻兼容 HTTP。
@@ -107,12 +107,13 @@ plan(ticket, agent):
 
 | 同一张票 | → Claude | → Pi | → Codex |
 |---|---|---|---|
-| Kimi Code 会员双协议 Key | ① 直连 Messages 入口 | ① 写槽 | ③ Chat ≠ Responses，要桥 |
+| Kimi Code 会员双协议 Key | ① 直连 Messages 入口 | ① 写槽 | ③ Chat ≠ Responses，要桥；→ Grok 走 ① Chat 配置 |
+| OpenAI API Key | — | ① 写槽 | ① 官方 Chat 配置写入 Grok |
 | GLM / DeepSeek API Key | ① 直连 Messages 入口 | ① 写槽 | ① 官方 Responses 端点直连 |
 | Anthropic API Key | native / ① | ① 写 Anthropic 槽 | ③ Messages → Responses |
 | Codex 订阅 | ③ 本机桥 | ② 写 `openai-codex` 槽 | native |
-| Claude 订阅 | native | ② 写 Anthropic 槽 | ③ 或暂不可行 |
-| Grok 订阅 | ③ 或暂不可行 | ② 写 xAI 槽 | ③ 或暂不可行 |
+| Claude 订阅 | native | ② 写 Anthropic 槽 | **产品不做** |
+| Grok 订阅 | ③ 本机桥 | ② 写 xAI 槽 | ③ 或暂不可行 |
 
 固定句式：
 
@@ -146,7 +147,7 @@ plan(ticket, agent):
 
 1. **① 补齐**：双协议 Key 接到更多已登记 Agent；GLM/DeepSeek → Pi 已可 experimental bind（自定义 provider 槽）；单协议 Key 的 reshape 继续按图补。
 2. **② 先用已有槽**：Claude / Codex / Grok 订阅 → Pi（目标已声明契约）。**当前实现**：这三条边已可 experimental bind（写入 Pi `auth.json` 对应槽，Pi 拥有刷新）。再评估其他 Agent 有没有同类槽。
-3. **③ 旗舰桥**：Codex 订阅 → Claude Code。再评估 Claude 订阅 → Codex、Grok 订阅 → Claude。
+3. **③ 旗舰桥**：Codex 订阅 → Claude Code；Grok 订阅 → Claude 走 xAI Chat Completions 本机桥。Claude 订阅 → Codex 明确产品不做。
 4. 管理面：OAuth 状态、配额、最小探测、桥启停放在现有页面，不另做工作台。
 
 ## 8. 其他文档怎么读

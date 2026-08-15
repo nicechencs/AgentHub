@@ -146,6 +146,9 @@ export const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON = [
   'Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。',
 ].join('');
 
+export const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON =
+  'Claude 订阅 → Codex：产品不做。Codex 不吃 Anthropic PKCE，本产品不走这条边。';
+
 const CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON = [
   'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
   '尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。',
@@ -335,6 +338,12 @@ const NATIVE_SUBSCRIPTION_PI_RULE_IDS = new Set([
   'grok-subscription-to-pi-v1',
 ]);
 const CODEX_CLAUDE_RULE_ID = 'codex-subscription-to-claude-responses-v1';
+const KIMI_GROK_RULE_ID = 'kimi-membership-to-grok-v1';
+const OPENAI_GROK_RULE_ID = 'openai-api-to-grok-v1';
+const GROK_CLAUDE_RULE_ID = 'grok-subscription-to-claude-v1';
+const KIMI_GROK_BASE_URL = 'https://api.kimi.com/coding/v1';
+const OPENAI_GROK_BASE_URL = 'https://api.openai.com/v1';
+const GROK_NATIVE_RULE_IDS = new Set([KIMI_GROK_RULE_ID, OPENAI_GROK_RULE_ID]);
 
 function jsonString(value: unknown, key: string): string | undefined {
   if (!value || typeof value !== 'object') return undefined;
@@ -603,6 +612,41 @@ function analyze(
       gateKind: 'none',
     };
   }
+  if (
+    (source === 'kimi_membership' || source === 'openai_api_key')
+    && request.targetAgentId === 'grok'
+  ) {
+    const kimi = source === 'kimi_membership';
+    return {
+      route: 'native_endpoint',
+      support: 'experimental',
+      reason: kimi
+        ? 'Kimi Code 会员可实验写入 Grok 的 OpenAI Chat Completions 配置。'
+        : 'OpenAI API 可实验写入 Grok 的官方 OpenAI Chat Completions 配置。',
+      actions: [
+        action(
+          'set_config',
+          'Grok',
+          `写入 Grok 的${kimi ? ' Kimi Code' : ' OpenAI'} 官方 OpenAI Chat Completions 配置。`,
+          kimi ? KIMI_GROK_BASE_URL : OPENAI_GROK_BASE_URL,
+        ),
+        action(
+          'set_config',
+          'Grok',
+          '设置 Grok 模型与 Chat Completions backend。',
+          `model=${kimi ? 'kimi-k2.5' : 'gpt-4o'}; api_backend=chat_completions`,
+        ),
+        secretAction('Grok', '从已选 Connection 引用 API Key；不会读取或显示它。'),
+      ],
+      limitations: [
+        '写入 Grok config.toml 的官方 OpenAI Chat Completions model 槽；不会启动本机桥接。',
+        '生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId: kimi ? KIMI_GROK_RULE_ID : OPENAI_GROK_RULE_ID,
+      gateKind: 'none',
+    };
+  }
   if (source === 'kimi_membership' && request.targetAgentId === 'codex') {
     return {
       route: 'local_bridge',
@@ -829,6 +873,37 @@ function analyze(
     };
   }
 
+  if (source === 'claude_subscription' && request.targetAgentId === 'codex') {
+    return unsupported(CLAUDE_SUBSCRIPTION_TO_CODEX_REASON, compatibilityEvidence);
+  }
+  if (source === 'grok_xai_subscription' && request.targetAgentId === 'claude') {
+    return {
+      route: 'local_bridge',
+      support: 'experimental',
+      reason: 'Grok 订阅可通过本机桥接到 Claude Code（Messages → xAI Chat Completions）。',
+      actions: [
+        action(
+          'requires_local_bridge',
+          'Claude Code',
+          'Claude Messages 与 xAI Chat Completions 需要本地双向协议转换。',
+        ),
+        action(
+          'set_env',
+          'Claude Code',
+          '写入 Claude Code 的 loopback Base URL 与本机 bearer；不会写入上游 OAuth token。',
+          'ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN',
+        ),
+      ],
+      limitations: [
+        'Claude 只写入本机 loopback URL 与本地 bearer；xAI OAuth token 不进入 Claude 配置、IPC 或日志。',
+        '实验性协议桥接：Claude Messages → xAI Chat Completions；AgentHub 需保持在托盘运行。',
+        'Grok access token 过期后需重新同步 Grok 登录；Hub 本轮不自动 refresh。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId: GROK_CLAUDE_RULE_ID,
+      gateKind: 'none',
+    };
+  }
   // Only Codex auth_json opens the experimental Responses → Claude bridge.
   // Bare Codex OAuth remains a closed subscription candidate.
   if (
@@ -894,7 +969,18 @@ function buildPlan(
     : analysis.ruleId === DEEPSEEK_CLAUDE_RULE_ID
       ? DEEPSEEK_CLAUDE_BASE_URL
       : KIMI_CLAUDE_BASE_URL;
-  const changes = analysis.route === 'native_endpoint' && request.targetAgentId === 'claude'
+  const changes = analysis.route === 'native_endpoint' && request.targetAgentId === 'grok'
+    ? [
+        change(
+          'grok',
+          'baseUrl',
+          analysis.ruleId === KIMI_GROK_RULE_ID ? KIMI_GROK_BASE_URL : OPENAI_GROK_BASE_URL,
+        ),
+        change('grok', 'model', analysis.ruleId === KIMI_GROK_RULE_ID ? 'kimi-k2.5' : 'gpt-4o'),
+        change('grok', 'apiBackend', 'chat_completions'),
+        secretChange('grok', 'apiKey'),
+      ]
+    : analysis.route === 'native_endpoint' && request.targetAgentId === 'claude'
     ? [
         change('claude', 'baseUrl', claudeBaseUrl),
         change('claude', 'claudeAuthEnv', 'ANTHROPIC_AUTH_TOKEN'),
@@ -947,12 +1033,20 @@ function buildPlan(
     || (analysis.route === 'native_endpoint' && analysis.support === 'experimental'
       && request.targetAgentId === 'codex'
       && !!analysis.ruleId && EXPLICIT_API_TO_CODEX_RULES.has(analysis.ruleId))
+    || (analysis.route === 'native_endpoint' && analysis.support === 'experimental'
+      && request.targetAgentId === 'grok'
+      && !!analysis.ruleId && GROK_NATIVE_RULE_IDS.has(analysis.ruleId))
     || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
     || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
       && request.sourceKind === 'account'
       && request.targetAgentId === 'claude'
       && analysis.ruleId === CODEX_CLAUDE_RULE_ID
       && hasCodexAccessToken(resolver, request.sourceId))
+    || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
+      && request.sourceKind === 'account'
+      && request.targetAgentId === 'claude'
+      && analysis.ruleId === GROK_CLAUDE_RULE_ID
+      && hasGrokAccessToken(resolver, request.sourceId))
     || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'pi')
     || (analysis.route === 'config_sync' && analysis.support === 'experimental'
       && request.targetAgentId === 'pi'
@@ -997,13 +1091,26 @@ function buildPlan(
     && request.targetAgentId === 'claude'
     && analysis.ruleId === CODEX_CLAUDE_RULE_ID
     && hasCodexAccessToken(resolver, request.sourceId);
+  const accountGrokNative = request.sourceKind === 'account'
+    && implementedPath
+    && request.targetAgentId === 'grok'
+    && !!analysis.ruleId
+    && GROK_NATIVE_RULE_IDS.has(analysis.ruleId)
+    && hasAccountApiKey(accountSource);
+  const accountGrokClaudeBridge = request.sourceKind === 'account'
+    && implementedPath
+    && request.targetAgentId === 'claude'
+    && analysis.ruleId === GROK_CLAUDE_RULE_ID
+    && hasGrokAccessToken(resolver, request.sourceId);
   const writeGate = (request.sourceKind === 'provider' && implementedPath)
     || accountKimiMembership
+    || accountGrokNative
     || accountExplicitApiToPi
     || accountExplicitApiToCodex
     || accountClaudeNative
     || accountNativeSubscriptionPi
-    || accountCodexClaudeBridge;
+    || accountCodexClaudeBridge
+    || accountGrokClaudeBridge;
   const canApply = writeGate;
   const maturity = mockPlanMaturity(analysis);
   const reusePath = NATIVE_SUBSCRIPTION_PI_RULE_IDS.has(analysis.ruleId ?? '')
@@ -1019,8 +1126,10 @@ function buildPlan(
     && !accountExplicitApiToCodex
     && !accountClaudeNative
     && !accountKimiMembership
+    && !accountGrokNative
     && !accountNativeSubscriptionPi
     && !accountCodexClaudeBridge
+    && !accountGrokClaudeBridge
     ? `${analysis.reason} ${SAME_EDGE_UNWRITABLE_REASON}`
     : analysis.reason;
   return {
@@ -1060,6 +1169,23 @@ function hasCodexAccessToken(
   return false;
 }
 
+function hasGrokAccessToken(
+  resolver: MockAdapterSourceResolver,
+  sourceId: string,
+): boolean {
+  const account = resolver.getAccountById(sourceId) as ClassifiableAccount | undefined;
+  if (!account || account.agentId !== 'grok' || account.kind !== 'oauth') return false;
+  const credentials = account.credentials;
+  if (!credentials || typeof credentials !== 'object') return false;
+  const record = credentials as Record<string, unknown>;
+  const candidates = [
+    record.access_token,
+    (record.tokens as Record<string, unknown> | undefined)?.access_token,
+    ((record.body as Record<string, unknown> | undefined)?.tokens as Record<string, unknown> | undefined)?.access_token,
+  ];
+  return candidates.some((token) => typeof token === 'string' && Boolean(token.trim()));
+}
+
 /** Mirror of core `adapter_maturity_from_decision` on the public analysis surface. */
 function mockPlanMaturity(analysis: AdapterRouteAnalysis): AdapterApplyPlan['maturity'] {
   const matrixOpen = analysis.route !== 'unsupported' && analysis.support !== 'unsupported';
@@ -1092,6 +1218,51 @@ function materializeApply(
   now: string,
 ): { profile: AdapterProfile; provider: Provider } {
   const safeId = safeSourceId(request.sourceId);
+  if (plan.analysis.route === 'native_endpoint' && request.targetAgentId === 'grok') {
+    const kimi = plan.analysis.ruleId === KIMI_GROK_RULE_ID;
+    const alias = kimi ? 'agenthub_kimi' : 'agenthub_openai';
+    const model = kimi ? 'kimi-k2.5' : 'gpt-4o';
+    const baseUrl = kimi ? KIMI_GROK_BASE_URL : OPENAI_GROK_BASE_URL;
+    const prefix = kimi ? 'kimi-grok' : 'openai-grok';
+    const profile: AdapterProfile = existing ?? {
+      id: `adapter-${prefix}-${safeId}`,
+      name: `${kimi ? 'Kimi' : 'OpenAI'} → Grok (${safeId})`,
+      sourceKind: request.sourceKind,
+      sourceId: request.sourceId,
+      targetAgentId: 'grok',
+      route: 'native_endpoint',
+      mode: 'api',
+      status: 'active',
+      ruleId: plan.analysis.ruleId!,
+      ruleVersion: '1',
+      generatedProviderId: `grok-${prefix}-adapter-${safeId}`,
+      localPort: null,
+      autoStart: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    return {
+      profile,
+      provider: {
+        id: profile.generatedProviderId!,
+        agentId: 'grok',
+        name: profile.name,
+        preset: 'openai-chat',
+        configText: [
+          '[models]',
+          `default = "${alias}"`,
+          '',
+          `[model."${alias}"]`,
+          `model = "${model}"`,
+          `base_url = "${baseUrl}"`,
+          `api_key = "${CONNECTION_SECRET_MARKER}"`,
+          'api_backend = "chat_completions"',
+        ].join('\n'),
+        configFormat: 'toml',
+        isCurrent: true,
+      },
+    };
+  }
   if (plan.analysis.route === 'native_endpoint' && request.targetAgentId === 'codex') {
     const glm = plan.analysis.ruleId === GLM_CODEX_RULE_ID;
     const slug = glm ? GLM_CODEX_PROVIDER_SLUG : DEEPSEEK_CODEX_PROVIDER_SLUG;
@@ -1140,15 +1311,20 @@ function materializeApply(
   }
   if (plan.analysis.route === 'local_bridge') {
     const codexClaudeBridge = plan.analysis.ruleId === CODEX_CLAUDE_RULE_ID;
+    const grokClaudeBridge = plan.analysis.ruleId === GROK_CLAUDE_RULE_ID;
     const anthropicBridge = plan.analysis.ruleId === 'anthropic-api-to-codex-v1';
     const profile: AdapterProfile = existing ?? {
       id: codexClaudeBridge
         ? `adapter-codex-claude-bridge-${safeId}`
+        : grokClaudeBridge
+        ? `adapter-grok-claude-bridge-${safeId}`
         : anthropicBridge
         ? `adapter-anthropic-codex-bridge-${safeId}`
         : `adapter-kimi-codex-bridge-${safeId}`,
       name: codexClaudeBridge
         ? `Codex → Claude Code 本地桥接 (${safeId})`
+        : grokClaudeBridge
+        ? `Grok → Claude Code 本地桥接 (${safeId})`
         : anthropicBridge
         ? `Anthropic → Codex 本地桥接 (${safeId})`
         : `Kimi → Codex 本地桥接 (${safeId})`,
@@ -1156,14 +1332,18 @@ function materializeApply(
       sourceId: request.sourceId,
       targetAgentId: request.targetAgentId,
       route: 'local_bridge',
-      mode: codexClaudeBridge ? 'oauth' : 'api',
+      mode: codexClaudeBridge || grokClaudeBridge ? 'oauth' : 'api',
       status: 'active',
       ruleId: codexClaudeBridge
         ? CODEX_CLAUDE_RULE_ID
+        : grokClaudeBridge
+        ? GROK_CLAUDE_RULE_ID
         : anthropicBridge ? 'anthropic-api-to-codex-v1' : 'kimi-membership-to-codex-v1',
       ruleVersion: '1',
       generatedProviderId: codexClaudeBridge
         ? `claude-codex-bridge-${safeId}`
+        : grokClaudeBridge
+        ? `claude-grok-bridge-${safeId}`
         : anthropicBridge
         ? `codex-anthropic-bridge-${safeId}`
         : `codex-kimi-bridge-${safeId}`,
@@ -1176,11 +1356,11 @@ function materializeApply(
       profile,
       provider: {
         id: profile.generatedProviderId!,
-        agentId: codexClaudeBridge ? 'claude' : 'codex',
+        agentId: codexClaudeBridge || grokClaudeBridge ? 'claude' : 'codex',
         name: profile.name,
-        preset: codexClaudeBridge ? 'anthropic' : 'openai-compatible',
+        preset: codexClaudeBridge || grokClaudeBridge ? 'anthropic' : 'openai-compatible',
         configText: JSON.stringify({
-          ...(codexClaudeBridge
+          ...(codexClaudeBridge || grokClaudeBridge
             ? {
                 env: {
                   ANTHROPIC_BASE_URL: `http://127.0.0.1:${profile.localPort ?? 32123}`,

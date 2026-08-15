@@ -1,6 +1,6 @@
 # 连接：票、绑定与协议图
 
-> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（OpenAI/xAI/GLM/DeepSeek API → Pi 属 ①；GLM/DeepSeek API → Codex 属 ①；Anthropic API Key → Codex 属 ③）；Grok 边仍不可行；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex 属 ①），GLM/DeepSeek → Pi 已可 experimental bind，② Claude/Codex/Grok 订阅 → Pi 已可 experimental bind（Pi 拥有写入槽刷新），③ Codex `auth_json` → Claude Responses 已可 experimental bind，App Server/OauthOther 仍关闭；§6.6 未做**。
+> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（Kimi/OpenAI API → Grok、OpenAI/xAI/GLM/DeepSeek API → Pi 属 ①；GLM/DeepSeek API → Codex 属 ①；Anthropic API Key → Codex 属 ③）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex 属 ①），GLM/DeepSeek → Pi 已可 experimental bind，② Claude/Codex/Grok 订阅 → Pi 已可 experimental bind，③ Codex Responses 与 Grok Chat 订阅 → Claude 已可 experimental bind；Claude 订阅 → Codex 产品关闭，App Server/OauthOther 仍关闭；§6.6 未做**。
 > 日期：2026-08-15。  
 > 本文是跨 Agent「把已有凭据接到另一个 Agent」的领域真源。**产品方向**（① API 直连 / ② 原生订阅复用 / ③ 本机桥）以 [product-decisions.md](product-decisions.md) 为准。页面、Hub 入口、Adapter、厂商规则文档以本文为准改表述；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
 > 关联：[product-decisions.md](product-decisions.md)、[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[adapter-design.md](adapter-design.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[account-authorization-pool.md](account-authorization-pool.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)。
@@ -235,10 +235,10 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 1. 读模型：Ticket / Binding 聚合；钱包去掉生成投影；「接到…」对真票常驻。
 2. 进口打标；规划器收口。
 3. 现有四条可 apply 路径改写成 `bind` 实现（Kimi→Claude/Pi reshape，Kimi→Codex bridge，Anthropic→Pi reshape）。
-4. 加边：Anthropic→Codex 桥（协议腿 + experimental bind 已开）、Kimi→Grok reshape、OpenAI/xAI Key → Pi/Grok。
+4. 加边：Anthropic→Codex 桥（协议腿 + experimental bind 已开）、Kimi/OpenAI API → Grok native、Grok 订阅 → Claude Chat 本机桥、OpenAI/xAI Key → Pi。
 5. 新 surface：GLM / DeepSeek 按双协议入口登记。
 6. 新 Agent writer：DeepSeek Harness（`dsh`）已接入；**DeepSeek API → `dsh` `config_sync`**、**DeepSeek API → Claude experimental `native_endpoint`** 与 **DeepSeek API → Codex experimental `native_endpoint`** 都走现有 `AdapterCapabilityMatrix` / `AdapterApplyService`。不要把 Harness 当协议桥。
-7. **跨 Agent 复用三路**（产品已定，见 [product-decisions.md](product-decisions.md)）：先补 ①（双协议 / 单协议 Key 直连），再接 ②（Claude / Codex / Grok 订阅 → Pi 等已有契约槽；当前三条 Pi 槽已可 experimental bind），③ Codex `auth_json` 订阅 → Claude Responses 的本机桥已可 experimental bind，App Server/OauthOther 仍关闭。GLM/DeepSeek → Pi 使用 Pi 自定义 provider 槽，GLM/DeepSeek → Codex 使用官方 Responses 端点，均已可 experimental bind。实现未开只表示缺执行器 / fixtures，不表示产品关闭。
+7. **跨 Agent 复用三路**（产品已定，见 [product-decisions.md](product-decisions.md)）：① Kimi/OpenAI API → Grok 已写官方 Chat TOML，② Claude / Codex / Grok 订阅 → Pi 已写契约槽，③ Codex Responses 与 Grok Chat 订阅 → Claude 的本机桥已可 experimental bind，App Server/OauthOther 仍关闭；Claude 订阅 → Codex 是产品关闭，不是待评估候选。
 
 做不到、且应看得见的上限：Cursor 当目标（无 writer）、未标记的自定义中转、二次投影、公网多账号共享。暂时不能当 HTTP 上游的登录态要写明缺哪一跳，不能写成「订阅一律不做」。
 

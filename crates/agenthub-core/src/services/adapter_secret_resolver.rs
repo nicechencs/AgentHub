@@ -26,7 +26,7 @@ use crate::services::adapter_route_constants::{
     GLM_CODEX_BASE_URL, GLM_CODEX_PROVIDER_SLUG, GLM_CODEX_RULE_ID, GLM_PI_BASE_URL,
     GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL,
     KIMI_PI_PROVIDER_SLOT, OPENAI_API_KEY_ENV, OPENAI_PI_PROVIDER_SLOT, XAI_API_KEY_ENV,
-    XAI_PI_PROVIDER_SLOT,
+    XAI_PI_PROVIDER_SLOT, KIMI_GROK_BASE_URL, OPENAI_GROK_BASE_URL,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -42,6 +42,8 @@ const DEEPSEEK_TO_CODEX_RULE: &str = DEEPSEEK_CODEX_RULE_ID;
 const KIMI_TO_CODEX_BRIDGE_RULE: &str = "kimi-membership-to-codex-v1";
 const ANTHROPIC_TO_CODEX_BRIDGE_RULE: &str = "anthropic-api-to-codex-v1";
 const CODEX_TO_CLAUDE_BRIDGE_RULE: &str = "codex-subscription-to-claude-responses-v1";
+const KIMI_TO_GROK_RULE: &str = "kimi-membership-to-grok-v1";
+const OPENAI_TO_GROK_RULE: &str = "openai-api-to-grok-v1";
 const KIMI_TO_PI_RULE: &str = "kimi-membership-to-pi-v1";
 const ANTHROPIC_TO_PI_RULE: &str = "anthropic-api-to-pi-v1";
 const OPENAI_TO_PI_RULE: &str = "openai-api-to-pi-v1";
@@ -282,6 +284,38 @@ impl AdapterSecretResolver {
         crate::bridge::session::resolve_codex_subscription_auth(&account.credentials)
     }
 
+    /// Resolve only the current Grok OAuth access token for the Claude bridge.
+    /// Refresh is intentionally not returned or persisted; the source account
+    /// must be synchronized again when its access token expires.
+    pub(crate) fn resolve_grok_subscription_auth(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<ResolvedAuth> {
+        if source_kind != AdapterSourceKind::Account {
+            return Err(invalid_reference());
+        }
+        let account = self
+            .accounts
+            .get_by_id(source_id.trim())?
+            .ok_or_else(invalid_reference)?;
+        if account.agent_id != AgentId::Grok
+            || account.kind != crate::models::AccountKind::Oauth
+        {
+            return Err(invalid_reference());
+        }
+        let access = first_usable_string(
+            &account.credentials,
+            &[
+                "/access_token",
+                "/tokens/access_token",
+                "/body/tokens/access_token",
+            ],
+        )
+        .ok_or_else(invalid_reference)?;
+        Ok(ResolvedAuth::bearer(access))
+    }
+
     /// Whether this row requires source-secret materialization before a live
     /// write. There are two explicit generated-provider credential modes:
     ///
@@ -309,6 +343,10 @@ impl AdapterSecretResolver {
             }
             Some(GENERATED_BY) if is_dsh_source_reference(provider) => {
                 self.validate_dsh_reference_target(provider)?;
+                Ok(true)
+            }
+            Some(GENERATED_BY) if is_grok_source_reference(provider) => {
+                self.validate_grok_reference_target(provider)?;
                 Ok(true)
             }
             Some(GENERATED_BY) if is_codex_local_token(provider) => {
@@ -370,6 +408,24 @@ impl AdapterSecretResolver {
                 .as_object_mut()
                 .ok_or_else(invalid_reference)?;
             obj.insert("api_key".into(), Value::String(api_key));
+            return Ok(materialized);
+        }
+
+        if is_grok_source_reference(target) {
+            self.validate_grok_reference_target(target)?;
+            let api_key = self.resolve_referenced_api_key(target)?;
+            let mut materialized = target.clone();
+            let content = materialized
+                .settings_config
+                .get("content")
+                .and_then(Value::as_str)
+                .ok_or_else(invalid_reference)?
+                .parse::<DocumentMut>()
+                .map_err(|_| invalid_reference())?;
+            let (_, _, alias) = grok_contract(adapter_rule_id(target).unwrap_or(""))?;
+            let mut document = content;
+            document["model"][alias]["api_key"] = toml_edit::value(api_key);
+            materialized.settings_config["content"] = Value::String(document.to_string());
             return Ok(materialized);
         }
 
@@ -507,6 +563,46 @@ impl AdapterSecretResolver {
             return Ok(scrubbed);
         }
 
+        if is_grok_source_reference(provider) {
+            self.validate_grok_reference_target(provider)?;
+            let _ = self.resolve_referenced_api_key(provider)?;
+            let mut scrubbed = live_raw.clone();
+            if scrubbed.get("format").and_then(Value::as_str) != Some("toml") {
+                return Err(invalid_reference());
+            }
+            let content = scrubbed
+                .get("content")
+                .and_then(Value::as_str)
+                .ok_or_else(invalid_reference)?
+                .parse::<DocumentMut>()
+                .map_err(|_| invalid_reference())?;
+            let (expected_base, expected_model, alias) =
+                grok_contract(adapter_rule_id(provider).unwrap_or(""))?;
+            let table = content["model"]
+                .get(alias)
+                .and_then(|item| item.as_table())
+                .ok_or_else(invalid_reference)?;
+            if content["models"]
+                .get("default")
+                .and_then(|item| item.as_str())
+                != Some(alias)
+                || table.get("base_url").and_then(|item| item.as_str()) != Some(expected_base)
+                || table.get("model").and_then(|item| item.as_str()) != Some(expected_model)
+                || table.get("api_backend").and_then(|item| item.as_str())
+                    != Some("chat_completions")
+                || table
+                    .get("api_key")
+                    .and_then(|item| item.as_str())
+                    .is_none_or(|value| value.trim().is_empty())
+            {
+                return Err(invalid_reference());
+            }
+            let mut document = content;
+            document["model"][alias]["api_key"] = toml_edit::value(CONNECTION_SECRET_MARKER);
+            scrubbed["content"] = Value::String(document.to_string());
+            return Ok(scrubbed);
+        }
+
         if is_pi_subscription_reference(provider) {
             self.validate_pi_reference_target(provider)?;
             let _ = self.resolve_referenced_subscription_oauth(provider)?;
@@ -582,6 +678,10 @@ impl AdapterSecretResolver {
                 | DEEPSEEK_TO_PI_RULE
                 | GLM_TO_CLAUDE_RULE
                 | DEEPSEEK_TO_CLAUDE_RULE,
+                AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            ) => self.resolve_explicit_api_key(rule, kind, source_id),
+            (
+                KIMI_TO_GROK_RULE | OPENAI_TO_GROK_RULE,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account,
             ) => self.resolve_explicit_api_key(rule, kind, source_id),
             (
@@ -670,6 +770,7 @@ impl AdapterSecretResolver {
             && !is_codex_source_reference(target)
             && !is_pi_source_reference(target)
             && !is_dsh_source_reference(target)
+            && !is_grok_source_reference(target)
         {
             return Err(invalid_reference());
         }
@@ -764,6 +865,38 @@ impl AdapterSecretResolver {
         }
         if obj.get("baseURL").and_then(Value::as_str) != Some(DEEPSEEK_API_BASE_URL)
             && obj.get("baseUrl").and_then(Value::as_str) != Some(DEEPSEEK_API_BASE_URL)
+        {
+            return Err(invalid_reference());
+        }
+        Ok(())
+    }
+
+    fn validate_grok_reference_target(&self, target: &Provider) -> Result<()> {
+        self.reference_source_id(target)?;
+        if target.settings_config.get("format").and_then(Value::as_str) != Some("toml") {
+            return Err(invalid_reference());
+        }
+        let content = target
+            .settings_config
+            .get("content")
+            .and_then(Value::as_str)
+            .ok_or_else(invalid_reference)?;
+        let document = content
+            .parse::<DocumentMut>()
+            .map_err(|_| invalid_reference())?;
+        let (expected_base, expected_model, alias) =
+            grok_contract(adapter_rule_id(target).unwrap_or(""))?;
+        let table = document["model"]
+            .get(alias)
+            .and_then(|item| item.as_table())
+            .ok_or_else(invalid_reference)?;
+        if document["models"].get("default").and_then(|item| item.as_str()) != Some(alias)
+            || table.get("base_url").and_then(|item| item.as_str()) != Some(expected_base)
+            || table.get("model").and_then(|item| item.as_str()) != Some(expected_model)
+            || table.get("api_backend").and_then(|item| item.as_str())
+                != Some("chat_completions")
+            || table.get("api_key").and_then(|item| item.as_str())
+                != Some(CONNECTION_SECRET_MARKER)
         {
             return Err(invalid_reference());
         }
@@ -895,6 +1028,24 @@ fn is_dsh_source_reference(provider: &Provider) -> bool {
             == Some(SOURCE_REFERENCE_MODE)
 }
 
+fn is_grok_source_reference(provider: &Provider) -> bool {
+    provider.agent_id == AgentId::Grok
+        && matches!(
+            adapter_rule_id(provider),
+            Some(KIMI_TO_GROK_RULE) | Some(OPENAI_TO_GROK_RULE)
+        )
+        && provider
+            .meta
+            .get("adapterRuleVersion")
+            .and_then(Value::as_u64)
+            == Some(1)
+        && provider
+            .meta
+            .get("adapterSecretMode")
+            .and_then(Value::as_str)
+            == Some(SOURCE_REFERENCE_MODE)
+}
+
 fn is_pi_source_reference(provider: &Provider) -> bool {
     provider.agent_id == AgentId::Pi
         && matches!(
@@ -951,6 +1102,14 @@ fn codex_contract(rule_id: &str) -> Result<(&'static str, &'static str)> {
 
 fn codex_provider_slug(rule_id: &str) -> Result<&'static str> {
     codex_contract(rule_id).map(|(_, slug)| slug)
+}
+
+fn grok_contract(rule_id: &str) -> Result<(&'static str, &'static str, &'static str)> {
+    match rule_id {
+        KIMI_TO_GROK_RULE => Ok((KIMI_GROK_BASE_URL, "kimi-k2.5", "agenthub_kimi")),
+        OPENAI_TO_GROK_RULE => Ok((OPENAI_GROK_BASE_URL, "gpt-4o", "agenthub_openai")),
+        _ => Err(invalid_reference()),
+    }
 }
 
 fn pi_slot_name(provider: &Provider) -> Result<&'static str> {
@@ -1077,7 +1236,7 @@ fn is_deepseek_api_source(source: &Provider) -> bool {
 fn provider_matches_explicit_api_rule(rule_id: &str, source: &Provider) -> bool {
     match rule_id {
         ANTHROPIC_TO_PI_RULE => is_anthropic_api_source(source),
-        OPENAI_TO_PI_RULE => is_openai_api_source(source),
+        OPENAI_TO_PI_RULE | OPENAI_TO_GROK_RULE => is_openai_api_source(source),
         XAI_TO_PI_RULE => is_xai_api_source(source),
         GLM_TO_CLAUDE_RULE | GLM_TO_PI_RULE | GLM_TO_CODEX_RULE => {
             is_glm_coding_plan_source(source)
@@ -1111,7 +1270,7 @@ fn extract_explicit_provider_api_key(rule_id: &str, settings: &Value) -> Result<
         ANTHROPIC_TO_PI_RULE | GLM_TO_CLAUDE_RULE | GLM_TO_PI_RULE | GLM_TO_CODEX_RULE => {
             &[ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV]
         }
-        OPENAI_TO_PI_RULE => &[OPENAI_API_KEY_ENV],
+        OPENAI_TO_PI_RULE | OPENAI_TO_GROK_RULE => &[OPENAI_API_KEY_ENV],
         XAI_TO_PI_RULE => &[XAI_API_KEY_ENV],
         DEEPSEEK_TO_CLAUDE_RULE | DEEPSEEK_TO_PI_RULE | DEEPSEEK_TO_CODEX_RULE => &[
             ANTHROPIC_AUTH_TOKEN_ENV,

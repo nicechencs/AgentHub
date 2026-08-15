@@ -1,7 +1,7 @@
 use super::*;
 use crate::models::{
-    decide_adapter_capability, AdapterCredentialClass, AdapterSourceProduct, AdapterSupport,
-    TicketSurface,
+    decide_adapter_capability, AdapterCredentialClass, AdapterRoute, AdapterSourceProduct,
+    AdapterSupport, TicketSurface,
 };
 
 #[test]
@@ -108,17 +108,19 @@ fn cursor_reason_is_no_writer_for_any_ticket_speaks() {
 }
 
 #[test]
-fn kimi_ticket_and_grok_share_chat_but_have_no_verified_edge() {
+fn kimi_ticket_and_grok_use_the_verified_native_edge() {
     let speaks = TicketSurface::KimiCodeMembership.speaks();
     assert!(speaks_intersect_accepts(
         speaks,
         agent_bind_capability(AgentId::Grok).accepts
     ));
-    assert_eq!(
-        unsupported_reason_for_target(AgentId::Grok, speaks),
-        SAME_PROTOCOL_NO_EDGE_REASON
+    let decision = crate::models::decide_adapter_capability(
+        AdapterSourceProduct::KimiCodeMembership,
+        crate::models::AdapterCredentialClass::ApiKey,
+        AgentId::Grok,
     );
-    assert!(SAME_PROTOCOL_NO_EDGE_REASON.contains("同协议但无已验证的边"));
+    assert_eq!(decision.route, AdapterRoute::NativeEndpoint);
+    assert!(decision.can_apply);
 }
 
 #[test]
@@ -174,7 +176,6 @@ fn capability_table_never_opens_can_apply() {
         AdapterCredentialClass::ApiKey,
         AgentId::Grok,
     );
-    assert!(!kimi_grok.can_apply);
-    assert_eq!(kimi_grok.reason, SAME_PROTOCOL_NO_EDGE_REASON);
-    assert!(!kimi_grok.reason.contains("仅支持预览"));
+    assert!(kimi_grok.can_apply);
+    assert_eq!(kimi_grok.route, AdapterRoute::NativeEndpoint);
 }

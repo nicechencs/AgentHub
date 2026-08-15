@@ -21,6 +21,7 @@ use tokio::sync::{watch, Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+use crate::bridge::protocol::chat::ChatStreamToIr;
 use crate::bridge::protocol::anthropic_messages::{
     anthropic_message_to_ir, encode_anthropic_message, encode_anthropic_sse,
     parse_messages_request, to_anthropic_messages_request, AnthropicStreamToIr,
@@ -760,17 +761,27 @@ async fn health(State(state): State<AppState>, headers: HeaderMap) -> Response {
 }
 
 async fn responses(State(state): State<AppState>, request: Request) -> Response {
-    if state.upstream.protocol == BridgeUpstreamProtocol::CodexResponsesOauth {
+    if state.upstream.protocol == BridgeUpstreamProtocol::CodexResponsesOauth
+        || is_grok_chat_bridge(&state)
+    {
         return StatusCode::NOT_FOUND.into_response();
     }
     handle_responses(state, request).await
 }
 
 async fn messages(State(state): State<AppState>, request: Request) -> Response {
-    if state.upstream.protocol != BridgeUpstreamProtocol::CodexResponsesOauth {
+    if state.upstream.protocol != BridgeUpstreamProtocol::CodexResponsesOauth
+        && !is_grok_chat_bridge(&state)
+    {
         return StatusCode::NOT_FOUND.into_response();
     }
     handle_messages(state, request).await
+}
+
+fn is_grok_chat_bridge(state: &AppState) -> bool {
+    state.upstream.protocol == BridgeUpstreamProtocol::KimiChatCompletions
+        && (state.upstream_url.host_str() == Some("api.x.ai")
+            || state.upstream.model.as_deref() == Some("grok-4.5"))
 }
 
 async fn handle_responses(state: AppState, request: Request) -> Response {
@@ -968,11 +979,25 @@ async fn handle_messages(state: AppState, request: Request) -> Response {
         }
     };
     let stream_requested = request.stream;
-    let mut upstream_body = to_responses_request(&request);
+    let protocol = state.upstream.protocol;
+    let mut upstream_body = match protocol {
+        BridgeUpstreamProtocol::KimiChatCompletions => to_kimi_chat_request(&request),
+        BridgeUpstreamProtocol::CodexResponsesOauth => to_responses_request(&request),
+        BridgeUpstreamProtocol::AnthropicMessages => {
+            unreachable!("messages handler does not accept Anthropic upstream")
+        }
+    };
     if let Some(model) = &state.upstream.model {
         upstream_body["model"] = Value::String(model.clone());
     }
-    let url = match state.upstream_url.join("responses") {
+    let path = match protocol {
+        BridgeUpstreamProtocol::KimiChatCompletions => "chat/completions",
+        BridgeUpstreamProtocol::CodexResponsesOauth => "responses",
+        BridgeUpstreamProtocol::AnthropicMessages => {
+            unreachable!("messages handler does not accept Anthropic upstream")
+        }
+    };
+    let url = match state.upstream_url.join(path) {
         Ok(url) => url,
         Err(_) => {
             state.record_upstream_failure();
@@ -984,15 +1009,21 @@ async fn handle_messages(state: AppState, request: Request) -> Response {
             );
         }
     };
+    let mut builder = state.client.post(url).json(&upstream_body);
+    builder = match protocol {
+        BridgeUpstreamProtocol::KimiChatCompletions
+        | BridgeUpstreamProtocol::CodexResponsesOauth => {
+            builder.bearer_auth(state.upstream.auth.token())
+        }
+        BridgeUpstreamProtocol::AnthropicMessages => {
+            unreachable!("messages handler does not accept Anthropic upstream")
+        }
+    };
     let upstream = tokio::select! {
         _ = state.force_shutdown.cancelled() => return stopping_response(),
         result = tokio::time::timeout(
             UPSTREAM_RESPONSE_HEADER_TIMEOUT,
-            state.client
-                .post(url)
-                .bearer_auth(state.upstream.auth.token())
-                .json(&upstream_body)
-                .send(),
+            builder.send(),
         ) => match result {
             Ok(result) => result,
             Err(_) => {
@@ -1117,8 +1148,22 @@ async fn messages_non_stream_response(
             );
         }
     };
-    let translated =
-        responses_output_to_ir(&upstream_body).and_then(|ir| encode_anthropic_message(&ir));
+    let translated = match state.upstream.protocol {
+        BridgeUpstreamProtocol::KimiChatCompletions => {
+            crate::bridge::protocol::chat::translate_chat_response(
+                &upstream_body,
+                Some(&request_id),
+            )
+            .and_then(|responses| responses_output_to_ir(&responses))
+            .and_then(|ir| encode_anthropic_message(&ir))
+        }
+        BridgeUpstreamProtocol::CodexResponsesOauth => {
+            responses_output_to_ir(&upstream_body).and_then(|ir| encode_anthropic_message(&ir))
+        }
+        BridgeUpstreamProtocol::AnthropicMessages => {
+            unreachable!("messages handler does not accept Anthropic upstream")
+        }
+    };
     match translated {
         Ok(value) => {
             state.record_upstream_success();
@@ -1419,6 +1464,41 @@ fn stream_response(
     (StatusCode::OK, headers, Body::from_stream(output)).into_response()
 }
 
+enum MessagesStreamCodec {
+    Chat(ChatStreamToIr),
+    Responses(ResponsesStreamToIr),
+}
+
+impl MessagesStreamCodec {
+    fn new(protocol: BridgeUpstreamProtocol, request_id: String, model: String) -> Self {
+        match protocol {
+            BridgeUpstreamProtocol::KimiChatCompletions => {
+                Self::Chat(ChatStreamToIr::new(request_id, model))
+            }
+            BridgeUpstreamProtocol::CodexResponsesOauth => {
+                Self::Responses(ResponsesStreamToIr::new())
+            }
+            BridgeUpstreamProtocol::AnthropicMessages => {
+                unreachable!("messages handler does not accept Anthropic upstream")
+            }
+        }
+    }
+
+    fn push(&mut self, value: &Value) -> Result<Vec<IrEvent>, ProtocolError> {
+        match self {
+            Self::Chat(translator) => translator.push_event(value),
+            Self::Responses(translator) => translator.push_event(value),
+        }
+    }
+
+    fn finish(&mut self) -> Vec<IrEvent> {
+        match self {
+            Self::Chat(translator) => translator.finish(),
+            Self::Responses(translator) => translator.finish(),
+        }
+    }
+}
+
 fn messages_stream_response(
     state: AppState,
     response: reqwest::Response,
@@ -1431,7 +1511,9 @@ fn messages_stream_response(
     let observed = state.clone();
     let bytes = response.bytes_stream();
     let output = stream! {
-        let mut translator = ResponsesStreamToIr::new();
+        let model = state.upstream.model.clone().unwrap_or_default();
+        let protocol = state.upstream.protocol;
+        let mut translator = MessagesStreamCodec::new(protocol, request_id.clone(), model);
         let mut ir_events: Vec<IrEvent> = Vec::new();
         let mut emitted_frames = 0usize;
         let mut buffer = std::collections::VecDeque::new();
@@ -1482,13 +1564,20 @@ fn messages_stream_response(
                     }
                 };
                 let Some(payload) = payload else { continue; };
-                if payload.is_empty() || payload == "[DONE]" { continue; }
+                if payload.is_empty() { continue; }
+                if payload == "[DONE]" {
+                    if protocol == BridgeUpstreamProtocol::KimiChatCompletions {
+                        saw_done = true;
+                        break 'upstream;
+                    }
+                    continue;
+                }
                 let Ok(value) = serde_json::from_str::<Value>(&payload) else {
                     observed.record_upstream_failure();
                     yield Ok::<_, Infallible>(stream_error_frame());
                     return;
                 };
-                let events = match translator.push_event(&value) {
+                let events = match translator.push(&value) {
                     Ok(events) => events,
                     Err(_) => {
                         observed.record_upstream_failure();

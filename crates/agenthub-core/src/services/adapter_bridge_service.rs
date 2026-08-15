@@ -39,6 +39,7 @@ use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
 const RULE_ID: &str = "kimi-membership-to-codex-v1";
 const ANTHROPIC_RULE_ID: &str = "anthropic-api-to-codex-v1";
 const CODEX_CLAUDE_RULE_ID: &str = "codex-subscription-to-claude-responses-v1";
+const GROK_CLAUDE_RULE_ID: &str = "grok-subscription-to-claude-v1";
 const RULE_VERSION: &str = "1";
 const KIMI_CHAT_BASE_URL: &str = "https://api.kimi.com/coding/v1";
 const ANTHROPIC_MESSAGES_BASE_URL: &str = "https://api.anthropic.com/v1";
@@ -49,6 +50,8 @@ const CODEX_DEFAULT_MODEL: &str = "gpt-5.4";
 const PROVIDER_SLUG: &str = "agenthub_kimi_bridge";
 const ANTHROPIC_PROVIDER_SLUG: &str = "agenthub_anthropic_bridge";
 const CODEX_CLAUDE_PROVIDER_SLUG: &str = "claude-codex-adapter-bridge";
+const GROK_CLAUDE_BASE_URL: &str = "https://api.x.ai/v1";
+const GROK_CLAUDE_DEFAULT_MODEL: &str = "grok-4.5";
 const GENERATED_BY: &str = "adapter";
 const BRIDGE_HEALTH_TIMEOUT: Duration = Duration::from_secs(4);
 const RETRYABLE_ERROR_PREFIX: &str = "retryable:";
@@ -118,11 +121,28 @@ const CODEX_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
     mode: AdapterProfileMode::Oauth,
 };
 
+const GROK_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: GROK_CLAUDE_RULE_ID,
+    profile_prefix: "adapter-grok-claude-bridge",
+    provider_prefix: "claude-grok-adapter-bridge",
+    profile_name: "Grok → Claude Code Bridge",
+    provider_name: "Grok Subscription Bridge",
+    toml_name: "",
+    provider_slug: "",
+    upstream_base_url: GROK_CLAUDE_BASE_URL,
+    default_model: GROK_CLAUDE_DEFAULT_MODEL,
+    protocol: BridgeUpstreamProtocol::KimiChatCompletions,
+    bridge_kind: "messages_to_xai_chat_completions",
+    target_agent: AgentId::Claude,
+    mode: AdapterProfileMode::Oauth,
+};
+
 fn rule_for_id(rule_id: &str) -> Option<CodexBridgeRule> {
     match rule_id {
         RULE_ID => Some(KIMI_CODEX_RULE),
         ANTHROPIC_RULE_ID => Some(ANTHROPIC_CODEX_RULE),
         CODEX_CLAUDE_RULE_ID => Some(CODEX_CLAUDE_RULE),
+        GROK_CLAUDE_RULE_ID => Some(GROK_CLAUDE_RULE),
         _ => None,
     }
 }
@@ -501,8 +521,13 @@ impl AdapterBridgeService {
         // token stays only in the returned in-memory material.
         let upstream_auth = match rule.protocol {
             BridgeUpstreamProtocol::KimiChatCompletions => {
-                self.secrets
-                    .resolve_kimi_membership_auth(request.source_kind, source_id)?
+                if rule.rule_id == GROK_CLAUDE_RULE_ID {
+                    self.secrets
+                        .resolve_grok_subscription_auth(request.source_kind, source_id)?
+                } else {
+                    self.secrets
+                        .resolve_kimi_membership_auth(request.source_kind, source_id)?
+                }
             }
             BridgeUpstreamProtocol::AnthropicMessages => self
                 .secrets
@@ -811,8 +836,8 @@ impl AdapterBridgeService {
         self.profiles.update(&profile)
     }
 
-    /// Validates that a profile and its generated provider are the exact
-    /// Kimi-membership -> Codex bridge projection before deletion.
+    /// Validates that a profile and its generated provider are an exact
+    /// supported local-bridge projection before deletion.
     ///
     /// The current provider is always rejected: callers must switch the
     /// Codex Connection first. A listener is deliberately not stopped here;
@@ -821,7 +846,7 @@ impl AdapterBridgeService {
     pub fn preflight_remove(&self, profile_id: &str) -> Result<AdapterBridgeRemoval> {
         let profile = self.bridge_profile(profile_id)?;
         let rule = rule_for_id(&profile.rule_id).ok_or_else(|| {
-            AppError::InvalidArg("adapter profile is not a supported Codex bridge".into())
+            AppError::InvalidArg("adapter profile is not a supported local bridge".into())
         })?;
         let expected_provider_id = stable_id(rule.provider_prefix, &profile.source_id);
         if profile.generated_provider_id.as_deref() != Some(expected_provider_id.as_str()) {
@@ -935,9 +960,15 @@ impl AdapterBridgeService {
         })?;
         validate_generated_provider(&provider, &profile, Some(local_port))?;
         let rule = rule_for_id(&profile.rule_id).ok_or_else(|| {
-            AppError::InvalidArg("adapter profile is not a supported Codex bridge".into())
+            AppError::InvalidArg("adapter profile is not a supported local bridge".into())
         })?;
         let upstream_auth = match rule.protocol {
+            BridgeUpstreamProtocol::KimiChatCompletions if rule.rule_id == GROK_CLAUDE_RULE_ID => {
+                self.secrets.resolve_grok_subscription_auth(
+                    profile.source_kind,
+                    &profile.source_id,
+                )?
+            }
             BridgeUpstreamProtocol::KimiChatCompletions => self
                 .secrets
                 .resolve_kimi_membership_auth(profile.source_kind, &profile.source_id)?,
@@ -975,16 +1006,20 @@ impl AdapterBridgeService {
             .and_then(rule_for_id)
             .ok_or_else(|| {
                 AppError::Unsupported(
-                    "adapter bridge currently supports Kimi membership or Anthropic API → Codex"
+                    "adapter bridge currently supports Kimi / Anthropic → Codex, Codex subscription → Claude, or Grok subscription → Claude"
                         .into(),
                 )
             })?;
         let source_ok = match rule.protocol {
             BridgeUpstreamProtocol::KimiChatCompletions => {
-                matches!(
-                    request.source_kind,
-                    AdapterSourceKind::Provider | AdapterSourceKind::Account
-                )
+                if rule.rule_id == GROK_CLAUDE_RULE_ID {
+                    request.source_kind == AdapterSourceKind::Account
+                } else {
+                    matches!(
+                        request.source_kind,
+                        AdapterSourceKind::Provider | AdapterSourceKind::Account
+                    )
+                }
             }
             BridgeUpstreamProtocol::AnthropicMessages => matches!(
                 request.source_kind,
@@ -1028,6 +1063,7 @@ impl AdapterBridgeService {
                 AdapterSourceKind::Provider | AdapterSourceKind::Account
             ),
             CODEX_CLAUDE_RULE_ID => profile.source_kind == AdapterSourceKind::Account,
+            GROK_CLAUDE_RULE_ID => profile.source_kind == AdapterSourceKind::Account,
             _ => false,
         };
         if !supported_source
@@ -1038,7 +1074,7 @@ impl AdapterBridgeService {
                 .is_none_or(|rule| profile.target_agent_id != rule.target_agent)
         {
             return Err(AppError::InvalidArg(
-                "adapter profile is not a supported Codex bridge".into(),
+                "adapter profile is not a supported local bridge".into(),
             ));
         }
         Ok(profile)
@@ -1052,7 +1088,7 @@ fn projected_provider_input(
 ) -> Result<ProviderInput> {
     validate_bound_port(port)?;
     let rule = rule_for_id(&profile.rule_id).ok_or_else(|| {
-        AppError::InvalidArg("adapter profile is not a supported Codex bridge".into())
+        AppError::InvalidArg("adapter profile is not a supported local bridge".into())
     })?;
     let provider_id = profile.generated_provider_id.as_deref().ok_or_else(|| {
         AppError::message(

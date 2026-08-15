@@ -566,8 +566,12 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
             AgentId::Grok,
         ))
         .unwrap();
-    assert!(!openai_grok.can_apply);
-    assert_eq!(openai_grok.analysis.route, AdapterRoute::Unsupported);
+    assert!(openai_grok.can_apply);
+    assert_eq!(openai_grok.analysis.route, AdapterRoute::NativeEndpoint);
+    assert_eq!(
+        openai_grok.analysis.rule_id.as_deref(),
+        Some("openai-api-to-grok-v1")
+    );
 
     let xai_grok = service
         .plan(&request(
@@ -820,7 +824,7 @@ fn plan_any_ticket_to_cursor_uses_no_writer_reason() {
 }
 
 #[test]
-fn plan_kimi_ticket_to_grok_uses_protocol_graph_reason() {
+fn plan_kimi_ticket_to_grok_is_writable_native_endpoint() {
     let (_dir, db) = test_db();
     ProviderRepo::new(db.clone())
         .create(&provider(
@@ -838,15 +842,19 @@ fn plan_kimi_ticket_to_grok_uses_protocol_graph_reason() {
             AgentId::Grok,
         ))
         .unwrap();
-    assert!(!plan.can_apply);
-    assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
-    assert_eq!(plan.reason, crate::models::SAME_PROTOCOL_NO_EDGE_REASON);
-    assert!(plan.reason.contains("同协议但无已验证的边"));
-    assert!(
-        !plan.reason.contains("仅支持预览到 Claude"),
-        "Kimi → Grok must not use the product whitelist: {}",
-        plan.reason
+    assert!(plan.can_apply);
+    assert_eq!(plan.analysis.route, AdapterRoute::NativeEndpoint);
+    assert_eq!(
+        plan.analysis.rule_id.as_deref(),
+        Some("kimi-membership-to-grok-v1")
     );
+    assert_eq!(
+        plan.reuse_path,
+        crate::models::AdapterReusePath::ApiEndpoint
+    );
+    assert_eq!(plan.changes[0].value.as_deref(), Some("https://api.kimi.com/coding/v1"));
+    assert_eq!(plan.changes[2].field, "apiBackend");
+    assert!(plan.changes[3].secret);
 }
 
 #[test]
@@ -1123,7 +1131,7 @@ fn subscriptions_are_native_pi_reuse_with_opening_bind() {
 }
 
 #[test]
-fn subscription_cross_agent_surfaces_are_unsupported_with_none_reuse_path() {
+fn claude_subscription_to_codex_is_product_closed() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())
         .create(&Account {
@@ -1139,13 +1147,40 @@ fn subscription_cross_agent_surfaces_are_unsupported_with_none_reuse_path() {
             updated_at: "now".into(),
         })
         .unwrap();
+    let service = AdapterRouteService::new(db);
+    let plan = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "claude-subscription",
+            AgentId::Codex,
+        ))
+        .unwrap();
+    assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
+    assert_eq!(plan.analysis.support, AdapterSupport::Unsupported);
+    assert_eq!(
+        plan.reason,
+        crate::models::CLAUDE_SUBSCRIPTION_TO_CODEX_REASON
+    );
+    assert_eq!(
+        plan.reuse_path,
+        crate::models::AdapterReusePath::None
+    );
+    assert!(!plan.can_apply);
+}
+
+#[test]
+fn grok_subscription_to_claude_is_writable_local_bridge() {
+    let (_dir, db) = test_db();
     AccountRepo::new(db.clone())
         .create(&Account {
             id: "grok-subscription".into(),
             agent_id: AgentId::Grok,
             kind: AccountKind::Oauth,
             label: "Grok subscription".into(),
-            credentials: serde_json::json!({"format": "oauth"}),
+            credentials: serde_json::json!({
+                "format": "oauth",
+                "access_token": "grok-access"
+            }),
             extra: serde_json::json!({}),
             status: "active".into(),
             is_current: false,
@@ -1154,24 +1189,23 @@ fn subscription_cross_agent_surfaces_are_unsupported_with_none_reuse_path() {
         })
         .unwrap();
     let service = AdapterRouteService::new(db);
-
-    for (id, target) in [
-        ("claude-subscription", AgentId::Codex),
-        ("grok-subscription", AgentId::Claude),
-    ] {
-        let plan = service
-            .plan(&request(AdapterSourceKind::Account, id, target))
-            .unwrap();
-        assert_eq!(plan.analysis.route, AdapterRoute::Unsupported, "{id}");
-        assert_eq!(plan.analysis.support, AdapterSupport::Unsupported, "{id}");
-        assert_eq!(plan.reason, crate::models::PROTOCOL_MISMATCH_REASON, "{id}");
-        assert_eq!(
-            plan.reuse_path,
-            crate::models::AdapterReusePath::None,
-            "{id}"
-        );
-        assert!(!plan.can_apply, "{id}");
-    }
+    let plan = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "grok-subscription",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
+    assert_eq!(plan.analysis.support, AdapterSupport::Experimental);
+    assert_eq!(plan.reason, "Grok 订阅可通过本机桥接到 Claude Code（Messages → xAI Chat Completions）。");
+    assert_eq!(plan.reuse_path, crate::models::AdapterReusePath::LocalBridge);
+    assert!(plan.can_apply);
+    assert_eq!(
+        plan.changes[0].value.as_deref(),
+        Some("http://127.0.0.1:<本机端口>")
+    );
+    assert!(plan.changes[1].secret);
 }
 
 #[test]

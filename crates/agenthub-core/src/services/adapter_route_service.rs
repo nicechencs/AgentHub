@@ -27,7 +27,8 @@ use crate::services::adapter_route_constants::{
     DEEPSEEK_CODEX_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID,
     DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID, GLM_CODEX_BASE_URL,
     GLM_CODEX_RULE_ID, GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_BASE_URL,
-    KIMI_CLAUDE_RULE_ID,
+    KIMI_CLAUDE_RULE_ID, KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL,
+    OPENAI_GROK_BASE_URL, OPENAI_GROK_DEFAULT_MODEL,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -150,6 +151,23 @@ impl AdapterRouteService {
                         change("codex", "provider", Some(provider), false),
                         change("codex", "baseUrl", Some(base_url), false),
                         change("codex", "wireApi", Some("responses"), false),
+                    ],
+                )
+            }
+            AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Grok => {
+                let (base_url, model) =
+                    if analysis.rule_id.as_deref() == Some("kimi-membership-to-grok-v1") {
+                        (KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL)
+                    } else {
+                        (OPENAI_GROK_BASE_URL, OPENAI_GROK_DEFAULT_MODEL)
+                    };
+                (
+                    AdapterServiceImpact::None,
+                    vec![
+                        change("grok", "baseUrl", Some(base_url), false),
+                        change("grok", "model", Some(model), false),
+                        change("grok", "apiBackend", Some("chat_completions"), false),
+                        change("grok", "apiKey", None, true),
                     ],
                 )
             }
@@ -543,6 +561,7 @@ fn subscription_account_secret_open(
                     | "codex-subscription-to-pi-v1"
                     | "grok-subscription-to-pi-v1"
                     | "codex-subscription-to-claude-responses-v1"
+                    | "grok-subscription-to-claude-v1"
             )
         )
     {
@@ -647,6 +666,20 @@ fn bind_implementation_open(
             AdapterSupport::Experimental,
         )
         | (
+            Some("grok-subscription-to-claude-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Claude,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("kimi-membership-to-grok-v1") | Some("openai-api-to-grok-v1"),
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            AgentId::Grok,
+            AdapterRoute::NativeEndpoint,
+            AdapterSupport::Experimental,
+        )
+        | (
             Some("deepseek-api-to-dsh-v1"),
             AdapterSourceKind::Provider,
             AgentId::Dsh,
@@ -740,6 +773,52 @@ fn actions_for(
                 ),
             ]
         }
+        (RouteSourceLabel::KimiMembership, AgentId::Grok, AdapterRoute::NativeEndpoint) => vec![
+            action(
+                "set_config",
+                "Grok",
+                "写入 Grok 的 Kimi Code 官方 OpenAI Chat Completions 配置。",
+                Some(KIMI_GROK_BASE_URL),
+                false,
+            ),
+            action(
+                "set_config",
+                "Grok",
+                "设置 Grok 模型与 Chat Completions backend。",
+                Some("model=kimi-k2.5; api_backend=chat_completions"),
+                false,
+            ),
+            action(
+                "reference_connection_secret",
+                "Grok",
+                "从已选 Connection 引用 API Key；不会读取或显示它。",
+                None,
+                true,
+            ),
+        ],
+        (RouteSourceLabel::OpenaiApiKey, AgentId::Grok, AdapterRoute::NativeEndpoint) => vec![
+            action(
+                "set_config",
+                "Grok",
+                "写入 Grok 的 OpenAI 官方 Chat Completions 配置。",
+                Some(OPENAI_GROK_BASE_URL),
+                false,
+            ),
+            action(
+                "set_config",
+                "Grok",
+                "设置 Grok 模型与 Chat Completions backend。",
+                Some("model=gpt-4o; api_backend=chat_completions"),
+                false,
+            ),
+            action(
+                "reference_connection_secret",
+                "Grok",
+                "从已选 Connection 引用 API Key；不会读取或显示它。",
+                None,
+                true,
+            ),
+        ],
         (RouteSourceLabel::KimiMembership, AgentId::Codex, AdapterRoute::LocalBridge) => {
             vec![action(
                 "requires_local_bridge",
@@ -813,6 +892,22 @@ fn actions_for(
                 "requires_local_bridge",
                 "Claude Code",
                 "Claude Messages 与 Codex Responses 需要本地双向协议转换。",
+                None,
+                false,
+            ),
+            action(
+                "set_env",
+                "Claude Code",
+                "写入 Claude Code 的 loopback Base URL 与本机 bearer；不会写入上游 OAuth token。",
+                Some("ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN"),
+                false,
+            ),
+        ],
+        (RouteSourceLabel::XaiGrokSubscription, AgentId::Claude, AdapterRoute::LocalBridge) => vec![
+            action(
+                "requires_local_bridge",
+                "Claude Code",
+                "Claude Messages 与 xAI Chat Completions 需要本地双向协议转换。",
                 None,
                 false,
             ),
@@ -1045,11 +1140,18 @@ fn evidence_for(
 ) -> Vec<AdapterEvidence> {
     match (source, target) {
         (RouteSourceLabel::KimiMembership, AgentId::Claude) => vec![kimi_claude_evidence()],
+        (RouteSourceLabel::KimiMembership, AgentId::Grok) => vec![kimi_pi_evidence()],
         (RouteSourceLabel::KimiMembership, AgentId::Codex) => vec![kimi_codex_evidence()],
         (RouteSourceLabel::KimiMembership, AgentId::Pi) => vec![kimi_pi_evidence()],
         (RouteSourceLabel::KimiMembership, _) => vec![kimi_pi_evidence()],
         (RouteSourceLabel::AnthropicApiKey, AgentId::Codex) => vec![anthropic_codex_evidence()],
         (RouteSourceLabel::AnthropicApiKey, _) => vec![anthropic_pi_evidence()],
+        (RouteSourceLabel::OpenaiApiKey, AgentId::Grok) => {
+            vec![adapter_compatibility_evidence()]
+        }
+        (RouteSourceLabel::XaiGrokSubscription, AgentId::Claude) => {
+            vec![adapter_compatibility_evidence()]
+        }
         (RouteSourceLabel::OpenaiApiKey | RouteSourceLabel::XaiApiKey, _) => {
             vec![anthropic_pi_evidence()]
         }

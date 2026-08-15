@@ -397,8 +397,9 @@ fn registered_surfaces_have_writable_pi_cells() {
         AgentId::Grok,
     )
     .public_surface();
-    assert_eq!(openai_grok.route, AdapterRoute::Unsupported);
-    assert!(!openai_grok.can_apply);
+    assert_eq!(openai_grok.route, AdapterRoute::NativeEndpoint);
+    assert!(openai_grok.can_apply);
+    assert_eq!(openai_grok.rule_id, Some("openai-api-to-grok-v1"));
 
     let xai_grok = decide_adapter_capability(
         AdapterSourceProduct::XaiApi,
@@ -448,15 +449,14 @@ fn cursor_target_uses_no_writer_reason_not_source_copy() {
 }
 
 #[test]
-fn kimi_to_grok_reason_comes_from_protocol_graph() {
+fn kimi_to_grok_is_an_open_native_endpoint() {
     let decision = decide_adapter_capability(
         AdapterSourceProduct::KimiCodeMembership,
         AdapterCredentialClass::ApiKey,
         AgentId::Grok,
     )
     .public_surface();
-    assert_eq!(decision.route, AdapterRoute::Unsupported);
-    assert!(!decision.can_apply);
-    assert_eq!(decision.reason, SAME_PROTOCOL_NO_EDGE_REASON);
-    assert!(!decision.reason.contains("仅支持预览到 Claude"));
+    assert_eq!(decision.route, AdapterRoute::NativeEndpoint);
+    assert!(decision.can_apply);
+    assert_eq!(decision.rule_id, Some("kimi-membership-to-grok-v1"));
 }

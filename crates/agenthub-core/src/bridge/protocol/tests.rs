@@ -10,7 +10,7 @@ use super::{
         parse_messages_request, to_anthropic_messages_request, translate_responses_to_anthropic_request,
         AnthropicStreamToIr,
     },
-    chat::{sse_frame, translate_chat_response, ResponsesSseTranslator},
+    chat::{sse_frame, translate_chat_response, ChatStreamToIr, ResponsesSseTranslator},
     responses::{
         encode_responses_from_ir, parse_responses_request, responses_output_to_ir,
         to_kimi_chat_request, to_responses_request, translate_responses_request, IrToResponsesSse,
@@ -192,6 +192,27 @@ fn non_streaming_tool_call_becomes_function_call_item() {
     assert_eq!(response["output"][0]["call_id"], "call_weather_1");
     assert_eq!(response["output"][0]["name"], "weather");
     assert_eq!(response["output"][0]["arguments"], "{\"city\":\"Taipei\"}");
+}
+
+#[test]
+fn chat_sse_to_ir_to_anthropic_sse_text_and_usage() {
+    let chunks = fixture("sse_text_usage_tail")
+        .as_array()
+        .cloned()
+        .expect("array fixture");
+    let mut translator = ChatStreamToIr::new("chat_stream", "grok-4.5");
+    let mut ir = chunks
+        .iter()
+        .flat_map(|chunk| translator.push_event(chunk).expect("chat chunk translates"))
+        .collect::<Vec<_>>();
+    ir.extend(translator.finish());
+    let frames = encode_anthropic_sse(&ir).expect("anthropic sse");
+    let joined = frames.join("");
+    assert!(joined.contains("event: message_start"));
+    assert!(joined.contains("event: content_block_delta"));
+    assert!(joined.contains("\"text\":\"Hel"));
+    assert!(joined.contains("\"input_tokens\":6"));
+    assert!(joined.contains("event: message_stop"));
 }
 
 #[test]
