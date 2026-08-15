@@ -57,4 +57,15 @@ export {
 } from './app-update-store';
 export { useAppUpdateAvailable } from './useAppUpdateAvailable';
 
+export {
+  getBridgePresenceSnapshot,
+  loadBridgePresence,
+  notifyBridgePresenceChanged,
+  resetBridgePresenceStore,
+  shouldShowBridgesNav,
+  subscribeBridgePresence,
+} from './bridge-presence-store';
+export type { BridgePresenceSnapshot } from './bridge-presence-store';
+export { useBridgePresence } from './useBridgePresence';
+
 export type { Backend } from '@/lib/backend/contracts';

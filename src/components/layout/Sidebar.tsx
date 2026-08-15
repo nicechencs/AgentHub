@@ -17,7 +17,13 @@ import { AgentDot } from '@/components/shared/AgentDot';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { AGENTS } from '@/config/agents';
-import { useAgentStatusesOptional, useAppUpdateAvailable } from '@/app/runtime';
+import {
+  loadBridgePresence,
+  shouldShowBridgesNav,
+  useAgentStatusesOptional,
+  useAppUpdateAvailable,
+  useBridgePresence,
+} from '@/app/runtime';
 import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/layout/SidebarContext';
@@ -144,9 +150,18 @@ export function Sidebar() {
   const { collapsed, toggle } = useSidebar();
   const { statuses: agents } = useAgentStatusesOptional();
   const appUpdate = useAppUpdateAvailable();
+  const bridgePresence = useBridgePresence();
   const settingsNotice = appUpdate
     ? { label: `有可用更新 v${appUpdate.version}` }
     : null;
+
+  React.useEffect(() => {
+    void loadBridgePresence();
+  }, []);
+
+  const manageItems = NAV_MANAGE.filter((item) => (
+    item.to !== BRIDGES_PATH || shouldShowBridgesNav(bridgePresence)
+  ));
 
   const installed = agents.filter((a) => a.installed).length;
 
@@ -227,7 +242,7 @@ export function Sidebar() {
           ))}
         </NavGroup>
         <NavGroup label="管理" collapsed={collapsed} className="mt-auto pb-2">
-          {NAV_MANAGE.map((item) => (
+          {manageItems.map((item) => (
             <SidebarNavLink
               key={item.to}
               item={item}
