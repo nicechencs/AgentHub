@@ -3,7 +3,11 @@
  * Filter / search / binding usage lines — pure functions for vitest.
  */
 import { agentDisplayName } from '@/config/agents';
-import type { AgentId } from '@/lib/types';
+import {
+  authDisplayForAccount,
+  authHealthLabel,
+} from '@/lib/backend/contracts/auth-state';
+import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
 import type {
   BindingRoute,
   BindingView,
@@ -17,6 +21,7 @@ import {
   ticketCredentialClassLabel,
   ticketSurfaceLabel,
 } from '@/lib/backend/contracts/ticket';
+import { accountToEntry, providerToEntry } from './connection-model';
 
 export type TicketWalletFilter = 'all' | TicketCredentialClass;
 
@@ -202,4 +207,144 @@ export function dashboardBindingMetaText(
   route: BindingRoute,
 ): string {
   return `${ticketLabel} · ${bindingRouteDashboardLabel(route)}`;
+}
+
+/** Optional pool-row fields shown only in the ticket detail panel. */
+export interface TicketDetailExtras {
+  identity?: string;
+  accountProvider?: string;
+  endpointMode?: 'official' | 'custom';
+  endpointHost?: string;
+  authLabel?: string;
+  authStatus?: AuthStatus;
+  quota5hPct?: number;
+  quota7dPct?: number;
+  quotaResetIn?: string;
+  quota7dResetIn?: string;
+  canEditKey?: boolean;
+  canEditConfig?: boolean;
+  isCurrent?: boolean;
+}
+
+export interface TicketDetailField {
+  label: string;
+  value: string;
+  mono?: boolean;
+}
+
+export function findTicketPoolSource(
+  ticket: Pick<TicketView, 'sourceKind' | 'sourceId' | 'agentId'>,
+  accounts: readonly Account[],
+  providers: readonly Provider[],
+): { account?: Account; provider?: Provider } {
+  if (ticket.sourceKind === 'provider') {
+    const provider =
+      providers.find((item) => item.id === ticket.sourceId && item.agentId === ticket.agentId)
+      ?? providers.find((item) => item.id === ticket.sourceId);
+    return { provider };
+  }
+  const account =
+    accounts.find((item) => item.id === ticket.sourceId && item.agentId === ticket.agentId)
+    ?? accounts.find((item) => item.id === ticket.sourceId);
+  return { account };
+}
+
+export function extrasFromPoolSource(
+  ticket: TicketView,
+  source: { account?: Account; provider?: Provider },
+): TicketDetailExtras {
+  const extras: TicketDetailExtras = {
+    canEditKey: ticket.sourceKind === 'account' && source.account?.kind === 'apikey',
+    canEditConfig: ticket.sourceKind === 'provider' && Boolean(source.provider),
+    isCurrent: source.account?.isCurrent === true || source.provider?.isCurrent === true,
+  };
+
+  if (source.account) {
+    const display = authDisplayForAccount(source.account);
+    extras.identity =
+      ticket.credentialClass === 'oauth'
+        ? source.account.email
+          ?? source.account.identityLabel
+          ?? source.account.subjectId
+          ?? '官方未提供账号信息'
+        : source.account.email ?? source.account.identityLabel ?? source.account.label;
+    if (source.account.provider && !ticket.label.includes(source.account.provider)) {
+      extras.accountProvider = source.account.provider;
+    }
+    extras.authLabel = display.label;
+    extras.authStatus = display.legacyStatus;
+    extras.quota5hPct = source.account.quota5hPct;
+    extras.quota7dPct = source.account.quota7dPct;
+    extras.quotaResetIn = source.account.quotaResetIn;
+    extras.quota7dResetIn = source.account.quota7dResetIn;
+    extras.endpointMode = accountToEntry(source.account).endpointMode;
+  }
+
+  if (source.provider) {
+    const entry = providerToEntry(source.provider);
+    extras.endpointMode = entry.endpointMode;
+    extras.endpointHost = entry.endpointHost;
+    extras.authLabel = authHealthLabel(entry.authHealth ?? 'configured');
+    extras.authStatus = entry.authStatus;
+  }
+
+  return extras;
+}
+
+/** Read-only fields for the ticket detail expand panel. */
+export function buildTicketDetailFields(
+  ticket: TicketView,
+  extras?: TicketDetailExtras | null,
+): TicketDetailField[] {
+  const fields: TicketDetailField[] = [
+    { label: '类型', value: ticketCredentialClassLabel(ticket.credentialClass) },
+    { label: '票面', value: ticketSurfaceLabel(ticket.surface) },
+    { label: '所属', value: agentDisplayName(ticket.agentId) },
+  ];
+  if (ticket.importedFrom) {
+    fields.push({ label: '导入自', value: agentDisplayName(ticket.importedFrom) });
+  }
+  if (extras?.endpointMode) {
+    fields.push({
+      label: '端点',
+      value: extras.endpointMode === 'official' ? '官方' : '自定义',
+    });
+  }
+  if (extras?.identity) {
+    fields.push({
+      label: ticket.credentialClass === 'oauth' ? '官方账号' : '账号',
+      value: extras.identity,
+    });
+  }
+  if (extras?.accountProvider) {
+    fields.push({ label: '提供商', value: extras.accountProvider });
+  }
+  if (extras?.endpointHost) {
+    fields.push({ label: 'Endpoint', value: extras.endpointHost, mono: true });
+  }
+  if (ticket.speaks.length > 0) {
+    fields.push({ label: '协议', value: ticket.speaks.join(' · ') });
+  }
+  return fields;
+}
+
+export function formatTicketBindingDetailLines(
+  bindings: readonly BindingView[],
+): string[] {
+  return bindings.map((binding) => {
+    const bits = [agentDisplayName(binding.agentId), bindingRouteUsageLabel(binding.route)];
+    if (binding.active) bits.push('当前');
+    if (binding.route === 'bridge' && binding.bridge?.running) bits.push('运行中');
+    if (binding.route === 'bridge' && binding.bridge && !binding.bridge.running) bits.push('已停止');
+    if (binding.route === 'bridge' && binding.bridge?.port) {
+      bits.push(`端口 ${binding.bridge.port}`);
+    }
+    return bits.join(' · ');
+  });
+}
+
+export function ticketDetailEditLabel(extras?: TicketDetailExtras | null): string | null {
+  if (extras?.canEditConfig) return '编辑配置';
+  if (extras?.canEditKey) return '编辑密钥';
+  return null;
 }

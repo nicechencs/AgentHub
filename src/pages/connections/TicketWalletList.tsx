@@ -1,15 +1,20 @@
 /**
  * Global ticket wallet list UI (Connections).
  * Data from listTicketWallet; per-row「接到…」always for true tickets.
+ * 「详情」is a read-only expand; edit/delete stay secondary actions inside it.
  */
 import * as React from 'react';
-import { ChevronDown, KeyRound, Plus, Share2, Search } from 'lucide-react';
+import { ChevronDown, KeyRound, Pencil, Plus, Share2, Search, Trash2 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { DetailRow } from '@/components/shared/DetailRow';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ListRow } from '@/components/shared/ListRow';
+import { QuotaBar } from '@/components/shared/QuotaBar';
 import { SegmentedControl } from '@/components/shared/SegmentedControl';
+import { StatusDot } from '@/components/shared/StatusDot';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
@@ -26,9 +31,14 @@ import {
 import type { AgentId } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
+  buildTicketDetailFields,
   buildTicketWalletRows,
   countTicketsByFilter,
+  formatTicketBindingDetailLines,
+  ticketDetailEditLabel,
   TICKET_WALLET_FILTERS,
+  type TicketDetailExtras,
+  type TicketDetailField,
   type TicketWalletFilter,
   type TicketWalletRow,
 } from './ticket-wallet-model';
@@ -41,16 +51,103 @@ function credentialBadgeVariant(
   return 'accent';
 }
 
+export function TicketDetailPanel({
+  id,
+  fields,
+  bindingLines,
+  extras,
+  editLabel,
+  onEdit,
+  onDelete,
+}: {
+  id: string;
+  fields: TicketDetailField[];
+  bindingLines: string[];
+  extras?: TicketDetailExtras | null;
+  editLabel?: string | null;
+  onEdit?: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <Card
+      id={id}
+      variant="plain"
+      className="mt-3 flex flex-col gap-2.5 bg-canvas p-3 text-xs"
+    >
+      <div className="grid gap-1.5 text-secondary sm:grid-cols-2">
+        {fields.map((field) => (
+          <DetailRow
+            key={`${field.label}:${field.value}`}
+            label={field.label}
+            value={field.value}
+            mono={field.mono}
+          />
+        ))}
+        {extras?.authLabel ? (
+          <span className="inline-flex items-center gap-1.5 sm:col-span-2">
+            登录态 {extras.authStatus ? <StatusDot status={extras.authStatus} /> : null}
+            <span className="text-xs text-secondary">{extras.authLabel}</span>
+          </span>
+        ) : null}
+      </div>
+
+      <div>
+        <p className="text-2xs text-muted">正用于</p>
+        {bindingLines.length === 0 ? (
+          <p className="mt-1 text-secondary">未绑定任何 Agent</p>
+        ) : (
+          <ul className="mt-1 space-y-0.5 text-secondary">
+            {bindingLines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {extras?.quota5hPct != null || extras?.quota7dPct != null ? (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5">
+          <QuotaBar label="5h" pct={extras.quota5hPct} resetIn={extras.quotaResetIn} />
+          <QuotaBar label="7d" pct={extras.quota7dPct} resetIn={extras.quota7dResetIn} />
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+        {editLabel && onEdit ? (
+          <Button size="sm" variant="secondary" onClick={onEdit}>
+            <Pencil className="h-3.5 w-3.5" /> {editLabel}
+          </Button>
+        ) : null}
+        <Button
+          size="sm"
+          variant="dangerOutline"
+          title={extras?.isCurrent ? '移入回收站；本机连接可能仍继续生效' : undefined}
+          onClick={onDelete}
+        >
+          <Trash2 className="h-3.5 w-3.5" /> 移入回收站
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 function TicketRow({
   row,
+  extras,
   onConnect,
-  onDetail,
+  onEdit,
+  onDelete,
 }: {
   row: TicketWalletRow;
+  extras: TicketDetailExtras | null;
   onConnect: (ticket: TicketView) => void;
-  onDetail: (ticket: TicketView) => void;
+  onEdit: (ticket: TicketView) => void;
+  onDelete: (ticket: TicketView) => void;
 }) {
   const { ticket, usageText, highlighted } = row;
+  const [expanded, setExpanded] = React.useState(false);
+  const detailsId = React.useId();
+  const editLabel = ticketDetailEditLabel(extras);
+
   return (
     <ListRow
       active={highlighted}
@@ -81,13 +178,32 @@ function TicketRow({
           <Button size="sm" variant="outline" onClick={() => onConnect(ticket)}>
             <Share2 className="h-3.5 w-3.5" /> 接到…
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => onDetail(ticket)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-expanded={expanded}
+            aria-controls={detailsId}
+            onClick={() => setExpanded((open) => !open)}
+          >
             详情
-            <ChevronDown className="h-3.5 w-3.5" />
+            <ChevronDown
+              className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')}
+            />
           </Button>
         </div>
       </div>
       <p className="mt-1 pl-5 text-2xs text-secondary">{usageText}</p>
+      {expanded ? (
+        <TicketDetailPanel
+          id={detailsId}
+          fields={buildTicketDetailFields(ticket, extras)}
+          bindingLines={formatTicketBindingDetailLines(row.bindings)}
+          extras={extras}
+          editLabel={editLabel}
+          onEdit={editLabel ? () => onEdit(ticket) : undefined}
+          onDelete={() => onDelete(ticket)}
+        />
+      ) : null}
     </ListRow>
   );
 }
@@ -98,7 +214,9 @@ export function TicketWalletList({
   highlightAgentId,
   initialFilter = 'all',
   onConnectTicket,
-  onDetailTicket,
+  extrasForTicket,
+  onEditTicket,
+  onDeleteTicket,
   onAddKey,
   onImportLogin,
   addAgentId,
@@ -110,7 +228,9 @@ export function TicketWalletList({
   highlightAgentId?: AgentId | null;
   initialFilter?: TicketWalletFilter;
   onConnectTicket: (ticket: TicketView) => void;
-  onDetailTicket: (ticket: TicketView) => void;
+  extrasForTicket?: (ticket: TicketView) => TicketDetailExtras | null;
+  onEditTicket: (ticket: TicketView) => void;
+  onDeleteTicket: (ticket: TicketView) => void;
   onAddKey?: () => void;
   onImportLogin?: () => void;
   addAgentId?: AgentId | null;
@@ -229,8 +349,10 @@ export function TicketWalletList({
             <TicketRow
               key={row.ticket.id}
               row={row}
+              extras={extrasForTicket?.(row.ticket) ?? null}
               onConnect={onConnectTicket}
-              onDetail={onDetailTicket}
+              onEdit={onEditTicket}
+              onDelete={onDeleteTicket}
             />
           ))}
         </div>
