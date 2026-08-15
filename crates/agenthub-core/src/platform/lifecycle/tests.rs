@@ -483,11 +483,16 @@ fn repair_detect_records_observed_status() {
 
 #[test]
 fn unsupported_unknown_agent_fails_closed() {
-    // Lifecycle uses AgentId enum — unknown string not constructible.
-    // Unregistered empty registry:
+    // P1-3: detectors are independent of AdapterRegistry. Empty detector
+    // registry still fails closed before execute.
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
-    let lc = LifecycleCoordinator::new(db, crate::adapters::AdapterRegistry::new());
+    let lc = LifecycleCoordinator::with_registries(
+        db,
+        crate::adapters::AdapterRegistry::new(),
+        DetectorRegistry::new(),
+        InstallContributionRegistry::new(),
+    );
     let err = lc.repair_detect(AgentId::Claude, None).unwrap_err();
     assert_eq!(err.code(), "not_found");
 }

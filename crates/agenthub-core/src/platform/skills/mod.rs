@@ -24,7 +24,10 @@ pub use ownership::is_managed_projection;
 pub use packages::SkillPackageService;
 pub use reconcile::{observed as skill_observed, SkillReconciler};
 pub use sources::SkillSourceService;
-pub use target::{AdapterSkillTarget, AgentSkillTarget, SkillTargetRegistry, StaticSkillTarget};
+pub use target::{
+    builtin_skill_target_registry, AdapterSkillTarget, AgentSkillTarget, SkillTargetRegistry,
+    StaticSkillTarget,
+};
 
 // Re-exports used by SkillService façade and its tests.
 pub(crate) use assignment::package_revision;

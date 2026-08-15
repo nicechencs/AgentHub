@@ -167,88 +167,92 @@ fn scan_cursor_version_end(bytes: &[u8], start: usize) -> Option<usize> {
 
 pub struct CursorAdapter;
 
+/// Standalone install probe used by platform detectors (no full adapter required).
+pub(crate) fn detect_installation() -> DetectResult {
+    let requires = crate::catalog::install::adapter_install_channels(AgentId::Cursor)
+        .first()
+        .map(|c| c.requires.clone())
+        .unwrap_or_default();
+    let env_ready = runtime::is_ready(&requires);
+    let mut notes = Vec::new();
+
+    if let Some((path, channel, via_well_known, version)) = resolve_cursor_agent_cli() {
+        if via_well_known {
+            notes.push(format!(
+                "found via well-known path (not on process PATH): {}; \
+                 restart AgentHub after installs if PATH still incomplete",
+                path.display()
+            ));
+        }
+        if let Some(ide) = detect_cursor_ide_version() {
+            notes.push(format!("Cursor IDE also present ({ide})"));
+        }
+        tracing::info!(
+            target: crate::logging::targets::DETECT,
+            module = crate::logging::targets::DETECT,
+            op = "detect",
+            agent = "cursor",
+            via = if via_well_known { "well_known" } else { "path" },
+            channel = channel,
+            path = %path.display(),
+            version = version.as_deref().unwrap_or("-"),
+            "Cursor Agent CLI detected"
+        );
+        return DetectResult {
+            agent: AgentId::Cursor,
+            status: DetectStatus::Installed,
+            version,
+            binary_path: Some(path),
+            channel: Some(channel.into()),
+            env_ready,
+            notes,
+        };
+    }
+
+    // Not installed: optional IDE-only tip (does NOT count as Installed).
+    if let Some(ide) = detect_cursor_ide_version() {
+        notes.push(format!(
+            "检测到 Cursor IDE ({ide})，但仍需安装 Cursor Agent CLI \
+             （官方: irm '{NATIVE_PS1_URL}' | iex 或 curl {NATIVE_SH_URL} | bash）"
+        ));
+    } else {
+        notes.push(NOT_FOUND_FIREFIGHTING_NOTE.into());
+    }
+    // Surface that bare PATH `agent` is not trusted when it looks like Grok.
+    if let Some(rejected) = path_agent_rejected_as_non_cursor() {
+        notes.push(format!(
+            "ignored PATH agent at {} (not Cursor Agent CLI; e.g. Grok uses agent.exe)",
+            rejected.display()
+        ));
+    }
+
+    tracing::debug!(
+        target: crate::logging::targets::DETECT,
+        module = crate::logging::targets::DETECT,
+        op = "detect",
+        agent = "cursor",
+        via = "not_found",
+        "Cursor Agent CLI not found"
+    );
+
+    DetectResult {
+        agent: AgentId::Cursor,
+        status: DetectStatus::NotFound,
+        version: None,
+        binary_path: None,
+        channel: None,
+        env_ready,
+        notes,
+    }
+}
+
 impl AgentAdapter for CursorAdapter {
     fn id(&self) -> AgentId {
         AgentId::Cursor
     }
 
     fn detect(&self) -> DetectResult {
-        let requires = self
-            .install_channels()
-            .first()
-            .map(|c| c.requires.clone())
-            .unwrap_or_default();
-        let env_ready = runtime::is_ready(&requires);
-        let mut notes = Vec::new();
-
-        if let Some((path, channel, via_well_known, version)) = resolve_cursor_agent_cli() {
-            if via_well_known {
-                notes.push(format!(
-                    "found via well-known path (not on process PATH): {}; \
-                     restart AgentHub after installs if PATH still incomplete",
-                    path.display()
-                ));
-            }
-            if let Some(ide) = detect_cursor_ide_version() {
-                notes.push(format!("Cursor IDE also present ({ide})"));
-            }
-            tracing::info!(
-                target: crate::logging::targets::DETECT,
-                module = crate::logging::targets::DETECT,
-                op = "detect",
-                agent = "cursor",
-                via = if via_well_known { "well_known" } else { "path" },
-                channel = channel,
-                path = %path.display(),
-                version = version.as_deref().unwrap_or("-"),
-                "Cursor Agent CLI detected"
-            );
-            return DetectResult {
-                agent: AgentId::Cursor,
-                status: DetectStatus::Installed,
-                version,
-                binary_path: Some(path),
-                channel: Some(channel.into()),
-                env_ready,
-                notes,
-            };
-        }
-
-        // Not installed: optional IDE-only tip (does NOT count as Installed).
-        if let Some(ide) = detect_cursor_ide_version() {
-            notes.push(format!(
-                "检测到 Cursor IDE ({ide})，但仍需安装 Cursor Agent CLI \
-                 （官方: irm '{NATIVE_PS1_URL}' | iex 或 curl {NATIVE_SH_URL} | bash）"
-            ));
-        } else {
-            notes.push(NOT_FOUND_FIREFIGHTING_NOTE.into());
-        }
-        // Surface that bare PATH `agent` is not trusted when it looks like Grok.
-        if let Some(rejected) = path_agent_rejected_as_non_cursor() {
-            notes.push(format!(
-                "ignored PATH agent at {} (not Cursor Agent CLI; e.g. Grok uses agent.exe)",
-                rejected.display()
-            ));
-        }
-
-        tracing::debug!(
-            target: crate::logging::targets::DETECT,
-            module = crate::logging::targets::DETECT,
-            op = "detect",
-            agent = "cursor",
-            via = "not_found",
-            "Cursor Agent CLI not found"
-        );
-
-        DetectResult {
-            agent: AgentId::Cursor,
-            status: DetectStatus::NotFound,
-            version: None,
-            binary_path: None,
-            channel: None,
-            env_ready,
-            notes,
-        }
+        detect_installation()
     }
 
     fn read_config(&self) -> Result<AgentConfig> {

@@ -118,6 +118,9 @@ impl SkillService {
     ///
     /// Filesystem-only path (no assignment table). Prefer [`with_db`] in production.
     pub fn new(source_root: PathBuf, registry: AdapterRegistry) -> Self {
+        // Compatibility: derive targets from the provided adapter registry so
+        // unit tests with fake adapters keep working. Production composition
+        // uses [`Self::with_db_and_target_registry`] + builtin StaticSkillTarget.
         let targets = SkillTargetRegistry::from_adapter_registry(&registry)
             .expect("adapter registry must contain unique skill target keys");
         Self::with_target_registry(source_root, registry, targets)
@@ -140,6 +143,9 @@ impl SkillService {
 
     /// Production constructor: shared source root + adapter registry + assignment DB.
     pub fn with_db(source_root: PathBuf, registry: AdapterRegistry, db: Database) -> Self {
+        // Compatibility path (tests / callers that still pass a full adapter set).
+        // Production AgentHub uses builtin StaticSkillTarget via
+        // [`Self::with_db_and_target_registry`].
         let targets = SkillTargetRegistry::from_adapter_registry(&registry)
             .expect("adapter registry must contain unique skill target keys");
         Self::with_db_and_target_registry(source_root, registry, db, targets)

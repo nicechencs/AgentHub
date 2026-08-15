@@ -18,25 +18,29 @@ use super::{
 
 pub struct KimiAdapter;
 
+/// Standalone install probe used by platform detectors (no full adapter required).
+pub(crate) fn detect_installation() -> DetectResult {
+    let requires = crate::catalog::install::adapter_install_channels(AgentId::Kimi)
+        .first()
+        .map(|c| c.requires.clone())
+        .unwrap_or_default();
+    let env_ready = runtime::is_ready(&requires);
+    detect_binary(
+        AgentId::Kimi,
+        &["kimi"],
+        &["--version"],
+        Some("native"),
+        env_ready,
+    )
+}
+
 impl AgentAdapter for KimiAdapter {
     fn id(&self) -> AgentId {
         AgentId::Kimi
     }
 
     fn detect(&self) -> DetectResult {
-        let requires = self
-            .install_channels()
-            .first()
-            .map(|c| c.requires.clone())
-            .unwrap_or_default();
-        let env_ready = runtime::is_ready(&requires);
-        detect_binary(
-            AgentId::Kimi,
-            &["kimi"],
-            &["--version"],
-            Some("native"),
-            env_ready,
-        )
+        detect_installation()
     }
 
     fn read_config(&self) -> Result<AgentConfig> {

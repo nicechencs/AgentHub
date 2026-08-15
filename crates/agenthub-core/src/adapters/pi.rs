@@ -18,20 +18,24 @@ use crate::utils::atomic::atomic_write;
 
 pub struct PiAdapter;
 
+/// Standalone install probe used by platform detectors (no full adapter required).
+pub(crate) fn detect_installation() -> DetectResult {
+    let requires = crate::catalog::install::adapter_install_channels(AgentId::Pi)
+        .first()
+        .map(|c| c.requires.clone())
+        .unwrap_or_default();
+    let env_ready = runtime::is_ready(&requires);
+    // Prefer PATH `pi` (npm global shim); channel inferred from path / well-known.
+    detect_binary(AgentId::Pi, &["pi"], &["--version"], Some("npm"), env_ready)
+}
+
 impl AgentAdapter for PiAdapter {
     fn id(&self) -> AgentId {
         AgentId::Pi
     }
 
     fn detect(&self) -> DetectResult {
-        let requires = self
-            .install_channels()
-            .first()
-            .map(|c| c.requires.clone())
-            .unwrap_or_default();
-        let env_ready = runtime::is_ready(&requires);
-        // Prefer PATH `pi` (npm global shim); channel inferred from path / well-known.
-        detect_binary(AgentId::Pi, &["pi"], &["--version"], Some("npm"), env_ready)
+        detect_installation()
     }
 
     fn read_config(&self) -> Result<AgentConfig> {
