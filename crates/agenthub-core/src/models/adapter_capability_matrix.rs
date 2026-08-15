@@ -25,18 +25,18 @@ pub const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON: &str = concat!(
     "替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。",
 );
 
-pub const SUBSCRIPTION_PI_PREVIEW_LIMITS: &[&str] = &[
-    "仅预览：不会写入 Pi 配置，也不会导出、复制或转换 OAuth token。",
-    "plan.canApply=false：无 Apply、启动 Bridge 或强制继续入口。",
-    "打开 bind 前需逐边验证刷新语义（refresh token 单次轮换会互相打翻）。",
+pub const SUBSCRIPTION_PI_APPLY_LIMITS: &[&str] = &[
+    "会把 OAuth access/refresh 写入 Pi auth.json 对应槽；预览、IPC、日志不传输明文 token。",
+    "写入后由 Pi 刷新该槽；Hub 不双刷同一 refresh token。原 Agent 与 Pi 同时刷新可能互相打翻。",
+    "实验性：应用后会把生成 Provider 设为 Pi 当前连接。",
 ];
 
 pub const CLAUDE_SUBSCRIPTION_TO_PI_REASON: &str =
-    "Claude 订阅可预览为 Pi 的 anthropic 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。";
+    "Claude 订阅可写入 Pi 的 anthropic 登录槽（原生订阅复用）。";
 pub const CODEX_SUBSCRIPTION_TO_PI_REASON: &str =
-    "Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。";
+    "Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。";
 pub const GROK_SUBSCRIPTION_TO_PI_REASON: &str =
-    "Grok / xAI 订阅可预览为 Pi 的 xai 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。";
+    "Grok / xAI 订阅可写入 Pi 的 xai 登录槽（原生订阅复用）。";
 
 /// Product / origin that owns the selected Connection credentials.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -560,16 +560,16 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
             transport: AdapterUpstreamTransport::NativeHttp,
             target: AgentId::Pi,
             protocol: AdapterTargetProtocol::PiProviderConfig,
-            version: "0",
+            version: MATRIX_VERSION,
         },
         route: AdapterRoute::ConfigSync,
         support: AdapterSupport::Experimental,
-        can_apply: false,
+        can_apply: true,
         reason: CLAUDE_SUBSCRIPTION_TO_PI_REASON,
-        limitations: SUBSCRIPTION_PI_PREVIEW_LIMITS,
-        rule_id: "claude-subscription-to-pi-v0",
+        limitations: SUBSCRIPTION_PI_APPLY_LIMITS,
+        rule_id: "claude-subscription-to-pi-v1",
         verified_at: "2026-08-15",
-        gates: AdapterCapabilityGates::all_closed(),
+        gates: AdapterCapabilityGates::all_open(),
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -578,16 +578,16 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
             transport: AdapterUpstreamTransport::NativeHttp,
             target: AgentId::Pi,
             protocol: AdapterTargetProtocol::PiProviderConfig,
-            version: "0",
+            version: MATRIX_VERSION,
         },
         route: AdapterRoute::ConfigSync,
         support: AdapterSupport::Experimental,
-        can_apply: false,
+        can_apply: true,
         reason: CODEX_SUBSCRIPTION_TO_PI_REASON,
-        limitations: SUBSCRIPTION_PI_PREVIEW_LIMITS,
-        rule_id: "codex-subscription-to-pi-v0",
+        limitations: SUBSCRIPTION_PI_APPLY_LIMITS,
+        rule_id: "codex-subscription-to-pi-v1",
         verified_at: "2026-08-15",
-        gates: AdapterCapabilityGates::all_closed(),
+        gates: AdapterCapabilityGates::all_open(),
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -596,16 +596,16 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
             transport: AdapterUpstreamTransport::NativeHttp,
             target: AgentId::Pi,
             protocol: AdapterTargetProtocol::PiProviderConfig,
-            version: "0",
+            version: MATRIX_VERSION,
         },
         route: AdapterRoute::ConfigSync,
         support: AdapterSupport::Experimental,
-        can_apply: false,
+        can_apply: true,
         reason: CODEX_SUBSCRIPTION_TO_PI_REASON,
-        limitations: SUBSCRIPTION_PI_PREVIEW_LIMITS,
-        rule_id: "codex-subscription-to-pi-v0",
+        limitations: SUBSCRIPTION_PI_APPLY_LIMITS,
+        rule_id: "codex-subscription-to-pi-v1",
         verified_at: "2026-08-15",
-        gates: AdapterCapabilityGates::all_closed(),
+        gates: AdapterCapabilityGates::all_open(),
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -614,16 +614,16 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
             transport: AdapterUpstreamTransport::NativeHttp,
             target: AgentId::Pi,
             protocol: AdapterTargetProtocol::PiProviderConfig,
-            version: "0",
+            version: MATRIX_VERSION,
         },
         route: AdapterRoute::ConfigSync,
         support: AdapterSupport::Experimental,
-        can_apply: false,
+        can_apply: true,
         reason: GROK_SUBSCRIPTION_TO_PI_REASON,
-        limitations: SUBSCRIPTION_PI_PREVIEW_LIMITS,
-        rule_id: "grok-subscription-to-pi-v0",
+        limitations: SUBSCRIPTION_PI_APPLY_LIMITS,
+        rule_id: "grok-subscription-to-pi-v1",
         verified_at: "2026-08-15",
-        gates: AdapterCapabilityGates::all_closed(),
+        gates: AdapterCapabilityGates::all_open(),
     },
     // Codex OAuth Account → Claude Code: recorded candidate, every gate closed.
     // Decision surface remains unsupported / can_apply=false (both transports).

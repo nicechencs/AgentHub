@@ -74,7 +74,10 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
     assert_eq!(claude.analysis.route, AdapterRoute::NativeEndpoint);
     assert_eq!(claude.analysis.support, AdapterSupport::Stable);
     assert_eq!(claude.maturity, AdapterMaturity::Stable);
-    assert_eq!(claude.reuse_path, crate::models::AdapterReusePath::ApiEndpoint);
+    assert_eq!(
+        claude.reuse_path,
+        crate::models::AdapterReusePath::ApiEndpoint
+    );
     assert_eq!(claude.service_impact, AdapterServiceImpact::None);
     assert!(claude.can_apply);
     assert_eq!(claude.changes[0].field, "baseUrl");
@@ -106,7 +109,10 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
         codex.service_impact,
         AdapterServiceImpact::RequiresLocalBridge
     );
-    assert_eq!(codex.reuse_path, crate::models::AdapterReusePath::LocalBridge);
+    assert_eq!(
+        codex.reuse_path,
+        crate::models::AdapterReusePath::LocalBridge
+    );
     assert!(codex.can_apply);
     assert_eq!(codex.changes.len(), 2);
     assert_eq!(codex.changes[0].target, "codex");
@@ -479,7 +485,7 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
 }
 
 #[test]
-fn account_that_is_not_anthropic_to_pi_stays_unwritable() {
+fn claude_subscription_account_to_pi_is_writable_but_same_edge_is_closed() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())
         .create(&Account {
@@ -487,7 +493,10 @@ fn account_that_is_not_anthropic_to_pi_stays_unwritable() {
             agent_id: AgentId::Claude,
             kind: AccountKind::Oauth,
             label: "Claude login".into(),
-            credentials: serde_json::json!({"format": "credentials_json"}),
+            credentials: serde_json::json!({
+                "format": "credentials_json",
+                "access_token": "claude-access"
+            }),
             extra: serde_json::json!({}),
             status: "active".into(),
             is_current: false,
@@ -521,7 +530,14 @@ fn account_that_is_not_anthropic_to_pi_stays_unwritable() {
             AgentId::Pi,
         ))
         .unwrap();
-    assert!(!other.can_apply, "non-Anthropic account → Pi stays closed");
+    assert!(
+        other.can_apply,
+        "Claude subscription account → Pi is writable"
+    );
+    assert_eq!(
+        other.analysis.rule_id.as_deref(),
+        Some("claude-subscription-to-pi-v1")
+    );
 
     let anthropic_to_claude = service
         .plan(&request(
@@ -880,14 +896,17 @@ fn codex_auth_json_account_to_claude_is_matrix_closed() {
 }
 
 #[test]
-fn subscriptions_preview_as_native_pi_reuse_without_opening_bind() {
+fn subscriptions_are_native_pi_reuse_with_opening_bind() {
     let (_dir, db) = test_db();
     let accounts = AccountRepo::new(db.clone());
     for (id, agent_id, credentials) in [
         (
             "claude-subscription",
             AgentId::Claude,
-            serde_json::json!({"format": "credentials_json"}),
+            serde_json::json!({
+                "format": "credentials_json",
+                "access_token": "claude-access"
+            }),
         ),
         (
             "codex-subscription",
@@ -900,7 +919,10 @@ fn subscriptions_preview_as_native_pi_reuse_without_opening_bind() {
         (
             "grok-subscription",
             AgentId::Grok,
-            serde_json::json!({"format": "oauth"}),
+            serde_json::json!({
+                "format": "oauth",
+                "access_token": "grok-access"
+            }),
         ),
     ] {
         accounts
@@ -923,19 +945,19 @@ fn subscriptions_preview_as_native_pi_reuse_without_opening_bind() {
     for (id, rule_id, reason, provider) in [
         (
             "claude-subscription",
-            "claude-subscription-to-pi-v0",
+            "claude-subscription-to-pi-v1",
             crate::models::CLAUDE_SUBSCRIPTION_TO_PI_REASON,
             "anthropic",
         ),
         (
             "codex-subscription",
-            "codex-subscription-to-pi-v0",
+            "codex-subscription-to-pi-v1",
             crate::models::CODEX_SUBSCRIPTION_TO_PI_REASON,
             "openai-codex",
         ),
         (
             "grok-subscription",
-            "grok-subscription-to-pi-v0",
+            "grok-subscription-to-pi-v1",
             crate::models::GROK_SUBSCRIPTION_TO_PI_REASON,
             "xai",
         ),
@@ -945,10 +967,10 @@ fn subscriptions_preview_as_native_pi_reuse_without_opening_bind() {
             .unwrap();
         assert_eq!(plan.analysis.route, AdapterRoute::ConfigSync, "{id}");
         assert_eq!(plan.analysis.support, AdapterSupport::Experimental, "{id}");
-        assert!(!plan.can_apply, "{id}");
+        assert!(plan.can_apply, "{id}");
         assert_eq!(
             plan.analysis.gate_kind,
-            crate::models::AdapterGateKind::PreviewOnly
+            crate::models::AdapterGateKind::None
         );
         assert_eq!(plan.analysis.rule_id.as_deref(), Some(rule_id), "{id}");
         assert_eq!(plan.reason, reason, "{id}");
@@ -977,7 +999,7 @@ fn subscriptions_preview_as_native_pi_reuse_without_opening_bind() {
         );
         assert_eq!(
             plan.analysis.limitations,
-            crate::models::SUBSCRIPTION_PI_PREVIEW_LIMITS
+            crate::models::SUBSCRIPTION_PI_APPLY_LIMITS
                 .iter()
                 .map(|value| (*value).to_owned())
                 .collect::<Vec<_>>(),
@@ -1126,14 +1148,19 @@ fn deepseek_preset_plans_dsh_without_secret() {
         .unwrap();
     assert_eq!(plan.analysis.route, AdapterRoute::ConfigSync);
     assert!(plan.can_apply);
-    assert_eq!(plan.analysis.rule_id.as_deref(), Some("deepseek-api-to-dsh-v1"));
+    assert_eq!(
+        plan.analysis.rule_id.as_deref(),
+        Some("deepseek-api-to-dsh-v1")
+    );
     assert_eq!(plan.changes[0].field, "provider");
     assert_eq!(plan.changes[0].value.as_deref(), Some("deepseek-official"));
     assert_eq!(plan.changes[1].field, "apiKeyEnv");
     assert_eq!(plan.changes[2].field, "apiKey");
     assert!(plan.changes[2].secret);
     assert!(plan.changes[2].value.is_none());
-    assert!(!serde_json::to_string(&plan).unwrap().contains("must-not-leak"));
+    assert!(!serde_json::to_string(&plan)
+        .unwrap()
+        .contains("must-not-leak"));
 }
 
 #[test]
@@ -1152,7 +1179,10 @@ fn deepseek_official_host_without_preset_plans_dsh() {
         .unwrap();
     assert_eq!(plan.analysis.route, AdapterRoute::ConfigSync);
     assert!(plan.can_apply);
-    assert_eq!(plan.analysis.rule_id.as_deref(), Some("deepseek-api-to-dsh-v1"));
+    assert_eq!(
+        plan.analysis.rule_id.as_deref(),
+        Some("deepseek-api-to-dsh-v1")
+    );
 }
 
 #[test]

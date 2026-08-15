@@ -313,9 +313,9 @@ const KIMI_MEMBERSHIP_RULE_IDS = new Set([
   'kimi-membership-to-pi-v1',
 ]);
 const NATIVE_SUBSCRIPTION_PI_RULE_IDS = new Set([
-  'claude-subscription-to-pi-v0',
-  'codex-subscription-to-pi-v0',
-  'grok-subscription-to-pi-v0',
+  'claude-subscription-to-pi-v1',
+  'codex-subscription-to-pi-v1',
+  'grok-subscription-to-pi-v1',
 ]);
 
 function jsonString(value: unknown, key: string): string | undefined {
@@ -687,19 +687,19 @@ function analyze(
     const subscription = source === 'claude_subscription'
       ? {
           value: 'anthropic',
-          ruleId: 'claude-subscription-to-pi-v0',
-          reason: 'Claude 订阅可预览为 Pi 的 anthropic 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。',
+          ruleId: 'claude-subscription-to-pi-v1',
+          reason: 'Claude 订阅可写入 Pi 的 anthropic 登录槽（原生订阅复用）。',
         }
       : source === 'grok_xai_subscription'
         ? {
             value: 'xai',
-            ruleId: 'grok-subscription-to-pi-v0',
-            reason: 'Grok / xAI 订阅可预览为 Pi 的 xai 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。',
+            ruleId: 'grok-subscription-to-pi-v1',
+            reason: 'Grok / xAI 订阅可写入 Pi 的 xai 登录槽（原生订阅复用）。',
           }
         : {
             value: 'openai-codex',
-            ruleId: 'codex-subscription-to-pi-v0',
-            reason: 'Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。',
+            ruleId: 'codex-subscription-to-pi-v1',
+            reason: 'Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。',
           };
     return {
       route: 'config_sync',
@@ -710,13 +710,13 @@ function analyze(
         secretAction('Pi', '从已选 Connection 引用授权（OAuth）；不会读取或显示 token。'),
       ],
       limitations: [
-        '仅预览：不会写入 Pi 配置，也不会导出、复制或转换 OAuth token。',
-        'plan.canApply=false：无 Apply、启动 Bridge 或强制继续入口。',
-        '打开 bind 前需逐边验证刷新语义（refresh token 单次轮换会互相打翻）。',
+        '会把 OAuth access/refresh 写入 Pi auth.json 对应槽；预览、IPC、日志不传输明文 token。',
+        '写入后由 Pi 刷新该槽；Hub 不双刷同一 refresh token。原 Agent 与 Pi 同时刷新可能互相打翻。',
+        '实验性：应用后会把生成 Provider 设为 Pi 当前连接。',
       ],
       evidence: compatibilityEvidence,
       ruleId: subscription.ruleId,
-      gateKind: 'preview_only',
+      gateKind: 'none',
     };
   }
 
@@ -775,7 +775,12 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
         : analysis.route === 'config_sync' && request.targetAgentId === 'pi'
       ? [
           change('pi', 'provider', configuredProvider ?? 'anthropic'),
-          secretChange('pi', 'apiKey'),
+          secretChange(
+            'pi',
+            analysis.ruleId && NATIVE_SUBSCRIPTION_PI_RULE_IDS.has(analysis.ruleId)
+              ? 'auth'
+              : 'apiKey',
+          ),
         ]
         : analysis.route === 'config_sync' && request.targetAgentId === 'dsh'
       ? [
@@ -790,12 +795,21 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
       && !!analysis.ruleId && CLAUDE_NATIVE_EXPERIMENTAL_RULES.has(analysis.ruleId))
     || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
     || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'pi')
+    || (analysis.route === 'config_sync' && analysis.support === 'experimental'
+      && request.targetAgentId === 'pi'
+      && !!analysis.ruleId
+      && NATIVE_SUBSCRIPTION_PI_RULE_IDS.has(analysis.ruleId))
     || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'dsh');
   const accountExplicitApiToPi = request.sourceKind === 'account'
     && implementedPath
     && request.targetAgentId === 'pi'
     && !!analysis.ruleId
     && EXPLICIT_API_TO_PI_RULES.has(analysis.ruleId);
+  const accountNativeSubscriptionPi = request.sourceKind === 'account'
+    && implementedPath
+    && request.targetAgentId === 'pi'
+    && !!analysis.ruleId
+    && NATIVE_SUBSCRIPTION_PI_RULE_IDS.has(analysis.ruleId);
   const accountExplicitApiToCodex = request.sourceKind === 'account'
     && implementedPath
     && request.targetAgentId === 'codex'
@@ -809,7 +823,8 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
   const writeGate = (request.sourceKind === 'provider' && implementedPath)
     || accountExplicitApiToPi
     || accountExplicitApiToCodex
-    || accountClaudeNative;
+    || accountClaudeNative
+    || accountNativeSubscriptionPi;
   const canApply = writeGate;
   const maturity = mockPlanMaturity(analysis);
   const reusePath = NATIVE_SUBSCRIPTION_PI_RULE_IDS.has(analysis.ruleId ?? '')
@@ -824,6 +839,7 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
     && !accountExplicitApiToPi
     && !accountExplicitApiToCodex
     && !accountClaudeNative
+    && !accountNativeSubscriptionPi
     ? `${analysis.reason} ${SAME_EDGE_UNWRITABLE_REASON}`
     : analysis.reason;
   return {
@@ -967,7 +983,19 @@ function materializeApply(
         : ruleId === 'anthropic-api-to-pi-v1'
           ? 'Anthropic'
           : 'Kimi';
-    const prefix = ruleId === 'openai-api-to-pi-v1'
+    const subscription = NATIVE_SUBSCRIPTION_PI_RULE_IDS.has(ruleId);
+    const subscriptionDisplay = ruleId === 'claude-subscription-to-pi-v1'
+      ? 'Claude'
+      : ruleId === 'codex-subscription-to-pi-v1'
+        ? 'Codex / ChatGPT'
+        : 'Grok / xAI';
+    const prefix = subscription
+      ? ruleId === 'claude-subscription-to-pi-v1'
+        ? 'claude-oauth'
+        : ruleId === 'codex-subscription-to-pi-v1'
+          ? 'codex-oauth'
+          : 'grok-oauth'
+      : ruleId === 'openai-api-to-pi-v1'
       ? 'openai'
       : ruleId === 'xai-api-to-pi-v1'
         ? 'xai'
@@ -977,12 +1005,12 @@ function materializeApply(
     const slot = piSlotFromPlan(plan, slotFallback);
     const profile: AdapterProfile = existing ?? {
       id: `adapter-${prefix}-pi-${safeId}`,
-      name: `${display} → Pi (${safeId})`,
+      name: `${subscription ? subscriptionDisplay : display} → Pi (${safeId})`,
       sourceKind: request.sourceKind,
       sourceId: request.sourceId,
       targetAgentId: request.targetAgentId,
       route: 'config_sync',
-      mode: 'api',
+      mode: subscription ? 'oauth' : 'api',
       status: 'active',
       ruleId,
       ruleVersion: '1',
@@ -999,10 +1027,20 @@ function materializeApply(
         agentId: 'pi',
         name: profile.name,
         preset: slot,
-        configText: JSON.stringify({
-          slot,
-          apiKey: CONNECTION_SECRET_MARKER,
-        }),
+        configText: JSON.stringify(subscription
+          ? {
+              auth: {
+                [slot]: {
+                  type: 'oauth',
+                  access: CONNECTION_SECRET_MARKER,
+                  refresh: CONNECTION_SECRET_MARKER,
+                },
+              },
+            }
+          : {
+              slot,
+              apiKey: CONNECTION_SECRET_MARKER,
+            }),
         configFormat: 'json',
         isCurrent: true,
       },

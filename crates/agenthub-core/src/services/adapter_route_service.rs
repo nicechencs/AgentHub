@@ -88,11 +88,23 @@ impl AdapterRouteService {
                     .find(|action| action.kind == "set_config" && action.target == "Pi")
                     .and_then(|action| action.value.as_deref())
                     .unwrap_or("anthropic");
+                let secret_field = if matches!(
+                    analysis.rule_id.as_deref(),
+                    Some(
+                        "claude-subscription-to-pi-v1"
+                            | "codex-subscription-to-pi-v1"
+                            | "grok-subscription-to-pi-v1"
+                    )
+                ) {
+                    "auth"
+                } else {
+                    "apiKey"
+                };
                 (
                     AdapterServiceImpact::None,
                     vec![
                         change("pi", "provider", Some(provider), false),
-                        change("pi", "apiKey", None, true),
+                        change("pi", secret_field, None, true),
                     ],
                 )
             }
@@ -105,8 +117,7 @@ impl AdapterRouteService {
                 ],
             ),
             AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Codex => {
-                let provider = if analysis.rule_id.as_deref() == Some("anthropic-api-to-codex-v1")
-                {
+                let provider = if analysis.rule_id.as_deref() == Some("anthropic-api-to-codex-v1") {
                     "AgentHub Anthropic 本地桥接"
                 } else {
                     "AgentHub Kimi 本地桥接"
@@ -130,7 +141,12 @@ impl AdapterRouteService {
             }
         };
 
-        let can_apply = write_gate(classified.decision.can_apply, request, &analysis);
+        let can_apply = write_gate(
+            &self.accounts,
+            classified.decision.can_apply,
+            request,
+            &analysis,
+        );
         let maturity = adapter_maturity_from_decision(&classified.decision);
         let reason = analysis.reason.clone();
         let reuse_path = reuse_path_for(classified.decision.route, classified.credential);
@@ -454,11 +470,44 @@ fn is_codex_auth_json(format: Option<&str>, credentials: &Value) -> bool {
 /// when a bind implementation exists for this `(rule, source_kind, target)`
 /// and the secret resolver can take that ticket's `source_kind`.
 fn write_gate(
+    accounts: &AccountRepo,
     matrix_can_apply: bool,
     request: &AdapterRouteRequest,
     analysis: &AdapterRouteAnalysis,
 ) -> bool {
-    matrix_can_apply && bind_implementation_open(request, analysis)
+    matrix_can_apply
+        && bind_implementation_open(request, analysis)
+        && subscription_account_secret_open(accounts, request, analysis)
+}
+
+fn subscription_account_secret_open(
+    accounts: &AccountRepo,
+    request: &AdapterRouteRequest,
+    analysis: &AdapterRouteAnalysis,
+) -> bool {
+    if request.source_kind != AdapterSourceKind::Account
+        || !matches!(
+            analysis.rule_id.as_deref(),
+            Some(
+                "claude-subscription-to-pi-v1"
+                    | "codex-subscription-to-pi-v1"
+                    | "grok-subscription-to-pi-v1"
+            )
+        )
+    {
+        return true;
+    }
+    let Ok(Some(account)) = accounts.get_by_id(&request.source_id) else {
+        return false;
+    };
+    [
+        "/access_token",
+        "/tokens/access_token",
+        "/body/tokens/access_token",
+    ]
+    .iter()
+    .filter_map(|pointer| account.credentials.pointer(pointer))
+    .any(|value| value.as_str().is_some_and(|token| !token.trim().is_empty()))
 }
 
 /// Bind implementations opened in this step. Kimi membership secrets stay
@@ -504,13 +553,20 @@ fn bind_implementation_open(
             AdapterSupport::Experimental,
         )
         | (
-            Some("anthropic-api-to-pi-v1")
-            | Some("openai-api-to-pi-v1")
-            | Some("xai-api-to-pi-v1"),
+            Some("anthropic-api-to-pi-v1") | Some("openai-api-to-pi-v1") | Some("xai-api-to-pi-v1"),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Pi,
             AdapterRoute::ConfigSync,
             AdapterSupport::Stable,
+        )
+        | (
+            Some("claude-subscription-to-pi-v1")
+            | Some("codex-subscription-to-pi-v1")
+            | Some("grok-subscription-to-pi-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Pi,
+            AdapterRoute::ConfigSync,
+            AdapterSupport::Experimental,
         )
         | (
             Some("anthropic-api-to-codex-v1"),

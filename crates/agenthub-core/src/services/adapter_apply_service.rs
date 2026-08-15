@@ -36,6 +36,9 @@ const KIMI_PI_RULE_ID: &str = "kimi-membership-to-pi-v1";
 const ANTHROPIC_PI_RULE_ID: &str = "anthropic-api-to-pi-v1";
 const OPENAI_PI_RULE_ID: &str = "openai-api-to-pi-v1";
 const XAI_PI_RULE_ID: &str = "xai-api-to-pi-v1";
+const CLAUDE_SUBSCRIPTION_PI_RULE_ID: &str = "claude-subscription-to-pi-v1";
+const CODEX_SUBSCRIPTION_PI_RULE_ID: &str = "codex-subscription-to-pi-v1";
+const GROK_SUBSCRIPTION_PI_RULE_ID: &str = "grok-subscription-to-pi-v1";
 const DEEPSEEK_DSH_RULE_ID: &str = "deepseek-api-to-dsh-v1";
 const RULE_VERSION: &str = "1";
 const CLAUDE_PROVIDER_PREFIX: &str = "claude-kimi-adapter";
@@ -45,6 +48,9 @@ const PI_KIMI_PROVIDER_PREFIX: &str = "pi-kimi-adapter";
 const PI_ANTHROPIC_PROVIDER_PREFIX: &str = "pi-anthropic-adapter";
 const PI_OPENAI_PROVIDER_PREFIX: &str = "pi-openai-adapter";
 const PI_XAI_PROVIDER_PREFIX: &str = "pi-xai-adapter";
+const PI_CLAUDE_OAUTH_PROVIDER_PREFIX: &str = "pi-claude-oauth-adapter";
+const PI_CODEX_OAUTH_PROVIDER_PREFIX: &str = "pi-codex-oauth-adapter";
+const PI_GROK_OAUTH_PROVIDER_PREFIX: &str = "pi-grok-oauth-adapter";
 const DSH_DEEPSEEK_PROVIDER_PREFIX: &str = "dsh-deepseek-adapter";
 const CLAUDE_PROFILE_PREFIX: &str = "adapter-kimi-claude";
 const CLAUDE_GLM_PROFILE_PREFIX: &str = "adapter-glm-claude";
@@ -160,6 +166,20 @@ impl AdapterApplyService {
                     rule,
                 )?)
             }
+            (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync)
+                if analysis
+                    .rule_id
+                    .as_deref()
+                    .is_some_and(is_subscription_pi_rule) =>
+            {
+                let rule = analysis.rule_id.as_deref().expect("checked above");
+                self.secrets.validate_subscription_oauth_source(
+                    rule,
+                    AdapterSourceKind::Account,
+                    source_id,
+                )?;
+                self.apply_generated(pi_subscription_spec(source_id, rule)?)
+            }
             (AdapterSourceKind::Provider, AgentId::Dsh, AdapterRoute::ConfigSync) => {
                 match analysis.rule_id.as_deref() {
                     Some(DEEPSEEK_DSH_RULE_ID) => {
@@ -172,7 +192,7 @@ impl AdapterApplyService {
                 }
             }
             _ => Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership provider -> Claude/Pi, GLM/DeepSeek ticket -> Claude, explicit API ticket -> Pi, and DeepSeek API provider -> DSH".into(),
+                "adapter apply currently supports Kimi membership provider -> Claude/Pi, GLM/DeepSeek ticket -> Claude, API or subscription Account -> Pi, and DeepSeek API provider -> DSH".into(),
             )),
         }
     }
@@ -433,11 +453,16 @@ impl AdapterApplyService {
                 analysis.support == AdapterSupport::Stable
             }
             (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync) => {
-                analysis.support == AdapterSupport::Stable
+                (analysis.support == AdapterSupport::Stable
                     && analysis
                         .rule_id
                         .as_deref()
-                        .is_some_and(is_explicit_api_to_pi_rule)
+                        .is_some_and(is_explicit_api_to_pi_rule))
+                    || (analysis.support == AdapterSupport::Experimental
+                        && analysis
+                            .rule_id
+                            .as_deref()
+                            .is_some_and(is_subscription_pi_rule))
             }
             (AdapterSourceKind::Provider, AgentId::Dsh, AdapterRoute::ConfigSync) => {
                 analysis.support == AdapterSupport::Stable
@@ -449,7 +474,7 @@ impl AdapterApplyService {
             Ok(analysis)
         } else {
             Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership provider -> Claude/Pi, GLM/DeepSeek ticket -> Claude, explicit API ticket -> Pi, and DeepSeek API provider -> DSH".into(),
+                "adapter apply currently supports Kimi membership provider -> Claude/Pi, GLM/DeepSeek ticket -> Claude, API or subscription Account -> Pi, and DeepSeek API provider -> DSH".into(),
             ))
         }
     }
@@ -474,12 +499,31 @@ impl AdapterApplyService {
         generated: &Provider,
         target_agent: AgentId,
     ) -> Result<()> {
+        let is_subscription_oauth = is_subscription_pi_rule(
+            generated
+                .meta
+                .get("adapterRuleId")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default(),
+        );
         let previous_id = generated
             .meta
             .get(PREVIOUS_CURRENT_ID)
             .and_then(serde_json::Value::as_str)
             .map(str::trim)
             .filter(|id| !id.is_empty() && *id != generated.id);
+        let backup_id = generated
+            .meta
+            .get(PREVIOUS_BACKUP_ID)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|id| !id.is_empty());
+        if is_subscription_oauth {
+            if let Some(backup_id) = backup_id {
+                self.providers
+                    .restore_named_backup_with_guard(saga_guard, backup_id)?;
+            }
+        }
         if let Some(previous_id) = previous_id {
             match self.providers.get(previous_id, Some(target_agent)) {
                 Ok(_) => {
@@ -491,13 +535,7 @@ impl AdapterApplyService {
                 Err(error) => return Err(error),
             }
         }
-        if let Some(backup_id) = generated
-            .meta
-            .get(PREVIOUS_BACKUP_ID)
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|id| !id.is_empty())
-        {
+        if let Some(backup_id) = backup_id.filter(|_| !is_subscription_oauth) {
             self.providers
                 .restore_named_backup_with_guard(saga_guard, backup_id)?;
         }
@@ -625,6 +663,15 @@ fn generated_provider_prefix(profile: &AdapterProfile) -> Option<&'static str> {
             Some(PI_OPENAI_PROVIDER_PREFIX)
         }
         (AgentId::Pi, AdapterRoute::ConfigSync, XAI_PI_RULE_ID) => Some(PI_XAI_PROVIDER_PREFIX),
+        (AgentId::Pi, AdapterRoute::ConfigSync, CLAUDE_SUBSCRIPTION_PI_RULE_ID) => {
+            Some(PI_CLAUDE_OAUTH_PROVIDER_PREFIX)
+        }
+        (AgentId::Pi, AdapterRoute::ConfigSync, CODEX_SUBSCRIPTION_PI_RULE_ID) => {
+            Some(PI_CODEX_OAUTH_PROVIDER_PREFIX)
+        }
+        (AgentId::Pi, AdapterRoute::ConfigSync, GROK_SUBSCRIPTION_PI_RULE_ID) => {
+            Some(PI_GROK_OAUTH_PROVIDER_PREFIX)
+        }
         (AgentId::Dsh, AdapterRoute::ConfigSync, DEEPSEEK_DSH_RULE_ID) => {
             Some(DSH_DEEPSEEK_PROVIDER_PREFIX)
         }
@@ -693,7 +740,9 @@ fn claude_native_layout(
     rule_id: &str,
 ) -> Result<(&'static str, &'static str, &'static str, &'static str)> {
     let base_url = claude_native_base_url(rule_id).ok_or_else(|| {
-        AppError::Unsupported("adapter apply currently supports Kimi / GLM / DeepSeek -> Claude".into())
+        AppError::Unsupported(
+            "adapter apply currently supports Kimi / GLM / DeepSeek -> Claude".into(),
+        )
     })?;
     match rule_id {
         RULE_ID => Ok((
@@ -830,6 +879,89 @@ fn is_explicit_api_to_pi_rule(rule_id: &str) -> bool {
         rule_id,
         ANTHROPIC_PI_RULE_ID | OPENAI_PI_RULE_ID | XAI_PI_RULE_ID
     )
+}
+
+fn is_subscription_pi_rule(rule_id: &str) -> bool {
+    matches!(
+        rule_id,
+        CLAUDE_SUBSCRIPTION_PI_RULE_ID
+            | CODEX_SUBSCRIPTION_PI_RULE_ID
+            | GROK_SUBSCRIPTION_PI_RULE_ID
+    )
+}
+
+fn pi_subscription_layout(rule_id: &str) -> Result<(&'static str, &'static str, &'static str)> {
+    match rule_id {
+        CLAUDE_SUBSCRIPTION_PI_RULE_ID => Ok((
+            PI_CLAUDE_OAUTH_PROVIDER_PREFIX,
+            "Claude",
+            ANTHROPIC_PI_PROVIDER_SLOT,
+        )),
+        CODEX_SUBSCRIPTION_PI_RULE_ID => Ok((
+            PI_CODEX_OAUTH_PROVIDER_PREFIX,
+            "Codex / ChatGPT",
+            "openai-codex",
+        )),
+        GROK_SUBSCRIPTION_PI_RULE_ID => Ok((
+            PI_GROK_OAUTH_PROVIDER_PREFIX,
+            "Grok / xAI",
+            XAI_PI_PROVIDER_SLOT,
+        )),
+        _ => Err(AppError::Unsupported(
+            "adapter apply currently supports Claude / Codex / Grok subscription -> Pi".into(),
+        )),
+    }
+}
+
+fn pi_subscription_spec(source_id: &str, rule_id: &str) -> Result<GeneratedApplySpec> {
+    let (provider_prefix, display, slot) = pi_subscription_layout(rule_id)?;
+    let profile_id = stable_id(&format!("adapter-{provider_prefix}"), source_id);
+    let provider_id = stable_id(provider_prefix, source_id);
+    let created_at = now();
+    Ok(GeneratedApplySpec {
+        target_agent: AgentId::Pi,
+        provider_id: provider_id.clone(),
+        proposed: AdapterProfile {
+            id: profile_id.clone(),
+            name: format!("{display} 订阅 → Pi ({})", safe_label(source_id)),
+            source_kind: AdapterSourceKind::Account,
+            source_id: source_id.into(),
+            target_agent_id: AgentId::Pi,
+            route: AdapterRoute::ConfigSync,
+            mode: AdapterProfileMode::Oauth,
+            status: AdapterProfileStatus::Applying,
+            rule_id: rule_id.into(),
+            rule_version: RULE_VERSION.into(),
+            generated_provider_id: Some(provider_id.clone()),
+            local_port: None,
+            auto_start: false,
+            last_error_code: None,
+            created_at: created_at.clone(),
+            updated_at: created_at,
+        },
+        provider: ProviderInput {
+            id: provider_id,
+            agent_id: AgentId::Pi,
+            name: format!("{display} 订阅 ({})", safe_label(source_id)),
+            settings_config: json!({
+                "auth": {
+                    (slot): {
+                        "type": "oauth",
+                        "access": CONNECTION_SECRET_MARKER,
+                        "refresh": CONNECTION_SECRET_MARKER,
+                    }
+                }
+            }),
+            meta: generated_meta(
+                rule_id,
+                &profile_id,
+                AdapterSourceKind::Account,
+                source_id,
+                None,
+            ),
+            is_current: false,
+        },
+    })
 }
 
 fn pi_explicit_api_layout(

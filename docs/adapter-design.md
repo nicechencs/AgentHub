@@ -1,6 +1,6 @@
 # Adapter 页面与本地协议桥接设计
 
-> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi / Anthropic → Codex 实验性本地桥接 + Pi 配置同步）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）。Anthropic API Key → Codex 的 `local_bridge` 已开放 experimental bind。ChatGPT/Codex subscription → Claude Code 是 **③ 本机桥** 的产品目标边，当前实现仍为 `plan.canApply=false`（见 [product-decisions.md](product-decisions.md)）。Codex 订阅 → Pi 是 ②，不走本页桥。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。Kimi / Anthropic → Codex 发布前仍需实机 dogfood。
+> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi / Anthropic → Codex 实验性本地桥接 + Pi 配置同步）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）；Claude/Codex/Grok 订阅 → Pi 的 ② `config_sync` 已开放 experimental bind（写入 `auth.json`，刷新由 Pi 拥有）。Anthropic API Key → Codex 的 `local_bridge` 已开放 experimental bind。ChatGPT/Codex subscription → Claude Code 是 **③ 本机桥** 的产品目标边，当前实现仍为 `plan.canApply=false`（见 [product-decisions.md](product-decisions.md)）。Codex 订阅 → Pi 是 ②，不走本页桥。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。Kimi / Anthropic → Codex 发布前仍需实机 dogfood。
 > 2026-08-15：跨 Agent 复用的**目标领域**改为票 / 绑定 / 协议图（[connection-binding-model.md](connection-binding-model.md)）。ConnectFlow 确认步与 Adapter 页删除已改走 `bind`/`unbind`；内部仍可复用 apply 实现 reshape/bridge 运行时。生成物是绑定的私有 runtime，不是钱包里的新票。
 > 调研日期：2026-08-12（进度同步：2026-08-12）
 > 重点参考：`D:\demo_github\AgentHub_Ref\Cli-Proxy-API-Management-Center`
@@ -184,7 +184,7 @@ PageHeader                                             [去 Dashboard 连接] [�
 - 来源 OAuth 未完成时整体阻断：不 fan-out、不 plan，目标区只显示「先完成授权」Notice 与去 Connections 的 CTA。
 - 用户点选目标卡后才运行 `plan`，局部显示 skeleton，不锁住已有适配列表。
 - 分析结果按 `(sourceKind, sourceId, target)` 做会话级缓存；换来源或重试时按生成计数丢弃过期响应。
-- 对尚未 `canApply` 的边，按三路说明缺的工程项：② 写「目标有槽、写入未开」；③ 写「要起本机桥、实现未开」，并链接[第 3 路边](provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code第-3-路实现未开) 与 [产品决策](product-decisions.md)。不得对 ② 显示「需要本机服务」，也不得把原因写成「订阅不是产品」。
+- 对尚未 `canApply` 的边，按三路说明缺的工程项：② 仍未开放的边写「目标有槽、写入未开」；已开放的 Claude/Codex/Grok 订阅 → Pi 写明写入 `auth.json` 且由 Pi 刷新；③ 写「要起本机桥、实现未开」，并链接[第 3 路边](provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code第-3-路实现未开) 与 [产品决策](product-decisions.md)。不得对 ② 显示「需要本机服务」，也不得把原因写成「订阅不是产品」。
 
 #### 步骤 C：确认配置
 
@@ -252,7 +252,7 @@ PageHeader                                             [去 Dashboard 连接] [�
 | loading | 复用列表 skeleton，Dialog 分区局部 skeleton |
 | empty | 说明“把现有连接接入其他 Agent”，提供 `新建适配` |
 | disconnected | inline ErrorState；禁用新建和 mutation，已有信息可读 |
-| unsupported | 中性说明，不使用红色故障态；给出原因与可用替代路径。对尚未就绪的订阅边显示 `实现未开`、`plan.canApply=false`，不显示 Apply 或“强制继续”；文案不得写成「订阅不是产品」 |
+| unsupported | 中性说明，不使用红色故障态；给出原因与可用替代路径。对尚未就绪的订阅边显示 `实现未开`、`plan.canApply=false`，不显示 Apply 或“强制继续”；② 已开放的 Pi 原生槽显示可 experimental bind；文案不得写成「订阅不是产品」 |
 | starting/stopping | 当前行按钮 loading，其他行可操作 |
 | error | 行内短错误 + `查看诊断`；toast 只用于操作结果，不承载完整原因 |
 | status_unavailable | 桥接状态读取失败时第二层状态显示 `状态不可用`（中性），不改写为桥接故障，也不清空持久 profile 信息 |

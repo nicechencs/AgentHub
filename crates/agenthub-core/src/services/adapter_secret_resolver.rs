@@ -8,9 +8,10 @@
 //! This module never mutates a provider row: callers receive a clone suitable
 //! for a live write, and must scrub live state before any database backfill.
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use toml_edit::DocumentMut;
 
+use crate::adapters::pi_auth::pi_oauth_entry_from_tokens;
 use crate::bridge::ResolvedAuth;
 use crate::error::{AppError, Result};
 use crate::models::{AdapterSourceKind, AgentId, Provider};
@@ -18,10 +19,10 @@ use crate::services::adapter_route_constants::{
     claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
     is_kimi_code_membership_source, is_openai_api_marker, is_xai_api_marker,
     settings_contain_anthropic_api_endpoint, ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV,
-    ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT, DEEPSEEK_API_BASE_URL, DEEPSEEK_API_KEY_ENV,
-    DEEPSEEK_CLAUDE_RULE_ID, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_RULE_ID,
-    KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT, OPENAI_API_KEY_ENV,
-    OPENAI_PI_PROVIDER_SLOT, XAI_API_KEY_ENV, XAI_PI_PROVIDER_SLOT,
+    ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT, DEEPSEEK_API_BASE_URL,
+    DEEPSEEK_API_KEY_ENV, DEEPSEEK_CLAUDE_RULE_ID, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT,
+    GLM_CLAUDE_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
+    OPENAI_API_KEY_ENV, OPENAI_PI_PROVIDER_SLOT, XAI_API_KEY_ENV, XAI_PI_PROVIDER_SLOT,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -38,6 +39,9 @@ const KIMI_TO_PI_RULE: &str = "kimi-membership-to-pi-v1";
 const ANTHROPIC_TO_PI_RULE: &str = "anthropic-api-to-pi-v1";
 const OPENAI_TO_PI_RULE: &str = "openai-api-to-pi-v1";
 const XAI_TO_PI_RULE: &str = "xai-api-to-pi-v1";
+const CLAUDE_SUBSCRIPTION_PI_RULE: &str = "claude-subscription-to-pi-v1";
+const CODEX_SUBSCRIPTION_PI_RULE: &str = "codex-subscription-to-pi-v1";
+const GROK_SUBSCRIPTION_PI_RULE: &str = "grok-subscription-to-pi-v1";
 const DEEPSEEK_TO_DSH_RULE: &str = "deepseek-api-to-dsh-v1";
 const SOURCE_REFERENCE_MODE: &str = "source_reference";
 const LOCAL_TOKEN_MODE: &str = "local_token";
@@ -45,6 +49,13 @@ const SOURCE_KIND_PROVIDER: &str = "provider";
 const SOURCE_KIND_ACCOUNT: &str = "account";
 const ANTHROPIC_PRESET: &str = "anthropic";
 const ACCOUNT_API_KEY_FORMAT: &str = "api_key";
+
+#[derive(Debug, Clone)]
+struct PiOAuthTokens {
+    access: String,
+    refresh: Option<String>,
+    expires_at: Option<String>,
+}
 
 /// Resolves generated-provider secret references at the live boundary.
 /// The repository is shared with ProviderService, but resolver work
@@ -93,6 +104,17 @@ impl AdapterSecretResolver {
         source_id: &str,
     ) -> Result<()> {
         let _ = self.resolve_explicit_api_key(rule_id, source_kind, source_id)?;
+        Ok(())
+    }
+
+    /// Read-only preflight for a native subscription OAuth Account → Pi bind.
+    pub fn validate_subscription_oauth_source(
+        &self,
+        rule_id: &str,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<()> {
+        let _ = self.resolve_subscription_oauth(rule_id, source_kind, source_id)?;
         Ok(())
     }
 
@@ -261,6 +283,23 @@ impl AdapterSecretResolver {
             return Ok(materialized);
         }
 
+        if is_pi_subscription_reference(target) {
+            self.validate_pi_reference_target(target)?;
+            let (kind, source_id) = self.reference_source_ref(target)?;
+            let rule = adapter_rule_id(target).ok_or_else(invalid_reference)?;
+            let tokens = self.resolve_subscription_oauth(rule, kind, source_id)?;
+            let slot = pi_slot_name(target)?;
+            let mut materialized = target.clone();
+            set_pi_slot_oauth(
+                &mut materialized.settings_config,
+                slot,
+                &tokens.access,
+                tokens.refresh.as_deref(),
+                tokens.expires_at.as_deref(),
+            )?;
+            return Ok(materialized);
+        }
+
         self.validate_pi_reference_target(target)?;
         let api_key = self.resolve_referenced_api_key(target)?;
         let slot = pi_slot_name(target)?;
@@ -274,7 +313,7 @@ impl AdapterSecretResolver {
     /// secret so a materialized value cannot reach the database.
     pub fn scrub_for_backfill(&self, provider: &Provider, live_raw: &Value) -> Result<Value> {
         if !self.is_reference_provider(provider)? {
-            return Ok(live_raw.clone());
+            return Ok(strip_pi_auth_for_persist(provider, live_raw));
         }
 
         if is_claude_source_reference(provider) {
@@ -290,8 +329,7 @@ impl AdapterSecretResolver {
                 .ok_or_else(invalid_reference)?;
             let expected_base = claude_native_base_url(adapter_rule_id(provider).unwrap_or(""))
                 .ok_or_else(invalid_reference)?;
-            if env.get(ANTHROPIC_BASE_URL_ENV).and_then(Value::as_str) != Some(expected_base)
-            {
+            if env.get(ANTHROPIC_BASE_URL_ENV).and_then(Value::as_str) != Some(expected_base) {
                 return Err(invalid_reference());
             }
             if !env.contains_key(ANTHROPIC_AUTH_TOKEN_ENV) {
@@ -325,10 +363,48 @@ impl AdapterSecretResolver {
             return Ok(scrubbed);
         }
 
+        if is_pi_subscription_reference(provider) {
+            self.validate_pi_reference_target(provider)?;
+            let _ = self.resolve_referenced_subscription_oauth(provider)?;
+            let slot = pi_slot_name(provider)?;
+            let live_slot = pi_auth_slot_object(live_raw, slot).ok_or_else(invalid_reference)?;
+            if !live_slot
+                .get("access")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty())
+            {
+                return Err(invalid_reference());
+            }
+            // Persist only the owned slot as markers. Drop `paths` so a later
+            // switch merges instead of replacing the whole auth.json file.
+            let mut scrubbed = json!({
+                "auth": {
+                    slot: {
+                        "type": "oauth",
+                        "access": CONNECTION_SECRET_MARKER,
+                        "refresh": CONNECTION_SECRET_MARKER
+                    }
+                }
+            });
+            if let Some(settings) = live_raw.get("settings") {
+                scrubbed
+                    .as_object_mut()
+                    .expect("scrubbed auth object")
+                    .insert("settings".into(), settings.clone());
+            }
+            if let Some(models) = live_raw.get("models") {
+                scrubbed
+                    .as_object_mut()
+                    .expect("scrubbed auth object")
+                    .insert("models".into(), models.clone());
+            }
+            return Ok(scrubbed);
+        }
+
         self.validate_pi_reference_target(provider)?;
         let _ = self.resolve_referenced_api_key(provider)?;
         let slot = pi_slot_name(provider)?;
-        let mut scrubbed = live_raw.clone();
+        let mut scrubbed = strip_pi_auth_for_persist(provider, live_raw);
         let live_slot = pi_slot_object(&scrubbed, slot).ok_or_else(invalid_reference)?;
         if slot == KIMI_PI_PROVIDER_SLOT
             && live_slot.get("baseUrl").and_then(Value::as_str) != Some(KIMI_PI_BASE_URL)
@@ -364,8 +440,71 @@ impl AdapterSecretResolver {
             (DEEPSEEK_TO_DSH_RULE, AdapterSourceKind::Provider) => {
                 self.resolve_deepseek_api_key(source_id)
             }
+            (
+                CLAUDE_SUBSCRIPTION_PI_RULE
+                | CODEX_SUBSCRIPTION_PI_RULE
+                | GROK_SUBSCRIPTION_PI_RULE,
+                AdapterSourceKind::Account,
+            ) => self
+                .resolve_subscription_oauth(rule, kind, source_id)
+                .map(|tokens| tokens.access),
             _ => Err(invalid_reference()),
         }
+    }
+
+    fn resolve_referenced_subscription_oauth(&self, target: &Provider) -> Result<PiOAuthTokens> {
+        let (kind, source_id) = self.reference_source_ref(target)?;
+        let rule = adapter_rule_id(target).ok_or_else(invalid_reference)?;
+        self.resolve_subscription_oauth(rule, kind, source_id)
+    }
+
+    fn resolve_subscription_oauth(
+        &self,
+        rule_id: &str,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<PiOAuthTokens> {
+        if !is_subscription_pi_rule(rule_id) || source_kind != AdapterSourceKind::Account {
+            return Err(invalid_reference());
+        }
+        let account = self
+            .accounts
+            .get_by_id(source_id.trim())?
+            .ok_or_else(invalid_reference)?;
+        if account.kind != crate::models::AccountKind::Oauth {
+            return Err(invalid_reference());
+        }
+        let credentials = &account.credentials;
+        let access = first_usable_string(
+            credentials,
+            &[
+                "/access_token",
+                "/tokens/access_token",
+                "/body/tokens/access_token",
+            ],
+        )
+        .ok_or_else(invalid_reference)?;
+        let refresh = first_usable_string(
+            credentials,
+            &[
+                "/refresh_token",
+                "/tokens/refresh_token",
+                "/body/tokens/refresh_token",
+            ],
+        );
+        let expires_at = first_usable_string(
+            credentials,
+            &[
+                "/expires_at",
+                "/tokens/expires_at",
+                "/body/tokens/expires_at",
+            ],
+        );
+        Ok(PiOAuthTokens {
+            access,
+            refresh,
+            expires_at,
+        })
     }
 
     fn reference_source_id<'a>(&self, target: &'a Provider) -> Result<&'a str> {
@@ -424,6 +563,17 @@ impl AdapterSecretResolver {
     fn validate_pi_reference_target(&self, target: &Provider) -> Result<()> {
         self.reference_source_id(target)?;
         let slot = pi_slot_name(target)?;
+        if is_pi_subscription_reference(target) {
+            let slot_obj =
+                pi_auth_slot_object(&target.settings_config, slot).ok_or_else(invalid_reference)?;
+            if slot_obj.get("type").and_then(Value::as_str) != Some("oauth")
+                || slot_obj.get("access").and_then(Value::as_str) != Some(CONNECTION_SECRET_MARKER)
+                || slot_obj.get("refresh").and_then(Value::as_str) != Some(CONNECTION_SECRET_MARKER)
+            {
+                return Err(invalid_reference());
+            }
+            return Ok(());
+        }
         let slot_obj =
             pi_slot_object(&target.settings_config, slot).ok_or_else(invalid_reference)?;
         if slot_obj.get("apiKey").and_then(Value::as_str) != Some(CONNECTION_SECRET_MARKER) {
@@ -544,6 +694,9 @@ fn is_pi_source_reference(provider: &Provider) -> bool {
                 | Some(ANTHROPIC_TO_PI_RULE)
                 | Some(OPENAI_TO_PI_RULE)
                 | Some(XAI_TO_PI_RULE)
+                | Some(CLAUDE_SUBSCRIPTION_PI_RULE)
+                | Some(CODEX_SUBSCRIPTION_PI_RULE)
+                | Some(GROK_SUBSCRIPTION_PI_RULE)
         )
         && provider
             .meta
@@ -557,6 +710,22 @@ fn is_pi_source_reference(provider: &Provider) -> bool {
             == Some(SOURCE_REFERENCE_MODE)
 }
 
+fn is_pi_subscription_reference(provider: &Provider) -> bool {
+    matches!(
+        adapter_rule_id(provider),
+        Some(CLAUDE_SUBSCRIPTION_PI_RULE)
+            | Some(CODEX_SUBSCRIPTION_PI_RULE)
+            | Some(GROK_SUBSCRIPTION_PI_RULE)
+    )
+}
+
+fn is_subscription_pi_rule(rule_id: &str) -> bool {
+    matches!(
+        rule_id,
+        CLAUDE_SUBSCRIPTION_PI_RULE | CODEX_SUBSCRIPTION_PI_RULE | GROK_SUBSCRIPTION_PI_RULE
+    )
+}
+
 fn adapter_rule_id(provider: &Provider) -> Option<&str> {
     provider.meta.get("adapterRuleId").and_then(Value::as_str)
 }
@@ -567,6 +736,9 @@ fn pi_slot_name(provider: &Provider) -> Result<&'static str> {
         Some(ANTHROPIC_TO_PI_RULE) => Ok(ANTHROPIC_PI_PROVIDER_SLOT),
         Some(OPENAI_TO_PI_RULE) => Ok(OPENAI_PI_PROVIDER_SLOT),
         Some(XAI_TO_PI_RULE) => Ok(XAI_PI_PROVIDER_SLOT),
+        Some(CLAUDE_SUBSCRIPTION_PI_RULE) => Ok(ANTHROPIC_PI_PROVIDER_SLOT),
+        Some(CODEX_SUBSCRIPTION_PI_RULE) => Ok("openai-codex"),
+        Some(GROK_SUBSCRIPTION_PI_RULE) => Ok(XAI_PI_PROVIDER_SLOT),
         _ => Err(invalid_reference()),
     }
 }
@@ -576,6 +748,14 @@ fn pi_slot_object<'a>(settings: &'a Value, slot: &str) -> Option<&'a Value> {
         .get("models")
         .and_then(|models| models.get("providers"))
         .and_then(|providers| providers.get(slot))
+        .filter(|value| value.is_object())
+}
+
+fn pi_auth_slot_object<'a>(settings: &'a Value, slot: &str) -> Option<&'a Value> {
+    settings
+        .get("auth")
+        .and_then(Value::as_object)
+        .and_then(|auth| auth.get(slot))
         .filter(|value| value.is_object())
 }
 
@@ -589,6 +769,35 @@ fn set_pi_slot_api_key(settings: &mut Value, slot: &str, api_key: &str) -> Resul
         .and_then(Value::as_object_mut)
         .ok_or_else(invalid_reference)?;
     provider.insert("apiKey".into(), Value::String(api_key.into()));
+    Ok(())
+}
+
+/// Live Pi envelopes now include `auth.json`. Never persist those tokens into a
+/// provider row; saga snapshots keep the in-memory original for rollback.
+fn strip_pi_auth_for_persist(provider: &Provider, live_raw: &Value) -> Value {
+    if provider.agent_id != AgentId::Pi {
+        return live_raw.clone();
+    }
+    let mut scrubbed = live_raw.clone();
+    if let Some(object) = scrubbed.as_object_mut() {
+        object.remove("auth");
+    }
+    scrubbed
+}
+
+fn set_pi_slot_oauth(
+    settings: &mut Value,
+    slot: &str,
+    access: &str,
+    refresh: Option<&str>,
+    expires_at: Option<&str>,
+) -> Result<()> {
+    let auth = settings
+        .get_mut("auth")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(invalid_reference)?;
+    let entry = pi_oauth_entry_from_tokens(access, refresh, expires_at, None);
+    auth.insert(slot.into(), entry);
     Ok(())
 }
 
@@ -728,6 +937,13 @@ fn usable_secret(value: &str) -> Option<&str> {
     } else {
         Some(trimmed)
     }
+}
+
+fn first_usable_string(value: &Value, pointers: &[&str]) -> Option<String> {
+    pointers
+        .iter()
+        .filter_map(|pointer| value.pointer(pointer).and_then(Value::as_str))
+        .find_map(|candidate| usable_secret(candidate).map(str::to_owned))
 }
 
 fn is_codex_local_token(provider: &Provider) -> bool {

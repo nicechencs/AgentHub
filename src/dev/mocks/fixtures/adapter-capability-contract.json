@@ -612,18 +612,22 @@
       "source": {
         "kind": "account",
         "agentId": "claude",
-        "accountKind": "oauth"
+        "accountKind": "oauth",
+        "credentials": {
+          "access_token": "must-not-leak",
+          "refresh_token": "must-not-leak"
+        }
       },
       "target": "pi",
       "expect": {
         "route": "config_sync",
         "support": "experimental",
-        "canApply": false,
-        "applyPath": "rejected",
-        "gateKind": "preview_only",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "gateKind": "none",
         "reusePath": "native_subscription",
-        "ruleId": "claude-subscription-to-pi-v0",
-        "reason": "Claude 订阅可预览为 Pi 的 anthropic 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+        "ruleId": "claude-subscription-to-pi-v1",
+        "reason": "Claude 订阅可写入 Pi 的 anthropic 登录槽（原生订阅复用）。"
       }
     },
     {
@@ -645,12 +649,12 @@
       "expect": {
         "route": "config_sync",
         "support": "experimental",
-        "canApply": false,
-        "applyPath": "rejected",
-        "gateKind": "preview_only",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "gateKind": "none",
         "reusePath": "native_subscription",
-        "ruleId": "codex-subscription-to-pi-v0",
-        "reason": "Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+        "ruleId": "codex-subscription-to-pi-v1",
+        "reason": "Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。"
       }
     },
     {
@@ -669,12 +673,12 @@
       "expect": {
         "route": "config_sync",
         "support": "experimental",
-        "canApply": false,
-        "applyPath": "rejected",
-        "gateKind": "preview_only",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "gateKind": "none",
         "reusePath": "native_subscription",
-        "ruleId": "codex-subscription-to-pi-v0",
-        "reason": "Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+        "ruleId": "codex-subscription-to-pi-v1",
+        "reason": "Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。"
       }
     },
     {
@@ -682,18 +686,22 @@
       "source": {
         "kind": "account",
         "agentId": "codex",
-        "accountKind": "oauth"
+        "accountKind": "oauth",
+        "credentials": {
+          "access_token": "must-not-leak",
+          "refresh_token": "must-not-leak"
+        }
       },
       "target": "pi",
       "expect": {
         "route": "config_sync",
         "support": "experimental",
-        "canApply": false,
-        "applyPath": "rejected",
-        "gateKind": "preview_only",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "gateKind": "none",
         "reusePath": "native_subscription",
-        "ruleId": "codex-subscription-to-pi-v0",
-        "reason": "Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+        "ruleId": "codex-subscription-to-pi-v1",
+        "reason": "Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。"
       }
     },
     {
@@ -701,18 +709,22 @@
       "source": {
         "kind": "account",
         "agentId": "grok",
-        "accountKind": "oauth"
+        "accountKind": "oauth",
+        "credentials": {
+          "access_token": "must-not-leak",
+          "refresh_token": "must-not-leak"
+        }
       },
       "target": "pi",
       "expect": {
         "route": "config_sync",
         "support": "experimental",
-        "canApply": false,
-        "applyPath": "rejected",
-        "gateKind": "preview_only",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "gateKind": "none",
         "reusePath": "native_subscription",
-        "ruleId": "grok-subscription-to-pi-v0",
-        "reason": "Grok / xAI 订阅可预览为 Pi 的 xai 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+        "ruleId": "grok-subscription-to-pi-v1",
+        "reason": "Grok / xAI 订阅可写入 Pi 的 xai 登录槽（原生订阅复用）。"
       }
     },
     {

@@ -199,31 +199,31 @@ fn pi_config_sync_rules_can_apply() {
 }
 
 #[test]
-fn subscription_pi_cells_are_native_http_preview_only() {
+fn subscription_pi_cells_are_native_http_and_applicable() {
     for (source, credential, reason, rule_id) in [
         (
             AdapterSourceProduct::ClaudeSubscription,
             AdapterCredentialClass::OauthOther,
             CLAUDE_SUBSCRIPTION_TO_PI_REASON,
-            "claude-subscription-to-pi-v0",
+            "claude-subscription-to-pi-v1",
         ),
         (
             AdapterSourceProduct::CodexChatGptSubscription,
             AdapterCredentialClass::OauthAuthJson,
             CODEX_SUBSCRIPTION_TO_PI_REASON,
-            "codex-subscription-to-pi-v0",
+            "codex-subscription-to-pi-v1",
         ),
         (
             AdapterSourceProduct::CodexChatGptSubscription,
             AdapterCredentialClass::OauthOther,
             CODEX_SUBSCRIPTION_TO_PI_REASON,
-            "codex-subscription-to-pi-v0",
+            "codex-subscription-to-pi-v1",
         ),
         (
             AdapterSourceProduct::XaiGrokSubscription,
             AdapterCredentialClass::OauthOther,
             GROK_SUBSCRIPTION_TO_PI_REASON,
-            "grok-subscription-to-pi-v0",
+            "grok-subscription-to-pi-v1",
         ),
     ] {
         let cell = ADAPTER_CAPABILITY_MATRIX
@@ -236,20 +236,20 @@ fn subscription_pi_cells_are_native_http_preview_only() {
             .expect("subscription Pi cell");
         assert_eq!(cell.key.transport, AdapterUpstreamTransport::NativeHttp);
         assert_eq!(cell.key.protocol, AdapterTargetProtocol::PiProviderConfig);
-        assert_eq!(cell.key.version, "0");
+        assert_eq!(cell.key.version, MATRIX_VERSION);
         assert_eq!(cell.verified_at, "2026-08-15");
         assert_eq!(cell.route, AdapterRoute::ConfigSync);
         assert_eq!(cell.support, AdapterSupport::Experimental);
-        assert!(!cell.can_apply);
-        assert_eq!(cell.gates, AdapterCapabilityGates::all_closed());
+        assert!(cell.can_apply);
+        assert_eq!(cell.gates, AdapterCapabilityGates::all_open());
         assert_eq!(cell.reason, reason);
         assert_eq!(cell.rule_id, rule_id);
 
         let decision = decide_adapter_capability(source, credential, AgentId::Pi);
         assert_eq!(decision.route, AdapterRoute::ConfigSync);
         assert_eq!(decision.support, AdapterSupport::Experimental);
-        assert!(!decision.can_apply);
-        assert_eq!(decision.gate_kind, AdapterGateKind::PreviewOnly);
+        assert!(decision.can_apply);
+        assert_eq!(decision.gate_kind, AdapterGateKind::None);
         assert_eq!(decision.reason, reason);
         assert_eq!(decision.rule_id, Some(rule_id));
     }

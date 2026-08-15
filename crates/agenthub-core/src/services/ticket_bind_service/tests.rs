@@ -216,6 +216,39 @@ fn anthropic_account(id: &str, api_key: &str) -> Account {
     }
 }
 
+fn subscription_account(
+    id: &str,
+    agent_id: AgentId,
+    access: &str,
+    refresh: &str,
+    codex_auth_json: bool,
+) -> Account {
+    let credentials = if codex_auth_json {
+        json!({
+            "format": "auth_json",
+            "tokens": { "access_token": access, "refresh_token": refresh }
+        })
+    } else {
+        json!({
+            "format": "oauth",
+            "access_token": access,
+            "refresh_token": refresh
+        })
+    };
+    Account {
+        id: id.into(),
+        agent_id,
+        kind: AccountKind::Oauth,
+        label: format!("{id} subscription"),
+        credentials,
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
 fn bind_service(
     db: Database,
     backups: PathBuf,
@@ -406,6 +439,89 @@ fn bind_openai_and_xai_provider_and_account_to_pi_then_unbind() {
 }
 
 #[test]
+fn bind_claude_codex_and_grok_subscriptions_to_pi_then_unbind() {
+    let (dir, db) = test_db();
+    let accounts = AccountRepo::new(db.clone());
+    for (account, rule_id) in [
+        (
+            subscription_account(
+                "claude-subscription",
+                AgentId::Claude,
+                "claude-access-secret",
+                "claude-refresh-secret",
+                false,
+            ),
+            "claude-subscription-to-pi-v1",
+        ),
+        (
+            subscription_account(
+                "codex-subscription",
+                AgentId::Codex,
+                "codex-access-secret",
+                "codex-refresh-secret",
+                true,
+            ),
+            "codex-subscription-to-pi-v1",
+        ),
+        (
+            subscription_account(
+                "grok-subscription",
+                AgentId::Grok,
+                "grok-access-secret",
+                "grok-refresh-secret",
+                false,
+            ),
+            "grok-subscription-to-pi-v1",
+        ),
+    ] {
+        accounts.create(&account).unwrap();
+        let service = bind_service(
+            db.clone(),
+            dir.path().join(format!("backups-{}", account.id)),
+            vec![Arc::new(FakePiAdapter::new())],
+        );
+        let ticket = ticket_id(AdapterSourceKind::Account, &account.id);
+        let plan = service
+            .tickets
+            .plan(&TicketPlanRequest {
+                ticket_id: ticket.clone(),
+                target_agent_id: AgentId::Pi,
+            })
+            .unwrap();
+        assert!(plan.can_apply, "{}", account.id);
+
+        let binding = service
+            .bind(&TicketPlanRequest {
+                ticket_id: ticket.clone(),
+                target_agent_id: AgentId::Pi,
+            })
+            .unwrap();
+        assert!(binding.active);
+        let profile = AdapterProfileRepo::new(db.clone())
+            .get(binding.profile_id.as_deref().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(profile.mode, crate::models::AdapterProfileMode::Oauth);
+        assert_eq!(profile.rule_id, rule_id);
+
+        service
+            .unbind(&TicketUnbindRequest {
+                ticket_id: ticket,
+                agent_id: AgentId::Pi,
+            })
+            .unwrap();
+        assert!(
+            AdapterProfileRepo::new(db.clone())
+                .get(&profile.id)
+                .unwrap()
+                .is_none(),
+            "{} profile should be deleted",
+            account.id
+        );
+    }
+}
+
+#[test]
 fn bind_projection_ticket_is_rejected() {
     let (dir, db) = test_db();
     ProviderRepo::new(db.clone())
@@ -539,20 +655,24 @@ fn bind_glm_and_deepseek_to_claude_then_unbind_rejects_unknown_relay() {
         })
         .unwrap();
     let tickets = TicketReadService::new(db.clone());
-    assert!(tickets
-        .plan(&TicketPlanRequest {
-            ticket_id: ticket_id(AdapterSourceKind::Provider, "glm-source"),
-            target_agent_id: AgentId::Claude,
-        })
-        .unwrap()
-        .can_apply);
-    assert!(tickets
-        .plan(&TicketPlanRequest {
-            ticket_id: ticket_id(AdapterSourceKind::Account, "deepseek-account"),
-            target_agent_id: AgentId::Claude,
-        })
-        .unwrap()
-        .can_apply);
+    assert!(
+        tickets
+            .plan(&TicketPlanRequest {
+                ticket_id: ticket_id(AdapterSourceKind::Provider, "glm-source"),
+                target_agent_id: AgentId::Claude,
+            })
+            .unwrap()
+            .can_apply
+    );
+    assert!(
+        tickets
+            .plan(&TicketPlanRequest {
+                ticket_id: ticket_id(AdapterSourceKind::Account, "deepseek-account"),
+                target_agent_id: AgentId::Claude,
+            })
+            .unwrap()
+            .can_apply
+    );
 
     let service = bind_service(
         db.clone(),
