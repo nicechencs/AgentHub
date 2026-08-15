@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { getSettings } from '@/lib/api/settings';
 import type { AppSettings } from '@/lib/types';
 import { applyTheme, loadStoredTheme, persistTheme, type ThemeMode } from '@/lib/theme';
 
@@ -23,6 +24,23 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  // First paint uses loadStoredTheme; reconcile from core after backend is ready.
+  React.useEffect(() => {
+    let cancelled = false;
+    void getSettings()
+      .then((s) => {
+        if (cancelled) return;
+        persistTheme(s.theme);
+        setThemeState(s.theme);
+      })
+      .catch(() => {
+        // Keep the local first-paint theme if core is unavailable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   React.useEffect(() => {
     if (theme !== 'system') return;

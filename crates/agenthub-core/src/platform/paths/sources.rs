@@ -60,6 +60,9 @@ impl AgentPathContribution for GrokPaths {
         AgentId::Grok
     }
     fn home_dir(&self) -> Result<PathBuf> {
+        if let Some(dir) = first_env_path("GROK_HOME") {
+            return Ok(dir);
+        }
         Ok(home_dir()?.join(".grok"))
     }
 }

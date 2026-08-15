@@ -1,4 +1,5 @@
 import type { Account, AgentId } from '@/lib/types';
+import { isPiRefreshProvider } from './oauth-constants';
 
 export type AccountActionKind = 'sync-current-login' | 'refresh-credentials';
 
@@ -6,7 +7,6 @@ export interface AccountAction {
   kind: AccountActionKind;
   label: string;
 }
-const PI_REFRESH_PROVIDERS = new Set(['anthropic', 'openai', 'openai-codex', 'xai']);
 
 /**
  * Central account action policy. Components must not infer provider-specific
@@ -27,7 +27,7 @@ export function accountActionPolicy(account: Pick<
   if (
     account.agentId === 'pi' &&
     account.refreshable === true &&
-    PI_REFRESH_PROVIDERS.has(account.provider?.trim().toLowerCase() ?? '')
+    isPiRefreshProvider(account.provider)
   ) {
     return { kind: 'refresh-credentials', label: '刷新凭据' };
   }

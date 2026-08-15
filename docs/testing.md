@@ -67,10 +67,71 @@ cargo test -p agenthub-gui commands::skill::tests
 
 UI 组件（`MarkdownView` / 预览对话框）以库 `@uiw/react-markdown-preview` 为主；单测优先契约与 service，不强制 jsdom 快照。
 
-## 6. 提交前最低检查
+## 6. 跨层契约（Adapter 路由）
+
+真源用例表：
+
+`src/dev/mocks/fixtures/adapter-capability-contract.json`
+
+| 字段 | 含义 |
+|---|---|
+| `route` / `support` / `canApply` / `ruleId` / `gateKind` / `reason` | analyze/plan 对外表面 |
+| `applyPath` | 生产执行入口：`native`（`AdapterApplyService`）/ `local_bridge`（Tauri bridge controller）/ `rejected`（禁止 apply） |
+
+**改矩阵 / reason / 白名单时必须先改或同步此 JSON**，再改：
+
+1. `crates/agenthub-core` 的 `ADAPTER_CAPABILITY_MATRIX` / route service  
+2. `src/dev/mocks/adapter.ts`  
+
+两端测试：
+
+- Rust：`cargo test -p agenthub-core shared_capability_contract`
+- 前端：`pnpm test -- src/dev/mocks/adapter.test.ts`（`it.each(contract.cases)`）
+
+快捷：`pnpm test:contracts`（含 boundary 全仓扫描 + backend features）。
+
+## 7. ConnectFlow / Hub 入口
+
+Hub Phase 1 统一连接流程的测试分文件存放（遵守 §1）；前端 vitest 固定走 mock backend（`#backend` → `dev/mocks`），领域 reset 放 `dev/mocks`，不要往生产 façade 塞测试 hook。
+
+| 层 | 文件 | 覆盖点 |
+|---|---|---|
+| 逻辑 | `src/lib/connect-flow/eligibility.test.ts` | 候选资格 |
+| 逻辑 | `src/lib/connect-flow/plan-fanout.test.ts` | plan fan-out |
+| 逻辑 | `src/lib/connect-flow/connection-usage.test.ts` | 用途聚合 |
+| 逻辑 | `src/lib/connect-flow/default-deps.test.ts` | 默认依赖组装 |
+| 逻辑 | `src/lib/connect-flow/reuse-offer.test.ts` | Connections 行「用于其他 Agent」可见性（Provider 白名单 / account 隐藏 / 生成 Provider 隐藏） |
+| 逻辑 | `src/lib/connect-flow/connect-intent.test.ts` | ①② 引导深链（intent/resume/`/?connect=` 的 parse/build/consume） |
+| 状态机 | `src/components/connect/connect-flow-state.test.ts` | 对话框状态机 |
+
+可行性权威为 `plan.canApply`，禁止只测 `analysis.support`。
+
+## 8. 分层边界护栏
+
+- 生产 module graph：`vite build` 禁止 `src/dev` / `src/test` / `*.test.ts` 入图。
+- 源码扫描：`src/lib/backend/boundary-imports.test.ts`  
+  - 仅 `lib/backend/tauri/**`（及 `lib/platform.ts` 的 `isTauri`）可 import `@tauri-apps`  
+  - 仅 `lib/backend/tauri/invoke.ts` 可从 `@tauri-apps/api/core` 直接 import `invoke`  
+  - `pages/**` / `lib/hooks/**` 不得 import `lib/backend/tauri` 或 `@/dev/*`
+- 运行时：非 Tauri 调用 Tauri port → `BackendUnavailableError`（禁止静默 mock）。
+
+## 9. CI
+
+| 触发 | 工作流 | 内容 |
+|---|---|---|
+| PR / push `dev`·`main` | `.github/workflows/pr-ci.yml` | typecheck、全量 `pnpm test`、`cargo test -p agenthub-core` |
+| push `release` | `.github/workflows/release.yml` | 上列 + workspace 全量 cargo + 打包发布元数据 |
+
+本地等价：`pnpm test:pr`。
+
+Bridge 半 e2e（端口重绑 / 上游轮转 / restore realign）见 `pnpm test:bridge` 与 [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) 自动覆盖对照表。
+
+## 10. 提交前最低检查
 
 改动触及对应层时至少跑：
 
 1. 相关 `cargo test` / `pnpm test -- <path>`（过滤到本域）。
-2. 若改了前端分层或依赖：`pnpm typecheck`（允许仅修本域错误，勿掩盖无关历史失败而不说明）。
-3. 新增测试文件路径符合 §1；生产文件无内嵌测试体。
+2. 若改了前端分层、Adapter 规则或边界：`pnpm test:contracts` 或 `pnpm test:pr`。
+3. 若改了前端分层或依赖：`pnpm typecheck`（允许仅修本域错误，勿掩盖无关历史失败而不说明）。
+4. 新增测试文件路径符合 §1；生产文件无内嵌测试体。
+5. 改 Adapter 可执行表面时同步 `adapter-capability-contract.json`（含 `applyPath`）。

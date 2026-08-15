@@ -172,7 +172,7 @@ pub fn estimate_cost_usd(
 ///
 /// All agents store **disjoint** buckets after parse:
 /// - Claude/Kimi/Pi: Anthropic-style input + cache create/read
-/// - Codex: ccusage non-cached `input` + separate `cache_read`
+/// - Codex / Grok: ccusage non-cached `input` + separate `cache_read`
 ///
 /// Never set `input_includes_cache` here — that flag is only for raw OpenAI
 /// totals at the parse boundary (`extract_codex`), not for stored rows.

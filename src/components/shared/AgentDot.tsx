@@ -1,3 +1,4 @@
+import type * as React from 'react';
 import { AGENT_MAP } from '@/config/agents';
 import type { AgentId } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
@@ -8,6 +9,15 @@ const SIZE = {
   md: 'h-2 w-2',
   lg: 'h-2.5 w-2.5',
 } as const;
+
+/**
+ * 侧栏状态条等场景：hover 放大倍数（与 HOVER_GROW_CLASS 同源，改这里即可）。
+ * 用 CSS 变量驱动 scale，避免业务侧散落任意 Tailwind 字面量。
+ */
+export const AGENT_DOT_HOVER_SCALE = 2.5;
+
+const HOVER_GROW_CLASS =
+  'origin-center transition-transform duration-150 ease-out hover:scale-[var(--agent-dot-hover-scale)]';
 
 /**
  * Agent 品牌色圆点（唯一出口）。
@@ -25,6 +35,9 @@ export function AgentDot({
   className,
   title,
   ring,
+  growOnHover = false,
+  hoverScale = AGENT_DOT_HOVER_SCALE,
+  style: styleProp,
 }: {
   /** 优先用 agentId 从 AGENTS 取色 */
   agentId?: AgentId;
@@ -35,6 +48,12 @@ export function AgentDot({
   title?: string | null;
   /** 侧栏等需要与面板底区分时加 ring */
   ring?: boolean;
+  /** 悬停放大（状态条等小圆点可扫读） */
+  growOnHover?: boolean;
+  /** 覆盖默认 {@link AGENT_DOT_HOVER_SCALE}；仅 growOnHover 时生效 */
+  hoverScale?: number;
+  /** Extra inline styles (e.g. animationDelay on BootSplash). backgroundColor is owned by AgentDot. */
+  style?: React.CSSProperties;
 }) {
   const resolved =
     color ??
@@ -43,15 +62,24 @@ export function AgentDot({
   const label =
     title === null ? undefined : (title ?? (agentId ? AGENT_MAP[agentId]?.name : undefined));
 
+  const style: React.CSSProperties = {
+    ...styleProp,
+    backgroundColor: resolved,
+    ...(growOnHover
+      ? ({ ['--agent-dot-hover-scale']: String(hoverScale) } as React.CSSProperties)
+      : null),
+  };
+
   const dot = (
     <span
       className={cn(
         'inline-block shrink-0 rounded-full',
         SIZE[size],
         ring && 'ring-1 ring-panel',
+        growOnHover && HOVER_GROW_CLASS,
         className,
       )}
-      style={{ backgroundColor: resolved }}
+      style={style}
       aria-hidden={label ? undefined : true}
     />
   );

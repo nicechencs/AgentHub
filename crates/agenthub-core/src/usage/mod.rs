@@ -3,6 +3,7 @@
 //! Parsing strategy informed by **ccusage**: agent-specific loaders, prefilter,
 //! message/request dedupe, prefer log costUSD, then token×rates.
 
+pub(crate) mod grok;
 mod pricing;
 // Legacy parsers + helpers; platform UsageSource integrations call into this
 // module. Collect entry is a façade over platform::usage.

@@ -1,0 +1,280 @@
+import { ArrowRight, ChevronDown, Copy } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { AgentDot } from '@/components/shared/AgentDot';
+import { DetailRow } from '@/components/shared/DetailRow';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
+import { useToast } from '@/components/ui/toast';
+import { agentDisplayName } from '@/config/agents';
+import { openLogsDir } from '@/lib/api/settings';
+import type {
+  AdapterBridgeRuntimeStatus,
+  AdapterProfile,
+} from '@/lib/backend/contracts/adapter';
+import type { ConnectionEntry } from '@/pages/connections/connection-model';
+import { AdapterErrorLines } from './adapter-components';
+import {
+  adapterBridgeEndpointLabel,
+  adapterBridgeUpstreamLabel,
+  adapterCredentialKindLabel,
+  adapterTableRouteLabel,
+} from './adapter-model';
+import {
+  adapterConfigStatusView,
+  adapterProfileRecoveryGuide,
+  adapterServiceStatusView,
+  adapterStatusDotClass,
+  adapterStatusTextClass,
+  resolveAdapterProfileSource,
+  type AdapterStatusView,
+} from './adapter-view-model';
+
+/**
+ * Read-only profile detail. AutoStart is the only editable field the backend
+ * exposes, so it lives here as a direct switch (no edit mode / dirty state).
+ * Remove is requested from here and confirmed by the page-level dialog.
+ */
+export function AdapterProfileDetailDialog({
+  profile,
+  bridgeStatus,
+  statusUnavailable,
+  entries,
+  busy,
+  error,
+  onClose,
+  onSetAutoStart,
+  onRequestRemove,
+}: {
+  profile: AdapterProfile | null;
+  bridgeStatus?: AdapterBridgeRuntimeStatus;
+  statusUnavailable: boolean;
+  entries: ConnectionEntry[];
+  busy: boolean;
+  error: unknown;
+  onClose: () => void;
+  onSetAutoStart: (profile: AdapterProfile, autoStart: boolean) => void;
+  onRequestRemove: (profile: AdapterProfile) => void;
+}) {
+  return (
+    <Dialog open={Boolean(profile)} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden">
+        {profile ? (
+          <ProfileDetailBody
+            profile={profile}
+            bridgeStatus={bridgeStatus}
+            statusUnavailable={statusUnavailable}
+            entries={entries}
+            busy={busy}
+            error={error}
+            onClose={onClose}
+            onSetAutoStart={onSetAutoStart}
+            onRequestRemove={onRequestRemove}
+          />
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProfileDetailBody({
+  profile,
+  bridgeStatus,
+  statusUnavailable,
+  entries,
+  busy,
+  error,
+  onClose,
+  onSetAutoStart,
+  onRequestRemove,
+}: {
+  profile: AdapterProfile;
+  bridgeStatus?: AdapterBridgeRuntimeStatus;
+  statusUnavailable: boolean;
+  entries: ConnectionEntry[];
+  busy: boolean;
+  error: unknown;
+  onClose: () => void;
+  onSetAutoStart: (profile: AdapterProfile, autoStart: boolean) => void;
+  onRequestRemove: (profile: AdapterProfile) => void;
+}) {
+  const { toast } = useToast();
+  const source = resolveAdapterProfileSource(profile, entries);
+  const configStatus = adapterConfigStatusView(profile.status);
+  const serviceStatus = adapterServiceStatusView({
+    route: profile.route,
+    bridgeState: bridgeStatus?.state,
+    statusUnavailable,
+  });
+  const isBridge = profile.route === 'local_bridge';
+  const endpoint = isBridge ? adapterBridgeEndpointLabel(profile, bridgeStatus) : null;
+  const recovery = adapterProfileRecoveryGuide(profile);
+
+  const copyEndpoint = async () => {
+    if (!endpoint) return;
+    try {
+      await navigator.clipboard.writeText(`http://${endpoint}`);
+      toast({ title: '端点已复制', description: `http://${endpoint}` });
+    } catch {
+      toast({ title: '复制失败', variant: 'danger' });
+    }
+  };
+
+  return (
+    <>
+      <DialogHeader className="shrink-0">
+        <DialogTitle className="flex min-w-0 flex-wrap items-center gap-1.5">
+          {source.agentId ? <AgentDot agentId={source.agentId} size="sm" title={null} /> : null}
+          <span className="truncate">{source.title}</span>
+          <ArrowRight className="h-4 w-4 shrink-0 text-muted" aria-hidden />
+          <AgentDot agentId={profile.targetAgentId} size="sm" title={null} />
+          <span className="truncate">{agentDisplayName(profile.targetAgentId)}</span>
+        </DialogTitle>
+        <DialogDescription className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="default">{adapterCredentialKindLabel(profile.mode)}</Badge>
+          <Badge variant="default">{adapterTableRouteLabel(profile.route)}</Badge>
+          {source.missing ? <span className="text-warning">来源连接已删除</span> : null}
+        </DialogDescription>
+      </DialogHeader>
+
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+        <section className="space-y-1.5">
+          <h3 className="text-sm font-medium">状态</h3>
+          <div className="space-y-1 rounded-btn border border-border bg-subtle p-3">
+            <DetailStatusLine label="配置" view={configStatus} />
+            {serviceStatus ? <DetailStatusLine label="服务" view={serviceStatus} /> : null}
+          </div>
+        </section>
+
+        {isBridge ? (
+          <section className="space-y-1.5">
+            <h3 className="text-sm font-medium">本地桥接</h3>
+            <div className="space-y-2 rounded-btn border border-border bg-subtle p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-muted">本地端点</span>
+                {endpoint ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-btn px-1 py-0.5 font-mono text-xs text-secondary hover:bg-hover hover:text-primary"
+                    onClick={() => { void copyEndpoint(); }}
+                    aria-label={`复制本地端点 ${endpoint}`}
+                  >
+                    {endpoint}
+                    <Copy className="h-3 w-3" aria-hidden />
+                  </button>
+                ) : (
+                  <span className="text-xs text-muted">待分配端口</span>
+                )}
+              </div>
+              {bridgeStatus?.upstreamStatus ? (
+                <DetailRow label="上游状态" value={adapterBridgeUpstreamLabel(bridgeStatus.upstreamStatus)} />
+              ) : null}
+              <label className="flex items-center justify-between gap-2 text-sm">
+                <span className="min-w-0">
+                  <span className="block">随 AgentHub 自动启动</span>
+                  <span className="block text-xs text-muted">仅在 AgentHub 运行时恢复，不是开机自启。</span>
+                </span>
+                <Switch
+                  checked={profile.autoStart}
+                  disabled={busy}
+                  aria-label="随 AgentHub 自动启动"
+                  onCheckedChange={(autoStart) => onSetAutoStart(profile, autoStart)}
+                />
+              </label>
+            </div>
+          </section>
+        ) : null}
+
+        <section className="space-y-1.5">
+          <h3 className="text-sm font-medium">生成的连接</h3>
+          <p className="text-sm text-secondary">
+            {profile.generatedProviderId ? (
+              <>
+                已生成 Provider（{profile.generatedProviderId}）。{' '}
+                <Link className="text-info underline" to={`/connections?agent=${profile.targetAgentId}`}>
+                  在 Connections 查看
+                </Link>
+              </>
+            ) : '未生成 Provider。'}
+          </p>
+        </section>
+
+        {recovery ? (
+          <section className="space-y-1.5" role="status">
+            <h3 className="text-sm font-medium text-warning">恢复步骤</h3>
+            <p className="text-sm text-secondary">{recovery.summary}</p>
+            <ul className="list-disc space-y-0.5 pl-5 text-sm text-secondary">
+              {recovery.steps.map((step) => <li key={step}>{step}</li>)}
+            </ul>
+          </section>
+        ) : null}
+
+        {error ? <AdapterErrorLines error={error} fallback="适配操作失败" /> : null}
+
+        <details className="group rounded-btn border border-border bg-subtle/60">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
+            <span>诊断信息</span>
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden />
+          </summary>
+          <div className="grid gap-1.5 border-t border-border px-3 py-3 text-xs">
+            <DetailRow label="Profile" value={profile.id} mono />
+            <DetailRow label="规则" value={`${profile.ruleId} · v${profile.ruleVersion}`} mono />
+            {profile.lastErrorCode ? <DetailRow label="最近错误码" value={profile.lastErrorCode} mono /> : null}
+            <DetailRow label="创建时间" value={profile.createdAt} mono />
+            <DetailRow label="更新时间" value={profile.updatedAt} mono />
+            <div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void (async () => {
+                    try {
+                      const path = await openLogsDir();
+                      toast({ title: '已打开日志目录', description: path, variant: 'success' });
+                    } catch (error) {
+                      toast({ title: '打开失败', description: String(error), variant: 'danger' });
+                    }
+                  })();
+                }}
+              >
+                打开日志目录
+              </Button>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
+        <Button
+          variant="dangerOutline"
+          disabled={busy}
+          onClick={() => onRequestRemove(profile)}
+        >
+          删除适配
+        </Button>
+        <Button variant="secondary" onClick={onClose}>关闭</Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+function DetailStatusLine({ label, view }: { label: string; view: AdapterStatusView }) {
+  return (
+    <p className="flex items-center gap-2 text-sm">
+      <span className="w-8 shrink-0 text-xs text-muted">{label}</span>
+      <span
+        className={`inline-block h-2 w-2 shrink-0 rounded-full ${adapterStatusDotClass(view.tone)}${view.pulse ? ' animate-pulse' : ''}`}
+        aria-hidden
+      />
+      <span className={adapterStatusTextClass(view.tone)}>{view.label}</span>
+    </p>
+  );
+}

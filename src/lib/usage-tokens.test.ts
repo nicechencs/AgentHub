@@ -29,6 +29,17 @@ describe('usageTokenParts (ccusage layout)', () => {
     }
   });
 
+  it('never peels cache from grok stored non-cached input', () => {
+    const p = usageTokenParts({
+      agentId: 'grok',
+      inputTokens: 7180,
+      cacheReadTokens: 11264,
+    });
+    expect(p.billableInput).toBe(7180);
+    expect(p.cache).toBe(11264);
+    expect(p.fullInput).toBe(7180 + 11264);
+  });
+
   it('keeps anthropic-style disjoint buckets', () => {
     const p = usageTokenParts({
       agentId: 'claude',
@@ -44,8 +55,9 @@ describe('usageTokenParts (ccusage layout)', () => {
     const total = sumBillableInput([
       { agentId: 'codex', inputTokens: 750, cacheReadTokens: 250 },
       { agentId: 'claude', inputTokens: 100, cacheReadTokens: 10 },
+      { agentId: 'grok', inputTokens: 7180, cacheReadTokens: 11264 },
     ]);
-    expect(total).toBe(850);
+    expect(total).toBe(750 + 100 + 7180);
   });
 
   it('clamps negative inputs to zero', () => {

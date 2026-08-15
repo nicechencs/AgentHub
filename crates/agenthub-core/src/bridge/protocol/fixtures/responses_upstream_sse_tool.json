@@ -1,0 +1,88 @@
+[
+  {
+    "type": "response.created",
+    "sequence_number": 0,
+    "response": {
+      "id": "resp_stream_tool",
+      "object": "response",
+      "model": "gpt-5",
+      "status": "in_progress",
+      "output": []
+    }
+  },
+  {
+    "type": "response.output_item.added",
+    "sequence_number": 1,
+    "output_index": 0,
+    "item": {
+      "id": "fc_1",
+      "type": "function_call",
+      "status": "in_progress",
+      "call_id": "call_weather",
+      "name": "weather",
+      "arguments": ""
+    }
+  },
+  {
+    "type": "response.function_call_arguments.delta",
+    "sequence_number": 2,
+    "output_index": 0,
+    "item_id": "fc_1",
+    "call_id": "call_weather",
+    "delta": "{\"city\":"
+  },
+  {
+    "type": "response.function_call_arguments.delta",
+    "sequence_number": 3,
+    "output_index": 0,
+    "item_id": "fc_1",
+    "call_id": "call_weather",
+    "delta": "\"Tokyo\"}"
+  },
+  {
+    "type": "response.function_call_arguments.done",
+    "sequence_number": 4,
+    "output_index": 0,
+    "item_id": "fc_1",
+    "call_id": "call_weather",
+    "arguments": "{\"city\":\"Tokyo\"}"
+  },
+  {
+    "type": "response.output_item.done",
+    "sequence_number": 5,
+    "output_index": 0,
+    "item": {
+      "id": "fc_1",
+      "type": "function_call",
+      "status": "completed",
+      "call_id": "call_weather",
+      "name": "weather",
+      "arguments": "{\"city\":\"Tokyo\"}"
+    }
+  },
+  {
+    "type": "response.completed",
+    "sequence_number": 6,
+    "response": {
+      "id": "resp_stream_tool",
+      "object": "response",
+      "model": "gpt-5",
+      "status": "completed",
+      "output": [
+        {
+          "id": "fc_1",
+          "type": "function_call",
+          "status": "completed",
+          "call_id": "call_weather",
+          "name": "weather",
+          "arguments": "{\"city\":\"Tokyo\"}"
+        }
+      ],
+      "usage": {
+        "input_tokens": 9,
+        "output_tokens": 5,
+        "total_tokens": 14
+      }
+    }
+  }
+]

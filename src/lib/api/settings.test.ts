@@ -3,6 +3,7 @@ import type { LogLevel } from '@/lib/types';
 import {
   closeToTraySettingValue,
   resolveCloseToTray,
+  resolveUsageCollectIntervalMin,
 } from '@/lib/backend/tauri/settings';
 
 /** Mirror parse rules used by settings API (keep in sync with settings.ts). */
@@ -51,5 +52,14 @@ describe('closeToTray helpers (shared with tauri settings port)', () => {
     expect(resolveCloseToTray(false, true)).toBe(false);
     expect(resolveCloseToTray(undefined, false)).toBe(false);
     expect(closeToTraySettingValue(false)).toBe('false');
+  });
+});
+
+describe('usageCollectIntervalMin helpers (shared with tauri settings port)', () => {
+  it('resolves core over local, including 0', () => {
+    expect(resolveUsageCollectIntervalMin(45, 15)).toBe(45);
+    expect(resolveUsageCollectIntervalMin(0, 30)).toBe(0);
+    expect(resolveUsageCollectIntervalMin(undefined, 15)).toBe(15);
+    expect(resolveUsageCollectIntervalMin(undefined, undefined)).toBe(30);
   });
 });

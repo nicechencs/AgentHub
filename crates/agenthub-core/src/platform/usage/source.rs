@@ -25,6 +25,8 @@ pub enum TokenAccounting {
 #[derive(Debug)]
 pub enum UsageLineOutcome {
     Event(RawUsageEvent),
+    /// One log line can yield several events (Grok `modelUsage` map).
+    Events(Vec<RawUsageEvent>),
     Skipped,
     Failed,
 }

@@ -1,8 +1,14 @@
 # Adapter sidecar：稳定目标架构与迁移契约
 
-> 状态：目标架构（已决定，尚未实现）  
+> 状态：目标架构（已决定；协议内核部分落地，sidecar 本体尚未实现）  
 > 日期：2026-08-12  
-> 范围：跨 Agent Adapter 的 `local_bridge` 长驻运行时、协议数据面与生命周期控制面。
+> 范围：跨 Agent Adapter 的 `local_bridge` 长驻运行时、协议数据面与生命周期控制面。  
+>
+> **进度摘要（不要倒读为已可 Apply）：**  
+> - 协议数据面内核（Codex subscription → Claude Code 候选）：`agenthub-core` 已有纯函数 Messages ↔ IR ↔ Responses 与 `RetryGate` 单测；**无网络、无 secret、无 listener**。  
+> - 路由门禁：`adapter_route_service` 对 Codex OAuth Account → Claude 仍为 `unsupported` / `canApply=false`。  
+> - 控制面 IPC、`agenthub-adapterd` binary、profile saga 迁移：**尚未实现**。  
+> - Connections / Account / Provider / ActiveBinding：**始终由 core services owner**，不迁入 sidecar。
 
 ## 1. 决策摘要与现状边界
 
@@ -320,7 +326,9 @@ credential rotation 以 source `connection_id` 变更事件或 revision 变化�
 
 工作：将 Tauri controller 中的 `local_bridge` 编排抽为 Tauri-neutral core application/control contract；明确 profile journal、request ID、revision/rule revalidation、状态 DTO 与 sidecar IPC 兼容版。当前 `BridgeRuntimeHost` **仍由 Tauri `AppState` 持有**，仅作为该 contract 的 in-process host adapter。
 
-验收：现有 GUI 行为不变；所有 `local_bridge` mutation 经相同 application contract；`config_sync`/`native_endpoint` 无 sidecar 依赖；request-id 幂等、revision/rule conflict、saga 补偿有测试。
+**与协议内核的关系（2026-08-12）：** Codex→Claude 的 **纯协议内核**（Messages/IR/Responses、fixtures、`RetryGate`）可在本阶段并行落入 `agenthub-core::bridge::protocol`，且必须保持 `canApply=false`。该内核**不**等于 sidecar 控制面、不改变 `BridgeRuntimeHost` 宿主归属，也不授权创建 subscription bridge profile。控制面 envelope / handshake / mutation API 仍属本设计的目标契约，实现前 GUI 不得假装 sidecar 已存在。
+
+验收：现有 GUI 行为不变；所有 `local_bridge` mutation 经相同 application contract；`config_sync`/`native_endpoint` 无 sidecar 依赖；request-id 幂等、revision/rule conflict、saga 补偿有测试；协议内核单测通过且路由门禁仍拒绝 Codex→Claude Apply。
 
 回滚：保留 Tauri in-process host adapter 和既有 command 映射，撤回尚未启用的 contract/DTO 调用；不迁移或重写用户 profile 数据。
 

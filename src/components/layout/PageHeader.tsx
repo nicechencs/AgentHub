@@ -19,7 +19,7 @@ export function PageHeader({
   className,
 }: {
   title: string;
-  /** 标题旁状态标记（如「开发中」） */
+  /** 标题旁状态标记（如更新 pin / 运行状态） */
   badge?: ReactNode;
   description?: string;
   /** 悬停时的详细说明；有则 description 可更短 */

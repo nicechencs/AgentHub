@@ -31,4 +31,24 @@ describe('skillsCopy', () => {
     expect(line).not.toMatch(/单向投影/);
     expect(line).not.toMatch(/git clone/);
   });
+
+  it('local filters include private-only and projection conflict', () => {
+    expect(skillsCopy.filters.enablePrivate).toBe('只在本工具');
+    expect(skillsCopy.filters.enableConflict).toBe('冲突');
+    expect(skillsCopy.filters.enableMapped).toBe('已启用');
+    expect(skillsCopy.filters.enableUnmapped).toBe('未启用');
+  });
+
+  it('tabs are library + market only', () => {
+    expect(skillsCopy.tabs).not.toHaveProperty('workspace');
+    expect(skillsCopy.tabs.library).toBe('本地共享库');
+    expect(skillsCopy.tabs.market).toBe('技能市场');
+  });
+
+  it('adopt toast stays on the local table', () => {
+    const t = skillsCopy.toast.adoptOk(false);
+    expect(t.description).toBe('已可在矩阵中启用');
+    expect(t).not.toHaveProperty('actionLabel');
+    expect(skillsCopy.toast.batchAdopt(1, 0, 0)).not.toHaveProperty('actionLabel');
+  });
 });

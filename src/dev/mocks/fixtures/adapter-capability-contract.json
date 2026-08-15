@@ -1,0 +1,179 @@
+{
+  "cases": [
+    {
+      "id": "kimi-membership-to-claude",
+      "source": {
+        "kind": "provider",
+        "agentId": "kimi",
+        "preset": "kimi-code-membership"
+      },
+      "target": "claude",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "stable",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "kimi-membership-to-claude-v1",
+        "gateKind": "none",
+        "reason": "Kimi Code 会员可预览为 Claude 的原生 Anthropic Messages 端点。"
+      }
+    },
+    {
+      "id": "kimi-membership-to-codex",
+      "source": {
+        "kind": "provider",
+        "agentId": "kimi",
+        "preset": "kimi-code-membership"
+      },
+      "target": "codex",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "kimi-membership-to-codex-v1",
+        "gateKind": "none",
+        "reason": "Kimi Code 会员到 Codex 需要本地协议桥接。"
+      }
+    },
+    {
+      "id": "kimi-membership-to-pi",
+      "source": {
+        "kind": "provider",
+        "agentId": "kimi",
+        "preset": "kimi-code-membership"
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "stable",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "kimi-membership-to-pi-v1",
+        "gateKind": "none",
+        "reason": "Kimi Code 会员可预览为 Pi 的配置同步。"
+      }
+    },
+    {
+      "id": "anthropic-api-to-pi",
+      "source": {
+        "kind": "provider",
+        "agentId": "claude",
+        "preset": "anthropic"
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "stable",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "anthropic-api-to-pi-v1",
+        "gateKind": "none",
+        "reason": "显式 Anthropic API Key 可预览为 Pi 的配置同步。"
+      }
+    },
+    {
+      "id": "codex-oauth-auth-json-to-claude",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentialFormat": "auth_json",
+        "credentials": {
+          "format": "auth_json",
+          "tokens": {
+            "access_token": "must-not-leak",
+            "refresh_token": "must-not-leak"
+          }
+        }
+      },
+      "target": "claude",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": "codex-subscription-to-claude-app-server-v0",
+        "gateKind": "subscription_candidate",
+        "reason": "Codex / ChatGPT 订阅 → Claude Code：当前不支持。尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。这只表示没有可执行规则，不代表连接失效。替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。"
+      }
+    },
+    {
+      "id": "codex-oauth-tokens-blob-to-claude",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentials": {
+          "tokens": {
+            "access_token": "must-not-leak"
+          }
+        }
+      },
+      "target": "claude",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": "codex-subscription-to-claude-app-server-v0",
+        "gateKind": "subscription_candidate",
+        "reason": "Codex / ChatGPT 订阅 → Claude Code：当前不支持。尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。这只表示没有可执行规则，不代表连接失效。替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。"
+      }
+    },
+    {
+      "id": "codex-oauth-without-auth-json-to-claude",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth"
+      },
+      "target": "claude",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "subscription_candidate",
+        "reason": "Codex / ChatGPT 订阅 → Claude Code：当前不支持。尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。这只表示没有可执行规则，不代表连接失效。替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。"
+      }
+    },
+    {
+      "id": "codex-provider-to-claude",
+      "source": {
+        "kind": "provider",
+        "agentId": "codex",
+        "preset": "openai-compatible"
+      },
+      "target": "claude",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reason": "AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。"
+      }
+    },
+    {
+      "id": "other-to-claude",
+      "source": {
+        "kind": "provider",
+        "agentId": "kimi",
+        "preset": "moonshot"
+      },
+      "target": "claude",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reason": "当前 Kimi 连接不是「Kimi Code 会员」来源。跨 Agent 适配仅支持会员：Connections 中选择 preset「Kimi Code 会员」，或配置端点包含 api.kimi.com/coding。开放平台（moonshot）与任意兼容 API 不会自动升级。当前不支持不等于连接失效。"
+      }
+    }
+  ]
+}

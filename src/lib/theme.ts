@@ -1,5 +1,5 @@
 import type { AppSettings } from '@/lib/types';
-import { loadString, saveString, StorageKey } from '@/lib/storage';
+import { loadString, saveString, StorageKey } from '@/lib/ui-preferences';
 
 export type ThemeMode = AppSettings['theme'];
 

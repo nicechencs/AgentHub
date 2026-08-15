@@ -170,6 +170,13 @@ impl Database {
         if let Some(v) = self.get_setting("close_to_tray")? {
             s.close_to_tray = parse_stored_bool(&v);
         }
+        if let Some(v) = self.get_setting("usage_collect_interval_min")? {
+            if let Ok(n) = v.parse::<u32>() {
+                if n <= crate::catalog::limits::MAX_USAGE_COLLECT_INTERVAL_MIN {
+                    s.usage_collect_interval_min = Some(n);
+                }
+            }
+        }
         Ok(s)
     }
 }

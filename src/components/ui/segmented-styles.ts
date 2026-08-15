@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils';
  *
  * ## 不该统一（允许特例）
  * - 预览 chrome「预览 | 源码」：更扁 sm + 固定 h-6（工具条密度）
- * - Agent 条 **renderEnd** 特例：生效绿点、琥珀「可加入」等（不是普通 count）
+ * - Agent 条 **renderEnd** 特例：生效绿点、琥珀「可加入」等（不是普通 count；用 `actionCountClass`）
  * - Agent 品牌圆点：仅 AgentTabStrip
  */
 export const segmentedTrackClass =
@@ -19,6 +19,13 @@ export const segmentedTrackClass =
 
 /** 筛选/导航旁的普通数量角标（连接页同源） */
 export const segmentedCountClass = 'tabular-nums text-muted';
+
+/**
+ * 琥珀行动角标（非普通 count）：如 Skills「只在本工具 / 可加入共享库」。
+ * 用 design token，避免页内 amber-* 漂移。
+ */
+export const actionCountClass =
+  'rounded-full bg-warning/15 px-1.5 py-0 text-2xs tabular-nums text-warning';
 
 export type SegmentedSize = 'sm' | 'md';
 

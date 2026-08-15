@@ -27,6 +27,7 @@ export interface SkillSyncReport {
   failed: { skill: string; agent: AgentId; code: string; error: string }[];
 }
 
+/** Installed / catalog row. `listSkillCatalog` reuses this DTO (no extra type). */
 export interface InstalledSkillDto {
   id: string;
   name: string;
@@ -65,6 +66,12 @@ export interface SkillProjectResultDto {
   appliedLinkKind: SkillLinkKind;
   fellBack: boolean;
   targetDir: string;
+}
+
+/** Debounced skill-directory change from the desktop filesystem watcher. */
+export interface SkillsFsChangedPayload {
+  source?: string;
+  roots?: number;
 }
 
 /** Local `SKILL.md` body for GUI markdown preview. */

@@ -89,7 +89,11 @@ export function ApiKeyAccountDialog({
         });
         toast({
           title: 'API Key 账号已更新',
-          description: acc.label,
+          description: acc.isCurrent && key.trim()
+            ? `${acc.label} · 已写入本机配置`
+            : acc.isCurrent
+              ? `${acc.label} · 仅更新名称，本机配置未改`
+              : `${acc.label} · 已保存到连接池，切换后才会写入本机`,
           variant: 'success',
         });
         onSaved(acc);
@@ -128,7 +132,7 @@ export function ApiKeyAccountDialog({
           </DialogTitle>
           <DialogDescription>
             {isEdit
-              ? '可改名称；API Key 留空则保留原密钥。密钥默认脱敏。'
+              ? '可改名称；API Key 留空则保留原密钥。当前连接改密钥会写入本机。'
               : '保存后可切换到本机生效。密钥默认脱敏。'}
           </DialogDescription>
         </DialogHeader>

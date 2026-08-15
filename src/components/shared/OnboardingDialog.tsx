@@ -29,7 +29,7 @@ import { AGENTS } from '@/config/agents';
 import { RUNTIME_MAP } from '@/config/runtimes';
 import { isCapabilityBlocked } from '@/lib/capability';
 import { hasEnvIssues } from '@/lib/env';
-import { loadBool, saveBool, StorageKey } from '@/lib/storage';
+import { loadBool, saveBool, StorageKey } from '@/lib/ui-preferences';
 import type { AgentStatus, RuntimeDetect } from '@/lib/types';
 import { cn } from '@/lib/utils';
 

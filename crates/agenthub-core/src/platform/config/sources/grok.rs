@@ -14,6 +14,9 @@ use crate::error::{AppError, Result};
 use crate::models::AgentId;
 use crate::platform::AgentKey;
 use crate::utils::atomic::atomic_write;
+use crate::utils::grok_toml::{
+    active_model_alias, ensure_grok_model_shape, EnsureGrokModelShapeOptions,
+};
 
 use super::super::document::{ConfigApplyResult, ConfigChangePlan, NormalizedConfigDocument};
 use super::super::projector::AgentConfigProjector;
@@ -27,7 +30,6 @@ use super::util::{
 
 const SCHEMA_VERSION: u32 = 2;
 const REL_PATH: &str = "config.toml";
-const DEFAULT_ALIAS: &str = "grok";
 
 pub struct GrokConfigProjector;
 
@@ -86,23 +88,6 @@ impl GrokConfigProjector {
         ))
     }
 
-    fn active_alias(doc: &DocumentMut) -> String {
-        if let Some(alias) = doc
-            .get("models")
-            .and_then(Item::as_table)
-            .and_then(|models| models.get("default"))
-            .and_then(Item::as_str)
-            .map(str::trim)
-            .filter(|alias| !alias.is_empty())
-        {
-            return alias.to_string();
-        }
-        doc.get("model")
-            .and_then(Item::as_table)
-            .and_then(|models| models.iter().next().map(|(key, _)| key.to_string()))
-            .unwrap_or_else(|| DEFAULT_ALIAS.to_string())
-    }
-
     fn active_entry<'a>(doc: &'a DocumentMut, alias: &str) -> Option<&'a toml_edit::Table> {
         doc.get("model")
             .and_then(Item::as_table)
@@ -111,66 +96,21 @@ impl GrokConfigProjector {
     }
 
     fn ensure_shape(doc: &mut DocumentMut, alias: &str) -> Result<()> {
-        let legacy_model = doc.get("model").and_then(Item::as_str).map(str::to_string);
-        let legacy_base = doc
-            .get("base_url")
-            .and_then(Item::as_str)
-            .map(str::to_string);
-        let legacy_key = doc
-            .get("api_key")
-            .and_then(Item::as_str)
-            .map(str::to_string);
-
-        if doc.get("models").is_none() {
-            doc["models"] = toml_edit::table();
-        }
-        {
-            let models = doc["models"]
-                .as_table_mut()
-                .ok_or_else(|| AppError::InvalidArg("Grok models must be a table".into()))?;
-            if models.get("default").is_none() {
-                models["default"] = toml_edit::value(alias);
-            }
-            if models.get("web_search").is_none() {
-                models["web_search"] = toml_edit::value(alias);
-            }
-        }
-
-        if doc.get("model").and_then(Item::as_table).is_none() {
-            doc.remove("model");
-            doc["model"] = toml_edit::table();
-        }
-        {
-            let model_root = doc["model"]
-                .as_table_mut()
-                .ok_or_else(|| AppError::InvalidArg("Grok model must be a table".into()))?;
-            if model_root.get(alias).is_none() {
-                let mut entry = toml_edit::table();
-                if let Some(model) = legacy_model {
-                    entry["model"] = toml_edit::value(model);
-                }
-                if let Some(base) = legacy_base {
-                    entry["base_url"] = toml_edit::value(base);
-                }
-                if let Some(key) = legacy_key {
-                    entry["api_key"] = toml_edit::value(key);
-                }
-                model_root.insert(alias, entry);
-            }
-            if model_root.get(alias).and_then(Item::as_table).is_none() {
-                return Err(AppError::InvalidArg(format!(
-                    "Grok model.{alias} must be a table"
-                )));
-            }
-        }
-        // Once migrated, the legacy root keys must not shadow the registry.
-        doc.remove("base_url");
-        doc.remove("api_key");
+        // Projector preserves legacy api_key during migration so non-secret
+        // applies do not drop credentials. Unknown root keys (e.g. env_key) stay.
+        ensure_grok_model_shape(
+            doc,
+            alias,
+            EnsureGrokModelShapeOptions {
+                migrate_legacy_api_key: true,
+                strip_root_env_key: false,
+            },
+        )?;
         Ok(())
     }
 
     fn extract(doc: &DocumentMut) -> BTreeMap<String, Value> {
-        let alias = Self::active_alias(doc);
+        let alias = active_model_alias(doc);
         let entry = Self::active_entry(doc, &alias);
         let mut values = BTreeMap::new();
         values.insert(
@@ -204,7 +144,7 @@ impl GrokConfigProjector {
     }
 
     fn merge(mut doc: DocumentMut, desired: &BTreeMap<String, Value>) -> Result<DocumentMut> {
-        let alias = Self::active_alias(&doc);
+        let alias = active_model_alias(&doc);
         Self::ensure_shape(&mut doc, &alias)?;
         let entry = doc["model"]
             .as_table_mut()

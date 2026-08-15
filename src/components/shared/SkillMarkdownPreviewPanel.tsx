@@ -11,7 +11,7 @@ import { MarkdownView } from '@/components/shared/MarkdownView';
 import { Button } from '@/components/ui/button';
 import { segmentedItemClass, segmentedTrackClass } from '@/components/ui/segmented-styles';
 import { Tip } from '@/components/ui/tooltip';
-import { AGENT_MAP } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
 import { readSkillMarkdown } from '@/lib/api/skill';
 import {
   hasEscPriorityOverlay,
@@ -32,7 +32,7 @@ export type SkillPreviewTarget = {
 
 function sourceMeta(target: SkillPreviewTarget): string {
   if (target.privateAgent) {
-    return AGENT_MAP[target.privateAgent]?.name ?? target.privateAgent;
+    return agentDisplayName(target.privateAgent);
   }
   return '共享库';
 }

@@ -18,7 +18,7 @@ import {
   type ColumnWidthSpec,
 } from '@/components/ui/table';
 import { Tip } from '@/components/ui/tooltip';
-import { AGENT_MAP } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
 import type { UsageRecord } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -192,7 +192,7 @@ export function UsageDetailsTable({ rows }: { rows: UsageRecord[] }) {
               <TableCell className="truncate whitespace-nowrap">
                 <span className="inline-flex max-w-full items-center gap-1.5">
                   <AgentDot agentId={r.agentId} />
-                  <span className="truncate">{AGENT_MAP[r.agentId]?.name ?? r.agentId}</span>
+                  <span className="truncate">{agentDisplayName(r.agentId)}</span>
                 </span>
               </TableCell>
               <TableCell className="truncate whitespace-nowrap font-mono text-xs">

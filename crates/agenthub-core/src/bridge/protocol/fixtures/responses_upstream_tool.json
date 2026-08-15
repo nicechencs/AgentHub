@@ -1,0 +1,22 @@
+{
+  "id": "resp_tool_1",
+  "object": "response",
+  "created_at": 1,
+  "model": "gpt-5",
+  "status": "completed",
+  "output": [
+    {
+      "id": "fc_call_weather",
+      "type": "function_call",
+      "status": "completed",
+      "call_id": "call_weather",
+      "name": "weather",
+      "arguments": "{\"city\":\"Tokyo\"}"
+    }
+  ],
+  "usage": {
+    "input_tokens": 10,
+    "output_tokens": 6,
+    "total_tokens": 16
+  }
+}

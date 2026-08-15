@@ -2,6 +2,9 @@
 
 mod account;
 mod adapter;
+mod adapter_capability_matrix;
+mod adapter_model_mapping;
+mod adapter_state_model;
 mod agent;
 mod backup;
 mod capability;
@@ -22,6 +25,9 @@ mod tests;
 
 pub use account::*;
 pub use adapter::*;
+pub use adapter_capability_matrix::*;
+pub use adapter_model_mapping::*;
+pub use adapter_state_model::*;
 pub use agent::*;
 pub use backup::*;
 pub use capability::*;

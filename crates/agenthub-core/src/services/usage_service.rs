@@ -15,6 +15,7 @@ use crate::platform::usage::{
 };
 use crate::platform::AgentKey;
 use crate::storage::{Database, UsageRepo};
+use crate::usage::grok::{grok_model_has_pricing, pricing_candidates};
 use crate::usage::session_jsonl::CollectStats;
 use crate::usage::{
     codex_billable_tokens, estimate_cost_usd, estimate_cost_usd_for_agent, has_embedded_pricing,
@@ -79,6 +80,16 @@ impl UsageService {
                 "failed to schedule usage token layout repair"
             );
         }
+        if let Err(e) = self.maybe_repair_grok_parser() {
+            let err_msg = redact_text(&e.to_string());
+            tracing::warn!(
+                module = targets::USAGE,
+                code = e.code(),
+                op = "grok_parser_repair",
+                error = %err_msg,
+                "failed to schedule Grok usage parser repair"
+            );
+        }
         let agents: Vec<AgentId> = match agent {
             Some(a) => vec![a],
             // Supported agents come from UsageSource registry (not a hard-coded name list).
@@ -117,21 +128,13 @@ impl UsageService {
                             + ev.output_tokens
                             + ev.cache_creation_tokens
                             + ev.cache_read_tokens;
-                        if tokens > 0 && ev.cost_usd.is_none() && !has_embedded_pricing(&ev.model) {
+                        if tokens > 0 && ev.cost_usd.is_none() && event_missing_pricing(&ev) {
                             missing_pricing.insert(ev.model.clone());
                         }
-                        // ccusage Auto: prefer log costUSD; else token × rates.
-                        // Stored input is already billable (Codex peeled at parse).
+                        // ccusage Auto: prefer log costUSD / Grok ticks; else token × rates.
+                        // Stored input is already billable (Codex/Grok peeled at parse).
                         // Unknown model (no table row, no log cost): $0 + missing tip.
-                        let cost = estimate_cost_usd_for_agent(
-                            ev.agent_id,
-                            &ev.model,
-                            ev.input_tokens,
-                            ev.output_tokens,
-                            ev.cache_creation_tokens,
-                            ev.cache_read_tokens,
-                            ev.cost_usd,
-                        );
+                        let cost = cost_for_event(&ev);
                         let cache_tokens = ev.cache_tokens_total();
                         rows.push(UsageRecord {
                             id: Uuid::new_v4().to_string(),
@@ -391,4 +394,78 @@ impl UsageService {
         );
         Ok(())
     }
+
+    /// One-time Grok rebuild: previous parser treated Grok as Claude-like JSONL
+    /// and scanned every `*.jsonl` under sessions. ccusage only counts
+    /// `updates.jsonl` `turn_completed` rows, peels cache out of input, and
+    /// prefers `costUsdTicks`. Old hashes / session ids (`updates`) cannot UPSERT
+    /// onto the new rows.
+    fn maybe_repair_grok_parser(&self) -> Result<()> {
+        const KEY: &str = "usage_grok_parser";
+        const VER: &str = "1";
+        let cur = self.repo.get_meta(KEY)?;
+        if cur.as_deref() == Some(VER) {
+            return Ok(());
+        }
+        let from = cur.as_deref().unwrap_or("unset");
+        tracing::info!(
+            module = targets::USAGE,
+            op = "grok_parser_repair",
+            from_version = from,
+            to_version = VER,
+            "Grok usage parser migration starting (clear grok rows + reset grok cursors)"
+        );
+        let deleted = self.repo.clear_records_for_agent(AgentId::Grok)?;
+        let n = self.repo.reset_cursors_for_agent(AgentId::Grok)?;
+        self.repo.set_meta(KEY, VER)?;
+        tracing::info!(
+            module = targets::USAGE,
+            op = "grok_parser_repair",
+            rows_deleted = deleted,
+            cursors_reset = n,
+            from_version = from,
+            to_version = VER,
+            "cleared Grok usage rows and cursors; next scan rebuilds from updates.jsonl"
+        );
+        Ok(())
+    }
 }
+
+fn event_missing_pricing(ev: &crate::models::ParsedUsageEvent) -> bool {
+    if ev.agent_id == AgentId::Grok {
+        !grok_model_has_pricing(&ev.model)
+    } else {
+        !has_embedded_pricing(&ev.model)
+    }
+}
+
+fn cost_for_event(ev: &crate::models::ParsedUsageEvent) -> f64 {
+    if ev.agent_id == AgentId::Grok && ev.cost_usd.is_none() {
+        if let Some(model) = pricing_candidates(&ev.model)
+            .into_iter()
+            .find(|c| has_embedded_pricing(c))
+        {
+            return estimate_cost_usd_for_agent(
+                ev.agent_id,
+                &model,
+                ev.input_tokens,
+                ev.output_tokens,
+                ev.cache_creation_tokens,
+                ev.cache_read_tokens,
+                None,
+            );
+        }
+    }
+    estimate_cost_usd_for_agent(
+        ev.agent_id,
+        &ev.model,
+        ev.input_tokens,
+        ev.output_tokens,
+        ev.cache_creation_tokens,
+        ev.cache_read_tokens,
+        ev.cost_usd,
+    )
+}
+
+#[cfg(test)]
+mod tests;

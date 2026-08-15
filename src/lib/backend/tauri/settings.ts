@@ -3,8 +3,10 @@ import type { SettingsPort } from '@/lib/backend/contracts';
 import { UNKNOWN_APP_VERSION } from '@/lib/app-version';
 import { logger } from '@/lib/logger';
 import {
+  loadBool,
   loadJson,
   loadString,
+  saveBool,
   saveJson,
   saveString,
   StorageKey,
@@ -12,6 +14,7 @@ import {
 import { applyTheme, type ThemeMode } from '@/lib/theme';
 import type { AppSettings, LogLevel, SkillMarketSource } from '@/lib/types';
 import { invoke } from './invoke';
+import { normalizeIntervalMin } from '@/lib/usage-sync';
 
 /** OS login-item helpers (Tauri plugin). Soft-fail outside desktop shell. */
 async function readOsAutoStart(): Promise<boolean | undefined> {
@@ -23,10 +26,40 @@ async function readOsAutoStart(): Promise<boolean | undefined> {
   }
 }
 
+/**
+ * auto-launch 0.5 on Windows: `disable()` calls `delete_value` and fails with
+ * ERROR_FILE_NOT_FOUND (os error 2 / 系统找不到指定的文件) when the Run key
+ * entry is already absent. Treat that as already-disabled success.
+ */
+export function isAlreadyDisabledAutostartError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /os error 2|ERROR_FILE_NOT_FOUND|找不到指定的文件|cannot find the file|not found/i.test(
+    msg,
+  );
+}
+
+/**
+ * Write OS login-item. Skips when already at the desired state so saving other
+ * general settings does not re-touch the registry. Disable is idempotent on
+ * Windows (missing Run value is success).
+ */
 async function writeOsAutoStart(enabled: boolean): Promise<void> {
-  const { enable, disable } = await import('@tauri-apps/plugin-autostart');
-  if (enabled) await enable();
-  else await disable();
+  const { enable, disable, isEnabled } = await import('@tauri-apps/plugin-autostart');
+  try {
+    if ((await isEnabled()) === enabled) return;
+  } catch {
+    // Plugin probe failed — still attempt the write below.
+  }
+  if (enabled) {
+    await enable();
+    return;
+  }
+  try {
+    await disable();
+  } catch (e) {
+    if (isAlreadyDisabledAutostartError(e)) return;
+    throw e;
+  }
 }
 
 const log = logger.scope('backend:tauri:settings');
@@ -38,14 +71,11 @@ const DEFAULTS: AppSettings = {
   theme: 'light',
   autoStart: true,
   closeToTray: true,
-  hasMasterPassword: false,
-  credentialStore: 'keyring',
   dataDir: '~/.agenthub',
   logsDir: '~/.agenthub/logs',
   logLevel: 'info',
   logRetentionDays: 14,
   skillMarketSource: 'auto',
-  autoBackup: true,
   usageCollectIntervalMin: 30,
   // Real value comes from Tauri getVersion(); do not hardcode a product semver.
   appVersion: UNKNOWN_APP_VERSION,
@@ -60,6 +90,8 @@ interface CoreAppSettings {
   logRetentionDays: number;
   skillMarketSource?: string;
   closeToTray?: boolean;
+  /** Foreground usage collect interval (minutes). Omitted on older cores. */
+  usageCollectIntervalMin?: number;
 }
 
 interface CorePathInfo {
@@ -116,6 +148,20 @@ export function closeToTraySettingValue(enabled: boolean): string {
   return enabled ? 'true' : 'false';
 }
 
+/**
+ * Resolve usage collect interval (minutes).
+ * Core is authoritative; localStorage is a one-shot migration fallback.
+ */
+export function resolveUsageCollectIntervalMin(
+  core: number | undefined,
+  local: number | undefined,
+  fallback = DEFAULTS.usageCollectIntervalMin,
+): number {
+  if (typeof core === 'number' && Number.isFinite(core)) return core;
+  if (typeof local === 'number' && Number.isFinite(local)) return local;
+  return fallback;
+}
+
 /** UI-only fields that still live in localStorage (not mock business data). */
 function loadUiLocal(): Partial<AppSettings> {
   return loadJson<Partial<AppSettings>>(SETTINGS_KEY, {});
@@ -142,11 +188,41 @@ export function createTauriSettingsPort(): SettingsPort {
           readOsAutoStart(),
         ]);
         const local = loadUiLocal();
-        const themeRaw = loadString(StorageKey.theme, core.theme ?? DEFAULTS.theme);
+        // Core theme is authoritative; localStorage is a first-paint cache only.
+        const theme = mapTheme(core.theme ?? loadString(StorageKey.theme, DEFAULTS.theme));
+        saveString(StorageKey.theme, theme);
+
+        let usageCollectIntervalMin = resolveUsageCollectIntervalMin(
+          core.usageCollectIntervalMin,
+          local.usageCollectIntervalMin,
+        );
+        // Key absent in SQLite (Option/undefined): migrate local once, else default.
+        if (typeof core.usageCollectIntervalMin !== 'number') {
+          const localInterval = local.usageCollectIntervalMin;
+          if (typeof localInterval === 'number' && Number.isFinite(localInterval)) {
+            const migrated = normalizeIntervalMin(localInterval);
+            usageCollectIntervalMin = migrated;
+            if (!loadBool(StorageKey.usageIntervalMigrated, false)) {
+              try {
+                await invoke('set_setting', {
+                  key: 'usage_collect_interval_min',
+                  value: String(migrated),
+                });
+                saveBool(StorageKey.usageIntervalMigrated, true);
+              } catch (e) {
+                log.error('migrate usageCollectIntervalMin to core failed', e);
+              }
+            }
+          } else {
+            usageCollectIntervalMin = DEFAULTS.usageCollectIntervalMin;
+            saveBool(StorageKey.usageIntervalMigrated, true);
+          }
+        } else {
+          saveBool(StorageKey.usageIntervalMigrated, true);
+        }
         const next: AppSettings = {
           ...DEFAULTS,
-          ...local,
-          theme: mapTheme(themeRaw),
+          theme,
           language: mapLanguageToUi(core.language),
           logLevel: parseLogLevel(core.logLevel),
           logRetentionDays: core.logRetentionDays || 14,
@@ -162,6 +238,7 @@ export function createTauriSettingsPort(): SettingsPort {
                 : DEFAULTS.autoStart,
           dataDir: paths.dataDir,
           logsDir: paths.logsDir,
+          usageCollectIntervalMin,
           // Package version from Tauri shell (not localStorage).
           appVersion: appVersion || DEFAULTS.appVersion,
         };
@@ -208,6 +285,16 @@ export function createTauriSettingsPort(): SettingsPort {
             value: closeToTraySettingValue(patch.closeToTray),
           });
         }
+        if (patch.usageCollectIntervalMin !== undefined) {
+          const mins = normalizeIntervalMin(patch.usageCollectIntervalMin);
+          await invoke('set_setting', {
+            key: 'usage_collect_interval_min',
+            value: String(mins),
+          });
+          saveBool(StorageKey.usageIntervalMigrated, true);
+          patch = { ...patch, usageCollectIntervalMin: mins };
+        }
+        // OS login-item last so a failure does not roll back already-written core keys.
         if (patch.autoStart !== undefined) {
           try {
             await writeOsAutoStart(patch.autoStart);
@@ -220,16 +307,12 @@ export function createTauriSettingsPort(): SettingsPort {
         }
 
         const local = loadUiLocal();
+        // Only persist UI-local fields. Leftover keys (hasMasterPassword /
+        // credentialStore / autoBackup) from older clients are ignored.
         const mergedLocal = {
-          ...local,
           autoStart: patch.autoStart ?? local.autoStart ?? DEFAULTS.autoStart,
           // Mirror for offline UI; core DB is authoritative after successful set.
           closeToTray: patch.closeToTray ?? local.closeToTray ?? DEFAULTS.closeToTray,
-          hasMasterPassword:
-            patch.hasMasterPassword ?? local.hasMasterPassword ?? DEFAULTS.hasMasterPassword,
-          credentialStore:
-            patch.credentialStore ?? local.credentialStore ?? DEFAULTS.credentialStore,
-          autoBackup: patch.autoBackup ?? local.autoBackup ?? DEFAULTS.autoBackup,
           usageCollectIntervalMin:
             patch.usageCollectIntervalMin ??
             local.usageCollectIntervalMin ??

@@ -1,0 +1,28 @@
+{
+  "id": "resp_text_1",
+  "object": "response",
+  "created_at": 1,
+  "model": "gpt-5",
+  "status": "completed",
+  "output": [
+    {
+      "id": "msg_out_1",
+      "type": "message",
+      "status": "completed",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "你好，世界。"
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 8,
+    "input_tokens_details": { "cached_tokens": 2 },
+    "output_tokens": 4,
+    "output_tokens_details": {},
+    "total_tokens": 12
+  }
+}

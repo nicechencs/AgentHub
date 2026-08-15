@@ -102,6 +102,28 @@ impl UsageRepo {
         })
     }
 
+    /// Drop usage rows for one agent (parser rewrite; other agents stay).
+    pub fn clear_records_for_agent(&self, agent: AgentId) -> Result<u64> {
+        self.db.with_conn(|conn| {
+            let n = conn.execute(
+                "DELETE FROM usage_records WHERE agent_id = ?1",
+                [agent.as_str()],
+            )?;
+            Ok(n as u64)
+        })
+    }
+
+    /// Force next collect to re-read this agent's session files from byte 0.
+    pub fn reset_cursors_for_agent(&self, agent: AgentId) -> Result<u64> {
+        self.db.with_conn(|conn| {
+            let n = conn.execute(
+                "UPDATE usage_cursors SET byte_offset = 0, file_mtime = 0, updated_at = datetime('now') WHERE agent_id = ?1",
+                [agent.as_str()],
+            )?;
+            Ok(n as u64)
+        })
+    }
+
     pub fn query(&self, q: &UsageQuery) -> Result<Vec<UsageRecord>> {
         let days = q.days.max(1) as i64;
         self.db.with_conn(|conn| {

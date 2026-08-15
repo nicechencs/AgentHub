@@ -13,6 +13,7 @@ pub const SETTINGS_WHITELIST: &[&str] = &[
     "log_retention_days",
     "skill_market_source",
     "close_to_tray",
+    "usage_collect_interval_min",
 ];
 
 pub struct SettingsService {
@@ -75,6 +76,7 @@ impl SettingsService {
                     .as_str()
                     .to_string(),
                 "close_to_tray" => normalize_bool_setting(value)?,
+                "usage_collect_interval_min" => parse_usage_collect_interval_min(value)?.to_string(),
                 _ => value.to_string(),
             };
             self.db.set_setting(key, &normalized)?;
@@ -110,6 +112,23 @@ fn normalize_bool_setting(value: &str) -> Result<String> {
             "invalid boolean setting value: {other} (use true/false)"
         ))),
     }
+}
+
+/// Parse usage collect interval minutes: `0` = manual only; max 24h.
+fn parse_usage_collect_interval_min(value: &str) -> Result<u32> {
+    use crate::catalog::limits::MAX_USAGE_COLLECT_INTERVAL_MIN;
+    let s = value.trim();
+    let n: u32 = s.parse().map_err(|_| {
+        AppError::InvalidArg(format!(
+            "invalid usage_collect_interval_min '{s}', expected integer 0..={MAX_USAGE_COLLECT_INTERVAL_MIN}"
+        ))
+    })?;
+    if n > MAX_USAGE_COLLECT_INTERVAL_MIN {
+        return Err(AppError::InvalidArg(format!(
+            "usage_collect_interval_min out of range: {n} (allowed 0..={MAX_USAGE_COLLECT_INTERVAL_MIN})"
+        )));
+    }
+    Ok(n)
 }
 
 #[cfg(test)]
@@ -180,6 +199,24 @@ mod tests {
         assert!(svc.get_all().unwrap().close_to_tray);
         assert!(svc.set("close_to_tray", "maybe").is_err());
         assert!(svc.get_all().unwrap().close_to_tray);
+    }
+
+    #[test]
+    fn usage_collect_interval_roundtrip_and_validation() {
+        let (_dir, svc) = svc_tmp();
+        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, None);
+
+        svc.set("usage_collect_interval_min", "0").unwrap();
+        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, Some(0));
+        svc.set("usage_collect_interval_min", "45").unwrap();
+        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, Some(45));
+        svc.set("usage_collect_interval_min", "1440").unwrap();
+        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, Some(1440));
+
+        assert!(svc.set("usage_collect_interval_min", "1441").is_err());
+        assert!(svc.set("usage_collect_interval_min", "-1").is_err());
+        assert!(svc.set("usage_collect_interval_min", "nope").is_err());
+        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, Some(1440));
     }
 
     #[test]

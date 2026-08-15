@@ -2,7 +2,7 @@
 
 > 状态：**当前工作区规则**，不代表已发布版本。
 > 最近核对：2026-08-12。
-> 本文是厂商入口、凭据类型和跨 Agent 适配规则的单一事实源；Adapter 的页面、运行时与协议桥架构见 [adapter-design.md](adapter-design.md)。
+> 本文是厂商入口、凭据类型和跨 Agent 适配规则的单一事实源；Adapter 的页面、运行时与协议桥架构见 [adapter-design.md](adapter-design.md)。日常 UI 入口见 [ui-design.md](ui-design.md) / ConnectFlow，本文件仍是规则真源。
 
 ## 1. 先看结论
 
@@ -121,14 +121,15 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 |---|---|---|---|
 | Kimi Provider，`agent_id=kimi` 且 `meta.preset=kimi-code-membership` | Claude Code | stable `native_endpoint` | **可应用**；普通 Apply 服务当前唯一白名单 |
 | 同上 | Codex | experimental `local_bridge` | **可实验应用**；`plan.canApply=true`，由 Tauri 专用 Bridge 路径执行，尚未完成端到端验收 |
-| 同上 | Pi | stable `config_sync` | **仅预览**；不可写入 |
-| Anthropic Provider，或显式 Anthropic API-key Account | Pi | stable `config_sync` | **仅预览**；不可写入 |
-| Codex OAuth Account，`credentials.format=auth_json`（ChatGPT subscription） | Claude Code | 受限实验候选 | **unsupported**；可解释门禁，`plan.canApply=false`，不得创建 profile、启动 bridge 或写入 Claude 配置 |
+| 同上 | Pi | stable `config_sync` | **可应用**；写入 Pi `models.json` 的 `kimi-for-coding` 槽，凭据只引用 |
+| Anthropic Provider（显式 Anthropic API Key） | Pi | stable `config_sync` | **可应用**；写入 Pi `models.json` 的 `anthropic` 槽，凭据只引用 |
+| Codex OAuth Account，`credentials.format=auth_json`（ChatGPT subscription） | Claude Code | 受限实验候选 | **unsupported**；可解释门禁，`plan.canApply=false`，不得创建 profile、启动 bridge 或写入 Claude 配置。Phase 1 **纯协议内核**（Messages↔IR↔Responses + RetryGate fixtures）已在 `agenthub-core` 落地，**不改变**本行可执行状态 |
 | 其他来源、目标或未标记记录 | 任意 | `unsupported` | 不产生写操作 |
 
 补充边界：
 
 - Kimi managed OAuth 不会被识别为 Kimi Code 会员 API Key。
+- Kimi Code 会员识别：**`meta.preset=kimi-code-membership`**，或配置中出现官方端点 **`api.kimi.com/coding`**（无 preset 的 live import 仍可识别）。仅 `agent_id=kimi` 或 Moonshot 开放平台 **不会**升为会员。
 - 普通 OpenAI、xAI、Gemini、Kimi 开放平台、GLM Coding Plan、DeepSeek API 或任意“兼容 API”目前都不会自动升级为 Adapter 规则。
 - `stable` 表示规则结论稳定，不等于已经开放写入；是否可写还要看 Apply 白名单。
 - Kimi → Codex 目前是唯一 Bridge 白名单，不代表已经提供通用协议网关。
@@ -185,7 +186,7 @@ Connection / Account（core services owner）
 | `ProtocolKernel` / IR | 纯请求、事件和错误映射；不读数据库、不刷新凭据、不监听端口。 |
 | `DownstreamSurface` | 按协议暴露最小 loopback surface：本候选为 Anthropic Messages；现有 Kimi 路径仍为 Responses。 |
 | sidecar runtime | `agenthub-adapterd` 是 `local_bridge` 唯一运行时/监听 owner；Connections、Account、Provider 与数据库/live-config 事务仍由 core services owner 持有。 |
-| capability matrix | 对每一 source × credential × transport × target × protocol × version 记录门禁、限制、fixtures 与验证日期；缺项即 fail-closed。 |
+| capability matrix | 对每一 source × credential × transport × target × protocol × version 记录门禁、限制、fixtures 与验证日期；缺项即 fail-closed。真源：`crates/agenthub-core/src/models/adapter_capability_matrix.rs`（`ADAPTER_CAPABILITY_MATRIX` / `decide_adapter_capability` / `CODEX_SUBSCRIPTION_TO_CLAUDE_REASON`）。analyze 对外附带结构化 `ruleId` + `gateKind`（如 `subscription_candidate`），UI 不得只靠解析 reason 文案。`plan.can_apply` = 矩阵开放 ∩ 已实现 apply 白名单。模型映射预留（**未接线**）：`adapter_model_mapping.rs`。状态分层预留（**未接线**）：`adapter_state_model.rs`。 |
 
 ### 5.3 Codex → Claude Code 的目标数据流与语义
 
@@ -243,14 +244,14 @@ Claude Code
 
 ### 7.1 Codex → Claude Code 的阶段、测试与验收门槛
 
-| 阶段 | 交付与门禁 | `canApply` |
-|---|---|---|
-| 0. 证据与 fixtures | 固化官方依据、条款结论、身份分类样例、Messages/IR/Responses/SSE 正反例 fixtures；确认参考实现许可边界 | `false` |
-| 1. 纯协议内核 | 无网络、无 secret 的 Anthropic Messages ↔ IR ↔ Responses 转换及状态机测试 | `false` |
-| 2. 认证 / transport spike | 分别验证 App Server 与经批准 Responses 候选；验证 OAuth refresh、single-flight、取消、工具副作用与不泄露 secret | `false` |
-| 3. sidecar profile 与 Apply saga | 至少一个 transport 候选的技术、官方契约与条款门禁完整通过并被明确选定后，实现 loopback bearer、profile、core-owner IPC、目标配置写入和完整失败回滚；其他候选可明确淘汰 | 仅受控实验规则可为 `true` |
-| 4. dogfood / experimental rollout | 当前用户、本机、显式 opt-in 的小范围验证与持续回归；发现上游/条款/语义漂移立即降级 | 受控且可撤销 |
-| 以后 | 每个供应商/产品/目标组合重新取证 | 默认 `false` |
+| 阶段 | 交付与门禁 | `canApply` | 当前进度（2026-08-12） |
+|---|---|---|---|
+| 0. 证据与 fixtures | 固化官方依据、条款结论、身份分类样例、Messages/IR/Responses/SSE 正反例 fixtures；确认参考实现许可边界 | `false` | **进行中**：`crates/agenthub-core/src/bridge/protocol/fixtures/` 已有 Messages / Responses / SSE 正反例；官方条款与 transport 选定证据仍未闭环 |
+| 1. 纯协议内核 | 无网络、无 secret 的 Anthropic Messages ↔ IR ↔ Responses 转换及状态机测试 | `false` | **内核已落地、门禁仍关闭**：`IrEvent` / `RetryGate`、`parse_messages_request`、`to_responses_request`、`responses_output_to_ir`、`ResponsesStreamToIr`、`encode_anthropic_sse` 与协议单测已在 core；**不得**据此开放 Apply |
+| 2. 认证 / transport spike | 分别验证 App Server 与经批准 Responses 候选；验证 OAuth refresh、single-flight、取消、工具副作用与不泄露 secret | `false` | **未开始**（或未完成证据）；Account OAuth refresh 能力存在 ≠ 已批准上游 transport |
+| 3. sidecar profile 与 Apply saga | 至少一个 transport 候选的技术、官方契约与条款门禁完整通过并被明确选定后，实现 loopback bearer、profile、core-owner IPC、目标配置写入和完整失败回滚；其他候选可明确淘汰 | 仅受控实验规则可为 `true` | **未开始**；控制面 IPC 与 Connections 领域仍见 sidecar 设计文档；**不得**跳过 phase 2 |
+| 4. dogfood / experimental rollout | 当前用户、本机、显式 opt-in 的小范围验证与持续回归；发现上游/条款/语义漂移立即降级 | 受控且可撤销 | **未开始** |
+| 以后 | 每个供应商/产品/目标组合重新取证 | 默认 `false` | 默认拒绝 |
 
 测试矩阵至少覆盖：文本与多轮上下文、system/developer、tool definition / call / result / 并行调用、thinking 降级、usage、stop reason、上游错误、取消、SSE 分片与 Unicode；首事件前/后重试分界；refresh single-flight 与账户失效隔离；loopback bearer 拒绝缺失/错误 token；日志与 IPC 不含授权 JSON、access/refresh token、prompt、工具参数或响应正文；sidecar/GUI 进程和数据库所有权；端口冲突、配置 revision 冲突、启动后写入失败与写入后验证失败的逆序回滚。
 

@@ -1,4 +1,8 @@
-import type { AdapterPort } from '@/lib/backend/contracts/adapter';
+import {
+  adapterCommandError,
+  isAdapterErrorCodeRetryable,
+  type AdapterPort,
+} from '@/lib/backend/contracts/adapter';
 import {
   mapAdapterApplyPlan,
   mapAdapterApplyResult,
@@ -13,42 +17,96 @@ import {
 } from '@/lib/backend/contracts/adapter-wire';
 import { invoke } from './invoke';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function payloadFromUnknown(error: unknown): unknown {
+  if (!isRecord(error)) return error;
+  if ('code' in error && 'message' in error) return error;
+  if ('payload' in error) return error.payload;
+  if (isRecord(error.error)) return error.error;
+  return error;
+}
+
+/** Map a Tauri Adapter command rejection onto the shared structured error. */
+export function mapAdapterInvokeError(error: unknown): never {
+  const payload = payloadFromUnknown(error);
+  if (isRecord(payload) && typeof payload.code === 'string' && typeof payload.message === 'string') {
+    throw adapterCommandError({
+      code: payload.code,
+      message: payload.message,
+      details: typeof payload.details === 'string' ? payload.details : null,
+      retryable: typeof payload.retryable === 'boolean'
+        ? payload.retryable
+        : isAdapterErrorCodeRetryable(payload.code),
+    });
+  }
+  if (typeof payload === 'string') {
+    const match = payload.match(/^(.*)\s\[([^\]]+)\]\s*$/);
+    if (match) {
+      throw adapterCommandError({
+        code: match[2],
+        message: match[1].trim(),
+      });
+    }
+    throw adapterCommandError({
+      code: 'adapter.command',
+      message: payload,
+      retryable: false,
+    });
+  }
+  throw adapterCommandError({
+    code: 'adapter.command',
+    message: error instanceof Error ? error.message : '适配操作失败',
+    retryable: false,
+  });
+}
+
+async function invokeAdapter<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(cmd, args);
+  } catch (error) {
+    mapAdapterInvokeError(error);
+  }
+}
+
 /** Tauri-only route preview transport. */
 export function createTauriAdapterPort(): AdapterPort {
   return {
     async analyze(request) {
-      const wire = await invoke<AdapterRouteAnalysisWire>('analyze_adapter', { ...request });
+      const wire = await invokeAdapter<AdapterRouteAnalysisWire>('analyze_adapter', { ...request });
       return mapAdapterRouteAnalysis(wire);
     },
     async plan(request) {
-      const wire = await invoke<AdapterApplyPlanWire>('plan_adapter', { ...request });
+      const wire = await invokeAdapter<AdapterApplyPlanWire>('plan_adapter', { ...request });
       return mapAdapterApplyPlan(wire);
     },
     async listProfiles(filter) {
-      const wire = await invoke<AdapterProfileWire[]>('list_adapter_profiles', { ...filter });
+      const wire = await invokeAdapter<AdapterProfileWire[]>('list_adapter_profiles', { ...filter });
       return wire.map(mapAdapterProfile);
     },
     async apply(request) {
-      const wire = await invoke<AdapterApplyResultWire>('apply_adapter', { ...request });
+      const wire = await invokeAdapter<AdapterApplyResultWire>('apply_adapter', { ...request });
       return mapAdapterApplyResult(wire);
     },
     async remove(profileId) {
-      await invoke<void>('remove_adapter', { profileId });
+      await invokeAdapter<void>('remove_adapter', { profileId });
     },
     async startBridge(profileId) {
-      const wire = await invoke<AdapterBridgeStatusDtoWire>('start_adapter_bridge', { profileId });
+      const wire = await invokeAdapter<AdapterBridgeStatusDtoWire>('start_adapter_bridge', { profileId });
       return mapAdapterBridgeStatusDto(wire);
     },
     async stopBridge(profileId) {
-      const wire = await invoke<AdapterBridgeStatusDtoWire>('stop_adapter_bridge', { profileId });
+      const wire = await invokeAdapter<AdapterBridgeStatusDtoWire>('stop_adapter_bridge', { profileId });
       return mapAdapterBridgeStatusDto(wire);
     },
     async getBridgeStatus(profileId) {
-      const wire = await invoke<AdapterBridgeStatusDtoWire>('get_adapter_bridge_status', { profileId });
+      const wire = await invokeAdapter<AdapterBridgeStatusDtoWire>('get_adapter_bridge_status', { profileId });
       return mapAdapterBridgeStatusDto(wire);
     },
     async setBridgeAutoStart(profileId, autoStart) {
-      const wire = await invoke<AdapterProfileWire>('set_adapter_bridge_auto_start', {
+      const wire = await invokeAdapter<AdapterProfileWire>('set_adapter_bridge_auto_start', {
         profileId,
         autoStart,
       });

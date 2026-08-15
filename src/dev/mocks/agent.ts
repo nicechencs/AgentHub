@@ -1,4 +1,4 @@
-import { AGENTS, AGENT_MAP } from '@/config/agents';
+import { AGENTS, AGENT_MAP, agentDisplayName } from '@/config/agents';
 import { enrichStatusesWithConnections } from '@/lib/api/agent-connection';
 import type { Backend, AgentPort } from '@/lib/backend/contracts';
 import { mergeAgentListWithCatalog } from '@/lib/backend/contracts/agent-catalog';
@@ -30,75 +30,109 @@ export { EnvNotReadyError, InstallFailedError, mergeAgentListWithCatalog };
  * - codex: npm installed, up to date → gray force
  * - others: not installed until user installs
  */
-const state: Record<AgentId, AgentStatus> = {
-  claude: {
-    agentId: 'claude',
-    installed: true,
-    version: '1.0.0',
-    latestVersion: '1.2.0',
-    channel: 'npm',
-    binPath: '~/AppData/Roaming/npm/claude.cmd',
-    authStatus: 'none',
-    authLabel: '未配置',
-    running: false,
-    capabilities: MOCK_CAPABILITIES.claude,
-  },
-  codex: {
-    agentId: 'codex',
-    installed: true,
-    version: '0.50.0',
-    latestVersion: '0.50.0',
-    channel: 'npm',
-    binPath: '~/AppData/Roaming/npm/codex.cmd',
-    authStatus: 'none',
-    authLabel: '未配置',
-    running: false,
-    capabilities: MOCK_CAPABILITIES.codex,
-  },
-  kimi: {
-    agentId: 'kimi',
-    installed: false,
-    authStatus: 'none',
-    authLabel: '未配置',
-    running: false,
-    capabilities: MOCK_CAPABILITIES.kimi,
-  },
-  grok: {
-    agentId: 'grok',
-    installed: false,
-    authStatus: 'none',
-    authLabel: '未配置',
-    running: false,
-    capabilities: MOCK_CAPABILITIES.grok,
-  },
-  pi: {
-    agentId: 'pi',
-    installed: false,
-    authStatus: 'none',
-    authLabel: '未配置',
-    running: false,
-    capabilities: MOCK_CAPABILITIES.pi,
-  },
-  workbuddy: {
-    agentId: 'workbuddy',
-    installed: true,
-    version: '5.3.8',
-    channel: 'native',
-    binPath: '~/AppData/Local/Programs/WorkBuddy/WorkBuddy.exe',
-    authStatus: 'none',
-    authLabel: '未配置',
-    running: false,
-    capabilities: MOCK_CAPABILITIES.workbuddy,
-  },
-  cursor: {
-    agentId: 'cursor',
-    installed: false,
-    authStatus: 'none',
-    authLabel: '未配置',
-    running: false,
-    capabilities: MOCK_CAPABILITIES.cursor,
-  },
-};
+function defaultMockAgentStatuses(): Record<AgentId, AgentStatus> {
+  return {
+    claude: {
+      agentId: 'claude',
+      installed: true,
+      version: '1.0.0',
+      latestVersion: '1.2.0',
+      channel: 'npm',
+      binPath: '~/AppData/Roaming/npm/claude.cmd',
+      authStatus: 'none',
+      authLabel: '未配置',
+      running: false,
+      capabilities: MOCK_CAPABILITIES.claude,
+    },
+    codex: {
+      agentId: 'codex',
+      installed: true,
+      version: '0.50.0',
+      latestVersion: '0.50.0',
+      channel: 'npm',
+      binPath: '~/AppData/Roaming/npm/codex.cmd',
+      authStatus: 'none',
+      authLabel: '未配置',
+      running: false,
+      capabilities: MOCK_CAPABILITIES.codex,
+    },
+    kimi: {
+      agentId: 'kimi',
+      installed: false,
+      authStatus: 'none',
+      authLabel: '未配置',
+      running: false,
+      capabilities: MOCK_CAPABILITIES.kimi,
+    },
+    grok: {
+      agentId: 'grok',
+      installed: false,
+      authStatus: 'none',
+      authLabel: '未配置',
+      running: false,
+      capabilities: MOCK_CAPABILITIES.grok,
+    },
+    pi: {
+      agentId: 'pi',
+      installed: false,
+      authStatus: 'none',
+      authLabel: '未配置',
+      running: false,
+      capabilities: MOCK_CAPABILITIES.pi,
+    },
+    workbuddy: {
+      agentId: 'workbuddy',
+      installed: true,
+      version: '5.3.8',
+      channel: 'native',
+      binPath: '~/AppData/Local/Programs/WorkBuddy/WorkBuddy.exe',
+      authStatus: 'none',
+      authLabel: '未配置',
+      running: false,
+      capabilities: MOCK_CAPABILITIES.workbuddy,
+    },
+    cursor: {
+      agentId: 'cursor',
+      installed: false,
+      authStatus: 'none',
+      authLabel: '未配置',
+      running: false,
+      capabilities: MOCK_CAPABILITIES.cursor,
+    },
+  };
+}
+
+const state: Record<AgentId, AgentStatus> = defaultMockAgentStatuses();
+
+/** Restore default install flags so opt-in ConnectFlow seeds do not leak across tests. */
+export function resetMockAgentStatuses(): void {
+  const defaults = defaultMockAgentStatuses();
+  (Object.keys(defaults) as AgentId[]).forEach((id) => {
+    const next = defaults[id];
+    const current = state[id] ?? (state[id] = next);
+    current.installed = next.installed;
+    current.version = next.version;
+    current.latestVersion = next.latestVersion;
+    current.channel = next.channel;
+    current.binPath = next.binPath;
+    current.authStatus = next.authStatus;
+    current.authLabel = next.authLabel;
+    current.running = next.running;
+    current.currentProvider = next.currentProvider;
+    current.capabilities = next.capabilities;
+  });
+}
+
+/** Test / opt-in fixture helper. Does not run from createBackend(). */
+export function markMockAgentInstalled(agentId: AgentId, installed = true): void {
+  const current = state[agentId] ?? (state[agentId] = missingAgentStatus(agentId));
+  current.installed = installed;
+  if (installed) {
+    current.version = current.version ?? '1.0.0';
+    current.channel = current.channel ?? 'npm';
+    current.binPath = current.binPath ?? `~/AppData/Roaming/npm/${agentId}.cmd`;
+  }
+}
 
 function missingAgentStatus(id: AgentId): AgentStatus {
   return {
@@ -352,7 +386,7 @@ function mockUpdateInfo(agentId: AgentId): AgentUpdateInfo {
 
 /** Mock-only install log lines for InstallOutcome.logs */
 function mockInstallLogs(agentId: AgentId, action: 'install' | 'upgrade'): string[] {
-  const name = AGENT_MAP[agentId]?.name ?? agentId;
+  const name = agentDisplayName(agentId);
   const ver = state[agentId].latestVersion ?? '1.0.0';
   return [
     `$ agenthub ${action} ${agentId}`,

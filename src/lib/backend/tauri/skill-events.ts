@@ -1,15 +1,13 @@
 /**
  * Tauri-only skill filesystem events.
- * Browser / mock builds: subscribe is a no-op.
+ * Only Tauri ports may import this module.
  */
+import type { SkillsFsChangedPayload } from '@/lib/backend/contracts/skill-types';
 import { isTauriApp } from '@/lib/platform';
 
 export const SKILLS_FS_CHANGED_EVENT = 'skills-fs-changed';
 
-export interface SkillsFsChangedPayload {
-  source?: string;
-  roots?: number;
-}
+export type { SkillsFsChangedPayload };
 
 /**
  * Subscribe to debounced skill-directory changes from the Rust watcher.

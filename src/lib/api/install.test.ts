@@ -6,16 +6,18 @@ const installRuntimePort = vi.fn(async () => ({
   logs: [],
   message: 'ok',
 }));
+const onProgressPort = vi.fn(() => () => {});
 
 vi.mock('@/app/runtime', () => ({
   getBackend: () => ({
     install: {
       installRuntime: installRuntimePort,
+      onProgress: onProgressPort,
     },
   }),
 }));
 
-import { installRuntime } from './install';
+import { installRuntime, onInstallProgress } from './install';
 
 describe('installRuntime façade', () => {
   it('omits channel so the host can pick brew on macOS or winget on Windows', async () => {
@@ -28,5 +30,15 @@ describe('installRuntime façade', () => {
     installRuntimePort.mockClear();
     await installRuntime('git', 'brew');
     expect(installRuntimePort).toHaveBeenCalledWith('git', 'brew');
+  });
+});
+
+describe('onInstallProgress façade', () => {
+  it('forwards the handler to InstallPort.onProgress', async () => {
+    const handler = vi.fn();
+    onProgressPort.mockClear();
+    const unsub = await onInstallProgress(handler);
+    expect(onProgressPort).toHaveBeenCalledWith(handler);
+    expect(typeof unsub).toBe('function');
   });
 });

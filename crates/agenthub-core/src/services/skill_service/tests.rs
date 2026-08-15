@@ -1816,3 +1816,140 @@ fn foreign_projection_map_status_is_conflict_not_blocked() {
     assert_eq!(p.map_status, SkillMapStatus::Conflict);
     assert!(p.map_status.is_actionable());
 }
+
+// -----------------------------------------------------------------------
+// list_catalog
+// -----------------------------------------------------------------------
+
+#[test]
+fn list_catalog_shared_skill_is_projectable_with_projections() {
+    let tmp = real_tempdir();
+    let source = tmp.path().join("skills");
+    let claude = tmp.path().join("claude-skills");
+    let codex = tmp.path().join("codex-skills");
+    let grok = tmp.path().join("grok-skills");
+    write_file(
+        &source.join("demo").join("SKILL.md"),
+        &skill_md("Demo", "shared"),
+    );
+
+    let svc = SkillService::new(source, make_registry(claude, codex, grok));
+    let listed = svc.list().unwrap();
+    let catalog = svc.list_catalog().unwrap();
+    let shared = catalog
+        .iter()
+        .find(|s| s.id == "demo" && s.origin == "shared")
+        .expect("shared catalog row");
+    assert!(shared.projectable);
+    assert_eq!(shared.map_status, SkillMapStatus::Available);
+    assert_eq!(shared.projections.len(), AgentId::ALL.len());
+    assert_eq!(shared.projections, listed[0].projections);
+}
+
+#[test]
+fn list_catalog_claude_private_skill_is_private_source() {
+    let tmp = real_tempdir();
+    let source = tmp.path().join("skills");
+    fs::create_dir_all(&source).unwrap();
+    let claude = tmp.path().join("claude-skills");
+    let codex = tmp.path().join("codex-skills");
+    let grok = tmp.path().join("grok-skills");
+    write_file(
+        &claude.join("hatch-pet").join("SKILL.md"),
+        &skill_md("hatch-pet", "private"),
+    );
+
+    let svc = SkillService::new(source, make_registry(claude, codex, grok));
+    let catalog = svc.list_catalog().unwrap();
+    let private = catalog
+        .iter()
+        .find(|s| s.id == "hatch-pet" && s.origin == "claude")
+        .expect("claude private catalog row");
+    assert!(!private.projectable);
+    assert_eq!(private.map_status, SkillMapStatus::PrivateSource);
+    assert!(private.projections.is_empty());
+}
+
+#[test]
+fn list_catalog_same_id_in_two_agents_is_two_rows() {
+    let tmp = real_tempdir();
+    let source = tmp.path().join("skills");
+    fs::create_dir_all(&source).unwrap();
+    let claude = tmp.path().join("claude-skills");
+    let codex = tmp.path().join("codex-skills");
+    let grok = tmp.path().join("grok-skills");
+    write_file(
+        &claude.join("solo").join("SKILL.md"),
+        &skill_md("Solo", "claude-copy"),
+    );
+    write_file(
+        &codex.join("solo").join("SKILL.md"),
+        &skill_md("Solo", "codex-copy"),
+    );
+
+    let svc = SkillService::new(source, make_registry(claude, codex, grok));
+    let catalog = svc.list_catalog().unwrap();
+    let rows: Vec<_> = catalog.iter().filter(|s| s.id == "solo").collect();
+    assert_eq!(rows.len(), 2, "same private id must stay two catalog rows");
+    assert!(rows.iter().any(|s| s.origin == "claude"));
+    assert!(rows.iter().any(|s| s.origin == "codex"));
+    for row in rows {
+        assert!(!row.projectable);
+        assert_eq!(row.map_status, SkillMapStatus::PrivateSource);
+        assert!(row.projections.is_empty());
+    }
+}
+
+#[test]
+fn list_catalog_omits_agent_copy_when_shared_has_same_id() {
+    let tmp = real_tempdir();
+    let source = tmp.path().join("skills");
+    let claude = tmp.path().join("claude-skills");
+    let codex = tmp.path().join("codex-skills");
+    let grok = tmp.path().join("grok-skills");
+    let same = skill_md("Demo", "same-bytes");
+    write_file(&source.join("demo").join("SKILL.md"), &same);
+    write_file(&claude.join("demo").join("SKILL.md"), &same);
+    write_file(
+        &source.join("other").join("SKILL.md"),
+        &skill_md("Other", "shared-version"),
+    );
+    write_file(
+        &claude.join("other").join("SKILL.md"),
+        &skill_md("Other", "agent-local-version"),
+    );
+
+    let svc = SkillService::new(source, make_registry(claude, codex, grok));
+    let catalog = svc.list_catalog().unwrap();
+    assert!(catalog
+        .iter()
+        .any(|s| s.id == "demo" && s.origin == "shared"));
+    assert!(catalog
+        .iter()
+        .any(|s| s.id == "other" && s.origin == "shared"));
+    assert!(
+        !catalog
+            .iter()
+            .any(|s| s.id == "demo" && s.origin == "claude"),
+        "identical agent copy must not appear in catalog"
+    );
+    assert!(
+        !catalog
+            .iter()
+            .any(|s| s.id == "other" && s.origin == "claude"),
+        "conflicting agent copy must not appear in catalog"
+    );
+
+    // list_installed() still surfaces the Claude workspace rows.
+    let installed = svc.list_installed().unwrap();
+    let demo_agent = installed
+        .iter()
+        .find(|s| s.id == "demo" && s.origin == "claude")
+        .expect("list_installed still shows Claude demo");
+    assert_eq!(demo_agent.map_status, SkillMapStatus::Available);
+    let other_agent = installed
+        .iter()
+        .find(|s| s.id == "other" && s.origin == "claude")
+        .expect("list_installed still shows Claude other");
+    assert_eq!(other_agent.map_status, SkillMapStatus::Conflict);
+}

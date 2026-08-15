@@ -13,6 +13,7 @@ import {
   getBackend,
   loadAgentCatalog,
   loadAgentStatuses,
+  loadConnectionPool,
 } from '@/app/runtime';
 import { applyTheme, loadStoredTheme } from '@/lib/theme';
 import { logger } from '@/lib/logger';
@@ -44,6 +45,9 @@ function startBackgroundPreload(): Promise<void> {
   // fire-and-forget：失败写日志，不抛到 splash
   void loadAgentStatuses(getBackend()).catch((e) => {
     log.error('agent status load failed', e);
+  });
+  void loadConnectionPool(getBackend()).catch((e) => {
+    log.error('connection pool load failed', e);
   });
 
   return loadAgentCatalog(getBackend())

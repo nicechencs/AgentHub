@@ -1,0 +1,26 @@
+{
+  "model": "gpt-5",
+  "max_tokens": 256,
+  "stream": false,
+  "system": "Answer precisely.",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello, 世界"
+    }
+  ],
+  "tools": [
+    {
+      "name": "weather",
+      "description": "Get weather",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "city": { "type": "string" }
+        }
+      }
+    }
+  ],
+  "tool_choice": { "type": "auto" },
+  "temperature": 0.2
+}

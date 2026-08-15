@@ -54,9 +54,16 @@ pub fn refresh_pi_provider(credentials: &Value) -> Result<Value> {
         })?
         .to_string();
 
-    let token_json = match provider {
+    // Normalize aliases (e.g. openai → openai-codex) before dispatch.
+    let canonical = super::pi_auth_json_key(provider).unwrap_or(provider);
+    if !super::pi_provider_refreshable(canonical) {
+        return Err(AppError::Unsupported(format!(
+            "Pi token refresh not implemented for provider '{provider}'"
+        )));
+    }
+    let token_json = match canonical {
         "anthropic" => refresh_anthropic(&refresh)?,
-        "openai-codex" | "openai" => refresh_openai_codex(&refresh)?,
+        "openai-codex" => refresh_openai_codex(&refresh)?,
         "xai" => refresh_xai(&refresh)?,
         other => {
             return Err(AppError::Unsupported(format!(
@@ -82,7 +89,8 @@ pub fn refresh_pi_provider(credentials: &Value) -> Result<Value> {
         .get("expires_in")
         .and_then(|v| v.as_i64())
         .unwrap_or(3600);
-    let expires_ms = chrono::Utc::now().timestamp_millis() + expires_in * 1000 - 5 * 60 * 1000;
+    let expires_ms = chrono::Utc::now().timestamp_millis() + expires_in * 1000
+        - crate::catalog::limits::OAUTH_REFRESH_SKEW_MS;
     let expires_at = chrono::DateTime::from_timestamp(expires_ms / 1000, 0)
         .map(|dt| dt.to_rfc3339())
         .unwrap_or_default();
@@ -95,7 +103,7 @@ pub fn refresh_pi_provider(credentials: &Value) -> Result<Value> {
     });
 
     let mut identity = extract_oauth_identity(
-        provider,
+        canonical,
         &token_json,
         Some(&access),
         token_json.get("id_token").and_then(|v| v.as_str()),
@@ -103,11 +111,11 @@ pub fn refresh_pi_provider(credentials: &Value) -> Result<Value> {
     identity.merge_missing(&identity_from_credentials(credentials));
 
     let mut body = serde_json::Map::new();
-    body.insert(provider.to_string(), entry);
+    body.insert(canonical.to_string(), entry);
 
     let mut cred = serde_json::Map::new();
     cred.insert("format".into(), json!("auth_json"));
-    cred.insert("provider".into(), json!(provider));
+    cred.insert("provider".into(), json!(canonical));
     cred.insert("body".into(), Value::Object(body));
     cred.insert("access_token".into(), json!(access));
     cred.insert("refresh_token".into(), json!(new_refresh));
@@ -117,7 +125,7 @@ pub fn refresh_pi_provider(credentials: &Value) -> Result<Value> {
     tracing::info!(
         module = targets::OAUTH,
         op = "pi_refresh",
-        provider,
+        provider = canonical,
         has_email = identity.email.is_some(),
         "pi oauth token refreshed"
     );

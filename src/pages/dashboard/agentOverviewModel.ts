@@ -1,10 +1,36 @@
 import type { AgentMeta } from '@/config/agents';
 import { authDisplayForAgentStatus } from '@/lib/backend/contracts/auth-state';
-import type { AgentStatus, AuthStatus } from '@/lib/types';
+import type { AgentId, AgentStatus, AuthStatus } from '@/lib/types';
 
 /** 内容与骨架屏共用：auto-fit 自适应，支持任意 agent 数量 */
 export const AGENT_OVERVIEW_GRID =
   'grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]';
+
+/** 已安装 → 打开连接流程；未安装 / 环境未就绪 → 跳转 Agents 页 */
+export type AgentCardAction =
+  | { kind: 'connect' }
+  | { kind: 'navigate'; to: string };
+
+/** 卡片桥徽标态（调用方已把查询失败收敛为 unavailable） */
+export type AgentCardBridgeState = 'running' | 'stopped' | 'degraded' | 'unavailable';
+
+/**
+ * 徽标输入：由调用方完成 profile 联结与桥状态查询后传入。
+ * 模型层只做映射，不读 provider.meta、不发请求。
+ */
+export interface AgentCardBadgeInput {
+  /** 当前生效 provider.id 命中 AdapterProfile.generatedProviderId 时传入 */
+  viaAdapter?: { sourceLabel?: string } | null;
+  /** 命中的 profile 为 bridge 型时传入；查询失败传 unavailable，不得省略 */
+  bridge?: { state: AgentCardBridgeState } | null;
+}
+
+export const AGENT_CARD_BRIDGE_LABEL: Record<AgentCardBridgeState, string> = {
+  running: '运行中',
+  stopped: '已停止',
+  degraded: '已降级',
+  unavailable: '状态不可用',
+};
 
 /** 异常 = 未安装 / 环境未就绪 / 认证临期或失效 */
 export function isAgentIssue(status: AgentStatus | undefined): boolean {
@@ -47,7 +73,7 @@ export function cardAuthStatus(
 export interface AgentCardView {
   missing: boolean;
   envMissing: boolean;
-  target: string;
+  action: AgentCardAction;
   /** 已安装时展示在名称后的版本文案，如 `v2.1.218`；未安装为 null */
   versionText: string | null;
   metaText: string;
@@ -59,26 +85,42 @@ export interface AgentCardView {
   authHealth: ReturnType<typeof authDisplayForAgentStatus>['health'];
   /** 已装/未装两态均为 true：用于约束等高两行布局 */
   twoLineLayout: true;
+  /** 当前生效连接经 Adapter 投影时非空 */
+  viaAdapter?: { sourceLabel?: string };
+  /** 命中 bridge 型 profile 时非空；查询失败为 unavailable，不得省略 */
+  bridge?: { state: AgentCardBridgeState; label: string };
+}
+
+function mapViaAdapter(
+  input?: { sourceLabel?: string } | null,
+): { sourceLabel?: string } | undefined {
+  if (!input) return undefined;
+  const sourceLabel = input.sourceLabel?.trim();
+  return sourceLabel ? { sourceLabel } : {};
+}
+
+function mapBridgeBadge(
+  input?: { state: AgentCardBridgeState } | null,
+): { state: AgentCardBridgeState; label: string } | undefined {
+  if (!input) return undefined;
+  return { state: input.state, label: AGENT_CARD_BRIDGE_LABEL[input.state] };
 }
 
 /** 按 AGENTS 定义顺序生成卡片视图模型（不排序） */
 export function buildAgentCardView(
   meta: AgentMeta,
   status: AgentStatus | undefined,
+  badges?: AgentCardBadgeInput | null,
 ): AgentCardView {
   const missing = !status || !status.installed;
   const envMissing = missing && status?.envReady === false;
 
-  // 当前生效：账号/密钥 → accounts；API 供应商 → providers；未配置默认进连接页
-  const kind = status?.effectiveKind ?? 'none';
-  const target = missing
-    ? '/agents'
-    : kind === 'account'
-      ? `/connections?agent=${meta.id}`
-      : kind === 'api'
-        ? `/connections?mode=providers&agent=${meta.id}`
-        : `/connections?agent=${meta.id}`;
+  // 已安装：打开连接流程；未安装 / 环境未就绪：保留跳转 /agents
+  const action: AgentCardAction = missing
+    ? { kind: 'navigate', to: '/agents' }
+    : { kind: 'connect' };
 
+  const kind = status?.effectiveKind ?? 'none';
   const effective =
     status?.effectiveLabel ?? status?.currentProvider ?? '未配置';
   const version = status?.version ?? '—';
@@ -103,18 +145,29 @@ export function buildAgentCardView(
 
   const connectionHint =
     kind === 'account' ? '当前账号/密钥' : kind === 'api' ? '当前 API 配置' : '当前连接';
-  const ariaLabel = missing
+  let ariaLabel = missing
     ? envMissing
       ? `${meta.name}，环境未就绪，点击修复`
       : `${meta.name}，未安装，点击安装`
     : `${meta.name}，${versionText}，${authLabel}，${connectionHint} ${effective}，点击管理连接`;
+
+  const viaAdapter = mapViaAdapter(badges?.viaAdapter);
+  const bridge = mapBridgeBadge(badges?.bridge);
+  if (viaAdapter) {
+    ariaLabel += viaAdapter.sourceLabel
+      ? `，经兼容路由 · ${viaAdapter.sourceLabel}`
+      : '，经兼容路由';
+  }
+  if (bridge) {
+    ariaLabel += `，${bridge.label}`;
+  }
 
   const statusDotTitle = missing ? (envMissing ? '环境未就绪' : '未安装') : authLabel;
 
   return {
     missing,
     envMissing,
-    target,
+    action,
     versionText,
     metaText,
     metaClass,
@@ -124,16 +177,41 @@ export function buildAgentCardView(
     authStatus: cardAuthStatus(status, missing),
     authHealth: authDisplay.health,
     twoLineLayout: true,
+    ...(viaAdapter ? { viaAdapter } : {}),
+    ...(bridge ? { bridge } : {}),
   };
+}
+
+/** Dashboard index 已接线 onConnectRequest；未传回调时 connect 退化为 Connections 页 */
+export function agentCardConnectFallback(agentId: AgentId): string {
+  return `/connections?agent=${agentId}`;
+}
+
+/**
+ * 卡片交互决议：navigate 原样跳转；connect 有回调则发请求，否则退化为 Connections。
+ */
+export function resolveAgentCardInteraction(
+  action: AgentCardAction,
+  agentId: AgentId,
+  onConnectRequest?: (agentId: AgentId) => void,
+): { type: 'connect'; agentId: AgentId } | { type: 'navigate'; to: string } {
+  if (action.kind === 'navigate') {
+    return { type: 'navigate', to: action.to };
+  }
+  if (onConnectRequest) {
+    return { type: 'connect', agentId };
+  }
+  return { type: 'navigate', to: agentCardConnectFallback(agentId) };
 }
 
 /** 按 meta 顺序 merge 状态（位置稳定，不按异常重排） */
 export function mergeAgentsInOrder(
   agentMetas: readonly AgentMeta[],
   agents: readonly AgentStatus[],
+  badgeInputs?: Readonly<Partial<Record<AgentId, AgentCardBadgeInput>>> | null,
 ): Array<{ meta: AgentMeta; status: AgentStatus | undefined; view: AgentCardView }> {
   return agentMetas.map((meta) => {
     const status = agents.find((a) => a.agentId === meta.id);
-    return { meta, status, view: buildAgentCardView(meta, status) };
+    return { meta, status, view: buildAgentCardView(meta, status, badgeInputs?.[meta.id]) };
   });
 }

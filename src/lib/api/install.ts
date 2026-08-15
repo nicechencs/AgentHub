@@ -2,10 +2,15 @@
  * Install command façade — production uses Tauri install port.
  */
 import { getBackend } from '@/app/runtime';
-import type { InstallOutcome } from '@/lib/backend/contracts/install-types';
+import type {
+  InstallOutcome,
+  InstallProgressPayload,
+} from '@/lib/backend/contracts/install-types';
+import { isProgressForAgent } from '@/lib/backend/contracts/install-types';
 import type { AgentId, RuntimeId } from '@/lib/types';
 
-export type { InstallOutcome };
+export type { InstallOutcome, InstallProgressPayload };
+export { isProgressForAgent };
 
 export async function installRuntime(
   runtimeId: RuntimeId,
@@ -36,4 +41,11 @@ export async function uninstallAgentCmd(
 
 export async function openAgentConfigDir(agentId: AgentId): Promise<string> {
   return getBackend().install.openAgentConfigDir(agentId);
+}
+
+/** Subscribe to live install/upgrade/uninstall log lines. */
+export async function onInstallProgress(
+  handler: (payload: InstallProgressPayload) => void,
+): Promise<() => void> {
+  return getBackend().install.onProgress(handler);
 }

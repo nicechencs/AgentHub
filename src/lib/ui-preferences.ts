@@ -16,6 +16,8 @@ export const StorageKey = {
   usageLastCollectAt: `${PREFIX}usage-last-collect-at`,
   /** SemVer last dismissed via “稍后” on the update prompt */
   updateDismissedVersion: `${PREFIX}update-dismissed-version`,
+  /** One-shot: localStorage usage interval migrated into SQLite */
+  usageIntervalMigrated: `${PREFIX}usage-interval-migrated-v1`,
 } as const;
 
 export function loadJson<T>(key: string, fallback: T): T {

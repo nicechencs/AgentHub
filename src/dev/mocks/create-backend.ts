@@ -1,8 +1,13 @@
 import { seedAgentCatalog } from '@/app/runtime/agent-catalog-store';
-import type { Backend, CreateBackend } from '@/lib/backend/contracts';
-import { createMockAccountPort, getMockAccountById, restoreMockAccount } from './account';
+import type { Backend, BackendFeatures, CreateBackend } from '@/lib/backend/contracts';
+import {
+  createMockAccountPort,
+  getMockAccountById,
+  resetMockAccounts,
+  restoreMockAccount,
+} from './account';
 import { createMockAdapterPort, resetMockAdapters } from './adapter';
-import { createMockAgentPort } from './agent';
+import { createMockAgentPort, resetMockAgentStatuses } from './agent';
 import { createMockBackupPort } from './backup';
 import { createMockCatalogPort, resetMockAgentCatalog } from './catalog';
 import { createMockChatPort, resetChatMock } from './chat';
@@ -27,8 +32,24 @@ import { createMockSkillPort } from './skill';
 import { createMockUpdatePort } from './update';
 import { createMockUsagePort } from './usage';
 import { createMockTrashPort, resetMockTrash } from './trash';
+import { seedConnectFlowAdapterFixtures } from './connect-flow-fixtures';
 
-/** Browser / vitest backend — never selected by production build. */
+/** Mock implements switch undo + latency demos; export package stays closed. */
+export const MOCK_BACKEND_FEATURES: BackendFeatures = {
+  providerUndoSwitch: true,
+  providerTestLatency: true,
+  accountUndoSwitch: true,
+  backupExport: false,
+};
+
+/**
+ * Browser mock backend — never selected by production build.
+ *
+ * Interactive `pnpm dev:mock` seeds demo ConnectFlow credentials after reset
+ * (Kimi membership + Anthropic API, Pi marked installed) so Adapter plan/apply
+ * is reachable. The vitest factory stays an empty pool: no seed when
+ * `import.meta.env.VITEST` is set or `import.meta.env.MODE === 'test'`.
+ */
 export const createBackend: CreateBackend = () => {
   // Factory 创建干净状态（无需生产 port 上的 resetForTests）
   resetChatMock();
@@ -37,11 +58,17 @@ export const createBackend: CreateBackend = () => {
   resetMockConfig();
   resetMockTrash();
   resetMockAdapters();
+  resetMockAccounts();
   resetMockProviders();
+  resetMockAgentStatuses();
   // Seed full agent catalog (ids / names / channels / capabilities).
   seedAgentCatalog(MOCK_AGENT_CATALOG);
+  if (!import.meta.env.VITEST && import.meta.env.MODE !== 'test') {
+    seedConnectFlowAdapterFixtures();
+  }
 
   const backend = {
+    features: { ...MOCK_BACKEND_FEATURES },
     account: createMockAccountPort(),
     adapter: createMockAdapterPort({
       getAccountById: getMockAccountById,
@@ -73,5 +100,12 @@ export const createBackend: CreateBackend = () => {
   backend.agent = createMockAgentPort(backend);
   return backend;
 };
+
+/**
+ * Opt-in Adapter / ConnectFlow seed. Tests keep an empty pool from `createBackend()`
+ * and call this after `getBackend()` when they need apply-ready fixtures.
+ * Interactive `dev:mock` already seeds inside `createBackend()`.
+ */
+export { seedConnectFlowAdapterFixtures };
 
 export default createBackend;

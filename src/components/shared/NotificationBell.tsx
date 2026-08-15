@@ -48,15 +48,9 @@ export function NotificationBell() {
       case 'refresh-token':
         navigate('/connections');
         break;
-      case 'view-diff':
       case 'upgrade':
-        navigate(alert.actionKind === 'upgrade' ? '/agents' : '/connections?mode=providers');
+        navigate('/agents');
         break;
-      case 'backup-now':
-        navigate('/settings?tab=backups');
-        break;
-      default:
-        navigate('/');
     }
   };
 

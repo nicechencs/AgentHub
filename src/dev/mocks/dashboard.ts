@@ -12,28 +12,12 @@ let alerts: DashboardAlert[] = [
     agentId: 'grok',
   },
   {
-    id: 'alert-2',
-    level: 'warning',
-    message: 'Codex 配置被外部修改,与当前供应商不一致',
-    actionLabel: '查看差异',
-    actionKind: 'view-diff',
-    agentId: 'codex',
-  },
-  {
     id: 'alert-3',
     level: 'info',
     message: 'Claude Code 可升级到 v2.2.0',
     actionLabel: '去升级',
     actionKind: 'upgrade',
     agentId: 'claude',
-  },
-  {
-    id: 'alert-4',
-    level: 'warning',
-    message: 'Grok 上次备份已是 12 天前',
-    actionLabel: '立即备份',
-    actionKind: 'backup-now',
-    agentId: 'grok',
   },
 ];
 

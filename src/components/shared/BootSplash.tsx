@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { AgentDot } from '@/components/shared/AgentDot';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { cn } from '@/lib/utils';
 import { AGENT_COLOR_VARS } from '@/styles/tokens';
@@ -93,15 +94,14 @@ export function BootSplash({
         {/* Agent 品牌色点：handoff 下保留轻呼吸，避免“全静止” */}
         <div className="boot-splash__dots flex items-center gap-1.5" aria-hidden>
           {AGENT_COLOR_VARS.map((color, i) => (
-            <span
+            <AgentDot
               key={color}
-              className="boot-splash__dot boot-splash__dot--pulse h-1.5 w-1.5 rounded-full"
-              style={
-                {
-                  backgroundColor: color,
-                  animationDelay: `${i * 120}ms`,
-                } as React.CSSProperties
-              }
+              color={color}
+              size="sm"
+              title={null}
+              className="boot-splash__dot boot-splash__dot--pulse"
+              // Stagger via CSS var on the shared size class; delay lives on the node.
+              style={{ animationDelay: `${i * 120}ms` } as React.CSSProperties}
             />
           ))}
         </div>

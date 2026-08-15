@@ -4,8 +4,8 @@ use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, Transact
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    AdapterProfile, AdapterProfileFilter, AdapterProfileStatus, AdapterRoute, AdapterSourceKind,
-    AgentId,
+    AdapterProfile, AdapterProfileFilter, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
+    AdapterSourceKind, AgentId,
 };
 use crate::storage::Database;
 
@@ -69,7 +69,7 @@ impl AdapterProfileRepo {
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 r#"
-                SELECT id, name, source_kind, source_id, target_agent_id, route,
+                SELECT id, name, source_kind, source_id, target_agent_id, route, mode,
                        status, rule_id, rule_version, generated_provider_id,
                        local_port, auto_start, last_error_code, created_at, updated_at
                 FROM adapter_profiles
@@ -79,6 +79,7 @@ impl AdapterProfileRepo {
                   AND (?4 IS NULL OR route = ?4)
                   AND (?5 IS NULL OR status = ?5)
                   AND (?6 IS NULL OR auto_start = ?6)
+                  AND (?7 IS NULL OR mode = ?7)
                 ORDER BY source_kind ASC, source_id ASC, target_agent_id ASC, name ASC, id ASC
                 "#,
             )?;
@@ -90,6 +91,7 @@ impl AdapterProfileRepo {
                     filter.route.map(AdapterRoute::as_str),
                     filter.status.map(AdapterProfileStatus::as_str),
                     filter.auto_start.map(i64::from),
+                    filter.mode.map(AdapterProfileMode::as_str),
                 ],
                 map_raw_row,
             )?;
@@ -112,9 +114,9 @@ impl AdapterProfileRepo {
                 r#"
                 UPDATE adapter_profiles
                 SET name = ?2, source_kind = ?3, source_id = ?4, target_agent_id = ?5,
-                    route = ?6, status = ?7, rule_id = ?8, rule_version = ?9,
-                    generated_provider_id = ?10, local_port = ?11, auto_start = ?12,
-                    last_error_code = ?13, created_at = ?14, updated_at = ?15
+                    route = ?6, mode = ?7, status = ?8, rule_id = ?9, rule_version = ?10,
+                    generated_provider_id = ?11, local_port = ?12, auto_start = ?13,
+                    last_error_code = ?14, created_at = ?15, updated_at = ?16
                 WHERE id = ?1
                 "#,
                 params![
@@ -124,6 +126,7 @@ impl AdapterProfileRepo {
                     stored.source_id,
                     stored.target_agent_id.as_str(),
                     stored.route.as_str(),
+                    stored.mode.as_str(),
                     stored.status.as_str(),
                     stored.rule_id,
                     stored.rule_version,
@@ -207,10 +210,10 @@ fn insert_conn(conn: &Connection, profile: &AdapterProfile) -> Result<()> {
     conn.execute(
         r#"
         INSERT INTO adapter_profiles (
-            id, name, source_kind, source_id, target_agent_id, route, status,
+            id, name, source_kind, source_id, target_agent_id, route, mode, status,
             rule_id, rule_version, generated_provider_id, last_error_code,
             local_port, auto_start, created_at, updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
         "#,
         params![
             profile.id,
@@ -219,6 +222,7 @@ fn insert_conn(conn: &Connection, profile: &AdapterProfile) -> Result<()> {
             profile.source_id,
             profile.target_agent_id.as_str(),
             profile.route.as_str(),
+            profile.mode.as_str(),
             profile.status.as_str(),
             profile.rule_id,
             profile.rule_version,
@@ -236,7 +240,7 @@ fn insert_conn(conn: &Connection, profile: &AdapterProfile) -> Result<()> {
 fn get_conn(conn: &Connection, id: &str) -> Result<Option<AdapterProfile>> {
     conn.query_row(
         r#"
-        SELECT id, name, source_kind, source_id, target_agent_id, route,
+        SELECT id, name, source_kind, source_id, target_agent_id, route, mode,
                status, rule_id, rule_version, generated_provider_id,
                local_port, auto_start, last_error_code, created_at, updated_at
         FROM adapter_profiles WHERE id = ?1
@@ -257,6 +261,7 @@ struct RawAdapterProfile {
     source_id: String,
     target_agent_id: String,
     route: String,
+    mode: String,
     status: String,
     rule_id: String,
     rule_version: String,
@@ -276,6 +281,8 @@ impl RawAdapterProfile {
             .ok_or_else(|| invalid_enum("target_agent_id", &self.target_agent_id, &self.id))?;
         let route = parse_stored_route(&self.route)
             .ok_or_else(|| invalid_enum("route", &self.route, &self.id))?;
+        let mode = parse_stored_mode(&self.mode)
+            .ok_or_else(|| invalid_enum("mode", &self.mode, &self.id))?;
         let status = parse_stored_status(&self.status)
             .ok_or_else(|| invalid_enum("status", &self.status, &self.id))?;
         let local_port = self
@@ -296,6 +303,7 @@ impl RawAdapterProfile {
             source_id: self.source_id,
             target_agent_id,
             route,
+            mode,
             status,
             rule_id: self.rule_id,
             rule_version: self.rule_version,
@@ -332,6 +340,14 @@ fn parse_stored_route(value: &str) -> Option<AdapterRoute> {
     }
 }
 
+fn parse_stored_mode(value: &str) -> Option<AdapterProfileMode> {
+    match value {
+        "api" => Some(AdapterProfileMode::Api),
+        "oauth" => Some(AdapterProfileMode::Oauth),
+        _ => None,
+    }
+}
+
 fn parse_stored_status(value: &str) -> Option<AdapterProfileStatus> {
     match value {
         "applying" => Some(AdapterProfileStatus::Applying),
@@ -349,15 +365,16 @@ fn map_raw_row(row: &Row<'_>) -> rusqlite::Result<RawAdapterProfile> {
         source_id: row.get(3)?,
         target_agent_id: row.get(4)?,
         route: row.get(5)?,
-        status: row.get(6)?,
-        rule_id: row.get(7)?,
-        rule_version: row.get(8)?,
-        generated_provider_id: row.get(9)?,
-        local_port: row.get(10)?,
-        auto_start: row.get(11)?,
-        last_error_code: row.get(12)?,
-        created_at: row.get(13)?,
-        updated_at: row.get(14)?,
+        mode: row.get(6)?,
+        status: row.get(7)?,
+        rule_id: row.get(8)?,
+        rule_version: row.get(9)?,
+        generated_provider_id: row.get(10)?,
+        local_port: row.get(11)?,
+        auto_start: row.get(12)?,
+        last_error_code: row.get(13)?,
+        created_at: row.get(14)?,
+        updated_at: row.get(15)?,
     })
 }
 

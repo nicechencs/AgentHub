@@ -27,6 +27,29 @@ export {
 } from './AgentStatusProvider';
 
 export {
+  accountsForAgent,
+  beginConnectionPoolMutation,
+  connectionCountsByAgent,
+  endConnectionPoolMutation,
+  getConnectionPoolSnapshot,
+  loadConnectionPool,
+  markConnectionCurrent,
+  notifyConnectionPoolChanged,
+  providersForAgent,
+  resetConnectionPoolStore,
+  subscribeConnectionPool,
+} from './connection-pool-store';
+export type {
+  ConnectionPoolLoadState,
+  ConnectionPoolSnapshot,
+} from './connection-pool-store';
+export {
+  ConnectionPoolProvider,
+  useConnectionPool,
+  useConnectionPoolOptional,
+} from './ConnectionPoolProvider';
+
+export {
   getAppUpdateAvailable,
   resetAppUpdateStore,
   setAppUpdateAvailable,

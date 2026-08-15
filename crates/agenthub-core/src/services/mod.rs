@@ -3,6 +3,7 @@ pub mod account_quota;
 pub mod account_service;
 pub mod adapter_apply_service;
 pub mod adapter_bridge_service;
+pub mod adapter_route_constants;
 pub mod adapter_route_service;
 pub mod adapter_secret_resolver;
 pub mod agent_service;
@@ -22,6 +23,7 @@ pub mod skill_market;
 pub mod skill_service;
 pub mod skillhub_market;
 pub mod skillssh_market;
+pub mod switch_undo;
 pub mod update_check_service;
 pub mod usage_service;
 

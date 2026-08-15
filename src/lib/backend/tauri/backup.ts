@@ -35,7 +35,8 @@ export function createTauriBackupPort(): BackupPort {
     },
 
     async exportBackup(_backupId) {
-      throw unsupportedError('导出备份');
+      // Gated by BackendFeatures.backupExport; package export is not implemented.
+      throw unsupportedError('导出备份', '换机导出包尚未接入');
     },
   };
 }

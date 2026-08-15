@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Hint, Tip } from '@/components/ui/tooltip';
+import { StatusPin } from '@/components/shared/StatusPin';
 import { RUNTIME_MAP } from '@/config/runtimes';
 import { resolveAutoInstallPlan } from '@/lib/api/env';
 import type { EnvStatus, RuntimeDetect } from '@/lib/types';
@@ -51,7 +52,7 @@ function chipVariant(status: EnvStatus): 'success' | 'warning' | 'default' {
 
 function statusIconMuted(status: EnvStatus) {
   if (status === 'missing') {
-    return <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted" />;
+    return <StatusPin tone="muted" />;
   }
   return statusIcon(status);
 }

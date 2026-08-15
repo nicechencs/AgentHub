@@ -7,6 +7,9 @@ use crate::models::{
 };
 use crate::runtime;
 use crate::utils::atomic::atomic_write;
+use crate::utils::grok_toml::{
+    active_model_alias, ensure_grok_model_shape, EnsureGrokModelShapeOptions,
+};
 use crate::utils::paths::{agent_home, home_dir};
 use crate::utils::redact::mask_secret_preview;
 use toml_edit::{DocumentMut, Item};
@@ -300,80 +303,20 @@ impl AgentAdapter for GrokAdapter {
     }
 }
 
-fn active_model_alias(doc: &DocumentMut) -> String {
-    doc.get("models")
-        .and_then(Item::as_table)
-        .and_then(|models| models.get("default"))
-        .and_then(Item::as_str)
-        .map(str::trim)
-        .filter(|alias| !alias.is_empty())
-        .map(str::to_owned)
-        .or_else(|| {
-            doc.get("model")
-                .and_then(Item::as_table)
-                .and_then(|models| models.iter().next().map(|(key, _)| key.to_string()))
-        })
-        .unwrap_or_else(|| "grok".into())
-}
-
 fn ensure_grok_profile<'a>(
     doc: &'a mut DocumentMut,
     alias: &str,
 ) -> Result<&'a mut toml_edit::Table> {
-    let legacy_model = doc.get("model").and_then(Item::as_str).map(str::to_owned);
-    let legacy_base_url = doc
-        .get("base_url")
-        .and_then(Item::as_str)
-        .map(str::to_owned);
-
-    if doc.get("models").is_none() {
-        doc["models"] = toml_edit::table();
-    }
-    {
-        let models = doc["models"]
-            .as_table_mut()
-            .ok_or_else(|| AppError::InvalidArg("Grok models must be a table".into()))?;
-        if models.get("default").is_none() {
-            models["default"] = toml_edit::value(alias);
-        }
-        if models.get("web_search").is_none() {
-            models["web_search"] = toml_edit::value(alias);
-        }
-    }
-
-    if doc.get("model").and_then(Item::as_table).is_none() {
-        doc.remove("model");
-        doc["model"] = toml_edit::table();
-    }
-    {
-        let models = doc["model"]
-            .as_table_mut()
-            .ok_or_else(|| AppError::InvalidArg("Grok model must be a table".into()))?;
-        if models.get(alias).is_none() {
-            let mut entry = toml_edit::table();
-            if let Some(model) = legacy_model {
-                entry["model"] = toml_edit::value(model);
-            }
-            if let Some(base_url) = legacy_base_url {
-                entry["base_url"] = toml_edit::value(base_url);
-            }
-            models.insert(alias, entry);
-        }
-        if models.get(alias).and_then(Item::as_table).is_none() {
-            return Err(AppError::InvalidArg(format!(
-                "Grok model.{alias} must be a table"
-            )));
-        }
-    }
-
-    doc.remove("base_url");
-    doc.remove("api_key");
-    doc.remove("env_key");
-    doc["model"]
-        .as_table_mut()
-        .and_then(|models| models.get_mut(alias))
-        .and_then(Item::as_table_mut)
-        .ok_or_else(|| AppError::InvalidArg(format!("Grok model.{alias} must be a table")))
+    // Account writers set api_key immediately after ensure; strip root env_key so
+    // leftover env pointers cannot shadow the nested registry entry.
+    ensure_grok_model_shape(
+        doc,
+        alias,
+        EnsureGrokModelShapeOptions {
+            migrate_legacy_api_key: false,
+            strip_root_env_key: true,
+        },
+    )
 }
 
 fn read_grok_api_key(path: &Path) -> Result<Option<String>> {

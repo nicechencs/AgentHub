@@ -10,7 +10,11 @@ use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    AgentConfig, AgentId, BackupKind, Provider, ProviderInput, ProviderSwitchResult,
+    AgentConfig, AgentId, BackupKind, Capability, Provider, ProviderInput, ProviderSwitchResult,
+};
+use crate::services::switch_undo::{
+    clear_switch_undo, extract_probe_url, peek_switch_undo, probe_url_latency_ms,
+    record_switch_undo, PROVIDER_UNDO_PREFIX,
 };
 use crate::services::{
     AdapterSecretResolver, BackupService, ConnectionService, LiveWriteAuthority, LiveWriteGuard,
@@ -25,6 +29,7 @@ pub const MAX_PROVIDER_NAME_LEN: usize = 256;
 
 /// Business facade over [`ProviderRepo`].
 pub struct ProviderService {
+    db: Database,
     repo: ProviderRepo,
     registry: AdapterRegistry,
     backup: Option<BackupService>,
@@ -98,6 +103,7 @@ impl ProviderService {
     /// Inject adapters for tests or callers that only need CRUD/import-live.
     pub fn with_registry(db: Database, registry: AdapterRegistry) -> Self {
         Self {
+            db: db.clone(),
             repo: ProviderRepo::new(db.clone()),
             registry,
             backup: None,
@@ -111,6 +117,7 @@ impl ProviderService {
     /// dependencies and backup location.
     pub fn with_live(db: Database, registry: AdapterRegistry, backups_root: PathBuf) -> Self {
         Self {
+            db: db.clone(),
             repo: ProviderRepo::new(db.clone()),
             backup: Some(BackupService::new(
                 db.clone(),
@@ -237,11 +244,9 @@ impl ProviderService {
     }
 
     fn update_and_snapshot(&self, input: &ProviderInput) -> Result<Provider> {
-        let result = self.update_inner(input);
-        if result.is_ok() {
-            self.snapshot_after_pool_change(input.agent_id, "after provider update");
-        }
-        result
+        let stored = self.update_inner(input)?;
+        self.sync_current_provider_live(&stored, "after provider update")?;
+        Ok(stored)
     }
 
     fn update_inner(&self, input: &ProviderInput) -> Result<Provider> {
@@ -289,11 +294,9 @@ impl ProviderService {
     }
 
     fn upsert_and_snapshot(&self, input: &ProviderInput) -> Result<Provider> {
-        let result = self.upsert_inner(input);
-        if result.is_ok() {
-            self.snapshot_after_pool_change(input.agent_id, "after provider upsert");
-        }
-        result
+        let stored = self.upsert_inner(input)?;
+        self.sync_current_provider_live(&stored, "after provider upsert")?;
+        Ok(stored)
     }
 
     fn upsert_inner(&self, input: &ProviderInput) -> Result<Provider> {
@@ -543,6 +546,7 @@ impl ProviderService {
         let live_before = adapter.read_config()?;
         ensure_config_agent(&live_before, agent)?;
         let current = self.repo.get_current(agent)?;
+        let previous_current_id = current.as_ref().map(|provider| provider.id.clone());
 
         let live_for_backfill = if live_config_is_empty(&live_before.raw) {
             None
@@ -631,6 +635,22 @@ impl ProviderService {
             }
         };
 
+        if let Some(from_id) = previous_current_id {
+            if from_id != provider.id {
+                record_switch_undo(
+                    &self.db,
+                    PROVIDER_UNDO_PREFIX,
+                    agent,
+                    &from_id,
+                    &provider.id,
+                )?;
+            } else {
+                clear_switch_undo(&self.db, PROVIDER_UNDO_PREFIX, agent)?;
+            }
+        } else {
+            clear_switch_undo(&self.db, PROVIDER_UNDO_PREFIX, agent)?;
+        }
+
         Ok(ProviderSwitchResult {
             provider,
             backup: snapshot,
@@ -638,14 +658,91 @@ impl ProviderService {
         })
     }
 
+    /// Re-apply the previous provider after a successful [`Self::switch`], if recorded.
+    ///
+    /// Returns `false` when there is no undo target (never switched, or already undone).
+    pub fn undo_switch(&self, agent: AgentId) -> Result<bool> {
+        let Some(from_id) = peek_switch_undo(&self.db, PROVIDER_UNDO_PREFIX, agent)? else {
+            return Ok(false);
+        };
+        // Re-switch writes a reverse undo slot; clear afterward for one-shot toast UX.
+        self.switch(&from_id, agent)?;
+        clear_switch_undo(&self.db, PROVIDER_UNDO_PREFIX, agent)?;
+        Ok(true)
+    }
+
+    /// Best-effort TCP/HTTP reachability probe of a saved provider base URL.
+    ///
+    /// Returns round-trip milliseconds when the endpoint answers (any HTTP status
+    /// counts as reachable). Missing URL or network failure → error.
+    pub fn test_latency(&self, agent: AgentId, provider_id: &str) -> Result<u64> {
+        let provider = self.get(provider_id, Some(agent))?;
+        let url = extract_probe_url(&provider.settings_config).ok_or_else(|| {
+            AppError::InvalidArg(
+                "该连接没有可探测的 Base URL（base_url / ANTHROPIC_BASE_URL 等）".into(),
+            )
+        })?;
+        probe_url_latency_ms(&url)
+    }
+
     /// Storage access for tests / future write paths (not used by list/show CLI).
     pub fn repo(&self) -> &ProviderRepo {
         &self.repo
     }
 
-    /// Pool changes do not rewrite live files, but retaining a post-change
-    /// snapshot makes imports/edits auditable and recoverable when live files
-    /// already exist. A missing live file is a normal no-op.
+    /// After a pool save: if this row is the active connection, write the
+    /// **new stored value** to live files. This must not reuse [`Self::switch`],
+    /// which treats the existing live file as authoritative for the current row.
+    ///
+    /// Non-current rows stay pool-only. Missing backup root / writer capability
+    /// is a no-op so CRUD tests and half-surface agents do not touch real files.
+    fn sync_current_provider_live(&self, stored: &Provider, note: &str) -> Result<()> {
+        if !stored.is_current {
+            self.snapshot_after_pool_change(stored.agent_id, note);
+            return Ok(());
+        }
+        let Some(backup) = self.backup.as_ref() else {
+            return Ok(());
+        };
+        let adapter = match self.adapter(stored.agent_id) {
+            Ok(adapter) => adapter,
+            Err(_) => return Ok(()),
+        };
+        if !adapter.capability(Capability::ConfigWrite).is_usable() {
+            self.snapshot_after_pool_change(stored.agent_id, note);
+            return Ok(());
+        }
+
+        let live_before = adapter.read_config()?;
+        ensure_config_agent(&live_before, stored.agent_id)?;
+        let materialized = self.secret_resolver.materialize_for_live(stored)?;
+        let target_config = AgentConfig {
+            agent: stored.agent_id,
+            raw: materialized.settings_config,
+        };
+        if live_before.raw == target_config.raw {
+            self.snapshot_after_pool_change(stored.agent_id, note);
+            return Ok(());
+        }
+
+        if let Err(error) = backup.snapshot(
+            stored.agent_id,
+            BackupKind::AutoSwitch,
+            Some(&format!("before applying current provider {}", stored.id)),
+        ) {
+            if error.code() != "not_found" {
+                return Err(error);
+            }
+        }
+        if let Err(error) = adapter.write_config(&target_config) {
+            let live_rollback = adapter.write_config(&live_before).err();
+            return Err(compensated_current_apply_error(error, live_rollback));
+        }
+        Ok(())
+    }
+
+    /// Pool-only changes keep an audit snapshot of the untouched live file.
+    /// A missing live file is a normal no-op.
     fn snapshot_after_pool_change(&self, agent: AgentId, note: &str) {
         let Some(backup) = self.backup.as_ref() else {
             return;
@@ -722,6 +819,20 @@ fn log_provider_op<T>(op: &str, agent: AgentId, started: Instant, result: &Resul
             );
         }
     }
+}
+
+fn compensated_current_apply_error(primary: AppError, live_rollback: Option<AppError>) -> AppError {
+    let Some(rollback) = live_rollback else {
+        return primary;
+    };
+    AppError::message(
+        "provider.current.apply.rollback",
+        format!(
+            "applying the current provider failed [{}]; compensation status: live={}",
+            primary.code(),
+            rollback.code()
+        ),
+    )
 }
 
 fn compensated_switch_error(

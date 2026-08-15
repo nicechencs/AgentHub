@@ -1,6 +1,8 @@
 pub mod agent_lock;
 pub mod atomic;
 pub mod command_exec;
+pub mod expiry;
+pub mod grok_toml;
 pub mod paths;
 pub mod process;
 pub mod project_path;

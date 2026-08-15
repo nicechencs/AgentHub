@@ -28,18 +28,41 @@ use agenthub_core::AgentHub;
 use serde::Serialize;
 
 /// Structured GUI error (keeps `code` for diagnostics).
+///
+/// Adapter commands return this type so the frontend can keep `code`,
+/// `message`, optional `details`, and `retryable`. Non-adapter commands
+/// still use [`map_err_string`].
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GuiError {
     pub code: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
+    pub retryable: bool,
 }
 
 impl GuiError {
     pub fn from_app(err: &AppError) -> Self {
+        Self::adapter(
+            err.code(),
+            agenthub_core::utils::redact::redact_text(&err.to_string()),
+            None,
+        )
+    }
+
+    pub(crate) fn adapter(
+        code: impl Into<String>,
+        message: impl Into<String>,
+        details: Option<String>,
+    ) -> Self {
+        let code = code.into();
+        let retryable = is_adapter_error_retryable(&code);
         Self {
-            code: err.code().to_string(),
-            message: agenthub_core::utils::redact::redact_text(&err.to_string()),
+            code,
+            message: message.into(),
+            details,
+            retryable,
         }
     }
 }
@@ -48,6 +71,77 @@ impl From<AppError> for GuiError {
     fn from(err: AppError) -> Self {
         Self::from_app(&err)
     }
+}
+
+/// Retryable Adapter command codes. Keep in lockstep with
+/// `isAdapterErrorCodeRetryable` on the frontend.
+///
+/// Retryable: `adapter.port_in_use`, `adapter.bridge_start`,
+/// `adapter.bridge_restore_*`, `adapter.bridge_upstream_auth`, and the
+/// `retryable:*` family.
+/// Not retryable: `adapter.bridge_rollback`, `adapter.bridge_stop`
+/// compensation, and `needs_attention`.
+pub(crate) fn is_adapter_error_retryable(code: &str) -> bool {
+    if code.starts_with("retryable:") {
+        return true;
+    }
+    matches!(
+        code,
+        "adapter.port_in_use" | "adapter.bridge_start" | "adapter.bridge_upstream_auth"
+    ) || code.starts_with("adapter.bridge_restore_")
+}
+
+fn is_structured_error_code(code: &str) -> bool {
+    !code.is_empty()
+        && !code.contains(' ')
+        && (code.contains('.')
+            || code.starts_with("retryable:")
+            || matches!(
+                code,
+                "needs_attention"
+                    | "not_found"
+                    | "invalid_arg"
+                    | "unsupported"
+                    | "io"
+                    | "db"
+                    | "json"
+            ))
+}
+
+/// Recover a structured Adapter error from a controller / legacy `String`
+/// without dropping a bracketed or bare error code.
+pub(crate) fn adapter_error_from_string(raw: String) -> GuiError {
+    let trimmed = raw.trim();
+    if is_structured_error_code(trimmed) {
+        return GuiError::adapter(trimmed, trimmed, None);
+    }
+    if let Some((code, message, details)) = split_legacy_error(trimmed) {
+        return GuiError::adapter(code, message, details);
+    }
+    GuiError::adapter("adapter.command", raw, None)
+}
+
+fn split_legacy_error(raw: &str) -> Option<(String, String, Option<String>)> {
+    let start = raw.rfind('[')?;
+    let end = raw[start + 1..].find(']')? + start + 1;
+    let code = &raw[start + 1..end];
+    if !is_structured_error_code(code) {
+        return None;
+    }
+    let before = raw[..start].trim_end();
+    let after = raw[end + 1..].trim();
+    let after = after.strip_prefix(':').map(str::trim).unwrap_or(after);
+    let message = if before.is_empty() {
+        raw.to_string()
+    } else {
+        before.to_string()
+    };
+    let details = if after.is_empty() {
+        None
+    } else {
+        Some(after.to_string())
+    };
+    Some((code.to_string(), message, details))
 }
 
 /// Map core error to String while logging (legacy commands still use String).

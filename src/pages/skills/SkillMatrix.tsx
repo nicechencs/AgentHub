@@ -1,6 +1,18 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { AlertTriangle, Check, ChevronDown, Circle, Eye, FolderOpen, Link2, Minus } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  Circle,
+  Eye,
+  FolderOpen,
+  Link2,
+  Minus,
+  Share2,
+  Trash2,
+} from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { Button } from '@/components/ui/button';
 import { ContextMenu, ContextMenuItem } from '@/components/ui/context-menu';
 import {
   ColumnResizeHandle,
@@ -16,11 +28,15 @@ import {
   type ColumnWidthSpec,
 } from '@/components/ui/table';
 import { Hint, Tip } from '@/components/ui/tooltip';
-import { AGENTS } from '@/config/agents';
-import { isMappedState } from '@/lib/api/skill';
+import { AGENTS, AGENT_MAP, agentDisplayName } from '@/config/agents';
+import {
+  isMappedState,
+  mapCoreSkill,
+  type InstalledSkillDto,
+} from '@/lib/api/skill';
 import { isCapabilityUsable } from '@/lib/capability';
 import { normalizeOpenPath } from '@/lib/path-open';
-import { sharedSkillActiveKey } from '@/lib/skills/preview-keys';
+import { privateSkillActiveKey, sharedSkillActiveKey } from '@/lib/skills/preview-keys';
 import type { AgentColumn } from '@/lib/hooks/useInstalledAgents';
 import type { AgentId, Skill, SkillMapStatus, SkillSyncState } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -74,20 +90,65 @@ function cellTitle(
   return skillsCopy.cell.tip(agentName, state, mapStatus, linkKind, reason);
 }
 
+export function catalogRowKey(row: Pick<InstalledSkillDto, 'origin' | 'id'>): string {
+  return `${row.origin}:${row.id}`;
+}
+
+export function isSharedCatalogRow(row: InstalledSkillDto): boolean {
+  return row.origin === 'shared';
+}
+
+/** 私有真源行：只在本工具，尚未加入共享库。投影副本不进表。 */
+export function isPrivateSourceRow(row: InstalledSkillDto): boolean {
+  return row.origin !== 'shared' && row.mapStatus === 'private_source';
+}
+
+/** 本地表可见行：共享矩阵 + 私有占位（不含已在共享库 / 冲突副本行） */
+export function visibleCatalogRows(rows: InstalledSkillDto[]): InstalledSkillDto[] {
+  return rows.filter((row) => isSharedCatalogRow(row) || isPrivateSourceRow(row));
+}
+
+export function catalogRowHasMapped(row: InstalledSkillDto): boolean {
+  return (row.projections ?? []).some((p) => isMappedState(p.state));
+}
+
+export function catalogRowHasConflict(row: InstalledSkillDto): boolean {
+  return (row.projections ?? []).some((p) => p.mapStatus === 'conflict');
+}
+
+function asMatrixSkill(row: InstalledSkillDto): Skill {
+  return mapCoreSkill({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    sourceDir: row.sourceDir,
+    projections: row.projections ?? [],
+  });
+}
+
+function isRealDescription(name: string, description?: string): boolean {
+  const desc = description?.trim() ?? '';
+  return !!desc && !/^[|>][+\-]?\d*$/.test(desc) && !desc.endsWith(' 技能') && desc !== `${name} 技能`;
+}
+
 interface SkillMatrixProps {
-  skills: Skill[];
+  /** catalog 行（共享 + 私有占位）；React key 为 `${origin}:${id}` */
+  rows: InstalledSkillDto[];
   selected: Set<string>;
   allSelected: boolean;
   pendingCells: Set<string>;
+  importingIds: Set<string>;
   onToggleSelect: (skillId: string) => void;
   onToggleSelectAll: () => void;
   onCellClick: (skill: Skill, agentId: AgentId) => void;
   /** 打开技能真源目录（sourceDir） */
   onOpenDir?: (path: string) => void;
   /** 预览本地 SKILL.md（Markdown） */
-  onPreview?: (skill: Skill) => void;
-  /** 当前预览复合 key（`shared:id`），与 checkbox selected 分离 */
+  onPreview?: (row: InstalledSkillDto) => void;
+  /** 当前预览复合 key（`shared:id` / `agent:id:skill`），与 checkbox selected 分离 */
   activeKey?: string | null;
+  onAdopt: (skillId: string, agentId: AgentId, name: string) => void;
+  onUninstall: (skillId: string, agentId: AgentId, name: string, inLibrary: boolean) => void;
   /**
    * 矩阵列：推荐传入「已安装」Agent（含不支持 skills 的，如 Kimi）。
    * 灰色单元格用后端 mapStatus 解释；未安装列仅在调用方显式传入时出现。
@@ -95,6 +156,62 @@ interface SkillMatrixProps {
   agents?: AgentColumn[];
   /** 已安装的 agent id 集合；缺省视为 props.agents 全部已安装 */
   installedAgentIds?: ReadonlySet<AgentId> | AgentId[];
+}
+
+function PrivateSkillPlaceholder({
+  row,
+  importing,
+  onAdopt,
+  onUninstall,
+}: {
+  row: InstalledSkillDto;
+  importing: boolean;
+  onAdopt: (skillId: string, agentId: AgentId, name: string) => void;
+  onUninstall: (skillId: string, agentId: AgentId, name: string, inLibrary: boolean) => void;
+}) {
+  const agentId = row.origin as AgentId;
+  const agentMeta = AGENT_MAP[agentId];
+  const agentName = agentDisplayName(agentId);
+  const W = skillsCopy.workspace;
+  const status = skillsCopy.cell.tip(agentName, 'absent', 'private_source');
+  return (
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+      <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted">
+        {agentMeta ? <AgentDot agentId={agentId} size="sm" /> : null}
+        <span className="truncate">
+          {agentName} · {status}
+        </span>
+      </span>
+      <div
+        className="flex shrink-0 flex-wrap items-center gap-1"
+        onClick={(e) => e.stopPropagation()}
+        onContextMenu={(e) => e.stopPropagation()}
+      >
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={importing}
+          aria-label={importing ? W.adoptBusy : W.adopt}
+          title={W.adoptHint}
+          onClick={() => onAdopt(row.id, agentId, row.name)}
+        >
+          <Share2 className={cn('h-3.5 w-3.5', importing && 'animate-pulse')} />
+          {importing ? W.adoptBusy : W.adopt}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-danger"
+          aria-label={W.removeAria}
+          title={W.remove}
+          onClick={() => onUninstall(row.id, agentId, row.name, false)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          {W.delete}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 /** 矩阵图标图例（默认折叠，记住用户选择） */
@@ -197,16 +314,19 @@ export function SkillMatrixLegend({ className }: { className?: string }) {
 
 /** 技能 × 工具同步矩阵 — lucide 图标 + sticky 表头；视觉协议见 ui/table */
 export function SkillMatrix({
-  skills,
+  rows,
   selected,
   allSelected,
   pendingCells,
+  importingIds,
   onToggleSelect,
   onToggleSelectAll,
   onCellClick,
   onOpenDir,
   onPreview,
   activeKey = null,
+  onAdopt,
+  onUninstall,
   agents,
   installedAgentIds,
   showLegend = true,
@@ -223,10 +343,11 @@ export function SkillMatrix({
   const { widths, onResizeStart } = useColumnWidths(MATRIX_WIDTH_SPECS);
   const tableMinWidth =
     CHECK_COL_W + widths.skill + widths.agent * Math.max(columns.length, 1);
+  const agentColSpan = Math.max(columns.length, 1);
   const [rowMenu, setRowMenu] = useState<{
     x: number;
     y: number;
-    skill: Skill;
+    row: InstalledSkillDto;
     path: string | null;
   } | null>(null);
 
@@ -280,45 +401,46 @@ export function SkillMatrix({
             </TableHeaderRow>
           </TableHeader>
           <TableBody>
-            {skills.map((skill) => {
-              // Hide placeholder / mis-parsed YAML block markers (`|`, `>`).
-              const desc = skill.description?.trim() ?? '';
-              const realDesc =
-                !!desc &&
-                !/^[|>][+\-]?\d*$/.test(desc) &&
-                !desc.endsWith(' 技能') &&
-                desc !== `${skill.name} 技能`;
-              const openPath = normalizeOpenPath(skill.sourceDir);
+            {rows.map((row) => {
+              const realDesc = isRealDescription(row.name, row.description);
+              const openPath =
+                normalizeOpenPath(row.sourceDir) ??
+                (isPrivateSourceRow(row) ? normalizeOpenPath(row.rootDir) : null);
               const canOpenDir = Boolean(openPath && onOpenDir);
               const canContext = Boolean(onPreview) || canOpenDir;
-              const rowActive = Boolean(activeKey && activeKey === sharedSkillActiveKey(skill.id));
+              const privateRow = isPrivateSourceRow(row);
+              const skill = privateRow ? null : asMatrixSkill(row);
+              const rowActive = Boolean(
+                activeKey &&
+                  (privateRow
+                    ? activeKey === privateSkillActiveKey(row.origin as AgentId, row.id)
+                    : activeKey === sharedSkillActiveKey(row.id)),
+              );
+              const openRowMenu = canContext
+                ? (e: { preventDefault: () => void; clientX: number; clientY: number }) => {
+                    e.preventDefault();
+                    setRowMenu({
+                      x: e.clientX,
+                      y: e.clientY,
+                      row,
+                      path: canOpenDir ? openPath : null,
+                    });
+                  }
+                : undefined;
               return (
-                <TableRow key={skill.id} active={rowActive}>
+                <TableRow key={catalogRowKey(row)} active={rowActive}>
                   <TableCell>
-                    <input
-                      type="checkbox"
-                      className="h-3.5 w-3.5 accent-accent"
-                      checked={selected.has(skill.id)}
-                      onChange={() => onToggleSelect(skill.id)}
-                      aria-label={`选择 ${skill.name}`}
-                    />
+                    {privateRow ? null : (
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 accent-accent"
+                        checked={selected.has(row.id)}
+                        onChange={() => onToggleSelect(row.id)}
+                        aria-label={`选择 ${row.name}`}
+                      />
+                    )}
                   </TableCell>
-                  <TableCell
-                    className="min-w-0"
-                    onContextMenu={
-                      canContext
-                        ? (e) => {
-                            e.preventDefault();
-                            setRowMenu({
-                              x: e.clientX,
-                              y: e.clientY,
-                              skill,
-                              path: canOpenDir ? openPath : null,
-                            });
-                          }
-                        : undefined
-                    }
-                  >
+                  <TableCell className="min-w-0" onContextMenu={openRowMenu}>
                     <div className="min-w-0">
                       {onPreview ? (
                         <button
@@ -327,41 +449,51 @@ export function SkillMatrix({
                             'block max-w-full truncate text-left text-sm font-medium text-primary',
                             'rounded-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
                           )}
-                          onClick={() => onPreview(skill)}
+                          onClick={() => onPreview(row)}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault();
-                              onPreview(skill);
+                              onPreview(row);
                             }
                           }}
                         >
-                          <Tip className="truncate" label={skill.name}>
-                            {skill.name}
+                          <Tip className="truncate" label={row.name}>
+                            {row.name}
                           </Tip>
                         </button>
                       ) : (
-                        <Tip className="truncate font-medium text-primary" label={skill.name}>
-                          {skill.name}
+                        <Tip className="truncate font-medium text-primary" label={row.name}>
+                          {row.name}
                         </Tip>
                       )}
                       {realDesc ? (
                         <Tip
                           className="mt-0.5 line-clamp-1 truncate text-sm text-secondary"
-                          label={skill.description}
+                          label={row.description}
                         >
-                          {skill.description}
+                          {row.description}
                         </Tip>
                       ) : null}
                     </div>
                   </TableCell>
-                  {columns.length === 0 ? (
+                  {privateRow ? (
+                    <TableCell colSpan={agentColSpan}>
+                      <PrivateSkillPlaceholder
+                        row={row}
+                        importing={importingIds.has(`${row.origin}:${row.id}`)}
+                        onAdopt={onAdopt}
+                        onUninstall={onUninstall}
+                      />
+                    </TableCell>
+                  ) : columns.length === 0 ? (
                     <TableCell className="text-xs text-muted" colSpan={1}>
                       暂无可用工具
                     </TableCell>
                   ) : (
                     columns.map((agent) => {
-                      const state = skill.sync[agent.id] ?? 'unsupported';
-                      const proj = skill.projections?.find((p) => p.agent === agent.id);
+                      const matrixSkill = skill!;
+                      const state = matrixSkill.sync[agent.id] ?? 'unsupported';
+                      const proj = matrixSkill.projections?.find((p) => p.agent === agent.id);
                       const agentInstalled = installedSet.has(agent.id);
                       const skillsCap = agent.capabilities?.skills;
                       const mapStatus = resolveMapStatus(
@@ -370,11 +502,11 @@ export function SkillMatrix({
                         agentInstalled,
                         isCapabilityUsable(skillsCap),
                       );
-                      const cellKey = `${skill.id}:${agent.id}`;
+                      const cellKey = `${row.id}:${agent.id}`;
                       const hasConflict =
                         mapStatus === 'conflict' ||
                         ((state === 'foreign' || state === 'conflict') &&
-                          skill.conflicts.includes(agent.id));
+                          matrixSkill.conflicts.includes(agent.id));
                       // conflict 仍可点；unsupported / not installed / target unavailable 不可点
                       const blocked =
                         mapStatus === 'agent_unsupported' ||
@@ -399,7 +531,7 @@ export function SkillMatrix({
                             <button
                               type="button"
                               disabled={!clickable}
-                              onClick={() => onCellClick(skill, agent.id)}
+                              onClick={() => onCellClick(matrixSkill, agent.id)}
                               aria-label={title}
                               className={cn(
                                 'relative inline-flex h-8 min-w-8 items-center justify-center rounded-btn px-1.5 transition-colors',
@@ -458,7 +590,7 @@ export function SkillMatrix({
           <ContextMenuItem
             onSelect={() => {
               if (!rowMenu) return;
-              onPreview(rowMenu.skill);
+              onPreview(rowMenu.row);
               setRowMenu(null);
             }}
           >

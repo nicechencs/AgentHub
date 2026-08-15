@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { AlertTriangle, Check } from 'lucide-react';
-import { AGENT_MAP } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
 import { tryLoadDoctorMapped } from '@/lib/api/doctor';
 import { missingPricingModels, parserHealth } from '@/lib/api/usage';
 import type { AgentId, ParserHealth } from '@/lib/types';
@@ -32,7 +32,7 @@ function toRowsFromParser(list: ParserHealth[]): Row[] {
 }
 
 function DashboardItem({ h }: { h: Row }) {
-  const name = AGENT_MAP[h.agentId]?.name ?? h.agentId;
+  const name = agentDisplayName(h.agentId);
   if (!h.supported) {
     return (
       <Tip className="text-muted" label="该 Agent 无本地会话日志解析源">
@@ -143,7 +143,7 @@ export function UsageParserHealth({
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-1">
           {rows.map((h) => {
-            const name = AGENT_MAP[h.agentId]?.name ?? h.agentId;
+            const name = agentDisplayName(h.agentId);
             if (!h.supported) {
               return (
                 <span key={h.agentId} className="text-muted">

@@ -10,23 +10,34 @@ import {
 import { looksLikeOfficialEndpoint } from '@/config/official-api';
 import {
   authDisplayForAccount,
+  authHealthLabel,
   type AuthHealth,
 } from '@/lib/backend/contracts/auth-state';
+import {
+  CONNECTION_KIND_FILTERS,
+  connectionKindLabel,
+  countByConnectionKind,
+  filterByConnectionKind,
+  kindBadge as sharedKindBadge,
+  type ConnectionKind,
+  type ConnectionKindFilter,
+} from '@/lib/connection-kind';
+import {
+  connectSourceKey,
+  type ConnectionUsage,
+  type ConnectionUsageMap,
+} from '@/lib/connect-flow/types';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
+
 /**
  * 列表行类型。
  * - oauth：官方登录
  * - apikey：API Key（含原 account apikey + 原 provider/供应商）
  */
-export type ConnectionKind = 'oauth' | 'apikey';
+export type { ConnectionKind };
+export type ConnectionFilter = ConnectionKindFilter;
 
-export type ConnectionFilter = 'all' | ConnectionKind;
-
-export const CONNECTION_FILTERS: Array<{ value: ConnectionFilter; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'oauth', label: '官方登录' },
-  { value: 'apikey', label: 'API Key' },
-];
+export const CONNECTION_FILTERS = CONNECTION_KIND_FILTERS;
 
 export type ConnectionEntry = {
   /** 列表稳定 key：`account:id` / `provider:id` */
@@ -57,6 +68,8 @@ export type ConnectionEntry = {
   endpointMode?: 'official' | 'custom';
   account?: Account;
   provider?: Provider;
+  /** 钱包用途；由页面层计算后经 usageMap 填入，未接线时缺省 */
+  usage?: ConnectionUsage;
 };
 
 export function authStatusOfAccount(a: Account): AuthStatus {
@@ -100,72 +113,86 @@ function providerSubtitle(
 ): string {
   const modeLabel = mode === 'official' ? '官方端点' : '自定义端点';
   const host = endpoint ? formatEndpointHost(endpoint) : undefined;
+  const health = authHealthLabel('configured');
   if (p.isCurrent) {
     return host
-      ? `已配置·未验证 · 当前生效 · ${modeLabel} · ${host}`
-      : `已配置·未验证 · 当前生效 · ${modeLabel}`;
+      ? `${health} · 当前生效 · ${modeLabel} · ${host}`
+      : `${health} · 当前生效 · ${modeLabel}`;
   }
   return host
-    ? `已配置·未验证 · 未生效 · ${modeLabel} · ${host}`
-    : `已配置·未验证 · 未生效 · ${modeLabel}`;
+    ? `${health} · 未生效 · ${modeLabel} · ${host}`
+    : `${health} · 未生效 · ${modeLabel}`;
 }
 
-export function accountToEntry(a: Account): ConnectionEntry {
-  return {
-    key: `account:${a.id}`,
-    source: 'account',
-    kind: a.kind === 'apikey' ? 'apikey' : 'oauth',
-    id: a.id,
-    agentId: a.agentId,
-    title: a.label,
-    subtitle: accountSubtitle(a),
-    isCurrent: a.isCurrent,
-    authStatus: authStatusOfAccount(a),
-    authHealth: authHealthOfAccount(a),
-    sortKey: a.updatedAt || a.lastUsedAt || a.createdAt || '',
-    identityLabel: a.identityLabel,
-    subscription: a.subscription,
-    quota5hPct: a.quota5hPct,
-    quota7dPct: a.quota7dPct,
-    quotaResetIn: a.quotaResetIn,
-    quota7dResetIn: a.quota7dResetIn,
-    // 账号池 API Key 默认视为官方直连（无 endpoint 字段）
-    endpointMode: a.kind === 'apikey' ? 'official' : undefined,
-    account: a,
-  };
+function attachUsage(entry: ConnectionEntry, usageMap?: ConnectionUsageMap): ConnectionEntry {
+  if (!usageMap) return entry;
+  const usage = usageMap.get(connectSourceKey({ kind: entry.source, id: entry.id }));
+  return usage === undefined ? entry : { ...entry, usage };
 }
 
-export function providerToEntry(p: Provider): ConnectionEntry {
+export function accountToEntry(a: Account, usageMap?: ConnectionUsageMap): ConnectionEntry {
+  return attachUsage(
+    {
+      key: `account:${a.id}`,
+      source: 'account',
+      kind: a.kind === 'apikey' ? 'apikey' : 'oauth',
+      id: a.id,
+      agentId: a.agentId,
+      title: a.label,
+      subtitle: accountSubtitle(a),
+      isCurrent: a.isCurrent,
+      authStatus: authStatusOfAccount(a),
+      authHealth: authHealthOfAccount(a),
+      sortKey: a.updatedAt || a.lastUsedAt || a.createdAt || '',
+      identityLabel: a.identityLabel,
+      subscription: a.subscription,
+      quota5hPct: a.quota5hPct,
+      quota7dPct: a.quota7dPct,
+      quotaResetIn: a.quotaResetIn,
+      quota7dResetIn: a.quota7dResetIn,
+      // 账号池 API Key 默认视为官方直连（无 endpoint 字段）
+      endpointMode: a.kind === 'apikey' ? 'official' : undefined,
+      account: a,
+    },
+    usageMap,
+  );
+}
+
+export function providerToEntry(p: Provider, usageMap?: ConnectionUsageMap): ConnectionEntry {
   const endpoint = extractProviderEndpoint(p.configText, p.configFormat);
   const endpointMode = providerEndpointMode(p, endpoint);
-  return {
-    key: `provider:${p.id}`,
-    source: 'provider',
-    // 产品：供应商并入 API Key
-    kind: 'apikey',
-    id: p.id,
-    agentId: p.agentId,
-    title: p.name,
-    subtitle: providerSubtitle(p, endpoint, endpointMode),
-    isCurrent: p.isCurrent,
-    authStatus: 'valid',
-    authHealth: 'configured',
-    sortKey: p.updatedAt || '',
-    latencyMs: p.latencyMs,
-    endpointHost: endpoint ? formatEndpointHost(endpoint) : undefined,
-    endpointMode,
-    provider: p,
-  };
+  return attachUsage(
+    {
+      key: `provider:${p.id}`,
+      source: 'provider',
+      // 产品：供应商并入 API Key
+      kind: 'apikey',
+      id: p.id,
+      agentId: p.agentId,
+      title: p.name,
+      subtitle: providerSubtitle(p, endpoint, endpointMode),
+      isCurrent: p.isCurrent,
+      authStatus: 'valid',
+      authHealth: 'configured',
+      sortKey: p.updatedAt || '',
+      latencyMs: p.latencyMs,
+      endpointHost: endpoint ? formatEndpointHost(endpoint) : undefined,
+      endpointMode,
+      provider: p,
+    },
+    usageMap,
+  );
 }
 
 /** 合并两池：当前项优先，再按更新时间降序 */
 export function mergeConnectionEntries(
   accounts: Account[],
   providers: Provider[],
+  usageMap?: ConnectionUsageMap,
 ): ConnectionEntry[] {
   const rows: ConnectionEntry[] = [
-    ...accounts.map(accountToEntry),
-    ...providers.map(providerToEntry),
+    ...accounts.map((a) => accountToEntry(a, usageMap)),
+    ...providers.map((p) => providerToEntry(p, usageMap)),
   ];
   rows.sort((a, b) => {
     if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
@@ -179,33 +206,21 @@ export function filterConnectionEntries(
   rows: ConnectionEntry[],
   filter: ConnectionFilter,
 ): ConnectionEntry[] {
-  if (filter === 'all') return rows;
-  return rows.filter((r) => r.kind === filter);
+  return filterByConnectionKind(rows, filter, (r) => r.kind);
 }
 
 export function countByKind(rows: ConnectionEntry[]): Record<ConnectionFilter, number> {
-  const counts: Record<ConnectionFilter, number> = {
-    all: rows.length,
-    oauth: 0,
-    apikey: 0,
-  };
-  for (const r of rows) {
-    counts[r.kind] += 1;
-  }
-  return counts;
+  return countByConnectionKind(rows, (r) => r.kind);
 }
 
 export function kindBadge(kind: ConnectionKind): {
   label: string;
   variant: 'default' | 'info' | 'accent';
 } {
-  switch (kind) {
-    case 'oauth':
-      return { label: '官方登录', variant: 'default' };
-    case 'apikey':
-      return { label: 'API Key', variant: 'info' };
-  }
+  return sharedKindBadge(kind);
 }
+
+export { connectionKindLabel };
 
 export function endpointModeBadge(
   mode: 'official' | 'custom' | undefined,
@@ -334,4 +349,90 @@ export function liveApiKeyImportGate(
     return { enabled: false, reason: '当前为桌面登录态，无法直接导入 API Key' };
   }
   return { enabled: false, reason: probe.summary || '未检测到可导入的 API Key' };
+}
+
+export type ConnectionPoolDiscoveryState = 'idle' | 'loading' | 'ready' | 'partial' | 'error';
+export type DiscoveredAuthKind = 'account' | 'provider';
+
+/**
+ * Live-auth banners must wait for a completed pool snapshot. An in-flight
+ * first load still has empty rows and would otherwise look like a new login.
+ */
+function liveAuthProbeKind(probe?: Pick<LiveAuthProbeLike, 'kind'> | null): string {
+  return probe?.kind?.trim().toLowerCase() ?? '';
+}
+
+function isOAuthLiveAuthKind(kind: string): boolean {
+  return kind === 'oauth' || kind === 'file-auth' || kind === 'file-auth.json';
+}
+
+function isApiKeyLiveAuthKind(kind: string): boolean {
+  return kind === 'api_key' || kind === 'api-key' || kind === 'apikey';
+}
+
+/**
+ * Incomplete pool data must not be stamped as “already evaluated”.
+ * A later successful refresh of the failed side should still be able to
+ * surface a real first-time discovery.
+ */
+export function isLiveAuthDiscoveryDeferred(input: {
+  poolState: ConnectionPoolDiscoveryState;
+  probe?: Pick<LiveAuthProbeLike, 'kind' | 'hasCredentials'> | null;
+  accountsFailed?: boolean;
+  providersFailed?: boolean;
+}): boolean {
+  if (input.poolState === 'idle' || input.poolState === 'loading' || input.poolState === 'error') {
+    return true;
+  }
+  if (!input.probe?.hasCredentials) return false;
+  const kind = liveAuthProbeKind(input.probe);
+  if (isOAuthLiveAuthKind(kind)) return Boolean(input.accountsFailed);
+  if (isApiKeyLiveAuthKind(kind)) return Boolean(input.accountsFailed || input.providersFailed);
+  return false;
+}
+
+export function liveAuthDiscoveryKind(input: {
+  poolState: ConnectionPoolDiscoveryState;
+  probe?: Pick<LiveAuthProbeLike, 'kind' | 'hasCredentials'> | null;
+  accounts: readonly { kind: string }[];
+  providers: readonly unknown[];
+  accountsFailed?: boolean;
+  providersFailed?: boolean;
+}): DiscoveredAuthKind | null {
+  if (isLiveAuthDiscoveryDeferred(input)) return null;
+  if (!input.probe?.hasCredentials) return null;
+
+  const kind = liveAuthProbeKind(input.probe);
+  const hasExistingOAuth = input.accounts.some((account) => account.kind === 'oauth');
+  const hasExistingApiKey =
+    input.accounts.some((account) => account.kind === 'apikey') || input.providers.length > 0;
+
+  if (isOAuthLiveAuthKind(kind) && !hasExistingOAuth) return 'account';
+  if (isApiKeyLiveAuthKind(kind) && !hasExistingApiKey) return 'provider';
+  return null;
+}
+
+/** A switch-preview response is only usable for the agent that requested it. */
+export function isCurrentSwitchPreviewRequest(
+  requestedAgentId: string,
+  currentAgentId: string,
+  generation: number,
+  currentGeneration: number,
+): boolean {
+  return requestedAgentId === currentAgentId && generation === currentGeneration;
+}
+
+export function beginExclusiveBusyIds(
+  current: ReadonlySet<string>,
+  id: string,
+): Set<string> | null {
+  if (current.size > 0 || !id) return null;
+  return new Set([id]);
+}
+
+export function endExclusiveBusyIds(current: ReadonlySet<string>, id: string): Set<string> {
+  if (!current.has(id)) return new Set(current);
+  const next = new Set(current);
+  next.delete(id);
+  return next;
 }

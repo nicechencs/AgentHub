@@ -4,9 +4,12 @@ import {
   FolderOpen,
   Pencil,
   RefreshCw,
+  Share2,
   Trash2,
   Gauge,
 } from 'lucide-react';
+import { CurrentBadge } from '@/components/shared/CurrentBadge';
+import { DetailRow } from '@/components/shared/DetailRow';
 import { ListRow } from '@/components/shared/ListRow';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { QuotaBar } from '@/components/shared/QuotaBar';
@@ -14,13 +17,39 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { agentDisplayName } from '@/config/agents';
 import { accountActionPolicy } from '@/lib/backend/contracts/account-actions';
 import { authDisplayForAccount, authHealthLabel } from '@/lib/backend/contracts/auth-state';
+import { shouldShowReuseAction } from '@/lib/connect-flow/reuse-offer';
+import type { ConnectionUsage } from '@/lib/connect-flow/types';
 import {
   endpointModeBadge,
   kindBadge,
   type ConnectionEntry,
 } from './connection-model';
+
+function usageViaLabel(via: 'direct' | 'adapter'): string {
+  return via === 'direct' ? '直接' : '经兼容路由';
+}
+
+function ConnectionUsageBlock({ usage }: { usage: ConnectionUsage }) {
+  if (usage.status === 'incomplete') {
+    return <p className="mt-1 pl-5 text-2xs text-secondary">用途未知</p>;
+  }
+  if (usage.agents.length === 0) {
+    return <p className="mt-1 pl-5 text-2xs text-muted">未使用</p>;
+  }
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1 pl-5">
+      <span className="text-2xs text-secondary">正用于：</span>
+      {usage.agents.map((item) => (
+        <Badge key={`${item.agentId}:${item.via}`} variant="default">
+          {agentDisplayName(item.agentId)}（{usageViaLabel(item.via)}）
+        </Badge>
+      ))}
+    </div>
+  );
+}
 
 /**
  * 统一连接卡：官方登录 / API Key / 供应商共用外壳，操作按 kind 分支。
@@ -37,8 +66,12 @@ export function ConnectionCard({
   onRefreshToken,
   onTest,
   onOpenConfigDir,
+  onReuseRequest,
+  adapterGeneratedProviderIds,
   canEditProvider = true,
   canSwitchProvider = true,
+  canSwitchAccount = true,
+  accountSwitchBlockedReason,
 }: {
   entry: ConnectionEntry;
   brandColor?: string;
@@ -50,10 +83,18 @@ export function ConnectionCard({
   onRefreshToken?: (e: ConnectionEntry) => void;
   onTest?: (e: ConnectionEntry) => void;
   onOpenConfigDir?: (e: ConnectionEntry) => void;
+  /** 凭据侧进入 ConnectFlow（来源预选）；未接线或来源无跨 Agent 可应用规则时不渲染入口 */
+  onReuseRequest?: (entry: ConnectionEntry) => void;
+  /** profiles 的 generatedProviderId 集合；命中的 Provider 不显示「用于其他 Agent」 */
+  adapterGeneratedProviderIds?: ReadonlySet<string>;
   /** Provider/API Key configuration is unavailable when the capability is blocked. */
   canEditProvider?: boolean;
   /** Applying a saved Provider writes the agent's live config. */
   canSwitchProvider?: boolean;
+  /** Account-pool switching is unavailable when the capability is blocked. */
+  canSwitchAccount?: boolean;
+  /** Shown on the switch control when account switching is blocked. */
+  accountSwitchBlockedReason?: string;
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const detailsId = React.useId();
@@ -63,6 +104,10 @@ export function ConnectionCard({
   const authLabel = account
     ? authDisplayForAccount(account).label
     : authHealthLabel(entry.authHealth ?? 'unknown');
+  const showReuse = shouldShowReuseAction(entry, {
+    reuseEnabled: Boolean(onReuseRequest),
+    adapterGeneratedProviderIds,
+  });
 
   return (
     <ListRow
@@ -95,7 +140,7 @@ export function ConnectionCard({
             return ep ? <Badge variant={ep.variant}>{ep.label}</Badge> : null;
           })()}
           {entry.subscription ? <Badge>{entry.subscription}</Badge> : null}
-          {entry.isCurrent ? <Badge variant="accent">当前</Badge> : null}
+          {entry.isCurrent ? <CurrentBadge /> : null}
           {entry.latencyMs != null ? (
             <span className="font-mono text-xs text-muted">{entry.latencyMs} ms</span>
           ) : null}
@@ -112,15 +157,31 @@ export function ConnectionCard({
             <Button
               size="sm"
               variant="outline"
-              disabled={switching || (entry.source === 'provider' && !canSwitchProvider)}
+              disabled={
+                switching ||
+                (entry.source === 'provider' && !canSwitchProvider) ||
+                (entry.source === 'account' && !canSwitchAccount)
+              }
               title={
                 entry.source === 'provider' && !canSwitchProvider
                   ? '该 Agent 不支持配置写入'
-                  : undefined
+                  : entry.source === 'account' && !canSwitchAccount
+                    ? accountSwitchBlockedReason ?? '该 Agent 不支持账号池切换'
+                    : undefined
               }
               onClick={() => onSwitch(entry)}
             >
               切换
+            </Button>
+          )}
+          {showReuse && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={switching}
+              onClick={() => onReuseRequest?.(entry)}
+            >
+              <Share2 className="h-3.5 w-3.5" /> 用于其他 Agent
             </Button>
           )}
           {entry.source === 'provider' && canEditProvider && (
@@ -155,6 +216,7 @@ export function ConnectionCard({
       </div>
 
       <p className="mt-1 pl-5 text-xs text-muted">{entry.subtitle}</p>
+      {entry.usage ? <ConnectionUsageBlock usage={entry.usage} /> : null}
 
       {expanded && (
         <Card
@@ -259,25 +321,3 @@ export function ConnectionCard({
   );
 }
 
-function DetailRow({
-  label,
-  value,
-  mono,
-  className,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  className?: string;
-}) {
-  return (
-    <span className={cn('min-w-0', className)}>
-      <span className="text-muted">{label} </span>
-      {mono ? (
-        <code className="break-all font-mono text-secondary">{value}</code>
-      ) : (
-        <span className="break-all text-secondary">{value}</span>
-      )}
-    </span>
-  );
-}

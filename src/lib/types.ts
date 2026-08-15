@@ -330,8 +330,6 @@ export interface AppSettings {
   theme: 'dark' | 'light' | 'system';
   autoStart: boolean;
   closeToTray: boolean;
-  hasMasterPassword: boolean;
-  credentialStore: 'keyring' | 'encrypted-file';
   dataDir: string;
   /** 日志目录（只读展示；真源为 path_info.logs_dir） */
   logsDir: string;
@@ -345,7 +343,7 @@ export interface AppSettings {
    * - `skills.sh` / `skillhub.cn`：固定源
    */
   skillMarketSource: SkillMarketSource;
-  autoBackup: boolean;
+  /** Foreground usage collect interval (minutes). 0 = manual only. Persisted in SQLite. */
   usageCollectIntervalMin: number;
   appVersion: string;
 }
@@ -355,7 +353,7 @@ export interface DashboardAlert {
   level: 'warning' | 'danger' | 'info';
   message: string;
   actionLabel: string;
-  actionKind: 'refresh-token' | 'view-diff' | 'backup-now' | 'upgrade';
+  actionKind: 'refresh-token' | 'upgrade';
   agentId?: AgentId;
 }
 

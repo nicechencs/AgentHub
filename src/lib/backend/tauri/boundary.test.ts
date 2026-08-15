@@ -182,6 +182,8 @@ describe('Tauri & Mock satisfy same production Backend shape', () => {
       expect(typeof backend.usage.getAvailability).toBe('function');
       expect(typeof backend.agent.installAgentDetailed).toBe('function');
       expect(typeof backend.env.installRuntimeDetailed).toBe('function');
+      expect(typeof backend.install.onProgress).toBe('function');
+      expect(typeof backend.skill.onFsChanged).toBe('function');
       expect(typeof backend.update.checkForUpdate).toBe('function');
       expect(typeof backend.update.downloadAndInstall).toBe('function');
       // removed from production contracts

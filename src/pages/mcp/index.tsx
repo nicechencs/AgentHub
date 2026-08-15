@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FolderOpen, Loader2, Plug, RefreshCw } from 'lucide-react';
+import { AgentTabStrip, type AgentTabId } from '@/components/layout/AgentTabStrip';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
@@ -10,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
-import { AGENT_MAP } from '@/config/agents';
+import { resolveAgentMeta, agentDisplayName, type AgentMeta } from '@/config/agents';
 import { listMcpInventory } from '@/lib/api/mcp';
 import { openPathInFileManager } from '@/lib/api/skill';
 import type { McpInventory, McpServerEntry, McpSourceFile } from '@/lib/backend/contracts/mcp-types';
@@ -18,7 +19,7 @@ import type { AgentId } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 function agentName(id: AgentId): string {
-  return AGENT_MAP[id]?.name ?? id;
+  return agentDisplayName(id);
 }
 
 function transportLabel(t: string): string {
@@ -45,7 +46,7 @@ export default function McpPage() {
   const [data, setData] = useState<McpInventory | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | string | null>(null);
-  const [filterAgent, setFilterAgent] = useState<AgentId | 'all'>('all');
+  const [filterAgent, setFilterAgent] = useState<AgentTabId>('all');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,14 +66,27 @@ export default function McpPage() {
     void load();
   }, [load]);
 
-  const agentsWithSomething = useMemo(() => {
-    if (!data) return [] as AgentId[];
+  const filterAgents = useMemo(() => {
+    if (!data) return [] as AgentMeta[];
     const ids = new Set<AgentId>();
     for (const s of data.sources) {
       if (s.exists || s.serverCount > 0) ids.add(s.agent);
     }
     for (const s of data.servers) ids.add(s.agent);
-    return [...ids].sort((a, b) => a.localeCompare(b));
+    return [...ids]
+      .sort((a, b) => a.localeCompare(b))
+      .map((id) => resolveAgentMeta(id));
+  }, [data]);
+
+  const agentCounts = useMemo(() => {
+    const counts: Partial<Record<AgentTabId, number>> = {
+      all: data?.servers.length ?? 0,
+    };
+    if (!data) return counts;
+    for (const s of data.servers) {
+      counts[s.agent] = (counts[s.agent] ?? 0) + 1;
+    }
+    return counts;
   }, [data]);
 
   const servers = useMemo(() => {
@@ -132,33 +146,18 @@ export default function McpPage() {
         <ErrorState error={error} onRetry={() => void load()} />
       ) : (
         <>
-          <div className={cn(pageRhythm.chromeRow)}>
-            <Button
-              size="sm"
-              variant={filterAgent === 'all' ? 'default' : 'outline'}
-              onClick={() => setFilterAgent('all')}
-            >
-              全部
-              {data ? (
-                <span className="ml-1 text-muted">({data.servers.length})</span>
-              ) : null}
-            </Button>
-            {agentsWithSomething.map((id) => {
-              const n = data?.servers.filter((s) => s.agent === id).length ?? 0;
-              return (
-                <Button
-                  key={id}
-                  size="sm"
-                  variant={filterAgent === id ? 'default' : 'outline'}
-                  className="gap-1.5"
-                  onClick={() => setFilterAgent(id)}
-                >
-                  <AgentDot agentId={id} className="h-2 w-2" />
-                  {agentName(id)}
-                  <span className="text-muted">({n})</span>
-                </Button>
-              );
-            })}
+          <div className={pageRhythm.chrome}>
+            <AgentTabStrip
+              showAll
+              value={filterAgent}
+              onChange={setFilterAgent}
+              agents={filterAgents}
+              counts={agentCounts}
+              countMode="defined"
+              countTitle={(id, n) => (id === 'all' ? `${n} 个 server` : `${agentName(id)} · ${n} 个`)}
+              emptyLabel="尚未发现任何 MCP 配置"
+              aria-label="按 Agent 筛选 MCP"
+            />
           </div>
 
           {existingSources.length > 0 ? (

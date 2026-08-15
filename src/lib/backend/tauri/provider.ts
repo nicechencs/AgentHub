@@ -6,7 +6,6 @@ import {
   type CoreSwitchResult,
 } from '@/lib/backend/contracts/provider-map';
 import type { CoreProviderPreset } from '@/lib/backend/contracts/skill-types';
-import { unsupportedError } from '@/lib/backend/contracts/errors';
 import type { SwitchPreview } from '@/lib/types';
 import { logger } from '@/lib/logger';
 import { invoke } from './invoke';
@@ -84,12 +83,25 @@ export function createTauriProviderPort(): ProviderPort {
       }
     },
 
-    async undoSwitch(_agentId) {
-      throw unsupportedError('撤销切换');
+    async undoSwitch(agentId) {
+      try {
+        return await invoke<boolean>('undo_switch_provider', { agentId });
+      } catch (e) {
+        log.error('undo_switch_provider failed', e);
+        throw e;
+      }
     },
 
-    async testLatency(_agentId, _providerId) {
-      throw unsupportedError('测速');
+    async testLatency(agentId, providerId) {
+      try {
+        return await invoke<number>('test_provider_latency', {
+          agentId,
+          providerId,
+        });
+      } catch (e) {
+        log.error('test_provider_latency failed', e);
+        throw e;
+      }
     },
 
     async listProviderPresets(agentId) {

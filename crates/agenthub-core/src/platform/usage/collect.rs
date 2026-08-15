@@ -172,6 +172,7 @@ fn parse_one_file(
         }
         match parser.on_line(line, session_id.as_deref()) {
             UsageLineOutcome::Event(ev) => events.push(ev),
+            UsageLineOutcome::Events(batch) => events.extend(batch),
             UsageLineOutcome::Skipped => skipped += 1,
             UsageLineOutcome::Failed => failed += 1,
         }

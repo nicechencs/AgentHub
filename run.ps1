@@ -2,6 +2,16 @@
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
+# Double-click / Explorer cmd often inherits a stale PATH. Merge Machine + User
+# and put cargo/pnpm first so `tauri:dev` finds the same tools as a terminal.
+$machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$extra = @(
+    (Join-Path $env:USERPROFILE '.cargo\bin'),
+    (Join-Path $env:LOCALAPPDATA 'pnpm')
+) | Where-Object { $_ -and (Test-Path $_) }
+$env:Path = (@($extra + $machinePath + $userPath + $env:Path) | Where-Object { $_ }) -join ';'
+
 $DevPort = 5173
 
 Write-Host "========================================" -ForegroundColor Cyan

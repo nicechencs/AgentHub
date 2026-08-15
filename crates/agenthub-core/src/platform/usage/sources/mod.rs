@@ -5,6 +5,7 @@
 
 mod claude_like;
 mod codex;
+mod grok;
 mod kimi;
 mod pi;
 
@@ -18,7 +19,7 @@ pub fn build_registry() -> UsageSourceRegistry {
         .expect("builtin usage source keys must be unique");
     reg.register(Arc::new(claude_like::WorkBuddyUsageSource))
         .expect("builtin usage source keys must be unique");
-    reg.register(Arc::new(claude_like::GrokUsageSource))
+    reg.register(Arc::new(grok::GrokUsageSource))
         .expect("builtin usage source keys must be unique");
     reg.register(Arc::new(codex::CodexUsageSource))
         .expect("builtin usage source keys must be unique");

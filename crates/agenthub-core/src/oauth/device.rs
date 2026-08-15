@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::catalog::limits::OAUTH_REFRESH_SKEW_MS;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{Account, AgentId};
@@ -21,7 +22,6 @@ const XAI_SCOPE: &str = "openid profile email offline_access grok-cli:access api
 const XAI_DEVICE_CODE_URL: &str = "https://auth.x.ai/oauth2/device/code";
 const XAI_TOKEN_URL: &str = "https://auth.x.ai/oauth2/token";
 const DEFAULT_POLL_INTERVAL_SECS: u64 = 5;
-const REFRESH_SKEW_MS: i64 = 5 * 60 * 1000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -248,7 +248,8 @@ pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
                 session.access = Some(access.to_string());
                 session.refresh = refresh;
                 session.expires_at_ms = Some(
-                    chrono::Utc::now().timestamp_millis() + expires_in * 1000 - REFRESH_SKEW_MS,
+                    chrono::Utc::now().timestamp_millis() + expires_in * 1000
+                        - OAUTH_REFRESH_SKEW_MS,
                 );
                 session.status = DeviceOAuthStatus::Complete;
                 return Ok(DeviceOAuthPoll {

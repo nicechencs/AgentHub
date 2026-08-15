@@ -4,12 +4,16 @@ import type { AgentMeta } from '@/config/agents';
 import type { AgentId, AgentStatus, AuthStatus } from '@/lib/types';
 
 import {
+  AGENT_CARD_BRIDGE_LABEL,
   AGENT_OVERVIEW_GRID,
+  agentCardConnectFallback,
   buildAgentCardView,
   cardAuthStatus,
   isAgentIssue,
   mergeAgentsInOrder,
+  resolveAgentCardInteraction,
   summarizeAgentOverview,
+  type AgentCardBridgeState,
 } from './agentOverviewModel';
 
 function meta(id: AgentId, name: string = id): AgentMeta {
@@ -158,7 +162,7 @@ describe('cardAuthStatus', () => {
 describe('buildAgentCardView', () => {
   const claude = meta('claude', 'Claude Code');
 
-  it('installed API: shows provider·url and jumps to providers mode', () => {
+  it('installed API: shows provider·url and uses connect action', () => {
     const view = buildAgentCardView(
       claude,
       status('claude', {
@@ -179,13 +183,13 @@ describe('buildAgentCardView', () => {
     expect(view.ariaLabel).toBe(
       'Claude Code，v2.1.218，API，当前 API 配置 xx云中转 · relay.xxyun.example.com，点击管理连接',
     );
-    expect(view.target).toBe('/connections?mode=providers&agent=claude');
+    expect(view.action).toEqual({ kind: 'connect' });
     expect(view.authStatus).toBe('valid');
     expect(view.statusDotTitle).toBe('API');
     expect(view.twoLineLayout).toBe(true);
   });
 
-  it('installed account: shows account label and jumps to accounts mode', () => {
+  it('installed account: shows account label and uses connect action', () => {
     const view = buildAgentCardView(
       claude,
       status('claude', {
@@ -199,7 +203,7 @@ describe('buildAgentCardView', () => {
     );
     expect(view.versionText).toBe('v2.1.218');
     expect(view.metaText).toBe('me@example.com');
-    expect(view.target).toBe('/connections?agent=claude');
+    expect(view.action).toEqual({ kind: 'connect' });
     expect(view.ariaLabel).toContain('当前账号/密钥 me@example.com');
   });
 
@@ -218,10 +222,10 @@ describe('buildAgentCardView', () => {
     expect(view.metaText).toBe('未配置');
     expect(view.titleFull).toBe('未配置 · —');
     expect(view.ariaLabel).toContain('当前连接 未配置');
-    expect(view.target).toBe('/connections?agent=claude');
+    expect(view.action).toEqual({ kind: 'connect' });
   });
 
-  it('not installed: install CTA and /agents', () => {
+  it('not installed: install CTA and navigate /agents', () => {
     const view = buildAgentCardView(
       claude,
       status('claude', { installed: false, envReady: true }),
@@ -233,13 +237,13 @@ describe('buildAgentCardView', () => {
     expect(view.metaClass).toBe('text-muted');
     expect(view.titleFull).toBe('未安装 · 点击安装');
     expect(view.ariaLabel).toBe('Claude Code，未安装，点击安装');
-    expect(view.target).toBe('/agents');
+    expect(view.action).toEqual({ kind: 'navigate', to: '/agents' });
     expect(view.authStatus).toBe('none');
     expect(view.statusDotTitle).toBe('未安装');
     expect(view.twoLineLayout).toBe(true);
   });
 
-  it('not installed + env not ready: warning meta and /agents', () => {
+  it('not installed + env not ready: warning meta and navigate /agents', () => {
     const view = buildAgentCardView(
       claude,
       status('claude', { installed: false, envReady: false }),
@@ -248,7 +252,7 @@ describe('buildAgentCardView', () => {
     expect(view.metaText).toBe('环境未就绪 · 点击修复');
     expect(view.metaClass).toBe('text-warning');
     expect(view.ariaLabel).toBe('Claude Code，环境未就绪，点击修复');
-    expect(view.target).toBe('/agents');
+    expect(view.action).toEqual({ kind: 'navigate', to: '/agents' });
     expect(view.statusDotTitle).toBe('环境未就绪');
     expect(view.twoLineLayout).toBe(true);
   });
@@ -257,7 +261,7 @@ describe('buildAgentCardView', () => {
     const view = buildAgentCardView(claude, undefined);
     expect(view.missing).toBe(true);
     expect(view.envMissing).toBe(false);
-    expect(view.target).toBe('/agents');
+    expect(view.action).toEqual({ kind: 'navigate', to: '/agents' });
     expect(view.metaText).toBe('未安装 · 点击安装');
   });
 
@@ -266,6 +270,85 @@ describe('buildAgentCardView', () => {
     const missing = buildAgentCardView(claude, status('claude', { installed: false }));
     expect(installed.twoLineLayout).toBe(true);
     expect(missing.twoLineLayout).toBe(true);
+  });
+
+  it('omits badges when no badge input is provided (equivalent to prior output)', () => {
+    const view = buildAgentCardView(claude, status('claude'));
+    const withUndefined = buildAgentCardView(claude, status('claude'), undefined);
+    const withEmpty = buildAgentCardView(claude, status('claude'), {});
+    expect(view.viaAdapter).toBeUndefined();
+    expect(view.bridge).toBeUndefined();
+    expect(view).toEqual(withUndefined);
+    expect(view).toEqual(withEmpty);
+    expect(view.action).toEqual({ kind: 'connect' });
+  });
+
+  it('maps viaAdapter hit with sourceLabel', () => {
+    const view = buildAgentCardView(claude, status('claude'), {
+      viaAdapter: { sourceLabel: 'Kimi 会员' },
+    });
+    expect(view.viaAdapter).toEqual({ sourceLabel: 'Kimi 会员' });
+    expect(view.ariaLabel).toContain('经兼容路由 · Kimi 会员');
+  });
+
+  it('maps viaAdapter hit without sourceLabel', () => {
+    const view = buildAgentCardView(claude, status('claude'), { viaAdapter: {} });
+    expect(view.viaAdapter).toEqual({});
+    expect(view.ariaLabel).toContain('经兼容路由');
+    expect(view.ariaLabel).not.toContain('经兼容路由 ·');
+  });
+
+  it.each([
+    ['running', '运行中'],
+    ['stopped', '已停止'],
+    ['degraded', '已降级'],
+    ['unavailable', '状态不可用'],
+  ] as const)('maps bridge state %s to label %s', (state, label) => {
+    const view = buildAgentCardView(claude, status('claude'), { bridge: { state } });
+    expect(view.bridge).toEqual({ state, label });
+    expect(view.ariaLabel).toContain(label);
+    expect(AGENT_CARD_BRIDGE_LABEL[state]).toBe(label);
+  });
+
+  it('does not hide unavailable bridge status', () => {
+    const view = buildAgentCardView(claude, status('claude'), {
+      bridge: { state: 'unavailable' },
+    });
+    expect(view.bridge).toEqual({ state: 'unavailable', label: '状态不可用' });
+  });
+
+  it('treats null badge fields as absent', () => {
+    const view = buildAgentCardView(claude, status('claude'), {
+      viaAdapter: null,
+      bridge: null,
+    });
+    expect(view.viaAdapter).toBeUndefined();
+    expect(view.bridge).toBeUndefined();
+  });
+});
+
+describe('resolveAgentCardInteraction', () => {
+  it('keeps navigate action unchanged even when a connect handler exists', () => {
+    const onConnect = (_id: AgentId) => undefined;
+    expect(
+      resolveAgentCardInteraction({ kind: 'navigate', to: '/agents' }, 'claude', onConnect),
+    ).toEqual({ type: 'navigate', to: '/agents' });
+  });
+
+  it('connect with handler stays connect', () => {
+    const onConnect = (_id: AgentId) => undefined;
+    expect(resolveAgentCardInteraction({ kind: 'connect' }, 'claude', onConnect)).toEqual({
+      type: 'connect',
+      agentId: 'claude',
+    });
+  });
+
+  it('connect without handler falls back to /connections?agent=X', () => {
+    expect(resolveAgentCardInteraction({ kind: 'connect' }, 'claude')).toEqual({
+      type: 'navigate',
+      to: '/connections?agent=claude',
+    });
+    expect(agentCardConnectFallback('kimi')).toBe('/connections?agent=kimi');
   });
 });
 
@@ -286,8 +369,23 @@ describe('mergeAgentsInOrder', () => {
     const merged = mergeAgentsInOrder(METAS, [status('claude')]);
     expect(merged).toHaveLength(METAS.length);
     expect(merged[0]!.view.missing).toBe(false);
+    expect(merged[0]!.view.action).toEqual({ kind: 'connect' });
     expect(merged[1]!.view.missing).toBe(true);
-    expect(merged[2]!.view.target).toBe('/agents');
+    expect(merged[2]!.view.action).toEqual({ kind: 'navigate', to: '/agents' });
+  });
+
+  it('passes badge inputs through without reordering', () => {
+    const merged = mergeAgentsInOrder(METAS, [status('claude'), status('kimi')], {
+      claude: {
+        viaAdapter: { sourceLabel: 'Kimi 会员' },
+        bridge: { state: 'running' satisfies AgentCardBridgeState },
+      },
+    });
+    expect(merged.map((c) => c.meta.id)).toEqual(METAS.map((m) => m.id));
+    expect(merged[0]!.view.viaAdapter).toEqual({ sourceLabel: 'Kimi 会员' });
+    expect(merged[0]!.view.bridge).toEqual({ state: 'running', label: '运行中' });
+    expect(merged[2]!.view.viaAdapter).toBeUndefined();
+    expect(merged[2]!.view.bridge).toBeUndefined();
   });
 
   it('does not reorder when later agents are healthier', () => {

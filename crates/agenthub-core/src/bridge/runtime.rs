@@ -101,9 +101,30 @@ pub enum BridgeRuntimeState {
     Degraded,
 }
 
-/// Upstream reachability is intentionally not probed from health/status calls. That avoids
-/// surprising billable requests and makes the unknown state explicit to callers.
+/// Last observed upstream outcome. Health and status reads never probe the provider; they
+/// only report this stored value so a UI poll cannot create a billable request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BridgeUpstreamStatus {
+    /// No successful or failed upstream outcome has been observed yet.
     Unknown,
+    /// The last observed health or request outcome succeeded.
+    Connected,
+    /// The local listener is stopped; no live upstream session remains.
+    Stopped,
+    /// The listener is still up, but the last health/auth/upstream outcome failed.
+    Degraded,
+    /// A host/status read failed. A missing instance after a clean stop is `Stopped`.
+    Unavailable,
+}
+
+impl BridgeUpstreamStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::Connected => "connected",
+            Self::Stopped => "stopped",
+            Self::Degraded => "degraded",
+            Self::Unavailable => "unavailable",
+        }
+    }
 }

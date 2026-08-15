@@ -39,6 +39,22 @@ fn kimi_source(id: &str, api_key: &str) -> Provider {
     }
 }
 
+fn kimi_coding_live_import(id: &str, api_key: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Kimi,
+        name: "Kimi coding live import".into(),
+        settings_config: json!({
+            "apiKey": api_key,
+            "baseUrl": "https://api.kimi.com/coding/v1",
+        }),
+        meta: json!({}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
 fn request(source_id: &str) -> AdapterBridgePrepareRequest {
     AdapterBridgePrepareRequest {
         source_kind: AdapterSourceKind::Provider,
@@ -359,7 +375,11 @@ fn restored_port_projection_and_persist_realign_active_profile() {
         .unwrap();
     let service = AdapterBridgeService::new(db.clone());
     let prepared = service.prepare(&request("kimi-membership")).unwrap();
-    let local_bearer = prepared.runtime_material().start_spec(None).local_token.clone();
+    let local_bearer = prepared
+        .runtime_material()
+        .start_spec(None)
+        .local_token
+        .clone();
     create_projection(&db, &prepared, 43121);
     let active = service.finalize(&prepared, 43121).unwrap();
     service
@@ -542,4 +562,21 @@ fn bridge_remove_preflight_rejects_current_or_malformed_generated_provider() {
         service.preflight_remove(&profile.id).unwrap_err().code(),
         "adapter.provider_conflict"
     );
+}
+
+#[test]
+fn prepare_accepts_coding_endpoint_without_preset() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_coding_live_import(
+            "kimi-live-import",
+            "upstream-membership-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db);
+
+    let prepared = service.prepare(&request("kimi-live-import")).unwrap();
+    assert_eq!(prepared.profile().route, AdapterRoute::LocalBridge);
+    assert_eq!(prepared.profile().status, AdapterProfileStatus::Applying);
+    assert!(!format!("{prepared:?}").contains("upstream-membership-secret"));
 }

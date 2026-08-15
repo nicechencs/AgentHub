@@ -27,7 +27,8 @@ describe('account action policy', () => {
     expect(accountActionPolicy(account({ agentId }))).toBeUndefined();
   });
 
-  it.each(['anthropic', 'openai', 'openai-codex', 'xai'] as const)(
+  // Canonical keys + aliases from Rust PI_PROVIDER_SPECS.refreshable.
+  it.each(['anthropic', 'claude', 'openai', 'openai-codex', 'codex', 'xai', 'grok'] as const)(
     'allows Pi credential refresh for %s',
     (provider) => {
       expect(accountActionPolicy(account({ agentId: 'pi', provider }))).toEqual({
@@ -40,6 +41,7 @@ describe('account action policy', () => {
   it('requires refresh credentials and hides unsupported Pi providers/non-OAuth', () => {
     expect(accountActionPolicy(account({ agentId: 'pi', provider: 'openai', refreshable: false }))).toBeUndefined();
     expect(accountActionPolicy(account({ agentId: 'pi', provider: 'google' }))).toBeUndefined();
+    expect(accountActionPolicy(account({ agentId: 'pi', provider: 'openrouter' }))).toBeUndefined();
     expect(accountActionPolicy(account({ agentId: 'pi', kind: 'apikey', provider: 'xai' }))).toBeUndefined();
   });
 });

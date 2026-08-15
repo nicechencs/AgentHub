@@ -19,14 +19,11 @@ const DEFAULTS: AppSettings = {
   theme: 'light',
   autoStart: true,
   closeToTray: true,
-  hasMasterPassword: false,
-  credentialStore: 'keyring',
   dataDir: '~/.agenthub',
   logsDir: '~/.agenthub/logs',
   logLevel: 'info',
   logRetentionDays: 14,
   skillMarketSource: 'auto',
-  autoBackup: true,
   usageCollectIntervalMin: 30,
   // Tracks package.json via Vite inject — no hand-maintained semver.
   appVersion: packageAppVersion(),
@@ -51,8 +48,8 @@ function mapTheme(raw: string): ThemeMode {
 
 function loadState(): AppSettings {
   const stored = loadJson<Partial<AppSettings>>(SETTINGS_KEY, {});
-  const themeRaw = loadString(StorageKey.theme, stored.theme ?? DEFAULTS.theme);
-  const theme = mapTheme(themeRaw);
+  // Blob is the mock's durable store (core analogue); StorageKey.theme is cache.
+  const theme = mapTheme(stored.theme ?? loadString(StorageKey.theme, DEFAULTS.theme));
   const logLevel = parseLogLevel(stored.logLevel ?? DEFAULTS.logLevel);
   const logRetentionDays =
     typeof stored.logRetentionDays === 'number' && stored.logRetentionDays >= 1
@@ -63,12 +60,20 @@ function loadState(): AppSettings {
   );
   return {
     ...DEFAULTS,
-    ...stored,
+    language: stored.language === 'en' || stored.language === 'zh' ? stored.language : DEFAULTS.language,
     theme,
+    autoStart: typeof stored.autoStart === 'boolean' ? stored.autoStart : DEFAULTS.autoStart,
+    closeToTray: typeof stored.closeToTray === 'boolean' ? stored.closeToTray : DEFAULTS.closeToTray,
+    dataDir: stored.dataDir ?? DEFAULTS.dataDir,
+    logsDir: stored.logsDir ?? DEFAULTS.logsDir,
     logLevel,
     logRetentionDays,
     skillMarketSource,
-    logsDir: stored.logsDir ?? DEFAULTS.logsDir,
+    usageCollectIntervalMin:
+      typeof stored.usageCollectIntervalMin === 'number'
+        ? stored.usageCollectIntervalMin
+        : DEFAULTS.usageCollectIntervalMin,
+    appVersion: stored.appVersion ?? DEFAULTS.appVersion,
   };
 }
 
@@ -89,6 +94,8 @@ export function createMockSettingsPort(): SettingsPort {
     async getSettings() {
       await delay(randomLatency(200, 300));
       state = loadState();
+      saveString(StorageKey.theme, state.theme);
+      applyTheme(state.theme);
       return { ...state };
     },
 
