@@ -3,6 +3,7 @@ import {
   mapAdapterApplyPlan,
   mapAdapterApplyResult,
   mapAdapterBridgeStatusDto,
+  mapAdapterRouteAnalysis,
 } from './adapter-wire';
 
 describe('Adapter Rust wire mappers', () => {
@@ -15,6 +16,7 @@ describe('Adapter Rust wire mappers', () => {
         sourceId: 'provider-kimi',
         targetAgentId: 'codex',
         route: 'local_bridge',
+        mode: 'api',
         status: 'active',
         ruleId: 'kimi-membership-to-codex-bridge-v1',
         ruleVersion: '1',
@@ -40,7 +42,7 @@ describe('Adapter Rust wire mappers', () => {
     });
 
     expect(result).toMatchObject({
-      profile: { route: 'local_bridge', localPort: 43123 },
+      profile: { route: 'local_bridge', mode: 'api', localPort: 43123 },
       provider: {
         agentId: 'codex',
         preset: 'openai-compatible',
@@ -126,9 +128,44 @@ describe('Adapter Rust wire mappers', () => {
         port: 43123,
         running: false,
         state: 'error',
+        upstreamStatus: 'unavailable',
+      }).upstreamStatus,
+    ).toBe('unavailable');
+    expect(
+      mapAdapterBridgeStatusDto({
+        profileId: 'adapter-kimi-codex-1',
+        port: 43123,
+        running: false,
+        state: 'error',
         upstreamStatus: 'not-a-real-label',
       }).upstreamStatus,
     ).toBe('unknown');
+  });
+
+  it('maps optional ruleId/gateKind and defaults missing gateKind to none', () => {
+    const withGate = mapAdapterRouteAnalysis({
+      route: 'unsupported',
+      support: 'unsupported',
+      reason: 'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
+      actions: [],
+      limitations: [],
+      evidence: [],
+      ruleId: 'codex-subscription-to-claude-app-server-v0',
+      gateKind: 'subscription_candidate',
+    });
+    expect(withGate.ruleId).toBe('codex-subscription-to-claude-app-server-v0');
+    expect(withGate.gateKind).toBe('subscription_candidate');
+
+    const legacy = mapAdapterRouteAnalysis({
+      route: 'native_endpoint',
+      support: 'stable',
+      reason: 'ok',
+      actions: [],
+      limitations: [],
+      evidence: [],
+    });
+    expect(legacy.ruleId).toBeNull();
+    expect(legacy.gateKind).toBe('none');
   });
 
   it('strips secret values from plan changes and analysis actions', () => {

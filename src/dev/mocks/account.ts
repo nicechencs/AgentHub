@@ -15,6 +15,31 @@ const mockState: Record<AgentId, Account[]> = {
 
 let lastSwitch: { agentId: AgentId; fromId: string } | null = null;
 
+/** Clears browser-mock account-pool state so each backend factory starts clean. */
+export function resetMockAccounts(): void {
+  (Object.keys(mockState) as AgentId[]).forEach((agentId) => {
+    mockState[agentId].length = 0;
+  });
+  lastSwitch = null;
+}
+
+/** Synchronous test-only insertion used by ConnectFlow / adapter fixtures. */
+export function upsertMockAccount(account: Account): Account {
+  const list = mockState[account.agentId] ?? (mockState[account.agentId] = []);
+  const index = list.findIndex((item) => item.id === account.id);
+  if (account.isCurrent) {
+    list.forEach((item) => {
+      item.isCurrent = false;
+    });
+  }
+  if (index >= 0) {
+    list[index] = { ...account };
+  } else {
+    list.push({ ...account });
+  }
+  return { ...(index >= 0 ? list[index] : list[list.length - 1]) };
+}
+
 /** Read-only lookup used by browser-only compatibility previews. */
 export function getMockAccountById(accountId: string): Account | undefined {
   const found = (Object.keys(mockState) as AgentId[])

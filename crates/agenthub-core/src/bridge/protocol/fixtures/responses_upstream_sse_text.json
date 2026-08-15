@@ -1,0 +1,55 @@
+[
+  {
+    "type": "response.created",
+    "sequence_number": 0,
+    "response": {
+      "id": "resp_stream_1",
+      "object": "response",
+      "created_at": 1,
+      "model": "gpt-5",
+      "status": "in_progress",
+      "output": []
+    }
+  },
+  {
+    "type": "response.output_text.delta",
+    "sequence_number": 1,
+    "output_index": 0,
+    "item_id": "msg_1",
+    "content_index": 0,
+    "delta": "你"
+  },
+  {
+    "type": "response.output_text.delta",
+    "sequence_number": 2,
+    "output_index": 0,
+    "item_id": "msg_1",
+    "content_index": 0,
+    "delta": "好"
+  },
+  {
+    "type": "response.completed",
+    "sequence_number": 3,
+    "response": {
+      "id": "resp_stream_1",
+      "object": "response",
+      "created_at": 1,
+      "model": "gpt-5",
+      "status": "completed",
+      "output": [
+        {
+          "id": "msg_1",
+          "type": "message",
+          "status": "completed",
+          "role": "assistant",
+          "content": [{ "type": "output_text", "text": "你好" }]
+        }
+      ],
+      "usage": {
+        "input_tokens": 3,
+        "output_tokens": 2,
+        "total_tokens": 5
+      }
+    }
+  }
+]

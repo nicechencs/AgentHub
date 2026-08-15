@@ -8,7 +8,7 @@
 > v1.4：**平台环境差异**：PowerShell 仅 Windows 共享 Runtime；macOS/Linux native 安装/升级走官方 sh + bash，不得检测或要求 PowerShell；包管理引导 Windows=`winget`、macOS=`brew`。
 > v1.5：**Adapter sidecar 目标架构**：`local_bridge` 的长驻 Runtime 与完整 saga 迁入用户级 `agenthub-adapterd`；Connections 与 live 配置事务继续由 core service 管理。当前实现仍为 Tauri 进程内宿主，按三阶段迁移。
 
-系列文档：[目录结构与模块拆分](architecture.md) · [Adapter Sidecar 目标架构](adapter-sidecar-design.md) · [前端 UI 设计](ui-design.md) · [CLI 与配置契约](cli-and-config.md)
+系列文档：[目录结构与模块拆分](architecture.md) · [Adapter Sidecar 目标架构](adapter-sidecar-design.md) · [前端 UI 设计](ui-design.md) · [CLI 与配置契约](cli-and-config.md) · [Hub 重构 Phase 1](hub-redesign-plan.md)
 
 ## 1. 已确认决策
 
@@ -317,7 +317,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 - 技术：React + TypeScript + Vite + Tailwind + shadcn/Radix（**只选一套 UI**）+ recharts + react-router + CodeMirror。**当前未**引入 TanStack Query / i18next（方案历史提及，以 `package.json` 为准）。
 - 结构：`lib/backend/tauri`（唯一 invoke）→ `lib/api` façade → 页面本地 state；mock 仅 `dev:mock`。事件桥为目标态，现以前端主动拉取为主。
-- 页面：Dashboard（含用量）/ Chat / Agents / Connections（账号 + API 配置）/ Adapter / Skills / MCP（只读清单）/ Projects / Settings（含 Backups）。
+- 页面：Dashboard（含用量）/ Chat / Agents / Connections（账号 + API 配置）/ Adapter（侧栏「桥与适配」）/ Skills / MCP（只读清单）/ Projects / Settings（含 Backups）。日常连接与跨服务复用从 Dashboard「连接/切换」、Connections「用于其他 Agent」的 ConnectFlow 发起；Adapter 页只做 profile / 桥的高级管理，不是日常创建入口。
 - 详细交互见 [ui-design.md](ui-design.md)。
 
 ## 7. 分期路线图
@@ -351,24 +351,27 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 前端 backend 分层（tauri / mocks / contracts / api façade） | ✅；`pnpm build` 强制 Tauri + 护栏 |
 | CLI `run` 多 Agent headless | ✅ |
 | 日志 tracing 文件 + 脱敏 | ✅ 见 logging.md |
-| Adapter 规则分析 / 预览 / profile 管理 | ✅；仅显式白名单可应用，当前组合与状态见[厂商、API 与 OAuth 适配规则](provider-api-oauth-adaptation.md#4-当前实现矩阵) |
-| MCP 本机配置清单 | ✅ core 只读扫描 + Tauri command + 前端页面；不修改或注入配置 |
-| 凭据落盘加密 | **范围外**（不实现） |
+| Adapter 规则分析 / 预览 / profile 管理 | ✅；白名单可应用：Kimi→Claude 直连、Kimi→Codex 桥、Kimi/Anthropic→Pi 配置同步；其余见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)；`/adapter` 与侧栏「桥与适配」保留为 profile / 桥高级管理，日常创建走 ConnectFlow |
+| Hub 统一连接流程 ConnectFlowDialog | ✅；推荐发起入口：Dashboard「连接/切换」、Connections「用于其他 Agent」；apply 同源 `lib/api/adapter`，`plan.canApply` 权威 |
+| MCP 本机配置清单 | ✅ core 只读扫描 + Tauri command + 前端页面；不修改或注入配置；管理/注入仍 Planned，无假 UI |
+| Settings 持久化 | ✅ L1 SQLite 白名单（`SETTINGS_WHITELIST`）：`theme` / `language` / `log_level` / `log_retention_days` / `skill_market_source` / `close_to_tray` / `usage_collect_interval_min`。用量间隔：`None`=从未写入（前端默认 30）、`0`=仅手动、上限 1440。主题以 core 为准：Settings Select 预览、Save 落盘，启动 `getSettings` 对账。`autoStart` 为 OS 登录项；`closeToTray` 写 core 并同步 AppState |
+| 凭据落盘加密 | **范围外**（不实现，非待办） |
 
 ### 8.2 未实现 / 仅部分 / 范围外
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| 备份**导出包**（换机） | ❌ | `exports/` 预留；无 command |
+| 备份**导出包**（换机） | ❌ | `exports/` 预留；无 command；`Backend.features.backupExport=false`，无 UI 入口 |
+| 测速 / 切换撤销 | ✅ | 生产已接线：`undo_switch_*` + `test_provider_latency`；`Backend.features` 打开入口；导出包仍关 |
 | 自身 **DB 备份**（`backups/db/`） | ❌ | 仅 live 快照 |
-| Dashboard **生产告警** | ❌ | 固定空实现；mock 可演示 |
+| Dashboard **生产告警** | 🟡 | 生产从 doctor 派生 auth/env/update 告警（本地 dismiss）；无独立告警总线。mock 可演示额外样例 |
 | Tauri **事件桥** | ❌ | 文档目标；现以前端 refetch 为主 |
 | MCP **管理 / 注入**、`ModelSelect`、`SessionResume` | Planned | `Mcp` 矩阵仍表示管理/注入能力；独立的只读 MCP inventory 已落地，不改变矩阵状态 |
 | Adapter 本地 Bridge 产品接线 | 🟡 部分实现 | core host、协议转换、Tauri controller、UI 控件、auto-start 恢复与退出 drain 已进入当前工作区；具体可执行状态见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)，端到端验收尚未收口 |
 | Adapter 用户级 sidecar | 🎯 目标已决策 / 未实现 | 当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有；待完成 Tauri-neutral control contract、`agenthub-adapterd`、本地 IPC、单实例/版本+schema 握手、SQLite shared/exclusive schema lease、更新/卸载 saga 和分阶段切换，见 [adapter-sidecar-design.md](adapter-sidecar-design.md) |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |
 | Token **后台自动刷新守护** | ❌ | 有手动 refresh |
-| Settings 部分开关真实生效 | 🟡 | 主题/语言/日志/用量定时采集部分接线；系统集成项未完整 |
+| Settings 语言切换 / i18n | ❌ | `language` 可写入 L1，UI 仅为中文只读说明，无 i18next |
 | Usage **后台守护 / 文件监听** | ❌ | 仅前台 interval + 手动 |
 | 官方模型商店 / 账号可用模型探测 | ❌ | 明确非目标（用量去重模型列表除外） |
 | WebDAV / 代理模式 / macOS·Linux 一等公民 | P4 候选 | 未开工 |
@@ -381,7 +384,8 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 ### 8.3 前端导航（与代码 `App.tsx` 一致）
 
 - Workspace：Chat / Agents / Skills / MCP / Projects。
-- Manage：Dashboard（含用量）/ Connections / Adapter / Settings（含 Backups）。
+- Manage：Dashboard（含用量）/ Connections / 桥与适配 / Settings（含 Backups）。
+- 推荐发起入口：Dashboard 卡片「连接/切换」、Connections「用于其他 Agent」（ConnectFlowDialog）。`/adapter` 与侧栏「桥与适配」保留，只管理已创建 profile 与本地桥，不是日常创建入口。
 
 旧路由 `/router` → `/adapter`；`/usage` → `/?section=usage`；`/backups` → `/settings?tab=backups`；`/providers`·`/accounts` → `/connections`。
 

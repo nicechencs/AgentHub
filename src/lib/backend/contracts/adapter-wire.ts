@@ -10,8 +10,10 @@ import type {
   AdapterBridgeRuntimeState,
   AdapterBridgeRuntimeStatus,
   AdapterEvidence,
+  AdapterGateKind,
   AdapterPlanChange,
   AdapterProfile,
+  AdapterProfileMode,
   AdapterProfileStatus,
   AdapterRoute,
   AdapterRouteAnalysis,
@@ -28,6 +30,7 @@ export interface AdapterProfileWire {
   sourceId: string;
   targetAgentId: AgentId;
   route: string;
+  mode: string;
   status: string;
   ruleId: string;
   ruleVersion: string;
@@ -89,6 +92,8 @@ export interface AdapterRouteAnalysisWire {
   actions: AdapterActionWire[];
   limitations: string[];
   evidence: AdapterEvidenceWire[];
+  ruleId?: string | null;
+  gateKind?: string | null;
 }
 
 export interface AdapterPlanChangeWire {
@@ -128,9 +133,33 @@ function mapProfileRoute(value: string): Exclude<AdapterRoute, 'unsupported'> {
   return route;
 }
 
+function mapProfileMode(value: string): AdapterProfileMode {
+  if (value === 'api' || value === 'oauth') return value;
+  return invalidWireValue('profile.mode', value);
+}
+
 function mapSupport(value: string): AdapterSupport {
   if (value === 'stable' || value === 'experimental' || value === 'unsupported') return value;
   return invalidWireValue('support', value);
+}
+
+function mapGateKind(value: string | null | undefined): AdapterGateKind {
+  if (
+    value == null
+    || value === ''
+    || value === 'none'
+  ) {
+    return 'none';
+  }
+  if (
+    value === 'preview_only'
+    || value === 'subscription_candidate'
+    || value === 'unsupported'
+  ) {
+    return value;
+  }
+  // Unknown future gate kinds fail closed to generic unsupported chrome.
+  return 'unsupported';
 }
 
 function mapActionKind(value: string): AdapterAction['kind'] {
@@ -175,8 +204,8 @@ function mapBridgeState(value: string): AdapterBridgeRuntimeState {
  * Whitelist upstream health labels. Unknown future values fail closed to
  * `unknown` so the UI never invents connectivity it cannot prove.
  *
- * Current desktop DTO only emits `unknown`; keep room for connected/stopped
- * without hard-coding a permanent discard.
+ * Desktop DTO emits unknown|connected|stopped|degraded|unavailable. Keep room
+ * for future labels without inventing connectivity.
  */
 function mapUpstreamStatus(value: string | undefined | null): string {
   if (
@@ -239,6 +268,7 @@ export function mapAdapterProfile(wire: AdapterProfileWire): AdapterProfile {
     sourceId: wire.sourceId,
     targetAgentId: wire.targetAgentId,
     route: mapProfileRoute(wire.route),
+    mode: mapProfileMode(wire.mode),
     status: mapProfileStatus(wire.status),
     ruleId: wire.ruleId,
     ruleVersion: wire.ruleVersion,
@@ -252,6 +282,7 @@ export function mapAdapterProfile(wire: AdapterProfileWire): AdapterProfile {
 }
 
 export function mapAdapterRouteAnalysis(wire: AdapterRouteAnalysisWire): AdapterRouteAnalysis {
+  const ruleId = typeof wire.ruleId === 'string' && wire.ruleId.trim() ? wire.ruleId : null;
   return {
     route: mapRoute(wire.route),
     support: mapSupport(wire.support),
@@ -259,6 +290,8 @@ export function mapAdapterRouteAnalysis(wire: AdapterRouteAnalysisWire): Adapter
     actions: wire.actions.map(mapAction),
     limitations: [...wire.limitations],
     evidence: wire.evidence.map(mapEvidence),
+    ruleId,
+    gateKind: mapGateKind(wire.gateKind),
   };
 }
 

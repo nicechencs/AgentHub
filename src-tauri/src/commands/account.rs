@@ -106,6 +106,23 @@ pub async fn switch_account(
     .await
 }
 
+/// Invoke: `undo_switch_account` — re-apply the previous account after a switch.
+#[tauri::command]
+pub async fn undo_switch_account(
+    state: State<'_, AppState>,
+    agent_id: String,
+) -> Result<bool, String> {
+    let hub = state.hub_arc()?;
+    let agent = parse_agent(&agent_id)?;
+    let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
+    with_hub_blocking(hub, move |hub| {
+        hub.accounts
+            .undo_switch(agent)
+            .map_err(|e| map_err_string("undo_switch_account", e))
+    })
+    .await
+}
+
 /// Invoke: `delete_account`
 #[tauri::command]
 pub async fn delete_account(

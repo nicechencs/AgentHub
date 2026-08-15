@@ -1,8 +1,11 @@
-//! Provider-neutral types used by the OpenAI Responses <-> Chat Completions bridge.
+//! Provider-neutral types used by bridge protocol kernels.
 //!
-//! The bridge intentionally keeps these types separate from the HTTP host.  That makes
-//! protocol translation deterministic and, importantly, prevents transport errors from
-//! accidentally serialising prompts, tool arguments, or credentials.
+//! The existing Kimi path uses OpenAI Responses wire objects and Chat Completions.
+//! The Codex subscription → Claude Code candidate uses the same request IR
+//! ([`BridgeRequest`]) plus a surface-neutral stream IR ([`IrEvent`]).
+//!
+//! These types stay separate from the HTTP host so translation is deterministic and
+//! transport errors cannot accidentally serialise prompts, tool arguments, or credentials.
 
 use std::collections::BTreeMap;
 
@@ -190,9 +193,10 @@ impl Usage {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StopReason {
+    #[default]
     Stop,
     Length,
     ToolCalls,
@@ -476,3 +480,213 @@ impl BridgeEvent {
 
 /// Stable insertion-ordered state for upstream Kimi tool-call `index` values.
 pub(crate) type ToolCallMap<T> = BTreeMap<usize, T>;
+
+/// Surface-neutral stream events for Messages ↔ Responses protocol kernels.
+///
+/// Wire encoders (Anthropic SSE, Responses SSE) own event names and JSON envelopes.
+/// Runtime hosts must not invent tool side-effects from these events alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IrEvent {
+    MessageStart {
+        id: String,
+        model: String,
+    },
+    TextDelta {
+        text: String,
+    },
+    ToolCallStart {
+        id: String,
+        name: String,
+    },
+    ToolCallDelta {
+        id: String,
+        arguments_delta: String,
+    },
+    ToolCallEnd {
+        id: String,
+    },
+    Usage {
+        input_tokens: u64,
+        output_tokens: u64,
+        cached_input_tokens: Option<u64>,
+    },
+    MessageEnd {
+        stop_reason: StopReason,
+    },
+    Error {
+        code: String,
+        message: String,
+        retryable: bool,
+    },
+}
+
+impl IrEvent {
+    /// Whether emitting this event commits the stream so upstream retries become unsafe.
+    pub fn commits_output(&self) -> bool {
+        match self {
+            Self::TextDelta { .. }
+            | Self::ToolCallStart { .. }
+            | Self::ToolCallDelta { .. }
+            | Self::ToolCallEnd { .. }
+            | Self::MessageEnd { .. } => true,
+            // MessageStart / Usage alone do not expose model content to the client surface
+            // in a way that would double-execute tools if the upstream turn is retried.
+            Self::MessageStart { .. } | Self::Usage { .. } | Self::Error { .. } => false,
+        }
+    }
+}
+
+/// Whether any effective client-visible content has already been emitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EmissionState {
+    #[default]
+    Idle,
+    Emitted,
+}
+
+impl EmissionState {
+    pub fn observe(self, event: &IrEvent) -> Self {
+        if self == Self::Emitted || event.commits_output() {
+            Self::Emitted
+        } else {
+            Self::Idle
+        }
+    }
+}
+
+/// Classification used by the first-event retry gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryClass {
+    /// Transient upstream/transport failure that may be retried before output.
+    Transient,
+    /// Permanent failure (auth, invalid request, unsupported, etc.).
+    Permanent,
+}
+
+/// Pure retry policy for subscription bridges.
+///
+/// Safe retries are allowed only before the first effective client-visible event.
+/// After any such event, replay is forbidden (no account switch, no tool re-run).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetryGate {
+    pub max_attempts: u32,
+}
+
+impl Default for RetryGate {
+    fn default() -> Self {
+        Self { max_attempts: 2 }
+    }
+}
+
+impl RetryGate {
+    pub fn new(max_attempts: u32) -> Self {
+        Self {
+            max_attempts: max_attempts.max(1),
+        }
+    }
+
+    /// `attempts_already` is the number of upstream tries that have already finished.
+    /// The first try is `0`.
+    pub fn can_retry(
+        &self,
+        state: EmissionState,
+        class: RetryClass,
+        attempts_already: u32,
+    ) -> bool {
+        if state != EmissionState::Idle {
+            return false;
+        }
+        if class != RetryClass::Transient {
+            return false;
+        }
+        attempts_already.saturating_add(1) < self.max_attempts
+    }
+}
+
+impl StopReason {
+    pub fn to_anthropic_stop_reason(&self) -> &'static str {
+        match self {
+            Self::Stop => "end_turn",
+            Self::Length => "max_tokens",
+            Self::ToolCalls => "tool_use",
+            Self::ContentFilter => "refusal",
+            Self::Unknown => "end_turn",
+        }
+    }
+
+    pub fn from_anthropic_stop_reason(value: Option<&str>) -> Self {
+        match value {
+            Some("end_turn") | Some("stop_sequence") => Self::Stop,
+            Some("max_tokens") => Self::Length,
+            Some("tool_use") => Self::ToolCalls,
+            Some("refusal") => Self::ContentFilter,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub fn to_responses_status(&self) -> &'static str {
+        match self {
+            Self::Length | Self::ContentFilter => "incomplete",
+            _ => "completed",
+        }
+    }
+}
+
+impl Usage {
+    pub fn to_anthropic_usage_json(&self) -> Value {
+        let mut usage = Map::new();
+        usage.insert("input_tokens".to_owned(), Value::from(self.input_tokens));
+        usage.insert("output_tokens".to_owned(), Value::from(self.output_tokens));
+        if let Some(cached) = self.cached_input_tokens {
+            usage.insert("cache_read_input_tokens".to_owned(), Value::from(cached));
+        }
+        Value::Object(usage)
+    }
+
+    pub fn from_anthropic_usage(value: &Value) -> Option<Self> {
+        let object = value.as_object()?;
+        let input_tokens = object.get("input_tokens")?.as_u64()?;
+        let output_tokens = object
+            .get("output_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or_default();
+        let cached_input_tokens = object
+            .get("cache_read_input_tokens")
+            .and_then(Value::as_u64)
+            .or_else(|| {
+                object
+                    .get("cache_creation_input_tokens")
+                    .and_then(Value::as_u64)
+            });
+        Some(Self {
+            input_tokens,
+            output_tokens,
+            total_tokens: input_tokens.saturating_add(output_tokens),
+            cached_input_tokens,
+        })
+    }
+
+    pub fn from_responses_usage(value: &Value) -> Option<Self> {
+        let object = value.as_object()?;
+        let input_tokens = object.get("input_tokens")?.as_u64()?;
+        let output_tokens = object
+            .get("output_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or_default();
+        let total_tokens = object
+            .get("total_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(input_tokens.saturating_add(output_tokens));
+        let cached_input_tokens = object
+            .get("input_tokens_details")
+            .and_then(Value::as_object)
+            .and_then(|details| details.get("cached_tokens"))
+            .and_then(Value::as_u64);
+        Some(Self {
+            input_tokens,
+            output_tokens,
+            total_tokens,
+            cached_input_tokens,
+        })
+    }
+}

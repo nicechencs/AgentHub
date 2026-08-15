@@ -2,9 +2,11 @@ import type { InstallPort } from '@/lib/backend/contracts';
 import type {
   AgentInstallCatalogEntryDto,
   InstallOutcome,
+  InstallProgressPayload,
 } from '@/lib/backend/contracts/install-types';
 import type { AgentId, RuntimeId } from '@/lib/types';
 import { logger } from '@/lib/logger';
+import { onInstallProgress } from './install-events';
 import { invoke } from './invoke';
 
 const log = logger.scope('backend:tauri:install');
@@ -73,6 +75,10 @@ export function createTauriInstallPort(): InstallPort {
         log.error('open_agent_config_dir failed', e);
         throw e;
       }
+    },
+
+    onProgress(handler: (payload: InstallProgressPayload) => void) {
+      return onInstallProgress(handler);
     },
   };
 }

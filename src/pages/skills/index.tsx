@@ -29,16 +29,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { segmentedCountClass } from '@/components/ui/segmented-styles';
+import { actionCountClass, segmentedCountClass } from '@/components/ui/segmented-styles';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TableSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
-import { AGENTS, AGENT_MAP } from '@/config/agents';
+import { AGENTS, agentDisplayName } from '@/config/agents';
 import {
   checkConflict,
   isMappedState,
-  isPrivateInstalledOrigin,
+  mapCoreSkill,
   openPathInFileManager,
   toggleSkillSync,
   type InstalledSkillDto,
@@ -56,10 +56,9 @@ import {
   runInstallMarketSkill,
   runInstallSkill,
   runUninstallSkill,
-  useInstalledSkills,
+  useSkillCatalog,
   useSkillMarket,
   useSkillsCacheVersion,
-  useSkillsList,
 } from '@/lib/hooks/useSkills';
 import { getSettings } from '@/lib/api/settings';
 import { usePrefersReducedMotion } from '@/lib/motion';
@@ -67,11 +66,17 @@ import { openExternalLink } from '@/lib/open-external';
 import { FEATURE_NOT_WIRED } from '@/lib/platform';
 import type { AgentId, Skill, SkillMarketSource, SkillSyncState } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { AgentWorkspace } from './AgentWorkspace';
 import { pageEdgePx, pageRhythm } from '@/components/layout/page-rhythm';
 import { skillsCopy } from './copy';
 import { SkillMarketTable } from './SkillMarketTable';
-import { SkillMatrix } from './SkillMatrix';
+import {
+  catalogRowHasConflict,
+  catalogRowHasMapped,
+  isPrivateSourceRow,
+  isSharedCatalogRow,
+  SkillMatrix,
+  visibleCatalogRows,
+} from './SkillMatrix';
 
 const PREVIEW_WIDTH_DEFAULT = 440;
 /** 正常拖拽/记忆宽度下限 */
@@ -124,40 +129,38 @@ function marketResultLabel(
   return marketSourceLabel(source);
 }
 
-/** library=本地共享库 · workspace=各agent技能 · market=市场；installed 兼容旧 URL */
-const SKILL_TABS = ['library', 'workspace', 'market'] as const;
+/** library=本地表 · market=市场；workspace / installed 兼容旧 URL */
+const SKILL_TABS = ['library', 'market'] as const;
 type SkillTab = (typeof SKILL_TABS)[number];
 
 function parseSkillTab(raw: string | null): SkillTab {
-  if (raw === 'installed') return 'library';
+  if (raw === 'installed' || raw === 'workspace') return 'library';
   if (raw && (SKILL_TABS as readonly string[]).includes(raw)) return raw as SkillTab;
   return 'library';
 }
 
-type SyncFilter = 'all' | 'mapped' | 'unmapped';
+type LocalFilter = 'all' | 'private' | 'mapped' | 'unmapped' | 'conflict';
 
-const FILTERS: { id: SyncFilter; label: string }[] = [
+const FILTERS: { id: LocalFilter; label: string }[] = [
   { id: 'all', label: skillsCopy.filters.enableAll },
+  { id: 'private', label: skillsCopy.filters.enablePrivate },
   { id: 'mapped', label: skillsCopy.filters.enableMapped },
   { id: 'unmapped', label: skillsCopy.filters.enableUnmapped },
+  { id: 'conflict', label: skillsCopy.filters.enableConflict },
 ];
 
 const cellKey = (skillId: string, agentId: AgentId) => `${skillId}:${agentId}`;
 
-/** 按真实写操作结果更新本地单元格 */
-function applyCellState(
-  skills: Skill[],
+/** 按真实写操作结果更新共享 catalog 行的投影 */
+function applyCatalogCellState(
+  rows: InstalledSkillDto[],
   skillId: string,
   agentId: AgentId,
   state: SkillSyncState,
-  conflict: boolean,
-): Skill[] {
-  return skills.map((s) => {
-    if (s.id !== skillId) return s;
-    const conflicts = conflict
-      ? Array.from(new Set([...s.conflicts.filter((a) => a !== agentId), agentId]))
-      : s.conflicts.filter((a) => a !== agentId);
-    const projections = (s.projections ?? []).map((p) =>
+): InstalledSkillDto[] {
+  return rows.map((row) => {
+    if (row.origin !== 'shared' || row.id !== skillId) return row;
+    const projections = (row.projections ?? []).map((p) =>
       p.agent === agentId
         ? {
             ...p,
@@ -166,12 +169,7 @@ function applyCellState(
           }
         : p,
     );
-    return {
-      ...s,
-      sync: { ...s.sync, [agentId]: state },
-      projections,
-      conflicts,
-    };
+    return { ...row, projections };
   });
 }
 
@@ -184,24 +182,23 @@ export default function SkillsPage() {
   const [installingMarketId, setInstallingMarketId] = useState<string | null>(null);
   const [skillMarketSource, setSkillMarketSource] = useState<SkillMarketSource>('auto');
 
-  /** 进程内 SWR：再进 Skills 页可立刻用旧矩阵，后台 revalidate */
+  /** 进程内 SWR：再进 Skills 页可立刻用旧 catalog，后台 revalidate */
   const {
-    data: skills,
+    data: catalog,
     error,
     loading,
     reload: load,
-    setData: setSkills,
-  } = useSkillsList();
+    setData: setCatalog,
+  } = useSkillCatalog();
 
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<SyncFilter>('all');
+  const [filter, setFilter] = useState<LocalFilter>('all');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchSyncing, setBatchSyncing] = useState(false);
   const [pendingCells, setPendingCells] = useState<Set<string>>(new Set());
   const [installSource, setInstallSource] = useState('');
   const [installOpen, setInstallOpen] = useState(false);
   const [importingIds, setImportingIds] = useState<Set<string>>(new Set());
-  const [batchAdopting, setBatchAdopting] = useState(false);
   const [importConflict, setImportConflict] = useState<{
     skillId: string;
     agentId: AgentId;
@@ -359,25 +356,6 @@ export default function SkillsPage() {
     persistPreviewWidth(PREVIEW_WIDTH_DEFAULT);
   }, [persistPreviewWidth]);
 
-  /**
-   * installed / market 按需加载：
-   * - workspace Tab：立刻拉 installed
-   * - library：共享库矩阵出数后再延后拉（badge，不挡首屏）
-   * - market：仅进入市场 Tab 才请求 skills.sh
-   */
-  const [installedEnabled, setInstalledEnabled] = useState(tab === 'workspace');
-  useEffect(() => {
-    if (tab === 'workspace') {
-      setInstalledEnabled(true);
-      return;
-    }
-    if (skills !== null) {
-      const id = window.setTimeout(() => setInstalledEnabled(true), 80);
-      return () => window.clearTimeout(id);
-    }
-  }, [tab, skills]);
-
-  const installedQuery = useInstalledSkills({ enabled: installedEnabled });
   const market = useSkillMarket(marketQuery, { enabled: tab === 'market' });
   /** 设置页切换市场源后 invalidate → version 变化，这里同步刷新源标签 */
   const marketCacheVersion = useSkillsCacheVersion('market');
@@ -406,43 +384,60 @@ export default function SkillsPage() {
     setSearchParams(p, { replace: true });
   };
 
-  /** 仅本地（可收编）数量，不含「已在真源」的投影/副本 */
-  const privateOnlyCount = useMemo(
-    () =>
-      installedQuery.data?.filter(
-        (s) =>
-          isPrivateInstalledOrigin(s.origin) &&
-          (s.mapStatus === 'private_source' || s.mapStatus == null),
-      ).length ?? 0,
-    [installedQuery.data],
+  const localRows = useMemo(
+    () => (catalog ? visibleCatalogRows(catalog) : []),
+    [catalog],
   );
 
-  /** 启用状态分段角标（与各Agent技能筛选一致：全量计数，不受搜索影响） */
+  const sharedCount = localRows.filter(isSharedCatalogRow).length;
+  /** 仅本地（可收编）数量，不含「已在真源」的投影/副本 */
+  const privateOnlyCount = localRows.filter(isPrivateSourceRow).length;
+
+  /** 筛选角标：全量计数，不受搜索影响 */
   const filterCounts = useMemo(() => {
-    if (!skills) return { all: 0, mapped: 0, unmapped: 0 };
     let mapped = 0;
     let unmapped = 0;
-    for (const s of skills) {
-      if (Object.values(s.sync).some((st) => isMappedState(st))) mapped++;
+    let conflict = 0;
+    let privateRows = 0;
+    for (const row of localRows) {
+      if (isPrivateSourceRow(row) || row.origin !== 'shared') {
+        privateRows++;
+        continue;
+      }
+      if (catalogRowHasMapped(row)) mapped++;
       else unmapped++;
+      if (catalogRowHasConflict(row)) conflict++;
     }
-    return { all: skills.length, mapped, unmapped };
-  }, [skills]);
+    return {
+      all: localRows.length,
+      private: privateRows,
+      mapped,
+      unmapped,
+      conflict,
+    };
+  }, [localRows]);
 
   const filtered = useMemo(() => {
-    if (!skills) return [];
     const keyword = search.trim().toLowerCase();
-    return skills.filter((s) => {
-      if (keyword && !s.name.toLowerCase().includes(keyword)) return false;
-      const states = Object.values(s.sync);
-      const hasMapped = states.some((st) => isMappedState(st));
-      if (filter === 'mapped') return hasMapped;
-      if (filter === 'unmapped') return !hasMapped;
+    return localRows.filter((row) => {
+      if (keyword && !row.name.toLowerCase().includes(keyword)) return false;
+      if (filter === 'all') return true;
+      if (filter === 'private') return row.origin !== 'shared';
+      if (!isSharedCatalogRow(row)) return false;
+      if (filter === 'mapped') return catalogRowHasMapped(row);
+      if (filter === 'unmapped') return !catalogRowHasMapped(row);
+      if (filter === 'conflict') return catalogRowHasConflict(row);
       return true;
     });
-  }, [skills, search, filter]);
+  }, [localRows, search, filter]);
 
-  const allSelected = filtered.length > 0 && filtered.every((s) => selected.has(s.id));
+  const filteredShared = useMemo(
+    () => filtered.filter(isSharedCatalogRow),
+    [filtered],
+  );
+
+  const allSelected =
+    filteredShared.length > 0 && filteredShared.every((s) => selected.has(s.id));
 
   const handleToggleSelect = (skillId: string) => {
     setSelected((prev) => {
@@ -454,7 +449,7 @@ export default function SkillsPage() {
   };
 
   const handleToggleSelectAll = () => {
-    setSelected(allSelected ? new Set() : new Set(filtered.map((s) => s.id)));
+    setSelected(allSelected ? new Set() : new Set(filteredShared.map((s) => s.id)));
   };
 
   const doToggle = async (
@@ -464,8 +459,11 @@ export default function SkillsPage() {
     meta?: { name?: string; wasMapped?: boolean },
   ) => {
     const key = cellKey(skillId, agentId);
-    const agentName = AGENT_MAP[agentId]?.name ?? agentId;
-    const skillName = meta?.name ?? skills?.find((s) => s.id === skillId)?.name ?? skillId;
+    const agentName = agentDisplayName(agentId);
+    const skillName =
+      meta?.name ??
+      catalog?.find((s) => s.origin === 'shared' && s.id === skillId)?.name ??
+      skillId;
     setPendingCells((prev) => new Set(prev).add(key));
     try {
       const result = await toggleSkillSync(skillId, agentId, { force });
@@ -479,8 +477,8 @@ export default function SkillsPage() {
         });
         return;
       }
-      setSkills((prev) =>
-        prev ? applyCellState(prev, skillId, agentId, result.state, result.conflict) : prev,
+      setCatalog((prev) =>
+        prev ? applyCatalogCellState(prev, skillId, agentId, result.state) : prev,
       );
       if (force) {
         toast({
@@ -519,7 +517,7 @@ export default function SkillsPage() {
   const handleCellClick = async (skill: Skill, agentId: AgentId) => {
     const state = skill.sync[agentId];
     if (state === 'unsupported') return;
-    const agentName = AGENT_MAP[agentId]?.name ?? agentId;
+    const agentName = agentDisplayName(agentId);
     // 已同步 → 直接取消，结果由 doToggle 统一提示
     if (isMappedState(state)) {
       await doToggle(skill.id, agentId, false, { name: skill.name, wasMapped: true });
@@ -588,9 +586,9 @@ export default function SkillsPage() {
     }
   };
 
-  /** 勾选行：仅对所选技能启用到已装工具（跳过已启用/冲突/不支持，不 force） */
+  /** 勾选行：仅对所选共享技能启用到已装工具（跳过已启用/冲突/不支持，不 force） */
   const handleBatchEnable = async () => {
-    if (!skills || selected.size === 0) return;
+    if (!catalog || selected.size === 0) return;
     if (installedAgents.length === 0) {
       toast({ ...skillsCopy.toast.noAgents, variant: 'danger' });
       return;
@@ -602,8 +600,9 @@ export default function SkillsPage() {
     let failed = 0;
     const targets = installedAgents.map((a) => a.id);
     try {
-      for (const skill of skills) {
-        if (!selected.has(skill.id)) continue;
+      for (const row of catalog) {
+        if (!isSharedCatalogRow(row) || !selected.has(row.id)) continue;
+        const skill = mapCoreSkill(row);
         for (const agentId of targets) {
           const state = skill.sync[agentId] ?? 'unsupported';
           const proj = skill.projections?.find((p) => p.agent === agentId);
@@ -635,14 +634,14 @@ export default function SkillsPage() {
             const result = await toggleSkillSync(skill.id, agentId, { force: false });
             if (result.conflict) {
               conflictSkipped++;
-              setSkills((prev) =>
-                prev ? applyCellState(prev, skill.id, agentId, result.state, true) : prev,
+              setCatalog((prev) =>
+                prev ? applyCatalogCellState(prev, skill.id, agentId, result.state) : prev,
               );
               continue;
             }
             enabled++;
-            setSkills((prev) =>
-              prev ? applyCellState(prev, skill.id, agentId, result.state, result.conflict) : prev,
+            setCatalog((prev) =>
+              prev ? applyCatalogCellState(prev, skill.id, agentId, result.state) : prev,
             );
           } catch {
             failed++;
@@ -692,8 +691,6 @@ export default function SkillsPage() {
         title: t.title,
         description: t.description,
         variant: 'success',
-        actionLabel: t.actionLabel,
-        onAction: goLibraryAndHighlight,
         duration: 8000,
       });
       setImportConflict(null);
@@ -719,58 +716,6 @@ export default function SkillsPage() {
     }
   };
 
-  const handleBatchAdopt = async (
-    items: { skillId: string; agentId: AgentId; name: string }[],
-  ) => {
-    if (items.length === 0) return;
-    setBatchAdopting(true);
-    let ok = 0;
-    let failed = 0;
-    let conflict = 0;
-    try {
-      for (const item of items) {
-        const key = `${item.agentId}:${item.skillId}`;
-        setImportingIds((prev) => new Set(prev).add(key));
-        try {
-          await runImportPrivateSkill(item.skillId, item.agentId, false);
-          ok++;
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          if (msg.includes('skill.conflict') || msg.toLowerCase().includes('already exists')) {
-            conflict++;
-            setImportConflict({
-              skillId: item.skillId,
-              agentId: item.agentId,
-              name: item.name,
-            });
-          } else {
-            failed++;
-          }
-        } finally {
-          setImportingIds((prev) => {
-            const next = new Set(prev);
-            next.delete(key);
-            return next;
-          });
-        }
-      }
-      {
-        const t = skillsCopy.toast.batchAdopt(ok, conflict, failed);
-        toast({
-          title: t.title,
-          description: t.description,
-          variant: failed > 0 ? 'danger' : 'success',
-          actionLabel: t.actionLabel,
-          onAction: t.actionLabel ? goLibraryAndHighlight : undefined,
-          duration: ok > 0 ? 8000 : 5000,
-        });
-      }
-      await load();
-    } finally {
-      setBatchAdopting(false);
-    }
-  };
-
   const handleUninstallPrivate = (
     skillId: string,
     agentId: AgentId,
@@ -792,7 +737,7 @@ export default function SkillsPage() {
     try {
       await runUninstallSkill(skillId, agentId);
       toast({
-        ...skillsCopy.toast.removeOk(AGENT_MAP[agentId]?.name ?? agentId, name),
+        ...skillsCopy.toast.removeOk(agentDisplayName(agentId), name),
         variant: 'success',
       });
       setRemoveFromTool(null);
@@ -815,73 +760,43 @@ export default function SkillsPage() {
   const previewWidthTransition =
     !previewResizing && !reduceMotion ? 'motion-panel-width' : 'transition-none';
 
-  const openSharedPreview = useCallback(
-    (skill: Skill) => {
+  const openCatalogPreview = useCallback(
+    (row: InstalledSkillDto) => {
       requestOpenPreview({
-        skillId: skill.id,
-        name: skill.name,
-        sourceDir: skill.sourceDir,
-        privateAgent: null,
+        skillId: row.id,
+        name: row.name,
+        sourceDir: row.sourceDir,
+        privateAgent: row.origin !== 'shared' ? (row.origin as AgentId) : null,
       });
     },
     [requestOpenPreview],
   );
 
-  const openPrivatePreview = useCallback(
-    (skill: InstalledSkillDto) => {
-      requestOpenPreview({
-        skillId: skill.id,
-        name: skill.name,
-        sourceDir: skill.sourceDir,
-        privateAgent:
-          skill.origin && skill.origin !== 'shared' ? (skill.origin as AgentId) : null,
-      });
-    },
-    [requestOpenPreview],
-  );
-
-  /** ↑/↓ when preview open: move active among currently visible list (library / workspace). */
+  /** ↑/↓ when preview open: move among currently filtered local rows (shared + private). */
   useEffect(() => {
     if (!previewExpanded || !previewTarget) return;
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       if (shouldIgnoreListKeyboard(e.target)) return;
-      if (tab !== 'library' && tab !== 'workspace') return;
+      if (tab !== 'library') return;
+      if (filtered.length === 0) return;
 
-      if (tab === 'library') {
-        if (filtered.length === 0) return;
-        e.preventDefault();
-        const ids = filtered.map((s) => s.id);
-        const currentId =
-          previewTarget && !previewTarget.privateAgent ? previewTarget.skillId : null;
-        let idx = currentId ? ids.indexOf(currentId) : -1;
-        if (idx < 0) idx = e.key === 'ArrowDown' ? -1 : 0;
-        const nextIdx =
-          e.key === 'ArrowDown'
-            ? Math.min(ids.length - 1, idx + 1)
-            : Math.max(0, idx <= 0 ? 0 : idx - 1);
-        const skill = filtered[nextIdx];
-        if (skill) openSharedPreview(skill);
-        return;
-      }
-
-      // workspace: navigate private installed rows that match active private scope
-      const rows = (installedQuery.data ?? []).filter(
-        (s) => isPrivateInstalledOrigin(s.origin),
-      );
-      if (rows.length === 0) return;
       e.preventDefault();
-      const keys = rows.map((s) => privateSkillActiveKey(s.origin as AgentId, s.id));
-      const cur = activeKey && activeKey.startsWith('agent:') ? activeKey : null;
+      const keys = filtered.map((row) =>
+        row.origin !== 'shared'
+          ? privateSkillActiveKey(row.origin as AgentId, row.id)
+          : sharedSkillActiveKey(row.id),
+      );
+      const cur = activeKey;
       let idx = cur ? keys.indexOf(cur) : -1;
       if (idx < 0) idx = e.key === 'ArrowDown' ? -1 : 0;
       const nextIdx =
         e.key === 'ArrowDown'
           ? Math.min(keys.length - 1, idx + 1)
           : Math.max(0, idx <= 0 ? 0 : idx - 1);
-      const skill = rows[nextIdx];
-      if (skill) openPrivatePreview(skill);
+      const row = filtered[nextIdx];
+      if (row) openCatalogPreview(row);
     };
 
     window.addEventListener('keydown', onKey);
@@ -891,10 +806,8 @@ export default function SkillsPage() {
     previewTarget,
     tab,
     filtered,
-    installedQuery.data,
     activeKey,
-    openSharedPreview,
-    openPrivatePreview,
+    openCatalogPreview,
   ]);
 
   /** Enter on focused name already handled in row; Enter while preview open → focus document. */
@@ -919,7 +832,7 @@ export default function SkillsPage() {
         <PageHeader
           size="compact"
           title={skillsCopy.page.title}
-          description={skillsCopy.page.meta(skills?.length ?? '…', privateOnlyCount)}
+          description={skillsCopy.page.meta(catalog == null ? '…' : sharedCount, privateOnlyCount)}
           descriptionTip={skillsCopy.page.descriptionTip}
           actions={
             <Button variant="ghost" size="sm" onClick={() => setInstallOpen(true)}>
@@ -941,20 +854,9 @@ export default function SkillsPage() {
         <TabsList>
           <TabsTrigger value="library" className="gap-1.5">
             {skillsCopy.tabs.library}
-            {skills != null ? (
-              <Tip className={segmentedCountClass} label={skillsCopy.tabs.libraryBadge(skills.length)}>
-                {skills.length}
-              </Tip>
-            ) : null}
-          </TabsTrigger>
-          <TabsTrigger value="workspace" className="gap-1.5">
-            {skillsCopy.tabs.workspace}
-            {privateOnlyCount > 0 ? (
-              <Tip
-                className="rounded-full bg-amber-500/15 px-1.5 py-0 text-2xs tabular-nums text-amber-700 dark:text-amber-300"
-                label={skillsCopy.tabs.privateBadge(privateOnlyCount)}
-              >
-                {privateOnlyCount}
+            {catalog != null ? (
+              <Tip className={segmentedCountClass} label={skillsCopy.tabs.libraryBadge(sharedCount)}>
+                {sharedCount}
               </Tip>
             ) : null}
           </TabsTrigger>
@@ -981,11 +883,32 @@ export default function SkillsPage() {
                 <SegmentedControl
                   value={filter}
                   onChange={setFilter}
-                  options={FILTERS.map((f) => ({
-                    value: f.id,
-                    label: f.label,
-                    count: filterCounts[f.id],
-                  }))}
+                  options={FILTERS.map((f) =>
+                    f.id === 'private'
+                      ? {
+                          value: f.id,
+                          label: (
+                            <span className="inline-flex items-center gap-1.5">
+                              {f.label}
+                              {filterCounts.private > 0 ? (
+                                <Tip
+                                  className={actionCountClass}
+                                  label={skillsCopy.tabs.privateBadge(filterCounts.private)}
+                                >
+                                  {filterCounts.private}
+                                </Tip>
+                              ) : (
+                                <span className={segmentedCountClass}>0</span>
+                              )}
+                            </span>
+                          ),
+                        }
+                      : {
+                          value: f.id,
+                          label: f.label,
+                          count: filterCounts[f.id],
+                        },
+                  )}
                   aria-label="启用状态过滤"
                 />
                 {selected.size > 0 ? (
@@ -1034,58 +957,28 @@ export default function SkillsPage() {
                 />
               ) : (
                 <SkillMatrix
-                  skills={filtered}
+                  rows={filtered}
                   selected={selected}
                   allSelected={allSelected}
                   pendingCells={pendingCells}
+                  importingIds={importingIds}
                   onToggleSelect={handleToggleSelect}
                   onToggleSelectAll={handleToggleSelectAll}
                   onCellClick={handleCellClick}
                   onOpenDir={(path) => void handleOpenDir(path)}
-                  onPreview={openSharedPreview}
-                  activeKey={
-                    previewTarget && !previewTarget.privateAgent
-                      ? sharedSkillActiveKey(previewTarget.skillId)
-                      : activeKey?.startsWith('shared:')
-                        ? activeKey
-                        : null
+                  onPreview={openCatalogPreview}
+                  activeKey={activeKey}
+                  onAdopt={(skillId, agentId, name) => {
+                    void handleImportPrivate(skillId, agentId, name, false);
+                  }}
+                  onUninstall={(skillId, agentId, name, inLibrary) =>
+                    handleUninstallPrivate(skillId, agentId, name, inLibrary)
                   }
                   agents={matrixAgents}
                   installedAgentIds={installedAgentIds}
                 />
               )}
             </>
-          )}
-        </TabsContent>
-
-        <TabsContent value="workspace" className="mt-3">
-          {installedQuery.error ? (
-            <ErrorState error={installedQuery.error} onRetry={() => void installedQuery.reload()} />
-          ) : installedQuery.loading && !installedQuery.data ? (
-            <TableSkeleton rows={6} cols={4} />
-          ) : (
-            <AgentWorkspace
-              installed={installedQuery.data ?? []}
-              installedAgents={matrixAgents}
-              importingIds={importingIds}
-              batchAdopting={batchAdopting}
-              onOpenDir={(path) => void handleOpenDir(path)}
-              onPreview={openPrivatePreview}
-              activeKey={
-                previewTarget?.privateAgent
-                  ? privateSkillActiveKey(previewTarget.privateAgent, previewTarget.skillId)
-                  : activeKey?.startsWith('agent:')
-                    ? activeKey
-                    : null
-              }
-              onAdopt={(skillId, agentId, name) => {
-                void handleImportPrivate(skillId, agentId, name, false);
-              }}
-              onUninstall={(skillId, agentId, name, inLibrary) =>
-                handleUninstallPrivate(skillId, agentId, name, inLibrary)
-              }
-              onBatchAdopt={(items) => void handleBatchAdopt(items)}
-            />
           )}
         </TabsContent>
 
@@ -1246,11 +1139,11 @@ export default function SkillsPage() {
               {removeFromTool &&
                 (removeFromTool.inLibrary
                   ? skillsCopy.dialog.removeBody(
-                      AGENT_MAP[removeFromTool.agentId]?.name ?? removeFromTool.agentId,
+                      agentDisplayName(removeFromTool.agentId),
                       removeFromTool.name,
                     )
                   : skillsCopy.dialog.deleteBody(
-                      AGENT_MAP[removeFromTool.agentId]?.name ?? removeFromTool.agentId,
+                      agentDisplayName(removeFromTool.agentId),
                       removeFromTool.name,
                     ))}
             </DialogDescription>

@@ -21,6 +21,29 @@ fn list_missing_source_is_empty() {
 }
 
 #[test]
+fn list_skill_catalog_empty_source_is_empty_or_shared_only() {
+    let (_dir, hub) = hub_with_skills(&[]);
+    let catalog = list_skill_catalog_inner(&hub).unwrap();
+    for s in catalog {
+        if s.origin == "shared" {
+            assert!(s.projectable);
+            assert_eq!(
+                s.map_status,
+                agenthub_core::models::SkillMapStatus::Available
+            );
+            assert_eq!(s.projections.len(), AgentId::ALL.len());
+        } else {
+            assert!(!s.projectable);
+            assert_eq!(
+                s.map_status,
+                agenthub_core::models::SkillMapStatus::PrivateSource
+            );
+            assert!(s.projections.is_empty());
+        }
+    }
+}
+
+#[test]
 fn sync_rejects_invalid_agent() {
     let (_dir, hub) = hub_with_skills(&[]);
     let err = sync_skill_inner(&hub, "any", "bad-agent", false).unwrap_err();

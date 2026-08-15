@@ -2,7 +2,7 @@
 
 > 对应《项目方案》GUI + CLI 双端与《架构拆分》`agenthub-cli` / 数据目录。  
 > 本文是**可验收契约**：实现 CLI 与配置读写时以本文为准；与 GUI 冲突时以 **core service 行为一致** 为最高原则。  
-> 状态（2026-08-03，以代码为准）：CLI 已覆盖 doctor / run / env / agent（含 `capabilities`）/ provider / account（含 `oauth-url`、`refresh`、`delete`）/ skill 全树 / usage / backup / config。GUI 已接线 doctor、安装、Provider、Account、OAuth PKCE（Claude/Codex/Grok）、Skill、Usage、Backup、Chat、Projects、Settings。**备份导出**仍未实现。凭据落盘加密为当前范围外。
+> 状态（2026-08-14，以代码为准）：CLI 已覆盖 doctor / run / env / agent（含 `capabilities`）/ provider / account（含 `oauth-url`、`refresh`、`delete`）/ skill 全树 / usage / backup / config。GUI 已接线 doctor、安装、Provider、Account、OAuth PKCE（Claude/Codex/Grok）、Skill、Usage、Backup、Chat、Projects、Settings（L1 白名单含用量间隔；主题 Save 落盘）。Provider/Account **测速与切换撤销**已接线（`Backend.features` true）。**备份导出**仍未实现。凭据落盘加密为当前范围外。
 > v1.1：`doctor` 含 runtimes；新增 `env` 资源；`agent install` 两阶段与 `--install-deps`。  
 > v1.2：平台环境差异——`doctor`/`env list` 仅返回宿主相关 Runtime（macOS 不含 PowerShell）；`env install` 默认 channel 与 `agent install|upgrade` native 底层命令按 Windows/macOS 分流。
 
@@ -269,8 +269,8 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 | 命令 | 说明 |
 |---|---|
 | `path` | 打印 `data_dir`、`db_path`、`backups_dir`、`logs_dir` |
-| `get [key]` | 无 key 则列出全部非敏感 settings（含 `log_level`、`log_retention_days`）；有 key 则单值 |
-| `set <key> <value>` | 仅允许白名单 key（§7.3）；`log_level` / `log_retention_days` **真正生效**，于**下次进程启动**应用；改 `data_dir` 需提示「下次进程生效」或要求重启 |
+| `get [key]` | 无 key 则列出全部非敏感 settings（白名单见 §7.3）；有 key 则单值 |
+| `set <key> <value>` | 仅允许白名单 key（§7.3）；`log_level` / `log_retention_days` 于**下次进程启动**应用 |
 
 ---
 
@@ -300,15 +300,15 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 |---|---|---|---|
 | Runtime 检测 / 引导安装 | ✅ Agents 页 / Env 条 | ✅ `env list` / `env install` | 两阶段 ensure_env |
 | Agent 检测/安装/升级/卸载 | ✅ Agents 页 | ✅ list/install/upgrade/uninstall + `capabilities` | |
-| Provider 列表/导入/切换/upsert | ✅ Connections | ✅ list/show/import/switch/presets | CLI 无 create/update/delete；GUI 有 upsert/delete |
-| Account 池与切换 | ✅ Connections | ✅ list/import/apikey/switch/delete | |
+| Provider 列表/导入/切换/upsert | ✅ Connections | ✅ list/show/import/switch/presets | CLI 无 create/update/delete；GUI 有 upsert/delete；**测速 / 切换撤销已接线**（`providerTestLatency` / `providerUndoSwitch`） |
+| Account 池与切换 | ✅ Connections | ✅ list/import/apikey/switch/delete | GUI **切换撤销已接线**（`accountUndoSwitch`） |
 | OAuth 添加账号 | ✅ Claude/Codex/Grok | 🟡 oauth-url + refresh | 完整浏览器流以 GUI 为主 |
 | Skills 矩阵 / 同步 / 安装 | ✅ Skills 页 | ✅ 全树（含 install/market/project） | market 默认 skills.sh；依赖网络与 Git |
 | Usage 采集/图表 | ✅ Dashboard 用量段 | ✅ collect/stats/models/health | Cursor Unsupported |
 | Backup 列表/创建/恢复/删除 | ✅ Settings·备份 | ✅ list/create/restore/delete | **导出包**未实现 |
 | Chat 多 Agent | ✅ /chat | ❌（用 `run` 一次性 headless） | 过程面板 Phase 0–2 |
 | Projects | ✅ /projects | ❌ | |
-| Settings 主题/日志等 | 🟡 部分接线 | ✅ config get/set 白名单 | 主题等 UI 偏好可 local；日志键落 SQLite |
+| Settings 主题/日志等 | ✅ L1 白名单 + OS 自启 | ✅ config get/set 白名单 | 主题/用量间隔/托盘落 SQLite；`autoStart` 为 OS 登录项；语言无 i18n |
 | Doctor / 排障 | ✅ doctor report | ✅ doctor（含 runtimes） | |
 | 官方模型目录 | ❌ | ❌ | 非目标 |
 | 备份导出 / DB 备份 | ❌ | ❌ | 预留目录 |
@@ -372,15 +372,19 @@ log_level = "info"              # error | warn | info | debug | trace
 
 | key | 类型 | 说明 |
 |---|---|---|
-| `language` | `zh` \| `en` | |
-| `theme` | `dark` \| `light` \| `system` | GUI 为主 |
+| `theme` | `dark` \| `light` \| `system` | core 权威；Settings Select 预览、Save 落盘；启动 `getSettings` 对账；localStorage 仅首屏缓存 |
+| `language` | `zh` / `zh-CN` \| `en` | 可落盘；GUI 暂无切换（仅中文只读说明） |
 | `log_level` | `error` \| `warn` \| `info` \| `debug` \| `trace` | 文件日志级别；**下次启动生效**；默认 `info` |
 | `log_retention_days` | u32（1..=365） | 日志保留天数；默认 **14**；**下次启动** purge 时生效 |
-| `auto_start` | bool | |
-| `close_to_tray` | bool | |
-| `auto_backup` | bool | 切换时是否强制 live 备份（建议默认 true，false 仅高级） |
-| `usage_collect_interval_min` | u32 | `0` = 仅手动；`>0` = GUI 前台按该分钟间隔自动 `usage collect`（后台暂停；非 OS 守护） |
-| `data_dir` | path | 敏感变更；set 后写启动配置或提示迁移 |
+| `skill_market_source` | `auto` \| `skills.sh` \| `skillhub.cn` | 远程技能市场源 |
+| `close_to_tray` | bool | 关窗隐藏到托盘；写 L1 并同步 Tauri AppState；默认 true |
+| `usage_collect_interval_min` | `Option<u32>` | `None`=从未写入（不序列化；GUI 默认 30）；`0`=仅手动；`1..=1440`=前台间隔分钟（非 OS 守护） |
+
+白名单与 `settings_service::SETTINGS_WHITELIST` 一致。下列**不是** L1 `config set` 键：
+
+- **开机自启**（GUI `autoStart`）：OS 登录项，不写 `settings` 表
+- **`auto_backup`**：旧客户端残留字段已忽略；live 快照由核心服务固定触发，无关闭开关
+- **`data_dir`**：L0 启动定位（`--data-dir` / `AGENTHUB_HOME`）；`config path` 只读展示
 
 只读展示（get 可给，set 拒绝）：`app_version`。当前版本不提供主密码或凭据存储方式切换。
 

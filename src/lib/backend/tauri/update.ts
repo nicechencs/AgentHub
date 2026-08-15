@@ -4,9 +4,8 @@
  */
 import { getVersion } from '@tauri-apps/api/app';
 import { check, type Update } from '@tauri-apps/plugin-updater';
-import { invoke } from '@tauri-apps/api/core';
 import type { UpdateDownloadProgress, UpdateInfo, UpdatePort } from '@/lib/backend/contracts/update-types';
-import { assertTauriRuntime } from './invoke';
+import { assertTauriRuntime, invoke } from './invoke';
 import { logger } from '@/lib/logger';
 
 const log = logger.scope('backend:tauri:update');

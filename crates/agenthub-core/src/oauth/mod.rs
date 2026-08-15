@@ -12,8 +12,9 @@ mod server;
 mod session;
 
 pub use catalog::{
-    is_device_code_option, list_oauth_options, pi_auth_json_key, resolve_pkce_provider,
-    OAuthFlowKind, OAuthLoginOption,
+    is_device_code_option, list_oauth_options, pi_auth_json_key, pi_provider_quota_backend,
+    pi_provider_refreshable, pi_refreshable_provider_aliases, resolve_pkce_provider, OAuthFlowKind,
+    OAuthLoginOption, PiQuotaBackend,
 };
 pub use device::{
     complete_device_oauth, device_oauth_agent, poll_device_oauth, start_device_oauth,

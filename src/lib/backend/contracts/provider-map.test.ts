@@ -37,6 +37,18 @@ describe('provider-map codex dual shape', () => {
     expect(p.authApiKey).toBe('sk-x');
   });
 
+  it('does not invent kimi-code-membership when meta.preset is missing', () => {
+    const p = mapCoreProvider({
+      id: 'k1',
+      agentId: 'kimi',
+      name: 'Imported',
+      settingsConfig: { format: 'toml', content: 'api_key = "x"\n' },
+      meta: {},
+      isCurrent: false,
+    });
+    expect(p.preset).toBe('custom');
+  });
+
   it('toCoreInput writes auth for codex and marker on empty', () => {
     const withKey = toCoreInput({
       id: 'c3',

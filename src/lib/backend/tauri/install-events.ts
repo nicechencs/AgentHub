@@ -1,17 +1,13 @@
 /**
  * Tauri-only live install/upgrade log stream.
- * Browser / mock builds: subscribe is a no-op.
+ * Only Tauri ports may import this module.
  */
+import type { InstallProgressPayload } from '@/lib/backend/contracts/install-types';
 import { isTauriApp } from '@/lib/platform';
-import type { AgentId } from '@/lib/types';
 
 export const INSTALL_PROGRESS_EVENT = 'install-progress';
 
-export interface InstallProgressPayload {
-  agentId?: string | null;
-  action?: string;
-  line: string;
-}
+export type { InstallProgressPayload };
 
 /**
  * Subscribe to install progress lines emitted while install/upgrade/uninstall runs.
@@ -34,13 +30,4 @@ export async function onInstallProgress(
   } catch {
     return () => {};
   }
-}
-
-/** Filter helper: only lines for this agent (or runtime-only when agentId is null). */
-export function isProgressForAgent(
-  payload: InstallProgressPayload,
-  agentId: AgentId,
-): boolean {
-  if (!payload.agentId) return false;
-  return payload.agentId === agentId;
 }

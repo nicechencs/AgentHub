@@ -1,7 +1,7 @@
 // Settings 设置页(docs/ui-design.md §4.8)
 // Tabs:常规 / 安全 / 数据 / 备份 / 关于；tab 与 ?tab= URL 同步。
 // 常规/数据草稿态编辑后点 [保存]；备份分区操作即时生效，无底部保存。
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -23,6 +23,7 @@ import {
 import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { StatusPin } from '@/components/shared/StatusPin';
 import { useTheme } from '@/components/shared/ThemeProvider';
 import {
   getSettings,
@@ -44,6 +45,7 @@ import {
 import { openExternalLink } from '@/lib/open-external';
 import { invalidateSkills } from '@/lib/hooks/useSkills';
 import type { AppSettings, LogLevel, SkillMarketSource } from '@/lib/types';
+import { applyTheme } from '@/lib/theme';
 import { notifyUsageSettingsChanged } from '@/lib/usage-sync';
 import { BackupsPanel } from './BackupsPanel';
 
@@ -144,7 +146,8 @@ export default function SettingsPage({
   onCheckUpdate?: () => Promise<UpdateInfo | null>;
 } = {}) {
   const { toast } = useToast();
-  const { setTheme } = useTheme();
+  const { theme: providerTheme, setTheme } = useTheme();
+  const committedThemeRef = useRef(providerTheme);
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = parseSettingsTab(searchParams.get('tab'));
 
@@ -171,6 +174,8 @@ export default function SettingsPage({
         // keep settings.appVersion fallback
       }
       setSettings(s);
+      committedThemeRef.current = s.theme;
+      setTheme(s.theme);
     } catch (e) {
       setError(e);
     } finally {
@@ -180,6 +185,13 @@ export default function SettingsPage({
 
   useEffect(() => {
     void load();
+  }, []);
+
+  // Unsaved Select preview must not stick after leaving Settings.
+  useEffect(() => {
+    return () => {
+      applyTheme(committedThemeRef.current);
+    };
   }, []);
 
   const setTab = (next: string) => {
@@ -282,8 +294,6 @@ export default function SettingsPage({
     );
   }
 
-  const isKeyring = settings.credentialStore === 'keyring';
-
   return (
     <div>
       <PageHeader
@@ -301,10 +311,10 @@ export default function SettingsPage({
           <TabsTrigger value="about" className="gap-1.5">
             关于
             {pendingUpdate && (
-              <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
-                aria-label={`有可用更新 v${pendingUpdate.version}`}
-                title={`可更新至 v${pendingUpdate.version}`}
+              <StatusPin
+                tone="warning"
+                label={`可更新至 v${pendingUpdate.version}`}
+                className="shrink-0"
               />
             )}
           </TabsTrigger>
@@ -314,19 +324,8 @@ export default function SettingsPage({
         <TabsContent value="general">
           <Card>
             <CardContent className="divide-y divide-border pt-1">
-              <Row label="语言" description="界面语言">
-                <Select
-                  value={settings.language}
-                  onValueChange={(v) => patch({ language: v as AppSettings['language'] })}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="zh">中文</SelectItem>
-                    <SelectItem value="en">English</SelectItem>
-                  </SelectContent>
-                </Select>
+              <Row label="语言" description="暂不提供切换">
+                <span className="text-sm text-secondary">界面目前仅中文</span>
               </Row>
               <Row label="主题" description="浅色 / 深色 / 跟随系统">
                 <Select
@@ -334,7 +333,7 @@ export default function SettingsPage({
                   onValueChange={(v) => {
                     const theme = v as AppSettings['theme'];
                     patch({ theme });
-                    setTheme(theme);
+                    applyTheme(theme);
                   }}
                 >
                   <SelectTrigger className="w-full">
@@ -395,18 +394,18 @@ export default function SettingsPage({
               <Button
                 disabled={saving}
                 onClick={() => {
-                  setTheme(settings.theme);
                   void (async () => {
                     setSaving(true);
                     try {
                       const next = await updateSettings({
-                        language: settings.language,
                         theme: settings.theme,
                         autoStart: settings.autoStart,
                         closeToTray: settings.closeToTray,
                         skillMarketSource: settings.skillMarketSource ?? 'auto',
                       });
                       setSettings(next);
+                      committedThemeRef.current = next.theme;
+                      setTheme(next.theme);
                       // 必须在保存成功后再清市场缓存，否则会继续展示上一源
                       invalidateSkills('market');
                       toast({
@@ -445,15 +444,10 @@ export default function SettingsPage({
               </Row>
               <Row
                 label="存储方式"
-                description="系统自动选择"
-                descriptionTip="只读展示；当前无需配置主密码或落盘加密。"
+                description="本地数据目录存储，界面脱敏展示"
+                descriptionTip="凭据写入本机数据目录；界面默认脱敏，当前不提供 keyring 或落盘加密。"
               >
-                <span className="text-sm text-secondary">
-                  {isKeyring ? '系统 keyring' : '本地存储'}
-                </span>
-                <Badge variant={isKeyring ? 'success' : 'default'}>
-                  {isKeyring ? 'keyring' : 'local'}
-                </Badge>
+                <span className="text-sm text-secondary">本地数据目录</span>
               </Row>
             </CardContent>
           </Card>
@@ -557,11 +551,16 @@ export default function SettingsPage({
                 <Input
                   type="number"
                   min={0}
+                  max={24 * 60}
                   className="w-20"
                   value={settings.usageCollectIntervalMin}
                   onChange={(e) => {
                     const n = parseInt(e.target.value, 10);
-                    patch({ usageCollectIntervalMin: Number.isNaN(n) ? 0 : Math.max(0, n) });
+                    if (Number.isNaN(n)) {
+                      patch({ usageCollectIntervalMin: 0 });
+                      return;
+                    }
+                    patch({ usageCollectIntervalMin: Math.min(24 * 60, Math.max(0, n)) });
                   }}
                 />
                 <Link

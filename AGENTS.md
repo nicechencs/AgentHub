@@ -52,13 +52,15 @@ src/
 
 ## Agent 协作规则
 
+全局约定见 `~/.grok/AGENTS.md`（所有项目适用）：**每次任务开始先判断能否拆成多个独立子任务；适合则立刻启动多个 subagent，不要只说不做。** 架构拍板、敏感操作与最终验收仍由主 Agent 负责。
+
 ### 代码任务
 
-遇到明确、边界清晰的代码任务时，可以调用 GPT Luna Max subagent，并设置 1.5 倍速执行。
+在通过上述判断并决定分派后，本仓库的代码类 subagent 使用 grok-4.6 并加速执行。
 
 适合交给 subagent 的任务：新功能、局部修改、测试、类型定义和机械化重构。
 
-Git 提交相关任务也使用 GPT Luna Max subagent，包括整理变更、生成提交信息和执行提交。
+Git 提交相关任务使用 grok-4.5执行，包括整理变更、生成提交信息和执行提交。
 
 架构决策、敏感操作和最终验收由主 Agent 负责。
 
@@ -66,24 +68,6 @@ Git 提交相关任务也使用 GPT Luna Max subagent，包括整理变更、生
 
 调用 subagent 时，明确写出以下信息：
 
-```text
-请使用 GPT Luna Max，以 1.5 倍速执行。
-
-任务：实现……
-文件：……
-限制：……
-验收标准：……
-```
-
-如果平台支持结构化参数，可按以下形式调用（示意）：
-
-```text
-model: gpt-luna-max
-speed: 1.5x
-task: 实现……
-files: [需要修改的文件]
-acceptance: [验收标准]
-```
 
 Subagent 完成后，主 Agent 必须检查代码并运行相关测试。
 
@@ -91,10 +75,10 @@ Subagent 完成后，主 Agent 必须检查代码并运行相关测试。
 
 ```mermaid
 flowchart TD
-    A[收到代码任务] --> B{任务是否明确且适合拆分？}
-    B -- 是 --> C[调用 GPT Luna Max<br/>1.5 倍速 subagent]
+    A[收到任务] --> B{能拆成多个独立子任务？}
+    B -- 是 --> C[本回合立刻启动多个 subagent]
     B -- 否 --> D[主 Agent 直接处理或先澄清]
-    C --> E[主 Agent 审查修改]
+    C --> E[主 Agent 审查与汇总]
     D --> E
     E --> F[运行测试或构建]
     F --> G[修复问题并交付]

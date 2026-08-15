@@ -1,17 +1,18 @@
 # Adapter 页面与本地协议桥接设计
 
-> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi → Codex 实验性本地桥接）**。Pi/config_sync 等仍为预览-only；发布前仍需实机 dogfood。ChatGPT/Codex subscription → Claude Code 是单独受门禁约束的实验候选，当前仍为 `unsupported` / `plan.canApply=false`。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。
+> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi → Codex 实验性本地桥接 + Pi 配置同步）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）。ChatGPT/Codex subscription → Claude Code 是单独受门禁约束的实验候选，当前仍为 `unsupported` / `plan.canApply=false`。`local_bridge` 的目标宿主已决策为用户级 sidecar，但当前工作区仍由 Tauri `AppState` 进程内托管，尚未完成进程迁移。Kimi → Codex 发布前仍需实机 dogfood。
 > 调研日期：2026-08-12（进度同步：2026-08-12）
 > 重点参考：`D:\demo_github\AgentHub_Ref\Cli-Proxy-API-Management-Center`
-> 关联文档：[adapter-sidecar-design.md](adapter-sidecar-design.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
+> 关联文档：[adapter-sidecar-design.md](adapter-sidecar-design.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
+> 2026-08-14 同步：Hub 重构 Phase 1 落地（[hub-redesign-plan.md](hub-redesign-plan.md)）——Dashboard Agent 卡片与 Connections 行新增统一连接流程 `ConnectFlowDialog`（复用同一 `lib/api/adapter` 门面与 `plan.canApply` 门禁）。Adapter 页（侧栏「桥与适配」）是高级管理入口（profile / 本地桥），不是日常创建入口；创建/apply 只走 ConnectFlow。
 
 ## 0. 当前落地状态
 
 | 范围 | 状态 | 当前边界 |
 |---|---|---|
-| 规则分析与预览 | ✅ | contracts、mock、`analyze`、`plan`、Adapter 页面和 profile 列表已接线；limitations 与 `canApply` 对齐真实能力 |
+| 规则分析与预览 | ✅ | contracts、mock、`analyze`、`plan`、ConnectFlowDialog 和 Adapter 页 profile 列表已接线；limitations 与 `canApply` 对齐真实能力 |
 | 稳定规则应用 | ✅ | Kimi Code 会员 Provider → Claude Code `native_endpoint` 可 apply；finalize 失败会回滚 live/current；返回值脱敏 |
-| 其它直连 / 配置同步规则 | 🟡 | Pi 等仍预览或 unsupported；未显式 `canApply=true` 一律不可写 |
+| 其它直连 / 配置同步规则 | ✅ | Kimi 会员 / Anthropic API Key → Pi `config_sync` 可 apply；未显式 `canApply=true` 的组合一律不可写 |
 | Bridge core | ✅ | `BridgeRuntimeHost`（per-profile gate、admission、超时与 cancellation-safe drain）、Responses ↔ Chat 协议与 fixtures |
 | Bridge 产品接线 | ✅ | Codex `local_bridge` 的 `canApply`、Tauri apply/start/stop/status、健康检查、失败补偿、凭证轮转 stop→restart、端口 rebind、opt-in auto-start 恢复、退出 drain；UI 已拆分 wire/model/components |
 | Bridge 进程边界 | 🎯 已决策 / 未迁移 | 目标为同包用户级 `agenthub-adapterd`；当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有，详细契约见 [Adapter Sidecar 目标架构](adapter-sidecar-design.md) |
@@ -20,7 +21,13 @@
 
 ## 1. 结论
 
-Adapter 负责把 **Connections 中已有的授权或 API Key** 接入另一个 Agent。它不是第二套 Connections，也不是通用 API 网关控制台。
+Adapter 负责把 **Connections 中已有的授权或 API Key** 接入另一个 Agent。机制不变：只引用已有连接，不复制凭据，也不是第二套 Connections，更不是通用 API 网关控制台。
+
+**入口定位（Adapter 页降级已落地）**：日常发起适配走 Hub 对话框，不必打开本页。`/adapter` 与侧栏「桥与适配」保留，只做已创建 profile 与本地桥的高级管理，不再提供选来源→分析→plan→apply 创建区。入口与信息架构见 [hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)。
+
+- 推荐：Dashboard Agent 卡片「连接/切换」、Connections 行「用于其他 Agent」→ 统一打开 `ConnectFlowDialog`。
+- 保留：`/adapter` 页 + 侧栏「桥与适配」（profile 列表、删除适配、桥 start/stop/retry、autoStart、详情）。
+- 创建/apply 只走 ConnectFlow：经 `lib/api/adapter`，以 `plan.canApply` 为权威门禁。
 
 一次适配只产生以下四种结果之一：
 
@@ -39,6 +46,7 @@ Adapter 负责把 **Connections 中已有的授权或 API Key** 接入另一个 
 4. **不是 Token 格式互转**：OAuth access/refresh token 不能通过改字段名变成另一家授权。只有目标客户端明确支持同一授权和刷新语义时，才可做配置同步。
 5. **能力要可验证**：兼容性由版本化规则和真实探测共同决定，不依赖页面硬编码的宣传矩阵。
 6. **Provider 不是服务**：Provider/Connection 是持久化配置实体；需要后台运行的是 `BridgeRuntime`。当前由 AgentHub 托盘进程托管，目标迁移到用户级 `agenthub-adapterd`；无论部署形态如何，都不把页面组件、Connections 或 ProviderService 变成长驻 HTTP 服务。
+7. **入口分层，机制不分叉**：日常走 Dashboard / Connections 的 `ConnectFlowDialog`；`/adapter` 页是高级管理（profile / 桥），不是日常创建入口。创建/apply 共用 `lib/api/adapter` 与 `plan.canApply`。
 
 ## 2. 范围与非目标
 
@@ -111,32 +119,43 @@ type CompatibilityRule = {
 
 ### 4.1 页面定位
 
-- 路由：沿用 `/adapter`；旧 `/router` 继续重定向。
-- 标题：`Adapter`。
-- 简介：`复用已有连接；必要时启动本地协议转换。`
-- `descriptionTip`：说明不会把一家 OAuth 凭据“转换”为另一家的授权，也不会在日志记录请求正文。
-- PageHeader 右侧唯一主按钮：`新建适配`。
+**推荐入口 vs 本页职责（Hub 重构 Phase 1 已落地）**
 
-页面沿用 `pageRhythm.pageShell`、`PageHeader`、`ListRow`、`Card`、`Badge`、`Dialog`、`EmptyState`、`ErrorState` 和现有 Tailwind 语义 token。不引入参考项目的 SCSS token、Sheet primitive 或新的视觉系统。
+日常发起「把已有连接接到另一个 Agent」走 Hub，不经过本页：
+
+| 入口 | 动作 | 打开 |
+|---|---|---|
+| Dashboard Agent 卡片 | 「连接/切换」 | `ConnectFlowDialog`（固定目标 Agent） |
+| Connections 行 | 「用于其他 Agent」 | `ConnectFlowDialog`（固定来源） |
+
+本页是高级管理入口：已创建 profile 列表与本地桥控件（start/stop/retry、autoStart、详情、删除）。日常创建不在本页。`/adapter` 路由与侧栏「桥与适配」均保留。创建/apply 只走 `ConnectFlowDialog`，经 `lib/api/adapter`，以 `plan.canApply` 为权威。入口与信息架构见 [hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)。
+
+以下描述本页（`/adapter`）自身，不是 `ConnectFlowDialog`：
+
+- 路由：沿用 `/adapter`；旧 `/router` 继续重定向。
+- 标题：`桥与适配`。
+- 侧栏 Manage 保留「桥与适配」（icon 仍为 Boxes）；不是日常创建入口。
+- 简介：日常连接与跨服务复用请走 Dashboard「连接/切换」或 Connections「用于其他 Agent」。本页管理已创建的适配与本地桥。
+- `descriptionTip`：说明不会把一家 OAuth 凭据“转换”为另一家的授权，也不会在日志记录请求正文。
+- PageHeader 右侧：主按钮「去 Dashboard 连接」→ `/`；次按钮「去 Connections」。
+- 本页不再渲染选来源 → 分析目标 → plan → apply 创建区。
+
+页面沿用 `pageRhythm.pageShell`、`PageHeader`、`PageSection`、`TableShell`、`SegmentedControl`、`Card`、`Badge`、`Dialog`、`EmptyState`、`ErrorState` 和现有 Tailwind 语义 token。不引入参考项目的 SCSS token、Sheet primitive 或新的视觉系统。
 
 ### 4.2 首屏信息架构
 
-保持单列纵向结构：
+本页不再渲染选来源→目标→plan→apply 创建区；日常创建走 ConnectFlow。当前首屏是已创建适配的紧凑服务列表：
 
 ```text
-PageHeader                                             [新建适配]
+PageHeader                                             [去 Dashboard 连接] [去 Connections]
 
-适配记录（N）                                  [仅显示异常 □]
-  后台服务 ● 运行中 · 2 个本地桥接
-
-  ● Kimi Code → Codex        本地桥接    127.0.0.1:43121
-    运行中 · 上次请求 2 分钟前 · 1280 ms        [停止] [详情]
-
-  ● Anthropic → Pi           配置同步
-    已应用 · 上次验证 今天 10:24                  [重新验证] [详情]
-
-（无记录时：说明 + 新建适配 CTA）
+已创建的适配（服务列表，非数据库表格）
+● 配置已生效       Kimi 会员 Key → Codex                    [停止] [详情]
+  ● 桥接运行中     [API Key][本地协议转换] 127.0.0.1:43121⧉
+● 配置已生效       Kimi 会员 Key → Claude Code                     [详情]
 ```
+
+目标全景 / 路径预览 / apply 确认已收进 ConnectFlow，不再出现在本页。`mode`（`api` | `oauth`）仍是持久化凭据族，与 `route` / `source_kind` 正交。Kimi API Key → Codex 的 `local_bridge` 仍是 API Key 协议转换，不得标成 OAuth。
 
 不默认展示：
 
@@ -148,21 +167,22 @@ PageHeader                                             [新建适配]
 
 ### 4.3 新建适配流程
 
-使用现有宽 Dialog 完成创建；只在最终应用前切换到简短确认视图，不增加多页 Wizard。若未来全站经设计评审引入共享 Sheet primitive，再统一迁移，Adapter 不单独创造交互原语。
+日常创建已收进 ConnectFlow；本节描述的选择/预览/确认不再出现在 `/adapter` 页。只在最终应用前弹出简短确认 Dialog，不增加多页 Wizard。若未来全站经设计评审引入共享 Sheet primitive，再统一迁移，Adapter 不单独创造交互原语。
 
 #### 步骤 A：选择来源
 
-- 下拉框按 Agent/Provider 分组列出 Connections 中可用连接。
-- 每项展示：名称、凭据类型、所属产品、状态、脱敏尾号。
+- 左侧按 Agent / Account·Provider 分组列出 Connections 中可用连接；默认展示全部。
+- 每项展示：名称、凭据类型 Badge、所属产品、授权状态、脱敏尾号。
 - 来源名称、产品与凭据类型按[独立适配规则](provider-api-oauth-adaptation.md)展示；已验证的预设可自动选择端点，不要求用户手工猜 Base URL。
-- 没有连接时显示 `前往 Connections 添加`，完成后返回当前 Dialog 并刷新。
-- OAuth 尚未完成时，在当前区块内展示 `连接 / 继续授权 / 等待回调 / 已连接 / 失败`；授权成功后的主动作是继续创建，而不是另开管理页。
+- 没有连接时显示 `前往 Connections 添加`。
+- OAuth 尚未完成时，只提示前往 Connections 完成授权；Adapter 不发起登录、不伪造 apply。
 
 #### 步骤 B：选择目标
 
-- 目标 Agent 只列已安装或可配置的 Agent；不可用项置灰并说明原因。
-- 用户选择后立即运行 `analyze`，局部显示 skeleton，不锁住已有适配列表。
-- 结果使用一个清晰 Badge：`直接同步`、`原生端点`、`需要本地代理` 或 `暂未支持`。
+- 选中来源后立即对所有已安装或可配置目标并行 `analyze`（目标全景），每张卡异步从 skeleton 变为路由结论 Badge；不可配置目标置灰说明原因、不发请求。
+- 来源 OAuth 未完成时整体阻断：不 fan-out、不 plan，目标区只显示「先完成授权」Notice 与去 Connections 的 CTA。
+- 用户点选目标卡后才运行 `plan`，局部显示 skeleton，不锁住已有适配列表。
+- 分析结果按 `(sourceKind, sourceId, target)` 做会话级缓存；换来源或重试时按生成计数丢弃过期响应。
 - 对 subscription 实验候选，`不支持`还须显示“当前未通过上游/条款/协议门禁”，并链接[订阅桥接专题与门禁](provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code当前结论与前置门禁)；不得以 opt-in、测试按钮或隐藏开关绕开规则。
 
 #### 步骤 C：确认配置
@@ -205,24 +225,24 @@ PageHeader                                             [新建适配]
 
 ### 4.4 适配列表与详情
 
-每行只展示：
+已创建适配使用紧凑服务列表（`ListRow`），不是可拖列宽的数据库表格。每行只展示：
 
-- 状态点；
-- `来源连接 → 目标 Agent`；
-- 路径 Badge；
-- 本地 endpoint（仅桥接）；
-- 当前状态、最近请求或最近错误；
-- 与状态匹配的主操作：启动、停止、重新验证；
-- `详情`。
+- **两层状态**（一列两行，不合并成单点）：第一行持久配置状态（`配置已生效 / 应用中 / 需要处理`）；第二行仅桥接显示观测运行状态（`桥接运行中 / 启动中 / 停止中 / 桥接已降级 / 桥接启动失败 / 桥接已停止 / 状态不可用`）。`getBridgeStatus` 读取失败显示 `状态不可用`，不得伪装成桥接故障；`needs_attention` 是主要视觉警告但不遮蔽运行状态。
+- `来源连接 → 目标 Agent`：按 `(sourceKind, sourceId)` 反查连接池取人类可读名称；来源已删除时回退 profile 名并标注。
+- 凭据类型与路径 Badge；本地 endpoint（仅桥接，一键复制）。
+- 与状态匹配的单一主操作：启动 / 停止 / 重试启动（degraded 仍视为持有 listener，只能停止）。
+- `详情`。删除与 auto-start 不占行内，移入详情 Dialog。
 
-列表区顶部仅在存在 `local_bridge` 时显示一行后台服务摘要：`运行中 / 启动中 / 已停止 / 异常`、桥接数量和 `重新启动`。它不是新的监控面板；`config_sync`、`native_endpoint` 不依赖后台服务，也不计入数量。
+列表区顶部仅在存在 `local_bridge` 时显示一行后台服务摘要：桥接数量、运行数量与托盘依赖提示。它不是新的监控面板；`config_sync`、`native_endpoint` 不依赖后台服务，也不计入数量。
 
-详情 Dialog 使用 `detail / edit` 三态：
+详情 Dialog 为只读 detail 单态（当前后端唯一可编辑字段是 auto-start，直接用行内 Switch，不需要 edit 态与 dirty 保护）：
 
-- 详情：配置摘要、能力限制、最近 5 条事件、生成的 Connection 链接。
-- 编辑：模型映射、端口/自动启动等必要字段；dirty 时才允许保存。
-- 关闭或切换对象时若有未保存变更，使用二次确认 Dialog 拦截。
-- 停止/删除走独立确认；只禁用当前行，不锁住整个列表。
+- 身份行（来源 → 目标 + 凭据/路径 Badge）、两层状态。
+- 桥接区：endpoint 复制、上游状态、auto-start 开关（明确「不是系统开机自启」）。
+- 生成的 Connection 链接；`needs_attention` 的恢复步骤（错误码 + 「启动只恢复运行时，不修复配置不一致」+ 删除重建兜底）。
+- 折叠的诊断信息：profile id、规则 id/版本、时间戳、最近错误码、`打开日志目录`（复用 settings 的 `openLogsDir`）。规则技术字段不与来源/目标同级展示。
+- 状态点仅过渡态（应用中 / 启动中 / 停止中）使用脉冲动画；稳态（运行中 / 已生效）保持静点，与全站状态点行为一致。
+- 停止/删除走独立确认；只禁用当前行，不锁住整个列表。最近事件、模型映射编辑、探测按钮在后端提供对应 API 前不做。
 
 ### 4.5 页面状态与文案
 
@@ -234,6 +254,8 @@ PageHeader                                             [新建适配]
 | unsupported | 中性说明，不使用红色故障态；给出原因、专题证据与可用替代路径。对 subscription 候选明确显示 `当前不支持`、`plan.canApply=false`，不显示 Apply、启动 bridge 或“强制继续”入口 |
 | starting/stopping | 当前行按钮 loading，其他行可操作 |
 | error | 行内短错误 + `查看诊断`；toast 只用于操作结果，不承载完整原因 |
+| status_unavailable | 桥接状态读取失败时第二层状态显示 `状态不可用`（中性），不改写为桥接故障，也不清空持久 profile 信息 |
+| analyze_failed | 目标全景单卡显示 `分析失败 · 点击重试`，按卡隔离，不影响其他目标与已有适配列表 |
 | needs_attention | warning 状态，显示恢复动作，不自动反复重试写配置 |
 
 ## 5. 服务设计
@@ -554,13 +576,13 @@ MVP 不做全文搜索、自动滚动、错误文件下载、方法/路径筛选
 - contracts、mock、`analyze`、`plan`、来源/目标选择、结果解释和应用预览已接线。
 - 普通 Apply 只开放后端显式 `canApply=true` 的规则；当前写入范围见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。
 - 其它结果仍可用于解释兼容路径，但未显式返回 `canApply=true` 时必须 fail-closed。
-- 仅预览规则（如 Pi `config_sync`）不产生写入、不启动本地服务。
+- 未显式 `canApply=true` 的规则不产生写入、不启动本地服务。Pi `config_sync`（Kimi 会员 / Anthropic API Key）已开放 apply。
 
 ### Phase 1：首条真实桥接（工作区已接线，发布前待 dogfood）
 
 - core 已有 `BridgeRuntimeHost`、loopback token、实例 start/status/stop/shutdown，以及 OpenAI Responses ↔ Chat Completions 的文本、SSE、工具、用量、停止原因和错误映射 fixtures。
 - Tauri `AppState` 持有 host；controller 已实现 apply/start/stop/status、健康检查、失败补偿、凭证漂移 stop→restart、端口占用 rebind、opt-in auto-start restore；`ExitCoordinator` 负责退出 drain；Adapter 页面已有对应状态与操作控件。
-- Codex `local_bridge` 已由 route plan 开放 Apply（实验性），规则状态见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。**发布前**仍需实机验收：密钥轮转、端口冲突、长流/工具闭环、托盘退出 drain。
+- Codex `local_bridge` 已由 route plan 开放 Apply（实验性），规则状态见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。**发布前**仍需实机验收：密钥轮转、端口冲突、长流/工具闭环、托盘退出 drain。清单见 [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md)。
 - 默认 `auto_start=false`；用户可在成功启动后自行打开自动恢复。
 
 ### Phase 2：Claude Code 桥接
@@ -663,8 +685,24 @@ src/lib/backend/
 ├─ contracts/adapter.ts
 └─ tauri/adapter.ts
 
+src/lib/api/adapter.ts                      # 对话框与 Adapter 页共用的 apply 门面
+
+src/lib/connect-flow/                       # 已落地：统一连接流程逻辑层
+├─ types.ts
+├─ eligibility.ts
+├─ plan-fanout.ts
+├─ connection-usage.ts
+└─ default-deps.ts
+
+src/components/connect/                     # 已落地：ConnectFlowDialog + 状态机
+├─ ConnectFlowDialog.tsx
+└─ connect-flow-state.ts
+
+src/pages/dashboard/index.tsx               # 已落地：挂载 ConnectFlowDialog
+src/pages/connections/index.tsx             # 已落地：挂载 ConnectFlowDialog
+
 src/dev/mocks/adapter.ts
-src/pages/adapter/
+src/pages/adapter/                          # 保留：高级管理（profile / 桥），不是日常创建入口
 ├─ index.tsx
 └─ index.test.tsx
 ```

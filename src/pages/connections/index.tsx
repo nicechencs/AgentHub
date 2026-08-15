@@ -1,33 +1,44 @@
 // Connections：按 Agent 管理「连接」——官方登录 / API Key / 供应商统一列表。
 // 存储仍为 accounts + providers 两表；本页做 UI 聚合与筛选，?mode= 仅深链提示筛选。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Cable } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { Notice } from '@/components/shared/Notice';
+import { StatusPin } from '@/components/shared/StatusPin';
 import { ListSkeleton } from '@/components/ui/skeleton';
-import { AGENT_IDS, AGENT_MAP } from '@/config/agents';
+import { AGENT_IDS, agentDisplayName } from '@/config/agents';
 import { resolveEffectiveConnection } from '@/lib/api/agent-connection';
-import { listAccounts } from '@/lib/api/account';
-import { listProviders } from '@/lib/api/provider';
-import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import type { AgentId, EffectiveConnectionKind } from '@/lib/types';
+import { listAdapterProfiles, type AdapterProfile } from '@/lib/api/adapter';
+import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
 import {
-  ConnectionList,
-  type ConnectionPoolSnapshot,
-} from './ConnectionList';
-import type { ConnectionFilter } from './connection-model';
+  buildResumeConnectUrl,
+  consumeConnectIntent,
+  parseResumeAgentId,
+  readConnectGuide,
+  type ConnectGuide,
+} from '@/lib/connect-flow/connect-intent';
+import { computeConnectionUsageMap } from '@/lib/connect-flow/connection-usage';
+import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
+import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
+import {
+  accountsForAgent,
+  connectionCountsByAgent,
+  getConnectionPoolSnapshot,
+  providersForAgent,
+  useConnectionPool,
+} from '@/app/runtime';
+import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
+import { connectionKindLabel, parseConnectionFocusFilter } from '@/lib/connection-kind';
+import type { AgentId, EffectiveConnectionKind } from '@/lib/types';
+import { ConnectionList } from './ConnectionList';
+import type { ConnectionEntry, ConnectionFilter } from './connection-model';
 
 export type ConnectionMode = 'accounts' | 'providers';
-
-function emptyCounts(ids: AgentId[]): Partial<Record<AgentId, number>> {
-  const next: Partial<Record<AgentId, number>> = {};
-  for (const id of ids) next[id] = 0;
-  return next;
-}
 
 function parseAgentParam(raw: string | null, allowed: AgentId[]): AgentId {
   if (raw && allowed.includes(raw as AgentId)) return raw as AgentId;
@@ -42,22 +53,20 @@ function pickInstalledAgent(preferred: AgentId, installed: AgentId[]): AgentId {
 
 /** 深链 ?mode= → 列表初始筛选（供应商已并入 API Key） */
 function parseFocusFilter(raw: string | null): ConnectionFilter | null {
-  if (raw === 'providers' || raw === 'api' || raw === 'provider' || raw === 'apikey' || raw === 'key') {
-    return 'apikey';
-  }
-  if (raw === 'accounts' || raw === 'account' || raw === 'oauth') return 'oauth';
-  return null;
+  return parseConnectionFocusFilter(raw);
 }
 
 function effectiveKindLabel(kind: EffectiveConnectionKind): string {
-  if (kind === 'account') return '官方登录';
-  if (kind === 'api') return 'API Key';
+  if (kind === 'account') return connectionKindLabel('oauth');
+  if (kind === 'api') return connectionKindLabel('apikey');
   return '未配置';
 }
 
 export default function ConnectionsPage() {
   const { installedIds, installedAgents, statuses, loading, state, error, reload } =
     useInstalledAgents();
+  const pool = useConnectionPool();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const rawAgent = parseAgentParam(searchParams.get('agent'), installedIds);
@@ -66,52 +75,98 @@ export default function ConnectionsPage() {
     [rawAgent, installedIds],
   );
   const focusFilter = parseFocusFilter(searchParams.get('mode'));
+  const allowedAgents = installedIds.length ? installedIds : AGENT_IDS;
+  const [pendingGuide, setPendingGuide] = useState<ConnectGuide | null>(null);
+  const consumedGuideKeyRef = useRef<string | null>(null);
+  const resumeAgentId = parseResumeAgentId(searchParams.get('resume'), allowedAgents);
 
-  const installedIdsKey = installedIds.join(',');
-  const installedIdsRef = useRef(installedIds);
-  installedIdsRef.current = installedIds;
+  useEffect(() => {
+    if (pool.state === 'idle') void pool.ensureLoaded();
+  }, [pool.ensureLoaded, pool.state]);
 
-  const [poolCounts, setPoolCounts] = useState<Partial<Record<AgentId, number>>>({});
-  /** 列表切换后即时摘要；避免只读陈旧 listAgents 的 effectiveKind */
-  const [liveSnap, setLiveSnap] = useState<ConnectionPoolSnapshot | null>(null);
+  const poolCounts = useMemo(() => {
+    const ids = installedIds.length ? installedIds : [...AGENT_IDS];
+    return connectionCountsByAgent(pool.accounts, pool.providers, ids);
+  }, [installedIds, pool.accounts, pool.providers]);
 
-  const refreshCounts = useCallback(async () => {
-    const ids = installedIdsRef.current.length ? installedIdsRef.current : [...AGENT_IDS];
+  // —— 钱包化增量：行用途反查 + 「用于其他 Agent」连接流程 ——
+  const [profiles, setProfiles] = useState<AdapterProfile[] | null>(null);
+  const [profilesFailed, setProfilesFailed] = useState(false);
+  const [connectEntry, setConnectEntry] = useState<ConnectFlowEntry | null>(null);
+  const connectDeps = useMemo(() => createDefaultConnectFlowDeps(), []);
+  const poolReload = pool.reload;
+
+  /** generation 防竞态：并发加载只让最新一次落盘；返回是否成功。 */
+  const profilesGeneration = useRef(0);
+  const loadProfiles = useCallback(async (): Promise<boolean> => {
+    const generation = ++profilesGeneration.current;
     try {
-      const [accs, provs] = await Promise.all([listAccounts(), listProviders()]);
-      const totals = emptyCounts(ids);
-      for (const a of accs) {
-        if (a.agentId in totals || ids.includes(a.agentId)) {
-          totals[a.agentId] = (totals[a.agentId] ?? 0) + 1;
-        }
+      const list = await listAdapterProfiles();
+      if (profilesGeneration.current === generation) {
+        setProfiles(list);
+        setProfilesFailed(false);
       }
-      for (const p of provs) {
-        if (p.agentId in totals || ids.includes(p.agentId)) {
-          totals[p.agentId] = (totals[p.agentId] ?? 0) + 1;
-        }
-      }
-      setPoolCounts(totals);
+      return true;
     } catch {
-      /* 角标失败不阻塞 */
+      // 用途属增强信息：读取失败时保持 incomplete 语义（显示「用途未知」而非「未使用」）
+      if (profilesGeneration.current === generation) {
+        setProfilesFailed(true);
+        setProfiles((prev) => prev ?? []);
+      }
+      return false;
     }
   }, []);
 
   useEffect(() => {
-    if (loading) return;
-    void refreshCounts();
-  }, [loading, installedIdsKey, refreshCounts]);
+    void loadProfiles();
+  }, [loadProfiles]);
 
-  // 不在换 agent 时清空 liveSnap：agentId 不匹配时自然回退 doctor 摘要，
-  // 避免顶部「当前生效」先变空再填上造成闪跳。
+  const usageMap = useMemo(
+    () =>
+      computeConnectionUsageMap({
+        accounts: pool.accounts,
+        providers: pool.providers,
+        profiles: profiles ?? [],
+        poolComplete: pool.state === 'ready' && profiles !== null && !profilesFailed,
+      }),
+    [pool.accounts, pool.providers, pool.state, profiles, profilesFailed],
+  );
 
-  const handlePoolChanged = useCallback(() => {
-    void refreshCounts();
-  }, [refreshCounts]);
+  const adapterGeneratedProviderIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const profile of profiles ?? []) {
+      if (profile.generatedProviderId) ids.add(profile.generatedProviderId);
+    }
+    return ids;
+  }, [profiles]);
 
-  const handleSnapshot = useCallback((snap: ConnectionPoolSnapshot) => {
-    setLiveSnap(snap);
-    // 角标由 onPoolChanged 链刷新；此处不再强制 refreshCounts，减少整页重绘
+  const handleReuseRequest = useCallback((entry: ConnectionEntry) => {
+    setConnectEntry({ mode: 'for-source', source: { kind: entry.source, id: entry.id } });
   }, []);
+
+  /**
+   * 连接变更后重载本页数据；任一失败则抛出，由对话框呈现刷新失败提示。
+   * loadProfiles 返回 boolean，pool/statuses 的 reload 对失败也正常 resolve，
+   * 必须查 store 快照的 state 判定成败。
+   */
+  const handleConnectionChanged = useCallback(async () => {
+    const profilesOk = await loadProfiles();
+    // statuses 强制刷新失败会 reject 并回滚为此前的 ready 快照——必须用 promise 结果
+    // 判定；连接池刷新失败则保留旧 state:'ready' 并写 errors——必须查快照 errors。
+    const [, statusesOk] = await Promise.all([
+      poolReload().catch(() => {}),
+      Promise.resolve(reload()).then(
+        () => true,
+        () => false,
+      ),
+    ]);
+    const poolSnapshot = getConnectionPoolSnapshot();
+    const poolOk =
+      poolSnapshot.state === 'ready' && !poolSnapshot.errors.accounts && !poolSnapshot.errors.providers;
+    if (!profilesOk || !poolOk || !statusesOk) {
+      throw new Error('列表刷新失败，可手动刷新查看最新状态');
+    }
+  }, [poolReload, loadProfiles, reload]);
 
   useEffect(() => {
     if (agentId === rawAgent) return;
@@ -122,30 +177,50 @@ export default function ConnectionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, rawAgent]);
 
+  /** 一次性消费 intent：写入 pendingGuide 后立刻从 URL 去掉，刷新不再弹窗。 */
+  useEffect(() => {
+    const allowed = installedIds.length ? installedIds : AGENT_IDS;
+    const guide = readConnectGuide(searchParams, allowed);
+    if (!guide) {
+      consumedGuideKeyRef.current = null;
+      return;
+    }
+
+    const key = searchParams.toString();
+    if (consumedGuideKeyRef.current === key) return;
+
+    consumedGuideKeyRef.current = key;
+    setPendingGuide(guide);
+    setSearchParams(consumeConnectIntent(searchParams), { replace: true });
+  }, [installedIds, searchParams, setSearchParams]);
+
   const setAgent = (id: AgentId) => {
+    setPendingGuide(null);
     const next = new URLSearchParams(searchParams);
     if (id === 'claude') next.delete('agent');
     else next.set('agent', id);
     next.delete('mode');
+    next.delete('intent');
+    next.delete('resume');
     setSearchParams(next, { replace: true });
   };
 
+  const handleGuideSucceeded = useCallback(() => {
+    const resume = pendingGuide?.resumeAgentId;
+    setPendingGuide(null);
+    if (resume) navigate(buildResumeConnectUrl(resume));
+  }, [navigate, pendingGuide]);
+
   const agentStatus = statuses?.find((item) => item.agentId === agentId);
-  // 优先用列表快照（切换后即时）；否则回退 doctor 富集结果
-  const liveEffective =
-    liveSnap && liveSnap.agentId === agentId
-      ? resolveEffectiveConnection(
-          liveSnap.accounts.find((a) => a.isCurrent),
-          liveSnap.providers.find((p) => p.isCurrent),
-        )
-      : null;
+  const liveEffective = resolveEffectiveConnection(
+    accountsForAgent(pool.accounts, agentId).find((account) => account.isCurrent),
+    providersForAgent(pool.providers, agentId).find((provider) => provider.isCurrent),
+  );
   const effectiveKind: EffectiveConnectionKind =
-    liveEffective?.kind ?? agentStatus?.effectiveKind ?? 'none';
+    liveEffective.kind !== 'none' ? liveEffective.kind : agentStatus?.effectiveKind ?? 'none';
   const effectiveLabel =
-    liveEffective && liveEffective.kind !== 'none'
-      ? liveEffective.label
-      : agentStatus?.effectiveLabel;
-  const agentName = AGENT_MAP[agentId]?.name ?? agentId;
+    liveEffective.kind !== 'none' ? liveEffective.label : agentStatus?.effectiveLabel;
+  const agentName = agentDisplayName(agentId);
 
   if (loading) {
     return (
@@ -192,9 +267,7 @@ export default function ConnectionsPage() {
           title="尚未安装 Agent"
           description="先到 Agents 页安装"
           actionLabel="去 Agents"
-          onAction={() => {
-            window.location.hash = '#/agents';
-          }}
+          onAction={() => navigate('/agents')}
         />
       </div>
     );
@@ -227,27 +300,51 @@ export default function ConnectionsPage() {
             const hasEffective = Boolean(st?.effectiveKind && st.effectiveKind !== 'none');
             if (!hasEffective) return null;
             return (
-              <span
-                className="h-1.5 w-1.5 rounded-full bg-success"
-                title={
+              <StatusPin
+                tone="success"
+                label={
                   st?.effectiveLabel
                     ? `当前生效：${st.effectiveLabel}`
                     : '已配置生效连接'
                 }
-                aria-hidden
               />
             );
           }}
         />
       </div>
 
+      {resumeAgentId ? (
+        <div className={pageRhythm.lead}>
+          <Notice
+            tone="info"
+            actionLabel="返回继续连接"
+            onAction={() => navigate(buildResumeConnectUrl(resumeAgentId))}
+          >
+            取消后可返回继续连接。
+          </Notice>
+        </div>
+      ) : null}
+
       {/* 当前生效只保留在 PageHeader description，避免与条下横幅重复 */}
       <ConnectionList
         agentId={agentId}
         agentStatuses={statuses ?? []}
-        onPoolChanged={handlePoolChanged}
-        onSnapshot={handleSnapshot}
         initialFilter={focusFilter ?? 'all'}
+        usageMap={usageMap}
+        adapterGeneratedProviderIds={adapterGeneratedProviderIds}
+        // fail-closed：profiles 未成功加载前无法识别 adapter 生成的 Provider，
+        // 复用入口整体隐藏，避免生成投影短暂出现「用于其他 Agent」形成二次投影链
+        onReuseRequest={profiles !== null && !profilesFailed ? handleReuseRequest : undefined}
+        guideIntent={pendingGuide?.intent ?? null}
+        onGuideSucceeded={handleGuideSucceeded}
+      />
+
+      <ConnectFlowDialog
+        entry={connectEntry}
+        deps={connectDeps}
+        onClose={() => setConnectEntry(null)}
+        onConnectionChanged={handleConnectionChanged}
+        onNavigate={(to) => navigate(to)}
       />
     </div>
   );

@@ -75,6 +75,9 @@ describe('buildAlertsFromAgents', () => {
       'auth-none:grok',
       'upgrade:pi',
     ]);
+    expect(new Set(alerts.map((a) => a.actionKind))).toEqual(
+      new Set(['refresh-token', 'upgrade']),
+    );
   });
 
   it('skips uninstalled agents', () => {

@@ -13,8 +13,24 @@ export interface AdapterRouteRequest {
 /** Closed compatibility routes; unknown wire values are rejected at the adapter boundary. */
 export type AdapterRoute = 'native_endpoint' | 'local_bridge' | 'config_sync' | 'unsupported';
 
+/**
+ * Persisted credential family for a profile. Orthogonal to `sourceKind` (table) and `route`
+ * (projection). API Key conversions stay `api` even when they use a local protocol bridge.
+ */
+export type AdapterProfileMode = 'api' | 'oauth';
+
 /** A rule can be stable, experimental, or explicitly unsupported. */
 export type AdapterSupport = 'stable' | 'experimental' | 'unsupported';
+
+/**
+ * Structured gate / presentation class from core analyze.
+ * Prefer this over parsing `reason` text. Does not authorize writes.
+ */
+export type AdapterGateKind =
+  | 'none'
+  | 'preview_only'
+  | 'subscription_candidate'
+  | 'unsupported';
 
 export type AdapterActionKind =
   | 'set_config'
@@ -54,6 +70,10 @@ export interface AdapterRouteAnalysis {
   actions: AdapterAction[];
   limitations: string[];
   evidence: AdapterEvidence[];
+  /** Capability-matrix rule id when a cell matched. */
+  ruleId?: string | null;
+  /** Structured gate class for UI chrome; prefer over parsing reason. */
+  gateKind?: AdapterGateKind;
 }
 
 export type AdapterServiceImpact = 'none' | 'requires_local_bridge';
@@ -67,7 +87,10 @@ export type AdapterPlanChange =
 export interface AdapterApplyPlan {
   analysis: AdapterRouteAnalysis;
   targetAgentId: AgentId;
-  /** Only explicit, stable rules can be applied. */
+  /**
+   * True only when the capability matrix is open **and** an apply implementation
+   * exists (provider-source whitelist). Matrix alone never authorizes writes.
+   */
   canApply: boolean;
   serviceImpact: AdapterServiceImpact;
   changes: AdapterPlanChange[];
@@ -84,6 +107,8 @@ export interface AdapterProfile {
   sourceId: string;
   targetAgentId: AgentId;
   route: Exclude<AdapterRoute, 'unsupported'>;
+  /** Credential family: API Key conversion vs official-login proxy. Independent of `route`. */
+  mode: AdapterProfileMode;
   status: AdapterProfileStatus;
   ruleId: string;
   ruleVersion: string;
@@ -106,6 +131,13 @@ export type AdapterBridgeRuntimeState =
   | 'error'
   | 'degraded';
 
+export type AdapterBridgeUpstreamStatus =
+  | 'unknown'
+  | 'connected'
+  | 'stopped'
+  | 'degraded'
+  | 'unavailable';
+
 /** Deliberately excludes the local bearer and all upstream credentials. */
 export interface AdapterBridgeRuntimeStatus {
   profileId: string;
@@ -113,7 +145,7 @@ export interface AdapterBridgeRuntimeStatus {
   port?: number | null;
   endpoint?: string | null;
   startedAt?: string | null;
-  upstreamStatus?: string | null;
+  upstreamStatus?: AdapterBridgeUpstreamStatus | string | null;
 }
 
 export type AdapterApplyRequest = AdapterRouteRequest;
@@ -128,6 +160,55 @@ export interface AdapterProfileFilter {
   sourceKind?: AdapterSourceKind;
   sourceId?: string;
   targetAgentId?: AgentId;
+  mode?: AdapterProfileMode;
+  route?: Exclude<AdapterRoute, 'unsupported'>;
+  status?: AdapterProfileStatus;
+  autoStart?: boolean;
+}
+
+/** Structured Adapter command error shared by Tauri and mock. */
+export interface AdapterCommandErrorFields {
+  code: string;
+  message: string;
+  details?: string | null;
+  retryable: boolean;
+}
+
+export class AdapterCommandError extends Error implements AdapterCommandErrorFields {
+  readonly code: string;
+  readonly details?: string | null;
+  readonly retryable: boolean;
+
+  constructor(fields: AdapterCommandErrorFields) {
+    super(fields.message);
+    this.name = 'AdapterCommandError';
+    this.code = fields.code;
+    this.details = fields.details ?? null;
+    this.retryable = fields.retryable;
+  }
+}
+
+/** Keep in lockstep with `is_adapter_error_retryable` in src-tauri/src/commands/mod.rs. */
+export function isAdapterErrorCodeRetryable(code: string): boolean {
+  if (code.startsWith('retryable:')) return true;
+  return code === 'adapter.port_in_use'
+    || code === 'adapter.bridge_start'
+    || code === 'adapter.bridge_upstream_auth'
+    || code.startsWith('adapter.bridge_restore_');
+}
+
+export function adapterCommandError(fields: {
+  code: string;
+  message: string;
+  details?: string | null;
+  retryable?: boolean;
+}): AdapterCommandError {
+  return new AdapterCommandError({
+    code: fields.code,
+    message: fields.message,
+    details: fields.details ?? null,
+    retryable: fields.retryable ?? isAdapterErrorCodeRetryable(fields.code),
+  });
 }
 
 export interface AdapterPort {

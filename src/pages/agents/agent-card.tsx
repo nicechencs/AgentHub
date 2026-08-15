@@ -47,7 +47,7 @@ import { openPathInFileManager } from '@/lib/api/skill';
 import {
   isProgressForAgent,
   onInstallProgress,
-} from '@/lib/backend/tauri/install-events';
+} from '@/lib/api/install';
 import { Tip } from '@/components/ui/tooltip';
 import { checkChannelEnv, formatMissingList } from '@/lib/env';
 import { normalizeOpenPath } from '@/lib/path-open';

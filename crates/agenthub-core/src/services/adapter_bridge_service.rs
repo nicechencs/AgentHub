@@ -30,8 +30,8 @@ use toml_edit::DocumentMut;
 use crate::bridge::{BridgeStartSpec, BridgeUpstreamConfig, ResolvedAuth};
 use crate::error::{AppError, Result};
 use crate::models::{
-    AdapterProfile, AdapterProfileFilter, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest,
-    AdapterSourceKind, AdapterSupport, AgentId, Provider, ProviderInput,
+    AdapterProfile, AdapterProfileFilter, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
+    AdapterRouteRequest, AdapterSourceKind, AdapterSupport, AgentId, Provider, ProviderInput,
 };
 use crate::services::{AdapterRouteService, AdapterSecretResolver};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
@@ -408,6 +408,7 @@ impl AdapterBridgeService {
             source_id: source_id.into(),
             target_agent_id: AgentId::Codex,
             route: AdapterRoute::LocalBridge,
+            mode: AdapterProfileMode::Api,
             status: AdapterProfileStatus::Applying,
             rule_id: RULE_ID.into(),
             rule_version: RULE_VERSION.into(),
@@ -1056,6 +1057,7 @@ fn same_profile_contract(existing: &AdapterProfile, proposed: &AdapterProfile) -
         && existing.source_id == proposed.source_id
         && existing.target_agent_id == proposed.target_agent_id
         && existing.route == proposed.route
+        && existing.mode == proposed.mode
         && existing.rule_id == proposed.rule_id
         && existing.rule_version == proposed.rule_version
         && existing.generated_provider_id == proposed.generated_provider_id

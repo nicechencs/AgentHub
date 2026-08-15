@@ -1,6 +1,7 @@
 /**
  * Dashboard alerts façade.
- * Production: empty (no simulated notifications). Mock: demo alerts under dev:mock.
+ * Production: derived from doctor agent status (auth / env / updates); dismiss is local.
+ * Mock: demo alerts under dev:mock.
  */
 import { getBackend } from '@/app/runtime';
 import type { DashboardAlert } from '@/lib/types';

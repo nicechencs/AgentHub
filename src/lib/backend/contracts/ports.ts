@@ -25,7 +25,7 @@ import type {
 } from '@/lib/types';
 import type { AgentCatalogPort } from './agent-catalog';
 import type { DoctorMapped, DoctorReport } from './doctor-port';
-import type { InstallOutcome } from './install-types';
+import type { InstallOutcome, InstallProgressPayload } from './install-types';
 import type {
   CoreProviderPreset,
   CoreSkill,
@@ -33,6 +33,7 @@ import type {
   SkillListingDto,
   SkillMarkdownPreviewDto,
   SkillProjectResultDto,
+  SkillsFsChangedPayload,
 } from './skill-types';
 import type { UsageAvailability, UsageQuery } from './usage-types';
 import type { ConfigPort } from './config-types';
@@ -314,7 +315,10 @@ export interface SkillPort {
   ): Promise<{ state: SkillSyncState; conflict: boolean }>;
   checkConflict(skillId: string, agentId: AgentId): Promise<boolean>;
   syncAll(): Promise<{ synced: number; skipped: number; failed: number }>;
+  /** CLI / internal alignment. GUI catalog uses `listSkillCatalog`. */
   listInstalledSkills(): Promise<InstalledSkillDto[]>;
+  /** Shared library + `private_source` agent rows (no available/conflict copies). */
+  listSkillCatalog(): Promise<InstalledSkillDto[]>;
   installSkillFromSource(source: string, overwrite?: boolean): Promise<CoreSkill>;
   importPrivateSkillToShared(
     skillId: string,
@@ -341,6 +345,10 @@ export interface SkillPort {
     skillId: string,
     privateAgent?: AgentId | null,
   ): Promise<SkillMarkdownPreviewDto>;
+  /** Subscribe to skill-directory changes. Returns an unsubscribe function. */
+  onFsChanged(
+    handler: (payload?: SkillsFsChangedPayload) => void,
+  ): Promise<() => void> | (() => void);
 }
 
 /** Result of a usage collect pass (mirrors core CollectResult). */
@@ -395,12 +403,51 @@ export interface InstallPort {
   upgradeAgentCmd(agentId: AgentId): Promise<InstallOutcome>;
   uninstallAgentCmd(agentId: AgentId, purgeConfig: boolean): Promise<InstallOutcome>;
   openAgentConfigDir(agentId: AgentId): Promise<string>;
+  /** Subscribe to live install/upgrade/uninstall log lines. Returns an unsubscribe function. */
+  onProgress(
+    handler: (payload: InstallProgressPayload) => void,
+  ): Promise<() => void> | (() => void);
 }
 
 export type { UpdatePort } from './update-types';
 export type { McpPort } from './mcp-types';
 
+/**
+ * Product features that may be implemented by mock before production.
+ * UI must gate on this surface instead of offering always-fail actions.
+ * Missing fields are treated as false (fail-closed).
+ */
+export interface BackendFeatures {
+  /** Toast undo after provider live switch. */
+  providerUndoSwitch: boolean;
+  /** Provider endpoint latency probe. */
+  providerTestLatency: boolean;
+  /** Toast undo after account live switch. */
+  accountUndoSwitch: boolean;
+  /** Export a portable backup package (machine migration). */
+  backupExport: boolean;
+}
+
+export const DEFAULT_BACKEND_FEATURES: BackendFeatures = {
+  providerUndoSwitch: false,
+  providerTestLatency: false,
+  accountUndoSwitch: false,
+  backupExport: false,
+};
+
+/** Merge optional partial features onto fail-closed defaults. */
+export function resolveBackendFeatures(
+  features?: Partial<BackendFeatures> | null,
+): BackendFeatures {
+  return { ...DEFAULT_BACKEND_FEATURES, ...features };
+}
+
 export interface Backend {
+  /**
+   * Which optional product features this backend actually implements.
+   * Prefer this over catching `BackendUnsupportedError` after the user clicks.
+   */
+  features: BackendFeatures;
   account: AccountPort;
   /** Read-only route compatibility preview; does not apply or start anything. */
   adapter: AdapterPort;

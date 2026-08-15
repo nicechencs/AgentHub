@@ -1,5 +1,5 @@
 /** Adapter route preview and the narrow, supported apply façade. */
-import { getBackend } from '@/app/runtime';
+import { getBackend, notifyConnectionPoolChanged } from '@/app/runtime';
 import type {
   AdapterApplyPlan,
   AdapterApplyRequest,
@@ -22,6 +22,7 @@ export type {
   AdapterPlanChange,
   AdapterProfile,
   AdapterProfileFilter,
+  AdapterProfileMode,
   AdapterProfileStatus,
   AdapterRoute,
   AdapterRouteAnalysis,
@@ -45,14 +46,26 @@ export async function listAdapterProfiles(filter?: AdapterProfileFilter): Promis
   return getBackend().adapter.listProfiles(filter);
 }
 
+async function refreshConnectionPoolAfterAdapterMutation(): Promise<void> {
+  try {
+    await notifyConnectionPoolChanged(getBackend());
+  } catch {
+    // The mutation itself succeeded. The pool store keeps previous rows and
+    // exposes the refresh error instead of pretending the list is current.
+  }
+}
+
 /** Applies only a stable adapter route supported by the active backend. */
 export async function applyAdapter(request: AdapterApplyRequest): Promise<AdapterApplyResult> {
-  return getBackend().adapter.apply(request);
+  const result = await getBackend().adapter.apply(request);
+  await refreshConnectionPoolAfterAdapterMutation();
+  return result;
 }
 
 /** Removes the generated projection when it is not the active Connection. */
 export async function removeAdapter(profileId: string): Promise<void> {
-  return getBackend().adapter.remove(profileId);
+  await getBackend().adapter.remove(profileId);
+  await refreshConnectionPoolAfterAdapterMutation();
 }
 
 /** Starts a previously-created local bridge on this machine. */

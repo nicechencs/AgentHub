@@ -20,7 +20,7 @@ use tokio::{
 use super::host::CleanupCompletion;
 use super::{
     BridgeHostError, BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec, BridgeUpstreamConfig,
-    ResolvedAuth,
+    BridgeUpstreamStatus, ResolvedAuth,
 };
 
 fn spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
@@ -195,6 +195,13 @@ async fn health_requires_the_local_bearer_token() {
     assert_eq!(health["ok"], true);
     assert_eq!(health["listener_status"], "running");
     assert_eq!(health["upstream_status"], "unknown");
+    assert_eq!(
+        host.status("health")
+            .expect("status")
+            .expect("instance")
+            .upstream_status,
+        BridgeUpstreamStatus::Unknown
+    );
     assert!(
         host.status("health")
             .expect("status")
@@ -688,5 +695,206 @@ async fn port_conflict_fails_and_non_streaming_response_translates() {
         "hello"
     );
     host.shutdown().await.expect("shutdown");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn status_and_health_report_last_observed_upstream_without_a_new_probe() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let started = host
+        .start(spec("observed", 0, upstream_port))
+        .await
+        .expect("start");
+    assert_eq!(started.upstream_status, BridgeUpstreamStatus::Unknown);
+
+    let connected = host
+        .record_upstream_outcome("observed", BridgeUpstreamStatus::Connected)
+        .expect("record connected")
+        .expect("instance");
+    assert_eq!(connected.upstream_status, BridgeUpstreamStatus::Connected);
+    let health = client()
+        .await
+        .get(format!("http://127.0.0.1:{}/health", started.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .send()
+        .await
+        .expect("health")
+        .json::<Value>()
+        .await
+        .expect("health json");
+    assert_eq!(health["upstream_status"], "connected");
+    assert_eq!(
+        host.status("observed")
+            .expect("status")
+            .expect("instance")
+            .upstream_status,
+        BridgeUpstreamStatus::Connected
+    );
+
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", started.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"test","input":"hello"}))
+        .send()
+        .await
+        .expect("response request");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        host.status("observed")
+            .expect("status after success")
+            .expect("instance")
+            .upstream_status,
+        BridgeUpstreamStatus::Connected
+    );
+
+    host.record_upstream_outcome("observed", BridgeUpstreamStatus::Degraded)
+        .expect("record degraded");
+    assert_eq!(
+        host.status("observed")
+            .expect("status after degrade")
+            .expect("instance")
+            .upstream_status,
+        BridgeUpstreamStatus::Degraded
+    );
+    let degraded_health = client()
+        .await
+        .get(format!("http://127.0.0.1:{}/health", started.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .send()
+        .await
+        .expect("degraded health")
+        .json::<Value>()
+        .await
+        .expect("degraded health json");
+    assert_eq!(degraded_health["upstream_status"], "degraded");
+
+    let stopped = host.stop("observed").await.expect("stop");
+    assert_eq!(stopped.state, BridgeRuntimeState::Stopped);
+    assert_eq!(stopped.upstream_status, BridgeUpstreamStatus::Stopped);
+    assert!(host
+        .status("observed")
+        .expect("status after stop")
+        .is_none());
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn request_failure_marks_upstream_degraded_and_status_does_not_probe() {
+    let host = BridgeRuntimeHost::new();
+    let started = host
+        .start(spec("degraded-request", 0, 1))
+        .await
+        .expect("start with no live upstream");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", started.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"test","input":"hello"}))
+        .send()
+        .await
+        .expect("failed request");
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let status = host
+        .status("degraded-request")
+        .expect("status")
+        .expect("instance");
+    assert_eq!(status.state, BridgeRuntimeState::Running);
+    assert_eq!(status.upstream_status, BridgeUpstreamStatus::Degraded);
+    host.stop("degraded-request").await.expect("stop");
+}
+
+async fn status_upstream(status: StatusCode) -> (u16, tokio::task::JoinHandle<()>) {
+    async fn chat(State(status): State<StatusCode>) -> Response {
+        (status, Json(json!({"error":{"message":"upstream-secret"}}))).into_response()
+    }
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind status upstream");
+    let port = listener.local_addr().expect("upstream addr").port();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/chat/completions", post(chat))
+                .with_state(status),
+        )
+        .await
+        .expect("serve status upstream");
+    });
+    (port, task)
+}
+
+#[tokio::test]
+async fn upstream_429_and_5xx_are_generic_and_mark_degraded() {
+    for (label, upstream_status, expected_local) in [
+        (
+            "too-many",
+            StatusCode::TOO_MANY_REQUESTS,
+            StatusCode::TOO_MANY_REQUESTS,
+        ),
+        (
+            "server-error",
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::BAD_GATEWAY,
+        ),
+    ] {
+        let (upstream_port, upstream_task) = status_upstream(upstream_status).await;
+        let host = BridgeRuntimeHost::new();
+        let started = host
+            .start(spec(label, 0, upstream_port))
+            .await
+            .expect("start");
+        let response = client()
+            .await
+            .post(format!("http://127.0.0.1:{}/v1/responses", started.port))
+            .header(header::AUTHORIZATION, "Bearer local-test-token")
+            .json(&json!({"model":"test","input":"hello"}))
+            .send()
+            .await
+            .expect("upstream error request");
+        assert_eq!(response.status(), expected_local);
+        let body = response.text().await.expect("error body");
+        assert!(body.contains("The upstream model provider returned an error."));
+        assert!(!body.contains("upstream-secret"));
+        assert_eq!(
+            host.status(label)
+                .expect("status")
+                .expect("instance")
+                .upstream_status,
+            BridgeUpstreamStatus::Degraded
+        );
+        host.stop(label).await.expect("stop");
+        upstream_task.abort();
+    }
+}
+
+#[tokio::test]
+async fn translate_failure_on_http_200_marks_upstream_degraded() {
+    let (upstream_port, upstream_task) = status_upstream(StatusCode::OK).await;
+    let host = BridgeRuntimeHost::new();
+    let started = host
+        .start(spec("translate-fail", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", started.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"test","input":"hello"}))
+        .send()
+        .await
+        .expect("translate failure request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        host.status("translate-fail")
+            .expect("status")
+            .expect("instance")
+            .upstream_status,
+        BridgeUpstreamStatus::Degraded
+    );
+    host.stop("translate-fail").await.expect("stop");
     upstream_task.abort();
 }

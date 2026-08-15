@@ -16,7 +16,7 @@ pub(crate) use codex::normalize_oauth_credentials as normalize_codex_oauth_crede
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 use crate::error::{AppError, Result};
 use crate::logging::targets;
@@ -25,6 +25,7 @@ use crate::models::{
     DetectResult, InstallChannel, LiveAccount, RunOptions, RunSpec,
 };
 use crate::utils::atomic::atomic_write;
+use crate::utils::expiry::{is_expired, normalize_credential_key};
 use crate::utils::redact::{mask_secret_preview, redact_text};
 
 pub trait AgentAdapter: Send + Sync {
@@ -259,28 +260,28 @@ pub(crate) fn inspect_auth_credentials(value: &serde_json::Value) -> AuthCredent
             return;
         };
         for (raw_key, value) in object {
-            let key = raw_key.to_ascii_lowercase().replace(['-', '.'], "_");
+            let key = normalize_credential_key(raw_key);
             let non_empty = value.as_str().map(str::trim).is_some_and(|s| !s.is_empty());
             match key.as_str() {
                 "access" | "access_token" | "accesstoken" | "id_token" | "idtoken" => {
                     out.has_access_token |= non_empty;
-                    if let Some(expired) = value_expired(value) {
+                    if let Some(expired) = is_expired(value) {
                         out.access_expired = Some(expired);
                     }
                 }
                 "refresh" | "refresh_token" | "refreshtoken" => {
                     out.has_refresh_token |= non_empty;
-                    if let Some(expired) = value_expired(value) {
+                    if let Some(expired) = is_expired(value) {
                         out.refresh_expired = Some(expired);
                     }
                 }
                 "expires" | "expires_at" | "expiresat" => {
-                    if let Some(expired) = value_expired(value) {
+                    if let Some(expired) = is_expired(value) {
                         out.access_expired = Some(expired);
                     }
                 }
                 "refresh_expires" | "refresh_expires_at" | "refreshexpiresat" => {
-                    if let Some(expired) = value_expired(value) {
+                    if let Some(expired) = is_expired(value) {
                         out.refresh_expired = Some(expired);
                     }
                 }
@@ -322,38 +323,6 @@ pub(crate) fn oauth_auth_health(metadata: AuthCredentialMetadata) -> crate::mode
         (_, Some(true), true, Some(true)) | (_, Some(true), false, _) => AuthHealth::NeedsLogin,
         (_, _, true, Some(false) | None) => AuthHealth::Renewable,
         _ => AuthHealth::Configured,
-    }
-}
-
-fn value_expired(value: &serde_json::Value) -> Option<bool> {
-    let now_secs = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
-    match value {
-        serde_json::Value::Number(number) => {
-            let timestamp = number.as_i64()?;
-            let timestamp = if timestamp.unsigned_abs() > 1_000_000_000_000 {
-                timestamp / 1000
-            } else {
-                timestamp
-            };
-            Some(timestamp <= now_secs as i64)
-        }
-        serde_json::Value::String(text) => {
-            let text = text.trim();
-            if text.is_empty() {
-                return None;
-            }
-            if let Ok(number) = text.parse::<i64>() {
-                let number = if number.unsigned_abs() > 1_000_000_000_000 {
-                    number / 1000
-                } else {
-                    number
-                };
-                return Some(number <= now_secs as i64);
-            }
-            let timestamp = chrono::DateTime::parse_from_rfc3339(text).ok()?.timestamp();
-            Some(timestamp <= now_secs as i64)
-        }
-        _ => None,
     }
 }
 

@@ -1,16 +1,17 @@
-import type {
-  AdapterAction,
-  AdapterApplyRequest,
-  AdapterApplyResult,
-  AdapterApplyPlan,
-  AdapterBridgeRuntimeStatus,
-  AdapterEvidence,
-  AdapterPlanChange,
-  AdapterPort,
-  AdapterProfile,
-  AdapterProfileFilter,
-  AdapterRouteAnalysis,
-  AdapterRouteRequest,
+import {
+  adapterCommandError,
+  type AdapterAction,
+  type AdapterApplyRequest,
+  type AdapterApplyResult,
+  type AdapterApplyPlan,
+  type AdapterBridgeRuntimeStatus,
+  type AdapterEvidence,
+  type AdapterPlanChange,
+  type AdapterPort,
+  type AdapterProfile,
+  type AdapterProfileFilter,
+  type AdapterRouteAnalysis,
+  type AdapterRouteRequest,
 } from '@/lib/backend/contracts/adapter';
 import type { Account, Provider } from '@/lib/types';
 import { delay } from './delay';
@@ -69,38 +70,135 @@ function secretChange(target: string, field: string): AdapterPlanChange {
   return { target, field, secret: true };
 }
 
-function unsupported(reason: string, evidenceItems: AdapterEvidence[]): AdapterRouteAnalysis {
+/** Keep in lockstep with `CODEX_SUBSCRIPTION_TO_CLAUDE_REASON` in agenthub-core. */
+export const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON = [
+  'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
+  '尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。',
+  '不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。',
+  '这只表示没有可执行规则，不代表连接失效。',
+  '替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。',
+].join('');
+
+function unsupported(
+  reason: string,
+  evidenceItems: AdapterEvidence[],
+  options?: { gateKind?: AdapterRouteAnalysis['gateKind']; ruleId?: string | null },
+): AdapterRouteAnalysis {
   return {
     route: 'unsupported',
     support: 'unsupported',
     reason,
     actions: [],
-    limitations: ['该组合暂未支持；不会改动来源连接、本机服务或配置。'],
+    limitations: [
+      '当前不支持此组合；不会改动来源连接、本机服务或配置。',
+      'plan.canApply=false：无 Apply、启动 Bridge 或强制继续入口。',
+    ],
     evidence: evidenceItems,
+    ruleId: options?.ruleId ?? null,
+    gateKind: options?.gateKind ?? 'unsupported',
   };
+}
+
+/** Optional classify-only fields that mirror core Account.extra / credentials. */
+type ClassifiableAccount = Account & {
+  extra?: Record<string, unknown>;
+  credentials?: Record<string, unknown>;
+};
+
+type RouteSourceLabel =
+  | 'kimi_membership'
+  | 'kimi_non_membership'
+  | 'anthropic_api_key'
+  | 'codex_subscription'
+  | 'codex_subscription_oauth_other'
+  | 'other'
+  | 'not_found';
+
+/** Keep lockstep with core `KIMI_NON_MEMBERSHIP_REASON`. */
+const KIMI_NON_MEMBERSHIP_REASON =
+  '当前 Kimi 连接不是「Kimi Code 会员」来源。跨 Agent 适配仅支持会员：Connections 中选择 preset「Kimi Code 会员」，或配置端点包含 api.kimi.com/coding。开放平台（moonshot）与任意兼容 API 不会自动升级。当前不支持不等于连接失效。';
+
+/** Keep lockstep with core `KIMI_MEMBERSHIP_PRESET` / `KIMI_CODING_ENDPOINT_NEEDLE`. */
+const KIMI_MEMBERSHIP_PRESET = 'kimi-code-membership';
+const KIMI_CODING_ENDPOINT_NEEDLE = 'api.kimi.com/coding';
+const KIMI_MEMBERSHIP_RULE_IDS = new Set([
+  'kimi-membership-to-claude-v1',
+  'kimi-membership-to-codex-v1',
+  'kimi-membership-to-pi-v1',
+]);
+
+function jsonString(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = (value as Record<string, unknown>)[key];
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  return trimmed || undefined;
+}
+
+/** Mirror `is_codex_auth_json`: format=auth_json OR nested tokens.access_token/refresh_token. */
+function isCodexAuthJson(format: string | undefined, credentials: unknown): boolean {
+  if (format?.toLowerCase() === 'auth_json') return true;
+  const tokens = credentials && typeof credentials === 'object'
+    ? (credentials as Record<string, unknown>).tokens
+    : undefined;
+  if (!tokens || typeof tokens !== 'object' || Array.isArray(tokens)) return false;
+  return Object.prototype.hasOwnProperty.call(tokens, 'access_token')
+    || Object.prototype.hasOwnProperty.call(tokens, 'refresh_token');
+}
+
+function textLooksLikeKimiCoding(text: string | undefined): boolean {
+  return typeof text === 'string' && text.toLowerCase().includes(KIMI_CODING_ENDPOINT_NEEDLE);
+}
+
+/** Same rule as core classify/apply: Kimi + (preset or official coding endpoint). */
+function isKimiMembershipProvider(provider: Pick<Provider, 'agentId' | 'preset' | 'configText'>): boolean {
+  return provider.agentId === 'kimi'
+    && (provider.preset === KIMI_MEMBERSHIP_PRESET
+      || textLooksLikeKimiCoding(provider.configText));
 }
 
 function classify(
   resolver: MockAdapterSourceResolver,
   request: AdapterRouteRequest,
-): 'kimi_membership' | 'anthropic_api_key' | 'other' | 'not_found' {
+): RouteSourceLabel {
   if (request.sourceKind === 'provider') {
     const provider = resolver.getProviderById(request.sourceId);
     if (!provider) return 'not_found';
-    if (provider.agentId === 'kimi' && provider.preset === 'kimi-code-membership') {
+    if (isKimiMembershipProvider(provider)) {
       return 'kimi_membership';
     }
-    if (provider.agentId === 'claude' && provider.preset === 'anthropic') {
+    if (
+      provider.agentId === 'claude'
+      && (provider.preset === 'anthropic'
+        || (typeof provider.configText === 'string'
+          && provider.configText.toLowerCase().includes('api.anthropic.com')))
+    ) {
       return 'anthropic_api_key';
     }
+    if (provider.agentId === 'kimi') return 'kimi_non_membership';
     return 'other';
   }
 
-  const account = resolver.getAccountById(request.sourceId);
+  const account = resolver.getAccountById(request.sourceId) as ClassifiableAccount | undefined;
   if (!account) return 'not_found';
-  return account.kind === 'apikey' && account.provider?.toLowerCase() === 'anthropic'
-    ? 'anthropic_api_key'
-    : 'other';
+  const explicitProvider =
+    jsonString(account.extra, 'provider')
+    ?? jsonString(account.credentials, 'provider')
+    ?? account.provider?.trim();
+  const credentialFormat =
+    jsonString(account.credentials, 'format')
+    ?? jsonString(account.extra, 'format')
+    ?? account.credentialFormat?.trim();
+
+  if (account.kind === 'apikey' && explicitProvider?.toLowerCase() === 'anthropic') {
+    return 'anthropic_api_key';
+  }
+  if (account.agentId === 'codex' && account.kind === 'oauth') {
+    return isCodexAuthJson(credentialFormat, account.credentials ?? {})
+      ? 'codex_subscription'
+      : 'codex_subscription_oauth_other';
+  }
+  return 'other';
 }
 
 function analyze(
@@ -109,7 +207,11 @@ function analyze(
 ): AdapterRouteAnalysis {
   const source = classify(resolver, request);
   if (source === 'not_found') {
-    throw new Error(`${request.sourceKind} not found: ${request.sourceId}`);
+    throw adapterCommandError({
+      code: 'not_found',
+      message: `${request.sourceKind} not found: ${request.sourceId}`,
+      retryable: false,
+    });
   }
   if (source === 'kimi_membership' && request.targetAgentId === 'claude') {
     return {
@@ -126,6 +228,8 @@ function analyze(
         '应用后会切换当前 Claude Connection；请确认无其他进行中的配置写入。',
       ],
       evidence: [evidence('Kimi Code: Claude Code integration', 'https://www.kimi.com/code/docs/en/third-party-tools/claude-code.html')],
+      ruleId: 'kimi-membership-to-claude-v1',
+      gateKind: 'none',
     };
   }
   if (source === 'kimi_membership' && request.targetAgentId === 'codex') {
@@ -141,6 +245,8 @@ function analyze(
         '固定端口被占用时会尝试重新分配端口并写回配置。',
       ],
       evidence: [evidence('Kimi Code: Codex local routing', 'https://www.kimi.com/code/docs/third-party-tools/codex.html')],
+      ruleId: 'kimi-membership-to-codex-v1',
+      gateKind: 'none',
     };
   }
   if (source === 'kimi_membership' && request.targetAgentId === 'pi') {
@@ -152,8 +258,13 @@ function analyze(
         action('set_config', 'Pi', '选择 Pi 的 Kimi For Coding provider。', 'kimi-for-coding'),
         secretAction('Pi', '从已选 Connection 引用 API Key；不会读取或显示它。'),
       ],
-      limitations: ['Phase 0 仅预览；不会同步配置或传输凭据。'],
+      limitations: [
+        '将写入 Pi models.json 对应 provider 槽；凭据只引用已保存的 Connection，不会读取或显示明文 Key。',
+        '应用后会切换当前 Pi Connection。',
+      ],
       evidence: [evidence('Kimi Code CLI provider configuration', 'https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/providers.html')],
+      ruleId: 'kimi-membership-to-pi-v1',
+      gateKind: 'none',
     };
   }
   if (source === 'anthropic_api_key' && request.targetAgentId === 'pi') {
@@ -165,34 +276,44 @@ function analyze(
         action('set_config', 'Pi', '选择 Pi 的 Anthropic provider。', 'anthropic'),
         secretAction('Pi', '从已选 Connection 引用 API Key；不会读取或显示它。'),
       ],
-      limitations: ['Phase 0 仅预览；不会同步配置或传输凭据。'],
+      limitations: [
+        '将写入 Pi models.json 对应 provider 槽；凭据只引用已保存的 Connection，不会读取或显示明文 Key。',
+        '应用后会切换当前 Pi Connection。',
+      ],
       evidence: [evidence('Pi custom provider and model configuration', 'https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md')],
+      ruleId: 'anthropic-api-to-pi-v1',
+      gateKind: 'none',
     };
   }
-  return unsupported(
-    source === 'kimi_membership'
-      ? 'Kimi Code 会员当前仅支持预览到 Claude、Codex 或 Pi。'
-      : source === 'anthropic_api_key'
-        ? 'Anthropic API Key 当前仅支持预览到 Pi。'
-        : otherUnsupportedReason(resolver, request),
-    [evidence(
-      'AgentHub：厂商、API 与 OAuth 适配规则',
-      'https://github.com/nicechencs/AgentHub/blob/release/docs/provider-api-oauth-adaptation.md',
-    )],
-  );
-}
 
-function otherUnsupportedReason(
-  resolver: MockAdapterSourceResolver,
-  request: AdapterRouteRequest,
-): string {
-  const sourceAgentId = request.sourceKind === 'account'
-    ? resolver.getAccountById(request.sourceId)?.agentId
-    : resolver.getProviderById(request.sourceId)?.agentId;
-  if (request.sourceKind === 'account' && sourceAgentId === 'codex' && request.targetAgentId === 'claude') {
-    return 'AgentHub 暂未提供从 Codex 账户到 Claude Code 的适配规则。当前尚未完成上游授权、条款和协议兼容性验证，因此不能应用；这只表示没有可执行规则，不代表连接失效。';
+  const compatibilityEvidence = [evidence(
+    'AgentHub：厂商、API 与 OAuth 适配规则',
+    'https://github.com/nicechencs/AgentHub/blob/release/docs/provider-api-oauth-adaptation.md',
+  )];
+  // Codex / ChatGPT subscription → Claude is a gated experimental candidate only.
+  // auth_json matches the closed matrix cell (ruleId present). Bare Codex OAuth
+  // still uses the closed subscription surface but does not pretend the cell matched.
+  if (
+    (source === 'codex_subscription' || source === 'codex_subscription_oauth_other')
+    && request.targetAgentId === 'claude'
+  ) {
+    return unsupported(CODEX_SUBSCRIPTION_TO_CLAUDE_REASON, compatibilityEvidence, {
+      gateKind: 'subscription_candidate',
+      ruleId: source === 'codex_subscription'
+        ? 'codex-subscription-to-claude-app-server-v0'
+        : null,
+    });
   }
-  return 'AgentHub 暂未提供此来源到所选目标的适配规则。这不表示连接失效。';
+  const reason = source === 'kimi_membership'
+    ? 'Kimi Code 会员当前仅支持预览到 Claude、Codex 或 Pi。'
+    : source === 'kimi_non_membership'
+      ? KIMI_NON_MEMBERSHIP_REASON
+    : source === 'anthropic_api_key'
+      ? 'Anthropic API Key 当前仅支持预览到 Pi。'
+      : source === 'codex_subscription' || source === 'codex_subscription_oauth_other'
+        ? 'AgentHub 暂未提供从 Codex 账户到所选目标的适配规则。当前不支持不等于连接失效。'
+        : 'AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。';
+  return unsupported(reason, compatibilityEvidence);
 }
 
 function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis): AdapterApplyPlan {
@@ -216,17 +337,152 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
           secretChange('pi', 'apiKey'),
         ]
       : [];
+  const canApply = request.sourceKind === 'provider'
+    && (
+      (analysis.route === 'native_endpoint' && analysis.support === 'stable' && request.targetAgentId === 'claude')
+      || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
+      || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'pi')
+    );
   return {
     analysis,
     targetAgentId: request.targetAgentId,
-    canApply: (analysis.route === 'native_endpoint' && request.targetAgentId === 'claude')
-      || (analysis.route === 'local_bridge' && request.targetAgentId === 'codex'),
+    canApply,
     serviceImpact: analysis.route === 'local_bridge' ? 'requires_local_bridge' : 'none',
     changes,
   };
 }
 
 /** Browser-only mirror of the core's explicit routing rules. */
+const CONNECTION_SECRET_MARKER = '$AGENTHUB_CONNECTION_SECRET$';
+
+function safeSourceId(sourceId: string): string {
+  return sourceId.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 40) || 'source';
+}
+
+function piSlotFromPlan(plan: AdapterApplyPlan, fallback: string): string {
+  return plan.analysis.actions.find(
+    (item) => item.kind === 'set_config' && item.target === 'Pi',
+  )?.value ?? fallback;
+}
+
+function materializeApply(
+  request: AdapterApplyRequest,
+  plan: AdapterApplyPlan,
+  existing: AdapterProfile | undefined,
+  now: string,
+): { profile: AdapterProfile; provider: Provider } {
+  const safeId = safeSourceId(request.sourceId);
+  if (plan.analysis.route === 'local_bridge') {
+    const profile: AdapterProfile = existing ?? {
+      id: `adapter-kimi-codex-bridge-${safeId}`,
+      name: `Kimi → Codex 本地桥接 (${safeId})`,
+      sourceKind: request.sourceKind,
+      sourceId: request.sourceId,
+      targetAgentId: request.targetAgentId,
+      route: 'local_bridge',
+      mode: 'api',
+      status: 'active',
+      ruleId: 'kimi-membership-to-codex-v1',
+      ruleVersion: '1',
+      generatedProviderId: `codex-kimi-bridge-${safeId}`,
+      localPort: 32123,
+      autoStart: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    return {
+      profile,
+      provider: {
+        id: profile.generatedProviderId!,
+        agentId: 'codex',
+        name: profile.name,
+        preset: 'openai-compatible',
+        configText: JSON.stringify({
+          baseUrl: `http://127.0.0.1:${profile.localPort ?? 32123}/v1`,
+          model: 'kimi-k2.5',
+        }),
+        configFormat: 'json',
+        isCurrent: true,
+      },
+    };
+  }
+
+  if (plan.analysis.route === 'config_sync' && request.targetAgentId === 'pi') {
+    const isAnthropic = plan.analysis.ruleId === 'anthropic-api-to-pi-v1';
+    const ruleId = isAnthropic ? 'anthropic-api-to-pi-v1' : 'kimi-membership-to-pi-v1';
+    const slot = piSlotFromPlan(plan, isAnthropic ? 'anthropic' : 'kimi-for-coding');
+    const profile: AdapterProfile = existing ?? {
+      id: isAnthropic ? `adapter-anthropic-pi-${safeId}` : `adapter-kimi-pi-${safeId}`,
+      name: `${isAnthropic ? 'Anthropic' : 'Kimi'} → Pi (${safeId})`,
+      sourceKind: request.sourceKind,
+      sourceId: request.sourceId,
+      targetAgentId: request.targetAgentId,
+      route: 'config_sync',
+      mode: 'api',
+      status: 'active',
+      ruleId,
+      ruleVersion: '1',
+      generatedProviderId: isAnthropic
+        ? `pi-anthropic-adapter-${safeId}`
+        : `pi-kimi-adapter-${safeId}`,
+      localPort: null,
+      autoStart: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    return {
+      profile,
+      provider: {
+        id: profile.generatedProviderId!,
+        agentId: 'pi',
+        name: profile.name,
+        preset: slot,
+        configText: JSON.stringify({
+          slot,
+          apiKey: CONNECTION_SECRET_MARKER,
+        }),
+        configFormat: 'json',
+        isCurrent: true,
+      },
+    };
+  }
+
+  const profile: AdapterProfile = existing ?? {
+    id: `adapter-kimi-claude-${safeId}`,
+    name: `Kimi → Claude (${safeId})`,
+    sourceKind: request.sourceKind,
+    sourceId: request.sourceId,
+    targetAgentId: request.targetAgentId,
+    route: 'native_endpoint',
+    mode: 'api',
+    status: 'active',
+    ruleId: 'kimi-membership-to-claude-v1',
+    ruleVersion: '1',
+    generatedProviderId: `claude-kimi-adapter-${safeId}`,
+    localPort: null,
+    autoStart: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+  return {
+    profile,
+    provider: {
+      id: profile.generatedProviderId!,
+      agentId: 'claude',
+      name: profile.name,
+      preset: 'anthropic-compatible',
+      configText: JSON.stringify({
+        env: {
+          ANTHROPIC_BASE_URL: 'https://api.kimi.com/coding/',
+          ANTHROPIC_AUTH_TOKEN: CONNECTION_SECRET_MARKER,
+        },
+      }),
+      configFormat: 'json',
+      isCurrent: true,
+    },
+  };
+}
+
 export function createMockAdapterPort(resolver: MockAdapterSourceResolver): AdapterPort {
   const state: MockAdapterState = {
     profiles: [],
@@ -251,12 +507,35 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         .filter((profile) => !filter.sourceKind || profile.sourceKind === filter.sourceKind)
         .filter((profile) => !filter.sourceId || profile.sourceId === filter.sourceId)
         .filter((profile) => !filter.targetAgentId || profile.targetAgentId === filter.targetAgentId)
+        .filter((profile) => !filter.mode || profile.mode === filter.mode)
+        .filter((profile) => !filter.route || profile.route === filter.route)
+        .filter((profile) => !filter.status || profile.status === filter.status)
+        .filter((profile) => filter.autoStart == null || profile.autoStart === filter.autoStart)
         .map((profile) => ({ ...profile }));
     },
     async apply(request: AdapterApplyRequest): Promise<AdapterApplyResult> {
       await delay(20);
       const plan = buildPlan(request, analyze(resolver, request));
-      if (!plan.canApply) throw new Error('当前适配路径尚不可应用');
+      if (!plan.canApply) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: '当前适配路径尚不可应用',
+          retryable: false,
+        });
+      }
+      // Re-validate membership independently of plan.canApply (same rule as core).
+      if (plan.analysis.ruleId && KIMI_MEMBERSHIP_RULE_IDS.has(plan.analysis.ruleId)) {
+        const source = request.sourceKind === 'provider'
+          ? resolver.getProviderById(request.sourceId)
+          : undefined;
+        if (!source || !isKimiMembershipProvider(source)) {
+          throw adapterCommandError({
+            code: 'invalid_arg',
+            message: 'invalid adapter secret reference',
+            retryable: false,
+          });
+        }
+      }
       const existing = state.profiles.find(
         (profile) =>
           profile.sourceKind === request.sourceKind &&
@@ -264,56 +543,11 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           profile.targetAgentId === request.targetAgentId,
       );
       const now = new Date().toISOString();
-      const safeId = request.sourceId.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 40) || 'source';
-      const isLocalBridge = plan.analysis.route === 'local_bridge';
-      const profile: AdapterProfile = existing ?? {
-        id: `adapter-kimi-${isLocalBridge ? 'codex-bridge' : 'claude'}-${safeId}`,
-        name: `Kimi → ${isLocalBridge ? 'Codex 本地桥接' : 'Claude'} (${safeId})`,
-        sourceKind: request.sourceKind,
-        sourceId: request.sourceId,
-        targetAgentId: request.targetAgentId,
-        route: isLocalBridge ? 'local_bridge' : 'native_endpoint',
-        status: 'active',
-        ruleId: isLocalBridge ? 'kimi-membership-to-codex-bridge-v1' : 'kimi-membership-to-claude-v1',
-        ruleVersion: '1',
-        generatedProviderId: isLocalBridge
-          ? `codex-kimi-bridge-${safeId}`
-          : `claude-kimi-adapter-${safeId}`,
-        localPort: isLocalBridge ? 32123 : null,
-        // Match desktop apply: local bridges are opt-in for auto-start.
-        autoStart: false,
-        createdAt: now,
-        updatedAt: now,
-      };
+      const { profile, provider } = materializeApply(request, plan, existing, now);
       if (!existing) state.profiles.push(profile);
-      if (isLocalBridge) {
+      if (plan.analysis.route === 'local_bridge') {
         state.bridgeStatuses.set(profile.id, runningBridgeStatus(profile));
       }
-      const provider: Provider = isLocalBridge ? {
-        id: profile.generatedProviderId!,
-        agentId: 'codex',
-        name: profile.name,
-        preset: 'openai-compatible',
-        configText: JSON.stringify({
-          baseUrl: `http://127.0.0.1:${profile.localPort ?? 32123}/v1`,
-          model: 'kimi-k2.5',
-        }),
-        configFormat: 'json',
-        isCurrent: true,
-      } : {
-        id: profile.generatedProviderId!,
-        agentId: 'claude',
-        name: profile.name,
-        preset: 'anthropic-compatible',
-        configText: JSON.stringify({
-          env: {
-            ANTHROPIC_BASE_URL: 'https://api.kimi.com/coding/',
-            ANTHROPIC_AUTH_TOKEN: '$AGENTHUB_CONNECTION_SECRET$',
-          },
-        }),
-        configFormat: 'json',
-        isCurrent: true,
-      };
       const generated = resolver.upsertGeneratedProvider?.(provider) ?? provider;
       state.generatedProviders.set(generated.id, { ...generated });
       return {
@@ -324,15 +558,31 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     async remove(profileId: string) {
       await delay(20);
       const index = state.profiles.findIndex((profile) => profile.id === profileId);
-      if (index < 0) throw new Error(`adapter profile not found: ${profileId}`);
+      if (index < 0) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: `adapter profile not found: ${profileId}`,
+          retryable: false,
+        });
+      }
       const profile = state.profiles[index];
       const providerId = profile.generatedProviderId;
       const generated = providerId
         ? resolver.getProviderById(providerId) ?? state.generatedProviders.get(providerId)
         : undefined;
-      if (!generated) throw new Error('适配生成的 Connection 不存在，无法安全删除');
+      if (!generated) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: '适配生成的 Connection 不存在，无法安全删除',
+          retryable: false,
+        });
+      }
       if (generated.isCurrent) {
-        throw new Error('请先在 Connections 切换到其他连接，再删除此适配');
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: '请先在 Connections 切换到其他连接，再删除此适配',
+          retryable: false,
+        });
       }
       resolver.removeGeneratedProvider?.(generated);
       state.generatedProviders.delete(generated.id);
@@ -356,9 +606,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         port: profile.localPort ?? current?.port ?? null,
         endpoint: profile.localPort ? `http://127.0.0.1:${profile.localPort}/v1` : null,
         startedAt: current?.startedAt ?? null,
-        // Desktop bridge DTO currently only emits upstream "unknown"; keep mock
-        // aligned so dogfood does not invent richer health than Tauri returns.
-        upstreamStatus: 'unknown',
+        upstreamStatus: 'stopped',
       };
       state.bridgeStatuses.set(profileId, status);
       return { ...status };
@@ -372,7 +620,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         port: profile.localPort ?? null,
         endpoint: profile.localPort ? `http://127.0.0.1:${profile.localPort}/v1` : null,
         startedAt: null,
-        upstreamStatus: 'unknown',
+        upstreamStatus: 'stopped',
       };
       return { ...status };
     },
@@ -388,8 +636,20 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
 
 function localBridgeProfile(state: MockAdapterState, profileId: string): AdapterProfile {
   const profile = state.profiles.find((item) => item.id === profileId);
-  if (!profile) throw new Error(`adapter profile not found: ${profileId}`);
-  if (profile.route !== 'local_bridge') throw new Error('此适配不需要本地桥接');
+  if (!profile) {
+    throw adapterCommandError({
+      code: 'not_found',
+      message: `adapter profile not found: ${profileId}`,
+      retryable: false,
+    });
+  }
+  if (profile.route !== 'local_bridge') {
+    throw adapterCommandError({
+      code: 'unsupported',
+      message: '此适配不需要本地桥接',
+      retryable: false,
+    });
+  }
   return profile;
 }
 

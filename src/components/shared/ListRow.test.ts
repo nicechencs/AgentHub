@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  actionCountClass,
   segmentedCountClass,
   segmentedItemClass,
   segmentedItemSizeClass,
@@ -21,6 +22,12 @@ describe('segmented-styles (shared track family)', () => {
     expect(segmentedCountClass).toContain('tabular-nums');
     expect(segmentedCountClass).toContain('text-muted');
     expect(segmentedCountClass).not.toContain('rounded-full');
+  });
+
+  it('action count uses warning tokens (not raw amber)', () => {
+    expect(actionCountClass).toContain('bg-warning/15');
+    expect(actionCountClass).toContain('text-warning');
+    expect(actionCountClass).not.toContain('amber-');
   });
 
   it('active item uses panel lift without accent fill', () => {

@@ -1,30 +1,49 @@
-import { useState } from 'react';
-import { ExternalLink, ShieldCheck } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { ChevronDown, ExternalLink } from 'lucide-react';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import { openExternalLink } from '@/lib/open-external';
+import { cn } from '@/lib/utils';
 import type {
   AdapterApplyPlan,
   AdapterBridgeRuntimeStatus,
-  AdapterProfile,
   AdapterRouteAnalysis,
 } from '@/lib/backend/contracts/adapter';
+import { AdapterProfilesList, type AdapterProfilesListProps } from './AdapterProfilesList';
+import { AdapterRoutePipeline } from './AdapterRoutePipeline';
 import {
   adapterActionLabel,
-  adapterBridgeEndpointLabel,
+  adapterErrorDetails,
+  adapterErrorRetryHint,
   adapterPlanChangeLabel,
-  adapterProfileRecordLabel,
-  bridgeStatusBadge,
+  adapterPreviewOutcome,
+  adapterServiceImpactLabel,
+  canApplyAdapterPlan,
   errorMessage,
-  futureAvailability,
-  profileStatusBadge,
-  routeLabel,
-  supportBadge,
+  unsupportedPresentation,
 } from './adapter-model';
+import type { AdapterPipelineModel } from './adapter-view-model';
+import { oauthIncompleteAuthHint } from './adapter-sources';
+
+export function AdapterErrorLines({
+  error,
+  fallback,
+}: {
+  error: unknown;
+  fallback: string;
+}) {
+  const details = adapterErrorDetails(error);
+  const retryHint = adapterErrorRetryHint(error);
+  return (
+    <>
+      <p className="text-sm text-danger" role="alert">{errorMessage(error, fallback)}</p>
+      {details ? <p className="text-xs text-secondary">{details}</p> : null}
+      {retryHint ? <p className="text-xs text-secondary">{retryHint}</p> : null}
+    </>
+  );
+}
 
 /** A degraded bridge still owns its local listener and must be stopped, not started again. */
 export function isBridgeStopCapable(
@@ -50,6 +69,9 @@ export function AdapterPreviewResult({
   compact = false,
   onApply,
   applyError,
+  authIncomplete = false,
+  authHint,
+  pipeline,
 }: {
   analysis: AdapterRouteAnalysis | null;
   plan: AdapterApplyPlan | null;
@@ -59,13 +81,17 @@ export function AdapterPreviewResult({
   compact?: boolean;
   onApply?: () => void;
   applyError?: unknown;
+  authIncomplete?: boolean;
+  authHint?: string;
+  /** Optional route topology rendered above the conclusion (preview pane only). */
+  pipeline?: AdapterPipelineModel | null;
 }) {
   if (loading) {
     return (
       <div className="space-y-2" aria-live="polite">
-        <p className="text-sm text-secondary">正在分析并生成只读配置预览…</p>
-        <Skeleton className="h-4 w-40" />
-        <Skeleton className="h-4 w-full" />
+        <p className="text-sm text-secondary">分析中…</p>
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-4 w-48" />
       </div>
     );
   }
@@ -74,172 +100,146 @@ export function AdapterPreviewResult({
       <ErrorState
         compact={compact}
         error={errorMessage(error, '无法分析此连接')}
-        title="无法生成适配预览"
+        title="分析失败"
         onRetry={onRetry}
       />
     );
   }
-  if (!analysis) return <p className="text-sm text-secondary">选择来源后自动生成预览。</p>;
+  if (!analysis) return <p className="text-sm text-secondary">选择来源后显示结果。</p>;
 
-  const support = supportBadge(analysis.support);
   if (analysis.route === 'unsupported') {
+    // Unsupported is a neutral gate conclusion — never a red fault, never Apply/Bridge.
+    const presentation = unsupportedPresentation(analysis, plan);
     return (
-      <div className="space-y-4 text-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="font-medium">暂未支持此组合</h2>
-          <Badge variant={support.variant}>{support.label}</Badge>
-          <ShieldCheck className="h-4 w-4 text-secondary" aria-label="不会执行更改" />
-        </div>
-        <p>{analysis.reason}</p>
-        <section className="space-y-1 rounded-btn border border-border bg-subtle p-3 text-secondary">
-          <h3 className="font-medium text-primary">暂未支持不等于连接失效</h3>
-          <p>本次不会写入配置、启动服务或改变当前连接。</p>
-          <p>下一步：继续使用原连接、改用目标 Agent 自身登录，或更换已支持的来源与目标组合。</p>
-        </section>
-        <EvidenceList evidence={analysis.evidence} />
+      <div className="space-y-3 text-sm">
+        {pipeline ? <AdapterRoutePipeline model={pipeline} /> : null}
+        <PreviewHeader
+          title={presentation.headline}
+          badgeLabel={presentation.badgeLabel}
+          badgeVariant="default"
+          summary={presentation.summary}
+        />
+        {presentation.reason ? (
+          <p className="text-secondary">{presentation.reason}</p>
+        ) : null}
+        {presentation.alternatives.length > 0 ? (
+          <ul className="list-disc space-y-0.5 pl-5 text-secondary">
+            {presentation.alternatives.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        ) : null}
+        <PreviewDetails>
+          <StringList title="说明" values={presentation.gateLines} empty="" />
+          {presentation.safetyNote ? (
+            <p className="text-xs text-muted">{presentation.safetyNote}</p>
+          ) : null}
+          {analysis.limitations.length > 0 ? (
+            <StringList title="限制" values={analysis.limitations} empty="" />
+          ) : null}
+          <EvidenceList evidence={analysis.evidence} />
+        </PreviewDetails>
       </div>
     );
   }
 
-  const availability = onApply ? null : futureAvailability(analysis.route);
+  const canApply = canApplyAdapterPlan(plan) && !authIncomplete;
+  const outcome = adapterPreviewOutcome({
+    route: analysis.route,
+    canApply: canApplyAdapterPlan(plan),
+    authIncomplete,
+  });
+  // Only the backend canApply gate may surface mutation controls.
+  const showApply = Boolean(onApply) && canApply;
+  const changes = plan?.changes ?? [];
+  const hasDetails = changes.length > 0
+    || analysis.actions.length > 0
+    || analysis.limitations.length > 0
+    || analysis.evidence.length > 0
+    || Boolean(plan?.serviceImpact);
+
   return (
-    <div className="space-y-4 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="font-medium">{routeLabel(analysis.route)}</h2>
-        <Badge variant={support.variant}>{support.label}</Badge>
-        {availability && <Badge variant="warning">{availability}</Badge>}
-        <ShieldCheck className="h-4 w-4 text-secondary" aria-label="只读预览" />
-      </div>
-      <p>{analysis.reason}</p>
-      <AdapterPreviewList title="将写配置" values={plan?.changes ?? []} empty="此路径当前不会写入配置。" />
-      <p className="text-xs text-secondary">
-        服务影响：{plan?.serviceImpact === 'requires_local_bridge'
-          ? '将启动仅本机可访问的协议桥接；请让 AgentHub 保持在托盘运行。'
-          : '无需本地服务'}
-      </p>
-      {onApply && <Button onClick={onApply}>{analysis.route === 'local_bridge' ? '启用本地桥接' : '应用配置'}</Button>}
-      {applyError ? <p className="text-sm text-danger" role="alert">{errorMessage(applyError, '应用适配失败')}</p> : null}
-      <AdapterActionList actions={analysis.actions} />
-      <StringList title="限制" values={analysis.limitations} empty="无额外限制。" />
-      <EvidenceList evidence={analysis.evidence} />
+    <div className="space-y-3 text-sm">
+      {pipeline ? <AdapterRoutePipeline model={pipeline} /> : null}
+      <PreviewHeader
+        title={outcome.title}
+        badgeLabel={outcome.badgeLabel}
+        badgeVariant={outcome.badgeVariant}
+        summary={outcome.nextStep}
+      />
+      {authIncomplete && (
+        <p className="text-sm text-warning" role="status">
+          {authHint ?? oauthIncompleteAuthHint()}{' '}
+          <a className="underline" href="#/connections">去 Connections</a>
+        </p>
+      )}
+      {showApply && (
+        <Button onClick={onApply}>
+          {analysis.route === 'local_bridge' ? '启用本地桥接' : '应用配置'}
+        </Button>
+      )}
+      {applyError ? <AdapterErrorLines error={applyError} fallback="应用适配失败" /> : null}
+      {hasDetails ? (
+        <PreviewDetails>
+          <AdapterPreviewList title="预计改动" values={changes} empty="无需写入配置。" />
+          <p className="text-xs text-secondary">
+            运行方式：{adapterServiceImpactLabel(plan?.serviceImpact)}
+          </p>
+          {analysis.actions.length > 0 ? (
+            <AdapterActionList actions={analysis.actions} />
+          ) : null}
+          {analysis.limitations.length > 0 ? (
+            <StringList title="限制" values={analysis.limitations} empty="" />
+          ) : null}
+          {analysis.evidence.length > 0 ? (
+            <EvidenceList evidence={analysis.evidence} />
+          ) : null}
+        </PreviewDetails>
+      ) : null}
     </div>
   );
 }
 
-export function AdapterProfiles({
-  profiles,
-  bridgeStatuses,
-  loading,
-  loadError,
-  errors,
-  removingProfileId,
-  busyProfileIds,
-  onRemove,
-  onStartBridge,
-  onRequestStopBridge,
-  onSetBridgeAutoStart,
-  onRetry,
+function PreviewHeader({
+  title,
+  badgeLabel,
+  badgeVariant,
+  summary,
 }: {
-  profiles: AdapterProfile[];
-  bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus>;
-  loading: boolean;
-  loadError: unknown;
-  errors: Record<string, string>;
-  removingProfileId: string | null;
-  busyProfileIds: Record<string, boolean>;
-  onRemove: (profile: AdapterProfile) => void;
-  onStartBridge: (profile: AdapterProfile) => void;
-  onRequestStopBridge: (profile: AdapterProfile) => void;
-  onSetBridgeAutoStart: (profile: AdapterProfile, autoStart: boolean) => void;
-  onRetry: () => void;
+  title: string;
+  badgeLabel: string;
+  badgeVariant: 'success' | 'warning' | 'default' | 'info';
+  summary: string;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <div>
-          <CardTitle>已创建的适配</CardTitle>
-          <p className="mt-1 text-sm text-secondary">生成的 Provider 仅引用原 Connection，不含凭据。</p>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {loading ? <Skeleton className="h-12 w-full" /> : loadError ? (
-          <div className="space-y-2" role="alert">
-            <p className="text-sm text-danger">{errorMessage(loadError, '无法读取已创建的适配。')}</p>
-            <Button variant="outline" size="sm" onClick={onRetry}>重试</Button>
-          </div>
-        ) : profiles.length === 0 ? (
-          <p className="text-sm text-secondary">尚未创建适配。</p>
-        ) : profiles.map((profile) => {
-          const status = profileStatusBadge(profile.status);
-          const removing = removingProfileId === profile.id;
-          const bridgeStatus = profile.route === 'local_bridge' ? bridgeStatuses[profile.id] : undefined;
-          const bridgeBadge = bridgeStatusBadge(bridgeStatus?.state);
-          const bridgeEndpoint = adapterBridgeEndpointLabel(profile, bridgeStatus);
-          const busy = busyProfileIds[profile.id] === true;
-          const bridgeTransitioning = bridgeStatus?.state === 'starting' || bridgeStatus?.state === 'stopping';
-          return (
-            <div key={profile.id} className="rounded-btn border border-border px-3 py-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="font-medium">{adapterProfileRecordLabel(profile)}</p>
-                  <p className="mt-0.5 text-xs text-secondary">
-                    {routeLabel(profile.route)} · 生成 Provider：{profile.generatedProviderId ?? '无'}
-                  </p>
-                  {profile.route === 'local_bridge' && (
-                    <p className="mt-0.5 text-xs text-secondary">
-                      本机桥接{bridgeEndpoint ? ` · ${bridgeEndpoint}` : ' · 等待分配端口'}
-                      {bridgeStatus?.upstreamStatus ? ` · 上游：${bridgeStatus.upstreamStatus}` : ''}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant={status.variant}>{status.label}</Badge>
-                  {profile.route === 'local_bridge' && <Badge variant={bridgeBadge.variant}>{bridgeBadge.label}</Badge>}
-                  <Button variant="dangerOutline" size="sm" disabled={removing || busy} onClick={() => onRemove(profile)}>
-                    {removing ? '删除中…' : '删除'}
-                  </Button>
-                </div>
-              </div>
-              {profile.route === 'local_bridge' && (
-                <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3 text-sm">
-                  <label className="flex items-center gap-2 text-secondary">
-                    <Switch
-                      checked={profile.autoStart}
-                      disabled={busy}
-                      aria-label={`${adapterProfileRecordLabel(profile)} 自动启动`}
-                      onCheckedChange={(autoStart) => onSetBridgeAutoStart(profile, autoStart)}
-                    />
-                    自动启动
-                  </label>
-                  {isBridgeStopCapable(bridgeStatus?.state) ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={busy || bridgeTransitioning}
-                      onClick={() => onRequestStopBridge(profile)}
-                    >
-                      {busy ? '处理中…' : '停止'}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={busy || bridgeTransitioning}
-                      onClick={() => onStartBridge(profile)}
-                    >
-                      {busy ? '处理中…' : '启动'}
-                    </Button>
-                  )}
-                  <a className="text-info hover:underline" href="#/connections">在 Connections 查看</a>
-                </div>
-              )}
-              {errors[profile.id] && <p className="mt-2 text-sm text-danger" role="alert">{errors[profile.id]}</p>}
-            </div>
-          );
-        })}
-      </CardContent>
-    </Card>
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-base font-medium">{title}</h2>
+        <Badge variant={badgeVariant}>{badgeLabel}</Badge>
+      </div>
+      <p className="text-secondary">{summary}</p>
+    </div>
   );
+}
+
+/** Secondary detail blocks stay collapsed so the first screen stays scannable. */
+function PreviewDetails({ children }: { children: ReactNode }) {
+  return (
+    <details className="group rounded-btn border border-border bg-subtle/60">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
+        <span>查看详情</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className={cn('space-y-3 border-t border-border px-3 py-3')}>
+        {children}
+      </div>
+    </details>
+  );
+}
+
+/** Stable page-facing alias for the managed-profile service list. */
+export function AdapterProfiles(props: AdapterProfilesListProps) {
+  return <AdapterProfilesList {...props} />;
 }
 
 export function AdapterPreviewList({
@@ -270,7 +270,7 @@ export function AdapterPreviewList({
 function AdapterActionList({ actions }: Pick<AdapterRouteAnalysis, 'actions'>) {
   return (
     <section>
-      <h3 className="font-medium">预览动作</h3>
+      <h3 className="font-medium">步骤</h3>
       {actions.length ? (
         <ul className="mt-1 list-disc space-y-1 pl-5 text-secondary">
           {actions.map((item) => (
@@ -279,7 +279,7 @@ function AdapterActionList({ actions }: Pick<AdapterRouteAnalysis, 'actions'>) {
             </li>
           ))}
         </ul>
-      ) : <p className="mt-1 text-secondary">没有可执行动作。</p>}
+      ) : <p className="mt-1 text-secondary">无额外步骤。</p>}
     </section>
   );
 }
@@ -309,25 +309,25 @@ function EvidenceList({ evidence }: Pick<AdapterRouteAnalysis, 'evidence'>) {
     }
   };
 
+  if (evidence.length === 0) return null;
+
   return (
     <section>
-      <h3 className="font-medium">兼容性说明</h3>
-      {evidence.length ? (
-        <ul className="mt-1 space-y-1 text-secondary">
-          {evidence.map((item) => (
-            <li key={item.url}>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 text-info hover:underline"
-                onClick={() => { void openEvidence(item.url); }}
-              >
-                {item.label} <ExternalLink className="h-3 w-3" />
-              </button>
-              <span className="ml-1 text-xs">验证于 {item.verifiedAt}</span>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="mt-1 text-secondary">无可展示依据。</p>}
+      <h3 className="font-medium">参考</h3>
+      <ul className="mt-1 space-y-1 text-secondary">
+        {evidence.map((item) => (
+          <li key={item.url}>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-info hover:underline"
+              onClick={() => { void openEvidence(item.url); }}
+            >
+              {item.label} <ExternalLink className="h-3 w-3" />
+            </button>
+            <span className="ml-1 text-xs text-muted">{item.verifiedAt}</span>
+          </li>
+        ))}
+      </ul>
       {openError ? (
         <p className="mt-2 text-sm text-danger" role="alert">
           {errorMessage(openError, '无法打开外部链接')}

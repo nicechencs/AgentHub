@@ -1,10 +1,16 @@
 use serde_json::{json, Value};
 
-use crate::bridge::types::BridgeEvent;
+use crate::bridge::types::{
+    BridgeEvent, EmissionState, IrEvent, RetryClass, RetryGate, StopReason,
+};
 
 use super::{
+    anthropic_messages::{encode_anthropic_message, encode_anthropic_sse, parse_messages_request},
     chat::{sse_frame, translate_chat_response, ResponsesSseTranslator},
-    responses::{parse_responses_request, to_kimi_chat_request, translate_responses_request},
+    responses::{
+        parse_responses_request, responses_output_to_ir, to_kimi_chat_request,
+        to_responses_request, translate_responses_request, ResponsesStreamToIr,
+    },
 };
 
 fn fixture(name: &str) -> Value {
@@ -31,6 +37,13 @@ fn fixture(name: &str) -> Value {
         }
         "usage_stop" => include_str!("fixtures/usage_stop.json"),
         "upstream_error" => include_str!("fixtures/upstream_error.json"),
+        "anthropic_messages_text" => include_str!("fixtures/anthropic_messages_text.json"),
+        "anthropic_messages_tools" => include_str!("fixtures/anthropic_messages_tools.json"),
+        "anthropic_messages_image" => include_str!("fixtures/anthropic_messages_image.json"),
+        "responses_upstream_text" => include_str!("fixtures/responses_upstream_text.json"),
+        "responses_upstream_tool" => include_str!("fixtures/responses_upstream_tool.json"),
+        "responses_upstream_sse_text" => include_str!("fixtures/responses_upstream_sse_text.json"),
+        "responses_upstream_sse_tool" => include_str!("fixtures/responses_upstream_sse_tool.json"),
         _ => panic!("unknown fixture"),
     };
     serde_json::from_str(source).expect("fixture is valid JSON")
@@ -357,4 +370,291 @@ fn sse_frame_uses_event_and_data_lines() {
     let frame = sse_frame(&event);
     assert!(frame.starts_with("event: response.created\ndata: {"));
     assert!(frame.ends_with("\n\n"));
+}
+
+#[test]
+fn anthropic_messages_request_maps_to_responses_request_with_unicode() {
+    let request = parse_messages_request(&fixture("anthropic_messages_text")).expect("parse");
+    assert_eq!(request.model, "gpt-5");
+    assert_eq!(request.instructions.as_deref(), Some("Answer precisely."));
+    assert_eq!(request.input.len(), 1);
+    assert_eq!(request.tools[0].name, "weather");
+    assert_eq!(request.passthrough["max_output_tokens"], 256);
+    assert_eq!(request.passthrough["temperature"], json!(0.2));
+
+    let responses = to_responses_request(&request);
+    assert_eq!(responses["model"], "gpt-5");
+    assert_eq!(responses["instructions"], "Answer precisely.");
+    assert_eq!(responses["input"][0]["content"][0]["text"], "Hello, 世界");
+    assert_eq!(responses["tools"][0]["name"], "weather");
+    assert_eq!(responses["max_output_tokens"], 256);
+    assert_eq!(responses["tool_choice"], "auto");
+}
+
+#[test]
+fn anthropic_tool_history_becomes_responses_function_calls_and_outputs() {
+    let request = parse_messages_request(&fixture("anthropic_messages_tools")).expect("parse");
+    assert_eq!(request.input.len(), 4);
+    assert!(matches!(
+        request.input[1].content[0],
+        crate::bridge::types::BridgeContent::ToolCall { .. }
+    ));
+    assert!(matches!(
+        request.input[2].role,
+        crate::bridge::types::MessageRole::Tool
+    ));
+
+    let responses = to_responses_request(&request);
+    let input = responses["input"].as_array().expect("input array");
+    assert_eq!(input[0]["role"], "user");
+    assert_eq!(input[1]["type"], "function_call");
+    assert_eq!(input[1]["call_id"], "call_weather");
+    assert_eq!(input[2]["type"], "function_call");
+    assert_eq!(input[2]["call_id"], "call_calendar");
+    assert_eq!(input.len(), 5);
+    assert_eq!(input[3]["type"], "function_call_output");
+    assert_eq!(input[3]["call_id"], "call_weather");
+    assert_eq!(input[3]["output"], "sunny");
+    assert_eq!(input[4]["type"], "function_call_output");
+    assert_eq!(input[4]["call_id"], "call_calendar");
+}
+
+#[test]
+fn anthropic_mixed_user_text_and_tool_result_keeps_text_in_responses_input() {
+    let request = parse_messages_request(&json!({
+        "model": "gpt-5",
+        "max_tokens": 128,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": "Also consider this note." },
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "call_weather",
+                        "content": "sunny"
+                    }
+                ]
+            }
+        ]
+    }))
+    .expect("parse mixed user message");
+
+    assert_eq!(request.input.len(), 1);
+    assert!(matches!(
+        request.input[0].role,
+        crate::bridge::types::MessageRole::User
+    ));
+    assert!(
+        request.input[0]
+            .content
+            .iter()
+            .any(|part| matches!(part, crate::bridge::types::BridgeContent::Text { .. }))
+    );
+    assert!(
+        request.input[0]
+            .content
+            .iter()
+            .any(|part| matches!(part, crate::bridge::types::BridgeContent::ToolResult { .. }))
+    );
+
+    let responses = to_responses_request(&request);
+    let input = responses["input"].as_array().expect("input array");
+    assert_eq!(input.len(), 2);
+    assert_eq!(input[0]["type"], "function_call_output");
+    assert_eq!(input[0]["call_id"], "call_weather");
+    assert_eq!(input[0]["output"], "sunny");
+    assert_eq!(input[1]["type"], "message");
+    assert_eq!(input[1]["role"], "user");
+    assert_eq!(input[1]["content"][0]["type"], "input_text");
+    assert_eq!(input[1]["content"][0]["text"], "Also consider this note.");
+}
+
+#[test]
+fn anthropic_image_input_fails_closed() {
+    let error =
+        parse_messages_request(&fixture("anthropic_messages_image")).expect_err("image rejected");
+    assert_eq!(error.code, "unsupported_image_input");
+    assert!(!error.message.contains("example.invalid"));
+}
+
+#[test]
+fn responses_output_to_ir_and_anthropic_message_round_trip_text() {
+    let ir = responses_output_to_ir(&fixture("responses_upstream_text")).expect("to ir");
+    assert!(matches!(ir[0], IrEvent::MessageStart { .. }));
+    assert_eq!(
+        ir.iter()
+            .find_map(|event| match event {
+                IrEvent::TextDelta { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .expect("text"),
+        "你好，世界。"
+    );
+    assert!(matches!(
+        ir.last(),
+        Some(IrEvent::MessageEnd {
+            stop_reason: StopReason::Stop
+        })
+    ));
+
+    let message = encode_anthropic_message(&ir).expect("anthropic message");
+    assert_eq!(message["role"], "assistant");
+    assert_eq!(message["content"][0]["text"], "你好，世界。");
+    assert_eq!(message["stop_reason"], "end_turn");
+    assert_eq!(message["usage"]["input_tokens"], 8);
+    assert_eq!(message["usage"]["cache_read_input_tokens"], 2);
+}
+
+#[test]
+fn responses_output_to_ir_tool_call_becomes_anthropic_tool_use() {
+    let ir = responses_output_to_ir(&fixture("responses_upstream_tool")).expect("to ir");
+    let message = encode_anthropic_message(&ir).expect("anthropic message");
+    assert_eq!(message["stop_reason"], "tool_use");
+    assert_eq!(message["content"][0]["type"], "tool_use");
+    assert_eq!(message["content"][0]["id"], "call_weather");
+    assert_eq!(message["content"][0]["name"], "weather");
+    assert_eq!(message["content"][0]["input"]["city"], "Tokyo");
+}
+
+#[test]
+fn responses_sse_to_ir_to_anthropic_sse_text_and_unicode_chunks() {
+    let chunks = fixture("responses_upstream_sse_text")
+        .as_array()
+        .cloned()
+        .expect("array");
+    let mut translator = ResponsesStreamToIr::new();
+    let mut ir = chunks
+        .iter()
+        .flat_map(|chunk| translator.push_event(chunk).expect("event"))
+        .collect::<Vec<_>>();
+    ir.extend(translator.finish());
+
+    let frames = encode_anthropic_sse(&ir).expect("sse frames");
+    let joined = frames.join("");
+    assert!(joined.contains("event: message_start\n"));
+    assert!(joined.contains("event: content_block_delta\n"));
+    assert!(joined.contains("\"text\":\"你\""));
+    assert!(joined.contains("\"text\":\"好\""));
+    assert!(joined.contains("event: message_delta\n"));
+    assert!(joined.contains("event: message_stop\n"));
+    assert!(joined.contains("\"stop_reason\":\"end_turn\""));
+}
+
+#[test]
+fn responses_sse_to_ir_to_anthropic_sse_tool_call_deltas() {
+    let chunks = fixture("responses_upstream_sse_tool")
+        .as_array()
+        .cloned()
+        .expect("array");
+    let mut translator = ResponsesStreamToIr::new();
+    let mut ir = chunks
+        .iter()
+        .flat_map(|chunk| translator.push_event(chunk).expect("event"))
+        .collect::<Vec<_>>();
+    ir.extend(translator.finish());
+
+    assert!(ir.iter().any(|event| matches!(
+        event,
+        IrEvent::ToolCallStart {
+            id,
+            name
+        } if id == "call_weather" && name == "weather"
+    )));
+    let args = ir
+        .iter()
+        .filter_map(|event| match event {
+            IrEvent::ToolCallDelta {
+                id,
+                arguments_delta,
+            } if id == "call_weather" => Some(arguments_delta.as_str()),
+            _ => None,
+        })
+        .collect::<String>();
+    assert_eq!(args, "{\"city\":\"Tokyo\"}");
+
+    let frames = encode_anthropic_sse(&ir).expect("sse frames");
+    let joined = frames.join("");
+    assert!(joined.contains("\"type\":\"tool_use\""));
+    assert!(joined.contains("\"partial_json\":\"{\\\"city\\\":"));
+    assert!(joined.contains("\"stop_reason\":\"tool_use\""));
+}
+
+#[test]
+fn anthropic_thinking_configuration_fails_closed() {
+    let error = parse_messages_request(&json!({
+        "model": "gpt-5",
+        "max_tokens": 32,
+        "messages": [{ "role": "user", "content": "hi" }],
+        "thinking": { "type": "enabled", "budget_tokens": 1024 }
+    }))
+    .expect_err("thinking must not be silently dropped");
+    assert_eq!(error.code, "unsupported_thinking");
+}
+
+#[test]
+fn responses_stream_error_is_generic_and_never_leaks_upstream_body() {
+    let mut translator = ResponsesStreamToIr::new();
+    let events = translator
+        .push_event(&json!({
+            "type": "error",
+            "error": {
+                "message": "Authorization Bearer sk-secret-key saw private input"
+            }
+        }))
+        .expect("error event maps");
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        IrEvent::Error {
+            code,
+            message,
+            retryable,
+        } => {
+            assert_eq!(code, "upstream_error");
+            assert!(!retryable);
+            assert!(!message.contains("sk-secret-key"));
+            assert!(!message.contains("private input"));
+            assert_eq!(message, "The upstream model provider returned an error.");
+        }
+        other => panic!("expected Error, got {other:?}"),
+    }
+}
+
+#[test]
+fn retry_gate_allows_transient_only_before_first_effective_event() {
+    let gate = RetryGate::new(2);
+    assert!(gate.can_retry(EmissionState::Idle, RetryClass::Transient, 0));
+    assert!(!gate.can_retry(EmissionState::Idle, RetryClass::Transient, 1));
+    assert!(!gate.can_retry(EmissionState::Idle, RetryClass::Permanent, 0));
+
+    let mut state = EmissionState::Idle;
+    state = state.observe(&IrEvent::MessageStart {
+        id: "msg_1".into(),
+        model: "gpt-5".into(),
+    });
+    assert_eq!(state, EmissionState::Idle);
+    assert!(gate.can_retry(state, RetryClass::Transient, 0));
+
+    // Usage alone is not client-visible content for retry purposes.
+    state = state.observe(&IrEvent::Usage {
+        input_tokens: 1,
+        output_tokens: 0,
+        cached_input_tokens: None,
+    });
+    assert_eq!(state, EmissionState::Idle);
+
+    state = state.observe(&IrEvent::TextDelta { text: "hi".into() });
+    assert_eq!(state, EmissionState::Emitted);
+    assert!(
+        !gate.can_retry(state, RetryClass::Transient, 0),
+        "replay is forbidden after any effective client-visible content"
+    );
+
+    // Tool-call starts also commit the stream (prevents dual tool execution on replay).
+    let after_tool = EmissionState::Idle.observe(&IrEvent::ToolCallStart {
+        id: "call_1".into(),
+        name: "weather".into(),
+    });
+    assert_eq!(after_tool, EmissionState::Emitted);
+    assert!(!gate.can_retry(after_tool, RetryClass::Transient, 0));
 }

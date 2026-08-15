@@ -1,5 +1,9 @@
 import * as React from 'react';
 import { Loader2, RotateCcw, Trash2 } from 'lucide-react';
+import {
+  closeConfirmationOnOpenChange,
+  preventBusyConfirmationDismissal,
+} from '@/components/shared/busy-confirmation';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -16,8 +20,14 @@ import {
   permanentlyDeleteConnectionTrash,
   restoreConnectionTrash,
 } from '@/lib/api/trash';
-import { AGENT_MAP } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
 import type { AgentId } from '@/lib/types';
+import {
+  claimConnectionTrashBusy,
+  getConnectionTrashBusyIds,
+  releaseConnectionTrashBusy,
+  subscribeConnectionTrashBusy,
+} from './connection-trash-lock';
 
 function dateLabel(value: string): string {
   const isoLike = value.replace(' ', 'T');
@@ -37,7 +47,16 @@ export function ConnectionTrashButton({
   const [open, setOpen] = React.useState(false);
   const [items, setItems] = React.useState<ConnectionTrashItem[]>([]);
   const [loading, setLoading] = React.useState(false);
-  const [busyId, setBusyId] = React.useState<string | null>(null);
+  const busyIds = React.useSyncExternalStore(
+    subscribeConnectionTrashBusy,
+    getConnectionTrashBusyIds,
+    getConnectionTrashBusyIds,
+  );
+  const [pendingPermanent, setPendingPermanent] = React.useState<ConnectionTrashItem | null>(null);
+
+  const trashBusy = busyIds.size > 0;
+  const permanentBusy = pendingPermanent !== null && busyIds.has(pendingPermanent.id);
+  const trashLocked = trashBusy || pendingPermanent !== null;
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -55,7 +74,7 @@ export function ConnectionTrashButton({
   }, [agentId, toast]);
 
   const restore = async (item: ConnectionTrashItem) => {
-    setBusyId(item.id);
+    if (!claimConnectionTrashBusy(item.id)) return;
     try {
       await restoreConnectionTrash(item.id);
       setItems((current) => current.filter((row) => row.id !== item.id));
@@ -68,16 +87,18 @@ export function ConnectionTrashButton({
         variant: 'danger',
       });
     } finally {
-      setBusyId(null);
+      releaseConnectionTrashBusy(item.id);
     }
   };
 
-  const permanentlyDelete = async (item: ConnectionTrashItem) => {
-    if (!window.confirm(`确定永久删除“${item.label}”吗？此操作不可恢复。`)) return;
-    setBusyId(item.id);
+  const confirmPermanentDelete = async () => {
+    if (!pendingPermanent) return;
+    const item = pendingPermanent;
+    if (!claimConnectionTrashBusy(item.id)) return;
     try {
       await permanentlyDeleteConnectionTrash(item.id);
       setItems((current) => current.filter((row) => row.id !== item.id));
+      setPendingPermanent(null);
       toast({ title: '已永久删除' });
     } catch (error) {
       toast({
@@ -86,7 +107,7 @@ export function ConnectionTrashButton({
         variant: 'danger',
       });
     } finally {
-      setBusyId(null);
+      releaseConnectionTrashBusy(item.id);
     }
   };
 
@@ -108,8 +129,22 @@ export function ConnectionTrashButton({
         </Button>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-xl">
+      <Dialog
+        open={open}
+        onOpenChange={(next) =>
+          closeConfirmationOnOpenChange(next, trashLocked, () => {
+            setOpen(false);
+            setPendingPermanent(null);
+          })
+        }
+      >
+        <DialogContent
+          className="max-w-xl"
+          hideClose={trashLocked}
+          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(trashLocked, event)}
+          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(trashLocked, event)}
+          onInteractOutside={(event) => preventBusyConfirmationDismissal(trashLocked, event)}
+        >
           <DialogHeader>
             <DialogTitle>认证信息回收站</DialogTitle>
             <DialogDescription>
@@ -127,7 +162,7 @@ export function ConnectionTrashButton({
               <p className="py-8 text-center text-sm text-muted-foreground">回收站为空</p>
             ) : (
               items.map((item) => {
-                const agentName = AGENT_MAP[item.agentId]?.name ?? item.agentId;
+                const agentName = agentDisplayName(item.agentId);
                 const kindLabel =
                   item.kind === 'account' && item.account?.kind === 'oauth'
                     ? '官方登录'
@@ -151,7 +186,7 @@ export function ConnectionTrashButton({
                         type="button"
                         variant="outline"
                         size="sm"
-                        disabled={busyId === item.id}
+                        disabled={trashBusy}
                         onClick={() => void restore(item)}
                       >
                         <RotateCcw className="mr-1 h-3.5 w-3.5" />
@@ -162,8 +197,8 @@ export function ConnectionTrashButton({
                         variant="ghost"
                         size="sm"
                         className="text-destructive"
-                        disabled={busyId === item.id}
-                        onClick={() => void permanentlyDelete(item)}
+                        disabled={trashBusy}
+                        onClick={() => setPendingPermanent(item)}
                       >
                         永久删除
                       </Button>
@@ -175,8 +210,46 @@ export function ConnectionTrashButton({
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => void load()} disabled={loading}>
+            <Button type="button" variant="outline" onClick={() => void load()} disabled={loading || trashLocked}>
               刷新
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!pendingPermanent}
+        onOpenChange={(next) =>
+          closeConfirmationOnOpenChange(next, permanentBusy, () => setPendingPermanent(null))
+        }
+      >
+        <DialogContent
+          className="max-w-sm"
+          hideClose={permanentBusy}
+          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(permanentBusy, event)}
+          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(permanentBusy, event)}
+          onInteractOutside={(event) => preventBusyConfirmationDismissal(permanentBusy, event)}
+        >
+          <DialogHeader>
+            <DialogTitle>永久删除「{pendingPermanent?.label}」？</DialogTitle>
+            <DialogDescription>此操作不可恢复。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={permanentBusy}
+              onClick={() => setPendingPermanent(null)}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              disabled={permanentBusy}
+              onClick={() => void confirmPermanentDelete()}
+            >
+              {permanentBusy ? '删除中…' : '永久删除'}
             </Button>
           </DialogFooter>
         </DialogContent>

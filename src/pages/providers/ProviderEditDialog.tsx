@@ -22,7 +22,7 @@ import { GenericConfigForm } from '@/components/shared/GenericConfigForm';
 import { SecretInput } from '@/components/shared/SecretInput';
 import { useToast } from '@/components/ui/toast';
 import { useAgentCatalogOptional } from '@/app/runtime';
-import { AGENT_MAP } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
 import {
   looksLikeOfficialEndpoint,
   officialApiDefaults,
@@ -91,7 +91,7 @@ export function ProviderEditDialog({
   const { toast } = useToast();
   const catalog = useAgentCatalogOptional();
   const isEdit = mode === 'edit';
-  const agentName = AGENT_MAP[agentId]?.name ?? agentId;
+  const agentName = agentDisplayName(agentId);
   const livePaths = liveConfigPaths(agentId);
 
   const [name, setName] = React.useState('');
@@ -488,9 +488,12 @@ export function ProviderEditDialog({
         return;
       }
 
+      const endpointLabel = useOfficial ? '官方端点' : '自定义端点';
       toast({
         title: isEdit ? 'API Key 已更新' : 'API Key 已添加',
-        description: `${result.provider.name}${useOfficial ? ' · 官方端点' : ' · 自定义端点'}`,
+        description: result.provider.isCurrent
+          ? `${result.provider.name} · ${endpointLabel} · 已写入本机配置`
+          : `${result.provider.name} · ${endpointLabel} · 已保存到连接池，切换后才会写入本机`,
         variant: 'success',
       });
       onSaved(result.provider);
@@ -514,7 +517,7 @@ export function ProviderEditDialog({
             {isEdit ? '编辑 API Key' : '添加 API Key'} — {agentName}
           </DialogTitle>
           <DialogDescription>
-            勾选「官方」时使用官方服务地址与模型；取消后可填自定义服务地址。应用后写入本机当前配置文件
+            勾选「官方」时使用官方服务地址与模型；取消后可填自定义服务地址。当前连接保存后会写入本机配置文件
             <span className="font-mono text-2xs"> {livePaths.config}</span>
             {livePaths.auth ? (
               <>

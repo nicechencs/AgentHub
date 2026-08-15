@@ -91,6 +91,16 @@ struct SkillListCache {
     skills: Arc<Vec<Skill>>,
 }
 
+/// One on-disk skill directory discovered under an agent's skills root.
+struct AgentSkillDirEntry {
+    agent: AgentId,
+    skill_id: String,
+    path: PathBuf,
+    skills_root: PathBuf,
+    display: String,
+    description: String,
+}
+
 /// Scans the shared skill source root and projects status onto each agent.
 pub struct SkillService {
     source_root: PathBuf,
@@ -1300,23 +1310,14 @@ impl SkillService {
         // Shared source skills (projectable).
         for skill in self.list()? {
             let source = lock.get(&skill.id).cloned();
-            out.push(InstalledSkill {
-                id: skill.id.clone(),
-                name: skill.name,
-                description: skill.description,
-                source_dir: skill.source_dir.clone(),
-                root_label: short_root_label(&self.source_root),
-                root_dir: self.source_root.clone(),
-                origin: "shared".into(),
-                projectable: true,
-                map_status: SkillMapStatus::Available,
+            out.push(installed_skill_from_shared(
+                &self.source_root,
+                skill,
                 source,
-                projections: skill.projections,
-            });
+            ));
         }
 
-        let shared_ids: std::collections::HashSet<String> =
-            out.iter().map(|s| s.id.clone()).collect();
+        let shared_ids: HashSet<String> = out.iter().map(|s| s.id.clone()).collect();
 
         // Per shared skill: (file index, lazy content hashes) reused across agents.
         let mut shared_cmp_cache: HashMap<
@@ -1329,73 +1330,57 @@ impl SkillService {
         // - Not in shared → PrivateSource (可加入共享库)
         // - Same id + content equal / link to shared → Available (已在共享库)
         // - Same id + content differs → Conflict (有冲突，可覆盖加入)
-        for agent in AgentId::ALL {
-            let Some(adapter) = self.registry.get(agent) else {
-                continue;
+        let source_root = &self.source_root;
+        for_each_agent_skill_dir(&self.registry, |entry| {
+            let map_status = if shared_ids.contains(&entry.skill_id) {
+                let shared_dir = source_root.join(&entry.skill_id);
+                map_status_agent_vs_shared(
+                    &entry.skill_id,
+                    &shared_dir,
+                    &entry.path,
+                    &mut shared_cmp_cache,
+                )
+            } else {
+                SkillMapStatus::PrivateSource
             };
-            if adapter.capability(Capability::Skills).is_blocked() {
-                continue;
-            }
-            let Some(skills_root) = adapter.skills_dir() else {
-                continue;
-            };
-            if !skills_root.is_dir() {
-                continue;
-            }
-            let entries = match fs::read_dir(&skills_root) {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            for ent in entries {
-                let ent = match ent {
-                    Ok(e) => e,
-                    Err(_) => continue,
-                };
-                let name = ent.file_name().to_string_lossy().into_owned();
-                if name.starts_with('.') {
-                    continue;
-                }
-                let path = ent.path();
-                let meta = match fs::symlink_metadata(&path) {
-                    Ok(m) => m,
-                    Err(_) => continue,
-                };
-                // Accept real dirs and projection links as "installed" for the agent.
-                let is_dirish =
-                    meta.is_dir() || is_link_or_reparse(&meta) || meta.file_type().is_symlink();
-                if !is_dirish {
-                    continue;
-                }
-                // Prefer entries that look like skills (SKILL.md) when resolvable.
-                let skill_md_ok = path.join("SKILL.md").is_file()
-                    || resolve_link_path(&path)
-                        .map(|r| r.join("SKILL.md").is_file())
-                        .unwrap_or(false);
-                if !skill_md_ok {
-                    continue;
-                }
-                let (display, description) = read_skill_metadata(&path, &name);
-                let map_status = if shared_ids.contains(&name) {
-                    let shared_dir = self.source_root.join(&name);
-                    map_status_agent_vs_shared(&name, &shared_dir, &path, &mut shared_cmp_cache)
-                } else {
-                    SkillMapStatus::PrivateSource
-                };
-                out.push(InstalledSkill {
-                    id: name,
-                    name: display,
-                    description,
-                    source_dir: path,
-                    root_label: short_root_label(&skills_root),
-                    root_dir: skills_root.clone(),
-                    origin: agent.as_str().to_string(),
-                    projectable: false,
-                    map_status,
-                    source: None,
-                    projections: vec![],
-                });
-            }
+            out.push(installed_skill_from_agent(entry, map_status));
+        });
+
+        out.sort_by(|a, b| a.id.cmp(&b.id).then(a.origin.cmp(&b.origin)));
+        Ok(out)
+    }
+
+    /// Catalog view: shared library rows plus agent-private skills that are **not**
+    /// already in the shared library (id match only — no content-hash compare).
+    ///
+    /// - Shared rows match [`Self::list`] content: `origin=shared`, projectable, full projections.
+    /// - Agent-only ids emit one row per agent directory (`projections` is empty).
+    /// - Same id under two agents (and not in shared) stays two rows.
+    /// - Agent copies / conflicts of a shared id are omitted.
+    pub fn list_catalog(&self) -> Result<Vec<InstalledSkill>> {
+        let mut out: Vec<InstalledSkill> = Vec::new();
+        let lock = skill_lock_load(&self.source_root)?;
+
+        for skill in self.list()? {
+            let source = lock.get(&skill.id).cloned();
+            out.push(installed_skill_from_shared(
+                &self.source_root,
+                skill,
+                source,
+            ));
         }
+
+        let shared_ids: HashSet<String> = out.iter().map(|s| s.id.clone()).collect();
+
+        for_each_agent_skill_dir(&self.registry, |entry| {
+            if shared_ids.contains(&entry.skill_id) {
+                return;
+            }
+            out.push(installed_skill_from_agent(
+                entry,
+                SkillMapStatus::PrivateSource,
+            ));
+        });
 
         out.sort_by(|a, b| a.id.cmp(&b.id).then(a.origin.cmp(&b.origin)));
         Ok(out)
@@ -1872,6 +1857,106 @@ fn strip_simple_quotes(value: &str) -> &str {
         }
     }
     value
+}
+
+/// Walk every agent skills root with the same discovery rules as
+/// [`SkillService::list_installed`] / [`SkillService::list_catalog`].
+fn for_each_agent_skill_dir(registry: &AdapterRegistry, mut visit: impl FnMut(AgentSkillDirEntry)) {
+    for agent in AgentId::ALL {
+        let Some(adapter) = registry.get(agent) else {
+            continue;
+        };
+        if adapter.capability(Capability::Skills).is_blocked() {
+            continue;
+        }
+        let Some(skills_root) = adapter.skills_dir() else {
+            continue;
+        };
+        if !skills_root.is_dir() {
+            continue;
+        }
+        let entries = match fs::read_dir(&skills_root) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for ent in entries {
+            let ent = match ent {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let name = ent.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                continue;
+            }
+            let path = ent.path();
+            let meta = match fs::symlink_metadata(&path) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            // Accept real dirs and projection links as "installed" for the agent.
+            let is_dirish =
+                meta.is_dir() || is_link_or_reparse(&meta) || meta.file_type().is_symlink();
+            if !is_dirish {
+                continue;
+            }
+            // Prefer entries that look like skills (SKILL.md) when resolvable.
+            let skill_md_ok = path.join("SKILL.md").is_file()
+                || resolve_link_path(&path)
+                    .map(|r| r.join("SKILL.md").is_file())
+                    .unwrap_or(false);
+            if !skill_md_ok {
+                continue;
+            }
+            let (display, description) = read_skill_metadata(&path, &name);
+            visit(AgentSkillDirEntry {
+                agent,
+                skill_id: name,
+                path,
+                skills_root: skills_root.clone(),
+                display,
+                description,
+            });
+        }
+    }
+}
+
+fn installed_skill_from_shared(
+    source_root: &Path,
+    skill: Skill,
+    source: Option<SkillSourceRecord>,
+) -> InstalledSkill {
+    InstalledSkill {
+        id: skill.id.clone(),
+        name: skill.name,
+        description: skill.description,
+        source_dir: skill.source_dir.clone(),
+        root_label: short_root_label(source_root),
+        root_dir: source_root.to_path_buf(),
+        origin: "shared".into(),
+        projectable: true,
+        map_status: SkillMapStatus::Available,
+        source,
+        projections: skill.projections,
+    }
+}
+
+fn installed_skill_from_agent(
+    entry: AgentSkillDirEntry,
+    map_status: SkillMapStatus,
+) -> InstalledSkill {
+    InstalledSkill {
+        id: entry.skill_id,
+        name: entry.display,
+        description: entry.description,
+        source_dir: entry.path,
+        root_label: short_root_label(&entry.skills_root),
+        root_dir: entry.skills_root,
+        origin: entry.agent.as_str().to_string(),
+        projectable: false,
+        map_status,
+        source: None,
+        projections: vec![],
+    }
 }
 
 /// Compare an agent-root skill directory against the shared library copy.
