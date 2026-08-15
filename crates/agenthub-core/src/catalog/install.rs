@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::models::{AgentId, RuntimeId};
+use crate::models::{AgentId, InstallChannel, RuntimeId};
 use crate::platform::install::builtin_install_registry;
 
 // Re-export types under catalog path for existing imports.
@@ -82,6 +82,30 @@ pub fn list_install_catalog() -> Vec<AgentInstallCatalogEntry> {
         .map(|agent_id| AgentInstallCatalogEntry {
             agent_id,
             channels: channels_for(agent_id),
+        })
+        .collect()
+}
+
+/// Adapter detect/doctor channels — same id order as [`channels_for`].
+///
+/// Labels and presence come from the install catalog; runtime notes come from
+/// [`crate::platform::install::InstallContribution`].
+pub fn adapter_install_channels(agent: AgentId) -> Vec<InstallChannel> {
+    let contrib = builtin_install_registry().get_agent_id(agent);
+    channels_for(agent)
+        .into_iter()
+        .map(|plan| {
+            let notes = match plan.id.as_str() {
+                "npm" => contrib.as_ref().and_then(|c| c.npm_min_runtime_notes()),
+                "native" => contrib.as_ref().and_then(|c| c.native_min_runtime_notes()),
+                _ => None,
+            };
+            InstallChannel {
+                id: plan.id,
+                label: plan.label,
+                requires: plan.requires,
+                min_runtime_notes: notes.map(str::to_string),
+            }
         })
         .collect()
 }
@@ -186,6 +210,25 @@ fn native_command_display(agent: AgentId) -> (&'static str, Option<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adapter_install_channels_match_catalog_ids() {
+        let registry = crate::adapters::register_all();
+        for agent in AgentId::ALL {
+            let adapter = registry
+                .get(agent)
+                .unwrap_or_else(|| panic!("missing adapter {}", agent.as_str()));
+            let adapter_channels = adapter.install_channels();
+            let adapter_ids: Vec<&str> = adapter_channels.iter().map(|ch| ch.id.as_str()).collect();
+            let catalog_channels = channels_for(agent);
+            let catalog_ids: Vec<&str> = catalog_channels.iter().map(|ch| ch.id.as_str()).collect();
+            assert_eq!(
+                adapter_ids, catalog_ids,
+                "install channel ids drifted for {}",
+                agent.as_str()
+            );
+        }
+    }
 
     #[test]
     fn catalog_covers_every_agent_with_a_plan() {
