@@ -736,7 +736,7 @@
         "canApply": false,
         "applyPath": "rejected",
         "ruleId": null,
-        "gateKind": "none",
+        "gateKind": "unsupported",
         "reason": "同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。",
         "reusePath": "none"
       }
@@ -880,14 +880,14 @@
       },
       "target": "grok",
       "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": null,
-        "gateKind": "unsupported",
-        "reason": "同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。",
-        "reusePath": "none"
+        "route": "native_endpoint",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "kimi-membership-to-grok-v1",
+        "gateKind": "none",
+        "reason": "Kimi Code 会员可实验写入 Grok 的 OpenAI Chat Completions 配置。",
+        "reusePath": "api_endpoint"
       }
     },
     {
@@ -1026,7 +1026,7 @@
         "ruleId": null,
         "gateKind": "unsupported",
         "reusePath": "none",
-        "reason": "协议不通：票所说的上游协议与该 Agent 所听的入口没有交集。"
+        "reason": "Claude 订阅 → Codex：产品不做。Codex 不吃 Anthropic PKCE，本产品不走这条边。"
       }
     },
     {
@@ -1034,18 +1034,22 @@
       "source": {
         "kind": "account",
         "agentId": "grok",
-        "accountKind": "oauth"
+        "accountKind": "oauth",
+        "credentials": {
+          "format": "oauth",
+          "access_token": "must-not-leak"
+        }
       },
       "target": "claude",
       "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": null,
-        "gateKind": "unsupported",
-        "reusePath": "none",
-        "reason": "协议不通：票所说的上游协议与该 Agent 所听的入口没有交集。"
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "grok-subscription-to-claude-v1",
+        "gateKind": "none",
+        "reusePath": "local_bridge",
+        "reason": "Grok 订阅可通过本机桥接到 Claude Code（Messages → xAI Chat Completions）。"
       }
     }
   ]

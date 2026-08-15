@@ -4,7 +4,6 @@ import type { Account, AgentId, Provider } from '@/lib/types';
 import {
   CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
   createMockAdapterPort,
-  PROTOCOL_MISMATCH_REASON,
   resetMockAdapters,
 } from './adapter';
 import { getMockAccountById, upsertMockAccount } from './account';
@@ -454,21 +453,13 @@ describe('mock adapter route preview', () => {
     expect((await adapter.listProfiles()).length).toBe(4);
   });
 
-  it('keeps subscription protocol mismatches unsupported', async () => {
+  it('closes Claude subscription → Codex as a product decision', async () => {
     const accounts = new Map<string, Account>([
       ['claude-subscription', {
         id: 'claude-subscription',
         agentId: 'claude',
         kind: 'oauth',
         label: 'Claude subscription',
-        isCurrent: false,
-        tokenValid: true,
-      }],
-      ['grok-subscription', {
-        id: 'grok-subscription',
-        agentId: 'grok',
-        kind: 'oauth',
-        label: 'Grok subscription',
         isCurrent: false,
         tokenValid: true,
       }],
@@ -482,20 +473,42 @@ describe('mock adapter route preview', () => {
       sourceId: 'claude-subscription',
       targetAgentId: 'codex',
     });
+    expect(claudeToCodex).toMatchObject({
+      analysis: {
+        route: 'unsupported',
+        reason: 'Claude 订阅 → Codex：产品不做。Codex 不吃 Anthropic PKCE，本产品不走这条边。',
+      },
+      canApply: false,
+      reusePath: 'none',
+    });
+  });
+
+  it('opens Grok subscription → Claude as an experimental local bridge', async () => {
+    const accountId = 'grok-subscription';
+    const accounts = new Map<string, Account>([
+      [accountId, {
+        id: accountId,
+        agentId: 'grok',
+        kind: 'oauth',
+        label: 'Grok subscription',
+        isCurrent: false,
+        tokenValid: true,
+        credentials: { access_token: 'must-not-leak' },
+      }],
+    ]);
+    const adapter = createMockAdapterPort({
+      getAccountById: (id) => accounts.get(id),
+      getProviderById: getMockProviderById,
+    });
     const grokToClaude = await adapter.plan({
       sourceKind: 'account',
-      sourceId: 'grok-subscription',
+      sourceId: accountId,
       targetAgentId: 'claude',
     });
-    expect(claudeToCodex).toMatchObject({
-      analysis: { route: 'unsupported', reason: PROTOCOL_MISMATCH_REASON },
-      canApply: false,
-      reusePath: 'none',
-    });
     expect(grokToClaude).toMatchObject({
-      analysis: { route: 'unsupported', reason: PROTOCOL_MISMATCH_REASON },
-      canApply: false,
-      reusePath: 'none',
+      analysis: { route: 'local_bridge', ruleId: 'grok-subscription-to-claude-v1' },
+      canApply: true,
+      reusePath: 'local_bridge',
     });
   });
 
