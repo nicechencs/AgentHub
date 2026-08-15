@@ -1,5 +1,4 @@
 import { ArrowRight, ChevronDown, Copy } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { Badge } from '@/components/ui/badge';
@@ -26,22 +25,21 @@ import {
   adapterBridgeEndpointLabel,
   adapterBridgeUpstreamLabel,
   adapterCredentialKindLabel,
-  adapterTableRouteLabel,
+  BRIDGES_MUTATION_FAILURE,
 } from './adapter-model';
 import {
-  adapterConfigStatusView,
   adapterProfileRecoveryGuide,
-  adapterServiceStatusView,
   adapterStatusDotClass,
   adapterStatusTextClass,
+  bridgeRuntimeStatusView,
   resolveAdapterProfileSource,
   type AdapterStatusView,
 } from './adapter-view-model';
 
 /**
- * Read-only profile detail. AutoStart is the only editable field the backend
+ * Read-only runtime detail. AutoStart is the only editable field the backend
  * exposes, so it lives here as a direct switch (no edit mode / dirty state).
- * Remove is requested from here and confirmed by the page-level dialog.
+ * Unbind is requested from here and confirmed by the page-level dialog.
  */
 export function AdapterProfileDetailDialog({
   profile,
@@ -108,8 +106,7 @@ function ProfileDetailBody({
 }) {
   const { toast } = useToast();
   const source = resolveAdapterProfileSource(profile, entries);
-  const configStatus = adapterConfigStatusView(profile.status);
-  const serviceStatus = adapterServiceStatusView({
+  const runtimeStatus = bridgeRuntimeStatusView({
     route: profile.route,
     bridgeState: bridgeStatus?.state,
     statusUnavailable,
@@ -140,7 +137,6 @@ function ProfileDetailBody({
         </DialogTitle>
         <DialogDescription className="flex flex-wrap items-center gap-1.5">
           <Badge variant="default">{adapterCredentialKindLabel(profile.mode)}</Badge>
-          <Badge variant="default">{adapterTableRouteLabel(profile.route)}</Badge>
           {source.missing ? <span className="text-warning">来源连接已删除</span> : null}
         </DialogDescription>
       </DialogHeader>
@@ -149,14 +145,13 @@ function ProfileDetailBody({
         <section className="space-y-1.5">
           <h3 className="text-sm font-medium">状态</h3>
           <div className="space-y-1 rounded-btn border border-border bg-subtle p-3">
-            <DetailStatusLine label="配置" view={configStatus} />
-            {serviceStatus ? <DetailStatusLine label="服务" view={serviceStatus} /> : null}
+            {runtimeStatus ? <DetailStatusLine view={runtimeStatus} /> : null}
           </div>
         </section>
 
         {isBridge ? (
           <section className="space-y-1.5">
-            <h3 className="text-sm font-medium">本地桥接</h3>
+            <h3 className="text-sm font-medium">本机端点</h3>
             <div className="space-y-2 rounded-btn border border-border bg-subtle p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-muted">本地端点</span>
@@ -194,16 +189,11 @@ function ProfileDetailBody({
         ) : null}
 
         <section className="space-y-1.5">
-          <h3 className="text-sm font-medium">生成的连接</h3>
+          <h3 className="text-sm font-medium">目标写入</h3>
           <p className="text-sm text-secondary">
-            {profile.generatedProviderId ? (
-              <>
-                已生成 Provider（{profile.generatedProviderId}）。{' '}
-                <Link className="text-info underline" to={`/connections?agent=${profile.targetAgentId}`}>
-                  在 Connections 查看
-                </Link>
-              </>
-            ) : '未生成 Provider。'}
+            {profile.generatedProviderId
+              ? `已写入 ${agentDisplayName(profile.targetAgentId)} 的本机地址；这不是 Connections 里的票。`
+              : '尚未写入目标工具的本机地址。'}
           </p>
         </section>
 
@@ -217,7 +207,7 @@ function ProfileDetailBody({
           </section>
         ) : null}
 
-        {error ? <AdapterErrorLines error={error} fallback="适配操作失败" /> : null}
+        {error ? <AdapterErrorLines error={error} fallback={BRIDGES_MUTATION_FAILURE} /> : null}
 
         <details className="group rounded-btn border border-border bg-subtle/60">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
@@ -239,8 +229,8 @@ function ProfileDetailBody({
                     try {
                       const path = await openLogsDir();
                       toast({ title: '已打开日志目录', description: path, variant: 'success' });
-                    } catch (error) {
-                      toast({ title: '打开失败', description: String(error), variant: 'danger' });
+                    } catch (openError) {
+                      toast({ title: '打开失败', description: String(openError), variant: 'danger' });
                     }
                   })();
                 }}
@@ -258,7 +248,7 @@ function ProfileDetailBody({
           disabled={busy}
           onClick={() => onRequestRemove(profile)}
         >
-          删除适配
+          解除绑定
         </Button>
         <Button variant="secondary" onClick={onClose}>关闭</Button>
       </DialogFooter>
@@ -266,10 +256,9 @@ function ProfileDetailBody({
   );
 }
 
-function DetailStatusLine({ label, view }: { label: string; view: AdapterStatusView }) {
+function DetailStatusLine({ view }: { view: AdapterStatusView }) {
   return (
     <p className="flex items-center gap-2 text-sm">
-      <span className="w-8 shrink-0 text-xs text-muted">{label}</span>
       <span
         className={`inline-block h-2 w-2 shrink-0 rounded-full ${adapterStatusDotClass(view.tone)}${view.pulse ? ' animate-pulse' : ''}`}
         aria-hidden

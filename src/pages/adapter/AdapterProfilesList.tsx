@@ -3,7 +3,6 @@ import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { ListRow } from '@/components/shared/ListRow';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
@@ -16,17 +15,17 @@ import type { ConnectionEntry } from '@/pages/connections/connection-model';
 import { AdapterErrorLines } from './adapter-components';
 import {
   adapterBridgeEndpointLabel,
-  adapterCredentialKindLabel,
-  adapterTableRouteLabel,
+  BRIDGES_EMPTY_DESCRIPTION,
+  BRIDGES_EMPTY_TITLE,
+  BRIDGES_MUTATION_FAILURE,
 } from './adapter-model';
 import { adapterFailurePresentation } from './adapter-sources';
 import {
-  adapterConfigStatusView,
   adapterProfilePrimaryAction,
   adapterProfileRecoveryGuide,
-  adapterServiceStatusView,
   adapterStatusDotClass,
   adapterStatusTextClass,
+  bridgeRuntimeStatusView,
   resolveAdapterProfileSource,
   type AdapterStatusView,
 } from './adapter-view-model';
@@ -40,7 +39,7 @@ export type AdapterProfilesListProps = {
   entries: ConnectionEntry[];
   loading: boolean;
   loadError: unknown;
-  /** Per-profile mutation errors (start/stop/autostart/remove). */
+  /** Per-profile mutation errors (start/stop/autostart/unbind). */
   errors: Record<string, unknown>;
   busyProfileIds: Record<string, boolean>;
   removingProfileId: string | null;
@@ -48,14 +47,11 @@ export type AdapterProfilesListProps = {
   onRequestStopBridge: (profile: AdapterProfile) => void;
   onShowDetail: (profile: AdapterProfile) => void;
   onRetry: () => void;
-  onStartCreate: () => void;
 };
 
 /**
- * Managed adapters as a compact service list (one shell, dense rows), not a
- * database table. Row surface: two-layer status, human-readable source → target,
- * endpoint copy, and the single state-matched primary action. Everything else
- * lives in the detail dialog.
+ * Local-bridge runtimes as a compact service list. Row surface: single-layer
+ * health, source → target, endpoint copy, and the state-matched primary action.
  */
 export function AdapterProfilesList({
   profiles,
@@ -71,7 +67,6 @@ export function AdapterProfilesList({
   onRequestStopBridge,
   onShowDetail,
   onRetry,
-  onStartCreate,
 }: AdapterProfilesListProps) {
   if (loading) {
     return (
@@ -85,7 +80,7 @@ export function AdapterProfilesList({
     return (
       <ErrorState
         error={loadError}
-        title="无法读取适配"
+        title="无法读取本机桥"
         onRetry={onRetry}
       />
     );
@@ -94,10 +89,8 @@ export function AdapterProfilesList({
     return (
       <EmptyState
         icon={Boxes}
-        title="没有已绑定的本机桥"
-        description="创建绑定不在本页。请走 Dashboard「连接/切换」或 Connections「接到…」。"
-        actionLabel="去 Dashboard 连接"
-        onAction={onStartCreate}
+        title={BRIDGES_EMPTY_TITLE}
+        description={BRIDGES_EMPTY_DESCRIPTION}
       />
     );
   }
@@ -143,8 +136,7 @@ function AdapterProfileRow({
   onShowDetail: (profile: AdapterProfile) => void;
 }) {
   const source = resolveAdapterProfileSource(profile, entries);
-  const configStatus = adapterConfigStatusView(profile.status);
-  const serviceStatus = adapterServiceStatusView({
+  const runtimeStatus = bridgeRuntimeStatusView({
     route: profile.route,
     bridgeState: bridgeStatus?.state,
     statusUnavailable,
@@ -156,17 +148,17 @@ function AdapterProfileRow({
     route: profile.route,
     bridgeState: bridgeStatus?.state,
     lastErrorCode: profile.lastErrorCode,
+    statusUnavailable,
   });
   const transitioning = bridgeStatus?.state === 'starting' || bridgeStatus?.state === 'stopping';
   const recovery = adapterProfileRecoveryGuide(profile);
-  const failure = error ? adapterFailurePresentation(error, '适配操作失败') : null;
+  const failure = error ? adapterFailurePresentation(error, BRIDGES_MUTATION_FAILURE) : null;
 
   return (
     <ListRow className="p-3">
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4">
-        <div className="w-40 shrink-0 space-y-1">
-          <StatusLine view={configStatus} emphasis />
-          {serviceStatus ? <StatusLine view={serviceStatus} /> : null}
+        <div className="w-40 shrink-0">
+          {runtimeStatus ? <StatusLine view={runtimeStatus} emphasis /> : null}
         </div>
         <div className="min-w-0 flex-1 space-y-1">
           <p className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-medium">
@@ -177,8 +169,6 @@ function AdapterProfileRow({
             <span className="truncate">{agentDisplayName(profile.targetAgentId)}</span>
           </p>
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <Badge variant="default">{adapterCredentialKindLabel(profile.mode)}</Badge>
-            <Badge variant="default">{adapterTableRouteLabel(profile.route)}</Badge>
             {endpoint ? <EndpointCopy endpoint={endpoint} /> : null}
             {source.missing ? (
               <span className="text-xs text-warning">来源连接已删除</span>
@@ -208,7 +198,7 @@ function AdapterProfileRow({
       ) : null}
       {failure ? (
         <div className="mt-2 space-y-1" role="alert">
-          <AdapterErrorLines error={error} fallback="适配操作失败" />
+          <AdapterErrorLines error={error} fallback={BRIDGES_MUTATION_FAILURE} />
           <p className="text-xs text-secondary">{failure.hint}</p>
         </div>
       ) : null}

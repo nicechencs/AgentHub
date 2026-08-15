@@ -52,9 +52,12 @@ import {
   unsupportedPresentation,
 } from './index';
 import { AdapterPreviewResult, AdapterProfiles, isBridgeStopCapable, openAdapterEvidence } from './adapter-components';
+import { AdapterProfileDetailDialog } from './AdapterProfileDetailDialog';
 import { startAdapterBridgeStatusPoll } from './use-adapter-resources';
 import {
   ADAPTER_BRIDGE_STATUS_POLL_MS,
+  BRIDGES_EMPTY_DESCRIPTION,
+  BRIDGES_EMPTY_TITLE,
   adapterBridgeProfilesToPoll,
   adapterErrorDetails,
   applyAdapterBridgeStatusPoll,
@@ -96,10 +99,182 @@ function plan(route: AdapterRouteAnalysis['route'], changes: AdapterPlanChange[]
 }
 
 describe('Adapter page view model', () => {
-  it('describes the page as profile and bridge management', () => {
-    expect(adapterPageDescription()).toBe(
-      '本页只管理已绑定的本机桥运行时（端口、启停、恢复）。创建绑定请走 Dashboard「连接/切换」或 Connections「接到…」。',
+  it('describes the page as local-bridge runtime ops', () => {
+    expect(adapterPageDescription()).toBe('本机协议转换 · 仅 127.0.0.1');
+  });
+
+  it('renders a healthy empty list without leaving-the-page CTAs', () => {
+    const markup = renderToStaticMarkup(
+      createElement(AdapterProfiles, {
+        profiles: [],
+        bridgeStatuses: {},
+        statusErrors: {},
+        entries: [],
+        loading: false,
+        loadError: null,
+        errors: {},
+        removingProfileId: null,
+        busyProfileIds: {},
+        onStartBridge: vi.fn(),
+        onRequestStopBridge: vi.fn(),
+        onShowDetail: vi.fn(),
+        onRetry: vi.fn(),
+      }),
     );
+    expect(markup).toContain(BRIDGES_EMPTY_TITLE);
+    expect(markup).toContain(BRIDGES_EMPTY_DESCRIPTION);
+    expect(markup).not.toContain('去 Dashboard');
+    expect(markup).not.toContain('去 Connections');
+    expect(markup).not.toContain('没有已绑定的本机桥');
+  });
+
+  it('renders a running bridge as single-layer health plus port', () => {
+    const profile = {
+      id: 'bridge-1',
+      name: 'Kimi → Codex',
+      sourceKind: 'provider' as const,
+      sourceId: 'kimi-1',
+      targetAgentId: 'codex' as const,
+      route: 'local_bridge' as const,
+      mode: 'api' as const,
+      status: 'active' as const,
+      ruleId: 'bridge',
+      ruleVersion: '1',
+      generatedProviderId: 'codex-bridge-1',
+      localPort: 43121,
+      autoStart: true,
+      createdAt: '2026-08-12T00:00:00Z',
+      updatedAt: '2026-08-12T00:00:00Z',
+    };
+    const markup = renderToStaticMarkup(
+      createElement(AdapterProfiles, {
+        profiles: [profile],
+        bridgeStatuses: {
+          [profile.id]: {
+            profileId: profile.id,
+            state: 'running',
+            port: 43121,
+            endpoint: 'http://127.0.0.1:43121',
+            startedAt: '2026-08-12T00:00:00Z',
+            upstreamStatus: 'connected',
+          },
+        },
+        statusErrors: {},
+        entries: [],
+        loading: false,
+        loadError: null,
+        errors: {},
+        removingProfileId: null,
+        busyProfileIds: {},
+        onStartBridge: vi.fn(),
+        onRequestStopBridge: vi.fn(),
+        onShowDetail: vi.fn(),
+        onRetry: vi.fn(),
+      }),
+    );
+    expect(markup).toContain('运行中');
+    expect(markup).toContain('127.0.0.1:43121');
+    expect(markup).toContain('停止');
+    expect(markup).not.toContain('配置已生效');
+    expect(markup).not.toContain('桥接运行中');
+    expect(markup).not.toContain('本地协议转换');
+  });
+
+  it('keeps last-known running as 状态不可用 + 停止 when status read fails', () => {
+    const profile = {
+      id: 'bridge-1',
+      name: 'Kimi → Codex',
+      sourceKind: 'provider' as const,
+      sourceId: 'kimi-1',
+      targetAgentId: 'codex' as const,
+      route: 'local_bridge' as const,
+      mode: 'api' as const,
+      status: 'active' as const,
+      ruleId: 'bridge',
+      ruleVersion: '1',
+      generatedProviderId: 'codex-bridge-1',
+      localPort: 43121,
+      autoStart: true,
+      createdAt: '2026-08-12T00:00:00Z',
+      updatedAt: '2026-08-12T00:00:00Z',
+    };
+    const markup = renderToStaticMarkup(
+      createElement(AdapterProfiles, {
+        profiles: [profile],
+        bridgeStatuses: {
+          [profile.id]: {
+            profileId: profile.id,
+            state: 'running',
+            port: 43121,
+            endpoint: 'http://127.0.0.1:43121',
+            startedAt: '2026-08-12T00:00:00Z',
+            upstreamStatus: 'connected',
+          },
+        },
+        statusErrors: { [profile.id]: new Error('status read failed') },
+        entries: [],
+        loading: false,
+        loadError: null,
+        errors: {},
+        removingProfileId: null,
+        busyProfileIds: {},
+        onStartBridge: vi.fn(),
+        onRequestStopBridge: vi.fn(),
+        onShowDetail: vi.fn(),
+        onRetry: vi.fn(),
+      }),
+    );
+    expect(markup).toContain('状态不可用');
+    expect(markup).toContain('停止');
+    expect(markup).not.toContain('启动失败');
+    expect(markup).not.toContain('重试启动');
+  });
+
+  it('renders detail as single-layer runtime without a Connections projection link', () => {
+    const profile = {
+      id: 'bridge-1',
+      name: 'Kimi → Codex',
+      sourceKind: 'provider' as const,
+      sourceId: 'kimi-1',
+      targetAgentId: 'codex' as const,
+      route: 'local_bridge' as const,
+      mode: 'api' as const,
+      status: 'active' as const,
+      ruleId: 'bridge',
+      ruleVersion: '1',
+      generatedProviderId: 'codex-bridge-1',
+      localPort: 43121,
+      autoStart: true,
+      createdAt: '2026-08-12T00:00:00Z',
+      updatedAt: '2026-08-12T00:00:00Z',
+    };
+    const markup = renderToStaticMarkup(
+      createElement(AdapterProfileDetailDialog, {
+        profile,
+        bridgeStatus: {
+          profileId: profile.id,
+          state: 'running',
+          port: 43121,
+          endpoint: 'http://127.0.0.1:43121',
+          startedAt: '2026-08-12T00:00:00Z',
+          upstreamStatus: 'connected',
+        },
+        statusUnavailable: false,
+        entries: [],
+        busy: false,
+        error: null,
+        onClose: vi.fn(),
+        onSetAutoStart: vi.fn(),
+        onRequestRemove: vi.fn(),
+      }),
+    );
+    expect(markup).toContain('运行中');
+    expect(markup).toContain('本机端点');
+    expect(markup).toContain('目标写入');
+    expect(markup).toContain('解除绑定');
+    expect(markup).not.toContain('配置已生效');
+    expect(markup).not.toContain('在 Connections 查看');
+    expect(markup).not.toContain('删除适配');
   });
 
   it('routes an empty connection list to the Connections empty state', () => {
@@ -446,7 +621,6 @@ describe('Adapter page view model', () => {
         onRequestStopBridge: vi.fn(),
         onShowDetail: vi.fn(),
         onRetry: vi.fn(),
-        onStartCreate: vi.fn(),
       }),
     );
     expect(rowMarkup).toContain('端口被占用');
@@ -792,7 +966,11 @@ describe('Adapter profile interactions', () => {
       status: 'rejected',
       reason: new Error('status read failed'),
     }]);
-    expect(failed.bridgeStatuses[running.id]).toMatchObject({ state: 'error', upstreamStatus: 'unavailable' });
+    expect(failed.bridgeStatuses[running.id]).toMatchObject({
+      state: 'running',
+      port: 32123,
+      upstreamStatus: 'unavailable',
+    });
     expect(failed.errors.bridgeStatuses[running.id]).toBeInstanceOf(Error);
     expect(isCurrentAdapterPreviewRequest(1, 2)).toBe(false);
 

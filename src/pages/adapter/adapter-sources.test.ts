@@ -305,7 +305,7 @@ describe('adapter apply and profile recovery presentation', () => {
     expect(markup).not.toContain('启用本地桥接');
   });
 
-  it('renders profile rows with endpoint, two-layer status, and a recovery entry', () => {
+  it('renders profile rows with endpoint, single-layer status, and a recovery entry', () => {
     const markup = renderToStaticMarkup(
       createElement(AdapterProfiles, {
         profiles: [{
@@ -345,22 +345,20 @@ describe('adapter apply and profile recovery presentation', () => {
         onRequestStopBridge: vi.fn(),
         onShowDetail: vi.fn(),
         onRetry: vi.fn(),
-        onStartCreate: vi.fn(),
       }),
     );
     // Human-readable source name resolved by (sourceKind, sourceId).
     expect(markup).toContain('Kimi 会员 Key');
-    // Two-layer status: durable configuration first, observed runtime second.
-    expect(markup).toContain('需要处理');
-    expect(markup).toContain('桥接启动失败');
+    expect(markup).toContain('启动失败');
+    expect(markup).not.toContain('配置已生效');
     // Recovery entry carries the stable error code and points at the detail dialog.
     expect(markup).toContain('adapter.bridge_start');
     expect(markup).toContain('详情');
     expect(markup).toContain('127.0.0.1:32123');
-    expect(markup).toContain('API Key');
-    expect(markup).toContain('本地协议转换');
+    expect(markup).not.toContain('API Key');
+    expect(markup).not.toContain('本地协议转换');
     expect(markup).toContain('重试启动');
-    // Remove moved into the detail dialog; rows keep only the state-matched action.
+    // Unbind lives in the detail dialog; rows keep only the state-matched action.
     expect(markup).not.toContain('删除');
     expect(markup).not.toContain('代理路由');
   });
@@ -397,11 +395,12 @@ describe('adapter apply and profile recovery presentation', () => {
         onRequestStopBridge: vi.fn(),
         onShowDetail: vi.fn(),
         onRetry: vi.fn(),
-        onStartCreate: vi.fn(),
       }),
     );
-    expect(markup).toContain('配置已生效');
     expect(markup).toContain('状态不可用');
-    expect(markup).not.toContain('桥接启动失败');
+    expect(markup).toContain('启动');
+    expect(markup).not.toContain('配置已生效');
+    expect(markup).not.toContain('启动失败');
+    expect(markup).not.toContain('重试启动');
   });
 });

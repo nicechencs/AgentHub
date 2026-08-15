@@ -581,7 +581,7 @@ function poolFailureMessage(errors: { accounts?: unknown; providers?: unknown },
   const parts: string[] = [];
   if (errors.accounts) parts.push('账户');
   if (errors.providers) parts.push('供应商');
-  if (profilesError) parts.push('适配档案');
+  if (profilesError) parts.push('绑定档案');
   if (parts.length === 0) return '部分资源加载失败';
   return `部分资源加载失败：${parts.join('、')}。请重试，勿将缺失数据当作空钱包。`;
 }

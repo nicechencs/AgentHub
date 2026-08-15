@@ -15,7 +15,10 @@ import {
   adapterServiceStatusView,
   adapterTargetBadge,
   adapterTargetCacheKey,
+  bridgesPageViewState,
+  bridgeRuntimeStatusView,
   filterBoundLocalBridgeRuntimes,
+  partitionLocalBridgeRuntimes,
   resolveAdapterProfileSource,
 } from './adapter-view-model';
 
@@ -40,34 +43,101 @@ function bridgeProfile(partial: Partial<AdapterProfile> = {}): AdapterProfile {
   };
 }
 
-describe('bound local-bridge runtime filter', () => {
+describe('local-bridge runtime partition', () => {
   const entries = [
     { source: 'provider' as const, id: 'kimi-1' },
     { source: 'account' as const, id: 'acc-1' },
   ];
 
-  it('keeps local_bridge profiles whose source still exists', () => {
-    const kept = filterBoundLocalBridgeRuntimes(
+  it('keeps local_bridge profiles whose source still exists in bound', () => {
+    const partitioned = partitionLocalBridgeRuntimes(
       [bridgeProfile(), bridgeProfile({ id: 'direct', route: 'native_endpoint', sourceId: 'kimi-1' })],
       { entries },
     );
-    expect(kept.map((item) => item.id)).toEqual(['bridge-1']);
+    expect(partitioned.bound.map((item) => item.id)).toEqual(['bridge-1']);
+    expect(partitioned.orphan).toEqual([]);
+    expect(filterBoundLocalBridgeRuntimes(
+      [bridgeProfile(), bridgeProfile({ id: 'direct', route: 'native_endpoint', sourceId: 'kimi-1' })],
+      { entries },
+    ).map((item) => item.id)).toEqual(['bridge-1']);
   });
 
-  it('keeps a missing-source bridge when wallet binding.profileId hits', () => {
-    const orphan = bridgeProfile({ id: 'orphan', sourceId: 'deleted' });
-    expect(filterBoundLocalBridgeRuntimes([orphan], { entries })).toEqual([]);
-    expect(filterBoundLocalBridgeRuntimes([orphan], {
+  it('keeps a missing-source bridge in bound when wallet binding.profileId hits', () => {
+    const missing = bridgeProfile({ id: 'missing-bound', sourceId: 'deleted' });
+    expect(partitionLocalBridgeRuntimes([missing], { entries })).toEqual({
+      bound: [],
+      orphan: [missing],
+    });
+    expect(partitionLocalBridgeRuntimes([missing], {
       entries,
-      bindingProfileIds: new Set(['orphan']),
-    }).map((item) => item.id)).toEqual(['orphan']);
+      bindingProfileIds: new Set(['missing-bound']),
+    }).bound.map((item) => item.id)).toEqual(['missing-bound']);
+  });
+
+  it('lists a missing-source bridge without a binding hit as orphan', () => {
+    const orphan = bridgeProfile({ id: 'orphan', sourceId: 'deleted' });
+    const partitioned = partitionLocalBridgeRuntimes([orphan], { entries });
+    expect(partitioned.bound).toEqual([]);
+    expect(partitioned.orphan.map((item) => item.id)).toEqual(['orphan']);
   });
 
   it('drops bridges with no source id', () => {
-    expect(filterBoundLocalBridgeRuntimes(
+    expect(partitionLocalBridgeRuntimes(
       [bridgeProfile({ sourceId: '' })],
       { entries, bindingProfileIds: new Set(['bridge-1']) },
-    )).toEqual([]);
+    )).toEqual({ bound: [], orphan: [] });
+  });
+});
+
+describe('bridges page view state', () => {
+  const emptyWallet = { settled: true, lastWalletBridgeCount: 0 };
+
+  it('stays loading until profiles and wallet have both settled', () => {
+    expect(bridgesPageViewState({
+      profileState: 'ready',
+      bound: [],
+      orphan: [],
+      wallet: { settled: false, lastWalletBridgeCount: 0 },
+    })).toBe('loading');
+    expect(bridgesPageViewState({
+      profileState: 'loading',
+      bound: [],
+      orphan: [],
+      wallet: emptyWallet,
+    })).toBe('loading');
+  });
+
+  it('uses last-known wallet count so a later wallet failure cannot become healthy empty', () => {
+    expect(bridgesPageViewState({
+      profileState: 'ready',
+      bound: [],
+      orphan: [],
+      wallet: { settled: true, lastWalletBridgeCount: 1 },
+    })).toBe('wallet_without_runtime');
+  });
+
+  it('treats only-orphan as a list, not healthy empty', () => {
+    expect(bridgesPageViewState({
+      profileState: 'ready',
+      bound: [],
+      orphan: [bridgeProfile({ id: 'orphan', sourceId: 'deleted' })],
+      wallet: emptyWallet,
+    })).toBe('list');
+  });
+
+  it('shows healthy empty only after both sides settle with zero bridges', () => {
+    expect(bridgesPageViewState({
+      profileState: 'ready',
+      bound: [],
+      orphan: [],
+      wallet: emptyWallet,
+    })).toBe('healthy_empty');
+    expect(bridgesPageViewState({
+      profileState: 'error',
+      bound: [],
+      orphan: [],
+      wallet: emptyWallet,
+    })).toBe('list_error');
   });
 });
 
@@ -122,22 +192,22 @@ describe('adapter two-layer profile status', () => {
   });
 
   it('keeps runtime state separate and never renders one for direct routes', () => {
-    expect(adapterServiceStatusView({ route: 'native_endpoint' })).toBeNull();
+    expect(bridgeRuntimeStatusView({ route: 'native_endpoint' })).toBeNull();
     expect(adapterServiceStatusView({ route: 'config_sync' })).toBeNull();
-    expect(adapterServiceStatusView({ route: 'local_bridge', bridgeState: 'running' }))
-      .toEqual({ label: '桥接运行中', tone: 'success' });
-    expect(adapterServiceStatusView({ route: 'local_bridge', bridgeState: 'starting' }))
+    expect(bridgeRuntimeStatusView({ route: 'local_bridge', bridgeState: 'running' }))
+      .toEqual({ label: '运行中', tone: 'success' });
+    expect(bridgeRuntimeStatusView({ route: 'local_bridge', bridgeState: 'starting' }))
       .toEqual({ label: '启动中', tone: 'info', pulse: true });
-    expect(adapterServiceStatusView({ route: 'local_bridge', bridgeState: 'degraded' }))
-      .toEqual({ label: '桥接已降级', tone: 'warning' });
-    expect(adapterServiceStatusView({ route: 'local_bridge', bridgeState: 'error' }))
-      .toEqual({ label: '桥接启动失败', tone: 'danger' });
-    expect(adapterServiceStatusView({ route: 'local_bridge' }))
-      .toEqual({ label: '桥接已停止', tone: 'muted' });
+    expect(bridgeRuntimeStatusView({ route: 'local_bridge', bridgeState: 'degraded' }))
+      .toEqual({ label: '已降级', tone: 'warning' });
+    expect(bridgeRuntimeStatusView({ route: 'local_bridge', bridgeState: 'error' }))
+      .toEqual({ label: '启动失败', tone: 'danger' });
+    expect(bridgeRuntimeStatusView({ route: 'local_bridge' }))
+      .toEqual({ label: '已停止', tone: 'muted' });
   });
 
-  it('reports a failed status read as unavailable, not as a bridge fault', () => {
-    expect(adapterServiceStatusView({
+  it('reports a failed status read as unavailable even when last-known state is running', () => {
+    expect(bridgeRuntimeStatusView({
       route: 'local_bridge',
       bridgeState: 'running',
       statusUnavailable: true,
@@ -233,7 +303,12 @@ describe('managed adapter profiles view model', () => {
       [bridgeProfile({ id: 'a' }), bridgeProfile({ id: 'b' }), bridgeProfile({ id: 'c' })],
       { a: { state: 'running' }, b: { state: 'degraded' }, c: { state: 'stopped' } },
     );
-    expect(summary).toEqual({ total: 3, running: 2, label: '本地桥接 3 个 · 2 个运行中' });
+    expect(summary).toEqual({
+      total: 3,
+      running: 2,
+      label: '3 个本机桥 · 2 个运行中 · 需保持托盘运行',
+    });
+    expect(adapterBridgeFleetSummary([bridgeProfile()], { 'bridge-1': { state: 'running' } })).toBeNull();
   });
 
   it('derives the state-matched primary action', () => {
@@ -249,6 +324,20 @@ describe('managed adapter profiles view model', () => {
       .toEqual({ kind: 'start', label: '重试启动' });
     expect(adapterProfilePrimaryAction({ route: 'local_bridge', lastErrorCode: 'adapter.bridge_start' }))
       .toEqual({ kind: 'start', label: '重试启动' });
+    expect(adapterProfilePrimaryAction({
+      route: 'local_bridge',
+      bridgeState: 'running',
+      statusUnavailable: true,
+    })).toEqual({ kind: 'stop', label: '停止' });
+    expect(adapterProfilePrimaryAction({
+      route: 'local_bridge',
+      bridgeState: 'degraded',
+      statusUnavailable: true,
+    })).toEqual({ kind: 'stop', label: '停止' });
+    expect(adapterProfilePrimaryAction({
+      route: 'local_bridge',
+      statusUnavailable: true,
+    })).toEqual({ kind: 'start', label: '启动' });
   });
 
   it('limits recovery guidance to needs_attention and separates runtime from config repair', () => {
@@ -259,7 +348,7 @@ describe('managed adapter profiles view model', () => {
     }));
     expect(guide?.summary).toContain('adapter.rollback_incomplete');
     expect(guide?.steps.some((step) => step.includes('不会修复配置不一致'))).toBe(true);
-    expect(guide?.steps.some((step) => step.includes('删除此适配后重新创建'))).toBe(true);
+    expect(guide?.steps.some((step) => step.includes('解除绑定后，到 Dashboard 重新连接'))).toBe(true);
 
     const directGuide = adapterProfileRecoveryGuide({
       route: 'native_endpoint',

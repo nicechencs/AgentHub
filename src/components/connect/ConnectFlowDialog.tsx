@@ -1031,7 +1031,7 @@ function SwitchNativePreview({
   }, [shouldFetch, option, previewNative]);
 
   const nativeHint = (
-    <p className="text-xs text-secondary">将走本 Agent 既有切换，不会创建跨服务适配。</p>
+    <p className="text-xs text-secondary">将走本 Agent 既有切换，不会创建跨服务绑定。</p>
   );
 
   if (phase === 'loading') {

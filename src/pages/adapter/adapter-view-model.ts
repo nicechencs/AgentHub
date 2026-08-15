@@ -81,11 +81,11 @@ export function adapterConfigStatusView(status: AdapterProfileStatus): AdapterSt
 }
 
 /**
- * Observed bridge runtime as the second status layer; `null` for direct routes.
- * A failed status read is "状态不可用" (the listener may be fine), which must
- * not be presented as a bridge start failure.
+ * Single-layer local-bridge runtime status. A failed status read is
+ * "状态不可用" (the listener may still be fine) and must not be presented as
+ * a start failure — even when last-known `bridgeState` is still `running`.
  */
-export function adapterServiceStatusView(input: {
+export function bridgeRuntimeStatusView(input: {
   route: AdapterProfile['route'];
   bridgeState?: AdapterBridgeRuntimeState;
   statusUnavailable?: boolean;
@@ -93,12 +93,21 @@ export function adapterServiceStatusView(input: {
   if (input.route !== 'local_bridge') return null;
   if (input.statusUnavailable) return { label: '状态不可用', tone: 'muted' };
   const state = input.bridgeState;
-  if (state === 'running') return { label: '桥接运行中', tone: 'success' };
+  if (state === 'running') return { label: '运行中', tone: 'success' };
   if (state === 'starting') return { label: '启动中', tone: 'info', pulse: true };
   if (state === 'stopping') return { label: '停止中', tone: 'info', pulse: true };
-  if (state === 'degraded') return { label: '桥接已降级', tone: 'warning' };
-  if (state === 'error') return { label: '桥接启动失败', tone: 'danger' };
-  return { label: '桥接已停止', tone: 'muted' };
+  if (state === 'degraded') return { label: '已降级', tone: 'warning' };
+  if (state === 'error') return { label: '启动失败', tone: 'danger' };
+  return { label: '已停止', tone: 'muted' };
+}
+
+/** @deprecated Prefer {@link bridgeRuntimeStatusView}; same single-layer labels. */
+export function adapterServiceStatusView(input: {
+  route: AdapterProfile['route'];
+  bridgeState?: AdapterBridgeRuntimeState;
+  statusUnavailable?: boolean;
+}): AdapterStatusView | null {
+  return bridgeRuntimeStatusView(input);
 }
 
 export function adapterStatusDotClass(tone: AdapterStatusTone): string {
@@ -141,7 +150,29 @@ export function resolveAdapterProfileSource(
   return { title: profile.name, agentId: null, missing: true };
 }
 
-/** Production Adapter list: bound `local_bridge` runtimes only. */
+export type BridgePartition<T extends AdapterProfile = AdapterProfile> = {
+  /** Source still exists, or last-known wallet `binding.profileId` hits. */
+  bound: T[];
+  /** Remaining `local_bridge` rows with a non-empty sourceId. */
+  orphan: T[];
+};
+
+function isLocalBridgeRuntime(
+  profile: Pick<AdapterProfile, 'route' | 'sourceId'>,
+): boolean {
+  return profile.route === 'local_bridge' && Boolean(profile.sourceId.trim());
+}
+
+function sourceStillPresent(
+  profile: Pick<AdapterProfile, 'sourceKind' | 'sourceId'>,
+  entries: readonly Pick<ConnectionEntry, 'source' | 'id'>[],
+): boolean {
+  return entries.some(
+    (entry) => entry.source === profile.sourceKind && entry.id === profile.sourceId,
+  );
+}
+
+/** Bound `local_bridge` only (source present or last-known binding hit). */
 export function isBoundLocalBridgeRuntime(
   profile: Pick<AdapterProfile, 'id' | 'route' | 'sourceKind' | 'sourceId'>,
   input: {
@@ -149,15 +180,33 @@ export function isBoundLocalBridgeRuntime(
     bindingProfileIds?: ReadonlySet<string>;
   },
 ): boolean {
-  if (profile.route !== 'local_bridge') return false;
-  if (!profile.sourceId.trim()) return false;
-  const sourceExists = input.entries.some(
-    (entry) => entry.source === profile.sourceKind && entry.id === profile.sourceId,
-  );
-  if (sourceExists) return true;
+  if (!isLocalBridgeRuntime(profile)) return false;
+  if (sourceStillPresent(profile, input.entries)) return true;
   return input.bindingProfileIds?.has(profile.id) === true;
 }
 
+/** All `local_bridge` runtimes: bound vs orphan. Dirty rows with empty sourceId are dropped. */
+export function partitionLocalBridgeRuntimes<T extends AdapterProfile>(
+  profiles: readonly T[],
+  input: {
+    entries: readonly Pick<ConnectionEntry, 'source' | 'id'>[];
+    bindingProfileIds?: ReadonlySet<string>;
+  },
+): BridgePartition<T> {
+  const bound: T[] = [];
+  const orphan: T[] = [];
+  for (const profile of profiles) {
+    if (!isLocalBridgeRuntime(profile)) continue;
+    if (sourceStillPresent(profile, input.entries) || input.bindingProfileIds?.has(profile.id)) {
+      bound.push(profile);
+    } else {
+      orphan.push(profile);
+    }
+  }
+  return { bound, orphan };
+}
+
+/** @deprecated Prefer {@link partitionLocalBridgeRuntimes}; this is `.bound` only. */
 export function filterBoundLocalBridgeRuntimes<T extends AdapterProfile>(
   profiles: readonly T[],
   input: {
@@ -165,7 +214,34 @@ export function filterBoundLocalBridgeRuntimes<T extends AdapterProfile>(
     bindingProfileIds?: ReadonlySet<string>;
   },
 ): T[] {
-  return profiles.filter((profile) => isBoundLocalBridgeRuntime(profile, input));
+  return partitionLocalBridgeRuntimes(profiles, input).bound;
+}
+
+export type BridgesWalletView = {
+  /** At least one wallet fetch finished (success, or failure with a last/empty snapshot). */
+  settled: boolean;
+  /** Last successful `route=bridge` count; a later failure must not write 0. */
+  lastWalletBridgeCount: number;
+};
+
+export type BridgesPageViewState =
+  | 'loading'
+  | 'list_error'
+  | 'list'
+  | 'wallet_without_runtime'
+  | 'healthy_empty';
+
+export function bridgesPageViewState(input: {
+  profileState: 'loading' | 'ready' | 'error';
+  bound: readonly unknown[];
+  orphan: readonly unknown[];
+  wallet: BridgesWalletView;
+}): BridgesPageViewState {
+  if (input.profileState === 'loading' || !input.wallet.settled) return 'loading';
+  if (input.profileState === 'error') return 'list_error';
+  if (input.bound.length + input.orphan.length > 0) return 'list';
+  if (input.wallet.lastWalletBridgeCount > 0) return 'wallet_without_runtime';
+  return 'healthy_empty';
 }
 
 // ---------- Route pipeline ----------
@@ -244,13 +320,13 @@ export function adapterApplySummaryLine(input: {
 
 // ---------- Managed profiles ----------
 
-/** Bridge fleet one-liner above the profile list; null when no bridges exist. */
+/** Fleet one-liner when there are at least two local bridges; `running` includes degraded. */
 export function adapterBridgeFleetSummary(
   profiles: readonly Pick<AdapterProfile, 'id' | 'route'>[],
   bridgeStatuses: Record<string, { state: AdapterBridgeRuntimeState } | undefined>,
 ): { total: number; running: number; label: string } | null {
   const bridges = profiles.filter((profile) => profile.route === 'local_bridge');
-  if (bridges.length === 0) return null;
+  if (bridges.length < 2) return null;
   const running = bridges.filter((profile) => {
     const state = bridgeStatuses[profile.id]?.state;
     return state === 'running' || state === 'degraded';
@@ -258,7 +334,7 @@ export function adapterBridgeFleetSummary(
   return {
     total: bridges.length,
     running,
-    label: `本地桥接 ${bridges.length} 个 · ${running} 个运行中`,
+    label: `${bridges.length} 个本机桥 · ${running} 个运行中 · 需保持托盘运行`,
   };
 }
 
@@ -268,17 +344,24 @@ export type AdapterProfilePrimaryAction =
 
 /**
  * Row-level primary action. Direct routes have none. A degraded bridge still
- * owns its listener and must be stopped, not started again.
+ * owns its listener and must be stopped, not started again. A status-read
+ * failure must not treat last-known `error` as a start failure.
  */
 export function adapterProfilePrimaryAction(input: {
   route: AdapterProfile['route'];
   bridgeState?: AdapterBridgeRuntimeState;
   lastErrorCode?: string | null;
+  statusUnavailable?: boolean;
 }): AdapterProfilePrimaryAction | null {
   if (input.route !== 'local_bridge') return null;
-  const state = input.bridgeState;
-  if (state === 'running' || state === 'degraded') return { kind: 'stop', label: '停止' };
-  const retry = state === 'error' || Boolean(input.lastErrorCode?.trim());
+  const ownsListener = input.bridgeState === 'running' || input.bridgeState === 'degraded';
+  if (input.statusUnavailable) {
+    return ownsListener
+      ? { kind: 'stop', label: '停止' }
+      : { kind: 'start', label: '启动' };
+  }
+  if (ownsListener) return { kind: 'stop', label: '停止' };
+  const retry = input.bridgeState === 'error' || Boolean(input.lastErrorCode?.trim());
   return { kind: 'start', label: retry ? '重试启动' : '启动' };
 }
 
@@ -308,7 +391,7 @@ export function adapterProfileRecoveryGuide(profile: Pick<AdapterProfile, 'route
       ...(profile.route === 'local_bridge'
         ? ['启动只恢复桥接运行时，不会修复配置不一致。']
         : []),
-      '若仍异常，删除此适配后重新创建。',
+      '解除绑定后，到 Dashboard 重新连接。',
       '不会自动反复重试。',
     ],
   };
