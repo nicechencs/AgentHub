@@ -866,13 +866,6 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           retryable: false,
         });
       }
-      if (profile.route === 'local_bridge' && generated.isCurrent) {
-        throw adapterCommandError({
-          code: 'unsupported',
-          message: '先在 Connections 切换到其他连接后再移除此适配器',
-          retryable: false,
-        });
-      }
       resolver.removeGeneratedProvider?.(generated);
       state.generatedProviders.delete(generated.id);
       state.bridgeStatuses.delete(profileId);
