@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::adapters::AdapterRegistry;
-use crate::catalog::{channels_for, list_install_catalog};
+use crate::platform::install::{channels_for, list_install_catalog};
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, Capability, CapabilityStateDto};
 
