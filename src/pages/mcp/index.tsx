@@ -11,6 +11,7 @@ import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
 import { AGENT_MAP } from '@/config/agents';
+import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { listMcpInventory } from '@/lib/api/mcp';
 import { openPathInFileManager } from '@/lib/api/skill';
 import type { McpInventory, McpServerEntry, McpSourceFile } from '@/lib/backend/contracts/mcp-types';
@@ -42,6 +43,8 @@ function parentDir(path: string): string {
 
 export default function McpPage() {
   const { toast } = useToast();
+  const { hiddenIds } = useInstalledAgents();
+  const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const [data, setData] = useState<McpInventory | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | string | null>(null);
@@ -72,19 +75,27 @@ export default function McpPage() {
       if (s.exists || s.serverCount > 0) ids.add(s.agent);
     }
     for (const s of data.servers) ids.add(s.agent);
-    return [...ids].sort((a, b) => a.localeCompare(b));
-  }, [data]);
+    return [...ids].filter((id) => !hiddenSet.has(id)).sort((a, b) => a.localeCompare(b));
+  }, [data, hiddenSet]);
+
+  useEffect(() => {
+    if (filterAgent !== 'all' && hiddenSet.has(filterAgent)) {
+      setFilterAgent('all');
+    }
+  }, [filterAgent, hiddenSet]);
 
   const servers = useMemo(() => {
     if (!data) return [] as McpServerEntry[];
-    if (filterAgent === 'all') return data.servers;
-    return data.servers.filter((s) => s.agent === filterAgent);
-  }, [data, filterAgent]);
+    const visible = data.servers.filter((s) => !hiddenSet.has(s.agent));
+    if (filterAgent === 'all') return visible;
+    return visible.filter((s) => s.agent === filterAgent);
+  }, [data, filterAgent, hiddenSet]);
 
   const sources = useMemo(() => {
     if (!data) return [] as McpSourceFile[];
+    const visible = data.sources.filter((s) => !hiddenSet.has(s.agent));
     const list =
-      filterAgent === 'all' ? data.sources : data.sources.filter((s) => s.agent === filterAgent);
+      filterAgent === 'all' ? visible : visible.filter((s) => s.agent === filterAgent);
     // Prefer existing / errored first for the "sources" strip
     return [...list].sort((a, b) => Number(b.exists) - Number(a.exists));
   }, [data, filterAgent]);
@@ -140,7 +151,9 @@ export default function McpPage() {
             >
               全部
               {data ? (
-                <span className="ml-1 text-muted">({data.servers.length})</span>
+                <span className="ml-1 text-muted">
+                  ({data.servers.filter((s) => !hiddenSet.has(s.agent)).length})
+                </span>
               ) : null}
             </Button>
             {agentsWithSomething.map((id) => {

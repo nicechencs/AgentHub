@@ -3,6 +3,7 @@
 mod account;
 mod adapter;
 mod agent;
+mod agent_visibility;
 mod backup;
 mod capability;
 mod chat;
@@ -23,6 +24,7 @@ mod tests;
 pub use account::*;
 pub use adapter::*;
 pub use agent::*;
+pub use agent_visibility::*;
 pub use backup::*;
 pub use capability::*;
 pub use chat::*;

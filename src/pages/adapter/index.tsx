@@ -15,6 +15,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { AGENT_IDS } from '@/config/agents';
+import { firstVisibleAgentId } from '@/lib/agent-visibility';
+import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
   analyzeAdapter,
   applyAdapter,
@@ -98,8 +100,16 @@ export default function AdapterPage() {
     updateProfile,
     removeProfile,
   } = useAdapterResources();
+  const { hiddenIds, visibleIds } = useInstalledAgents();
+  const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+  const targetOptions = useMemo(
+    () => (visibleIds.length ? visibleIds : AGENT_IDS.filter((id) => !hiddenSet.has(id))),
+    [visibleIds, hiddenSet],
+  );
   const [sourceKey, setSourceKey] = useState('');
-  const [targetAgentId, setTargetAgentId] = useState<AgentId>('claude');
+  const [targetAgentId, setTargetAgentId] = useState<AgentId>(() =>
+    firstVisibleAgentId('claude', visibleIds.length ? visibleIds : AGENT_IDS),
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [analysis, setAnalysis] = useState<AdapterRouteAnalysis | null>(null);
   const [plan, setPlan] = useState<AdapterApplyPlan | null>(null);
@@ -117,10 +127,26 @@ export default function AdapterPage() {
   const [retryToken, setRetryToken] = useState(0);
   const requestGeneration = useRef(0);
 
-  const source = useMemo(
-    () => entries.find((entry) => entry.key === sourceKey) ?? null,
-    [entries, sourceKey],
+  const visibleEntries = useMemo(
+    () => entries.filter((entry) => !hiddenSet.has(entry.agentId)),
+    [entries, hiddenSet],
   );
+  const source = useMemo(
+    () => visibleEntries.find((entry) => entry.key === sourceKey) ?? null,
+    [visibleEntries, sourceKey],
+  );
+
+  useEffect(() => {
+    if (targetOptions.length && !targetOptions.includes(targetAgentId)) {
+      setTargetAgentId(targetOptions[0]);
+    }
+  }, [targetOptions, targetAgentId]);
+
+  useEffect(() => {
+    if (sourceKey && !visibleEntries.some((entry) => entry.key === sourceKey)) {
+      setSourceKey('');
+    }
+  }, [sourceKey, visibleEntries]);
   const bridgeStatusErrors = useMemo(
     () => Object.fromEntries(
       Object.entries(resourceErrors.bridgeStatuses).map(([profileId, error]) => [
@@ -404,7 +430,7 @@ export default function AdapterPage() {
                 onChange={(event) => setSourceKey(event.target.value)}
               >
                 <option value="">请选择连接</option>
-                {entries.map((entry) => (
+                {visibleEntries.map((entry) => (
                   <option key={entry.key} value={entry.key}>
                     {sourceLabel(entry)}
                   </option>
@@ -419,7 +445,7 @@ export default function AdapterPage() {
                 value={targetAgentId}
                 onChange={(event) => setTargetAgentId(event.target.value as AgentId)}
               >
-                {AGENT_IDS.map((agentId) => (
+                {targetOptions.map((agentId) => (
                   <option key={agentId} value={agentId}>{targetAgentName(agentId)}</option>
                 ))}
               </select>

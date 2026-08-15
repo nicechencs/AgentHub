@@ -39,6 +39,12 @@ import {
 import { Skeleton, TableSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 
+import {
+  filterVisibleTrend,
+  filterVisibleUsage,
+  hiddenAgentIdSet,
+  visibleCatalogAgents,
+} from '@/lib/agent-visibility';
 import { listAgents } from '@/lib/api/agent';
 import { listRuntimes } from '@/lib/api/env';
 import {
@@ -49,7 +55,7 @@ import {
   type UsageAvailability,
 } from '@/lib/api/usage';
 import { createBackup } from '@/lib/api/backup';
-import { AGENTS, AGENT_MAP } from '@/config/agents';
+import { AGENT_MAP } from '@/config/agents';
 import { hasEnvIssues } from '@/lib/env';
 import { loadBool, saveBool, StorageKey } from '@/lib/storage';
 import type { AgentId, AgentStatus, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
@@ -191,7 +197,7 @@ export default function DashboardPage() {
 
   const handleBackupAll = async () => {
     if (!agents) return;
-    const installed = agents.filter((a) => a.installed);
+    const installed = agents.filter((a) => a.installed && !a.hidden);
     if (installed.length === 0) {
       toast({ title: '没有已安装的 agent', variant: 'danger' });
       return;
@@ -235,18 +241,27 @@ export default function DashboardPage() {
     return () => window.removeEventListener(USAGE_COLLECTED_EVENT, onCollected);
   }, [loadUsage]);
 
+  const hiddenIds = useMemo(() => hiddenAgentIdSet(agents ?? []), [agents]);
+  const visibleAgentMetas = useMemo(() => visibleCatalogAgents(hiddenIds), [hiddenIds]);
+
+  useEffect(() => {
+    if (agentFilter !== 'all' && hiddenIds.has(agentFilter)) {
+      setAgentFilter('all');
+    }
+  }, [agentFilter, hiddenIds]);
+
   /** 「今天」在 days=1 拉取后再按本地日历日收窄；其余范围直接用后端窗口 */
   const rangedUsage = useMemo(() => {
     const list = usage ?? [];
-    if (dateRange !== 'today') return list;
-    return list.filter((r) => isLocalToday(r.timestamp));
-  }, [usage, dateRange]);
+    const scoped = dateRange !== 'today' ? list : list.filter((r) => isLocalToday(r.timestamp));
+    return filterVisibleUsage(scoped, hiddenIds);
+  }, [usage, dateRange, hiddenIds]);
 
   const rangedTrend = useMemo(() => {
-    if (dateRange !== 'today') return trend;
-    const key = localDateKey();
-    return trend.filter((p) => p.date === key);
-  }, [trend, dateRange]);
+    const scoped =
+      dateRange !== 'today' ? trend : trend.filter((p) => p.date === localDateKey());
+    return filterVisibleTrend(scoped, hiddenIds);
+  }, [trend, dateRange, hiddenIds]);
 
   const metrics = useMemo(() => {
     const list = rangedUsage;
@@ -306,9 +321,9 @@ export default function DashboardPage() {
     return [...filtered].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   }, [rangedUsage, modelFilter]);
 
-  const trendAgents = agentFilter === 'all' ? AGENTS : [AGENT_MAP[agentFilter]];
+  const trendAgents = agentFilter === 'all' ? visibleAgentMetas : [AGENT_MAP[agentFilter]];
   const maxTokens = distribution[0]?.tokens ?? 0;
-  const installedCount = agents?.filter((a) => a.installed).length ?? 0;
+  const installedCount = agents?.filter((a) => a.installed && !a.hidden).length ?? 0;
   const envBad = hasEnvIssues(runtimes);
   const showEnvCta = !agentsLoading && agents !== null && installedCount === 0 && envBad;
 
@@ -353,7 +368,7 @@ export default function DashboardPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全部 Agent</SelectItem>
-              {AGENTS.map((a) => (
+              {visibleAgentMetas.map((a) => (
                 <SelectItem key={a.id} value={a.id}>
                   {a.name}
                 </SelectItem>
@@ -658,7 +673,11 @@ export default function DashboardPage() {
         )}
 
         {!usageUnavailable && (
-          <UsageParserHealth variant="dashboard" refreshKey={healthRefreshKey} />
+          <UsageParserHealth
+            variant="dashboard"
+            refreshKey={healthRefreshKey}
+            hiddenAgentIds={hiddenIds}
+          />
         )}
       </PageSection>
     </div>

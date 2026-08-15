@@ -172,19 +172,22 @@ export default function ProjectsPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { installedAgents, installedIds, loading: agentsLoading } = useInstalledAgents();
+  const { installedAgents, installedIds, hiddenIds, loading: agentsLoading } = useInstalledAgents();
 
   const agentFromUrl = searchParams.get('agent') as AgentId | null;
-  const tabAgents = installedAgents.length > 0 ? installedAgents : AGENTS;
+  const tabAgents =
+    installedAgents.length > 0
+      ? installedAgents
+      : AGENTS.filter((a) => !hiddenIds.includes(a.id));
   /** 稳定 key，避免 installedAgents 每渲染新建数组导致计数重复拉取 */
   const tabAgentIdsKey = agentsLoading
     ? ''
     : installedIds.length > 0
       ? installedIds.join(',')
-      : AGENTS.map((a) => a.id).join(',');
+      : tabAgents.map((a) => a.id).join(',');
 
   const [agentId, setAgentId] = useState<AgentId>(() => {
-    if (agentFromUrl && AGENTS.some((a) => a.id === agentFromUrl)) return agentFromUrl;
+    if (agentFromUrl && tabAgents.some((a) => a.id === agentFromUrl)) return agentFromUrl;
     return tabAgents[0]?.id ?? 'claude';
   });
 
@@ -215,7 +218,7 @@ export default function ProjectsPage() {
   const agentMeta = AGENT_MAP[agentId];
 
   useEffect(() => {
-    if (agentFromUrl && agentFromUrl !== agentId && AGENTS.some((a) => a.id === agentFromUrl)) {
+    if (agentFromUrl && agentFromUrl !== agentId && tabAgents.some((a) => a.id === agentFromUrl)) {
       setAgentId(agentFromUrl);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to URL
@@ -224,8 +227,13 @@ export default function ProjectsPage() {
   useEffect(() => {
     if (agentsLoading || tabAgents.length === 0) return;
     if (!tabAgents.some((a) => a.id === agentId)) {
-      setAgentId(tabAgents[0].id);
+      const nextId = tabAgents[0].id;
+      setAgentId(nextId);
+      const next = new URLSearchParams(searchParams);
+      next.set('agent', nextId);
+      setSearchParams(next, { replace: true });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- URL write is a one-shot fallback
   }, [agentsLoading, tabAgents, agentId]);
 
   const resetTree = useCallback(() => {
