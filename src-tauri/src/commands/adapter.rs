@@ -131,7 +131,7 @@ pub async fn list_adapter_profiles(
     .map_err(adapter_error_from_string)
 }
 
-/// Bind a ticket to an Agent. Codex targets use the existing host bridge saga.
+/// Bind a ticket to an Agent. Local-bridge targets use the desktop host saga.
 #[tauri::command]
 pub async fn bind_ticket(
     state: State<'_, AppState>,
@@ -325,7 +325,24 @@ async fn bind_ticket_inner(
         .await
         .map_err(adapter_error_from_string)?
     };
-    if target_agent_parsed == agenthub_core::models::AgentId::Codex {
+    let plan = {
+        let hub = hub.clone();
+        let ticket_id = ticket_id.clone();
+        with_hub_blocking(hub, move |hub| {
+            hub.tickets
+                .plan(&TicketPlanRequest {
+                    ticket_id,
+                    target_agent_id: target_agent_parsed,
+                })
+                .map_err(|err| map_err_string("bind_ticket_plan", err))
+        })
+        .await
+        .map_err(adapter_error_from_string)?
+    };
+    if !plan.can_apply {
+        return Err(adapter_error_from_string(plan.reason));
+    }
+    if plan.analysis.route == AdapterRoute::LocalBridge {
         let result = apply_local_bridge(
             hub,
             host,

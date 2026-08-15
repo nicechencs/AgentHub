@@ -144,17 +144,17 @@ describe('Adapter Rust wire mappers', () => {
 
   it('maps optional ruleId/gateKind and defaults missing gateKind to none', () => {
     const withGate = mapAdapterRouteAnalysis({
-      route: 'unsupported',
-      support: 'unsupported',
-      reason: 'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
+      route: 'local_bridge',
+      support: 'experimental',
+      reason: 'Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。',
       actions: [],
       limitations: [],
       evidence: [],
-      ruleId: 'codex-subscription-to-claude-app-server-v0',
-      gateKind: 'subscription_candidate',
+      ruleId: 'codex-subscription-to-claude-responses-v1',
+      gateKind: 'none',
     });
-    expect(withGate.ruleId).toBe('codex-subscription-to-claude-app-server-v0');
-    expect(withGate.gateKind).toBe('subscription_candidate');
+    expect(withGate.ruleId).toBe('codex-subscription-to-claude-responses-v1');
+    expect(withGate.gateKind).toBe('none');
 
     const legacy = mapAdapterRouteAnalysis({
       route: 'native_endpoint',
@@ -225,7 +225,7 @@ describe('Adapter Rust wire mappers', () => {
       analysis: {
         route: 'unsupported',
         support: 'unsupported',
-        reason: 'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
+        reason: 'Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。',
         actions: [],
         limitations: [],
         evidence: [],
@@ -234,13 +234,13 @@ describe('Adapter Rust wire mappers', () => {
       canApply: false,
       maturity: 'preview',
       reusePath: 'none',
-      reason: 'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
+      reason: 'Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。',
       serviceImpact: 'none',
       changes: [],
     });
     expect(preview.maturity).toBe('preview');
     expect(preview.canApply).toBe(false);
-    expect(preview.reason).toContain('当前不支持');
+    expect(preview.reason).toContain('Messages → Responses');
     expect(preview.reusePath).toBe('none');
 
     const legacy = mapAdapterApplyPlan({

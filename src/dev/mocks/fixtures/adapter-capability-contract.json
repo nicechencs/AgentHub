@@ -138,14 +138,14 @@
       },
       "target": "claude",
       "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": "codex-subscription-to-claude-app-server-v0",
-        "gateKind": "subscription_candidate",
-        "reason": "Codex / ChatGPT 订阅 → Claude Code：当前不支持。尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。这只表示没有可执行规则，不代表连接失效。替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。",
-        "reusePath": "none"
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "codex-subscription-to-claude-responses-v1",
+        "gateKind": "none",
+        "reason": "Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。",
+        "reusePath": "local_bridge"
       }
     },
     {
@@ -162,14 +162,14 @@
       },
       "target": "claude",
       "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": "codex-subscription-to-claude-app-server-v0",
-        "gateKind": "subscription_candidate",
-        "reason": "Codex / ChatGPT 订阅 → Claude Code：当前不支持。尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。这只表示没有可执行规则，不代表连接失效。替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。",
-        "reusePath": "none"
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "codex-subscription-to-claude-responses-v1",
+        "gateKind": "none",
+        "reason": "Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。",
+        "reusePath": "local_bridge"
       }
     },
     {
@@ -612,18 +612,22 @@
       "source": {
         "kind": "account",
         "agentId": "claude",
-        "accountKind": "oauth"
+        "accountKind": "oauth",
+        "credentials": {
+          "access_token": "must-not-leak",
+          "refresh_token": "must-not-leak"
+        }
       },
       "target": "pi",
       "expect": {
         "route": "config_sync",
         "support": "experimental",
-        "canApply": false,
-        "applyPath": "rejected",
-        "gateKind": "preview_only",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "gateKind": "none",
         "reusePath": "native_subscription",
-        "ruleId": "claude-subscription-to-pi-v0",
-        "reason": "Claude 订阅可预览为 Pi 的 anthropic 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+        "ruleId": "claude-subscription-to-pi-v1",
+        "reason": "Claude 订阅可写入 Pi 的 anthropic 登录槽（原生订阅复用）。"
       }
     },
     {
@@ -645,12 +649,12 @@
       "expect": {
         "route": "config_sync",
         "support": "experimental",
-        "canApply": false,
-        "applyPath": "rejected",
-        "gateKind": "preview_only",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "gateKind": "none",
         "reusePath": "native_subscription",
-        "ruleId": "codex-subscription-to-pi-v0",
-        "reason": "Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+        "ruleId": "codex-subscription-to-pi-v1",
+        "reason": "Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。"
       }
     },
     {
@@ -669,12 +673,12 @@
       "expect": {
         "route": "config_sync",
         "support": "experimental",
-        "canApply": false,
-        "applyPath": "rejected",
-        "gateKind": "preview_only",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "gateKind": "none",
         "reusePath": "native_subscription",
-        "ruleId": "codex-subscription-to-pi-v0",
-        "reason": "Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+        "ruleId": "codex-subscription-to-pi-v1",
+        "reason": "Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。"
       }
     },
     {
@@ -682,18 +686,22 @@
       "source": {
         "kind": "account",
         "agentId": "codex",
-        "accountKind": "oauth"
+        "accountKind": "oauth",
+        "credentials": {
+          "access_token": "must-not-leak",
+          "refresh_token": "must-not-leak"
+        }
       },
       "target": "pi",
       "expect": {
         "route": "config_sync",
         "support": "experimental",
-        "canApply": false,
-        "applyPath": "rejected",
-        "gateKind": "preview_only",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "gateKind": "none",
         "reusePath": "native_subscription",
-        "ruleId": "codex-subscription-to-pi-v0",
-        "reason": "Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+        "ruleId": "codex-subscription-to-pi-v1",
+        "reason": "Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。"
       }
     },
     {
@@ -701,18 +709,22 @@
       "source": {
         "kind": "account",
         "agentId": "grok",
-        "accountKind": "oauth"
+        "accountKind": "oauth",
+        "credentials": {
+          "access_token": "must-not-leak",
+          "refresh_token": "must-not-leak"
+        }
       },
       "target": "pi",
       "expect": {
         "route": "config_sync",
         "support": "experimental",
-        "canApply": false,
-        "applyPath": "rejected",
-        "gateKind": "preview_only",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "gateKind": "none",
         "reusePath": "native_subscription",
-        "ruleId": "grok-subscription-to-pi-v0",
-        "reason": "Grok / xAI 订阅可预览为 Pi 的 xai 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。"
+        "ruleId": "grok-subscription-to-pi-v1",
+        "reason": "Grok / xAI 订阅可写入 Pi 的 xai 登录槽（原生订阅复用）。"
       }
     },
     {

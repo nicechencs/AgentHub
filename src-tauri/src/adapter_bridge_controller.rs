@@ -1,7 +1,7 @@
 //! Desktop-process control plane for Adapter local bridges.
 //!
 //! `agenthub-core` owns profile persistence, source-secret resolution and the
-//! generated Codex provider projection.  This module deliberately owns the
+//! generated target provider projection.  This module deliberately owns the
 //! cross-boundary saga: the loopback listener must bind before the generated
 //! provider is made current, and a failed apply must not leave a newly-started
 //! listener running.  Neither upstream nor local bearer tokens cross the
@@ -140,7 +140,7 @@ impl AdapterBridgeStatusDto {
     }
 }
 
-/// Apply a Kimi membership -> Codex local bridge.
+/// Apply a supported local bridge through the desktop host saga.
 ///
 /// The direct Kimi -> Claude adapter intentionally stays in
 /// `AdapterApplyService`; only the local route has a listener lifecycle.
@@ -154,7 +154,7 @@ pub(crate) async fn apply_local_bridge(
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let profile_id = bridge_profile_id_for_request(hub.clone(), request.clone()).await?;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
-    // First-time apply must make the generated Codex Connection current.
+    // First-time apply must make the generated target Connection current.
     apply_local_bridge_locked(hub, host, coordinator, request, true).await
 }
 
@@ -163,9 +163,10 @@ async fn apply_local_bridge_locked(
     host: Arc<BridgeRuntimeHost>,
     coordinator: Arc<AdapterBridgeSagaCoordinator>,
     request: AdapterBridgePrepareRequest,
-    // When true (initial apply), always switch Codex to the generated bridge.
-    // Manual start keeps the user's current Connection unless the generated
-    // bridge provider was already current (then refresh live config only).
+    // When true (initial apply), always switch the target Agent to the
+    // generated bridge. Manual start keeps the user's current Connection
+    // unless the generated bridge provider was already current (then refresh
+    // live config only).
     force_switch_current: bool,
 ) -> Result<AdapterApplyResult, String> {
     let prepared = with_hub_blocking(hub.clone(), move |hub| {
@@ -212,18 +213,20 @@ async fn apply_local_bridge_locked(
     // retains the cross-process switch lock from snapshot through
     // projection/finalize/rollback; do not call ordinary lock-taking provider
     // APIs while it is held.
-    let _target_guard = coordinator.lock_target(AgentId::Codex).await;
+    let target_agent = prepared.profile().target_agent_id;
+    let _target_guard = coordinator.lock_target(target_agent).await;
     let result = with_hub_blocking(hub.clone(), move |hub| {
         let core_guard = hub
             .providers
-            .begin_live_saga(AgentId::Codex)
+            .begin_live_saga(target_agent)
             .map_err(|error| map_err_string("begin_adapter_bridge_provider_saga", error))?;
         let projection = hub
             .adapter_bridge
             .revalidate_provider_projection(&prepared, port)
             .map_err(|error| map_err_string("revalidate_adapter_bridge_provider", error))?;
         let provider_id = prepared.profile().generated_provider_id.clone();
-        let snapshot = capture_provider_snapshot(hub, &core_guard, provider_id.as_deref())?;
+        let snapshot =
+            capture_provider_snapshot(hub, &core_guard, provider_id.as_deref(), target_agent)?;
         persist_bridge_projection_inner(
             hub,
             &core_guard,
@@ -456,9 +459,9 @@ pub(crate) fn restore_adapter_bridges(
             let _ = host.record_upstream_outcome(&profile.id, BridgeUpstreamStatus::Connected);
 
             // Preferred-port rebind must rewrite profile.local_port and the
-            // generated Codex base_url; otherwise restore leaves a dead endpoint.
+            // generated target endpoint; otherwise restore leaves a dead endpoint.
             if Some(runtime.status.port) != profile.local_port {
-                let _target_guard = coordinator.lock_target(AgentId::Codex).await;
+                let _target_guard = coordinator.lock_target(profile.target_agent_id).await;
                 if let Err(error) = with_hub_blocking(hub.clone(), {
                     let profile_id = profile.id.clone();
                     let port = runtime.status.port;
@@ -535,14 +538,21 @@ fn persist_bridge_projection_inner(
     let should_switch = should_make_bridge_current(force_switch_current, generated_was_current);
 
     let provider = if should_switch {
-        match hub
-            .providers
-            .switch_with_guard(core_guard, &provider_id, AgentId::Codex)
-        {
+        match hub.providers.switch_with_guard(
+            core_guard,
+            &provider_id,
+            prepared.profile().target_agent_id,
+        ) {
             Ok(result) => result.provider.redacted(),
             Err(error) => {
-                let rollback =
-                    rollback_bridge_projection(hub, core_guard, &provider_id, snapshot, created);
+                let rollback = rollback_bridge_projection(
+                    hub,
+                    core_guard,
+                    &provider_id,
+                    snapshot,
+                    created,
+                    prepared.profile().target_agent_id,
+                );
                 return Err(composite_saga_error(
                     "switch_adapter_bridge_provider",
                     map_err_string("switch_adapter_bridge_provider", error),
@@ -566,8 +576,14 @@ fn persist_bridge_projection_inner(
     let profile = match hub.adapter_bridge.finalize(prepared, port) {
         Ok(profile) => profile,
         Err(error) => {
-            let rollback =
-                rollback_bridge_projection(hub, core_guard, &provider_id, snapshot, created);
+            let rollback = rollback_bridge_projection(
+                hub,
+                core_guard,
+                &provider_id,
+                snapshot,
+                created,
+                prepared.profile().target_agent_id,
+            );
             return Err(composite_saga_error(
                 "finalize_adapter_bridge",
                 map_err_string("finalize_adapter_bridge", error),
@@ -587,14 +603,15 @@ fn should_make_bridge_current(force_switch_current: bool, generated_was_current:
 #[derive(Clone)]
 struct BridgeProviderSnapshot {
     generated: Option<Provider>,
-    current_codex: Option<Provider>,
-    live_codex: ProviderLiveConfigSnapshot,
+    current_provider: Option<Provider>,
+    live_config: ProviderLiveConfigSnapshot,
 }
 
 fn capture_provider_snapshot(
     hub: &AgentHub,
     core_guard: &ProviderLiveSagaGuard<'_>,
     generated_provider_id: Option<&str>,
+    target_agent: AgentId,
 ) -> Result<BridgeProviderSnapshot, String> {
     let generated = match generated_provider_id {
         Some(id) => hub
@@ -604,19 +621,19 @@ fn capture_provider_snapshot(
             .map_err(|error| map_err_string("snapshot_adapter_bridge_provider", error))?,
         None => None,
     };
-    let current_codex = hub
+    let current_provider = hub
         .providers
         .repo()
-        .get_current(AgentId::Codex)
+        .get_current(target_agent)
         .map_err(|error| map_err_string("snapshot_adapter_bridge_provider", error))?;
-    let live_codex = hub
+    let live_config = hub
         .providers
-        .capture_live_config_snapshot_with_guard(core_guard, AgentId::Codex)
+        .capture_live_config_snapshot_with_guard(core_guard, target_agent)
         .map_err(|error| map_err_string("snapshot_adapter_bridge_live_config", error))?;
     Ok(BridgeProviderSnapshot {
         generated,
-        current_codex,
-        live_codex,
+        current_provider,
+        live_config,
     })
 }
 
@@ -629,6 +646,7 @@ fn rollback_bridge_projection(
     provider_id: &str,
     snapshot: &BridgeProviderSnapshot,
     created: bool,
+    target_agent: AgentId,
 ) -> Result<(), &'static str> {
     let mut failed = false;
 
@@ -640,16 +658,16 @@ fn rollback_bridge_projection(
     } else if created
         && hub
             .providers
-            .delete_with_guard(core_guard, provider_id, AgentId::Codex)
+            .delete_with_guard(core_guard, provider_id, target_agent)
             .is_err()
     {
         failed = true;
     }
 
-    if let Some(old_current) = &snapshot.current_codex {
+    if let Some(old_current) = &snapshot.current_provider {
         if hub
             .providers
-            .switch_with_guard(core_guard, &old_current.id, AgentId::Codex)
+            .switch_with_guard(core_guard, &old_current.id, target_agent)
             .is_err()
         {
             failed = true;
@@ -659,11 +677,11 @@ fn rollback_bridge_projection(
     // A provider switch back to an old current row may backfill a drifted
     // value rather than the byte-exact snapshot captured before this saga.
     // Always restore the snapshot last, whether or not there was an old
-    // current provider, so failed finalize/switch cannot leave live Codex
-    // config changed.
+    // current provider, so failed finalize/switch cannot leave live config
+    // changed.
     if hub
         .providers
-        .restore_live_config_snapshot_with_guard(core_guard, &snapshot.live_codex)
+        .restore_live_config_snapshot_with_guard(core_guard, &snapshot.live_config)
         .is_err()
     {
         failed = true;
@@ -721,8 +739,11 @@ async fn load_bridge_profile(
 ) -> Result<AdapterProfile, String> {
     let profile = load_adapter_profile(hub, profile_id).await?;
     if profile.route != AdapterRoute::LocalBridge
-        || profile.target_agent_id != AgentId::Codex
-        || profile.source_kind != AdapterSourceKind::Provider
+        || !matches!(profile.target_agent_id, AgentId::Codex | AgentId::Claude)
+        || !matches!(
+            profile.source_kind,
+            AdapterSourceKind::Provider | AdapterSourceKind::Account
+        )
     {
         return Err("adapter profile is not a supported local bridge".into());
     }
@@ -847,21 +868,37 @@ async fn start_with_bind_fallback(
 }
 
 fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> Result<(), String> {
+    let profile = hub
+        .adapter_apply
+        .list(None, None, None)
+        .map_err(|error| map_err_string("load_adapter_bridge_restore_profile", error))?
+        .into_iter()
+        .find(|profile| profile.id == profile_id)
+        .ok_or_else(|| format!("adapter profile not found: {profile_id}"))?;
+    let target_agent = profile.target_agent_id;
     let core_guard = hub
         .providers
-        .begin_live_saga(AgentId::Codex)
+        .begin_live_saga(target_agent)
         .map_err(|error| map_err_string("begin_adapter_bridge_restore_rebind_saga", error))?;
     let (input, was_current) = hub
         .adapter_bridge
         .projection_for_restored_port(profile_id, port)
         .map_err(|error| map_err_string("projection_adapter_bridge_restore_port", error))?;
     // Snapshot before any pool or live mutation so a later-stage failure can
-    // restore the previous generated row and Codex config in reverse order.
-    let snapshot = capture_provider_snapshot(hub, &core_guard, Some(input.id.as_str()))?;
+    // restore the previous generated row and target config in reverse order.
+    let snapshot =
+        capture_provider_snapshot(hub, &core_guard, Some(input.id.as_str()), target_agent)?;
     let provider_id = input.id.clone();
 
     if let Err(error) = hub.providers.update_with_guard(&core_guard, &input) {
-        let rollback = rollback_bridge_projection(hub, &core_guard, &provider_id, &snapshot, false);
+        let rollback = rollback_bridge_projection(
+            hub,
+            &core_guard,
+            &provider_id,
+            &snapshot,
+            false,
+            target_agent,
+        );
         return Err(composite_saga_error(
             "update_adapter_bridge_restore_port",
             map_err_string("update_adapter_bridge_restore_port", error),
@@ -869,12 +906,18 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
         ));
     }
     if was_current {
-        if let Err(error) =
-            hub.providers
-                .switch_with_guard(&core_guard, &provider_id, AgentId::Codex)
+        if let Err(error) = hub
+            .providers
+            .switch_with_guard(&core_guard, &provider_id, target_agent)
         {
-            let rollback =
-                rollback_bridge_projection(hub, &core_guard, &provider_id, &snapshot, false);
+            let rollback = rollback_bridge_projection(
+                hub,
+                &core_guard,
+                &provider_id,
+                &snapshot,
+                false,
+                target_agent,
+            );
             return Err(composite_saga_error(
                 "switch_adapter_bridge_restore_port",
                 map_err_string("switch_adapter_bridge_restore_port", error),
@@ -886,7 +929,14 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
         // persist_restored_port is last and transactional, so a failure leaves
         // profile.local_port on the old preferred port. Compensate provider and
         // live config so restore can stop the rebound listener safely.
-        let rollback = rollback_bridge_projection(hub, &core_guard, &provider_id, &snapshot, false);
+        let rollback = rollback_bridge_projection(
+            hub,
+            &core_guard,
+            &provider_id,
+            &snapshot,
+            false,
+            target_agent,
+        );
         return Err(composite_saga_error(
             "persist_adapter_bridge_restore_port",
             map_err_string("persist_adapter_bridge_restore_port", error),

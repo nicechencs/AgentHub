@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AdapterCommandError } from '@/lib/backend/contracts/adapter';
 import type { Account, AgentId, Provider } from '@/lib/types';
-import { createMockAdapterPort, PROTOCOL_MISMATCH_REASON, resetMockAdapters } from './adapter';
+import {
+  CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
+  createMockAdapterPort,
+  PROTOCOL_MISMATCH_REASON,
+  resetMockAdapters,
+} from './adapter';
 import { getMockAccountById } from './account';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
@@ -188,7 +193,74 @@ describe('mock adapter route preview', () => {
     expect(plan.reason).not.toContain('同边但暂不可写');
   });
 
-  it('previews Claude, Codex, and Grok OAuth reuse into Pi without opening bind', async () => {
+  it('opens Codex auth_json into the experimental Claude local bridge', async () => {
+    const accountId = 'codex-auth-json-claude';
+    const account = {
+      id: accountId,
+      agentId: 'codex' as const,
+      kind: 'oauth' as const,
+      label: 'ChatGPT subscription',
+      isCurrent: true,
+      tokenValid: true,
+      credentialFormat: 'auth_json',
+      credentials: {
+        format: 'auth_json',
+        tokens: {
+          access_token: 'must-not-leak',
+          refresh_token: 'must-not-leak',
+        },
+      },
+    };
+    const adapter = createMockAdapterPort({
+      getAccountById: (id) => id === accountId ? account : getMockAccountById(id),
+      getProviderById: getMockProviderById,
+    });
+    const request = {
+      sourceKind: 'account' as const,
+      sourceId: accountId,
+      targetAgentId: 'claude' as const,
+    };
+
+    const plan = await adapter.plan(request);
+    expect(plan).toMatchObject({
+      canApply: true,
+      reusePath: 'local_bridge',
+      serviceImpact: 'requires_local_bridge',
+      analysis: {
+        route: 'local_bridge',
+        support: 'experimental',
+        ruleId: 'codex-subscription-to-claude-responses-v1',
+        gateKind: 'none',
+      },
+    });
+    expect(plan.changes).toEqual([
+      {
+        target: 'claude',
+        field: 'ANTHROPIC_BASE_URL',
+        value: 'http://127.0.0.1:<本机端口>',
+        secret: false,
+      },
+      { target: 'claude', field: 'ANTHROPIC_AUTH_TOKEN', secret: true },
+    ]);
+    expect(plan.reason).toBe(CODEX_SUBSCRIPTION_TO_CLAUDE_REASON);
+
+    const applied = await adapter.apply(request);
+    expect(applied.profile).toMatchObject({
+      targetAgentId: 'claude',
+      route: 'local_bridge',
+      mode: 'oauth',
+      ruleId: 'codex-subscription-to-claude-responses-v1',
+    });
+    expect(JSON.parse(applied.provider.configText)).toEqual({
+      env: {
+        ANTHROPIC_BASE_URL: 'http://127.0.0.1:32123',
+        ANTHROPIC_AUTH_TOKEN: '$AGENTHUB_CONNECTION_SECRET$',
+      },
+    });
+    expect(JSON.stringify({ plan, applied })).not.toContain('must-not-leak');
+  });
+
+  it('opens Claude, Codex, and Grok OAuth reuse into Pi for experimental bind', async () => {
     const accounts = new Map<string, Account>([
       ['claude-subscription', {
         id: 'claude-subscription',
@@ -232,26 +304,26 @@ describe('mock adapter route preview', () => {
       {
         sourceId: 'claude-subscription',
         value: 'anthropic',
-        ruleId: 'claude-subscription-to-pi-v0',
-        reason: 'Claude 订阅可预览为 Pi 的 anthropic 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。',
+        ruleId: 'claude-subscription-to-pi-v1',
+        reason: 'Claude 订阅可写入 Pi 的 anthropic 登录槽（原生订阅复用）。',
       },
       {
         sourceId: 'codex-auth-json',
         value: 'openai-codex',
-        ruleId: 'codex-subscription-to-pi-v0',
-        reason: 'Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。',
+        ruleId: 'codex-subscription-to-pi-v1',
+        reason: 'Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。',
       },
       {
         sourceId: 'codex-oauth-other',
         value: 'openai-codex',
-        ruleId: 'codex-subscription-to-pi-v0',
-        reason: 'Codex / ChatGPT 订阅可预览为 Pi 的 openai-codex 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。',
+        ruleId: 'codex-subscription-to-pi-v1',
+        reason: 'Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。',
       },
       {
         sourceId: 'grok-subscription',
         value: 'xai',
-        ruleId: 'grok-subscription-to-pi-v0',
-        reason: 'Grok / xAI 订阅可预览为 Pi 的 xai 登录槽（原生订阅复用）。当前仅预览：bind 未开，plan.canApply=false。',
+        ruleId: 'grok-subscription-to-pi-v1',
+        reason: 'Grok / xAI 订阅可写入 Pi 的 xai 登录槽（原生订阅复用）。',
       },
     ] as const;
 
@@ -265,7 +337,7 @@ describe('mock adapter route preview', () => {
         analysis: {
           route: 'config_sync',
           support: 'experimental',
-          gateKind: 'preview_only',
+          gateKind: 'none',
           ruleId: item.ruleId,
           reason: item.reason,
           actions: [
@@ -283,27 +355,29 @@ describe('mock adapter route preview', () => {
             },
           ],
           limitations: [
-            '仅预览：不会写入 Pi 配置，也不会导出、复制或转换 OAuth token。',
-            'plan.canApply=false：无 Apply、启动 Bridge 或强制继续入口。',
-            '打开 bind 前需逐边验证刷新语义（refresh token 单次轮换会互相打翻）。',
+            '会把 OAuth access/refresh 写入 Pi auth.json 对应槽；预览、IPC、日志不传输明文 token。',
+            '写入后由 Pi 刷新该槽；Hub 不双刷同一 refresh token。原 Agent 与 Pi 同时刷新可能互相打翻。',
+            '实验性：应用后会把生成 Provider 设为 Pi 当前连接。',
           ],
         },
-        canApply: false,
-        maturity: 'preview',
+        canApply: true,
+        maturity: 'experimental',
         reusePath: 'native_subscription',
         serviceImpact: 'none',
         changes: [
           { target: 'pi', field: 'provider', value: item.value, secret: false },
-          { target: 'pi', field: 'apiKey', secret: true },
+          { target: 'pi', field: 'auth', secret: true },
         ],
       });
-      await expect(adapter.apply({
+      const applied = await adapter.apply({
         sourceKind: 'account',
         sourceId: item.sourceId,
         targetAgentId: 'pi',
-      })).rejects.toThrow(/不可应用|不支持|canApply/i);
+      });
+      expect(applied.profile.mode).toBe('oauth');
+      expect(applied.provider.configText).not.toContain('must-not-leak');
     }
-    expect(await adapter.listProfiles()).toEqual([]);
+    expect((await adapter.listProfiles()).length).toBe(4);
   });
 
   it('keeps subscription protocol mismatches unsupported', async () => {

@@ -1,12 +1,12 @@
 use super::*;
 use crate::adapters::AgentAdapter;
 use crate::models::Provider;
-use crate::services::adapter_route_constants::{
-    DEEPSEEK_CLAUDE_BASE_URL, GLM_CLAUDE_BASE_URL, KIMI_CLAUDE_BASE_URL,
-};
 use crate::models::{
     AgentConfig, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
     InstallChannel, RunOptions, RunSpec,
+};
+use crate::services::adapter_route_constants::{
+    DEEPSEEK_CLAUDE_BASE_URL, GLM_CLAUDE_BASE_URL, KIMI_CLAUDE_BASE_URL,
 };
 use crate::storage::{ActiveBindingRepo, ProviderRepo};
 use serde_json::json;
@@ -1370,6 +1370,110 @@ fn pi_anthropic_account_apply_sets_source_ref_account_and_keeps_secret_out() {
         .contains("sk-anthropic-secret"));
 }
 
+#[test]
+fn pi_subscription_account_apply_uses_oauth_auth_slot_without_persisting_tokens() {
+    let (dir, db) = test_db();
+    let accounts = crate::storage::AccountRepo::new(db.clone());
+    for (id, agent_id, credentials, slot, access, refresh, rule_id) in [
+        (
+            "claude-subscription",
+            AgentId::Claude,
+            json!({
+                "format": "oauth",
+                "access_token": "claude-access-secret",
+                "refresh_token": "claude-refresh-secret",
+                "expires_at": "2030-01-01T00:00:00Z"
+            }),
+            ANTHROPIC_PI_PROVIDER_SLOT,
+            "claude-access-secret",
+            "claude-refresh-secret",
+            "claude-subscription-to-pi-v1",
+        ),
+        (
+            "codex-subscription",
+            AgentId::Codex,
+            json!({
+                "format": "auth_json",
+                "tokens": {
+                    "access_token": "codex-access-secret",
+                    "refresh_token": "codex-refresh-secret"
+                }
+            }),
+            "openai-codex",
+            "codex-access-secret",
+            "codex-refresh-secret",
+            "codex-subscription-to-pi-v1",
+        ),
+        (
+            "grok-subscription",
+            AgentId::Grok,
+            json!({
+                "format": "oauth",
+                "access_token": "grok-access-secret",
+                "refresh_token": "grok-refresh-secret"
+            }),
+            XAI_PI_PROVIDER_SLOT,
+            "grok-access-secret",
+            "grok-refresh-secret",
+            "grok-subscription-to-pi-v1",
+        ),
+    ] {
+        accounts
+            .create(&crate::models::Account {
+                id: id.into(),
+                agent_id,
+                kind: crate::models::AccountKind::Oauth,
+                label: id.into(),
+                credentials,
+                extra: json!({}),
+                status: "active".into(),
+                is_current: false,
+                created_at: "now".into(),
+                updated_at: "now".into(),
+            })
+            .unwrap();
+        let fake = Arc::new(FakePiAdapter::new());
+        let mut registry = AdapterRegistry::new();
+        registry.register(fake.clone());
+        let service = AdapterApplyService::new(
+            db.clone(),
+            registry,
+            dir.path().join(format!("backups-{id}")),
+        );
+
+        let result = service
+            .apply(&AdapterApplyRequest {
+                source_kind: AdapterSourceKind::Account,
+                source_id: id.into(),
+                target_agent_id: AgentId::Pi,
+            })
+            .unwrap();
+        let stored = ProviderRepo::new(db.clone())
+            .get_by_id(&result.provider.id)
+            .unwrap()
+            .unwrap();
+        let live = fake.read_config().unwrap();
+
+        assert_eq!(result.profile.mode, AdapterProfileMode::Oauth);
+        assert_eq!(result.profile.rule_id, rule_id);
+        assert_eq!(live.raw["auth"][slot]["type"], "oauth");
+        assert_eq!(live.raw["auth"][slot]["access"], access);
+        assert_eq!(live.raw["auth"][slot]["refresh"], refresh);
+        assert_eq!(
+            stored.settings_config["auth"][slot]["access"],
+            CONNECTION_SECRET_MARKER
+        );
+        assert_eq!(
+            stored.settings_config["auth"][slot]["refresh"],
+            CONNECTION_SECRET_MARKER
+        );
+        let serialized = serde_json::to_string(&result).unwrap();
+        assert!(!serialized.contains(access));
+        assert!(!serialized.contains(refresh));
+        assert!(!serde_json::to_string(&stored).unwrap().contains(access));
+    }
+}
+
 fn explicit_api_source(id: &str, preset: &str, env_key: &str, api_key: &str) -> Provider {
     Provider {
         id: id.into(),
@@ -1416,7 +1520,9 @@ fn pi_openai_and_xai_apply_sets_slot_and_keeps_secret_out() {
     registry.register(fake.clone());
     let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
 
-    let openai = service.apply(&request("openai-source", AgentId::Pi)).unwrap();
+    let openai = service
+        .apply(&request("openai-source", AgentId::Pi))
+        .unwrap();
     assert_eq!(openai.profile.rule_id, OPENAI_PI_RULE_ID);
     let openai_stored = ProviderRepo::new(db.clone())
         .get_by_id(&openai.provider.id)
@@ -1792,9 +1898,7 @@ fn dsh_missing_secret_creates_no_profile() {
         dir.path().join("backups"),
     );
 
-    assert!(service
-        .apply(&request("ds-source", AgentId::Dsh))
-        .is_err());
+    assert!(service.apply(&request("ds-source", AgentId::Dsh)).is_err());
     assert!(AdapterProfileRepo::new(db.clone())
         .list(None, None, None)
         .unwrap()
@@ -1814,9 +1918,7 @@ fn dsh_agent_id_alone_does_not_apply() {
         dir.path().join("backups"),
     );
 
-    assert!(service
-        .apply(&request("dsh-only", AgentId::Dsh))
-        .is_err());
+    assert!(service.apply(&request("dsh-only", AgentId::Dsh)).is_err());
     assert!(AdapterProfileRepo::new(db.clone())
         .list(None, None, None)
         .unwrap()
@@ -1848,7 +1950,9 @@ fn deepseek_host_without_preset_applies_to_dsh() {
     let result = service.apply(&request(&source.id, AgentId::Dsh)).unwrap();
     assert_eq!(result.profile.rule_id, DEEPSEEK_DSH_RULE_ID);
     assert_eq!(fake.read_config().unwrap().raw["api_key"], "sk-from-host");
-    assert!(!serde_json::to_string(&result).unwrap().contains("sk-from-host"));
+    assert!(!serde_json::to_string(&result)
+        .unwrap()
+        .contains("sk-from-host"));
 }
 
 #[test]

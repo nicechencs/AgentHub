@@ -52,6 +52,7 @@ impl AgentAdapter for PiAdapter {
         let dir = pi_config_dir()?;
         let settings_path = dir.join("settings.json");
         let models_path = dir.join("models.json");
+        let auth_path = dir.join("auth.json");
 
         let settings = read_json_object_or_empty(&settings_path)?;
         let models = if models_path.exists() {
@@ -59,6 +60,7 @@ impl AgentAdapter for PiAdapter {
         } else {
             None
         };
+        let auth = read_json_object_or_empty(&auth_path)?;
 
         // Raw envelope for display; write_config is fail-closed until merge rules
         // for settings/models are proven safe.
@@ -67,12 +69,14 @@ impl AgentAdapter for PiAdapter {
         if let Some(m) = models {
             raw.insert("models".into(), m);
         }
+        raw.insert("auth".into(), auth);
         raw.insert(
             "paths".into(),
             serde_json::json!({
                 "configDir": dir,
                 "settings": settings_path,
                 "models": models_path,
+                "auth": auth_path,
             }),
         );
 
@@ -377,17 +381,15 @@ fn write_pi_config(config: &AgentConfig) -> Result<()> {
         .ok_or_else(|| AppError::InvalidArg("Pi settings_config must be a JSON object".into()))?;
     let dir = pi_config_dir()?;
 
-    let desired_models = raw
+    let models_path = dir.join("models.json");
+    let merged_models = raw
         .get("models")
         .or_else(|| raw.get("providers").map(|_| &config.raw))
-        .ok_or_else(|| {
-            AppError::InvalidArg(
-                "Pi settings_config must contain models.providers or providers".into(),
-            )
-        })?;
-    let models_path = dir.join("models.json");
-    let live_models = read_json_object_or_empty(&models_path)?;
-    let merged = merge_pi_models(&live_models, desired_models)?;
+        .map(|desired_models| {
+            let live_models = read_json_object_or_empty(&models_path)?;
+            merge_pi_models(&live_models, desired_models)
+        })
+        .transpose()?;
     let merged_settings = raw
         .get("settings")
         .map(|settings| {
@@ -401,13 +403,41 @@ fn write_pi_config(config: &AgentConfig) -> Result<()> {
         })
         .transpose()?;
 
-    // A live snapshot contains settings + models + paths.  Only settings is
-    // written back from that envelope; paths is adapter metadata and is never
-    // persisted to Pi's files.
+    if merged_models.is_none() && raw.get("auth").is_none() {
+        return Err(AppError::InvalidArg(
+            "Pi settings_config must contain models.providers, providers, or auth".into(),
+        ));
+    }
+
+    let merged_auth = raw
+        .get("auth")
+        .map(|auth| {
+            if !auth.is_object() {
+                return Err(AppError::InvalidArg(
+                    "Pi settings_config.auth must be a JSON object".into(),
+                ));
+            }
+            if raw.contains_key("paths") {
+                Ok(auth.clone())
+            } else {
+                let live_auth = read_json_object_or_empty(&dir.join("auth.json"))?;
+                Ok(merge_redacted_json(&live_auth, auth))
+            }
+        })
+        .transpose()?;
+
+    // A live snapshot contains settings + models + auth + paths.  `paths`
+    // makes auth a complete-file restore; generated apply envelopes merge only
+    // the provider keys they own.
     if let Some(settings) = merged_settings {
         write_json_value(&dir.join("settings.json"), &settings)?;
     }
-    write_json_value(&models_path, &merged)?;
+    if let Some(models) = merged_models {
+        write_json_value(&models_path, &models)?;
+    }
+    if let Some(auth) = merged_auth {
+        write_json_value(&dir.join("auth.json"), &auth)?;
+    }
     Ok(())
 }
 
@@ -495,6 +525,9 @@ fn merge_redacted_json(
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::sync::Mutex;
+
+    static PI_CONFIG_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn build_run_spec_print_mode() {
@@ -579,5 +612,63 @@ mod tests {
     fn merge_models_requires_provider_object() {
         let err = merge_pi_models(&json!({}), &json!({"models": []})).unwrap_err();
         assert_eq!(err.code(), "invalid_arg");
+    }
+
+    #[test]
+    fn write_config_auth_only_merges_and_snapshot_auth_replaces() {
+        let _guard = PI_CONFIG_ENV_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("PI_CODING_AGENT_DIR");
+        std::env::set_var("PI_CODING_AGENT_DIR", dir.path());
+        std::fs::write(
+            dir.path().join("auth.json"),
+            serde_json::to_vec_pretty(&json!({
+                "keep": { "type": "oauth", "access": "keep-access" },
+                "anthropic": { "type": "oauth", "access": "old-access", "refresh": "old-refresh" }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        write_pi_config(&AgentConfig {
+            agent: AgentId::Pi,
+            raw: json!({
+                "auth": {
+                    "anthropic": {
+                        "type": "oauth",
+                        "access": "new-access",
+                        "refresh": "new-refresh"
+                    },
+                    "keep": { "type": "oauth", "access": "***" }
+                }
+            }),
+        })
+        .unwrap();
+        let merged = read_json_object_or_empty(&dir.path().join("auth.json")).unwrap();
+        assert_eq!(merged["keep"]["access"], "keep-access");
+        assert_eq!(merged["anthropic"]["access"], "new-access");
+
+        write_pi_config(&AgentConfig {
+            agent: AgentId::Pi,
+            raw: json!({
+                "auth": {
+                    "only": { "type": "oauth", "access": "snapshot-access" }
+                },
+                "paths": { "auth": "snapshot.json" }
+            }),
+        })
+        .unwrap();
+        let replaced = read_json_object_or_empty(&dir.path().join("auth.json")).unwrap();
+        assert_eq!(
+            replaced,
+            json!({
+                "only": { "type": "oauth", "access": "snapshot-access" }
+            })
+        );
+
+        match previous {
+            Some(value) => std::env::set_var("PI_CODING_AGENT_DIR", value),
+            None => std::env::remove_var("PI_CODING_AGENT_DIR"),
+        }
     }
 }

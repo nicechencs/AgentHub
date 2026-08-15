@@ -1,8 +1,8 @@
 use super::*;
 use crate::models::{Account, AccountKind};
 use crate::services::adapter_route_constants::{
-    DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, GLM_CLAUDE_BASE_URL, KIMI_CLAUDE_BASE_URL,
-    KIMI_MEMBERSHIP_PRESET, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT,
+    DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT,
+    GLM_CLAUDE_BASE_URL, KIMI_CLAUDE_BASE_URL, KIMI_MEMBERSHIP_PRESET,
 };
 use crate::storage::AccountRepo;
 use serde_json::json;
@@ -584,7 +584,11 @@ fn openai_provider_and_xai_account_materialize_and_scrub() {
     );
     let (_dir, resolver) = resolver_with(source.clone());
     resolver
-        .validate_explicit_api_source(OPENAI_TO_PI_RULE, AdapterSourceKind::Provider, "openai-source")
+        .validate_explicit_api_source(
+            OPENAI_TO_PI_RULE,
+            AdapterSourceKind::Provider,
+            "openai-source",
+        )
         .unwrap();
     let target = pi_openai_target(&source.id);
     let materialized = resolver.materialize_for_live(&target).unwrap();
@@ -673,6 +677,159 @@ fn anthropic_account_rejects_missing_format_or_key_and_kimi_account_kind() {
             .code(),
         "invalid_arg"
     );
+}
+
+fn pi_subscription_target(source_id: &str, rule_id: &str, slot: &str) -> Provider {
+    provider(
+        "generated-pi-subscription",
+        AgentId::Pi,
+        json!({
+            "auth": {
+                (slot): {
+                    "type": "oauth",
+                    "access": CONNECTION_SECRET_MARKER,
+                    "refresh": CONNECTION_SECRET_MARKER
+                }
+            }
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": rule_id,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": SOURCE_REFERENCE_MODE,
+            "adapterSourceRef": { "kind": SOURCE_KIND_ACCOUNT, "id": source_id },
+        }),
+    )
+}
+
+#[test]
+fn subscription_accounts_materialize_claude_codex_and_grok_oauth_slots() {
+    for (id, agent_id, credentials, rule_id, slot, access, refresh) in [
+        (
+            "claude-subscription",
+            AgentId::Claude,
+            json!({
+                "access_token": "claude-access-secret",
+                "refresh_token": "claude-refresh-secret",
+                "expires_at": "2030-01-01T00:00:00Z"
+            }),
+            CLAUDE_SUBSCRIPTION_PI_RULE,
+            ANTHROPIC_PI_PROVIDER_SLOT,
+            "claude-access-secret",
+            "claude-refresh-secret",
+        ),
+        (
+            "codex-subscription",
+            AgentId::Codex,
+            json!({
+                "format": "auth_json",
+                "body": {
+                    "tokens": {
+                        "access_token": "codex-access-secret",
+                        "refresh_token": "codex-refresh-secret"
+                    }
+                }
+            }),
+            CODEX_SUBSCRIPTION_PI_RULE,
+            "openai-codex",
+            "codex-access-secret",
+            "codex-refresh-secret",
+        ),
+        (
+            "grok-subscription",
+            AgentId::Grok,
+            json!({
+                "access_token": "grok-access-secret",
+                "refresh_token": "grok-refresh-secret"
+            }),
+            GROK_SUBSCRIPTION_PI_RULE,
+            XAI_PI_PROVIDER_SLOT,
+            "grok-access-secret",
+            "grok-refresh-secret",
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("subscription-resolver.db")).unwrap();
+        AccountRepo::new(db.clone())
+            .create(&Account {
+                id: id.into(),
+                agent_id,
+                kind: AccountKind::Oauth,
+                label: id.into(),
+                credentials,
+                extra: json!({}),
+                status: "active".into(),
+                is_current: false,
+                created_at: "now".into(),
+                updated_at: "now".into(),
+            })
+            .unwrap();
+        let resolver = AdapterSecretResolver::new(db);
+        resolver
+            .validate_subscription_oauth_source(rule_id, AdapterSourceKind::Account, id)
+            .unwrap();
+        let target = pi_subscription_target(id, rule_id, slot);
+        let materialized = resolver.materialize_for_live(&target).unwrap();
+        assert_eq!(materialized.settings_config["auth"][slot]["access"], access);
+        assert_eq!(
+            materialized.settings_config["auth"][slot]["refresh"],
+            refresh
+        );
+        let live_envelope = json!({
+            "settings": {},
+            "models": { "providers": {} },
+            "auth": {
+                (slot): {
+                    "type": "oauth",
+                    "access": access,
+                    "refresh": refresh
+                },
+                "keep": { "type": "oauth", "access": "other-provider-secret" }
+            },
+            "paths": { "auth": "auth.json" }
+        });
+        let scrubbed = resolver
+            .scrub_for_backfill(&target, &live_envelope)
+            .unwrap();
+        assert_eq!(scrubbed["auth"][slot]["access"], CONNECTION_SECRET_MARKER);
+        assert_eq!(scrubbed["auth"][slot]["refresh"], CONNECTION_SECRET_MARKER);
+        assert!(scrubbed.get("paths").is_none());
+        assert!(scrubbed["auth"].get("keep").is_none());
+        let serialized = serde_json::to_string(&scrubbed).unwrap();
+        assert!(!serialized.contains(access));
+        assert!(!serialized.contains(refresh));
+        assert!(!serialized.contains("other-provider-secret"));
+    }
+}
+
+#[test]
+fn subscription_oauth_requires_access_token() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("subscription-resolver.db")).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "missing-access".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::Oauth,
+            label: "missing access".into(),
+            credentials: json!({"refresh_token": "refresh-only-secret"}),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let resolver = AdapterSecretResolver::new(db);
+    let error = resolver
+        .validate_subscription_oauth_source(
+            CLAUDE_SUBSCRIPTION_PI_RULE,
+            AdapterSourceKind::Account,
+            "missing-access",
+        )
+        .unwrap_err();
+    assert_eq!(error.code(), "invalid_arg");
+    assert!(!error.to_string().contains("refresh-only-secret"));
 }
 
 #[test]
@@ -780,7 +937,10 @@ fn dsh_source_reference_materializes_and_scrubs() {
 
     assert!(resolver.is_reference_provider(&target).unwrap());
     let materialized = resolver.materialize_for_live(&target).unwrap();
-    assert_eq!(materialized.settings_config["api_key"], "sk-deepseek-secret");
+    assert_eq!(
+        materialized.settings_config["api_key"],
+        "sk-deepseek-secret"
+    );
     assert_eq!(target.settings_config["api_key"], CONNECTION_SECRET_MARKER);
 
     let live_raw = json!({
@@ -847,7 +1007,12 @@ fn glm_provider_and_deepseek_account_materialize_and_scrub_by_rule_url() {
             "glm-source",
         )
         .unwrap();
-    let target = claude_native_target(&source.id, GLM_TO_CLAUDE_RULE, GLM_CLAUDE_BASE_URL, "provider");
+    let target = claude_native_target(
+        &source.id,
+        GLM_TO_CLAUDE_RULE,
+        GLM_CLAUDE_BASE_URL,
+        "provider",
+    );
     let materialized = resolver.materialize_for_live(&target).unwrap();
     assert_eq!(
         materialized.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
@@ -865,12 +1030,17 @@ fn glm_provider_and_deepseek_account_materialize_and_scrub_by_rule_url() {
         CONNECTION_SECRET_MARKER
     );
     assert_eq!(scrubbed["env"]["ANTHROPIC_BASE_URL"], GLM_CLAUDE_BASE_URL);
-    assert!(!serde_json::to_string(&scrubbed).unwrap().contains("glm-secret"));
+    assert!(!serde_json::to_string(&scrubbed)
+        .unwrap()
+        .contains("glm-secret"));
 
     let mut wrong_url = target.clone();
     wrong_url.settings_config["env"]["ANTHROPIC_BASE_URL"] = json!(KIMI_CLAUDE_BASE_URL);
     assert_eq!(
-        resolver.materialize_for_live(&wrong_url).unwrap_err().code(),
+        resolver
+            .materialize_for_live(&wrong_url)
+            .unwrap_err()
+            .code(),
         "invalid_arg"
     );
 
