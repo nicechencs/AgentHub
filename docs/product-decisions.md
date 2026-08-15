@@ -105,15 +105,15 @@ plan(ticket, agent):
 
 三路不是票的字段。钱包只标这张票 **对上游能说什么**；走哪一路只出现在 bind 预览里。
 
-| 同一张票 | → Claude | → Pi | → Codex |
-|---|---|---|---|
-| Kimi Code 会员双协议 Key | ① 直连 Messages 入口 | ① 写槽 | ③ Chat ≠ Responses，要桥；→ Grok 走 ① Chat 配置 |
-| OpenAI API Key | — | ① 写槽 | ① 官方 Chat 配置写入 Grok |
-| GLM / DeepSeek API Key | ① 直连 Messages 入口 | ① 写槽 | ① 官方 Responses 端点直连 |
-| Anthropic API Key | native / ① | ① 写 Anthropic 槽 | ③ Messages → Responses |
-| Codex 订阅 | ③ 本机桥 | ② 写 `openai-codex` 槽 | native |
-| Claude 订阅 | native | ② 写 Anthropic 槽 | **产品不做** |
-| Grok 订阅 | ③ 本机桥 | ② 写 xAI 槽 | ③ 或暂不可行 |
+| 同一张票 | → Claude | → Pi | → Codex | → Grok |
+|---|---|---|---|---|
+| Kimi Code 会员双协议 Key | ① 直连 Messages 入口 | ① 写槽 | ③ Chat ≠ Responses，要桥 | ① 写 Chat 配置 |
+| OpenAI API Key | — | ① 写槽 | ③ Chat ≠ Responses（未开） | ① 写官方 Chat 配置 |
+| GLM / DeepSeek API Key | ① 直连 Messages 入口 | ① 写槽 | ① 官方 Responses 端点直连 | — |
+| Anthropic API Key | native / ① | ① 写 Anthropic 槽 | ③ Messages → Responses | — |
+| Codex 订阅 | ③ 本机桥 | ② 写 `openai-codex` 槽 | native | — |
+| Claude 订阅 | native | ② 写 Anthropic 槽 | **产品不做** | — |
+| Grok 订阅 | ③ 本机桥 | ② 写 xAI 槽 | — | native |
 
 固定句式：
 
