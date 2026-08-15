@@ -675,7 +675,14 @@ fn append_responses_input(input: &mut Vec<Value>, message: &BridgeMessage) {
                 "output": output,
             }));
         }
-        return;
+        let has_text = message.content.iter().any(|content| {
+            matches!(content, BridgeContent::Text { text } if !text.is_empty())
+        });
+        if !has_text {
+            return;
+        }
+        // Mixed text + tool_result: keep function_call_output items, then fall through
+        // so the existing role-message logic can emit the text.
     }
 
     let tool_calls: Vec<_> = message

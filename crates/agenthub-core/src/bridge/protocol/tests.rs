@@ -411,11 +411,63 @@ fn anthropic_tool_history_becomes_responses_function_calls_and_outputs() {
     assert_eq!(input[1]["call_id"], "call_weather");
     assert_eq!(input[2]["type"], "function_call");
     assert_eq!(input[2]["call_id"], "call_calendar");
+    assert_eq!(input.len(), 5);
     assert_eq!(input[3]["type"], "function_call_output");
     assert_eq!(input[3]["call_id"], "call_weather");
     assert_eq!(input[3]["output"], "sunny");
     assert_eq!(input[4]["type"], "function_call_output");
     assert_eq!(input[4]["call_id"], "call_calendar");
+}
+
+#[test]
+fn anthropic_mixed_user_text_and_tool_result_keeps_text_in_responses_input() {
+    let request = parse_messages_request(&json!({
+        "model": "gpt-5",
+        "max_tokens": 128,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": "Also consider this note." },
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "call_weather",
+                        "content": "sunny"
+                    }
+                ]
+            }
+        ]
+    }))
+    .expect("parse mixed user message");
+
+    assert_eq!(request.input.len(), 1);
+    assert!(matches!(
+        request.input[0].role,
+        crate::bridge::types::MessageRole::User
+    ));
+    assert!(
+        request.input[0]
+            .content
+            .iter()
+            .any(|part| matches!(part, crate::bridge::types::BridgeContent::Text { .. }))
+    );
+    assert!(
+        request.input[0]
+            .content
+            .iter()
+            .any(|part| matches!(part, crate::bridge::types::BridgeContent::ToolResult { .. }))
+    );
+
+    let responses = to_responses_request(&request);
+    let input = responses["input"].as_array().expect("input array");
+    assert_eq!(input.len(), 2);
+    assert_eq!(input[0]["type"], "function_call_output");
+    assert_eq!(input[0]["call_id"], "call_weather");
+    assert_eq!(input[0]["output"], "sunny");
+    assert_eq!(input[1]["type"], "message");
+    assert_eq!(input[1]["role"], "user");
+    assert_eq!(input[1]["content"][0]["type"], "input_text");
+    assert_eq!(input[1]["content"][0]["text"], "Also consider this note.");
 }
 
 #[test]
