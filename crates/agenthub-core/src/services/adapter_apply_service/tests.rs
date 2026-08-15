@@ -1,6 +1,6 @@
 use super::*;
 use crate::adapters::AgentAdapter;
-use crate::models::{Account, AccountKind, Provider};
+use crate::models::{Account, AccountKind, AdapterApplyResult, Provider};
 use crate::models::{
     AgentConfig, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
     InstallChannel, RunOptions, RunSpec,
@@ -8,6 +8,8 @@ use crate::models::{
 use crate::services::adapter_route_constants::{
     DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_PI_PROVIDER_SLOT,
     GLM_CLAUDE_BASE_URL, GLM_PI_BASE_URL, GLM_PI_PROVIDER_SLOT, KIMI_CLAUDE_BASE_URL,
+    KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL, KIMI_GROK_RULE_ID, OPENAI_GROK_BASE_URL,
+    OPENAI_GROK_DEFAULT_MODEL, OPENAI_GROK_RULE_ID,
 };
 use crate::storage::{AccountRepo, ActiveBindingRepo, ProviderRepo};
 use serde_json::json;
@@ -2257,4 +2259,200 @@ fn deepseek_preset_alias_applies_to_claude() {
     assert!(!serde_json::to_string(&result)
         .unwrap()
         .contains("sk-deepseek-secret"));
+}
+
+fn openai_api_source(id: &str, api_key: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Codex,
+        name: "OpenAI API".into(),
+        settings_config: json!({"apiKey": api_key}),
+        meta: json!({"preset": "openai"}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+fn openai_api_account(id: &str, api_key: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Codex,
+        kind: AccountKind::ApiKey,
+        label: "OpenAI key".into(),
+        credentials: json!({
+            "format": "api_key",
+            "api_key": api_key,
+            "provider": "openai",
+        }),
+        extra: json!({"provider": "openai"}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+fn assert_grok_toml(content: &str, alias: &str, base_url: &str, model: &str, api_key: &str) {
+    let doc: toml_edit::DocumentMut = content.parse().expect("grok toml");
+    assert_eq!(doc["models"]["default"].as_str(), Some(alias));
+    let entry = &doc["model"][alias];
+    assert_eq!(entry["base_url"].as_str(), Some(base_url));
+    assert_eq!(entry["model"].as_str(), Some(model));
+    assert_eq!(entry["api_backend"].as_str(), Some("chat_completions"));
+    assert_eq!(entry["api_key"].as_str(), Some(api_key));
+}
+
+fn assert_grok_apply(
+    db: &Database,
+    fake: &FakeClaudeAdapter,
+    result: &AdapterApplyResult,
+    rule_id: &str,
+    alias: &str,
+    base_url: &str,
+    model: &str,
+    secret: &str,
+) {
+    assert_eq!(result.profile.rule_id, rule_id);
+    assert_eq!(result.profile.route, AdapterRoute::NativeEndpoint);
+    let stored = ProviderRepo::new(db.clone())
+        .get_by_id(&result.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.settings_config["format"], "toml");
+    assert_grok_toml(
+        stored.settings_config["content"].as_str().unwrap(),
+        alias,
+        base_url,
+        model,
+        CONNECTION_SECRET_MARKER,
+    );
+    let live = fake.read_config().unwrap().raw;
+    assert_eq!(live["format"], "toml");
+    assert_grok_toml(
+        live["content"].as_str().unwrap(),
+        alias,
+        base_url,
+        model,
+        secret,
+    );
+    let serialized = serde_json::to_string(&result).unwrap();
+    assert!(!serialized.contains(secret));
+    assert!(!serde_json::to_string(&stored).unwrap().contains(secret));
+}
+
+#[test]
+fn apply_kimi_membership_and_openai_api_to_grok() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source("kimi-source", "kimi-grok-secret"))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&openai_api_source("openai-source", "openai-grok-secret"))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&kimi_account("kimi-account", "kimi-account-secret"))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&openai_api_account("openai-account", "openai-account-secret"))
+        .unwrap();
+    let fake = Arc::new(FakeClaudeAdapter::new_for(AgentId::Grok));
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
+
+    let kimi = service
+        .apply(&request("kimi-source", AgentId::Grok))
+        .unwrap();
+    assert_grok_apply(
+        &db,
+        fake.as_ref(),
+        &kimi,
+        KIMI_GROK_RULE_ID,
+        "agenthub_kimi",
+        KIMI_GROK_BASE_URL,
+        KIMI_GROK_DEFAULT_MODEL,
+        "kimi-grok-secret",
+    );
+
+    let openai = service
+        .apply(&request("openai-source", AgentId::Grok))
+        .unwrap();
+    assert_grok_apply(
+        &db,
+        fake.as_ref(),
+        &openai,
+        OPENAI_GROK_RULE_ID,
+        "agenthub_openai",
+        OPENAI_GROK_BASE_URL,
+        OPENAI_GROK_DEFAULT_MODEL,
+        "openai-grok-secret",
+    );
+
+    let kimi_account_result = service
+        .apply(&account_request("kimi-account", AgentId::Grok))
+        .unwrap();
+    assert_grok_apply(
+        &db,
+        fake.as_ref(),
+        &kimi_account_result,
+        KIMI_GROK_RULE_ID,
+        "agenthub_kimi",
+        KIMI_GROK_BASE_URL,
+        KIMI_GROK_DEFAULT_MODEL,
+        "kimi-account-secret",
+    );
+
+    let openai_account_result = service
+        .apply(&account_request("openai-account", AgentId::Grok))
+        .unwrap();
+    assert_grok_apply(
+        &db,
+        fake.as_ref(),
+        &openai_account_result,
+        OPENAI_GROK_RULE_ID,
+        "agenthub_openai",
+        OPENAI_GROK_BASE_URL,
+        OPENAI_GROK_DEFAULT_MODEL,
+        "openai-account-secret",
+    );
+}
+
+#[test]
+fn apply_rejects_local_bridge_and_non_grok_sources() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source("kimi-source", "kimi-secret"))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_moonshot("moonshot-source", "moonshot-secret"))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_bare("bare-source", "bare-secret"))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "xai-source",
+            "xai",
+            "XAI_API_KEY",
+            "xai-secret",
+        ))
+        .unwrap();
+    let fake = Arc::new(FakeClaudeAdapter::new_for(AgentId::Grok));
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake);
+    let service = AdapterApplyService::new(db, registry, dir.path().join("backups"));
+
+    let local_bridge = service
+        .apply(&request("kimi-source", AgentId::Codex))
+        .unwrap_err();
+    assert!(matches!(local_bridge, AppError::Unsupported(_)));
+
+    for source in ["moonshot-source", "bare-source", "xai-source"] {
+        let err = service.apply(&request(source, AgentId::Grok)).unwrap_err();
+        assert!(
+            matches!(err, AppError::Unsupported(_)),
+            "{source} should not apply to Grok: {err}"
+        );
+    }
 }
