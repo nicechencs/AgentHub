@@ -722,7 +722,7 @@ mod tests {
                 "format": "auth_json",
                 "body": {
                     "https://auth.x.ai::client": {
-                        "email": "cunsen.chen@gmail.com",
+                        "email": "user@example.com",
                         "user_id": "u-1",
                         "refresh_token": "rt"
                     }
@@ -730,14 +730,14 @@ mod tests {
             }),
             json!({
                 "source": "live",
-                "email": "cunsen.chen@gmail.com",
-                "identityLabel": "cunsen.chen@gmail.com"
+                "email": "user@example.com",
+                "identityLabel": "user@example.com"
             }),
         );
         // Even with email present, placeholder label must be upgraded.
         assert!(needs_identity_heal(&acc));
         assert!(heal_account_identity(&mut acc));
-        assert_eq!(acc.label, "cunsen.chen@gmail.com");
+        assert_eq!(acc.label, "user@example.com");
         assert!(!needs_identity_heal(&acc));
     }
 

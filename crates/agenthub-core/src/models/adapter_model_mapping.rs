@@ -106,6 +106,8 @@ const KIMI_PI_MODELS: &[AdapterModelMapEntry] = &[AdapterModelMapEntry {
 const ANTHROPIC_PI_MODELS: &[AdapterModelMapEntry] = &[];
 const OPENAI_PI_MODELS: &[AdapterModelMapEntry] = &[];
 const XAI_PI_MODELS: &[AdapterModelMapEntry] = &[];
+const GLM_PI_MODELS: &[AdapterModelMapEntry] = &[];
+const DEEPSEEK_PI_MODELS: &[AdapterModelMapEntry] = &[];
 
 const DEEPSEEK_DSH_MODELS: &[AdapterModelMapEntry] = &[
     AdapterModelMapEntry {
@@ -177,6 +179,24 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
         target_protocol: AdapterTargetProtocol::PiProviderConfig,
         default_target_model: None,
         entries: XAI_PI_MODELS,
+        allow_passthrough: true,
+    },
+    AdapterModelMappingTable {
+        id: "glm-coding-plan-pi-v1",
+        source: AdapterSourceProduct::GlmCodingPlan,
+        target: AgentId::Pi,
+        target_protocol: AdapterTargetProtocol::PiProviderConfig,
+        default_target_model: Some("glm-4.6"),
+        entries: GLM_PI_MODELS,
+        allow_passthrough: true,
+    },
+    AdapterModelMappingTable {
+        id: "deepseek-api-pi-v1",
+        source: AdapterSourceProduct::DeepseekApi,
+        target: AgentId::Pi,
+        target_protocol: AdapterTargetProtocol::PiProviderConfig,
+        default_target_model: Some("deepseek-chat"),
+        entries: DEEPSEEK_PI_MODELS,
         allow_passthrough: true,
     },
     AdapterModelMappingTable {

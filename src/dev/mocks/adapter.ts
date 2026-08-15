@@ -293,10 +293,19 @@ const OPENAI_API_ENDPOINT_NEEDLE = 'api.openai.com';
 const XAI_API_ENDPOINT_NEEDLE = 'api.x.ai';
 const GLM_CODING_ANTHROPIC_NEEDLE = 'open.bigmodel.cn/api/anthropic';
 const GLM_CODING_CHAT_NEEDLE = 'open.bigmodel.cn/api/coding';
+const GLM_CODING_RESPONSES_NEEDLE = 'open.bigmodel.cn/api/v1';
 const DEEPSEEK_API_ENDPOINT_NEEDLE = 'api.deepseek.com';
 const KIMI_CLAUDE_BASE_URL = 'https://api.kimi.com/coding/';
 const GLM_CLAUDE_BASE_URL = 'https://open.bigmodel.cn/api/anthropic';
 const DEEPSEEK_CLAUDE_BASE_URL = 'https://api.deepseek.com/anthropic';
+const GLM_PI_BASE_URL = 'https://open.bigmodel.cn/api/coding/paas/v4';
+const DEEPSEEK_PI_BASE_URL = 'https://api.deepseek.com';
+const GLM_CODEX_BASE_URL = 'https://open.bigmodel.cn/api/v1';
+const DEEPSEEK_CODEX_BASE_URL = 'https://api.deepseek.com';
+const GLM_CODEX_RULE_ID = 'glm-coding-plan-to-codex-v1';
+const DEEPSEEK_CODEX_RULE_ID = 'deepseek-api-to-codex-v1';
+const GLM_CODEX_PROVIDER_SLUG = 'agenthub_glm';
+const DEEPSEEK_CODEX_PROVIDER_SLUG = 'agenthub_deepseek';
 const GLM_CLAUDE_RULE_ID = 'glm-coding-plan-to-claude-v1';
 const DEEPSEEK_CLAUDE_RULE_ID = 'deepseek-api-to-claude-v1';
 const CLAUDE_NATIVE_EXPERIMENTAL_RULES = new Set([
@@ -307,9 +316,13 @@ const EXPLICIT_API_TO_PI_RULES = new Set([
   'anthropic-api-to-pi-v1',
   'openai-api-to-pi-v1',
   'xai-api-to-pi-v1',
+  'glm-coding-plan-to-pi-v1',
+  'deepseek-api-to-pi-v1',
 ]);
 const EXPLICIT_API_TO_CODEX_RULES = new Set([
   'anthropic-api-to-codex-v1',
+  GLM_CODEX_RULE_ID,
+  DEEPSEEK_CODEX_RULE_ID,
 ]);
 const KIMI_MEMBERSHIP_RULE_IDS = new Set([
   'kimi-membership-to-claude-v1',
@@ -353,6 +366,29 @@ function isKimiMembershipProvider(provider: Pick<Provider, 'agentId' | 'preset' 
       || textLooksLikeKimiCoding(provider.configText));
 }
 
+function isKimiMembershipAccount(account: ClassifiableAccount | undefined): boolean {
+  if (!account) return false;
+  if (account.agentId !== 'kimi' || account.kind !== 'apikey') return false;
+  const extra = account.extra ?? {};
+  const credentials = account.credentials ?? {};
+  const tags = [
+    jsonString(extra, 'provider'),
+    jsonString(extra, 'preset'),
+    jsonString(credentials, 'provider'),
+  ];
+  return tags.some((tag) => tag?.toLowerCase() === KIMI_MEMBERSHIP_PRESET)
+    || textLooksLikeKimiCoding(JSON.stringify(extra))
+    || textLooksLikeKimiCoding(JSON.stringify(credentials));
+}
+
+function hasAccountApiKey(account: ClassifiableAccount | undefined): boolean {
+  if (!account || account.kind !== 'apikey') return false;
+  const credentials = account.credentials;
+  return !!credentials
+    && jsonString(credentials, 'format')?.toLowerCase() === 'api_key'
+    && !!jsonString(credentials, 'api_key');
+}
+
 function classify(
   resolver: MockAdapterSourceResolver,
   request: AdapterRouteRequest,
@@ -392,6 +428,7 @@ function classify(
       tag?.toLowerCase() === 'glm-coding-plan'
       || config.toLowerCase().includes(GLM_CODING_ANTHROPIC_NEEDLE)
       || config.toLowerCase().includes(GLM_CODING_CHAT_NEEDLE)
+      || config.toLowerCase().includes(GLM_CODING_RESPONSES_NEEDLE)
     ) {
       return 'glm_coding_plan';
     }
@@ -417,6 +454,12 @@ function classify(
     ?? jsonString(account.extra, 'format')
     ?? account.credentialFormat?.trim();
 
+  if (isKimiMembershipAccount(account)) {
+    return 'kimi_membership';
+  }
+  if (account.kind === 'apikey' && account.agentId === 'kimi') {
+    return 'kimi_non_membership';
+  }
   if (account.agentId === 'claude' && account.kind === 'oauth') {
     return 'claude_subscription';
   }
@@ -451,8 +494,10 @@ function classify(
     && (explicitProvider?.toLowerCase() === 'glm-coding-plan'
       || credentialsText.toLowerCase().includes(GLM_CODING_ANTHROPIC_NEEDLE)
       || credentialsText.toLowerCase().includes(GLM_CODING_CHAT_NEEDLE)
+      || credentialsText.toLowerCase().includes(GLM_CODING_RESPONSES_NEEDLE)
       || extraText.toLowerCase().includes(GLM_CODING_ANTHROPIC_NEEDLE)
-      || extraText.toLowerCase().includes(GLM_CODING_CHAT_NEEDLE))
+      || extraText.toLowerCase().includes(GLM_CODING_CHAT_NEEDLE)
+      || extraText.toLowerCase().includes(GLM_CODING_RESPONSES_NEEDLE))
   ) {
     return 'glm_coding_plan';
   }
@@ -610,6 +655,36 @@ function analyze(
       gateKind: 'none',
     };
   }
+  if (
+    (source === 'glm_coding_plan' || source === 'deepseek_api')
+    && request.targetAgentId === 'codex'
+  ) {
+    const glm = source === 'glm_coding_plan';
+    const baseUrl = glm ? GLM_CODEX_BASE_URL : DEEPSEEK_CODEX_BASE_URL;
+    const ruleId = glm ? GLM_CODEX_RULE_ID : DEEPSEEK_CODEX_RULE_ID;
+    const model = glm ? 'glm-5.3' : 'deepseek-v4-flash';
+    return {
+      route: 'native_endpoint',
+      support: 'experimental',
+      reason: `${glm ? 'GLM Coding Plan' : 'DeepSeek API'} 官方 Responses 端点可实验直连 Codex。`,
+      actions: [
+        action('set_config', 'Codex', `${glm ? 'GLM Coding Plan' : 'DeepSeek API'} 官方 Responses Base URL；不会启动本机桥接。`, baseUrl),
+        action('set_config', 'Codex', `使用 Codex Responses wire_api 与默认模型 ${model}。`, `wire_api=responses; model=${model}`),
+        secretAction('Codex', '从已选 Connection 引用 API Key；不会读取或显示它。'),
+      ],
+      limitations: [
+        '将把 Codex 配置为官方 Responses 端点；不会启动本机 loopback Bridge。',
+        '生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。',
+        '当前未写入官方 ~/.codex/models.json；使用默认 model 与显式 Provider 配置。',
+      ],
+      evidence: [evidence(
+        glm ? 'GLM Coding Plan Codex Responses integration' : 'DeepSeek API Codex Responses integration',
+        glm ? 'https://docs.bigmodel.cn/cn/coding-plan/tool/codex' : 'https://api-docs.deepseek.com/quick_start/agent_integrations/codex/',
+      )],
+      ruleId,
+      gateKind: 'none',
+    };
+  }
   if (source === 'deepseek_api' && request.targetAgentId === 'dsh') {
     return {
       route: 'config_sync',
@@ -679,6 +754,35 @@ function analyze(
       ],
       evidence: [evidence('Pi custom provider and model configuration', 'https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md')],
       ruleId: 'xai-api-to-pi-v1',
+      gateKind: 'none',
+    };
+  }
+  if (
+    (source === 'glm_coding_plan' || source === 'deepseek_api')
+    && request.targetAgentId === 'pi'
+  ) {
+    const glm = source === 'glm_coding_plan';
+    const slot = glm ? 'glm-coding-plan' : 'deepseek';
+    const ruleId = glm ? 'glm-coding-plan-to-pi-v1' : 'deepseek-api-to-pi-v1';
+    return {
+      route: 'config_sync',
+      support: 'experimental',
+      reason: `${glm ? 'GLM Coding Plan' : 'DeepSeek API'} 可实验预览为 Pi 的配置同步。`,
+      actions: [
+        action(
+          'set_config',
+          'Pi',
+          `写入 Pi 的 ${glm ? 'GLM Coding Plan' : 'DeepSeek'} 自定义 provider 槽。`,
+          slot,
+        ),
+        secretAction('Pi', '从已选 Connection 引用 API Key；不会读取或显示它。'),
+      ],
+      limitations: [
+        `将写入 Pi models.json 的 ${slot} 自定义槽（baseUrl、api、models）与凭据引用标记；不会在预览中传输明文 Key。`,
+        '生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。',
+      ],
+      evidence: [evidence('Pi custom provider and model configuration', 'https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md')],
+      ruleId,
       gateKind: 'none',
     };
   }
@@ -812,6 +916,12 @@ function buildPlan(
               change('claude', 'ANTHROPIC_BASE_URL', 'http://127.0.0.1:<本机端口>'),
               secretChange('claude', 'ANTHROPIC_AUTH_TOKEN'),
             ]
+        : analysis.route === 'native_endpoint' && request.targetAgentId === 'codex'
+          ? [
+              change('codex', 'provider', analysis.ruleId === GLM_CODEX_RULE_ID ? 'GLM Coding Plan' : 'DeepSeek API'),
+              change('codex', 'baseUrl', analysis.ruleId === GLM_CODEX_RULE_ID ? GLM_CODEX_BASE_URL : DEEPSEEK_CODEX_BASE_URL),
+              change('codex', 'wireApi', 'responses'),
+            ]
         : analysis.route === 'config_sync' && request.targetAgentId === 'pi'
       ? [
           change('pi', 'provider', configuredProvider ?? 'anthropic'),
@@ -831,8 +941,12 @@ function buildPlan(
       : [];
   const implementedPath =
     (analysis.route === 'native_endpoint' && analysis.support === 'stable' && request.targetAgentId === 'claude')
-    || (analysis.route === 'native_endpoint' && analysis.support === 'experimental' && request.targetAgentId === 'claude'
+    || (analysis.route === 'native_endpoint' && analysis.support === 'experimental'
+      && (request.targetAgentId === 'claude' || request.targetAgentId === 'codex')
       && !!analysis.ruleId && CLAUDE_NATIVE_EXPERIMENTAL_RULES.has(analysis.ruleId))
+    || (analysis.route === 'native_endpoint' && analysis.support === 'experimental'
+      && request.targetAgentId === 'codex'
+      && !!analysis.ruleId && EXPLICIT_API_TO_CODEX_RULES.has(analysis.ruleId))
     || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
     || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
       && request.sourceKind === 'account'
@@ -843,8 +957,15 @@ function buildPlan(
     || (analysis.route === 'config_sync' && analysis.support === 'experimental'
       && request.targetAgentId === 'pi'
       && !!analysis.ruleId
+      && EXPLICIT_API_TO_PI_RULES.has(analysis.ruleId))
+    || (analysis.route === 'config_sync' && analysis.support === 'experimental'
+      && request.targetAgentId === 'pi'
+      && !!analysis.ruleId
       && NATIVE_SUBSCRIPTION_PI_RULE_IDS.has(analysis.ruleId))
     || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'dsh');
+  const accountSource = request.sourceKind === 'account'
+    ? resolver.getAccountById(request.sourceId) as ClassifiableAccount | undefined
+    : undefined;
   const accountExplicitApiToPi = request.sourceKind === 'account'
     && implementedPath
     && request.targetAgentId === 'pi'
@@ -865,12 +986,19 @@ function buildPlan(
     && request.targetAgentId === 'claude'
     && !!analysis.ruleId
     && CLAUDE_NATIVE_EXPERIMENTAL_RULES.has(analysis.ruleId);
+  const accountKimiMembership = request.sourceKind === 'account'
+    && implementedPath
+    && !!analysis.ruleId
+    && KIMI_MEMBERSHIP_RULE_IDS.has(analysis.ruleId)
+    && isKimiMembershipAccount(accountSource)
+    && hasAccountApiKey(accountSource);
   const accountCodexClaudeBridge = request.sourceKind === 'account'
     && implementedPath
     && request.targetAgentId === 'claude'
     && analysis.ruleId === CODEX_CLAUDE_RULE_ID
     && hasCodexAccessToken(resolver, request.sourceId);
   const writeGate = (request.sourceKind === 'provider' && implementedPath)
+    || accountKimiMembership
     || accountExplicitApiToPi
     || accountExplicitApiToCodex
     || accountClaudeNative
@@ -885,11 +1013,12 @@ function buildPlan(
       : analysis.route === 'local_bridge'
         ? 'local_bridge' as const
         : 'api_endpoint' as const;
-  // Same-edge Account stays closed except explicit API → Pi / Anthropic → Codex.
+  // Same-edge Account stays closed except explicit API → Pi / Codex.
   const reason = implementedPath && request.sourceKind !== 'provider'
     && !accountExplicitApiToPi
     && !accountExplicitApiToCodex
     && !accountClaudeNative
+    && !accountKimiMembership
     && !accountNativeSubscriptionPi
     && !accountCodexClaudeBridge
     ? `${analysis.reason} ${SAME_EDGE_UNWRITABLE_REASON}`
@@ -963,6 +1092,52 @@ function materializeApply(
   now: string,
 ): { profile: AdapterProfile; provider: Provider } {
   const safeId = safeSourceId(request.sourceId);
+  if (plan.analysis.route === 'native_endpoint' && request.targetAgentId === 'codex') {
+    const glm = plan.analysis.ruleId === GLM_CODEX_RULE_ID;
+    const slug = glm ? GLM_CODEX_PROVIDER_SLUG : DEEPSEEK_CODEX_PROVIDER_SLUG;
+    const model = glm ? 'glm-5.3' : 'deepseek-v4-flash';
+    const baseUrl = glm ? GLM_CODEX_BASE_URL : DEEPSEEK_CODEX_BASE_URL;
+    const profile: AdapterProfile = existing ?? {
+      id: `adapter-${glm ? 'glm' : 'deepseek'}-codex-${safeId}`,
+      name: `${glm ? 'GLM Coding Plan' : 'DeepSeek'} → Codex (${safeId})`,
+      sourceKind: request.sourceKind,
+      sourceId: request.sourceId,
+      targetAgentId: request.targetAgentId,
+      route: 'native_endpoint',
+      mode: 'api',
+      status: 'active',
+      ruleId: plan.analysis.ruleId!,
+      ruleVersion: '1',
+      generatedProviderId: `codex-${glm ? 'glm' : 'deepseek'}-adapter-${safeId}`,
+      localPort: null,
+      autoStart: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    return {
+      profile,
+      provider: {
+        id: profile.generatedProviderId!,
+        agentId: 'codex',
+        name: profile.name,
+        preset: 'openai-compatible',
+        configText: [
+          `model_provider = "${slug}"`,
+          `model = "${model}"`,
+          'model_reasoning_effort = "high"',
+          'preferred_auth_method = "apikey"',
+          '',
+          `[model_providers.${slug}]`,
+          `name = "${glm ? 'GLM Coding Plan' : 'DeepSeek'}"`,
+          `base_url = "${baseUrl}"`,
+          'wire_api = "responses"',
+          `experimental_bearer_token = "${CONNECTION_SECRET_MARKER}"`,
+        ].join('\n'),
+        configFormat: 'toml',
+        isCurrent: true,
+      },
+    };
+  }
   if (plan.analysis.route === 'local_bridge') {
     const codexClaudeBridge = plan.analysis.ruleId === CODEX_CLAUDE_RULE_ID;
     const anthropicBridge = plan.analysis.ruleId === 'anthropic-api-to-codex-v1';
@@ -1068,6 +1243,10 @@ function materializeApply(
       ? 'openai'
       : ruleId === 'xai-api-to-pi-v1'
         ? 'xai'
+        : ruleId === 'glm-coding-plan-to-pi-v1'
+          ? 'glm-coding-plan'
+          : ruleId === 'deepseek-api-to-pi-v1'
+            ? 'deepseek'
         : ruleId === 'anthropic-api-to-pi-v1'
           ? 'anthropic'
           : 'kimi-for-coding';
@@ -1075,6 +1254,10 @@ function materializeApply(
       ? 'OpenAI'
       : ruleId === 'xai-api-to-pi-v1'
         ? 'xAI'
+        : ruleId === 'glm-coding-plan-to-pi-v1'
+          ? 'GLM Coding Plan'
+          : ruleId === 'deepseek-api-to-pi-v1'
+            ? 'DeepSeek'
         : ruleId === 'anthropic-api-to-pi-v1'
           ? 'Anthropic'
           : 'Kimi';
@@ -1094,10 +1277,17 @@ function materializeApply(
       ? 'openai'
       : ruleId === 'xai-api-to-pi-v1'
         ? 'xai'
+      : ruleId === 'glm-coding-plan-to-pi-v1'
+        ? 'glm'
+        : ruleId === 'deepseek-api-to-pi-v1'
+          ? 'deepseek'
         : ruleId === 'anthropic-api-to-pi-v1'
           ? 'anthropic'
           : 'kimi';
     const slot = piSlotFromPlan(plan, slotFallback);
+    const piCustom = ruleId === 'glm-coding-plan-to-pi-v1' || ruleId === 'deepseek-api-to-pi-v1';
+    const piBaseUrl = ruleId === 'glm-coding-plan-to-pi-v1' ? GLM_PI_BASE_URL : DEEPSEEK_PI_BASE_URL;
+    const piModel = ruleId === 'glm-coding-plan-to-pi-v1' ? 'glm-4.6' : 'deepseek-chat';
     const profile: AdapterProfile = existing ?? {
       id: `adapter-${prefix}-pi-${safeId}`,
       name: `${subscription ? subscriptionDisplay : display} → Pi (${safeId})`,
@@ -1132,10 +1322,23 @@ function materializeApply(
                 },
               },
             }
-          : {
-              slot,
-              apiKey: CONNECTION_SECRET_MARKER,
-            }),
+          : piCustom
+            ? {
+                models: {
+                  providers: {
+                    [slot]: {
+                      baseUrl: piBaseUrl,
+                      api: 'openai-completions',
+                      models: [{ id: piModel }],
+                      apiKey: CONNECTION_SECRET_MARKER,
+                    },
+                  },
+                },
+              }
+            : {
+                slot,
+                apiKey: CONNECTION_SECRET_MARKER,
+              }),
         configFormat: 'json',
         isCurrent: true,
       },
@@ -1225,10 +1428,16 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
       }
       // Re-validate source secrets independently of plan.canApply (same rule as core).
       if (plan.analysis.ruleId && KIMI_MEMBERSHIP_RULE_IDS.has(plan.analysis.ruleId)) {
-        const source = request.sourceKind === 'provider'
+        const providerSource = request.sourceKind === 'provider'
           ? resolver.getProviderById(request.sourceId)
           : undefined;
-        if (!source || !isKimiMembershipProvider(source)) {
+        const accountSource = request.sourceKind === 'account'
+          ? resolver.getAccountById(request.sourceId) as ClassifiableAccount | undefined
+          : undefined;
+        const valid = request.sourceKind === 'provider'
+          ? !!providerSource && isKimiMembershipProvider(providerSource)
+          : isKimiMembershipAccount(accountSource) && hasAccountApiKey(accountSource);
+        if (!valid) {
           throw adapterCommandError({
             code: 'invalid_arg',
             message: 'invalid adapter secret reference',

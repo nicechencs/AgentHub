@@ -17,10 +17,25 @@ pub const GLM_CLAUDE_BASE_URL: &str = "https://open.bigmodel.cn/api/anthropic";
 /// Official DeepSeek Anthropic-compatible endpoint projected into Claude.
 pub const DEEPSEEK_CLAUDE_BASE_URL: &str = "https://api.deepseek.com/anthropic";
 
+/// Official GLM Coding Plan OpenAI Responses endpoint projected into Codex.
+pub const GLM_CODEX_BASE_URL: &str = "https://open.bigmodel.cn/api/v1";
+
+/// Official DeepSeek OpenAI Responses endpoint projected into Codex.
+pub const DEEPSEEK_CODEX_BASE_URL: &str = DEEPSEEK_API_BASE_URL;
+
 /// Claude native_endpoint rule ids that write an Anthropic-compatible base URL.
 pub const KIMI_CLAUDE_RULE_ID: &str = "kimi-membership-to-claude-v1";
 pub const GLM_CLAUDE_RULE_ID: &str = "glm-coding-plan-to-claude-v1";
 pub const DEEPSEEK_CLAUDE_RULE_ID: &str = "deepseek-api-to-claude-v1";
+pub const GLM_CODEX_RULE_ID: &str = "glm-coding-plan-to-codex-v1";
+pub const DEEPSEEK_CODEX_RULE_ID: &str = "deepseek-api-to-codex-v1";
+
+pub const GLM_CODEX_DEFAULT_MODEL: &str = "glm-5.3";
+pub const DEEPSEEK_CODEX_DEFAULT_MODEL: &str = "deepseek-v4-flash";
+pub const GLM_CODEX_PROVIDER_PREFIX: &str = "codex-glm-adapter";
+pub const DEEPSEEK_CODEX_PROVIDER_PREFIX: &str = "codex-deepseek-adapter";
+pub const GLM_CODEX_PROVIDER_SLUG: &str = "agenthub_glm";
+pub const DEEPSEEK_CODEX_PROVIDER_SLUG: &str = "agenthub_deepseek";
 
 /// Substring that identifies the official Kimi Code membership HTTP host.
 pub const KIMI_CODING_ENDPOINT_NEEDLE: &str = "api.kimi.com/coding";
@@ -33,6 +48,18 @@ pub const KIMI_PI_BASE_URL: &str = "https://api.kimi.com/coding/v1";
 
 /// Pi `models.json` provider slot for Kimi Code membership.
 pub const KIMI_PI_PROVIDER_SLOT: &str = "kimi-for-coding";
+
+/// Official GLM Coding Plan OpenAI Chat Completions endpoint projected into Pi.
+pub const GLM_PI_BASE_URL: &str = "https://open.bigmodel.cn/api/coding/paas/v4";
+
+/// Pi custom provider slot for GLM Coding Plan.
+pub const GLM_PI_PROVIDER_SLOT: &str = "glm-coding-plan";
+
+/// Pi custom provider slot for DeepSeek API.
+pub const DEEPSEEK_PI_PROVIDER_SLOT: &str = "deepseek";
+
+pub const GLM_PI_RULE_ID: &str = "glm-coding-plan-to-pi-v1";
+pub const DEEPSEEK_PI_RULE_ID: &str = "deepseek-api-to-pi-v1";
 
 /// Pi `models.json` provider slot for an explicit Anthropic API key.
 pub const ANTHROPIC_PI_PROVIDER_SLOT: &str = "anthropic";
@@ -101,6 +128,9 @@ pub const GLM_CODING_ANTHROPIC_NEEDLE: &str = "open.bigmodel.cn/api/anthropic";
 /// Official GLM Coding Plan Chat Completions host path.
 pub const GLM_CODING_CHAT_NEEDLE: &str = "open.bigmodel.cn/api/coding";
 
+/// Official GLM Coding Plan Responses host path.
+pub const GLM_CODING_RESPONSES_NEEDLE: &str = "open.bigmodel.cn/api/v1";
+
 /// Official DeepSeek HTTP host.
 pub const DEEPSEEK_API_ENDPOINT_NEEDLE: &str = "api.deepseek.com";
 
@@ -144,6 +174,21 @@ pub(crate) fn is_kimi_code_membership_source(
             || settings_contain_kimi_coding_endpoint(settings))
 }
 
+/// Account membership = Kimi API Key **and** (`extra.provider` /
+/// `extra.preset` / `credentials.provider` is the membership tag **or** the
+/// credentials/extra blob contains the official coding endpoint). Managed Kimi
+/// OAuth must never be upgraded to a membership API Key.
+pub(crate) fn is_kimi_code_membership_account(
+    agent_id: AgentId,
+    extra: &Value,
+    credentials: &Value,
+) -> bool {
+    agent_id == AgentId::Kimi
+        && (account_provider_tag_matches(extra, credentials)
+            || settings_contain_kimi_coding_endpoint(extra)
+            || settings_contain_kimi_coding_endpoint(credentials))
+}
+
 /// True when config text/JSON contains the official Kimi Code coding host.
 pub(crate) fn settings_contain_kimi_coding_endpoint(value: &Value) -> bool {
     value_contains_needle(value, KIMI_CODING_ENDPOINT_NEEDLE)
@@ -168,6 +213,7 @@ pub(crate) fn settings_contain_xai_api_endpoint(value: &Value) -> bool {
 pub(crate) fn settings_contain_glm_coding_plan_endpoint(value: &Value) -> bool {
     value_contains_needle(value, GLM_CODING_ANTHROPIC_NEEDLE)
         || value_contains_needle(value, GLM_CODING_CHAT_NEEDLE)
+        || value_contains_needle(value, GLM_CODING_RESPONSES_NEEDLE)
 }
 
 /// True when config points at DeepSeek's public API host.
@@ -211,6 +257,16 @@ fn meta_preset(meta: &Value) -> Option<&str> {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
+}
+
+fn account_provider_tag_matches(extra: &Value, credentials: &Value) -> bool {
+    [
+        extra.get("provider").and_then(Value::as_str),
+        extra.get("preset").and_then(Value::as_str),
+        credentials.get("provider").and_then(Value::as_str),
+    ]
+    .into_iter()
+    .any(|tag| explicit_provider_tag_matches(tag, &[KIMI_MEMBERSHIP_PRESET]))
 }
 
 pub(crate) fn value_contains_needle(value: &Value, needle: &str) -> bool {

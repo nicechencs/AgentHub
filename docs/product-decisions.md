@@ -29,6 +29,7 @@
 | Kimi Code 会员 Key | Claude Code | 写 Anthropic 兼容入口 |
 | 同一把 Key | Pi | 写入 Pi 的对应槽 |
 | GLM Coding Plan / DeepSeek API | Claude Code | 写官方 Anthropic 兼容入口 |
+| GLM Coding Plan / DeepSeek API | Codex | 写官方 Responses 兼容入口 |
 
 同一机制也覆盖**单协议 Key**：Anthropic Key → Pi、OpenAI Key → Pi。它们不是「双协议」，但同样是直连、不起桥。
 
@@ -70,8 +71,8 @@ Pi 是当前已登记的跨 Agent 第 2 路落点。别的 Agent 必须逐个验
 | Kimi / Anthropic API Key → Codex | Codex 听 Responses，上游是 Chat 或 Messages，要转换 |
 | Claude 订阅 → Codex（若 transport 成立） | Codex 听 Responses，上游是 Anthropic OAuth |
 
-③ 对齐 cc-switch 的 Codex OAuth 反代、CLIProxyAPI 的协议 translator。  
-**不**学 CLIProxyAPI「永远先起一个兼容 HTTP」。
+③ 只在协议对不上时起本机桥。  
+**不**默认先起一个常驻兼容 HTTP。
 
 ## 2. 和领域 route 的映射
 
@@ -106,7 +107,8 @@ plan(ticket, agent):
 
 | 同一张票 | → Claude | → Pi | → Codex |
 |---|---|---|---|
-| Kimi / GLM / DeepSeek 双协议 Key | ① 直连 Messages 入口 | ① 写槽 | ③ Chat ≠ Responses，要桥 |
+| Kimi Code 会员双协议 Key | ① 直连 Messages 入口 | ① 写槽 | ③ Chat ≠ Responses，要桥 |
+| GLM / DeepSeek API Key | ① 直连 Messages 入口 | ① 写槽 | ① 官方 Responses 端点直连 |
 | Anthropic API Key | native / ① | ① 写 Anthropic 槽 | ③ Messages → Responses |
 | Codex 订阅 | ③ 本机桥 | ② 写 `openai-codex` 槽 | native |
 | Claude 订阅 | native | ② 写 Anthropic 槽 | ③ 或暂不可行 |
@@ -116,19 +118,19 @@ plan(ticket, agent):
 
 > 双协议指这把 Key 对**上游**能说 Messages 和 Chat Completions。能不能直连由**目标听什么**决定。Chat Completions 不是 Codex 的 Responses。
 
-## 5. 参考项目怎么对
+## 5. 和本产品的边界
 
-不要把三个项目都概括成「本机代理」。
+同类桌面/代理工具里常见「配置切换、本机桥、管理面」。AgentHub 的取舍是：
 
-| | cc-switch | CLIProxyAPI | Management Center | AgentHub |
-|---|---|---|---|---|
-| ① 双协议 / 官方兼容入口直连 | 有（preset 直连） | 也能配 Key，但默认仍走代理 | 不管转发 | **优先直连** |
-| ② 订阅写进目标自己的槽 | 有（各 App 官方登录 / 切换） | 弱；倾向先登录再暴露 HTTP | 发起 OAuth、管凭据 | **Pi 三槽是范例**；能写槽就写槽 |
-| ③ 协议转换 / 订阅反代 | Codex OAuth 反代进 Claude；Needs Local Routing | 核心：多协议 translator | 无 | 只在 ①② 都走不通时起桥 |
-| 管理面 | 托盘 / 健康 | 服务端 | 主职：登录、配额、探测、日志 | 用现有页面做这些动作，不抄多栏工作台 |
+| | AgentHub |
+|---|---|
+| ① 双协议 / 官方兼容入口 | **优先直连**，能配官方端点就不启进程 |
+| ② 订阅写进目标自己的槽 | **能写槽就写槽**（Pi 三槽是范例） |
+| ③ 协议转换 | 只在 ①② 都走不通时起本机桥 |
+| 管理面 | 用现有页面做登录、配额、探测、桥启停，不另做多栏工作台 |
 
-明确不抄：公网入口、号池拼车、转售、把投影再当票、参考项目源码、CLIProxyAPI「永远起代理」。  
-凭据落盘加密仍为项目范围外。
+本产品不做：公网入口、多账号拼车、转售、把桥的生成配置再当作钱包里的票、默认常驻兼容代理。  
+公开致谢见根 [README.md](../README.md)。凭据落盘加密仍为项目范围外。
 
 ## 6. 产品开，实现可以关
 
@@ -142,10 +144,10 @@ plan(ticket, agent):
 
 ## 7. 工程顺序（不再讨论方向）
 
-1. **① 补齐**：双协议 Key 接到更多已登记 Agent（GLM/DeepSeek → Pi 等）；单协议 Key 的 reshape 继续按图补。
+1. **① 补齐**：双协议 Key 接到更多已登记 Agent；GLM/DeepSeek → Pi 已可 experimental bind（自定义 provider 槽）；单协议 Key 的 reshape 继续按图补。
 2. **② 先用已有槽**：Claude / Codex / Grok 订阅 → Pi（目标已声明契约）。**当前实现**：这三条边已可 experimental bind（写入 Pi `auth.json` 对应槽，Pi 拥有刷新）。再评估其他 Agent 有没有同类槽。
-3. **③ 旗舰桥**：Codex 订阅 → Claude Code（cc-switch 已有）。再评估 Claude 订阅 → Codex、Grok 订阅 → Claude。
-4. 管理面：OAuth 状态、配额、最小探测、桥启停（对齐 Management Center 的职责，不抄页面）。
+3. **③ 旗舰桥**：Codex 订阅 → Claude Code。再评估 Claude 订阅 → Codex、Grok 订阅 → Claude。
+4. 管理面：OAuth 状态、配额、最小探测、桥启停放在现有页面，不另做工作台。
 
 ## 8. 其他文档怎么读
 
@@ -172,12 +174,12 @@ plan(ticket, agent):
 
 旧句「订阅本机路由是唯一产品」「只借鉴方法不借鉴产品」「消费订阅不是产品」作废。
 
-## 9. 评审纪要（Fable / GPT Sol）
+## 9. 评审结论
 
-2026-08-15 与 Fable、GPT Sol 对质后的共识，写入本文，不再另开讨论：
+2026-08-15 评审后写入本文，不再另开讨论：
 
 - 三路是产品一等语言，**不**进领域模型当第五个 `route`。
 - 分类在边上，不在票上。同一把 Kimi Key → Claude 是 ①、→ Codex 是 ③，这是常态。
-- 反对「全部走本机桥」：①② 本可零进程；强行桥增加 sidecar、语义损失和条款暴露。cc-switch 对双协议 preset 也是直连。
+- 反对「全部走本机桥」：①② 本可零进程；强行桥增加 sidecar、语义损失和条款暴露。双协议 Key 对听 Chat Completions 的目标应直连。
 - 反对「订阅一律 ③」：Pi 三个 OAuth 槽已经是 ② 的反例。不能当 API Key ≠ 目标不能原生吃同一契约。
 - 上一版把「订阅」几乎都写成 ③，风险是：先造桥、漏掉 Pi `config_sync`、UI 对原生订阅误显示「需要本机服务」。
