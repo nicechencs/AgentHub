@@ -110,10 +110,11 @@ impl AgentHub {
         let ticket_bind =
             TicketBindService::new(db.clone(), registry.clone(), backups_dir(&data_dir));
         let backups = BackupService::new(db.clone(), registry.clone(), backups_dir(&data_dir));
-        let skills = SkillService::with_db(
+        let skills = SkillService::with_db_and_target_registry(
             home_dir()?.join(".agents").join("skills"),
             registry.clone(),
             db.clone(),
+            crate::platform::skills::builtin_skill_target_registry().clone(),
         );
         let settings = SettingsService::new(data_dir.clone(), db.clone());
         let projects = ProjectService::new(registry.clone(), data_dir.clone());

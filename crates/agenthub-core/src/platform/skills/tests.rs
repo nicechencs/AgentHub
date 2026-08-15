@@ -203,3 +203,45 @@ fn assert_no_helper_dirs(skills_root: &Path) {
         );
     }
 }
+
+#[test]
+fn builtin_skill_targets_cover_skills_capable_agents_without_adapter_registry() {
+    use crate::adapters::register_all;
+    use crate::models::AgentId;
+    use crate::platform::skills::{
+        builtin_skill_target_registry, SkillTargetRegistry, StaticSkillTarget,
+    };
+    use crate::platform::AgentKey;
+    use std::sync::Arc;
+
+    let builtin = builtin_skill_target_registry();
+    let from_adapters =
+        SkillTargetRegistry::from_adapter_registry(&register_all()).expect("adapter targets");
+
+    let builtin_keys = builtin.supported_agent_keys();
+    let adapter_keys = from_adapters.supported_agent_keys();
+    assert_eq!(
+        builtin_keys, adapter_keys,
+        "builtin StaticSkillTarget set must match adapter-derived membership"
+    );
+
+    // Kimi has no skills root — must not appear.
+    assert!(!builtin.contains_key(&AgentKey::from_agent_id(AgentId::Kimi)));
+
+    for key in &builtin_keys {
+        let target = builtin.get(key).expect("builtin target");
+        assert!(target.supports_skills());
+        assert!(target.skills_root().is_some());
+    }
+
+    // Standalone StaticSkillTarget registers without AgentAdapter.
+    let mut custom = SkillTargetRegistry::new();
+    custom
+        .register(Arc::new(StaticSkillTarget {
+            agent_key: AgentKey::parse("skills-only-agent").unwrap(),
+            skills_root: Some(std::path::PathBuf::from("/tmp/skills-only")),
+            supports: true,
+        }))
+        .unwrap();
+    assert!(custom.contains_key(&AgentKey::parse("skills-only-agent").unwrap()));
+}
