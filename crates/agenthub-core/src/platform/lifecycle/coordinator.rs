@@ -9,7 +9,7 @@ use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
 use crate::logging::{self, targets};
 use crate::models::{AgentId, DetectStatus, InstallOutcome};
-use crate::platform::detection::{AdapterDetector, DetectorRegistry};
+use crate::platform::detection::{builtin_detector_registry, DetectorRegistry};
 use crate::platform::install::{builtin_install_registry, InstallContributionRegistry};
 use crate::platform::AgentKey;
 use crate::storage::{Database, OperationRepo};
@@ -66,13 +66,12 @@ pub struct LifecycleCoordinator {
 
 impl LifecycleCoordinator {
     pub fn new(db: Database, registry: AdapterRegistry) -> Self {
-        let mut detectors = DetectorRegistry::new();
-        for adapter in registry.all() {
-            detectors
-                .register(Arc::new(AdapterDetector::new(adapter)))
-                .expect("unique adapter detector key");
-        }
-        Self::with_registries(db, registry, detectors, builtin_install_registry().clone())
+        Self::with_registries(
+            db,
+            registry,
+            builtin_detector_registry().clone(),
+            builtin_install_registry().clone(),
+        )
     }
 
     /// Injectable composition root for tests and future key-native integrations.

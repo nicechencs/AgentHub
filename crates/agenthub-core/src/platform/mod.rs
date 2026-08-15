@@ -15,9 +15,9 @@ pub mod stream;
 pub mod usage;
 
 pub use skills::{
-    bootstrap_skill_assignments, AdapterSkillTarget, AgentSkillTarget, SkillAssignmentService,
-    SkillBootstrapReport, SkillPackageService, SkillReconciler, SkillSourceService,
-    SkillTargetRegistry, StaticSkillTarget,
+    bootstrap_skill_assignments, builtin_skill_target_registry, AdapterSkillTarget,
+    AgentSkillTarget, SkillAssignmentService, SkillBootstrapReport, SkillPackageService,
+    SkillReconciler, SkillSourceService, SkillTargetRegistry, StaticSkillTarget,
 };
 
 pub use agent_catalog::{
@@ -29,7 +29,9 @@ pub use config::{
     ConfigChangePlan, ConfigProjectorRegistry, ConfigValidationResult, ConfigurationService,
     NormalizedConfigDocument, SECRET_REDACTED,
 };
-pub use detection::{builtin_detector_registry, AdapterDetector, AgentDetector, DetectorRegistry};
+pub use detection::{
+    builtin_detector_registry, AdapterDetector, AgentDetector, DetectorRegistry, FnDetector,
+};
 pub use install::{
     builtin_install_registry, InstallContribution, InstallContributionRegistry,
     OfficialVersionProbe, ScriptVersionKind,
