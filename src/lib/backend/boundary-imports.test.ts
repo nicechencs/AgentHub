@@ -52,11 +52,14 @@ const DIRECT_TAURI_CORE_INVOKE_RE =
   /import\s*\{[^}]*\binvoke\b[^}]*\}\s*from\s*['"]@tauri-apps\/api\/core['"]/;
 
 describe('pages/hooks façade patterns (spot checks)', () => {
-  it('agent-card uses the install façade, not tauri install-events', () => {
-    const src = sourceOf('pages/agents/agent-card.tsx');
-    expect(src).not.toMatch(/@\/lib\/backend\/tauri/);
-    expect(src).not.toMatch(/isTauriApp/);
-    expect(src).toMatch(/from '@\/lib\/api\/install'/);
+  it('agent-card lifecycle uses the install façade, not tauri install-events', () => {
+    const card = sourceOf('pages/agents/agent-card.tsx');
+    const life = sourceOf('pages/agents/use-agent-card-lifecycle.ts');
+    expect(card).not.toMatch(/@\/lib\/backend\/tauri/);
+    expect(card).not.toMatch(/isTauriApp/);
+    expect(life).not.toMatch(/@\/lib\/backend\/tauri/);
+    expect(life).not.toMatch(/isTauriApp/);
+    expect(life).toMatch(/from '@\/lib\/api\/install'/);
   });
 
   it('useSkills uses the skill façade, not tauri skill-events', () => {

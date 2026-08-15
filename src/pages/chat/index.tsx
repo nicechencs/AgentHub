@@ -1,25 +1,19 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Check,
-  ChevronDown,
   FolderOpen,
   Loader2,
   MessagesSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  SendHorizontal,
   Settings2,
-  Square,
-  Terminal,
   Trash2,
 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
@@ -37,15 +31,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/toast';
@@ -64,11 +49,9 @@ import { listProviders, switchProvider } from '@/lib/api/provider';
 import { takeChatBootstrap } from '@/lib/chat-bootstrap';
 import {
   hasProcessDetails,
-  phaseFromMessageStatus,
   processKey,
   processPhaseLabel,
   reduceProcessEvent,
-  stepSummary,
   type AgentProcessView,
   type ProcessMap,
 } from '@/lib/chat-process';
@@ -78,529 +61,17 @@ import type {
   ChatEvent,
   ChatMessage,
   Conversation,
-  ProcessStep,
   Provider,
 } from '@/lib/types';
 import { cn } from '@/lib/utils';
-
-type TurnGroup = {
-  turn: number;
-  user?: ChatMessage;
-  agents: ChatMessage[];
-};
-
-function formatStepInput(input: unknown): string | null {
-  if (input == null) return null;
-  try {
-    const s = typeof input === 'string' ? input : JSON.stringify(input);
-    return s.length > 240 ? `${s.slice(0, 240)}…` : s;
-  } catch {
-    return String(input);
-  }
-}
-
-/** Render tool/stderr text; highlight unified-diff style lines when present. */
-function DiffAwarePre({ text, className }: { text: string; className?: string }) {
-  const looksDiff =
-    /^(?:diff --git|@@ |--- |\+\+\+ )/m.test(text) ||
-    (text.includes('\n+') && text.includes('\n-') && /^(?:[+-](?![+-])).+/m.test(text));
-
-  if (!looksDiff) {
-    return (
-      <pre className={className}>{text.length > 4000 ? `${text.slice(0, 4000)}…` : text}</pre>
-    );
-  }
-
-  const lines = text.split('\n').slice(0, 200);
-  return (
-    <pre className={cn(className, 'space-y-0')}>
-      {lines.map((line, i) => {
-        const tone =
-          line.startsWith('+') && !line.startsWith('+++')
-            ? 'text-success'
-            : line.startsWith('-') && !line.startsWith('---')
-              ? 'text-danger'
-              : line.startsWith('@@')
-                ? 'text-info'
-                : 'text-secondary';
-        return (
-          <div key={i} className={cn('whitespace-pre-wrap break-all', tone)}>
-            {line || ' '}
-          </div>
-        );
-      })}
-      {text.split('\n').length > 200 ? (
-        <div className="text-muted">…已截断</div>
-      ) : null}
-    </pre>
-  );
-}
-
-function formatDurationMs(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  const m = Math.floor(ms / 60_000);
-  const s = Math.round((ms % 60_000) / 1000);
-  return `${m}m ${s}s`;
-}
-
-function ProcessStepRow({ step }: { step: ProcessStep }) {
-  if (step.type === 'tool') {
-    const input = formatStepInput(step.input);
-    return (
-      <div className="rounded-btn border border-border/80 bg-panel px-2 py-1.5">
-        <div className="flex items-center gap-1.5 font-medium text-secondary">
-          <span className="rounded-btn bg-subtle px-1 py-0.5 text-2xs uppercase tracking-wide text-muted">
-            tool
-          </span>
-          <span>{step.name}</span>
-          <span className="text-muted">· {step.status}</span>
-        </div>
-        {input ? (
-          <pre className="mt-1 max-h-16 overflow-auto whitespace-pre-wrap break-all font-mono text-2xs text-muted">
-            {input}
-          </pre>
-        ) : null}
-        {step.result ? (
-          <DiffAwarePre
-            text={step.result}
-            className="mt-1 max-h-28 overflow-auto rounded-btn bg-subtle/50 px-1.5 py-1 font-mono text-2xs leading-relaxed text-secondary"
-          />
-        ) : null}
-      </div>
-    );
-  }
-  if (step.type === 'thinking') {
-    return (
-      <div className="rounded-btn border border-dashed border-border/80 px-2 py-1.5 text-muted">
-        <span className="mr-1.5 text-2xs uppercase tracking-wide">thinking</span>
-        <span className="whitespace-pre-wrap">{step.text}</span>
-      </div>
-    );
-  }
-  if (step.type === 'error') {
-    return <div className="text-danger">{step.message}</div>;
-  }
-  return (
-    <div className="text-muted">
-      <span className="mr-1 font-medium text-secondary">{step.type}</span>
-      {stepSummary(step)}
-    </div>
-  );
-}
-
-function isProcessActivePhase(phase: AgentProcessView['phase']): boolean {
-  return phase === 'queued' || phase === 'starting' || phase === 'running';
-}
-
-function isProcessErrorPhase(phase: AgentProcessView['phase']): boolean {
-  return phase === 'failed' || phase === 'timeout';
-}
-
-/**
- * 过程面板（受控 open）：
- * - 进行中 / 失败 / 超时 → 默认展开
- * - 成功 / 取消 → 默认折叠
- * - messageStatus 优先于 process.phase（防止过程机滞后仍停在 running）
- * - 用户点击后记住选择；阶段变化时重新交给自动策略
- */
-function AgentProcessPanel({
-  view,
-  messageStatus,
-  durationMs,
-  exitCode,
-}: {
-  view: AgentProcessView;
-  /** 对应气泡消息状态；终态时强制驱动折叠策略 */
-  messageStatus?: string;
-  durationMs?: number;
-  exitCode?: number | null;
-}) {
-  const timeline = view.steps.filter((s) => s.type !== 'text');
-  const toolCount = timeline.filter((s) => s.type === 'tool').length;
-  const thinkingCount = timeline.filter((s) => s.type === 'thinking').length;
-
-  const effectivePhase: AgentProcessView['phase'] =
-    messageStatus && messageStatus !== 'running'
-      ? phaseFromMessageStatus(messageStatus)
-      : view.phase;
-
-  const autoOpen =
-    isProcessActivePhase(effectivePhase) || isProcessErrorPhase(effectivePhase);
-
-  const [userOpen, setUserOpen] = useState<boolean | null>(null);
-  const phaseKeyRef = useRef(effectivePhase);
-
-  // 阶段变化（含消息终态到位）时清掉手动覆盖，确保「结束后折叠」生效
-  useLayoutEffect(() => {
-    if (phaseKeyRef.current !== effectivePhase) {
-      phaseKeyRef.current = effectivePhase;
-      setUserOpen(null);
-    }
-  }, [effectivePhase]);
-
-  const open = userOpen ?? autoOpen;
-
-  return (
-    <details
-      className="mb-2 rounded-card border border-border bg-subtle/60 text-xs text-secondary"
-      open={open}
-      onToggle={(e) => {
-        const next = e.currentTarget.open;
-        // 与受控 open 对齐：只在用户意图与当前受控值不同时写入
-        if (next !== open) {
-          setUserOpen(next);
-        }
-      }}
-    >
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2.5 py-1.5 text-muted marker:content-none [&::-webkit-details-marker]:hidden">
-        <Terminal className="h-3 w-3 shrink-0 opacity-70" />
-        <span className="font-medium text-secondary">过程</span>
-        <span className="text-muted">·</span>
-        <span>{processPhaseLabel(effectivePhase)}</span>
-        {timeline.length > 0 ? (
-          <span className="text-muted">· {timeline.length} 步</span>
-        ) : null}
-        {durationMs != null && durationMs > 0 ? (
-          <span className="text-muted">· {formatDurationMs(durationMs)}</span>
-        ) : null}
-        {view.command ? (
-          <Tip
-            className="ml-auto max-w-[45%] truncate font-mono text-2xs text-muted"
-            label={view.command}
-          >
-            {view.command}
-          </Tip>
-        ) : null}
-      </summary>
-      <div className="space-y-2 border-t border-border px-2.5 py-2">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          <span className="text-muted">状态</span>
-          <span className="font-medium text-secondary">
-            {processPhaseLabel(effectivePhase)}
-          </span>
-          {durationMs != null && durationMs > 0 ? (
-            <>
-              <span className="text-muted">·</span>
-              <span className="text-muted">耗时 {formatDurationMs(durationMs)}</span>
-            </>
-          ) : null}
-          {exitCode != null ? (
-            <>
-              <span className="text-muted">·</span>
-              <span className="text-muted">exit {exitCode}</span>
-            </>
-          ) : null}
-          {toolCount > 0 || thinkingCount > 0 ? (
-            <>
-              <span className="text-muted">·</span>
-              <span className="text-muted">
-                {[toolCount > 0 ? `工具 ${toolCount}` : null, thinkingCount > 0 ? `思考 ${thinkingCount}` : null]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </span>
-            </>
-          ) : null}
-        </div>
-        {view.command ? (
-          <div>
-            <div className="mb-0.5 text-muted">命令</div>
-            <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-btn bg-panel px-2 py-1.5 font-mono text-2xs leading-relaxed text-primary">
-              {view.command}
-            </pre>
-          </div>
-        ) : null}
-        {timeline.length > 0 ? (
-          <div>
-            <div className="mb-1 text-muted">步骤</div>
-            <div className="max-h-48 space-y-1.5 overflow-y-auto">
-              {timeline.map((step, i) => (
-                <ProcessStepRow key={`${step.type}-${i}`} step={step} />
-              ))}
-            </div>
-          </div>
-        ) : null}
-        {view.stderr ? (
-          <div>
-            <div className="mb-0.5 text-muted">stderr</div>
-            <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all rounded-btn bg-panel px-2 py-1.5 font-mono text-2xs leading-relaxed text-danger/90">
-              {view.stderr}
-            </pre>
-          </div>
-        ) : !timeline.length && isProcessActivePhase(effectivePhase) ? (
-          <p className="text-muted">等待 CLI 输出过程日志…</p>
-        ) : null}
-      </div>
-    </details>
-  );
-}
-
-function groupByTurn(messages: ChatMessage[]): TurnGroup[] {
-  const map = new Map<number, TurnGroup>();
-  for (const m of messages) {
-    let g = map.get(m.turn);
-    if (!g) {
-      g = { turn: m.turn, agents: [] };
-      map.set(m.turn, g);
-    }
-    if (m.role === 'user') g.user = m;
-    else g.agents.push(m);
-  }
-  return [...map.values()].sort((a, b) => a.turn - b.turn);
-}
-
-/** 从 provider 配置文本里尽量抽出 model 名 */
-function extractModel(configText: string): string | null {
-  const toml = configText.match(/(?:^|\n)\s*(?:model|default_model)\s*=\s*"([^"]+)"/m);
-  if (toml?.[1]) return toml[1];
-  const json = configText.match(/"(?:model|default_model)"\s*:\s*"([^"]+)"/);
-  return json?.[1] ?? null;
-}
-
-function relativeTime(iso: string): string {
-  const t = Date.parse(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
-  if (Number.isNaN(t)) return '';
-  const diff = Date.now() - t;
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return '刚刚';
-  if (m < 60) return `${m} 分钟前`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} 小时前`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d} 天前`;
-  return new Date(t).toLocaleDateString();
-}
-
-/** Composer 正文区：约 1 行起、最多 ~12 行；超出后内部滚动，工具条始终贴底。 */
-const COMPOSER_MIN_PX = 56;
-const COMPOSER_MAX_PX = 240;
-
-function ChatComposer({
-  draft,
-  setDraft,
-  sending,
-  active,
-  installed,
-  providers,
-  primaryAgent,
-  agentPickerLabel,
-  modelPickerLabel,
-  modelPickerSubtitle,
-  switchingProvider,
-  onSend,
-  onCancel,
-  onToggleAgent,
-  onSwitchProvider,
-}: {
-  draft: string;
-  setDraft: (v: string) => void;
-  sending: boolean;
-  active: Conversation;
-  installed: Map<AgentId, boolean>;
-  providers: Provider[];
-  primaryAgent: AgentId | null;
-  agentPickerLabel: string;
-  modelPickerLabel: string;
-  modelPickerSubtitle: string | null;
-  switchingProvider: boolean;
-  onSend: () => void;
-  onCancel: () => void;
-  onToggleAgent: (id: AgentId) => void;
-  onSwitchProvider: (id: string) => void;
-}) {
-  const canSend = Boolean(draft.trim());
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const syncTextareaHeight = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    // 先收成 auto 再量 scrollHeight，避免删字后高度卡住
-    el.style.height = 'auto';
-    const contentH = el.scrollHeight;
-    const next = Math.min(Math.max(contentH, COMPOSER_MIN_PX), COMPOSER_MAX_PX);
-    el.style.height = `${next}px`;
-    el.style.overflowY = contentH > COMPOSER_MAX_PX ? 'auto' : 'hidden';
-  }, []);
-
-  useLayoutEffect(() => {
-    syncTextareaHeight();
-  }, [draft, syncTextareaHeight]);
-
-  // 窗口变窄换行后需重算高度
-  useEffect(() => {
-    const onResize = () => syncTextareaHeight();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [syncTextareaHeight]);
-
-  return (
-    <>
-      <div className="rounded-composer border border-border bg-panel shadow-xs">
-        <textarea
-          ref={textareaRef}
-          className={cn(
-            'block w-full resize-none overflow-x-hidden break-words bg-transparent',
-            'px-4 pb-2 pt-3 text-sm leading-[1.45] outline-none placeholder:text-muted',
-            'disabled:cursor-not-allowed disabled:opacity-60',
-          )}
-          style={{ minHeight: COMPOSER_MIN_PX, maxHeight: COMPOSER_MAX_PX }}
-          placeholder="发送消息给 Agent…（Shift+Enter 换行）"
-          rows={1}
-          value={draft}
-          disabled={sending}
-          onChange={(e) => setDraft(e.target.value)}
-          onInput={syncTextareaHeight}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              onSend();
-            }
-          }}
-          aria-label="消息输入"
-        />
-        <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-2 py-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                disabled={sending}
-                className="inline-flex h-7 max-w-36 items-center gap-1.5 rounded-btn border border-border bg-subtle px-2 text-xs text-secondary hover:bg-hover disabled:opacity-50"
-              >
-                {active.agentIds[0] && <AgentLogo agentId={active.agentIds[0]} size="sm" />}
-                <span className="truncate">{agentPickerLabel}</span>
-                <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel>选择 Agent（可多选）</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {AGENT_IDS.filter((id) => installed.get(id) !== false).map((id) => (
-                <DropdownMenuCheckboxItem
-                  key={id}
-                  checked={active.agentIds.includes(id)}
-                  disabled={sending}
-                  onCheckedChange={() => onToggleAgent(id)}
-                >
-                  <span className="flex items-center gap-2">
-                    <AgentLogo agentId={id} size="sm" />
-                    {agentDisplayName(id)}
-                  </span>
-                </DropdownMenuCheckboxItem>
-              ))}
-              {AGENT_IDS.every((id) => installed.get(id) === false) && (
-                <div className="px-2 py-1.5 text-xs text-muted">尚未安装任何 Agent</div>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <Hint
-              label={
-                active.agentIds.length > 1 && primaryAgent
-                  ? `连接切换作用于首个 Agent（${agentDisplayName(primaryAgent)}）`
-                  : undefined
-              }
-            >
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  disabled={!primaryAgent || sending || switchingProvider}
-                  className="inline-flex h-7 max-w-44 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-xs text-secondary hover:bg-hover disabled:opacity-50"
-                  aria-label={
-                    active.agentIds.length > 1
-                      ? `连接切换作用于首个 Agent（${agentDisplayName(primaryAgent!)}）`
-                      : '切换连接'
-                  }
-                >
-                  <span className="min-w-0 truncate">
-                    {modelPickerLabel}
-                    {modelPickerSubtitle ? (
-                      <span className="text-muted"> · {modelPickerSubtitle}</span>
-                    ) : null}
-                  </span>
-                  <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-                </button>
-              </DropdownMenuTrigger>
-            </Hint>
-            <DropdownMenuContent align="start" className="w-64">
-              <DropdownMenuLabel>
-                {primaryAgent ? `${agentDisplayName(primaryAgent)} · 切换连接` : '切换连接'}
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {providers.length === 0 ? (
-                <div className="px-2 py-3 text-xs text-muted">暂无连接，去连接页添加</div>
-              ) : (
-                providers.map((p) => {
-                  const model = extractModel(p.configText);
-                  return (
-                    <DropdownMenuItem
-                      key={p.id}
-                      disabled={p.isCurrent || switchingProvider}
-                      onClick={() => onSwitchProvider(p.id)}
-                    >
-                      <span className="flex min-w-0 flex-1 items-center gap-2">
-                        {p.isCurrent ? (
-                          <Check className="h-3.5 w-3.5 shrink-0 text-accent" />
-                        ) : (
-                          <span className="w-3.5 shrink-0" />
-                        )}
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate">{p.name}</span>
-                          {model ? (
-                            <span className="block truncate text-xs text-muted">{model}</span>
-                          ) : null}
-                        </span>
-                      </span>
-                    </DropdownMenuItem>
-                  );
-                })
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <div className="flex-1" />
-
-          {sending ? (
-            <Button size="sm" variant="dangerOutline" onClick={onCancel}>
-              <Square className="h-3.5 w-3.5" />
-              停止
-            </Button>
-          ) : (
-            <Button
-              size="icon"
-              variant={canSend ? 'default' : 'secondary'}
-              className="h-7 w-7 rounded-btn"
-              disabled={!canSend}
-              onClick={onSend}
-              title="发送"
-            >
-              <SendHorizontal className="h-3.5 w-3.5" />
-            </Button>
-          )}
-        </div>
-      </div>
-      <div className="mt-2 flex justify-center px-2">
-        <Tip
-          className="inline-flex max-w-[min(100%,28rem)] items-center gap-1 text-xs text-muted"
-          label={[
-            'Agent 可能改动工作目录中的文件',
-            active.cwd ?? '工作目录未设置',
-            active.allowDangerous
-              ? '自动批准已开启：跳过工具确认'
-              : '自动批准已关闭：工具调用需确认',
-          ].join(' · ')}
-        >
-          <span className="min-w-0 truncate">
-            {active.cwd ?? '未设置工作目录'}
-          </span>
-          <span className="shrink-0">
-            · {active.allowDangerous ? '自动批准' : '需确认'}
-          </span>
-        </Tip>
-      </div>
-    </>
-  );
-}
+import { ChatComposer } from './ChatComposer';
+import { ChatProcessPanel } from './ChatProcessPanel';
+import {
+  extractModel,
+  formatDurationMs,
+  groupByTurn,
+  relativeTime,
+} from './chat-format';
 
 export default function ChatPage() {
   const { toast } = useToast();
@@ -1249,7 +720,7 @@ export default function ChatPage() {
                                 )}
                               </div>
                               {hasProcessDetails(proc) && proc ? (
-                                <AgentProcessPanel
+                                <ChatProcessPanel
                                   view={proc}
                                   messageStatus={m.status}
                                   durationMs={m.durationMs}
