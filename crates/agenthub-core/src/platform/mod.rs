@@ -33,8 +33,10 @@ pub use detection::{
     builtin_detector_registry, AdapterDetector, AgentDetector, DetectorRegistry, FnDetector,
 };
 pub use install::{
-    builtin_install_registry, InstallContribution, InstallContributionRegistry,
-    OfficialVersionProbe, ScriptVersionKind,
+    adapter_install_channels, builtin_install_registry, channels_for, list_install_catalog,
+    native_ps1_url, native_setup_url, native_sh_url, npm_install_extra_flags, npm_package,
+    official_version_probe, AgentInstallCatalogEntry, InstallChannelPlan, InstallContribution,
+    InstallContributionRegistry, OfficialVersionProbe, ScriptVersionKind,
 };
 pub use lifecycle::{
     LifecycleCoordinator, LifecycleResult, OperationId, OperationKind, OperationRecord,
