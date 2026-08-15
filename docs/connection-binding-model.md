@@ -103,6 +103,8 @@ Account / Provider / live 事务仍由 core service 单点负责，不建设 `co
 
 优先 ①②，对不上再 ③。桥只是第 3 路的手段，不是订阅的默认。OAuth 先看目标有没有同一授权契约槽（②）；没有且存在转换边才进 ③。API Key 与 OAuth 分开判。三路是用户说明，不新增领域枚举。见 [product-decisions.md](product-decisions.md)。
 
+`plan.reusePath` 是派生展示字段，非第五个 route；领域 route 仍是 `native` | `reshape` | `bridge` | 不可行。
+
 ### 3.2 协议图
 
 边是 `(上游协议 → 下游协议)` + 转换器 + fixtures + 成熟度。商品组合（Kimi 会员 × Claude）是图的一次求值结果，不是规则本身。
