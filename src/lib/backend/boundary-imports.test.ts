@@ -44,9 +44,9 @@ function toPosixRel(abs: string): string {
 const TAURI_IMPORT_RE =
   /(?:from|import)\s+['"]@tauri-apps\/[^'"]+['"]|import\s*\(\s*['"]@tauri-apps\/[^'"]+['"]\s*\)/;
 const BACKEND_TAURI_IMPORT_RE =
-  /from\s+['"]@\/lib\/backend\/tauri(?:\/[^'"]*)?['"]|from\s+['"](?:\.\.\/)+backend\/tauri(?:\/[^'"]*)?['"]/;
+  /(?:from|import)\s*\(?\s*['"](?:@\/lib\/backend\/tauri|(?:\.\.\/)+backend\/tauri|\.\/backend\/tauri)(?:\/[^'"]*)?['"]/;
 const DEV_IMPORT_RE =
-  /from\s+['"]@\/dev\/|from\s+['"](?:\.\.\/)*dev\/|import\s*\(\s*['"]@\/dev\//;
+  /(?:from|import)\s*\(?\s*['"](?:@\/dev\/|(?:\.\.\/)*dev\/|\.\/dev\/)/;
 /** Direct core invoke import (must only live in tauri/invoke.ts). */
 const DIRECT_TAURI_CORE_INVOKE_RE =
   /import\s*\{[^}]*\binvoke\b[^}]*\}\s*from\s*['"]@tauri-apps\/api\/core['"]/;
@@ -157,12 +157,20 @@ describe('production module graph boundary (full src scan)', () => {
   });
 
   it('pages/bridges does not import pages/connections, and layout does not import bridges models', () => {
-    const bridgesToConnections = /from\s+['"]@\/pages\/connections(?:\/[^'"]*)?['"]/;
-    const layoutToBridgesModel = /from\s+['"]@\/pages\/bridges\/[^'"]+['"]/;
+    const pageImport = (page: string) =>
+      new RegExp(
+        String.raw`(?:from|import)\s*\(?\s*['"](?:@/pages/${page}(?:/[^'"]*)?|(?:\.\./)+${page}(?:/[^'"]*)?)['"]`,
+      );
+    const bridgesToConnections = pageImport('connections');
+    const connectionsToBridges = pageImport('bridges');
+    const layoutToBridgesModel = /(?:from|import)\s*\(?\s*['"](?:@\/pages\/bridges\/[^'"]+|(?:\.\.\/)+bridges\/[^'"]+)['"]/;
     const offenders: string[] = [];
     for (const rel of productionFiles) {
       const src = sourceOf(rel);
       if (rel.startsWith('pages/bridges/') && bridgesToConnections.test(src)) {
+        offenders.push(rel);
+      }
+      if (rel.startsWith('pages/connections/') && connectionsToBridges.test(src)) {
         offenders.push(rel);
       }
       if (
