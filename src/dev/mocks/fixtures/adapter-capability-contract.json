@@ -58,6 +58,82 @@
       }
     },
     {
+      "id": "kimi-membership-account-to-claude",
+      "source": {
+        "kind": "account",
+        "agentId": "kimi",
+        "accountKind": "apikey",
+        "extra": {
+          "provider": "kimi-code-membership"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "claude",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "stable",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "kimi-membership-to-claude-v1",
+        "gateKind": "none",
+        "reason": "Kimi Code 会员可预览为 Claude 的原生 Anthropic Messages 端点。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "kimi-membership-account-to-codex",
+      "source": {
+        "kind": "account",
+        "agentId": "kimi",
+        "accountKind": "apikey",
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak",
+          "provider": "kimi-code-membership"
+        }
+      },
+      "target": "codex",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "kimi-membership-to-codex-v1",
+        "gateKind": "none",
+        "reason": "Kimi Code 会员到 Codex 需要本地协议桥接。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "kimi-membership-account-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "kimi",
+        "accountKind": "apikey",
+        "extra": {
+          "preset": "kimi-code-membership"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "stable",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "kimi-membership-to-pi-v1",
+        "gateKind": "none",
+        "reason": "Kimi Code 会员可预览为 Pi 的配置同步。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
       "id": "anthropic-api-to-pi",
       "source": {
         "kind": "provider",

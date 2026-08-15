@@ -452,11 +452,11 @@ fn coding_endpoint_without_preset_resolves_and_materializes() {
     );
     let (_dir, resolver) = resolver_with(source.clone());
     resolver
-        .validate_kimi_membership_source(&source.id)
+        .validate_kimi_membership_source(AdapterSourceKind::Provider, &source.id)
         .unwrap();
     assert_eq!(
         resolver
-            .resolve_kimi_membership_auth(&source.id)
+            .resolve_kimi_membership_auth(AdapterSourceKind::Provider, &source.id)
             .unwrap()
             .token(),
         "test-kimi-secret"
@@ -471,6 +471,109 @@ fn coding_endpoint_without_preset_resolves_and_materializes() {
         target(&source.id).settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
         CONNECTION_SECRET_MARKER
     );
+}
+
+#[test]
+fn kimi_membership_account_materializes_and_scrubs_without_plaintext() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("adapter-secret-resolver-kimi-account.db")).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "kimi-account".into(),
+            agent_id: AgentId::Kimi,
+            kind: AccountKind::ApiKey,
+            label: "Kimi Code membership".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "kimi-account-secret",
+                "provider": KIMI_MEMBERSHIP_PRESET,
+            }),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let resolver = AdapterSecretResolver::new(db);
+    resolver
+        .validate_kimi_membership_source(AdapterSourceKind::Account, "kimi-account")
+        .unwrap();
+    assert_eq!(
+        resolver
+            .resolve_kimi_membership_auth(AdapterSourceKind::Account, "kimi-account")
+            .unwrap()
+            .token(),
+        "kimi-account-secret"
+    );
+
+    let mut target = pi_kimi_target("kimi-account");
+    target.meta["adapterSourceRef"] = json!({"kind": "account", "id": "kimi-account"});
+    let materialized = resolver.materialize_for_live(&target).unwrap();
+    assert_eq!(
+        materialized.settings_config["models"]["providers"][KIMI_PI_PROVIDER_SLOT]["apiKey"],
+        "kimi-account-secret"
+    );
+    assert_eq!(
+        target.settings_config["models"]["providers"][KIMI_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    let scrubbed = resolver
+        .scrub_for_backfill(
+            &target,
+            &json!({
+                "models": {
+                    "providers": {
+                        KIMI_PI_PROVIDER_SLOT: {
+                            "baseUrl": KIMI_PI_BASE_URL,
+                            "apiKey": "kimi-account-secret",
+                        }
+                    }
+                }
+            }),
+        )
+        .unwrap();
+    assert_eq!(
+        scrubbed["models"]["providers"][KIMI_PI_PROVIDER_SLOT]["apiKey"],
+        CONNECTION_SECRET_MARKER
+    );
+    assert!(!serde_json::to_string(&scrubbed)
+        .unwrap()
+        .contains("kimi-account-secret"));
+}
+
+#[test]
+fn kimi_membership_account_requires_api_key_format_and_value() {
+    for credentials in [
+        json!({"provider": KIMI_MEMBERSHIP_PRESET, "api_key": "secret"}),
+        json!({"format": "api_key", "provider": KIMI_MEMBERSHIP_PRESET}),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("adapter-secret-resolver-kimi-invalid.db"))
+            .unwrap();
+        AccountRepo::new(db.clone())
+            .create(&Account {
+                id: "kimi-invalid".into(),
+                agent_id: AgentId::Kimi,
+                kind: AccountKind::ApiKey,
+                label: "invalid".into(),
+                credentials,
+                extra: json!({}),
+                status: "active".into(),
+                is_current: false,
+                created_at: "now".into(),
+                updated_at: "now".into(),
+            })
+            .unwrap();
+        let resolver = AdapterSecretResolver::new(db);
+        assert_eq!(
+            resolver
+                .validate_kimi_membership_source(AdapterSourceKind::Account, "kimi-invalid")
+                .unwrap_err()
+                .code(),
+            "invalid_arg"
+        );
+    }
 }
 
 #[test]
@@ -1021,7 +1124,7 @@ fn membership_requires_kimi_agent_and_preset_or_coding_endpoint() {
     for (id, agent, settings, meta, ok) in cases {
         let source = provider(id, *agent, settings.clone(), meta.clone());
         let (_dir, resolver) = resolver_with(source);
-        let result = resolver.validate_kimi_membership_source(id);
+        let result = resolver.validate_kimi_membership_source(AdapterSourceKind::Provider, id);
         if *ok {
             result.unwrap();
         } else {

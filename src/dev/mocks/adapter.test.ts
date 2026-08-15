@@ -7,7 +7,7 @@ import {
   PROTOCOL_MISMATCH_REASON,
   resetMockAdapters,
 } from './adapter';
-import { getMockAccountById } from './account';
+import { getMockAccountById, upsertMockAccount } from './account';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
   seedConnectFlowAdapterFixtures,
@@ -70,6 +70,80 @@ describe('mock adapter route preview', () => {
     expect(repeated.profile.id).toBe(applied.profile.id);
     expect(await adapter.listProfiles()).toHaveLength(1);
     expect(JSON.stringify(applied)).not.toContain('must-not-leak');
+  });
+
+  it('classifies and applies a Kimi membership Account on all three provider edges', async () => {
+    const sourceId = `kimi-account-${Date.now()}-${Math.random()}`;
+    upsertMockAccount({
+      id: sourceId,
+      agentId: 'kimi',
+      kind: 'apikey',
+      label: 'Kimi Code membership',
+      isCurrent: false,
+      tokenValid: true,
+      credentials: {
+        format: 'api_key',
+        api_key: 'must-not-leak',
+        provider: 'kimi-code-membership',
+      },
+      extra: {},
+    } as Account & {
+      credentials: Record<string, unknown>;
+      extra: Record<string, unknown>;
+    });
+    const adapter = createMockAdapterPort(resolver);
+
+    for (const targetAgentId of ['claude', 'pi', 'codex'] as const) {
+      const plan = await adapter.plan({
+        sourceKind: 'account',
+        sourceId,
+        targetAgentId,
+      });
+      expect(plan.canApply).toBe(true);
+      const applied = await adapter.apply({
+        sourceKind: 'account',
+        sourceId,
+        targetAgentId,
+      });
+      expect(applied.profile.sourceKind).toBe('account');
+      expect(applied.profile.ruleId).toBe(
+        targetAgentId === 'claude'
+          ? 'kimi-membership-to-claude-v1'
+          : targetAgentId === 'pi'
+            ? 'kimi-membership-to-pi-v1'
+            : 'kimi-membership-to-codex-v1',
+      );
+      expect(JSON.stringify(applied)).not.toContain('must-not-leak');
+    }
+
+    const bareId = `${sourceId}-bare`;
+    upsertMockAccount({
+      id: bareId,
+      agentId: 'kimi',
+      kind: 'apikey',
+      label: 'Kimi API',
+      isCurrent: false,
+      tokenValid: true,
+    });
+    const oauthId = `${sourceId}-oauth`;
+    upsertMockAccount({
+      id: oauthId,
+      agentId: 'kimi',
+      kind: 'oauth',
+      label: 'Kimi managed OAuth',
+      isCurrent: false,
+      tokenValid: true,
+    });
+    expect((await adapter.plan({
+      sourceKind: 'account',
+      sourceId: bareId,
+      targetAgentId: 'claude',
+    })).canApply).toBe(false);
+    expect((await adapter.plan({
+      sourceKind: 'account',
+      sourceId: oauthId,
+      targetAgentId: 'pi',
+    })).canApply).toBe(false);
   });
 
   it('applies a local bridge, exposes its generated Codex Connection, and controls status without tokens', async () => {

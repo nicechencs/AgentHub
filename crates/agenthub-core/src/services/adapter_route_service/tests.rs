@@ -40,6 +40,25 @@ fn kimi_coding_provider_without_preset(id: &str) -> Provider {
     }
 }
 
+fn kimi_membership_account(id: &str, kind: AccountKind, tagged: bool) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Kimi,
+        kind,
+        label: "Kimi Code membership".into(),
+        credentials: serde_json::json!({
+            "format": if kind == AccountKind::ApiKey { "api_key" } else { "oauth" },
+            "api_key": if kind == AccountKind::ApiKey { "must-not-leak" } else { "" },
+            "provider": if tagged { "kimi-code-membership" } else { "kimi" },
+        }),
+        extra: serde_json::json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
 fn request(
     source_kind: AdapterSourceKind,
     source_id: &str,
@@ -154,6 +173,63 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
         .iter()
         .filter(|action| action.secret)
         .all(|action| action.value.is_none()));
+}
+
+#[test]
+fn kimi_membership_account_uses_provider_edges_but_managed_oauth_stays_closed() {
+    let (_dir, db) = test_db();
+    let accounts = AccountRepo::new(db.clone());
+    accounts
+        .create(&kimi_membership_account("kimi-account", AccountKind::ApiKey, true))
+        .unwrap();
+    accounts
+        .create(&kimi_membership_account(
+            "kimi-bare-account",
+            AccountKind::ApiKey,
+            false,
+        ))
+        .unwrap();
+    accounts
+        .create(&kimi_membership_account(
+            "kimi-oauth-account",
+            AccountKind::Oauth,
+            true,
+        ))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    for target in [AgentId::Claude, AgentId::Pi, AgentId::Codex] {
+        let plan = service
+            .plan(&request(AdapterSourceKind::Account, "kimi-account", target))
+            .unwrap();
+        assert!(plan.can_apply, "{target}");
+        assert_eq!(plan.analysis.reason, match target {
+            AgentId::Claude => "Kimi Code 会员可预览为 Claude 的原生 Anthropic Messages 端点。",
+            AgentId::Pi => "Kimi Code 会员可预览为 Pi 的配置同步。",
+            AgentId::Codex => "Kimi Code 会员到 Codex 需要本地协议桥接。",
+            _ => unreachable!(),
+        });
+    }
+
+    let bare = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "kimi-bare-account",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert!(!bare.can_apply);
+    assert!(bare.reason.contains("Kimi Code 会员"));
+
+    let oauth = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "kimi-oauth-account",
+            AgentId::Pi,
+        ))
+        .unwrap();
+    assert!(!oauth.can_apply);
+    assert_eq!(oauth.analysis.route, AdapterRoute::Unsupported);
 }
 
 #[test]

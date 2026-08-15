@@ -156,6 +156,21 @@ pub(crate) fn is_kimi_code_membership_source(
             || settings_contain_kimi_coding_endpoint(settings))
 }
 
+/// Account membership = Kimi API Key **and** (`extra.provider` /
+/// `extra.preset` / `credentials.provider` is the membership tag **or** the
+/// credentials/extra blob contains the official coding endpoint). Managed Kimi
+/// OAuth must never be upgraded to a membership API Key.
+pub(crate) fn is_kimi_code_membership_account(
+    agent_id: AgentId,
+    extra: &Value,
+    credentials: &Value,
+) -> bool {
+    agent_id == AgentId::Kimi
+        && (account_provider_tag_matches(extra, credentials)
+            || settings_contain_kimi_coding_endpoint(extra)
+            || settings_contain_kimi_coding_endpoint(credentials))
+}
+
 /// True when config text/JSON contains the official Kimi Code coding host.
 pub(crate) fn settings_contain_kimi_coding_endpoint(value: &Value) -> bool {
     value_contains_needle(value, KIMI_CODING_ENDPOINT_NEEDLE)
@@ -223,6 +238,16 @@ fn meta_preset(meta: &Value) -> Option<&str> {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
+}
+
+fn account_provider_tag_matches(extra: &Value, credentials: &Value) -> bool {
+    [
+        extra.get("provider").and_then(Value::as_str),
+        extra.get("preset").and_then(Value::as_str),
+        credentials.get("provider").and_then(Value::as_str),
+    ]
+    .into_iter()
+    .any(|tag| explicit_provider_tag_matches(tag, &[KIMI_MEMBERSHIP_PRESET]))
 }
 
 pub(crate) fn value_contains_needle(value: &Value, needle: &str) -> bool {

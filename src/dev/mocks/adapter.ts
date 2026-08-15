@@ -357,6 +357,29 @@ function isKimiMembershipProvider(provider: Pick<Provider, 'agentId' | 'preset' 
       || textLooksLikeKimiCoding(provider.configText));
 }
 
+function isKimiMembershipAccount(account: ClassifiableAccount | undefined): boolean {
+  if (!account) return false;
+  if (account.agentId !== 'kimi' || account.kind !== 'apikey') return false;
+  const extra = account.extra ?? {};
+  const credentials = account.credentials ?? {};
+  const tags = [
+    jsonString(extra, 'provider'),
+    jsonString(extra, 'preset'),
+    jsonString(credentials, 'provider'),
+  ];
+  return tags.some((tag) => tag?.toLowerCase() === KIMI_MEMBERSHIP_PRESET)
+    || textLooksLikeKimiCoding(JSON.stringify(extra))
+    || textLooksLikeKimiCoding(JSON.stringify(credentials));
+}
+
+function hasAccountApiKey(account: ClassifiableAccount | undefined): boolean {
+  if (!account || account.kind !== 'apikey') return false;
+  const credentials = account.credentials;
+  return !!credentials
+    && jsonString(credentials, 'format')?.toLowerCase() === 'api_key'
+    && !!jsonString(credentials, 'api_key');
+}
+
 function classify(
   resolver: MockAdapterSourceResolver,
   request: AdapterRouteRequest,
@@ -421,6 +444,12 @@ function classify(
     ?? jsonString(account.extra, 'format')
     ?? account.credentialFormat?.trim();
 
+  if (isKimiMembershipAccount(account)) {
+    return 'kimi_membership';
+  }
+  if (account.kind === 'apikey' && account.agentId === 'kimi') {
+    return 'kimi_non_membership';
+  }
   if (account.agentId === 'claude' && account.kind === 'oauth') {
     return 'claude_subscription';
   }
@@ -882,6 +911,9 @@ function buildPlan(
       && !!analysis.ruleId
       && NATIVE_SUBSCRIPTION_PI_RULE_IDS.has(analysis.ruleId))
     || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'dsh');
+  const accountSource = request.sourceKind === 'account'
+    ? resolver.getAccountById(request.sourceId) as ClassifiableAccount | undefined
+    : undefined;
   const accountExplicitApiToPi = request.sourceKind === 'account'
     && implementedPath
     && request.targetAgentId === 'pi'
@@ -902,12 +934,19 @@ function buildPlan(
     && request.targetAgentId === 'claude'
     && !!analysis.ruleId
     && CLAUDE_NATIVE_EXPERIMENTAL_RULES.has(analysis.ruleId);
+  const accountKimiMembership = request.sourceKind === 'account'
+    && implementedPath
+    && !!analysis.ruleId
+    && KIMI_MEMBERSHIP_RULE_IDS.has(analysis.ruleId)
+    && isKimiMembershipAccount(accountSource)
+    && hasAccountApiKey(accountSource);
   const accountCodexClaudeBridge = request.sourceKind === 'account'
     && implementedPath
     && request.targetAgentId === 'claude'
     && analysis.ruleId === CODEX_CLAUDE_RULE_ID
     && hasCodexAccessToken(resolver, request.sourceId);
   const writeGate = (request.sourceKind === 'provider' && implementedPath)
+    || accountKimiMembership
     || accountExplicitApiToPi
     || accountExplicitApiToCodex
     || accountClaudeNative
@@ -927,6 +966,7 @@ function buildPlan(
     && !accountExplicitApiToPi
     && !accountExplicitApiToCodex
     && !accountClaudeNative
+    && !accountKimiMembership
     && !accountNativeSubscriptionPi
     && !accountCodexClaudeBridge
     ? `${analysis.reason} ${SAME_EDGE_UNWRITABLE_REASON}`
@@ -1290,10 +1330,16 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
       }
       // Re-validate source secrets independently of plan.canApply (same rule as core).
       if (plan.analysis.ruleId && KIMI_MEMBERSHIP_RULE_IDS.has(plan.analysis.ruleId)) {
-        const source = request.sourceKind === 'provider'
+        const providerSource = request.sourceKind === 'provider'
           ? resolver.getProviderById(request.sourceId)
           : undefined;
-        if (!source || !isKimiMembershipProvider(source)) {
+        const accountSource = request.sourceKind === 'account'
+          ? resolver.getAccountById(request.sourceId) as ClassifiableAccount | undefined
+          : undefined;
+        const valid = request.sourceKind === 'provider'
+          ? !!providerSource && isKimiMembershipProvider(providerSource)
+          : isKimiMembershipAccount(accountSource) && hasAccountApiKey(accountSource);
+        if (!valid) {
           throw adapterCommandError({
             code: 'invalid_arg',
             message: 'invalid adapter secret reference',

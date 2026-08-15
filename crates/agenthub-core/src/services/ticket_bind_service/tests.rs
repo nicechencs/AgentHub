@@ -216,6 +216,25 @@ fn anthropic_account(id: &str, api_key: &str) -> Account {
     }
 }
 
+fn kimi_account(id: &str, api_key: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Kimi,
+        kind: AccountKind::ApiKey,
+        label: "Kimi Code membership".into(),
+        credentials: json!({
+            "format": "api_key",
+            "api_key": api_key,
+            "provider": "kimi-code-membership",
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
 fn subscription_account(
     id: &str,
     agent_id: AgentId,
@@ -357,6 +376,65 @@ fn bind_anthropic_account_to_pi_requires_can_apply_and_keeps_account_source_ref(
     assert!(!serde_json::to_string(&generated)
         .unwrap()
         .contains("sk-account-secret"));
+}
+
+#[test]
+fn bind_kimi_account_to_claude_and_pi_then_unbind_keeps_source_ticket() {
+    let (dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&kimi_account("kimi-account", "kimi-account-secret"))
+        .unwrap();
+    let service = bind_service(
+        db.clone(),
+        dir.path().join("backups"),
+        vec![Arc::new(FakeClaudeAdapter::new()), Arc::new(FakePiAdapter::new())],
+    );
+
+    let claude = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "kimi-account"),
+            target_agent_id: AgentId::Claude,
+        })
+        .unwrap();
+    assert!(claude.active);
+    let claude_profile = AdapterProfileRepo::new(db.clone())
+        .get(claude.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(claude_profile.source_kind, AdapterSourceKind::Account);
+    assert_eq!(claude_profile.rule_id, "kimi-membership-to-claude-v1");
+    service
+        .unbind(&TicketUnbindRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "kimi-account"),
+            agent_id: AgentId::Claude,
+        })
+        .unwrap();
+
+    let pi = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "kimi-account"),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap();
+    assert!(pi.active);
+    let pi_profile = AdapterProfileRepo::new(db.clone())
+        .get(pi.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(pi_profile.source_kind, AdapterSourceKind::Account);
+    assert_eq!(pi_profile.rule_id, "kimi-membership-to-pi-v1");
+    service
+        .unbind(&TicketUnbindRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Account, "kimi-account"),
+            agent_id: AgentId::Pi,
+        })
+        .unwrap();
+
+    let source = AccountRepo::new(db)
+        .get_by_id("kimi-account")
+        .unwrap()
+        .expect("source account remains after unbind");
+    assert_eq!(source.credentials["api_key"], "kimi-account-secret");
 }
 
 #[test]

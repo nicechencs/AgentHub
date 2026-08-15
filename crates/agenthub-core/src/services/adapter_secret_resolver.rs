@@ -17,7 +17,8 @@ use crate::error::{AppError, Result};
 use crate::models::{AdapterSourceKind, AgentId, Provider};
 use crate::services::adapter_route_constants::{
     claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
-    is_kimi_code_membership_source, is_openai_api_marker, is_xai_api_marker,
+    is_kimi_code_membership_account, is_kimi_code_membership_source, is_openai_api_marker,
+    is_xai_api_marker,
     settings_contain_anthropic_api_endpoint, ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV,
     ANTHROPIC_BASE_URL_ENV, ANTHROPIC_PI_PROVIDER_SLOT, DEEPSEEK_API_BASE_URL,
     DEEPSEEK_API_KEY_ENV, DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID,
@@ -81,8 +82,12 @@ impl AdapterSecretResolver {
     /// Read-only preflight for the Kimi membership source used by adapter apply.
     /// This deliberately exposes only the normal validation error, never source
     /// configuration or a secret value.
-    pub fn validate_kimi_membership_source(&self, source_id: &str) -> Result<()> {
-        let _ = self.resolve_kimi_membership_api_key(source_id)?;
+    pub fn validate_kimi_membership_source(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<()> {
+        let _ = self.resolve_kimi_membership_api_key(source_kind, source_id)?;
         Ok(())
     }
 
@@ -132,21 +137,49 @@ impl AdapterSecretResolver {
     /// Resolve a Kimi Code membership API key for an in-process adapter
     /// runtime. The returned value is intentionally not serializable and must
     /// be passed directly to the runtime; callers must never persist or log it.
-    fn resolve_kimi_membership_api_key(&self, source_id: &str) -> Result<String> {
+    fn resolve_kimi_membership_api_key(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<String> {
         let source_id = source_id.trim();
         if source_id.is_empty() {
             return Err(invalid_reference());
         }
-        let source = self
-            .providers
-            .get_by_id(source_id)?
-            .ok_or_else(invalid_reference)?;
-        // Same rule as classify: preset or official coding endpoint. Never
-        // upgrade from agent_id=kimi alone.
-        if !is_kimi_code_membership_source(source.agent_id, &source.meta, &source.settings_config) {
-            return Err(invalid_reference());
+        match source_kind {
+            AdapterSourceKind::Provider => {
+                let source = self
+                    .providers
+                    .get_by_id(source_id)?
+                    .ok_or_else(invalid_reference)?;
+                // Same rule as classify: preset or official coding endpoint.
+                // Never upgrade from agent_id=kimi alone.
+                if !is_kimi_code_membership_source(
+                    source.agent_id,
+                    &source.meta,
+                    &source.settings_config,
+                ) {
+                    return Err(invalid_reference());
+                }
+                extract_kimi_api_key(&source.settings_config)
+            }
+            AdapterSourceKind::Account => {
+                let account = self
+                    .accounts
+                    .get_by_id(source_id)?
+                    .ok_or_else(invalid_reference)?;
+                if account.kind != crate::models::AccountKind::ApiKey
+                    || !is_kimi_code_membership_account(
+                        account.agent_id,
+                        &account.extra,
+                        &account.credentials,
+                    )
+                {
+                    return Err(invalid_reference());
+                }
+                extract_account_api_key(&account.credentials)
+            }
         }
-        extract_kimi_api_key(&source.settings_config)
     }
 
     fn resolve_anthropic_api_key(
@@ -205,8 +238,12 @@ impl AdapterSecretResolver {
 
     /// Internal bridge boundary: resolve membership auth without exposing the
     /// plaintext key to GUI/Tauri DTO layers.
-    pub(crate) fn resolve_kimi_membership_auth(&self, source_id: &str) -> Result<ResolvedAuth> {
-        self.resolve_kimi_membership_api_key(source_id)
+    pub(crate) fn resolve_kimi_membership_auth(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<ResolvedAuth> {
+        self.resolve_kimi_membership_api_key(source_kind, source_id)
             .map(ResolvedAuth::bearer)
     }
 
@@ -452,8 +489,11 @@ impl AdapterSecretResolver {
         let (kind, source_id) = self.reference_source_ref(target)?;
         let rule = adapter_rule_id(target).ok_or_else(invalid_reference)?;
         match (rule, kind) {
-            (KIMI_TO_CLAUDE_RULE | KIMI_TO_PI_RULE, AdapterSourceKind::Provider) => {
-                self.resolve_kimi_membership_api_key(source_id)
+            (
+                KIMI_TO_CLAUDE_RULE | KIMI_TO_PI_RULE,
+                AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            ) => {
+                self.resolve_kimi_membership_api_key(kind, source_id)
             }
             (
                 ANTHROPIC_TO_PI_RULE

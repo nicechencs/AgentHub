@@ -68,7 +68,7 @@ AgentHub 不「共享链接」，它**绑定票**。直连、改配置、本机�
 
 硬规则：
 
-1. **票不因被绑定而分裂。** 一把 Kimi 会员 Key 可以同时绑 Claude（reshape）和 Codex（bridge）。钱包里仍是一行。
+1. **票不因被绑定而分裂。** 一把 Kimi 会员 Provider 或 Account Key 可以同时绑 Claude（reshape）和 Codex（bridge）。钱包里仍是一行。
 2. **绑定可以很多，active 每个 Agent 只有一条。**
 3. **投影不是票。** 桥写出来的 localhost Provider / profile 是绑定的私有运行时材料，默认不进钱包，更不能再当 `bind` 的来源（禁止二次投影）。
 

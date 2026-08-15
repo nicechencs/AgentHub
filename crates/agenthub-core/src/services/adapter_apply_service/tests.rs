@@ -1,6 +1,6 @@
 use super::*;
 use crate::adapters::AgentAdapter;
-use crate::models::Provider;
+use crate::models::{Account, AccountKind, Provider};
 use crate::models::{
     AgentConfig, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
     InstallChannel, RunOptions, RunSpec,
@@ -9,7 +9,7 @@ use crate::services::adapter_route_constants::{
     DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_PI_PROVIDER_SLOT,
     GLM_CLAUDE_BASE_URL, GLM_PI_BASE_URL, GLM_PI_PROVIDER_SLOT, KIMI_CLAUDE_BASE_URL,
 };
-use crate::storage::{ActiveBindingRepo, ProviderRepo};
+use crate::storage::{AccountRepo, ActiveBindingRepo, ProviderRepo};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -122,6 +122,25 @@ fn kimi_source(id: &str, api_key: &str) -> Provider {
     }
 }
 
+fn kimi_account(id: &str, api_key: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Kimi,
+        kind: AccountKind::ApiKey,
+        label: "Kimi Code membership".into(),
+        credentials: json!({
+            "format": "api_key",
+            "api_key": api_key,
+            "provider": "kimi-code-membership",
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
 fn kimi_coding_live_import(id: &str, api_key: &str) -> Provider {
     Provider {
         id: id.into(),
@@ -170,6 +189,14 @@ fn kimi_bare(id: &str, api_key: &str) -> Provider {
 fn request(source_id: &str, target_agent_id: AgentId) -> AdapterApplyRequest {
     AdapterApplyRequest {
         source_kind: AdapterSourceKind::Provider,
+        source_id: source_id.into(),
+        target_agent_id,
+    }
+}
+
+fn account_request(source_id: &str, target_agent_id: AgentId) -> AdapterApplyRequest {
+    AdapterApplyRequest {
+        source_kind: AdapterSourceKind::Account,
         source_id: source_id.into(),
         target_agent_id,
     }
@@ -1086,6 +1113,59 @@ fn pi_kimi_apply_sets_current_and_keeps_secret_out_of_dto() {
     assert!(!serde_json::to_string(&profile)
         .unwrap()
         .contains("test-kimi-secret"));
+}
+
+#[test]
+fn kimi_account_apply_writes_both_targets_with_account_source_ref() {
+    let (dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&kimi_account("kimi-account", "test-kimi-account-secret"))
+        .unwrap();
+    let fake_pi = Arc::new(FakePiAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake_pi.clone());
+    let service = AdapterApplyService::new(db.clone(), registry, dir.path().join("backups"));
+
+    let pi = service
+        .apply(&account_request("kimi-account", AgentId::Pi))
+        .unwrap();
+    let pi_stored = ProviderRepo::new(db.clone())
+        .get_by_id(&pi.provider.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(pi.profile.source_kind, AdapterSourceKind::Account);
+    assert_eq!(
+        pi_stored.meta["adapterSourceRef"]["kind"],
+        "account"
+    );
+    assert_eq!(
+        fake_pi.read_config().unwrap().raw["models"]["providers"][KIMI_PI_PROVIDER_SLOT]["apiKey"],
+        "test-kimi-account-secret"
+    );
+    assert!(!serde_json::to_string(&pi_stored)
+        .unwrap()
+        .contains("test-kimi-account-secret"));
+
+    let (_dir, claude_db) = test_db();
+    AccountRepo::new(claude_db.clone())
+        .create(&kimi_account("kimi-account", "test-kimi-account-secret"))
+        .unwrap();
+    let fake_claude = Arc::new(FakeClaudeAdapter::new());
+    let mut registry = AdapterRegistry::new();
+    registry.register(fake_claude.clone());
+    let claude_service =
+        AdapterApplyService::new(claude_db.clone(), registry, dir.path().join("claude-backups"));
+    let claude = claude_service
+        .apply(&account_request("kimi-account", AgentId::Claude))
+        .unwrap();
+    assert_eq!(claude.profile.source_kind, AdapterSourceKind::Account);
+    assert_eq!(
+        fake_claude.read_config().unwrap().raw["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "test-kimi-account-secret"
+    );
+    assert!(!serde_json::to_string(&claude.provider)
+        .unwrap()
+        .contains("test-kimi-account-secret"));
 }
 
 #[test]

@@ -21,7 +21,8 @@ use crate::models::{
 };
 use crate::services::adapter_route_constants::{
     claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
-    is_kimi_code_membership_source, is_openai_api_marker, is_xai_api_marker,
+    is_kimi_code_membership_account, is_kimi_code_membership_source, is_openai_api_marker,
+    is_xai_api_marker,
     settings_contain_anthropic_api_endpoint, ANTHROPIC_AUTH_TOKEN_ENV, DEEPSEEK_CLAUDE_BASE_URL,
     DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID,
     DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID, GLM_PI_PROVIDER_SLOT,
@@ -358,6 +359,28 @@ impl AdapterRouteService {
                         label: RouteSourceLabel::DeepseekApi,
                         reason_hint: None,
                     })
+                } else if account.kind == AccountKind::ApiKey
+                    && is_kimi_code_membership_account(
+                        account.agent_id,
+                        &account.extra,
+                        &account.credentials,
+                    )
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::KimiCodeMembership,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::KimiMembership,
+                        reason_hint: None,
+                    })
+                } else if account.kind == AccountKind::ApiKey
+                    && account.agent_id == AgentId::Kimi
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::Other,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::Other,
+                        reason_hint: Some(KIMI_NON_MEMBERSHIP_REASON),
+                    })
                 } else if account.agent_id == AgentId::Codex
                     && account.kind == AccountKind::Oauth
                     && is_codex_auth_json(credential_format, &account.credentials)
@@ -523,9 +546,8 @@ fn subscription_account_secret_open(
     .any(|value| value.as_str().is_some_and(|token| !token.trim().is_empty()))
 }
 
-/// Bind implementations opened in this step. Kimi membership secrets stay
-/// Provider-only; Anthropic / OpenAI / xAI / GLM / DeepSeek API secrets also
-/// resolve from an Account row (`credentials.api_key`).
+/// Bind implementations opened in this step. API secrets resolve from either
+/// a Provider or an Account row (`credentials.api_key`).
 fn bind_implementation_open(
     request: &AdapterRouteRequest,
     analysis: &AdapterRouteAnalysis,
@@ -539,7 +561,7 @@ fn bind_implementation_open(
     ) {
         (
             Some(KIMI_CLAUDE_RULE_ID),
-            AdapterSourceKind::Provider,
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Claude,
             AdapterRoute::NativeEndpoint,
             AdapterSupport::Stable,
@@ -553,14 +575,14 @@ fn bind_implementation_open(
         )
         | (
             Some("kimi-membership-to-pi-v1"),
-            AdapterSourceKind::Provider,
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Pi,
             AdapterRoute::ConfigSync,
             AdapterSupport::Stable,
         )
         | (
             Some("kimi-membership-to-codex-v1"),
-            AdapterSourceKind::Provider,
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Codex,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,

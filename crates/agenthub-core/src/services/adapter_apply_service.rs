@@ -111,12 +111,13 @@ impl AdapterApplyService {
         match (request.source_kind, request.target_agent_id, analysis.route) {
             (source_kind, AgentId::Claude, AdapterRoute::NativeEndpoint) => {
                 match analysis.rule_id.as_deref() {
-                    Some(RULE_ID) if source_kind == AdapterSourceKind::Provider => {
+                    Some(RULE_ID) => {
                         // Validate before creating a profile or provider: a dangling/masked
                         // source must be a completely side-effect-free failure.
-                        self.secrets.validate_kimi_membership_source(source_id)?;
+                        self.secrets
+                            .validate_kimi_membership_source(source_kind, source_id)?;
                         self.apply_generated(claude_native_spec(
-                            AdapterSourceKind::Provider,
+                            source_kind,
                             source_id,
                             RULE_ID,
                         )?)
@@ -126,30 +127,34 @@ impl AdapterApplyService {
                         self.apply_generated(claude_native_spec(source_kind, source_id, rule)?)
                     }
                     _ => Err(AppError::Unsupported(
-                        "adapter apply currently supports Kimi membership provider or GLM/DeepSeek ticket -> Claude".into(),
+                        "adapter apply currently supports Kimi membership Provider/Account or GLM/DeepSeek ticket -> Claude".into(),
                     )),
                 }
             }
-            (AdapterSourceKind::Provider, AgentId::Pi, AdapterRoute::ConfigSync) => {
+            (source_kind, AgentId::Pi, AdapterRoute::ConfigSync)
+                if source_kind == AdapterSourceKind::Provider
+                    || analysis.rule_id.as_deref() == Some(KIMI_PI_RULE_ID) =>
+            {
                 match analysis.rule_id.as_deref() {
                     Some(KIMI_PI_RULE_ID) => {
-                        self.secrets.validate_kimi_membership_source(source_id)?;
-                        self.apply_generated(pi_kimi_spec(source_id))
+                        self.secrets
+                            .validate_kimi_membership_source(source_kind, source_id)?;
+                        self.apply_generated(pi_kimi_spec(source_kind, source_id))
                     }
                     Some(rule) if is_explicit_api_to_pi_rule(rule) => {
                         self.secrets.validate_explicit_api_source(
                             rule,
-                            AdapterSourceKind::Provider,
+                            source_kind,
                             source_id,
                         )?;
                         self.apply_generated(pi_explicit_api_spec(
-                            AdapterSourceKind::Provider,
+                            source_kind,
                             source_id,
                             rule,
                         )?)
                     }
                     _ => Err(AppError::Unsupported(
-                        "adapter apply currently supports Kimi membership or explicit API provider -> Pi".into(),
+                        "adapter apply currently supports Kimi membership Provider/Account or explicit API provider -> Pi".into(),
                     )),
                 }
             }
@@ -197,7 +202,7 @@ impl AdapterApplyService {
                 }
             }
             _ => Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership provider -> Claude/Pi, GLM/DeepSeek ticket -> Claude, API or subscription Account -> Pi, and DeepSeek API provider -> DSH".into(),
+                "adapter apply currently supports Kimi membership Provider/Account -> Claude/Pi, GLM/DeepSeek ticket -> Claude, API or subscription Account -> Pi, and DeepSeek API provider -> DSH".into(),
             )),
         }
     }
@@ -470,10 +475,12 @@ impl AdapterApplyService {
             }
             (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync) => {
                 (analysis.support == AdapterSupport::Stable
-                    && analysis
-                        .rule_id
-                        .as_deref()
-                        .is_some_and(is_explicit_api_to_pi_rule))
+                    && analysis.rule_id.as_deref() == Some(KIMI_PI_RULE_ID))
+                    || (analysis.support == AdapterSupport::Stable
+                        && analysis
+                            .rule_id
+                            .as_deref()
+                            .is_some_and(is_explicit_api_to_pi_rule))
                     || (analysis.support == AdapterSupport::Experimental
                         && analysis
                             .rule_id
@@ -495,7 +502,7 @@ impl AdapterApplyService {
             Ok(analysis)
         } else {
             Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership provider -> Claude/Pi, GLM/DeepSeek ticket -> Claude, API or subscription Account -> Pi, and DeepSeek API provider -> DSH".into(),
+                "adapter apply currently supports Kimi membership Provider/Account -> Claude/Pi, GLM/DeepSeek ticket -> Claude, API or subscription Account -> Pi, and DeepSeek API provider -> DSH".into(),
             ))
         }
     }
@@ -755,7 +762,7 @@ fn is_claude_native_explicit_rule(rule_id: &str) -> bool {
 
 fn is_claude_native_apply_rule(rule_id: &str, source_kind: AdapterSourceKind) -> bool {
     match (rule_id, source_kind) {
-        (RULE_ID, AdapterSourceKind::Provider) => true,
+        (RULE_ID, AdapterSourceKind::Provider | AdapterSourceKind::Account) => true,
         (GLM_CLAUDE_RULE_ID | DEEPSEEK_CLAUDE_RULE_ID, _) => true,
         _ => false,
     }
@@ -844,7 +851,7 @@ fn claude_native_spec(
     })
 }
 
-fn pi_kimi_spec(source_id: &str) -> GeneratedApplySpec {
+fn pi_kimi_spec(source_kind: AdapterSourceKind, source_id: &str) -> GeneratedApplySpec {
     let profile_id = stable_id(PI_KIMI_PROFILE_PREFIX, source_id);
     let provider_id = stable_id(PI_KIMI_PROVIDER_PREFIX, source_id);
     let created_at = now();
@@ -856,7 +863,7 @@ fn pi_kimi_spec(source_id: &str) -> GeneratedApplySpec {
         proposed: AdapterProfile {
             id: profile_id.clone(),
             name: format!("Kimi → Pi ({})", safe_label(source_id)),
-            source_kind: AdapterSourceKind::Provider,
+            source_kind,
             source_id: source_id.into(),
             target_agent_id: AgentId::Pi,
             route: AdapterRoute::ConfigSync,
@@ -890,7 +897,7 @@ fn pi_kimi_spec(source_id: &str) -> GeneratedApplySpec {
             meta: generated_meta(
                 KIMI_PI_RULE_ID,
                 &profile_id,
-                AdapterSourceKind::Provider,
+                source_kind,
                 source_id,
                 None,
             ),
