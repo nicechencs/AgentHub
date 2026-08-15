@@ -16,9 +16,8 @@ use crate::error::{AppError, Result};
 use crate::models::{
     adapter_maturity_from_decision, decide_adapter_capability, AccountKind, AdapterAction,
     AdapterApplyPlan, AdapterCapabilityDecision, AdapterCredentialClass, AdapterEvidence,
-    AdapterGateKind, AdapterPlanChange, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis,
-    AdapterRouteRequest, AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct,
-    AdapterSupport, AgentId,
+    AdapterPlanChange, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
+    AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
 };
 use crate::services::adapter_route_constants::{
     claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
@@ -88,11 +87,23 @@ impl AdapterRouteService {
                     .find(|action| action.kind == "set_config" && action.target == "Pi")
                     .and_then(|action| action.value.as_deref())
                     .unwrap_or("anthropic");
+                let secret_field = if matches!(
+                    analysis.rule_id.as_deref(),
+                    Some(
+                        "claude-subscription-to-pi-v1"
+                            | "codex-subscription-to-pi-v1"
+                            | "grok-subscription-to-pi-v1"
+                    )
+                ) {
+                    "auth"
+                } else {
+                    "apiKey"
+                };
                 (
                     AdapterServiceImpact::None,
                     vec![
                         change("pi", "provider", Some(provider), false),
-                        change("pi", "apiKey", None, true),
+                        change("pi", secret_field, None, true),
                     ],
                 )
             }
@@ -105,8 +116,7 @@ impl AdapterRouteService {
                 ],
             ),
             AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Codex => {
-                let provider = if analysis.rule_id.as_deref() == Some("anthropic-api-to-codex-v1")
-                {
+                let provider = if analysis.rule_id.as_deref() == Some("anthropic-api-to-codex-v1") {
                     "AgentHub Anthropic 本地桥接"
                 } else {
                     "AgentHub Kimi 本地桥接"
@@ -124,13 +134,30 @@ impl AdapterRouteService {
                     ],
                 )
             }
+            AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Claude => (
+                AdapterServiceImpact::RequiresLocalBridge,
+                vec![
+                    change(
+                        "claude",
+                        "ANTHROPIC_BASE_URL",
+                        Some("http://127.0.0.1:<本机端口>"),
+                        false,
+                    ),
+                    change("claude", "ANTHROPIC_AUTH_TOKEN", None, true),
+                ],
+            ),
             AdapterRoute::LocalBridge => (AdapterServiceImpact::RequiresLocalBridge, vec![]),
             AdapterRoute::Unsupported | AdapterRoute::ConfigSync | AdapterRoute::NativeEndpoint => {
                 (AdapterServiceImpact::None, vec![])
             }
         };
 
-        let can_apply = write_gate(classified.decision.can_apply, request, &analysis);
+        let can_apply = write_gate(
+            &self.accounts,
+            classified.decision.can_apply,
+            request,
+            &analysis,
+        );
         let maturity = adapter_maturity_from_decision(&classified.decision);
         let reason = analysis.reason.clone();
         let reuse_path = reuse_path_for(classified.decision.route, classified.credential);
@@ -335,7 +362,7 @@ impl AdapterRouteService {
                     && is_codex_auth_json(credential_format, &account.credentials)
                 {
                     // Explicit Codex / ChatGPT subscription (`format=auth_json` or tokens blob).
-                    // Matrix cell exists and stays fully gated closed.
+                    // The Responses → Claude cell is open, subject to the Account secret gate.
                     Ok(SourceIdentity {
                         product: AdapterSourceProduct::CodexChatGptSubscription,
                         credential: AdapterCredentialClass::OauthAuthJson,
@@ -454,11 +481,45 @@ fn is_codex_auth_json(format: Option<&str>, credentials: &Value) -> bool {
 /// when a bind implementation exists for this `(rule, source_kind, target)`
 /// and the secret resolver can take that ticket's `source_kind`.
 fn write_gate(
+    accounts: &AccountRepo,
     matrix_can_apply: bool,
     request: &AdapterRouteRequest,
     analysis: &AdapterRouteAnalysis,
 ) -> bool {
-    matrix_can_apply && bind_implementation_open(request, analysis)
+    matrix_can_apply
+        && bind_implementation_open(request, analysis)
+        && subscription_account_secret_open(accounts, request, analysis)
+}
+
+fn subscription_account_secret_open(
+    accounts: &AccountRepo,
+    request: &AdapterRouteRequest,
+    analysis: &AdapterRouteAnalysis,
+) -> bool {
+    if request.source_kind != AdapterSourceKind::Account
+        || !matches!(
+            analysis.rule_id.as_deref(),
+            Some(
+                "claude-subscription-to-pi-v1"
+                    | "codex-subscription-to-pi-v1"
+                    | "grok-subscription-to-pi-v1"
+                    | "codex-subscription-to-claude-responses-v1"
+            )
+        )
+    {
+        return true;
+    }
+    let Ok(Some(account)) = accounts.get_by_id(&request.source_id) else {
+        return false;
+    };
+    [
+        "/access_token",
+        "/tokens/access_token",
+        "/body/tokens/access_token",
+    ]
+    .iter()
+    .filter_map(|pointer| account.credentials.pointer(pointer))
+    .any(|value| value.as_str().is_some_and(|token| !token.trim().is_empty()))
 }
 
 /// Bind implementations opened in this step. Kimi membership secrets stay
@@ -504,18 +565,32 @@ fn bind_implementation_open(
             AdapterSupport::Experimental,
         )
         | (
-            Some("anthropic-api-to-pi-v1")
-            | Some("openai-api-to-pi-v1")
-            | Some("xai-api-to-pi-v1"),
+            Some("anthropic-api-to-pi-v1") | Some("openai-api-to-pi-v1") | Some("xai-api-to-pi-v1"),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Pi,
             AdapterRoute::ConfigSync,
             AdapterSupport::Stable,
         )
         | (
+            Some("claude-subscription-to-pi-v1")
+            | Some("codex-subscription-to-pi-v1")
+            | Some("grok-subscription-to-pi-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Pi,
+            AdapterRoute::ConfigSync,
+            AdapterSupport::Experimental,
+        )
+        | (
             Some("anthropic-api-to-codex-v1"),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Codex,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("codex-subscription-to-claude-responses-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Claude,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
@@ -566,14 +641,6 @@ fn analysis_from_decision(
             .collect()
     };
 
-    let gate_kind = if matches!(source, RouteSourceLabel::CodexSubscription)
-        && request.target_agent_id == AgentId::Claude
-    {
-        AdapterGateKind::SubscriptionCandidate
-    } else {
-        decision.gate_kind
-    };
-
     AdapterRouteAnalysis {
         route: decision.route,
         support: decision.support,
@@ -582,7 +649,7 @@ fn analysis_from_decision(
         limitations,
         evidence,
         rule_id: decision.rule_id.map(str::to_owned),
-        gate_kind,
+        gate_kind: decision.gate_kind,
     }
 }
 
@@ -639,6 +706,22 @@ fn actions_for(
                 false,
             )]
         }
+        (RouteSourceLabel::CodexSubscription, AgentId::Claude, AdapterRoute::LocalBridge) => vec![
+            action(
+                "requires_local_bridge",
+                "Claude Code",
+                "Claude Messages 与 Codex Responses 需要本地双向协议转换。",
+                None,
+                false,
+            ),
+            action(
+                "set_env",
+                "Claude Code",
+                "写入 Claude Code 的 loopback Base URL 与本机 bearer；不会写入上游 OAuth token。",
+                Some("ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN"),
+                false,
+            ),
+        ],
         (RouteSourceLabel::KimiMembership, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
             action(
                 "set_config",

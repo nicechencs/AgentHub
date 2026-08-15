@@ -53,7 +53,7 @@ impl TicketBindService {
         if plan.analysis.route == AdapterRoute::LocalBridge {
             return Err(AppError::message(
                 HOSTED_BRIDGE_BIND,
-                "Codex local_bridge bind must run in the desktop host saga",
+                "local_bridge bind must run in the desktop host saga",
             ));
         }
         let result = self.apply.apply(&AdapterApplyRequest {

@@ -45,41 +45,50 @@ fn kimi_claude_and_codex_cells_are_applicable() {
 }
 
 #[test]
-fn codex_oauth_to_claude_is_unsupported_and_cannot_apply() {
+fn codex_oauth_to_claude_opens_only_the_responses_cell() {
     let decision = decide_adapter_capability(
         AdapterSourceProduct::CodexChatGptSubscription,
         AdapterCredentialClass::OauthAuthJson,
         AgentId::Claude,
     )
     .public_surface();
-    assert_eq!(decision.route, AdapterRoute::Unsupported);
-    assert_eq!(decision.support, AdapterSupport::Unsupported);
-    assert!(!decision.can_apply);
+    assert_eq!(decision.route, AdapterRoute::LocalBridge);
+    assert_eq!(decision.support, AdapterSupport::Experimental);
+    assert!(decision.can_apply);
     assert_eq!(decision.reason, CODEX_SUBSCRIPTION_TO_CLAUDE_REASON);
-    assert_eq!(decision.gate_kind, AdapterGateKind::SubscriptionCandidate);
-    assert!(decision.reason.contains("当前不支持"));
-    assert!(decision.reason.contains("门禁"));
+    assert_eq!(decision.gate_kind, AdapterGateKind::None);
+    assert!(decision.reason.contains("Messages → Responses"));
     let gates = decision.gates.expect("candidate retains gate record");
-    assert!(!gates.all_passed());
+    assert!(gates.all_passed());
 
-    // Both transport candidates exist in the matrix and stay closed.
-    for transport in [
-        AdapterUpstreamTransport::CodexAppServer,
-        AdapterUpstreamTransport::CodexResponsesOauth,
-    ] {
-        let cell = lookup_adapter_capability(&AdapterCapabilityKey {
-            source: AdapterSourceProduct::CodexChatGptSubscription,
-            credential: AdapterCredentialClass::OauthAuthJson,
-            transport,
-            target: AgentId::Claude,
-            protocol: AdapterTargetProtocol::AnthropicMessages,
-            version: "0",
-        })
-        .expect("candidate cell");
-        assert!(!cell.can_apply);
-        assert!(!cell.gates.all_passed());
-        assert!(!AdapterCapabilityDecision::from_cell(cell).can_apply);
-    }
+    let app_server = lookup_adapter_capability(&AdapterCapabilityKey {
+        source: AdapterSourceProduct::CodexChatGptSubscription,
+        credential: AdapterCredentialClass::OauthAuthJson,
+        transport: AdapterUpstreamTransport::CodexAppServer,
+        target: AgentId::Claude,
+        protocol: AdapterTargetProtocol::AnthropicMessages,
+        version: "0",
+    })
+    .expect("app server candidate cell");
+    assert!(!app_server.can_apply);
+    assert!(!app_server.gates.all_passed());
+    assert!(!AdapterCapabilityDecision::from_cell(app_server).can_apply);
+
+    let responses = lookup_adapter_capability(&AdapterCapabilityKey {
+        source: AdapterSourceProduct::CodexChatGptSubscription,
+        credential: AdapterCredentialClass::OauthAuthJson,
+        transport: AdapterUpstreamTransport::CodexResponsesOauth,
+        target: AgentId::Claude,
+        protocol: AdapterTargetProtocol::AnthropicMessages,
+        version: MATRIX_VERSION,
+    })
+    .expect("Responses cell");
+    assert!(responses.can_apply);
+    assert_eq!(
+        responses.rule_id,
+        "codex-subscription-to-claude-responses-v1"
+    );
+    assert_eq!(responses.gates, AdapterCapabilityGates::all_open());
 }
 
 #[test]
@@ -129,9 +138,9 @@ fn maturity_maps_open_stable_experimental_preview_and_none() {
     .public_surface();
     assert_eq!(
         adapter_maturity_from_decision(&codex_claude),
-        AdapterMaturity::Preview
+        AdapterMaturity::Experimental
     );
-    assert!(!codex_claude.can_apply);
+    assert!(codex_claude.can_apply);
 
     let anthropic_codex = decide_adapter_capability(
         AdapterSourceProduct::AnthropicApi,
@@ -199,31 +208,31 @@ fn pi_config_sync_rules_can_apply() {
 }
 
 #[test]
-fn subscription_pi_cells_are_native_http_preview_only() {
+fn subscription_pi_cells_are_native_http_and_applicable() {
     for (source, credential, reason, rule_id) in [
         (
             AdapterSourceProduct::ClaudeSubscription,
             AdapterCredentialClass::OauthOther,
             CLAUDE_SUBSCRIPTION_TO_PI_REASON,
-            "claude-subscription-to-pi-v0",
+            "claude-subscription-to-pi-v1",
         ),
         (
             AdapterSourceProduct::CodexChatGptSubscription,
             AdapterCredentialClass::OauthAuthJson,
             CODEX_SUBSCRIPTION_TO_PI_REASON,
-            "codex-subscription-to-pi-v0",
+            "codex-subscription-to-pi-v1",
         ),
         (
             AdapterSourceProduct::CodexChatGptSubscription,
             AdapterCredentialClass::OauthOther,
             CODEX_SUBSCRIPTION_TO_PI_REASON,
-            "codex-subscription-to-pi-v0",
+            "codex-subscription-to-pi-v1",
         ),
         (
             AdapterSourceProduct::XaiGrokSubscription,
             AdapterCredentialClass::OauthOther,
             GROK_SUBSCRIPTION_TO_PI_REASON,
-            "grok-subscription-to-pi-v0",
+            "grok-subscription-to-pi-v1",
         ),
     ] {
         let cell = ADAPTER_CAPABILITY_MATRIX
@@ -236,23 +245,40 @@ fn subscription_pi_cells_are_native_http_preview_only() {
             .expect("subscription Pi cell");
         assert_eq!(cell.key.transport, AdapterUpstreamTransport::NativeHttp);
         assert_eq!(cell.key.protocol, AdapterTargetProtocol::PiProviderConfig);
-        assert_eq!(cell.key.version, "0");
+        assert_eq!(cell.key.version, MATRIX_VERSION);
         assert_eq!(cell.verified_at, "2026-08-15");
         assert_eq!(cell.route, AdapterRoute::ConfigSync);
         assert_eq!(cell.support, AdapterSupport::Experimental);
-        assert!(!cell.can_apply);
-        assert_eq!(cell.gates, AdapterCapabilityGates::all_closed());
+        assert!(cell.can_apply);
+        assert_eq!(cell.gates, AdapterCapabilityGates::all_open());
         assert_eq!(cell.reason, reason);
         assert_eq!(cell.rule_id, rule_id);
 
         let decision = decide_adapter_capability(source, credential, AgentId::Pi);
         assert_eq!(decision.route, AdapterRoute::ConfigSync);
         assert_eq!(decision.support, AdapterSupport::Experimental);
-        assert!(!decision.can_apply);
-        assert_eq!(decision.gate_kind, AdapterGateKind::PreviewOnly);
+        assert!(decision.can_apply);
+        assert_eq!(decision.gate_kind, AdapterGateKind::None);
         assert_eq!(decision.reason, reason);
         assert_eq!(decision.rule_id, Some(rule_id));
     }
+}
+
+#[test]
+fn codex_app_server_candidate_stays_v0_and_closed() {
+    let cell = lookup_adapter_capability(&AdapterCapabilityKey {
+        source: AdapterSourceProduct::CodexChatGptSubscription,
+        credential: AdapterCredentialClass::OauthAuthJson,
+        transport: AdapterUpstreamTransport::CodexAppServer,
+        target: AgentId::Claude,
+        protocol: AdapterTargetProtocol::AnthropicMessages,
+        version: "0",
+    })
+    .expect("App Server candidate");
+    assert_eq!(cell.rule_id, "codex-subscription-to-claude-app-server-v0");
+    assert_eq!(cell.key.version, "0");
+    assert!(!cell.can_apply);
+    assert_eq!(cell.gates, AdapterCapabilityGates::all_closed());
 }
 
 #[test]
