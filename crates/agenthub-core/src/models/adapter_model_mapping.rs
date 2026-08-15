@@ -6,9 +6,10 @@
 //! models fail closed unless the table opts into passthrough.
 //!
 //! Reserved for:
-//! - existing Kimi Code membership paths (Claude / Codex / Pi)
+//! - existing Kimi Code membership paths (Claude / Codex / Pi / Grok)
 //! - Anthropic API Key → Pi
-//! - future Codex subscription → Claude Code (empty until gates open)
+//! - OpenAI API → Grok
+//! - Grok subscription → Claude Code
 
 use super::adapter_capability_matrix::{AdapterSourceProduct, AdapterTargetProtocol};
 use super::AgentId;
@@ -108,6 +109,16 @@ const OPENAI_PI_MODELS: &[AdapterModelMapEntry] = &[];
 const XAI_PI_MODELS: &[AdapterModelMapEntry] = &[];
 const GLM_PI_MODELS: &[AdapterModelMapEntry] = &[];
 const DEEPSEEK_PI_MODELS: &[AdapterModelMapEntry] = &[];
+const KIMI_GROK_MODELS: &[AdapterModelMapEntry] = &[AdapterModelMapEntry {
+    source_model: "kimi-k2.5",
+    target_model: "kimi-k2.5",
+    notes: Some("Grok OpenAI Chat Completions model slot"),
+}];
+const OPENAI_GROK_MODELS: &[AdapterModelMapEntry] = &[AdapterModelMapEntry {
+    source_model: "gpt-4o",
+    target_model: "gpt-4o",
+    notes: Some("Grok OpenAI Chat Completions model slot"),
+}];
 
 const DEEPSEEK_DSH_MODELS: &[AdapterModelMapEntry] = &[
     AdapterModelMapEntry {
@@ -155,6 +166,15 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
         allow_passthrough: false,
     },
     AdapterModelMappingTable {
+        id: "kimi-membership-grok-v1",
+        source: AdapterSourceProduct::KimiCodeMembership,
+        target: AgentId::Grok,
+        target_protocol: AdapterTargetProtocol::OpenAiChatCompletions,
+        default_target_model: Some("kimi-k2.5"),
+        entries: KIMI_GROK_MODELS,
+        allow_passthrough: false,
+    },
+    AdapterModelMappingTable {
         id: "anthropic-api-pi-v1",
         source: AdapterSourceProduct::AnthropicApi,
         target: AgentId::Pi,
@@ -182,6 +202,15 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
         allow_passthrough: true,
     },
     AdapterModelMappingTable {
+        id: "openai-api-grok-v1",
+        source: AdapterSourceProduct::OpenaiApi,
+        target: AgentId::Grok,
+        target_protocol: AdapterTargetProtocol::OpenAiChatCompletions,
+        default_target_model: Some("gpt-4o"),
+        entries: OPENAI_GROK_MODELS,
+        allow_passthrough: false,
+    },
+    AdapterModelMappingTable {
         id: "glm-coding-plan-pi-v1",
         source: AdapterSourceProduct::GlmCodingPlan,
         target: AgentId::Pi,
@@ -206,6 +235,15 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
         target_protocol: AdapterTargetProtocol::AnthropicMessages,
         default_target_model: None,
         entries: CODEX_CLAUDE_MODELS,
+        allow_passthrough: false,
+    },
+    AdapterModelMappingTable {
+        id: "grok-subscription-claude-v1",
+        source: AdapterSourceProduct::XaiGrokSubscription,
+        target: AgentId::Claude,
+        target_protocol: AdapterTargetProtocol::AnthropicMessages,
+        default_target_model: Some("grok-4.5"),
+        entries: &[],
         allow_passthrough: false,
     },
     AdapterModelMappingTable {

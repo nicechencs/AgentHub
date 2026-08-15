@@ -820,6 +820,43 @@ fn openai_provider_and_xai_account_materialize_and_scrub() {
     );
 }
 
+#[test]
+fn grok_native_reference_materializes_and_scrubs_toml_api_key() {
+    let source = provider(
+        "openai-grok-source",
+        AgentId::Codex,
+        json!({"env": { OPENAI_API_KEY_ENV: "sk-grok-secret" }}),
+        json!({"preset": "openai"}),
+    );
+    let (_dir, resolver) = resolver_with(source);
+    let target = provider(
+        "grok-openai-target",
+        AgentId::Grok,
+        json!({
+            "format": "toml",
+            "content": "[models]\ndefault = \"agenthub_openai\"\n\n[model.agenthub_openai]\nmodel = \"gpt-4o\"\nbase_url = \"https://api.openai.com/v1\"\napi_key = \"$AGENTHUB_CONNECTION_SECRET$\"\napi_backend = \"chat_completions\"\n"
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": OPENAI_TO_GROK_RULE,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": SOURCE_REFERENCE_MODE,
+            "adapterSourceRef": { "kind": SOURCE_KIND_PROVIDER, "id": "openai-grok-source" }
+        }),
+    );
+    assert!(resolver.is_reference_provider(&target).unwrap());
+    let materialized = resolver.materialize_for_live(&target).unwrap();
+    let live = materialized.settings_config["content"].as_str().unwrap();
+    assert!(live.contains("api_key = \"sk-grok-secret\""));
+    assert!(!serde_json::to_string(&target).unwrap().contains("sk-grok-secret"));
+    let scrubbed = resolver
+        .scrub_for_backfill(&target, &materialized.settings_config)
+        .unwrap();
+    let persisted = scrubbed["content"].as_str().unwrap();
+    assert!(persisted.contains(&format!("api_key = \"{CONNECTION_SECRET_MARKER}\"")));
+    assert!(!persisted.contains("sk-grok-secret"));
+}
+
 fn pi_custom_target(
     source_id: &str,
     rule_id: &str,
