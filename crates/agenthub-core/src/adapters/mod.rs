@@ -3,6 +3,7 @@
 mod claude;
 mod codex;
 pub(crate) mod cursor;
+pub(crate) mod dsh;
 mod grok;
 mod kimi;
 mod pi;
@@ -665,7 +666,7 @@ fn managed_toml_provider_keys(agent: AgentId) -> Result<&'static [&'static str]>
         ]),
         AgentId::Kimi => Ok(&["default_model", "default_provider", "providers"]),
         AgentId::Grok => Ok(&["models", "model", "base_url", "api_key", "env_key"]),
-        AgentId::Claude | AgentId::Pi | AgentId::WorkBuddy | AgentId::Cursor => {
+        AgentId::Claude | AgentId::Pi | AgentId::WorkBuddy | AgentId::Cursor | AgentId::Dsh => {
             Err(crate::error::AppError::InvalidArg(format!(
                 "{} provider config is JSON, not TOML",
                 agent.display_name()
@@ -794,6 +795,7 @@ pub fn register_all() -> AdapterRegistry {
     reg.register(Arc::new(pi::PiAdapter));
     reg.register(Arc::new(workbuddy::WorkBuddyAdapter));
     reg.register(Arc::new(cursor::CursorAdapter));
+    reg.register(Arc::new(dsh::DshAdapter));
     reg
 }
 
@@ -1004,6 +1006,13 @@ fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str)> {
                 paths.push((p, ch));
             }
             let _ = home;
+        }
+        AgentId::Dsh => {
+            for npm_dir in npm_global_bin_dirs(&home) {
+                push_npm(&mut paths, npm_dir);
+            }
+            push_native(&mut paths, home.join(".local").join("bin"));
+            push_native(&mut paths, home.join(".dsh").join("bin"));
         }
     }
 

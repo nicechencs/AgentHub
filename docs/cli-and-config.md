@@ -32,7 +32,7 @@
 | `-h` / `--help` | 帮助 |
 | `-V` / `--version` | 版本（与 core/appVersion 对齐） |
 | `--data-dir <path>` | 覆盖数据目录（优先级见 §7.1） |
-| `-a` / `--agent <id>` | 默认 agent：`claude` \| `codex` \| `kimi` \| `grok` \| `pi` \| `workbuddy` \| `cursor`（真源 `AgentId::ALL`） |
+| `-a` / `--agent <id>` | 默认 agent：`claude` \| `codex` \| `kimi` \| `grok` \| `pi` \| `workbuddy` \| `cursor` \| `dsh`（真源 `AgentId::ALL`） |
 | `-o` / `--output <fmt>` | `table`（默认，TTY）\| `json` \| `quiet`（仅退出码/最少输出） |
 | `-y` / `--yes` | 跳过交互确认（脚本/CI） |
 | `-v` / `--verbose` | 已接入 core **tracing**：本次进程级别至少 `debug`（文件 + stderr），用于路径/操作等诊断；详见 [logging.md](logging.md) |
@@ -40,7 +40,7 @@
 
 ### 2.2 Agent id 规范
 
-- 一律小写：`claude` / `codex` / `kimi` / `grok` / `pi` / `workbuddy` / `cursor`
+- 一律小写：`claude` / `codex` / `kimi` / `grok` / `pi` / `workbuddy` / `cursor` / `dsh`（真源 `AgentId::ALL`；`dsh` 约束见 [deepseek-harness-integration.md](deepseek-harness-integration.md)）
 - 非法 id → 退出码 `2`，stderr 提示合法值（`AgentId::expected_list()`）
 
 ### 2.3 输出

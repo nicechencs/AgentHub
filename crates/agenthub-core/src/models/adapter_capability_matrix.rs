@@ -30,6 +30,8 @@ pub enum AdapterSourceProduct {
     AnthropicApi,
     /// Codex / ChatGPT subscription account (`auth_json` OAuth shape).
     CodexChatGptSubscription,
+    /// DeepSeek official API Key (preset `deepseek` or host `api.deepseek.com`).
+    DeepSeekApi,
     /// Anything else; never upgraded by name guessing.
     Other,
 }
@@ -71,6 +73,8 @@ pub enum AdapterTargetProtocol {
     OpenAiResponses,
     /// Pi-native provider config slot (not a wire protocol).
     PiProviderConfig,
+    /// DSH home-level Cordis patch + credentials reference (not a wire protocol).
+    DshProviderConfig,
 }
 
 /// Closed lookup key for one matrix cell.
@@ -300,6 +304,11 @@ const ANTHROPIC_PI_LIMITS: &[&str] = &[
     "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
 ];
 
+const DEEPSEEK_DSH_LIMITS: &[&str] = &[
+    "将写入 DeepSeek Harness 的 home 级 provider 引用与凭据文件；不会把 API Key 写入 cordis.patch.yml。",
+    "应用后会把该生成 Provider 设为 DSH 当前连接；请确认无其他进行中的配置写入。",
+];
+
 const CODEX_CLAUDE_LIMITS: &[&str] = &[
     "当前不支持此组合；尚未通过上游授权、条款与协议兼容性门禁。",
     "plan.canApply=false：不会创建 adapter profile、启动 Bridge 或写入 Claude 配置。",
@@ -378,6 +387,24 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         reason: "显式 Anthropic API Key 可预览为 Pi 的配置同步。",
         limitations: ANTHROPIC_PI_LIMITS,
         rule_id: "anthropic-api-to-pi-v1",
+        verified_at: VERIFIED_AT,
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::DeepSeekApi,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Dsh,
+            protocol: AdapterTargetProtocol::DshProviderConfig,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::ConfigSync,
+        support: AdapterSupport::Stable,
+        can_apply: true,
+        reason: "DeepSeek API Key 可预览为 DeepSeek Harness 的配置同步。",
+        limitations: DEEPSEEK_DSH_LIMITS,
+        rule_id: "deepseek-api-to-dsh-v1",
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
     },
@@ -464,6 +491,14 @@ pub fn decide_adapter_capability(
             ),
             (AdapterSourceProduct::AnthropicApi, _) => AdapterCapabilityDecision::unsupported(
                 "Anthropic API Key 当前仅支持预览到 Pi。",
+            ),
+            (AdapterSourceProduct::DeepSeekApi, AgentId::Claude) => {
+                AdapterCapabilityDecision::unsupported(
+                    "DeepSeek API → Claude Code 走 Anthropic 兼容入口，另立项；当前仅支持接到 DeepSeek Harness。",
+                )
+            }
+            (AdapterSourceProduct::DeepSeekApi, _) => AdapterCapabilityDecision::unsupported(
+                "DeepSeek API Key 当前仅支持预览到 DeepSeek Harness。",
             ),
             (AdapterSourceProduct::CodexChatGptSubscription, AgentId::Claude) => {
                 AdapterCapabilityDecision::unsupported_subscription_candidate(
@@ -641,5 +676,27 @@ mod tests {
         assert!(anthropic_pi.can_apply);
         assert_eq!(anthropic_pi.gate_kind, AdapterGateKind::None);
         assert_eq!(anthropic_pi.rule_id, Some("anthropic-api-to-pi-v1"));
+    }
+
+    #[test]
+    fn deepseek_api_to_dsh_can_apply() {
+        let dsh = decide_adapter_capability(
+            AdapterSourceProduct::DeepSeekApi,
+            AdapterCredentialClass::ApiKey,
+            AgentId::Dsh,
+        );
+        assert_eq!(dsh.route, AdapterRoute::ConfigSync);
+        assert!(dsh.can_apply);
+        assert_eq!(dsh.rule_id, Some("deepseek-api-to-dsh-v1"));
+
+        let claude = decide_adapter_capability(
+            AdapterSourceProduct::DeepSeekApi,
+            AdapterCredentialClass::ApiKey,
+            AgentId::Claude,
+        )
+        .public_surface();
+        assert_eq!(claude.route, AdapterRoute::Unsupported);
+        assert!(!claude.can_apply);
+        assert!(claude.reason.contains("另立项"));
     }
 }

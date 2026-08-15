@@ -35,6 +35,7 @@ const AGENT_IDS: AgentId[] = [
   'pi',
   'workbuddy',
   'cursor',
+  'dsh',
 ];
 
 describe('isCapabilityUsable / isCapabilityBlocked', () => {
@@ -141,6 +142,10 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
     expect(MOCK_CAPABILITIES.cursor!.accountSwitch!.level).toBe('unsupported');
     expect(MOCK_CAPABILITIES.cursor!.providerPresets!.level).toBe('unsupported');
     expect(MOCK_CAPABILITIES.claude!.accountSwitch!.level).toBe('full');
+    expect(MOCK_CAPABILITIES.dsh!.apiKeyAccount!.level).toBe('full');
+    expect(MOCK_CAPABILITIES.dsh!.usage!.level).toBe('full');
+    expect(MOCK_CAPABILITIES.dsh!.structuredStream!.level).toBe('planned');
+    expect(MOCK_CAPABILITIES.dsh!.configWrite!.level).toBe('partial');
   });
 
   it('accountSwitch blocked agents match Connections TabStrip expectations', () => {

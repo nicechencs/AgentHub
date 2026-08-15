@@ -216,10 +216,11 @@ fn registry_covers_supported_not_cursor() {
     assert!(reg.contains(AgentId::Codex));
     assert!(reg.contains(AgentId::Kimi));
     assert!(reg.contains(AgentId::Grok));
+    assert!(reg.contains(AgentId::Dsh));
     assert!(!reg.contains(AgentId::Cursor));
     assert!(!reg.contains(AgentId::Pi));
     assert!(!reg.contains(AgentId::WorkBuddy));
-    assert_eq!(reg.supported_agents().len(), 4);
+    assert_eq!(reg.supported_agents().len(), 5);
 }
 
 #[test]
@@ -442,6 +443,7 @@ fn projector_schema_versions_are_stable() {
         AgentId::Codex,
         AgentId::Kimi,
         AgentId::Grok,
+        AgentId::Dsh,
     ] {
         let p = reg.get_agent_id(agent).unwrap();
         let expected = if agent == AgentId::Grok { 2 } else { 1 };
@@ -609,4 +611,98 @@ fn kimi_invalid_toml_errors() {
     let svc = test_configuration_service();
     let err = svc.read_at(AgentId::Kimi, Some(home)).unwrap_err();
     assert_eq!(err.code(), "invalid_arg");
+}
+
+#[test]
+fn dsh_read_redacts_key_and_keeps_other_plugin_rows() {
+    let dir = tempdir().unwrap();
+    let home = dir.path();
+    std::fs::write(
+        home.join("cordis.patch.yml"),
+        "- id: example.other\n  config:\n    keep: yes\n- id: @deepseek-ai/dsh-llm-deepseek\n  config:\n    apiKeyEnv: DEEPSEEK_API_KEY\n    baseURL: https://api.deepseek.com\n    thinking: enabled\n    reasoningEffort: high\n    model: deepseek-v4-flash\n",
+    )
+    .unwrap();
+    std::fs::write(home.join(".credentials.yaml"), "DEEPSEEK_API_KEY: sk-dsh-secret\n").unwrap();
+
+    let svc = test_configuration_service();
+    let doc = svc.read_at(AgentId::Dsh, Some(home)).unwrap();
+    assert!(!doc.missing);
+    assert_eq!(
+        doc.values.get("model").and_then(Value::as_str),
+        Some("deepseek-v4-flash")
+    );
+    assert_eq!(
+        doc.values.get("apiKey").and_then(Value::as_str),
+        Some(SECRET_REDACTED)
+    );
+    assert_eq!(
+        doc.values.get("provider").and_then(Value::as_str),
+        Some("deepseek-official")
+    );
+    let dumped = serde_json::to_string(&doc).unwrap();
+    assert!(!dumped.contains("sk-dsh-secret"));
+}
+
+#[test]
+fn dsh_apply_writes_credentials_not_patch() {
+    let dir = tempdir().unwrap();
+    let home = dir.path();
+    std::fs::write(
+        home.join("cordis.patch.yml"),
+        "- id: example.other\n  config:\n    keep: yes\n",
+    )
+    .unwrap();
+    let svc = test_configuration_service();
+    let mut desired = BTreeMap::new();
+    desired.insert("provider".into(), json!("deepseek-official"));
+    desired.insert("model".into(), json!("deepseek-v4-pro"));
+    desired.insert("baseUrl".into(), json!("https://api.deepseek.com"));
+    desired.insert("thinking".into(), json!("disabled"));
+    desired.insert("reasoningEffort".into(), json!("low"));
+    desired.insert("apiKeyEnv".into(), json!("DEEPSEEK_API_KEY"));
+    desired.insert("apiKey".into(), json!("sk-dsh-applied"));
+    svc.apply_at(AgentId::Dsh, &desired, Some(home)).unwrap();
+
+    let patch = std::fs::read_to_string(home.join("cordis.patch.yml")).unwrap();
+    assert!(patch.contains("example.other"));
+    assert!(patch.contains("keep: yes"));
+    assert!(patch.contains("deepseek-v4-pro"));
+    assert!(patch.contains("thinking: disabled"));
+    assert!(!patch.contains("sk-dsh-applied"));
+    let creds = std::fs::read_to_string(home.join(".credentials.yaml")).unwrap();
+    assert!(creds.contains("sk-dsh-applied"));
+    assert!(creds.contains("DEEPSEEK_API_KEY"));
+
+    let read = svc.read_at(AgentId::Dsh, Some(home)).unwrap();
+    assert_eq!(
+        read.values.get("apiKey").and_then(Value::as_str),
+        Some(SECRET_REDACTED)
+    );
+}
+
+#[test]
+fn dsh_apply_secret_unchanged_preserves_existing_key() {
+    let dir = tempdir().unwrap();
+    let home = dir.path();
+    std::fs::write(
+        home.join("cordis.patch.yml"),
+        "- id: @deepseek-ai/dsh-llm-deepseek\n  config:\n    apiKeyEnv: DEEPSEEK_API_KEY\n    baseURL: https://api.deepseek.com\n    thinking: enabled\n    reasoningEffort: high\n    model: deepseek-v4-flash\n",
+    )
+    .unwrap();
+    std::fs::write(home.join(".credentials.yaml"), "DEEPSEEK_API_KEY: sk-keep-me\n").unwrap();
+    let svc = test_configuration_service();
+    let mut desired = BTreeMap::new();
+    desired.insert("model".into(), json!("deepseek-v4-pro"));
+    desired.insert("apiKey".into(), json!(SECRET_REDACTED));
+    desired.insert("apiKeyEnv".into(), json!("DEEPSEEK_API_KEY"));
+    desired.insert("provider".into(), json!("deepseek-official"));
+    desired.insert("baseUrl".into(), json!("https://api.deepseek.com"));
+    desired.insert("thinking".into(), json!("enabled"));
+    desired.insert("reasoningEffort".into(), json!("high"));
+    svc.apply_at(AgentId::Dsh, &desired, Some(home)).unwrap();
+    let creds = std::fs::read_to_string(home.join(".credentials.yaml")).unwrap();
+    assert!(creds.contains("sk-keep-me"));
+    let patch = std::fs::read_to_string(home.join("cordis.patch.yml")).unwrap();
+    assert!(patch.contains("deepseek-v4-pro"));
+    assert!(!patch.contains("sk-keep-me"));
 }

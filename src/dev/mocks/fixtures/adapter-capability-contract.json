@@ -158,6 +158,42 @@
       }
     },
     {
+      "id": "deepseek-api-to-dsh",
+      "source": {
+        "kind": "provider",
+        "agentId": "dsh",
+        "preset": "deepseek"
+      },
+      "target": "dsh",
+      "expect": {
+        "route": "config_sync",
+        "support": "stable",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "deepseek-api-to-dsh-v1",
+        "gateKind": "none",
+        "reason": "DeepSeek API Key 可预览为 DeepSeek Harness 的配置同步。"
+      }
+    },
+    {
+      "id": "deepseek-api-to-claude",
+      "source": {
+        "kind": "provider",
+        "agentId": "dsh",
+        "preset": "deepseek"
+      },
+      "target": "claude",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reason": "DeepSeek API → Claude Code 走 Anthropic 兼容入口，另立项；当前仅支持接到 DeepSeek Harness。"
+      }
+    },
+    {
       "id": "other-to-claude",
       "source": {
         "kind": "provider",

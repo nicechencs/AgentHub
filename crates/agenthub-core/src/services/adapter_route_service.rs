@@ -16,8 +16,9 @@ use crate::models::{
     AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
 };
 use crate::services::adapter_route_constants::{
-    is_kimi_code_membership_source, settings_contain_anthropic_api_endpoint,
-    ANTHROPIC_AUTH_TOKEN_ENV, KIMI_CLAUDE_BASE_URL,
+    is_deepseek_api_source, is_kimi_code_membership_source,
+    settings_contain_anthropic_api_endpoint, settings_contain_deepseek_api_endpoint,
+    ANTHROPIC_AUTH_TOKEN_ENV, DSH_DEEPSEEK_PROVIDER_SLOT, KIMI_CLAUDE_BASE_URL,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -88,6 +89,14 @@ impl AdapterRouteService {
                     ],
                 )
             }
+            AdapterRoute::ConfigSync if request.target_agent_id == AgentId::Dsh => (
+                AdapterServiceImpact::None,
+                vec![
+                    change("dsh", "provider", Some(DSH_DEEPSEEK_PROVIDER_SLOT), false),
+                    change("dsh", "apiKeyEnv", Some("DEEPSEEK_API_KEY"), false),
+                    change("dsh", "apiKey", None, true),
+                ],
+            ),
             AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Codex => (
                 AdapterServiceImpact::RequiresLocalBridge,
                 vec![
@@ -155,6 +164,13 @@ impl AdapterRouteService {
                         label: RouteSourceLabel::AnthropicApiKey,
                         reason_hint: None,
                     }
+                } else if is_deepseek_api_source(preset, &provider.settings_config) {
+                    SourceIdentity {
+                        product: AdapterSourceProduct::DeepSeekApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::DeepSeekApiKey,
+                        reason_hint: None,
+                    }
                 } else if provider.agent_id == AgentId::Kimi {
                     SourceIdentity {
                         product: AdapterSourceProduct::Other,
@@ -191,6 +207,18 @@ impl AdapterRouteService {
                         product: AdapterSourceProduct::AnthropicApi,
                         credential: AdapterCredentialClass::ApiKey,
                         label: RouteSourceLabel::AnthropicApiKey,
+                        reason_hint: None,
+                    }
+                } else if account.kind == AccountKind::ApiKey
+                    && (explicit_provider
+                        .is_some_and(|value| value.eq_ignore_ascii_case("deepseek"))
+                        || settings_contain_deepseek_api_endpoint(&account.credentials)
+                        || settings_contain_deepseek_api_endpoint(&account.extra))
+                {
+                    SourceIdentity {
+                        product: AdapterSourceProduct::DeepSeekApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::DeepSeekApiKey,
                         reason_hint: None,
                     }
                 } else if account.agent_id == AgentId::Codex
@@ -266,6 +294,7 @@ struct SourceIdentity {
 enum RouteSourceLabel {
     KimiMembership,
     AnthropicApiKey,
+    DeepSeekApiKey,
     CodexSubscription,
     Other,
 }
@@ -314,10 +343,14 @@ fn implemented_apply_whitelist(
             AdapterRoute::NativeEndpoint,
             AdapterSupport::Stable,
             AgentId::Claude
-        ) | (
+        )         | (
             AdapterRoute::ConfigSync,
             AdapterSupport::Stable,
             AgentId::Pi
+        ) | (
+            AdapterRoute::ConfigSync,
+            AdapterSupport::Stable,
+            AgentId::Dsh
         ) | (
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
@@ -458,6 +491,22 @@ fn actions_for(
                 true,
             ),
         ],
+        (RouteSourceLabel::DeepSeekApiKey, AgentId::Dsh, AdapterRoute::ConfigSync) => vec![
+            action(
+                "set_config",
+                "DeepSeek Harness",
+                "选择 DSH 的官方 DeepSeek provider。",
+                Some(DSH_DEEPSEEK_PROVIDER_SLOT),
+                false,
+            ),
+            action(
+                "reference_connection_secret",
+                "DeepSeek Harness",
+                "从已选 Connection 引用 API Key；不会读取或显示它。",
+                None,
+                true,
+            ),
+        ],
         _ => vec![],
     }
 }
@@ -473,6 +522,7 @@ fn evidence_for(
         (RouteSourceLabel::KimiMembership, AgentId::Pi) => vec![kimi_pi_evidence()],
         (RouteSourceLabel::KimiMembership, _) => vec![kimi_pi_evidence()],
         (RouteSourceLabel::AnthropicApiKey, _) => vec![anthropic_pi_evidence()],
+        (RouteSourceLabel::DeepSeekApiKey, _) => vec![deepseek_dsh_evidence()],
         (RouteSourceLabel::CodexSubscription, _) => vec![adapter_compatibility_evidence()],
         (RouteSourceLabel::Other, _) => vec![adapter_compatibility_evidence()],
     }
@@ -533,6 +583,15 @@ fn anthropic_pi_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "Pi custom provider and model configuration".into(),
         url: "https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md"
+            .into(),
+        verified_at: VERIFIED_AT.into(),
+    }
+}
+
+fn deepseek_dsh_evidence() -> AdapterEvidence {
+    AdapterEvidence {
+        label: "DeepSeek Harness LLM / credentials".into(),
+        url: "https://deepseek-harness.github.io/deepseek-harness/en/reference/subsystems/credentials"
             .into(),
         verified_at: VERIFIED_AT.into(),
     }

@@ -8,7 +8,7 @@
 > v1.4：**平台环境差异**：PowerShell 仅 Windows 共享 Runtime；macOS/Linux native 安装/升级走官方 sh + bash，不得检测或要求 PowerShell；包管理引导 Windows=`winget`、macOS=`brew`。
 > v1.5：**Adapter sidecar 目标架构**：`local_bridge` 的长驻 Runtime 与完整 saga 迁入用户级 `agenthub-adapterd`；Connections 与 live 配置事务继续由 core service 管理。当前实现仍为 Tauri 进程内宿主，按三阶段迁移。
 
-系列文档：[目录结构与模块拆分](architecture.md) · [票 / 绑定 / 协议图](connection-binding-model.md) · [Adapter Sidecar 目标架构](adapter-sidecar-design.md) · [前端 UI 设计](ui-design.md) · [CLI 与配置契约](cli-and-config.md) · [Hub 重构 Phase 1 记录](hub-redesign-plan.md)
+系列文档：[目录结构与模块拆分](architecture.md) · [票 / 绑定 / 协议图](connection-binding-model.md) · [Adapter Sidecar 目标架构](adapter-sidecar-design.md) · [前端 UI 设计](ui-design.md) · [CLI 与配置契约](cli-and-config.md) · [Hub 重构 Phase 1 记录](hub-redesign-plan.md) · [DeepSeek Harness 接入](deepseek-harness-integration.md)
 
 ## 1. 已确认决策
 
@@ -20,7 +20,7 @@
 | 产品形态 | GUI + CLI 双端，核心逻辑抽成 `agenthub-core` crate 共享 |
 | OAuth 账号管理 | 支持多账号池 + 一键切换 |
 | Token 统计来源 | **零侵入**：解析各 agent 本地日志/会话文件，不做本地代理 |
-| Agent 范围 | **七家**：Claude / Codex / Kimi / Grok / Pi / WorkBuddy / **Cursor Agent**（半套 CLI）；不支持 Cursor IDE 私有库账号池 |
+| Agent 范围 | **当前八家**：Claude / Codex / Kimi / Grok / Pi / WorkBuddy / **Cursor Agent**（半套 CLI）/ **DeepSeek Harness（`dsh`）**；不支持 Cursor IDE 私有库账号池。`dsh` 专项约束见 [deepseek-harness-integration.md](deepseek-harness-integration.md) |
 | 分层原则 | **Service 管编排**（备份/锁/backfill/投影/聚合）；**Adapter 管差异**（路径、读写格式、解析器挂接） |
 | Adapter 进程边界 | `local_bridge` 目标由同包用户级 `agenthub-adapterd` 托管；GUI/CLI 是控制客户端。Connections 不拆进程，OS 系统服务不在当前范围 |
 
@@ -50,6 +50,7 @@
 | Pi | npm only | Node.js + npm | settings / models JSON | provider 键控 auth | 支持投影 | 能力矩阵见实现 |
 | WorkBuddy | native Setup only | 无 Node 依赖 | settings / models / MCP JSON | 官方 OAuth 落点；**P0 不切换账号** | 支持投影 | 能力矩阵见实现 |
 | Cursor Agent | native 官方脚本 | Windows：PowerShell；Unix：bash/curl | 无稳定供应商模板（write fail-closed） | API Key / `agent login`；**禁止**私有 IDE 库账号池 | 产品 skill 目录可投影 | 非标准会话格式；usage 不支持 |
+| DeepSeek Harness（`dsh`） | npm `@deepseek-ai/dsh` only | Node.js + npm | home 级 Cordis patch（只合并官方 LLM 插件行） | DeepSeek API Key 引用；无 OAuth | 投影到 `$DSH_HOME/skills`；对方也会读 `~/.agents/skills` | 解析会话日志 provider usage；启发式 Token Meter 不计费 |
 
 > **Cursor Agent 边界**  
 > - 卡片名 **Cursor Agent**；管公开 Agent CLI，不是把 IDE 可执行文件当 headless。  
@@ -60,6 +61,12 @@
 > - Pi：npm 渠道；Provider 写回 `~/.pi/agent/models.json`，账号切换与 usage 以能力矩阵为准。
 > - WorkBuddy：Electron 桌面 + bundled CLI；Provider 写回 `~/.workbuddy/models.json`；accountSwitch / usage 以能力矩阵为准。
 > - 禁止改动安装包内部产品文件。
+>
+> **DeepSeek Harness 边界（已接入）**  
+> - Agent id 用 `dsh`，不要和 DeepSeek API 票面混名。  
+> - 只登记 npm 全局 `dsh`；`npx … web`、源码、Python SDK 不是安装渠道。  
+> - 配置只改 home 级用户 patch；凭据只写引用，Key 进 `.credentials.yaml`。  
+> - DeepSeek API → `dsh` 走现有 `AdapterCapabilityMatrix` + `config_sync`；DeepSeek → Claude 另立项。专项方案见 [deepseek-harness-integration.md](deepseek-harness-integration.md)。
 
 共享技能源：`~/.agents/skills/`（带 lock 清单），各 Agent 的 `skills` 目录是其投影目标，不是第二真源。
 
@@ -338,7 +345,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 |---|---|
 | 文档集（方案 / 架构 / UI / 票与绑定 / CLI / 日志 / 能力矩阵 / Chat 过程） | ✅ |
 | cargo workspace：`agenthub-core` / `agenthub-cli` / `src-tauri`（gui） | ✅ |
-| 七家 Adapter + `capability()` 矩阵 + 一致性测试 | ✅ |
+| 八家 Adapter + `capability()` 矩阵 + 一致性测试 | ✅ |
 | Runtime detect + 两阶段 install（ensure_env→agent） | ✅ GUI Agents 页 + CLI `env` / `agent install` |
 | Provider 池 CRUD + live 切换（backfill/backup/原子写/锁） | ✅ Tauri + CLI |
 | Account 池 + 文件型 import/switch/apikey + OAuth 手动 refresh | ✅ |
@@ -381,6 +388,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | CLI Provider create/update/delete | ❌ | 与 GUI 不对称，脚本侧靠 import-live + switch |
 | TanStack Query / i18next 等 | ❌ | 方案提及；`package.json` 未依赖 |
 | 凭据 keyring/AES/主密码 | 范围外 | 见 AGENTS.md |
+| DeepSeek Harness（`dsh`）生产接入 | ✅ P1–P5 | `AgentId::Dsh`、npm detect/install、home patch + 凭据引用、Skills/Usage/Projects、headless text run、DeepSeek API → `dsh` `config_sync`。StructuredStream / DeepSeek→Claude 仍 Planned / 另立项，见 [deepseek-harness-integration.md](deepseek-harness-integration.md) |
 
 ### 8.3 前端导航（与代码 `App.tsx` 一致）
 

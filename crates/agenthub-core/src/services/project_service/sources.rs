@@ -14,8 +14,8 @@ use crate::platform::AgentKey;
 use super::finish_sessions;
 use super::scan::{
     aggregate_projects, grok_session_dir_for_delete, kimi_session_dir_for_delete,
-    list_claude_workbuddy_sessions, list_codex_sessions, list_cursor_projects, list_grok_sessions,
-    list_kimi_sessions, list_pi_sessions,
+    list_claude_workbuddy_sessions, list_codex_sessions, list_cursor_projects, list_dsh_sessions,
+    list_grok_sessions, list_kimi_sessions, list_pi_sessions,
 };
 
 pub fn builtin_project_registry() -> &'static ProjectSourceRegistry {
@@ -39,6 +39,8 @@ fn build_registry() -> ProjectSourceRegistry {
     reg.register(Arc::new(WorkBuddyProjectSource))
         .expect("unique built-in project source");
     reg.register(Arc::new(CursorProjectSource))
+        .expect("unique built-in project source");
+    reg.register(Arc::new(DshProjectSource))
         .expect("unique built-in project source");
     reg
 }
@@ -295,5 +297,50 @@ impl ProjectSource for CursorProjectSource {
     ) -> Result<Vec<AgentSession>> {
         let _ = ctx;
         Ok(vec![])
+    }
+}
+
+// --- DSH (JSONL under known persistence roots) -----------------------------
+
+struct DshProjectSource;
+
+impl ProjectSource for DshProjectSource {
+    fn agent_key(&self) -> AgentKey {
+        builtin_key("dsh")
+    }
+
+    fn list_projects(&self, ctx: &ProjectScanContext<'_>) -> Result<Vec<AgentProject>> {
+        if empty_if_missing(ctx.home) {
+            return Ok(vec![]);
+        }
+        let sessions = self.list_sessions(ctx)?;
+        Ok(aggregate_projects(AgentId::Dsh, ctx.home, &sessions))
+    }
+
+    fn list_sessions(&self, ctx: &ProjectScanContext<'_>) -> Result<Vec<AgentSession>> {
+        if empty_if_missing(ctx.home) {
+            return Ok(vec![]);
+        }
+        Ok(finish_sessions(list_dsh_sessions(
+            ctx.home,
+            None,
+            ctx.data_dir,
+        )?))
+    }
+
+    fn list_sessions_in_project(
+        &self,
+        ctx: &ProjectScanContext<'_>,
+        project_id: &str,
+        _key: &str,
+    ) -> Result<Vec<AgentSession>> {
+        if empty_if_missing(ctx.home) {
+            return Ok(vec![]);
+        }
+        Ok(finish_sessions(list_dsh_sessions(
+            ctx.home,
+            Some(project_id),
+            ctx.data_dir,
+        )?))
     }
 }

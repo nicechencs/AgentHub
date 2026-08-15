@@ -48,6 +48,7 @@ export const AGENT_DISPLAY: Record<
   pi: { letter: 'P', colorKey: 'pi' },
   workbuddy: { letter: 'W', colorKey: 'workbuddy' },
   cursor: { letter: 'R', colorKey: 'cursor' },
+  dsh: { letter: 'D', colorKey: 'dsh' },
 };
 
 const FALLBACK_COLOR = 'var(--text-muted)';

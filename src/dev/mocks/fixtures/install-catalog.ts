@@ -119,4 +119,15 @@ export const MOCK_INSTALL_CATALOG: AgentInstallCatalogEntryDto[] = [
       },
     ],
   },
+  {
+    agentId: 'dsh',
+    channels: [
+      {
+        id: 'npm',
+        label: 'npm @deepseek-ai/dsh',
+        command: 'npm i -g @deepseek-ai/dsh',
+        requires: ['nodejs', 'npm'],
+      },
+    ],
+  },
 ];

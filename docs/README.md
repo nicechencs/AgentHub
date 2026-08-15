@@ -25,6 +25,7 @@
 | [capability-matrix.md](capability-matrix.md) | **能力矩阵**：`Capability` 枚举 + 四级状态、现状矩阵、防漂移测试、P0–P4（**v1.0 已落地**） |
 | [account-authorization-pool.md](account-authorization-pool.md) | **账号池身份×授权**：同人可多授权并存；去重仅限同授权票；与能力矩阵边界（**已落地**） |
 | [adding-an-agent.md](adding-an-agent.md) | 新增 Agent 适配器清单与调研步骤 |
+| [deepseek-harness-integration.md](deepseek-harness-integration.md) | **DeepSeek Harness（`dsh`）接入方案**：安装、会话、用量、Skills、模型路由与配置；P1–P5 已落地，StructuredStream / DeepSeek→Claude 仍 Planned / 另立项 |
 | [privacy.md](privacy.md) | **发布与隐私边界**：禁止提交项、截图规范、OAuth 常量勿外泄、docs 写法 |
 
 ## 文档管理规则
@@ -36,5 +37,6 @@
 - 对外发布、截图与凭据相关表述遵守 [privacy.md](privacy.md)。
 - 跨 Agent「把已有凭据接到另一个 Agent」的领域模型（票 / 绑定 / 协议图 / 目标 UI）以 [connection-binding-model.md](connection-binding-model.md) 为唯一真源。该文是目标架构，未落地前实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
 - 厂商端点、凭据类型与协议图上的边以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。日常 UI 目标见 [ui-design.md](ui-design.md)，Phase 1 实施记录见 [hub-redesign-plan.md](hub-redesign-plan.md)。
+- DeepSeek Harness（Agent `dsh`）的安装、会话、用量、Skills 与模型配置以 [deepseek-harness-integration.md](deepseek-harness-integration.md) 为设计真源；未实现前不得把该文能力表抄进 CLI 矩阵快照。
 - `local_bridge` 的进程所有权、控制面和 sidecar 迁移契约以 [adapter-sidecar-design.md](adapter-sidecar-design.md) 为唯一真源；当前实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
 - 新的一次性任务可以临时创建提示词文件；任务完成后删除提示词和任务拆分，并同步更新对应稳定文档。
