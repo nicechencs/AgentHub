@@ -16,7 +16,6 @@ import {
   action,
   agentBindCapability,
   evidence,
-  secretAction,
   unsupported,
   unsupportedReasonFromGraph,
   type MockAdapterSourceResolver,
