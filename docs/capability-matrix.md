@@ -99,6 +99,8 @@ pub struct CapabilityState {
 
 ## 5. 现状矩阵（7 家 × 14 项；CLI 快照 2026-08-03）
 
+DeepSeek Harness（`dsh`）是下一生产候选，**尚未**进入本快照。目标级别与 reason 见 [deepseek-harness-integration.md](deepseek-harness-integration.md) §11；无 adapter、无本地样例前不得把该列抄进 CLI 矩阵。
+
 > 生成：`cargo run -p agenthub-cli -- agent capabilities --markdown`
 
 | Capability | claude | codex | kimi | grok | pi | workbuddy | cursor |

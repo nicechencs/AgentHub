@@ -67,7 +67,7 @@ crates/agenthub-core/
     │
     ├── models/                # 纯数据结构,serde 序列化,不含逻辑
     │   ├── mod.rs
-    │   ├── agent.rs           # AgentId 枚举(七家)、DetectResult、AgentStatus
+    │   ├── agent.rs           # AgentId 枚举(当前七家；`dsh` 方案见 docs/deepseek-harness-integration.md)、DetectResult、AgentStatus
     │   ├── capability.rs      # Capability / CapabilityLevel / CapabilityState（矩阵真源类型）
     │   ├── provider.rs        # Provider { id, agent_id, name, settings_config: Value, meta, is_current }
     │   ├── account.rs         # Account { id, agent_id, kind: Oauth|ApiKey, credentials, extra, status }
@@ -89,7 +89,7 @@ crates/agenthub-core/
     │   └── (repo)/            # 每表一个 repo: provider_repo / backup_repo / …
     │                          # （规划名 dao；实现用 *Repo 后缀）
     │
-    ├── adapters/              # AgentAdapter trait + 注册表 + 七家实现
+    ├── adapters/              # AgentAdapter trait + 注册表 + 当前七家实现
     │   ├── mod.rs             # trait AgentAdapter; capability(); AdapterRegistry; register_all()
     │   ├── claude.rs
     │   ├── codex.rs

@@ -112,6 +112,16 @@ GLM Coding Plan 的凭据和使用范围必须单独识别：
 
 DeepSeek 使用平台签发的 API Key，不是 OAuth。官方 Anthropic 兼容表中存在“忽略”或“不支持”的字段，因此新增规则时必须按目标 Agent 实测文本、流式输出、thinking、工具调用、停止原因和用量，不能只验证请求成功。当前 AgentHub 尚无 DeepSeek Adapter 规则。
 
+DeepSeek API 票和 DeepSeek Harness（Agent `dsh`）不是同一对象：
+
+| 目标 | 预期路线 | 当前状态 |
+|---|---|---|
+| DeepSeek Harness（`dsh`） | `native` / `config_sync`：凭据引用 + 官方 provider 槽（常见 `deepseek-official`） | **规则未开放**；Agent 本身也未注册。设计见 [deepseek-harness-integration.md](deepseek-harness-integration.md) |
+| Claude Code | `native_endpoint`：Anthropic 兼容入口 | **规则未开放**；须按上表实测，不能只验证 HTTP 200 |
+| Codex | 默认 `unsupported` | Chat Completions 不代表 Responses |
+
+接到 `dsh` 时走对方官方 LLM adapter，不把 Harness 当 Messages↔Responses 桥，也不把 OAuth 票写入其凭据缝。
+
 ## 3. 路由类型
 
 | 路由 | 使用条件 | 是否运行本地服务 |
@@ -290,5 +300,8 @@ Claude Code
 - [DeepSeek Anthropic API compatibility](https://api-docs.deepseek.com/guides/anthropic_api)
 - [DeepSeek 接入 Claude Code](https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code/)
 - [DeepSeek Models & Pricing（双协议 Base URL）](https://api-docs.deepseek.com/quick_start/pricing/)
+- [DeepSeek Harness 产品页](https://deepseek.com/harness/en/)
+- [DeepSeek Harness 架构](https://deepseek-harness.github.io/deepseek-harness/en/reference/)
+- AgentHub 侧 DSH 接入方案：[deepseek-harness-integration.md](deepseek-harness-integration.md)
 - [Pi AI providers 与 OAuth](https://github.com/earendil-works/pi/blob/main/packages/ai/README.md)
 - [Gemini API OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai)

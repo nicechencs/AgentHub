@@ -235,7 +235,8 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 3. 现有四条可 apply 路径改写成 `bind` 实现（Kimi→Claude/Pi reshape，Kimi→Codex bridge，Anthropic→Pi reshape）。
 4. 加边：Anthropic→Codex 桥、Kimi→Grok reshape、OpenAI/xAI Key → Pi/Grok。
 5. 新 surface：GLM / DeepSeek 按双协议入口登记。
-6. 能当 HTTP 上游的订阅（如 Codex 订阅→Claude）接执行器后打开那条边。
+6. 新 Agent writer：DeepSeek Harness（`dsh`）先登记再长 **DeepSeek API → `dsh` native/`config_sync`**；专项方案见 [deepseek-harness-integration.md](deepseek-harness-integration.md)。不要把 Harness 当协议桥。
+7. 能当 HTTP 上游的订阅（如 Codex 订阅→Claude）接执行器后打开那条边。
 
 做不到、且应看得见的上限：Cursor 当目标（无 writer）、未标记的自定义中转、不能当 HTTP 上游的官方登录、二次投影、公网号池。
 
