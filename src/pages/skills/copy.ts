@@ -19,10 +19,17 @@ export const skillsCopy = {
   },
 
   tabs: {
-    library: '本地共享库',
+    library: '本地技能',
     market: '技能市场',
-    libraryBadge: (n: number) => `${n} 个共享库技能`,
+    libraryBadge: (n: number) => `${n} 个本地技能`,
     privateBadge: (n: number) => `${n} 个只在本工具、可加入共享库`,
+  },
+
+  matrix: {
+    /** Shared-root column; fallback when catalog rows have no rootLabel. */
+    sharedRoot: '~/.agents/skills',
+    sharedRootPresence: (inLibrary: boolean, label: string) =>
+      inLibrary ? `已在 ${label}` : `未加入 ${label}`,
   },
 
   filters: {
@@ -154,6 +161,7 @@ export const skillsCopy = {
   menu: {
     preview: '预览 SKILL.md',
     openFolder: '打开所在文件夹',
+    removePrivate: '从该工具目录删除',
   },
 
   preview: {
@@ -286,7 +294,7 @@ export const skillsCopy = {
     marketInstallOk: (name: string) => ({
       title: '已安装到共享库',
       description: `${name} · 到矩阵启用`,
-      actionLabel: '去本地共享库' as const,
+      actionLabel: '去本地技能' as const,
     }),
     marketExists: (reason: string) => ({
       title: '共享库已有同名技能',
