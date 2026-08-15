@@ -49,8 +49,17 @@ describe('skillsCopy', () => {
 
   it('tabs are library + market only', () => {
     expect(skillsCopy.tabs).not.toHaveProperty('workspace');
-    expect(skillsCopy.tabs.library).toBe('本地共享库');
+    expect(skillsCopy.tabs.library).toBe('本地技能');
     expect(skillsCopy.tabs.market).toBe('技能市场');
+    expect(skillsCopy.tabs.libraryBadge(12)).toBe('12 个本地技能');
+    expect(skillsCopy.menu.removePrivate).toBe('从该工具目录删除');
+  });
+
+  it('shared-root column names the path and states presence', () => {
+    const root = '~/.agents/skills';
+    expect(skillsCopy.matrix.sharedRoot).toBe(root);
+    expect(skillsCopy.matrix.sharedRootPresence(true, root)).toBe(`已在 ${root}`);
+    expect(skillsCopy.matrix.sharedRootPresence(false, root)).toBe(`未加入 ${root}`);
   });
 
   it('adopt toast stays on the local table', () => {

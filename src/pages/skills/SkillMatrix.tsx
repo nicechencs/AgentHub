@@ -12,7 +12,6 @@ import {
   Trash2,
 } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
-import { Button } from '@/components/ui/button';
 import { ContextMenu, ContextMenuItem } from '@/components/ui/context-menu';
 import {
   ColumnResizeHandle,
@@ -28,7 +27,7 @@ import {
   type ColumnWidthSpec,
 } from '@/components/ui/table';
 import { Hint, Tip } from '@/components/ui/tooltip';
-import { AGENTS, AGENT_MAP, agentDisplayName } from '@/config/agents';
+import { AGENTS, agentDisplayName } from '@/config/agents';
 import {
   isMappedState,
   mapCoreSkill,
@@ -42,10 +41,11 @@ import type { AgentId, Skill, SkillMapStatus, SkillSyncState } from '@/lib/types
 import { cn } from '@/lib/utils';
 import { skillsCopy } from './copy';
 
-/** checkbox 固定；技能名 / Agent 列可拖（Agent 列共用宽度，矩阵对齐） */
+/** checkbox 固定；技能名 / 共享根 / Agent 列可拖（Agent 列共用宽度，矩阵对齐） */
 const CHECK_COL_W = 40;
-const MATRIX_WIDTH_SPECS: ColumnWidthSpec<'skill' | 'agent'>[] = [
+const MATRIX_WIDTH_SPECS: ColumnWidthSpec<'skill' | 'shared' | 'agent'>[] = [
   { key: 'skill', defaultWidth: 192, minWidth: 120 },
+  { key: 'shared', defaultWidth: 152, minWidth: 128 },
   { key: 'agent', defaultWidth: 96, minWidth: 72 },
 ];
 
@@ -98,10 +98,27 @@ export function isSharedCatalogRow(row: InstalledSkillDto): boolean {
   return row.origin === 'shared';
 }
 
+/** 表头用共享真源短路径；优先 catalog 行上的 rootLabel。 */
+export function sharedRootColumnLabel(
+  rows: Array<Pick<InstalledSkillDto, 'origin' | 'rootLabel'>>,
+): string {
+  const labeled = rows.find((row) => row.origin === 'shared' && row.rootLabel.trim());
+  return labeled?.rootLabel.trim() || skillsCopy.matrix.sharedRoot;
+}
+
 /** 私有真源行：只在本工具，尚未加入共享库。投影副本不进表。 */
 export function isPrivateSourceRow(row: InstalledSkillDto): boolean {
   return row.origin !== 'shared' && row.mapStatus === 'private_source';
 }
+
+/** 私有行归属的工具列；必须画在该列，不得塞进第一列（Claude）占位。 */
+export function privateRowOriginId(row: InstalledSkillDto): AgentId | null {
+  return isPrivateSourceRow(row) ? (row.origin as AgentId) : null;
+}
+
+/** 所有状态格同一盒子，避免勾/圈/横杠对不齐。 */
+const STATUS_GLYPH_CLASS =
+  'relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-btn';
 
 /** 本地表可见行：共享矩阵 + 私有占位（不含已在共享库 / 冲突副本行） */
 export function visibleCatalogRows(rows: InstalledSkillDto[]): InstalledSkillDto[] {
@@ -158,63 +175,90 @@ interface SkillMatrixProps {
   installedAgentIds?: ReadonlySet<AgentId> | AgentId[];
 }
 
-function PrivateSkillPlaceholder({
-  row,
+function StatusGlyph({
+  hint,
+  children,
+  disabled,
+  busy,
+  onClick,
+}: {
+  hint: string;
+  children: ReactNode;
+  disabled?: boolean;
+  busy?: boolean;
+  onClick?: () => void;
+}) {
+  if (onClick) {
+    return (
+      <Hint label={hint}>
+        <button
+          type="button"
+          disabled={disabled || busy}
+          onClick={onClick}
+          aria-label={hint}
+          className={cn(
+            STATUS_GLYPH_CLASS,
+            'transition-colors',
+            disabled
+              ? 'cursor-not-allowed text-disabled'
+              : 'cursor-pointer hover:bg-hover',
+            busy && 'opacity-50',
+          )}
+        >
+          {children}
+        </button>
+      </Hint>
+    );
+  }
+  return (
+    <Hint label={hint}>
+      <span tabIndex={0} className={STATUS_GLYPH_CLASS} aria-label={hint}>
+        {children}
+      </span>
+    </Hint>
+  );
+}
+
+function SharedRootCell({
+  inLibrary,
+  label,
+  privateRow,
   importing,
   onAdopt,
-  onUninstall,
 }: {
-  row: InstalledSkillDto;
+  inLibrary: boolean;
+  label: string;
+  privateRow: boolean;
   importing: boolean;
-  onAdopt: (skillId: string, agentId: AgentId, name: string) => void;
-  onUninstall: (skillId: string, agentId: AgentId, name: string, inLibrary: boolean) => void;
+  onAdopt?: () => void;
 }) {
-  const agentId = row.origin as AgentId;
-  const agentMeta = AGENT_MAP[agentId];
+  if (privateRow && onAdopt) {
+    const hint = importing ? skillsCopy.workspace.adoptBusy : skillsCopy.workspace.adoptHint;
+    return (
+      <StatusGlyph hint={hint} busy={importing} onClick={onAdopt}>
+        <Share2 className={cn('h-3.5 w-3.5', importing && 'animate-pulse')} />
+      </StatusGlyph>
+    );
+  }
+  const hint = skillsCopy.matrix.sharedRootPresence(inLibrary, label);
+  return (
+    <StatusGlyph hint={hint}>
+      {inLibrary ? (
+        <Check className="h-3.5 w-3.5 text-success" strokeWidth={2.5} />
+      ) : (
+        <Minus className="h-3.5 w-3.5 text-muted/50" />
+      )}
+    </StatusGlyph>
+  );
+}
+
+function PrivateOriginCell({ agentId }: { agentId: AgentId }) {
   const agentName = agentDisplayName(agentId);
-  const W = skillsCopy.workspace;
   const hint = skillsCopy.cell.tip(agentName, 'absent', 'private_source');
   return (
-    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-      <Hint label={hint}>
-        <span
-          tabIndex={0}
-          className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted"
-          aria-label={`${agentName}，${hint}`}
-        >
-          {agentMeta ? <AgentDot agentId={agentId} size="sm" /> : null}
-          <span className="truncate">{agentName}</span>
-        </span>
-      </Hint>
-      <div
-        className="flex shrink-0 flex-wrap items-center gap-1"
-        onClick={(e) => e.stopPropagation()}
-        onContextMenu={(e) => e.stopPropagation()}
-      >
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={importing}
-          aria-label={importing ? W.adoptBusy : W.adopt}
-          title={W.adoptHint}
-          onClick={() => onAdopt(row.id, agentId, row.name)}
-        >
-          <Share2 className={cn('h-3.5 w-3.5', importing && 'animate-pulse')} />
-          {importing ? W.adoptBusy : W.adopt}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="text-danger"
-          aria-label={W.removeAria}
-          title={W.remove}
-          onClick={() => onUninstall(row.id, agentId, row.name, false)}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          {W.delete}
-        </Button>
-      </div>
-    </div>
+    <StatusGlyph hint={hint}>
+      <Circle className="h-3.5 w-3.5 text-muted" strokeWidth={1.8} />
+    </StatusGlyph>
   );
 }
 
@@ -345,9 +389,12 @@ export function SkillMatrix({
       : new Set<AgentId>(installedAgentIds ?? columns.map((a) => a.id));
 
   const { widths, onResizeStart } = useColumnWidths(MATRIX_WIDTH_SPECS);
+  const sharedRootLabel = sharedRootColumnLabel(rows);
   const tableMinWidth =
-    CHECK_COL_W + widths.skill + widths.agent * Math.max(columns.length, 1);
-  const agentColSpan = Math.max(columns.length, 1);
+    CHECK_COL_W +
+    widths.skill +
+    widths.shared +
+    widths.agent * Math.max(columns.length, 1);
   const [rowMenu, setRowMenu] = useState<{
     x: number;
     y: number;
@@ -362,6 +409,7 @@ export function SkillMatrix({
           <colgroup>
             <col style={{ width: CHECK_COL_W }} />
             <col style={{ width: widths.skill }} />
+            <col style={{ width: widths.shared }} />
             {columns.map((agent) => (
               <col key={agent.id} style={{ width: widths.agent }} />
             ))}
@@ -382,6 +430,14 @@ export function SkillMatrix({
                 <ColumnResizeHandle
                   columnKey="skill"
                   label="技能名"
+                  onResizeStart={onResizeStart}
+                />
+              </TableHead>
+              <TableHead className="relative select-none text-center">
+                <span className="font-mono text-2xs whitespace-nowrap">{sharedRootLabel}</span>
+                <ColumnResizeHandle
+                  columnKey="shared"
+                  label={sharedRootLabel}
                   onResizeStart={onResizeStart}
                 />
               </TableHead>
@@ -411,8 +467,9 @@ export function SkillMatrix({
                 normalizeOpenPath(row.sourceDir) ??
                 (isPrivateSourceRow(row) ? normalizeOpenPath(row.rootDir) : null);
               const canOpenDir = Boolean(openPath && onOpenDir);
-              const canContext = Boolean(onPreview) || canOpenDir;
               const privateRow = isPrivateSourceRow(row);
+              const originId = privateRowOriginId(row);
+              const canContext = Boolean(onPreview) || canOpenDir || privateRow;
               const skill = privateRow ? null : asMatrixSkill(row);
               const rowActive = Boolean(
                 activeKey &&
@@ -445,56 +502,96 @@ export function SkillMatrix({
                     )}
                   </TableCell>
                   <TableCell className="min-w-0" onContextMenu={openRowMenu}>
-                    <div className="min-w-0">
-                      {onPreview ? (
-                        <button
-                          type="button"
-                          className={cn(
-                            'block max-w-full truncate text-left text-sm font-medium text-primary',
-                            'rounded-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
-                          )}
-                          onClick={() => onPreview(row)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              onPreview(row);
-                            }
-                          }}
-                        >
-                          <Tip className="truncate" label={row.name}>
+                    <div className="flex min-w-0 items-start gap-1">
+                      <div className="min-w-0 flex-1">
+                        {onPreview ? (
+                          <button
+                            type="button"
+                            className={cn(
+                              'block max-w-full truncate text-left text-sm font-medium text-primary',
+                              'rounded-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
+                            )}
+                            onClick={() => onPreview(row)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                onPreview(row);
+                              }
+                            }}
+                          >
+                            <Tip className="truncate" label={row.name}>
+                              {row.name}
+                            </Tip>
+                          </button>
+                        ) : (
+                          <Tip className="truncate font-medium text-primary" label={row.name}>
                             {row.name}
                           </Tip>
-                        </button>
-                      ) : (
-                        <Tip className="truncate font-medium text-primary" label={row.name}>
-                          {row.name}
-                        </Tip>
-                      )}
-                      {realDesc ? (
-                        <Tip
-                          className="mt-0.5 line-clamp-1 truncate text-sm text-secondary"
-                          label={row.description}
-                        >
-                          {row.description}
-                        </Tip>
+                        )}
+                        {realDesc ? (
+                          <Tip
+                            className="mt-0.5 line-clamp-1 truncate text-sm text-secondary"
+                            label={row.description}
+                          >
+                            {row.description}
+                          </Tip>
+                        ) : null}
+                      </div>
+                      {privateRow && originId ? (
+                        <Hint label={skillsCopy.workspace.remove}>
+                          <button
+                            type="button"
+                            className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-btn text-danger hover:bg-hover"
+                            aria-label={skillsCopy.workspace.removeAria}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUninstall(row.id, originId, row.name, false);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </Hint>
                       ) : null}
                     </div>
                   </TableCell>
-                  {privateRow ? (
-                    <TableCell colSpan={agentColSpan}>
-                      <PrivateSkillPlaceholder
-                        row={row}
-                        importing={importingIds.has(`${row.origin}:${row.id}`)}
-                        onAdopt={onAdopt}
-                        onUninstall={onUninstall}
-                      />
-                    </TableCell>
-                  ) : columns.length === 0 ? (
+                  <TableCell className="text-center">
+                    <SharedRootCell
+                      inLibrary={isSharedCatalogRow(row)}
+                      label={sharedRootLabel}
+                      privateRow={privateRow}
+                      importing={importingIds.has(`${row.origin}:${row.id}`)}
+                      onAdopt={
+                        privateRow && originId
+                          ? () => onAdopt(row.id, originId, row.name)
+                          : undefined
+                      }
+                    />
+                  </TableCell>
+                  {columns.length === 0 ? (
                     <TableCell className="text-xs text-muted" colSpan={1}>
                       暂无可用工具
                     </TableCell>
                   ) : (
                     columns.map((agent) => {
+                      if (privateRow) {
+                        const isOrigin = originId === agent.id;
+                        return (
+                          <TableCell key={agent.id} className="text-center">
+                            {isOrigin ? (
+                              <PrivateOriginCell agentId={agent.id} />
+                            ) : (
+                              <StatusGlyph
+                                hint={skillsCopy.matrix.sharedRootPresence(
+                                  false,
+                                  sharedRootLabel,
+                                )}
+                              >
+                                <Minus className="h-3.5 w-3.5 text-muted/50" />
+                              </StatusGlyph>
+                            )}
+                          </TableCell>
+                        );
+                      }
                       const matrixSkill = skill!;
                       const state = matrixSkill.sync[agent.id] ?? 'unsupported';
                       const proj = matrixSkill.projections?.find((p) => p.agent === agent.id);
@@ -518,7 +615,7 @@ export function SkillMatrix({
                         mapStatus === 'target_unavailable' ||
                         mapStatus === 'private_source' ||
                         state === 'unsupported';
-                      const clickable = !blocked && !pendingCells.has(cellKey);
+                      const pending = pendingCells.has(cellKey);
                       const title = cellTitle(
                         agent.name,
                         state,
@@ -527,52 +624,45 @@ export function SkillMatrix({
                         skillsCap?.reason ?? undefined,
                       );
                       return (
-                        <TableCell
-                          key={agent.id}
-                          className="text-center"
-                        >
-                          <Hint label={title}>
-                            <button
-                              type="button"
-                              disabled={!clickable}
-                              onClick={() => onCellClick(matrixSkill, agent.id)}
-                              aria-label={title}
-                              className={cn(
-                                'relative inline-flex h-8 min-w-8 items-center justify-center rounded-btn px-1.5 transition-colors',
-                                clickable && 'cursor-pointer hover:bg-hover',
-                                blocked && 'cursor-not-allowed text-disabled',
-                                pendingCells.has(cellKey) && 'opacity-50',
+                        <TableCell key={agent.id} className="text-center">
+                          <StatusGlyph
+                            hint={title}
+                            disabled={blocked || pending}
+                            busy={pending}
+                            onClick={
+                              blocked
+                                ? undefined
+                                : () => onCellClick(matrixSkill, agent.id)
+                            }
+                          >
+                            {state === 'linked' && !blocked && (
+                              <Link2 className="h-3.5 w-3.5 text-success" strokeWidth={2.5} />
+                            )}
+                            {state === 'copied' && !blocked && (
+                              <Check className="h-3.5 w-3.5 text-success" strokeWidth={2.5} />
+                            )}
+                            {!blocked &&
+                              (state === 'absent' ||
+                                state === 'foreign' ||
+                                state === 'conflict') && (
+                                <>
+                                  <Circle className="h-3.5 w-3.5 text-muted" strokeWidth={1.8} />
+                                  {hasConflict && (
+                                    <AlertTriangle
+                                      className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 text-warning"
+                                      strokeWidth={2.5}
+                                    />
+                                  )}
+                                </>
                               )}
-                            >
-                              {state === 'linked' && !blocked && (
-                                <Link2 className="h-3.5 w-3.5 text-success" strokeWidth={2.5} />
+                            {blocked && <Minus className="h-3.5 w-3.5 text-muted/50" />}
+                            {isMappedState(state) &&
+                              !blocked &&
+                              proj?.linkKind &&
+                              proj.linkKind !== 'none' && (
+                                <span className="sr-only">{proj.linkKind}</span>
                               )}
-                              {state === 'copied' && !blocked && (
-                                <Check className="h-3.5 w-3.5 text-success" strokeWidth={2.5} />
-                              )}
-                              {!blocked &&
-                                (state === 'absent' ||
-                                  state === 'foreign' ||
-                                  state === 'conflict') && (
-                                  <>
-                                    <Circle className="h-3.5 w-3.5 text-muted" strokeWidth={1.8} />
-                                    {hasConflict && (
-                                      <AlertTriangle
-                                        className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 text-warning"
-                                        strokeWidth={2.5}
-                                      />
-                                    )}
-                                  </>
-                                )}
-                              {blocked && <Minus className="h-3.5 w-3.5 text-muted/50" />}
-                              {isMappedState(state) &&
-                                !blocked &&
-                                proj?.linkKind &&
-                                proj.linkKind !== 'none' && (
-                                  <span className="sr-only">{proj.linkKind}</span>
-                                )}
-                            </button>
-                          </Hint>
+                          </StatusGlyph>
                         </TableCell>
                       );
                     })
@@ -612,6 +702,23 @@ export function SkillMatrix({
           >
             <FolderOpen className="h-3.5 w-3.5" />
             {skillsCopy.menu.openFolder}
+          </ContextMenuItem>
+        ) : null}
+        {rowMenu && isPrivateSourceRow(rowMenu.row) ? (
+          <ContextMenuItem
+            onSelect={() => {
+              if (!rowMenu) return;
+              onUninstall(
+                rowMenu.row.id,
+                rowMenu.row.origin as AgentId,
+                rowMenu.row.name,
+                false,
+              );
+              setRowMenu(null);
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5 text-danger" />
+            {skillsCopy.menu.removePrivate}
           </ContextMenuItem>
         ) : null}
       </ContextMenu>

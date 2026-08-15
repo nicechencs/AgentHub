@@ -1,13 +1,25 @@
 # 连接：票、绑定与协议图
 
-> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（Kimi/OpenAI API → Grok、OpenAI/xAI/GLM/DeepSeek API → Pi 属 ①；GLM/DeepSeek API → Codex 属 ①；Anthropic API Key → Codex 属 ③）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex 属 ①），GLM/DeepSeek → Pi 已可 experimental bind，② Claude/Codex/Grok 订阅 → Pi 已可 experimental bind，③ Codex Responses 与 Grok Chat 订阅 → Claude 已可 experimental bind；Claude 订阅 → Codex 产品关闭，App Server/OauthOther 仍关闭；§6.6 未做**。
+> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（Kimi/OpenAI API → Grok、OpenAI/xAI/GLM/DeepSeek API → Pi 属 ①；GLM/DeepSeek API → Codex 属 ①；Anthropic API Key → Codex 属 ③）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex 属 ①），GLM/DeepSeek → Pi 已可 experimental bind，② Claude/Codex/Grok 订阅 → Pi 已可 experimental bind，③ Codex Responses 与 Grok Chat 订阅 → Claude 已可 experimental bind；Claude 订阅 → Codex 产品不做，App Server/OauthOther 仍关闭；§6.6 未做**。
 > 日期：2026-08-15。  
-> 本文是跨 Agent「把已有凭据接到另一个 Agent」的领域真源。**产品方向**（① API 直连 / ② 原生订阅复用 / ③ 本机桥）以 [product-decisions.md](product-decisions.md) 为准。页面、Hub 入口、Adapter、厂商规则文档以本文为准改表述；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
+> 本文是实现用的领域模型，不是给最终用户看的说明书。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。页面、Hub 入口、Adapter、厂商规则文档以本文为准改对象名；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
 > 关联：[product-decisions.md](product-decisions.md)、[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[adapter-design.md](adapter-design.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[account-authorization-pool.md](account-authorization-pool.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)。
+
+日常说法对照（本文仍用左边，方便和代码对齐）：
+
+| 本文用词 | 日常说法 |
+|---|---|
+| 票 / Ticket | 一份登录（一把 Key 或一次订阅） |
+| Agent | 编程工具 |
+| 槽 / Slot | 对方认的那一处配置 / 登录 |
+| 边 / Edge | 某一份登录接到某一个工具的做法 |
+| ① reshape / `native_endpoint` | 直接改配置 |
+| ② reshape / `config_sync` | 写进对方认的登录 |
+| ③ `bridge` / `local_bridge` | 本机转发 |
 
 ## 0. 一句话
 
-AgentHub 不「共享链接」，它**绑定票**。直连、改配置、本机桥都是同一种写入：`bind(票, Agent)`。扩大 = 认出更多票面、让更多 Agent 能被写入、给协议图补已验证的边。现有 Connections / Dashboard / ConnectFlow **可以按本文重做**，不必守着 Agent 分页和「只给白名单显示按钮」。
+AgentHub 不「共享链接」，它把**一份登录**接到一个编程工具。直接改配置、写进对方认的登录、本机转发，对实现都是同一种写入：`bind(票, Agent)`。扩大 = 认出更多登录、让更多工具能被写入、给已测过的转换补上做法。现有 Connections / Dashboard / ConnectFlow **可以按本文重做**，不必守着按工具分页和「只给白名单显示按钮」。
 
 ## 1. 用户任务
 

@@ -392,6 +392,8 @@ export default function SkillsPage() {
   const sharedCount = localRows.filter(isSharedCatalogRow).length;
   /** 仅本地（可收编）数量，不含「已在真源」的投影/副本 */
   const privateOnlyCount = localRows.filter(isPrivateSourceRow).length;
+  /** Tab「本地技能」角标：列表可见行（共享库 + 只在本工具） */
+  const localCount = localRows.length;
 
   /** 筛选角标：全量计数，不受搜索影响 */
   const filterCounts = useMemo(() => {
@@ -855,8 +857,8 @@ export default function SkillsPage() {
           <TabsTrigger value="library" className="gap-1.5">
             {skillsCopy.tabs.library}
             {catalog != null ? (
-              <Tip className={segmentedCountClass} label={skillsCopy.tabs.libraryBadge(sharedCount)}>
-                {sharedCount}
+              <Tip className={segmentedCountClass} label={skillsCopy.tabs.libraryBadge(localCount)}>
+                {localCount}
               </Tip>
             ) : null}
           </TabsTrigger>
