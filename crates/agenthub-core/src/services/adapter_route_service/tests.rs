@@ -74,6 +74,7 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
     assert_eq!(claude.analysis.route, AdapterRoute::NativeEndpoint);
     assert_eq!(claude.analysis.support, AdapterSupport::Stable);
     assert_eq!(claude.maturity, AdapterMaturity::Stable);
+    assert_eq!(claude.reuse_path, crate::models::AdapterReusePath::ApiEndpoint);
     assert_eq!(claude.service_impact, AdapterServiceImpact::None);
     assert!(claude.can_apply);
     assert_eq!(claude.changes[0].field, "baseUrl");
@@ -105,6 +106,7 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
         codex.service_impact,
         AdapterServiceImpact::RequiresLocalBridge
     );
+    assert_eq!(codex.reuse_path, crate::models::AdapterReusePath::LocalBridge);
     assert!(codex.can_apply);
     assert_eq!(codex.changes.len(), 2);
     assert_eq!(codex.changes[0].target, "codex");
@@ -130,6 +132,7 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
     assert_eq!(pi.analysis.route, AdapterRoute::ConfigSync);
     assert_eq!(pi.analysis.support, AdapterSupport::Stable);
     assert_eq!(pi.maturity, AdapterMaturity::Stable);
+    assert_eq!(pi.reuse_path, crate::models::AdapterReusePath::ApiEndpoint);
     assert!(pi.can_apply);
     assert_eq!(pi.changes[0].field, "provider");
     assert_eq!(pi.changes[0].value.as_deref(), Some("kimi-for-coding"));
@@ -858,6 +861,7 @@ fn codex_auth_json_account_to_claude_is_matrix_closed() {
         plan.analysis.reason,
         crate::models::CODEX_SUBSCRIPTION_TO_CLAUDE_REASON
     );
+    assert_eq!(plan.reuse_path, crate::models::AdapterReusePath::None);
     assert!(plan.changes.is_empty());
     assert!(plan.analysis.actions.is_empty());
     assert!(!serde_json::to_string(&plan)
@@ -873,6 +877,165 @@ fn codex_auth_json_account_to_claude_is_matrix_closed() {
     .public_surface();
     assert_eq!(matrix.route, AdapterRoute::Unsupported);
     assert!(!matrix.can_apply);
+}
+
+#[test]
+fn subscriptions_preview_as_native_pi_reuse_without_opening_bind() {
+    let (_dir, db) = test_db();
+    let accounts = AccountRepo::new(db.clone());
+    for (id, agent_id, credentials) in [
+        (
+            "claude-subscription",
+            AgentId::Claude,
+            serde_json::json!({"format": "credentials_json"}),
+        ),
+        (
+            "codex-subscription",
+            AgentId::Codex,
+            serde_json::json!({
+                "format": "auth_json",
+                "tokens": {"access_token": "must-not-leak"}
+            }),
+        ),
+        (
+            "grok-subscription",
+            AgentId::Grok,
+            serde_json::json!({"format": "oauth"}),
+        ),
+    ] {
+        accounts
+            .create(&Account {
+                id: id.into(),
+                agent_id,
+                kind: AccountKind::Oauth,
+                label: id.into(),
+                credentials,
+                extra: serde_json::json!({}),
+                status: "active".into(),
+                is_current: false,
+                created_at: "now".into(),
+                updated_at: "now".into(),
+            })
+            .unwrap();
+    }
+
+    let service = AdapterRouteService::new(db);
+    for (id, rule_id, reason, provider) in [
+        (
+            "claude-subscription",
+            "claude-subscription-to-pi-v0",
+            crate::models::CLAUDE_SUBSCRIPTION_TO_PI_REASON,
+            "anthropic",
+        ),
+        (
+            "codex-subscription",
+            "codex-subscription-to-pi-v0",
+            crate::models::CODEX_SUBSCRIPTION_TO_PI_REASON,
+            "openai-codex",
+        ),
+        (
+            "grok-subscription",
+            "grok-subscription-to-pi-v0",
+            crate::models::GROK_SUBSCRIPTION_TO_PI_REASON,
+            "xai",
+        ),
+    ] {
+        let plan = service
+            .plan(&request(AdapterSourceKind::Account, id, AgentId::Pi))
+            .unwrap();
+        assert_eq!(plan.analysis.route, AdapterRoute::ConfigSync, "{id}");
+        assert_eq!(plan.analysis.support, AdapterSupport::Experimental, "{id}");
+        assert!(!plan.can_apply, "{id}");
+        assert_eq!(
+            plan.analysis.gate_kind,
+            crate::models::AdapterGateKind::PreviewOnly
+        );
+        assert_eq!(plan.analysis.rule_id.as_deref(), Some(rule_id), "{id}");
+        assert_eq!(plan.reason, reason, "{id}");
+        assert_eq!(
+            plan.reuse_path,
+            crate::models::AdapterReusePath::NativeSubscription,
+            "{id}"
+        );
+        assert_eq!(plan.changes[0].value.as_deref(), Some(provider), "{id}");
+        assert_eq!(
+            plan.analysis.actions[1].kind, "reference_connection_secret",
+            "{id}"
+        );
+        assert_eq!(
+            plan.analysis.actions[1].secret, true,
+            "{id}: action should remain a reference"
+        );
+        let serialized = serde_json::to_value(&plan).unwrap();
+        assert_eq!(serialized["reusePath"], "native_subscription");
+        assert!(!serde_json::to_string(&plan)
+            .unwrap()
+            .contains("must-not-leak"));
+        assert_eq!(
+            plan.analysis.evidence[0].label, "Pi custom provider and model configuration",
+            "{id}"
+        );
+        assert_eq!(
+            plan.analysis.limitations,
+            crate::models::SUBSCRIPTION_PI_PREVIEW_LIMITS
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect::<Vec<_>>(),
+            "{id}"
+        );
+    }
+}
+
+#[test]
+fn subscription_cross_agent_surfaces_are_unsupported_with_none_reuse_path() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "claude-subscription".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::Oauth,
+            label: "Claude subscription".into(),
+            credentials: serde_json::json!({"format": "credentials_json"}),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "grok-subscription".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "Grok subscription".into(),
+            credentials: serde_json::json!({"format": "oauth"}),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    for (id, target) in [
+        ("claude-subscription", AgentId::Codex),
+        ("grok-subscription", AgentId::Claude),
+    ] {
+        let plan = service
+            .plan(&request(AdapterSourceKind::Account, id, target))
+            .unwrap();
+        assert_eq!(plan.analysis.route, AdapterRoute::Unsupported, "{id}");
+        assert_eq!(plan.analysis.support, AdapterSupport::Unsupported, "{id}");
+        assert_eq!(plan.reason, crate::models::PROTOCOL_MISMATCH_REASON, "{id}");
+        assert_eq!(
+            plan.reuse_path,
+            crate::models::AdapterReusePath::None,
+            "{id}"
+        );
+        assert!(!plan.can_apply, "{id}");
+    }
 }
 
 #[test]
@@ -1078,6 +1241,8 @@ struct SharedContractExpect {
     route: AdapterRoute,
     support: AdapterSupport,
     can_apply: bool,
+    #[serde(default)]
+    reuse_path: Option<crate::models::AdapterReusePath>,
     apply_path: SharedContractApplyPath,
     rule_id: Option<String>,
     gate_kind: crate::models::AdapterGateKind,
@@ -1182,6 +1347,9 @@ fn shared_capability_contract_matches_classify_and_plan() {
         assert_eq!(analysis.gate_kind, case.expect.gate_kind, "{}", case.id);
         assert_eq!(analysis.reason, case.expect.reason, "{}", case.id);
         assert_eq!(plan.can_apply, case.expect.can_apply, "{}", case.id);
+        if let Some(reuse_path) = case.expect.reuse_path {
+            assert_eq!(plan.reuse_path, reuse_path, "{}", case.id);
+        }
 
         // applyPath documents production entry: local_bridge is plan-open but
         // never goes through AdapterApplyService (native config write only).

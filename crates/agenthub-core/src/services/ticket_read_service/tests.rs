@@ -222,7 +222,11 @@ fn ordinary_current_provider_and_account_produce_native_active_bindings() {
         t.id == "account:codex-oauth"
             && t.surface == TicketSurface::CodexChatgptSubscription
             && t.credential_class == TicketCredentialClass::Oauth
-            && t.speaks == vec![TicketProtocol::OpenaiResponses]
+            && t.speaks
+                == vec![
+                    TicketProtocol::OpenaiResponses,
+                    TicketProtocol::OpenaiCodexPkce,
+                ]
     }));
 
     let provider_binding = wallet
@@ -242,6 +246,48 @@ fn ordinary_current_provider_and_account_produce_native_active_bindings() {
     assert_eq!(account_binding.route, TicketBindingRoute::Native);
     assert!(account_binding.active);
     assert_eq!(account_binding.agent_id, AgentId::Codex);
+}
+
+#[test]
+fn claude_and_grok_oauth_accounts_have_subscription_surfaces_and_contract_speaks() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "claude-oauth",
+            AgentId::Claude,
+            AccountKind::Oauth,
+            "Claude subscription",
+            false,
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "grok-oauth",
+            AgentId::Grok,
+            AccountKind::Oauth,
+            "Grok subscription",
+            false,
+        ))
+        .unwrap();
+
+    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    let claude = wallet
+        .tickets
+        .iter()
+        .find(|ticket| ticket.id == "account:claude-oauth")
+        .unwrap();
+    assert_eq!(claude.surface, TicketSurface::ClaudeSubscription);
+    assert!(claude.speaks.contains(&TicketProtocol::AnthropicMessages));
+    assert!(claude.speaks.contains(&TicketProtocol::AnthropicPkce));
+
+    let grok = wallet
+        .tickets
+        .iter()
+        .find(|ticket| ticket.id == "account:grok-oauth")
+        .unwrap();
+    assert_eq!(grok.surface, TicketSurface::GrokXaiSubscription);
+    assert!(grok.speaks.contains(&TicketProtocol::OpenaiChat));
+    assert!(grok.speaks.contains(&TicketProtocol::XaiDeviceCode));
 }
 
 #[test]
@@ -307,7 +353,8 @@ fn profile_with_missing_source_row_is_skipped() {
 #[test]
 fn each_agent_has_at_most_one_active_binding_provider_wins() {
     let (_dir, db) = test_db();
-    // Both current on Claude — provider must win.
+    // Both current on Claude — the Claude OAuth account is now a subscription
+    // ticket, but provider still wins the active binding.
     AccountRepo::new(db.clone())
         .create(&account(
             "claude-acct",
@@ -487,6 +534,14 @@ fn ticket_surface_serde_matches_wire() {
         serde_json::json!("codex-chatgpt-subscription")
     );
     assert_eq!(
+        serde_json::to_value(TicketSurface::ClaudeSubscription).unwrap(),
+        serde_json::json!("claude-subscription")
+    );
+    assert_eq!(
+        serde_json::to_value(TicketSurface::GrokXaiSubscription).unwrap(),
+        serde_json::json!("grok-xai-subscription")
+    );
+    assert_eq!(
         serde_json::to_value(TicketCredentialClass::ApiKey).unwrap(),
         serde_json::json!("api_key")
     );
@@ -510,6 +565,14 @@ fn ticket_surface_serde_matches_wire() {
     assert_eq!(
         TicketSurface::parse("deepseek-api"),
         Some(TicketSurface::DeepseekApi)
+    );
+    assert_eq!(
+        TicketSurface::parse("claude-subscription"),
+        Some(TicketSurface::ClaudeSubscription)
+    );
+    assert_eq!(
+        TicketSurface::parse("grok-xai-subscription"),
+        Some(TicketSurface::GrokXaiSubscription)
     );
     assert_eq!(
         TicketSurface::OpenaiApi.speaks(),
@@ -722,6 +785,63 @@ fn list_wallet_unrecognized_account_surface_skips_writeback() {
     let stored = AccountRepo::new(db).get_by_id("legacy").unwrap().unwrap();
     assert_eq!(stored.extra["surface"], "future-account-surface");
     assert!(stored.is_current);
+}
+
+#[test]
+fn list_wallet_unknown_surface_reclassifies_and_only_writes_known_result() {
+    let (_dir, db) = test_db();
+    let mut claude = account(
+        "claude-unknown",
+        AgentId::Claude,
+        AccountKind::Oauth,
+        "Claude",
+        false,
+    );
+    claude.extra = serde_json::json!({"surface": "unknown"});
+    AccountRepo::new(db.clone()).create(&claude).unwrap();
+
+    let mut relay = account(
+        "relay-unknown",
+        AgentId::Kimi,
+        AccountKind::Oauth,
+        "Relay",
+        false,
+    );
+    relay.credentials = serde_json::json!({"token": "must-not-leak"});
+    relay.extra = serde_json::json!({"surface": "unknown", "keep": true});
+    AccountRepo::new(db.clone()).create(&relay).unwrap();
+
+    let wallet = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    assert_eq!(
+        wallet
+            .tickets
+            .iter()
+            .find(|ticket| ticket.id == "account:claude-unknown")
+            .unwrap()
+            .surface,
+        TicketSurface::ClaudeSubscription
+    );
+    assert_eq!(
+        wallet
+            .tickets
+            .iter()
+            .find(|ticket| ticket.id == "account:relay-unknown")
+            .unwrap()
+            .surface,
+        TicketSurface::Unknown
+    );
+
+    let stored_claude = AccountRepo::new(db.clone())
+        .get_by_id("claude-unknown")
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored_claude.extra["surface"], "claude-subscription");
+    let stored_relay = AccountRepo::new(db)
+        .get_by_id("relay-unknown")
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored_relay.extra["surface"], "unknown");
+    assert_eq!(stored_relay.extra["keep"], true);
 }
 
 #[test]
