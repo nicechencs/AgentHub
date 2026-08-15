@@ -107,15 +107,89 @@ pub fn switch(
     assume_yes: bool,
 ) -> Result<()> {
     let agent = require_agent(agent_filter, "switch")?;
+    confirm(&switch_confirm_prompt(hub, agent, id_or_name), assume_yes)?;
+    let result = hub.providers.switch(id_or_name, agent)?;
+    emit_provider_switch(&result, format)
+}
+
+/// Undo the last provider switch for `--agent` (one-shot).
+pub fn undo(
+    hub: &AgentHub,
+    format: OutputFormat,
+    agent_filter: Option<&str>,
+    assume_yes: bool,
+) -> Result<()> {
+    let agent = require_agent(agent_filter, "undo")?;
     confirm(
         &format!(
-            "Switch {} to provider {id_or_name}? Current live config will be backfilled and backed up.",
+            "Undo the last provider switch for {}? Live config will be backfilled and backed up.",
             agent.as_str()
         ),
         assume_yes,
     )?;
-    let result = hub.providers.switch(id_or_name, agent)?;
-    emit_provider_switch(&result, format)
+    let undone = hub.providers.undo_switch(agent)?;
+    match format {
+        OutputFormat::Quiet => Ok(()),
+        OutputFormat::Json => print_json(&serde_json::json!({
+            "undone": undone,
+            "agent": agent.as_str(),
+        })),
+        OutputFormat::Table => {
+            if undone {
+                println!("undid last provider switch for {}", agent.as_str());
+            } else {
+                println!("no provider switch to undo for {}", agent.as_str());
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Probe a saved provider Base URL RTT in milliseconds.
+pub fn test_latency(
+    hub: &AgentHub,
+    id_or_name: &str,
+    format: OutputFormat,
+    agent_filter: Option<&str>,
+) -> Result<()> {
+    let agent = require_agent(agent_filter, "test-latency")?;
+    let ms = hub.providers.test_latency(agent, id_or_name)?;
+    match format {
+        OutputFormat::Quiet => Ok(()),
+        OutputFormat::Json => print_json(&serde_json::json!({
+            "agent": agent.as_str(),
+            "provider": id_or_name,
+            "latencyMs": ms,
+        })),
+        OutputFormat::Table => {
+            println!("{} {}  {ms} ms", agent.as_str(), id_or_name);
+            Ok(())
+        }
+    }
+}
+
+pub fn switch_confirm_prompt(hub: &AgentHub, agent: AgentId, id_or_name: &str) -> String {
+    let current = hub
+        .providers
+        .list(Some(agent))
+        .ok()
+        .and_then(|items| items.into_iter().find(|p| p.is_current));
+    let backfill = match current {
+        Some(c) => format!("backfill: current live will be saved as 「{}」", c.name),
+        None => "backfill: no current provider; live will be written directly".into(),
+    };
+    let backup = format!(
+        "backup: {}",
+        hub.backups
+            .backups_root()
+            .join("live")
+            .join(agent.as_str())
+            .display()
+    );
+    format!(
+        "Switch {} to provider {id_or_name}?\n  {backfill}\n  {backup}\n  process: running agent processes are not stopped",
+        agent.as_str()
+    )
 }
 
 /// Pure presentation for list (testable without DB).
@@ -220,163 +294,4 @@ pub fn emit_provider_switch(result: &ProviderSwitchResult, format: OutputFormat)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use agenthub_core::error::AppError;
-    use serde_json::json;
-
-    fn sample_provider() -> Provider {
-        Provider {
-            id: "p1".into(),
-            agent_id: AgentId::Claude,
-            name: "Relay".into(),
-            settings_config: json!({
-                "api_key": "sk-secret",
-                "base_url": "https://example.com",
-                "nested": { "auth_token": "tok", "x": 1 }
-            }),
-            meta: json!({"TOKEN": "t", "note": "ok"}),
-            is_current: true,
-            created_at: "2026-01-01 00:00:00".into(),
-            updated_at: "2026-01-02 00:00:00".into(),
-        }
-    }
-
-    #[test]
-    fn parse_agent_filter_none() {
-        assert_eq!(parse_agent_filter(None).unwrap(), None);
-    }
-
-    #[test]
-    fn parse_agent_filter_valid() {
-        assert_eq!(
-            parse_agent_filter(Some("claude")).unwrap(),
-            Some(AgentId::Claude)
-        );
-        assert_eq!(
-            parse_agent_filter(Some("GROK")).unwrap(),
-            Some(AgentId::Grok)
-        );
-        assert_eq!(
-            parse_agent_filter(Some("cursor")).unwrap(),
-            Some(AgentId::Cursor)
-        );
-        assert_eq!(
-            parse_agent_filter(Some("cursor-agent")).unwrap(),
-            Some(AgentId::Cursor)
-        );
-    }
-
-    #[test]
-    fn parse_agent_filter_invalid_is_invalid_arg() {
-        let err = parse_agent_filter(Some("not-an-agent")).unwrap_err();
-        assert_eq!(err.code(), "invalid_arg");
-        match &err {
-            AppError::InvalidArg(msg) => {
-                assert!(msg.contains("not-an-agent"));
-                assert!(msg.contains("claude"));
-                assert!(msg.contains("cursor"));
-            }
-            other => panic!("expected InvalidArg, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn select_presets_all_and_filtered() {
-        let all = select_presets(None).unwrap();
-        assert_eq!(all.len(), 8);
-
-        let claude = select_presets(Some("claude")).unwrap();
-        assert_eq!(claude.len(), 2);
-        assert!(claude.iter().all(|p| p.agent == AgentId::Claude));
-        assert!(claude.iter().all(|p| !p.template.is_empty()));
-    }
-
-    #[test]
-    fn select_presets_rejects_invalid_agent() {
-        assert!(matches!(
-            select_presets(Some("nope")),
-            Err(AppError::InvalidArg(_))
-        ));
-    }
-
-    #[test]
-    fn resolve_agent_filter_mirrors_parse() {
-        assert_eq!(resolve_agent_filter(None).unwrap(), None);
-        assert_eq!(
-            resolve_agent_filter(Some("kimi")).unwrap(),
-            Some(AgentId::Kimi)
-        );
-        assert!(matches!(
-            resolve_agent_filter(Some("bad")),
-            Err(AppError::InvalidArg(_))
-        ));
-    }
-
-    #[test]
-    fn write_operations_require_agent() {
-        assert_eq!(
-            require_agent(None, "switch").unwrap_err().code(),
-            "invalid_arg"
-        );
-        assert_eq!(
-            require_agent(None, "import-live").unwrap_err().code(),
-            "invalid_arg"
-        );
-        assert_eq!(
-            require_agent(Some("codex"), "switch").unwrap(),
-            AgentId::Codex
-        );
-    }
-
-    #[test]
-    fn emit_list_and_show_quiet_is_ok() {
-        let items = vec![sample_provider()];
-        emit_provider_list(&items, OutputFormat::Quiet).unwrap();
-        emit_provider_show(&items[0], OutputFormat::Quiet).unwrap();
-    }
-
-    #[test]
-    fn emit_json_redacts_secrets_and_is_valid() {
-        let p = sample_provider();
-        // redacted view used by emit paths
-        let r = p.redacted();
-        let s = serde_json::to_string(&r).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
-        assert_eq!(v["settingsConfig"]["api_key"], "***");
-        assert_eq!(v["settingsConfig"]["base_url"], "https://example.com");
-        assert_eq!(v["settingsConfig"]["nested"]["auth_token"], "***");
-        assert_eq!(v["settingsConfig"]["nested"]["x"], 1);
-        assert_eq!(v["meta"]["TOKEN"], "***");
-        assert_eq!(v["meta"]["note"], "ok");
-        assert_eq!(v["isCurrent"], true);
-        // original untouched
-        assert_eq!(p.settings_config["api_key"], "sk-secret");
-    }
-
-    #[test]
-    fn emit_list_json_shape_via_redacted_vec() {
-        let items = vec![sample_provider()];
-        let redacted: Vec<Provider> = items.iter().map(Provider::redacted).collect();
-        let v = serde_json::to_value(&redacted).unwrap();
-        assert!(v.is_array());
-        assert_eq!(v[0]["id"], "p1");
-        assert_eq!(v[0]["agentId"], "claude");
-        assert_eq!(v[0]["name"], "Relay");
-        assert_eq!(v[0]["settingsConfig"]["api_key"], "***");
-    }
-
-    #[test]
-    fn switch_result_redacts_provider_secrets() {
-        let result = ProviderSwitchResult {
-            provider: sample_provider(),
-            backup: None,
-            backfilled_provider_id: Some("old-provider".into()),
-        };
-        emit_provider_switch(&result, OutputFormat::Quiet).unwrap();
-        let value = serde_json::to_value(result.redacted()).unwrap();
-        assert_eq!(value["provider"]["settingsConfig"]["api_key"], "***");
-        assert_eq!(value["provider"]["meta"]["TOKEN"], "***");
-        assert_eq!(value["backfilledProviderId"], "old-provider");
-    }
-}
+mod tests;

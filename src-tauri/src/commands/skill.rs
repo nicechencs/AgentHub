@@ -2,11 +2,10 @@
 
 use agenthub_core::models::{
     AgentId, InstalledSkill, Skill, SkillListing, SkillMarkdownPreview, SkillProjectMode,
-    SkillProjectResult, SkillSyncState,
+    SkillProjectResult,
 };
 use agenthub_core::services::SkillMarketRegistry;
 use agenthub_core::AgentHub;
-use serde::Serialize;
 use tauri::State;
 
 use agenthub_core::logging::targets;
@@ -14,29 +13,7 @@ use agenthub_core::logging::targets;
 use crate::commands::{map_err_string, parse_agent, parse_agent_opt, with_hub_blocking};
 use crate::state::AppState;
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SkillAction {
-    pub skill: String,
-    pub agent: AgentId,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SkillFailure {
-    pub skill: String,
-    pub agent: AgentId,
-    pub code: String,
-    pub error: String,
-}
-
-#[derive(Debug, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SkillSyncReport {
-    pub synced: Vec<SkillAction>,
-    pub skipped: Vec<SkillAction>,
-    pub failed: Vec<SkillFailure>,
-}
+pub use agenthub_core::models::SkillSyncReport;
 
 /// Invoke: `list_skills`
 #[tauri::command]
@@ -339,47 +316,24 @@ fn sync_all_skills_inner(
     force: bool,
 ) -> Result<SkillSyncReport, String> {
     let selected = parse_agent_opt(agent_id)?;
-    let targets: Vec<AgentId> = match selected {
-        Some(a) => vec![a],
-        None => AgentId::ALL.to_vec(),
+    let (targets, skip_unsupported) = match selected {
+        Some(a) => (vec![a], false),
+        None => (AgentId::ALL.to_vec(), true),
     };
-    let skills = hub
+    let report = hub
         .skills
-        .list()
+        .sync_targets(&targets, force, skip_unsupported)
         .map_err(|e| map_err_string("sync_all_skills", e))?;
-    let mut report = SkillSyncReport::default();
-
-    for skill in &skills {
-        for &agent in &targets {
-            let action = SkillAction {
-                skill: skill.id.clone(),
-                agent,
-            };
-            if selected.is_none() && skill.state_for(agent) == Some(SkillSyncState::Unsupported) {
-                report.skipped.push(action);
-                continue;
-            }
-            match hub.skills.sync(&skill.id, agent, force) {
-                Ok(()) => report.synced.push(action),
-                Err(error) => {
-                    tracing::warn!(
-                        target: targets::GUI,
-                        op = "sync_all_skills",
-                        skill = %action.skill,
-                        agent = %action.agent.as_str(),
-                        code = %error.code(),
-                        error = %error,
-                        "skill sync failed"
-                    );
-                    report.failed.push(SkillFailure {
-                        skill: action.skill,
-                        agent,
-                        code: error.code().to_string(),
-                        error: error.to_string(),
-                    });
-                }
-            }
-        }
+    for failure in &report.failed {
+        tracing::warn!(
+            target: targets::GUI,
+            op = "sync_all_skills",
+            skill = %failure.skill,
+            agent = %failure.agent.as_str(),
+            code = %failure.code,
+            error = %failure.error,
+            "skill sync failed"
+        );
     }
     Ok(report)
 }

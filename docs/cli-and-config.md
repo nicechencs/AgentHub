@@ -1,8 +1,8 @@
-# AgentHub CLI 命令规范与配置契约 v1.2
+# AgentHub CLI 命令规范与配置契约 v1.4
 
 > 对应《项目方案》GUI + CLI 双端与《架构拆分》`agenthub-cli` / 数据目录。  
 > 本文是**可验收契约**：实现 CLI 与配置读写时以本文为准；与 GUI 冲突时以 **core service 行为一致** 为最高原则。  
-> 状态（2026-08-14，以代码为准）：CLI 已覆盖 doctor / run / env / agent（含 `capabilities`）/ provider / account（含 `oauth-url`、`refresh`、`delete`）/ skill 全树 / usage / backup / config。GUI 已接线 doctor、安装、Provider、Account、OAuth PKCE（Claude/Codex/Grok）、Skill、Usage、Backup、Chat、Projects、Settings（L1 白名单含用量间隔；主题 Save 落盘）。Provider/Account **测速与切换撤销**已接线（`Backend.features` true）。**备份导出**仍未实现。凭据落盘加密为当前范围外。
+> 状态（2026-08-15，以代码为准）：CLI 已覆盖 doctor（含 ⑤ Locks）/ run / env / agent（含 `capabilities`、`outdated`）/ provider（含 `undo`、`test-latency`）/ account（含 `oauth-url`、`refresh`、`delete`、`undo`）/ skill 全树 / usage / backup（含 `delete`）/ config（白名单 + 只读 `app_version`）。GUI 已接线 doctor、安装、Provider、Account、OAuth PKCE（Claude/Codex/Grok）、Skill、Usage、Backup、Chat、Projects、Settings。Provider/Account **测速与切换撤销** CLI/GUI 均已接线。**备份导出**仍未实现。凭据落盘加密为当前范围外。
 > v1.1：`doctor` 含 runtimes；新增 `env` 资源；`agent install` 两阶段与 `--install-deps`。  
 > v1.2：平台环境差异——`doctor`/`env list` 仅返回宿主相关 Runtime（macOS 不含 PowerShell）；`env install` 默认 channel 与 `agent install|upgrade` native 底层命令按 Windows/macOS 分流。
 
@@ -73,13 +73,16 @@ agenthub
 │   ├── capabilities [--markdown]   # 静态能力矩阵
 │   ├── install    <agent> [--channel <name>] [--install-deps]
 │   ├── upgrade    <agent>
+│   ├── outdated   [agent] [--force]        # npm dist-tag 探测
 │   └── uninstall  <agent> [--purge-config]
 ├── provider
 │   ├── list       [--agent <id>]
 │   ├── show       <name> [--agent <id>]
 │   ├── switch     <name> --agent <id>
 │   ├── import-live [--agent <id>] [--name <name>]
-│   └── presets    [--agent <id>]          # 列出内置预设 id
+│   ├── presets    [--agent <id>]          # 列出内置预设 id
+│   ├── undo       --agent <id>            # 撤销最近一次 switch
+│   └── test-latency <name> --agent <id>   # Base URL RTT（毫秒）
 ├── account
 │   ├── list       [--agent <id>]
 │   ├── switch     <id-or-label> --agent <id>
@@ -87,7 +90,8 @@ agenthub
 │   ├── add-apikey --agent <id> --label <s> --key <s>   # key 也可 stdin
 │   ├── delete     <id-or-label> --agent <id>
 │   ├── oauth-url                       # 打印 PKCE authorize URL（不完成流程）
-│   └── refresh    <id-or-label> --agent <id>
+│   ├── refresh    <id-or-label> --agent <id>
+│   └── undo       --agent <id>            # 撤销最近一次 switch
 ├── skill
 │   ├── list            [--agent <id>]
 │   ├── list-installed              # 全技能根（共享 + Agent 私有）
@@ -108,7 +112,8 @@ agenthub
 ├── backup
 │   ├── list       [--agent <id>]
 │   ├── create     --agent <id> [--note <s>]
-│   └── restore    <backup-id>
+│   ├── restore    <backup-id>
+│   └── delete     <backup-id>
 └── config                           # AgentHub 自身设置（非各 agent live）
     ├── path                         # 打印 data dir / db 路径
     ├── get        [key]
@@ -167,7 +172,7 @@ agenthub
 | `list` | | `env_service.detect_all` | 否 | 与 doctor 的 runtimes 段同源；**仅宿主相关 Runtime**（macOS/Linux 不含 `powershell`） |
 | `install` | `<runtime> [--channel]` | `env_service.install_runtime` | 中 | P2；`runtime`：`nodejs`/`git` 等；channel 默认 **Windows=`winget`、macOS=`brew`**；`powershell` **永不**一键安装；流式日志 stderr；成功后 invalidate 缓存 |
 
-- `install` 在无自动渠道时打印 remediations（命令 + URL）并以退出码 `3`（业务失败）结束，**不**假装成功。
+- `install` 在无自动渠道时打印 remediations（命令 + URL）并以退出码 `3`（业务失败）结束，**不**假装成功。无包管理器（brew/winget 未找到）或不支持的安装渠道 → 退出码 `3`（`env.not_ready` / `unsupported`），`--output json` 的 `details` 含 `remediations`（已按宿主平台过滤）。命令已执行但重新检测未就绪仍为 `install.failed`（退出码 `1`）。
 - **不提供** `env uninstall`（避免误伤系统 Node）。
 - 平台环境差异硬约束见 [agenthub-plan.md §5.7.5](agenthub-plan.md)。
 
@@ -212,8 +217,10 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 | `switch` | `<name> --agent`（agent 可全局 `-a`） | `switch` | **高** | 流程：校验→backfill→backup→原子写→锁；与 GUI 完全一致 |
 | `import-live` | `[--agent] [--name]` | `import from live` | 中 | 把当前 live 收成一条 provider |
 | `presets` | `[--agent]` | presets 注册表 | 否 | P1 起 presets 应在 **core**，CLI/GUI 共用 |
+| `undo` | `--agent` | `undo_switch` | **高** | 一发撤销最近一次 switch；无槽位时不报错 |
+| `test-latency` | `<name> --agent` | `test_latency` | 否 | 探测已存 provider 的 Base URL RTT（毫秒） |
 
-`switch` 在 TTY 且无 `-y` 时应用 dialoguer 展示三要素摘要（backfill / backup 路径 / 进程警告），与 `SwitchConfirmDialog` 同语义。
+`switch` 在 TTY 且无 `-y` 时展示三要素摘要（backfill / backup 路径 / 进程警告），与 `SwitchConfirmDialog` 同语义。
 
 ### 4.5 `account`
 
@@ -224,10 +231,13 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 | `import` | `[--agent] [--name]` | `import_live` | 中 | 导入 live 文件型凭据 |
 | `add-apikey` | `--agent [--label] --key` | `add_api_key` | 中 | `--key -` 表示从 stdin 读，避免进 shell 历史 |
 | `delete` | `<id-or-label> --agent` | `delete` | 中 | 仅删池内记录，不改 live |
+| `oauth-url` | `--agent` | `start_oauth` | 否 | 只打印 authorize URL，不完成浏览器流 |
+| `refresh` | `<id-or-label> --agent` | `refresh_token` | 中 | 用 refresh 换新 |
+| `undo` | `--agent` | `undo_switch` | **高** | 一发撤销最近一次 switch |
 
 文件型账号池：仅导入 adapter 声明支持的 live 凭据形态。无法在公开配置中可靠定位的官方登录态，import 返回 `unsupported`（退出码 `3`），不猜测路径。可入池但写回契约未锁定的 API Key，apply 到 live 仍 `unsupported`。
 
-**OAuth**：GUI 完成已配置平台的 loopback PKCE；CLI 提供 `account oauth-url`（只出 URL）与 `account refresh`（用 refresh 换新），**不**把完整浏览器 PKCE 作为 CLI 主路径。
+**OAuth**：GUI 完成已配置平台的 loopback PKCE；CLI 提供 `account oauth-url`（只出 URL）与 `account refresh`（用 refresh 换新），**不**把完整浏览器 PKCE 作为 CLI 主路径。CLI `oauth-url` 只打印 URL，进程退出后 loopback 失效。
 
 ### 4.6 `skill`
 
@@ -263,6 +273,7 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 | `list` | `[--agent]` | `list` | 否 | kind / files / size / note |
 | `create` | `--agent [--note]` | `create` manual | 否 | |
 | `restore` | `<backup-id>` | `restore` | **高** | 恢复前自动再备份当前 live |
+| `delete` | `<backup-id>` | `delete` | **高** | 删快照与索引行；需确认/`-y` |
 
 ### 4.9 `config`（AgentHub 自身，不是 live）
 
@@ -299,9 +310,9 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 | 能力 | GUI | CLI v1 | 备注 |
 |---|---|---|---|
 | Runtime 检测 / 引导安装 | ✅ Agents 页 / Env 条 | ✅ `env list` / `env install` | 两阶段 ensure_env |
-| Agent 检测/安装/升级/卸载 | ✅ Agents 页 | ✅ list/install/upgrade/uninstall + `capabilities` | |
-| Provider 列表/导入/切换/upsert | ✅ Connections | ✅ list/show/import/switch/presets | CLI 无 create/update/delete；GUI 有 upsert/delete；**测速 / 切换撤销已接线**（`providerTestLatency` / `providerUndoSwitch`） |
-| Account 池与切换 | ✅ Connections | ✅ list/import/apikey/switch/delete | GUI **切换撤销已接线**（`accountUndoSwitch`） |
+| Agent 检测/安装/升级/卸载 | ✅ Agents 页 | ✅ list/install/upgrade/uninstall/outdated + `capabilities` | |
+| Provider 列表/导入/切换/upsert | ✅ Connections | ✅ list/show/import/switch/presets/undo/test-latency | CLI 无 create/update/delete；GUI 有 upsert/delete |
+| Account 池与切换 | ✅ Connections | ✅ list/import/apikey/switch/delete/undo | GUI/CLI 切换撤销均已接线 |
 | OAuth 添加账号 | ✅ Claude/Codex/Grok | 🟡 oauth-url + refresh | 完整浏览器流以 GUI 为主 |
 | Skills 矩阵 / 同步 / 安装 | ✅ Skills 页 | ✅ 全树（含 install/market/project） | market 默认 skills.sh；依赖网络与 Git |
 | Usage 采集/图表 | ✅ Dashboard 用量段 | ✅ collect/stats/models/health | Cursor Unsupported |
@@ -309,7 +320,7 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 | Chat 多 Agent | ✅ /chat | ❌（用 `run` 一次性 headless） | 过程面板 Phase 0–2 |
 | Projects | ✅ /projects | ❌ | |
 | Settings 主题/日志等 | ✅ L1 白名单 + OS 自启 | ✅ config get/set 白名单 | 主题/用量间隔/托盘落 SQLite；`autoStart` 为 OS 登录项；语言无 i18n |
-| Doctor / 排障 | ✅ doctor report | ✅ doctor（含 runtimes） | |
+| Doctor / 排障 | ✅ doctor report | ✅ doctor（含 runtimes + locks） | |
 | 官方模型目录 | ❌ | ❌ | 非目标 |
 | 备份导出 / DB 备份 | ❌ | ❌ | 预留目录 |
 
@@ -472,3 +483,6 @@ L3 内置    →  只读模板；不是用户状态
 |---|---|---|
 | v1.0 | 2026-07-27 | 初版：命令树 freeze、退出码、GUI 矩阵、L0–L3 配置契约、验收清单 |
 | v1.1 | 2026-07-27 | 前置环境：`env` 资源、doctor runtimes、`agent install --install-deps`、EnvNotReady 契约 |
+| v1.2 | 2026-07-27 | 平台环境差异：`doctor`/`env list` 仅返回宿主相关 Runtime；`env install` 默认 channel 与 native 底层命令按 Windows/macOS 分流 |
+| v1.3 | 2026-08-15 | 命令树补齐 `agent outdated` / `backup delete` / `provider undo|test-latency` / `account undo`；doctor ⑤ Locks；`config get` 全白名单 + 只读 `app_version`；JSON 错误带 details；EnvNotReady 退出码 3 |
+| v1.4 | 2026-08-15 | `agent uninstall --purge-config` 只走 core 一次 PreUninstall 备份；`env install` 无 brew/winget → `env.not_ready`（退出码 3）；`skill sync` 下沉 `SkillService::sync_targets`；`--quiet` 不再泄漏 capabilities markdown / install logs；`oauth-url` 标明 loopback 随进程退出 |

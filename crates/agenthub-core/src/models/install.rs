@@ -19,6 +19,27 @@ pub struct InstallOutcome {
     /// Present after runtime install redetect.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime: Option<EnvStatus>,
+    /// Stable machine code for CLI exit mapping (`env.not_ready`, `unsupported`, …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// Structured details (no secrets). Used by CLI `--output json` errors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+}
+
+impl Default for InstallOutcome {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            action: String::new(),
+            logs: Vec::new(),
+            message: String::new(),
+            agent: None,
+            runtime: None,
+            code: None,
+            details: None,
+        }
+    }
 }
 
 impl InstallOutcome {
@@ -32,8 +53,17 @@ impl InstallOutcome {
             action: action.into(),
             logs,
             message: message.into(),
-            agent: None,
-            runtime: None,
+            ..Self::default()
         }
+    }
+
+    pub fn with_code(
+        mut self,
+        code: impl Into<String>,
+        details: Option<serde_json::Value>,
+    ) -> Self {
+        self.code = Some(code.into());
+        self.details = details;
+        self
     }
 }

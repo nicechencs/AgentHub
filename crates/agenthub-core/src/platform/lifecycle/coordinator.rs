@@ -382,6 +382,7 @@ impl LifecycleCoordinator {
                     },
                     agent: None,
                     runtime: None,
+                    ..Default::default()
                 })
             },
             &crate::utils::command_exec::SystemCommandExecutor,

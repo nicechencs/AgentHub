@@ -387,7 +387,8 @@ async fn unbind_ticket_inner(
                 lifecycle_barrier,
                 profile.id.clone(),
             )
-            .await?;
+            .await
+            .map_err(adapter_error_from_string)?;
         }
         let _target_guard = coordinator.lock_target(profile.target_agent_id).await;
     }

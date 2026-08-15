@@ -16,6 +16,9 @@ pub const SETTINGS_WHITELIST: &[&str] = &[
     "usage_collect_interval_min",
 ];
 
+/// Read-only keys: `config get` may return them; `config set` always rejects.
+pub const SETTINGS_READONLY: &[&str] = &["app_version"];
+
 pub struct SettingsService {
     data_dir: PathBuf,
     db: Database,
@@ -44,10 +47,14 @@ impl SettingsService {
     }
 
     pub fn get(&self, key: &str) -> Result<Option<String>> {
+        if SETTINGS_READONLY.contains(&key) {
+            return Ok(Some(readonly_setting(key)));
+        }
         if !SETTINGS_WHITELIST.contains(&key) {
             return Err(AppError::InvalidArg(format!(
-                "settings key not allowed: {key} (allowed: {})",
-                SETTINGS_WHITELIST.join(", ")
+                "settings key not allowed: {key} (allowed: {}, {})",
+                SETTINGS_WHITELIST.join(", "),
+                SETTINGS_READONLY.join(", ")
             )));
         }
         self.db.get_setting(key)
@@ -59,6 +66,11 @@ impl SettingsService {
 
     pub fn set(&self, key: &str, value: &str) -> Result<()> {
         let result = (|| {
+            if SETTINGS_READONLY.contains(&key) {
+                return Err(AppError::InvalidArg(format!(
+                    "settings key is read-only: {key}"
+                )));
+            }
             if !SETTINGS_WHITELIST.contains(&key) {
                 return Err(AppError::InvalidArg(format!(
                     "settings key not allowed: {key} (allowed: {})",
@@ -76,7 +88,9 @@ impl SettingsService {
                     .as_str()
                     .to_string(),
                 "close_to_tray" => normalize_bool_setting(value)?,
-                "usage_collect_interval_min" => parse_usage_collect_interval_min(value)?.to_string(),
+                "usage_collect_interval_min" => {
+                    parse_usage_collect_interval_min(value)?.to_string()
+                }
                 _ => value.to_string(),
             };
             self.db.set_setting(key, &normalized)?;
@@ -101,6 +115,13 @@ impl SettingsService {
 
     pub fn db_ok(&self) -> Result<()> {
         self.db.ping()
+    }
+}
+
+fn readonly_setting(key: &str) -> String {
+    match key {
+        "app_version" => env!("CARGO_PKG_VERSION").to_string(),
+        other => other.to_string(),
     }
 }
 
@@ -211,12 +232,18 @@ mod tests {
         svc.set("usage_collect_interval_min", "45").unwrap();
         assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, Some(45));
         svc.set("usage_collect_interval_min", "1440").unwrap();
-        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, Some(1440));
+        assert_eq!(
+            svc.get_all().unwrap().usage_collect_interval_min,
+            Some(1440)
+        );
 
         assert!(svc.set("usage_collect_interval_min", "1441").is_err());
         assert!(svc.set("usage_collect_interval_min", "-1").is_err());
         assert!(svc.set("usage_collect_interval_min", "nope").is_err());
-        assert_eq!(svc.get_all().unwrap().usage_collect_interval_min, Some(1440));
+        assert_eq!(
+            svc.get_all().unwrap().usage_collect_interval_min,
+            Some(1440)
+        );
     }
 
     #[test]
@@ -225,5 +252,17 @@ mod tests {
         assert!(svc.get("log_level").unwrap().is_some());
         svc.set("theme", "dark").unwrap();
         assert_eq!(svc.get("theme").unwrap().as_deref(), Some("dark"));
+    }
+
+    #[test]
+    fn app_version_is_read_only() {
+        let (_dir, svc) = svc_tmp();
+        assert_eq!(
+            svc.get("app_version").unwrap().as_deref(),
+            Some(env!("CARGO_PKG_VERSION"))
+        );
+        let err = svc.set("app_version", "9.9.9").unwrap_err();
+        assert_eq!(err.code(), "invalid_arg");
+        assert!(err.to_string().contains("read-only"));
     }
 }

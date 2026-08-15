@@ -53,4 +53,27 @@ impl AppError {
             message: message.into(),
         }
     }
+
+    /// JSON `details` payload for CLI `--output json` (never includes raw secrets).
+    pub fn details(&self) -> serde_json::Value {
+        match self {
+            Self::EnvNotReady(raw) => {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) {
+                    if value.is_object() {
+                        return value;
+                    }
+                }
+                serde_json::json!({ "message": crate::utils::redact::redact_text(raw) })
+            }
+            Self::InvalidArg(message)
+            | Self::NotFound(message)
+            | Self::Unsupported(message)
+            | Self::Message { message, .. } => {
+                serde_json::json!({ "message": crate::utils::redact::redact_text(message) })
+            }
+            other => {
+                serde_json::json!({ "message": crate::utils::redact::redact_text(&other.to_string()) })
+            }
+        }
+    }
 }

@@ -37,6 +37,7 @@ fn install_runtime_powershell_refuses() {
     };
     let out = install_runtime(RuntimeId::PowerShell, "winget", &ex).unwrap();
     assert!(!out.ok);
+    assert_eq!(out.code.as_deref(), Some("unsupported"));
     assert!(out.message.contains("不支持") || out.message.contains("PowerShell"));
     assert!(ex.calls.lock().unwrap().is_empty());
 }
@@ -359,6 +360,7 @@ fn install_runtime_git_uses_winget_git_package() {
     if cmds.is_empty() {
         // The package manager may not be installed on this environment.
         assert!(!out.ok);
+        assert_eq!(out.code.as_deref(), Some("env.not_ready"));
         assert!(
             out.message.contains("winget")
                 || out.message.contains("Homebrew")
@@ -389,6 +391,225 @@ fn install_runtime_git_uses_winget_git_package() {
             out.logs
         );
     }
+}
+
+#[test]
+fn host_remediations_omit_foreign_package_managers() {
+    for id in [RuntimeId::NodeJs, RuntimeId::Git] {
+        let remediations = host_remediations(id);
+        assert!(
+            !remediations.is_empty(),
+            "expected at least one host remediation for {}",
+            id.as_str()
+        );
+        for rem in remediations {
+            if cfg!(windows) {
+                assert_ne!(rem.kind, "brew", "Windows must not suggest brew");
+            } else {
+                assert_ne!(rem.kind, "winget", "macOS/Linux must not suggest winget");
+            }
+        }
+    }
+}
+
+#[test]
+fn missing_package_manager_outcome_is_env_not_ready() {
+    let out = missing_package_manager_outcome(
+        "env_install",
+        vec!["# install runtime nodejs via brew (node)".into()],
+        "brew",
+        RuntimeId::NodeJs,
+        "未找到 Homebrew。请先安装 Homebrew（https://brew.sh/）后重试。",
+    );
+    assert!(!out.ok);
+    assert_eq!(out.code.as_deref(), Some("env.not_ready"));
+    let details = out.details.expect("env.not_ready details");
+    assert!(details["agent"].is_null());
+    assert_eq!(details["channel"], "brew");
+    assert_eq!(details["missing"], serde_json::json!(["nodejs"]));
+    let remediations = details["remediations"].as_array().expect("remediations");
+    assert!(!remediations.is_empty());
+    for rem in remediations {
+        let kind = rem["kind"].as_str().unwrap_or_default();
+        if cfg!(windows) {
+            assert_ne!(kind, "brew");
+        } else {
+            assert_ne!(kind, "winget");
+        }
+        assert!(
+            rem.get("command").is_some() || rem.get("url").is_some() || rem.get("text").is_some(),
+            "remediation should carry command, url, or text: {rem}"
+        );
+    }
+    assert!(details["hint"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Homebrew"));
+    assert!(
+        out.logs
+            .iter()
+            .any(|line| line.contains("remediation") || line.contains("https://")),
+        "logs should print remediations: {:?}",
+        out.logs
+    );
+}
+
+#[test]
+fn missing_winget_outcome_normalizes_npm_to_nodejs() {
+    let out = missing_package_manager_outcome(
+        "env_install",
+        Vec::new(),
+        "winget",
+        RuntimeId::NodeJs,
+        "未找到 winget。请手动安装 Node.js LTS 后重新检测。",
+    );
+    assert_eq!(out.code.as_deref(), Some("env.not_ready"));
+    let details = out.details.expect("details");
+    assert_eq!(details["channel"], "winget");
+    assert_eq!(details["missing"], serde_json::json!(["nodejs"]));
+}
+
+#[test]
+fn install_runtime_unsupported_channel_is_coded() {
+    let ex = MockExecutor {
+        calls: Arc::new(Mutex::new(Vec::new())),
+        exit_code: 0,
+        stdout: String::new(),
+    };
+    let out = install_runtime(RuntimeId::NodeJs, "apt", &ex).unwrap();
+    assert!(!out.ok);
+    assert_eq!(out.code.as_deref(), Some("unsupported"));
+    let details = out.details.expect("unsupported details");
+    assert_eq!(details["channel"], "apt");
+    assert!(
+        details["hint"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("winget")
+            || details["hint"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("brew"),
+        "details.hint should mention the platform channel: {details}"
+    );
+    assert!(ex.calls.lock().unwrap().is_empty());
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn install_runtime_brew_channel_unsupported_off_macos() {
+    let ex = MockExecutor {
+        calls: Arc::new(Mutex::new(Vec::new())),
+        exit_code: 0,
+        stdout: String::new(),
+    };
+    let out = install_runtime(RuntimeId::Git, "brew", &ex).unwrap();
+    assert!(!out.ok);
+    assert_eq!(out.code.as_deref(), Some("unsupported"));
+    assert_eq!(out.details.as_ref().unwrap()["channel"], "brew");
+    assert!(ex.calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn install_runtime_missing_winget_is_env_not_ready() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+    };
+    let out = install_runtime(RuntimeId::Npm, "winget", &ex).unwrap();
+    let cmds = calls.lock().unwrap();
+    if cmds.is_empty() {
+        assert!(!out.ok);
+        assert_eq!(out.code.as_deref(), Some("env.not_ready"));
+        let details = out.details.expect("env.not_ready details");
+        assert!(details["agent"].is_null());
+        assert_eq!(details["channel"], "winget");
+        assert_eq!(details["missing"], serde_json::json!(["nodejs"]));
+        let remediations = details["remediations"].as_array().expect("remediations");
+        assert!(!remediations.is_empty());
+        for rem in remediations {
+            if cfg!(windows) {
+                assert_ne!(rem["kind"], "brew");
+            } else {
+                assert_ne!(rem["kind"], "winget");
+            }
+        }
+        assert!(
+            out.logs
+                .iter()
+                .any(|line| line.contains("remediation") || line.contains("https://")),
+            "logs should print remediations: {:?}",
+            out.logs
+        );
+    } else {
+        // winget is on PATH: executor ran, so this is the redetect path, not env.not_ready.
+        assert_ne!(out.code.as_deref(), Some("env.not_ready"));
+        assert_ne!(out.code.as_deref(), Some("unsupported"));
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn install_runtime_missing_brew_is_env_not_ready() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+    };
+    let out = install_runtime(RuntimeId::Git, "brew", &ex).unwrap();
+    let cmds = calls.lock().unwrap();
+    if cmds.is_empty() {
+        assert!(!out.ok);
+        assert_eq!(out.code.as_deref(), Some("env.not_ready"));
+        let details = out.details.expect("env.not_ready details");
+        assert_eq!(details["channel"], "brew");
+        assert_eq!(details["missing"], serde_json::json!(["git"]));
+        let remediations = details["remediations"].as_array().expect("remediations");
+        assert!(!remediations.is_empty());
+        for rem in remediations {
+            assert_ne!(rem["kind"], "winget");
+        }
+    } else {
+        assert_ne!(out.code.as_deref(), Some("env.not_ready"));
+        assert_ne!(out.code.as_deref(), Some("unsupported"));
+    }
+}
+
+#[test]
+fn finalize_runtime_install_does_not_set_business_code() {
+    let res = ExecResult {
+        command: "winget install -e --id Git.Git".into(),
+        exit_code: Some(1),
+        stdout: String::new(),
+        stderr: "failed".into(),
+        timed_out: false,
+        spawn_error: None,
+    };
+    // Prefer a runtime that is not ready so this stays on the execute-then-redetect
+    // failure path. If every runtime is already ok, success-after-nonzero also
+    // must not carry env.not_ready / unsupported.
+    let id = [
+        RuntimeId::PowerShell,
+        RuntimeId::Git,
+        RuntimeId::NodeJs,
+        RuntimeId::Npm,
+    ]
+    .into_iter()
+    .find(|id| runtime::detect_one(*id).status != EnvStatusKind::Ok)
+    .unwrap_or(RuntimeId::Git);
+    let out = finalize_runtime_install(id, vec!["# ran winget".into()], res);
+    if runtime::detect_one(id).status != EnvStatusKind::Ok && id != RuntimeId::NodeJs {
+        assert!(!out.ok, "redetect of missing {} must fail", id.as_str());
+    }
+    assert!(
+        out.code.is_none(),
+        "executed install path must stay install.failed, got {:?}",
+        out.code
+    );
+    assert!(out.details.is_none());
 }
 
 #[test]
