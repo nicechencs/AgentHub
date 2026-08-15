@@ -130,12 +130,12 @@ DeepSeek API 已登记票面；**Claude bind 已开**（①，experimental `nati
 
 ## 3. 路由类型
 
-| 路由 | 使用条件 | 是否运行本地服务 |
-|---|---|---|
-| `config_sync` | 目标 Agent 原生支持同一凭据和协议，仅需转换配置结构 | 否 |
-| `native_endpoint` | 上游原生提供目标协议，只需写 Base URL、模型与凭据引用 | 否 |
-| `local_bridge` | 授权允许，但上下游协议不同，且已有经过测试的转换器 | 是，仅 loopback |
-| `unsupported` | 产品、凭据、协议、版本或授权边界未验证 | 否 |
+| 路由 | 使用条件 | 用户三路 | 是否运行本地服务 |
+|---|---|---|---|
+| `config_sync` | 目标原生支持同一凭据、协议或 **OAuth 契约槽**，只改配置形状 | ① 或 ② | 否 |
+| `native_endpoint` | 上游原生提供目标协议，只需写 Base URL、模型与凭据引用 | ① | 否 |
+| `local_bridge` | 协议或契约对不上，且已有经过测试的转换器 | ③ | 是，仅 loopback |
+| `unsupported` | 产品、凭据、协议、版本或授权边界未验证 | —— | 否 |
 
 Bridge 转换的是请求、流式事件、工具调用、停止原因和用量字段，不会把 OAuth Token “转换”为另一家 API Key。
 
@@ -159,7 +159,7 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 | GLM Coding Plan Provider / Account（preset / extra.provider / 官方 host） | Claude Code | experimental `native_endpoint` | **可实验应用**；写入 `https://open.bigmodel.cn/api/anthropic`，凭据只引用 |
 | DeepSeek API Provider / Account（preset `deepseek-api` / `deepseek` / 官方 host） | Claude Code | experimental `native_endpoint` | **可实验应用**；写入 `https://api.deepseek.com/anthropic`，凭据只引用 |
 | DeepSeek API Provider（preset `deepseek-api` / `deepseek` 或 host `api.deepseek.com`） | DeepSeek Harness（`dsh`） | stable `config_sync` | **可应用**；写入 home 级官方 provider 引用，Key 只进 `.credentials.yaml`，不进 `cordis.patch.yml` |
-| Codex OAuth Account，`credentials.format=auth_json`（ChatGPT subscription） | Claude Code | **产品目标边**（本机桥） | **当前实现** `maturity=preview`，`plan.canApply=false`：还不能创建 profile、启动 bridge 或写入 Claude。Phase 1 纯协议内核已在 core；缺的是 transport / session / apply，不是产品否决。见 [product-decisions.md](product-decisions.md) |
+| Codex OAuth Account，`credentials.format=auth_json`（ChatGPT subscription） | Claude Code | **③ 产品目标边**（本机桥，不是 ②） | **当前实现** `maturity=preview`，`plan.canApply=false`：还不能创建 profile、启动 bridge 或写入 Claude。Phase 1 纯协议内核已在 core；缺的是 transport / session / apply，不是产品否决。同票 → Pi 是 ②，见 [product-decisions.md](product-decisions.md) |
 | 其他来源、目标或未标记记录 | 任意 | `unsupported` | 不产生写操作 |
 
 补充边界：

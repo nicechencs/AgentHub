@@ -1,7 +1,7 @@
 # Hub 重构 Phase 1 实施方案（Agent 优先信息架构）v2
 
 > 状态：**Phase 1 已实施**（2026-08-14），本文保留为当时的实施记录。  
-> **2026-08-15 起的领域与 UI 目标**改以 [connection-binding-model.md](connection-binding-model.md) 为准：票 / 绑定 / 协议图；Connections 改为全局钱包；真票常驻「接到…」；生成投影退出列表。Phase 1 的对话框外壳仍可复用，**按 Agent tab 分页、行按钮白名单、诊断只放 Dashboard 不再是终态**，UI 允许按目标文档重做。
+> **2026-08-15 起的领域与 UI 目标**改以 [connection-binding-model.md](connection-binding-model.md) 为准：票 / 绑定 / 协议图；Connections 改为全局钱包；真票常驻「接到…」；生成投影退出列表。**产品方向**以 [product-decisions.md](product-decisions.md) 为准（① API 直连 / ② 原生订阅 / ③ 本机桥）。下文「不改 OAuth 门禁」只约束当时 Phase 1 实施范围，不是「订阅一律不跨 Agent」。Phase 1 的对话框外壳仍可复用，**按 Agent tab 分页、行按钮白名单、诊断只放 Dashboard 不再是终态**，UI 允许按目标文档重做。
 > 验收：pnpm typecheck / typecheck:test / test（627 用例，含集成 bug 防回归）/ build 全绿；cargo test 79 用例全绿（Rust 未改动）；dev:mock 冒烟通过（空态引导、非空可行性置灰+原因、无控制台错误）。
 > 关联文档同步：docs/ui-design.md、docs/adapter-design.md 正文定位、docs/architecture.md §4.1 目录树（lib/connect-flow、components/connect）与 §4.6、README.md、docs/README.md、docs/agenthub-plan.md、docs/testing.md、docs/adapter-kimi-codex-dogfood.md。
 > v2 修订要点：plan.canApply 为可执行权威；补同 Agent 原生切换分流；用途/徽标改用 profile 联结（不读 provider.meta）；apply 自动切换语义如实；排除 adapter 生成 Provider 作为来源；两层 OAuth 门禁；可注入 helper 保证 Node 环境可测。

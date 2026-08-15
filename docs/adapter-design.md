@@ -35,8 +35,8 @@ Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变�
 | 目标 `route` | 当前实现名 | 含义 | 用户看到的动作 |
 |---|---|---|---|
 | `native` | 账号/供应商切换 | 票本来就是给这个 Agent 的 | 切换，不起桥 |
-| `reshape` | `config_sync` / `native_endpoint` | 同协议，只改配置形状 | 写入配置，凭据只引用 |
-| `bridge` | `local_bridge` | 协议不同，图上有边 | 起 loopback，目标只持本地 token |
+| `reshape` | `config_sync` / `native_endpoint` | 共同协议（①）或共同 OAuth 契约槽（②），只改配置形状 | 写入配置，凭据只引用，不起桥 |
+| `bridge` | `local_bridge` | 协议/契约对不上，图上有边（③） | 起 loopback，目标只持本地 token |
 | 不可行 | `unsupported` | 无 writer / 无表面 / 无边 | 解释原因，不提供「强制转换」 |
 
 核心产品决策：
@@ -82,12 +82,12 @@ Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变�
 选择 Connection + 目标 Agent
   → 校验凭据产品/区域/授权范围
   → 读取目标 Agent 能力与版本
-  → 是否有目标原生配置映射？
-       是 → config_sync
-  → 上游是否原生提供目标协议端点？
-       是 → native_endpoint
-  → 是否存在已测试的协议转换器，且条款/授权允许？
-       是 → local_bridge
+  → OAuth 且目标有同一授权契约槽？
+       是 → config_sync（②，不起桥）
+  → 是否有目标原生配置映射 / 上游原生协议端点？
+       是 → config_sync / native_endpoint（①，不起桥）
+  → 是否存在已测试的协议转换器？
+       是 → local_bridge（③）
   → unsupported（给出原因与可行替代）
 ```
 

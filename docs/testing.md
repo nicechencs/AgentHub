@@ -77,7 +77,7 @@ UI 组件（`MarkdownView` / 预览对话框）以库 `@uiw/react-markdown-previ
 
 | 字段 | 含义 |
 |---|---|
-| `route` / `support` / `canApply` / `maturity` / `ruleId` / `gateKind` / `reason` | `plan()` 是唯一规划出口；analyze 仍给 route/support/reason 主旨。`canApply` = 矩阵开放 ∩ write_gate |
+| `route` / `support` / `canApply` / `maturity` / `ruleId` / `gateKind` / `reason` | `plan()` 是唯一规划出口；analyze 仍给 route/support/reason 主旨。`canApply` = 矩阵开放 ∩ write_gate。用户三路（①②③）由 `plan()` 派生，**不是**第二套契约字段 |
 | `applyPath` | 生产执行入口：`native`（`AdapterApplyService`）/ `local_bridge`（Tauri bridge controller）/ `rejected`（禁止 apply） |
 
 **改矩阵 / reason / write_gate 可写路径时必须先改或同步此 JSON**，再改：

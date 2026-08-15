@@ -155,8 +155,20 @@ plan(ticket, agent):
 | [connection-binding-model.md](connection-binding-model.md) | 票 / 绑定 / `native·reshape·bridge`；三路是用户映射，不是第二套枚举 |
 | [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | 厂商边与当前能否 bind；订阅 ≠ 要起桥 |
 | [adapter-design.md](adapter-design.md) | 页面与桥 runtime；桥只服务 ③ |
+| [ui-design.md](ui-design.md) | ConnectFlow 预览标 ①②③；② 不显示本机服务 |
+| [adding-an-agent.md](adding-an-agent.md) | 新 Agent 必须登记 wire 协议 **和** OAuth 契约槽 |
+| [architecture.md](architecture.md) | 模块拆分；原则 12 按三路解释 `plan()` |
 | [agenthub-plan.md](agenthub-plan.md) | 总方案；§8 是实现清单 |
 | [adapter-sidecar-design.md](adapter-sidecar-design.md) | 只有 ③ 依赖 sidecar |
+| [hub-redesign-plan.md](hub-redesign-plan.md) | Phase 1 **历史记录**；「不改 OAuth 门禁」不是产品否决 |
+| [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | ① 与 ③ 的真机清单；同票不同路 |
+| [deepseek-harness-integration.md](deepseek-harness-integration.md) | DeepSeek API 属 ①；DSH 不是桥 |
+| [account-authorization-pool.md](account-authorization-pool.md) | 票的去重；不决定走哪一路 |
+| [capability-matrix.md](capability-matrix.md) | Agent **自己**能不能；不是复用三路 |
+| [testing.md](testing.md) | 契约仍是 `route`/`canApply`；三路由 plan 派生 |
+| [cli-and-config.md](cli-and-config.md) | CLI「代理模式」≠ ③ |
+| [privacy.md](privacy.md) / [logging.md](logging.md) | 脱敏与截图；与三路正交 |
+| [platform-capability-*.md](platform-capability-refactor.md) | 平台端口历史；不定义复用产品 |
 
 旧句「订阅本机路由是唯一产品」「只借鉴方法不借鉴产品」「消费订阅不是产品」作废。
 
