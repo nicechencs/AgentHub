@@ -291,10 +291,10 @@ Claude Code
 
 | 阶段 | 交付与门禁 | `canApply` | 当前进度（2026-08-12） |
 |---|---|---|---|
-| 0. 证据与 fixtures | 固化身份分类样例、Messages/IR/Responses/SSE 正反例 fixtures；确认参考实现许可边界与选定 transport | `false` | **进行中**：`crates/agenthub-core/src/bridge/protocol/fixtures/` 已有 Messages / Responses / SSE 正反例；transport 选定证据仍未闭环 |
+| 0. 证据与 fixtures | 固化身份分类样例、Messages/IR/Responses/SSE 正反例 fixtures；确认参考实现许可边界与选定 transport | `false` | **进行中**：`crates/agenthub-core/src/bridge/protocol/fixtures/` 已有 Messages / Responses / SSE 正反例；transport 选定证据 = Responses（协议内核已有 Messages↔Responses fixtures；host spike 用 mock Responses 上游） |
 | 1. 纯协议内核 | 无网络、无 secret 的 Anthropic Messages ↔ IR ↔ Responses 转换及状态机测试 | `false` | **内核已落地、门禁仍关闭**：`IrEvent` / `RetryGate`、`parse_messages_request`、`to_responses_request`、`responses_output_to_ir`、`ResponsesStreamToIr`、`encode_anthropic_sse` 与协议单测已在 core；**不得**据此开放 Apply |
-| 2. 认证 / transport spike | 分别验证 App Server 与 Responses（含参考项目已走通的本机反代通道）；验证 OAuth refresh、single-flight、取消、工具副作用与不泄露 secret | `false` | **未开始**（或未完成证据）；Account OAuth refresh 能力存在 ≠ 已选定上游 transport |
-| 3. sidecar profile 与 Apply saga | 至少一条 transport 在协议/refresh/回滚上通过后，实现 loopback bearer、profile、core-owner IPC、目标配置写入和完整失败回滚；其他候选可明确淘汰 | 工程就绪后可为 `true` | **未开始**；控制面 IPC 与 Connections 领域仍见 sidecar 设计文档；**不得**跳过 phase 2 |
+| 2. 认证 / transport spike | 分别验证 App Server 与 Responses（含参考项目已走通的本机反代通道）；验证 OAuth refresh、single-flight、取消、工具副作用与不泄露 secret | `false` | **进行中**：已选定候选 **Codex Responses + OAuth**（`BridgeUpstreamProtocol::CodexResponsesOauth`）；host 增加 Messages 下游 `/v1/messages` spike；App Server 候选推迟（双 Agent / 工具副作用风险未过） |
+| 3. sidecar profile 与 Apply saga | 至少一条 transport 在协议/refresh/回滚上通过后，实现 loopback bearer、profile、core-owner IPC、目标配置写入和完整失败回滚；其他候选可明确淘汰 | `false` | **仍未开始**；控制面 IPC 与 Connections 领域仍见 sidecar 设计文档；**不得**跳过 phase 2 |
 | 4. dogfood / experimental rollout | 当前用户、本机、显式 opt-in 的小范围验证与持续回归；发现上游/条款/语义漂移立即降级 | 受控且可撤销 | **未开始** |
 | 以后 | 每个供应商/产品/目标组合重新取证 | 默认 `false` | 默认拒绝 |
 
