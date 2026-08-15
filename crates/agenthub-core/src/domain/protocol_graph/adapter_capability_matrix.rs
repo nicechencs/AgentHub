@@ -9,9 +9,11 @@
 //! experimental local-bridge edge. The App Server candidate remains closed.
 
 use super::{
-    agent_bind_capability, speaks_intersect_accepts, AdapterGateKind, AdapterMaturity,
-    AdapterRoute, AdapterSupport, AgentId, TicketSurface, AGENT_NO_WRITER_REASON,
+    agent_bind_capability, speaks_intersect_accepts, AGENT_NO_WRITER_REASON,
     PROTOCOL_MISMATCH_REASON, SAME_PROTOCOL_NO_EDGE_REASON,
+};
+use crate::models::{
+    AdapterGateKind, AdapterMaturity, AdapterRoute, AdapterSupport, AgentId, TicketSurface,
 };
 
 /// Shared public reason for the experimental Codex / ChatGPT subscription →

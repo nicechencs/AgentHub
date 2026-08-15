@@ -5,7 +5,7 @@
 //! Writable routes still come only from an explicit matrix cell ∩ plan
 //! `write_gate`. See [connection-binding-model.md] §2.2 / §6.2.
 
-use super::{AgentId, TicketProtocol};
+use crate::models::{AgentId, TicketProtocol};
 
 /// Target has no live-config writer and cannot be a bind sink (e.g. Cursor).
 pub const AGENT_NO_WRITER_REASON: &str = "该 Agent 无配置写入能力，不能作为绑定落点";
