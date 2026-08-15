@@ -1,15 +1,15 @@
 //! List / delete / excerpt agent-native project containers & session logs.
 //!
 //! Platform merge/sort/metadata/delete live here. Per-agent discovery is
-//! contributed via [`crate::platform::projects::ProjectSource`] (see
-//! [`sources`]). Filesystem scanners live in [`scan`].
+//! contributed via [`crate::platform::projects::ProjectSource`] (builtin
+//! registry: [`crate::platform::projects::builtin_project_registry`]).
+//! Filesystem scanners live in [`scan`] (still owned here until further split).
 
 mod scan;
 mod session_index;
-mod sources;
 
-// Re-export scanners for unit tests (`use super::*`) and ProjectService.
-#[allow(unused_imports)] // used via `use super::*` in tests.rs and sources via scan::
+// Re-export scanners for unit tests (`use super::*`) and platform ProjectSource impls.
+#[allow(unused_imports)] // used via `use super::*` in tests.rs and platform::projects::sources
 pub(crate) use scan::{
     aggregate_projects, extract_any_text, extract_userish_text, grok_session_dir_for_delete,
     kimi_session_dir_for_delete, list_claude_workbuddy_sessions, list_codex_sessions,
@@ -28,20 +28,19 @@ use std::time::{Instant, SystemTime};
 use chrono::{DateTime, Utc};
 
 use crate::adapters::AdapterRegistry;
-use crate::catalog::limits::PROJECT_MAX_PER_AGENT as MAX_PER_AGENT;
 use crate::error::{AppError, Result};
 use crate::logging::{self, targets};
 use crate::models::{
     AgentId, AgentProject, AgentProjectExcerpt, AgentSession, Capability, ProjectMetadataFile,
     ProjectUserMeta,
 };
-use crate::platform::projects::{ProjectScanContext, ProjectSourceRegistry};
+use crate::platform::projects::{
+    builtin_project_registry, ProjectScanContext, ProjectSourceRegistry,
+};
 use crate::platform::AgentKey;
 use crate::utils::atomic::atomic_write;
 use crate::utils::paths::agent_home;
 use crate::utils::redact::redact_text;
-
-use sources::builtin_project_registry;
 
 const METADATA_FILE: &str = "project_metadata.json";
 
@@ -594,14 +593,6 @@ pub(crate) fn list_sessions_for_project_key_home(
         Some(source) => source.list_sessions_in_project(&ctx, project_id, key),
         None => Ok(vec![]),
     }
-}
-
-pub(crate) fn finish_sessions(mut rows: Vec<AgentSession>) -> Vec<AgentSession> {
-    rows.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-    if rows.len() > MAX_PER_AGENT {
-        rows.truncate(MAX_PER_AGENT);
-    }
-    rows
 }
 
 /// Claude / WorkBuddy: one container per `projects/<encodedDir>/`, top-level session files only.

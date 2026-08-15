@@ -43,8 +43,8 @@ pub use paths::{
     AgentPathRegistry,
 };
 pub use projects::{
-    empty_registry as empty_project_registry, ProjectScanContext, ProjectSource,
-    ProjectSourceRegistry,
+    builtin_project_registry, empty_registry as empty_project_registry, ProjectScanContext,
+    ProjectSource, ProjectSourceRegistry,
 };
 pub use stream::{
     builtin_stream_registry, has_stream_parser, StreamParseError, StreamParser,
