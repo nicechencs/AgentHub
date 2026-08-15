@@ -143,6 +143,10 @@ function secretChange(target: string, field: string): AdapterPlanChange {
 
 /** Keep in lockstep with `CODEX_SUBSCRIPTION_TO_CLAUDE_REASON` in agenthub-core. */
 export const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON = [
+  'Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。',
+].join('');
+
+const CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON = [
   'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
   '尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。',
   '不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。',
@@ -317,6 +321,7 @@ const NATIVE_SUBSCRIPTION_PI_RULE_IDS = new Set([
   'codex-subscription-to-pi-v1',
   'grok-subscription-to-pi-v1',
 ]);
+const CODEX_CLAUDE_RULE_ID = 'codex-subscription-to-claude-responses-v1';
 
 function jsonString(value: unknown, key: string): string | undefined {
   if (!value || typeof value !== 'object') return undefined;
@@ -720,18 +725,44 @@ function analyze(
     };
   }
 
-  // Codex / ChatGPT subscription → Claude is a gated experimental candidate only.
-  // auth_json matches the closed matrix cell (ruleId present). Bare Codex OAuth
-  // still uses the closed subscription surface but does not pretend the cell matched.
+  // Only Codex auth_json opens the experimental Responses → Claude bridge.
+  // Bare Codex OAuth remains a closed subscription candidate.
   if (
     (source === 'codex_subscription' || source === 'codex_subscription_oauth_other')
     && request.targetAgentId === 'claude'
   ) {
-    return unsupported(CODEX_SUBSCRIPTION_TO_CLAUDE_REASON, compatibilityEvidence, {
+    if (source === 'codex_subscription') {
+      return {
+        route: 'local_bridge',
+        support: 'experimental',
+        reason: CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
+        actions: [
+          action(
+            'requires_local_bridge',
+            'Claude Code',
+            'Claude Messages 与 Codex Responses 需要本地双向协议转换。',
+          ),
+          action(
+            'set_env',
+            'Claude Code',
+            '写入 Claude Code 的 loopback Base URL 与本机 bearer；不会写入上游 OAuth token。',
+            'ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN',
+          ),
+        ],
+        limitations: [
+          '会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 token 不进 Claude。',
+          '实验性协议桥接：Claude Messages → Codex Responses；AgentHub 需保持在托盘运行。',
+          'Codex access token 过期后需重新同步 Codex 登录；Hub 本轮不自动 refresh。',
+          '固定端口被占用时会尝试重新分配端口并写回配置。',
+        ],
+        evidence: compatibilityEvidence,
+        ruleId: CODEX_CLAUDE_RULE_ID,
+        gateKind: 'none',
+      };
+    }
+    return unsupported(CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON, compatibilityEvidence, {
       gateKind: 'subscription_candidate',
-      ruleId: source === 'codex_subscription'
-        ? 'codex-subscription-to-claude-app-server-v0'
-        : null,
+      ruleId: null,
     });
   }
   if (source === 'kimi_non_membership') {
@@ -746,7 +777,11 @@ function analyze(
   return unsupported(unsupportedReasonFromGraph(source, request.targetAgentId), compatibilityEvidence);
 }
 
-function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis): AdapterApplyPlan {
+function buildPlan(
+  resolver: MockAdapterSourceResolver,
+  request: AdapterRouteRequest,
+  analysis: AdapterRouteAnalysis,
+): AdapterApplyPlan {
   const configuredProvider = analysis.actions.find(
     (item) => item.kind === 'set_config' && item.target === 'Pi',
   )?.value;
@@ -772,6 +807,11 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
             ),
             change('codex', 'baseUrl', 'http://127.0.0.1:<本机端口>/v1'),
           ]
+        : analysis.route === 'local_bridge' && request.targetAgentId === 'claude'
+          ? [
+              change('claude', 'ANTHROPIC_BASE_URL', 'http://127.0.0.1:<本机端口>'),
+              secretChange('claude', 'ANTHROPIC_AUTH_TOKEN'),
+            ]
         : analysis.route === 'config_sync' && request.targetAgentId === 'pi'
       ? [
           change('pi', 'provider', configuredProvider ?? 'anthropic'),
@@ -794,6 +834,11 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
     || (analysis.route === 'native_endpoint' && analysis.support === 'experimental' && request.targetAgentId === 'claude'
       && !!analysis.ruleId && CLAUDE_NATIVE_EXPERIMENTAL_RULES.has(analysis.ruleId))
     || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
+    || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
+      && request.sourceKind === 'account'
+      && request.targetAgentId === 'claude'
+      && analysis.ruleId === CODEX_CLAUDE_RULE_ID
+      && hasCodexAccessToken(resolver, request.sourceId))
     || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'pi')
     || (analysis.route === 'config_sync' && analysis.support === 'experimental'
       && request.targetAgentId === 'pi'
@@ -820,11 +865,17 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
     && request.targetAgentId === 'claude'
     && !!analysis.ruleId
     && CLAUDE_NATIVE_EXPERIMENTAL_RULES.has(analysis.ruleId);
+  const accountCodexClaudeBridge = request.sourceKind === 'account'
+    && implementedPath
+    && request.targetAgentId === 'claude'
+    && analysis.ruleId === CODEX_CLAUDE_RULE_ID
+    && hasCodexAccessToken(resolver, request.sourceId);
   const writeGate = (request.sourceKind === 'provider' && implementedPath)
     || accountExplicitApiToPi
     || accountExplicitApiToCodex
     || accountClaudeNative
-    || accountNativeSubscriptionPi;
+    || accountNativeSubscriptionPi
+    || accountCodexClaudeBridge;
   const canApply = writeGate;
   const maturity = mockPlanMaturity(analysis);
   const reusePath = NATIVE_SUBSCRIPTION_PI_RULE_IDS.has(analysis.ruleId ?? '')
@@ -840,6 +891,7 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
     && !accountExplicitApiToCodex
     && !accountClaudeNative
     && !accountNativeSubscriptionPi
+    && !accountCodexClaudeBridge
     ? `${analysis.reason} ${SAME_EDGE_UNWRITABLE_REASON}`
     : analysis.reason;
   return {
@@ -852,6 +904,31 @@ function buildPlan(request: AdapterRouteRequest, analysis: AdapterRouteAnalysis)
     serviceImpact: analysis.route === 'local_bridge' ? 'requires_local_bridge' : 'none',
     changes,
   };
+}
+
+function hasCodexAccessToken(
+  resolver: MockAdapterSourceResolver,
+  sourceId: string,
+): boolean {
+  const account = resolver.getAccountById(sourceId) as ClassifiableAccount | undefined;
+  if (!account || account.agentId !== 'codex' || account.kind !== 'oauth') return false;
+  const credentials = account.credentials;
+  if (!credentials || typeof credentials !== 'object') return false;
+  const record = credentials as Record<string, unknown>;
+  const tokens = record.tokens;
+  if (tokens && typeof tokens === 'object' && !Array.isArray(tokens)) {
+    const accessToken = (tokens as Record<string, unknown>).access_token;
+    if (typeof accessToken === 'string' && accessToken.trim()) return true;
+  }
+  const body = record.body;
+  if (body && typeof body === 'object' && !Array.isArray(body)) {
+    const bodyTokens = (body as Record<string, unknown>).tokens;
+    if (bodyTokens && typeof bodyTokens === 'object' && !Array.isArray(bodyTokens)) {
+      const accessToken = (bodyTokens as Record<string, unknown>).access_token;
+      return typeof accessToken === 'string' && Boolean(accessToken.trim());
+    }
+  }
+  return false;
 }
 
 /** Mirror of core `adapter_maturity_from_decision` on the public analysis surface. */
@@ -887,23 +964,32 @@ function materializeApply(
 ): { profile: AdapterProfile; provider: Provider } {
   const safeId = safeSourceId(request.sourceId);
   if (plan.analysis.route === 'local_bridge') {
+    const codexClaudeBridge = plan.analysis.ruleId === CODEX_CLAUDE_RULE_ID;
     const anthropicBridge = plan.analysis.ruleId === 'anthropic-api-to-codex-v1';
     const profile: AdapterProfile = existing ?? {
-      id: anthropicBridge
+      id: codexClaudeBridge
+        ? `adapter-codex-claude-bridge-${safeId}`
+        : anthropicBridge
         ? `adapter-anthropic-codex-bridge-${safeId}`
         : `adapter-kimi-codex-bridge-${safeId}`,
-      name: anthropicBridge
+      name: codexClaudeBridge
+        ? `Codex → Claude Code 本地桥接 (${safeId})`
+        : anthropicBridge
         ? `Anthropic → Codex 本地桥接 (${safeId})`
         : `Kimi → Codex 本地桥接 (${safeId})`,
       sourceKind: request.sourceKind,
       sourceId: request.sourceId,
       targetAgentId: request.targetAgentId,
       route: 'local_bridge',
-      mode: 'api',
+      mode: codexClaudeBridge ? 'oauth' : 'api',
       status: 'active',
-      ruleId: anthropicBridge ? 'anthropic-api-to-codex-v1' : 'kimi-membership-to-codex-v1',
+      ruleId: codexClaudeBridge
+        ? CODEX_CLAUDE_RULE_ID
+        : anthropicBridge ? 'anthropic-api-to-codex-v1' : 'kimi-membership-to-codex-v1',
       ruleVersion: '1',
-      generatedProviderId: anthropicBridge
+      generatedProviderId: codexClaudeBridge
+        ? `claude-codex-bridge-${safeId}`
+        : anthropicBridge
         ? `codex-anthropic-bridge-${safeId}`
         : `codex-kimi-bridge-${safeId}`,
       localPort: 32123,
@@ -915,12 +1001,21 @@ function materializeApply(
       profile,
       provider: {
         id: profile.generatedProviderId!,
-        agentId: 'codex',
+        agentId: codexClaudeBridge ? 'claude' : 'codex',
         name: profile.name,
-        preset: 'openai-compatible',
+        preset: codexClaudeBridge ? 'anthropic' : 'openai-compatible',
         configText: JSON.stringify({
-          baseUrl: `http://127.0.0.1:${profile.localPort ?? 32123}/v1`,
-          model: anthropicBridge ? 'claude-sonnet-4-20250514' : 'kimi-k2.5',
+          ...(codexClaudeBridge
+            ? {
+                env: {
+                  ANTHROPIC_BASE_URL: `http://127.0.0.1:${profile.localPort ?? 32123}`,
+                  ANTHROPIC_AUTH_TOKEN: CONNECTION_SECRET_MARKER,
+                },
+              }
+            : {
+                baseUrl: `http://127.0.0.1:${profile.localPort ?? 32123}/v1`,
+                model: anthropicBridge ? 'claude-sonnet-4-20250514' : 'kimi-k2.5',
+              }),
         }),
         configFormat: 'json',
         isCurrent: true,
@@ -1104,7 +1199,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     },
     async plan(request) {
       await delay(20);
-      return buildPlan(request, analyze(resolver, request));
+      return buildPlan(resolver, request, analyze(resolver, request));
     },
     async listProfiles(filter: AdapterProfileFilter = {}) {
       await delay(20);
@@ -1120,7 +1215,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     },
     async apply(request: AdapterApplyRequest): Promise<AdapterApplyResult> {
       await delay(20);
-      const plan = buildPlan(request, analyze(resolver, request));
+      const plan = buildPlan(resolver, request, analyze(resolver, request));
       if (!plan.canApply) {
         throw adapterCommandError({
           code: 'unsupported',
@@ -1128,7 +1223,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           retryable: false,
         });
       }
-      // Re-validate membership independently of plan.canApply (same rule as core).
+      // Re-validate source secrets independently of plan.canApply (same rule as core).
       if (plan.analysis.ruleId && KIMI_MEMBERSHIP_RULE_IDS.has(plan.analysis.ruleId)) {
         const source = request.sourceKind === 'provider'
           ? resolver.getProviderById(request.sourceId)
@@ -1140,6 +1235,14 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
             retryable: false,
           });
         }
+      }
+      if (plan.analysis.ruleId === CODEX_CLAUDE_RULE_ID
+        && !hasCodexAccessToken(resolver, request.sourceId)) {
+        throw adapterCommandError({
+          code: 'invalid_arg',
+          message: 'invalid adapter secret reference',
+          retryable: false,
+        });
       }
       const existing = state.profiles.find(
         (profile) =>

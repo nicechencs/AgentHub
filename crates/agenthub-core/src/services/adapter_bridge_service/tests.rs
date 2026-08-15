@@ -451,6 +451,29 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
     upstream_task.abort();
 }
 
+#[tokio::test]
+async fn codex_responses_health_probe_does_not_request_models() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "codex-health-profile".into(),
+        source_connection_id: "codex-subscription".into(),
+        preferred_port: None,
+        upstream_base_url: "http://127.0.0.1:9/should-not-be-called".into(),
+        upstream_model: CODEX_DEFAULT_MODEL.into(),
+        protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
+        upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
+        local_bearer: "local-secret".into(),
+    };
+    let host = crate::bridge::BridgeRuntimeHost::new();
+    let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
+
+    material
+        .verify_bound_health(runtime.port)
+        .await
+        .expect("local health is sufficient for Codex Responses");
+
+    host.shutdown().await.unwrap();
+}
+
 #[test]
 fn restore_uses_a_rotated_source_key_without_changing_the_local_bearer() {
     let (_dir, db) = test_db();
@@ -621,6 +644,124 @@ fn anthropic_request(
         target_agent_id: AgentId::Codex,
         auto_start: true,
     }
+}
+
+fn codex_claude_request(source_id: &str) -> AdapterBridgePrepareRequest {
+    AdapterBridgePrepareRequest {
+        source_kind: AdapterSourceKind::Account,
+        source_id: source_id.into(),
+        target_agent_id: AgentId::Claude,
+        auto_start: true,
+    }
+}
+
+fn codex_subscription_account(id: &str, access_token: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Codex,
+        kind: AccountKind::Oauth,
+        label: "Codex subscription".into(),
+        credentials: json!({
+            "format": "auth_json",
+            "tokens": {
+                "access_token": access_token,
+                "refresh_token": "refresh-must-not-enter-bridge"
+            }
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+#[test]
+fn prepare_codex_subscription_projects_only_claude_loopback_env() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&codex_subscription_account(
+            "codex-subscription",
+            "codex-upstream-access-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+
+    let prepared = service
+        .prepare(&codex_claude_request("codex-subscription"))
+        .unwrap();
+    assert_eq!(prepared.profile().target_agent_id, AgentId::Claude);
+    assert_eq!(prepared.profile().mode, AdapterProfileMode::Oauth);
+    assert_eq!(
+        prepared.profile().rule_id,
+        "codex-subscription-to-claude-responses-v1"
+    );
+    assert_eq!(
+        prepared
+            .runtime_material()
+            .start_spec(None)
+            .upstream
+            .base_url,
+        "https://chatgpt.com/backend-api/codex/"
+    );
+    assert_eq!(
+        prepared
+            .runtime_material()
+            .start_spec(None)
+            .upstream
+            .model
+            .as_deref(),
+        Some("gpt-5.4")
+    );
+    assert_eq!(
+        prepared
+            .runtime_material()
+            .start_spec(None)
+            .upstream
+            .protocol,
+        BridgeUpstreamProtocol::CodexResponsesOauth
+    );
+    assert_eq!(
+        prepared
+            .runtime_material()
+            .start_spec(None)
+            .upstream
+            .auth
+            .token(),
+        "codex-upstream-access-secret"
+    );
+    let input = match prepared.provider_projection(43144).unwrap() {
+        AdapterBridgeProviderProjection::Create(input) => input,
+        other => panic!("expected create projection, got {other:?}"),
+    };
+    assert_eq!(input.agent_id, AgentId::Claude);
+    assert_eq!(
+        input.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        "http://127.0.0.1:43144"
+    );
+    assert!(input.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"]
+        .as_str()
+        .is_some_and(|token| token.starts_with("ahb_")));
+    assert!(!serde_json::to_string(&input)
+        .unwrap()
+        .contains("codex-upstream-access-secret"));
+    assert!(!serde_json::to_string(&input)
+        .unwrap()
+        .contains("refresh-must-not-enter-bridge"));
+}
+
+#[test]
+fn prepare_codex_subscription_requires_access_token() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&codex_subscription_account("codex-refresh-only", ""))
+        .unwrap();
+    let service = AdapterBridgeService::new(db);
+    let error = service
+        .prepare(&codex_claude_request("codex-refresh-only"))
+        .unwrap_err();
+    assert_eq!(error.code(), "invalid_arg");
+    assert!(!format!("{error}").contains("refresh-must-not-enter-bridge"));
 }
 
 #[test]

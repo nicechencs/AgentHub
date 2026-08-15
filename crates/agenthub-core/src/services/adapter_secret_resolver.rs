@@ -35,6 +35,7 @@ const GLM_TO_CLAUDE_RULE: &str = GLM_CLAUDE_RULE_ID;
 const DEEPSEEK_TO_CLAUDE_RULE: &str = DEEPSEEK_CLAUDE_RULE_ID;
 const KIMI_TO_CODEX_BRIDGE_RULE: &str = "kimi-membership-to-codex-v1";
 const ANTHROPIC_TO_CODEX_BRIDGE_RULE: &str = "anthropic-api-to-codex-v1";
+const CODEX_TO_CLAUDE_BRIDGE_RULE: &str = "codex-subscription-to-claude-responses-v1";
 const KIMI_TO_PI_RULE: &str = "kimi-membership-to-pi-v1";
 const ANTHROPIC_TO_PI_RULE: &str = "anthropic-api-to-pi-v1";
 const OPENAI_TO_PI_RULE: &str = "openai-api-to-pi-v1";
@@ -214,6 +215,27 @@ impl AdapterSecretResolver {
     ) -> Result<ResolvedAuth> {
         self.resolve_anthropic_api_key(source_kind, source_id)
             .map(ResolvedAuth::bearer)
+    }
+
+    /// Resolve only the current Codex OAuth access token for a bridge upstream.
+    /// Refresh is intentionally owned by the next Codex login sync; this
+    /// adapter does not persist or return refresh material.
+    pub(crate) fn resolve_codex_subscription_auth(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<ResolvedAuth> {
+        if source_kind != AdapterSourceKind::Account {
+            return Err(invalid_reference());
+        }
+        let account = self
+            .accounts
+            .get_by_id(source_id.trim())?
+            .ok_or_else(invalid_reference)?;
+        if account.kind != crate::models::AccountKind::Oauth {
+            return Err(invalid_reference());
+        }
+        crate::bridge::session::resolve_codex_subscription_auth(&account.credentials)
     }
 
     /// Whether this row requires source-secret materialization before a live
@@ -634,18 +656,7 @@ impl AdapterSecretResolver {
                         .filter(|id| !id.is_empty())
                         .is_none()
                 })
-            || target.settings_config.get("format").and_then(Value::as_str) != Some("toml")
-            || target
-                .settings_config
-                .get("auth")
-                .and_then(Value::as_object)
-                .and_then(|auth| auth.get("OPENAI_API_KEY"))
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|token| {
-                    !token.is_empty() && *token != CONNECTION_SECRET_MARKER && *token != "***"
-                })
-                .is_none()
+            || !valid_local_token_projection(target)
         {
             return Err(invalid_reference());
         }
@@ -947,21 +958,58 @@ fn first_usable_string(value: &Value, pointers: &[&str]) -> Option<String> {
 }
 
 fn is_codex_local_token(provider: &Provider) -> bool {
-    provider.agent_id == AgentId::Codex
-        && matches!(
-            provider.meta.get("adapterRuleId").and_then(Value::as_str),
-            Some(KIMI_TO_CODEX_BRIDGE_RULE) | Some(ANTHROPIC_TO_CODEX_BRIDGE_RULE)
-        )
-        && provider
-            .meta
-            .get("adapterRuleVersion")
-            .and_then(Value::as_u64)
-            == Some(1)
+    matches!(
+        (
+            provider.agent_id,
+            provider.meta.get("adapterRuleId").and_then(Value::as_str)
+        ),
+        (
+            AgentId::Codex,
+            Some(KIMI_TO_CODEX_BRIDGE_RULE | ANTHROPIC_TO_CODEX_BRIDGE_RULE)
+        ) | (AgentId::Claude, Some(CODEX_TO_CLAUDE_BRIDGE_RULE))
+    ) && provider
+        .meta
+        .get("adapterRuleVersion")
+        .and_then(Value::as_u64)
+        == Some(1)
         && provider
             .meta
             .get("adapterSecretMode")
             .and_then(Value::as_str)
             == Some(LOCAL_TOKEN_MODE)
+}
+
+fn valid_local_token_projection(provider: &Provider) -> bool {
+    if provider.agent_id == AgentId::Claude {
+        let Some(env) = provider
+            .settings_config
+            .get("env")
+            .and_then(Value::as_object)
+        else {
+            return false;
+        };
+        return env
+            .get(ANTHROPIC_BASE_URL_ENV)
+            .and_then(Value::as_str)
+            .is_some_and(|value| value.starts_with("http://127.0.0.1:"))
+            && env
+                .get(ANTHROPIC_AUTH_TOKEN_ENV)
+                .and_then(Value::as_str)
+                .is_some_and(|token| usable_secret(token).is_some());
+    }
+
+    provider
+        .settings_config
+        .get("format")
+        .and_then(Value::as_str)
+        == Some("toml")
+        && provider
+            .settings_config
+            .get("auth")
+            .and_then(Value::as_object)
+            .and_then(|auth| auth.get("OPENAI_API_KEY"))
+            .and_then(Value::as_str)
+            .is_some_and(|token| usable_secret(token).is_some())
 }
 
 fn extract_kimi_api_key(settings: &Value) -> Result<String> {

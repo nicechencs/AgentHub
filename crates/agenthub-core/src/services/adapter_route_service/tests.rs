@@ -830,7 +830,7 @@ fn unsupported_and_missing_sources_have_no_changes() {
 }
 
 #[test]
-fn codex_auth_json_account_to_claude_is_matrix_closed() {
+fn codex_auth_json_account_to_claude_is_writable_local_bridge() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())
         .create(&Account {
@@ -858,28 +858,41 @@ fn codex_auth_json_account_to_claude_is_matrix_closed() {
             AgentId::Claude,
         ))
         .unwrap();
-    assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
-    assert_eq!(plan.analysis.support, AdapterSupport::Unsupported);
-    assert_eq!(plan.maturity, AdapterMaturity::Preview);
-    assert!(
-        !plan.can_apply,
-        "Codex OAuth → Claude must keep can_apply=false"
-    );
+    assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
+    assert_eq!(plan.analysis.support, AdapterSupport::Experimental);
+    assert_eq!(plan.maturity, AdapterMaturity::Experimental);
+    assert!(plan.can_apply, "Codex OAuth → Claude Responses is writable");
     assert_eq!(
         plan.analysis.gate_kind,
-        crate::models::AdapterGateKind::SubscriptionCandidate
+        crate::models::AdapterGateKind::None
     );
     assert_eq!(
         plan.analysis.rule_id.as_deref(),
-        Some("codex-subscription-to-claude-app-server-v0")
+        Some("codex-subscription-to-claude-responses-v1")
     );
     assert_eq!(
         plan.analysis.reason,
         crate::models::CODEX_SUBSCRIPTION_TO_CLAUDE_REASON
     );
-    assert_eq!(plan.reuse_path, crate::models::AdapterReusePath::None);
-    assert!(plan.changes.is_empty());
-    assert!(plan.analysis.actions.is_empty());
+    assert_eq!(
+        plan.reuse_path,
+        crate::models::AdapterReusePath::LocalBridge
+    );
+    assert_eq!(
+        plan.service_impact,
+        AdapterServiceImpact::RequiresLocalBridge
+    );
+    assert_eq!(plan.changes[0].target, "claude");
+    assert_eq!(plan.changes[0].field, "ANTHROPIC_BASE_URL");
+    assert_eq!(
+        plan.changes[0].value.as_deref(),
+        Some("http://127.0.0.1:<本机端口>")
+    );
+    assert!(plan.changes[1].secret);
+    assert_eq!(plan.changes[1].field, "ANTHROPIC_AUTH_TOKEN");
+    assert!(plan.analysis.actions.iter().any(|action| {
+        action.kind == "requires_local_bridge" && action.target == "Claude Code"
+    }));
     assert!(!serde_json::to_string(&plan)
         .unwrap()
         .contains("must-not-leak"));
@@ -891,8 +904,8 @@ fn codex_auth_json_account_to_claude_is_matrix_closed() {
         AgentId::Claude,
     )
     .public_surface();
-    assert_eq!(matrix.route, AdapterRoute::Unsupported);
-    assert!(!matrix.can_apply);
+    assert_eq!(matrix.route, AdapterRoute::LocalBridge);
+    assert!(matrix.can_apply);
 }
 
 #[test]

@@ -238,7 +238,7 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 4. 加边：Anthropic→Codex 桥（协议腿 + experimental bind 已开）、Kimi→Grok reshape、OpenAI/xAI Key → Pi/Grok。
 5. 新 surface：GLM / DeepSeek 按双协议入口登记。
 6. 新 Agent writer：DeepSeek Harness（`dsh`）已接入；**DeepSeek API → `dsh` `config_sync`** 与 **DeepSeek API → Claude experimental `native_endpoint`** 都走现有 `AdapterCapabilityMatrix` / `AdapterApplyService`。不要把 Harness 当协议桥。
-7. **跨 Agent 复用三路**（产品已定，见 [product-decisions.md](product-decisions.md)）：先补 ①（双协议 / 单协议 Key 直连），再接 ②（Claude / Codex / Grok 订阅 → Pi 等已有契约槽；当前三条 Pi 槽已可 experimental bind），最后做 ③（Codex 订阅 → Claude 本机桥）。实现未开只表示缺执行器 / fixtures，不表示产品关闭。
+7. **跨 Agent 复用三路**（产品已定，见 [product-decisions.md](product-decisions.md)）：先补 ①（双协议 / 单协议 Key 直连），再接 ②（Claude / Codex / Grok 订阅 → Pi 等已有契约槽；当前三条 Pi 槽已可 experimental bind），③ Codex `auth_json` 订阅 → Claude Responses 的本机桥已可 experimental bind，App Server/OauthOther 仍关闭。实现未开只表示缺执行器 / fixtures，不表示产品关闭。
 
 做不到、且应看得见的上限：Cursor 当目标（无 writer）、未标记的自定义中转、二次投影、公网号池。暂时不能当 HTTP 上游的登录态要写明缺哪一跳，不能写成「订阅一律不做」。
 

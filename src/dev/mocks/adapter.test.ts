@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AdapterCommandError } from '@/lib/backend/contracts/adapter';
 import type { Account, AgentId, Provider } from '@/lib/types';
-import { createMockAdapterPort, PROTOCOL_MISMATCH_REASON, resetMockAdapters } from './adapter';
+import {
+  CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
+  createMockAdapterPort,
+  PROTOCOL_MISMATCH_REASON,
+  resetMockAdapters,
+} from './adapter';
 import { getMockAccountById } from './account';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
@@ -186,6 +191,73 @@ describe('mock adapter route preview', () => {
     })).rejects.toThrow(/不可应用|不支持|canApply/i);
     expect(JSON.stringify({ analysis, plan })).not.toMatch(/sk-|access_token|refresh_token|bearer/i);
     expect(plan.reason).not.toContain('同边但暂不可写');
+  });
+
+  it('opens Codex auth_json into the experimental Claude local bridge', async () => {
+    const accountId = 'codex-auth-json-claude';
+    const account = {
+      id: accountId,
+      agentId: 'codex' as const,
+      kind: 'oauth' as const,
+      label: 'ChatGPT subscription',
+      isCurrent: true,
+      tokenValid: true,
+      credentialFormat: 'auth_json',
+      credentials: {
+        format: 'auth_json',
+        tokens: {
+          access_token: 'must-not-leak',
+          refresh_token: 'must-not-leak',
+        },
+      },
+    };
+    const adapter = createMockAdapterPort({
+      getAccountById: (id) => id === accountId ? account : getMockAccountById(id),
+      getProviderById: getMockProviderById,
+    });
+    const request = {
+      sourceKind: 'account' as const,
+      sourceId: accountId,
+      targetAgentId: 'claude' as const,
+    };
+
+    const plan = await adapter.plan(request);
+    expect(plan).toMatchObject({
+      canApply: true,
+      reusePath: 'local_bridge',
+      serviceImpact: 'requires_local_bridge',
+      analysis: {
+        route: 'local_bridge',
+        support: 'experimental',
+        ruleId: 'codex-subscription-to-claude-responses-v1',
+        gateKind: 'none',
+      },
+    });
+    expect(plan.changes).toEqual([
+      {
+        target: 'claude',
+        field: 'ANTHROPIC_BASE_URL',
+        value: 'http://127.0.0.1:<本机端口>',
+        secret: false,
+      },
+      { target: 'claude', field: 'ANTHROPIC_AUTH_TOKEN', secret: true },
+    ]);
+    expect(plan.reason).toBe(CODEX_SUBSCRIPTION_TO_CLAUDE_REASON);
+
+    const applied = await adapter.apply(request);
+    expect(applied.profile).toMatchObject({
+      targetAgentId: 'claude',
+      route: 'local_bridge',
+      mode: 'oauth',
+      ruleId: 'codex-subscription-to-claude-responses-v1',
+    });
+    expect(JSON.parse(applied.provider.configText)).toEqual({
+      env: {
+        ANTHROPIC_BASE_URL: 'http://127.0.0.1:32123',
+        ANTHROPIC_AUTH_TOKEN: '$AGENTHUB_CONNECTION_SECRET$',
+      },
+    });
+    expect(JSON.stringify({ plan, applied })).not.toContain('must-not-leak');
   });
 
   it('opens Claude, Codex, and Grok OAuth reuse into Pi for experimental bind', async () => {

@@ -5,9 +5,8 @@
 //! `can_apply = false`. This is separate from the per-agent feature matrix in
 //! [`crate::models::capability`].
 //!
-//! Codex / ChatGPT subscription OAuth → Claude Code is recorded as an
-//! experimental *candidate* with every gate closed, so analyze/plan stay
-//! unsupported and Apply/Start/Bridge remain forbidden.
+//! Codex / ChatGPT subscription OAuth → Claude Code Responses is an
+//! experimental local-bridge edge. The App Server candidate remains closed.
 
 use super::{
     agent_bind_capability, speaks_intersect_accepts, AdapterGateKind, AdapterMaturity,
@@ -15,9 +14,15 @@ use super::{
     PROTOCOL_MISMATCH_REASON, SAME_PROTOCOL_NO_EDGE_REASON,
 };
 
-/// Shared public reason for Codex / ChatGPT subscription → Claude Code (closed).
-/// Mock UI and core analyze must keep this string in lockstep.
-pub const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON: &str = concat!(
+/// Shared public reason for the experimental Codex / ChatGPT subscription →
+/// Claude Code Responses edge. Mock UI and core analyze must keep this string
+/// in lockstep.
+pub const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON: &str =
+    concat!("Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。",);
+
+/// Closed fallback reason for Codex subscription shapes without the
+/// `OauthAuthJson` Responses cell.
+pub const CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON: &str = concat!(
     "Codex / ChatGPT 订阅 → Claude Code：当前不支持。",
     "尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。",
     "不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。",
@@ -365,10 +370,10 @@ const DEEPSEEK_DSH_LIMITS: &[&str] = &[
 ];
 
 const CODEX_CLAUDE_LIMITS: &[&str] = &[
-    "当前不支持此组合；尚未通过上游授权、条款与协议兼容性门禁。",
-    "plan.canApply=false：不会创建 adapter profile、启动 Bridge 或写入 Claude 配置。",
-    "不会把 ChatGPT / Codex OAuth token 导出或写入目标客户端。",
-    "替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源（例如 Kimi Code 会员 → Claude）。",
+    "会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 token 不进 Claude。",
+    "实验性协议桥接：Claude Messages → Codex Responses；AgentHub 需保持在托盘运行。",
+    "Codex access token 过期后需重新同步 Codex 登录；Hub 本轮不自动 refresh。",
+    "固定端口被占用时会尝试重新分配端口并写回配置。",
 ];
 
 /// Compile-time matrix. Order does not matter; lookup is by full key equality.
@@ -625,8 +630,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
     },
-    // Codex OAuth Account → Claude Code: recorded candidate, every gate closed.
-    // Decision surface remains unsupported / can_apply=false (both transports).
+    // Codex OAuth Account → Claude Code App Server remains a closed candidate.
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
             source: AdapterSourceProduct::CodexChatGptSubscription,
@@ -639,12 +643,14 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::LocalBridge,
         support: AdapterSupport::Experimental,
         can_apply: false,
-        reason: CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
+        reason: CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON,
         limitations: CODEX_CLAUDE_LIMITS,
         rule_id: "codex-subscription-to-claude-app-server-v0",
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_closed(),
     },
+    // Codex OAuth Account → Claude Code Responses is the experimental bridge
+    // write surface. Only this OauthAuthJson cell is open.
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
             source: AdapterSourceProduct::CodexChatGptSubscription,
@@ -652,16 +658,16 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
             transport: AdapterUpstreamTransport::CodexResponsesOauth,
             target: AgentId::Claude,
             protocol: AdapterTargetProtocol::AnthropicMessages,
-            version: "0",
+            version: MATRIX_VERSION,
         },
         route: AdapterRoute::LocalBridge,
         support: AdapterSupport::Experimental,
-        can_apply: false,
+        can_apply: true,
         reason: CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
         limitations: CODEX_CLAUDE_LIMITS,
-        rule_id: "codex-subscription-to-claude-responses-v0",
-        verified_at: VERIFIED_AT,
-        gates: AdapterCapabilityGates::all_closed(),
+        rule_id: "codex-subscription-to-claude-responses-v1",
+        verified_at: "2026-08-15",
+        gates: AdapterCapabilityGates::all_open(),
     },
 ];
 
@@ -717,7 +723,7 @@ pub fn decide_adapter_capability(
             )
         ) {
             return AdapterCapabilityDecision::unsupported_subscription_candidate(
-                CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
+                CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON,
             );
         }
         // 票.speaks ∩ agent.accepts — protocol graph, not a product whitelist.

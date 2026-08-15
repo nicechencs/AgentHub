@@ -138,14 +138,14 @@
       },
       "target": "claude",
       "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": "codex-subscription-to-claude-app-server-v0",
-        "gateKind": "subscription_candidate",
-        "reason": "Codex / ChatGPT 订阅 → Claude Code：当前不支持。尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。这只表示没有可执行规则，不代表连接失效。替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。",
-        "reusePath": "none"
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "codex-subscription-to-claude-responses-v1",
+        "gateKind": "none",
+        "reason": "Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。",
+        "reusePath": "local_bridge"
       }
     },
     {
@@ -162,14 +162,14 @@
       },
       "target": "claude",
       "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": "codex-subscription-to-claude-app-server-v0",
-        "gateKind": "subscription_candidate",
-        "reason": "Codex / ChatGPT 订阅 → Claude Code：当前不支持。尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。这只表示没有可执行规则，不代表连接失效。替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。",
-        "reusePath": "none"
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "codex-subscription-to-claude-responses-v1",
+        "gateKind": "none",
+        "reason": "Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。",
+        "reusePath": "local_bridge"
       }
     },
     {
