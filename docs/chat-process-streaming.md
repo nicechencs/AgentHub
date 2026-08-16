@@ -1,6 +1,6 @@
 # Chat 过程流式展示设计
 
-> 状态：**Phase 0–2 已落地**（2026-08-03）；Phase 3 体验打磨未做  
+> 状态：**Phase 0–2 已落地**（2026-08-03）；Phase 3 体验打磨未做（展示层方案已由 [chat-page-redesign.md](chat-page-redesign.md) 拍板）  
 > 范围：GUI Chat 的「Cursor 式过程」——命令、状态、stderr、结构化工具/thinking 步骤  
 > 非目标：接管各 CLI 原生多轮 session、交互式 tool 审批（RPC）、凭据加密
 
@@ -174,6 +174,10 @@ frontend
 - [x] `ProcessMode::Auto` 覆盖支持结构化流的 Agent（WorkBuddy / Cursor 仍 text）  
 
 ### Phase 3 — 体验打磨（后续）
+
+> 过程面板的**展示层**（摘要行 / 无边框步骤时间线 / 命令·stderr·exit 收进「运行详情」次级折叠）已在
+> [chat-page-redesign.md](chat-page-redesign.md) 拍板，属 Chat 页 UI 重设计范围，
+> **不改本文的过程模型、事件 wire 与内存策略**。下列协议侧项仍未排期：
 
 - diff 预览、usage、更稳 cancel  
 - 可选过程持久化  
