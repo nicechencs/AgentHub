@@ -13,6 +13,7 @@ import {
   groupConversationsByDay,
   messageStatusLabel,
   newConversationDefaults,
+  nextConversationAgentIds,
   retryTarget,
   sendBlockers,
   turnComparisonChips,
@@ -240,6 +241,27 @@ describe('newConversationDefaults', () => {
       agentIds: ['claude'],
       cwd: null,
     });
+  });
+});
+
+describe('nextConversationAgentIds', () => {
+  it('appends a new id and keeps the current primary first', () => {
+    expect(nextConversationAgentIds(['grok', 'claude'], 'codex')).toEqual([
+      'grok',
+      'claude',
+      'codex',
+    ]);
+  });
+
+  it('removes an id without reordering the rest', () => {
+    expect(nextConversationAgentIds(['grok', 'claude', 'codex'], 'claude')).toEqual([
+      'grok',
+      'codex',
+    ]);
+  });
+
+  it('refuses to drop the last agent', () => {
+    expect(nextConversationAgentIds(['claude'], 'claude')).toBeNull();
   });
 });
 
