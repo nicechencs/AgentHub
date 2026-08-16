@@ -63,6 +63,7 @@ import type {
   Conversation,
   Provider,
 } from '@/lib/types';
+import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
 import { ChatComposer } from './ChatComposer';
 import { ChatProcessPanel } from './ChatProcessPanel';
@@ -607,7 +608,7 @@ export default function ChatPage() {
             新建对话
           </Button>
         </div>
-        <div className="px-3 pb-1.5 text-2xs font-medium uppercase tracking-wide text-muted">
+        <div className={cn('px-3 pb-1.5', pageRhythm.sectionEyebrow)}>
           对话历史
         </div>
         <div className="flex-1 overflow-y-auto px-1.5 pb-3">
@@ -620,7 +621,7 @@ export default function ChatPage() {
           ) : conversations.length === 0 ? (
             <div className="px-2 py-4 text-center">
               <p className="text-xs text-muted">暂无对话</p>
-              <p className="mt-1 text-2xs text-muted">点上方「新建对话」开始</p>
+              <p className="mt-1 text-xs text-muted">点上方「新建对话」开始</p>
             </div>
           ) : (
             conversations.map((c) => {
@@ -668,7 +669,12 @@ export default function ChatPage() {
 
       {/* 右侧：对话窗口 */}
       <section className="relative flex min-w-0 flex-1 flex-col bg-panel">
-        <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4">
+        <header
+          className={cn(
+            'flex h-10 shrink-0 items-center gap-2 border-b border-border',
+            pageRhythm.chatChromeX,
+          )}
+        >
           {!railOpen && (
             <Hint label="展开历史">
               <button
@@ -793,7 +799,12 @@ export default function ChatPage() {
               )}
             </div>
 
-            <div className="shrink-0 border-t border-border/60 bg-canvas px-4 pb-4 pt-2">
+            <div
+              className={cn(
+                'shrink-0 border-t border-border/60 bg-canvas pb-4 pt-2',
+                pageRhythm.chatChromeX,
+              )}
+            >
               <div className="mx-auto w-full max-w-3xl">
                 <ChatComposer
                   draft={draft}

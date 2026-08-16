@@ -28,6 +28,7 @@ import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/layout/SidebarContext';
 import { installedCatalogAgents } from '@/components/layout/sidebar-agents';
+import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
 import { BRIDGES_NAV_LABEL, BRIDGES_PATH } from '@/lib/bridges-path';
 
@@ -125,7 +126,7 @@ function NavGroup({
   return (
     <div className={cn('flex shrink-0 flex-col gap-0.5', className)}>
       {!collapsed && (
-        <div className="px-2.5 pb-1 pt-2 text-2xs font-medium uppercase tracking-wide text-muted">
+        <div className={cn('px-2.5 pb-1 pt-2', pageRhythm.sectionEyebrow)}>
           {label}
         </div>
       )}
