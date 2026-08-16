@@ -32,6 +32,7 @@ export function ChatSessionRail({
   onQueryChange,
   activeId,
   sendingConversationId,
+  agentsReady,
   hasUsableAgent,
   deleteConfirmId,
   onToggleRail,
@@ -50,6 +51,7 @@ export function ChatSessionRail({
   onQueryChange: (q: string) => void;
   activeId: string | null;
   sendingConversationId: string | null;
+  agentsReady: boolean;
   hasUsableAgent: boolean;
   deleteConfirmId: string | null;
   onToggleRail: () => void;
@@ -79,12 +81,12 @@ export function ChatSessionRail({
             <PanelLeftClose className="h-4 w-4" />
           </button>
         </Hint>
-        <Hint label={hasUsableAgent ? undefined : '请先安装或取消隐藏 Agent'}>
+        <Hint label={agentsReady && !hasUsableAgent ? '请先安装或取消隐藏 Agent' : undefined}>
           <Button
             className="min-w-0 flex-1 justify-start gap-1.5"
             size="sm"
             variant="secondary"
-            disabled={!hasUsableAgent}
+            disabled={agentsReady && !hasUsableAgent}
             onClick={onNewChat}
           >
             <Plus className="h-3.5 w-3.5" />
@@ -165,7 +167,7 @@ export function ChatSessionRail({
                       <Hint label="删除">
                         <button
                           type="button"
-                          className="mr-1 rounded-btn p-1 opacity-0 transition-opacity hover:bg-panel group-hover:opacity-100"
+                          className="mr-1 rounded-btn p-1 opacity-0 transition-opacity hover:bg-panel group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
                           aria-label="删除"
                           onClick={() => onRequestDelete(c.id)}
                         >

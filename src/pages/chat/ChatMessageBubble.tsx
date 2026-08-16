@@ -143,7 +143,8 @@ function CopyButton({ text }: { text: string }) {
       aria-label="复制"
       className={cn(
         'absolute bottom-1 right-1 rounded-btn p-1 text-muted',
-        'opacity-0 transition-opacity hover:bg-panel hover:text-primary group-hover:opacity-100',
+        'opacity-0 transition-opacity hover:bg-panel hover:text-primary',
+        'group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100',
       )}
       onClick={() => {
         void navigator.clipboard.writeText(text).then(
