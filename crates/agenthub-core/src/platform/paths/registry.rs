@@ -1,12 +1,11 @@
 //! Path contribution registry.
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use crate::models::AgentId;
 
 use super::contribution::AgentPathContribution;
-use super::sources;
 
 #[derive(Clone, Default)]
 pub struct AgentPathRegistry {
@@ -34,6 +33,5 @@ impl AgentPathRegistry {
 }
 
 pub fn builtin_path_registry() -> &'static AgentPathRegistry {
-    static REG: OnceLock<AgentPathRegistry> = OnceLock::new();
-    REG.get_or_init(sources::build_registry)
+    &crate::integrations::production_integrations().paths
 }

@@ -1,11 +1,9 @@
-//! P13 / R07 open/closed validation via test-only `demo-agent`.
+//! P13 / R07 / P2-1 open/closed validation via test-only `demo-agent`.
 //!
-//! This module is **only** compiled under `cfg(test)`. The demo agent never
-//! enters production registries, migrations, or UI. It uses an open
-//! [`AgentKey`] only — identity stays entirely key-native.
+//! Contributions live in `integrations/agents/demo_agent/`. This file only
+//! drives the real catalog / lifecycle / configuration services.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,33 +11,27 @@ use std::time::Duration;
 use tempfile::tempdir;
 
 use crate::error::{AppError, Result};
-use crate::models::{
-    Capability, CapabilityLevel, CapabilityStateDto, DetectStatus, InstallOutcome, RuntimeId,
-};
-use crate::platform::agent_catalog::{
-    AgentCatalogService, AgentDescriptor, AgentKey, InstallChannelDescriptor,
-};
+use crate::integrations::agents::demo_agent;
+use crate::integrations::ProductionIntegrations;
+use crate::models::{Capability, CapabilityLevel, DetectStatus, InstallOutcome};
+use crate::platform::agent_catalog::{AgentCatalogService, AgentDescriptor, AgentKey};
 use crate::platform::config::{
-    builtin_config_registry, AgentConfigProjector, AgentConfigSchema, ConfigApplyResult,
-    ConfigChangePlan, ConfigFieldSchema, ConfigProjectorRegistry, ConfigValidationIssue,
-    ConfigValidationResult, ConfigValueType, ConfigurationService, NativeConfigFormat,
-    NormalizedConfigDocument,
+    builtin_config_registry, ConfigProjectorRegistry, ConfigurationService,
 };
-use crate::platform::detection::{builtin_detector_registry, AgentDetector, DetectorRegistry};
+use crate::platform::detection::{builtin_detector_registry, DetectorRegistry};
 use crate::platform::install::{
     builtin_install_registry, InstallContribution, InstallContributionRegistry,
 };
 use crate::platform::lifecycle::{
-    InstallationObserved, LifecycleCoordinator, LifecycleInstallExecutor, OperationKind,
-    OperationStatus, VecProgressSink,
+    LifecycleCoordinator, LifecycleInstallExecutor, OperationKind, OperationStatus, VecProgressSink,
 };
 use crate::storage::Database;
 use crate::utils::command_exec::{CommandExecutor, ExecRequest, ExecResult};
 
-const DEMO_KEY: &str = "demo-agent";
+const DEMO_KEY: &str = demo_agent::KEY;
 
 fn demo_key() -> AgentKey {
-    AgentKey::parse(DEMO_KEY).expect("demo-agent is a valid open AgentKey")
+    demo_agent::key()
 }
 
 fn test_configuration_database() -> Database {
@@ -47,157 +39,13 @@ fn test_configuration_database() -> Database {
     Database::open(&dir.path().join("configuration-authority.db")).expect("configuration db")
 }
 
+fn register_demo(installed: Arc<AtomicBool>) -> ProductionIntegrations {
+    let mut bundle = ProductionIntegrations::empty();
+    demo_agent::register(&mut bundle.as_context(), installed);
+    bundle
+}
+
 // ── Test-only contributions (never registered in production) ─────────────────
-
-/// Detector that observes install state via a shared flag (no filesystem / process).
-struct DemoDetector {
-    key: AgentKey,
-    installed: Arc<AtomicBool>,
-}
-
-impl AgentDetector for DemoDetector {
-    fn agent_key(&self) -> AgentKey {
-        self.key.clone()
-    }
-
-    fn detect(&self) -> InstallationObserved {
-        let installed = self.installed.load(Ordering::SeqCst);
-        InstallationObserved {
-            status: if installed {
-                DetectStatus::Installed
-            } else {
-                DetectStatus::NotFound
-            },
-            version: installed.then(|| "0.0.1-demo".into()),
-            binary_path: None,
-            channel: Some("npm".into()),
-            notes: vec!["demo-agent detector".into()],
-        }
-    }
-}
-
-/// Declarative install contribution (metadata only; no process execution).
-struct DemoInstallContribution {
-    key: AgentKey,
-}
-
-impl InstallContribution for DemoInstallContribution {
-    fn agent_key(&self) -> AgentKey {
-        self.key.clone()
-    }
-
-    fn npm_package(&self) -> Option<&'static str> {
-        Some("@agenthub/demo-agent")
-    }
-}
-
-/// Config projector registered only in injectable test registries.
-struct DemoConfigProjector {
-    key: AgentKey,
-}
-
-impl AgentConfigProjector for DemoConfigProjector {
-    fn agent_key(&self) -> AgentKey {
-        self.key.clone()
-    }
-
-    fn schema(&self) -> AgentConfigSchema {
-        AgentConfigSchema {
-            agent_key: self.key.clone(),
-            schema_version: 1,
-            native_format: NativeConfigFormat::Json,
-            relative_path: "demo.json".into(),
-            fields: vec![ConfigFieldSchema {
-                key: "greeting".into(),
-                label: "Greeting".into(),
-                value_type: ConfigValueType::String,
-                required: false,
-                secret: false,
-                default: Some(serde_json::json!("hello")),
-                validation: None,
-                help: None,
-                capability: Some(Capability::ConfigWrite.as_str().into()),
-            }],
-        }
-    }
-
-    fn read_normalized(&self, _agent_home: &Path) -> Result<NormalizedConfigDocument> {
-        Ok(NormalizedConfigDocument {
-            agent_key: self.key.clone(),
-            schema_version: 1,
-            values: BTreeMap::from([("greeting".into(), serde_json::json!("hello"))]),
-            unknown_native: serde_json::json!({}),
-            path: None,
-            missing: true,
-        })
-    }
-
-    fn validate(
-        &self,
-        values: &BTreeMap<String, serde_json::Value>,
-    ) -> Result<ConfigValidationResult> {
-        if values.contains_key("nope") {
-            return Ok(ConfigValidationResult::failure(vec![
-                ConfigValidationIssue {
-                    field_key: "nope".into(),
-                    code: "unknown_field".into(),
-                    message: "unknown".into(),
-                },
-            ]));
-        }
-        Ok(ConfigValidationResult::success())
-    }
-
-    fn plan_apply(
-        &self,
-        current: &NormalizedConfigDocument,
-        desired: &BTreeMap<String, serde_json::Value>,
-    ) -> Result<ConfigChangePlan> {
-        Ok(ConfigChangePlan {
-            agent_key: self.key.clone(),
-            schema_version: 1,
-            target_path: std::path::PathBuf::from("demo.json"),
-            field_changes: desired
-                .keys()
-                .map(|k| crate::platform::config::FieldChange {
-                    field_key: k.clone(),
-                    from: current.values.get(k).cloned(),
-                    to: desired.get(k).cloned(),
-                    secret: false,
-                })
-                .collect(),
-        })
-    }
-
-    fn apply(
-        &self,
-        agent_home: &Path,
-        desired: &BTreeMap<String, serde_json::Value>,
-    ) -> Result<ConfigApplyResult> {
-        let current = self.read_normalized(agent_home)?;
-        let plan = self.plan_apply(&current, desired)?;
-        Ok(ConfigApplyResult {
-            document: NormalizedConfigDocument {
-                values: desired.clone(),
-                ..current
-            },
-            plan,
-        })
-    }
-
-    fn materialize_settings_config(
-        &self,
-        _base_raw: Option<&serde_json::Value>,
-        desired: &BTreeMap<String, serde_json::Value>,
-    ) -> Result<serde_json::Value> {
-        Ok(serde_json::Value::Object(
-            desired
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-        ))
-    }
-}
 
 /// Lifecycle install executor that flips the shared detector flag (no real install).
 struct FakeLifecycleInstallExecutor {
@@ -281,46 +129,7 @@ impl CommandExecutor for NoopCommandExecutor {
 // ── Descriptor / harness helpers ─────────────────────────────────────────────
 
 fn demo_descriptor() -> AgentDescriptor {
-    let mut capabilities = BTreeMap::new();
-    for cap in Capability::ALL {
-        // Only ConfigWrite has a real handler (DemoConfigProjector) → usable.
-        // Everything else is sparse: Planned or Unsupported → not executable.
-        let (level, reason) = match cap {
-            Capability::ConfigWrite => (CapabilityLevel::Full, None),
-            Capability::Usage
-            | Capability::Mcp
-            | Capability::ModelSelect
-            | Capability::SessionResume => (
-                CapabilityLevel::Planned,
-                Some("demo-agent roadmap cell".into()),
-            ),
-            _ => (
-                CapabilityLevel::Unsupported,
-                Some("demo-agent sparse surface".into()),
-            ),
-        };
-        capabilities.insert(
-            cap.as_str().to_string(),
-            CapabilityStateDto {
-                level,
-                reason,
-                min_version: None,
-            },
-        );
-    }
-    AgentDescriptor {
-        key: demo_key(),
-        display_name: "Demo Agent".into(),
-        integration_version: 1,
-        capabilities,
-        install_channels: vec![InstallChannelDescriptor {
-            id: "npm".into(),
-            label: "npm".into(),
-            command: "npm i -g @agenthub/demo-agent".into(),
-            requires: vec![RuntimeId::NodeJs],
-        }],
-        config_schema_version: Some(1),
-    }
+    demo_agent::descriptor()
 }
 
 fn level_is_executable(level: CapabilityLevel) -> bool {
@@ -354,23 +163,10 @@ fn open_demo_platform() -> (
     let catalog =
         AgentCatalogService::new(vec![demo_descriptor()]).expect("demo catalog injection");
 
-    let mut detectors = DetectorRegistry::new();
-    detectors
-        .register(Arc::new(DemoDetector {
-            key: key.clone(),
-            installed: Arc::clone(&installed),
-        }))
-        .expect("register demo detector");
-
-    let mut installs = InstallContributionRegistry::new();
-    installs
-        .register(Arc::new(DemoInstallContribution { key: key.clone() }))
-        .expect("register demo install");
-
-    let mut config_reg = ConfigProjectorRegistry::new();
-    config_reg
-        .register(Arc::new(DemoConfigProjector { key: key.clone() }))
-        .expect("register demo config projector");
+    let bundle = register_demo(Arc::clone(&installed));
+    let detectors = bundle.detectors.clone();
+    let installs = bundle.install.clone();
+    let config_reg = bundle.config.clone();
     let configuration = ConfigurationService::with_registry(db.clone(), config_reg.clone());
 
     let lifecycle = LifecycleCoordinator::with_registries_and_executor(
@@ -414,42 +210,23 @@ fn demo_agent_catalog_is_queryable_via_injection() {
 #[test]
 fn demo_agent_registries_queryable_and_reject_duplicate_keys() {
     let key = demo_key();
+    let mut bundle = register_demo(Arc::new(AtomicBool::new(false)));
 
-    let mut detectors = DetectorRegistry::new();
-    detectors
-        .register(Arc::new(DemoDetector {
-            key: key.clone(),
-            installed: Arc::new(AtomicBool::new(false)),
-        }))
-        .unwrap();
-    assert!(detectors.contains_key(&key));
-    assert!(detectors.get(&key).is_some());
-    let dup = detectors.register(Arc::new(DemoDetector {
-        key: key.clone(),
-        installed: Arc::new(AtomicBool::new(false)),
-    }));
-    assert!(matches!(dup, Err(AppError::InvalidArg(_))));
-
-    let mut installs = InstallContributionRegistry::new();
-    installs
-        .register(Arc::new(DemoInstallContribution { key: key.clone() }))
-        .unwrap();
-    assert!(installs.contains_key(&key));
+    assert!(bundle.detectors.contains_key(&key));
+    assert!(bundle.detectors.get(&key).is_some());
+    assert!(bundle.install.contains_key(&key));
     assert_eq!(
-        installs.get(&key).unwrap().npm_package(),
+        bundle.install.get(&key).unwrap().npm_package(),
         Some("@agenthub/demo-agent")
     );
-    let dup = installs.register(Arc::new(DemoInstallContribution { key: key.clone() }));
-    assert!(matches!(dup, Err(AppError::InvalidArg(_))));
+    assert!(bundle.config.contains_key(&key));
+    assert!(bundle.config.get(&key).is_some());
 
-    let mut configs = ConfigProjectorRegistry::new();
-    configs
-        .register(Arc::new(DemoConfigProjector { key: key.clone() }))
-        .unwrap();
-    assert!(configs.contains_key(&key));
-    assert!(configs.get(&key).is_some());
-    let dup = configs.register(Arc::new(DemoConfigProjector { key: key.clone() }));
-    assert!(matches!(dup, Err(AppError::InvalidArg(_))));
+    let dup_installed = Arc::new(AtomicBool::new(false));
+    let err = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        demo_agent::register(&mut bundle.as_context(), dup_installed);
+    }));
+    assert!(err.is_err(), "second register must reject duplicate keys");
 }
 
 #[test]
@@ -511,10 +288,8 @@ fn demo_agent_install_and_repair_via_real_lifecycle_path() {
 #[test]
 fn demo_agent_config_schema_and_validate_via_configuration_service() {
     let key = demo_key();
-    let mut reg = ConfigProjectorRegistry::new();
-    reg.register(Arc::new(DemoConfigProjector { key: key.clone() }))
-        .unwrap();
-    let svc = ConfigurationService::with_registry(test_configuration_database(), reg);
+    let bundle = register_demo(Arc::new(AtomicBool::new(false)));
+    let svc = ConfigurationService::with_registry(test_configuration_database(), bundle.config);
 
     let schema = svc.schema_for_agent_key(&key).expect("schema via service");
     assert_eq!(schema.agent_key.as_str(), DEMO_KEY);

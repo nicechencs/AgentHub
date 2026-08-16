@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::Result;
-use crate::platform::usage::source::{UsageFileParser, UsageLineOutcome, UsageSource};
+use crate::platform::usage::{UsageFileParser, UsageLineOutcome, UsageSource};
 use crate::platform::AgentKey;
 use crate::usage::session_jsonl::{
     bootstrap_kimi_model, discover_kimi_files, extract_kimi, kimi_root_from_wire_path,
@@ -54,4 +54,10 @@ impl UsageSource for KimiUsageSource {
         };
         Box::new(KimiParser { model })
     }
+}
+
+pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {
+    ctx.usage
+        .register(std::sync::Arc::new(KimiUsageSource))
+        .expect("unique built-in usage source");
 }

@@ -9,22 +9,23 @@ use std::path::Path;
 use serde_json::{json, Map, Value};
 
 use crate::adapters::dsh::{
-    read_credential_value, read_llm_fields, write_credential_value, write_llm_fields, CREDENTIALS_FILE,
-    DEFAULT_API_KEY_ENV, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_PROVIDER, HOME_PATCH_FILE,
+    read_credential_value, read_llm_fields, write_credential_value, write_llm_fields,
+    CREDENTIALS_FILE, DEFAULT_API_KEY_ENV, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_PROVIDER,
+    HOME_PATCH_FILE,
 };
 use crate::error::{AppError, Result};
 use crate::models::AgentId;
 use crate::platform::AgentKey;
 
-use super::super::document::{ConfigApplyResult, ConfigChangePlan, NormalizedConfigDocument};
-use super::super::projector::AgentConfigProjector;
-use super::super::schema::{
-    AgentConfigSchema, ConfigValidationResult, ConfigValueType, NativeConfigFormat, SECRET_REDACTED,
-};
-use super::util::{
+use crate::platform::config::sources::util::{
     field, finish_apply, get_str_map, plan_from_maps, redact_secrets, secret_unchanged, string_val,
     validate_known_fields,
 };
+use crate::platform::config::AgentConfigProjector;
+use crate::platform::config::{
+    AgentConfigSchema, ConfigValidationResult, ConfigValueType, NativeConfigFormat, SECRET_REDACTED,
+};
+use crate::platform::config::{ConfigApplyResult, ConfigChangePlan, NormalizedConfigDocument};
 
 const SCHEMA_VERSION: u32 = 1;
 
@@ -46,7 +47,14 @@ impl DshConfigProjector {
                     false,
                     Some("Official DeepSeek slot is deepseek-official"),
                 ),
-                field("model", "Model", ConfigValueType::String, false, false, None),
+                field(
+                    "model",
+                    "Model",
+                    ConfigValueType::String,
+                    false,
+                    false,
+                    None,
+                ),
                 field(
                     "baseUrl",
                     "Base URL",
@@ -69,12 +77,7 @@ impl DshConfigProjector {
                     "reasoningEffort",
                     "Reasoning effort",
                     ConfigValueType::Enum {
-                        options: vec![
-                            "off".into(),
-                            "low".into(),
-                            "high".into(),
-                            "max".into(),
-                        ],
+                        options: vec!["off".into(), "low".into(), "high".into(), "max".into()],
                     },
                     false,
                     false,
@@ -125,10 +128,7 @@ impl DshConfigProjector {
         );
         values.insert(
             "maxTokens".into(),
-            fields
-                .max_tokens
-                .map(|n| json!(n))
-                .unwrap_or(Value::Null),
+            fields.max_tokens.map(|n| json!(n)).unwrap_or(Value::Null),
         );
         values.insert("apiKeyEnv".into(), string_val(Some(&fields.api_key_env)));
         values.insert("apiKey".into(), string_val(Some(&key)));
@@ -182,11 +182,7 @@ impl DshConfigProjector {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty() && *s != SECRET_REDACTED)
         {
-            write_credential_value(
-                &home.join(CREDENTIALS_FILE),
-                &fields.api_key_env,
-                existing,
-            )?;
+            write_credential_value(&home.join(CREDENTIALS_FILE), &fields.api_key_env, existing)?;
         }
         Ok(())
     }
@@ -311,4 +307,10 @@ impl AgentConfigProjector for DshConfigProjector {
         }
         Ok(Value::Object(out))
     }
+}
+
+pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {
+    ctx.config
+        .register(std::sync::Arc::new(DshConfigProjector))
+        .expect("unique built-in config projector");
 }

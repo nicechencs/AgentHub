@@ -1,7 +1,7 @@
 //! Platform Configuration: schema, projector port, registry, service.
 //!
-//! Agent-specific native JSON/TOML knowledge lives in [`sources`].
-//! TODO(P13): move projectors under integrations/agents/<key>/.
+//! Shared schema/projector ports live here; per-agent projectors live in
+//! [`crate::integrations`].
 
 mod document;
 mod projector;
