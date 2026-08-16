@@ -57,11 +57,11 @@ mock 下 apply 正向链路不可达，必须 `pnpm tauri:dev` + 真实凭据。
 
 | Dogfood 项 | 自动化覆盖 | 测试入口（过滤） | 仍须真机 |
 |---|---|---|---|
-| 1. 密钥轮转 | 部分：上游 secret 变更 → listener 替换 + local bearer 不变；restore material 读新 key | `cargo test -p agenthub-gui ensure_listener_replaces_upstream_auth`；`cargo test -p agenthub-core restore_uses_a_rotated_source_key` | 真 Kimi 上游是否吃新 key；Codex 长连接行为 |
+| 1. 密钥轮转 | 部分：上游 secret 变更 → listener 替换 + local bearer 不变；restore material 读新 key | `cargo test -p agenthub-gui ensure_listener_replaces_upstream_auth_while_keeping_local_bearer`；`cargo test -p agenthub-core restore_uses_a_rotated_source_key_without_changing_the_local_bearer` | 真 Kimi 上游是否吃新 key；Codex 长连接行为 |
 | 2. 端口占用重绑 | 部分：preferred 被占 → rebind；再 realign profile/provider 端口一致；失败回滚 | `ensure_listener_rebinds_when_preferred_port_is_busy`；`busy_preferred_port_rebind_then_realign_updates_projection`；`realign_restored_bridge_port_*` | 真 Codex 读到新 `base_url` |
 | 3. 长时间 SSE | 部分：mock 上游分片 / 空闲超时（core bridge） | `cargo test -p agenthub-core -- bridge::` | 真模型数分钟流 |
 | 4. 文本+工具闭环 | 部分：协议 fixtures（Responses↔Chat） | `cargo test -p agenthub-core -- bridge::protocol` | 真 Codex 工具执行 |
-| 5. 上游失败与取消 | 部分：401 health 拒绝、脱敏 Debug、degraded 状态 | `bound_health_rejects_upstream_auth`；bridge host health/status 测 | 真 401/429/5xx 正文不泄漏；客户端取消 |
+| 5. 上游失败与取消 | 部分：401 health 拒绝、脱敏 Debug、degraded 状态 | `bound_health_rejects_upstream_auth_before_a_provider_switch`；bridge host health/status 测 | 真 401/429/5xx 正文不泄漏；客户端取消 |
 | 6. 托盘退出 drain | 部分：ExitCoordinator / stop 幂等 | `exit_coordinator`；`stop_is_idempotent_*` | 真托盘三选一 UI |
 | 7. auto_start 恢复 | 部分：restore 过滤、retryable 标记、失败回滚、端口 realign | `restore_filter_*`；`retryable_restore_*`；`realign_restored_bridge_port_*` | 冷启动完整 GUI + 真端口竞争 |
 

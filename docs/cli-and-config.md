@@ -2,7 +2,8 @@
 
 > 对应《项目方案》GUI + CLI 双端与《架构拆分》`agenthub-cli` / 数据目录。  
 > 本文是**可验收契约**：实现 CLI 与配置读写时以本文为准；与 GUI 冲突时以 **core service 行为一致** 为最高原则。  
-> 状态（2026-08-15，以代码为准）：CLI 已覆盖 doctor（含 ⑤ Locks）/ run / env / agent（含 `capabilities`、`outdated`）/ provider（含 `undo`、`test-latency`）/ account（含 `oauth-url`、`refresh`、`delete`、`undo`）/ skill 全树 / usage / backup（含 `delete`）/ config（白名单 + 只读 `app_version`）。GUI 已接线 doctor、安装、Provider、Account、OAuth PKCE（Claude/Codex/Grok）、Skill、Usage、Backup、Chat、Projects、Settings。Provider/Account **测速与切换撤销** CLI/GUI 均已接线。**备份导出**仍未实现。凭据落盘加密为当前范围外。跨 Agent 复用三路见 [product-decisions.md](product-decisions.md)；本文「代理模式」≠ ③ 本机路由。
+> 状态（2026-08-15，以代码为准）：CLI 已覆盖 doctor（含 ⑤ Locks）/ run / env / agent（含 `capabilities`、`outdated`）/ provider（含 `undo`、`test-latency`）/ account（含 `oauth-url`、`refresh`、`delete`、`undo`）/ skill 全树 / usage / backup（含 `delete`）/ config（白名单 + 只读 `app_version`）。GUI 已接线 doctor、安装、Provider、Account、OAuth PKCE（Claude/Codex/Grok）、Skill、Usage、Backup、Chat、Projects、Settings。Provider/Account **测速与切换撤销** CLI/GUI 均已接线。**备份导出**仍未实现。凭据落盘加密为当前范围外。跨 Agent 复用三路见 [product-decisions.md](product-decisions.md)；本文「代理模式」≠ ③ 本机路由。  
+> **2026-08-16 文档回写**（仍为 v1.4）：对齐 `DoctorReport`、`--days`、`add-apikey [--label]`、L0 仅 `--data-dir` / `AGENTHUB_HOME`；删除 `--show-secrets` 二期主密码表述。
 > v1.1：`doctor` 含 runtimes；新增 `env` 资源；`agent install` 两阶段与 `--install-deps`。  
 > v1.2：平台环境差异——`doctor`/`env list` 仅返回宿主相关 Runtime（macOS 不含 PowerShell）；`env install` 默认 channel 与 `agent install|upgrade` native 底层命令按 Windows/macOS 分流。
 
@@ -47,7 +48,7 @@
 
 - **table**：`comfy-table`，适合人类；列名稳定（改名视为破坏性变更）
 - **json**：stdout 单一 JSON 值（对象或数组）；错误时 stdout 可空，stderr 为 JSON 或纯文本错误（见 §5.2）
-- **凭据**：任何输出默认脱敏（`sk-••••3f2a`）；不提供 `--show-secrets` 给普通用户流（若二期需要，必须再加主密码校验）
+- **凭据**：任何输出默认脱敏（`sk-••••3f2a`）；**不提供** `--show-secrets`。主密码 / 落盘加密为项目范围外。
 
 ### 2.4 二进制与安装名
 
@@ -87,7 +88,7 @@ agenthub
 │   ├── list       [--agent <id>]
 │   ├── switch     <id-or-label> --agent <id>
 │   ├── import     [--agent <id>] [--name <name>]
-│   ├── add-apikey --agent <id> --label <s> --key <s>   # key 也可 stdin
+│   ├── add-apikey --agent <id> [--label <s>] --key <s>   # key 也可 stdin
 │   ├── delete     <id-or-label> --agent <id>
 │   ├── oauth-url                       # 打印 PKCE authorize URL（不完成流程）
 │   ├── refresh    <id-or-label> --agent <id>
@@ -106,7 +107,7 @@ agenthub
 │   └── market          [--query <q>]
 ├── usage
 │   ├── collect
-│   ├── stats      [--days 7|14|30] [--agent <id>] [--model <name>]
+│   ├── stats      [--days <n>] [--agent <id>] [--model <name>]   # n >= 1，默认 7
 │   ├── models     [--agent <id>]
 │   └── health
 ├── backup
@@ -138,7 +139,7 @@ agenthub
 |---|---|
 | 作用 | 一页看健康：**宿主相关共享 runtimes**、数据目录、db 可写、**全部已注册 Agent** detect、当前 provider/账号摘要（脱敏）、parser health、锁是否异常 |
 | core | `env_service.detect_all`（= `runtime::host_runtimes`）+ `agent_service.detect_all` + `usage_service.parser_health` + settings/paths |
-| 输出 | table 分区或 json：`{ dataDir, runtimes[], agents[], usageHealth[], ok: bool, warnings[] }` |
+| 输出 | table 分区或 json（`DoctorReport`，camelCase）：`{ dataDir, runtimes[], agents[], capabilities, usageHealth[], paths, dbOk, ok, warnings[], version, locks[] }`。`paths` 为 `PathInfo`（`dataDir` / `dbPath` / `backupsDir` / `logsDir`）。`locks` 为 `{data_dir}/locks` 下 live-write 锁检查（`held` / `stale` / `malformed`） |
 | 分区顺序 | ① Runtimes ② Agents ③ Paths/DB ④ Usage parsers ⑤ Locks |
 | 退出码 | 全部关键检查通过 `0`；runtime 缺失/过旧视为 **警告**（`0` + warnings，不挡 doctor）；db 不可用等硬错误 `1` |
 
@@ -262,7 +263,7 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 | 命令 | 参数 | core | 说明 |
 |---|---|---|---|
 | `collect` | | `collect` | 增量采集；`-v` 打每 agent 进度 |
-| `stats` | `--days` `--agent` `--model` | `summary` | 输入/输出/缓存/成本估算 |
+| `stats` | `--days` `--agent` `--model` | `summary` | `--days` 任意 ≥ 1，默认 7；输入/输出/缓存/成本估算 |
 | `models` | `[--agent]` | `list_models` | **用量去重模型名**，非官方目录 |
 | `health` | | `parser_health` | 与 Dashboard 用量段 ParserHealthBar 同数据 |
 
@@ -317,7 +318,7 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 | Skills 矩阵 / 同步 / 安装 | ✅ Skills 页 | ✅ 全树（含 install/market/project） | market 默认 skills.sh；依赖网络与 Git |
 | Usage 采集/图表 | ✅ Dashboard 用量段 | ✅ collect/stats/models/health | Cursor Unsupported |
 | Backup 列表/创建/恢复/删除 | ✅ Settings·备份 | ✅ list/create/restore/delete | **导出包**未实现 |
-| Chat 多 Agent | ✅ /chat | ❌（用 `run` 一次性 headless） | 过程面板 Phase 0–2 |
+| Chat 多 Agent | ✅ /chat | ❌（用 `run` 一次性 headless） | 过程面板 Phase 0–2 现行契约；Phase 3 展示层已落地 |
 | Projects | ✅ /projects | ❌ | |
 | Settings 主题/日志等 | ✅ L1 白名单 + OS 自启 | ✅ config get/set 白名单 | 主题/用量间隔/托盘落 SQLite；`autoStart` 为 OS 登录项；语言无 i18n |
 | Doctor / 排障 | ✅ doctor report | ✅ doctor（含 runtimes + locks） | |
@@ -330,18 +331,20 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 
 ### 7.1 层 L0 — 启动定位（极薄，可文件可环境变量）
 
-**目的**：只解决「数据目录在哪、日志多吵」，**不**承载 providers/accounts 业务。
+**目的**：只解决「数据目录在哪」。**不**承载 providers/accounts 业务。
 
-#### 查找顺序（高 → 低）
+#### 查找顺序（高 → 低）——现行只实现 1 / 2 / 4
 
 1. CLI/GUI 显式 `--data-dir` / 开发参数  
 2. 环境变量 `AGENTHUB_HOME`（绝对路径或可展开 `~`）  
-3. 可选用户文件（若存在）  
+3. 可选用户文件 `agenthub.toml`：**契约预留 / 当前未实现**（全仓无读取代码）  
 4. 默认：`dirs::home_dir()/.agenthub`（**禁止**用 Git Bash 注入的错误 `HOME` 作为唯一依据；Windows 用 `dirs`）
 
-#### 可选文件：`%USERPROFILE%\.agenthub\agenthub.toml`（或 `$AGENTHUB_HOME/agenthub.toml` 自举前仅认默认位置）
+**L0 现行只有** `--data-dir` 与 `AGENTHUB_HOME`。
 
-仅允许：
+#### 可选文件：`agenthub.toml`（契约预留 / 当前未实现）
+
+文档曾写 `%USERPROFILE%\.agenthub\agenthub.toml`（或 `$AGENTHUB_HOME/agenthub.toml`）可带 `data_dir` / `log_level`。这是契约预留，**代码未读该文件**。若日后实现，仅允许：
 
 ```toml
 # AgentHub 启动配置（可选）。业务数据在 agenthub.db，勿把 provider 写这里。
@@ -350,7 +353,7 @@ log_level = "info"              # error | warn | info | debug | trace
 ```
 
 **禁止**写入：api_key、oauth token、provider 列表、账号池。  
-若文件出现未知键：警告并忽略（前向兼容），不失败启动。
+若日后实现且文件出现未知键：警告并忽略（前向兼容），不失败启动。
 
 ### 7.2 层 L1 — AgentHub 业务真源（SQLite）
 
@@ -427,7 +430,7 @@ log_level = "info"              # error | warn | info | debug | trace
 ### 7.6 三层关系（不得双真源）
 
 ```text
-L0 启动    →  只定位 data_dir / log
+L0 启动    →  只定位 data_dir（现行：`--data-dir` / `AGENTHUB_HOME`；`agenthub.toml` 契约预留未实现）
 L1 SQLite  →  AgentHub 业务唯一真源（池、用量、备份索引、settings）
 L2 live    →  各 Agent 运行时读的文件；由 switch/sync 从 L1 投影或写回
 L3 内置    →  只读模板；不是用户状态
@@ -454,7 +457,7 @@ L3 内置    →  只读模板；不是用户状态
 |---|---|
 | **P0** | clap 骨架、`doctor`（**runtimes**+detect+paths）、`env list`、`agent list`、`config path/get`；L0 环境变量 + 默认 data_dir；db 迁移 |
 | **P1** | `provider list/show/switch/import-live`、`skill list/sync/enable/disable`、`backup *`、`-o json`/`-y`、退出码；presets 进 core；agent list 附 `envReady` |
-| **P2** | `account *`、`usage *`、`agent install/upgrade/uninstall`（两阶段 + `--install-deps`）、`env install`；可选 `agenthub.toml` |
+| **P2** | `account *`、`usage *`、`agent install/upgrade/uninstall`（两阶段 + `--install-deps`）、`env install`；可选 `agenthub.toml`（**契约预留 / 当前未实现**） |
 | **P3+** | export/import CLI、oauth 辅助、更细 doctor / PATH 诊断 |
 
 ---

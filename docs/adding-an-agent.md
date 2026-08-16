@@ -19,16 +19,16 @@
 
 | 步骤 | 位置 | 说明 |
 |---|---|---|
-| 1. 兼容适配器 | `crates/agenthub-core/src/adapters/<id>.rs` | 兼容期实现 `AgentAdapter`；只实现该 Agent 真实拥有的能力 |
-| 2. 注册 | `integrations/agents/<key>/` + `register_integrations` | 稀疏端口（paths/install/config/usage/stream/project/detect/skills）进该目录；`adapters/register_all()` 仍是过渡 `AgentAdapter` 注册点 |
+| 1. 生产适配器 | `crates/agenthub-core/src/adapters/<id>.rs` + `register_all()` | 生产 `AgentAdapter` **仍在此实现并注册**；只实现该 Agent 真实拥有的能力 |
+| 2. 稀疏端口 | `integrations/agents/<key>/` + `register_integrations` | paths/install/config/usage/stream/project/detect/skills 进该目录；`platform/*/sources` 多为兼容转发，不是新贡献落点 |
 | 3. 枚举 | `models/agent.rs` | `AgentId` 变体 + `ALL` + `as_str`/`parse`/`display_name` |
-| 4. 前端 id | `src/lib/types.ts` + catalog 驱动列表 | 产品列表以 runtime catalog 为准；静态 `AGENTS` 仅过渡 |
+| 4. 前端 id | runtime catalog + `KNOWN_AGENT_IDS` + `src/styles/tokens.ts` | 产品列表以 catalog 为准；`KNOWN_AGENT_IDS` 只是已知 key（**不是**封闭枚举）；配色在 tokens。不要只改 `types.ts`，也不要把前端 id 当成封闭集合 |
 | 5. key-native 端口 | `platform/*/registry.rs` | 以 `AgentKey` 注册 detector、install、config、skills、usage、stream、project 等实际支持的端口 |
 | 6. 测试 | `cargo test -p agenthub-core` | adapter fixture + 已注册端口契约；禁止写死 agent 数量 |
-| 7. 绑定入口 | `models/agent_capability.rs`：先登记 `accepts[]` + `writer` | `accepts[]` 必须同时写 **wire 协议** 和 **OAuth 契约槽**（有则登记，否则规划器判不出 ②）。无 writer（如 Cursor）不能当 `bind` 落点。登记后由协议图长出 ① 直连 / ② 原生订阅 / ③ 本机路由，不要再加商品白名单。见 [product-decisions.md](product-decisions.md)、[connection-binding-model.md](connection-binding-model.md) |
+| 7. 绑定入口 | `crates/agenthub-core/src/domain/protocol_graph/agent_capability.rs`：先登记 `accepts[]` + `writer` | `accepts[]` 必须同时写 **wire 协议** 和 **OAuth 契约槽**（有则登记，否则规划器判不出 ②）。无 writer（如 Cursor）不能当 `bind` 落点。登记后由协议图长出 ① 直连 / ② 原生订阅 / ③ 本机路由，不要再加商品白名单。见 [product-decisions.md](product-decisions.md)、[connection-binding-model.md](connection-binding-model.md) |
 
 > **禁止**：在 `platform/*` service、通用 utils、页面业务里新增具体 Agent 名称分支。  
-> 差异只能进入：adapter / `platform/*/sources` 贡献 / descriptor / 明确兼容层。
+> 生产贡献进 `integrations/agents/<key>/`；`platform/*/sources` 多为兼容转发，不要再当新 Agent 的落点。
 
 ### 1.2 test-only 验证轨（开放扩展）
 

@@ -25,7 +25,7 @@ AgentHub 是一个本地运行的多 Agent 桌面管理工具。它用统一的 
 | **Settings** | 管理偏好、日志、数据目录、更新与配置备份 |
 | **CLI** | 提供 doctor、env、agent、provider、account、skill、usage、backup、run 等命令 |
 
-当前内置适配：**Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、Cursor Agent**。各家能力不同，请以 [能力矩阵](docs/capability-matrix.md) 或以下命令为准：
+当前内置适配：**Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、Cursor Agent、DeepSeek Harness（dsh）**。各家能力不同，请以 [能力矩阵](docs/capability-matrix.md) 或以下命令为准：
 
 ```powershell
 cargo run -p agenthub-cli -- agent capabilities

@@ -16,14 +16,14 @@
 
 ```text
 crates/agenthub-core/src/catalog/
-  install.rs   # npm 包、native ps1/sh、setup URL（安装 allowlist 唯一真相）
+  install.rs   # façade；真源 `platform/install`（InstallContribution + catalog API）
   limits.rs    # 超时 / 容量 / TTL / Node 最低主版本
   market.rs    # skills.sh / skillhub.cn base URL、UA、SkillMarketSource
 ```
 
 - OAuth 接入配置：`crates/agenthub-core/src/oauth/`（**勿**把 client/端点常量贴进公开文档或 issue）
 - Agent 家目录：`crates/agenthub-core/src/utils/paths.rs`
-- 定价表：`pnpm pricing:update` → `usage/embedded-pricing.json`
+- 定价表：`pnpm pricing:update` → `crates/agenthub-core/src/usage/embedded-pricing.json`
 
 ## 环境变量
 
@@ -51,7 +51,7 @@ crates/agenthub-core/src/catalog/
 - 主题 / Agent 品牌色 hex 真源：`src/styles/tokens.ts`（禁止在 globals / index.html / 组件内再抄一套）
 - mock：`src/dev/mocks/fixtures/install-catalog.ts`（仅 dev:mock / vitest）
 
-改安装渠道时：只改 `catalog/install.rs`；mock 快照若用于 UI 开发需同步。  
+改安装渠道时：改 `platform/install`（`catalog/install.rs` 只是 façade）；mock 快照若用于 UI 开发需同步。  
 改配色时：只改 `src/styles/tokens.ts`。
 
 ## 后续（未做）

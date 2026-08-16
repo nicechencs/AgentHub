@@ -12,6 +12,7 @@
 > 2026-08-14：Hub 重构 Phase 1 入口（ConnectFlow）已落地，详见 [hub-redesign-plan.md](hub-redesign-plan.md) / [ui-design.md](ui-design.md)。
 > 2026-08-15：把已有登录接到另一个工具的领域对象仍是票 / 绑定 / 协议图，UI 可按钱包重做，见 [connection-binding-model.md](connection-binding-model.md)。**产品方向**（① 直接改配置 / ② 写进对方认的登录 / ③ 本机转发）见 [product-decisions.md](product-decisions.md)。当前实现：读模型 + 全局钱包 + `plan_ticket` / `bind` / `unbind`；`canApply` 仍按「现在能不能写上去」打开。
 > 2026-08-15：模块化审查结论与分阶段收口见 [modularity-improvement.md](modularity-improvement.md)。目录职责仍以本文为准；生产组合仍偏 Adapter-centric，改进按该文 P0/P1/P2，不另开微服务。
+> 2026-08-16 文档回写：core 现树含 `integrations/` `platform/` `adapter_control/` `domain/`；生产写入走 Ticket；`adapter_control` 契约已落地但仍 in-process。
 
 ## 1. 顶层结构
 
@@ -20,22 +21,16 @@ AgentHub/
 ├── README.md                  # 入口：启动方式与结构摘要
 ├── AGENTS.md                  # 项目约定 + Agent 协作规则（真源）
 ├── agent.md                   # 兼容入口 → AGENTS.md
-├── run.bat / run.ps1          # Windows 一键启动（保留在根）
-├── Cargo.toml                 # workspace 清单,members = ["crates/*", "src-tauri"]
+├── run.bat / run.ps1          # Windows 一键启动
+├── run.sh                     # macOS / Linux 源码启动（非正式发行承诺）
+├── Cargo.toml                 # workspace members = ["crates/agenthub-core", "crates/agenthub-cli", "src-tauri"]
 ├── package.json               # 前端根(pnpm)
 ├── pnpm-lock.yaml
 ├── vite.config.ts
 ├── tsconfig.json
 ├── tailwind.config.ts
 ├── index.html                 # Vite 入口
-├── docs/                      # 方案与设计文档
-│   ├── README.md              # 文档索引
-│   ├── agenthub-plan.md
-│   ├── architecture.md        # 本文档
-│   ├── ui-design.md
-│   ├── connection-binding-model.md  # 票 / 绑定 / 协议图（目标）
-│   ├── cli-and-config.md      # CLI 命令树 + 配置 L0–L3 契约
-│   └── logging.md             # 日志规范（级别/文件/脱敏/排查）
+├── docs/                      # 方案与设计文档（索引见 docs/README.md）
 ├── scripts/                   # 运维脚本
 ├── src/                       # React 前端(见 §4)
 ├── src-tauri/                 # agenthub-gui,Tauri v2 壳(见 §3)；应用图标在 icons/
@@ -61,102 +56,98 @@ crates/agenthub-core/
 ├── Cargo.toml                 # rusqlite(bundled)/serde/toml_edit/
 │                              # tokio/axum/reqwest（OAuth + Bridge）/thiserror/dirs/tempfile/jsonc-parser
 └── src/
-    ├── lib.rs                 # 对外门面:pub use 各 service;AgentHub::new(data_dir) 统一构造
+    ├── lib.rs                 # 对外门面:pub use 各 service;AgentHub::open(data_dir) 统一构造
     ├── error.rs               # AppError(thiserror),含 i18n key + 中英文消息;Result<T> 别名
     ├── logging/               # 统一 tracing：按日文件 + 可选 stderr、targets、保留清理（见 logging.md）
-    │   └── mod.rs
+    ├── catalog/               # 产品常量 façade（limits / market；install 转调 platform::install）
+    ├── presets/
     │
-    ├── models/                # 纯数据结构,serde 序列化,不含逻辑
-    │   ├── mod.rs
+    ├── models/                # 纯数据结构,serde 序列化；规划矩阵不在此树
     │   ├── agent.rs           # AgentId 枚举(当前八家，含 `dsh`)、DetectResult、AgentStatus
-    │   ├── capability.rs      # Capability / CapabilityLevel / CapabilityState（矩阵真源类型）
-    │   ├── provider.rs        # Provider { id, agent_id, name, settings_config: Value, meta, is_current }
-    │   ├── account.rs         # Account { id, agent_id, kind: Oauth|ApiKey, credentials, extra, status }
-    │   ├── skill.rs           # Skill / SkillProjection / SkillSyncState
-    │   ├── usage.rs           # UsageRecord、UsageQuery、UsageSummary、ParserHealth
-    │   ├── backup.rs          # BackupKind + BackupRecord
-    │   ├── chat.rs            # Conversation / ChatMessage / ChatEvent / ProcessStep
-    │   ├── run.rs             # RunSpec / RunOptions / ProcessMode / MultiRunReport
-    │   ├── project.rs         # AgentProject 容器 + AgentSession 会话列表模型
-    │   ├── install.rs         # InstallChannel / InstallPlan / InstallOutcome
-    │   ├── runtime.rs         # RuntimeId / EnvStatus
-    │   ├── adapter.rs         # 路由分析、apply plan、profile 与状态（目标：plan/bind，见 connection-binding-model.md）
-    │   └── settings.rs        # AppSettings（主题/语言/日志等）
+    │   ├── capability.rs      # Capability / CapabilityLevel / CapabilityState（产品能力枚举）
+    │   ├── provider.rs / account.rs / skill.rs / usage.rs / backup.rs
+    │   ├── chat.rs / run.rs / project.rs / install.rs / runtime.rs / settings.rs
+    │   ├── adapter.rs         # 路由分析、apply plan、profile 与状态
+    │   ├── ticket.rs          # Ticket / TicketBinding / TicketWallet
+    │   ├── connection_trash.rs / agent_visibility.rs / update.rs
+    │   └── adapter_state_model.rs / adapter_model_mapping.rs
+    │
+    ├── domain/                # 无 I/O 的规划图
+    │   └── protocol_graph/    # 规划矩阵真源（不再在 models/ 下）
+    │       ├── adapter_capability_matrix.rs
+    │       └── agent_capability.rs
     │
     ├── storage/               # SQLite 层:agenthub.db,WAL,schema 版本迁移
-    │   ├── mod.rs             # Database 结构(连接池/r2d2 或 Arc<Mutex<Connection>>)
-    │   ├── migrations/        # 0001_init.sql, 0002_*.sql ... 版本号递增,启动时顺序执行
-    │   ├── adapter_profile_repo.rs # Adapter profile 持久化
-    │   └── (repo)/            # 每表一个 repo: provider_repo / backup_repo / …
-    │                          # （规划名 dao；实现用 *Repo 后缀）
+    │   ├── mod.rs             # Database
+    │   ├── migrations/
+    │   ├── account_repo.rs / provider_repo.rs / backup_repo.rs / chat_repo.rs
+    │   ├── adapter_profile_repo.rs / skill_repo.rs / operation_repo.rs
+    │   ├── usage_repo.rs      # 用量入库（不是 usage_dao）
+    │   ├── binding_repo.rs    # ActiveBinding 行
+    │   └── connection_trash_repo.rs
     │
-    ├── adapters/              # AgentAdapter trait + 注册表 + 当前八家实现
-    │   ├── mod.rs             # trait AgentAdapter; capability(); AdapterRegistry; register_all()
-    │   ├── claude.rs
-    │   ├── codex.rs
-    │   ├── kimi.rs
-    │   ├── grok.rs
-    │   ├── pi.rs
-    │   ├── workbuddy.rs
-    │   ├── cursor.rs          # 半套 Agent CLI（不碰 IDE 私有账号库）
-    │   ├── dsh.rs             # DeepSeek Harness（npm `dsh`，不是 DeepSeek API 票）
-    │   └── tests.rs
+    ├── adapters/              # 生产 AgentAdapter 仍在此：trait / registry / 各家 impl
+    │   ├── adapter_trait.rs / registry.rs / detect_binary.rs
+    │   ├── claude.rs / codex.rs / kimi.rs / grok.rs / pi.rs
+    │   ├── workbuddy.rs / cursor.rs / dsh.rs
+    │   └── config_write.rs / auth_revision.rs / pi_auth.rs
+    │                          # 兼容期未整段迁走；integrations/*/adapter_facade 才是空转 façade
+    │
+    ├── integrations/          # 稀疏端口贡献（并非每家都有全套文件）
+    │   ├── agents/
+    │   │   ├── {claude,codex,kimi,grok,pi,workbuddy,cursor,dsh}/
+    │   │   │   # 按需：paths / install / config / usage / stream / project
+    │   │   └── demo_agent/    # 仅 test-only，不进 register_production
+    │   └── shared/
+    │
+    ├── platform/              # 平台能力（与具体 Agent 解耦的 registry / service）
+    │   ├── agent_catalog/     # AgentCatalogService / AgentKey / 目录
+    │   ├── config/            # ConfigurationService：schema / read / apply
+    │   ├── detection/ / install/ / lifecycle/
+    │   ├── paths/ / projects/ / skills/ / stream/ / usage/
+    │
+    ├── adapter_control/       # Tauri-neutral 控制契约（仍 in-process）
+    │   ├── contract.rs        # AdapterControl / BindAction / UnbindAction
+    │   ├── coordinator.rs     # AdapterSagaCoordinator
+    │   └── status.rs
+    │                          # 当前由 src-tauri adapter_control_host.rs
+    │                          # 的 DesktopAdapterControl 实现；agenthub-adapterd 仍不存在
     │
     ├── bridge/                # loopback host + Responses/Chat 协议转换
-    │   ├── host.rs            # 实例 start/status/stop/shutdown
-    │   ├── runtime.rs         # 上游配置与请求执行
-    │   ├── types.rs           # 非序列化 runtime 输入/状态
-    │   └── protocol/          # chat/responses 映射、SSE 与 fixtures
+    │   ├── host/              # 已拆：mod / lifecycle / http / dispatch
+    │   ├── runtime.rs / types.rs / session.rs
+    │   └── protocol/          # chat / responses / anthropic_messages
     │
     ├── runtime/               # 共享运行时(与具体 Agent 解耦;安装 Agent 的前置环境)
-    │   ├── mod.rs             # RuntimeId; EnvStatus; RuntimeDetect; InstallChannel requires
-    │   ├── detect.rs          # which/where + 版本解析;短 TTL 缓存;安装后 invalidate
-    │   ├── nodejs.rs          # node/npm 检测;min_version;PATH broken 判定
-    │   └── bootstrap.rs       # 引导安装计划:winget / 官方 URL / 可复制命令(不替代包管理器)
+    │   ├── mod.rs / detect.rs / nodejs.rs / bootstrap.rs
     │
     ├── services/              # 业务层:组合 adapter + repo,GUI/CLI 只调这一层
-    │   ├── mod.rs
-    │   ├── env_service.rs     # detect_all / ensure / install_runtime
-    │   ├── agent_service.rs   # detect
-    │   ├── install_service.rs # 两阶段安装 / upgrade / uninstall
-    │   ├── provider_service.rs# CRUD + 切换(backfill→backup→原子写→锁)
-    │   ├── account_service.rs # 账号池、切换、import、refresh_token
-    │   ├── adapter_route_service.rs  # 只读兼容规则分析/预览
-    │   ├── adapter_apply_service.rs  # 仅应用显式稳定的直连规则
-    │   ├── adapter_secret_resolver.rs# 进程内解析 Connection secret
-    │   ├── adapter_bridge_service.rs # Bridge saga/profile 准备与收尾
-    │   ├── mcp_inventory.rs   # 只读扫描本机 MCP 配置
-    │   ├── skill_service.rs   # 真源 list、投影、install/uninstall/update/project/import_private
-    │   ├── skill_market.rs    # SkillMarket trait + 注册表（默认 skills.sh；可选 builtin）
-    │   ├── skillssh_market.rs # skills.sh 远程搜索/安装（HTTP + git clone）
-    │   ├── project_service.rs # 原生 project/session 扫描、删除、摘录
-    │   ├── chat_service.rs    # 会话 CRUD + 多 Agent send（不用 CLI --resume）
-    │   ├── run_service.rs     # headless 多 Agent 执行 + 流式步骤
-    │   ├── usage_service.rs   # 增量采集 → 入库 → query/trend/list_models/health
-    │   ├── backup_service.rs  # live 快照/恢复/删除索引（自身 DB 备份/导出尚未）
-    │   └── settings_service.rs
+    │   ├── env_service.rs / agent_service.rs / install_service.rs
+    │   ├── provider_service.rs / account_service.rs
+    │   ├── adapter_route_service/ / adapter_apply_service/
+    │   ├── adapter_secret_resolver.rs / adapter_bridge_service.rs
+    │   ├── ticket_read_service.rs / ticket_bind_service.rs
+    │   ├── connection_service.rs / live_write_authority.rs
+    │   ├── agent_visibility_service.rs / update_check_service.rs
+    │   ├── skill_service.rs / skill_market.rs
+    │   ├── skillssh_market.rs / skillhub_market.rs
+    │   ├── switch_undo/ / account_quota.rs
+    │   ├── mcp_inventory.rs / project_service.rs
+    │   ├── chat_service.rs / run_service.rs
+    │   ├── usage_service.rs / backup_service.rs / settings_service.rs
     │
     ├── usage/                 # 会话日志用量解析（零代理、只读）
-    │   ├── mod.rs             # supports_usage；collect_for_agent 入口
-    │   ├── session_jsonl.rs   # 统一 session JSONL 增量采集（多 agent 路径）
-    │   ├── pricing.rs         # 模型定价 → 成本估算（USD，与价表同单位，无汇率）
-    │   ├── embedded-pricing.json      # 离线价表快照（LiteLLM 同步 + overrides）
-    │   └── embedded-pricing.meta.json # 上次同步元数据
+    │   ├── session_jsonl.rs / pricing.rs / grok.rs
+    │   ├── embedded-pricing.json / embedded-pricing.meta.json
     │
-    ├── oauth/                 # OAuth PKCE（已支持平台见代码）
-    │   ├── mod.rs             # start / wait / complete + SessionStore
-    │   ├── pkce.rs
-    │   ├── providers.rs       # 平台接入配置（勿在公开文档抄写端点/client）
-    │   ├── server.rs          # loopback 回调
-    │   └── session.rs
+    ├── oauth/                 # PKCE + device / identity / catalog / pi_refresh
+    │   ├── pkce.rs / providers.rs / server.rs / session.rs
+    │   ├── device.rs / identity.rs / catalog.rs / pi_refresh.rs
+    │                          # 勿在公开文档抄写端点/client
     │
     └── utils/
-        ├── paths.rs           # home / agent_home（dirs::home_dir）
-        ├── atomic.rs          # 原子写
-        ├── process.rs         # spawn + CREATE_NO_WINDOW + RunSpec
-        ├── command_exec.rs    # 安装类命令封装
-        ├── agent_lock.rs      # per-agent 写锁
-        ├── redact.rs          # 脱敏
+        ├── paths.rs / atomic.rs / process.rs / command_exec.rs
+        ├── agent_lock.rs / redact.rs / expiry.rs / grok_toml.rs
         └── stream_parse/      # Chat 结构化流解析（claude/codex/kimi/grok/pi）
 ```
 
@@ -168,16 +159,23 @@ crates/agenthub-core/
 trait AgentAdapter {
     fn id(&self) -> AgentId;
     fn detect(&self) -> DetectResult;
-    fn install_channels(&self) -> Vec<InstallChannel>; // id/label/requires/min runtime
-    fn read_config(&self) -> AgentConfig;
-    fn apply_provider(&self, p: &Provider) -> Result<()>; // 只写 live;备份由 backup_service 先执行
-    fn read_auth(&self) -> AuthState;
-    fn apply_account(&self, a: &Account) -> Result<()>;
-    fn supports_skills(&self) -> bool;
+    fn install_channels(&self) -> Vec<InstallChannel>; // 默认 catalog 贡献
+    fn read_config(&self) -> Result<AgentConfig>;
+    fn write_config(&self, config: &AgentConfig) -> Result<()>; // 不是 apply_provider
+    fn read_auth(&self) -> Result<AuthState>;
+    fn read_account(&self) -> Result<LiveAccount>;
+    fn apply_account(&self, account: &LiveAccount) -> Result<()>;
+    fn build_api_key_account(&self, api_key: &str) -> Result<LiveAccount>;
+    fn authorization_key(&self, kind: AccountKind, credentials: &Value) -> Option<String>;
+    fn identity_label(&self, kind: AccountKind, credentials: &Value, label_hint: Option<&str>) -> Option<String>;
     fn skills_dir(&self) -> Option<PathBuf>;
     fn live_backup_paths(&self) -> Vec<PathBuf>;
-    fn usage_source(&self) -> Option<Box<dyn UsageParser>>;
+    fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec>;
+    fn capability(&self, cap: Capability) -> CapabilityState;
 }
+
+// 没有 supports_skills / usage_source。
+// skills 在 platform/skills，usage 在 platform/usage。
 
 // 共享运行时 — 不在 Adapter 内实现检测
 enum RuntimeId { NodeJs, Npm, PowerShell, Git }
@@ -192,11 +190,14 @@ struct InstallChannel {
 
 | 方法 | 含义 |
 |---|---|
-| `detect` / `read_*` / `apply_*` | 该 Agent 安装态与 live 配置/凭据的读写真相 |
-| `install_channels` | 可选安装渠道及**平台相关前置 Runtime**；native 在 Unix 上不得 require PowerShell；service 据此跑 ensure_env |
-| `supports_skills` / `skills_dir` | 技能投影目标；Kimi 等返回 false / None |
+| `detect` / `read_*` / `write_config` / `apply_account` | 该 Agent 安装态与 live 配置/凭据的读写真相 |
+| `install_channels` | 可选安装渠道及**平台相关前置 Runtime**；生产默认走 catalog；native 在 Unix 上不得 require PowerShell |
+| `read_account` / `build_api_key_account` | 读 live 快照、构造 API Key 票（不写盘） |
+| `authorization_key` / `identity_label` | 账号池去重指纹与展示标签（身份 ≠ 授权） |
+| `skills_dir` | 技能投影目标目录；无目标则 None。投影编排在 `platform/skills` |
 | `live_backup_paths` | 写前快照文件清单，供 `backup_service` 统一拷贝 |
-| `usage_source` | 挂接该 Agent 的 UsageParser；无日志源则 None |
+| `build_run_spec` | headless 运行命令 |
+| `capability` | 该 Agent 对 `Capability` 的声明（穷尽 match） |
 
 **演进预留**（非 MVP 必做）：当投影方式不再只是「复制到 dir」时，再增加 `install_skill` / `remove_skill` / `list_installed_skills`，把落盘差异继续留在 Adapter，**禁止**在 `skill_service` 写 `match agent_id`。
 
@@ -206,8 +207,19 @@ struct InstallChannel {
 |---|---|---|
 | `provider_service` | CRUD、切换编排（backfill→backup→写→锁） | 不解析 jsonl；不知 skills 真源 |
 | `account_service` | 账号池、OAuth/导入、切换编排 | 不实现各家 OAuth 端点细节（oauth/ 模块） |
-| `adapter_route_service` / `adapter_apply_service` | 只读分析、预览；应用后端显式允许的稳定规则 | 不推断未知凭据，不把 preview 自动升级为可写 |
+| `adapter_route_service` / `adapter_apply_service` | 只读分析、预览；应用后端显式 `can_apply` 边（现有多条，不再是「仅 Kimi→Claude」） | 不推断未知凭据，不把 preview 自动升级为可写 |
 | `adapter_bridge_service` | 准备/恢复 Bridge profile 与 runtime material，记录 finalize/needs_attention | 不持有 listener，不直接写 live 配置；当前由 Tauri controller、目标由 sidecar application service 编排 host 与 ProviderService |
+| `ticket_read_service` | 钱包只读聚合 + `plan_ticket` | 不写绑定、不启动 listener |
+| `ticket_bind_service` | `bind` / `unbind` 写口 | LocalBridge bind 拒绝，必须走 desktop host saga |
+| `connection_service` | 当前指针 `ActiveBinding`（account/provider `is_current`） | 不是产品 `TicketBinding`；不写 live 文件 |
+| `live_write_authority` | 跨进程 live 写锁 | 不解释配置语义 |
+| `agent_visibility_service` | 软隐藏 Agent（仅 UI） | 不改 detect / install / 凭据 |
+| `ConfigurationService`（platform） | 通用配置 schema / read / validate / apply | 不持有账号池 |
+| `AgentCatalogService`（platform） | Agent 目录（key / 能力 / 安装渠道） | 不执行安装 |
+| `skillhub_market` / `skillssh_market` | skillhub.cn / skills.sh 远程搜索与安装 | 不改投影矩阵真源 |
+| `update_check_service` | 探测远程 latest（npm dist-tags / 官方 feed） | 不自动升级 |
+| `switch_undo` | Provider / Account 切换撤销 | 不改 live 语义，只回滚最近一次切换 |
+| `account_quota` | OAuth 账号用量窗（写入 `account.extra`） | 失败软降级，不阻断 list/refresh |
 | `mcp_inventory` | 只读扫描已知 MCP 配置文件并归一化 server 条目 | 不创建、编辑、删除或注入 MCP server |
 | `skill_service` | 真源扫描、投影矩阵、sync/enable/disable、install/uninstall/update/project、import_private | 不扫描会话日志；远程市场由 `skill_market`/`skillssh_market` 提供；插件体系仅只读协作 |
 | `usage_service` | collect、入库、summary/trend、**list_models（用量去重）** | 不提供官方模型商店；不算 live 配置默认 model 源 |
@@ -224,7 +236,7 @@ struct InstallChannel {
   provider_service.switch
     → account/provider backfill
     → backup_service.snapshot(agent)      // adapter.live_backup_paths()
-    → adapter.apply_provider(p)           // 原子写
+    → adapter.write_config(...)           // ProviderService 编排原子写
     → emit provider-switched
 
 同步 Skill:
@@ -244,10 +256,16 @@ struct InstallChannel {
 
 应用稳定 Adapter 规则:
   adapter_route_service.analyze / plan
-    → 后端显式 can_apply 门禁
+    → 后端显式 can_apply 门禁（多条已登记边）
     → adapter_apply_service.apply
     → 创建受管 profile / Provider
     → provider_service.switch（复用备份与原子写）
+
+产品绑定:
+  bind_ticket
+    → AdapterControl（in-process DesktopAdapterControl）
+    → reshape：TicketBindService
+    → local_bridge：desktop host saga（TicketBindService 拒绝 LocalBridge）
 
 应用 local_bridge（当前 / 目标）:
   当前：Tauri adapter_bridge_controller → BridgeRuntimeHost + core services
@@ -255,6 +273,7 @@ struct InstallChannel {
       → AdapterRuntimeApplication（local_bridge 完整 saga 的唯一进程 owner）
       → BridgeRuntimeHost + AdapterBridgeService + ProviderService
   // Connections/ProviderService 仍是领域 owner；sidecar 不直接写表或 live 文件
+  // agenthub-adapterd 仍不存在
 
 MCP 清单:
   mcp_inventory.list
@@ -263,8 +282,8 @@ MCP 清单:
 
 采集 Usage:
   usage_service.collect
-    → adapter.usage_source()?.parse_incremental(...)
-    → usage_dao 增量插入
+    → platform/usage 源 parse_incremental(...)
+    → usage_repo 增量插入
     → pricing 填 cost
     → emit usage-updated
 
@@ -289,34 +308,36 @@ Chat 发送（GUI）:
 ```
 src-tauri/
 ├── Cargo.toml                 # 依赖 agenthub-core;tauri 2.x;
-│                              # tauri-plugin-{single-instance,window-state,updater,dialog,opener,process,autostart}
+│                              # 插件：autostart / dialog / single-instance；
+│                              # updater 条件编译（macos/windows/linux）。
+│                              # 没有 window-state / opener / process
 ├── tauri.conf.json
 ├── build.rs
 ├── icons/
 └── src/
     ├── lib.rs                 # 启动:初始化 AgentHub(core 门面)→ .manage(AppState);
     │                          # tauri::generate_handler! 注册 commands;托盘
-    ├── state.rs               # AppState { hub: Arc<AgentHub> }(core 内含 db/锁/缓存)
+    ├── state.rs               # AppState 持有 hub + BridgeRuntimeHost
+    │                          # + AdapterBridgeSagaCoordinator + ExitCoordinator
+    ├── adapter_bridge_controller.rs
+    ├── adapter_control_host.rs  # DesktopAdapterControl（in-process AdapterControl）
+    ├── exit_coordinator.rs
+    ├── tray.rs
+    ├── skill_watch.rs
+    ├── window_policy.rs
     └── commands/              # 薄层:参数校验 + 调 core service + 序列化;每模块一文件
-        ├── mod.rs
-        ├── doctor.rs          # get_doctor_report（含 runtimes / agents / capabilities）
-        ├── install.rs         # install_runtime / install_agent / upgrade / uninstall / open paths
-        ├── provider.rs        # list / upsert / delete / switch / import_live / presets / preview
-        ├── account.rs         # list / add_apikey / import_live / switch / delete / refresh
-        ├── oauth.rs           # oauth_start / wait / complete / supported
-        ├── skill.rs           # list / sync / disable / install / market / project / …
-        ├── usage.rs           # availability / collect / query / trend / list_models / health
-        ├── backup.rs          # list / create / restore / delete
-        ├── chat.rs            # conversations CRUD / chat_send(Channel) / chat_cancel
-        ├── project.rs         # list / delete / excerpts
-        └── settings.rs        # get / set / path_info / open_logs_dir
+        ├── account.rs / adapter.rs / agent_catalog.rs / agent_visibility.rs
+        ├── backup.rs / chat.rs / configuration.rs / doctor.rs
+        ├── install.rs / lifecycle.rs / mcp.rs / oauth.rs
+        ├── project.rs / provider.rs / settings.rs / skill.rs
+        ├── trash.rs / usage.rs
 ```
 
 事件约定（**目标**）：切换/采集完成后可 `app.emit("provider-switched" | "account-switched" | "usage-updated", payload)`。**当前实现**以前端主动 refetch 为主，尚未统一 emit 事件桥。Chat 流式走 Tauri v2 `ipc::Channel<ChatEvent>`（非 SSE），阻塞 IO 经 `spawn_blocking` / hub blocking 封装。
 
 ### 3.1 Adapter Runtime 进程边界（目标）
 
-当前工作区中，`src-tauri::AppState` 同时持有 `BridgeRuntimeHost`、process-local saga coordinator 与退出 barrier。这是可工作的进程内实现，不是最终部署边界。
+当前工作区中，`src-tauri::AppState` 同时持有 `BridgeRuntimeHost`、process-local saga coordinator 与退出 barrier。这是可工作的进程内实现，不是最终部署边界。Phase 1 控制契约已在 core `adapter_control` + in-process host；sidecar 二进制 / IPC / schema lease 未开工。
 
 目标结构：
 
@@ -352,23 +373,26 @@ React Routes UI（本机路由页）
 ```
 src/
 ├── app/
-│   └── runtime/                 # 应用组合入口（装配 backend adapter）
+│   └── runtime/                 # 应用组合入口 + catalog / agent-status /
+│                                # connection-pool / bridge-presence / app-update stores
 ├── lib/
 │   ├── backend/
 │   │   ├── contracts/           # DTO、接口、纯映射（不碰 Tauri）
 │   │   ├── tauri/               # 唯一允许调用 invoke 的地方
 │   │   └── current.ts           # 默认生产实现切换点
-│   └── connect-flow/            # 统一连接流程逻辑层（契约/可行性/fan-out/用途反查），见 hub-redesign-plan.md
+│   ├── api/                     # 兼容 façade，页面无需一次全改
+│   ├── connect-flow/            # 统一连接流程逻辑层
+│   ├── hooks/                   # useSkills / useInstalledAgents
+│   ├── ticket-wallet.ts
+│   └── bridges-path.ts
 ├── dev/
 │   └── mocks/
-│       ├── backend.ts
-│       ├── account.ts
-│       ├── chat.ts
+│       ├── backend.ts / account.ts / chat.ts / adapter.ts / ticket.ts
+│       ├── catalog.ts / config.ts / trash.ts / update.ts
+│       ├── OAuthFlowDialog.tsx
 │       └── fixtures/
 ├── test/
-│   ├── factories/
-│   └── setup.ts
-├── lib/api/                     # 暂时保留兼容 façade，页面无需一次全改
+│   └── setup.ts                 # 无 factories/
 ├── pages/                       # 页面层；不直接 invoke
 ├── main.tsx / App.tsx           # 入口;侧边导航 + 路由(react-router)
 ├── config/
@@ -378,9 +402,7 @@ src/
 │   ├── ui/                      # shadcn 生成组件
 │   ├── layout/                  # Sidebar / TopBar / PageHeader / AgentTabStrip
 │   ├── connect/                 # ConnectFlowDialog（统一连接流程 UI + 状态机）
-│   └── shared/                  # SecretInput / SwitchConfirmDialog / EmptyState / ...
-├── hooks/                       # 或 lib/hooks/
-├── i18n/locales/                # 如启用 i18n
+│   └── shared/                  # SecretInput / EmptyState / ...
 └── styles/
 ```
 
@@ -391,7 +413,7 @@ src/
 | `lib/backend/tauri/` | **唯一**允许调用 Tauri `invoke` 的边界 |
 | `lib/backend/current.ts` | 默认生产实现（指向 Tauri adapter） |
 | `dev/mocks/` | 浏览器开发态 mock（backend / 领域 / fixtures） |
-| `test/` | 测试 factories 与 setup（约定见 [testing.md](testing.md)） |
+| `test/` | vitest `setup.ts`（约定见 [testing.md](testing.md)；无 factories/） |
 | `lib/api/` | 兼容 façade：现有页面可继续 import，内部逐步委托到 `lib/backend` |
 | `lib/connect-flow/` | 统一连接流程逻辑层（契约/可行性/fan-out/用途反查） |
 | `components/connect/` | ConnectFlowDialog（统一连接流程 UI + 状态机） |
@@ -419,9 +441,9 @@ src/
 
 - 非 Tauri 运行时调用 Tauri port：`assertTauriRuntime` → 明确 **unavailable**，禁止静默 mock。
 - Usage：生产已接线 `UsageService`（session JSONL 增量采集 + 文件游标）；解析策略全面借鉴 **ccusage**；成本优先日志 `costUSD`，否则查内嵌 `embedded-pricing.json`（**离线快照**，LiteLLM 子集 + 日期别名 + `scripts/pricing/overrides.json`）；估算结果与价表同单位（**USD / 1M tokens**，字段 `costUsd`，**不做汇率换算**）；价表日更靠 `pnpm pricing:update` / `.github/workflows/update-embedded-pricing.yml` 开 PR，**运行时不拉价**；`doctor` 附带 `usageHealth` 分区（CLI ④）；`getAvailability()` → `available`；演示曲线仍仅 `dev:mock`。GUI：`UsageSyncProvider` 按 `usageCollectIntervalMin` 在**前台**定时 `collect`（`0` 仅手动），Dashboard 展示上次/下次同步；后台守护与文件监听见 [ui-design.md §4.6](ui-design.md)。
-- OAuth PKCE：Claude / Codex / Grok 已有 loopback PKCE（`oauth_start` / `wait` / `complete`）；未配置的 Agent 对话框展示 unavailable。演示 OAuth 仍走 `#oauth-flow-dialog` mock。
+- OAuth：Claude / Codex / Grok 已有 loopback PKCE（`oauth_start` / `wait` / `complete`）；另有 device flow 命令（`oauth_device_start` / `oauth_device_poll` / `oauth_device_complete`）。未配置的 Agent 对话框展示 unavailable。演示 OAuth 仍走 `#oauth-flow-dialog` mock。不要抄 OAuth 端点。
 - Dashboard alerts：生产从 doctor 派生 auth/env/update 告警（本地 dismiss）；mock 另有演示样例。
-- 可选产品能力（测速 / 切换撤销 / 备份导出包）由 `Backend.features` 声明；生产默认全 false，UI 必须按 features 隐藏入口，不得依赖用户点了再失败。
+- 可选产品能力由 `Backend.features` 声明；生产：`providerUndoSwitch` / `providerTestLatency` / `accountUndoSwitch` 为 true，`backupExport` 仍为 false。UI 必须按 features 隐藏入口，不得依赖用户点了再失败。
 - 页面与 `lib/api` façade **不得**直接 `import` `@/dev/*`；测试可直接实例化 mock backend。
 - 页面 **不得**用 `isTauriApp()` 在真实/ mock transport 之间分支；能力由 `Backend.features` / typed result / unsupported 表达。
 
@@ -439,7 +461,12 @@ src/
 | 原文件 | 生产 | mock | façade |
 |---|---|---|---|
 | `account.ts` | `lib/backend/tauri/account.ts` | `dev/mocks/account.ts` | `lib/api/account.ts` |
-| `adapter.ts` | `lib/backend/tauri/adapter.ts` | `dev/mocks/adapter.ts` | `lib/api/adapter.ts` |
+| `adapter.ts` | `lib/backend/tauri/adapter.ts` | `dev/mocks/adapter.ts` | `lib/api/adapter.ts`（`apply` 已 deprecated，页面不得再调用；产品写入走 TicketPort） |
+| `tickets` | `lib/backend/tauri/ticket.ts` | `dev/mocks/ticket.ts` | `lib/api/tickets.ts`（plan/bind/unbind） |
+| `catalog` | `lib/backend/tauri/catalog.ts` | `dev/mocks/catalog.ts` | 经 `app/runtime` catalog store；无独立 `lib/api/catalog.ts` |
+| `config` | `lib/backend/tauri/config.ts` | `dev/mocks/config.ts` | `lib/api/config.ts` |
+| `trash` | `lib/backend/tauri/trash.ts` | `dev/mocks/trash.ts` | `lib/api/trash.ts` |
+| `update` | `lib/backend/tauri/update.ts` | `dev/mocks/update.ts` | `lib/api/update.ts` |
 | `agent.ts` | `lib/backend/tauri/agent.ts` | `dev/mocks/agent.ts` | `lib/api/agent.ts` |
 | `backup.ts` | `lib/backend/tauri/backup.ts` | `dev/mocks/backup.ts` | `lib/api/backup.ts` |
 | `chat.ts` | `lib/backend/tauri/chat.ts` | `dev/mocks/chat.ts` | `lib/api/chat.ts` |

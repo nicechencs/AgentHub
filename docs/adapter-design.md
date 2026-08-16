@@ -1,12 +1,13 @@
 # Adapter 页面与本地协议桥接设计
 
 > 用户表面：**Routes / 本机路由**。模块名仍叫 Adapter（`lib/api/adapter`、contracts、Rust `Adapter*` 本轮不改名）。
-> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi / Anthropic / Codex / Grok subscription → Codex/Claude 实验性本地桥接 + Pi 配置同步 + Kimi/OpenAI API → Grok native）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）；Claude/Codex/Grok 订阅 → Pi 的 ② `config_sync` 已开放 experimental bind（写入 `auth.json`，刷新由 Pi 拥有）。Anthropic API Key → Codex、Codex Responses `auth_json` → Claude 与 Grok Chat OAuth → Claude 的 `local_bridge` 已开放 experimental bind。Claude 订阅 → Codex 明确产品不做；Codex App Server 仍关闭；Codex 订阅 → Pi 是 ②，不走本页桥。`local_bridge` 当前由 Tauri `AppState` 进程内托管，本轮不做 sidecar 或自动 refresh。Kimi / Anthropic / Codex / Grok → Claude 发布前仍需实机 dogfood。
+> 状态：**可应用路径已接线（Claude 稳定直连 + Kimi / Anthropic / Codex / Grok subscription → Codex/Claude 实验性本地桥接 + Pi 配置同步 + Kimi/OpenAI API → Grok native）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 bind（写入 `models.json` 对应槽位，凭据只引用）；Claude/Codex/Grok 订阅 → Pi 的 ② `config_sync` 已开放 experimental bind（写入 `auth.json`，刷新由 Pi 拥有）。Anthropic API Key → Codex、Codex Responses `auth_json` → Claude 与 Grok Chat OAuth → Claude 的 `local_bridge` 已开放 experimental bind。Claude 订阅 → Codex 明确产品不做；Codex App Server 仍关闭；Codex 订阅 → Pi 是 ②，不走本页桥。`local_bridge` 当前由 Tauri `AppState` 进程内托管，本轮不做 sidecar 或自动 refresh。Kimi / Anthropic / Codex / Grok → Claude 发布前仍需实机 dogfood。
 > 2026-08-15：读者向说明见 [product-decisions.md](product-decisions.md)。实现对象仍是票 / 绑定 / 协议图（[connection-binding-model.md](connection-binding-model.md)）。ConnectFlow 确认步与本机路由解绑已改走 `bind`/`unbind`；内部仍可复用 apply 实现 reshape/bridge 运行时。生成物是绑定的私有 runtime，不是钱包里的新登录。本机路由页终态见 [bridges-page-redesign.md](bridges-page-redesign.md) 与 [ui-design.md](ui-design.md) §4.3.3。
 > 调研日期：2026-08-12（进度同步：2026-08-12）
 > 关联文档：[product-decisions.md](product-decisions.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
-> 2026-08-14 同步：Hub 重构 Phase 1 落地（[hub-redesign-plan.md](hub-redesign-plan.md)）——Dashboard Agent 卡片与 Connections 行新增统一连接流程 `ConnectFlowDialog`（复用同一 `lib/api/adapter` 门面与 `plan.canApply` 门禁）。创建绑定不在本页。
-> 2026-08-15 同步：本机路由页终态已落地——规范路由当时为 `/bridges`，侧栏英文 Bridges（有桥才出现），页标题「本机路由」，目录 `src/pages/bridges/`。
+> 2026-08-14 同步：Hub 重构 Phase 1 落地（[hub-redesign-plan.md](hub-redesign-plan.md)）——Dashboard Agent 卡片与 Connections 行新增统一连接流程 `ConnectFlowDialog`。创建绑定不在本页。
+> 2026-08-16 同步：产品写入口径统一——创建绑定只走 Hub：`lib/api/tickets` 的 `planTicket` / `bindTicket` / `unbindTicket`（`TicketPort`）。`lib/api/adapter` 只服务只读分析/预览与桥运行时（start/stop/status）。`applyAdapter` 已 `@deprecated`，页面不得调用。
+> 2026-08-15 同步：本机路由页终态已落地——当时规范路由为 `/bridges`，侧栏英文曾用 Bridges。2026-08-16 起用户表面是 **Routes / `/routes`**；目录仍为 `src/pages/bridges/`。
 > 2026-08-16 同步：用户表面改为 **Routes / 本机路由**，规范路由 `/routes`；`/adapter`、`/router`、`/bridges` 永久跳过来。目录仍为 `src/pages/bridges/`。
 
 ## 0. 当前落地状态
@@ -14,24 +15,30 @@
 | 范围 | 状态 | 当前边界 |
 |---|---|---|
 | 规则分析与预览 | ✅ | contracts、mock、`analyze`、`plan`、ConnectFlowDialog 已接线；本机路由页只列 `local_bridge` 运行时（含孤立）；limitations 与 `canApply` 对齐真实能力 |
-| 稳定规则应用 | ✅ | Kimi Code 会员 Provider → Claude Code `native_endpoint` 可 apply；finalize 失败会回滚 live/current；返回值脱敏 |
-| 其它直连 / 配置同步规则 | ✅ | Kimi 会员 / Anthropic API Key → Pi `config_sync` 可 apply；未显式 `canApply=true` 的组合一律不可写 |
+| 稳定规则应用 | ✅ | Kimi Code 会员 Provider → Claude Code `native_endpoint` 可 `bindTicket`；finalize 失败会回滚 live/current；返回值脱敏 |
+| 其它直连 / 配置同步规则 | ✅ | Kimi 会员 / Anthropic API Key → Pi `config_sync` 可 bind；未显式 `canApply=true` 的组合一律不可写 |
 | Bridge core | ✅ | `BridgeRuntimeHost`（per-profile gate、admission、超时与 cancellation-safe drain）、Responses ↔ Chat / Responses ↔ Anthropic Messages 协议与 fixtures |
-| Bridge 产品接线 | ✅ | Codex `local_bridge` 的 `canApply`、Tauri apply/start/stop/status、健康检查、失败补偿、凭证轮转 stop→restart、端口 rebind、opt-in auto-start 恢复、退出 drain；UI 已拆分 wire/model/components |
+| Bridge 产品接线 | ✅ | Codex `local_bridge` 的 `canApply`、产品写入走 `bindTicket`、桥运行时 start/stop/status、健康检查、失败补偿、凭证轮转 stop→restart、端口 rebind、opt-in auto-start 恢复、退出 drain；UI 已拆分 wire/model/components |
 | Bridge 进程边界 | 🎯 已决策 / 未迁移 | 目标为同包用户级 `agenthub-adapterd`；当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有，详细契约见 [Adapter Sidecar 目标架构](adapter-sidecar-design.md) |
 
 这里的“已落地”描述当前工作区状态，不代表相关能力已经随 Release 发布；“已决策”只表示目标架构确定，不代表 sidecar 二进制、IPC 或进程监管已经实现。
 
 ## 1. 结论
 
-Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变：只引用票，不复制凭据，不另建一套账号池，也不是公网/多租户网关。产品分三路（① API 直连 ② 原生订阅 ③ 本机路由），见 [product-decisions.md](product-decisions.md)；本页的桥 runtime 只服务 ③。目标对象是 **绑定**：`plan(票, Agent)` 在 native / reshape / bridge / 不可行 中择一，`bind` 写入。前端写入入口已是 `bind`/`unbind`；mock/内部仍可复用 apply 生成运行时，见 [connection-binding-model.md](connection-binding-model.md)。
+Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变：只引用票，不复制凭据，不另建一套账号池，也不是公网/多租户网关。产品分三路（① API 直连 ② 原生订阅 ③ 本机路由），见 [product-decisions.md](product-decisions.md)；本页的桥 runtime 只服务 ③。目标对象是 **绑定**：`planTicket(票, Agent)` 在 native / reshape / bridge / 不可行 中择一，`bindTicket` 写入。
+
+**产品写入口径（统一，勿再写分叉）：**
+
+- 创建绑定只走 Hub：`lib/api/tickets` 的 `planTicket` / `bindTicket` / `unbindTicket`（`TicketPort`，独立 port，不塞进 `AdapterPort`）。
+- `lib/api/adapter` 只服务只读分析/预览（`analyze` / `plan` / `listProfiles`）与桥运行时（`startBridge` / `stopBridge` / `getBridgeStatus` / `setBridgeAutoStart`）。
+- `applyAdapter` 已 `@deprecated`，页面不得调用。host 内部仍可复用 apply 实现 reshape/bridge 运行时，见 [connection-binding-model.md](connection-binding-model.md)。
 
 **入口定位（本机路由页终态已落地）**：日常发起绑定走 Hub 对话框，不必打开本页。用户表面是 **Routes / 本机路由**；内部模块仍叫 Adapter。本页只管理 ③ 的本机路由运行时，不再提供选来源→分析→plan→apply 创建区。入口与信息架构见 [bridges-page-redesign.md](bridges-page-redesign.md)、[ui-design.md](ui-design.md) §4.3.3。
 
 - 推荐：Dashboard「连接/切换」、Connections「接到…」→ 同一绑定对话框。
 - 本页：`/routes` 列出全部 `local_bridge` 运行时（含孤立；start/stop/retry、autoStart、详情、解绑走 `unbindTicket`）。`/adapter`、`/router`、`/bridges` 永久跳过来。
 - 侧栏：英文 Routes，有本机路由才出现。Settings → 数据永远有「本机路由」入口。
-- 创建绑定只走 Hub：经 `lib/api/tickets` 的 `bind`；`plan.canApply` 表示现在能写入。目标 UI 见 [ui-design.md §4.3](ui-design.md)。
+- 创建绑定只走 Hub：经 `lib/api/tickets` 的 `planTicket` / `bindTicket` / `unbindTicket`；`plan.canApply` 表示现在能写入。目标 UI 见 [ui-design.md §4.3](ui-design.md)。
 
 一次规划只产生以下四种结果之一（括号内为当前实现名）：
 
@@ -50,7 +57,7 @@ Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变�
 4. **不是 Token 格式互转**：OAuth access/refresh token 不能通过改字段名变成另一家授权。只有目标客户端明确支持同一授权和刷新语义时，才可做配置同步。
 5. **能力要可验证**：兼容性由版本化规则和真实探测共同决定，不依赖页面硬编码的宣传矩阵。
 6. **Provider 不是服务**：Provider/Connection 是持久化配置实体；需要后台运行的是 `BridgeRuntime`。当前由 AgentHub 托盘进程托管，目标迁移到用户级 `agenthub-adapterd`；无论部署形态如何，都不把页面组件、Connections 或 ProviderService 变成长驻 HTTP 服务。
-7. **入口分层，机制不分叉**：日常走 Dashboard / Connections 的 `ConnectFlowDialog`；`/routes` 只管理本机路由运行时，不是日常创建入口。创建/apply 共用 `lib/api/adapter` 与 `plan()`。
+7. **入口分层，机制不分叉**：日常走 Dashboard / Connections 的 `ConnectFlowDialog`（确认步走 `bindTicket`）；`/routes` 只管理本机路由运行时，不是日常创建入口。只读预览可走 `lib/api/adapter` 的 `analyze` / `plan`；写入不得走 `applyAdapter`。
 
 ## 2. 范围与非目标
 
@@ -96,26 +103,18 @@ Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变�
 
 ### 3.2 规则契约
 
-兼容规则至少包含：
+前端**没有**名为 `CompatibilityRule` 的 TypeScript 类型。下列字段是规则文档概念，对应 core 协议图单元格（`domain/protocol_graph/adapter_capability_matrix.rs`），不是 `src/lib/backend/contracts` 里的 TS 类型：
 
-```ts
-type CompatibilityRule = {
-  id: string;
-  sourceProduct: string;
-  credentialKinds: Array<'oauth' | 'api_key'>;
-  sourceProtocols: ProtocolId[];
-  targetAgent: AgentId;
-  targetProtocol: ProtocolId;
-  route: 'config_sync' | 'native_endpoint' | 'local_bridge' | 'unsupported';
-  support: 'stable' | 'experimental' | 'unsupported';
-  minTargetVersion?: string;
-  maxTargetVersion?: string;
-  requiredCapabilities: CapabilityId[];
-  limitations: string[];
-  sourceUrl?: string;
-  verifiedAt: string;
-};
-```
+| 字段 | 含义 |
+|---|---|
+| `id` / `ruleId` | 版本化规则 id，如 `codex-subscription-to-claude-responses-v1` |
+| `sourceProduct` / `credentialKinds` | 来源产品与凭据族 |
+| `sourceProtocols` / `targetAgent` / `targetProtocol` | 上游协议、目标 Agent、目标协议 |
+| `route` | `config_sync` / `native_endpoint` / `local_bridge` / `unsupported` |
+| `support` | `stable` / `experimental` / `unsupported` |
+| `minTargetVersion` / `maxTargetVersion` | 可选版本窗 |
+| `requiredCapabilities` / `limitations` | 能力与已知损失 |
+| `sourceUrl` / `verifiedAt` | 依据与验证日期 |
 
 规则必须来自独立适配文档中的已验证条目，并与分析、计划、执行和测试使用同一版本。页面只展示适用于当前选择的结论；“查看兼容性依据”再显示来源、验证日期和限制，不把完整规则表常驻首屏。
 
@@ -132,7 +131,7 @@ type CompatibilityRule = {
 | Dashboard Agent 卡片 | 「连接/切换」 | `ConnectFlowDialog`（固定目标 Agent） |
 | Connections 行 | 「接到…」 | 绑定对话框（固定票） |
 
-本页只管理 ③ 本机路由运行时：端口、启停、自动恢复、失败详情、解绑。日常创建不在本页。创建绑定只走 `ConnectFlowDialog`，经 `lib/api/adapter`，以 `plan()` 的 route / maturity / canApply / reason 为权威。入口与信息架构见 [bridges-page-redesign.md](bridges-page-redesign.md)、[ui-design.md](ui-design.md) §4.3.3。
+本页只管理 ③ 本机路由运行时：端口、启停、自动恢复、失败详情、解绑。日常创建不在本页。创建绑定只走 `ConnectFlowDialog`，经 `lib/api/tickets` 的 `planTicket` / `bindTicket`，以 plan 的 route / maturity / canApply / reason 为权威。入口与信息架构见 [bridges-page-redesign.md](bridges-page-redesign.md)、[ui-design.md](ui-design.md) §4.3.3。
 
 以下描述本页（`/routes`）自身，不是 `ConnectFlowDialog`：
 
@@ -439,6 +438,8 @@ type AdapterProfile = {
   sourceId: string;
   targetAgentId: AgentId;
   route: 'config_sync' | 'native_endpoint' | 'local_bridge';
+  /** 必填凭据族，与 `route` / `sourceKind` 正交。见 `src/lib/backend/contracts/adapter.ts`。 */
+  mode: 'api' | 'oauth';
   status: 'applying' | 'active' | 'needs_attention';
   ruleId: string;
   ruleVersion: string;
@@ -473,19 +474,29 @@ type AdapterBridgeRuntimeStatus = {
 
 ### 7.2 前端端口
 
-在 `src/lib/backend/contracts/adapter.ts` 增加独立端口，并接入 `Backend.adapter`：
+`TicketPort` 是独立 port（`src/lib/backend/contracts/ticket.ts`），挂在 `Backend.ticket`，**不塞进** `AdapterPort`。产品写入走 `TicketPort.plan` / `bind` / `unbind`（façade：`planTicket` / `bindTicket` / `unbindTicket`）。
+
+`AdapterPort`（`src/lib/backend/contracts/adapter.ts`）只服务只读分析/预览与桥运行时：
 
 ```ts
 export interface AdapterPort {
   analyze(request: AdapterRouteRequest): Promise<AdapterRouteAnalysis>;
   plan(request: AdapterRouteRequest): Promise<AdapterApplyPlan>;
   listProfiles(filter?: AdapterProfileFilter): Promise<AdapterProfile[]>;
+  /** Host-only；产品页面不得调用。façade `applyAdapter` 已 @deprecated。 */
   apply(request: AdapterApplyRequest): Promise<AdapterApplyResult>;
   remove(profileId: string): Promise<void>;
   startBridge(profileId: string): Promise<AdapterBridgeRuntimeStatus>;
   stopBridge(profileId: string): Promise<AdapterBridgeRuntimeStatus>;
   getBridgeStatus(profileId: string): Promise<AdapterBridgeRuntimeStatus>;
   setBridgeAutoStart(profileId: string, autoStart: boolean): Promise<AdapterProfile>;
+}
+
+export interface TicketPort {
+  listWallet(): Promise<TicketWallet>;
+  plan(ticketId: string, targetAgentId: AgentId): Promise<AdapterApplyPlan>;
+  bind(ticketId: string, targetAgentId: AgentId): Promise<BindTicketResult>;
+  unbind(ticketId: string, agentId: AgentId): Promise<void>;
 }
 ```
 
@@ -557,15 +568,15 @@ MVP 不做全文搜索、自动滚动、错误文件下载、方法/路径筛选
 ### Phase 0：规则与预览（已落地）
 
 - contracts、mock、`analyze`、`plan`、来源/目标选择、结果解释和应用预览已接线。
-- 普通 Apply 只开放后端显式 `canApply=true` 的规则；当前写入范围见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。
+- 普通 bind 只开放后端显式 `canApply=true` 的规则；当前写入范围见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。
 - 其它结果仍可用于解释兼容路径，但未显式返回 `canApply=true` 时必须 fail-closed。
-- 未显式 `canApply=true` 的规则不产生写入、不启动本地服务。Pi `config_sync`（Kimi 会员 / Anthropic API Key）已开放 apply。
+- 未显式 `canApply=true` 的规则不产生写入、不启动本地服务。Pi `config_sync`（Kimi 会员 / Anthropic API Key）已开放 bind。
 
 ### Phase 1：首条真实桥接（工作区已接线，发布前待 dogfood）
 
 - core 已有 `BridgeRuntimeHost`、loopback token、实例 start/status/stop/shutdown，以及 OpenAI Responses ↔ Chat Completions / Anthropic Messages 的文本、SSE、工具、用量、停止原因和错误映射 fixtures；Codex Responses → Claude 复用同一 host saga，健康检查只验证 loopback，不访问不存在的 `/models`。
-- Tauri `AppState` 持有 host；controller 已实现 apply/start/stop/status、健康检查、失败补偿、凭证漂移 stop→restart、端口占用 rebind、opt-in auto-start restore；`ExitCoordinator` 负责退出 drain；本机路由页已有对应状态与操作控件。
-- Codex `local_bridge` 已由 route plan 开放 Apply（实验性），规则状态见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。**发布前**仍需实机验收：密钥轮转、端口冲突、长流/工具闭环、托盘退出 drain。清单见 [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md)。
+- Tauri `AppState` 持有 host；`DesktopAdapterControl` 已实现 bind/unbind 与 start/stop/status；健康检查、失败补偿、凭证漂移 stop→restart、端口占用 rebind、opt-in auto-start restore 仍在 controller；`ExitCoordinator` 负责退出 drain；本机路由页已有对应状态与操作控件。
+- Codex `local_bridge` 已由 route plan 开放 experimental bind，规则状态见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵) 与 `codex-subscription-to-claude-responses-v1`。**发布前**仍需实机验收：密钥轮转、端口冲突、长流/工具闭环、托盘退出 drain。清单见 [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md)。
 - 默认 `auto_start=false`；用户可在成功启动后自行打开自动恢复。
 
 ### Phase 2：Claude Code 桥接
@@ -585,7 +596,7 @@ MVP 不做全文搜索、自动滚动、错误文件下载、方法/路径筛选
 
 sidecar 目标已经确认，但不进行 big-bang 重写：
 
-1. **建立进程缝**：把 Tauri controller 中的 `local_bridge` 编排抽成 Tauri-neutral application/control contract，继续使用 in-process host，产品行为不变。
+1. **建立进程缝（已落地）**：`adapter_control` + `DesktopAdapterControl` in-process host，产品行为不变。sidecar 二进制未开始。
 2. **可回滚 sidecar**：新增同包 `agenthub-adapterd`、本地 IPC、单实例、shared/exclusive schema lease 与版本/schema 握手；以内部 rollout mode 二选一启用 in-process 或 sidecar，禁止双 host。
 3. **sidecar 成为唯一 owner**：GUI 只保留 control client，退出 GUI 不再停止 Bridge；完成更新前 running-set 恢复、卸载前 live loopback 解除、后台启动和 CLI 接线后，再删除进程内兼容路径。
 
@@ -665,33 +676,46 @@ src-tauri/src/exit_coordinator.rs           # 当前：统一退出确认、drai
 src-tauri/src/tray.rs                       # 当前：退出动作委托 ExitCoordinator
 
 src/lib/backend/
-├─ contracts/adapter.ts
-└─ tauri/adapter.ts
+├─ contracts/adapter.ts                     # AdapterPort + AdapterProfile.mode
+├─ contracts/ticket.ts                      # TicketPort（独立 port）
+└─ tauri/{adapter,ticket}.ts
 
-src/lib/api/adapter.ts                      # 对话框与本机路由页共用的 apply 门面
+src/lib/api/tickets.ts                      # 产品写入：planTicket / bindTicket / unbindTicket
+src/lib/api/adapter.ts                      # 只读分析/预览 + 桥运行时；applyAdapter 已 @deprecated
+src/lib/bridges-path.ts                     # Routes 路径常量；Sidebar / Settings / Dashboard 共用
 
 src/lib/connect-flow/                       # 已落地：统一连接流程逻辑层
 ├─ types.ts
 ├─ eligibility.ts
 ├─ plan-fanout.ts
 ├─ connection-usage.ts
-└─ default-deps.ts
+├─ reuse-offer.ts
+├─ connect-intent.ts
+└─ default-deps.ts                          # plan/bind 走 tickets，不走 applyAdapter
 
-src/components/connect/                     # 已落地：ConnectFlowDialog + 状态机
+src/components/connect/                     # 已落地：ConnectFlowDialog + 状态机 + 步骤
 ├─ ConnectFlowDialog.tsx
+├─ ConnectFlowSelectStep.tsx
+├─ ConnectFlowPreviewStep.tsx
+├─ ConnectFlowResultStep.tsx
 └─ connect-flow-state.ts
 
 src/pages/dashboard/index.tsx               # 已落地：挂载 ConnectFlowDialog
 src/pages/connections/index.tsx             # 已落地：挂载 ConnectFlowDialog
 
 src/dev/mocks/adapter.ts
-src/pages/bridges/                          # 本机路由运行时运维台，不是日常创建入口
+src/pages/bridges/                          # 本机路由运行时运维台（用户表面 Routes / /routes）
 ├─ index.tsx
 ├─ adapter-model.ts
 ├─ adapter-view-model.ts
+├─ adapter-copy.ts
+├─ adapter-labels.ts
+├─ adapter-resources.ts
+├─ adapter-create-flow.ts
+├─ adapter-components.tsx
 ├─ AdapterProfilesList.tsx
 ├─ AdapterProfileDetailDialog.tsx
 └─ use-bridge-resources.ts
 ```
 
-以上是当前工作区的实际落点。sidecar 目标态预计新增 `crates/agenthub-adapterd`、Tauri-neutral control/application contract 与 `src-tauri` IPC client，均尚未落地，具体边界见 [adapter-sidecar-design.md](adapter-sidecar-design.md)。后续拆分页面组件或扩展协议文件时继续保持 service、runtime、protocol 与 UI 边界，不要求机械照搬最初的建议文件名。
+以上是当前工作区的实际落点。`adapter_control` 契约已在 core + `DesktopAdapterControl`（in-process）落地。sidecar 目标态预计新增 `crates/agenthub-adapterd` 与 `src-tauri` IPC client，**尚未开工**，具体边界见 [adapter-sidecar-design.md](adapter-sidecar-design.md)。后续拆分页面组件或扩展协议文件时继续保持 service、runtime、protocol 与 UI 边界，不要求机械照搬最初的建议文件名。

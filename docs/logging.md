@@ -93,7 +93,7 @@ agenthub-core::logging
 
 CLI 无 `-v` 时：文件用 settings 级别；控制台默认只出 `warn+`，减少表格输出噪声。
 
-可选 L0 `agenthub.toml` 中的 `log_level` 仅作启动定位说明；**业务真源以 L1 settings 为准**（见配置文档 §7）。
+可选 L0 `agenthub.toml` 的 `log_level` 为**契约预留 / 当前未实现**（全仓无读取代码）；L0 现行只有 `--data-dir` 与 `AGENTHUB_HOME`。**业务真源以 L1 settings 为准**（见配置文档 §7）。
 
 ---
 
@@ -212,7 +212,7 @@ agenthub -v doctor            # 本次进程 debug（文件 + stderr）
 | 按日文件 + `log_retention_days` 启动清理 | **已落地** |
 | settings / `config get|set`：`log_level`、`log_retention_days` | **已落地**（下次启动生效） |
 | `targets` + `log_app_error*` / `log_*` | **已落地** |
-| core 单测：parse/purge/load_log_prefs/settings 校验 | **已落地** |
+| core 单测：parse/purge/load_log_prefs/settings 校验 | 测试仍内嵌于 `logging/mod.rs`（历史遗留，与 [testing.md](testing.md) 分文件约定不一致） |
 | GUI settings commands + Settings 数据页日志项 | **已落地** |
 | 关键路径埋点（boot、settings、部分 service/CLI/GUI） | **P0 已落地** |
 | detect 消防日志（`core.detect`：PATH / well-known / version probe / PS 双版本 notes） | **已落地** |
