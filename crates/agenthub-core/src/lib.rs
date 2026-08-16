@@ -1,6 +1,7 @@
 //! agenthub-core — shared business logic for GUI and CLI.
 //! No Tauri dependency.
 
+pub mod adapter_control;
 pub mod adapters;
 pub mod bridge;
 pub mod catalog;

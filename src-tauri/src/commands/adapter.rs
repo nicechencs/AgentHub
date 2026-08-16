@@ -1,17 +1,18 @@
-//! Read-only Adapter route analysis and plan commands.
+//! Read-only Adapter route analysis and plan commands + thin control delegates.
+//!
+//! Mutation / local_bridge lifecycle goes through
+//! [`agenthub_core::adapter_control::AdapterControl`] (desktop host impl).
 
+use agenthub_core::adapter_control::AdapterControl;
 use agenthub_core::models::{
     ticket_id, AdapterApplyPlan, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind,
-    TicketBinding, TicketBindingRoute, TicketPlanRequest, TicketUnbindRequest, TicketWallet,
+    TicketBinding, TicketBindingRoute, TicketPlanRequest, TicketWallet,
 };
-use agenthub_core::services::ticket_binding_from_apply;
 use tauri::State;
 
-use crate::adapter_bridge_controller::{
-    apply_local_bridge, local_bridge_status, remove_adapter_with_bridge_cleanup,
-    set_local_bridge_auto_start, start_local_bridge, stop_local_bridge, AdapterBridgeStatusDto,
-};
+use crate::adapter_bridge_controller::AdapterBridgeStatusDto;
+use crate::adapter_control_host::apply_result_from_binding;
 use crate::commands::{
     adapter_error_from_string, map_err_string, parse_agent, with_hub_blocking, GuiError,
 };
@@ -138,15 +139,12 @@ pub async fn bind_ticket(
     ticket_id: String,
     target_agent_id: String,
 ) -> Result<TicketBinding, GuiError> {
-    bind_ticket_inner(
-        state.hub_arc().map_err(adapter_error_from_string)?,
-        state.bridge_host(),
-        state.bridge_saga_coordinator(),
-        state.lifecycle_shutdown_barrier(),
-        ticket_id,
-        target_agent_id,
-    )
-    .await
+    let control = state.adapter_control().map_err(adapter_error_from_string)?;
+    let target_agent_id = parse_agent(&target_agent_id).map_err(adapter_error_from_string)?;
+    control
+        .bind(ticket_id, target_agent_id)
+        .await
+        .map_err(adapter_error_from_string)
 }
 
 /// Unbind a ticket from an Agent. Stops a bridge first, then restores previous
@@ -157,15 +155,12 @@ pub async fn unbind_ticket(
     ticket_id: String,
     agent_id: String,
 ) -> Result<(), GuiError> {
-    unbind_ticket_inner(
-        state.hub_arc().map_err(adapter_error_from_string)?,
-        state.bridge_host(),
-        state.bridge_saga_coordinator(),
-        state.lifecycle_shutdown_barrier(),
-        ticket_id,
-        agent_id,
-    )
-    .await
+    let control = state.adapter_control().map_err(adapter_error_from_string)?;
+    let agent_id = parse_agent(&agent_id).map_err(adapter_error_from_string)?;
+    control
+        .unbind(ticket_id, agent_id)
+        .await
+        .map_err(adapter_error_from_string)
 }
 
 /// Thin compatibility delegate to [`bind_ticket`]. Prefer bind as the write API.
@@ -180,15 +175,12 @@ pub async fn apply_adapter(
 ) -> Result<AdapterApplyResult, GuiError> {
     let source_kind_parsed = parse_source_kind(&source_kind).map_err(adapter_error_from_string)?;
     let ticket = ticket_id(source_kind_parsed, &source_id);
-    let binding = bind_ticket_inner(
-        state.hub_arc().map_err(adapter_error_from_string)?,
-        state.bridge_host(),
-        state.bridge_saga_coordinator(),
-        state.lifecycle_shutdown_barrier(),
-        ticket,
-        target_agent_id,
-    )
-    .await?;
+    let control = state.adapter_control().map_err(adapter_error_from_string)?;
+    let target_agent_id = parse_agent(&target_agent_id).map_err(adapter_error_from_string)?;
+    let binding = control
+        .bind(ticket, target_agent_id)
+        .await
+        .map_err(adapter_error_from_string)?;
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     with_hub_blocking(hub, move |hub| apply_result_from_binding(hub, &binding))
         .await
@@ -201,15 +193,12 @@ pub async fn start_adapter_bridge(
     state: State<'_, AppState>,
     profile_id: String,
 ) -> Result<AdapterBridgeStatusDto, GuiError> {
-    start_local_bridge(
-        state.hub_arc().map_err(adapter_error_from_string)?,
-        state.bridge_host(),
-        state.bridge_saga_coordinator(),
-        state.lifecycle_shutdown_barrier(),
-        profile_id,
-    )
-    .await
-    .map_err(adapter_error_from_string)
+    state
+        .adapter_control()
+        .map_err(adapter_error_from_string)?
+        .start_bridge(profile_id)
+        .await
+        .map_err(adapter_error_from_string)
 }
 
 /// Stop one local bridge. Calling stop for an already-stopped profile is safe.
@@ -218,15 +207,12 @@ pub async fn stop_adapter_bridge(
     state: State<'_, AppState>,
     profile_id: String,
 ) -> Result<AdapterBridgeStatusDto, GuiError> {
-    stop_local_bridge(
-        state.hub_arc().map_err(adapter_error_from_string)?,
-        state.bridge_host(),
-        state.bridge_saga_coordinator(),
-        state.lifecycle_shutdown_barrier(),
-        profile_id,
-    )
-    .await
-    .map_err(adapter_error_from_string)
+    state
+        .adapter_control()
+        .map_err(adapter_error_from_string)?
+        .stop_bridge(profile_id)
+        .await
+        .map_err(adapter_error_from_string)
 }
 
 /// Get a credential-free local listener state for one bridge profile.
@@ -235,13 +221,12 @@ pub async fn get_adapter_bridge_status(
     state: State<'_, AppState>,
     profile_id: String,
 ) -> Result<AdapterBridgeStatusDto, GuiError> {
-    local_bridge_status(
-        state.hub_arc().map_err(adapter_error_from_string)?,
-        state.bridge_host(),
-        profile_id,
-    )
-    .await
-    .map_err(adapter_error_from_string)
+    state
+        .adapter_control()
+        .map_err(adapter_error_from_string)?
+        .bridge_status(profile_id)
+        .await
+        .map_err(adapter_error_from_string)
 }
 
 /// Enable or disable background restore for an existing local bridge.
@@ -251,13 +236,12 @@ pub async fn set_adapter_bridge_auto_start(
     profile_id: String,
     auto_start: bool,
 ) -> Result<AdapterProfile, GuiError> {
-    set_local_bridge_auto_start(
-        state.hub_arc().map_err(adapter_error_from_string)?,
-        profile_id,
-        auto_start,
-    )
-    .await
-    .map_err(adapter_error_from_string)
+    state
+        .adapter_control()
+        .map_err(adapter_error_from_string)?
+        .set_auto_start(profile_id, auto_start)
+        .await
+        .map_err(adapter_error_from_string)
 }
 
 /// Remove an adapter profile and its generated provider when it is not current.
@@ -266,19 +250,16 @@ pub async fn remove_adapter(
     state: State<'_, AppState>,
     profile_id: String,
 ) -> Result<(), GuiError> {
-    remove_adapter_with_bridge_cleanup(
-        state.hub_arc().map_err(adapter_error_from_string)?,
-        state.bridge_host(),
-        state.bridge_saga_coordinator(),
-        state.lifecycle_shutdown_barrier(),
-        profile_id,
-    )
-    .await
-    .map_err(adapter_error_from_string)
+    state
+        .adapter_control()
+        .map_err(adapter_error_from_string)?
+        .remove(profile_id)
+        .await
+        .map_err(adapter_error_from_string)
 }
 
 // ---------------------------------------------------------------------------
-// Testable inner implementations (take &AgentHub, no Tauri State)
+// Testable helpers (no Tauri State)
 // ---------------------------------------------------------------------------
 
 fn list_adapter_profiles_inner(
@@ -303,149 +284,6 @@ fn list_adapter_profiles_inner(
             ..AdapterProfileFilter::default()
         })
         .map_err(|err| map_err_string("list_adapter_profiles", err))
-}
-
-async fn bind_ticket_inner(
-    hub: std::sync::Arc<agenthub_core::AgentHub>,
-    host: std::sync::Arc<agenthub_core::bridge::BridgeRuntimeHost>,
-    coordinator: std::sync::Arc<crate::adapter_bridge_controller::AdapterBridgeSagaCoordinator>,
-    lifecycle_barrier: std::sync::Arc<crate::exit_coordinator::LifecycleShutdownBarrier>,
-    ticket_id: String,
-    target_agent_id: String,
-) -> Result<TicketBinding, GuiError> {
-    let target_agent_parsed = parse_agent(&target_agent_id).map_err(adapter_error_from_string)?;
-    let (source_kind, source_id) = {
-        let hub = hub.clone();
-        let ticket_id = ticket_id.clone();
-        with_hub_blocking(hub, move |hub| {
-            hub.tickets
-                .parse_bindable_ticket(&ticket_id)
-                .map_err(|err| map_err_string("bind_ticket", err))
-        })
-        .await
-        .map_err(adapter_error_from_string)?
-    };
-    let plan = {
-        let hub = hub.clone();
-        let ticket_id = ticket_id.clone();
-        with_hub_blocking(hub, move |hub| {
-            hub.tickets
-                .plan(&TicketPlanRequest {
-                    ticket_id,
-                    target_agent_id: target_agent_parsed,
-                })
-                .map_err(|err| map_err_string("bind_ticket_plan", err))
-        })
-        .await
-        .map_err(adapter_error_from_string)?
-    };
-    if !plan.can_apply {
-        return Err(adapter_error_from_string(plan.reason));
-    }
-    if plan.analysis.route == AdapterRoute::LocalBridge {
-        let result = apply_local_bridge(
-            hub,
-            host,
-            coordinator,
-            lifecycle_barrier,
-            agenthub_core::services::AdapterBridgePrepareRequest {
-                source_kind,
-                source_id,
-                target_agent_id: target_agent_parsed,
-                auto_start: false,
-            },
-        )
-        .await
-        .map_err(adapter_error_from_string)?;
-        return Ok(ticket_binding_from_apply(&ticket_id, &result));
-    }
-    let _target_guard = coordinator.lock_target(target_agent_parsed).await;
-    with_hub_blocking(hub, move |hub| {
-        hub.ticket_bind
-            .bind(&TicketPlanRequest {
-                ticket_id,
-                target_agent_id: target_agent_parsed,
-            })
-            .map_err(|err| map_err_string("bind_ticket", err))
-    })
-    .await
-    .map_err(adapter_error_from_string)
-}
-
-async fn unbind_ticket_inner(
-    hub: std::sync::Arc<agenthub_core::AgentHub>,
-    host: std::sync::Arc<agenthub_core::bridge::BridgeRuntimeHost>,
-    coordinator: std::sync::Arc<crate::adapter_bridge_controller::AdapterBridgeSagaCoordinator>,
-    lifecycle_barrier: std::sync::Arc<crate::exit_coordinator::LifecycleShutdownBarrier>,
-    ticket_id: String,
-    agent_id: String,
-) -> Result<(), GuiError> {
-    let agent_parsed = parse_agent(&agent_id).map_err(adapter_error_from_string)?;
-    let (source_kind, source_id) =
-        agenthub_core::models::parse_ticket_id(&ticket_id).map_err(adapter_error_from_string)?;
-    let profile = {
-        let hub = hub.clone();
-        let source_id = source_id.clone();
-        with_hub_blocking(hub, move |hub| {
-            hub.adapter_apply
-                .list(Some(source_kind), Some(&source_id), Some(agent_parsed))
-                .map_err(|err| map_err_string("unbind_ticket", err))
-                .map(|mut profiles| profiles.pop())
-        })
-        .await
-        .map_err(adapter_error_from_string)?
-    };
-    if let Some(profile) = profile.as_ref() {
-        if profile.route == AdapterRoute::LocalBridge {
-            stop_local_bridge(
-                hub.clone(),
-                host,
-                coordinator.clone(),
-                lifecycle_barrier,
-                profile.id.clone(),
-            )
-            .await
-            .map_err(adapter_error_from_string)?;
-        }
-        let _target_guard = coordinator.lock_target(profile.target_agent_id).await;
-    }
-    with_hub_blocking(hub, move |hub| {
-        hub.ticket_bind
-            .unbind(&TicketUnbindRequest {
-                ticket_id,
-                agent_id: agent_parsed,
-            })
-            .map_err(|err| map_err_string("unbind_ticket", err))
-    })
-    .await
-    .map_err(adapter_error_from_string)
-}
-
-fn apply_result_from_binding(
-    hub: &agenthub_core::AgentHub,
-    binding: &TicketBinding,
-) -> Result<AdapterApplyResult, String> {
-    let profile_id = binding.profile_id.as_deref().ok_or_else(|| {
-        "bind did not persist an adapter profile [adapter.profile_missing]".to_string()
-    })?;
-    let profile = hub
-        .adapter_apply
-        .list(None, None, Some(binding.agent_id))
-        .map_err(|err| map_err_string("apply_adapter", err))?
-        .into_iter()
-        .find(|profile| profile.id == profile_id)
-        .ok_or_else(|| format!("adapter profile not found: {profile_id}"))?;
-    let provider_id = profile.generated_provider_id.clone().ok_or_else(|| {
-        "bind did not persist a generated provider [adapter.provider_missing]".to_string()
-    })?;
-    let provider = hub
-        .providers
-        .get(&provider_id, Some(binding.agent_id))
-        .map_err(|err| map_err_string("apply_adapter", err))?;
-    Ok(AdapterApplyResult {
-        profile,
-        provider: provider.redacted(),
-    })
 }
 
 fn parse_source_kind(source_kind: &str) -> Result<AdapterSourceKind, String> {
