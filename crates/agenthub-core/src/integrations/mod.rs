@@ -96,3 +96,7 @@ pub fn production_integrations() -> &'static ProductionIntegrations {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "toml_provider_tests.rs"]
+mod toml_provider_tests;

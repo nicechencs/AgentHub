@@ -336,19 +336,7 @@ fn extract_settings_openai_api_key(raw: &Value) -> Option<String> {
 
 /// Write API-key mode auth.json. Replaces OAuth blob.
 fn write_codex_api_key_auth(path: &Path, api_key: &str) -> Result<()> {
-    let body = json!({ "OPENAI_API_KEY": api_key });
-    let mut bytes = serde_json::to_vec_pretty(&body)?;
-    bytes.push(b'\n');
-    atomic_write(path, &bytes)?;
-    let written = std::fs::read_to_string(path)?;
-    let parsed: Value = serde_json::from_str(&written)?;
-    match parsed.get("OPENAI_API_KEY").and_then(|v| v.as_str()) {
-        Some(v) if v == api_key => Ok(()),
-        _ => Err(AppError::message(
-            "provider.verify",
-            "Codex auth.json OPENAI_API_KEY verification failed after write",
-        )),
-    }
+    crate::integrations::agents::codex::write_api_key_auth(path, api_key)
 }
 
 /// When switching to official OAuth, remove API-key auth preference left by provider mode.

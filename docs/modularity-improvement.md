@@ -179,10 +179,11 @@ platform/{detection,skills,agent_catalog,lifecycle,config/dsh} → adapters
 
 #### P0-2 配置写路径收口（有 projector 的 Agent）
 
-- **问题**：`write_config` 与 projector 双轨；`platform/config` → `adapters::dsh` 反向依赖。
-- **建议**：Claude/Codex/Kimi/Grok/Dsh 的 live apply 只走 projector；adapter `write_config` 变薄委托。共享 YAML/JSON helpers 下沉到 `platform/config/sources/<id>/`。
+- **状态（2026-08-16）**：整块 apply 语义统一仍暂缓。已做最小切口：Codex/Kimi/Grok 的 provider-managed TOML 键与 Codex `auth.json` 写入收成单一真源（`integrations/agents/<key>/managed.rs`），双轨引用同一常量；契约测试断言 projector 写入的 native key ⊆ managed keys。`platform/config` 反向 import `adapters` 已随 P2-1 消失。
+- **问题（剩余）**：`write_config` 整表替换与 projector 逐字段 merge 语义仍不同。
+- **建议（后续，勿整块当 P0）**：live apply 只走 projector 仍是大改，单独排期。
 - **风险**：Provider envelope 与 schema 字段映射。
-- **验收**：provider switch 与 GenericConfigForm 走同一 apply；`rg 'use crate::adapters::' platform/config` 为空。现有 provider/config 测试全绿。
+- **验收（本切口）**：改一份 managed keys，provider switch 与契约测试同时变；Codex auth 只有一个写入函数。
 
 #### P0-3 产品写入只走 `plan_ticket` / `bind_ticket` / `unbind_ticket`
 

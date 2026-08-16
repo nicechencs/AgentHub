@@ -279,13 +279,7 @@ impl CodexConfigProjector {
     }
 
     fn write_auth(path: &Path, api_key: &str) -> Result<()> {
-        let body = json!({ "OPENAI_API_KEY": api_key });
-        let mut bytes = serde_json::to_vec_pretty(&body)?;
-        bytes.push(b'\n');
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        atomic_write(path, &bytes)
+        super::write_api_key_auth(path, api_key)
     }
 }
 
