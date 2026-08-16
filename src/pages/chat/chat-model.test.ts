@@ -92,7 +92,12 @@ describe('cwdShortName', () => {
     expect(cwdShortName('D:\\projects\\demo\\')).toBe('demo');
     expect(cwdShortName('/home/user/proj/')).toBe('proj');
     expect(cwdShortName('C:\\\\')).toBe('C:');
-    expect(cwdShortName('/')).toBe('未设目录');
+    expect(cwdShortName('C:')).toBe('C:');
+  });
+
+  it('keeps POSIX root as /', () => {
+    expect(cwdShortName('/')).toBe('/');
+    expect(cwdShortName('///')).toBe('/');
   });
 });
 
@@ -205,14 +210,15 @@ describe('newConversationDefaults', () => {
     status('grok', true),
   ];
 
-  it('strips hidden and uninstalled ids, keeps catalog order', () => {
+  it('strips hidden and uninstalled ids, keeps the session agent order', () => {
     const active = conv({
       id: 'a',
-      agentIds: ['kimi', 'codex', 'claude', 'grok'],
+      // grok 在 claude 前：与 catalog 序（claude, grok）可区分
+      agentIds: ['kimi', 'grok', 'codex', 'claude'],
       cwd: '/tmp/app',
     });
     expect(newConversationDefaults(active, agents)).toEqual({
-      agentIds: ['claude', 'grok'],
+      agentIds: ['grok', 'claude'],
       cwd: '/tmp/app',
     });
   });

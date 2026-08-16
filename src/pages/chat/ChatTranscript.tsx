@@ -138,9 +138,22 @@ function ComparisonBar({
   );
 }
 
+function chipStatusLabel(status: ChatMessageStatus): string {
+  if (status === 'running') return '生成中';
+  if (status === 'cancelled') return '已取消';
+  if (status === 'ok') return '成功';
+  return '失败';
+}
+
 function ChipStatus({ status }: { status: ChatMessageStatus }) {
+  const label = chipStatusLabel(status);
   if (status === 'running') {
-    return <Loader2 className="h-3 w-3 animate-spin text-muted" />;
+    return (
+      <span className="inline-flex" aria-label={label}>
+        <Loader2 className="h-3 w-3 animate-spin text-muted" aria-hidden />
+        <span className="sr-only">{label}</span>
+      </span>
+    );
   }
   const tone =
     status === 'ok'
@@ -148,5 +161,9 @@ function ChipStatus({ status }: { status: ChatMessageStatus }) {
       : status === 'failed' || status === 'timeout'
         ? 'bg-danger'
         : 'bg-muted';
-  return <span className={cn('inline-block h-1.5 w-1.5 rounded-full', tone)} />;
+  return (
+    <span className={cn('inline-block h-1.5 w-1.5 rounded-full', tone)} aria-label={label}>
+      <span className="sr-only">{label}</span>
+    </span>
+  );
 }

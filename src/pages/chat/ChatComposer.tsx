@@ -81,12 +81,11 @@ export function ChatComposer({
   const firstBlocker = blockers[0] ?? null;
   const hiddenBlocked = firstBlocker?.kind === 'hiddenAgents' ||
     active.agentIds.some((id) => hiddenIds.has(id));
-  const sendingElsewhere = firstBlocker?.kind === 'sendingElsewhere';
+  const sendingElsewhere = blockers.some((b) => b.kind === 'sendingElsewhere');
   const canSend = Boolean(draft.trim()) && blockers.length === 0 && !sending;
   const pickerIds = AGENT_IDS.filter((id) => {
-    if (installed.get(id) === false) return false;
     if (hiddenIds.has(id)) return active.agentIds.includes(id);
-    return true;
+    return installed.get(id) === true;
   });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 

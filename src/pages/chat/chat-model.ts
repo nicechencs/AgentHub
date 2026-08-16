@@ -2,7 +2,7 @@
  * Chat 页纯函数：会话分组 / 发送前置 / 展示文案。
  * 不 import React、不碰 lib/api。
  */
-import { AGENT_IDS, agentDisplayName } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
 import { processPhaseLabel, type AgentProcessView } from '@/lib/chat-process';
 import type { AgentId, AgentStatus, ChatMessage, ChatMessageStatus, Conversation } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
@@ -34,7 +34,10 @@ export function cwdShortName(cwd: string | null | undefined): string {
   const trimmed = cwd.trim();
   if (!trimmed) return '未设目录';
   const stripped = trimmed.replace(/[\\/]+$/, '');
-  if (!stripped) return '未设目录';
+  if (!stripped) {
+    // POSIX 根 `/`（或 `///`）去尾分隔后为空，仍应显示 `/`
+    return trimmed.includes('/') ? '/' : '未设目录';
+  }
   const parts = stripped.split(/[\\/]/);
   return parts[parts.length - 1] || '未设目录';
 }
@@ -134,11 +137,11 @@ export function newConversationDefaults(
     return { agentIds: fallbackIds, cwd: null };
   }
 
+  // 继承当前会话顺序（agentIds[0] 是 primary），只过滤 hidden / 未安装
   const kept = active.agentIds.filter((id) => !hidden.has(id) && !uninstalled.has(id));
-  const ordered = AGENT_IDS.length > 0 ? AGENT_IDS.filter((id) => kept.includes(id)) : kept;
 
   return {
-    agentIds: ordered.length > 0 ? ordered : fallbackIds,
+    agentIds: kept.length > 0 ? kept : fallbackIds,
     cwd: active.cwd ?? null,
   };
 }

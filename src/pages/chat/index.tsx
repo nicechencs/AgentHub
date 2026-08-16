@@ -24,7 +24,12 @@ export default function ChatPage() {
     );
   }
 
-  if (!page.listLoading && page.conversations.length === 0 && !page.hasUsableAgent) {
+  if (
+    !page.listLoading &&
+    page.conversations.length === 0 &&
+    page.agentsReady &&
+    !page.hasUsableAgent
+  ) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <EmptyState
@@ -58,6 +63,7 @@ export default function ChatPage() {
         onQueryChange={page.setRailQuery}
         activeId={page.activeId}
         sendingConversationId={page.sendingConversationId}
+        agentsReady={page.agentsReady}
         hasUsableAgent={page.hasUsableAgent}
         deleteConfirmId={page.deleteConfirmId}
         onToggleRail={() => page.setRailOpen(false)}

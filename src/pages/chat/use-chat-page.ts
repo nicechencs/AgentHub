@@ -44,7 +44,10 @@ export function useChatPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [agentStatus, setAgentStatus] = useState<AgentStatus[]>([]);
+  /** listAgents 成功后才为 true；失败/未完成时不得把「未知」当成「没有可用 Agent」 */
+  const [agentsReady, setAgentsReady] = useState(false);
   const [providers, setProviders] = useState<Provider[]>([]);
+  const providersGenRef = useRef(0);
   const [error, setError] = useState<unknown>(null);
   /** 会话列表骨架（不再用整页 spinner 挡住消息区） */
   const [listLoading, setListLoading] = useState(true);
@@ -52,6 +55,7 @@ export function useChatPage() {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendingConversationId, setSendingConversationId] = useState<string | null>(null);
+  const sendingConversationIdRef = useRef<string | null>(null);
   const [draft, setDraft] = useState('');
   const [railOpen, setRailOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -94,7 +98,8 @@ export function useChatPage() {
     [providers],
   );
 
-  const hasUsableAgent = agentStatus.some((a) => a.installed && !a.hidden);
+  const hasUsableAgent =
+    agentsReady && agentStatus.some((a) => a.installed && !a.hidden);
 
   const defaultAgents = useCallback((agents: AgentStatus[]): AgentId[] => {
     const installedIds = agents.filter((a) => a.installed && !a.hidden).map((a) => a.agentId);
@@ -114,6 +119,18 @@ export function useChatPage() {
     [defaultAgents],
   );
 
+  const refreshAgents = useCallback(async (): Promise<AgentStatus[]> => {
+    try {
+      const agents = await listAgents();
+      setAgentStatus(agents);
+      setAgentsReady(true);
+      return agents;
+    } catch (e) {
+      setAgentsReady(false);
+      throw e;
+    }
+  }, []);
+
   /**
    * 会话列表优先：不因 listAgents（doctor）阻塞会话渲染。
    * agents 仅在空列表需自动建会话时才 await。
@@ -122,28 +139,28 @@ export function useChatPage() {
     const convs = await listConversations();
     if (convs.length > 0) {
       setConversations(convs);
-      // agent 状态异步填充 picker，不挡列表
-      void listAgents()
-        .then(setAgentStatus)
-        .catch(() => {});
+      // agent 状态异步填充 picker，不挡列表；失败记 ready=false，允许重试
+      void refreshAgents().catch(() => {});
       return convs;
     }
-    const agents = await listAgents();
-    setAgentStatus(agents);
+    const agents = await refreshAgents();
     const ensured = await ensureConversation(convs, agents);
     setConversations(ensured);
     return ensured;
-  }, [ensureConversation]);
+  }, [ensureConversation, refreshAgents]);
 
   const loadMessages = useCallback(async (id: string) => {
     return listChatMessages(id);
   }, []);
 
   const loadProviders = useCallback(async (agentId: AgentId) => {
+    const gen = ++providersGenRef.current;
     try {
       const list = await listProviders(agentId);
+      if (gen !== providersGenRef.current) return;
       setProviders(list);
     } catch {
+      if (gen !== providersGenRef.current) return;
       setProviders([]);
     }
   }, []);
@@ -229,9 +246,11 @@ export function useChatPage() {
 
   useEffect(() => {
     if (!primaryAgent) {
+      providersGenRef.current += 1;
       setProviders([]);
       return;
     }
+    setProviders([]);
     void loadProviders(primaryAgent);
   }, [primaryAgent, loadProviders]);
 
@@ -249,21 +268,28 @@ export function useChatPage() {
 
   const turns = useMemo(() => groupByTurn(messages), [messages]);
 
-  const sendingTitle = useMemo(() => {
-    if (!sendingConversationId) return '';
-    const row = conversations.find((c) => c.id === sendingConversationId);
-    return conversationTitle(row?.title ?? '');
+  const liveSendingConversationId = useMemo(() => {
+    if (!sendingConversationId) return null;
+    return conversations.some((c) => c.id === sendingConversationId)
+      ? sendingConversationId
+      : null;
   }, [conversations, sendingConversationId]);
+
+  const sendingTitle = useMemo(() => {
+    if (!liveSendingConversationId) return '';
+    const row = conversations.find((c) => c.id === liveSendingConversationId);
+    return conversationTitle(row?.title ?? '');
+  }, [conversations, liveSendingConversationId]);
 
   const blockers = useMemo(() => {
     if (!active) return [];
     return sendBlockers({
       conversation: active,
       hiddenIds,
-      sendingConversationId,
+      sendingConversationId: liveSendingConversationId,
       sendingTitle,
     });
-  }, [active, hiddenIds, sendingConversationId, sendingTitle]);
+  }, [active, hiddenIds, liveSendingConversationId, sendingTitle]);
 
   const railGroups = useMemo(() => {
     const filtered = filterConversations(conversations, railQuery);
@@ -303,7 +329,16 @@ export function useChatPage() {
   );
 
   async function handleNewChat() {
-    const defaults = newConversationDefaults(active, agentStatus);
+    let status = agentStatus;
+    if (!agentsReady) {
+      try {
+        status = await refreshAgents();
+      } catch (e) {
+        toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
+        return;
+      }
+    }
+    const defaults = newConversationDefaults(active, status);
     if (defaults.agentIds.length === 0) return;
     try {
       const conv = await createConversation(defaults.agentIds, defaults.cwd);
@@ -320,6 +355,9 @@ export function useChatPage() {
     try {
       if (sendingConversationId === id) {
         await chatCancel(id).catch(() => {});
+        sendingConversationIdRef.current = null;
+        setSending(false);
+        setSendingConversationId(null);
       }
       await deleteConversation(id);
       const rest = conversations.filter((c) => c.id !== id);
@@ -368,7 +406,7 @@ export function useChatPage() {
 
   async function renameTitle(next: string) {
     if (!active) return false;
-    const title = next;
+    const title = next.trim();
     try {
       const updated = await updateConversation(active.id, { title });
       setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
@@ -487,7 +525,7 @@ export function useChatPage() {
     if (sendBlockers({
       conversation: active,
       hiddenIds,
-      sendingConversationId,
+      sendingConversationId: liveSendingConversationId,
       sendingTitle,
     }).length > 0) {
       return;
@@ -495,6 +533,7 @@ export function useChatPage() {
     if (!prompt) return;
 
     const sendConvId = active.id;
+    sendingConversationIdRef.current = sendConvId;
     setSending(true);
     setSendingConversationId(sendConvId);
     if (clearDraft) setDraft('');
@@ -527,8 +566,11 @@ export function useChatPage() {
         if (rows && activeIdRef.current === sendConvId) setMessages(rows);
       }
     } finally {
-      setSending(false);
-      setSendingConversationId(null);
+      if (sendingConversationIdRef.current === sendConvId) {
+        sendingConversationIdRef.current = null;
+        setSending(false);
+        setSendingConversationId(null);
+      }
     }
   }
 
@@ -567,6 +609,7 @@ export function useChatPage() {
   }
 
   function focusConversation(id: string) {
+    if (!conversations.some((c) => c.id === id)) return;
     setActiveId(id);
   }
 
@@ -579,13 +622,14 @@ export function useChatPage() {
     messages,
     turns,
     agentStatus,
+    agentsReady,
     providers,
     error,
     listLoading,
     messagesLoading,
     sending,
     sendingHere,
-    sendingConversationId,
+    sendingConversationId: liveSendingConversationId,
     draft,
     setDraft,
     railOpen,
