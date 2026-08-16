@@ -317,22 +317,23 @@ export function AgentCard({
                   )}
                   {updateUnsupported &&
                     (officialSetupUrl ? (
-                      <button
-                        type="button"
-                        disabled={actionsBusy || hidden}
-                        onClick={openOfficialSetup}
-                        className="cursor-pointer text-xs text-accent underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                        title={`打开官网下载：${officialSetupUrl}`}
-                      >
-                        需官网更新
-                      </button>
+                      <Hint label="打开官网下载">
+                        <button
+                          type="button"
+                          disabled={actionsBusy || hidden}
+                          onClick={openOfficialSetup}
+                          className="cursor-pointer text-xs text-accent underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          需官网更新
+                        </button>
+                      </Hint>
                     ) : (
-                      <span
+                      <Tip
                         className="text-xs text-muted"
-                        title={agent.update?.note ?? '该 Agent 不支持自动更新检测'}
+                        label={agent.update?.note ?? '该 Agent 不支持自动更新检测'}
                       >
                         需官网更新
-                      </span>
+                      </Tip>
                     ))}
                 </>
               ) : cardState === 'env_missing' ? (
