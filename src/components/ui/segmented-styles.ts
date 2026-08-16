@@ -25,13 +25,13 @@ export const segmentedCountClass = 'tabular-nums text-muted';
  * 用 design token，避免页内 amber-* 漂移。
  */
 export const actionCountClass =
-  'rounded-full bg-warning/15 px-1.5 py-0 text-2xs tabular-nums text-warning';
+  'rounded-full bg-warning/15 px-1.5 py-0 text-meta tabular-nums text-warning';
 
 export type SegmentedSize = 'sm' | 'md';
 
 /** 与 sm / md 档位对应的内边距与字号 */
 export function segmentedItemSizeClass(size: SegmentedSize = 'md'): string {
-  return size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-2.5 py-1.5 text-sm';
+  return size === 'sm' ? 'px-2.5 py-1 text-meta' : 'px-2.5 py-1.5 text-body';
 }
 
 export function segmentedItemClass(

@@ -13,7 +13,7 @@ const DropdownMenuSubTrigger = React.forwardRef<
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
     className={cn(
-      'flex cursor-default select-none items-center rounded-btn px-2 py-1.5 text-sm outline-none data-[state=open]:bg-hover focus:bg-hover',
+      'flex cursor-default select-none items-center rounded-btn px-2 py-1.5 text-body outline-none data-[state=open]:bg-hover focus:bg-hover',
       className,
     )}
     {...props}
@@ -57,7 +57,7 @@ const DropdownMenuItem = React.forwardRef<
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      'flex cursor-default select-none items-center gap-2 rounded-btn px-2 py-1.5 text-sm outline-none focus:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+      'flex cursor-default select-none items-center gap-2 rounded-btn px-2 py-1.5 text-body outline-none focus:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
       className,
     )}
     {...props}
@@ -79,7 +79,7 @@ const DropdownMenuLabel = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
-    className={cn('px-2 py-1.5 text-xs font-medium text-muted', className)}
+    className={cn('px-2 py-1.5 text-meta font-medium text-muted', className)}
     {...props}
   />
 ));
@@ -92,7 +92,7 @@ const DropdownMenuCheckboxItem = React.forwardRef<
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
     className={cn(
-      'relative flex cursor-default select-none items-center rounded-btn py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+      'relative flex cursor-default select-none items-center rounded-btn py-1.5 pl-8 pr-2 text-body outline-none focus:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
       className,
     )}
     checked={checked}

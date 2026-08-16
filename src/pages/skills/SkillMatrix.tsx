@@ -322,7 +322,7 @@ export function SkillMatrixLegend({ className }: { className?: string }) {
   ];
 
   return (
-    <div className={cn('text-2xs', className)} role="note" aria-label="技能启用状态图例">
+    <div className={cn('text-meta', className)} role="note" aria-label="技能启用状态图例">
       <button
         type="button"
         className="inline-flex items-center gap-1 text-muted transition-colors hover:text-secondary"
@@ -434,7 +434,7 @@ export function SkillMatrix({
                 />
               </TableHead>
               <TableHead className="relative select-none text-center">
-                <span className="font-mono text-2xs whitespace-nowrap">{sharedRootLabel}</span>
+                <span className="font-mono text-meta whitespace-nowrap">{sharedRootLabel}</span>
                 <ColumnResizeHandle
                   columnKey="shared"
                   label={sharedRootLabel}

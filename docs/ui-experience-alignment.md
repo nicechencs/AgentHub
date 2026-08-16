@@ -58,7 +58,7 @@
 | 气质 | 编辑器工作台：选中即工作 | 流程紧凑、少装饰、状态清楚 | 全局框架已接近桌面工具，**Skills 内容面仍像管理表格 + 说明书** |
 | 颜色 | 近中性灰阶，accent 克制 | 中性 + 少量功能色 | 中性底色合格；**accent 曝光需要收敛，色相暂不构成主矛盾** |
 | 边框 | 极弱分隔，靠底色差 | 细线、少双重描边 | **卡片/表格/Tab 多重 border 叠罗汉** |
-| 字号 | 12–13 列表，UI 标签更小 | 偏紧 | 已有 11–16 阶，**混用与行高不统一** |
+| 字号 | 12–13 列表，UI 标签更小 | 偏紧 | 已收成 title 16 / body 13 / meta 12 |
 | 辅助信息 | Tooltip / 状态栏 / 命令面板 | 短状态、少说教 | **主列长文 + 原生 title + Tip 混用** |
 | 预览/详情 | 侧栏/编辑区与列表强绑定 | 输出区与输入一体 | 侧栏已有，**active 绑定与加载质感不足** |
 
@@ -82,19 +82,17 @@
 
 **深层问题**：文档写了「靠明度分层，不靠边框堆叠」，实现仍是 **panel + border + card + table header bg-subtle** 叠加，分层靠线不靠面。实机确认应先减框、减元信息，再讨论换 accent 色相。
 
-### 3.2 字体与字号（`tailwind.config.ts` + body）
+### 3.2 字体与字号（`src/styles/tokens.ts` `TYPE_SCALE`）
 
-| 阶 | 配置 | 实际使用问题 |
-|----|------|----------------|
-| 2xs | 11px / 1.3 | 路径、角标、图例；**有时用在应可读的次文上** |
-| xs | 12px / 1.4 | tip、表头 |
-| sm | 13px / 1.45 | 设计意图正文；按钮 `text-sm` 实际是 13 |
-| base | 14px | 混用 |
-| lg | 16px | 页标题 |
-| 字体 | system-ui 栈 | 可接受；**缺统一的 UI 数字/路径 mono 规范场景表** |
-| body | 13px | 与 tailwind `text-sm` 对齐尚可 |
+| 标准 | class | 像素 / 行高 | 用途 |
+|------|-------|-------------|------|
+| title | `text-title` | 16 / 1.35 | 页标题、空态主句、指标数字 |
+| body | `text-body` | 13 / 1.45 | 正文、按钮、列表名、段标题（加字重） |
+| meta | `text-meta` | 12 / 1.4 | 次级说明、表头、路径、角标、眉题 |
 
-**问题**：表格 `tableStyles` 用 `text-sm`（13）+ `th text-xs`（12），而多处 badge/说明用 `text-2xs`（11），**同一屏 11/12/13/14 齐飞**，缺少「角色 → 字号」硬映射。
+旧名 `text-lg`/`text-xl`、`text-sm`/`text-base`、`text-xs`/`text-2xs` 是同像素别名，不是第四档。`body` 元素跟 body 档走。
+
+**历史问题（已收敛）**：曾并行 11/12/13/14/16/20 六档；现只保留上表三档。
 
 ### 3.3 边框与圆角
 
@@ -211,16 +209,17 @@ Phase 0 保持现有 primary/secondary/muted 数值，只补 `--text-disabled`�
 
 ### 4.4 字号角色表（强制映射）
 
-| 角色 | 字号 | 行高 | 使用场景 |
-|------|------|------|----------|
-| Display | 16px | 1.35 | 仅页标题（`PageHeader` h1） |
-| Title | **14px** | 1.35 | 预览标题、区块标题 |
-| Body | **13px** | 1.45 | 默认正文、菜单项、按钮 |
-| Label | **12px** | 1.35 | 表头、Tab、Segmented、Toast 描述 |
-| Meta | **11px** | 1.3 | 路径、角标数字、footer 计数 |
-| Code | **12px mono** | 1.4 | 路径、ID、源码 |
+真源：`TYPE_SCALE`（`src/styles/tokens.ts`）。**只许三档**，禁止再加 11 / 14 / 20 或任意 `text-[Npx]`。
 
-**收敛动作**：业务侧少直接写 `text-2xs`；优先 `text-meta` 工具 class 或约定 `text-xs text-muted`。
+| 角色 | class | 字号 | 行高 | 使用场景 |
+|------|-------|------|------|----------|
+| Title | `text-title` | 16px | 1.35 | `PageHeader` h1、空态主句、Dashboard 指标、Markdown 文档 H1 |
+| Body | `text-body` | 13px | 1.45 | 正文、按钮、列表名、`CardTitle` / `PageSection` / Dialog 标题（靠字重区分）、菜单项 |
+| Meta | `text-meta` | 12px | 1.4 | 表头、路径、角标、眉题、Toast 描述、Tooltip、代码/mono |
+
+**别名**（同像素，便于存量 class）：`text-lg`/`text-xl` → title；`text-sm`/`text-base` → body；`text-xs`/`text-2xs` → meta。新代码写语义名。
+
+**字重，不是第四档**：段标题 / 卡标题用 body + `font-medium`/`semibold`，不要为了「看起来像标题」再开 14px。
 
 ### 4.5 字体
 
@@ -374,12 +373,12 @@ checkbox 多选 ⟂ activeKey  // 两套状态，禁止混用
 
 ### 6.4 预览 chrome 收敛
 
-- 标题：skill **显示名**（14/13 semibold）。  
+- 标题：skill **显示名**（body 档 + semibold）。  
 - 路径：默认 **不占第二行主视线**；放 footer 或 title tip。  
 - 来源：header 用短 meta「共享库」或 Agent 名，保证跨筛选后仍知道当前预览对象来自哪里。
 - 模式切换：segment 高度 24–28，与全站 Segmented 统一。  
 - 收起：仅一个 icon 按钮（PanelRightClose），tooltip「收起预览」。
-- `MarkdownView variant="document"`：H1 20px、H2 16px、H3 14px，正文 13px；首个标题上边距为 0。不得直接沿用库默认的大号 GitHub README 排版。
+- `MarkdownView variant="document"`：H1=`text-title`（16），H2–H4/正文=`text-body`（13），code/pre=`text-meta`（12）；首个标题上边距为 0。不得直接沿用库默认的大号 GitHub README 排版。
 
 ### 6.5 键盘与焦点（Phase 1 最小闭环）
 

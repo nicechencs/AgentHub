@@ -12,20 +12,20 @@ import { cn } from '@/lib/utils';
  * 业务表只选 `TableShell variant`；表头/行/单元格密度由 Context 自动套用。
  */
 export const tableStyles = {
-  table: 'w-full border-collapse text-sm',
+  table: 'w-full border-collapse text-body',
   theadRow: 'border-b border-border bg-subtle text-left',
-  th: 'px-3 py-2 text-xs font-medium text-muted',
+  th: 'px-3 py-2 text-meta font-medium text-muted',
   tr: 'border-t border-border/50 last:border-0 hover:bg-hover',
   trSelected: 'bg-hover/40',
   trActive: 'bg-active hover:bg-active',
   theadRowWorkbench: 'border-b border-border/70 bg-subtle/50 text-left',
   trWorkbench:
     'border-t border-border/40 last:border-0 hover:bg-hover data-[active=true]:bg-active data-[active=true]:hover:bg-active',
-  thWorkbench: 'px-3 py-2 text-xs font-medium text-muted',
+  thWorkbench: 'px-3 py-2 text-meta font-medium text-muted',
   tdWorkbench: 'px-3 py-2',
   td: 'px-3 py-2',
   footer:
-    'flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2 text-xs text-muted',
+    'flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2 text-meta text-muted',
   resizeHandle:
     'absolute right-0 top-0 z-10 h-full w-1.5 cursor-col-resize touch-none hover:bg-accent/40 active:bg-accent/60',
 } as const;

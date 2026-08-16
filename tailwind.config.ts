@@ -1,8 +1,11 @@
 import type { Config } from 'tailwindcss';
+import { buildTailwindFontSize } from './src/styles/tokens';
 
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
+    // 覆盖默认 2xl/3xl… 阶，只保留 TYPE_SCALE 三档 + 同像素别名
+    fontSize: buildTailwindFontSize(),
     extend: {
       colors: {
         // 设计 token 真源：src/styles/tokens.ts → CSS 变量（docs/ui-design.md §2）
@@ -52,15 +55,6 @@ export default {
         sm: 'var(--shadow-sm)',
         md: 'var(--shadow-md)',
         lg: 'var(--shadow-lg)',
-      },
-      fontSize: {
-        // 桌面密度:13px 正文主力,12px 次级,14px 区块标题,16px 页标题
-        '2xs': ['11px', { lineHeight: '1.3' }],
-        xs: ['12px', { lineHeight: '1.4' }],
-        sm: ['13px', { lineHeight: '1.45' }],
-        base: ['14px', { lineHeight: '1.5' }],
-        lg: ['16px', { lineHeight: '1.5' }],
-        xl: ['20px', { lineHeight: '1.3' }],
       },
       fontFamily: {
         sans: [

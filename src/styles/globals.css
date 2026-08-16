@@ -19,8 +19,8 @@ body {
   background-color: var(--bg-canvas);
   color: var(--text-primary);
   @apply bg-canvas text-primary font-sans antialiased;
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--font-body-size, 13px);
+  line-height: var(--font-body-leading, 1.45);
 }
 
 ::-webkit-scrollbar {

@@ -928,7 +928,7 @@ function MetricCard({ label, value }: { label: string; value: string }) {
   return (
     <Card className="p-3">
       <p className="text-xs text-muted">{label}</p>
-      <p className="mt-1 text-xl font-semibold tracking-tight">{value}</p>
+      <p className="mt-1 text-title font-semibold tracking-tight">{value}</p>
     </Card>
   );
 }

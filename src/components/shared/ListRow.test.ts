@@ -14,8 +14,8 @@ describe('segmented-styles (shared track family)', () => {
   });
 
   it('sm/md size tokens stay distinct', () => {
-    expect(segmentedItemSizeClass('sm')).toContain('text-xs');
-    expect(segmentedItemSizeClass('md')).toContain('text-sm');
+    expect(segmentedItemSizeClass('sm')).toContain('text-meta');
+    expect(segmentedItemSizeClass('md')).toContain('text-body');
   });
 
   it('count badge is plain muted tabular nums', () => {
@@ -37,7 +37,7 @@ describe('segmented-styles (shared track family)', () => {
     expect(active).toContain('font-medium');
     expect(active).not.toContain('bg-accent');
     expect(inactive).toContain('text-secondary');
-    expect(inactive).toContain('text-xs');
+    expect(inactive).toContain('text-meta');
   });
 });
 

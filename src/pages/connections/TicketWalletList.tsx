@@ -94,7 +94,7 @@ export function TicketDetailPanel({
       </div>
 
       <div>
-        <p className="text-2xs text-muted">正用于</p>
+        <p className="text-meta text-muted">正用于</p>
         {bindingLines.length === 0 ? (
           <p className="mt-1 text-secondary">未绑定任何 Agent</p>
         ) : (
@@ -169,7 +169,7 @@ function TicketRow({
           <Badge variant={ticket.surface === 'unknown' ? 'accent' : 'default'}>
             {ticketSurfaceLabel(ticket.surface)}
           </Badge>
-          <span className="truncate text-2xs text-muted">
+          <span className="truncate text-meta text-muted">
             {agentDisplayName(ticket.agentId)}
           </span>
         </div>
@@ -191,7 +191,7 @@ function TicketRow({
           </Button>
         </div>
       </div>
-      <p className="mt-1 pl-5 text-2xs text-secondary">
+      <p className="mt-1 pl-5 text-meta text-secondary">
         {usageParts.map((part, index) => (
           part.kind === 'bridge' ? (
             <Link
@@ -279,7 +279,7 @@ export function TicketWalletList({
       <DropdownMenuContent align="end" className="min-w-[14rem]">
         {installedAgentIds && installedAgentIds.length > 0 && onPickAddAgent ? (
           <>
-            <div className="px-2 py-1.5 text-2xs text-muted">添加到 Agent</div>
+            <div className="px-2 py-1.5 text-meta text-muted">添加到 Agent</div>
             {installedAgentIds.map((id) => (
               <DropdownMenuItem
                 key={id}
@@ -373,7 +373,7 @@ export function TicketWalletList({
       ) : null}
 
       {wallet ? (
-        <p className="mt-3 text-2xs text-muted">
+        <p className="mt-3 text-meta text-muted">
           钱包 · {tickets.length} 张票
           {highlightAgentId
             ? ` · 已高亮 ${agentDisplayName(highlightAgentId)} 的当前绑定`

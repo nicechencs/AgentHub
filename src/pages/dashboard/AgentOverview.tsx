@@ -131,7 +131,7 @@ export function AgentOverview({
                     </Tip>
                     {view.versionText ? (
                       <Tip
-                        className="min-w-0 truncate text-2xs font-normal text-muted"
+                        className="min-w-0 truncate text-meta font-normal text-muted"
                         label={view.versionText}
                       >
                         {view.versionText}
@@ -151,7 +151,7 @@ export function AgentOverview({
                   </Tip>
                   {viaLabel ? (
                     <Tip className="shrink-0" label={viaLabel}>
-                      <Badge variant="info" className="h-5 max-w-[7rem] truncate px-1.5 text-2xs">
+                      <Badge variant="info" className="h-5 max-w-[7rem] truncate px-1.5 text-meta">
                         {viaLabel}
                       </Badge>
                     </Tip>
@@ -160,7 +160,7 @@ export function AgentOverview({
                     <Tip className="shrink-0" label="管理本机路由">
                       <Badge
                         variant={bridgeBadgeVariant(view.bridge.state)}
-                        className="h-5 cursor-pointer px-1.5 text-2xs"
+                        className="h-5 cursor-pointer px-1.5 text-meta"
                         onClick={(event) => {
                           event.stopPropagation();
                           navigate(bridgesHrefForProfile(view.bridge?.profileId));

@@ -59,21 +59,21 @@ function ProcessStepRow({ step }: { step: ProcessStep }) {
     return (
       <div className="rounded-btn border border-border/80 bg-panel px-2 py-1.5">
         <div className="flex items-center gap-1.5 font-medium text-secondary">
-          <span className="rounded-btn bg-subtle px-1 py-0.5 text-2xs uppercase tracking-wide text-muted">
+          <span className="rounded-btn bg-subtle px-1 py-0.5 text-meta uppercase tracking-wide text-muted">
             tool
           </span>
           <span>{step.name}</span>
           <span className="text-muted">· {step.status}</span>
         </div>
         {input ? (
-          <pre className="mt-1 max-h-16 overflow-auto whitespace-pre-wrap break-all font-mono text-2xs text-muted">
+          <pre className="mt-1 max-h-16 overflow-auto whitespace-pre-wrap break-all font-mono text-meta text-muted">
             {input}
           </pre>
         ) : null}
         {step.result ? (
           <DiffAwarePre
             text={step.result}
-            className="mt-1 max-h-28 overflow-auto rounded-btn bg-subtle/50 px-1.5 py-1 font-mono text-2xs leading-relaxed text-secondary"
+            className="mt-1 max-h-28 overflow-auto rounded-btn bg-subtle/50 px-1.5 py-1 font-mono text-meta leading-relaxed text-secondary"
           />
         ) : null}
       </div>
@@ -82,7 +82,7 @@ function ProcessStepRow({ step }: { step: ProcessStep }) {
   if (step.type === 'thinking') {
     return (
       <div className="rounded-btn border border-dashed border-border/80 px-2 py-1.5 text-muted">
-        <span className="mr-1.5 text-2xs uppercase tracking-wide">thinking</span>
+        <span className="mr-1.5 text-meta uppercase tracking-wide">thinking</span>
         <span className="whitespace-pre-wrap">{step.text}</span>
       </div>
     );
@@ -167,7 +167,7 @@ export function ChatProcessPanel({
         ) : null}
         {view.command ? (
           <Tip
-            className="ml-auto max-w-[45%] truncate font-mono text-2xs text-muted"
+            className="ml-auto max-w-[45%] truncate font-mono text-meta text-muted"
             label={view.command}
           >
             {view.command}
@@ -206,7 +206,7 @@ export function ChatProcessPanel({
         {view.command ? (
           <div>
             <div className="mb-0.5 text-muted">命令</div>
-            <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-btn bg-panel px-2 py-1.5 font-mono text-2xs leading-relaxed text-primary">
+            <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-btn bg-panel px-2 py-1.5 font-mono text-meta leading-relaxed text-primary">
               {view.command}
             </pre>
           </div>
@@ -224,7 +224,7 @@ export function ChatProcessPanel({
         {view.stderr ? (
           <div>
             <div className="mb-0.5 text-muted">stderr</div>
-            <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all rounded-btn bg-panel px-2 py-1.5 font-mono text-2xs leading-relaxed text-danger/90">
+            <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all rounded-btn bg-panel px-2 py-1.5 font-mono text-meta leading-relaxed text-danger/90">
               {view.stderr}
             </pre>
           </div>

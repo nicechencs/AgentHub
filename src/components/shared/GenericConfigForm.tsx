@@ -68,7 +68,7 @@ export function GenericConfigForm({
           return (
             <div
               key={field.key}
-              className="rounded-btn border border-border bg-canvas px-2.5 py-2 text-2xs text-muted"
+              className="rounded-btn border border-border bg-canvas px-2.5 py-2 text-meta text-muted"
             >
               字段 <code className="font-mono">{field.key}</code>（{field.label}）类型不受支持
             </div>
@@ -122,7 +122,7 @@ export function GenericConfigForm({
                   onCheckedChange={(v) => patch(field.key, v)}
                   disabled={fieldDisabled}
                 />
-                <span className="text-2xs text-muted">{field.help ?? ''}</span>
+                <span className="text-meta text-muted">{field.help ?? ''}</span>
               </div>
             ) : null}
             {kind === 'enum' && field.valueType.kind === 'enum' ? (
@@ -144,9 +144,9 @@ export function GenericConfigForm({
               </Select>
             ) : null}
             {field.help && kind !== 'boolean' ? (
-              <span className="text-2xs text-muted">{field.help}</span>
+              <span className="text-meta text-muted">{field.help}</span>
             ) : null}
-            {err ? <span className="text-2xs text-danger">{err}</span> : null}
+            {err ? <span className="text-meta text-danger">{err}</span> : null}
           </label>
         );
       })}

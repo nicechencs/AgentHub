@@ -15,8 +15,8 @@ describe('pageRhythm (docs/ui-design.md §2)', () => {
 
   it('separates page sections from nav eyebrows', () => {
     expect(pageRhythm.section).toBe('mt-6');
-    expect(pageRhythm.sectionEyebrow).toContain('text-2xs');
+    expect(pageRhythm.sectionEyebrow).toContain('text-meta');
     expect(pageRhythm.sectionEyebrow).toContain('uppercase');
-    expect(pageRhythm.sectionEyebrow).not.toContain('text-base');
+    expect(pageRhythm.sectionEyebrow).not.toContain('text-title');
   });
 });

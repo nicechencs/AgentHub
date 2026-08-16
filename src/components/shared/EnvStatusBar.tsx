@@ -138,9 +138,9 @@ export function EnvStatusBar({
                     <>
                       <p className="font-medium">{meta.name}</p>
                       <p className="text-muted">{meta.description}</p>
-                      {r.path && <p className="mt-1 font-mono text-2xs">{r.path}</p>}
+                      {r.path && <p className="mt-1 font-mono text-meta">{r.path}</p>}
                       {r.notes?.map((n) => (
-                        <p key={n} className="mt-0.5 font-mono text-2xs text-secondary">
+                        <p key={n} className="mt-0.5 font-mono text-meta text-secondary">
                           {n}
                         </p>
                       ))}

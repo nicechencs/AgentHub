@@ -48,10 +48,10 @@ export const PageSection = forwardRef<HTMLElement, PageSectionProps>(
         {(title || description) && (
           <div className={pageRhythm.sectionHead}>
             {title ? (
-              <h2 className="text-base font-semibold tracking-tight text-primary">{title}</h2>
+              <h2 className="text-body font-semibold tracking-tight text-primary">{title}</h2>
             ) : null}
             {description ? (
-              <p className={cn(title ? 'mt-0.5' : undefined, 'text-xs text-secondary')}>
+              <p className={cn(title ? 'mt-0.5' : undefined, 'text-meta text-secondary')}>
                 {description}
               </p>
             ) : null}

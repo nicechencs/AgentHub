@@ -36,7 +36,7 @@ function brandHex(agentId: AgentId): string | undefined {
 export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentId; size?: 'sm' | 'md' | 'lg' }) {
   const meta = resolveAgentMeta(agentId);
   const sizeCls = {
-    sm: 'h-6 w-6 text-2xs',
+    sm: 'h-6 w-6 text-meta',
     md: 'h-8 w-8 text-xs',
     lg: 'h-10 w-10 text-sm',
   }[size];

@@ -96,7 +96,7 @@ export function ContextMenuItem({
       role="menuitem"
       disabled={disabled}
       className={cn(
-        'flex w-full cursor-default select-none items-center gap-2 rounded-btn px-2 py-1.5 text-left text-sm outline-none',
+        'flex w-full cursor-default select-none items-center gap-2 rounded-btn px-2 py-1.5 text-left text-body outline-none',
         'hover:bg-hover focus:bg-hover disabled:pointer-events-none disabled:opacity-50',
         className,
       )}

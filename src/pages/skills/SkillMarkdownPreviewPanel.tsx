@@ -174,7 +174,7 @@ export function SkillMarkdownPreviewPanel({
             >
               {name || '技能预览'}
             </h2>
-            <span className="shrink-0 text-2xs text-muted">{originLabel}</span>
+            <span className="shrink-0 text-meta text-muted">{originLabel}</span>
           </div>
         </div>
 
@@ -305,7 +305,7 @@ export function SkillMarkdownPreviewPanel({
 
       <footer className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-1.5">
         <Tip
-          className="min-w-0 flex-1 truncate font-mono text-2xs text-muted"
+          className="min-w-0 flex-1 truncate font-mono text-meta text-muted"
           label={path ?? target.sourceDir ?? undefined}
         >
           {path ?? target.sourceDir ?? target.skillId}
