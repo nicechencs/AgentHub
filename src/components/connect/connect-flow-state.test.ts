@@ -654,7 +654,7 @@ describe('plan 预览人话化', () => {
     }));
     expect(view.routeLabel).toBe('③ 本机协议桥');
     expect(view.startsBridge).toBe(true);
-    expect(view.serviceImpact).toBe('将启动本机桥');
+    expect(view.serviceImpact).toBe('将启动本机路由');
     expect(view.writes.some((line) => line.includes('使用已保存的密钥'))).toBe(true);
     expect(view.portNotes.length).toBeGreaterThan(0);
     expect(view.modelMappings).toEqual(['model：kimi-k2']);

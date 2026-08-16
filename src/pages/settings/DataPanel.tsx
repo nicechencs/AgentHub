@@ -35,9 +35,9 @@ export function DataPanel({
           <Card>
             <CardContent className="divide-y divide-border pt-1">
               <SettingsRow
-                label="本机桥运行时"
+                label="本机路由运行时"
                 description="永远可打开"
-                descriptionTip="管本机转发进程。侧栏只在有桥时出现；这里始终可找回。"
+                descriptionTip="管本机转发进程。侧栏只在有本机路由时出现；这里始终可找回。"
               >
                 <Link
                   to={BRIDGES_PATH}

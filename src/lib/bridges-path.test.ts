@@ -13,7 +13,7 @@ describe('bridges-path', () => {
     expect(bridgesHrefForProfile('a b')).toBe(`${BRIDGES_PATH}?profile=a%20b`);
   });
 
-  it('drops leftover tab= from legacy adapter/router bookmarks', () => {
+  it('drops leftover tab= from legacy adapter/router/bridges bookmarks', () => {
     expect(legacyBridgesRedirectTo('?tab=profiles&profile=p1')).toBe(
       `${BRIDGES_PATH}?profile=p1`,
     );

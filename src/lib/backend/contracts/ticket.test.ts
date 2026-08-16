@@ -222,10 +222,10 @@ describe('ticket / binding display labels', () => {
   it('maps route labels for usage and dashboard', () => {
     expect(bindingRouteUsageLabel('native')).toBe('切换');
     expect(bindingRouteUsageLabel('reshape')).toBe('改配置');
-    expect(bindingRouteUsageLabel('bridge')).toBe('本机桥');
+    expect(bindingRouteUsageLabel('bridge')).toBe('本机路由');
     expect(bindingRouteDashboardLabel('native')).toBe('直连');
     expect(bindingRouteDashboardLabel('reshape')).toBe('改配置');
-    expect(bindingRouteDashboardLabel('bridge')).toBe('本机桥');
+    expect(bindingRouteDashboardLabel('bridge')).toBe('本机路由');
   });
 
   it('maps credential and surface chip labels', () => {

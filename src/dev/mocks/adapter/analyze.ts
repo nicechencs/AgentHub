@@ -91,7 +91,7 @@ export function analyze(
     return {
       route: 'local_bridge',
       support: 'experimental',
-      reason: 'Grok 订阅可通过本机桥接到 Claude Code（Messages → xAI Chat Completions）。',
+      reason: 'Grok 订阅可通过本机路由到 Claude Code（Messages → xAI Chat Completions）。',
       actions: [
         action(
           'requires_local_bridge',

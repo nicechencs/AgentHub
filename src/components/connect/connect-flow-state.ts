@@ -528,7 +528,7 @@ export function describePlanPreview(plan: AdapterApplyPlan): PlanPreviewView {
       ))
     : [];
   if (startsBridge && portNotes.length === 0) {
-    portNotes.push('将启动本机桥并分配端口');
+    portNotes.push('将启动本机路由并分配端口');
   }
   const modelMappings = plan.changes
     .filter((change) => /model|模型/i.test(change.field))
@@ -540,7 +540,7 @@ export function describePlanPreview(plan: AdapterApplyPlan): PlanPreviewView {
   return {
     routeLabel,
     writes,
-    serviceImpact: startsBridge ? '将启动本机桥' : '无需本地服务',
+    serviceImpact: startsBridge ? '将启动本机路由' : '无需本地服务',
     startsBridge,
     portNotes,
     modelMappings,

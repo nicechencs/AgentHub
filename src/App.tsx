@@ -43,7 +43,7 @@ function LegacyBackupsRedirect() {
   return <Navigate to="/settings?tab=backups" replace />;
 }
 
-/** 旧 /adapter、/router 深链兼容 → /bridges；丢弃遗留 ?tab= */
+/** 旧 /adapter、/router、/bridges 深链兼容 → /routes；丢弃遗留 ?tab= */
 function LegacyBridgesRedirect() {
   const { search } = useLocation();
   return <Navigate to={legacyBridgesRedirectTo(search)} replace />;
@@ -88,7 +88,8 @@ export default function App() {
                 <Route path="/chat" element={<ChatPage />} />
                 <Route path="/agents" element={<AgentsPage />} />
                 <Route path="/connections" element={<ConnectionsPage />} />
-                <Route path="/bridges" element={<BridgesPage />} />
+                <Route path="/routes" element={<BridgesPage />} />
+                <Route path="/bridges" element={<LegacyBridgesRedirect />} />
                 <Route path="/adapter" element={<LegacyBridgesRedirect />} />
                 <Route path="/router" element={<LegacyBridgesRedirect />} />
                 {/* 兼容旧路由与深链 */}

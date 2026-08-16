@@ -274,7 +274,7 @@ export default function BridgesPage() {
             {...listProps}
             profiles={[]}
             loading={false}
-            loadError={resourceErrors.profiles ?? new Error('无法读取本机桥')}
+            loadError={resourceErrors.profiles ?? new Error('无法读取本机路由')}
           />
         ) : null}
         {pageView === 'wallet_without_runtime' ? (
@@ -306,7 +306,7 @@ export default function BridgesPage() {
             ) : null}
             {orphan.length > 0 ? (
               <PageSection
-                title="孤立本机桥"
+                title="孤立本机路由"
                 description="来源票或绑定记录已不在。停止或解除仍走同一套命令。"
               >
                 <AdapterProfiles
@@ -354,12 +354,12 @@ export default function BridgesPage() {
           onInteractOutside={(event) => preventBusyConfirmationDismissal(stopDialogBusy, event)}
         >
           <DialogHeader className="shrink-0">
-            <DialogTitle>停止本机桥？</DialogTitle>
+            <DialogTitle>停止本机路由？</DialogTitle>
             <DialogDescription>停止后，该工具将无法通过此转发访问上游。</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
             {stopConfirm && <p className="text-sm text-secondary">{adapterProfileFlowLabel(stopConfirm, entries)}</p>}
-            {stopError ? <AdapterErrorLines error={stopError} fallback="无法停止本机桥" /> : null}
+            {stopError ? <AdapterErrorLines error={stopError} fallback="无法停止本机路由" /> : null}
           </div>
           <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
             <Button variant="secondary" onClick={() => setStopConfirm(null)} disabled={stopDialogBusy}>取消</Button>
@@ -382,15 +382,15 @@ export default function BridgesPage() {
           onInteractOutside={(event) => preventBusyConfirmationDismissal(removeDialogBusy, event)}
         >
           <DialogHeader className="shrink-0">
-            <DialogTitle>解除本机桥绑定？</DialogTitle>
+            <DialogTitle>解除本机路由绑定？</DialogTitle>
             <DialogDescription>
-              会停桥并恢复该工具上一份配置。票仍留在 Connections。
+              会停止本机路由并恢复该工具上一份配置。票仍留在 Connections。
               {removeConfirmIsOrphan ? '来源或绑定记录已不在，仍走同一解除。' : ''}
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
             {removeConfirm && <p className="text-sm text-secondary">{adapterProfileFlowLabel(removeConfirm, entries)}</p>}
-            {removeError ? <AdapterErrorLines error={removeError} fallback="无法解除本机桥绑定" /> : null}
+            {removeError ? <AdapterErrorLines error={removeError} fallback="无法解除本机路由绑定" /> : null}
           </div>
           <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
             <Button variant="secondary" onClick={() => setRemoveConfirm(null)} disabled={removeDialogBusy}>取消</Button>

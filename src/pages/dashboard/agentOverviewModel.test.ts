@@ -328,7 +328,7 @@ describe('buildAgentCardView', () => {
     expect(view.bridge).toEqual({ state: 'unavailable', label: '状态不可用', profileId: null });
   });
 
-  it('forwards the current-bridge profileId for /bridges deep links', () => {
+  it('forwards the current-bridge profileId for /routes deep links', () => {
     const view = buildAgentCardView(claude, status('claude'), {
       bridge: { state: 'running', profileId: 'bridge-1' },
     });

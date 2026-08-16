@@ -32,7 +32,7 @@
 > **身份可以重复出现在列表里；只有「同一张授权票」才去重。  
 > 多枚仍有效的 token = 多条池记录；本机 live 仍只有一个 current。**
 
-跨 Agent 复用时，这里的「授权」就是 [票（Ticket）](connection-binding-model.md)。`agent_id` / 从哪个 Agent 导入只表示出身，**不**决定能不能 `bind` 到别的 Agent，也不决定走 ① 直连、② 原生订阅还是 ③ 本机桥。每个 Agent 的 active 绑定至多一条，对应本节的 live 生效位。见 [product-decisions.md](product-decisions.md)。
+跨 Agent 复用时，这里的「授权」就是 [票（Ticket）](connection-binding-model.md)。`agent_id` / 从哪个 Agent 导入只表示出身，**不**决定能不能 `bind` 到别的 Agent，也不决定走 ① 直连、② 原生订阅还是 ③ 本机路由。每个 Agent 的 active 绑定至多一条，对应本节的 live 生效位。见 [product-decisions.md](product-decisions.md)。
 
 ---
 

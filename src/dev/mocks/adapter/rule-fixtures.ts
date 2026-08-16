@@ -221,7 +221,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     reason: 'Kimi Code 会员可实验写入 Grok 的 OpenAI Chat Completions 配置。',
     evidence: 'compatibility',
     limitations: [
-      '只修改 Grok ~/.grok/config.toml 的官方 TOML provider；不会启动本机桥接。',
+      '只修改 Grok ~/.grok/config.toml 的官方 TOML provider；不会启动本机路由。',
       COMPAT_LIMIT_SECRET,
     ],
     buildActions: () => [
@@ -247,7 +247,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     reason: 'OpenAI API 可实验写入 Grok 的官方 OpenAI Chat Completions 配置。',
     evidence: 'compatibility',
     limitations: [
-      '只修改 Grok ~/.grok/config.toml 的官方 TOML provider；不会启动本机桥接。',
+      '只修改 Grok ~/.grok/config.toml 的官方 TOML provider；不会启动本机路由。',
       COMPAT_LIMIT_SECRET,
     ],
     buildActions: () => [
@@ -285,7 +285,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
       '当前未写入官方 ~/.codex/models.json；使用默认 model 与显式 Provider 配置。',
     ],
     buildActions: () => [
-      action('set_config', 'Codex', 'GLM Coding Plan 官方 Responses Base URL；不会启动本机桥接。', GLM_CODEX_BASE_URL),
+      action('set_config', 'Codex', 'GLM Coding Plan 官方 Responses Base URL；不会启动本机路由。', GLM_CODEX_BASE_URL),
       action('set_config', 'Codex', '使用 Codex Responses wire_api 与默认模型 glm-5.3。', 'wire_api=responses; model=glm-5.3'),
       secretAction('Codex', '从已选 Connection 引用 API Key；不会读取或显示它。'),
     ],
@@ -317,7 +317,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
       '当前未写入官方 ~/.codex/models.json；使用默认 model 与显式 Provider 配置。',
     ],
     buildActions: () => [
-      action('set_config', 'Codex', 'DeepSeek API 官方 Responses Base URL；不会启动本机桥接。', DEEPSEEK_CODEX_BASE_URL),
+      action('set_config', 'Codex', 'DeepSeek API 官方 Responses Base URL；不会启动本机路由。', DEEPSEEK_CODEX_BASE_URL),
       action('set_config', 'Codex', '使用 Codex Responses wire_api 与默认模型 deepseek-v4-flash。', 'wire_api=responses; model=deepseek-v4-flash'),
       secretAction('Codex', '从已选 Connection 引用 API Key；不会读取或显示它。'),
     ],

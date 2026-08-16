@@ -172,7 +172,7 @@ export function ConnectFlowPreviewStep({
       </section>
       <section className="space-y-0.5 text-secondary">
         <p>服务影响：{view.serviceImpact}</p>
-        {view.startsBridge ? <p>将启动本机桥。</p> : <p>不启动本机桥。</p>}
+        {view.startsBridge ? <p>将启动本机路由。</p> : <p>不启动本机路由。</p>}
         {view.portNotes.map((line) => <p key={line}>端口：{line}</p>)}
         {view.modelMappings.length > 0 ? (
           <div>

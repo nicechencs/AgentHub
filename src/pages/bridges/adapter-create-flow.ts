@@ -213,10 +213,10 @@ export function adapterPreviewOutcome(input: {
   }
   if (input.canApply && input.route === 'local_bridge') {
     return {
-      title: '可接入 · 本地桥接',
+      title: '可接入 · 本机路由',
       badgeLabel: '可应用',
       badgeVariant: 'success',
-      nextStep: '确认后创建本机桥接，需保持托盘运行。',
+      nextStep: '确认后创建本机路由，需保持托盘运行。',
     };
   }
   if (input.canApply && (input.route === 'native_endpoint' || input.route === 'config_sync')) {
@@ -247,7 +247,7 @@ export function adapterServiceImpactLabel(
   impact: AdapterApplyPlan['serviceImpact'] | null | undefined,
 ): string {
   return impact === 'requires_local_bridge'
-    ? '本机桥接'
+    ? '本机路由'
     : '无需本地服务';
 }
 

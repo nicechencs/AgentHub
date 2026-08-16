@@ -1,18 +1,19 @@
 # Adapter 页面与本地协议桥接设计
 
-> 用户表面：**Bridges / 本机桥**。模块名仍叫 Adapter（`lib/api/adapter`、contracts、Rust `Adapter*` 本轮不改名）。
+> 用户表面：**Routes / 本机路由**。模块名仍叫 Adapter（`lib/api/adapter`、contracts、Rust `Adapter*` 本轮不改名）。
 > 状态：**可应用路径已接线（Claude 稳定直连 + Kimi / Anthropic / Codex / Grok subscription → Codex/Claude 实验性本地桥接 + Pi 配置同步 + Kimi/OpenAI API → Grok native）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 apply（写入 `models.json` 对应槽位，凭据只引用）；Claude/Codex/Grok 订阅 → Pi 的 ② `config_sync` 已开放 experimental bind（写入 `auth.json`，刷新由 Pi 拥有）。Anthropic API Key → Codex、Codex Responses `auth_json` → Claude 与 Grok Chat OAuth → Claude 的 `local_bridge` 已开放 experimental bind。Claude 订阅 → Codex 明确产品不做；Codex App Server 仍关闭；Codex 订阅 → Pi 是 ②，不走本页桥。`local_bridge` 当前由 Tauri `AppState` 进程内托管，本轮不做 sidecar 或自动 refresh。Kimi / Anthropic / Codex / Grok → Claude 发布前仍需实机 dogfood。
-> 2026-08-15：读者向说明见 [product-decisions.md](product-decisions.md)。实现对象仍是票 / 绑定 / 协议图（[connection-binding-model.md](connection-binding-model.md)）。ConnectFlow 确认步与本机桥解绑已改走 `bind`/`unbind`；内部仍可复用 apply 实现 reshape/bridge 运行时。生成物是绑定的私有 runtime，不是钱包里的新登录。本机桥页终态见 [bridges-page-redesign.md](bridges-page-redesign.md) 与 [ui-design.md](ui-design.md) §4.3.3。
+> 2026-08-15：读者向说明见 [product-decisions.md](product-decisions.md)。实现对象仍是票 / 绑定 / 协议图（[connection-binding-model.md](connection-binding-model.md)）。ConnectFlow 确认步与本机路由解绑已改走 `bind`/`unbind`；内部仍可复用 apply 实现 reshape/bridge 运行时。生成物是绑定的私有 runtime，不是钱包里的新登录。本机路由页终态见 [bridges-page-redesign.md](bridges-page-redesign.md) 与 [ui-design.md](ui-design.md) §4.3.3。
 > 调研日期：2026-08-12（进度同步：2026-08-12）
 > 关联文档：[product-decisions.md](product-decisions.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
 > 2026-08-14 同步：Hub 重构 Phase 1 落地（[hub-redesign-plan.md](hub-redesign-plan.md)）——Dashboard Agent 卡片与 Connections 行新增统一连接流程 `ConnectFlowDialog`（复用同一 `lib/api/adapter` 门面与 `plan.canApply` 门禁）。创建绑定不在本页。
-> 2026-08-15 同步：本机桥页终态已落地——规范路由 `/bridges`，侧栏英文 Bridges（有桥才出现），页标题「本机桥」，目录 `src/pages/bridges/`。
+> 2026-08-15 同步：本机路由页终态已落地——规范路由当时为 `/bridges`，侧栏英文 Bridges（有桥才出现），页标题「本机路由」，目录 `src/pages/bridges/`。
+> 2026-08-16 同步：用户表面改为 **Routes / 本机路由**，规范路由 `/routes`；`/adapter`、`/router`、`/bridges` 永久跳过来。目录仍为 `src/pages/bridges/`。
 
 ## 0. 当前落地状态
 
 | 范围 | 状态 | 当前边界 |
 |---|---|---|
-| 规则分析与预览 | ✅ | contracts、mock、`analyze`、`plan`、ConnectFlowDialog 已接线；本机桥页只列 `local_bridge` 运行时（含孤立）；limitations 与 `canApply` 对齐真实能力 |
+| 规则分析与预览 | ✅ | contracts、mock、`analyze`、`plan`、ConnectFlowDialog 已接线；本机路由页只列 `local_bridge` 运行时（含孤立）；limitations 与 `canApply` 对齐真实能力 |
 | 稳定规则应用 | ✅ | Kimi Code 会员 Provider → Claude Code `native_endpoint` 可 apply；finalize 失败会回滚 live/current；返回值脱敏 |
 | 其它直连 / 配置同步规则 | ✅ | Kimi 会员 / Anthropic API Key → Pi `config_sync` 可 apply；未显式 `canApply=true` 的组合一律不可写 |
 | Bridge core | ✅ | `BridgeRuntimeHost`（per-profile gate、admission、超时与 cancellation-safe drain）、Responses ↔ Chat / Responses ↔ Anthropic Messages 协议与 fixtures |
@@ -23,13 +24,13 @@
 
 ## 1. 结论
 
-Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变：只引用票，不复制凭据，不另建一套账号池，也不是公网/多租户网关。产品分三路（① API 直连 ② 原生订阅 ③ 本机桥），见 [product-decisions.md](product-decisions.md)；本页的桥 runtime 只服务 ③。目标对象是 **绑定**：`plan(票, Agent)` 在 native / reshape / bridge / 不可行 中择一，`bind` 写入。前端写入入口已是 `bind`/`unbind`；mock/内部仍可复用 apply 生成运行时，见 [connection-binding-model.md](connection-binding-model.md)。
+Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变：只引用票，不复制凭据，不另建一套账号池，也不是公网/多租户网关。产品分三路（① API 直连 ② 原生订阅 ③ 本机路由），见 [product-decisions.md](product-decisions.md)；本页的桥 runtime 只服务 ③。目标对象是 **绑定**：`plan(票, Agent)` 在 native / reshape / bridge / 不可行 中择一，`bind` 写入。前端写入入口已是 `bind`/`unbind`；mock/内部仍可复用 apply 生成运行时，见 [connection-binding-model.md](connection-binding-model.md)。
 
-**入口定位（本机桥页终态已落地）**：日常发起绑定走 Hub 对话框，不必打开本页。用户表面是 **Bridges / 本机桥**；内部模块仍叫 Adapter。本页只管理 ③ 的本机桥运行时，不再提供选来源→分析→plan→apply 创建区。入口与信息架构见 [bridges-page-redesign.md](bridges-page-redesign.md)、[ui-design.md](ui-design.md) §4.3.3。
+**入口定位（本机路由页终态已落地）**：日常发起绑定走 Hub 对话框，不必打开本页。用户表面是 **Routes / 本机路由**；内部模块仍叫 Adapter。本页只管理 ③ 的本机路由运行时，不再提供选来源→分析→plan→apply 创建区。入口与信息架构见 [bridges-page-redesign.md](bridges-page-redesign.md)、[ui-design.md](ui-design.md) §4.3.3。
 
 - 推荐：Dashboard「连接/切换」、Connections「接到…」→ 同一绑定对话框。
-- 本页：`/bridges` 列出全部 `local_bridge` 运行时（含孤立；start/stop/retry、autoStart、详情、解绑走 `unbindTicket`）。`/adapter`、`/router` 永久跳过来。
-- 侧栏：英文 Bridges，有桥才出现。Settings → 数据永远有「本机桥」入口。
+- 本页：`/routes` 列出全部 `local_bridge` 运行时（含孤立；start/stop/retry、autoStart、详情、解绑走 `unbindTicket`）。`/adapter`、`/router`、`/bridges` 永久跳过来。
+- 侧栏：英文 Routes，有本机路由才出现。Settings → 数据永远有「本机路由」入口。
 - 创建绑定只走 Hub：经 `lib/api/tickets` 的 `bind`；`plan.canApply` 表示现在能写入。目标 UI 见 [ui-design.md §4.3](ui-design.md)。
 
 一次规划只产生以下四种结果之一（括号内为当前实现名）：
@@ -49,7 +50,7 @@ Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变�
 4. **不是 Token 格式互转**：OAuth access/refresh token 不能通过改字段名变成另一家授权。只有目标客户端明确支持同一授权和刷新语义时，才可做配置同步。
 5. **能力要可验证**：兼容性由版本化规则和真实探测共同决定，不依赖页面硬编码的宣传矩阵。
 6. **Provider 不是服务**：Provider/Connection 是持久化配置实体；需要后台运行的是 `BridgeRuntime`。当前由 AgentHub 托盘进程托管，目标迁移到用户级 `agenthub-adapterd`；无论部署形态如何，都不把页面组件、Connections 或 ProviderService 变成长驻 HTTP 服务。
-7. **入口分层，机制不分叉**：日常走 Dashboard / Connections 的 `ConnectFlowDialog`；`/bridges` 只管理本机桥运行时，不是日常创建入口。创建/apply 共用 `lib/api/adapter` 与 `plan()`。
+7. **入口分层，机制不分叉**：日常走 Dashboard / Connections 的 `ConnectFlowDialog`；`/routes` 只管理本机路由运行时，不是日常创建入口。创建/apply 共用 `lib/api/adapter` 与 `plan()`。
 
 ## 2. 范围与非目标
 
@@ -122,7 +123,7 @@ type CompatibilityRule = {
 
 ### 4.1 页面定位
 
-**推荐入口 vs 本页职责（本机桥页终态已落地）**
+**推荐入口 vs 本页职责（本机路由页终态已落地）**
 
 日常发起「把已有连接接到另一个 Agent」走 Hub，不经过本页：
 
@@ -131,31 +132,31 @@ type CompatibilityRule = {
 | Dashboard Agent 卡片 | 「连接/切换」 | `ConnectFlowDialog`（固定目标 Agent） |
 | Connections 行 | 「接到…」 | 绑定对话框（固定票） |
 
-本页只管理 ③ 本机桥运行时：端口、启停、自动恢复、失败详情、解绑。日常创建不在本页。创建绑定只走 `ConnectFlowDialog`，经 `lib/api/adapter`，以 `plan()` 的 route / maturity / canApply / reason 为权威。入口与信息架构见 [bridges-page-redesign.md](bridges-page-redesign.md)、[ui-design.md](ui-design.md) §4.3.3。
+本页只管理 ③ 本机路由运行时：端口、启停、自动恢复、失败详情、解绑。日常创建不在本页。创建绑定只走 `ConnectFlowDialog`，经 `lib/api/adapter`，以 `plan()` 的 route / maturity / canApply / reason 为权威。入口与信息架构见 [bridges-page-redesign.md](bridges-page-redesign.md)、[ui-design.md](ui-design.md) §4.3.3。
 
-以下描述本页（`/bridges`）自身，不是 `ConnectFlowDialog`：
+以下描述本页（`/routes`）自身，不是 `ConnectFlowDialog`：
 
-- 路由：`/bridges`。`/adapter`、`/router` 永久 `replace` 过来（丢弃遗留 `?tab=`）。
-- 标题：中文「本机桥」。侧栏英文 **Bridges**，有桥才出现（`partitionLocalBridgeRuntimes` 的 bound+orphan，或钱包仍有 `route=bridge`）。Settings → 数据永远有「本机桥」入口。
+- 路由：`/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。
+- 标题：中文「本机路由」。侧栏英文 **Routes**，有本机路由才出现（`partitionLocalBridgeRuntimes` 的 bound+orphan，或钱包仍有 `route=bridge`）。Settings → 数据永远有「本机路由」入口。
 - 页头无「去 Dashboard / 去 Connections」。创建区不在本页。
-- 列出全部 `kind === 'local_bridge'`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机桥」。空 `sourceId` 丢弃。
+- 列出全部 `kind === 'local_bridge'`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机路由」。空 `sourceId` 丢弃。
 - 解绑只走 `unbindTicket`（优先钱包 id，否则 `ticketIdFor(sourceId)` + `targetAgentId`）。不提供 `removeAdapter`。
-- Dashboard 当前 ③ 徽标、Connections「本机桥」点进 `/bridges?profile=`；未知/缺失打开列表，不 toast。
+- Dashboard 当前 ③ 徽标、Connections「本机路由」点进 `/routes?profile=`；未知/缺失打开列表，不 toast。
 - `descriptionTip`：说明不会把一家 OAuth 凭据“转换”为另一家的授权，也不会在日志记录请求正文。
 
 页面沿用 `pageRhythm.pageShell`、`PageHeader`、`PageSection`、`TableShell`、`SegmentedControl`、`Card`、`Badge`、`Dialog`、`EmptyState`、`ErrorState` 和现有 Tailwind 语义 token。不另起一套视觉系统。
 
 ### 4.2 首屏信息架构
 
-本页不再渲染选来源→目标→plan→apply 创建区；日常创建走 ConnectFlow。当前首屏是本机桥运行时的单层列表：
+本页不再渲染选来源→目标→plan→apply 创建区；日常创建走 ConnectFlow。当前首屏是本机路由运行时的单层列表：
 
 ```text
-PageHeader  本机桥 · 本机协议转换 · 仅 127.0.0.1
+PageHeader  本机路由 · 本机协议转换 · 仅 127.0.0.1
 
 ● 运行中    Kimi 会员  →  Codex     127.0.0.1:43121⧉  [停止] [详情]
 ```
 
-行与详情都是**单层**进程健康 + 端口，不画「配置已生效 / 桥接运行中」。`bound+orphan >= 2` 时列表上方一行舰队摘要（`N 个本机桥 · M 个运行中 · 需保持托盘运行`）。一条桥不显示舰队数字。
+行与详情都是**单层**进程健康 + 端口，不画「配置已生效 / 桥接运行中」。`bound+orphan >= 2` 时列表上方一行舰队摘要（`N 个本机路由 · M 个运行中 · 需保持托盘运行`）。一条桥不显示舰队数字。
 
 目标全景 / 路径预览 / apply 确认已收进 ConnectFlow，不再出现在本页。`mode`（`api` | `oauth`）仍是持久化凭据族，与 `route` / `source_kind` 正交。Kimi API Key → Codex 的 `local_bridge` 仍是 API Key 协议转换，不得标成 OAuth。
 
@@ -169,7 +170,7 @@ PageHeader  本机桥 · 本机协议转换 · 仅 127.0.0.1
 
 ### 4.3 新建绑定流程（ConnectFlow，不在本页）
 
-日常创建已收进 ConnectFlow；本节描述的选择/预览/确认不再出现在 `/bridges` 页。只在最终应用前弹出简短确认 Dialog，不增加多页 Wizard。若未来全站经设计评审引入共享 Sheet primitive，再统一迁移，Adapter 不单独创造交互原语。
+日常创建已收进 ConnectFlow；本节描述的选择/预览/确认不再出现在 `/routes` 页。只在最终应用前弹出简短确认 Dialog，不增加多页 Wizard。若未来全站经设计评审引入共享 Sheet primitive，再统一迁移，Adapter 不单独创造交互原语。
 
 #### 步骤 A：选择来源
 
@@ -185,7 +186,7 @@ PageHeader  本机桥 · 本机协议转换 · 仅 127.0.0.1
 - 来源 OAuth 未完成时整体阻断：不 fan-out、不 plan，目标区只显示「先完成授权」Notice 与去 Connections 的 CTA。
 - 用户点选目标卡后才运行 `plan`，局部显示 skeleton，不锁住已有适配列表。
 - 分析结果按 `(sourceKind, sourceId, target)` 做会话级缓存；换来源或重试时按生成计数丢弃过期响应。
-- 对尚未 `canApply` 的边，按三路说明缺的工程项：② 仍未开放的边写「目标有槽、写入未开」；已开放的 Claude/Codex/Grok 订阅 → Pi 写明写入 `auth.json` 且由 Pi 刷新；Kimi/OpenAI API → Grok 属 ①，写入官方 Chat TOML；GLM/DeepSeek API → Pi 属 ①，已开放 experimental `config_sync`，写入 Pi 自定义 provider 槽；③ Codex Responses / Grok Chat → Claude 写「要起本机桥、experimental bind」，Claude 订阅 → Codex 写明确「产品不做」，App Server/OauthOther 仍写关闭原因，并链接[第 3 路边](provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code第-3-路responses-experimental-bind) 与 [产品决策](product-decisions.md)。不得对 ② 显示「需要本机服务」，也不得把原因写成「订阅不是产品」。
+- 对尚未 `canApply` 的边，按三路说明缺的工程项：② 仍未开放的边写「目标有槽、写入未开」；已开放的 Claude/Codex/Grok 订阅 → Pi 写明写入 `auth.json` 且由 Pi 刷新；Kimi/OpenAI API → Grok 属 ①，写入官方 Chat TOML；GLM/DeepSeek API → Pi 属 ①，已开放 experimental `config_sync`，写入 Pi 自定义 provider 槽；③ Codex Responses / Grok Chat → Claude 写「要起本机路由、experimental bind」，Claude 订阅 → Codex 写明确「产品不做」，App Server/OauthOther 仍写关闭原因，并链接[第 3 路边](provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code第-3-路responses-experimental-bind) 与 [产品决策](product-decisions.md)。不得对 ② 显示「需要本机服务」，也不得把原因写成「订阅不是产品」。
 
 #### 步骤 C：确认配置
 
@@ -225,7 +226,7 @@ PageHeader  本机桥 · 本机协议转换 · 仅 127.0.0.1
 - 部分失败且已回滚：说明失败阶段和“未改动现有配置”，允许重试。
 - 补偿失败：进入 `needs_attention`，显示稳定错误码、已完成/未完成步骤和唯一推荐恢复动作。
 
-### 4.4 本机桥列表与详情
+### 4.4 本机路由列表与详情
 
 只列 `kind === 'local_bridge'`。使用紧凑服务列表（`ListRow`），不是可拖列宽的数据库表格。每行只展示：
 
@@ -235,7 +236,7 @@ PageHeader  本机桥 · 本机协议转换 · 仅 127.0.0.1
 - 与状态匹配的单一主操作：启动 / 停止 / 重试启动。读失败 + last-known 运行中/已降级 →「停止」；读失败 + 其余 →「启动」（不是「重试启动」）。degraded 仍视为持有 listener，只能停止。
 - `详情`。解绑与 auto-start 不占行内，移入详情 Dialog。
 
-`bound+orphan >= 2` 时列表上方一行舰队摘要。`running` 与 `degraded` 都算运行中。①② 不计。孤立运行时必须能看见、能停、能解绑；仅孤立时跳过健康空态，直接「孤立本机桥」分区。
+`bound+orphan >= 2` 时列表上方一行舰队摘要。`running` 与 `degraded` 都算运行中。①② 不计。孤立运行时必须能看见、能停、能解绑；仅孤立时跳过健康空态，直接「孤立本机路由」分区。
 
 详情 Dialog 为只读 detail 单态（当前后端唯一可编辑字段是 auto-start，直接用行内 Switch，不需要 edit 态与 dirty 保护）：
 
@@ -245,7 +246,7 @@ PageHeader  本机桥 · 本机协议转换 · 仅 127.0.0.1
 - `needs_attention` 的恢复步骤（错误码 + 「启动只恢复运行时，不修复配置不一致」）。
 - 折叠的诊断信息：profile id、规则 id/版本、时间戳、最近错误码、`打开日志目录`（复用 settings 的 `openLogsDir`）。规则技术字段不与来源/目标同级展示。
 - 状态点仅过渡态（启动中 / 停止中）使用脉冲动画；稳态保持静点。
-- 停止确认：「停止本机桥？」；解绑确认：「解除本机桥绑定？」；孤立多一句「来源或绑定记录已不在，仍走同一解除。」只禁用当前行，不锁住整个列表。解绑失败展示错误 +「重试解除」，不得改走 `removeAdapter`。
+- 停止确认：「停止本机路由？」；解绑确认：「解除本机路由绑定？」；孤立多一句「来源或绑定记录已不在，仍走同一解除。」只禁用当前行，不锁住整个列表。解绑失败展示错误 +「重试解除」，不得改走 `removeAdapter`。
 
 ### 4.5 页面状态与文案
 
@@ -254,16 +255,16 @@ PageHeader  本机桥 · 本机协议转换 · 仅 127.0.0.1
 | 状态 | 表现 |
 |---|---|
 | loading | 复用列表 skeleton，Dialog 分区局部 skeleton。钱包从未结算时即使 profile 已空也保持 loading |
-| healthy_empty | 标题「没有本机桥」，一段说明，**无按钮**。仅当 profile 与钱包均已结算、`bound+orphan===0`、且 last-known `walletBridgeCount===0` |
+| healthy_empty | 标题「没有本机路由」，一段说明，**无按钮**。仅当 profile 与钱包均已结算、`bound+orphan===0`、且 last-known `walletBridgeCount===0` |
 | list_error | 读 profile 失败。保留 last-known 行；不得因此掉进健康空态 |
 | wallet_without_runtime | 钱包 last-known 有桥、列表成功且 `bound+orphan===0`。不是健康空态；可重试 |
-| list | 含 only-orphan。直接列表，不叠「没有本机桥」 |
+| list | 含 only-orphan。直接列表，不叠「没有本机路由」 |
 | disconnected | inline ErrorState；禁用 mutation，已有信息可读 |
 | unsupported | 中性说明，不使用红色故障态；给出原因与可用替代路径。对尚未就绪的订阅边显示 `实现未开`、`plan.canApply=false`，不显示 Apply 或“强制继续”；② 已开放的 Pi 原生槽显示可 experimental bind；文案不得写成「订阅不是产品」 |
 | starting/stopping | 当前行按钮 loading，其他行可操作 |
 | error | 行内短错误 + `查看诊断`；toast 只用于操作结果，不承载完整原因 |
 | status_unavailable | 轮询读失败时主状态显示 `状态不可用`（中性），保留 last-known state+port，不改写为启动失败 |
-| analyze_failed | ConnectFlow 目标全景单卡显示 `分析失败 · 点击重试`，按卡隔离，不影响本机桥列表 |
+| analyze_failed | ConnectFlow 目标全景单卡显示 `分析失败 · 点击重试`，按卡隔离，不影响本机路由列表 |
 | needs_attention | warning 状态，显示恢复动作，不自动反复重试写配置 |
 
 ## 5. 服务设计
@@ -301,7 +302,7 @@ adapter_service
 
 ### 5.2 本地桥接形态
 
-需要区分“模块独立”和“进程独立”。Bridge Runtime 已在 core 中完成模块隔离；下一目标是把 `local_bridge` 的完整运行时与生命周期迁入同包用户级 sidecar `agenthub-adapterd`。这项决策不等于把 Connections、本机桥页或所有 Adapter 规则搬进另一个进程。
+需要区分“模块独立”和“进程独立”。Bridge Runtime 已在 core 中完成模块隔离；下一目标是把 `local_bridge` 的完整运行时与生命周期迁入同包用户级 sidecar `agenthub-adapterd`。这项决策不等于把 Connections、本机路由页或所有 Adapter 规则搬进另一个进程。
 
 | 形态 | 能否关窗口继续运行 | 能否退出 GUI 后运行 | 安装/升级成本 | 决策 |
 |---|---:|---:|---:|---|
@@ -547,7 +548,7 @@ MVP 不做全文搜索、自动滚动、错误文件下载、方法/路径筛选
 
 ## 9. 管理面取舍
 
-本页只做本机桥 runtime 的管理：OAuth 等待态、字段旁探测、保存前冲突检测、最近事件与 request id。最小探测请求不是代理 runtime。
+本页只做本机路由 runtime 的管理：OAuth 等待态、字段旁探测、保存前冲突检测、最近事件与 request id。最小探测请求不是代理 runtime。
 
 不做：多栏 Provider 工作台、批量账号网格、权重/冷却池、另一套视觉系统。产品边界见 [product-decisions.md](product-decisions.md)。
 
@@ -563,7 +564,7 @@ MVP 不做全文搜索、自动滚动、错误文件下载、方法/路径筛选
 ### Phase 1：首条真实桥接（工作区已接线，发布前待 dogfood）
 
 - core 已有 `BridgeRuntimeHost`、loopback token、实例 start/status/stop/shutdown，以及 OpenAI Responses ↔ Chat Completions / Anthropic Messages 的文本、SSE、工具、用量、停止原因和错误映射 fixtures；Codex Responses → Claude 复用同一 host saga，健康检查只验证 loopback，不访问不存在的 `/models`。
-- Tauri `AppState` 持有 host；controller 已实现 apply/start/stop/status、健康检查、失败补偿、凭证漂移 stop→restart、端口占用 rebind、opt-in auto-start restore；`ExitCoordinator` 负责退出 drain；本机桥页已有对应状态与操作控件。
+- Tauri `AppState` 持有 host；controller 已实现 apply/start/stop/status、健康检查、失败补偿、凭证漂移 stop→restart、端口占用 rebind、opt-in auto-start restore；`ExitCoordinator` 负责退出 drain；本机路由页已有对应状态与操作控件。
 - Codex `local_bridge` 已由 route plan 开放 Apply（实验性），规则状态见[实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。**发布前**仍需实机验收：密钥轮转、端口冲突、长流/工具闭环、托盘退出 drain。清单见 [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md)。
 - 默认 `auto_start=false`；用户可在成功启动后自行打开自动恢复。
 
@@ -667,7 +668,7 @@ src/lib/backend/
 ├─ contracts/adapter.ts
 └─ tauri/adapter.ts
 
-src/lib/api/adapter.ts                      # 对话框与本机桥页共用的 apply 门面
+src/lib/api/adapter.ts                      # 对话框与本机路由页共用的 apply 门面
 
 src/lib/connect-flow/                       # 已落地：统一连接流程逻辑层
 ├─ types.ts
@@ -684,7 +685,7 @@ src/pages/dashboard/index.tsx               # 已落地：挂载 ConnectFlowDial
 src/pages/connections/index.tsx             # 已落地：挂载 ConnectFlowDialog
 
 src/dev/mocks/adapter.ts
-src/pages/bridges/                          # 本机桥运行时运维台，不是日常创建入口
+src/pages/bridges/                          # 本机路由运行时运维台，不是日常创建入口
 ├─ index.tsx
 ├─ adapter-model.ts
 ├─ adapter-view-model.ts

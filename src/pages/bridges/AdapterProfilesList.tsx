@@ -82,7 +82,7 @@ export function AdapterProfilesList({
     return (
       <ErrorState
         error={loadError}
-        title="无法读取本机桥"
+        title="无法读取本机路由"
         onRetry={onRetry}
       />
     );

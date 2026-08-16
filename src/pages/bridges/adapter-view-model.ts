@@ -195,7 +195,7 @@ export function adapterBridgeFleetSummary(
   return {
     total: bridges.length,
     running,
-    label: `${bridges.length} 个本机桥 · ${running} 个运行中 · 需保持托盘运行`,
+    label: `${bridges.length} 个本机路由 · ${running} 个运行中 · 需保持托盘运行`,
   };
 }
 

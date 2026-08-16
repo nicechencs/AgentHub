@@ -157,7 +157,7 @@ export function AgentOverview({
                     </Tip>
                   ) : null}
                   {view.bridge ? (
-                    <Tip className="shrink-0" label="管理本机桥">
+                    <Tip className="shrink-0" label="管理本机路由">
                       <Badge
                         variant={bridgeBadgeVariant(view.bridge.state)}
                         className="h-5 cursor-pointer px-1.5 text-2xs"

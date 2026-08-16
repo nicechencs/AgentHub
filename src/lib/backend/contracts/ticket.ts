@@ -242,14 +242,14 @@ export interface TicketPort {
 /** Route label for Connections「正用于」line. */
 export function bindingRouteUsageLabel(route: BindingRoute): string {
   if (route === 'reshape') return '改配置';
-  if (route === 'bridge') return '本机桥';
+  if (route === 'bridge') return '本机路由';
   return '切换';
 }
 
 /** Route label for Dashboard card meta. */
 export function bindingRouteDashboardLabel(route: BindingRoute): string {
   if (route === 'reshape') return '改配置';
-  if (route === 'bridge') return '本机桥';
+  if (route === 'bridge') return '本机路由';
   return '直连';
 }
 

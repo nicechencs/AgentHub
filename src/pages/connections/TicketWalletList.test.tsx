@@ -58,7 +58,7 @@ describe('TicketWalletList details', () => {
     expect(markup).not.toContain('编辑 API Key');
   });
 
-  it('links 本机桥 usage to /bridges without opening ConnectFlow', () => {
+  it('links 本机路由 usage to /routes without opening ConnectFlow', () => {
     const wallet = sampleWallet();
     wallet.bindings = [{
       ticketId: 'provider:kimi-1',
@@ -76,8 +76,8 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('href="/bridges?profile=bridge-1"');
-    expect(markup).toContain('本机桥');
+    expect(markup).toContain('href="/routes?profile=bridge-1"');
+    expect(markup).toContain('本机路由');
     expect(markup).toContain('接到…');
   });
 });

@@ -292,7 +292,7 @@ AgentHub **不**在 DSH 里再挂一个自研 LLM adapter，也不把 DSH 当 lo
 |---|---|---|---|
 | DeepSeek API Key | `dsh` | `native` / `config_sync` | P5：写入凭据引用 + `deepseek-official` + 模型 id |
 | DeepSeek API Key | Claude Code | experimental `native_endpoint` | 已开（`deepseek-api-to-claude-v1`）；官方 Anthropic 兼容入口，见适配规则文 §2.4 |
-| DeepSeek API Key | Codex | experimental `native_endpoint` | 已开（`deepseek-api-to-codex-v1`）；官方 Responses 入口，AgentHub 写入 `wire_api=responses`，不启动本机桥 |
+| DeepSeek API Key | Codex | experimental `native_endpoint` | 已开（`deepseek-api-to-codex-v1`）；官方 Responses 入口，AgentHub 写入 `wire_api=responses`，不启动本机路由 |
 | Kimi / OpenAI / 其它 Chat 兼容票 | `dsh` | 可能 `config_sync` 到 `dsh-llm-pi-ai` | **另证**；P5 不做 |
 | 任一家 OAuth | `dsh` | `unsupported` | DSH 凭据缝是 API Key 引用，不是 OAuth |
 
