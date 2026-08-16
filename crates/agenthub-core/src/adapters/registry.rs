@@ -32,24 +32,43 @@ pub fn wants_structured_for(mode: crate::models::ProcessMode, agent: AgentId) ->
 #[derive(Clone)]
 pub struct AdapterRegistry {
     adapters: HashMap<AgentId, Arc<dyn AgentAdapter>>,
+    /// Insertion order for registered adapters (catalog / open-key composition).
+    ///
+    /// Kept as [`AgentId`] so this layer stays free of `platform::AgentKey`.
+    /// Callers that need open identity convert via `AgentKey::from_agent_id`.
+    registration_order: Vec<AgentId>,
 }
 
 impl AdapterRegistry {
     pub fn new() -> Self {
         Self {
             adapters: HashMap::new(),
+            registration_order: Vec::new(),
         }
     }
 
     pub fn register(&mut self, adapter: Arc<dyn AgentAdapter>) {
-        self.adapters.insert(adapter.id(), adapter);
+        let id = adapter.id();
+        let is_new = !self.adapters.contains_key(&id);
+        self.adapters.insert(id, adapter);
+        if is_new {
+            self.registration_order.push(id);
+        }
     }
 
     pub fn get(&self, id: AgentId) -> Option<Arc<dyn AgentAdapter>> {
         self.adapters.get(&id).cloned()
     }
 
+    /// Registered agents in insertion order (not [`AgentId::ALL`]).
+    pub fn registered_agents(&self) -> &[AgentId] {
+        &self.registration_order
+    }
+
     pub fn all(&self) -> Vec<Arc<dyn AgentAdapter>> {
+        // Compatibility: still filter through AgentId::ALL for callers that lock
+        // product order to that closed list (usage/matrix/etc.). Catalog uses
+        // [`Self::registered_agents`] instead.
         AgentId::ALL
             .iter()
             .filter_map(|id| self.adapters.get(id).cloned())
