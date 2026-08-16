@@ -9,15 +9,15 @@ use crate::error::{AppError, Result};
 use crate::models::AgentId;
 use crate::platform::AgentKey;
 
-use super::super::document::{ConfigApplyResult, ConfigChangePlan, NormalizedConfigDocument};
-use super::super::projector::AgentConfigProjector;
-use super::super::schema::{
-    AgentConfigSchema, ConfigValidationResult, ConfigValueType, NativeConfigFormat, SECRET_REDACTED,
-};
-use super::util::{
+use crate::platform::config::sources::util::{
     field, finish_apply, get_str_map, json_object_or_empty, plan_from_maps, redact_secrets,
     secret_unchanged, string_val, validate_known_fields, write_bytes,
 };
+use crate::platform::config::AgentConfigProjector;
+use crate::platform::config::{
+    AgentConfigSchema, ConfigValidationResult, ConfigValueType, NativeConfigFormat, SECRET_REDACTED,
+};
+use crate::platform::config::{ConfigApplyResult, ConfigChangePlan, NormalizedConfigDocument};
 
 const SCHEMA_VERSION: u32 = 1;
 const REL_PATH: &str = "settings.json";
@@ -424,4 +424,10 @@ impl AgentConfigProjector for ClaudeConfigProjector {
         let merged = Self::merge_into_root(root, &current_values, desired)?;
         Ok(Value::Object(merged))
     }
+}
+
+pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {
+    ctx.config
+        .register(std::sync::Arc::new(ClaudeConfigProjector))
+        .expect("unique built-in config projector");
 }

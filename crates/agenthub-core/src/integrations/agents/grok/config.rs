@@ -18,15 +18,15 @@ use crate::utils::grok_toml::{
     active_model_alias, ensure_grok_model_shape, EnsureGrokModelShapeOptions,
 };
 
-use super::super::document::{ConfigApplyResult, ConfigChangePlan, NormalizedConfigDocument};
-use super::super::projector::AgentConfigProjector;
-use super::super::schema::{
-    AgentConfigSchema, ConfigValidationResult, ConfigValueType, NativeConfigFormat,
-};
-use super::util::{
+use crate::platform::config::sources::util::{
     field, finish_apply, get_str_map, invalid_toml, plan_from_maps, redact_secrets,
     secret_unchanged, string_val, validate_known_fields,
 };
+use crate::platform::config::AgentConfigProjector;
+use crate::platform::config::{
+    AgentConfigSchema, ConfigValidationResult, ConfigValueType, NativeConfigFormat,
+};
+use crate::platform::config::{ConfigApplyResult, ConfigChangePlan, NormalizedConfigDocument};
 
 const SCHEMA_VERSION: u32 = 2;
 const REL_PATH: &str = "config.toml";
@@ -193,13 +193,14 @@ impl AgentConfigProjector for GrokConfigProjector {
         // Scrub api_key from unknown_native content for API safety.
         let mut safe_doc = doc.clone();
         if safe_doc.get("api_key").and_then(|v| v.as_str()).is_some() {
-            safe_doc["api_key"] = toml_edit::value(super::super::schema::SECRET_REDACTED);
+            safe_doc["api_key"] = toml_edit::value(crate::platform::config::SECRET_REDACTED);
         }
         if let Some(models) = safe_doc.get_mut("model").and_then(Item::as_table_mut) {
             for (_, item) in models.iter_mut() {
                 if let Some(entry) = item.as_table_mut() {
                     if entry.get("api_key").and_then(Item::as_str).is_some() {
-                        entry["api_key"] = toml_edit::value(super::super::schema::SECRET_REDACTED);
+                        entry["api_key"] =
+                            toml_edit::value(crate::platform::config::SECRET_REDACTED);
                     }
                 }
             }
@@ -303,4 +304,10 @@ impl AgentConfigProjector for GrokConfigProjector {
         let merged = Self::merge(doc, desired)?;
         Ok(json!({ "format": "toml", "content": merged.to_string() }))
     }
+}
+
+pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {
+    ctx.config
+        .register(std::sync::Arc::new(GrokConfigProjector))
+        .expect("unique built-in config projector");
 }

@@ -6,7 +6,7 @@
 //! Channel list / GUI catalog DTOs: [`catalog`] (same contribution allowlist).
 //! Detection continues via [`crate::adapters::AgentAdapter::detect`].
 //!
-//! TODO(P13): move contributions under integrations/agents/<key>/.
+//! Per-agent package ids / URLs live in [`crate::integrations`].
 
 mod catalog;
 mod contribution;

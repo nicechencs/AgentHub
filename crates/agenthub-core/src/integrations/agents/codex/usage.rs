@@ -5,9 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::error::Result;
 use crate::logging::targets;
 use crate::models::AgentId;
-use crate::platform::usage::source::{
-    TokenAccounting, UsageFileParser, UsageLineOutcome, UsageSource,
-};
+use crate::platform::usage::{TokenAccounting, UsageFileParser, UsageLineOutcome, UsageSource};
 use crate::platform::AgentKey;
 use crate::usage::session_jsonl::{
     bootstrap_codex_prefix, discover_codex_files, extract_codex, line_might_have_usage_codex,
@@ -117,4 +115,10 @@ impl UsageSource for CodexUsageSource {
             state,
         })
     }
+}
+
+pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {
+    ctx.usage
+        .register(std::sync::Arc::new(CodexUsageSource))
+        .expect("unique built-in usage source");
 }

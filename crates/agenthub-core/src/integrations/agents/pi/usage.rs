@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::Result;
-use crate::platform::usage::source::{UsageFileParser, UsageLineOutcome, UsageSource};
+use crate::platform::usage::{UsageFileParser, UsageLineOutcome, UsageSource};
 use crate::platform::AgentKey;
 use crate::usage::session_jsonl::{
     bootstrap_pi_model, discover_pi_files, extract_pi, line_might_have_usage_pi,
@@ -62,4 +62,10 @@ impl UsageSource for PiUsageSource {
         };
         Box::new(PiParser { model })
     }
+}
+
+pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {
+    ctx.usage
+        .register(std::sync::Arc::new(PiUsageSource))
+        .expect("unique built-in usage source");
 }

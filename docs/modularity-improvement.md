@@ -64,7 +64,7 @@ AgentHub **不需要推倒重来**。三 crate 边界、`core` 无 Tauri、前�
 |---|---|---|
 | core / gui / cli 三壳 | 已落地 | 健康 |
 | 平台 registry + AgentKey | registry 在；生产仍经 `AgentAdapter` 包装 | 半落地 |
-| 稀疏端口、新增 Agent 只加一目录 | `integrations/agents/<key>/` **不存在**；生产改 8–13 处 | 未落地 |
+| 稀疏端口、新增 Agent 只加一目录 | `integrations/agents/<key>/` **已落地**；`AgentAdapter` 仍在 `adapters/` 过渡 | 半落地 |
 | Ticket + Binding 唯一写入 | 读模型 / `plan` / `bind` 已有；`apply_adapter` 与 host saga 仍并行 | 半落地 |
 | 前端 backend 分层 | transport 干净；contracts 过厚、api 夹映射、页面 VM 交叉 | 骨架健康 |
 | 页面 = 编排 + 本地 state | Connections / Bridges 接近；Chat / Skills / Projects / AgentCard 仍是上帝页 | 不均 |
@@ -301,8 +301,9 @@ adapter/secret/   按 source product
 
 #### P2-1 物理目录 `integrations/agents/<key>/`
 
-- **建议**：先 `mod` 重导出再搬文件；每 Agent 一目录：`paths` / `install` / `config` / `usage` / `stream` / `project` / 过渡 `adapter_facade`。
-- **验收**：新增第九个 **test-only** agent 只加一个目录 + 一处 `register_integrations`；不改 platform service / 页面分支。
+- **状态（2026-08-16）**：已落地。生产贡献经 `integrations::register_integrations`；`builtin_*_registry` 只读该集合。`AgentAdapter` 仍在 `adapters/`（过渡 `adapter_facade`）。test-only `demo-agent` 在 `integrations/agents/demo_agent/`，不进生产注册。
+- **建议（后续）**：再把胖 `adapters/<id>.rs` 迁进各目录的 `adapter_facade`。
+- **验收**：新增第九个 **test-only** agent 只加一个目录 + 一处 `register`；不改 platform service / 页面分支。
 
 #### P2-2 `catalog/` 与 `agent_catalog` 消歧
 

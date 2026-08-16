@@ -10,12 +10,11 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, Capability};
-use crate::platform::paths::{resolve_agent_config_dir, resolve_agent_home};
 use crate::platform::AgentKey;
 
 /// Describes one agent's skill projection root.
@@ -146,85 +145,16 @@ impl SkillTargetRegistry {
     }
 }
 
-fn push_static(
-    out: &mut SkillTargetRegistry,
-    agent: AgentId,
-    skills_root: Option<PathBuf>,
-) -> Result<()> {
-    if skills_root.is_none() {
-        return Ok(());
-    }
-    out.register(Arc::new(StaticSkillTarget {
-        agent_key: AgentKey::from_agent_id(agent),
-        skills_root,
-        supports: true,
-    }))
-}
-
 /// Production skill targets from path contributions — no fat adapter registry.
 ///
-/// Mirrors former `from_adapter_registry(register_all())` membership: agents with
-/// usable Skills + concrete skills root (Kimi omitted).
+/// Membership is filled by `integrations::register_integrations` (Kimi omitted).
 pub fn build_builtin_skill_targets() -> Result<SkillTargetRegistry> {
-    let mut out = SkillTargetRegistry::new();
-    // AgentId::ALL order; skip agents without a skills root.
-    push_static(
-        &mut out,
-        AgentId::Claude,
-        resolve_agent_home(AgentId::Claude)
-            .ok()
-            .map(|h| h.join("skills")),
-    )?;
-    push_static(
-        &mut out,
-        AgentId::Codex,
-        resolve_agent_home(AgentId::Codex)
-            .ok()
-            .map(|h| h.join("skills")),
-    )?;
-    // Kimi: Skills unsupported — omit.
-    push_static(
-        &mut out,
-        AgentId::Grok,
-        resolve_agent_home(AgentId::Grok)
-            .ok()
-            .map(|h| h.join("skills")),
-    )?;
-    push_static(
-        &mut out,
-        AgentId::Pi,
-        resolve_agent_config_dir(AgentId::Pi)
-            .ok()
-            .map(|h| h.join("skills")),
-    )?;
-    push_static(
-        &mut out,
-        AgentId::WorkBuddy,
-        resolve_agent_config_dir(AgentId::WorkBuddy)
-            .ok()
-            .map(|h| h.join("skills")),
-    )?;
-    push_static(
-        &mut out,
-        AgentId::Cursor,
-        resolve_agent_home(AgentId::Cursor)
-            .ok()
-            .map(|h| h.join("skills-cursor")),
-    )?;
-    push_static(
-        &mut out,
-        AgentId::Dsh,
-        resolve_agent_home(AgentId::Dsh)
-            .ok()
-            .map(|h| h.join("skills")),
-    )?;
-    Ok(out)
+    Ok(crate::integrations::production_integrations()
+        .skills
+        .clone())
 }
 
 /// Process-wide builtin skill target registry.
 pub fn builtin_skill_target_registry() -> &'static SkillTargetRegistry {
-    static REGISTRY: OnceLock<SkillTargetRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(|| {
-        build_builtin_skill_targets().expect("unique built-in skill target keys")
-    })
+    &crate::integrations::production_integrations().skills
 }

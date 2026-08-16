@@ -1,14 +1,13 @@
 //! Install contribution registry.
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use crate::error::{AppError, Result};
 use crate::models::AgentId;
 use crate::platform::AgentKey;
 
 use super::contribution::InstallContribution;
-use super::sources;
 
 #[derive(Clone, Default)]
 pub struct InstallContributionRegistry {
@@ -77,6 +76,5 @@ impl InstallContributionRegistry {
 }
 
 pub fn builtin_install_registry() -> &'static InstallContributionRegistry {
-    static REG: OnceLock<InstallContributionRegistry> = OnceLock::new();
-    REG.get_or_init(sources::build_registry)
+    &crate::integrations::production_integrations().install
 }
