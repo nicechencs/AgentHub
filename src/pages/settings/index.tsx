@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { pageRhythm } from '@/components/layout/page-rhythm';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { ErrorState } from '@/components/shared/ErrorState';
@@ -193,22 +194,24 @@ export default function SettingsPage({
       />
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
-          <TabsTrigger value="general">常规</TabsTrigger>
-          <TabsTrigger value="security">安全</TabsTrigger>
-          <TabsTrigger value="data">数据</TabsTrigger>
-          <TabsTrigger value="backups">备份</TabsTrigger>
-          <TabsTrigger value="about" className="gap-1.5">
-            关于
-            {pendingUpdate && (
-              <StatusPin
-                tone="warning"
-                label={`可更新至 v${pendingUpdate.version}`}
-                className="shrink-0"
-              />
-            )}
-          </TabsTrigger>
-        </TabsList>
+        <div className={pageRhythm.chrome}>
+          <TabsList>
+            <TabsTrigger value="general">常规</TabsTrigger>
+            <TabsTrigger value="security">安全</TabsTrigger>
+            <TabsTrigger value="data">数据</TabsTrigger>
+            <TabsTrigger value="backups">备份</TabsTrigger>
+            <TabsTrigger value="about" className="gap-1.5">
+              关于
+              {pendingUpdate && (
+                <StatusPin
+                  tone="warning"
+                  label={`可更新至 v${pendingUpdate.version}`}
+                  className="shrink-0"
+                />
+              )}
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="general">
           <GeneralPanel

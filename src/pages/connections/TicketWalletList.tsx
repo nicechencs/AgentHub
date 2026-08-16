@@ -23,6 +23,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Tip } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import type { TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
 import {
@@ -150,10 +151,7 @@ function TicketRow({
   const editLabel = ticketDetailEditLabel(extras);
 
   return (
-    <ListRow
-      active={highlighted}
-      className={cn('p-3', highlighted && 'ring-1 ring-accent/40')}
-    >
+    <ListRow active={highlighted} className="p-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <span
@@ -162,9 +160,9 @@ function TicketRow({
           >
             {highlighted ? '●' : '○'}
           </span>
-          <span className="truncate text-sm font-medium" title={ticket.label}>
+          <Tip className="truncate text-sm font-medium" label={ticket.label}>
             {ticket.label}
-          </span>
+          </Tip>
           <Badge variant={credentialBadgeVariant(ticket.credentialClass)}>
             {ticketCredentialClassLabel(ticket.credentialClass)}
           </Badge>

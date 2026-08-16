@@ -6,6 +6,7 @@ import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ListSkeleton } from '@/components/ui/skeleton';
@@ -133,7 +134,8 @@ export default function McpPage() {
     <div>
       <PageHeader
         title="MCP"
-        description="只读扫描各 Agent 本机 MCP 配置（不注入、不修改）"
+        description="只读扫描 · 不注入"
+        descriptionTip="管理/注入仍为规划能力。此处仅汇总已发现的配置文件与 server 条目，便于排查与打开配置目录。"
         actions={
           <Button
             size="sm"
@@ -147,10 +149,6 @@ export default function McpPage() {
           </Button>
         }
       />
-
-      <p className={cn(pageRhythm.lead, 'text-xs text-muted')}>
-        管理/注入仍为规划能力。此处仅汇总已发现的配置文件与 server 条目，便于排查与打开配置目录。
-      </p>
 
       {loading && !data ? (
         <ListSkeleton rows={5} />
@@ -177,7 +175,7 @@ export default function McpPage() {
               <h2 className="text-xs font-medium uppercase tracking-wide text-muted">配置来源</h2>
               <div className="grid gap-2 sm:grid-cols-2">
                 {existingSources.map((s) => (
-                  <Card key={`${s.agent}:${s.path}`} className="shadow-none">
+                  <Card key={`${s.agent}:${s.path}`}>
                     <CardContent className="flex items-start justify-between gap-3 p-3">
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 text-sm font-medium text-primary">
@@ -229,30 +227,32 @@ export default function McpPage() {
             ) : (
               <div className={pageRhythm.stackDense}>
                 {servers.map((s) => (
-                  <Card key={`${s.agent}:${s.name}:${s.sourcePath}`} className="shadow-none">
+                  <Card key={`${s.agent}:${s.name}:${s.sourcePath}`}>
                     <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 p-3 pb-1">
                       <CardTitle className="flex min-w-0 items-center gap-2 text-sm font-medium">
                         <AgentDot agentId={s.agent} className="h-2 w-2" />
                         <span className="truncate">{s.name}</span>
-                        <span className="rounded-btn bg-subtle px-1.5 py-0.5 text-2xs font-normal text-muted">
-                          {transportLabel(s.transport)}
-                        </span>
-                        {s.enabled === false ? (
-                          <span className="text-2xs font-normal text-warning">已禁用</span>
-                        ) : null}
+                        <Badge>{transportLabel(s.transport)}</Badge>
+                        {s.enabled === false ? <Badge variant="warning">已禁用</Badge> : null}
                       </CardTitle>
                       <span className="shrink-0 text-xs text-muted">{agentName(s.agent)}</span>
                     </CardHeader>
                     <CardContent className="space-y-1 px-3 pb-3 pt-0">
                       {s.command ? (
-                        <p className="truncate font-mono text-2xs text-secondary" title={s.command}>
+                        <Tip
+                          className="block truncate font-mono text-2xs text-secondary"
+                          label={s.command}
+                        >
                           {s.command}
-                        </p>
+                        </Tip>
                       ) : null}
                       {s.url ? (
-                        <p className="truncate font-mono text-2xs text-secondary" title={s.url}>
+                        <Tip
+                          className="block truncate font-mono text-2xs text-secondary"
+                          label={s.url}
+                        >
                           {s.url}
-                        </p>
+                        </Tip>
                       ) : null}
                       <div className="flex items-center justify-between gap-2 pt-1">
                         <Tip label={s.sourcePath}>

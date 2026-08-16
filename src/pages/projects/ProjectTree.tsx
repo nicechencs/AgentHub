@@ -208,10 +208,7 @@ export function ProjectTree({
                           return (
                             <li
                               key={s.id}
-                              className={cn(
-                                'flex items-start gap-2 px-3 py-2.5 pl-10',
-                                isSel && 'bg-accent/5',
-                              )}
+                              className="flex items-start gap-2 px-3 py-2.5 pl-10"
                             >
                               {showDelete && (
                                 <input
@@ -256,7 +253,6 @@ export function ProjectTree({
                                           type="button"
                                           className="inline-flex max-w-full items-center gap-1 rounded-sm text-left hover:text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                                           aria-label={`复制 Session ID ${sid}`}
-                                          title="点击复制原生 Session ID"
                                           onClick={(e) => onCopySessionId(s, e)}
                                         >
                                           <span className="truncate">
