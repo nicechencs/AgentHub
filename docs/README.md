@@ -25,6 +25,7 @@
 | [cli-and-config.md](cli-and-config.md) | **CLI 命令树 / 退出码 / GUI 矩阵 / 配置 L0–L3 契约与验收清单**（**v1.2**；doctor/env 宿主 Runtime） |
 | [logging.md](logging.md) | **日志规范**：级别、文件路径、保留、module 字段、脱敏、排查与 `config` 键（**v1.0**） |
 | [chat-process-streaming.md](chat-process-streaming.md) | **Chat 过程流式**：Cursor 式步骤/工具展示的统一模型、分 Agent 接入、Phase 0–3 计划 |
+| [chat-page-redesign.md](chat-page-redesign.md) | **Chat 工作台重设计**（2026-08-16 Draft）：会话 rail / header 上下文芯片 / 多 Agent 对比条 / 过程面板 Phase 3 展示层 / 发送前置校验与文件拆分；不改 ChatEvent wire 与过程落库 |
 | [capability-matrix.md](capability-matrix.md) | **能力矩阵**：`Capability` 枚举 + 四级状态、现状矩阵、防漂移测试、P0–P4（**v1.0 已落地**） |
 | [account-authorization-pool.md](account-authorization-pool.md) | **账号池身份×授权**：同人可多授权并存；去重仅限同授权票；与能力矩阵边界（**已落地**） |
 | [adding-an-agent.md](adding-an-agent.md) | 新增 Agent 适配器清单；`accepts[]` 须登记 wire 协议 **和** OAuth 契约槽 |
