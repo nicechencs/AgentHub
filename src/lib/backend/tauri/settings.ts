@@ -344,5 +344,20 @@ export function createTauriSettingsPort(): SettingsPort {
         throw e;
       }
     },
+
+    async pickDirectory(options) {
+      try {
+        const picked = await invoke<string | null>('pick_directory', {
+          title: options?.title ?? null,
+          defaultPath: options?.defaultPath ?? null,
+        });
+        if (picked == null) return null;
+        const trimmed = picked.trim();
+        return trimmed || null;
+      } catch (e) {
+        log.error('pickDirectory failed', e);
+        throw e;
+      }
+    },
   };
 }

@@ -1,9 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { agentDisplayName } from '@/config/agents';
 import type { Account, Provider } from '@/lib/types';
 import type { TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
 import {
   activeBindingForAgent,
+  buildTicketAddMenu,
+  dispatchTicketAddAction,
+  ticketAddDialogState,
   buildTicketDetailFields,
   buildTicketWalletRows,
   countTicketsByFilter,
@@ -291,5 +294,63 @@ describe('ticket detail fields', () => {
     expect(keyExtras.canEditConfig).toBe(true);
     expect(keyExtras.endpointHost).toBe('relay.example.com');
     expect(ticketDetailEditLabel(keyExtras)).toBe('编辑配置');
+  });
+});
+
+describe('buildTicketAddMenu', () => {
+  it('nests import and API Key under each Agent', () => {
+    const menu = buildTicketAddMenu(['claude', 'kimi']);
+    expect(menu.map((item) => item.id)).toEqual(['claude', 'kimi']);
+    expect(menu[0]?.name).toBe(agentDisplayName('claude'));
+    expect(menu.map((item) => item.actions.map((a) => a.kind))).toEqual([
+      ['import-login', 'api-key'],
+      ['import-login', 'api-key'],
+    ]);
+    expect(menu[0]?.actions.map((a) => a.label)).toEqual(['导入当前登录', '添加 API Key']);
+  });
+
+  it('is empty when no Agent is installed', () => {
+    expect(buildTicketAddMenu([])).toEqual([]);
+    expect(buildTicketAddMenu(null)).toEqual([]);
+    expect(buildTicketAddMenu()).toEqual([]);
+  });
+});
+
+describe('dispatchTicketAddAction', () => {
+  it('forwards the selected Agent to the matching handler', () => {
+    const onImportLogin = vi.fn();
+    const onAddKey = vi.fn();
+    dispatchTicketAddAction('import-login', 'kimi', { onImportLogin, onAddKey });
+    expect(onImportLogin).toHaveBeenCalledOnce();
+    expect(onImportLogin).toHaveBeenCalledWith('kimi');
+    expect(onAddKey).not.toHaveBeenCalled();
+
+    onImportLogin.mockClear();
+    dispatchTicketAddAction('api-key', 'claude', { onImportLogin, onAddKey });
+    expect(onAddKey).toHaveBeenCalledOnce();
+    expect(onAddKey).toHaveBeenCalledWith('claude');
+    expect(onImportLogin).not.toHaveBeenCalled();
+  });
+
+  it('no-ops when the matching handler is missing', () => {
+    expect(() => dispatchTicketAddAction('import-login', 'kimi', {})).not.toThrow();
+    expect(() => dispatchTicketAddAction('api-key', 'claude', {})).not.toThrow();
+  });
+});
+
+describe('ticketAddDialogState', () => {
+  it('opens import or API Key against the submenu Agent', () => {
+    expect(ticketAddDialogState('import-login', 'codex')).toEqual({
+      addAgentId: 'codex',
+      loginImportOpen: true,
+      apiKeyDialogOpen: false,
+      clearEditProvider: false,
+    });
+    expect(ticketAddDialogState('api-key', 'grok')).toEqual({
+      addAgentId: 'grok',
+      loginImportOpen: false,
+      apiKeyDialogOpen: true,
+      clearEditProvider: true,
+    });
   });
 });

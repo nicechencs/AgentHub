@@ -403,6 +403,27 @@ export function conversationTitle(title: string): string {
   return title.trim() ? title : '新对话';
 }
 
+export type ChatBlockerPrimaryTarget =
+  | 'agents'
+  | 'connections'
+  | 'pick-directory'
+  | 'settings';
+
+export function blockerPrimaryTarget(
+  blocker: Pick<ChatSendBlocker, 'kind'>,
+): ChatBlockerPrimaryTarget {
+  switch (blocker.kind) {
+    case 'hiddenAgents':
+      return 'agents';
+    case 'unconfiguredAuth':
+      return 'connections';
+    case 'noCwd':
+      return 'pick-directory';
+    case 'sendingElsewhere':
+      return 'settings';
+  }
+}
+
 export function blockerCopy(blocker: ChatSendBlocker): {
   text: string;
   primaryAction: string;

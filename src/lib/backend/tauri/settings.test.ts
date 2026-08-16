@@ -535,6 +535,33 @@ describe('createTauriSettingsPort usage interval and theme', () => {
   });
 });
 
+describe('createTauriSettingsPort pickDirectory', () => {
+  beforeEach(() => {
+    tauriRuntime = true;
+    invokeMock.mockReset();
+  });
+
+  it('invokes pick_directory and returns a path', async () => {
+    invokeMock.mockResolvedValue('/Users/me/proj');
+    const port = createTauriSettingsPort();
+    await expect(
+      port.pickDirectory({ title: '选择工作目录', defaultPath: '/Users/me' }),
+    ).resolves.toBe('/Users/me/proj');
+    expect(invokeMock).toHaveBeenCalledWith('pick_directory', {
+      title: '选择工作目录',
+      defaultPath: '/Users/me',
+    });
+  });
+
+  it('maps cancel and blank to null', async () => {
+    const port = createTauriSettingsPort();
+    invokeMock.mockResolvedValueOnce(null);
+    await expect(port.pickDirectory()).resolves.toBeNull();
+    invokeMock.mockResolvedValueOnce('   ');
+    await expect(port.pickDirectory()).resolves.toBeNull();
+  });
+});
+
 describe('isAlreadyDisabledAutostartError', () => {
   it('matches Windows missing-value errors', () => {
     expect(

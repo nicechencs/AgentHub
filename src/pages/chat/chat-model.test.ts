@@ -7,6 +7,7 @@ import {
   agentHasConfiguredAuth,
   agentPickerLabel,
   blockerCopy,
+  blockerPrimaryTarget,
   chatAgentPickerRows,
   chatConnectionKind,
   chatConnectionPickerView,
@@ -399,6 +400,15 @@ describe('blockerCopy', () => {
       primaryAction: '回到该会话',
       secondaryAction: '停止',
     });
+  });
+});
+
+describe('blockerPrimaryTarget', () => {
+  it('sends noCwd to the directory picker, not session settings', () => {
+    expect(blockerPrimaryTarget({ kind: 'hiddenAgents' })).toBe('agents');
+    expect(blockerPrimaryTarget({ kind: 'unconfiguredAuth' })).toBe('connections');
+    expect(blockerPrimaryTarget({ kind: 'noCwd' })).toBe('pick-directory');
+    expect(blockerPrimaryTarget({ kind: 'sendingElsewhere' })).toBe('settings');
   });
 });
 

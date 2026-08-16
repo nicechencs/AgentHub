@@ -34,6 +34,62 @@ export const TICKET_WALLET_FILTERS: Array<{ value: TicketWalletFilter; label: st
   { value: 'unknown', label: '未识别' },
 ];
 
+export type TicketAddKind = 'import-login' | 'api-key';
+
+export const TICKET_ADD_ACTIONS: Array<{ kind: TicketAddKind; label: string }> = [
+  { kind: 'import-login', label: '导入当前登录' },
+  { kind: 'api-key', label: '添加 API Key' },
+];
+
+export interface TicketAddMenuAgent {
+  id: AgentId;
+  name: string;
+  actions: Array<{ kind: TicketAddKind; label: string }>;
+}
+
+export function buildTicketAddMenu(
+  agentIds?: readonly AgentId[] | null,
+): TicketAddMenuAgent[] {
+  if (!agentIds || agentIds.length === 0) return [];
+  return agentIds.map((id) => ({
+    id,
+    name: agentDisplayName(id),
+    actions: TICKET_ADD_ACTIONS,
+  }));
+}
+
+export function dispatchTicketAddAction(
+  kind: TicketAddKind,
+  agentId: AgentId,
+  handlers: {
+    onImportLogin?: (id: AgentId) => void;
+    onAddKey?: (id: AgentId) => void;
+  },
+): void {
+  if (kind === 'import-login') {
+    handlers.onImportLogin?.(agentId);
+    return;
+  }
+  handlers.onAddKey?.(agentId);
+}
+
+export function ticketAddDialogState(
+  kind: TicketAddKind,
+  agentId: AgentId,
+): {
+  addAgentId: AgentId;
+  loginImportOpen: boolean;
+  apiKeyDialogOpen: boolean;
+  clearEditProvider: boolean;
+} {
+  return {
+    addAgentId: agentId,
+    loginImportOpen: kind === 'import-login',
+    apiKeyDialogOpen: kind === 'api-key',
+    clearEditProvider: kind === 'api-key',
+  };
+}
+
 /** 「未识别」按 surface；可兼 credentialClass === 'unknown'。 */
 export function isUnrecognizedTicket(ticket: Pick<TicketView, 'surface' | 'credentialClass'>): boolean {
   return ticket.surface === 'unknown' || ticket.credentialClass === 'unknown';

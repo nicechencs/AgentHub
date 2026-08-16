@@ -5,7 +5,7 @@
  */
 import * as React from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, KeyRound, Pencil, Plus, Share2, Search, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, KeyRound, Pencil, Plus, Share2, Search, Trash2 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -21,6 +21,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tip } from '@/components/ui/tooltip';
@@ -33,6 +37,8 @@ import {
 import type { AgentId } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
+  buildTicketAddMenu,
+  dispatchTicketAddAction,
   buildTicketDetailFields,
   buildTicketWalletRows,
   countTicketsByFilter,
@@ -233,9 +239,7 @@ export function TicketWalletList({
   onDeleteTicket,
   onAddKey,
   onImportLogin,
-  addAgentId,
   installedAgentIds,
-  onPickAddAgent,
 }: {
   wallet: TicketWallet | null;
   loading?: boolean;
@@ -245,11 +249,9 @@ export function TicketWalletList({
   extrasForTicket?: (ticket: TicketView) => TicketDetailExtras | null;
   onEditTicket: (ticket: TicketView) => void;
   onDeleteTicket: (ticket: TicketView) => void;
-  onAddKey?: () => void;
-  onImportLogin?: () => void;
-  addAgentId?: AgentId | null;
+  onAddKey?: (agentId: AgentId) => void;
+  onImportLogin?: (agentId: AgentId) => void;
   installedAgentIds?: readonly AgentId[];
-  onPickAddAgent?: (id: AgentId) => void;
 }) {
   const [filter, setFilter] = React.useState<TicketWalletFilter>(initialFilter);
   const [query, setQuery] = React.useState('');
@@ -268,6 +270,10 @@ export function TicketWalletList({
       highlightAgentId: highlightAgentId ?? null,
     });
   }, [wallet, filter, query, highlightAgentId]);
+  const addAgents = React.useMemo(
+    () => buildTicketAddMenu(installedAgentIds),
+    [installedAgentIds],
+  );
 
   const addMenu = (
     <DropdownMenu>
@@ -276,29 +282,36 @@ export function TicketWalletList({
           <Plus className="h-4 w-4" /> 添加 <ChevronDown className="h-3.5 w-3.5" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[14rem]">
-        {installedAgentIds && installedAgentIds.length > 0 && onPickAddAgent ? (
-          <>
-            <div className="px-2 py-1.5 text-meta text-muted">添加到 Agent</div>
-            {installedAgentIds.map((id) => (
-              <DropdownMenuItem
-                key={id}
-                onSelect={() => onPickAddAgent(id)}
-                className={addAgentId === id ? 'bg-active' : undefined}
-              >
-                {agentDisplayName(id)}
-                {addAgentId === id ? ' · 当前' : ''}
-              </DropdownMenuItem>
-            ))}
-            <div className="my-1 h-px bg-border" />
-          </>
-        ) : null}
-        <DropdownMenuItem disabled={!onImportLogin} onSelect={() => onImportLogin?.()}>
-          导入当前登录态
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled={!onAddKey} onSelect={() => onAddKey?.()}>
-          添加 API Key
-        </DropdownMenuItem>
+      <DropdownMenuContent align="end" className="min-w-[12rem]">
+        <DropdownMenuLabel>选择 Agent</DropdownMenuLabel>
+        {addAgents.length === 0 ? (
+          <DropdownMenuItem disabled>没有可添加的 Agent</DropdownMenuItem>
+        ) : (
+          addAgents.map((agent) => (
+            <DropdownMenuSub key={agent.id}>
+              <DropdownMenuSubTrigger className="justify-between gap-2">
+                <span className="truncate">{agent.name}</span>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted" />
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="min-w-[10rem]">
+                {agent.actions.map((action) => (
+                  <DropdownMenuItem
+                    key={action.kind}
+                    disabled={action.kind === 'import-login' ? !onImportLogin : !onAddKey}
+                    onSelect={() =>
+                      dispatchTicketAddAction(action.kind, agent.id, {
+                        onImportLogin,
+                        onAddKey,
+                      })
+                    }
+                  >
+                    {action.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          ))
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

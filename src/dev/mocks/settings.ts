@@ -125,5 +125,24 @@ export function createMockSettingsPort(): SettingsPort {
         throw new Error('浏览器拦截了弹窗，请允许本页打开新窗口后重试');
       }
     },
+
+    async pickDirectory(options) {
+      await delay(40);
+      return promptForDirectoryPath(options?.title, options?.defaultPath);
+    },
   };
+}
+
+/** Browser cannot expose a real filesystem path; prompt is the mock stand-in. */
+export function promptForDirectoryPath(
+  title?: string,
+  defaultPath?: string | null,
+): string | null {
+  if (typeof window === 'undefined' || typeof window.prompt !== 'function') {
+    return null;
+  }
+  const entered = window.prompt(title ?? '选择工作目录（输入完整路径）', defaultPath ?? '');
+  if (entered == null) return null;
+  const trimmed = entered.trim();
+  return trimmed || null;
 }

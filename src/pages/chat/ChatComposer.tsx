@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils';
 import { extractModel } from './chat-format';
 import {
   blockerCopy,
+  blockerPrimaryTarget,
   type ChatAgentPickerRow,
   type ChatConnectionPickerView,
   type ChatSendBlocker,
@@ -58,6 +59,7 @@ export function ChatComposer({
   onToggleAgent,
   onSwitchProvider,
   onOpenSettings,
+  onPickWorkingDirectory,
   onFocusConversation,
 }: {
   draft: string;
@@ -78,6 +80,7 @@ export function ChatComposer({
   onToggleAgent: (id: AgentId) => void;
   onSwitchProvider: (id: string) => void;
   onOpenSettings: () => void;
+  onPickWorkingDirectory: () => void;
   onFocusConversation: (id: string) => void;
 }) {
   const navigate = useNavigate();
@@ -121,6 +124,7 @@ export function ChatComposer({
             navigate(primaryAgent ? `/connections?agent=${primaryAgent}` : '/connections')
           }
           onOpenSettings={onOpenSettings}
+          onPickWorkingDirectory={onPickWorkingDirectory}
           onFocusConversation={onFocusConversation}
           onCancel={onCancel}
         />
@@ -322,6 +326,7 @@ function BlockerNotice({
   onGoAgents,
   onGoConnections,
   onOpenSettings,
+  onPickWorkingDirectory,
   onFocusConversation,
   onCancel,
 }: {
@@ -329,6 +334,7 @@ function BlockerNotice({
   onGoAgents: () => void;
   onGoConnections: () => void;
   onOpenSettings: () => void;
+  onPickWorkingDirectory: () => void;
   onFocusConversation: (id: string) => void;
   onCancel: () => void;
 }) {
@@ -366,11 +372,12 @@ function BlockerNotice({
       className="mb-2"
       actionLabel={copy.primaryAction}
       onAction={
-        blocker.kind === 'hiddenAgents'
-          ? onGoAgents
-          : blocker.kind === 'unconfiguredAuth'
-            ? onGoConnections
-            : onOpenSettings
+        {
+          agents: onGoAgents,
+          connections: onGoConnections,
+          'pick-directory': onPickWorkingDirectory,
+          settings: onOpenSettings,
+        }[blockerPrimaryTarget(blocker)]
       }
     >
       {copy.text}
