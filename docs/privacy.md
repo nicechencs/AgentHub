@@ -21,7 +21,7 @@
 ## 截图规范
 
 - Skills / Connections 等演示优先 **`pnpm dev:mock`**，路径应出现 `c:\mock\…` 或占位符。
-- 第三方产品截图裁掉账号、账单、邮箱区域（参见 `ui-experience-alignment` 对 Cursor 的裁剪说明）。
+- 第三方产品截图裁掉账号、账单、邮箱区域（参见 [ui-experience-alignment.md](ui-experience-alignment.md) 对 Cursor 的裁剪说明）。仓库不存实机图，以 `pnpm dev:mock` 为准。
 - 发现真实用户名路径：先脱敏再提交，或改用 mock 截图。
 
 ## OAuth 常量

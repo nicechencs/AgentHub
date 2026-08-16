@@ -7,6 +7,7 @@
 > v1.3：**安装前置环境（Runtime）**：用户机可能无法直接装 Agent（缺 Node/npm 等），安装管线改为「检测环境 → 引导装环境 → 再装 Agent」。  
 > v1.4：**平台环境差异**：PowerShell 仅 Windows 共享 Runtime；macOS/Linux native 安装/升级走官方 sh + bash，不得检测或要求 PowerShell；包管理引导 Windows=`winget`、macOS=`brew`。
 > v1.5：**Adapter sidecar 目标架构**：`local_bridge` 的长驻 Runtime 与完整 saga 迁入用户级 `agenthub-adapterd`；Connections 与 live 配置事务继续由 core service 管理。当前实现仍为 Tauri 进程内宿主，按三阶段迁移。
+> 2026-08-16 文档回写：§4–§5 的 Adapter 伪代码是立项接口（`apply_provider` 等），现行 trait 见 [architecture.md](architecture.md)；§8 为实现真源。
 
 系列文档：[产品决策（跨 Agent 复用三路）](product-decisions.md) · [目录结构与模块拆分](architecture.md) · [模块化改进方案](modularity-improvement.md) · [票 / 绑定 / 协议图](connection-binding-model.md) · [Adapter Sidecar 目标架构](adapter-sidecar-design.md) · [前端 UI 设计](ui-design.md) · [CLI 与配置契约](cli-and-config.md) · [Hub 重构 Phase 1 记录](hub-redesign-plan.md) · [DeepSeek Harness 接入](deepseek-harness-integration.md)
 
@@ -85,7 +86,7 @@
 │  │ services  │ │ storage  │ │ AgentAdapter   │ │
 │  │ (业务编排) │ │ (SQLite) │ │ trait + 注册表  │ │
 │  └───────────┘ └──────────┘ └────────────────┘ │
-│       adapters/: claude / codex / kimi / grok / pi / workbuddy │
+│       adapters/: claude / codex / kimi / grok / pi / workbuddy / cursor / dsh │
 │                  （每 agent 一个模块）            │
 └─────────────────────────────────────────────────┘
 ```
@@ -108,13 +109,14 @@ trait AgentAdapter {
     fn detect(&self) -> DetectResult;                 // 是否安装/版本/二进制路径
     fn install_channels(&self) -> Vec<InstallChannel>; // 渠道 id/标签 + requires: [RuntimeId]
     fn read_config(&self) -> AgentConfig;             // 当前 API 配置（live）
-    fn apply_provider(&self, p: &Provider) -> Result<()>; // 只负责写 live；备份由 service 先做
+    fn write_config(&self, config: &AgentConfig) -> Result<()>; // 现行名；立项稿曾写 apply_provider
     fn read_auth(&self) -> AuthState;                 // 当前认证状态（脱敏）
-    fn apply_account(&self, a: &Account) -> Result<()>;   // 账号凭据写入
-    fn supports_skills(&self) -> bool;
+    fn apply_account(&self, a: &LiveAccount) -> Result<()>;   // 账号凭据写入
+    // 没有 supports_skills / usage_source；skills/usage 在 platform/
     fn skills_dir(&self) -> Option<PathBuf>;          // 技能投影目标；不支持则 None
     fn live_backup_paths(&self) -> Vec<PathBuf>;      // 写前应快照的 live 文件清单
-    fn usage_source(&self) -> Option<Box<dyn UsageParser>>; // 日志解析器；无则 None
+    fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec>;
+    fn capability(&self, cap: Capability) -> CapabilityState;
 }
 ```
 
@@ -225,7 +227,7 @@ trait AgentAdapter {
 
 ```
 校验 → backfill → backup_service.snapshot(agent)  // 问 Adapter.live_backup_paths()
-     → adapter.apply_provider(...)                // 原子写
+     → adapter.write_config(...)                  // 原子写（立项稿曾写 apply_provider）
      → 索引写入 backups 表
 ```
 
@@ -330,6 +332,8 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 ## 7. 分期路线图
 
+> **历史路线图**（脚手架叙事）。P0–P4 描述的是立项时的分期，不是当前待办。**现状以 §8 为准**；已完成项不要再按本表当未做。sidecar 仍是目标架构、**未迁**（见 §8.2）。
+
 | 阶段 | 内容 |
 |---|---|
 | **P0 脚手架** | cargo workspace（core/gui/cli）、SQLite 层 + 迁移、AgentAdapter trait + 注册表、基础 detect；**Runtime detect（至少 node/npm）**；CLI：`doctor`（含 runtimes）/ `agent list` / `config path` / 可选 `env list`（见 cli-and-config §8） |
@@ -338,7 +342,9 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | **P3** | 各平台凭据管理完善；OAuth 添加账号（loopback PKCE） |
 | **P4 二期候选** | macOS/Linux 适配；配置备份同步；token 自动刷新守护；代理模式（热切换不改 live 文件，独立评估）；可选「账号可用模型探测」（非 Usage 附属） |
 
-## 8. 当前实现状态（以代码与测试为准）
+## 8. 当前实现状态（实现真源；以代码与测试为准）
+
+已完成项以本表为准，不要按 §7 历史路线图写成未做。sidecar 仍是目标、**未迁**（见 §8.2）。
 
 ### 8.1 已落地
 
@@ -354,7 +360,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | Skills 投影 + install/uninstall/update/project/market | ✅ core + CLI + Tauri；前端 Skills 页接线 |
 | Backup live list/create/restore/delete | ✅ |
 | Usage 增量采集 + Dashboard 图表/明细/ParserHealth | ✅（部分 Agent 按能力矩阵 Unsupported） |
-| Chat 多 Agent 对话 + 过程面板 | ✅ 结构化流以能力矩阵为准 |
+| Chat 多 Agent 对话 + 过程面板 | ✅ 结构化流以能力矩阵为准；Phase 3 展示层已落地 |
 | Projects 列表/删除/摘录 | ✅（部分 Agent Partial） |
 | 前端 backend 分层（tauri / mocks / contracts / api façade） | ✅；`pnpm build` 强制 Tauri + 护栏 |
 | CLI `run` 多 Agent headless | ✅ |
@@ -375,17 +381,17 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | Dashboard **生产告警** | 🟡 | 生产从 doctor 派生 auth/env/update 告警（本地 dismiss）；无独立告警总线。mock 可演示额外样例 |
 | Tauri **事件桥** | ❌ | 文档目标；现以前端 refetch 为主 |
 | MCP **管理 / 注入**、`ModelSelect`、`SessionResume` | Planned | `Mcp` 矩阵仍表示管理/注入能力；独立的只读 MCP inventory 已落地，不改变矩阵状态 |
-| 票 / 绑定读模型与钱包重做 | ✅ 读模型、进口打标、`plan` 收口、拒投影、`bind`/`unbind` 写入已落地；§6.4 部分落地（Kimi/OpenAI API → Grok，OpenAI/xAI/GLM/DeepSeek API → Pi，GLM/DeepSeek API → Codex）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex，属 ①）；② Claude/Codex/Grok 订阅 Account → Pi 已可 experimental bind；③ Codex Responses 与 Grok Chat 订阅→Claude 已可 experimental `local_bridge` bind，Claude 订阅→Codex 产品关闭，App Server/OauthOther 仍关闭；见 [product-decisions.md](product-decisions.md)；§6.6 未做 | [connection-binding-model.md](connection-binding-model.md)：`list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`。`canApply` = 现在 bind 会成功（有实现且 secret 可按票 `source_kind` 解析）。可写边：Kimi 会员 Provider / Account → Claude/Pi/Codex/Grok，OpenAI API Provider / Account → Grok/Pi，Anthropic / xAI API（Provider 与 Account）→ Pi，GLM Coding Plan / DeepSeek API（Provider 与 Account）→ Pi 自定义 provider 与 Codex 官方 Responses，Anthropic API（Provider 与 Account）→ Codex，GLM Coding Plan / DeepSeek API（Provider 与 Account）→ Claude，带 access token 的 Codex `auth_json` 或 Grok OAuth 订阅 → Claude Responses/Chat（③）。Claude 订阅 → Codex 产品不做。写入走 bind，apply 为薄兼容委托 |
+| 票 / 绑定读模型与钱包重做 | ✅ 读模型、进口打标、`plan` 收口、拒投影、`bind`/`unbind` 写入已落地；§6.4 部分落地（Kimi/OpenAI API → Grok，OpenAI/xAI/GLM/DeepSeek API → Pi，GLM/DeepSeek API → Codex）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex，属 ①）；② Claude/Codex/Grok 订阅 Account → Pi 已可 experimental bind；③ Codex Responses 与 Grok Chat 订阅→Claude 已可 experimental `local_bridge` bind，Claude 订阅→Codex 产品关闭，App Server/OauthOther 仍关闭；见 [product-decisions.md](product-decisions.md)；dsh writer 已接入（`AgentId::Dsh` + `deepseek-api-to-dsh-v1`）；未做的是 sidecar 迁移 | [connection-binding-model.md](connection-binding-model.md)：`list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`。`canApply` = 现在 bind 会成功（有实现且 secret 可按票 `source_kind` 解析）。可写边：Kimi 会员 Provider / Account → Claude/Pi/Codex/Grok，OpenAI API Provider / Account → Grok/Pi，Anthropic / xAI API（Provider 与 Account）→ Pi，GLM Coding Plan / DeepSeek API（Provider 与 Account）→ Pi 自定义 provider 与 Codex 官方 Responses，Anthropic API（Provider 与 Account）→ Codex，GLM Coding Plan / DeepSeek API（Provider 与 Account）→ Claude，带 access token 的 Codex `auth_json` 或 Grok OAuth 订阅 → Claude Responses/Chat（③）。Claude 订阅 → Codex 产品不做。写入走 bind，apply 为薄兼容委托 |
 | Adapter 本地 Bridge 产品接线 | 🟡 部分实现 | core host、协议转换、Tauri controller、UI 控件、auto-start 恢复与退出 drain 已进入当前工作区；具体可执行状态见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)，端到端验收尚未收口 |
-| Adapter 用户级 sidecar | 🎯 目标已决策 / 未实现 | 当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有；待完成 Tauri-neutral control contract、`agenthub-adapterd`、本地 IPC、单实例/版本+schema 握手、SQLite shared/exclusive schema lease、更新/卸载 saga 和分阶段切换，见 [adapter-sidecar-design.md](adapter-sidecar-design.md) |
-| 模块化收口（双真源 / 上帝文件 / 写入入口） | 📋 方案已落地 / 代码未收口 | 生产组合仍偏 Adapter-centric；P0–P2 见 [modularity-improvement.md](modularity-improvement.md)。不拆微服务，凭据落盘加密仍范围外 |
+| Adapter 用户级 sidecar | 🎯 目标已决策 / 未实现 | Phase 1 控制契约已落地（core `adapter_control` + in-process `DesktopAdapterControl`）。仍待 `agenthub-adapterd`、本地 IPC、schema lease、更新/卸载 saga。见 [adapter-sidecar-design.md](adapter-sidecar-design.md) |
+| 模块化收口（双真源 / 上帝文件 / 写入入口） | 📋 部分已收口 | integrations / Ticket 写口 / `adapter_control` 契约已落地；仍待削 `AgentAdapter` 厚表面、sidecar 二进制、Skills/Projects/AgentCard。见 [modularity-improvement.md](modularity-improvement.md)。不拆微服务，凭据落盘加密仍范围外 |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |
 | Token **后台自动刷新守护** | ❌ | 有手动 refresh |
 | Settings 语言切换 / i18n | ❌ | `language` 可写入 L1，UI 仅为中文只读说明，无 i18next |
 | Usage **后台守护 / 文件监听** | ❌ | 仅前台 interval + 手动 |
 | 官方模型商店 / 账号可用模型探测 | ❌ | 明确非目标（用量去重模型列表除外） |
 | WebDAV / 代理模式 / macOS·Linux 一等公民 | P4 候选 | 未开工 |
-| Chat 后续阶段（diff 预览、过程落库等） | ❌ | 见 chat-process-streaming.md |
+| Chat 后续阶段 | 🟡 展示层已落地 / 协议侧未做 | 过程面板展示层（摘要行 / 时间线 / 运行详情）已落地。协议侧（过程落库、过程内 usage、Pi rpc 审批、diff 预览落库）仍未做。见 [chat-process-streaming.md](chat-process-streaming.md) |
 | 部分 Agent 的 ConfigWrite / 账号切换 / Usage | Unsupported | 设计边界，见能力矩阵 |
 | CLI Provider create/update/delete | ❌ | 与 GUI 不对称，脚本侧靠 import-live + switch |
 | TanStack Query / i18next 等 | ❌ | 方案提及；`package.json` 未依赖 |

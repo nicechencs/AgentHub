@@ -154,7 +154,7 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 
 | 显式来源 | 目标 | 分析结果 | 当前可执行状态 |
 |---|---|---|---|
-| Kimi Provider，`agent_id=kimi` 且 `meta.preset=kimi-code-membership` | Claude Code | stable `native_endpoint` | **可应用**；普通 Apply 服务当前唯一白名单 |
+| Kimi Provider，`agent_id=kimi` 且 `meta.preset=kimi-code-membership` | Claude Code | stable `native_endpoint` | **可应用**；最早稳定边之一，现与多条 `can_apply=true` 边并列 |
 | 同上 | Codex | experimental `local_bridge` | **可实验应用**；`plan.canApply=true`，由 Tauri 专用 Bridge 路径执行，尚未完成端到端验收 |
 | 同上 | Pi | stable `config_sync` | **可应用**；写入 Pi `models.json` 的 `kimi-for-coding` 槽，凭据只引用 |
 | Kimi Code 会员 Account（`kind=apikey`，membership tag / `api.kimi.com/coding`，`credentials.format=api_key`） | Claude Code | stable `native_endpoint` | **可应用**；与 Kimi Provider 同边，生成 meta 的 `adapterSourceRef.kind=account` |
@@ -228,9 +228,9 @@ Responses 已选为本轮上游 transport，并用 fixtures / host health 验证
 
 被选定的 transport 必须证明：身份只用于当前用户，token 不跨 IPC 泄露，刷新不导致并发风暴，协议闭环正确，且失败不会留下可用的 Claude Code loopback 配置。两条都未就绪时，UI 仍展示这条产品边为可预览，并给出 Claude 自身登录或已支持 API Key 作为临时替代。
 
-### 5.2 订阅桥接的分层契约（设计目标，未实现）
+### 5.2 订阅桥接的分层契约
 
-订阅桥接不得把现有 Kimi resolver 或 Adapter 页面扩展成隐式 OAuth proxy。目标职责如下：
+Responses `auth_json` → Claude 已可 experimental bind（`codex-subscription-to-claude-responses-v1`）。未落地的是 sidecar IPC、自动 refresh、App Server。订阅桥接不得把现有 Kimi resolver 或 Adapter 页面扩展成隐式 OAuth proxy。目标职责如下：
 
 ```text
 Connection / Account（core services owner）
@@ -249,8 +249,8 @@ Connection / Account（core services owner）
 | `UpstreamTransport` | 封装一个经门禁批准的 App Server spike 或 Codex Responses transport；不让协议映射层、UI 或目标客户端猜端点。 |
 | `ProtocolKernel` / IR | 纯请求、事件和错误映射；不读数据库、不刷新凭据、不监听端口。 |
 | `DownstreamSurface` | 按协议暴露最小 loopback surface：本候选为 Anthropic Messages；现有 Kimi 路径仍为 Responses。 |
-| sidecar runtime | `agenthub-adapterd` 是 `local_bridge` 唯一运行时/监听 owner；Connections、Account、Provider 与数据库/live-config 事务仍由 core services owner 持有。 |
-| capability matrix | 对每一 source × credential × transport × target × protocol × version 记录门禁、限制、fixtures 与验证日期；缺项即 fail-closed。真源：`crates/agenthub-core/src/models/adapter_capability_matrix.rs`（`ADAPTER_CAPABILITY_MATRIX` / `decide_adapter_capability` / `CODEX_SUBSCRIPTION_TO_CLAUDE_REASON`）。analyze 对外附带结构化 `ruleId` + `gateKind`（如 `subscription_candidate`），UI 不得只靠解析 reason 文案。`plan()` 是唯一规划出口；`plan.can_apply` = 矩阵开放 ∩ plan 私有 `write_gate`（有 bind 实现且 secret 可按 `source_kind` 解析；本步 Account 同边可写包括 Anthropic API → Pi 与带 access token 的 Codex `auth_json` → Claude Responses）。模型映射预留（**未接线**）：`adapter_model_mapping.rs`。状态分层预留（**未接线**）：`adapter_state_model.rs`。 |
+| sidecar runtime | 目标：`agenthub-adapterd` 是 `local_bridge` 唯一运行时/监听 owner。当前仍由 Tauri `AppState` / `BridgeRuntimeHost` 进程内托管；sidecar IPC 未迁移。Connections、Account、Provider 与数据库/live-config 事务仍由 core services owner 持有。 |
+| capability matrix | 对每一 source × credential × transport × target × protocol × version 记录门禁、限制、fixtures 与验证日期；缺项即 fail-closed。真源：`crates/agenthub-core/src/domain/protocol_graph/adapter_capability_matrix.rs`（`ADAPTER_CAPABILITY_MATRIX` / `decide_adapter_capability` / `CODEX_SUBSCRIPTION_TO_CLAUDE_REASON`）。analyze 对外附带结构化 `ruleId` + `gateKind`（如 `subscription_candidate`），UI 不得只靠解析 reason 文案。`plan()` 是唯一规划出口；`plan.can_apply` = 矩阵开放 ∩ plan 私有 `write_gate`（有 bind 实现且 secret 可按 `source_kind` 解析；本步 Account 同边可写包括 Anthropic API → Pi 与带 access token 的 Codex `auth_json` → Claude Responses）。模型映射预留（**未接线**）：`adapter_model_mapping.rs`。状态分层预留（**未接线**）：`adapter_state_model.rs`。 |
 
 ### 5.3 Codex → Claude Code 的目标数据流与语义
 

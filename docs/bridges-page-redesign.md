@@ -1,6 +1,8 @@
 # 「桥与适配」页终态：本机桥运行时（Bridges）
 
-> **2026-08-16 表面更新**：用户可见名称改为 **本机路由**，侧栏英文 **Routes**，规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久跳到 `/routes`。下文保留 2026-08-15 当时的 IA 决策记录（对象、单层健康、条件侧栏），不再当作现行页名/路径。
+> **2026-08-16 表面更新**：用户可见名称改为 **本机路由**，侧栏英文 **Routes**，规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久跳到 `/routes`。  
+> **以下 Overview 起至文末为实施前原文 / 历史 IA**（2026-08-15）：当时规范路由写 `/bridges`、侧栏写 Bridges、页标题写「本机桥」、并按 PR 1–5 计划实施。阅读时把文中 `/bridges`、Bridges、「本机桥」理解为当时用词，不要当成现行路径或侧栏名。对象三分、单层健康、条件侧栏、`partitionLocalBridgeRuntimes` 等 IA 决策仍有效。  
+> 条件侧栏已落地：`src/app/runtime/bridge-presence-store.ts` 的 `shouldShowBridgesNav`（只做侧栏可见性，不算 bound/orphan）。页目录为 `src/pages/bridges/`。
 
 | 字段 | 值 |
 |---|---|
@@ -42,7 +44,7 @@ Hub Phase 1 之后，把票接到 Agent 的日常动作已经离开本页：Dash
 `src/pages/adapter/index.tsx` 的 `AdapterPage` 已经不做创建，但仍按一等 Manage 工作台排版：
 
 - 标题「桥与适配」，把已搬走的「适配」和剩下的「桥」焊在一起。
-- 侧栏 `NAV_MANAGE` 是 Manage 里唯一中文项（`Dashboard` / `Connections` / **桥与适配** / `Settings`），违反 [ui-design.md](D:\demo_chen\2026\AgentHub\docs\ui-design.md)「导航保留英文专有名词」。
+- 侧栏 `NAV_MANAGE` 是 Manage 里唯一中文项（`Dashboard` / `Connections` / **桥与适配** / `Settings`），违反 [ui-design.md](./ui-design.md)「导航保留英文专有名词」。
 - 页内文案互相打架：标题「桥与适配」、段「本机桥运行时」、空态「没有已绑定的本机桥」、删除确认「删除此适配」。
 - 路由 `/adapter` 描述的是旧 source→analyze→plan→apply 工作台；`/router` 仍重定向到这里。
 - `PageHeader` 主按钮「去 Dashboard 连接」、次按钮「去 Connections」——主行动是离开本页。同一句道歉在 header、`PageSection`、空态重复三遍。
@@ -379,7 +381,7 @@ function pageViewState(input: {
 
 `EmptyState`：`title` + **一段** `description`（含 hint）。不传按钮。不扩展 `EmptyState`。
 
-这是对 [ui-design.md](D:\demo_chen\2026\AgentHub\docs\ui-design.md) §1.4 的**显式例外**。
+这是对 [ui-design.md](./ui-design.md) §1.4 的**显式例外**。
 
 禁止：header「去 Dashboard 连接」；段描述再道歉；嵌 ConnectFlow。
 
@@ -831,9 +833,10 @@ export const BRIDGES_PATH = '/bridges'; // PR 2 起；PR 1 深链仍用 /adapter
 
 ## References
 
-- 现状页：`src/pages/adapter/index.tsx`、`adapter-view-model.ts`、`AdapterProfilesList.tsx`、`AdapterProfileDetailDialog.tsx`、`use-adapter-resources.ts`
-- 测试消费者：`src/pages/adapter/index.test.tsx`（`from './index'`）、`adapter-sources.test.ts`、`adapter-view-model.test.ts`
-- 导航 / 路由：`src/components/layout/Sidebar.tsx`、`src/App.tsx`、`src/pages/router/index.tsx`
+- 现状页：`src/pages/bridges/index.tsx`、`adapter-view-model.ts`、`AdapterProfilesList.tsx`、`AdapterProfileDetailDialog.tsx`、`use-bridge-resources.ts`
+- 测试消费者：`src/pages/bridges/index.test.tsx`、`adapter-view-model.test.ts`
+- 条件侧栏：`src/app/runtime/bridge-presence-store.ts`（`shouldShowBridgesNav`）
+- 导航 / 路由：`src/components/layout/Sidebar.tsx`、`src/App.tsx`（`/routes`；`/adapter`、`/router`、`/bridges` 永久跳过来）
 - 入口：`src/pages/dashboard/AgentOverview.tsx`、`src/pages/dashboard/index.tsx`（`adapterBadgeHits` = 当前投影）、`src/pages/connections/ticket-wallet-model.ts`、`ConnectFlowDialog.tsx`、`src-tauri/src/tray.rs`
 - unbind 真源：`TicketBindService::unbind`；`remove_adapter_with_bridge_cleanup`；`AdapterApplyService::remove` 拒绝 `local_bridge`
 - 产品文档：`docs/ui-design.md`、`docs/connection-binding-model.md`、`docs/adapter-design.md`、`docs/product-decisions.md`、`docs/hub-redesign-plan.md` §4 锚点

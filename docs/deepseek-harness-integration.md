@@ -3,7 +3,7 @@
 > 状态：**P1–P5 已接入代码**（2026-08-15）  
 > 调研依据：官方站点、开发者文档、GitHub `deepseek-ai/deepseek-harness`（MIT，developer preview）。  
 > 真源关系：本文是 **DSH 接入** 的唯一设计真源。实施时按 [adding-an-agent.md](adding-an-agent.md) 走生产接入轨；能力声明按 [capability-matrix.md](capability-matrix.md)；票面与跨 Agent 边按 [product-decisions.md](product-decisions.md)、[connection-binding-model.md](connection-binding-model.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)。DeepSeek API 票走 **① API 直连**，不要把 DSH 当 ③ 协议桥。  
-> 实现状态以 adapter `capability()`、已注册的 `platform/*/sources` 与测试为准。本文保留设计约束；能力级别以代码声明为准。
+> 实现状态以 adapter `capability()`、`integrations/agents/dsh/` 与测试为准（`platform/*/sources` 只是兼容转发）。本文保留设计约束；能力级别以代码声明为准。
 
 ---
 
@@ -106,7 +106,7 @@ AgentHub 以 Windows 为交付重点。官方事实：
 
 ## 3. 端口映射（按现有稀疏端口）
 
-平台 service / 页面 **禁止** 再写 `dsh` 分支。差异只进 adapter 与 `platform/*/sources`。
+平台 service / 页面 **禁止** 再写 `dsh` 分支。差异只进 adapter 与 `integrations/agents/dsh/`（`platform/*/sources` 只是兼容转发）。
 
 | 端口 | P1 | 目标 | 说明 |
 |---|---|---|---|
@@ -226,7 +226,7 @@ AgentHub Usage 的产品语义是 **零侵入解析本地日志里的 provider u
 5. fork / subagent：跳过 seed 前缀里的父历史 burst，避免重复计费。
 6. 增量 cursor 按文件偏移；压缩 JSONL（Zstd 等）解不开就 skip + failed，不半解。
 
-`Capability::Usage`：parser + fixtures 合并前保持 **Planned**。Cursor 那种「无稳定日志」才是 Unsupported；DSH 有日志，只是我们还没接。
+`Capability::Usage`：现行 **Full**（parser + fixtures 已接入）。Cursor 那种「无稳定日志」才是 Unsupported。
 
 ---
 
@@ -359,23 +359,23 @@ P4 才做 `build_run_spec`，且必须先量：
 
 ---
 
-## 11. 目标能力矩阵（接入后；现在不是事实）
+## 11. 现行能力矩阵（P1–P5 已接入；以 adapter `capability()` 为准）
 
-无 adapter、无本地样例前，**不得**把下表写进 CLI 快照。
+下表与 `adapters/dsh.rs` 的 `capability()` 对齐，不是「接入后才成立」的目标稿。
 
-| Capability | 目标 | reason |
+| Capability | 现行 | reason |
 |---|---|---|
-| ConfigWrite | Partial | 只写 home patch；整行替换未测通则 fail-closed |
-| AccountSwitch | Partial | 仅 API Key 引用切换 |
+| ConfigWrite | Partial | 只合并 home 级 DeepSeek LLM 插件行；整棵 Cordis 树 fail-closed |
+| AccountSwitch | Partial | 仅 API Key 引用切换，无 OAuth |
 | ApiKeyAccount | Full | DeepSeek API Key |
 | Skills | Full | `$DSH_HOME/skills` 可投影 |
 | LiveBackup | Full | home patch + 凭据文档 + profile manifest |
 | StructuredStream | Planned | headless 事件契约未验证 |
-| DangerousMode | Partial | 存在 danger composition；Windows PTY 未验证 |
-| ProjectHistory | Full | 会话 header / 日志可扫（有样例后） |
+| DangerousMode | Partial | 存在 danger composition；未验证官方非交互 flag |
+| ProjectHistory | Full | 会话 header / 日志可扫 |
 | ProjectDelete | Partial | 仅单会话 JSONL；不删 SQLite 整库 |
 | ProviderPresets | Partial | 内置 `deepseek-official`，不是通用预设商店 |
-| Usage | Planned → Full | 有 usage fixtures 后升 Full |
+| Usage | Full | 解析会话日志 provider usage |
 | Mcp | Planned | 与其它家相同；只读 inventory 不改矩阵 |
 | ModelSelect | Planned | 走配置投影，不做运行时模型商店 |
 | SessionResume | Planned | Chat 不接原生 resume |
@@ -455,20 +455,20 @@ P4 才做 `build_run_spec`，且必须先量：
 
 ## 15. 实施位置（已按清单落地）
 
-按 [adding-an-agent.md](adding-an-agent.md) §1.1：
+按 [adding-an-agent.md](adding-an-agent.md) §1.1。**真源在 `integrations/agents/dsh/`**；`platform/*/sources` 只是兼容转发，没有 `platform/config/sources/dsh.rs` 这类分文件。
 
 | 步骤 | 位置 |
 |---|---|
-| Adapter | `crates/agenthub-core/src/adapters/dsh.rs` + `mod.rs` `register_all` |
+| Adapter | `crates/agenthub-core/src/adapters/dsh.rs` + `mod.rs` `register_all`；集成注册 `integrations/agents/dsh/` |
 | 枚举 | `models/agent.rs` `AgentId` |
-| 路径 | `platform/paths/sources.rs` |
-| 安装 | `platform/install/sources.rs`（npm `@deepseek-ai/dsh`） |
-| 配置 | `platform/config/sources/dsh.rs`（P2） |
-| Usage | `platform/usage/sources/dsh.rs` + `usage/session_jsonl.rs` 发现函数（P3） |
-| Projects | `platform/projects` source（P3） |
-| Stream | **未注册** parser；`StructuredStream=Planned`，headless 仅 text run spec |
+| 路径 | `integrations/agents/dsh/paths.rs`（`platform/paths` 兼容转发） |
+| 安装 | `integrations/agents/dsh/install.rs`（npm `@deepseek-ai/dsh`） |
+| 配置 | `integrations/agents/dsh/config.rs` |
+| Usage | `integrations/agents/dsh/usage.rs`（`platform/usage/sources` 兼容转发） |
+| Projects | `integrations/agents/dsh/project.rs` |
+| Stream | **未注册** parser；`StructuredStream=Planned`，headless 仅 text run spec。流式真源是 `utils/stream_parse/` + `platform/stream` 兼容层 |
 | 绑定 | `AdapterCapabilityMatrix` `deepseek-api-to-dsh-v1` + apply 白名单（P5） |
-| 前端装饰 | `src/config/agents.ts`、`src/styles/tokens.ts`、`src/lib/types.ts` `KNOWN_AGENT_IDS` |
+| 前端装饰 | `src/config/agents.ts`、`src/styles/tokens.ts`（含 `--agent-dsh`）、`src/lib/types.ts` `KNOWN_AGENT_IDS` |
 | CLI 帮助 | `cli-and-config.md` 的 agent id 列表随代码改 |
 | 能力快照 | 实现后重跑 `agenthub agent capabilities --markdown` |
 

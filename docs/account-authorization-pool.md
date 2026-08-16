@@ -167,8 +167,9 @@ fn identity_label(
 | Pi | Full | provider 键控 body 中的票材料 hash | provider + 展示 hint |
 | Codex | Full | token 材料或整包 cred hash | 能抠则邮箱类 hint |
 | Kimi | Full | 可轮换 token 优先，否则整包 | 有则邮箱类 hint |
-| WorkBuddy | Unsup | 不走 import | — |
-| Cursor | Unsup | 不走 import | — |
+| WorkBuddy | Unsup | 两边都不支持（无 import / 无 `add_api_key`） | — |
+| Cursor | Unsup | 可 `add_api_key` 入池；`apply_account` 为 Unsupported（不写 live） | — |
+| dsh | Partial | 可 import / API Key 切换，无 OAuth | — |
 
 能力矩阵单元格不变；各家差异在 adapter 如何抽 **票** 的指纹，不在「能不能」。字段抽取细节以 adapter 源码为准，不在文档展开。
 
@@ -205,11 +206,11 @@ user@example.com
 
 | 项 | 位置 |
 |---|---|
-| `accounts_same_authorization` | `account_service.rs` |
-| `AgentAdapter::authorization_key` / `identity_label` 默认实现 | `adapters/mod.rs` |
+| `accounts_same_authorization` | `account_service/surface.rs` |
+| `AgentAdapter::authorization_key` / `identity_label` 默认实现 | `adapters/adapter_trait.rs` |
 | import / add_api_key / create 去重 | `AccountService` |
 | extra.identityLabel 写入 | `attach_identity_meta` |
-| UI 按身份分组 | `groupAccountsByIdentity` + `pages/accounts` |
+| `groupAccountsByIdentity` | 仅 `account-map` 映射/测试残留；Connections 已是票钱包，**不要**再验收 `pages/accounts` 按身份分组 |
 | 单测 | `account_service::tests`、`account-map.test.ts` |
 
 | 行为 | 结果 |
@@ -235,11 +236,11 @@ user@example.com
 - [x] `identity_label` + `default_identity_label`  
 - [x] Service 经 adapter 调用；默认实现覆盖各家  
 
-### PR-C — UI 分组
+### PR-C — UI 分组（历史）
 
 - [x] `identityLabel` / `createdAt` 映射  
-- [x] Connections 账号列表按身份分组  
-- [x] 多授权副文案：授权时间 / 「当前生效仅一条」  
+- [x] `groupAccountsByIdentity` 仅映射/测试残留；Connections 已是票钱包，不再按身份分组验收  
+- [x] 多授权副文案：授权时间 / 「当前生效仅一条」（映射层仍保留）  
 
 ### 验收清单
 
@@ -268,3 +269,4 @@ user@example.com
 |---|---|
 | 2026-08-03 | 初版：产品定为「同人多授权并存」；去重仅限同授权票 |
 | 2026-08-03 | PR-A/B/C 落地：service 去重、adapter 指纹、Connections 分组 UI |
+| 2026-08-16 | 对照代码：补 dsh / Cursor 入池边界；§8 不再验收 `pages/accounts` 分组；Connections 已是票钱包 |

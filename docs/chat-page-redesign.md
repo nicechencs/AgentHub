@@ -4,12 +4,12 @@
 |---|---|
 | 作者 | — |
 | 日期 | 2026-08-16 |
-| 状态 | Draft |
+| 状态 | Implemented（2026-08） |
 | 类型 | 产品 / UX / 界面重设计（无新后端能力、无 wire 变更） |
 | 范围 | Chat 页信息架构、会话 rail、会话 header、消息区与多 Agent 展示、过程面板 Phase 3 表面、Composer 与发送前置校验、消息轻操作、页面文件拆分、文档回写 |
 | 非范围 | Rust / Tauri 命令、`ChatEvent` wire、过程落库、CLI 原生 `--resume` 与交互式 tool 审批、Connections/Bridges 职责、凭据落盘加密（**无必要 / 项目范围外**）、国产 OAuth 开边 / OAuth→API（产品不做） |
 
-本文是 Chat 页本期重设计的真源，风格与 [bridges-page-redesign.md](bridges-page-redesign.md) 对齐。产品契约回写至 [ui-design.md §4.4](ui-design.md)；过程协议仍以 [chat-process-streaming.md](chat-process-streaming.md) 为真源，本文只拍板其 Phase 3 的**展示层**。实现由后续任务完成，本文不改业务代码。
+本文是 Chat 页本期重设计的真源，风格与 [bridges-page-redesign.md](bridges-page-redesign.md) 对齐。产品契约回写至 [ui-design.md §4.4](ui-design.md)；过程协议仍以 [chat-process-streaming.md](chat-process-streaming.md) 为真源，本文拍板其 Phase 3 的**展示层**（已落地）。协议侧（过程落库、过程内 usage、Pi rpc 审批、diff 预览落库）仍未做。
 
 ---
 
@@ -17,15 +17,15 @@
 
 Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 prompt 发给一个或多个已安装 Agent，流式看 stdout 与 Cursor 式过程（命令 / 工具 / thinking / stderr），可取消。它**不是**各 CLI 原生 session 的续聊器，不接管交互式 tool 审批，不发明新后端协议。
 
-当前实现功能语义完整（会话 CRUD、多 Agent 并行、流式过程、bootstrap、取消），但表面停留在「最小 IM」：rail 只有标题和相对时间，会话上下文（cwd / 自动批准）藏在 Dialog 与 composer 下方一行 Tip，多 Agent 只有纵向堆叠没有轮级对照，过程面板像调试日志，空态与引导挤在 toast 里，`index.tsx` 908 行编排渲染一体。
+实施前基线功能语义完整（会话 CRUD、多 Agent 并行、流式过程、bootstrap、取消），但表面停留在「最小 IM」：rail 只有标题和相对时间，会话上下文（cwd / 自动批准）藏在 Dialog 与 composer 下方一行 Tip，多 Agent 只有纵向堆叠没有轮级对照，过程面板像调试日志，空态与引导挤在 toast 里，`index.tsx` 当时 908 行编排渲染一体。
 
-终态把 Chat 定位为**桌面工作台**：左侧升级后的会话 rail（搜索、按日分组、agent/cwd 摘要、删除确认），右侧对话列（可编辑标题 + 上下文芯片的 header、带轮级对比条的消息区、摘要行+时间线的过程面板、内嵌前置校验引导的 composer、复制/重试轻操作）。所有改动只用现有 `lib/api/chat` + provider switch，不引入新依赖，不改 `ChatEvent`。文件按 [modularity-improvement.md P1-7](modularity-improvement.md) 的 Connections 样板拆：纯函数进 `chat-model` / `chat-format`，副作用进 `use-chat-page`，JSX 进同目录组件，`index.tsx` 只编排。
+**2026-08 已落地**：Chat 现为桌面工作台。rail 有搜索、按日分组、agent/cwd 摘要、删除确认；header 有可编辑标题与上下文芯片；消息区有轮级对比条；过程面板为摘要行 + 时间线 +「运行详情」；composer 内嵌 `sendBlockers` 引导；复制/重试已接。`sendBlockers` / `filterConversations` / `groupConversationsByDay` / `retryTarget` / `turnComparisonChips` 在 `chat-model.ts` + `chat-model.test.ts`。`index.tsx` 已拆完，约 147 行只编排。chrome 水平 inset 引用 `pageRhythm.chatChromeX`。所有改动只用现有 `lib/api/chat` + provider switch，不引入新依赖，不改 `ChatEvent`。
 
 ---
 
 ## Background & Motivation
 
-### 现状线框（2026-08-16 实现）
+### 实施前基线线框（2026-08-16 拆分前）
 
 ```
 ┌──────────────────────┬──────────────────────────────────────────────┐
@@ -56,15 +56,15 @@ Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 pro
 | 3 | **多 Agent 对比弱**：空态文案说「多选可并排对比」，实际纵向堆叠且无轮级对照；连接切换只作用于 `agentIds[0]`，只有 Hint 提示 | `index.tsx` 空态文案与 `g.agents.map` 纵向渲染；`handleSwitchProvider` 只打 `primaryAgent` |
 | 4 | **过程面板像调试日志**：summary 常驻命令 mono；展开区「状态 / 命令 / 步骤 / stderr」四段并列同级；每个 tool 步骤套边框卡；成功后 summary 仍显示命令 | `ChatProcessPanel.tsx` summary 的 `view.command` Tip 与展开区四段结构 |
 | 5 | **空态 / 引导弱**：无 Agent → toast；无 cwd → toast + 弹 Dialog；隐藏 Agent → placeholder + toast；从 Projects 跳入无 cwd → 自动弹 Dialog | `handleNewChat` / `handleSend` / bootstrap 分支的 `toast` 调用 |
-| 6 | **上帝页**：`index.tsx` 908 行，约 16 个 useState/useRef，加载/发送/CRUD/bootstrap 编排与 rail/header/消息区/两个 Dialog 的 JSX 同文件；无 `chat-model`、无 page hook | `src/pages/chat/index.tsx`；[modularity-improvement.md](modularity-improvement.md) §4.5 上帝页清单 |
-| 7 | **桌面密度与 token 不对齐**：rail 选中用 `bg-hover`（与悬停同色系，未用 `bg-active`）；header / composer 硬编码 `px-4` 而非 `pageRhythm.chatChromeX` | `index.tsx` rail 行 `selected ? 'bg-hover' : …`；`page-rhythm.ts` 定义了 `chatChromeX` 但 Chat 页未引用 |
+| 6 | **上帝页（实施前）**：`index.tsx` 当时 908 行，约 16 个 useState/useRef，加载/发送/CRUD/bootstrap 编排与 rail/header/消息区/两个 Dialog 的 JSX 同文件；无 `chat-model`、无 page hook。**现已拆完**（`index.tsx` 约 147 行只编排） | 实施前：`src/pages/chat/index.tsx`；现：同目录 `chat-model` / `use-chat-page` / 组件；[modularity-improvement.md](modularity-improvement.md) §4.5 |
+| 7 | **桌面密度与 token 不对齐（实施前）**：rail 选中用 `bg-hover`；header / composer 硬编码 `px-4`。**现已对齐**：选中 `bg-active`，chrome 引用 `pageRhythm.chatChromeX` | 现：`ChatSessionRail.tsx` / `ChatSessionHeader.tsx` / `index.tsx` |
 | 8 | **缺少桌面轻操作**：无复制、无重试、无标题就地编辑、无 rail 搜索/分组；发送中切会话 composer 静默禁用、无状态提示；自动滚动无条件拉底 | `index.tsx` 无任何消息操作按钮；`ChatComposer` `disabled={sending}`；`bottomRef.scrollIntoView` 无阈值 |
 
 ### 量化
 
 | 量 | 现值 | 目标 |
 |---|---|---|
-| `index.tsx` 行数 | 908（编排 + 渲染 + 2 个 Dialog） | ≤ ~200，只编排 |
+| `index.tsx` 行数 | 实施前 908（编排 + 渲染 + 2 个 Dialog） | 已落地：约 147 行只编排 |
 | rail 每行信息 | 2 字段（标题、相对时间） | 标题 + agent 品牌点 + cwd 短名 +（发送中）状态点 |
 | 会话上下文入口 | 2 处（Dialog、composer Tip 行），header 0 | header 芯片常驻 + Dialog 编辑 |
 | 消息级操作 | 0 | 复制（user/agent）、重试（末轮失败） |
@@ -348,22 +348,22 @@ flowchart TD
   G -->|切回| F
 ```
 
-### 9. 组件与文件拆分（实施者必须按此拆）
+### 9. 组件与文件拆分（已按此落地）
 
 ```
 src/pages/chat/
-  index.tsx              # 只编排：use-chat-page + 组件拼装（目标 ≤ ~200 行）
-  chat-model.ts          # 新增：页面级纯函数（见下）
-  chat-model.test.ts     # 新增：vitest node，不渲染 DOM
-  use-chat-page.ts       # 新增：副作用 hook（加载/发送/过程/bootstrap/CRUD）
-  ChatSessionRail.tsx    # 新增：rail（搜索/分组/行/删除确认）
-  ChatSessionHeader.tsx  # 新增：标题就地编辑 + 芯片 + 设置入口
-  ChatTranscript.tsx     # 新增：滚动区 + 轮渲染 + 对比条 + 空转录 + 骨架
-  ChatMessageBubble.tsx  # 新增：单条消息（meta/过程面板挂载/复制/重试）
-  ChatSettingsDialog.tsx # 新增：cwd + 自动批准 + 危险确认（从 index 迁出）
-  ChatComposer.tsx       # 保留打磨：blocker 引导行、安全提示行、深链空态
-  ChatProcessPanel.tsx   # 保留打磨：摘要行 + 时间线 + 运行详情
-  chat-format.ts         # 保留：展示格式化（groupByTurn/relativeTime/…）
+  index.tsx              # 只编排：use-chat-page + 组件拼装（约 147 行）
+  chat-model.ts          # 页面级纯函数（含 sendBlockers / filterConversations / groupConversationsByDay / retryTarget / turnComparisonChips）
+  chat-model.test.ts     # vitest node，不渲染 DOM
+  use-chat-page.ts       # 副作用 hook（加载/发送/过程/bootstrap/CRUD）
+  ChatSessionRail.tsx    # rail（搜索/分组/行/删除确认）
+  ChatSessionHeader.tsx  # 标题就地编辑 + 芯片 + 设置入口
+  ChatTranscript.tsx     # 滚动区 + 轮渲染 + 对比条 + 空转录 + 骨架
+  ChatMessageBubble.tsx  # 单条消息（meta/过程面板挂载/复制/重试）
+  ChatSettingsDialog.tsx # cwd + 自动批准 + 危险确认
+  ChatComposer.tsx       # blocker 引导行、安全提示行、深链空态
+  ChatProcessPanel.tsx   # 摘要行 + 时间线 + 运行详情
+  chat-format.ts         # 展示格式化（groupByTurn/relativeTime/…）
 ```
 
 | 文件 | 职责 | 不做什么 |
@@ -437,55 +437,55 @@ src/pages/chat/
 
 **rail**
 
-- [ ] 搜索同时匹配标题与 cwd，大小写不敏感；无结果显示「没有匹配的对话」。
-- [ ] 分组边界正确（本地自然日：今天 / 昨天 / 近 7 天 / 更早），`groupConversationsByDay` 单测覆盖跨日边界。
-- [ ] 行 meta 显示 agent 品牌点（>3 折叠为 +N）与 cwd 末段；无 cwd 显示「未设目录」。
-- [ ] 选中行用 `bg-active`；hover 用 `bg-hover`；两态可区分。
-- [ ] 删除必经确认 Dialog；发送中的会话删除先取消；删除最后一个自动补建（有可用 Agent）。
-- [ ] 发送中的会话行显示状态点。
+- [x] 搜索同时匹配标题与 cwd，大小写不敏感；无结果显示「没有匹配的对话」。
+- [x] 分组边界正确（本地自然日：今天 / 昨天 / 近 7 天 / 更早），`groupConversationsByDay` 单测覆盖跨日边界。
+- [x] 行 meta 显示 agent 品牌点（>3 折叠为 +N）与 cwd 末段；无 cwd 显示「未设目录」。
+- [x] 选中行用 `bg-active`；hover 用 `bg-hover`；两态可区分。
+- [x] 删除必经确认 Dialog；发送中的会话删除先取消；删除最后一个自动补建（有可用 Agent）。
+- [x] 发送中的会话行显示状态点。
 
 **header**
 
-- [ ] 标题就地编辑：Enter/blur 保存、Esc 取消、空值回退「新对话」；rail 同步刷新。
-- [ ] cwd 芯片 Hint 显示完整路径；未设置时 warning 态；点击打开设置。
-- [ ] 自动批准芯片仅开启时显示；点击打开设置。
-- [ ] 含隐藏 Agent 时芯片带「已隐藏」标记。
+- [x] 标题就地编辑：Enter/blur 保存、Esc 取消、空值回退「新对话」；rail 同步刷新。
+- [x] cwd 芯片 Hint 显示完整路径；未设置时 warning 态；点击打开设置。
+- [x] 自动批准芯片仅开启时显示；点击打开设置。
+- [x] 含隐藏 Agent 时芯片带「已隐藏」标记。
 
 **composer / 发送**
 
-- [ ] `sendBlockers` 顺序：hiddenAgents > unconfiguredAuth > noCwd > sendingElsewhere；单测覆盖。
-- [ ] Agent picker：可选项在前；已隐藏 / 未配置授权置底，不可新增，已在会话内可取消勾选。
-- [ ] 引导行只渲染第一个 blocker 且带可用修复动作；发送禁用 + Hint 原因。
-- [ ] 无 cwd 时 textarea 可输入、发送禁用；设置 cwd 后不丢草稿即可发送。
-- [ ] Projects bootstrap 无 cwd：不自动弹 Dialog，引导行出现；query 清理、bootstrap 只消费一次。
-- [ ] 连接 picker 多选时显示「仅作用于首位 Agent（{name}）」；空态深链 `/connections?agent=`。
-- [ ] 发送按钮是页内唯一 accent 主 CTA。
+- [x] `sendBlockers` 顺序：hiddenAgents > unconfiguredAuth > noCwd > sendingElsewhere；单测覆盖。
+- [x] Agent picker：可选项在前；已隐藏 / 未配置授权置底，不可新增，已在会话内可取消勾选。
+- [x] 引导行只渲染第一个 blocker 且带可用修复动作；发送禁用 + Hint 原因。
+- [x] 无 cwd 时 textarea 可输入、发送禁用；设置 cwd 后不丢草稿即可发送。
+- [x] Projects bootstrap 无 cwd：不自动弹 Dialog，引导行出现；query 清理、bootstrap 只消费一次。
+- [x] 连接 picker 多选时显示「仅作用于首位 Agent（{name}）」；空态深链 `/connections?agent=`。
+- [x] 发送按钮是页内唯一 accent 主 CTA。
 
 **消息区 / 多 Agent**
 
-- [ ] 同轮 ≥2 个 agent 消息才出现对比条；芯片状态点与耗时正确；点击定位到对应气泡。
-- [ ] user / agent 气泡 hover 复制可用；运行中气泡不显示复制。
-- [ ] 仅最后一轮失败/取消/超时气泡显示重试；重试作为新 turn 发给会话全部 Agent；`retryTarget` 单测覆盖。
-- [ ] 流式仅在贴近底部时跟随滚动；上翻回看不被拉底。
+- [x] 同轮 ≥2 个 agent 消息才出现对比条；芯片状态点与耗时正确；点击定位到对应气泡。
+- [x] user / agent 气泡 hover 复制可用；运行中气泡不显示复制。
+- [x] 仅最后一轮失败/取消/超时气泡显示重试；重试作为新 turn 发给会话全部 Agent；`retryTarget` 单测覆盖。
+- [x] 流式仅在贴近底部时跟随滚动；上翻回看不被拉底。
 
 **过程面板**
 
-- [ ] 成功后折叠且摘要行不含命令；摘要 = 阶段 · N 步 · 耗时。
-- [ ] 展开为无边框步骤时间线；命令 / stderr / exit 在「运行详情」次级折叠内。
-- [ ] 进行中/失败/超时默认展开；用户手动开合记忆到阶段变化；diff 高亮保留。
+- [x] 成功后折叠且摘要行不含命令；摘要 = 阶段 · N 步 · 耗时。
+- [x] 展开为无边框步骤时间线；命令 / stderr / exit 在「运行详情」次级折叠内。
+- [x] 进行中/失败/超时默认展开；用户手动开合记忆到阶段变化；diff 高亮保留。
 
 **切会话 / 取消**
 
-- [ ] 发送中切走：目标会话显示 sendingElsewhere 引导行；「回到该会话」「停止」可用。
-- [ ] 切回发送中会话：后续 chunk 续接不崩；`agentFinished` 后正文完整。
-- [ ] 取消后过程面板转「已取消」并折叠。
+- [x] 发送中切走：目标会话显示 sendingElsewhere 引导行；「回到该会话」「停止」可用。
+- [x] 切回发送中会话：后续 chunk 续接不崩；`agentFinished` 后正文完整。
+- [x] 取消后过程面板转「已取消」并折叠。
 
 **工程**
 
-- [ ] `index.tsx` 只编排（≤ ~200 行）；文件拆分与 §9 一致。
-- [ ] `chat-model.test.ts` 覆盖全部导出纯函数（vitest node，不渲染 DOM）；`chat-process` / `chat-format` 既有测试保持绿。
-- [ ] 页面无 `invoke`、无新 npm 依赖、无 `rounded-[Npx]`；chrome 水平 inset 引用 `pageRhythm.chatChromeX`。
-- [ ] `pnpm test`（chat 域过滤）与 `pnpm build` 通过；`pnpm dev:mock` 下全部状态可走通（mock 已覆盖全事件类型与 cancel，无需扩展）。
+- [x] `index.tsx` 只编排（约 147 行）；文件拆分与 §9 一致。
+- [x] `chat-model.test.ts` 覆盖全部导出纯函数（vitest node，不渲染 DOM）；`chat-process` / `chat-format` 既有测试保持绿。
+- [x] 页面无 `invoke`、无新 npm 依赖、无 `rounded-[Npx]`；chrome 水平 inset 引用 `pageRhythm.chatChromeX`。
+- [x] `pnpm test`（chat 域过滤）与 `pnpm build` 通过；`pnpm dev:mock` 下全部状态可走通（mock 已覆盖全事件类型与 cancel，无需扩展）。
 
 ---
 
@@ -511,11 +511,11 @@ src/pages/chat/
 | [README.md（docs 索引）](README.md) | 新增本文条目 |
 | [chat-process-streaming.md](chat-process-streaming.md) | Phase 3 段加一句指向：展示层已由本文拍板，协议侧（落库/审批/usage）不变 |
 
-实现落地后由实施者回写：[modularity-improvement.md](modularity-improvement.md) P1-7 表中 `pages/chat/index.tsx` 行更新为已完成形态（`chat-model` + `use-chat-page` + 组件拆分）。
+表面与拆分已落地（2026-08）。[modularity-improvement.md](modularity-improvement.md) P1-7 表中 `pages/chat/index.tsx` 行应记为已完成形态（`chat-model` + `use-chat-page` + 组件拆分）。
 
 ---
 
-## 实施注意（给实现者）
+## 实施注意（历史备忘；表面与拆分已落地，勿再当待办）
 
 1. **先拆后改**：PR 1 纯拆文件（`chat-model` + `use-chat-page` + 组件迁移，行为零变化，现有测试全绿）；PR 2 rail + header + 设置迁移；PR 3 composer blockers + 消息操作 + 对比条；PR 4 过程面板表面。每个 PR 可独立评审回滚。
 2. `messageStatusLabel`、picker label 等现在 `index.tsx` 内的纯逻辑**迁入 `chat-model.ts` 并补单测**，不要留在组件里。
@@ -537,6 +537,6 @@ src/pages/chat/
 - 共享组件：`ListRow` / `SearchField` / `EmptyState` / `AgentDot` / `Notice` / `MarkdownView`
 - Mock 边界：`src/dev/mocks/chat.ts`
 - 产品契约：[ui-design.md](ui-design.md) §1–§3、§4.4；[ui-experience-alignment.md](ui-experience-alignment.md)（明度分层 / 提示分级 / 文案语气）
-- 过程协议：[chat-process-streaming.md](chat-process-streaming.md)（Phase 0–2 已落地；本文只拍板 Phase 3 展示层）
+- 过程协议：[chat-process-streaming.md](chat-process-streaming.md)（Phase 0–2 现行契约；Phase 3 展示层已落地，协议侧未做）
 - 拆分样板：[modularity-improvement.md](modularity-improvement.md) P1-7；`src/pages/connections/connection-model.ts`
 - 测试约定：[testing.md](testing.md)

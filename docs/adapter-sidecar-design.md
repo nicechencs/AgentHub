@@ -1,14 +1,16 @@
 # Adapter sidecar：稳定目标架构与迁移契约
 
-> 状态：目标架构（已决定；协议内核部分落地，sidecar 本体尚未实现）  
-> 日期：2026-08-12  
+> 状态：目标架构（已决定；Phase 1 控制契约已落地，sidecar 本体尚未实现）  
+> 日期：2026-08-12（进度回写：2026-08-16）  
 > 范围：跨 Agent Adapter 的 `local_bridge` 长驻运行时、协议数据面与生命周期控制面。  
 >
-> **进度摘要（不要倒读为已可 Apply）：**  
-> - 协议数据面内核（Codex subscription → Claude Code 候选）：`agenthub-core` 已有纯函数 Messages ↔ IR ↔ Responses 与 `RetryGate` 单测；**无网络、无 secret、无 listener**。  
-> - 路由门禁：`adapter_route_service` 对 Codex OAuth Account → Claude 仍为 `unsupported` / `canApply=false`。  
-> - 控制面 IPC、`agenthub-adapterd` binary、profile saga 迁移：**尚未实现**。  
-> - 票、绑定、Connections / Account / Provider / ActiveBinding：**始终由 core services owner**，不迁入 sidecar。生成 Provider 是绑定的私有投影，不是第二套钱包。
+> **进度摘要（区分契约与二进制；不要倒读为 sidecar 已迁移）：**  
+> - **Phase 1 控制契约：已落地** — `crates/agenthub-core/src/adapter_control/{mod,contract,coordinator,status}.rs` + `src-tauri/src/adapter_control_host.rs`（`DesktopAdapterControl`，仍 in-process）。  
+> - **Phase 2 sidecar：未开工** — 无 `crates/agenthub-adapterd/`、无 IPC client、无 `DataStoreBootstrap` / `SchemaGenerationLease` 实现（仅本文出现）。  
+> - 协议数据面内核：仍在 `agenthub-core`（纯函数 Messages ↔ IR ↔ Responses 与 `RetryGate` 单测）。listener 生命周期仍随 GUI 宿主进程。  
+> - Codex OAuth → Claude：现为 **experimental bind**（Responses）。对照 `domain/protocol_graph/adapter_capability_matrix.rs` 的 `codex-subscription-to-claude-responses-v1`（`can_apply=true`，gates 全开）。**不要**再写文首旧门禁「仍 unsupported / canApply=false」。App Server 边（`codex-subscription-to-claude-app-server-v0`）仍关闭。  
+> - 票、绑定、Connections / Account / Provider / ActiveBinding：**始终由 core services owner**，不迁入 sidecar。生成 Provider 是绑定的私有投影，不是第二套钱包。  
+> - 凭据落盘加密范围外。国产 OAuth 适配 / 转 API 产品不做。
 
 ## 1. 决策摘要与现状边界
 
@@ -16,9 +18,11 @@
 
 这是一份**目标设计**，不能倒读为当前实现。当前 MVP 中：
 
-- `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有，`src-tauri` 的 controller 负责编排 host、`AdapterBridgeService` 与 `ProviderService`；
+- `adapter_control` 契约已落地；`DesktopAdapterControl` 仍是 in-process host，`BridgeRuntimeHost` 仍由 Tauri `AppState` 持有；
+- `src-tauri` 的 controller 仍编排 host、`AdapterBridgeService` 与 `ProviderService`（经 control contract）；
 - Runtime 的协议转换实现在 `agenthub-core`，但 listener 的生命周期仍随 GUI 宿主进程；
-- `local_bridge` 已是独立路由，`config_sync` 和 `native_endpoint` 不依赖这个 host。
+- `local_bridge` 已是独立路由，`config_sync` 和 `native_endpoint` 不依赖这个 host；
+- **不要**把 sidecar 写成已迁移：无 `agenthub-adapterd`、无 IPC client、无 schema lease 实现。
 
 目标实现中，只有下列职责移入 `agenthub-adapterd`：跨 Agent Adapter 的 `local_bridge` 长驻 Runtime、loopback 协议数据面、完整 `local_bridge` saga，以及其恢复、健康检查和进程生命周期。不要以“sidecar”之名把全部 Adapter、Connections 或账户领域拆成另一个进程。
 
@@ -115,18 +119,19 @@ SQLite 以 WAL 模式作为共享的**持久化真源**，不是运行状态真�
 
 ## 6. 进程、模块与落点
 
-推荐的目标落点（仅为目标目录建议，不表示现已存在）：
+`adapter_control` **已存在于 core**（Phase 1 in-process host）；`adapterd` / IPC client **仍是目标**，不要把下列目录整表读成「现已迁到 sidecar」：
 
 ```text
 crates/
   agenthub-core/
-    src/adapter_control/       # Tauri-neutral DTO、application contract、IPC protocol types
+    src/adapter_control/       # 已落地：Tauri-neutral DTO、application contract、进程内 coordinator
     src/services/              # Connection/Provider/Account/LiveWriteAuthority 等领域 owner
     src/bridge/                # runtime 与协议转换可复用实现
-  agenthub-adapterd/           # sidecar binary、IPC server、instance lock、recovery supervisor
+  agenthub-adapterd/           # 目标：sidecar binary、IPC server、instance lock、recovery supervisor（未开工）
 src-tauri/
-  src/adapter_sidecar_client.rs # spawn/connect/handshake/control IPC client
-  src/...                       # UI command 只映射到 client，不再持有 runtime host
+  src/adapter_control_host.rs  # 已落地：DesktopAdapterControl（in-process）
+  src/adapter_sidecar_client.rs # 目标：spawn/connect/handshake/control IPC client（未开工）
+  src/...                       # 目标：UI command 只映射到 client，不再持有 runtime host
 ```
 
 `agenthub-adapterd` 用 canonical data directory 推导 SQLite、日志、IPC 名称和 instance lock；不得接受含糊的相对目录启动。GUI 或 CLI 先 canonicalize data directory，再连接或启动同一实例。sidecar 的 argv 只允许定位数据目录、日志级别和受控 bootstrap 参数，不能携带原始凭据、OAuth token 或 profile secret。
@@ -322,19 +327,19 @@ credential rotation 以 source `connection_id` 变更事件或 revision 变化�
 
 ## 13. 三阶段迁移、验收与回滚
 
-### Phase 1：抽离契约，不改变当前宿主
+### Phase 1：抽离契约，不改变当前宿主（**已落地**）
 
-工作：将 Tauri controller 中的 `local_bridge` 编排抽为 Tauri-neutral core application/control contract；明确 profile journal、request ID、revision/rule revalidation、状态 DTO 与 sidecar IPC 兼容版。当前 `BridgeRuntimeHost` **仍由 Tauri `AppState` 持有**，仅作为该 contract 的 in-process host adapter。
+工作（已完成）：将 Tauri controller 中的 `local_bridge` 编排抽为 Tauri-neutral core application/control contract（`agenthub_core::adapter_control` + `DesktopAdapterControl`）。当前 `BridgeRuntimeHost` **仍由 Tauri `AppState` 持有**，仅作为该 contract 的 in-process host adapter。sidecar IPC envelope / handshake 仍是目标契约，尚未实现。
 
-**与协议内核的关系（2026-08-12）：** Codex→Claude 是 **③ 本机路由** 的产品目标边（见 [product-decisions.md](product-decisions.md)）。①② 不依赖 sidecar。**纯协议内核**（Messages/IR/Responses、fixtures、`RetryGate`）可在本阶段并行落入 `agenthub-core::bridge::protocol`；仅有内核时仍保持 `canApply=false`（工程未接 transport / apply，不是产品否决）。该内核**不**等于 sidecar 控制面、不改变 `BridgeRuntimeHost` 宿主归属。控制面 envelope / handshake / mutation API 仍属本设计的目标契约，实现前 GUI 不得假装 sidecar 已存在。
+**与协议内核的关系（2026-08-16 回写）：** Codex→Claude Responses 是 **③ 本机路由** 的 experimental bind 边（`codex-subscription-to-claude-responses-v1`，见 [product-decisions.md](product-decisions.md) 与 `domain/protocol_graph/adapter_capability_matrix.rs`）。①② 不依赖 sidecar。**纯协议内核**（Messages/IR/Responses、fixtures、`RetryGate`）已在 `agenthub-core::bridge::protocol`。该内核**不**等于 sidecar 控制面、不改变 `BridgeRuntimeHost` 宿主归属。控制面 envelope / handshake / mutation API 仍属 Phase 2 目标契约，实现前 GUI 不得假装 sidecar 已存在。
 
-验收：现有 GUI 行为不变；所有 `local_bridge` mutation 经相同 application contract；`config_sync`/`native_endpoint` 无 sidecar 依赖；request-id 幂等、revision/rule conflict、saga 补偿有测试；协议内核单测通过且路由门禁仍拒绝 Codex→Claude Apply。
+验收：现有 GUI 行为不变；所有 `local_bridge` mutation 经相同 application contract（当前为 in-process `DesktopAdapterControl`）；`config_sync`/`native_endpoint` 无 sidecar 依赖；request-id 幂等、revision/rule conflict、saga 补偿有测试；协议内核单测通过。Codex→Claude Responses 的产品门禁以协议图为准（experimental bind），不要把过时的 `canApply=false` 写回验收。
 
 回滚：保留 Tauri in-process host adapter 和既有 command 映射，撤回尚未启用的 contract/DTO 调用；不迁移或重写用户 profile 数据。
 
-### Phase 2：引入 sidecar，双通路可控切换
+### Phase 2：引入 sidecar，双通路可控切换（**未开工**）
 
-工作：实现 `DataStoreBootstrap`/migration lock 与 `open_checked`，再实现 `crates/agenthub-adapterd`、独立进程生命周期、单实例锁、local IPC、handshake、observed status、恢复 supervisor；`src-tauri` 实现 client 与 spawn/connect。通过显式 feature/发布开关把 `local_bridge` 的管理请求路由到 sidecar；所有 live 写仍由同一 core `ProviderService` 路径完成。
+工作（尚未开始）：实现 `DataStoreBootstrap`/migration lock 与 `open_checked`，再实现 `crates/agenthub-adapterd`、独立进程生命周期、单实例锁、local IPC、handshake、observed status、恢复 supervisor；`src-tauri` 实现 client 与 spawn/connect。通过显式 feature/发布开关把 `local_bridge` 的管理请求路由到 sidecar；所有 live 写仍由同一 core `ProviderService` 路径完成。当前工作区没有这些类型或 crate 的实现，只有本文描述。
 
 验收：同 canonical data dir 只起一个 sidecar；GUI 退出/crash 后 listener 存活；sidecar cold restart 恢复 auto-start；受控更新恢复更新前完整 running set；不兼容协议/schema 拒绝 mutation；migration 并发/中断 fail-closed 且可恢复；stale lock 安全回收；sidecar unavailable 仅影响 `local_bridge`；不出现数据库直写或 live 文件直写。
 

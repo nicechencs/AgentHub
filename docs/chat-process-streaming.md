@@ -1,8 +1,9 @@
 # Chat 过程流式展示设计
 
-> 状态：**Phase 0–2 已落地**（2026-08-03）；Phase 3 体验打磨未做（展示层方案已由 [chat-page-redesign.md](chat-page-redesign.md) 拍板）  
+> 状态：**Phase 0–2 是现行契约**（2026-08-03）；Phase 3 **展示层已落地**（2026-08，见 [chat-page-redesign.md](chat-page-redesign.md)）。协议侧未做：过程落库、过程内 usage、Pi rpc 审批、diff 预览落库。  
 > 范围：GUI Chat 的「Cursor 式过程」——命令、状态、stderr、结构化工具/thinking 步骤  
-> 非目标：接管各 CLI 原生多轮 session、交互式 tool 审批（RPC）、凭据加密
+> 非目标：接管各 CLI 原生多轮 session、交互式 tool 审批（RPC）、凭据加密  
+> mock 路径：`src/dev/mocks/chat.ts`。`src/lib/api/chat.ts` 是生产 façade，不是 mock。
 
 ## 1. 背景与问题（历史；Phase 0–2 已修复主体）
 
@@ -92,6 +93,7 @@ type AgentProcessView = {
   command?: string;
   stdout: string;
   stderr: string;
+  steps: ProcessStep[]; // 已落地；真源 `src/lib/chat-process.ts`（`ProcessStep` 在 `src/lib/types.ts`）
   updatedAt: number;
 };
 ```
@@ -115,13 +117,11 @@ CLI flag 与事件字段随上游版本变化，**不在本文抄写完整映射
 adapters/*
   build_run_spec(..., ProcessMode)  // 按 mode 换 flag
 
-stream_parsers/                     // 新模块（建议）
-  mod.rs                            // trait StreamParser + registry
-  claude_ndjson.rs
-  codex_jsonl.rs
-  kimi_ndjson.rs
-  pi_json.rs
-  passthrough.rs                    // text：chunk → ProcessEvent::text
+utils/stream_parse/                 // 行缓冲 + 各家 parser（现行）
+  claude.rs / codex.rs / kimi.rs / grok.rs / pi.rs
+platform/stream                     // 兼容层：StreamParser port + registry；
+                                    // 各家 NDJSON 解码在 integrations/agents/<key>/
+                                    // 不是 stream_parsers/
 
 run_service
   行缓冲 stdout → parser.feed(line) → on_process(ProcessEvent)
@@ -173,15 +173,15 @@ frontend
 - [x] Kimi / Pi / Grok 结构化 parser  
 - [x] `ProcessMode::Auto` 覆盖支持结构化流的 Agent（WorkBuddy / Cursor 仍 text）  
 
-### Phase 3 — 体验打磨（后续）
+### Phase 3 — 体验打磨
 
-> 过程面板的**展示层**（摘要行 / 无边框步骤时间线 / 命令·stderr·exit 收进「运行详情」次级折叠）已在
-> [chat-page-redesign.md](chat-page-redesign.md) 拍板，属 Chat 页 UI 重设计范围，
-> **不改本文的过程模型、事件 wire 与内存策略**。下列协议侧项仍未排期：
+> **展示层已落地**（摘要行 / 无边框步骤时间线 / 命令·stderr·exit 收进「运行详情」次级折叠），
+> 见 [chat-page-redesign.md](chat-page-redesign.md)。属 Chat 页 UI 重设计范围，
+> **不改本文的过程模型、事件 wire 与内存策略**。下列**协议侧**仍未做：
 
-- diff 预览、usage、更稳 cancel  
-- 可选过程持久化  
-- 交互式 tool 审批（若上游提供稳定契约）  
+- diff 预览落库、过程内 usage  
+- 过程步骤落库回放  
+- 交互式 tool 审批（Pi rpc；若上游提供稳定契约）  
 
 ## 8. Phase 0 实现说明
 
@@ -190,8 +190,10 @@ frontend
 | `docs/chat-process-streaming.md` | 本设计 |
 | `src/lib/chat-process.ts` | `AgentProcessView` + `reduceProcessEvent` |
 | `src/lib/chat-process.test.ts` | 状态机单测 |
-| `src/pages/chat/index.tsx` | 过程面板渲染；会话切换清空 |
-| `src/lib/api/chat.ts`（mock） | 模拟 stderr 一行，便于浏览器原型 |
+| `src/pages/chat/ChatProcessPanel.tsx` | 过程面板渲染（摘要行 + 时间线 + 运行详情） |
+| `src/pages/chat/use-chat-page.ts` | 会话切换清空 `processMap` |
+| `src/lib/api/chat.ts` | 生产 façade（不是 mock） |
+| `src/dev/mocks/chat.ts` | mock 路径（`dev:mock` / 测试） |
 
 行为要点：
 
@@ -223,9 +225,14 @@ frontend
 - [x] text fallback 仍可完整出字（WorkBuddy/Cursor 等）  
 - [x] `chat-process` 单测  
 
-### Phase 3（未做）
+### Phase 3 展示层（已落地）
 
-- [ ] diff 预览、过程内 usage 展示  
+- [x] 摘要行 = 阶段 · N 步 · 耗时（不含命令）  
+- [x] 无边框步骤时间线；命令 / stderr / exit 收进「运行详情」  
+
+### Phase 3 协议侧（未做）
+
+- [ ] diff 预览落库、过程内 usage 展示  
 - [ ] 过程步骤可选落库回放  
 - [ ] Pi rpc 交互审批  
 
