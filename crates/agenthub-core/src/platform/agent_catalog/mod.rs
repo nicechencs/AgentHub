@@ -1,16 +1,16 @@
 //! Agent Catalog — read-only discovery of registered agents.
 //!
-//! Aggregates descriptors from the legacy [`AdapterRegistry`], capability
-//! matrix, and install catalog. Callers should prefer this service over
-//! hard-coded `AgentId` lists when listing product metadata.
+//! Aggregates descriptors from the live [`AdapterRegistry`] (registration
+//! order → [`AgentKey`]), capability matrix, and install catalog. Callers
+//! should prefer this service over hard-coded `AgentId` lists when listing
+//! product metadata. [`crate::models::AgentId`] remains a compatibility DTO
+//! for old API / DB columns — it is not deleted.
 //!
-//! # Migration notes
+//! # Composition
 //!
-//! TODO(P03-P08): replace internal aggregation that still walks
-//! [`crate::models::AgentId::ALL`] / legacy registry with
-//! `integrations/agents/<key>` contributions. Delete the bridge once every
-//! platform caller uses [`AgentKey`] + sparse ports and CodeGraph shows no
-//! remaining `AgentId` match in platform services.
+//! [`AgentCatalogService::from_registry`] walks registry registration order as
+//! [`AgentKey`]s. It does **not** iterate [`crate::models::AgentId::ALL`].
+//! Unknown keys resolve to not_found / unavailable.
 
 mod key;
 mod model;

@@ -3,9 +3,9 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::adapters::AdapterRegistry;
-use crate::platform::install::{channels_for, list_install_catalog};
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, Capability, CapabilityStateDto};
+use crate::platform::install::{channels_for, list_install_catalog};
 
 use super::{AgentDescriptor, AgentKey, InstallChannelDescriptor};
 
@@ -14,15 +14,13 @@ const BUILTIN_INTEGRATION_VERSION: u32 = 1;
 
 /// Read-only catalog of agent descriptors.
 ///
-/// # Aggregation bridge (temporary)
-///
-/// TODO(P03-P08): build descriptors from `integrations/agents/*` modules and
-/// sparse ports instead of `AgentId::ALL` + [`AdapterRegistry`] + install
-/// catalog match arms. Remove `from_registry` bridge once CodeGraph shows no
-/// platform callers depend on those legacy sources for discovery.
+/// Production composition walks the adapter registry's **registered keys**
+/// (insertion order → [`AgentKey`]), not [`AgentId::ALL`]. Unknown keys stay
+/// unavailable via [`Self::get`] / [`Self::get_str`]. Legacy API/DB DTOs may
+/// still use [`AgentId`].
 #[derive(Debug, Clone)]
 pub struct AgentCatalogService {
-    /// Product order (stable; locked by tests).
+    /// Product order (stable; locked by tests for builtin registry).
     descriptors: Vec<AgentDescriptor>,
     index: HashMap<String, usize>,
 }
@@ -44,13 +42,15 @@ impl AgentCatalogService {
         Ok(Self { descriptors, index })
     }
 
-    /// Aggregate from the live adapter registry + install catalog.
+    /// Aggregate from an explicit [`AgentKey`] order against the live registry.
     ///
-    /// Order = [`AgentId::ALL`] (product order). Missing adapters fail closed.
-    pub fn from_registry(registry: &AdapterRegistry) -> Result<Self> {
-        // Temporary bridge: product order still follows closed AgentId::ALL.
-        // TODO(P01→P13): drop AgentId::ALL once registry keys are open strings.
-        let install_by_agent: BTreeMap<AgentId, Vec<InstallChannelDescriptor>> =
+    /// Order = `keys` (caller-controlled). Missing adapters / keys that are not
+    /// closed [`AgentId`] values fail closed as not_found / unavailable.
+    ///
+    /// Used by [`Self::from_registry`] and by tests that prove composition does
+    /// not walk [`AgentId::ALL`].
+    pub fn from_keys(registry: &AdapterRegistry, keys: &[AgentKey]) -> Result<Self> {
+        let install_by_key: BTreeMap<String, Vec<InstallChannelDescriptor>> =
             list_install_catalog()
                 .into_iter()
                 .map(|entry| {
@@ -64,55 +64,29 @@ impl AgentCatalogService {
                             requires: ch.requires,
                         })
                         .collect();
-                    (entry.agent_id, channels)
+                    (entry.agent_id.as_str().to_string(), channels)
                 })
                 .collect();
 
-        let mut descriptors = Vec::with_capacity(AgentId::ALL.len());
-        for id in AgentId::ALL {
-            let adapter = registry.get(id).ok_or_else(|| {
-                AppError::NotFound(format!(
-                    "adapter not registered for catalog: {}",
-                    id.as_str()
-                ))
-            })?;
-
-            let mut capabilities = BTreeMap::new();
-            for cap in Capability::ALL {
-                let state = adapter.capability(cap);
-                capabilities.insert(cap.as_str().to_string(), CapabilityStateDto::from(state));
-            }
-
-            let install_channels = install_by_agent.get(&id).cloned().unwrap_or_else(|| {
-                // Fallback should be unreachable when install catalog covers ALL;
-                // keep channels_for so a partial catalog still hydrates.
-                channels_for(id)
-                    .into_iter()
-                    .map(|ch| InstallChannelDescriptor {
-                        id: ch.id,
-                        label: ch.label,
-                        command: ch.command,
-                        requires: ch.requires,
-                    })
-                    .collect()
-            });
-
-            // Config schema version from platform projectors (P08); unsupported = None.
-            let config_schema_version = crate::platform::config::builtin_config_registry()
-                .get_agent_id(id)
-                .map(|p| p.schema().schema_version);
-
-            descriptors.push(AgentDescriptor {
-                key: AgentKey::from_agent_id(id),
-                display_name: id.display_name().to_string(),
-                integration_version: BUILTIN_INTEGRATION_VERSION,
-                capabilities,
-                install_channels,
-                config_schema_version,
-            });
+        let mut descriptors = Vec::with_capacity(keys.len());
+        for key in keys {
+            descriptors.push(descriptor_for_key(registry, key, &install_by_key)?);
         }
-
         Self::new(descriptors)
+    }
+
+    /// Aggregate from the live adapter registry + install catalog.
+    ///
+    /// Order = registry **registration order** (converted to [`AgentKey`]).
+    /// Missing adapters fail closed. Does **not** iterate [`AgentId::ALL`].
+    pub fn from_registry(registry: &AdapterRegistry) -> Result<Self> {
+        let keys: Vec<AgentKey> = registry
+            .registered_agents()
+            .iter()
+            .copied()
+            .map(AgentKey::from_agent_id)
+            .collect();
+        Self::from_keys(registry, &keys)
     }
 
     /// Catalog for the built-in `register_all()` registry.
@@ -130,7 +104,7 @@ impl AgentCatalogService {
         self.descriptors.clone()
     }
 
-    /// Lookup by validated key. Unknown keys → [`AppError::NotFound`] (no fallback).
+    /// Lookup by validated key. Unknown keys → [`AppError::NotFound`] (unavailable).
     pub fn get(&self, key: &AgentKey) -> Result<&AgentDescriptor> {
         self.index
             .get(key.as_str())
@@ -160,4 +134,62 @@ impl AgentCatalogService {
     pub fn is_empty(&self) -> bool {
         self.descriptors.is_empty()
     }
+}
+
+fn descriptor_for_key(
+    registry: &AdapterRegistry,
+    key: &AgentKey,
+    install_by_key: &BTreeMap<String, Vec<InstallChannelDescriptor>>,
+) -> Result<AgentDescriptor> {
+    // Legacy adapters are still AgentId-backed; open keys without a closed id
+    // cannot hydrate from the adapter registry → unavailable.
+    let id = AgentId::parse(key.as_str()).ok_or_else(|| {
+        AppError::NotFound(format!(
+            "agent not found in catalog: {} (unavailable)",
+            key.as_str()
+        ))
+    })?;
+
+    let adapter = registry.get(id).ok_or_else(|| {
+        AppError::NotFound(format!(
+            "adapter not registered for catalog: {} (unavailable)",
+            key.as_str()
+        ))
+    })?;
+
+    let mut capabilities = BTreeMap::new();
+    for cap in Capability::ALL {
+        let state = adapter.capability(cap);
+        capabilities.insert(cap.as_str().to_string(), CapabilityStateDto::from(state));
+    }
+
+    let install_channels = install_by_key
+        .get(key.as_str())
+        .cloned()
+        .unwrap_or_else(|| {
+            // Fallback when install catalog omits a registered key.
+            channels_for(id)
+                .into_iter()
+                .map(|ch| InstallChannelDescriptor {
+                    id: ch.id,
+                    label: ch.label,
+                    command: ch.command,
+                    requires: ch.requires,
+                })
+                .collect()
+        });
+
+    // Config schema version from platform projectors; unsupported = None.
+    let config_schema_version = crate::platform::config::builtin_config_registry()
+        .get(key)
+        .map(|p| p.schema().schema_version);
+
+    Ok(AgentDescriptor {
+        key: key.clone(),
+        display_name: id.display_name().to_string(),
+        integration_version: BUILTIN_INTEGRATION_VERSION,
+        capabilities,
+        install_channels,
+        config_schema_version,
+    })
 }
