@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '@/components/ui/toast';
+import { AGENT_IDS } from '@/config/agents';
 import { listAgents } from '@/lib/api/agent';
 import {
   chatCancel,
@@ -24,11 +25,14 @@ import type {
 } from '@/lib/types';
 import { extractModel, groupByTurn } from './chat-format';
 import {
+  agentHasConfiguredAuth,
   agentPickerLabel as agentPickerLabelOf,
+  chatAgentPickerRows,
   connectionPickerCaption,
   conversationTitle,
   filterConversations,
   groupConversationsByDay,
+  isChatAgentSelectable,
   newConversationDefaults,
   nextConversationAgentIds,
   retryTarget,
@@ -89,6 +93,22 @@ export function useChatPage() {
     () => new Set(agentStatus.filter((a) => a.hidden).map((a) => a.agentId)),
     [agentStatus],
   );
+  const unconfiguredAuthIds = useMemo(
+    () =>
+      new Set(
+        agentStatus.filter((a) => a.installed && !agentHasConfiguredAuth(a)).map((a) => a.agentId),
+      ),
+    [agentStatus],
+  );
+  const pickerRows = useMemo(
+    () =>
+      chatAgentPickerRows({
+        catalogIds: AGENT_IDS,
+        agentStatus,
+        selectedIds: active?.agentIds ?? [],
+      }),
+    [agentStatus, active?.agentIds],
+  );
   const activeHasHidden = Boolean(active?.agentIds.some((id) => hiddenIds.has(id)));
 
   const primaryAgent = active?.agentIds[0] ?? null;
@@ -98,12 +118,11 @@ export function useChatPage() {
     [providers],
   );
 
-  const hasUsableAgent =
-    agentsReady && agentStatus.some((a) => a.installed && !a.hidden);
+  const hasUsableAgent = agentsReady && agentStatus.some((a) => isChatAgentSelectable(a));
 
   const defaultAgents = useCallback((agents: AgentStatus[]): AgentId[] => {
-    const installedIds = agents.filter((a) => a.installed && !a.hidden).map((a) => a.agentId);
-    if (installedIds.length > 0) return [installedIds[0]];
+    const selectable = agents.filter((a) => isChatAgentSelectable(a)).map((a) => a.agentId);
+    if (selectable.length > 0) return [selectable[0]];
     return [];
   }, []);
 
@@ -286,10 +305,11 @@ export function useChatPage() {
     return sendBlockers({
       conversation: active,
       hiddenIds,
+      unconfiguredAuthIds,
       sendingConversationId: liveSendingConversationId,
       sendingTitle,
     });
-  }, [active, hiddenIds, liveSendingConversationId, sendingTitle]);
+  }, [active, hiddenIds, unconfiguredAuthIds, liveSendingConversationId, sendingTitle]);
 
   const railGroups = useMemo(() => {
     const filtered = filterConversations(conversations, railQuery);
@@ -419,8 +439,10 @@ export function useChatPage() {
 
   async function toggleConversationAgent(id: AgentId) {
     if (!active || sending) return;
-    if (installed.get(id) === false) return;
-    if (hiddenIds.has(id) && !active.agentIds.includes(id)) return;
+    const row = pickerRows.find((r) => r.id === id);
+    const alreadySelected = active.agentIds.includes(id);
+    // 隐藏 / 未配置授权：不可新增，但已在会话里的可以取消勾选移出
+    if (!row?.selectable && !alreadySelected) return;
     const next = nextConversationAgentIds(active.agentIds, id);
     if (!next) {
       toast({ title: '至少保留一个 Agent', variant: 'danger' });
@@ -519,6 +541,7 @@ export function useChatPage() {
     if (sendBlockers({
       conversation: active,
       hiddenIds,
+      unconfiguredAuthIds,
       sendingConversationId: liveSendingConversationId,
       sendingTitle,
     }).length > 0) {
@@ -639,6 +662,8 @@ export function useChatPage() {
     setDeleteConfirmId,
     processMap,
     hiddenIds,
+    unconfiguredAuthIds,
+    pickerRows,
     installed,
     primaryAgent,
     hasUsableAgent,

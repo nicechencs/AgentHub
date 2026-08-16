@@ -311,7 +311,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 **会话 header**：标题就地编辑（Enter/blur 保存、Esc 取消、空值回退「新对话」；自动标题仅在 title 为空时由首条 prompt 生成）+ Agent 只读芯片（含「已隐藏」标记）+ cwd 芯片（Hint 完整路径，点击开设置；未设置为 warning 态）+ 自动批准芯片（**仅开启时显示**，warning 态）+ 设置按钮。修改 Agent 只在 composer picker。
 
-**Composer 与发送前置校验**：自动增高 textarea + 底栏（Agent 多选 / 连接切换 / 发送）。发送前置条件统一为 `sendBlockers` 纯函数，composer 上方渲染第一个 blocker 引导行（含修复动作），优先级：含隐藏 Agent > 无 cwd > 他会话发送中；空草稿只禁发送不出引导行。composer 下方仅一行安全提示（批准关：「Agent 可能修改工作目录中的文件」；批准开：warning「自动批准已开启 · Agent 将不经确认修改文件」）。连接切换仅作用于 `agentIds[0]`，多选时固定标注；无连接深链 `/connections?agent=`。发送按钮是页内唯一 accent 主 CTA；发送中变「停止」。
+**Composer 与发送前置校验**：自动增高 textarea + 底栏（Agent 多选 / 连接切换 / 发送）。Agent picker 只让已安装、未隐藏且已配置授权的项可选；已隐藏 / 未配置授权的项置底（标「已隐藏」/「未配置授权」），不可新增，已在会话内可取消勾选移出。发送前置条件统一为 `sendBlockers` 纯函数，composer 上方渲染第一个 blocker 引导行（含修复动作），优先级：含隐藏 Agent > 未配置授权 > 无 cwd > 他会话发送中；空草稿只禁发送不出引导行。composer 下方仅一行安全提示（批准关：「Agent 可能修改工作目录中的文件」；批准开：warning「自动批准已开启 · Agent 将不经确认修改文件」）。连接切换仅作用于 `agentIds[0]`，多选时固定标注；无连接深链 `/connections?agent=`。发送按钮是页内唯一 accent 主 CTA；发送中变「停止」。
 
 **多 Agent 一轮**：默认纵向堆叠；同轮 ≥2 个 agent 消息时 user 气泡下出「本轮 N 个 Agent」对比条（logo + 状态点 + 耗时，点击定位），**不做左右分栏**。
 

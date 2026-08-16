@@ -80,7 +80,7 @@ Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 pro
 - 连接切换只作用于 `agentIds[0]`（primaryAgent）。
 - Projects → Chat bootstrap：`sessionStorage` + `/chat?from=projects`，可预填 prompt / title / cwd / agentIds，只消费一次。
 - 自动批准开启需二次确认；过程面板进行中/失败默认展开、成功/取消默认折叠。
-- 隐藏 Agent：picker 不新增，已在会话里的仍可见并标「已隐藏」。
+- 隐藏 / 未配置授权 Agent：picker 置底且不可新增；已在会话里的仍可见并标「已隐藏」/「未配置授权」，可取消勾选移出。
 - 空列表自动建会话（有已安装且未隐藏 Agent 时）；删除最后一个会话自动补建。
 - 发送中删除会话先 `chatCancel` 再删。
 
@@ -124,13 +124,13 @@ Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 pro
 | K3 | **重命名只在 header 就地编辑**（点击标题 → Input，Enter/blur 保存、Esc 取消、空值回退「新对话」）；rail 不放第二个编辑入口；自动标题仅在 title 为空时由首条 prompt 生成，用户改过不覆盖 | 一份数据一处编辑；rail 行保持轻，重命名频率低不值得行级按钮 |
 | K4 | **多 Agent 默认纵向堆叠 + 轮级对比条**：同一 turn ≥2 个 agent 消息时，user 气泡下渲染一行 agent 芯片（logo + 名称 + 状态点 + 耗时），点击滚动定位到对应气泡；**不做左右分栏**。连接 picker 在多选时固定标注「仅作用于首位 Agent（{name}）」 | max-w-3xl 下分栏会把过程面板和代码块挤碎；对比条给「谁完成了、谁失败了、各花多久」的轮级答案，纵向保证可读 |
 | K5 | **过程面板收敛为「摘要行 + 步骤时间线 + 次级详情」**：summary = `阶段 · N 步 · 耗时`（去掉常驻命令 mono）；展开 = 无边框步骤时间线（左侧细竖线，tool/thinking/status/error 行）；命令 / stderr / exit 收进时间线下方「运行详情」次级折叠。折叠策略保持现状：进行中/失败/超时展开，成功/取消折叠，用户手动覆盖记忆到阶段变化 | 步骤是主叙事，命令与 stderr 是排障信息；成功后一行摘要即可，不该继续展示命令 |
-| K6 | **发送前置校验统一为 `sendBlockers` 纯函数**，composer 上方渲染第一个 blocker 的引导行（含修复动作），发送按钮禁用 + Hint 原因。优先级：含隐藏 Agent > 无 cwd > 他会话发送中 >（空草稿只禁发送不出引导行）。页级「无可用 Agent 且无会话」用 EmptyState。Projects bootstrap 无 cwd 不再自动弹 Dialog，由引导行接管 | 前置条件从「点了才知道」变成「看得见、点得到」；toast 只留异步失败结果 |
+| K6 | **发送前置校验统一为 `sendBlockers` 纯函数**，composer 上方渲染第一个 blocker 的引导行（含修复动作），发送按钮禁用 + Hint 原因。优先级：含隐藏 Agent > 未配置授权 > 无 cwd > 他会话发送中 >（空草稿只禁发送不出引导行）。页级「无可用 Agent 且无会话」用 EmptyState。Projects bootstrap 无 cwd 不再自动弹 Dialog，由引导行接管 | 前置条件从「点了才知道」变成「看得见、点得到」；toast 只留异步失败结果 |
 | K7 | **消息轻操作**：user / agent 气泡 hover 显示「复制」（`navigator.clipboard` + toast「已复制」）；**最后一轮**的失败/取消/超时 agent 气泡显示「重试」= 用该轮 user prompt 重新 `chatSend`（新 turn，发给会话当前全部 Agent；多 Agent 时 Hint 说明）。历史轮不出重试，用复制自行重发 | 重试复用现有 send，不新增 API；只在末轮出现避免 CTA 散落 |
 | K8 | **文件按 P1-7 样板拆**：`chat-model.ts`（纯函数）+ `use-chat-page.ts`（副作用 hook）+ `ChatSessionRail` / `ChatSessionHeader` / `ChatTranscript` / `ChatMessageBubble` / `ChatSettingsDialog`（JSX）；保留并打磨 `ChatComposer` / `ChatProcessPanel` / `chat-format.ts`；`index.tsx` 只编排 | 与 Connections 样板一致；纯函数可 vitest node 单测，拆分先行为不变后改表面 |
 
 附属拍板（不再另开讨论）：
 
-- **新建对话默认值**：继承当前会话的 cwd 与 agentIds（剔除已隐藏；剔除后为空则回退第一个已安装未隐藏 Agent）。
+- **新建对话默认值**：继承当前会话的 cwd 与 agentIds（剔除已隐藏与未配置授权；剔除后为空则回退第一个可选 Agent）。
 - **发送中切会话**：保持「同一时刻至多一个进行中 turn」的现状语义；切走后其他会话 composer 显示状态行「『{title}』正在生成」+「回到该会话 / 停止」；切回后续流接续（早期增量缺失，最终以 `agentFinished` 全量落定），不做回放，过程不落库。
 - **滚动**：仅当滚动位置贴近底部（阈值约 80px）时跟随流式输出；用户上翻回看时不拉底。
 - **连接 picker 空态**：「暂无连接」行改为深链按钮 → `/connections?agent={primaryAgent}`；添加/绑定一律走 Connections 与 ConnectFlow，Chat 不重建。
@@ -295,6 +295,7 @@ Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 pro
 ```ts
 type ChatSendBlocker =
   | { kind: 'hiddenAgents'; agentIds: AgentId[] }   // → [去 Agents 页]
+  | { kind: 'unconfiguredAuth'; agentIds: AgentId[] } // → [去 Connections 页]
   | { kind: 'noCwd' }                                // → [设置工作目录]
   | { kind: 'sendingElsewhere'; conversationId: string; title: string };
                                                      // → [回到该会话] [停止]
@@ -308,7 +309,7 @@ function sendBlockers(input: {
 ```
 
 - 空草稿只禁用发送按钮，不出引导行。存在 blocker 时发送禁用 + Hint 显示原因；textarea 除 `hiddenAgents` / 发送中外保持可输入（无 cwd 时可先写 prompt）。
-- **Agent picker**：现状规则保留（已安装才可选、隐藏项不新增、至少保留一个、发送中禁改）。
+- **Agent picker**：已安装且已配置授权的项在前、可选；已隐藏或未配置授权的项置底（标「已隐藏」/「未配置授权」），不可新增，已在会话内的可取消勾选移出。至少保留一个、发送中禁改。
 - **连接 picker**：label = 当前 provider 名 + model 副标题（现状）；多 Agent 时 dropdown label 行固定加一句「仅作用于首位 Agent（{name}）」，trigger Hint 同句；无连接时 dropdown 内为深链按钮「去 Connections 添加」→ `/connections?agent={primaryAgent}`。切换成功 toast「已切换连接」（现状）。
 - 发送按钮为本页唯一 accent 主 CTA；发送中变「停止」（dangerOutline，现状）。
 
@@ -330,7 +331,7 @@ function sendBlockers(input: {
 | **重试** | 见 §7；重试本质是一次普通发送，走同一 blocker 校验 |
 | **切会话** | 清空 `processMap` 与流式缓冲（现状）；消息重新加载。**发送中切走**：目标会话 composer 显示 `sendingElsewhere` 引导行（回到该会话 / 停止），textarea 禁用；rail 中发送中行显示状态点。**切回**：后续 chunk 继续应用，早期增量缺失，最终以 `agentFinished` 全量落定（现状语义，不做回放） |
 | **Projects bootstrap** | `/chat?from=projects` + `takeChatBootstrap()` 只消费一次；建会话、可选设标题、预填草稿；toast「已从 Projects 创建会话」。**变化**：无 cwd 时不再自动弹设置 Dialog，由 `noCwd` 引导行 + header warning 芯片接管；query 清理（replace）保留 |
-| **隐藏 Agent** | picker 不新增隐藏项；已在会话内的仍可见并标「已隐藏」；含隐藏 Agent 的会话：header 芯片标记 + `hiddenAgents` 引导行 + 发送禁用（不再靠 placeholder 文案与 toast） |
+| **隐藏 / 未配置授权 Agent** | picker 置底：不可新增，已在会话内的仍可见并标「已隐藏」/「未配置授权」，可取消勾选移出；含这些 Agent 的会话：header 芯片标记（隐藏）+ `hiddenAgents` / `unconfiguredAuth` 引导行 + 发送禁用 |
 | **自动批准** | 编辑仍在设置 Dialog：开启走二次确认 Dialog（文案现状保留）；开启后 header 显示 warning 芯片、composer 安全提示行切换文案；关闭即时生效 |
 | **连接切换** | 仅 primaryAgent（现状）；成功后刷新 provider 列表；多选提示与深链见 §6 |
 | **滚动 / 键盘** | 条件跟随滚动（§4）；标题编辑 Enter/Esc；不新增全局快捷键 |
@@ -338,7 +339,7 @@ function sendBlockers(input: {
 ```mermaid
 flowchart TD
   A[输入草稿 · Enter] --> B{sendBlockers 为空?}
-  B -- 否 --> C[引导行 + 发送禁用<br/>hiddenAgents / noCwd / sendingElsewhere]
+  B -- 否 --> C[引导行 + 发送禁用<br/>hiddenAgents / unconfiguredAuth / noCwd / sendingElsewhere]
   B -- 是 --> D[chatSend 乐观插入 user + running 占位]
   D --> E{事件到达时仍在该会话?}
   E -- 是 --> F[applyEvent + reduceProcessEvent<br/>正文流式 · 过程时间线]
@@ -397,6 +398,7 @@ src/pages/chat/
 | cwd 芯片（未设置） | 未设置工作目录 |
 | 自动批准芯片 Hint | 已跳过工具确认，仅在信任该目录时开启 |
 | 引导行 hiddenAgents | 会话包含已隐藏 Agent，暂不能发送 · [去 Agents 页] |
+| 引导行 unconfiguredAuth | 会话包含未配置授权的 Agent，暂不能发送 · [去 Connections 页] |
 | 引导行 noCwd | 未设置工作目录 — Agent 需要在指定目录内工作 · [设置工作目录] |
 | 引导行 sendingElsewhere | 「{title}」正在生成 · [回到该会话] [停止] |
 | composer placeholder | 发送消息给 Agent…（Shift+Enter 换行） |
@@ -451,7 +453,8 @@ src/pages/chat/
 
 **composer / 发送**
 
-- [ ] `sendBlockers` 顺序：hiddenAgents > noCwd > sendingElsewhere；单测覆盖。
+- [ ] `sendBlockers` 顺序：hiddenAgents > unconfiguredAuth > noCwd > sendingElsewhere；单测覆盖。
+- [ ] Agent picker：可选项在前；已隐藏 / 未配置授权置底，不可新增，已在会话内可取消勾选。
 - [ ] 引导行只渲染第一个 blocker 且带可用修复动作；发送禁用 + Hint 原因。
 - [ ] 无 cwd 时 textarea 可输入、发送禁用；设置 cwd 后不丢草稿即可发送。
 - [ ] Projects bootstrap 无 cwd：不自动弹 Dialog，引导行出现；query 清理、bootstrap 只消费一次。

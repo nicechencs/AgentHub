@@ -4,13 +4,16 @@ import type { AgentId, AgentStatus, ChatMessage, Conversation } from '@/lib/type
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { TurnGroup } from './chat-format';
 import {
+  agentHasConfiguredAuth,
   agentPickerLabel,
   blockerCopy,
+  chatAgentPickerRows,
   connectionPickerCaption,
   conversationTitle,
   cwdShortName,
   filterConversations,
   groupConversationsByDay,
+  isChatAgentSelectable,
   messageStatusLabel,
   newConversationDefaults,
   nextConversationAgentIds,
@@ -36,14 +39,17 @@ function status(
   agentId: AgentId,
   installed: boolean,
   hidden = false,
+  extra: Partial<AgentStatus> = {},
 ): AgentStatus {
   return {
     agentId,
     installed,
-    authStatus: 'none',
-    authLabel: '',
+    authStatus: installed ? 'valid' : 'none',
+    authLabel: installed ? 'API' : '',
+    effectiveKind: installed ? 'api' : 'none',
     running: false,
     hidden,
+    ...extra,
   };
 }
 
@@ -167,19 +173,32 @@ describe('sendBlockers', () => {
     cwd: 'D:\\work',
   });
 
-  it('returns hiddenAgents before noCwd before sendingElsewhere', () => {
+  it('returns hiddenAgents before unconfiguredAuth before noCwd before sendingElsewhere', () => {
     const blockers = sendBlockers({
-      conversation: { ...base, cwd: null, agentIds: ['claude', 'kimi'] },
+      conversation: { ...base, cwd: null, agentIds: ['claude', 'kimi', 'grok'] },
       hiddenIds: new Set<AgentId>(['kimi']),
+      unconfiguredAuthIds: new Set<AgentId>(['grok']),
       sendingConversationId: 'other',
       sendingTitle: '别的会话',
     });
     expect(blockers.map((b) => b.kind)).toEqual([
       'hiddenAgents',
+      'unconfiguredAuth',
       'noCwd',
       'sendingElsewhere',
     ]);
     expect(blockers[0]).toEqual({ kind: 'hiddenAgents', agentIds: ['kimi'] });
+    expect(blockers[1]).toEqual({ kind: 'unconfiguredAuth', agentIds: ['grok'] });
+  });
+
+  it('does not list a hidden agent again as unconfiguredAuth', () => {
+    const blockers = sendBlockers({
+      conversation: { ...base, agentIds: ['kimi'] },
+      hiddenIds: new Set<AgentId>(['kimi']),
+      unconfiguredAuthIds: new Set<AgentId>(['kimi']),
+      sendingConversationId: null,
+    });
+    expect(blockers.map((b) => b.kind)).toEqual(['hiddenAgents']);
   });
 
   it('does not treat an empty draft as a blocker', () => {
@@ -240,6 +259,23 @@ describe('newConversationDefaults', () => {
     expect(newConversationDefaults(null, agents)).toEqual({
       agentIds: ['claude'],
       cwd: null,
+    });
+  });
+
+  it('drops agents without configured auth and falls back to a selectable one', () => {
+    const none = status('pi', true, false, {
+      authStatus: 'none',
+      authLabel: '未配置',
+      effectiveKind: 'none',
+    });
+    const active = conv({
+      id: 'a',
+      agentIds: ['pi'],
+      cwd: '/tmp/app',
+    });
+    expect(newConversationDefaults(active, [...agents, none])).toEqual({
+      agentIds: ['claude'],
+      cwd: '/tmp/app',
     });
   });
 });
@@ -346,6 +382,10 @@ describe('blockerCopy', () => {
       text: '会话包含已隐藏 Agent，暂不能发送',
       primaryAction: '去 Agents 页',
     });
+    expect(blockerCopy({ kind: 'unconfiguredAuth', agentIds: ['grok'] })).toEqual({
+      text: '会话包含未配置授权的 Agent，暂不能发送',
+      primaryAction: '去 Connections 页',
+    });
     expect(blockerCopy({ kind: 'noCwd' })).toEqual({
       text: '未设置工作目录 — Agent 需要在指定目录内工作',
       primaryAction: '设置工作目录',
@@ -425,5 +465,76 @@ describe('turnComparisonChips', () => {
       { agentId: 'claude', status: 'ok', durationMs: 1200, messageId: 'm1' },
       { agentId: 'codex', status: 'running', durationMs: 0, messageId: 'm2' },
     ]);
+  });
+});
+
+describe('agentHasConfiguredAuth / picker rows', () => {
+  it('treats bound account/api and verified health as configured', () => {
+    expect(agentHasConfiguredAuth(status('claude', true))).toBe(true);
+    expect(
+      agentHasConfiguredAuth(
+        status('codex', true, false, {
+          effectiveKind: 'account',
+          authHealth: 'verified',
+          authStatus: 'valid',
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      agentHasConfiguredAuth(
+        status('kimi', true, false, {
+          effectiveKind: 'none',
+          authStatus: 'none',
+          authLabel: '未配置',
+          authHealth: 'missing',
+        }),
+      ),
+    ).toBe(false);
+    expect(agentHasConfiguredAuth(status('grok', false))).toBe(false);
+  });
+
+  it('isChatAgentSelectable requires installed, visible, and configured auth', () => {
+    expect(isChatAgentSelectable(status('claude', true))).toBe(true);
+    expect(isChatAgentSelectable(status('codex', true, true))).toBe(false);
+    expect(
+      isChatAgentSelectable(
+        status('kimi', true, false, {
+          effectiveKind: 'none',
+          authStatus: 'none',
+          authHealth: 'missing',
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('lists selectable agents first and parks hidden / no-auth at the end', () => {
+    const rows = chatAgentPickerRows({
+      catalogIds: ['claude', 'codex', 'kimi', 'grok', 'pi'],
+      selectedIds: ['claude'],
+      agentStatus: [
+        status('claude', true),
+        status('codex', true, true),
+        status('kimi', true, false, {
+          effectiveKind: 'none',
+          authStatus: 'none',
+          authHealth: 'missing',
+        }),
+        status('grok', false),
+        status('pi', true),
+      ],
+    });
+    expect(rows.map((r) => r.id)).toEqual(['claude', 'pi', 'codex', 'kimi']);
+    expect(rows.map((r) => r.selectable)).toEqual([true, true, false, false]);
+    expect(rows.map((r) => r.reason)).toEqual([null, null, 'hidden', 'noAuth']);
+  });
+
+  it('keeps an already-selected uninstalled agent visible but unselectable', () => {
+    const rows = chatAgentPickerRows({
+      catalogIds: ['claude', 'kimi'],
+      selectedIds: ['kimi'],
+      agentStatus: [status('claude', true), status('kimi', false)],
+    });
+    expect(rows.map((r) => r.id)).toEqual(['claude', 'kimi']);
+    expect(rows[1]).toEqual({ id: 'kimi', selectable: false, reason: 'noAuth' });
   });
 });

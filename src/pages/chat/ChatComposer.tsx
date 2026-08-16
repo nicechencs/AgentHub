@@ -24,11 +24,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Hint } from '@/components/ui/tooltip';
-import { AGENT_IDS, agentDisplayName } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
 import type { AgentId, Conversation, Provider } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { extractModel } from './chat-format';
-import { blockerCopy, type ChatSendBlocker } from './chat-model';
+import { blockerCopy, type ChatAgentPickerRow, type ChatSendBlocker } from './chat-model';
 
 /** Composer 正文区：约 1 行起、最多 ~12 行；超出后内部滚动，工具条始终贴底。 */
 const COMPOSER_MIN_PX = 56;
@@ -39,7 +39,6 @@ export function ChatComposer({
   setDraft,
   sending,
   active,
-  installed,
   providers,
   primaryAgent,
   agentPickerLabel,
@@ -47,6 +46,7 @@ export function ChatComposer({
   modelPickerSubtitle,
   switchingProvider,
   hiddenIds,
+  pickerRows,
   blockers,
   connectionCaption,
   onSend,
@@ -60,7 +60,6 @@ export function ChatComposer({
   setDraft: (v: string) => void;
   sending: boolean;
   active: Conversation;
-  installed: Map<AgentId, boolean>;
   providers: Provider[];
   primaryAgent: AgentId | null;
   agentPickerLabel: string;
@@ -68,6 +67,7 @@ export function ChatComposer({
   modelPickerSubtitle: string | null;
   switchingProvider: boolean;
   hiddenIds: Set<AgentId>;
+  pickerRows: ChatAgentPickerRow[];
   blockers: ChatSendBlocker[];
   connectionCaption: string | null;
   onSend: () => void;
@@ -83,10 +83,6 @@ export function ChatComposer({
     active.agentIds.some((id) => hiddenIds.has(id));
   const sendingElsewhere = blockers.some((b) => b.kind === 'sendingElsewhere');
   const canSend = Boolean(draft.trim()) && blockers.length === 0 && !sending;
-  const pickerIds = AGENT_IDS.filter((id) => {
-    if (hiddenIds.has(id)) return active.agentIds.includes(id);
-    return installed.get(id) === true;
-  });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const syncTextareaHeight = useCallback(() => {
@@ -118,6 +114,9 @@ export function ChatComposer({
         <BlockerNotice
           blocker={firstBlocker}
           onGoAgents={() => navigate('/agents')}
+          onGoConnections={() =>
+            navigate(primaryAgent ? `/connections?agent=${primaryAgent}` : '/connections')
+          }
           onOpenSettings={onOpenSettings}
           onFocusConversation={onFocusConversation}
           onCancel={onCancel}
@@ -162,23 +161,29 @@ export function ChatComposer({
             <DropdownMenuContent align="start" className="w-56">
               <DropdownMenuLabel>选择 Agent（可多选）</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {pickerIds.map((id) => (
-                <DropdownMenuCheckboxItem
-                  key={id}
-                  checked={active.agentIds.includes(id)}
-                  disabled={sending || (hiddenIds.has(id) && !active.agentIds.includes(id))}
-                  onCheckedChange={() => onToggleAgent(id)}
-                >
-                  <span className="flex items-center gap-2">
-                    <AgentLogo agentId={id} size="sm" />
-                    {agentDisplayName(id)}
-                    {hiddenIds.has(id) && (
-                      <span className="text-xs text-muted">已隐藏</span>
-                    )}
-                  </span>
-                </DropdownMenuCheckboxItem>
-              ))}
-              {pickerIds.length === 0 && (
+              {pickerRows.map((row) => {
+                const checked = active.agentIds.includes(row.id);
+                return (
+                  <DropdownMenuCheckboxItem
+                    key={row.id}
+                    checked={checked}
+                    disabled={sending || sendingElsewhere || (!row.selectable && !checked)}
+                    onCheckedChange={() => onToggleAgent(row.id)}
+                  >
+                    <span className="flex items-center gap-2">
+                      <AgentLogo agentId={row.id} size="sm" />
+                      {agentDisplayName(row.id)}
+                      {row.reason === 'hidden' && (
+                        <span className="text-xs text-muted">已隐藏</span>
+                      )}
+                      {row.reason === 'noAuth' && (
+                        <span className="text-xs text-muted">未配置授权</span>
+                      )}
+                    </span>
+                  </DropdownMenuCheckboxItem>
+                );
+              })}
+              {pickerRows.length === 0 && (
                 <div className="px-2 py-1.5 text-xs text-muted">尚未安装任何 Agent</div>
               )}
             </DropdownMenuContent>
@@ -297,12 +302,14 @@ export function ChatComposer({
 function BlockerNotice({
   blocker,
   onGoAgents,
+  onGoConnections,
   onOpenSettings,
   onFocusConversation,
   onCancel,
 }: {
   blocker: ChatSendBlocker;
   onGoAgents: () => void;
+  onGoConnections: () => void;
   onOpenSettings: () => void;
   onFocusConversation: (id: string) => void;
   onCancel: () => void;
@@ -340,7 +347,13 @@ function BlockerNotice({
       tone="warning"
       className="mb-2"
       actionLabel={copy.primaryAction}
-      onAction={blocker.kind === 'hiddenAgents' ? onGoAgents : onOpenSettings}
+      onAction={
+        blocker.kind === 'hiddenAgents'
+          ? onGoAgents
+          : blocker.kind === 'unconfiguredAuth'
+            ? onGoConnections
+            : onOpenSettings
+      }
     >
       {copy.text}
     </Notice>
