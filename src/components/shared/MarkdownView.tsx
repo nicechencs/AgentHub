@@ -202,24 +202,24 @@ export function MarkdownView({
         className={cn(
           // Reset library default canvas so it inherits chat/dialog backgrounds.
           '!bg-transparent',
-          variant === 'chat' && 'text-sm [&_pre]:text-2xs',
-          // document：侧栏密度；! 覆盖 @uiw 默认 2em h1 / 底部分割线，避免压过预览 chrome
+          variant === 'chat' && 'text-body [&_pre]:text-meta',
+          // document：三档字号；! 覆盖 @uiw 默认 2em h1 / 底部分割线，避免压过预览 chrome
           variant === 'document' &&
             [
               'wmde-markdown-document min-w-0 max-w-full break-words',
-              'text-sm leading-[1.45]',
+              'text-body leading-[1.45]',
               '[&>:first-child]:!mt-0',
-              // h1 16px（与页内区块标题同级），去掉 GitHub 风底边线
+              // h1 走 title 档，去掉 GitHub 风底边线
               '[&_h1]:!mt-0 [&_h1]:!mb-2 [&_h1]:!border-0 [&_h1]:!pb-0',
-              '[&_h1]:!text-base [&_h1]:!font-semibold [&_h1]:!leading-[1.35] [&_h1]:!text-primary',
+              '[&_h1]:!text-title [&_h1]:!font-semibold [&_h1]:!leading-[1.35] [&_h1]:!text-primary',
               '[&_h2]:!mt-4 [&_h2]:!mb-1.5 [&_h2]:!border-0 [&_h2]:!pb-0',
-              '[&_h2]:!text-sm [&_h2]:!font-semibold [&_h2]:!leading-[1.35] [&_h2]:!text-primary',
-              '[&_h3]:!mt-3 [&_h3]:!mb-1 [&_h3]:!text-sm [&_h3]:!font-semibold [&_h3]:!text-primary',
-              '[&_h4]:!mt-2.5 [&_h4]:!mb-1 [&_h4]:!text-sm [&_h4]:!font-medium [&_h4]:!text-primary',
-              '[&_p]:!my-1.5 [&_p]:!text-sm [&_p]:!leading-[1.5] [&_p]:!text-primary',
-              '[&_ul]:!my-1.5 [&_ol]:!my-1.5 [&_li]:!my-0.5 [&_li]:!text-sm',
-              '[&_pre]:!my-2.5 [&_pre]:!max-w-full [&_pre]:!overflow-x-auto [&_pre]:!rounded-btn [&_pre]:!text-xs',
-              '[&_code]:!text-xs [&_code]:!font-mono',
+              '[&_h2]:!text-body [&_h2]:!font-semibold [&_h2]:!leading-[1.35] [&_h2]:!text-primary',
+              '[&_h3]:!mt-3 [&_h3]:!mb-1 [&_h3]:!text-body [&_h3]:!font-semibold [&_h3]:!text-primary',
+              '[&_h4]:!mt-2.5 [&_h4]:!mb-1 [&_h4]:!text-body [&_h4]:!font-medium [&_h4]:!text-primary',
+              '[&_p]:!my-1.5 [&_p]:!text-body [&_p]:!leading-[1.45] [&_p]:!text-primary',
+              '[&_ul]:!my-1.5 [&_ol]:!my-1.5 [&_li]:!my-0.5 [&_li]:!text-body',
+              '[&_pre]:!my-2.5 [&_pre]:!max-w-full [&_pre]:!overflow-x-auto [&_pre]:!rounded-btn [&_pre]:!text-meta',
+              '[&_code]:!text-meta [&_code]:!font-mono',
               '[&_blockquote]:!my-2 [&_blockquote]:!border-l-2 [&_blockquote]:!border-border [&_blockquote]:!pl-3 [&_blockquote]:!text-secondary',
               '[&_hr]:!my-3 [&_hr]:!border-border',
               '[&_table]:!my-2.5 [&_table]:!w-max [&_table]:!max-w-none [&_table]:!border-collapse',
@@ -234,7 +234,7 @@ export function MarkdownView({
           // Keep text on design tokens; library handles internal structure.
           backgroundColor: 'transparent',
           color: 'var(--text-primary)',
-          fontSize: 13,
+          fontSize: 'var(--font-body-size, 13px)',
           padding: 0,
         }}
       />

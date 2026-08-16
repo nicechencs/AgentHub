@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
  * chip: 有边框、可点击 affordance —— 表达可选项
  */
 const badgeVariants = cva(
-  'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-colors',
+  'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-meta font-medium transition-colors',
   {
     variants: {
       variant: {

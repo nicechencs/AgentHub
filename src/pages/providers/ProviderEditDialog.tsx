@@ -518,11 +518,11 @@ export function ProviderEditDialog({
           </DialogTitle>
           <DialogDescription>
             勾选「官方」时使用官方服务地址与模型；取消后可填自定义服务地址。当前连接保存后会写入本机配置文件
-            <span className="font-mono text-2xs"> {livePaths.config}</span>
+            <span className="font-mono text-meta"> {livePaths.config}</span>
             {livePaths.auth ? (
               <>
                 {' · '}
-                <span className="font-mono text-2xs">{livePaths.auth}</span>
+                <span className="font-mono text-meta">{livePaths.auth}</span>
               </>
             ) : null}
             。
@@ -530,7 +530,7 @@ export function ProviderEditDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-start justify-between gap-2 rounded-card border border-border bg-canvas px-3 py-2 text-2xs text-muted">
+          <div className="flex flex-wrap items-start justify-between gap-2 rounded-card border border-border bg-canvas px-3 py-2 text-meta text-muted">
             <div className="min-w-0 flex-1 space-y-0.5">
               <p>
                 <span className="text-secondary">本机当前配置 </span>
@@ -565,7 +565,7 @@ export function ProviderEditDialog({
             />
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-medium text-primary">使用官方端点</span>
-              <span className="mt-0.5 block text-2xs text-muted">
+              <span className="mt-0.5 block text-meta text-muted">
                 {official
                   ? `勾选后下方 URL / 模型显示 ${official.label} 默认值且不可改；取消后可自定义中转`
                   : '该 Agent 暂无内置官方模板，可手动填写'}
@@ -624,7 +624,7 @@ export function ProviderEditDialog({
               >
                 识别并填入
               </Button>
-              <span className="text-2xs text-muted">
+              <span className="text-meta text-muted">
                 {detectHints.length > 0 ? detectHints.join(' · ') : '\u00a0'}
               </span>
             </div>
@@ -645,7 +645,7 @@ export function ProviderEditDialog({
           {/* 固定占位，避免 tomlOpaque 出现时把表单顶高 */}
           <p
             className={cn(
-              'min-h-[2.25rem] rounded-btn border px-2.5 py-2 text-2xs',
+              'min-h-[2.25rem] rounded-btn border px-2.5 py-2 text-meta',
               tomlOpaque
                 ? 'border-border bg-canvas text-muted'
                 : 'border-transparent text-transparent',
@@ -660,19 +660,19 @@ export function ProviderEditDialog({
           {configError ? (
             <p
               role="alert"
-              className="rounded-btn border border-danger/40 bg-danger/5 px-2.5 py-2 text-2xs text-danger"
+              className="rounded-btn border border-danger/40 bg-danger/5 px-2.5 py-2 text-meta text-danger"
             >
               {configError}。请修正 JSON 原文后再保存；当前原文会保留，不会被结构化字段覆盖。
             </p>
           ) : null}
 
           {schemaStatus === 'loading' || schemaStatus === 'idle' ? (
-            <p className="text-2xs text-muted">加载配置字段 schema…</p>
+            <p className="text-meta text-muted">加载配置字段 schema…</p>
           ) : null}
 
           {schemaStatus === 'error' ? (
             <div className="flex flex-col gap-2 rounded-card border border-danger/40 bg-danger/5 px-3 py-2.5">
-              <p className="text-2xs text-danger">
+              <p className="text-meta text-danger">
                 {schemaError ?? '配置 schema 不可用，禁止保存'}
               </p>
               <Button

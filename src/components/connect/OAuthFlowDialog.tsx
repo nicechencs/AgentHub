@@ -350,7 +350,7 @@ export function OAuthFlowDialog({
                 >
                   <div className="text-sm font-medium text-primary">{opt.label}</div>
                   <div className="mt-0.5 text-xs text-muted">{opt.description}</div>
-                  <div className="mt-1 font-mono text-2xs text-muted">
+                  <div className="mt-1 font-mono text-meta text-muted">
                     {opt.flow === 'deviceCode' ? '设备码' : '浏览器 PKCE'}
                     {opt.authJsonKey ? ` · ${opt.authJsonKey}` : ''}
                   </div>
@@ -399,14 +399,14 @@ export function OAuthFlowDialog({
                 <p className="text-sm text-secondary">等待在浏览器中完成设备授权…</p>
                 <Card variant="plain" className="w-full bg-canvas px-4 py-3 text-left">
                   <p className="text-xs text-muted">设备码</p>
-                  <p className="font-mono text-2xl tracking-widest text-primary">
+                  <p className="font-mono text-title tracking-widest text-primary">
                     {deviceInfo.userCode}
                   </p>
-                  <p className="mt-2 break-all font-mono text-2xs text-muted">
+                  <p className="mt-2 break-all font-mono text-meta text-muted">
                     {deviceInfo.verificationUri}
                   </p>
                 </Card>
-                <p className="font-mono text-lg tabular-nums text-primary">
+                <p className="font-mono text-title tabular-nums text-primary">
                   {mm}:{ss}
                 </p>
                 <div className="flex flex-wrap justify-center gap-2">
@@ -434,12 +434,12 @@ export function OAuthFlowDialog({
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
             <p className="text-sm text-secondary">等待浏览器回调…</p>
-            <p className="font-mono text-2xl tabular-nums text-primary">
+            <p className="font-mono text-title tabular-nums text-primary">
               {mm}:{ss}
             </p>
             {oauthState && (
               <Tip
-                className="max-w-full truncate font-mono text-2xs text-muted"
+                className="max-w-full truncate font-mono text-meta text-muted"
                 label={oauthState}
               >
                 state: {oauthState}
@@ -450,7 +450,7 @@ export function OAuthFlowDialog({
               <Notice tone="info">
                 若浏览器未自动回调，可复制授权链接手动打开，或把最终跳转的本地回调 URL 粘贴到下方。
                 {redirectUri ? (
-                  <span className="mt-1 block font-mono text-2xs text-muted">
+                  <span className="mt-1 block font-mono text-meta text-muted">
                     期望回调前缀：{redirectUri}
                   </span>
                 ) : null}

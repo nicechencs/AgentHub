@@ -132,7 +132,7 @@ export function ProjectTree({
                     {p.preview && (
                       <p className="mt-1 line-clamp-2 text-xs text-secondary">{p.preview}</p>
                     )}
-                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-2xs text-muted">
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-meta text-muted">
                       {p.actualPath && (
                         <Tip label={p.actualPath}>{shortPath(p.actualPath, 48)}</Tip>
                       )}
@@ -243,7 +243,7 @@ export function ProjectTree({
                                     {s.preview}
                                   </p>
                                 )}
-                                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-2xs text-muted">
+                                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-meta text-muted">
                                   {(() => {
                                     const sid = nativeSessionId(s);
                                     if (!sid) return null;

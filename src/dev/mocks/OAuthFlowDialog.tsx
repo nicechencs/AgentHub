@@ -105,7 +105,7 @@ export function OAuthFlowDialog({
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
             <p className="text-sm text-secondary">等待模拟回调（loopback）…</p>
-            <p className="font-mono text-2xl tabular-nums text-primary">
+            <p className="font-mono text-title tabular-nums text-primary">
               {mm}:{ss}
             </p>
             <div className="w-full rounded-card border border-border bg-canvas p-3">

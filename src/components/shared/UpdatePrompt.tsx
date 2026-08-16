@@ -260,7 +260,7 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
             </div>
             <Progress value={percent ?? (phase === 'installing' ? 100 : 15)} />
             {downloadedLabel && percent != null && (
-              <p className="text-2xs text-muted">{downloadedLabel}</p>
+              <p className="text-meta text-muted">{downloadedLabel}</p>
             )}
           </div>
         )}

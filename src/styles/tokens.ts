@@ -1,6 +1,6 @@
 /**
  * Design tokens — **single source of truth** for theme colors, agent brand
- * colors, radii, and shadows.
+ * colors, radii, shadows, and the three UI type sizes.
  *
  * Runtime CSS variables are generated from this module:
  * - full set → `virtual:agenthub-design-tokens.css` (Vite plugin)
@@ -92,6 +92,52 @@ export const RADIUS = {
   lg: '12px',
 } as const;
 
+/**
+ * UI 字号只保留三档。不要再加第四个像素值。
+ *
+ * | 标准 | class | 像素 | 用途 |
+ * | title | `text-title` | 16 | 页标题、空态主句、指标数字 |
+ * | body | `text-body` | 13 | 正文、按钮、列表名、段标题（加字重） |
+ * | meta | `text-meta` | 12 | 次级说明、表头、路径、角标、眉题 |
+ */
+export const TYPE_SCALE = {
+  title: { size: '16px', lineHeight: '1.35' },
+  body: { size: '13px', lineHeight: '1.45' },
+  meta: { size: '12px', lineHeight: '1.4' },
+} as const;
+
+export type TypeScaleRole = keyof typeof TYPE_SCALE;
+
+/**
+ * 旧 Tailwind 名 → 三档标准。像素与标准相同，不是额外字号。
+ * 新代码优先写 `text-title` / `text-body` / `text-meta`。
+ */
+export const TYPE_SCALE_ALIASES = {
+  lg: 'title',
+  xl: 'title',
+  sm: 'body',
+  base: 'body',
+  xs: 'meta',
+  '2xs': 'meta',
+} as const satisfies Record<string, TypeScaleRole>;
+
+export function typeScaleTw(role: TypeScaleRole): [string, { lineHeight: string }] {
+  const spec = TYPE_SCALE[role];
+  return [spec.size, { lineHeight: spec.lineHeight }];
+}
+
+/** Tailwind `theme.extend.fontSize`：三档标准 + 同像素别名。 */
+export function buildTailwindFontSize(): Record<string, [string, { lineHeight: string }]> {
+  const fontSize: Record<string, [string, { lineHeight: string }]> = {};
+  for (const role of Object.keys(TYPE_SCALE) as TypeScaleRole[]) {
+    fontSize[role] = typeScaleTw(role);
+  }
+  for (const [alias, role] of Object.entries(TYPE_SCALE_ALIASES)) {
+    fontSize[alias] = typeScaleTw(role);
+  }
+  return fontSize;
+}
+
 export const SHADOWS = {
   light: {
     xs: '0 1px 2px rgba(0, 0, 0, 0.04)',
@@ -146,6 +192,10 @@ function themeDecls(scheme: ThemeScheme): string[] {
     lines.push(`--radius-sm: ${RADIUS.sm};`);
     lines.push(`--radius: ${RADIUS.DEFAULT};`);
     lines.push(`--radius-lg: ${RADIUS.lg};`);
+    for (const [role, spec] of Object.entries(TYPE_SCALE)) {
+      lines.push(`--font-${role}-size: ${spec.size};`);
+      lines.push(`--font-${role}-leading: ${spec.lineHeight};`);
+    }
   }
   for (const [key, value] of Object.entries(shadows)) {
     lines.push(`--shadow-${key}: ${value};`);
@@ -183,9 +233,15 @@ export function buildBootCriticalCss(): string {
   ] as const;
   const darkKeys = lightKeys;
 
+  const typeScaleLines = Object.entries(TYPE_SCALE).flatMap(([role, spec]) => [
+    `--font-${role}-size: ${spec.size};`,
+    `--font-${role}-leading: ${spec.lineHeight};`,
+  ]);
+
   const lightLines = [
     ...lightKeys.map((k) => `--${k}: ${THEME.light[k]};`),
     ...TOKEN_AGENT_IDS.map((id) => `--agent-${id}: ${AGENT_COLORS[id].light};`),
+    ...typeScaleLines,
   ];
   const darkLines = [
     ...darkKeys.map((k) => `--${k}: ${THEME.dark[k]};`),

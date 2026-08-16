@@ -85,7 +85,7 @@ export function BootSplash({
         </div>
 
         <div className="flex flex-col items-center gap-1.5">
-          <div className="boot-splash__title text-lg font-semibold tracking-tight text-primary">
+          <div className="boot-splash__title text-title font-semibold tracking-tight text-primary">
             AgentHub
           </div>
           <div className="boot-splash__subtitle text-xs text-muted">{subtitle}</div>

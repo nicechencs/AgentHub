@@ -153,11 +153,11 @@ function ToastItem({
         className="min-w-0 flex-1 select-text"
         onPointerDown={(e) => e.stopPropagation()}
       >
-        <ToastPrimitive.Title className="select-text text-sm font-medium">
+        <ToastPrimitive.Title className="select-text text-body font-medium">
           {t.title}
         </ToastPrimitive.Title>
         {t.description && (
-          <ToastPrimitive.Description className="mt-0.5 select-text break-words text-xs text-secondary">
+          <ToastPrimitive.Description className="mt-0.5 select-text break-words text-meta text-secondary">
             {t.description}
           </ToastPrimitive.Description>
         )}
@@ -169,7 +169,7 @@ function ToastItem({
             t.onAction?.();
             requestClose();
           }}
-          className="inline-flex h-6 shrink-0 items-center rounded-btn border border-accent/50 px-2.5 text-xs font-medium text-accent hover:bg-accent/10"
+          className="inline-flex h-6 shrink-0 items-center rounded-btn border border-accent/50 px-2.5 text-meta font-medium text-accent hover:bg-accent/10"
         >
           {t.actionLabel}
         </ToastPrimitive.Action>

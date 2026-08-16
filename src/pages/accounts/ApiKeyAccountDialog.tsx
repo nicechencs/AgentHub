@@ -176,7 +176,7 @@ export function ApiKeyAccountDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <span className="text-2xs text-muted">
+              <span className="text-meta text-muted">
                 切换生效时写入 Claude 配置中的该环境变量字段。
               </span>
             </label>

@@ -4,7 +4,7 @@ import { Hint } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-btn text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-btn text-body font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
@@ -18,7 +18,7 @@ const buttonVariants = cva(
       },
       size: {
         default: 'h-7 px-3',
-        sm: 'h-7 px-2.5 text-xs',
+        sm: 'h-7 px-2.5 text-meta',
         lg: 'h-8 px-3.5',
         icon: 'h-7 w-7',
       },

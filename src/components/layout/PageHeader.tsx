@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
  * 勿把长说明直接铺在页面上。
  *
  * - `default`：常规页（Dashboard / Settings…）
- * - `compact`：全高页（Skills / Chat 壳内）— 更小标题与底边距
+ * - `compact`：全高页（Skills / Chat 壳内）— 同档标题，只收底边距
  */
 export function PageHeader({
   title,
@@ -40,12 +40,7 @@ export function PageHeader({
     >
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
-          <h1
-            className={cn(
-              'font-semibold tracking-tight text-primary',
-              compact ? 'text-base leading-tight' : 'text-lg',
-            )}
-          >
+          <h1 className="text-title font-semibold tracking-tight text-primary">
             {title}
           </h1>
           {badge}
@@ -53,21 +48,13 @@ export function PageHeader({
         {description &&
           (descriptionTip ? (
             <Tip
-              className={cn(
-                'mt-0.5 block text-secondary',
-                compact ? 'text-2xs' : 'text-xs',
-              )}
+              className="mt-0.5 block text-meta text-secondary"
               label={descriptionTip}
             >
               {description}
             </Tip>
           ) : (
-            <p
-              className={cn(
-                'mt-0.5 text-secondary',
-                compact ? 'text-2xs' : 'text-xs',
-              )}
-            >
+            <p className="mt-0.5 text-meta text-secondary">
               {description}
             </p>
           ))}

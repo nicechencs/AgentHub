@@ -183,7 +183,7 @@ export default function McpPage() {
                           <span className="font-normal text-muted">· {s.label}</span>
                         </div>
                         <Tip label={s.path}>
-                          <p className="mt-1 truncate font-mono text-2xs text-muted">{s.path}</p>
+                          <p className="mt-1 truncate font-mono text-meta text-muted">{s.path}</p>
                         </Tip>
                         <p className="mt-1 text-xs text-secondary">
                           {s.readable
@@ -238,7 +238,7 @@ export default function McpPage() {
                     <CardContent className="space-y-1 px-3 pb-3 pt-0">
                       {s.command ? (
                         <Tip
-                          className="block truncate font-mono text-2xs text-secondary"
+                          className="block truncate font-mono text-meta text-secondary"
                           label={s.command}
                         >
                           {s.command}
@@ -246,7 +246,7 @@ export default function McpPage() {
                       ) : null}
                       {s.url ? (
                         <Tip
-                          className="block truncate font-mono text-2xs text-secondary"
+                          className="block truncate font-mono text-meta text-secondary"
                           label={s.url}
                         >
                           {s.url}
@@ -254,7 +254,7 @@ export default function McpPage() {
                       ) : null}
                       <div className="flex items-center justify-between gap-2 pt-1">
                         <Tip label={s.sourcePath}>
-                          <p className="min-w-0 truncate text-2xs text-muted">
+                          <p className="min-w-0 truncate text-meta text-muted">
                             {s.sourceFormat} · {s.sourcePath}
                           </p>
                         </Tip>
