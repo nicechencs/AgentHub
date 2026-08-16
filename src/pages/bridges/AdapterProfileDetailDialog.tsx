@@ -51,6 +51,7 @@ export function AdapterProfileDetailDialog({
   onClose,
   onSetAutoStart,
   onRequestRemove,
+  targetHidden = false,
 }: {
   profile: AdapterProfile | null;
   bridgeStatus?: AdapterBridgeRuntimeStatus;
@@ -61,6 +62,7 @@ export function AdapterProfileDetailDialog({
   onClose: () => void;
   onSetAutoStart: (profile: AdapterProfile, autoStart: boolean) => void;
   onRequestRemove: (profile: AdapterProfile) => void;
+  targetHidden?: boolean;
 }) {
   return (
     <Dialog open={Boolean(profile)} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -76,6 +78,7 @@ export function AdapterProfileDetailDialog({
             onClose={onClose}
             onSetAutoStart={onSetAutoStart}
             onRequestRemove={onRequestRemove}
+            targetHidden={targetHidden}
           />
         ) : null}
       </DialogContent>
@@ -93,6 +96,7 @@ function ProfileDetailBody({
   onClose,
   onSetAutoStart,
   onRequestRemove,
+  targetHidden,
 }: {
   profile: AdapterProfile;
   bridgeStatus?: AdapterBridgeRuntimeStatus;
@@ -103,6 +107,7 @@ function ProfileDetailBody({
   onClose: () => void;
   onSetAutoStart: (profile: AdapterProfile, autoStart: boolean) => void;
   onRequestRemove: (profile: AdapterProfile) => void;
+  targetHidden: boolean;
 }) {
   const { toast } = useToast();
   const source = resolveAdapterProfileSource(profile, entries);
@@ -179,8 +184,9 @@ function ProfileDetailBody({
                 </span>
                 <Switch
                   checked={profile.autoStart}
-                  disabled={busy}
+                  disabled={busy || targetHidden}
                   aria-label="随 AgentHub 自动启动"
+                  title={targetHidden ? '目标 Agent 已隐藏，仅可停止运行中的桥接' : undefined}
                   onCheckedChange={(autoStart) => onSetAutoStart(profile, autoStart)}
                 />
               </label>
@@ -245,7 +251,8 @@ function ProfileDetailBody({
       <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
         <Button
           variant="dangerOutline"
-          disabled={busy}
+          disabled={busy || targetHidden}
+          title={targetHidden ? '目标 Agent 已隐藏，仅可停止运行中的桥接' : undefined}
           onClick={() => onRequestRemove(profile)}
         >
           解除绑定

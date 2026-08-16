@@ -15,6 +15,7 @@ import {
 import { useAgentStatusesOptional } from '@/app/runtime';
 import { useConnectionPool } from '@/app/runtime/ConnectionPoolProvider';
 import { AGENT_IDS, agentDisplayName } from '@/config/agents';
+import { hiddenAgentIdSet } from '@/lib/agent-visibility';
 import { resolveEffectiveConnection } from '@/lib/api/agent-connection';
 import type { AdapterProfile } from '@/lib/api/adapter';
 import { buildConnectionsGuideUrl } from '@/lib/connect-flow/connect-intent';
@@ -176,10 +177,11 @@ export function ConnectFlowDialog({
     ? sourceAgentIdOf(entry, pool.accounts, pool.providers)
     : null;
   // 引用必须稳定：这些数组直接进 effect 依赖，逐渲染新建会反复触发 fanout.start
-  const catalogIds = React.useMemo(
-    () => (AGENT_IDS.length > 0 ? [...AGENT_IDS] : uniquePoolAgentIds(pool.accounts, pool.providers)),
-    [pool.accounts, pool.providers],
-  );
+  const hiddenSet = React.useMemo(() => hiddenAgentIdSet(statuses ?? []), [statuses]);
+  const catalogIds = React.useMemo(() => {
+    const ids = AGENT_IDS.length > 0 ? [...AGENT_IDS] : uniquePoolAgentIds(pool.accounts, pool.providers);
+    return ids.filter((id) => !hiddenSet.has(id));
+  }, [pool.accounts, pool.providers, hiddenSet]);
   const targetAgentIds = React.useMemo(
     () => (entry?.mode === 'for-source' ? excludeOwnAgentTargets(catalogIds, sourceAgentId) : []),
     [entry, catalogIds, sourceAgentId],

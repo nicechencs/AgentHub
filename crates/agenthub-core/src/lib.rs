@@ -31,8 +31,9 @@ use platform::{LifecycleCoordinator, LifecycleResult};
 use services::{
     check_agent_updates as probe_agent_updates, install_runtime_system, invalidate_latest_cache,
     AccountService, AdapterApplyService, AdapterBridgeService, AdapterRouteService, AgentService,
-    BackupService, ChatService, ConnectionService, EnvService, ProjectService, ProviderService,
-    RunService, SettingsService, SkillService, TicketBindService, TicketReadService, UsageService,
+    AgentVisibilityService, BackupService, ChatService, ConnectionService, EnvService,
+    ProjectService, ProviderService, RunService, SettingsService, SkillService, TicketBindService,
+    TicketReadService, UsageService,
 };
 use storage::Database;
 use utils::command_exec::SystemCommandExecutor;
@@ -80,6 +81,8 @@ pub struct AgentHub {
     pub chat: ChatService,
     pub projects: ProjectService,
     pub usage: UsageService,
+    /// Soft-hide preference (UI only; detect / install unchanged).
+    pub agent_visibility: AgentVisibilityService,
 }
 
 impl AgentHub {
@@ -129,6 +132,7 @@ impl AgentHub {
         let settings = SettingsService::new(data_dir.clone(), db.clone());
         let projects = ProjectService::new(registry.clone(), data_dir.clone());
         let usage = UsageService::new(db.clone());
+        let agent_visibility = AgentVisibilityService::new(data_dir.clone());
         tracing::info!(
             target: logging::targets::BOOT,
             module = logging::targets::BOOT,
@@ -160,6 +164,7 @@ impl AgentHub {
             chat,
             projects,
             usage,
+            agent_visibility,
         })
     }
 

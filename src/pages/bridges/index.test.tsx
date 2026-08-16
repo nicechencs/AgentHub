@@ -112,6 +112,20 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('没有已绑定的本机桥');
   });
 
+  it('keeps a hidden-target profile stop-only', () => {
+    const profile = localBridgeProfile();
+    const markup = renderToStaticMarkup(
+      createElement(AdapterProfiles, {
+        ...emptyListProps,
+        profiles: [profile],
+        bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
+        hiddenTargetIds: new Set([profile.targetAgentId]),
+      }),
+    );
+    expect(markup).toContain('目标已隐藏，仅可停止');
+    expect(markup).toContain('停止');
+  });
+
   it('renders a running bridge as single-layer health plus port', () => {
     const profile = localBridgeProfile();
     const markup = renderToStaticMarkup(
