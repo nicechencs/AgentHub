@@ -33,6 +33,8 @@ function toPosixRel(abs: string): string {
 /** 已退役的「第四档」名，以及任意像素字号。tokens.ts 的别名表除外。 */
 const RETIRED_SIZE =
   /\btext-(?:2xs|xl|2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl)\b|text-\[\d+px\]/;
+const FONT_SIZE_PROP = /fontSize:\s*(\d+)/g;
+const ALLOWED_FONT_PX = new Set(['12', '13', '16']);
 
 describe('type scale source contract', () => {
   it('does not introduce a fourth font size in production source', () => {
@@ -42,6 +44,9 @@ describe('type scale source contract', () => {
       if (rel === 'styles/tokens.ts') continue;
       const src = readFileSync(abs, 'utf8');
       if (RETIRED_SIZE.test(src)) hits.push(rel);
+      for (const match of src.matchAll(FONT_SIZE_PROP)) {
+        if (!ALLOWED_FONT_PX.has(match[1])) hits.push(`${rel} (fontSize:${match[1]})`);
+      }
     }
     expect(hits).toEqual([]);
   });

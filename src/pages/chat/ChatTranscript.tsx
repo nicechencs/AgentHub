@@ -1,6 +1,7 @@
 import type { RefObject } from 'react';
 import { Loader2 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
+import { pageRhythm } from '@/components/layout/page-rhythm';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { agentDisplayName } from '@/config/agents';
 import { processKey, type ProcessMap } from '@/lib/chat-process';
@@ -57,13 +58,13 @@ export function ChatTranscript({
         <div className="flex h-full flex-col items-center justify-center px-6 py-10">
           <div className="text-center">
             <p className="text-title font-semibold tracking-tight text-primary">开始对话</p>
-            <p className="mt-2 max-w-md text-sm text-muted">
+            <p className="mt-2 max-w-md text-body text-muted">
               向 {agentPickerLabel(active)} 发送第一条消息；多选 Agent 可同轮对比
             </p>
           </div>
         </div>
       ) : (
-        <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6">
+        <div className={cn('mx-auto w-full max-w-3xl space-y-6 py-6', pageRhythm.chatChromeX)}>
           {turns.map((g) => {
             const chips = g.agents.length >= 2 ? turnComparisonChips(g.agents) : [];
             return (
@@ -115,7 +116,7 @@ function ComparisonBar({
   }>;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+    <div className="flex flex-wrap items-center gap-2 text-meta text-muted">
       <span>本轮 {chips.length} 个 Agent</span>
       {chips.map((chip) => (
         <button

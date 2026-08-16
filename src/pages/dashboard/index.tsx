@@ -74,6 +74,7 @@ import { AGENTS, AGENT_MAP, agentDisplayName } from '@/config/agents';
 import { hasEnvIssues } from '@/lib/env';
 import { loadBool, saveBool, StorageKey } from '@/lib/ui-preferences';
 import type { AgentId, AgentStatus, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
+import { typeScalePx } from '@/styles/tokens';
 import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
 import { usageTokenParts } from '@/lib/usage-tokens';
 import { cn, fmtTokens } from '@/lib/utils';
@@ -735,13 +736,13 @@ export default function DashboardPage() {
                         <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} strokeOpacity={0.6} />
                         <XAxis
                           dataKey="date"
-                          tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                          tick={{ fill: 'var(--text-muted)', fontSize: typeScalePx('meta') }}
                           tickLine={false}
                           axisLine={{ stroke: 'var(--border)' }}
                           tickFormatter={(d: string) => d.slice(5)}
                         />
                         <YAxis
-                          tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                          tick={{ fill: 'var(--text-muted)', fontSize: typeScalePx('meta') }}
                           tickLine={false}
                           axisLine={false}
                           tickFormatter={(v: number) => fmtTokens(v)}
@@ -752,7 +753,7 @@ export default function DashboardPage() {
                             backgroundColor: 'var(--bg-panel)',
                             border: '1px solid var(--border)',
                             borderRadius: 8,
-                            fontSize: 12,
+                            fontSize: typeScalePx('meta'),
                           }}
                           labelStyle={{ color: 'var(--text-secondary)' }}
                           formatter={(value, name) => [

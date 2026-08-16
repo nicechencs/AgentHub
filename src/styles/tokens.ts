@@ -127,6 +127,11 @@ export function typeScaleTw(role: TypeScaleRole): [string, { lineHeight: string 
   return [spec.size, { lineHeight: spec.lineHeight }];
 }
 
+/** 给 Recharts 等不能写 Tailwind class 的地方用。 */
+export function typeScalePx(role: TypeScaleRole): number {
+  return Number.parseInt(TYPE_SCALE[role].size, 10);
+}
+
 /** Tailwind `theme.extend.fontSize`：三档标准 + 同像素别名。 */
 export function buildTailwindFontSize(): Record<string, [string, { lineHeight: string }]> {
   const fontSize: Record<string, [string, { lineHeight: string }]> = {};

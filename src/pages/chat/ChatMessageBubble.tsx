@@ -47,7 +47,7 @@ function UserBubble({ message }: { message: ChatMessage }) {
     <div className="flex justify-end">
       <div
         id={`chat-msg-${message.id}`}
-        className="group relative max-w-[85%] rounded-composer bg-subtle px-4 py-2 text-sm text-primary"
+        className="group relative max-w-[85%] rounded-composer bg-subtle px-4 py-2 text-body text-primary"
       >
         <MarkdownView content={message.content} variant="chat" />
         <CopyButton text={message.content} />
@@ -84,7 +84,7 @@ function AgentBubble({
     <div id={`chat-msg-${message.id}`} className="group flex gap-3">
       <AgentLogo agentId={agent} size="md" />
       <div className="relative min-w-0 flex-1 pt-0.5">
-        <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-muted">
+        <div className="mb-1 flex flex-wrap items-center gap-2 text-meta text-muted">
           <span className="font-medium text-secondary">{agentDisplayName(agent)}</span>
           {statusText && <span>{statusText}</span>}
           {message.durationMs > 0 && <span>{formatDurationMs(message.durationMs)}</span>}
@@ -98,7 +98,7 @@ function AgentBubble({
                 type="button"
                 disabled={retryDisabled}
                 onClick={onRetry}
-                className="rounded-btn px-1.5 py-0.5 text-xs text-secondary hover:bg-hover hover:text-primary disabled:opacity-50"
+                className="rounded-btn px-1.5 py-0.5 text-meta text-secondary hover:bg-hover hover:text-primary disabled:opacity-50"
               >
                 重试
               </button>
@@ -113,7 +113,7 @@ function AgentBubble({
             exitCode={message.exitCode}
           />
         ) : null}
-        <div className="text-sm leading-relaxed text-primary">
+        <div className="text-body leading-relaxed text-primary">
           {message.content ? (
             <MarkdownView content={message.content} variant="chat" />
           ) : running ? (
@@ -125,7 +125,7 @@ function AgentBubble({
             <span className="text-muted">{message.error || '（无输出）'}</span>
           )}
           {message.error && message.status !== 'ok' && message.content && (
-            <p className="mt-2 text-sm text-danger">{message.error}</p>
+            <p className="mt-2 text-body text-danger">{message.error}</p>
           )}
         </div>
         {!running && <CopyButton text={message.content} />}

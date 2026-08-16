@@ -149,7 +149,7 @@ export function ChatProcessPanel({
 
   return (
     <details
-      className="mb-2 text-xs text-secondary"
+      className="mb-2 text-meta text-secondary"
       open={open}
       onToggle={(e) => {
         const next = e.currentTarget.open;
@@ -175,7 +175,7 @@ export function ChatProcessPanel({
         ) : null}
         {hasRunDetails && (
           <details
-            className="text-xs"
+            className="text-meta"
             onClick={(e) => e.stopPropagation()}
             onToggle={(e) => e.stopPropagation()}
           >

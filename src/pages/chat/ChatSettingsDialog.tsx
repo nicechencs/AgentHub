@@ -39,7 +39,7 @@ export function ChatSettingsDialog({
           {active && (
             <div className="space-y-4 py-2">
               <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-xs text-muted">
+                <label className="mb-1.5 flex items-center gap-1.5 text-meta text-muted">
                   <FolderOpen className="h-3.5 w-3.5" />
                   工作目录
                 </label>
@@ -53,10 +53,10 @@ export function ChatSettingsDialog({
                   }}
                 />
               </div>
-              <label className="flex items-center justify-between gap-3 text-sm">
+              <label className="flex items-center justify-between gap-3 text-body">
                 <span>
                   <span className="block font-medium">自动批准</span>
-                  <Tip className="text-xs text-muted" label="关闭时 CLI 遇审批可能等到超时">
+                  <Tip className="text-meta text-muted" label="关闭时 CLI 遇审批可能等到超时">
                     跳过工具确认
                   </Tip>
                 </span>
