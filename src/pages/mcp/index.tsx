@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FolderOpen, Loader2, Plug, RefreshCw } from 'lucide-react';
 import { AgentTabStrip, type AgentTabId } from '@/components/layout/AgentTabStrip';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -18,7 +19,6 @@ import { listMcpInventory } from '@/lib/api/mcp';
 import { openPathInFileManager } from '@/lib/api/skill';
 import type { McpInventory, McpServerEntry, McpSourceFile } from '@/lib/backend/contracts/mcp-types';
 import type { AgentId } from '@/lib/types';
-import { cn } from '@/lib/utils';
 
 function agentName(id: AgentId): string {
   return agentDisplayName(id);
@@ -171,8 +171,7 @@ export default function McpPage() {
           </div>
 
           {existingSources.length > 0 ? (
-            <div className={cn(pageRhythm.section, 'space-y-2')}>
-              <h2 className="text-xs font-medium uppercase tracking-wide text-muted">配置来源</h2>
+            <PageSection title="配置来源">
               <div className="grid gap-2 sm:grid-cols-2">
                 {existingSources.map((s) => (
                   <Card key={`${s.agent}:${s.path}`}>
@@ -207,11 +206,10 @@ export default function McpPage() {
                   </Card>
                 ))}
               </div>
-            </div>
+            </PageSection>
           ) : null}
 
-          <div className={cn(pageRhythm.section, 'space-y-2')}>
-            <h2 className="text-xs font-medium uppercase tracking-wide text-muted">Server 列表</h2>
+          <PageSection title="Server 列表">
             {servers.length === 0 ? (
               <EmptyState
                 icon={Plug}
@@ -275,7 +273,7 @@ export default function McpPage() {
                 ))}
               </div>
             )}
-          </div>
+          </PageSection>
         </>
       )}
     </div>

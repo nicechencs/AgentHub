@@ -19,6 +19,7 @@ import {
 } from '@/lib/skills/preview-keys';
 import { splitSkillMarkdown } from '@/lib/skills/skill-markdown';
 import type { AgentId } from '@/lib/types';
+import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
 
 export type SkillPreviewTarget = {
@@ -281,7 +282,7 @@ export function SkillMarkdownPreviewPanel({
           <div className="min-w-0">
             {previewDescription ? (
               <div className="mb-3 border-b border-border/70 pb-3">
-                <p className="text-2xs font-medium uppercase tracking-wide text-muted">
+                <p className={pageRhythm.sectionEyebrow}>
                   描述
                 </p>
                 <p className="mt-1 text-sm leading-relaxed text-secondary">

@@ -47,6 +47,11 @@ export const pageRhythm = {
   sectionRuled: 'mt-8 border-t border-border pt-6',
   /** 段标题区底距 */
   sectionHead: 'mb-3',
+  /**
+   * 导航/工具条分组眉题（侧栏 Workspace、Chat 历史）。
+   * 页内主内容段请用 `PageSection`（14px 句式标题），不要再手写 uppercase h2。
+   */
+  sectionEyebrow: 'text-2xs font-medium uppercase tracking-wide text-muted',
   /** 深链滚动偏移 */
   scrollMt: 'scroll-mt-4',
 } as const;
