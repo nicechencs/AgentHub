@@ -1,5 +1,17 @@
 import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { extendTailwindMerge } from 'tailwind-merge';
+
+/**
+ * `text-title` / `text-body` / `text-meta` 是字号，不是颜色。
+ * 不注册的话 twMerge 会把它们和 `text-primary` 当成同一组并丢掉字号。
+ */
+const twMerge = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      'font-size': [{ text: ['title', 'body', 'meta', '2xs'] }],
+    },
+  },
+});
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
