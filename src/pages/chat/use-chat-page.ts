@@ -28,6 +28,7 @@ import {
   agentHasConfiguredAuth,
   agentPickerLabel as agentPickerLabelOf,
   chatAgentPickerRows,
+  chatConnectionPickerView,
   connectionPickerCaption,
   conversationTitle,
   filterConversations,
@@ -114,7 +115,7 @@ export function useChatPage() {
   const primaryAgent = active?.agentIds[0] ?? null;
 
   const currentProvider = useMemo(
-    () => providers.find((p) => p.isCurrent) ?? providers[0] ?? null,
+    () => providers.find((p) => p.isCurrent) ?? null,
     [providers],
   );
 
@@ -138,9 +139,9 @@ export function useChatPage() {
     [defaultAgents],
   );
 
-  const refreshAgents = useCallback(async (): Promise<AgentStatus[]> => {
+  const refreshAgents = useCallback(async (opts: { force?: boolean } = {}): Promise<AgentStatus[]> => {
     try {
-      const agents = await listAgents();
+      const agents = await listAgents(opts);
       setAgentStatus(agents);
       setAgentsReady(true);
       return agents;
@@ -325,17 +326,22 @@ export function useChatPage() {
 
   const agentPickerLabel = useMemo(() => agentPickerLabelOf(active), [active]);
 
-  const modelPickerLabel = useMemo(() => {
-    if (!primaryAgent) return '切换连接';
-    if (switchingProvider) return '切换中…';
-    if (!currentProvider) return '未配置连接';
-    return currentProvider.name;
-  }, [primaryAgent, currentProvider, switchingProvider]);
+  const primaryStatus = useMemo(
+    () => (primaryAgent ? agentStatus.find((a) => a.agentId === primaryAgent) : undefined),
+    [agentStatus, primaryAgent],
+  );
 
-  const modelPickerSubtitle = useMemo(() => {
-    if (!currentProvider || switchingProvider) return null;
-    return extractModel(currentProvider.configText);
-  }, [currentProvider, switchingProvider]);
+  const connectionView = useMemo(
+    () =>
+      chatConnectionPickerView({
+        primaryAgent,
+        switching: switchingProvider,
+        status: primaryStatus,
+        currentProviderName: currentProvider?.name ?? null,
+        currentProviderModel: currentProvider ? extractModel(currentProvider.configText) : null,
+      }),
+    [primaryAgent, switchingProvider, primaryStatus, currentProvider],
+  );
 
   const connectionCaption = useMemo(
     () =>
@@ -456,7 +462,10 @@ export function useChatPage() {
     setSwitchingProvider(true);
     try {
       await switchProvider(primaryAgent, providerId);
-      await loadProviders(primaryAgent);
+      await Promise.all([
+        loadProviders(primaryAgent),
+        refreshAgents({ force: true }).catch(() => []),
+      ]);
       toast({ title: '已切换连接', variant: 'success' });
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
@@ -669,8 +678,7 @@ export function useChatPage() {
     hasUsableAgent,
     activeHasHidden,
     agentPickerLabel,
-    modelPickerLabel,
-    modelPickerSubtitle,
+    connectionView,
     connectionCaption,
     blockers,
     railGroups,

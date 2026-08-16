@@ -114,8 +114,7 @@ export default function ChatPage() {
                 providers={page.providers}
                 primaryAgent={page.primaryAgent}
                 agentPickerLabel={page.agentPickerLabel}
-                modelPickerLabel={page.modelPickerLabel}
-                modelPickerSubtitle={page.modelPickerSubtitle}
+                connectionView={page.connectionView}
                 switchingProvider={page.switchingProvider}
                 hiddenIds={page.hiddenIds}
                 pickerRows={page.pickerRows}
