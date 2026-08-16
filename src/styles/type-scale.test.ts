@@ -6,6 +6,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { cn } from '@/lib/utils';
 
 const srcRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -43,5 +44,13 @@ describe('type scale source contract', () => {
       if (RETIRED_SIZE.test(src)) hits.push(rel);
     }
     expect(hits).toEqual([]);
+  });
+
+  it('keeps semantic font-size classes when merged with text color', () => {
+    expect(cn('text-meta', 'text-secondary')).toContain('text-meta');
+    expect(cn('text-meta', 'text-secondary')).toContain('text-secondary');
+    expect(cn('text-body', 'text-primary')).toContain('text-body');
+    expect(cn('text-title', 'text-primary')).toContain('text-title');
+    expect(cn('text-meta', 'text-body')).toBe('text-body');
   });
 });

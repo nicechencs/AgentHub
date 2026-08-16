@@ -111,6 +111,7 @@ export type TypeScaleRole = keyof typeof TYPE_SCALE;
 /**
  * 旧 Tailwind 名 → 三档标准。像素与标准相同，不是额外字号。
  * 新代码优先写 `text-title` / `text-body` / `text-meta`。
+ * `cn()` 已把这三档注册为 font-size，避免和 `text-primary` 互斥。
  */
 export const TYPE_SCALE_ALIASES = {
   lg: 'title',
