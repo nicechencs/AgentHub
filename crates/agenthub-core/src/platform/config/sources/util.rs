@@ -9,15 +9,15 @@ use crate::error::{AppError, Result};
 use crate::platform::AgentKey;
 use crate::utils::atomic::atomic_write;
 
-use super::super::document::{
-    ConfigApplyResult, ConfigChangePlan, FieldChange, NormalizedConfigDocument,
-};
-use super::super::schema::{
+use crate::platform::config::{
     AgentConfigSchema, ConfigFieldSchema, ConfigValidationIssue, ConfigValidationResult,
     ConfigValueType, SECRET_REDACTED,
 };
+use crate::platform::config::{
+    ConfigApplyResult, ConfigChangePlan, FieldChange, NormalizedConfigDocument,
+};
 
-pub(super) fn field(
+pub(crate) fn field(
     key: &str,
     label: &str,
     value_type: ConfigValueType,
@@ -38,11 +38,11 @@ pub(super) fn field(
     }
 }
 
-pub(super) fn string_val(v: Option<&str>) -> Value {
+pub(crate) fn string_val(v: Option<&str>) -> Value {
     Value::String(v.unwrap_or("").to_string())
 }
 
-pub(super) fn get_str_map(values: &BTreeMap<String, Value>, key: &str) -> Option<String> {
+pub(crate) fn get_str_map(values: &BTreeMap<String, Value>, key: &str) -> Option<String> {
     values
         .get(key)
         .and_then(|v| v.as_str())
@@ -50,14 +50,14 @@ pub(super) fn get_str_map(values: &BTreeMap<String, Value>, key: &str) -> Option
 }
 
 /// Secret is "unchanged" when omitted, empty, or redaction marker.
-pub(super) fn secret_unchanged(desired: Option<&str>) -> bool {
+pub(crate) fn secret_unchanged(desired: Option<&str>) -> bool {
     match desired {
         None => true,
         Some(s) => s.is_empty() || s == SECRET_REDACTED,
     }
 }
 
-pub(super) fn redact_secrets(
+pub(crate) fn redact_secrets(
     mut values: BTreeMap<String, Value>,
     schema: &AgentConfigSchema,
 ) -> BTreeMap<String, Value> {
@@ -76,7 +76,7 @@ pub(super) fn redact_secrets(
     values
 }
 
-pub(super) fn validate_known_fields(
+pub(crate) fn validate_known_fields(
     schema: &AgentConfigSchema,
     values: &BTreeMap<String, Value>,
 ) -> ConfigValidationResult {
@@ -158,7 +158,7 @@ pub(super) fn validate_known_fields(
     }
 }
 
-pub(super) fn plan_from_maps(
+pub(crate) fn plan_from_maps(
     agent_key: AgentKey,
     schema_version: u32,
     target_path: PathBuf,
@@ -223,19 +223,19 @@ fn normalize_cmp(v: &Option<Value>) -> Option<String> {
     }
 }
 
-pub(super) fn write_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(crate) fn write_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
     atomic_write(path, bytes)
 }
 
-pub(super) fn json_object_or_empty(v: &Value) -> Map<String, Value> {
+pub(crate) fn json_object_or_empty(v: &Value) -> Map<String, Value> {
     v.as_object().cloned().unwrap_or_default()
 }
 
-pub(super) fn invalid_toml(path: &Path, e: impl std::fmt::Display) -> AppError {
+pub(crate) fn invalid_toml(path: &Path, e: impl std::fmt::Display) -> AppError {
     AppError::InvalidArg(format!("invalid TOML at {}: {e}", path.display()))
 }
 
-pub(super) fn finish_apply(
+pub(crate) fn finish_apply(
     agent_key: AgentKey,
     schema: &AgentConfigSchema,
     path: PathBuf,

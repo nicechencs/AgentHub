@@ -20,7 +20,7 @@
 | 步骤 | 位置 | 说明 |
 |---|---|---|
 | 1. 兼容适配器 | `crates/agenthub-core/src/adapters/<id>.rs` | 兼容期实现 `AgentAdapter`；只实现该 Agent 真实拥有的能力 |
-| 2. 注册 | `adapters/mod.rs` → `register_all()` | `reg.register(Arc::new(...))` **唯一生产注册点** |
+| 2. 注册 | `integrations/agents/<key>/` + `register_integrations` | 稀疏端口（paths/install/config/usage/stream/project/detect/skills）进该目录；`adapters/register_all()` 仍是过渡 `AgentAdapter` 注册点 |
 | 3. 枚举 | `models/agent.rs` | `AgentId` 变体 + `ALL` + `as_str`/`parse`/`display_name` |
 | 4. 前端 id | `src/lib/types.ts` + catalog 驱动列表 | 产品列表以 runtime catalog 为准；静态 `AGENTS` 仅过渡 |
 | 5. key-native 端口 | `platform/*/registry.rs` | 以 `AgentKey` 注册 detector、install、config、skills、usage、stream、project 等实际支持的端口 |
@@ -119,7 +119,7 @@
 | 项 | 状态 |
 |---|---|
 | 删除 `AgentId` / 胖 `AgentAdapter` | 暂缓；兼容层仍在 |
-| `integrations/agents/<key>/` 物理目录 | 目标布局；贡献仍多在 `platform/*/sources` |
+| `integrations/agents/<key>/` 物理目录 | **P2-1 已落地**；生产贡献经 `register_integrations`。`AgentAdapter` 仍在 `adapters/`（过渡 façade） |
 | Skills `projection_mode=link` 进 reconciler | 库字段已有；reconcile 仍以 copy/sync 语义为主 |
 | `install_skill` 自动写 `skill_packages` | 首次 sync/bootstrap 写入；可后续收紧 |
 | Bootstrap 扫描真实 `~/.agents` 于 open | **故意不**自动扫描用户目录 |
@@ -132,4 +132,4 @@
 1. 删除已无调用者的 provider-detect agent 分支（CodeGraph callers 证明后）  
 2. 统一 market install 路径到 `SkillSourceService`  
 3. 删除 `is_current` 字段（binding 稳定后单独 migration）  
-4. 物理目录迁入 `integrations/agents/*`（仅移动、不改行为）
+4. 把过渡 `adapter_facade` 从 `adapters/<id>.rs` 再迁进 `integrations/agents/<key>/`（仅移动、不改行为）

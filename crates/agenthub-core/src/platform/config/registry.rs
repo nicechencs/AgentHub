@@ -1,14 +1,13 @@
 //! Compile-time registry of optional AgentConfigProjector contributions.
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use crate::error::{AppError, Result};
 use crate::models::AgentId;
 use crate::platform::AgentKey;
 
 use super::projector::AgentConfigProjector;
-use super::sources;
 
 /// Lookup table keyed by the open AgentKey identity.
 #[derive(Clone, Default)]
@@ -72,14 +71,7 @@ impl ConfigProjectorRegistry {
     }
 }
 
-fn build_registry() -> ConfigProjectorRegistry {
-    let mut reg = ConfigProjectorRegistry::new();
-    sources::register_all(&mut reg);
-    reg
-}
-
-/// Process-wide builtin projectors (Claude / Codex / Kimi / Grok).
+/// Process-wide builtin projectors (filled by `integrations::register_integrations`).
 pub fn builtin_config_registry() -> &'static ConfigProjectorRegistry {
-    static REG: OnceLock<ConfigProjectorRegistry> = OnceLock::new();
-    REG.get_or_init(build_registry)
+    &crate::integrations::production_integrations().config
 }

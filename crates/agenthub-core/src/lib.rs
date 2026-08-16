@@ -7,6 +7,7 @@ pub mod bridge;
 pub mod catalog;
 pub mod domain;
 pub mod error;
+pub mod integrations;
 pub mod logging;
 pub mod models;
 pub mod oauth;

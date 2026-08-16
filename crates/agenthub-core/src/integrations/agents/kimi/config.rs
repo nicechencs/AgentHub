@@ -11,15 +11,15 @@ use crate::models::AgentId;
 use crate::platform::AgentKey;
 use crate::utils::atomic::atomic_write;
 
-use super::super::document::{ConfigApplyResult, ConfigChangePlan, NormalizedConfigDocument};
-use super::super::projector::AgentConfigProjector;
-use super::super::schema::{
-    AgentConfigSchema, ConfigValidationResult, ConfigValueType, NativeConfigFormat, SECRET_REDACTED,
-};
-use super::util::{
+use crate::platform::config::sources::util::{
     field, finish_apply, get_str_map, invalid_toml, plan_from_maps, redact_secrets,
     secret_unchanged, string_val, validate_known_fields,
 };
+use crate::platform::config::AgentConfigProjector;
+use crate::platform::config::{
+    AgentConfigSchema, ConfigValidationResult, ConfigValueType, NativeConfigFormat, SECRET_REDACTED,
+};
+use crate::platform::config::{ConfigApplyResult, ConfigChangePlan, NormalizedConfigDocument};
 
 const SCHEMA_VERSION: u32 = 1;
 const REL_PATH: &str = "config.toml";
@@ -322,4 +322,10 @@ impl AgentConfigProjector for KimiConfigProjector {
         let merged = Self::merge(doc, &current_values, desired)?;
         Ok(json!({ "format": "toml", "content": merged.to_string() }))
     }
+}
+
+pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {
+    ctx.config
+        .register(std::sync::Arc::new(KimiConfigProjector))
+        .expect("unique built-in config projector");
 }
