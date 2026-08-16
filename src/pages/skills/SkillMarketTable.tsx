@@ -14,7 +14,7 @@ import {
   type ColumnWidthSpec,
 } from '@/components/ui/table';
 import { useToast } from '@/components/ui/toast';
-import { Tip } from '@/components/ui/tooltip';
+import { Hint, Tip } from '@/components/ui/tooltip';
 import type { SkillListingDto } from '@/lib/api/skill';
 import { openExternalLink } from '@/lib/open-external';
 import { cn } from '@/lib/utils';
@@ -132,20 +132,19 @@ export function SkillMarketTable({
               <TableRow key={item.id} className={cn(item.installed && 'opacity-60')}>
                 <TableCell className="min-w-0">
                   {detailUrl ? (
-                    <button
-                      type="button"
-                      className="group inline-flex max-w-full items-center gap-1 text-left font-medium text-accent underline-offset-2 hover:underline"
-                      title={detailUrl}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openDetail(detailUrl);
-                      }}
-                    >
-                      <Tip className="truncate" label={item.name}>
-                        {item.name}
-                      </Tip>
-                      <ExternalLink className="h-3 w-3 shrink-0 opacity-70 group-hover:opacity-100" />
-                    </button>
+                    <Hint label={item.name}>
+                      <button
+                        type="button"
+                        className="group inline-flex max-w-full items-center gap-1 text-left font-medium text-accent underline-offset-2 hover:underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openDetail(detailUrl);
+                        }}
+                      >
+                        <span className="truncate">{item.name}</span>
+                        <ExternalLink className="h-3 w-3 shrink-0 opacity-70 group-hover:opacity-100" />
+                      </button>
+                    </Hint>
                   ) : (
                     <Tip className="truncate font-medium" label={item.name}>
                       {item.name}

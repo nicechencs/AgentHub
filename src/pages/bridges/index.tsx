@@ -5,6 +5,7 @@ import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { Notice } from '@/components/shared/Notice';
 import { Button } from '@/components/ui/button';
 import { Boxes } from 'lucide-react';
 import {
@@ -258,7 +259,11 @@ export default function BridgesPage() {
         descriptionTip={BRIDGES_PAGE_DESCRIPTION_TIP}
       />
 
-      {connectionWarning && <p className="mb-3 text-sm text-warning" role="alert">{connectionWarning}</p>}
+      {connectionWarning ? (
+        <div className={pageRhythm.lead}>
+          <Notice tone="warning">{connectionWarning}</Notice>
+        </div>
+      ) : null}
 
       <div className={pageRhythm.stackDense}>
         {pageView === 'loading' ? (

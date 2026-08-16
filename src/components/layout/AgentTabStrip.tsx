@@ -37,7 +37,7 @@ type AgentTabStripBase = {
   counts?: Partial<Record<AgentTabId, number | undefined | null>>;
   /** 默认 positive */
   countMode?: AgentTabCountMode;
-  /** title / tip，如 `${n} 条连接` */
+  /** 并入 Tab 的 Hint，如 `${n} 条连接`；不要再写原生 title */
   countTitle?: (id: AgentTabId, n: number) => string;
   /**
    * 非普通计数的尾部（生效绿点、琥珀行动角标等）。
@@ -114,18 +114,17 @@ export function AgentTabStrip(props: AgentTabStripProps) {
     }
   };
 
+  const countHint = (id: AgentTabId): string | undefined => {
+    const n = resolveCountDisplay(counts?.[id], countMode);
+    if (n == null || !countTitle) return undefined;
+    return countTitle(id, n);
+  };
+
   const endSlot = (id: AgentTabId) => {
     const extra = renderEnd?.(id);
     const n = resolveCountDisplay(counts?.[id], countMode);
     const countNode =
-      n != null ? (
-        <span
-          className={segmentedCountClass}
-          title={countTitle?.(id, n)}
-        >
-          {n}
-        </span>
-      ) : null;
+      n != null ? <span className={segmentedCountClass}>{n}</span> : null;
     if (!extra && !countNode) return null;
     if (extra && countNode) {
       return (
@@ -145,7 +144,7 @@ export function AgentTabStrip(props: AgentTabStripProps) {
       className={cn(segmentedTrackClass, className)}
     >
       {showAll ? (
-        <Hint label={allLabel}>
+        <Hint label={[allLabel, countHint('all')].filter(Boolean).join(' · ')}>
           <button
             type="button"
             role="tab"
@@ -163,7 +162,7 @@ export function AgentTabStrip(props: AgentTabStripProps) {
         const active = value === meta.id;
         const tip = isDisabled
           ? (disabledReason ?? `${meta.name} 暂不支持此功能`)
-          : meta.name;
+          : [meta.name, countHint(meta.id)].filter(Boolean).join(' · ');
         return (
           <Hint key={meta.id} label={tip}>
             <button
