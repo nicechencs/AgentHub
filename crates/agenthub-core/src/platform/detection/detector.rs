@@ -32,3 +32,34 @@ impl AgentDetector for AdapterDetector {
         self.adapter.detect().into()
     }
 }
+
+/// Standalone detector: `AgentKey` + detect closure — no `AgentAdapter` required.
+///
+/// Production builtins and test-only agents both use this shape so detect can be
+/// registered without implementing the full adapter surface.
+pub struct FnDetector {
+    key: AgentKey,
+    detect_fn: Arc<dyn Fn() -> InstallationObserved + Send + Sync>,
+}
+
+impl FnDetector {
+    pub fn new(
+        key: AgentKey,
+        detect_fn: impl Fn() -> InstallationObserved + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            key,
+            detect_fn: Arc::new(detect_fn),
+        }
+    }
+}
+
+impl AgentDetector for FnDetector {
+    fn agent_key(&self) -> AgentKey {
+        self.key.clone()
+    }
+
+    fn detect(&self) -> InstallationObserved {
+        (self.detect_fn)()
+    }
+}

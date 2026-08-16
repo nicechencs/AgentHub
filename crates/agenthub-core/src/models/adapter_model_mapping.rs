@@ -11,8 +11,7 @@
 //! - OpenAI API → Grok
 //! - Grok subscription → Claude Code
 
-use super::adapter_capability_matrix::{AdapterSourceProduct, AdapterTargetProtocol};
-use super::AgentId;
+use super::{AdapterSourceProduct, AdapterTargetProtocol, AgentId};
 
 /// One source-model → target-model mapping row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

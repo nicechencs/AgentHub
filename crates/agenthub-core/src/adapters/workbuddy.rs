@@ -23,86 +23,91 @@ pub const SETUP_URL: &str = "https://www.codebuddy.cn/work/";
 
 pub struct WorkBuddyAdapter;
 
+/// Standalone install probe used by platform detectors (no full adapter required).
+pub(crate) fn detect_installation() -> DetectResult {
+    let env_ready = true; // native Setup has no Node/npm runtime dependency
+    let mut notes = Vec::new();
+
+    let Some(exe) = resolve_workbuddy_exe() else {
+        tracing::debug!(
+            target: crate::logging::targets::DETECT,
+            module = crate::logging::targets::DETECT,
+            op = "detect",
+            agent = "workbuddy",
+            via = "not_found",
+            "WorkBuddy.exe not found in default or registry paths"
+        );
+        notes.push(
+            "WorkBuddy not found. Install via official Setup: https://www.codebuddy.cn/work/"
+                .into(),
+        );
+        return DetectResult {
+            agent: AgentId::WorkBuddy,
+            status: DetectStatus::NotFound,
+            version: None,
+            binary_path: None,
+            channel: None,
+            env_ready,
+            notes,
+        };
+    };
+
+    let install_dir = exe
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| exe.clone());
+    let codebuddy = resolve_bundled_codebuddy(&install_dir);
+    if codebuddy.is_none() {
+        notes.push(
+            "WorkBuddy.exe found but bundled codebuddy CLI missing under install resources"
+                .into(),
+        );
+    }
+
+    let version = read_version_from_last_launch()
+        .or_else(|| read_version_from_package_json(&install_dir));
+
+    if let Some(ref cb) = codebuddy {
+        tracing::info!(
+            target: crate::logging::targets::DETECT,
+            module = crate::logging::targets::DETECT,
+            op = "detect",
+            agent = "workbuddy",
+            via = "native",
+            path = %exe.display(),
+            codebuddy = %cb.display(),
+            version = version.as_deref().unwrap_or("?"),
+            "WorkBuddy desktop + bundled CLI detected"
+        );
+    } else {
+        tracing::debug!(
+            target: crate::logging::targets::DETECT,
+            module = crate::logging::targets::DETECT,
+            op = "detect",
+            agent = "workbuddy",
+            path = %exe.display(),
+            "WorkBuddy.exe present without bundled codebuddy"
+        );
+    }
+
+    DetectResult {
+        agent: AgentId::WorkBuddy,
+        status: DetectStatus::Installed,
+        version,
+        binary_path: Some(exe),
+        channel: Some("native".into()),
+        env_ready,
+        notes,
+    }
+}
+
 impl AgentAdapter for WorkBuddyAdapter {
     fn id(&self) -> AgentId {
         AgentId::WorkBuddy
     }
 
     fn detect(&self) -> DetectResult {
-        let env_ready = true; // native Setup has no Node/npm runtime dependency
-        let mut notes = Vec::new();
-
-        let Some(exe) = resolve_workbuddy_exe() else {
-            tracing::debug!(
-                target: crate::logging::targets::DETECT,
-                module = crate::logging::targets::DETECT,
-                op = "detect",
-                agent = "workbuddy",
-                via = "not_found",
-                "WorkBuddy.exe not found in default or registry paths"
-            );
-            notes.push(
-                "WorkBuddy not found. Install via official Setup: https://www.codebuddy.cn/work/"
-                    .into(),
-            );
-            return DetectResult {
-                agent: AgentId::WorkBuddy,
-                status: DetectStatus::NotFound,
-                version: None,
-                binary_path: None,
-                channel: None,
-                env_ready,
-                notes,
-            };
-        };
-
-        let install_dir = exe
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| exe.clone());
-        let codebuddy = resolve_bundled_codebuddy(&install_dir);
-        if codebuddy.is_none() {
-            notes.push(
-                "WorkBuddy.exe found but bundled codebuddy CLI missing under install resources"
-                    .into(),
-            );
-        }
-
-        let version = read_version_from_last_launch()
-            .or_else(|| read_version_from_package_json(&install_dir));
-
-        if let Some(ref cb) = codebuddy {
-            tracing::info!(
-                target: crate::logging::targets::DETECT,
-                module = crate::logging::targets::DETECT,
-                op = "detect",
-                agent = "workbuddy",
-                via = "native",
-                path = %exe.display(),
-                codebuddy = %cb.display(),
-                version = version.as_deref().unwrap_or("?"),
-                "WorkBuddy desktop + bundled CLI detected"
-            );
-        } else {
-            tracing::debug!(
-                target: crate::logging::targets::DETECT,
-                module = crate::logging::targets::DETECT,
-                op = "detect",
-                agent = "workbuddy",
-                path = %exe.display(),
-                "WorkBuddy.exe present without bundled codebuddy"
-            );
-        }
-
-        DetectResult {
-            agent: AgentId::WorkBuddy,
-            status: DetectStatus::Installed,
-            version,
-            binary_path: Some(exe),
-            channel: Some("native".into()),
-            env_ready,
-            notes,
-        }
+        detect_installation()
     }
 
     fn read_config(&self) -> Result<AgentConfig> {

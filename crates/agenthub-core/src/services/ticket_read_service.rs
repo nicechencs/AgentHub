@@ -22,6 +22,7 @@ use crate::services::AdapterRouteService;
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
 
 /// Aggregates Ticket / Binding read models and thin `plan(ticket, agent)` wrapping.
+#[derive(Clone)]
 pub struct TicketReadService {
     accounts: AccountRepo,
     providers: ProviderRepo,

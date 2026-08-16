@@ -1,0 +1,187 @@
+/**
+ * Shared credential-row read model (P2-7).
+ * Connections / ConnectFlow / ticket wallet project from this axis.
+ * Do not import this from a page module into contracts; pages consume via lib façades.
+ */
+import { looksLikeOfficialEndpoint } from '@/config/official-api';
+import {
+  extractProviderEndpoint,
+  formatEndpointHost,
+} from '@/lib/backend/contracts/agent-connection';
+import {
+  authDisplayForAccount,
+  authHealthLabel,
+  type AuthHealth,
+} from '@/lib/backend/contracts/auth-state';
+import {
+  ticketCredentialClassLabel,
+  ticketSurfaceLabel,
+  type TicketView,
+} from '@/lib/backend/contracts/ticket';
+import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
+
+/** Stable auth summary shared by list / picker / wallet projections. */
+export type CredentialRowAuth = {
+  status: AuthStatus;
+  health?: AuthHealth;
+  label: string;
+};
+
+/**
+ * Canonical credential list row.
+ * Callers add UI-only fields (usage, viaAdapter, group, highlighted, …).
+ */
+export type CredentialRow = {
+  /** `account:<id>` / `provider:<id>` (ticket.id is already this shape). */
+  key: string;
+  source: 'account' | 'provider';
+  id: string;
+  agentId: AgentId;
+  title: string;
+  subtitle: string;
+  isCurrent: boolean;
+  auth: CredentialRowAuth;
+};
+
+export type CredentialRowInput =
+  | { source: 'account'; account: Account }
+  | { source: 'provider'; provider: Provider }
+  | {
+      source: 'ticket';
+      ticket: TicketView;
+      /** Pool/binding current flag when known; tickets alone have no isCurrent. */
+      isCurrent?: boolean;
+    };
+
+function accountSubtitle(a: Account): string {
+  if (a.isCurrent) {
+    const bits: string[] = [];
+    bits.push(authDisplayForAccount(a).label);
+    if (a.subscription) bits.push(a.subscription);
+    return bits.join(' · ');
+  }
+  const bits: string[] = [];
+  bits.push(authDisplayForAccount(a).label, '未生效');
+  if (a.provider && !a.label.includes(a.provider)) bits.push(a.provider);
+  if (a.subscription) bits.push(a.subscription);
+  return bits.join(' · ');
+}
+
+/** Resolve official vs custom endpoint mode for a Provider row. */
+export function providerEndpointMode(
+  p: Provider,
+  endpoint?: string,
+): 'official' | 'custom' {
+  if (p.official === true) return 'official';
+  if (p.official === false) return 'custom';
+  if (p.preset && /anthropic|openai|moonshot|xai/i.test(p.preset) && !/compat|custom|relay/i.test(p.preset)) {
+    if (!endpoint || looksLikeOfficialEndpoint(p.agentId, endpoint)) return 'official';
+  }
+  if (!endpoint || looksLikeOfficialEndpoint(p.agentId, endpoint)) return 'official';
+  return 'custom';
+}
+
+function providerSubtitle(
+  p: Provider,
+  endpoint: string | undefined,
+  mode: 'official' | 'custom',
+): string {
+  const modeLabel = mode === 'official' ? '官方端点' : '自定义端点';
+  const host = endpoint ? formatEndpointHost(endpoint) : undefined;
+  const health = authHealthLabel('configured');
+  if (p.isCurrent) {
+    return host
+      ? `${health} · 当前生效 · ${modeLabel} · ${host}`
+      : `${health} · 当前生效 · ${modeLabel}`;
+  }
+  return host
+    ? `${health} · 未生效 · ${modeLabel} · ${host}`
+    : `${health} · 未生效 · ${modeLabel}`;
+}
+
+function ticketSubtitle(ticket: TicketView): string {
+  const classLabel = ticketCredentialClassLabel(ticket.credentialClass);
+  const surface = ticketSurfaceLabel(ticket.surface);
+  if (surface && surface !== classLabel) {
+    return `${classLabel} · ${surface}`;
+  }
+  return classLabel;
+}
+
+function fromAccount(account: Account): CredentialRow {
+  const display = authDisplayForAccount(account);
+  return {
+    key: `account:${account.id}`,
+    source: 'account',
+    id: account.id,
+    agentId: account.agentId,
+    title: account.label,
+    subtitle: accountSubtitle(account),
+    isCurrent: account.isCurrent,
+    auth: {
+      status: display.legacyStatus,
+      health: display.health,
+      label: display.label,
+    },
+  };
+}
+
+function fromProvider(provider: Provider): CredentialRow {
+  const endpoint = extractProviderEndpoint(provider.configText, provider.configFormat);
+  const mode = providerEndpointMode(provider, endpoint);
+  return {
+    key: `provider:${provider.id}`,
+    source: 'provider',
+    id: provider.id,
+    agentId: provider.agentId,
+    title: provider.name,
+    subtitle: providerSubtitle(provider, endpoint, mode),
+    isCurrent: provider.isCurrent,
+    auth: {
+      status: 'valid',
+      health: 'configured',
+      label: authHealthLabel('configured'),
+    },
+  };
+}
+
+function fromTicket(
+  ticket: TicketView,
+  isCurrent: boolean,
+): CredentialRow {
+  return {
+    key: ticket.id,
+    source: ticket.sourceKind,
+    id: ticket.sourceId,
+    agentId: ticket.agentId,
+    title: ticket.label,
+    subtitle: ticketSubtitle(ticket),
+    isCurrent,
+    auth: {
+      status: 'valid',
+      health: 'configured',
+      label: ticketCredentialClassLabel(ticket.credentialClass),
+    },
+  };
+}
+
+/** Single projection used by Connections and ConnectFlow (and ticket wallet). */
+export function toCredentialRow(input: CredentialRowInput): CredentialRow {
+  if (input.source === 'account') return fromAccount(input.account);
+  if (input.source === 'provider') return fromProvider(input.provider);
+  return fromTicket(input.ticket, input.isCurrent ?? false);
+}
+
+/** Provider endpoint fields for ConnectionEntry / ticket detail extras. */
+export function providerEndpointExtras(provider: Provider): {
+  endpoint?: string;
+  endpointHost?: string;
+  endpointMode: 'official' | 'custom';
+} {
+  const endpoint = extractProviderEndpoint(provider.configText, provider.configFormat);
+  return {
+    endpoint,
+    endpointHost: endpoint ? formatEndpointHost(endpoint) : undefined,
+    endpointMode: providerEndpointMode(provider, endpoint),
+  };
+}

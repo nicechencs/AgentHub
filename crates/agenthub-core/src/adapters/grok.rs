@@ -22,25 +22,29 @@ use super::{
 
 pub struct GrokAdapter;
 
+/// Standalone install probe used by platform detectors (no full adapter required).
+pub(crate) fn detect_installation() -> DetectResult {
+    let requires = crate::catalog::install::adapter_install_channels(AgentId::Grok)
+        .first()
+        .map(|c| c.requires.clone())
+        .unwrap_or_default();
+    let env_ready = runtime::is_ready(&requires);
+    detect_binary(
+        AgentId::Grok,
+        &["grok"],
+        &["--version"],
+        Some("native"),
+        env_ready,
+    )
+}
+
 impl AgentAdapter for GrokAdapter {
     fn id(&self) -> AgentId {
         AgentId::Grok
     }
 
     fn detect(&self) -> DetectResult {
-        let requires = self
-            .install_channels()
-            .first()
-            .map(|c| c.requires.clone())
-            .unwrap_or_default();
-        let env_ready = runtime::is_ready(&requires);
-        detect_binary(
-            AgentId::Grok,
-            &["grok"],
-            &["--version"],
-            Some("native"),
-            env_ready,
-        )
+        detect_installation()
     }
 
     fn read_config(&self) -> Result<AgentConfig> {
