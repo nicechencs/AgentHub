@@ -1,10 +1,3 @@
-//! Write-side adapter apply for Kimi membership → Claude/Pi/Grok, OpenAI API → Grok,
-//! GLM/DeepSeek ticket → Claude/Codex, explicit API → Pi, and DeepSeek API → DSH.
-//!
-//! The generated provider deliberately stores only a reference marker.  The
-//! secret is materialized in memory by `AdapterSecretResolver` at ProviderService's
-//! live-write boundary.
-
 use std::path::PathBuf;
 
 use chrono::Utc;
@@ -37,651 +30,55 @@ use crate::services::{
 };
 use crate::storage::{AdapterProfileRepo, Database};
 
-const RULE_ID: &str = KIMI_CLAUDE_RULE_ID;
-const KIMI_PI_RULE_ID: &str = "kimi-membership-to-pi-v1";
-const ANTHROPIC_PI_RULE_ID: &str = "anthropic-api-to-pi-v1";
-const OPENAI_PI_RULE_ID: &str = "openai-api-to-pi-v1";
-const XAI_PI_RULE_ID: &str = "xai-api-to-pi-v1";
-const CLAUDE_SUBSCRIPTION_PI_RULE_ID: &str = "claude-subscription-to-pi-v1";
-const CODEX_SUBSCRIPTION_PI_RULE_ID: &str = "codex-subscription-to-pi-v1";
-const GROK_SUBSCRIPTION_PI_RULE_ID: &str = "grok-subscription-to-pi-v1";
-const KIMI_GROK_RULE_ID: &str = "kimi-membership-to-grok-v1";
-const OPENAI_GROK_RULE_ID: &str = "openai-api-to-grok-v1";
-const DEEPSEEK_DSH_RULE_ID: &str = "deepseek-api-to-dsh-v1";
-const RULE_VERSION: &str = "1";
-const CLAUDE_PROVIDER_PREFIX: &str = "claude-kimi-adapter";
-const CLAUDE_GLM_PROVIDER_PREFIX: &str = "claude-glm-adapter";
-const CLAUDE_DEEPSEEK_PROVIDER_PREFIX: &str = "claude-deepseek-adapter";
-const CODEX_GLM_PROFILE_PREFIX: &str = "adapter-glm-codex";
-const CODEX_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-codex";
-const PI_KIMI_PROVIDER_PREFIX: &str = "pi-kimi-adapter";
-const PI_ANTHROPIC_PROVIDER_PREFIX: &str = "pi-anthropic-adapter";
-const PI_OPENAI_PROVIDER_PREFIX: &str = "pi-openai-adapter";
-const PI_XAI_PROVIDER_PREFIX: &str = "pi-xai-adapter";
-const PI_GLM_PROVIDER_PREFIX: &str = "pi-glm-adapter";
-const PI_DEEPSEEK_PROVIDER_PREFIX: &str = "pi-deepseek-adapter";
-const PI_CLAUDE_OAUTH_PROVIDER_PREFIX: &str = "pi-claude-oauth-adapter";
-const PI_CODEX_OAUTH_PROVIDER_PREFIX: &str = "pi-codex-oauth-adapter";
-const PI_GROK_OAUTH_PROVIDER_PREFIX: &str = "pi-grok-oauth-adapter";
-const DSH_DEEPSEEK_PROVIDER_PREFIX: &str = "dsh-deepseek-adapter";
-const GROK_KIMI_PROVIDER_PREFIX: &str = "grok-kimi-adapter";
-const GROK_OPENAI_PROVIDER_PREFIX: &str = "grok-openai-adapter";
-const CLAUDE_PROFILE_PREFIX: &str = "adapter-kimi-claude";
-const CLAUDE_GLM_PROFILE_PREFIX: &str = "adapter-glm-claude";
-const CLAUDE_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-claude";
-const PI_KIMI_PROFILE_PREFIX: &str = "adapter-kimi-pi";
-const PI_ANTHROPIC_PROFILE_PREFIX: &str = "adapter-anthropic-pi";
-const PI_OPENAI_PROFILE_PREFIX: &str = "adapter-openai-pi";
-const PI_XAI_PROFILE_PREFIX: &str = "adapter-xai-pi";
-const PI_GLM_PROFILE_PREFIX: &str = "adapter-glm-pi";
-const PI_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-pi";
-const DSH_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-dsh";
-const GROK_KIMI_PROFILE_PREFIX: &str = "adapter-kimi-grok";
-const GROK_OPENAI_PROFILE_PREFIX: &str = "adapter-openai-grok";
-const PREVIOUS_CURRENT_ID: &str = "previousCurrentId";
-const PREVIOUS_BACKUP_ID: &str = "previousBackupId";
+use super::{AdapterApplyService, GeneratedApplySpec};
 
-/// Applies supported write-side routes and owns their generated profiles.
-pub struct AdapterApplyService {
-    routes: AdapterRouteService,
-    profiles: AdapterProfileRepo,
-    providers: ProviderService,
-    secrets: AdapterSecretResolver,
-}
-
-/// Pre-switch snapshot used to reverse a successful live switch when profile
-/// finalization (or the switch itself) fails. Deliberately private and
-/// non-serializable: the live config may contain materialized credentials.
-struct ApplySnapshot {
-    /// Generated provider row before create/update in this apply, if any.
-    generated_before: Option<Provider>,
-    /// Target agent current provider before switch (may equal `generated_before`).
-    previous_current: Option<Provider>,
-    live_config: ProviderLiveConfigSnapshot,
-    created: bool,
-}
-
-struct GeneratedApplySpec {
-    target_agent: AgentId,
-    provider_id: String,
-    proposed: AdapterProfile,
-    provider: ProviderInput,
-}
-
-impl AdapterApplyService {
-    pub fn new(db: Database, registry: AdapterRegistry, backups_root: PathBuf) -> Self {
-        Self {
-            routes: AdapterRouteService::new(db.clone()),
-            profiles: AdapterProfileRepo::new(db.clone()),
-            providers: ProviderService::with_live(db.clone(), registry, backups_root),
-            secrets: AdapterSecretResolver::new(db.clone()),
-        }
-    }
-
-    /// Whether `apply` has a write arm for this matrix cell (not LocalBridge).
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn apply_has_arm(
-        rule_id: &str,
-        source_kind: AdapterSourceKind,
-        target: AgentId,
-        route: AdapterRoute,
-    ) -> bool {
-        match (source_kind, target, route) {
-            (_, AgentId::Claude, AdapterRoute::NativeEndpoint) => {
-                rule_id == RULE_ID || is_claude_native_explicit_rule(rule_id)
-            }
-            (_, AgentId::Codex, AdapterRoute::NativeEndpoint) => is_codex_native_rule(rule_id),
-            (_, AgentId::Grok, AdapterRoute::NativeEndpoint) => is_grok_native_rule(rule_id),
-            (sk, AgentId::Pi, AdapterRoute::ConfigSync)
-                if sk == AdapterSourceKind::Provider || rule_id == KIMI_PI_RULE_ID =>
-            {
-                rule_id == KIMI_PI_RULE_ID || is_explicit_api_to_pi_rule(rule_id)
-            }
-            (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync) => {
-                is_explicit_api_to_pi_rule(rule_id) || is_subscription_pi_rule(rule_id)
-            }
-            (AdapterSourceKind::Provider, AgentId::Dsh, AdapterRoute::ConfigSync) => {
-                rule_id == DEEPSEEK_DSH_RULE_ID
-            }
-            _ => false,
-        }
-    }
-
-    pub fn apply(&self, request: &AdapterApplyRequest) -> Result<AdapterApplyResult> {
-        let analysis = self.ensure_supported(request)?;
-        let source_id = request.source_id.trim();
-        match (request.source_kind, request.target_agent_id, analysis.route) {
-            (source_kind, AgentId::Claude, AdapterRoute::NativeEndpoint) => {
-                match analysis.rule_id.as_deref() {
-                    Some(RULE_ID) => {
-                        // Validate before creating a profile or provider: a dangling/masked
-                        // source must be a completely side-effect-free failure.
-                        self.secrets
-                            .validate_kimi_membership_source(source_kind, source_id)?;
-                        self.apply_generated(claude_native_spec(
-                            source_kind,
-                            source_id,
-                            RULE_ID,
-                        )?)
-                    }
-                    Some(rule) if is_claude_native_explicit_rule(rule) => {
-                        self.secrets.validate_explicit_api_source(rule, source_kind, source_id)?;
-                        self.apply_generated(claude_native_spec(source_kind, source_id, rule)?)
-                    }
-                    _ => Err(AppError::Unsupported(
-                        "adapter apply currently supports Kimi membership Provider/Account or GLM/DeepSeek ticket -> Claude".into(),
-                    )),
-                }
-            }
-            (source_kind, AgentId::Codex, AdapterRoute::NativeEndpoint)
-                if analysis
-                    .rule_id
-                    .as_deref()
-                    .is_some_and(is_codex_native_rule) =>
-            {
-                let rule = analysis.rule_id.as_deref().expect("checked above");
-                self.secrets
-                    .validate_explicit_api_source(rule, source_kind, source_id)?;
-                self.apply_generated(codex_native_spec(source_kind, source_id, rule)?)
-            }
-            (source_kind, AgentId::Grok, AdapterRoute::NativeEndpoint)
-                if analysis
-                    .rule_id
-                    .as_deref()
-                    .is_some_and(is_grok_native_rule) =>
-            {
-                let rule = analysis.rule_id.as_deref().expect("checked above");
-                if rule == KIMI_GROK_RULE_ID {
-                    self.secrets
-                        .validate_kimi_membership_source(source_kind, source_id)?;
-                } else {
-                    self.secrets
-                        .validate_explicit_api_source(rule, source_kind, source_id)?;
-                }
-                self.apply_generated(grok_native_spec(source_kind, source_id, rule)?)
-            }
-            (source_kind, AgentId::Pi, AdapterRoute::ConfigSync)
-                if source_kind == AdapterSourceKind::Provider
-                    || analysis.rule_id.as_deref() == Some(KIMI_PI_RULE_ID) =>
-            {
-                match analysis.rule_id.as_deref() {
-                    Some(KIMI_PI_RULE_ID) => {
-                        self.secrets
-                            .validate_kimi_membership_source(source_kind, source_id)?;
-                        self.apply_generated(pi_kimi_spec(source_kind, source_id))
-                    }
-                    Some(rule) if is_explicit_api_to_pi_rule(rule) => {
-                        self.secrets.validate_explicit_api_source(
-                            rule,
-                            source_kind,
-                            source_id,
-                        )?;
-                        self.apply_generated(pi_explicit_api_spec(
-                            source_kind,
-                            source_id,
-                            rule,
-                        )?)
-                    }
-                    _ => Err(AppError::Unsupported(
-                        "adapter apply currently supports Kimi membership Provider/Account or explicit API provider -> Pi".into(),
-                    )),
-                }
-            }
-            (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync)
-                if analysis
-                    .rule_id
-                    .as_deref()
-                    .is_some_and(is_explicit_api_to_pi_rule) =>
-            {
-                let rule = analysis.rule_id.as_deref().expect("checked above");
-                self.secrets.validate_explicit_api_source(
-                    rule,
-                    AdapterSourceKind::Account,
-                    source_id,
-                )?;
-                self.apply_generated(pi_explicit_api_spec(
-                    AdapterSourceKind::Account,
-                    source_id,
-                    rule,
-                )?)
-            }
-            (AdapterSourceKind::Account, AgentId::Pi, AdapterRoute::ConfigSync)
-                if analysis
-                    .rule_id
-                    .as_deref()
-                    .is_some_and(is_subscription_pi_rule) =>
-            {
-                let rule = analysis.rule_id.as_deref().expect("checked above");
-                self.secrets.validate_subscription_oauth_source(
-                    rule,
-                    AdapterSourceKind::Account,
-                    source_id,
-                )?;
-                self.apply_generated(pi_subscription_spec(source_id, rule)?)
-            }
-            (AdapterSourceKind::Provider, AgentId::Dsh, AdapterRoute::ConfigSync) => {
-                match analysis.rule_id.as_deref() {
-                    Some(DEEPSEEK_DSH_RULE_ID) => {
-                        self.secrets.validate_deepseek_api_source(source_id)?;
-                        self.apply_generated(dsh_deepseek_spec(source_id))
-                    }
-                    _ => Err(AppError::Unsupported(
-                        "adapter apply currently supports only DeepSeek API provider -> DSH".into(),
-                    )),
-                }
-            }
-            _ => Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership Provider/Account -> Claude/Pi/Grok, OpenAI API -> Grok, GLM/DeepSeek ticket -> Claude/Codex, API or subscription Account -> Pi, and DeepSeek API provider -> DSH".into(),
-            )),
-        }
-    }
-
-    fn apply_generated(&self, mut spec: GeneratedApplySpec) -> Result<AdapterApplyResult> {
-        // Acquire before reading or creating any generated-provider/profile
-        // state. The guard covers every compensation input and mutation below.
-        let saga_guard = self.providers.begin_live_saga(spec.target_agent)?;
-        let mut profile = self.profiles.create_or_get(&spec.proposed)?;
-        if !same_profile_contract(&profile, &spec.proposed) {
-            return Err(AppError::message(
-                "adapter.profile_conflict",
-                "adapter profile conflicts with requested rule",
-            ));
-        }
-
-        let existing = match self
-            .providers
-            .get(&spec.provider_id, Some(spec.target_agent))
-        {
-            Ok(existing) => Some(existing),
-            Err(AppError::NotFound(_)) => None,
-            Err(error) => return Err(error),
-        };
-        if let Some(existing) = existing.as_ref() {
-            if !provider_owned_by(existing, &profile) {
-                return Err(AppError::message(
-                    "adapter.provider_conflict",
-                    "generated provider id is owned by another provider",
-                ));
-            }
-            if profile.status == AdapterProfileStatus::Active
-                && provider_matches_projection(existing, &spec.provider)
-                && existing.is_current
-            {
-                // Only a complete current projection is idempotent.  A
-                // demoted or drifted row must be repaired and switched again.
-                return Ok(AdapterApplyResult {
-                    profile,
-                    provider: existing.redacted(),
-                });
-            }
-        }
-
-        if profile.status != AdapterProfileStatus::Applying {
-            profile.status = AdapterProfileStatus::Applying;
-            profile.last_error_code = None;
-            profile.updated_at = now();
-            profile = self.profiles.update(&profile)?;
-        }
-
-        // Capture compensation inputs before demote/create: a repair demotes a
-        // current generated row, so get_current after that would miss the
-        // pre-saga binding needed for full inverse.
-        let previous_current = match self.providers.repo().get_current(spec.target_agent) {
-            Ok(current) => current,
-            Err(error) => return Err(self.fail_profile(profile, &error)),
-        };
-        let live_config = match self
-            .providers
-            .capture_live_config_snapshot_with_guard(&saga_guard, spec.target_agent)
-        {
-            Ok(snapshot) => snapshot,
-            Err(error) => return Err(self.fail_profile(profile, &error)),
-        };
-        let generated_before = existing.clone();
-        let created = existing.is_none();
-        let snapshot = ApplySnapshot {
-            generated_before,
-            previous_current: previous_current.clone(),
-            live_config,
-            created,
-        };
-        stamp_previous_restore_meta(
-            &mut spec.provider.meta,
-            previous_current.as_ref(),
-            &spec.provider_id,
-            existing.as_ref(),
-        );
-
-        // Create/repair the pool row before switch; the switched provider is
-        // returned from switch_with_guard below.
-        if let Err(error) = match existing {
-            Some(existing) if provider_matches_projection(&existing, &spec.provider) => Ok(()),
-            Some(_) => {
-                // Repair the persisted generated projection before switching it
-                // live.  Explicitly demote first so the switch owns the only
-                // live write and re-validates/materializes the source secret.
-                let repaired = ProviderInput {
-                    is_current: false,
-                    ..spec.provider.clone()
-                };
-                self.providers
-                    .update_with_guard(&saga_guard, &repaired)
-                    .map(|_| ())
-            }
-            None => self
-                .providers
-                .create_with_guard(&saga_guard, &spec.provider)
-                .map(|_| ()),
-        } {
-            return Err(self.fail_profile(profile, &error));
-        }
-
-        let switched = match self.providers.switch_with_guard(
-            &saga_guard,
-            &spec.provider_id,
-            spec.target_agent,
-        ) {
-            Ok(result) => {
-                if let Some(backup_id) = result.backup.as_ref().map(|backup| backup.id.as_str()) {
-                    if let Err(error) =
-                        self.persist_previous_backup_id(&saga_guard, &result.provider, backup_id)
-                    {
-                        if let Err(restore_error) = self.compensate_apply(
-                            &saga_guard,
-                            &spec.provider_id,
-                            spec.target_agent,
-                            &snapshot,
-                        ) {
-                            return Err(self.fail_profile(profile, &restore_error));
-                        }
-                        return Err(self.fail_profile(profile, &error));
-                    }
-                }
-                result.provider
-            }
-            Err(error) => {
-                if let Err(restore_error) = self.compensate_apply(
-                    &saga_guard,
-                    &spec.provider_id,
-                    spec.target_agent,
-                    &snapshot,
-                ) {
-                    return Err(self.fail_profile(profile, &restore_error));
-                }
-                return Err(self.fail_profile(profile, &error));
-            }
-        };
-
-        profile.status = AdapterProfileStatus::Active;
-        profile.generated_provider_id = Some(spec.provider_id.clone());
-        profile.last_error_code = None;
-        profile.updated_at = now();
-        let profile = match self.profiles.update(&profile) {
-            Ok(profile) => profile,
-            Err(_) => {
-                let mut attention = profile;
-                attention.status = AdapterProfileStatus::NeedsAttention;
-                let restore_error = self
-                    .compensate_apply(&saga_guard, &spec.provider_id, spec.target_agent, &snapshot)
-                    .err();
-                attention.last_error_code = Some(
-                    if restore_error.is_some() {
-                        "adapter.rollback_incomplete"
-                    } else {
-                        "adapter.profile_finalize"
-                    }
-                    .into(),
-                );
-                attention.updated_at = now();
-                let _ = self.profiles.update(&attention);
-                if restore_error.is_some() {
-                    return Err(AppError::message(
-                        "adapter.rollback_incomplete",
-                        "adapter profile finalization failed and repair rollback was incomplete",
-                    ));
-                }
-                return Err(AppError::message(
-                    "adapter.profile_finalize",
-                    "adapter profile finalization failed",
-                ));
-            }
-        };
-        Ok(AdapterApplyResult {
-            profile,
-            provider: switched.redacted(),
-        })
-    }
-
-    pub fn list(
-        &self,
-        source_kind: Option<AdapterSourceKind>,
-        source_id: Option<&str>,
-        target_agent_id: Option<AgentId>,
-    ) -> Result<Vec<AdapterProfile>> {
-        self.list_filtered(&AdapterProfileFilter {
-            source_kind,
-            source_id: source_id.map(str::to_owned),
-            target_agent_id,
-            ..AdapterProfileFilter::default()
-        })
-    }
-
-    /// Lists profiles using the full typed filter, including product `mode`.
-    pub fn list_filtered(&self, filter: &AdapterProfileFilter) -> Result<Vec<AdapterProfile>> {
-        self.profiles.list_filtered(filter)
-    }
-
-    /// Removes the profile and its generated provider when it still exists.
-    pub fn remove(&self, profile_id: &str) -> Result<()> {
-        // Lock the profile's target agent (Claude native or Pi config_sync),
-        // not a hardcoded Claude saga. Read the profile first so the lock
-        // matches the generated provider that will be deleted.
-        let profile = self.profiles.get(profile_id)?.ok_or_else(|| {
-            AppError::NotFound(format!("adapter profile not found: {profile_id}"))
-        })?;
-        if !owns_apply_profile(&profile) {
-            return Err(AppError::Unsupported(
-                "adapter apply remove supports Claude native, Pi config_sync, and DSH config_sync profiles".into(),
-            ));
-        }
-        let saga_guard = self.providers.begin_live_saga(profile.target_agent_id)?;
-        let profile = self.profiles.get(profile_id)?.ok_or_else(|| {
-            AppError::NotFound(format!("adapter profile not found: {profile_id}"))
-        })?;
-        if let Some(provider_id) = profile.generated_provider_id.as_deref() {
-            let provider = match self
-                .providers
-                .get(provider_id, Some(profile.target_agent_id))
-            {
-                Ok(provider) => Some(provider),
-                Err(AppError::NotFound(_)) => None,
-                Err(error) => return Err(error),
-            };
-            if let Some(provider) = provider {
-                if !provider_owned_by(&provider, &profile) {
-                    return Err(AppError::message(
-                        "adapter.provider_conflict",
-                        "generated provider does not belong to adapter profile",
-                    ));
-                }
-                if provider.is_current {
-                    self.restore_previous_binding(&saga_guard, &provider, profile.target_agent_id)?;
-                }
-                self.providers.delete_with_guard(
-                    &saga_guard,
-                    provider_id,
-                    profile.target_agent_id,
-                )?;
-            }
-        }
-        self.profiles.delete(profile_id)
-    }
-
-    fn ensure_supported(&self, request: &AdapterApplyRequest) -> Result<AdapterRouteAnalysis> {
-        let analysis = self.routes.analyze(&AdapterRouteRequest {
-            source_kind: request.source_kind,
-            source_id: request.source_id.clone(),
-            target_agent_id: request.target_agent_id,
-        })?;
-        if apply_request_supported(
-            request.source_kind,
-            request.target_agent_id,
-            analysis.route,
-            analysis.rule_id.as_deref(),
-            analysis.support,
-            analysis.gate_kind,
-        ) {
-            Ok(analysis)
-        } else {
-            Err(AppError::Unsupported(
-                "adapter apply currently supports Kimi membership Provider/Account -> Claude/Pi/Grok, OpenAI API -> Grok, GLM/DeepSeek ticket -> Claude/Codex, API or subscription Account -> Pi, and DeepSeek API provider -> DSH".into(),
-            ))
-        }
-    }
-
-    fn persist_previous_backup_id(
-        &self,
-        saga_guard: &ProviderLiveSagaGuard<'_>,
-        provider: &Provider,
-        backup_id: &str,
-    ) -> Result<Provider> {
-        let mut input = provider_input(provider);
-        let Some(meta) = input.meta.as_object_mut() else {
-            return Ok(provider.clone());
-        };
-        meta.insert(PREVIOUS_BACKUP_ID.into(), json!(backup_id));
-        self.providers.update_with_guard(saga_guard, &input)
-    }
-
-    fn restore_previous_binding(
-        &self,
-        saga_guard: &ProviderLiveSagaGuard<'_>,
-        generated: &Provider,
-        target_agent: AgentId,
-    ) -> Result<()> {
-        let is_subscription_oauth = is_subscription_pi_rule(
-            generated
-                .meta
-                .get("adapterRuleId")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default(),
-        );
-        let previous_id = generated
-            .meta
-            .get(PREVIOUS_CURRENT_ID)
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|id| !id.is_empty() && *id != generated.id);
-        let backup_id = generated
-            .meta
-            .get(PREVIOUS_BACKUP_ID)
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|id| !id.is_empty());
-        if is_subscription_oauth {
-            if let Some(backup_id) = backup_id {
-                self.providers
-                    .restore_named_backup_with_guard(saga_guard, backup_id)?;
-            }
-        }
-        if let Some(previous_id) = previous_id {
-            match self.providers.get(previous_id, Some(target_agent)) {
-                Ok(_) => {
-                    self.providers
-                        .switch_with_guard(saga_guard, previous_id, target_agent)?;
-                    return Ok(());
-                }
-                Err(AppError::NotFound(_)) => {}
-                Err(error) => return Err(error),
-            }
-        }
-        if let Some(backup_id) = backup_id.filter(|_| !is_subscription_oauth) {
-            self.providers
-                .restore_named_backup_with_guard(saga_guard, backup_id)?;
-        }
-        Ok(())
-    }
-
-    fn fail_profile(&self, mut profile: AdapterProfile, error: &AppError) -> AppError {
-        profile.status = AdapterProfileStatus::NeedsAttention;
-        profile.last_error_code = Some(error.code().into());
-        profile.updated_at = now();
-        let _ = self.profiles.update(&profile);
-        AppError::message(
-            "adapter_apply.failed",
-            format!("adapter apply failed: {}", error.code()),
-        )
-    }
-
-    /// Inverse of a successful live switch: restore the generated pool row
-    /// (or delete a create), re-select the pre-switch current provider when one
-    /// existed, then force the pre-switch live config. Every step is attempted
-    /// even if an earlier step fails.
-    fn compensate_apply(
-        &self,
-        saga_guard: &ProviderLiveSagaGuard<'_>,
-        provider_id: &str,
-        target_agent: AgentId,
-        snapshot: &ApplySnapshot,
-    ) -> Result<()> {
-        let mut failed: Option<AppError> = None;
-        let previous_id = snapshot
-            .previous_current
-            .as_ref()
-            .map(|provider| provider.id.as_str());
-        let generated_was_previous = snapshot
-            .generated_before
-            .as_ref()
-            .is_some_and(|provider| previous_id == Some(provider.id.as_str()));
-
-        if let Some(old) = &snapshot.generated_before {
-            let mut input = provider_input(old);
-            // When the generated row itself was current, re-activate via the
-            // pool update path (no second live switch). A different previous
-            // current is re-selected below with switch_with_guard.
-            input.is_current = generated_was_previous;
-            if let Err(error) = self.providers.update_with_guard(saga_guard, &input) {
-                failed = Some(error);
-            }
-        } else if snapshot.created {
-            if let Err(error) =
-                self.providers
-                    .delete_with_guard(saga_guard, provider_id, target_agent)
-            {
-                failed = Some(error);
-            }
-        }
-
-        if let Some(previous) = &snapshot.previous_current {
-            if !generated_was_previous {
-                if let Err(error) =
-                    self.providers
-                        .switch_with_guard(saga_guard, &previous.id, target_agent)
-                {
-                    failed = Some(error);
-                }
-            }
-        }
-
-        // Always restore live last so a switch-back that backfills a drifted
-        // value cannot leave the on-disk Claude config changed.
-        if let Err(error) = self
-            .providers
-            .restore_live_config_snapshot_with_guard(saga_guard, &snapshot.live_config)
-        {
-            failed = Some(error);
-        }
-
-        match failed {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
-    }
-}
+pub(super) const RULE_ID: &str = KIMI_CLAUDE_RULE_ID;
+pub(super) const KIMI_PI_RULE_ID: &str = "kimi-membership-to-pi-v1";
+pub(super) const ANTHROPIC_PI_RULE_ID: &str = "anthropic-api-to-pi-v1";
+pub(super) const OPENAI_PI_RULE_ID: &str = "openai-api-to-pi-v1";
+pub(super) const XAI_PI_RULE_ID: &str = "xai-api-to-pi-v1";
+pub(super) const CLAUDE_SUBSCRIPTION_PI_RULE_ID: &str = "claude-subscription-to-pi-v1";
+pub(super) const CODEX_SUBSCRIPTION_PI_RULE_ID: &str = "codex-subscription-to-pi-v1";
+pub(super) const GROK_SUBSCRIPTION_PI_RULE_ID: &str = "grok-subscription-to-pi-v1";
+pub(super) const KIMI_GROK_RULE_ID: &str = "kimi-membership-to-grok-v1";
+pub(super) const OPENAI_GROK_RULE_ID: &str = "openai-api-to-grok-v1";
+pub(super) const DEEPSEEK_DSH_RULE_ID: &str = "deepseek-api-to-dsh-v1";
+pub(super) const RULE_VERSION: &str = "1";
+pub(super) const CLAUDE_PROVIDER_PREFIX: &str = "claude-kimi-adapter";
+pub(super) const CLAUDE_GLM_PROVIDER_PREFIX: &str = "claude-glm-adapter";
+pub(super) const CLAUDE_DEEPSEEK_PROVIDER_PREFIX: &str = "claude-deepseek-adapter";
+pub(super) const CODEX_GLM_PROFILE_PREFIX: &str = "adapter-glm-codex";
+pub(super) const CODEX_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-codex";
+pub(super) const PI_KIMI_PROVIDER_PREFIX: &str = "pi-kimi-adapter";
+pub(super) const PI_ANTHROPIC_PROVIDER_PREFIX: &str = "pi-anthropic-adapter";
+pub(super) const PI_OPENAI_PROVIDER_PREFIX: &str = "pi-openai-adapter";
+pub(super) const PI_XAI_PROVIDER_PREFIX: &str = "pi-xai-adapter";
+pub(super) const PI_GLM_PROVIDER_PREFIX: &str = "pi-glm-adapter";
+pub(super) const PI_DEEPSEEK_PROVIDER_PREFIX: &str = "pi-deepseek-adapter";
+pub(super) const PI_CLAUDE_OAUTH_PROVIDER_PREFIX: &str = "pi-claude-oauth-adapter";
+pub(super) const PI_CODEX_OAUTH_PROVIDER_PREFIX: &str = "pi-codex-oauth-adapter";
+pub(super) const PI_GROK_OAUTH_PROVIDER_PREFIX: &str = "pi-grok-oauth-adapter";
+pub(super) const DSH_DEEPSEEK_PROVIDER_PREFIX: &str = "dsh-deepseek-adapter";
+pub(super) const GROK_KIMI_PROVIDER_PREFIX: &str = "grok-kimi-adapter";
+pub(super) const GROK_OPENAI_PROVIDER_PREFIX: &str = "grok-openai-adapter";
+pub(super) const CLAUDE_PROFILE_PREFIX: &str = "adapter-kimi-claude";
+pub(super) const CLAUDE_GLM_PROFILE_PREFIX: &str = "adapter-glm-claude";
+pub(super) const CLAUDE_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-claude";
+pub(super) const PI_KIMI_PROFILE_PREFIX: &str = "adapter-kimi-pi";
+pub(super) const PI_ANTHROPIC_PROFILE_PREFIX: &str = "adapter-anthropic-pi";
+pub(super) const PI_OPENAI_PROFILE_PREFIX: &str = "adapter-openai-pi";
+pub(super) const PI_XAI_PROFILE_PREFIX: &str = "adapter-xai-pi";
+pub(super) const PI_GLM_PROFILE_PREFIX: &str = "adapter-glm-pi";
+pub(super) const PI_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-pi";
+pub(super) const DSH_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-dsh";
+pub(super) const GROK_KIMI_PROFILE_PREFIX: &str = "adapter-kimi-grok";
+pub(super) const GROK_OPENAI_PROFILE_PREFIX: &str = "adapter-openai-grok";
+pub(super) const PREVIOUS_CURRENT_ID: &str = "previousCurrentId";
+pub(super) const PREVIOUS_BACKUP_ID: &str = "previousBackupId";
 
 /// 幂等判定：已有投影是否已是当前规则的完整契约。
 /// 不比较 `name`：展示名随票 display 变化，不是契约。
-fn same_profile_contract(existing: &AdapterProfile, proposed: &AdapterProfile) -> bool {
+pub(super) fn same_profile_contract(existing: &AdapterProfile, proposed: &AdapterProfile) -> bool {
     existing.id == proposed.id
         && existing.source_kind == proposed.source_kind
         && existing.source_id == proposed.source_id
@@ -693,7 +90,7 @@ fn same_profile_contract(existing: &AdapterProfile, proposed: &AdapterProfile) -
         && existing.generated_provider_id == proposed.generated_provider_id
 }
 
-fn owns_apply_profile(profile: &AdapterProfile) -> bool {
+pub(super) fn owns_apply_profile(profile: &AdapterProfile) -> bool {
     matches!(
         (profile.target_agent_id, profile.route),
         (AgentId::Claude, AdapterRoute::NativeEndpoint)
@@ -704,7 +101,7 @@ fn owns_apply_profile(profile: &AdapterProfile) -> bool {
     )
 }
 
-fn generated_provider_prefix(profile: &AdapterProfile) -> Option<&'static str> {
+pub(super) fn generated_provider_prefix(profile: &AdapterProfile) -> Option<&'static str> {
     match (
         profile.target_agent_id,
         profile.route,
@@ -757,7 +154,7 @@ fn generated_provider_prefix(profile: &AdapterProfile) -> Option<&'static str> {
     }
 }
 
-fn provider_owned_by(provider: &crate::models::Provider, profile: &AdapterProfile) -> bool {
+pub(super) fn provider_owned_by(provider: &crate::models::Provider, profile: &AdapterProfile) -> bool {
     let Some(prefix) = generated_provider_prefix(profile) else {
         return false;
     };
@@ -849,26 +246,26 @@ pub(crate) fn apply_request_supported(
     }
 }
 
-fn is_claude_native_explicit_rule(rule_id: &str) -> bool {
+pub(super) fn is_claude_native_explicit_rule(rule_id: &str) -> bool {
     matches!(rule_id, GLM_CLAUDE_RULE_ID | DEEPSEEK_CLAUDE_RULE_ID)
 }
 
-fn is_codex_native_rule(rule_id: &str) -> bool {
+pub(super) fn is_codex_native_rule(rule_id: &str) -> bool {
     matches!(rule_id, GLM_CODEX_RULE_ID | DEEPSEEK_CODEX_RULE_ID)
 }
 
-fn is_grok_native_rule(rule_id: &str) -> bool {
+pub(super) fn is_grok_native_rule(rule_id: &str) -> bool {
     matches!(rule_id, KIMI_GROK_RULE_ID | OPENAI_GROK_RULE_ID)
 }
 
-fn is_api_source_kind(source_kind: AdapterSourceKind) -> bool {
+pub(super) fn is_api_source_kind(source_kind: AdapterSourceKind) -> bool {
     matches!(
         source_kind,
         AdapterSourceKind::Provider | AdapterSourceKind::Account
     )
 }
 
-fn claude_native_layout(
+pub(super) fn claude_native_layout(
     rule_id: &str,
 ) -> Result<(&'static str, &'static str, &'static str, &'static str)> {
     let base_url = claude_native_base_url(rule_id).ok_or_else(|| {
@@ -901,7 +298,7 @@ fn claude_native_layout(
     }
 }
 
-fn claude_native_spec(
+pub(super) fn claude_native_spec(
     source_kind: AdapterSourceKind,
     source_id: &str,
     rule_id: &str,
@@ -951,7 +348,7 @@ fn claude_native_spec(
     })
 }
 
-fn codex_native_spec(
+pub(super) fn codex_native_spec(
     source_kind: AdapterSourceKind,
     source_id: &str,
     rule_id: &str,
@@ -1031,7 +428,7 @@ fn codex_native_spec(
     })
 }
 
-fn grok_native_spec(
+pub(super) fn grok_native_spec(
     source_kind: AdapterSourceKind,
     source_id: &str,
     rule_id: &str,
@@ -1101,7 +498,7 @@ fn grok_native_spec(
     })
 }
 
-fn pi_kimi_spec(source_kind: AdapterSourceKind, source_id: &str) -> GeneratedApplySpec {
+pub(super) fn pi_kimi_spec(source_kind: AdapterSourceKind, source_id: &str) -> GeneratedApplySpec {
     let profile_id = stable_id(PI_KIMI_PROFILE_PREFIX, source_id);
     let provider_id = stable_id(PI_KIMI_PROVIDER_PREFIX, source_id);
     let created_at = now();
@@ -1150,7 +547,7 @@ fn pi_kimi_spec(source_kind: AdapterSourceKind, source_id: &str) -> GeneratedApp
     }
 }
 
-fn is_explicit_api_to_pi_rule(rule_id: &str) -> bool {
+pub(super) fn is_explicit_api_to_pi_rule(rule_id: &str) -> bool {
     matches!(
         rule_id,
         ANTHROPIC_PI_RULE_ID
@@ -1161,7 +558,7 @@ fn is_explicit_api_to_pi_rule(rule_id: &str) -> bool {
     )
 }
 
-fn is_subscription_pi_rule(rule_id: &str) -> bool {
+pub(super) fn is_subscription_pi_rule(rule_id: &str) -> bool {
     matches!(
         rule_id,
         CLAUDE_SUBSCRIPTION_PI_RULE_ID
@@ -1170,7 +567,7 @@ fn is_subscription_pi_rule(rule_id: &str) -> bool {
     )
 }
 
-fn pi_subscription_layout(rule_id: &str) -> Result<(&'static str, &'static str, &'static str)> {
+pub(super) fn pi_subscription_layout(rule_id: &str) -> Result<(&'static str, &'static str, &'static str)> {
     match rule_id {
         CLAUDE_SUBSCRIPTION_PI_RULE_ID => Ok((
             PI_CLAUDE_OAUTH_PROVIDER_PREFIX,
@@ -1193,7 +590,7 @@ fn pi_subscription_layout(rule_id: &str) -> Result<(&'static str, &'static str, 
     }
 }
 
-fn pi_subscription_spec(source_id: &str, rule_id: &str) -> Result<GeneratedApplySpec> {
+pub(super) fn pi_subscription_spec(source_id: &str, rule_id: &str) -> Result<GeneratedApplySpec> {
     let (provider_prefix, display, slot) = pi_subscription_layout(rule_id)?;
     let profile_id = stable_id(&format!("adapter-{provider_prefix}"), source_id);
     let provider_id = stable_id(provider_prefix, source_id);
@@ -1244,7 +641,7 @@ fn pi_subscription_spec(source_id: &str, rule_id: &str) -> Result<GeneratedApply
     })
 }
 
-fn pi_explicit_api_layout(
+pub(super) fn pi_explicit_api_layout(
     rule_id: &str,
 ) -> Result<(&'static str, &'static str, &'static str, &'static str)> {
     match rule_id {
@@ -1285,7 +682,7 @@ fn pi_explicit_api_layout(
     }
 }
 
-fn pi_explicit_api_spec(
+pub(super) fn pi_explicit_api_spec(
     source_kind: AdapterSourceKind,
     source_id: &str,
     rule_id: &str,
@@ -1343,7 +740,7 @@ fn pi_explicit_api_spec(
     })
 }
 
-fn dsh_deepseek_spec(source_id: &str) -> GeneratedApplySpec {
+pub(super) fn dsh_deepseek_spec(source_id: &str) -> GeneratedApplySpec {
     let profile_id = stable_id(DSH_DEEPSEEK_PROFILE_PREFIX, source_id);
     let provider_id = stable_id(DSH_DEEPSEEK_PROVIDER_PREFIX, source_id);
     let created_at = now();
@@ -1393,7 +790,7 @@ fn dsh_deepseek_spec(source_id: &str) -> GeneratedApplySpec {
     }
 }
 
-fn generated_meta(
+pub(super) fn generated_meta(
     rule_id: &str,
     profile_id: &str,
     source_kind: AdapterSourceKind,
@@ -1418,7 +815,7 @@ fn generated_meta(
 
 /// 投影契约：id / agent / settings / 合同 meta。
 /// 不比较 `name`：展示名随票 display 变化，重 bind 不得因此重写 live。
-fn provider_matches_projection(
+pub(super) fn provider_matches_projection(
     provider: &crate::models::Provider,
     projection: &ProviderInput,
 ) -> bool {
@@ -1428,7 +825,7 @@ fn provider_matches_projection(
         && projection_contract_meta(&provider.meta) == projection_contract_meta(&projection.meta)
 }
 
-fn projection_contract_meta(meta: &serde_json::Value) -> serde_json::Value {
+pub(super) fn projection_contract_meta(meta: &serde_json::Value) -> serde_json::Value {
     let mut cloned = meta.clone();
     if let Some(object) = cloned.as_object_mut() {
         object.remove(PREVIOUS_CURRENT_ID);
@@ -1437,7 +834,7 @@ fn projection_contract_meta(meta: &serde_json::Value) -> serde_json::Value {
     cloned
 }
 
-fn stamp_previous_restore_meta(
+pub(super) fn stamp_previous_restore_meta(
     meta: &mut serde_json::Value,
     previous_current: Option<&Provider>,
     generated_id: &str,
@@ -1470,7 +867,7 @@ fn stamp_previous_restore_meta(
     }
 }
 
-fn provider_input(provider: &Provider) -> ProviderInput {
+pub(super) fn provider_input(provider: &Provider) -> ProviderInput {
     ProviderInput {
         id: provider.id.clone(),
         agent_id: provider.agent_id,
@@ -1481,11 +878,11 @@ fn provider_input(provider: &Provider) -> ProviderInput {
     }
 }
 
-fn now() -> String {
+pub(super) fn now() -> String {
     Utc::now().to_rfc3339()
 }
 
-fn stable_id(prefix: &str, source_id: &str) -> String {
+pub(super) fn stable_id(prefix: &str, source_id: &str) -> String {
     format!(
         "{prefix}-{}-{:016x}",
         safe_label(source_id),
@@ -1493,7 +890,7 @@ fn stable_id(prefix: &str, source_id: &str) -> String {
     )
 }
 
-fn safe_label(value: &str) -> String {
+pub(super) fn safe_label(value: &str) -> String {
     let label: String = value
         .chars()
         .map(|c| {
@@ -1512,11 +909,9 @@ fn safe_label(value: &str) -> String {
     }
 }
 
-fn fnv1a(bytes: &[u8]) -> u64 {
+pub(super) fn fnv1a(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf29ce484222325_u64, |hash, byte| {
         (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
     })
 }
 
-#[cfg(test)]
-mod tests;

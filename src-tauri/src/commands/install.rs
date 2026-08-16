@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use agenthub_core::catalog::{list_install_catalog, AgentInstallCatalogEntry};
+use agenthub_core::platform::install::{list_install_catalog, AgentInstallCatalogEntry};
 use agenthub_core::logging::targets;
 use agenthub_core::models::{AgentId, AgentUpdateInfo, InstallOutcome, RuntimeId};
 use agenthub_core::AgentKey;

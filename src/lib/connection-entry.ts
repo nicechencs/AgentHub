@@ -1,23 +1,19 @@
 /**
  * Shared connection list row. Used by Connections and Bridges.
  * Do not import this type from a page module.
+ * Core fields come from `toCredentialRow` (P2-7); this type adds UI/list extras.
  */
-import { looksLikeOfficialEndpoint } from '@/config/official-api';
-import {
-  extractProviderEndpoint,
-  formatEndpointHost,
-} from '@/lib/backend/contracts/agent-connection';
-import {
-  authDisplayForAccount,
-  authHealthLabel,
-  type AuthHealth,
-} from '@/lib/backend/contracts/auth-state';
+import type { AuthHealth } from '@/lib/backend/contracts/auth-state';
 import type { ConnectionKind } from '@/lib/connection-kind';
 import {
   connectSourceKey,
   type ConnectionUsage,
   type ConnectionUsageMap,
 } from '@/lib/connect-flow/types';
+import {
+  providerEndpointExtras,
+  toCredentialRow,
+} from '@/lib/credential-row';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
 
 export type ConnectionEntry = {
@@ -54,53 +50,11 @@ export type ConnectionEntry = {
 };
 
 export function authStatusOfAccount(a: Account): AuthStatus {
-  return authDisplayForAccount(a).legacyStatus;
+  return toCredentialRow({ source: 'account', account: a }).auth.status;
 }
 
 export function authHealthOfAccount(a: Account): AuthHealth {
-  return authDisplayForAccount(a).health;
-}
-
-function accountSubtitle(a: Account): string {
-  if (a.isCurrent) {
-    const bits: string[] = [];
-    bits.push(authDisplayForAccount(a).label);
-    if (a.subscription) bits.push(a.subscription);
-    return bits.join(' · ');
-  }
-  const bits: string[] = [];
-  bits.push(authDisplayForAccount(a).label, '未生效');
-  if (a.provider && !a.label.includes(a.provider)) bits.push(a.provider);
-  if (a.subscription) bits.push(a.subscription);
-  return bits.join(' · ');
-}
-
-function providerEndpointMode(p: Provider, endpoint?: string): 'official' | 'custom' {
-  if (p.official === true) return 'official';
-  if (p.official === false) return 'custom';
-  if (p.preset && /anthropic|openai|moonshot|xai/i.test(p.preset) && !/compat|custom|relay/i.test(p.preset)) {
-    if (!endpoint || looksLikeOfficialEndpoint(p.agentId, endpoint)) return 'official';
-  }
-  if (!endpoint || looksLikeOfficialEndpoint(p.agentId, endpoint)) return 'official';
-  return 'custom';
-}
-
-function providerSubtitle(
-  p: Provider,
-  endpoint: string | undefined,
-  mode: 'official' | 'custom',
-): string {
-  const modeLabel = mode === 'official' ? '官方端点' : '自定义端点';
-  const host = endpoint ? formatEndpointHost(endpoint) : undefined;
-  const health = authHealthLabel('configured');
-  if (p.isCurrent) {
-    return host
-      ? `${health} · 当前生效 · ${modeLabel} · ${host}`
-      : `${health} · 当前生效 · ${modeLabel}`;
-  }
-  return host
-    ? `${health} · 未生效 · ${modeLabel} · ${host}`
-    : `${health} · 未生效 · ${modeLabel}`;
+  return toCredentialRow({ source: 'account', account: a }).auth.health ?? 'unknown';
 }
 
 function attachUsage(entry: ConnectionEntry, usageMap?: ConnectionUsageMap): ConnectionEntry {
@@ -110,18 +64,19 @@ function attachUsage(entry: ConnectionEntry, usageMap?: ConnectionUsageMap): Con
 }
 
 export function accountToEntry(a: Account, usageMap?: ConnectionUsageMap): ConnectionEntry {
+  const row = toCredentialRow({ source: 'account', account: a });
   return attachUsage(
     {
-      key: `account:${a.id}`,
-      source: 'account',
+      key: row.key,
+      source: row.source,
       kind: a.kind === 'apikey' ? 'apikey' : 'oauth',
-      id: a.id,
-      agentId: a.agentId,
-      title: a.label,
-      subtitle: accountSubtitle(a),
-      isCurrent: a.isCurrent,
-      authStatus: authStatusOfAccount(a),
-      authHealth: authHealthOfAccount(a),
+      id: row.id,
+      agentId: row.agentId,
+      title: row.title,
+      subtitle: row.subtitle,
+      isCurrent: row.isCurrent,
+      authStatus: row.auth.status,
+      authHealth: row.auth.health,
       sortKey: a.updatedAt || a.lastUsedAt || a.createdAt || '',
       identityLabel: a.identityLabel,
       subscription: a.subscription,
@@ -137,23 +92,23 @@ export function accountToEntry(a: Account, usageMap?: ConnectionUsageMap): Conne
 }
 
 export function providerToEntry(p: Provider, usageMap?: ConnectionUsageMap): ConnectionEntry {
-  const endpoint = extractProviderEndpoint(p.configText, p.configFormat);
-  const endpointMode = providerEndpointMode(p, endpoint);
+  const row = toCredentialRow({ source: 'provider', provider: p });
+  const { endpointHost, endpointMode } = providerEndpointExtras(p);
   return attachUsage(
     {
-      key: `provider:${p.id}`,
-      source: 'provider',
+      key: row.key,
+      source: row.source,
       kind: 'apikey',
-      id: p.id,
-      agentId: p.agentId,
-      title: p.name,
-      subtitle: providerSubtitle(p, endpoint, endpointMode),
-      isCurrent: p.isCurrent,
-      authStatus: 'valid',
-      authHealth: 'configured',
+      id: row.id,
+      agentId: row.agentId,
+      title: row.title,
+      subtitle: row.subtitle,
+      isCurrent: row.isCurrent,
+      authStatus: row.auth.status,
+      authHealth: row.auth.health,
       sortKey: p.updatedAt || '',
       latencyMs: p.latencyMs,
-      endpointHost: endpoint ? formatEndpointHost(endpoint) : undefined,
+      endpointHost,
       endpointMode,
       provider: p,
     },

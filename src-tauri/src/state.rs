@@ -9,6 +9,7 @@ use agenthub_core::logging::{self, targets};
 use agenthub_core::AgentHub;
 
 use crate::adapter_bridge_controller::AdapterBridgeSagaCoordinator;
+use crate::adapter_control_host::DesktopAdapterControl;
 use crate::exit_coordinator::{ExitCoordinator, LifecycleShutdownBarrier};
 use crate::window_policy::{self, parse_bool_setting};
 
@@ -91,6 +92,16 @@ impl AppState {
 
     pub(crate) fn bridge_saga_coordinator(&self) -> Arc<AdapterBridgeSagaCoordinator> {
         Arc::clone(&self.bridge_saga_coordinator)
+    }
+
+    /// Desktop AdapterControl façade (parse-free bind / bridge lifecycle).
+    pub(crate) fn adapter_control(&self) -> Result<DesktopAdapterControl, String> {
+        Ok(DesktopAdapterControl::new(
+            self.hub_arc()?,
+            self.bridge_host(),
+            self.bridge_saga_coordinator(),
+            self.lifecycle_shutdown_barrier(),
+        ))
     }
 
     pub(crate) fn exit_coordinator(&self) -> &ExitCoordinator {

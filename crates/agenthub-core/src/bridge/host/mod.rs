@@ -9,6 +9,7 @@ mod lifecycle;
 
 pub use lifecycle::{BridgeHostError, BridgeRuntimeHost};
 
+#[cfg(test)]
 pub(super) use http::sse_frame_end;
 pub(super) use lifecycle::CleanupCompletion;
 

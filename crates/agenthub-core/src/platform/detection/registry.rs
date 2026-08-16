@@ -7,7 +7,8 @@ use crate::error::{AppError, Result};
 use crate::models::AgentId;
 use crate::platform::AgentKey;
 
-use super::detector::{AdapterDetector, AgentDetector};
+use super::detector::AgentDetector;
+use super::sources;
 
 #[derive(Clone, Default)]
 pub struct DetectorRegistry {
@@ -57,18 +58,7 @@ impl DetectorRegistry {
     }
 }
 
-fn build_registry() -> DetectorRegistry {
-    let adapters = crate::adapters::register_all();
-    let mut registry = DetectorRegistry::new();
-    for adapter in adapters.all() {
-        registry
-            .register(Arc::new(AdapterDetector::new(adapter)))
-            .expect("unique built-in detector");
-    }
-    registry
-}
-
 pub fn builtin_detector_registry() -> &'static DetectorRegistry {
     static REGISTRY: OnceLock<DetectorRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(build_registry)
+    REGISTRY.get_or_init(sources::build_registry)
 }

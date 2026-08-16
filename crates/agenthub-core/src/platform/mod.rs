@@ -15,9 +15,9 @@ pub mod stream;
 pub mod usage;
 
 pub use skills::{
-    bootstrap_skill_assignments, AdapterSkillTarget, AgentSkillTarget, SkillAssignmentService,
-    SkillBootstrapReport, SkillPackageService, SkillReconciler, SkillSourceService,
-    SkillTargetRegistry, StaticSkillTarget,
+    bootstrap_skill_assignments, builtin_skill_target_registry, AdapterSkillTarget,
+    AgentSkillTarget, SkillAssignmentService, SkillBootstrapReport, SkillPackageService,
+    SkillReconciler, SkillSourceService, SkillTargetRegistry, StaticSkillTarget,
 };
 
 pub use agent_catalog::{
@@ -29,10 +29,14 @@ pub use config::{
     ConfigChangePlan, ConfigProjectorRegistry, ConfigValidationResult, ConfigurationService,
     NormalizedConfigDocument, SECRET_REDACTED,
 };
-pub use detection::{builtin_detector_registry, AdapterDetector, AgentDetector, DetectorRegistry};
+pub use detection::{
+    builtin_detector_registry, AdapterDetector, AgentDetector, DetectorRegistry, FnDetector,
+};
 pub use install::{
-    builtin_install_registry, InstallContribution, InstallContributionRegistry,
-    OfficialVersionProbe, ScriptVersionKind,
+    adapter_install_channels, builtin_install_registry, channels_for, list_install_catalog,
+    native_ps1_url, native_setup_url, native_sh_url, npm_install_extra_flags, npm_package,
+    official_version_probe, AgentInstallCatalogEntry, InstallChannelPlan, InstallContribution,
+    InstallContributionRegistry, OfficialVersionProbe, ScriptVersionKind,
 };
 pub use lifecycle::{
     LifecycleCoordinator, LifecycleResult, OperationId, OperationKind, OperationRecord,

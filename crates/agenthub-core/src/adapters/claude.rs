@@ -18,26 +18,31 @@ use super::{
 
 pub struct ClaudeAdapter;
 
+/// Standalone install probe used by platform detectors (no full adapter required).
+pub(crate) fn detect_installation() -> DetectResult {
+    let channels = crate::catalog::install::adapter_install_channels(AgentId::Claude);
+    let default_requires = channels
+        .first()
+        .map(|c| c.requires.as_slice())
+        .unwrap_or(&[]);
+    let env_ready = runtime::is_ready(default_requires);
+    // Prefer `claude` on PATH (npm or native); channel inferred from path.
+    detect_binary(
+        AgentId::Claude,
+        &["claude"],
+        &["--version"],
+        None,
+        env_ready,
+    )
+}
+
 impl AgentAdapter for ClaudeAdapter {
     fn id(&self) -> AgentId {
         AgentId::Claude
     }
 
     fn detect(&self) -> DetectResult {
-        let channels = self.install_channels();
-        let default_requires = channels
-            .first()
-            .map(|c| c.requires.as_slice())
-            .unwrap_or(&[]);
-        let env_ready = runtime::is_ready(default_requires);
-        // Prefer `claude` on PATH (npm or native); channel inferred from path.
-        detect_binary(
-            AgentId::Claude,
-            &["claude"],
-            &["--version"],
-            None,
-            env_ready,
-        )
+        detect_installation()
     }
 
     fn read_config(&self) -> Result<AgentConfig> {

@@ -2,6 +2,7 @@
 //! Business logic stays in core; this crate only wires state + commands.
 
 mod adapter_bridge_controller;
+mod adapter_control_host;
 mod commands;
 mod exit_coordinator;
 mod skill_watch;

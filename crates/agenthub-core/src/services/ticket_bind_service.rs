@@ -31,11 +31,27 @@ pub struct TicketBindService {
 
 impl TicketBindService {
     pub fn new(db: Database, registry: AdapterRegistry, backups_root: PathBuf) -> Self {
+        Self::from_parts(
+            TicketReadService::new(db.clone()),
+            AdapterApplyService::new(db.clone(), registry.clone(), backups_root.clone()),
+            AdapterProfileRepo::new(db.clone()),
+            ProviderService::with_live(db, registry, backups_root),
+        )
+    }
+
+    /// Inject hub-owned instances. Callers must not build a second
+    /// [`ProviderService::with_live`] solely for ticket bind.
+    pub fn from_parts(
+        tickets: TicketReadService,
+        apply: AdapterApplyService,
+        profiles: AdapterProfileRepo,
+        providers: ProviderService,
+    ) -> Self {
         Self {
-            tickets: TicketReadService::new(db.clone()),
-            apply: AdapterApplyService::new(db.clone(), registry.clone(), backups_root.clone()),
-            profiles: AdapterProfileRepo::new(db.clone()),
-            providers: ProviderService::with_live(db, registry, backups_root),
+            tickets,
+            apply,
+            profiles,
+            providers,
         }
     }
 

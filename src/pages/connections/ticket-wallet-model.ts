@@ -3,10 +3,6 @@
  * Filter / search / binding usage lines — pure functions for vitest.
  */
 import { agentDisplayName } from '@/config/agents';
-import {
-  authDisplayForAccount,
-  authHealthLabel,
-} from '@/lib/backend/contracts/auth-state';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
 import type {
   BindingRoute,
@@ -21,7 +17,10 @@ import {
   ticketCredentialClassLabel,
   ticketSurfaceLabel,
 } from '@/lib/backend/contracts/ticket';
-import { accountToEntry, providerToEntry } from '@/lib/connection-entry';
+import {
+  providerEndpointExtras,
+  toCredentialRow,
+} from '@/lib/credential-row';
 import { bridgesHrefForProfile } from '@/lib/bridges-path';
 
 export { activeBindingForAgent } from '@/lib/ticket-wallet';
@@ -280,7 +279,7 @@ export function extrasFromPoolSource(
   };
 
   if (source.account) {
-    const display = authDisplayForAccount(source.account);
+    const row = toCredentialRow({ source: 'account', account: source.account });
     extras.identity =
       ticket.credentialClass === 'oauth'
         ? source.account.email
@@ -291,21 +290,22 @@ export function extrasFromPoolSource(
     if (source.account.provider && !ticket.label.includes(source.account.provider)) {
       extras.accountProvider = source.account.provider;
     }
-    extras.authLabel = display.label;
-    extras.authStatus = display.legacyStatus;
+    extras.authLabel = row.auth.label;
+    extras.authStatus = row.auth.status;
     extras.quota5hPct = source.account.quota5hPct;
     extras.quota7dPct = source.account.quota7dPct;
     extras.quotaResetIn = source.account.quotaResetIn;
     extras.quota7dResetIn = source.account.quota7dResetIn;
-    extras.endpointMode = accountToEntry(source.account).endpointMode;
+    extras.endpointMode = source.account.kind === 'apikey' ? 'official' : undefined;
   }
 
   if (source.provider) {
-    const entry = providerToEntry(source.provider);
-    extras.endpointMode = entry.endpointMode;
-    extras.endpointHost = entry.endpointHost;
-    extras.authLabel = authHealthLabel(entry.authHealth ?? 'configured');
-    extras.authStatus = entry.authStatus;
+    const row = toCredentialRow({ source: 'provider', provider: source.provider });
+    const endpoint = providerEndpointExtras(source.provider);
+    extras.endpointMode = endpoint.endpointMode;
+    extras.endpointHost = endpoint.endpointHost;
+    extras.authLabel = row.auth.label;
+    extras.authStatus = row.auth.status;
   }
 
   return extras;
