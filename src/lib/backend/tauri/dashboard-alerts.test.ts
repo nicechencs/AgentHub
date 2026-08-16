@@ -80,6 +80,14 @@ describe('buildAlertsFromAgents', () => {
     );
   });
 
+  it('skips hidden agents', () => {
+    const alerts = buildAlertsFromAgents([
+      base({ agentId: 'claude', hidden: true, authStatus: 'expired' }),
+      base({ agentId: 'codex', authStatus: 'none' }),
+    ]);
+    expect(alerts.map((a) => a.id)).toEqual(['auth-none:codex']);
+  });
+
   it('skips uninstalled agents', () => {
     const alerts = buildAlertsFromAgents([
       base({ agentId: 'claude', installed: false, authStatus: 'expired' }),

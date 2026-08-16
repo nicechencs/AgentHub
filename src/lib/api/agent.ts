@@ -86,6 +86,11 @@ export async function checkAgentUpdates(
   return getBackend().agent.checkAgentUpdates(agentIds, force);
 }
 
+export async function setAgentHidden(agentId: AgentId, hidden: boolean): Promise<void> {
+  await getBackend().agent.setAgentHidden(agentId, hidden);
+  await refreshAgentStatusStore();
+}
+
 /** Merge update probe rows onto agent status list (by agentId). */
 export function applyAgentUpdates(
   agents: AgentStatus[],

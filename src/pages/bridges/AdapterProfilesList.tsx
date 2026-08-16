@@ -47,6 +47,7 @@ export type AdapterProfilesListProps = {
   onRequestStopBridge: (profile: AdapterProfile) => void;
   onShowDetail: (profile: AdapterProfile) => void;
   onRetry: () => void;
+  hiddenTargetIds?: ReadonlySet<string>;
 };
 
 /**
@@ -67,6 +68,7 @@ export function AdapterProfilesList({
   onRequestStopBridge,
   onShowDetail,
   onRetry,
+  hiddenTargetIds,
 }: AdapterProfilesListProps) {
   if (loading) {
     return (
@@ -108,6 +110,7 @@ export function AdapterProfilesList({
           onStartBridge={onStartBridge}
           onRequestStopBridge={onRequestStopBridge}
           onShowDetail={onShowDetail}
+          targetHidden={hiddenTargetIds?.has(profile.targetAgentId) === true}
         />
       ))}
     </div>
@@ -124,6 +127,7 @@ function AdapterProfileRow({
   onStartBridge,
   onRequestStopBridge,
   onShowDetail,
+  targetHidden,
 }: {
   profile: AdapterProfile;
   bridgeStatus?: AdapterBridgeRuntimeStatus;
@@ -134,6 +138,7 @@ function AdapterProfileRow({
   onStartBridge: (profile: AdapterProfile) => void;
   onRequestStopBridge: (profile: AdapterProfile) => void;
   onShowDetail: (profile: AdapterProfile) => void;
+  targetHidden: boolean;
 }) {
   const source = resolveAdapterProfileSource(profile, entries);
   const runtimeStatus = bridgeRuntimeStatusView({
@@ -173,6 +178,9 @@ function AdapterProfileRow({
             {source.missing ? (
               <span className="text-xs text-warning">来源连接已删除</span>
             ) : null}
+            {targetHidden ? (
+              <span className="text-xs text-muted">目标已隐藏，仅可停止</span>
+            ) : null}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -180,7 +188,12 @@ function AdapterProfileRow({
             <Button
               variant="outline"
               size="sm"
-              disabled={busy || transitioning}
+              disabled={busy || transitioning || (targetHidden && action.kind !== 'stop')}
+              title={
+                targetHidden && action.kind !== 'stop'
+                  ? '目标 Agent 已隐藏，仅可停止运行中的桥接'
+                  : undefined
+              }
               onClick={() => (action.kind === 'stop' ? onRequestStopBridge(profile) : onStartBridge(profile))}
             >
               {busy ? '处理中…' : action.label}

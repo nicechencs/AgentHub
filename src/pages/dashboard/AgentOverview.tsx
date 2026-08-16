@@ -56,9 +56,9 @@ export function AgentOverview({
   const navigate = useNavigate();
   // Dashboard 只展示已安装 Agent；未安装的去 Agents 页安装。
   const installedMetas = AGENTS.filter((m) =>
-    agents.some((a) => a.agentId === m.id && a.installed),
+    agents.some((a) => a.agentId === m.id && a.installed && !a.hidden),
   );
-  const installedStatuses = agents.filter((a) => a.installed);
+  const installedStatuses = agents.filter((a) => a.installed && !a.hidden);
   const { summaryText } = summarizeAgentOverview(installedMetas, installedStatuses);
   const cards = mergeAgentsInOrder(installedMetas, installedStatuses, badgeInputs);
 
