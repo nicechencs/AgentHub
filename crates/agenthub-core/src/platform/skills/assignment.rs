@@ -107,18 +107,22 @@ impl SkillAssignmentService {
         projection_mode: Option<&str>,
         now: &str,
     ) -> Result<SkillAssignmentRow> {
+        let existing = self.repo.get_assignment(skill_id, agent_key.as_str())?;
+        // None keeps the existing mode so disable/sync do not reset link → copy.
+        // A new row with no explicit mode still defaults to copy.
         let mode = projection_mode
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .unwrap_or("copy");
-
-        let existing = self.repo.get_assignment(skill_id, agent_key.as_str())?;
+            .map(ToString::to_string)
+            .or_else(|| existing.as_ref().map(|prev| prev.projection_mode.clone()))
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "copy".into());
         let row = match existing {
             Some(prev) => SkillAssignmentRow {
                 skill_package_id: skill_id.to_string(),
                 agent_key: agent_key.to_string(),
                 desired_enabled,
-                projection_mode: mode.to_string(),
+                projection_mode: mode,
                 // Keep applied_revision until reconcile succeeds/fails with a new value.
                 applied_revision: prev.applied_revision,
                 // Reset observed to pending so reconciler is expected to run.
@@ -130,7 +134,7 @@ impl SkillAssignmentService {
                 skill_package_id: skill_id.to_string(),
                 agent_key: agent_key.to_string(),
                 desired_enabled,
-                projection_mode: mode.to_string(),
+                projection_mode: mode,
                 applied_revision: None,
                 observed_status: "pending".into(),
                 last_error: None,

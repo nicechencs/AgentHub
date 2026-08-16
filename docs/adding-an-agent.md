@@ -120,7 +120,7 @@
 |---|---|
 | 删除 `AgentId` / 胖 `AgentAdapter` | 暂缓；兼容层仍在 |
 | `integrations/agents/<key>/` 物理目录 | **P2-1 已落地**；生产贡献经 `register_integrations`。`AgentAdapter` 仍在 `adapters/`（过渡 façade） |
-| Skills `projection_mode=link` 进 reconciler | 库字段已有；reconcile 仍以 copy/sync 语义为主 |
+| Skills `projection_mode=link` 进 reconciler | **已落地**：reconcile 认 `assignment.projection_mode`；不确定目录不删 |
 | `install_skill` 自动写 `skill_packages` | 首次 sync/bootstrap 写入；可后续收紧 |
 | Bootstrap 扫描真实 `~/.agents` 于 open | **故意不**自动扫描用户目录 |
 | 前后端契约 codegen / xtask new-agent | 未授权，不做 |
