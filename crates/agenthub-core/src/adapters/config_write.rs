@@ -148,7 +148,7 @@ fn merge_toml_provider_config(expected: AgentId, live: &str, desired: &str) -> R
         ))
     })?;
 
-    for key in managed_toml_provider_keys(expected)? {
+    for key in crate::integrations::shared::toml_provider::managed_toml_provider_keys(expected)? {
         live_doc.as_table_mut().remove(key);
     }
     for (key, item) in desired_doc.iter() {
@@ -174,33 +174,4 @@ fn leading_toml_trivia(input: &str) -> &str {
         }
     }
     &input[..end]
-}
-
-fn managed_toml_provider_keys(agent: AgentId) -> Result<&'static [&'static str]> {
-    match agent {
-        AgentId::Codex => Ok(&[
-            "model",
-            "review_model",
-            "model_provider",
-            "model_reasoning_effort",
-            "model_reasoning_summary",
-            "model_verbosity",
-            "model_providers",
-            // provider / relay common top-level flags
-            "disable_response_storage",
-            "preferred_auth_method",
-            "network_access",
-            "windows_wsl_setup_acknowledged",
-            // features.goals / responses_websockets_v2 等随供应商切换整表替换
-            "features",
-        ]),
-        AgentId::Kimi => Ok(&["default_model", "default_provider", "providers"]),
-        AgentId::Grok => Ok(&["models", "model", "base_url", "api_key", "env_key"]),
-        AgentId::Claude | AgentId::Pi | AgentId::WorkBuddy | AgentId::Cursor | AgentId::Dsh => {
-            Err(crate::error::AppError::InvalidArg(format!(
-                "{} provider config is JSON, not TOML",
-                agent.display_name()
-            )))
-        }
-    }
 }
