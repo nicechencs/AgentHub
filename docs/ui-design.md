@@ -277,7 +277,51 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 ### 4.4 Chat（会话）
 
-全高特例布局（`App` 中 `pathname === '/chat'`）：**无 TopBar / 无 PageHeader**，主区 `overflow-hidden` + 子树 `h-full`，会话列表与消息区自行分配高度；**不**套用 `max-w-content` 居中内容壳。其余功能页保持标准壳（TopBar + max-w-content）。
+全高特例布局（`App` 中 `pathname === '/chat'`）：**无 TopBar / 无 PageHeader**，主区 `overflow-hidden` + 子树 `h-full`，会话列表与消息区自行分配高度；**不**套用 `max-w-content` 居中内容壳。其余功能页保持标准壳（TopBar + max-w-content）。本节为产品契约摘要；完整方案（现状诊断、逐流程交互、文件拆分、验收）见 [chat-page-redesign.md](chat-page-redesign.md)。
+
+**目标线框：**
+
+```
+┌───────────────────────┬─────────────────────────────────────────────────┐
+│ [◧] [＋ 新建对话]      │ 标题（就地编辑）✎ [◉ Agent] [cwd] [自动批准] ⚙   │
+│ [🔍 搜索对话        ]  ├─────────────────────────────────────────────────┤
+│ 今天                   │            （消息列 max-w-3xl 居中）             │
+│ ▮当前会话（bg-active） │                        ┌ user 气泡（bg-subtle）┐ │
+│ ▮ ● cwd 短名          │ 本轮 2 个 Agent：[◉ …] [◆ …]   ← ≥2 时对比条    │
+│  其他会话             │ ◉ Claude  12.4s                                 │
+│   ● cwd 短名          │ ▸ 已完成 · 6 步 · 12.4s   ← 过程摘要行           │
+│ 昨天 / 近 7 天 / 更早  │ 正文（Markdown）                        [复制]   │
+│  …                    ├─────────────────────────────────────────────────┤
+│                       │ （blocker 引导行：无 cwd / 隐藏 Agent / 他处发送中）│
+│                       │ ┌ composer（rounded-composer）─────────────────┐ │
+│                       │ │ textarea 自动增高 56–240px                    │ │
+│                       │ │ [Agent 多选 ▾] [连接 ▾（仅首位 Agent）]  [➤] │ │
+│                       │ └───────────────────────────────────────────────┘ │
+│                       │          Agent 可能修改工作目录中的文件           │
+└───────────────────────┴─────────────────────────────────────────────────┘
+```
+
+**会话 rail**（240px，可收起为 `w-0`，header 左端出现展开按钮）：
+
+- 顶部「新建对话」（secondary）+ `SearchField`（匹配标题与 cwd）。
+- 按相对日分组：今天 / 昨天 / 近 7 天 / 更早；组内 `updatedAt` 倒序。
+- 行两行结构：标题（空标题显示「新对话」，发送中带状态点）；meta = `AgentDot` 品牌点列（>3 折叠 +N）+ cwd 末段目录名（无 cwd 显示「未设目录」）。完整 cwd 与更新时间进行级 Hint，不常驻。
+- 选中 `bg-active`、hover `bg-hover`（与 `ListRow` 语义一致；**禁止**用 `bg-hover` 表示选中）。
+- 删除 hover 显示，必经二次确认；发送中的会话删除先取消；删除最后一个自动补建（有可用 Agent 时）。
+
+**会话 header**：标题就地编辑（Enter/blur 保存、Esc 取消、空值回退「新对话」；自动标题仅在 title 为空时由首条 prompt 生成）+ Agent 只读芯片（含「已隐藏」标记）+ cwd 芯片（Hint 完整路径，点击开设置；未设置为 warning 态）+ 自动批准芯片（**仅开启时显示**，warning 态）+ 设置按钮。修改 Agent 只在 composer picker。
+
+**Composer 与发送前置校验**：自动增高 textarea + 底栏（Agent 多选 / 连接切换 / 发送）。发送前置条件统一为 `sendBlockers` 纯函数，composer 上方渲染第一个 blocker 引导行（含修复动作），优先级：含隐藏 Agent > 无 cwd > 他会话发送中；空草稿只禁发送不出引导行。composer 下方仅一行安全提示（批准关：「Agent 可能修改工作目录中的文件」；批准开：warning「自动批准已开启 · Agent 将不经确认修改文件」）。连接切换仅作用于 `agentIds[0]`，多选时固定标注；无连接深链 `/connections?agent=`。发送按钮是页内唯一 accent 主 CTA；发送中变「停止」。
+
+**多 Agent 一轮**：默认纵向堆叠；同轮 ≥2 个 agent 消息时 user 气泡下出「本轮 N 个 Agent」对比条（logo + 状态点 + 耗时，点击定位），**不做左右分栏**。
+
+**过程面板**（展示层规则；协议见 [chat-process-streaming.md](chat-process-streaming.md)）：摘要行 = `阶段 · N 步 · 耗时`（不含命令）；展开 = 无边框步骤时间线（tool/thinking/status/error）；命令 / stderr / exit 收进「运行详情」次级折叠。进行中/失败/超时默认展开，成功/取消默认折叠，用户手动开合记忆到阶段变化。
+
+**消息轻操作**：user / agent 气泡 hover 复制（运行中不显示）；最后一轮失败/取消/超时气泡可「重试」（同一 prompt 作为新 turn 重发给会话全部 Agent，不新增 API）。流式仅在贴近底部时跟随滚动。
+
+**空态矩阵**：无已装未隐藏 Agent 且无会话 → 页级 EmptyState「还没有可对话的 Agent」+「去 Agents 页」；空转录 → 「开始对话」居中引导；无 cwd / 含隐藏 Agent / 他处发送中 → composer 引导行（不再只靠 toast）；Projects bootstrap 无 cwd 不自动弹 Dialog，由引导行接管。
+
+**密度与组件约束**：rail `bg-canvas`，主列 `bg-panel`；header / composer chrome 水平 inset 统一 `pageRhythm.chatChromeX`（禁止硬编码 `px-4`）；消息列 `max-w-3xl`；圆角只用 `rounded-btn` / `rounded-card` / `rounded-composer`；过程仅内存、切会话清空；页面层不 `invoke`。文件拆分按 [chat-page-redesign.md §9](chat-page-redesign.md)（`chat-model` 纯函数 + `use-chat-page` hook + 组件，`index.tsx` 只编排）。
 
 ### 4.5 Skills（技能管理）
 
