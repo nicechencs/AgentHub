@@ -25,7 +25,7 @@
 - 为方便测试向生产 façade 导出 `__reset*ForTests` 一类 hook（重置逻辑放 `dev/mocks`）。
 - 让 `pnpm build` / 生产 module graph 依赖测试或 mock 文件（见 architecture 生产护栏）。
 
-历史遗留：部分旧模块仍有内嵌 `#[cfg(test)]`；**新代码与触达重构必须分文件**，不要扩大内嵌面。
+历史遗留（与本条约不一致，**不要扩大**）：`crates/agenthub-core/src/logging/mod.rs` 仍内嵌 `#[cfg(test)] mod tests { ... }`；部分 GUI commands 仍把测试写在生产文件里（如 `src-tauri/src/commands/chat.rs`、`settings.rs`、`account.rs`、`backup.rs`、`project.rs`，以及 `tray.rs` / `window_policy.rs`）。**新代码必须分文件**。
 
 ## 2. 运行命令
 
@@ -121,8 +121,8 @@ Hub Phase 1 统一连接流程的测试分文件存放（遵守 §1）；前端 
 
 | 触发 | 工作流 | 内容 |
 |---|---|---|
-| PR / push `dev`·`main` | `.github/workflows/pr-ci.yml` | typecheck、全量 `pnpm test`、`cargo test -p agenthub-core` |
-| push `release` | `.github/workflows/release.yml` | 上列 + workspace 全量 cargo + 打包发布元数据 |
+| PR / push `dev`·`main` | `.github/workflows/pr-ci.yml` | `pnpm typecheck`、`pnpm typecheck:test`、全量 `pnpm test`、`cargo test -p agenthub-core` |
+| push `release` | `.github/workflows/release.yml` | 更严：`pnpm typecheck` + `pnpm typecheck:test` + 全量 `pnpm test` + `cargo test --workspace` + 打包发布元数据 |
 
 本地等价：`pnpm test:pr`。
 

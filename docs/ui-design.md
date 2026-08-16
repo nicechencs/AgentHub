@@ -36,7 +36,7 @@
 状态:  --success / --warning / --danger / --info
 Agent 品牌色（logo 点、图表系列；改 tokens.ts 的 AGENT_COLORS）:
   --agent-claude / --agent-codex / --agent-kimi / --agent-grok
-  --agent-pi / --agent-workbuddy / --agent-cursor
+  --agent-pi / --agent-workbuddy / --agent-cursor / --agent-dsh
   TS 取 hex：agentHex(id) ；样式绑定：agentCssVar(id) 或 AGENT_MAP[id].color
 字号:  仅三档，真源 `TYPE_SCALE`（`src/styles/tokens.ts`）— 16 `text-title` 页标题/空态主句/指标 · 13 `text-body` 正文/按钮/列表名/段标题 · 12 `text-meta` 次级/表头/路径/角标。`text-lg`/`text-xl`=`title`，`text-sm`/`text-base`=`body`，`text-xs`/`text-2xs`=`meta`（同像素别名，禁止再长出第四档）
 圆角:  6px `rounded-btn` 控件 / 8px `rounded-card` 卡片·弹层 / 12px `rounded-composer` 输入壳·聊天气泡；chip 与头像用 `rounded-full`（禁止魔法 `rounded-[Npx]`）
@@ -214,7 +214,9 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - **已落地（读模型 + 写入）**：跨工具钱包列表 + 真登录常驻「接到…」+ Dashboard 当前绑定；生成投影不进钱包。确认步走 `bind`，成功以该工具的当前绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
 - 实现落点：`TicketWalletList` / `ticket-wallet-model` / `lib/api/tickets`；`reuse-offer` 为真票常驻语义。
 
-#### 4.3.1 mode=providers — API 配置
+#### 4.3.1 mode=providers — API 配置（历史线框 / 过渡形态）
+
+> 当时按 Agent tab + `mode=providers` 的左右栏编辑器。**现行是全局票钱包**（见 §4.3 目标线框），不再以本线框为产品契约。
 
 ```
 ┌─ API 配置 ─────────────────────────────────────────────────┐
@@ -240,7 +242,9 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 └───────────────────────────────────────────────┘
 ```
 
-#### 4.3.2 mode=accounts — 账号与密钥（OAuth + API Key 同一凭据池）
+#### 4.3.2 mode=accounts — 账号与密钥（历史线框 / 过渡形态）
+
+> 当时按 Agent tab + `mode=accounts` 的账号卡列表。**现行是全局票钱包**（见 §4.3 目标线框），OAuth / API Key 仍是票面类型，但不再以本线框为第一导航。
 
 ```
 ┌─ 账号与密钥 ───────────────────────────────────────────────┐
@@ -277,7 +281,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 ### 4.4 Chat（会话）
 
-全高特例布局（`App` 中 `pathname === '/chat'`）：**无 TopBar / 无 PageHeader**，主区 `overflow-hidden` + 子树 `h-full`，会话列表与消息区自行分配高度；**不**套用 `max-w-content` 居中内容壳。其余功能页保持标准壳（TopBar + max-w-content）。本节为产品契约摘要；完整方案（现状诊断、逐流程交互、文件拆分、验收）见 [chat-page-redesign.md](chat-page-redesign.md)。
+全高特例布局（`App` 中 `pathname === '/chat'`）：**无 TopBar / 无 PageHeader**，主区 `overflow-hidden` + 子树 `h-full`，会话列表与消息区自行分配高度；**不**套用 `max-w-content` 居中内容壳。其余功能页保持标准壳（TopBar + max-w-content）。本节为产品契约摘要；完整方案（已落地，见 [chat-page-redesign.md](chat-page-redesign.md) Implemented 2026-08）。
 
 **目标线框：**
 

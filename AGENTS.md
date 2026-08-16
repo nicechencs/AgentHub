@@ -30,7 +30,7 @@ src/
 │  ├─ tauri/                    # 唯一允许调用 invoke 的地方
 │  └─ current.ts                # 默认生产实现
 ├─ dev/mocks/                   # browser mock（backend / account / chat / fixtures）
-├─ test/                        # factories + setup.ts
+├─ test/                        # setup.ts
 ├─ lib/api/                     # 兼容 façade，页面可渐进迁移
 └─ pages/
 ```
@@ -49,6 +49,7 @@ src/
 - mock 只服务 `dev:mock`（及测试），不得打进生产 build。
 - 非 Tauri 的生产页面：明确报错或显示 **unavailable**，禁止静默 mock。
 - 页面层不直接 `invoke`；`lib/api/` 为过渡兼容层。
+- 产品写入走 TicketPort（`lib/api/tickets` 的 plan/bind/unbind）；`lib/api/adapter` 只服务预览与桥运行时。
 
 ## 测试约定（摘要）
 

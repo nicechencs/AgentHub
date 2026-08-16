@@ -156,8 +156,9 @@ Claude 订阅接到 Codex：**产品不做**（不是「以后再转发」）。
 
 | 这份登录 | → Claude | → Pi | → Codex | → Grok |
 |---|---|---|---|---|
-| Kimi 会员 Key | ① 填 Claude 能用的地址 | ① 写进 Pi | ③ 要转发 | ① 写进 Grok 的 Chat 配置 |
-| OpenAI Key | — | ① 写进 Pi | ③ 要转发（还没做） | ① 写进 Grok 的 Chat 配置 |
+| Kimi 会员 Key | ① 填 Claude 能用的地址 | ① 写进 Pi | ③ 要转发 | ① 实验可写 |
+| OpenAI Key | — | ① 写进 Pi | ③ 要转发（还没做） | ① 实验可写 |
+| xAI Key | — | ① 写进 Pi | — | 换到这份登录 |
 | GLM / DeepSeek Key | ① 填 Claude 能用的地址 | ① 写进 Pi | ① 官方有 Codex 要的接口 | — |
 | Anthropic Key | 换到这份登录 | ① 写进 Pi | ③ 要转发 | — |
 | Codex 订阅 | ③ 本机转发 | ② 写进 Pi 认的登录 | 换到这份登录 | — |
@@ -255,7 +256,8 @@ Claude 订阅 → Codex 是**产品不做**，不是「以后再转发」。
 | [testing.md](testing.md) | 契约仍是 `route` / `canApply`；三种做法由 plan 派生 |
 | [cli-and-config.md](cli-and-config.md) | CLI「代理模式」≠ ③ |
 | [privacy.md](privacy.md) / [logging.md](logging.md) | 脱敏与截图 |
-| [platform-capability-*.md](platform-capability-refactor.md) | 平台端口历史；不定义复用产品 |
+| [platform-capability-refactor.md](platform-capability-refactor.md) | 平台端口拆分历史；不定义复用产品 |
+| [platform-capability-remediation.md](platform-capability-remediation.md) | 平台端口收口与兼容边界；不定义复用产品 |
 
 旧句「订阅本机路由是唯一产品」「只借鉴方法不借鉴产品」「消费订阅不是产品」作废。
 
