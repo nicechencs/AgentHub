@@ -139,10 +139,20 @@ function ComparisonBar({
 }
 
 function chipStatusLabel(status: ChatMessageStatus): string {
-  if (status === 'running') return '生成中';
-  if (status === 'cancelled') return '已取消';
-  if (status === 'ok') return '成功';
-  return '失败';
+  switch (status) {
+    case 'running':
+      return '生成中';
+    case 'cancelled':
+      return '已取消';
+    case 'ok':
+      return '成功';
+    case 'timeout':
+      return '超时';
+    case 'skipped':
+      return '已跳过';
+    default:
+      return '失败';
+  }
 }
 
 function ChipStatus({ status }: { status: ChatMessageStatus }) {

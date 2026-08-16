@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '@/components/ui/toast';
-import { AGENT_IDS } from '@/config/agents';
 import { listAgents } from '@/lib/api/agent';
 import {
   chatCancel,
@@ -31,6 +30,7 @@ import {
   filterConversations,
   groupConversationsByDay,
   newConversationDefaults,
+  nextConversationAgentIds,
   retryTarget,
   sendBlockers,
 } from './chat-model';
@@ -421,17 +421,11 @@ export function useChatPage() {
     if (!active || sending) return;
     if (installed.get(id) === false) return;
     if (hiddenIds.has(id) && !active.agentIds.includes(id)) return;
-    const set = new Set(active.agentIds);
-    if (set.has(id)) {
-      if (set.size === 1) {
-        toast({ title: '至少保留一个 Agent', variant: 'danger' });
-        return;
-      }
-      set.delete(id);
-    } else {
-      set.add(id);
+    const next = nextConversationAgentIds(active.agentIds, id);
+    if (!next) {
+      toast({ title: '至少保留一个 Agent', variant: 'danger' });
+      return;
     }
-    const next = AGENT_IDS.filter((a) => set.has(a));
     await patchActive({ agentIds: next });
   }
 

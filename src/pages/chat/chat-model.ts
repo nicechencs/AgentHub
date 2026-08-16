@@ -122,6 +122,18 @@ export function sendBlockers(input: {
   return out;
 }
 
+/** 多选勾选：保持当前顺序；新增追加到末尾。只剩一个时返回 null。 */
+export function nextConversationAgentIds(
+  current: AgentId[],
+  toggleId: AgentId,
+): AgentId[] | null {
+  if (current.includes(toggleId)) {
+    if (current.length === 1) return null;
+    return current.filter((id) => id !== toggleId);
+  }
+  return [...current, toggleId];
+}
+
 export function newConversationDefaults(
   active: Conversation | null,
   agentStatus: AgentStatus[],

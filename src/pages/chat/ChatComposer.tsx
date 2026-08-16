@@ -192,6 +192,7 @@ export function ChatComposer({
                   disabled={
                     !primaryAgent ||
                     sending ||
+                    sendingElsewhere ||
                     switchingProvider ||
                     Boolean(primaryAgent && hiddenIds.has(primaryAgent))
                   }
