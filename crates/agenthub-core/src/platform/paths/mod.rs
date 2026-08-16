@@ -2,7 +2,7 @@
 //!
 //! [`crate::utils::paths::agent_home`] is a thin façade over this registry.
 //!
-//! TODO(P13): co-locate with integrations/agents/<key>/.
+//! Per-agent roots live in [`crate::integrations`].
 
 mod contribution;
 mod registry;

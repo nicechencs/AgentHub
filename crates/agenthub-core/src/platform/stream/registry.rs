@@ -1,13 +1,12 @@
 //! Compile-time StreamParser registry.
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use crate::models::AgentId;
 use crate::platform::AgentKey;
 
 use super::parser::{StreamParseError, StreamParser};
-use super::sources;
 
 #[derive(Clone, Default)]
 pub struct StreamParserRegistry {
@@ -100,6 +99,5 @@ impl StreamParserRegistry {
 }
 
 pub fn builtin_stream_registry() -> &'static StreamParserRegistry {
-    static REG: OnceLock<StreamParserRegistry> = OnceLock::new();
-    REG.get_or_init(sources::build_registry)
+    &crate::integrations::production_integrations().stream
 }

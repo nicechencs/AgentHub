@@ -11,15 +11,15 @@ use crate::models::AgentId;
 use crate::platform::AgentKey;
 use crate::utils::atomic::atomic_write;
 
-use super::super::document::{ConfigApplyResult, ConfigChangePlan, NormalizedConfigDocument};
-use super::super::projector::AgentConfigProjector;
-use super::super::schema::{
-    AgentConfigSchema, ConfigValidationResult, ConfigValueType, NativeConfigFormat,
-};
-use super::util::{
+use crate::platform::config::sources::util::{
     field, finish_apply, get_str_map, invalid_toml, plan_from_maps, redact_secrets,
     secret_unchanged, string_val, validate_known_fields,
 };
+use crate::platform::config::AgentConfigProjector;
+use crate::platform::config::{
+    AgentConfigSchema, ConfigValidationResult, ConfigValueType, NativeConfigFormat,
+};
+use crate::platform::config::{ConfigApplyResult, ConfigChangePlan, NormalizedConfigDocument};
 
 const SCHEMA_VERSION: u32 = 1;
 const REL_PATH: &str = "config.toml";
@@ -437,4 +437,10 @@ impl AgentConfigProjector for CodexConfigProjector {
         }
         Ok(out)
     }
+}
+
+pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {
+    ctx.config
+        .register(std::sync::Arc::new(CodexConfigProjector))
+        .expect("unique built-in config projector");
 }

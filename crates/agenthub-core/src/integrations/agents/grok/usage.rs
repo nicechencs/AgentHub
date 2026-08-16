@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::Result;
-use crate::platform::usage::source::{UsageFileParser, UsageLineOutcome, UsageSource};
+use crate::platform::usage::{UsageFileParser, UsageLineOutcome, UsageSource};
 use crate::platform::AgentKey;
 use crate::usage::grok::{discover_grok_files, line_might_have_usage_grok, GrokParser};
 
@@ -27,6 +27,12 @@ impl UsageSource for GrokUsageSource {
             inner: GrokParser::new(path),
         })
     }
+}
+
+pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {
+    ctx.usage
+        .register(std::sync::Arc::new(GrokUsageSource))
+        .expect("unique built-in usage source");
 }
 
 struct GrokFileParser {

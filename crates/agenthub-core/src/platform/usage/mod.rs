@@ -1,8 +1,6 @@
 //! Platform Usage capability: ports, registry, and agent-agnostic collection.
 //!
-//! Agent-specific log discovery and line parsing live in [`sources`].
-//! TODO(P13): move sources under `integrations/agents/<key>/` once the
-//! integration layout is the sole contribution path.
+//! Agent-specific log discovery lives in [`crate::integrations`].
 
 mod collect;
 mod registry;

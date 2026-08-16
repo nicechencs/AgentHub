@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::Result;
-use crate::platform::usage::source::{UsageFileParser, UsageLineOutcome, UsageSource};
+use crate::platform::usage::{UsageFileParser, UsageLineOutcome, UsageSource};
 use crate::platform::AgentKey;
 use crate::usage::session_jsonl::{
     discover_dsh_files, extract_dsh, line_might_have_usage_dsh, note_dsh_model_from_line,
@@ -44,4 +44,10 @@ impl UsageSource for DshUsageSource {
     fn begin_file(&self, _path: &Path, _byte_offset: u64) -> Box<dyn UsageFileParser> {
         Box::new(DshParser { model: None })
     }
+}
+
+pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {
+    ctx.usage
+        .register(std::sync::Arc::new(DshUsageSource))
+        .expect("unique built-in usage source");
 }

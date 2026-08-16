@@ -1,14 +1,13 @@
 //! Compile-time registry of optional UsageSource contributions.
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use crate::error::{AppError, Result};
 use crate::models::AgentId;
 use crate::platform::AgentKey;
 
 use super::source::UsageSource;
-use super::sources;
 
 /// Lookup table keyed by the open AgentKey identity.
 #[derive(Clone, Default)]
@@ -87,8 +86,7 @@ impl UsageSourceRegistry {
     }
 }
 
-/// Process-wide builtin sources (Claude/Codex/Kimi/Grok/Pi/WorkBuddy).
+/// Process-wide builtin sources (filled by `integrations::register_integrations`).
 pub fn builtin_usage_registry() -> &'static UsageSourceRegistry {
-    static REG: OnceLock<UsageSourceRegistry> = OnceLock::new();
-    REG.get_or_init(sources::build_registry)
+    &crate::integrations::production_integrations().usage
 }

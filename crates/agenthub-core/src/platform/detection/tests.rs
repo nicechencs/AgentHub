@@ -94,12 +94,14 @@ fn fn_detector_registers_without_agent_adapter() {
     let key = AgentKey::parse("sparse-probe").unwrap();
     let mut registry = DetectorRegistry::new();
     registry
-        .register(Arc::new(FnDetector::new(key.clone(), || InstallationObserved {
-            status: DetectStatus::NotFound,
-            version: None,
-            binary_path: None,
-            channel: Some("npm".into()),
-            notes: vec!["no adapter".into()],
+        .register(Arc::new(FnDetector::new(key.clone(), || {
+            InstallationObserved {
+                status: DetectStatus::NotFound,
+                version: None,
+                binary_path: None,
+                channel: Some("npm".into()),
+                notes: vec!["no adapter".into()],
+            }
         })))
         .unwrap();
 
@@ -111,7 +113,7 @@ fn fn_detector_registers_without_agent_adapter() {
 
 #[test]
 fn builtin_detectors_cover_eight_agents_without_register_all() {
-    // builtin_detector_registry is built from sources::build_registry, not register_all.
+    // builtin_detector_registry is filled by integrations::register_integrations, not register_all.
     let detectors = builtin_detector_registry();
     assert_eq!(detectors.supported_agent_keys().len(), AgentId::ALL.len());
     for agent in AgentId::ALL {
@@ -133,9 +135,15 @@ fn builtin_detectors_cover_eight_agents_without_register_all() {
     for agent in AgentId::ALL {
         let via_detector = detectors.get_agent_id(agent).unwrap().detect();
         let via_adapter = adapters.get(agent).unwrap().detect();
-        assert_eq!(via_detector.status, via_adapter.status, "{}", agent.as_str());
         assert_eq!(
-            via_detector.version, via_adapter.version,
+            via_detector.status,
+            via_adapter.status,
+            "{}",
+            agent.as_str()
+        );
+        assert_eq!(
+            via_detector.version,
+            via_adapter.version,
             "{}",
             agent.as_str()
         );
@@ -149,7 +157,8 @@ fn builtin_detectors_cover_eight_agents_without_register_all() {
             agent.as_str()
         );
         assert_eq!(
-            via_detector.channel, via_adapter.channel,
+            via_detector.channel,
+            via_adapter.channel,
             "{}",
             agent.as_str()
         );

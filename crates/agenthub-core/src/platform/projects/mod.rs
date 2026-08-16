@@ -3,8 +3,8 @@
 //! Agent-specific filesystem discovery is registered as contributions.
 //! [`crate::services::ProjectService`] merges, sorts, applies metadata, and deletes.
 //!
-//! Scan helpers remain under `services/project_service/scan` for now (P1-4);
-//! TODO(P2-1): move source impls under integrations/agents/<key>/.
+//! Scan helpers remain under `services/project_service/scan`.
+//! Per-agent sources live in [`crate::integrations`].
 
 mod registry;
 mod source;

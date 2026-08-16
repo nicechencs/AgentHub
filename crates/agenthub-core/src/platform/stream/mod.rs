@@ -4,7 +4,7 @@
 //! [`crate::utils::stream_parse::StreamSession`]; agent-specific NDJSON
 //! decoding is registered here.
 //!
-//! TODO(P13): move sources under integrations/agents/<key>/.
+//! Per-agent NDJSON decoders live in [`crate::integrations`].
 
 mod parser;
 mod registry;
