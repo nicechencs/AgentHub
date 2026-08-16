@@ -6,11 +6,14 @@
 //! provider is made current, and a failed apply must not leave a newly-started
 //! listener running.  Neither upstream nor local bearer tokens cross the
 //! Tauri command boundary.
+//!
+//! Process-local profile / target gates and the credential-free status DTO live
+//! in [`agenthub_core::adapter_control`] so commands stay Tauri-neutral.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::time::SystemTime;
 
+use agenthub_core::adapter_control::AdapterBridgeStatus;
 use agenthub_core::bridge::{
     BridgeHostError, BridgeRuntimeHost, BridgeRuntimeState, BridgeRuntimeStatus,
     BridgeUpstreamStatus,
@@ -24,7 +27,6 @@ use agenthub_core::services::{
     ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
 };
 use agenthub_core::AgentHub;
-use serde::Serialize;
 
 use crate::commands::{map_err_string, with_hub_blocking};
 use crate::exit_coordinator::LifecycleShutdownBarrier;
@@ -36,109 +38,11 @@ const CODE_BRIDGE_RESTORE_SOURCE: &str = "adapter.bridge_restore_source";
 const CODE_BRIDGE_RESTORE_START: &str = "adapter.bridge_restore_start";
 const CODE_BRIDGE_PORT_IN_USE: &str = "adapter.port_in_use";
 
-/// Process-local authority for bridge sagas. Every operation for one profile
-/// takes the same lock, while provider-changing stages also serialize against
-/// other Codex bridge projections before a live config snapshot is captured.
-/// This is intentionally owned by `AppState`, not a global: tests and
-/// alternate desktop hosts must not share lifecycle state.
-pub(crate) struct AdapterBridgeSagaCoordinator {
-    profiles: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
-    targets: Mutex<HashMap<AgentId, Arc<tokio::sync::Mutex<()>>>>,
-}
+/// Process-local saga gates (Tauri-neutral; defined in core).
+pub(crate) use agenthub_core::adapter_control::AdapterBridgeSagaCoordinator;
 
-impl AdapterBridgeSagaCoordinator {
-    pub(crate) fn new() -> Self {
-        Self {
-            profiles: Mutex::new(HashMap::new()),
-            targets: Mutex::new(HashMap::new()),
-        }
-    }
-
-    async fn lock_profile(&self, profile_id: &str) -> tokio::sync::OwnedMutexGuard<()> {
-        let lock = {
-            let mut profiles = self
-                .profiles
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            Arc::clone(
-                profiles
-                    .entry(profile_id.to_owned())
-                    .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
-            )
-        };
-        lock.lock_owned().await
-    }
-
-    /// The single Tauri authority for mutations that can change one target
-    /// agent's live configuration or authentication.  The lock is per-agent
-    /// so a Claude operation never unnecessarily blocks Codex, while all
-    /// Codex paths share exactly the same authority as a bridge saga.
-    pub(crate) async fn lock_target(&self, agent: AgentId) -> tokio::sync::OwnedMutexGuard<()> {
-        let lock = {
-            let mut targets = self
-                .targets
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            Arc::clone(
-                targets
-                    .entry(agent)
-                    .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
-            )
-        };
-        lock.lock_owned().await
-    }
-}
-
-impl Default for AdapterBridgeSagaCoordinator {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Credential-free listener state exposed through Tauri.
-///
-/// The Core `BridgeRuntimeStatus` intentionally has no serde implementation,
-/// so the GUI gets this small, deliberate DTO rather than a structural dump of
-/// runtime internals.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct AdapterBridgeStatusDto {
-    pub profile_id: String,
-    pub port: Option<u16>,
-    pub running: bool,
-    pub state: String,
-    pub upstream_status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_connection_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub started_at_unix_ms: Option<u128>,
-}
-
-impl AdapterBridgeStatusDto {
-    fn stopped(profile: &AdapterProfile) -> Self {
-        Self {
-            profile_id: profile.id.clone(),
-            port: profile.local_port,
-            running: false,
-            state: "stopped".into(),
-            upstream_status: "stopped".into(),
-            source_connection_id: Some(profile.source_id.clone()),
-            started_at_unix_ms: None,
-        }
-    }
-
-    fn from_runtime(status: BridgeRuntimeStatus) -> Self {
-        Self {
-            profile_id: status.profile_id,
-            port: Some(status.port),
-            running: status.running,
-            state: runtime_state_name(status.state).into(),
-            upstream_status: upstream_status_name(status.upstream_status).into(),
-            source_connection_id: status.source_connection_id,
-            started_at_unix_ms: system_time_millis(status.started_at),
-        }
-    }
-}
+/// Wire / test alias for the core credential-free bridge status DTO.
+pub(crate) type AdapterBridgeStatusDto = AdapterBridgeStatus;
 
 /// Apply a supported local bridge through the desktop host saga.
 ///
@@ -1000,28 +904,6 @@ fn map_bridge_host_error(error: BridgeHostError) -> String {
     // Host error implementations intentionally contain no bearer; still use a
     // stable GUI-facing code and do not serialize the Debug representation.
     format!("本机桥无法启动或停止 [{CODE_BRIDGE_START}]: {error}")
-}
-
-fn runtime_state_name(state: BridgeRuntimeState) -> &'static str {
-    match state {
-        BridgeRuntimeState::Starting => "starting",
-        BridgeRuntimeState::Running => "running",
-        BridgeRuntimeState::Stopping => "stopping",
-        BridgeRuntimeState::Stopped => "stopped",
-        BridgeRuntimeState::Error => "error",
-        BridgeRuntimeState::Degraded => "degraded",
-    }
-}
-
-fn upstream_status_name(status: BridgeUpstreamStatus) -> &'static str {
-    status.as_str()
-}
-
-fn system_time_millis(value: SystemTime) -> Option<u128> {
-    value
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|value| value.as_millis())
 }
 
 #[cfg(test)]
