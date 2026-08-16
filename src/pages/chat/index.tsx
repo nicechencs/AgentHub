@@ -111,7 +111,6 @@ export default function ChatPage() {
                 setDraft={page.setDraft}
                 sending={page.sendingHere}
                 active={page.active}
-                installed={page.installed}
                 providers={page.providers}
                 primaryAgent={page.primaryAgent}
                 agentPickerLabel={page.agentPickerLabel}
@@ -119,6 +118,7 @@ export default function ChatPage() {
                 modelPickerSubtitle={page.modelPickerSubtitle}
                 switchingProvider={page.switchingProvider}
                 hiddenIds={page.hiddenIds}
+                pickerRows={page.pickerRows}
                 blockers={page.blockers}
                 connectionCaption={page.connectionCaption}
                 onSend={() => void page.handleSend()}

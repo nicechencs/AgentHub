@@ -9,8 +9,58 @@ import type { TurnGroup } from './chat-format';
 
 export type ChatSendBlocker =
   | { kind: 'hiddenAgents'; agentIds: AgentId[] }
+  | { kind: 'unconfiguredAuth'; agentIds: AgentId[] }
   | { kind: 'noCwd' }
   | { kind: 'sendingElsewhere'; conversationId: string; title: string };
+
+export type ChatAgentPickerReason = 'hidden' | 'noAuth';
+
+export type ChatAgentPickerRow = {
+  id: AgentId;
+  selectable: boolean;
+  reason: ChatAgentPickerReason | null;
+};
+
+/** 已绑定登录 / API Key 才算配置了授权；未配置或未登录不可选。 */
+export function agentHasConfiguredAuth(status: AgentStatus | undefined): boolean {
+  if (!status?.installed) return false;
+  if (status.effectiveKind && status.effectiveKind !== 'none') return true;
+  if (status.authHealth === 'verified' || status.authHealth === 'renewable' || status.authHealth === 'configured') {
+    return true;
+  }
+  if (status.authHealth === 'missing' || status.authHealth === 'needs_login') return false;
+  if (status.authLabel === 'API') return true;
+  if (status.authStatus === 'valid' || status.authStatus === 'expiring') return true;
+  return false;
+}
+
+export function isChatAgentSelectable(status: AgentStatus | undefined): boolean {
+  return Boolean(status?.installed && !status.hidden && agentHasConfiguredAuth(status));
+}
+
+/**
+ * 已安装（或已在会话里）的 Agent：可选的在前，已隐藏 / 未配置授权的置底且不可选。
+ */
+export function chatAgentPickerRows(input: {
+  catalogIds: AgentId[];
+  agentStatus: AgentStatus[];
+  selectedIds: AgentId[];
+}): ChatAgentPickerRow[] {
+  const byId = new Map(input.agentStatus.map((a) => [a.agentId, a]));
+  const rows: ChatAgentPickerRow[] = [];
+  for (const id of input.catalogIds) {
+    const status = byId.get(id);
+    const installed = status?.installed === true;
+    const selected = input.selectedIds.includes(id);
+    if (!installed && !selected) continue;
+    const hidden = Boolean(status?.hidden);
+    const noAuth = !agentHasConfiguredAuth(status);
+    const selectable = Boolean(installed && !hidden && !noAuth);
+    const reason: ChatAgentPickerReason | null = hidden ? 'hidden' : noAuth ? 'noAuth' : null;
+    rows.push({ id, selectable, reason });
+  }
+  return [...rows.filter((r) => r.selectable), ...rows.filter((r) => !r.selectable)];
+}
 
 export type ConversationDayKey = 'today' | 'yesterday' | 'week' | 'earlier';
 
@@ -101,6 +151,7 @@ export function groupConversationsByDay(
 export function sendBlockers(input: {
   conversation: Conversation;
   hiddenIds: Set<AgentId>;
+  unconfiguredAuthIds?: Set<AgentId>;
   sendingConversationId: string | null;
   sendingTitle?: string;
 }): ChatSendBlocker[] {
@@ -108,6 +159,12 @@ export function sendBlockers(input: {
   const hidden = input.conversation.agentIds.filter((id) => input.hiddenIds.has(id));
   if (hidden.length > 0) {
     out.push({ kind: 'hiddenAgents', agentIds: hidden });
+  }
+  const unconfigured = input.conversation.agentIds.filter(
+    (id) => !input.hiddenIds.has(id) && input.unconfiguredAuthIds?.has(id),
+  );
+  if (unconfigured.length > 0) {
+    out.push({ kind: 'unconfiguredAuth', agentIds: unconfigured });
   }
   if (!input.conversation.cwd) {
     out.push({ kind: 'noCwd' });
@@ -142,15 +199,19 @@ export function newConversationDefaults(
   const uninstalled = new Set(
     agentStatus.filter((a) => a.installed === false).map((a) => a.agentId),
   );
-  const fallback = agentStatus.find((a) => a.installed && !a.hidden)?.agentId;
+  const fallback = agentStatus.find((a) => isChatAgentSelectable(a))?.agentId;
   const fallbackIds: AgentId[] = fallback ? [fallback] : [];
 
   if (!active) {
     return { agentIds: fallbackIds, cwd: null };
   }
 
-  // 继承当前会话顺序（agentIds[0] 是 primary），只过滤 hidden / 未安装
-  const kept = active.agentIds.filter((id) => !hidden.has(id) && !uninstalled.has(id));
+  // 继承当前会话顺序（agentIds[0] 是 primary），只保留可选 Agent
+  const byId = new Map(agentStatus.map((a) => [a.agentId, a]));
+  const kept = active.agentIds.filter((id) => {
+    if (hidden.has(id) || uninstalled.has(id)) return false;
+    return agentHasConfiguredAuth(byId.get(id));
+  });
 
   return {
     agentIds: kept.length > 0 ? kept : fallbackIds,
@@ -251,6 +312,11 @@ export function blockerCopy(blocker: ChatSendBlocker): {
       return {
         text: '会话包含已隐藏 Agent，暂不能发送',
         primaryAction: '去 Agents 页',
+      };
+    case 'unconfiguredAuth':
+      return {
+        text: '会话包含未配置授权的 Agent，暂不能发送',
+        primaryAction: '去 Connections 页',
       };
     case 'noCwd':
       return {
