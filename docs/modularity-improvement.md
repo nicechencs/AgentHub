@@ -281,7 +281,7 @@ adapter/secret/   按 source product
 
 | 文件 | 下一刀 |
 |---|---|
-| `pages/chat/index.tsx` | `ChatComposer` / `ChatProcessPanel` / `chat-format.ts` |
+| `pages/chat/index.tsx` | 已拆 `chat-model` / `use-chat-page` / `ChatSessionRail` / `ChatSessionHeader` / `ChatTranscript` / `ChatMessageBubble` / `ChatSettingsDialog`（`ChatComposer` / `ChatProcessPanel` / `chat-format` 保留打磨） |
 | `pages/skills/index.tsx` | preview-split + Library/Market；`SkillMarkdownPreviewPanel` 迁出 `shared` |
 | `pages/projects/index.tsx` | format/prompts/filter + `ProjectTree` |
 | `pages/agents/agent-card.tsx` | lifecycle hook + uninstall dialog |
