@@ -3,14 +3,15 @@
 > **定位**：对标 **Cursor** / **Codex**（及同类 IDE 工作台）的**视觉层级与交互质感**，不是抄皮肤、不是改产品信息架构。  
 > **范围**：颜色层级、边框、字号/字体、表面分层、预览面板、提示体系、辅助信息；优先落在 **Skills** 与**全站 token/组件**，再推广到 Connections / Agents / Chat。  
 > **关系**：本文件是体验与视觉执行方案；页面线框与业务交互仍以 [ui-design.md](ui-design.md) 为产品契约。冲突时：**业务规则以 ui-design 为准，视觉执行以本文件收敛 token 与组件为准**。  
-> **版本**：v1.1 · 2026-08-06（实机核验版）
-> **截图说明**：已在同一台 Windows 设备、浅色主题、相近 1440px 窗口宽度下核验 **AgentHub Skills（关/开预览）**、**Cursor Settings** 与 **ChatGPT/Codex 工作台**；截图及可见差异见 §12.2。Cursor 图为避免露出账户区域裁去底部 80px，不影响本次灰阶、边框和信息层级判断。
+> **版本**：v1.1 · 2026-08-06（实机核验版）  
+> **落地状态（2026-08）**：**Phase 0–2 大体已落地**（token / Skills 静音与预览一体 / 文案包）；**Phase 3–5 仍是计划**（全站控件方言、动效、主题精修）。  
+> **截图**：仓库不存实机图，以 `pnpm dev:mock` 为准。当时核验条件见 §12.2 文字结论，不链本地 png。
 
 ---
 
 ## 0. 审查结论与已拍板决策
 
-**结论：批准进入 Phase 0–1。** 实机对比支持原方案的主方向，但修正两点轻重：AgentHub 的全局框架与侧栏并不差，当前最大差距集中在 **Skills 内容面过度表格化** 与 **预览焦点叙事不完整**；indigo 色相本身不是 Phase 0 的首要问题。
+**结论（当时核验）**：实机对比支持原方案的主方向，但修正两点轻重：AgentHub 的全局框架与侧栏并不差，当时最大差距集中在 **Skills 内容面过度表格化** 与 **预览焦点叙事不完整**；indigo 色相本身不是 Phase 0 的首要问题。Phase 0–2 现已大体落地，不必再按「批准进入 Phase 0–1」排期。
 
 已拍板：
 
@@ -156,7 +157,7 @@ Skills 单页可同时出现：`PageHeader`、Tabs、SegmentedControl、AgentTab
 | AgentHub Skills 行同时展示名称、描述、绝对路径，并叠加 Card 外框与行分隔 | 首屏噪声主要来自**三行元信息 + 表格壳** | Phase 1 固定「名称 + 最多一行描述」，路径移到预览/footer；新增 flush/workbench 表壳变体 |
 | 打开预览后，左侧没有可辨 active 行 | 预览与列表缺同一焦点叙事 | `activeKey` 成为 Phase 1 验收阻断项，不得只复用 checkbox selected |
 | 预览 header 两层、路径常驻；Markdown 首屏标题和首段明显过大过重 | 右栏 chrome 与文档正文同时抢主视线 | `SkillMarkdownPreviewPanel` 与 `MarkdownView(document)` 必须一起收敛，不能只改容器 |
-| Cursor Settings 主要靠宽松面差和组块底色分层，极少使用外包边框 | 原「边框堆叠」诊断成立 | `TableShell` 需要显式 workbench/flush 变体，而不是继续给页面传 class 打补丁 |
+| Cursor Settings 主要靠宽松面差和组块底色分层，极少使用外包边框 | 原「边框堆叠」诊断成立 | `TableShell` 已有 workbench/flush 变体；**Skills 矩阵仍用默认 Card 壳，flush 未用** |
 | ChatGPT/Codex 空白工作台大面积留白，只在任务卡与 composer 上给极弱轮廓 | Codex 的「克制」来自少量高价值表面，不是单纯缩小字号 | AgentHub 不照抄大留白；只借其辅助信息降噪和焦点单一性 |
 
 **误判修正**：不再把 `#4F46E5` 视为「冲突最强的一点」，也不建议 Phase 0 把 `--text-muted` 改成更浅的 `#8B8B96`。这两项都可能掩盖真正的结构噪声，且后者会降低小字可读性。
@@ -175,7 +176,7 @@ Skills 单页可同时出现：`PageHeader`、Tabs、SegmentedControl、AgentTab
 | 1 Panel | `--bg-panel` | `#FFFFFF` | `#121214` | 右预览、侧栏、浮层底 |
 | 2 Subtle | `--bg-subtle` | `#F1F1F3` | `#1A1A1D` | 表头、工具条条带 |
 | 3 Hover | `--bg-hover` | `#EBEBED` | `#1C1C1F` | 行 hover |
-| 4 Active | **新增** `--bg-active` | `#E4E4E7` | `#27272A` | **当前预览行 / 当前连接** |
+| 4 Active | `--bg-active` | `#E4E4E7` | `#2c2c31` | **当前预览行 / 当前连接** |
 | Overlay | panel + shadow | 沿用 Panel | 沿用 Panel | Dialog / Menu / Toast |
 
 **规则**：
@@ -399,7 +400,7 @@ checkbox 多选 ⟂ activeKey  // 两套状态，禁止混用
 
 **改动**：
 
-1. `globals.css`：只新增 `--bg-active`（浅 `#E4E4E7` / 深 `#27272A`）与 `--text-disabled`（浅 `#A1A1AA` / 深 `#52525B`）；**不改**现有 secondary/muted/accent 数值。
+1. `globals.css`：只新增 `--bg-active`（浅 `#E4E4E7` / 深 `#2c2c31`，与 `tokens.ts` 一致）与 `--text-disabled`（浅 `#A1A1AA` / 深 `#52525B`）；**不改**现有 secondary/muted/accent 数值。
 2. Accent 采用方案 B：盘点 Skills 中 `variant="default"`，一页只留一个主 CTA，其余用现有 secondary / ghost；不新建按钮变体、不换色相。
 3. `docs/ui-design.md` 同步 token、Skills fullBleed 特例与本文边界。
 4. 提示延迟统一沿用 `src/main.tsx` 的 200ms；在本文与 `tooltip.tsx` 约定中补「禁止业务 native title」核对清单。
@@ -413,7 +414,7 @@ checkbox 多选 ⟂ activeKey  // 两套状态，禁止混用
 | 项 | 动作 |
 |----|------|
 | 文案 | 删除 Tab 下常驻长说明；图例提供明确折叠按钮，默认折叠，并记住用户选择 |
-| 表壳 | 为 `TableShell` 增加显式 workbench/flush 变体：取消 Card shadow/外包框，仅保留必要分隔；不修改所有表格默认值 |
+| 表壳 | 为 `TableShell` 增加显式 workbench/flush 变体（组件已有；**Skills 矩阵仍用默认 TableShell = Card 壳，flush 未用**）；不修改所有表格默认值 |
 | 列表 | 名称 13px 主文；描述存在时固定一行 secondary + ellipsis，所有行高度稳定；绝对路径移出行，放预览/footer |
 | 提示 | 去掉行级 native `title` 教学串；按钮保留短 Hint，统一 200ms |
 | Markdown | 收敛 `MarkdownView(document)` 标题、段间距、代码块与列表密度，按 §6.4 验收 |
@@ -506,17 +507,15 @@ checkbox 多选 ⟂ activeKey  // 两套状态，禁止混用
 
 ---
 
-## 11. 建议执行顺序（给排期）
+## 11. 建议执行顺序（历史排期；Phase 0–2 已大体落地）
 
 ```text
-Week 1: Phase 0 + Phase 1（体感跃迁最大）
-Week 1–2: Phase 2（文案）
-Week 2–3: Phase 3（全站收敛，可拆 PR）
+已落地: Phase 0 + Phase 1 + Phase 2（token / Skills 静音与预览 / 文案包）
+仍是计划: Phase 3（全站收敛，可拆 PR）
 Backlog: Phase 4–5
 ```
 
-**第一个可合并 PR 建议标题**：  
-`style(skills): quiet chrome, active row, preview surface hierarchy`
+Phase 0–1 的首个 PR 当时标题：`style(skills): quiet chrome, active row, preview surface hierarchy`。
 
 ---
 
@@ -536,32 +535,24 @@ Backlog: Phase 4–5
 - [ ] 筛选隐藏 active 时预览保留，header 来源明确
 - [ ] Markdown H1/H2 不压过预览 header，首屏无库默认大号 README 感
 
-### 12.2 对照截图与结论
+### 12.2 对照结论（仓库不存实机图）
 
-拍摄条件：Windows 浅色主题；窗口宽度均为 1440px。AgentHub 与 ChatGPT/Codex 为 1440×900；Cursor 原图同宽，为避免账户区域进入仓库裁去底部 80px，保留 1440×820 的有效审查区。  
-**隐私**：AgentHub Skills 截图使用 mock 路径（`c:\mock\…`），不得提交含真实用户目录的截图。
+当时核验条件：Windows 浅色主题；窗口宽度均为 1440px。AgentHub 与 ChatGPT/Codex 为 1440×900；Cursor 原图同宽，为避免账户区域进入仓库裁去底部 80px。  
+**仓库不存实机图**（`docs/assets/ui-experience-alignment/` 目录不存在），以 `pnpm dev:mock` 为准。AgentHub Skills 演示须用 mock 路径（`c:\mock\…`），不得提交含真实用户目录的截图。
 
 #### A. AgentHub Skills — 关闭预览
-
-![AgentHub Skills 关闭预览](assets/ui-experience-alignment/01-agenthub-skills-closed.png)
 
 **可见结论**：侧栏选中态与画布灰阶已接近桌面工具；噪声集中在内容区——Tab 下常驻教学段、Card 外壳、表头与逐行分隔同时存在，且每行把名称、描述、绝对路径全部常驻。Phase 1 应减内容面噪声，不重做侧栏。
 
 #### B. AgentHub Skills — 打开预览
 
-![AgentHub Skills 打开预览](assets/ui-experience-alignment/02-agenthub-skills-preview-open.png)
-
 **可见结论**：左右分栏方向正确，但左侧没有与右侧目标对应的 active 行；右栏双层 header、常驻路径和 Markdown 大标题共同抢视线。仅瘦身预览容器不足，必须同时处理 `activeKey` 与 `MarkdownView(document)`。
 
 #### C. Cursor Settings
 
-![Cursor Settings 浅色实机](assets/ui-experience-alignment/03-cursor-settings.png)
-
 **可见结论**：当前项主要靠中性灰底而非品牌色；设置组靠轻微面差分层，外包边框与逐行分隔很少。AgentHub 可借其「中性 active + 少边框」，无需照抄具体圆角或颜色。
 
 #### D. ChatGPT/Codex 工作台
-
-![ChatGPT Codex 浅色空白工作台](assets/ui-experience-alignment/04-chatgpt-codex.png)
 
 **可见结论**：主区域大面积留白，任务卡与 composer 才有弱轮廓；一个时刻只有一个明确任务入口。AgentHub 不适合复制这种留白比例，但应借其「说明不常驻、路径不铺满、功能色只落在小图标/状态」的克制。
 
@@ -594,4 +585,4 @@ Backlog: Phase 4–5
 4. **预览与列表未完成焦点叙事**；  
 5. **管理后台式 Table/Card 外壳**重于当前有限的 accent 曝光。
 
-按 Phase 0→1 执行即可在 Skills 上先对齐「表面层级 + 预览焦点 + 辅助信息」三条主线。Phase 0 保留 indigo 并降低暴露；是否换色相留待 Phase 1 前后同状态截图复核，不为对标而抄品牌皮肤。
+Phase 0–2 已大体落地，Skills 上「表面层级 + 预览焦点 + 辅助信息」三条主线已对齐。Phase 0 保留 indigo 并降低暴露；是否换色相仍属 Phase 5 计划，不为对标而抄品牌皮肤。Skills 矩阵仍用默认 `TableShell`（Card 壳），`flush` 未用。

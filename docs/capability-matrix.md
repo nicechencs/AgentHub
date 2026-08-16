@@ -15,7 +15,7 @@
 
 - 真源 = 各 adapter 的穷尽 `match` on `Capability`
 - 服务层经 `registry.require(...)` 闸门
-- 前端 `src/config/agents.ts` **仅展示元数据**（无 capabilities 镜像）；生产能力来自 doctor / agent 列表下发
+- 前端 `src/config/agents.ts` **禁止静态手抄** capabilities；字段可来自 runtime catalog，不以本地镜像为真源
 - Usage 已实现：七家 Full（含 `dsh`），Cursor Unsupported（见 §5）
 
 仍用四级状态表达：**Partial**（可放行须提示）、**Unsupported**（对方边界）、**Planned**（我们未接）。
@@ -36,7 +36,7 @@
 | **「能不能」** | 调用方据此决定放行或拒绝 | 进能力矩阵 | `supports_skills`、`write_config` 是否 fail-closed、是否支持结构化流 |
 | **「怎么做」** | 是参数/数据，不是能力 | 下沉为 adapter 方法 | npm 包名、安装脚本 URL、`agent_home` 映射、`managed_toml_provider_keys` |
 
-第二类**不要**塞进矩阵。`install_service.rs:107-170` 的 `npm_package` / `native_ps1_url` / `native_sh_url`、`utils/paths.rs:71-94` 的 `agent_home`、`adapters/mod.rs:181-199` 的 `managed_toml_provider_keys` 都应该变成 trait 方法（`fn npm_package(&self) -> Option<&'static str>`、`fn home_dir(&self) -> Result<PathBuf>` …），和实现放在同一个文件里。这是**并行的**清理项，不属于本设计的范围，但两件事一起做才能真正消掉 `adding-an-agent.md` 的清单。
+第二类**不要**塞进矩阵。安装贡献在 `platform/install/contribution.rs`（`npm_package` / native 脚本 URL 等）；`managed_toml_provider_keys` 在 `integrations/shared/toml_provider.rs`；`adapters/mod.rs` 是 façade（trait 在 `adapter_trait.rs`，registry 在 `registry.rs`）。这是**并行的**清理项，不属于本设计的范围，但两件事一起做才能真正消掉 `adding-an-agent.md` 的清单。
 
 账号池「同人多授权 / 同票去重」属于第二类（怎么认授权），**不进矩阵**；见 [account-authorization-pool.md](account-authorization-pool.md)。矩阵只回答 `AccountSwitch` / `ApiKeyAccount` 能不能。
 
@@ -95,11 +95,11 @@ pub struct CapabilityState {
 
 - `Partial` 表达 Kimi 危险模式、Cursor 项目列表这类"能用但要提示"的状态；
 - `Unsupported` 与 `Planned` 语义完全不同——前者是**对方 CLI 的边界**（永久），后者是**我们的待办**（会变）。合并二者会让 UI 无法区分"做不到"和"还没做"，也会让矩阵失去当路线图的价值；
-- `reason` 让所有拒绝都自带解释。现在 `skill_service.rs:382` 给用户的是 `skills are not supported for kimi`，矩阵化后能给出"Kimi CLI 无技能目录模型"。
+- `reason` 让所有拒绝都自带解释。`registry.require(agent, Capability::Skills)` 会带上 adapter 声明的原因（Kimi 为「Kimi CLI 无技能目录模型」）。
 
 ## 5. 现状矩阵（8 家 × 14 项；`dsh` 列按 adapter `capability()` 2026-08-15）
 
-DeepSeek Harness（`dsh`）已进生产 registry。其余七列仍是 2026-08-03 CLI 快照；以 `agenthub agent capabilities --markdown` 与 adapter 源码为准。
+DeepSeek Harness（`dsh`）已进生产 registry。级别表以 `agenthub agent capabilities --markdown` 与 adapter `capability()` 为准。
 
 > 生成：`cargo run -p agenthub-cli -- agent capabilities --markdown`
 
@@ -122,30 +122,33 @@ DeepSeek Harness（`dsh`）已进生产 registry。其余七列仍是 2026-08-03
 
 非 Full 单元格的依据与拟定 `reason`（路径/解析细节以 adapter 与 `project_service` 源码为准，不在此展开）：
 
-| 单元格 | reason |
+| 单元格 | reason（摘自 adapter `capability()`） |
 |---|---|
 | ConfigWrite / cursor | 无稳定配置写入契约，fail-closed |
-| AccountSwitch / workbuddy | UI：`暂不支持账号池切换` |
-| AccountSwitch / cursor | UI：`账号由 Cursor 管理`；不读写 IDE 私有账号库 |
-| ApiKeyAccount / codex | 可入池；live 应用仅支持官方 OAuth 凭据形态 |
-| ApiKeyAccount / pi | 可入池；provider schema 不稳定，不写回 live |
-| ApiKeyAccount / cursor | 仅入池；需用户自行完成官方登录或环境变量 |
+| AccountSwitch / workbuddy | 暂不支持账号池切换 |
+| AccountSwitch / cursor | 账号由 Cursor 管理 |
+| ApiKeyAccount / workbuddy | 暂不支持 API Key 账号池 |
+| ApiKeyAccount / codex | 可入池；live 应用仅支持 OAuth auth.json |
+| ApiKeyAccount / pi | 可入池；auth.json provider schema 不稳定，不写回 |
+| ApiKeyAccount / cursor | 可用 API Key 或 cursor-agent login |
 | Skills / kimi | Kimi CLI 无技能目录模型 |
-| LiveBackup / cursor | 无稳定配置/凭据文件契约，不备份 IDE 内部库 |
-| StructuredStream / workbuddy·cursor | CLI 仅提供 text 输出，无结构化事件流 |
-| DangerousMode / kimi | headless 下危险开关与提示模式互斥，不生效 |
-| DangerousMode / pi | 仅信任项目本地文件，非完全跳过确认 |
+| LiveBackup / cursor | 无稳定配置/凭据文件 |
+| StructuredStream / workbuddy | CLI 仅提供 text 输出，无结构化事件流 |
+| StructuredStream / cursor | Agent CLI 仅提供 text 输出 |
+| DangerousMode / kimi | -p 与 --yolo 互斥，headless 下该开关不生效 |
+| DangerousMode / pi | --approve 仅信任项目文件，非完全跳过确认 |
 | ProjectHistory / cursor | 仅工作区目录列表，无会话 transcript |
-| ProjectDelete / cursor | 目录内部结构无安全浅删契约 |
+| ProjectDelete / cursor | 无安全浅删契约 |
 | ProjectHistory / 各支持家 | 只读扫描 agent home 下已知会话/项目布局；mtime 索引可加速 |
-| ProviderPresets / pi·workbuddy | 暂无内置 provider 模板（手工 Provider 仍可写回） |
+| ProviderPresets / pi | 暂无内置 Pi provider 预设 |
+| ProviderPresets / workbuddy | 暂无内置 WorkBuddy provider 预设 |
 | ProviderPresets / cursor | 无 provider 配置契约 |
 | ConfigWrite / dsh | 只合并 home 级 DeepSeek LLM 插件行；整棵 Cordis 树 fail-closed |
 | AccountSwitch / dsh | 仅 API Key 引用切换，无 OAuth |
 | DangerousMode / dsh | 存在 danger composition；未验证官方非交互 flag |
 | ProjectDelete / dsh | 仅删除单会话 JSONL，不删 SQLite 整库 |
 | ProviderPresets / dsh | 内置 deepseek-official，不是通用预设商店 |
-| StructuredStream / dsh | headless 事件契约未验证，保持 Planned |
+| StructuredStream / dsh | headless 事件契约未验证 |
 
 **注意**：`Skills` 与 `ProviderPresets` 之外，本矩阵不重复 `install_channels()` 已返回的结构化数据——安装渠道是数据不是能力（§3）。
 
@@ -169,7 +172,7 @@ DeepSeek Harness（`dsh`）已进生产 registry。其余七列仍是 2026-08-03
 trait 新增一个**无默认实现**的方法，强制每家表态：
 
 ```rust
-// adapters/mod.rs
+// adapters/adapter_trait.rs（`adapters/mod.rs` 是 façade）
 pub trait AgentAdapter: Send + Sync {
     // …既有方法…
     fn capability(&self, cap: Capability) -> CapabilityState;
@@ -183,18 +186,17 @@ pub trait AgentAdapter: Send + Sync {
 fn capability(&self, cap: Capability) -> CapabilityState {
     use Capability::*;
     match cap {
-        ConfigWrite => unsupported("无稳定配置写入契约，fail-closed"),
-        AccountSwitch => unsupported("账号由 Cursor 管理"),
-        ApiKeyAccount => partial("仅入账号池；需自行设 CURSOR_API_KEY 或 agent login"),
-        Skills => full(),
-        LiveBackup => unsupported("无稳定配置/凭据文件"),
-        StructuredStream => unsupported("Agent CLI 仅提供 text 输出"),
-        DangerousMode => full(),
-        ProjectHistory => partial("仅工作区目录列表，无会话 transcript"),
-        ProjectDelete => unsupported("无安全浅删契约"),
-        ProviderPresets => unsupported("无 provider 配置契约"),
-        Usage => unsupported("IDE 内部用量库，明确范围外"),
-        Mcp | ModelSelect | SessionResume => planned("待验证接入"),
+        Skills | DangerousMode => CapabilityState::full(),
+        ConfigWrite => CapabilityState::unsupported("无稳定配置写入契约，fail-closed"),
+        AccountSwitch => CapabilityState::unsupported("账号由 Cursor 管理"),
+        ApiKeyAccount => CapabilityState::partial("可用 API Key 或 cursor-agent login"),
+        LiveBackup => CapabilityState::unsupported("无稳定配置/凭据文件"),
+        StructuredStream => CapabilityState::unsupported("Agent CLI 仅提供 text 输出"),
+        ProjectHistory => CapabilityState::partial("仅工作区目录列表，无会话 transcript"),
+        ProjectDelete => CapabilityState::unsupported("无安全浅删契约"),
+        ProviderPresets => CapabilityState::unsupported("无 provider 配置契约"),
+        Usage => CapabilityState::unsupported("IDE 内部用量库，明确范围外"),
+        Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
     }
 }
 ```
@@ -206,6 +208,7 @@ fn capability(&self, cap: Capability) -> CapabilityState {
 ### 7.2 汇总在 registry
 
 ```rust
+// adapters/registry.rs
 impl AdapterRegistry {
     /// 全局视图，供 GUI / CLI / 文档生成使用。
     pub fn matrix(&self) -> BTreeMap<AgentId, BTreeMap<Capability, CapabilityState>>;
@@ -214,7 +217,7 @@ impl AdapterRegistry {
 
 ### 7.3 一致性测试（矩阵可信的前提）
 
-声明与行为必须绑死，否则矩阵仍只是注释。参照已有的 `well_known_paths_cover_all_agents_non_empty`（`adapters/mod.rs:732`）风格，加一组遍历全 registry 的断言：
+声明与行为必须绑死，否则矩阵仍只是注释。参照已有的 `well_known_paths_cover_all_agents_non_empty`（`adapters/tests.rs`）风格，加一组遍历全 registry 的断言：
 
 ```rust
 #[test]
@@ -224,7 +227,7 @@ fn declared_capabilities_match_actual_behavior() {
 
         if adapter.capability(Capability::Skills).is_blocked() {
             assert!(adapter.skills_dir().is_none(), "{id} 声明无 skills 却给了目录");
-            assert!(!adapter.supports_skills());
+            // Adapter 上已无 `supports_skills`；技能端口见 `platform/skills/target.rs` 的 `AgentSkillTarget::supports_skills()`
         }
         if adapter.capability(Capability::ConfigWrite).is_blocked() {
             assert!(matches!(
@@ -236,7 +239,7 @@ fn declared_capabilities_match_actual_behavior() {
             assert!(adapter.live_backup_paths().is_empty());
         }
         if adapter.capability(Capability::StructuredStream).is_blocked() {
-            assert!(!ProcessMode::Auto.wants_structured_for(id));
+            assert!(!supports_structured_stream(id));
         }
         if adapter.capability(Capability::ProviderPresets).is_blocked() {
             assert!(presets::list_for(id).is_empty());
@@ -282,7 +285,7 @@ impl AdapterRegistry {
 }
 ```
 
-于是 `skill_service.rs:382-384` 这类代码变成一行：
+于是技能闸门收成一行：
 
 ```rust
 let adapter = self.registry.require(agent, Capability::Skills)?;
@@ -301,20 +304,15 @@ let adapter = self.registry.require(agent, Capability::Skills)?;
 
 有效状态是两者的合取，但必须分开建模——否则 UI 只能显示同一个置灰，而用户在两种情况下需要采取**完全不同的行动**（一个是"换个 Agent"，一个是"去装"）。
 
-```rust
-impl AdapterRegistry {
-    pub fn effective(&self, agent: AgentId, cap: Capability, detect: &DetectResult)
-        -> EffectiveCapability;
-}
-```
+`AdapterRegistry::effective()` **未实现**（仓库里没有这个方法）。静态能力与运行时 detect 仍须分开建模，不要合并成同一个置灰。
 
 `min_version` 字段现在全为 `None`。等真出现版本门槛的能力再填——没有实例的提前建模是空转。
 
 ## 10. 前端契约
 
-`src/config/agents.ts` 只保留**展示元数据**（`id/name/color/letter/installChannels`），`capabilities` 字段整个删除，改由后端下发。
+`src/config/agents.ts` 只保留**展示元数据**（letter / 品牌色）；**禁止**静态手抄 capabilities。`capabilities` 字段可来自 runtime catalog（`mapCatalogCapabilities`），不以本地镜像为真源。
 
-能力是静态的，直接并入现有 `listAgents()` 响应即可，不增加往返：
+能力是静态的，直接并入现有 catalog / `listAgents()` 响应即可，不增加往返：
 
 ```ts
 export type CapabilityLevel = 'full' | 'partial' | 'unsupported' | 'planned';
@@ -327,13 +325,13 @@ export type AgentCapabilities = Record<Capability, AgentCapability>;
 
 UI 侧的具体变化：
 
-| 位置 | 现状 | 改后 |
-|---|---|---|
-| `src/pages/accounts/index.tsx` | `accountDisabledAgents(statuses)` 只读 detect/doctor 矩阵；无 statuses 时不猜 MOCK |
-| `src/pages/connections/index.tsx:133` | 硬编码一句通用 `disabledReason` | 渲染后端 `reason` |
-| `src/pages/skills/SkillMatrix.tsx:176` | `agent_unsupported` 无原因 | 单元格 tooltip 显示 `reason` |
-| Chat 危险模式开关 | Kimi 静默失效 | `partial` 渲染为黄色 badge + 提示 |
-| Dashboard 用量 / Chat 危险模式 | 布尔或静默 | 由 `Usage` / `DangerousMode` 能力驱动（含 partial 提示） |
+| 位置 | 现状 |
+|---|---|
+| `src/pages/accounts/` | 无 `index.tsx`；只剩 `ApiKeyAccountDialog` |
+| `src/pages/connections/` | 全局票钱包（`listTicketWallet`），不是按 Agent 分页的账号列表 |
+| `src/pages/skills/SkillMatrix.tsx` | 已用 `skillsCap?.reason` 做单元格 tooltip |
+| Chat 危险模式开关 | `partial` 应渲染为黄色 badge + 提示（Kimi 不得静默失效） |
+| Dashboard 用量 / Chat 危险模式 | 由 `Usage` / `DangerousMode` 能力驱动（含 partial 提示） |
 
 `partial` 态正好落实 [ui-design.md](ui-design.md) §1.5「能力不齐是常态」——现有布尔模型表达不了它。
 
@@ -364,7 +362,7 @@ P1/P2 之间可插入 §3 的「怎么做」下沉清理（`npm_package` / `agen
 - `Capability::ALL.len()` × `AgentId::ALL.len()` 个单元格全部有显式声明（编译器保证）。
 - 所有非 `Full` 单元格都有 `reason`（测试保证）。
 - 声明与行为一致（§7.3 测试保证）。
-- 全仓搜不到 `supports_account_switch` / `supports_skills` 的残留调用。
-- `src/config/agents.ts` 不再含 `capabilities` 字段。
+- Adapter 上已无 `supports_account_switch` / `supports_skills`。`platform/skills/target.rs` 的 `AgentSkillTarget::supports_skills()` 仍在，不要按「全仓搜不到 `supports_skills`」验收。
+- `src/config/agents.ts` **禁止静态手抄** capabilities；字段可来自 catalog。
 - 接入第 8 家 Agent 时，遗漏的能力声明表现为**编译错误**而非文档清单里的一行。
 - `agenthub agent capabilities --markdown` 的输出与 §5 表格一致（P4 后由生成器覆写本节）。

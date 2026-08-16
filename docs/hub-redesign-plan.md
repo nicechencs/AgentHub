@@ -27,6 +27,7 @@
 ```
 
 Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 仍按 Agent tab，行按钮只给可 apply 的 Provider。  
+**「Agent tab + 行按钮白名单」已被后续 Connections 全局钱包取代**（真票常驻「接到…」，不可行在对话框置灰 + 原因，不再靠行上藏按钮）。  
 **此后的目标形态**见 [connection-binding-model.md](connection-binding-model.md) / [ui-design.md](ui-design.md)：全局钱包、真票常驻「接到…」、不可行在同一对话框说明。下文 §3 是 Phase 1 冻结范围，不是下一轮 UI 约束。
 
 ## 3. Phase 1 范围
@@ -52,7 +53,7 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
    - 目标 Agent 自有凭据（已在组 1）。
    - **可行性权威：对每个候选 fan-out `planAdapter`（只读 Phase 0 预览），以 `plan.canApply` 决定可选/置灰**；路线摘要与原因取 `plan.analysis`。禁止以 `analysis.support` 推断可执行。
    - **两层门禁分离**：(a) 来源 OAuth 未完成 → 本地预检（沿用 adapter-sources.ts 既有识别），**不发起 fan-out**，该项显示"去 Connections 完成登录"；(b) OAuth 完成但能力矩阵关闭 → plan 返回的原因文本原样透传，置灰。
-   - 选中可行项 → 预览步（plan 结果人话化：写哪些配置/服务影响/是否起桥/端口/模型映射）→ 确认 → `applyAdapter`。
+   - 选中可行项 → 预览步（plan 结果人话化：写哪些配置/服务影响/是否起桥/端口/模型映射）→ 确认 → `bindTicket` / `bindViaTicket`（`src/lib/connect-flow/default-deps.ts`；当时方案写 `applyAdapter`）。
    - **apply 成功语义（如实）**：后端 apply 会自动使生成/更新的 Provider 成为目标 Agent 当前连接（直接路由与首次桥 apply 均如此）。成功态以 `result.provider.isCurrent` 为权威展示"已生效"；不存在"需手动切换"的常规成功分支。
    - 失败态：错误原文 + 保留选择与预览、可重试；busy 期间禁止重复提交与关闭。
    - apply 成功后由对话框触发页面级刷新（见 §6 集成契约 `onApplied`）；刷新失败显示"已应用，但列表刷新失败"，不得误报未生效。
@@ -80,8 +81,8 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
   - 兼容路由用途：存在 profile 满足 `profile.sourceKind/sourceId` 指向该凭据（按 `(kind, id)` 匹配，防 account/provider id 碰撞）**且** `generatedProviderId` 对应的 Provider 当前 `isCurrent=true` → 用于 `profile.targetAgentId`。
   - 同一 Agent 同时命中直接与兼容用途时去重（显示一次，直接用途优先）。
   - profile/生成 Provider/来源缺失或数据部分加载失败 → 该行用途显示"未知/不完整"，不得显示为"未使用"。
-- 行动作增加"用于其他 Agent"→ 打开 ConnectFlowDialog（来源预选）。入口仅对存在后端可 apply 路径的 Provider 显示：Kimi Code 会员 Provider、Claude 的 Anthropic Provider；account 来源（含 apikey）与 adapter 生成 Provider、无规则来源一律不显示。行按钮是可行动作入口；不可行诊断由 Dashboard「连接/切换」承担。
-- **不改动现有 agent tab 过滤结构**（跨 Agent 全局钱包视图属 Phase 2 终态，本期只做行级增强，控制回归面）。
+- 行动作增加"用于其他 Agent"→ 打开 ConnectFlowDialog（来源预选）。入口仅对存在后端可 apply 路径的 Provider 显示：Kimi Code 会员 Provider、Claude 的 Anthropic Provider；account 来源（含 apikey）与 adapter 生成 Provider、无规则来源一律不显示。行按钮是可行动作入口；不可行诊断由 Dashboard「连接/切换」承担。**此白名单已被后续 Connections 全局钱包取代**（真票常驻「接到…」）。
+- **不改动现有 agent tab 过滤结构**（当时把跨 Agent 全局钱包视图标为 Phase 2；**现已被全局钱包取代**，本期只做行级增强是当时回归面控制，不是现行约束）。
 
 ### 3.2 非目标（明确不做，Review 请勿要求扩入）
 

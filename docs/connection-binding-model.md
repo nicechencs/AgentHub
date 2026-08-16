@@ -1,6 +1,6 @@
 # 连接：票、绑定与协议图
 
-> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（Kimi/OpenAI API → Grok、OpenAI/xAI/GLM/DeepSeek API → Pi 属 ①；GLM/DeepSeek API → Codex 属 ①；Anthropic API Key → Codex 属 ③）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex 属 ①），GLM/DeepSeek → Pi 已可 experimental bind，② Claude/Codex/Grok 订阅 → Pi 已可 experimental bind，③ Codex Responses 与 Grok Chat 订阅 → Claude 已可 experimental bind；Claude 订阅 → Codex 产品不做，App Server/OauthOther 仍关闭；§6.6 未做**。
+> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（Kimi/OpenAI API → Grok、OpenAI/xAI/GLM/DeepSeek API → Pi 属 ①；GLM/DeepSeek API → Codex 属 ①；Anthropic API Key → Codex 属 ③）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex 属 ①），GLM/DeepSeek → Pi 已可 experimental bind，② Claude/Codex/Grok 订阅 → Pi 已可 experimental bind，③ Codex Responses 与 Grok Chat 订阅 → Claude 已可 experimental bind；Claude 订阅 → Codex 产品不做，App Server/OauthOther 仍关闭；dsh writer 已接入（`AgentId::Dsh` + `deepseek-api-to-dsh-v1`）。未做的是 sidecar 迁移**。
 > 日期：2026-08-15。  
 > 本文是实现用的领域模型，不是给最终用户看的说明书。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。页面、Hub 入口、Adapter、厂商规则文档以本文为准改对象名；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
 > 关联：[product-decisions.md](product-decisions.md)、[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[adapter-design.md](adapter-design.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[account-authorization-pool.md](account-authorization-pool.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)。
@@ -40,12 +40,17 @@ AgentHub 不「共享链接」，它把**一份登录**接到一个编程工具�
 
 | 字段 | 含义 |
 |---|---|
-| `id` | 稳定身份 |
+| `id` | `account:<id>` / `provider:<id>` |
+| `sourceKind` | `account` / `provider` |
+| `sourceId` | 底层行 id |
+| `agentId` | 出身 Agent（导入时的归属，不是能力） |
+| `label` | 展示名 |
 | `surface` | 产品表面：Kimi 会员、Anthropic API、OpenAI Key、Codex 订阅…… |
-| `credentialClass` | `api_key` / `oauth_refreshable` / …… |
+| `credentialClass` | 仅 `api_key` / `oauth` / `unknown` |
 | `speaks[]` | 这张票对**上游**能说的协议（Messages、Chat Completions、Responses……） |
-| `secretRef` | 只引用，不复制，不写进目标 Agent 的 live |
 | `importedFrom` | 仅审计：从哪个 Agent 导入。**不是能力** |
+
+钱包 DTO **没有** `secretRef`：密钥经 `AdapterSecretResolver` 按 `source_kind` 解析，不进票对象。生成投影不是票：`PROJECTION_NOT_A_TICKET`（「投影不是票 / 禁止二次投影」），不能再当 `bind` 来源。
 
 规则：
 
@@ -76,7 +81,8 @@ AgentHub 不「共享链接」，它把**一份登录**接到一个编程工具�
 | `agentId` | 目标 Agent |
 | `route` | `native` / `reshape` / `bridge` |
 | `active` | 该 Agent 当前是否用它。每个 Agent 同时只有一条 active |
-| `runtime?` | 仅 `bridge`：loopback、本地 bearer、桥进程。不是一张新票 |
+| `profileId` | 可选；对应 adapter profile |
+| `bridge` | 仅 `route=bridge`：loopback 端口 / 是否在跑。不是一张新票 |
 
 硬规则：
 
@@ -93,7 +99,7 @@ AgentHub 不「共享链接」，它把**一份登录**接到一个编程工具�
 | ActiveBinding（勿简称 Binding） | `ConnectionService` 的 Agent 当前行指针 | 与产品 Binding 同词不同物；改 current 不得误伤钱包绑定 |
 | 规划器 | `plan()` 唯一出口；内部矩阵 ∩ 私有 write_gate（有 bind 实现且 secret 可按 `source_kind` 解析） | `plan(ticket, agent)` 为唯一真理；Anthropic / OpenAI / xAI API Account → Pi 可写 |
 
-Account / Provider / live 事务仍由 core service 单点负责，不建设 `connectionsd`。`local_bridge` 的 listener 仍按 [sidecar 契约](adapter-sidecar-design.md) 走用户级进程。
+Account / Provider / live 事务仍由 core service 单点负责，不建设 `connectionsd`。`local_bridge` 的目标为用户级 sidecar（见 [sidecar 契约](adapter-sidecar-design.md)）；当前仍由 Tauri `AppState` / `BridgeRuntimeHost` 进程内托管。
 
 ## 3. 路由是协议图，不是商品表
 
