@@ -36,6 +36,8 @@ import { TicketWalletList } from './TicketWalletList';
 import {
   extrasFromPoolSource,
   findTicketPoolSource,
+  ticketAddDialogState,
+  type TicketAddKind,
   type TicketWalletFilter,
 } from './ticket-wallet-model';
 import {
@@ -225,6 +227,14 @@ export default function ConnectionsPage() {
     [pool.accounts, pool.providers],
   );
 
+  const openTicketAdd = useCallback((kind: TicketAddKind, agentId: AgentId) => {
+    const next = ticketAddDialogState(kind, agentId);
+    setAddAgentId(next.addAgentId);
+    if (next.clearEditProvider) setEditProvider(null);
+    if (next.loginImportOpen) setLoginImportOpen(true);
+    if (next.apiKeyDialogOpen) setApiKeyDialogOpen(true);
+  }, []);
+
   const handleEditTicket = useCallback(
     (ticket: TicketView) => {
       const source = findTicketPoolSource(ticket, pool.accounts, pool.providers);
@@ -379,14 +389,9 @@ export default function ConnectionsPage() {
             extrasForTicket={extrasForTicket}
             onEditTicket={handleEditTicket}
             onDeleteTicket={setDeleteTicket}
-            addAgentId={addAgentId}
             installedAgentIds={allowedAgents}
-            onPickAddAgent={setAddAgentId}
-            onAddKey={() => {
-              setEditProvider(null);
-              setApiKeyDialogOpen(true);
-            }}
-            onImportLogin={() => setLoginImportOpen(true)}
+            onAddKey={(id) => openTicketAdd('api-key', id)}
+            onImportLogin={(id) => openTicketAdd('import-login', id)}
           />
         </>
       )}

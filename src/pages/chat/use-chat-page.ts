@@ -13,6 +13,7 @@ import {
   updateConversation,
 } from '@/lib/api/chat';
 import { listProviders, switchProvider } from '@/lib/api/provider';
+import { pickDirectory } from '@/lib/api/settings';
 import { takeChatBootstrap } from '@/lib/chat-bootstrap';
 import { processKey, reduceProcessEvent, type ProcessMap } from '@/lib/chat-process';
 import type {
@@ -430,6 +431,25 @@ export function useChatPage() {
     }
   }
 
+  async function pickWorkingDirectory() {
+    if (!active) return;
+    try {
+      const picked = await pickDirectory({
+        title: '选择工作目录',
+        defaultPath: active.cwd ?? null,
+      });
+      if (picked) {
+        await patchActive({ cwd: picked });
+      }
+    } catch (e) {
+      toast({
+        title: '无法选择目录',
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
+    }
+  }
+
   async function renameTitle(next: string) {
     if (!active) return false;
     const title = next.trim();
@@ -690,6 +710,7 @@ export function useChatPage() {
     handleNewChat,
     confirmDelete,
     patchActive,
+    pickWorkingDirectory,
     renameTitle,
     toggleConversationAgent,
     handleSwitchProvider,

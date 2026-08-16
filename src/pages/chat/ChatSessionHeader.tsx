@@ -16,6 +16,7 @@ export function ChatSessionHeader({
   onExpandRail,
   onRename,
   onOpenSettings,
+  onPickWorkingDirectory,
 }: {
   active: Conversation | null;
   railOpen: boolean;
@@ -23,6 +24,7 @@ export function ChatSessionHeader({
   onExpandRail: () => void;
   onRename: (next: string) => Promise<boolean>;
   onOpenSettings: () => void;
+  onPickWorkingDirectory: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(active?.title ?? '');
@@ -113,10 +115,10 @@ export function ChatSessionHeader({
       {active && (
         <div className="flex min-w-0 shrink-0 items-center gap-1.5">
           <AgentChip agentIds={active.agentIds} hasHidden={hasHidden} />
-          <Hint label={active.cwd || '未设置工作目录'}>
+          <Hint label={active.cwd || '点击选择工作目录'}>
             <button
               type="button"
-              onClick={onOpenSettings}
+              onClick={onPickWorkingDirectory}
               className={cn(
                 'inline-flex h-7 max-w-[9rem] items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-meta',
                 active.cwd ? 'text-secondary hover:bg-hover' : 'text-warning hover:bg-hover',

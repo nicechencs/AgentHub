@@ -1,5 +1,7 @@
 //! Settings / path info / open logs directory — thin wrappers over SettingsService.
 
+pub mod pick_directory;
+
 use tauri::State;
 
 use crate::commands::{map_err_string, with_hub_blocking};

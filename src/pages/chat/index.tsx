@@ -82,6 +82,7 @@ export default function ChatPage() {
           onExpandRail={() => page.setRailOpen(true)}
           onRename={page.renameTitle}
           onOpenSettings={() => page.setSettingsOpen(true)}
+          onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
         />
 
         <ChatTranscript
@@ -125,6 +126,7 @@ export default function ChatPage() {
                 onToggleAgent={(id) => void page.toggleConversationAgent(id)}
                 onSwitchProvider={(id) => void page.handleSwitchProvider(id)}
                 onOpenSettings={() => page.setSettingsOpen(true)}
+                onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
                 onFocusConversation={page.focusConversation}
               />
             </div>

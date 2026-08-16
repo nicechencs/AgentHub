@@ -21,6 +21,14 @@ export async function openExternalUrl(url: string): Promise<void> {
   return getBackend().settings.openExternalUrl(url);
 }
 
+/** Native folder picker. `null` = cancelled. */
+export async function pickDirectory(options?: {
+  title?: string;
+  defaultPath?: string | null;
+}): Promise<string | null> {
+  return getBackend().settings.pickDirectory(options);
+}
+
 /** Static options (avoid module-init getBackend for tree-shaking / SSR-less safety). */
 export const LOG_LEVEL_OPTIONS: { value: LogLevel; label: string }[] = [
   { value: 'error', label: 'error — 仅错误' },
