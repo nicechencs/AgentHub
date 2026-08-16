@@ -3,6 +3,7 @@
 mod adapter_facade;
 mod config;
 mod install;
+pub(crate) mod managed;
 mod paths;
 mod project;
 mod stream;

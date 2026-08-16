@@ -1,8 +1,10 @@
 //! Codex integration (`codex`).
 
 mod adapter_facade;
+pub(crate) mod auth;
 mod config;
 mod install;
+pub(crate) mod managed;
 mod paths;
 mod project;
 mod stream;
@@ -26,3 +28,5 @@ pub fn register(ctx: &mut IntegrationContext<'_>) {
     );
     register_skills_from_home(ctx, AgentId::Codex, "skills");
 }
+
+pub(crate) use auth::write_api_key_auth;
