@@ -12,7 +12,10 @@ use crate::platform::skills::fs_safe::{
     ensure_no_symlink_in_ancestors, ensure_no_symlink_in_existing_prefix, is_exact_child,
     reject_source_target_overlap, validate_skill_id, validate_skills_root,
 };
-use crate::platform::skills::ownership::{project_copy_with_ownership, unproject_with_ownership};
+use crate::platform::skills::ownership::{
+    project_copy_with_ownership, project_link_with_ownership, unproject_with_ownership,
+    PROJECTION_MODE_LINK,
+};
 use crate::platform::skills::packages::validate_and_collect_source;
 use crate::platform::skills::target::SkillTargetRegistry;
 use crate::platform::AgentKey;
@@ -166,7 +169,16 @@ impl SkillReconciler {
         let revision = package.as_ref().map(|p| p.revision.as_str()).unwrap_or("1");
 
         if assignment.desired_enabled {
-            match self.project_copy(skill_id, agent_key, force) {
+            let project = if assignment
+                .projection_mode
+                .trim()
+                .eq_ignore_ascii_case(PROJECTION_MODE_LINK)
+            {
+                self.project_link(skill_id, agent_key, force)
+            } else {
+                self.project_copy(skill_id, agent_key, force)
+            };
+            match project {
                 Ok(()) => self.persist_observed(
                     skill_id,
                     agent_key.as_str(),
@@ -262,6 +274,28 @@ impl SkillReconciler {
             now,
         )?;
         Ok(outcome)
+    }
+
+    /// Project source skill onto agent skills root as a managed link.
+    ///
+    /// `force` cannot take over a foreign link or unmanaged user directory.
+    pub fn project_link(&self, skill_id: &str, agent_key: &AgentKey, force: bool) -> Result<()> {
+        let skill_id = validate_skill_id(skill_id)?;
+        let (source_dir, skills_root, target_dir) =
+            self.resolve_projection_paths(skill_id, agent_key)?;
+
+        let package = self.repo.get_package(skill_id)?;
+        let revision = package.as_ref().map(|p| p.revision.as_str()).unwrap_or("1");
+
+        project_link_with_ownership(
+            &skills_root,
+            skill_id,
+            &source_dir,
+            &target_dir,
+            force,
+            revision,
+            agent_key,
+        )
     }
 
     /// Project source skill onto agent skills root as a copy (existing sync semantics).

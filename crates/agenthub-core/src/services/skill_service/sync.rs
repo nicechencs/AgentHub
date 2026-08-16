@@ -277,7 +277,7 @@ impl SkillService {
         let record = lock.get(skill_id);
         let agent_key = AgentKey::from_agent_id(agent);
         assign.ensure_package(skill_id, record, &now)?;
-        assign.set_desired_enabled(skill_id, &agent_key, true, Some("copy"), &now)?;
+        assign.set_desired_enabled(skill_id, &agent_key, true, None, &now)?;
         reconciler.reconcile_one(skill_id, &agent_key, force, &now)
     }
 

@@ -11,23 +11,28 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::error::{AppError, Result};
+use crate::models::SkillLinkKind;
 use crate::platform::AgentKey;
 use crate::utils::atomic::atomic_write;
 
 use super::fs_safe::{
     collect_regular_files, ensure_no_symlink_in_existing_prefix, inspect_projection_target,
-    is_exact_child, is_link_or_reparse, link_resolves_to_source, remove_projection_link,
-    validate_skill_id, validate_skills_root, validate_tree_entries_safe, TargetPresence,
+    is_exact_child, is_link_or_reparse, is_path_inside, link_resolves_to_source,
+    remove_projection_link, validate_skill_id, validate_skills_root, validate_tree_entries_safe,
+    TargetPresence,
 };
-use super::packages::materialize_projection;
+use super::packages::{materialize_projection, validate_and_collect_source};
+use super::projection_link::create_projection_link;
 
 pub(crate) const OWNERSHIP_FORMAT_VERSION: u32 = 1;
 pub(crate) const PROJECTION_MODE_COPY: &str = "copy";
+pub(crate) const PROJECTION_MODE_LINK: &str = "link";
 
 const OWNERSHIP_DIR_SEGMENTS: &[&str] = &[".agenthub", "skill-ownership"];
 
@@ -536,6 +541,180 @@ pub(crate) fn project_copy_with_ownership(
         }
     }
     Ok(())
+}
+
+/// Project source as a managed link. Shared by the reconciler link path.
+///
+/// **Force semantics:** same as copy — foreign links and unmanaged directories
+/// are always `skill.conflict`. Force cannot claim them.
+///
+/// A verified managed copy is converted to a link by creating the link at a
+/// sibling staging path first. If that fails (or falls back to a physical copy),
+/// the original managed copy is left untouched.
+pub(crate) fn project_link_with_ownership(
+    skills_root: &Path,
+    skill_id: &str,
+    source_dir: &Path,
+    target_dir: &Path,
+    force: bool,
+    applied_revision: &str,
+    agent: &AgentKey,
+) -> Result<()> {
+    let _ = force;
+    let skill_id = validate_skill_id(skill_id)?;
+    validate_and_collect_source(source_dir, skill_id)?;
+
+    if !skills_root.exists() {
+        ensure_no_symlink_in_existing_prefix(skills_root)?;
+        fs::create_dir_all(skills_root)?;
+    }
+    validate_skills_root(skills_root)?;
+
+    match inspect_projection_target(target_dir)? {
+        TargetPresence::Missing => {
+            let (applied, _fell_back) = create_projection_link(source_dir, target_dir)?;
+            finalize_link_projection_ownership(
+                skills_root,
+                skill_id,
+                target_dir,
+                applied == SkillLinkKind::None,
+                applied_revision,
+            )
+        }
+        TargetPresence::Link { .. } => {
+            if !link_resolves_to_source(target_dir, source_dir) {
+                return Err(conflict_error(skill_id, agent, target_dir));
+            }
+            // Correct managed link: drop a leftover copy marker so bootstrap
+            // and verify_copy_ownership do not see a copy/link mismatch.
+            clear_ownership_marker(skills_root, skill_id)
+        }
+        TargetPresence::Directory => {
+            validate_tree_entries_safe(target_dir, "skill target")?;
+            match verify_copy_ownership(skills_root, skill_id, target_dir, None) {
+                Ok(_) => convert_managed_copy_to_link(
+                    skills_root,
+                    skill_id,
+                    source_dir,
+                    target_dir,
+                    applied_revision,
+                    agent,
+                ),
+                Err(e) if e.code() == "skill.conflict" => {
+                    Err(conflict_error(skill_id, agent, target_dir))
+                }
+                Err(e) => Err(e),
+            }
+        }
+        TargetPresence::Dangerous { kind } => Err(AppError::InvalidArg(format!(
+            "skill target for '{skill_id}' on {} is not a safe directory ({kind}): {}",
+            agent.as_str(),
+            target_dir.display()
+        ))),
+    }
+}
+
+/// Create a real link at a sibling path, then swap it over a verified copy.
+///
+/// Link-create failure or copy fallback leaves the managed copy in place
+/// (desired mode stays `link`; physical form is the fallback copy).
+fn convert_managed_copy_to_link(
+    skills_root: &Path,
+    skill_id: &str,
+    source_dir: &Path,
+    target_dir: &Path,
+    applied_revision: &str,
+    agent: &AgentKey,
+) -> Result<()> {
+    let staging = match allocate_link_staging_path(skills_root, skill_id) {
+        Ok(path) => path,
+        Err(_) => return Ok(()),
+    };
+
+    let (applied, _fell_back) = match create_projection_link(source_dir, &staging) {
+        Ok(result) => result,
+        Err(_) => {
+            let _ = cleanup_link_staging(&staging, skills_root);
+            return Ok(());
+        }
+    };
+
+    if applied == SkillLinkKind::None {
+        let _ = cleanup_link_staging(&staging, skills_root);
+        return Ok(());
+    }
+
+    if let Err(e) = unproject_with_ownership(skills_root, skill_id, source_dir, target_dir, agent) {
+        let _ = cleanup_link_staging(&staging, skills_root);
+        return Err(e);
+    }
+
+    if let Err(e) = fs::rename(&staging, target_dir) {
+        let _ = cleanup_link_staging(&staging, skills_root);
+        return Err(AppError::message(
+            "skill.swap",
+            format!(
+                "recycled managed copy for '{skill_id}' but failed to place link at {}: {e}",
+                target_dir.display()
+            ),
+        ));
+    }
+
+    finalize_link_projection_ownership(skills_root, skill_id, target_dir, false, applied_revision)
+}
+
+fn allocate_link_staging_path(skills_root: &Path, skill_id: &str) -> Result<PathBuf> {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    for i in 0u32..1024 {
+        let name = format!(".agenthub-link-{skill_id}-{nanos}-{i}");
+        let path = skills_root.join(&name);
+        if !is_path_inside(&path, skills_root) {
+            return Err(AppError::InvalidArg(format!(
+                "link staging path escapes skills root: {}",
+                path.display()
+            )));
+        }
+        if fs::symlink_metadata(&path).is_err() {
+            return Ok(path);
+        }
+    }
+    Err(AppError::message(
+        "skill.staging",
+        "could not allocate unique skill link staging path",
+    ))
+}
+
+fn cleanup_link_staging(path: &Path, skills_root: &Path) -> Result<()> {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return Ok(());
+    };
+    if !name.starts_with(".agenthub-link-") {
+        return Ok(());
+    }
+    if path.parent() != Some(skills_root) {
+        return Ok(());
+    }
+    match inspect_projection_target(path)? {
+        TargetPresence::Missing => Ok(()),
+        TargetPresence::Link { .. } => remove_projection_link(path),
+        TargetPresence::Directory => {
+            validate_tree_entries_safe(path, "skill helper")?;
+            fs::remove_dir_all(path).or_else(|e| {
+                if e.kind() == io::ErrorKind::NotFound {
+                    Ok(())
+                } else {
+                    Err(AppError::from(e))
+                }
+            })
+        }
+        TargetPresence::Dangerous { kind } => Err(AppError::InvalidArg(format!(
+            "refusing to clean unsafe link staging ({kind}): {}",
+            path.display()
+        ))),
+    }
 }
 
 /// After `create_projection_link`: real links clear stale markers; copy fallback

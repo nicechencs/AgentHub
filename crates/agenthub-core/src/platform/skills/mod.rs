@@ -82,3 +82,6 @@ mod ownership_tests;
 
 #[cfg(test)]
 mod commit_tests;
+
+#[cfg(test)]
+mod reconcile_link_tests;
