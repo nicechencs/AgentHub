@@ -28,7 +28,12 @@ import { agentDisplayName } from '@/config/agents';
 import type { AgentId, Conversation, Provider } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { extractModel } from './chat-format';
-import { blockerCopy, type ChatAgentPickerRow, type ChatSendBlocker } from './chat-model';
+import {
+  blockerCopy,
+  type ChatAgentPickerRow,
+  type ChatConnectionPickerView,
+  type ChatSendBlocker,
+} from './chat-model';
 
 /** Composer 正文区：约 1 行起、最多 ~12 行；超出后内部滚动，工具条始终贴底。 */
 const COMPOSER_MIN_PX = 56;
@@ -42,8 +47,7 @@ export function ChatComposer({
   providers,
   primaryAgent,
   agentPickerLabel,
-  modelPickerLabel,
-  modelPickerSubtitle,
+  connectionView,
   switchingProvider,
   hiddenIds,
   pickerRows,
@@ -63,8 +67,7 @@ export function ChatComposer({
   providers: Provider[];
   primaryAgent: AgentId | null;
   agentPickerLabel: string;
-  modelPickerLabel: string;
-  modelPickerSubtitle: string | null;
+  connectionView: ChatConnectionPickerView;
   switchingProvider: boolean;
   hiddenIds: Set<AgentId>;
   pickerRows: ChatAgentPickerRow[];
@@ -205,9 +208,9 @@ export function ChatComposer({
                   aria-label={connectionCaption ?? '切换连接'}
                 >
                   <span className="min-w-0 truncate">
-                    {modelPickerLabel}
-                    {modelPickerSubtitle ? (
-                      <span className="text-muted"> · {modelPickerSubtitle}</span>
+                    {connectionView.label}
+                    {connectionView.subtitle ? (
+                      <span className="text-muted"> · {connectionView.subtitle}</span>
                     ) : null}
                   </span>
                   <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
@@ -222,44 +225,59 @@ export function ChatComposer({
                 <p className="px-2 pb-1.5 text-meta text-muted">{connectionCaption}</p>
               )}
               <DropdownMenuSeparator />
-              {providers.length === 0 ? (
-                <div className="px-2 py-2">
-                  <p className="mb-2 text-meta text-muted">暂无连接</p>
-                  {primaryAgent && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => navigate(`/connections?agent=${primaryAgent}`)}
-                    >
-                      去 Connections 添加
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                providers.map((p) => {
-                  const model = extractModel(p.configText);
-                  return (
-                    <DropdownMenuItem
-                      key={p.id}
-                      disabled={p.isCurrent || switchingProvider}
-                      onClick={() => onSwitchProvider(p.id)}
-                    >
-                      <span className="flex min-w-0 flex-1 items-center gap-2">
-                        {p.isCurrent ? (
-                          <Check className="h-3.5 w-3.5 shrink-0 text-accent" />
-                        ) : (
-                          <span className="w-3.5 shrink-0" />
-                        )}
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate">{p.name}</span>
-                          {model ? (
-                            <span className="block truncate text-meta text-muted">{model}</span>
-                          ) : null}
+              {connectionView.currentLoginTitle && (
+                <DropdownMenuItem disabled>
+                  <span className="flex min-w-0 flex-1 items-center gap-2">
+                    <Check className="h-3.5 w-3.5 shrink-0 text-accent" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{connectionView.currentLoginTitle}</span>
+                      {connectionView.currentLoginSubtitle ? (
+                        <span className="block truncate text-meta text-muted">
+                          {connectionView.currentLoginSubtitle}
                         </span>
+                      ) : null}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              )}
+              {providers.map((p) => {
+                const model = extractModel(p.configText);
+                const isCurrent = connectionView.kind === 'api' && p.isCurrent;
+                return (
+                  <DropdownMenuItem
+                    key={p.id}
+                    disabled={isCurrent || switchingProvider}
+                    onClick={() => onSwitchProvider(p.id)}
+                  >
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      {isCurrent ? (
+                        <Check className="h-3.5 w-3.5 shrink-0 text-accent" />
+                      ) : (
+                        <span className="w-3.5 shrink-0" />
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{p.name}</span>
+                        {model ? (
+                          <span className="block truncate text-meta text-muted">{model}</span>
+                        ) : null}
                       </span>
-                    </DropdownMenuItem>
-                  );
-                })
+                    </span>
+                  </DropdownMenuItem>
+                );
+              })}
+              {connectionView.emptyHint && providers.length === 0 && (
+                <p className="px-2 py-1.5 text-meta text-muted">{connectionView.emptyHint}</p>
+              )}
+              {primaryAgent && (
+                <div className="px-2 py-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate(`/connections?agent=${primaryAgent}`)}
+                  >
+                    {connectionView.manageLabel}
+                  </Button>
+                </div>
               )}
             </DropdownMenuContent>
           </DropdownMenu>

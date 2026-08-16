@@ -235,6 +235,107 @@ export function connectionPickerCaption(opts: {
   return `仅作用于首位 Agent（${agentDisplayName(id)}）`;
 }
 
+export type ChatConnectionPickerKind = 'account' | 'api' | 'none';
+
+export type ChatConnectionPickerView = {
+  kind: ChatConnectionPickerKind;
+  label: string;
+  subtitle: string | null;
+  currentLoginTitle: string | null;
+  currentLoginSubtitle: string | null;
+  emptyHint: string | null;
+  manageLabel: string;
+};
+
+export function chatConnectionKind(
+  status: AgentStatus | undefined,
+  hasCurrentProvider: boolean,
+): ChatConnectionPickerKind {
+  if (status?.effectiveKind === 'account') return 'account';
+  if (status?.effectiveKind === 'api') return 'api';
+  if (agentHasConfiguredAuth(status)) {
+    if (status?.authLabel === 'API' || status?.authHealth === 'configured') return 'api';
+    return 'account';
+  }
+  if (hasCurrentProvider) return 'api';
+  return 'none';
+}
+
+function accountConnectionTitle(status: AgentStatus | undefined): string {
+  const label = status?.effectiveLabel?.trim() || status?.currentProvider?.trim();
+  if (label && label !== '未配置') return label;
+  return '已登录';
+}
+
+export function chatConnectionPickerView(input: {
+  primaryAgent: AgentId | null;
+  switching?: boolean;
+  status?: AgentStatus;
+  currentProviderName?: string | null;
+  currentProviderModel?: string | null;
+}): ChatConnectionPickerView {
+  if (!input.primaryAgent) {
+    return {
+      kind: 'none',
+      label: '切换连接',
+      subtitle: null,
+      currentLoginTitle: null,
+      currentLoginSubtitle: null,
+      emptyHint: null,
+      manageLabel: '去 Connections 添加',
+    };
+  }
+
+  const kind = chatConnectionKind(input.status, Boolean(input.currentProviderName));
+  if (input.switching) {
+    return {
+      kind,
+      label: '切换中…',
+      subtitle: null,
+      currentLoginTitle: kind === 'account' ? accountConnectionTitle(input.status) : null,
+      currentLoginSubtitle: kind === 'account' ? '当前登录' : null,
+      emptyHint: kind === 'none' ? '暂无连接' : null,
+      manageLabel: kind === 'none' ? '去 Connections 添加' : '去 Connections 管理',
+    };
+  }
+
+  if (kind === 'account') {
+    const title = accountConnectionTitle(input.status);
+    return {
+      kind,
+      label: title,
+      subtitle: null,
+      currentLoginTitle: title,
+      currentLoginSubtitle: '当前登录',
+      emptyHint: null,
+      manageLabel: '去 Connections 管理',
+    };
+  }
+
+  if (kind === 'api') {
+    const title = input.currentProviderName?.trim() || input.status?.effectiveLabel?.trim() || 'API';
+    return {
+      kind,
+      label: title,
+      subtitle: input.currentProviderModel?.trim() || null,
+      currentLoginTitle: input.currentProviderName ? null : title,
+      currentLoginSubtitle: input.currentProviderName ? null : 'API',
+      emptyHint: null,
+      manageLabel: '去 Connections 管理',
+    };
+  }
+
+  return {
+    kind: 'none',
+    label: '未配置连接',
+    subtitle: null,
+    currentLoginTitle: null,
+    currentLoginSubtitle: null,
+    emptyHint: '暂无连接',
+    manageLabel: '去 Connections 添加',
+  };
+}
+
 export function messageStatusLabel(
   status: string,
   process?: AgentProcessView,

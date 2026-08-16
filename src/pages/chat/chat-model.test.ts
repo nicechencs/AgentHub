@@ -8,6 +8,8 @@ import {
   agentPickerLabel,
   blockerCopy,
   chatAgentPickerRows,
+  chatConnectionKind,
+  chatConnectionPickerView,
   connectionPickerCaption,
   conversationTitle,
   cwdShortName,
@@ -536,5 +538,123 @@ describe('agentHasConfiguredAuth / picker rows', () => {
     });
     expect(rows.map((r) => r.id)).toEqual(['claude', 'kimi']);
     expect(rows[1]).toEqual({ id: 'kimi', selectable: false, reason: 'noAuth' });
+  });
+});
+
+describe('chatConnectionPickerView', () => {
+  it('does not treat a current oauth account as unconfigured when no API provider exists', () => {
+    const grok = status('grok', true, false, {
+      effectiveKind: 'account',
+      effectiveLabel: 'user@example.com',
+      authHealth: 'renewable',
+      authLabel: '可续期·未验证',
+    });
+    expect(chatConnectionKind(grok, false)).toBe('account');
+    const view = chatConnectionPickerView({
+      primaryAgent: 'grok',
+      status: grok,
+    });
+    expect(view.kind).toBe('account');
+    expect(view.label).toBe('user@example.com');
+    expect(view.subtitle).toBeNull();
+    expect(view.currentLoginTitle).toBe('user@example.com');
+    expect(view.currentLoginSubtitle).toBe('当前登录');
+    expect(view.emptyHint).toBeNull();
+    expect(view.manageLabel).toBe('去 Connections 管理');
+  });
+
+  it('keeps API provider name and model when that is the effective connection', () => {
+    const view = chatConnectionPickerView({
+      primaryAgent: 'claude',
+      status: status('claude', true, false, {
+        effectiveKind: 'api',
+        effectiveLabel: 'api.example.com',
+      }),
+      currentProviderName: 'api.example.com',
+      currentProviderModel: 'sonnet',
+    });
+    expect(view.kind).toBe('api');
+    expect(view.label).toBe('api.example.com');
+    expect(view.subtitle).toBe('sonnet');
+    expect(view.currentLoginTitle).toBeNull();
+    expect(view.manageLabel).toBe('去 Connections 管理');
+  });
+
+  it('prefers the bound account over a leftover provider row', () => {
+    const view = chatConnectionPickerView({
+      primaryAgent: 'grok',
+      status: status('grok', true, false, {
+        effectiveKind: 'account',
+        effectiveLabel: 'user@example.com',
+      }),
+      currentProviderName: 'stale-api',
+      currentProviderModel: 'grok-4',
+    });
+    expect(view.kind).toBe('account');
+    expect(view.label).toBe('user@example.com');
+    expect(view.subtitle).toBeNull();
+  });
+
+  it('treats live oauth without a wallet current row as logged in, not missing', () => {
+    const grok = status('grok', true, false, {
+      effectiveKind: 'none',
+      effectiveLabel: undefined,
+      authHealth: 'renewable',
+      authStatus: 'valid',
+      authLabel: '可续期·未验证',
+    });
+    expect(chatConnectionKind(grok, true)).toBe('account');
+    const view = chatConnectionPickerView({
+      primaryAgent: 'grok',
+      status: grok,
+      currentProviderName: 'stale-api',
+    });
+    expect(view.kind).toBe('account');
+    expect(view.label).toBe('已登录');
+    expect(view.emptyHint).toBeNull();
+  });
+
+  it('treats live API credentials without a current provider as API, not a login row', () => {
+    const view = chatConnectionPickerView({
+      primaryAgent: 'claude',
+      status: status('claude', true, false, {
+        effectiveKind: 'none',
+        effectiveLabel: undefined,
+        authHealth: 'configured',
+        authStatus: 'valid',
+        authLabel: '已配置·未验证',
+      }),
+    });
+    expect(view.kind).toBe('api');
+    expect(view.label).toBe('API');
+    expect(view.currentLoginSubtitle).toBe('API');
+    expect(view.emptyHint).toBeNull();
+  });
+
+  it('keeps 未配置连接 only when the agent has no bound login or API', () => {
+    const view = chatConnectionPickerView({
+      primaryAgent: 'pi',
+      status: status('pi', true, false, {
+        effectiveKind: 'none',
+        authStatus: 'none',
+        authLabel: '未配置',
+        authHealth: 'missing',
+      }),
+    });
+    expect(view.kind).toBe('none');
+    expect(view.label).toBe('未配置连接');
+    expect(view.emptyHint).toBe('暂无连接');
+    expect(view.manageLabel).toBe('去 Connections 添加');
+  });
+
+  it('replaces the chip label while switching', () => {
+    const view = chatConnectionPickerView({
+      primaryAgent: 'claude',
+      switching: true,
+      status: status('claude', true),
+      currentProviderName: 'official',
+    });
+    expect(view.label).toBe('切换中…');
+    expect(view.subtitle).toBeNull();
   });
 });
