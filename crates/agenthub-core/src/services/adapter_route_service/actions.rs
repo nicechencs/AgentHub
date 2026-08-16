@@ -383,7 +383,7 @@ pub(super) fn actions_for(
                 action(
                     "set_config",
                     "Codex",
-                    "设置 GLM Coding Plan 官方 Responses Base URL；不会启动本机桥接。",
+                    "设置 GLM Coding Plan 官方 Responses Base URL；不会启动本机路由。",
                     Some(GLM_CODEX_BASE_URL),
                     false,
                 ),
@@ -408,7 +408,7 @@ pub(super) fn actions_for(
                 action(
                     "set_config",
                     "Codex",
-                    "设置 DeepSeek 官方 Responses Base URL；不会启动本机桥接。",
+                    "设置 DeepSeek 官方 Responses Base URL；不会启动本机路由。",
                     Some(DEEPSEEK_CODEX_BASE_URL),
                     false,
                 ),

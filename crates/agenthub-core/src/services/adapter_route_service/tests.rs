@@ -1200,7 +1200,7 @@ fn grok_subscription_to_claude_is_writable_local_bridge() {
         .unwrap();
     assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
     assert_eq!(plan.analysis.support, AdapterSupport::Experimental);
-    assert_eq!(plan.reason, "Grok 订阅可通过本机桥接到 Claude Code（Messages → xAI Chat Completions）。");
+    assert_eq!(plan.reason, "Grok 订阅可通过本机路由到 Claude Code（Messages → xAI Chat Completions）。");
     assert_eq!(plan.reuse_path, crate::models::AdapterReusePath::LocalBridge);
     assert!(plan.can_apply);
     assert_eq!(

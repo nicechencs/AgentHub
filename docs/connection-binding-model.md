@@ -175,7 +175,7 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 | Dashboard 卡片 | 这个 Agent 用哪张票？ | `bind`，target 固定，选票 |
 | Connections 钱包 | 这张票再接到谁？ | `bind`，ticket 固定，选 Agent |
 
-不再要求用户理解 Adapter。`/bridges` 只管理本机桥运行时：端口、启停、自动恢复、失败详情、解绑。创建绑定不在本页。`/adapter`、`/router` 永久跳过来。
+不再要求用户理解 Adapter。`/routes` 只管理本机路由运行时：端口、启停、自动恢复、失败详情、解绑。创建绑定不在本页。`/adapter`、`/router`、`/bridges` 永久跳过来。
 
 ### 5.2 Connections = 全局钱包
 
@@ -187,7 +187,7 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 │ 筛选 [全部] [官方登录] [API Key] [未识别]   搜票 / 搜用途          │
 │                                                                   │
 │ ● Kimi 会员          [API Key] [会员]                             │
-│   正用于：Claude（改配置）· Codex（本机桥 · 运行中）               │
+│   正用于：Claude（改配置）· Codex（本机路由 · 运行中）               │
 │   [接到…] [详情]                                                  │
 │                                                                   │
 │ ○ Anthropic Key      [API Key] [官方]                             │
@@ -203,19 +203,19 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 规则：
 
 - 每一张**真票**都有「接到…」。未识别、无边、目标无 writer，都在对话框里置灰 + 原因，不在列表上假装这件事不存在。
-- 生成投影**不出现**在钱包。已有用途记在源票的「正用于」上，并标 ① 直连 / ② 原生订阅 / ③ 本机桥（过渡期「经兼容路由」只表示 reshape，不要当成桥）。
+- 生成投影**不出现**在钱包。已有用途记在源票的「正用于」上，并标 ① 直连 / ② 原生订阅 / ③ 本机路由（过渡期「经兼容路由」只表示 reshape，不要当成桥）。
 - 「切换」只用于该票与其 `importedFrom` / 原生 Agent 的 `native` 绑定。接到别的 Agent 一律叫「接到…」（文案可再打磨，语义是 bind）。
 - 深链 `?agent=` 仍可用：打开钱包并高亮该 Agent 的 active 绑定，而不是把整个钱包切成该 Agent 的私有列表。
 - 添加票：导入登录态、新 API Key。进口必须写下 `surface`。
 
 ### 5.3 Dashboard = Agent 的绑定
 
-卡片展示：**当前绑定的票**（不是「当前 Provider 行」）、路线（① 直连 / ② 原生订阅 / ③ 本机桥）、仅 ③ 显示桥是否在跑。
+卡片展示：**当前绑定的票**（不是「当前 Provider 行」）、路线（① 直连 / ② 原生订阅 / ③ 本机路由）、仅 ③ 显示桥是否在跑。
 
 - 主动作仍是打开同一套 bind 对话框（target 固定）。
 - 来源不再按「本 Agent 表里的行 / 别人表里的行」分组，而按 **native 候选** 与 **可规划的其他票** 分组。
 - 不可行票留在列表里，置灰 + 原因。
-- 桥徽标**只服务当前生效的 ③**：点进 `/bridges?profile=`（无 id 则 `/bridges`），tip「管理本机桥」。管的是这条绑定的 runtime，不是再创建一条投影，也不是孤立回收通道。孤立 / 非当前桥没有徽标。
+- 桥徽标**只服务当前生效的 ③**：点进 `/routes?profile=`（无 id 则 `/routes`），tip「管理本机路由」。管的是这条绑定的 runtime，不是再创建一条投影，也不是孤立回收通道。孤立 / 非当前桥没有徽标。
 
 ### 5.4 对话框
 
@@ -228,13 +228,13 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 
 OAuth 未完成：引导去补登录，不在对话框里发起新授权。空钱包：引导添加票。资源加载失败：错误 + 重试，不得当成空池，也不得整页藏「接到…」。
 
-### 5.5 Bridges（本机桥）
+### 5.5 Routes（本机路由）
 
-规范路由 `/bridges`。侧栏英文 Bridges，有桥才出现；Settings → 数据永远有「本机桥」入口。
+规范路由 `/routes`。侧栏英文 Routes，有本机路由才出现；Settings → 数据永远有「本机路由」入口。
 
 列出全部 `route=local_bridge`（`partitionLocalBridgeRuntimes`）：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进孤立分区。行与详情都是**单层**进程健康 + 端口，不画「配置已生效 / 桥接运行中」。来源/目标是纯文字，**禁止**链到 `/connections?agent=`（生成投影不得出现在钱包）。
 
-没有「选来源 → 分析 → apply」创建区。解绑只走 `unbindTicket`，不要只删投影行而留下指向死端口的 live，也不走 `removeAdapter`。Connections「本机桥」点进对应 runtime（`/bridges?profile=`）。
+没有「选来源 → 分析 → apply」创建区。解绑只走 `unbindTicket`，不要只删投影行而留下指向死端口的 live，也不走 `removeAdapter`。Connections「本机路由」点进对应 runtime（`/routes?profile=`）。
 
 ## 6. 扩大在本模型里怎么做
 
@@ -252,10 +252,10 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 1. 读模型：Ticket / Binding 聚合；钱包去掉生成投影；「接到…」对真票常驻。
 2. 进口打标；规划器收口。
 3. 现有四条可 apply 路径改写成 `bind` 实现（Kimi→Claude/Pi reshape，Kimi→Codex bridge，Anthropic→Pi reshape）。
-4. 加边：Anthropic→Codex 桥（协议腿 + experimental bind 已开）、Kimi/OpenAI API → Grok native、Grok 订阅 → Claude Chat 本机桥、OpenAI/xAI Key → Pi。
+4. 加边：Anthropic→Codex 桥（协议腿 + experimental bind 已开）、Kimi/OpenAI API → Grok native、Grok 订阅 → Claude Chat 本机路由、OpenAI/xAI Key → Pi。
 5. 新 surface：GLM / DeepSeek 按双协议入口登记。
 6. 新 Agent writer：DeepSeek Harness（`dsh`）已接入；**DeepSeek API → `dsh` `config_sync`**、**DeepSeek API → Claude experimental `native_endpoint`** 与 **DeepSeek API → Codex experimental `native_endpoint`** 都走现有 `AdapterCapabilityMatrix` / `AdapterApplyService`。不要把 Harness 当协议桥。
-7. **跨 Agent 复用三路**（产品已定，见 [product-decisions.md](product-decisions.md)）：① Kimi/OpenAI API → Grok 已写官方 Chat TOML，② Claude / Codex / Grok 订阅 → Pi 已写契约槽，③ Codex Responses 与 Grok Chat 订阅 → Claude 的本机桥已可 experimental bind，App Server/OauthOther 仍关闭；Claude 订阅 → Codex 是产品关闭，不是待评估候选。
+7. **跨 Agent 复用三路**（产品已定，见 [product-decisions.md](product-decisions.md)）：① Kimi/OpenAI API → Grok 已写官方 Chat TOML，② Claude / Codex / Grok 订阅 → Pi 已写契约槽，③ Codex Responses 与 Grok Chat 订阅 → Claude 的本机路由已可 experimental bind，App Server/OauthOther 仍关闭；Claude 订阅 → Codex 是产品关闭，不是待评估候选。
 
 做不到、且应看得见的上限：Cursor 当目标（无 writer）、未标记的自定义中转、二次投影、公网多账号共享。暂时不能当 HTTP 上游的登录态要写明缺哪一跳，不能写成「订阅一律不做」。
 

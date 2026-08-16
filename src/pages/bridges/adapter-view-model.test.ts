@@ -191,7 +191,7 @@ describe('managed adapter profiles view model', () => {
     expect(summary).toEqual({
       total: 3,
       running: 2,
-      label: '3 个本机桥 · 2 个运行中 · 需保持托盘运行',
+      label: '3 个本机路由 · 2 个运行中 · 需保持托盘运行',
     });
     expect(adapterBridgeFleetSummary([bridgeProfile()], { 'bridge-1': { state: 'running' } })).toBeNull();
   });

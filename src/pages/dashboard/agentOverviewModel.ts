@@ -25,7 +25,7 @@ export interface AgentCardBadgeInput {
   bridge?: { state: AgentCardBridgeState; profileId?: string | null } | null;
   /**
    * 当前绑定的票（钱包读模型）。有值时卡片主文案优先展示
-   * 「票 label · 直连/改配置/本机桥」，不再只显示 Provider 行名。
+   * 「票 label · 直连/改配置/本机路由」，不再只显示 Provider 行名。
    */
   binding?: { ticketLabel: string; routeLabel: string } | null;
 }

@@ -173,10 +173,10 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 | xAI Provider / Account（preset / extra.provider / `api.x.ai`） | Pi | stable `config_sync` | **可 bind**；写入 Pi `models.json` 的 `xai` 槽，凭据只引用。xAI → Grok 是原生切换，不进矩阵 |
 | GLM Coding Plan Provider / Account（preset / extra.provider / 官方 host） | Claude Code | experimental `native_endpoint` | **可实验应用**；写入 `https://open.bigmodel.cn/api/anthropic`，凭据只引用 |
 | GLM Coding Plan Provider / Account | Pi | experimental `config_sync` | **可实验应用**；写入 `glm-coding-plan` 自定义槽与 `https://open.bigmodel.cn/api/coding/paas/v4`，凭据只引用 |
-| GLM Coding Plan Provider / Account | Codex | experimental `native_endpoint` | **可实验应用**；`ruleId=glm-coding-plan-to-codex-v1`，写入 `https://open.bigmodel.cn/api/v1`、`glm-5.3`、`wire_api=responses`，不起本机桥，凭据只引用 |
+| GLM Coding Plan Provider / Account | Codex | experimental `native_endpoint` | **可实验应用**；`ruleId=glm-coding-plan-to-codex-v1`，写入 `https://open.bigmodel.cn/api/v1`、`glm-5.3`、`wire_api=responses`，不起本机路由，凭据只引用 |
 | DeepSeek API Provider / Account（preset `deepseek-api` / `deepseek` / 官方 host） | Claude Code | experimental `native_endpoint` | **可实验应用**；写入 `https://api.deepseek.com/anthropic`，凭据只引用 |
 | DeepSeek API Provider / Account | Pi | experimental `config_sync` | **可实验应用**；写入 `deepseek` 自定义槽与 `https://api.deepseek.com`，凭据只引用 |
-| DeepSeek API Provider / Account | Codex | experimental `native_endpoint` | **可实验应用**；`ruleId=deepseek-api-to-codex-v1`，写入 `https://api.deepseek.com`、`deepseek-v4-flash`、`wire_api=responses`，不起本机桥，凭据只引用 |
+| DeepSeek API Provider / Account | Codex | experimental `native_endpoint` | **可实验应用**；`ruleId=deepseek-api-to-codex-v1`，写入 `https://api.deepseek.com`、`deepseek-v4-flash`、`wire_api=responses`，不起本机路由，凭据只引用 |
 | DeepSeek API Provider（preset `deepseek-api` / `deepseek` 或 host `api.deepseek.com`） | DeepSeek Harness（`dsh`） | stable `config_sync` | **可应用**；写入 home 级官方 provider 引用，Key 只进 `.credentials.yaml`，不进 `cordis.patch.yml` |
 | Codex OAuth Account，`credentials.format=auth_json`（ChatGPT subscription） | Claude Code | experimental `local_bridge` | **③ 已可 experimental bind**；`ruleId=codex-subscription-to-claude-responses-v1`，`plan.canApply=true`（Account 有 access token 时），写入 Claude loopback env；上游 OAuth token 不写入 Claude。同票 → Pi 是 ②，见 [product-decisions.md](product-decisions.md) |
 | Grok OAuth Account（有 `access_token`） | Claude Code | experimental `local_bridge` | **③ 已可 experimental bind**；`ruleId=grok-subscription-to-claude-v1`，上游 `https://api.x.ai/v1` Chat Completions、默认 `grok-4.5`；只写 Claude loopback env，上游 token 不写入 Claude |
@@ -201,8 +201,8 @@ AgentHub 当前可发起的登录与跨 Agent 适配是两套能力：
 | 登录目标 | AgentHub 当前入口 | 跨 Agent 复用（产品 / 实现） |
 |---|---|---|
 | Claude | PKCE | ② → Pi Anthropic 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。→ Codex 产品不做 |
-| Codex / ChatGPT | PKCE | ② → Pi `openai-codex` 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → Claude Responses 本机桥（已可 experimental bind；Hub 本轮不自动 refresh，过期需重新同步 Codex 登录） |
-| Grok / xAI | PKCE | ② → Pi xAI 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → Claude xAI Chat 本机桥（experimental bind） |
+| Codex / ChatGPT | PKCE | ② → Pi `openai-codex` 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → Claude Responses 本机路由（已可 experimental bind；Hub 本轮不自动 refresh，过期需重新同步 Codex 登录） |
+| Grok / xAI | PKCE | ② → Pi xAI 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → Claude xAI Chat 本机路由（experimental bind） |
 | Pi | Anthropic PKCE、OpenAI Codex PKCE、xAI device code | **第 2 路的标准落点**：只写入 Pi 对应槽；不能推导其他 Agent 也有这些槽 |
 | Kimi | 当前没有 AgentHub OAuth 登录入口 | **产品不做**国产 OAuth 开边或转 API。会员 API Key 走 ①/③；Kimi CLI managed OAuth / Pi `kimi-coding` 不得升成会员 Key，也不得登记 Adapter 边 |
 | 其他国产登录（GLM / DeepSeek / 通义 / 豆包等） | 无 AgentHub OAuth 入口 | **产品不做**。已登记的只有官方 API Key 票面；OAuth 不进矩阵 |

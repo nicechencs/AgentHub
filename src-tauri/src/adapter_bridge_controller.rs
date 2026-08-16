@@ -903,7 +903,7 @@ async fn bridge_profile_id_for_request(
 fn map_bridge_host_error(error: BridgeHostError) -> String {
     // Host error implementations intentionally contain no bearer; still use a
     // stable GUI-facing code and do not serialize the Debug representation.
-    format!("本机桥无法启动或停止 [{CODE_BRIDGE_START}]: {error}")
+    format!("本机路由无法启动或停止 [{CODE_BRIDGE_START}]: {error}")
 }
 
 #[cfg(test)]

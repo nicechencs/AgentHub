@@ -48,9 +48,9 @@ fn optional_mode_and_route_filters_fail_closed() {
 #[test]
 fn adapter_error_from_string_keeps_bracketed_code_and_retryable() {
     let error =
-        adapter_error_from_string("本机桥无法启动或停止 [adapter.port_in_use]".into());
+        adapter_error_from_string("本机路由无法启动或停止 [adapter.port_in_use]".into());
     assert_eq!(error.code, "adapter.port_in_use");
-    assert!(error.message.contains("本机桥"));
+    assert!(error.message.contains("本机路由"));
     assert!(error.retryable);
     assert!(error.details.is_none());
 }

@@ -56,7 +56,7 @@ export function secretChange(target: string, field: string): AdapterPlanChange {
 
 /** Keep in lockstep with `CODEX_SUBSCRIPTION_TO_CLAUDE_REASON` in agenthub-core. */
 export const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON = [
-  'Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。',
+  'Codex / ChatGPT 订阅可通过本机路由到 Claude Code（Messages → Responses）。',
 ].join('');
 
 export const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON =

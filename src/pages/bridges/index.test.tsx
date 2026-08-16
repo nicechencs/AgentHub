@@ -85,11 +85,11 @@ describe('Bridges page', () => {
     expect(adapterPageDescription()).toBe('本机协议转换 · 仅 127.0.0.1');
   });
 
-  it('rewrites /adapter and /router bookmarks onto /bridges and drops ?tab=', () => {
-    expect(legacyBridgesRedirectTo('')).toBe('/bridges');
-    expect(legacyBridgesRedirectTo('?tab=oauth')).toBe('/bridges');
-    expect(legacyBridgesRedirectTo('?tab=api&profile=bridge-1')).toBe('/bridges?profile=bridge-1');
-    expect(legacyBridgesRedirectTo('?profile=bridge-1')).toBe('/bridges?profile=bridge-1');
+  it('rewrites /adapter, /router and /bridges bookmarks onto /routes and drops ?tab=', () => {
+    expect(legacyBridgesRedirectTo('')).toBe('/routes');
+    expect(legacyBridgesRedirectTo('?tab=oauth')).toBe('/routes');
+    expect(legacyBridgesRedirectTo('?tab=api&profile=bridge-1')).toBe('/routes?profile=bridge-1');
+    expect(legacyBridgesRedirectTo('?profile=bridge-1')).toBe('/routes?profile=bridge-1');
   });
 
   it('opens ?profile= only when the runtime exists', () => {
@@ -109,7 +109,7 @@ describe('Bridges page', () => {
     expect(markup).toContain(BRIDGES_EMPTY_DESCRIPTION);
     expect(markup).not.toContain('去 Dashboard');
     expect(markup).not.toContain('去 Connections');
-    expect(markup).not.toContain('没有已绑定的本机桥');
+    expect(markup).not.toContain('没有已绑定的本机路由');
   });
 
   it('keeps a hidden-target profile stop-only', () => {

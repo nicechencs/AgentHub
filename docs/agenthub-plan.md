@@ -15,12 +15,12 @@
 | 决策点 | 结论 |
 |---|---|
 | 平台范围 | Windows 为主交付；macOS 已支持源码运行与本机构建；Linux 仅路径/命令抽象预留。**共享 Runtime 与 native 安装命令按宿主平台分流**（见 §5.7.2 / §5.7.5） |
-| 复用策略 | 配置切换按「路径 + 读取 + 校验 + 原子写」；跨 Agent 复用分三路（① API 直连 ② 原生订阅 ③ 本机桥），见 [product-decisions.md](product-decisions.md)。实现从零自研 |
-| MVP 范围 | Agent 安装/卸载（含**前置运行时检测与引导**）、API 配置管理、技能/插件管理、Token 统计、**票接到其他 Agent（直连 / 原生订阅 / 本机桥）** |
+| 复用策略 | 配置切换按「路径 + 读取 + 校验 + 原子写」；跨 Agent 复用分三路（① API 直连 ② 原生订阅 ③ 本机路由），见 [product-decisions.md](product-decisions.md)。实现从零自研 |
+| MVP 范围 | Agent 安装/卸载（含**前置运行时检测与引导**）、API 配置管理、技能/插件管理、Token 统计、**票接到其他 Agent（直连 / 原生订阅 / 本机路由）** |
 | 产品形态 | GUI + CLI 双端，核心逻辑抽成 `agenthub-core` crate 共享 |
-| OAuth 账号管理 | 支持多账号池 + 一键切换；订阅先走目标原生槽（②），对不上再本机桥（③） |
+| OAuth 账号管理 | 支持多账号池 + 一键切换；订阅先走目标原生槽（②），对不上再本机路由（③） |
 | 跨 Agent 复用 | **核心产品**，三路都要做。能直连就直连，不默认常驻代理。实现未开 ≠ 产品不做。不做公网入口、多账号拼车、转售 |
-| Token 统计来源 | **零侵入**：解析各 agent 本地日志/会话文件。这只约束 Usage，**不禁止** ③ 的本机桥 |
+| Token 统计来源 | **零侵入**：解析各 agent 本地日志/会话文件。这只约束 Usage，**不禁止** ③ 的本机路由 |
 | Agent 范围 | **当前八家**：Claude / Codex / Kimi / Grok / Pi / WorkBuddy / **Cursor Agent**（半套 CLI）/ **DeepSeek Harness（`dsh`）**；不支持 Cursor IDE 私有库账号池。`dsh` 专项约束见 [deepseek-harness-integration.md](deepseek-harness-integration.md) |
 | 分层原则 | **Service 管编排**（备份/锁/backfill/投影/聚合）；**Adapter 管差异**（路径、读写格式、解析器挂接） |
 | Adapter 进程边界 | `local_bridge` 目标由同包用户级 `agenthub-adapterd` 托管；GUI/CLI 是控制客户端。Connections 不拆进程，OS 系统服务不在当前范围 |
@@ -30,7 +30,7 @@
 ### 配置与状态管理类工具 — 最直接参照系
 - **借鉴**：按应用封装「路径 + 读取 + 校验 + 原子写」；供应商配置用灵活 JSON/`Value`，由前端预设模板决定；SQLite 存自身状态（带 schema 迁移）；backfill 机制（切换前把用户手改的 live 配置回存）；原子写（tempfile+rename）、TOML 编辑保留注释格式；前端 API 封装层。AgentHub **实际**为 `lib/backend` 分层 + 页面本地 state。
 - **避坑**：Windows 下不要用 `HOME` 环境变量取 home dir（Git Bash 会注入错误值），用 `dirs::home_dir()`；巨型 `match` 分支散布多处（我们用 trait + 注册表替代）；官方 OAuth 登录态不能被配置切换覆盖，需识别保护。
-- **差异化空间**：多 Agent 钱包 + 三路复用（直连 / 原生订阅 / 本机桥），而不是只做单一 CLI 的供应商预设，也不默认常驻代理。不做公网网关或多账号拼车。产品取舍见 [product-decisions.md](product-decisions.md)。
+- **差异化空间**：多 Agent 钱包 + 三路复用（直连 / 原生订阅 / 本机路由），而不是只做单一 CLI 的供应商预设，也不默认常驻代理。不做公网网关或多账号拼车。产品取舍见 [product-decisions.md](product-decisions.md)。
 
 ### 账号管理与工程实践类工具
 - **借鉴**：后端分层（commands 薄层 → models → modules → utils）；索引 + 分文件 + SQLite 统计库的混合存储；OAuth loopback 回调（双栈监听、ephemeral 端口、state 校验）；token 提前刷新 + 每账号互斥锁防并发重复刷新；写第三方配置前必备份 + 原子写 + 路径白名单校验。
@@ -183,7 +183,7 @@ trait AgentAdapter {
 ### 5.5 Token 统计（零侵入）与模型列表
 
 #### Token 统计
-- **Usage 不做**本地代理、**不**劫持请求；只读解析各 Agent 已有会话/日志。③ 本机桥是另一条产品线，见 [product-decisions.md](product-decisions.md)。
+- **Usage 不做**本地代理、**不**劫持请求；只读解析各 Agent 已有会话/日志。③ 本机路由是另一条产品线，见 [product-decisions.md](product-decisions.md)。
 - 每 agent 一个 `UsageParser`（独立 `usage/` 目录，经 Adapter `usage_source()` 挂接）→ 统一  
   `UsageRecord { agent, account?, model, input/output/cache tokens, cost?, ts, session_id }`  
   → 增量入库（文件 offset / 哈希去重）。
@@ -325,7 +325,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 - 技术：React + TypeScript + Vite + Tailwind + shadcn/Radix（**只选一套 UI**）+ recharts + react-router + CodeMirror。**当前未**引入 TanStack Query / i18next（方案历史提及，以 `package.json` 为准）。
 - 结构：`lib/backend/tauri`（唯一 invoke）→ `lib/api` façade → 页面本地 state；mock 仅 `dev:mock`。事件桥为目标态，现以前端主动拉取为主。
-- 页面：Dashboard（含用量）/ Chat / Agents / Connections（目标：跨 Agent 钱包）/ Bridges（侧栏英文，有桥才出现；页标题「本机桥」，只管 ③ 运行时）/ Skills / MCP（只读清单）/ Projects / Settings（含 Backups；数据区永远有「本机桥」入口）。日常绑定从 Dashboard「连接/切换」、Connections「接到…」发起。领域目标见 [connection-binding-model.md](connection-binding-model.md)。
+- 页面：Dashboard（含用量）/ Chat / Agents / Connections（目标：跨 Agent 钱包）/ Routes（侧栏英文，有本机路由才出现；页标题「本机路由」，只管 ③ 运行时）/ Skills / MCP（只读清单）/ Projects / Settings（含 Backups；数据区永远有「本机路由」入口）。日常绑定从 Dashboard「连接/切换」、Connections「接到…」发起。领域目标见 [connection-binding-model.md](connection-binding-model.md)。
 - 详细交互见 [ui-design.md](ui-design.md)。
 
 ## 7. 分期路线图
@@ -395,17 +395,17 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 ### 8.3 前端导航（与代码 `App.tsx` 一致）
 
 - Workspace：Chat / Agents / Skills / MCP / Projects。
-- Manage：Dashboard（含用量）/ Connections / Bridges（有桥才出现）/ Settings（含 Backups）。
-- 推荐发起入口：Dashboard 卡片「连接/切换」、Connections「接到…」。`/bridges` 只管理本机桥运行时。目标钱包见 [connection-binding-model.md](connection-binding-model.md)。
+- Manage：Dashboard（含用量）/ Connections / Routes（有本机路由才出现）/ Settings（含 Backups）。
+- 推荐发起入口：Dashboard 卡片「连接/切换」、Connections「接到…」。`/routes` 只管理本机路由运行时。目标钱包见 [connection-binding-model.md](connection-binding-model.md)。
 
-旧路由 `/adapter`、`/router` → `/bridges`；`/usage` → `/?section=usage`；`/backups` → `/settings?tab=backups`；`/providers`·`/accounts` → `/connections`。
+旧路由 `/adapter`、`/router`、`/bridges` → `/routes`；`/usage` → `/?section=usage`；`/backups` → `/settings?tab=backups`；`/providers`·`/accounts` → `/connections`。
 
 ## 9. 风险与开放问题
 
 1. **官方凭据落点随版本变化**：部分 Agent 的主登录态未必落在公开配置文件中。账号切换以文件型凭据导入/备份为先，未确认的路径不强行写入。
 2. **日志格式漂移**：各家 sessions 格式会随版本变。UsageParser 设计为容错（跳过失配记录 + 统计失败率 + 按 agent 版本选择解析器）。
 3. **合规边界**：定位是个人本机工具，默认不提供公网分发或多账号共享。三路复用是产品能力；③ 的非官方通道风险对用户可见。用户须遵守各上游服务条款。
-4. **写第三方配置的跟进成本**：各家配置格式都会变，适配层需要持续维护。本机桥只服务 ③，按 fixtures 与回滚开放边；①② 不起桥。
+4. **写第三方配置的跟进成本**：各家配置格式都会变，适配层需要持续维护。本机路由只服务 ③，按 fixtures 与回滚开放边；①② 不起桥。
 5. **Skills 真源假设**：以 `~/.agents/skills` 为唯一真源；若用户长期只在 Agent 目录改 skill，需补导入/回收，否则仅是单向投影器。
 6. **前置环境安装的权限与策略**：公司机可能禁用 winget/MSI、Node 装完但 GUI 进程 PATH 未刷新、需要「新开终端/重启 AgentHub」才能看到 `node`。产品文案与 `doctor` 需覆盖 **PATH 刷新 / 重启提示**；自动装 Runtime 失败必须降级为可复制命令，禁止假成功。
 7. **不替官方背锅**：Runtime/Agent 安装脚本来自上游；AgentHub 只编排与展示。网络失败、镜像源、证书问题在 UI 中归类为「环境/网络」并给出官方文档入口。

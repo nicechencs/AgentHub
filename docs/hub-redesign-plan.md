@@ -1,8 +1,8 @@
 # Hub 重构 Phase 1 实施方案（Agent 优先信息架构）v2
 
 > 状态：**Phase 1 已实施**（2026-08-14），本文保留为当时的实施记录。  
-> **§3.2 过渡冻结已解除**（2026-08-15）：终态 IA 见 [bridges-page-redesign.md](bridges-page-redesign.md)——规范路由 `/bridges`，侧栏英文 Bridges（有桥才出现），页目录 `src/pages/bridges/`。下文 §3.2「不移除 `/adapter`、不改路由结构、侧栏改名『桥与适配』」是当时护栏，不是现行约束。  
-> **2026-08-15 起的领域与 UI 目标**改以 [connection-binding-model.md](connection-binding-model.md) 为准：票 / 绑定 / 协议图；Connections 改为全局钱包；真票常驻「接到…」；生成投影退出列表。**产品方向**以 [product-decisions.md](product-decisions.md) 为准（① API 直连 / ② 原生订阅 / ③ 本机桥）。下文「不改 OAuth 门禁」只约束当时 Phase 1 实施范围，不是「订阅一律不跨 Agent」。Phase 1 的对话框外壳仍可复用，**按 Agent tab 分页、行按钮白名单、诊断只放 Dashboard 不再是终态**，UI 允许按目标文档重做。
+> **§3.2 过渡冻结已解除**（2026-08-15）：终态 IA 见 [bridges-page-redesign.md](bridges-page-redesign.md)。现行表面是 **Routes / 本机路由**（`/routes`）；`/adapter`、`/router`、`/bridges` 永久跳过来。页目录仍为 `src/pages/bridges/`。下文 §3.2「不移除 `/adapter`、不改路由结构、侧栏改名『桥与适配』」是当时护栏，不是现行约束。  
+> **2026-08-15 起的领域与 UI 目标**改以 [connection-binding-model.md](connection-binding-model.md) 为准：票 / 绑定 / 协议图；Connections 改为全局钱包；真票常驻「接到…」；生成投影退出列表。**产品方向**以 [product-decisions.md](product-decisions.md) 为准（① API 直连 / ② 原生订阅 / ③ 本机路由）。下文「不改 OAuth 门禁」只约束当时 Phase 1 实施范围，不是「订阅一律不跨 Agent」。Phase 1 的对话框外壳仍可复用，**按 Agent tab 分页、行按钮白名单、诊断只放 Dashboard 不再是终态**，UI 允许按目标文档重做。
 > 验收：pnpm typecheck / typecheck:test / test（627 用例，含集成 bug 防回归）/ build 全绿；cargo test 79 用例全绿（Rust 未改动）；dev:mock 冒烟通过（空态引导、非空可行性置灰+原因、无控制台错误）。
 > 关联文档同步：docs/ui-design.md、docs/adapter-design.md 正文定位、docs/architecture.md §4.1 目录树（lib/connect-flow、components/connect）与 §4.6、README.md、docs/README.md、docs/agenthub-plan.md、docs/testing.md、docs/adapter-kimi-codex-dogfood.md。
 > v2 修订要点：plan.canApply 为可执行权威；补同 Agent 原生切换分流；用途/徽标改用 profile 联结（不读 provider.meta）；apply 自动切换语义如实；排除 adapter 生成 Provider 作为来源；两层 OAuth 门禁；可注入 helper 保证 Node 环境可测。
@@ -88,7 +88,7 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 - **不动 Rust 后端**：analyze/plan/apply/bridge/OAuth/switch 命令与能力矩阵原样使用。若实施中发现必须改后端才能达成目标，停下上报，不得绕过。
 - **不做 AdapterProfile 与 agent_active_bindings 的物理合并**（推迟 Phase 2；本期只做前端读模型聚合）。
 - **不改 OAuth 门禁**：`canApply=false` 的路线保持不可用，UI 呈现为置灰+原因。
-- **不移除 `/adapter` 页与侧栏入口**（**2026-08-15 已解除**：现行规范路由 `/bridges`，侧栏英文 Bridges 有桥才出现；见 [bridges-page-redesign.md](bridges-page-redesign.md)）。过渡期职责定位：Dashboard/Connections 为推荐入口，本页只管理桥 runtime；两处 apply 行为同源（同一 lib/api 门面），不允许行为分叉。侧栏文案当时改为「桥与适配」，创建区已收掉。
+- **不移除 `/adapter` 页与侧栏入口**（**2026-08-15 已解除**：现行规范路由 `/routes`，侧栏英文 Routes 有本机路由才出现；见 [bridges-page-redesign.md](bridges-page-redesign.md)）。过渡期职责定位：Dashboard/Connections 为推荐入口，本页只管理桥 runtime；两处 apply 行为同源（同一 lib/api 门面），不允许行为分叉。侧栏文案当时改为「桥与适配」，创建区已收掉。
 - **不重做 OAuth 授权 UI**、不做 ①② 引导跳转的自动弹窗与回跳闭环（Phase 2）。
 - **不重构 Connections 页 tab 信息架构**（全局钱包视图属 Phase 2）。
 - **不修改 `src/lib/api/adapter.ts` 既有行为**（含 apply 后连接池刷新异常被吞的既有语义——对话框通过 `onApplied` 自行补偿刷新并呈现刷新失败）。
@@ -97,7 +97,7 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 
 ## 4. 现状锚点（实施者必读，v2 已按评审核实修正）
 
-- 路由与页面：`src/App.tsx`（`/` Dashboard、`/connections`、`/bridges`；`/adapter`、`/router` 永久跳到 `/bridges`）。侧栏 `src/components/layout/Sidebar.tsx`（英文 Bridges，有桥才出现）。
+- 路由与页面：`src/App.tsx`（`/` Dashboard、`/connections`、`/routes`；`/adapter`、`/router`、`/bridges` 永久跳到 `/routes`）。侧栏 `src/components/layout/Sidebar.tsx`（英文 Routes，有本机路由才出现）。
 - Dashboard 卡片：`src/pages/dashboard/AgentOverview.tsx` + `agentOverviewModel.ts`。**注意：AgentOverview 只渲染已安装 Agent**；`buildAgentCardView.target` 现为 URL 字符串且被测试断言（改动作模型时同步改测试）。
 - 生效连接解析：`src/lib/api/agent-connection.ts`（基于 accounts/providers 的 isCurrent）。**Dashboard 的 agents 状态来自页面自身的 `listAgents()` 加载，不随连接池自动刷新**——apply 后需显式触发重载。
 - 连接池 store：`src/app/runtime/connection-pool-store.ts`（accounts+providers 缓存与 `notifyConnectionPoolChanged`）。
@@ -227,6 +227,6 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 4. 写入收成 `bind` / `unbind`；现有四条 apply 路径先改写成绑定实现。
 5. 再按协议图加边（Anthropic→Codex、Kimi→Grok、新 surface……）。
 
-仍有效、且已落地的 Phase 1 资产：ConnectFlow 双入口外壳、①② 深链、本机桥页不做日常创建。现行表面是 `/bridges`（侧栏 Bridges，有桥才出现），只管理 ③ 运行时。
+仍有效、且已落地的 Phase 1 资产：ConnectFlow 双入口外壳、①② 深链、本机路由页不做日常创建。现行表面是 `/routes`（侧栏 Routes，有本机路由才出现），只管理 ③ 运行时。
 
 OAuthFlowDialog 收编进 Connections 仍未做，可并进钱包「添加票」。

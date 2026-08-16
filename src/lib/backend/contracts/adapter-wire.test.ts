@@ -146,7 +146,7 @@ describe('Adapter Rust wire mappers', () => {
     const withGate = mapAdapterRouteAnalysis({
       route: 'local_bridge',
       support: 'experimental',
-      reason: 'Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。',
+      reason: 'Codex / ChatGPT 订阅可通过本机路由到 Claude Code（Messages → Responses）。',
       actions: [],
       limitations: [],
       evidence: [],
@@ -225,7 +225,7 @@ describe('Adapter Rust wire mappers', () => {
       analysis: {
         route: 'unsupported',
         support: 'unsupported',
-        reason: 'Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。',
+        reason: 'Codex / ChatGPT 订阅可通过本机路由到 Claude Code（Messages → Responses）。',
         actions: [],
         limitations: [],
         evidence: [],
@@ -234,7 +234,7 @@ describe('Adapter Rust wire mappers', () => {
       canApply: false,
       maturity: 'preview',
       reusePath: 'none',
-      reason: 'Codex / ChatGPT 订阅可通过本机桥接到 Claude Code（Messages → Responses）。',
+      reason: 'Codex / ChatGPT 订阅可通过本机路由到 Claude Code（Messages → Responses）。',
       serviceImpact: 'none',
       changes: [],
     });

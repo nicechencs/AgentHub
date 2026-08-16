@@ -25,7 +25,7 @@
 | 4. 前端 id | `src/lib/types.ts` + catalog 驱动列表 | 产品列表以 runtime catalog 为准；静态 `AGENTS` 仅过渡 |
 | 5. key-native 端口 | `platform/*/registry.rs` | 以 `AgentKey` 注册 detector、install、config、skills、usage、stream、project 等实际支持的端口 |
 | 6. 测试 | `cargo test -p agenthub-core` | adapter fixture + 已注册端口契约；禁止写死 agent 数量 |
-| 7. 绑定入口 | `models/agent_capability.rs`：先登记 `accepts[]` + `writer` | `accepts[]` 必须同时写 **wire 协议** 和 **OAuth 契约槽**（有则登记，否则规划器判不出 ②）。无 writer（如 Cursor）不能当 `bind` 落点。登记后由协议图长出 ① 直连 / ② 原生订阅 / ③ 本机桥，不要再加商品白名单。见 [product-decisions.md](product-decisions.md)、[connection-binding-model.md](connection-binding-model.md) |
+| 7. 绑定入口 | `models/agent_capability.rs`：先登记 `accepts[]` + `writer` | `accepts[]` 必须同时写 **wire 协议** 和 **OAuth 契约槽**（有则登记，否则规划器判不出 ②）。无 writer（如 Cursor）不能当 `bind` 落点。登记后由协议图长出 ① 直连 / ② 原生订阅 / ③ 本机路由，不要再加商品白名单。见 [product-decisions.md](product-decisions.md)、[connection-binding-model.md](connection-binding-model.md) |
 
 > **禁止**：在 `platform/*` service、通用 utils、页面业务里新增具体 Agent 名称分支。  
 > 差异只能进入：adapter / `platform/*/sources` 贡献 / descriptor / 明确兼容层。

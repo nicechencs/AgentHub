@@ -124,11 +124,11 @@ describe('ticket wallet filter / search', () => {
     ]);
   });
 
-  it('matches「正用于」agent and route labels (Codex / 本机桥)', () => {
+  it('matches「正用于」agent and route labels (Codex / 本机路由)', () => {
     const wallet = sampleWallet();
     expect(searchTickets(wallet.tickets, 'Codex', wallet.bindings).map((t) => t.id))
       .toEqual(['provider:kimi-1']);
-    expect(searchTickets(wallet.tickets, '本机桥', wallet.bindings).map((t) => t.id))
+    expect(searchTickets(wallet.tickets, '本机路由', wallet.bindings).map((t) => t.id))
       .toEqual(['provider:kimi-1']);
     expect(searchTickets(wallet.tickets, '改配置', wallet.bindings).map((t) => t.id))
       .toEqual(['provider:kimi-1']);
@@ -143,10 +143,10 @@ describe('binding usage text', () => {
     const kimiBindings = wallet.bindings.filter((b) => b.ticketId === 'provider:kimi-1');
     expect(formatTicketUsageText(kimiBindings)).toContain('正用于：');
     expect(formatTicketUsageText(kimiBindings)).toContain('改配置');
-    expect(formatTicketUsageText(kimiBindings)).toContain('本机桥 · 运行中');
+    expect(formatTicketUsageText(kimiBindings)).toContain('本机路由 · 运行中');
     expect(formatTicketUsageText([])).toBe('未使用');
     const parts = formatTicketUsageParts(kimiBindings);
-    expect(parts.some((part) => part.kind === 'bridge' && part.href === '/bridges?profile=p2')).toBe(true);
+    expect(parts.some((part) => part.kind === 'bridge' && part.href === '/routes?profile=p2')).toBe(true);
     expect(formatTicketUsageParts([{
       ticketId: 'provider:kimi-1',
       agentId: 'codex',
@@ -154,12 +154,12 @@ describe('binding usage text', () => {
       active: true,
       profileId: null,
       bridge: { port: 8123, running: true },
-    }]).some((part) => part.kind === 'bridge' && part.href === '/bridges')).toBe(true);
+    }]).some((part) => part.kind === 'bridge' && part.href === '/routes')).toBe(true);
   });
 
   it('maps dashboard meta text', () => {
     expect(dashboardBindingMetaText('Kimi 会员', 'reshape')).toBe('Kimi 会员 · 改配置');
-    expect(dashboardBindingMetaText('Kimi 会员', 'bridge')).toBe('Kimi 会员 · 本机桥');
+    expect(dashboardBindingMetaText('Kimi 会员', 'bridge')).toBe('Kimi 会员 · 本机路由');
     expect(dashboardBindingMetaText('me@…', 'native')).toBe('me@… · 直连');
   });
 });
@@ -246,7 +246,7 @@ describe('ticket detail fields', () => {
       wallet.bindings.filter((binding) => binding.ticketId === 'provider:kimi-1'),
     )).toEqual([
       `${agentDisplayName('claude')} · 改配置 · 当前`,
-      `${agentDisplayName('codex')} · 本机桥 · 当前 · 运行中 · 端口 8123`,
+      `${agentDisplayName('codex')} · 本机路由 · 当前 · 运行中 · 端口 8123`,
     ]);
     expect(formatTicketBindingDetailLines(
       wallet.bindings.filter((binding) => binding.ticketId === 'account:oauth-1'),

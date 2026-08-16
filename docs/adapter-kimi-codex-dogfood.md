@@ -2,7 +2,7 @@
 
 > 关联：[adapter-design.md](adapter-design.md) Phase 1 / §11.4、[product-decisions.md](product-decisions.md)。  
 > 自动验收（bridge / restore / 退出协调器）已在工作区通过；**本清单只覆盖必须用桌面应用 + 真实连接完成的项**。  
-> 创建/应用的日常入口可以是 Dashboard 卡片「连接/切换」或 Connections「接到…」（ConnectFlow）；本机桥页（`/bridges`，侧栏 Bridges）只用于 ③ 的桥控件。  
+> 创建/应用的日常入口可以是 Dashboard 卡片「连接/切换」或 Connections「接到…」（ConnectFlow）；本机路由页（`/routes`，侧栏 Routes）只用于 ③ 的桥控件。  
 > 入口：Dashboard「连接/切换」与 Connections 全局钱包「接到…」（真票常驻；不可行目标在对话框置灰 + 原因）。生成投影不进钱包。见 [connection-binding-model.md](connection-binding-model.md)。  
 > 本清单同时覆盖 ①（Kimi→Claude、Anthropic Key→Pi）和 ③（Kimi→Codex）。同一把 Kimi Key 对不同目标走不同路，不是「双协议 = 万能」。  
 > **禁止**把密钥、Authorization、prompt、工具参数或响应正文写入本文件或任何报告。只记 `profile_id`、端口、错误码、耗时、是否完成。
@@ -27,7 +27,7 @@ mock 下 apply 正向链路不可达，必须 `pnpm tauri:dev` + 真实凭据。
 
 - [ ]
 
-### 2. Kimi 会员 Provider → Codex（③ 本机桥；Chat Completions ≠ Responses）
+### 2. Kimi 会员 Provider → Codex（③ 本机路由；Chat Completions ≠ Responses）
 
 步骤：
 
@@ -35,7 +35,7 @@ mock 下 apply 正向链路不可达，必须 `pnpm tauri:dev` + 真实凭据。
 2. 选该 Kimi 会员为来源、Codex 为目标，预览后 apply（本地桥）。
 3. 核对桥已创建/可启动，Codex 当前连接指向生成 Provider（只记 `profile_id`、端口）。
 
-预期：③ 本机桥可 apply；Codex 卡片显示桥状态；该 Kimi 行「正用于」含 Codex。
+预期：③ 本机路由可 apply；Codex 卡片显示桥状态；该 Kimi 行「正用于」含 Codex。
 
 - [ ]
 
@@ -121,7 +121,7 @@ cargo test -p agenthub-gui --locked adapter_bridge_controller
 
 1. 用 `TcpListener` 或其他进程占住桥的 preferred 端口。
 2. 启动或重启该桥（或重启 AgentHub 且 `auto_start=true`）。
-3. 在本机桥页（`/bridges`）、Connections 或 Dashboard 徽标均可核对写回的端口和 Codex `base_url`（不要只看本机桥页）。
+3. 在本机路由页（`/routes`）、Connections 或 Dashboard 徽标均可核对写回的端口和 Codex `base_url`（不要只看本机路由页）。
 
 预期：绑到新端口；profile / generated provider 对齐新端口；不留下指向已停 listener 的旧端口。
 

@@ -1,9 +1,9 @@
-/** Shared Bridges route helpers. Pages must not own these constants. */
+/** Shared local-routes helpers. Pages must not own these constants. */
 
-export const BRIDGES_NAV_LABEL = 'Bridges';
-export const BRIDGES_PATH = '/bridges';
+export const BRIDGES_NAV_LABEL = 'Routes';
+export const BRIDGES_PATH = '/routes';
 
-/** Drop leftover `?tab=` from `/adapter` / `/router` bookmarks. */
+/** Drop leftover `?tab=` from `/adapter` / `/router` / `/bridges` bookmarks. */
 export function legacyBridgesRedirectTo(search: string): string {
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
   params.delete('tab');

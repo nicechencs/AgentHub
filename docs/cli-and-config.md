@@ -2,7 +2,7 @@
 
 > 对应《项目方案》GUI + CLI 双端与《架构拆分》`agenthub-cli` / 数据目录。  
 > 本文是**可验收契约**：实现 CLI 与配置读写时以本文为准；与 GUI 冲突时以 **core service 行为一致** 为最高原则。  
-> 状态（2026-08-15，以代码为准）：CLI 已覆盖 doctor（含 ⑤ Locks）/ run / env / agent（含 `capabilities`、`outdated`）/ provider（含 `undo`、`test-latency`）/ account（含 `oauth-url`、`refresh`、`delete`、`undo`）/ skill 全树 / usage / backup（含 `delete`）/ config（白名单 + 只读 `app_version`）。GUI 已接线 doctor、安装、Provider、Account、OAuth PKCE（Claude/Codex/Grok）、Skill、Usage、Backup、Chat、Projects、Settings。Provider/Account **测速与切换撤销** CLI/GUI 均已接线。**备份导出**仍未实现。凭据落盘加密为当前范围外。跨 Agent 复用三路见 [product-decisions.md](product-decisions.md)；本文「代理模式」≠ ③ 本机桥。
+> 状态（2026-08-15，以代码为准）：CLI 已覆盖 doctor（含 ⑤ Locks）/ run / env / agent（含 `capabilities`、`outdated`）/ provider（含 `undo`、`test-latency`）/ account（含 `oauth-url`、`refresh`、`delete`、`undo`）/ skill 全树 / usage / backup（含 `delete`）/ config（白名单 + 只读 `app_version`）。GUI 已接线 doctor、安装、Provider、Account、OAuth PKCE（Claude/Codex/Grok）、Skill、Usage、Backup、Chat、Projects、Settings。Provider/Account **测速与切换撤销** CLI/GUI 均已接线。**备份导出**仍未实现。凭据落盘加密为当前范围外。跨 Agent 复用三路见 [product-decisions.md](product-decisions.md)；本文「代理模式」≠ ③ 本机路由。
 > v1.1：`doctor` 含 runtimes；新增 `env` 资源；`agent install` 两阶段与 `--install-deps`。  
 > v1.2：平台环境差异——`doctor`/`env list` 仅返回宿主相关 Runtime（macOS 不含 PowerShell）；`env install` 默认 channel 与 `agent install|upgrade` native 底层命令按 Windows/macOS 分流。
 
@@ -124,7 +124,7 @@ agenthub
 
 - `agenthub oauth ...` 完整浏览器 PKCE 主路径归 GUI；CLI 提供 `account oauth-url` / `account refresh`
 - 官方「模型商店」浏览/切换
-- 代理模式（热切换不改 live 文件，P4）、WebDAV。这不是三路里的 ③ 本机桥；③ 走现有 `local_bridge`，不在本条「明确不做」里
+- 代理模式（热切换不改 live 文件，P4）、WebDAV。这不是三路里的 ③ 本机路由；③ 走现有 `local_bridge`，不在本条「明确不做」里
 
 ---
 
