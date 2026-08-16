@@ -12,6 +12,7 @@ import {
   buildBootCriticalCss,
   buildDesignTokensCss,
   buildTailwindFontSize,
+  typeScalePx,
   typeScaleTw,
 } from './tokens';
 
@@ -85,5 +86,8 @@ describe('TYPE_SCALE (docs/ui-design.md §2)', () => {
     expect(fontSize['2xs']).toEqual(fontSize.meta);
     const distinctPx = new Set(Object.values(fontSize).map(([size]) => size));
     expect(distinctPx).toEqual(new Set(['16px', '13px', '12px']));
+    expect(typeScalePx('title')).toBe(16);
+    expect(typeScalePx('body')).toBe(13);
+    expect(typeScalePx('meta')).toBe(12);
   });
 });

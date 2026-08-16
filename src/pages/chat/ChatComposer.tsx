@@ -127,7 +127,7 @@ export function ChatComposer({
           ref={textareaRef}
           className={cn(
             'block w-full resize-none overflow-x-hidden break-words bg-transparent',
-            'px-4 pb-2 pt-3 text-sm leading-[1.45] outline-none placeholder:text-muted',
+            'px-4 pb-2 pt-3 text-body leading-[1.45] outline-none placeholder:text-muted',
             'disabled:cursor-not-allowed disabled:opacity-60',
           )}
           style={{ minHeight: COMPOSER_MIN_PX, maxHeight: COMPOSER_MAX_PX }}
@@ -151,7 +151,7 @@ export function ChatComposer({
               <button
                 type="button"
                 disabled={sending || sendingElsewhere}
-                className="inline-flex h-7 max-w-36 items-center gap-1.5 rounded-btn border border-border bg-subtle px-2 text-xs text-secondary hover:bg-hover disabled:opacity-50"
+                className="inline-flex h-7 max-w-36 items-center gap-1.5 rounded-btn border border-border bg-subtle px-2 text-meta text-secondary hover:bg-hover disabled:opacity-50"
               >
                 {active.agentIds[0] && <AgentLogo agentId={active.agentIds[0]} size="sm" />}
                 <span className="truncate">{agentPickerLabel}</span>
@@ -174,17 +174,17 @@ export function ChatComposer({
                       <AgentLogo agentId={row.id} size="sm" />
                       {agentDisplayName(row.id)}
                       {row.reason === 'hidden' && (
-                        <span className="text-xs text-muted">已隐藏</span>
+                        <span className="text-meta text-muted">已隐藏</span>
                       )}
                       {row.reason === 'noAuth' && (
-                        <span className="text-xs text-muted">未配置授权</span>
+                        <span className="text-meta text-muted">未配置授权</span>
                       )}
                     </span>
                   </DropdownMenuCheckboxItem>
                 );
               })}
               {pickerRows.length === 0 && (
-                <div className="px-2 py-1.5 text-xs text-muted">尚未安装任何 Agent</div>
+                <div className="px-2 py-1.5 text-meta text-muted">尚未安装任何 Agent</div>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -201,7 +201,7 @@ export function ChatComposer({
                     switchingProvider ||
                     Boolean(primaryAgent && hiddenIds.has(primaryAgent))
                   }
-                  className="inline-flex h-7 max-w-44 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-xs text-secondary hover:bg-hover disabled:opacity-50"
+                  className="inline-flex h-7 max-w-44 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-meta text-secondary hover:bg-hover disabled:opacity-50"
                   aria-label={connectionCaption ?? '切换连接'}
                 >
                   <span className="min-w-0 truncate">
@@ -224,7 +224,7 @@ export function ChatComposer({
               <DropdownMenuSeparator />
               {providers.length === 0 ? (
                 <div className="px-2 py-2">
-                  <p className="mb-2 text-xs text-muted">暂无连接</p>
+                  <p className="mb-2 text-meta text-muted">暂无连接</p>
                   {primaryAgent && (
                     <Button
                       size="sm"
@@ -253,7 +253,7 @@ export function ChatComposer({
                         <span className="min-w-0 flex-1">
                           <span className="block truncate">{p.name}</span>
                           {model ? (
-                            <span className="block truncate text-xs text-muted">{model}</span>
+                            <span className="block truncate text-meta text-muted">{model}</span>
                           ) : null}
                         </span>
                       </span>
@@ -287,7 +287,7 @@ export function ChatComposer({
       </div>
       <p
         className={cn(
-          'mt-2 text-center text-xs',
+          'mt-2 text-center text-meta',
           active.allowDangerous ? 'text-warning' : 'text-muted',
         )}
       >
@@ -324,7 +324,7 @@ function BlockerNotice({
             <Button
               size="sm"
               variant="outline"
-              className="h-6 px-2 text-xs"
+              className="h-6 px-2 text-meta"
               onClick={() => onFocusConversation(blocker.conversationId)}
             >
               {copy.primaryAction}
@@ -332,7 +332,7 @@ function BlockerNotice({
             <Button
               size="sm"
               variant="dangerOutline"
-              className="h-6 px-2 text-xs"
+              className="h-6 px-2 text-meta"
               onClick={onCancel}
             >
               {copy.secondaryAction}

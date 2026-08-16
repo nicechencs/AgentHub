@@ -96,7 +96,7 @@ export function ChatSessionHeader({
         ) : (
           <button
             type="button"
-            className="max-w-full truncate text-left text-sm font-semibold text-primary"
+            className="max-w-full truncate text-left text-body font-semibold text-primary"
             onClick={() => {
               if (!active) return;
               committedRef.current = false;
@@ -118,7 +118,7 @@ export function ChatSessionHeader({
               type="button"
               onClick={onOpenSettings}
               className={cn(
-                'inline-flex h-7 max-w-[9rem] items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-xs',
+                'inline-flex h-7 max-w-[9rem] items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-meta',
                 active.cwd ? 'text-secondary hover:bg-hover' : 'text-warning hover:bg-hover',
               )}
             >
@@ -133,7 +133,7 @@ export function ChatSessionHeader({
               <button
                 type="button"
                 onClick={onOpenSettings}
-                className="inline-flex h-7 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-xs text-warning hover:bg-hover"
+                className="inline-flex h-7 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-meta text-warning hover:bg-hover"
               >
                 <ShieldAlert className="h-3 w-3 shrink-0" />
                 自动批准
@@ -160,7 +160,7 @@ function AgentChip({ agentIds, hasHidden }: { agentIds: AgentId[]; hasHidden: bo
   if (agentIds.length === 0) return null;
   if (agentIds.length === 1) {
     return (
-      <span className="inline-flex h-7 items-center gap-1.5 rounded-btn border border-border bg-subtle px-2 text-xs text-secondary">
+      <span className="inline-flex h-7 items-center gap-1.5 rounded-btn border border-border bg-subtle px-2 text-meta text-secondary">
         <AgentLogo agentId={agentIds[0]} size="sm" />
         <span className="truncate">{agentDisplayName(agentIds[0])}</span>
         {hasHidden && <span className="text-muted">已隐藏</span>}
@@ -168,7 +168,7 @@ function AgentChip({ agentIds, hasHidden }: { agentIds: AgentId[]; hasHidden: bo
     );
   }
   return (
-    <span className="inline-flex h-7 items-center gap-1.5 rounded-btn border border-border bg-subtle px-2 text-xs text-secondary">
+    <span className="inline-flex h-7 items-center gap-1.5 rounded-btn border border-border bg-subtle px-2 text-meta text-secondary">
       <span className="flex items-center">
         {agentIds.slice(0, 3).map((id, i) => (
           <span key={id} className={cn(i > 0 && '-ml-1.5')} style={{ zIndex: 3 - i }}>

@@ -112,12 +112,12 @@ export function ChatSessionRail({
           </div>
         ) : conversations.length === 0 ? (
           <div className="px-2 py-4 text-center">
-            <p className="text-xs text-muted">暂无对话</p>
+            <p className="text-meta text-muted">暂无对话</p>
             <p className="mt-1 text-meta text-muted">点上方「新建对话」开始</p>
           </div>
         ) : filteredCount === 0 ? (
           <div className="px-2 py-4 text-center">
-            <p className="text-xs text-muted">没有匹配的对话</p>
+            <p className="text-meta text-muted">没有匹配的对话</p>
           </div>
         ) : (
           groups.map((group) => (
@@ -145,7 +145,7 @@ export function ChatSessionRail({
                         type="button"
                         onClick={() => onFocus(c.id)}
                         className={cn(
-                          'min-w-0 flex-1 px-2 py-1.5 text-left text-sm',
+                          'min-w-0 flex-1 px-2 py-1.5 text-left text-body',
                           selected ? 'font-medium text-primary' : 'text-secondary',
                         )}
                       >
@@ -155,7 +155,7 @@ export function ChatSessionRail({
                             <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted" />
                           )}
                         </span>
-                        <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
+                        <span className="mt-0.5 flex items-center gap-1.5 text-meta text-muted">
                           <span className="inline-flex items-center gap-0.5">
                             {dots.shown.map((id) => (
                               <AgentDot key={id} agentId={id} size="sm" title={null} />
