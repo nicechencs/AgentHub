@@ -186,7 +186,7 @@ trait AgentAdapter {
 
 #### Token 统计
 - **Usage 不做**本地代理、**不**劫持请求；只读解析各 Agent 已有会话/日志。③ 本机路由是另一条产品线，见 [product-decisions.md](product-decisions.md)。
-- 每 agent 一个 `UsageParser`（独立 `usage/` 目录，经 Adapter `usage_source()` 挂接）→ 统一  
+- 每 agent 一个用量源（独立 `usage/` + `platform/usage` 注册，不再经 Adapter `usage_source()`）→ 统一  
   `UsageRecord { agent, account?, model, input/output/cache tokens, cost?, ts, session_id }`  
   → 增量入库（文件 offset / 哈希去重）。
 - 解析容错：格式失配跳过并计数，不中断整次采集。大文件只读打开、增量游标。
