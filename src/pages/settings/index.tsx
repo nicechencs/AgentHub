@@ -8,6 +8,7 @@ import { pageRhythm } from '@/components/layout/page-rhythm';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { useI18n, syncLanguageFromSettings } from '@/components/shared/LanguageProvider';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { useTheme } from '@/components/shared/ThemeProvider';
 import {
@@ -41,8 +42,10 @@ export default function SettingsPage({
   onCheckUpdate?: () => Promise<UpdateInfo | null>;
 } = {}) {
   const { toast } = useToast();
+  const { t, setLanguage } = useI18n();
   const { theme: providerTheme, setTheme } = useTheme();
   const committedThemeRef = useRef(providerTheme);
+  const committedLanguageRef = useRef(lang);
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = parseSettingsTab(searchParams.get('tab'));
 
@@ -68,7 +71,9 @@ export default function SettingsPage({
       }
       setSettings(s);
       committedThemeRef.current = s.theme;
+      committedLanguageRef.current = s.language;
       setTheme(s.theme);
+      setLanguage(s.language);
     } catch (e) {
       setError(e);
     } finally {
@@ -83,8 +88,10 @@ export default function SettingsPage({
   useEffect(() => {
     return () => {
       applyTheme(committedThemeRef.current);
+      syncLanguageFromSettings({ language: committedLanguageRef.current });
+      setLanguage(committedLanguageRef.current);
     };
-  }, []);
+  }, [setLanguage]);
 
   const setTab = (next: string) => {
     const value = parseSettingsTab(next);
@@ -101,14 +108,14 @@ export default function SettingsPage({
         if (onCheckUpdate) {
           const found = await onCheckUpdate();
           if (!found) {
-            toast({ title: '已是最新版本', variant: 'success' });
+            toast({ title: t('settings.page.latestVersion'), variant: 'success' });
           }
           return;
         }
         if (!(await isUpdateAvailable())) {
           toast({
-            title: '无法检查更新',
-            description: '仅桌面端支持自动更新',
+            title: t('settings.page.cannotCheckUpdate'),
+            description: t('settings.page.desktopOnlyUpdate'),
             variant: 'danger',
           });
           return;
@@ -116,17 +123,17 @@ export default function SettingsPage({
         const found = await checkForUpdate();
         setAppUpdateAvailable(found);
         if (!found) {
-          toast({ title: '已是最新版本', variant: 'success' });
+          toast({ title: t('settings.page.latestVersion'), variant: 'success' });
         } else {
           toast({
-            title: `发现新版本 v${found.version}`,
-            description: '可点击「一键更新」安装',
+            title: t('settings.page.updateFound', { version: found.version }),
+            description: t('settings.page.updateFoundDesc'),
             variant: 'success',
           });
         }
       } catch (e) {
         toast({
-          title: '检查更新失败',
+          title: t('settings.page.checkUpdateFailed'),
           description: e instanceof Error ? e.message : String(e),
           variant: 'danger',
         });
@@ -143,13 +150,13 @@ export default function SettingsPage({
         await downloadAndInstallUpdate();
         setAppUpdateAvailable(null);
         toast({
-          title: '更新已安装',
-          description: '请手动重启应用以完成更新',
+          title: t('settings.page.updateInstalled'),
+          description: t('settings.page.updateInstalledDesc'),
           variant: 'success',
         });
       } catch (e) {
         toast({
-          title: '更新失败',
+          title: t('settings.page.updateFailed'),
           description: e instanceof Error ? e.message : String(e),
           variant: 'danger',
         });
@@ -163,9 +170,9 @@ export default function SettingsPage({
     return (
       <div>
         <PageHeader
-          title="设置"
-          description="偏好与数据"
-          descriptionTip="主题、安全展示、日志、用量采集间隔与备份。"
+          title={t('settings.page.title')}
+          description={t('settings.page.description')}
+          descriptionTip={t('settings.page.descriptionTip')}
         />
         <SettingsSkeleton />
       </div>
@@ -176,11 +183,11 @@ export default function SettingsPage({
     return (
       <div>
         <PageHeader
-          title="设置"
-          description="偏好与数据"
-          descriptionTip="主题、安全展示、日志、用量采集间隔与备份。"
+          title={t('settings.page.title')}
+          description={t('settings.page.description')}
+          descriptionTip={t('settings.page.descriptionTip')}
         />
-        <ErrorState error={error ?? new Error('设置数据为空')} onRetry={() => void load()} />
+        <ErrorState error={error ?? new Error(t('settings.page.emptyError'))} onRetry={() => void load()} />
       </div>
     );
   }
@@ -188,24 +195,24 @@ export default function SettingsPage({
   return (
     <div>
       <PageHeader
-        title="设置"
-        description="偏好与数据"
-        descriptionTip="主题、安全展示、日志、用量采集间隔与备份。"
+        title={t('settings.page.title')}
+        description={t('settings.page.description')}
+        descriptionTip={t('settings.page.descriptionTip')}
       />
 
       <Tabs value={tab} onValueChange={setTab}>
         <div className={pageRhythm.chrome}>
           <TabsList>
-            <TabsTrigger value="general">常规</TabsTrigger>
-            <TabsTrigger value="security">安全</TabsTrigger>
-            <TabsTrigger value="data">数据</TabsTrigger>
-            <TabsTrigger value="backups">备份</TabsTrigger>
+            <TabsTrigger value="general">{t('settings.page.tabGeneral')}</TabsTrigger>
+            <TabsTrigger value="security">{t('settings.page.tabSecurity')}</TabsTrigger>
+            <TabsTrigger value="data">{t('settings.page.tabData')}</TabsTrigger>
+            <TabsTrigger value="backups">{t('settings.page.tabBackups')}</TabsTrigger>
             <TabsTrigger value="about" className="gap-1.5">
-              关于
+              {t('settings.page.tabAbout')}
               {pendingUpdate && (
                 <StatusPin
                   tone="warning"
-                  label={`可更新至 v${pendingUpdate.version}`}
+                  label={t('settings.page.updatePin', { version: pendingUpdate.version })}
                   className="shrink-0"
                 />
               )}
@@ -219,6 +226,7 @@ export default function SettingsPage({
             patch={patch}
             setSettings={setSettings}
             committedThemeRef={committedThemeRef}
+            committedLanguageRef={committedLanguageRef}
             saving={saving}
             setSaving={setSaving}
           />

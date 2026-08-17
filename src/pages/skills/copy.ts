@@ -2,6 +2,7 @@
  * Skills 页文案真源（Phase 2）。
  * L0/L1 用短词；L2 tip ≤2 短句；L3「单向投影」等不进主界面。
  * Toast 标题宜 ≤16 字；description 不塞完整路径。
+ * 待迁入 i18n 字典（后续期）；新增页面文案一律进 `src/lib/i18n/locales`。
  */
 import type { SkillMapStatus, SkillSyncState } from '@/lib/types';
 import { mapStatusLabel } from '@/lib/api/skill';

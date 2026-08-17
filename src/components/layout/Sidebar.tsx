@@ -30,23 +30,24 @@ import { useSidebar } from '@/components/layout/SidebarContext';
 import { installedCatalogAgents } from '@/components/layout/sidebar-agents';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
-import { BRIDGES_NAV_LABEL, BRIDGES_PATH } from '@/lib/bridges-path';
+import { useI18n } from '@/components/shared/LanguageProvider';
+import { BRIDGES_PATH } from '@/lib/bridges-path';
 
 /** 工作区 */
 const NAV_WORKSPACE = [
-  { to: '/chat', label: 'Chat', icon: MessagesSquare },
-  { to: '/agents', label: 'Agents', icon: Bot },
-  { to: '/skills', label: 'Skills', icon: Blocks },
-  { to: '/mcp', label: 'MCP', icon: Plug },
-  { to: '/projects', label: 'Projects', icon: FolderKanban },
+  { to: '/chat', navKey: 'nav.chat', icon: MessagesSquare },
+  { to: '/agents', navKey: 'nav.agents', icon: Bot },
+  { to: '/skills', navKey: 'nav.skills', icon: Blocks },
+  { to: '/mcp', navKey: 'nav.mcp', icon: Plug },
+  { to: '/projects', navKey: 'nav.projects', icon: FolderKanban },
 ] as const;
 
 /** 管理 */
 const NAV_MANAGE = [
-  { to: '/', label: 'Dashboard', icon: Gauge },
-  { to: '/connections', label: 'Connections', icon: Key },
-  { to: BRIDGES_PATH, label: BRIDGES_NAV_LABEL, icon: Cable },
-  { to: '/settings', label: 'Settings', icon: Settings2 },
+  { to: '/', navKey: 'nav.dashboard', icon: Gauge },
+  { to: '/connections', navKey: 'nav.connections', icon: Key },
+  { to: BRIDGES_PATH, navKey: 'nav.routes', icon: Cable },
+  { to: '/settings', navKey: 'nav.settings', icon: Settings2 },
 ] as const;
 
 type NavItem = (typeof NAV_WORKSPACE)[number] | (typeof NAV_MANAGE)[number];
@@ -65,7 +66,9 @@ function SidebarNavLink({
   /** Optional silent tip (e.g. app update available on Settings). */
   notice?: { label: string } | null;
 }) {
-  const { to, label, icon: Icon } = item;
+  const { t } = useI18n();
+  const { to, navKey, icon: Icon } = item;
+  const label = t(navKey);
   const tip = notice?.label;
   const a11yLabel = tip ? `${label} — ${tip}` : label;
 
@@ -140,20 +143,22 @@ function agentDotLabel(
   meta: (typeof AGENTS)[number],
   status: AgentStatus | undefined,
   hasUpdate: boolean,
+  upgradeable: string,
 ): string {
   const ver = status?.version ? ` v${status.version}` : '';
-  const up = hasUpdate ? ` (可升级 v${status?.latestVersion})` : '';
+  const up = hasUpdate ? upgradeable : '';
   return `${meta.name}${ver}${up}`;
 }
 
 /** 侧边导航:可折叠;底部为 agent 在线状态迷你条 */
 export function Sidebar() {
   const { collapsed, toggle } = useSidebar();
+  const { t } = useI18n();
   const { statuses: agents } = useAgentStatusesOptional();
   const appUpdate = useAppUpdateAvailable();
   const bridgePresence = useBridgePresence();
   const settingsNotice = appUpdate
-    ? { label: `有可用更新 v${appUpdate.version}` }
+    ? { label: t('nav.updateAvailable', { version: appUpdate.version }) }
     : null;
 
   React.useEffect(() => {
@@ -198,12 +203,12 @@ export function Sidebar() {
         )}
       >
         {collapsed ? (
-          <Hint label="展开侧栏" side="right">
+          <Hint label={t('nav.expandSidebar')} side="right">
             <button
               type="button"
               onClick={toggle}
               className="group relative flex h-7 w-7 shrink-0 items-center justify-center rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
-              aria-label="展开侧栏"
+              aria-label={t('nav.expandSidebar')}
             >
               <span className="flex h-7 w-7 items-center justify-center rounded-btn transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
                 <AppLogo size={20} className="h-5 w-5 rounded-[22%]" />
@@ -221,12 +226,12 @@ export function Sidebar() {
               </span>
               <span className="truncate text-sm font-semibold tracking-tight">AgentHub</span>
             </div>
-            <Hint label="收起侧栏" side="right">
+            <Hint label={t('nav.collapseSidebar')} side="right">
               <button
                 type="button"
                 onClick={toggle}
                 className="flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors hover:bg-hover hover:text-primary"
-                aria-label="收起侧栏"
+                aria-label={t('nav.collapseSidebar')}
               >
                 <PanelLeftClose className="h-4 w-4" strokeWidth={1.8} />
               </button>
@@ -242,12 +247,12 @@ export function Sidebar() {
           collapsed ? 'px-1.5' : 'px-2',
         )}
       >
-        <NavGroup label="工作区" collapsed={collapsed}>
+        <NavGroup label={t('nav.workspace')} collapsed={collapsed}>
           {NAV_WORKSPACE.map((item) => (
             <SidebarNavLink key={item.to} item={item} collapsed={collapsed} itemClass={itemClass} />
           ))}
         </NavGroup>
-        <NavGroup label="管理" collapsed={collapsed} className="mt-auto pb-2">
+        <NavGroup label={t('nav.manage')} collapsed={collapsed} className="mt-auto pb-2">
           {manageItems.map((item) => (
             <SidebarNavLink
               key={item.to}
@@ -263,10 +268,10 @@ export function Sidebar() {
       {/* agent 在线状态迷你条：最底部 */}
       <div className={cn('shrink-0 border-t border-border', collapsed ? 'px-1.5 py-2.5' : 'px-3 py-2.5')}>
         {collapsed ? (
-          <Hint label={`${installed}/${visibleTotal} agents 已安装`} side="right">
+          <Hint label={t('nav.agentsInstalled', { installed, total: visibleTotal })} side="right">
             <div
               className="flex cursor-default flex-wrap items-center justify-center gap-1.5 rounded-btn py-0.5"
-              aria-label={`${installed}/${visibleTotal} agents 已安装`}
+              aria-label={t('nav.agentsInstalled', { installed, total: visibleTotal })}
             >
               {installedMetas.map((meta) => {
                 const status = agents.find((a) => a.agentId === meta.id);
@@ -303,14 +308,19 @@ export function Sidebar() {
                   key={meta.id}
                   agentId={meta.id}
                   color={meta.color}
-                  title={agentDotLabel(meta, status, hasUpdate)}
+                  title={agentDotLabel(
+                    meta,
+                    status,
+                    hasUpdate,
+                    t('nav.upgradeable', { version: status?.latestVersion ?? '' }),
+                  )}
                   growOnHover
                   className={cn(hasUpdate && 'ring-2 ring-warning')}
                 />
               );
             })}
             {installed === 0 && (
-              <span className="text-xs text-muted">未安装 Agent</span>
+              <span className="text-xs text-muted">{t('nav.noAgentInstalled')}</span>
             )}
             <span className="ml-auto shrink-0 text-xs text-muted">
               {installed}/{visibleTotal}

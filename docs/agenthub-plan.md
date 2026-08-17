@@ -387,7 +387,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 模块化收口（双真源 / 上帝文件 / 写入入口） | 📋 部分已收口 | integrations / Ticket 写口 / `adapter_control` 契约已落地；仍待削 `AgentAdapter` 厚表面、sidecar 二进制、Skills/Projects/AgentCard。见 [modularity-improvement.md](modularity-improvement.md)。不拆微服务，凭据落盘加密仍范围外 |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |
 | Token **后台自动刷新守护** | ❌ | 有手动 refresh |
-| Settings 语言切换 / i18n | ❌ | `language` 可写入 L1，UI 仅为中文只读说明，无 i18next |
+| Settings 语言切换 / i18n | ✅ | 轻量自研字典 + `LanguageProvider`；Settings 五面板与侧栏 chrome 可切换中/英。`language` 以 L1 core 为真源，localStorage 仅首屏缓存。业务页（Chat / Dashboard / Connections / Skills `copy.ts` 等）分期迁移。不引入 i18next |
 | Usage **后台守护 / 文件监听** | ❌ | 仅前台 interval + 手动 |
 | 官方模型商店 / 账号可用模型探测 | ❌ | 明确非目标（用量去重模型列表除外） |
 | WebDAV / 代理模式 / macOS·Linux 一等公民 | P4 候选 | 未开工 |
