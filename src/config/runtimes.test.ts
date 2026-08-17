@@ -28,8 +28,21 @@ describe('runtime remediation platform filtering', () => {
   it('offers copyable distro commands on Linux without winget or brew', () => {
     const rows = runtimeRemediationsForPlatform(RUNTIME_MAP.nodejs.remediations, 'linux');
     expect(rows.some((row) => row.kind === 'command' && row.value.includes('apt-get'))).toBe(true);
+    expect(rows.some((row) => row.kind === 'command' && row.value.includes('zypper'))).toBe(true);
+    expect(rows.some((row) => row.kind === 'command' && row.value.includes('apk add'))).toBe(true);
+    expect(rows.some((row) => row.kind === 'hint' && row.value.includes('不要套用 apt-get'))).toBe(
+      true,
+    );
     expect(rows.some((row) => row.kind === 'url' && row.value.includes('nodejs.org'))).toBe(true);
     expect(rows.some((row) => row.kind === 'winget' || row.kind === 'brew')).toBe(false);
+  });
+
+  it('never offers apt commands on Windows or macOS', () => {
+    for (const platform of ['windows', 'macos'] as const) {
+      const rows = runtimeRemediationsForPlatform(RUNTIME_MAP.nodejs.remediations, platform);
+      expect(rows.some((row) => (row.value ?? '').includes('apt-get'))).toBe(false);
+      expect(rows.some((row) => (row.value ?? '').includes('zypper'))).toBe(false);
+    }
   });
 
   it('omits PowerShell from host runtime list outside Windows', () => {

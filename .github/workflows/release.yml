@@ -352,12 +352,143 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  build-linux:
+    name: Build Linux (x64)
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout validated commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 9
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            src-tauri
+
+      - name: Install Linux native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Linux desktop bundles
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Do not require the updater key: unsigned .deb + AppImage must still ship.
+          # When the key is present (same secret as Windows/macOS), also emit .sig.
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY is set; building signed Linux updater artifacts."
+            pnpm tauri build --bundles deb,appimage -- --locked
+          else
+            echo "TAURI_SIGNING_PRIVATE_KEY is unset; building unsigned Linux installers."
+            pnpm tauri:build:linux -- --locked
+          fi
+
+      - name: Collect Linux artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE="target/release/bundle"
+          OUT="release-assets/linux"
+          mkdir -p "$OUT/deb" "$OUT/appimage"
+
+          DEB_COUNT=0
+          for source in "$BUNDLE"/deb/*.deb; do
+            [ -f "$source" ] || continue
+            DEB_COUNT=$((DEB_COUNT + 1))
+            destination="$OUT/deb/$(basename "$source")"
+            if [ -e "$destination" ]; then
+              echo "Duplicate staged asset name: $(basename "$source")" >&2
+              exit 1
+            fi
+            cp "$source" "$destination"
+            if [ -f "${source}.sig" ]; then
+              cp "${source}.sig" "${destination}.sig"
+            fi
+          done
+          if [ "$DEB_COUNT" -eq 0 ]; then
+            echo "No .deb artifact under $BUNDLE/deb" >&2
+            exit 1
+          fi
+
+          APPIMAGE_COUNT=0
+          APPIMAGE_SIG_COUNT=0
+          for source in "$BUNDLE"/appimage/*.AppImage; do
+            [ -f "$source" ] || continue
+            APPIMAGE_COUNT=$((APPIMAGE_COUNT + 1))
+            destination="$OUT/appimage/$(basename "$source")"
+            if [ -e "$destination" ]; then
+              echo "Duplicate staged asset name: $(basename "$source")" >&2
+              exit 1
+            fi
+            cp "$source" "$destination"
+            if [ -f "${source}.sig" ]; then
+              if [ -z "$(LC_ALL=C tr -d '[:space:]' < "${source}.sig")" ]; then
+                echo "Empty updater signature for $source; publishing the installer without it." >&2
+              else
+                cp "${source}.sig" "${destination}.sig"
+                APPIMAGE_SIG_COUNT=$((APPIMAGE_SIG_COUNT + 1))
+              fi
+            fi
+          done
+          if [ "$APPIMAGE_COUNT" -eq 0 ]; then
+            echo "No AppImage artifact under $BUNDLE/appimage" >&2
+            exit 1
+          fi
+          if [ "$APPIMAGE_SIG_COUNT" -eq 0 ]; then
+            echo "Linux AppImage updater signatures were not produced; installers will still be published."
+          fi
+          find "release-assets/linux" -type f -print | LC_ALL=C sort
+
+      - name: Upload Linux release assets
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-linux
+          path: release-assets/linux
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
     name: Publish GitHub Release
     needs:
       - validate
       - build-windows
       - build-macos
+      - build-linux
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -384,6 +515,12 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           name: release-macos
+          path: build-tree/target/release/bundle
+
+      - name: Download Linux release assets
+        uses: actions/download-artifact@v7
+        with:
+          name: release-linux
           path: build-tree/target/release/bundle
 
       - name: Validate publish target and prepare assets
@@ -438,13 +575,34 @@ jobs:
             cp "$source" "$destination"
           done < <(find "$BUNDLE" -type f -print0)
 
+          DEB_COUNT=0
+          APPIMAGE_COUNT=0
+          while IFS= read -r -d '' source; do
+            case "$source" in
+              *.deb) DEB_COUNT=$((DEB_COUNT + 1)) ;;
+              *.AppImage) APPIMAGE_COUNT=$((APPIMAGE_COUNT + 1)) ;;
+            esac
+          done < <(find "$BUNDLE" -type f -print0)
+          if [ "$DEB_COUNT" -eq 0 ] || [ "$APPIMAGE_COUNT" -eq 0 ]; then
+            echo "Linux release assets are required (.deb and AppImage); found deb=$DEB_COUNT appimage=$APPIMAGE_COUNT" >&2
+            exit 1
+          fi
+
+          REQUIRED_PLATFORMS="windows-x86_64,darwin-aarch64"
+          LINUX_SIGS="$(find "$BUNDLE" -type f -name '*.AppImage.sig' -print 2>/dev/null || true)"
+          if [ -n "$LINUX_SIGS" ]; then
+            REQUIRED_PLATFORMS="$REQUIRED_PLATFORMS,linux-x86_64"
+          else
+            echo "Linux updater signatures are absent; publishing installers without a signed linux-x86_64 feed entry."
+          fi
+
           node scripts/build-latest-json.mjs \
             --version "$VERSION" \
             --notes "AgentHub $TAG" \
             --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG" \
             --target-dir "$BUNDLE" \
             --mac-arch aarch64 \
-            --required-platforms windows-x86_64,darwin-aarch64 \
+            --required-platforms "$REQUIRED_PLATFORMS" \
             --out "$ASSETS/latest.json"
 
           node --input-type=module <<'NODE'
@@ -454,6 +612,13 @@ jobs:
             if (!feed.platforms?.[platform]?.url || !feed.platforms?.[platform]?.signature) {
               throw new Error(`latest.json is missing a signed ${platform} updater artifact`);
             }
+          }
+          const linux = feed.platforms?.['linux-x86_64'];
+          if (linux && (!linux.url || !linux.signature)) {
+            throw new Error('latest.json linux-x86_64 is present but not a signed updater artifact');
+          }
+          if (!linux) {
+            console.warn('latest.json has no linux-x86_64 entry; Linux auto-update is not signed yet. .deb and AppImage are still published.');
           }
           NODE
 
@@ -538,7 +703,11 @@ jobs:
             echo "- Tag: \`$TAG\`"
             echo "- Commit: \`$GITHUB_SHA\`"
             echo "- Prerelease: \`$PRERELEASE\`"
+            echo "- Platforms: Windows (signed), macOS (signed updater; Apple notarization not promised), Linux (.deb + AppImage)"
             echo "- Assets:"
             find release-assets -maxdepth 1 -type f -printf '  - `%f`\n' | LC_ALL=C sort
             echo "- URL: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+            if ! grep -q '"linux-x86_64"' release-assets/latest.json; then
+              echo "- Linux auto-update: not signed yet (installers are still published). Remaining secret: \`TAURI_SIGNING_PRIVATE_KEY\`"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

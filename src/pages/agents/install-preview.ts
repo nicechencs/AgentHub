@@ -71,12 +71,19 @@ export function buildEnvInstallPreview(
     if (id === 'git' && channel === 'brew') {
       return `$ brew install git  # ${meta?.name ?? id}`;
     }
-    if (channel === 'manual') {
+    if (
+      channel === 'manual' ||
+      channel === 'apt' ||
+      channel === 'dnf' ||
+      channel === 'pacman' ||
+      channel === 'zypper' ||
+      channel === 'apk'
+    ) {
       if (id === 'nodejs' || id === 'npm') {
-        return `# Linux: sudo apt-get install -y nodejs npm   # or dnf/pacman; prefer https://nodejs.org/ LTS`;
+        return `# Linux: sudo apt-get install -y nodejs npm   # or dnf/pacman/zypper/apk; unknown distros: https://nodejs.org/ LTS`;
       }
       if (id === 'git') {
-        return `# Linux: sudo apt-get install -y git   # or: sudo dnf install -y git / sudo pacman -S --needed git`;
+        return `# Linux: sudo apt-get install -y git   # or dnf/pacman/zypper/apk; unknown distros: https://git-scm.com/downloads`;
       }
       return `# Linux has no one-click installer for ${id}; use the distro package manager or official download`;
     }

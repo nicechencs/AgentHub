@@ -8,7 +8,7 @@ usage() {
 Usage: scripts/check-linux-prereqs.sh [--check] [--print-packages]
 
   --check            Probe the current host (default). Exit 0 if ready, 1 if not.
-  --print-packages   Print copyable install commands for Debian/Fedora/Arch and exit 0.
+  --print-packages   Print copyable install commands and other-distro hints, then exit 0.
   -h, --help         Show this help.
 
 Verification: ./scripts/check-linux-prereqs.sh --check
@@ -73,6 +73,11 @@ sudo pacman -S --needed \
   librsvg \
   xdotool \
   pkgconf
+
+# openSUSE / SUSE and Alpine: do not assume apt-get.
+# Install equivalent WebKitGTK 4.1 / SSL / AppIndicator / rsvg / xdo packages
+# with zypper or apk, or follow https://v2.tauri.app/start/prerequisites/#linux
+# Packaged desktop clients: GitHub Releases (.deb or AppImage).
 EOF
 }
 

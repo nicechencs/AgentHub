@@ -171,7 +171,7 @@ agenthub
 | 命令 | 参数 | core | 危险 | 说明 |
 |---|---|---|---|---|
 | `list` | | `env_service.detect_all` | 否 | 与 doctor 的 runtimes 段同源；**仅宿主相关 Runtime**（macOS/Linux 不含 `powershell`） |
-| `install` | `<runtime> [--channel]` | `env_service.install_runtime` | 中 | P2；`runtime`：`nodejs`/`git` 等；channel 默认 **Windows=`winget`、macOS=`brew`、Linux=`manual`**；`powershell` **永不**一键安装；Linux 不自动执行 apt/dnf/pacman，只打印 remediations；流式日志 stderr；成功后 invalidate 缓存 |
+| `install` | `<runtime> [--channel]` | `env_service.install_runtime` | 中 | P2；`runtime`：`nodejs`/`git` 等；channel 默认 **Windows=`winget`、macOS=`brew`、Linux=`manual`**；`powershell` **永不**一键安装；Linux 的 `manual`/`apt`/`dnf`/`pacman`/`zypper`/`apk` 只打印 remediations，不自动 sudo；未知发行版不猜测 apt-get；流式日志 stderr；成功后 invalidate 缓存 |
 
 - `install` 在无自动渠道时打印 remediations（命令 + URL）并以退出码 `3`（业务失败）结束，**不**假装成功。无包管理器（brew/winget 未找到）或不支持的安装渠道 → 退出码 `3`（`env.not_ready` / `unsupported`），`--output json` 的 `details` 含 `remediations`（已按宿主平台过滤）。命令已执行但重新检测未就绪仍为 `install.failed`（退出码 `1`）。
 - **不提供** `env uninstall`（避免误伤系统 Node）。

@@ -79,6 +79,16 @@ fn map_install_failure_missing_brew_is_env_not_ready() {
 fn install_unsupported_channel_is_unsupported() {
     let dir = tempfile::tempdir().unwrap();
     let hub = AgentHub::open(Some(dir.path())).unwrap();
-    let err = install(&hub, "nodejs", "apt", OutputFormat::Quiet).unwrap_err();
-    assert_eq!(err.code(), "unsupported");
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    {
+        let err = install(&hub, "nodejs", "winget", OutputFormat::Quiet).unwrap_err();
+        assert_eq!(err.code(), "unsupported");
+        let err = install(&hub, "nodejs", "apt", OutputFormat::Quiet).unwrap_err();
+        assert_eq!(err.code(), "env.not_ready");
+    }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        let err = install(&hub, "nodejs", "apt", OutputFormat::Quiet).unwrap_err();
+        assert_eq!(err.code(), "unsupported");
+    }
 }

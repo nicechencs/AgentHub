@@ -50,4 +50,12 @@ describe('buildInstallPreview', () => {
     expect(lines.join('\n')).not.toContain('winget');
     expect(lines.join('\n')).not.toContain('brew install');
   });
+
+  it('treats --channel apt as a Linux copy-command path, not winget/brew', () => {
+    const lines = buildEnvInstallPreview(['nodejs', 'git'], 'apt');
+    expect(lines.join('\n')).toContain('apt-get install');
+    expect(lines.join('\n')).not.toContain('winget');
+    expect(lines.join('\n')).not.toContain('brew install');
+    expect(lines.join('\n')).not.toContain('$ agenthub env install');
+  });
 });
