@@ -8,6 +8,8 @@ const PREFIX = 'agenthub:';
 export const StorageKey = {
   theme: `${PREFIX}theme`,
   language: `${PREFIX}language`,
+  /** One-shot: first-launch system language already seeded into core */
+  languageSystemSeeded: `${PREFIX}language-system-seeded-v1`,
   onboardingDone: `${PREFIX}onboarding-done`,
   usageGuideDismissed: `${PREFIX}usage-guide-dismissed`,
   dismissedAlertIds: `${PREFIX}dismissed-alert-ids`,

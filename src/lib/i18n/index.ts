@@ -1,5 +1,5 @@
 import { logger } from '@/lib/logger';
-import { loadString, saveString, StorageKey } from '@/lib/ui-preferences';
+import { loadBool, loadString, saveBool, saveString, StorageKey } from '@/lib/ui-preferences';
 import { en } from './locales/en';
 import { zh } from './locales/zh';
 import type { Dict, MessageKey, MessageParams, TranslateFn, UiLanguage } from './types';
@@ -12,10 +12,55 @@ export const DICTS: Record<UiLanguage, Dict> = { zh, en };
 
 export function parseUiLanguage(raw: string | null | undefined): UiLanguage {
   if (!raw) return 'zh';
-  const v = raw.trim().toLowerCase();
-  if (v === 'en' || v.startsWith('en')) return 'en';
-  if (v === 'zh' || v.startsWith('zh')) return 'zh';
+  const v = raw.trim().toLowerCase().replace(/_/g, '-');
+  if (v === 'en' || v.startsWith('en-') || v.startsWith('en')) return 'en';
+  if (v === 'zh' || v.startsWith('zh-') || v.startsWith('zh')) return 'zh';
   return 'zh';
+}
+
+/** 读 navigator.languages，再补 navigator.language。无环境时空列表。 */
+export function readNavigatorLanguages(): string[] {
+  if (typeof navigator === 'undefined') return [];
+  const list: string[] = [];
+  if (Array.isArray(navigator.languages)) list.push(...navigator.languages);
+  if (navigator.language) list.unshift(navigator.language);
+  return list;
+}
+
+/**
+ * 从系统语言列表挑第一个可识别的 zh/en。
+ * 未识别（如仅 fr）回落 zh。可传入 candidates 便于单测。
+ */
+export function detectSystemLanguage(candidates?: readonly string[] | null): UiLanguage {
+  const list = candidates ?? readNavigatorLanguages();
+  for (const raw of list) {
+    const v = raw.trim().toLowerCase().replace(/_/g, '-');
+    if (!v) continue;
+    if (v === 'en' || v.startsWith('en-')) return 'en';
+    if (v === 'zh' || v.startsWith('zh-')) return 'zh';
+  }
+  return 'zh';
+}
+
+export function isLanguageSystemSeeded(): boolean {
+  return loadBool(StorageKey.languageSystemSeeded, false);
+}
+
+export function markLanguageSystemSeeded(): void {
+  saveBool(StorageKey.languageSystemSeeded, true);
+}
+
+/**
+ * 首次启动：本地（系统检测或已有缓存）优先，必要时回写 core。
+ * 之后：core 为权威。
+ */
+export function planLanguageReconcile(
+  core: UiLanguage,
+  local: UiLanguage,
+  seeded: boolean,
+): { next: UiLanguage; writeCore: boolean } {
+  if (seeded) return { next: core, writeCore: false };
+  return { next: local, writeCore: local !== core };
 }
 
 export function htmlLang(lang: UiLanguage): 'zh-CN' | 'en' {
@@ -67,7 +112,11 @@ export function createTranslator(lang: UiLanguage): TranslateFn {
 }
 
 export function loadStoredLanguage(): UiLanguage {
-  return parseUiLanguage(loadString(StorageKey.language, 'zh'));
+  const raw = loadString(StorageKey.language, '');
+  if (raw) return parseUiLanguage(raw);
+  const detected = detectSystemLanguage();
+  persistLanguage(detected);
+  return detected;
 }
 
 export function persistLanguage(lang: UiLanguage): void {

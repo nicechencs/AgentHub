@@ -1,10 +1,14 @@
 import * as React from 'react';
-import { getSettings } from '@/lib/api/settings';
+import { getSettings, updateSettings } from '@/lib/api/settings';
+import { logger } from '@/lib/logger';
 import {
   applyLanguage,
   createTranslator,
+  isLanguageSystemSeeded,
   loadStoredLanguage,
+  markLanguageSystemSeeded,
   persistLanguage,
+  planLanguageReconcile,
   translate,
   type TranslateFn,
   type UiLanguage,
@@ -27,6 +31,8 @@ export function useI18n() {
   return React.useContext(LanguageContext);
 }
 
+const log = logger.scope('i18n');
+
 /** 启动时应用本地语言，并与 core settings 对账。 */
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = React.useState<UiLanguage>(() => loadStoredLanguage());
@@ -38,11 +44,27 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     let cancelled = false;
     void getSettings()
-      .then((s) => {
+      .then(async (s) => {
+        const local = loadStoredLanguage();
+        const seeded = isLanguageSystemSeeded();
+        const { next, writeCore } = planLanguageReconcile(s.language, local, seeded);
+        if (writeCore) {
+          try {
+            await updateSettings({ language: next });
+          } catch (e) {
+            log.error('seed system language to core failed', e);
+            if (cancelled) return;
+            persistLanguage(next);
+            applyLanguage(next);
+            setLangState(next);
+            return;
+          }
+        }
+        if (!seeded) markLanguageSystemSeeded();
         if (cancelled) return;
-        persistLanguage(s.language);
-        applyLanguage(s.language);
-        setLangState(s.language);
+        persistLanguage(next);
+        applyLanguage(next);
+        setLangState(next);
       })
       .catch(() => {
         // Keep the local first-paint language if core is unavailable.
