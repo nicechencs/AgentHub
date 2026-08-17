@@ -198,7 +198,7 @@ function ProfileDetailBody({
           <h3 className="text-sm font-medium">目标写入</h3>
           <p className="text-sm text-secondary">
             {profile.generatedProviderId
-              ? `已写入 ${agentDisplayName(profile.targetAgentId)} 的本机地址；这不是 Connections 里的票。`
+              ? `已写入 ${agentDisplayName(profile.targetAgentId)} 的本机地址；这不是 Connections 里的登录。`
               : '尚未写入目标工具的本机地址。'}
           </p>
         </section>

@@ -344,10 +344,10 @@ export default function ConnectionsPage() {
         title="连接"
         description={
           visibleWallet
-            ? `钱包 · ${visibleWallet.tickets.length} 张票`
+            ? `钱包 · ${visibleWallet.tickets.length} 份登录`
             : '钱包 · 官方登录 / API Key'
         }
-        descriptionTip="跨 Agent 的票列表。每张真票都可「接到…」其他 Agent；生成投影不出现在本页。"
+        descriptionTip="跨 Agent 的登录列表。每份登录都可「接到…」其他 Agent；生成投影不出现在本页。"
       />
 
       {resumeAgentId ? (
@@ -365,7 +365,7 @@ export default function ConnectionsPage() {
       {walletError && !wallet ? (
         <ErrorState
           error={walletError}
-          title="无法读取票钱包"
+          title="无法读取钱包"
           onRetry={() => void loadWallet()}
         />
       ) : (
@@ -377,7 +377,7 @@ export default function ConnectionsPage() {
               actionLabel="重试"
               onAction={() => void loadWallet()}
             >
-              票钱包刷新失败，下方仍是上次成功加载的数据。
+              钱包刷新失败，下方仍是上次成功加载的数据。
             </Notice>
           ) : null}
           <TicketWalletList

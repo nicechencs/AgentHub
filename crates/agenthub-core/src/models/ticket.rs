@@ -9,7 +9,7 @@ use serde_json::Value;
 use super::{AdapterSourceKind, AdapterSourceProduct, AgentId};
 
 /// `plan_ticket` rejects generated projection providers (not tickets).
-pub const PROJECTION_NOT_A_TICKET: &str = "投影不是票 / 禁止二次投影";
+pub const PROJECTION_NOT_A_TICKET: &str = "投影不是登录 / 禁止二次投影";
 
 /// Wallet list payload for `list_ticket_wallet`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
