@@ -2,6 +2,67 @@
 
 use crate::models::{Remediation, RuntimeId};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LinuxFamily {
+    Debian,
+    Fedora,
+    Arch,
+    Other,
+}
+
+fn os_release_field(text: &str, key: &str) -> Option<String> {
+    for line in text.lines() {
+        let line = line.trim();
+        let rest = line.strip_prefix(key)?.strip_prefix('=')?;
+        let value = rest.trim().trim_matches('"').trim_matches('\'');
+        if !value.is_empty() {
+            return Some(value.to_ascii_lowercase());
+        }
+    }
+    None
+}
+
+fn linux_family_from_os_release(text: &str) -> LinuxFamily {
+    let id = os_release_field(text, "ID").unwrap_or_default();
+    let like = os_release_field(text, "ID_LIKE").unwrap_or_default();
+    let hay = format!("{id} {like}");
+    let tokens = hay.split_whitespace();
+    if tokens.clone().any(|t| matches!(t, "debian" | "ubuntu" | "linuxmint")) {
+        LinuxFamily::Debian
+    } else if tokens
+        .clone()
+        .any(|t| matches!(t, "fedora" | "rhel" | "centos" | "rocky" | "almalinux"))
+    {
+        LinuxFamily::Fedora
+    } else if tokens.any(|t| matches!(t, "arch" | "archlinux" | "manjaro")) {
+        LinuxFamily::Arch
+    } else {
+        LinuxFamily::Other
+    }
+}
+
+#[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
+fn linux_family() -> LinuxFamily {
+    match std::fs::read_to_string("/etc/os-release") {
+        Ok(text) => linux_family_from_os_release(&text),
+        Err(_) => LinuxFamily::Other,
+    }
+}
+
+#[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
+fn linux_runtime_command(id: RuntimeId) -> Option<String> {
+    let packages = match id {
+        RuntimeId::NodeJs | RuntimeId::Npm => "nodejs npm",
+        RuntimeId::Git => "git",
+        RuntimeId::PowerShell => return None,
+    };
+    Some(match linux_family() {
+        LinuxFamily::Fedora => format!("sudo dnf install -y {packages}"),
+        LinuxFamily::Arch => format!("sudo pacman -S --needed {packages}"),
+        LinuxFamily::Debian | LinuxFamily::Other => format!("sudo apt-get install -y {packages}"),
+    })
+}
+
 pub fn remediation_for(id: RuntimeId) -> Remediation {
     match id {
         RuntimeId::NodeJs => {
@@ -27,11 +88,11 @@ pub fn remediation_for(id: RuntimeId) -> Remediation {
                 }
             } else {
                 Remediation {
-                    kind: "hint".into(),
-                    command: None,
+                    kind: "command".into(),
+                    command: linux_runtime_command(RuntimeId::NodeJs),
                     url: Some("https://nodejs.org/".into()),
                     text: Some(
-                        "Install Node.js LTS via your package manager, then restart the shell / AgentHub so PATH refreshes."
+                        "Linux does not one-click install Node. Use your distro packages or the official LTS, then fully quit and restart AgentHub so PATH refreshes. Distro nodejs is often older than 18; prefer https://nodejs.org/ when unsure."
                             .into(),
                     ),
                 }
@@ -96,11 +157,11 @@ pub fn remediation_for(id: RuntimeId) -> Remediation {
                 }
             } else {
                 Remediation {
-                    kind: "hint".into(),
-                    command: None,
+                    kind: "command".into(),
+                    command: linux_runtime_command(RuntimeId::Git),
                     url: Some("https://git-scm.com/downloads".into()),
                     text: Some(
-                        "Install Git via your package manager, then restart AgentHub so PATH refreshes. Skills market / git URL install need git clone."
+                        "Linux does not one-click install Git. Use your distro package manager or the official download, then fully quit and restart AgentHub so PATH refreshes. Skills market / git URL install need git clone."
                             .into(),
                     ),
                 }
@@ -108,3 +169,6 @@ pub fn remediation_for(id: RuntimeId) -> Remediation {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -153,6 +153,18 @@ function mockEnvInstallLogs(id: RuntimeId, channel: string): string[] {
       `✓ Git 环境就绪(mock)`,
     ];
   }
+  if (channel === 'manual') {
+    const command =
+      id === 'git'
+        ? 'sudo apt-get install -y git'
+        : 'sudo apt-get install -y nodejs npm';
+    return [
+      `# Linux has no one-click ${meta.name} installer`,
+      `remediation: ${command}`,
+      `remediation url: ${id === 'git' ? 'https://git-scm.com/downloads' : 'https://nodejs.org/'}`,
+      `Install with your distro package manager or the official download, then restart AgentHub.`,
+    ];
+  }
   return [
     `$ agenthub env install ${id} --channel ${channel}`,
     `正在一键安装 ${meta.name}...`,
@@ -176,6 +188,22 @@ export function createMockEnvPort(_backend: Backend): EnvPort {
     },
 
     async installRuntimeDetailed(id, channel = defaultChannel()) {
+      if (channel === 'manual') {
+        await delay(randomLatency(80, 160));
+        return {
+          ok: false,
+          action: 'install_runtime',
+          logs: mockEnvInstallLogs(id, channel),
+          message:
+            'Linux 不提供一键包管理安装。请用发行版包管理器或官网安装后，完全退出并重启 AgentHub 再检测。',
+          code: 'env.not_ready',
+          details: {
+            agent: null,
+            channel: 'manual',
+            missing: [id === 'npm' ? 'nodejs' : id],
+          },
+        };
+      }
       await this.installRuntime(id, channel);
       return {
         ok: true,
@@ -186,11 +214,15 @@ export function createMockEnvPort(_backend: Backend): EnvPort {
     },
 
     async installRuntime(id, channel = defaultChannel()) {
-      void channel;
       await delay(randomLatency());
       const state = readState();
       const meta = RUNTIME_MAP[id];
       const platform = detectHostPlatform();
+      if (channel === 'manual') {
+        throw new Error(
+          'Linux 不提供一键包管理安装,请按修复步骤用发行版包管理器或官网安装后重新检测',
+        );
+      }
 
       if (id === 'nodejs' || id === 'npm') {
         if (!RUNTIME_MAP.nodejs.canAutoInstall) {

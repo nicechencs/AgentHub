@@ -52,6 +52,9 @@ jobs:
       - name: Type check tests
         run: pnpm typecheck:test
 
+      - name: Linux prereq script tests
+        run: node --test scripts/check-linux-prereqs.test.mjs
+
       - name: Frontend tests (mock backend + contracts)
         run: pnpm test
 

@@ -306,7 +306,8 @@ fn channel_requires(
 }
 
 /// Install a shared runtime (Node.js / Git via winget on Windows or Homebrew
-/// on macOS). Passing an empty channel selects the platform default.
+/// on macOS). Linux uses the `manual` channel: remediations only, no spawn.
+/// Passing an empty channel selects the platform default.
 pub fn install_runtime(
     id: RuntimeId,
     channel: &str,
@@ -316,6 +317,7 @@ pub fn install_runtime(
 }
 
 /// winget package id for runtimes that support one-click install.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn winget_package_id(id: RuntimeId) -> Option<&'static str> {
     match id {
         RuntimeId::NodeJs | RuntimeId::Npm => Some("OpenJS.NodeJS.LTS"),
@@ -328,13 +330,15 @@ fn winget_package_id(id: RuntimeId) -> Option<&'static str> {
 ///
 /// Keep Windows on winget for compatibility. macOS uses Homebrew because it is
 /// the standard way to install both Node.js and Git without a PowerShell
-/// dependency. Linux retains the historical winget default; callers can still
-/// pass an explicit channel and will receive a clear unsupported-channel error.
+/// dependency. Linux has no automatic package-manager channel: the default is
+/// `manual` (copyable remediations only).
 fn default_runtime_channel() -> &'static str {
     if cfg!(target_os = "macos") {
         "brew"
-    } else {
+    } else if cfg!(windows) {
         "winget"
+    } else {
+        "manual"
     }
 }
 
@@ -416,14 +420,17 @@ fn unsupported_channel_outcome(action: &str, logs: Vec<String>, channel: &str) -
     #[cfg(windows)]
     let platform_hint = "Windows 默认使用 winget";
     #[cfg(all(not(target_os = "macos"), not(windows)))]
-    let platform_hint = "当前平台仅支持 --channel winget";
+    let platform_hint = "Linux 不提供一键包管理安装；默认 --channel manual，仅展示可复制命令与官网";
 
+    let supported = default_runtime_channel();
     #[cfg(target_os = "macos")]
     let suffix = "（macOS 默认使用 brew；可传 --channel brew）";
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
     let suffix = "";
+    #[cfg(all(not(target_os = "macos"), not(windows)))]
+    let suffix = "（Linux 默认 manual，不自动执行 apt/dnf/pacman）";
 
-    let message = format!("不支持的安装渠道 '{channel}'（当前仅 winget{suffix}）");
+    let message = format!("不支持的安装渠道 '{channel}'（当前仅 {supported}{suffix}）");
     InstallOutcome::failure(action, logs, message).with_code(
         "unsupported",
         Some(serde_json::json!({
@@ -530,20 +537,30 @@ fn install_runtime_inner(
             return Ok(InstallOutcome::failure(action, logs, msg).with_code("unsupported", None));
         }
 
-        let Some(package_id) = winget_package_id(target) else {
-            return Ok(InstallOutcome::failure(
-                action,
-                logs,
-                format!("runtime {} 暂不支持自动安装", id.as_str()),
-            )
-            .with_code("unsupported", None));
-        };
-
         let channel = if channel.is_empty() {
             default_runtime_channel()
         } else {
             channel
         };
+
+        if channel == "manual" {
+            logs.push(format!(
+                "# install runtime {} via manual remediations (no package manager spawned)",
+                target.as_str()
+            ));
+            return Ok(missing_package_manager_outcome(
+                action,
+                logs,
+                "manual",
+                target,
+                "Linux 不提供一键包管理安装。请用发行版包管理器或官网安装后，完全退出并重启 AgentHub 再检测。",
+            ));
+        }
+
+        #[cfg(not(windows))]
+        if channel == "winget" {
+            return Ok(unsupported_channel_outcome(action, logs, channel));
+        }
 
         #[cfg(target_os = "macos")]
         if channel == "brew" {
@@ -578,51 +595,68 @@ fn install_runtime_inner(
             return Ok(finalize_runtime_install(id, logs, res));
         }
 
-        if channel != "winget" {
+        #[cfg(not(windows))]
+        {
             return Ok(unsupported_channel_outcome(action, logs, channel));
         }
 
-        logs.push(format!(
-            "# install runtime {} via {channel} ({package_id})",
-            target.as_str()
-        ));
+        #[cfg(windows)]
+        {
+            if channel != "winget" {
+                return Ok(unsupported_channel_outcome(action, logs, channel));
+            }
 
-        let winget = match resolve_bin(&["winget", "winget.exe"]) {
-            Ok(p) => p,
-            Err(e) => {
-                logs.push(e.to_string());
-                let manual = match target {
-                    RuntimeId::Git => "请手动安装 Git 后重新检测。",
-                    _ => "请手动安装 Node.js LTS 后重新检测。",
-                };
-                return Ok(missing_package_manager_outcome(
+            let Some(package_id) = winget_package_id(target) else {
+                return Ok(InstallOutcome::failure(
                     action,
                     logs,
-                    "winget",
-                    target,
-                    format!("未找到 winget。{manual}"),
-                ));
-            }
-        };
+                    format!("runtime {} 暂不支持自动安装", id.as_str()),
+                )
+                .with_code("unsupported", None));
+            };
 
-        let req = ExecRequest {
-            program: winget,
-            args: vec![
-                "install".into(),
-                "-e".into(),
-                "--id".into(),
-                package_id.into(),
-                "--accept-package-agreements".into(),
-                "--accept-source-agreements".into(),
-                "--disable-interactivity".into(),
-            ],
-            timeout: ENV_TIMEOUT,
-            max_output_bytes: MAX_OUTPUT,
-        };
-        let res = executor.run(&req);
-        push_exec_logs(&mut logs, &res, ENV_TIMEOUT.as_secs());
+            logs.push(format!(
+                "# install runtime {} via {channel} ({package_id})",
+                target.as_str()
+            ));
 
-        Ok(finalize_runtime_install(id, logs, res))
+            let winget = match resolve_bin(&["winget", "winget.exe"]) {
+                Ok(p) => p,
+                Err(e) => {
+                    logs.push(e.to_string());
+                    let manual = match target {
+                        RuntimeId::Git => "请手动安装 Git 后重新检测。",
+                        _ => "请手动安装 Node.js LTS 后重新检测。",
+                    };
+                    return Ok(missing_package_manager_outcome(
+                        action,
+                        logs,
+                        "winget",
+                        target,
+                        format!("未找到 winget。{manual}"),
+                    ));
+                }
+            };
+
+            let req = ExecRequest {
+                program: winget,
+                args: vec![
+                    "install".into(),
+                    "-e".into(),
+                    "--id".into(),
+                    package_id.into(),
+                    "--accept-package-agreements".into(),
+                    "--accept-source-agreements".into(),
+                    "--disable-interactivity".into(),
+                ],
+                timeout: ENV_TIMEOUT,
+                max_output_bytes: MAX_OUTPUT,
+            };
+            let res = executor.run(&req);
+            push_exec_logs(&mut logs, &res, ENV_TIMEOUT.as_secs());
+
+            Ok(finalize_runtime_install(id, logs, res))
+        }
     })();
 
     log_install_result("install_runtime", started, None, Some(id.as_str()), &result);

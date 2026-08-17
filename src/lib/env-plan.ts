@@ -5,6 +5,7 @@ import { RUNTIME_MAP } from '@/config/runtimes';
 import {
   detectHostPlatform,
   getRuntimeInstallChannel,
+  supportsRuntimeAutoInstall,
   type HostPlatform,
   type RuntimeInstallChannel,
 } from '@/lib/platform-detect';
@@ -32,6 +33,7 @@ export function runtimeChannelForPlan(
 export function resolveAutoInstallPlan(
   runtimes: RuntimeDetect[],
   onlyIds?: RuntimeId[],
+  platform: HostPlatform = detectHostPlatform(),
 ): AutoInstallPlan {
   const filter = onlyIds ? new Set(onlyIds) : null;
   const issues = runtimes.filter(
@@ -40,9 +42,10 @@ export function resolveAutoInstallPlan(
   const issueIds = new Set(issues.map((i) => i.id));
   const targets: RuntimeId[] = [];
   const skipped: RuntimeId[] = [];
+  const canAuto = supportsRuntimeAutoInstall(platform);
 
   if (issueIds.has('nodejs') || issueIds.has('npm')) {
-    if (RUNTIME_MAP.nodejs.canAutoInstall) {
+    if (canAuto && RUNTIME_MAP.nodejs.canAutoInstall) {
       targets.push('nodejs');
     } else {
       if (issueIds.has('nodejs')) skipped.push('nodejs');
@@ -52,7 +55,7 @@ export function resolveAutoInstallPlan(
 
   for (const id of issueIds) {
     if (id === 'nodejs' || id === 'npm') continue;
-    if (RUNTIME_MAP[id].canAutoInstall) targets.push(id);
+    if (canAuto && RUNTIME_MAP[id].canAutoInstall) targets.push(id);
     else skipped.push(id);
   }
 

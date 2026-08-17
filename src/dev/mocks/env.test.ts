@@ -52,4 +52,25 @@ describe('mock env install platform paths', () => {
     const node = await env.installRuntime('nodejs');
     expect(node.path).toContain('Program Files');
   });
+
+  it('does not one-click install on Linux mocks', async () => {
+    vi.stubGlobal('navigator', {
+      platform: 'Linux x86_64',
+      userAgent: 'Mozilla/5.0 (X11; Linux x86_64)',
+    });
+    await resetRuntimesDemo();
+    const env = createMockEnvPort(backend);
+
+    const listed = await env.listRuntimes();
+    expect(listed.map((item) => item.id)).toEqual(['nodejs', 'npm', 'git']);
+    expect(listed.some((item) => item.id === 'powershell')).toBe(false);
+
+    const detailed = await env.installRuntimeDetailed('nodejs');
+    expect(detailed.ok).toBe(false);
+    expect(detailed.code).toBe('env.not_ready');
+    expect(detailed.logs.some((line) => line.includes('apt-get'))).toBe(true);
+    expect(detailed.logs.some((line) => line.includes('winget'))).toBe(false);
+
+    await expect(env.installRuntime('git')).rejects.toThrow(/Linux/);
+  });
 });

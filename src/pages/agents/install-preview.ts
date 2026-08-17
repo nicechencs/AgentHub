@@ -71,6 +71,15 @@ export function buildEnvInstallPreview(
     if (id === 'git' && channel === 'brew') {
       return `$ brew install git  # ${meta?.name ?? id}`;
     }
+    if (channel === 'manual') {
+      if (id === 'nodejs' || id === 'npm') {
+        return `# Linux: sudo apt-get install -y nodejs npm   # or dnf/pacman; prefer https://nodejs.org/ LTS`;
+      }
+      if (id === 'git') {
+        return `# Linux: sudo apt-get install -y git   # or: sudo dnf install -y git / sudo pacman -S --needed git`;
+      }
+      return `# Linux has no one-click installer for ${id}; use the distro package manager or official download`;
+    }
     return `$ agenthub env install ${id} --channel ${channel}`;
   });
 }

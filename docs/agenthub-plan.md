@@ -5,7 +5,7 @@
 > v1.1：补齐 Adapter / Service 职责边界、Skills 投影模型、备份流程、Token 统计与「模型列表」语义。  
 > v1.2：CLI 命令树与配置三层契约见专文 [cli-and-config.md](cli-and-config.md)。  
 > v1.3：**安装前置环境（Runtime）**：用户机可能无法直接装 Agent（缺 Node/npm 等），安装管线改为「检测环境 → 引导装环境 → 再装 Agent」。  
-> v1.4：**平台环境差异**：PowerShell 仅 Windows 共享 Runtime；macOS/Linux native 安装/升级走官方 sh + bash，不得检测或要求 PowerShell；包管理引导 Windows=`winget`、macOS=`brew`。
+> v1.4：**平台环境差异**：PowerShell 仅 Windows 共享 Runtime；macOS/Linux native 安装/升级走官方 sh + bash，不得检测或要求 PowerShell；包管理引导 Windows=`winget`、macOS=`brew`、Linux=`manual`（仅 URL/可复制命令）。
 > v1.5：**Adapter sidecar 目标架构**：`local_bridge` 的长驻 Runtime 与完整 saga 迁入用户级 `agenthub-adapterd`；Connections 与 live 配置事务继续由 core service 管理。当前实现仍为 Tauri 进程内宿主，按三阶段迁移。
 > 2026-08-16 文档回写：§4–§5 的 Adapter 伪代码是立项接口（`apply_provider` 等），现行 trait 见 [architecture.md](architecture.md)；§8 为实现真源。
 
@@ -15,7 +15,7 @@
 
 | 决策点 | 结论 |
 |---|---|
-| 平台范围 | Windows 为主交付；macOS 已支持源码运行与本机构建；Linux 仅路径/命令抽象预留。**共享 Runtime 与 native 安装命令按宿主平台分流**（见 §5.7.2 / §5.7.5） |
+| 平台范围 | Windows 为主交付；macOS / Linux 已支持源码运行与本机构建；GitHub Releases 签名包仍只覆盖 Windows / macOS。**共享 Runtime 与 native 安装命令按宿主平台分流**（见 §5.7.2 / §5.7.5） |
 | 复用策略 | 配置切换按「路径 + 读取 + 校验 + 原子写」；跨 Agent 复用分三路（① API 直连 ② 原生订阅 ③ 本机路由），见 [product-decisions.md](product-decisions.md)。实现从零自研 |
 | MVP 范围 | Agent 安装/卸载（含**前置运行时检测与引导**）、API 配置管理、技能/插件管理、Token 统计、**票接到其他 Agent（直连 / 原生订阅 / 本机路由）** |
 | 产品形态 | GUI + CLI 双端，核心逻辑抽成 `agenthub-core` crate 共享 |
@@ -265,10 +265,10 @@ trait AgentAdapter {
 
 | RuntimeId | 典型检测 | 谁需要 | Windows | macOS / Linux |
 |---|---|---|---|---|
-| `nodejs` | `node -v` + 路径 | Claude/Codex/Pi 等 **npm** 渠道 | ① `winget install OpenJS.NodeJS.LTS` ② 官网 LTS ③ 可复制命令 | ① `brew install node` ② 官网 ③ 包管理器提示 |
+| `nodejs` | `node -v` + 路径 | Claude/Codex/Pi 等 **npm** 渠道 | ① `winget install OpenJS.NodeJS.LTS` ② 官网 LTS ③ 可复制命令 | macOS：① `brew install node` ② 官网。Linux：发行版命令 + 官网 LTS，不一键安装 |
 | `npm` | `npm -v`（通常随 Node） | 同上 | 随 Node；node 在 npm 不在 → 修 PATH / 重装 Node | 同左 |
 | `powershell` | 5.1（`powershell`）与 7（`pwsh`）双探针，任一可用即可 | **仅 Windows** native `.ps1` 渠道 | **只检测、不一键安装**；ExecutionPolicy 提示 | **不检测、不展示、不作为渠道前置**；native 走官方 sh |
-| `git` | `git --version` + 路径 | Skills 市场 / git URL 安装 | ① `winget install --id Git.Git` ② 官网 | ① `brew install git` ② 官网 |
+| `git` | `git --version` + 路径 | Skills 市场 / git URL 安装 | ① `winget install --id Git.Git` ② 官网 | macOS：① `brew install git` ② 官网。Linux：发行版命令 + 官网，不一键安装 |
 | `curl` / 系统下载器 | 可选（执行 native sh 时用） | 部分官方一键脚本 | 系统自带 / 浏览器降级 | 系统 `curl`；缺失时提示手动下载 |
 
 版本门槛：在 Adapter/渠道元数据中声明 `min_version`（如 Node ≥ 18）；detect 返回 `ok | outdated | missing`。
@@ -305,10 +305,10 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 #### 5.7.5 平台环境差异（硬约束）
 
-| 主题 | Windows | macOS | Linux（预留） |
+| 主题 | Windows | macOS | Linux |
 |---|---|---|---|
 | 共享 Runtime 探测 | Node / npm / **PowerShell** / Git | Node / npm / Git | 同 macOS |
-| Runtime 一键修复默认渠道 | `winget` | `brew` | 无自动包管理器时仅 URL/命令 |
+| Runtime 一键修复默认渠道 | `winget` | `brew` | `manual`：不自动执行包管理器，只给 URL/可复制命令 |
 | native 渠道前置 | `requires: [powershell]` | `requires: []` | `requires: []` |
 | native 安装/升级命令 | `irm <allowlisted-ps1> \| iex` | `curl -fsS <allowlisted-sh> \| bash` | 同 macOS |
 | 仅 Windows 有 ps1 的 Agent（如 Codex native） | 展示 native 渠道 | **不**暴露 Windows-only ps1 为 native；优先 npm 或官网 | 同 macOS |
@@ -390,7 +390,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | Settings 语言切换 / i18n | ✅ | 轻量自研字典 + `LanguageProvider`；Settings 五面板与侧栏 chrome 可切换中/英。`language` 以 L1 core 为真源，localStorage 仅首屏缓存。首次启动按系统语言 seed 一次。业务页（Chat / Dashboard / Connections / Skills `copy.ts` 等）分期迁移。不引入 i18next |
 | Usage **后台守护 / 文件监听** | ❌ | 仅前台 interval + 手动 |
 | 官方模型商店 / 账号可用模型探测 | ❌ | 明确非目标（用量去重模型列表除外） |
-| WebDAV / 代理模式 / macOS·Linux 一等公民 | P4 候选 | 未开工 |
+| WebDAV / 代理模式 / macOS·Linux 一等公民 | P4 候选 | Linux **源码运行 / 本机构建 `.deb`** 已落地；签名 GitHub Release、自动更新与一等公民发行仍未承诺 |
 | Chat 后续阶段 | 🟡 展示层已落地 / 协议侧未做 | 过程面板展示层（摘要行 / 时间线 / 运行详情）已落地。协议侧（过程落库、过程内 usage、Pi rpc 审批、diff 预览落库）仍未做。见 [chat-process-streaming.md](chat-process-streaming.md) |
 | 部分 Agent 的 ConfigWrite / 账号切换 / Usage | Unsupported | 设计边界，见能力矩阵 |
 | CLI Provider create/update/delete | ❌ | 与 GUI 不对称，脚本侧靠 import-live + switch |
