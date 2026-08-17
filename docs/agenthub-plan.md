@@ -328,7 +328,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 - 技术：React + TypeScript + Vite + Tailwind + shadcn/Radix（**只选一套 UI**）+ recharts + react-router + CodeMirror。**当前未**引入 TanStack Query / i18next（方案历史提及，以 `package.json` 为准）。
 - 结构：`lib/backend/tauri`（唯一 invoke）→ `lib/api` façade → 页面本地 state；mock 仅 `dev:mock`。事件桥为目标态，现以前端主动拉取为主。
-- 页面：Dashboard（含用量）/ Chat / Agents / Connections（目标：跨 Agent 钱包）/ Routes（侧栏英文，有本机路由才出现；页标题「本机路由」，只管 ③ 运行时）/ Skills / MCP（只读清单）/ Projects / Settings（含 Backups；数据区永远有「本机路由」入口）。日常绑定从 Dashboard「连接/切换」、Connections「接到…」发起。领域目标见 [connection-binding-model.md](connection-binding-model.md)。
+- 页面：Dashboard（含用量）/ Chat / Agents / Connections（目标：跨 Agent 钱包）/ Routes（侧栏英文，有本机路由才出现；页标题「本机路由」，只管 ③ 运行时）/ Skills / MCP（只读清单）/ Projects / Settings（含 Backups；本机区永远有「本机路由」入口）。日常绑定从 Dashboard「连接/切换」、Connections「接到…」发起。领域目标见 [connection-binding-model.md](connection-binding-model.md)。
 - 详细交互见 [ui-design.md](ui-design.md)。
 
 ## 7. 分期路线图
@@ -369,7 +369,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | Adapter 规则分析 / 预览 / profile 管理 | ✅ 当前可 bind：Kimi Provider→Claude/Pi reshape、Kimi Provider→Codex bridge、Anthropic Provider/Account→Pi reshape；Kimi/OpenAI API Provider/Account→Grok 官方 Chat TOML `native_endpoint`；GLM/DeepSeek Provider/Account→Codex 官方 Responses `native_endpoint` 与→Claude/Pi 已可 experimental bind；② Claude/Codex/Grok OAuth Account→Pi 已可 experimental bind；③ 带 access token 的 Codex `auth_json` 或 Grok OAuth 订阅→Claude 已可 experimental `local_bridge` bind，目标只写 loopback URL 与本地 bearer；Claude 订阅→Codex 明确产品不做，App Server/OauthOther 仍关闭。其余见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。写入入口 `bind`/`unbind`，投影不进钱包，见 [connection-binding-model.md](connection-binding-model.md) |
 | Hub 统一连接流程 ConnectFlowDialog | ✅ Phase 1 外壳已落地。目标 UI：全局钱包 + 真票「接到…」。`plan.canApply` 只表示现在能写入 |
 | MCP 本机配置清单 | ✅ core 只读扫描 + Tauri command + 前端页面；不修改或注入配置；管理/注入仍 Planned，无假 UI |
-| Settings 持久化 | ✅ L1 SQLite 白名单（`SETTINGS_WHITELIST`）：`theme` / `language` / `log_level` / `log_retention_days` / `skill_market_source` / `close_to_tray` / `usage_collect_interval_min`。用量间隔：`None`=从未写入（前端默认 30）、`0`=仅手动、上限 1440。主题以 core 为准：Settings Select 预览、Save 落盘，启动 `getSettings` 对账。`autoStart` 为 OS 登录项；`closeToTray` 写 core 并同步 AppState |
+| Settings 持久化 | ✅ L1 SQLite 白名单（`SETTINGS_WHITELIST`）：`theme` / `language` / `log_level` / `log_retention_days` / `skill_market_source` / `close_to_tray` / `usage_collect_interval_min`。用量间隔：`None`=从未写入（前端默认 30）、`0`=仅手动、上限 1440。主题/语言以 core 为准：Settings 变更即落盘，启动 `getSettings` 对账。`autoStart` 为 OS 登录项；`closeToTray` 写 core 并同步 AppState |
 | 凭据落盘加密 | **范围外**（不实现，非待办） |
 
 ### 8.2 未实现 / 仅部分 / 范围外
@@ -388,7 +388,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 模块化收口（双真源 / 上帝文件 / 写入入口） | 📋 部分已收口 | integrations / Ticket 写口 / `adapter_control` 契约已落地；仍待削 `AgentAdapter` 厚表面、sidecar 二进制、Skills/Projects/AgentCard。见 [modularity-improvement.md](modularity-improvement.md)。不拆微服务，凭据落盘加密仍范围外 |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |
 | Token **后台自动刷新守护** | ❌ | 有手动 refresh |
-| Settings 语言切换 / i18n | ✅ | 轻量自研字典 + `LanguageProvider`；Settings 五面板与侧栏 chrome 可切换中/英。`language` 以 L1 core 为真源，localStorage 仅首屏缓存。首次启动按系统语言 seed 一次。业务页（Chat / Dashboard / Connections / Skills `copy.ts` 等）分期迁移。不引入 i18next |
+| Settings 语言切换 / i18n | ✅ | 轻量自研字典 + `LanguageProvider`；Settings 三面板（偏好 / 本机 / 关于）与侧栏 chrome 可切换中/英。`language` 以 L1 core 为真源，localStorage 仅首屏缓存。首次启动按系统语言 seed 一次。业务页（Chat / Dashboard / Connections / Skills `copy.ts` 等）分期迁移。不引入 i18next |
 | Usage **后台守护 / 文件监听** | ❌ | 仅前台 interval + 手动 |
 | 官方模型商店 / 账号可用模型探测 | ❌ | 明确非目标（用量去重模型列表除外） |
 | WebDAV / 代理模式 | P4 候选 | 桌面端已按 Windows / macOS / Linux 三平台交付（Linux 安装包可未签名；自动更新签名取决于 `TAURI_SIGNING_PRIVATE_KEY`）。WebDAV 与代理模式仍未做 |
