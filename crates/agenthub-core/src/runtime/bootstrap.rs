@@ -22,19 +22,19 @@ fn os_release_field(text: &str, key: &str) -> Option<String> {
     None
 }
 
+fn hay_has_token(hay: &str, needles: &[&str]) -> bool {
+    hay.split_whitespace().any(|token| needles.contains(&token))
+}
+
 fn linux_family_from_os_release(text: &str) -> LinuxFamily {
     let id = os_release_field(text, "ID").unwrap_or_default();
     let like = os_release_field(text, "ID_LIKE").unwrap_or_default();
     let hay = format!("{id} {like}");
-    let tokens = hay.split_whitespace();
-    if tokens.clone().any(|t| matches!(t, "debian" | "ubuntu" | "linuxmint")) {
+    if hay_has_token(&hay, &["debian", "ubuntu", "linuxmint"]) {
         LinuxFamily::Debian
-    } else if tokens
-        .clone()
-        .any(|t| matches!(t, "fedora" | "rhel" | "centos" | "rocky" | "almalinux"))
-    {
+    } else if hay_has_token(&hay, &["fedora", "rhel", "centos", "rocky", "almalinux"]) {
         LinuxFamily::Fedora
-    } else if tokens.any(|t| matches!(t, "arch" | "archlinux" | "manjaro")) {
+    } else if hay_has_token(&hay, &["arch", "archlinux", "manjaro"]) {
         LinuxFamily::Arch
     } else {
         LinuxFamily::Other
