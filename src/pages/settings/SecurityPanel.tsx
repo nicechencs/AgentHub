@@ -1,24 +1,26 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { SettingsRow } from './settings-shared';
 
 export function SecurityPanel() {
+  const { t } = useI18n();
   return (
           <Card>
             <CardContent className="divide-y divide-border pt-1">
               <SettingsRow
-                label="凭据展示"
-                description="界面不回显明文"
-                descriptionTip="密钥与令牌经 SecretInput 管理；默认脱敏显示，可点眼睛切换明文。"
+                label={t('settings.security.displayLabel')}
+                description={t('settings.security.displayDescription')}
+                descriptionTip={t('settings.security.displayTip')}
               >
-                <Badge variant="success">不回显</Badge>
+                <Badge variant="success">{t('settings.security.displayBadge')}</Badge>
               </SettingsRow>
               <SettingsRow
-                label="存储方式"
-                description="本地数据目录存储，界面脱敏展示"
-                descriptionTip="凭据写入本机数据目录；界面默认脱敏，当前不提供 keyring 或落盘加密。"
+                label={t('settings.security.storeLabel')}
+                description={t('settings.security.storeDescription')}
+                descriptionTip={t('settings.security.storeTip')}
               >
-                <span className="text-sm text-secondary">本地数据目录</span>
+                <span className="text-sm text-secondary">{t('settings.security.storeValue')}</span>
               </SettingsRow>
             </CardContent>
           </Card>

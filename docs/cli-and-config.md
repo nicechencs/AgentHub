@@ -320,7 +320,7 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 | Backup 列表/创建/恢复/删除 | ✅ Settings·备份 | ✅ list/create/restore/delete | **导出包**未实现 |
 | Chat 多 Agent | ✅ /chat | ❌（用 `run` 一次性 headless） | 过程面板 Phase 0–2 现行契约；Phase 3 展示层已落地 |
 | Projects | ✅ /projects | ❌ | |
-| Settings 主题/日志等 | ✅ L1 白名单 + OS 自启 | ✅ config get/set 白名单 | 主题/用量间隔/托盘落 SQLite；`autoStart` 为 OS 登录项；语言无 i18n |
+| Settings 主题/日志等 | ✅ L1 白名单 + OS 自启 | ✅ config get/set 白名单 | 主题/用量间隔/托盘/语言落 SQLite；`autoStart` 为 OS 登录项；GUI Settings 可切换中/英 |
 | Doctor / 排障 | ✅ doctor report | ✅ doctor（含 runtimes + locks） | |
 | 官方模型目录 | ❌ | ❌ | 非目标 |
 | 备份导出 / DB 备份 | ❌ | ❌ | 预留目录 |
@@ -387,7 +387,7 @@ log_level = "info"              # error | warn | info | debug | trace
 | key | 类型 | 说明 |
 |---|---|---|
 | `theme` | `dark` \| `light` \| `system` | core 权威；Settings Select 预览、Save 落盘；启动 `getSettings` 对账；localStorage 仅首屏缓存 |
-| `language` | `zh` / `zh-CN` \| `en` | 可落盘；GUI 暂无切换（仅中文只读说明） |
+| `language` | `zh` / `zh-CN` \| `en` | 可落盘；GUI Settings 可切换中/英，core 为真源，localStorage 仅首屏缓存 |
 | `log_level` | `error` \| `warn` \| `info` \| `debug` \| `trace` | 文件日志级别；**下次启动生效**；默认 `info` |
 | `log_retention_days` | u32（1..=365） | 日志保留天数；默认 **14**；**下次启动** purge 时生效 |
 | `skill_market_source` | `auto` \| `skills.sh` \| `skillhub.cn` | 远程技能市场源 |

@@ -10,11 +10,16 @@ import {
   SelectItem,
 } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
-import { LOG_LEVEL_OPTIONS, openLogsDir, updateSettings } from '@/lib/api/settings';
+import { useI18n } from '@/components/shared/LanguageProvider';
+import { openLogsDir, updateSettings } from '@/lib/api/settings';
 import { BRIDGES_PATH } from '@/lib/bridges-path';
 import type { AppSettings, LogLevel } from '@/lib/types';
 import { notifyUsageSettingsChanged } from '@/lib/usage-sync';
-import { dataSettingsSaveDescription } from './settings-format';
+import {
+  dataSettingsSaveDescription,
+  LOG_LEVEL_VALUES,
+  logLevelOptionLabel,
+} from './settings-format';
 import { SettingsRow } from './settings-shared';
 
 export function DataPanel({
@@ -31,25 +36,26 @@ export function DataPanel({
   setSaving: (v: boolean) => void;
 }) {
   const { toast } = useToast();
+  const { t } = useI18n();
   return (
           <Card>
             <CardContent className="divide-y divide-border pt-1">
               <SettingsRow
-                label="本机路由运行时"
-                description="永远可打开"
-                descriptionTip="管本机转发进程。侧栏只在有本机路由时出现；这里始终可找回。"
+                label={t('settings.data.routesLabel')}
+                description={t('settings.data.routesDescription')}
+                descriptionTip={t('settings.data.routesTip')}
               >
                 <Link
                   to={BRIDGES_PATH}
                   className="inline-flex h-7 items-center justify-center rounded-btn border border-border bg-transparent px-2.5 text-xs font-medium text-secondary transition-colors hover:bg-hover hover:text-primary"
                 >
-                  打开
+                  {t('common.open')}
                 </Link>
               </SettingsRow>
               <SettingsRow
-                label="数据目录"
-                description="只读"
-                descriptionTip="配置快照、备份与统计数据存放位置（桌面端不可改）。"
+                label={t('settings.data.dataDirLabel')}
+                description={t('settings.data.dataDirDescription')}
+                descriptionTip={t('settings.data.dataDirTip')}
               >
                 <Input
                   className="w-full font-mono text-xs"
@@ -59,9 +65,9 @@ export function DataPanel({
                 />
               </SettingsRow>
               <SettingsRow
-                label="日志级别"
-                description="下次启动生效"
-                descriptionTip="写入数据目录 logs 的详细程度。"
+                label={t('settings.data.logLevelLabel')}
+                description={t('settings.data.logLevelDescription')}
+                descriptionTip={t('settings.data.logLevelTip')}
               >
                 <Select
                   value={settings.logLevel}
@@ -71,18 +77,18 @@ export function DataPanel({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {LOG_LEVEL_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
+                    {LOG_LEVEL_VALUES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {logLevelOptionLabel(value, t)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </SettingsRow>
               <SettingsRow
-                label="日志保留"
-                description="天；默认 14"
-                descriptionTip="按日日志超过天数后，启动时自动清理（1–365）。"
+                label={t('settings.data.logRetentionLabel')}
+                description={t('settings.data.logRetentionDescription')}
+                descriptionTip={t('settings.data.logRetentionTip')}
               >
                 <Input
                   type="number"
@@ -101,9 +107,9 @@ export function DataPanel({
                 />
               </SettingsRow>
               <SettingsRow
-                label="日志目录"
-                description="按日文件"
-                descriptionTip="文件名 agenthub.YYYY-MM-DD；排查问题时可打开此目录。"
+                label={t('settings.data.logsDirLabel')}
+                description={t('settings.data.logsDirDescription')}
+                descriptionTip={t('settings.data.logsDirTip')}
               >
                 <Input
                   className="w-full font-mono text-xs"
@@ -118,10 +124,10 @@ export function DataPanel({
                     void (async () => {
                       try {
                         const p = await openLogsDir();
-                        toast({ title: '已打开日志目录', description: p, variant: 'success' });
+                        toast({ title: t('settings.data.logsOpened'), description: p, variant: 'success' });
                       } catch (e) {
                         toast({
-                          title: '打开失败',
+                          title: t('settings.data.logsOpenFailed'),
                           description: String(e),
                           variant: 'danger',
                         });
@@ -129,13 +135,13 @@ export function DataPanel({
                     })();
                   }}
                 >
-                  打开
+                  {t('common.open')}
                 </Button>
               </SettingsRow>
               <SettingsRow
-                label="用量采集间隔"
-                description="分钟；0=仅手动"
-                descriptionTip="App 前台时按间隔自动增量采集，后台暂停。总览显示上次/下次同步。"
+                label={t('settings.data.usageIntervalLabel')}
+                description={t('settings.data.usageIntervalDescription')}
+                descriptionTip={t('settings.data.usageIntervalTip')}
               >
                 <Input
                   type="number"
@@ -156,13 +162,13 @@ export function DataPanel({
                   to="/?section=usage"
                   className="inline-flex h-7 items-center justify-center rounded-btn border border-border bg-transparent px-2.5 text-xs font-medium text-secondary transition-colors hover:bg-hover hover:text-primary"
                 >
-                  查看
+                  {t('common.view')}
                 </Link>
               </SettingsRow>
             </CardContent>
             <CardFooter className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-muted">
-                日志级别与保留天数写入本机配置；级别变更需重启应用后生效。
+                {t('settings.data.footerNote')}
               </p>
               <Button
                 disabled={saving}
@@ -178,19 +184,19 @@ export function DataPanel({
                       setSettings(next);
                       notifyUsageSettingsChanged();
                       toast({
-                        title: '数据设置已保存',
-                        description: dataSettingsSaveDescription(next),
+                        title: t('settings.data.savedToast'),
+                        description: dataSettingsSaveDescription(next, t),
                         variant: 'success',
                       });
                     } catch (e) {
-                      toast({ title: '保存失败', description: String(e), variant: 'danger' });
+                      toast({ title: t('common.saveFailed'), description: String(e), variant: 'danger' });
                     } finally {
                       setSaving(false);
                     }
                   })()
                 }
               >
-                {saving ? '保存中…' : '保存'}
+                {saving ? t('common.saving') : t('common.save')}
               </Button>
             </CardFooter>
           </Card>

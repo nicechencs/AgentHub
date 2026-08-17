@@ -20,26 +20,40 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { AGENTS, AGENT_MAP, type AgentMeta, agentDisplayName } from '@/config/agents';
 import { createBackup, deleteBackup, listBackups, restoreBackup } from '@/lib/api/backup';
+import type { TranslateFn } from '@/lib/i18n';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import type { AgentId, BackupKind, BackupMeta } from '@/lib/types';
-import { cn, fmtBytes, fmtRelative } from '@/lib/utils';
+import { cn, fmtBytes } from '@/lib/utils';
+import { fmtAbsoluteI18n, fmtRelativeI18n } from './settings-format';
 
-const KIND_META: Record<BackupKind, { label: string; variant: 'accent' | 'default' | 'warning' }> = {
-  'auto-switch': { label: '切换前自动', variant: 'accent' },
-  manual: { label: '手动', variant: 'default' },
-  'pre-uninstall': { label: '卸载前', variant: 'warning' },
-  'pre-restore': { label: '恢复前自动', variant: 'accent' },
-  'pre-skill-uninstall': { label: '技能卸载前', variant: 'warning' },
+const KIND_VARIANT: Record<BackupKind, 'accent' | 'default' | 'warning'> = {
+  'auto-switch': 'accent',
+  manual: 'default',
+  'pre-uninstall': 'warning',
+  'pre-restore': 'accent',
+  'pre-skill-uninstall': 'warning',
 };
+
+function backupKindLabel(kind: BackupKind, t: TranslateFn): string {
+  switch (kind) {
+    case 'auto-switch':
+      return t('settings.backups.kindAutoSwitch');
+    case 'manual':
+      return t('settings.backups.kindManual');
+    case 'pre-uninstall':
+      return t('settings.backups.kindPreUninstall');
+    case 'pre-restore':
+      return t('settings.backups.kindPreRestore');
+    case 'pre-skill-uninstall':
+      return t('settings.backups.kindPreSkillUninstall');
+  }
+}
 
 /** 卡片内文件路径最多展示行数 */
 const FILE_PREVIEW = 3;
-
-function fmtAbsolute(iso: string): string {
-  return new Date(iso).toLocaleString('zh-CN', { hour12: false });
-}
 
 function shortPath(f: string): string {
   const norm = f.replace(/\\/g, '/');
@@ -50,6 +64,7 @@ function shortPath(f: string): string {
 
 export function BackupsPanel() {
   const { toast } = useToast();
+  const { t, lang } = useI18n();
   const {
     loading: agentsLoading,
     error: agentsError,
@@ -131,8 +146,8 @@ export function BackupsPanel() {
     if (!agentId || !agentMeta) return;
     if (!isInstalled) {
       toast({
-        title: '无法备份',
-        description: `${agentMeta.name} 未安装，只能查看或恢复已有备份`,
+        title: t('settings.backups.cannotBackup'),
+        description: t('settings.backups.notInstalledDesc', { name: agentMeta.name }),
         variant: 'danger',
       });
       return;
@@ -140,11 +155,11 @@ export function BackupsPanel() {
     setCreating(true);
     try {
       await createBackup(agentId);
-      toast({ title: '备份已创建', description: agentMeta.name, variant: 'success' });
+      toast({ title: t('settings.backups.backupCreated'), description: agentMeta.name, variant: 'success' });
       await refresh();
       void reloadAgents();
     } catch (e) {
-      toast({ title: '备份失败', description: e instanceof Error ? e.message : String(e), variant: 'danger' });
+      toast({ title: t('settings.backups.backupFailed'), description: e instanceof Error ? e.message : String(e), variant: 'danger' });
     } finally {
       setCreating(false);
     }
@@ -157,14 +172,14 @@ export function BackupsPanel() {
     try {
       await restoreBackup(target.id);
       toast({
-        title: '已恢复到该备份',
-        description: `${agentDisplayName(target.agentId)} · ${fmtRelative(target.createdAt)}`,
+        title: t('settings.backups.restored'),
+        description: `${agentDisplayName(target.agentId)} · ${fmtRelativeI18n(target.createdAt, t)}`,
         variant: 'success',
       });
       setRestoreTarget(null);
       await refresh();
     } catch (e) {
-      toast({ title: '恢复失败', description: e instanceof Error ? e.message : String(e), variant: 'danger' });
+      toast({ title: t('settings.backups.restoreFailed'), description: e instanceof Error ? e.message : String(e), variant: 'danger' });
     } finally {
       setBusyId(null);
     }
@@ -174,10 +189,10 @@ export function BackupsPanel() {
     setBusyId(bk.id);
     try {
       await deleteBackup(bk.id);
-      toast({ title: '备份已删除' });
+      toast({ title: t('settings.backups.deleted') });
       await refresh();
     } catch (e) {
-      toast({ title: '删除失败', description: e instanceof Error ? e.message : String(e), variant: 'danger' });
+      toast({ title: t('settings.backups.deleteFailed'), description: e instanceof Error ? e.message : String(e), variant: 'danger' });
     } finally {
       setBusyId(null);
     }
@@ -189,31 +204,30 @@ export function BackupsPanel() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <div className="min-w-0">
-            <p className="text-sm">安全备份已启用</p>
+            <p className="text-sm">{t('settings.backups.enabledTitle')}</p>
             <p className="mt-0.5 text-xs text-muted">
-              切换、导入或更新连接后自动保留当前配置快照
+              {t('settings.backups.enabledDesc')}
             </p>
           </div>
         </div>
         {agentMeta && (
           <Button
             disabled={creating || !isInstalled}
-            title={!isInstalled ? '未安装，无法创建新备份' : undefined}
+            title={!isInstalled ? t('settings.backups.createTitleNotInstalled') : undefined}
             onClick={() => void handleCreate()}
           >
             <Plus className="h-4 w-4" />
             {creating
-              ? '备份中…'
+              ? t('settings.backups.creating')
               : isInstalled
-                ? `备份 ${agentMeta.name.replace(' Code', '')}`
-                : '未安装'}
+                ? t('settings.backups.backupAgent', { name: agentMeta.name.replace(' Code', '') })
+                : t('settings.backups.notInstalled')}
           </Button>
         )}
       </div>
 
       <p className="mb-4 text-xs text-muted">
-        备份各 Agent 当前配置，切换账号/供应商出错时可一键恢复。仅列出已安装或仍有备份的
-        Agent。
+        {t('settings.backups.pageHint')}
       </p>
 
       {/* Agent 切换：已安装 ∪ 有备份 */}
@@ -225,13 +239,13 @@ export function BackupsPanel() {
             value={agentId ?? visibleAgents[0]?.id ?? AGENTS[0].id}
             onChange={setAgentId}
             agents={visibleAgents}
-            emptyLabel="暂无已安装或仍有备份的 Agent"
+            emptyLabel={t('settings.backups.emptyAgents')}
           />
         )}
         {!pageLoading && agentMeta && agentId && (
           <span className="text-xs text-muted">
-            {agentMeta.name} · {counts[agentId] ?? 0} 条记录
-            {!isInstalled && ' · 已卸载（可恢复备份）'}
+            {t('settings.backups.recordCount', { name: agentMeta.name, count: counts[agentId] ?? 0 })}
+            {!isInstalled && t('settings.backups.uninstalledHint')}
           </span>
         )}
       </div>
@@ -250,27 +264,31 @@ export function BackupsPanel() {
       ) : visibleAgents.length === 0 ? (
         <EmptyState
           icon={Database}
-          title="无可管理 Agent"
-          description="先到 Agents 页安装"
+          title={t('settings.backups.noManageable')}
+          description={t('settings.backups.installFirst')}
         />
       ) : !agentMeta || !agentId ? (
         <BackupsSkeleton />
       ) : items.length === 0 ? (
         <EmptyState
           icon={Database}
-          title={`${agentMeta.name} 暂无备份`}
+          title={t('settings.backups.noBackups', { name: agentMeta.name })}
           description={
             isInstalled
-              ? '切换、导入或更新后会自动保留快照，也可点右上角立即备份'
-              : '该 Agent 已卸载，且没有可恢复的备份'
+              ? t('settings.backups.noBackupsInstalled')
+              : t('settings.backups.noBackupsUninstalled')
           }
-          actionLabel={isInstalled ? `备份 ${agentMeta.name.replace(' Code', '')}` : undefined}
+          actionLabel={
+            isInstalled
+              ? t('settings.backups.backupAgent', { name: agentMeta.name.replace(' Code', '') })
+              : undefined
+          }
           onAction={isInstalled ? () => void handleCreate() : undefined}
         />
       ) : (
         <div className="flex flex-col gap-2.5">
           {items.map((bk) => {
-            const kind = KIND_META[bk.kind];
+            const kind = { label: backupKindLabel(bk.kind, t), variant: KIND_VARIANT[bk.kind] };
             const busy = busyId === bk.id;
             const files = bk.files ?? [];
             const shownFiles = files.slice(0, FILE_PREVIEW);
@@ -295,10 +313,10 @@ export function BackupsPanel() {
                     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                       <Badge variant={kind.variant}>{kind.label}</Badge>
                       <span className="text-sm font-medium tabular-nums">
-                        {fmtRelative(bk.createdAt)}
+                        {fmtRelativeI18n(bk.createdAt, t)}
                       </span>
                       <span className="text-xs text-muted tabular-nums">
-                        {fmtAbsolute(bk.createdAt)}
+                        {fmtAbsoluteI18n(bk.createdAt, lang)}
                       </span>
                       <span className="text-xs text-muted">·</span>
                       <span className="text-xs text-muted tabular-nums">
@@ -318,11 +336,11 @@ export function BackupsPanel() {
                           </li>
                         ))}
                         {moreFiles > 0 && (
-                          <li className="text-xs text-muted">另有 {moreFiles} 个文件</li>
+                          <li className="text-xs text-muted">{t('settings.backups.moreFiles', { count: moreFiles })}</li>
                         )}
                       </ul>
                     ) : (
-                      <p className="mt-1.5 text-xs text-muted">无文件列表</p>
+                      <p className="mt-1.5 text-xs text-muted">{t('settings.backups.noFileList')}</p>
                     )}
                   </div>
 
@@ -334,7 +352,7 @@ export function BackupsPanel() {
                       onClick={() => setRestoreTarget(bk)}
                     >
                       <RotateCcw className="h-3.5 w-3.5" />
-                      恢复
+                      {t('common.restore')}
                     </Button>
                     <Button
                       variant="ghost"
@@ -344,7 +362,7 @@ export function BackupsPanel() {
                       onClick={() => void handleDelete(bk)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      删除
+                      {t('common.delete')}
                     </Button>
                   </div>
                 </div>
@@ -360,26 +378,25 @@ export function BackupsPanel() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>恢复备份</DialogTitle>
+            <DialogTitle>{t('settings.backups.restoreTitle')}</DialogTitle>
             <DialogDescription>
-              {restoreTarget && (
-                <>
-                  将恢复 {agentDisplayName(restoreTarget.agentId)} 在{' '}
-                  {fmtAbsolute(restoreTarget.createdAt)} 的备份（
-                  {KIND_META[restoreTarget.kind].label}）。
-                </>
-              )}
+              {restoreTarget &&
+                t('settings.backups.restoreDesc', {
+                  name: agentDisplayName(restoreTarget.agentId),
+                  when: fmtAbsoluteI18n(restoreTarget.createdAt, lang),
+                  kind: backupKindLabel(restoreTarget.kind, t),
+                })}
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-secondary">
-            恢复前会先备份当前配置。确定恢复到该备份？
+            {t('settings.backups.restoreConfirm')}
           </p>
           <DialogFooter>
             <Button variant="secondary" disabled={busyId !== null} onClick={() => setRestoreTarget(null)}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button disabled={busyId !== null} onClick={() => void handleRestore()}>
-              {busyId !== null ? '恢复中…' : '确定恢复'}
+              {busyId !== null ? t('settings.backups.restoring') : t('settings.backups.confirmRestore')}
             </Button>
           </DialogFooter>
         </DialogContent>

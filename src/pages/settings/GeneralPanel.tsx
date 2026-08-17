@@ -9,14 +9,17 @@ import {
   SelectItem,
 } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { updateSettings } from '@/lib/api/settings';
 import { invalidateSkills } from '@/lib/hooks/useSkills';
 import type { AppSettings } from '@/lib/types';
 import { applyTheme } from '@/lib/theme';
 import { useTheme } from '@/components/shared/ThemeProvider';
 import {
+  generalSettingsPayload,
   generalSettingsSaveDescription,
-  SKILL_MARKET_OPTIONS,
+  SKILL_MARKET_VALUES,
+  skillMarketLabel,
 } from './settings-format';
 import { SettingsRow } from './settings-shared';
 
@@ -25,6 +28,7 @@ export function GeneralPanel({
   patch,
   setSettings,
   committedThemeRef,
+  committedLanguageRef,
   saving,
   setSaving,
 }: {
@@ -32,18 +36,41 @@ export function GeneralPanel({
   patch: (p: Partial<AppSettings>) => void;
   setSettings: (s: AppSettings) => void;
   committedThemeRef: React.MutableRefObject<AppSettings['theme']>;
+  committedLanguageRef: React.MutableRefObject<AppSettings['language']>;
   saving: boolean;
   setSaving: (v: boolean) => void;
 }) {
   const { toast } = useToast();
   const { setTheme } = useTheme();
+  const { t, setLanguage } = useI18n();
   return (
           <Card>
             <CardContent className="divide-y divide-border pt-1">
-              <SettingsRow label="语言" description="暂不提供切换">
-                <span className="text-sm text-secondary">界面目前仅中文</span>
+              <SettingsRow
+                label={t('settings.general.languageLabel')}
+                description={t('settings.general.languageDescription')}
+              >
+                <Select
+                  value={settings.language}
+                  onValueChange={(v) => {
+                    const language = v as AppSettings['language'];
+                    patch({ language });
+                    setLanguage(language);
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="zh">{t('settings.general.languageZh')}</SelectItem>
+                    <SelectItem value="en">{t('settings.general.languageEn')}</SelectItem>
+                  </SelectContent>
+                </Select>
               </SettingsRow>
-              <SettingsRow label="主题" description="浅色 / 深色 / 跟随系统">
+              <SettingsRow
+                label={t('settings.general.themeLabel')}
+                description={t('settings.general.themeDescription')}
+              >
                 <Select
                   value={settings.theme}
                   onValueChange={(v) => {
@@ -56,16 +83,16 @@ export function GeneralPanel({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="light">浅色</SelectItem>
-                    <SelectItem value="dark">深色</SelectItem>
-                    <SelectItem value="system">跟随系统</SelectItem>
+                    <SelectItem value="light">{t('settings.general.themeLight')}</SelectItem>
+                    <SelectItem value="dark">{t('settings.general.themeDark')}</SelectItem>
+                    <SelectItem value="system">{t('settings.general.themeSystem')}</SelectItem>
                   </SelectContent>
                 </Select>
               </SettingsRow>
               <SettingsRow
-                label="开机自启"
-                description="登录后启动"
-                descriptionTip="写入操作系统登录项（Windows 启动项 / macOS Login Item）。保存「外观与行为」后生效。"
+                label={t('settings.general.autoStartLabel')}
+                description={t('settings.general.autoStartDescription')}
+                descriptionTip={t('settings.general.autoStartTip')}
               >
                 <Switch
                   checked={settings.autoStart}
@@ -73,9 +100,9 @@ export function GeneralPanel({
                 />
               </SettingsRow>
               <SettingsRow
-                label="关闭到托盘"
-                description="关窗不退出"
-                descriptionTip="点击关闭按钮后隐藏到系统托盘，进程保持运行。Windows 可从托盘图标恢复；macOS 可从菜单栏托盘或 Dock 图标恢复。"
+                label={t('settings.general.closeToTrayLabel')}
+                description={t('settings.general.closeToTrayDescription')}
+                descriptionTip={t('settings.general.closeToTrayTip')}
               >
                 <Switch
                   checked={settings.closeToTray}
@@ -83,9 +110,9 @@ export function GeneralPanel({
                 />
               </SettingsRow>
               <SettingsRow
-                label="技能市场"
-                description="远程技能源"
-                descriptionTip="自动：优先 skills.sh，网络不可达时回退 skillhub.cn。也可固定只用其一。"
+                label={t('settings.general.skillMarketLabel')}
+                description={t('settings.general.skillMarketDescription')}
+                descriptionTip={t('settings.general.skillMarketTip')}
               >
                 <Select
                   value={settings.skillMarketSource ?? 'auto'}
@@ -97,9 +124,9 @@ export function GeneralPanel({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {SKILL_MARKET_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
+                    {SKILL_MARKET_VALUES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {skillMarketLabel(value, t)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -113,25 +140,22 @@ export function GeneralPanel({
                   void (async () => {
                     setSaving(true);
                     try {
-                      const next = await updateSettings({
-                        theme: settings.theme,
-                        autoStart: settings.autoStart,
-                        closeToTray: settings.closeToTray,
-                        skillMarketSource: settings.skillMarketSource ?? 'auto',
-                      });
+                      const next = await updateSettings(generalSettingsPayload(settings));
                       setSettings(next);
                       committedThemeRef.current = next.theme;
+                      committedLanguageRef.current = next.language;
                       setTheme(next.theme);
+                      setLanguage(next.language);
                       // 必须在保存成功后再清市场缓存，否则会继续展示上一源
                       invalidateSkills('market');
                       toast({
-                        title: '常规设置已保存',
-                        description: generalSettingsSaveDescription(next),
+                        title: t('settings.general.savedToast'),
+                        description: generalSettingsSaveDescription(next, t),
                         variant: 'success',
                       });
                     } catch (e) {
                       toast({
-                        title: '保存失败',
+                        title: t('common.saveFailed'),
                         description: String(e),
                         variant: 'danger',
                       });
@@ -141,7 +165,7 @@ export function GeneralPanel({
                   })();
                 }}
               >
-                {saving ? '保存中…' : '保存'}
+                {saving ? t('common.saving') : t('common.save')}
               </Button>
             </CardFooter>
           </Card>

@@ -1,7 +1,7 @@
 # AgentHub 前端 UI 设计
 
 > 对应《架构拆分》§4。技术：React 18 + TS + Vite + Tailwind + shadcn/Radix（唯一 UI 体系）+ CodeMirror 6 + recharts + react-router。  
-> **实际依赖**以根目录 `package.json` 为准：**未**引入 TanStack Query / i18next / react-hook-form / zod；页面用本地 state + `lib/api`。  
+> **实际依赖**以根目录 `package.json` 为准：**未**引入 TanStack Query / i18next / react-hook-form / zod；页面用本地 state + `lib/api`。GUI 语言为轻量自研字典（`src/lib/i18n/`），不引入 i18next。  
 > 范围：**八家** Agent（Claude / Codex / Kimi / Grok / Pi / WorkBuddy / **Cursor Agent** 半套 CLI / **DeepSeek Harness**）；**不支持基于 Cursor IDE 私有库的账号池**。Dashboard 与侧栏按 `AGENTS` 自适应，不写死数量。  
 > v1.1：Usage 模型筛选语义、Backups 流程、Dashboard/侧栏与当前 agent 集合对齐。  
 > v1.3：Agents / 首次引导增加 **「环境未就绪」** 态；安装链路先 Runtime 再 Agent。  
@@ -415,7 +415,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 ### 4.8 Settings
 
-分区：常规（语言只读中文说明 / 主题 / 开机自启 / 关闭到托盘 / 技能市场）、**安全**（**凭据脱敏说明**——SecretInput / 不明文回显；**不要求**用户配置主密码或落盘加密，与项目「凭据不加密落盘」决策一致，勿把主密码/keyring 当必填路径）、数据（数据目录只读、**日志级别/保留/打开目录**、用量采集间隔）、**备份**（live 配置快照；安全自动备份固定启用）、关于（版本/更新）。
+分区：常规（**语言切换** 简体中文 / English / 主题 / 开机自启 / 关闭到托盘 / 技能市场）、**安全**（**凭据脱敏说明**——SecretInput / 不明文回显；**不要求**用户配置主密码或落盘加密，与项目「凭据不加密落盘」决策一致，勿把主密码/keyring 当必填路径）、数据（数据目录只读、**日志级别/保留/打开目录**、用量采集间隔）、**备份**（live 配置快照；安全自动备份固定启用）、关于（版本/更新）。
 
 **L1 SQLite 白名单**（`SETTINGS_WHITELIST`，与 CLI `config get/set` 共用）：`theme`、`language`、`log_level`、`log_retention_days`、`skill_market_source`、`close_to_tray`、`usage_collect_interval_min`。
 
@@ -423,7 +423,8 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - **用量采集间隔**：已写入 SQLite，**不是**仅 localStorage。`None`=从未写入（前端默认 30）；`0`=仅手动；上限 1440。保存后 `notifyUsageSettingsChanged` 立即重排程（见 §4.6）。
 - **开机自启**（`autoStart`）：OS 登录项（Windows 启动项 / macOS Login Item），不进 L1 白名单。
 - **关闭到托盘**（`closeToTray`）：写 core，并同步 Tauri `AppState`。
-- 语言键可落盘，UI 暂不提供切换。`autoBackup` 兼容字段已不展示开关；live 快照由核心服务在切换/导入/更新后自动创建。换机整库导出未实现（`Backend.features.backupExport=false`），无 UI 入口。
+- **语言**：core L1 为权威（`zh-CN` / `en`）。Settings Select **只预览**（`LanguageProvider.setLanguage`）；离开未保存则回退到已提交值。点保存才 `set_setting`。启动时 `LanguageProvider` 用 localStorage 做首屏缓存，再 `getSettings` 对账；同步 `<html lang>`。不引入 i18next；字典在 `src/lib/i18n/locales/{zh,en}.ts`，第一期覆盖 Settings 五面板与侧栏 chrome。导航专有名（Chat / Agents / Skills / MCP / Projects / Dashboard / Connections / Routes / Settings）两种语言同值。业务页分期迁移。
+- `autoBackup` 兼容字段已不展示开关；live 快照由核心服务在切换/导入/更新后自动创建。换机整库导出未实现（`Backend.features.backupExport=false`），无 UI 入口。
 
 Tab 与 URL `?tab=` 同步（`general` / `security` / `data` / `backups` / `about`）；非法或缺省值 fallback 到 `general`。切换使用 `replace`，避免污染浏览器历史。
 

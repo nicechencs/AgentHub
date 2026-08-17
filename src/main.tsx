@@ -5,6 +5,7 @@ import App from './App';
 import { BootSplash } from '@/components/shared/BootSplash';
 import { ToastProvider } from '@/components/ui/toast';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { LanguageProvider } from '@/components/shared/LanguageProvider';
 import { ThemeProvider } from '@/components/shared/ThemeProvider';
 import { UsageSyncProvider } from '@/components/shared/UsageSyncProvider';
 import {
@@ -15,6 +16,7 @@ import {
   loadAgentStatuses,
   loadConnectionPool,
 } from '@/app/runtime';
+import { applyLanguage, loadStoredLanguage } from '@/lib/i18n';
 import { applyTheme, loadStoredTheme } from '@/lib/theme';
 import { logger } from '@/lib/logger';
 // Design tokens first (SSOT: src/styles/tokens.ts), then structural styles
@@ -113,17 +115,19 @@ function Root() {
       )}
       <HashRouter>
         <ThemeProvider>
-          <TooltipProvider delayDuration={200} skipDelayDuration={0}>
-            <ToastProvider>
-              <AgentCatalogProvider>
-                <AgentStatusProvider>
-                  <UsageSyncProvider>
-                    <App />
-                  </UsageSyncProvider>
-                </AgentStatusProvider>
-              </AgentCatalogProvider>
-            </ToastProvider>
-          </TooltipProvider>
+          <LanguageProvider>
+            <TooltipProvider delayDuration={200} skipDelayDuration={0}>
+              <ToastProvider>
+                <AgentCatalogProvider>
+                  <AgentStatusProvider>
+                    <UsageSyncProvider>
+                      <App />
+                    </UsageSyncProvider>
+                  </AgentStatusProvider>
+                </AgentCatalogProvider>
+              </ToastProvider>
+            </TooltipProvider>
+          </LanguageProvider>
         </ThemeProvider>
       </HashRouter>
     </>
@@ -133,6 +137,7 @@ function Root() {
 function boot() {
   // 首屏前同步主题,避免闪烁
   applyTheme(loadStoredTheme());
+  applyLanguage(loadStoredLanguage());
 
   // 立刻挂载 React：由 Root 内 splash 覆盖预加载，不再阻塞在 createRoot 之前
   ReactDOM.createRoot(document.getElementById('root')!).render(

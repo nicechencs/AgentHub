@@ -364,7 +364,7 @@ React Routes UI（本机路由页）
 
 ## 4. `src` — React 前端
 
-技术：React 18 + TypeScript + Vite + Tailwind + shadcn/Radix（只此一套 UI）+ CodeMirror 6 + recharts + react-router。页面内本地 state + `lib/api` 拉取（**未**引入 TanStack Query / react-hook-form / zod / i18next）。详细设计见 `ui-design.md`。
+技术：React 18 + TypeScript + Vite + Tailwind + shadcn/Radix（只此一套 UI）+ CodeMirror 6 + recharts + react-router。页面内本地 state + `lib/api` 拉取（**未**引入 TanStack Query / react-hook-form / zod / i18next）。GUI 语言为轻量自研字典 + `LanguageProvider`（`src/lib/i18n/`），见 `ui-design.md`。详细设计见 `ui-design.md`。
 
 ### 4.1 目录结构（已落地）
 
@@ -381,6 +381,7 @@ src/
 │   │   ├── tauri/               # 唯一允许调用 invoke 的地方
 │   │   └── current.ts           # 默认生产实现切换点
 │   ├── api/                     # 兼容 façade，页面无需一次全改
+│   ├── i18n/                    # 轻量字典 + t()；zh/en；不引入 i18next
 │   ├── connect-flow/            # 统一连接流程逻辑层
 │   ├── hooks/                   # useSkills / useInstalledAgents
 │   ├── ticket-wallet.ts
