@@ -79,7 +79,7 @@ function explicitTagMatches(tag: string | undefined, accepted: readonly string[]
   return !!tag && accepted.some((item) => item.toLowerCase() === tag.toLowerCase());
 }
 
-const PROJECTION_NOT_A_TICKET = '投影不是票';
+const PROJECTION_NOT_A_TICKET = '投影不是登录';
 
 function persistedSurface(blob: unknown): TicketSurface | undefined {
   const raw = jsonString(blob, 'surface');

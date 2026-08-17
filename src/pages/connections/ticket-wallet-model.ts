@@ -374,7 +374,7 @@ export function buildTicketDetailFields(
 ): TicketDetailField[] {
   const fields: TicketDetailField[] = [
     { label: '类型', value: ticketCredentialClassLabel(ticket.credentialClass) },
-    { label: '票面', value: ticketSurfaceLabel(ticket.surface) },
+    { label: '来源', value: ticketSurfaceLabel(ticket.surface) },
     { label: '所属', value: agentDisplayName(ticket.agentId) },
   ];
   if (ticket.importedFrom) {

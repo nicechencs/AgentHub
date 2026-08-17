@@ -737,7 +737,7 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。",
+        "reason": "同协议但无已验证的边：登录与该 Agent 入口相通，但协议图上尚无已验证的适配边。",
         "reusePath": "none"
       }
     },

@@ -234,7 +234,7 @@ describe('ticket detail fields', () => {
     });
     expect(fields).toEqual(expect.arrayContaining([
       { label: '类型', value: 'API Key' },
-      { label: '票面', value: '会员' },
+      { label: '来源', value: '会员' },
       { label: '所属', value: agentDisplayName('kimi') },
       { label: '导入自', value: agentDisplayName('kimi') },
       { label: '端点', value: '自定义' },

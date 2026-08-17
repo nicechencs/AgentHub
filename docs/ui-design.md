@@ -212,11 +212,11 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - 「切换」只用于这份登录对它本来所属工具的 native 绑定。接到其他工具一律走 `bind`。
 - 添加登录时写下它是哪一家。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意工具）。
 - **已落地（读模型 + 写入）**：跨工具钱包列表 + 真登录常驻「接到…」+ Dashboard 当前绑定；生成投影不进钱包。确认步走 `bind`，成功以该工具的当前绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
-- 实现落点：`TicketWalletList` / `ticket-wallet-model` / `lib/api/tickets`；`reuse-offer` 为真票常驻语义。
+- 实现落点：`TicketWalletList` / `ticket-wallet-model` / `lib/api/tickets`；`reuse-offer` 为登录常驻「接到…」语义。
 
 #### 4.3.1 mode=providers — API 配置（历史线框 / 过渡形态）
 
-> 当时按 Agent tab + `mode=providers` 的左右栏编辑器。**现行是全局票钱包**（见 §4.3 目标线框），不再以本线框为产品契约。
+> 当时按 Agent tab + `mode=providers` 的左右栏编辑器。**现行是全局钱包**（见 §4.3 目标线框），不再以本线框为产品契约。
 
 ```
 ┌─ API 配置 ─────────────────────────────────────────────────┐
@@ -244,7 +244,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 #### 4.3.2 mode=accounts — 账号与密钥（历史线框 / 过渡形态）
 
-> 当时按 Agent tab + `mode=accounts` 的账号卡列表。**现行是全局票钱包**（见 §4.3 目标线框），OAuth / API Key 仍是票面类型，但不再以本线框为第一导航。
+> 当时按 Agent tab + `mode=accounts` 的账号卡列表。**现行是全局钱包**（见 §4.3 目标线框），OAuth / API Key 仍是来源类型，但不再以本线框为第一导航。
 
 ```
 ┌─ 账号与密钥 ───────────────────────────────────────────────┐
@@ -269,7 +269,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 #### 4.3.3 Routes（本机路由）
 
-用户表面是 **本机路由运行时**：协议对不上时在这台电脑上开的一层转发。票在 Connections，绑定在 Dashboard / ConnectFlow；本页只服务 ③。内部模块仍叫 Adapter（`lib/api/adapter`），不得漏进侧栏、页标题、空态、确认框、徽标、托盘。
+用户表面是 **本机路由运行时**：协议对不上时在这台电脑上开的一层转发。登录在 Connections，绑定在 Dashboard / ConnectFlow；本页只服务 ③。内部模块仍叫 Adapter（`lib/api/adapter`），不得漏进侧栏、页标题、空态、确认框、徽标、托盘。
 
 规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。侧栏英文 **Routes**，仅当本机确有 `local_bridge`（含孤立）或钱包仍有 `route=bridge` 时出现；Settings → 数据有一条永远在的「本机路由运行时」回收链。页头无「去 Dashboard / 去 Connections」。创建区不在本页。
 

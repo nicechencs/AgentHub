@@ -312,7 +312,7 @@ export default function BridgesPage() {
             {orphan.length > 0 ? (
               <PageSection
                 title="孤立本机路由"
-                description="来源票或绑定记录已不在。停止或解除仍走同一套命令。"
+                description="来源登录或绑定记录已不在。停止或解除仍走同一套命令。"
               >
                 <AdapterProfiles
                   {...listProps}
@@ -389,7 +389,7 @@ export default function BridgesPage() {
           <DialogHeader className="shrink-0">
             <DialogTitle>解除本机路由绑定？</DialogTitle>
             <DialogDescription>
-              会停止本机路由并恢复该工具上一份配置。票仍留在 Connections。
+              会停止本机路由并恢复该工具上一份配置。登录仍留在 Connections。
               {removeConfirmIsOrphan ? '来源或绑定记录已不在，仍走同一解除。' : ''}
             </DialogDescription>
           </DialogHeader>

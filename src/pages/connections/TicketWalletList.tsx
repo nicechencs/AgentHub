@@ -322,7 +322,7 @@ export function TicketWalletList({
         <SegmentedControl
           value={filter}
           onChange={setFilter}
-          aria-label="票类型筛选"
+          aria-label="登录类型筛选"
           options={TICKET_WALLET_FILTERS.map((f) => ({
             value: f.value,
             label: f.label,
@@ -335,9 +335,9 @@ export function TicketWalletList({
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜票 / 搜用途"
+              placeholder="搜索登录或用途"
               className="h-8 w-44 pl-7 text-xs"
-              aria-label="搜索票"
+              aria-label="搜索登录"
             />
           </div>
           {addMenu}
@@ -351,7 +351,7 @@ export function TicketWalletList({
       {wallet && tickets.length === 0 ? (
         <EmptyState
           icon={KeyRound}
-          title="钱包还没有票"
+          title="钱包还没有登录"
           description="导入官方登录态或添加 API Key，再接到其他 Agent。"
           action={addMenu}
         />
@@ -360,7 +360,7 @@ export function TicketWalletList({
       {wallet && tickets.length > 0 && rows.length === 0 ? (
         <EmptyState
           icon={KeyRound}
-          title="没有匹配的票"
+          title="没有匹配的登录"
           description="请改用其他筛选或清空搜索。"
           actionLabel="显示全部"
           onAction={() => {
@@ -387,7 +387,7 @@ export function TicketWalletList({
 
       {wallet ? (
         <p className="mt-3 text-meta text-muted">
-          钱包 · {tickets.length} 张票
+          钱包 · {tickets.length} 份登录
           {highlightAgentId
             ? ` · 已高亮 ${agentDisplayName(highlightAgentId)} 的当前绑定`
             : ''}

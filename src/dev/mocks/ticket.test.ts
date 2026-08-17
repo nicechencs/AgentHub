@@ -428,7 +428,7 @@ describe('mock ticket wallet', () => {
     const generatedId = `claude-kimi-adapter-${CONNECT_FLOW_FIXTURE_IDS.kimiMembership}`;
     await expect(getBackend().ticket.plan(`provider:${generatedId}`, 'pi')).rejects.toMatchObject({
       code: 'invalid_arg',
-      message: expect.stringContaining('投影不是票'),
+      message: expect.stringContaining('投影不是登录'),
     });
   });
 
@@ -467,7 +467,7 @@ describe('mock ticket wallet', () => {
     const generatedId = `claude-kimi-adapter-${CONNECT_FLOW_FIXTURE_IDS.kimiMembership}`;
     await expect(getBackend().ticket.bind(`provider:${generatedId}`, 'pi')).rejects.toMatchObject({
       code: 'invalid_arg',
-      message: expect.stringContaining('投影不是票'),
+      message: expect.stringContaining('投影不是登录'),
     });
   });
 

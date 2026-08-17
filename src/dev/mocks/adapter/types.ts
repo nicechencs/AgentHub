@@ -75,11 +75,11 @@ export const AGENT_NO_WRITER_REASON = '该 Agent 无配置写入能力，不能�
 
 /** Keep in lockstep with `PROTOCOL_MISMATCH_REASON` in agenthub-core. */
 export const PROTOCOL_MISMATCH_REASON =
-  '协议不通：票所说的上游协议与该 Agent 所听的入口没有交集。';
+  '协议不通：登录所说的上游协议与该 Agent 所听的入口没有交集。';
 
 /** Keep in lockstep with `SAME_PROTOCOL_NO_EDGE_REASON` in agenthub-core. */
 export const SAME_PROTOCOL_NO_EDGE_REASON =
-  '同协议但无已验证的边：票与该 Agent 入口相通，但协议图上尚无已验证的适配边。';
+  '同协议但无已验证的边：登录与该 Agent 入口相通，但协议图上尚无已验证的适配边。';
 
 export type TicketProtocol =
   | 'anthropic-messages'
