@@ -5,7 +5,7 @@
 > 状态（2026-08-15，以代码为准）：CLI 已覆盖 doctor（含 ⑤ Locks）/ run / env / agent（含 `capabilities`、`outdated`）/ provider（含 `undo`、`test-latency`）/ account（含 `oauth-url`、`refresh`、`delete`、`undo`）/ skill 全树 / usage / backup（含 `delete`）/ config（白名单 + 只读 `app_version`）。GUI 已接线 doctor、安装、Provider、Account、OAuth PKCE（Claude/Codex/Grok）、Skill、Usage、Backup、Chat、Projects、Settings。Provider/Account **测速与切换撤销** CLI/GUI 均已接线。**备份导出**仍未实现。凭据落盘加密为当前范围外。跨 Agent 复用三路见 [product-decisions.md](product-decisions.md)；本文「代理模式」≠ ③ 本机路由。  
 > **2026-08-16 文档回写**（仍为 v1.4）：对齐 `DoctorReport`、`--days`、`add-apikey [--label]`、L0 仅 `--data-dir` / `AGENTHUB_HOME`；删除 `--show-secrets` 二期主密码表述。
 > v1.1：`doctor` 含 runtimes；新增 `env` 资源；`agent install` 两阶段与 `--install-deps`。  
-> v1.2：平台环境差异——`doctor`/`env list` 仅返回宿主相关 Runtime（macOS 不含 PowerShell）；`env install` 默认 channel 与 `agent install|upgrade` native 底层命令按 Windows/macOS 分流。
+> v1.2：平台环境差异——`doctor`/`env list` 仅返回宿主相关 Runtime（macOS 不含 PowerShell）；`env install` 默认 channel 与 `agent install|upgrade` native 底层命令按 Windows/macOS/Linux 分流。
 
 系列文档：[项目方案](agenthub-plan.md) · [架构拆分](architecture.md) · [UI 设计](ui-design.md) · [日志规范](logging.md)
 
@@ -171,7 +171,7 @@ agenthub
 | 命令 | 参数 | core | 危险 | 说明 |
 |---|---|---|---|---|
 | `list` | | `env_service.detect_all` | 否 | 与 doctor 的 runtimes 段同源；**仅宿主相关 Runtime**（macOS/Linux 不含 `powershell`） |
-| `install` | `<runtime> [--channel]` | `env_service.install_runtime` | 中 | P2；`runtime`：`nodejs`/`git` 等；channel 默认 **Windows=`winget`、macOS=`brew`**；`powershell` **永不**一键安装；流式日志 stderr；成功后 invalidate 缓存 |
+| `install` | `<runtime> [--channel]` | `env_service.install_runtime` | 中 | P2；`runtime`：`nodejs`/`git` 等；channel 默认 **Windows=`winget`、macOS=`brew`、Linux=`manual`**；`powershell` **永不**一键安装；Linux 不自动执行 apt/dnf/pacman，只打印 remediations；流式日志 stderr；成功后 invalidate 缓存 |
 
 - `install` 在无自动渠道时打印 remediations（命令 + URL）并以退出码 `3`（业务失败）结束，**不**假装成功。无包管理器（brew/winget 未找到）或不支持的安装渠道 → 退出码 `3`（`env.not_ready` / `unsupported`），`--output json` 的 `details` 含 `remediations`（已按宿主平台过滤）。命令已执行但重新检测未就绪仍为 `install.failed`（退出码 `1`）。
 - **不提供** `env uninstall`（避免误伤系统 Node）。
@@ -207,7 +207,7 @@ agenthub
 }
 ```
 
-GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `brew`，macOS 不展示 `winget`）。
+GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `brew`，macOS 不展示 `winget`，Linux 不展示 `winget`/`brew`）。
 
 ### 4.4 `provider`
 

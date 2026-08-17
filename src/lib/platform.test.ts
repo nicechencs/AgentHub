@@ -53,10 +53,10 @@ describe('runtime install platform helpers', () => {
     expect(getRuntimeInstallChannel('macos')).toBe('brew');
   });
 
-  it('keeps winget for Windows and Linux/unknown fallback hosts', () => {
+  it('keeps winget on Windows and uses manual remediations on Linux/unknown', () => {
     expect(detectHostPlatform({ platform: 'Win32', userAgent: '' })).toBe('windows');
     expect(getRuntimeInstallChannel('windows')).toBe('winget');
-    expect(getRuntimeInstallChannel('linux')).toBe('winget');
-    expect(getRuntimeInstallChannel('unknown')).toBe('winget');
+    expect(getRuntimeInstallChannel('linux')).toBe('manual');
+    expect(getRuntimeInstallChannel('unknown')).toBe('manual');
   });
 });

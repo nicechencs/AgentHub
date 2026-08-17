@@ -25,6 +25,13 @@ describe('runtime remediation platform filtering', () => {
     expect(rows.some((row) => row.kind === 'url')).toBe(true);
   });
 
+  it('offers copyable distro commands on Linux without winget or brew', () => {
+    const rows = runtimeRemediationsForPlatform(RUNTIME_MAP.nodejs.remediations, 'linux');
+    expect(rows.some((row) => row.kind === 'command' && row.value.includes('apt-get'))).toBe(true);
+    expect(rows.some((row) => row.kind === 'url' && row.value.includes('nodejs.org'))).toBe(true);
+    expect(rows.some((row) => row.kind === 'winget' || row.kind === 'brew')).toBe(false);
+  });
+
   it('omits PowerShell from host runtime list outside Windows', () => {
     expect(runtimesForPlatform('macos').map((r) => r.id)).not.toContain('powershell');
     expect(runtimesForPlatform('linux').map((r) => r.id)).not.toContain('powershell');

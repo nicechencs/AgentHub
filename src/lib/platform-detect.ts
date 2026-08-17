@@ -2,7 +2,7 @@
 
 export type HostPlatform = 'windows' | 'macos' | 'linux' | 'unknown';
 
-export type RuntimeInstallChannel = 'winget' | 'brew';
+export type RuntimeInstallChannel = 'winget' | 'brew' | 'manual';
 
 export function detectHostPlatform(input?: {
   platform?: string;
@@ -21,7 +21,17 @@ export function detectHostPlatform(input?: {
 export function getRuntimeInstallChannel(
   platform: HostPlatform = detectHostPlatform(),
 ): RuntimeInstallChannel {
-  return platform === 'macos' ? 'brew' : 'winget';
+  if (platform === 'macos') return 'brew';
+  if (platform === 'windows') return 'winget';
+  return 'manual';
+}
+
+/** One-click runtime install exists only where core can spawn winget/brew. */
+export function supportsRuntimeAutoInstall(
+  platform: HostPlatform = detectHostPlatform(),
+): boolean {
+  const channel = getRuntimeInstallChannel(platform);
+  return channel === 'winget' || channel === 'brew';
 }
 
 export const runtimeInstallChannel = getRuntimeInstallChannel;
