@@ -13,7 +13,9 @@ enum LinuxFamily {
 fn os_release_field(text: &str, key: &str) -> Option<String> {
     for line in text.lines() {
         let line = line.trim();
-        let rest = line.strip_prefix(key)?.strip_prefix('=')?;
+        let Some(rest) = line.strip_prefix(key).and_then(|rest| rest.strip_prefix('=')) else {
+            continue;
+        };
         let value = rest.trim().trim_matches('"').trim_matches('\'');
         if !value.is_empty() {
             return Some(value.to_ascii_lowercase());
