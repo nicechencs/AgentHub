@@ -3,7 +3,14 @@ import type { zh } from './locales/zh';
 
 export type UiLanguage = AppSettings['language'];
 
-export type Dict = typeof zh;
+/** 叶子放宽为 string，避免 en 被 zh 的中文字面量锁死。 */
+type StringifyLeaves<T> = T extends string
+  ? string
+  : T extends object
+    ? { [K in keyof T]: StringifyLeaves<T[K]> }
+    : T;
+
+export type Dict = StringifyLeaves<typeof zh>;
 
 export type MessageParams = Record<string, string | number>;
 
