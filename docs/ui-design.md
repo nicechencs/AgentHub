@@ -88,7 +88,7 @@ Agent 品牌色（logo 点、图表系列；改 tokens.ts 的 AGENT_COLORS）:
 │ │ Manage         │   │                                      │
 │ │ ▣ Dashboard    │   │                                      │
 │ │ ⇄ Connections  │   │                                      │
-│ │ ▦ Routes       │   │  （有本机路由才出现；Settings 数据区常驻入口）│
+│ │ ▦ Routes       │   │  （有本机路由才出现；Settings 本机区常驻入口）│
 │ │ ⚙ Settings     │   │                                      │
 │ ├────────────────┤   │                                      │
 │ │ ● N/M agents   │   │   (侧栏底部:agent 在线状态迷你条)      │
@@ -271,7 +271,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 用户表面是 **本机路由运行时**：协议对不上时在这台电脑上开的一层转发。票在 Connections，绑定在 Dashboard / ConnectFlow；本页只服务 ③。内部模块仍叫 Adapter（`lib/api/adapter`），不得漏进侧栏、页标题、空态、确认框、徽标、托盘。
 
-规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。侧栏英文 **Routes**，仅当本机确有 `local_bridge`（含孤立）或钱包仍有 `route=bridge` 时出现；Settings → 数据有一条永远在的「本机路由运行时」回收链。页头无「去 Dashboard / 去 Connections」。创建区不在本页。
+规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。侧栏英文 **Routes**，仅当本机确有 `local_bridge`（含孤立）或钱包仍有 `route=bridge` 时出现；Settings → 本机有一条永远在的「本机路由运行时」回收链。页头无「去 Dashboard / 去 Connections」。创建区不在本页。
 
 列出全部 `route=local_bridge`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机路由」。行与详情都是**单层**进程健康 + 端口，不画「配置已生效 / 桥接运行中」。解绑只走 `unbindTicket`，不提供 `removeAdapter`。健康空态（profile 与钱包均已结算且 `bound+orphan===0` 且 last-known 钱包桥数为 0）标题「没有本机路由」，**无按钮**——这是对 §1.4 的显式例外。
 
@@ -400,7 +400,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - **「手动采集」**：与筛选同行；进度条；首次引导用 `StorageKey.usageGuideDismissed`。
 - **同步状态文案**（同筛选项右侧）：`上次同步：… · 还有 x 分 y 秒 自动同步` / `仅手动采集`（`UsageSyncProvider` + `usage-sync` 纯函数）。
 - **前台自动采集**：`usageCollectIntervalMin`（默认 30；`0` = 仅手动）。App 在前台且 `document.visibilityState === 'visible'` 时按间隔调用 `collectUsage`；切后台暂停；回到前台若已到期则 grace 后补采。有新增条数时 toast「自动同步完成」。
-- 设置中可改采集间隔（保存后 `notifyUsageSettingsChanged` 立即重排程），并可跳转 Dashboard 用量段。
+- 设置中可改采集间隔（偏好页变更后立即写入，`notifyUsageSettingsChanged` 立即重排程），并可跳转 Dashboard 用量段。
 
 #### 用量同步 — 已做 / 以后要做
 
@@ -411,29 +411,48 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 ### 4.7 （已并入 Settings）
 
-独立 Backups 一级页已取消；live 配置快照管理见 §4.8「备份」分区。`/backups` 保留永久重定向到 `/settings?tab=backups`。
+独立 Backups 一级页已取消；live 配置快照管理见 §4.8「本机」分区。`/backups` 保留永久重定向到 `/settings?tab=backups`（Settings 再 replace 到 `/settings?tab=local#backups`）。
 
 ### 4.8 Settings
 
-分区：常规（**语言切换** 简体中文 / English / 主题 / 开机自启 / 关闭到托盘 / 技能市场）、**安全**（**凭据脱敏说明**——SecretInput / 不明文回显；**不要求**用户配置主密码或落盘加密，与项目「凭据不加密落盘」决策一致，勿把主密码/keyring 当必填路径）、数据（数据目录只读、**日志级别/保留/打开目录**、用量采集间隔）、**备份**（live 配置快照；安全自动备份固定启用）、关于（版本/更新）。
+三个分区（侧栏英文 **Settings**；页内中文 **偏好 / 本机 / 关于**，英文 **Preferences / This device / About**）：
+
+1. **偏好**（`?tab=preferences`）：语言、主题、开机自启、关闭到托盘、技能市场源、用量采集间隔。
+2. **本机**（`?tab=local`）：数据目录（只读 + 打开）、日志级别 / 保留天数、打开日志目录、本机路由回收链，以及完整备份管理（Agent Tab、创建 / 恢复 / 删除；安全自动备份固定启用）。
+3. **关于**（`?tab=about`）：版本、检查/安装更新、GitHub 仓库、标语，以及原「安全」页的两条只读凭据说明（界面脱敏；存储不加密。**不**提供主密码 / keyring UI）。
+
+Chat 会话设置（`ChatSettingsDialog`：cwd / 自动批准）不进 Settings。
 
 **L1 SQLite 白名单**（`SETTINGS_WHITELIST`，与 CLI `config get/set` 共用）：`theme`、`language`、`log_level`、`log_retention_days`、`skill_market_source`、`close_to_tray`、`usage_collect_interval_min`。
 
-- **主题**：core 为权威。Settings 页 Select **只预览**（`applyTheme`）；离开未保存则回退到已提交值。点保存才 `set_setting`。启动时 ThemeProvider 用 localStorage 做首屏缓存，再 `getSettings` 对账。
-- **用量采集间隔**：已写入 SQLite，**不是**仅 localStorage。`None`=从未写入（前端默认 30）；`0`=仅手动；上限 1440。保存后 `notifyUsageSettingsChanged` 立即重排程（见 §4.6）。
+- **保存模型**：无页级「保存」条。偏好控件变更即 `updateSettings`；主题/语言先预览再落盘，离开页面不回退。日志级别与保留天数同样立即写入；级别变更保留「需重启才完全生效」提示。备份的创建 / 恢复 / 删除即时生效（恢复仍二次确认）。关于页的检查/安装更新即时生效。
+- **主题**：core 为权威。Settings 页 Select 预览并立即 `set_setting`。启动时 ThemeProvider 用 localStorage 做首屏缓存，再 `getSettings` 对账。
+- **用量采集间隔**：在偏好页。已写入 SQLite，**不是**仅 localStorage。`None`=从未写入（前端默认 30）；`0`=仅手动；上限 1440。变更后 `notifyUsageSettingsChanged` 立即重排程（见 §4.6）。
 - **开机自启**（`autoStart`）：OS 登录项（Windows 启动项 / macOS Login Item），不进 L1 白名单。
 - **关闭到托盘**（`closeToTray`）：写 core，并同步 Tauri `AppState`。
-- **语言**：core L1 为权威（`zh-CN` / `en`）。Settings Select **只预览**（`LanguageProvider.setLanguage`）；离开未保存则回退到已提交值。点保存才 `set_setting`。启动时 `LanguageProvider` 用 localStorage 做首屏缓存，再 `getSettings` 对账；同步 `<html lang>`。**首次启动**（无语言缓存且尚未 seed）按 `navigator.languages` / `navigator.language` 选 zh/en，回落 zh，并一次性写入 core；已有用户选择不覆盖。不引入 i18next；字典在 `src/lib/i18n/locales/{zh,en}.ts`，第一期覆盖 Settings 五面板与侧栏 chrome。导航专有名（Chat / Agents / Skills / MCP / Projects / Dashboard / Connections / Routes / Settings）两种语言同值。业务页分期迁移。
+- **语言**：core L1 为权威（`zh-CN` / `en`）。Settings Select 预览并立即 `set_setting`。启动时 `LanguageProvider` 用 localStorage 做首屏缓存，再 `getSettings` 对账；同步 `<html lang>`。**首次启动**（无语言缓存且尚未 seed）按 `navigator.languages` / `navigator.language` 选 zh/en，回落 zh，并一次性写入 core；已有用户选择不覆盖。不引入 i18next；字典在 `src/lib/i18n/locales/{zh,en}.ts`，第一期覆盖 Settings 三面板与侧栏 chrome。导航专有名（Chat / Agents / Skills / MCP / Projects / Dashboard / Connections / Routes / Settings）两种语言同值。业务页分期迁移。
 - `autoBackup` 兼容字段已不展示开关；live 快照由核心服务在切换/导入/更新后自动创建。换机整库导出未实现（`Backend.features.backupExport=false`），无 UI 入口。
 
-Tab 与 URL `?tab=` 同步（`general` / `security` / `data` / `backups` / `about`）；非法或缺省值 fallback 到 `general`。切换使用 `replace`，避免污染浏览器历史。
+Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `about`（解析集中在 `src/pages/settings/settings-format.ts` 的 `SETTINGS_TABS` / `parseSettingsTab` / `resolveSettingsLocation`）。非法或缺省值 fallback 到 Preferences。切换使用 `replace`，避免污染浏览器历史。
 
-#### 备份分区（`/settings?tab=backups`）
+旧 slug **replace 重定向**（不 404、不落空白面板）：
 
-原独立 Backups 页并入此处。侧栏不再单独挂 Backups 入口。`/backups` 重定向到本分区。
+| 旧 `?tab=` | 去向 |
+|---|---|
+| `general` | Preferences |
+| `security` | About（凭据说明现居于此） |
+| `data` | Local（页顶：数据 / 日志） |
+| `backups` | Local，并落到备份区（`#backups`） |
+| `about` | About |
+
+`/backups` → `/settings?tab=backups` → `/settings?tab=local#backups`。侧栏不单独挂「备份」。
+
+#### 备份分区（`/settings?tab=local#backups`）
+
+原独立 Backups 页并入 Settings → 本机。侧栏不再单独挂 Backups 入口。`/backups` 与旧 `?tab=backups` 经重定向到达本分区。
 
 ```
-┌─ Settings › 备份 ──────────────────────────────────────────┐
+┌─ Settings › 本机 › 备份 ───────────────────────────────────┐
 │ 安全备份已启用 …               [备份 Claude]                │
 │ [Claude] [Codex] [Kimi] [Grok]   Claude · 3 条记录         │
 │                                                            │

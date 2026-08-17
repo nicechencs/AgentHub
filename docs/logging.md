@@ -213,7 +213,7 @@ agenthub -v doctor            # 本次进程 debug（文件 + stderr）
 | settings / `config get|set`：`log_level`、`log_retention_days` | **已落地**（下次启动生效） |
 | `targets` + `log_app_error*` / `log_*` | **已落地** |
 | core 单测：parse/purge/load_log_prefs/settings 校验 | 测试仍内嵌于 `logging/mod.rs`（历史遗留，与 [testing.md](testing.md) 分文件约定不一致） |
-| GUI settings commands + Settings 数据页日志项 | **已落地** |
+| GUI settings commands + Settings 本机页日志项 | **已落地** |
 | 关键路径埋点（boot、settings、部分 service/CLI/GUI） | **P0 已落地** |
 | detect 消防日志（`core.detect`：PATH / well-known / version probe / PS 双版本 notes） | **已落地** |
 | install 失败附加 diag 行（redetect / PATH / 解释器） | **已落地** |
