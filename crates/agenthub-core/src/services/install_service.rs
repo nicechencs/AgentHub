@@ -442,6 +442,7 @@ fn unsupported_channel_outcome(action: &str, logs: Vec<String>, channel: &str) -
 
 /// Complete an environment install by invalidating detection caches and
 /// checking the exact requested runtime (plus Node.js for an npm request).
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 fn finalize_runtime_install(
     id: RuntimeId,
     mut logs: Vec<String>,
