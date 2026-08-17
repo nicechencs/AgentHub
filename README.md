@@ -6,7 +6,7 @@
 
 AgentHub 是一个本地运行的多 Agent 桌面管理工具。它用统一的 GUI 和 CLI 管理 AI Coding Agent 的安装环境、连接、Skills、用量与本地会话。
 
-技术栈：**Tauri v2 + React + Rust**。Windows 是主要交付平台；macOS 与 Linux 支持源码运行与本机构建。GitHub Releases 目前只发布已签名的 Windows / macOS 包。
+技术栈：**Tauri v2 + React + Rust**。Windows、macOS、Linux 都是正式桌面平台。GitHub Releases 发布三端安装包：Windows 安装包与 updater 已签名；macOS updater 已签名（Apple 公证未承诺）；Linux 发布 `.deb` 与 AppImage，安装包可以未签名。Linux 自动更新只有在 Release 的 `latest.json` 含已签名 `linux-x86_64` 条目时可用，否则请手动下载新安装包。
 
 ## 主要功能
 
@@ -37,7 +37,15 @@ cargo run -p agenthub-cli -- agent capabilities
 
 ### 使用发布包
 
-从 [GitHub Releases](https://github.com/nicechencs/AgentHub/releases) 下载 Windows 安装包。macOS 当前以源码运行和本机打包为主，暂不承诺签名、公证后的发行包。Linux **没有**官方签名安装包；请按下面的源码路径安装，或本机构建未签名 `.deb`。
+从 [GitHub Releases](https://github.com/nicechencs/AgentHub/releases) 下载对应平台的桌面安装包：
+
+| 平台 | 安装包 | 签名 |
+|---|---|---|
+| Windows | NSIS `.exe` / MSI | 安装包与 updater 已签名 |
+| macOS | `.dmg`（另有 updater `.app.tar.gz`） | updater 已签名；Apple 公证未承诺 |
+| Linux | `.deb` 与 AppImage | 安装包可以未签名；自动更新仅在该版本提供了签名 AppImage 时可用 |
+
+Debian / Ubuntu 可用 `.deb`；其他发行版优先 AppImage。也可以按下面的源码路径运行真实桌面端（不是 mock）。
 
 ### 从源码运行
 
@@ -70,7 +78,7 @@ sudo apt-get install -y \
   librsvg2-dev libxdo-dev
 ```
 
-Fedora / Arch 命令见 `scripts/check-linux-prereqs.sh --print-packages`。桌面端需要图形会话（`DISPLAY` 或 `WAYLAND_DISPLAY`）。无桌面时可用 `pnpm dev:mock` 看前端演示。
+Fedora / Arch 命令见 `scripts/check-linux-prereqs.sh --print-packages`。openSUSE / Alpine 等其他发行版不要套用 `apt-get`，请用本机包管理器或看该脚本里的说明。桌面端需要图形会话（`DISPLAY` 或 `WAYLAND_DISPLAY`）。无桌面时可用 `pnpm dev:mock` 看前端演示。
 
 仅查看前端和演示数据，无需真实 Agent：
 
@@ -90,7 +98,7 @@ pnpm dev:mock
 | `pnpm build` | 前端生产构建，强制使用 Tauri adapter |
 | `pnpm tauri:build` | 构建桌面安装包 |
 | `pnpm tauri:build:macos` | 构建本地使用的 macOS `.app` |
-| `pnpm tauri:build:linux` | 构建本地使用的 Linux `.deb`（未签名，不进 GitHub Release） |
+| `pnpm tauri:build:linux` | 构建本地使用的 Linux `.deb` 与 AppImage（未签名；正式包由 `release` 分支的 GitHub Actions 发布） |
 | `./run.sh --check` | 检查 macOS/Linux 源码运行依赖 |
 | `cargo test -p agenthub-core` | 运行 Rust core 测试 |
 | `cargo run -p agenthub-cli -- --help` | 查看 CLI 帮助 |

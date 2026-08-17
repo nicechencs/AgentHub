@@ -7,6 +7,8 @@ enum LinuxFamily {
     Debian,
     Fedora,
     Arch,
+    Suse,
+    Alpine,
     Other,
 }
 
@@ -38,6 +40,10 @@ fn linux_family_from_os_release(text: &str) -> LinuxFamily {
         LinuxFamily::Fedora
     } else if hay_has_token(&hay, &["arch", "archlinux", "manjaro"]) {
         LinuxFamily::Arch
+    } else if hay_has_token(&hay, &["suse", "opensuse", "sles"]) {
+        LinuxFamily::Suse
+    } else if hay_has_token(&hay, &["alpine"]) {
+        LinuxFamily::Alpine
     } else {
         LinuxFamily::Other
     }
@@ -52,17 +58,25 @@ fn linux_family() -> LinuxFamily {
 }
 
 #[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
-fn linux_runtime_command(id: RuntimeId) -> Option<String> {
+fn linux_runtime_command_for(family: LinuxFamily, id: RuntimeId) -> Option<String> {
     let packages = match id {
         RuntimeId::NodeJs | RuntimeId::Npm => "nodejs npm",
         RuntimeId::Git => "git",
         RuntimeId::PowerShell => return None,
     };
-    Some(match linux_family() {
-        LinuxFamily::Fedora => format!("sudo dnf install -y {packages}"),
-        LinuxFamily::Arch => format!("sudo pacman -S --needed {packages}"),
-        LinuxFamily::Debian | LinuxFamily::Other => format!("sudo apt-get install -y {packages}"),
-    })
+    match family {
+        LinuxFamily::Debian => Some(format!("sudo apt-get install -y {packages}")),
+        LinuxFamily::Fedora => Some(format!("sudo dnf install -y {packages}")),
+        LinuxFamily::Arch => Some(format!("sudo pacman -S --needed {packages}")),
+        LinuxFamily::Suse => Some(format!("sudo zypper install -y {packages}")),
+        LinuxFamily::Alpine => Some(format!("sudo apk add {packages}")),
+        LinuxFamily::Other => None,
+    }
+}
+
+#[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
+fn linux_runtime_command(id: RuntimeId) -> Option<String> {
+    linux_runtime_command_for(linux_family(), id)
 }
 
 pub fn remediation_for(id: RuntimeId) -> Remediation {
@@ -94,7 +108,7 @@ pub fn remediation_for(id: RuntimeId) -> Remediation {
                     command: linux_runtime_command(RuntimeId::NodeJs),
                     url: Some("https://nodejs.org/".into()),
                     text: Some(
-                        "Linux does not one-click install Node. Use your distro packages or the official LTS, then fully quit and restart AgentHub so PATH refreshes. Distro nodejs is often older than 18; prefer https://nodejs.org/ when unsure."
+                        "Linux does not one-click install Node. Use your distro package manager or the official LTS, then fully quit and restart AgentHub so PATH refreshes. Distro nodejs is often older than 18; prefer https://nodejs.org/ when unsure. Unknown distros get the official URL instead of an apt-get guess."
                             .into(),
                     ),
                 }
@@ -163,7 +177,7 @@ pub fn remediation_for(id: RuntimeId) -> Remediation {
                     command: linux_runtime_command(RuntimeId::Git),
                     url: Some("https://git-scm.com/downloads".into()),
                     text: Some(
-                        "Linux does not one-click install Git. Use your distro package manager or the official download, then fully quit and restart AgentHub so PATH refreshes. Skills market / git URL install need git clone."
+                        "Linux does not one-click install Git. Use your distro package manager or the official download, then fully quit and restart AgentHub so PATH refreshes. Skills market / git URL install need git clone. Unknown distros get the official URL instead of an apt-get guess."
                             .into(),
                     ),
                 }

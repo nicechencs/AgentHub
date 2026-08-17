@@ -12,10 +12,13 @@
  * Looks under target/release/bundle for:
  *   nsis/*-setup.exe + .sig
  *   msi/*.msi + .sig
- *   appimage/*.AppImage + .sig
+ *   appimage/*.AppImage + .sig  (unsigned AppImage is skipped for the feed;
+ *   GitHub Releases still publish .deb + AppImage installers)
  *   macos/*.app.tar.gz + .sig
  *
  * Platform keys follow Tauri static JSON: windows-x86_64 / linux-x86_64 / darwin-*.
+ * Linux is a published release platform. `linux-x86_64` appears in the feed
+ * only when a non-empty AppImage signature exists.
  */
 import fs from 'node:fs';
 import path from 'node:path';

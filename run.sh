@@ -30,8 +30,8 @@ Usage: ./run.sh [--check] [--] [tauri args...]
 
 macOS: requires Xcode Command Line Tools, Node.js, and Rust.
 Linux: requires Tauri native libraries (see scripts/check-linux-prereqs.sh),
-       Node.js, and Rust. Official signed GitHub Releases are still
-       Windows/macOS only; Linux is source-run and local package builds.
+       Node.js, and Rust. Desktop installers also ship on GitHub Releases
+       as .deb and AppImage (unsigned is OK).
 EOF
       exit 0
       ;;
@@ -94,7 +94,7 @@ if [[ "$CHECK_ONLY" -eq 1 ]]; then
   info "node $(node -v) | pnpm $(pnpm -v) | cargo $(cargo --version)"
   if [[ "$HOST" == "Linux" ]]; then
     info "Next: ./run.sh            # start Tauri desktop (real backend)"
-    info "  or: pnpm tauri:build:linux  # local unsigned .deb (no GitHub Release)"
+    info "  or: pnpm tauri:build:linux  # local unsigned .deb + AppImage"
   else
     info "Next: ./run.sh            # start Tauri desktop (real backend)"
     info "  or: pnpm tauri:build:macos  # local unsigned .app"

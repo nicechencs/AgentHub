@@ -56,7 +56,7 @@ Issues in **AgentHub’s own code** that can cause:
 - Credential or token leakage via GUI, CLI, logs, backups export, or IPC
 - Path traversal / arbitrary file read-write outside intended live/backup allowlists
 - Command or argument injection when invoking install scripts, agents, or shell helpers
-- Tampering or spoofing of the **app update** chain controlled by this project
+- Tampering or spoofing of the **app update** chain controlled by this project (Windows/macOS updater artifacts are signed; Linux installers may ship unsigned, and Linux auto-update is only offered when a signed `linux-x86_64` entry is present in `latest.json`)
 - Privilege escalation **from the app’s security model** (e.g. bypassing confirmations for destructive writes) when caused by AgentHub bugs
 - XSS or unsafe `invoke` bridging that reaches native capabilities without intended checks
 

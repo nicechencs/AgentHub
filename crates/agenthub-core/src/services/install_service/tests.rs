@@ -529,8 +529,23 @@ fn host_remediations_omit_foreign_package_managers() {
         for rem in remediations {
             if cfg!(windows) {
                 assert_ne!(rem.kind, "brew", "Windows must not suggest brew");
+                if let Some(command) = rem.command.as_deref() {
+                    assert!(
+                        !command.to_ascii_lowercase().contains("apt"),
+                        "Windows must not suggest apt: {command}"
+                    );
+                }
+            } else if cfg!(target_os = "macos") {
+                assert_ne!(rem.kind, "winget", "macOS must not suggest winget");
+                if let Some(command) = rem.command.as_deref() {
+                    assert!(
+                        !command.to_ascii_lowercase().contains("apt"),
+                        "macOS must not suggest apt: {command}"
+                    );
+                }
             } else {
-                assert_ne!(rem.kind, "winget", "macOS/Linux must not suggest winget");
+                assert_ne!(rem.kind, "winget", "Linux must not suggest winget");
+                assert_ne!(rem.kind, "brew", "Linux must not suggest brew");
             }
         }
     }
@@ -600,11 +615,16 @@ fn install_runtime_unsupported_channel_is_coded() {
         exit_code: 0,
         stdout: String::new(),
     };
-    let out = install_runtime(RuntimeId::NodeJs, "apt", &ex).unwrap();
+    let channel = if cfg!(all(not(windows), not(target_os = "macos"))) {
+        "chocolatey"
+    } else {
+        "apt"
+    };
+    let out = install_runtime(RuntimeId::NodeJs, channel, &ex).unwrap();
     assert!(!out.ok);
     assert_eq!(out.code.as_deref(), Some("unsupported"));
     let details = out.details.expect("unsupported details");
-    assert_eq!(details["channel"], "apt");
+    assert_eq!(details["channel"], channel);
     assert!(
         details["hint"]
             .as_str()
@@ -786,7 +806,9 @@ fn linux_default_runtime_install_is_manual_and_does_not_spawn() {
         assert_ne!(rem["kind"], "brew");
     }
     assert!(
-        out.message.contains("Linux") || out.message.contains("manual"),
+        out.message.contains("Linux")
+            || out.message.contains("manual")
+            || out.message.contains("包管理器"),
         "expected a Linux manual message: {}",
         out.message
     );
@@ -800,11 +822,36 @@ fn linux_rejects_explicit_winget_and_brew_without_spawning() {
         exit_code: 0,
         stdout: String::new(),
     };
-    for channel in ["winget", "brew", "apt"] {
+    for channel in ["winget", "brew"] {
         let out = install_runtime(RuntimeId::Git, channel, &ex).unwrap();
         assert!(!out.ok, "{channel}");
         assert_eq!(out.code.as_deref(), Some("unsupported"), "{channel}");
         assert_eq!(out.details.as_ref().unwrap()["channel"], channel);
         assert!(ex.calls.lock().unwrap().is_empty());
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_accepts_apt_as_copy_command_channel_without_spawning() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+    };
+    for channel in ["apt", "dnf", "pacman", "zypper", "apk"] {
+        let out = install_runtime(RuntimeId::Git, channel, &ex).unwrap();
+        assert!(!out.ok, "{channel}");
+        assert_eq!(out.code.as_deref(), Some("env.not_ready"), "{channel}");
+        let details = out.details.as_ref().expect(channel);
+        assert_eq!(details["channel"], channel, "{channel}");
+        let remediations = details["remediations"].as_array().expect(channel);
+        assert!(!remediations.is_empty(), "{channel}");
+        for rem in remediations {
+            assert_ne!(rem["kind"], "winget", "{channel}");
+            assert_ne!(rem["kind"], "brew", "{channel}");
+        }
+        assert!(calls.lock().unwrap().is_empty(), "{channel}");
     }
 }
