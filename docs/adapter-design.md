@@ -37,7 +37,7 @@ Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变�
 
 - 推荐：Dashboard「连接/切换」、Connections「接到…」→ 同一绑定对话框。
 - 本页：`/routes` 列出全部 `local_bridge` 运行时（含孤立；start/stop/retry、autoStart、详情、解绑走 `unbindTicket`）。`/adapter`、`/router`、`/bridges` 永久跳过来。
-- 侧栏：英文 Routes，有本机路由才出现。Settings → 数据永远有「本机路由」入口。
+- 侧栏：英文 Routes，有本机路由才出现。Settings → 本机永远有「本机路由」入口。
 - 创建绑定只走 Hub：经 `lib/api/tickets` 的 `planTicket` / `bindTicket` / `unbindTicket`；`plan.canApply` 表示现在能写入。目标 UI 见 [ui-design.md §4.3](ui-design.md)。
 
 一次规划只产生以下四种结果之一（括号内为当前实现名）：
@@ -136,7 +136,7 @@ Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变�
 以下描述本页（`/routes`）自身，不是 `ConnectFlowDialog`：
 
 - 路由：`/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。
-- 标题：中文「本机路由」。侧栏英文 **Routes**，有本机路由才出现（`partitionLocalBridgeRuntimes` 的 bound+orphan，或钱包仍有 `route=bridge`）。Settings → 数据永远有「本机路由」入口。
+- 标题：中文「本机路由」。侧栏英文 **Routes**，有本机路由才出现（`partitionLocalBridgeRuntimes` 的 bound+orphan，或钱包仍有 `route=bridge`）。Settings → 本机永远有「本机路由」入口。
 - 页头无「去 Dashboard / 去 Connections」。创建区不在本页。
 - 列出全部 `kind === 'local_bridge'`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机路由」。空 `sourceId` 丢弃。
 - 解绑只走 `unbindTicket`（优先钱包 id，否则 `ticketIdFor(sourceId)` + `targetAgentId`）。不提供 `removeAdapter`。

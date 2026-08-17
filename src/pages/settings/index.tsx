@@ -1,8 +1,8 @@
 // Settings 设置页(docs/ui-design.md §4.8)
-// Tabs:常规 / 安全 / 数据 / 备份 / 关于；tab 与 ?tab= URL 同步。
-// 常规/数据草稿态编辑后点 [保存]；备份分区操作即时生效，无底部保存。
+// Tabs:偏好 / 本机 / 关于；?tab= 与 URL 同步。旧 slug 经 replace 重定向。
+// 控件变更立即 persist；无页级保存条。备份在本机分区，?tab=backups → local#backups。
 import { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -27,12 +27,15 @@ import {
 } from '@/lib/api/update';
 import { applyTheme } from '@/lib/theme';
 import type { AppSettings } from '@/lib/types';
-import { BackupsPanel } from './BackupsPanel';
 import { AboutPanel } from './AboutPanel';
-import { DataPanel } from './DataPanel';
-import { GeneralPanel } from './GeneralPanel';
-import { SecurityPanel } from './SecurityPanel';
-import { parseSettingsTab } from './settings-format';
+import { LocalPanel } from './LocalPanel';
+import { PreferencesPanel } from './PreferencesPanel';
+import {
+  parseSettingsHash,
+  parseSettingsTab,
+  resolveSettingsLocation,
+  settingsSearch,
+} from './settings-format';
 import { SettingsSkeleton } from './settings-shared';
 
 export default function SettingsPage({
@@ -46,13 +49,16 @@ export default function SettingsPage({
   const { theme: providerTheme, setTheme } = useTheme();
   const committedThemeRef = useRef(providerTheme);
   const committedLanguageRef = useRef(lang);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const tab = parseSettingsTab(searchParams.get('tab'));
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const rawTab = searchParams.get('tab');
+  const resolved = resolveSettingsLocation(rawTab, location.hash);
+  const tab = resolved.tab;
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
-  const [saving, setSaving] = useState(false);
 
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
@@ -86,6 +92,23 @@ export default function SettingsPage({
   }, []);
 
   useEffect(() => {
+    if (!resolved.shouldReplace) return;
+    navigate(
+      { pathname: '/settings', search: settingsSearch(resolved.tab), hash: resolved.hash ? `#${resolved.hash}` : '' },
+      { replace: true },
+    );
+  }, [navigate, resolved.hash, resolved.shouldReplace, resolved.tab]);
+
+  useEffect(() => {
+    if (loading || tab !== 'local') return;
+    if (parseSettingsHash(location.hash) !== 'backups') return;
+    const id = window.requestAnimationFrame(() => {
+      document.getElementById('settings-backups')?.scrollIntoView({ block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [loading, tab, location.hash]);
+
+  useEffect(() => {
     return () => {
       applyTheme(committedThemeRef.current);
       syncLanguageFromSettings({ language: committedLanguageRef.current });
@@ -95,7 +118,7 @@ export default function SettingsPage({
 
   const setTab = (next: string) => {
     const value = parseSettingsTab(next);
-    setSearchParams({ tab: value }, { replace: true });
+    navigate({ pathname: '/settings', search: settingsSearch(value), hash: '' }, { replace: true });
   };
 
   const patch = (p: Partial<AppSettings>) =>
@@ -203,10 +226,8 @@ export default function SettingsPage({
       <Tabs value={tab} onValueChange={setTab}>
         <div className={pageRhythm.chrome}>
           <TabsList>
-            <TabsTrigger value="general">{t('settings.page.tabGeneral')}</TabsTrigger>
-            <TabsTrigger value="security">{t('settings.page.tabSecurity')}</TabsTrigger>
-            <TabsTrigger value="data">{t('settings.page.tabData')}</TabsTrigger>
-            <TabsTrigger value="backups">{t('settings.page.tabBackups')}</TabsTrigger>
+            <TabsTrigger value="preferences">{t('settings.page.tabPreferences')}</TabsTrigger>
+            <TabsTrigger value="local">{t('settings.page.tabLocal')}</TabsTrigger>
             <TabsTrigger value="about" className="gap-1.5">
               {t('settings.page.tabAbout')}
               {pendingUpdate && (
@@ -220,34 +241,22 @@ export default function SettingsPage({
           </TabsList>
         </div>
 
-        <TabsContent value="general">
-          <GeneralPanel
+        <TabsContent value="preferences">
+          <PreferencesPanel
             settings={settings}
             patch={patch}
             setSettings={setSettings}
             committedThemeRef={committedThemeRef}
             committedLanguageRef={committedLanguageRef}
-            saving={saving}
-            setSaving={setSaving}
           />
         </TabsContent>
 
-        <TabsContent value="security">
-          <SecurityPanel />
-        </TabsContent>
-
-        <TabsContent value="data">
-          <DataPanel
+        <TabsContent value="local">
+          <LocalPanel
             settings={settings}
             patch={patch}
             setSettings={setSettings}
-            saving={saving}
-            setSaving={setSaving}
           />
-        </TabsContent>
-
-        <TabsContent value="backups">
-          <BackupsPanel />
         </TabsContent>
 
         <TabsContent value="about">

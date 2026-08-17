@@ -37,12 +37,10 @@ export const en = {
   settings: {
     page: {
       title: 'Settings',
-      description: 'Preferences and data',
-      descriptionTip: 'Theme, credential display, logs, usage interval, and backups.',
-      tabGeneral: 'General',
-      tabSecurity: 'Security',
-      tabData: 'Data',
-      tabBackups: 'Backups',
+      description: 'Preferences, this device, and about',
+      descriptionTip: 'Language and theme apply immediately. This device covers data, logs, and backups. About has version and credential notes.',
+      tabPreferences: 'Preferences',
+      tabLocal: 'This device',
       tabAbout: 'About',
       updatePin: 'Update to v{version}',
       emptyError: 'Settings data is empty',
@@ -58,7 +56,7 @@ export const en = {
     },
     general: {
       languageLabel: 'Language',
-      languageDescription: 'Preview now, save to remember',
+      languageDescription: 'Applies immediately',
       languageZh: '简体中文',
       languageEn: 'English',
       themeLabel: 'Theme',
@@ -69,7 +67,7 @@ export const en = {
       autoStartLabel: 'Launch at login',
       autoStartDescription: 'Start after you sign in',
       autoStartTip:
-        'Writes the OS login item (Windows Startup / macOS Login Item). Takes effect after you save Appearance & behavior.',
+        'Writes the OS login item (Windows Startup / macOS Login Item). Applies immediately.',
       closeToTrayLabel: 'Close to tray',
       closeToTrayDescription: 'Hide instead of quit',
       closeToTrayTip:
@@ -92,8 +90,10 @@ export const en = {
       routesTip:
         'Manages local forwarding processes. The sidebar only appears when a local route exists; this entry is always here.',
       dataDirLabel: 'Data directory',
-      dataDirDescription: 'Read-only',
+      dataDirDescription: 'Read-only; can open',
       dataDirTip: 'Where config snapshots, backups, and stats live (not editable on desktop).',
+      dataDirOpened: 'Opened data directory',
+      dataDirOpenFailed: "Couldn't open",
       logLevelLabel: 'Log level',
       logLevelDescription: 'Applies on next launch',
       logLevelTip: 'How detailed the files in the data-directory logs folder are.',
@@ -115,6 +115,7 @@ export const en = {
       usageIntervalTip:
         'While the app is in the foreground, collect incrementally on this interval. Pauses in the background. Overview shows last / next sync.',
       footerNote: 'Log level and retention are saved locally; level changes apply after restart.',
+      logLevelSavedToast: 'Log level saved',
       savedToast: 'Data settings saved',
       usageManual: 'Usage is manual only',
       usageAuto: 'Auto-collect usage every {minutes} min',

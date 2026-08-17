@@ -38,7 +38,7 @@ function LegacyUsageRedirect() {
   return <Navigate to="/?section=usage" replace />;
 }
 
-/** 独立 Backups 页已并入 Settings → /settings?tab=backups */
+/** 独立 Backups 页已并入 Settings；旧 /backups → ?tab=backups → local#backups */
 function LegacyBackupsRedirect() {
   return <Navigate to="/settings?tab=backups" replace />;
 }

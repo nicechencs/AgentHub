@@ -7,14 +7,78 @@ export const SKILL_MARKET_VALUES: SkillMarketSource[] = ['auto', 'skills.sh', 's
 
 export const LOG_LEVEL_VALUES: LogLevel[] = ['error', 'warn', 'info', 'debug', 'trace'];
 
-export const SETTINGS_TABS = ['general', 'security', 'data', 'backups', 'about'] as const;
+/** Canonical Settings `?tab=` slugs. */
+export const SETTINGS_TABS = ['preferences', 'local', 'about'] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
+/** In-page focus after a tab is resolved (hash `#backups`). */
+export type SettingsSection = 'backups';
+
+export const SETTINGS_BACKUPS_HASH = 'backups';
+
+/**
+ * Legacy `?tab=` slugs → canonical tab (+ optional hash).
+ * `general` → Preferences; `security` → About (credential note);
+ * `data` → Local (top); `backups` → Local `#backups`.
+ */
+export const SETTINGS_TAB_REDIRECTS: Record<string, { tab: SettingsTab; hash?: string }> = {
+  preferences: { tab: 'preferences' },
+  local: { tab: 'local' },
+  about: { tab: 'about' },
+  general: { tab: 'preferences' },
+  security: { tab: 'about' },
+  data: { tab: 'local' },
+  backups: { tab: 'local', hash: SETTINGS_BACKUPS_HASH },
+};
+
+export function isSettingsTab(raw: string | null | undefined): raw is SettingsTab {
+  return !!raw && (SETTINGS_TABS as readonly string[]).includes(raw);
+}
+
+/** Resolve any `?tab=` value to a canonical tab. Unknown / empty → Preferences. */
 export function parseSettingsTab(raw: string | null): SettingsTab {
-  if (raw && (SETTINGS_TABS as readonly string[]).includes(raw)) {
-    return raw as SettingsTab;
-  }
-  return 'general';
+  if (!raw) return 'preferences';
+  const mapped = SETTINGS_TAB_REDIRECTS[raw];
+  if (mapped) return mapped.tab;
+  return 'preferences';
+}
+
+export function parseSettingsHash(hash: string | null | undefined): SettingsSection | null {
+  const value = (hash ?? '').replace(/^#/, '');
+  return value === SETTINGS_BACKUPS_HASH ? 'backups' : null;
+}
+
+export interface SettingsLocation {
+  tab: SettingsTab;
+  hash: string;
+  /** True when the incoming `?tab=` is legacy, unknown, or needs a backups hash. */
+  shouldReplace: boolean;
+}
+
+/**
+ * Central URL resolver: canonical tab + optional `#backups`.
+ * Old slugs and illegal values are marked for replace-navigation.
+ */
+export function resolveSettingsLocation(
+  rawTab: string | null,
+  hash: string | null | undefined,
+): SettingsLocation {
+  const mapped = rawTab ? SETTINGS_TAB_REDIRECTS[rawTab] : undefined;
+  const tab = mapped?.tab ?? 'preferences';
+  const fromLegacyBackups = rawTab === 'backups';
+  const existingHash = parseSettingsHash(hash);
+  const nextHash =
+    fromLegacyBackups || existingHash === 'backups' ? SETTINGS_BACKUPS_HASH : '';
+
+  const canonicalTab = isSettingsTab(rawTab);
+  const hashOk = (nextHash === '' && !existingHash) || (nextHash === SETTINGS_BACKUPS_HASH && existingHash === 'backups');
+  const shouldReplace = rawTab !== null && (!canonicalTab || (fromLegacyBackups && !hashOk));
+
+  return { tab, hash: nextHash, shouldReplace };
+}
+
+export function settingsSearch(tab: SettingsTab): string {
+  return `?tab=${tab}`;
 }
 
 export function skillMarketLabel(
@@ -42,34 +106,12 @@ export function logLevelOptionLabel(level: LogLevel, t: TranslateFn): string {
   }
 }
 
-/** 常规区保存成功摘要：覆盖本区实际写入项，避免只提技能市场。 */
-export function generalSettingsSaveDescription(s: AppSettings, t: TranslateFn): string {
-  const tray = s.closeToTray ? t('settings.general.trayOnClose') : t('settings.general.quitOnClose');
-  return `${tray} · ${t('settings.general.skillMarketSummary', {
-    label: skillMarketLabel(s.skillMarketSource, t),
-  })}`;
+export function clampLogRetentionDays(n: number): number {
+  return Math.min(365, Math.max(1, n));
 }
 
-/** 数据区保存成功摘要：区分立即生效与需重启项。 */
-export function dataSettingsSaveDescription(s: AppSettings, t: TranslateFn): string {
-  const usage =
-    s.usageCollectIntervalMin <= 0
-      ? t('settings.data.usageManual')
-      : t('settings.data.usageAuto', { minutes: s.usageCollectIntervalMin });
-  return `${usage}；${t('settings.data.logLevelRestart', {
-    level: s.logLevel,
-    days: s.logRetentionDays,
-  })}`;
-}
-
-export function generalSettingsPayload(s: AppSettings): Partial<AppSettings> {
-  return {
-    theme: s.theme,
-    language: s.language,
-    autoStart: s.autoStart,
-    closeToTray: s.closeToTray,
-    skillMarketSource: s.skillMarketSource ?? 'auto',
-  };
+export function clampUsageIntervalMin(n: number): number {
+  return Math.min(24 * 60, Math.max(0, n));
 }
 
 export function fmtRelativeI18n(iso: string | undefined, t: TranslateFn): string {

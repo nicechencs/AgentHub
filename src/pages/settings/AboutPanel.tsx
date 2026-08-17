@@ -7,6 +7,7 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import type { UpdateInfo } from '@/lib/api/update';
 import { openExternalLink } from '@/lib/open-external';
 import type { AppSettings } from '@/lib/types';
+import { SecurityPanel } from './SecurityPanel';
 import { GITHUB_REPO_URL } from './settings-format';
 import { SettingsRow } from './settings-shared';
 
@@ -90,6 +91,9 @@ export function AboutPanel({
           </SettingsRow>
         </CardContent>
       </Card>
+      <div className="mt-4">
+        <SecurityPanel />
+      </div>
       <p className="mt-3 text-xs text-muted">
         {t('settings.about.tagline')}
       </p>
