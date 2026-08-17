@@ -79,6 +79,24 @@ export const RUNTIMES: RuntimeMeta[] = [
         platform: 'linux',
       },
       {
+        kind: 'command',
+        value: 'sudo zypper install -y nodejs npm',
+        label: 'openSUSE 安装 Node.js',
+        platform: 'linux',
+      },
+      {
+        kind: 'command',
+        value: 'sudo apk add nodejs npm',
+        label: 'Alpine 安装 Node.js',
+        platform: 'linux',
+      },
+      {
+        kind: 'hint',
+        value:
+          '其他发行版不要套用 apt-get。请用本机包管理器，或打开 Node.js 官网安装 LTS。',
+        platform: 'linux',
+      },
+      {
         kind: 'url',
         value: 'https://nodejs.org/',
         label: '打开 Node.js 官网',
@@ -171,6 +189,23 @@ export const RUNTIMES: RuntimeMeta[] = [
         kind: 'command',
         value: 'sudo pacman -S --needed git',
         label: 'Arch 安装 Git',
+        platform: 'linux',
+      },
+      {
+        kind: 'command',
+        value: 'sudo zypper install -y git',
+        label: 'openSUSE 安装 Git',
+        platform: 'linux',
+      },
+      {
+        kind: 'command',
+        value: 'sudo apk add git',
+        label: 'Alpine 安装 Git',
+        platform: 'linux',
+      },
+      {
+        kind: 'hint',
+        value: '其他发行版不要套用 apt-get。请用本机包管理器，或打开 Git 官网下载。',
         platform: 'linux',
       },
       {

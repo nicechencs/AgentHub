@@ -179,7 +179,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - 页顶 **环境条**：共享 Runtime 总览（与 doctor 同源，**仅宿主相关**）；Windows 可显示 PowerShell 5.1/7 芯片，**macOS/Linux 不展示 PowerShell**。任一 Agent 的 npm 渠道依赖 Node，装一次全局受益。
 - 每 agent 一张宽卡片：版本、渠道（npm/native）、二进制路径、可升级标记、**渠道前置状态**（native 在 Unix 上不得要求 PowerShell）。
 - **安装 Agent**：仅 `ready_to_install` 可点；core 仍会二次 `ensure_env`，防止 UI 竞态。安装/升级预览可附带平台底层命令（Windows `irm…|iex` / macOS·Linux `curl…|bash`）。
-- **安装环境**：展开 InlineTerminal；默认包管理器 **Windows=`winget`、macOS=`brew`、Linux=`manual`（无自动包管理器）**，失败则展示官方下载链接 + 可复制命令 +「我已装好，重新检测」。禁止跨平台展示错误的包管理器命令。
+- **安装环境**：展开 InlineTerminal；默认包管理器 **Windows=`winget`、macOS=`brew`、Linux=`manual`（无自动 sudo；`apt` 等渠道同样只给可复制命令）**，失败则展示官方下载链接 + 可复制命令 +「我已装好，重新检测」。禁止跨平台展示错误的包管理器命令；Linux 未知发行版不猜测 `apt-get`。
 - PATH 刚刷新场景：检测仍失败时 toast/横幅提示「请完全退出并重启 AgentHub 后再检测」（GUI 进程继承旧 PATH）。
 - 卸载：DropdownMenu 二级——「仅卸载程序」/「卸载并删除配置」（后者红字 + 输入 agent 名确认 + **自动 pre-uninstall 备份**）。**不提供「卸载 Node」**（共享运行时）。
 

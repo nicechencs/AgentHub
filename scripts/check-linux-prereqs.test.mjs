@@ -26,6 +26,8 @@ test('linux prereq script exists and is a bash checker', () => {
   assert.match(text, /sudo apt-get install/);
   assert.match(text, /sudo dnf install/);
   assert.match(text, /sudo pacman -S/);
+  assert.match(text, /zypper|apk/);
+  assert.match(text, /do not assume apt-get/i);
   assert.doesNotMatch(text, /\$\(\s*sudo|`sudo/);
   assert.match(text, /never uses sudo/i);
 });
@@ -37,6 +39,8 @@ test('--print-packages lists Debian, Fedora, and Arch commands', () => {
   assert.match(result.stdout, /libwebkit2gtk-4\.1-dev/);
   assert.match(result.stdout, /dnf install/);
   assert.match(result.stdout, /pacman -S/);
+  assert.match(result.stdout, /zypper|apk/);
+  assert.match(result.stdout, /do not assume apt-get/i);
   assert.equal(result.stdout.includes('TAURI_SIGNING'), false);
 });
 
@@ -64,10 +68,13 @@ test('unknown flags fail with usage, not a package-manager mutation', () => {
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /^\s*sudo\s/m);
 });
 
-test('run.sh --help documents Linux source-run and --check', () => {
+test('run.sh --help documents Linux source-run, Releases, and --check', () => {
   const result = run(launcher, ['--help']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /--check/);
   assert.match(result.stdout, /Linux/);
   assert.match(result.stdout, /check-linux-prereqs/);
+  assert.match(result.stdout, /GitHub Releases/);
+  assert.match(result.stdout, /AppImage/);
+  assert.doesNotMatch(result.stdout, /Windows\/macOS only/);
 });

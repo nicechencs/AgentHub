@@ -15,7 +15,7 @@
 
 | 决策点 | 结论 |
 |---|---|
-| 平台范围 | Windows 为主交付；macOS / Linux 已支持源码运行与本机构建；GitHub Releases 签名包仍只覆盖 Windows / macOS。**共享 Runtime 与 native 安装命令按宿主平台分流**（见 §5.7.2 / §5.7.5） |
+| 平台范围 | Windows / macOS / Linux 三平台交付。GitHub Releases 发布 Windows（签名安装包 + 签名 updater）、macOS（签名 updater；Apple 公证未承诺）、Linux（`.deb` + AppImage；安装包可未签名，`latest.json` 的 `linux-x86_64` 仅在具备 updater 签名时写入）。**共享 Runtime 与 native 安装命令按宿主平台分流**（见 §5.7.2 / §5.7.5） |
 | 复用策略 | 配置切换按「路径 + 读取 + 校验 + 原子写」；跨 Agent 复用分三路（① API 直连 ② 原生订阅 ③ 本机路由），见 [product-decisions.md](product-decisions.md)。实现从零自研 |
 | MVP 范围 | Agent 安装/卸载（含**前置运行时检测与引导**）、API 配置管理、技能/插件管理、Token 统计、**票接到其他 Agent（直连 / 原生订阅 / 本机路由）** |
 | 产品形态 | GUI + CLI 双端，核心逻辑抽成 `agenthub-core` crate 共享 |
@@ -265,10 +265,10 @@ trait AgentAdapter {
 
 | RuntimeId | 典型检测 | 谁需要 | Windows | macOS / Linux |
 |---|---|---|---|---|
-| `nodejs` | `node -v` + 路径 | Claude/Codex/Pi 等 **npm** 渠道 | ① `winget install OpenJS.NodeJS.LTS` ② 官网 LTS ③ 可复制命令 | macOS：① `brew install node` ② 官网。Linux：发行版命令 + 官网 LTS，不一键安装 |
+| `nodejs` | `node -v` + 路径 | Claude/Codex/Pi 等 **npm** 渠道 | ① `winget install OpenJS.NodeJS.LTS` ② 官网 LTS ③ 可复制命令 | macOS：① `brew install node` ② 官网。Linux：已知发行版给对应命令，未知发行版只给官网 LTS，不一键安装、不猜测 apt-get |
 | `npm` | `npm -v`（通常随 Node） | 同上 | 随 Node；node 在 npm 不在 → 修 PATH / 重装 Node | 同左 |
 | `powershell` | 5.1（`powershell`）与 7（`pwsh`）双探针，任一可用即可 | **仅 Windows** native `.ps1` 渠道 | **只检测、不一键安装**；ExecutionPolicy 提示 | **不检测、不展示、不作为渠道前置**；native 走官方 sh |
-| `git` | `git --version` + 路径 | Skills 市场 / git URL 安装 | ① `winget install --id Git.Git` ② 官网 | macOS：① `brew install git` ② 官网。Linux：发行版命令 + 官网，不一键安装 |
+| `git` | `git --version` + 路径 | Skills 市场 / git URL 安装 | ① `winget install --id Git.Git` ② 官网 | macOS：① `brew install git` ② 官网。Linux：已知发行版给对应命令，未知发行版只给官网，不一键安装、不猜测 apt-get |
 | `curl` / 系统下载器 | 可选（执行 native sh 时用） | 部分官方一键脚本 | 系统自带 / 浏览器降级 | 系统 `curl`；缺失时提示手动下载 |
 
 版本门槛：在 Adapter/渠道元数据中声明 `min_version`（如 Node ≥ 18）；detect 返回 `ok | outdated | missing`。
@@ -308,7 +308,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 主题 | Windows | macOS | Linux |
 |---|---|---|---|
 | 共享 Runtime 探测 | Node / npm / **PowerShell** / Git | Node / npm / Git | 同 macOS |
-| Runtime 一键修复默认渠道 | `winget` | `brew` | `manual`：不自动执行包管理器，只给 URL/可复制命令 |
+| Runtime 一键修复默认渠道 | `winget` | `brew` | `manual`（也可传 `apt`/`dnf`/`pacman`/`zypper`/`apk`）：不自动 sudo，只给 URL/可复制命令；未知发行版不猜测 apt-get |
 | native 渠道前置 | `requires: [powershell]` | `requires: []` | `requires: []` |
 | native 安装/升级命令 | `irm <allowlisted-ps1> \| iex` | `curl -fsS <allowlisted-sh> \| bash` | 同 macOS |
 | 仅 Windows 有 ps1 的 Agent（如 Codex native） | 展示 native 渠道 | **不**暴露 Windows-only ps1 为 native；优先 npm 或官网 | 同 macOS |
@@ -320,8 +320,9 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 1. 在 macOS/Linux doctor / 环境条把「未安装 pwsh」标成环境故障。
 2. 在 Unix native catalog 展示 `irm … | iex` 或把 PowerShell 写进 `requires`。
-3. 在前端 remediation 给 macOS 用户推 `winget`，或给 Windows 用户推 `brew`（可用 `platform` 标记过滤）。
+3. 在前端 remediation 给 macOS 用户推 `winget`，或给 Windows 用户推 `brew`（可用 `platform` 标记过滤）。Linux 不得建议 winget/brew；Windows/macOS 不得建议 apt。
 4. 在多个 Adapter 内复制 `which node` / PowerShell 探测；统一走 `runtime/`。
+5. 对 `LinuxFamily::Other`（以及未识别的发行版）输出 `apt-get`；openSUSE/Alpine 应给 zypper/apk 或官网，而不是错误的 apt。
 
 ## 6. 前端设计
 
@@ -390,7 +391,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | Settings 语言切换 / i18n | ✅ | 轻量自研字典 + `LanguageProvider`；Settings 五面板与侧栏 chrome 可切换中/英。`language` 以 L1 core 为真源，localStorage 仅首屏缓存。首次启动按系统语言 seed 一次。业务页（Chat / Dashboard / Connections / Skills `copy.ts` 等）分期迁移。不引入 i18next |
 | Usage **后台守护 / 文件监听** | ❌ | 仅前台 interval + 手动 |
 | 官方模型商店 / 账号可用模型探测 | ❌ | 明确非目标（用量去重模型列表除外） |
-| WebDAV / 代理模式 / macOS·Linux 一等公民 | P4 候选 | Linux **源码运行 / 本机构建 `.deb`** 已落地；签名 GitHub Release、自动更新与一等公民发行仍未承诺 |
+| WebDAV / 代理模式 | P4 候选 | 桌面端已按 Windows / macOS / Linux 三平台交付（Linux 安装包可未签名；自动更新签名取决于 `TAURI_SIGNING_PRIVATE_KEY`）。WebDAV 与代理模式仍未做 |
 | Chat 后续阶段 | 🟡 展示层已落地 / 协议侧未做 | 过程面板展示层（摘要行 / 时间线 / 运行详情）已落地。协议侧（过程落库、过程内 usage、Pi rpc 审批、diff 预览落库）仍未做。见 [chat-process-streaming.md](chat-process-streaming.md) |
 | 部分 Agent 的 ConfigWrite / 账号切换 / Usage | Unsupported | 设计边界，见能力矩阵 |
 | CLI Provider create/update/delete | ❌ | 与 GUI 不对称，脚本侧靠 import-live + switch |

@@ -330,8 +330,9 @@ fn winget_package_id(id: RuntimeId) -> Option<&'static str> {
 ///
 /// Keep Windows on winget for compatibility. macOS uses Homebrew because it is
 /// the standard way to install both Node.js and Git without a PowerShell
-/// dependency. Linux has no automatic package-manager channel: the default is
-/// `manual` (copyable remediations only).
+/// dependency. Linux does not spawn a package manager: the default is `manual`,
+/// and `apt` / `dnf` / `pacman` / `zypper` / `apk` are the same copy-command
+/// path (no sudo).
 fn default_runtime_channel() -> &'static str {
     if cfg!(target_os = "macos") {
         "brew"
@@ -362,16 +363,36 @@ fn resolve_brew() -> Result<String> {
     })
 }
 
+#[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
+fn looks_like_linux_package_command(command: &str) -> bool {
+    let lower = command.to_ascii_lowercase();
+    lower.contains("apt-get")
+        || lower.contains("apt install")
+        || lower.contains("dnf install")
+        || lower.contains("pacman -s")
+        || lower.contains("zypper")
+        || lower.contains("apk add")
+}
+
 /// Drop package-manager remediations that do not apply on this host.
-/// Windows never surfaces `brew`; macOS/Linux never surface `winget`.
+/// Windows never surfaces `brew` or apt; macOS never surfaces `winget` or apt;
+/// Linux never surfaces `winget`/`brew`.
 fn filter_host_remediations(items: Vec<Remediation>) -> Vec<Remediation> {
     items
         .into_iter()
         .filter(|r| {
             if cfg!(windows) {
                 r.kind != "brew"
-            } else {
+                    && r.command
+                        .as_deref()
+                        .map_or(true, |command| !looks_like_linux_package_command(command))
+            } else if cfg!(target_os = "macos") {
                 r.kind != "winget"
+                    && r.command
+                        .as_deref()
+                        .map_or(true, |command| !looks_like_linux_package_command(command))
+            } else {
+                r.kind != "winget" && r.kind != "brew"
             }
         })
         .collect()
@@ -420,7 +441,7 @@ fn unsupported_channel_outcome(action: &str, logs: Vec<String>, channel: &str) -
     #[cfg(windows)]
     let platform_hint = "Windows 默认使用 winget";
     #[cfg(all(not(target_os = "macos"), not(windows)))]
-    let platform_hint = "Linux 不提供一键包管理安装；默认 --channel manual，仅展示可复制命令与官网";
+    let platform_hint = "Linux 不自动执行包管理器；默认 --channel manual，也可传 apt/dnf/pacman/zypper/apk 以拿到可复制命令与官网";
 
     let supported = default_runtime_channel();
     #[cfg(target_os = "macos")]
@@ -428,7 +449,7 @@ fn unsupported_channel_outcome(action: &str, logs: Vec<String>, channel: &str) -
     #[cfg(windows)]
     let suffix = "";
     #[cfg(all(not(target_os = "macos"), not(windows)))]
-    let suffix = "（Linux 默认 manual，不自动执行 apt/dnf/pacman）";
+    let suffix = "（Linux 默认 manual；apt/dnf/pacman/zypper/apk 只返回可复制命令，不自动 sudo）";
 
     let message = format!("不支持的安装渠道 '{channel}'（当前仅 {supported}{suffix}）");
     InstallOutcome::failure(action, logs, message).with_code(
@@ -544,17 +565,19 @@ fn install_runtime_inner(
             channel
         };
 
-        if channel == "manual" {
+        let linux_copy_channel = cfg!(all(not(windows), not(target_os = "macos")))
+            && matches!(channel, "manual" | "apt" | "dnf" | "pacman" | "zypper" | "apk");
+        if channel == "manual" || linux_copy_channel {
             logs.push(format!(
-                "# install runtime {} via manual remediations (no package manager spawned)",
+                "# install runtime {} via {channel} remediations (no package manager spawned)",
                 target.as_str()
             ));
             return Ok(missing_package_manager_outcome(
                 action,
                 logs,
-                "manual",
+                channel,
                 target,
-                "Linux 不提供一键包管理安装。请用发行版包管理器或官网安装后，完全退出并重启 AgentHub 再检测。",
+                "Linux 不自动执行包管理器。请按可复制命令或官网安装后，完全退出并重启 AgentHub 再检测。",
             ));
         }
 

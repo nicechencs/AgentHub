@@ -34,7 +34,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:build:macos": "tauri build --bundles app --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'",
-    "tauri:build:linux": "tauri build --bundles deb --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'",
+    "tauri:build:linux": "tauri build --bundles deb,appimage --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'",
     "updater:latest-json": "node scripts/build-latest-json.mjs",
     "release:check": "node scripts/release-metadata.mjs",
     "release:test": "node --test scripts/release-metadata.test.mjs scripts/build-latest-json.test.mjs scripts/check-linux-prereqs.test.mjs",

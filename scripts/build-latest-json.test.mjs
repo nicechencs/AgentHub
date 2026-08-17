@@ -11,10 +11,14 @@ function tempBundle() {
   const macos = path.join(root, 'macos');
   const nsis = path.join(root, 'nsis');
   const msi = path.join(root, 'msi');
+  const appimage = path.join(root, 'appimage');
+  const deb = path.join(root, 'deb');
   fs.mkdirSync(macos, { recursive: true });
   fs.mkdirSync(nsis, { recursive: true });
   fs.mkdirSync(msi, { recursive: true });
-  return { root, macos, nsis, msi };
+  fs.mkdirSync(appimage, { recursive: true });
+  fs.mkdirSync(deb, { recursive: true });
+  return { root, macos, nsis, msi, appimage, deb };
 }
 
 function signedArtifact(dir, name, signature = 'sig') {
@@ -118,4 +122,46 @@ test('enforces required platform set when requested by a release publisher', () 
     Object.keys(buildFeed({ ...args, requiredPlatforms: ['windows-x86_64', 'darwin-aarch64'] }).platforms).sort(),
     ['darwin-aarch64', 'windows-x86_64'],
   );
+});
+
+test('includes signed Linux AppImage as linux-x86_64 without requiring a .deb signature', () => {
+  const { root, nsis, macos, appimage, deb } = tempBundle();
+  signedArtifact(nsis, 'AgentHub_1.0.0_x64-setup.exe', 'windows-sig');
+  signedArtifact(macos, 'AgentHub_1.0.0_aarch64.app.tar.gz', 'mac-sig');
+  signedArtifact(appimage, 'AgentHub_1.0.0_amd64.AppImage', 'linux-sig');
+  fs.writeFileSync(path.join(deb, 'AgentHub_1.0.0_amd64.deb'), 'deb');
+
+  const feed = buildFeed({
+    version: '1.0.0',
+    notes: '',
+    baseUrl: 'https://example.invalid/releases/download/v1.0.0',
+    out: 'latest.json',
+    targetDir: root,
+    macArch: null,
+    requiredPlatforms: ['windows-x86_64', 'darwin-aarch64', 'linux-x86_64'],
+  });
+  assert.equal(feed.platforms['linux-x86_64'].signature, 'linux-sig');
+  assert.equal(
+    feed.platforms['linux-x86_64'].url,
+    'https://example.invalid/releases/download/v1.0.0/AgentHub_1.0.0_amd64.AppImage',
+  );
+});
+
+test('skips unsigned Linux AppImage so Windows/macOS feeds can still publish', () => {
+  const { root, nsis, macos, appimage } = tempBundle();
+  signedArtifact(nsis, 'AgentHub_1.0.0_x64-setup.exe', 'windows-sig');
+  signedArtifact(macos, 'AgentHub_1.0.0_aarch64.app.tar.gz', 'mac-sig');
+  fs.writeFileSync(path.join(appimage, 'AgentHub_1.0.0_amd64.AppImage'), 'appimage');
+
+  const feed = buildFeed({
+    version: '1.0.0',
+    notes: '',
+    baseUrl: 'https://example.invalid/releases/download/v1.0.0',
+    out: 'latest.json',
+    targetDir: root,
+    macArch: null,
+    requiredPlatforms: ['windows-x86_64', 'darwin-aarch64'],
+  });
+  assert.equal(feed.platforms['linux-x86_64'], undefined);
+  assert.deepEqual(Object.keys(feed.platforms).sort(), ['darwin-aarch64', 'windows-x86_64']);
 });
