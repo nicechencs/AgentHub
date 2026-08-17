@@ -42,7 +42,7 @@ export default function SettingsPage({
   onCheckUpdate?: () => Promise<UpdateInfo | null>;
 } = {}) {
   const { toast } = useToast();
-  const { t, setLanguage } = useI18n();
+  const { t, lang, setLanguage } = useI18n();
   const { theme: providerTheme, setTheme } = useTheme();
   const committedThemeRef = useRef(providerTheme);
   const committedLanguageRef = useRef(lang);
