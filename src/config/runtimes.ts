@@ -61,6 +61,24 @@ export const RUNTIMES: RuntimeMeta[] = [
         platform: 'macos',
       },
       {
+        kind: 'command',
+        value: 'sudo apt-get install -y nodejs npm',
+        label: 'Debian/Ubuntu 安装 Node.js',
+        platform: 'linux',
+      },
+      {
+        kind: 'command',
+        value: 'sudo dnf install -y nodejs npm',
+        label: 'Fedora 安装 Node.js',
+        platform: 'linux',
+      },
+      {
+        kind: 'command',
+        value: 'sudo pacman -S --needed nodejs npm',
+        label: 'Arch 安装 Node.js',
+        platform: 'linux',
+      },
+      {
         kind: 'url',
         value: 'https://nodejs.org/',
         label: '打开 Node.js 官网',
@@ -136,6 +154,24 @@ export const RUNTIMES: RuntimeMeta[] = [
         value: 'brew install git',
         label: '用 Homebrew 安装 Git',
         platform: 'macos',
+      },
+      {
+        kind: 'command',
+        value: 'sudo apt-get install -y git',
+        label: 'Debian/Ubuntu 安装 Git',
+        platform: 'linux',
+      },
+      {
+        kind: 'command',
+        value: 'sudo dnf install -y git',
+        label: 'Fedora 安装 Git',
+        platform: 'linux',
+      },
+      {
+        kind: 'command',
+        value: 'sudo pacman -S --needed git',
+        label: 'Arch 安装 Git',
+        platform: 'linux',
       },
       {
         kind: 'url',

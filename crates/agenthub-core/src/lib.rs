@@ -198,7 +198,8 @@ impl AgentHub {
         env!("CARGO_PKG_VERSION")
     }
 
-    /// Install a shared runtime (Node via winget). Never fakes success without redetect.
+    /// Install a shared runtime (Node via winget/brew, or Linux remediations).
+    /// Never fakes success without redetect.
     pub fn install_runtime(&self, id: RuntimeId, channel: &str) -> Result<InstallOutcome> {
         install_runtime_system(id, channel)
     }

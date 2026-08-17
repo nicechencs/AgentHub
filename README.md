@@ -1,12 +1,12 @@
 # AgentHub
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-0078D6.svg)](#快速开始)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6.svg)](#快速开始)
 [![Release](https://img.shields.io/github/v/release/nicechencs/AgentHub?label=version)](https://github.com/nicechencs/AgentHub/releases)
 
 AgentHub 是一个本地运行的多 Agent 桌面管理工具。它用统一的 GUI 和 CLI 管理 AI Coding Agent 的安装环境、连接、Skills、用量与本地会话。
 
-技术栈：**Tauri v2 + React + Rust**。Windows 是主要交付平台；macOS 支持源码运行与本机构建。
+技术栈：**Tauri v2 + React + Rust**。Windows 是主要交付平台；macOS 与 Linux 支持源码运行与本机构建。GitHub Releases 目前只发布已签名的 Windows / macOS 包。
 
 ## 主要功能
 
@@ -37,11 +37,11 @@ cargo run -p agenthub-cli -- agent capabilities
 
 ### 使用发布包
 
-从 [GitHub Releases](https://github.com/nicechencs/AgentHub/releases) 下载 Windows 安装包。macOS 当前以源码运行和本机打包为主，暂不承诺签名、公证后的发行包。
+从 [GitHub Releases](https://github.com/nicechencs/AgentHub/releases) 下载 Windows 安装包。macOS 当前以源码运行和本机打包为主，暂不承诺签名、公证后的发行包。Linux **没有**官方签名安装包；请按下面的源码路径安装，或本机构建未签名 `.deb`。
 
 ### 从源码运行
 
-需要 [Node.js](https://nodejs.org/)、[Rust](https://rustup.rs/) 和 pnpm。
+需要 [Node.js](https://nodejs.org/) LTS、[Rust](https://rustup.rs/) 和 pnpm。
 
 Windows：
 
@@ -51,12 +51,26 @@ Windows：
 
 也可以双击 `run.bat`。脚本会检查开发依赖并启动 Tauri 桌面端。
 
-macOS：
+macOS / Linux：
 
 ```bash
 chmod +x ./run.sh
-./run.sh
+./run.sh --check    # 只检查依赖，不启动
+./run.sh            # 启动 Tauri 桌面端（真实后端）
 ```
+
+Linux 还需要 Tauri 的系统库（脚本缺项时会打印发行版命令，**不会**自动 `sudo`）：
+
+```bash
+# Debian / Ubuntu
+sudo apt-get update
+sudo apt-get install -y \
+  build-essential curl wget file pkg-config \
+  libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev \
+  librsvg2-dev libxdo-dev
+```
+
+Fedora / Arch 命令见 `scripts/check-linux-prereqs.sh --print-packages`。桌面端需要图形会话（`DISPLAY` 或 `WAYLAND_DISPLAY`）。无桌面时可用 `pnpm dev:mock` 看前端演示。
 
 仅查看前端和演示数据，无需真实 Agent：
 
@@ -76,6 +90,8 @@ pnpm dev:mock
 | `pnpm build` | 前端生产构建，强制使用 Tauri adapter |
 | `pnpm tauri:build` | 构建桌面安装包 |
 | `pnpm tauri:build:macos` | 构建本地使用的 macOS `.app` |
+| `pnpm tauri:build:linux` | 构建本地使用的 Linux `.deb`（未签名，不进 GitHub Release） |
+| `./run.sh --check` | 检查 macOS/Linux 源码运行依赖 |
 | `cargo test -p agenthub-core` | 运行 Rust core 测试 |
 | `cargo run -p agenthub-cli -- --help` | 查看 CLI 帮助 |
 

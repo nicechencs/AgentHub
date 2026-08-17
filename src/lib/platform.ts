@@ -7,7 +7,12 @@
 import { isTauri } from '@tauri-apps/api/core';
 
 export type { HostPlatform, RuntimeInstallChannel } from './platform-detect';
-export { detectHostPlatform, getRuntimeInstallChannel, runtimeInstallChannel } from './platform-detect';
+export {
+  detectHostPlatform,
+  getRuntimeInstallChannel,
+  runtimeInstallChannel,
+  supportsRuntimeAutoInstall,
+} from './platform-detect';
 
 /** @deprecated 使用 contracts/errors；保留兼容旧 import */
 export const FEATURE_NOT_WIRED = '功能尚未接入';

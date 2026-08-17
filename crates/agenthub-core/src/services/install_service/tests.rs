@@ -47,8 +47,10 @@ fn install_runtime_powershell_refuses() {
 fn runtime_default_channel_matches_platform() {
     if cfg!(target_os = "macos") {
         assert_eq!(default_runtime_channel(), "brew");
-    } else {
+    } else if cfg!(windows) {
         assert_eq!(default_runtime_channel(), "winget");
+    } else {
+        assert_eq!(default_runtime_channel(), "manual");
     }
 }
 
@@ -472,17 +474,23 @@ fn install_runtime_git_uses_winget_git_package() {
     let out = install_runtime(RuntimeId::Git, channel, &ex).unwrap();
     let cmds = calls.lock().unwrap();
     if cmds.is_empty() {
-        // The package manager may not be installed on this environment.
+        // Linux is always manual. Other hosts reach this when brew/winget is missing.
         assert!(!out.ok);
         assert_eq!(out.code.as_deref(), Some("env.not_ready"));
         assert!(
             out.message.contains("winget")
                 || out.message.contains("Homebrew")
-                || out
-                    .logs
-                    .iter()
-                    .any(|l| l.contains("winget") || l.contains("brew")),
-            "expected package-manager-missing path: msg={} logs={:?}",
+                || out.message.contains("Linux")
+                || out.message.contains("manual")
+                || out.logs.iter().any(|l| {
+                    l.contains("winget")
+                        || l.contains("brew")
+                        || l.contains("apt-get")
+                        || l.contains("dnf")
+                        || l.contains("pacman")
+                        || l.contains("manual")
+                }),
+            "expected package-manager-missing or Linux manual path: msg={} logs={:?}",
             out.message,
             out.logs
         );
@@ -491,8 +499,10 @@ fn install_runtime_git_uses_winget_git_package() {
             cmds.iter().any(|c| {
                 if cfg!(target_os = "macos") {
                     c.contains("brew") && c.contains("install git")
-                } else {
+                } else if cfg!(windows) {
                     c.contains("Git.Git")
+                } else {
+                    false
                 }
             }),
             "expected platform package install, got {cmds:?}"
@@ -603,7 +613,15 @@ fn install_runtime_unsupported_channel_is_coded() {
             || details["hint"]
                 .as_str()
                 .unwrap_or_default()
-                .contains("brew"),
+                .contains("brew")
+            || details["hint"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("manual")
+            || details["hint"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("Linux"),
         "details.hint should mention the platform channel: {details}"
     );
     assert!(ex.calls.lock().unwrap().is_empty());
@@ -634,6 +652,13 @@ fn install_runtime_missing_winget_is_env_not_ready() {
     };
     let out = install_runtime(RuntimeId::Npm, "winget", &ex).unwrap();
     let cmds = calls.lock().unwrap();
+    if cfg!(not(windows)) {
+        assert!(cmds.is_empty());
+        assert!(!out.ok);
+        assert_eq!(out.code.as_deref(), Some("unsupported"));
+        assert_eq!(out.details.as_ref().unwrap()["channel"], "winget");
+        return;
+    }
     if cmds.is_empty() {
         assert!(!out.ok);
         assert_eq!(out.code.as_deref(), Some("env.not_ready"));
@@ -736,4 +761,50 @@ fn grok_native_url_is_official_cli_allowlist() {
     );
     let sh = native_sh_url(AgentId::Grok).unwrap();
     assert!(sh.contains("install.sh"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_default_runtime_install_is_manual_and_does_not_spawn() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+    };
+    let out = install_runtime(RuntimeId::NodeJs, "", &ex).unwrap();
+    assert!(calls.lock().unwrap().is_empty());
+    assert!(!out.ok);
+    assert_eq!(out.code.as_deref(), Some("env.not_ready"));
+    let details = out.details.expect("manual remediations");
+    assert_eq!(details["channel"], "manual");
+    assert_eq!(details["missing"], serde_json::json!(["nodejs"]));
+    let remediations = details["remediations"].as_array().expect("remediations");
+    assert!(!remediations.is_empty());
+    for rem in remediations {
+        assert_ne!(rem["kind"], "winget");
+        assert_ne!(rem["kind"], "brew");
+    }
+    assert!(
+        out.message.contains("Linux") || out.message.contains("manual"),
+        "expected a Linux manual message: {}",
+        out.message
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_rejects_explicit_winget_and_brew_without_spawning() {
+    let ex = MockExecutor {
+        calls: Arc::new(Mutex::new(Vec::new())),
+        exit_code: 0,
+        stdout: String::new(),
+    };
+    for channel in ["winget", "brew", "apt"] {
+        let out = install_runtime(RuntimeId::Git, channel, &ex).unwrap();
+        assert!(!out.ok, "{channel}");
+        assert_eq!(out.code.as_deref(), Some("unsupported"), "{channel}");
+        assert_eq!(out.details.as_ref().unwrap()["channel"], channel);
+        assert!(ex.calls.lock().unwrap().is_empty());
+    }
 }

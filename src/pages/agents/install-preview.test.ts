@@ -42,4 +42,12 @@ describe('buildInstallPreview', () => {
   it('handles empty targets', () => {
     expect(buildEnvInstallPreview([])).toEqual(['# no auto-install targets']);
   });
+
+  it('builds copyable Linux remediations without winget or brew', () => {
+    const lines = buildEnvInstallPreview(['nodejs', 'npm', 'git'], 'manual');
+    expect(lines.join('\n')).toContain('apt-get install -y nodejs npm');
+    expect(lines.join('\n')).toContain('apt-get install -y git');
+    expect(lines.join('\n')).not.toContain('winget');
+    expect(lines.join('\n')).not.toContain('brew install');
+  });
 });
