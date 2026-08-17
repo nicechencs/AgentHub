@@ -588,7 +588,7 @@ export default function DashboardPage() {
                 actionLabel="重试"
                 onAction={() => void loadWallet()}
               >
-                票钱包刷新失败，卡片绑定信息可能不是最新。
+                钱包刷新失败，卡片绑定信息可能不是最新。
               </Notice>
             ) : null}
           </div>

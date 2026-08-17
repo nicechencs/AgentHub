@@ -53,6 +53,12 @@ describe('TicketWalletList details', () => {
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).toContain('接到…');
     expect(markup).toContain('详情');
+    expect(markup).toContain('搜索登录或用途');
+    expect(markup).toContain('aria-label="搜索登录"');
+    expect(markup).toContain('aria-label="登录类型筛选"');
+    expect(markup).toContain('钱包 · 1 份登录');
+    expect(markup).not.toContain('搜票');
+    expect(markup).not.toContain('张票');
     expect(markup).not.toContain('移入回收站');
     expect(markup).not.toContain('编辑配置');
     expect(markup).not.toContain('编辑 API Key');
@@ -80,6 +86,38 @@ describe('TicketWalletList details', () => {
     expect(markup).toContain('本机路由');
     expect(markup).toContain('接到…');
   });
+
+  it('uses 登录 copy for an empty wallet', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: { tickets: [], bindings: [] },
+        onConnectTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('钱包还没有登录');
+    expect(markup).toContain('钱包 · 0 份登录');
+    expect(markup).toContain('官方登录');
+    expect(markup).toContain('API Key');
+    expect(markup).toContain('未识别');
+    expect(markup).not.toContain('钱包还没有票');
+  });
+
+  it('uses 登录 copy when filters match nothing', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: sampleWallet(),
+        initialFilter: 'oauth',
+        onConnectTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('没有匹配的登录');
+    expect(markup).toContain('钱包 · 1 份登录');
+    expect(markup).not.toContain('没有匹配的票');
+  });
 });
 
 describe('TicketDetailPanel', () => {
@@ -89,7 +127,7 @@ describe('TicketDetailPanel', () => {
         id: 'ticket-detail',
         fields: [
           { label: '类型', value: 'API Key' },
-          { label: '票面', value: '会员' },
+          { label: '来源', value: '会员' },
         ],
         bindingLines: ['Claude · 改配置 · 当前'],
         extras: { canEditConfig: true, isCurrent: true },
@@ -100,6 +138,7 @@ describe('TicketDetailPanel', () => {
     );
     expect(markup).toContain('id="ticket-detail"');
     expect(markup).toContain('类型');
+    expect(markup).toContain('来源');
     expect(markup).toContain('API Key');
     expect(markup).toContain('正用于');
     expect(markup).toContain('Claude · 改配置 · 当前');
