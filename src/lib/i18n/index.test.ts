@@ -3,12 +3,16 @@ import { StorageKey } from '@/lib/ui-preferences';
 import {
   applyLanguage,
   createTranslator,
+  detectSystemLanguage,
   flattenKeys,
   htmlLang,
   interpolate,
+  isLanguageSystemSeeded,
   loadStoredLanguage,
+  markLanguageSystemSeeded,
   parseUiLanguage,
   persistLanguage,
+  planLanguageReconcile,
   translate,
 } from './index';
 import { en } from './locales/en';
@@ -66,13 +70,53 @@ describe('translate / interpolate', () => {
   });
 });
 
+describe('detectSystemLanguage', () => {
+  it('picks the first recognizable zh/en from the list', () => {
+    expect(detectSystemLanguage(['en-US'])).toBe('en');
+    expect(detectSystemLanguage(['zh-CN'])).toBe('zh');
+    expect(detectSystemLanguage(['zh_TW'])).toBe('zh');
+    expect(detectSystemLanguage(['fr-FR', 'en-GB'])).toBe('en');
+    expect(detectSystemLanguage(['de-DE', 'ja-JP'])).toBe('zh');
+    expect(detectSystemLanguage([])).toBe('zh');
+  });
+});
+
+describe('planLanguageReconcile', () => {
+  it('seeds local over core once, then core wins', () => {
+    expect(planLanguageReconcile('zh', 'en', false)).toEqual({ next: 'en', writeCore: true });
+    expect(planLanguageReconcile('zh', 'zh', false)).toEqual({ next: 'zh', writeCore: false });
+    expect(planLanguageReconcile('zh', 'en', true)).toEqual({ next: 'zh', writeCore: false });
+    expect(planLanguageReconcile('en', 'zh', true)).toEqual({ next: 'en', writeCore: false });
+  });
+});
+
 describe('language storage and html lang', () => {
   it('loads and persists via StorageKey.language', () => {
     stubStorage();
-    expect(loadStoredLanguage()).toBe('zh');
     persistLanguage('en');
     expect(store.get(StorageKey.language)).toBe('en');
     expect(loadStoredLanguage()).toBe('en');
+  });
+
+  it('detects system language when cache is empty and persists it', () => {
+    stubStorage();
+    vi.stubGlobal('navigator', { language: 'en-US', languages: ['en-US'] });
+    expect(loadStoredLanguage()).toBe('en');
+    expect(store.get(StorageKey.language)).toBe('en');
+  });
+
+  it('does not override an existing cache with the system language', () => {
+    stubStorage();
+    persistLanguage('zh');
+    vi.stubGlobal('navigator', { language: 'en-US', languages: ['en-US'] });
+    expect(loadStoredLanguage()).toBe('zh');
+  });
+
+  it('records the one-shot seed flag', () => {
+    stubStorage();
+    expect(isLanguageSystemSeeded()).toBe(false);
+    markLanguageSystemSeeded();
+    expect(isLanguageSystemSeeded()).toBe(true);
   });
 
   it('rejects illegal stored values', () => {

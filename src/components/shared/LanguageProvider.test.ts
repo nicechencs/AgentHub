@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StorageKey } from '@/lib/ui-preferences';
-import { applyLanguage, loadStoredLanguage, persistLanguage } from '@/lib/i18n';
+import { applyLanguage, loadStoredLanguage, persistLanguage, planLanguageReconcile } from '@/lib/i18n';
 import { syncLanguageFromSettings } from './LanguageProvider';
 
 const store = new Map<string, string>();
@@ -41,5 +41,10 @@ describe('LanguageProvider helpers', () => {
     persistLanguage('en');
     // getSettings failure path: caller keeps loadStoredLanguage().
     expect(loadStoredLanguage()).toBe('en');
+  });
+
+  it('first launch writes system language to core; later launches keep core', () => {
+    expect(planLanguageReconcile('zh', 'en', false).writeCore).toBe(true);
+    expect(planLanguageReconcile('en', 'zh', true).next).toBe('en');
   });
 });
