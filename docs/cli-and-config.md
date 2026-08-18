@@ -221,7 +221,7 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 | `undo` | `--agent` | `undo_switch` | **高** | 一发撤销最近一次 switch；无槽位时不报错 |
 | `test-latency` | `<name> --agent` | `test_latency` | 否 | 探测已存 provider 的 Base URL RTT（毫秒） |
 
-`switch` 在 TTY 且无 `-y` 时展示三要素摘要（backfill / backup 路径 / 进程警告），与 `SwitchConfirmDialog` 同语义。
+`switch` 在 TTY 且无 `-y` 时展示三要素摘要（backfill / backup 路径 / 进程警告）。GUI 侧已无 `SwitchConfirmDialog`，危险确认走各页 Dialog + `busy-confirmation`。
 
 ### 4.5 `account`
 

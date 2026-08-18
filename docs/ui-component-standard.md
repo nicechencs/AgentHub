@@ -1,0 +1,339 @@
+# UI 组件与体验标准
+
+> **定位**：组件用法标准。统一「用哪个件、什么层级、什么禁止」，减少方言，增强可预期性。  
+> **不是**再写一版产品线框，也不是重写视觉 token / 对标执行。  
+> **版本**：v1.0 · 2026-08-18（对照现行实现 + Fable 会审）
+
+## 1. 定位与阅读顺序
+
+| 文档 | 管什么 | 冲突时 |
+|---|---|---|
+| [ui-design.md](ui-design.md) | 布局、页面线框、业务交互、四态产品规则 | **业务规则**以它为准 |
+| [ui-experience-alignment.md](ui-experience-alignment.md) | 对标 Cursor/Codex 的 token、表面分层、提示通道、分期改造 | **token / 视觉收敛**以它为准 |
+| [chat-page-redesign.md](chat-page-redesign.md) / [bridges-page-redesign.md](bridges-page-redesign.md) | Chat / Routes 已落地的页面 IA | 本页特例以它们为准 |
+| **本文** | 组件清单、决策树、信息通道、对照审计、分期落地 | 组件用法与检查表以本文为准 |
+
+阅读顺序：先 `ui-design` 弄清页面在做什么 → 再看本文决定用哪个组件 → token 细节回 `tokens.ts` / 对标文档。
+
+**范围外（不得据此派工）**：凭据落盘加密；国产 OAuth 开边 / 转 API。现有国产路由只认官方 API Key。
+
+**技术栈（承认现状，不另起炉灶）**：React 18 + TS + Vite + Tailwind 3 + shadcn/Radix + lucide + CVA + CodeMirror 6 + recharts。未引入 TanStack Query / i18next / RHF / zod。GUI 语言走 `src/lib/i18n/`。禁止再引入第二套 UI 库。页面不得 `invoke`。
+
+---
+
+## 2. 设计原则
+
+1. **浅色优先，克制**。靠明度分层，不靠多重边框和 accent 铺底。
+2. **一页至多一个 accent 主 CTA**（`Button variant="default"`）。其余用 `secondary` / `outline` / `ghost`。
+3. **四态必达**：loading / empty / error / partial。空态给下一步；**例外**：Routes 健康空态无按钮（空是常态）。
+4. **提示分层**：控件释义走 `Hint`，截断/路径走 `Tip`，页内横幅走 `Notice`，短结果走 `Toast`，危险后果走 `Dialog`。禁止原生 `title` 当教学。
+5. **不为空而空**。L3 教学不得默认占主列；L4 路径/ID 不得每行复读。
+6. **危险先说清楚再执行**。确认用各页 `Dialog` + `busy-confirmation`，不再发明 `SwitchConfirmDialog`。
+7. **凭据不明文常驻**。`SecretInput` 默认脱敏；眼睛切换明文。现行实现无二次确认、无自动再遮蔽——不要把未做的写成必须项。
+
+---
+
+## 3. Token 与焦点速查
+
+真源：`src/styles/tokens.ts` → Vite 注入 CSS 变量。`tailwind.config.ts` 只映射 `var(--…)`。不要在本文复制大段色值。
+
+| 约束 | 现行值 | 说明 |
+|---|---|---|
+| 字号 | 仅三档：`text-title` 16 / `text-body` 13 / `text-meta` 12 | `text-sm`/`text-xs` 等是同像素别名，**新代码写语义名** |
+| 圆角 | `rounded-btn` 6 / `rounded-card` 8 / `rounded-composer` 12 | 禁止 `rounded-[Npx]` |
+| 阴影 | `shadow-xs` 卡 / `sm` 轻浮层 / `md` 菜单·Toast / `lg` Dialog | |
+| 焦点环 | `focus:ring-2 focus:ring-accent/60` | Input / Button / Select 已对齐；**不要**再改成 1px 方言 |
+| Accent | 浅 `#4F46E5`，深 `#6366F1` | Phase 0 已选：保留 indigo，只降暴露。换色相 = Phase 5，先不做 |
+| 控件高 | 默认 `h-7` | `lg` 才 `h-8`。搜索框不要自创 `h-8` |
+
+**已知文档/实现差（不在本阶段改色）**：
+
+- 深色 `--bg-hover`：代码 `#1e1e22`，对标文档写 `#1C1C1F`。
+- 深色 `--text-muted`：代码 `#8b8b96`；Phase 0 明确浅色 muted 不要弱到这个值。深色精修属 Phase 4–5。
+
+**两套「L」不要混用**：
+
+| 名称 | 出处 | 含义 |
+|---|---|---|
+| **信息分级 L0–L4** | 对标文档 §5.1 | L0 必需标签 · L1 行内状态 · L2 Hint 解释 · L3 教学 · L4 路径/调试 |
+| **操作权重** | 本文 / `ui-design` 主 CTA | 每页 1 个 accent；次操作 ghost/secondary/outline；危险先 outline，确认后再 `danger` |
+
+不要再发明第三套 L0–L4。
+
+---
+
+## 4. 现行组件清单
+
+分层（已落地，必须承认）：
+
+```
+src/components/ui/        # 唯一基础件（shadcn/Radix）；仅此处可包 Radix
+src/components/shared/    # 自研复合件
+src/components/layout/    # 壳
+src/components/connect/   # ConnectFlow / OAuth
+```
+
+页面本地件（`pages/*/…`）不是共享清单的一部分：`AgentCard`、`SkillMatrix`、`UsageDetailsTable`、`ParserHealthBar`（Dashboard 兼容 re-export）等。需要复用时先抽，再进 `shared/`。
+
+### 4.1 `ui/` 基础件
+
+| 组件 | 真实 API | 用法 |
+|---|---|---|
+| `Button` | `default` / `secondary` / `outline` / `ghost` / `danger` / `dangerOutline`；`default` `h-7` / `sm` / `lg` `h-8` / `icon` | `title` 自动转 `Hint`。作为 `DropdownMenuTrigger asChild` 时不要设 `title`，外层包 `Hint` |
+| `Input` | `h-7`，`ring-2 ring-accent/60` | `title` → `Hint` |
+| `Select` | Radix，Trigger `h-7` | 表单选择 |
+| `Dialog` | 默认 `max-w-lg`、`rounded-card`、`p-6`、`shadow-lg` | Footer 右对齐；取消=`ghost`，主操作靠右。忙碌中走 `busy-confirmation` + `hideClose` |
+| `DropdownMenu` | Radix | 添加菜单、行操作 |
+| `ContextMenu` | **自研 portal，不是 Radix** | Chat 会话列表、侧栏、Skills 矩阵 |
+| `Tabs` | 与分段控件同灰轨 + 白底抬起 | 页级导航（Skills 三栏、Settings） |
+| `Switch` | 选中 = accent | Settings 即时开关 |
+| `Progress` | 细条 | 只经 `QuotaBar` 等复合件，页面少直接用 |
+| `Toast` | `default` / `success` / `danger`；默认 5s | 标题 ≤16 字；可带撤销 |
+| `Hint` / `Tip` | 默认 200ms（`main.tsx` TooltipProvider） | 见 §5.5 |
+| `TableShell` | `default` = Card 壳（全站管理表，含 Skills）；`workbench` / `flush` **API 在、业务侧基本不用** | 业务表只选 variant，禁止手写 `*Workbench` class |
+| `Card` | `default` 边框+`shadow-xs` / `plain` 无框 / `subtle` 弱底 | 嵌套用 `plain`/`subtle`，避免双重描边 |
+| `Badge` | `default` / `accent` / `success` / `warning` / `danger` / `info` / `chip` / `chipActive` | 状态用无边框淡底；可点选项用 `chip` |
+| `Skeleton` / `ListSkeleton` / `TableSkeleton` / `CardGridSkeleton` | | loading 用骨架，不用一句「正在加载…」 |
+| `segmented-styles.ts` | `segmentedTrackClass` / `segmentedItemClass` / `segmentedCountClass` / `actionCountClass` | 分段视觉真源 |
+
+### 4.2 `shared/` 复合件
+
+| 组件 | 职责 | 注意 |
+|---|---|---|
+| `EmptyState` | 图标 + 主句 + 可选行动 | 主句走 `text-title`；无行动仅用于「筛选无结果」等可解释空 |
+| `ErrorState` | 摘要 + 重试 + 复制诊断 | 分区内嵌用 `compact`（Dashboard 用量） |
+| `Notice` | 页内横幅；`neutral` / `info` / `warning` / `danger` / `success` | 一屏建议最多一条 |
+| `SearchField` | `h-7` + 左图标 | **禁止**手写 `relative + Search + pl-7/pl-8` |
+| `SecretInput` | 脱敏回显 + 眼睛切换 | 无二次确认、无 10s 再遮蔽；聚焦已遮蔽值会清空以便重输 |
+| `ListRow` | 管理列表行；`active` = `bg-active` + 可选左边条 | 仍带 border + `rounded-card`，偏管理后台。工作台会话行不要套它 |
+| `SegmentedControl` | 页内筛选，默认 `sm` + `count` | 不要用来切页面 |
+| `QuotaBar` | 5h/7d 配额 | |
+| `StatusDot` | 认证四态 | |
+| `StatusPin` | 更小的语义点（更新/生效/缺失） | 不要手写 `h-1.5 w-1.5 rounded-full bg-*` |
+| `AgentDot` / `AgentLogo` / `AppLogo` | 品牌标识 | `AgentDot.title` → `Hint`；不要用 Agent 色铺大面 |
+| `CurrentBadge` | 「当前」 | |
+| `DetailRow` | 详情网格 label/value | |
+| `ConfigEditor` | CodeMirror；敏感键脱敏层 | |
+| `GenericConfigForm` | 通用字段表 | |
+| `InlineTerminal` | 安装/升级流式输出 | |
+| `EnvStatusBar` / `EnvRemediationPanel` | Runtime 状态与修复 | |
+| `MarkdownView` | Skills 预览等 | |
+| `UsageParserHealth` | Dashboard 主用 `dashboard` | `UsageHealthStrip` / `ParserHealthBar` 是兼容 re-export，新代码不要用 |
+| `OnboardingDialog` / `BootSplash` | 首次引导 / 启动 | |
+| `ThemeProvider` / `LanguageProvider` | 主题 / 文案字典 | |
+| `NotificationBell` / `UpdatePrompt` / `UsageSyncProvider` | 壳级服务 | |
+| `busy-confirmation` | 忙碌中禁止关确认框 | 危险 Dialog 必用 |
+
+`SwitchConfirmDialog`：**已删除**。`ui-design.md` 旧 §5 与 `cli-and-config.md` 的「同语义」表述不得再当成 GUI 组件名。
+
+`OAuthFlowDialog`：实现在 `components/connect/`；`shared/OAuthFlowDialog.ts` 只再导出 token helper。
+
+### 4.3 `layout/`
+
+| 组件 | 职责 |
+|---|---|
+| `Sidebar` | Workspace：Chat / Agents / Skills / MCP / Projects。Manage：Dashboard / Connections / Routes（**有本机路由才出现**）/ Backups / Settings |
+| `TopBar` | Chat 不渲染 |
+| `PageHeader` | `default` / `compact`（全高页只收底距）。标题一律 `text-title` |
+| `PageSection` | 段距 / 可选分割线 / 段标题（body + semibold） |
+| `AgentTabStrip` | 页内 Agent 过滤，固定 md；普通数字走 `counts` |
+| `page-rhythm.ts` | 边缘与区块节奏真源 |
+
+### 4.4 `connect/`
+
+| 组件 | 职责 |
+|---|---|
+| `ConnectFlowDialog` | 绑定。Dashboard 点工具 = 固定选登录；Connections「接到…」= 登录固定、选工具。确认走 `bind` |
+| `OAuthFlowDialog` | 仅已开边 OAuth（Claude / Codex / Gemini / Antigravity 等）。国产 OAuth **不开边** |
+
+---
+
+## 5. 组件决策树
+
+### 5.1 按钮
+
+| 页面角色 | variant | 例 |
+|---|---|---|
+| 该页唯一主行动 | `default`（accent） | Connections「添加」、空态主按钮 |
+| 卡内安装 / 次要提交 | `secondary` | Agents 卡「安装」 |
+| 需要边框的次要 | `outline` | ErrorState「复制诊断」、Notice 行动 |
+| 工具条、取消、图标 | `ghost` | Dialog 取消、行内「详情」 |
+| 确认框里的破坏 | `danger` | 卸载、停止路由、删除会话 |
+| 未确认前的破坏入口 | `dangerOutline` 或 `ghost` | 行内「移入回收站」 |
+
+尺寸：默认 `h-7`。不要为了「更显眼」把搜索框做成 `h-8`。
+
+### 5.2 表面：Card / 表 / ListRow
+
+| 内容 | 用 | 不用 |
+|---|---|---|
+| 独立内容块（设置分区、指标、钱包行外壳） | `Card default` 或 `ListRow` | 再外包一层 Card |
+| 已在框内的工具条 / 嵌套 | `Card plain` / `subtle` | 再加 border |
+| 管理表（用量、Skills 三 Tab） | `TableShell default` | 手写 table class；不要为了对标 IDE 把 Skills 改成 `flush`（本阶段不做） |
+| 工作台会话列表（Chat rail） | 页面自管行 + `bg-active` | `ListRow`（带卡边，会把 rail 做成后台） |
+| 表格预览行 | `TableRow active` | 整行铺 accent |
+
+`ListRow` 去边框、改成 IDE 树行：先不做。
+
+### 5.3 Tabs vs Segmented vs AgentTabStrip
+
+见 `segmented-styles.ts` 注释，这里是硬规则：
+
+| 场景 | 组件 | 尺寸 |
+|---|---|---|
+| 页级导航（Skills 三栏、Settings 分区） | `Tabs` | md |
+| 页内列表筛选（全部 / OAuth / API Key…） | `SegmentedControl` | sm + `count` |
+| 页内 Agent 过滤 | `AgentTabStrip` | md（不要再传 sm） |
+| 预览「预览 \| 源码」 | 允许手写扁段，`h-6` | 特例 |
+
+普通数量用 `segmentedCountClass`。琥珀行动角标用 `actionCountClass`，不要再画一遍明文数字。
+
+### 5.4 搜索
+
+列表筛选 **必须** `SearchField`。现行已收口：Skills、Chat、Projects、**Connections 钱包**。
+
+禁止再写 `relative + Search icon + Input`（旧方言：`h-8 w-44 pl-7 text-xs`）。
+
+### 5.5 提示通道
+
+| 要说的事 | 通道 | 长度 | 不要 |
+|---|---|---|---|
+| 图标按钮是什么 | `Button title` → `Hint` | ≤20 字 | 原生 `title` |
+| 截断文本 / 路径全文 | `Tip` | 完整串或「名 · 一句」 | 行级 native title |
+| 禁用原因 | `Hint` 包一层（disabled 子节点也能悬停） | 一句 | 把原因写进主列 |
+| 页内需要行动的状态 | `Notice` | 一屏一条 | 多条堆叠 |
+| 操作结果 | `Toast` | 标题 ≤16 字 | 把路径堆进标题 |
+| 危险后果 / 不可逆 | `Dialog` + `busy-confirmation` | 结构化 | 只靠 tip |
+
+测试锁：`src/components/ui/title-channel.test.ts` 禁止 `pages` / `layout` / `shared` 在 `p/span/div/button` 等节点写原生 `title`。`Button` / `Input` / `AgentDot` 的 `title` 不在扫描内。
+
+### 5.6 四态
+
+| 态 | 组件 | 规则 |
+|---|---|---|
+| loading | `ListSkeleton` / `TableSkeleton` / `CardGridSkeleton` / `Skeleton` | 与终态同密度，避免「一行字 → 卡片」跳动 |
+| empty | `EmptyState` | 有明确下一步则给按钮；筛选无结果给「显示全部」 |
+| error | `ErrorState` | 分区失败用 `compact`，不要白掉整页（Dashboard 用量） |
+| partial | 缺块单独标注 | 多 Agent 能力不齐是常态 |
+
+**产品例外**：Routes 健康空态无按钮（[bridges-page-redesign.md](bridges-page-redesign.md)）。
+
+### 5.7 凭据输入
+
+- 密钥 / token：`SecretInput`
+- 普通文本：`Input`
+- 不要把「10s 自动再遮蔽」写成验收项
+
+### 5.8 危险确认
+
+各页自己的 `Dialog`。忙碌中：
+
+- `closeConfirmationOnOpenChange(open, busy, onClose)`
+- `preventBusyConfirmationDismissal(busy, event)`
+- 必要时 `DialogContent hideClose`
+
+不要新建全局 `SwitchConfirmDialog`。三要素（backfill / 备份路径 / 进程警告）是**文案内容**，不是组件名。
+
+---
+
+## 6. 页面壳与节奏
+
+`App.tsx`：
+
+| 路由 | TopBar | 外壳 |
+|---|---|---|
+| 常规页 | 有 | `pageRhythm.pageShell` = `mx-auto max-w-content px-6 py-6`（1200） |
+| `/chat` | 无 | fullBleed，无 `PageHeader` |
+| `/skills` | 有 | fullBleed；`PageHeader size="compact"` + Tabs |
+
+区块自上而下：`PageHeader` → `chrome` / `chromeRow` → `lead`（环境条、Notice）→ `stack` / `blocks` → `PageSection`。Chat / Skills 自管布局，但水平 inset 须走 `pageRhythm` / `pageEdgePx`，禁止硬编码 `px-4`（Chat chrome 除外，它的真源是 `chatChromeX`）。
+
+导航专有名词保持英文（Dashboard / Agents / …）；页面标题与正文用中文。
+
+---
+
+## 7. 对照审计
+
+### 7.1 文档偏差（已按现行实现纠正）
+
+| 旧描述 | 现行 | 处理 |
+|---|---|---|
+| `SwitchConfirmDialog` 仍在 `ui-design` §5 | 代码已删（`modularity-improvement.md`） | 本文 + `ui-design` §5 删除该行 |
+| `SecretInput`「二次确认 + 10s 再遮蔽」 | 眼睛切换；无自动遮蔽 | 产品原则改为按实现写 |
+| 输入焦点「应是 ring-1」等口头差 | 实现与 `ui-design` 均为 `ring-2 / accent/60` | 以代码为准 |
+| Dialog「max-w-md / rounded-composer」 | 默认 `max-w-lg` / `rounded-card` | 以 `dialog.tsx` 为准 |
+| `AgentCard` 列为 shared | 在 `pages/agents` / Dashboard `AgentOverview` | 清单降为页面件 |
+| 对标 Phase 3「抽 ListRow / compact Header / 分段同一族」 | 这三项已落地 | Phase 3 剩余改为方言收口，见 §8 |
+
+### 7.2 实现方言（本 PR 已收一部分）
+
+| 项 | 原状 | 本标准 |
+|---|---|---|
+| Connections 钱包搜索 | 手写 `h-8 w-44 pl-7 text-xs` | 已改 `SearchField` |
+| 钱包 loading | 「正在加载钱包…」 | 已改 `ListSkeleton` |
+| `EmptyState` / `ErrorState` / `Notice` / `QuotaBar` / `StatusDot` | `text-sm` / `text-xs` | 已改语义名；空态/错误主句升为 `text-title` |
+| 全站仍大量 `text-sm` / `text-xs` | 别名，像素相同 | 新代码写语义名；存量不搞大扫除 |
+
+### 7.3 仍存在的体验债（承认，不假装本周清完）
+
+| 债 | 位置 | 本阶段 |
+|---|---|---|
+| 列表名仍写 `text-sm font-medium` | 多页 | 新代码改 `text-body`；不扫全站 |
+| `ListRow` 带卡边，和 Chat 会话行是两套选中态 | `ListRow` vs Chat rail | 先保持；去边框重做 = 后做 |
+| Card 密度不齐 | Dashboard 工具卡 / Agents 卡 / Settings | 新卡跟 `p-3` / Header `px-4`；不重做旧卡 |
+| Accent 面积 | 多数页已克制；继续避免卡内并排 `default` | 审计随 PR，不单开换色 |
+| `TableShell workbench/flush` 未用于业务 | Skills 仍是 default Card 壳 | **先不做** 大改表壳 |
+| 动效 / 深色 hover·muted / accent 换色相 | 对标 Phase 4–5 | **先不做** |
+
+---
+
+## 8. 分期落地
+
+### 当前（Phase 3 收口，可拆 PR）
+
+1. **文档**：本文 + 回写 `ui-design.md` §1.3 / §5 + `docs/README.md` + 对标文档相关链接。  
+2. **SearchField 收口** Connections 钱包（本 PR 已做）。  
+3. **共享件字号**改语义 token；空态/错误主句用 `text-title`（本 PR 已做）。  
+4. **钱包 loading** 改 `ListSkeleton`（本 PR 已做）。  
+5. **提示通道决策**以本文 §5.5 为准；后续 PR 按检查表自检。
+
+### 先不做
+
+- 动效、深色精修、accent 换色相（Phase 4–5）
+- `TableShell` 改 workbench / 去掉 Skills Card 壳
+- `ListRow` 去边框改成 IDE 树
+- 全站 `text-sm` → `text-body` 机械替换
+- 引入第二套 UI 库、i18next、RHF、zod
+- 凭据落盘加密
+- 国产 OAuth 开边 / 转 API
+- 恢复 `SwitchConfirmDialog`
+- 给 `SecretInput` 加 10s 自动遮蔽（除非产品重新授权）
+
+---
+
+## 9. 禁止项（PR 检查表）
+
+- [ ] 没有新增 UI 库或平行组件目录
+- [ ] 页面没有直接 `invoke`
+- [ ] 没有手写搜索框（必须 `SearchField`）
+- [ ] 没有新增字号档或 `text-[Npx]` / `rounded-[Npx]`
+- [ ] 新代码字号用 `text-title` / `text-body` / `text-meta`
+- [ ] 一页没有两枚并排 `variant="default"`
+- [ ] 没有在 `pages` / `layout` / `shared` 的文本节点上写原生 `title`
+- [ ] loading 不是一句「正在加载…」（用对应 Skeleton）
+- [ ] 危险确认用 Dialog + `busy-confirmation`，没有新的全局确认件
+- [ ] 没有把凭据加密或国产 OAuth 写成待办
+- [ ] Chat / Skills 水平 inset 走 `pageRhythm`，没有随手 `px-4`（Chat chrome 除外）
+- [ ] Agent 品牌色只用于点与图表，不铺按钮/大面
+
+---
+
+## 10. 与对标文档 Phase 3 的关系
+
+对标文档 Phase 3 原列表里，下列**已经落地**，不必再派工：
+
+- 选中态抽 `ListRow`
+- Segmented / Tabs / AgentTabStrip 同一视觉族
+- `PageHeader size="compact"`
+
+对标文档仍标「计划」的剩余项，以**本文 §8** 为准：先收方言与文档，不动表壳/动效/换色。
