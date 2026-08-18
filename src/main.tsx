@@ -4,7 +4,7 @@ import { HashRouter } from 'react-router-dom';
 import App from './App';
 import { BootSplash } from '@/components/shared/BootSplash';
 import { ToastProvider } from '@/components/ui/toast';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { TooltipProvider, TOOLTIP } from '@/components/ui/tooltip';
 import { LanguageProvider } from '@/components/shared/LanguageProvider';
 import { ThemeProvider } from '@/components/shared/ThemeProvider';
 import { UsageSyncProvider } from '@/components/shared/UsageSyncProvider';
@@ -116,7 +116,7 @@ function Root() {
       <HashRouter>
         <ThemeProvider>
           <LanguageProvider>
-            <TooltipProvider delayDuration={200} skipDelayDuration={0}>
+            <TooltipProvider delayDuration={TOOLTIP.delayMs} skipDelayDuration={0}>
               <ToastProvider>
                 <AgentCatalogProvider>
                   <AgentStatusProvider>
