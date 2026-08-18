@@ -60,6 +60,27 @@ export function chatAgentPickerRows(input: {
   return [...rows.filter((r) => r.selectable), ...rows.filter((r) => !r.selectable)];
 }
 
+/** 列表为空时的原因：未就绪不得当成「没装」。安装/全隐藏在 picker 里不必拆开。 */
+export type ChatPickerEmptyKind = 'loading' | 'none';
+
+export function chatAgentPickerEmptyKind(input: {
+  agentsReady: boolean;
+  rowCount: number;
+}): ChatPickerEmptyKind | null {
+  if (input.rowCount > 0) return null;
+  return input.agentsReady ? 'none' : 'loading';
+}
+
+export function chatAgentPickerEmptyCopy(kind: ChatPickerEmptyKind): {
+  text: string;
+  action: string | null;
+} {
+  if (kind === 'loading') {
+    return { text: '正在检测已安装的 Agent…', action: null };
+  }
+  return { text: '没有可选择的 Agent', action: '去 Agents 页' };
+}
+
 export type ConversationDayKey = 'today' | 'yesterday' | 'week' | 'earlier';
 
 export type ConversationDayGroup = {

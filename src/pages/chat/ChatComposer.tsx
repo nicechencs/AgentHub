@@ -33,6 +33,8 @@ import {
   autoApproveFooter,
   blockerCopy,
   blockerPrimaryTarget,
+  chatAgentPickerEmptyCopy,
+  chatAgentPickerEmptyKind,
   type ChatAgentPickerRow,
   type ChatConnectionPickerView,
   type ChatSendBlocker,
@@ -54,6 +56,7 @@ export function ChatComposer({
   switchingProvider,
   hiddenIds,
   pickerRows,
+  agentsReady,
   blockers,
   connectionCaption,
   onSend,
@@ -75,6 +78,7 @@ export function ChatComposer({
   switchingProvider: boolean;
   hiddenIds: Set<AgentId>;
   pickerRows: ChatAgentPickerRow[];
+  agentsReady: boolean;
   blockers: ChatSendBlocker[];
   connectionCaption: string | null;
   onSend: () => void;
@@ -117,6 +121,11 @@ export function ChatComposer({
   const sendHint = firstBlocker ? blockerCopy(firstBlocker).text : '发送';
   const selectedAgent = active.agentIds[0] ?? '';
   const approveFooter = autoApproveFooter(active.allowDangerous, active.agentIds[0] ?? null);
+  const pickerEmpty = chatAgentPickerEmptyKind({
+    agentsReady,
+    rowCount: pickerRows.length,
+  });
+  const pickerEmptyCopy = pickerEmpty ? chatAgentPickerEmptyCopy(pickerEmpty) : null;
 
   return (
     <>
@@ -197,8 +206,20 @@ export function ChatComposer({
                   </DropdownMenuRadioItem>
                 ))}
               </DropdownMenuRadioGroup>
-              {pickerRows.length === 0 && (
-                <div className="px-2 py-1.5 text-meta text-muted">尚未安装任何 Agent</div>
+              {pickerEmptyCopy && (
+                <div className="px-2 py-2">
+                  <p className="text-meta text-muted">{pickerEmptyCopy.text}</p>
+                  {pickerEmptyCopy.action && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2"
+                      onClick={() => navigate('/agents')}
+                    >
+                      {pickerEmptyCopy.action}
+                    </Button>
+                  )}
+                </div>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
