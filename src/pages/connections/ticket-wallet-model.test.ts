@@ -144,11 +144,12 @@ describe('binding usage text', () => {
   it('formats active bindings with route labels', () => {
     const wallet = sampleWallet();
     const kimiBindings = wallet.bindings.filter((b) => b.ticketId === 'provider:kimi-1');
-    expect(formatTicketUsageText(kimiBindings)).toContain('正用于：');
-    expect(formatTicketUsageText(kimiBindings)).toContain('改配置');
-    expect(formatTicketUsageText(kimiBindings)).toContain('本机路由 · 运行中');
+    expect(formatTicketUsageText(kimiBindings, 'kimi')).toContain('正用于：');
+    expect(formatTicketUsageText(kimiBindings, 'kimi')).toContain('改配置');
+    expect(formatTicketUsageText(kimiBindings, 'kimi')).toContain('本机路由 · 运行中');
     expect(formatTicketUsageText([])).toBe('未使用');
-    const parts = formatTicketUsageParts(kimiBindings);
+    expect(formatTicketUsageText([], 'codex')).toBe(`${agentDisplayName('codex')} · 未使用`);
+    const parts = formatTicketUsageParts(kimiBindings, 'kimi');
     expect(parts.some((part) => part.kind === 'bridge' && part.href === '/routes?profile=p2')).toBe(true);
     expect(formatTicketUsageParts([{
       ticketId: 'provider:kimi-1',
@@ -158,6 +159,25 @@ describe('binding usage text', () => {
       profileId: null,
       bridge: { port: 8123, running: true },
     }]).some((part) => part.kind === 'bridge' && part.href === '/routes')).toBe(true);
+  });
+
+  it('keeps self-use on one phrase so the row does not repeat the owner', () => {
+    expect(formatTicketUsageText([{
+      ticketId: 'account:codex-1',
+      agentId: 'codex',
+      route: 'native',
+      active: true,
+      profileId: null,
+      bridge: null,
+    }], 'codex')).toBe(`${agentDisplayName('codex')}（切换）`);
+    expect(formatTicketUsageText([{
+      ticketId: 'account:codex-1',
+      agentId: 'codex',
+      route: 'native',
+      active: true,
+      profileId: null,
+      bridge: null,
+    }], 'codex')).not.toContain('正用于：');
   });
 
   it('maps dashboard meta text', () => {

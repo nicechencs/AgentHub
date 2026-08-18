@@ -159,7 +159,7 @@ function TicketRow({
   return (
     <ListRow active={highlighted} className="p-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
           <span
             className={cn('text-xs', highlighted ? 'text-success' : 'text-muted')}
             aria-hidden
@@ -175,8 +175,21 @@ function TicketRow({
           <Badge variant={ticket.surface === 'unknown' ? 'accent' : 'default'}>
             {ticketSurfaceLabel(ticket.surface)}
           </Badge>
-          <span className="truncate text-meta text-muted">
-            {agentDisplayName(ticket.agentId)}
+          <span className="text-meta text-secondary">
+            {usageParts.map((part, index) => (
+              part.kind === 'bridge' ? (
+                <Link
+                  key={`${part.href}:${index}`}
+                  to={part.href}
+                  className="text-info underline"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {part.label}
+                </Link>
+              ) : (
+                <span key={`text:${index}`}>{part.text}</span>
+              )
+            ))}
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -197,22 +210,6 @@ function TicketRow({
           </Button>
         </div>
       </div>
-      <p className="mt-1 pl-5 text-meta text-secondary">
-        {usageParts.map((part, index) => (
-          part.kind === 'bridge' ? (
-            <Link
-              key={`${part.href}:${index}`}
-              to={part.href}
-              className="text-info underline"
-              onClick={(event) => event.stopPropagation()}
-            >
-              {part.label}
-            </Link>
-          ) : (
-            <span key={`text:${index}`}>{part.text}</span>
-          )
-        ))}
-      </p>
       {expanded ? (
         <TicketDetailPanel
           id={detailsId}
