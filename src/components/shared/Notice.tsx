@@ -55,7 +55,7 @@ export function Notice({
   return (
     <div
       className={cn(
-        'flex items-start gap-2 rounded-card border px-3 py-2 text-xs leading-relaxed text-secondary',
+        'flex items-start gap-2 rounded-card border px-3 py-2 text-meta leading-relaxed text-secondary',
         conf.wrap,
         className,
       )}
@@ -65,7 +65,7 @@ export function Notice({
       {(actionLabel && onAction) || onDismiss ? (
         <div className="flex shrink-0 items-center gap-1">
           {actionLabel && onAction && (
-            <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={onAction}>
+            <Button size="sm" variant="outline" className="h-6 px-2 text-meta" onClick={onAction}>
               {actionLabel}
             </Button>
           )}
