@@ -11,24 +11,18 @@ export const LOG_LEVEL_VALUES: LogLevel[] = ['error', 'warn', 'info', 'debug', '
 export const SETTINGS_TABS = ['preferences', 'local', 'about'] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
-/** In-page focus after a tab is resolved (hash `#backups`). */
-export type SettingsSection = 'backups';
-
-export const SETTINGS_BACKUPS_HASH = 'backups';
-
 /**
- * Legacy `?tab=` slugs → canonical tab (+ optional hash).
+ * Legacy `?tab=` slugs → canonical tab.
  * `general` → Preferences; `security` → About (credential note);
- * `data` → Local (top); `backups` → Local `#backups`.
+ * `data` → Local. `backups` is not a Settings tab — see {@link settingsBackupsRedirect}.
  */
-export const SETTINGS_TAB_REDIRECTS: Record<string, { tab: SettingsTab; hash?: string }> = {
+export const SETTINGS_TAB_REDIRECTS: Record<string, { tab: SettingsTab }> = {
   preferences: { tab: 'preferences' },
   local: { tab: 'local' },
   about: { tab: 'about' },
   general: { tab: 'preferences' },
   security: { tab: 'about' },
   data: { tab: 'local' },
-  backups: { tab: 'local', hash: SETTINGS_BACKUPS_HASH },
 };
 
 export function isSettingsTab(raw: string | null | undefined): raw is SettingsTab {
@@ -43,38 +37,31 @@ export function parseSettingsTab(raw: string | null): SettingsTab {
   return 'preferences';
 }
 
-export function parseSettingsHash(hash: string | null | undefined): SettingsSection | null {
+/** Old Settings backups deep links → standalone `/backups`. */
+export function settingsBackupsRedirect(
+  rawTab: string | null,
+  hash?: string | null,
+): '/backups' | null {
+  if (rawTab === 'backups') return '/backups';
   const value = (hash ?? '').replace(/^#/, '');
-  return value === SETTINGS_BACKUPS_HASH ? 'backups' : null;
+  return value === 'backups' ? '/backups' : null;
 }
 
 export interface SettingsLocation {
   tab: SettingsTab;
-  hash: string;
-  /** True when the incoming `?tab=` is legacy, unknown, or needs a backups hash. */
+  /** True when the incoming `?tab=` is legacy or unknown. */
   shouldReplace: boolean;
 }
 
 /**
- * Central URL resolver: canonical tab + optional `#backups`.
+ * Central URL resolver: canonical tab.
  * Old slugs and illegal values are marked for replace-navigation.
  */
-export function resolveSettingsLocation(
-  rawTab: string | null,
-  hash: string | null | undefined,
-): SettingsLocation {
+export function resolveSettingsLocation(rawTab: string | null): SettingsLocation {
   const mapped = rawTab ? SETTINGS_TAB_REDIRECTS[rawTab] : undefined;
   const tab = mapped?.tab ?? 'preferences';
-  const fromLegacyBackups = rawTab === 'backups';
-  const existingHash = parseSettingsHash(hash);
-  const nextHash =
-    fromLegacyBackups || existingHash === 'backups' ? SETTINGS_BACKUPS_HASH : '';
-
-  const canonicalTab = isSettingsTab(rawTab);
-  const hashOk = (nextHash === '' && !existingHash) || (nextHash === SETTINGS_BACKUPS_HASH && existingHash === 'backups');
-  const shouldReplace = rawTab !== null && (!canonicalTab || (fromLegacyBackups && !hashOk));
-
-  return { tab, hash: nextHash, shouldReplace };
+  const shouldReplace = rawTab !== null && !isSettingsTab(rawTab);
+  return { tab, shouldReplace };
 }
 
 export function settingsSearch(tab: SettingsTab): string {

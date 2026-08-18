@@ -25,6 +25,7 @@ export const zh = {
     dashboard: 'Dashboard',
     connections: 'Connections',
     routes: 'Routes',
+    backups: 'Backups',
     settings: 'Settings',
     expandSidebar: '展开侧栏',
     collapseSidebar: '收起侧栏',
@@ -37,7 +38,7 @@ export const zh = {
     page: {
       title: '设置',
       description: '偏好、本机与关于',
-      descriptionTip: '语言与主题立即生效；本机含数据目录、日志与备份；关于含版本与凭据说明。',
+      descriptionTip: '语言与主题立即生效；本机含数据目录与日志；关于含版本与凭据说明。',
       tabPreferences: '偏好',
       tabLocal: '本机',
       tabAbout: '关于',
@@ -145,6 +146,9 @@ export const zh = {
       tagline: 'AgentHub — 统一管理 AI coding agent 的配置、账号与用量。',
     },
     backups: {
+      pageTitle: '安全备份',
+      pageDescription: '本机配置快照',
+      pageDescriptionTip: '切换、导入或更新后自动保留 live 配置；可手动备份、恢复或删除。不含会话日志或整库换机包。',
       kindAutoSwitch: '切换前自动',
       kindManual: '手动',
       kindPreUninstall: '卸载前',

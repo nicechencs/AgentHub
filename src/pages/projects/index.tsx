@@ -25,7 +25,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
-import { AGENTS, AGENT_MAP } from '@/config/agents';
+import { AGENT_MAP } from '@/config/agents';
 import {
   deleteAgentProject,
   deleteAgentProjects,
@@ -46,6 +46,7 @@ import { cn } from '@/lib/utils';
 import { projectMatches, sessionMatches } from './project-filter';
 import { buildContinuePrompt, buildSummaryPrompt } from './project-prompts';
 import { nativeSessionId, shortSessionId } from './project-format';
+import { resolveProjectTabAgents } from './project-tab-agents';
 import { ProjectTree } from './ProjectTree';
 
 export default function ProjectsPage() {
@@ -55,16 +56,9 @@ export default function ProjectsPage() {
   const { installedAgents, installedIds, hiddenIds, loading: agentsLoading } = useInstalledAgents();
 
   const agentFromUrl = searchParams.get('agent') as AgentId | null;
-  const tabAgents =
-    installedAgents.length > 0
-      ? installedAgents
-      : AGENTS.filter((a) => !hiddenIds.includes(a.id));
+  const tabAgents = resolveProjectTabAgents(installedAgents, hiddenIds);
   /** 稳定 key，避免 installedAgents 每渲染新建数组导致计数重复拉取 */
-  const tabAgentIdsKey = agentsLoading
-    ? ''
-    : installedIds.length > 0
-      ? installedIds.join(',')
-      : tabAgents.map((a) => a.id).join(',');
+  const tabAgentIdsKey = agentsLoading ? '' : installedIds.join(',');
 
   const [agentId, setAgentId] = useState<AgentId>(() => {
     if (agentFromUrl && tabAgents.some((a) => a.id === agentFromUrl)) return agentFromUrl;
@@ -613,7 +607,7 @@ export default function ProjectsPage() {
             value={agentId}
             onChange={setAgent}
             agents={tabAgents}
-            emptyLabel="尚未安装任何 Agent"
+            emptyLabel="没有可查看的 Agent"
             counts={projectCounts}
             countMode="defined"
             countTitle={(_id, n) => `${n} 个项目`}
@@ -650,6 +644,14 @@ export default function ProjectsPage() {
         <ListSkeleton rows={5} />
       ) : phase === 'error' ? (
         <ErrorState error={error} onRetry={() => void loadProjects(agentId, showHidden)} />
+      ) : tabAgents.length === 0 ? (
+        <EmptyState
+          icon={FolderKanban}
+          title="还没有可查看的 Agent"
+          description="安装或取消隐藏 Agent 后即可查看项目"
+          actionLabel="去 Agents 页"
+          onAction={() => navigate('/agents')}
+        />
       ) : visibleProjects.length === 0 ? (
         <EmptyState
           icon={FolderKanban}

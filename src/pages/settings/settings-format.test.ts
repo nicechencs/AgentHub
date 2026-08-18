@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
 import {
-  SETTINGS_BACKUPS_HASH,
   SETTINGS_TABS,
   clampLogRetentionDays,
   clampUsageIntervalMin,
   logLevelOptionLabel,
-  parseSettingsHash,
   parseSettingsTab,
   resolveSettingsLocation,
+  settingsBackupsRedirect,
   settingsSearch,
   skillMarketLabel,
 } from './settings-format';
@@ -28,7 +27,6 @@ describe('parseSettingsTab', () => {
     expect(parseSettingsTab('general')).toBe('preferences');
     expect(parseSettingsTab('security')).toBe('about');
     expect(parseSettingsTab('data')).toBe('local');
-    expect(parseSettingsTab('backups')).toBe('local');
   });
 
   it('falls back to preferences for empty or unknown values', () => {
@@ -40,75 +38,61 @@ describe('parseSettingsTab', () => {
 
 describe('resolveSettingsLocation', () => {
   it('does not rewrite a bare /settings URL', () => {
-    expect(resolveSettingsLocation(null, '')).toEqual({
+    expect(resolveSettingsLocation(null)).toEqual({
       tab: 'preferences',
-      hash: '',
       shouldReplace: false,
     });
   });
 
   it('leaves canonical slugs in place', () => {
-    expect(resolveSettingsLocation('preferences', '')).toEqual({
+    expect(resolveSettingsLocation('preferences')).toEqual({
       tab: 'preferences',
-      hash: '',
       shouldReplace: false,
     });
-    expect(resolveSettingsLocation('local', '')).toEqual({
+    expect(resolveSettingsLocation('local')).toEqual({
       tab: 'local',
-      hash: '',
       shouldReplace: false,
     });
-    expect(resolveSettingsLocation('about', '')).toEqual({
+    expect(resolveSettingsLocation('about')).toEqual({
       tab: 'about',
-      hash: '',
       shouldReplace: false,
     });
   });
 
   it('replace-navigates legacy slugs', () => {
-    expect(resolveSettingsLocation('general', '')).toEqual({
+    expect(resolveSettingsLocation('general')).toEqual({
       tab: 'preferences',
-      hash: '',
       shouldReplace: true,
     });
-    expect(resolveSettingsLocation('security', '')).toEqual({
+    expect(resolveSettingsLocation('security')).toEqual({
       tab: 'about',
-      hash: '',
       shouldReplace: true,
     });
-    expect(resolveSettingsLocation('data', '')).toEqual({
+    expect(resolveSettingsLocation('data')).toEqual({
       tab: 'local',
-      hash: '',
       shouldReplace: true,
-    });
-  });
-
-  it('sends tab=backups to local and focuses the backups section', () => {
-    expect(resolveSettingsLocation('backups', '')).toEqual({
-      tab: 'local',
-      hash: SETTINGS_BACKUPS_HASH,
-      shouldReplace: true,
-    });
-    expect(resolveSettingsLocation('local', '#backups')).toEqual({
-      tab: 'local',
-      hash: SETTINGS_BACKUPS_HASH,
-      shouldReplace: false,
     });
   });
 
   it('replace-navigates unknown slugs to preferences', () => {
-    expect(resolveSettingsLocation('legacy-foo', '')).toEqual({
+    expect(resolveSettingsLocation('legacy-foo')).toEqual({
       tab: 'preferences',
-      hash: '',
       shouldReplace: true,
     });
   });
 
-  it('builds search strings and parses the backups hash', () => {
+  it('builds search strings', () => {
     expect(settingsSearch('local')).toBe('?tab=local');
-    expect(parseSettingsHash('#backups')).toBe('backups');
-    expect(parseSettingsHash('backups')).toBe('backups');
-    expect(parseSettingsHash('#other')).toBeNull();
+  });
+});
+
+describe('settingsBackupsRedirect', () => {
+  it('sends old Settings backups links to /backups', () => {
+    expect(settingsBackupsRedirect('backups', '')).toBe('/backups');
+    expect(settingsBackupsRedirect('local', '#backups')).toBe('/backups');
+    expect(settingsBackupsRedirect(null, 'backups')).toBe('/backups');
+    expect(settingsBackupsRedirect('local', '')).toBeNull();
+    expect(settingsBackupsRedirect('preferences', '#other')).toBeNull();
   });
 });
 

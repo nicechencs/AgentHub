@@ -15,6 +15,7 @@ import SkillsPage from '@/pages/skills';
 import McpPage from '@/pages/mcp';
 import ProjectsPage from '@/pages/projects';
 import SettingsPage from '@/pages/settings';
+import BackupsPage from '@/pages/backups';
 import { legacyBridgesRedirectTo } from '@/lib/bridges-path';
 import {
   checkForUpdate,
@@ -36,11 +37,6 @@ function LegacyConnectionsRedirect({ mode }: { mode: 'providers' | 'accounts' })
 /** 独立 Usage 页已合并进 Dashboard → /?section=usage */
 function LegacyUsageRedirect() {
   return <Navigate to="/?section=usage" replace />;
-}
-
-/** 独立 Backups 页已并入 Settings；旧 /backups → ?tab=backups → local#backups */
-function LegacyBackupsRedirect() {
-  return <Navigate to="/settings?tab=backups" replace />;
 }
 
 /** 旧 /adapter、/router、/bridges 深链兼容 → /routes；丢弃遗留 ?tab= */
@@ -99,8 +95,7 @@ export default function App() {
                 <Route path="/mcp" element={<McpPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/usage" element={<LegacyUsageRedirect />} />
-                {/* 已并入 Settings */}
-                <Route path="/backups" element={<LegacyBackupsRedirect />} />
+                <Route path="/backups" element={<BackupsPage />} />
                 <Route
                   path="/settings"
                   element={<SettingsPage onCheckUpdate={checkForAppUpdate} />}

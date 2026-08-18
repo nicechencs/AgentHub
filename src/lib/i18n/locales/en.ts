@@ -26,6 +26,7 @@ export const en = {
     dashboard: 'Dashboard',
     connections: 'Connections',
     routes: 'Routes',
+    backups: 'Backups',
     settings: 'Settings',
     expandSidebar: 'Expand sidebar',
     collapseSidebar: 'Collapse sidebar',
@@ -38,7 +39,7 @@ export const en = {
     page: {
       title: 'Settings',
       description: 'Preferences, this device, and about',
-      descriptionTip: 'Language and theme apply immediately. This device covers data, logs, and backups. About has version and credential notes.',
+      descriptionTip: 'Language and theme apply immediately. This device covers data and logs. About has version and credential notes.',
       tabPreferences: 'Preferences',
       tabLocal: 'This device',
       tabAbout: 'About',
@@ -150,6 +151,10 @@ export const en = {
       tagline: 'AgentHub — manage AI coding agent config, accounts, and usage in one place.',
     },
     backups: {
+      pageTitle: 'Safe backups',
+      pageDescription: 'Live config snapshots',
+      pageDescriptionTip:
+        'A snapshot is kept after switch, import, or update. You can also back up, restore, or delete. Session logs and full-app export are not included.',
       kindAutoSwitch: 'Before switch',
       kindManual: 'Manual',
       kindPreUninstall: 'Before uninstall',

@@ -1,4 +1,4 @@
-// Settings「备份」分区：本机配置快照
+// 安全备份页：本机 live 配置快照
 // Agent Tab = 已安装 ∪ 有备份记录；列表平铺不折叠
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Database, Plus, RotateCcw, Trash2 } from 'lucide-react';
@@ -27,7 +27,7 @@ import type { TranslateFn } from '@/lib/i18n';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import type { AgentId, BackupKind, BackupMeta } from '@/lib/types';
 import { cn, fmtBytes } from '@/lib/utils';
-import { fmtAbsoluteI18n, fmtRelativeI18n } from './settings-format';
+import { fmtAbsoluteI18n, fmtRelativeI18n } from '@/pages/settings/settings-format';
 
 const KIND_VARIANT: Record<BackupKind, 'accent' | 'default' | 'warning'> = {
   'auto-switch': 'accent',
@@ -200,7 +200,6 @@ export function BackupsPanel() {
 
   return (
     <div>
-      {/* 工具条 */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <div className="min-w-0">
@@ -230,7 +229,6 @@ export function BackupsPanel() {
         {t('settings.backups.pageHint')}
       </p>
 
-      {/* Agent 切换：已安装 ∪ 有备份 */}
       <div className="mb-5 flex flex-wrap items-center gap-3">
         {pageLoading ? (
           <Skeleton className="h-9 w-64 rounded-card" />

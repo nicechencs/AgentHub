@@ -22,7 +22,6 @@ import {
   clampLogRetentionDays,
   logLevelOptionLabel,
 } from './settings-format';
-import { BackupsPanel } from './BackupsPanel';
 import { SettingsRow } from './settings-shared';
 
 export function LocalPanel({
@@ -54,9 +53,8 @@ export function LocalPanel({
   };
 
   return (
-    <div className="space-y-8">
-      <Card>
-        <CardContent className="divide-y divide-border pt-1">
+    <Card>
+      <CardContent className="divide-y divide-border pt-1">
           <SettingsRow
             label={t('settings.data.dataDirLabel')}
             description={t('settings.data.dataDirDescription')}
@@ -200,12 +198,7 @@ export function LocalPanel({
               {t('common.open')}
             </Link>
           </SettingsRow>
-        </CardContent>
-      </Card>
-
-      <section id="settings-backups" className="scroll-mt-6">
-        <BackupsPanel />
-      </section>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
