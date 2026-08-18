@@ -191,6 +191,12 @@ fn list_claude_aggregates_sessions_into_project() {
     assert_eq!(projects.len(), 1);
     assert_eq!(projects[0].session_count, 2);
     assert_eq!(projects[0].id, "claude:proj:-C-Users-demo-app");
+    if let Some(actual) = projects[0].actual_path.as_deref() {
+        assert!(
+            Path::new(actual).exists(),
+            "actual_path must be a verified existing workspace, got {actual}"
+        );
+    }
 
     let svc = ProjectService::default();
     // list_sessions via public API needs real agent_home; exercise helper filter:
@@ -200,6 +206,49 @@ fn list_claude_aggregates_sessions_into_project() {
         .collect();
     assert_eq!(filtered.len(), 2);
     let _ = svc;
+}
+
+#[test]
+fn claude_actual_path_only_when_workspace_exists() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".claude");
+    write_session(
+        &home
+            .join("projects")
+            .join("-Z-NoSuch-AgentHub-XYZ")
+            .join("s.jsonl"),
+        &[r#"{"type":"user","text":"hello"}"#],
+    );
+    let missing = list_projects_for_agent_home(AgentId::Claude, &home, None).unwrap();
+    assert_eq!(missing.len(), 1);
+    assert!(
+        missing[0].actual_path.is_none(),
+        "unverified restore must not be openable: {:?}",
+        missing[0].actual_path
+    );
+
+    let ws = dir.path().join("real-workspace");
+    fs::create_dir_all(&ws).unwrap();
+    let escaped = ws.display().to_string().replace('\\', "\\\\");
+    write_session(
+        &home
+            .join("projects")
+            .join("-C-Users-demo-verified")
+            .join("s.jsonl"),
+        &[&format!(
+            r#"{{"cwd":"{escaped}","type":"user","text":"from existing cwd"}}"#
+        )],
+    );
+    let projects = list_projects_for_agent_home(AgentId::Claude, &home, None).unwrap();
+    let found = projects
+        .iter()
+        .find(|p| p.id.contains("demo-verified"))
+        .expect("verified project");
+    let actual = found
+        .actual_path
+        .as_deref()
+        .expect("verified actual_path");
+    assert!(Path::new(actual).exists());
 }
 
 #[test]
@@ -223,11 +272,18 @@ fn list_cursor_workspace_folders_no_fake_excerpt() {
         .iter()
         .find(|r| r.relative_path.contains("AgentHub"))
         .expect("AgentHub folder");
-    assert!(agenthub
-        .actual_path
-        .as_deref()
-        .unwrap_or("")
-        .contains("AgentHub"));
+    assert!(
+        agenthub.title.contains("AgentHub") || agenthub.relative_path.contains("AgentHub"),
+        "title={} rel={}",
+        agenthub.title,
+        agenthub.relative_path
+    );
+    if let Some(actual) = agenthub.actual_path.as_deref() {
+        assert!(
+            Path::new(actual).exists(),
+            "cursor actual_path must exist when set: {actual}"
+        );
+    }
     let empty = rows
         .iter()
         .find(|r| r.relative_path.contains("empty-window"))

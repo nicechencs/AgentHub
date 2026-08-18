@@ -40,7 +40,11 @@ import { openPathInFileManager } from '@/lib/api/skill';
 import { setChatBootstrap } from '@/lib/chat-bootstrap';
 import { isCapabilityUsable } from '@/lib/capability';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { normalizeOpenPath, projectOpenCandidates } from '@/lib/path-open';
+import {
+  normalizeOpenPath,
+  projectOpenCandidates,
+  verifiedProjectWorkspacePath,
+} from '@/lib/path-open';
 import type { AgentId, AgentProject, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { projectMatches, sessionMatches } from './project-filter';
@@ -312,13 +316,15 @@ export default function ProjectsPage() {
   }
 
   /**
-   * Open project folder: try workspace (actualPath) then storagePath.
-   * Paths are normalized for the new `cwd/D:/…` / forward-slash formats.
+   * Open project folder: verified workspace first, then storagePath.
+   * Restored Claude addresses are only opened when the backend verified they exist.
    */
   async function openProjectDir(p: AgentProject, e: React.MouseEvent) {
     e.stopPropagation();
     const candidates = projectOpenCandidates({
+      agentId: p.agentId,
       actualPath: p.actualPath,
+      relativePath: p.relativePath,
       storagePath: p.storagePath,
     });
     if (candidates.length === 0) {
@@ -340,11 +346,28 @@ export default function ProjectsPage() {
     });
   }
 
-  async function openSessionCwd(s: AgentSession, e: React.MouseEvent) {
+  async function openProjectWorkspace(p: AgentProject, e: React.MouseEvent) {
     e.stopPropagation();
-    const target = normalizeOpenPath(s.cwd);
+    const target = verifiedProjectWorkspacePath(p);
     if (!target) {
-      toast({ title: '该会话没有可打开的工作目录', variant: 'danger' });
+      toast({ title: '项目路径未通过校验，无法打开', variant: 'danger' });
+      return;
+    }
+    try {
+      await openPathInFileManager(target);
+    } catch (err) {
+      toast({
+        title: err instanceof Error ? err.message : String(err),
+        variant: 'danger',
+      });
+    }
+  }
+
+  async function openSessionRecord(s: AgentSession, e: React.MouseEvent) {
+    e.stopPropagation();
+    const target = normalizeOpenPath(s.path);
+    if (!target) {
+      toast({ title: '该会话没有可定位的记录文件', variant: 'danger' });
       return;
     }
     try {
@@ -686,11 +709,12 @@ export default function ProjectsPage() {
           visibleSessions={visibleSessions}
           onToggleExpand={(p) => void toggleExpand(p)}
           onOpenProjectDir={(p, e) => void openProjectDir(p, e)}
+          onOpenProjectWorkspace={(p, e) => void openProjectWorkspace(p, e)}
           onOpenAliasDialog={openAliasDialog}
           onToggleHideProject={(p, e) => void toggleHideProject(p, e)}
           onToggleOne={toggleOne}
           onCopySessionId={(s, e) => void copySessionId(s, e)}
-          onOpenSessionCwd={(s, e) => void openSessionCwd(s, e)}
+          onOpenSessionRecord={(s, e) => void openSessionRecord(s, e)}
           onGoContinue={goContinue}
           onRequestDelete={setDeleteTarget}
         />

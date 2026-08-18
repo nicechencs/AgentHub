@@ -1,3 +1,4 @@
+import { restoreProjectWorkspacePath } from '@/lib/path-open';
 import type { AgentProject, AgentSession } from '@/lib/types';
 
 export function displayTitle(p: Pick<AgentProject, 'title' | 'alias'>): string {
@@ -5,10 +6,12 @@ export function displayTitle(p: Pick<AgentProject, 'title' | 'alias'>): string {
   return a || p.title;
 }
 
-/** Workspace path if known; otherwise the relative / storage key. */
+/** Restored address for display. Click-to-open still requires a verified actualPath. */
 export function projectDisplayPath(
-  p: Pick<AgentProject, 'actualPath' | 'relativePath' | 'storagePath'>,
+  p: Pick<AgentProject, 'agentId' | 'actualPath' | 'relativePath' | 'storagePath'>,
 ): string {
+  const restored = restoreProjectWorkspacePath(p);
+  if (restored) return restored;
   const actual = p.actualPath?.trim();
   if (actual) return actual;
   const rel = p.relativePath?.trim();
