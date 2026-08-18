@@ -254,10 +254,10 @@ pub async fn open_agent_config_dir(
     .await
 }
 
-/// Invoke: `open_path_in_file_manager` — open any absolute directory path.
+/// Invoke: `open_path_in_file_manager` — open a directory, or reveal a file.
 ///
 /// Accepts path-format drift from project discovery (`D:/work`, `cwd/D:/work`).
-/// If `path` points at a file, opens its parent directory.
+/// If `path` points at a file, locates/selects that file in the file manager.
 #[tauri::command]
 pub async fn open_path_in_file_manager(path: String) -> Result<String, String> {
     let p = normalize_open_path_input(&path);
@@ -266,15 +266,36 @@ pub async fn open_path_in_file_manager(path: String) -> Result<String, String> {
         tracing::warn!(target: targets::GUI, op = "open_path_in_file_manager", "{msg}");
         return Err(msg);
     }
-    let open_target = if p.is_file() {
-        p.parent()
-            .map(|parent| parent.to_path_buf())
-            .unwrap_or(p.clone())
+    match file_manager_action(&p) {
+        FileManagerAction::RevealFile(file) => {
+            reveal_in_file_manager(&file)?;
+            Ok(file.display().to_string())
+        }
+        FileManagerAction::OpenDir(dir) => {
+            open_in_file_manager(&dir)?;
+            Ok(dir.display().to_string())
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FileManagerAction {
+    OpenDir(std::path::PathBuf),
+    RevealFile(std::path::PathBuf),
+}
+
+fn file_manager_action(path: &std::path::Path) -> FileManagerAction {
+    if path.is_file() {
+        FileManagerAction::RevealFile(path.to_path_buf())
     } else {
-        p.clone()
-    };
-    open_in_file_manager(&open_target)?;
-    Ok(open_target.display().to_string())
+        FileManagerAction::OpenDir(path.to_path_buf())
+    }
+}
+
+#[cfg(any(test, windows))]
+fn explorer_select_arg(path: &std::path::Path) -> String {
+    let p = path.to_string_lossy().replace('/', "\\");
+    format!("/select,{p}")
 }
 
 /// Strip storage-key prefixes and normalize separators for the current OS.
@@ -289,6 +310,47 @@ fn normalize_open_path_input(raw: &str) -> std::path::PathBuf {
         s = s.replace('/', "\\");
     }
     std::path::PathBuf::from(s)
+}
+
+fn reveal_in_file_manager(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .arg(explorer_select_arg(path))
+            .spawn()
+            .map_err(|e| {
+                let msg = format!("open explorer failed: {e}");
+                tracing::warn!(target: targets::GUI, op = "reveal_in_file_manager", "{msg}");
+                msg
+            })?;
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn()
+            .map_err(|e| {
+                let msg = format!("open -R failed: {e}");
+                tracing::warn!(target: targets::GUI, op = "reveal_in_file_manager", "{msg}");
+                msg
+            })?;
+        Ok(())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // No portable "select this file" flag across Linux file managers.
+        let parent = path.parent().unwrap_or(path);
+        open_in_file_manager(parent)
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        let _ = path;
+        let msg = "reveal in file manager unsupported on this platform".to_string();
+        tracing::warn!(target: targets::GUI, op = "reveal_in_file_manager", "{msg}");
+        Err(msg)
+    }
 }
 
 fn open_in_file_manager(path: &std::path::Path) -> Result<(), String> {
