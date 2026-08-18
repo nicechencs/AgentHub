@@ -12,7 +12,7 @@
 
 ## 1. 设计原则
 
-1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / **Routes**（有本机路由才出现） / Settings）；用量合并进 Dashboard，备份并入 Settings。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。**例外：Connections 目标态是跨工具钱包**（一份份登录），Agent 只作筛选/高亮，不作第一导航；见 §4.3 与 [connection-binding-model.md](connection-binding-model.md)。底层 accounts/providers 可继续分表，UI 与规划器谈的是登录和绑定。连接从 Agent 卡片或钱包「接到…」发起；`/routes` 只做本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。
+1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / **Routes**（有本机路由才出现） / **Backups** / Settings）；用量合并进 Dashboard。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。**例外：Connections 目标态是跨工具钱包**（一份份登录），Agent 只作筛选/高亮，不作第一导航；见 §4.3 与 [connection-binding-model.md](connection-binding-model.md)。底层 accounts/providers 可继续分表，UI 与规划器谈的是登录和绑定。连接从 Agent 卡片或钱包「接到…」发起；`/routes` 只做本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。
 2. **危险操作必有前置信息**：切换供应商/账号前展示 backfill 摘要、备份位置、运行中进程警告。
 3. **凭据永不明文回显**：SecretInput 组件统一脱敏（`sk-••••3f2a`），「显示」需二次确认且 10s 后自动遮蔽。
 4. **空状态给动作**：每个空列表都有明确的下一步按钮（添加供应商/导入账号/安装 Agent / 安装运行环境）。**例外：Routes 健康空态没有按钮**——多数连接不需要本机转发，空是常态，不是待转化漏斗。
@@ -409,50 +409,14 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 | **已做** | 手动采集；前台定时自动采集；上次/下次倒计时；间隔设置生效；增量游标 + raw_hash 去重 |
 | **以后** | 系统托盘/开机后台守护（App 未开也能采）；日志目录 **文件监听** 近实时触发；OS 级定时任务；采集失败重试与失败计数 UI；跨设备同步；自动采集静音策略可配置 |
 
-### 4.7 （已并入 Settings）
+### 4.7 Backups（安全备份）
 
-独立 Backups 一级页已取消；live 配置快照管理见 §4.8「本机」分区。`/backups` 保留永久重定向到 `/settings?tab=backups`（Settings 再 replace 到 `/settings?tab=local#backups`）。
+侧栏 Manage，Settings 上方；路由 `/backups`。页题中文 **安全备份**，侧栏英文 **Backups**。
 
-### 4.8 Settings
-
-三个分区（侧栏英文 **Settings**；页内中文 **偏好 / 本机 / 关于**，英文 **Preferences / This device / About**）：
-
-1. **偏好**（`?tab=preferences`）：语言、主题、开机自启、关闭到托盘、技能市场源、用量采集间隔。
-2. **本机**（`?tab=local`）：数据目录（只读 + 打开）、日志级别 / 保留天数、打开日志目录、本机路由回收链，以及完整备份管理（Agent Tab、创建 / 恢复 / 删除；安全自动备份固定启用）。
-3. **关于**（`?tab=about`）：版本、检查/安装更新、GitHub 仓库、标语，以及原「安全」页的两条只读凭据说明（界面脱敏；存储不加密。**不**提供主密码 / keyring UI）。
-
-Chat 会话设置（`ChatSettingsDialog`：cwd / 自动批准）不进 Settings。
-
-**L1 SQLite 白名单**（`SETTINGS_WHITELIST`，与 CLI `config get/set` 共用）：`theme`、`language`、`log_level`、`log_retention_days`、`skill_market_source`、`close_to_tray`、`usage_collect_interval_min`。
-
-- **保存模型**：无页级「保存」条。偏好控件变更即 `updateSettings`；主题/语言先预览再落盘，离开页面不回退。日志级别与保留天数同样立即写入；级别变更保留「需重启才完全生效」提示。备份的创建 / 恢复 / 删除即时生效（恢复仍二次确认）。关于页的检查/安装更新即时生效。
-- **主题**：core 为权威。Settings 页 Select 预览并立即 `set_setting`。启动时 ThemeProvider 用 localStorage 做首屏缓存，再 `getSettings` 对账。
-- **用量采集间隔**：在偏好页。已写入 SQLite，**不是**仅 localStorage。`None`=从未写入（前端默认 30）；`0`=仅手动；上限 1440。变更后 `notifyUsageSettingsChanged` 立即重排程（见 §4.6）。
-- **开机自启**（`autoStart`）：OS 登录项（Windows 启动项 / macOS Login Item），不进 L1 白名单。
-- **关闭到托盘**（`closeToTray`）：写 core，并同步 Tauri `AppState`。
-- **语言**：core L1 为权威（`zh-CN` / `en`）。Settings Select 预览并立即 `set_setting`。启动时 `LanguageProvider` 用 localStorage 做首屏缓存，再 `getSettings` 对账；同步 `<html lang>`。**首次启动**（无语言缓存且尚未 seed）按 `navigator.languages` / `navigator.language` 选 zh/en，回落 zh，并一次性写入 core；已有用户选择不覆盖。不引入 i18next；字典在 `src/lib/i18n/locales/{zh,en}.ts`，第一期覆盖 Settings 三面板与侧栏 chrome。导航专有名（Chat / Agents / Skills / MCP / Projects / Dashboard / Connections / Routes / Settings）两种语言同值。业务页分期迁移。
-- `autoBackup` 兼容字段已不展示开关；live 快照由核心服务在切换/导入/更新后自动创建。换机整库导出未实现（`Backend.features.backupExport=false`），无 UI 入口。
-
-Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `about`（解析集中在 `src/pages/settings/settings-format.ts` 的 `SETTINGS_TABS` / `parseSettingsTab` / `resolveSettingsLocation`）。非法或缺省值 fallback 到 Preferences。切换使用 `replace`，避免污染浏览器历史。
-
-旧 slug **replace 重定向**（不 404、不落空白面板）：
-
-| 旧 `?tab=` | 去向 |
-|---|---|
-| `general` | Preferences |
-| `security` | About（凭据说明现居于此） |
-| `data` | Local（页顶：数据 / 日志） |
-| `backups` | Local，并落到备份区（`#backups`） |
-| `about` | About |
-
-`/backups` → `/settings?tab=backups` → `/settings?tab=local#backups`。侧栏不单独挂「备份」。
-
-#### 备份分区（`/settings?tab=local#backups`）
-
-原独立 Backups 页并入 Settings → 本机。侧栏不再单独挂 Backups 入口。`/backups` 与旧 `?tab=backups` 经重定向到达本分区。
+旧 Settings 深链 `/settings?tab=backups` 与 `/settings?tab=local#backups` 永久重定向到 `/backups`。
 
 ```
-┌─ Settings › 本机 › 备份 ───────────────────────────────────┐
+┌─ 安全备份 ─────────────────────────────────────────────────┐
 │ 安全备份已启用 …               [备份 Claude]                │
 │ [Claude] [Codex] [Kimi] [Grok]   Claude · 3 条记录         │
 │                                                            │
@@ -465,11 +429,45 @@ Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `about`（�
 ```
 
 - 顶部工具条：**安全备份已启用**（切换、导入或更新后自动快照）+ **备份当前 Agent**（随 Tab 变化；未安装禁用）。
-- **AgentTabStrip** = **已安装 ∪ 有备份记录**（装/卸或备份变化会更新 Tab；保持产品序）。
+- **AgentTabStrip** = **已安装 ∪ 有备份记录**（装/卸或备份变化会更新 Tab；保持产品序；隐藏 Agent 不占 Tab）。
 - 列表**平铺不折叠**；已卸载但有历史备份的 Agent 仍可切换查看/恢复。
 - 条目中等密度卡片：左信息（类型/时间/备注/文件）、**右侧** [恢复] [删除]。
 - **恢复**：二次确认 + **恢复前对当前 live 再备份一次**。
 - 对象仅为各 Adapter 的 live 配置与凭据快照，不含会话日志/整库换机包。
+- `autoBackup` 兼容字段已不展示开关；live 快照由核心服务在切换/导入/更新后自动创建。换机整库导出未实现（`Backend.features.backupExport=false`），无 UI 入口。
+
+### 4.8 Settings
+
+三个分区（侧栏英文 **Settings**；页内中文 **偏好 / 本机 / 关于**，英文 **Preferences / This device / About**）：
+
+1. **偏好**（`?tab=preferences`）：语言、主题、开机自启、关闭到托盘、技能市场源、用量采集间隔。
+2. **本机**（`?tab=local`）：数据目录（只读 + 打开）、日志级别 / 保留天数、打开日志目录、本机路由回收链。
+3. **关于**（`?tab=about`）：版本、检查/安装更新、GitHub 仓库、标语，以及原「安全」页的两条只读凭据说明（界面脱敏；存储不加密。**不**提供主密码 / keyring UI）。
+
+Chat 会话设置（`ChatSettingsDialog`：cwd / 自动批准）不进 Settings。
+
+**L1 SQLite 白名单**（`SETTINGS_WHITELIST`，与 CLI `config get/set` 共用）：`theme`、`language`、`log_level`、`log_retention_days`、`skill_market_source`、`close_to_tray`、`usage_collect_interval_min`。
+
+- **保存模型**：无页级「保存」条。偏好控件变更即 `updateSettings`；主题/语言先预览再落盘，离开页面不回退。日志级别与保留天数同样立即写入；级别变更保留「需重启才完全生效」提示。关于页的检查/安装更新即时生效。
+- **主题**：core 为权威。Settings 页 Select 预览并立即 `set_setting`。启动时 ThemeProvider 用 localStorage 做首屏缓存，再 `getSettings` 对账。
+- **用量采集间隔**：在偏好页。已写入 SQLite，**不是**仅 localStorage。`None`=从未写入（前端默认 30）；`0`=仅手动；上限 1440。变更后 `notifyUsageSettingsChanged` 立即重排程（见 §4.6）。
+- **开机自启**（`autoStart`）：OS 登录项（Windows 启动项 / macOS Login Item），不进 L1 白名单。
+- **关闭到托盘**（`closeToTray`）：写 core，并同步 Tauri `AppState`。
+- **语言**：core L1 为权威（`zh-CN` / `en`）。Settings Select 预览并立即 `set_setting`。启动时 `LanguageProvider` 用 localStorage 做首屏缓存，再 `getSettings` 对账；同步 `<html lang>`。**首次启动**（无语言缓存且尚未 seed）按 `navigator.languages` / `navigator.language` 选 zh/en，回落 zh，并一次性写入 core；已有用户选择不覆盖。不引入 i18next；字典在 `src/lib/i18n/locales/{zh,en}.ts`，第一期覆盖 Settings 三面板与侧栏 chrome。导航专有名（Chat / Agents / Skills / MCP / Projects / Dashboard / Connections / Routes / Backups / Settings）两种语言同值。业务页分期迁移。
+
+Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `about`（解析集中在 `src/pages/settings/settings-format.ts` 的 `SETTINGS_TABS` / `parseSettingsTab` / `resolveSettingsLocation`）。非法或缺省值 fallback 到 Preferences。切换使用 `replace`，避免污染浏览器历史。
+
+旧 slug **replace 重定向**（不 404、不落空白面板）：
+
+| 旧 `?tab=` | 去向 |
+|---|---|
+| `general` | Preferences |
+| `security` | About（凭据说明现居于此） |
+| `data` | Local（页顶：数据 / 日志） |
+| `backups` | `/backups`（独立页） |
+| `about` | About |
+
+`/settings?tab=backups` 与 `/settings#backups` → `/backups`。
 
 ## 5. 组件清单（自研部分，shadcn 基础件之外）
 

@@ -1,8 +1,8 @@
 // Settings 设置页(docs/ui-design.md §4.8)
 // Tabs:偏好 / 本机 / 关于；?tab= 与 URL 同步。旧 slug 经 replace 重定向。
-// 控件变更立即 persist；无页级保存条。备份在本机分区，?tab=backups → local#backups。
+// 控件变更立即 persist；无页级保存条。旧 ?tab=backups / #backups → /backups。
 import { useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -31,9 +31,9 @@ import { AboutPanel } from './AboutPanel';
 import { LocalPanel } from './LocalPanel';
 import { PreferencesPanel } from './PreferencesPanel';
 import {
-  parseSettingsHash,
   parseSettingsTab,
   resolveSettingsLocation,
+  settingsBackupsRedirect,
   settingsSearch,
 } from './settings-format';
 import { SettingsSkeleton } from './settings-shared';
@@ -53,7 +53,8 @@ export default function SettingsPage({
   const location = useLocation();
   const navigate = useNavigate();
   const rawTab = searchParams.get('tab');
-  const resolved = resolveSettingsLocation(rawTab, location.hash);
+  const backupsPath = settingsBackupsRedirect(rawTab, location.hash);
+  const resolved = resolveSettingsLocation(rawTab);
   const tab = resolved.tab;
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -92,21 +93,12 @@ export default function SettingsPage({
   }, []);
 
   useEffect(() => {
-    if (!resolved.shouldReplace) return;
+    if (backupsPath || !resolved.shouldReplace) return;
     navigate(
-      { pathname: '/settings', search: settingsSearch(resolved.tab), hash: resolved.hash ? `#${resolved.hash}` : '' },
+      { pathname: '/settings', search: settingsSearch(resolved.tab) },
       { replace: true },
     );
-  }, [navigate, resolved.hash, resolved.shouldReplace, resolved.tab]);
-
-  useEffect(() => {
-    if (loading || tab !== 'local') return;
-    if (parseSettingsHash(location.hash) !== 'backups') return;
-    const id = window.requestAnimationFrame(() => {
-      document.getElementById('settings-backups')?.scrollIntoView({ block: 'start' });
-    });
-    return () => window.cancelAnimationFrame(id);
-  }, [loading, tab, location.hash]);
+  }, [backupsPath, navigate, resolved.shouldReplace, resolved.tab]);
 
   useEffect(() => {
     return () => {
@@ -123,6 +115,10 @@ export default function SettingsPage({
 
   const patch = (p: Partial<AppSettings>) =>
     setSettings((prev) => (prev ? { ...prev, ...p } : prev));
+
+  if (backupsPath) {
+    return <Navigate to={backupsPath} replace />;
+  }
 
   const checkUpdate = () => {
     void (async () => {

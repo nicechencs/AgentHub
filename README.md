@@ -22,7 +22,8 @@ AgentHub 是一个本地运行的多 Agent 桌面管理工具。它用统一的 
 | **MCP** | 只读汇总各 Agent 的本机 MCP 配置；管理与注入仍在规划中 |
 | **Chat** | 在桌面端调用一个或多个本机 Agent，并展示流式过程 |
 | **Projects** | 浏览、整理和汇总各 Agent 的本地项目与会话 |
-| **Settings** | 管理偏好、日志、数据目录、更新与配置备份 |
+| **Backups** | 管理各 Agent 的 live 配置快照：自动备份、手动备份、恢复与删除 |
+| **Settings** | 管理偏好、日志、数据目录与更新 |
 | **CLI** | 提供 doctor、env、agent、provider、account、skill、usage、backup、run 等命令 |
 
 当前内置适配：**Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、Cursor Agent、DeepSeek Harness（dsh）**。各家能力不同，请以 [能力矩阵](docs/capability-matrix.md) 或以下命令为准：

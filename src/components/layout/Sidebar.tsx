@@ -9,6 +9,7 @@ import {
   Cable,
   Plug,
   FolderKanban,
+  Database,
   Settings2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -47,6 +48,7 @@ const NAV_MANAGE = [
   { to: '/', navKey: 'nav.dashboard', icon: Gauge },
   { to: '/connections', navKey: 'nav.connections', icon: Key },
   { to: BRIDGES_PATH, navKey: 'nav.routes', icon: Cable },
+  { to: '/backups', navKey: 'nav.backups', icon: Database },
   { to: '/settings', navKey: 'nav.settings', icon: Settings2 },
 ] as const;
 

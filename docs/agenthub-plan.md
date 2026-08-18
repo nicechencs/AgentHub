@@ -405,7 +405,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 - Manage：Dashboard（含用量）/ Connections / Routes（有本机路由才出现）/ Settings（含 Backups）。
 - 推荐发起入口：Dashboard 卡片「连接/切换」、Connections「接到…」。`/routes` 只管理本机路由运行时。目标钱包见 [connection-binding-model.md](connection-binding-model.md)。
 
-旧路由 `/adapter`、`/router`、`/bridges` → `/routes`；`/usage` → `/?section=usage`；`/backups` → `/settings?tab=backups`；`/providers`·`/accounts` → `/connections`。
+旧路由 `/adapter`、`/router`、`/bridges` → `/routes`；`/usage` → `/?section=usage`；`/settings?tab=backups` → `/backups`；`/providers`·`/accounts` → `/connections`。
 
 ## 9. 风险与开放问题
 
