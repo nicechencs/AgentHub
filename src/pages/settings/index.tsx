@@ -1,6 +1,6 @@
 // Settings（docs/ui-design.md §4.8）
 import { useEffect, useRef, useState } from 'react';
-import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -25,13 +25,13 @@ import {
 } from '@/lib/api/update';
 import { applyTheme } from '@/lib/theme';
 import type { AppSettings } from '@/lib/types';
+import { BackupsPanel } from '@/pages/backups/BackupsPanel';
 import { AboutPanel } from './AboutPanel';
 import { LocalPanel } from './LocalPanel';
 import { PreferencesPanel } from './PreferencesPanel';
 import {
   parseSettingsTab,
   resolveSettingsLocation,
-  settingsBackupsRedirect,
   settingsSearch,
 } from './settings-format';
 import { SettingsSkeleton } from './settings-shared';
@@ -51,8 +51,7 @@ export default function SettingsPage({
   const location = useLocation();
   const navigate = useNavigate();
   const rawTab = searchParams.get('tab');
-  const backupsPath = settingsBackupsRedirect(rawTab, location.hash);
-  const resolved = resolveSettingsLocation(rawTab);
+  const resolved = resolveSettingsLocation(rawTab, location.hash);
   const tab = resolved.tab;
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -91,12 +90,12 @@ export default function SettingsPage({
   }, []);
 
   useEffect(() => {
-    if (backupsPath || !resolved.shouldReplace) return;
+    if (!resolved.shouldReplace) return;
     navigate(
       { pathname: '/settings', search: settingsSearch(resolved.tab) },
       { replace: true },
     );
-  }, [backupsPath, navigate, resolved.shouldReplace, resolved.tab]);
+  }, [navigate, resolved.shouldReplace, resolved.tab]);
 
   useEffect(() => {
     return () => {
@@ -113,10 +112,6 @@ export default function SettingsPage({
 
   const patch = (p: Partial<AppSettings>) =>
     setSettings((prev) => (prev ? { ...prev, ...p } : prev));
-
-  if (backupsPath) {
-    return <Navigate to={backupsPath} replace />;
-  }
 
   const checkUpdate = () => {
     void (async () => {
@@ -222,6 +217,7 @@ export default function SettingsPage({
           <TabsList>
             <TabsTrigger value="preferences">{t('settings.page.tabPreferences')}</TabsTrigger>
             <TabsTrigger value="local">{t('settings.page.tabLocal')}</TabsTrigger>
+            <TabsTrigger value="backups">{t('settings.page.tabBackups')}</TabsTrigger>
             <TabsTrigger value="about" className="gap-1.5">
               {t('settings.page.tabAbout')}
               {pendingUpdate && (
@@ -251,6 +247,10 @@ export default function SettingsPage({
             patch={patch}
             setSettings={setSettings}
           />
+        </TabsContent>
+
+        <TabsContent value="backups">
+          <BackupsPanel />
         </TabsContent>
 
         <TabsContent value="about">

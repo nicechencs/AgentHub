@@ -15,7 +15,6 @@ import SkillsPage from '@/pages/skills';
 import McpPage from '@/pages/mcp';
 import ProjectsPage from '@/pages/projects';
 import SettingsPage from '@/pages/settings';
-import BackupsPage from '@/pages/backups';
 import { legacyBridgesRedirectTo } from '@/lib/bridges-path';
 import {
   checkForUpdate,
@@ -43,6 +42,11 @@ function LegacyUsageRedirect() {
 function LegacyBridgesRedirect() {
   const { search } = useLocation();
   return <Navigate to={legacyBridgesRedirectTo(search)} replace />;
+}
+
+/** 独立 Backups 页已并入 Settings → /settings?tab=backups */
+function LegacyBackupsRedirect() {
+  return <Navigate to="/settings?tab=backups" replace />;
 }
 
 export default function App() {
@@ -95,7 +99,7 @@ export default function App() {
                 <Route path="/mcp" element={<McpPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/usage" element={<LegacyUsageRedirect />} />
-                <Route path="/backups" element={<BackupsPage />} />
+                <Route path="/backups" element={<LegacyBackupsRedirect />} />
                 <Route
                   path="/settings"
                   element={<SettingsPage onCheckUpdate={checkForAppUpdate} />}

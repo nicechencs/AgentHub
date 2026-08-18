@@ -328,7 +328,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 - 技术：React + TypeScript + Vite + Tailwind + shadcn/Radix（**只选一套 UI**）+ recharts + react-router + CodeMirror。**当前未**引入 TanStack Query / i18next（方案历史提及，以 `package.json` 为准）。
 - 结构：`lib/backend/tauri`（唯一 invoke）→ `lib/api` façade → 页面本地 state；mock 仅 `dev:mock`。事件桥为目标态，现以前端主动拉取为主。
-- 页面：Dashboard（含用量）/ Chat / Agents / Connections（目标：跨 Agent 钱包）/ Routes（侧栏英文，有本机路由才出现；页标题「本机路由」，只管 ③ 运行时）/ Skills / MCP（只读清单）/ Projects / Backups / Settings（本机区永远有「本机路由」入口）。日常绑定从 Dashboard「连接/切换」、Connections「接到…」发起。领域目标见 [connection-binding-model.md](connection-binding-model.md)。
+- 页面：Dashboard（含用量）/ Chat / Agents / Connections（目标：跨 Agent 钱包）/ Routes（侧栏英文，有本机路由才出现；页标题「本机路由」，只管 ③ 运行时）/ Skills / MCP（只读清单）/ Projects / Settings（含备份 tab；本机区永远有「本机路由」入口）。日常绑定从 Dashboard「连接/切换」、Connections「接到…」发起。领域目标见 [connection-binding-model.md](connection-binding-model.md)。
 - 详细交互见 [ui-design.md](ui-design.md)。
 
 ## 7. 分期路线图
@@ -388,7 +388,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 模块化收口（双真源 / 上帝文件 / 写入入口） | 📋 部分已收口 | integrations / Ticket 写口 / `adapter_control` 契约已落地；仍待削 `AgentAdapter` 厚表面、sidecar 二进制、Skills/Projects/AgentCard。见 [modularity-improvement.md](modularity-improvement.md)。不拆微服务，凭据落盘加密仍范围外 |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |
 | Token **后台自动刷新守护** | ❌ | 有手动 refresh |
-| Settings 语言切换 / i18n | ✅ | 轻量自研字典 + `LanguageProvider`；Settings 三面板（偏好 / 本机 / 关于）与侧栏 chrome 可切换中/英。`language` 以 L1 core 为真源，localStorage 仅首屏缓存。首次启动按系统语言 seed 一次。业务页（Chat / Dashboard / Connections / Skills `copy.ts` 等）分期迁移。不引入 i18next |
+| Settings 语言切换 / i18n | ✅ | 轻量自研字典 + `LanguageProvider`；Settings 四面板（偏好 / 本机 / 备份 / 关于）与侧栏 chrome 可切换中/英。`language` 以 L1 core 为真源，localStorage 仅首屏缓存。首次启动按系统语言 seed 一次。业务页（Chat / Dashboard / Connections / Skills `copy.ts` 等）分期迁移。不引入 i18next |
 | Usage **后台守护 / 文件监听** | ❌ | 仅前台 interval + 手动 |
 | 官方模型商店 / 账号可用模型探测 | ❌ | 明确非目标（用量去重模型列表除外） |
 | WebDAV / 代理模式 | P4 候选 | 桌面端已按 Windows / macOS / Linux 三平台交付（Linux 安装包可未签名；自动更新签名取决于 `TAURI_SIGNING_PRIVATE_KEY`）。WebDAV 与代理模式仍未做 |
@@ -402,10 +402,10 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 ### 8.3 前端导航（与代码 `App.tsx` 一致）
 
 - Workspace：Chat / Agents / Skills / MCP / Projects。
-- Manage：Dashboard（含用量）/ Connections / Routes（有本机路由才出现）/ Backups / Settings。
+- Manage：Dashboard（含用量）/ Connections / Routes（有本机路由才出现）/ Settings（含备份 tab）。
 - 推荐发起入口：Dashboard 卡片「连接/切换」、Connections「接到…」。`/routes` 只管理本机路由运行时。目标钱包见 [connection-binding-model.md](connection-binding-model.md)。
 
-旧路由 `/adapter`、`/router`、`/bridges` → `/routes`；`/usage` → `/?section=usage`；`/settings?tab=backups` → `/backups`；`/providers`·`/accounts` → `/connections`。
+旧路由 `/adapter`、`/router`、`/bridges` → `/routes`；`/usage` → `/?section=usage`；`/backups` → `/settings?tab=backups`；`/providers`·`/accounts` → `/connections`。
 
 ## 9. 风险与开放问题
 

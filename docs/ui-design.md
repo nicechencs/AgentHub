@@ -412,14 +412,13 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 ### 4.7 Backups（安全备份）
 
-侧栏 Manage，Settings 上方；路由 `/backups`。页题中文 **安全备份**，侧栏英文 **Backups**。
+Settings 子页（`?tab=backups`），**不**占侧栏。页内 tab 中文 **备份**，英文 **Backups**。页内不再重复「已启用 / 自动快照 / 用途说明」；Settings 页头已覆盖分区语义。
 
-旧 Settings 深链 `/settings?tab=backups` 与 `/settings?tab=local#backups` 永久重定向到 `/backups`。
+独立路由 `/backups` 永久重定向到 `/settings?tab=backups`。旧深链 `/settings#backups`、`/settings?tab=local#backups` replace 到 `?tab=backups`。
 
 ```
-┌─ 安全备份 ─────────────────────────────────────────────────┐
-│ 安全备份已启用 …               [备份 Claude]                │
-│ [Claude] [Codex] [Kimi] [Grok]   Claude · 3 条记录         │
+┌─ 备份 ─────────────────────────────────────────────────────┐
+│ [Claude] [Codex] [Kimi] [Grok]   Claude · 3 条记录  [备份] │
 │                                                            │
 │ ┌ 卡片 ──────────────────────────────── [恢复] [删除] ───┐ │
 │ │ 切换前自动  2h前  绝对时间  · 0.4KB                     │ │
@@ -429,7 +428,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 └────────────────────────────────────────────────────────────┘
 ```
 
-- 顶部工具条：**安全备份已启用**（切换、导入或更新后自动快照）+ **备份当前 Agent**（随 Tab 变化；未安装禁用）。
+- 顶部一行：AgentTabStrip + 记录数 + **备份**（当前 Tab 的 Agent；未安装禁用）。不另写说明段。
 - **AgentTabStrip** = **已安装 ∪ 有备份记录**（装/卸或备份变化会更新 Tab；保持产品序；隐藏 Agent 不占 Tab）。
 - 列表**平铺不折叠**；已卸载但有历史备份的 Agent 仍可切换查看/恢复。
 - 条目中等密度卡片：左信息（类型/时间/备注/文件）、**右侧** [恢复] [删除]。
@@ -439,11 +438,12 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 ### 4.8 Settings
 
-三个分区（侧栏英文 **Settings**；页内中文 **偏好 / 本机 / 关于**，英文 **Preferences / This device / About**）：
+四个分区（侧栏英文 **Settings**；页内中文 **偏好 / 本机 / 备份 / 关于**，英文 **Preferences / This device / Backups / About**）：
 
 1. **偏好**（`?tab=preferences`）：语言、主题、开机自启、关闭到托盘、技能市场源、用量采集间隔。
 2. **本机**（`?tab=local`）：数据目录（只读 + 打开）、日志级别 / 保留天数、打开日志目录、本机路由回收链。
-3. **关于**（`?tab=about`）：版本、检查/安装更新、GitHub 仓库、标语，以及原「安全」页的两条只读凭据说明（界面脱敏；存储不加密。**不**提供主密码 / keyring UI）。
+3. **备份**（`?tab=backups`）：各 Agent live 配置快照的查看 / 手动备份 / 恢复 / 删除，见 §4.7。
+4. **关于**（`?tab=about`）：版本、检查/安装更新、GitHub 仓库、标语，以及原「安全」页的两条只读凭据说明（界面脱敏；存储不加密。**不**提供主密码 / keyring UI）。
 
 Chat 会话设置（`ChatSettingsDialog`：cwd / 自动批准）不进 Settings。
 
@@ -454,9 +454,9 @@ Chat 会话设置（`ChatSettingsDialog`：cwd / 自动批准）不进 Settings�
 - **用量采集间隔**：在偏好页。已写入 SQLite，**不是**仅 localStorage。`None`=从未写入（前端默认 30）；`0`=仅手动；上限 1440。变更后 `notifyUsageSettingsChanged` 立即重排程（见 §4.6）。
 - **开机自启**（`autoStart`）：OS 登录项（Windows 启动项 / macOS Login Item），不进 L1 白名单。
 - **关闭到托盘**（`closeToTray`）：写 core，并同步 Tauri `AppState`。
-- **语言**：core L1 为权威（`zh-CN` / `en`）。Settings Select 预览并立即 `set_setting`。启动时 `LanguageProvider` 用 localStorage 做首屏缓存，再 `getSettings` 对账；同步 `<html lang>`。**首次启动**（无语言缓存且尚未 seed）按 `navigator.languages` / `navigator.language` 选 zh/en，回落 zh，并一次性写入 core；已有用户选择不覆盖。不引入 i18next；字典在 `src/lib/i18n/locales/{zh,en}.ts`，第一期覆盖 Settings 三面板与侧栏 chrome。导航专有名（Chat / Agents / Skills / MCP / Projects / Dashboard / Connections / Routes / Backups / Settings）两种语言同值。业务页分期迁移。
+- **语言**：core L1 为权威（`zh-CN` / `en`）。Settings Select 预览并立即 `set_setting`。启动时 `LanguageProvider` 用 localStorage 做首屏缓存，再 `getSettings` 对账；同步 `<html lang>`。**首次启动**（无语言缓存且尚未 seed）按 `navigator.languages` / `navigator.language` 选 zh/en，回落 zh，并一次性写入 core；已有用户选择不覆盖。不引入 i18next；字典在 `src/lib/i18n/locales/{zh,en}.ts`，第一期覆盖 Settings 四面板与侧栏 chrome。导航专有名（Chat / Agents / Skills / MCP / Projects / Dashboard / Connections / Routes / Settings）两种语言同值。业务页分期迁移。
 
-Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `about`（解析集中在 `src/pages/settings/settings-format.ts` 的 `SETTINGS_TABS` / `parseSettingsTab` / `resolveSettingsLocation`）。非法或缺省值 fallback 到 Preferences。切换使用 `replace`，避免污染浏览器历史。
+Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `backups` / `about`（解析集中在 `src/pages/settings/settings-format.ts` 的 `SETTINGS_TABS` / `parseSettingsTab` / `resolveSettingsLocation`）。非法或缺省值 fallback 到 Preferences。切换使用 `replace`，避免污染浏览器历史。
 
 旧 slug **replace 重定向**（不 404、不落空白面板）：
 
@@ -465,10 +465,10 @@ Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `about`（�
 | `general` | Preferences |
 | `security` | About（凭据说明现居于此） |
 | `data` | Local（页顶：数据 / 日志） |
-| `backups` | `/backups`（独立页） |
+| `backups` | Backups（规范 tab） |
 | `about` | About |
 
-`/settings?tab=backups` 与 `/settings#backups` → `/backups`。
+`/backups` → `/settings?tab=backups`。`/settings#backups` 与 `/settings?tab=local#backups` → `/settings?tab=backups`。
 
 ## 5. 组件清单（自研部分，shadcn 基础件之外）
 
