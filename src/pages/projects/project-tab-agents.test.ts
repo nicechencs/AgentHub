@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveProjectTabAgents } from './project-tab-agents';
+import { resolveProjectFetchAgentId, resolveProjectTabAgents } from './project-tab-agents';
 
 const claude = { id: 'claude', name: 'Claude' };
 const codex = { id: 'codex', name: 'Codex' };
@@ -24,5 +24,22 @@ describe('resolveProjectTabAgents', () => {
       'codex',
     ]);
     expect(resolveProjectTabAgents([claude, kimi], ['claude', 'kimi'])).toEqual([]);
+  });
+});
+
+describe('resolveProjectFetchAgentId', () => {
+  it('returns null when the tab list is empty', () => {
+    expect(resolveProjectFetchAgentId([], 'claude')).toBeNull();
+    expect(resolveProjectFetchAgentId([], '')).toBeNull();
+  });
+
+  it('returns null when the selected id is not on the strip', () => {
+    expect(resolveProjectFetchAgentId([codex, kimi], 'claude')).toBeNull();
+    expect(resolveProjectFetchAgentId([codex], '')).toBeNull();
+  });
+
+  it('returns the selected id when it is on the strip', () => {
+    expect(resolveProjectFetchAgentId([claude, kimi], 'kimi')).toBe('kimi');
+    expect(resolveProjectFetchAgentId([codex], 'codex')).toBe('codex');
   });
 });

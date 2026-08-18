@@ -328,7 +328,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 - 技术：React + TypeScript + Vite + Tailwind + shadcn/Radix（**只选一套 UI**）+ recharts + react-router + CodeMirror。**当前未**引入 TanStack Query / i18next（方案历史提及，以 `package.json` 为准）。
 - 结构：`lib/backend/tauri`（唯一 invoke）→ `lib/api` façade → 页面本地 state；mock 仅 `dev:mock`。事件桥为目标态，现以前端主动拉取为主。
-- 页面：Dashboard（含用量）/ Chat / Agents / Connections（目标：跨 Agent 钱包）/ Routes（侧栏英文，有本机路由才出现；页标题「本机路由」，只管 ③ 运行时）/ Skills / MCP（只读清单）/ Projects / Settings（含 Backups；本机区永远有「本机路由」入口）。日常绑定从 Dashboard「连接/切换」、Connections「接到…」发起。领域目标见 [connection-binding-model.md](connection-binding-model.md)。
+- 页面：Dashboard（含用量）/ Chat / Agents / Connections（目标：跨 Agent 钱包）/ Routes（侧栏英文，有本机路由才出现；页标题「本机路由」，只管 ③ 运行时）/ Skills / MCP（只读清单）/ Projects / Backups / Settings（本机区永远有「本机路由」入口）。日常绑定从 Dashboard「连接/切换」、Connections「接到…」发起。领域目标见 [connection-binding-model.md](connection-binding-model.md)。
 - 详细交互见 [ui-design.md](ui-design.md)。
 
 ## 7. 分期路线图
@@ -402,7 +402,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 ### 8.3 前端导航（与代码 `App.tsx` 一致）
 
 - Workspace：Chat / Agents / Skills / MCP / Projects。
-- Manage：Dashboard（含用量）/ Connections / Routes（有本机路由才出现）/ Settings（含 Backups）。
+- Manage：Dashboard（含用量）/ Connections / Routes（有本机路由才出现）/ Backups / Settings。
 - 推荐发起入口：Dashboard 卡片「连接/切换」、Connections「接到…」。`/routes` 只管理本机路由运行时。目标钱包见 [connection-binding-model.md](connection-binding-model.md)。
 
 旧路由 `/adapter`、`/router`、`/bridges` → `/routes`；`/usage` → `/?section=usage`；`/settings?tab=backups` → `/backups`；`/providers`·`/accounts` → `/connections`。

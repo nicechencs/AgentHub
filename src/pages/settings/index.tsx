@@ -1,6 +1,4 @@
-// Settings 设置页(docs/ui-design.md §4.8)
-// Tabs:偏好 / 本机 / 关于；?tab= 与 URL 同步。旧 slug 经 replace 重定向。
-// 控件变更立即 persist；无页级保存条。旧 ?tab=backups / #backups → /backups。
+// Settings（docs/ui-design.md §4.8）
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
