@@ -7,7 +7,6 @@ import {
   logLevelOptionLabel,
   parseSettingsTab,
   resolveSettingsLocation,
-  settingsBackupsRedirect,
   settingsSearch,
   skillMarketLabel,
 } from './settings-format';
@@ -17,13 +16,14 @@ const tEn = createTranslator('en');
 
 describe('parseSettingsTab', () => {
   it('accepts canonical slugs', () => {
-    expect(SETTINGS_TABS).toEqual(['preferences', 'local', 'about']);
+    expect(SETTINGS_TABS).toEqual(['preferences', 'local', 'backups', 'about']);
     expect(parseSettingsTab('preferences')).toBe('preferences');
     expect(parseSettingsTab('local')).toBe('local');
+    expect(parseSettingsTab('backups')).toBe('backups');
     expect(parseSettingsTab('about')).toBe('about');
   });
 
-  it('maps legacy slugs onto the three-tab IA', () => {
+  it('maps legacy slugs onto the four-tab IA', () => {
     expect(parseSettingsTab('general')).toBe('preferences');
     expect(parseSettingsTab('security')).toBe('about');
     expect(parseSettingsTab('data')).toBe('local');
@@ -57,6 +57,10 @@ describe('resolveSettingsLocation', () => {
       tab: 'about',
       shouldReplace: false,
     });
+    expect(resolveSettingsLocation('backups')).toEqual({
+      tab: 'backups',
+      shouldReplace: false,
+    });
   });
 
   it('replace-navigates legacy slugs', () => {
@@ -86,13 +90,28 @@ describe('resolveSettingsLocation', () => {
   });
 });
 
-describe('settingsBackupsRedirect', () => {
-  it('sends old Settings backups links to /backups', () => {
-    expect(settingsBackupsRedirect('backups', '')).toBe('/backups');
-    expect(settingsBackupsRedirect('local', '#backups')).toBe('/backups');
-    expect(settingsBackupsRedirect(null, 'backups')).toBe('/backups');
-    expect(settingsBackupsRedirect('local', '')).toBeNull();
-    expect(settingsBackupsRedirect('preferences', '#other')).toBeNull();
+describe('legacy backups hash', () => {
+  it('maps #backups onto the backups tab and replace-navigates', () => {
+    expect(resolveSettingsLocation('local', '#backups')).toEqual({
+      tab: 'backups',
+      shouldReplace: true,
+    });
+    expect(resolveSettingsLocation(null, 'backups')).toEqual({
+      tab: 'backups',
+      shouldReplace: true,
+    });
+    expect(resolveSettingsLocation('backups', '#backups')).toEqual({
+      tab: 'backups',
+      shouldReplace: true,
+    });
+    expect(resolveSettingsLocation('local', '')).toEqual({
+      tab: 'local',
+      shouldReplace: false,
+    });
+    expect(resolveSettingsLocation('preferences', '#other')).toEqual({
+      tab: 'preferences',
+      shouldReplace: false,
+    });
   });
 });
 
