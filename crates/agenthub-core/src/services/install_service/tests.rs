@@ -131,8 +131,8 @@ fn install_agent_env_not_ready_without_deps() {
 
 #[test]
 fn install_from_contribution_uses_npm_allowlist_without_agent_id() {
-    use crate::platform::AgentKey;
     use crate::platform::install::InstallContribution;
+    use crate::platform::AgentKey;
 
     struct FakeContrib;
     impl InstallContribution for FakeContrib {
@@ -179,8 +179,8 @@ fn install_from_contribution_uses_npm_allowlist_without_agent_id() {
 
 #[test]
 fn install_agent_with_contribution_prefers_passed_npm_package() {
-    use crate::platform::AgentKey;
     use crate::platform::install::InstallContribution;
+    use crate::platform::AgentKey;
 
     struct OverrideClaude;
     impl InstallContribution for OverrideClaude {

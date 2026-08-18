@@ -463,7 +463,13 @@ pub fn to_anthropic_messages_request(request: &BridgeRequest) -> Value {
         );
     }
 
-    for key in ["temperature", "top_p", "top_k", "stop_sequences", "metadata"] {
+    for key in [
+        "temperature",
+        "top_p",
+        "top_k",
+        "stop_sequences",
+        "metadata",
+    ] {
         if let Some(value) = request.passthrough.get(key) {
             body.insert(key.to_owned(), value.clone());
         }
@@ -889,8 +895,7 @@ fn anthropic_assistant_message(message: &BridgeMessage) -> Value {
                 let input = if arguments.trim().is_empty() {
                     json!({})
                 } else {
-                    serde_json::from_str(arguments)
-                        .unwrap_or_else(|_| json!({ "raw": arguments }))
+                    serde_json::from_str(arguments).unwrap_or_else(|_| json!({ "raw": arguments }))
                 };
                 content.push(json!({
                     "type": "tool_use",

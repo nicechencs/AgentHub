@@ -6,14 +6,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use super::fs_safe::is_link_or_reparse;
+use super::ownership::ownership_marker_path;
 use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::AppError;
 use crate::models::{
     AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
     InstallChannel, RunOptions, RunSpec,
 };
-use super::fs_safe::is_link_or_reparse;
-use super::ownership::ownership_marker_path;
 use crate::platform::skills::{
     SkillAssignmentService, SkillReconciler, SkillTargetRegistry, StaticSkillTarget,
 };
@@ -184,13 +184,7 @@ fn link_mode_is_idempotent_and_clears_stale_copy_marker() {
         .reconcile_one_for_agent("demo", AgentId::Claude, false, "t1")
         .unwrap();
 
-    super::ownership::write_copy_ownership_marker(
-        &claude,
-        "demo",
-        "stale",
-        "deadbeef",
-    )
-    .unwrap();
+    super::ownership::write_copy_ownership_marker(&claude, "demo", "stale", "deadbeef").unwrap();
     assert!(ownership_marker_path(&claude, "demo").is_file());
 
     assign.ensure_package("demo", None, "t2").unwrap();

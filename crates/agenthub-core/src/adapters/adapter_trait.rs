@@ -86,7 +86,6 @@ pub trait AgentAdapter: Send + Sync {
     fn capability(&self, cap: Capability) -> CapabilityState;
 }
 
-
 /// Shared default for [`AgentAdapter::authorization_key`].
 ///
 /// - ApiKey: hash of `api_key`

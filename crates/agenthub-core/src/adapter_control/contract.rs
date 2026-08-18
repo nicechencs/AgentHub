@@ -117,9 +117,9 @@ pub fn resolve_unbind_action(
     agent_id: AgentId,
 ) -> Result<UnbindAction> {
     let (source_kind, source_id) = parse_ticket_id(ticket_id).map_err(AppError::InvalidArg)?;
-    let mut profiles = hub
-        .adapter_apply
-        .list(Some(source_kind), Some(&source_id), Some(agent_id))?;
+    let mut profiles =
+        hub.adapter_apply
+            .list(Some(source_kind), Some(&source_id), Some(agent_id))?;
     let profile = profiles.pop();
     let stop_bridge_profile_id = profile
         .as_ref()

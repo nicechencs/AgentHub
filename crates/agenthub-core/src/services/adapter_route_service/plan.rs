@@ -15,8 +15,8 @@ use crate::services::adapter_route_constants::{
     DEEPSEEK_CODEX_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID,
     DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID, GLM_CODEX_BASE_URL,
     GLM_CODEX_RULE_ID, GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_BASE_URL,
-    KIMI_CLAUDE_RULE_ID, KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL,
-    OPENAI_GROK_BASE_URL, OPENAI_GROK_DEFAULT_MODEL,
+    KIMI_CLAUDE_RULE_ID, KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL, OPENAI_GROK_BASE_URL,
+    OPENAI_GROK_DEFAULT_MODEL,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
@@ -24,7 +24,6 @@ use super::actions::*;
 use super::{AdapterRouteService, ClassifiedRoute};
 
 impl AdapterRouteService {
-
     pub fn analyze(&self, request: &AdapterRouteRequest) -> Result<AdapterRouteAnalysis> {
         let classified = self.classify(request)?;
         Ok(analysis_from_decision(

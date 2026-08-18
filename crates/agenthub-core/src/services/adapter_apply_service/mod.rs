@@ -14,10 +14,6 @@ mod tests;
 use std::path::PathBuf;
 
 use crate::adapters::AdapterRegistry;
-use crate::services::{
-    AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderService,
-};
-use crate::storage::{AdapterProfileRepo, Database};
 use crate::error::{AppError, Result};
 use crate::models::{
     AdapterApplyRequest, AdapterApplyResult, AdapterGateKind, AdapterProfile, AdapterProfileFilter,
@@ -27,6 +23,10 @@ use crate::models::{
 };
 use crate::services::adapter_route_constants::*;
 use crate::services::ProviderLiveSagaGuard;
+use crate::services::{
+    AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderService,
+};
+use crate::storage::{AdapterProfileRepo, Database};
 use chrono::Utc;
 use serde_json::json;
 
@@ -50,7 +50,6 @@ pub(super) struct GeneratedApplySpec {
     pub(super) proposed: AdapterProfile,
     pub(super) provider: ProviderInput,
 }
-
 
 /// Applies supported write-side routes and owns their generated profiles.
 #[derive(Clone)]

@@ -34,7 +34,11 @@ impl AccountService {
         result
     }
 
-    pub(super) fn switch_inner(&self, id_or_label: &str, agent: AgentId) -> Result<AccountSwitchResult> {
+    pub(super) fn switch_inner(
+        &self,
+        id_or_label: &str,
+        agent: AgentId,
+    ) -> Result<AccountSwitchResult> {
         let backup = self.backup.as_ref().ok_or_else(|| {
             AppError::Unsupported(
                 "account live switching requires an explicitly configured backup root".into(),

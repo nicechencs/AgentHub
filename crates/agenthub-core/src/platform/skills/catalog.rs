@@ -26,7 +26,10 @@ pub(crate) struct AgentSkillDirEntry {
 
 /// Walk every agent skills root with the same discovery rules as
 /// [`SkillService::list_installed`] / [`SkillService::list_catalog`].
-pub(crate) fn for_each_agent_skill_dir(registry: &AdapterRegistry, mut visit: impl FnMut(AgentSkillDirEntry)) {
+pub(crate) fn for_each_agent_skill_dir(
+    registry: &AdapterRegistry,
+    mut visit: impl FnMut(AgentSkillDirEntry),
+) {
     for agent in AgentId::ALL {
         let Some(adapter) = registry.get(agent) else {
             continue;

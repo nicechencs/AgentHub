@@ -129,7 +129,10 @@ fn grok_subscription_prepare_uses_xai_chat_and_projects_only_loopback() {
     let spec = prepared.runtime_material().start_spec(Some(0));
     assert_eq!(spec.upstream.base_url, "https://api.x.ai/v1");
     assert_eq!(spec.upstream.model.as_deref(), Some("grok-4.5"));
-    assert_eq!(spec.upstream.protocol, BridgeUpstreamProtocol::KimiChatCompletions);
+    assert_eq!(
+        spec.upstream.protocol,
+        BridgeUpstreamProtocol::KimiChatCompletions
+    );
     assert_eq!(spec.upstream.auth.token(), "grok-upstream-secret");
 
     let projection = prepared.provider_projection(43123).unwrap();
@@ -235,10 +238,7 @@ fn account_prepare_projects_without_plaintext_and_oauth_is_rejected() {
     assert!(!format!("{prepared:?}").contains("account-upstream-secret"));
 
     let generated = create_projection(&db, &prepared, 43123);
-    assert_eq!(
-        generated.meta["adapterSourceRef"]["kind"],
-        "account"
-    );
+    assert_eq!(generated.meta["adapterSourceRef"]["kind"], "account");
     assert!(!serde_json::to_string(&generated)
         .unwrap()
         .contains("account-upstream-secret"));

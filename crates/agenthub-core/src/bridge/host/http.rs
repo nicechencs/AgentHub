@@ -229,7 +229,12 @@ pub(super) fn protocol_error_response(error: ProtocolError) -> Response {
     error_response(StatusCode::BAD_REQUEST, error.code, &error.message, None)
 }
 
-pub(super) fn log_protocol_error(state: &ListenerState, request_id: &str, started: Instant, error: &ProtocolError) {
+pub(super) fn log_protocol_error(
+    state: &ListenerState,
+    request_id: &str,
+    started: Instant,
+    error: &ProtocolError,
+) {
     tracing::warn!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id, op = "protocol", code = error.code, status = 400_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge protocol rejected request");
 }
 

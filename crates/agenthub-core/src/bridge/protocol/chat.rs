@@ -199,9 +199,7 @@ impl ChatStreamToIr {
         fallback_index: usize,
         events: &mut Vec<IrEvent>,
     ) -> ProtocolResult<()> {
-        let object = raw_tool
-            .as_object()
-            .ok_or_else(ProtocolError::upstream)?;
+        let object = raw_tool.as_object().ok_or_else(ProtocolError::upstream)?;
         let index = object
             .get("index")
             .and_then(Value::as_u64)
@@ -240,13 +238,15 @@ impl ChatStreamToIr {
                 name: name.to_owned(),
             });
         } else if !name.is_empty() {
-            self.tools
-                .get_mut(&index)
-                .expect("tool state exists")
-                .name = name.to_owned();
+            self.tools.get_mut(&index).expect("tool state exists").name = name.to_owned();
         }
         if !arguments.is_empty() {
-            let id = self.tools.get(&index).expect("tool state exists").id.clone();
+            let id = self
+                .tools
+                .get(&index)
+                .expect("tool state exists")
+                .id
+                .clone();
             events.push(IrEvent::ToolCallDelta {
                 id,
                 arguments_delta: arguments.to_owned(),

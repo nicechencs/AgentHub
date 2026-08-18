@@ -5,9 +5,7 @@ use std::time::Instant;
 
 use crate::error::{AppError, Result};
 use crate::logging::targets;
-use crate::models::{
-    AgentId, SkillAction, SkillFailure, SkillSyncReport, SkillSyncState,
-};
+use crate::models::{AgentId, SkillAction, SkillFailure, SkillSyncReport, SkillSyncState};
 use crate::platform::skills::{
     chrono_now, ensure_no_symlink_in_ancestors, ensure_no_symlink_in_existing_prefix,
     is_exact_child, package_revision, project_copy_with_ownership, reject_source_target_overlap,
@@ -159,7 +157,12 @@ impl SkillService {
 
     /// FS-only project (used when no DB). Ownership rules match
     /// [`SkillReconciler::project_copy`] via shared `project_copy_with_ownership`.
-    pub(super) fn sync_projection(&self, skill_id: &str, agent: AgentId, force: bool) -> Result<()> {
+    pub(super) fn sync_projection(
+        &self,
+        skill_id: &str,
+        agent: AgentId,
+        force: bool,
+    ) -> Result<()> {
         let (source_dir, skills_root, target_dir) =
             self.resolve_projection_paths(skill_id, agent)?;
         let agent_key = AgentKey::from_agent_id(agent);
@@ -253,7 +256,11 @@ impl SkillService {
     }
 
     /// FS-only unproject — ownership proof required (same as reconciler).
-    pub(super) fn disable_projection_key(&self, skill_id: &str, agent_key: &AgentKey) -> Result<()> {
+    pub(super) fn disable_projection_key(
+        &self,
+        skill_id: &str,
+        agent_key: &AgentKey,
+    ) -> Result<()> {
         let (source_dir, skills_root, target_dir) =
             self.resolve_projection_paths_key(skill_id, agent_key)?;
 
@@ -270,7 +277,12 @@ impl SkillService {
         Ok((assign, reconciler))
     }
 
-    pub(super) fn sync_via_assignment(&self, skill_id: &str, agent: AgentId, force: bool) -> Result<()> {
+    pub(super) fn sync_via_assignment(
+        &self,
+        skill_id: &str,
+        agent: AgentId,
+        force: bool,
+    ) -> Result<()> {
         let now = chrono_now();
         let (assign, reconciler) = self.assignment_stack()?;
         let lock = skill_lock_load(&self.source_root)?;
@@ -281,7 +293,11 @@ impl SkillService {
         reconciler.reconcile_one(skill_id, &agent_key, force, &now)
     }
 
-    pub(super) fn disable_via_assignment_key(&self, skill_id: &str, agent_key: &AgentKey) -> Result<()> {
+    pub(super) fn disable_via_assignment_key(
+        &self,
+        skill_id: &str,
+        agent_key: &AgentKey,
+    ) -> Result<()> {
         let now = chrono_now();
         let (assign, reconciler) = self.assignment_stack()?;
         let lock = skill_lock_load(&self.source_root)?;
@@ -359,5 +375,4 @@ impl SkillService {
 
         Ok((source_dir, skills_root, target_dir))
     }
-
 }

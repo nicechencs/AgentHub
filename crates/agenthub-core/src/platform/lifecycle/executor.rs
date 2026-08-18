@@ -71,7 +71,10 @@ pub(super) fn legacy_builtin_agent_id(key: &AgentKey) -> Option<AgentId> {
         .find(|agent| agent.as_str() == key.as_str())
 }
 
-fn require_contribution_matches(key: &AgentKey, contribution: &dyn InstallContribution) -> Result<()> {
+fn require_contribution_matches(
+    key: &AgentKey,
+    contribution: &dyn InstallContribution,
+) -> Result<()> {
     if contribution.agent_key() != *key {
         return Err(AppError::InvalidArg(format!(
             "install contribution key mismatch: expected {}, got {}",

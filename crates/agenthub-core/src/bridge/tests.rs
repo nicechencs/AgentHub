@@ -1107,10 +1107,7 @@ async fn codex_responses_oauth_messages_returns_anthropic_json_and_accepts_both_
     let configured_debug = format!("{configured:?}");
     assert!(!configured_debug.contains("oauth-upstream-token"));
     assert!(!configured_debug.contains("local-test-token"));
-    let status = host
-        .start(configured)
-        .await
-        .expect("start");
+    let status = host.start(configured).await.expect("start");
     let url = format!("http://127.0.0.1:{}/v1/messages", status.port);
     for auth_header in [
         ("authorization", "Bearer local-test-token"),

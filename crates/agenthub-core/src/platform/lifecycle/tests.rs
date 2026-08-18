@@ -932,11 +932,11 @@ fn builtin_executor_installs_non_agent_id_via_contribution_allowlist() {
         "contribution-driven install must succeed when allowlisted command exits 0; msg={}",
         outcome.message
     );
-    assert!(outcome.logs.iter().any(|l| l.contains("@agenthub/p1-2-contract-pkg")));
     assert!(outcome
         .logs
         .iter()
-        .any(|l| l.contains("--ignore-scripts")));
+        .any(|l| l.contains("@agenthub/p1-2-contract-pkg")));
+    assert!(outcome.logs.iter().any(|l| l.contains("--ignore-scripts")));
 
     let commands = calls.lock().unwrap();
     assert!(

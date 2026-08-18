@@ -622,7 +622,11 @@ fn dsh_read_redacts_key_and_keeps_other_plugin_rows() {
         "- id: example.other\n  config:\n    keep: yes\n- id: @deepseek-ai/dsh-llm-deepseek\n  config:\n    apiKeyEnv: DEEPSEEK_API_KEY\n    baseURL: https://api.deepseek.com\n    thinking: enabled\n    reasoningEffort: high\n    model: deepseek-v4-flash\n",
     )
     .unwrap();
-    std::fs::write(home.join(".credentials.yaml"), "DEEPSEEK_API_KEY: sk-dsh-secret\n").unwrap();
+    std::fs::write(
+        home.join(".credentials.yaml"),
+        "DEEPSEEK_API_KEY: sk-dsh-secret\n",
+    )
+    .unwrap();
 
     let svc = test_configuration_service();
     let doc = svc.read_at(AgentId::Dsh, Some(home)).unwrap();
@@ -689,7 +693,11 @@ fn dsh_apply_secret_unchanged_preserves_existing_key() {
         "- id: @deepseek-ai/dsh-llm-deepseek\n  config:\n    apiKeyEnv: DEEPSEEK_API_KEY\n    baseURL: https://api.deepseek.com\n    thinking: enabled\n    reasoningEffort: high\n    model: deepseek-v4-flash\n",
     )
     .unwrap();
-    std::fs::write(home.join(".credentials.yaml"), "DEEPSEEK_API_KEY: sk-keep-me\n").unwrap();
+    std::fs::write(
+        home.join(".credentials.yaml"),
+        "DEEPSEEK_API_KEY: sk-keep-me\n",
+    )
+    .unwrap();
     let svc = test_configuration_service();
     let mut desired = BTreeMap::new();
     desired.insert("model".into(), json!("deepseek-v4-pro"));

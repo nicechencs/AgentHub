@@ -1,14 +1,13 @@
 use serde_json::{json, Value};
 use toml_edit::DocumentMut;
 
+use super::*;
 use crate::adapters::pi_auth::pi_oauth_entry_from_tokens;
 use crate::bridge::ResolvedAuth;
 use crate::error::{AppError, Result};
 use crate::models::{AdapterSourceKind, AgentId, Provider};
 use crate::services::adapter_route_constants::*;
 use crate::storage::{AccountRepo, Database, ProviderRepo};
-use super::*;
-
 
 pub(super) fn is_claude_source_reference(provider: &Provider) -> bool {
     provider.agent_id == AgentId::Claude
@@ -493,4 +492,3 @@ pub(super) fn toml_non_empty(value: Option<&str>) -> Option<&str> {
 pub(super) fn invalid_reference() -> AppError {
     AppError::InvalidArg("invalid adapter secret reference".into())
 }
-

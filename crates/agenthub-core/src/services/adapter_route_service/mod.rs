@@ -49,4 +49,3 @@ pub(super) struct ClassifiedRoute {
     pub(super) credential: AdapterCredentialClass,
     pub(super) decision: AdapterCapabilityDecision,
 }
-

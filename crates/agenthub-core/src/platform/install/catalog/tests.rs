@@ -12,19 +12,26 @@ fn adapter_install_channels_match_catalog_ids_requires_and_notes() {
         let catalog_channels = channels_for(agent);
         let expected = adapter_install_channels(agent);
         assert_eq!(
-            adapter_channels, expected,
+            adapter_channels,
+            expected,
             "adapter.install_channels drifted from catalog for {}",
             agent.as_str()
         );
         let adapter_ids: Vec<&str> = adapter_channels.iter().map(|ch| ch.id.as_str()).collect();
         let catalog_ids: Vec<&str> = catalog_channels.iter().map(|ch| ch.id.as_str()).collect();
         assert_eq!(
-            adapter_ids, catalog_ids,
+            adapter_ids,
+            catalog_ids,
             "install channel ids drifted for {}",
             agent.as_str()
         );
         for (adapter_ch, catalog_ch) in adapter_channels.iter().zip(catalog_channels.iter()) {
-            assert_eq!(adapter_ch.requires, catalog_ch.requires, "{}", agent.as_str());
+            assert_eq!(
+                adapter_ch.requires,
+                catalog_ch.requires,
+                "{}",
+                agent.as_str()
+            );
             assert_eq!(adapter_ch.label, catalog_ch.label, "{}", agent.as_str());
         }
     }
@@ -43,24 +50,20 @@ fn adapter_install_channel_notes_come_from_contribution() {
     let cursor = adapter_install_channels(AgentId::Cursor);
     assert_eq!(cursor.len(), 1);
     assert_eq!(cursor[0].id, "native");
-    assert!(
-        cursor[0]
-            .min_runtime_notes
-            .as_deref()
-            .unwrap_or_default()
-            .contains("cursor.com/install")
-    );
+    assert!(cursor[0]
+        .min_runtime_notes
+        .as_deref()
+        .unwrap_or_default()
+        .contains("cursor.com/install"));
 
     let workbuddy = adapter_install_channels(AgentId::WorkBuddy);
     assert_eq!(workbuddy[0].id, "native");
     assert!(workbuddy[0].requires.is_empty());
-    assert!(
-        workbuddy[0]
-            .min_runtime_notes
-            .as_deref()
-            .unwrap_or_default()
-            .contains("codebuddy.cn")
-    );
+    assert!(workbuddy[0]
+        .min_runtime_notes
+        .as_deref()
+        .unwrap_or_default()
+        .contains("codebuddy.cn"));
 
     let dsh = adapter_install_channels(AgentId::Dsh);
     assert_eq!(dsh[0].id, "npm");
