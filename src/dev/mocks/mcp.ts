@@ -11,6 +11,26 @@ const DEMO: McpInventory = {
       readable: true,
       serverCount: 2,
       label: 'Claude 全局 (~/.claude.json)',
+      snippet: `{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\\\work"]
+    },
+    "docs": {
+      "type": "sse",
+      "url": "https://mcp.example.com/sse"
+    }
+  }
+}`,
+    },
+    {
+      agent: 'claude',
+      path: 'C:\\Users\\demo\\.claude\\settings.json',
+      exists: true,
+      readable: true,
+      serverCount: 0,
+      label: 'Claude settings.json',
     },
     {
       agent: 'codex',
@@ -19,6 +39,10 @@ const DEMO: McpInventory = {
       readable: true,
       serverCount: 1,
       label: 'Codex config.toml',
+      snippet: `[mcp_servers.demo]
+command = "uvx"
+args = ["mcp-server-demo"]
+`,
     },
     {
       agent: 'workbuddy',
@@ -37,6 +61,12 @@ const DEMO: McpInventory = {
       command: 'npx -y @modelcontextprotocol/server-filesystem C:\\work',
       sourcePath: 'C:\\Users\\demo\\.claude.json',
       sourceFormat: 'json',
+      snippet: `{
+  "filesystem": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\\\work"]
+  }
+}`,
     },
     {
       agent: 'claude',
@@ -46,6 +76,12 @@ const DEMO: McpInventory = {
       sourcePath: 'C:\\Users\\demo\\.claude.json',
       sourceFormat: 'json',
       enabled: true,
+      snippet: `{
+  "docs": {
+    "type": "sse",
+    "url": "https://mcp.example.com/sse"
+  }
+}`,
     },
     {
       agent: 'codex',
@@ -54,6 +90,10 @@ const DEMO: McpInventory = {
       command: 'uvx mcp-server-demo',
       sourcePath: 'C:\\Users\\demo\\.codex\\config.toml',
       sourceFormat: 'toml',
+      snippet: `[mcp_servers.demo]
+command = "uvx"
+args = ["mcp-server-demo"]
+`,
     },
   ],
 };

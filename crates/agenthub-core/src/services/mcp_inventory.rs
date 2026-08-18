@@ -8,11 +8,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use serde_json::Value as JsonValue;
-use toml_edit::DocumentMut;
+use serde_json::{json, Map as JsonMap, Value as JsonValue};
+use toml_edit::{value as toml_value, DocumentMut, Item, Table, Value as TomlValue};
 
 use crate::models::AgentId;
 use crate::utils::paths::{agent_home, home_dir};
+use crate::utils::redact::is_secret_key;
 
 /// One discovered MCP server entry (redacted; no env secrets).
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -28,6 +29,9 @@ pub struct McpServerEntry {
     /// json | toml
     pub source_format: String,
     pub enabled: Option<bool>,
+    /// Redacted raw fragment for this server only (pretty JSON / TOML).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<String>,
 }
 
 /// One known MCP config file location for an agent.
@@ -42,6 +46,9 @@ pub struct McpSourceFile {
     pub server_count: usize,
     /// Human label for the file role
     pub label: String,
+    /// Redacted MCP-related section of the file (not the whole config).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -66,16 +73,18 @@ pub fn list_mcp_inventory() -> McpInventory {
                 error: None,
                 server_count: 0,
                 label: loc.label.to_string(),
+                snippet: None,
             };
             if !src.exists {
                 sources.push(src);
                 continue;
             }
             match parse_source(agent, &loc) {
-                Ok(entries) => {
+                Ok(parsed) => {
                     src.readable = true;
-                    src.server_count = entries.len();
-                    servers.extend(entries);
+                    src.server_count = parsed.entries.len();
+                    src.snippet = parsed.snippet;
+                    servers.extend(parsed.entries);
                 }
                 Err(e) => {
                     src.readable = false;
@@ -203,7 +212,42 @@ fn source_locations(agent: AgentId) -> Vec<SourceLoc> {
     out
 }
 
-fn parse_source(agent: AgentId, loc: &SourceLoc) -> Result<Vec<McpServerEntry>, String> {
+struct ParsedSource {
+    snippet: Option<String>,
+    entries: Vec<McpServerEntry>,
+}
+
+enum FoundServers<'a> {
+    AtRootKey {
+        key: &'static str,
+        map: &'a JsonMap<String, JsonValue>,
+    },
+    UnderMcp {
+        mcp: &'a JsonValue,
+        map: &'a JsonMap<String, JsonValue>,
+    },
+    Bare {
+        map: &'a JsonMap<String, JsonValue>,
+    },
+}
+
+impl<'a> FoundServers<'a> {
+    fn map(&self) -> &'a JsonMap<String, JsonValue> {
+        match self {
+            Self::AtRootKey { map, .. } | Self::UnderMcp { map, .. } | Self::Bare { map } => map,
+        }
+    }
+
+    fn source_value(&self) -> JsonValue {
+        match self {
+            Self::AtRootKey { key, map } => json!({ *key: map }),
+            Self::UnderMcp { mcp, .. } => json!({ "mcp": mcp }),
+            Self::Bare { map } => JsonValue::Object((*map).clone()),
+        }
+    }
+}
+
+fn parse_source(agent: AgentId, loc: &SourceLoc) -> Result<ParsedSource, String> {
     let path = &loc.path;
     match loc.format {
         SourceFormat::Json => parse_json_file(agent, path),
@@ -211,56 +255,57 @@ fn parse_source(agent: AgentId, loc: &SourceLoc) -> Result<Vec<McpServerEntry>, 
     }
 }
 
-fn parse_json_file(agent: AgentId, path: &Path) -> Result<Vec<McpServerEntry>, String> {
+fn parse_json_file(agent: AgentId, path: &Path) -> Result<ParsedSource, String> {
     let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let value: JsonValue = serde_json::from_str(&text).map_err(|e| format!("invalid JSON: {e}"))?;
-    Ok(extract_json_servers(
-        agent,
-        &value,
-        &path.display().to_string(),
-    ))
+    Ok(parse_json_value(agent, &value, &path.display().to_string()))
 }
 
-fn extract_json_servers(
-    agent: AgentId,
-    root: &JsonValue,
-    source_path: &str,
-) -> Vec<McpServerEntry> {
-    let map = match find_server_map(root) {
-        Some(m) => m,
-        None => return Vec::new(),
+fn parse_json_value(agent: AgentId, root: &JsonValue, source_path: &str) -> ParsedSource {
+    let Some(found) = find_servers(root) else {
+        return ParsedSource {
+            snippet: None,
+            entries: Vec::new(),
+        };
     };
-    let mut out = Vec::new();
-    for (name, cfg) in map {
-        out.push(entry_from_json_cfg(agent, name, cfg, source_path, "json"));
-    }
-    out
+    let snippet = pretty_json(&redact_mcp_json(&found.source_value()));
+    let entries = found
+        .map()
+        .iter()
+        .map(|(name, cfg)| entry_from_json_cfg(agent, name, cfg, source_path, "json"))
+        .collect();
+    ParsedSource { snippet, entries }
 }
 
 /// Accept common shapes: `{ mcpServers: {...} }`, `{ servers: {...} }`,
 /// or a bare map of server name → config (when values look like server objects).
-fn find_server_map(root: &JsonValue) -> Option<&serde_json::Map<String, JsonValue>> {
+fn find_servers(root: &JsonValue) -> Option<FoundServers<'_>> {
     let obj = root.as_object()?;
     for key in ["mcpServers", "mcp_servers", "servers"] {
-        if let Some(v) = obj.get(key) {
-            if let Some(m) = v.as_object() {
-                return Some(m);
-            }
+        if let Some(m) = obj.get(key).and_then(|v| v.as_object()) {
+            return Some(FoundServers::AtRootKey { key, map: m });
         }
     }
-    // Nested under mcp
-    if let Some(mcp) = obj.get("mcp").and_then(|v| v.as_object()) {
-        for key in ["mcpServers", "servers"] {
-            if let Some(m) = mcp.get(key).and_then(|v| v.as_object()) {
-                return Some(m);
+    if let Some(mcp_val) = obj.get("mcp") {
+        if let Some(mcp) = mcp_val.as_object() {
+            for key in ["mcpServers", "servers"] {
+                if let Some(m) = mcp.get(key).and_then(|v| v.as_object()) {
+                    return Some(FoundServers::UnderMcp {
+                        mcp: mcp_val,
+                        map: m,
+                    });
+                }
             }
-        }
-        if looks_like_server_map(mcp) {
-            return Some(mcp);
+            if looks_like_server_map(mcp) {
+                return Some(FoundServers::UnderMcp {
+                    mcp: mcp_val,
+                    map: mcp,
+                });
+            }
         }
     }
     if looks_like_server_map(obj) {
-        return Some(obj);
+        return Some(FoundServers::Bare { map: obj });
     }
     None
 }
@@ -352,6 +397,7 @@ fn entry_from_json_cfg(
         _ => None,
     };
 
+    let snippet = pretty_json(&redact_mcp_json(&json!({ name: cfg })));
     McpServerEntry {
         agent,
         name: name.to_string(),
@@ -361,15 +407,23 @@ fn entry_from_json_cfg(
         source_path: source_path.to_string(),
         source_format: source_format.to_string(),
         enabled,
+        snippet,
     }
 }
 
-fn parse_toml_file(agent: AgentId, path: &Path) -> Result<Vec<McpServerEntry>, String> {
+fn parse_toml_file(agent: AgentId, path: &Path) -> Result<ParsedSource, String> {
     let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let doc: DocumentMut = text.parse().map_err(|e| format!("invalid TOML: {e}"))?;
+    let Some(servers_item) = doc.get("mcp_servers") else {
+        return Ok(ParsedSource {
+            snippet: None,
+            entries: Vec::new(),
+        });
+    };
+    let snippet = toml_source_snippet(servers_item);
     let mut out = Vec::new();
     // Codex: [mcp_servers.name]
-    if let Some(table) = doc.get("mcp_servers").and_then(|i| i.as_table()) {
+    if let Some(table) = servers_item.as_table() {
         for (name, item) in table.iter() {
             let Some(tbl) = item.as_table() else {
                 continue;
@@ -394,6 +448,7 @@ fn parse_toml_file(agent: AgentId, path: &Path) -> Result<Vec<McpServerEntry>, S
                 _ => None,
             };
             let type_hint = tbl.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            let server_snippet = toml_server_snippet(name, item);
             out.push(McpServerEntry {
                 agent,
                 name: name.to_string(),
@@ -407,10 +462,192 @@ fn parse_toml_file(agent: AgentId, path: &Path) -> Result<Vec<McpServerEntry>, S
                 source_path: path.display().to_string(),
                 source_format: "toml".into(),
                 enabled: None,
+                snippet: server_snippet,
             });
         }
     }
-    Ok(out)
+    Ok(ParsedSource {
+        snippet,
+        entries: out,
+    })
+}
+
+fn toml_source_snippet(servers_item: &Item) -> Option<String> {
+    let mut snippet_doc = DocumentMut::new();
+    snippet_doc.insert("mcp_servers", servers_item.clone());
+    redact_toml_document(&mut snippet_doc);
+    clip_snippet(snippet_doc.to_string())
+}
+
+fn toml_server_snippet(name: &str, item: &Item) -> Option<String> {
+    let mut servers = Table::new();
+    servers.set_implicit(true);
+    servers.insert(name, item.clone());
+    let mut snippet_doc = DocumentMut::new();
+    snippet_doc.insert("mcp_servers", Item::Table(servers));
+    redact_toml_document(&mut snippet_doc);
+    clip_snippet(snippet_doc.to_string())
+}
+
+fn is_mcp_secret_bag(key: &str) -> bool {
+    matches!(
+        key.to_ascii_lowercase().as_str(),
+        "env" | "headers" | "header" | "secrets"
+    )
+}
+
+fn redact_mcp_json(value: &JsonValue) -> JsonValue {
+    match value {
+        JsonValue::Object(map) => {
+            let mut out = JsonMap::new();
+            for (k, child) in map {
+                if is_secret_key(k) {
+                    out.insert(k.clone(), JsonValue::String("***".into()));
+                } else if is_mcp_secret_bag(k) {
+                    out.insert(k.clone(), mask_json_string_leaves(child));
+                } else {
+                    out.insert(k.clone(), redact_mcp_json(child));
+                }
+            }
+            JsonValue::Object(out)
+        }
+        JsonValue::Array(items) => JsonValue::Array(items.iter().map(redact_mcp_json).collect()),
+        other => other.clone(),
+    }
+}
+
+fn mask_json_string_leaves(value: &JsonValue) -> JsonValue {
+    match value {
+        JsonValue::Object(map) => {
+            let mut out = JsonMap::new();
+            for (k, child) in map {
+                out.insert(k.clone(), mask_json_string_leaves(child));
+            }
+            JsonValue::Object(out)
+        }
+        JsonValue::Array(items) => {
+            JsonValue::Array(items.iter().map(mask_json_string_leaves).collect())
+        }
+        JsonValue::String(_) => JsonValue::String("***".into()),
+        other => other.clone(),
+    }
+}
+
+fn pretty_json(value: &JsonValue) -> Option<String> {
+    clip_snippet(serde_json::to_string_pretty(value).ok()?)
+}
+
+fn clip_snippet(s: String) -> Option<String> {
+    const MAX: usize = 16 * 1024;
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if s.len() <= MAX {
+        return Some(s);
+    }
+    let mut end = MAX;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    Some(format!("{}…\n(truncated)", &s[..end]))
+}
+
+fn redact_toml_document(doc: &mut DocumentMut) {
+    let keys: Vec<String> = doc.iter().map(|(k, _)| k.to_string()).collect();
+    for k in keys {
+        if is_secret_key(&k) {
+            doc[&k] = toml_value("***");
+            continue;
+        }
+        if let Some(item) = doc.get_mut(&k) {
+            if is_mcp_secret_bag(&k) {
+                mask_toml_string_leaves(item);
+            } else {
+                redact_toml_item(item);
+            }
+        }
+    }
+}
+
+fn redact_toml_item(item: &mut Item) {
+    match item {
+        Item::None => {}
+        Item::Value(v) => redact_toml_value(v, false),
+        Item::Table(t) => redact_toml_table(t, false),
+        Item::ArrayOfTables(a) => {
+            for t in a.iter_mut() {
+                redact_toml_table(t, false);
+            }
+        }
+    }
+}
+
+fn redact_toml_table(table: &mut Table, mask_all_strings: bool) {
+    let keys: Vec<String> = table.iter().map(|(k, _)| k.to_string()).collect();
+    for k in keys {
+        if is_secret_key(&k) {
+            table[&k] = toml_value("***");
+            continue;
+        }
+        let bag = is_mcp_secret_bag(&k);
+        match table.get_mut(&k) {
+            Some(Item::Value(v)) => redact_toml_value(v, mask_all_strings || bag),
+            Some(Item::Table(t)) => redact_toml_table(t, mask_all_strings || bag),
+            Some(Item::ArrayOfTables(a)) => {
+                for t in a.iter_mut() {
+                    redact_toml_table(t, mask_all_strings || bag);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn redact_toml_value(val: &mut TomlValue, mask_all_strings: bool) {
+    match val {
+        TomlValue::String(_) if mask_all_strings => {
+            *val = TomlValue::from("***");
+        }
+        TomlValue::InlineTable(t) => {
+            let keys: Vec<String> = t
+                .get_values()
+                .into_iter()
+                .filter_map(|(path, _)| path.first().map(|k| k.get().to_string()))
+                .collect();
+            for k in keys {
+                let secret = is_secret_key(&k);
+                let bag = is_mcp_secret_bag(&k);
+                let is_string = t.get(&k).and_then(|v| v.as_str()).is_some();
+                if secret || (mask_all_strings && is_string) {
+                    t.insert(&k, TomlValue::from("***"));
+                    continue;
+                }
+                if let Some(inner) = t.get_mut(&k) {
+                    redact_toml_value(inner, mask_all_strings || bag);
+                }
+            }
+        }
+        TomlValue::Array(arr) => {
+            for v in arr.iter_mut() {
+                redact_toml_value(v, mask_all_strings);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn mask_toml_string_leaves(item: &mut Item) {
+    match item {
+        Item::Value(v) => redact_toml_value(v, true),
+        Item::Table(t) => redact_toml_table(t, true),
+        Item::ArrayOfTables(a) => {
+            for t in a.iter_mut() {
+                redact_toml_table(t, true);
+            }
+        }
+        Item::None => {}
+    }
 }
 
 fn classify_transport(type_hint: &str, command: Option<&str>, url: Option<&str>) -> String {
@@ -431,72 +668,4 @@ fn classify_transport(type_hint: &str, command: Option<&str>, url: Option<&str>)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-    use tempfile::tempdir;
-
-    #[test]
-    fn extracts_claude_style_mcp_servers() {
-        let v: JsonValue = serde_json::json!({
-            "mcpServers": {
-                "fs": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] },
-                "remote": { "type": "sse", "url": "https://example.com/sse" }
-            }
-        });
-        let entries = extract_json_servers(AgentId::Claude, &v, "/tmp/.claude.json");
-        assert_eq!(entries.len(), 2);
-        let fs = entries.iter().find(|e| e.name == "fs").unwrap();
-        assert_eq!(fs.transport, "stdio");
-        assert!(fs.command.as_ref().unwrap().contains("npx"));
-        let remote = entries.iter().find(|e| e.name == "remote").unwrap();
-        assert_eq!(remote.transport, "sse");
-        assert_eq!(remote.url.as_deref(), Some("https://example.com/sse"));
-    }
-
-    #[test]
-    fn ignores_settings_root_without_servers() {
-        let v: JsonValue = serde_json::json!({
-            "theme": "dark",
-            "model": "opus",
-            "permissions": {}
-        });
-        assert!(extract_json_servers(AgentId::Claude, &v, "x").is_empty());
-    }
-
-    #[test]
-    fn parses_codex_toml_mcp_servers() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        let mut f = fs::File::create(&path).unwrap();
-        writeln!(
-            f,
-            r#"
-[mcp_servers.demo]
-command = "uvx"
-args = ["mcp-server-demo"]
-
-[mcp_servers.keep]
-command = "echo"
-"#
-        )
-        .unwrap();
-        let entries = parse_toml_file(AgentId::Codex, &path).unwrap();
-        assert_eq!(entries.len(), 2);
-        assert!(entries.iter().any(|e| e.name == "demo"));
-        assert!(entries.iter().any(|e| e.name == "keep"));
-    }
-
-    #[test]
-    fn list_inventory_is_empty_in_isolated_tmpdir_homes() {
-        // Smoke: function returns without panic; source list may be non-empty
-        // (paths resolved) even when files are missing.
-        let inv = list_mcp_inventory();
-        assert!(!inv.sources.is_empty());
-        for s in &inv.sources {
-            if !s.exists {
-                assert_eq!(s.server_count, 0);
-            }
-        }
-    }
-}
+mod tests;
