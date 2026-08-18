@@ -20,7 +20,7 @@ export function StatusDot({ status, withLabel = false }: { status: AuthStatus; w
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className={cn('inline-block h-2 w-2 rounded-full', COLOR[status])} />
-      {withLabel && <span className="text-xs text-secondary">{LABEL[status]}</span>}
+      {withLabel && <span className="text-meta text-secondary">{LABEL[status]}</span>}
     </span>
   );
 }

@@ -5,18 +5,19 @@
  */
 import * as React from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, ChevronRight, KeyRound, Pencil, Plus, Share2, Search, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, KeyRound, Pencil, Plus, Share2, Trash2 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ListRow } from '@/components/shared/ListRow';
 import { QuotaBar } from '@/components/shared/QuotaBar';
+import { SearchField } from '@/components/shared/SearchField';
 import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { ListSkeleton } from '@/components/ui/skeleton';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -161,12 +162,12 @@ function TicketRow({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <span
-            className={cn('text-xs', highlighted ? 'text-success' : 'text-muted')}
+            className={cn('text-meta', highlighted ? 'text-success' : 'text-muted')}
             aria-hidden
           >
             {highlighted ? '●' : '○'}
           </span>
-          <Tip className="truncate text-sm font-medium" label={ticket.label}>
+          <Tip className="truncate text-body font-medium" label={ticket.label}>
             {ticket.label}
           </Tip>
           <Badge variant={credentialBadgeVariant(ticket.credentialClass)}>
@@ -330,23 +331,18 @@ export function TicketWalletList({
           }))}
         />
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索登录或用途"
-              className="h-8 w-44 pl-7 text-xs"
-              aria-label="搜索登录"
-            />
-          </div>
+          <SearchField
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索登录或用途"
+            className="w-44"
+            aria-label="搜索登录"
+          />
           {addMenu}
         </div>
       </div>
 
-      {loading && !wallet ? (
-        <p className="text-xs text-muted">正在加载钱包…</p>
-      ) : null}
+      {loading && !wallet ? <ListSkeleton rows={4} /> : null}
 
       {wallet && tickets.length === 0 ? (
         <EmptyState
