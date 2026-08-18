@@ -8,6 +8,8 @@ import {
   agentPickerLabel,
   blockerCopy,
   blockerPrimaryTarget,
+  chatAgentPickerEmptyCopy,
+  chatAgentPickerEmptyKind,
   chatAgentPickerRows,
   chatConnectionKind,
   chatConnectionPickerView,
@@ -604,6 +606,29 @@ describe('agentHasConfiguredAuth / picker rows', () => {
       agentStatus: [status('claude', true), status('kimi', false), status('codex', true, true)],
     });
     expect(rows.map((r) => r.id)).toEqual(['claude']);
+  });
+});
+
+describe('chatAgentPickerEmptyKind', () => {
+  it('is null when the picker has rows', () => {
+    expect(chatAgentPickerEmptyKind({ agentsReady: true, rowCount: 2 })).toBeNull();
+    expect(chatAgentPickerEmptyKind({ agentsReady: false, rowCount: 1 })).toBeNull();
+  });
+
+  it('does not treat an unreadied empty list as none installed', () => {
+    expect(chatAgentPickerEmptyKind({ agentsReady: false, rowCount: 0 })).toBe('loading');
+    expect(chatAgentPickerEmptyCopy('loading')).toEqual({
+      text: '正在检测已安装的 Agent…',
+      action: null,
+    });
+  });
+
+  it('uses a single ready-empty copy for hidden-or-uninstalled', () => {
+    expect(chatAgentPickerEmptyKind({ agentsReady: true, rowCount: 0 })).toBe('none');
+    expect(chatAgentPickerEmptyCopy('none')).toEqual({
+      text: '没有可选择的 Agent',
+      action: '去 Agents 页',
+    });
   });
 });
 

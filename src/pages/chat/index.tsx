@@ -119,6 +119,7 @@ export default function ChatPage() {
                 switchingProvider={page.switchingProvider}
                 hiddenIds={page.hiddenIds}
                 pickerRows={page.pickerRows}
+                agentsReady={page.agentsReady}
                 blockers={page.blockers}
                 connectionCaption={page.connectionCaption}
                 onSend={() => void page.handleSend()}
