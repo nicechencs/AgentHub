@@ -133,7 +133,7 @@ export function EnvStatusBar({
                 <Hint
                   key={r.id}
                   side="bottom"
-                  contentClassName="max-w-sm space-y-0.5"
+                  contentClassName="space-y-0.5"
                   label={
                     <>
                       <p className="font-medium">{meta.name}</p>

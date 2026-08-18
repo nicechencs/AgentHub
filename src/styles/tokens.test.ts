@@ -12,6 +12,7 @@ import {
   buildBootCriticalCss,
   buildDesignTokensCss,
   buildTailwindFontSize,
+  TOOLTIP,
   typeScalePx,
   typeScaleTw,
 } from './tokens';
@@ -46,6 +47,10 @@ describe('design tokens SSOT', () => {
     expect(css).toContain('--shadow-md:');
     expect(css).toContain(`--font-body-size: ${TYPE_SCALE.body.size};`);
     expect(css).toContain(`--font-title-leading: ${TYPE_SCALE.title.lineHeight};`);
+    expect(css).toContain(`--tooltip-max-width: ${TOOLTIP.maxWidth};`);
+    expect(css).toContain(`--tooltip-max-height: ${TOOLTIP.maxHeight};`);
+    expect(css).toContain(`--tooltip-pad-x: ${TOOLTIP.paddingX};`);
+    expect(css).toContain(`--tooltip-pad-y: ${TOOLTIP.paddingY};`);
   });
 
   it('builds boot-critical CSS for index.html injection', () => {
