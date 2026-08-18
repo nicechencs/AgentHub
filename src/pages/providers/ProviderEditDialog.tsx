@@ -559,7 +559,7 @@ export function ProviderEditDialog({
           <label className="flex cursor-pointer items-start gap-2.5 rounded-card border border-border bg-panel px-3 py-2.5">
             <input
               type="checkbox"
-              className="mt-0.5 h-4 w-4 accent-[var(--color-accent,theme(colors.sky.500))]"
+              className="mt-0.5 h-4 w-4 accent-accent"
               checked={useOfficial}
               onChange={(e) => onToggleOfficial(e.target.checked)}
             />

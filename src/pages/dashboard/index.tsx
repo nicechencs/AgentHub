@@ -14,7 +14,6 @@ import {
   BarChart3,
   DatabaseBackup,
   RefreshCw,
-  UserRound,
 } from 'lucide-react';
 
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -789,14 +788,7 @@ export default function DashboardPage() {
                     className="justify-start"
                     onClick={openForAgentConnect}
                   >
-                    <ArrowLeftRight className="h-4 w-4" /> 切换供应商
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="justify-start"
-                    onClick={openForAgentConnect}
-                  >
-                    <UserRound className="h-4 w-4" /> 切换账号
+                    <ArrowLeftRight className="h-4 w-4" /> 连接 / 切换
                   </Button>
                   <Button
                     variant="outline"
