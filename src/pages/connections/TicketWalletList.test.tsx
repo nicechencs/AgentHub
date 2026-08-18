@@ -64,6 +64,42 @@ describe('TicketWalletList details', () => {
     expect(markup).not.toContain('编辑 API Key');
   });
 
+  it('puts usage on the same row and omits a second Codex label', () => {
+    const wallet: TicketWallet = {
+      tickets: [{
+        id: 'account:codex-1',
+        sourceKind: 'account',
+        sourceId: 'codex-1',
+        agentId: 'codex',
+        label: 'ChatGPT Plus',
+        surface: 'codex-chatgpt-subscription',
+        credentialClass: 'oauth',
+        speaks: ['openai-responses'],
+        importedFrom: 'codex',
+      }],
+      bindings: [{
+        ticketId: 'account:codex-1',
+        agentId: 'codex',
+        route: 'native',
+        active: true,
+        profileId: null,
+        bridge: null,
+      }],
+    };
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        onConnectTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('ChatGPT Plus');
+    expect(markup).toContain('Codex（切换）');
+    expect(markup).not.toContain('正用于：');
+    expect(markup).not.toContain('mt-1 pl-5');
+  });
+
   it('links 本机路由 usage to /routes without opening ConnectFlow', () => {
     const wallet = sampleWallet();
     wallet.bindings = [{
