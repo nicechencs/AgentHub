@@ -77,7 +77,8 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     accountSwitch: { level: 'full' },
     apiKeyAccount: {
       level: 'partial',
-      reason: '可入池；auth.json provider schema 不稳定，不写回',
+      reason:
+        '可入池；写回 auth.json 需带官方厂商槽（anthropic/openai/…）；自定义 URL 走 models.json / 供应商切换',
     },
     skills: { level: 'full' },
     liveBackup: { level: 'full' },

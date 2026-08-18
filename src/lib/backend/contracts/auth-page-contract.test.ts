@@ -44,6 +44,7 @@ describe('Tauri auth payload to page contract', () => {
       health: 'verified',
       source: '.credentials.json',
       revision: 'rev-42',
+      alsoPresent: ['oauth'],
     };
     const probe = normalizeAuthState(tauriPayload, 'claude');
     const live = mergeLiveAuthIntoAgentStatus(status(), probe);
@@ -63,6 +64,7 @@ describe('Tauri auth payload to page contract', () => {
       health: 'verified',
       source: '.credentials.json',
       revision: 'rev-42',
+      alsoPresent: ['oauth'],
     });
     expect(live).toMatchObject({
       authHealth: 'verified',
@@ -88,5 +90,35 @@ describe('Tauri auth payload to page contract', () => {
       health: 'needs_login',
       legacyStatus: 'expired',
     });
+  });
+
+  it('normalizes alsoPresent to string entries without trimming', () => {
+    expect(
+      normalizeAuthState({ agent: 'claude', summary: '', hasCredentials: false }, 'claude')
+        .alsoPresent,
+    ).toEqual([]);
+    expect(
+      normalizeAuthState(
+        { agent: 'claude', summary: '', hasCredentials: false, alsoPresent: null },
+        'claude',
+      ).alsoPresent,
+    ).toEqual([]);
+    expect(
+      normalizeAuthState(
+        {
+          agent: 'claude',
+          summary: '',
+          hasCredentials: false,
+          alsoPresent: ['oauth', 1, '', ' api_key ', null] as unknown as string[],
+        },
+        'claude',
+      ).alsoPresent,
+    ).toEqual(['oauth', '', ' api_key ']);
+    expect(
+      normalizeAuthState(
+        { agent: 'claude', summary: 'ok', hasCredentials: true, alsoPresent: ['oauth'] },
+        'claude',
+      ).alsoPresent,
+    ).toEqual(['oauth']);
   });
 });

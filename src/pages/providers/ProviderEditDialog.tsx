@@ -17,6 +17,13 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { ConfigEditor } from '@/components/shared/ConfigEditor';
 import { GenericConfigForm } from '@/components/shared/GenericConfigForm';
 import { SecretInput } from '@/components/shared/SecretInput';
@@ -24,9 +31,18 @@ import { useToast } from '@/components/ui/toast';
 import { useAgentCatalogOptional } from '@/app/runtime';
 import { agentDisplayName } from '@/config/agents';
 import {
+  agentHasOfficialApiTemplate,
   looksLikeOfficialEndpoint,
   officialApiDefaults,
 } from '@/config/official-api';
+import {
+  isPiAuthJsonSlot,
+  isPiPlaceholderBaseUrl,
+  PI_PLACEHOLDER_BASE_URL,
+  PI_PROVIDER_SLOT_OPTIONS,
+  piFormRequiresBaseUrl,
+  piProviderSlotHint,
+} from '@/lib/pi-provider-slots';
 import {
   getAgentConfigSchema,
   materializeAgentConfig,
@@ -43,6 +59,8 @@ import {
   defaultConfigScaffold,
   EMPTY_FORM_VARS,
   extractFormVars,
+  FORM_FIELD_LABELS,
+  formFieldVisibility,
   initFormFromConfig,
   liveConfigPaths,
   parseJsonObjectConfig,
@@ -60,6 +78,14 @@ import {
 } from './providerSaveFlow';
 
 export type ProviderDialogMode = 'add' | 'edit';
+
+function piSlotSelectOptions(slug: string) {
+  const id = slug.trim() || 'custom';
+  if (PI_PROVIDER_SLOT_OPTIONS.some((slot) => slot.id === id)) {
+    return PI_PROVIDER_SLOT_OPTIONS;
+  }
+  return [...PI_PROVIDER_SLOT_OPTIONS, { id, label: id }];
+}
 
 export function getConfigTextError(
   agentId: AgentId,
@@ -269,10 +295,10 @@ export function ProviderEditDialog({
       setShowAdvanced(provider.configText.trim() === REDACTED_MARKER);
       return;
     }
-    // 新增：默认官方
+    // 新增：有官方模板才默认官方（Pi 无单一官方 URL）
     setName('');
     setConfigError(null);
-    setUseOfficial(true);
+    setUseOfficial(agentHasOfficialApiTemplate(agentId));
     setShowAdvanced(false);
     applyOfficialDefaults();
   }, [open, isEdit, provider, agentId, applyOfficialDefaults]);
@@ -384,12 +410,16 @@ export function ProviderEditDialog({
     });
   };
 
+  const piSlug = vars.providerSlug.trim() || 'custom';
+  const piNeedsUrl = agentId === 'pi' && piFormRequiresBaseUrl(piSlug);
+
   // 新增必须填 Key；编辑可只改名称/官方开关（Key 留空保留）
   // schema idle/loading/error → fail closed，禁止保存
   const canSave =
     canSaveWithSchemaStatus(schemaStatus) &&
     !configError &&
-    (isEdit ? true : Boolean(vars.apiKey.trim()));
+    (isEdit ? true : Boolean(vars.apiKey.trim())) &&
+    (!piNeedsUrl || Boolean(vars.baseUrl.trim()));
 
   const openLiveDir = async () => {
     try {
@@ -488,7 +518,14 @@ export function ProviderEditDialog({
         return;
       }
 
-      const endpointLabel = useOfficial ? '官方端点' : '自定义端点';
+      const endpointLabel =
+        agentId === 'pi'
+          ? isPiAuthJsonSlot(saveVars.providerSlug) && !saveVars.baseUrl.trim()
+            ? '官方厂商槽'
+            : '自定义端点'
+          : useOfficial
+            ? '官方端点'
+            : '自定义端点';
       toast({
         title: isEdit ? 'API Key 已更新' : 'API Key 已添加',
         description: result.provider.isCurrent
@@ -517,15 +554,27 @@ export function ProviderEditDialog({
             {isEdit ? '编辑 API Key' : '添加 API Key'} — {agentName}
           </DialogTitle>
           <DialogDescription>
-            勾选「官方」时使用官方服务地址与模型；取消后可填自定义服务地址。当前连接保存后会写入本机配置文件
-            <span className="font-mono text-meta"> {livePaths.config}</span>
-            {livePaths.auth ? (
+            {agentId === 'pi' ? (
               <>
-                {' · '}
-                <span className="font-mono text-meta">{livePaths.auth}</span>
+                官方厂商槽的 Key 写入
+                <span className="font-mono text-meta"> ~/.pi/agent/auth.json</span>
+                ；自定义 URL 写入
+                <span className="font-mono text-meta"> models.json</span>
+                。保存到连接池，当前连接切换后才会写回本机。
               </>
-            ) : null}
-            。
+            ) : (
+              <>
+                勾选「官方」时使用官方服务地址与模型；取消后可填自定义服务地址。当前连接保存后会写入本机配置文件
+                <span className="font-mono text-meta"> {livePaths.config}</span>
+                {livePaths.auth ? (
+                  <>
+                    {' · '}
+                    <span className="font-mono text-meta">{livePaths.auth}</span>
+                  </>
+                ) : null}
+                。
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -556,22 +605,22 @@ export function ProviderEditDialog({
             </Button>
           </div>
 
-          <label className="flex cursor-pointer items-start gap-2.5 rounded-card border border-border bg-panel px-3 py-2.5">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 accent-[var(--color-accent,theme(colors.sky.500))]"
-              checked={useOfficial}
-              onChange={(e) => onToggleOfficial(e.target.checked)}
-            />
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-medium text-primary">使用官方端点</span>
-              <span className="mt-0.5 block text-meta text-muted">
-                {official
-                  ? `勾选后下方 URL / 模型显示 ${official.label} 默认值且不可改；取消后可自定义中转`
-                  : '该 Agent 暂无内置官方模板，可手动填写'}
+          {official ? (
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-card border border-border bg-panel px-3 py-2.5">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 accent-[var(--color-accent,theme(colors.sky.500))]"
+                checked={useOfficial}
+                onChange={(e) => onToggleOfficial(e.target.checked)}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-primary">使用官方端点</span>
+                <span className="mt-0.5 block text-meta text-muted">
+                  {`勾选后下方 URL / 模型显示 ${official.label} 默认值且不可改；取消后可自定义中转`}
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+          ) : null}
 
           {/* 布局固定：勾选官方只切换只读/禁用，不卸载区块，避免高度跳动 */}
           <div
@@ -705,8 +754,43 @@ export function ProviderEditDialog({
             />
           ) : schemaStatus === 'unsupported' ? (
             <>
+              {formFieldVisibility(agentId).providerSlug ? (
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted">{FORM_FIELD_LABELS.providerSlug}</span>
+                  <Select
+                    value={vars.providerSlug.trim() || 'custom'}
+                    onValueChange={(value) => {
+                      const patch: Partial<ProviderFormVars> = { providerSlug: value };
+                      if (isPiAuthJsonSlot(value) && isPiPlaceholderBaseUrl(vars.baseUrl)) {
+                        patch.baseUrl = '';
+                      } else if (
+                        piFormRequiresBaseUrl(value) &&
+                        !vars.baseUrl.trim()
+                      ) {
+                        patch.baseUrl = PI_PLACEHOLDER_BASE_URL;
+                      }
+                      patchVars(patch);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="自定义 (models.json)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {piSlotSelectOptions(vars.providerSlug).map((slot) => (
+                        <SelectItem key={slot.id} value={slot.id}>
+                          {slot.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="text-meta text-muted">{piProviderSlotHint(piSlug)}</span>
+                </label>
+              ) : null}
               <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">Endpoint URL</span>
+                <span className="text-xs text-muted">
+                  Endpoint URL
+                  {agentId === 'pi' && !piNeedsUrl ? '（可选）' : ''}
+                </span>
                 <Input
                   value={
                     useOfficial
@@ -724,12 +808,19 @@ export function ProviderEditDialog({
                     if (useOfficial) return;
                     onFieldPaste('baseUrl', e);
                   }}
-                  placeholder="https://api.example.com"
+                  placeholder={
+                    agentId === 'pi' && !piNeedsUrl
+                      ? '官方内置端点，自定义中转再填'
+                      : 'https://api.example.com'
+                  }
                   autoComplete="off"
                   spellCheck={false}
                   readOnly={useOfficial}
                   className={useOfficial ? 'cursor-default bg-canvas text-secondary' : undefined}
                 />
+                {piNeedsUrl && !vars.baseUrl.trim() ? (
+                  <span className="text-meta text-danger">自定义槽需要 Endpoint URL</span>
+                ) : null}
               </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">
@@ -742,14 +833,19 @@ export function ProviderEditDialog({
                 />
               </label>
               <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">Model</span>
+                <span className="text-xs text-muted">
+                  Model
+                  {agentId === 'pi' && !piNeedsUrl ? '（可选）' : ''}
+                </span>
                 <Input
                   value={useOfficial ? official?.model || vars.model : vars.model}
                   onChange={(e) => {
                     if (useOfficial) return;
                     patchVars({ model: e.target.value });
                   }}
-                  placeholder="模型 id"
+                  placeholder={
+                    agentId === 'pi' && !piNeedsUrl ? '官方内置模型，可不填' : '模型 id'
+                  }
                   autoComplete="off"
                   spellCheck={false}
                   readOnly={useOfficial}

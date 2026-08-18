@@ -59,13 +59,12 @@ pub(crate) fn detect_installation() -> DetectResult {
     let codebuddy = resolve_bundled_codebuddy(&install_dir);
     if codebuddy.is_none() {
         notes.push(
-            "WorkBuddy.exe found but bundled codebuddy CLI missing under install resources"
-                .into(),
+            "WorkBuddy.exe found but bundled codebuddy CLI missing under install resources".into(),
         );
     }
 
-    let version = read_version_from_last_launch()
-        .or_else(|| read_version_from_package_json(&install_dir));
+    let version =
+        read_version_from_last_launch().or_else(|| read_version_from_package_json(&install_dir));
 
     if let Some(ref cb) = codebuddy {
         tracing::info!(
@@ -170,6 +169,7 @@ impl AgentAdapter for WorkBuddyAdapter {
                 health: crate::models::AuthHealth::Unknown,
                 source: None,
                 revision: None,
+                also_present: Vec::new(),
             });
         };
         if !path.is_file() {
@@ -181,6 +181,7 @@ impl AgentAdapter for WorkBuddyAdapter {
                 health: crate::models::AuthHealth::Missing,
                 source: Some("workbuddy:desktop-login-metadata".into()),
                 revision: None,
+                also_present: Vec::new(),
             });
         }
         let body = match std::fs::read_to_string(&path)
@@ -197,6 +198,7 @@ impl AgentAdapter for WorkBuddyAdapter {
                     health: crate::models::AuthHealth::Unknown,
                     source: Some("workbuddy:desktop-login-metadata".into()),
                     revision: auth_file_revision(&path),
+                    also_present: Vec::new(),
                 });
             }
         };
@@ -210,6 +212,7 @@ impl AgentAdapter for WorkBuddyAdapter {
                 health: crate::models::AuthHealth::Unknown,
                 source: Some("workbuddy:desktop-login-metadata".into()),
                 revision: auth_file_revision(&path),
+                also_present: Vec::new(),
             });
         };
         let health =
@@ -232,6 +235,7 @@ impl AgentAdapter for WorkBuddyAdapter {
             health,
             source: Some("workbuddy:desktop-login-metadata".into()),
             revision: auth_file_revision(&path),
+            also_present: Vec::new(),
         })
     }
 

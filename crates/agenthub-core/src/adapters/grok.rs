@@ -68,74 +68,7 @@ impl AgentAdapter for GrokAdapter {
 
     fn read_auth(&self) -> Result<AuthState> {
         let home = agent_home(AgentId::Grok)?;
-        let auth = home.join("auth.json");
-        let config = home.join("config.toml");
-        if read_grok_api_key(&config)?.is_some_and(|key| !key.is_empty()) {
-            return Ok(AuthState {
-                agent: AgentId::Grok,
-                kind: Some("api_key".into()),
-                summary: "API key present in config.toml".into(),
-                has_credentials: true,
-                health: crate::models::AuthHealth::Configured,
-                source: Some("grok:config.toml".into()),
-                revision: auth_files_revision(&[&config, &auth]),
-            });
-        }
-        let has = auth.is_file();
-        if !has {
-            return Ok(AuthState {
-                agent: AgentId::Grok,
-                kind: None,
-                summary: "no auth".into(),
-                has_credentials: false,
-                health: crate::models::AuthHealth::Missing,
-                source: Some("grok:auth.json".into()),
-                revision: None,
-            });
-        }
-        let body = match std::fs::read_to_string(&auth)
-            .ok()
-            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-        {
-            Some(body) => body,
-            None => {
-                return Ok(AuthState {
-                    agent: AgentId::Grok,
-                    kind: None,
-                    summary: "auth.json could not be parsed".into(),
-                    has_credentials: false,
-                    health: crate::models::AuthHealth::Unknown,
-                    source: Some("grok:auth.json".into()),
-                    revision: auth_file_revision(&auth),
-                });
-            }
-        };
-        let metadata = inspect_auth_credentials(&body);
-        if !metadata.has_access_token && !metadata.has_refresh_token {
-            return Ok(AuthState {
-                agent: AgentId::Grok,
-                kind: None,
-                summary: "auth.json present but credentials could not be classified".into(),
-                has_credentials: false,
-                health: crate::models::AuthHealth::Unknown,
-                source: Some("grok:auth.json".into()),
-                revision: auth_file_revision(&auth),
-            });
-        }
-        let health = oauth_auth_health(metadata);
-        Ok(AuthState {
-            agent: AgentId::Grok,
-            kind: Some("oauth".into()),
-            summary: if health == crate::models::AuthHealth::NeedsLogin {
-                "Grok OAuth credentials are expired; sign in again".into()
-            } else {
-                "auth.json credentials present".into()
-            },
-            has_credentials: true,
-            health,
-            source: Some("grok:auth.json".into()),
-            revision: auth_file_revision(&auth),
-        })
+        grok_auth_state(&home.join("config.toml"), &home.join("auth.json"))
     }
 
     fn read_account(&self) -> Result<LiveAccount> {
@@ -295,6 +228,95 @@ impl AgentAdapter for GrokAdapter {
             env: vec![],
         })
     }
+}
+
+pub(crate) fn grok_auth_state(config: &Path, auth: &Path) -> Result<AuthState> {
+    if read_grok_api_key(config)?.is_some_and(|key| !key.is_empty()) {
+        let state = AuthState {
+            agent: AgentId::Grok,
+            kind: Some("api_key".into()),
+            summary: "API key present in config.toml".into(),
+            has_credentials: true,
+            health: crate::models::AuthHealth::Configured,
+            source: Some("grok:config.toml".into()),
+            revision: auth_files_revision(&[config, auth]),
+            also_present: Vec::new(),
+        };
+        return Ok(if grok_auth_json_has_oauth(auth) {
+            state.with_also_present(["oauth"])
+        } else {
+            state
+        });
+    }
+    if !auth.is_file() {
+        return Ok(AuthState {
+            agent: AgentId::Grok,
+            kind: None,
+            summary: "no auth".into(),
+            has_credentials: false,
+            health: crate::models::AuthHealth::Missing,
+            source: Some("grok:auth.json".into()),
+            revision: None,
+            also_present: Vec::new(),
+        });
+    }
+    let body = match std::fs::read_to_string(auth)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+    {
+        Some(body) => body,
+        None => {
+            return Ok(AuthState {
+                agent: AgentId::Grok,
+                kind: None,
+                summary: "auth.json could not be parsed".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Unknown,
+                source: Some("grok:auth.json".into()),
+                revision: auth_file_revision(auth),
+                also_present: Vec::new(),
+            });
+        }
+    };
+    let metadata = inspect_auth_credentials(&body);
+    if !metadata.has_access_token && !metadata.has_refresh_token {
+        return Ok(AuthState {
+            agent: AgentId::Grok,
+            kind: None,
+            summary: "auth.json present but credentials could not be classified".into(),
+            has_credentials: false,
+            health: crate::models::AuthHealth::Unknown,
+            source: Some("grok:auth.json".into()),
+            revision: auth_file_revision(auth),
+            also_present: Vec::new(),
+        });
+    }
+    let health = oauth_auth_health(metadata);
+    Ok(AuthState {
+        agent: AgentId::Grok,
+        kind: Some("oauth".into()),
+        summary: if health == crate::models::AuthHealth::NeedsLogin {
+            "Grok OAuth credentials are expired; sign in again".into()
+        } else {
+            "auth.json credentials present".into()
+        },
+        has_credentials: true,
+        health,
+        source: Some("grok:auth.json".into()),
+        revision: auth_file_revision(auth),
+        also_present: Vec::new(),
+    })
+}
+
+fn grok_auth_json_has_oauth(auth: &Path) -> bool {
+    let Some(body) = std::fs::read_to_string(auth)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+    else {
+        return false;
+    };
+    let metadata = inspect_auth_credentials(&body);
+    metadata.has_access_token || metadata.has_refresh_token
 }
 
 fn ensure_grok_profile<'a>(

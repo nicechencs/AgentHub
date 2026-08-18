@@ -113,6 +113,7 @@ export type LiveAuthProbeLike = {
   health?: AuthHealth;
   source?: string | null;
   revision?: string | null;
+  alsoPresent?: string[] | null;
 };
 
 export type LiveAuthImportGate = {
@@ -198,6 +199,49 @@ function isOAuthLiveAuthKind(kind: string): boolean {
 
 function isApiKeyLiveAuthKind(kind: string): boolean {
   return kind === 'api_key' || kind === 'api-key' || kind === 'apikey';
+}
+
+const GENERIC_LIVE_AUTH_COEXISTENCE_NOTICE =
+  '本机同时有 API Key 和官方登录，它们不在同一处。导入只会收入当前检测为生效的那一份；另一份仍留在本机。';
+
+function alsoPresentKinds(probe?: Pick<LiveAuthProbeLike, 'alsoPresent'> | null): string[] {
+  if (!Array.isArray(probe?.alsoPresent)) return [];
+  return probe.alsoPresent
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Warn when a second credential family is on disk. Does not change import gates.
+ */
+export function liveAuthCoexistenceNotice(
+  probe: LiveAuthProbeLike | null | undefined,
+  agentId: AgentId,
+): string | null {
+  if (!probe) return null;
+  const kind = liveAuthProbeKind(probe);
+  const also = alsoPresentKinds(probe);
+  const alsoHasOAuth = also.some(isOAuthLiveAuthKind);
+  const alsoHasApiKey = also.some(isApiKeyLiveAuthKind);
+  if (kind !== 'mixed' && !alsoHasOAuth && !alsoHasApiKey) return null;
+
+  if (agentId === 'pi' || kind === 'mixed') {
+    return 'Pi 的 auth.json 里同时有 API Key 槽和 OAuth 槽。导入会按 provider 分行，不会猜一个全局当前项。';
+  }
+  if (agentId === 'claude' && isApiKeyLiveAuthKind(kind) && alsoHasOAuth) {
+    return '本机同时有 API Key 和官方登录。Claude 会优先用 Key（按 API 计费），订阅登录被压住。导入只会收入当前这份 Key。要用订阅请先去掉 settings/环境里的 Key。';
+  }
+  if (agentId === 'grok' && isApiKeyLiveAuthKind(kind) && alsoHasOAuth) {
+    return '本机同时有配置里的 API Key 和 grok login 登录态。写在模型上的 Key 优先于登录态；只有全局 XAI_API_KEY 时登录态才优先。导入按当前检测结果。';
+  }
+  if (agentId === 'kimi') {
+    return '本机同时有 config.toml 里的 API Key 和 /login 登录态。当前用哪一份取决于 default_model / 最后一次 /login。导入只会收入当前检测为生效的那一份。';
+  }
+  if (agentId === 'codex') {
+    return '本机同时有 API Key 和 ChatGPT 登录痕迹。交互 TUI 多半仍认登录态；导入按当前检测结果。';
+  }
+  return GENERIC_LIVE_AUTH_COEXISTENCE_NOTICE;
 }
 
 /**

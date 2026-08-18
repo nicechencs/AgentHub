@@ -160,12 +160,14 @@ describe('provider-detect fields', () => {
       apiKey: '',
     });
     const parsed = JSON.parse(next) as {
-      providers: Record<string, { baseUrl?: string; apiKey?: string; models: { id: string }[] }>;
+      models: {
+        providers: Record<string, { baseUrl?: string; apiKey?: string; models: { id: string }[] }>;
+      };
     };
-    expect(parsed.providers.custom.baseUrl).toBe('https://new.example.com/v1');
-    expect(parsed.providers.custom.apiKey).toBe(REDACTED_MARKER);
-    expect(parsed.providers.custom.models[0]?.id).toBe('new-model');
-    expect(parsed.providers.keep.models[0]?.id).toBe('keep');
+    expect(parsed.models.providers.custom.baseUrl).toBe('https://new.example.com/v1');
+    expect(parsed.models.providers.custom.apiKey).toBe(REDACTED_MARKER);
+    expect(parsed.models.providers.custom.models[0]?.id).toBe('new-model');
+    expect(parsed.models.providers.keep.models[0]?.id).toBe('keep');
   });
 
   it('keeps Pi live-config envelope metadata while editing nested models', () => {
@@ -335,7 +337,148 @@ describe('provider-detect fields', () => {
       expect(v.baseUrl).toBe(true);
       expect(v.apiKey).toBe(true);
       expect(v.model).toBe(true);
+      expect(v.providerSlug).toBe(false);
     }
+  });
+
+  it('shows providerSlug only for Pi', () => {
+    expect(formFieldVisibility('pi').providerSlug).toBe(true);
+    expect(formFieldVisibility('claude').providerSlug).toBe(false);
+  });
+
+  it('writes Pi auth.json only for an official slot without relay URL', () => {
+    const out = applyFormVars('pi', '{}', 'json', {
+      baseUrl: '',
+      apiKey: 'sk-openai-test',
+      model: '',
+      modelOpus: '',
+      modelSonnet: '',
+      modelHaiku: '',
+      modelFable: '',
+      modelSubagent: '',
+      claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN',
+      reasoningEffort: '',
+      wireApi: '',
+      providerSlug: 'openai',
+    });
+    const parsed = JSON.parse(out) as {
+      auth: { openai: { type: string; key: string } };
+      models?: unknown;
+      providers?: unknown;
+    };
+    expect(parsed.auth.openai).toEqual({ type: 'api_key', key: 'sk-openai-test' });
+    expect(parsed.models).toBeUndefined();
+    expect(parsed.providers).toBeUndefined();
+  });
+
+  it('writes Pi models.json + auth.json when an official slot has a relay URL', () => {
+    const out = applyFormVars('pi', '{}', 'json', {
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'sk-openai-test',
+      model: 'gpt-4o',
+      modelOpus: '',
+      modelSonnet: '',
+      modelHaiku: '',
+      modelFable: '',
+      modelSubagent: '',
+      claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN',
+      reasoningEffort: '',
+      wireApi: '',
+      providerSlug: 'openai',
+    });
+    const parsed = JSON.parse(out) as {
+      auth: { openai: { type: string; key: string } };
+      models: { providers: { openai: { apiKey?: string; api?: string; baseUrl?: string } } };
+      providers?: unknown;
+    };
+    expect(parsed.auth.openai.type).toBe('api_key');
+    expect(parsed.auth.openai.key).toBe('sk-openai-test');
+    expect(parsed.models.providers.openai.apiKey).toBe('sk-openai-test');
+    expect(parsed.models.providers.openai.api).toBe('openai-completions');
+    expect(parsed.models.providers.openai.baseUrl).toBe('https://api.openai.com/v1');
+    expect(parsed.providers).toBeUndefined();
+  });
+
+  it('does not write Pi auth.json for custom or models.json bind slots', () => {
+    const out = applyFormVars('pi', '{}', 'json', {
+      baseUrl: 'https://relay.example.com/v1',
+      apiKey: 'sk-custom',
+      model: 'custom-model',
+      modelOpus: '',
+      modelSonnet: '',
+      modelHaiku: '',
+      modelFable: '',
+      modelSubagent: '',
+      claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN',
+      reasoningEffort: '',
+      wireApi: '',
+      providerSlug: 'custom',
+    });
+    const parsed = JSON.parse(out) as {
+      auth?: unknown;
+      models: { providers: { custom: { apiKey?: string; baseUrl?: string } } };
+      providers?: unknown;
+    };
+    expect(parsed.auth).toBeUndefined();
+    expect(parsed.providers).toBeUndefined();
+    expect(parsed.models.providers.custom.apiKey).toBe('sk-custom');
+    expect(parsed.models.providers.custom.baseUrl).toBe('https://relay.example.com/v1');
+  });
+
+  it('renames the scaffold custom slot when switching to an official auth slot', () => {
+    const scaffold = JSON.stringify({
+      providers: {
+        custom: {
+          baseUrl: 'https://your-relay.example.com/v1',
+          api: 'openai-completions',
+          apiKey: '',
+          models: [{ id: 'custom-model', name: 'Custom Model' }],
+        },
+      },
+    });
+    const out = applyFormVars('pi', scaffold, 'json', {
+      ...extractFormVars('pi', scaffold, 'json'),
+      providerSlug: 'anthropic',
+      baseUrl: '',
+      apiKey: 'sk-ant-test',
+      model: '',
+    });
+    const parsed = JSON.parse(out) as {
+      auth: { anthropic: { type: string; key: string } };
+      models?: { providers?: Record<string, unknown> };
+      providers?: unknown;
+    };
+    expect(parsed.auth.anthropic).toEqual({ type: 'api_key', key: 'sk-ant-test' });
+    expect(parsed.providers).toBeUndefined();
+    expect(parsed.models?.providers).toBeUndefined();
+  });
+
+  it('keeps Pi auth.json on official-slot edit when apiKey is left empty', () => {
+    const source = JSON.stringify({
+      auth: { openai: { type: 'api_key', key: 'sk-keep' } },
+    });
+    const out = applyFormVars('pi', source, 'json', {
+      ...extractFormVars('pi', source, 'json'),
+      apiKey: '',
+      providerSlug: 'openai',
+    });
+    const parsed = JSON.parse(out) as {
+      auth: { openai: { type: string; key: string } };
+    };
+    expect(parsed.auth.openai).toEqual({ type: 'api_key', key: 'sk-keep' });
+  });
+
+  it('extracts Pi official-slot key from auth.json-only envelope', () => {
+    const vars = extractFormVars(
+      'pi',
+      JSON.stringify({
+        auth: { openai: { type: 'api_key', key: 'sk-from-auth' } },
+      }),
+      'json',
+    );
+    expect(vars.providerSlug).toBe('openai');
+    expect(vars.apiKey).toBe('sk-from-auth');
+    expect(vars.baseUrl).toBe('');
   });
 });
 

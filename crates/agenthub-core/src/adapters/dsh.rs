@@ -116,6 +116,7 @@ impl AgentAdapter for DshAdapter {
                 health: AuthHealth::Configured,
                 source: Some("dsh:credentials+env".into()),
                 revision: auth_file_revision(&creds),
+                also_present: Vec::new(),
             });
         }
         if env_set {
@@ -127,6 +128,7 @@ impl AgentAdapter for DshAdapter {
                 health: AuthHealth::Configured,
                 source: Some("dsh:env".into()),
                 revision: None,
+                also_present: Vec::new(),
             });
         }
         if has_file {
@@ -138,6 +140,7 @@ impl AgentAdapter for DshAdapter {
                 health: AuthHealth::Configured,
                 source: Some("dsh:credentials".into()),
                 revision: auth_file_revision(&creds),
+                also_present: Vec::new(),
             });
         }
         Ok(AuthState {
@@ -148,6 +151,7 @@ impl AgentAdapter for DshAdapter {
             health: AuthHealth::Missing,
             source: Some("dsh:credentials".into()),
             revision: auth_file_revision(&creds),
+            also_present: Vec::new(),
         })
     }
 
@@ -184,8 +188,14 @@ impl AgentAdapter for DshAdapter {
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| AppError::InvalidArg("DSH account requires credentials.api_key".into()))?;
-        write_credential_value(&agent_home(AgentId::Dsh)?.join(CREDENTIALS_FILE), DEFAULT_API_KEY_ENV, key)?;
+            .ok_or_else(|| {
+                AppError::InvalidArg("DSH account requires credentials.api_key".into())
+            })?;
+        write_credential_value(
+            &agent_home(AgentId::Dsh)?.join(CREDENTIALS_FILE),
+            DEFAULT_API_KEY_ENV,
+            key,
+        )?;
         let patch = agent_home(AgentId::Dsh)?.join(HOME_PATCH_FILE);
         let mut fields = read_llm_fields(&patch)?;
         fields.api_key_env = DEFAULT_API_KEY_ENV.to_string();
@@ -211,7 +221,9 @@ impl AgentAdapter for DshAdapter {
     }
 
     fn skills_dir(&self) -> Option<PathBuf> {
-        agent_home(AgentId::Dsh).ok().map(|home| home.join("skills"))
+        agent_home(AgentId::Dsh)
+            .ok()
+            .map(|home| home.join("skills"))
     }
 
     fn live_backup_paths(&self) -> Vec<PathBuf> {
@@ -244,11 +256,7 @@ impl AgentAdapter for DshAdapter {
         Ok(RunSpec {
             agent: AgentId::Dsh,
             program: binary.to_path_buf(),
-            args: vec![
-                "--profile".into(),
-                "headless".into(),
-                prompt.to_string(),
-            ],
+            args: vec!["--profile".into(), "headless".into(), prompt.to_string()],
             cwd: opts.cwd.clone(),
             env,
         })
@@ -414,7 +422,9 @@ pub(crate) fn read_credential_value(path: &Path, key: &str) -> Result<Option<Str
 
 pub(crate) fn write_credential_value(path: &Path, key: &str, value: &str) -> Result<()> {
     if value.trim().is_empty() {
-        return Err(AppError::InvalidArg("credential value must not be empty".into()));
+        return Err(AppError::InvalidArg(
+            "credential value must not be empty".into(),
+        ));
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -463,7 +473,10 @@ fn render_flat_yaml_map(map: &Map<String, Value>) -> String {
     }
 }
 
-fn find_plugin_row(text: &str, plugin_id: &str) -> Option<std::collections::BTreeMap<String, String>> {
+fn find_plugin_row(
+    text: &str,
+    plugin_id: &str,
+) -> Option<std::collections::BTreeMap<String, String>> {
     let mut current_id: Option<String> = None;
     let mut in_config = false;
     let mut row = std::collections::BTreeMap::new();
