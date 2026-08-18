@@ -17,7 +17,8 @@ pub struct AgentProject {
     pub title: String,
     /// Absolute native storage root (e.g. `~/.claude/projects/-Users-…`).
     pub storage_path: String,
-    /// Verified / best-effort decoded workspace path.
+    /// Workspace path that exists on disk (decoded + verified). Display may
+    /// still restore an unverified address in the UI; only this field is openable.
     pub actual_path: Option<String>,
     /// Relative path under the agent home.
     pub relative_path: String,

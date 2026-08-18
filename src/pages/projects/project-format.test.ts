@@ -29,6 +29,7 @@ describe('projectDisplayPath', () => {
   it('prefers the workspace path, then relative, then storage', () => {
     expect(
       projectDisplayPath({
+        agentId: 'claude',
         actualPath: 'C:\\Users\\demo\\app',
         relativePath: 'projects/-C-Users-demo-app',
         storagePath: 'C:\\Users\\demo\\.claude\\projects\\-C-Users-demo-app',
@@ -36,6 +37,7 @@ describe('projectDisplayPath', () => {
     ).toBe('C:\\Users\\demo\\app');
     expect(
       projectDisplayPath({
+        agentId: 'kimi',
         actualPath: '  ',
         relativePath: 'sessions',
         storagePath: 'C:\\Users\\demo\\.kimi-code\\sessions',
@@ -43,11 +45,23 @@ describe('projectDisplayPath', () => {
     ).toBe('sessions');
     expect(
       projectDisplayPath({
+        agentId: 'grok',
         actualPath: null,
         relativePath: '',
         storagePath: 'C:\\Users\\demo\\.grok\\sessions',
       }),
     ).toBe('C:\\Users\\demo\\.grok\\sessions');
+  });
+
+  it('still displays a restored Claude dir when actualPath is missing', () => {
+    expect(
+      projectDisplayPath({
+        agentId: 'claude',
+        actualPath: null,
+        relativePath: 'projects/-C-Users-demo-app',
+        storagePath: 'C:\\Users\\demo\\.claude\\projects\\-C-Users-demo-app',
+      }),
+    ).toBe('C:\\Users\\demo\\app');
   });
 });
 
