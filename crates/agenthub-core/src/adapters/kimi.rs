@@ -246,7 +246,7 @@ impl AgentAdapter for KimiAdapter {
 pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
     match read_kimi_api_key(config) {
         Ok(Some(key)) if !key.is_empty() => {
-            return AuthState {
+            let state = AuthState {
                 agent: AgentId::Kimi,
                 kind: Some("api_key".into()),
                 summary: "API key present in config.toml".into(),
@@ -254,6 +254,12 @@ pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
                 health: crate::models::AuthHealth::Configured,
                 source: Some("kimi:config.toml".into()),
                 revision: auth_file_revision(config),
+                also_present: Vec::new(),
+            };
+            return if oauth_tokens_present(cred) {
+                state.with_also_present(["oauth"])
+            } else {
+                state
             };
         }
         Ok(_) => {}
@@ -266,6 +272,7 @@ pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
                 health: crate::models::AuthHealth::Unknown,
                 source: Some("kimi:config.toml".into()),
                 revision: auth_file_revision(config),
+                also_present: Vec::new(),
             };
         }
     }
@@ -279,6 +286,7 @@ pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
             health: crate::models::AuthHealth::Missing,
             source: Some("kimi:credentials/kimi-code.json".into()),
             revision: None,
+            also_present: Vec::new(),
         };
     }
     let body = match std::fs::read_to_string(cred)
@@ -295,6 +303,7 @@ pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
                 health: crate::models::AuthHealth::Unknown,
                 source: Some("kimi:credentials/kimi-code.json".into()),
                 revision: auth_file_revision(cred),
+                also_present: Vec::new(),
             };
         }
     };
@@ -308,6 +317,7 @@ pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
             health: crate::models::AuthHealth::Unknown,
             source: Some("kimi:credentials/kimi-code.json".into()),
             revision: auth_file_revision(cred),
+            also_present: Vec::new(),
         };
     }
     let health = oauth_auth_health(metadata);
@@ -323,7 +333,19 @@ pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
         health,
         source: Some("kimi:credentials/kimi-code.json".into()),
         revision: auth_file_revision(cred),
+        also_present: Vec::new(),
     }
+}
+
+fn oauth_tokens_present(path: &Path) -> bool {
+    let Some(body) = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+    else {
+        return false;
+    };
+    let metadata = inspect_auth_credentials(&body);
+    metadata.has_access_token || metadata.has_refresh_token
 }
 
 fn read_kimi_api_key(path: &Path) -> Result<Option<String>> {

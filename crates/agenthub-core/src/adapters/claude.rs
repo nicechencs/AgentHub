@@ -66,77 +66,8 @@ impl AgentAdapter for ClaudeAdapter {
 
     fn read_auth(&self) -> Result<AuthState> {
         let home = agent_home(AgentId::Claude)?;
-        let settings_path = home.join("settings.json");
-        // Match read_account: an explicit settings token is the effective
-        // auth mode even when stale OAuth credentials remain on disk.
-        match read_claude_settings_token(&settings_path) {
-            Ok(Some(_)) => {
-                return Ok(AuthState {
-                    agent: AgentId::Claude,
-                    kind: Some("api_key".into()),
-                    summary: "API key present in settings.json".into(),
-                    has_credentials: true,
-                    health: crate::models::AuthHealth::Configured,
-                    source: Some("claude:settings.json".into()),
-                    revision: auth_file_revision(&settings_path),
-                });
-            }
-            Ok(None) => {}
-            Err(_) => {
-                return Ok(AuthState {
-                    agent: AgentId::Claude,
-                    kind: None,
-                    summary: "Claude settings.json could not be parsed".into(),
-                    has_credentials: false,
-                    health: crate::models::AuthHealth::Unknown,
-                    source: Some("claude:settings.json".into()),
-                    revision: auth_file_revision(&settings_path),
-                });
-            }
-        }
-        // Official OAuth: macOS Keychain first, then credentials file under
-        // agent home.
-        if let Some(bundle) = read_claude_oauth_bundle()? {
-            let mut metadata = inspect_auth_credentials(&bundle.body);
-            metadata.access_expired = metadata.access_expired.or(Some(bundle.expired));
-            let health = oauth_auth_health(metadata);
-            let credentials_path = home.join(".credentials.json");
-            return Ok(AuthState {
-                agent: AgentId::Claude,
-                kind: Some("oauth".into()),
-                summary: if health == crate::models::AuthHealth::NeedsLogin {
-                    "Claude OAuth credentials are expired; sign in again".into()
-                } else {
-                    "Claude OAuth credentials located".into()
-                },
-                has_credentials: true,
-                health,
-                source: Some(format!("claude:{}", bundle.source.as_str())),
-                revision: claude_oauth_revision(&bundle, &credentials_path),
-            });
-        }
-        let credentials_path = home.join(".credentials.json");
-        if credentials_path.is_file() {
-            return Ok(AuthState {
-                agent: AgentId::Claude,
-                kind: None,
-                summary: "Claude credentials file could not be classified".into(),
-                has_credentials: false,
-                health: crate::models::AuthHealth::Unknown,
-                source: Some("claude:.credentials.json".into()),
-                revision: auth_file_revision(&credentials_path),
-            });
-        }
-        Ok(AuthState {
-            agent: AgentId::Claude,
-            kind: None,
-            summary: "no Claude credentials found (settings API key or official login state)"
-                .into(),
-            has_credentials: false,
-            health: crate::models::AuthHealth::Missing,
-            source: Some("claude:settings.json".into()),
-            revision: auth_file_revision(&settings_path),
-        })
+        let state = claude_auth_state(&home)?;
+        Ok(with_claude_keychain_also_present(state))
     }
 
     fn read_account(&self) -> Result<LiveAccount> {
@@ -327,6 +258,125 @@ impl AgentAdapter for ClaudeAdapter {
             env: vec![],
         })
     }
+}
+
+/// Classify Claude auth under `home` (settings + same-home credentials file).
+///
+/// macOS Keychain is still consulted for official OAuth / `also_present`,
+/// matching production `read_auth`. File OAuth is read from
+/// `home/.credentials.json` and does not re-enter `agent_home()`.
+pub(crate) fn claude_auth_state(home: &Path) -> Result<AuthState> {
+    let settings_path = home.join("settings.json");
+    // Match read_account: an explicit settings token is the effective
+    // auth mode even when stale OAuth credentials remain on disk.
+    match read_claude_settings_token(&settings_path) {
+        Ok(Some(_)) => {
+            let state = AuthState {
+                agent: AgentId::Claude,
+                kind: Some("api_key".into()),
+                summary: "API key present in settings.json".into(),
+                has_credentials: true,
+                health: crate::models::AuthHealth::Configured,
+                source: Some("claude:settings.json".into()),
+                revision: auth_file_revision(&settings_path),
+                also_present: Vec::new(),
+            };
+            return Ok(if claude_file_oauth_present(home) {
+                state.with_also_present(["oauth"])
+            } else {
+                state
+            });
+        }
+        Ok(None) => {}
+        Err(_) => {
+            return Ok(AuthState {
+                agent: AgentId::Claude,
+                kind: None,
+                summary: "Claude settings.json could not be parsed".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Unknown,
+                source: Some("claude:settings.json".into()),
+                revision: auth_file_revision(&settings_path),
+                also_present: Vec::new(),
+            });
+        }
+    }
+    // Official OAuth: macOS Keychain first, then credentials file under
+    // the given home (not a second `agent_home()` lookup).
+    let credentials_path = home.join(".credentials.json");
+    if let Some(bundle) = read_claude_oauth_for_home(home)? {
+        let mut metadata = inspect_auth_credentials(&bundle.body);
+        metadata.access_expired = metadata.access_expired.or(Some(bundle.expired));
+        let health = oauth_auth_health(metadata);
+        return Ok(AuthState {
+            agent: AgentId::Claude,
+            kind: Some("oauth".into()),
+            summary: if health == crate::models::AuthHealth::NeedsLogin {
+                "Claude OAuth credentials are expired; sign in again".into()
+            } else {
+                "Claude OAuth credentials located".into()
+            },
+            has_credentials: true,
+            health,
+            source: Some(format!("claude:{}", bundle.source.as_str())),
+            revision: claude_oauth_revision(&bundle, &credentials_path),
+            also_present: Vec::new(),
+        });
+    }
+    if credentials_path.is_file() {
+        return Ok(AuthState {
+            agent: AgentId::Claude,
+            kind: None,
+            summary: "Claude credentials file could not be classified".into(),
+            has_credentials: false,
+            health: crate::models::AuthHealth::Unknown,
+            source: Some("claude:.credentials.json".into()),
+            revision: auth_file_revision(&credentials_path),
+            also_present: Vec::new(),
+        });
+    }
+    Ok(AuthState {
+        agent: AgentId::Claude,
+        kind: None,
+        summary: "no Claude credentials found (settings API key or official login state)".into(),
+        has_credentials: false,
+        health: crate::models::AuthHealth::Missing,
+        source: Some("claude:settings.json".into()),
+        revision: auth_file_revision(&settings_path),
+        also_present: Vec::new(),
+    })
+}
+
+/// File OAuth under `home` only. Keychain is merged in `read_auth` so unit
+/// tests against a tempdir are not polluted by the developer machine login.
+fn claude_file_oauth_present(home: &Path) -> bool {
+    matches!(
+        read_claude_oauth_from_path(&home.join(".credentials.json")),
+        Ok(Some(_))
+    )
+}
+
+fn with_claude_keychain_also_present(state: AuthState) -> AuthState {
+    if state.kind.as_deref() != Some("api_key") || !state.also_present.is_empty() {
+        return state;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if matches!(read_claude_oauth_from_keychain(), Ok(Some(_))) {
+            return state.with_also_present(["oauth"]);
+        }
+    }
+    state
+}
+
+fn read_claude_oauth_for_home(home: &Path) -> Result<Option<ClaudeOauthBundle>> {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(bundle) = read_claude_oauth_from_keychain()? {
+            return Ok(Some(bundle));
+        }
+    }
+    read_claude_oauth_from_path(&home.join(".credentials.json"))
 }
 
 fn read_claude_settings_token(path: &Path) -> Result<Option<(String, String)>> {
@@ -533,10 +583,14 @@ fn read_claude_oauth_from_keychain() -> Result<Option<ClaudeOauthBundle>> {
 
 fn read_claude_oauth_from_file() -> Result<Option<ClaudeOauthBundle>> {
     let path = agent_home(AgentId::Claude)?.join(".credentials.json");
+    read_claude_oauth_from_path(&path)
+}
+
+fn read_claude_oauth_from_path(path: &Path) -> Result<Option<ClaudeOauthBundle>> {
     if !path.exists() {
         return Ok(None);
     }
-    let content = std::fs::read_to_string(&path)?;
+    let content = std::fs::read_to_string(path)?;
     Ok(parse_claude_oauth_json(
         &content,
         ClaudeOauthSource::CredentialsFile,

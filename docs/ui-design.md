@@ -210,8 +210,9 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - 「正用于」来自绑定：native / reshape / bridge，不是手写 account/provider 出身。
 - **每一份真登录都有「接到…」**，打开同一绑定对话框（登录固定，选工具）。接不上、工具不能写入、未识别：对话框内置灰 + 原因，不在行上隐藏动作。选目标后预览标 ① 只改配置 / ② 写进对方认的登录 / ③ 本机转发，不要把订阅默认写成转发。
 - 「切换」只用于这份登录对它本来所属工具的 native 绑定。接到其他工具一律走 `bind`。
-- 添加登录时写下它是哪一家。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意工具）。
+- 添加登录时写下它是哪一家。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意工具）。**Pi 无单一官方 URL**：弹窗选厂商槽，官方槽（anthropic / openai / …）只写 `~/.pi/agent/auth.json`，自定义 URL 写 `models.json`。
 - **已落地（读模型 + 写入）**：跨工具钱包列表 + 真登录常驻「接到…」+ Dashboard 当前绑定；生成投影不进钱包。确认步走 `bind`，成功以该工具的当前绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
+- 导入当前登录时若本机同时有 Key 与官方登录，对话框警告条说明当前会收入哪一份。
 - 实现落点：`TicketWalletList` / `ticket-wallet-model` / `lib/api/tickets`；`reuse-offer` 为登录常驻「接到…」语义。
 
 #### 4.3.1 mode=providers — API 配置（历史线框 / 过渡形态）

@@ -12,6 +12,7 @@ import type {
 } from '@/lib/backend/contracts/config-types';
 import type { AgentId, Provider } from '@/lib/types';
 import type { ProviderFormVars } from '@/lib/provider-detect';
+import { piProviderSlotById } from '@/lib/pi-provider-slots';
 import { REDACTED_MARKER } from '@/lib/provider-detect';
 
 /** UI schema load state for the Provider edit dialog. */
@@ -291,9 +292,13 @@ function resolveAuthApiKeyInput(
 }
 
 function buildDisplayName(input: ProviderSaveFlowInput): string {
-  const { name, useOfficial, officialLabel, vars } = input;
+  const { name, useOfficial, officialLabel, vars, agentId } = input;
   if (name.trim()) return name.trim();
   if (useOfficial && officialLabel) return officialLabel;
+  if (agentId === 'pi') {
+    const slot = piProviderSlotById(vars.providerSlug);
+    if (slot && slot.id !== 'custom') return slot.label;
+  }
   if (vars.baseUrl) {
     try {
       return new URL(vars.baseUrl).host;

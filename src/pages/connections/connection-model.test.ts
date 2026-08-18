@@ -13,6 +13,7 @@ import {
   isCurrentSwitchPreviewRequest,
   isLiveAuthDiscoveryDeferred,
   liveApiKeyImportGate,
+  liveAuthCoexistenceNotice,
   liveAuthDiscoveryKind,
   liveAuthImportGate,
   mergeConnectionEntries,
@@ -231,6 +232,110 @@ describe('connection-model', () => {
     expect(liveApiKeyImportGate(previousAgentProbe, false, 'codex')).toEqual({
       enabled: false,
       reason: '本机认证方式正在切换，已禁用 API Key 导入',
+    });
+  });
+
+  describe('live-auth coexistence', () => {
+    it('does not warn when a second credential family is absent', () => {
+      expect(
+        liveAuthCoexistenceNotice(
+          { agentId: 'claude', kind: 'oauth', hasCredentials: true, alsoPresent: [] },
+          'claude',
+        ),
+      ).toBeNull();
+      expect(
+        liveAuthCoexistenceNotice(
+          { agentId: 'claude', kind: 'oauth', hasCredentials: true },
+          'claude',
+        ),
+      ).toBeNull();
+      expect(
+        liveAuthCoexistenceNotice(
+          { agentId: 'claude', kind: 'oauth', hasCredentials: true, alsoPresent: ['nope'] },
+          'claude',
+        ),
+      ).toBeNull();
+      expect(liveAuthCoexistenceNotice(null, 'claude')).toBeNull();
+    });
+
+    it('warns about a second live credential family without changing import gates', () => {
+      const claudeDual = {
+        agentId: 'claude' as const,
+        kind: 'api_key',
+        hasCredentials: true,
+        alsoPresent: ['oauth'],
+      };
+      expect(liveAuthCoexistenceNotice(claudeDual, 'claude')).toContain('Key');
+      expect(liveAuthImportGate(claudeDual, false, 'claude')).toEqual({
+        enabled: false,
+        reason: '当前本机配置为 API Key，不是 OAuth 登录态',
+      });
+      expect(liveApiKeyImportGate(claudeDual, false, 'claude')).toEqual({
+        enabled: true,
+        reason: '',
+      });
+
+      const oauthAlsoApiKey = {
+        agentId: 'claude' as const,
+        kind: 'oauth',
+        hasCredentials: true,
+        alsoPresent: ['api_key'],
+      };
+      expect(liveAuthImportGate(oauthAlsoApiKey, false, 'claude')).toEqual({
+        enabled: true,
+        reason: '',
+      });
+      expect(liveApiKeyImportGate(oauthAlsoApiKey, false, 'claude')).toEqual({
+        enabled: false,
+        reason: '当前本机为 OAuth 登录态，请导入当前登录态',
+      });
+    });
+
+    it('uses agent-specific copy for grok / kimi / codex and a generic cursor notice', () => {
+      expect(
+        liveAuthCoexistenceNotice(
+          { agentId: 'grok', kind: 'api_key', hasCredentials: true, alsoPresent: ['oauth'] },
+          'grok',
+        ),
+      ).toContain('grok login');
+      expect(
+        liveAuthCoexistenceNotice(
+          { agentId: 'kimi', kind: 'api_key', hasCredentials: true, alsoPresent: ['oauth'] },
+          'kimi',
+        ),
+      ).toMatch(/config\.toml|\/login/);
+      expect(
+        liveAuthCoexistenceNotice(
+          { agentId: 'codex', kind: 'api_key', hasCredentials: true, alsoPresent: ['oauth'] },
+          'codex',
+        ),
+      ).toMatch(/ChatGPT|TUI/);
+      expect(
+        liveAuthCoexistenceNotice(
+          { agentId: 'cursor', kind: 'api_key', hasCredentials: true, alsoPresent: ['oauth'] },
+          'cursor',
+        ),
+      ).toContain('本机同时有');
+    });
+
+    it('treats trimmed file-auth.json in alsoPresent as an oauth family', () => {
+      expect(
+        liveAuthCoexistenceNotice(
+          {
+            agentId: 'claude',
+            kind: 'api_key',
+            hasCredentials: true,
+            alsoPresent: [' file-auth.json '],
+          },
+          'claude',
+        ),
+      ).toContain('Key');
+    });
+
+    it('still returns the pi notice for kind mixed without alsoPresent', () => {
+      const piMixed = { agentId: 'pi' as const, kind: 'mixed', hasCredentials: true };
+      expect(liveAuthCoexistenceNotice(piMixed, 'pi')).toMatch(/auth\.json|provider/);
+      expect(liveAuthImportGate(piMixed, false, 'pi').enabled).toBe(false);
     });
   });
 

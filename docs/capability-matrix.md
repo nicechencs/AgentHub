@@ -129,7 +129,7 @@ DeepSeek Harness（`dsh`）已进生产 registry。级别表以 `agenthub agent 
 | AccountSwitch / cursor | 账号由 Cursor 管理 |
 | ApiKeyAccount / workbuddy | 暂不支持 API Key 账号池 |
 | ApiKeyAccount / codex | 可入池；live 应用仅支持 OAuth auth.json |
-| ApiKeyAccount / pi | 可入池；auth.json provider schema 不稳定，不写回 |
+| ApiKeyAccount / pi | 可入池；写回 auth.json 需带官方厂商槽（anthropic/openai/…）；自定义 URL 走 models.json / 供应商切换 |
 | ApiKeyAccount / cursor | 可用 API Key 或 cursor-agent login |
 | Skills / kimi | Kimi CLI 无技能目录模型 |
 | LiveBackup / cursor | 无稳定配置/凭据文件 |

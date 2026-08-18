@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use super::pi_auth::{
-    combined_live_account, expand_auth_to_live_accounts, merge_auth_json, pi_config_dir,
-    read_auth_json,
+    apply_pi_api_key_to_dir, combined_live_account, expand_auth_to_live_accounts, merge_auth_json,
+    pi_config_dir, read_auth_json, write_verified_auth_json,
 };
 use super::{
     api_key_live_account, auth_file_revision, detect_binary, inspect_auth_credentials,
@@ -81,81 +81,7 @@ impl AgentAdapter for PiAdapter {
     }
 
     fn read_auth(&self) -> Result<AuthState> {
-        let auth = pi_config_dir()?.join("auth.json");
-        let has = auth.is_file();
-        let (kind, summary, has_credentials, health) = if !has {
-            (
-                None,
-                "no auth.json".into(),
-                false,
-                crate::models::AuthHealth::Missing,
-            )
-        } else {
-            match read_auth_json().and_then(|body| {
-                let n = body.as_object().map(|o| o.len()).unwrap_or(0);
-                if n == 0 {
-                    return Ok((
-                        None,
-                        "auth.json exists but contains no provider credentials".into(),
-                        false,
-                        crate::models::AuthHealth::Unknown,
-                    ));
-                }
-                let entries = expand_auth_to_live_accounts(&body)?;
-                let has_oauth = entries.iter().any(|entry| entry.kind == AccountKind::Oauth);
-                let has_api_key = entries
-                    .iter()
-                    .any(|entry| entry.kind == AccountKind::ApiKey);
-                let kind = match (has_oauth, has_api_key) {
-                    (true, true) => Some("mixed"),
-                    (true, false) => Some("oauth"),
-                    (false, true) => Some("api_key"),
-                    (false, false) => Some("file-auth.json"),
-                };
-                let summary = format!(
-                    "auth.json present ({n} provider credentials; {})",
-                    kind.unwrap_or("file-auth.json")
-                );
-                let provider_healths: Vec<_> = body
-                    .as_object()
-                    .expect("Pi auth.json was validated as an object")
-                    .values()
-                    .map(pi_provider_auth_health)
-                    .collect();
-                let health = aggregate_pi_provider_auth_health(provider_healths);
-                if health == crate::models::AuthHealth::Unknown {
-                    return Ok((
-                        None,
-                        "auth.json present but credentials could not be classified".into(),
-                        false,
-                        crate::models::AuthHealth::Unknown,
-                    ));
-                }
-                Ok((
-                    kind.map(str::to_owned),
-                    summary,
-                    !entries.is_empty(),
-                    health,
-                ))
-            }) {
-                Ok(result) => result,
-                Err(_) => (
-                    None,
-                    "auth.json present but credentials could not be classified".into(),
-                    false,
-                    crate::models::AuthHealth::Unknown,
-                ),
-            }
-        };
-        Ok(AuthState {
-            agent: AgentId::Pi,
-            kind,
-            summary,
-            has_credentials,
-            health,
-            source: Some("pi:auth.json".into()),
-            revision: auth_file_revision(&auth),
-        })
+        Ok(pi_auth_state(&pi_config_dir()?.join("auth.json")))
     }
 
     fn read_account(&self) -> Result<LiveAccount> {
@@ -192,25 +118,23 @@ impl AgentAdapter for PiAdapter {
                 // Merge provider keys so switching one OAuth account does not
                 // wipe other providers already stored in auth.json.
                 let merged = merge_auth_json(&body)?;
-                let path = pi_config_dir()?.join("auth.json");
-                let mut bytes = serde_json::to_vec_pretty(&merged)?;
-                bytes.push(b'\n');
-                atomic_write(&path, &bytes)?;
-                let written = std::fs::read_to_string(&path)?;
-                let parsed: serde_json::Value = serde_json::from_str(&written)?;
-                if parsed != merged {
-                    return Err(AppError::message(
-                        "account.verify",
-                        "Pi auth.json verification failed after write",
-                    ));
-                }
-                Ok(())
+                write_verified_auth_json(&pi_config_dir()?.join("auth.json"), &merged)
             }
-            "api_key" => Err(AppError::Unsupported(
-                "Pi live apply for standalone API key accounts is not supported; \
-                 import auth.json (provider-keyed) or use `pi --api-key` / models.json"
-                    .into(),
-            )),
+            "api_key" => {
+                let key = account
+                    .credentials
+                    .get("api_key")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::InvalidArg("Pi api_key is required".into()))?;
+                let key = require_api_key(key)?;
+                let provider = account
+                    .credentials
+                    .get("provider")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| account.extra.get("provider").and_then(|v| v.as_str()))
+                    .unwrap_or("");
+                apply_pi_api_key_to_dir(&pi_config_dir()?, provider, key)
+            }
             other => Err(AppError::InvalidArg(format!(
                 "unsupported Pi account credential format: {other}"
             ))),
@@ -218,8 +142,9 @@ impl AgentAdapter for PiAdapter {
     }
 
     fn build_api_key_account(&self, api_key: &str) -> Result<LiveAccount> {
-        // Allow storing a pool entry for future use / manual apply; live apply
-        // of this format remains Unsupported (auth.json provider schema varies).
+        // Pool-only: no official slot is known at add time. Live apply writes
+        // auth.json only when credentials.provider / extra.provider is an
+        // official slot (anthropic/openai/…).
         let key = require_api_key(api_key)?;
         Ok(api_key_live_account(
             AgentId::Pi,
@@ -231,7 +156,7 @@ impl AgentAdapter for PiAdapter {
             "API Key",
             serde_json::json!({
                 "source": "manual",
-                "note": "pool-only; apply to live auth.json is unsupported"
+                "note": "pool-only unless credentials.provider is an official auth.json slot"
             }),
         ))
     }
@@ -248,9 +173,9 @@ impl AgentAdapter for PiAdapter {
             AccountSwitch | Skills | LiveBackup | StructuredStream | ProjectHistory
             | ProjectDelete => CapabilityState::full(),
             ConfigWrite => CapabilityState::full(),
-            ApiKeyAccount => {
-                CapabilityState::partial("可入池；auth.json provider schema 不稳定，不写回")
-            }
+            ApiKeyAccount => CapabilityState::partial(
+                "可入池；写回 auth.json 需带官方厂商槽（anthropic/openai/…）；自定义 URL 走 models.json / 供应商切换",
+            ),
             DangerousMode => CapabilityState::partial("--approve 仅信任项目文件，非完全跳过确认"),
             ProviderPresets => CapabilityState::unsupported("暂无内置 Pi provider 预设"),
             Usage => CapabilityState::full(),
@@ -298,6 +223,102 @@ impl AgentAdapter for PiAdapter {
             env: vec![],
         })
     }
+}
+
+/// Classify the given Pi `auth.json` path. Does not call `read_auth_json()`
+/// (that helper re-enters `pi_config_dir()`).
+pub(crate) fn pi_auth_state(auth: &Path) -> AuthState {
+    let has = auth.is_file();
+    let (kind, summary, has_credentials, health) = if !has {
+        (
+            None,
+            "no auth.json".into(),
+            false,
+            crate::models::AuthHealth::Missing,
+        )
+    } else {
+        match read_pi_auth_json_object(auth).and_then(|body| {
+            let n = body.as_object().map(|o| o.len()).unwrap_or(0);
+            if n == 0 {
+                return Ok((
+                    None,
+                    "auth.json exists but contains no provider credentials".into(),
+                    false,
+                    crate::models::AuthHealth::Unknown,
+                ));
+            }
+            let entries = expand_auth_to_live_accounts(&body)?;
+            let has_oauth = entries.iter().any(|entry| entry.kind == AccountKind::Oauth);
+            let has_api_key = entries
+                .iter()
+                .any(|entry| entry.kind == AccountKind::ApiKey);
+            let kind = match (has_oauth, has_api_key) {
+                (true, true) => Some("mixed"),
+                (true, false) => Some("oauth"),
+                (false, true) => Some("api_key"),
+                (false, false) => Some("file-auth.json"),
+            };
+            let summary = format!(
+                "auth.json present ({n} provider credentials; {})",
+                kind.unwrap_or("file-auth.json")
+            );
+            let provider_healths: Vec<_> = body
+                .as_object()
+                .expect("Pi auth.json was validated as an object")
+                .values()
+                .map(pi_provider_auth_health)
+                .collect();
+            let health = aggregate_pi_provider_auth_health(provider_healths);
+            if health == crate::models::AuthHealth::Unknown {
+                return Ok((
+                    None,
+                    "auth.json present but credentials could not be classified".into(),
+                    false,
+                    crate::models::AuthHealth::Unknown,
+                ));
+            }
+            Ok((
+                kind.map(str::to_owned),
+                summary,
+                !entries.is_empty(),
+                health,
+            ))
+        }) {
+            Ok(result) => result,
+            Err(_) => (
+                None,
+                "auth.json present but credentials could not be classified".into(),
+                false,
+                crate::models::AuthHealth::Unknown,
+            ),
+        }
+    };
+    let state = AuthState {
+        agent: AgentId::Pi,
+        kind,
+        summary,
+        has_credentials,
+        health,
+        source: Some("pi:auth.json".into()),
+        revision: auth_file_revision(auth),
+        also_present: Vec::new(),
+    };
+    if state.kind.as_deref() == Some("mixed") {
+        state.with_also_present(["oauth", "api_key"])
+    } else {
+        state
+    }
+}
+
+fn read_pi_auth_json_object(auth: &Path) -> Result<serde_json::Value> {
+    let text = std::fs::read_to_string(auth)?;
+    let body: serde_json::Value = serde_json::from_str(&text)?;
+    if !body.is_object() {
+        return Err(AppError::InvalidArg(
+            "Pi auth.json must be a JSON object".into(),
+        ));
+    }
+    Ok(body)
 }
 
 /// Classify one Pi provider entry without mixing expiry/token facts from its
@@ -480,10 +501,13 @@ fn merge_pi_models(
 
     // Apply desired top-level options (for example `baseUrl` overrides) while
     // retaining unknown keys already present in the live file.
+    // Root apply envelopes may include auth/settings/paths next to
+    // `providers`. Those belong in their own files — never models.json.
     for (key, value) in desired_obj {
-        if key != "providers" {
-            merged.insert(key.clone(), value.clone());
+        if matches!(key.as_str(), "providers" | "auth" | "settings" | "paths") {
+            continue;
         }
+        merged.insert(key.clone(), value.clone());
     }
     Ok(serde_json::Value::Object(merged))
 }
@@ -656,6 +680,90 @@ mod tests {
                 "only": { "type": "oauth", "access": "snapshot-access" }
             })
         );
+
+        match previous {
+            Some(value) => std::env::set_var("PI_CODING_AGENT_DIR", value),
+            None => std::env::remove_var("PI_CODING_AGENT_DIR"),
+        }
+    }
+
+    #[test]
+    fn write_config_models_and_auth_do_not_cross_files() {
+        let _guard = PI_CONFIG_ENV_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("PI_CODING_AGENT_DIR");
+        std::env::set_var("PI_CODING_AGENT_DIR", dir.path());
+        std::fs::write(
+            dir.path().join("auth.json"),
+            serde_json::to_vec_pretty(&json!({
+                "keep": { "type": "oauth", "access": "keep-access" }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("models.json"),
+            serde_json::to_vec_pretty(&json!({
+                "providers": {
+                    "keep": { "baseUrl": "https://keep.example", "apiKey": "keep-secret" }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        write_pi_config(&AgentConfig {
+            agent: AgentId::Pi,
+            raw: json!({
+                "models": {
+                    "providers": {
+                        "custom": {
+                            "baseUrl": "https://relay.example/v1",
+                            "api": "openai-completions",
+                            "apiKey": "sk-relay",
+                            "models": [{ "id": "custom-model" }]
+                        }
+                    }
+                },
+                "auth": {
+                    "openai": { "type": "api_key", "key": "sk-openai" }
+                }
+            }),
+        })
+        .unwrap();
+
+        let models = read_json_object_or_empty(&dir.path().join("models.json")).unwrap();
+        assert_eq!(
+            models["providers"]["custom"]["baseUrl"],
+            "https://relay.example/v1"
+        );
+        assert_eq!(models["providers"]["keep"]["apiKey"], "keep-secret");
+        assert!(models.get("auth").is_none(), "auth must not leak into models.json");
+
+        let auth = read_json_object_or_empty(&dir.path().join("auth.json")).unwrap();
+        assert_eq!(auth["openai"]["type"], "api_key");
+        assert_eq!(auth["openai"]["key"], "sk-openai");
+        assert_eq!(auth["keep"]["access"], "keep-access");
+
+        // Legacy root `{ providers, auth }` must also keep auth out of models.json.
+        write_pi_config(&AgentConfig {
+            agent: AgentId::Pi,
+            raw: json!({
+                "providers": {
+                    "extra": { "baseUrl": "https://extra.example", "apiKey": "sk-extra" }
+                },
+                "auth": {
+                    "deepseek": { "type": "api_key", "key": "sk-ds" }
+                }
+            }),
+        })
+        .unwrap();
+        let models = read_json_object_or_empty(&dir.path().join("models.json")).unwrap();
+        assert_eq!(models["providers"]["extra"]["baseUrl"], "https://extra.example");
+        assert!(models.get("auth").is_none());
+        let auth = read_json_object_or_empty(&dir.path().join("auth.json")).unwrap();
+        assert_eq!(auth["deepseek"]["key"], "sk-ds");
+        assert_eq!(auth["openai"]["key"], "sk-openai");
 
         match previous {
             Some(value) => std::env::set_var("PI_CODING_AGENT_DIR", value),

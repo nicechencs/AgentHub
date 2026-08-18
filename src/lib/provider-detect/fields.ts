@@ -4,6 +4,10 @@
  */
 import type { AgentId } from '@/lib/types';
 import {
+  defaultPiProviderApi,
+  isPiAuthJsonSlot,
+} from '@/lib/pi-provider-slots';
+import {
   CLAUDE_MODEL_ROLE_ENV,
   EMPTY_FORM_VARS,
   REDACTED_MARKER,
@@ -51,19 +55,58 @@ export function parseJsonObjectConfig(configText: string): JsonObjectParseResult
   }
 }
 
+function firstPiAuthApiKey(
+  auth: Record<string, unknown> | undefined,
+  preferSlug?: string,
+): { slug: string; key: string } | undefined {
+  if (!auth) return undefined;
+  const readKey = (entry: unknown): string => {
+    const obj = objectValue(entry);
+    const raw =
+      (typeof obj?.key === 'string' && obj.key) ||
+      (typeof obj?.api_key === 'string' && obj.api_key) ||
+      (typeof obj?.apiKey === 'string' && obj.apiKey) ||
+      '';
+    return sanitizeSecretForForm(raw);
+  };
+  if (preferSlug) {
+    const key = readKey(auth[preferSlug]);
+    if (key) return { slug: preferSlug, key };
+  }
+  for (const [slug, entry] of Object.entries(auth)) {
+    const obj = objectValue(entry);
+    const type = typeof obj?.type === 'string' ? obj.type : '';
+    const key = readKey(entry);
+    if (key && (type === 'api_key' || type === 'apikey' || type === 'api-key' || !type)) {
+      return { slug, key };
+    }
+  }
+  return undefined;
+}
+
 function extractPiProviderVars(root: unknown): ProviderFormVars {
   const rootObject = objectValue(root);
   const modelsObject = objectValue(rootObject?.models);
-  const providers = objectValue(rootObject?.providers) ?? objectValue(modelsObject?.providers);
-  const [providerSlug, providerValue] = providers ? Object.entries(providers)[0] ?? [] : [];
+  const providers = objectValue(modelsObject?.providers) ?? objectValue(rootObject?.providers);
+  const entries = providers ? Object.entries(providers) : [];
+  const preferred =
+    entries.find(([, value]) => {
+      const provider = objectValue(value);
+      return typeof provider?.baseUrl === 'string' && provider.baseUrl.trim();
+    }) ?? entries[0];
+  const [providerSlug, providerValue] = preferred ?? [];
   const provider = objectValue(providerValue);
   const models = Array.isArray(provider?.models) ? provider.models : [];
   const model = objectValue(models[0]);
+  const authHit = firstPiAuthApiKey(objectValue(rootObject?.auth), providerSlug);
+  const providerKey = sanitizeSecretForForm(
+    typeof provider?.apiKey === 'string' ? provider.apiKey : '',
+  );
   return {
     ...EMPTY_FORM_VARS,
-    providerSlug: providerSlug ?? 'custom',
+    providerSlug: providerSlug ?? authHit?.slug ?? 'custom',
     baseUrl: typeof provider?.baseUrl === 'string' ? provider.baseUrl : '',
-    apiKey: sanitizeSecretForForm(typeof provider?.apiKey === 'string' ? provider.apiKey : ''),
+    apiKey: providerKey || authHit?.key || '',
     model: typeof model?.id === 'string' ? model.id : '',
   };
 }
@@ -83,29 +126,76 @@ function extractWorkBuddyModelVars(root: unknown): ProviderFormVars {
 }
 
 function applyPiProviderVars(root: Record<string, unknown>, vars: ProviderFormVars): string {
-  const modelsObject = objectValue(root.models);
-  const native = modelsObject && objectValue(modelsObject.providers) ? modelsObject : root;
-  const existingProviders = objectValue(native.providers);
-  const providers: Record<string, unknown> = existingProviders ? { ...existingProviders } : {};
-  const slug = vars.providerSlug.trim() || Object.keys(providers)[0] || 'custom';
-  const existingProvider = objectValue(providers[slug]);
-  const provider: Record<string, unknown> = existingProvider ? { ...existingProvider } : {};
-  const models = Array.isArray(provider.models) ? [...provider.models] : [];
-  const existingModel = objectValue(models[0]);
-  const model: Record<string, unknown> = existingModel ? { ...existingModel } : {};
-  const modelId = vars.model.trim() || (typeof model.id === 'string' ? model.id : 'custom-model');
+  const slug = vars.providerSlug.trim() || 'custom';
+  const key = vars.apiKey.trim();
+  const url = vars.baseUrl.trim();
+  const authSlot = isPiAuthJsonSlot(slug);
+  // Official slots without a relay URL stay on Pi builtins (auth.json only).
+  // A custom / bind slot, or an official slot with a URL, writes models.json.
+  const writeModelsProvider = !authSlot || Boolean(url);
+  const liveEnvelope = Boolean(objectValue(root.paths));
 
-  if (vars.baseUrl.trim()) provider.baseUrl = vars.baseUrl.trim();
-  if (vars.apiKey.trim()) provider.apiKey = vars.apiKey.trim();
-  else if (typeof provider.apiKey === 'string') provider.apiKey = REDACTED_MARKER;
-  if (typeof provider.api !== 'string' || !provider.api) provider.api = 'openai-completions';
-  model.id = modelId;
-  if (typeof model.name !== 'string' || !model.name) model.name = modelId;
-  models[0] = model;
-  provider.models = models;
-  providers[slug] = provider;
-  native.providers = providers;
-  if (native !== root) root.models = native;
+  const modelsObject = objectValue(root.models);
+  const existingProviders =
+    objectValue(modelsObject?.providers) ?? objectValue(root.providers) ?? {};
+  const providers: Record<string, unknown> = { ...existingProviders };
+  const ownedSlugs = Object.keys(providers);
+  if (ownedSlugs.length === 1 && ownedSlugs[0] !== slug) {
+    const prior = objectValue(providers[ownedSlugs[0]]);
+    delete providers[ownedSlugs[0]];
+    if (prior) providers[slug] = prior;
+  }
+
+  if (writeModelsProvider) {
+    const existingProvider = objectValue(providers[slug]);
+    const provider: Record<string, unknown> = existingProvider ? { ...existingProvider } : {};
+    const models = Array.isArray(provider.models) ? [...provider.models] : [];
+    const existingModel = objectValue(models[0]);
+    const model: Record<string, unknown> = existingModel ? { ...existingModel } : {};
+    const modelId = vars.model.trim() || (typeof model.id === 'string' ? model.id : 'custom-model');
+
+    if (url) provider.baseUrl = url;
+    if (key) provider.apiKey = key;
+    else if (typeof provider.apiKey === 'string') provider.apiKey = REDACTED_MARKER;
+    if (typeof provider.api !== 'string' || !provider.api) {
+      provider.api = defaultPiProviderApi(slug);
+    }
+    model.id = modelId;
+    if (typeof model.name !== 'string' || !model.name) model.name = modelId;
+    models[0] = model;
+    provider.models = models;
+    providers[slug] = provider;
+  } else {
+    delete providers[slug];
+  }
+
+  const nextModels: Record<string, unknown> = modelsObject ? { ...modelsObject } : {};
+  if (Object.keys(providers).length > 0) {
+    nextModels.providers = providers;
+    root.models = nextModels;
+  } else if (modelsObject) {
+    delete nextModels.providers;
+    if (Object.keys(nextModels).length > 0) root.models = nextModels;
+    else delete root.models;
+  }
+  delete root.providers;
+
+  const existingAuth = objectValue(root.auth);
+  if (authSlot && key) {
+    root.auth = {
+      ...(existingAuth ?? {}),
+      [slug]: { type: 'api_key', key },
+    };
+  } else if (authSlot && existingAuth) {
+    // Edit with empty key: keep the stored auth slot so write_config can merge.
+    root.auth = existingAuth;
+  } else if (!authSlot && existingAuth && !liveEnvelope) {
+    const authKeys = Object.keys(existingAuth);
+    if (authKeys.length === 1) {
+      delete root.auth;
+    }
+  }
+
   return JSON.stringify(root, null, 2);
 }
 
@@ -593,6 +683,7 @@ export function formFieldVisibility(
     claudeAuthEnv: isClaude,
     reasoningEffort: agentId === 'codex',
     wireApi: agentId === 'codex',
+    providerSlug: agentId === 'pi',
   };
 }
 
@@ -609,4 +700,5 @@ export const FORM_FIELD_LABELS: Record<FormFieldKey, string> = {
   claudeAuthEnv: 'Auth 字段',
   reasoningEffort: 'Reasoning effort',
   wireApi: 'Wire API',
+  providerSlug: 'Pi 厂商槽',
 };

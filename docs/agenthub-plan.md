@@ -110,7 +110,7 @@ trait AgentAdapter {
     fn install_channels(&self) -> Vec<InstallChannel>; // 渠道 id/标签 + requires: [RuntimeId]
     fn read_config(&self) -> AgentConfig;             // 当前 API 配置（live）
     fn write_config(&self, config: &AgentConfig) -> Result<()>; // 现行名；立项稿曾写 apply_provider
-    fn read_auth(&self) -> AuthState;                 // 当前认证状态（脱敏）
+    fn read_auth(&self) -> AuthState;                 // 当前认证状态（脱敏；并存时 alsoPresent 列出未胜出的凭据族）
     fn apply_account(&self, a: &LiveAccount) -> Result<()>;   // 账号凭据写入
     // 没有 supports_skills / usage_source；skills/usage 在 platform/
     fn skills_dir(&self) -> Option<PathBuf>;          // 技能投影目标；不支持则 None

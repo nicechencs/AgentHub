@@ -43,6 +43,7 @@ import {
 import {
   deleteConnectionDialogDescription,
   deleteConnectionToastDescription,
+  liveAuthCoexistenceNotice,
 } from './connection-model';
 import {
   closeConfirmationOnOpenChange,
@@ -57,7 +58,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { deleteAccount, importCurrentLogin } from '@/lib/api/account';
+import { deleteAccount, importCurrentLogin, probeLiveAuth, type LiveAuthProbe } from '@/lib/api/account';
 import { deleteProvider } from '@/lib/api/provider';
 import type { Account, Provider } from '@/lib/types';
 
@@ -104,6 +105,9 @@ export default function ConnectionsPage() {
   const [editProvider, setEditProvider] = useState<Provider | null>(null);
   const [editAccountKey, setEditAccountKey] = useState<Account | null>(null);
   const [loginImportOpen, setLoginImportOpen] = useState(false);
+  const [importLiveProbe, setImportLiveProbe] = useState<LiveAuthProbe | null>(null);
+  const [importProbeLoading, setImportProbeLoading] = useState(false);
+  const importProbeGen = useRef(0);
   const [importingAccount, setImportingAccount] = useState(false);
   const [deleteTicket, setDeleteTicket] = useState<TicketView | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -116,6 +120,31 @@ export default function ConnectionsPage() {
   useEffect(() => {
     if (highlightAgentId) setAddAgentId(highlightAgentId);
   }, [highlightAgentId]);
+
+  useEffect(() => {
+    if (!loginImportOpen) {
+      importProbeGen.current += 1;
+      setImportLiveProbe(null);
+      setImportProbeLoading(false);
+      return;
+    }
+    const generation = ++importProbeGen.current;
+    const agentId = addAgentId;
+    setImportLiveProbe(null);
+    setImportProbeLoading(true);
+    void probeLiveAuth(agentId, { force: true }).then(
+      (probe) => {
+        if (importProbeGen.current !== generation) return;
+        setImportLiveProbe(probe);
+        setImportProbeLoading(false);
+      },
+      () => {
+        if (importProbeGen.current !== generation) return;
+        setImportLiveProbe(null);
+        setImportProbeLoading(false);
+      },
+    );
+  }, [addAgentId, loginImportOpen]);
 
   const walletGeneration = useRef(0);
   const loadWallet = useCallback(async (): Promise<boolean> => {
@@ -250,14 +279,19 @@ export default function ConnectionsPage() {
     [pool.accounts, pool.providers],
   );
 
+  const importCoexistenceNotice = liveAuthCoexistenceNotice(importLiveProbe, addAgentId);
+
   const confirmImportLogin = async () => {
+    const coexistenceNotice = importCoexistenceNotice;
     setImportingAccount(true);
     try {
       const acc = await importCurrentLogin(addAgentId);
       setLoginImportOpen(false);
       toast({
         title: '已导入当前登录态',
-        description: `${acc.label} 已入库`,
+        description: coexistenceNotice
+          ? `${acc.label} 已入库。另一份本机凭据未导入，仍留在本机。`
+          : `${acc.label} 已入库`,
         variant: 'success',
       });
       await loadWallet();
@@ -427,6 +461,12 @@ export default function ConnectionsPage() {
               将读取 {agentDisplayName(addAgentId)} 本机官方 CLI 已完成的登录；AgentHub 不会在此发起新的授权。
             </DialogDescription>
           </DialogHeader>
+          {importProbeLoading ? (
+            <p className="text-xs text-muted">正在检测本机凭据…</p>
+          ) : null}
+          {importCoexistenceNotice ? (
+            <Notice tone="warning">{importCoexistenceNotice}</Notice>
+          ) : null}
           <DialogFooter>
             <Button
               variant="outline"

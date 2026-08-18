@@ -80,73 +80,7 @@ impl AgentAdapter for CodexAdapter {
 
     fn read_auth(&self) -> Result<AuthState> {
         let home = agent_home(AgentId::Codex)?;
-        let auth = home.join("auth.json");
-        if read_live_openai_api_key(&auth).ok().flatten().is_some() {
-            return Ok(AuthState {
-                agent: AgentId::Codex,
-                kind: Some("api_key".into()),
-                summary: "OPENAI_API_KEY present in auth.json".into(),
-                has_credentials: true,
-                health: crate::models::AuthHealth::Configured,
-                source: Some("codex:auth.json".into()),
-                revision: auth_file_revision(&auth),
-            });
-        }
-        let has = auth.is_file();
-        if !has {
-            return Ok(AuthState {
-                agent: AgentId::Codex,
-                kind: None,
-                summary: "no auth.json".into(),
-                has_credentials: false,
-                health: crate::models::AuthHealth::Missing,
-                source: Some("codex:auth.json".into()),
-                revision: None,
-            });
-        }
-        let body = match std::fs::read_to_string(&auth)
-            .ok()
-            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        {
-            Some(body) => body,
-            None => {
-                return Ok(AuthState {
-                    agent: AgentId::Codex,
-                    kind: None,
-                    summary: "auth.json could not be parsed".into(),
-                    has_credentials: false,
-                    health: crate::models::AuthHealth::Unknown,
-                    source: Some("codex:auth.json".into()),
-                    revision: auth_file_revision(&auth),
-                });
-            }
-        };
-        let metadata = inspect_auth_credentials(&body);
-        if !metadata.has_access_token && !metadata.has_refresh_token {
-            return Ok(AuthState {
-                agent: AgentId::Codex,
-                kind: None,
-                summary: "auth.json present but credentials could not be classified".into(),
-                has_credentials: false,
-                health: crate::models::AuthHealth::Unknown,
-                source: Some("codex:auth.json".into()),
-                revision: auth_file_revision(&auth),
-            });
-        }
-        let health = oauth_auth_health(metadata);
-        Ok(AuthState {
-            agent: AgentId::Codex,
-            kind: Some("oauth".into()),
-            summary: if health == crate::models::AuthHealth::NeedsLogin {
-                "Codex OAuth credentials are expired; run `codex login`".into()
-            } else {
-                "Codex OAuth credentials present".into()
-            },
-            has_credentials: true,
-            health,
-            source: Some("codex:auth.json".into()),
-            revision: auth_file_revision(&auth),
-        })
+        Ok(codex_auth_state(&home.join("auth.json")))
     }
 
     fn read_account(&self) -> Result<LiveAccount> {
@@ -292,6 +226,90 @@ impl AgentAdapter for CodexAdapter {
             cwd: opts.cwd.clone(),
             env: vec![],
         })
+    }
+}
+
+pub(crate) fn codex_auth_state(auth: &Path) -> AuthState {
+    if !auth.is_file() {
+        return AuthState {
+            agent: AgentId::Codex,
+            kind: None,
+            summary: "no auth.json".into(),
+            has_credentials: false,
+            health: crate::models::AuthHealth::Missing,
+            source: Some("codex:auth.json".into()),
+            revision: None,
+            also_present: Vec::new(),
+        };
+    }
+    let body = match std::fs::read_to_string(auth)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+    {
+        Some(body) => body,
+        None => {
+            return AuthState {
+                agent: AgentId::Codex,
+                kind: None,
+                summary: "auth.json could not be parsed".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Unknown,
+                source: Some("codex:auth.json".into()),
+                revision: auth_file_revision(auth),
+                also_present: Vec::new(),
+            };
+        }
+    };
+    let has_api_key = body
+        .get("OPENAI_API_KEY")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .is_some_and(|s| !s.is_empty());
+    let metadata = inspect_auth_credentials(&body);
+    let has_oauth = metadata.has_access_token || metadata.has_refresh_token;
+    if has_api_key {
+        let state = AuthState {
+            agent: AgentId::Codex,
+            kind: Some("api_key".into()),
+            summary: "OPENAI_API_KEY present in auth.json".into(),
+            has_credentials: true,
+            health: crate::models::AuthHealth::Configured,
+            source: Some("codex:auth.json".into()),
+            revision: auth_file_revision(auth),
+            also_present: Vec::new(),
+        };
+        return if has_oauth {
+            state.with_also_present(["oauth"])
+        } else {
+            state
+        };
+    }
+    if !has_oauth {
+        return AuthState {
+            agent: AgentId::Codex,
+            kind: None,
+            summary: "auth.json present but credentials could not be classified".into(),
+            has_credentials: false,
+            health: crate::models::AuthHealth::Unknown,
+            source: Some("codex:auth.json".into()),
+            revision: auth_file_revision(auth),
+            also_present: Vec::new(),
+        };
+    }
+    let health = oauth_auth_health(metadata);
+    AuthState {
+        agent: AgentId::Codex,
+        kind: Some("oauth".into()),
+        summary: if health == crate::models::AuthHealth::NeedsLogin {
+            "Codex OAuth credentials are expired; run `codex login`".into()
+        } else {
+            "Codex OAuth credentials present".into()
+        },
+        has_credentials: true,
+        health,
+        source: Some("codex:auth.json".into()),
+        revision: auth_file_revision(auth),
+        also_present: Vec::new(),
     }
 }
 
