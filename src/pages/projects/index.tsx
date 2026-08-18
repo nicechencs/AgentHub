@@ -46,7 +46,7 @@ import { cn } from '@/lib/utils';
 import { projectMatches, sessionMatches } from './project-filter';
 import { buildContinuePrompt, buildSummaryPrompt } from './project-prompts';
 import { nativeSessionId, shortSessionId } from './project-format';
-import { resolveProjectTabAgents } from './project-tab-agents';
+import { resolveProjectFetchAgentId, resolveProjectTabAgents } from './project-tab-agents';
 import { ProjectTree } from './ProjectTree';
 
 export default function ProjectsPage() {
@@ -62,7 +62,7 @@ export default function ProjectsPage() {
 
   const [agentId, setAgentId] = useState<AgentId>(() => {
     if (agentFromUrl && tabAgents.some((a) => a.id === agentFromUrl)) return agentFromUrl;
-    return tabAgents[0]?.id ?? 'claude';
+    return tabAgents[0]?.id ?? '';
   });
 
   const [projects, setProjects] = useState<AgentProject[]>([]);
@@ -110,7 +110,7 @@ export default function ProjectsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- URL write is a one-shot fallback
   }, [agentsLoading, tabAgents, agentId]);
 
-  const agentVisible = tabAgents.some((a) => a.id === agentId);
+  const fetchAgentId = resolveProjectFetchAgentId(tabAgents, agentId);
 
   const resetTree = useCallback(() => {
     setExpanded(new Set());
@@ -149,6 +149,11 @@ export default function ProjectsPage() {
     [resetTree],
   );
 
+  const reloadProjects = () => {
+    if (!fetchAgentId) return Promise.resolve();
+    return loadProjects(fetchAgentId, showHidden);
+  };
+
   useEffect(() => {
     void getProjectMetadata()
       .then((m) => setShowHidden(!!m.showHiddenProjects))
@@ -159,13 +164,13 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     if (agentsLoading) return;
-    if (!agentVisible) {
+    if (!fetchAgentId) {
       setProjects([]);
       setPhase(tabAgents.length === 0 ? 'ready' : 'loading');
       return;
     }
-    void loadProjects(agentId, showHidden);
-  }, [agentId, showHidden, loadProjects, agentsLoading, agentVisible, tabAgents.length]);
+    void loadProjects(fetchAgentId, showHidden);
+  }, [fetchAgentId, showHidden, loadProjects, agentsLoading, tabAgents.length]);
 
   /** 拉取全部 agent 项目数，角标与 Skills 工具条一致 */
   useEffect(() => {
@@ -277,7 +282,7 @@ export default function ProjectsPage() {
         title: p.hidden ? '已取消隐藏' : '已隐藏项目',
         variant: 'success',
       });
-      await loadProjects(agentId, showHidden);
+      await reloadProjects();
     } catch (err) {
       toast({ title: err instanceof Error ? err.message : String(err), variant: 'danger' });
     } finally {
@@ -298,7 +303,7 @@ export default function ProjectsPage() {
       await upsertProjectMeta(aliasTarget.id, { alias: aliasDraft });
       toast({ title: '已保存别名', variant: 'success' });
       setAliasTarget(null);
-      await loadProjects(agentId, showHidden);
+      await reloadProjects();
     } catch (err) {
       toast({ title: err instanceof Error ? err.message : String(err), variant: 'danger' });
     } finally {
@@ -494,7 +499,7 @@ export default function ProjectsPage() {
           })
           .filter((p) => p.agentId === 'cursor' || p.sessionCount > 0),
       );
-      await loadProjects(agentId, showHidden);
+      await reloadProjects();
       setSelected(new Set());
       setBatchDeleteOpen(false);
       toast({
@@ -590,8 +595,8 @@ export default function ProjectsPage() {
             <Button
               size="sm"
               variant="outline"
-              disabled={phase === 'loading' || busy}
-              onClick={() => void loadProjects(agentId, showHidden)}
+              disabled={phase === 'loading' || busy || tabAgents.length === 0}
+              onClick={() => void reloadProjects()}
             >
               刷新
             </Button>
@@ -643,7 +648,7 @@ export default function ProjectsPage() {
       {phase === 'loading' ? (
         <ListSkeleton rows={5} />
       ) : phase === 'error' ? (
-        <ErrorState error={error} onRetry={() => void loadProjects(agentId, showHidden)} />
+        <ErrorState error={error} onRetry={() => void reloadProjects()} />
       ) : tabAgents.length === 0 ? (
         <EmptyState
           icon={FolderKanban}
@@ -664,7 +669,7 @@ export default function ProjectsPage() {
           actionLabel={projects.length === 0 ? '刷新' : '清空搜索'}
           onAction={
             projects.length === 0
-              ? () => void loadProjects(agentId, showHidden)
+              ? () => void reloadProjects()
               : () => setSearch('')
           }
         />

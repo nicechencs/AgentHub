@@ -1,4 +1,5 @@
 import { toHiddenIdSet } from '@/lib/agent-visibility';
+import type { AgentId } from '@/lib/types';
 
 /**
  * Projects tabs: installed and not hidden only.
@@ -11,4 +12,12 @@ export function resolveProjectTabAgents<T extends { id: string }>(
 ): T[] {
   const hidden = toHiddenIdSet(hiddenIds);
   return installedAgents.filter((agent) => !hidden.has(agent.id));
+}
+
+export function resolveProjectFetchAgentId(
+  tabAgents: readonly { id: string }[],
+  selectedId: string,
+): AgentId | null {
+  if (tabAgents.length === 0) return null;
+  return tabAgents.some((agent) => agent.id === selectedId) ? selectedId : null;
 }

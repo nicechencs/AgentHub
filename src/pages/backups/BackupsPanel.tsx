@@ -1,5 +1,3 @@
-// 安全备份页：本机 live 配置快照
-// Agent Tab = 已安装 ∪ 有备份记录；列表平铺不折叠
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Database, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
@@ -27,7 +25,7 @@ import type { TranslateFn } from '@/lib/i18n';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import type { AgentId, BackupKind, BackupMeta } from '@/lib/types';
 import { cn, fmtBytes } from '@/lib/utils';
-import { fmtAbsoluteI18n, fmtRelativeI18n } from '@/pages/settings/settings-format';
+import { fmtAbsoluteI18n, fmtRelativeI18n } from './backup-format';
 
 const KIND_VARIANT: Record<BackupKind, 'accent' | 'default' | 'warning'> = {
   'auto-switch': 'accent',
@@ -106,7 +104,6 @@ export function BackupsPanel() {
     return map;
   }, [backups]);
 
-  /** 已安装 ∪ 有备份记录（保持 AGENTS 产品序） */
   const visibleAgents: AgentMeta[] = useMemo(() => {
     const withBackups = new Set(
       (backups ?? []).map((b) => b.agentId).filter(Boolean) as AgentId[],
@@ -118,7 +115,6 @@ export function BackupsPanel() {
     );
   }, [backups, installedIds, hiddenIds]);
 
-  // 当前选中不在可见列表时，落到第一个可见 Agent
   useEffect(() => {
     if (agentsLoading || loading) return;
     if (visibleAgents.length === 0) {
