@@ -4,7 +4,7 @@
 > **范围**：颜色层级、边框、字号/字体、表面分层、预览面板、提示体系、辅助信息；优先落在 **Skills** 与**全站 token/组件**，再推广到 Connections / Agents / Chat。  
 > **关系**：本文件是体验与视觉执行方案；页面线框与业务交互仍以 [ui-design.md](ui-design.md) 为产品契约。冲突时：**业务规则以 ui-design 为准，视觉执行以本文件收敛 token 与组件为准**。  
 > **版本**：v1.1 · 2026-08-06（实机核验版）  
-> **落地状态（2026-08）**：**Phase 0–2 大体已落地**（token / Skills 静音与预览一体 / 文案包）；**Phase 3–5 仍是计划**（全站控件方言、动效、主题精修）。  
+> **落地状态（2026-08）**：**Phase 0–2 大体已落地**（token / Skills 静音与预览一体 / 文案包）。Phase 3 里 ListRow / 分段同一族 / `PageHeader compact` 已落地；剩余方言收口与组件决策见 [ui-component-standard.md](ui-component-standard.md)。Phase 4–5（动效、深色精修、accent 换色）仍是 backlog。  
 > **截图**：仓库不存实机图，以 `pnpm dev:mock` 为准。当时核验条件见 §12.2 文字结论，不链本地 png。
 
 ---
@@ -440,13 +440,19 @@ checkbox 多选 ⟂ activeKey  // 两套状态，禁止混用
 
 **验收**：任意操作 tip ≤2 短句；无「单向投影」出现在 L0/L1。
 
-### Phase 3 — 全站控件方言收敛（2–4 天）
+### Phase 3 — 全站控件方言收敛
 
-1. 统一选中态：列表左边条或 `bg-active`（Connections 已有部分 → 抽 `ListRow`）。  
-2. Segmented / Tabs 视觉同一族。  
-3. Card：能靠 surface 的去掉双重 border。  
-4. Accent 面积审计：一页一主 CTA。  
-5. PageHeader：支持更紧凑 `size="compact"`（全高页用）。
+**已落地**：`ListRow`；Segmented / Tabs / `AgentTabStrip` 同一视觉族；`PageHeader size="compact"`。
+
+**仍做（以 [ui-component-standard.md](ui-component-standard.md) §8 为准，不按「天」排期）**：
+
+1. SearchField 收口（Connections 钱包已收；禁止再手写搜索框）。  
+2. 共享件字号改语义 token（`text-title` / `text-body` / `text-meta`）；存量页面别名不搞大扫除。  
+3. loading 用 Skeleton，不用一句「正在加载…」。  
+4. Accent 面积：一页一主 CTA，随 PR 自检。  
+5. Card：新卡避免双重描边；不重做旧卡密度。
+
+**先不做**：`TableShell` 改 workbench、`ListRow` 去边框、全站 `text-sm` 机械替换。
 
 ### Phase 4 — 动效与主题质感（1 天）
 
@@ -511,7 +517,7 @@ checkbox 多选 ⟂ activeKey  // 两套状态，禁止混用
 
 ```text
 已落地: Phase 0 + Phase 1 + Phase 2（token / Skills 静音与预览 / 文案包）
-仍是计划: Phase 3（全站收敛，可拆 PR）
+Phase 3 收口: 文档 + SearchField / 共享件字号 / 钱包骨架（见 ui-component-standard.md）；其余随 PR
 Backlog: Phase 4–5
 ```
 
@@ -570,6 +576,7 @@ Phase 0–1 的首个 PR 当时标题：`style(skills): quiet chrome, active row
 ### 12.3 相关文档
 
 - [ui-design.md](ui-design.md) — 布局与页面契约  
+- [ui-component-standard.md](ui-component-standard.md) — 组件用法标准与决策树  
 - [chat-process-streaming.md](chat-process-streaming.md) — Chat 过程展示（另一条体验线）  
 - [architecture.md](architecture.md) — 前端分层  
 
