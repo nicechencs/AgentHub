@@ -36,7 +36,7 @@ import {
   groupConversationsByDay,
   isChatAgentSelectable,
   newConversationDefaults,
-  nextConversationAgentIds,
+  selectConversationAgent,
   retryTarget,
   sendBlockers,
 } from './chat-model';
@@ -85,6 +85,22 @@ export function useChatPage() {
     [conversations, activeId],
   );
 
+  useEffect(() => {
+    if (!active || sending) return;
+    if (active.agentIds.length <= 1) return;
+    const next = selectConversationAgent({
+      currentIds: [],
+      nextId: active.agentIds[0],
+      allowDangerous: active.allowDangerous,
+    });
+    if (!next) return;
+    void updateConversation(active.id, next)
+      .then((updated) => {
+        setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      })
+      .catch(() => {});
+  }, [active, sending]);
+
   const installed = useMemo(() => {
     const m = new Map<AgentId, boolean>();
     for (const a of agentStatus) m.set(a.agentId, a.installed);
@@ -107,9 +123,8 @@ export function useChatPage() {
       chatAgentPickerRows({
         catalogIds: AGENT_IDS,
         agentStatus,
-        selectedIds: active?.agentIds ?? [],
       }),
-    [agentStatus, active?.agentIds],
+    [agentStatus],
   );
   const activeHasHidden = Boolean(active?.agentIds.some((id) => hiddenIds.has(id)));
 
@@ -200,7 +215,10 @@ export function useChatPage() {
           setSearchParams({}, { replace: true });
           if (boot) {
             try {
-              const created = await createConversation(boot.agentIds, boot.cwd ?? null);
+              const created = await createConversation(
+                boot.agentIds.slice(0, 1),
+                boot.cwd ?? null,
+              );
               let next = created;
               if (boot.title) {
                 try {
@@ -463,18 +481,17 @@ export function useChatPage() {
     }
   }
 
-  async function toggleConversationAgent(id: AgentId) {
+  async function selectConversationAgentId(id: AgentId) {
     if (!active || sending) return;
     const row = pickerRows.find((r) => r.id === id);
-    const alreadySelected = active.agentIds.includes(id);
-    // 隐藏 / 未配置授权：不可新增，但已在会话里的可以取消勾选移出
-    if (!row?.selectable && !alreadySelected) return;
-    const next = nextConversationAgentIds(active.agentIds, id);
-    if (!next) {
-      toast({ title: '至少保留一个 Agent', variant: 'danger' });
-      return;
-    }
-    await patchActive({ agentIds: next });
+    if (!row?.selectable) return;
+    const next = selectConversationAgent({
+      currentIds: active.agentIds,
+      nextId: id,
+      allowDangerous: active.allowDangerous,
+    });
+    if (!next) return;
+    await patchActive(next);
   }
 
   async function handleSwitchProvider(providerId: string) {
@@ -712,7 +729,7 @@ export function useChatPage() {
     patchActive,
     pickWorkingDirectory,
     renameTitle,
-    toggleConversationAgent,
+    selectConversationAgentId,
     handleSwitchProvider,
     handleSend,
     retryLast,

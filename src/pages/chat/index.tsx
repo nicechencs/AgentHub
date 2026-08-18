@@ -123,7 +123,7 @@ export default function ChatPage() {
                 connectionCaption={page.connectionCaption}
                 onSend={() => void page.handleSend()}
                 onCancel={() => void page.cancelSending()}
-                onToggleAgent={(id) => void page.toggleConversationAgent(id)}
+                onSelectAgent={(id) => void page.selectConversationAgentId(id)}
                 onSwitchProvider={(id) => void page.handleSwitchProvider(id)}
                 onOpenSettings={() => page.setSettingsOpen(true)}
                 onPickWorkingDirectory={() => void page.pickWorkingDirectory()}

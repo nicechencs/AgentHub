@@ -54,12 +54,19 @@ describe('chat API (browser mock)', () => {
     expect(mapChatMessage(m)).not.toBe(m);
   });
 
+  it('createConversation rejects more than one agent', async () => {
+    const createP = createConversation(['claude', 'codex']);
+    const rejected = expect(createP).rejects.toThrow(/only one agent/);
+    await vi.runAllTimersAsync();
+    await rejected;
+  });
+
   it('create / list / update / delete conversation', async () => {
-    const createP = createConversation(['claude', 'codex'], 'D:\\demo');
+    const createP = createConversation(['claude'], 'D:\\demo');
     await vi.runAllTimersAsync();
     const conv = await createP;
     expect(conv.id).toMatch(/^conv-mock-/);
-    expect(conv.agentIds).toEqual(['claude', 'codex']);
+    expect(conv.agentIds).toEqual(['claude']);
     expect(conv.cwd).toBe('D:\\demo');
     expect(conv.title).toBe('');
 
@@ -77,6 +84,11 @@ describe('chat API (browser mock)', () => {
     expect(updated.title).toBe('hello');
     expect(updated.allowDangerous).toBe(true);
     expect(updated.cwd).toBeNull();
+
+    const multiP = updateConversation(conv.id, { agentIds: ['claude', 'codex'] });
+    const multiRejected = expect(multiP).rejects.toThrow(/only one agent/);
+    await vi.runAllTimersAsync();
+    await multiRejected;
 
     const delP = deleteConversation(conv.id);
     await vi.runAllTimersAsync();
@@ -126,7 +138,7 @@ describe('chat API (browser mock)', () => {
   });
 
   it('chatCancel mid-send marks agent cancelled', async () => {
-    const createP = createConversation(['claude', 'codex']);
+    const createP = createConversation(['claude']);
     await vi.runAllTimersAsync();
     const conv = await createP;
 

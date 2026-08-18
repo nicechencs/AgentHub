@@ -155,7 +155,7 @@ fn build_prompt_truncates_old_turns() {
 }
 
 #[test]
-fn create_dedupes_agent_ids() {
+fn create_dedupes_same_agent_and_rejects_multiple() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let run = Arc::new(RunService::with_runner(
@@ -164,9 +164,15 @@ fn create_dedupes_agent_ids() {
     ));
     let chat = ChatService::new(db, run);
     let conv = chat
-        .create_conversation(vec![AgentId::Claude, AgentId::Claude, AgentId::Codex], None)
+        .create_conversation(vec![AgentId::Claude, AgentId::Claude], None)
         .unwrap();
-    assert_eq!(conv.agent_ids, vec![AgentId::Claude, AgentId::Codex]);
+    assert_eq!(conv.agent_ids, vec![AgentId::Claude]);
+
+    let err = chat
+        .create_conversation(vec![AgentId::Claude, AgentId::Codex], None)
+        .unwrap_err();
+    assert_eq!(err.code(), "invalid_arg");
+    assert!(err.to_string().contains("only one agent"));
 }
 
 #[test]
@@ -182,7 +188,7 @@ fn send_persists_and_isolates_prompts() {
     let chat = ChatService::new(db, run);
 
     let conv = chat
-        .create_conversation(vec![AgentId::Claude, AgentId::Codex], None)
+        .create_conversation(vec![AgentId::Claude], None)
         .unwrap();
 
     // First turn
@@ -194,27 +200,20 @@ fn send_persists_and_isolates_prompts() {
 
     let msgs = chat.list_messages(&conv.id).unwrap();
     assert!(msgs.iter().any(|m| m.role == ChatRole::User));
-    assert_eq!(msgs.iter().filter(|m| m.role == ChatRole::Agent).count(), 2);
+    assert_eq!(msgs.iter().filter(|m| m.role == ChatRole::Agent).count(), 1);
     assert!(msgs.iter().all(|m| m.status != ChatMessageStatus::Running));
 
     // Second turn: RecordingProcessRunner returns mock:{agent}; verify history used.
     calls.lock().unwrap().clear();
     chat.send(&conv.id, "second", &|_| {}).unwrap();
     let specs = calls.lock().unwrap().clone();
-    assert_eq!(specs.len(), 2, "each selected agent must reach the runner");
-    assert!(specs.iter().any(|s| s.agent == AgentId::Claude));
-    assert!(specs.iter().any(|s| s.agent == AgentId::Codex));
-    for s in &specs {
-        let joined = s.args.join(" ");
-        // Second-turn prompt should include prior user text when agent ran.
-        if matches!(s.agent, AgentId::Claude | AgentId::Codex) {
-            assert!(
-                joined.contains("second") || joined.contains("first question"),
-                "unexpected args for {}: {joined}",
-                s.agent.as_str()
-            );
-        }
-    }
+    assert_eq!(specs.len(), 1, "the selected agent must reach the runner");
+    assert_eq!(specs[0].agent, AgentId::Claude);
+    let joined = specs[0].args.join(" ");
+    assert!(
+        joined.contains("second") || joined.contains("first question"),
+        "unexpected args for claude: {joined}"
+    );
 
     let updated = chat.get_conversation(&conv.id).unwrap();
     assert!(!updated.title.is_empty());
@@ -358,7 +357,7 @@ fn send_events_include_turn_and_no_running_left() {
     ));
     let chat = ChatService::new(db, run);
     let conv = chat
-        .create_conversation(vec![AgentId::Claude, AgentId::Codex], None)
+        .create_conversation(vec![AgentId::Claude], None)
         .unwrap();
 
     let events = Mutex::new(Vec::new());
@@ -374,7 +373,7 @@ fn send_events_include_turn_and_no_running_left() {
     });
     let (turn, agents) = started.expect("Started event");
     assert_eq!(turn, 1);
-    assert_eq!(agents.len(), 2);
+    assert_eq!(agents, vec![AgentId::Claude]);
 
     for e in &events {
         match e {
@@ -393,7 +392,7 @@ fn send_events_include_turn_and_no_running_left() {
 
     let msgs = chat.list_messages(&conv.id).unwrap();
     assert!(msgs.iter().all(|m| m.status != ChatMessageStatus::Running));
-    assert_eq!(msgs.iter().filter(|m| m.role == ChatRole::Agent).count(), 2);
+    assert_eq!(msgs.iter().filter(|m| m.role == ChatRole::Agent).count(), 1);
 }
 
 #[test]
@@ -482,15 +481,26 @@ fn update_conversation_dedupes_and_validates_cwd() {
         .update_conversation(
             &conv.id,
             Some("renamed".into()),
-            Some(vec![AgentId::Claude, AgentId::Claude, AgentId::Grok]),
+            Some(vec![AgentId::Grok, AgentId::Grok]),
             Some(Some(cwd.to_string_lossy().into_owned())),
             Some(true),
         )
         .unwrap();
     assert_eq!(updated.title, "renamed");
-    assert_eq!(updated.agent_ids, vec![AgentId::Claude, AgentId::Grok]);
+    assert_eq!(updated.agent_ids, vec![AgentId::Grok]);
     assert_eq!(updated.cwd.as_deref(), Some(cwd.to_string_lossy().as_ref()));
     assert!(updated.allow_dangerous);
+
+    let multi = chat
+        .update_conversation(
+            &conv.id,
+            None,
+            Some(vec![AgentId::Claude, AgentId::Grok]),
+            None,
+            None,
+        )
+        .unwrap_err();
+    assert_eq!(multi.code(), "invalid_arg");
 
     let err = chat
         .update_conversation(

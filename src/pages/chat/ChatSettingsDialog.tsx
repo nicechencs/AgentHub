@@ -15,6 +15,12 @@ import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
 import { pickDirectory } from '@/lib/api/settings';
 import type { Conversation } from '@/lib/types';
+import {
+  autoApproveActive,
+  autoApproveConfirmCopy,
+  autoApproveEffect,
+  autoApproveHint,
+} from './chat-model';
 
 export function ChatSettingsDialog({
   open,
@@ -34,6 +40,10 @@ export function ChatSettingsDialog({
   const { toast } = useToast();
   const [cwdDraft, setCwdDraft] = useState(active?.cwd ?? '');
   const [picking, setPicking] = useState(false);
+  const selectedAgent = active?.agentIds[0] ?? null;
+  const approveEffect = autoApproveEffect(selectedAgent);
+  const approveEnabled = approveEffect !== 'none';
+  const approveOn = autoApproveActive(Boolean(active?.allowDangerous), selectedAgent);
 
   useEffect(() => {
     setCwdDraft(active?.cwd ?? '');
@@ -102,13 +112,22 @@ export function ChatSettingsDialog({
               <label className="flex items-center justify-between gap-3 text-body">
                 <span>
                   <span className="block font-medium">自动批准</span>
-                  <Tip className="text-meta text-muted" label="关闭时 CLI 遇审批可能等到超时">
-                    跳过工具确认
+                  <Tip
+                    className="text-meta text-muted"
+                    label={
+                      approveEnabled
+                        ? '关闭时 CLI 遇审批可能等到超时'
+                        : autoApproveHint('none')
+                    }
+                  >
+                    {autoApproveHint(approveEffect)}
                   </Tip>
                 </span>
                 <Switch
-                  checked={active.allowDangerous}
+                  checked={approveOn}
+                  disabled={!approveEnabled}
                   onCheckedChange={(checked) => {
+                    if (!approveEnabled) return;
                     if (checked) {
                       onDangerConfirmChange(true);
                       return;
@@ -132,7 +151,7 @@ export function ChatSettingsDialog({
           <DialogHeader>
             <DialogTitle>开启自动批准？</DialogTitle>
             <DialogDescription>
-              开启后将跳过工具确认，Agent 可直接改文件、执行命令。仅在信任当前工作目录时开启。
+              {autoApproveConfirmCopy(approveEffect)}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

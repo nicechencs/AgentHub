@@ -227,11 +227,19 @@ mod tests {
         let hub = AgentHub::open(Some(dir.path())).unwrap();
         let conv = create_conversation_inner(
             &hub,
-            vec!["claude".into(), "claude".into(), "grok".into()],
+            vec!["claude".into(), "claude".into()],
             None,
         )
         .unwrap();
-        assert_eq!(conv.agent_ids, vec![AgentId::Claude, AgentId::Grok]);
+        assert_eq!(conv.agent_ids, vec![AgentId::Claude]);
+
+        let err = create_conversation_inner(
+            &hub,
+            vec!["claude".into(), "grok".into()],
+            None,
+        )
+        .unwrap_err();
+        assert!(err.contains("only one agent"));
 
         let updated = update_conversation_inner(
             &hub,
