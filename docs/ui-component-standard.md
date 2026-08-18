@@ -84,8 +84,8 @@ src/components/connect/   # ConnectFlow / OAuth
 | `Select` | Radix，Trigger `h-7` | 表单选择 |
 | `Dialog` | 默认 `max-w-lg`、`rounded-card`、`p-6`、`shadow-lg` | Footer 右对齐；取消=`ghost`，主操作靠右。忙碌中走 `busy-confirmation` + `hideClose` |
 | `DropdownMenu` | Radix | 添加菜单、行操作 |
-| `ContextMenu` | **自研 portal，不是 Radix** | Chat 会话列表、侧栏、Skills 矩阵 |
-| `Tabs` | 与分段控件同灰轨 + 白底抬起 | 页级导航（Skills 三栏、Settings） |
+| `ContextMenu` | **自研 portal，不是 Radix** | **仅** Skills 矩阵右键。Chat rail / 侧栏不用它 |
+| `Tabs` | 与分段控件同灰轨 + 白底抬起 | 页级导航（Skills **两栏** library/market、Settings 三分区） |
 | `Switch` | 选中 = accent | Settings 即时开关 |
 | `Progress` | 细条 | 只经 `QuotaBar` 等复合件，页面少直接用 |
 | `Toast` | `default` / `success` / `danger`；默认 5s | 标题 ≤16 字；可带撤销 |
@@ -93,14 +93,14 @@ src/components/connect/   # ConnectFlow / OAuth
 | `TableShell` | `default` = Card 壳（全站管理表，含 Skills）；`workbench` / `flush` **API 在、业务侧基本不用** | 业务表只选 variant，禁止手写 `*Workbench` class |
 | `Card` | `default` 边框+`shadow-xs` / `plain` 无框 / `subtle` 弱底 | 嵌套用 `plain`/`subtle`，避免双重描边 |
 | `Badge` | `default` / `accent` / `success` / `warning` / `danger` / `info` / `chip` / `chipActive` | 状态用无边框淡底；可点选项用 `chip` |
-| `Skeleton` / `ListSkeleton` / `TableSkeleton` / `CardGridSkeleton` | | loading 用骨架，不用一句「正在加载…」 |
+| `Skeleton` / `ListSkeleton` / `TableSkeleton` / `CardGridSkeleton` | | loading 用骨架，不用一句「正在加载…」。**没有** `ChatListSkeleton`。`CardGridSkeleton` 已导出、业务未用 |
 | `segmented-styles.ts` | `segmentedTrackClass` / `segmentedItemClass` / `segmentedCountClass` / `actionCountClass` | 分段视觉真源 |
 
 ### 4.2 `shared/` 复合件
 
 | 组件 | 职责 | 注意 |
 |---|---|---|
-| `EmptyState` | 图标 + 主句 + 可选行动 | 主句走 `text-title`；无行动仅用于「筛选无结果」等可解释空 |
+| `EmptyState` | 图标 + 主句 + 可选行动 | 主句走 `text-title`。默认 `actionLabel` 按钮是 accent——仅当空态就是本页主行动时用；本页已有主 CTA 时传入 `action` 并降为 `secondary`/`outline` |
 | `ErrorState` | 摘要 + 重试 + 复制诊断 | 分区内嵌用 `compact`（Dashboard 用量） |
 | `Notice` | 页内横幅；`neutral` / `info` / `warning` / `danger` / `success` | 一屏建议最多一条 |
 | `SearchField` | `h-7` + 左图标 | **禁止**手写 `relative + Search + pl-7/pl-8` |
@@ -116,7 +116,7 @@ src/components/connect/   # ConnectFlow / OAuth
 | `ConfigEditor` | CodeMirror；敏感键脱敏层 | |
 | `GenericConfigForm` | 通用字段表 | |
 | `InlineTerminal` | 安装/升级流式输出 | |
-| `EnvStatusBar` / `EnvRemediationPanel` | Runtime 状态与修复 | |
+| `EnvStatusBar` / `EnvRemediationPanel` | Runtime 状态与修复 | 环境条「一键修复」用 `secondary`；面板内「一键安装」仍是 accent，本页若已有主 CTA 应降级 |
 | `MarkdownView` | Skills 预览等 | |
 | `UsageParserHealth` | Dashboard 主用 `dashboard` | `UsageHealthStrip` / `ParserHealthBar` 是兼容 re-export，新代码不要用 |
 | `OnboardingDialog` / `BootSplash` | 首次引导 / 启动 | |
@@ -154,7 +154,7 @@ src/components/connect/   # ConnectFlow / OAuth
 
 | 页面角色 | variant | 例 |
 |---|---|---|
-| 该页唯一主行动 | `default`（accent） | Connections「添加」、空态主按钮 |
+| 该页唯一主行动 | `default`（accent） | Connections「添加」、**本页没有其他主 CTA 时的**空态按钮 |
 | 卡内安装 / 次要提交 | `secondary` | Agents 卡「安装」 |
 | 需要边框的次要 | `outline` | ErrorState「复制诊断」、Notice 行动 |
 | 工具条、取消、图标 | `ghost` | Dialog 取消、行内「详情」 |
@@ -169,7 +169,7 @@ src/components/connect/   # ConnectFlow / OAuth
 |---|---|---|
 | 独立内容块（设置分区、指标、钱包行外壳） | `Card default` 或 `ListRow` | 再外包一层 Card |
 | 已在框内的工具条 / 嵌套 | `Card plain` / `subtle` | 再加 border |
-| 管理表（用量、Skills 三 Tab） | `TableShell default` | 手写 table class；不要为了对标 IDE 把 Skills 改成 `flush`（本阶段不做） |
+| 管理表（用量、Skills 库/市场） | `TableShell default` | 手写 table class；不要为了对标 IDE 把 Skills 改成 `flush`（本阶段不做） |
 | 工作台会话列表（Chat rail） | 页面自管行 + `bg-active` | `ListRow`（带卡边，会把 rail 做成后台） |
 | 表格预览行 | `TableRow active` | 整行铺 accent |
 
@@ -181,7 +181,7 @@ src/components/connect/   # ConnectFlow / OAuth
 
 | 场景 | 组件 | 尺寸 |
 |---|---|---|
-| 页级导航（Skills 三栏、Settings 分区） | `Tabs` | md |
+| 页级导航（Skills 两栏、Settings 分区） | `Tabs` | md |
 | 页内列表筛选（全部 / OAuth / API Key…） | `SegmentedControl` | sm + `count` |
 | 页内 Agent 过滤 | `AgentTabStrip` | md（不要再传 sm） |
 | 预览「预览 \| 源码」 | 允许手写扁段，`h-6` | 特例 |
@@ -205,7 +205,9 @@ src/components/connect/   # ConnectFlow / OAuth
 | 操作结果 | `Toast` | 标题 ≤16 字 | 把路径堆进标题 |
 | 危险后果 / 不可逆 | `Dialog` + `busy-confirmation` | 结构化 | 只靠 tip |
 
-测试锁：`src/components/ui/title-channel.test.ts` 禁止 `pages` / `layout` / `shared` 在 `p/span/div/button` 等节点写原生 `title`。`Button` / `Input` / `AgentDot` 的 `title` 不在扫描内。
+测试锁：`src/components/ui/title-channel.test.ts` 禁止 `pages` / `layout` / `shared` 在 `p/span/div/button` 等节点写原生 `title`。`Button` / `Input` / `AgentDot` 的 `title` 不在扫描内。`components/ui/` 自己的裸 `<button title>` 也不准（Toast 复制钮已收）。
+
+`Hint` 与 `Tip` **同一 200ms**（`main.tsx` TooltipProvider）。`Tip` 只是给非控件节点包一层 span，不是更长延迟。
 
 ### 5.6 四态
 
@@ -260,10 +262,11 @@ src/components/connect/   # ConnectFlow / OAuth
 |---|---|---|
 | `SwitchConfirmDialog` 仍在 `ui-design` §5 | 代码已删（`modularity-improvement.md`） | 本文 + `ui-design` §5 删除该行 |
 | `SecretInput`「二次确认 + 10s 再遮蔽」 | 眼睛切换；无自动遮蔽 | 产品原则改为按实现写 |
-| 输入焦点「应是 ring-1」等口头差 | 实现与 `ui-design` 均为 `ring-2 / accent/60` | 以代码为准 |
+| 输入焦点「应是 ring-1」等口头差 | 实现与 `ui-design` 均为 `ring-2 / accent/60` | 以代码为准。会审稿若写 `ring-1` / Dialog `max-w-md` / Badge `outline` / `ChatListSkeleton`，一律以本表和源码为准 |
 | Dialog「max-w-md / rounded-composer」 | 默认 `max-w-lg` / `rounded-card` | 以 `dialog.tsx` 为准 |
-| `AgentCard` 列为 shared | 在 `pages/agents` / Dashboard `AgentOverview` | 清单降为页面件 |
+| `AgentCard` 列为 shared；Skills「三 Tab」 | Agent 卡在 `pages/agents` / `AgentOverview`；Skills 只有 library + market | 清单按实现写 |
 | 对标 Phase 3「抽 ListRow / compact Header / 分段同一族」 | 这三项已落地 | Phase 3 剩余改为方言收口，见 §8 |
+| Dashboard 快捷「切换供应商 / 切换账号」 | 两钮同一 `openForAgentConnect` | 已收成一枚「连接 / 切换」 |
 
 ### 7.2 实现方言（本 PR 已收一部分）
 
@@ -281,9 +284,14 @@ src/components/connect/   # ConnectFlow / OAuth
 | 列表名仍写 `text-sm font-medium` | 多页 | 新代码改 `text-body`；不扫全站 |
 | `ListRow` 带卡边，和 Chat 会话行是两套选中态 | `ListRow` vs Chat rail | 先保持；去边框重做 = 后做 |
 | Card 密度不齐 | Dashboard 工具卡 / Agents 卡 / Settings | 新卡跟 `p-3` / Header `px-4`；不重做旧卡 |
-| Accent 面积 | 多数页已克制；继续避免卡内并排 `default` | 审计随 PR，不单开换色 |
+| Accent 面积 | EmptyState 默认 accent；Skills 页头「安装」反而是 ghost；`EnvRemediationPanel`「一键安装」accent | 新空态看本页是否已有主 CTA；Skills 安装 / 环境面板降级随后续 PR |
+| 选中态方言 | `ListRow` 带框；Chat rail / Sidebar 无框 `bg-active`；Agents 渠道 chip 铺 `accent/10` | 工作台无框、管理列表有框——先承认两套，不硬收 |
+| 无 Checkbox / Textarea 基础件 | Skills / Projects / Provider 手写 `<input type="checkbox">`；Chat composer 无 ring | **先不抽**新 ui 件；新 checkbox 用 `accent-accent`，禁止 `--color-accent` / `sky.500` |
+| 旧 class | 回收站曾用 `text-muted-foreground`、`rounded-lg` | 本 PR 已改 token class |
 | `TableShell workbench/flush` 未用于业务 | Skills 仍是 default Card 壳 | **先不做** 大改表壳 |
 | 动效 / 深色 hover·muted / accent 换色相 | 对标 Phase 4–5 | **先不做** |
+| Backups「无可管理」空态无下一步 | `BackupsPanel` | 后做：补「去 Agents」 |
+| Dashboard 骨架按全部 `AGENTS` 出卡 | `dashboard/index.tsx` | 后做：按已装数出骨架 |
 
 ---
 
@@ -303,11 +311,12 @@ src/components/connect/   # ConnectFlow / OAuth
 - `TableShell` 改 workbench / 去掉 Skills Card 壳
 - `ListRow` 去边框改成 IDE 树
 - 全站 `text-sm` → `text-body` 机械替换
-- 引入第二套 UI 库、i18next、RHF、zod
+- 引入第二套 UI 库、i18next、RHF、zod；现抽 `Checkbox`/`Textarea`/`Popover`
 - 凭据落盘加密
 - 国产 OAuth 开边 / 转 API
 - 恢复 `SwitchConfirmDialog`
 - 给 `SecretInput` 加 10s 自动遮蔽（除非产品重新授权）
+- 把 Chat rail / Sidebar 强行改成 `ListRow`
 
 ---
 
@@ -319,7 +328,8 @@ src/components/connect/   # ConnectFlow / OAuth
 - [ ] 没有新增字号档或 `text-[Npx]` / `rounded-[Npx]`
 - [ ] 新代码字号用 `text-title` / `text-body` / `text-meta`
 - [ ] 一页没有两枚并排 `variant="default"`
-- [ ] 没有在 `pages` / `layout` / `shared` 的文本节点上写原生 `title`
+- [ ] 没有在 `pages` / `layout` / `shared` / `ui` 的裸 button 上写原生 `title`
+- [ ] 没有 `text-muted-foreground` 或 `accent-[var(--color-accent…)]`
 - [ ] loading 不是一句「正在加载…」（用对应 Skeleton）
 - [ ] 危险确认用 Dialog + `busy-confirmation`，没有新的全局确认件
 - [ ] 没有把凭据加密或国产 OAuth 写成待办

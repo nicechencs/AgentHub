@@ -154,12 +154,12 @@ export function ConnectionTrashButton({
 
           <div className="max-h-[55vh] space-y-2 overflow-y-auto py-2">
             {loading ? (
-              <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+              <div className="flex items-center justify-center gap-2 py-8 text-body text-muted">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 正在读取回收站…
               </div>
             ) : items.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">回收站为空</p>
+              <p className="py-8 text-center text-body text-muted">回收站为空</p>
             ) : (
               items.map((item) => {
                 const agentName = agentDisplayName(item.agentId);
@@ -170,14 +170,14 @@ export function ConnectionTrashButton({
                 return (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between gap-3 rounded-lg border p-3"
+                    className="flex items-center justify-between gap-3 rounded-card border border-border p-3"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{item.label}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="truncate text-body font-medium">{item.label}</p>
+                      <p className="text-meta text-muted">
                         {agentName} · {kindLabel} · 删除于 {dateLabel(item.deletedAt)}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-meta text-muted">
                         {item.wasCurrent ? '删除前为当前连接 · ' : ''}保留至 {dateLabel(item.expiresAt)}
                       </p>
                     </div>
