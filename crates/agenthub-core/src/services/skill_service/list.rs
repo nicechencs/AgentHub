@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    AgentId, Capability, Skill, SkillLinkKind, SkillMapStatus, SkillMarkdownPreview, SkillProjection,
-    SkillSyncState,
+    AgentId, Capability, Skill, SkillLinkKind, SkillMapStatus, SkillMarkdownPreview,
+    SkillProjection, SkillSyncState,
 };
 use crate::platform::skills::{
     classify_projection, collect_file_index, hash_skill_root_shallow, is_exact_child,
@@ -322,5 +322,4 @@ impl SkillService {
             map_status,
         }
     }
-
 }

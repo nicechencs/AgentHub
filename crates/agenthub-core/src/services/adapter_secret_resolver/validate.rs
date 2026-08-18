@@ -1,15 +1,14 @@
 use serde_json::{json, Value};
 use toml_edit::DocumentMut;
 
+use super::helpers::*;
+use super::*;
 use crate::adapters::pi_auth::pi_oauth_entry_from_tokens;
 use crate::bridge::ResolvedAuth;
 use crate::error::{AppError, Result};
 use crate::models::{AdapterSourceKind, AgentId, Provider};
 use crate::services::adapter_route_constants::*;
 use crate::storage::{AccountRepo, Database, ProviderRepo};
-use super::helpers::*;
-use super::*;
-
 
 impl AdapterSecretResolver {
     pub fn validate_kimi_membership_source(
@@ -224,9 +223,7 @@ impl AdapterSecretResolver {
             .accounts
             .get_by_id(source_id.trim())?
             .ok_or_else(invalid_reference)?;
-        if account.agent_id != AgentId::Grok
-            || account.kind != crate::models::AccountKind::Oauth
-        {
+        if account.agent_id != AgentId::Grok || account.kind != crate::models::AccountKind::Oauth {
             return Err(invalid_reference());
         }
         let access = first_usable_string(

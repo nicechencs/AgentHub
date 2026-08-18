@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use crate::models::{SkillLinkKind, SkillSyncState};
 
 use super::fs_index::collect_file_index;
-use super::fs_safe::{detect_link_kind, is_link_or_reparse, link_resolves_to_source, resolve_link_path};
+use super::fs_safe::{
+    detect_link_kind, is_link_or_reparse, link_resolves_to_source, resolve_link_path,
+};
 use super::hash::hash_tree_files;
 
 /// Classify source vs target for the projection matrix (list path).

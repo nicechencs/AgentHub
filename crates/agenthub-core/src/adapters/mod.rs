@@ -46,7 +46,9 @@ pub(crate) use detect_binary::{
     detect_binary, expand_binary_names, extract_version_token, infer_channel,
     looks_like_version_line, well_known_bin_paths, NOT_FOUND_FIREFIGHTING_NOTE,
 };
-pub use registry::{register_all, supports_structured_stream, wants_structured_for, AdapterRegistry};
+pub use registry::{
+    register_all, supports_structured_stream, wants_structured_for, AdapterRegistry,
+};
 
 #[cfg(test)]
 mod tests;

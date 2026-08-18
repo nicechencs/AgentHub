@@ -1,5 +1,5 @@
-use super::*;
 use super::rules::*;
+use super::*;
 
 impl AdapterBridgeService {
     pub fn profile_id_for_request(&self, request: &AdapterBridgePrepareRequest) -> Result<String> {
@@ -161,7 +161,10 @@ impl AdapterBridgeService {
 
     /// Mark a saga complete after its generated provider was persisted and
     /// switched by `ProviderService`. This method owns profile state only.
-    pub(super) fn ensure_supported(&self, request: &AdapterBridgePrepareRequest) -> Result<CodexBridgeRule> {
+    pub(super) fn ensure_supported(
+        &self,
+        request: &AdapterBridgePrepareRequest,
+    ) -> Result<CodexBridgeRule> {
         let analysis = self.routes.analyze(&AdapterRouteRequest {
             source_kind: request.source_kind,
             source_id: request.source_id.clone(),

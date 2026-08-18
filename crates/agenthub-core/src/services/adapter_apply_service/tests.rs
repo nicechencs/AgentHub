@@ -2354,7 +2354,10 @@ fn apply_kimi_membership_and_openai_api_to_grok() {
         .create(&kimi_account("kimi-account", "kimi-account-secret"))
         .unwrap();
     AccountRepo::new(db.clone())
-        .create(&openai_api_account("openai-account", "openai-account-secret"))
+        .create(&openai_api_account(
+            "openai-account",
+            "openai-account-secret",
+        ))
         .unwrap();
     let fake = Arc::new(FakeClaudeAdapter::new_for(AgentId::Grok));
     let mut registry = AdapterRegistry::new();

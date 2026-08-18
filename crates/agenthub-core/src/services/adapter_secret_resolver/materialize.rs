@@ -1,15 +1,14 @@
 use serde_json::{json, Value};
 use toml_edit::DocumentMut;
 
+use super::helpers::*;
+use super::*;
 use crate::adapters::pi_auth::pi_oauth_entry_from_tokens;
 use crate::bridge::ResolvedAuth;
 use crate::error::{AppError, Result};
 use crate::models::{AdapterSourceKind, AgentId, Provider};
 use crate::services::adapter_route_constants::*;
 use crate::storage::{AccountRepo, Database, ProviderRepo};
-use super::helpers::*;
-use super::*;
-
 
 impl AdapterSecretResolver {
     pub fn is_reference_provider(&self, provider: &Provider) -> Result<bool> {
@@ -365,10 +364,9 @@ impl AdapterSecretResolver {
                 | DEEPSEEK_TO_CLAUDE_RULE,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account,
             ) => self.resolve_explicit_api_key(rule, kind, source_id),
-            (
-                OPENAI_TO_GROK_RULE,
-                AdapterSourceKind::Provider | AdapterSourceKind::Account,
-            ) => self.resolve_explicit_api_key(rule, kind, source_id),
+            (OPENAI_TO_GROK_RULE, AdapterSourceKind::Provider | AdapterSourceKind::Account) => {
+                self.resolve_explicit_api_key(rule, kind, source_id)
+            }
             (
                 GLM_TO_CODEX_RULE | DEEPSEEK_TO_CODEX_RULE,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account,
@@ -388,7 +386,10 @@ impl AdapterSecretResolver {
         }
     }
 
-    pub(super) fn resolve_referenced_subscription_oauth(&self, target: &Provider) -> Result<PiOAuthTokens> {
+    pub(super) fn resolve_referenced_subscription_oauth(
+        &self,
+        target: &Provider,
+    ) -> Result<PiOAuthTokens> {
         let (kind, source_id) = self.reference_source_ref(target)?;
         let rule = adapter_rule_id(target).ok_or_else(invalid_reference)?;
         self.resolve_subscription_oauth(rule, kind, source_id)
@@ -575,13 +576,14 @@ impl AdapterSecretResolver {
             .get(alias)
             .and_then(|item| item.as_table())
             .ok_or_else(invalid_reference)?;
-        if document["models"].get("default").and_then(|item| item.as_str()) != Some(alias)
+        if document["models"]
+            .get("default")
+            .and_then(|item| item.as_str())
+            != Some(alias)
             || table.get("base_url").and_then(|item| item.as_str()) != Some(expected_base)
             || table.get("model").and_then(|item| item.as_str()) != Some(expected_model)
-            || table.get("api_backend").and_then(|item| item.as_str())
-                != Some("chat_completions")
-            || table.get("api_key").and_then(|item| item.as_str())
-                != Some(CONNECTION_SECRET_MARKER)
+            || table.get("api_backend").and_then(|item| item.as_str()) != Some("chat_completions")
+            || table.get("api_key").and_then(|item| item.as_str()) != Some(CONNECTION_SECRET_MARKER)
         {
             return Err(invalid_reference());
         }

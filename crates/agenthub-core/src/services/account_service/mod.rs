@@ -88,7 +88,6 @@ impl AccountService {
         }
     }
 
-
     pub fn repo(&self) -> &AccountRepo {
         &self.repo
     }
@@ -125,4 +124,3 @@ impl AccountService {
             .transpose()
     }
 }
-

@@ -1,7 +1,8 @@
 use super::*;
 use crate::models::{
     Account, AccountKind, AdapterCapabilityDecision, AdapterMaturity, AdapterRoute,
-    AdapterRouteAnalysis, AdapterServiceImpact, AdapterSupport, Provider, ADAPTER_CAPABILITY_MATRIX,
+    AdapterRouteAnalysis, AdapterServiceImpact, AdapterSupport, Provider,
+    ADAPTER_CAPABILITY_MATRIX,
 };
 use crate::services::adapter_apply_service::apply_request_supported;
 use crate::services::AdapterApplyService;
@@ -854,7 +855,10 @@ fn plan_kimi_ticket_to_grok_is_writable_native_endpoint() {
         plan.reuse_path,
         crate::models::AdapterReusePath::ApiEndpoint
     );
-    assert_eq!(plan.changes[0].value.as_deref(), Some("https://api.kimi.com/coding/v1"));
+    assert_eq!(
+        plan.changes[0].value.as_deref(),
+        Some("https://api.kimi.com/coding/v1")
+    );
     assert_eq!(plan.changes[2].field, "apiBackend");
     assert!(plan.changes[3].secret);
 }
@@ -1163,10 +1167,7 @@ fn claude_subscription_to_codex_is_product_closed() {
         plan.reason,
         crate::models::CLAUDE_SUBSCRIPTION_TO_CODEX_REASON
     );
-    assert_eq!(
-        plan.reuse_path,
-        crate::models::AdapterReusePath::None
-    );
+    assert_eq!(plan.reuse_path, crate::models::AdapterReusePath::None);
     assert!(!plan.can_apply);
 }
 
@@ -1200,8 +1201,14 @@ fn grok_subscription_to_claude_is_writable_local_bridge() {
         .unwrap();
     assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
     assert_eq!(plan.analysis.support, AdapterSupport::Experimental);
-    assert_eq!(plan.reason, "Grok 订阅可通过本机路由到 Claude Code（Messages → xAI Chat Completions）。");
-    assert_eq!(plan.reuse_path, crate::models::AdapterReusePath::LocalBridge);
+    assert_eq!(
+        plan.reason,
+        "Grok 订阅可通过本机路由到 Claude Code（Messages → xAI Chat Completions）。"
+    );
+    assert_eq!(
+        plan.reuse_path,
+        crate::models::AdapterReusePath::LocalBridge
+    );
     assert!(plan.can_apply);
     assert_eq!(
         plan.changes[0].value.as_deref(),
@@ -1612,9 +1619,7 @@ fn shared_capability_contract_matches_classify_and_plan() {
     }
 }
 
-fn analysis_from_cell(
-    cell: &crate::models::AdapterCapabilityCell,
-) -> AdapterRouteAnalysis {
+fn analysis_from_cell(cell: &crate::models::AdapterCapabilityCell) -> AdapterRouteAnalysis {
     let decision = AdapterCapabilityDecision::from_cell(cell);
     AdapterRouteAnalysis {
         route: decision.route,
@@ -1684,12 +1689,7 @@ fn open_matrix_cells_have_bind_and_apply_arms() {
                 continue;
             }
             assert!(
-                AdapterApplyService::apply_has_arm(
-                    cell.rule_id,
-                    kind,
-                    cell.key.target,
-                    cell.route,
-                ),
+                AdapterApplyService::apply_has_arm(cell.rule_id, kind, cell.key.target, cell.route,),
                 "open cell {} ({:?} -> {:?}) has bind but no apply arm",
                 cell.rule_id,
                 kind,

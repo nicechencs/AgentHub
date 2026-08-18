@@ -498,7 +498,6 @@ impl AdapterBridgeRemoval {
     }
 }
 
-
 /// Credential-safe bridge profile and provider projection service.
 pub struct AdapterBridgeService {
     pub(super) routes: AdapterRouteService,

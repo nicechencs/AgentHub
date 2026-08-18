@@ -19,10 +19,9 @@ use crate::services::adapter_route_constants::{
     DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT,
     DSH_DEFAULT_MODEL, GLM_CLAUDE_RULE_ID, GLM_CODEX_BASE_URL, GLM_CODEX_DEFAULT_MODEL,
     GLM_CODEX_PROVIDER_PREFIX, GLM_CODEX_PROVIDER_SLUG, GLM_CODEX_RULE_ID, GLM_PI_BASE_URL,
-    GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL,
-    KIMI_PI_PROVIDER_SLOT, KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL,
-    OPENAI_GROK_BASE_URL, OPENAI_GROK_DEFAULT_MODEL, OPENAI_PI_PROVIDER_SLOT,
-    XAI_PI_PROVIDER_SLOT,
+    GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_GROK_BASE_URL,
+    KIMI_GROK_DEFAULT_MODEL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT, OPENAI_GROK_BASE_URL,
+    OPENAI_GROK_DEFAULT_MODEL, OPENAI_PI_PROVIDER_SLOT, XAI_PI_PROVIDER_SLOT,
 };
 use crate::services::{
     AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
@@ -234,7 +233,10 @@ impl AdapterApplyService {
         }
     }
 
-    pub(super) fn apply_generated(&self, mut spec: GeneratedApplySpec) -> Result<AdapterApplyResult> {
+    pub(super) fn apply_generated(
+        &self,
+        mut spec: GeneratedApplySpec,
+    ) -> Result<AdapterApplyResult> {
         // Acquire before reading or creating any generated-provider/profile
         // state. The guard covers every compensation input and mutation below.
         let saga_guard = self.providers.begin_live_saga(spec.target_agent)?;
@@ -475,7 +477,10 @@ impl AdapterApplyService {
         self.profiles.delete(profile_id)
     }
 
-    pub(super) fn ensure_supported(&self, request: &AdapterApplyRequest) -> Result<AdapterRouteAnalysis> {
+    pub(super) fn ensure_supported(
+        &self,
+        request: &AdapterApplyRequest,
+    ) -> Result<AdapterRouteAnalysis> {
         let analysis = self.routes.analyze(&AdapterRouteRequest {
             source_kind: request.source_kind,
             source_id: request.source_id.clone(),
