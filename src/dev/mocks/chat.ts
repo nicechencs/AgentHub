@@ -17,6 +17,20 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function requireSingleAgent(agentIds: AgentId[]): AgentId[] {
+  const seen: AgentId[] = [];
+  for (const id of agentIds) {
+    if (!seen.includes(id)) seen.push(id);
+  }
+  if (seen.length === 0) {
+    throw new Error('conversation must select at least one agent');
+  }
+  if (seen.length > 1) {
+    throw new Error('conversation can select only one agent');
+  }
+  return seen;
+}
+
 function mockTitle(prompt: string) {
   const t = prompt.trim();
   return t.length <= 30 ? t : `${t.slice(0, 29)}…`;
@@ -41,7 +55,7 @@ export function createMockChatPort(): ChatPort {
       const conv: Conversation = {
         id: `conv-mock-${mockSeq++}`,
         title: '',
-        agentIds: [...agentIds],
+        agentIds: requireSingleAgent(agentIds),
         cwd: cwd ?? null,
         allowDangerous: false,
         createdAt: nowIso(),
@@ -60,7 +74,7 @@ export function createMockChatPort(): ChatPort {
       const next: Conversation = {
         ...cur,
         title: patch.title ?? cur.title,
-        agentIds: patch.agentIds ?? cur.agentIds,
+        agentIds: patch.agentIds ? requireSingleAgent(patch.agentIds) : cur.agentIds,
         cwd: patch.cwd !== undefined ? patch.cwd : cur.cwd,
         allowDangerous: patch.allowDangerous ?? cur.allowDangerous,
         updatedAt: nowIso(),
@@ -102,10 +116,11 @@ export function createMockChatPort(): ChatPort {
       }
       conv.updatedAt = nowIso();
 
-      onEvent({ type: 'started', turn, agents: [...conv.agentIds] });
+      const agents = conv.agentIds.slice(0, 1);
+      onEvent({ type: 'started', turn, agents });
       mockCancel.delete(conversationId);
 
-      for (const agent of conv.agentIds as AgentId[]) {
+      for (const agent of agents) {
         if (mockCancel.has(conversationId)) {
           const cancelled: ChatMessage = {
             id: `msg-mock-${mockSeq++}`,

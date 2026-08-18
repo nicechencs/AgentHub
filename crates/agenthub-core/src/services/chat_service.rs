@@ -1,4 +1,4 @@
-//! Chat conversations: CRUD + multi-agent send with isolated context stitching.
+//! Chat conversations: CRUD + single-agent send with isolated context stitching.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -56,12 +56,7 @@ impl ChatService {
         agent_ids: Vec<AgentId>,
         cwd: Option<String>,
     ) -> Result<Conversation> {
-        let agent_ids = dedupe_agents(agent_ids);
-        if agent_ids.is_empty() {
-            return Err(AppError::InvalidArg(
-                "conversation must select at least one agent".into(),
-            ));
-        }
+        let agent_ids = require_single_agent(agent_ids)?;
         if let Some(ref c) = cwd {
             validate_cwd(c)?;
         }
@@ -92,13 +87,7 @@ impl ChatService {
             conv.title = t;
         }
         if let Some(agents) = agent_ids {
-            let agents = dedupe_agents(agents);
-            if agents.is_empty() {
-                return Err(AppError::InvalidArg(
-                    "conversation must select at least one agent".into(),
-                ));
-            }
-            conv.agent_ids = agents;
+            conv.agent_ids = require_single_agent(agents)?;
         }
         if let Some(c) = cwd {
             if let Some(ref path) = c {
@@ -219,7 +208,13 @@ impl ChatService {
         }
 
         let history = self.repo.list_messages(conversation_id)?;
-        let agents = conv.agent_ids.clone();
+        // Legacy multi-agent rows: send only the first agent.
+        let agents: Vec<AgentId> = conv.agent_ids.first().copied().into_iter().collect();
+        if agents.is_empty() {
+            return Err(AppError::InvalidArg(
+                "conversation must select at least one agent".into(),
+            ));
+        }
         let agents_joined = agents
             .iter()
             .map(|a| a.as_str())
@@ -293,6 +288,9 @@ impl ChatService {
         )> {
             if conv.title.trim().is_empty() {
                 conv.title = truncate_title(user_input, 30);
+            }
+            if conv.agent_ids.len() > 1 {
+                conv.agent_ids.truncate(1);
             }
             conv.updated_at = now;
             self.repo.update_conversation(&conv)?;
@@ -560,6 +558,21 @@ fn dedupe_agents(agents: Vec<AgentId>) -> Vec<AgentId> {
         }
     }
     out
+}
+
+fn require_single_agent(agents: Vec<AgentId>) -> Result<Vec<AgentId>> {
+    let agents = dedupe_agents(agents);
+    if agents.is_empty() {
+        return Err(AppError::InvalidArg(
+            "conversation must select at least one agent".into(),
+        ));
+    }
+    if agents.len() > 1 {
+        return Err(AppError::InvalidArg(
+            "conversation can select only one agent".into(),
+        ));
+    }
+    Ok(agents)
 }
 
 fn validate_cwd(cwd: &str) -> Result<()> {
