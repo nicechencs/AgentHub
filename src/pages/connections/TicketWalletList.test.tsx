@@ -57,6 +57,9 @@ describe('TicketWalletList details', () => {
     expect(markup).toContain('aria-label="搜索登录"');
     expect(markup).toContain('aria-label="登录类型筛选"');
     expect(markup).toContain('钱包 · 1 份登录');
+    expect(markup).toContain('var(--agent-kimi)');
+    expect(markup).not.toContain('●');
+    expect(markup).not.toContain('○');
     expect(markup).not.toContain('搜票');
     expect(markup).not.toContain('张票');
     expect(markup).not.toContain('移入回收站');
@@ -95,6 +98,7 @@ describe('TicketWalletList details', () => {
       }),
     );
     expect(markup).toContain('ChatGPT Plus');
+    expect(markup).toContain('var(--agent-codex)');
     expect(markup).toContain('Codex（切换）');
     expect(markup).not.toContain('正用于：');
     expect(markup).not.toContain('mt-1 pl-5');
