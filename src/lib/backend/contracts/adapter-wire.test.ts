@@ -56,6 +56,43 @@ describe('Adapter Rust wire mappers', () => {
     });
   });
 
+  it('maps a wrapped { result } apply payload the same as a raw AdapterApplyResult', () => {
+    const raw = {
+      profile: {
+        id: 'adapter-kimi-codex-1',
+        name: 'Kimi → Codex 本地桥接',
+        sourceKind: 'provider' as const,
+        sourceId: 'provider-kimi',
+        targetAgentId: 'codex' as const,
+        route: 'local_bridge',
+        mode: 'api',
+        status: 'active',
+        ruleId: 'kimi-membership-to-codex-bridge-v1',
+        ruleVersion: '1',
+        generatedProviderId: 'generated-codex-1',
+        localPort: 43123,
+        autoStart: true,
+        createdAt: '2026-08-12T00:00:00.000Z',
+        updatedAt: '2026-08-12T00:00:00.000Z',
+      },
+      provider: {
+        id: 'generated-codex-1',
+        agentId: 'codex' as const,
+        name: 'AgentHub Kimi 本地桥接',
+        settingsConfig: {
+          baseUrl: 'http://127.0.0.1:43123/v1',
+          model: 'kimi-k2.5',
+        },
+        meta: { preset: 'openai-compatible' },
+        isCurrent: true,
+        createdAt: '2026-08-12T00:00:00.000Z',
+        updatedAt: '2026-08-12T00:00:00.000Z',
+      },
+    };
+    expect(mapAdapterApplyResult({ result: raw }).profile.id).toBe('adapter-kimi-codex-1');
+    expect(mapAdapterApplyResult(raw).provider.id).toBe('generated-codex-1');
+  });
+
   it('derives the loopback endpoint and ISO time from the Tauri bridge DTO', () => {
     const status = mapAdapterBridgeStatusDto({
       profileId: 'adapter-kimi-codex-1',
