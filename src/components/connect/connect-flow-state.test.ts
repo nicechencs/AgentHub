@@ -48,6 +48,7 @@ import {
   resolvePreset,
   settleConfirm,
   shouldRevertPreviewToSelect,
+  shouldShowPreviewImportHint,
   shouldShowSelectSkeleton,
   sourceAgentIdOf,
   tryAcquireConfirmLock,
@@ -638,7 +639,7 @@ describe('空态', () => {
 });
 
 describe('plan 预览人话化', () => {
-  it('列出写入、桥、端口与模型映射', () => {
+  it('列出写入、桥与模型映射，且不重复端口 URL', () => {
     const view = describePlanPreview(plan({
       analysis: analysis({
         route: 'local_bridge',
@@ -656,9 +657,35 @@ describe('plan 预览人话化', () => {
     expect(view.startsBridge).toBe(true);
     expect(view.serviceImpact).toBe('将启动本机路由');
     expect(view.writes.some((line) => line.includes('使用已保存的密钥'))).toBe(true);
-    expect(view.portNotes.length).toBeGreaterThan(0);
+    expect(view.portNotes).toEqual([]);
     expect(view.modelMappings).toEqual(['model：kimi-k2']);
     expect(view.limitations).toEqual(['需保持托盘运行']);
+  });
+
+  it('Grok→Claude 主句不含协议箭头，写入不露出 ANTHROPIC_*', () => {
+    const view = describePlanPreview(plan({
+      analysis: analysis({
+        route: 'local_bridge',
+        reason: 'Grok 订阅会经本机路由接到 Claude Code.',
+        limitations: [
+          '会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 xAI OAuth token 不进 Claude。',
+          '实验性协议桥接：Claude Messages → xAI Chat Completions；AgentHub 需保持在托盘运行。',
+        ],
+      }),
+      serviceImpact: 'requires_local_bridge',
+      changes: [
+        { target: 'claude', field: 'ANTHROPIC_BASE_URL', value: 'http://127.0.0.1:<本机端口>', secret: false },
+        { target: 'claude', field: 'ANTHROPIC_AUTH_TOKEN', secret: true },
+      ],
+    }));
+    expect(view.reason).toBe('Grok 订阅会经本机路由接到 Claude Code.');
+    expect(view.reason).not.toMatch(/Messages/);
+    expect(view.writes[0]).not.toContain('ANTHROPIC_BASE_URL');
+    expect(view.writes[0]).toContain('本机接口地址');
+    expect(view.writes[1]).toContain('本机认证令牌');
+    expect(view.portNotes).toEqual([]);
+    expect(view.serviceImpact).toBe('将启动本机路由');
+    expect(view.limitations.some((line) => line.includes('ANTHROPIC'))).toBe(true);
   });
 
   it('renders native subscription reuse without starting a local bridge', () => {
@@ -968,6 +995,44 @@ describe('preview 同步失效与确认占锁', () => {
       accounts: [claudeAccount],
       providers: [],
     })).toBe(true);
+  });
+
+  it('for-source 已导入且已登录的 live ticket 不显示导入提示', () => {
+    expect(shouldShowPreviewImportHint({
+      entry: { mode: 'for-source', source: { kind: 'account', id: 'acc-grok' } },
+      option: null,
+      accounts: [account({ id: 'acc-grok', agentId: 'grok', tokenValid: true })],
+      providers: [],
+    })).toBe(false);
+  });
+
+  it('来源未导入或未登录时显示导入提示', () => {
+    expect(shouldShowPreviewImportHint({
+      entry: { mode: 'for-source', source: { kind: 'account', id: 'missing' } },
+      option: null,
+      accounts: [],
+      providers: [],
+    })).toBe(true);
+    expect(shouldShowPreviewImportHint({
+      entry: { mode: 'for-source', source: { kind: 'account', id: 'acc-grok' } },
+      option: null,
+      accounts: [account({ id: 'acc-grok', agentId: 'grok', tokenValid: false })],
+      providers: [],
+    })).toBe(true);
+  });
+
+  it('for-agent 已导入且已登录的来源不显示导入提示', () => {
+    const live = option({
+      ref: { kind: 'account', id: 'acc-grok' },
+      state: { kind: 'plannable' },
+      agentId: 'grok',
+      group: 'cross',
+      account: account({ id: 'acc-grok', agentId: 'grok', tokenValid: true }),
+    });
+    expect(shouldShowPreviewImportHint({
+      entry: forAgent,
+      option: live,
+    })).toBe(false);
   });
 
   it('确认占锁：已持有则再次获取失败，释放后可再获取', () => {

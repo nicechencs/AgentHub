@@ -588,7 +588,7 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
         xai_grok.analysis.reason,
         crate::models::SAME_PROTOCOL_NO_EDGE_REASON
     );
-    assert!(xai_grok.analysis.reason.contains("同协议但无已验证的边"));
+    assert_eq!(xai_grok.analysis.reason, "这条接到方式还没做好，暂不能绑定。");
     assert!(!xai_grok.analysis.reason.contains("仅支持预览"));
 }
 
@@ -1203,7 +1203,7 @@ fn grok_subscription_to_claude_is_writable_local_bridge() {
     assert_eq!(plan.analysis.support, AdapterSupport::Experimental);
     assert_eq!(
         plan.reason,
-        "Grok 订阅可通过本机路由到 Claude Code（Messages → xAI Chat Completions）。"
+        "Grok 订阅会经本机路由接到 Claude Code."
     );
     assert_eq!(
         plan.reuse_path,

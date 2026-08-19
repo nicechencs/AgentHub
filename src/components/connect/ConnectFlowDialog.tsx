@@ -50,6 +50,7 @@ import {
   resolveEmptyKind,
   settleConfirm,
   shouldRevertPreviewToSelect,
+  shouldShowPreviewImportHint,
   sourceAgentIdOf,
   tryAcquireConfirmLock,
 } from './connect-flow-state';
@@ -408,6 +409,12 @@ export function ConnectFlowDialog({
                   previewInvalid={previewInvalid}
                   previewNative={deps.previewNative}
                   onGoImport={goImportLogin}
+                  showImportHint={shouldShowPreviewImportHint({
+                    entry,
+                    option: selectedOption,
+                    accounts: pool.accounts,
+                    providers: pool.providers,
+                  })}
                 />
               ) : null}
 
@@ -449,11 +456,11 @@ export function ConnectFlowDialog({
               {!entryStale && state.step === 'result' ? (
                 <>
                   {canRetry(state) ? (
-                    <Button variant="secondary" onClick={() => dispatch({ type: 'retry_from_result' })}>
+                    <Button onClick={() => dispatch({ type: 'retry_from_result' })}>
                       重试
                     </Button>
                   ) : null}
-                  <Button onClick={requestClose}>关闭</Button>
+                  <Button variant="secondary" onClick={requestClose}>关闭</Button>
                 </>
               ) : null}
             </DialogFooter>
