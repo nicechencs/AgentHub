@@ -123,9 +123,9 @@ agenthub
 
 **明确不做（CLI v1）：**
 
-- `agenthub oauth ...` 完整浏览器 PKCE 主路径归 GUI；CLI 提供 `account oauth-url` / `account refresh`
+- `agenthub oauth ...` 完整浏览器登录主路径归 GUI；CLI 提供 `account oauth-url` / `account refresh`
 - 官方「模型商店」浏览/切换
-- 代理模式（热切换不改 live 文件，P4）、WebDAV。这不是三路里的 ③ 本机路由；③ 走现有 `local_bridge`，不在本条「明确不做」里
+- 代理模式（热切换不改 live 文件，P4）、WebDAV。这不是三路里的本机路由；本机转发走现有 `local_bridge`，不在本条「明确不做」里
 
 ---
 

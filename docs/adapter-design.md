@@ -53,7 +53,7 @@ Adapter 负责把 **登录列表里已有的登录**接到另一个 Agent。机�
 
 1. **复用 Connections**：凭据仍在 Connections 管理；Adapter 只引用 `connection_id`，不复制一套账号池。
 2. **优先直连**：能通过配置同步或上游原生兼容端点完成时，不启动本地服务。
-3. **桥接是兜底**：只有明确需要协议转换时才启动本地服务。生成的 loopback 端点是**绑定的 runtime**，目标态不作为钱包里的新票，也不能再拿去 bind。
+3. **桥接是兜底**：只有明确需要协议转换时才启动本地服务。生成的 loopback 端点是**绑定的 runtime**，目标态不作为登录列表里的新登录，也不能再拿去 bind。
 4. **不是 Token 格式互转**：OAuth access/refresh token 不能通过改字段名变成另一家授权。只有目标客户端明确支持同一授权和刷新语义时，才可做配置同步。
 5. **能力要可验证**：兼容性由版本化规则和真实探测共同决定，不依赖页面硬编码的宣传矩阵。
 6. **Provider 不是服务**：Provider/Connection 是持久化配置实体；需要后台运行的是 `BridgeRuntime`。当前由 AgentHub 托盘进程托管，目标迁移到用户级 `agenthub-adapterd`；无论部署形态如何，都不把页面组件、Connections 或 ProviderService 变成长驻 HTTP 服务。
@@ -66,11 +66,11 @@ Adapter 负责把 **登录列表里已有的登录**接到另一个 Agent。机�
 - 从 Connections 选择一个现有 OAuth 或 API Key 连接。
 - 选择目标 Agent，并自动分析可用路径。
 - 预览将写入的配置、本地服务影响和已知能力差异。
-- 执行配置同步、原生兼容端点接入或本地协议桥接。
+- 执行配置同步、原生兼容端点接入或本机路由。
 - 对上游和最终目标协议分别进行最小有效请求测试。
 - 管理本地桥接的启动、停止、重启、最近状态和错误诊断。
 - 关闭主窗口后，本地桥接继续由托盘进程运行；显式退出 AgentHub 前提示会停止的桥接数量。
-- 将桥接结果记为该 Agent 的一条 `bridge` 绑定（当前实现仍落成生成 Provider + profile），复用现有切换、备份和恢复链路。目标态生成物不进钱包。
+- 将桥接结果记为该 Agent 的一条 `bridge` 绑定（当前实现仍落成生成 Provider + profile），复用现有切换、备份和恢复链路。目标态生成物不进登录列表。
 
 ### 2.2 明确不做
 
@@ -129,14 +129,14 @@ Adapter 负责把 **登录列表里已有的登录**接到另一个 Agent。机�
 | 入口 | 动作 | 打开 |
 |---|---|---|
 | Dashboard Agent 卡片 | 「连接/切换」 | `ConnectFlowDialog`（固定目标 Agent） |
-| Connections 行 | 「接到…」 | 绑定对话框（固定票） |
+| Connections 行 | 「接到…」 | 绑定对话框（固定登录） |
 
 本页只管理 ③ 本机路由运行时：端口、启停、自动恢复、失败详情、解绑。日常创建不在本页。创建绑定只走 `ConnectFlowDialog`，经 `lib/api/tickets` 的 `planTicket` / `bindTicket`，以 plan 的 route / maturity / canApply / reason 为权威。入口与信息架构见 [bridges-page-redesign.md](bridges-page-redesign.md)、[ui-design.md](ui-design.md) §4.3.3。
 
 以下描述本页（`/routes`）自身，不是 `ConnectFlowDialog`：
 
 - 路由：`/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。
-- 标题：中文「本机路由」。侧栏英文 **Routes**，有本机路由才出现（`partitionLocalBridgeRuntimes` 的 bound+orphan，或钱包仍有 `route=bridge`）。Settings → 本机永远有「本机路由」入口。
+- 标题：中文「本机路由」。侧栏英文 **Routes**，有本机路由才出现（`partitionLocalBridgeRuntimes` 的 bound+orphan，或登录列表仍有 `route=bridge`）。Settings → 本机永远有「本机路由」入口。
 - 页头无「去 Dashboard / 去 Connections」。创建区不在本页。
 - 列出全部 `kind === 'local_bridge'`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机路由」。空 `sourceId` 丢弃。
 - 解绑只走 `unbindTicket`（优先钱包 id，否则 `ticketIdFor(sourceId)` + `targetAgentId`）。不提供 `removeAdapter`。
@@ -241,7 +241,7 @@ PageHeader  本机路由 · 本机协议转换 · 仅 127.0.0.1
 
 - 身份行（来源 → 目标 + 凭据族 Badge）、**单层**运行时状态（与行同一套 `bridgeRuntimeStatusView`）。删除「配置 / 服务」两行和「配置已生效」块。
 - 桥接区：本机端点复制、上游状态、auto-start 开关（「仅在 AgentHub 运行时恢复，不是开机自启」）。
-- 目标写入：若有 `generatedProviderId`，纯文字「已写入 {Agent} 的本机地址；这不是 Connections 里的票。」**禁止**链到 `/connections?agent=`。需要看当前绑定去 Dashboard 对应卡片。
+- 目标写入：若有 `generatedProviderId`，纯文字「已写入 {Agent} 的本机地址；这不是 Connections 里的登录。」**禁止**链到 `/connections?agent=`。需要看当前绑定去 Dashboard 对应卡片。
 - `needs_attention` 的恢复步骤（错误码 + 「启动只恢复运行时，不修复配置不一致」）。
 - 折叠的诊断信息：profile id、规则 id/版本、时间戳、最近错误码、`打开日志目录`（复用 settings 的 `openLogsDir`）。规则技术字段不与来源/目标同级展示。
 - 状态点仅过渡态（启动中 / 停止中）使用脉冲动画；稳态保持静点。
