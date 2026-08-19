@@ -71,6 +71,7 @@ import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
 import { getConnectionPoolSnapshot, providersForAgent, useConnectionPool } from '@/app/runtime';
 import { AGENTS, AGENT_MAP, agentDisplayName } from '@/config/agents';
 import { hasEnvIssues } from '@/lib/env';
+import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { loadBool, saveBool, StorageKey } from '@/lib/ui-preferences';
 import type { AgentId, AgentStatus, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import { typeScalePx } from '@/styles/tokens';
@@ -78,7 +79,11 @@ import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
 import { usageTokenParts } from '@/lib/usage-tokens';
 import { cn, fmtTokens } from '@/lib/utils';
 import { AgentOverview, AgentOverviewSkeleton } from './AgentOverview';
-import type { AgentCardBadgeInput, AgentCardBridgeState } from './agentOverviewModel';
+import {
+  dashboardOverviewSkeletonCount,
+  type AgentCardBadgeInput,
+  type AgentCardBridgeState,
+} from './agentOverviewModel';
 import { UsageDetailsTable } from './UsageDetailsTable';
 
 /** 日期筛选预设：today / 24h 均按 days=1 拉取，today 再按本地日历日收窄 */
@@ -123,6 +128,7 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const usageSync = useUsageSync();
   const usageSectionRef = useRef<HTMLElement>(null);
+  const { installedIds } = useInstalledAgents();
 
   // —— Agent / runtime（上半）——
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
@@ -545,6 +551,10 @@ export default function DashboardPage() {
   const trendAgents = agentFilter === 'all' ? visibleAgentMetas : [AGENT_MAP[agentFilter]];
   const maxTokens = distribution[0]?.tokens ?? 0;
   const installedCount = agents?.filter((a) => a.installed && !a.hidden).length ?? 0;
+  const overviewSkeletonCount = dashboardOverviewSkeletonCount(
+    agents,
+    installedIds.length,
+  );
   const envBad = hasEnvIssues(runtimes);
   const showEnvCta = !agentsLoading && agents !== null && installedCount === 0 && envBad;
 
@@ -559,7 +569,7 @@ export default function DashboardPage() {
       {/* —— 上半：Agent 总览（独立 loading / error）—— */}
       <PageSection first>
         {agentsLoading ? (
-          <AgentOverviewSkeleton />
+          <AgentOverviewSkeleton count={overviewSkeletonCount} />
         ) : agentsError ? (
           <ErrorState error={agentsError} onRetry={() => void loadAgents()} />
         ) : agents ? (

@@ -181,7 +181,8 @@ export function AgentOverview({
   );
 }
 
-export function AgentOverviewSkeleton() {
+export function AgentOverviewSkeleton({ count }: { count: number }) {
+  const n = Math.max(0, count);
   return (
     <div>
       <div className="mb-3 flex items-center gap-2">
@@ -189,8 +190,8 @@ export function AgentOverviewSkeleton() {
         <Skeleton className="ml-auto h-6 w-10" />
       </div>
       <div className={AGENT_OVERVIEW_GRID}>
-        {AGENTS.map((meta) => (
-          <Card key={meta.id} className="p-3">
+        {Array.from({ length: n }).map((_, i) => (
+          <Card key={i} className="p-3">
             <div className="flex items-center gap-2">
               <Skeleton className="h-6 w-6 shrink-0 rounded-full" />
               <Skeleton className="h-4 w-20" />

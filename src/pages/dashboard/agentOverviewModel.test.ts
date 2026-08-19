@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AgentMeta } from '@/config/agents';
+import { AGENTS, type AgentMeta } from '@/config/agents';
 import type { AgentId, AgentStatus, AuthStatus } from '@/lib/types';
 
 import {
@@ -9,6 +9,7 @@ import {
   agentCardConnectFallback,
   buildAgentCardView,
   cardAuthStatus,
+  dashboardOverviewSkeletonCount,
   isAgentIssue,
   mergeAgentsInOrder,
   resolveAgentCardInteraction,
@@ -367,6 +368,28 @@ describe('resolveAgentCardInteraction', () => {
       to: '/connections?agent=claude',
     });
     expect(agentCardConnectFallback('kimi')).toBe('/connections?agent=kimi');
+  });
+});
+
+describe('dashboardOverviewSkeletonCount', () => {
+  it('uses fallback when agents is null, not catalog length', () => {
+    const count = dashboardOverviewSkeletonCount(null, 2);
+    expect(count).toBe(2);
+    expect(count).toBeLessThan(AGENTS.length);
+  });
+
+  it('counts only installed && !hidden when agents is present', () => {
+    const agents = [
+      status('claude', { installed: true }),
+      status('codex', { installed: false }),
+      status('kimi', { installed: true, hidden: true }),
+      status('grok', { installed: true }),
+    ];
+    expect(dashboardOverviewSkeletonCount(agents, 99)).toBe(2);
+  });
+
+  it('returns 0 for an empty agents list', () => {
+    expect(dashboardOverviewSkeletonCount([], 5)).toBe(0);
   });
 });
 
