@@ -957,7 +957,8 @@ fn generated_pi_kimi_provider(profile_id: &str, source_id: &str, current: bool) 
                         "models": [{ "id": "kimi-k2.5" }],
                     }
                 }
-            }
+            },
+            "settings": { "defaultProvider": KIMI_PI_PROVIDER_SLOT },
         }),
         meta: json!({
             "generatedBy": "adapter",
@@ -1109,6 +1110,14 @@ fn pi_kimi_apply_sets_current_and_keeps_secret_out_of_dto() {
         KIMI_PI_BASE_URL
     );
     assert_eq!(
+        stored.settings_config["settings"]["defaultProvider"],
+        KIMI_PI_PROVIDER_SLOT
+    );
+    assert_eq!(
+        live.raw["settings"]["defaultProvider"],
+        KIMI_PI_PROVIDER_SLOT
+    );
+    assert_eq!(
         stored.settings_config["models"]["providers"][KIMI_PI_PROVIDER_SLOT]["apiKey"],
         CONNECTION_SECRET_MARKER
     );
@@ -1203,6 +1212,10 @@ fn pi_anthropic_apply_sets_current_and_keeps_secret_out_of_dto() {
     assert_eq!(
         stored.settings_config["models"]["providers"][ANTHROPIC_PI_PROVIDER_SLOT]["apiKey"],
         CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(
+        stored.settings_config["settings"]["defaultProvider"],
+        ANTHROPIC_PI_PROVIDER_SLOT
     );
     assert!(!serde_json::to_string(&result)
         .unwrap()
@@ -1454,6 +1467,10 @@ fn pi_anthropic_account_apply_sets_source_ref_account_and_keeps_secret_out() {
         stored.settings_config["models"]["providers"][ANTHROPIC_PI_PROVIDER_SLOT]["apiKey"],
         CONNECTION_SECRET_MARKER
     );
+    assert_eq!(
+        stored.settings_config["settings"]["defaultProvider"],
+        ANTHROPIC_PI_PROVIDER_SLOT
+    );
     assert!(!serde_json::to_string(&result)
         .unwrap()
         .contains("sk-anthropic-secret"));
@@ -1556,6 +1573,8 @@ fn pi_subscription_account_apply_uses_oauth_auth_slot_without_persisting_tokens(
             stored.settings_config["auth"][slot]["refresh"],
             CONNECTION_SECRET_MARKER
         );
+        assert_eq!(stored.settings_config["settings"]["defaultProvider"], slot);
+        assert_eq!(live.raw["settings"]["defaultProvider"], slot);
         let serialized = serde_json::to_string(&result).unwrap();
         assert!(!serialized.contains(access));
         assert!(!serialized.contains(refresh));
@@ -1637,6 +1656,10 @@ fn pi_openai_and_xai_apply_sets_slot_and_keeps_secret_out() {
         CONNECTION_SECRET_MARKER
     );
     assert_eq!(
+        openai_stored.settings_config["settings"]["defaultProvider"],
+        OPENAI_PI_PROVIDER_SLOT
+    );
+    assert_eq!(
         fake.read_config().unwrap().raw["models"]["providers"][OPENAI_PI_PROVIDER_SLOT]["apiKey"],
         "sk-openai-secret"
     );
@@ -1658,6 +1681,10 @@ fn pi_openai_and_xai_apply_sets_slot_and_keeps_secret_out() {
     assert_eq!(
         xai_stored.settings_config["models"]["providers"][XAI_PI_PROVIDER_SLOT]["apiKey"],
         CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(
+        xai_stored.settings_config["settings"]["defaultProvider"],
+        XAI_PI_PROVIDER_SLOT
     );
     assert!(!serde_json::to_string(&openai)
         .unwrap()
@@ -1729,6 +1756,10 @@ fn pi_glm_and_deepseek_apply_sets_custom_provider_contract_and_keeps_secret_out(
         CONNECTION_SECRET_MARKER
     );
     assert_eq!(
+        glm_stored.settings_config["settings"]["defaultProvider"],
+        GLM_PI_PROVIDER_SLOT
+    );
+    assert_eq!(
         fake.read_config().unwrap().raw["models"]["providers"][GLM_PI_PROVIDER_SLOT]["apiKey"],
         "glm-pi-secret"
     );
@@ -1762,6 +1793,10 @@ fn pi_glm_and_deepseek_apply_sets_custom_provider_contract_and_keeps_secret_out(
     assert_eq!(
         deepseek_stored.settings_config["models"]["providers"][DEEPSEEK_PI_PROVIDER_SLOT]["apiKey"],
         CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(
+        deepseek_stored.settings_config["settings"]["defaultProvider"],
+        DEEPSEEK_PI_PROVIDER_SLOT
     );
     assert_eq!(
         fake.read_config().unwrap().raw["models"]["providers"][DEEPSEEK_PI_PROVIDER_SLOT]["apiKey"],

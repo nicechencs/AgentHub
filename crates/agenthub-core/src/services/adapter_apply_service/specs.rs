@@ -551,7 +551,8 @@ pub(super) fn pi_kimi_spec(source_kind: AdapterSourceKind, source_id: &str) -> G
                             "models": [{ "id": model }],
                         }
                     }
-                }
+                },
+                "settings": { "defaultProvider": KIMI_PI_PROVIDER_SLOT },
             }),
             meta: generated_meta(KIMI_PI_RULE_ID, &profile_id, source_kind, source_id, None),
             is_current: false,
@@ -641,7 +642,8 @@ pub(super) fn pi_subscription_spec(source_id: &str, rule_id: &str) -> Result<Gen
                         "access": CONNECTION_SECRET_MARKER,
                         "refresh": CONNECTION_SECRET_MARKER,
                     }
-                }
+                },
+                "settings": { "defaultProvider": slot },
             }),
             meta: generated_meta(
                 rule_id,
@@ -746,7 +748,8 @@ pub(super) fn pi_explicit_api_spec(
                     "providers": {
                         (slot): pi_provider
                     }
-                }
+                },
+                "settings": { "defaultProvider": slot },
             }),
             meta: generated_meta(rule_id, &profile_id, source_kind, source_id, None),
             is_current: false,

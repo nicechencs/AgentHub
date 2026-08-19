@@ -66,7 +66,9 @@ impl StreamSession {
         structured_requested: bool,
         registry: &StreamParserRegistry,
     ) -> Self {
-        let parser = registry.get(&agent_key);
+        let parser = registry
+            .get(&agent_key)
+            .map(|p| p.for_session().unwrap_or(p));
         // Text mode always remains passthrough. Other modes require both the
         // caller's capability decision and a registered parser.
         let structured =
@@ -294,8 +296,11 @@ pub fn extract_native_session_id(agent_key: &str, line: &str) -> Option<String> 
     let v: serde_json::Value = serde_json::from_str(line).ok()?;
     let raw = match agent_key {
         "claude" => first_json_str(&v, &["session_id", "sessionId"]),
-        "codex" => first_json_str(&v, &["thread_id", "session_id", "sessionId"])
-            .or_else(|| v.pointer("/thread/id").and_then(|x| x.as_str()).map(str::to_string)),
+        "codex" => first_json_str(&v, &["thread_id", "session_id", "sessionId"]).or_else(|| {
+            v.pointer("/thread/id")
+                .and_then(|x| x.as_str())
+                .map(str::to_string)
+        }),
         _ => None,
     }?;
     crate::adapters::session_resume::valid_session_id(&raw).map(str::to_string)

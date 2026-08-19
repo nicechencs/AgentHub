@@ -211,6 +211,10 @@ impl AgentAdapter for PiAdapter {
             mode.into(),
             "--no-session".into(),
         ];
+        // Documented `--provider` / `--model`. Prefer settings.json; if that
+        // file has neither default, fall back to a single auth.json slot so
+        // Chat works after an auth-only bind (no re-bind required).
+        args.extend(pi_cli_provider_args());
         if opts.allow_dangerous {
             // Closest documented non-interactive trust flag for project files.
             args.push("--approve".into());
@@ -360,6 +364,51 @@ where
         .into_iter()
         .max_by_key(rank)
         .unwrap_or(AuthHealth::Missing)
+}
+
+/// Resolve Pi `--provider` / `--model` from live config when we can.
+/// Missing files or unreadable JSON are ignored — the CLI still launches.
+fn pi_cli_provider_args() -> Vec<String> {
+    let Ok(dir) = pi_config_dir() else {
+        return Vec::new();
+    };
+    let settings =
+        read_json_object_or_empty(&dir.join("settings.json")).unwrap_or(serde_json::json!({}));
+    let provider = nonempty_json_str(&settings, "defaultProvider");
+    let model = nonempty_json_str(&settings, "defaultModel");
+    if provider.is_some() || model.is_some() {
+        let mut args = Vec::new();
+        if let Some(provider) = provider {
+            args.push("--provider".into());
+            args.push(provider);
+        }
+        if let Some(model) = model {
+            args.push("--model".into());
+            args.push(model);
+        }
+        return args;
+    }
+    let auth = read_json_object_or_empty(&dir.join("auth.json")).unwrap_or(serde_json::json!({}));
+    let Some(obj) = auth.as_object() else {
+        return Vec::new();
+    };
+    let slots: Vec<&str> = obj
+        .iter()
+        .filter(|(_, v)| v.is_object())
+        .map(|(k, _)| k.as_str())
+        .collect();
+    if slots.len() == 1 {
+        return vec!["--provider".into(), slots[0].to_string()];
+    }
+    Vec::new()
+}
+
+fn nonempty_json_str(v: &serde_json::Value, key: &str) -> Option<String> {
+    v.get(key)
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
 }
 
 fn read_json_object_or_empty(path: &Path) -> Result<serde_json::Value> {
@@ -544,29 +593,100 @@ mod tests {
 
     static PI_CONFIG_ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    fn with_pi_config_dir<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
+        let _guard = PI_CONFIG_ENV_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("PI_CODING_AGENT_DIR");
+        std::env::set_var("PI_CODING_AGENT_DIR", dir.path());
+        let result = f(dir.path());
+        match previous {
+            Some(value) => std::env::set_var("PI_CODING_AGENT_DIR", value),
+            None => std::env::remove_var("PI_CODING_AGENT_DIR"),
+        }
+        result
+    }
+
     #[test]
     fn build_run_spec_print_mode() {
-        let adapter = PiAdapter;
-        let bin = PathBuf::from("pi");
-        let opts = RunOptions::default();
-        let spec = adapter.build_run_spec(&bin, "hello", &opts).unwrap();
-        assert_eq!(spec.agent, AgentId::Pi);
-        assert_eq!(spec.program, bin);
-        assert_eq!(spec.args[0], "-p");
-        assert_eq!(spec.args[1], "hello");
-        assert!(spec.args.iter().any(|a| a == "--mode"));
-        assert!(spec.args.iter().any(|a| a == "text"));
-        assert!(spec.args.iter().any(|a| a == "--no-session"));
-        assert!(!spec.args.iter().any(|a| a == "--approve"));
+        with_pi_config_dir(|_| {
+            let adapter = PiAdapter;
+            let bin = PathBuf::from("pi");
+            let opts = RunOptions::default();
+            let spec = adapter.build_run_spec(&bin, "hello", &opts).unwrap();
+            assert_eq!(spec.agent, AgentId::Pi);
+            assert_eq!(spec.program, bin);
+            assert_eq!(spec.args[0], "-p");
+            assert_eq!(spec.args[1], "hello");
+            assert!(spec.args.iter().any(|a| a == "--mode"));
+            assert!(spec.args.iter().any(|a| a == "text"));
+            assert!(spec.args.iter().any(|a| a == "--no-session"));
+            assert!(!spec.args.iter().any(|a| a == "--approve"));
+            assert!(!spec.args.iter().any(|a| a == "--provider"));
+        });
     }
 
     #[test]
     fn build_run_spec_allow_dangerous_adds_approve() {
-        let adapter = PiAdapter;
-        let mut opts = RunOptions::default();
-        opts.allow_dangerous = true;
-        let spec = adapter.build_run_spec(Path::new("pi"), "x", &opts).unwrap();
-        assert!(spec.args.iter().any(|a| a == "--approve"));
+        with_pi_config_dir(|_| {
+            let adapter = PiAdapter;
+            let mut opts = RunOptions::default();
+            opts.allow_dangerous = true;
+            let spec = adapter.build_run_spec(Path::new("pi"), "x", &opts).unwrap();
+            assert!(spec.args.iter().any(|a| a == "--approve"));
+        });
+    }
+
+    #[test]
+    fn build_run_spec_uses_sole_auth_json_provider() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("auth.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "xai": { "type": "oauth", "access": "test-access" }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let spec = PiAdapter
+                .build_run_spec(Path::new("pi"), "ping", &RunOptions::default())
+                .unwrap();
+            let args = spec.args;
+            let idx = args
+                .iter()
+                .position(|a| a == "--provider")
+                .expect("--provider");
+            assert_eq!(args[idx + 1], "xai");
+            assert!(!args.iter().any(|a| a == "--model"));
+        });
+    }
+
+    #[test]
+    fn build_run_spec_uses_settings_default_provider() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({ "defaultProvider": "xai" })).unwrap(),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.join("auth.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "anthropic": { "type": "oauth", "access": "other-access" },
+                    "xai": { "type": "oauth", "access": "test-access" }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let spec = PiAdapter
+                .build_run_spec(Path::new("pi"), "ping", &RunOptions::default())
+                .unwrap();
+            let args = spec.args;
+            let idx = args
+                .iter()
+                .position(|a| a == "--provider")
+                .expect("--provider");
+            assert_eq!(args[idx + 1], "xai");
+        });
     }
 
     #[test]
@@ -736,7 +856,10 @@ mod tests {
             "https://relay.example/v1"
         );
         assert_eq!(models["providers"]["keep"]["apiKey"], "keep-secret");
-        assert!(models.get("auth").is_none(), "auth must not leak into models.json");
+        assert!(
+            models.get("auth").is_none(),
+            "auth must not leak into models.json"
+        );
 
         let auth = read_json_object_or_empty(&dir.path().join("auth.json")).unwrap();
         assert_eq!(auth["openai"]["type"], "api_key");
@@ -757,7 +880,10 @@ mod tests {
         })
         .unwrap();
         let models = read_json_object_or_empty(&dir.path().join("models.json")).unwrap();
-        assert_eq!(models["providers"]["extra"]["baseUrl"], "https://extra.example");
+        assert_eq!(
+            models["providers"]["extra"]["baseUrl"],
+            "https://extra.example"
+        );
         assert!(models.get("auth").is_none());
         let auth = read_json_object_or_empty(&dir.path().join("auth.json")).unwrap();
         assert_eq!(auth["deepseek"]["key"], "sk-ds");
@@ -767,5 +893,48 @@ mod tests {
             Some(value) => std::env::set_var("PI_CODING_AGENT_DIR", value),
             None => std::env::remove_var("PI_CODING_AGENT_DIR"),
         }
+    }
+
+    #[test]
+    fn write_config_settings_default_provider_merges_without_clobber() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "theme": "dark",
+                    "defaultThinkingLevel": "low"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.join("auth.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "keep": { "type": "oauth", "access": "keep-access" }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+
+            write_pi_config(&AgentConfig {
+                agent: AgentId::Pi,
+                raw: json!({
+                    "settings": { "defaultProvider": "xai" },
+                    "auth": {
+                        "xai": { "type": "oauth", "access": "new-access" }
+                    }
+                }),
+            })
+            .unwrap();
+
+            let settings = read_json_object_or_empty(&dir.join("settings.json")).unwrap();
+            assert_eq!(settings["defaultProvider"], "xai");
+            assert_eq!(settings["theme"], "dark");
+            assert_eq!(settings["defaultThinkingLevel"], "low");
+
+            let auth = read_json_object_or_empty(&dir.join("auth.json")).unwrap();
+            assert_eq!(auth["xai"]["access"], "new-access");
+            assert_eq!(auth["keep"]["access"], "keep-access");
+        });
     }
 }
