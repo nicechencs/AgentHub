@@ -448,10 +448,11 @@ fn require_blocks_unsupported_and_allows_full() {
 #[test]
 fn require_planned_uses_distinct_copy_from_unsupported() {
     let reg = register_all();
-    // Claude Usage is Full (parser wired); SessionResume still Planned; Kimi Skills Unsupported.
+    // Claude Usage is Full; SessionResume is Partial (print+resume). Grok SessionResume stays Planned.
     assert!(reg.require(AgentId::Claude, Capability::Usage).is_ok());
-    let planned = match reg.require(AgentId::Claude, Capability::SessionResume) {
-        Ok(_) => panic!("claude session resume should be planned/blocked"),
+    assert!(reg.require(AgentId::Claude, Capability::SessionResume).is_ok());
+    let planned = match reg.require(AgentId::Grok, Capability::SessionResume) {
+        Ok(_) => panic!("grok session resume should be planned/blocked"),
         Err(e) => e,
     };
     let unsupported = match reg.require(AgentId::Kimi, Capability::Skills) {
@@ -1277,4 +1278,35 @@ fn apply_pi_api_key_to_dir_rejects_empty_provider() {
         );
     }
     assert!(!dir.path().join("auth.json").exists());
+}
+
+#[test]
+fn print_resume_flags_match_official_cli() {
+    let mut opts = crate::models::RunOptions {
+        process_mode: crate::models::ProcessMode::Auto,
+        native_session_id: Some("sess-1".into()),
+        ..crate::models::RunOptions::default()
+    };
+    let claude = register_all()
+        .get(AgentId::Claude)
+        .unwrap()
+        .build_run_spec(std::path::Path::new("claude"), "hi", &opts)
+        .unwrap();
+    assert_eq!(claude.args[0], "-p");
+    assert_eq!(claude.args[1], "--resume");
+    assert_eq!(claude.args[2], "sess-1");
+    assert_eq!(claude.args[3], "hi");
+
+    opts.allow_dangerous = true;
+    let codex = register_all()
+        .get(AgentId::Codex)
+        .unwrap()
+        .build_run_spec(std::path::Path::new("codex"), "hi", &opts)
+        .unwrap();
+    assert_eq!(codex.args[0], "exec");
+    assert_eq!(codex.args[1], "resume");
+    assert_eq!(codex.args[2], "sess-1");
+    assert!(codex.args.contains(&"--json".into()));
+    assert!(codex.args.contains(&"--dangerously-bypass-approvals-and-sandbox".into()));
+    assert_eq!(codex.args.last().map(String::as_str), Some("hi"));
 }

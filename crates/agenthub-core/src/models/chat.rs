@@ -77,6 +77,9 @@ pub struct Conversation {
     pub allow_dangerous: bool,
     pub created_at: String,
     pub updated_at: String,
+    /// Official CLI session id captured from the last print-mode run, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_session_id: Option<String>,
 }
 
 /// One message in a conversation.

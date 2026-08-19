@@ -1,5 +1,6 @@
 import type { TranslateFn } from '@/lib/i18n';
 import { restoreProjectWorkspacePath } from '@/lib/path-open';
+import { nativeResumeCommand as planResumeCommand } from '@/lib/session-resume';
 import type { AgentProject, AgentSession } from '@/lib/types';
 
 export function displayTitle(p: Pick<AgentProject, 'title' | 'alias'>): string {
@@ -78,6 +79,13 @@ export function shortPath(p: string, max = 48): string {
 export function nativeSessionId(s: Pick<AgentSession, 'sessionId'>): string | null {
   const sid = s.sessionId?.trim();
   return sid ? sid : null;
+}
+
+/** Official CLI resume command for this session, when the agent has a known flag. */
+export function nativeResumeCommand(
+  s: Pick<AgentSession, 'agentId' | 'sessionId'>,
+): string | null {
+  return planResumeCommand(s.agentId, s.sessionId);
 }
 
 export function shortSessionId(id: string, max = 36): string {

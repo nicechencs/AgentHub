@@ -1,8 +1,14 @@
 use std::fs;
+use std::path::Path;
 
 use tempfile::tempdir;
 
-use super::{clear_grok_field, grok_auth_state, read_grok_api_key, write_grok_api_key};
+use crate::adapters::AgentAdapter;
+use crate::models::{ProcessMode, RunOptions};
+
+use super::{
+    clear_grok_field, grok_auth_state, read_grok_api_key, write_grok_api_key, GrokAdapter,
+};
 
 #[test]
 fn grok_account_key_reads_and_writes_active_nested_model() {
@@ -107,4 +113,55 @@ fn grok_oauth_only_leaves_also_present_empty() {
         .unwrap()
         .get("alsoPresent")
         .is_none());
+}
+
+#[test]
+fn build_run_spec_guards_auto_update_and_streams_json() {
+    let spec = GrokAdapter
+        .build_run_spec(
+            Path::new("grok"),
+            "hi",
+            &RunOptions {
+                process_mode: ProcessMode::Auto,
+                ..RunOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        spec.args,
+        vec![
+            "--no-auto-update",
+            "-p",
+            "hi",
+            "--output-format",
+            "streaming-json"
+        ]
+    );
+    assert!(spec.env.is_empty());
+}
+
+#[test]
+fn build_run_spec_dangerous_prefixes_always_approve() {
+    let spec = GrokAdapter
+        .build_run_spec(
+            Path::new("grok"),
+            "hi",
+            &RunOptions {
+                allow_dangerous: true,
+                process_mode: ProcessMode::Auto,
+                ..RunOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        spec.args,
+        vec![
+            "--always-approve",
+            "--no-auto-update",
+            "-p",
+            "hi",
+            "--output-format",
+            "streaming-json"
+        ]
+    );
 }

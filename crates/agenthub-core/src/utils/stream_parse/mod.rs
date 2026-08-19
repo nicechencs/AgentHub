@@ -45,6 +45,7 @@ pub struct StreamSession {
     assistant_text: String,
     step_count: usize,
     raw_fallback_lines: usize,
+    native_session_id: Option<String>,
 }
 
 impl StreamSession {
@@ -97,6 +98,7 @@ impl StreamSession {
             assistant_text: String::new(),
             step_count: 0,
             raw_fallback_lines: 0,
+            native_session_id: None,
         }
     }
 
@@ -114,6 +116,10 @@ impl StreamSession {
 
     pub fn step_count(&self) -> usize {
         self.step_count
+    }
+
+    pub fn native_session_id(&self) -> Option<&str> {
+        self.native_session_id.as_deref()
     }
 
     /// Feed a raw process chunk; returns decoded outputs for the UI / chat content.
@@ -180,6 +186,11 @@ impl StreamSession {
         if line.is_empty() {
             return Vec::new();
         }
+        if self.native_session_id.is_none() {
+            if let Some(id) = extract_native_session_id(self.agent_key.as_str(), line) {
+                self.native_session_id = Some(id);
+            }
+        }
         if line.len() > MAX_LINE_BYTES {
             self.raw_fallback_lines += 1;
             self.step_count += 1;
@@ -194,7 +205,8 @@ impl StreamSession {
 
         match parsed {
             Some(events) if !events.is_empty() => self.map_steps(events),
-            _ => {
+            Some(_) => Vec::new(),
+            None => {
                 self.raw_fallback_lines += 1;
                 // If it looks like JSON but unknown shape, keep as raw step (not chat body).
                 if line.starts_with('{') {
@@ -271,6 +283,34 @@ impl StreamSession {
             "structured stream session closed"
         );
     }
+}
+
+/// Pull an official session/thread id from one structured stdout line.
+pub fn extract_native_session_id(agent_key: &str, line: &str) -> Option<String> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    let raw = match agent_key {
+        "claude" => first_json_str(&v, &["session_id", "sessionId"]),
+        "codex" => first_json_str(&v, &["thread_id", "session_id", "sessionId"])
+            .or_else(|| v.pointer("/thread/id").and_then(|x| x.as_str()).map(str::to_string)),
+        _ => None,
+    }?;
+    crate::adapters::session_resume::valid_session_id(&raw).map(str::to_string)
+}
+
+fn first_json_str(v: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(s) = v.get(*key).and_then(|x| x.as_str()) {
+            let t = s.trim();
+            if !t.is_empty() {
+                return Some(t.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn append_assistant(dest: &mut String, chunk: &str) {
