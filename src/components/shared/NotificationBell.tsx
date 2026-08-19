@@ -9,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Hint } from '@/components/ui/tooltip';
 import { listAlerts, dismissAlert } from '@/lib/api/dashboard';
 import type { DashboardAlert } from '@/lib/types';
@@ -22,6 +23,7 @@ function LevelIcon({ level }: { level: DashboardAlert['level'] }) {
 
 /** 顶栏通知铃:拉取 Dashboard 告警,点击跳转对应页面 */
 export function NotificationBell() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [alerts, setAlerts] = React.useState<DashboardAlert[]>([]);
   const [open, setOpen] = React.useState(false);
@@ -61,12 +63,12 @@ export function NotificationBell() {
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
-      <Hint label="通知">
+      <Hint label={t('chrome.bell.label')}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
             className="relative rounded-btn p-1.5 text-secondary hover:bg-hover hover:text-primary"
-            aria-label="通知"
+            aria-label={t('chrome.bell.label')}
           >
             <Bell className="h-4 w-4" />
             {alerts.length > 0 && (
@@ -79,7 +81,7 @@ export function NotificationBell() {
       </Hint>
       <DropdownMenuContent align="end" className="w-80">
         <DropdownMenuLabel className="flex items-center justify-between">
-          <span>需要关注</span>
+          <span>{t('chrome.bell.title')}</span>
           {alerts.length > 0 && (
             <button
               type="button"
@@ -89,7 +91,7 @@ export function NotificationBell() {
                 void handleDismissAll();
               }}
             >
-              全部忽略
+              {t('chrome.bell.dismissAll')}
             </button>
           )}
         </DropdownMenuLabel>
@@ -97,7 +99,7 @@ export function NotificationBell() {
         {alerts.length === 0 ? (
           <div className="flex items-center gap-2 px-2 py-4 text-sm text-secondary">
             <CheckCircle2 className="h-4 w-4 text-success" />
-            暂无新通知
+            {t('chrome.bell.empty')}
           </div>
         ) : (
           alerts.map((alert) => (
