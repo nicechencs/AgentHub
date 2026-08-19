@@ -180,27 +180,35 @@ describe('TicketWalletList details', () => {
 });
 
 describe('TicketDetailPanel', () => {
-  it('renders ticket fields, bindings, and secondary edit/delete', () => {
+  it('lays out 用量, 用在哪, and collapsed 更多 without header duplicates', () => {
     const markup = renderWithTooltip(
       createElement(TicketDetailPanel, {
         id: 'ticket-detail',
-        fields: [
-          { label: '类型', value: 'API Key' },
-          { label: '来源', value: '会员' },
+        advanced: [
+          { label: '导入自', value: 'Kimi' },
+          { label: '协议', value: 'anthropic-messages' },
         ],
-        bindingLines: ['Claude · 改配置 · 当前'],
-        extras: { canEditConfig: true, isCurrent: true },
+        bindings: [{ agent: 'Claude', status: '当前使用' }],
+        extras: { quota7dPct: 40, quota7dResetIn: '3d', canEditConfig: true, isCurrent: true },
         editLabel: '编辑配置',
         onEdit() {},
         onDelete() {},
       }),
     );
     expect(markup).toContain('id="ticket-detail"');
-    expect(markup).toContain('类型');
-    expect(markup).toContain('来源');
-    expect(markup).toContain('API Key');
-    expect(markup).toContain('正用于');
-    expect(markup).toContain('Claude · 改配置 · 当前');
+    expect(markup).toContain('用量');
+    expect(markup).toContain('用在哪');
+    expect(markup).toContain('更多');
+    expect(markup).toContain('<details>');
+    expect(markup).not.toContain('<details open');
+    expect(markup).toContain('Claude');
+    expect(markup).toContain('当前使用');
+    expect(markup).not.toContain('正用于');
+    expect(markup).not.toContain('Claude · 改配置 · 当前');
+    expect(markup).not.toContain('>类型<');
+    expect(markup).not.toContain('>来源<');
+    expect(markup).not.toContain('>所属<');
+    expect(markup).not.toContain('官方账号');
     expect(markup).toContain('编辑配置');
     expect(markup).toContain('移入回收站');
   });
@@ -209,16 +217,19 @@ describe('TicketDetailPanel', () => {
     const markup = renderWithTooltip(
       createElement(TicketDetailPanel, {
         id: 'oauth-detail',
-        fields: [{ label: '类型', value: '官方登录' }],
-        bindingLines: [],
+        advanced: [{ label: '登录状态', value: '可续期，尚未验证' }],
+        bindings: [],
         extras: { authLabel: '可续期·未验证' },
         onDelete() {},
       }),
     );
-    expect(markup).toContain('官方登录');
-    expect(markup).toContain('未绑定任何 Agent');
-    expect(markup).toContain('可续期·未验证');
+    expect(markup).toContain('用在哪');
+    expect(markup).toContain('还没接到任何工具');
+    expect(markup).toContain('可续期，尚未验证');
+    expect(markup).not.toContain('可续期·未验证');
+    expect(markup).not.toContain('未绑定任何 Agent');
     expect(markup).not.toContain('编辑密钥');
     expect(markup).not.toContain('编辑配置');
+    expect(markup).not.toContain('用量');
   });
 });

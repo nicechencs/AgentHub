@@ -325,6 +325,43 @@ export interface TicketDetailField {
   mono?: boolean;
 }
 
+export interface TicketDetailSections {
+  /** Non-duplicate facts for the collapsed「更多」block. */
+  advanced: TicketDetailField[];
+}
+
+export interface TicketBindingDetailLine {
+  agent: string;
+  status: string;
+}
+
+const AUTH_LABEL_HUMAN: Record<string, string> = {
+  '可续期·未验证': '可续期，尚未验证',
+  '已配置·未验证': '已配置，尚未验证',
+};
+
+/** Human words for login health; never dump「可续期·未验证」as a raw token. */
+export function humanizeTicketAuthLabel(label: string): string {
+  return AUTH_LABEL_HUMAN[label] ?? label.replace(/·/g, '，');
+}
+
+function endpointHostOnly(host: string): string {
+  try {
+    if (/^https?:\/\//i.test(host)) return new URL(host).host;
+  } catch {
+    /* keep raw host */
+  }
+  return host;
+}
+
+export function ticketBindingStatus(binding: BindingView): string {
+  if (binding.route === 'bridge') {
+    if (binding.bridge?.running) return '本机路由运行中';
+    if (binding.bridge && !binding.bridge.running) return '本机路由已停止';
+  }
+  return binding.active ? '当前使用' : '未使用';
+}
+
 export function findTicketPoolSource(
   ticket: Pick<TicketView, 'sourceKind' | 'sourceId' | 'agentId'>,
   accounts: readonly Account[],
@@ -385,56 +422,54 @@ export function extrasFromPoolSource(
   return extras;
 }
 
-/** Read-only fields for the ticket detail expand panel. */
+/**
+ * Advanced-only facts for the ticket detail expand.
+ * Header already shows 类型 / 来源 / 所属 / 官方账号 / email / 订阅.
+ */
 export function buildTicketDetailFields(
   ticket: TicketView,
   extras?: TicketDetailExtras | null,
-): TicketDetailField[] {
-  const fields: TicketDetailField[] = [
-    { label: '类型', value: ticketCredentialClassLabel(ticket.credentialClass) },
-    { label: '来源', value: ticketSurfaceLabel(ticket.surface) },
-    { label: '所属', value: agentDisplayName(ticket.agentId) },
-  ];
+): TicketDetailSections {
+  const advanced: TicketDetailField[] = [];
   if (ticket.importedFrom) {
-    fields.push({ label: '导入自', value: agentDisplayName(ticket.importedFrom) });
+    advanced.push({ label: '导入自', value: agentDisplayName(ticket.importedFrom) });
   }
-  if (extras?.endpointMode) {
-    fields.push({
-      label: '端点',
-      value: extras.endpointMode === 'official' ? '官方' : '自定义',
+  if (extras?.authLabel) {
+    advanced.push({
+      label: '登录状态',
+      value: humanizeTicketAuthLabel(extras.authLabel),
     });
   }
-  if (extras?.identity) {
-    fields.push({
-      label: ticket.credentialClass === 'oauth' ? '官方账号' : '账号',
-      value: extras.identity,
-    });
+
+  const customEndpoint = extras != null && extras.endpointMode === 'custom';
+  if (customEndpoint) {
+    advanced.push({ label: '端点', value: '自定义' });
+    if (extras.endpointHost) {
+      advanced.push({
+        label: 'Endpoint',
+        value: endpointHostOnly(extras.endpointHost),
+        mono: true,
+      });
+    }
   }
-  if (extras?.accountProvider) {
-    fields.push({ label: '提供商', value: extras.accountProvider });
+
+  const showProtocol =
+    ticket.speaks.length > 0
+    && (ticket.credentialClass === 'api_key' || customEndpoint);
+  if (showProtocol) {
+    advanced.push({ label: '协议', value: ticket.speaks.join(' · ') });
   }
-  if (extras?.endpointHost) {
-    fields.push({ label: 'Endpoint', value: extras.endpointHost, mono: true });
-  }
-  if (ticket.speaks.length > 0) {
-    fields.push({ label: '协议', value: ticket.speaks.join(' · ') });
-  }
-  return fields;
+
+  return { advanced };
 }
 
 export function formatTicketBindingDetailLines(
   bindings: readonly BindingView[],
-): string[] {
-  return bindings.map((binding) => {
-    const bits = [agentDisplayName(binding.agentId), bindingRouteUsageLabel(binding.route)];
-    if (binding.active) bits.push('当前');
-    if (binding.route === 'bridge' && binding.bridge?.running) bits.push('运行中');
-    if (binding.route === 'bridge' && binding.bridge && !binding.bridge.running) bits.push('已停止');
-    if (binding.route === 'bridge' && binding.bridge?.port) {
-      bits.push(`端口 ${binding.bridge.port}`);
-    }
-    return bits.join(' · ');
-  });
+): TicketBindingDetailLine[] {
+  return bindings.map((binding) => ({
+    agent: agentDisplayName(binding.agentId),
+    status: ticketBindingStatus(binding),
+  }));
 }
 
 export function ticketDetailEditLabel(extras?: TicketDetailExtras | null): string | null {
