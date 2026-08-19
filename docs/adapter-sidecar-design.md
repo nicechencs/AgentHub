@@ -1,5 +1,6 @@
 # Adapter sidecar：稳定目标架构与迁移契约
 
+> **现行状态（2026-08-19）**：sidecar（`agenthub-adapterd`）仍是目标、未迁。官方船经 `release` 三文件 bump。
 > 状态：目标架构（已决定；Phase 1 控制契约已落地，sidecar 本体尚未实现）  
 > 日期：2026-08-12（进度回写：2026-08-16）  
 > 范围：跨 Agent Adapter 的 `local_bridge` 长驻运行时、协议数据面与生命周期控制面。  

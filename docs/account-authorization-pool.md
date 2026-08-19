@@ -1,5 +1,6 @@
 # 账号池：身份 × 授权 与去重方案
 
+> **现行状态（2026-08-19）**：本机路由导入同一 agent 只 upsert 一个槽；自动生成的配置不出现在登录列表。sidecar 未迁。
 > 状态：**产品决策已定；PR-A/B/C 已落地（2026-08-03）**。  
 > 关联：[capability-matrix.md](capability-matrix.md)（Agent 原生能力）、[product-decisions.md](product-decisions.md)（跨 Agent 复用三路）、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)（协议图上的边）、[connection-binding-model.md](connection-binding-model.md)（票 / 绑定）、[architecture.md](architecture.md)、[cli-and-config.md](cli-and-config.md)（account 命令）。
 > **废止**：此前「同 email/user_id 必合并为一条」的草案；以本文为准。
@@ -27,7 +28,7 @@
 | 同一人，API Key A 与 Key B | **2** | 不同密钥 |
 | 不同人 | **2+** | 不同身份 |
 
-**例外（本机 loopback 桥）**：`127.0.0.1` / `localhost` / `::1` 上的 bridge ticket 不是独立用户授权——bind 每次都会换端口和 bearer。同一 agent 只保留一个 loopback-bridge 槽位，再 import 覆盖（新端口、新 token），不按 token 指纹另开一行。不得与远端 API Key / 官方 OAuth 合并，也不得删 adapter 生成的 projection。
+**例外（本机路由）**：`127.0.0.1` / `localhost` / `::1` 上的本机路由不是独立用户授权——bind 每次都会换端口和 bearer。同一 agent 只保留一个本机路由槽位，再 import 覆盖（新端口、新 token），不按 token 指纹另开一行。不得与远端 API Key / 官方 OAuth 合并，也不得删 adapter 自动生成的配置。自动生成的配置对用户**隐藏**（不出现在登录列表，不是第二份登录）。
 
 一句话：
 

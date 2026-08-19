@@ -1,5 +1,6 @@
 # AgentHub 平台能力架构改造方案
 
+> **现行状态（2026-08-19）**：sidecar（`agenthub-adapterd`）仍是目标、未迁。官方船经 `release` 三文件 bump。
 > 状态：稳定架构方案；P01-P13 主线与 R00-R08 修正已执行完成。当前实现、兼容边界和验证结果见 [platform-capability-remediation.md](platform-capability-remediation.md)。
 > 更新日期：2026-08-07
 > 适用范围：当前单体桌面应用、`agenthub-core`、Tauri/CLI 入口和前端
