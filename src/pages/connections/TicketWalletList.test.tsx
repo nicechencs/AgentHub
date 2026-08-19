@@ -177,6 +177,102 @@ describe('TicketWalletList details', () => {
     expect(markup).not.toContain('钱包');
     expect(markup).not.toContain('没有匹配的票');
   });
+
+  it('keeps 添加 as a menu trigger and does not add a 新 API Key filter chip', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: sampleWallet(),
+        installedAgentIds: ['claude'],
+        onConnectTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+        onAddKey() {},
+        onImportLogin() {},
+      }),
+    );
+    expect(markup).toContain('添加');
+    expect(markup).toContain('aria-label="登录类型筛选"');
+    expect(markup).toContain('全部');
+    expect(markup).toContain('API Key');
+    expect(markup).not.toContain('新 API Key');
+  });
+
+  it('renders 全部 after an API Key filter without throwing', () => {
+    const mixed: TicketWallet = {
+      tickets: [
+        ...sampleWallet().tickets,
+        {
+          id: 'account:codex-1',
+          sourceKind: 'account',
+          sourceId: 'codex-1',
+          agentId: 'codex',
+          label: 'ChatGPT Plus',
+          surface: 'codex-chatgpt-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'codex',
+        },
+        {
+          id: 'account:unknown-1',
+          sourceKind: 'account',
+          sourceId: 'u1',
+          agentId: 'pi',
+          label: '',
+          surface: 'unknown',
+          credentialClass: 'unknown',
+          speaks: [],
+          importedFrom: null,
+        },
+      ],
+      bindings: [
+        ...sampleWallet().bindings,
+        {
+          ticketId: 'account:codex-1',
+          agentId: 'codex',
+          route: 'native',
+          active: true,
+          profileId: null,
+          bridge: null,
+        },
+      ],
+    };
+
+    expect(() =>
+      renderWithTooltip(
+        createElement(TicketWalletList, {
+          wallet: mixed,
+          initialFilter: 'api_key',
+          onConnectTicket() {},
+          onEditTicket() {},
+          onDeleteTicket() {},
+        }),
+      ),
+    ).not.toThrow();
+
+    expect(() =>
+      renderWithTooltip(
+        createElement(TicketWalletList, {
+          wallet: mixed,
+          initialFilter: 'all',
+          onConnectTicket() {},
+          onEditTicket() {},
+          onDeleteTicket() {},
+        }),
+      ),
+    ).not.toThrow();
+
+    const allMarkup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: mixed,
+        initialFilter: 'all',
+        onConnectTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(allMarkup).toContain('Kimi 会员');
+    expect(allMarkup).toContain('ChatGPT Plus');
+  });
 });
 
 describe('TicketDetailPanel', () => {
