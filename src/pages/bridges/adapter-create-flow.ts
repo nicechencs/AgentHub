@@ -26,7 +26,7 @@ export function adapterTableRouteLabel(route: AdapterRouteAnalysis['route']): st
 
 export function supportBadge(support: AdapterSupport): { label: string; variant: 'success' | 'warning' | 'default' } {
   if (support === 'stable') return { label: '稳定规则', variant: 'success' };
-  if (support === 'experimental') return { label: '实验规则', variant: 'warning' };
+  if (support === 'experimental') return { label: '', variant: 'default' };
   // Neutral, not a fault state: unsupported is a gate conclusion, not a red error.
   return { label: '当前不支持', variant: 'default' };
 }

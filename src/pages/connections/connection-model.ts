@@ -69,11 +69,11 @@ export function withProviderLatency(
   const host = entry.endpointHost;
   const base = entry.isCurrent
     ? host
-      ? `已配置·未验证 · 当前生效 · ${modeLabel} · ${host}`
-      : `已配置·未验证 · 当前生效 · ${modeLabel}`
+      ? `已配置 · 当前生效 · ${modeLabel} · ${host}`
+      : `已配置 · 当前生效 · ${modeLabel}`
     : host
-      ? `已配置·未验证 · 未生效 · ${modeLabel} · ${host}`
-      : `已配置·未验证 · 未生效 · ${modeLabel}`;
+      ? `已配置 · 未生效 · ${modeLabel} · ${host}`
+      : `已配置 · 未生效 · ${modeLabel}`;
   return {
     ...entry,
     latencyMs,
