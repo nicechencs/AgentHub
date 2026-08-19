@@ -315,6 +315,62 @@ fn unknown_surface_ticket_has_empty_speaks() {
 }
 
 #[test]
+fn applying_or_failed_bridge_without_port_is_hidden_from_usage_lines() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "grok-live",
+            AgentId::Grok,
+            AccountKind::Oauth,
+            "Grok subscription",
+            true,
+        ))
+        .unwrap();
+    let mut applying = profile(
+        "adapter-grok-claude-applying",
+        AdapterSourceKind::Account,
+        "grok-live",
+        AgentId::Claude,
+        AdapterRoute::LocalBridge,
+        Some("claude-grok-adapter-bridge"),
+        None,
+    );
+    applying.status = AdapterProfileStatus::Applying;
+    applying.last_error_code = Some("retryable:adapter.bridge_projection".into());
+    AdapterProfileRepo::new(db.clone())
+        .create(&applying)
+        .unwrap();
+
+    let wallet = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    assert!(
+        wallet
+            .bindings
+            .iter()
+            .all(|binding| binding.profile_id.as_deref() != Some("adapter-grok-claude-applying")),
+        "applying-without-port must not appear as 正用于: {:?}",
+        wallet.bindings
+    );
+    assert!(wallet.bindings.iter().any(|binding| {
+        binding.ticket_id == "account:grok-live"
+            && binding.agent_id == AgentId::Grok
+            && binding.active
+    }));
+
+    let mut failed = applying;
+    failed.status = AdapterProfileStatus::NeedsAttention;
+    AdapterProfileRepo::new(db.clone()).update(&failed).unwrap();
+    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    assert!(
+        wallet
+            .bindings
+            .iter()
+            .all(|binding| binding.profile_id.as_deref() != Some("adapter-grok-claude-applying")),
+        "failed-without-port must not appear as 正用于: {:?}",
+        wallet.bindings
+    );
+}
+
+#[test]
 fn profile_with_missing_source_row_is_skipped() {
     let (_dir, db) = test_db();
     ProviderRepo::new(db.clone())

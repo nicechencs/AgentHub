@@ -4,7 +4,8 @@ use crate::services::adapter_route_constants::{
     DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_CODEX_BASE_URL,
     DEEPSEEK_CODEX_PROVIDER_SLUG, DEEPSEEK_PI_PROVIDER_SLOT, DSH_API_KEY_ENV,
     DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CODEX_BASE_URL, GLM_CODEX_PROVIDER_SLUG,
-    GLM_PI_BASE_URL, GLM_PI_PROVIDER_SLOT, KIMI_CLAUDE_BASE_URL, KIMI_MEMBERSHIP_PRESET,
+    GLM_PI_BASE_URL, GLM_PI_PROVIDER_SLOT, GROK_CLAUDE_RULE_ID, KIMI_CLAUDE_BASE_URL,
+    KIMI_MEMBERSHIP_PRESET,
 };
 use crate::storage::AccountRepo;
 use serde_json::json;
@@ -491,6 +492,36 @@ fn local_token_bridge_passes_through_but_unknown_generated_metadata_fails_closed
     assert_eq!(
         resolver.materialize_for_live(&anthropic_bridge).unwrap(),
         anthropic_bridge
+    );
+
+    let grok_claude_bridge = provider(
+        "generated-claude-grok",
+        AgentId::Claude,
+        json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": "http://127.0.0.1:43081",
+                "ANTHROPIC_AUTH_TOKEN": "local-grok-claude-bridge-token",
+            }
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": GROK_CLAUDE_RULE_ID,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": LOCAL_TOKEN_MODE,
+            "adapterProfileId": "grok-claude-bridge-profile",
+            "adapterSourceRef": { "kind": SOURCE_KIND_ACCOUNT, "id": "grok-subscription" },
+        }),
+    );
+    assert!(!resolver.is_reference_provider(&grok_claude_bridge).unwrap());
+    assert_eq!(
+        resolver.materialize_for_live(&grok_claude_bridge).unwrap(),
+        grok_claude_bridge
+    );
+    assert_eq!(
+        resolver
+            .scrub_for_backfill(&grok_claude_bridge, &grok_claude_bridge.settings_config)
+            .unwrap(),
+        grok_claude_bridge.settings_config
     );
 
     for mutation in [
@@ -1164,6 +1195,42 @@ fn subscription_accounts_materialize_claude_codex_and_grok_oauth_slots() {
         assert!(!serialized.contains(refresh));
         assert!(!serialized.contains("other-provider-secret"));
     }
+}
+
+#[test]
+fn grok_subscription_auth_json_resolves_access_token() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("grok-auth-json-resolver.db")).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "grok-auth-json".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "Grok subscription".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "tokens": {
+                        "access_token": "grok-auth-json-access",
+                        "refresh_token": "grok-auth-json-refresh"
+                    }
+                }
+            }),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let resolver = AdapterSecretResolver::new(db);
+    assert_eq!(
+        resolver
+            .resolve_grok_subscription_auth(AdapterSourceKind::Account, "grok-auth-json")
+            .unwrap()
+            .token(),
+        "grok-auth-json-access"
+    );
 }
 
 #[test]

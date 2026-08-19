@@ -86,10 +86,12 @@ impl AdapterBridgeService {
                 "adapter bridge error code must not be empty".into(),
             ));
         }
-        // Do not promote a first-time `applying` profile: without a generated
-        // provider and bound port it has no active projection to restore.
-        // Existing active profiles retain their active projection and are
-        // therefore retried by `list_auto_start_profiles`.
+        // Existing active profiles keep their projection and stay eligible
+        // for `list_auto_start_profiles`. A first-time apply has no bound
+        // port: leaving `applying` shows a zombie route in Connections.
+        if profile.status == AdapterProfileStatus::Applying && profile.local_port.is_none() {
+            profile.status = AdapterProfileStatus::NeedsAttention;
+        }
         profile.last_error_code = Some(format!("{RETRYABLE_ERROR_PREFIX}{code}"));
         profile.updated_at = now();
         self.profiles.update(&profile)

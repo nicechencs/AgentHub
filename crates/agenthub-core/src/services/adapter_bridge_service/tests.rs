@@ -419,6 +419,32 @@ fn auto_start_and_attention_are_profile_only_state_transitions() {
 }
 
 #[test]
+fn failed_first_apply_does_not_remain_applying() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source(
+            "kimi-membership",
+            "upstream-membership-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service.prepare(&request("kimi-membership")).unwrap();
+    assert_eq!(prepared.profile().status, AdapterProfileStatus::Applying);
+    assert_eq!(prepared.profile().local_port, None);
+
+    let failed = service
+        .mark_retryable(&prepared.profile().id, "adapter.bridge_projection")
+        .unwrap();
+    assert_eq!(failed.status, AdapterProfileStatus::NeedsAttention);
+    assert_eq!(
+        failed.last_error_code.as_deref(),
+        Some("retryable:adapter.bridge_projection")
+    );
+    assert_eq!(failed.local_port, None);
+    assert!(service.list_auto_start_profiles().unwrap().is_empty());
+}
+
+#[test]
 fn retryable_restore_failure_stays_auto_start_eligible_and_prepare_retries() {
     let (_dir, db) = test_db();
     ProviderRepo::new(db.clone())
