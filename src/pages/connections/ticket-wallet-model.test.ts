@@ -302,7 +302,7 @@ describe('ticket detail fields', () => {
     expect(labels).not.toContain('Endpoint');
     expect(advanced).toEqual(expect.arrayContaining([
       { label: '导入自', value: agentDisplayName('grok') },
-      { label: '登录状态', value: '可续期，尚未验证' },
+      { label: '登录状态', value: '可续期' },
     ]));
   });
 
@@ -325,7 +325,9 @@ describe('ticket detail fields', () => {
       profileId: 'p2',
       bridge: { port: 8123, running: false },
     })).toBe('本机路由已停止');
-    expect(humanizeTicketAuthLabel('可续期·未验证')).toBe('可续期，尚未验证');
+    expect(humanizeTicketAuthLabel('可续期·未验证')).toBe('可续期');
+    expect(humanizeTicketAuthLabel('已配置·未验证')).toBe('已配置');
+    expect(humanizeTicketAuthLabel('可续期')).toBe('可续期');
   });
 
   it('joins pool extras so OAuth can be inspected and API Key can be edited', () => {

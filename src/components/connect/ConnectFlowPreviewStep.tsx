@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Notice } from '@/components/shared/Notice';
-import { Badge } from '@/components/ui/badge';
 import type { SwitchPreview } from '@/lib/types';
 import type { ConnectFlowDeps, SourceOption } from '@/lib/connect-flow/types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -158,7 +157,6 @@ export function ConnectFlowPreviewStep({
       <div>
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="font-medium">{view.title}</h3>
-          {view.experimental ? <Badge variant="warning">实验</Badge> : null}
         </div>
         {view.reason ? <p className="mt-1 text-secondary">{view.reason}</p> : null}
       </div>

@@ -88,9 +88,9 @@ function profile(overrides: Partial<AdapterProfile> = {}): AdapterProfile {
 describe('planMaturityLabel', () => {
   it('maps the four planner maturity tiers', () => {
     expect(planMaturityLabel('stable')).toBe('稳定');
-    expect(planMaturityLabel('experimental')).toBe('实验');
+    expect(planMaturityLabel('experimental')).toBe('');
     expect(planMaturityLabel('preview')).toBe('可预览');
-    expect(planMaturityLabel('none')).toBe('无边');
+    expect(planMaturityLabel('none')).toBe('');
     expect(planMaturityLabel(undefined)).toBe('');
   });
 });

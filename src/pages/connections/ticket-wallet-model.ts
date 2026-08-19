@@ -406,11 +406,11 @@ export interface TicketBindingDetailLine {
 }
 
 const AUTH_LABEL_HUMAN: Record<string, string> = {
-  '可续期·未验证': '可续期，尚未验证',
-  '已配置·未验证': '已配置，尚未验证',
+  '可续期·未验证': '可续期',
+  '已配置·未验证': '已配置',
 };
 
-/** Human words for login health; never dump「可续期·未验证」as a raw token. */
+/** Human words for login health; map legacy ·未验证 tokens to 可续期 / 已配置. */
 export function humanizeTicketAuthLabel(label: string): string {
   return AUTH_LABEL_HUMAN[label] ?? label.replace(/·/g, '，');
 }

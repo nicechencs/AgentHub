@@ -99,7 +99,7 @@ describe('ConnectFlowPreviewStep Grok→Claude markup', () => {
       onGoImport: () => undefined,
     }));
     expect(html).toContain('本机路由');
-    expect(html).toContain('实验');
+    expect(html).not.toContain('实验');
     expect(html).toContain('用这份 Grok 登录接到 Claude Code。');
     expect(html).toContain('关掉会进托盘，路由继续跑。');
     for (const banned of BANNED_PREVIEW_COPY) {

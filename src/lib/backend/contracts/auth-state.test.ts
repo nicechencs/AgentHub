@@ -17,8 +17,8 @@ function account(overrides: Partial<Account> = {}): Account {
 describe('auth state display mapping', () => {
   it.each([
     ['verified', '已验证'],
-    ['renewable', '可续期·未验证'],
-    ['configured', '已配置·未验证'],
+    ['renewable', '可续期'],
+    ['configured', '已配置'],
     ['needs_login', '需要重新登录'],
     ['unknown', '状态未知'],
     ['missing', '未登录'],
@@ -29,12 +29,12 @@ describe('auth state display mapping', () => {
   });
 
   it('does not call refresh-token credentials verified', () => {
-    expect(authDisplayForAccount(account({ refreshable: true })).label).toBe('可续期·未验证');
+    expect(authDisplayForAccount(account({ refreshable: true })).label).toBe('可续期');
     expect(
       authDisplayForAccount(
         account({ kind: 'apikey', authHealth: undefined, tokenValid: true }),
       ).label,
-    ).toBe('已配置·未验证');
+    ).toBe('已配置');
   });
 
   it('keeps an explicit unknown health out of the expired visual state', () => {
@@ -56,7 +56,7 @@ describe('auth state display mapping', () => {
     };
     expect(authDisplayForAgentStatus(status)).toMatchObject({
       health: 'renewable',
-      label: '可续期·未验证',
+      label: '可续期',
       legacyStatus: 'valid',
     });
   });

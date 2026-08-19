@@ -12,8 +12,8 @@ export type AuthHealth =
 
 export const AUTH_HEALTH_LABEL: Record<AuthHealth, string> = {
   verified: '已验证',
-  renewable: '可续期·未验证',
-  configured: '已配置·未验证',
+  renewable: '可续期',
+  configured: '已配置',
   needs_login: '需要重新登录',
   unknown: '状态未知',
   missing: '未登录',
