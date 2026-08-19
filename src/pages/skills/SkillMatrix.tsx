@@ -12,6 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { ContextMenu, ContextMenuItem } from '@/components/ui/context-menu';
 import {
   ColumnResizeHandle,
@@ -38,8 +39,9 @@ import { normalizeOpenPath } from '@/lib/path-open';
 import { privateSkillActiveKey, sharedSkillActiveKey } from '@/lib/skills/preview-keys';
 import type { AgentColumn } from '@/lib/hooks/useInstalledAgents';
 import type { AgentId, Skill, SkillMapStatus, SkillSyncState } from '@/lib/types';
+import type { TranslateFn } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { skillsCopy } from './copy';
+import { skillCellTip, sharedRootPresence } from './copy';
 
 /** checkbox 固定；技能名 / 共享根 / Agent 列可拖（Agent 列共用宽度，矩阵对齐） */
 const CHECK_COL_W = 40;
@@ -81,13 +83,14 @@ function resolveMapStatus(
 }
 
 function cellTitle(
+  t: TranslateFn,
   agentName: string,
   state: SkillSyncState,
   mapStatus: SkillMapStatus,
   linkKind?: string,
   reason?: string,
 ): string {
-  return skillsCopy.cell.tip(agentName, state, mapStatus, linkKind, reason);
+  return skillCellTip(t, agentName, state, mapStatus, linkKind, reason);
 }
 
 export function catalogRowKey(row: Pick<InstalledSkillDto, 'origin' | 'id'>): string {
@@ -101,9 +104,10 @@ export function isSharedCatalogRow(row: InstalledSkillDto): boolean {
 /** 表头用共享真源短路径；优先 catalog 行上的 rootLabel。 */
 export function sharedRootColumnLabel(
   rows: Array<Pick<InstalledSkillDto, 'origin' | 'rootLabel'>>,
+  t?: TranslateFn,
 ): string {
   const labeled = rows.find((row) => row.origin === 'shared' && row.rootLabel.trim());
-  return labeled?.rootLabel.trim() || skillsCopy.matrix.sharedRoot;
+  return labeled?.rootLabel.trim() || (t ? t('skills.matrix.sharedRoot') : '~/.agents/skills');
 }
 
 /** 私有真源行：只在本工具，尚未加入共享库。投影副本不进表。 */
@@ -232,15 +236,16 @@ function SharedRootCell({
   importing: boolean;
   onAdopt?: () => void;
 }) {
+  const { t } = useI18n();
   if (privateRow && onAdopt) {
-    const hint = importing ? skillsCopy.workspace.adoptBusy : skillsCopy.workspace.adoptHint;
+    const hint = importing ? t('skills.workspace.adoptBusy') : t('skills.workspace.adoptHint');
     return (
       <StatusGlyph hint={hint} busy={importing} onClick={onAdopt}>
         <Share2 className={cn('h-3.5 w-3.5', importing && 'animate-pulse')} />
       </StatusGlyph>
     );
   }
-  const hint = skillsCopy.matrix.sharedRootPresence(inLibrary, label);
+  const hint = sharedRootPresence(t, inLibrary, label);
   return (
     <StatusGlyph hint={hint}>
       {inLibrary ? (
@@ -253,8 +258,9 @@ function SharedRootCell({
 }
 
 function PrivateOriginCell({ agentId }: { agentId: AgentId }) {
+  const { t } = useI18n();
   const agentName = agentDisplayName(agentId);
-  const hint = skillsCopy.cell.tip(agentName, 'absent', 'private_source');
+  const hint = skillCellTip(t, agentName, 'absent', 'private_source');
   return (
     <StatusGlyph hint={hint}>
       <Circle className="h-3.5 w-3.5 text-muted" strokeWidth={1.8} />
@@ -264,6 +270,7 @@ function PrivateOriginCell({ agentId }: { agentId: AgentId }) {
 
 /** 矩阵图标图例（默认折叠，记住用户选择） */
 export function SkillMatrixLegend({ className }: { className?: string }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(readLegendOpen);
 
   useEffect(() => {
@@ -274,7 +281,6 @@ export function SkillMatrixLegend({ className }: { className?: string }) {
     }
   }, [open]);
 
-  const L = skillsCopy.legend.items;
   const items: {
     key: string;
     icon: ReactNode;
@@ -284,20 +290,20 @@ export function SkillMatrixLegend({ className }: { className?: string }) {
     {
       key: 'linked',
       icon: <Link2 className="h-3.5 w-3.5 text-success" strokeWidth={2.5} />,
-      label: L.linked.label,
-      hint: L.linked.hint,
+      label: t('skills.legend.linkedLabel'),
+      hint: t('skills.legend.linkedHint'),
     },
     {
       key: 'copied',
       icon: <Check className="h-3.5 w-3.5 text-success" strokeWidth={2.5} />,
-      label: L.copied.label,
-      hint: L.copied.hint,
+      label: t('skills.legend.copiedLabel'),
+      hint: t('skills.legend.copiedHint'),
     },
     {
       key: 'absent',
       icon: <Circle className="h-3.5 w-3.5 text-muted" strokeWidth={1.8} />,
-      label: L.absent.label,
-      hint: L.absent.hint,
+      label: t('skills.legend.absentLabel'),
+      hint: t('skills.legend.absentHint'),
     },
     {
       key: 'conflict',
@@ -310,19 +316,19 @@ export function SkillMatrixLegend({ className }: { className?: string }) {
           />
         </span>
       ),
-      label: L.conflict.label,
-      hint: L.conflict.hint,
+      label: t('skills.legend.conflictLabel'),
+      hint: t('skills.legend.conflictHint'),
     },
     {
       key: 'blocked',
       icon: <Minus className="h-3.5 w-3.5 text-muted/50" />,
-      label: L.blocked.label,
-      hint: L.blocked.hint,
+      label: t('skills.legend.blockedLabel'),
+      hint: t('skills.legend.blockedHint'),
     },
   ];
 
   return (
-    <div className={cn('text-meta', className)} role="note" aria-label="技能启用状态图例">
+    <div className={cn('text-meta', className)} role="note" aria-label={t('skills.matrix.legendAria')}>
       <button
         type="button"
         className="inline-flex items-center gap-1 text-muted transition-colors hover:text-secondary"
@@ -333,7 +339,7 @@ export function SkillMatrixLegend({ className }: { className?: string }) {
           className={cn('h-3.5 w-3.5 transition-transform', !open && '-rotate-90')}
           aria-hidden
         />
-        {skillsCopy.legend.toggle}
+        {t('skills.legend.toggle')}
       </button>
       {open ? (
         <div className="mt-1.5 rounded-btn border border-border/60 bg-subtle/40 px-3 py-2">
@@ -353,7 +359,7 @@ export function SkillMatrixLegend({ className }: { className?: string }) {
               </li>
             ))}
           </ul>
-          <p className="mt-1.5 text-muted">{skillsCopy.legend.footer}</p>
+          <p className="mt-1.5 text-muted">{t('skills.legend.footer')}</p>
         </div>
       ) : null}
     </div>
@@ -379,6 +385,7 @@ export function SkillMatrix({
   installedAgentIds,
   showLegend = true,
 }: SkillMatrixProps & { showLegend?: boolean }) {
+  const { t } = useI18n();
   const columns: AgentColumn[] =
     agents ??
     // Fallback for Storybook/tests only — real pages pass useInstalledAgents().
@@ -389,7 +396,7 @@ export function SkillMatrix({
       : new Set<AgentId>(installedAgentIds ?? columns.map((a) => a.id));
 
   const { widths, onResizeStart } = useColumnWidths(MATRIX_WIDTH_SPECS);
-  const sharedRootLabel = sharedRootColumnLabel(rows);
+  const sharedRootLabel = sharedRootColumnLabel(rows, t);
   const tableMinWidth =
     CHECK_COL_W +
     widths.skill +
@@ -422,14 +429,14 @@ export function SkillMatrix({
                   className="h-3.5 w-3.5 accent-accent"
                   checked={allSelected}
                   onChange={onToggleSelectAll}
-                  aria-label="全选"
+                  aria-label={t('skills.matrix.selectAll')}
                 />
               </TableHead>
               <TableHead className="relative select-none">
-                技能名
+                {t('skills.matrix.skillName')}
                 <ColumnResizeHandle
                   columnKey="skill"
-                  label="技能名"
+                  label={t('skills.matrix.skillName')}
                   onResizeStart={onResizeStart}
                 />
               </TableHead>
@@ -453,7 +460,7 @@ export function SkillMatrix({
                   {/* 工具列共用宽度：拖任一表头即同步全部工具列 */}
                   <ColumnResizeHandle
                     columnKey="agent"
-                    label="工具"
+                    label={t('skills.matrix.tool')}
                     onResizeStart={onResizeStart}
                   />
                 </TableHead>
@@ -497,7 +504,7 @@ export function SkillMatrix({
                         className="h-3.5 w-3.5 accent-accent"
                         checked={selected.has(row.id)}
                         onChange={() => onToggleSelect(row.id)}
-                        aria-label={`选择 ${row.name}`}
+                        aria-label={t('skills.matrix.selectSkill', { name: row.name })}
                       />
                     )}
                   </TableCell>
@@ -538,11 +545,11 @@ export function SkillMatrix({
                         ) : null}
                       </div>
                       {privateRow && originId ? (
-                        <Hint label={skillsCopy.workspace.remove}>
+                        <Hint label={t('skills.workspace.remove')}>
                           <button
                             type="button"
                             className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-btn text-danger hover:bg-hover"
-                            aria-label={skillsCopy.workspace.removeAria}
+                            aria-label={t('skills.workspace.removeAria')}
                             onClick={(e) => {
                               e.stopPropagation();
                               onUninstall(row.id, originId, row.name, false);
@@ -569,7 +576,7 @@ export function SkillMatrix({
                   </TableCell>
                   {columns.length === 0 ? (
                     <TableCell className="text-xs text-muted" colSpan={1}>
-                      暂无可用工具
+                      {t('skills.matrix.noTools')}
                     </TableCell>
                   ) : (
                     columns.map((agent) => {
@@ -581,7 +588,8 @@ export function SkillMatrix({
                               <PrivateOriginCell agentId={agent.id} />
                             ) : (
                               <StatusGlyph
-                                hint={skillsCopy.matrix.sharedRootPresence(
+                                hint={sharedRootPresence(
+                                  t,
                                   false,
                                   sharedRootLabel,
                                 )}
@@ -617,6 +625,7 @@ export function SkillMatrix({
                         state === 'unsupported';
                       const pending = pendingCells.has(cellKey);
                       const title = cellTitle(
+                        t,
                         agent.name,
                         state,
                         mapStatus,
@@ -689,7 +698,7 @@ export function SkillMatrix({
             }}
           >
             <Eye className="h-3.5 w-3.5" />
-            {skillsCopy.menu.preview}
+            {t('skills.menu.preview')}
           </ContextMenuItem>
         ) : null}
         {rowMenu?.path && onOpenDir ? (
@@ -701,7 +710,7 @@ export function SkillMatrix({
             }}
           >
             <FolderOpen className="h-3.5 w-3.5" />
-            {skillsCopy.menu.openFolder}
+            {t('skills.menu.openFolder')}
           </ContextMenuItem>
         ) : null}
         {rowMenu && isPrivateSourceRow(rowMenu.row) ? (
@@ -718,7 +727,7 @@ export function SkillMatrix({
             }}
           >
             <Trash2 className="h-3.5 w-3.5 text-danger" />
-            {skillsCopy.menu.removePrivate}
+            {t('skills.menu.removePrivate')}
           </ContextMenuItem>
         ) : null}
       </ContextMenu>

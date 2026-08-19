@@ -1,6 +1,7 @@
 import { agentDisplayName } from '@/config/agents';
 import { authHealthLabel } from '@/lib/backend/contracts/auth-state';
 import type { ConnectionEntry } from '@/lib/connection-entry';
+import type { TranslateFn } from '@/lib/i18n';
 import type { AgentId } from '@/lib/types';
 import type {
   AdapterAction,
@@ -11,24 +12,24 @@ import type {
   AdapterSupport,
 } from '@/lib/backend/contracts/adapter';
 
-export function routeLabel(route: AdapterRouteAnalysis['route']): string {
-  if (route === 'native_endpoint') return '原生端点';
-  if (route === 'local_bridge') return '需要本地代理';
-  if (route === 'config_sync') return '直接同步';
-  return '当前不支持';
+export function routeLabel(route: AdapterRouteAnalysis['route'], t?: TranslateFn): string {
+  if (route === 'native_endpoint') return t ? t('routes.create.route.nativeEndpoint') : '原生端点';
+  if (route === 'local_bridge') return t ? t('routes.create.route.localBridge') : '需要本地代理';
+  if (route === 'config_sync') return t ? t('routes.create.route.configSync') : '直接同步';
+  return t ? t('routes.create.route.unsupported') : '当前不支持';
 }
 
 /** Table column copy for the projection path. Credential family is a separate column. */
-export function adapterTableRouteLabel(route: AdapterRouteAnalysis['route']): string {
-  if (route === 'local_bridge') return '本地协议转换';
-  return routeLabel(route);
+export function adapterTableRouteLabel(route: AdapterRouteAnalysis['route'], t?: TranslateFn): string {
+  if (route === 'local_bridge') return t ? t('routes.create.tableLocalBridge') : '本地协议转换';
+  return routeLabel(route, t);
 }
 
-export function supportBadge(support: AdapterSupport): { label: string; variant: 'success' | 'warning' | 'default' } {
-  if (support === 'stable') return { label: '稳定规则', variant: 'success' };
+export function supportBadge(support: AdapterSupport, t?: TranslateFn): { label: string; variant: 'success' | 'warning' | 'default' } {
+  if (support === 'stable') return { label: t ? t('routes.create.support.stable') : '稳定规则', variant: 'success' };
   if (support === 'experimental') return { label: '', variant: 'default' };
   // Neutral, not a fault state: unsupported is a gate conclusion, not a red error.
-  return { label: '当前不支持', variant: 'default' };
+  return { label: t ? t('routes.create.support.unsupported') : '当前不支持', variant: 'default' };
 }
 
 /** The backend's explicit capability flag is the sole apply gate. */
@@ -197,7 +198,7 @@ export function adapterPreviewOutcome(input: {
   route: AdapterRouteAnalysis['route'];
   canApply: boolean;
   authIncomplete?: boolean;
-}): {
+}, t?: TranslateFn): {
   title: string;
   badgeLabel: string;
   badgeVariant: 'success' | 'warning' | 'default' | 'info';
@@ -205,41 +206,41 @@ export function adapterPreviewOutcome(input: {
 } {
   if (input.authIncomplete) {
     return {
-      title: '先完成授权',
-      badgeLabel: '待授权',
+      title: t ? t('routes.create.preview.authTitle') : '先完成授权',
+      badgeLabel: t ? t('routes.create.preview.authBadge') : '待授权',
       badgeVariant: 'warning',
-      nextStep: '到 Connections 完成授权。',
+      nextStep: t ? t('routes.create.preview.authNext') : '到 Connections 完成授权。',
     };
   }
   if (input.canApply && input.route === 'local_bridge') {
     return {
-      title: '可接入 · 本机路由',
-      badgeLabel: '可应用',
+      title: t ? t('routes.create.preview.localTitle') : '可接入 · 本机路由',
+      badgeLabel: t ? t('routes.create.preview.applyBadge') : '可应用',
       badgeVariant: 'success',
-      nextStep: '确认后创建本机路由，需保持托盘运行。',
+      nextStep: t ? t('routes.create.preview.localNext') : '确认后创建本机路由，需保持托盘运行。',
     };
   }
   if (input.canApply && (input.route === 'native_endpoint' || input.route === 'config_sync')) {
     return {
-      title: '可接入 · 直接写入',
-      badgeLabel: '可应用',
+      title: t ? t('routes.create.preview.directTitle') : '可接入 · 直接写入',
+      badgeLabel: t ? t('routes.create.preview.applyBadge') : '可应用',
       badgeVariant: 'success',
-      nextStep: '确认后写入目标配置。',
+      nextStep: t ? t('routes.create.preview.directNext') : '确认后写入目标配置。',
     };
   }
   if (input.route === 'config_sync') {
     return {
-      title: '仅可预览',
-      badgeLabel: '仅预览',
+      title: t ? t('routes.create.preview.previewTitle') : '仅可预览',
+      badgeLabel: t ? t('routes.create.preview.previewBadge') : '仅预览',
       badgeVariant: 'warning',
-      nextStep: '暂不支持一键应用。',
+      nextStep: t ? t('routes.create.preview.previewNext') : '暂不支持一键应用。',
     };
   }
   return {
-    title: routeLabel(input.route),
-    badgeLabel: '仅预览',
+    title: routeLabel(input.route, t),
+    badgeLabel: t ? t('routes.create.preview.previewBadge') : '仅预览',
     badgeVariant: 'default',
-    nextStep: '暂不支持一键应用。',
+    nextStep: t ? t('routes.create.preview.previewNext') : '暂不支持一键应用。',
   };
 }
 
@@ -263,15 +264,15 @@ export function sourceStatusHint(entry: Pick<ConnectionEntry, 'kind' | 'authHeal
 }
 
 /** The apply mutation is final; runtime probing is a later best-effort concern. */
-export function adapterApplyCommit(result: Pick<AdapterApplyResult, 'profile'>): {
+export function adapterApplyCommit(result: Pick<AdapterApplyResult, 'profile'>, t?: TranslateFn): {
   successMessage: string;
   shouldProbeBridge: boolean;
   shouldRefresh: true;
 } {
   return {
     successMessage: result.profile.route === 'local_bridge'
-      ? '本地桥接已创建并启动，Codex Connection 已切换。'
-      : '适配已应用。',
+      ? (t ? t('routes.create.apply.localCreated') : '本地桥接已创建并启动，Codex Connection 已切换。')
+      : (t ? t('routes.create.apply.applied') : '适配已应用。'),
     shouldProbeBridge: result.profile.route === 'local_bridge',
     shouldRefresh: true,
   };
@@ -283,8 +284,10 @@ export function maskedIdSuffix(id: string): string {
   return suffix ? `…${suffix}` : '…';
 }
 
-export function sourceKindLabel(sourceKind: 'account' | 'provider'): string {
-  return sourceKind === 'account' ? '账户' : 'Provider';
+export function sourceKindLabel(sourceKind: 'account' | 'provider', t?: TranslateFn): string {
+  return sourceKind === 'account'
+    ? (t ? t('routes.create.sourceKind.account') : '账户')
+    : (t ? t('routes.create.sourceKind.provider') : 'Provider');
 }
 
 /** One canonical source label for selection, preview, and confirmation. */

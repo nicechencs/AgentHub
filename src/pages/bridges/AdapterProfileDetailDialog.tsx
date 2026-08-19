@@ -1,6 +1,7 @@
 import { ArrowRight, ChevronDown, Copy } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailRow } from '@/components/shared/DetailRow';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,7 +26,6 @@ import {
   adapterBridgeEndpointLabel,
   adapterBridgeUpstreamLabel,
   adapterCredentialKindLabel,
-  BRIDGES_MUTATION_FAILURE,
 } from './adapter-model';
 import {
   adapterProfileRecoveryGuide,
@@ -110,23 +110,24 @@ function ProfileDetailBody({
   targetHidden: boolean;
 }) {
   const { toast } = useToast();
+  const { t } = useI18n();
   const source = resolveAdapterProfileSource(profile, entries);
   const runtimeStatus = bridgeRuntimeStatusView({
     route: profile.route,
     bridgeState: bridgeStatus?.state,
     statusUnavailable,
-  });
+  }, t);
   const isBridge = profile.route === 'local_bridge';
   const endpoint = isBridge ? adapterBridgeEndpointLabel(profile, bridgeStatus) : null;
-  const recovery = adapterProfileRecoveryGuide(profile);
+  const recovery = adapterProfileRecoveryGuide(profile, t);
 
   const copyEndpoint = async () => {
     if (!endpoint) return;
     try {
       await navigator.clipboard.writeText(`http://${endpoint}`);
-      toast({ title: '端点已复制', description: `http://${endpoint}` });
+      toast({ title: t('routes.endpointCopied'), description: `http://${endpoint}` });
     } catch {
-      toast({ title: '复制失败', variant: 'danger' });
+      toast({ title: t('routes.copyFailed'), variant: 'danger' });
     }
   };
 
@@ -141,14 +142,14 @@ function ProfileDetailBody({
           <span className="truncate">{agentDisplayName(profile.targetAgentId)}</span>
         </DialogTitle>
         <DialogDescription className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="default">{adapterCredentialKindLabel(profile.mode)}</Badge>
-          {source.missing ? <span className="text-warning">来源连接已删除</span> : null}
+          <Badge variant="default">{adapterCredentialKindLabel(profile.mode, t)}</Badge>
+          {source.missing ? <span className="text-warning">{t('routes.sourceDeleted')}</span> : null}
         </DialogDescription>
       </DialogHeader>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
         <section className="space-y-1.5">
-          <h3 className="text-sm font-medium">状态</h3>
+          <h3 className="text-sm font-medium">{t('routes.status')}</h3>
           <div className="space-y-1 rounded-btn border border-border bg-subtle p-3">
             {runtimeStatus ? <DetailStatusLine view={runtimeStatus} /> : null}
           </div>
@@ -156,37 +157,40 @@ function ProfileDetailBody({
 
         {isBridge ? (
           <section className="space-y-1.5">
-            <h3 className="text-sm font-medium">本机端点</h3>
+            <h3 className="text-sm font-medium">{t('routes.localEndpoint')}</h3>
             <div className="space-y-2 rounded-btn border border-border bg-subtle p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-muted">本地端点</span>
+                <span className="text-muted">{t('routes.localEndpointLabel')}</span>
                 {endpoint ? (
                   <button
                     type="button"
                     className="inline-flex items-center gap-1 rounded-btn px-1 py-0.5 font-mono text-xs text-secondary hover:bg-hover hover:text-primary"
                     onClick={() => { void copyEndpoint(); }}
-                    aria-label={`复制本地端点 ${endpoint}`}
+                    aria-label={t('routes.copyEndpointAria', { endpoint })}
                   >
                     {endpoint}
                     <Copy className="h-3 w-3" aria-hidden />
                   </button>
                 ) : (
-                  <span className="text-xs text-muted">待分配端口</span>
+                  <span className="text-xs text-muted">{t('routes.pendingPort')}</span>
                 )}
               </div>
               {bridgeStatus?.upstreamStatus ? (
-                <DetailRow label="上游状态" value={adapterBridgeUpstreamLabel(bridgeStatus.upstreamStatus)} />
+                <DetailRow
+                  label={t('routes.upstreamStatus')}
+                  value={adapterBridgeUpstreamLabel(bridgeStatus.upstreamStatus, t)}
+                />
               ) : null}
               <label className="flex items-center justify-between gap-2 text-sm">
                 <span className="min-w-0">
-                  <span className="block">随 AgentHub 自动启动</span>
-                  <span className="block text-xs text-muted">仅在 AgentHub 运行时恢复，不是开机自启。</span>
+                  <span className="block">{t('routes.autoStart')}</span>
+                  <span className="block text-xs text-muted">{t('routes.autoStartHint')}</span>
                 </span>
                 <Switch
                   checked={profile.autoStart}
                   disabled={busy || targetHidden}
-                  aria-label="随 AgentHub 自动启动"
-                  title={targetHidden ? '目标 Agent 已隐藏，仅可停止运行中的桥接' : undefined}
+                  aria-label={t('routes.autoStart')}
+                  title={targetHidden ? t('routes.targetHiddenHint') : undefined}
                   onCheckedChange={(autoStart) => onSetAutoStart(profile, autoStart)}
                 />
               </label>
@@ -195,17 +199,17 @@ function ProfileDetailBody({
         ) : null}
 
         <section className="space-y-1.5">
-          <h3 className="text-sm font-medium">目标写入</h3>
+          <h3 className="text-sm font-medium">{t('routes.targetWrite')}</h3>
           <p className="text-sm text-secondary">
             {profile.generatedProviderId
-              ? `已写入 ${agentDisplayName(profile.targetAgentId)} 的本机地址；这不是 Connections 里的登录。`
-              : '尚未写入目标工具的本机地址。'}
+              ? t('routes.writtenTo', { name: agentDisplayName(profile.targetAgentId) })
+              : t('routes.notWritten')}
           </p>
         </section>
 
         {recovery ? (
           <section className="space-y-1.5" role="status">
-            <h3 className="text-sm font-medium text-warning">恢复步骤</h3>
+            <h3 className="text-sm font-medium text-warning">{t('routes.recovery.stepsTitle')}</h3>
             <p className="text-sm text-secondary">{recovery.summary}</p>
             <ul className="list-disc space-y-0.5 pl-5 text-sm text-secondary">
               {recovery.steps.map((step) => <li key={step}>{step}</li>)}
@@ -213,19 +217,19 @@ function ProfileDetailBody({
           </section>
         ) : null}
 
-        {error ? <AdapterErrorLines error={error} fallback={BRIDGES_MUTATION_FAILURE} /> : null}
+        {error ? <AdapterErrorLines error={error} fallback={t('routes.mutationFailure')} /> : null}
 
         <details className="group rounded-btn border border-border bg-subtle/60">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
-            <span>诊断信息</span>
+            <span>{t('routes.diagnostics')}</span>
             <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden />
           </summary>
           <div className="grid gap-1.5 border-t border-border px-3 py-3 text-xs">
-            <DetailRow label="Profile" value={profile.id} mono />
-            <DetailRow label="规则" value={`${profile.ruleId} · v${profile.ruleVersion}`} mono />
-            {profile.lastErrorCode ? <DetailRow label="最近错误码" value={profile.lastErrorCode} mono /> : null}
-            <DetailRow label="创建时间" value={profile.createdAt} mono />
-            <DetailRow label="更新时间" value={profile.updatedAt} mono />
+            <DetailRow label={t('routes.profileId')} value={profile.id} mono />
+            <DetailRow label={t('routes.rule')} value={`${profile.ruleId} · v${profile.ruleVersion}`} mono />
+            {profile.lastErrorCode ? <DetailRow label={t('routes.lastError')} value={profile.lastErrorCode} mono /> : null}
+            <DetailRow label={t('routes.createdAt')} value={profile.createdAt} mono />
+            <DetailRow label={t('routes.updatedAt')} value={profile.updatedAt} mono />
             <div>
               <Button
                 size="sm"
@@ -234,14 +238,14 @@ function ProfileDetailBody({
                   void (async () => {
                     try {
                       const path = await openLogsDir();
-                      toast({ title: '已打开日志目录', description: path, variant: 'success' });
+                      toast({ title: t('routes.logsOpened'), description: path, variant: 'success' });
                     } catch (openError) {
-                      toast({ title: '打开失败', description: String(openError), variant: 'danger' });
+                      toast({ title: t('routes.openFailed'), description: String(openError), variant: 'danger' });
                     }
                   })();
                 }}
               >
-                打开日志目录
+                {t('routes.openLogs')}
               </Button>
             </div>
           </div>
@@ -252,12 +256,12 @@ function ProfileDetailBody({
         <Button
           variant="dangerOutline"
           disabled={busy || targetHidden}
-          title={targetHidden ? '目标 Agent 已隐藏，仅可停止运行中的桥接' : undefined}
+          title={targetHidden ? t('routes.targetHiddenHint') : undefined}
           onClick={() => onRequestRemove(profile)}
         >
-          解除绑定
+          {t('routes.unbind.action')}
         </Button>
-        <Button variant="secondary" onClick={onClose}>关闭</Button>
+        <Button variant="secondary" onClick={onClose}>{t('routes.close')}</Button>
       </DialogFooter>
     </>
   );

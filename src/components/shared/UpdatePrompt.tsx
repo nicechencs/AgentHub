@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/components/ui/toast';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { setAppUpdateAvailable } from '@/app/runtime';
 import {
   checkForUpdate,
@@ -54,6 +55,7 @@ function wasDismissed(version: string): boolean {
  * Silent auto-check after boot; settings can call `checkNow` via `onReady`.
  */
 export function UpdatePrompt({ onReady }: UpdatePromptProps) {
+  const { t } = useI18n();
   const { toast } = useToast();
   const [open, setOpen] = React.useState(false);
   const [info, setInfo] = React.useState<UpdateInfo | null>(null);
@@ -81,8 +83,8 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
         if (!available) {
           if (!quiet) {
             toast({
-              title: '无法检查更新',
-              description: '仅桌面端支持自动更新',
+              title: t('settings.page.cannotCheckUpdate'),
+              description: t('settings.page.desktopOnlyUpdate'),
               variant: 'danger',
             });
           }
@@ -92,7 +94,7 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
         if (!next) {
           setAppUpdateAvailable(null);
           if (!quiet) {
-            toast({ title: '已是最新版本', variant: 'success' });
+            toast({ title: t('settings.page.latestVersion'), variant: 'success' });
           }
           return null;
         }
@@ -105,7 +107,7 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
         // Errors must still surface — either here or via rethrow to the caller.
         if (!quiet) {
           toast({
-            title: '检查更新失败',
+            title: t('settings.page.checkUpdateFailed'),
             description: msg,
             variant: 'danger',
           });
@@ -113,7 +115,7 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
         throw e instanceof Error ? e : new Error(msg);
       }
     },
-    [presentUpdate, toast],
+    [presentUpdate, t, toast],
   );
 
   React.useEffect(() => {
@@ -183,8 +185,8 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
         setAppUpdateAvailable(null);
         // relaunch() should terminate; if we are still here, show a soft message.
         toast({
-          title: '更新已安装',
-          description: '请手动重启应用以完成更新',
+          title: t('settings.page.updateInstalled'),
+          description: t('settings.page.updateInstalledDesc'),
           variant: 'success',
         });
         setOpen(false);
@@ -194,7 +196,7 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
         setError(msg);
         setPhase('idle');
         toast({
-          title: '更新失败',
+          title: t('settings.page.updateFailed'),
           description: msg,
           variant: 'danger',
         });
@@ -227,18 +229,15 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <RefreshCw className="h-4 w-4 text-accent" />
-            发现新版本
+            {t('chrome.update.found')}
           </DialogTitle>
           <DialogDescription>
-            {info ? (
-              <>
-                当前 <span className="font-mono">v{info.currentVersion}</span>
-                {' → '}
-                <span className="font-mono text-primary">v{info.version}</span>
-              </>
-            ) : (
-              '有可用更新'
-            )}
+            {info
+              ? t('chrome.update.currentToNew', {
+                  current: info.currentVersion,
+                  next: info.version,
+                })
+              : t('chrome.update.available')}
           </DialogDescription>
         </DialogHeader>
 
@@ -247,13 +246,17 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
             {info.notes}
           </div>
         ) : (
-          <p className="text-xs text-muted">建议更新以获得修复与新功能。安装过程中应用将重启。</p>
+          <p className="text-xs text-muted">{t('chrome.update.notesFallback')}</p>
         )}
 
         {busy && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-muted">
-              <span>{phase === 'installing' ? '正在安装并重启…' : '正在下载更新…'}</span>
+              <span>
+                {phase === 'installing'
+                  ? t('chrome.update.installingHint')
+                  : t('chrome.update.downloadingHint')}
+              </span>
               <span className="font-mono">
                 {percent != null ? `${percent}%` : downloadedLabel || '…'}
               </span>
@@ -273,15 +276,15 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
 
         <DialogFooter>
           <Button variant="outline" disabled={busy} onClick={onDismiss}>
-            稍后
+            {t('chrome.update.later')}
           </Button>
           <Button disabled={busy} onClick={onInstall}>
             <Download className="mr-1.5 h-3.5 w-3.5" />
             {phase === 'downloading'
-              ? '下载中…'
+              ? t('chrome.update.downloading')
               : phase === 'installing'
-                ? '安装中…'
-                : '一键更新'}
+                ? t('chrome.update.installing')
+                : t('settings.about.oneClickUpdate')}
           </Button>
         </DialogFooter>
       </DialogContent>

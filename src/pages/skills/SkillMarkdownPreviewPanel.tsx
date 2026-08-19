@@ -11,6 +11,7 @@ import { MarkdownView } from '@/components/shared/MarkdownView';
 import { Button } from '@/components/ui/button';
 import { segmentedItemClass, segmentedTrackClass } from '@/components/ui/segmented-styles';
 import { Tip } from '@/components/ui/tooltip';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { agentDisplayName } from '@/config/agents';
 import { readSkillMarkdown } from '@/lib/api/skill';
 import {
@@ -30,13 +31,6 @@ export type SkillPreviewTarget = {
   /** Optional dir path for “open folder”. */
   sourceDir?: string | null;
 };
-
-function sourceMeta(target: SkillPreviewTarget): string {
-  if (target.privateAgent) {
-    return agentDisplayName(target.privateAgent);
-  }
-  return '共享库';
-}
 
 function PreviewSkeleton() {
   return (
@@ -86,6 +80,7 @@ export function SkillMarkdownPreviewPanel({
   const [name, setName] = useState('');
   const [truncated, setTruncated] = useState(false);
   const [mode, setMode] = useState<'preview' | 'source'>('preview');
+  const { t } = useI18n();
   const requestSeq = useRef(0);
   const titleId = useId();
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -147,7 +142,9 @@ export function SkillMarkdownPreviewPanel({
 
   const openFolderPath =
     target.sourceDir ?? (path ? path.replace(/[\\/][^\\/]+$/, '') : null);
-  const originLabel = sourceMeta(target);
+  const originLabel = target.privateAgent
+    ? agentDisplayName(target.privateAgent)
+    : t('skills.preview.sharedOrigin');
   // 预览态剥 YAML frontmatter，避免 --- / name: / description: 被渲染成假正文
   const mdParts = !loading && !error && content ? splitSkillMarkdown(content) : null;
   const previewBody = mdParts?.body ?? '';
@@ -172,7 +169,7 @@ export function SkillMarkdownPreviewPanel({
               id={titleId}
               className="truncate text-sm font-semibold leading-tight text-primary"
             >
-              {name || '技能预览'}
+              {name || t('skills.preview.titleFallback')}
             </h2>
             <span className="shrink-0 text-meta text-muted">{originLabel}</span>
           </div>
@@ -186,7 +183,7 @@ export function SkillMarkdownPreviewPanel({
             onClick={() => setMode('preview')}
           >
             <Eye className="h-3 w-3" />
-            预览
+            {t('skills.preview.modePreview')}
           </button>
           <button
             type="button"
@@ -194,7 +191,7 @@ export function SkillMarkdownPreviewPanel({
             onClick={() => setMode('source')}
           >
             <Code2 className="h-3 w-3" />
-            源码
+            {t('skills.preview.modeSource')}
           </button>
         </div>
 
@@ -203,8 +200,8 @@ export function SkillMarkdownPreviewPanel({
             size="icon"
             variant="ghost"
             className="h-7 w-7 shrink-0"
-            title="打开目录"
-            aria-label="打开目录"
+            title={t('skills.preview.openDir')}
+            aria-label={t('skills.preview.openDir')}
             onClick={() => onOpenDir(openFolderPath)}
           >
             <FolderOpen className="h-3.5 w-3.5" />
@@ -215,8 +212,8 @@ export function SkillMarkdownPreviewPanel({
           size="icon"
           variant="ghost"
           className="h-7 w-7 shrink-0"
-          aria-label="收起预览"
-          title="收起预览"
+          aria-label={t('skills.preview.collapse')}
+          title={t('skills.preview.collapse')}
           onClick={onClose}
         >
           <PanelRightClose className="h-4 w-4" />
@@ -275,7 +272,7 @@ export function SkillMarkdownPreviewPanel({
                   });
               }}
             >
-              重试
+              {t('skills.preview.retry')}
             </Button>
           </div>
         ) : mode === 'preview' ? (
@@ -283,7 +280,7 @@ export function SkillMarkdownPreviewPanel({
             {previewDescription ? (
               <div className="mb-3 border-b border-border/70 pb-3">
                 <p className={pageRhythm.sectionEyebrow}>
-                  描述
+                  {t('skills.preview.description')}
                 </p>
                 <p className="mt-1 text-sm leading-relaxed text-secondary">
                   {previewDescription}
@@ -293,7 +290,7 @@ export function SkillMarkdownPreviewPanel({
             {previewBody.trim() ? (
               <MarkdownView content={previewBody} variant="document" />
             ) : (
-              <p className="py-6 text-sm text-muted">正文为空（仅有 frontmatter 或文件未写入内容）</p>
+              <p className="py-6 text-sm text-muted">{t('skills.preview.emptyBody')}</p>
             )}
           </div>
         ) : (
@@ -309,7 +306,7 @@ export function SkillMarkdownPreviewPanel({
           label={path ?? target.sourceDir ?? undefined}
         >
           {path ?? target.sourceDir ?? target.skillId}
-          {truncated ? ' · 已截断' : ''}
+          {truncated ? t('skills.preview.truncatedSuffix') : ''}
         </Tip>
       </footer>
     </aside>
