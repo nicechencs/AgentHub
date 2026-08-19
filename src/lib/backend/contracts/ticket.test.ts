@@ -204,6 +204,26 @@ describe('Ticket Rust wire mappers', () => {
     expect(isActiveBindingForAgent(result.binding, 'claude')).toBe(false);
   });
 
+  it('maps a raw TicketBinding object (live Rust bind_ticket serde)', () => {
+    const result = mapBindTicketResult({
+      ticketId: 'account:anth-1',
+      agentId: 'pi',
+      route: 'reshape',
+      active: true,
+      profileId: 'prof-pi',
+      bridge: null,
+    });
+    expect(result.binding).toEqual({
+      ticketId: 'account:anth-1',
+      agentId: 'pi',
+      route: 'reshape',
+      active: true,
+      profileId: 'prof-pi',
+      bridge: null,
+    });
+    expect(isActiveBindingForAgent(result.binding, 'pi')).toBe(true);
+  });
+
   it('rejects bind_ticket wire without binding, and accepts empty unbind_ticket', () => {
     expect(() => mapBindTicketResult({} as never)).toThrow(/binding/);
     expect(() => mapUnbindTicketResult('nope')).toThrow(/unbind_ticket/);
