@@ -26,7 +26,7 @@ import type { TranslateFn } from '@/lib/i18n';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import type { AgentId, BackupKind, BackupMeta } from '@/lib/types';
 import { cn, fmtBytes } from '@/lib/utils';
-import { fmtAbsoluteI18n, fmtRelativeI18n } from './backup-format';
+import { backupNoteSubtitle, backupRowTitle, fmtAbsoluteI18n, fmtRelativeI18n } from './backup-format';
 
 const KIND_VARIANT: Record<BackupKind, 'accent' | 'default' | 'warning'> = {
   'auto-switch': 'accent',
@@ -270,6 +270,7 @@ export function BackupsPanel() {
         <div className="flex flex-col gap-2.5">
           {items.map((bk) => {
             const kind = { label: backupKindLabel(bk.kind, t), variant: KIND_VARIANT[bk.kind] };
+            const note = backupNoteSubtitle(bk.note);
             const busy = busyId === bk.id;
             const files = bk.files ?? [];
             const shownFiles = files.slice(0, FILE_PREVIEW);
@@ -293,8 +294,8 @@ export function BackupsPanel() {
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                       <Badge variant={kind.variant}>{kind.label}</Badge>
-                      <span className="text-sm font-medium tabular-nums">
-                        {fmtRelativeI18n(bk.createdAt, t)}
+                      <span className="text-sm font-medium">
+                        {backupRowTitle(bk, t)}
                       </span>
                       <span className="text-xs text-muted tabular-nums">
                         {fmtAbsoluteI18n(bk.createdAt, lang)}
@@ -305,7 +306,7 @@ export function BackupsPanel() {
                       </span>
                     </div>
 
-                    {bk.note && <p className="mt-1.5 text-sm text-secondary">{bk.note}</p>}
+                    {note && <p className="mt-1.5 text-sm text-secondary">{note}</p>}
 
                     {files.length > 0 ? (
                       <ul className="mt-1.5 space-y-0.5">

@@ -44,9 +44,9 @@ function LegacyBridgesRedirect() {
   return <Navigate to={legacyBridgesRedirectTo(search)} replace />;
 }
 
-/** 独立 Backups 页已并入 Settings → /settings?tab=local#backups */
+/** 独立 Backups 页已并入 Settings → /settings?tab=backups */
 function LegacyBackupsRedirect() {
-  return <Navigate to="/settings?tab=local#backups" replace />;
+  return <Navigate to="/settings?tab=backups" replace />;
 }
 
 export default function App() {

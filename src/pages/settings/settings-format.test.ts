@@ -16,17 +16,17 @@ const tEn = createTranslator('en');
 
 describe('parseSettingsTab', () => {
   it('accepts canonical slugs', () => {
-    expect(SETTINGS_TABS).toEqual(['preferences', 'local', 'about']);
+    expect(SETTINGS_TABS).toEqual(['preferences', 'local', 'backups', 'about']);
     expect(parseSettingsTab('preferences')).toBe('preferences');
     expect(parseSettingsTab('local')).toBe('local');
+    expect(parseSettingsTab('backups')).toBe('backups');
     expect(parseSettingsTab('about')).toBe('about');
   });
 
-  it('maps legacy slugs onto the three-tab IA', () => {
+  it('maps legacy slugs onto the four-tab IA', () => {
     expect(parseSettingsTab('general')).toBe('preferences');
     expect(parseSettingsTab('security')).toBe('about');
     expect(parseSettingsTab('data')).toBe('local');
-    expect(parseSettingsTab('backups')).toBe('local');
   });
 
   it('falls back to preferences for empty or unknown values', () => {
@@ -56,6 +56,11 @@ describe('resolveSettingsLocation', () => {
       hash: '',
       shouldReplace: false,
     });
+    expect(resolveSettingsLocation('backups')).toEqual({
+      tab: 'backups',
+      hash: '',
+      shouldReplace: false,
+    });
     expect(resolveSettingsLocation('about')).toEqual({
       tab: 'about',
       hash: '',
@@ -79,11 +84,6 @@ describe('resolveSettingsLocation', () => {
       hash: '',
       shouldReplace: true,
     });
-    expect(resolveSettingsLocation('backups')).toEqual({
-      tab: 'local',
-      hash: 'backups',
-      shouldReplace: true,
-    });
   });
 
   it('replace-navigates unknown slugs to preferences', () => {
@@ -96,29 +96,30 @@ describe('resolveSettingsLocation', () => {
 
   it('builds search strings', () => {
     expect(settingsSearch('local')).toBe('?tab=local');
+    expect(settingsSearch('backups')).toBe('?tab=backups');
   });
 });
 
 describe('legacy backups hash', () => {
-  it('maps backups slug and #backups onto local#backups', () => {
+  it('maps #backups and local#backups onto the backups tab', () => {
     expect(resolveSettingsLocation('local', '#backups')).toEqual({
-      tab: 'local',
-      hash: 'backups',
-      shouldReplace: false,
+      tab: 'backups',
+      hash: '',
+      shouldReplace: true,
     });
     expect(resolveSettingsLocation(null, 'backups')).toEqual({
-      tab: 'local',
-      hash: 'backups',
+      tab: 'backups',
+      hash: '',
       shouldReplace: true,
     });
     expect(resolveSettingsLocation('backups', '#backups')).toEqual({
-      tab: 'local',
-      hash: 'backups',
+      tab: 'backups',
+      hash: '',
       shouldReplace: true,
     });
     expect(resolveSettingsLocation('preferences', '#backups')).toEqual({
-      tab: 'local',
-      hash: 'backups',
+      tab: 'backups',
+      hash: '',
       shouldReplace: true,
     });
     expect(resolveSettingsLocation('local', '')).toEqual({
@@ -135,13 +136,13 @@ describe('legacy backups hash', () => {
 });
 
 describe('settings-format i18n helpers', () => {
-  it('does not list backups as a peer Settings tab', () => {
-    expect(tZh('settings.page.description')).toBe('偏好、本机与关于');
-    expect(tEn('settings.page.description')).toBe('Preferences, this device, and about');
-    expect(tZh('settings.page.description')).not.toContain('备份');
-    expect(tEn('settings.page.description')).not.toMatch(/backup/i);
-    expect(tZh('settings.page.descriptionTip')).toContain('本机含数据目录、日志与备份');
-    expect(tEn('settings.page.descriptionTip')).toContain('This device covers data, logs, and backups');
+  it('lists backups as a peer Settings tab', () => {
+    expect(tZh('settings.page.description')).toBe('偏好、本机、备份与关于');
+    expect(tEn('settings.page.description')).toBe('Preferences, this device, backups, and about');
+    expect(tZh('settings.page.tabBackups')).toBe('备份');
+    expect(tEn('settings.page.tabBackups')).toBe('Backups');
+    expect(tZh('settings.page.descriptionTip')).toContain('备份管理配置快照');
+    expect(tEn('settings.page.descriptionTip')).toContain('Backups manage config snapshots');
   });
 
   it('labels follow the active language', () => {

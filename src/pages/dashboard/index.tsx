@@ -434,6 +434,7 @@ export default function DashboardPage() {
     try {
       await Promise.all(installed.map((a) => createBackup(a.agentId, 'Dashboard 手动备份')));
       toast({ title: '备份完成', description: `已为 ${installed.length} 个 agent 创建备份`, variant: 'success' });
+      navigate('/settings?tab=backups');
     } catch (e) {
       toast({ title: '备份失败', description: String(e), variant: 'danger' });
     } finally {

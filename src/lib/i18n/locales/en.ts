@@ -37,8 +37,8 @@ export const en = {
   settings: {
     page: {
       title: 'Settings',
-      description: 'Preferences, this device, and about',
-      descriptionTip: 'Language and theme apply immediately. This device covers data, logs, and backups. About has version and credential notes.',
+      description: 'Preferences, this device, backups, and about',
+      descriptionTip: 'Language and theme apply immediately. This device covers data and logs. Backups manage config snapshots. About has version and credential notes.',
       tabPreferences: 'Preferences',
       tabLocal: 'This device',
       tabBackups: 'Backups',
@@ -157,6 +157,7 @@ export const en = {
         'A snapshot is kept after switch, import, or update. You can also back up, restore, or delete. Session logs and full-app export are not included.',
       kindAutoSwitch: 'Before switch',
       kindManual: 'Manual',
+      titleManual: 'Manual backup',
       kindPreUninstall: 'Before uninstall',
       kindPreRestore: 'Before restore',
       kindPreSkillUninstall: 'Before skill uninstall',

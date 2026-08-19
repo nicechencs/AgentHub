@@ -170,6 +170,10 @@ export function buildAgentCardView(
 
   const viaAdapter = mapViaAdapter(badges?.viaAdapter);
   const bridge = mapBridgeBadge(badges?.bridge);
+  let authStatus = cardAuthStatus(status, missing);
+  if (!missing && bridge?.state === 'stopped' && authStatus === 'valid') {
+    authStatus = 'none';
+  }
   const binding = badges?.binding?.ticketLabel
     ? {
         ticketLabel: badges.binding.ticketLabel,
@@ -188,7 +192,10 @@ export function buildAgentCardView(
     ariaLabel += `，${bridge.label}`;
   }
 
-  const statusDotTitle = missing ? (envMissing ? '环境未就绪' : '未安装') : authLabel;
+  let statusDotTitle = missing ? (envMissing ? '环境未就绪' : '未安装') : authLabel;
+  if (!missing && bridge?.state === 'stopped') {
+    statusDotTitle = AGENT_CARD_BRIDGE_LABEL.stopped;
+  }
 
   return {
     missing,
@@ -200,7 +207,7 @@ export function buildAgentCardView(
     titleFull,
     ariaLabel,
     statusDotTitle,
-    authStatus: cardAuthStatus(status, missing),
+    authStatus,
     authHealth: authDisplay.health,
     twoLineLayout: true,
     ...(viaAdapter ? { viaAdapter } : {}),

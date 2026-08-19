@@ -8,19 +8,19 @@ export const SKILL_MARKET_VALUES: SkillMarketSource[] = ['auto', 'skills.sh', 's
 export const LOG_LEVEL_VALUES: LogLevel[] = ['error', 'warn', 'info', 'debug', 'trace'];
 
 /** Canonical Settings `?tab=` slugs. */
-export const SETTINGS_TABS = ['preferences', 'local', 'about'] as const;
+export const SETTINGS_TABS = ['preferences', 'local', 'backups', 'about'] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 /**
  * Legacy `?tab=` slugs → canonical tab.
  * `general` → Preferences; `security` → About (credential note);
- * `data` → Local. `backups` slug and `#backups` hash → Local + `#backups`
- * (see {@link resolveSettingsLocation}).
+ * `data` → Local. `backups` is a canonical tab. Legacy `#backups` /
+ * `?tab=local#backups` → Backups (see {@link resolveSettingsLocation}).
  */
 export const SETTINGS_TAB_REDIRECTS: Record<string, { tab: SettingsTab }> = {
   preferences: { tab: 'preferences' },
   local: { tab: 'local' },
-  backups: { tab: 'local' },
+  backups: { tab: 'backups' },
   about: { tab: 'about' },
   general: { tab: 'preferences' },
   security: { tab: 'about' },
@@ -59,8 +59,8 @@ export function resolveSettingsLocation(
   const hashValue = (hash ?? '').replace(/^#/, '');
   const wantsBackups = hashValue === 'backups' || rawTab === 'backups';
   if (wantsBackups) {
-    const alreadyCanonical = rawTab === 'local' && hashValue === 'backups';
-    return { tab: 'local', hash: 'backups', shouldReplace: !alreadyCanonical };
+    const alreadyCanonical = rawTab === 'backups' && hashValue === '';
+    return { tab: 'backups', hash: '', shouldReplace: !alreadyCanonical };
   }
   const mapped = rawTab ? SETTINGS_TAB_REDIRECTS[rawTab] : undefined;
   const tab = mapped?.tab ?? 'preferences';
