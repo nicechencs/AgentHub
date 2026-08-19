@@ -183,15 +183,52 @@ export function mapTicketWallet(wire: TicketWalletWire): TicketWallet {
   };
 }
 
-/** `plan_ticket` returns the same apply-plan wire as `plan_adapter`. */
-export function mapPlanTicketResult(wire: AdapterApplyPlanWire): AdapterApplyPlan {
-  return mapAdapterApplyPlan(wire);
+const BIND_RESULT_UNREADABLE = '绑定结果无法识别，请重试';
+const PLAN_RESULT_UNREADABLE = '连接方案无法识别，请重试';
+const UNBIND_RESULT_UNREADABLE = '解除绑定结果无法识别，请重试';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** Live Rust `TicketBinding` is identified by these two fields at any wrap level. */
+function hasTicketAndAgent(value: unknown): value is BindingViewWire {
+  if (!isRecord(value)) return false;
+  return typeof value.ticketId === 'string' && typeof value.agentId === 'string';
+}
+
+function isAdapterApplyPlanWire(value: unknown): value is AdapterApplyPlanWire {
+  if (!isRecord(value)) return false;
+  return isRecord(value.analysis) && typeof value.targetAgentId === 'string';
 }
 
 /**
- * `bind_ticket` wire: live Rust returns a top-level `TicketBinding`
+ * `plan_ticket` live Rust returns a top-level `AdapterApplyPlan`.
+ * Mocks / older fixtures may wrap it as `{ plan }`. Accept both.
+ */
+export type PlanTicketResultWire = AdapterApplyPlanWire | { plan: AdapterApplyPlanWire };
+
+/** `plan_ticket` returns the same apply-plan shape as `plan_adapter`. */
+export function mapPlanTicketResult(wire: PlanTicketResultWire): AdapterApplyPlan {
+  try {
+    if (isAdapterApplyPlanWire(wire)) {
+      return mapAdapterApplyPlan(wire);
+    }
+    if (isRecord(wire) && isAdapterApplyPlanWire(wire.plan)) {
+      return mapAdapterApplyPlan(wire.plan);
+    }
+    throw new Error(PLAN_RESULT_UNREADABLE);
+  } catch (error) {
+    if (error instanceof Error && error.message === PLAN_RESULT_UNREADABLE) throw error;
+    throw new Error(PLAN_RESULT_UNREADABLE);
+  }
+}
+
+/**
+ * `bind_ticket` live Rust returns a top-level `TicketBinding`
  * (`ticketId` / `agentId` / `route` / …). Mocks and older fixtures wrap it as
- * `{ binding }`. Accept both.
+ * `{ binding }`. Accept both. Presence of `ticketId` + `agentId` means the
+ * object itself is the binding.
  */
 export type BindTicketResultWire = { binding: BindingViewWire } | BindingViewWire;
 
@@ -199,37 +236,31 @@ export interface BindTicketResult {
   binding: BindingView;
 }
 
-function isBindingViewWire(wire: object): wire is BindingViewWire {
-  const record = wire as Record<string, unknown>;
-  return (
-    typeof record.ticketId === 'string'
-    && typeof record.agentId === 'string'
-    && typeof record.route === 'string'
-  );
+function bindingWireFrom(wire: unknown): BindingViewWire | null {
+  if (hasTicketAndAgent(wire)) return wire;
+  if (isRecord(wire) && hasTicketAndAgent(wire.binding)) return wire.binding;
+  return null;
 }
 
 export function mapBindTicketResult(wire: BindTicketResultWire): BindTicketResult {
-  if (!wire || typeof wire !== 'object') {
-    throw new Error('Invalid bind_ticket wire: missing binding');
+  try {
+    const binding = bindingWireFrom(wire);
+    if (!binding) throw new Error(BIND_RESULT_UNREADABLE);
+    return { binding: mapBindingView(binding) };
+  } catch (error) {
+    if (error instanceof Error && error.message === BIND_RESULT_UNREADABLE) throw error;
+    throw new Error(BIND_RESULT_UNREADABLE);
   }
-  const nested = (wire as { binding?: unknown }).binding;
-  if (nested != null && typeof nested === 'object') {
-    return { binding: mapBindingView(nested as BindingViewWire) };
-  }
-  if (isBindingViewWire(wire)) {
-    return { binding: mapBindingView(wire) };
-  }
-  throw new Error('Invalid bind_ticket wire: missing binding');
 }
 
 /**
- * `unbind_ticket` may return `{}` or an updated wallet.
+ * `unbind_ticket` may return `{}`, `null`, or an updated wallet.
  * Callers that need the wallet should `listWallet()` after unbind.
  */
 export function mapUnbindTicketResult(wire: unknown): void {
   if (wire == null) return;
   if (typeof wire !== 'object') {
-    throw new Error(`Invalid unbind_ticket wire: ${String(wire)}`);
+    throw new Error(UNBIND_RESULT_UNREADABLE);
   }
 }
 

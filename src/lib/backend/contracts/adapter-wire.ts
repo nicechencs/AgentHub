@@ -354,10 +354,37 @@ function asCoreProvider(wire: CoreProviderWire): CoreProvider {
   };
 }
 
-export function mapAdapterApplyResult(wire: AdapterApplyResultWire): AdapterApplyResult {
-  const provider: Provider = mapCoreProvider(asCoreProvider(wire.provider));
+function isAdapterApplyResultWire(value: unknown): value is AdapterApplyResultWire {
+  return (
+    typeof value === 'object'
+    && value !== null
+    && typeof (value as AdapterApplyResultWire).profile === 'object'
+    && (value as AdapterApplyResultWire).profile !== null
+    && typeof (value as AdapterApplyResultWire).provider === 'object'
+    && (value as AdapterApplyResultWire).provider !== null
+  );
+}
+
+/**
+ * `apply_adapter` live Rust returns a top-level `AdapterApplyResult`.
+ * Mocks / older fixtures may wrap it as `{ result }`. Accept both.
+ */
+export type AdapterApplyResultWireInput =
+  | AdapterApplyResultWire
+  | { result: AdapterApplyResultWire };
+
+export function mapAdapterApplyResult(wire: AdapterApplyResultWireInput): AdapterApplyResult {
+  const raw = isAdapterApplyResultWire(wire)
+    ? wire
+    : isAdapterApplyResultWire((wire as { result?: unknown }).result)
+      ? (wire as { result: AdapterApplyResultWire }).result
+      : null;
+  if (!raw) {
+    throw new Error('应用结果无法识别，请重试');
+  }
+  const provider: Provider = mapCoreProvider(asCoreProvider(raw.provider));
   return {
-    profile: mapAdapterProfile(wire.profile),
+    profile: mapAdapterProfile(raw.profile),
     provider,
   };
 }
