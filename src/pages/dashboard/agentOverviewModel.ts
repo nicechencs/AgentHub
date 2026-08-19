@@ -231,6 +231,17 @@ export function resolveAgentCardInteraction(
   return { type: 'navigate', to: agentCardConnectFallback(agentId) };
 }
 
+/** Loading 骨架卡数 = 已装且未隐藏的 Agent，不用目录全量。 */
+export function dashboardOverviewSkeletonCount(
+  agents: AgentStatus[] | null,
+  fallbackInstalledCount: number,
+): number {
+  if (agents) {
+    return agents.filter((a) => a.installed && !a.hidden).length;
+  }
+  return Math.max(0, fallbackInstalledCount);
+}
+
 /** 按 meta 顺序 merge 状态（位置稳定，不按异常重排） */
 export function mergeAgentsInOrder(
   agentMetas: readonly AgentMeta[],
