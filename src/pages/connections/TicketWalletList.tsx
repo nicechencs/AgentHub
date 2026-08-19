@@ -358,11 +358,19 @@ export function TicketWalletList({
           icon={KeyRound}
           title="没有匹配的登录"
           description="请改用其他筛选或清空搜索。"
-          actionLabel="显示全部"
-          onAction={() => {
-            setFilter('all');
-            setQuery('');
-          }}
+          action={
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              onClick={() => {
+                setFilter('all');
+                setQuery('');
+              }}
+            >
+              显示全部
+            </Button>
+          }
         />
       ) : null}
 

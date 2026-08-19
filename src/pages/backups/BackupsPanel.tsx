@@ -254,10 +254,13 @@ export function BackupsPanel() {
               ? t('settings.backups.noBackupsInstalled')
               : t('settings.backups.noBackupsUninstalled')
           }
-          actionLabel={
-            isInstalled ? t('settings.backups.backupNow') : undefined
+          action={
+            isInstalled ? (
+              <Button size="sm" variant="outline" className="mt-2" onClick={() => void handleCreate()}>
+                {t('settings.backups.backupNow')}
+              </Button>
+            ) : undefined
           }
-          onAction={isInstalled ? () => void handleCreate() : undefined}
         />
       ) : (
         <div className="flex flex-col gap-2.5">

@@ -613,6 +613,7 @@ export function AgentCard({
           <EnvRemediationPanel
             key={`card-env-${agent.agentId}-${envAutoStart}`}
             compact
+            pageHasPrimaryCta
             runtime={runtimes.find((r) => envCheck.missing.includes(r.id) || envCheck.outdated.includes(r.id))}
             runtimes={runtimes}
             focusIds={[...envCheck.missing, ...envCheck.outdated, ...envCheck.broken]}

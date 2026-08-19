@@ -756,7 +756,7 @@ export default function SkillsPage() {
           description={skillsCopy.page.meta(catalog == null ? '…' : sharedCount, privateOnlyCount)}
           descriptionTip={skillsCopy.page.descriptionTip}
           actions={
-            <Button variant="ghost" size="sm" onClick={() => setInstallOpen(true)}>
+            <Button size="sm" onClick={() => setInstallOpen(true)}>
               <Plus className="h-3.5 w-3.5" /> {skillsCopy.page.installCta}
             </Button>
           }

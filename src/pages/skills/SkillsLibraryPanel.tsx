@@ -130,16 +130,20 @@ export function SkillsLibraryPanel(props: SkillsLibraryPanelProps) {
               ? skillsCopy.empty.noMatchFilter
               : skillsCopy.empty.noMatchLibrary
           }
-          actionLabel={
-            search || filter !== 'all' ? skillsCopy.empty.clearFilter : undefined
-          }
-          onAction={
-            search || filter !== 'all'
-              ? () => {
+          action={
+            search || filter !== 'all' ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                onClick={() => {
                   onSearchChange('');
                   onFilterChange('all');
-                }
-              : undefined
+                }}
+              >
+                {skillsCopy.empty.clearFilter}
+              </Button>
+            ) : undefined
           }
         />
       ) : (
