@@ -14,6 +14,7 @@ import {
   legacyBridgesRedirectTo,
 } from '@/lib/bridges-path';
 import type { AdapterProfileMode } from '@/lib/backend/contracts/adapter';
+import type { TranslateFn } from '@/lib/i18n';
 
 /**
  * Adapter page filter uses the shared connection-kind taxonomy (`all|oauth|apikey`).
@@ -83,8 +84,8 @@ export function connectionKindForTab(tab: AdapterTab): ConnectionKind {
   return connectionKindForFilter(tab);
 }
 
-export function adapterCredentialKindLabel(mode: AdapterProfileMode): string {
-  return connectionKindLabel(connectionKindFromAdapterProfileMode(mode));
+export function adapterCredentialKindLabel(mode: AdapterProfileMode, t?: TranslateFn): string {
+  return connectionKindLabel(connectionKindFromAdapterProfileMode(mode), t);
 }
 
 export function filterProfilesByMode<T extends { mode?: AdapterProfileMode | null }>(

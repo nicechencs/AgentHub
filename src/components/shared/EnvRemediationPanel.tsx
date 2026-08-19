@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Copy, Download, ExternalLink, RefreshCw, X } from 'lucide-react';
 import { envOneClickInstallVariant } from '@/components/shared/env-remediation-cta';
 import { InlineTerminal, type TerminalStatus } from '@/components/shared/InlineTerminal';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -52,6 +53,7 @@ export function EnvRemediationPanel({
   /** 本页已有主 CTA 时，一键安装降为 secondary */
   pageHasPrimaryCta?: boolean;
 }) {
+  const { t } = useI18n();
   const { toast } = useToast();
   const allRuntimes = runtimes ?? (runtime ? [runtime] : []);
   const plan = resolveAutoInstallPlan(allRuntimes, focusIds ?? (runtime ? [runtime.id] : undefined));
@@ -90,7 +92,7 @@ export function EnvRemediationPanel({
   const startOneClickInstall = React.useCallback(async () => {
     if (!canOneClick || inFlightRef.current) return;
     cancelRef.current = { cancelled: false };
-    setLines(['正在安装…']);
+    setLines([t('chrome.env.installingLine')]);
     setStatus('running');
     setRunning(true);
     try {
@@ -106,10 +108,10 @@ export function EnvRemediationPanel({
       if (cancelRef.current.cancelled) return;
       setStatus('done');
       toast({
-        title: `已安装 ${plan.summary}`,
+        title: t('chrome.env.installedToast', { summary: plan.summary }),
         description: plan.skipped.length
-          ? `仍需手动处理: ${formatMissingList(plan.skipped)}`
-          : '若仍检测异常，请完全退出并重启 AgentHub 后再检测',
+          ? t('chrome.env.stillManual', { list: formatMissingList(plan.skipped) })
+          : t('chrome.env.restartHint'),
         variant: 'success',
       });
       await new Promise((r) => setTimeout(r, DONE_HOLD_MS));
@@ -119,14 +121,14 @@ export function EnvRemediationPanel({
       setStatus('failed');
       if (e instanceof RuntimeInstallFailedError) {
         setLines(e.logs.length ? e.logs : [e.message]);
-        toast({ title: '一键安装失败', description: e.message, variant: 'danger' });
+        toast({ title: t('chrome.env.oneClickFailed'), description: e.message, variant: 'danger' });
       } else {
-        toast({ title: '一键安装失败', description: String(e), variant: 'danger' });
+        toast({ title: t('chrome.env.oneClickFailed'), description: String(e), variant: 'danger' });
       }
     } finally {
       setRunning(false);
     }
-  }, [canOneClick, plan.targets, plan.summary, plan.skipped, onDone, toast, setRunning, runtimeChannel]);
+  }, [canOneClick, plan.targets, plan.summary, plan.skipped, onDone, t, toast, setRunning, runtimeChannel]);
 
   React.useEffect(() => {
     if (!autoStart || autoStartedRef.current || !canOneClick) return;
@@ -136,13 +138,13 @@ export function EnvRemediationPanel({
 
   const copy = (text: string) => {
     navigator.clipboard.writeText(text).catch(() => {});
-    toast({ title: '已复制' });
+    toast({ title: t('chrome.env.copied') });
   };
 
   const openUrl = (url: string) => {
     void openExternalLink(url).catch((e) => {
       toast({
-        title: '无法打开链接',
+        title: t('chrome.env.openLinkFailed'),
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
@@ -157,10 +159,10 @@ export function EnvRemediationPanel({
   );
   const title =
     focusIds && focusIds.length > 1
-      ? `环境未就绪 · ${formatMissingList(focusIds)}`
+      ? t('chrome.env.notReadyList', { list: formatMissingList(focusIds) })
       : plan.targets.length > 1
-        ? `环境未就绪 · 可一键修复 ${plan.summary}`
-        : `${meta.name} 未就绪`;
+        ? t('chrome.env.notReadyFix', { summary: plan.summary })
+        : t('chrome.env.notReadyName', { name: meta.name });
 
   return (
     <Card
@@ -176,16 +178,16 @@ export function EnvRemediationPanel({
             <span className="text-sm font-medium">{title}</span>
             <Badge variant="warning">
               {primary.status === 'outdated'
-                ? '版本过旧'
+                ? t('chrome.env.statusOutdated')
                 : primary.status === 'broken_path'
-                  ? 'PATH 异常'
-                  : '未安装'}
+                  ? t('chrome.env.statusBrokenPath')
+                  : t('chrome.env.statusMissing')}
             </Badge>
-            {canOneClick && <Badge variant="accent">支持一键安装</Badge>}
+            {canOneClick && <Badge variant="accent">{t('chrome.env.oneClickSupported')}</Badge>}
           </div>
           <p className="mt-1 text-xs text-secondary">
             {canOneClick
-              ? `将自动安装 ${plan.summary}${plan.skipped.length ? `;其余需手动: ${formatMissingList(plan.skipped)}` : ''}`
+              ? `${t('chrome.env.willInstall', { summary: plan.summary })}${plan.skipped.length ? t('chrome.env.restManual', { list: formatMissingList(plan.skipped) }) : ''}`
               : meta.description}
           </p>
         </div>
@@ -199,9 +201,9 @@ export function EnvRemediationPanel({
       {primary.status === 'broken_path' && (
         <Tip
           className="mt-2 block rounded-btn border border-warning/30 bg-panel px-2.5 py-2 text-xs text-warning"
-          label="可能已安装但不在当前进程 PATH。先点「检测」；仍失败请完全退出并重启 AgentHub。"
+          label={t('chrome.env.pathTip')}
         >
-          PATH 异常：先检测，必要时重启应用
+          {t('chrome.env.pathHint')}
         </Tip>
       )}
 
@@ -213,26 +215,26 @@ export function EnvRemediationPanel({
             onClick={() => void startOneClickInstall()}
           >
             <Download className="h-3.5 w-3.5" />
-            一键安装 {plan.summary}
+            {t('chrome.env.oneClickInstallBtn', { summary: plan.summary })}
           </Button>
         )}
         {status === 'running' && (
           <Button size="sm" variant={envOneClickInstallVariant(pageHasPrimaryCta ?? false)} disabled>
             <Download className="h-3.5 w-3.5 animate-pulse" />
-            正在一键安装…
+            {t('chrome.env.oneClickInstalling')}
           </Button>
         )}
         <Button
           size="sm"
           variant="outline"
           onClick={() => {
-            toast({ title: '正在重新检测…' });
+            toast({ title: t('chrome.env.redetecting') });
             onDone();
           }}
           disabled={status === 'running'}
         >
           <RefreshCw className="h-3.5 w-3.5" />
-          已装好，检测
+          {t('chrome.env.installedDetect')}
         </Button>
       </div>
 
@@ -245,7 +247,7 @@ export function EnvRemediationPanel({
       {status !== 'running' && (
         <details className="mt-3" open={!canOneClick}>
           <summary className="cursor-pointer text-xs text-muted hover:text-secondary">
-            {canOneClick ? '手动步骤' : '修复步骤'}
+            {canOneClick ? t('chrome.env.manualSteps') : t('chrome.env.fixSteps')}
           </summary>
           <ul className="mt-2 space-y-2">
             {remediations.map((r, i) => (
@@ -267,6 +269,7 @@ function RemediationRow({
   onCopy: (t: string) => void;
   onOpenUrl: (u: string) => void;
 }) {
+  const { t } = useI18n();
   if (item.kind === 'hint') {
     return <li className="text-xs text-muted">💡 {item.value}</li>;
   }
@@ -274,9 +277,9 @@ function RemediationRow({
   if (item.kind === 'url') {
     return (
       <li className="flex items-center justify-between gap-2 rounded-btn border border-border bg-panel px-2.5 py-1.5">
-        <span className="text-xs text-secondary">{item.label ?? '官方下载'}</span>
+        <span className="text-xs text-secondary">{item.label ?? t('chrome.env.officialDownload')}</span>
         <Button size="sm" variant="ghost" className="h-7" onClick={() => onOpenUrl(item.value)}>
-          <ExternalLink className="h-3.5 w-3.5" /> 打开
+          <ExternalLink className="h-3.5 w-3.5" /> {t('common.open')}
         </Button>
       </li>
     );
@@ -291,12 +294,12 @@ function RemediationRow({
               ? 'winget'
               : item.kind === 'brew'
                 ? 'Homebrew'
-                : '命令')}
+                : t('chrome.env.command'))}
         </p>
         <p className="truncate font-mono text-xs text-secondary">{item.value}</p>
       </div>
       <Button size="sm" variant="ghost" className="h-7 shrink-0" onClick={() => onCopy(item.value)}>
-        <Copy className="h-3.5 w-3.5" /> 复制
+        <Copy className="h-3.5 w-3.5" /> {t('chrome.env.copy')}
       </Button>
     </li>
   );

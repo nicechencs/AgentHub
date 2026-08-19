@@ -29,6 +29,7 @@ import { segmentedCountClass } from '@/components/ui/segmented-styles';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { AGENTS, agentDisplayName } from '@/config/agents';
 import {
   checkConflict,
@@ -61,7 +62,27 @@ import { FEATURE_NOT_WIRED } from '@/lib/platform';
 import type { AgentId, Skill, SkillMarketSource } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { pageRhythm } from '@/components/layout/page-rhythm';
-import { skillsCopy } from './copy';
+import {
+  adoptFailedToast,
+  adoptOkToast,
+  batchEnableToast,
+  conflictPromptToast,
+  disableFailedToast,
+  disableOkToast,
+  enableFailedToast,
+  enableOkToast,
+  installFailedToast,
+  installNeedSourceToast,
+  installOkToast,
+  marketExistsToast,
+  marketInstallOkToast,
+  noAgentsToast,
+  openPathFailedToast,
+  openPathMissingToast,
+  overwriteOkToast,
+  removeFailedToast,
+  removeOkToast,
+} from './copy';
 import {
   catalogRowHasConflict,
   catalogRowHasMapped,
@@ -92,6 +113,7 @@ import { SkillsMarketPanel } from './SkillsMarketPanel';
 
 export default function SkillsPage() {
   const { toast } = useToast();
+  const { t } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = parseSkillTab(searchParams.get('tab'));
   const { installedAgents, hiddenIds, loading: agentsLoading } = useInstalledAgents();
@@ -388,7 +410,7 @@ export default function SkillsPage() {
       const result = await toggleSkillSync(skillId, agentId, { force });
       if (result.conflict && !force) {
         toast({
-          ...skillsCopy.toast.conflictPrompt(agentName, skillName),
+          ...conflictPromptToast(t, agentName, skillName),
           duration: 12_000,
           onAction: () => {
             void doToggle(skillId, agentId, true, { name: skillName, wasMapped: false });
@@ -401,25 +423,25 @@ export default function SkillsPage() {
       );
       if (force) {
         toast({
-          ...skillsCopy.toast.overwriteOk(agentName, skillName),
+          ...overwriteOkToast(t, agentName, skillName),
           variant: 'success',
         });
       } else if (meta?.wasMapped) {
         toast({
-          ...skillsCopy.toast.disableOk(agentName, skillName),
+          ...disableOkToast(t, agentName, skillName),
           variant: 'success',
         });
       } else if (isMappedState(result.state)) {
         toast({
-          ...skillsCopy.toast.enableOk(agentName, skillName),
+          ...enableOkToast(t, agentName, skillName),
           variant: 'success',
         });
       }
     } catch (e) {
       toast({
-        ...(meta?.wasMapped ? skillsCopy.toast.disableFailed : skillsCopy.toast.enableFailed)(
-          e instanceof Error ? e.message : String(e),
-        ),
+        ...(meta?.wasMapped
+          ? disableFailedToast(t, e instanceof Error ? e.message : String(e))
+          : enableFailedToast(t, e instanceof Error ? e.message : String(e))),
         variant: 'danger',
       });
       // 写失败后从服务端拉齐，避免本地假状态
@@ -449,7 +471,7 @@ export default function SkillsPage() {
           skill.conflicts.includes(agentId) || (await checkConflict(skill.id, agentId));
         if (conflict) {
           toast({
-            ...skillsCopy.toast.conflictPrompt(agentName, skill.name),
+            ...conflictPromptToast(t, agentName, skill.name),
             duration: 12_000,
             onAction: () => {
               void doToggle(skill.id, agentId, true, { name: skill.name, wasMapped: false });
@@ -466,13 +488,13 @@ export default function SkillsPage() {
 
   const handleInstall = async () => {
     if (!installSource.trim()) {
-      toast({ ...skillsCopy.toast.installNeedSource, variant: 'danger' });
+      toast({ ...installNeedSourceToast(t), variant: 'danger' });
       return;
     }
     try {
       await runInstallSkill(installSource.trim(), false);
       toast({
-        ...skillsCopy.toast.installOk,
+        ...installOkToast(t),
         variant: 'success',
         duration: 8000,
       });
@@ -481,7 +503,7 @@ export default function SkillsPage() {
       await load();
     } catch (e) {
       toast({
-        ...skillsCopy.toast.installFailed(e instanceof Error ? e.message : String(e)),
+        ...installFailedToast(t, e instanceof Error ? e.message : String(e)),
         variant: 'danger',
       });
     }
@@ -490,16 +512,14 @@ export default function SkillsPage() {
   const handleOpenDir = async (path: string) => {
     const target = normalizeOpenPath(path) ?? path.trim();
     if (!target) {
-      toast({ ...skillsCopy.toast.openPathMissing, variant: 'danger' });
+      toast({ ...openPathMissingToast(t), variant: 'danger' });
       return;
     }
     try {
       await openPathInFileManager(target);
     } catch (e) {
       toast({
-        ...skillsCopy.toast.openPathFailed(
-          e instanceof Error ? e.message : FEATURE_NOT_WIRED,
-        ),
+        ...openPathFailedToast(t, e instanceof Error ? e.message : FEATURE_NOT_WIRED),
         variant: 'danger',
       });
     }
@@ -509,7 +529,7 @@ export default function SkillsPage() {
   const handleBatchEnable = async () => {
     if (!catalog || selected.size === 0) return;
     if (installedAgents.length === 0) {
-      toast({ ...skillsCopy.toast.noAgents, variant: 'danger' });
+      toast({ ...noAgentsToast(t), variant: 'danger' });
       return;
     }
     setBatchSyncing(true);
@@ -568,11 +588,11 @@ export default function SkillsPage() {
         }
       }
       const skipParts: string[] = [];
-      if (conflictSkipped > 0) skipParts.push(`冲突 ${conflictSkipped}`);
-      if (blockedSkipped > 0) skipParts.push(`不支持/不可用 ${blockedSkipped}`);
-      if (failed > 0) skipParts.push(`失败 ${failed}`);
+      if (conflictSkipped > 0) skipParts.push(t('skills.toast.skipConflict', { n: conflictSkipped }));
+      if (blockedSkipped > 0) skipParts.push(t('skills.toast.skipBlocked', { n: blockedSkipped }));
+      if (failed > 0) skipParts.push(t('skills.toast.skipFailed', { n: failed }));
       toast({
-        ...skillsCopy.toast.batchEnable(enabled, failed, skipParts),
+        ...batchEnableToast(t, enabled, failed, skipParts),
         variant: failed > 0 ? 'danger' : 'success',
         duration: 8000,
       });
@@ -607,10 +627,10 @@ export default function SkillsPage() {
     setImportingIds((prev) => new Set(prev).add(key));
     try {
       await runImportPrivateSkill(skillId, agentId, overwrite);
-      const t = skillsCopy.toast.adoptOk(overwrite);
+      const toastCopy = adoptOkToast(t, overwrite);
       toast({
-        title: t.title,
-        description: t.description,
+        title: toastCopy.title,
+        description: toastCopy.description,
         variant: 'success',
         duration: 8000,
       });
@@ -624,7 +644,7 @@ export default function SkillsPage() {
         return false;
       }
       toast({
-        ...skillsCopy.toast.adoptFailed(msg),
+        ...adoptFailedToast(t, msg),
         variant: 'danger',
       });
       return false;
@@ -658,14 +678,14 @@ export default function SkillsPage() {
     try {
       await runUninstallSkill(skillId, agentId);
       toast({
-        ...skillsCopy.toast.removeOk(agentDisplayName(agentId), name),
+        ...removeOkToast(t, agentDisplayName(agentId), name),
         variant: 'success',
       });
       setRemoveFromTool(null);
       await load();
     } catch (e) {
       toast({
-        ...skillsCopy.toast.removeFailed(e instanceof Error ? e.message : String(e)),
+        ...removeFailedToast(t, e instanceof Error ? e.message : String(e)),
         variant: 'danger',
       });
     } finally {
@@ -752,12 +772,15 @@ export default function SkillsPage() {
       <div className={cn('shrink-0 border-b border-border pt-4 pb-1', pageRhythm.workbenchX)}>
         <PageHeader
           size="compact"
-          title={skillsCopy.page.title}
-          description={skillsCopy.page.meta(catalog == null ? '…' : sharedCount, privateOnlyCount)}
-          descriptionTip={skillsCopy.page.descriptionTip}
+          title={t('skills.page.title')}
+          description={t('skills.page.meta', {
+            shared: catalog == null ? '…' : sharedCount,
+            privateOnly: privateOnlyCount,
+          })}
+          descriptionTip={t('skills.page.descriptionTip')}
           actions={
             <Button size="sm" onClick={() => setInstallOpen(true)}>
-              <Plus className="h-3.5 w-3.5" /> {skillsCopy.page.installCta}
+              <Plus className="h-3.5 w-3.5" /> {t('skills.page.installCta')}
             </Button>
           }
         />
@@ -774,16 +797,16 @@ export default function SkillsPage() {
           <Tabs value={tab} onValueChange={(v) => setTab(parseSkillTab(v))} className="mb-2">
         <TabsList>
           <TabsTrigger value="library" className="gap-1.5">
-            {skillsCopy.tabs.library}
+            {t('skills.tabs.library')}
             {catalog != null ? (
-              <Tip className={segmentedCountClass} label={skillsCopy.tabs.libraryBadge(localCount)}>
+              <Tip className={segmentedCountClass} label={t('skills.tabs.libraryBadge', { n: localCount })}>
                 {localCount}
               </Tip>
             ) : null}
           </TabsTrigger>
           <TabsTrigger value="market" className="gap-1.5">
             <Store className="h-3.5 w-3.5" />
-            {skillsCopy.tabs.market}
+            {t('skills.tabs.market')}
           </TabsTrigger>
         </TabsList>
 
@@ -840,12 +863,12 @@ export default function SkillsPage() {
                 setInstallingMarketId(item.id);
                 try {
                   const skill = await runInstallMarketSkill(item.id, false);
-                  const t = skillsCopy.toast.marketInstallOk(skill.name);
+                  const toastCopy = marketInstallOkToast(t, skill.name);
                   toast({
-                    title: t.title,
-                    description: t.description,
+                    title: toastCopy.title,
+                    description: toastCopy.description,
                     variant: 'success',
-                    actionLabel: t.actionLabel,
+                    actionLabel: toastCopy.actionLabel,
                     onAction: goLibraryAndHighlight,
                     duration: 8000,
                   });
@@ -855,12 +878,12 @@ export default function SkillsPage() {
                   const msg = e instanceof Error ? e.message : String(e);
                   if (msg.toLowerCase().includes('already exists')) {
                     toast({
-                      ...skillsCopy.toast.marketExists(msg),
+                      ...marketExistsToast(t, msg),
                       variant: 'danger',
                     });
                   } else {
                     toast({
-                      ...skillsCopy.toast.installFailed(msg),
+                      ...installFailedToast(t, msg),
                       variant: 'danger',
                     });
                   }
@@ -879,7 +902,7 @@ export default function SkillsPage() {
             <div
               role="separator"
               aria-orientation="vertical"
-              aria-label="调整预览宽度"
+              aria-label={t('skills.preview.resizeAria')}
               aria-valuenow={previewWidth}
               aria-valuemin={PREVIEW_WIDTH_FLOOR}
               tabIndex={previewExpanded ? 0 : -1}
@@ -937,20 +960,20 @@ export default function SkillsPage() {
           <DialogHeader>
             <DialogTitle>
               {removeFromTool?.inLibrary
-                ? skillsCopy.dialog.removeTitle
-                : skillsCopy.dialog.deleteTitle}
+                ? t('skills.dialog.removeTitle')
+                : t('skills.dialog.deleteTitle')}
             </DialogTitle>
             <DialogDescription>
               {removeFromTool &&
                 (removeFromTool.inLibrary
-                  ? skillsCopy.dialog.removeBody(
-                      agentDisplayName(removeFromTool.agentId),
-                      removeFromTool.name,
-                    )
-                  : skillsCopy.dialog.deleteBody(
-                      agentDisplayName(removeFromTool.agentId),
-                      removeFromTool.name,
-                    ))}
+                  ? t('skills.dialog.removeBody', {
+                      agentName: agentDisplayName(removeFromTool.agentId),
+                      skillName: removeFromTool.name,
+                    })
+                  : t('skills.dialog.deleteBody', {
+                      agentName: agentDisplayName(removeFromTool.agentId),
+                      skillName: removeFromTool.name,
+                    }))}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -959,7 +982,7 @@ export default function SkillsPage() {
               disabled={dangerBusy}
               onClick={() => setRemoveFromTool(null)}
             >
-              {skillsCopy.dialog.conflictCancel}
+              {t('skills.dialog.conflictCancel')}
             </Button>
             <Button
               variant="danger"
@@ -967,10 +990,10 @@ export default function SkillsPage() {
               onClick={() => void confirmRemoveFromTool()}
             >
               {dangerBusy
-                ? skillsCopy.dialog.busy
+                ? t('skills.dialog.busy')
                 : removeFromTool?.inLibrary
-                  ? skillsCopy.dialog.removeConfirm
-                  : skillsCopy.dialog.deleteConfirm}
+                  ? t('skills.dialog.removeConfirm')
+                  : t('skills.dialog.deleteConfirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -979,20 +1002,20 @@ export default function SkillsPage() {
       <Dialog open={installOpen} onOpenChange={setInstallOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{skillsCopy.dialog.installTitle}</DialogTitle>
-            <DialogDescription>{skillsCopy.dialog.installBody}</DialogDescription>
+            <DialogTitle>{t('skills.dialog.installTitle')}</DialogTitle>
+            <DialogDescription>{t('skills.dialog.installBody')}</DialogDescription>
           </DialogHeader>
           <Input
             value={installSource}
             onChange={(e) => setInstallSource(e.target.value)}
-            placeholder={skillsCopy.dialog.installPlaceholder}
+            placeholder={t('skills.dialog.installPlaceholder')}
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setInstallOpen(false)}>
-              {skillsCopy.dialog.conflictCancel}
+              {t('skills.dialog.conflictCancel')}
             </Button>
             <Button onClick={() => void handleInstall()}>
-              {skillsCopy.dialog.installConfirm}
+              {t('skills.dialog.installConfirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1004,14 +1027,15 @@ export default function SkillsPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{skillsCopy.dialog.importConflictTitle}</DialogTitle>
+            <DialogTitle>{t('skills.dialog.importConflictTitle')}</DialogTitle>
             <DialogDescription>
-              {importConflict && skillsCopy.dialog.importConflictBody(importConflict.name)}
+              {importConflict &&
+                t('skills.dialog.importConflictBody', { name: importConflict.name })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setImportConflict(null)}>
-              {skillsCopy.dialog.conflictCancel}
+              {t('skills.dialog.conflictCancel')}
             </Button>
             <Button
               onClick={() => {
@@ -1024,7 +1048,7 @@ export default function SkillsPage() {
                 );
               }}
             >
-              {skillsCopy.dialog.importConflictConfirm}
+              {t('skills.dialog.importConflictConfirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

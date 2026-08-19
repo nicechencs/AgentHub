@@ -5,6 +5,7 @@ import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Notice } from '@/components/shared/Notice';
 import { Button } from '@/components/ui/button';
 import { Boxes } from 'lucide-react';
@@ -18,15 +19,8 @@ import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import { AdapterErrorLines, AdapterProfiles } from './adapter-components';
 import { AdapterProfileDetailDialog } from './AdapterProfileDetailDialog';
 import {
-  BRIDGES_EMPTY_DESCRIPTION,
-  BRIDGES_EMPTY_TITLE,
-  BRIDGES_PAGE_DESCRIPTION,
-  BRIDGES_PAGE_DESCRIPTION_TIP,
-  BRIDGES_PAGE_TITLE,
   BRIDGES_PATH,
-  BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION,
   resolveBridgesProfileQuery,
-  BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE,
   resourceFailureMessage,
 } from './adapter-model';
 import {
@@ -61,6 +55,7 @@ type WalletSnapshot = {
  * Connections ConnectFlow. Do not mount analyze fan-out, plan, or apply here.
  */
 export default function BridgesPage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const {
@@ -212,7 +207,7 @@ export default function BridgesPage() {
   const stopDialogBusy = Boolean(stopConfirm && busyProfileIds[stopConfirm.id]);
   const removeDialogBusy = removingProfileId !== null;
   const listedBridges = useMemo(() => [...bound, ...orphan], [bound, orphan]);
-  const fleetSummary = adapterBridgeFleetSummary(listedBridges, bridgeStatuses);
+  const fleetSummary = adapterBridgeFleetSummary(listedBridges, bridgeStatuses, t);
   const profileQuery = searchParams.get('profile');
   const pageView = bridgesPageViewState({
     profileState: loading && profileState !== 'error' ? 'loading' : profileState,
@@ -254,9 +249,9 @@ export default function BridgesPage() {
   return (
     <div>
       <PageHeader
-        title={BRIDGES_PAGE_TITLE}
-        description={BRIDGES_PAGE_DESCRIPTION}
-        descriptionTip={BRIDGES_PAGE_DESCRIPTION_TIP}
+        title={t('routes.page.title')}
+        description={t('routes.page.description')}
+        descriptionTip={t('routes.page.descriptionTip')}
       />
 
       {connectionWarning ? (
@@ -279,21 +274,21 @@ export default function BridgesPage() {
             {...listProps}
             profiles={[]}
             loading={false}
-            loadError={resourceErrors.profiles ?? new Error('无法读取本机路由')}
+            loadError={resourceErrors.profiles ?? new Error(t('routes.loadError'))}
           />
         ) : null}
         {pageView === 'wallet_without_runtime' ? (
           <ErrorState
-            title={BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE}
-            error={new Error(BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION)}
+            title={t('routes.walletWithoutRuntime.title')}
+            error={new Error(t('routes.walletWithoutRuntime.description'))}
             onRetry={() => { void reload(); }}
           />
         ) : null}
         {pageView === 'healthy_empty' ? (
           <EmptyState
             icon={Boxes}
-            title={BRIDGES_EMPTY_TITLE}
-            description={BRIDGES_EMPTY_DESCRIPTION}
+            title={t('routes.empty.title')}
+            description={t('routes.empty.description')}
           />
         ) : null}
         {pageView === 'list' ? (
@@ -311,8 +306,8 @@ export default function BridgesPage() {
             ) : null}
             {orphan.length > 0 ? (
               <PageSection
-                title="孤立本机路由"
-                description="来源登录或绑定记录已不在。停止或解除仍走同一套命令。"
+                title={t('routes.orphan.title')}
+                description={t('routes.orphan.description')}
               >
                 <AdapterProfiles
                   {...listProps}
@@ -359,17 +354,17 @@ export default function BridgesPage() {
           onInteractOutside={(event) => preventBusyConfirmationDismissal(stopDialogBusy, event)}
         >
           <DialogHeader className="shrink-0">
-            <DialogTitle>停止本机路由？</DialogTitle>
-            <DialogDescription>停止后，该工具将无法通过此转发访问上游。</DialogDescription>
+            <DialogTitle>{t('routes.stop.title')}</DialogTitle>
+            <DialogDescription>{t('routes.stop.description')}</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
             {stopConfirm && <p className="text-sm text-secondary">{adapterProfileFlowLabel(stopConfirm, entries)}</p>}
-            {stopError ? <AdapterErrorLines error={stopError} fallback="无法停止本机路由" /> : null}
+            {stopError ? <AdapterErrorLines error={stopError} fallback={t('routes.stop.fallback')} /> : null}
           </div>
           <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
-            <Button variant="secondary" onClick={() => setStopConfirm(null)} disabled={stopDialogBusy}>取消</Button>
+            <Button variant="secondary" onClick={() => setStopConfirm(null)} disabled={stopDialogBusy}>{t('common.cancel')}</Button>
             <Button variant="danger" onClick={() => void confirmStopBridge()} disabled={stopDialogBusy}>
-              {stopDialogBusy ? '停止中…' : '确认停止'}
+              {stopDialogBusy ? t('routes.stop.confirming') : t('routes.stop.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -387,20 +382,20 @@ export default function BridgesPage() {
           onInteractOutside={(event) => preventBusyConfirmationDismissal(removeDialogBusy, event)}
         >
           <DialogHeader className="shrink-0">
-            <DialogTitle>解除本机路由绑定？</DialogTitle>
+            <DialogTitle>{t('routes.unbind.title')}</DialogTitle>
             <DialogDescription>
-              会停止本机路由并恢复该工具上一份配置。登录仍留在 Connections。
-              {removeConfirmIsOrphan ? '来源或绑定记录已不在，仍走同一解除。' : ''}
+              {t('routes.unbind.description')}
+              {removeConfirmIsOrphan ? t('routes.unbind.orphanNote') : ''}
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
             {removeConfirm && <p className="text-sm text-secondary">{adapterProfileFlowLabel(removeConfirm, entries)}</p>}
-            {removeError ? <AdapterErrorLines error={removeError} fallback="无法解除本机路由绑定" /> : null}
+            {removeError ? <AdapterErrorLines error={removeError} fallback={t('routes.unbind.fallback')} /> : null}
           </div>
           <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
-            <Button variant="secondary" onClick={() => setRemoveConfirm(null)} disabled={removeDialogBusy}>取消</Button>
+            <Button variant="secondary" onClick={() => setRemoveConfirm(null)} disabled={removeDialogBusy}>{t('common.cancel')}</Button>
             <Button variant="danger" onClick={() => void confirmRemove()} disabled={removeDialogBusy}>
-              {removeDialogBusy ? '解除中…' : removeError ? '重试解除' : '确认解除'}
+              {removeDialogBusy ? t('routes.unbind.confirming') : removeError ? t('routes.unbind.retry') : t('routes.unbind.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

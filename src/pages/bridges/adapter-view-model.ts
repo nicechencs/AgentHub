@@ -9,6 +9,7 @@ import type {
 } from '@/lib/backend/contracts/adapter';
 import type { AgentId } from '@/lib/types';
 import type { ConnectionEntry } from '@/lib/connection-entry';
+import type { TranslateFn } from '@/lib/i18n';
 
 export type AdapterStatusTone = 'success' | 'warning' | 'danger' | 'info' | 'muted';
 
@@ -24,16 +25,22 @@ export function bridgeRuntimeStatusView(input: {
   route: AdapterProfile['route'];
   bridgeState?: AdapterBridgeRuntimeState;
   statusUnavailable?: boolean;
-}): AdapterStatusView | null {
+}, t?: TranslateFn): AdapterStatusView | null {
   if (input.route !== 'local_bridge') return null;
-  if (input.statusUnavailable) return { label: '状态不可用', tone: 'muted' };
+  if (input.statusUnavailable) {
+    return { label: t ? t('routes.runtime.unavailable') : '状态不可用', tone: 'muted' };
+  }
   const state = input.bridgeState;
-  if (state === 'running') return { label: '运行中', tone: 'success' };
-  if (state === 'starting') return { label: '启动中', tone: 'info', pulse: true };
-  if (state === 'stopping') return { label: '停止中', tone: 'info', pulse: true };
-  if (state === 'degraded') return { label: '已降级', tone: 'warning' };
-  if (state === 'error') return { label: '启动失败', tone: 'danger' };
-  return { label: '已停止', tone: 'muted' };
+  if (state === 'running') return { label: t ? t('routes.runtime.running') : '运行中', tone: 'success' };
+  if (state === 'starting') {
+    return { label: t ? t('routes.runtime.starting') : '启动中', tone: 'info', pulse: true };
+  }
+  if (state === 'stopping') {
+    return { label: t ? t('routes.runtime.stopping') : '停止中', tone: 'info', pulse: true };
+  }
+  if (state === 'degraded') return { label: t ? t('routes.runtime.degraded') : '已降级', tone: 'warning' };
+  if (state === 'error') return { label: t ? t('routes.runtime.error') : '启动失败', tone: 'danger' };
+  return { label: t ? t('routes.runtime.stopped') : '已停止', tone: 'muted' };
 }
 
 /** @deprecated Prefer {@link bridgeRuntimeStatusView}; same single-layer labels. */
@@ -41,8 +48,8 @@ export function adapterServiceStatusView(input: {
   route: AdapterProfile['route'];
   bridgeState?: AdapterBridgeRuntimeState;
   statusUnavailable?: boolean;
-}): AdapterStatusView | null {
-  return bridgeRuntimeStatusView(input);
+}, t?: TranslateFn): AdapterStatusView | null {
+  return bridgeRuntimeStatusView(input, t);
 }
 
 export function adapterStatusDotClass(tone: AdapterStatusTone): string {
@@ -185,6 +192,7 @@ export function bridgesPageViewState(input: {
 export function adapterBridgeFleetSummary(
   profiles: readonly Pick<AdapterProfile, 'id' | 'route'>[],
   bridgeStatuses: Record<string, { state: AdapterBridgeRuntimeState } | undefined>,
+  t?: TranslateFn,
 ): { total: number; running: number; label: string } | null {
   const bridges = profiles.filter((profile) => profile.route === 'local_bridge');
   if (bridges.length < 2) return null;
@@ -195,7 +203,9 @@ export function adapterBridgeFleetSummary(
   return {
     total: bridges.length,
     running,
-    label: `${bridges.length} 个本机路由 · ${running} 个运行中 · 需保持托盘运行`,
+    label: t
+      ? t('routes.fleetSummary', { total: bridges.length, running })
+      : `${bridges.length} 个本机路由 · ${running} 个运行中 · 需保持托盘运行`,
   };
 }
 
@@ -220,17 +230,19 @@ export function adapterProfilePrimaryAction(input: {
   bridgeState?: AdapterBridgeRuntimeState;
   lastErrorCode?: string | null;
   statusUnavailable?: boolean;
-}): AdapterProfilePrimaryAction | null {
+}, t?: TranslateFn): AdapterProfilePrimaryAction | null {
   if (input.route !== 'local_bridge') return null;
   const ownsListener = isBridgeStopCapable(input.bridgeState);
+  const stopLabel = t ? t('routes.action.stop') : '停止';
+  const startLabel = t ? t('routes.action.start') : '启动';
   if (input.statusUnavailable) {
     return ownsListener
-      ? { kind: 'stop', label: '停止' }
-      : { kind: 'start', label: '启动' };
+      ? { kind: 'stop', label: stopLabel }
+      : { kind: 'start', label: startLabel };
   }
-  if (ownsListener) return { kind: 'stop', label: '停止' };
+  if (ownsListener) return { kind: 'stop', label: stopLabel };
   const retry = input.bridgeState === 'error' || Boolean(input.lastErrorCode?.trim());
-  return { kind: 'start', label: retry ? '重试启动' : '启动' };
+  return { kind: 'start', label: retry ? (t ? t('routes.action.retryStart') : '重试启动') : startLabel };
 }
 
 /** Human-readable "source → target" one-liner for confirmations. */
@@ -247,20 +259,25 @@ export function adapterProfileFlowLabel(
  * restores the runtime; it cannot repair inconsistent durable configuration,
  * so delete-and-recreate stays the explicit fallback.
  */
-export function adapterProfileRecoveryGuide(profile: Pick<AdapterProfile, 'route' | 'status' | 'lastErrorCode'>): {
+export function adapterProfileRecoveryGuide(
+  profile: Pick<AdapterProfile, 'route' | 'status' | 'lastErrorCode'>,
+  t?: TranslateFn,
+): {
   summary: string;
   steps: string[];
 } | null {
   if (profile.status !== 'needs_attention') return null;
   const code = profile.lastErrorCode?.trim();
   return {
-    summary: code ? `上次未完成（${code}）。` : '上次可能未完成。',
+    summary: code
+      ? (t ? t('routes.recovery.summaryWithCode', { code }) : `上次未完成（${code}）。`)
+      : (t ? t('routes.recovery.summaryUnknown') : '上次可能未完成。'),
     steps: [
       ...(profile.route === 'local_bridge'
-        ? ['启动只恢复桥接运行时，不会修复配置不一致。']
+        ? [t ? t('routes.recovery.startOnlyRuntime') : '启动只恢复桥接运行时，不会修复配置不一致。']
         : []),
-      '解除绑定后，到 Dashboard 重新连接。',
-      '不会自动反复重试。',
+      t ? t('routes.recovery.unbindReconnect') : '解除绑定后，到 Dashboard 重新连接。',
+      t ? t('routes.recovery.noAutoRetry') : '不会自动反复重试。',
     ],
   };
 }

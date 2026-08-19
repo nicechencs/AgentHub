@@ -4,10 +4,11 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { SearchField } from '@/components/shared/SearchField';
 import { TableSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import type { SkillListingDto } from '@/lib/api/skill';
 import { openExternalLink } from '@/lib/open-external';
 import type { SkillMarketSource } from '@/lib/types';
-import { skillsCopy } from './copy';
+import { marketSuffix } from './copy';
 import { SkillMarketTable } from './SkillMarketTable';
 import { marketHomeUrl, marketResultLabel } from './skills-preview-model';
 
@@ -37,6 +38,7 @@ export function SkillsMarketPanel({
   onInstall,
 }: SkillsMarketPanelProps) {
   const { toast } = useToast();
+  const { t } = useI18n();
   return (
     <>
       <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -44,7 +46,7 @@ export function SkillsMarketPanel({
           className="w-72"
           value={marketQuery}
           onChange={(e) => onMarketQueryChange(e.target.value)}
-          placeholder={skillsCopy.filters.marketSearchPlaceholder}
+          placeholder={t('skills.filters.marketSearchPlaceholder')}
         />
         <p className="text-xs text-muted">
           <button
@@ -54,7 +56,7 @@ export function SkillsMarketPanel({
               const url = marketHomeUrl(activeMarketProvider, skillMarketSource);
               void openExternalLink(url).catch((e) => {
                 toast({
-                  title: '无法打开链接',
+                  title: t('chrome.env.openLinkFailed'),
                   description: e instanceof Error ? e.message : String(e),
                   variant: 'danger',
                 });
@@ -64,7 +66,8 @@ export function SkillsMarketPanel({
             {marketResultLabel(activeMarketProvider, skillMarketSource)}
           </button>
           {' · '}
-          {skillsCopy.market.suffix(
+          {marketSuffix(
+            t,
             skillMarketSource === 'auto' &&
               (activeMarketProvider === 'skills.sh' ||
                 activeMarketProvider === 'skillhub.cn'),
@@ -78,8 +81,8 @@ export function SkillsMarketPanel({
       ) : !items?.length ? (
         <EmptyState
           icon={Store}
-          title={skillsCopy.empty.marketNoneTitle}
-          description={skillsCopy.empty.marketNoneDesc}
+          title={t('skills.empty.marketNoneTitle')}
+          description={t('skills.empty.marketNoneDesc')}
         />
       ) : (
         <SkillMarketTable

@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { EnvStatusBar } from '@/components/shared/EnvStatusBar';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Notice } from '@/components/shared/Notice';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -41,6 +42,7 @@ type Step = 'env' | 'detect' | 'import' | 'done';
  */
 export function OnboardingDialog() {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { toast } = useToast();
   const [open, setOpen] = React.useState(() => !loadBool(StorageKey.onboardingDone));
   const [step, setStep] = React.useState<Step>('env');
@@ -130,8 +132,8 @@ export function OnboardingDialog() {
       setImported(count);
       setStep('done');
       toast({
-        title: count > 0 ? `已导入 ${count} 个账号` : '未发现可导入的登录态',
-        description: count > 0 ? '可在 Connections → 账号与密钥 查看并切换' : '可稍后手动添加账号',
+        title: count > 0 ? t('chrome.onboarding.toastImported', { n: count }) : t('chrome.onboarding.toastNone'),
+        description: count > 0 ? t('chrome.onboarding.toastImportedDesc') : t('chrome.onboarding.toastNoneDesc'),
         variant: count > 0 ? 'success' : 'default',
       });
     } finally {
@@ -152,10 +154,10 @@ export function OnboardingDialog() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-accent" />
-            欢迎使用 AgentHub
+            {t('chrome.onboarding.title')}
           </DialogTitle>
           <DialogDescription>
-            统一管理 Claude Code、Codex、Kimi、Grok。安装 Agent 前会先检查本机运行环境。
+            {t('chrome.onboarding.description')}
           </DialogDescription>
         </DialogHeader>
 
@@ -163,7 +165,7 @@ export function OnboardingDialog() {
         {step === 'env' && (
           <div className="space-y-3 py-1">
             <p className="text-sm text-secondary">
-              Step 1/2 · 检测共享运行环境(Node / npm 等)。缺失时仍可进入应用,稍后在 Agents 页修复。
+              {t('chrome.onboarding.stepEnv')}
             </p>
             {runtimes == null || envLoading ? (
               <div className="space-y-2">
@@ -179,23 +181,23 @@ export function OnboardingDialog() {
                 />
                 {envIssues ? (
                   <Notice tone="warning">
-                    <p className="font-medium text-warning">部分环境未就绪</p>
+                    <p className="font-medium text-warning">{t('chrome.onboarding.envPartialTitle')}</p>
                     <ul className="mt-1 list-inside list-disc text-muted">
                       {runtimes
                         .filter((r) => r.status !== 'ok')
                         .map((r) => (
                           <li key={r.id}>
                             {RUNTIME_MAP[r.id].name}
-                            {r.minRequired ? ` (需要 ≥ ${r.minRequired})` : ''}
+                            {r.minRequired ? t('chrome.onboarding.envNeedMin', { min: r.minRequired }) : ''}
                           </li>
                         ))}
                     </ul>
                     <p className="mt-1.5 text-muted">
-                      可先继续；需要装 Codex 等 npm 渠道时，请到 Agents 页安装 Node.js。
+                      {t('chrome.onboarding.envPartialHint')}
                     </p>
                   </Notice>
                 ) : (
-                  <Notice tone="success">运行环境就绪</Notice>
+                  <Notice tone="success">{t('chrome.onboarding.envReady')}</Notice>
                 )}
               </>
             )}
@@ -204,7 +206,7 @@ export function OnboardingDialog() {
 
         {step === 'detect' && (
           <div className="space-y-3 py-2">
-            <p className="text-sm text-secondary">Step 2/2 · 正在检测本机已安装的 agent…</p>
+            <p className="text-sm text-secondary">{t('chrome.onboarding.stepDetect')}</p>
             <div className="space-y-2">
               {AGENTS.map((m) => (
                 <div key={m.id} className="flex items-center gap-3">
@@ -220,13 +222,16 @@ export function OnboardingDialog() {
           <div className="space-y-4 py-1">
             {runtimes && hasEnvIssues(runtimes) && (
               <Notice tone="warning">
-                运行环境仍有问题。未安装的 Agent 可能需要先修复环境。
-                {noAgents && ' 建议引导结束后前往 Agents 页。'}
+                {t('chrome.onboarding.envStillIssues')}
+                {noAgents ? t('chrome.onboarding.envStillIssuesGoAgents') : ''}
               </Notice>
             )}
             <div>
               <p className="mb-2 text-sm text-secondary">
-                检测到 {installed.length}/{visibleMetas.length} 个已安装
+                {t('chrome.onboarding.detectedCount', {
+                  installed: installed.length,
+                  total: visibleMetas.length,
+                })}
               </p>
               <ul className="divide-y divide-border rounded-card border border-border">
                 {visibleMetas.map((agentMeta) => {
@@ -244,12 +249,12 @@ export function OnboardingDialog() {
                         <p className="text-xs text-muted">
                           {missing
                             ? envBad
-                              ? '未安装 · 环境未就绪'
-                              : '未安装'
+                              ? t('chrome.onboarding.notInstalledEnv')
+                              : t('chrome.onboarding.notInstalled')
                             : `v${status?.version ?? '—'}`}
                         </p>
                       </div>
-                      {missing && envBad && <Badge variant="warning">环境</Badge>}
+                      {missing && envBad && <Badge variant="warning">{t('chrome.onboarding.envBadge')}</Badge>}
                       {!missing && status && <StatusDot status={status.authStatus} withLabel />}
                     </li>
                   );
@@ -259,16 +264,15 @@ export function OnboardingDialog() {
 
             {step === 'import' && (
               <p className="text-xs text-muted">
-                可一键导入已安装 agent 的当前登录态到账号池;也可跳过,稍后在 Connections → 账号与密钥
-                手动添加。
+                {t('chrome.onboarding.importHint')}
               </p>
             )}
 
             {step === 'done' && (
               <Notice tone="success" className="text-sm">
                 {imported > 0
-                  ? `已导入 ${imported} 个账号，可直接使用。`
-                  : '引导完成。可从侧栏进入各功能页。'}
+                  ? t('chrome.onboarding.importedDone', { n: imported })
+                  : t('chrome.onboarding.doneNoImport')}
               </Notice>
             )}
           </div>
@@ -278,12 +282,12 @@ export function OnboardingDialog() {
           {step === 'env' && (
             <>
               <Button variant="ghost" onClick={() => finish()} disabled={envLoading}>
-                跳过引导
+                {t('chrome.onboarding.skipGuide')}
               </Button>
               {envIssues ? (
                 <>
                   <Button variant="outline" onClick={() => setStep('detect')} disabled={runtimes == null}>
-                    稍后修复环境
+                    {t('chrome.onboarding.fixLater')}
                   </Button>
                   <Button
                     onClick={() => {
@@ -292,30 +296,30 @@ export function OnboardingDialog() {
                     disabled={runtimes == null}
                   >
                     <Wrench className="h-4 w-4" />
-                    去 Agents 修复
+                    {t('chrome.onboarding.goAgentsFix')}
                   </Button>
                 </>
               ) : (
                 <Button onClick={() => setStep('detect')} disabled={runtimes == null || envLoading}>
-                  继续检测 Agent
+                  {t('chrome.onboarding.continueDetect')}
                 </Button>
               )}
             </>
           )}
           {step === 'detect' && (
             <Button variant="ghost" disabled>
-              检测中…
+              {t('chrome.onboarding.detecting')}
             </Button>
           )}
           {step === 'import' && (
             <>
               <Button variant="ghost" onClick={() => finish(noAgents && envIssues ? '/agents' : undefined)}>
-                跳过
+                {t('chrome.onboarding.skip')}
               </Button>
               {noAgents && envIssues ? (
                 <Button onClick={() => finish('/agents')}>
                   <Wrench className="h-4 w-4" />
-                  去安装环境与 Agent
+                  {t('chrome.onboarding.goInstall')}
                 </Button>
               ) : (
                 <Button
@@ -323,7 +327,7 @@ export function OnboardingDialog() {
                   onClick={() => void handleImport()}
                 >
                   <DownloadCloud className="h-4 w-4" />
-                  {importing ? '导入中…' : '导入现有登录态'}
+                  {importing ? t('chrome.onboarding.importing') : t('chrome.onboarding.importLogin')}
                 </Button>
               )}
             </>
@@ -331,10 +335,10 @@ export function OnboardingDialog() {
           {step === 'done' && (
             <>
               <Button variant="outline" onClick={() => finish('/connections')}>
-                查看账号
+                {t('chrome.onboarding.viewAccounts')}
               </Button>
               <Button onClick={() => finish(noAgents ? '/agents' : '/')}>
-                {noAgents ? '去 Agents' : '进入 Dashboard'}
+                {noAgents ? t('chrome.onboarding.goAgents') : t('chrome.onboarding.enterDashboard')}
               </Button>
             </>
           )}
