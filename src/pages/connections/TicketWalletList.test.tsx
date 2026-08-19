@@ -58,7 +58,8 @@ describe('TicketWalletList details', () => {
     expect(markup).toContain('pl-8');
     expect(markup).not.toContain('pl-7');
     expect(markup).toContain('aria-label="登录类型筛选"');
-    expect(markup).toContain('钱包 · 1 份登录');
+    expect(markup).toContain('1 份登录');
+    expect(markup).not.toContain('钱包');
     expect(markup).toContain('var(--agent-kimi)');
     expect(markup).not.toContain('●');
     expect(markup).not.toContain('○');
@@ -152,8 +153,9 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('钱包还没有登录');
-    expect(markup).toContain('钱包 · 0 份登录');
+    expect(markup).toContain('还没有登录');
+    expect(markup).toContain('0 份登录');
+    expect(markup).not.toContain('钱包');
     expect(markup).toContain('官方登录');
     expect(markup).toContain('API Key');
     expect(markup).toContain('未识别');
@@ -171,7 +173,8 @@ describe('TicketWalletList details', () => {
       }),
     );
     expect(markup).toContain('没有匹配的登录');
-    expect(markup).toContain('钱包 · 1 份登录');
+    expect(markup).toContain('1 份登录');
+    expect(markup).not.toContain('钱包');
     expect(markup).not.toContain('没有匹配的票');
   });
 });

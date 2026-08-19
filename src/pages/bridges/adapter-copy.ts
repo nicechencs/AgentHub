@@ -53,7 +53,7 @@ export const BRIDGES_PAGE_DESCRIPTION_TIP =
 export const BRIDGES_EMPTY_TITLE = '没有本机路由';
 export const BRIDGES_EMPTY_DESCRIPTION =
   '多数连接不需要本机转发。只有协议对不上时才会在这台电脑上开一层转换。若刚完成需要转发的绑定，到 Dashboard 看对应工具上的路由状态。';
-export const BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE = '钱包里有本机路由绑定，但找不到运行时';
+export const BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE = '登录列表里有本机路由绑定，但找不到运行时';
 export const BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION = '可重试读取。不是「没有本机路由」。';
 export { BRIDGES_NAV_LABEL, BRIDGES_PATH, bridgesHrefForProfile, legacyBridgesRedirectTo };
 
