@@ -583,7 +583,7 @@ function poolFailureMessage(errors: { accounts?: unknown; providers?: unknown },
   if (errors.providers) parts.push('供应商');
   if (profilesError) parts.push('绑定档案');
   if (parts.length === 0) return '部分资源加载失败';
-  return `部分资源加载失败：${parts.join('、')}。请重试，勿将缺失数据当作空钱包。`;
+  return `部分资源加载失败：${parts.join('、')}。请重试，勿将缺失数据当作空列表。`;
 }
 
 export function resolveEmptyKind(input: EmptyKindInput): ConnectFlowEmptyKind {

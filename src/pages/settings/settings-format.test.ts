@@ -16,17 +16,17 @@ const tEn = createTranslator('en');
 
 describe('parseSettingsTab', () => {
   it('accepts canonical slugs', () => {
-    expect(SETTINGS_TABS).toEqual(['preferences', 'local', 'backups', 'about']);
+    expect(SETTINGS_TABS).toEqual(['preferences', 'local', 'about']);
     expect(parseSettingsTab('preferences')).toBe('preferences');
     expect(parseSettingsTab('local')).toBe('local');
-    expect(parseSettingsTab('backups')).toBe('backups');
     expect(parseSettingsTab('about')).toBe('about');
   });
 
-  it('maps legacy slugs onto the four-tab IA', () => {
+  it('maps legacy slugs onto the three-tab IA', () => {
     expect(parseSettingsTab('general')).toBe('preferences');
     expect(parseSettingsTab('security')).toBe('about');
     expect(parseSettingsTab('data')).toBe('local');
+    expect(parseSettingsTab('backups')).toBe('local');
   });
 
   it('falls back to preferences for empty or unknown values', () => {
@@ -40,6 +40,7 @@ describe('resolveSettingsLocation', () => {
   it('does not rewrite a bare /settings URL', () => {
     expect(resolveSettingsLocation(null)).toEqual({
       tab: 'preferences',
+      hash: '',
       shouldReplace: false,
     });
   });
@@ -47,18 +48,17 @@ describe('resolveSettingsLocation', () => {
   it('leaves canonical slugs in place', () => {
     expect(resolveSettingsLocation('preferences')).toEqual({
       tab: 'preferences',
+      hash: '',
       shouldReplace: false,
     });
     expect(resolveSettingsLocation('local')).toEqual({
       tab: 'local',
+      hash: '',
       shouldReplace: false,
     });
     expect(resolveSettingsLocation('about')).toEqual({
       tab: 'about',
-      shouldReplace: false,
-    });
-    expect(resolveSettingsLocation('backups')).toEqual({
-      tab: 'backups',
+      hash: '',
       shouldReplace: false,
     });
   });
@@ -66,14 +66,22 @@ describe('resolveSettingsLocation', () => {
   it('replace-navigates legacy slugs', () => {
     expect(resolveSettingsLocation('general')).toEqual({
       tab: 'preferences',
+      hash: '',
       shouldReplace: true,
     });
     expect(resolveSettingsLocation('security')).toEqual({
       tab: 'about',
+      hash: '',
       shouldReplace: true,
     });
     expect(resolveSettingsLocation('data')).toEqual({
       tab: 'local',
+      hash: '',
+      shouldReplace: true,
+    });
+    expect(resolveSettingsLocation('backups')).toEqual({
+      tab: 'local',
+      hash: 'backups',
       shouldReplace: true,
     });
   });
@@ -81,6 +89,7 @@ describe('resolveSettingsLocation', () => {
   it('replace-navigates unknown slugs to preferences', () => {
     expect(resolveSettingsLocation('legacy-foo')).toEqual({
       tab: 'preferences',
+      hash: '',
       shouldReplace: true,
     });
   });
@@ -91,31 +100,50 @@ describe('resolveSettingsLocation', () => {
 });
 
 describe('legacy backups hash', () => {
-  it('maps #backups onto the backups tab and replace-navigates', () => {
+  it('maps backups slug and #backups onto local#backups', () => {
     expect(resolveSettingsLocation('local', '#backups')).toEqual({
-      tab: 'backups',
-      shouldReplace: true,
+      tab: 'local',
+      hash: 'backups',
+      shouldReplace: false,
     });
     expect(resolveSettingsLocation(null, 'backups')).toEqual({
-      tab: 'backups',
+      tab: 'local',
+      hash: 'backups',
       shouldReplace: true,
     });
     expect(resolveSettingsLocation('backups', '#backups')).toEqual({
-      tab: 'backups',
+      tab: 'local',
+      hash: 'backups',
+      shouldReplace: true,
+    });
+    expect(resolveSettingsLocation('preferences', '#backups')).toEqual({
+      tab: 'local',
+      hash: 'backups',
       shouldReplace: true,
     });
     expect(resolveSettingsLocation('local', '')).toEqual({
       tab: 'local',
+      hash: '',
       shouldReplace: false,
     });
     expect(resolveSettingsLocation('preferences', '#other')).toEqual({
       tab: 'preferences',
+      hash: '',
       shouldReplace: false,
     });
   });
 });
 
 describe('settings-format i18n helpers', () => {
+  it('does not list backups as a peer Settings tab', () => {
+    expect(tZh('settings.page.description')).toBe('偏好、本机与关于');
+    expect(tEn('settings.page.description')).toBe('Preferences, this device, and about');
+    expect(tZh('settings.page.description')).not.toContain('备份');
+    expect(tEn('settings.page.description')).not.toMatch(/backup/i);
+    expect(tZh('settings.page.descriptionTip')).toContain('本机含数据目录、日志与备份');
+    expect(tEn('settings.page.descriptionTip')).toContain('This device covers data, logs, and backups');
+  });
+
   it('labels follow the active language', () => {
     expect(skillMarketLabel('auto', tZh)).toBe('自动（不通则切换）');
     expect(skillMarketLabel('auto', tEn)).toBe('Auto (switch if unreachable)');

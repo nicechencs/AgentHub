@@ -37,8 +37,8 @@ export const en = {
   settings: {
     page: {
       title: 'Settings',
-      description: 'Preferences, this device, backups, and about',
-      descriptionTip: 'Language and theme apply immediately. This device covers data and logs. Backups manage config snapshots. About has version and credential notes.',
+      description: 'Preferences, this device, and about',
+      descriptionTip: 'Language and theme apply immediately. This device covers data, logs, and backups. About has version and credential notes.',
       tabPreferences: 'Preferences',
       tabLocal: 'This device',
       tabBackups: 'Backups',

@@ -8,18 +8,19 @@ export const SKILL_MARKET_VALUES: SkillMarketSource[] = ['auto', 'skills.sh', 's
 export const LOG_LEVEL_VALUES: LogLevel[] = ['error', 'warn', 'info', 'debug', 'trace'];
 
 /** Canonical Settings `?tab=` slugs. */
-export const SETTINGS_TABS = ['preferences', 'local', 'backups', 'about'] as const;
+export const SETTINGS_TABS = ['preferences', 'local', 'about'] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 /**
  * Legacy `?tab=` slugs → canonical tab.
  * `general` → Preferences; `security` → About (credential note);
- * `data` → Local. `#backups` hash → Backups (see {@link resolveSettingsLocation}).
+ * `data` → Local. `backups` slug and `#backups` hash → Local + `#backups`
+ * (see {@link resolveSettingsLocation}).
  */
 export const SETTINGS_TAB_REDIRECTS: Record<string, { tab: SettingsTab }> = {
   preferences: { tab: 'preferences' },
   local: { tab: 'local' },
-  backups: { tab: 'backups' },
+  backups: { tab: 'local' },
   about: { tab: 'about' },
   general: { tab: 'preferences' },
   security: { tab: 'about' },
@@ -40,26 +41,31 @@ export function parseSettingsTab(raw: string | null): SettingsTab {
 
 export interface SettingsLocation {
   tab: SettingsTab;
+  /** Fragment without `#`. Canonical backups deep-link is `backups`. */
+  hash: string;
   /** True when the incoming `?tab=` / hash is legacy or unknown. */
   shouldReplace: boolean;
 }
 
 /**
- * Central URL resolver: canonical tab.
- * Old slugs, `#backups` hashes, and illegal values are marked for replace-navigation.
+ * Central URL resolver: canonical tab + hash.
+ * Old slugs, a standalone `backups` slug, `#backups` hashes, and illegal
+ * values are marked for replace-navigation.
  */
 export function resolveSettingsLocation(
   rawTab: string | null,
   hash?: string | null,
 ): SettingsLocation {
   const hashValue = (hash ?? '').replace(/^#/, '');
-  if (hashValue === 'backups') {
-    return { tab: 'backups', shouldReplace: true };
+  const wantsBackups = hashValue === 'backups' || rawTab === 'backups';
+  if (wantsBackups) {
+    const alreadyCanonical = rawTab === 'local' && hashValue === 'backups';
+    return { tab: 'local', hash: 'backups', shouldReplace: !alreadyCanonical };
   }
   const mapped = rawTab ? SETTINGS_TAB_REDIRECTS[rawTab] : undefined;
   const tab = mapped?.tab ?? 'preferences';
   const shouldReplace = rawTab !== null && !isSettingsTab(rawTab);
-  return { tab, shouldReplace };
+  return { tab, hash: '', shouldReplace };
 }
 
 export function settingsSearch(tab: SettingsTab): string {

@@ -347,7 +347,7 @@ export function TicketWalletList({
       {wallet && tickets.length === 0 ? (
         <EmptyState
           icon={KeyRound}
-          title="钱包还没有登录"
+          title="还没有登录"
           description="导入官方登录态或添加 API Key，再接到其他 Agent。"
           action={addMenu}
         />
@@ -391,7 +391,7 @@ export function TicketWalletList({
 
       {wallet ? (
         <p className="mt-3 text-meta text-muted">
-          钱包 · {tickets.length} 份登录
+          {tickets.length} 份登录
           {highlightAgentId
             ? ` · 已高亮 ${agentDisplayName(highlightAgentId)} 的当前绑定`
             : ''}
