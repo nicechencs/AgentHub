@@ -140,6 +140,19 @@ function markLastThinkingDone(steps: ProcessStep[]): ProcessStep[] {
   return steps;
 }
 
+/**
+ * Codex `item.updated` reasoning is a full snapshot; Grok/Pi/Claude thinking
+ * chunks are deltas. If the new text already contains the previous text as a
+ * prefix, replace; a later shorter prefix is a replay and is ignored.
+ */
+export function mergeThinkingText(prev: string, next: string): string {
+  if (!next) return prev;
+  if (!prev) return next;
+  if (next.startsWith(prev)) return next;
+  if (prev.startsWith(next)) return prev;
+  return `${prev}${next}`;
+}
+
 function mergeToolStep(prev: Extract<ProcessStep, { type: 'tool' }>, step: Extract<ProcessStep, { type: 'tool' }>): ProcessStep {
   const name =
     step.name && step.name !== 'tool' ? step.name : prev.name || step.name;
@@ -169,7 +182,7 @@ function pushStep(steps: ProcessStep[], step: ProcessStep): ProcessStep[] {
       const next = steps.slice(0, -1);
       next.push({
         type: 'thinking',
-        text: `${last.text}${step.text}`,
+        text: mergeThinkingText(last.text, step.text),
         done: Boolean(step.done),
       });
       return next.length > MAX_STEPS ? next.slice(next.length - MAX_STEPS) : next;
