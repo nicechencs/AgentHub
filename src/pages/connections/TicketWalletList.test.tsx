@@ -276,16 +276,16 @@ describe('TicketWalletList details', () => {
 });
 
 describe('TicketDetailPanel', () => {
-  it('lays out 用量, 用在哪, and collapsed 更多 without header duplicates', () => {
+  it('lays out 用量, 用在哪, footer 导入自, and collapsed 更多 without header duplicates', () => {
     const markup = renderWithTooltip(
       createElement(TicketDetailPanel, {
         id: 'ticket-detail',
         advanced: [
-          { label: '导入自', value: 'Kimi' },
           { label: '协议', value: 'anthropic-messages' },
         ],
         bindings: [{ agent: 'Claude', status: '当前使用' }],
         extras: { quota7dPct: 40, quota7dResetIn: '3d', canEditConfig: true, isCurrent: true },
+        importedFromLabel: '导入自 Kimi',
         editLabel: '编辑配置',
         onEdit() {},
         onDelete() {},
@@ -294,6 +294,7 @@ describe('TicketDetailPanel', () => {
     expect(markup).toContain('id="ticket-detail"');
     expect(markup).toContain('用量');
     expect(markup).toContain('用在哪');
+    expect(markup).toContain('导入自 Kimi');
     expect(markup).toContain('更多');
     expect(markup).toContain('<details>');
     expect(markup).not.toContain('<details open');
@@ -307,27 +308,78 @@ describe('TicketDetailPanel', () => {
     expect(markup).not.toContain('官方账号');
     expect(markup).toContain('编辑配置');
     expect(markup).toContain('移入回收站');
+    const moreIndex = markup.indexOf('更多');
+    const importIndex = markup.indexOf('导入自 Kimi');
+    const protocolIndex = markup.indexOf('anthropic-messages');
+    expect(moreIndex).toBeGreaterThan(-1);
+    expect(protocolIndex).toBeGreaterThan(moreIndex);
+    expect(importIndex).toBeGreaterThan(protocolIndex);
+  });
+
+  it('omits 更多 for official login when only import + auth remain', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketDetailPanel, {
+        id: 'oauth-grok-detail',
+        advanced: [],
+        bindings: [],
+        extras: { authLabel: '可续期·未验证' },
+        importedFromLabel: '导入自 Grok',
+        onDelete() {},
+      }),
+    );
+    expect(markup).toContain('用在哪');
+    expect(markup).toContain('导入自 Grok');
+    expect(markup).toContain('移入回收站');
+    expect(markup).not.toContain('用量');
+    expect(markup).not.toContain('更多');
+    expect(markup).not.toContain('<details>');
+    expect(markup).not.toContain('登录状态');
+    expect(markup).not.toContain('尚未验证');
+    expect(markup).not.toContain('未验证');
+    expect(markup).not.toContain('可续期·未验证');
   });
 
   it('does not offer edit for OAuth tickets', () => {
     const markup = renderWithTooltip(
       createElement(TicketDetailPanel, {
         id: 'oauth-detail',
-        advanced: [{ label: '登录状态', value: '可续期' }],
+        advanced: [],
         bindings: [],
         extras: { authLabel: '可续期·未验证' },
+        importedFromLabel: '导入自 Grok',
         onDelete() {},
       }),
     );
     expect(markup).toContain('用在哪');
     expect(markup).toContain('还没接到任何工具');
-    expect(markup).toContain('可续期');
+    expect(markup).toContain('导入自 Grok');
+    expect(markup).not.toContain('登录状态');
     expect(markup).not.toContain('尚未验证');
+    expect(markup).not.toContain('未验证');
     expect(markup).not.toContain('可续期·未验证');
     expect(markup).not.toContain('未验证');
     expect(markup).not.toContain('未绑定任何 Agent');
     expect(markup).not.toContain('编辑密钥');
     expect(markup).not.toContain('编辑配置');
     expect(markup).not.toContain('用量');
+    expect(markup).not.toContain('更多');
+  });
+});
+
+describe('TicketWalletList header health chip', () => {
+  it('shows a quiet 可续期 chip and never 未验证', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: sampleWallet(),
+        extrasForTicket: () => ({ authLabel: '可续期·未验证' }),
+        onConnectTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('可续期');
+    expect(markup).not.toContain('尚未验证');
+    expect(markup).not.toContain('未验证');
+    expect(markup).not.toContain('可续期·未验证');
   });
 });
