@@ -516,6 +516,8 @@ function endReasonWithFullStop(reason: string): string {
 
 function localTargetLabels(targetAgentId: string): { display: string; short: string } {
   if (targetAgentId === 'claude') return { display: 'Claude Code', short: 'Claude' };
+  if (targetAgentId === 'codex') return { display: 'Codex', short: 'Codex' };
+  if (targetAgentId === 'pi') return { display: 'Pi', short: 'Pi' };
   return { display: targetAgentId, short: targetAgentId };
 }
 
