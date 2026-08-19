@@ -55,9 +55,12 @@ export function secretChange(target: string, field: string): AdapterPlanChange {
 }
 
 /** Keep in lockstep with `CODEX_SUBSCRIPTION_TO_CLAUDE_REASON` in agenthub-core. */
-export const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON = [
-  'Codex / ChatGPT 订阅可通过本机路由到 Claude Code（Messages → Responses）。',
-].join('');
+export const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON =
+  'Codex / ChatGPT 订阅会经本机路由接到 Claude Code.';
+
+/** Keep in lockstep with `GROK_SUBSCRIPTION_TO_CLAUDE_REASON` in agenthub-core. */
+export const GROK_SUBSCRIPTION_TO_CLAUDE_REASON =
+  'Grok 订阅会经本机路由接到 Claude Code.';
 
 export const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON =
   'Claude 订阅 → Codex：产品不做。Codex 不吃 Anthropic PKCE，本产品不走这条边。';
@@ -74,12 +77,10 @@ export const CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON = [
 export const AGENT_NO_WRITER_REASON = '该 Agent 无配置写入能力，不能作为绑定落点';
 
 /** Keep in lockstep with `PROTOCOL_MISMATCH_REASON` in agenthub-core. */
-export const PROTOCOL_MISMATCH_REASON =
-  '协议不通：登录所说的上游协议与该 Agent 所听的入口没有交集。';
+export const PROTOCOL_MISMATCH_REASON = '这份登录接不到这个 Agent。';
 
 /** Keep in lockstep with `SAME_PROTOCOL_NO_EDGE_REASON` in agenthub-core. */
-export const SAME_PROTOCOL_NO_EDGE_REASON =
-  '同协议但无已验证的边：登录与该 Agent 入口相通，但协议图上尚无已验证的适配边。';
+export const SAME_PROTOCOL_NO_EDGE_REASON = '这条接到方式还没做好，暂不能绑定。';
 
 export type TicketProtocol =
   | 'anthropic-messages'

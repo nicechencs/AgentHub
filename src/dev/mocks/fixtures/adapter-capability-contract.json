@@ -310,7 +310,7 @@
         "applyPath": "local_bridge",
         "ruleId": "codex-subscription-to-claude-responses-v1",
         "gateKind": "none",
-        "reason": "Codex / ChatGPT 订阅可通过本机路由到 Claude Code（Messages → Responses）。",
+        "reason": "Codex / ChatGPT 订阅会经本机路由接到 Claude Code.",
         "reusePath": "local_bridge"
       }
     },
@@ -334,7 +334,7 @@
         "applyPath": "local_bridge",
         "ruleId": "codex-subscription-to-claude-responses-v1",
         "gateKind": "none",
-        "reason": "Codex / ChatGPT 订阅可通过本机路由到 Claude Code（Messages → Responses）。",
+        "reason": "Codex / ChatGPT 订阅会经本机路由接到 Claude Code.",
         "reusePath": "local_bridge"
       }
     },
@@ -737,7 +737,7 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "同协议但无已验证的边：登录与该 Agent 入口相通，但协议图上尚无已验证的适配边。",
+        "reason": "这条接到方式还没做好，暂不能绑定。",
         "reusePath": "none"
       }
     },
@@ -779,7 +779,7 @@
         "applyPath": "local_bridge",
         "ruleId": "grok-subscription-to-claude-v1",
         "gateKind": "none",
-        "reason": "Grok 订阅可通过本机路由到 Claude Code（Messages → xAI Chat Completions）。",
+        "reason": "Grok 订阅会经本机路由接到 Claude Code.",
         "reusePath": "local_bridge"
       }
     },
@@ -1049,7 +1049,7 @@
         "ruleId": "grok-subscription-to-claude-v1",
         "gateKind": "none",
         "reusePath": "local_bridge",
-        "reason": "Grok 订阅可通过本机路由到 Claude Code（Messages → xAI Chat Completions）。"
+        "reason": "Grok 订阅会经本机路由接到 Claude Code."
       }
     }
   ]

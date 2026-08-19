@@ -11,12 +11,10 @@ use crate::models::{AgentId, TicketProtocol};
 pub const AGENT_NO_WRITER_REASON: &str = "该 Agent 无配置写入能力，不能作为绑定落点";
 
 /// `票.speaks ∩ agent.accepts` is empty.
-pub const PROTOCOL_MISMATCH_REASON: &str =
-    "协议不通：登录所说的上游协议与该 Agent 所听的入口没有交集。";
+pub const PROTOCOL_MISMATCH_REASON: &str = "这份登录接不到这个 Agent。";
 
 /// Protocols overlap, but the graph has no verified edge for this pair.
-pub const SAME_PROTOCOL_NO_EDGE_REASON: &str =
-    "同协议但无已验证的边：登录与该 Agent 入口相通，但协议图上尚无已验证的适配边。";
+pub const SAME_PROTOCOL_NO_EDGE_REASON: &str = "这条接到方式还没做好，暂不能绑定。";
 
 /// What an Agent listens to: a wire protocol and/or a named config slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

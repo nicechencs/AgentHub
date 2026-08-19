@@ -57,7 +57,7 @@ fn codex_oauth_to_claude_opens_only_the_responses_cell() {
     assert!(decision.can_apply);
     assert_eq!(decision.reason, CODEX_SUBSCRIPTION_TO_CLAUDE_REASON);
     assert_eq!(decision.gate_kind, AdapterGateKind::None);
-    assert!(decision.reason.contains("Messages → Responses"));
+    assert!(!decision.reason.contains("Messages"));
     let gates = decision.gates.expect("candidate retains gate record");
     assert!(gates.all_passed());
 
@@ -410,7 +410,7 @@ fn registered_surfaces_have_writable_pi_cells() {
     assert_eq!(xai_grok.route, AdapterRoute::Unsupported);
     assert!(!xai_grok.can_apply);
     assert_eq!(xai_grok.reason, SAME_PROTOCOL_NO_EDGE_REASON);
-    assert!(xai_grok.reason.contains("同协议但无已验证的边"));
+    assert_eq!(xai_grok.reason, "这条接到方式还没做好，暂不能绑定。");
     assert!(!xai_grok.reason.contains("仅支持预览"));
 }
 

@@ -124,12 +124,14 @@ export function ConnectFlowPreviewStep({
   previewInvalid,
   previewNative,
   onGoImport,
+  showImportHint,
 }: {
   state: ConnectFlowState;
   option: SourceOption | null;
   previewInvalid: boolean;
   previewNative?: ConnectFlowDeps['previewNative'];
   onGoImport: () => void;
+  showImportHint: boolean;
 }) {
   if (previewInvalid) {
     return <Notice tone="warning">{PREVIEW_SELECTION_STALE_MESSAGE}</Notice>;
@@ -172,7 +174,6 @@ export function ConnectFlowPreviewStep({
       </section>
       <section className="space-y-0.5 text-secondary">
         <p>服务影响：{view.serviceImpact}</p>
-        {view.startsBridge ? <p>将启动本机路由。</p> : <p>不启动本机路由。</p>}
         {view.portNotes.map((line) => <p key={line}>端口：{line}</p>)}
         {view.modelMappings.length > 0 ? (
           <div>
@@ -192,11 +193,13 @@ export function ConnectFlowPreviewStep({
         </section>
       ) : null}
       {state.lastError ? <Notice tone="danger">{state.lastError}</Notice> : null}
-      <p className="text-xs text-muted">
-        若来源尚未登录，请先在官方 CLI 完成登录再{' '}
-        <button type="button" className="underline" onClick={onGoImport}>去 Connections 导入</button>
-        。
-      </p>
+      {showImportHint ? (
+        <p className="text-xs text-muted">
+          若来源尚未登录，请先在官方 CLI 完成登录再{' '}
+          <button type="button" className="underline" onClick={onGoImport}>去 Connections 导入</button>
+          。
+        </p>
+      ) : null}
     </div>
   );
 }
