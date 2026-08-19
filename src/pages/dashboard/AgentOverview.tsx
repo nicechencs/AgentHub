@@ -3,6 +3,7 @@ import { Bot } from 'lucide-react';
 
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { Badge } from '@/components/ui/badge';
@@ -54,19 +55,20 @@ export function AgentOverview({
   badgeInputs,
 }: AgentOverviewProps) {
   const navigate = useNavigate();
+  const { t } = useI18n();
   // Dashboard 只展示已安装 Agent；未安装的去 Agents 页安装。
   const installedMetas = AGENTS.filter((m) =>
     agents.some((a) => a.agentId === m.id && a.installed && !a.hidden),
   );
   const installedStatuses = agents.filter((a) => a.installed && !a.hidden);
-  const { summaryText } = summarizeAgentOverview(installedMetas, installedStatuses);
-  const cards = mergeAgentsInOrder(installedMetas, installedStatuses, badgeInputs);
+  const { summaryText } = summarizeAgentOverview(installedMetas, installedStatuses, t);
+  const cards = mergeAgentsInOrder(installedMetas, installedStatuses, badgeInputs, t);
 
   return (
     <div>
       <div className="mb-3 flex items-center gap-2 text-sm">
         <span>
-          <span className="font-medium text-primary">Agent 总览</span>
+          <span className="font-medium text-primary">{t('dashboard.overview.title')}</span>
           <span className="text-muted"> {summaryText}</span>
         </span>
         <Button
@@ -75,16 +77,16 @@ export function AgentOverview({
           className="ml-auto h-6 px-2 text-xs"
           onClick={() => navigate('/agents')}
         >
-          管理
+          {t('dashboard.overview.manage')}
         </Button>
       </div>
 
       {cards.length === 0 ? (
         <EmptyState
           icon={Bot}
-          title="尚未安装 Agent"
-          description="安装后可在此查看状态"
-          actionLabel="去安装"
+          title={t('dashboard.overview.emptyTitle')}
+          description={t('dashboard.overview.emptyDesc')}
+          actionLabel={t('dashboard.overview.emptyAction')}
           onAction={() => navigate('/agents')}
         />
       ) : (
@@ -100,8 +102,10 @@ export function AgentOverview({
             };
             const viaLabel = view.viaAdapter
               ? view.viaAdapter.sourceLabel
-                ? `经兼容路由 · ${view.viaAdapter.sourceLabel}`
-                : '经兼容路由'
+                ? t('dashboard.overview.viaCompatibleWithSource', {
+                    source: view.viaAdapter.sourceLabel,
+                  })
+                : t('dashboard.overview.viaCompatible')
               : null;
             return (
               <Card
@@ -157,7 +161,7 @@ export function AgentOverview({
                     </Tip>
                   ) : null}
                   {view.bridge ? (
-                    <Tip className="shrink-0" label="管理本机路由">
+                    <Tip className="shrink-0" label={t('dashboard.overview.manageLocalRoute')}>
                       <Badge
                         variant={bridgeBadgeVariant(view.bridge.state)}
                         className="h-5 cursor-pointer px-1.5 text-meta"

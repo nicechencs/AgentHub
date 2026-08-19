@@ -14,6 +14,7 @@ import type {
 } from '@/lib/connect-flow/types';
 import { connectSourceKey, planFanoutKey } from '@/lib/connect-flow/types';
 import type { AdapterReusePath } from '@/lib/backend/contracts/adapter';
+import type { TranslateFn } from '@/lib/i18n';
 
 export type ConnectFlowStep = 'select' | 'preview' | 'result';
 export type ConnectFlowBusy = 'idle' | 'applying' | 'switching';
@@ -134,19 +135,20 @@ export function resolvePreset(
   entry: ConnectFlowEntry,
   accounts: readonly Account[],
   providers: readonly Provider[],
+  t?: TranslateFn,
 ): PresetResolution {
   if (entry.mode === 'for-agent') {
     if (isBlankId(entry.targetAgentId)) {
-      return { status: 'invalid', message: ILLEGAL_TARGET_MESSAGE };
+      return { status: 'invalid', message: t ? t('connect.result.illegalTarget') : ILLEGAL_TARGET_MESSAGE };
     }
     return { status: 'ok' };
   }
   if (isIllegalSourceRef(entry.source)) {
-    return { status: 'invalid', message: ILLEGAL_SOURCE_MESSAGE };
+    return { status: 'invalid', message: t ? t('connect.result.illegalSource') : ILLEGAL_SOURCE_MESSAGE };
   }
   const found = lookupSourceRecord(entry.source, accounts, providers);
   if (!found) {
-    return { status: 'deleted', message: DELETED_SOURCE_MESSAGE };
+    return { status: 'deleted', message: t ? t('connect.result.deletedSource') : DELETED_SOURCE_MESSAGE };
   }
   return { status: 'ok' };
 }
@@ -467,22 +469,24 @@ export function reduceConnectFlow(state: ConnectFlowState, event: ConnectFlowEve
   }
 }
 
-export function formatConnectFlowError(error: unknown): string {
+export function formatConnectFlowError(error: unknown, t?: TranslateFn): string {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
     return error.message;
   }
   if (typeof error === 'string' && error.trim()) return error;
-  return '操作失败';
+  return t ? t('connect.result.opFailed') : '操作失败';
 }
 
-export function connectFlowResultMessage(result: ConnectFlowResultView): string {
+export function connectFlowResultMessage(result: ConnectFlowResultView, t?: TranslateFn): string {
   if (result.kind === 'failed') return result.error;
   if (result.kind === 'applied') {
-    if (result.refreshFailed) return REFRESH_FAILED_APPLIED;
-    return result.isCurrent ? RESULT_ACTIVE : RESULT_APPLIED;
+    if (result.refreshFailed) return t ? t('connect.result.refreshApplied') : REFRESH_FAILED_APPLIED;
+    return result.isCurrent
+      ? (t ? t('connect.result.active') : RESULT_ACTIVE)
+      : (t ? t('connect.result.applied') : RESULT_APPLIED);
   }
-  if (result.refreshFailed) return REFRESH_FAILED_SWITCHED;
-  return RESULT_SWITCHED;
+  if (result.refreshFailed) return t ? t('connect.result.refreshSwitched') : REFRESH_FAILED_SWITCHED;
+  return t ? t('connect.result.switched') : RESULT_SWITCHED;
 }
 
 export interface PlanPreviewView {
@@ -499,11 +503,11 @@ function reusePathForPlan(plan: AdapterApplyPlan): AdapterReusePath {
   return 'api_endpoint';
 }
 
-function titleForReusePath(reusePath: AdapterReusePath): string {
-  if (reusePath === 'local_bridge') return '本机路由';
-  if (reusePath === 'api_endpoint') return '直连';
-  if (reusePath === 'native_subscription') return '用这份登录';
-  return '当前不支持';
+function titleForReusePath(reusePath: AdapterReusePath, t?: TranslateFn): string {
+  if (reusePath === 'local_bridge') return t ? t('kind.route.localRoute') : '本机路由';
+  if (reusePath === 'api_endpoint') return t ? t('kind.route.direct') : '直连';
+  if (reusePath === 'native_subscription') return t ? t('kind.route.reuseLogin') : '用这份登录';
+  return t ? t('kind.route.unsupported') : '当前不支持';
 }
 
 function endReasonWithFullStop(reason: string): string {
@@ -515,30 +519,34 @@ function localTargetLabels(targetAgentId: string): { display: string; short: str
   return { display: targetAgentId, short: targetAgentId };
 }
 
-function sourceHintFromReason(reason: string): string {
-  if (reason.includes('Grok')) return 'Grok 登录';
-  if (reason.includes('Codex')) return 'Codex / ChatGPT 登录';
-  return '登录';
+function sourceHintFromReason(reason: string, t?: TranslateFn): string {
+  if (reason.includes('Grok')) return t ? t('connect.preview.sourceGrok') : 'Grok 登录';
+  if (reason.includes('Codex')) return t ? t('connect.preview.sourceCodex') : 'Codex / ChatGPT 登录';
+  return t ? t('connect.preview.sourceLogin') : '登录';
 }
 
-function notesForReusePath(reusePath: AdapterReusePath): string[] {
-  if (reusePath === 'local_bridge') return ['关掉会进托盘，路由继续跑。'];
-  if (reusePath === 'api_endpoint') return ['会把这份连接写进目标 Agent。'];
-  if (reusePath === 'native_subscription') return ['会把这份官方登录写进目标 Agent。'];
+function notesForReusePath(reusePath: AdapterReusePath, t?: TranslateFn): string[] {
+  if (reusePath === 'local_bridge') return [t ? t('connect.preview.noteLocalRoute') : '关掉会进托盘，路由继续跑。'];
+  if (reusePath === 'api_endpoint') return [t ? t('connect.preview.noteDirect') : '会把这份连接写进目标 Agent。'];
+  if (reusePath === 'native_subscription') return [t ? t('connect.preview.noteReuse') : '会把这份官方登录写进目标 Agent。'];
   return [];
 }
 
-export function describePlanPreview(plan: AdapterApplyPlan): PlanPreviewView {
+export function describePlanPreview(plan: AdapterApplyPlan, t?: TranslateFn): PlanPreviewView {
   const reusePath = reusePathForPlan(plan);
   const analysisReason = plan.analysis.reason || plan.reason || '';
+  const sourceHint = sourceHintFromReason(analysisReason, t);
+  const display = localTargetLabels(plan.targetAgentId).display;
   const reason = reusePath === 'local_bridge'
-    ? `用这份 ${sourceHintFromReason(analysisReason)}接到 ${localTargetLabels(plan.targetAgentId).display}。`
+    ? (t
+      ? t('connect.preview.localReason', { source: sourceHint, target: display })
+      : `用这份 ${sourceHint}接到 ${display}。`)
     : endReasonWithFullStop(analysisReason);
   return {
-    title: titleForReusePath(reusePath),
+    title: titleForReusePath(reusePath, t),
     experimental: plan.analysis.support === 'experimental',
     reason,
-    notes: notesForReusePath(reusePath),
+    notes: notesForReusePath(reusePath, t),
   };
 }
 
@@ -594,26 +602,33 @@ export interface EmptyKindInput {
   eligibilities: ReadonlyMap<string, PlanEligibility>;
   entry: ConnectFlowEntry;
   visibleTargetAgentIds?: readonly AgentId[];
+  t?: TranslateFn;
 }
 
-function poolFailureMessage(errors: { accounts?: unknown; providers?: unknown }, profilesError?: unknown): string {
+function poolFailureMessage(
+  errors: { accounts?: unknown; providers?: unknown },
+  profilesError?: unknown,
+  t?: TranslateFn,
+): string {
   const parts: string[] = [];
-  if (errors.accounts) parts.push('账户');
-  if (errors.providers) parts.push('供应商');
-  if (profilesError) parts.push('绑定档案');
-  if (parts.length === 0) return '部分资源加载失败';
-  return `部分资源加载失败：${parts.join('、')}。请重试，勿将缺失数据当作空列表。`;
+  if (errors.accounts) parts.push(t ? t('connect.result.partAccounts') : '账户');
+  if (errors.providers) parts.push(t ? t('connect.result.partProviders') : '供应商');
+  if (profilesError) parts.push(t ? t('connect.result.partProfiles') : '绑定档案');
+  if (parts.length === 0) return t ? t('connect.result.poolPartial') : '部分资源加载失败';
+  return t
+    ? t('connect.result.poolPartialParts', { parts: parts.join('、') })
+    : `部分资源加载失败：${parts.join('、')}。请重试，勿将缺失数据当作空列表。`;
 }
 
 export function resolveEmptyKind(input: EmptyKindInput): ConnectFlowEmptyKind {
-  const preset = resolvePreset(input.entry, input.accounts, input.providers);
+  const preset = resolvePreset(input.entry, input.accounts, input.providers, input.t);
   const poolBroken = input.poolState === 'error' || input.poolState === 'partial'
     || Boolean(input.poolErrors.accounts)
     || Boolean(input.poolErrors.providers)
     || Boolean(input.profilesError);
 
   if (poolBroken) {
-    return { kind: 'partial_load_error', message: poolFailureMessage(input.poolErrors, input.profilesError) };
+    return { kind: 'partial_load_error', message: poolFailureMessage(input.poolErrors, input.profilesError, input.t) };
   }
 
   if (preset.status === 'invalid') {
@@ -629,7 +644,10 @@ export function resolveEmptyKind(input: EmptyKindInput): ConnectFlowEmptyKind {
     && input.profiles
     && isGeneratedAdapterSource(input.entry.source, input.profiles)
   ) {
-    return { kind: 'preset_invalid', message: GENERATED_SOURCE_REUSE_MESSAGE };
+    return {
+      kind: 'preset_invalid',
+      message: input.t ? input.t('connect.result.generatedReuse') : GENERATED_SOURCE_REUSE_MESSAGE,
+    };
   }
 
   if (input.poolState !== 'ready') {
@@ -697,8 +715,9 @@ export async function settleConfirm(input: {
   startedGeneration: number;
   deps: Pick<ConnectFlowDeps, 'apply' | 'switchNative'>;
   option: SourceOption | null;
+  t?: TranslateFn;
 }): Promise<SettleConfirmResult> {
-  const { state, startedGeneration, deps, option } = input;
+  const { state, startedGeneration, deps, option, t } = input;
 
   if (state.busy === 'applying') {
     if (
@@ -718,7 +737,7 @@ export async function settleConfirm(input: {
       return { event: { type: 'apply_succeeded', generation: startedGeneration, result }, called: 'apply' };
     } catch (error) {
       return {
-        event: { type: 'apply_failed', generation: startedGeneration, error: formatConnectFlowError(error) },
+        event: { type: 'apply_failed', generation: startedGeneration, error: formatConnectFlowError(error, t) },
         called: 'apply',
       };
     }
@@ -726,7 +745,10 @@ export async function settleConfirm(input: {
 
   if (state.busy === 'switching') {
     if (!option || option.state.kind !== 'switchable') {
-      return { event: { type: 'switch_failed', error: '当前项不可切换' }, called: null };
+      return {
+        event: { type: 'switch_failed', error: t ? t('connect.result.cannotSwitch') : '当前项不可切换' },
+        called: null,
+      };
     }
     try {
       await deps.switchNative(option);
@@ -735,7 +757,7 @@ export async function settleConfirm(input: {
         called: 'switch',
       };
     } catch (error) {
-      return { event: { type: 'switch_failed', error: formatConnectFlowError(error) }, called: 'switch' };
+      return { event: { type: 'switch_failed', error: formatConnectFlowError(error, t) }, called: 'switch' };
     }
   }
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { AgentDot } from '@/components/shared/AgentDot';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import {
   ColumnResizeHandle,
@@ -19,6 +20,7 @@ import {
 } from '@/components/ui/table';
 import { Tip } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
+import type { MessageKey } from '@/lib/i18n';
 import type { UsageRecord } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -35,18 +37,28 @@ type ColumnKey =
   | 'session';
 
 const COLUMNS: (ColumnWidthSpec<ColumnKey> & {
-  label: string;
   align: 'left' | 'right';
 })[] = [
-  { key: 'timestamp', label: '时间', align: 'left', defaultWidth: 120, minWidth: 88 },
-  { key: 'agent', label: 'Agent', align: 'left', defaultWidth: 110, minWidth: 80 },
-  { key: 'model', label: '模型', align: 'left', defaultWidth: 160, minWidth: 96 },
-  { key: 'input', label: '输入', align: 'right', defaultWidth: 96, minWidth: 72 },
-  { key: 'output', label: '输出', align: 'right', defaultWidth: 96, minWidth: 72 },
-  { key: 'cacheRead', label: '缓存读', align: 'right', defaultWidth: 96, minWidth: 72 },
-  { key: 'cost', label: '成本', align: 'right', defaultWidth: 88, minWidth: 64 },
-  { key: 'session', label: '会话', align: 'left', defaultWidth: 180, minWidth: 96 },
+  { key: 'timestamp', align: 'left', defaultWidth: 120, minWidth: 88 },
+  { key: 'agent', align: 'left', defaultWidth: 110, minWidth: 80 },
+  { key: 'model', align: 'left', defaultWidth: 160, minWidth: 96 },
+  { key: 'input', align: 'right', defaultWidth: 96, minWidth: 72 },
+  { key: 'output', align: 'right', defaultWidth: 96, minWidth: 72 },
+  { key: 'cacheRead', align: 'right', defaultWidth: 96, minWidth: 72 },
+  { key: 'cost', align: 'right', defaultWidth: 88, minWidth: 64 },
+  { key: 'session', align: 'left', defaultWidth: 180, minWidth: 96 },
 ];
+
+const COLUMN_LABEL_KEYS: Record<ColumnKey, MessageKey> = {
+  timestamp: 'dashboard.table.timestamp',
+  agent: 'dashboard.table.agent',
+  model: 'dashboard.table.model',
+  input: 'dashboard.table.input',
+  output: 'dashboard.table.output',
+  cacheRead: 'dashboard.table.cacheRead',
+  cost: 'dashboard.table.cost',
+  session: 'dashboard.table.session',
+};
 
 const WIDTH_SPECS: ColumnWidthSpec<ColumnKey>[] = COLUMNS.map(
   ({ key, defaultWidth, minWidth }) => ({ key, defaultWidth, minWidth }),
@@ -77,6 +89,7 @@ export function buildPageItems(current: number, total: number): Array<number | '
 }
 
 export function UsageDetailsTable({ rows }: { rows: UsageRecord[] }) {
+  const { t } = useI18n();
   const { widths, onResizeStart, totalWidth } = useColumnWidths(WIDTH_SPECS);
   const [page, setPage] = useState(1);
 
@@ -104,11 +117,13 @@ export function UsageDetailsTable({ rows }: { rows: UsageRecord[] }) {
       footer={
         <TableFooterBar>
           <p>
-            共 {total.toLocaleString()} 条
+            {t('dashboard.table.total', { n: total.toLocaleString() })}
             {total > 0 && (
               <>
-                ，第 {safePage}/{totalPages} 页
-                <span className="text-muted/80">（每页 {PAGE_SIZE} 条）</span>
+                {t('dashboard.table.page', { page: safePage, pages: totalPages })}
+                <span className="text-muted/80">
+                  {t('dashboard.table.pageSize', { n: PAGE_SIZE })}
+                </span>
               </>
             )}
           </p>
@@ -120,7 +135,7 @@ export function UsageDetailsTable({ rows }: { rows: UsageRecord[] }) {
                 variant="outline"
                 size="sm"
                 disabled={safePage <= 1}
-                aria-label="上一页"
+                aria-label={t('dashboard.table.prevPage')}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
@@ -136,7 +151,7 @@ export function UsageDetailsTable({ rows }: { rows: UsageRecord[] }) {
                     type="button"
                     variant={item === safePage ? 'default' : 'outline'}
                     size="sm"
-                    aria-label={`第 ${item} 页`}
+                    aria-label={t('dashboard.table.pageN', { n: item })}
                     aria-current={item === safePage ? 'page' : undefined}
                     className="min-w-7 px-2"
                     onClick={() => setPage(item)}
@@ -150,7 +165,7 @@ export function UsageDetailsTable({ rows }: { rows: UsageRecord[] }) {
                 variant="outline"
                 size="sm"
                 disabled={safePage >= totalPages}
-                aria-label="下一页"
+                aria-label={t('dashboard.table.nextPage')}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               >
                 <ChevronRight className="h-3.5 w-3.5" />
@@ -168,19 +183,22 @@ export function UsageDetailsTable({ rows }: { rows: UsageRecord[] }) {
         </colgroup>
         <TableHeader>
           <TableHeaderRow>
-            {COLUMNS.map((c) => (
-              <TableHead
-                key={c.key}
-                className={cn('relative select-none', c.align === 'right' && 'text-right')}
-              >
-                {c.label}
-                <ColumnResizeHandle
-                  columnKey={c.key}
-                  label={c.label}
-                  onResizeStart={onResizeStart}
-                />
-              </TableHead>
-            ))}
+            {COLUMNS.map((c) => {
+              const label = t(COLUMN_LABEL_KEYS[c.key]);
+              return (
+                <TableHead
+                  key={c.key}
+                  className={cn('relative select-none', c.align === 'right' && 'text-right')}
+                >
+                  {label}
+                  <ColumnResizeHandle
+                    columnKey={c.key}
+                    label={label}
+                    onResizeStart={onResizeStart}
+                  />
+                </TableHead>
+              );
+            })}
           </TableHeaderRow>
         </TableHeader>
         <TableBody>

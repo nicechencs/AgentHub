@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Notice } from '@/components/shared/Notice';
 import { Tip } from '@/components/ui/tooltip';
 import {
@@ -83,6 +84,7 @@ export function OAuthFlowDialog({
   onOpenChange: (v: boolean) => void;
   onCompleted: (acc: Account) => void;
 }) {
+  const { t } = useI18n();
   const { toast } = useToast();
   const [step, setStep] = React.useState<Step>('check');
   const [countdown, setCountdown] = React.useState(120);
@@ -193,7 +195,7 @@ export function OAuthFlowDialog({
       setRedirectUri(start.redirectUri);
       if (!start.browserOpened) {
         toast({
-          title: '请手动打开授权页',
+          title: t('connect.oauth.openAuthPage'),
           description: start.authorizeUrl,
         });
         void openExternalLink(start.authorizeUrl).catch(() => {});
@@ -201,7 +203,7 @@ export function OAuthFlowDialog({
       const wait = await waitOAuth(start.state, 120);
       if (!isCurrent()) return;
       if (wait.status === 'failed') {
-        setErrorMsg(wait.error ?? '授权失败');
+        setErrorMsg(wait.error ?? t('connect.oauth.authFailed'));
         setStep('error');
         return;
       }
@@ -249,7 +251,7 @@ export function OAuthFlowDialog({
           return;
         }
         if (poll.status === 'failed' || poll.status === 'expired') {
-          setErrorMsg(poll.error ?? '设备码授权失败');
+          setErrorMsg(poll.error ?? t('connect.oauth.deviceFailed'));
           setStep('error');
           return;
         }
@@ -258,7 +260,7 @@ export function OAuthFlowDialog({
         if (poll.status === 'completing') continue;
       }
       if (isCurrent()) {
-        setErrorMsg('设备码授权超时');
+        setErrorMsg(t('connect.oauth.deviceTimeout'));
         setStep('error');
       }
     } catch (e) {
@@ -283,7 +285,7 @@ export function OAuthFlowDialog({
         await openManualCallbackFallbackIfCurrent(url, isCurrent).catch(() => {});
       }
       if (!isCurrent()) return;
-      toast({ title: '已提交回调，若仍等待请确认 URL 含 code 与 state' });
+      toast({ title: t('connect.oauth.submittedCallback') });
     } finally {
       if (isCurrent()) setSubmittingManual(false);
     }
@@ -292,41 +294,41 @@ export function OAuthFlowDialog({
   const copyAuthorizeUrl = () => {
     if (!authorizeUrl) return;
     navigator.clipboard.writeText(authorizeUrl).catch(() => {});
-    toast({ title: '授权链接已复制' });
+    toast({ title: t('connect.oauth.copiedLink') });
   };
 
   const copyUserCode = () => {
     if (!deviceInfo?.userCode) return;
     navigator.clipboard.writeText(deviceInfo.userCode).catch(() => {});
-    toast({ title: '设备码已复制' });
+    toast({ title: t('connect.oauth.copiedCode') });
   };
 
   const mm = String(Math.floor(countdown / 60));
   const ss = String(countdown % 60).padStart(2, '0');
+  const title = selected
+    ? t('connect.oauth.titleWithProvider', { name: meta.name, provider: selected.label })
+    : t('connect.oauth.title', { name: meta.name });
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            OAuth 登录 — {meta.name}
-            {selected ? ` · ${selected.label}` : ''}
-          </DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
         {step === 'check' && (
           <div className="flex flex-col items-center gap-3 py-8 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
-            <p className="text-sm text-secondary">检查 OAuth 支持…</p>
+            <p className="text-sm text-secondary">{t('connect.oauth.checking')}</p>
           </div>
         )}
 
         {step === 'unavailable' && (
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <AlertCircle className="h-10 w-10 text-warning" />
-            <p className="text-sm font-medium text-primary">OAuth 授权尚未配置</p>
+            <p className="text-sm font-medium text-primary">{t('connect.oauth.unavailableTitle')}</p>
             <p className="text-xs text-secondary">
-              该 Agent 暂未接入 OAuth。请改用「导入当前账号」或「添加 API Key」。
+              {t('connect.oauth.unavailableDesc')}
             </p>
           </div>
         )}
@@ -334,8 +336,7 @@ export function OAuthFlowDialog({
         {step === 'pick' && (
           <div className="flex flex-col gap-3 py-2">
             <p className="text-sm text-secondary">
-              Pi 支持多家上游 OAuth。请选择要登录的提供商；凭据将写入{' '}
-              <span className="font-mono text-xs">~/.pi/agent/auth.json</span>。
+              {t('connect.oauth.pickHint', { path: '~/.pi/agent/auth.json' })}
             </p>
             <div className="flex flex-col gap-2">
               {options.map((opt) => (
@@ -351,7 +352,7 @@ export function OAuthFlowDialog({
                   <div className="text-sm font-medium text-primary">{opt.label}</div>
                   <div className="mt-0.5 text-xs text-muted">{opt.description}</div>
                   <div className="mt-1 font-mono text-meta text-muted">
-                    {opt.flow === 'deviceCode' ? '设备码' : '浏览器登录'}
+                    {opt.flow === 'deviceCode' ? t('connect.oauth.flowDevice') : t('connect.oauth.flowBrowser')}
                     {opt.authJsonKey ? ` · ${opt.authJsonKey}` : ''}
                   </div>
                 </button>
@@ -364,16 +365,15 @@ export function OAuthFlowDialog({
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <ExternalLink className="h-8 w-8 text-accent" />
             <p className="text-sm text-secondary">
-              将在系统浏览器中打开 {selected?.label ?? meta.name} 授权页面，请完成登录授权。
-              授权完成后会回到这台电脑。
+              {t('connect.oauth.browserHint', { name: selected?.label ?? meta.name })}
             </p>
             {options.length > 1 ? (
               <Button variant="ghost" size="sm" onClick={() => setStep('pick')}>
-                重选提供商
+                {t('connect.oauth.reselect')}
               </Button>
             ) : null}
             <Button onClick={() => void startPkceFlow()}>
-              <ExternalLink className="h-4 w-4" /> 打开浏览器授权
+              <ExternalLink className="h-4 w-4" /> {t('connect.oauth.openBrowser')}
             </Button>
           </div>
         )}
@@ -384,21 +384,21 @@ export function OAuthFlowDialog({
               <>
                 <ExternalLink className="h-8 w-8 text-accent" />
                 <p className="text-sm text-secondary">
-                  {selected?.label ?? 'xAI'} 使用设备码登录：打开验证页并输入显示的代码。
+                  {t('connect.oauth.deviceHint', { name: selected?.label ?? 'xAI' })}
                 </p>
                 {options.length > 1 ? (
                   <Button variant="ghost" size="sm" onClick={() => setStep('pick')}>
-                    重选提供商
+                    {t('connect.oauth.reselect')}
                   </Button>
                 ) : null}
-                <Button onClick={() => void startDeviceFlow()}>开始设备码登录</Button>
+                <Button onClick={() => void startDeviceFlow()}>{t('connect.oauth.startDevice')}</Button>
               </>
             ) : (
               <>
                 <Loader2 className="h-8 w-8 animate-spin text-accent" />
-                <p className="text-sm text-secondary">等待在浏览器中完成设备授权…</p>
+                <p className="text-sm text-secondary">{t('connect.oauth.waitingDevice')}</p>
                 <Card variant="plain" className="w-full bg-canvas px-4 py-3 text-left">
-                  <p className="text-xs text-muted">设备码</p>
+                  <p className="text-xs text-muted">{t('connect.oauth.deviceCode')}</p>
                   <p className="font-mono text-title tracking-widest text-primary">
                     {deviceInfo.userCode}
                   </p>
@@ -411,7 +411,7 @@ export function OAuthFlowDialog({
                 </p>
                 <div className="flex flex-wrap justify-center gap-2">
                   <Button size="sm" variant="outline" onClick={copyUserCode}>
-                    <Copy className="h-3.5 w-3.5" /> 复制设备码
+                    <Copy className="h-3.5 w-3.5" /> {t('connect.oauth.copyDeviceCode')}
                   </Button>
                   <Button
                     size="sm"
@@ -422,7 +422,7 @@ export function OAuthFlowDialog({
                       void openExternalLink(url).catch(() => {});
                     }}
                   >
-                    <ExternalLink className="h-3.5 w-3.5" /> 打开验证页
+                    <ExternalLink className="h-3.5 w-3.5" /> {t('connect.oauth.openVerify')}
                   </Button>
                 </div>
               </>
@@ -433,7 +433,7 @@ export function OAuthFlowDialog({
         {step === 'waiting' && (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
-            <p className="text-sm text-secondary">等待浏览器回调…</p>
+            <p className="text-sm text-secondary">{t('connect.oauth.waitingCallback')}</p>
             <p className="font-mono text-title tabular-nums text-primary">
               {mm}:{ss}
             </p>
@@ -448,10 +448,10 @@ export function OAuthFlowDialog({
 
             <div className="w-full space-y-2 text-left">
               <Notice tone="info">
-                若浏览器未自动回调，可复制授权链接手动打开，或把最终跳转的本地回调 URL 粘贴到下方。
+                {t('connect.oauth.waitingNotice')}
                 {redirectUri ? (
                   <span className="mt-1 block font-mono text-meta text-muted">
-                    期望回调前缀：{redirectUri}
+                    {t('connect.oauth.expectedPrefix', { uri: redirectUri })}
                   </span>
                 ) : null}
               </Notice>
@@ -462,7 +462,7 @@ export function OAuthFlowDialog({
                   disabled={!authorizeUrl}
                   onClick={copyAuthorizeUrl}
                 >
-                  <Copy className="h-3.5 w-3.5" /> 复制授权链接
+                  <Copy className="h-3.5 w-3.5" /> {t('connect.oauth.copyAuthLink')}
                 </Button>
                 <Button
                   size="sm"
@@ -474,18 +474,18 @@ export function OAuthFlowDialog({
                     void openExternalLink(authorizeUrl).catch((e) => {
                       if (!isOAuthFlowTokenCurrent(flowTokenRef.current, token)) return;
                       toast({
-                        title: '无法打开授权页',
+                        title: t('connect.oauth.cannotOpen'),
                         description: e instanceof Error ? e.message : String(e),
                         variant: 'danger',
                       });
                     });
                   }}
                 >
-                  <ExternalLink className="h-3.5 w-3.5" /> 重新打开授权页
+                  <ExternalLink className="h-3.5 w-3.5" /> {t('connect.oauth.reopenAuth')}
                 </Button>
               </div>
               <Card variant="plain" className="bg-canvas p-3">
-                <p className="mb-2 text-xs text-muted">手动粘贴回调 URL</p>
+                <p className="mb-2 text-xs text-muted">{t('connect.oauth.pasteCallback')}</p>
                 <div className="flex gap-2">
                   <Input
                     value={manualUrl}
@@ -499,7 +499,7 @@ export function OAuthFlowDialog({
                     disabled={submittingManual || !manualUrl.includes('code=')}
                     onClick={() => void submitManualCallback()}
                   >
-                    {submittingManual ? '提交中…' : '提交'}
+                    {submittingManual ? t('connect.oauth.submitting') : t('connect.oauth.submit')}
                   </Button>
                 </div>
               </Card>
@@ -510,8 +510,8 @@ export function OAuthFlowDialog({
         {step === 'error' && (
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <AlertCircle className="h-10 w-10 text-danger" />
-            <p className="text-sm font-medium text-primary">授权失败</p>
-            <p className="text-xs text-secondary">{errorMsg ?? '未知错误'}</p>
+            <p className="text-sm font-medium text-primary">{t('connect.oauth.failedTitle')}</p>
+            <p className="text-xs text-secondary">{errorMsg ?? t('connect.oauth.unknownError')}</p>
             <Button
               variant="secondary"
               onClick={() => {
@@ -520,7 +520,7 @@ export function OAuthFlowDialog({
                 else setStep('browser');
               }}
             >
-              重试
+              {t('chrome.error.retry')}
             </Button>
           </div>
         )}
@@ -528,7 +528,7 @@ export function OAuthFlowDialog({
         {step === 'done' && account && (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <CheckCircle2 className="h-10 w-10 text-success" />
-            <p className="text-sm font-medium">授权成功</p>
+            <p className="text-sm font-medium">{t('connect.oauth.success')}</p>
             <Card variant="plain" className="bg-canvas px-6 py-3">
               <p className="text-sm">{account.email ?? account.label}</p>
               {account.subscription && (
@@ -540,8 +540,8 @@ export function OAuthFlowDialog({
             </Card>
             <p className="text-xs text-muted">
               {agentId === 'pi'
-                ? '已写入账号池，并合并到 Pi auth.json'
-                : '账号已写入本地账号池'}
+                ? t('connect.oauth.writtenPi')
+                : t('connect.oauth.writtenPool')}
             </p>
           </div>
         )}
@@ -550,7 +550,7 @@ export function OAuthFlowDialog({
           {step === 'done' && account ? (
             <>
               <Button variant="outline" onClick={() => handleOpenChange(false)}>
-                稍后
+                {t('connect.oauth.later')}
               </Button>
               <Button
                 onClick={() => {
@@ -558,12 +558,14 @@ export function OAuthFlowDialog({
                   handleOpenChange(false);
                 }}
               >
-                立即切换到此账号
+                {t('connect.oauth.switchNow')}
               </Button>
             </>
           ) : (
             <Button variant="outline" onClick={() => handleOpenChange(false)}>
-              {step === 'waiting' || (step === 'device' && deviceInfo) ? '取消等待' : '关闭'}
+              {step === 'waiting' || (step === 'device' && deviceInfo)
+                ? t('connect.oauth.cancelWait')
+                : t('connect.oauth.close')}
             </Button>
           )}
         </DialogFooter>

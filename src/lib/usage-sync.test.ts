@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { createTranslator } from '@/lib/i18n';
 import {
   buildUsageSyncStatusLine,
   computeAutoRetryAt,
@@ -120,5 +121,36 @@ describe('status labels', () => {
     expect(countdown).toContain('自动同步');
     expect(countdown).not.toContain('上次同步');
     expect(countdown).not.toContain('尚未同步');
+  });
+});
+
+describe('status labels with translator', () => {
+  it('uses en copy when t is passed', () => {
+    const t = createTranslator('en');
+    const now = 1_000_000;
+    expect(formatDurationShort(5_000, t)).toBe('5s');
+    expect(formatDurationShort(65_000, t)).toBe('1m 5s');
+    expect(formatLastCollectLabel(null, now, t)).toBe('Not synced yet');
+    expect(formatNextCollectLabel(null, 0, now, t)).toBe('Manual collect only');
+    expect(
+      buildUsageSyncStatusLine({
+        lastCollectAt: null,
+        nextCollectAt: null,
+        intervalMin: 0,
+        collecting: true,
+        now,
+        t,
+      }),
+    ).toBe('Syncing usage…');
+    expect(
+      buildUsageSyncStatusLine({
+        lastCollectAt: null,
+        nextCollectAt: null,
+        intervalMin: 0,
+        collecting: false,
+        now,
+        t,
+      }),
+    ).toBe('Manual collect only');
   });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createTranslator } from '@/lib/i18n';
 
 import { AGENTS, type AgentMeta } from '@/config/agents';
 import type { AgentId, AgentStatus, AuthStatus } from '@/lib/types';
@@ -468,5 +469,17 @@ describe('stopped route status dot', () => {
     const view = buildAgentCardView(claude, status('claude'), { bridge: { state: 'running' } });
     expect(view.authStatus).toBe('valid');
     expect(view.bridge?.label).toBe('运行中');
+  });
+});
+
+describe('agent overview with translator', () => {
+  it('uses locale copy for summary and missing card', () => {
+    const t = createTranslator('en');
+    const s = summarizeAgentOverview(METAS, [status('claude')], t);
+    expect(s.summaryText).toContain('ready');
+    expect(s.summaryText).not.toContain('就绪');
+    const view = buildAgentCardView(meta('claude', 'Claude Code'), status('claude', { installed: false }), null, t);
+    expect(view.metaText).toBe('Not installed · click to install');
+    expect(view.ariaLabel).toContain('not installed');
   });
 });

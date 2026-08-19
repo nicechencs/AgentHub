@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Notice } from '@/components/shared/Notice';
 import type { SwitchPreview } from '@/lib/types';
 import type { ConnectFlowDeps, SourceOption } from '@/lib/connect-flow/types';
@@ -7,11 +8,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   describePlanPreview,
   formatConnectFlowError,
-  PREVIEW_SELECTION_STALE_MESSAGE,
   type ConnectFlowState,
 } from './connect-flow-state';
 
 function SwitchPreviewFacts({ preview }: { preview: SwitchPreview }) {
+  const { t } = useI18n();
   return (
     <div className="flex flex-col gap-2.5 text-sm">
       <div className="flex items-start gap-2">
@@ -21,7 +22,7 @@ function SwitchPreviewFacts({ preview }: { preview: SwitchPreview }) {
       <div className="flex items-start gap-2">
         <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
         <span className="text-secondary">
-          切换前备份到 <code className="font-mono text-xs">{preview.backupPath}</code>
+          {t('connect.preview.backupTo', { path: preview.backupPath })}
         </span>
       </div>
       {preview.processWarning ? (
@@ -45,6 +46,7 @@ function SwitchNativePreview({
   lastError: string | null;
   previewNative?: ConnectFlowDeps['previewNative'];
 }) {
+  const { t } = useI18n();
   const label = option?.label ?? fallbackLabel;
   const shouldFetch = Boolean(option?.ref.kind === 'provider' && previewNative);
   const [phase, setPhase] = React.useState<'idle' | 'loading' | 'ready' | 'error'>(
@@ -72,26 +74,29 @@ function SwitchNativePreview({
       },
       (error: unknown) => {
         if (cancelled) return;
-        setPreviewError(formatConnectFlowError(error));
+        setPreviewError(formatConnectFlowError(error, t));
         setPhase('error');
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [shouldFetch, option, previewNative]);
+  }, [shouldFetch, option, previewNative, t]);
 
   const nativeHint = (
-    <p className="text-xs text-secondary">将走本 Agent 既有切换，不会创建跨服务绑定。</p>
+    <p className="text-xs text-secondary">{t('connect.preview.nativeHint')}</p>
+  );
+  const switchPrompt = (
+    <p>{t('connect.preview.switchTo', { label: label ?? '' })}</p>
   );
 
   if (phase === 'loading') {
     return (
       <div className="space-y-2 text-sm">
-        <p>切换到「{label}」？</p>
+        {switchPrompt}
         <Skeleton className="h-4 w-full" />
         <Skeleton className="h-4 w-3/4" />
-        <p className="text-xs text-muted">正在预览…</p>
+        <p className="text-xs text-muted">{t('connect.preview.previewing')}</p>
         {nativeHint}
       </div>
     );
@@ -100,7 +105,7 @@ function SwitchNativePreview({
   if (phase === 'error') {
     return (
       <div className="space-y-2 text-sm">
-        <p>切换到「{label}」？</p>
+        {switchPrompt}
         <Notice tone="danger">{previewError}</Notice>
         {nativeHint}
       </div>
@@ -109,7 +114,7 @@ function SwitchNativePreview({
 
   return (
     <div className="space-y-2 text-sm">
-      <p>切换到「{label}」？</p>
+      {switchPrompt}
       {preview ? <SwitchPreviewFacts preview={preview} /> : null}
       {nativeHint}
       {lastError ? <Notice tone="danger">{lastError}</Notice> : null}
@@ -132,8 +137,9 @@ export function ConnectFlowPreviewStep({
   onGoImport: () => void;
   showImportHint: boolean;
 }) {
+  const { t } = useI18n();
   if (previewInvalid) {
-    return <Notice tone="warning">{PREVIEW_SELECTION_STALE_MESSAGE}</Notice>;
+    return <Notice tone="warning">{t('connect.preview.stale')}</Notice>;
   }
 
   if (state.previewKind === 'switch') {
@@ -148,10 +154,10 @@ export function ConnectFlowPreviewStep({
   }
 
   if (!state.boundPlan) {
-    return <Notice tone="warning">没有可应用的预览，请返回重新选择。</Notice>;
+    return <Notice tone="warning">{t('connect.preview.noPlan')}</Notice>;
   }
 
-  const view = describePlanPreview(state.boundPlan.plan);
+  const view = describePlanPreview(state.boundPlan.plan, t);
   return (
     <div className="space-y-3 text-sm">
       <div>
@@ -168,9 +174,9 @@ export function ConnectFlowPreviewStep({
       {state.lastError ? <Notice tone="danger">{state.lastError}</Notice> : null}
       {showImportHint ? (
         <p className="text-xs text-muted">
-          若来源尚未登录，请先在官方 CLI 完成登录再{' '}
-          <button type="button" className="underline" onClick={onGoImport}>去 Connections 导入</button>
-          。
+          {t('connect.preview.importHintBefore')}
+          <button type="button" className="underline" onClick={onGoImport}>{t('connect.preview.importHintLink')}</button>
+          {t('connect.preview.importHintAfter')}
         </p>
       ) : null}
     </div>

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createTranslator } from '@/lib/i18n';
 import { agentDisplayName } from '@/config/agents';
 import type { Account, Provider } from '@/lib/types';
 import type { TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
@@ -27,6 +28,8 @@ import {
   searchTickets,
   ticketBindingStatus,
   ticketDetailEditLabel,
+  ticketWalletFilterLabel,
+  ticketCredentialClassChipLabel,
 } from './ticket-wallet-model';
 
 function sampleWallet(): TicketWallet {
@@ -588,5 +591,20 @@ describe('filter change after add-dialog leftover', () => {
       extrasFromPoolSource(wallet.tickets[2]!, { account: undefined, provider: undefined }),
     ).not.toThrow();
     expect(() => buildTicketDetailFields(wallet.tickets[2]!)).not.toThrow();
+  });
+});
+
+describe('ticket wallet labels with translator', () => {
+  it('uses kind / connections copy', () => {
+    const t = createTranslator('en');
+    expect(ticketWalletFilterLabel('all', t)).toBe('All');
+    expect(ticketWalletFilterLabel('oauth', t)).toBe('Official login');
+    expect(ticketCredentialClassChipLabel('api_key', t)).toBe('API Key');
+    const wallet = sampleWallet();
+    const rows = buildTicketWalletRows(wallet, { t });
+    const kimi = rows.find((r) => r.ticket.id === 'provider:kimi-1');
+    expect(kimi?.usageText).toContain('Rewrite config');
+    expect(kimi?.usageText).toContain('Local route');
+    expect(kimi?.usageText).not.toContain('改配置');
   });
 });

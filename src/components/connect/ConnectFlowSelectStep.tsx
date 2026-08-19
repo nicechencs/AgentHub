@@ -3,17 +3,14 @@ import { AgentDot } from '@/components/shared/AgentDot';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { CurrentBadge } from '@/components/shared/CurrentBadge';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { ListRow } from '@/components/shared/ListRow';
 import { Notice } from '@/components/shared/Notice';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { agentDisplayName } from '@/config/agents';
-import { planMaturityLabel } from '@/lib/connect-flow/eligibility';
-import {
-  AGENT_ALL_INFEASIBLE_MESSAGE,
-  SOURCE_ALL_INFEASIBLE_MESSAGE,
-} from '@/lib/connect-flow/reuse-offer';
+import { planMaturityLabel, planRouteSummary } from '@/lib/connect-flow/eligibility';
 import type { AgentId } from '@/lib/types';
 import type {
   ConnectFlowEntry,
@@ -40,10 +37,11 @@ export function EffectiveSummary({
   label: string;
   authLabel: string;
 }) {
+  const { t } = useI18n();
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       <AgentDot agentId={agentId} size="sm" title={null} />
-      <span>当前生效：{label}</span>
+      <span>{t('connect.dialog.currentEffective', { label })}</span>
       <Badge variant="default">{authLabel}</Badge>
     </span>
   );
@@ -58,6 +56,7 @@ export function FixedSourceSummary({
   accounts: { id: string; label: string; agentId: AgentId }[];
   providers: { id: string; name: string; agentId: AgentId }[];
 }) {
+  const { t } = useI18n();
   const record = entry.source.kind === 'account'
     ? accounts.find((item) => item.id === entry.source.id)
     : providers.find((item) => item.id === entry.source.id);
@@ -68,7 +67,7 @@ export function FixedSourceSummary({
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       {agentId ? <AgentDot agentId={agentId} size="sm" title={null} /> : null}
-      <span>将「{label}」接到其他 Agent</span>
+      <span>{t('connect.dialog.attachToOthers', { label })}</span>
     </span>
   );
 }
@@ -118,10 +117,11 @@ export function ConnectFlowSelectStep({
   onGoNewKey: () => void;
   onOauthGuide: (agentId: AgentId) => void;
 }) {
+  const { t } = useI18n();
   if (emptyKind.kind === 'partial_load_error') {
     return (
       <div className="space-y-3">
-        <Notice tone="danger" actionLabel="重试" onAction={onRetryResources}>
+        <Notice tone="danger" actionLabel={t('chrome.error.retry')} onAction={onRetryResources}>
           {emptyKind.message}
         </Notice>
         {entry.mode === 'for-agent' && options.length > 0 ? (
@@ -158,11 +158,11 @@ export function ConnectFlowSelectStep({
     return (
       <EmptyState
         icon={Wallet}
-        title="还没有凭据"
-        description="先到 Connections 添加登录态或 API Key，再回来连接 Agent。"
+        title={t('connect.select.emptyTitle')}
+        description={t('connect.select.emptyDesc')}
         action={
           <Button size="sm" variant="outline" className="mt-2" onClick={onGoImport}>
-            去 Connections 添加
+            {t('connect.select.emptyAction')}
           </Button>
         }
       />
@@ -196,7 +196,9 @@ export function ConnectFlowSelectStep({
 
       {emptyKind.kind === 'all_infeasible' ? (
         <Notice tone="warning">
-          {entry.mode === 'for-source' ? SOURCE_ALL_INFEASIBLE_MESSAGE : AGENT_ALL_INFEASIBLE_MESSAGE}
+          {entry.mode === 'for-source'
+            ? t('connect.select.allInfeasibleSource')
+            : t('connect.select.allInfeasibleAgent')}
         </Notice>
       ) : null}
 
@@ -222,13 +224,14 @@ function SourceGroups({
   onRetryEligibility: (request: { source: SourceOption['ref']; targetAgentId: AgentId }) => void;
   onOauthGuide: (agentId: AgentId) => void;
 }) {
+  const { t } = useI18n();
   const { native, cross } = splitSourceOptions(options);
   return (
     <div className="space-y-4">
       <section className="space-y-2">
-        <h3 className="text-sm font-medium">本 Agent 凭据</h3>
+        <h3 className="text-sm font-medium">{t('connect.select.nativeTitle')}</h3>
         {native.length === 0 ? (
-          <p className="text-xs text-muted">此 Agent 还没有自有凭据。</p>
+          <p className="text-xs text-muted">{t('connect.select.nativeEmpty')}</p>
         ) : native.map((item) => (
           <NativeOptionRow
             key={`${item.ref.kind}:${item.ref.id}`}
@@ -239,9 +242,9 @@ function SourceGroups({
         ))}
       </section>
       <section className="space-y-2">
-        <h3 className="text-sm font-medium">其他服务凭据</h3>
+        <h3 className="text-sm font-medium">{t('connect.select.crossTitle')}</h3>
         {cross.length === 0 ? (
-          <p className="text-xs text-muted">登录列表里暂无其他服务凭据。</p>
+          <p className="text-xs text-muted">{t('connect.select.crossEmpty')}</p>
         ) : cross.map((item) => (
           <CrossOptionRow
             key={`${item.ref.kind}:${item.ref.id}`}
@@ -267,6 +270,7 @@ function NativeOptionRow({
   active: boolean;
   onSelect: (option: SourceOption) => void;
 }) {
+  const { t } = useI18n();
   const disabled = option.state.kind === 'current' || option.state.kind === 'blocked_native';
   return (
     <ListRow
@@ -292,7 +296,7 @@ function NativeOptionRow({
           {option.sublabel ? <p className="truncate text-xs text-muted">{option.sublabel}</p> : null}
           {option.viaAdapter ? (
             <p className="mt-0.5 text-xs text-secondary">
-              经兼容路由 · 来源 {option.viaAdapter.sourceLabel}
+              {t('connect.select.viaSource', { source: option.viaAdapter.sourceLabel })}
             </p>
           ) : null}
           {option.state.kind === 'blocked_native' ? (
@@ -302,7 +306,7 @@ function NativeOptionRow({
         {option.state.kind === 'current' ? (
           <span className="flex items-center gap-1">
             <CurrentBadge />
-            <span className="text-xs text-secondary">当前使用</span>
+            <span className="text-xs text-secondary">{t('connect.select.currentlyUsed')}</span>
           </span>
         ) : null}
       </div>
@@ -382,8 +386,9 @@ function TargetGrid({
   onRetryEligibility: (request: { source: SourceOption['ref']; targetAgentId: AgentId }) => void;
   onOauthGuide: (agentId: AgentId) => void;
 }) {
+  const { t } = useI18n();
   if (targetAgentIds.length === 0) {
-    return <p className="text-sm text-muted">没有可选择的其他 Agent。</p>;
+    return <p className="text-sm text-muted">{t('connect.select.noOtherAgents')}</p>;
   }
   return (
     <div className="grid grid-cols-2 gap-2">
@@ -439,13 +444,14 @@ function EligibilityBody({
   onRetry: () => void;
   onOauthGuide: () => void;
 }) {
+  const { t } = useI18n();
   if (!eligibility || eligibility.kind === 'loading') {
     return <Skeleton className="mt-2 h-3 w-28" />;
   }
   if (eligibility.kind === 'blocked_oauth') {
     return (
       <p className="mt-1 text-xs text-warning">
-        {eligibility.message}{' '}
+        {t('connect.select.oauthIncomplete')}{' '}
         <button
           type="button"
           className="underline"
@@ -454,7 +460,7 @@ function EligibilityBody({
             onOauthGuide();
           }}
         >
-          去 Connections 完成登录
+          {t('connect.select.goLogin')}
         </button>
       </p>
     );
@@ -471,15 +477,16 @@ function EligibilityBody({
             onRetry();
           }}
         >
-          <RefreshCw className="h-3 w-3" /> 重试
+          <RefreshCw className="h-3 w-3" /> {t('chrome.error.retry')}
         </Button>
       </p>
     );
   }
-  const maturity = planMaturityLabel(eligibility.plan.maturity);
+  const maturity = planMaturityLabel(eligibility.plan.maturity, t);
+  const routeTitle = planRouteSummary(eligibility.plan, t);
   const routeLine = maturity
-    ? `${eligibility.routeSummary} · ${maturity}`
-    : eligibility.routeSummary;
+    ? `${routeTitle} · ${maturity}`
+    : routeTitle;
   if (eligibility.canApply) {
     return <p className="mt-1 text-xs text-secondary">{routeLine}</p>;
   }
@@ -493,21 +500,22 @@ function GuideActions({
   onGoImport: () => void;
   onGoNewKey: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <section className="space-y-2 rounded-btn border border-border bg-subtle/60 p-3">
-      <p className="text-xs font-medium text-secondary">其他连接方式</p>
+      <p className="text-xs font-medium text-secondary">{t('connect.select.otherWays')}</p>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" onClick={onGoImport}>
           <Wallet className="h-3.5 w-3.5" />
-          导入已有登录态
+          {t('connect.select.importLogin')}
         </Button>
         <Button size="sm" variant="outline" onClick={onGoNewKey}>
           <KeyRound className="h-3.5 w-3.5" />
-          新 API Key
+          {t('connect.select.newApiKey')}
         </Button>
       </div>
       <p className="text-xs text-muted">
-        未登录请先在对应官方 CLI 完成登录，再返回导入。新 API Key 会跳到 Connections 供应商列表。
+        {t('connect.select.otherWaysHint')}
       </p>
     </section>
   );
