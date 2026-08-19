@@ -8,7 +8,7 @@
 > v1.4：环境条/安装预览按宿主平台分流——macOS/Linux 不展示 PowerShell；native 命令预览 Windows=`irm|iex`、macOS/Linux=`curl|bash`；Runtime 修复默认 Windows=`winget`、macOS=`brew`、Linux=`manual`。  
 > 2026-08-14 Hub Phase 1：推荐入口为 Dashboard「连接/切换」与 Connections「接到…」，统一 `ConnectFlowDialog`。  
 > 2026-08-15：Connections 全局登录列表与真登录「接到…」、Dashboard 当前绑定读模型已落地（见 [connection-binding-model.md](connection-binding-model.md) §5–§6 第 1 步）；ConnectFlow 确认步走 `bind`，本机路由解绑走 `unbind`。用户表面是 **Routes / 本机路由**（`/routes`）；内部模块仍叫 Adapter。下文 §4.1 / §4.3 为目标线框。现行界面说「登录」不说「票/钱包」；预览芯片不再标 ①②③。  
-> 把已有登录接到另一个工具的产品模型仍是三种做法（① 直接改配置 / ② 写进对方认的登录 / ③ 本机转发），见 [product-decisions.md](product-decisions.md)。**现行界面芯片**是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不再标圈号。预览不得把 ①② 写成「需要本机服务」。
+> 把已有登录接到另一个工具的产品模型仍是三种做法：直接改配置 / 写进对方认的登录 / 本机转发，见 [product-decisions.md](product-decisions.md)。**现行界面芯片**是「直连 / 用这份登录 / 本机路由 / 当前不支持」。预览不得把「直接改配置 / 写进对方认的登录」写成「需要本机服务」。
 
 ## 1. 设计原则
 
@@ -157,9 +157,9 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - Agent 卡片**只渲染已安装 Agent**（未安装去 Agents 页；未装卡不出「连接/切换」）。两行紧凑：第一行 logo + 名称 + 版本 + 右侧认证状态点（绿=已认证/黄=即将过期/红=失效/灰=未配置）；第二行当前连接 meta。顺序固定为 `AGENTS` 定义序，不按状态重排。
 - **主动作「连接/切换」**（点击卡片）：打开统一绑定对话框（现名 `ConnectFlowDialog`），目标固定为该编程工具，选一份登录。目标语义是 `bind(这份登录, 此工具)`，不是「在两套池里挑一行」。
 - 徽标（目标态按**当前绑定**展示，过渡期仍可用 profile 联结；卡片 meta 现行 **直连 / 改配置 / 本机路由**，不在徽标上标圈号）：
-  - **① 直接改配置 / ② 写进对方认的登录**：`route=reshape`（或命中生成投影）。meta 用「直连」或「改配置」，不要显示转发。
-  - **③ 本机转发**：仅当前生效的 ③ 显示桥徽标（meta **本机路由**）；查询失败显示「状态不可用」，不得静默隐藏。点击徽标进入 `/routes?profile=`（无 id 则 `/routes`），tip「管理本机路由」（`stopPropagation`）。孤立 / 非当前桥没有徽标。
-- **ConnectFlow（工具侧）**：两组来源——**本来就是给它的登录**（走切换）+ **其他登录**（`plan(ticket, agent)`）。可执行权威是 `plan()` 的 route / maturity / canApply / reason（`canApply` 表示现在能写入）。产品模型仍是三种做法；界面芯片现行 **直连 / 用这份登录 / 本机路由 / 当前不支持**，不再标 ①②③。② 不得出现「需要本机服务」或转发启停。接不上的登录**留在列表**，置灰 + 原因原文，不从 Connections 藏起来再让本页单独诊断。OAuth 未完成：引导去钱包补登录。空态与「导入登录态 / 新 API Key」走深链 `intent=import-login|add-key`；成功后回 `/?connect=` 重开。导入仍是读官方 CLI 已完成的登录。
+  - **直接改配置 / 写进对方认的登录**：`route=reshape`（或命中自动生成的配置）。meta 用「直连」或「改配置」，不要显示转发。
+  - **本机转发**：仅当前生效的本机转发显示路由徽标（meta **本机路由**）；查询失败显示「状态不可用」，不得静默隐藏。点击徽标进入 `/routes?profile=`（无 id 则 `/routes`），tip「管理本机路由」（`stopPropagation`）。孤立 / 非当前本机路由没有徽标。
+- **ConnectFlow（工具侧）**：两组来源——**本来就是给它的登录**（走切换）+ **其他登录**（`plan(ticket, agent)`）。可执行权威是 `plan()` 的 route / maturity / canApply / reason（`canApply` 表示现在能写入）。产品模型仍是三种做法；界面芯片现行 **直连 / 用这份登录 / 本机路由 / 当前不支持**。写进对方认的登录不得出现「需要本机服务」或转发启停。接不上的登录**留在列表**，置灰 + 原因原文，不从 Connections 藏起来再让本页单独诊断。OAuth 未完成：引导去 Connections 补登录。空态与「导入登录态 / 新 API Key」走深链 `intent=import-login|add-key`；成功后回 `/?connect=` 重开。导入仍是读官方 CLI 已完成的登录。
 - **共享筛选**（时间 + Agent）驱动一套指标卡与趋势图；筛选变更时 `queryUsage` / `usageTrend` 各请求一次，上下共用 records。
 - 用量图：堆叠 Area，按 agent 分色。选中单 agent 时分布条下钻到**按模型**拆分。
 - Agent 总览与用量分区处理 loading/error：用量失败不白屏上半。
@@ -204,7 +204,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 ### 4.3 Connections（连接 = 登录列表）
 
-侧栏只保留一个入口。目标态：**跨工具的登录列表**，不是按工具切开的两套池。底层 accounts/providers 可继续分表；UI 谈一份登录和「正用于」哪些绑定。生成投影不进本页。完整规则见 [connection-binding-model.md §5](connection-binding-model.md#51-两个入口一个对象)。
+侧栏只保留一个入口。目标态：**跨工具的登录列表**，不是按工具切开的两套池。底层 accounts/providers 可继续分表；UI 谈一份登录和「正用于」哪些绑定。自动生成的配置不出现在登录列表。完整规则见 [connection-binding-model.md §5](connection-binding-model.md#51-两个入口一个对象)。
 
 路由：`/connections`；`/connections?agent=codex` 高亮该 Agent 的 active 绑定（**不**再把整页收成该 Agent 私有列表）；`?mode=` 仍可筛到 API Key。旧 `/providers`、`/accounts` 重定向至此。
 
@@ -227,10 +227,10 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 ```
 
 - 「正用于」来自绑定：native / reshape / bridge，不是手写 account/provider 出身。
-- **每一份真登录都有「接到…」**，打开同一绑定对话框（登录固定，选工具）。接不上、工具不能写入、未识别：对话框内置灰 + 原因，不在行上隐藏动作。选目标后预览按三种做法说明（模型 ① 只改配置 / ② 写进对方认的登录 / ③ 本机转发）；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不再标圈号。不要把订阅默认写成转发。
+- **每一份真登录都有「接到…」**，打开同一绑定对话框（登录固定，选工具）。接不上、工具不能写入、未识别：对话框内置灰 + 原因，不在行上隐藏动作。选目标后预览按三种做法说明（直接改配置 / 写进对方认的登录 / 本机转发）；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。不要把订阅默认写成转发。
 - 「切换」只用于这份登录对它本来所属工具的 native 绑定。接到其他工具一律走 `bind`。
 - 添加登录时写下它是哪一家。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意工具）。**Pi 无单一官方 URL**：弹窗选厂商槽，官方槽（anthropic / openai / …）只写 `~/.pi/agent/auth.json`，自定义 URL 写 `models.json`。
-- **已落地（读模型 + 写入）**：跨工具登录列表 + 真登录常驻「接到…」+ Dashboard 当前绑定；生成投影不进登录列表。确认步走 `bind`，成功以该工具的当前绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
+- **已落地（读模型 + 写入）**：跨工具登录列表 + 真登录常驻「接到…」+ Dashboard 当前绑定；自动生成的配置不出现在登录列表。确认步走 `bind`，成功以该工具的当前绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
 - 导入当前登录时若本机同时有 Key 与官方登录，对话框警告条说明当前会收入哪一份。
 - **详情展开**：不是字段堆。行头在官方登录 / 订阅旁放安静健康 chip（可续期 / 已配置；不写实验 / 未验证）。`sm+` 两栏 **用量**（有配额才出现，QuotaBar 先 7d 再 5h + reset）| **用在哪**（每行一个绑定：左 Agent 名，右「当前使用 / 本机路由运行中 / 本机路由已停止 / 未使用」；空态「还没接到任何工具」）。**更多**仅在有自定义端点 / 协议时出现（默认折叠）；仅 import + 登录状态时不渲染。页脚一行：左「导入自 …」，右编辑配置或编辑密钥（若可）+「移入回收站」。
 - 实现落点：`TicketWalletList` / `ticket-wallet-model` / `lib/api/tickets`；`reuse-offer` 为登录常驻「接到…」语义。
@@ -291,11 +291,11 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 #### 4.3.3 Routes（本机路由）
 
-用户表面是 **本机路由运行时**：协议对不上时在这台电脑上开的一层转发。登录在 Connections，绑定在 Dashboard / ConnectFlow；本页只服务 ③。内部模块仍叫 Adapter（`lib/api/adapter`），不得漏进侧栏、页标题、空态、确认框、徽标、托盘。
+用户表面是 **本机路由运行时**：协议对不上时在这台电脑上开的一层转发。登录在 Connections，绑定在 Dashboard / ConnectFlow；本页只服务本机转发。内部模块仍叫 Adapter（`lib/api/adapter`），不得漏进侧栏、页标题、空态、确认框、徽标、托盘。
 
-规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。侧栏英文 **Routes**，仅当本机确有 `local_bridge`（含孤立）或钱包仍有 `route=bridge` 时出现；Settings → 本机有一条永远在的「本机路由运行时」回收链。页头无「去 Dashboard / 去 Connections」。创建区不在本页。
+规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。侧栏英文 **Routes**，仅当本机确有本机路由（含孤立）或登录列表仍有 `route=bridge` 时出现；Settings → 本机有一条永远在的「本机路由运行时」回收链。页头无「去 Dashboard / 去 Connections」。创建区不在本页。
 
-列出全部 `route=local_bridge`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机路由」。行与详情都是**单层**进程健康 + 端口，不画「配置已生效 / 桥接运行中」。解绑只走 `unbindTicket`，不提供 `removeAdapter`。健康空态（profile 与钱包均已结算且 `bound+orphan===0` 且 last-known 钱包桥数为 0）标题「没有本机路由」，**无按钮**——这是对 §1.4 的显式例外。
+列出全部 `route=local_bridge`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机路由」。行与详情都是**单层**进程健康 + 端口，不画「配置已生效 / 桥接运行中」。解绑只走 unbind，不提供 `removeAdapter`。健康空态（profile 与登录列表均已结算且 `bound+orphan===0` 且 last-known 本机路由数为 0）标题「没有本机路由」，**无按钮**——这是对 §1.4 的显式例外。
 
 - 与 ConnectFlow 两处 bind 同源（`lib/api/adapter` / `lib/api/tickets`）；可执行权威是 `plan.canApply`，禁止以 `analysis.support` 推断可执行。
 - 规则名称、route 和可执行状态以[当前实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)为准。

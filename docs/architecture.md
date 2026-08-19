@@ -11,7 +11,7 @@
 > 日志：core 统一 tracing（文件 + 可选 stderr）→ [logging.md](logging.md)。  
 > **前端 backend 分层（已落地）**：`lib/backend/{contracts,tauri,current}` + `dev/mocks` + `app/runtime`；命令与 adapter 选择见 **§4.1–§4.2**。
 > 2026-08-14：Hub 重构 Phase 1 入口（ConnectFlow）已落地，详见 [hub-redesign-plan.md](hub-redesign-plan.md) / [ui-design.md](ui-design.md)。
-> 2026-08-19：把已有登录接到另一个工具的领域对象仍是票 / 绑定 / 协议图（实现名），见 [connection-binding-model.md](connection-binding-model.md)。**产品方向**（① 直接改配置 / ② 写进对方认的登录 / ③ 本机转发）见 [product-decisions.md](product-decisions.md)。现行 UI 说「登录」不说「票/钱包」，芯片不再标圈号。当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`；`canApply` 仍按「现在能不能写上去」打开。
+> 2026-08-19：用户看到的是「登录」，不是「票 / 钱包」。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不标圈号。三种做法是直接改配置 / 写进对方认的登录 / 本机转发，见 [product-decisions.md](product-decisions.md)。领域对象仍是票 / 绑定 / 协议图（实现名），见 [connection-binding-model.md](connection-binding-model.md)。当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`；`canApply` 仍按「现在能不能写上去」打开。
 > 2026-08-15：模块化审查结论与分阶段收口见 [modularity-improvement.md](modularity-improvement.md)。目录职责仍以本文为准；生产组合仍偏 Adapter-centric，改进按该文 P0/P1/P2，不另开微服务。
 > 2026-08-16 文档回写：core 现树含 `integrations/` `platform/` `adapter_control/` `domain/`；生产写入走 Ticket；`adapter_control` 契约已落地但仍 in-process。
 
@@ -210,7 +210,7 @@ struct InstallChannel {
 | `account_service` | 账号池、OAuth/导入、切换编排 | 不实现各家 OAuth 端点细节（oauth/ 模块） |
 | `adapter_route_service` / `adapter_apply_service` | 只读分析、预览；应用后端显式 `can_apply` 边（现有多条，不再是「仅 Kimi→Claude」） | 不推断未知凭据，不把 preview 自动升级为可写 |
 | `adapter_bridge_service` | 准备/恢复 Bridge profile 与 runtime material，记录 finalize/needs_attention | 不持有 listener，不直接写 live 配置；当前由 Tauri controller、目标由 sidecar application service 编排 host 与 ProviderService |
-| `ticket_read_service` | 钱包只读聚合 + `plan_ticket` | 不写绑定、不启动 listener |
+| `ticket_read_service` | 登录列表只读聚合 + `plan_ticket` | 不写绑定、不启动 listener |
 | `ticket_bind_service` | `bind` / `unbind` 写口 | LocalBridge bind 拒绝，必须走 desktop host saga |
 | `connection_service` | 当前指针 `ActiveBinding`（account/provider `is_current`） | 不是产品 `TicketBinding`；不写 live 文件 |
 | `live_write_authority` | 跨进程 live 写锁 | 不解释配置语义 |
@@ -463,7 +463,7 @@ src/
 | 原文件 | 生产 | mock | façade |
 |---|---|---|---|
 | `account.ts` | `lib/backend/tauri/account.ts` | `dev/mocks/account.ts` | `lib/api/account.ts` |
-| `adapter.ts` | `lib/backend/tauri/adapter.ts` | `dev/mocks/adapter.ts` | `lib/api/adapter.ts`（`apply` 已 deprecated，页面不得再调用；产品写入走 TicketPort） |
+| `adapter.ts` | `lib/backend/tauri/adapter.ts` | `dev/mocks/adapter.ts` | `lib/api/adapter.ts`（`apply` 已 deprecated，页面不得再调用；产品写入走 plan/bind/unbind） |
 | `tickets` | `lib/backend/tauri/ticket.ts` | `dev/mocks/ticket.ts` | `lib/api/tickets.ts`（plan/bind/unbind） |
 | `catalog` | `lib/backend/tauri/catalog.ts` | `dev/mocks/catalog.ts` | 经 `app/runtime` catalog store；无独立 `lib/api/catalog.ts` |
 | `config` | `lib/backend/tauri/config.ts` | `dev/mocks/config.ts` | `lib/api/config.ts` |
@@ -510,7 +510,7 @@ DTO / mapper：`lib/backend/contracts/*-map.ts`。错误类型：`contracts/erro
 
 Connections 收拢凭据生命周期。目标领域是 **票（Ticket）+ 绑定（Binding）+ 协议图**，不是「account/provider 出身 × 商品白名单」；完整模型与可重做的 UI 见 [connection-binding-model.md](connection-binding-model.md)。
 
-当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`。日常入口仍是 Dashboard「连接/切换」与 Connections「接到…」，走 `ConnectFlowDialog`（`plan.canApply` 表示**现在能写入**）。预览按三种做法说明（直接改配置 / 写进对方认的登录 / 本机转发）；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，见 [product-decisions.md](product-decisions.md)。自动生成的配置不进登录列表。`/routes` 只管理 ③ 的本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。各家接口与现在能不能写上去仍以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
+当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`。日常入口仍是 Dashboard「连接/切换」与 Connections「接到…」，走 `ConnectFlowDialog`（`plan.canApply` 表示**现在能写入**）。预览按三种做法说明（直接改配置 / 写进对方认的登录 / 本机转发）；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，见 [product-decisions.md](product-decisions.md)。自动生成的配置不进登录列表。`/routes` 只管理本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。各家接口与现在能不能写上去仍以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
 
 **未迁移 / 有意保留**：
 
@@ -580,5 +580,5 @@ CLI 与 GUI 共用数据目录与 per-agent 写锁（core 内文件锁，跨进�
 8. **commands 一文件一模块、薄到只做校验** —— 不要把大量 command 堆进同一个 `lib.rs`。
 9. **models 纯数据、credentials 脱敏边界清晰** —— 当前版本沿用现有存储方案，DTO 出 core 前集中脱敏，避免 API、CLI、日志泄漏完整凭据。
 10. **前端 invoke 单点 + mock 外置** —— 仅 `lib/backend/tauri/` 可 `invoke`；mock 只在 `dev/mocks/` 且仅由 `dev:mock` 注入；`build` 强制 Tauri；非 Tauri 生产页明确报错/unavailable。
-11. **Bridge 数据面独立进程、Connections 领域不拆** —— `agenthub-adapterd` 只承接 `local_bridge` 的长驻 listener、协议转换和完整 saga；票、绑定、Account/Provider/live 事务继续由 core service 单点负责，避免按页面边界制造 `connectionsd` 或双写。生成 Provider 是绑定的私有 runtime，不是第二套钱包。
-12. **跨工具复用按协议图规划、按绑定写入** —— `plan(ticket, agent)` 在 native / reshape / bridge / 不可行 中择一；用户层解释为 ① 直接改配置 / ② 写进对方认的登录 / ③ 本机转发，不新增领域枚举。`bind` / `unbind` 是唯一写入。扩大靠登记登录表面、Agent `accepts`（听哪种接口 **和** 认哪套订阅登录）/`writer` 和已测过的做法。见 [product-decisions.md](product-decisions.md)、[connection-binding-model.md](connection-binding-model.md)。
+11. **Bridge 数据面独立进程、Connections 领域不拆** —— `agenthub-adapterd` 只承接 `local_bridge` 的长驻 listener、协议转换和完整 saga；票、绑定、Account/Provider/live 事务继续由 core service 单点负责，避免按页面边界制造 `connectionsd` 或双写。生成 Provider 是绑定的私有 runtime，不是第二套登录列表。
+12. **跨工具复用按协议图规划、按绑定写入** —— `plan(ticket, agent)` 在 native / reshape / bridge / 不可行 中择一；用户层解释为直接改配置 / 写进对方认的登录 / 本机转发，不新增领域枚举。`bind` / `unbind` 是唯一写入。扩大靠登记登录表面、Agent `accepts`（听哪种接口 **和** 认哪套订阅登录）/`writer` 和已测过的做法。见 [product-decisions.md](product-decisions.md)、[connection-binding-model.md](connection-binding-model.md)。
