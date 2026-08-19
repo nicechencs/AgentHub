@@ -1,5 +1,6 @@
 # AgentHub 目录结构与模块拆分
 
+> **现行状态（dest `02358a3` / 0.2.2）**：Linux 一等公民；官方船经 `release` 三文件版本 bump 后发布。`agenthub-adapterd` sidecar 是目标、未迁。Chat 模型选择 / Projects `--resume` / MCP 注入 / 全站 i18n 未做。
 > 对应《AgentHub 项目方案 v1.3》第 4 节的落地细化。  
 > 目标 cargo workspace 为三 crate：`agenthub-core`（业务核心）/ `agenthub-gui`（Tauri 壳）/ `agenthub-cli`（命令行）；当前三者均已在仓库中（`src-tauri` = gui）。
 > v1.1 同步：Adapter 接口加厚（skills/backup 路径）、Service 职责表、Usage/模型列表边界。  
@@ -213,7 +214,7 @@ struct InstallChannel {
 | `ticket_bind_service` | `bind` / `unbind` 写口 | LocalBridge bind 拒绝，必须走 desktop host saga |
 | `connection_service` | 当前指针 `ActiveBinding`（account/provider `is_current`） | 不是产品 `TicketBinding`；不写 live 文件 |
 | `live_write_authority` | 跨进程 live 写锁 | 不解释配置语义 |
-| `agent_visibility_service` | dest store-stamp 隐藏（仅 UI） | 不改 detect / install / 凭据；不是旧 release #22 软隐藏 |
+| `agent_visibility_service` | dest store-stamp 隐藏：`{data_dir}/agent_visibility.json`（不是 release #22 软隐藏）。detect / install / 凭据 / 备份不变；Usage collect 与 parser_health 跳过 hidden | 不改 detect / install / 凭据 |
 | `ConfigurationService`（platform） | 通用配置 schema / read / validate / apply | 不持有账号池 |
 | `AgentCatalogService`（platform） | Agent 目录（key / 能力 / 安装渠道） | 不执行安装 |
 | `skillhub_market` / `skillssh_market` | skillhub.cn / skills.sh 远程搜索与安装 | 不改投影矩阵真源 |

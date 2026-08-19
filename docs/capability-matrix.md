@@ -1,5 +1,6 @@
 # Agent 能力矩阵设计（v1.0 已落地）
 
+> **现行状态（dest `02358a3` / 0.2.2）**：sidecar（`agenthub-adapterd`）仍是目标、未迁。版本仍 0.2.2；官方船经 `release` 三文件 bump。
 > 状态：**P0-P4 与 R00-R08 已落地**（2026-08-07 与代码及测试对齐）；P13/OCP 已由 test-only `demo-agent` 验证。矩阵仍只回答“能不能”，平台端口收口与兼容边界见 [platform-capability-remediation.md](platform-capability-remediation.md)。
 > 真源在 adapter `capability()`；GUI/CLI 由 `registry.matrix()` 下发；CLI：`agenthub agent capabilities [--markdown]`。  
 > 关联：[architecture.md](architecture.md)、[platform-capability-refactor.md](platform-capability-refactor.md)、[adding-an-agent.md](adding-an-agent.md)。本文只回答「某个 Agent 自己能不能」；跨 Agent 复用三路见 [product-decisions.md](product-decisions.md)，不写进 Capability 枚举。  

@@ -1,7 +1,6 @@
 # 连接：票、绑定与协议图
 
-> **现行界面（2026-08-19）：** 用户看到的是「登录」，不是「票 / 钱包」。本文的票 / Ticket / 钱包是实现与领域名。生成投影不是登录卡。预览芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不再标 ①②③。
-
+> **现行状态（dest `02358a3` / 0.2.2）：** 用户看到的是「登录」，不是「票 / 钱包」。票 / Ticket / 钱包是实现名。Grok→Claude 走 `local_token` / `bind_ticket`；生成投影隐藏；sidecar 未迁。预览芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不再标 ①②③。
 > 状态：**§6 第 1–3 步已落地；§6.4 部分落地（Kimi/OpenAI API → Grok、OpenAI/xAI/GLM/DeepSeek API → Pi 属 ①；GLM/DeepSeek API → Codex 属 ①；Anthropic API Key → Codex 属 ③）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex 属 ①），GLM/DeepSeek → Pi 已可 experimental bind，② Claude/Codex/Grok 订阅 → Pi 已可 experimental bind，③ Codex Responses 与 Grok Chat 订阅 → Claude 已可 experimental bind；Claude 订阅 → Codex 产品不做，App Server/OauthOther 仍关闭；dsh writer 已接入（`AgentId::Dsh` + `deepseek-api-to-dsh-v1`）。未做的是 sidecar 迁移**。
 > 日期：2026-08-15。  
 > 本文是实现用的领域模型，不是给最终用户看的说明书。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。页面、Hub 入口、Adapter、厂商规则文档以本文为准改对象名；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
@@ -119,7 +118,7 @@ Account / Provider / live 事务仍由 core service 单点负责，不建设 `co
 |---|---|---|---|---|
 | `native` | 票本来就是给这个 Agent 的 | 账号/供应商切换 | ② 的本 Agent 情形 | 切换，不起桥 |
 | `reshape` | 共同协议或共同 OAuth 契约槽，只改配置形状 | `config_sync` / `native_endpoint` | ① API 直连 或 ② 原生订阅 | 写配置，凭据只引用，不起桥 |
-| `bridge` | 协议/契约对不上，图上有边 | `local_bridge` | ③ 本机协议桥 | 起 loopback，目标只持本地 token |
+| `bridge` | 协议/契约对不上，图上有边 | `local_bridge` | ③ 本机路由 | 起 loopback，目标只持本地 token |
 | 不可行 | 无 writer、无表面、无边、登录态不能当 HTTP 上游 | `unsupported` | —— | 说明原因和替代，不提供「强制转换」 |
 
 优先 ①②，对不上再 ③。桥只是第 3 路的手段，不是订阅的默认。OAuth 先看目标有没有同一授权契约槽（②）；没有且存在转换边才进 ③。API Key 与 OAuth 分开判。三路是用户说明，不新增领域枚举。见 [product-decisions.md](product-decisions.md)。
@@ -211,14 +210,14 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 规则：
 
 - 每一张**真票**都有「接到…」。未识别、无边、目标无 writer，都在对话框里置灰 + 原因，不在列表上假装这件事不存在。
-- 生成投影**不出现**在钱包。已有用途记在源票的「正用于」上，并标 ① 直连 / ② 原生订阅 / ③ 本机路由（过渡期「经兼容路由」只表示 reshape，不要当成桥）。
+- 生成投影**不出现**在钱包。已有用途记在源票的「正用于」上，并标现行芯片 **直连 / 用这份登录 / 本机路由**（架构名仍是 ①②③；过渡期「经兼容路由」只表示 reshape，不要当成桥）。
 - 「切换」只用于该票与其 `importedFrom` / 原生 Agent 的 `native` 绑定。接到别的 Agent 一律叫「接到…」（文案可再打磨，语义是 bind）。
 - 深链 `?agent=` 仍可用：打开钱包并高亮该 Agent 的 active 绑定，而不是把整个钱包切成该 Agent 的私有列表。
 - 添加票：导入登录态、新 API Key。进口必须写下 `surface`。
 
 ### 5.3 Dashboard = Agent 的绑定
 
-卡片展示：**当前绑定的票**（不是「当前 Provider 行」）、路线（① 直连 / ② 原生订阅 / ③ 本机路由）、仅 ③ 显示桥是否在跑。
+卡片展示：**当前绑定的票**（不是「当前 Provider 行」）、路线（现行芯片 **直连 / 用这份登录 / 本机路由**；架构名仍是 ①②③）、仅 ③ 显示桥是否在跑。
 
 - 主动作仍是打开同一套 bind 对话框（target 固定）。
 - 来源不再按「本 Agent 表里的行 / 别人表里的行」分组，而按 **native 候选** 与 **可规划的其他票** 分组。
