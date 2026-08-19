@@ -17,14 +17,9 @@ pub fn parse_responses_request(value: &Value) -> ProtocolResult<BridgeRequest> {
     let object = value
         .as_object()
         .ok_or_else(|| ProtocolError::invalid_request("The request body must be a JSON object."))?;
-    if object.contains_key("reasoning") {
-        // Kimi's OpenAI-compatible endpoint has no verified equivalent for Responses
-        // reasoning controls.  Dropping it could change the requested model behavior.
-        return Err(ProtocolError::unsupported(
-            "unsupported_reasoning",
-            "Reasoning configuration is not supported by this bridge.",
-        ));
-    }
+    // Codex always sends `reasoning` when model_reasoning_effort is set. Chat Completions
+    // upstreams do not take the Responses `reasoning` object, so never fail the request.
+    // Grok/xAI maps effort -> reasoning_effort; other Chat Completions upstreams drop it.
     let model = required_string(object, "model", "A non-empty model is required.")?;
     let input = match object.get("input") {
         Some(Value::String(text)) => vec![BridgeMessage {
@@ -54,11 +49,14 @@ pub fn parse_responses_request(value: &Value) -> ProtocolResult<BridgeRequest> {
     };
 
     let known = known_request_fields();
-    let passthrough = object
+    let mut passthrough = object
         .iter()
         .filter(|(key, _)| !known.contains(key.as_str()))
         .map(|(key, item)| (key.clone(), item.clone()))
-        .collect();
+        .collect::<Map<String, Value>>();
+    if let Some(effort) = grok_reasoning_effort(object.get("reasoning")) {
+        passthrough.insert("reasoning_effort".to_owned(), Value::String(effort));
+    }
 
     Ok(BridgeRequest {
         model,
@@ -146,6 +144,20 @@ pub fn to_kimi_chat_request(request: &BridgeRequest) -> Value {
     }
 
     Value::Object(body)
+}
+
+/// Convert a parsed OpenAI Responses request to xAI/Grok Chat Completions.
+///
+/// Same Chat Completions shape as [`to_kimi_chat_request`], plus `reasoning_effort`
+/// when Codex sent a mappable Responses `reasoning.effort`.
+pub fn to_grok_chat_request(request: &BridgeRequest) -> Value {
+    let mut body = to_kimi_chat_request(request);
+    if let Some(effort) = request.passthrough.get("reasoning_effort") {
+        if let Some(object) = body.as_object_mut() {
+            object.insert("reasoning_effort".to_owned(), effort.clone());
+        }
+    }
+    body
 }
 
 /// Convenience entry point for HTTP handlers.
@@ -1837,7 +1849,20 @@ fn known_request_fields() -> HashSet<&'static str> {
         "tools",
         "tool_choice",
         "stream",
+        "reasoning",
     ]
     .into_iter()
     .collect()
+}
+
+/// Map Responses `reasoning.effort` to xAI Chat Completions `reasoning_effort`.
+///
+/// Unknown shapes or effort values are ignored so Codex Chat still completes.
+fn grok_reasoning_effort(value: Option<&Value>) -> Option<String> {
+    let effort = match value? {
+        Value::Object(object) => object.get("effort").and_then(Value::as_str)?,
+        Value::String(effort) => effort.as_str(),
+        _ => return None,
+    };
+    matches!(effort, "low" | "medium" | "high" | "xhigh").then(|| effort.to_owned())
 }

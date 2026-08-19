@@ -13,8 +13,8 @@ use super::{
     chat::{sse_frame, translate_chat_response, ChatStreamToIr, ResponsesSseTranslator},
     responses::{
         encode_responses_from_ir, parse_responses_request, responses_output_to_ir,
-        to_kimi_chat_request, to_responses_request, translate_responses_request, IrToResponsesSse,
-        ResponsesStreamToIr,
+        to_grok_chat_request, to_kimi_chat_request, to_responses_request,
+        translate_responses_request, IrToResponsesSse, ResponsesStreamToIr,
     },
 };
 
@@ -102,15 +102,52 @@ fn streaming_request_opt_in_preserves_final_usage_chunk() {
 }
 
 #[test]
-fn reasoning_configuration_fails_closed_without_a_verified_kimi_mapping() {
-    let error = parse_responses_request(&fixture("responses_reasoning"))
-        .expect_err("reasoning must not be silently dropped");
+fn reasoning_is_dropped_on_kimi_chat_and_mapped_for_grok() {
+    let request = fixture("responses_reasoning");
+    let bridge = parse_responses_request(&request).expect("reasoning must not reject the request");
+    assert_eq!(bridge.passthrough["reasoning_effort"], "medium");
 
-    assert_eq!(error.code, "unsupported_reasoning");
-    assert_eq!(
-        error.message,
-        "Reasoning configuration is not supported by this bridge."
-    );
+    let kimi = to_kimi_chat_request(&bridge);
+    assert!(kimi.get("reasoning").is_none());
+    assert!(kimi.get("reasoning_effort").is_none());
+    assert_eq!(kimi["messages"][0]["content"], "Explain the result.");
+
+    let grok = to_grok_chat_request(&bridge);
+    assert!(grok.get("reasoning").is_none());
+    assert_eq!(grok["reasoning_effort"], "medium");
+    assert_eq!(grok["messages"][0]["content"], "Explain the result.");
+}
+
+#[test]
+fn unknown_or_malformed_reasoning_is_ignored_and_request_still_parses() {
+    for reasoning in [
+        json!({"effort": "minimal"}),
+        json!({"summary": "auto"}),
+        json!(null),
+        json!("fast"),
+        json!(1),
+    ] {
+        let mut request = fixture("responses_text");
+        request["reasoning"] = reasoning;
+        let bridge = parse_responses_request(&request)
+            .expect("malformed reasoning must not reject the request");
+        assert!(bridge.passthrough.get("reasoning_effort").is_none());
+        let kimi = to_kimi_chat_request(&bridge);
+        assert!(kimi.get("reasoning").is_none());
+        assert!(kimi.get("reasoning_effort").is_none());
+    }
+}
+
+#[test]
+fn codex_high_reasoning_with_summary_maps_only_effort_for_grok() {
+    let mut request = fixture("responses_text");
+    request["reasoning"] = json!({"effort": "high", "summary": "auto"});
+    let bridge = parse_responses_request(&request).expect("codex reasoning parses");
+    assert_eq!(bridge.passthrough["reasoning_effort"], "high");
+    let grok = to_grok_chat_request(&bridge);
+    assert_eq!(grok["reasoning_effort"], "high");
+    assert!(grok.get("reasoning").is_none());
+    assert!(grok.get("summary").is_none());
 }
 
 #[test]
