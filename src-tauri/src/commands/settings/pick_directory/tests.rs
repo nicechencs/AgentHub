@@ -1,6 +1,8 @@
 use super::{
-    file_path_to_display_string, path_to_display_string, starting_directory,
+    file_path_to_display_string, path_to_display_string, pick_directory_default_title,
+    starting_directory, DEFAULT_PICK_DIRECTORY_TITLE,
 };
+use crate::tray_i18n::TrayUiLanguage;
 use std::fs;
 use tauri_plugin_dialog::FilePath;
 use tempfile::tempdir;
@@ -42,6 +44,22 @@ fn starting_directory_uses_parent_when_default_is_existing_file() {
 #[test]
 fn starting_directory_none_for_relative_single_component() {
     assert!(starting_directory(Some("foo")).is_none());
+}
+
+#[test]
+fn pick_directory_default_title_zh_en() {
+    assert_eq!(
+        pick_directory_default_title(TrayUiLanguage::Zh),
+        DEFAULT_PICK_DIRECTORY_TITLE
+    );
+    assert_eq!(
+        pick_directory_default_title(TrayUiLanguage::Zh),
+        "选择工作目录"
+    );
+    assert_eq!(
+        pick_directory_default_title(TrayUiLanguage::En),
+        "Select working directory"
+    );
 }
 
 #[test]

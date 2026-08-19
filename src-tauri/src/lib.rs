@@ -8,6 +8,7 @@ mod exit_coordinator;
 mod skill_watch;
 mod state;
 mod tray;
+mod tray_i18n;
 mod window_policy;
 
 use state::AppState;

@@ -2,7 +2,7 @@
 
 pub mod pick_directory;
 
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::commands::{map_err_string, with_hub_blocking};
 use crate::state::AppState;
@@ -31,6 +31,7 @@ pub async fn get_path_info(state: State<'_, AppState>) -> Result<PathInfo, Strin
 /// Invoke: `set_setting` — whitelist key (theme|language|log_level|log_retention_days|close_to_tray|…).
 #[tauri::command]
 pub async fn set_setting(
+    app: AppHandle,
     state: State<'_, AppState>,
     key: String,
     value: String,
@@ -47,6 +48,9 @@ pub async fn set_setting(
 
     // Keep in-process close-to-tray flag in sync so the next window close uses it.
     state.sync_setting_flag(&key_for_sync, &value_for_sync);
+    if key_for_sync == "language" {
+        crate::tray::rebuild_tray_menu(&app, &value_for_sync);
+    }
     Ok(())
 }
 
