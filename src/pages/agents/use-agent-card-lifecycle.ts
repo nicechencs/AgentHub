@@ -49,7 +49,6 @@ export function useAgentCardLifecycle(input: {
     onRecheckUpdate,
   } = input;
   const { t } = useI18n();
-  const { t } = useI18n();
   const { toast } = useToast();
   const [task, setTask] = React.useState<AgentCardTask | null>(null);
   const cancelRef = React.useRef({ cancelled: false });
