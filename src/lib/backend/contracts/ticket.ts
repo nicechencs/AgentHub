@@ -188,20 +188,38 @@ export function mapPlanTicketResult(wire: AdapterApplyPlanWire): AdapterApplyPla
   return mapAdapterApplyPlan(wire);
 }
 
-/** Exact camelCase shape from Rust `bind_ticket`. */
-export interface BindTicketResultWire {
-  binding: BindingViewWire;
-}
+/**
+ * `bind_ticket` wire: live Rust returns a top-level `TicketBinding`
+ * (`ticketId` / `agentId` / `route` / …). Mocks and older fixtures wrap it as
+ * `{ binding }`. Accept both.
+ */
+export type BindTicketResultWire = { binding: BindingViewWire } | BindingViewWire;
 
 export interface BindTicketResult {
   binding: BindingView;
 }
 
+function isBindingViewWire(wire: object): wire is BindingViewWire {
+  const record = wire as Record<string, unknown>;
+  return (
+    typeof record.ticketId === 'string'
+    && typeof record.agentId === 'string'
+    && typeof record.route === 'string'
+  );
+}
+
 export function mapBindTicketResult(wire: BindTicketResultWire): BindTicketResult {
-  if (!wire || typeof wire !== 'object' || wire.binding == null) {
+  if (!wire || typeof wire !== 'object') {
     throw new Error('Invalid bind_ticket wire: missing binding');
   }
-  return { binding: mapBindingView(wire.binding) };
+  const nested = (wire as { binding?: unknown }).binding;
+  if (nested != null && typeof nested === 'object') {
+    return { binding: mapBindingView(nested as BindingViewWire) };
+  }
+  if (isBindingViewWire(wire)) {
+    return { binding: mapBindingView(wire) };
+  }
+  throw new Error('Invalid bind_ticket wire: missing binding');
 }
 
 /**
