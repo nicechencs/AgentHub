@@ -170,6 +170,19 @@ export const TOOLTIP = {
   delayMs: 200,
 } as const;
 
+/**
+ * Action-button rhythm. Hover is fill/color only — never a shadow.
+ * Shadows belong to elevation layers (card / tooltip / popover / dialog),
+ * segmented *selected* lift, or always-on overlay FABs.
+ * Chrome is locked in `components/ui/button.tsx`.
+ */
+export const BUTTON = {
+  height: { default: 28, lg: 32 },
+  padX: { sm: 8, default: 12, lg: 16 },
+  radius: '6px',
+  hoverShadow: 'none',
+} as const;
+
 /** CSS custom property for an agent brand color. */
 export function agentCssVar(id: TokenAgentId): `var(--agent-${TokenAgentId})` {
   return `var(--agent-${id})`;

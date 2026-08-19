@@ -50,6 +50,23 @@ Agent 品牌色（logo 点、图表系列；改 tokens.ts 的 AGENT_COLORS）:
 
 **主按钮（accent / `variant="default"`）**：一页至多一个主 CTA；卡内安装/次级行动用 `secondary` / `ghost`（需边界时用 outline），避免多枚 accent 并排抢视线。Phase 0 保留 indigo 色相，只降低暴露；是否换色见 `ui-experience-alignment.md` Phase 5。
 
+**Button（`components/ui/button.tsx`，节奏真源 `BUTTON` in `tokens.ts`）**：
+
+| 轴 | 标准 |
+|---|---|
+| 角色（6） | `default` 页级 CTA（≤1）· `secondary` 实心底 · `outline` 有边 · `ghost` 无铬 · `danger` / `dangerOutline` 破坏 |
+| 高度（2） | `sm` / `default` / `icon` = **28**（`h-7`）· `lg` = **32**（`h-8`）。水平 pad **8 / 12 / 16**（`px-2` / `px-3` / `px-4`） |
+| 悬停 / 按下 | **只改底色与字色**。原语锁 `shadow-none hover:shadow-none active:shadow-none`。禁止 `hover:shadow-*`、禁止 `px-2.5` / `px-3.5` |
+| 焦点 | `focus-visible:ring-2 ring-accent/60`（与 Input / Select 一致） |
+| 禁用 | `opacity-50` + 无指针 |
+
+不是 Button 的表面（不要为了「统一阴影」去改）：
+
+- **分段选中抬起**：`SegmentedControl` / `Tabs` / `AgentTabStrip` 的 *active* 项用 `shadow-sm`，hover 未选项只洗底。
+- **浮层**：Tooltip `shadow-sm`、菜单 `shadow-md`、Dialog `shadow-lg`——不是 hover 才出现。
+- **回收站 FAB**：始终 `shadow-md`（浮在画布上的 overlay），hover 不加减阴影。
+- **手写 `<button>`**：链接字、矩阵格、预览 chrome 保持原样；看起来像动作按钮的应改走 `Button` / `buttonVariants`。
+
 **列表选中态**：`ListRow`（`components/shared`）= `bg-active` + 可选左边条；表格预览行用 `TableRow active`。勿把 checkbox 多选画成整行 accent。
 
 **分段控件族**：`SegmentedControl` / `Tabs` / `AgentTabStrip` 共用 `segmented-styles`（灰轨 + 白底抬起）。

@@ -12,6 +12,7 @@ import {
   buildBootCriticalCss,
   buildDesignTokensCss,
   buildTailwindFontSize,
+  BUTTON,
   TOOLTIP,
   typeScalePx,
   typeScaleTw,
@@ -94,5 +95,17 @@ describe('TYPE_SCALE (docs/ui-design.md §2)', () => {
     expect(typeScalePx('title')).toBe(16);
     expect(typeScalePx('body')).toBe(13);
     expect(typeScalePx('meta')).toBe(12);
+  });
+});
+
+describe('BUTTON (docs/ui-design.md §2)', () => {
+  it('keeps two heights, 4px-ladder padding, and no hover shadow', () => {
+    expect(BUTTON.height.default).toBe(28);
+    expect(BUTTON.height.lg).toBe(32);
+    expect(BUTTON.padX.sm % 4).toBe(0);
+    expect(BUTTON.padX.default % 4).toBe(0);
+    expect(BUTTON.padX.lg % 4).toBe(0);
+    expect(BUTTON.hoverShadow).toBe('none');
+    expect(BUTTON.radius).toBe('6px');
   });
 });
