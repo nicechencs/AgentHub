@@ -14,7 +14,7 @@
 | [platform-capability-refactor.md](platform-capability-refactor.md) | **平台能力架构改造方案**：解耦边界、稀疏端口、生命周期/Skills/连接/用量；P01-P13 与 R00-R08 已完成 |
 | [platform-capability-remediation.md](platform-capability-remediation.md) | **2026-08-07 审查修正方案**：Active Binding、配置 fail-closed、Skills 安全/原子性、Lifecycle 审计与 AgentKey/OCP 真验证 |
 | [testing.md](testing.md) | **测试约定**：测试与生产分文件、vitest/cargo 命令、mock 边界、Markdown 预览用例索引 |
-| [ui-design.md](ui-design.md) | 前端布局、页面线框、交互与组件；「接到…」预览标 ① 只改配置 / ② 写进对方认的登录 / ③ 本机转发，② 不显示本机服务 |
+| [ui-design.md](ui-design.md) | 前端布局、页面线框、交互与组件；三种做法仍是 ① 直接改配置 / ② 写进对方认的登录 / ③ 本机转发，但界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不再标圈号。② 不显示本机服务 |
 | [ui-component-standard.md](ui-component-standard.md) | **UI 组件与体验标准**（**v1.0**）：现行清单、决策树、提示通道、对照审计与 Phase 3 收口；不替代页面线框 |
 | [connection-binding-model.md](connection-binding-model.md) | 实现用的领域模型（一份登录 / 绑定 / 规划器）。**读模型 + plan/bind/unbind 已落地；sidecar 迁移未做**。读者向说明见 [product-decisions.md](product-decisions.md) |
 | [hub-redesign-plan.md](hub-redesign-plan.md) | **Hub 重构 Phase 1 已实施**（历史）：ConnectFlowDialog；后续以 [connection-binding-model.md](connection-binding-model.md) 为 UI 与领域目标 |

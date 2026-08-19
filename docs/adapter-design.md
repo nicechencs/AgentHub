@@ -619,7 +619,7 @@ sidecar 目标已经确认，但不进行 big-bang 重写：
 - 补偿自身失败时进入 `needs_attention` 并给出稳定恢复动作。
 - 应用重启后只恢复 `auto_start` profile；恢复失败不污染已有当前 Provider。
 - 当前进程内模式：关闭窗口进入托盘后端点持续可用；显式退出执行 drain 并释放端口。
-- 当前进程内模式：`close_to_tray=false` 且有活跃桥接时，窗口关闭必须出现“隐藏到托盘 / 停止桥接并退出 / 取消”，不能直接结束进程。
+- 当前进程内模式：关窗隐藏到托盘的条件是 `close_to_tray` **或** 本机路由正在跑；托盘「退出」会确认。中文托盘：打开 AgentHub / 打开路由 / 启动路由 / 停止路由 / 退出。
 - sidecar 模式：普通 GUI 退出后端点持续可用；只有显式停止、更新、卸载或 sidecar 自身关停才 drain。
 - sidecar 模式：GUI 崩溃不影响 listener；sidecar 崩溃后必须明确呈现 `host_unavailable`，重启与恢复不得产生第二个 listener。
 - 第二实例、重复恢复、IPC 重试和并发 start 不能创建重复监听器；版本不兼容的客户端不得执行 mutation。

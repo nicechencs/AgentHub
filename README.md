@@ -16,14 +16,13 @@ AgentHub 是一个本地运行的多 Agent 桌面管理工具。它用统一的 
 |---|---|
 | **Dashboard** | 查看 Agent 状态、Token 趋势、成本估算与解析健康度；已安装 Agent 可直接连接/切换 |
 | **Agents** | 检测 Node/npm/Git 等运行环境，安装、升级或卸载 Agent |
-| **Connections** | 登录钱包：管理官方登录与 API Key，查看一份登录正用于哪些编程工具，并接到其他工具。白话说明见 [产品决策](docs/product-decisions.md)；领域模型见 [连接绑定](docs/connection-binding-model.md)。切换前自动备份 live |
+| **Connections** | 管理官方登录与 API Key，查看一份登录正用于哪些编程工具，并接到其他工具。白话说明见 [产品决策](docs/product-decisions.md)；领域模型见 [连接绑定](docs/connection-binding-model.md)。切换前自动备份 live |
 | **Routes** | 本机路由运行时（端口、启停、恢复）；侧栏英文 Routes，有本机路由才出现。日常绑定走 Dashboard / Connections；规则见[厂商、API 与 OAuth 规则](docs/provider-api-oauth-adaptation.md) |
-| **Skills** | 以 `~/.agents/skills/` 为共享真源，向各 Agent 投影和同步技能 |
+| **Skills** | 以 `~/.agents/skills/` 为共享真源，向各 Agent 同步技能 |
 | **MCP** | 只读汇总各 Agent 的本机 MCP 配置；管理与注入仍在规划中 |
 | **Chat** | 在桌面端调用一个或多个本机 Agent，并展示流式过程 |
 | **Projects** | 浏览、整理和汇总各 Agent 的本地项目与会话 |
-| **Backups** | 管理各 Agent 的 live 配置快照：自动备份、手动备份、恢复与删除 |
-| **Settings** | 管理偏好、日志、数据目录与更新 |
+| **Settings** | 四个分区：偏好 / 本机 / 备份 / 关于。本机含数据目录、日志与本机路由入口；备份是独立分页（`/settings?tab=backups`，`/backups` 会跳过来），不占侧栏 |
 | **CLI** | 提供 doctor、env、agent、provider、account、skill、usage、backup、run 等命令 |
 
 当前内置适配：**Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、Cursor Agent、DeepSeek Harness（dsh）**。各家能力不同，请以 [能力矩阵](docs/capability-matrix.md) 或以下命令为准：
@@ -32,7 +31,7 @@ AgentHub 是一个本地运行的多 Agent 桌面管理工具。它用统一的 
 cargo run -p agenthub-cli -- agent capabilities
 ```
 
-> 把已有登录接到另一个编程工具，只可能是三种做法：① 直接改配置 ② 写进对方认的登录 ③ 本机转发。能改配置或写进对方认的登录，就不做转发。白话与图见 [产品决策](docs/product-decisions.md)。现在能不能写上去见[适配规则矩阵](docs/provider-api-oauth-adaptation.md#4-当前实现矩阵)。本机转发有实验路径，端到端验收未收口。Cursor 只支持公开的 Agent CLI，不能作为写入目标。
+> 把已有登录接到另一个编程工具，只可能是三种做法：① 直接改配置 ② 写进对方认的登录 ③ 本机转发（产品模型；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不再标圈号）。能改配置或写进对方认的登录，就不做转发。白话与图见 [产品决策](docs/product-decisions.md)。现在能不能写上去见[适配规则矩阵](docs/provider-api-oauth-adaptation.md#4-当前实现矩阵)。本机转发仍有未收口路径，端到端验收未完成；界面不再标「实验」。Cursor 只支持公开的 Agent CLI，不能作为写入目标。
 
 ## 快速开始
 
