@@ -584,6 +584,120 @@ fn import_live_preserves_full_secrets_and_marks_new_row_current() {
 }
 
 #[test]
+fn import_live_loopback_collapses_extra_rows_and_keeps_generated() {
+    let live = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": "http://127.0.0.1:43081",
+                "ANTHROPIC_AUTH_TOKEN": "token-aaa"
+            }
+        }),
+    };
+    let (_root, _db, svc, adapter, _backups) = live_svc(AgentId::Claude, live);
+    let imported = svc
+        .import_live(AgentId::Claude, Some("Claude live"))
+        .unwrap();
+
+    svc.repo()
+        .upsert(&Provider {
+            id: "claude-old-loopback".into(),
+            agent_id: AgentId::Claude,
+            name: "Old loopback leftover".into(),
+            settings_config: json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "http://127.0.0.1:11111",
+                    "ANTHROPIC_AUTH_TOKEN": "old-leftover"
+                }
+            }),
+            meta: json!({ "source": "live" }),
+            is_current: false,
+            created_at: "2020-01-01 00:00:00".into(),
+            updated_at: "2020-01-01 00:00:00".into(),
+        })
+        .unwrap();
+
+    let mut leftover_manual = input(
+        "claude-manual-loopback",
+        AgentId::Claude,
+        "Manual loopback",
+        false,
+    );
+    leftover_manual.settings_config = json!({
+        "env": {
+            "ANTHROPIC_BASE_URL": "http://localhost:22222",
+            "ANTHROPIC_AUTH_TOKEN": "manual-leftover"
+        }
+    });
+    leftover_manual.meta = json!({ "source": "manual" });
+    svc.create(&leftover_manual).unwrap();
+
+    let mut generated = input("claude-generated", AgentId::Claude, "Generated", false);
+    generated.settings_config = json!({
+        "env": {
+            "ANTHROPIC_BASE_URL": "http://127.0.0.1:33333",
+            "ANTHROPIC_AUTH_TOKEN": "generated-token"
+        }
+    });
+    generated.meta = json!({
+        "generatedBy": "adapter",
+        "adapterRuleId": "kimi-membership-to-claude-v1"
+    });
+    svc.create(&generated).unwrap();
+
+    let mut remote = input("claude-remote", AgentId::Claude, "Remote", false);
+    remote.settings_config = json!({
+        "env": {
+            "ANTHROPIC_BASE_URL": "https://api.anthropic.com",
+            "ANTHROPIC_AUTH_TOKEN": "sk-remote"
+        }
+    });
+    svc.create(&remote).unwrap();
+
+    *adapter.config.lock().unwrap() = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": "http://127.0.0.1:44227",
+                "ANTHROPIC_AUTH_TOKEN": "token-bbb"
+            }
+        }),
+    };
+    let refreshed = svc.import_live(AgentId::Claude, None).unwrap();
+    assert_eq!(refreshed.id, imported.id);
+    assert_eq!(
+        refreshed.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        "http://127.0.0.1:44227"
+    );
+    assert_eq!(
+        refreshed.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "token-bbb"
+    );
+
+    let list = svc.list(Some(AgentId::Claude)).unwrap();
+    assert!(svc
+        .get("claude-old-loopback", Some(AgentId::Claude))
+        .is_err());
+    assert!(svc
+        .get("claude-manual-loopback", Some(AgentId::Claude))
+        .is_err());
+    assert!(svc.get("claude-generated", Some(AgentId::Claude)).is_ok());
+    assert!(svc.get("claude-remote", Some(AgentId::Claude)).is_ok());
+    assert_eq!(
+        list.iter()
+            .filter(|row| row.meta.get("source").and_then(|v| v.as_str()) == Some("live"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        list.iter()
+            .filter(|row| row.meta.get("generatedBy").and_then(|v| v.as_str()) == Some("adapter"))
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn import_live_updates_existing_live_row_but_never_manual_provider() {
     let live = AgentConfig {
         agent: AgentId::Claude,

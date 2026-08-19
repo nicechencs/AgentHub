@@ -27,6 +27,8 @@
 | 同一人，API Key A 与 Key B | **2** | 不同密钥 |
 | 不同人 | **2+** | 不同身份 |
 
+**例外（本机 loopback 桥）**：`127.0.0.1` / `localhost` / `::1` 上的 bridge ticket 不是独立用户授权——bind 每次都会换端口和 bearer。同一 agent 只保留一个 loopback-bridge 槽位，再 import 覆盖（新端口、新 token），不按 token 指纹另开一行。不得与远端 API Key / 官方 OAuth 合并，也不得删 adapter 生成的 projection。
+
 一句话：
 
 > **身份可以重复出现在列表里；只有「同一张授权票」才去重。  
