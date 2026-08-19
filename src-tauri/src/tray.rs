@@ -17,6 +17,9 @@ use crate::exit_coordinator::{
     ExitPreparation,
 };
 use crate::state::AppState;
+use crate::tray_i18n::{
+    parse_tray_language, tray_dialog_copy, tray_menu_copy, TrayMenuCopy, TrayUiLanguage,
+};
 
 const TRAY_ID: &str = "main";
 pub(crate) const MENU_SHOW: &str = "tray-show";
@@ -165,24 +168,23 @@ fn show_bridge_impact_prompt<R: Runtime>(
     preparation: ExitPreparation,
     action: CoordinatedShutdownAction,
 ) {
+    let copy = tray_dialog_copy(current_tray_language(&app));
     let bridge_text = match preparation.active_bridge_count {
-        Some(count) => format!("{count} 个本机路由正在运行。"),
-        None => "本机路由状态暂时无法读取。".to_owned(),
+        Some(count) => copy.running_count_line(count),
+        None => copy.status_unavailable.to_owned(),
     };
     let (action_label, impact_label) = match action {
-        CoordinatedShutdownAction::Exit => ("停止服务并退出", "停止服务并退出会中断"),
-        CoordinatedShutdownAction::Restart => ("停止服务并重启", "停止服务并重启会中断"),
+        CoordinatedShutdownAction::Exit => (copy.stop_and_quit, copy.impact_quit),
+        CoordinatedShutdownAction::Restart => (copy.stop_and_restart, copy.impact_restart),
     };
     let callback_app = app.clone();
     app.dialog()
-        .message(format!(
-            "{bridge_text}\n{impact_label}这些本地 Connections。也可以让它们继续在托盘中运行，或取消本次操作。"
-        ))
-        .title("本机路由正在运行")
+        .message(format!("{bridge_text}\n{impact_label}"))
+        .title(copy.running_title)
         .kind(MessageDialogKind::Warning)
         .buttons(MessageDialogButtons::OkCancelCustom(
             action_label.to_owned(),
-            "继续运行…".to_owned(),
+            copy.keep_running_ellipsis.to_owned(),
         ))
         .show(move |stop_and_exit| {
             if stop_and_exit {
@@ -198,22 +200,19 @@ fn show_bridge_impact_prompt<R: Runtime>(
 }
 
 fn show_continue_running_prompt<R: Runtime>(app: AppHandle<R>, action: CoordinatedShutdownAction) {
+    let copy = tray_dialog_copy(current_tray_language(&app));
     let message = match action {
-        CoordinatedShutdownAction::Exit => {
-            "选择“隐藏到托盘”会保留正在运行的本机路由和 Connections；也可以取消本次退出。"
-        }
-        CoordinatedShutdownAction::Restart => {
-            "选择“隐藏到托盘”会保留正在运行的本机路由和 Connections，并暂不重启；也可以取消本次重启。"
-        }
+        CoordinatedShutdownAction::Exit => copy.hide_body_exit,
+        CoordinatedShutdownAction::Restart => copy.hide_body_restart,
     };
     let callback_app = app.clone();
     app.dialog()
         .message(message)
-        .title("继续运行本机路由？")
+        .title(copy.continue_title)
         .kind(MessageDialogKind::Info)
         .buttons(MessageDialogButtons::OkCancelCustom(
-            "隐藏到托盘".to_owned(),
-            "取消".to_owned(),
+            copy.hide_to_tray.to_owned(),
+            copy.cancel.to_owned(),
         ))
         .show(move |hide_to_tray| {
             apply_exit_impact_choice(
@@ -348,14 +347,32 @@ fn spawn_tray_bridge_batch<R: Runtime>(app: AppHandle<R>, start: bool) {
     });
 }
 
-/// Create the tray icon with context menu. Call once from app setup.
-pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
-    let show_i = MenuItem::with_id(app, MENU_SHOW, "打开 AgentHub", true, None::<&str>)?;
-    let open_routes_i = MenuItem::with_id(app, MENU_OPEN_ROUTES, "打开路由", true, None::<&str>)?;
-    let start_routes_i = MenuItem::with_id(app, MENU_START_ROUTES, "启动路由", true, None::<&str>)?;
-    let stop_routes_i = MenuItem::with_id(app, MENU_STOP_ROUTES, "停止路由", true, None::<&str>)?;
-    let quit_i = MenuItem::with_id(app, MENU_QUIT, "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(
+fn current_tray_language<R: Runtime>(app: &AppHandle<R>) -> TrayUiLanguage {
+    let raw = app
+        .try_state::<AppState>()
+        .and_then(|state| {
+            state
+                .hub()
+                .ok()
+                .and_then(|hub| hub.settings.get("language").ok().flatten())
+        })
+        .unwrap_or_default();
+    parse_tray_language(&raw)
+}
+
+fn build_tray_menu<R: Runtime>(
+    app: &AppHandle<R>,
+    copy: &TrayMenuCopy,
+) -> tauri::Result<Menu<R>> {
+    let show_i = MenuItem::with_id(app, MENU_SHOW, copy.show, true, None::<&str>)?;
+    let open_routes_i =
+        MenuItem::with_id(app, MENU_OPEN_ROUTES, copy.open_routes, true, None::<&str>)?;
+    let start_routes_i =
+        MenuItem::with_id(app, MENU_START_ROUTES, copy.start_routes, true, None::<&str>)?;
+    let stop_routes_i =
+        MenuItem::with_id(app, MENU_STOP_ROUTES, copy.stop_routes, true, None::<&str>)?;
+    let quit_i = MenuItem::with_id(app, MENU_QUIT, copy.quit, true, None::<&str>)?;
+    Menu::with_items(
         app,
         &[
             &show_i,
@@ -364,7 +381,46 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             &stop_routes_i,
             &quit_i,
         ],
-    )?;
+    )
+}
+
+/// Rebuild tray labels after a successful `language` settings write.
+pub(crate) fn rebuild_tray_menu<R: Runtime>(app: &AppHandle<R>, language: &str) {
+    let copy = tray_menu_copy(parse_tray_language(language));
+    let menu = match build_tray_menu(app, &copy) {
+        Ok(menu) => menu,
+        Err(error) => {
+            tracing::warn!(
+                target: "gui",
+                op = "tray_i18n",
+                error = %error,
+                "rebuild tray menu failed"
+            );
+            return;
+        }
+    };
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        tracing::warn!(
+            target: "gui",
+            op = "tray_i18n",
+            "rebuild tray menu skipped because tray icon is unavailable"
+        );
+        return;
+    };
+    if let Err(error) = tray.set_menu(Some(menu)) {
+        tracing::warn!(
+            target: "gui",
+            op = "tray_i18n",
+            error = %error,
+            "set tray menu failed"
+        );
+    }
+}
+
+/// Create the tray icon with context menu. Call once from app setup.
+pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+    let copy = tray_menu_copy(current_tray_language(app));
+    let menu = build_tray_menu(app, &copy)?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
@@ -489,5 +545,60 @@ mod tests {
             MouseButton::Right,
             MouseButtonState::Up
         ));
+    }
+
+    #[test]
+    fn parse_tray_language_maps_zh_en_and_unknown() {
+        use crate::tray_i18n::parse_tray_language;
+        assert_eq!(parse_tray_language("zh-CN"), TrayUiLanguage::Zh);
+        assert_eq!(parse_tray_language("zh"), TrayUiLanguage::Zh);
+        assert_eq!(parse_tray_language(""), TrayUiLanguage::Zh);
+        assert_eq!(parse_tray_language("en"), TrayUiLanguage::En);
+        assert_eq!(parse_tray_language("en-US"), TrayUiLanguage::En);
+        assert_eq!(parse_tray_language("EN"), TrayUiLanguage::En);
+    }
+
+    #[test]
+    fn tray_menu_copy_zh_matches_current_labels() {
+        use crate::tray_i18n::tray_menu_copy;
+        let copy = tray_menu_copy(TrayUiLanguage::Zh);
+        assert_eq!(copy.show, "打开 AgentHub");
+        assert_eq!(copy.open_routes, "打开路由");
+        assert_eq!(copy.start_routes, "启动路由");
+        assert_eq!(copy.stop_routes, "停止路由");
+        assert_eq!(copy.quit, "退出");
+    }
+
+    #[test]
+    fn tray_menu_copy_en_matches_requested_labels() {
+        use crate::tray_i18n::tray_menu_copy;
+        let copy = tray_menu_copy(TrayUiLanguage::En);
+        assert_eq!(copy.show, "Open AgentHub");
+        assert_eq!(copy.open_routes, "Open routes");
+        assert_eq!(copy.start_routes, "Start routes");
+        assert_eq!(copy.stop_routes, "Stop routes");
+        assert_eq!(copy.quit, "Quit");
+    }
+
+    #[test]
+    fn tray_dialog_copy_zh_keeps_current_key_labels() {
+        use crate::tray_i18n::tray_dialog_copy;
+        let copy = tray_dialog_copy(TrayUiLanguage::Zh);
+        assert_eq!(copy.running_title, "本机路由正在运行");
+        assert_eq!(copy.hide_to_tray, "隐藏到托盘");
+        assert_eq!(copy.stop_and_quit, "停止服务并退出");
+        assert_eq!(copy.keep_running, "继续运行");
+        assert_eq!(copy.cancel, "取消");
+    }
+
+    #[test]
+    fn tray_dialog_copy_en_uses_requested_key_labels() {
+        use crate::tray_i18n::tray_dialog_copy;
+        let copy = tray_dialog_copy(TrayUiLanguage::En);
+        assert_eq!(copy.running_title, "Local routes running");
+        assert_eq!(copy.hide_to_tray, "Hide to tray");
+        assert_eq!(copy.stop_and_quit, "Stop and quit");
+        assert_eq!(copy.keep_running, "Keep running");
+        assert_eq!(copy.cancel, "Cancel");
     }
 }
