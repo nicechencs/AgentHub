@@ -14,6 +14,16 @@ import type { AgentId, Provider } from '@/lib/types';
 import type { ProviderFormVars } from '@/lib/provider-detect';
 import { piProviderSlotById } from '@/lib/pi-provider-slots';
 import { REDACTED_MARKER } from '@/lib/provider-detect';
+import type { MessageKey, TranslateFn } from '@/lib/i18n/types';
+
+function tx(
+  t: TranslateFn | undefined,
+  key: MessageKey,
+  fallback: string,
+  params?: Record<string, string | number>,
+): string {
+  return t ? t(key, params) : fallback;
+}
 
 /** UI schema load state for the Provider edit dialog. */
 export type SchemaUiStatus = 'idle' | 'loading' | 'ready' | 'unsupported' | 'error';
@@ -73,7 +83,7 @@ export type SchemaLoadPlan =
  * Decide what the dialog should do when opening / retrying schema load.
  * Does not call the network — pure plan from catalog expectation.
  */
-export function planSchemaLoad(expectation: ProjectorExpectation): SchemaLoadPlan {
+export function planSchemaLoad(expectation: ProjectorExpectation, t?: TranslateFn): SchemaLoadPlan {
   switch (expectation.kind) {
     case 'unknown':
       if (expectation.reason === 'catalog_not_ready') {
@@ -81,7 +91,7 @@ export function planSchemaLoad(expectation: ProjectorExpectation): SchemaLoadPla
       }
       return {
         action: 'error',
-        message: schemaErrorMessage(expectation.reason),
+        message: schemaErrorMessage(expectation.reason, t),
       };
     case 'unsupported':
       return { action: 'unsupported' };
@@ -90,22 +100,22 @@ export function planSchemaLoad(expectation: ProjectorExpectation): SchemaLoadPla
   }
 }
 
-export function schemaErrorMessage(reason: string): string {
+export function schemaErrorMessage(reason: string, t?: TranslateFn): string {
   switch (reason) {
     case 'catalog_not_ready':
-      return 'Agent Catalog 尚未就绪，无法确认配置能力';
+      return tx(t, 'connections.providerDialog.schemaCatalogNotReady', 'Agent Catalog 尚未就绪，无法确认配置能力');
     case 'catalog_unavailable':
-      return 'Agent Catalog 不可用，无法确认配置能力';
+      return tx(t, 'connections.providerDialog.schemaCatalogUnavailable', 'Agent Catalog 不可用，无法确认配置能力');
     case 'entry_missing':
-      return '当前 Agent 不在 Catalog 中，无法确认配置能力';
+      return tx(t, 'connections.providerDialog.schemaEntryMissing', '当前 Agent 不在 Catalog 中，无法确认配置能力');
     case 'version_undefined':
-      return 'Catalog 未声明 configSchemaVersion，禁止保存';
+      return tx(t, 'connections.providerDialog.schemaVersionUndefined', 'Catalog 未声明 configSchemaVersion，禁止保存');
     case 'version_invalid':
-      return 'Catalog 的 configSchemaVersion 无效';
+      return tx(t, 'connections.providerDialog.schemaVersionInvalid', 'Catalog 的 configSchemaVersion 无效');
     case 'schema_load_failed':
-      return '加载配置 schema 失败';
+      return tx(t, 'connections.providerDialog.schemaLoadFailed', '加载配置 schema 失败');
     default:
-      return reason || '配置能力未知';
+      return reason || tx(t, 'connections.providerDialog.schemaUnknown', '配置能力未知');
   }
 }
 
@@ -151,6 +161,7 @@ export interface ProviderSaveFlowInput {
   vars: ProviderFormVars;
   saveVars: ProviderFormVars;
   finalFormat: 'json' | 'toml';
+  t?: TranslateFn;
   /** Scaffold / official base when configText is empty or redacted. */
   baseText: string;
 }
@@ -200,7 +211,7 @@ export interface ProviderSaveFlowDeps {
 /**
  * Parse JSON base for materialize. Fail closed — never substitute {}.
  */
-export function parseJsonConfigBase(baseText: string):
+export function parseJsonConfigBase(baseText: string, t?: TranslateFn):
   | { ok: true; value: Record<string, unknown> }
   | { ok: false; message: string } {
   const trimmed = baseText.trim();
@@ -210,12 +221,12 @@ export function parseJsonConfigBase(baseText: string):
   try {
     const parsed: unknown = JSON.parse(trimmed);
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { ok: false, message: '配置 JSON 必须是对象' };
+      return { ok: false, message: tx(t, 'connections.providerDialog.configMustBeObject', '配置 JSON 必须是对象') };
     }
     return { ok: true, value: parsed as Record<string, unknown> };
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
-    return { ok: false, message: `配置 JSON 解析失败：${detail}` };
+    return { ok: false, message: tx(t, 'connections.providerDialog.configParseFailed', `配置 JSON 解析失败：${detail}`, { detail }) };
   }
 }
 
@@ -242,14 +253,15 @@ function buildTomlBaseRaw(
 function materializeToConfigText(
   agentId: AgentId,
   raw: unknown,
+  t?: TranslateFn,
 ):
   | { ok: true; finalText: string; authApiKey?: string }
   | { ok: false; message: string } {
   if (raw == null) {
-    return { ok: false, message: 'materialize 返回空结果' };
+    return { ok: false, message: tx(t, 'connections.providerDialog.materializeEmpty', 'materialize 返回空结果') };
   }
   if (typeof raw !== 'object') {
-    return { ok: false, message: 'materialize 返回无法识别的结果' };
+    return { ok: false, message: tx(t, 'connections.providerDialog.materializeUnrecognized', 'materialize 返回无法识别的结果') };
   }
   const obj = raw as {
     format?: string;
@@ -272,7 +284,7 @@ function materializeToConfigText(
   } catch (e) {
     return {
       ok: false,
-      message: e instanceof Error ? e.message : '无法序列化 materialize 结果',
+      message: e instanceof Error ? e.message : tx(t, 'connections.providerDialog.materializeSerializeFailed', '无法序列化 materialize 结果'),
     };
   }
 }
@@ -362,7 +374,7 @@ export async function runProviderSaveFlow(
     return {
       ok: false,
       code: 'schema_not_ready',
-      message: '配置 schema 未就绪，禁止保存',
+      message: tx(input.t, 'connections.providerDialog.schemaBlockedSave', '配置 schema 未就绪，禁止保存'),
       preserveInput: true,
     };
   }
@@ -380,7 +392,7 @@ export async function runProviderSaveFlow(
       return {
         ok: false,
         code: 'schema_not_ready',
-        message: '配置 schema 未就绪，禁止保存',
+        message: tx(input.t, 'connections.providerDialog.schemaBlockedSave', '配置 schema 未就绪，禁止保存'),
         preserveInput: true,
       };
     }
@@ -389,7 +401,7 @@ export async function runProviderSaveFlow(
     if (input.finalFormat === 'toml') {
       baseRaw = buildTomlBaseRaw(input.agentId, input.baseText, authApiKey);
     } else {
-      const parsed = parseJsonConfigBase(input.baseText);
+      const parsed = parseJsonConfigBase(input.baseText, input.t);
       if (!parsed.ok) {
         return {
           ok: false,
@@ -420,7 +432,7 @@ export async function runProviderSaveFlow(
     if (!validation.ok) {
       const summary =
         validation.issues.map((i) => i.message).filter(Boolean).join('；') ||
-        '配置校验未通过';
+        tx(input.t, 'connections.providerDialog.validationFailed', '配置校验未通过');
       return {
         ok: false,
         code: 'validation_failed',
@@ -442,7 +454,7 @@ export async function runProviderSaveFlow(
       };
     }
 
-    const materialized = materializeToConfigText(input.agentId, raw);
+    const materialized = materializeToConfigText(input.agentId, raw, input.t);
     if (!materialized.ok) {
       return {
         ok: false,

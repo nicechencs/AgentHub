@@ -4,6 +4,7 @@ import { getAgentStatusSnapshot, useAgentStatuses } from '@/app/runtime';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { EnvRemediationPanel } from '@/components/shared/EnvRemediationPanel';
 import { EnvStatusBar } from '@/components/shared/EnvStatusBar';
 import { ErrorState } from '@/components/shared/ErrorState';
@@ -19,6 +20,7 @@ import { AgentCard } from './agent-card';
 
 /** Agents 安装管理页 — 环境检测 + Agent 安装（backend 由构建时 composition root 选择） */
 export default function AgentsPage() {
+  const { t } = useI18n();
   const { state, statuses, error, reload } = useAgentStatuses();
   const [updateById, setUpdateById] = React.useState<
     Partial<Record<AgentId, AgentUpdateInfo>>
@@ -83,13 +85,13 @@ export default function AgentsPage() {
             agentId: agent.agentId,
             state: 'unknown',
             currentVersion: agent.version,
-            note: '更新检查失败，仍可强制升级',
+            note: t('agents.page.updateCheckFailed'),
           };
         }
         return next;
       });
     }
-  }, []);
+  }, [t]);
 
   const loadRuntimes = React.useCallback(async () => {
     setEnvLoading(true);
@@ -192,9 +194,9 @@ export default function AgentsPage() {
   return (
     <div>
       <PageHeader
-        title="Agent 管理"
-        description="环境修复与安装"
-        descriptionTip="检测并修复共享运行时（如 Node），再安装或升级 Claude / Codex / Kimi / Grok / Pi / WorkBuddy / Cursor Agent 等 CLI。"
+        title={t('agents.page.title')}
+        description={t('agents.page.description')}
+        descriptionTip={t('agents.page.descriptionTip')}
       />
 
       <div className={pageRhythm.lead}>
@@ -229,9 +231,9 @@ export default function AgentsPage() {
         {!showAgentSkeleton && hasEnvIssues(runtimes) && !showPagePanel && (
           <Tip
             className="text-xs text-muted"
-            label="「一键修复」仅安装可自动处理的 runtime（如 Node）。卸载 Agent 不会卸载共享环境。若 PATH 仍异常，请完全退出并重启 AgentHub 后再检测。"
+            label={t('agents.page.envTip')}
           >
-            环境未就绪，可先一键修复
+            {t('agents.page.envHint')}
           </Tip>
         )}
       </div>
@@ -243,9 +245,9 @@ export default function AgentsPage() {
       ) : agents.length === 0 ? (
         <EmptyState
           icon={PackageSearch}
-          title="未检测到 Agent"
-          description="确认 CLI 已安装后重试"
-          actionLabel="重新检测"
+          title={t('agents.page.emptyTitle')}
+          description={t('agents.page.emptyDesc')}
+          actionLabel={t('agents.page.redetect')}
           onAction={retry}
         />
       ) : (

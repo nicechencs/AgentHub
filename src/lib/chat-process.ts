@@ -4,7 +4,12 @@
  * 设计见 docs/chat-process-streaming.md。
  */
 
+import { interpolate, type MessageKey, type MessageParams, type TranslateFn } from '@/lib/i18n';
 import type { AgentId, ChatEvent, ChatMessageStatus, ProcessStep } from '@/lib/types';
+
+function tx(t: TranslateFn | undefined, key: MessageKey, fallback: string, params?: MessageParams): string {
+  return t ? t(key, params) : interpolate(fallback, params);
+}
 
 export type ProcessPhase =
   | 'queued'
@@ -55,41 +60,43 @@ export function phaseFromMessageStatus(status: ChatMessageStatus | string): Proc
   }
 }
 
-export function processPhaseLabel(phase: ProcessPhase): string {
+export function processPhaseLabel(phase: ProcessPhase, t?: TranslateFn): string {
   switch (phase) {
     case 'queued':
-      return '排队中';
+      return tx(t, 'chat.process.queued', '排队中');
     case 'starting':
-      return '启动中';
+      return tx(t, 'chat.process.starting', '启动中');
     case 'running':
-      return '生成中';
+      return tx(t, 'chat.process.running', '生成中');
     case 'ok':
-      return '已完成';
+      return tx(t, 'chat.process.ok', '已完成');
     case 'failed':
-      return '失败';
+      return tx(t, 'chat.process.failed', '失败');
     case 'cancelled':
-      return '已取消';
+      return tx(t, 'chat.process.cancelled', '已取消');
     case 'timeout':
-      return '超时';
+      return tx(t, 'chat.process.timeout', '超时');
     default:
       return phase;
   }
 }
 
-export function stepSummary(step: ProcessStep): string {
+export function stepSummary(step: ProcessStep, t?: TranslateFn): string {
   switch (step.type) {
     case 'status':
       return step.detail ? `${step.phase} · ${step.detail}` : step.phase;
     case 'thinking':
-      return step.done ? '思考完成' : '思考中';
+      return step.done
+        ? tx(t, 'chat.process.thinkingDone', '思考完成')
+        : tx(t, 'chat.process.thinking', '思考中');
     case 'tool': {
       const st = step.status || '';
       return st ? `${step.name} (${st})` : step.name;
     }
     case 'text':
-      return '文本';
+      return tx(t, 'chat.process.text', '文本');
     case 'raw':
-      return step.note || '原始事件';
+      return step.note || tx(t, 'chat.process.rawEvent', '原始事件');
     case 'error':
       return step.message;
     default:

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createTranslator } from '@/lib/i18n';
 import {
   hasProcessDetails,
   phaseFromMessageStatus,
@@ -9,6 +10,8 @@ import {
   type ProcessMap,
 } from '@/lib/chat-process';
 import type { ChatEvent, ChatMessage } from '@/lib/types';
+
+const t = createTranslator('zh');
 
 function finishedMsg(partial: Partial<ChatMessage> & Pick<ChatMessage, 'status' | 'content'>): ChatMessage {
   return {
@@ -115,7 +118,7 @@ describe('chat-process reduceProcessEvent', () => {
     expect(map['1:claude']?.steps).toHaveLength(2);
     expect(map['1:claude']?.steps[0]).toMatchObject({ type: 'tool', name: 'Read' });
     expect(map['1:claude']?.steps[1]).toMatchObject({ type: 'thinking' });
-    expect(stepSummary(map['1:claude']!.steps[0])).toContain('Read');
+    expect(stepSummary(map['1:claude']!.steps[0], t)).toContain('Read');
   });
 
   it('agentFinished maps status to phase', () => {
@@ -142,8 +145,8 @@ describe('chat-process reduceProcessEvent', () => {
   it('phaseFromMessageStatus and labels', () => {
     expect(phaseFromMessageStatus('cancelled')).toBe('cancelled');
     expect(phaseFromMessageStatus('failed')).toBe('failed');
-    expect(processPhaseLabel('queued')).toBe('排队中');
-    expect(processPhaseLabel('running')).toBe('生成中');
+    expect(processPhaseLabel('queued', t)).toBe('排队中');
+    expect(processPhaseLabel('running', t)).toBe('生成中');
   });
 
   it('hasProcessDetails is true for command, steps, or active phases', () => {

@@ -1,6 +1,8 @@
 import type { RefObject } from 'react';
 import { Loader2 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
+import { useI18n } from '@/components/shared/LanguageProvider';
+import type { TranslateFn } from '@/lib/i18n';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { agentDisplayName } from '@/config/agents';
@@ -36,6 +38,7 @@ export function ChatTranscript({
   onScroll: () => void;
   onRetry: () => void;
 }) {
+  const { t } = useI18n();
   if (listLoading && !active) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
@@ -57,9 +60,9 @@ export function ChatTranscript({
       ) : turns.length === 0 ? (
         <div className="flex h-full flex-col items-center justify-center px-6 py-10">
           <div className="text-center">
-            <p className="text-title font-semibold tracking-tight text-primary">开始对话</p>
+            <p className="text-title font-semibold tracking-tight text-primary">{t('chat.transcript.start')}</p>
             <p className="mt-2 max-w-md text-body text-muted">
-              向 {agentPickerLabel(active)} 发送第一条消息
+              {t('chat.transcript.firstMessage', { agent: agentPickerLabel(t, active) })}
             </p>
           </div>
         </div>
@@ -115,9 +118,10 @@ function ComparisonBar({
     messageId: string;
   }>;
 }) {
+  const { t } = useI18n();
   return (
     <div className="flex flex-wrap items-center gap-2 text-meta text-muted">
-      <span>本轮 {chips.length} 个 Agent</span>
+      <span>{t('chat.transcript.turnAgents', { n: chips.length })}</span>
       {chips.map((chip) => (
         <button
           key={chip.messageId}
@@ -139,25 +143,26 @@ function ComparisonBar({
   );
 }
 
-function chipStatusLabel(status: ChatMessageStatus): string {
+function chipStatusLabel(t: TranslateFn, status: ChatMessageStatus): string {
   switch (status) {
     case 'running':
-      return '生成中';
+      return t('chat.transcript.generating');
     case 'cancelled':
-      return '已取消';
+      return t('chat.transcript.cancelled');
     case 'ok':
-      return '成功';
+      return t('chat.transcript.success');
     case 'timeout':
-      return '超时';
+      return t('chat.transcript.timeout');
     case 'skipped':
-      return '已跳过';
+      return t('chat.transcript.skipped');
     default:
-      return '失败';
+      return t('chat.transcript.failed');
   }
 }
 
 function ChipStatus({ status }: { status: ChatMessageStatus }) {
-  const label = chipStatusLabel(status);
+  const { t } = useI18n();
+  const label = chipStatusLabel(t, status);
   if (status === 'running') {
     return (
       <span className="inline-flex" aria-label={label}>

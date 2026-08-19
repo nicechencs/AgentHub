@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FolderOpen, PanelLeftOpen, Settings2, ShieldAlert } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentLogo } from '@/components/shared/AgentLogo';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Input } from '@/components/ui/input';
 import { Hint } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
@@ -47,6 +48,7 @@ export function ChatSessionHeader({
     if (editing) inputRef.current?.focus();
   }, [editing]);
 
+  const { t } = useI18n();
   const hasHidden = Boolean(active?.agentIds.some((id) => hiddenIds.has(id)));
   const selectedAgent = active?.agentIds[0] ?? null;
   const approveOn = autoApproveActive(Boolean(active?.allowDangerous), selectedAgent);
@@ -71,12 +73,12 @@ export function ChatSessionHeader({
       )}
     >
       {!railOpen && (
-        <Hint label="展开历史">
+        <Hint label={t('chat.rail.expandHistory')}>
           <button
             type="button"
             className="flex h-7 w-7 items-center justify-center rounded-btn text-muted hover:bg-hover hover:text-primary"
             onClick={onExpandRail}
-            aria-label="展开历史"
+            aria-label={t('chat.rail.expandHistory')}
           >
             <PanelLeftOpen className="h-4 w-4" />
           </button>
@@ -87,7 +89,7 @@ export function ChatSessionHeader({
           <Input
             ref={inputRef}
             value={draftTitle}
-            aria-label="会话标题"
+            aria-label={t('chat.header.titleAria')}
             className="h-7 max-w-xs font-semibold"
             onChange={(e) => setDraftTitle(e.target.value)}
             onKeyDown={(e) => {
@@ -116,14 +118,14 @@ export function ChatSessionHeader({
             }}
             disabled={!active}
           >
-            {active ? conversationTitle(active.title) : '对话'}
+            {active ? conversationTitle(t, active.title) : t('chat.header.conversation')}
           </button>
         )}
       </div>
       {active && (
         <div className="flex min-w-0 shrink-0 items-center gap-1.5">
           <AgentChip agentIds={active.agentIds} hasHidden={hasHidden} />
-          <Hint label={active.cwd || '点击选择工作目录'}>
+          <Hint label={active.cwd || t('chat.header.pickCwd')}>
             <button
               type="button"
               onClick={onPickWorkingDirectory}
@@ -134,27 +136,27 @@ export function ChatSessionHeader({
             >
               <FolderOpen className="h-3 w-3 shrink-0" />
               <span className="truncate">
-                {active.cwd ? cwdShortName(active.cwd) : '未设置工作目录'}
+                {active.cwd ? cwdShortName(active.cwd, t) : t('chat.header.cwdUnset')}
               </span>
             </button>
           </Hint>
           {approveOn && (
-            <Hint label={autoApproveHint(autoApproveEffect(selectedAgent))}>
+            <Hint label={autoApproveHint(t, autoApproveEffect(selectedAgent))}>
               <button
                 type="button"
                 onClick={onOpenSettings}
                 className="inline-flex h-7 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-meta text-warning hover:bg-hover"
               >
                 <ShieldAlert className="h-3 w-3 shrink-0" />
-                自动批准
+                {t('chat.header.autoApprove')}
               </button>
             </Hint>
           )}
-          <Hint label="会话设置">
+          <Hint label={t('chat.header.sessionSettings')}>
             <button
               type="button"
               className="flex h-7 w-7 items-center justify-center rounded-btn text-muted hover:bg-hover hover:text-primary"
-              aria-label="会话设置"
+              aria-label={t('chat.header.sessionSettings')}
               onClick={onOpenSettings}
             >
               <Settings2 className="h-4 w-4" />
@@ -167,13 +169,14 @@ export function ChatSessionHeader({
 }
 
 function AgentChip({ agentIds, hasHidden }: { agentIds: AgentId[]; hasHidden: boolean }) {
+  const { t } = useI18n();
   if (agentIds.length === 0) return null;
   if (agentIds.length === 1) {
     return (
       <span className="inline-flex h-7 items-center gap-1.5 rounded-btn border border-border bg-subtle px-2 text-meta text-secondary">
         <AgentLogo agentId={agentIds[0]} size="sm" />
         <span className="truncate">{agentDisplayName(agentIds[0])}</span>
-        {hasHidden && <span className="text-muted">已隐藏</span>}
+        {hasHidden && <span className="text-muted">{t('chat.header.hidden')}</span>}
       </span>
     );
   }
@@ -186,8 +189,8 @@ function AgentChip({ agentIds, hasHidden }: { agentIds: AgentId[]; hasHidden: bo
           </span>
         ))}
       </span>
-      <span>{agentIds.length} 个 Agent</span>
-      {hasHidden && <span className="text-muted">已隐藏</span>}
+      <span>{t('chat.header.agentCount', { n: agentIds.length })}</span>
+      {hasHidden && <span className="text-muted">{t('chat.header.hidden')}</span>}
     </span>
   );
 }

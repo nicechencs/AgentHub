@@ -11,6 +11,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { SearchField } from '@/components/shared/SearchField';
 import { Button } from '@/components/ui/button';
@@ -49,6 +50,7 @@ import { resolveProjectFetchAgentId, resolveProjectTabAgents } from './project-t
 import { ProjectTree } from './ProjectTree';
 
 export default function ProjectsPage() {
+  const { t } = useI18n();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -231,7 +233,7 @@ export default function ProjectsPage() {
   async function toggleExpand(project: AgentProject) {
     if (project.agentId === 'cursor' && project.sessionCount === 0) {
       toast({
-        title: 'Cursor 仅提供工作区目录列表，无会话 transcript',
+        title: t('projects.toast.cursorNoTranscript'),
         variant: 'danger',
       });
       return;
@@ -276,7 +278,7 @@ export default function ProjectsPage() {
     try {
       await upsertProjectMeta(p.id, { hidden: !p.hidden });
       toast({
-        title: p.hidden ? '已取消隐藏' : '已隐藏项目',
+        title: p.hidden ? t('projects.toast.unhidden') : t('projects.toast.hidden'),
         variant: 'success',
       });
       await reloadProjects();
@@ -291,7 +293,7 @@ export default function ProjectsPage() {
     e.stopPropagation();
     const target = verifiedProjectWorkspacePath(p);
     if (!target) {
-      toast({ title: '项目路径未通过校验，无法打开', variant: 'danger' });
+      toast({ title: t('projects.toast.pathInvalid'), variant: 'danger' });
       return;
     }
     try {
@@ -308,7 +310,7 @@ export default function ProjectsPage() {
     e.stopPropagation();
     const target = normalizeOpenPath(s.path);
     if (!target) {
-      toast({ title: '该会话没有可定位的记录文件', variant: 'danger' });
+      toast({ title: t('projects.toast.noRecord'), variant: 'danger' });
       return;
     }
     try {
@@ -325,14 +327,14 @@ export default function ProjectsPage() {
     e?.stopPropagation();
     const sid = nativeSessionId(s);
     if (!sid) {
-      toast({ title: '该会话没有原生 Session ID', variant: 'danger' });
+      toast({ title: t('projects.toast.noSessionId'), variant: 'danger' });
       return;
     }
     try {
       await navigator.clipboard.writeText(sid);
-      toast({ title: 'Session ID 已复制', description: shortSessionId(sid, 48) });
+      toast({ title: t('projects.toast.sessionIdCopied'), description: shortSessionId(sid, 48) });
     } catch {
-      toast({ title: '复制失败', variant: 'danger' });
+      toast({ title: t('projects.toast.copyFailed'), variant: 'danger' });
     }
   }
 
@@ -426,7 +428,7 @@ export default function ProjectsPage() {
         next.delete(deleteTarget.id);
         return next;
       });
-      toast({ title: '已删除记录', variant: 'success' });
+      toast({ title: t('projects.toast.deleted'), variant: 'success' });
       setDeleteTarget(null);
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
@@ -467,7 +469,7 @@ export default function ProjectsPage() {
       setSelected(new Set());
       setBatchDeleteOpen(false);
       toast({
-        title: n === ids.length ? `已删除 ${n} 条记录` : `已删除 ${n}/${ids.length} 条记录`,
+        title: n === ids.length ? t('projects.toast.deletedAll', { n }) : t('projects.toast.deletedPartial', { n, total: ids.length }),
         variant: n === ids.length ? 'success' : 'danger',
       });
     } catch (e) {
@@ -490,14 +492,14 @@ export default function ProjectsPage() {
   async function handleSummarize() {
     const ids = selectableSessions.filter((p) => selected.has(p.id)).map((p) => p.id);
     if (ids.length === 0) {
-      toast({ title: '请先勾选要总结的会话', variant: 'danger' });
+      toast({ title: t('projects.toast.selectToSummarize'), variant: 'danger' });
       return;
     }
     setBusy(true);
     try {
       const excerpts = await getAgentProjectExcerpts(ids);
       if (excerpts.length === 0) {
-        toast({ title: '未能读取会话摘录', variant: 'danger' });
+        toast({ title: t('projects.toast.excerptFailed'), variant: 'danger' });
         return;
       }
       const cwds = excerpts.map((e) => e.cwd).filter(Boolean) as string[];
@@ -506,7 +508,7 @@ export default function ProjectsPage() {
       setChatBootstrap({
         agentIds: [agentId],
         cwd,
-        title: `总结 ${excerpts.length} 条记录`,
+        title: t('projects.toast.summarizeTitle', { n: excerpts.length }),
         prompt: buildSummaryPrompt(name, excerpts),
       });
       navigate('/chat?from=projects');
@@ -520,9 +522,9 @@ export default function ProjectsPage() {
   return (
     <div>
       <PageHeader
-        title="项目"
-        description="本机会话与工作区"
-        descriptionTip="按 Agent 浏览本地项目与会话；可打开目录、继续 Chat、删除或批量总结。不调用各 CLI 原生 --resume。"
+        title={t('projects.page.title')}
+        description={t('projects.page.description')}
+        descriptionTip={t('projects.page.descriptionTip')}
         actions={
           <div className="flex items-center gap-2">
             {selected.size > 0 && (
@@ -539,7 +541,7 @@ export default function ProjectsPage() {
                     ) : (
                       <Sparkles className="h-3.5 w-3.5" />
                     )}
-                    总结 ({selected.size})
+                    {t('projects.page.summarize', { n: selected.size })}
                   </Button>
                 )}
                 {showDelete && (
@@ -551,7 +553,7 @@ export default function ProjectsPage() {
                     onClick={() => setBatchDeleteOpen(true)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                    删除 ({selected.size})
+                    {t('projects.page.delete', { n: selected.size })}
                   </Button>
                 )}
               </>
@@ -562,7 +564,7 @@ export default function ProjectsPage() {
               disabled={phase === 'loading' || busy || tabAgents.length === 0}
               onClick={() => void reloadProjects()}
             >
-              刷新
+              {t('projects.page.refresh')}
             </Button>
           </div>
         }
@@ -576,14 +578,14 @@ export default function ProjectsPage() {
             value={agentId}
             onChange={setAgent}
             agents={tabAgents}
-            emptyLabel="没有可查看的 Agent"
+            emptyLabel={t('projects.page.noAgents')}
             counts={projectCounts}
             countMode="defined"
-            countTitle={(_id, n) => `${n} 个项目`}
+            countTitle={(_id, n) => t('projects.page.projectCount', { n })}
           />
         )}
         {selected.size > 0 && (
-          <span className="text-xs text-muted">已选 {selected.size}</span>
+          <span className="text-xs text-muted">{t('projects.page.selected', { n: selected.size })}</span>
         )}
         <Button
           size="sm"
@@ -591,20 +593,20 @@ export default function ProjectsPage() {
           onClick={() => void toggleShowHidden()}
         >
           <EyeOff className="h-3.5 w-3.5" />
-          {showHidden ? '隐藏项' : '显示隐藏'}
+          {showHidden ? t('projects.page.hideItems') : t('projects.page.showHidden')}
         </Button>
       </div>
 
       <div className={pageRhythm.chromeRow}>
         <SearchField
           className="min-w-[200px] max-w-sm flex-1"
-          placeholder="搜索项目名、路径；已展开时可搜会话…"
+          placeholder={t('projects.page.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         {selectableSessions.length > 0 && showDelete && (
           <Button size="sm" variant="ghost" onClick={toggleAllVisible}>
-            {allVisibleSelected ? '取消全选' : '全选已展开会话'}
+            {allVisibleSelected ? t('projects.page.deselectAll') : t('projects.page.selectAllExpanded')}
           </Button>
         )}
       </div>
@@ -616,21 +618,21 @@ export default function ProjectsPage() {
       ) : tabAgents.length === 0 ? (
         <EmptyState
           icon={FolderKanban}
-          title="还没有可查看的 Agent"
-          description="安装或取消隐藏 Agent 后即可查看项目"
-          actionLabel="去 Agents 页"
+          title={t('projects.empty.noAgentsTitle')}
+          description={t('projects.empty.noAgentsDesc')}
+          actionLabel={t('projects.empty.goAgents')}
           onAction={() => navigate('/agents')}
         />
       ) : visibleProjects.length === 0 ? (
         <EmptyState
           icon={FolderKanban}
-          title={projects.length === 0 ? '暂无项目' : '没有匹配的项目'}
+          title={projects.length === 0 ? t('projects.empty.noProjects') : t('projects.empty.noMatch')}
           description={
             projects.length === 0
-              ? `在 ${agentMeta?.name ?? agentId} 中对话后会出现在此`
-              : '换关键词或清空搜索'
+              ? t('projects.empty.noProjectsDesc', { name: agentMeta?.name ?? agentId })
+              : t('projects.empty.noMatchDesc')
           }
-          actionLabel={projects.length === 0 ? '刷新' : '清空搜索'}
+          actionLabel={projects.length === 0 ? t('projects.empty.refresh') : t('projects.empty.clearSearch')}
           onAction={
             projects.length === 0
               ? () => void reloadProjects()
@@ -662,11 +664,11 @@ export default function ProjectsPage() {
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>删除会话？</DialogTitle>
+            <DialogTitle>{t('projects.dialog.deleteTitle')}</DialogTitle>
             <DialogDescription>
               {deleteTarget?.agentId === 'grok'
-                ? '删除会话目录（含 sidecar），不可恢复；不改 Agent 配置。'
-                : '删除会话日志，不可恢复；不改 Agent 配置。'}
+                ? t('projects.dialog.deleteGrok')
+                : t('projects.dialog.deleteLog')}
             </DialogDescription>
           </DialogHeader>
           {deleteTarget && (
@@ -684,11 +686,11 @@ export default function ProjectsPage() {
           )}
           <DialogFooter>
             <Button variant="outline" disabled={busy} onClick={() => setDeleteTarget(null)}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button variant="danger" disabled={busy} onClick={() => void handleDeleteOne()}>
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              确认删除
+              {t('projects.dialog.confirmDelete')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -697,16 +699,16 @@ export default function ProjectsPage() {
       <Dialog open={batchDeleteOpen} onOpenChange={setBatchDeleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>删除 {selected.size} 条会话？</DialogTitle>
-            <DialogDescription>批量删除日志，不可恢复。</DialogDescription>
+            <DialogTitle>{t('projects.dialog.batchTitle', { n: selected.size })}</DialogTitle>
+            <DialogDescription>{t('projects.dialog.batchDesc')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" disabled={busy} onClick={() => setBatchDeleteOpen(false)}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button variant="danger" disabled={busy} onClick={() => void handleBatchDelete()}>
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              确认删除
+              {t('projects.dialog.confirmDelete')}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -11,6 +11,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { EnvRemediationPanel } from '@/components/shared/EnvRemediationPanel';
 import { InlineTerminal } from '@/components/shared/InlineTerminal';
 import { Badge } from '@/components/ui/badge';
@@ -58,6 +59,7 @@ export function AgentCard({
   /** After upgrade, parent may force-refresh update probe for this agent. */
   onRecheckUpdate?: () => void;
 }) {
+  const { t } = useI18n();
   const meta = AGENT_MAP[agent.agentId];
   const [selectedChannelId, setSelectedChannelId] = React.useState(
     () => agent.channel ?? meta?.installChannels[0]?.id ?? 'native',
@@ -121,15 +123,15 @@ export function AgentCard({
     try {
       await setAgentHidden(agent.agentId, !hidden);
       toast({
-        title: hidden ? '已取消隐藏' : '已隐藏',
+        title: hidden ? t('agents.env.hiddenOk') : t('agents.env.hidden'),
         description: hidden
-          ? `${meta?.name ?? agent.agentId} 已恢复显示`
-          : `${meta?.name ?? agent.agentId} 已从其他页面隐藏`,
+          ? t('agents.env.restoredDesc', { name: meta?.name ?? agent.agentId })
+          : t('agents.env.hiddenDesc', { name: meta?.name ?? agent.agentId }),
         variant: 'success',
       });
     } catch (e) {
       toast({
-        title: hidden ? '取消隐藏失败' : '隐藏失败',
+        title: hidden ? t('agents.env.unhideFailed') : t('agents.env.hideFailed'),
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
@@ -141,7 +143,7 @@ export function AgentCard({
   if (!meta) {
     return (
       <Card className="min-h-20 p-3 text-sm text-muted">
-        未知 Agent：{agent.agentId}
+        {t('agents.card.unknown', { id: agent.agentId })}
       </Card>
     );
   }
@@ -152,7 +154,7 @@ export function AgentCard({
   if (!selectedChannel) {
     return (
       <Card className="min-h-20 p-3 text-sm text-muted">
-        {meta.name}：安装渠道加载中…
+        {t('agents.card.channelLoading', { name: meta.name })}
       </Card>
     );
   }
@@ -180,8 +182,8 @@ export function AgentCard({
   const openOfficialSetup = () => {
     if (!officialSetupUrl) {
       toast({
-        title: '暂无官网下载地址',
-        description: agent.update?.note ?? '请到该 Agent 官网手动更新',
+        title: t('agents.update.noOfficialUrl'),
+        description: agent.update?.note ?? t('agents.update.manualOfficial'),
         variant: 'danger',
       });
       return;
@@ -191,7 +193,7 @@ export function AgentCard({
         await openExternalLink(officialSetupUrl);
       } catch (e) {
         toast({
-          title: '无法打开官网',
+          title: t('agents.update.cannotOpenOfficial'),
           description: e instanceof Error ? e.message : String(e),
           variant: 'danger',
         });
@@ -220,35 +222,35 @@ export function AgentCard({
       : '';
 
   const upgradeTooltip = (() => {
-    if (checkingUpdate) return '正在检查更新…';
+    if (checkingUpdate) return t('agents.update.checking');
     if (updateUnsupported) {
-      const note = agent.update?.note ?? '该 Agent 不支持自动更新检测';
+      const note = agent.update?.note ?? t('agents.card.unsupportedUpdate');
       return officialSetupUrl
-        ? `${note} · 点击打开官网下载`
+        ? t('agents.update.clickOfficial', { note })
         : note;
     }
     if (upgradable) {
       return latestVersionLabel
-        ? `可更新到 ${latestVersionLabel}${sourceHint}`
-        : '检测到可用更新';
+        ? t('agents.update.availableVersion', { version: latestVersionLabel, source: sourceHint })
+        : t('agents.update.available');
     }
     if (updateState === 'up_to_date') {
       return latestVersionLabel
-        ? `已是最新 ${latestVersionLabel}${sourceHint} · 点击可强制升级`
-        : '已是最新 · 点击可强制升级';
+        ? t('agents.update.latestForceVersion', { version: latestVersionLabel, source: sourceHint })
+        : t('agents.update.latestForce');
     }
     if (updateState === 'unknown') {
       return agent.update?.note
-        ? `${agent.update.note} · 点击可强制升级`
-        : '未能检测更新 · 点击可强制升级';
+        ? t('agents.update.unknownForceNote', { note: agent.update.note })
+        : t('agents.update.unknownForce');
     }
-    return '强制升级到最新（按已装渠道重装 / 重跑官方脚本）';
+    return t('agents.update.forceLatest');
   })();
 
   const copyCommand = () => {
     if (!task) return;
     navigator.clipboard.writeText(task.command).catch(() => {});
-    toast({ title: '命令已复制' });
+    toast({ title: t('agents.env.commandCopied') });
   };
 
   /** Open agent config home (~/.claude 等) in the OS file manager. */
@@ -257,13 +259,13 @@ export function AgentCard({
       try {
         const path = await openAgentConfig(agent.agentId);
         toast({
-          title: '已打开配置目录',
+          title: t('agents.env.openedConfigDir'),
           description: path ?? meta.name,
           variant: 'success',
         });
       } catch (e) {
         toast({
-          title: '打开失败',
+          title: t('agents.env.openFailed'),
           description: e instanceof Error ? e.message : String(e),
           variant: 'danger',
         });
@@ -276,7 +278,7 @@ export function AgentCard({
     void (async () => {
       const bin = normalizeOpenPath(agent.binPath);
       if (!bin) {
-        toast({ title: '没有可打开的安装路径', variant: 'danger' });
+        toast({ title: t('agents.env.noInstallPath'), variant: 'danger' });
         return;
       }
       const sep = bin.includes('\\') ? '\\' : '/';
@@ -284,10 +286,10 @@ export function AgentCard({
       const dir = last > 2 ? bin.slice(0, last) : bin;
       try {
         await openPathInFileManager(dir);
-        toast({ title: '已打开安装目录', description: dir, variant: 'success' });
+        toast({ title: t('agents.env.openedInstallDir'), description: dir, variant: 'success' });
       } catch (e) {
         toast({
-          title: '打开失败',
+          title: t('agents.env.openFailed'),
           description: e instanceof Error ? e.message : String(e),
           variant: 'danger',
         });
@@ -310,7 +312,7 @@ export function AgentCard({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{meta.name}</span>
-              {hidden && <Badge>已隐藏</Badge>}
+              {hidden && <Badge>{t('agents.card.hidden')}</Badge>}
               {agent.installed ? (
                 <>
                   {versionLabel && (
@@ -318,46 +320,46 @@ export function AgentCard({
                   )}
                   {upgradable && latestVersionLabel && (
                     <span className="text-xs text-success">
-                      最新 {latestVersionLabel} ↗
+                      {t('agents.card.latest', { version: latestVersionLabel })}
                     </span>
                   )}
                   {updateState === 'up_to_date' && (
-                    <span className="text-xs text-muted">已最新</span>
+                    <span className="text-xs text-muted">{t('agents.card.upToDate')}</span>
                   )}
                   {updateState === 'unknown' && (
-                    <span className="text-xs text-muted">更新未知</span>
+                    <span className="text-xs text-muted">{t('agents.card.updateUnknown')}</span>
                   )}
                   {updateUnsupported &&
                     (officialSetupUrl ? (
-                      <Hint label="打开官网下载">
+                      <Hint label={t('agents.card.openOfficialDownload')}>
                         <button
                           type="button"
                           disabled={actionsBusy || hidden}
                           onClick={openOfficialSetup}
                           className="cursor-pointer text-xs text-accent underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          需官网更新
+                          {t('agents.card.needsOfficial')}
                         </button>
                       </Hint>
                     ) : (
                       <Tip
                         className="text-xs text-muted"
-                        label={agent.update?.note ?? '该 Agent 不支持自动更新检测'}
+                        label={agent.update?.note ?? t('agents.card.unsupportedUpdate')}
                       >
-                        需官网更新
+                        {t('agents.card.needsOfficial')}
                       </Tip>
                     ))}
                 </>
               ) : cardState === 'env_missing' ? (
                 <>
-                  <span className="text-sm text-muted">未安装</span>
-                  <Badge variant="warning">环境未就绪</Badge>
-                  {canOneClickEnv && <Badge>可一键安装</Badge>}
+                  <span className="text-sm text-muted">{t('agents.card.notInstalled')}</span>
+                  <Badge variant="warning">{t('agents.card.envNotReady')}</Badge>
+                  {canOneClickEnv && <Badge>{t('agents.card.oneClickInstall')}</Badge>}
                 </>
               ) : (
                 <>
-                  <span className="text-sm text-muted">未安装</span>
-                  <Badge variant="success">环境就绪</Badge>
+                  <span className="text-sm text-muted">{t('agents.card.notInstalled')}</span>
+                  <Badge variant="success">{t('agents.card.envReady')}</Badge>
                 </>
               )}
             </div>
@@ -370,7 +372,7 @@ export function AgentCard({
             ) : (
               <div className="mt-1 space-y-1 text-xs text-muted">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span>渠道</span>
+                  <span>{t('agents.card.channel')}</span>
                   <div className="flex flex-wrap gap-1">
                     {meta.installChannels.map((ch) => {
                       const chCheck = checkChannelEnv(ch, runtimes);
@@ -378,7 +380,7 @@ export function AgentCard({
                       return (
                         <Hint
                           key={ch.id}
-                          label={!chCheck.ready ? '该渠道环境未就绪' : ch.label}
+                          label={!chCheck.ready ? t('agents.card.channelEnvNotReady') : ch.label}
                         >
                           <button
                             type="button"
@@ -404,13 +406,26 @@ export function AgentCard({
                 {cardState === 'env_missing' && (
                   <Tip
                     className="truncate text-secondary"
-                    label={`缺少: ${formatMissingList([
-                      ...envCheck.missing,
-                      ...envCheck.outdated,
-                      ...envCheck.broken,
-                    ])}${canOneClickEnv ? ` · 一键可装 ${envPlan.summary}` : ''}`}
+                    label={
+                      canOneClickEnv
+                        ? t('agents.card.missingTipOneClick', {
+                            list: formatMissingList([
+                              ...envCheck.missing,
+                              ...envCheck.outdated,
+                              ...envCheck.broken,
+                            ]),
+                            summary: envPlan.summary,
+                          })
+                        : t('agents.card.missingTip', {
+                            list: formatMissingList([
+                              ...envCheck.missing,
+                              ...envCheck.outdated,
+                              ...envCheck.broken,
+                            ]),
+                          })
+                    }
                   >
-                    缺少{' '}
+                    {t('agents.card.missing')}
                     {formatMissingList([
                       ...envCheck.missing,
                       ...envCheck.outdated,
@@ -429,12 +444,12 @@ export function AgentCard({
               size="sm"
               variant="outline"
               disabled={hiding}
-              aria-label="取消隐藏"
-              title="取消隐藏后恢复显示与操作"
+              aria-label={t('agents.card.unhide')}
+              title={t('agents.card.unhideTitle')}
               onClick={() => void toggleHidden()}
             >
               <Eye className="h-3.5 w-3.5" />
-              取消隐藏
+              {t('agents.card.unhide')}
             </Button>
           ) : agent.installed ? (
             <>
@@ -455,10 +470,10 @@ export function AgentCard({
                 }
                 aria-label={
                   updateUnsupported
-                    ? '打开官网更新'
+                    ? t('agents.card.openOfficialUpdate')
                     : upgradable
-                      ? '更新'
-                      : '强制升级'
+                      ? t('agents.card.update')
+                      : t('agents.card.forceUpgrade')
                 }
                 title={upgradeTooltip}
                 onClick={updateUnsupported ? openOfficialSetup : onUpgradeClick}
@@ -474,8 +489,8 @@ export function AgentCard({
                 size="icon"
                 variant="outline"
                 disabled={busy}
-                aria-label="打开配置目录"
-                title="打开该 Agent 的配置目录"
+                aria-label={t('agents.card.openConfigDir')}
+                title={t('agents.card.openConfigDirTitle')}
                 onClick={openConfigDir}
               >
                 <FolderOpen className="h-3.5 w-3.5" />
@@ -484,15 +499,15 @@ export function AgentCard({
                 size="icon"
                 variant="outline"
                 disabled={actionsBusy}
-                aria-label="隐藏"
-                title="隐藏后其他页面不再显示此 Agent"
+                aria-label={t('agents.card.hide')}
+                title={t('agents.card.hideTitle')}
                 onClick={() => void toggleHidden()}
               >
                 <EyeOff className="h-3.5 w-3.5" />
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="outline" disabled={busy} aria-label="更多">
+                  <Button size="icon" variant="outline" disabled={busy} aria-label={t('agents.card.more')}>
                     ···
                   </Button>
                 </DropdownMenuTrigger>
@@ -507,7 +522,7 @@ export function AgentCard({
                           void openBinDir();
                         }}
                       >
-                        <FolderOpen className="h-3.5 w-3.5" /> 打开安装目录
+                        <FolderOpen className="h-3.5 w-3.5" /> {t('agents.card.openInstallDir')}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                     </>
@@ -515,13 +530,13 @@ export function AgentCard({
                   <DropdownMenuItem
                     onSelect={(event) => openUninstallConfirm(event, 'program')}
                   >
-                    仅卸载程序
+                    {t('agents.card.uninstallProgram')}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="text-danger"
                     onSelect={(event) => openUninstallConfirm(event, 'config')}
                   >
-                    卸载并删除配置
+                    {t('agents.card.uninstallConfig')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -535,32 +550,32 @@ export function AgentCard({
                 disabled={busy}
                 title={
                   canOneClickEnv
-                    ? '先修环境再安装当前渠道 Agent'
-                    : '仅安装缺失的运行环境，装完后再装 Agent'
+                    ? t('agents.card.fixThenInstall')
+                    : t('agents.card.envOnlyThenInstall')
                 }
               >
                 <Zap className="h-3.5 w-3.5" />
-                {canOneClickEnv ? '修复并安装' : '修环境'}
+                {canOneClickEnv ? t('agents.card.fixAndInstall') : t('agents.card.fixEnv')}
               </Button>
               <Button
                 size="icon"
                 variant="outline"
                 disabled={actionsBusy}
-                aria-label="隐藏"
-                title="隐藏后其他页面不再显示此 Agent"
+                aria-label={t('agents.card.hide')}
+                title={t('agents.card.hideTitle')}
                 onClick={() => void toggleHidden()}
               >
                 <EyeOff className="h-3.5 w-3.5" />
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="outline" disabled={busy} aria-label="更多">
+                  <Button size="icon" variant="outline" disabled={busy} aria-label={t('agents.card.more')}>
                     ···
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onSelect={startOneClickEnvOnly}>
-                    <Wrench className="h-3.5 w-3.5" /> 仅修环境
+                    <Wrench className="h-3.5 w-3.5" /> {t('agents.card.envOnly')}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={() => {
@@ -569,10 +584,10 @@ export function AgentCard({
                           ? buildEnvInstallPreview(envPlan.targets, runtimeChannelForPlan())
                           : buildAgentInstallPreview(agent.agentId, 'install', selectedChannel.id);
                       navigator.clipboard.writeText(lines.join('\n')).catch(() => {});
-                      toast({ title: '命令预览已复制' });
+                      toast({ title: t('agents.env.commandPreviewCopied') });
                     }}
                   >
-                    <Copy className="h-3.5 w-3.5" /> 复制命令
+                    <Copy className="h-3.5 w-3.5" /> {t('agents.card.copyCommand')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -584,17 +599,17 @@ export function AgentCard({
                 variant="secondary"
                 onClick={() => startAgentInstall(selectedChannel)}
                 disabled={busy}
-                title={`使用渠道 ${selectedChannel.id} 安装`}
+                title={t('agents.card.installWithChannel', { id: selectedChannel.id })}
               >
                 <Zap className="h-3.5 w-3.5" />
-                安装
+                {t('agents.card.install')}
               </Button>
               <Button
                 size="icon"
                 variant="outline"
                 disabled={actionsBusy}
-                aria-label="隐藏"
-                title="隐藏后其他页面不再显示此 Agent"
+                aria-label={t('agents.card.hide')}
+                title={t('agents.card.hideTitle')}
                 onClick={() => void toggleHidden()}
               >
                 <EyeOff className="h-3.5 w-3.5" />
@@ -602,7 +617,7 @@ export function AgentCard({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="sm" variant="outline" disabled={busy}>
-                    渠道 <ChevronDown className="h-3 w-3" />
+                    {t('agents.card.channel')} <ChevronDown className="h-3 w-3" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -617,7 +632,7 @@ export function AgentCard({
                         }}
                       >
                         {ch.label}
-                        {!chCheck.ready ? ' · 需先修环境' : ''}
+                        {!chCheck.ready ? t('agents.card.needFixEnv') : ''}
                       </DropdownMenuItem>
                     );
                   })}
@@ -656,18 +671,18 @@ export function AgentCard({
           <div className="mb-1 flex items-center justify-between">
             <span className="text-xs text-muted">
               {task.action === 'oneclick'
-                ? '环境 → Agent'
+                ? t('agents.card.oneclickProgress')
                 : task.action === 'install'
-                  ? '安装中'
-                  : '升级中'}
+                  ? t('agents.card.installing')
+                  : t('agents.card.upgrading')}
             </span>
             <div className="flex items-center gap-1">
-              <Button size="sm" variant="ghost" onClick={copyCommand} title="复制 CLI 命令">
-                <Copy className="h-3.5 w-3.5" /> 复制
+              <Button size="sm" variant="ghost" onClick={copyCommand} title={t('agents.card.copyCliCommand')}>
+                <Copy className="h-3.5 w-3.5" /> {t('agents.card.copy')}
               </Button>
               {task.status !== 'running' && (
                 <Button size="sm" variant="ghost" onClick={() => setTask(null)}>
-                  <X className="h-3.5 w-3.5" /> 关闭
+                  <X className="h-3.5 w-3.5" /> {t('agents.card.close')}
                 </Button>
               )}
             </div>

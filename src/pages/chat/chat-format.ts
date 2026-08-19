@@ -1,5 +1,10 @@
+import { interpolate, type MessageKey, type MessageParams, type TranslateFn } from '@/lib/i18n';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { ChatMessage } from '@/lib/types';
+
+function tx(t: TranslateFn | undefined, key: MessageKey, fallback: string, params?: MessageParams): string {
+  return t ? t(key, params) : interpolate(fallback, params);
+}
 
 export type TurnGroup = {
   turn: number;
@@ -55,16 +60,16 @@ export function extractModel(configText: string): string | null {
   return json?.[1] ?? null;
 }
 
-export function relativeTime(iso: string): string {
-  const t = Date.parse(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
-  if (Number.isNaN(t)) return '';
-  const diff = Date.now() - t;
+export function relativeTime(iso: string, t?: TranslateFn): string {
+  const parsed = Date.parse(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(parsed)) return '';
+  const diff = Date.now() - parsed;
   const m = Math.floor(diff / 60000);
-  if (m < 1) return '刚刚';
-  if (m < 60) return `${m} 分钟前`;
+  if (m < 1) return tx(t, 'common.relativeJustNow', '刚刚');
+  if (m < 60) return tx(t, 'common.relativeMinutes', '{n} 分钟前', { n: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h} 小时前`;
+  if (h < 24) return tx(t, 'common.relativeHours', '{n} 小时前', { n: h });
   const d = Math.floor(h / 24);
-  if (d < 7) return `${d} 天前`;
-  return new Date(t).toLocaleDateString();
+  if (d < 7) return tx(t, 'common.relativeDays', '{n} 天前', { n: d });
+  return new Date(parsed).toLocaleDateString();
 }

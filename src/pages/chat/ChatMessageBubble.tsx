@@ -1,5 +1,6 @@
 import { Copy, Loader2 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { MarkdownView } from '@/components/shared/MarkdownView';
 import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
@@ -71,8 +72,9 @@ function AgentBubble({
   retryDisabled: boolean;
   onRetry: () => void;
 }) {
+  const { t } = useI18n();
   const agent = message.agentId ?? 'claude';
-  const statusText = messageStatusLabel(message.status, process);
+  const statusText = messageStatusLabel(t, message.status, process);
   const running = message.status === 'running';
   const showRetry =
     isLastTurn &&
@@ -91,7 +93,7 @@ function AgentBubble({
           {showRetry && (
             <Hint
               label={
-                multiAgent ? '将把这条提示重新发给会话中的全部 Agent' : undefined
+                multiAgent ? t('chat.bubble.retryAllHint') : undefined
               }
             >
               <button
@@ -100,7 +102,7 @@ function AgentBubble({
                 onClick={onRetry}
                 className="rounded-btn px-1.5 py-0.5 text-meta text-secondary hover:bg-hover hover:text-primary disabled:opacity-50"
               >
-                重试
+                {t('chat.bubble.retry')}
               </button>
             </Hint>
           )}
@@ -119,10 +121,10 @@ function AgentBubble({
           ) : running ? (
             <span className="inline-flex items-center gap-2 text-muted">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {process ? `${processPhaseLabel(process.phase)}…` : '生成中…'}
+              {process ? t('chat.bubble.generatingPhase', { phase: processPhaseLabel(process.phase, t) }) : t('chat.bubble.generating')}
             </span>
           ) : (
-            <span className="text-muted">{message.error || '（无输出）'}</span>
+            <span className="text-muted">{message.error || t('chat.bubble.noOutput')}</span>
           )}
           {message.error && message.status !== 'ok' && message.content && (
             <p className="mt-2 text-body text-danger">{message.error}</p>
@@ -135,12 +137,13 @@ function AgentBubble({
 }
 
 function CopyButton({ text }: { text: string }) {
+  const { t } = useI18n();
   const { toast } = useToast();
   if (!text) return null;
   return (
     <button
       type="button"
-      aria-label="复制"
+      aria-label={t('chat.bubble.copyAria')}
       className={cn(
         'absolute bottom-1 right-1 rounded-btn p-1 text-muted',
         'opacity-0 transition-opacity hover:bg-panel hover:text-primary',
@@ -148,8 +151,8 @@ function CopyButton({ text }: { text: string }) {
       )}
       onClick={() => {
         void navigator.clipboard.writeText(text).then(
-          () => toast({ title: '已复制', variant: 'success' }),
-          () => toast({ title: '复制失败', variant: 'danger' }),
+          () => toast({ title: t('chat.bubble.copied'), variant: 'success' }),
+          () => toast({ title: t('chat.bubble.copyFailed'), variant: 'danger' }),
         );
       }}
     >
