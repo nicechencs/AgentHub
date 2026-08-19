@@ -5,9 +5,9 @@
 - 日常开发与 PR 的工作分支是 **`dev`**，不是 `main`，也不是 `release`。
 - 每日功能 PR 合入 `dev`。不要把 `release` 当日常集成线。
 - 正式发版：先同时改 `package.json`、`Cargo.toml` 的 `[workspace.package]`、`src-tauri/tauri.conf.json` 三个版本号，再推 `release`。GitHub Actions 只从 `release` 出包；已存在的 tag（当前 `v0.2.2`）会被拒绝覆盖。
-- Agent 隐藏以 `dev` 的 store-stamp 为准，不是旧 `release` 线 #22 的软隐藏。
+- Agent 隐藏以 `dev` 上按商店标记为准，只影响界面。
 - 本仓库编码用 **Grok Build**。不要用 CloudAgent 改这个仓库。
-- 当前界面说「登录」，不说「票」。实现里的 Ticket / TicketPort 仍是内部名字。
+- 当前界面说「登录」，不说「票」。
 
 ## 凭据存储决策
 
@@ -58,7 +58,7 @@ src/
 - mock 只服务 `dev:mock`（及测试），不得打进生产 build。
 - 非 Tauri 的生产页面：明确报错或显示 **unavailable**，禁止静默 mock。
 - 页面层不直接 `invoke`；`lib/api/` 为过渡兼容层。
-- 产品写入走 TicketPort（`lib/api/tickets` 的 plan/bind/unbind）；`lib/api/adapter` 只服务预览与桥运行时。
+- 产品写入走 plan/bind/unbind（`lib/api/tickets`）；`lib/api/adapter` 只服务预览与本机路由运行时。
 
 ## 测试约定（摘要）
 
