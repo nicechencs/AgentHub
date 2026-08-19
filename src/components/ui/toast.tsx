@@ -2,6 +2,7 @@ import * as React from 'react';
 import * as ToastPrimitive from '@radix-ui/react-toast';
 import { Check, Copy, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Hint } from '@/components/ui/tooltip';
 import { ToastAutoDismissController } from './toast-auto-dismiss';
 
 /** 默认展示时长（毫秒） */
@@ -174,16 +175,17 @@ function ToastItem({
           {t.actionLabel}
         </ToastPrimitive.Action>
       )}
-      <button
-        type="button"
-        aria-label={copied ? '已复制' : '复制消息'}
-        title={copied ? '已复制' : '复制消息'}
-        onClick={() => void copyText()}
-        onPointerDown={(e) => e.stopPropagation()}
-        className="mt-0.5 shrink-0 text-muted hover:text-primary"
-      >
-        {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
-      </button>
+      <Hint label={copied ? '已复制' : '复制消息'}>
+        <button
+          type="button"
+          aria-label={copied ? '已复制' : '复制消息'}
+          onClick={() => void copyText()}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="mt-0.5 shrink-0 text-muted hover:text-primary"
+        >
+          {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+      </Hint>
       <ToastPrimitive.Close
         className="mt-0.5 shrink-0 text-muted hover:text-primary"
         aria-label="关闭"

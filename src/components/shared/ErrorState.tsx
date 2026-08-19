@@ -31,8 +31,8 @@ export function ErrorState({
       )}
     >
       <AlertTriangle className={cn('text-danger', compact ? 'h-5 w-5' : 'h-6 w-6')} />
-      <p className="text-sm font-medium">{title}</p>
-      <p className="max-w-md text-xs text-secondary">{message}</p>
+      <p className="text-title font-medium">{title}</p>
+      <p className="max-w-md text-meta text-secondary">{message}</p>
       <div className="flex gap-2">
         <Button size="sm" variant="secondary" onClick={onRetry}>
           <RefreshCw className="h-3.5 w-3.5" /> 重试

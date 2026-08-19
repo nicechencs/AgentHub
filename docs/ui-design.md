@@ -12,9 +12,9 @@
 
 ## 1. 设计原则
 
-1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / **Routes**（有本机路由才出现） / **Backups** / Settings）；用量合并进 Dashboard。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。**例外：Connections 目标态是跨工具钱包**（一份份登录），Agent 只作筛选/高亮，不作第一导航；见 §4.3 与 [connection-binding-model.md](connection-binding-model.md)。底层 accounts/providers 可继续分表，UI 与规划器谈的是登录和绑定。连接从 Agent 卡片或钱包「接到…」发起；`/routes` 只做本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。
+1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / **Routes**（有本机路由才出现） / Settings）；备份在 Settings `?tab=backups`，不占侧栏。用量合并进 Dashboard。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。**例外：Connections 目标态是跨工具钱包**（一份份登录），Agent 只作筛选/高亮，不作第一导航；见 §4.3 与 [connection-binding-model.md](connection-binding-model.md)。底层 accounts/providers 可继续分表，UI 与规划器谈的是登录和绑定。连接从 Agent 卡片或钱包「接到…」发起；`/routes` 只做本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。
 2. **危险操作必有前置信息**：切换供应商/账号前展示 backfill 摘要、备份位置、运行中进程警告。
-3. **凭据永不明文回显**：SecretInput 组件统一脱敏（`sk-••••3f2a`），「显示」需二次确认且 10s 后自动遮蔽。
+3. **凭据永不明文回显**：`SecretInput` 统一脱敏回显（`sk-••••3f2a` 一类掩码）；点眼睛切换明文。现行实现无二次确认、无自动再遮蔽。聚焦已遮蔽值会清空以便重新输入。
 4. **空状态给动作**：每个空列表都有明确的下一步按钮（添加供应商/导入账号/安装 Agent / 安装运行环境）。**例外：Routes 健康空态没有按钮**——多数连接不需要本机转发，空是常态，不是待转化漏斗。
 5. **能力不齐是常态**：Kimi 无技能目录、部分账号切换受限等，用 Tab 置灰 / 单元格 `—` / partial 态表达，禁止整页白屏。
 6. **先环境后 Agent**：未满足渠道前置（如缺 Node）时，主按钮是「安装环境 / 查看修复步骤」，不是假装可装 Agent；装完环境后自动「重新检测」再解锁 Agent 安装。
@@ -25,7 +25,9 @@
 > 运行时以 CSS 变量暴露；`tailwind.config.ts` 只映射 `var(--…)`；`globals.css` 只放结构样式。  
 > Vite 插件把 token 注入 `virtual:agenthub-design-tokens.css`，并把 boot 子集写入 `index.html` 标记区。  
 > 浅色优先（Cursor 桌面风），深色备选；靠明度分层，不靠边框堆叠。  
-> **体验与视觉执行细化**（对标 Cursor/Codex 的层级、提示、预览、分期改造）见 [ui-experience-alignment.md](ui-experience-alignment.md)；与本文冲突时业务规则以本文为准，token/组件收敛以对标文档为准。
+> **体验与视觉执行细化**（对标 Cursor/Codex 的层级、提示、预览、分期改造）见 [ui-experience-alignment.md](ui-experience-alignment.md)。  
+> **组件用法、决策树与现行清单**见 [ui-component-standard.md](ui-component-standard.md)；本文 §5 只保留索引，细节以标准为准。  
+> 冲突时：业务规则以本文为准，token 收敛以对标文档为准，组件选用以标准为准。
 
 ```
 主题:浅色优先,深色备选(.dark) —— hex 以 tokens.ts 为准，下列为语义名
@@ -487,33 +489,32 @@ Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `backups` /
 
 `/backups` → `/settings?tab=backups`。`/settings#backups` 与 `/settings?tab=local#backups` → `/settings?tab=backups`。
 
-## 5. 组件清单（自研部分，shadcn 基础件之外）
+## 5. 组件清单
+
+完整现行清单、决策树与禁止项见 [ui-component-standard.md](ui-component-standard.md)。下面只列产品契约仍要点名的复合件；**不要**把本表当实现目录。
 
 | 组件 | 职责 |
 |---|---|
 | `AgentTabStrip` | 页内 agent 切换条，能力位置灰（如 Kimi 不支持账号切换/技能） |
-| `AgentCard` | Dashboard/Agents 页卡片，状态点 + 版本 + 当前配置；Dashboard 已装卡主动作打开 ConnectFlowDialog |
 | `ConnectFlowDialog` | 绑定对话框：Dashboard（工具固定，选一份登录）与 Connections「接到…」（登录固定，选工具）；目标语义 `bind`；预览标 ① 只改配置 / ② 写进对方认的登录 / ③ 本机转发；`plan.canApply` 只表示现在能写入 |
 | `AgentDot` | Agent 品牌色圆点（侧栏/列表等轻量标识） |
 | `StatusDot` | 四态认证状态（有效/临期/失效/未配置） |
-| `SearchField` | 统一搜索输入（图标 + 清空），列表页筛选条复用 |
-| `SegmentedControl` | 分段切换（Connections mode、过滤条等） |
-| `SecretInput` | 脱敏回显 + 二次确认显示 + 自动再遮蔽 |
+| `SearchField` | 统一搜索输入（左图标 + `h-7`）。列表筛选禁止手写搜索框 |
+| `SegmentedControl` | 页内列表筛选（Connections 登录类型等）；页级导航用 `Tabs` |
+| `SecretInput` | 脱敏回显 + 眼睛切换明文。无二次确认、无自动再遮蔽 |
 | `ConfigEditor` | CodeMirror 封装：JSON/TOML 高亮、敏感键自动脱敏层 |
-| `SwitchConfirmDialog` | 供应商/账号切换确认（backfill/备份/进程警告三要素） |
 | `QuotaBar` | 5h/7d 配额窗口进度条 + reset 倒计时 |
-| `OAuthFlowDialog` | 三步授权：等待态含**复制授权链接** + **手动粘贴回调 URL** |
+| `OAuthFlowDialog` | 三步授权：等待态含**复制授权链接** + **手动粘贴回调 URL**。实现在 `components/connect/` |
 | `Notice` | 统一信息条；tone：`neutral` / `info` / `warning` / `danger` / `success` |
+| `EmptyState` / `ErrorState` / `ListSkeleton` / `TableSkeleton` | 四态载体；见本文 §6 |
+| `ListRow` | 管理列表行选中态（`bg-active` + 可选左边条） |
 | `InlineTerminal` | 安装/升级 **环境或 Agent** 的流式输出面板 |
 | `EnvStatusBar` | 页顶/Doctor 共享的 Runtime 状态条（ok/missing/outdated） |
 | `EnvRemediationPanel` | 缺失 Runtime 的修复步骤：自动装 / 复制命令 / 打开官方页 / 重新检测 |
-| `SkillMatrix` | 技能×agent 同步矩阵（视觉走 `ui/table`） |
-| `UsageDetailsTable` | Dashboard 用量明细（分页/列宽；视觉走 `ui/table`） |
-| `Table` / `TableShell` / `tableStyles` | 表格视觉协议：统一表头/行分隔/密度；业务形态可不同 |
-| `TableSkeleton` | 表格 loading 骨架（与 `tableStyles` 对齐） |
-| `UsageParserHealth` | 用量解析健康：主用于 Dashboard（`dashboard`）；`compact` 仅兼容 re-export，不挂 Agents/Projects |
-| `ParserHealthBar` | 兼容 re-export → `UsageParserHealth`（dashboard） |
-| `UsageHealthStrip` | 兼容 re-export → `UsageParserHealth`（compact） |
+| `UsageParserHealth` | 用量解析健康：主用于 Dashboard（`dashboard`）；`compact` 仅兼容 re-export |
+| `TableShell` | 全站管理表默认 Card 壳（含 Skills）。`workbench`/`flush` 业务侧基本不用 |
+
+页面本地件（不进 shared）：Dashboard/Agents 的 Agent 卡、`SkillMatrix`、`UsageDetailsTable`。危险确认走各页 `Dialog` + `busy-confirmation`，**没有** `SwitchConfirmDialog`。
 
 ## 6. 状态覆盖清单
 

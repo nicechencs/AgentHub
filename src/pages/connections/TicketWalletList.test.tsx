@@ -55,6 +55,8 @@ describe('TicketWalletList details', () => {
     expect(markup).toContain('详情');
     expect(markup).toContain('搜索登录或用途');
     expect(markup).toContain('aria-label="搜索登录"');
+    expect(markup).toContain('pl-8');
+    expect(markup).not.toContain('pl-7');
     expect(markup).toContain('aria-label="登录类型筛选"');
     expect(markup).toContain('钱包 · 1 份登录');
     expect(markup).toContain('var(--agent-kimi)');
@@ -125,6 +127,20 @@ describe('TicketWalletList details', () => {
     expect(markup).toContain('href="/routes?profile=bridge-1"');
     expect(markup).toContain('本机路由');
     expect(markup).toContain('接到…');
+  });
+
+  it('shows ListSkeleton while the wallet is loading', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: null,
+        loading: true,
+        onConnectTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('animate-pulse');
+    expect(markup).not.toContain('正在加载钱包');
   });
 
   it('uses 登录 copy for an empty wallet', () => {
