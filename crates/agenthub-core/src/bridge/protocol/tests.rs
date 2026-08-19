@@ -198,14 +198,53 @@ fn unsupported_or_non_text_function_call_output_fails_closed() {
 }
 
 #[test]
-fn unsupported_multimodal_and_hosted_tools_fail_closed() {
+fn unsupported_multimodal_fails_closed() {
     let error = parse_responses_request(&fixture("unsupported_input")).expect_err("image rejected");
     assert_eq!(error.code, "unsupported_image_input");
     assert!(!error.message.contains("example.invalid"));
+}
 
-    let error = parse_responses_request(&fixture("unsupported_web_search"))
-        .expect_err("web search rejected");
-    assert_eq!(error.code, "unsupported_web_search");
+#[test]
+fn hosted_tools_are_dropped_and_function_tools_still_translate() {
+    let request = parse_responses_request(&fixture("unsupported_web_search"))
+        .expect("hosted tools must not reject the request");
+    assert!(request.tools.is_empty());
+
+    let mut mixed = fixture("unsupported_web_search");
+    mixed["tools"] = json!([
+        { "type": "web_search" },
+        { "type": "computer" },
+        { "type": "apply_patch" },
+        { "type": "local_shell" },
+        { "type": "custom", "name": "custom_tool" },
+        {
+            "type": "function",
+            "name": "lookup",
+            "description": "Look something up",
+            "parameters": { "type": "object", "properties": {} }
+        }
+    ]);
+    mixed["tool_choice"] = json!({ "type": "web_search" });
+    let request = parse_responses_request(&mixed).expect("mixed tools parse");
+    assert_eq!(request.tools.len(), 1);
+    assert_eq!(request.tools[0].name, "lookup");
+    assert!(request.tool_choice.is_none());
+
+    let kimi = to_kimi_chat_request(&request);
+    assert_eq!(
+        kimi["tools"]
+            .as_array()
+            .expect("function tools forwarded")
+            .len(),
+        1
+    );
+    assert_eq!(kimi["tools"][0]["type"], "function");
+    assert_eq!(kimi["tools"][0]["function"]["name"], "lookup");
+    assert!(kimi.get("tool_choice").is_none());
+
+    let grok = to_grok_chat_request(&request);
+    assert_eq!(grok["tools"][0]["function"]["name"], "lookup");
+    assert_eq!(grok["tools"].as_array().unwrap().len(), 1);
 }
 
 #[test]
@@ -783,11 +822,14 @@ fn responses_tool_history_becomes_anthropic_tool_use_and_results() {
 }
 
 #[test]
-fn responses_to_anthropic_rejects_image_and_hosted_tools() {
+fn responses_to_anthropic_rejects_image_and_drops_hosted_tools() {
     let error = parse_responses_request(&fixture("unsupported_input")).expect_err("image");
     assert_eq!(error.code, "unsupported_image_input");
-    let error = parse_responses_request(&fixture("unsupported_web_search")).expect_err("search");
-    assert_eq!(error.code, "unsupported_web_search");
+    let request =
+        parse_responses_request(&fixture("unsupported_web_search")).expect("hosted tools dropped");
+    assert!(request.tools.is_empty());
+    let anthropic = to_anthropic_messages_request(&request);
+    assert!(anthropic.get("tools").is_none());
 }
 
 #[test]
