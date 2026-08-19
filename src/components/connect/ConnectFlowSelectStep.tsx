@@ -241,7 +241,7 @@ function SourceGroups({
       <section className="space-y-2">
         <h3 className="text-sm font-medium">其他服务凭据</h3>
         {cross.length === 0 ? (
-          <p className="text-xs text-muted">钱包里暂无其他服务凭据。</p>
+          <p className="text-xs text-muted">登录列表里暂无其他服务凭据。</p>
         ) : cross.map((item) => (
           <CrossOptionRow
             key={`${item.ref.kind}:${item.ref.id}`}

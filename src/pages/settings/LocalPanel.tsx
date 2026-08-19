@@ -1,5 +1,7 @@
 import { useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { pageRhythm } from '@/components/layout/page-rhythm';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,11 +13,11 @@ import {
   SelectItem,
 } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
-import { useI18n } from '@/components/shared/LanguageProvider';
 import { openLogsDir } from '@/lib/api/settings';
 import { openPathInFileManager } from '@/lib/api/skill';
 import { BRIDGES_PATH } from '@/lib/bridges-path';
 import type { AppSettings, LogLevel } from '@/lib/types';
+import { BackupsPanel } from '@/pages/backups/BackupsPanel';
 import { persistSettingsPatch } from './settings-persist';
 import {
   LOG_LEVEL_VALUES,
@@ -53,7 +55,8 @@ export function LocalPanel({
   };
 
   return (
-    <Card>
+    <div className={pageRhythm.stack}>
+      <Card>
       <CardContent className="divide-y divide-border pt-1">
           <SettingsRow
             label={t('settings.data.dataDirLabel')}
@@ -199,6 +202,10 @@ export function LocalPanel({
             </Link>
           </SettingsRow>
       </CardContent>
-    </Card>
+      </Card>
+      <div id="settings-backups">
+        <BackupsPanel />
+      </div>
+    </div>
   );
 }

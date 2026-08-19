@@ -431,9 +431,9 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 ### 4.7 Backups（安全备份）
 
-Settings 子页（`?tab=backups`），**不**占侧栏。页内 tab 中文 **备份**，英文 **Backups**。页内不再重复「已启用 / 自动快照 / 用途说明」；Settings 页头已覆盖分区语义。
+Settings **本机**分区内的备份段（`?tab=local#backups`），**不**占侧栏，也不是独立 Settings tab。页内不再重复「已启用 / 自动快照 / 用途说明」；Settings 页头与本机分区已覆盖语义。
 
-独立路由 `/backups` 永久重定向到 `/settings?tab=backups`。旧深链 `/settings#backups`、`/settings?tab=local#backups` replace 到 `?tab=backups`。
+独立路由 `/backups` 永久重定向到 `/settings?tab=local#backups`。旧深链 `/settings#backups`、`/settings?tab=backups` replace 到 `?tab=local#backups`。已是规范形的 `?tab=local#backups` 不改写。
 
 ```
 ┌─ 备份 ─────────────────────────────────────────────────────┐
@@ -457,12 +457,11 @@ Settings 子页（`?tab=backups`），**不**占侧栏。页内 tab 中文 **备
 
 ### 4.8 Settings
 
-四个分区（侧栏英文 **Settings**；页内中文 **偏好 / 本机 / 备份 / 关于**，英文 **Preferences / This device / Backups / About**）：
+三个分区（侧栏英文 **Settings**；页内中文 **偏好 / 本机 / 关于**，英文 **Preferences / This device / About**）：
 
 1. **偏好**（`?tab=preferences`）：语言、主题、开机自启、关闭到托盘、技能市场源、用量采集间隔。
-2. **本机**（`?tab=local`）：数据目录（只读 + 打开）、日志级别 / 保留天数、打开日志目录、本机路由回收链。
-3. **备份**（`?tab=backups`）：各 Agent live 配置快照的查看 / 手动备份 / 恢复 / 删除，见 §4.7。
-4. **关于**（`?tab=about`）：版本、检查/安装更新、GitHub 仓库、标语，以及原「安全」页的两条只读凭据说明（界面脱敏；存储不加密。**不**提供主密码 / keyring UI）。
+2. **本机**（`?tab=local`）：数据目录（只读 + 打开）、日志级别 / 保留天数、打开日志目录、本机路由回收链，以及各 Agent live 配置快照的查看 / 手动备份 / 恢复 / 删除（`#backups`，见 §4.7）。
+3. **关于**（`?tab=about`）：版本、检查/安装更新、GitHub 仓库、标语，以及原「安全」页的两条只读凭据说明（界面脱敏；存储不加密。**不**提供主密码 / keyring UI）。
 
 Chat 会话设置（`ChatSettingsDialog`：cwd / 自动批准）不进 Settings。
 
@@ -473,9 +472,9 @@ Chat 会话设置（`ChatSettingsDialog`：cwd / 自动批准）不进 Settings�
 - **用量采集间隔**：在偏好页。已写入 SQLite，**不是**仅 localStorage。`None`=从未写入（前端默认 30）；`0`=仅手动；上限 1440。变更后 `notifyUsageSettingsChanged` 立即重排程（见 §4.6）。
 - **开机自启**（`autoStart`）：OS 登录项（Windows 启动项 / macOS Login Item），不进 L1 白名单。
 - **关闭到托盘**（`closeToTray`）：写 core，并同步 Tauri `AppState`。
-- **语言**：core L1 为权威（`zh-CN` / `en`）。Settings Select 预览并立即 `set_setting`。启动时 `LanguageProvider` 用 localStorage 做首屏缓存，再 `getSettings` 对账；同步 `<html lang>`。**首次启动**（无语言缓存且尚未 seed）按 `navigator.languages` / `navigator.language` 选 zh/en，回落 zh，并一次性写入 core；已有用户选择不覆盖。不引入 i18next；字典在 `src/lib/i18n/locales/{zh,en}.ts`，第一期覆盖 Settings 四面板与侧栏 chrome。导航专有名（Chat / Agents / Skills / MCP / Projects / Dashboard / Connections / Routes / Settings）两种语言同值。业务页分期迁移。
+- **语言**：core L1 为权威（`zh-CN` / `en`）。Settings Select 预览并立即 `set_setting`。启动时 `LanguageProvider` 用 localStorage 做首屏缓存，再 `getSettings` 对账；同步 `<html lang>`。**首次启动**（无语言缓存且尚未 seed）按 `navigator.languages` / `navigator.language` 选 zh/en，回落 zh，并一次性写入 core；已有用户选择不覆盖。不引入 i18next；字典在 `src/lib/i18n/locales/{zh,en}.ts`，第一期覆盖 Settings 三面板与侧栏 chrome。导航专有名（Chat / Agents / Skills / MCP / Projects / Dashboard / Connections / Routes / Settings）两种语言同值。业务页分期迁移。
 
-Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `backups` / `about`（解析集中在 `src/pages/settings/settings-format.ts` 的 `SETTINGS_TABS` / `parseSettingsTab` / `resolveSettingsLocation`）。非法或缺省值 fallback 到 Preferences。切换使用 `replace`，避免污染浏览器历史。
+Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `about`（解析集中在 `src/pages/settings/settings-format.ts` 的 `SETTINGS_TABS` / `parseSettingsTab` / `resolveSettingsLocation`）。非法或缺省值 fallback 到 Preferences。切换使用 `replace`，避免污染浏览器历史。备份深链保留 hash：`?tab=local#backups` 滚到本机页 `#settings-backups`。
 
 旧 slug **replace 重定向**（不 404、不落空白面板）：
 
@@ -484,10 +483,10 @@ Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `backups` /
 | `general` | Preferences |
 | `security` | About（凭据说明现居于此） |
 | `data` | Local（页顶：数据 / 日志） |
-| `backups` | Backups（规范 tab） |
+| `backups` | Local + `#backups`（备份段） |
 | `about` | About |
 
-`/backups` → `/settings?tab=backups`。`/settings#backups` 与 `/settings?tab=local#backups` → `/settings?tab=backups`。
+`/backups` → `/settings?tab=local#backups`。`/settings#backups` 与 `/settings?tab=backups` → `/settings?tab=local#backups`。
 
 ## 5. 组件清单
 

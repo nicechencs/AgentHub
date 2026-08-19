@@ -340,7 +340,7 @@ export default function ConnectionsPage() {
   if (loading) {
     return (
       <div>
-        <PageHeader title="连接" description="钱包" descriptionTip="正在检测已安装的 Agent。" />
+        <PageHeader title="连接" description="登录列表" descriptionTip="正在检测已安装的 Agent。" />
         <div className={pageRhythm.chrome}>
           <ListSkeleton rows={4} />
         </div>
@@ -351,7 +351,7 @@ export default function ConnectionsPage() {
   if (state === 'error') {
     return (
       <div>
-        <PageHeader title="连接" description="钱包" descriptionTip="Agent 检测失败，请重试后再管理连接。" />
+        <PageHeader title="连接" description="登录列表" descriptionTip="Agent 检测失败，请重试后再管理连接。" />
         <ErrorState error={error} title="无法读取 Agent 安装状态" onRetry={() => void reload()} />
       </div>
     );
@@ -360,7 +360,7 @@ export default function ConnectionsPage() {
   if (!loading && installedIds.length === 0) {
     return (
       <div>
-        <PageHeader title="连接" description="钱包" descriptionTip="先安装 Agent，再管理连接。" />
+        <PageHeader title="连接" description="登录列表" descriptionTip="先安装 Agent，再管理连接。" />
         <EmptyState
           icon={Cable}
           title="尚未安装 Agent"
@@ -378,8 +378,8 @@ export default function ConnectionsPage() {
         title="连接"
         description={
           visibleWallet
-            ? `钱包 · ${visibleWallet.tickets.length} 份登录`
-            : '钱包 · 官方登录 / API Key'
+            ? `${visibleWallet.tickets.length} 份登录`
+            : '官方登录 / API Key'
         }
         descriptionTip="跨 Agent 的登录列表。每份登录都可「接到…」其他 Agent；生成投影不出现在本页。"
       />
@@ -399,7 +399,7 @@ export default function ConnectionsPage() {
       {walletError && !wallet ? (
         <ErrorState
           error={walletError}
-          title="无法读取钱包"
+          title="无法读取登录列表"
           onRetry={() => void loadWallet()}
         />
       ) : (
@@ -411,7 +411,7 @@ export default function ConnectionsPage() {
               actionLabel="重试"
               onAction={() => void loadWallet()}
             >
-              钱包刷新失败，下方仍是上次成功加载的数据。
+              登录列表刷新失败，下方仍是上次成功加载的数据。
             </Notice>
           ) : null}
           <TicketWalletList

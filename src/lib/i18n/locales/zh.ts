@@ -36,8 +36,8 @@ export const zh = {
   settings: {
     page: {
       title: '设置',
-      description: '偏好、本机、备份与关于',
-      descriptionTip: '语言与主题立即生效；本机含数据目录与日志；备份管理配置快照；关于含版本与凭据说明。',
+      description: '偏好、本机与关于',
+      descriptionTip: '语言与主题立即生效；本机含数据目录、日志与备份；关于含版本与凭据说明。',
       tabPreferences: '偏好',
       tabLocal: '本机',
       tabBackups: '备份',
