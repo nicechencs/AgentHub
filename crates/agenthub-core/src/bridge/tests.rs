@@ -1242,7 +1242,34 @@ async fn grok_chat_protocol_accepts_messages_and_returns_anthropic_json() {
         .send()
         .await
         .expect("responses route request");
-    assert_eq!(responses.status(), StatusCode::NOT_FOUND);
+    assert_eq!(responses.status(), StatusCode::OK);
+    let responses_body: Value = responses.json().await.expect("responses json");
+    assert_eq!(responses_body["object"], "response");
+    assert_eq!(responses_body["output"][0]["content"][0]["text"], "hello");
     host.stop("grok-messages").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn grok_chat_protocol_accepts_responses_and_returns_responses_json() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_spec("grok-responses", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model": "grok-4.5", "input": "hello"}))
+        .send()
+        .await
+        .expect("responses request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("responses json");
+    assert_eq!(body["object"], "response");
+    assert_eq!(body["output"][0]["content"][0]["text"], "hello");
+    host.stop("grok-responses").await.expect("stop");
     upstream_task.abort();
 }

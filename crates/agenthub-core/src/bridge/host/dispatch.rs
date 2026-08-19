@@ -59,8 +59,9 @@ impl<'a> ProtocolSelector<'a> {
         }
     }
 
-    /// Grok reuses the Kimi Chat Completions upstream wire, but serves Claude-shaped
-    /// `/v1/messages` locally (host `api.x.ai` or model `grok-4.5`).
+    /// Grok reuses the Kimi Chat Completions upstream wire. Locally it serves both
+    /// Claude-shaped `/v1/messages` and Codex-shaped `/v1/responses`
+    /// (host `api.x.ai` or model `grok-4.5`).
     fn is_grok_chat_bridge(self) -> bool {
         self.protocol == BridgeUpstreamProtocol::KimiChatCompletions
             && (self.upstream_host == Some("api.x.ai") || self.model == Some("grok-4.5"))
@@ -69,9 +70,6 @@ impl<'a> ProtocolSelector<'a> {
     pub(super) fn local_endpoint(self) -> LocalEndpoint {
         match self.protocol {
             BridgeUpstreamProtocol::CodexResponsesOauth => LocalEndpoint::Messages,
-            BridgeUpstreamProtocol::KimiChatCompletions if self.is_grok_chat_bridge() => {
-                LocalEndpoint::Messages
-            }
             BridgeUpstreamProtocol::KimiChatCompletions
             | BridgeUpstreamProtocol::AnthropicMessages => LocalEndpoint::Responses,
         }
@@ -82,7 +80,7 @@ impl<'a> ProtocolSelector<'a> {
     }
 
     pub(super) fn serves_messages(self) -> bool {
-        self.local_endpoint() == LocalEndpoint::Messages
+        self.local_endpoint() == LocalEndpoint::Messages || self.is_grok_chat_bridge()
     }
 }
 
