@@ -170,7 +170,7 @@ export interface ConnectFlowDialogProps {
 /** 用途反查（钱包行"正用于哪些 Agent"）。 */
 export interface ConnectionUsageEntry {
   agentId: AgentId;
-  /** direct = 自身 isCurrent 生效；adapter = 经兼容路由投影生效 */
+  /** direct = 自身 isCurrent 生效；adapter = 本机路由生效 */
   via: 'direct' | 'adapter';
 }
 

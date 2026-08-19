@@ -290,7 +290,7 @@ describe('buildAgentCardView', () => {
       viaAdapter: { sourceLabel: 'Kimi 会员' },
     });
     expect(view.viaAdapter).toEqual({ sourceLabel: 'Kimi 会员' });
-    expect(view.ariaLabel).toContain('经兼容路由 · Kimi 会员');
+    expect(view.ariaLabel).toContain('本机路由 · Kimi 会员');
   });
 
   it('prefers wallet binding meta text over effectiveLabel', () => {
@@ -307,8 +307,8 @@ describe('buildAgentCardView', () => {
   it('maps viaAdapter hit without sourceLabel', () => {
     const view = buildAgentCardView(claude, status('claude'), { viaAdapter: {} });
     expect(view.viaAdapter).toEqual({});
-    expect(view.ariaLabel).toContain('经兼容路由');
-    expect(view.ariaLabel).not.toContain('经兼容路由 ·');
+    expect(view.ariaLabel).toContain('本机路由');
+    expect(view.ariaLabel).not.toContain('本机路由 ·');
   });
 
   it.each([

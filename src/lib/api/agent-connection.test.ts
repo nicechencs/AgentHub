@@ -6,6 +6,8 @@ import {
   extractProviderEndpoint,
   formatApiConnectionLabel,
   formatEndpointHost,
+  formatLocalRouteLabel,
+  isInternalGeneratedProvider,
   resolveEffectiveConnection,
 } from '@/lib/api/agent-connection';
 import type { Account, AgentStatus, Provider } from '@/lib/types';
@@ -73,6 +75,22 @@ describe('formatEndpointHost', () => {
   it('keeps host and non-root path', () => {
     expect(formatEndpointHost('https://relay.example.com/v1')).toBe('relay.example.com/v1');
   });
+
+  it('omits host:port from the main sentence', () => {
+    expect(formatEndpointHost('https://relay.example.com:8443/v1')).toBe('relay.example.com/v1');
+    expect(formatEndpointHost('http://127.0.0.1:44227')).toBe('127.0.0.1');
+    expect(formatEndpointHost('http://127.0.0.1:44227')).not.toMatch(/:\d/);
+  });
+
+  it('does not cut mid-word on a long host/path', () => {
+    const host = formatEndpointHost(
+      'https://very-long-subdomain-name.relay.example.com/v1/compat/something-extra',
+    );
+    expect(host).toBe('very-long-subdomain-name.relay');
+    expect(host).not.toMatch(/some$/);
+    expect(host.length).toBeLessThanOrEqual(36);
+    expect(host).not.toContain(':');
+  });
 });
 
 describe('resolveEffectiveConnection', () => {
@@ -120,6 +138,23 @@ describe('formatApiConnectionLabel', () => {
         provider({ configText: 'model = "x"\n', configFormat: 'toml', name: '官方' }),
       ),
     ).toBe('官方');
+  });
+
+  it('hides adapter-generated bridge names and loopback host:port', () => {
+    const generated = provider({
+      id: 'claude-grok-adapter-bridge-grok-live-452e70db',
+      name: 'Grok Subscription Bridge',
+      configText: JSON.stringify({
+        env: { ANTHROPIC_BASE_URL: 'http://127.0.0.1:44227' },
+      }),
+    });
+    expect(isInternalGeneratedProvider(generated)).toBe(true);
+    expect(formatApiConnectionLabel(generated)).toBe('本机路由');
+    expect(formatApiConnectionLabel(generated, { sourceLabel: 'user@x.com' })).toBe(
+      '本机路由 · user@x.com',
+    );
+    expect(formatApiConnectionLabel(generated)).not.toMatch(/Bridge|grok-live|127\.0\.0\.1|44227/i);
+    expect(formatLocalRouteLabel('user@x.com')).toBe('本机路由 · user@x.com');
   });
 });
 

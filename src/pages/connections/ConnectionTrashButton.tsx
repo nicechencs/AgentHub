@@ -29,6 +29,7 @@ import {
   releaseConnectionTrashBusy,
   subscribeConnectionTrashBusy,
 } from './connection-trash-lock';
+import { dedupTrashItems, humanizeTrashLabel } from './connection-trash-model';
 
 function dateLabel(value: string): string {
   const isoLike = value.replace(' ', 'T');
@@ -63,7 +64,7 @@ export function ConnectionTrashButton({
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
-      setItems(await listConnectionTrash(agentId));
+      setItems(dedupTrashItems(await listConnectionTrash(agentId)));
     } catch (error) {
       toast({
         title: t('connections.trash.loadFailed'),
@@ -172,13 +173,14 @@ export function ConnectionTrashButton({
                   item.kind === 'account' && item.account?.kind === 'oauth'
                     ? t('kind.oauth')
                     : t('kind.apikey');
+                const title = humanizeTrashLabel(item, t);
                 return (
                   <div
                     key={item.id}
                     className="flex items-center justify-between gap-3 rounded-card border border-border p-3"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-body font-medium">{item.label}</p>
+                      <p className="truncate text-body font-medium">{title}</p>
                       <p className="text-meta text-muted">
                         {t('connections.trash.deletedAt', {
                           agent: agentName,
@@ -242,7 +244,9 @@ export function ConnectionTrashButton({
         >
           <DialogHeader>
             <DialogTitle>
-              {t('connections.trash.permanentTitle', { label: pendingPermanent?.label ?? '' })}
+              {t('connections.trash.permanentTitle', {
+                label: pendingPermanent ? humanizeTrashLabel(pendingPermanent, t) : '',
+              })}
             </DialogTitle>
             <DialogDescription>{t('connections.trash.permanentDesc')}</DialogDescription>
           </DialogHeader>
