@@ -260,17 +260,19 @@ describe('ticket detail fields', () => {
       endpointHost: 'https://relay.example.com/v1',
     });
     expect(advanced).toEqual(expect.arrayContaining([
-      { label: '导入自', value: agentDisplayName('kimi') },
       { label: '端点', value: '自定义' },
       { label: 'Endpoint', value: 'relay.example.com', mono: true },
       { label: '协议', value: 'anthropic-messages' },
     ]));
-    expect(advanced.map((field) => field.label)).not.toEqual(
+    const customLabels = advanced.map((field) => field.label);
+    expect(customLabels).not.toContain('导入自');
+    expect(customLabels).not.toContain('登录状态');
+    expect(customLabels).not.toEqual(
       expect.arrayContaining(['类型', '来源', '所属', '官方账号', '提供商']),
     );
   });
 
-  it('omits header duplicates and protocol for official OAuth', () => {
+  it('omits import, login status, and protocol for official OAuth', () => {
     const { advanced } = buildTicketDetailFields(
       ticket({
         id: 'account:oauth-1',
@@ -292,6 +294,9 @@ describe('ticket detail fields', () => {
       },
     );
     const labels = advanced.map((field) => field.label);
+    expect(advanced).toEqual([]);
+    expect(labels).not.toContain('导入自');
+    expect(labels).not.toContain('登录状态');
     expect(labels).not.toContain('类型');
     expect(labels).not.toContain('来源');
     expect(labels).not.toContain('所属');
@@ -300,10 +305,16 @@ describe('ticket detail fields', () => {
     expect(labels).not.toContain('提供商');
     expect(labels).not.toContain('端点');
     expect(labels).not.toContain('Endpoint');
-    expect(advanced).toEqual(expect.arrayContaining([
-      { label: '导入自', value: agentDisplayName('grok') },
-      { label: '登录状态', value: '可续期' },
-    ]));
+  });
+
+  it('humanizes login health without 未验证', () => {
+    expect(humanizeTicketAuthLabel('可续期·未验证')).toBe('可续期');
+    expect(humanizeTicketAuthLabel('已配置·未验证')).toBe('已配置');
+    expect(humanizeTicketAuthLabel('可续期，尚未验证')).toBe('可续期');
+    expect(humanizeTicketAuthLabel('已配置，尚未验证')).toBe('已配置');
+    expect(humanizeTicketAuthLabel('可续期')).toBe('可续期');
+    expect(humanizeTicketAuthLabel('已配置')).toBe('已配置');
+    expect(humanizeTicketAuthLabel('已验证')).toBe('已验证');
   });
 
   it('lists bindings as agent + one short status', () => {
