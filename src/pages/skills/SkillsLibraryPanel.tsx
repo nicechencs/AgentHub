@@ -124,7 +124,7 @@ export function SkillsLibraryPanel(props: SkillsLibraryPanelProps) {
       {filtered.length === 0 ? (
         <EmptyState
           icon={PackageSearch}
-          title={skillsCopy.empty.noMatchTitle}
+          title={search || filter !== 'all' ? skillsCopy.empty.noMatchTitle : skillsCopy.empty.emptyLibraryTitle}
           description={
             search || filter !== 'all'
               ? skillsCopy.empty.noMatchFilter

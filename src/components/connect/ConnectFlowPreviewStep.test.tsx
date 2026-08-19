@@ -45,7 +45,7 @@ function previewState(): ConnectFlowState {
       kind: 'ready',
       plan: plan(),
       canApply: true,
-      routeSummary: '③ 本机协议桥',
+      routeSummary: '本机路由',
     },
   });
 }

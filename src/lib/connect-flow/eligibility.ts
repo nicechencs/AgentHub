@@ -30,15 +30,15 @@ const ACCOUNT_SWITCH_BLOCKED_FALLBACK = '该 Agent 不支持账号池切换';
 const PROVIDER_SWITCH_BLOCKED_FALLBACK = '当前 Agent 不支持 Provider 配置写入';
 
 const ROUTE_SUMMARY: Record<AdapterRoute, string> = {
-  native_endpoint: '① API 端点直连',
-  local_bridge: '③ 本机协议桥',
-  config_sync: '① API 端点直连',
+  native_endpoint: '直连',
+  local_bridge: '本机路由',
+  config_sync: '直连',
   unsupported: '当前不支持',
 };
 const REUSE_PATH_SUMMARY: Record<AdapterReusePath, string> = {
-  api_endpoint: '① API 端点直连',
-  native_subscription: '② 原生订阅复用',
-  local_bridge: '③ 本机协议桥',
+  api_endpoint: '直连',
+  native_subscription: '用这份登录',
+  local_bridge: '本机路由',
   none: '当前不支持',
 };
 

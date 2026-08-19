@@ -351,7 +351,7 @@ export function OAuthFlowDialog({
                   <div className="text-sm font-medium text-primary">{opt.label}</div>
                   <div className="mt-0.5 text-xs text-muted">{opt.description}</div>
                   <div className="mt-1 font-mono text-meta text-muted">
-                    {opt.flow === 'deviceCode' ? '设备码' : '浏览器 PKCE'}
+                    {opt.flow === 'deviceCode' ? '设备码' : '浏览器登录'}
                     {opt.authJsonKey ? ` · ${opt.authJsonKey}` : ''}
                   </div>
                 </button>
@@ -365,7 +365,7 @@ export function OAuthFlowDialog({
             <ExternalLink className="h-8 w-8 text-accent" />
             <p className="text-sm text-secondary">
               将在系统浏览器中打开 {selected?.label ?? meta.name} 授权页面，请完成登录授权。
-              回调经本机 loopback 接收。
+              授权完成后会回到这台电脑。
             </p>
             {options.length > 1 ? (
               <Button variant="ghost" size="sm" onClick={() => setStep('pick')}>
