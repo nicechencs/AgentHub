@@ -1,4 +1,4 @@
-> **现行状态（2026-08-19）：** 用户表面已是 **Routes** / `/routes` / 本机路由；侧栏不再叫「桥与适配」。下文是历史终态设计文，不要当未完成改名任务。
+> **现行状态（2026-08-19）：** 用户表面已是 **Routes** / `/routes` / 本机路由；侧栏不再叫「桥与适配」。Settings 四栏：偏好 / 本机 / 备份 / 关于（备份不并入本机）。托盘中文：打开 AgentHub / 打开路由 / 启动路由 / 停止路由 / 退出。picker 芯片「直连 / 用这份登录 / 本机路由 / 当前不支持」，界面不标 ①②③。下文 Overview–PR Plan 是历史终态设计，不要当未完成改名或 Settings 三栏任务。
 
 # 「桥与适配」页终态：本机桥运行时（Bridges）
 
@@ -21,7 +21,7 @@
 
 ## Overview
 
-Hub Phase 1 之后，把票接到 Agent 的日常动作已经离开本页：Dashboard「连接/切换」与 Connections「接到…」共用 `ConnectFlowDialog`，经 `plan()` / `bind()` 写入。绝大多数成功绑定走 ① `native_endpoint` 或 ② `config_sync`，**从不启动本机进程**。本页现在只列出已存在的 `route=local_bridge` 运行时（启停、端口、自动启动、诊断、解绑）。空列表是常态，不是待转化漏斗。
+Hub Phase 1 之后，把登录接到工具的日常动作已经离开本页：Dashboard「连接/切换」与 Connections「接到…」共用 `ConnectFlowDialog`，经 `plan()` / `bind()` 写入。绝大多数成功绑定走 ① `native_endpoint` 或 ② `config_sync`，**从不启动本机进程**。本页现在只列出已存在的 `route=local_bridge` 运行时（启停、端口、自动启动、诊断、解绑）。空列表是常态，不是待转化漏斗。
 
 终态把这个表面重新定义为 **本机桥运行时管理**：绑定私有的 loopback 协议转换进程，不是票、不是绑定工作台、也不是 Adapter。侧栏英文专有名词 **Bridges**，仅在本机确有桥（或需要找回孤立运行时）时出现。规范路由改为 `/bridges`。页面不再用「去 Dashboard / 去 Connections」当主 CTA，行也不再画「配置已生效 + 桥接运行中」两层旧 Adapter 名片。
 

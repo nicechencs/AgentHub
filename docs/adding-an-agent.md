@@ -2,7 +2,7 @@
 
 > 当前状态：R00-R08 已完成。本文同时描述生产兼容接入轨和 AgentKey test-only 验证轨；生产组合仍保留 `AgentId`/`AgentAdapter` façade，不代表旧身份模型已删除。
 
-> 更新：2026-08-15（补登记 `accepts` / `writer`，供票绑定规划器使用；并指向 DSH 接入方案）
+> 更新：2026-08-15（补登记 `accepts` / `writer`，供登录绑定规划器使用；并指向 DSH 接入方案）
 > 真源：`docs/platform-capability-refactor.md`、[platform-capability-remediation.md](platform-capability-remediation.md)、[product-decisions.md](product-decisions.md)、[connection-binding-model.md](connection-binding-model.md) 与本文件。
 > **DeepSeek Harness（`dsh`）**：专项方案见 [deepseek-harness-integration.md](deepseek-harness-integration.md)；生产接入已按本文 §1.1 落地（`AgentId::Dsh` / `register_all` / 稀疏端口）。本文仍是通用清单。
 > **开闭验证（test-only）**：`crates/agenthub-core/src/platform/demo_agent_tests.rs` 使用独立 `AgentKey("demo-agent")`，不进入生产 registry，也不借用真实 AgentId。
@@ -25,7 +25,7 @@
 | 4. 前端 id | runtime catalog + `KNOWN_AGENT_IDS` + `src/styles/tokens.ts` | 产品列表以 catalog 为准；`KNOWN_AGENT_IDS` 只是已知 key（**不是**封闭枚举）；配色在 tokens。不要只改 `types.ts`，也不要把前端 id 当成封闭集合 |
 | 5. key-native 端口 | `platform/*/registry.rs` | 以 `AgentKey` 注册 detector、install、config、skills、usage、stream、project 等实际支持的端口 |
 | 6. 测试 | `cargo test -p agenthub-core` | adapter fixture + 已注册端口契约；禁止写死 agent 数量 |
-| 7. 绑定入口 | `crates/agenthub-core/src/domain/protocol_graph/agent_capability.rs`：先登记 `accepts[]` + `writer` | `accepts[]` 必须同时写 **wire 协议** 和 **OAuth 契约槽**（有则登记，否则规划器判不出 ②）。无 writer（如 Cursor）不能当 `bind` 落点。登记后由协议图长出 ① 直连 / ② 原生订阅 / ③ 本机路由，不要再加商品白名单。见 [product-decisions.md](product-decisions.md)、[connection-binding-model.md](connection-binding-model.md) |
+| 7. 绑定入口 | `crates/agenthub-core/src/domain/protocol_graph/agent_capability.rs`：先登记 `accepts[]` + `writer` | `accepts[]` 必须同时写 **wire 协议** 和 **OAuth 契约槽**（有则登记，否则规划器判不出「写进对方认的登录」）。无 writer（如 Cursor）不能当 `bind` 落点。登记后由协议图长出直连 / 用这份登录 / 本机路由，不要再加商品白名单。见 [product-decisions.md](product-decisions.md)、[connection-binding-model.md](connection-binding-model.md) |
 
 > **禁止**：在 `platform/*` service、通用 utils、页面业务里新增具体 Agent 名称分支。  
 > 生产贡献进 `integrations/agents/<key>/`；`platform/*/sources` 多为兼容转发，不要再当新 Agent 的落点。

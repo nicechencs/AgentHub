@@ -1,8 +1,8 @@
-# Adapter 页面与本地协议桥接设计
+# Adapter 页面与本机路由设计
 
 > 用户表面：**Routes / 本机路由**。模块名仍叫 Adapter（`lib/api/adapter`、contracts、Rust `Adapter*` 本轮不改名）。
 > 状态：**可应用路径已接线（Claude 稳定直连 + Kimi / Anthropic / Codex / Grok subscription → Codex/Claude 实验性本地桥接 + Pi 配置同步 + Kimi/OpenAI API → Grok native）**。Kimi 会员 / Anthropic API Key → Pi 的 `config_sync` 已开放 bind（写入 `models.json` 对应槽位，凭据只引用）；Claude/Codex/Grok 订阅 → Pi 的 ② `config_sync` 已开放 experimental bind（写入 `auth.json`，刷新由 Pi 拥有）。Anthropic API Key → Codex、Codex Responses `auth_json` → Claude 与 Grok Chat OAuth → Claude 的 `local_bridge` 已开放 experimental bind。Claude 订阅 → Codex 明确产品不做；Codex App Server 仍关闭；Codex 订阅 → Pi 是 ②，不走本页桥。`local_bridge` 当前由 Tauri `AppState` 进程内托管，本轮不做 sidecar 或自动 refresh。Kimi / Anthropic / Codex / Grok → Claude 发布前仍需实机 dogfood。
-> 2026-08-15：读者向说明见 [product-decisions.md](product-decisions.md)。实现对象仍是票 / 绑定 / 协议图（[connection-binding-model.md](connection-binding-model.md)）。ConnectFlow 确认步与本机路由解绑已改走 `bind`/`unbind`；内部仍可复用 apply 实现 reshape/bridge 运行时。生成物是绑定的私有 runtime，不是钱包里的新登录。本机路由页终态见 [bridges-page-redesign.md](bridges-page-redesign.md) 与 [ui-design.md](ui-design.md) §4.3.3。
+> 2026-08-15：读者向说明见 [product-decisions.md](product-decisions.md)。实现对象仍是登录 / 绑定 / 协议图（实现名见 [connection-binding-model.md](connection-binding-model.md)）。ConnectFlow 确认步与本机路由解绑已改走 `bind`/`unbind`；内部仍可复用 apply 实现 reshape/bridge 运行时。生成物是绑定的私有 runtime，不是登录列表里的新登录。本机路由页终态见 [bridges-page-redesign.md](bridges-page-redesign.md) 与 [ui-design.md](ui-design.md) §4.3.3。
 > 调研日期：2026-08-12（进度同步：2026-08-12）
 > 关联文档：[product-decisions.md](product-decisions.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[architecture.md](architecture.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[ui-design.md](ui-design.md)、[logging.md](logging.md)、[account-authorization-pool.md](account-authorization-pool.md)
 > 2026-08-14 同步：Hub 重构 Phase 1 落地（[hub-redesign-plan.md](hub-redesign-plan.md)）——Dashboard Agent 卡片与 Connections 行新增统一连接流程 `ConnectFlowDialog`。创建绑定不在本页。
@@ -25,7 +25,7 @@
 
 ## 1. 结论
 
-Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变：只引用票，不复制凭据，不另建一套账号池，也不是公网/多租户网关。产品分三路（① API 直连 ② 原生订阅 ③ 本机路由），见 [product-decisions.md](product-decisions.md)；本页的桥 runtime 只服务 ③。目标对象是 **绑定**：`planTicket(票, Agent)` 在 native / reshape / bridge / 不可行 中择一，`bindTicket` 写入。
+Adapter 负责把 **登录列表里已有的登录**接到另一个 Agent。机制不变：只引用登录，不复制凭据，不另建一套账号池，也不是公网/多租户网关。产品分三路（直接改配置 / 写进对方认的登录 / 本机转发），见 [product-decisions.md](product-decisions.md)；本页的运行时只服务本机路由。目标对象是 **绑定**：`planTicket(登录, Agent)` 在 native / reshape / bridge / 不可行 中择一，`bindTicket` 写入。
 
 **产品写入口径（统一，勿再写分叉）：**
 
@@ -33,7 +33,7 @@ Adapter 负责把 **钱包里已有的票**接到另一个 Agent。机制不变�
 - `lib/api/adapter` 只服务只读分析/预览（`analyze` / `plan` / `listProfiles`）与桥运行时（`startBridge` / `stopBridge` / `getBridgeStatus` / `setBridgeAutoStart`）。
 - `applyAdapter` 已 `@deprecated`，页面不得调用。host 内部仍可复用 apply 实现 reshape/bridge 运行时，见 [connection-binding-model.md](connection-binding-model.md)。
 
-**入口定位（本机路由页终态已落地）**：日常发起绑定走 Hub 对话框，不必打开本页。用户表面是 **Routes / 本机路由**；内部模块仍叫 Adapter。本页只管理 ③ 的本机路由运行时，不再提供选来源→分析→plan→apply 创建区。入口与信息架构见 [bridges-page-redesign.md](bridges-page-redesign.md)、[ui-design.md](ui-design.md) §4.3.3。
+**入口定位（本机路由页终态已落地）**：日常发起绑定走 Hub 对话框，不必打开本页。用户表面是 **Routes / 本机路由**；内部模块仍叫 Adapter。本页只管理本机路由运行时，不再提供选来源→分析→plan→apply 创建区。入口与信息架构见 [bridges-page-redesign.md](bridges-page-redesign.md)、[ui-design.md](ui-design.md) §4.3.3。
 
 - 推荐：Dashboard「连接/切换」、Connections「接到…」→ 同一绑定对话框。
 - 本页：`/routes` 列出全部 `local_bridge` 运行时（含孤立；start/stop/retry、autoStart、详情、解绑走 `unbindTicket`）。`/adapter`、`/router`、`/bridges` 永久跳过来。
