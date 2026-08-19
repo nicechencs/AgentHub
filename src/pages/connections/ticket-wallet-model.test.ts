@@ -17,8 +17,10 @@ import {
   formatTicketBindingDetailLines,
   formatTicketUsageParts,
   formatTicketUsageText,
+  humanizeTicketAuthLabel,
   isUnrecognizedTicket,
   searchTickets,
+  ticketBindingStatus,
   ticketDetailEditLabel,
 } from './ticket-wallet-model';
 
@@ -247,33 +249,78 @@ function provider(partial: Partial<Provider> & Pick<Provider, 'id' | 'name'>): P
 }
 
 describe('ticket detail fields', () => {
-  it('shows ticket identity without opening an edit form', () => {
-    const fields = buildTicketDetailFields(ticket({ id: 'provider:kimi-1' }), {
+  it('keeps API Key custom endpoint facts under advanced only', () => {
+    const { advanced } = buildTicketDetailFields(ticket({ id: 'provider:kimi-1' }), {
       endpointMode: 'custom',
-      endpointHost: 'relay.example.com',
+      endpointHost: 'https://relay.example.com/v1',
     });
-    expect(fields).toEqual(expect.arrayContaining([
-      { label: '类型', value: 'API Key' },
-      { label: '来源', value: '会员' },
-      { label: '所属', value: agentDisplayName('kimi') },
+    expect(advanced).toEqual(expect.arrayContaining([
       { label: '导入自', value: agentDisplayName('kimi') },
       { label: '端点', value: '自定义' },
       { label: 'Endpoint', value: 'relay.example.com', mono: true },
       { label: '协议', value: 'anthropic-messages' },
     ]));
+    expect(advanced.map((field) => field.label)).not.toEqual(
+      expect.arrayContaining(['类型', '来源', '所属', '官方账号', '提供商']),
+    );
   });
 
-  it('lists bindings including inactive and stopped bridges', () => {
+  it('omits header duplicates and protocol for official OAuth', () => {
+    const { advanced } = buildTicketDetailFields(
+      ticket({
+        id: 'account:oauth-1',
+        sourceKind: 'account',
+        sourceId: 'oauth-1',
+        agentId: 'grok',
+        label: 'me@example.com',
+        surface: 'grok-xai-subscription',
+        credentialClass: 'oauth',
+        speaks: ['openai-chat', 'xai-device-code'],
+        importedFrom: 'grok',
+      }),
+      {
+        identity: 'me@example.com',
+        accountProvider: 'https://accounts.x.ai/oauth',
+        authLabel: '可续期·未验证',
+        endpointMode: 'official',
+        endpointHost: 'accounts.x.ai',
+      },
+    );
+    const labels = advanced.map((field) => field.label);
+    expect(labels).not.toContain('类型');
+    expect(labels).not.toContain('来源');
+    expect(labels).not.toContain('所属');
+    expect(labels).not.toContain('官方账号');
+    expect(labels).not.toContain('协议');
+    expect(labels).not.toContain('提供商');
+    expect(labels).not.toContain('端点');
+    expect(labels).not.toContain('Endpoint');
+    expect(advanced).toEqual(expect.arrayContaining([
+      { label: '导入自', value: agentDisplayName('grok') },
+      { label: '登录状态', value: '可续期，尚未验证' },
+    ]));
+  });
+
+  it('lists bindings as agent + one short status', () => {
     const wallet = sampleWallet();
     expect(formatTicketBindingDetailLines(
       wallet.bindings.filter((binding) => binding.ticketId === 'provider:kimi-1'),
     )).toEqual([
-      `${agentDisplayName('claude')} · 改配置 · 当前`,
-      `${agentDisplayName('codex')} · 本机路由 · 当前 · 运行中 · 端口 8123`,
+      { agent: agentDisplayName('claude'), status: '当前使用' },
+      { agent: agentDisplayName('codex'), status: '本机路由运行中' },
     ]);
     expect(formatTicketBindingDetailLines(
       wallet.bindings.filter((binding) => binding.ticketId === 'account:oauth-1'),
-    )).toEqual([`${agentDisplayName('claude')} · 切换`]);
+    )).toEqual([{ agent: agentDisplayName('claude'), status: '未使用' }]);
+    expect(ticketBindingStatus({
+      ticketId: 'provider:kimi-1',
+      agentId: 'codex',
+      route: 'bridge',
+      active: true,
+      profileId: 'p2',
+      bridge: { port: 8123, running: false },
+    })).toBe('本机路由已停止');
+    expect(humanizeTicketAuthLabel('可续期·未验证')).toBe('可续期，尚未验证');
   });
 
   it('joins pool extras so OAuth can be inspected and API Key can be edited', () => {
