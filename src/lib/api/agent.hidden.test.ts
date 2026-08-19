@@ -7,6 +7,7 @@ import {
   setBackend,
 } from '@/app/runtime';
 import type { Backend } from '@/lib/backend/contracts';
+import type { AgentStatus } from '@/lib/types';
 import { setAgentHidden } from './agent';
 
 function agentBackend(overrides: {
@@ -27,7 +28,7 @@ describe('setAgentHidden', () => {
   });
 
   it('stamps hidden without forcing a status reload', async () => {
-    const listAgents = vi.fn(async () => [
+    const listAgents = vi.fn(async (): Promise<AgentStatus[]> => [
       {
         agentId: 'claude',
         installed: true,
@@ -52,7 +53,7 @@ describe('setAgentHidden', () => {
   });
 
   it('reverts the stamp when persist fails', async () => {
-    const listAgents = vi.fn(async () => [
+    const listAgents = vi.fn(async (): Promise<AgentStatus[]> => [
       {
         agentId: 'claude',
         installed: true,
