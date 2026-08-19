@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { AlertTriangle, Check } from 'lucide-react';
 import { agentDisplayName } from '@/config/agents';
-import { toHiddenIdSet } from '@/lib/agent-visibility';
 import { tryLoadDoctorMapped } from '@/lib/api/doctor';
 import { missingPricingModels, parserHealth } from '@/lib/api/usage';
 import type { AgentId, ParserHealth } from '@/lib/types';
@@ -21,6 +20,17 @@ type Row = {
   failRatePct?: number | null;
   skipped?: number | null;
 };
+
+export const DASHBOARD_PARSE_EMPTY = '暂无已安装的 Agent';
+
+export function filterHealthRowsByVisibleIds<T extends { agentId: string }>(
+  rows: readonly T[],
+  visibleAgentIds: readonly string[] | undefined,
+): T[] {
+  if (visibleAgentIds == null) return [...rows];
+  const allowed = new Set(visibleAgentIds);
+  return rows.filter((row) => allowed.has(row.agentId));
+}
 
 function toRowsFromParser(list: ParserHealth[]): Row[] {
   return list.map((h) => ({
@@ -68,12 +78,13 @@ export function UsageParserHealth({
   variant = 'dashboard',
   refreshKey = 0,
   className,
-  hiddenAgentIds,
+  visibleAgentIds,
 }: {
   variant?: 'dashboard' | 'compact';
   refreshKey?: number;
   className?: string;
-  hiddenAgentIds?: Iterable<string>;
+  /** Installed && !hidden ids from `visibleInstalledIds`. Omit to show API rows as-is. */
+  visibleAgentIds?: readonly string[];
 }) {
   const [rows, setRows] = React.useState<Row[] | null>(null);
   const [missing, setMissing] = React.useState<string[]>([]);
@@ -125,8 +136,7 @@ export function UsageParserHealth({
     };
   }, [refreshKey, variant]);
 
-  const hidden = toHiddenIdSet(hiddenAgentIds ?? []);
-  const visibleRows = (rows ?? []).filter((r) => !hidden.has(r.agentId));
+  const visibleRows = filterHealthRowsByVisibleIds(rows ?? [], visibleAgentIds);
 
   if (variant === 'compact') {
     if (!rows) return null;
@@ -201,12 +211,16 @@ export function UsageParserHealth({
     <div className={cn('mt-4 space-y-1.5', className)}>
       <p className="text-xs text-secondary">
         <span className="text-muted">解析：</span>{' '}
-        {visibleRows.map((h, i) => (
-          <span key={h.agentId}>
-            {i > 0 && <span className="mx-1.5 text-muted">·</span>}
-            <DashboardItem h={h} />
-          </span>
-        ))}
+        {visibleRows.length === 0 ? (
+          <span>{DASHBOARD_PARSE_EMPTY}</span>
+        ) : (
+          visibleRows.map((h, i) => (
+            <span key={h.agentId}>
+              {i > 0 && <span className="mx-1.5 text-muted">·</span>}
+              <DashboardItem h={h} />
+            </span>
+          ))
+        )}
       </p>
       {missing.length > 0 && (
         <Tip

@@ -44,6 +44,7 @@ import {
   filterVisibleUsage,
   hiddenAgentIdSet,
   visibleCatalogAgents,
+  visibleInstalledIds,
 } from '@/lib/agent-visibility';
 import { listAgents } from '@/lib/api/agent';
 import {
@@ -470,6 +471,10 @@ export default function DashboardPage() {
 
   const hiddenIds = useMemo(() => hiddenAgentIdSet(agents ?? []), [agents]);
   const visibleAgentMetas = useMemo(() => visibleCatalogAgents(hiddenIds), [hiddenIds]);
+  const parseVisibleIds = useMemo(
+    () => (agents == null ? undefined : visibleInstalledIds(agents)),
+    [agents],
+  );
 
   useEffect(() => {
     if (agentFilter !== 'all' && hiddenIds.has(agentFilter)) {
@@ -915,7 +920,7 @@ export default function DashboardPage() {
           <UsageParserHealth
             variant="dashboard"
             refreshKey={healthRefreshKey}
-            hiddenAgentIds={hiddenIds}
+            visibleAgentIds={parseVisibleIds}
           />
         )}
       </PageSection>

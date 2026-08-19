@@ -100,6 +100,21 @@ describe('agent-visibility', () => {
     ).toEqual(['codex']);
   });
 
+  it('keeps only Grok when the rest of the catalog is uninstalled or hidden', () => {
+    expect(
+      visibleInstalledIds([
+        status('claude', { installed: false }),
+        status('codex', { installed: false }),
+        status('kimi', { installed: false }),
+        status('grok'),
+        status('pi', { hidden: true }),
+        status('workbuddy', { installed: false }),
+        status('cursor', { installed: false }),
+        status('dsh', { installed: false }),
+      ]),
+    ).toEqual(['grok']);
+  });
+
   it('builds a hidden id set and visible catalog subset', () => {
     const hidden = hiddenAgentIdSet([status('claude', { hidden: true }), status('codex')]);
     expect([...hidden]).toEqual(['claude']);

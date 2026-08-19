@@ -1,5 +1,7 @@
 //! Usage collection + query service.
 
+use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Instant;
 
 use uuid::Uuid;
@@ -7,7 +9,8 @@ use uuid::Uuid;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    AgentId, CollectResult, ParserHealth, UsageQuery, UsageRecord, UsageTrendPoint,
+    AgentId, CollectResult, DetectResult, DetectStatus, ParserHealth, UsageQuery, UsageRecord,
+    UsageTrendPoint,
 };
 use crate::platform::usage::{
     builtin_usage_registry, collect_with_source, collect_with_source_for_agent_id, TokenAccounting,
@@ -22,9 +25,16 @@ use crate::usage::{
 };
 use crate::utils::redact::redact_text;
 
+use super::agent_service::AgentService;
+use super::agent_visibility_service::AgentVisibilityService;
+
+/// Live (or test-injected) set of agents collect / parser_health may scan.
+type CollectTargetResolver = Arc<dyn Fn() -> Result<HashSet<AgentId>> + Send + Sync>;
+
 pub struct UsageService {
     repo: UsageRepo,
     registry: UsageSourceRegistry,
+    collect_targets: Option<CollectTargetResolver>,
 }
 
 impl UsageService {
@@ -32,11 +42,60 @@ impl UsageService {
         Self::with_registry(db, builtin_usage_registry().clone())
     }
 
+    /// Production constructor: skip hidden (visibility file) and not-installed (detect).
+    pub fn with_live_scope(
+        db: Database,
+        visibility: AgentVisibilityService,
+        agents: AgentService,
+    ) -> Self {
+        Self::with_registry_and_scope(
+            db,
+            builtin_usage_registry().clone(),
+            Some(live_collect_target_resolver(visibility, agents)),
+        )
+    }
+
     pub fn with_registry(db: Database, registry: UsageSourceRegistry) -> Self {
+        Self::with_registry_and_scope(db, registry, None)
+    }
+
+    fn with_registry_and_scope(
+        db: Database,
+        registry: UsageSourceRegistry,
+        collect_targets: Option<CollectTargetResolver>,
+    ) -> Self {
         Self {
             repo: UsageRepo::new(db),
             registry,
+            collect_targets,
         }
+    }
+
+    /// Test helper: only these installed && !hidden agents are collect/health targets.
+    #[cfg(test)]
+    pub(crate) fn with_visible_installed(
+        db: Database,
+        registry: UsageSourceRegistry,
+        visible_installed: impl IntoIterator<Item = AgentId>,
+    ) -> Self {
+        let allowed: HashSet<AgentId> = visible_installed.into_iter().collect();
+        let allowed = Arc::new(allowed);
+        Self::with_registry_and_scope(db, registry, Some(Arc::new(move || Ok((*allowed).clone()))))
+    }
+
+    fn resolve_collect_agents(&self, requested: Option<AgentId>) -> Result<Vec<AgentId>> {
+        let candidates: Vec<AgentId> = match requested {
+            Some(a) => vec![a],
+            None => self.registry.supported_agents(),
+        };
+        let Some(resolve) = &self.collect_targets else {
+            return Ok(candidates);
+        };
+        let allowed = resolve()?;
+        Ok(candidates
+            .into_iter()
+            .filter(|agent| allowed.contains(agent))
+            .collect())
     }
 
     /// Key-native collection entry point.
@@ -90,11 +149,7 @@ impl UsageService {
                 "failed to schedule Grok usage parser repair"
             );
         }
-        let agents: Vec<AgentId> = match agent {
-            Some(a) => vec![a],
-            // Supported agents come from UsageSource registry (not a hard-coded name list).
-            None => self.registry.supported_agents(),
-        };
+        let agents = self.resolve_collect_agents(agent)?;
 
         let mut inserted = 0u64;
         let mut skipped = 0u64;
@@ -287,8 +342,12 @@ impl UsageService {
     pub fn parser_health(&self) -> Result<Vec<ParserHealth>> {
         let stored = self.repo.load_parser_health()?;
         let counts = self.repo.count_by_agent()?;
+        let agents = match &self.collect_targets {
+            Some(_) => self.resolve_collect_agents(None)?,
+            None => AgentId::ALL.to_vec(),
+        };
         let mut out = Vec::new();
-        for a in AgentId::ALL {
+        for a in agents {
             let supported = self.registry.contains_key(&AgentKey::from_agent_id(a));
             let records = counts
                 .iter()
@@ -429,6 +488,30 @@ impl UsageService {
         );
         Ok(())
     }
+}
+
+fn live_collect_target_resolver(
+    visibility: AgentVisibilityService,
+    agents: AgentService,
+) -> CollectTargetResolver {
+    Arc::new(move || {
+        let hidden = visibility.list_hidden_agents()?;
+        let detect = agents.detect_all();
+        Ok(visible_installed_agent_ids(&hidden, &detect))
+    })
+}
+
+/// Same rule as frontend `visibleInstalledIds`: installed && !hidden.
+pub(crate) fn visible_installed_agent_ids(
+    hidden: &[String],
+    detect: &[DetectResult],
+) -> HashSet<AgentId> {
+    let hidden: HashSet<&str> = hidden.iter().map(String::as_str).collect();
+    detect
+        .iter()
+        .filter(|row| row.status == DetectStatus::Installed && !hidden.contains(row.agent.as_str()))
+        .map(|row| row.agent)
+        .collect()
 }
 
 fn event_missing_pricing(ev: &crate::models::ParsedUsageEvent) -> bool {

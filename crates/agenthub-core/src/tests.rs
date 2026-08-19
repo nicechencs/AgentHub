@@ -20,9 +20,15 @@ fn agent_hub_open_doctor_has_all_runtimes_and_agents() {
         "PowerShell must not appear in doctor runtimes on non-Windows hosts"
     );
     assert_eq!(report.agents.len(), crate::models::AgentId::ALL.len());
-    // Usage health covers every agent id (supported or not)
-    assert_eq!(report.usage_health.len(), crate::models::AgentId::ALL.len());
-    assert!(report.usage_health.iter().any(|h| h.supported));
+    // Parser health matches Dashboard 解析: installed && !hidden only.
+    assert!(
+        report.usage_health.iter().all(|h| {
+            report.agents.iter().any(|a| {
+                a.agent == h.agent_id && a.status == crate::models::DetectStatus::Installed
+            })
+        }),
+        "parser health must omit uninstalled agents"
+    );
     assert_eq!(hub.registry.all().len(), crate::models::AgentId::ALL.len());
     assert!(report.db_ok);
     assert!(report.ok);
@@ -58,4 +64,43 @@ fn legacy_repair_facade_keeps_detect_result_in_outcome() {
         outcome.agent.as_ref().map(|detect| detect.agent),
         Some(AgentId::WorkBuddy)
     );
+}
+
+#[test]
+fn parser_health_omits_hidden_installed_agents() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let hub = AgentHub::open(Some(dir.path())).expect("open hub");
+    let installed: Vec<_> = hub
+        .agents
+        .detect_all()
+        .into_iter()
+        .filter(|row| row.status == models::DetectStatus::Installed)
+        .map(|row| row.agent)
+        .collect();
+
+    let before = hub.usage.parser_health().expect("parser_health");
+    assert!(
+        before.iter().all(|h| installed.contains(&h.agent_id)),
+        "parser health must only include installed agents: {before:?}"
+    );
+    for id in &installed {
+        hub.agent_visibility
+            .set_agent_hidden(*id, true)
+            .expect("hide");
+    }
+    let hidden = hub.usage.parser_health().expect("parser_health hidden");
+    assert!(
+        hidden.is_empty(),
+        "hidden installed agents must not appear: {hidden:?}"
+    );
+
+    // Cursor can be installed but has no usage source — unhide a collectable agent.
+    if let Some(id) = before.first().map(|h| h.agent_id) {
+        hub.agent_visibility
+            .set_agent_hidden(id, false)
+            .expect("unhide");
+        let shown = hub.usage.parser_health().expect("parser_health shown");
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].agent_id, id);
+    }
 }

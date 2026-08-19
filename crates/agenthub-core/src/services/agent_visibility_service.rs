@@ -1,11 +1,13 @@
 //! Persist which agents the user has soft-hidden.
 //!
-//! Hidden is a display preference: detect / install / credentials / usage / backups
-//! are unchanged. The file lives under `{data_dir}/agent_visibility.json`.
+//! Hidden is a display preference: detect / install / credentials / backups
+//! are unchanged. Usage collect and parser_health skip hidden agents so the
+//! Dashboard 解析 strip and CLI/auto collect cannot see them.
+//! The file lives under `{data_dir}/agent_visibility.json`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, AgentVisibilityFile};
@@ -13,7 +15,12 @@ use crate::utils::atomic::atomic_write;
 
 const VISIBILITY_FILE: &str = "agent_visibility.json";
 
+#[derive(Clone)]
 pub struct AgentVisibilityService {
+    inner: Arc<Inner>,
+}
+
+struct Inner {
     data_dir: PathBuf,
     lock: Mutex<()>,
 }
@@ -21,17 +28,19 @@ pub struct AgentVisibilityService {
 impl AgentVisibilityService {
     pub fn new(data_dir: PathBuf) -> Self {
         Self {
-            data_dir,
-            lock: Mutex::new(()),
+            inner: Arc::new(Inner {
+                data_dir,
+                lock: Mutex::new(()),
+            }),
         }
     }
 
     fn path(&self) -> PathBuf {
-        self.data_dir.join(VISIBILITY_FILE)
+        self.inner.data_dir.join(VISIBILITY_FILE)
     }
 
     fn with_lock<T>(&self, f: impl FnOnce() -> Result<T>) -> Result<T> {
-        let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = self.inner.lock.lock().unwrap_or_else(|e| e.into_inner());
         f()
     }
 

@@ -25,6 +25,7 @@ pub fn invalidate_detect_cache() {
     }
 }
 
+#[derive(Clone)]
 pub struct AgentService {
     registry: AdapterRegistry,
 }
