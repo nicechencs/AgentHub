@@ -251,7 +251,7 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 2. **声明更多 Agent 入口**  
    Grok 听 Chat、Pi 听槽位、Cursor 无 writer。新 Agent 先登记再长路由。
 3. **给协议图加边**  
-   已有 Messages↔Responses 内核、Chat→Responses 桥。缺边就补转换器 + fixtures。没有边就如实不可行。
+   已有 Messages↔Responses 内核、Chat→Responses 桥。缺边就补转换器 + fixtures。没有边就如实不可行。Grok→Claude 本机路由的生成 Provider 是 `adapterSecretMode=local_token` + `grok-subscription-to-claude-v1`，与 Codex→Claude 一样按已知 local-token 桥放行。
 
 建议顺序（工程，不是再讨论「能不能做」）：
 

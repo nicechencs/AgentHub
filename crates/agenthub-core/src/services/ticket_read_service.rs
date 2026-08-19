@@ -13,8 +13,8 @@ use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
     attach_persisted_surface, parse_ticket_id, ticket_id, Account, AccountKind, AdapterApplyPlan,
-    AdapterProfile, AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AgentId,
-    PersistedTicketSurface, Provider, Ticket, TicketBinding, TicketBindingRoute,
+    AdapterProfile, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
+    AgentId, PersistedTicketSurface, Provider, Ticket, TicketBinding, TicketBindingRoute,
     TicketBridgeRuntime, TicketCredentialClass, TicketPlanRequest, TicketSurface, TicketWallet,
     PROJECTION_NOT_A_TICKET,
 };
@@ -331,6 +331,14 @@ fn binding_from_profile(
         AdapterRoute::LocalBridge => TicketBindingRoute::Bridge,
         AdapterRoute::Unsupported => return None,
     };
+    // Incomplete first-time apply / failed-without-port must not appear as
+    // Connections「正用于」. Active current projections still pass `active`.
+    if !active
+        && (profile.status == AdapterProfileStatus::Applying
+            || (route == TicketBindingRoute::Bridge && profile.local_port.is_none()))
+    {
+        return None;
+    }
     let ticket = ticket_id(profile.source_kind, &profile.source_id);
     // (f) source row gone → skip (ticket was never built).
     if !ticket_ids.contains(&ticket) {

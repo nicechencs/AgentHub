@@ -121,6 +121,31 @@ fn status_dto_maps_observed_upstream_and_missing_instance_to_stopped() {
 }
 
 #[test]
+fn invalid_secret_reference_is_shown_in_chinese_for_claude_target() {
+    assert_eq!(
+        map_bridge_apply_error(
+            "invalid argument: invalid adapter secret reference [invalid_arg]",
+            AgentId::Claude,
+        ),
+        "这份 Grok 登录没法解析成 Claude 路由要用的密钥 [invalid_arg]"
+    );
+    assert_eq!(
+        map_bridge_apply_error(
+            "invalid argument: invalid adapter secret reference [invalid_arg]",
+            AgentId::Codex,
+        ),
+        "这份登录没法解析成目标路由要用的密钥 [invalid_arg]"
+    );
+    assert_eq!(
+        map_bridge_apply_error(
+            "本机路由无法启动或停止 [adapter.bridge_start]",
+            AgentId::Claude
+        ),
+        "本机路由无法启动或停止 [adapter.bridge_start]"
+    );
+}
+
+#[test]
 fn started_listener_is_compensated_after_apply_stage_failure() {
     tauri::async_runtime::block_on(async {
         let host = BridgeRuntimeHost::new();
