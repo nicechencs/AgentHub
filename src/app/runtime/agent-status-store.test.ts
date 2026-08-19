@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Backend } from '@/lib/backend/contracts';
 import {
+  applyAgentHidden,
   getAgentStatusSnapshot,
   liveAuthProbeForAgent,
   loadAgentStatuses,
   resetAgentStatusStore,
+  revertAgentHidden,
 } from './agent-status-store';
 
 function deferred<T>() {
@@ -288,5 +290,150 @@ describe('agent-status-store', () => {
       agentId: 'claude',
       kind: 'oauth',
     });
+  });
+
+  it('stamps hidden locally and keeps it over a stale listAgents result', async () => {
+    const listAgents = vi
+      .fn()
+      .mockResolvedValueOnce([{ agentId: 'claude', installed: true, hidden: false }])
+      .mockResolvedValueOnce([{ agentId: 'claude', installed: true, hidden: false }]);
+    const backend = { agent: { listAgents } } as unknown as Backend;
+
+    await loadAgentStatuses(backend);
+    applyAgentHidden('claude', true);
+    expect(getAgentStatusSnapshot().statuses[0]?.hidden).toBe(true);
+
+    const refreshed = await loadAgentStatuses(backend, { force: true });
+    expect(listAgents).toHaveBeenCalledTimes(2);
+    expect(refreshed.statuses[0]?.hidden).toBe(true);
+  });
+
+  it('does not treat an overlaid stale list as backend confirmation', async () => {
+    const listAgents = vi
+      .fn()
+      .mockResolvedValueOnce([{ agentId: 'claude', installed: true, hidden: false }])
+      .mockResolvedValueOnce([{ agentId: 'claude', installed: true, hidden: false }])
+      .mockResolvedValueOnce([{ agentId: 'claude', installed: true, hidden: false }]);
+    const backend = { agent: { listAgents } } as unknown as Backend;
+
+    await loadAgentStatuses(backend);
+    applyAgentHidden('claude', true);
+    await loadAgentStatuses(backend, { force: true });
+    const stillHidden = await loadAgentStatuses(backend, { force: true });
+    expect(stillHidden.statuses[0]?.hidden).toBe(true);
+  });
+
+  it('drops the pending hide once listAgents confirms it', async () => {
+    const listAgents = vi
+      .fn()
+      .mockResolvedValueOnce([{ agentId: 'claude', installed: true, hidden: false }])
+      .mockResolvedValueOnce([{ agentId: 'claude', installed: true, hidden: true }])
+      .mockResolvedValueOnce([{ agentId: 'claude', installed: true, hidden: false }]);
+    const backend = { agent: { listAgents } } as unknown as Backend;
+
+    await loadAgentStatuses(backend);
+    applyAgentHidden('claude', true);
+    await loadAgentStatuses(backend, { force: true });
+    expect(getAgentStatusSnapshot().statuses[0]?.hidden).toBe(true);
+
+    const confirmed = await loadAgentStatuses(backend, { force: true });
+    expect(confirmed.statuses[0]?.hidden).toBe(false);
+  });
+
+  it('keeps a hide that landed during a failed forced refresh', async () => {
+    let rejectSecond!: (error: Error) => void;
+    const secondRequest = new Promise<Array<{ agentId: string; installed: boolean; hidden?: boolean }>>(
+      (_, reject) => {
+        rejectSecond = reject;
+      },
+    );
+    const listAgents = vi
+      .fn()
+      .mockResolvedValueOnce([{ agentId: 'claude', installed: true, hidden: false }])
+      .mockImplementationOnce(() => secondRequest);
+    const backend = { agent: { listAgents } } as unknown as Backend;
+
+    await loadAgentStatuses(backend);
+    const refresh = loadAgentStatuses(backend, { force: true });
+    applyAgentHidden('claude', true);
+    expect(getAgentStatusSnapshot().statuses[0]?.hidden).toBe(true);
+
+    rejectSecond(new Error('focus refresh failed'));
+    await expect(refresh).rejects.toThrow('focus refresh failed');
+    expect(getAgentStatusSnapshot().statuses[0]?.hidden).toBe(true);
+  });
+
+  it('applies a pending hide when the first listAgents arrives', async () => {
+    applyAgentHidden('claude', true);
+    const backend = {
+      agent: {
+        listAgents: vi.fn(async () => [{ agentId: 'claude', installed: true, hidden: false }]),
+      },
+    } as unknown as Backend;
+    const loaded = await loadAgentStatuses(backend);
+    expect(loaded.statuses[0]?.hidden).toBe(true);
+  });
+
+  it('does not restore a reverted hide when a stale enrich finishes', async () => {
+    const list2 = deferred<Array<{ agentId: string; installed: boolean; hidden?: boolean }>>();
+    const enrich = deferred<{
+      agentId: string;
+      kind: string;
+      summary: string;
+      hasCredentials: boolean;
+      health: 'verified';
+    }>();
+    const listAgents = vi
+      .fn()
+      .mockResolvedValueOnce([{ agentId: 'claude', installed: true, hidden: false }])
+      .mockImplementationOnce(() => list2.promise);
+    const probeLiveAuth = vi.fn((agentId: string) => {
+      if (listAgents.mock.calls.length >= 2) return enrich.promise;
+      return Promise.resolve({
+        agentId,
+        kind: 'oauth',
+        summary: 'ok',
+        hasCredentials: true,
+        health: 'verified' as const,
+      });
+    });
+    const backend = {
+      agent: { listAgents },
+      account: { probeLiveAuth },
+    } as unknown as Backend;
+
+    await loadAgentStatuses(backend);
+    const refresh = loadAgentStatuses(backend, { force: true });
+    applyAgentHidden('claude', true);
+    list2.resolve([{ agentId: 'claude', installed: true, hidden: false }]);
+    await vi.waitFor(() => {
+      expect(getAgentStatusSnapshot().statuses[0]?.hidden).toBe(true);
+      expect(probeLiveAuth).toHaveBeenCalledTimes(2);
+    });
+
+    revertAgentHidden('claude', false);
+    expect(getAgentStatusSnapshot().statuses[0]?.hidden).toBe(false);
+
+    enrich.resolve({
+      agentId: 'claude',
+      kind: 'oauth',
+      summary: 'ok',
+      hasCredentials: true,
+      health: 'verified',
+    });
+    await refresh;
+    expect(getAgentStatusSnapshot().statuses[0]?.hidden).toBe(false);
+  });
+
+  it('reverts a local hide stamp', async () => {
+    const backend = {
+      agent: {
+        listAgents: vi.fn(async () => [{ agentId: 'claude', installed: true, hidden: false }]),
+      },
+    } as unknown as Backend;
+    await loadAgentStatuses(backend);
+    applyAgentHidden('claude', true);
+    revertAgentHidden('claude', false);
+    expect(getAgentStatusSnapshot().statuses[0]?.hidden).toBe(false);
   });
 });

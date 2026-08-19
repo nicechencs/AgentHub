@@ -1,7 +1,13 @@
 /**
  * Agent API façade — delegates to app runtime backend.
  */
-import { getBackend, loadAgentStatuses } from '@/app/runtime';
+import {
+  applyAgentHidden,
+  getAgentStatusSnapshot,
+  getBackend,
+  loadAgentStatuses,
+  revertAgentHidden,
+} from '@/app/runtime';
 import type { InstallOutcome } from '@/lib/backend/contracts/install-types';
 import type { AgentId, AgentStatus, AgentUpdateInfo } from '@/lib/types';
 
@@ -87,8 +93,16 @@ export async function checkAgentUpdates(
 }
 
 export async function setAgentHidden(agentId: AgentId, hidden: boolean): Promise<void> {
-  await getBackend().agent.setAgentHidden(agentId, hidden);
-  await refreshAgentStatusStore();
+  const previous = Boolean(
+    getAgentStatusSnapshot().statuses.find((row) => row.agentId === agentId)?.hidden,
+  );
+  applyAgentHidden(agentId, hidden);
+  try {
+    await getBackend().agent.setAgentHidden(agentId, hidden);
+  } catch (error) {
+    revertAgentHidden(agentId, previous);
+    throw error;
+  }
 }
 
 /** Merge update probe rows onto agent status list (by agentId). */

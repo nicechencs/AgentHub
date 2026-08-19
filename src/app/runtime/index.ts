@@ -13,10 +13,12 @@ export {
 export type { AgentCatalogSnapshot, AgentCatalogStatus } from './agent-catalog-store';
 export { AgentCatalogProvider, useAgentCatalog, useAgentCatalogOptional } from './AgentCatalogProvider';
 export {
+  applyAgentHidden,
   getAgentStatusSnapshot,
   liveAuthProbeForAgent,
   loadAgentStatuses,
   resetAgentStatusStore,
+  revertAgentHidden,
   subscribeAgentStatuses,
 } from './agent-status-store';
 export type { AgentStatusLoadState, AgentStatusSnapshot } from './agent-status-store';
