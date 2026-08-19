@@ -1,7 +1,7 @@
 # Chat 过程流式展示设计
 
 > 状态：**Phase 0–2 是现行契约**（2026-08-03）；Phase 3 **展示层已落地**（2026-08，见 [chat-page-redesign.md](chat-page-redesign.md)）。协议侧未做：过程落库、过程内 usage、Pi rpc 审批、diff 预览落库。  
-> **现行状态（2026-08-19）：** Chat 无独立模型选择器；MCP 注入未做；sidecar 未迁。下文 Phase 文不要读成这些能力已交付。  
+> **现行状态**：本文管过程协议与展示契约，不是 Chat 页 IA。Chat **没有**独立模型选择器；chrome 见 [ui-design.md](ui-design.md) §4.4。  
 > 范围：GUI Chat 的「Cursor 式过程」——命令、状态、stderr、结构化工具/thinking 步骤  
 > 非目标：接管各 CLI 原生多轮 session、交互式 tool 审批（RPC）、凭据加密  
 > mock 路径：`src/dev/mocks/chat.ts`。`src/lib/api/chat.ts` 是生产 façade，不是 mock。

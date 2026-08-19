@@ -1,6 +1,6 @@
 # 把已有登录接到另一个编程工具
 
-> 状态：**2026-08-19**。本文是跨工具复用的**产品**真源，前半用日常说法，后半给实现对照。三种做法是直接改配置 / 写进对方认的登录 / 本机转发；**现行界面芯片**是「直连 / 用这份登录 / 本机路由 / 当前不支持」。界面说「登录」，不说「票」。  
+> 状态：**2026-08-19**。本文是跨工具复用的**产品**真源，前半用日常说法（直接改配置 / 写进对方认的登录 / 本机转发），不标圈号。现行界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。界面说「登录」，不说「票 / 钱包」。  
 > 领域对象与规划器仍以 [connection-binding-model.md](connection-binding-model.md) 为准。  
 > 各家接口与**现在能不能写上去**以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为准。  
 > 实现清单以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
@@ -76,7 +76,7 @@ flowchart TB
 Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口」，但同样只改配置、不转发。
 
 必须写全名：名字里带「OpenAI 兼容」的，多半是 Chat 这种接口，**不是** Codex 要的那种（Responses）。  
-所以同一把「兼容」Key 接到 Codex，常常只能走 ③，不是「兼容就万能」。
+所以同一把「兼容」Key 接到 Codex，常常只能走本机转发，不是「兼容就万能」。
 
 ### 1.2 写进对方认的登录
 
@@ -97,8 +97,8 @@ Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口
 |---|---|---|
 | Claude 订阅 → Codex | **产品不做** | Codex 不会用 Claude 这套登录，本产品不走这条 |
 | 任一国产 OAuth（Kimi `/login`、GLM / DeepSeek 登录等）→ 任意工具 | **产品不做** | 不为中国产 OAuth 开边，也不把它转成 API |
-| Grok 订阅 → Claude | **③** | Claude 听的话和 Grok 说的话不同，要本机转发 |
-| Codex 订阅 → Claude | **③** | Claude 只听自己那套接口；这是本机转发，不是写 Claude 官方登录 |
+| Grok 订阅 → Claude | **本机转发** | Claude 听的话和 Grok 说的话不同，要本机转发 |
+| Codex 订阅 → Claude | **本机转发** | Claude 只听自己那套接口；这是本机转发，不是写 Claude 官方登录 |
 
 如果刷新令牌只能用一次，原来的工具和目标工具各自刷新会互相打翻。逐条选「目标自己再登录」或「由 AgentHub 统一刷新，目标只拿引用」。
 
@@ -112,14 +112,14 @@ Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口
 | Kimi / Anthropic 的 Key → Codex | Codex 要的接口和上游不同，要转换 |
 | Grok 订阅 → Claude Code | Claude 听一种接口，上游是 Grok 的另一种 |
 
-③ 只在对不上时才转发。  
+本机转发只在对不上时才转发。  
 **不**默认先开一个一直挂着的兼容服务。
 
 ## 2. 图：三种做法分别接到谁
 
 下面只画「谁接到谁」。每种做法本身见文首三张小图。完整对照表在下一节。
 
-**① 只改配置**（不另开程序）
+**只改配置**（不另开程序）
 
 ```mermaid
 flowchart LR
@@ -132,14 +132,14 @@ flowchart LR
 
 智谱 / DeepSeek 还可以直接接到 DeepSeek 自己的工具。
 
-**② 写进对方认的登录**（目前只写进 Pi）
+**写进对方认的登录**（目前只写进 Pi）
 
 ```mermaid
 flowchart LR
   subs["Claude / Codex / Grok 订阅"] --> pi["Pi 里对应那一家"]
 ```
 
-**③ 本机转发**（中间多一截，目标只连你家电脑）
+**本机转发**（中间多一截，目标只连你家电脑）
 
 ```mermaid
 flowchart LR
@@ -152,12 +152,12 @@ Claude 订阅接到 Codex：**产品不做**（不是「以后再转发」）。
 
 ## 3. 同一份登录，接到谁，做法可以不同
 
-三种做法不是登录上的固定标签。登录列表只标明这份登录**对上游能说什么**；走哪一种只出现在「接到…」的预览里。
+三种做法不是登录上的固定标签。钱包只标明这份登录**对上游能说什么**；走哪一种只出现在「接到…」的预览里。
 
 | 这份登录 | → Claude | → Pi | → Codex | → Grok |
 |---|---|---|---|---|
-| Kimi 会员 Key | ① 填 Claude 能用的地址 | ① 写进 Pi | ③ 要转发 | ① 可试写 |
-| OpenAI Key | — | ① 写进 Pi | ③ 要转发（还没做） | ① 可试写 |
+| Kimi 会员 Key | ① 填 Claude 能用的地址 | ① 写进 Pi | ③ 要转发 | ① 实验可写 |
+| OpenAI Key | — | ① 写进 Pi | ③ 要转发（还没做） | ① 实验可写 |
 | xAI Key | — | ① 写进 Pi | — | 换到这份登录 |
 | GLM / DeepSeek Key | ① 填 Claude 能用的地址 | ① 写进 Pi | ① 官方有 Codex 要的接口 | — |
 | Anthropic Key | 换到这份登录 | ① 写进 Pi | ③ 要转发 | — |
