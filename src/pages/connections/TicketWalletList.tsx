@@ -29,12 +29,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tip } from '@/components/ui/tooltip';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import type { TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
-import {
-  ticketCredentialClassLabel,
-  ticketSurfaceLabel,
-} from '@/lib/backend/contracts/ticket';
 import type { AgentId } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
@@ -45,7 +42,11 @@ import {
   countTicketsByFilter,
   formatTicketBindingDetailLines,
   humanizeTicketAuthLabel,
+  ticketAddActionLabel,
+  ticketCredentialClassChipLabel,
   ticketDetailEditLabel,
+  ticketSurfaceChipLabel,
+  ticketWalletFilterLabel,
   TICKET_WALLET_FILTERS,
   type TicketAddMenuAgent,
   type TicketBindingDetailLine,
@@ -63,7 +64,7 @@ function credentialBadgeVariant(
   return 'accent';
 }
 
-const HIDDEN_ADVANCED_LABELS = new Set(['导入自', '登录状态']);
+const HIDDEN_ADVANCED_LABELS = new Set(['导入自', '登录状态', 'Imported from', 'Login status']);
 
 export function TicketDetailPanel({
   id,
@@ -84,6 +85,7 @@ export function TicketDetailPanel({
   onEdit?: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useI18n();
   const has7d = extras?.quota7dPct != null;
   const has5h = extras?.quota5hPct != null;
   const hasQuota = has7d || has5h;
@@ -98,7 +100,7 @@ export function TicketDetailPanel({
       <div className={cn('grid gap-3', hasQuota && 'sm:grid-cols-2')}>
         {hasQuota ? (
           <div>
-            <p className="text-meta text-muted">用量</p>
+            <p className="text-meta text-muted">{t('connections.list.usage')}</p>
             <div className="mt-1.5 flex flex-col gap-1.5">
               {has7d ? (
                 <QuotaBar
@@ -119,9 +121,9 @@ export function TicketDetailPanel({
         ) : null}
 
         <div>
-          <p className="text-meta text-muted">用在哪</p>
+          <p className="text-meta text-muted">{t('connections.list.usedOn')}</p>
           {bindings.length === 0 ? (
-            <p className="mt-1.5 text-body text-secondary">还没接到任何工具</p>
+            <p className="mt-1.5 text-body text-secondary">{t('connections.list.unusedTools')}</p>
           ) : (
             <ul className="mt-1.5 space-y-1">
               {bindings.map((line) => (
@@ -140,7 +142,7 @@ export function TicketDetailPanel({
 
       {visibleAdvanced.length > 0 ? (
         <details>
-          <summary className="cursor-pointer text-meta text-muted">更多</summary>
+          <summary className="cursor-pointer text-meta text-muted">{t('connections.list.more')}</summary>
           <div className="mt-1.5 grid gap-1.5 text-secondary sm:grid-cols-2">
             {visibleAdvanced.map((field) => (
               <DetailRow
@@ -169,10 +171,10 @@ export function TicketDetailPanel({
           <Button
             size="sm"
             variant="dangerOutline"
-            title={extras?.isCurrent ? '移入回收站；本机连接可能仍继续生效' : undefined}
+            title={extras?.isCurrent ? t('connections.list.moveToTrashCurrentTip') : undefined}
             onClick={onDelete}
           >
-            <Trash2 className="h-3.5 w-3.5" /> 移入回收站
+            <Trash2 className="h-3.5 w-3.5" /> {t('connections.list.moveToTrash')}
           </Button>
         </div>
       </div>
@@ -193,10 +195,11 @@ function TicketRow({
   onEdit: (ticket: TicketView) => void;
   onDelete: (ticket: TicketView) => void;
 }) {
+  const { t } = useI18n();
   const { ticket, usageParts, highlighted } = row;
   const [expanded, setExpanded] = React.useState(false);
   const detailsId = React.useId();
-  const editLabel = ticketDetailEditLabel(extras);
+  const editLabel = ticketDetailEditLabel(extras, t);
 
   return (
     <ListRow
@@ -211,10 +214,10 @@ function TicketRow({
             {ticket.label}
           </Tip>
           <Badge variant={credentialBadgeVariant(ticket.credentialClass)}>
-            {ticketCredentialClassLabel(ticket.credentialClass)}
+            {ticketCredentialClassChipLabel(ticket.credentialClass, t)}
           </Badge>
           <Badge variant={ticket.surface === 'unknown' ? 'accent' : 'default'}>
-            {ticketSurfaceLabel(ticket.surface)}
+            {ticketSurfaceChipLabel(ticket.surface, t)}
           </Badge>
           {extras?.authLabel ? (
             <Badge variant="default">{humanizeTicketAuthLabel(extras.authLabel)}</Badge>
@@ -238,7 +241,7 @@ function TicketRow({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button size="sm" variant="outline" onClick={() => onConnect(ticket)}>
-            <Share2 className="h-3.5 w-3.5" /> 接到…
+            <Share2 className="h-3.5 w-3.5" /> {t('connections.list.connect')}
           </Button>
           <Button
             size="sm"
@@ -247,7 +250,7 @@ function TicketRow({
             aria-controls={detailsId}
             onClick={() => setExpanded((open) => !open)}
           >
-            详情
+            {t('connections.list.details')}
             <ChevronDown
               className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')}
             />
@@ -257,12 +260,12 @@ function TicketRow({
       {expanded ? (
         <TicketDetailPanel
           id={detailsId}
-          advanced={buildTicketDetailFields(ticket, extras).advanced}
-          bindings={formatTicketBindingDetailLines(row.bindings)}
+          advanced={buildTicketDetailFields(ticket, extras, t).advanced}
+          bindings={formatTicketBindingDetailLines(row.bindings, t)}
           extras={extras}
           importedFromLabel={
             ticket.importedFrom
-              ? `导入自 ${agentDisplayName(ticket.importedFrom)}`
+              ? t('connections.list.importedFrom', { name: agentDisplayName(ticket.importedFrom) })
               : null
           }
           editLabel={editLabel}
@@ -283,13 +286,14 @@ function TicketAddMenu({
   onImportLogin?: (agentId: AgentId) => void;
   onAddKey?: (agentId: AgentId) => void;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = React.useState(false);
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button>
-          <Plus className="h-4 w-4" /> 添加 <ChevronDown className="h-3.5 w-3.5" />
+          <Plus className="h-4 w-4" /> {t('connections.list.add')} <ChevronDown className="h-3.5 w-3.5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -297,9 +301,9 @@ function TicketAddMenu({
         className="min-w-[12rem]"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        <DropdownMenuLabel>选择 Agent</DropdownMenuLabel>
+        <DropdownMenuLabel>{t('connections.list.addAgent')}</DropdownMenuLabel>
         {agents.length === 0 ? (
-          <DropdownMenuItem disabled>没有可添加的 Agent</DropdownMenuItem>
+          <DropdownMenuItem disabled>{t('connections.list.noAddAgent')}</DropdownMenuItem>
         ) : (
           agents.map((agent) => (
             <DropdownMenuSub key={agent.id}>
@@ -325,7 +329,7 @@ function TicketAddMenu({
                       })
                     }
                   >
-                    {action.label}
+                    {ticketAddActionLabel(action.kind, t)}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuSubContent>
@@ -362,6 +366,7 @@ export function TicketWalletList({
   onImportLogin?: (agentId: AgentId) => void;
   installedAgentIds?: readonly AgentId[];
 }) {
+  const { t } = useI18n();
   const [filter, setFilter] = React.useState<TicketWalletFilter>(initialFilter);
   const [query, setQuery] = React.useState('');
 
@@ -378,11 +383,12 @@ export function TicketWalletList({
         filter,
         query,
         highlightAgentId: highlightAgentId ?? null,
+        t,
       });
     } catch {
       return [];
     }
-  }, [wallet, filter, query, highlightAgentId]);
+  }, [wallet, filter, query, highlightAgentId, t]);
   const addAgents = React.useMemo(
     () => buildTicketAddMenu(installedAgentIds),
     [installedAgentIds],
@@ -402,10 +408,10 @@ export function TicketWalletList({
         <SegmentedControl
           value={filter}
           onChange={setFilter}
-          aria-label="登录类型筛选"
+          aria-label={t('connections.list.filterAria')}
           options={TICKET_WALLET_FILTERS.map((f) => ({
             value: f.value,
-            label: f.label,
+            label: ticketWalletFilterLabel(f.value, t),
             count: counts[f.value],
           }))}
         />
@@ -413,9 +419,9 @@ export function TicketWalletList({
           <SearchField
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索登录或用途"
+            placeholder={t('connections.list.searchPlaceholder')}
             className="w-44"
-            aria-label="搜索登录"
+            aria-label={t('connections.list.searchAria')}
           />
           {renderAddMenu()}
         </div>
@@ -426,8 +432,8 @@ export function TicketWalletList({
       {wallet && tickets.length === 0 ? (
         <EmptyState
           icon={KeyRound}
-          title="还没有登录"
-          description="导入官方登录态或添加 API Key，再接到其他 Agent。"
+          title={t('connections.list.emptyTitle')}
+          description={t('connections.list.emptyDesc')}
           action={renderAddMenu()}
         />
       ) : null}
@@ -435,8 +441,8 @@ export function TicketWalletList({
       {wallet && tickets.length > 0 && rows.length === 0 ? (
         <EmptyState
           icon={KeyRound}
-          title="没有匹配的登录"
-          description="请改用其他筛选或清空搜索。"
+          title={t('connections.list.noMatchTitle')}
+          description={t('connections.list.noMatchDesc')}
           action={
             <Button
               size="sm"
@@ -447,7 +453,7 @@ export function TicketWalletList({
                 setQuery('');
               }}
             >
-              显示全部
+              {t('connections.list.showAll')}
             </Button>
           }
         />
@@ -470,9 +476,9 @@ export function TicketWalletList({
 
       {wallet ? (
         <p className="mt-3 text-meta text-muted">
-          {tickets.length} 份登录
+          {t('connections.list.count', { n: tickets.length })}
           {highlightAgentId
-            ? ` · 已高亮 ${agentDisplayName(highlightAgentId)} 的当前绑定`
+            ? t('connections.list.highlighted', { name: agentDisplayName(highlightAgentId) })
             : ''}
         </p>
       ) : null}

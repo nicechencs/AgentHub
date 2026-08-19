@@ -4,7 +4,8 @@ import { planTicket } from '@/lib/api/tickets';
 import { upsertMockAccount } from '@/dev/mocks/account';
 import type { Account, AgentStatus, Provider } from '@/lib/types';
 import type { AdapterApplyPlan, AdapterProfile, AdapterRouteAnalysis } from '@/lib/api/adapter';
-import { buildSourceOptions, isOauthIncomplete, planMaturityLabel, planToEligibility } from './eligibility';
+import { createTranslator } from '@/lib/i18n';
+import { buildSourceOptions, isOauthIncomplete, oauthIncompleteMessage, planMaturityLabel, planRouteSummary, planToEligibility } from './eligibility';
 
 function analysis(overrides: Partial<AdapterRouteAnalysis> = {}): AdapterRouteAnalysis {
   return {
@@ -354,5 +355,19 @@ describe('buildSourceOptions', () => {
       ],
     });
     expect(options[0]?.state).toEqual({ kind: 'switchable' });
+  });
+});
+
+describe('eligibility labels with translator', () => {
+  it('maps maturity and route summaries through t()', () => {
+    const t = createTranslator('en');
+    expect(planMaturityLabel('stable', t)).toBe('Stable');
+    expect(planMaturityLabel('preview', t)).toBe('Preview');
+    expect(planMaturityLabel('experimental', t)).toBe('');
+    expect(oauthIncompleteMessage(t)).toContain('Connections');
+    const bridge = plan({ analysis: analysis({ route: 'local_bridge' }) });
+    expect(planRouteSummary(bridge, t)).toBe('Local route');
+    const reuse = plan({ reusePath: 'native_subscription', analysis: analysis({ route: 'config_sync' }) });
+    expect(planRouteSummary(reuse, t)).toBe('Use this login');
   });
 });

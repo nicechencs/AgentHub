@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import type { ConnectionTrashItem } from '@/lib/backend/contracts';
 import {
@@ -43,6 +44,7 @@ export function ConnectionTrashButton({
   agentId?: AgentId;
   onChanged?: () => void;
 }) {
+  const { t } = useI18n();
   const { toast } = useToast();
   const [open, setOpen] = React.useState(false);
   const [items, setItems] = React.useState<ConnectionTrashItem[]>([]);
@@ -64,25 +66,28 @@ export function ConnectionTrashButton({
       setItems(await listConnectionTrash(agentId));
     } catch (error) {
       toast({
-        title: '无法读取回收站',
+        title: t('connections.trash.loadFailed'),
         description: error instanceof Error ? error.message : String(error),
         variant: 'danger',
       });
     } finally {
       setLoading(false);
     }
-  }, [agentId, toast]);
+  }, [agentId, toast, t]);
 
   const restore = async (item: ConnectionTrashItem) => {
     if (!claimConnectionTrashBusy(item.id)) return;
     try {
       await restoreConnectionTrash(item.id);
       setItems((current) => current.filter((row) => row.id !== item.id));
-      toast({ title: '已恢复连接', description: '已恢复到连接列表，未自动写入本机配置。' });
+      toast({
+        title: t('connections.trash.restored'),
+        description: t('connections.trash.restoredDesc'),
+      });
       onChanged?.();
     } catch (error) {
       toast({
-        title: '恢复失败',
+        title: t('connections.trash.restoreFailed'),
         description: error instanceof Error ? error.message : String(error),
         variant: 'danger',
       });
@@ -99,10 +104,10 @@ export function ConnectionTrashButton({
       await permanentlyDeleteConnectionTrash(item.id);
       setItems((current) => current.filter((row) => row.id !== item.id));
       setPendingPermanent(null);
-      toast({ title: '已永久删除' });
+      toast({ title: t('connections.trash.permanentlyDeleted') });
     } catch (error) {
       toast({
-        title: '永久删除失败',
+        title: t('connections.trash.permanentFailed'),
         description: error instanceof Error ? error.message : String(error),
         variant: 'danger',
       });
@@ -125,7 +130,7 @@ export function ConnectionTrashButton({
           }}
         >
           <Trash2 className="h-4 w-4" aria-hidden />
-          回收站
+          {t('connections.trash.button')}
         </Button>
       </div>
 
@@ -146,9 +151,9 @@ export function ConnectionTrashButton({
           onInteractOutside={(event) => preventBusyConfirmationDismissal(trashLocked, event)}
         >
           <DialogHeader>
-            <DialogTitle>认证信息回收站</DialogTitle>
+            <DialogTitle>{t('connections.trash.title')}</DialogTitle>
             <DialogDescription>
-              删除的官方登录与 API Key 会保留 30 天。恢复只回到 AgentHub 列表，不会自动写入本机配置。
+              {t('connections.trash.description')}
             </DialogDescription>
           </DialogHeader>
 
@@ -156,17 +161,17 @@ export function ConnectionTrashButton({
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-8 text-body text-muted">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                正在读取回收站…
+                {t('connections.trash.loading')}
               </div>
             ) : items.length === 0 ? (
-              <p className="py-8 text-center text-body text-muted">回收站为空</p>
+              <p className="py-8 text-center text-body text-muted">{t('connections.trash.empty')}</p>
             ) : (
               items.map((item) => {
                 const agentName = agentDisplayName(item.agentId);
                 const kindLabel =
                   item.kind === 'account' && item.account?.kind === 'oauth'
-                    ? '官方登录'
-                    : 'API Key';
+                    ? t('kind.oauth')
+                    : t('kind.apikey');
                 return (
                   <div
                     key={item.id}
@@ -175,10 +180,15 @@ export function ConnectionTrashButton({
                     <div className="min-w-0">
                       <p className="truncate text-body font-medium">{item.label}</p>
                       <p className="text-meta text-muted">
-                        {agentName} · {kindLabel} · 删除于 {dateLabel(item.deletedAt)}
+                        {t('connections.trash.deletedAt', {
+                          agent: agentName,
+                          kind: kindLabel,
+                          when: dateLabel(item.deletedAt),
+                        })}
                       </p>
                       <p className="text-meta text-muted">
-                        {item.wasCurrent ? '删除前为当前连接 · ' : ''}保留至 {dateLabel(item.expiresAt)}
+                        {item.wasCurrent ? t('connections.trash.wasCurrent') : ''}
+                        {t('connections.trash.expiresAt', { when: dateLabel(item.expiresAt) })}
                       </p>
                     </div>
                     <div className="flex shrink-0 gap-2">
@@ -190,7 +200,7 @@ export function ConnectionTrashButton({
                         onClick={() => void restore(item)}
                       >
                         <RotateCcw className="mr-1 h-3.5 w-3.5" />
-                        恢复
+                        {t('common.restore')}
                       </Button>
                       <Button
                         type="button"
@@ -200,7 +210,7 @@ export function ConnectionTrashButton({
                         disabled={trashBusy}
                         onClick={() => setPendingPermanent(item)}
                       >
-                        永久删除
+                        {t('connections.trash.permanent')}
                       </Button>
                     </div>
                   </div>
@@ -211,7 +221,7 @@ export function ConnectionTrashButton({
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => void load()} disabled={loading || trashLocked}>
-              刷新
+              {t('connections.trash.refresh')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -231,8 +241,10 @@ export function ConnectionTrashButton({
           onInteractOutside={(event) => preventBusyConfirmationDismissal(permanentBusy, event)}
         >
           <DialogHeader>
-            <DialogTitle>永久删除「{pendingPermanent?.label}」？</DialogTitle>
-            <DialogDescription>此操作不可恢复。</DialogDescription>
+            <DialogTitle>
+              {t('connections.trash.permanentTitle', { label: pendingPermanent?.label ?? '' })}
+            </DialogTitle>
+            <DialogDescription>{t('connections.trash.permanentDesc')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button
@@ -241,7 +253,7 @@ export function ConnectionTrashButton({
               disabled={permanentBusy}
               onClick={() => setPendingPermanent(null)}
             >
-              取消
+              {t('common.cancel')}
             </Button>
             <Button
               type="button"
@@ -249,7 +261,7 @@ export function ConnectionTrashButton({
               disabled={permanentBusy}
               onClick={() => void confirmPermanentDelete()}
             >
-              {permanentBusy ? '删除中…' : '永久删除'}
+              {permanentBusy ? t('connections.trash.deleting') : t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>

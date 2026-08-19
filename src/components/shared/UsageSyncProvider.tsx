@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { getSettings } from '@/lib/api/settings';
 import { collectUsage, getUsageAvailability } from '@/lib/api/usage';
@@ -53,6 +54,7 @@ export function useUsageSync(): UsageSyncContextValue {
 
 export function UsageSyncProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
+  const { t } = useI18n();
   const [intervalMin, setIntervalMin] = useState(0);
   const [lastCollectAt, setLastCollectAt] = useState<number | null>(() => loadLastCollectAt());
   const [nextCollectAt, setNextCollectAt] = useState<number | null>(null);
@@ -141,7 +143,7 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
           setNextCollectAt(retryAt);
           if (source === 'manual') {
             toast({
-              title: 'Usage 不可用',
+              title: t('dashboard.page.usageUnavailableTitle'),
               description: availability.reason,
               variant: 'danger',
             });
@@ -171,30 +173,35 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
         notifyUsageCollected({ source, inserted, at });
 
         if (source === 'manual') {
+          const models = `${missing.slice(0, 4).join(', ')}${missing.length > 4 ? '…' : ''}`;
           toast({
-            title: '手动采集完成',
+            title: t('dashboard.sync.toastManualDone'),
             description:
               missing.length > 0
-                ? `导入完成${inserted != null ? `（+${inserted}）` : ''}。缺价模型: ${missing.slice(0, 4).join(', ')}${missing.length > 4 ? '…' : ''}（成本记为 $0）`
+                ? t('dashboard.sync.toastManualMissing', {
+                    inserted: inserted != null ? t('dashboard.sync.toastInsertedParen', { n: inserted }) : '',
+                    models,
+                  })
                 : inserted != null
-                  ? `已从本地日志增量导入 ${inserted} 条用量。`
-                  : '已从各 agent 本地日志增量导入最新用量。',
+                  ? t('dashboard.sync.toastManualInserted', { n: inserted })
+                  : t('dashboard.sync.toastManualGeneric'),
             variant: missing.length > 0 ? 'default' : 'success',
           });
         } else if (inserted != null && inserted > 0) {
+          const models = `${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''}`;
           toast({
-            title: '自动同步完成',
+            title: t('dashboard.sync.toastAutoDone'),
             description:
               missing.length > 0
-                ? `新增 ${inserted} 条。缺价模型: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''}（成本 $0）`
-                : `新增 ${inserted} 条用量记录。`,
+                ? t('dashboard.sync.toastAutoMissing', { n: inserted, models })
+                : t('dashboard.sync.toastAutoInserted', { n: inserted }),
             variant: 'success',
           });
         }
       } catch (e) {
         if (source === 'manual') {
           toast({
-            title: '采集失败',
+            title: t('dashboard.sync.toastCollectFailed'),
             description: e instanceof Error ? e.message : String(e),
             variant: 'danger',
           });
@@ -230,7 +237,7 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
         setCollectPct(0);
       }
     },
-    [clearTimer, recomputeNext, toast],
+    [clearTimer, recomputeNext, toast, t],
   );
 
   const manualCollect = useCallback(async () => {
@@ -309,8 +316,9 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
         intervalMin,
         collecting,
         now: nowTick,
+        t,
       }),
-    [lastCollectAt, nextCollectAt, intervalMin, collecting, nowTick],
+    [lastCollectAt, nextCollectAt, intervalMin, collecting, nowTick, t],
   );
 
   const value = useMemo<UsageSyncContextValue>(

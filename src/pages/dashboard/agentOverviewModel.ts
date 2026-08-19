@@ -1,5 +1,6 @@
 import type { AgentMeta } from '@/config/agents';
 import { authDisplayForAgentStatus } from '@/lib/backend/contracts/auth-state';
+import type { TranslateFn } from '@/lib/i18n';
 import type { AgentId, AgentStatus, AuthStatus } from '@/lib/types';
 
 /** 内容与骨架屏共用：auto-fit 自适应，支持任意 agent 数量 */
@@ -37,6 +38,16 @@ export const AGENT_CARD_BRIDGE_LABEL: Record<AgentCardBridgeState, string> = {
   unavailable: '状态不可用',
 };
 
+export function agentCardBridgeLabel(state: AgentCardBridgeState, t?: TranslateFn): string {
+  if (t) {
+    if (state === 'running') return t('routes.runtime.running');
+    if (state === 'stopped') return t('routes.runtime.stopped');
+    if (state === 'degraded') return t('routes.runtime.degraded');
+    return t('routes.runtime.unavailable');
+  }
+  return AGENT_CARD_BRIDGE_LABEL[state];
+}
+
 /** 异常 = 未安装 / 环境未就绪 / 认证临期或失效 */
 export function isAgentIssue(status: AgentStatus | undefined): boolean {
   if (!status || !status.installed) return true;
@@ -53,6 +64,7 @@ export function isAgentIssue(status: AgentStatus | undefined): boolean {
 export function summarizeAgentOverview(
   agentMetas: readonly AgentMeta[],
   agents: readonly AgentStatus[],
+  t?: TranslateFn,
 ): { total: number; readyCount: number; issueCount: number; summaryText: string } {
   const issueCount = agentMetas.reduce((n, meta) => {
     const status = agents.find((a) => a.agentId === meta.id);
@@ -60,8 +72,11 @@ export function summarizeAgentOverview(
   }, 0);
   const total = agentMetas.length;
   const readyCount = total - issueCount;
-  const summaryText =
-    issueCount > 0
+  const summaryText = t
+    ? issueCount > 0
+      ? t('dashboard.overview.summaryIssues', { ready: readyCount, total, issues: issueCount })
+      : t('dashboard.overview.summaryReady', { ready: readyCount, total })
+    : issueCount > 0
       ? `${readyCount}/${total} 就绪 · ${issueCount} 项待处理`
       : `${readyCount}/${total} 就绪`;
   return { total, readyCount, issueCount, summaryText };
@@ -108,11 +123,12 @@ function mapViaAdapter(
 
 function mapBridgeBadge(
   input?: { state: AgentCardBridgeState; profileId?: string | null } | null,
+  t?: TranslateFn,
 ): { state: AgentCardBridgeState; label: string; profileId: string | null } | undefined {
   if (!input) return undefined;
   return {
     state: input.state,
-    label: AGENT_CARD_BRIDGE_LABEL[input.state],
+    label: agentCardBridgeLabel(input.state, t),
     profileId: input.profileId ?? null,
   };
 }
@@ -122,6 +138,7 @@ export function buildAgentCardView(
   meta: AgentMeta,
   status: AgentStatus | undefined,
   badges?: AgentCardBadgeInput | null,
+  t?: TranslateFn,
 ): AgentCardView {
   const missing = !status || !status.installed;
   const envMissing = missing && status?.envReady === false;
@@ -132,8 +149,9 @@ export function buildAgentCardView(
     : { kind: 'connect' };
 
   const kind = status?.effectiveKind ?? 'none';
+  const unconfigured = t ? t('dashboard.overview.unconfigured') : '未配置';
   const effective =
-    status?.effectiveLabel ?? status?.currentProvider ?? '未配置';
+    status?.effectiveLabel ?? status?.currentProvider ?? unconfigured;
   const version = status?.version ?? '—';
   const versionText = missing ? null : `v${version}`;
   const authDisplay = authDisplayForAgentStatus(status);
@@ -143,10 +161,10 @@ export function buildAgentCardView(
   let metaClass: 'text-muted' | 'text-warning' = 'text-muted';
   if (missing) {
     if (envMissing) {
-      metaText = '环境未就绪 · 点击修复';
+      metaText = t ? t('dashboard.overview.envNotReady') : '环境未就绪 · 点击修复';
       metaClass = 'text-warning';
     } else {
-      metaText = '未安装 · 点击安装';
+      metaText = t ? t('dashboard.overview.notInstalled') : '未安装 · 点击安装';
     }
   } else if (badges?.binding?.ticketLabel) {
     metaText = `${badges.binding.ticketLabel} · ${badges.binding.routeLabel}`;
@@ -161,15 +179,37 @@ export function buildAgentCardView(
       : `${effective} · ${authLabel}`;
 
   const connectionHint =
-    kind === 'account' ? '当前账号/密钥' : kind === 'api' ? '当前 API 配置' : '当前连接';
+    kind === 'account'
+      ? t
+        ? t('dashboard.overview.hintAccount')
+        : '当前账号/密钥'
+      : kind === 'api'
+        ? t
+          ? t('dashboard.overview.hintApi')
+          : '当前 API 配置'
+        : t
+          ? t('dashboard.overview.hintConnection')
+          : '当前连接';
   let ariaLabel = missing
     ? envMissing
-      ? `${meta.name}，环境未就绪，点击修复`
-      : `${meta.name}，未安装，点击安装`
-    : `${meta.name}，${versionText}，${authLabel}，${connectionHint} ${effective}，点击管理连接`;
+      ? t
+        ? t('dashboard.overview.ariaMissingEnv', { name: meta.name })
+        : `${meta.name}，环境未就绪，点击修复`
+      : t
+        ? t('dashboard.overview.ariaMissing', { name: meta.name })
+        : `${meta.name}，未安装，点击安装`
+    : t
+      ? t('dashboard.overview.ariaInstalled', {
+          name: meta.name,
+          version: versionText ?? `v${version}`,
+          auth: authLabel,
+          hint: connectionHint,
+          effective,
+        })
+      : `${meta.name}，${versionText}，${authLabel}，${connectionHint} ${effective}，点击管理连接`;
 
   const viaAdapter = mapViaAdapter(badges?.viaAdapter);
-  const bridge = mapBridgeBadge(badges?.bridge);
+  const bridge = mapBridgeBadge(badges?.bridge, t);
   let authStatus = cardAuthStatus(status, missing);
   if (!missing && bridge?.state === 'stopped' && authStatus === 'valid') {
     authStatus = 'none';
@@ -182,19 +222,33 @@ export function buildAgentCardView(
     : undefined;
   if (viaAdapter) {
     ariaLabel += viaAdapter.sourceLabel
-      ? `，经兼容路由 · ${viaAdapter.sourceLabel}`
-      : '，经兼容路由';
+      ? t
+        ? t('dashboard.overview.ariaViaSource', { source: viaAdapter.sourceLabel })
+        : `，经兼容路由 · ${viaAdapter.sourceLabel}`
+      : t
+        ? t('dashboard.overview.ariaVia')
+        : '，经兼容路由';
   }
   if (binding) {
-    ariaLabel += `，当前绑定 ${binding.ticketLabel}（${binding.routeLabel}）`;
+    ariaLabel += t
+      ? t('dashboard.overview.ariaBinding', { label: binding.ticketLabel, route: binding.routeLabel })
+      : `，当前绑定 ${binding.ticketLabel}（${binding.routeLabel}）`;
   }
   if (bridge) {
-    ariaLabel += `，${bridge.label}`;
+    ariaLabel += t ? t('dashboard.overview.ariaBridge', { label: bridge.label }) : `，${bridge.label}`;
   }
 
-  let statusDotTitle = missing ? (envMissing ? '环境未就绪' : '未安装') : authLabel;
+  let statusDotTitle = missing
+    ? envMissing
+      ? t
+        ? t('dashboard.overview.envNotReadyShort')
+        : '环境未就绪'
+      : t
+        ? t('dashboard.overview.notInstalledShort')
+        : '未安装'
+    : authLabel;
   if (!missing && bridge?.state === 'stopped') {
-    statusDotTitle = AGENT_CARD_BRIDGE_LABEL.stopped;
+    statusDotTitle = agentCardBridgeLabel('stopped', t);
   }
 
   return {
@@ -254,9 +308,10 @@ export function mergeAgentsInOrder(
   agentMetas: readonly AgentMeta[],
   agents: readonly AgentStatus[],
   badgeInputs?: Readonly<Partial<Record<AgentId, AgentCardBadgeInput>>> | null,
+  t?: TranslateFn,
 ): Array<{ meta: AgentMeta; status: AgentStatus | undefined; view: AgentCardView }> {
   return agentMetas.map((meta) => {
     const status = agents.find((a) => a.agentId === meta.id);
-    return { meta, status, view: buildAgentCardView(meta, status, badgeInputs?.[meta.id]) };
+    return { meta, status, view: buildAgentCardView(meta, status, badgeInputs?.[meta.id], t) };
   });
 }

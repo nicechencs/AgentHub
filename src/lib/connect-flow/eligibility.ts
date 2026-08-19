@@ -9,6 +9,7 @@ import { toCredentialRow } from '@/lib/credential-row';
 import type { Account, Provider } from '@/lib/types';
 import type { AdapterApplyPlan, AdapterProfile, AdapterRoute } from '@/lib/api/adapter';
 import type { AdapterMaturity, AdapterReusePath } from '@/lib/backend/contracts/adapter';
+import type { TranslateFn } from '@/lib/i18n';
 import type {
   PlanEligibility,
   SourceOption,
@@ -22,12 +23,24 @@ const INCOMPLETE_OAUTH_STATUS = new Set(['expired', 'none']);
 /** Canonical in this module. */
 export const OAUTH_INCOMPLETE_MESSAGE = '官方登录未完成，先到 Connections 授权。';
 
+export function oauthIncompleteMessage(t?: TranslateFn): string {
+  return t ? t('connect.select.oauthIncomplete') : OAUTH_INCOMPLETE_MESSAGE;
+}
+
 /**
  * Native switch reasons come from agent capability gates
  * (`accountSwitch` / `providerCapabilityGate`).
  */
 const ACCOUNT_SWITCH_BLOCKED_FALLBACK = '该 Agent 不支持账号池切换';
 const PROVIDER_SWITCH_BLOCKED_FALLBACK = '当前 Agent 不支持 Provider 配置写入';
+
+export function accountSwitchBlockedFallback(t?: TranslateFn): string {
+  return t ? t('connect.select.accountSwitchBlocked') : ACCOUNT_SWITCH_BLOCKED_FALLBACK;
+}
+
+export function providerSwitchBlockedFallback(t?: TranslateFn): string {
+  return t ? t('connect.select.providerSwitchBlocked') : PROVIDER_SWITCH_BLOCKED_FALLBACK;
+}
 
 const ROUTE_SUMMARY: Record<AdapterRoute, string> = {
   native_endpoint: '直连',
@@ -113,12 +126,23 @@ function viaAdapterForProvider(
   };
 }
 
-export function planMaturityLabel(maturity: AdapterMaturity | undefined): string {
-  if (maturity === 'stable') return '稳定';
+export function planMaturityLabel(maturity: AdapterMaturity | undefined, t?: TranslateFn): string {
+  if (maturity === 'stable') return t ? t('connect.select.maturityStable') : '稳定';
   if (maturity === 'experimental') return '';
-  if (maturity === 'preview') return '可预览';
+  if (maturity === 'preview') return t ? t('connect.select.maturityPreview') : '可预览';
   if (maturity === 'none') return '';
   return '';
+}
+
+export function planRouteSummary(plan: AdapterApplyPlan, t?: TranslateFn): string {
+  const reusePath = reusePathForPlan(plan);
+  if (t) {
+    if (reusePath === 'local_bridge') return t('kind.route.localRoute');
+    if (reusePath === 'native_subscription') return t('kind.route.reuseLogin');
+    if (reusePath === 'none') return t('kind.route.unsupported');
+    return t('kind.route.direct');
+  }
+  return REUSE_PATH_SUMMARY[reusePath] ?? ROUTE_SUMMARY[plan.analysis.route];
 }
 
 export function planToEligibility(plan: AdapterApplyPlan): PlanEligibility {

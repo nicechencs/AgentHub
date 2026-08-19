@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Notice } from '@/components/shared/Notice';
 import { ListSkeleton } from '@/components/ui/skeleton';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { agentDisplayName } from '@/config/agents';
 import { listTicketWallet, type TicketView, type TicketWallet } from '@/lib/api/tickets';
@@ -78,6 +79,7 @@ function parseWalletFilter(raw: string | null): TicketWalletFilter {
 }
 
 export default function ConnectionsPage() {
+  const { t } = useI18n();
   const { installedIds, visibleIds, hiddenIds, loading, state, error, reload } = useInstalledAgents();
   const pool = useConnectionPool();
   const navigate = useNavigate();
@@ -202,9 +204,9 @@ export default function ConnectionsPage() {
       && !poolSnapshot.errors.accounts
       && !poolSnapshot.errors.providers;
     if (!walletOk || !poolOk || !statusesOk) {
-      throw new Error('列表刷新失败，可手动刷新查看最新状态');
+      throw new Error(t('connections.page.refreshFailed'));
     }
-  }, [loadWallet, poolReload, reload]);
+  }, [loadWallet, poolReload, reload, t]);
 
   useEffect(() => {
     const allowed = installedIds.length ? installedIds : visibleIds;
@@ -259,12 +261,13 @@ export default function ConnectionsPage() {
         return extrasFromPoolSource(
           ticket,
           findTicketPoolSource(ticket, pool.accounts, pool.providers),
+          t,
         );
       } catch {
         return null;
       }
     },
-    [pool.accounts, pool.providers],
+    [pool.accounts, pool.providers, t],
   );
 
   const openTicketAdd = useCallback((kind: TicketAddKind, agentId: AgentId) => {
@@ -294,7 +297,7 @@ export default function ConnectionsPage() {
     [pool.accounts, pool.providers],
   );
 
-  const importCoexistenceNotice = liveAuthCoexistenceNotice(importLiveProbe, addAgentId);
+  const importCoexistenceNotice = liveAuthCoexistenceNotice(importLiveProbe, addAgentId, t);
 
   const confirmImportLogin = async () => {
     const coexistenceNotice = importCoexistenceNotice;
@@ -303,10 +306,10 @@ export default function ConnectionsPage() {
       const acc = await importCurrentLogin(addAgentId);
       setLoginImportOpen(false);
       toast({
-        title: '已导入当前登录态',
+        title: t('connections.import.toastOk'),
         description: coexistenceNotice
-          ? `${acc.label} 已入库。另一份本机凭据未导入，仍留在本机。`
-          : `${acc.label} 已入库`,
+          ? t('connections.import.toastOkCoexist', { label: acc.label })
+          : t('connections.import.toastOkDesc', { label: acc.label }),
         variant: 'success',
       });
       await loadWallet();
@@ -314,7 +317,7 @@ export default function ConnectionsPage() {
       handleGuideSucceeded();
     } catch (e) {
       toast({
-        title: '导入失败',
+        title: t('connections.import.toastFail'),
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
@@ -335,15 +338,15 @@ export default function ConnectionsPage() {
       }
       setDeleteTicket(null);
       toast({
-        title: '已移入回收站',
-        description: deleteConnectionToastDescription({ isCurrent: extras?.isCurrent === true }),
+        title: t('connections.delete.toastOk'),
+        description: deleteConnectionToastDescription({ isCurrent: extras?.isCurrent === true }, t),
         variant: 'success',
       });
       await loadWallet();
       await poolReload().catch(() => {});
     } catch (e) {
       toast({
-        title: '删除失败',
+        title: t('connections.delete.toastFail'),
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
@@ -355,7 +358,11 @@ export default function ConnectionsPage() {
   if (loading) {
     return (
       <div>
-        <PageHeader title="连接" description="登录列表" descriptionTip="正在检测已安装的 Agent。" />
+        <PageHeader
+          title={t('connections.page.title')}
+          description={t('connections.page.description')}
+          descriptionTip={t('connections.page.descriptionTipLoading')}
+        />
         <div className={pageRhythm.chrome}>
           <ListSkeleton rows={4} />
         </div>
@@ -366,8 +373,12 @@ export default function ConnectionsPage() {
   if (state === 'error') {
     return (
       <div>
-        <PageHeader title="连接" description="登录列表" descriptionTip="Agent 检测失败，请重试后再管理连接。" />
-        <ErrorState error={error} title="无法读取 Agent 安装状态" onRetry={() => void reload()} />
+        <PageHeader
+          title={t('connections.page.title')}
+          description={t('connections.page.description')}
+          descriptionTip={t('connections.page.descriptionTipError')}
+        />
+        <ErrorState error={error} title={t('connections.page.agentStatusError')} onRetry={() => void reload()} />
       </div>
     );
   }
@@ -375,12 +386,16 @@ export default function ConnectionsPage() {
   if (!loading && installedIds.length === 0) {
     return (
       <div>
-        <PageHeader title="连接" description="登录列表" descriptionTip="先安装 Agent，再管理连接。" />
+        <PageHeader
+          title={t('connections.page.title')}
+          description={t('connections.page.description')}
+          descriptionTip={t('connections.page.descriptionTipEmpty')}
+        />
         <EmptyState
           icon={Cable}
-          title="尚未安装 Agent"
-          description="先到 Agents 页安装"
-          actionLabel="去 Agents"
+          title={t('connections.page.emptyTitle')}
+          description={t('connections.page.emptyDesc')}
+          actionLabel={t('connections.page.emptyAction')}
           onAction={() => navigate('/agents')}
         />
       </div>
@@ -390,23 +405,23 @@ export default function ConnectionsPage() {
   return (
     <div>
       <PageHeader
-        title="连接"
+        title={t('connections.page.title')}
         description={
           visibleWallet
-            ? `${visibleWallet.tickets.length} 份登录`
-            : '官方登录 / API Key'
+            ? t('connections.page.descriptionCount', { n: visibleWallet.tickets.length })
+            : t('connections.page.descriptionKinds')
         }
-        descriptionTip="跨 Agent 的登录列表。每份登录都可接到其他 Agent。"
+        descriptionTip={t('connections.page.descriptionTip')}
       />
 
       {resumeAgentId ? (
         <div className={pageRhythm.lead}>
           <Notice
             tone="info"
-            actionLabel="返回继续连接"
+            actionLabel={t('connections.page.resumeAction')}
             onAction={() => navigate(buildResumeConnectUrl(resumeAgentId))}
           >
-            取消后可返回继续连接。
+            {t('connections.page.resumeNotice')}
           </Notice>
         </div>
       ) : null}
@@ -414,7 +429,7 @@ export default function ConnectionsPage() {
       {walletError && !wallet ? (
         <ErrorState
           error={walletError}
-          title="无法读取登录列表"
+          title={t('connections.page.walletError')}
           onRetry={() => void loadWallet()}
         />
       ) : (
@@ -423,10 +438,10 @@ export default function ConnectionsPage() {
             <Notice
               className="mb-3 text-sm"
               tone="warning"
-              actionLabel="重试"
+              actionLabel={t('chrome.error.retry')}
               onAction={() => void loadWallet()}
             >
-              登录列表刷新失败，下方仍是上次成功加载的数据。
+              {t('connections.page.walletRefreshFailed')}
             </Notice>
           ) : null}
           <TicketWalletList
@@ -472,13 +487,13 @@ export default function ConnectionsPage() {
           onInteractOutside={(event) => preventBusyConfirmationDismissal(importingAccount, event)}
         >
           <DialogHeader>
-            <DialogTitle>导入当前登录态？</DialogTitle>
+            <DialogTitle>{t('connections.import.title')}</DialogTitle>
             <DialogDescription>
-              将读取 {agentDisplayName(addAgentId)} 本机官方 CLI 已完成的登录；AgentHub 不会在此发起新的授权。
+              {t('connections.import.description', { name: agentDisplayName(addAgentId) })}
             </DialogDescription>
           </DialogHeader>
           {importProbeLoading ? (
-            <p className="text-xs text-muted">正在检测本机凭据…</p>
+            <p className="text-xs text-muted">{t('connections.import.probing')}</p>
           ) : null}
           {importCoexistenceNotice ? (
             <Notice tone="warning">{importCoexistenceNotice}</Notice>
@@ -489,10 +504,10 @@ export default function ConnectionsPage() {
               disabled={importingAccount}
               onClick={() => setLoginImportOpen(false)}
             >
-              取消
+              {t('common.cancel')}
             </Button>
             <Button disabled={importingAccount} onClick={() => void confirmImportLogin()}>
-              {importingAccount ? '导入中…' : '确认导入'}
+              {importingAccount ? t('connections.import.importing') : t('connections.import.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -512,25 +527,25 @@ export default function ConnectionsPage() {
           onInteractOutside={(event) => preventBusyConfirmationDismissal(deleteBusy, event)}
         >
           <DialogHeader>
-            <DialogTitle>移入回收站？</DialogTitle>
+            <DialogTitle>{t('connections.delete.title')}</DialogTitle>
             <DialogDescription>
               {deleteTicket
                 ? `${deleteTicket.label} · ${deleteConnectionDialogDescription({
                     isCurrent: extrasForTicket(deleteTicket)?.isCurrent === true,
-                  })}`
+                  }, t)}`
                 : ''}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" disabled={deleteBusy} onClick={() => setDeleteTicket(null)}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button
               variant="danger"
               disabled={deleteBusy}
               onClick={() => void confirmDeleteTicket()}
             >
-              {deleteBusy ? '删除中…' : '移入回收站'}
+              {deleteBusy ? t('connections.delete.deleting') : t('connections.delete.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

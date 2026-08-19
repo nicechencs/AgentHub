@@ -22,6 +22,7 @@ import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Notice } from '@/components/shared/Notice';
 import { UsageParserHealth } from '@/components/shared/UsageParserHealth';
 import { useUsageSync } from '@/components/shared/UsageSyncProvider';
@@ -63,7 +64,7 @@ import {
 } from '@/lib/api/usage';
 import { createBackup } from '@/lib/api/backup';
 import { listTicketWallet, type TicketWallet } from '@/lib/api/tickets';
-import { bindingRouteDashboardLabel } from '@/lib/backend/contracts/ticket';
+import type { MessageKey } from '@/lib/i18n';
 import { activeBindingForAgent } from '@/lib/ticket-wallet';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
 import { consumeConnectResume, parseConnectResumeParam } from '@/lib/connect-flow/connect-intent';
@@ -90,12 +91,19 @@ import { UsageDetailsTable } from './UsageDetailsTable';
 /** 日期筛选预设：today / 24h 均按 days=1 拉取，today 再按本地日历日收窄 */
 type DateRange = 'today' | '24h' | '7d' | '30d';
 
-const DATE_RANGE_OPTIONS: { value: DateRange; label: string; days: number }[] = [
-  { value: 'today', label: '今天', days: 1 },
-  { value: '24h', label: '近 24 小时', days: 1 },
-  { value: '7d', label: '7 天', days: 7 },
-  { value: '30d', label: '一个月', days: 30 },
+const DATE_RANGE_OPTIONS: { value: DateRange; days: number }[] = [
+  { value: 'today', days: 1 },
+  { value: '24h', days: 1 },
+  { value: '7d', days: 7 },
+  { value: '30d', days: 30 },
 ];
+
+const DATE_RANGE_LABEL_KEYS: Record<DateRange, MessageKey> = {
+  today: 'dashboard.range.today',
+  '24h': 'dashboard.range.last24h',
+  '7d': 'dashboard.range.last7d',
+  '30d': 'dashboard.range.last30d',
+};
 
 function isLocalToday(iso: string): boolean {
   const d = new Date(iso);
@@ -127,6 +135,7 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
+  const { t } = useI18n();
   const usageSync = useUsageSync();
   const usageSectionRef = useRef<HTMLElement>(null);
   const { installedIds } = useInstalledAgents();
@@ -154,8 +163,7 @@ export default function DashboardPage() {
 
   const days =
     DATE_RANGE_OPTIONS.find((o) => o.value === dateRange)?.days ?? 7;
-  const dayLabel =
-    DATE_RANGE_OPTIONS.find((o) => o.value === dateRange)?.label ?? '';
+  const dayLabel = t(DATE_RANGE_LABEL_KEYS[dateRange]);
 
   // —— 采集（状态由 UsageSyncProvider 统一管理）——
   const collecting = usageSync.collecting;
@@ -299,7 +307,12 @@ export default function DashboardPage() {
       const binding = active
         ? {
             ticketLabel: active.ticket.label,
-            routeLabel: bindingRouteDashboardLabel(active.binding.route),
+            routeLabel:
+              active.binding.route === 'reshape'
+                ? t('connections.list.routeReshape')
+                : active.binding.route === 'bridge'
+                  ? t('kind.route.localRoute')
+                  : t('kind.route.direct'),
           }
         : null;
       if (!hit && !binding) continue;
@@ -310,7 +323,7 @@ export default function DashboardPage() {
       };
     }
     return inputs;
-  }, [adapterBadgeHits, bridgeStates, wallet]);
+  }, [adapterBadgeHits, bridgeStates, wallet, t]);
 
   const handleConnectRequest = useCallback((agentId: AgentId) => {
     setConnectEntry({ mode: 'for-agent', targetAgentId: agentId });
@@ -324,11 +337,11 @@ export default function DashboardPage() {
         ? agentFilter
         : installed[0] ?? null;
     if (!target) {
-      toast({ title: '请先安装 Agent', variant: 'danger' });
+      toast({ title: t('dashboard.page.installFirst'), variant: 'danger' });
       return;
     }
     handleConnectRequest(target);
-  }, [agents, agentFilter, handleConnectRequest, toast]);
+  }, [agents, agentFilter, handleConnectRequest, toast, t]);
 
   /** 回跳 `/?connect=`：agents 就绪后打开对应 ConnectFlow，并 replace 掉 query，避免关窗后重开。 */
   const consumedConnectRef = useRef<string | null>(null);
@@ -368,9 +381,9 @@ export default function DashboardPage() {
     const poolOk =
       poolSnapshot.state === 'ready' && !poolSnapshot.errors.accounts && !poolSnapshot.errors.providers;
     if (!agentsOk || !profilesOk || !walletOk || !poolOk) {
-      throw new Error('页面数据刷新失败，可手动刷新查看最新状态');
+      throw new Error(t('dashboard.page.refreshFailed'));
     }
-  }, [loadAgents, poolReload, loadProfiles, loadWallet]);
+  }, [loadAgents, poolReload, loadProfiles, loadWallet, t]);
 
   /** days / agentFilter 变化时各请求一次，上下共用 */
   const loadUsage = useCallback(
@@ -417,26 +430,30 @@ export default function DashboardPage() {
   // /?section=usage 或 /usage 重定向后滚到用量段
   useEffect(() => {
     if (searchParams.get('section') !== 'usage') return;
-    const t = window.setTimeout(() => {
+    const scrollTimer = window.setTimeout(() => {
       usageSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
-    return () => window.clearTimeout(t);
+    return () => window.clearTimeout(scrollTimer);
   }, [searchParams, agentsLoading, usageLoading]);
 
   const handleBackupAll = async () => {
     if (!agents) return;
     const installed = agents.filter((a) => a.installed && !a.hidden);
     if (installed.length === 0) {
-      toast({ title: '没有已安装的 agent', variant: 'danger' });
+      toast({ title: t('dashboard.page.noInstalledAgent'), variant: 'danger' });
       return;
     }
     setBackingUp(true);
     try {
-      await Promise.all(installed.map((a) => createBackup(a.agentId, 'Dashboard 手动备份')));
-      toast({ title: '备份完成', description: `已为 ${installed.length} 个 agent 创建备份`, variant: 'success' });
+      await Promise.all(installed.map((a) => createBackup(a.agentId, t('dashboard.page.backupNote'))));
+      toast({
+        title: t('dashboard.page.backupDone'),
+        description: t('dashboard.page.backupDoneDesc', { n: installed.length }),
+        variant: 'success',
+      });
       navigate('/settings?tab=backups');
     } catch (e) {
-      toast({ title: '备份失败', description: String(e), variant: 'danger' });
+      toast({ title: t('dashboard.page.backupFailed'), description: String(e), variant: 'danger' });
     } finally {
       setBackingUp(false);
     }
@@ -446,12 +463,12 @@ export default function DashboardPage() {
   const usageUnavailableReason =
     usageAvailability?.status === 'unavailable'
       ? usageAvailability.reason
-      : 'Usage 尚未接入';
+      : t('dashboard.page.usageNotWired');
 
   const handleCollect = async () => {
     if (usageUnavailable) {
       toast({
-        title: 'Usage 不可用',
+        title: t('dashboard.page.usageUnavailableTitle'),
         description: usageUnavailableReason,
         variant: 'danger',
       });
@@ -567,9 +584,9 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader
-        title="总览"
-        description="状态与用量"
-        descriptionTip="上半为各 Agent 状态，下半为本地日志解析的 Token 用量与成本估算。"
+        title={t('dashboard.page.title')}
+        description={t('dashboard.page.description')}
+        descriptionTip={t('dashboard.page.descriptionTip')}
       />
 
       {/* —— 上半：Agent 总览（独立 loading / error）—— */}
@@ -584,11 +601,11 @@ export default function DashboardPage() {
               <Notice
                 className="text-sm"
                 tone="warning"
-                actionLabel="去修复"
+                actionLabel={t('dashboard.page.envNoticeAction')}
                 onAction={() => navigate('/agents')}
               >
-                <p className="font-medium text-warning">环境未就绪，尚未安装 Agent</p>
-                <p className="mt-0.5 text-secondary">先修运行环境，再装 CLI</p>
+                <p className="font-medium text-warning">{t('dashboard.page.envNoticeTitle')}</p>
+                <p className="mt-0.5 text-secondary">{t('dashboard.page.envNoticeBody')}</p>
               </Notice>
             )}
             <AgentOverview
@@ -600,10 +617,10 @@ export default function DashboardPage() {
               <Notice
                 className="mt-3 text-sm"
                 tone="warning"
-                actionLabel="重试"
+                actionLabel={t('chrome.error.retry')}
                 onAction={() => void loadWallet()}
               >
-                登录列表刷新失败，卡片绑定信息可能不是最新。
+                {t('dashboard.page.walletRefreshFailed')}
               </Notice>
             ) : null}
           </div>
@@ -618,7 +635,7 @@ export default function DashboardPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部 Agent</SelectItem>
+              <SelectItem value="all">{t('dashboard.page.allAgents')}</SelectItem>
               {visibleAgentMetas.map((a) => (
                 <SelectItem key={a.id} value={a.id}>
                   {a.name}
@@ -628,10 +645,10 @@ export default function DashboardPage() {
           </Select>
           <Select value={modelFilter} onValueChange={setModelFilter}>
             <SelectTrigger className="w-44">
-              <SelectValue placeholder="全部模型" />
+              <SelectValue placeholder={t('dashboard.page.allModels')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部模型</SelectItem>
+              <SelectItem value="all">{t('dashboard.page.allModels')}</SelectItem>
               {models.map((m) => (
                 <SelectItem key={m} value={m}>
                   {m}
@@ -646,7 +663,7 @@ export default function DashboardPage() {
             <SelectContent>
               {DATE_RANGE_OPTIONS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
-                  {o.label}
+                  {t(DATE_RANGE_LABEL_KEYS[o.value])}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -671,16 +688,16 @@ export default function DashboardPage() {
                   usageUnavailable
                     ? usageUnavailableReason
                     : usageSync.intervalMin > 0
-                      ? `从本地日志增量导入；也可等自动同步（每 ${usageSync.intervalMin} 分钟，仅前台）`
-                      : '从本地日志增量导入；当前仅手动（间隔为 0）'
+                      ? t('dashboard.page.collectTitleAuto', { minutes: usageSync.intervalMin })
+                      : t('dashboard.page.collectTitleManual')
                 }
               >
                 <RefreshCw className={collecting ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} />
                 {collecting
                   ? usageSync.collectSource === 'auto'
-                    ? '同步中…'
-                    : '采集中…'
-                  : '采集'}
+                    ? t('dashboard.page.syncing')
+                    : t('dashboard.page.collecting')
+                  : t('dashboard.page.collect')}
               </Button>
             </div>
             {collecting && (
@@ -697,10 +714,10 @@ export default function DashboardPage() {
         ) : usageUnavailable ? (
           <Card className="p-6">
             <div className="flex flex-col items-start gap-2">
-              <p className="text-sm font-medium text-primary">用量不可用</p>
+              <p className="text-sm font-medium text-primary">{t('dashboard.page.usageUnavailable')}</p>
               <p className="text-xs text-secondary">{usageUnavailableReason}</p>
               <p className="text-xs text-muted">
-                演示数据请用 <code className="font-mono">pnpm dev:mock</code>
+                {t('dashboard.page.usageUnavailableDemo', { cmd: 'pnpm dev:mock' })}
               </p>
             </div>
           </Card>
@@ -714,19 +731,30 @@ export default function DashboardPage() {
             )}
           >
             <div className={pageRhythm.metricGrid}>
-              <MetricCard label={`输入(${dayLabel})`} value={metrics.input} />
-              <MetricCard label={`输出(${dayLabel})`} value={metrics.output} />
-              <MetricCard label="缓存命中" value={metrics.cacheHit} />
-              <MetricCard label="估算成本" value={metrics.cost} />
+              <MetricCard
+                label={t('dashboard.page.metricInput', { range: dayLabel })}
+                value={metrics.input}
+              />
+              <MetricCard
+                label={t('dashboard.page.metricOutput', { range: dayLabel })}
+                value={metrics.output}
+              />
+              <MetricCard label={t('dashboard.page.metricCacheHit')} value={metrics.cacheHit} />
+              <MetricCard label={t('dashboard.page.metricCost')} value={metrics.cost} />
             </div>
 
             <div className="grid grid-cols-3 items-start gap-4">
               <Card className="col-span-2">
                 <CardHeader>
-                  <CardTitle>{dayLabel} Token 用量</CardTitle>
+                  <CardTitle>
+                    {t('dashboard.page.tokenUsageTitle', { range: dayLabel })}
+                  </CardTitle>
                   <p className="text-xs text-muted">
-                    合计 {fmtTokens(metrics.totalIn)} in / {fmtTokens(metrics.totalOut)} out / ≈$
-                    {metrics.totalCost.toFixed(1)}
+                    {t('dashboard.page.tokenUsageSummary', {
+                      in: fmtTokens(metrics.totalIn),
+                      out: fmtTokens(metrics.totalOut),
+                      cost: metrics.totalCost.toFixed(1),
+                    })}
                   </p>
                 </CardHeader>
                 <CardContent>
@@ -797,7 +825,7 @@ export default function DashboardPage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>快捷操作</CardTitle>
+                  <CardTitle>{t('dashboard.page.quickActions')}</CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-2">
                   <Button
@@ -805,7 +833,7 @@ export default function DashboardPage() {
                     className="justify-start"
                     onClick={openForAgentConnect}
                   >
-                    <ArrowLeftRight className="h-4 w-4" /> 连接 / 切换
+                    <ArrowLeftRight className="h-4 w-4" /> {t('dashboard.page.connectSwitch')}
                   </Button>
                   <Button
                     variant="outline"
@@ -814,7 +842,7 @@ export default function DashboardPage() {
                     onClick={() => void handleBackupAll()}
                   >
                     <DatabaseBackup className="h-4 w-4" />
-                    {backingUp ? '备份中…' : '立即备份'}
+                    {backingUp ? t('dashboard.page.backingUp') : t('dashboard.page.backupNow')}
                   </Button>
                 </CardContent>
               </Card>
@@ -822,11 +850,15 @@ export default function DashboardPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>{agentFilter === 'all' ? 'Agent 用量分布' : '模型用量分布'}</CardTitle>
+                <CardTitle>
+                  {agentFilter === 'all'
+                    ? t('dashboard.page.distByAgent')
+                    : t('dashboard.page.distByModel')}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 {distribution.length === 0 ? (
-                  <p className="py-4 text-sm text-secondary">暂无数据</p>
+                  <p className="py-4 text-sm text-secondary">{t('dashboard.page.noData')}</p>
                 ) : (
                   <ul className="space-y-1.5">
                     {distribution.map((d) => (
@@ -836,7 +868,9 @@ export default function DashboardPage() {
                           <span className="truncate">{d.label}</span>
                         </span>
                         {d.tokens === 0 ? (
-                          <span className="shrink-0 text-xs text-muted">无数据</span>
+                          <span className="shrink-0 text-xs text-muted">
+                            {t('dashboard.page.noDataShort')}
+                          </span>
                         ) : (
                           <>
                             <div className="h-1.5 w-32 shrink-0 overflow-hidden rounded-full bg-subtle sm:w-40">
@@ -871,8 +905,8 @@ export default function DashboardPage() {
         ref={usageSectionRef}
         id="usage"
         ruled
-        title="用量明细"
-        description="与上方共用时间、Agent 筛选；模型筛选仅作用于本表。"
+        title={t('dashboard.page.detailsTitle')}
+        description={t('dashboard.page.detailsDescription')}
       >
         {showGuide && !usageUnavailable && (
           <Notice
@@ -883,7 +917,7 @@ export default function DashboardPage() {
               saveBool(StorageKey.usageGuideDismissed, true);
             }}
           >
-            首次请点「采集」导入历史；之后可按设置自动同步（仅前台）。
+            {t('dashboard.page.guide')}
           </Notice>
         )}
 
@@ -892,7 +926,7 @@ export default function DashboardPage() {
         ) : usageUnavailable ? (
           <EmptyState
             icon={BarChart3}
-            title="用量不可用"
+            title={t('dashboard.page.usageUnavailable')}
             description={usageUnavailableReason}
           />
         ) : usageError ? (
@@ -900,16 +934,16 @@ export default function DashboardPage() {
             compact
             error={usageError}
             onRetry={() => void loadUsage(true)}
-            title="用量加载失败"
+            title={t('dashboard.page.usageLoadFailed')}
           />
         ) : tableRows.length === 0 ? (
           <EmptyState
             icon={BarChart3}
-            title="暂无用量"
-            description="调整筛选，或点「采集」同步本地日志"
+            title={t('dashboard.page.noUsage')}
+            description={t('dashboard.page.noUsageDesc')}
             action={
               <Button size="sm" variant="outline" className="mt-2" onClick={() => void handleCollect()}>
-                采集
+                {t('dashboard.page.collect')}
               </Button>
             }
           />

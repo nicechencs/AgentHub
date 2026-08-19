@@ -8,6 +8,7 @@ import type {
   BindingRoute,
   BindingView,
   TicketCredentialClass,
+  TicketSurface,
   TicketView,
   TicketWallet,
 } from '@/lib/backend/contracts/ticket';
@@ -22,6 +23,7 @@ import {
   toCredentialRow,
 } from '@/lib/credential-row';
 import { bridgesHrefForProfile } from '@/lib/bridges-path';
+import type { TranslateFn } from '@/lib/i18n';
 
 export { activeBindingForAgent } from '@/lib/ticket-wallet';
 
@@ -40,6 +42,70 @@ export const TICKET_ADD_ACTIONS: Array<{ kind: TicketAddKind; label: string }> =
   { kind: 'import-login', label: '导入当前登录' },
   { kind: 'api-key', label: '添加 API Key' },
 ];
+
+export function ticketWalletFilterLabel(
+  filter: TicketWalletFilter,
+  t?: TranslateFn,
+): string {
+  if (!t) {
+    return TICKET_WALLET_FILTERS.find((item) => item.value === filter)?.label ?? '全部';
+  }
+  if (filter === 'all') return t('kind.all');
+  if (filter === 'oauth') return t('kind.oauth');
+  if (filter === 'api_key') return t('kind.apikey');
+  return t('connections.list.unrecognized');
+}
+
+export function ticketAddActionLabel(kind: TicketAddKind, t?: TranslateFn): string {
+  if (!t) {
+    return TICKET_ADD_ACTIONS.find((item) => item.kind === kind)?.label ?? '导入当前登录';
+  }
+  return kind === 'import-login'
+    ? t('connections.list.importLogin')
+    : t('connections.list.addApiKey');
+}
+
+export function ticketCredentialClassChipLabel(
+  cls: TicketCredentialClass,
+  t?: TranslateFn,
+): string {
+  if (!t) return ticketCredentialClassLabel(cls);
+  if (cls === 'oauth') return t('kind.oauth');
+  if (cls === 'api_key') return t('kind.apikey');
+  return t('connections.list.unrecognized');
+}
+
+export function ticketSurfaceChipLabel(surface: TicketSurface, t?: TranslateFn): string {
+  if (!t) return ticketSurfaceLabel(surface);
+  if (surface === 'kimi-code-membership') return t('connections.list.surfaceMember');
+  if (surface === 'anthropic-api') return t('connections.list.surfaceOfficial');
+  if (surface === 'openai-api') return t('connections.list.surfaceOpenai');
+  if (surface === 'xai-api') return t('connections.list.surfaceXai');
+  if (surface === 'glm-coding-plan') return t('connections.list.surfaceGlm');
+  if (surface === 'deepseek-api') return t('connections.list.surfaceDeepseek');
+  if (
+    surface === 'codex-chatgpt-subscription'
+    || surface === 'claude-subscription'
+    || surface === 'grok-xai-subscription'
+  ) {
+    return t('connections.list.surfaceSub');
+  }
+  return t('connections.list.unrecognized');
+}
+
+function bindingUsageRouteLabel(route: BindingRoute, t?: TranslateFn): string {
+  if (!t) return bindingRouteUsageLabel(route);
+  if (route === 'reshape') return t('connections.list.routeReshape');
+  if (route === 'bridge') return t('kind.route.localRoute');
+  return t('connections.list.routeSwitch');
+}
+
+function bindingDashboardRouteLabel(route: BindingRoute, t?: TranslateFn): string {
+  if (!t) return bindingRouteDashboardLabel(route);
+  if (route === 'reshape') return t('connections.list.routeReshape');
+  if (route === 'bridge') return t('kind.route.localRoute');
+  return t('kind.route.direct');
+}
 
 export interface TicketAddMenuAgent {
   id: AgentId;
@@ -185,26 +251,32 @@ export function bindingsForTicket(
   return wallet.bindings.filter((b) => b.ticketId === ticketId);
 }
 
-export function formatBindingUsageParts(binding: BindingView): TicketUsagePart[] {
-  const route = bindingRouteUsageLabel(binding.route);
+export function formatBindingUsageParts(
+  binding: BindingView,
+  t?: TranslateFn,
+): TicketUsagePart[] {
+  const route = bindingUsageRouteLabel(binding.route, t);
   const name = agentDisplayName(binding.agentId);
   if (binding.route === 'bridge') {
     const suffix = binding.bridge?.running
-      ? ' · 运行中'
+      ? (t ? t('connections.list.runningSuffix') : ' · 运行中')
       : binding.bridge && !binding.bridge.running
-        ? ' · 已停止'
+        ? (t ? t('connections.list.stoppedSuffix') : ' · 已停止')
         : '';
     return [
-      { kind: 'text', text: `${name}（` },
+      { kind: 'text', text: t ? t('connections.list.usageOpen', { name }) : `${name}（` },
       { kind: 'bridge', label: route, href: bridgesHrefForProfile(binding.profileId) },
-      { kind: 'text', text: `${suffix}）` },
+      { kind: 'text', text: t ? t('connections.list.usageCloseWithSuffix', { suffix }) : `${suffix}）` },
     ];
   }
-  return [{ kind: 'text', text: `${name}（${route}）` }];
+  return [{
+    kind: 'text',
+    text: t ? t('connections.list.usageWithRoute', { name, route }) : `${name}（${route}）`,
+  }];
 }
 
-export function formatBindingUsagePart(binding: BindingView): string {
-  return formatBindingUsageParts(binding)
+export function formatBindingUsagePart(binding: BindingView, t?: TranslateFn): string {
+  return formatBindingUsageParts(binding, t)
     .map((part) => (part.kind === 'bridge' ? part.label : part.text))
     .join('');
 }
@@ -212,12 +284,17 @@ export function formatBindingUsagePart(binding: BindingView): string {
 export function formatTicketUsageParts(
   bindings: readonly BindingView[],
   ownerAgentId?: AgentId,
+  t?: TranslateFn,
 ): TicketUsagePart[] {
   const active = bindings.filter((b) => b.active);
   if (active.length === 0) {
     return [{
       kind: 'text',
-      text: ownerAgentId ? `${agentDisplayName(ownerAgentId)} · 未使用` : '未使用',
+      text: ownerAgentId
+        ? (t
+          ? t('connections.list.unusedWithOwner', { name: agentDisplayName(ownerAgentId) })
+          : `${agentDisplayName(ownerAgentId)} · 未使用`)
+        : (t ? t('connections.list.unused') : '未使用'),
     }];
   }
   const selfOnly =
@@ -225,12 +302,15 @@ export function formatTicketUsageParts(
     && active.length === 1
     && active[0]!.agentId === ownerAgentId;
   if (selfOnly) {
-    return formatBindingUsageParts(active[0]!);
+    return formatBindingUsageParts(active[0]!, t);
   }
-  const parts: TicketUsagePart[] = [{ kind: 'text', text: '正用于：' }];
+  const parts: TicketUsagePart[] = [{
+    kind: 'text',
+    text: t ? t('connections.list.usedFor') : '正用于：',
+  }];
   active.forEach((binding, index) => {
     if (index > 0) parts.push({ kind: 'text', text: ' · ' });
-    parts.push(...formatBindingUsageParts(binding));
+    parts.push(...formatBindingUsageParts(binding, t));
   });
   return parts;
 }
@@ -238,8 +318,9 @@ export function formatTicketUsageParts(
 export function formatTicketUsageText(
   bindings: readonly BindingView[],
   ownerAgentId?: AgentId,
+  t?: TranslateFn,
 ): string {
-  return formatTicketUsageParts(bindings, ownerAgentId)
+  return formatTicketUsageParts(bindings, ownerAgentId, t)
     .map((part) => (part.kind === 'bridge' ? part.label : part.text))
     .join('');
 }
@@ -336,12 +417,14 @@ export function buildTicketWalletRows(
     highlightAgentId?: AgentId | null;
     /** Optional soft filter by agent (UI chip); omit for full wallet. */
     agentFilterId?: AgentId | null;
+    t?: TranslateFn;
   } = {},
 ): TicketWalletRow[] {
   const filter = options.filter ?? 'all';
   const query = options.query ?? '';
   const highlightAgentId = options.highlightAgentId ?? null;
   const agentFilterId = options.agentFilterId ?? null;
+  const t = options.t;
 
   let tickets = filterTickets(wallet.tickets, filter);
   tickets = searchTickets(tickets, query, wallet.bindings);
@@ -359,8 +442,8 @@ export function buildTicketWalletRows(
       ticket,
       bindings,
       highlighted,
-      usageText: formatTicketUsageText(bindings, ticket.agentId),
-      usageParts: formatTicketUsageParts(bindings, ticket.agentId),
+      usageText: formatTicketUsageText(bindings, ticket.agentId, t),
+      usageParts: formatTicketUsageParts(bindings, ticket.agentId, t),
     };
   });
 }
@@ -368,8 +451,9 @@ export function buildTicketWalletRows(
 export function dashboardBindingMetaText(
   ticketLabel: string,
   route: BindingRoute,
+  t?: TranslateFn,
 ): string {
-  return `${ticketLabel} · ${bindingRouteDashboardLabel(route)}`;
+  return `${ticketLabel} · ${bindingDashboardRouteLabel(route, t)}`;
 }
 
 /** Optional pool-row fields shown only in the ticket detail panel. */
@@ -430,12 +514,17 @@ function endpointHostOnly(host: string): string {
   return host;
 }
 
-export function ticketBindingStatus(binding: BindingView): string {
+export function ticketBindingStatus(binding: BindingView, t?: TranslateFn): string {
   if (binding.route === 'bridge') {
-    if (binding.bridge?.running) return '本机路由运行中';
-    if (binding.bridge && !binding.bridge.running) return '本机路由已停止';
+    if (binding.bridge?.running) {
+      return t ? t('connections.list.bridgeRunning') : '本机路由运行中';
+    }
+    if (binding.bridge && !binding.bridge.running) {
+      return t ? t('connections.list.bridgeStopped') : '本机路由已停止';
+    }
   }
-  return binding.active ? '当前使用' : '未使用';
+  if (binding.active) return t ? t('connections.list.currentlyUsed') : '当前使用';
+  return t ? t('connections.list.unused') : '未使用';
 }
 
 export function findTicketPoolSource(
@@ -458,6 +547,7 @@ export function findTicketPoolSource(
 export function extrasFromPoolSource(
   ticket: TicketView,
   source: { account?: Account; provider?: Provider },
+  t?: TranslateFn,
 ): TicketDetailExtras {
   const extras: TicketDetailExtras = {
     canEditKey: ticket.sourceKind === 'account' && source.account?.kind === 'apikey',
@@ -472,7 +562,7 @@ export function extrasFromPoolSource(
         ? source.account.email
           ?? source.account.identityLabel
           ?? source.account.subjectId
-          ?? '官方未提供账号信息'
+          ?? (t ? t('connections.list.noAccountInfo') : '官方未提供账号信息')
         : source.account.email ?? source.account.identityLabel ?? source.account.label;
     if (
       source.account.provider
@@ -509,12 +599,16 @@ export function extrasFromPoolSource(
 export function buildTicketDetailFields(
   ticket: TicketView,
   extras?: TicketDetailExtras | null,
+  t?: TranslateFn,
 ): TicketDetailSections {
   const advanced: TicketDetailField[] = [];
 
   const customEndpoint = extras != null && extras.endpointMode === 'custom';
   if (customEndpoint) {
-    advanced.push({ label: '端点', value: '自定义' });
+    advanced.push({
+      label: t ? t('connections.list.endpoint') : '端点',
+      value: t ? t('connections.list.custom') : '自定义',
+    });
     if (extras.endpointHost) {
       advanced.push({
         label: 'Endpoint',
@@ -529,7 +623,10 @@ export function buildTicketDetailFields(
     speaks.length > 0
     && (ticket.credentialClass === 'api_key' || customEndpoint);
   if (showProtocol) {
-    advanced.push({ label: '协议', value: speaks.join(' · ') });
+    advanced.push({
+      label: t ? t('connections.list.protocol') : '协议',
+      value: speaks.join(' · '),
+    });
   }
 
   return { advanced };
@@ -537,15 +634,19 @@ export function buildTicketDetailFields(
 
 export function formatTicketBindingDetailLines(
   bindings: readonly BindingView[],
+  t?: TranslateFn,
 ): TicketBindingDetailLine[] {
   return bindings.map((binding) => ({
     agent: agentDisplayName(binding.agentId),
-    status: ticketBindingStatus(binding),
+    status: ticketBindingStatus(binding, t),
   }));
 }
 
-export function ticketDetailEditLabel(extras?: TicketDetailExtras | null): string | null {
-  if (extras?.canEditConfig) return '编辑配置';
-  if (extras?.canEditKey) return '编辑密钥';
+export function ticketDetailEditLabel(
+  extras?: TicketDetailExtras | null,
+  t?: TranslateFn,
+): string | null {
+  if (extras?.canEditConfig) return t ? t('connections.list.editConfig') : '编辑配置';
+  if (extras?.canEditKey) return t ? t('connections.list.editKey') : '编辑密钥';
   return null;
 }

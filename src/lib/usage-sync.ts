@@ -3,6 +3,7 @@
  * Actual timers live in UsageSyncProvider; this module stays pure/testable.
  */
 
+import type { TranslateFn } from '@/lib/i18n';
 import { loadString, saveString, StorageKey } from '@/lib/ui-preferences';
 
 /** Dispatched after settings save so the provider reloads interval. */
@@ -78,37 +79,54 @@ export function computeNextCollectAt(
   return Math.max(now, lastCollectAt + ms);
 }
 
-export function formatDurationShort(ms: number): string {
+export function formatDurationShort(ms: number, t?: TranslateFn): string {
   const totalSec = Math.max(0, Math.ceil(ms / 1000));
-  if (totalSec < 60) return `${totalSec} 秒`;
+  if (totalSec < 60) {
+    return t ? t('dashboard.sync.seconds', { n: totalSec }) : `${totalSec} 秒`;
+  }
   const totalMin = Math.floor(totalSec / 60);
   const sec = totalSec % 60;
   if (totalMin < 60) {
-    return sec > 0 ? `${totalMin} 分 ${sec} 秒` : `${totalMin} 分钟`;
+    return sec > 0
+      ? (t ? t('dashboard.sync.minutesSeconds', { min: totalMin, sec }) : `${totalMin} 分 ${sec} 秒`)
+      : (t ? t('dashboard.sync.minutes', { n: totalMin }) : `${totalMin} 分钟`);
   }
   const hours = Math.floor(totalMin / 60);
   const min = totalMin % 60;
-  return min > 0 ? `${hours} 小时 ${min} 分` : `${hours} 小时`;
+  return min > 0
+    ? (t ? t('dashboard.sync.hoursMinutes', { hours, min }) : `${hours} 小时 ${min} 分`)
+    : (t ? t('dashboard.sync.hours', { n: hours }) : `${hours} 小时`);
 }
 
-export function formatLastCollectLabel(lastCollectAt: number | null, now = Date.now()): string {
-  if (lastCollectAt == null) return '尚未同步';
+export function formatLastCollectLabel(
+  lastCollectAt: number | null,
+  now = Date.now(),
+  t?: TranslateFn,
+): string {
+  if (lastCollectAt == null) return t ? t('dashboard.sync.neverSynced') : '尚未同步';
   const ago = Math.max(0, now - lastCollectAt);
-  if (ago < 15_000) return '上次同步：刚刚';
-  return `上次同步：${formatDurationShort(ago)}前`;
+  if (ago < 15_000) return t ? t('dashboard.sync.lastJustNow') : '上次同步：刚刚';
+  return t
+    ? t('dashboard.sync.lastAgo', { ago: formatDurationShort(ago, t) })
+    : `上次同步：${formatDurationShort(ago)}前`;
 }
 
 export function formatNextCollectLabel(
   nextCollectAt: number | null,
   intervalMin: number,
   now = Date.now(),
+  t?: TranslateFn,
 ): string {
   const mins = normalizeIntervalMin(intervalMin);
-  if (mins <= 0) return '仅手动采集';
-  if (nextCollectAt == null) return `每 ${mins} 分钟自动同步`;
+  if (mins <= 0) return t ? t('dashboard.sync.manualOnly') : '仅手动采集';
+  if (nextCollectAt == null) {
+    return t ? t('dashboard.sync.everyMinutes', { minutes: mins }) : `每 ${mins} 分钟自动同步`;
+  }
   const remain = nextCollectAt - now;
-  if (remain <= 0) return '即将自动同步';
-  return `还有 ${formatDurationShort(remain)} 自动同步`;
+  if (remain <= 0) return t ? t('dashboard.sync.soon') : '即将自动同步';
+  return t
+    ? t('dashboard.sync.remaining', { remain: formatDurationShort(remain, t) })
+    : `还有 ${formatDurationShort(remain)} 自动同步`;
 }
 
 /** Status line for Dashboard: countdown / manual only (no last-sync time). */
@@ -119,10 +137,11 @@ export function buildUsageSyncStatusLine(opts: {
   intervalMin: number;
   collecting: boolean;
   now?: number;
+  t?: TranslateFn;
 }): string {
   const now = opts.now ?? Date.now();
-  if (opts.collecting) return '正在同步用量…';
-  return formatNextCollectLabel(opts.nextCollectAt, opts.intervalMin, now);
+  if (opts.collecting) return opts.t ? opts.t('dashboard.sync.syncing') : '正在同步用量…';
+  return formatNextCollectLabel(opts.nextCollectAt, opts.intervalMin, now, opts.t);
 }
 
 export function notifyUsageSettingsChanged(): void {

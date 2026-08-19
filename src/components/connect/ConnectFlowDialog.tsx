@@ -3,6 +3,7 @@ import {
   closeConfirmationOnOpenChange,
   preventBusyConfirmationDismissal,
 } from '@/components/shared/busy-confirmation';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -81,6 +82,7 @@ export function ConnectFlowDialog({
 }: ConnectFlowDialogProps) {
   const open = entry !== null;
   const key = connectFlowEntryKey(entry);
+  const { t } = useI18n();
   const pool = useConnectionPool();
   const { statuses } = useAgentStatusesOptional();
   const depsRef = React.useRef(deps);
@@ -248,6 +250,7 @@ export function ConnectFlowDialog({
         eligibilities,
         entry,
         visibleTargetAgentIds: targetAgentIds,
+        t,
       })
     : { kind: 'none' as const };
 
@@ -313,6 +316,7 @@ export function ConnectFlowDialog({
           startedGeneration: begun.next.selectionGeneration,
           deps: depsRef.current,
           option: selectedOption,
+          t,
         });
         if (session !== sessionRef.current) return;
         dispatch(settled.event);
@@ -328,7 +332,7 @@ export function ConnectFlowDialog({
         releaseConfirmLock(confirmingRef);
       }
     })();
-  }, [state, selectedOption, previewInvalid]);
+  }, [state, selectedOption, previewInvalid, t]);
 
   const retryResources = React.useCallback(() => {
     void pool.reload();
@@ -336,10 +340,10 @@ export function ConnectFlowDialog({
   }, [pool, loadProfiles, key]);
 
   const title = !entry
-    ? '连接'
+    ? t('connect.dialog.title')
     : entry.mode === 'for-agent'
-      ? `连接 ${agentDisplayName(entry.targetAgentId)}`
-      : '接到…';
+      ? t('connect.dialog.titleAgent', { name: agentDisplayName(entry.targetAgentId) })
+      : t('connect.dialog.titleSource');
 
   return (
     <Dialog
@@ -426,7 +430,7 @@ export function ConnectFlowDialog({
             <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
               {entryStale || state.step === 'select' ? (
                 <>
-                  <Button variant="secondary" disabled={busy} onClick={requestClose}>取消</Button>
+                  <Button variant="secondary" disabled={busy} onClick={requestClose}>{t('common.cancel')}</Button>
                   {!entryStale ? (
                     <Button
                       disabled={busy || !canEnterPreview(state, selectedOption, selectedEligibility)}
@@ -436,7 +440,7 @@ export function ConnectFlowDialog({
                         eligibility: selectedEligibility,
                       })}
                     >
-                      下一步
+                      {t('connect.dialog.next')}
                     </Button>
                   ) : null}
                 </>
@@ -444,12 +448,12 @@ export function ConnectFlowDialog({
               {!entryStale && state.step === 'preview' ? (
                 <>
                   <Button variant="secondary" disabled={busy} onClick={() => dispatch({ type: 'back_to_select' })}>
-                    返回
+                    {t('connect.dialog.back')}
                   </Button>
                   <Button disabled={!canConfirm(state) || previewInvalid} onClick={handleConfirm}>
                     {busy
-                      ? (state.busy === 'switching' ? '切换中…' : '应用中…')
-                      : (state.previewKind === 'switch' ? '确认切换' : '确认应用')}
+                      ? (state.busy === 'switching' ? t('connect.dialog.switching') : t('connect.dialog.applying'))
+                      : (state.previewKind === 'switch' ? t('connect.dialog.confirmSwitch') : t('connect.dialog.confirmApply'))}
                   </Button>
                 </>
               ) : null}
@@ -457,10 +461,10 @@ export function ConnectFlowDialog({
                 <>
                   {canRetry(state) ? (
                     <Button onClick={() => dispatch({ type: 'retry_from_result' })}>
-                      重试
+                      {t('chrome.error.retry')}
                     </Button>
                   ) : null}
-                  <Button variant="secondary" onClick={requestClose}>关闭</Button>
+                  <Button variant="secondary" onClick={requestClose}>{t('connect.dialog.close')}</Button>
                 </>
               ) : null}
             </DialogFooter>
