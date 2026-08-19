@@ -10,7 +10,7 @@ import {
   mapAdapterProfile,
   mapAdapterRouteAnalysis,
   type AdapterApplyPlanWire,
-  type AdapterApplyResultWire,
+  type AdapterApplyResultWireInput,
   type AdapterBridgeStatusDtoWire,
   type AdapterProfileWire,
   type AdapterRouteAnalysisWire,
@@ -89,7 +89,7 @@ export function createTauriAdapterPort(): AdapterPort {
     async apply(request) {
       // Thin host command: core `apply_adapter` delegates to bind_ticket_inner.
       // Product UI must write via bindTicket, not this transport.
-      const wire = await invokeAdapter<AdapterApplyResultWire>('apply_adapter', { ...request });
+      const wire = await invokeAdapter<AdapterApplyResultWireInput>('apply_adapter', { ...request });
       return mapAdapterApplyResult(wire);
     },
     async remove(profileId) {

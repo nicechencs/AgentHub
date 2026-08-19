@@ -10,9 +10,9 @@ import {
   mapTicketWallet,
   mapUnbindTicketResult,
   type BindTicketResultWire,
+  type PlanTicketResultWire,
   type TicketWalletWire,
 } from '@/lib/backend/contracts/ticket';
-import type { AdapterApplyPlanWire } from '@/lib/backend/contracts/adapter-wire';
 import type { AgentId } from '@/lib/types';
 import { mapAdapterInvokeError } from './adapter';
 import { invoke } from './invoke';
@@ -33,7 +33,7 @@ export function createTauriTicketPort(): TicketPort {
       return mapTicketWallet(wire);
     },
     async plan(ticketId: string, targetAgentId: AgentId): Promise<AdapterApplyPlan> {
-      const wire = await invokeTicket<AdapterApplyPlanWire>('plan_ticket', {
+      const wire = await invokeTicket<PlanTicketResultWire>('plan_ticket', {
         ticketId,
         targetAgentId,
       });

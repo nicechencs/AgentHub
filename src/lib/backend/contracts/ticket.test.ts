@@ -14,6 +14,15 @@ import {
   ticketSurfaceLabel,
 } from './ticket';
 
+function thrownMessage(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  throw new Error('expected mapper to throw');
+}
+
 describe('Ticket Rust wire mappers', () => {
   it('maps a full wallet with provider and account tickets plus bindings', () => {
     const wallet = mapTicketWallet({
@@ -158,7 +167,7 @@ describe('Ticket Rust wire mappers', () => {
   });
 
   it('reuses adapter apply-plan mapping for plan_ticket', () => {
-    const plan = mapPlanTicketResult({
+    const raw = {
       analysis: {
         route: 'config_sync',
         support: 'stable',
@@ -169,12 +178,18 @@ describe('Ticket Rust wire mappers', () => {
         ruleId: 'kimi-membership-to-claude-v1',
         gateKind: 'none',
       },
-      targetAgentId: 'claude',
+      targetAgentId: 'claude' as const,
       canApply: true,
       serviceImpact: 'none',
       changes: [],
-    });
+    };
+    const plan = mapPlanTicketResult(raw);
     expect(plan).toMatchObject({
+      canApply: true,
+      analysis: { route: 'config_sync' },
+      targetAgentId: 'claude',
+    });
+    expect(mapPlanTicketResult({ plan: raw })).toMatchObject({
       canApply: true,
       analysis: { route: 'config_sync' },
       targetAgentId: 'claude',
@@ -224,9 +239,48 @@ describe('Ticket Rust wire mappers', () => {
     expect(isActiveBindingForAgent(result.binding, 'pi')).toBe(true);
   });
 
-  it('rejects bind_ticket wire without binding, and accepts empty unbind_ticket', () => {
-    expect(() => mapBindTicketResult({} as never)).toThrow(/binding/);
-    expect(() => mapUnbindTicketResult('nope')).toThrow(/unbind_ticket/);
+  it('maps a raw TicketBinding bridge object with port 44227', () => {
+    const result = mapBindTicketResult({
+      ticketId: 'provider:kimi-1',
+      agentId: 'codex',
+      route: 'bridge',
+      active: true,
+      profileId: 'prof-bridge',
+      bridge: { port: 44227, running: true },
+    });
+    expect(result.binding).toEqual({
+      ticketId: 'provider:kimi-1',
+      agentId: 'codex',
+      route: 'bridge',
+      active: true,
+      profileId: 'prof-bridge',
+      bridge: { port: 44227, running: true },
+    });
+    expect(isActiveBindingForAgent(result.binding, 'codex')).toBe(true);
+  });
+
+  it('rejects a bind result without ticketId/agentId, and accepts empty unbind', () => {
+    const bindEmpty = thrownMessage(() => mapBindTicketResult({} as never));
+    expect(bindEmpty).toMatch(/绑定结果无法识别/);
+    expect(bindEmpty).not.toMatch(/wire|bind_ticket/i);
+
+    const bindBadRoute = thrownMessage(() => mapBindTicketResult({
+      ticketId: 'account:anth-1',
+      agentId: 'pi',
+      route: 'not-a-route',
+      active: true,
+    } as never));
+    expect(bindBadRoute).toMatch(/绑定结果无法识别/);
+    expect(bindBadRoute).not.toMatch(/wire|bind_ticket/i);
+
+    const planEmpty = thrownMessage(() => mapPlanTicketResult({} as never));
+    expect(planEmpty).toMatch(/连接方案无法识别/);
+    expect(planEmpty).not.toMatch(/wire|plan_ticket/i);
+
+    const unbindBad = thrownMessage(() => mapUnbindTicketResult('nope'));
+    expect(unbindBad).toMatch(/解除绑定结果无法识别/);
+    expect(unbindBad).not.toMatch(/wire|unbind_ticket/i);
+
     expect(mapUnbindTicketResult({})).toBeUndefined();
     expect(mapUnbindTicketResult({ tickets: [], bindings: [] })).toBeUndefined();
     expect(mapUnbindTicketResult(null)).toBeUndefined();
