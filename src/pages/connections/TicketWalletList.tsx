@@ -39,13 +39,14 @@ import type { AgentId } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
   buildTicketAddMenu,
-  dispatchTicketAddAction,
+  handleTicketAddMenuSelect,
   buildTicketDetailFields,
   buildTicketWalletRows,
   countTicketsByFilter,
   formatTicketBindingDetailLines,
   ticketDetailEditLabel,
   TICKET_WALLET_FILTERS,
+  type TicketAddMenuAgent,
   type TicketBindingDetailLine,
   type TicketDetailExtras,
   type TicketDetailField,
@@ -203,7 +204,7 @@ function TicketRow({
             {ticketSurfaceLabel(ticket.surface)}
           </Badge>
           <span className="text-meta text-secondary">
-            {usageParts.map((part, index) => (
+            {(usageParts ?? []).map((part, index) => (
               part.kind === 'bridge' ? (
                 <Link
                   key={`${part.href}:${index}`}
@@ -252,6 +253,70 @@ function TicketRow({
   );
 }
 
+function TicketAddMenu({
+  agents,
+  onImportLogin,
+  onAddKey,
+}: {
+  agents: TicketAddMenuAgent[];
+  onImportLogin?: (agentId: AgentId) => void;
+  onAddKey?: (agentId: AgentId) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button>
+          <Plus className="h-4 w-4" /> 添加 <ChevronDown className="h-3.5 w-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="min-w-[12rem]"
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        <DropdownMenuLabel>选择 Agent</DropdownMenuLabel>
+        {agents.length === 0 ? (
+          <DropdownMenuItem disabled>没有可添加的 Agent</DropdownMenuItem>
+        ) : (
+          agents.map((agent) => (
+            <DropdownMenuSub key={agent.id}>
+              <DropdownMenuSubTrigger className="justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-2">
+                  <AgentDot agentId={agent.id} size="sm" title={null} />
+                  <span className="truncate">{agent.name}</span>
+                </span>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted" />
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent
+                className="min-w-[10rem]"
+                onCloseAutoFocus={(event) => event.preventDefault()}
+              >
+                {agent.actions.map((action) => (
+                  <DropdownMenuItem
+                    key={action.kind}
+                    disabled={action.kind === 'import-login' ? !onImportLogin : !onAddKey}
+                    onSelect={(event) =>
+                      handleTicketAddMenuSelect(event, action.kind, agent.id, {
+                        onImportLogin,
+                        onAddKey,
+                        onMenuClose: () => setOpen(false),
+                      })
+                    }
+                  >
+                    {action.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function TicketWalletList({
   wallet,
   loading,
@@ -288,59 +353,27 @@ export function TicketWalletList({
   const counts = React.useMemo(() => countTicketsByFilter(tickets), [tickets]);
   const rows = React.useMemo(() => {
     if (!wallet) return [];
-    return buildTicketWalletRows(wallet, {
-      filter,
-      query,
-      highlightAgentId: highlightAgentId ?? null,
-    });
+    try {
+      return buildTicketWalletRows(wallet, {
+        filter,
+        query,
+        highlightAgentId: highlightAgentId ?? null,
+      });
+    } catch {
+      return [];
+    }
   }, [wallet, filter, query, highlightAgentId]);
   const addAgents = React.useMemo(
     () => buildTicketAddMenu(installedAgentIds),
     [installedAgentIds],
   );
 
-  const addMenu = (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button>
-          <Plus className="h-4 w-4" /> 添加 <ChevronDown className="h-3.5 w-3.5" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[12rem]">
-        <DropdownMenuLabel>选择 Agent</DropdownMenuLabel>
-        {addAgents.length === 0 ? (
-          <DropdownMenuItem disabled>没有可添加的 Agent</DropdownMenuItem>
-        ) : (
-          addAgents.map((agent) => (
-            <DropdownMenuSub key={agent.id}>
-              <DropdownMenuSubTrigger className="justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-2">
-                  <AgentDot agentId={agent.id} size="sm" title={null} />
-                  <span className="truncate">{agent.name}</span>
-                </span>
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted" />
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="min-w-[10rem]">
-                {agent.actions.map((action) => (
-                  <DropdownMenuItem
-                    key={action.kind}
-                    disabled={action.kind === 'import-login' ? !onImportLogin : !onAddKey}
-                    onSelect={() =>
-                      dispatchTicketAddAction(action.kind, agent.id, {
-                        onImportLogin,
-                        onAddKey,
-                      })
-                    }
-                  >
-                    {action.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          ))
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+  const renderAddMenu = () => (
+    <TicketAddMenu
+      agents={addAgents}
+      onImportLogin={onImportLogin}
+      onAddKey={onAddKey}
+    />
   );
 
   return (
@@ -364,7 +397,7 @@ export function TicketWalletList({
             className="w-44"
             aria-label="搜索登录"
           />
-          {addMenu}
+          {renderAddMenu()}
         </div>
       </div>
 
@@ -375,7 +408,7 @@ export function TicketWalletList({
           icon={KeyRound}
           title="还没有登录"
           description="导入官方登录态或添加 API Key，再接到其他 Agent。"
-          action={addMenu}
+          action={renderAddMenu()}
         />
       ) : null}
 
