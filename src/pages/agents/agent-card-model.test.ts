@@ -59,3 +59,23 @@ describe('agent-card menu wiring', () => {
     expect(dialogs).toContain('shouldIgnoreDismiss');
   });
 });
+
+describe('agent-card install confirm', () => {
+  it('opens confirm instead of starting install immediately', () => {
+    const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
+    const dialogs = readFileSync(path.join(dir, 'AgentCardDialogs.tsx'), 'utf8');
+    expect(card).toContain("setConfirmDialog('install')");
+    expect(card).not.toMatch(/onClick=\{\(\) => startAgentInstall\(selectedChannel\)\}/);
+    expect(dialogs).toContain('agents.dialog.confirmInstall');
+    expect(dialogs).toContain('onConfirmInstall');
+  });
+
+  it('makes retry the primary button after a failed task', () => {
+    const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
+    expect(card).toContain('installFailed');
+    expect(card).toContain("variant={installFailed ? 'default' : 'secondary'}");
+    expect(card).toContain('agents.card.retry');
+    expect(card).toContain('retryAction');
+  });
+});
+

@@ -7,8 +7,9 @@
 
 use std::time::{Duration, Instant};
 
+use std::path::PathBuf;
 #[cfg(not(windows))]
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::adapters::AdapterRegistry;
 use crate::catalog::limits::{
@@ -32,6 +33,43 @@ use crate::utils::redact::redact_text;
 fn elapsed_ms(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
+
+pub(crate) fn user_npm_prefix() -> Result<PathBuf> {
+    Ok(crate::utils::paths::resolve_data_dir(None)?.join("npm"))
+}
+
+fn ensure_user_npm_prefix() -> Result<PathBuf> {
+    let prefix = user_npm_prefix()?;
+    std::fs::create_dir_all(&prefix)?;
+    Ok(prefix)
+}
+
+fn looks_like_permission_failure(res: &ExecResult) -> bool {
+    let blob = format!("{}
+{}
+{}", res.stderr, res.stdout, res.spawn_error.as_deref().unwrap_or(""));
+    let lower = blob.to_ascii_lowercase();
+    lower.contains("eacces")
+        || lower.contains("eperm")
+        || lower.contains("permission denied")
+        || lower.contains("operation not permitted")
+        || lower.contains("access is denied")
+}
+
+fn install_command_failure_message(agent_label: &str, res: &ExecResult) -> String {
+    if res.timed_out {
+        return format!("{agent_label} 安装超时");
+    }
+    if let Some(err) = &res.spawn_error {
+        return format!("{agent_label} 安装命令无法启动：{err}");
+    }
+    let code = res.exit_code.unwrap_or(-1);
+    if looks_like_permission_failure(res) {
+        return format!("{agent_label} 安装失败：没有写入权限（EACCES，退出码 {code}）");
+    }
+    format!("{agent_label} 安装失败（退出码 {code}）")
+}
+
 
 /// Log start/end for install-family ops. Business failures (`Ok(outcome.ok=false)`)
 /// are ERROR; hard `Err` uses structured app-error helpers.
@@ -832,9 +870,17 @@ pub fn install_agent_with_contribution(
             }
         };
 
-        if !res.success() && !res.timed_out {
-            // still redetect — installer may return non-zero but work
-            logs.push("安装命令未以 0 退出，将重新检测以确认结果…".into());
+        let setup_guide = contribution.native_setup_url().is_some()
+            && contribution.native_ps1_url().is_none()
+            && contribution.native_sh_url().is_none()
+            && channel == "native";
+        if !res.success() && !setup_guide {
+            logs.push("安装命令未成功退出，已判定失败。".into());
+            if looks_like_permission_failure(&res) {
+                logs.push("诊断：没有写入权限，不是 PATH 问题。".into());
+            }
+            let msg = install_command_failure_message(agent.as_str(), &res);
+            return Ok(InstallOutcome::failure(action, logs, msg));
         }
 
         runtime::invalidate_cache();
@@ -848,7 +894,7 @@ pub fn install_agent_with_contribution(
         let installed = detect.status == DetectStatus::Installed;
         if installed {
             if let Some(p) = &detect.binary_path {
-                logs.push(format!("redetect: Installed @ {}", p.display()));
+                logs.push(format!("检测：已安装 @ {}", p.display()));
             }
             for n in &detect.notes {
                 logs.push(n.clone());
@@ -871,23 +917,24 @@ pub fn install_agent_with_contribution(
                 ..Default::default()
             })
         } else {
-            logs.push("重新检测: not_found".into());
+            logs.push("检测结果：未找到二进制。".into());
             for n in &detect.notes {
                 logs.push(n.clone());
             }
-            logs.push(
-                "诊断: 安装命令可能已成功，但当前进程 PATH 未包含新二进制。\
-                 请完全退出并重启 AgentHub，或在终端确认 which/where 结果后再点「重新检测」。"
-                    .into(),
-            );
+            if setup_guide {
+                logs.push("请在官网完成安装后，完全退出并重启 AgentHub。".into());
+            } else {
+                logs.push("诊断：命令已成功退出，但当前进程仍未找到新二进制。请完全退出并重启 AgentHub。".into());
+            }
             Ok(InstallOutcome {
                 ok: false,
                 action: action.into(),
                 logs,
-                message: format!(
-                    "{} 安装命令已执行，但重新检测未找到二进制（请检查 PATH 或重启 AgentHub）",
-                    agent.as_str()
-                ),
+                message: if setup_guide {
+                    format!("{} 已打开官网安装页，请完成安装后重启 AgentHub", agent.as_str())
+                } else {
+                    format!("{} 安装命令已成功退出，但未找到二进制（请重启 AgentHub）", agent.as_str())
+                },
                 agent: Some(detect),
                 runtime: None,
                 ..Default::default()
@@ -1018,7 +1065,10 @@ pub fn install_from_contribution(
         // success as the execute-layer result for allowlisted npm/script installs.
         let ok = res.success();
         if !ok {
-            logs.push("安装命令未成功退出（lifecycle 将仍执行 redetect）".into());
+            logs.push("安装命令未成功退出，已判定失败。".into());
+            if looks_like_permission_failure(&res) {
+                logs.push("诊断：没有写入权限，不是 PATH 问题。".into());
+            }
         }
         Ok(InstallOutcome {
             ok,
@@ -1027,7 +1077,7 @@ pub fn install_from_contribution(
             message: if ok {
                 format!("{} 安装命令已成功执行", key.as_str())
             } else {
-                format!("{} 安装命令未成功", key.as_str())
+                install_command_failure_message(key.as_str(), &res)
             },
             agent: None,
             runtime: None,
@@ -1414,11 +1464,11 @@ fn uninstall_agent_inner(
         let mut removed_program = false;
         if is_npm {
             if let Some(pkg) = contribution.npm_package() {
-                logs.push(format!("# npm uninstall -g {pkg}"));
+                logs.push(format!("# npm uninstall -g --prefix ~/.agenthub/npm {pkg}"));
                 let npm = resolve_bin(&["npm", "npm.cmd"])?;
                 let req = ExecRequest {
                     program: npm,
-                    args: vec!["uninstall".into(), "-g".into(), pkg.into()],
+                    args: vec!["uninstall".into(), "-g".into(), "--prefix".into(), ensure_user_npm_prefix()?.display().to_string(), pkg.into()],
                     timeout: AGENT_TIMEOUT,
                     max_output_bytes: MAX_OUTPUT,
                 };
@@ -1606,11 +1656,11 @@ pub fn uninstall_from_contribution(
 
         let removed_program;
         if let Some(pkg) = contribution.npm_package() {
-            logs.push(format!("# npm uninstall -g {pkg}"));
+            logs.push(format!("# npm uninstall -g --prefix ~/.agenthub/npm {pkg}"));
             let npm = resolve_bin(&["npm", "npm.cmd"])?;
             let req = ExecRequest {
                 program: npm,
-                args: vec!["uninstall".into(), "-g".into(), pkg.into()],
+                args: vec!["uninstall".into(), "-g".into(), "--prefix".into(), ensure_user_npm_prefix()?.display().to_string(), pkg.into()],
                 timeout: AGENT_TIMEOUT,
                 max_output_bytes: MAX_OUTPUT,
             };
@@ -1704,13 +1754,15 @@ fn run_npm_install(
     } else {
         format!(" {}", extra.join(" "))
     };
-    push_log(logs, format!("# npm {label} -g{extra_note} {pkg}"));
-    push_log(logs, format!("using npm: {npm}"));
+    let prefix = ensure_user_npm_prefix()?;
+    let prefix_text = prefix.display().to_string();
+    push_log(logs, format!("# npm {label} -g --prefix {prefix_text}{extra_note} {pkg}"));
+    push_log(logs, format!("使用 npm： {npm}"));
     push_log(
         logs,
         format!("# 正在通过 npm 下载安装 {pkg}（可能需数分钟，请保持网络畅通）…"),
     );
-    let mut args = vec!["install".into(), "-g".into()];
+    let mut args = vec!["install".into(), "-g".into(), "--prefix".into(), prefix_text.clone()];
     for flag in extra {
         args.push((*flag).into());
     }
@@ -1806,7 +1858,7 @@ fn run_native_setup_guide(
     let res = executor.run(&req);
     push_exec_logs(logs, &res, 15);
     logs.push(
-        "已尝试打开官网安装页。请完成 WorkBuddySetup 安装后回到 AgentHub 点击重新检测。".into(),
+        "已尝试打开官网安装页。请完成安装后，完全退出并重启 AgentHub。".into(),
     );
     // Always report non-success so install_agent does not claim Installed until redetect.
     Ok(ExecResult {
