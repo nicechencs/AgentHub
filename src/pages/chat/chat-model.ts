@@ -3,6 +3,7 @@
  * 不 import React、不碰 lib/api。
  */
 import { agentDisplayName } from '@/config/agents';
+import type { TranslateFn } from '@/lib/i18n';
 import { processPhaseLabel, type AgentProcessView } from '@/lib/chat-process';
 import type { AgentId, AgentStatus, ChatMessage, ChatMessageStatus, Conversation } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
@@ -71,14 +72,14 @@ export function chatAgentPickerEmptyKind(input: {
   return input.agentsReady ? 'none' : 'loading';
 }
 
-export function chatAgentPickerEmptyCopy(kind: ChatPickerEmptyKind): {
+export function chatAgentPickerEmptyCopy(t: TranslateFn, kind: ChatPickerEmptyKind): {
   text: string;
   action: string | null;
 } {
   if (kind === 'loading') {
-    return { text: '正在检测已安装的 Agent…', action: null };
+    return { text: t('chat.picker.loading'), action: null };
   }
-  return { text: '没有可选择的 Agent', action: '去 Agents 页' };
+  return { text: t('chat.picker.none'), action: t('chat.picker.goAgents') };
 }
 
 export type ConversationDayKey = 'today' | 'yesterday' | 'week' | 'earlier';
@@ -89,26 +90,26 @@ export type ConversationDayGroup = {
   items: Conversation[];
 };
 
-const DAY_LABEL: Record<ConversationDayKey, string> = {
-  today: '今天',
-  yesterday: '昨天',
-  week: '近 7 天',
-  earlier: '更早',
+const DAY_KEYS: Record<ConversationDayKey, 'chat.day.today' | 'chat.day.yesterday' | 'chat.day.week' | 'chat.day.earlier'> = {
+  today: 'chat.day.today',
+  yesterday: 'chat.day.yesterday',
+  week: 'chat.day.week',
+  earlier: 'chat.day.earlier',
 };
 
 const RETRY_STATUSES = new Set<ChatMessageStatus>(['failed', 'cancelled', 'timeout']);
 
-export function cwdShortName(cwd: string | null | undefined): string {
-  if (cwd == null) return '未设目录';
+export function cwdShortName(cwd: string | null | undefined, t: TranslateFn): string {
+  if (cwd == null) return t('chat.cwd.unset');
   const trimmed = cwd.trim();
-  if (!trimmed) return '未设目录';
+  if (!trimmed) return t('chat.cwd.unset');
   const stripped = trimmed.replace(/[\\/]+$/, '');
   if (!stripped) {
     // POSIX 根 `/`（或 `///`）去尾分隔后为空，仍应显示 `/`
-    return trimmed.includes('/') ? '/' : '未设目录';
+    return trimmed.includes('/') ? '/' : t('chat.cwd.unset');
   }
   const parts = stripped.split(/[\\/]/);
-  return parts[parts.length - 1] || '未设目录';
+  return parts[parts.length - 1] || t('chat.cwd.unset');
 }
 
 export function filterConversations(convs: Conversation[], query: string): Conversation[] {
@@ -135,6 +136,7 @@ function parseUpdatedAt(iso: string): number {
 export function groupConversationsByDay(
   convs: Conversation[],
   nowMs: number,
+  t: TranslateFn,
 ): ConversationDayGroup[] {
   const today = startOfLocalDay(nowMs);
   const yesterday = new Date(today);
@@ -154,17 +156,17 @@ export function groupConversationsByDay(
   };
 
   for (const c of convs) {
-    const t = parseUpdatedAt(c.updatedAt);
-    if (t >= todayStart) buckets.today.push(c);
-    else if (t >= yesterdayStart) buckets.yesterday.push(c);
-    else if (t >= weekStart) buckets.week.push(c);
+    const ts = parseUpdatedAt(c.updatedAt);
+    if (ts >= todayStart) buckets.today.push(c);
+    else if (ts >= yesterdayStart) buckets.yesterday.push(c);
+    else if (ts >= weekStart) buckets.week.push(c);
     else buckets.earlier.push(c);
   }
 
   const order: ConversationDayKey[] = ['today', 'yesterday', 'week', 'earlier'];
   return order
     .filter((key) => buckets[key].length > 0)
-    .map((key) => ({ key, label: DAY_LABEL[key], items: buckets[key] }));
+    .map((key) => ({ key, label: t(DAY_KEYS[key]), items: buckets[key] }));
 }
 
 export function sendBlockers(input: {
@@ -226,39 +228,40 @@ export function autoApproveActive(
   return allowDangerous && autoApproveEffect(agentId) !== 'none';
 }
 
-export function autoApproveHint(effect: AutoApproveEffect): string {
+export function autoApproveHint(t: TranslateFn, effect: AutoApproveEffect): string {
   switch (effect) {
     case 'skip':
-      return '跳过工具确认';
+      return t('chat.autoApprove.skip');
     case 'project-trust':
-      return '仅信任项目文件，不是完全跳过确认';
+      return t('chat.autoApprove.projectTrust');
     case 'none':
-      return '此 Agent 的 headless 模式无法跳过确认';
+      return t('chat.autoApprove.none');
   }
 }
 
 export function autoApproveFooter(
+  t: TranslateFn,
   allowDangerous: boolean,
   agentId: AgentId | null | undefined,
 ): { text: string; warning: boolean } {
   const effect = autoApproveEffect(agentId);
   if (!allowDangerous) {
-    return { text: 'Agent 可能修改工作目录中的文件', warning: false };
+    return { text: t('chat.autoApprove.footerOff'), warning: false };
   }
   if (effect === 'skip') {
-    return { text: '自动批准已开启 · Agent 将不经确认修改文件', warning: true };
+    return { text: t('chat.autoApprove.footerSkip'), warning: true };
   }
   if (effect === 'project-trust') {
-    return { text: '自动批准已开启 · 仅信任项目文件，仍可能要求确认', warning: true };
+    return { text: t('chat.autoApprove.footerTrust'), warning: true };
   }
-  return { text: '此 Agent 无法在 Chat 中跳过确认，自动批准不会生效', warning: false };
+  return { text: t('chat.autoApprove.footerNone'), warning: false };
 }
 
-export function autoApproveConfirmCopy(effect: AutoApproveEffect): string {
+export function autoApproveConfirmCopy(t: TranslateFn, effect: AutoApproveEffect): string {
   if (effect === 'project-trust') {
-    return '开启后会信任当前项目内的文件。该 Agent 不会完全跳过工具确认，仍可能停下等待批准。仅在信任当前工作目录时开启。';
+    return t('chat.autoApprove.confirmTrust');
   }
-  return '开启后将跳过工具确认，Agent 可直接改文件、执行命令。仅在信任当前工作目录时开启。';
+  return t('chat.autoApprove.confirmSkip');
 }
 
 /** 单选：点当前项不变；点其他项替换。无法跳过确认的 Agent 会清掉已开的自动批准。 */
@@ -306,19 +309,19 @@ export function newConversationDefaults(
   };
 }
 
-export function agentPickerLabel(active: Conversation | null): string {
+export function agentPickerLabel(t: TranslateFn, active: Conversation | null): string {
   const id = active?.agentIds[0];
-  return id ? agentDisplayName(id) : '选择 Agent';
+  return id ? agentDisplayName(id) : t('chat.picker.selectAgent');
 }
 
-export function connectionPickerCaption(opts: {
+export function connectionPickerCaption(t: TranslateFn, opts: {
   agentIds: AgentId[];
   primaryAgent?: AgentId | null;
 }): string | null {
   if (opts.agentIds.length <= 1) return null;
   const id = opts.primaryAgent ?? opts.agentIds[0];
   if (!id) return null;
-  return `仅作用于首位 Agent（${agentDisplayName(id)}）`;
+  return t('chat.connection.caption', { name: agentDisplayName(id) });
 }
 
 export type ChatConnectionPickerKind = 'account' | 'api' | 'none';
@@ -347,13 +350,13 @@ export function chatConnectionKind(
   return 'none';
 }
 
-function accountConnectionTitle(status: AgentStatus | undefined): string {
+function accountConnectionTitle(t: TranslateFn, status: AgentStatus | undefined): string {
   const label = status?.effectiveLabel?.trim() || status?.currentProvider?.trim();
-  if (label && label !== '未配置') return label;
-  return '已登录';
+  if (label && label !== t('chat.connection.unconfiguredLabel')) return label;
+  return t('chat.connection.signedIn');
 }
 
-export function chatConnectionPickerView(input: {
+export function chatConnectionPickerView(t: TranslateFn, input: {
   primaryAgent: AgentId | null;
   switching?: boolean;
   status?: AgentStatus;
@@ -363,12 +366,12 @@ export function chatConnectionPickerView(input: {
   if (!input.primaryAgent) {
     return {
       kind: 'none',
-      label: '切换连接',
+      label: t('chat.connection.switch'),
       subtitle: null,
       currentLoginTitle: null,
       currentLoginSubtitle: null,
       emptyHint: null,
-      manageLabel: '去 Connections 添加',
+      manageLabel: t('chat.connection.add'),
     };
   }
 
@@ -376,25 +379,25 @@ export function chatConnectionPickerView(input: {
   if (input.switching) {
     return {
       kind,
-      label: '切换中…',
+      label: t('chat.connection.switching'),
       subtitle: null,
-      currentLoginTitle: kind === 'account' ? accountConnectionTitle(input.status) : null,
-      currentLoginSubtitle: kind === 'account' ? '当前登录' : null,
-      emptyHint: kind === 'none' ? '暂无连接' : null,
-      manageLabel: kind === 'none' ? '去 Connections 添加' : '去 Connections 管理',
+      currentLoginTitle: kind === 'account' ? accountConnectionTitle(t, input.status) : null,
+      currentLoginSubtitle: kind === 'account' ? t('chat.connection.currentLogin') : null,
+      emptyHint: kind === 'none' ? t('chat.connection.none') : null,
+      manageLabel: kind === 'none' ? t('chat.connection.add') : t('chat.connection.manage'),
     };
   }
 
   if (kind === 'account') {
-    const title = accountConnectionTitle(input.status);
+    const title = accountConnectionTitle(t, input.status);
     return {
       kind,
       label: title,
       subtitle: null,
       currentLoginTitle: title,
-      currentLoginSubtitle: '当前登录',
+      currentLoginSubtitle: t('chat.connection.currentLogin'),
       emptyHint: null,
-      manageLabel: '去 Connections 管理',
+      manageLabel: t('chat.connection.manage'),
     };
   }
 
@@ -407,41 +410,42 @@ export function chatConnectionPickerView(input: {
       currentLoginTitle: input.currentProviderName ? null : title,
       currentLoginSubtitle: input.currentProviderName ? null : 'API',
       emptyHint: null,
-      manageLabel: '去 Connections 管理',
+      manageLabel: t('chat.connection.manage'),
     };
   }
 
   return {
     kind: 'none',
-    label: '未配置连接',
+    label: t('chat.connection.unconfigured'),
     subtitle: null,
     currentLoginTitle: null,
     currentLoginSubtitle: null,
-    emptyHint: '暂无连接',
-    manageLabel: '去 Connections 添加',
+    emptyHint: t('chat.connection.none'),
+    manageLabel: t('chat.connection.add'),
   };
 }
 
 export function messageStatusLabel(
+  t: TranslateFn,
   status: string,
   process?: AgentProcessView,
 ): string | null {
   // 过程机更细（排队/启动）；终态以 message.status 为准
   if (process && (status === 'running' || !status)) {
     if (process.phase === 'queued' || process.phase === 'starting' || process.phase === 'running') {
-      return processPhaseLabel(process.phase);
+      return processPhaseLabel(process.phase, t);
     }
   }
   switch (status) {
     case 'running':
-      return '生成中';
+      return t('chat.status.generating');
     case 'error':
     case 'failed':
-      return '失败';
+      return t('chat.status.failed');
     case 'cancelled':
-      return '已取消';
+      return t('chat.status.cancelled');
     case 'timeout':
-      return '超时';
+      return t('chat.status.timeout');
     case 'ok':
     case 'done':
     case 'success':
@@ -485,8 +489,8 @@ export function turnComparisonChips(agents: ChatMessage[]): Array<{
     }));
 }
 
-export function conversationTitle(title: string): string {
-  return title.trim() ? title : '新对话';
+export function conversationTitle(t: TranslateFn, title: string): string {
+  return title.trim() ? title : t('chat.title.newConversation');
 }
 
 export type ChatBlockerPrimaryTarget =
@@ -510,7 +514,7 @@ export function blockerPrimaryTarget(
   }
 }
 
-export function blockerCopy(blocker: ChatSendBlocker): {
+export function blockerCopy(t: TranslateFn, blocker: ChatSendBlocker): {
   text: string;
   primaryAction: string;
   secondaryAction?: string;
@@ -518,24 +522,24 @@ export function blockerCopy(blocker: ChatSendBlocker): {
   switch (blocker.kind) {
     case 'hiddenAgents':
       return {
-        text: '会话包含已隐藏 Agent，暂不能发送',
-        primaryAction: '去 Agents 页',
+        text: t('chat.blocker.hidden'),
+        primaryAction: t('chat.blocker.goAgents'),
       };
     case 'unconfiguredAuth':
       return {
-        text: '会话包含未配置授权的 Agent，暂不能发送',
-        primaryAction: '去 Connections 页',
+        text: t('chat.blocker.unconfigured'),
+        primaryAction: t('chat.blocker.goConnections'),
       };
     case 'noCwd':
       return {
-        text: '未设置工作目录 — Agent 需要在指定目录内工作',
-        primaryAction: '设置工作目录',
+        text: t('chat.blocker.noCwd'),
+        primaryAction: t('chat.blocker.setCwd'),
       };
     case 'sendingElsewhere':
       return {
-        text: `「${conversationTitle(blocker.title)}」正在生成`,
-        primaryAction: '回到该会话',
-        secondaryAction: '停止',
+        text: t('chat.blocker.generating', { title: conversationTitle(t, blocker.title) }),
+        primaryAction: t('chat.blocker.backToSession'),
+        secondaryAction: t('chat.blocker.stop'),
       };
   }
 }

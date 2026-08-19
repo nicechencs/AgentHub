@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { agentDisplayName } from '@/config/agents';
+import { createTranslator } from '@/lib/i18n';
 import type { AgentId, AgentStatus, ChatMessage, Conversation } from '@/lib/types';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { TurnGroup } from './chat-format';
@@ -32,6 +33,8 @@ import {
   turnComparisonChips,
   visibleAgentDots,
 } from './chat-model';
+
+const t = createTranslator('zh');
 
 function conv(partial: Partial<Conversation> & Pick<Conversation, 'id'>): Conversation {
   return {
@@ -91,30 +94,30 @@ function processView(phase: AgentProcessView['phase']): AgentProcessView {
 
 describe('cwdShortName', () => {
   it('takes the last segment of a Windows path', () => {
-    expect(cwdShortName('D:\\projects\\demo')).toBe('demo');
+    expect(cwdShortName('D:\\projects\\demo', t)).toBe('demo');
   });
 
   it('takes the last segment of a POSIX path', () => {
-    expect(cwdShortName('/home/user/proj')).toBe('proj');
+    expect(cwdShortName('/home/user/proj', t)).toBe('proj');
   });
 
   it('returns 未设目录 for null / undefined / empty', () => {
-    expect(cwdShortName(null)).toBe('未设目录');
-    expect(cwdShortName(undefined)).toBe('未设目录');
-    expect(cwdShortName('')).toBe('未设目录');
-    expect(cwdShortName('   ')).toBe('未设目录');
+    expect(cwdShortName(null, t)).toBe('未设目录');
+    expect(cwdShortName(undefined, t)).toBe('未设目录');
+    expect(cwdShortName('', t)).toBe('未设目录');
+    expect(cwdShortName('   ', t)).toBe('未设目录');
   });
 
   it('strips trailing separators on both styles', () => {
-    expect(cwdShortName('D:\\projects\\demo\\')).toBe('demo');
-    expect(cwdShortName('/home/user/proj/')).toBe('proj');
-    expect(cwdShortName('C:\\\\')).toBe('C:');
-    expect(cwdShortName('C:')).toBe('C:');
+    expect(cwdShortName('D:\\projects\\demo\\', t)).toBe('demo');
+    expect(cwdShortName('/home/user/proj/', t)).toBe('proj');
+    expect(cwdShortName('C:\\\\', t)).toBe('C:');
+    expect(cwdShortName('C:', t)).toBe('C:');
   });
 
   it('keeps POSIX root as /', () => {
-    expect(cwdShortName('/')).toBe('/');
-    expect(cwdShortName('///')).toBe('/');
+    expect(cwdShortName('/', t)).toBe('/');
+    expect(cwdShortName('///', t)).toBe('/');
   });
 });
 
@@ -151,7 +154,7 @@ describe('groupConversationsByDay', () => {
     const yesterday = conv({ id: 'y', title: 'yest', updatedAt: at(2026, 7, 15, 23) });
     const week = conv({ id: 'w', title: 'week', updatedAt: at(2026, 7, 11, 8) });
     const earlier = conv({ id: 'e', title: 'old', updatedAt: at(2026, 7, 9, 8) });
-    const groups = groupConversationsByDay([today, yesterday, week, earlier], now);
+    const groups = groupConversationsByDay([today, yesterday, week, earlier], now, t);
 
     expect(groups.map((g) => g.key)).toEqual(['today', 'yesterday', 'week', 'earlier']);
     expect(groups.map((g) => g.label)).toEqual(['今天', '昨天', '近 7 天', '更早']);
@@ -161,7 +164,7 @@ describe('groupConversationsByDay', () => {
   it('keeps input order inside a group and omits empty buckets', () => {
     const a = conv({ id: 'a', updatedAt: at(2026, 7, 16, 14) });
     const b = conv({ id: 'b', updatedAt: at(2026, 7, 16, 10) });
-    const groups = groupConversationsByDay([a, b], now);
+    const groups = groupConversationsByDay([a, b], now, t);
     expect(groups).toHaveLength(1);
     expect(groups[0].key).toBe('today');
     expect(groups[0].items.map((c) => c.id)).toEqual(['a', 'b']);
@@ -170,7 +173,7 @@ describe('groupConversationsByDay', () => {
   it('puts today-minus-6 in week and today-minus-7 in earlier', () => {
     const sixDays = conv({ id: 's', updatedAt: at(2026, 7, 10, 12) });
     const sevenDays = conv({ id: 'v', updatedAt: at(2026, 7, 9, 12) });
-    const groups = groupConversationsByDay([sixDays, sevenDays], now);
+    const groups = groupConversationsByDay([sixDays, sevenDays], now, t);
     expect(groups.find((g) => g.key === 'week')?.items.map((c) => c.id)).toEqual(['s']);
     expect(groups.find((g) => g.key === 'earlier')?.items.map((c) => c.id)).toEqual(['v']);
   });
@@ -353,15 +356,15 @@ describe('autoApproveEffect', () => {
   });
 
   it('uses honest footer and confirm copy per effect', () => {
-    expect(autoApproveFooter(false, 'claude').warning).toBe(false);
-    expect(autoApproveFooter(true, 'claude')).toEqual({
+    expect(autoApproveFooter(t, false, 'claude').warning).toBe(false);
+    expect(autoApproveFooter(t, true, 'claude')).toEqual({
       text: '自动批准已开启 · Agent 将不经确认修改文件',
       warning: true,
     });
-    expect(autoApproveFooter(true, 'pi').text).toContain('仅信任项目文件');
-    expect(autoApproveFooter(true, 'kimi').text).toContain('不会生效');
-    expect(autoApproveHint('none')).toContain('无法跳过确认');
-    expect(autoApproveConfirmCopy('project-trust')).toContain('不会完全跳过');
+    expect(autoApproveFooter(t, true, 'pi').text).toContain('仅信任项目文件');
+    expect(autoApproveFooter(t, true, 'kimi').text).toContain('不会生效');
+    expect(autoApproveHint(t, 'none')).toContain('无法跳过确认');
+    expect(autoApproveConfirmCopy(t, 'project-trust')).toContain('不会完全跳过');
   });
 });
 
@@ -434,28 +437,28 @@ describe('visibleAgentDots', () => {
 
 describe('conversationTitle', () => {
   it('falls back to 新对话 for empty titles', () => {
-    expect(conversationTitle('')).toBe('新对话');
-    expect(conversationTitle('   ')).toBe('新对话');
-    expect(conversationTitle('修复登录')).toBe('修复登录');
+    expect(conversationTitle(t, '')).toBe('新对话');
+    expect(conversationTitle(t, '   ')).toBe('新对话');
+    expect(conversationTitle(t, '修复登录')).toBe('修复登录');
   });
 });
 
 describe('blockerCopy', () => {
   it('returns copy for each blocker kind', () => {
-    expect(blockerCopy({ kind: 'hiddenAgents', agentIds: ['claude'] })).toEqual({
+    expect(blockerCopy(t, { kind: 'hiddenAgents', agentIds: ['claude'] })).toEqual({
       text: '会话包含已隐藏 Agent，暂不能发送',
       primaryAction: '去 Agents 页',
     });
-    expect(blockerCopy({ kind: 'unconfiguredAuth', agentIds: ['grok'] })).toEqual({
+    expect(blockerCopy(t, { kind: 'unconfiguredAuth', agentIds: ['grok'] })).toEqual({
       text: '会话包含未配置授权的 Agent，暂不能发送',
       primaryAction: '去 Connections 页',
     });
-    expect(blockerCopy({ kind: 'noCwd' })).toEqual({
+    expect(blockerCopy(t, { kind: 'noCwd' })).toEqual({
       text: '未设置工作目录 — Agent 需要在指定目录内工作',
       primaryAction: '设置工作目录',
     });
     expect(
-      blockerCopy({ kind: 'sendingElsewhere', conversationId: 'x', title: '对比方案' }),
+      blockerCopy(t, { kind: 'sendingElsewhere', conversationId: 'x', title: '对比方案' }),
     ).toEqual({
       text: '「对比方案」正在生成',
       primaryAction: '回到该会话',
@@ -475,20 +478,20 @@ describe('blockerPrimaryTarget', () => {
 
 describe('connectionPickerCaption', () => {
   it('returns the primary-agent caption only for multi-select', () => {
-    expect(connectionPickerCaption({ agentIds: ['claude'] })).toBeNull();
+    expect(connectionPickerCaption(t, { agentIds: ['claude'] })).toBeNull();
     expect(
-      connectionPickerCaption({ agentIds: ['claude', 'codex'], primaryAgent: 'claude' }),
+      connectionPickerCaption(t, { agentIds: ['claude', 'codex'], primaryAgent: 'claude' }),
     ).toBe(`仅作用于首位 Agent（${agentDisplayName('claude')}）`);
   });
 });
 
 describe('agentPickerLabel', () => {
   it('labels the first selected agent', () => {
-    expect(agentPickerLabel(null)).toBe('选择 Agent');
-    expect(agentPickerLabel(conv({ id: '1', agentIds: ['claude'] }))).toBe(
+    expect(agentPickerLabel(t, null)).toBe('选择 Agent');
+    expect(agentPickerLabel(t, conv({ id: '1', agentIds: ['claude'] }))).toBe(
       agentDisplayName('claude'),
     );
-    expect(agentPickerLabel(conv({ id: '2', agentIds: ['claude', 'codex'] }))).toBe(
+    expect(agentPickerLabel(t, conv({ id: '2', agentIds: ['claude', 'codex'] }))).toBe(
       agentDisplayName('claude'),
     );
   });
@@ -496,23 +499,23 @@ describe('agentPickerLabel', () => {
 
 describe('messageStatusLabel', () => {
   it('returns null for success statuses', () => {
-    expect(messageStatusLabel('ok')).toBeNull();
-    expect(messageStatusLabel('done')).toBeNull();
-    expect(messageStatusLabel('success')).toBeNull();
+    expect(messageStatusLabel(t, 'ok')).toBeNull();
+    expect(messageStatusLabel(t, 'done')).toBeNull();
+    expect(messageStatusLabel(t, 'success')).toBeNull();
   });
 
   it('uses process phase while running', () => {
-    expect(messageStatusLabel('running', processView('queued'))).toBe('排队中');
-    expect(messageStatusLabel('running', processView('starting'))).toBe('启动中');
-    expect(messageStatusLabel('running', processView('running'))).toBe('生成中');
-    expect(messageStatusLabel('running')).toBe('生成中');
+    expect(messageStatusLabel(t, 'running', processView('queued'))).toBe('排队中');
+    expect(messageStatusLabel(t, 'running', processView('starting'))).toBe('启动中');
+    expect(messageStatusLabel(t, 'running', processView('running'))).toBe('生成中');
+    expect(messageStatusLabel(t, 'running')).toBe('生成中');
   });
 
   it('maps terminal and unknown statuses', () => {
-    expect(messageStatusLabel('failed')).toBe('失败');
-    expect(messageStatusLabel('cancelled')).toBe('已取消');
-    expect(messageStatusLabel('timeout')).toBe('超时');
-    expect(messageStatusLabel('weird')).toBe('weird');
+    expect(messageStatusLabel(t, 'failed')).toBe('失败');
+    expect(messageStatusLabel(t, 'cancelled')).toBe('已取消');
+    expect(messageStatusLabel(t, 'timeout')).toBe('超时');
+    expect(messageStatusLabel(t, 'weird')).toBe('weird');
   });
 });
 
@@ -617,7 +620,7 @@ describe('chatAgentPickerEmptyKind', () => {
 
   it('does not treat an unreadied empty list as none installed', () => {
     expect(chatAgentPickerEmptyKind({ agentsReady: false, rowCount: 0 })).toBe('loading');
-    expect(chatAgentPickerEmptyCopy('loading')).toEqual({
+    expect(chatAgentPickerEmptyCopy(t, 'loading')).toEqual({
       text: '正在检测已安装的 Agent…',
       action: null,
     });
@@ -625,7 +628,7 @@ describe('chatAgentPickerEmptyKind', () => {
 
   it('uses a single ready-empty copy for hidden-or-uninstalled', () => {
     expect(chatAgentPickerEmptyKind({ agentsReady: true, rowCount: 0 })).toBe('none');
-    expect(chatAgentPickerEmptyCopy('none')).toEqual({
+    expect(chatAgentPickerEmptyCopy(t, 'none')).toEqual({
       text: '没有可选择的 Agent',
       action: '去 Agents 页',
     });
@@ -641,7 +644,7 @@ describe('chatConnectionPickerView', () => {
       authLabel: '可续期·未验证',
     });
     expect(chatConnectionKind(grok, false)).toBe('account');
-    const view = chatConnectionPickerView({
+    const view = chatConnectionPickerView(t, {
       primaryAgent: 'grok',
       status: grok,
     });
@@ -655,7 +658,7 @@ describe('chatConnectionPickerView', () => {
   });
 
   it('keeps API provider name and model when that is the effective connection', () => {
-    const view = chatConnectionPickerView({
+    const view = chatConnectionPickerView(t, {
       primaryAgent: 'claude',
       status: status('claude', true, false, {
         effectiveKind: 'api',
@@ -672,7 +675,7 @@ describe('chatConnectionPickerView', () => {
   });
 
   it('prefers the bound account over a leftover provider row', () => {
-    const view = chatConnectionPickerView({
+    const view = chatConnectionPickerView(t, {
       primaryAgent: 'grok',
       status: status('grok', true, false, {
         effectiveKind: 'account',
@@ -695,7 +698,7 @@ describe('chatConnectionPickerView', () => {
       authLabel: '可续期·未验证',
     });
     expect(chatConnectionKind(grok, true)).toBe('account');
-    const view = chatConnectionPickerView({
+    const view = chatConnectionPickerView(t, {
       primaryAgent: 'grok',
       status: grok,
       currentProviderName: 'stale-api',
@@ -706,7 +709,7 @@ describe('chatConnectionPickerView', () => {
   });
 
   it('treats live API credentials without a current provider as API, not a login row', () => {
-    const view = chatConnectionPickerView({
+    const view = chatConnectionPickerView(t, {
       primaryAgent: 'claude',
       status: status('claude', true, false, {
         effectiveKind: 'none',
@@ -723,7 +726,7 @@ describe('chatConnectionPickerView', () => {
   });
 
   it('keeps 未配置连接 only when the agent has no bound login or API', () => {
-    const view = chatConnectionPickerView({
+    const view = chatConnectionPickerView(t, {
       primaryAgent: 'pi',
       status: status('pi', true, false, {
         effectiveKind: 'none',
@@ -739,7 +742,7 @@ describe('chatConnectionPickerView', () => {
   });
 
   it('replaces the chip label while switching', () => {
-    const view = chatConnectionPickerView({
+    const view = chatConnectionPickerView(t, {
       primaryAgent: 'claude',
       switching: true,
       status: status('claude', true),

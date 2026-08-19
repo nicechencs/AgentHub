@@ -1,5 +1,6 @@
 import * as React from 'react';
 import type { TerminalStatus } from '@/components/shared/InlineTerminal';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import type { InstallChannelMeta } from '@/config/agents';
 import {
@@ -47,6 +48,7 @@ export function useAgentCardLifecycle(input: {
     onEnvChanged,
     onRecheckUpdate,
   } = input;
+  const { t } = useI18n();
   const { toast } = useToast();
   const [task, setTask] = React.useState<AgentCardTask | null>(null);
   const cancelRef = React.useRef({ cancelled: false });
@@ -100,12 +102,13 @@ export function useAgentCardLifecycle(input: {
   ) => {
     cancelRef.current = { cancelled: false };
     setElapsedSec(0);
+    const executingLine = t('agents.lifecycle.executing');
     setTask({
       action,
       command,
       lines: [
-        '正在执行…',
-        '# 下载/安装可能需数分钟；有新输出时会实时显示在下方',
+        executingLine,
+        t('agents.lifecycle.executingHint'),
       ],
       status: 'running',
     });
@@ -125,7 +128,7 @@ export function useAgentCardLifecycle(input: {
       setTask((prev) => {
         if (!prev || prev.status !== 'running') return prev;
         const base =
-          prev.lines.length === 2 && prev.lines[0] === '正在执行…'
+          prev.lines.length === 2 && prev.lines[0] === executingLine
             ? []
             : prev.lines;
         const next = [...base, line];
@@ -152,7 +155,7 @@ export function useAgentCardLifecycle(input: {
         onOk();
         await new Promise((r) => setTimeout(r, DONE_HOLD_MS));
       } else {
-        toast({ title: '操作未成功', description: outcome.message, variant: 'danger' });
+        toast({ title: t('agents.lifecycle.notOk'), description: outcome.message, variant: 'danger' });
       }
     } catch (e) {
       if (e instanceof InstallFailedError) {
@@ -162,11 +165,11 @@ export function useAgentCardLifecycle(input: {
           lines: e.logs.length ? e.logs : [e.message],
           status: 'failed',
         });
-        toast({ title: '操作失败', description: e.message, variant: 'danger' });
+        toast({ title: t('agents.lifecycle.failed'), description: e.message, variant: 'danger' });
         return;
       }
       setTask((prev) => (prev ? { ...prev, status: 'failed', lines: [String(e)] } : prev));
-      toast({ title: '操作失败', description: String(e), variant: 'danger' });
+      toast({ title: t('agents.lifecycle.failed'), description: String(e), variant: 'danger' });
     } finally {
       releaseProgressUnsub();
     }
@@ -179,10 +182,12 @@ export function useAgentCardLifecycle(input: {
       setEnvAutoStart(canOneClickEnv);
       setShowEnvPanel(true);
       toast({
-        title: '环境未就绪',
+        title: t('agents.lifecycle.envNotReady'),
         description: canOneClickEnv
-          ? `将一键安装 ${envPlan.summary}`
-          : `请先处理: ${formatMissingList([...check.missing, ...check.outdated, ...check.broken])}`,
+          ? t('agents.lifecycle.willOneClick', { summary: envPlan.summary })
+          : t('agents.lifecycle.handleFirst', {
+              list: formatMissingList([...check.missing, ...check.outdated, ...check.broken]),
+            }),
         variant: canOneClickEnv ? 'default' : 'danger',
       });
       return;
@@ -194,7 +199,7 @@ export function useAgentCardLifecycle(input: {
       () => installAgentDetailed(agent.agentId, channel.id, { installDeps: false }),
       () => {
         onChanged();
-        toast({ title: `${agentName} 安装完成`, variant: 'success' });
+        toast({ title: t('agents.lifecycle.installDone', { name: agentName }), variant: 'success' });
       },
     );
   };
@@ -204,12 +209,14 @@ export function useAgentCardLifecycle(input: {
       setShowEnvPanel(true);
       setEnvAutoStart(false);
       toast({
-        title: '无法一键安装',
-        description: `需手动处理: ${formatMissingList([
-          ...envCheck.missing,
-          ...envCheck.outdated,
-          ...envCheck.broken,
-        ])}`,
+        title: t('agents.lifecycle.cannotOneClick'),
+        description: t('agents.lifecycle.needManual', {
+          list: formatMissingList([
+            ...envCheck.missing,
+            ...envCheck.outdated,
+            ...envCheck.broken,
+          ]),
+        }),
         variant: 'danger',
       });
       return;
@@ -226,8 +233,10 @@ export function useAgentCardLifecycle(input: {
         onChanged();
         onEnvChanged();
         toast({
-          title: `${agentName} 一键安装完成`,
-          description: envCheck.ready ? undefined : `已尝试安装依赖 ${envPlan.summary}`,
+          title: t('agents.lifecycle.oneClickDone', { name: agentName }),
+          description: envCheck.ready
+            ? undefined
+            : t('agents.lifecycle.triedDeps', { summary: envPlan.summary }),
           variant: 'success',
         });
       },
@@ -252,7 +261,7 @@ export function useAgentCardLifecycle(input: {
       () => {
         onChanged();
         onRecheckUpdate?.();
-        toast({ title: `${agentName} 已升级`, variant: 'success' });
+        toast({ title: t('agents.lifecycle.upgraded', { name: agentName }), variant: 'success' });
       },
     );
   };
@@ -263,7 +272,7 @@ export function useAgentCardLifecycle(input: {
       const outcome = await uninstallAgentDetailed(agent.agentId, deleteConfig);
       if (!outcome.ok) {
         toast({
-          title: '卸载未完成',
+          title: t('agents.lifecycle.uninstallIncomplete'),
           description: outcome.message,
           variant: 'danger',
         });
@@ -279,15 +288,15 @@ export function useAgentCardLifecycle(input: {
       setConfirmName('');
       onChanged();
       toast({
-        title: `${agentName} 已卸载`,
+        title: t('agents.lifecycle.uninstalled', { name: agentName }),
         description: deleteConfig
-          ? '配置已处理(未卸载 Node 等共享环境)'
+          ? t('agents.lifecycle.configHandled')
           : undefined,
         variant: 'success',
       });
     } catch (e) {
       const msg = e instanceof InstallFailedError ? e.message : String(e);
-      toast({ title: '卸载失败', description: msg, variant: 'danger' });
+      toast({ title: t('agents.lifecycle.uninstallFailed'), description: msg, variant: 'danger' });
     } finally {
       setUninstalling(false);
     }

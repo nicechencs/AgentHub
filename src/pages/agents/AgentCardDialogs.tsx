@@ -1,3 +1,4 @@
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -39,6 +40,7 @@ export function AgentCardDialogs({
   onConfirmForceUpgrade,
   shouldIgnoreDismiss,
 }: AgentCardDialogsProps) {
+  const { t } = useI18n();
   const onDialogOpenChange = (nextOpen: boolean) => {
     if (shouldIgnoreDismiss?.(nextOpen)) return;
     if (!nextOpen) onClose();
@@ -49,17 +51,17 @@ export function AgentCardDialogs({
       <Dialog open={confirmDialog === 'program'} onOpenChange={onDialogOpenChange}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>卸载 {agentName}？</DialogTitle>
+            <DialogTitle>{t('agents.dialog.uninstallTitle', { name: agentName })}</DialogTitle>
             <DialogDescription>
-              只卸程序，不卸 Node 等共享环境。
+              {t('agents.dialog.uninstallDesc')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => onClose()} disabled={uninstalling}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button variant="danger" onClick={() => onUninstall(false)} disabled={uninstalling}>
-              {uninstalling ? '卸载中...' : '确认卸载'}
+              {uninstalling ? t('agents.dialog.uninstalling') : t('agents.dialog.confirmUninstall')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -71,16 +73,16 @@ export function AgentCardDialogs({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>强制升级 {agentName}？</DialogTitle>
+            <DialogTitle>{t('agents.dialog.forceUpgradeTitle', { name: agentName })}</DialogTitle>
             <DialogDescription>
               {updateState === 'up_to_date'
-                ? '当前检测为已是最新版本。强制升级将按已装渠道重新安装 / 重跑官方脚本。'
-                : '未能确认是否有新版本。强制升级将按已装渠道重新安装 / 重跑官方脚本。'}
+                ? t('agents.dialog.forceUpgradeUpToDate')
+                : t('agents.dialog.forceUpgradeUnknown')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => onClose()} disabled={busy}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button
               variant="default"
@@ -90,7 +92,7 @@ export function AgentCardDialogs({
                 onConfirmForceUpgrade();
               }}
             >
-              确认强制升级
+              {t('agents.dialog.confirmForceUpgrade')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -108,13 +110,13 @@ export function AgentCardDialogs({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>卸载并删除配置？</DialogTitle>
+            <DialogTitle>{t('agents.dialog.uninstallConfigTitle')}</DialogTitle>
             <DialogDescription className="text-danger">
-              先备份再删配置；不卸 Node 等共享环境。
+              {t('agents.dialog.uninstallConfigDesc')}
             </DialogDescription>
           </DialogHeader>
           <div className="text-sm text-secondary">
-            输入 <span className="font-mono font-medium text-primary">{agentName}</span> 确认：
+            {t('agents.dialog.typeToConfirm', { name: agentName })}
           </div>
           <Input
             value={confirmName}
@@ -125,14 +127,14 @@ export function AgentCardDialogs({
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => onClose()} disabled={uninstalling}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button
               variant="danger"
               onClick={() => onUninstall(true)}
               disabled={uninstalling || confirmName !== agentName}
             >
-              {uninstalling ? '卸载中...' : '卸载并删除配置'}
+              {uninstalling ? t('agents.dialog.uninstalling') : t('agents.dialog.uninstallConfigAction')}
             </Button>
           </DialogFooter>
         </DialogContent>

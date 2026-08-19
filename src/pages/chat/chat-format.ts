@@ -1,3 +1,4 @@
+import type { TranslateFn } from '@/lib/i18n';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { ChatMessage } from '@/lib/types';
 
@@ -55,16 +56,16 @@ export function extractModel(configText: string): string | null {
   return json?.[1] ?? null;
 }
 
-export function relativeTime(iso: string): string {
-  const t = Date.parse(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
-  if (Number.isNaN(t)) return '';
-  const diff = Date.now() - t;
+export function relativeTime(iso: string, t: TranslateFn): string {
+  const parsed = Date.parse(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(parsed)) return '';
+  const diff = Date.now() - parsed;
   const m = Math.floor(diff / 60000);
-  if (m < 1) return '刚刚';
-  if (m < 60) return `${m} 分钟前`;
+  if (m < 1) return t('common.relativeJustNow');
+  if (m < 60) return t('common.relativeMinutes', { n: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h} 小时前`;
+  if (h < 24) return t('common.relativeHours', { n: h });
   const d = Math.floor(h / 24);
-  if (d < 7) return `${d} 天前`;
-  return new Date(t).toLocaleDateString();
+  if (d < 7) return t('common.relativeDays', { n: d });
+  return new Date(parsed).toLocaleDateString();
 }

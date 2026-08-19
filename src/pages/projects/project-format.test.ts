@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createTranslator } from '@/lib/i18n';
 import {
   displayTitle,
   extraPreview,
@@ -10,6 +11,8 @@ import {
   shortPath,
   shortSessionId,
 } from './project-format';
+
+const t = createTranslator('zh');
 
 const NOW = Date.parse('2026-08-18T12:00:00.000Z');
 
@@ -135,13 +138,13 @@ describe('nativeSessionId', () => {
 describe('relativeTime', () => {
   it('buckets just now / minutes / hours / days', () => {
     vi.useFakeTimers({ now: NOW });
-    expect(relativeTime(new Date(NOW - 30_000).toISOString())).toBe('刚刚');
-    expect(relativeTime(new Date(NOW - 5 * 60_000).toISOString())).toBe('5 分钟前');
-    expect(relativeTime(new Date(NOW - 3 * 3600_000).toISOString())).toBe('3 小时前');
-    expect(relativeTime(new Date(NOW - 2 * 86400_000).toISOString())).toBe('2 天前');
+    expect(relativeTime(new Date(NOW - 30_000).toISOString(), t)).toBe('刚刚');
+    expect(relativeTime(new Date(NOW - 5 * 60_000).toISOString(), t)).toBe('5 分钟前');
+    expect(relativeTime(new Date(NOW - 3 * 3600_000).toISOString(), t)).toBe('3 小时前');
+    expect(relativeTime(new Date(NOW - 2 * 86400_000).toISOString(), t)).toBe('2 天前');
   });
 
   it('returns empty string for unparseable input', () => {
-    expect(relativeTime('not-a-date')).toBe('');
+    expect(relativeTime('not-a-date', t)).toBe('');
   });
 });

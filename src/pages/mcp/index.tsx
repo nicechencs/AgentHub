@@ -6,6 +6,7 @@ import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
@@ -23,6 +24,7 @@ function agentName(id: AgentId): string {
 }
 
 export default function McpPage() {
+  const { t } = useI18n();
   const { toast } = useToast();
   const { hiddenIds } = useInstalledAgents();
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
@@ -90,7 +92,7 @@ export default function McpPage() {
       await openPathInFileManager(path);
     } catch (e) {
       toast({
-        title: '无法打开目录',
+        title: t('mcp.toast.cannotOpenDir'),
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
@@ -100,9 +102,9 @@ export default function McpPage() {
   return (
     <div>
       <PageHeader
-        title="MCP"
-        description="只读扫描 · 不注入"
-        descriptionTip="管理/注入仍为规划能力。此处仅汇总已发现的 server 条目，便于排查与打开配置目录。"
+        title={t('mcp.page.title')}
+        description={t('mcp.page.description')}
+        descriptionTip={t('mcp.page.descriptionTip')}
         actions={
           <Button
             size="sm"
@@ -112,7 +114,7 @@ export default function McpPage() {
             className="gap-1.5"
           >
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            刷新
+            {t('mcp.page.refresh')}
           </Button>
         }
       />
@@ -131,9 +133,13 @@ export default function McpPage() {
               agents={filterAgents}
               counts={agentCounts}
               countMode="defined"
-              countTitle={(id, n) => (id === 'all' ? `${n} 个 server` : `${agentName(id)} · ${n} 个`)}
-              emptyLabel="尚未发现任何 MCP 配置"
-              aria-label="按 Agent 筛选 MCP"
+              countTitle={(id, n) =>
+                id === 'all'
+                  ? t('mcp.page.countAll', { n })
+                  : t('mcp.page.countAgent', { name: agentName(id), n })
+              }
+              emptyLabel={t('mcp.page.emptyTabs')}
+              aria-label={t('mcp.page.filterAria')}
             />
           </div>
 
@@ -141,13 +147,13 @@ export default function McpPage() {
             {servers.length === 0 ? (
               <EmptyState
                 icon={Plug}
-                title="未发现 MCP server"
+                title={t('mcp.empty.title')}
                 description={
                   filterAgent === 'all'
-                    ? '在各 Agent 官方配置中添加 MCP 后点刷新。AgentHub 当前只读展示，不会写入或注入。'
-                    : `${agentName(filterAgent)} 下未解析到 server 条目。`
+                    ? t('mcp.empty.all')
+                    : t('mcp.empty.agent', { name: agentName(filterAgent) })
                 }
-                actionLabel="刷新"
+                actionLabel={t('mcp.empty.refresh')}
                 onAction={() => void load()}
               />
             ) : (

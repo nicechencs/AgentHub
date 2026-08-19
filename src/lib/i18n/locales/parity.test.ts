@@ -22,21 +22,35 @@ describe('locale key parity', () => {
     expect(zhKeys.length).toBeGreaterThan(50);
   });
 
-  it('covers dashboard / connections / connect namespaces', () => {
+  it('covers dashboard / connections / connect / chat / agents / projects / mcp namespaces', () => {
     const keys = flattenKeys(zh);
     expect(keys.some((k) => k.startsWith('dashboard.'))).toBe(true);
     expect(keys.some((k) => k.startsWith('connections.'))).toBe(true);
     expect(keys.some((k) => k.startsWith('connect.'))).toBe(true);
+    expect(keys.some((k) => k.startsWith('chat.'))).toBe(true);
+    expect(keys.some((k) => k.startsWith('agents.'))).toBe(true);
+    expect(keys.some((k) => k.startsWith('projects.'))).toBe(true);
+    expect(keys.some((k) => k.startsWith('mcp.'))).toBe(true);
+    expect(keys.some((k) => k.startsWith('connections.providerDialog.'))).toBe(true);
     expect(keys).toContain('dashboard.sync.manualOnly');
     expect(keys).toContain('connect.select.oauthIncomplete');
     expect(keys).toContain('kind.route.localRoute');
+    expect(keys).toContain('chat.page.emptyTitle');
+    expect(keys).toContain('agents.page.title');
+    expect(keys).toContain('projects.page.title');
+    expect(keys).toContain('mcp.page.title');
+    expect(keys).toContain('connections.providerDialog.useOfficial');
   });
 
-  it('dashboard / connections / connect user copy avoids banned jargon', () => {
+  it('dashboard / connections / connect / chat / agents / projects / mcp user copy avoids banned jargon', () => {
     const keys = flattenKeys(zh).filter((k) =>
       k.startsWith('dashboard.')
       || k.startsWith('connections.')
-      || k.startsWith('connect.'),
+      || k.startsWith('connect.')
+      || k.startsWith('chat.')
+      || k.startsWith('agents.')
+      || k.startsWith('projects.')
+      || k.startsWith('mcp.'),
     );
     expect(keys.length).toBeGreaterThan(20);
     for (const key of keys) {

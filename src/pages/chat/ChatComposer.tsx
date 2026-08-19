@@ -12,6 +12,7 @@ import {
   Square,
 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Notice } from '@/components/shared/Notice';
 import { Button } from '@/components/ui/button';
 import {
@@ -90,6 +91,7 @@ export function ChatComposer({
   onFocusConversation: (id: string) => void;
 }) {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const firstBlocker = blockers[0] ?? null;
   const hiddenBlocked = firstBlocker?.kind === 'hiddenAgents' ||
     active.agentIds.some((id) => hiddenIds.has(id));
@@ -118,14 +120,14 @@ export function ChatComposer({
   }, [syncTextareaHeight]);
 
   const textareaDisabled = sending || hiddenBlocked || sendingElsewhere;
-  const sendHint = firstBlocker ? blockerCopy(firstBlocker).text : '发送';
+  const sendHint = firstBlocker ? blockerCopy(t, firstBlocker).text : t('chat.composer.send');
   const selectedAgent = active.agentIds[0] ?? '';
-  const approveFooter = autoApproveFooter(active.allowDangerous, active.agentIds[0] ?? null);
+  const approveFooter = autoApproveFooter(t, active.allowDangerous, active.agentIds[0] ?? null);
   const pickerEmpty = chatAgentPickerEmptyKind({
     agentsReady,
     rowCount: pickerRows.length,
   });
-  const pickerEmptyCopy = pickerEmpty ? chatAgentPickerEmptyCopy(pickerEmpty) : null;
+  const pickerEmptyCopy = pickerEmpty ? chatAgentPickerEmptyCopy(t, pickerEmpty) : null;
 
   return (
     <>
@@ -151,7 +153,7 @@ export function ChatComposer({
             'disabled:cursor-not-allowed disabled:opacity-60',
           )}
           style={{ minHeight: COMPOSER_MIN_PX, maxHeight: COMPOSER_MAX_PX }}
-          placeholder="发送消息给 Agent…（Shift+Enter 换行）"
+          placeholder={t('chat.composer.placeholder')}
           rows={1}
           value={draft}
           disabled={textareaDisabled}
@@ -163,7 +165,7 @@ export function ChatComposer({
               if (canSend) onSend();
             }
           }}
-          aria-label="消息输入"
+          aria-label={t('chat.composer.inputAria')}
         />
         <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-2 py-2">
           <DropdownMenu>
@@ -179,7 +181,7 @@ export function ChatComposer({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel>选择 Agent</DropdownMenuLabel>
+              <DropdownMenuLabel>{t('chat.composer.selectAgent')}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuRadioGroup
                 value={selectedAgent}
@@ -200,7 +202,7 @@ export function ChatComposer({
                       <AgentLogo agentId={row.id} size="sm" />
                       {agentDisplayName(row.id)}
                       {row.reason === 'noAuth' && (
-                        <span className="text-meta text-muted">未配置授权</span>
+                        <span className="text-meta text-muted">{t('chat.composer.noAuth')}</span>
                       )}
                     </span>
                   </DropdownMenuRadioItem>
@@ -237,7 +239,7 @@ export function ChatComposer({
                     Boolean(primaryAgent && hiddenIds.has(primaryAgent))
                   }
                   className="inline-flex h-7 max-w-44 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-meta text-secondary hover:bg-hover disabled:opacity-50"
-                  aria-label={connectionCaption ?? '切换连接'}
+                  aria-label={connectionCaption ?? t('chat.composer.switchConnection')}
                 >
                   <span className="min-w-0 truncate">
                     {connectionView.label}
@@ -251,7 +253,9 @@ export function ChatComposer({
             </Hint>
             <DropdownMenuContent align="start" className="w-64">
               <DropdownMenuLabel>
-                {primaryAgent ? `${agentDisplayName(primaryAgent)} · 切换连接` : '切换连接'}
+                {primaryAgent
+                  ? t('chat.composer.switchConnectionNamed', { name: agentDisplayName(primaryAgent) })
+                  : t('chat.composer.switchConnection')}
               </DropdownMenuLabel>
               {connectionCaption && (
                 <p className="px-2 pb-1.5 text-meta text-muted">{connectionCaption}</p>
@@ -319,7 +323,7 @@ export function ChatComposer({
           {sending ? (
             <Button size="sm" variant="dangerOutline" onClick={onCancel}>
               <Square className="h-3.5 w-3.5" />
-              停止
+              {t('chat.composer.stop')}
             </Button>
           ) : (
             <Button
@@ -364,7 +368,8 @@ function BlockerNotice({
   onFocusConversation: (id: string) => void;
   onCancel: () => void;
 }) {
-  const copy = blockerCopy(blocker);
+  const { t } = useI18n();
+  const copy = blockerCopy(t, blocker);
   if (blocker.kind === 'sendingElsewhere') {
     return (
       <Notice tone="warning" className="mb-2">

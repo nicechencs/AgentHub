@@ -1,10 +1,12 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import {
   phaseFromMessageStatus,
   processPhaseLabel,
   stepSummary,
   type AgentProcessView,
 } from '@/lib/chat-process';
+import type { TranslateFn } from '@/lib/i18n';
 import type { ProcessStep } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
@@ -16,6 +18,7 @@ import {
 
 /** Render tool/stderr text; highlight unified-diff style lines when present. */
 function DiffAwarePre({ text, className }: { text: string; className?: string }) {
+  const { t } = useI18n();
   const looksDiff =
     /^(?:diff --git|@@ |--- |\+\+\+ )/m.test(text) ||
     (text.includes('\n+') && text.includes('\n-') && /^(?:[+-](?![+-])).+/m.test(text));
@@ -45,13 +48,14 @@ function DiffAwarePre({ text, className }: { text: string; className?: string })
         );
       })}
       {text.split('\n').length > 200 ? (
-        <div className="text-muted">…已截断</div>
+        <div className="text-muted">{t('chat.process.truncated')}</div>
       ) : null}
     </pre>
   );
 }
 
 function ProcessStepRow({ step }: { step: ProcessStep }) {
+  const { t } = useI18n();
   if (step.type === 'tool') {
     const input = formatStepInput(step.input);
     return (
@@ -87,19 +91,20 @@ function ProcessStepRow({ step }: { step: ProcessStep }) {
       </div>
     );
   }
-  return <div className="py-1 text-muted">{stepSummary(step)}</div>;
+  return <div className="py-1 text-muted">{stepSummary(step, t)}</div>;
 }
 
 function summaryLabel(
   effectivePhase: AgentProcessView['phase'],
   stepCount: number,
-  durationMs?: number,
+  durationMs: number | undefined,
+  t: TranslateFn,
 ): string {
   if (stepCount === 0 && isProcessActivePhase(effectivePhase)) {
-    return '▸ 生成中';
+    return t('chat.process.summaryGenerating');
   }
-  const parts = [processPhaseLabel(effectivePhase)];
-  if (stepCount > 0) parts.push(`${stepCount} 步`);
+  const parts = [processPhaseLabel(effectivePhase, t)];
+  if (stepCount > 0) parts.push(t('chat.process.steps', { n: stepCount }));
   if (durationMs != null && durationMs > 0) parts.push(formatDurationMs(durationMs));
   return `▸ ${parts.join(' · ')}`;
 }
@@ -123,6 +128,7 @@ export function ChatProcessPanel({
   durationMs?: number;
   exitCode?: number | null;
 }) {
+  const { t } = useI18n();
   const timeline = view.steps.filter((s) => s.type !== 'text');
 
   const effectivePhase: AgentProcessView['phase'] =
@@ -160,7 +166,7 @@ export function ChatProcessPanel({
     >
       <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1 text-muted marker:content-none [&::-webkit-details-marker]:hidden">
         <span className="font-medium text-secondary">
-          {summaryLabel(effectivePhase, timeline.length, durationMs)}
+          {summaryLabel(effectivePhase, timeline.length, durationMs, t)}
         </span>
       </summary>
       <div className="space-y-2 pb-1">
@@ -171,7 +177,7 @@ export function ChatProcessPanel({
             ))}
           </div>
         ) : isProcessActivePhase(effectivePhase) ? (
-          <p className="text-muted">等待 CLI 输出过程日志…</p>
+          <p className="text-muted">{t('chat.process.waitingLogs')}</p>
         ) : null}
         {hasRunDetails && (
           <details
@@ -179,11 +185,11 @@ export function ChatProcessPanel({
             onClick={(e) => e.stopPropagation()}
             onToggle={(e) => e.stopPropagation()}
           >
-            <summary className="cursor-pointer text-muted">运行详情</summary>
+            <summary className="cursor-pointer text-muted">{t('chat.process.runDetails')}</summary>
             <div className="mt-1.5 space-y-2">
               {view.command ? (
                 <div>
-                  <div className="mb-0.5 text-muted">命令</div>
+                  <div className="mb-0.5 text-muted">{t('chat.process.command')}</div>
                   <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-btn bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-primary">
                     {view.command}
                   </pre>
