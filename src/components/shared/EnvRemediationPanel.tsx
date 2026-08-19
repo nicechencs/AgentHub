@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Copy, Download, ExternalLink, RefreshCw, X } from 'lucide-react';
+import { envOneClickInstallVariant } from '@/components/shared/env-remediation-cta';
 import { InlineTerminal, type TerminalStatus } from '@/components/shared/InlineTerminal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,7 @@ export function EnvRemediationPanel({
   compact,
   /** 打开后自动开始一键安装 */
   autoStart = false,
+  pageHasPrimaryCta = false,
 }: {
   /** 主展示的 Runtime(兼容单点修复) */
   runtime?: RuntimeDetect;
@@ -47,6 +49,8 @@ export function EnvRemediationPanel({
   className?: string;
   compact?: boolean;
   autoStart?: boolean;
+  /** 本页已有主 CTA 时，一键安装降为 secondary */
+  pageHasPrimaryCta?: boolean;
 }) {
   const { toast } = useToast();
   const allRuntimes = runtimes ?? (runtime ? [runtime] : []);
@@ -203,13 +207,17 @@ export function EnvRemediationPanel({
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {canOneClick && status !== 'running' && status !== 'done' && (
-          <Button size="sm" onClick={() => void startOneClickInstall()}>
+          <Button
+            size="sm"
+            variant={envOneClickInstallVariant(pageHasPrimaryCta ?? false)}
+            onClick={() => void startOneClickInstall()}
+          >
             <Download className="h-3.5 w-3.5" />
             一键安装 {plan.summary}
           </Button>
         )}
         {status === 'running' && (
-          <Button size="sm" disabled>
+          <Button size="sm" variant={envOneClickInstallVariant(pageHasPrimaryCta ?? false)} disabled>
             <Download className="h-3.5 w-3.5 animate-pulse" />
             正在一键安装…
           </Button>

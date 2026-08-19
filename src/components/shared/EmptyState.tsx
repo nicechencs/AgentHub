@@ -2,7 +2,11 @@ import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-/** 空状态:图标 + 一句话 + 主行动按钮(docs/ui-design.md §6) */
+/**
+ * 空状态：图标 + 主句 + 可选行动。
+ * `actionLabel` 默认 accent，仅当空态就是本页主行动时用。
+ * 本页已有主 CTA 时传入 `action`，用 secondary / outline。
+ */
 export function EmptyState({
   icon: Icon,
   title,

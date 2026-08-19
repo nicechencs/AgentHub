@@ -160,8 +160,11 @@ export function ConnectFlowSelectStep({
         icon={Wallet}
         title="还没有凭据"
         description="先到 Connections 添加登录态或 API Key，再回来连接 Agent。"
-        actionLabel="去 Connections 添加"
-        onAction={onGoImport}
+        action={
+          <Button size="sm" variant="outline" className="mt-2" onClick={onGoImport}>
+            去 Connections 添加
+          </Button>
+        }
       />
     );
   }

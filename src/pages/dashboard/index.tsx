@@ -891,8 +891,11 @@ export default function DashboardPage() {
             icon={BarChart3}
             title="暂无用量"
             description="调整筛选，或点「采集」同步本地日志"
-            actionLabel="采集"
-            onAction={() => void handleCollect()}
+            action={
+              <Button size="sm" variant="outline" className="mt-2" onClick={() => void handleCollect()}>
+                采集
+              </Button>
+            }
           />
         ) : (
           <UsageDetailsTable rows={tableRows} />

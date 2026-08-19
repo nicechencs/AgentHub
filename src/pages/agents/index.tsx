@@ -183,6 +183,7 @@ export default function AgentsPage() {
             runtimes={runtimes}
             focusIds={pageFix.runtimeId ? [pageFix.runtimeId] : undefined}
             autoStart={pageFix.autoStart}
+            pageHasPrimaryCta
             onRunningChange={setEnvInstallRunning}
             onDismiss={() => {
               setEnvInstallRunning(false);
