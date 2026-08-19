@@ -283,9 +283,9 @@ impl AccountService {
                     agent = account.agent_id.as_str(),
                     "heal lost the race; using latest row"
                 );
-                self.repo.get_by_id(&account.id)?.ok_or_else(|| {
-                    AppError::NotFound(format!("account not found: {}", account.id))
-                })
+                self.repo
+                    .get_by_id(&account.id)?
+                    .ok_or_else(|| AppError::NotFound(format!("account not found: {}", account.id)))
             }
             Err(error) => Err(error),
         }

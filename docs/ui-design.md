@@ -12,7 +12,7 @@
 
 ## 1. 设计原则
 
-1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / **Routes**（有本机路由才出现） / **Backups** / Settings）；用量合并进 Dashboard。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。**例外：Connections 目标态是跨工具钱包**（一份份登录），Agent 只作筛选/高亮，不作第一导航；见 §4.3 与 [connection-binding-model.md](connection-binding-model.md)。底层 accounts/providers 可继续分表，UI 与规划器谈的是登录和绑定。连接从 Agent 卡片或钱包「接到…」发起；`/routes` 只做本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。
+1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / **Routes**（有本机路由才出现） / Settings）；备份在 Settings `?tab=backups`，不占侧栏。用量合并进 Dashboard。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。**例外：Connections 目标态是跨工具钱包**（一份份登录），Agent 只作筛选/高亮，不作第一导航；见 §4.3 与 [connection-binding-model.md](connection-binding-model.md)。底层 accounts/providers 可继续分表，UI 与规划器谈的是登录和绑定。连接从 Agent 卡片或钱包「接到…」发起；`/routes` 只做本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。
 2. **危险操作必有前置信息**：切换供应商/账号前展示 backfill 摘要、备份位置、运行中进程警告。
 3. **凭据永不明文回显**：`SecretInput` 统一脱敏回显（`sk-••••3f2a` 一类掩码）；点眼睛切换明文。现行实现无二次确认、无自动再遮蔽。聚焦已遮蔽值会清空以便重新输入。
 4. **空状态给动作**：每个空列表都有明确的下一步按钮（添加供应商/导入账号/安装 Agent / 安装运行环境）。**例外：Routes 健康空态没有按钮**——多数连接不需要本机转发，空是常态，不是待转化漏斗。
@@ -212,8 +212,9 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - 「正用于」来自绑定：native / reshape / bridge，不是手写 account/provider 出身。
 - **每一份真登录都有「接到…」**，打开同一绑定对话框（登录固定，选工具）。接不上、工具不能写入、未识别：对话框内置灰 + 原因，不在行上隐藏动作。选目标后预览标 ① 只改配置 / ② 写进对方认的登录 / ③ 本机转发，不要把订阅默认写成转发。
 - 「切换」只用于这份登录对它本来所属工具的 native 绑定。接到其他工具一律走 `bind`。
-- 添加登录时写下它是哪一家。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意工具）。
+- 添加登录时写下它是哪一家。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意工具）。**Pi 无单一官方 URL**：弹窗选厂商槽，官方槽（anthropic / openai / …）只写 `~/.pi/agent/auth.json`，自定义 URL 写 `models.json`。
 - **已落地（读模型 + 写入）**：跨工具钱包列表 + 真登录常驻「接到…」+ Dashboard 当前绑定；生成投影不进钱包。确认步走 `bind`，成功以该工具的当前绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
+- 导入当前登录时若本机同时有 Key 与官方登录，对话框警告条说明当前会收入哪一份。
 - 实现落点：`TicketWalletList` / `ticket-wallet-model` / `lib/api/tickets`；`reuse-offer` 为登录常驻「接到…」语义。
 
 #### 4.3.1 mode=providers — API 配置（历史线框 / 过渡形态）
@@ -413,14 +414,13 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 ### 4.7 Backups（安全备份）
 
-侧栏 Manage，Settings 上方；路由 `/backups`。页题中文 **安全备份**，侧栏英文 **Backups**。
+Settings 子页（`?tab=backups`），**不**占侧栏。页内 tab 中文 **备份**，英文 **Backups**。页内不再重复「已启用 / 自动快照 / 用途说明」；Settings 页头已覆盖分区语义。
 
-旧 Settings 深链 `/settings?tab=backups` 与 `/settings?tab=local#backups` 永久重定向到 `/backups`。
+独立路由 `/backups` 永久重定向到 `/settings?tab=backups`。旧深链 `/settings#backups`、`/settings?tab=local#backups` replace 到 `?tab=backups`。
 
 ```
-┌─ 安全备份 ─────────────────────────────────────────────────┐
-│ 安全备份已启用 …               [备份 Claude]                │
-│ [Claude] [Codex] [Kimi] [Grok]   Claude · 3 条记录         │
+┌─ 备份 ─────────────────────────────────────────────────────┐
+│ [Claude] [Codex] [Kimi] [Grok]   Claude · 3 条记录  [备份] │
 │                                                            │
 │ ┌ 卡片 ──────────────────────────────── [恢复] [删除] ───┐ │
 │ │ 切换前自动  2h前  绝对时间  · 0.4KB                     │ │
@@ -430,7 +430,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 └────────────────────────────────────────────────────────────┘
 ```
 
-- 顶部工具条：**安全备份已启用**（切换、导入或更新后自动快照）+ **备份当前 Agent**（随 Tab 变化；未安装禁用）。
+- 顶部一行：AgentTabStrip + 记录数 + **备份**（当前 Tab 的 Agent；未安装禁用）。不另写说明段。
 - **AgentTabStrip** = **已安装 ∪ 有备份记录**（装/卸或备份变化会更新 Tab；保持产品序；隐藏 Agent 不占 Tab）。
 - 列表**平铺不折叠**；已卸载但有历史备份的 Agent 仍可切换查看/恢复。
 - 条目中等密度卡片：左信息（类型/时间/备注/文件）、**右侧** [恢复] [删除]。
@@ -440,11 +440,12 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 ### 4.8 Settings
 
-三个分区（侧栏英文 **Settings**；页内中文 **偏好 / 本机 / 关于**，英文 **Preferences / This device / About**）：
+四个分区（侧栏英文 **Settings**；页内中文 **偏好 / 本机 / 备份 / 关于**，英文 **Preferences / This device / Backups / About**）：
 
 1. **偏好**（`?tab=preferences`）：语言、主题、开机自启、关闭到托盘、技能市场源、用量采集间隔。
 2. **本机**（`?tab=local`）：数据目录（只读 + 打开）、日志级别 / 保留天数、打开日志目录、本机路由回收链。
-3. **关于**（`?tab=about`）：版本、检查/安装更新、GitHub 仓库、标语，以及原「安全」页的两条只读凭据说明（界面脱敏；存储不加密。**不**提供主密码 / keyring UI）。
+3. **备份**（`?tab=backups`）：各 Agent live 配置快照的查看 / 手动备份 / 恢复 / 删除，见 §4.7。
+4. **关于**（`?tab=about`）：版本、检查/安装更新、GitHub 仓库、标语，以及原「安全」页的两条只读凭据说明（界面脱敏；存储不加密。**不**提供主密码 / keyring UI）。
 
 Chat 会话设置（`ChatSettingsDialog`：cwd / 自动批准）不进 Settings。
 
@@ -455,9 +456,9 @@ Chat 会话设置（`ChatSettingsDialog`：cwd / 自动批准）不进 Settings�
 - **用量采集间隔**：在偏好页。已写入 SQLite，**不是**仅 localStorage。`None`=从未写入（前端默认 30）；`0`=仅手动；上限 1440。变更后 `notifyUsageSettingsChanged` 立即重排程（见 §4.6）。
 - **开机自启**（`autoStart`）：OS 登录项（Windows 启动项 / macOS Login Item），不进 L1 白名单。
 - **关闭到托盘**（`closeToTray`）：写 core，并同步 Tauri `AppState`。
-- **语言**：core L1 为权威（`zh-CN` / `en`）。Settings Select 预览并立即 `set_setting`。启动时 `LanguageProvider` 用 localStorage 做首屏缓存，再 `getSettings` 对账；同步 `<html lang>`。**首次启动**（无语言缓存且尚未 seed）按 `navigator.languages` / `navigator.language` 选 zh/en，回落 zh，并一次性写入 core；已有用户选择不覆盖。不引入 i18next；字典在 `src/lib/i18n/locales/{zh,en}.ts`，第一期覆盖 Settings 三面板与侧栏 chrome。导航专有名（Chat / Agents / Skills / MCP / Projects / Dashboard / Connections / Routes / Backups / Settings）两种语言同值。业务页分期迁移。
+- **语言**：core L1 为权威（`zh-CN` / `en`）。Settings Select 预览并立即 `set_setting`。启动时 `LanguageProvider` 用 localStorage 做首屏缓存，再 `getSettings` 对账；同步 `<html lang>`。**首次启动**（无语言缓存且尚未 seed）按 `navigator.languages` / `navigator.language` 选 zh/en，回落 zh，并一次性写入 core；已有用户选择不覆盖。不引入 i18next；字典在 `src/lib/i18n/locales/{zh,en}.ts`，第一期覆盖 Settings 四面板与侧栏 chrome。导航专有名（Chat / Agents / Skills / MCP / Projects / Dashboard / Connections / Routes / Settings）两种语言同值。业务页分期迁移。
 
-Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `about`（解析集中在 `src/pages/settings/settings-format.ts` 的 `SETTINGS_TABS` / `parseSettingsTab` / `resolveSettingsLocation`）。非法或缺省值 fallback 到 Preferences。切换使用 `replace`，避免污染浏览器历史。
+Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `backups` / `about`（解析集中在 `src/pages/settings/settings-format.ts` 的 `SETTINGS_TABS` / `parseSettingsTab` / `resolveSettingsLocation`）。非法或缺省值 fallback 到 Preferences。切换使用 `replace`，避免污染浏览器历史。
 
 旧 slug **replace 重定向**（不 404、不落空白面板）：
 
@@ -466,10 +467,10 @@ Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `about`（�
 | `general` | Preferences |
 | `security` | About（凭据说明现居于此） |
 | `data` | Local（页顶：数据 / 日志） |
-| `backups` | `/backups`（独立页） |
+| `backups` | Backups（规范 tab） |
 | `about` | About |
 
-`/settings?tab=backups` 与 `/settings#backups` → `/backups`。
+`/backups` → `/settings?tab=backups`。`/settings#backups` 与 `/settings?tab=local#backups` → `/settings?tab=backups`。
 
 ## 5. 组件清单
 

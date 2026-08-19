@@ -2,7 +2,7 @@ use std::fs;
 
 use tempfile::tempdir;
 
-use super::{clear_grok_field, read_grok_api_key, write_grok_api_key};
+use super::{clear_grok_field, grok_auth_state, read_grok_api_key, write_grok_api_key};
 
 #[test]
 fn grok_account_key_reads_and_writes_active_nested_model() {
@@ -37,4 +37,74 @@ api_backend = "responses"
     let text = fs::read_to_string(&path).unwrap();
     assert!(text.contains("api_backend = \"responses\""));
     assert!(!text.contains("xai-test-key-123456"));
+}
+
+#[test]
+fn grok_api_key_and_oauth_sets_also_present() {
+    let dir = tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let auth = dir.path().join("auth.json");
+    fs::write(&config, "api_key = \"xai-fixture-key\"\n").unwrap();
+    fs::write(
+        &auth,
+        r#"{"access_token":"grok-access-fixture","refresh_token":"grok-refresh-fixture"}"#,
+    )
+    .unwrap();
+
+    let state = grok_auth_state(&config, &auth).unwrap();
+    assert_eq!(state.kind.as_deref(), Some("api_key"));
+    assert!(state.also_present.iter().any(|kind| kind == "oauth"));
+    let dumped = serde_json::to_string(&state).unwrap();
+    assert!(!dumped.contains("xai-fixture-key"));
+    assert!(!dumped.contains("grok-access-fixture"));
+    assert!(!dumped.contains("grok-refresh-fixture"));
+}
+
+#[test]
+fn grok_api_key_and_missing_or_unparseable_auth_leaves_also_present_empty() {
+    let dir = tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let auth = dir.path().join("auth.json");
+    fs::write(&config, "api_key = \"xai-only-fixture\"\n").unwrap();
+
+    let missing = grok_auth_state(&config, &auth).unwrap();
+    assert_eq!(missing.kind.as_deref(), Some("api_key"));
+    assert!(missing.also_present.is_empty());
+    let dumped = serde_json::to_string(&missing).unwrap();
+    assert!(!dumped.contains("xai-only-fixture"));
+    assert!(serde_json::to_value(&missing)
+        .unwrap()
+        .get("alsoPresent")
+        .is_none());
+
+    fs::write(&auth, "not-json").unwrap();
+    let unparseable = grok_auth_state(&config, &auth).unwrap();
+    assert_eq!(unparseable.kind.as_deref(), Some("api_key"));
+    assert!(unparseable.also_present.is_empty());
+    let dumped = serde_json::to_string(&unparseable).unwrap();
+    assert!(!dumped.contains("xai-only-fixture"));
+}
+
+#[test]
+fn grok_oauth_only_leaves_also_present_empty() {
+    let dir = tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let auth = dir.path().join("auth.json");
+    fs::write(&config, "default = \"grok\"\n").unwrap();
+    fs::write(
+        &auth,
+        r#"{"access_token":"grok-oauth-only-fixture","refresh_token":"grok-refresh-only-fixture"}"#,
+    )
+    .unwrap();
+
+    let state = grok_auth_state(&config, &auth).unwrap();
+    assert_eq!(state.kind.as_deref(), Some("oauth"));
+    assert!(state.also_present.is_empty());
+    let dumped = serde_json::to_string(&state).unwrap();
+    assert!(!dumped.contains("grok-oauth-only-fixture"));
+    assert!(!dumped.contains("grok-refresh-only-fixture"));
+    assert!(serde_json::to_value(&state)
+        .unwrap()
+        .get("alsoPresent")
+        .is_none());
 }

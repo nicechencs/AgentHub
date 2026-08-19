@@ -12,6 +12,8 @@
 //!
 //! AgentHub keeps one pool row per provider key so Connections can show each login.
 
+use std::path::Path;
+
 use serde_json::{json, Map, Value};
 
 use crate::error::{AppError, Result};
@@ -19,6 +21,7 @@ use crate::models::{AccountKind, AgentId, LiveAccount};
 use crate::oauth::{
     apply_identity_to_credentials, extract_oauth_identity, identity_from_credentials, OAuthIdentity,
 };
+use crate::utils::atomic::atomic_write;
 use crate::utils::paths::agent_config_dir;
 use crate::utils::redact::mask_secret_preview;
 
@@ -33,6 +36,32 @@ pub const PI_OAUTH_PROVIDER_KEYS: &[&str] = &[
     "radius",
 ];
 
+/// Official Pi `auth.json` slots for API-key entries
+/// (https://pi.dev/docs/latest/providers). Custom providers belong in
+/// `models.json`, not here.
+pub const PI_AUTH_JSON_SLOTS: &[&str] = &[
+    "anthropic",
+    "ant-ling",
+    "azure-openai-responses",
+    "openai",
+    "deepseek",
+    "nvidia",
+    "google",
+    "amazon-bedrock",
+];
+
+pub fn is_pi_auth_json_slot(id: &str) -> bool {
+    PI_AUTH_JSON_SLOTS.contains(&id)
+}
+
+/// `{ "type": "api_key", "key": "…" }` — official auth.json entry shape.
+pub fn pi_api_key_auth_entry(key: &str) -> Value {
+    json!({
+        "type": "api_key",
+        "key": key,
+    })
+}
+
 pub fn pi_config_dir() -> Result<std::path::PathBuf> {
     agent_config_dir(AgentId::Pi)
 }
@@ -43,11 +72,14 @@ pub fn pi_auth_path() -> Result<std::path::PathBuf> {
 
 /// Read auth.json object (empty object when missing).
 pub fn read_auth_json() -> Result<Value> {
-    let path = pi_auth_path()?;
+    read_auth_json_at(&pi_auth_path()?)
+}
+
+fn read_auth_json_at(path: &Path) -> Result<Value> {
     if !path.exists() {
         return Ok(json!({}));
     }
-    let text = std::fs::read_to_string(&path)?;
+    let text = std::fs::read_to_string(path)?;
     let body: Value = serde_json::from_str(&text)?;
     if !body.is_object() {
         return Err(AppError::InvalidArg(
@@ -59,7 +91,11 @@ pub fn read_auth_json() -> Result<Value> {
 
 /// Merge `patch` keys into existing auth.json (provider-level merge).
 pub fn merge_auth_json(patch: &Value) -> Result<Value> {
-    let mut base = read_auth_json()?;
+    merge_auth_json_in_dir(&pi_config_dir()?, patch)
+}
+
+fn merge_auth_json_in_dir(dir: &Path, patch: &Value) -> Result<Value> {
+    let mut base = read_auth_json_at(&dir.join("auth.json"))?;
     let patch_obj = patch
         .as_object()
         .ok_or_else(|| AppError::InvalidArg("Pi auth.json patch must be a JSON object".into()))?;
@@ -70,6 +106,47 @@ pub fn merge_auth_json(patch: &Value) -> Result<Value> {
         base_obj.insert(k.clone(), v.clone());
     }
     Ok(base)
+}
+
+pub(crate) fn write_verified_auth_json(path: &Path, body: &Value) -> Result<()> {
+    let mut bytes = serde_json::to_vec_pretty(body)?;
+    bytes.push(b'\n');
+    atomic_write(path, &bytes)?;
+    let written = std::fs::read_to_string(path)?;
+    let parsed: Value = serde_json::from_str(&written)?;
+    if parsed != *body {
+        return Err(AppError::message(
+            "account.verify",
+            "Pi auth.json verification failed after write",
+        ));
+    }
+    Ok(())
+}
+
+/// Write `{ provider: { type: api_key, key } }` into `dir/auth.json`.
+/// Does not touch other provider keys. `dir` is the Pi config dir
+/// (`~/.pi/agent` or `PI_CODING_AGENT_DIR`).
+pub(crate) fn apply_pi_api_key_to_dir(dir: &Path, provider: &str, key: &str) -> Result<()> {
+    let provider = provider.trim();
+    if provider.is_empty() {
+        return Err(AppError::InvalidArg(
+            "Pi API key apply requires an official provider slot (anthropic/openai/…)".into(),
+        ));
+    }
+    if !is_pi_auth_json_slot(provider) {
+        return Err(AppError::InvalidArg(format!(
+            "Pi API key apply does not write custom slot '{provider}'; \
+             custom slots belong in models.json / provider switch, not this account apply"
+        )));
+    }
+    let key = key.trim();
+    if key.is_empty() {
+        return Err(AppError::InvalidArg("Pi api_key is required".into()));
+    }
+    let mut patch = Map::new();
+    patch.insert(provider.to_string(), pi_api_key_auth_entry(key));
+    let merged = merge_auth_json_in_dir(dir, &Value::Object(patch))?;
+    write_verified_auth_json(&dir.join("auth.json"), &merged)
 }
 
 /// Expand full auth.json into one LiveAccount per provider key.

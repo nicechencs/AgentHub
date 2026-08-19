@@ -879,9 +879,7 @@ pub fn decide_adapter_capability(
             (source, target),
             (AdapterSourceProduct::ClaudeSubscription, AgentId::Codex)
         ) {
-            return AdapterCapabilityDecision::unsupported(
-                CLAUDE_SUBSCRIPTION_TO_CODEX_REASON,
-            );
+            return AdapterCapabilityDecision::unsupported(CLAUDE_SUBSCRIPTION_TO_CODEX_REASON);
         }
         // Recorded gated candidate: keep subscription messaging if the cell is absent.
         if matches!(

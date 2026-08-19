@@ -8,6 +8,8 @@ import {
   agentPickerLabel,
   blockerCopy,
   blockerPrimaryTarget,
+  chatAgentPickerEmptyCopy,
+  chatAgentPickerEmptyKind,
   chatAgentPickerRows,
   chatConnectionKind,
   chatConnectionPickerView,
@@ -19,7 +21,12 @@ import {
   isChatAgentSelectable,
   messageStatusLabel,
   newConversationDefaults,
-  nextConversationAgentIds,
+  autoApproveActive,
+  autoApproveConfirmCopy,
+  autoApproveEffect,
+  autoApproveFooter,
+  autoApproveHint,
+  selectConversationAgent,
   retryTarget,
   sendBlockers,
   turnComparisonChips,
@@ -233,7 +240,7 @@ describe('newConversationDefaults', () => {
     status('grok', true),
   ];
 
-  it('strips hidden and uninstalled ids, keeps the session agent order', () => {
+  it('keeps only the first selectable agent from the current session', () => {
     const active = conv({
       id: 'a',
       // grok 在 claude 前：与 catalog 序（claude, grok）可区分
@@ -241,7 +248,7 @@ describe('newConversationDefaults', () => {
       cwd: '/tmp/app',
     });
     expect(newConversationDefaults(active, agents)).toEqual({
-      agentIds: ['grok', 'claude'],
+      agentIds: ['grok'],
       cwd: '/tmp/app',
     });
   });
@@ -283,24 +290,78 @@ describe('newConversationDefaults', () => {
   });
 });
 
-describe('nextConversationAgentIds', () => {
-  it('appends a new id and keeps the current primary first', () => {
-    expect(nextConversationAgentIds(['grok', 'claude'], 'codex')).toEqual([
-      'grok',
-      'claude',
-      'codex',
-    ]);
+describe('selectConversationAgent', () => {
+  it('replaces the current agent with the clicked one', () => {
+    expect(
+      selectConversationAgent({
+        currentIds: ['grok'],
+        nextId: 'codex',
+        allowDangerous: false,
+      }),
+    ).toEqual({ agentIds: ['codex'] });
   });
 
-  it('removes an id without reordering the rest', () => {
-    expect(nextConversationAgentIds(['grok', 'claude', 'codex'], 'claude')).toEqual([
-      'grok',
-      'codex',
-    ]);
+  it('is a no-op when clicking the already selected agent', () => {
+    expect(
+      selectConversationAgent({
+        currentIds: ['claude'],
+        nextId: 'claude',
+        allowDangerous: true,
+      }),
+    ).toBeNull();
   });
 
-  it('refuses to drop the last agent', () => {
-    expect(nextConversationAgentIds(['claude'], 'claude')).toBeNull();
+  it('clears auto-approve when switching to an agent that cannot skip confirms', () => {
+    expect(
+      selectConversationAgent({
+        currentIds: ['claude'],
+        nextId: 'kimi',
+        allowDangerous: true,
+      }),
+    ).toEqual({ agentIds: ['kimi'], allowDangerous: false });
+  });
+
+  it('keeps auto-approve when switching to an agent that honors it', () => {
+    expect(
+      selectConversationAgent({
+        currentIds: ['claude'],
+        nextId: 'pi',
+        allowDangerous: true,
+      }),
+    ).toEqual({ agentIds: ['pi'] });
+  });
+});
+
+describe('autoApproveEffect', () => {
+  it('matches headless adapter flags, not TUI capability labels', () => {
+    expect(autoApproveEffect('claude')).toBe('skip');
+    expect(autoApproveEffect('codex')).toBe('skip');
+    expect(autoApproveEffect('grok')).toBe('skip');
+    expect(autoApproveEffect('workbuddy')).toBe('skip');
+    expect(autoApproveEffect('cursor')).toBe('skip');
+    expect(autoApproveEffect('pi')).toBe('project-trust');
+    expect(autoApproveEffect('kimi')).toBe('none');
+    expect(autoApproveEffect('dsh')).toBe('none');
+    expect(autoApproveEffect(null)).toBe('none');
+  });
+
+  it('only treats stored allowDangerous as active when the agent can honor it', () => {
+    expect(autoApproveActive(true, 'claude')).toBe(true);
+    expect(autoApproveActive(true, 'pi')).toBe(true);
+    expect(autoApproveActive(true, 'kimi')).toBe(false);
+    expect(autoApproveActive(false, 'claude')).toBe(false);
+  });
+
+  it('uses honest footer and confirm copy per effect', () => {
+    expect(autoApproveFooter(false, 'claude').warning).toBe(false);
+    expect(autoApproveFooter(true, 'claude')).toEqual({
+      text: '自动批准已开启 · Agent 将不经确认修改文件',
+      warning: true,
+    });
+    expect(autoApproveFooter(true, 'pi').text).toContain('仅信任项目文件');
+    expect(autoApproveFooter(true, 'kimi').text).toContain('不会生效');
+    expect(autoApproveHint('none')).toContain('无法跳过确认');
+    expect(autoApproveConfirmCopy('project-trust')).toContain('不会完全跳过');
   });
 });
 
@@ -422,13 +483,13 @@ describe('connectionPickerCaption', () => {
 });
 
 describe('agentPickerLabel', () => {
-  it('labels none / single / multi sessions', () => {
+  it('labels the first selected agent', () => {
     expect(agentPickerLabel(null)).toBe('选择 Agent');
     expect(agentPickerLabel(conv({ id: '1', agentIds: ['claude'] }))).toBe(
       agentDisplayName('claude'),
     );
     expect(agentPickerLabel(conv({ id: '2', agentIds: ['claude', 'codex'] }))).toBe(
-      '2 个 Agent',
+      agentDisplayName('claude'),
     );
   });
 });
@@ -519,10 +580,9 @@ describe('agentHasConfiguredAuth / picker rows', () => {
     ).toBe(false);
   });
 
-  it('lists selectable agents first and parks hidden / no-auth at the end', () => {
+  it('omits hidden and uninstalled agents, and parks no-auth at the end as unselectable', () => {
     const rows = chatAgentPickerRows({
       catalogIds: ['claude', 'codex', 'kimi', 'grok', 'pi'],
-      selectedIds: ['claude'],
       agentStatus: [
         status('claude', true),
         status('codex', true, true),
@@ -535,19 +595,40 @@ describe('agentHasConfiguredAuth / picker rows', () => {
         status('pi', true),
       ],
     });
-    expect(rows.map((r) => r.id)).toEqual(['claude', 'pi', 'codex', 'kimi']);
-    expect(rows.map((r) => r.selectable)).toEqual([true, true, false, false]);
-    expect(rows.map((r) => r.reason)).toEqual([null, null, 'hidden', 'noAuth']);
+    expect(rows.map((r) => r.id)).toEqual(['claude', 'pi', 'kimi']);
+    expect(rows.map((r) => r.selectable)).toEqual([true, true, false]);
+    expect(rows.map((r) => r.reason)).toEqual([null, null, 'noAuth']);
   });
 
-  it('keeps an already-selected uninstalled agent visible but unselectable', () => {
+  it('does not keep a selected hidden or uninstalled agent in the picker', () => {
     const rows = chatAgentPickerRows({
-      catalogIds: ['claude', 'kimi'],
-      selectedIds: ['kimi'],
-      agentStatus: [status('claude', true), status('kimi', false)],
+      catalogIds: ['claude', 'kimi', 'codex'],
+      agentStatus: [status('claude', true), status('kimi', false), status('codex', true, true)],
     });
-    expect(rows.map((r) => r.id)).toEqual(['claude', 'kimi']);
-    expect(rows[1]).toEqual({ id: 'kimi', selectable: false, reason: 'noAuth' });
+    expect(rows.map((r) => r.id)).toEqual(['claude']);
+  });
+});
+
+describe('chatAgentPickerEmptyKind', () => {
+  it('is null when the picker has rows', () => {
+    expect(chatAgentPickerEmptyKind({ agentsReady: true, rowCount: 2 })).toBeNull();
+    expect(chatAgentPickerEmptyKind({ agentsReady: false, rowCount: 1 })).toBeNull();
+  });
+
+  it('does not treat an unreadied empty list as none installed', () => {
+    expect(chatAgentPickerEmptyKind({ agentsReady: false, rowCount: 0 })).toBe('loading');
+    expect(chatAgentPickerEmptyCopy('loading')).toEqual({
+      text: '正在检测已安装的 Agent…',
+      action: null,
+    });
+  });
+
+  it('uses a single ready-empty copy for hidden-or-uninstalled', () => {
+    expect(chatAgentPickerEmptyKind({ agentsReady: true, rowCount: 0 })).toBe('none');
+    expect(chatAgentPickerEmptyCopy('none')).toEqual({
+      text: '没有可选择的 Agent',
+      action: '去 Agents 页',
+    });
   });
 });
 

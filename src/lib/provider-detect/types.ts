@@ -111,7 +111,8 @@ export type FormFieldKey =
   | 'modelSubagent'
   | 'claudeAuthEnv'
   | 'reasoningEffort'
-  | 'wireApi';
+  | 'wireApi'
+  | 'providerSlug';
 
 /** 粘贴 → 识别 → 合并进表单 + 配置正文 的一站式结果 */
 export interface SmartPasteApplyResult {

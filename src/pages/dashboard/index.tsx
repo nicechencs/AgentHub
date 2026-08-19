@@ -28,7 +28,7 @@ import { useUsageSync } from '@/components/shared/UsageSyncProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Tip } from '@/components/ui/tooltip';
+import { Tip, tooltipSurfaceStyle } from '@/components/ui/tooltip';
 import {
   Select,
   SelectContent,
@@ -748,13 +748,14 @@ export default function DashboardPage() {
                           width={48}
                         />
                         <Tooltip
-                          contentStyle={{
-                            backgroundColor: 'var(--bg-panel)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 8,
-                            fontSize: typeScalePx('meta'),
+                          contentStyle={tooltipSurfaceStyle()}
+                          labelStyle={{
+                            color: 'var(--text-secondary)',
+                            fontSize: 'var(--font-meta-size)',
                           }}
-                          labelStyle={{ color: 'var(--text-secondary)' }}
+                          itemStyle={{
+                            fontSize: 'var(--font-meta-size)',
+                          }}
                           formatter={(value, name) => [
                             fmtTokens(Number(value)),
                             agentDisplayName(name as AgentId),

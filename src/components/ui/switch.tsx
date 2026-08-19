@@ -14,6 +14,7 @@ const Switch = React.forwardRef<
       // primary 在本项目是文字色；开关选中态用 accent
       'data-[state=checked]:before:border-accent/40 data-[state=checked]:before:bg-accent',
       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
+      'disabled:cursor-not-allowed disabled:opacity-50',
       className,
     )}
     {...props}

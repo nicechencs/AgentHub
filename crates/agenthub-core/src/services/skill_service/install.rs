@@ -14,12 +14,12 @@ use crate::models::{
 use crate::platform::skills::{
     acquire_skill_lock, acquire_skill_root_lock, chrono_now, clear_managed_target_for_reproject,
     commit_skill_package, create_projection_link, ensure_no_symlink_in_existing_prefix,
-    ensure_skill_md, finalize_link_projection_ownership, inspect_projection_target,
-    is_exact_child, is_link_or_reparse, materialize_projection, paths_equal_lexical,
-    prepare_git_skill_staging, read_skill_metadata, record_copy_ownership, remove_projection_link,
-    resolve_link_path, skill_lock_load, skill_lock_remove, skill_lock_upsert,
-    validate_and_collect_source, validate_skill_id, validate_skills_root, validate_tree_entries_safe,
-    PreparedSkillTree, SkillCommitFaults, SkillPackageService, SkillSourceService, TargetPresence,
+    ensure_skill_md, finalize_link_projection_ownership, inspect_projection_target, is_exact_child,
+    is_link_or_reparse, materialize_projection, paths_equal_lexical, prepare_git_skill_staging,
+    read_skill_metadata, record_copy_ownership, remove_projection_link, resolve_link_path,
+    skill_lock_load, skill_lock_remove, skill_lock_upsert, validate_and_collect_source,
+    validate_skill_id, validate_skills_root, validate_tree_entries_safe, PreparedSkillTree,
+    SkillCommitFaults, SkillPackageService, SkillSourceService, TargetPresence,
 };
 use crate::platform::AgentKey;
 use crate::storage::SkillRepo;
@@ -691,5 +691,4 @@ impl SkillService {
     pub fn skill_lock_path(&self) -> PathBuf {
         self.source_root.join(".skill-lock.json")
     }
-
 }

@@ -139,9 +139,24 @@ export function formatBindingUsagePart(binding: BindingView): string {
     .join('');
 }
 
-export function formatTicketUsageParts(bindings: readonly BindingView[]): TicketUsagePart[] {
+export function formatTicketUsageParts(
+  bindings: readonly BindingView[],
+  ownerAgentId?: AgentId,
+): TicketUsagePart[] {
   const active = bindings.filter((b) => b.active);
-  if (active.length === 0) return [{ kind: 'text', text: '未使用' }];
+  if (active.length === 0) {
+    return [{
+      kind: 'text',
+      text: ownerAgentId ? `${agentDisplayName(ownerAgentId)} · 未使用` : '未使用',
+    }];
+  }
+  const selfOnly =
+    Boolean(ownerAgentId)
+    && active.length === 1
+    && active[0]!.agentId === ownerAgentId;
+  if (selfOnly) {
+    return formatBindingUsageParts(active[0]!);
+  }
   const parts: TicketUsagePart[] = [{ kind: 'text', text: '正用于：' }];
   active.forEach((binding, index) => {
     if (index > 0) parts.push({ kind: 'text', text: ' · ' });
@@ -150,8 +165,11 @@ export function formatTicketUsageParts(bindings: readonly BindingView[]): Ticket
   return parts;
 }
 
-export function formatTicketUsageText(bindings: readonly BindingView[]): string {
-  return formatTicketUsageParts(bindings)
+export function formatTicketUsageText(
+  bindings: readonly BindingView[],
+  ownerAgentId?: AgentId,
+): string {
+  return formatTicketUsageParts(bindings, ownerAgentId)
     .map((part) => (part.kind === 'bridge' ? part.label : part.text))
     .join('');
 }
@@ -271,8 +289,8 @@ export function buildTicketWalletRows(
       ticket,
       bindings,
       highlighted,
-      usageText: formatTicketUsageText(bindings),
-      usageParts: formatTicketUsageParts(bindings),
+      usageText: formatTicketUsageText(bindings, ticket.agentId),
+      usageParts: formatTicketUsageParts(bindings, ticket.agentId),
     };
   });
 }

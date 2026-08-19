@@ -9,6 +9,8 @@ export interface McpServerEntry {
   sourcePath: string;
   sourceFormat: string;
   enabled?: boolean | null;
+  /** Redacted raw fragment for this server only. */
+  snippet?: string | null;
 }
 
 export interface McpSourceFile {
@@ -19,6 +21,8 @@ export interface McpSourceFile {
   error?: string | null;
   serverCount: number;
   label: string;
+  /** Redacted MCP-related section of the source file. */
+  snippet?: string | null;
 }
 
 export interface McpInventory {

@@ -192,7 +192,11 @@ pub(crate) fn is_yaml_block_scalar_marker(value: &str) -> bool {
 }
 
 /// Collect indented lines of a YAML block scalar, collapse to one display line.
-pub(crate) fn collect_yaml_block_scalar(lines: &[&str], idx: &mut usize, key_indent: usize) -> String {
+pub(crate) fn collect_yaml_block_scalar(
+    lines: &[&str],
+    idx: &mut usize,
+    key_indent: usize,
+) -> String {
     let mut parts: Vec<&str> = Vec::new();
     while *idx < lines.len() {
         let raw = lines[*idx];

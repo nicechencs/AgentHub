@@ -59,7 +59,7 @@ export function ChatTranscript({
           <div className="text-center">
             <p className="text-title font-semibold tracking-tight text-primary">开始对话</p>
             <p className="mt-2 max-w-md text-body text-muted">
-              向 {agentPickerLabel(active)} 发送第一条消息；多选 Agent 可同轮对比
+              向 {agentPickerLabel(active)} 发送第一条消息
             </p>
           </div>
         </div>

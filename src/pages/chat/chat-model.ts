@@ -13,7 +13,7 @@ export type ChatSendBlocker =
   | { kind: 'noCwd' }
   | { kind: 'sendingElsewhere'; conversationId: string; title: string };
 
-export type ChatAgentPickerReason = 'hidden' | 'noAuth';
+export type ChatAgentPickerReason = 'noAuth';
 
 export type ChatAgentPickerRow = {
   id: AgentId;
@@ -39,27 +39,46 @@ export function isChatAgentSelectable(status: AgentStatus | undefined): boolean 
 }
 
 /**
- * 已安装（或已在会话里）的 Agent：可选的在前，已隐藏 / 未配置授权的置底且不可选。
+ * 已安装且未隐藏的 Agent：未配置授权的置底、灰显不可选。隐藏的不进列表。
  */
 export function chatAgentPickerRows(input: {
   catalogIds: AgentId[];
   agentStatus: AgentStatus[];
-  selectedIds: AgentId[];
 }): ChatAgentPickerRow[] {
   const byId = new Map(input.agentStatus.map((a) => [a.agentId, a]));
   const rows: ChatAgentPickerRow[] = [];
   for (const id of input.catalogIds) {
     const status = byId.get(id);
-    const installed = status?.installed === true;
-    const selected = input.selectedIds.includes(id);
-    if (!installed && !selected) continue;
-    const hidden = Boolean(status?.hidden);
+    if (status?.installed !== true || status.hidden) continue;
     const noAuth = !agentHasConfiguredAuth(status);
-    const selectable = Boolean(installed && !hidden && !noAuth);
-    const reason: ChatAgentPickerReason | null = hidden ? 'hidden' : noAuth ? 'noAuth' : null;
-    rows.push({ id, selectable, reason });
+    rows.push({
+      id,
+      selectable: !noAuth,
+      reason: noAuth ? 'noAuth' : null,
+    });
   }
   return [...rows.filter((r) => r.selectable), ...rows.filter((r) => !r.selectable)];
+}
+
+/** 列表为空时的原因：未就绪不得当成「没装」。安装/全隐藏在 picker 里不必拆开。 */
+export type ChatPickerEmptyKind = 'loading' | 'none';
+
+export function chatAgentPickerEmptyKind(input: {
+  agentsReady: boolean;
+  rowCount: number;
+}): ChatPickerEmptyKind | null {
+  if (input.rowCount > 0) return null;
+  return input.agentsReady ? 'none' : 'loading';
+}
+
+export function chatAgentPickerEmptyCopy(kind: ChatPickerEmptyKind): {
+  text: string;
+  action: string | null;
+} {
+  if (kind === 'loading') {
+    return { text: '正在检测已安装的 Agent…', action: null };
+  }
+  return { text: '没有可选择的 Agent', action: '去 Agents 页' };
 }
 
 export type ConversationDayKey = 'today' | 'yesterday' | 'week' | 'earlier';
@@ -179,16 +198,85 @@ export function sendBlockers(input: {
   return out;
 }
 
-/** 多选勾选：保持当前顺序；新增追加到末尾。只剩一个时返回 null。 */
-export function nextConversationAgentIds(
-  current: AgentId[],
-  toggleId: AgentId,
-): AgentId[] | null {
-  if (current.includes(toggleId)) {
-    if (current.length === 1) return null;
-    return current.filter((id) => id !== toggleId);
+/**
+ * Chat headless 自动批准的真实效果，对齐各 adapter `build_run_spec`。
+ * 不是 capability 标牌：Kimi/DSH 在 TUI 里有 yolo，但 -p / headless 不会加上。
+ */
+export type AutoApproveEffect = 'skip' | 'project-trust' | 'none';
+
+export function autoApproveEffect(agentId: AgentId | null | undefined): AutoApproveEffect {
+  switch (agentId) {
+    case 'claude':
+    case 'codex':
+    case 'grok':
+    case 'workbuddy':
+    case 'cursor':
+      return 'skip';
+    case 'pi':
+      return 'project-trust';
+    default:
+      return 'none';
   }
-  return [...current, toggleId];
+}
+
+export function autoApproveActive(
+  allowDangerous: boolean,
+  agentId: AgentId | null | undefined,
+): boolean {
+  return allowDangerous && autoApproveEffect(agentId) !== 'none';
+}
+
+export function autoApproveHint(effect: AutoApproveEffect): string {
+  switch (effect) {
+    case 'skip':
+      return '跳过工具确认';
+    case 'project-trust':
+      return '仅信任项目文件，不是完全跳过确认';
+    case 'none':
+      return '此 Agent 的 headless 模式无法跳过确认';
+  }
+}
+
+export function autoApproveFooter(
+  allowDangerous: boolean,
+  agentId: AgentId | null | undefined,
+): { text: string; warning: boolean } {
+  const effect = autoApproveEffect(agentId);
+  if (!allowDangerous) {
+    return { text: 'Agent 可能修改工作目录中的文件', warning: false };
+  }
+  if (effect === 'skip') {
+    return { text: '自动批准已开启 · Agent 将不经确认修改文件', warning: true };
+  }
+  if (effect === 'project-trust') {
+    return { text: '自动批准已开启 · 仅信任项目文件，仍可能要求确认', warning: true };
+  }
+  return { text: '此 Agent 无法在 Chat 中跳过确认，自动批准不会生效', warning: false };
+}
+
+export function autoApproveConfirmCopy(effect: AutoApproveEffect): string {
+  if (effect === 'project-trust') {
+    return '开启后会信任当前项目内的文件。该 Agent 不会完全跳过工具确认，仍可能停下等待批准。仅在信任当前工作目录时开启。';
+  }
+  return '开启后将跳过工具确认，Agent 可直接改文件、执行命令。仅在信任当前工作目录时开启。';
+}
+
+/** 单选：点当前项不变；点其他项替换。无法跳过确认的 Agent 会清掉已开的自动批准。 */
+export function selectConversationAgent(input: {
+  currentIds: AgentId[];
+  nextId: AgentId;
+  allowDangerous: boolean;
+}): { agentIds: AgentId[]; allowDangerous?: boolean } | null {
+  if (input.currentIds.length === 1 && input.currentIds[0] === input.nextId) {
+    return null;
+  }
+  const patch: { agentIds: AgentId[]; allowDangerous?: boolean } = {
+    agentIds: [input.nextId],
+  };
+  if (input.allowDangerous && autoApproveEffect(input.nextId) === 'none') {
+    patch.allowDangerous = false;
+  }
+  return patch;
 }
 
 export function newConversationDefaults(
@@ -206,7 +294,6 @@ export function newConversationDefaults(
     return { agentIds: fallbackIds, cwd: null };
   }
 
-  // 继承当前会话顺序（agentIds[0] 是 primary），只保留可选 Agent
   const byId = new Map(agentStatus.map((a) => [a.agentId, a]));
   const kept = active.agentIds.filter((id) => {
     if (hidden.has(id) || uninstalled.has(id)) return false;
@@ -214,15 +301,14 @@ export function newConversationDefaults(
   });
 
   return {
-    agentIds: kept.length > 0 ? kept : fallbackIds,
+    agentIds: kept.length > 0 ? [kept[0]] : fallbackIds,
     cwd: active.cwd ?? null,
   };
 }
 
 export function agentPickerLabel(active: Conversation | null): string {
-  if (!active) return '选择 Agent';
-  if (active.agentIds.length === 1) return agentDisplayName(active.agentIds[0]);
-  return `${active.agentIds.length} 个 Agent`;
+  const id = active?.agentIds[0];
+  return id ? agentDisplayName(id) : '选择 Agent';
 }
 
 export function connectionPickerCaption(opts: {

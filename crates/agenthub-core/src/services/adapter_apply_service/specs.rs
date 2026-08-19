@@ -19,10 +19,9 @@ use crate::services::adapter_route_constants::{
     DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT,
     DSH_DEFAULT_MODEL, GLM_CLAUDE_RULE_ID, GLM_CODEX_BASE_URL, GLM_CODEX_DEFAULT_MODEL,
     GLM_CODEX_PROVIDER_PREFIX, GLM_CODEX_PROVIDER_SLUG, GLM_CODEX_RULE_ID, GLM_PI_BASE_URL,
-    GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_PI_BASE_URL,
-    KIMI_PI_PROVIDER_SLOT, KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL,
-    OPENAI_GROK_BASE_URL, OPENAI_GROK_DEFAULT_MODEL, OPENAI_PI_PROVIDER_SLOT,
-    XAI_PI_PROVIDER_SLOT,
+    GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_GROK_BASE_URL,
+    KIMI_GROK_DEFAULT_MODEL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT, OPENAI_GROK_BASE_URL,
+    OPENAI_GROK_DEFAULT_MODEL, OPENAI_PI_PROVIDER_SLOT, XAI_PI_PROVIDER_SLOT,
 };
 use crate::services::{
     AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
@@ -154,7 +153,10 @@ pub(super) fn generated_provider_prefix(profile: &AdapterProfile) -> Option<&'st
     }
 }
 
-pub(super) fn provider_owned_by(provider: &crate::models::Provider, profile: &AdapterProfile) -> bool {
+pub(super) fn provider_owned_by(
+    provider: &crate::models::Provider,
+    profile: &AdapterProfile,
+) -> bool {
     let Some(prefix) = generated_provider_prefix(profile) else {
         return false;
     };
@@ -221,11 +223,15 @@ pub(crate) fn apply_request_supported(
         },
         (source_kind, AgentId::Codex, AdapterRoute::NativeEndpoint) => {
             support == AdapterSupport::Experimental
-                && rule_id.is_some_and(|rule| is_codex_native_rule(rule) && is_api_source_kind(source_kind))
+                && rule_id.is_some_and(|rule| {
+                    is_codex_native_rule(rule) && is_api_source_kind(source_kind)
+                })
         }
         (source_kind, AgentId::Grok, AdapterRoute::NativeEndpoint) => {
             support == AdapterSupport::Experimental
-                && rule_id.is_some_and(|rule| is_grok_native_rule(rule) && is_api_source_kind(source_kind))
+                && rule_id.is_some_and(|rule| {
+                    is_grok_native_rule(rule) && is_api_source_kind(source_kind)
+                })
         }
         (AdapterSourceKind::Provider, AgentId::Pi, AdapterRoute::ConfigSync) => {
             (support == AdapterSupport::Stable && rule_id == Some(KIMI_PI_RULE_ID))
@@ -492,7 +498,13 @@ pub(super) fn grok_native_spec(
             agent_id: AgentId::Grok,
             name: format!("{display} ({})", safe_label(source_id)),
             settings_config: json!({"format": "toml", "content": content}),
-            meta: generated_meta(rule_id, &profile_id, source_kind, source_id, Some("openai-chat")),
+            meta: generated_meta(
+                rule_id,
+                &profile_id,
+                source_kind,
+                source_id,
+                Some("openai-chat"),
+            ),
             is_current: false,
         },
     })
@@ -567,7 +579,9 @@ pub(super) fn is_subscription_pi_rule(rule_id: &str) -> bool {
     )
 }
 
-pub(super) fn pi_subscription_layout(rule_id: &str) -> Result<(&'static str, &'static str, &'static str)> {
+pub(super) fn pi_subscription_layout(
+    rule_id: &str,
+) -> Result<(&'static str, &'static str, &'static str)> {
     match rule_id {
         CLAUDE_SUBSCRIPTION_PI_RULE_ID => Ok((
             PI_CLAUDE_OAUTH_PROVIDER_PREFIX,
@@ -914,4 +928,3 @@ pub(super) fn fnv1a(bytes: &[u8]) -> u64 {
         (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
     })
 }
-

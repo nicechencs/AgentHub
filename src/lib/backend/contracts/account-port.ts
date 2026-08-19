@@ -61,6 +61,8 @@ export interface AuthState {
   health?: AuthHealth;
   /** Redacted source label (settings/auth file/live/etc.). */
   source?: string | null;
+  /** Other live credential families besides `kind` (e.g. `["oauth"]` when kind is api_key). */
+  alsoPresent?: string[] | null;
 }
 
 /** Normalized probe consumed by browser pages; keeps agentId for old callers. */
@@ -73,6 +75,13 @@ export interface LiveAuthProbe {
   revision?: string | null;
   health?: AuthHealth;
   source?: string | null;
+  /** Other live credential families besides `kind` (e.g. `["oauth"]` when kind is api_key). */
+  alsoPresent?: string[] | null;
+}
+
+function normalizeAlsoPresent(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is string => typeof item === 'string');
 }
 
 /** Accept both current core AuthState (`agent`) and legacy JS probe (`agentId`). */
@@ -89,6 +98,7 @@ export function normalizeAuthState(
     revision: raw.revision ?? null,
     health: normalizeAuthHealth(raw.health),
     source: raw.source ?? null,
+    alsoPresent: normalizeAlsoPresent(raw.alsoPresent),
   };
 }
 

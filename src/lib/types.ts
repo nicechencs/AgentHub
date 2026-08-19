@@ -446,6 +446,7 @@ export interface AgentProject {
   agentId: AgentId;
   title: string;
   storagePath: string;
+  /** Workspace that exists on disk (decoded + verified). Only this is click-to-open. */
   actualPath?: string | null;
   relativePath: string;
   sessionCount: number;

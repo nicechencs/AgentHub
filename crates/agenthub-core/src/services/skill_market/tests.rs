@@ -45,7 +45,10 @@ fn mark_listings_installed_matches_shared_or_local_id() {
         listing("skillhub:hello"),
     ];
     mark_listings_installed(&mut items, &skills);
-    assert!(items[0].installed, "skills.sh listing should match local slug");
+    assert!(
+        items[0].installed,
+        "skills.sh listing should match local slug"
+    );
     assert!(items[1].installed, "exact shared id should match");
     assert!(!items[2].installed, "unrelated listing must stay unmarked");
     assert!(

@@ -132,7 +132,7 @@ src/components/connect/   # ConnectFlow / OAuth
 
 | 组件 | 职责 |
 |---|---|
-| `Sidebar` | Workspace：Chat / Agents / Skills / MCP / Projects。Manage：Dashboard / Connections / Routes（**有本机路由才出现**）/ Backups / Settings |
+| `Sidebar` | Workspace：Chat / Agents / Skills / MCP / Projects。Manage：Dashboard / Connections / Routes（**有本机路由才出现**）/ Settings。备份在 Settings `?tab=backups`，不占侧栏 |
 | `TopBar` | Chat 不渲染 |
 | `PageHeader` | `default` / `compact`（全高页只收底距）。标题一律 `text-title` |
 | `PageSection` | 段距 / 可选分割线 / 段标题（body + semibold） |

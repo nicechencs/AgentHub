@@ -95,5 +95,4 @@ impl SkillService {
         out.sort_by(|a, b| a.id.cmp(&b.id).then(a.origin.cmp(&b.origin)));
         Ok(out)
     }
-
 }

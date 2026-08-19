@@ -328,4 +328,3 @@ pub(super) fn fnv1a(bytes: &[u8]) -> u64 {
         (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
     })
 }
-

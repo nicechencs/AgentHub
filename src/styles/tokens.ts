@@ -159,6 +159,17 @@ export const SHADOWS = {
   },
 } as const satisfies Record<ThemeScheme, Record<string, string>>;
 
+/** Hover tooltip geometry. Chrome is locked in `components/ui/tooltip.tsx`. */
+export const TOOLTIP = {
+  maxWidth: '280px',
+  maxHeight: '192px',
+  paddingX: '10px',
+  paddingY: '6px',
+  sideOffset: 8,
+  collisionPadding: 8,
+  delayMs: 200,
+} as const;
+
 /** CSS custom property for an agent brand color. */
 export function agentCssVar(id: TokenAgentId): `var(--agent-${TokenAgentId})` {
   return `var(--agent-${id})`;
@@ -202,6 +213,10 @@ function themeDecls(scheme: ThemeScheme): string[] {
       lines.push(`--font-${role}-size: ${spec.size};`);
       lines.push(`--font-${role}-leading: ${spec.lineHeight};`);
     }
+    lines.push(`--tooltip-max-width: ${TOOLTIP.maxWidth};`);
+    lines.push(`--tooltip-max-height: ${TOOLTIP.maxHeight};`);
+    lines.push(`--tooltip-pad-x: ${TOOLTIP.paddingX};`);
+    lines.push(`--tooltip-pad-y: ${TOOLTIP.paddingY};`);
   }
   for (const [key, value] of Object.entries(shadows)) {
     lines.push(`--shadow-${key}: ${value};`);

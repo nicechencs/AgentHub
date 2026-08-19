@@ -7,8 +7,8 @@ use crate::bridge::types::{
 use super::{
     anthropic_messages::{
         anthropic_message_to_ir, encode_anthropic_message, encode_anthropic_sse,
-        parse_messages_request, to_anthropic_messages_request, translate_responses_to_anthropic_request,
-        AnthropicStreamToIr,
+        parse_messages_request, to_anthropic_messages_request,
+        translate_responses_to_anthropic_request, AnthropicStreamToIr,
     },
     chat::{sse_frame, translate_chat_response, ChatStreamToIr, ResponsesSseTranslator},
     responses::{
@@ -493,18 +493,14 @@ fn anthropic_mixed_user_text_and_tool_result_keeps_text_in_responses_input() {
         request.input[0].role,
         crate::bridge::types::MessageRole::User
     ));
-    assert!(
-        request.input[0]
-            .content
-            .iter()
-            .any(|part| matches!(part, crate::bridge::types::BridgeContent::Text { .. }))
-    );
-    assert!(
-        request.input[0]
-            .content
-            .iter()
-            .any(|part| matches!(part, crate::bridge::types::BridgeContent::ToolResult { .. }))
-    );
+    assert!(request.input[0]
+        .content
+        .iter()
+        .any(|part| matches!(part, crate::bridge::types::BridgeContent::Text { .. })));
+    assert!(request.input[0]
+        .content
+        .iter()
+        .any(|part| matches!(part, crate::bridge::types::BridgeContent::ToolResult { .. })));
 
     let responses = to_responses_request(&request);
     let input = responses["input"].as_array().expect("input array");
@@ -716,9 +712,15 @@ fn responses_request_maps_to_anthropic_messages_text_tools_and_unicode() {
     assert_eq!(anthropic["system"], "Answer precisely.");
     assert_eq!(anthropic["max_tokens"], 512);
     assert_eq!(anthropic["messages"][0]["role"], "user");
-    assert_eq!(anthropic["messages"][0]["content"][0]["text"], "Hello, 世界");
+    assert_eq!(
+        anthropic["messages"][0]["content"][0]["text"],
+        "Hello, 世界"
+    );
     assert_eq!(anthropic["tools"][0]["name"], "weather");
-    assert_eq!(anthropic["tools"][0]["input_schema"]["properties"]["city"]["type"], "string");
+    assert_eq!(
+        anthropic["tools"][0]["input_schema"]["properties"]["city"]["type"],
+        "string"
+    );
     assert_eq!(anthropic["tool_choice"]["type"], "auto");
     assert_eq!(anthropic["temperature"], json!(0.2));
     assert!(anthropic.get("stream_options").is_none());
@@ -726,8 +728,8 @@ fn responses_request_maps_to_anthropic_messages_text_tools_and_unicode() {
 
 #[test]
 fn responses_tool_history_becomes_anthropic_tool_use_and_results() {
-    let request = parse_responses_request(&fixture("responses_parallel_tool_history"))
-        .expect("parse");
+    let request =
+        parse_responses_request(&fixture("responses_parallel_tool_history")).expect("parse");
     let anthropic = to_anthropic_messages_request(&request);
     let messages = anthropic["messages"].as_array().expect("messages");
     assert_eq!(messages[0]["role"], "user");
@@ -765,7 +767,8 @@ fn anthropic_message_to_ir_to_responses_text_and_usage() {
         "你好，世界。"
     );
     assert!(matches!(
-        ir.iter().find(|event| matches!(event, IrEvent::Usage { .. })),
+        ir.iter()
+            .find(|event| matches!(event, IrEvent::Usage { .. })),
         Some(IrEvent::Usage {
             input_tokens: 8,
             output_tokens: 4,
@@ -785,7 +788,10 @@ fn anthropic_message_to_ir_to_responses_text_and_usage() {
     assert_eq!(response["output"][0]["content"][0]["text"], "你好，世界。");
     assert_eq!(response["usage"]["input_tokens"], 8);
     assert_eq!(response["usage"]["output_tokens"], 4);
-    assert_eq!(response["usage"]["input_tokens_details"]["cached_tokens"], 2);
+    assert_eq!(
+        response["usage"]["input_tokens_details"]["cached_tokens"],
+        2
+    );
 }
 
 #[test]
@@ -810,7 +816,10 @@ fn anthropic_max_tokens_stop_becomes_responses_incomplete() {
     ));
     let response = encode_responses_from_ir(&ir, Some("resp_len")).expect("responses");
     assert_eq!(response["status"], "incomplete");
-    assert_eq!(response["incomplete_details"]["reason"], "max_output_tokens");
+    assert_eq!(
+        response["incomplete_details"]["reason"],
+        "max_output_tokens"
+    );
 }
 
 #[test]
@@ -834,7 +843,10 @@ fn anthropic_usage_maps_cache_tokens_and_malformed_usage_is_dropped() {
     assert_eq!(response["usage"]["input_tokens"], 12);
     assert_eq!(response["usage"]["output_tokens"], 2);
     assert_eq!(response["usage"]["total_tokens"], 14);
-    assert_eq!(response["usage"]["input_tokens_details"]["cached_tokens"], 5);
+    assert_eq!(
+        response["usage"]["input_tokens_details"]["cached_tokens"],
+        5
+    );
 
     let ir = anthropic_message_to_ir(&fixture("anthropic_upstream_usage_malformed")).expect("ir");
     assert!(
@@ -907,10 +919,7 @@ fn anthropic_sse_to_ir_to_responses_sse_text_chunks() {
             "response.completed",
         ]
     );
-    let joined = events
-        .iter()
-        .map(sse_frame)
-        .collect::<String>();
+    let joined = events.iter().map(sse_frame).collect::<String>();
     assert!(joined.contains("\"delta\":\"你\""));
     assert!(joined.contains("\"delta\":\"好\""));
     assert!(joined.contains("\"text\":\"你好\""));

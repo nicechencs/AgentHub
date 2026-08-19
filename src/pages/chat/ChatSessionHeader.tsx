@@ -7,7 +7,13 @@ import { Hint } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import type { AgentId, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { conversationTitle, cwdShortName } from './chat-model';
+import {
+  autoApproveActive,
+  autoApproveEffect,
+  autoApproveHint,
+  conversationTitle,
+  cwdShortName,
+} from './chat-model';
 
 export function ChatSessionHeader({
   active,
@@ -42,6 +48,8 @@ export function ChatSessionHeader({
   }, [editing]);
 
   const hasHidden = Boolean(active?.agentIds.some((id) => hiddenIds.has(id)));
+  const selectedAgent = active?.agentIds[0] ?? null;
+  const approveOn = autoApproveActive(Boolean(active?.allowDangerous), selectedAgent);
 
   async function commit() {
     if (cancelledRef.current) {
@@ -130,8 +138,8 @@ export function ChatSessionHeader({
               </span>
             </button>
           </Hint>
-          {active.allowDangerous && (
-            <Hint label="已跳过工具确认，仅在信任该目录时开启">
+          {approveOn && (
+            <Hint label={autoApproveHint(autoApproveEffect(selectedAgent))}>
               <button
                 type="button"
                 onClick={onOpenSettings}

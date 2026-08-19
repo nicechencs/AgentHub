@@ -134,10 +134,7 @@ fn native_uninstaller_specs(
         .collect()
 }
 
-fn require_contribution_key(
-    key: &AgentKey,
-    contribution: &dyn InstallContribution,
-) -> Result<()> {
+fn require_contribution_key(key: &AgentKey, contribution: &dyn InstallContribution) -> Result<()> {
     if contribution.agent_key() != *key {
         return Err(AppError::InvalidArg(format!(
             "install contribution key mismatch: expected {}, got {}",
@@ -566,7 +563,10 @@ fn install_runtime_inner(
         };
 
         let linux_copy_channel = cfg!(all(not(windows), not(target_os = "macos")))
-            && matches!(channel, "manual" | "apt" | "dnf" | "pacman" | "zypper" | "apk");
+            && matches!(
+                channel,
+                "manual" | "apt" | "dnf" | "pacman" | "zypper" | "apk"
+            );
         if channel == "manual" || linux_copy_channel {
             logs.push(format!(
                 "# install runtime {} via {channel} remediations (no package manager spawned)",
@@ -816,9 +816,13 @@ pub fn install_agent_with_contribution(
 
         let res = match channel.as_str() {
             "npm" => run_npm_install(contribution, agent.as_str(), false, executor, &mut logs)?,
-            "native" => {
-                run_native_install(contribution, agent.as_str(), Some(agent), executor, &mut logs)?
-            }
+            "native" => run_native_install(
+                contribution,
+                agent.as_str(),
+                Some(agent),
+                executor,
+                &mut logs,
+            )?,
             other => {
                 return Ok(InstallOutcome::failure(
                     action,
@@ -999,9 +1003,7 @@ pub fn install_from_contribution(
 
         let res = match channel.as_str() {
             "npm" => run_npm_install(contribution, key.as_str(), false, executor, &mut logs)?,
-            "native" => {
-                run_native_install(contribution, key.as_str(), None, executor, &mut logs)?
-            }
+            "native" => run_native_install(contribution, key.as_str(), None, executor, &mut logs)?,
             other => {
                 return Ok(InstallOutcome::failure(
                     action,
@@ -1125,7 +1127,13 @@ pub fn upgrade_agent_with_contribution(
 
         let res = match channel {
             "npm" => run_npm_install(contribution, agent.as_str(), true, executor, &mut logs)?,
-            _ => run_native_install(contribution, agent.as_str(), Some(agent), executor, &mut logs)?,
+            _ => run_native_install(
+                contribution,
+                agent.as_str(),
+                Some(agent),
+                executor,
+                &mut logs,
+            )?,
         };
         // A redetected old binary is not evidence that an upgrade succeeded:
         // setup-only channels (for example WorkBuddy) and failed installers
@@ -1648,9 +1656,7 @@ pub fn uninstall_from_contribution(
                 }
             }
             if !any_found {
-                logs.push(
-                    "no allowlisted native binary/uninstaller found for contribution".into(),
-                );
+                logs.push("no allowlisted native binary/uninstaller found for contribution".into());
             }
             removed_program = any_removed;
         }
@@ -1687,9 +1693,9 @@ fn run_npm_install(
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<ExecResult> {
-    let pkg = contribution.npm_package().ok_or_else(|| {
-        AppError::Unsupported(format!("{agent_label} 无 npm 安装包"))
-    })?;
+    let pkg = contribution
+        .npm_package()
+        .ok_or_else(|| AppError::Unsupported(format!("{agent_label} 无 npm 安装包")))?;
     let npm = resolve_bin(&["npm", "npm.cmd", "npm.exe"])?;
     let label = if upgrade { "upgrade" } else { "install" };
     let extra = contribution.npm_install_extra_flags();
@@ -1756,9 +1762,9 @@ fn run_native_setup_guide(
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<ExecResult> {
-    let url = contribution.native_setup_url().ok_or_else(|| {
-        AppError::Unsupported(format!("{agent_label} has no setup URL"))
-    })?;
+    let url = contribution
+        .native_setup_url()
+        .ok_or_else(|| AppError::Unsupported(format!("{agent_label} has no setup URL")))?;
     if !url.starts_with("https://") {
         return Err(AppError::InvalidArg("setup URL must be https".into()));
     }

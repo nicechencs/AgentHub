@@ -34,15 +34,6 @@ pub(crate) use crate::platform::skills::parse_skill_frontmatter;
 // Test prelude: `tests.rs` relies on `use super::*` seeing the former monolith imports.
 #[cfg(test)]
 #[allow(unused_imports)]
-use std::collections::{BTreeMap, HashMap, HashSet};
-#[cfg(test)]
-#[allow(unused_imports)]
-use std::fs;
-#[cfg(test)]
-#[allow(unused_imports)]
-use std::io::{self, Write};
-#[cfg(test)]
-#[allow(unused_imports)]
 use crate::models::{
     AgentId, Capability, InstalledSkill, SkillAction, SkillFailure, SkillLinkKind, SkillMapStatus,
     SkillMarkdownPreview, SkillProjectMode, SkillProjectResult, SkillProjection, SkillSourceRecord,
@@ -63,6 +54,15 @@ use crate::platform::AgentKey;
 #[cfg(test)]
 #[allow(unused_imports)]
 use crate::storage::SkillRepo;
+#[cfg(test)]
+#[allow(unused_imports)]
+use std::collections::{BTreeMap, HashMap, HashSet};
+#[cfg(test)]
+#[allow(unused_imports)]
+use std::fs;
+#[cfg(test)]
+#[allow(unused_imports)]
+use std::io::{self, Write};
 
 /// Cached `list()` snapshot keyed by a cheap filesystem fingerprint.
 pub(super) struct SkillListCache {

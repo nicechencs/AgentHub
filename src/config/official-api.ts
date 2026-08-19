@@ -98,6 +98,11 @@ export function officialApiDefaults(agentId: AgentId): OfficialApiDefaults | nul
   return OFFICIAL[agentId] ?? null;
 }
 
+/** Agents that have a real official URL/model template (Pi does not). */
+export function agentHasOfficialApiTemplate(agentId: AgentId): boolean {
+  return officialApiDefaults(agentId) != null;
+}
+
 /** 是否像官方 endpoint（用于旧数据推断） */
 export function looksLikeOfficialEndpoint(
   agentId: AgentId,

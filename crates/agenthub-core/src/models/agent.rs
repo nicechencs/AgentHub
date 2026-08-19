@@ -184,4 +184,16 @@ pub struct AuthState {
     /// Opaque revision of the live auth source (for change detection only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revision: Option<String>,
+    /// Other live credential families on disk besides [`Self::kind`].
+    /// Typical values: `oauth`, `api_key`. Empty when only one family exists.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub also_present: Vec<String>,
+}
+
+impl AuthState {
+    /// Mark additional live credential families without changing the winning `kind`.
+    pub fn with_also_present(mut self, kinds: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.also_present = kinds.into_iter().map(Into::into).collect();
+        self
+    }
 }
