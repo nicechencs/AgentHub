@@ -1380,3 +1380,94 @@ async fn kimi_chat_responses_with_reasoning_still_returns_responses_json() {
     host.stop("kimi-reasoning").await.expect("stop");
     upstream_task.abort();
 }
+
+#[tokio::test]
+async fn grok_chat_responses_with_hosted_tools_returns_responses_json() {
+    let (upstream_port, captured, upstream_task) = capturing_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_spec("grok-hosted-tools", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "input": "hello",
+            "tools": [
+                { "type": "web_search" },
+                { "type": "computer" },
+                { "type": "apply_patch" },
+                {
+                    "type": "function",
+                    "name": "lookup",
+                    "parameters": { "type": "object", "properties": {} }
+                }
+            ]
+        }))
+        .send()
+        .await
+        .expect("responses request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("responses json");
+    assert_ne!(
+        body["error"]["code"], "unsupported_tool",
+        "Codex hosted tools must not fail Grok 本机路由"
+    );
+    assert_ne!(body["error"]["code"], "unsupported_web_search");
+    assert_ne!(body["error"]["code"], "unsupported_computer_use");
+    assert_eq!(body["object"], "response");
+    assert_eq!(body["output"][0]["content"][0]["text"], "hello");
+
+    let upstream_bodies = captured.lock().expect("lock captured bodies").clone();
+    assert_eq!(upstream_bodies.len(), 1);
+    let tools = upstream_bodies[0]["tools"]
+        .as_array()
+        .expect("function tools forwarded");
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0]["type"], "function");
+    assert_eq!(tools[0]["function"]["name"], "lookup");
+    assert_eq!(upstream_bodies[0]["messages"][0]["content"], "hello");
+
+    host.stop("grok-hosted-tools").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn grok_chat_responses_hosted_tools_only_still_returns_responses_json() {
+    let (upstream_port, captured, upstream_task) = capturing_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_spec("grok-hosted-only", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "input": "hello",
+            "tools": [
+                { "type": "web_search" },
+                { "type": "apply_patch" }
+            ]
+        }))
+        .send()
+        .await
+        .expect("responses request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("responses json");
+    assert_ne!(body["error"]["code"], "unsupported_tool");
+    assert_eq!(body["object"], "response");
+    assert_eq!(body["output"][0]["content"][0]["text"], "hello");
+
+    let upstream_bodies = captured.lock().expect("lock captured bodies").clone();
+    assert_eq!(upstream_bodies.len(), 1);
+    assert!(upstream_bodies[0].get("tools").is_none());
+
+    host.stop("grok-hosted-only").await.expect("stop");
+    upstream_task.abort();
+}

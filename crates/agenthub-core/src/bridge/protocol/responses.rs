@@ -11,8 +11,10 @@ use crate::bridge::types::{
 
 /// Parse the subset of `POST /v1/responses` that this bridge can faithfully represent.
 ///
-/// Unsupported multimodal and hosted-tool inputs fail closed.  This is intentional: sending
-/// a text-only approximation would make it look as if the model saw data it never received.
+/// Unsupported multimodal inputs fail closed: a text-only approximation would make
+/// it look as if the model saw data it never received. Hosted tool types that Chat
+/// Completions cannot take (web_search, computer, apply_patch, ...) are dropped so
+/// Codex Chat still completes; function tools keep translating.
 pub fn parse_responses_request(value: &Value) -> ProtocolResult<BridgeRequest> {
     let object = value
         .as_object()
@@ -1724,15 +1726,10 @@ fn parse_tools(value: Option<&Value>) -> ProtocolResult<Vec<BridgeTool>> {
             .ok_or_else(|| ProtocolError::invalid_request("Every tool must be an object."))?;
         let kind = required_string(object, "type", "Every tool requires a type.")?;
         if kind != "function" {
-            let code = match kind.as_str() {
-                "web_search" | "web_search_preview" => "unsupported_web_search",
-                "computer_use" | "computer" => "unsupported_computer_use",
-                _ => "unsupported_tool",
-            };
-            return Err(ProtocolError::unsupported(
-                code,
-                "This hosted tool type is not supported by this bridge.",
-            ));
+            // Codex sends hosted tools (web_search, computer, apply_patch, ...)
+            // that xAI/Kimi Chat Completions cannot take. Drop them instead of
+            // failing the request so Grok->Codex Chat still completes.
+            continue;
         }
         let parameters = object
             .get("parameters")
@@ -1773,10 +1770,9 @@ fn parse_tool_choice(value: Option<&Value>) -> ProtocolResult<Option<ToolChoice>
         },
         Value::Object(object) => {
             if object.get("type").and_then(Value::as_str) != Some("function") {
-                return Err(ProtocolError::unsupported(
-                    "unsupported_tool_choice",
-                    "Only function tool choice is supported by this bridge.",
-                ));
+                // Hosted tool_choice has nothing to bind after hosted tools are
+                // dropped. Ignore it so the request still completes.
+                return Ok(None);
             }
             let name = object
                 .get("name")
