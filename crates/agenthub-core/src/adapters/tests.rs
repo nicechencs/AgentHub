@@ -1304,9 +1304,29 @@ fn print_resume_flags_match_official_cli() {
         .build_run_spec(std::path::Path::new("codex"), "hi", &opts)
         .unwrap();
     assert_eq!(codex.args[0], "exec");
-    assert_eq!(codex.args[1], "resume");
-    assert_eq!(codex.args[2], "sess-1");
+    assert_eq!(codex.args[1], "--skip-git-repo-check");
+    assert_eq!(codex.args[2], "resume");
+    assert_eq!(codex.args[3], "sess-1");
     assert!(codex.args.contains(&"--json".into()));
     assert!(codex.args.contains(&"--dangerously-bypass-approvals-and-sandbox".into()));
     assert_eq!(codex.args.last().map(String::as_str), Some("hi"));
+}
+
+#[test]
+fn codex_chat_run_spec_skips_git_repo_trust_check() {
+    let spec = register_all()
+        .get(AgentId::Codex)
+        .unwrap()
+        .build_run_spec(
+            std::path::Path::new("codex"),
+            "ping",
+            &crate::models::RunOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(spec.args[0], "exec");
+    assert!(
+        spec.args.contains(&"--skip-git-repo-check".into()),
+        "AgentHub Chat workdirs are often not trusted git repos: {spec:?}"
+    );
+    assert_eq!(spec.args.last().map(String::as_str), Some("ping"));
 }

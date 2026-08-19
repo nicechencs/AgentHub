@@ -712,6 +712,22 @@ describe('plan 预览人话化', () => {
     }
   });
 
+  it('Grok→Codex local_bridge 用 Codex 展示名而不是 raw id', () => {
+    const view = describePlanPreview(plan({
+      targetAgentId: 'codex',
+      analysis: analysis({
+        route: 'local_bridge',
+        support: 'experimental',
+        reason: 'Grok 登录会经本机路由接到 Codex。',
+      }),
+      reusePath: 'local_bridge',
+      serviceImpact: 'requires_local_bridge',
+    }));
+    expect(view.title).toBe('本机路由');
+    expect(view.reason).toBe('用这份 Grok 登录接到 Codex。');
+    expect(view.reason).not.toMatch(/接到 codex/);
+  });
+
   it('renders native subscription reuse as a single human note', () => {
     const view = describePlanPreview(plan({
       analysis: analysis({

@@ -214,7 +214,11 @@ impl AgentAdapter for CodexAdapter {
     fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec> {
         // text: codex exec <prompt>
         // structured (Chat): codex exec --json <prompt>  → JSONL process events
-        let mut args = vec!["exec".into()];
+        // AgentHub Chat chooses the workdir (often not a trusted git repo).
+        // Pass Codex's trust skip only on this AgentHub-managed spawn so a
+        // user-picked folder works. Does not change `codex` invoked outside
+        // AgentHub.
+        let mut args = vec!["exec".into(), "--skip-git-repo-check".into()];
         if let Some(sid) = opts
             .native_session_id
             .as_deref()
