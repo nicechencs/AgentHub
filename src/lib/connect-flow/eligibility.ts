@@ -115,9 +115,9 @@ function viaAdapterForProvider(
 
 export function planMaturityLabel(maturity: AdapterMaturity | undefined): string {
   if (maturity === 'stable') return '稳定';
-  if (maturity === 'experimental') return '实验';
+  if (maturity === 'experimental') return '';
   if (maturity === 'preview') return '可预览';
-  if (maturity === 'none') return '无边';
+  if (maturity === 'none') return '';
   return '';
 }
 

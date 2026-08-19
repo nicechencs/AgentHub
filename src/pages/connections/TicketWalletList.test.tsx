@@ -313,7 +313,7 @@ describe('TicketDetailPanel', () => {
     const markup = renderWithTooltip(
       createElement(TicketDetailPanel, {
         id: 'oauth-detail',
-        advanced: [{ label: '登录状态', value: '可续期，尚未验证' }],
+        advanced: [{ label: '登录状态', value: '可续期' }],
         bindings: [],
         extras: { authLabel: '可续期·未验证' },
         onDelete() {},
@@ -321,8 +321,10 @@ describe('TicketDetailPanel', () => {
     );
     expect(markup).toContain('用在哪');
     expect(markup).toContain('还没接到任何工具');
-    expect(markup).toContain('可续期，尚未验证');
+    expect(markup).toContain('可续期');
+    expect(markup).not.toContain('尚未验证');
     expect(markup).not.toContain('可续期·未验证');
+    expect(markup).not.toContain('未验证');
     expect(markup).not.toContain('未绑定任何 Agent');
     expect(markup).not.toContain('编辑密钥');
     expect(markup).not.toContain('编辑配置');
