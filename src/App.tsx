@@ -1,5 +1,5 @@
-import { useCallback, useRef } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { useCallback, useEffect, useRef } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { SidebarProvider } from '@/components/layout/SidebarContext';
 import { TopBar } from '@/components/layout/TopBar';
@@ -15,6 +15,7 @@ import SkillsPage from '@/pages/skills';
 import McpPage from '@/pages/mcp';
 import ProjectsPage from '@/pages/projects';
 import SettingsPage from '@/pages/settings';
+import { onTrayNavigate } from '@/lib/backend/tauri/tray-events';
 import { legacyBridgesRedirectTo } from '@/lib/bridges-path';
 import {
   checkForUpdate,
@@ -51,11 +52,30 @@ function LegacyBackupsRedirect() {
 
 export default function App() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const isChat = pathname === '/chat';
   /** 技能页需左右分栏铺满主区，不受 max-w-content 限制 */
   const isSkills = pathname === '/skills';
   const fullBleed = isChat || isSkills;
   const updateHandleRef = useRef<UpdatePromptHandle | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
+    void onTrayNavigate((path) => {
+      navigate(path);
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+        return;
+      }
+      unsub = fn;
+    });
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, [navigate]);
 
   const onUpdateReady = useCallback((handle: UpdatePromptHandle) => {
     updateHandleRef.current = handle;

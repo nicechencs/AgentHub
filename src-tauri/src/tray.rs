@@ -1,13 +1,17 @@
-//! System tray: show main window / quit.
+//! System tray: show / open routes / start-stop local bridges / quit.
 //! Paired with single-instance focus and optional close-to-tray hide.
 
+use agenthub_core::adapter_control::AdapterControl;
+use agenthub_core::models::{AdapterProfileFilter, AdapterRoute};
+use serde::Serialize;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, Runtime,
+    AppHandle, Emitter, Manager, Runtime,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
+use crate::commands::{map_err_string, with_hub_blocking};
 use crate::exit_coordinator::{
     exit_impact_action, CoordinatedShutdownAction, ExitImpactAction, ExitImpactChoice,
     ExitPreparation,
@@ -16,14 +20,29 @@ use crate::state::AppState;
 
 const TRAY_ID: &str = "main";
 pub(crate) const MENU_SHOW: &str = "tray-show";
+pub(crate) const MENU_OPEN_ROUTES: &str = "tray-open-routes";
+pub(crate) const MENU_START_ROUTES: &str = "tray-start-routes";
+pub(crate) const MENU_STOP_ROUTES: &str = "tray-stop-routes";
 pub(crate) const MENU_QUIT: &str = "tray-quit";
+
+const TRAY_NAVIGATE_EVENT: &str = "tray-navigate";
+const TRAY_NAVIGATE_PATH: &str = "/routes";
 
 /// Pure menu-id → action mapping (unit-tested).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TrayMenuAction {
     Show,
+    OpenRoutes,
+    StartRoutes,
+    StopRoutes,
     Quit,
     Ignore,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrayNavigatePayload {
+    path: &'static str,
 }
 
 /// How a user-originated exit request was handled.  Window-close handling uses
@@ -42,9 +61,24 @@ pub(crate) enum ExitRequestDisposition {
 pub(crate) fn tray_menu_action(id: &str) -> TrayMenuAction {
     match id {
         MENU_SHOW => TrayMenuAction::Show,
+        MENU_OPEN_ROUTES => TrayMenuAction::OpenRoutes,
+        MENU_START_ROUTES => TrayMenuAction::StartRoutes,
+        MENU_STOP_ROUTES => TrayMenuAction::StopRoutes,
         MENU_QUIT => TrayMenuAction::Quit,
         _ => TrayMenuAction::Ignore,
     }
+}
+
+/// `(profile_id, running)` → ids to start (not running) or stop (running).
+pub(crate) fn tray_bridge_batch_ids<'a>(
+    profiles: impl IntoIterator<Item = (&'a str, bool)>,
+    start: bool,
+) -> Vec<String> {
+    profiles
+        .into_iter()
+        .filter(|(_, running)| if start { !*running } else { *running })
+        .map(|(id, _)| id.to_owned())
+        .collect()
 }
 
 /// Whether a tray click should surface the main window.
@@ -215,11 +249,122 @@ fn apply_exit_impact_choice<R: Runtime>(
     }
 }
 
+fn emit_tray_navigate<R: Runtime>(app: &AppHandle<R>) {
+    if let Err(error) = app.emit(
+        TRAY_NAVIGATE_EVENT,
+        &TrayNavigatePayload {
+            path: TRAY_NAVIGATE_PATH,
+        },
+    ) {
+        tracing::warn!(
+            target: "gui",
+            op = "tray_navigate",
+            error = %error,
+            "emit tray-navigate failed"
+        );
+    }
+}
+
+fn spawn_tray_bridge_batch<R: Runtime>(app: AppHandle<R>, start: bool) {
+    tauri::async_runtime::spawn(async move {
+        // Extract owned handles before any `.await` — Tauri `State` is not Send.
+        let extracted = app.try_state::<AppState>().and_then(|state| {
+            Some((
+                state.hub_arc().ok()?,
+                state.bridge_host(),
+                state.adapter_control().ok()?,
+            ))
+        });
+        let Some((hub, host, control)) = extracted else {
+            tracing::warn!(
+                target: "gui",
+                op = "tray_routes",
+                "tray start/stop ignored because application state is unavailable"
+            );
+            return;
+        };
+
+        let profiles = match with_hub_blocking(hub, move |hub| {
+            hub.adapter_apply
+                .list_filtered(&AdapterProfileFilter {
+                    route: Some(AdapterRoute::LocalBridge),
+                    ..AdapterProfileFilter::default()
+                })
+                .map_err(|err| map_err_string("tray_list_local_bridges", err))
+        })
+        .await
+        {
+            Ok(profiles) => profiles,
+            Err(error) => {
+                tracing::warn!(
+                    target: "gui",
+                    op = "tray_routes",
+                    error = %error,
+                    "tray list local bridges failed"
+                );
+                return;
+            }
+        };
+
+        if profiles.is_empty() {
+            tracing::info!(
+                target: "gui",
+                op = "tray_routes",
+                start,
+                "no local bridge profiles; tray start/stop is a no-op"
+            );
+            return;
+        }
+
+        let ids = tray_bridge_batch_ids(
+            profiles.iter().map(|profile| {
+                let running = host
+                    .status(&profile.id)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|status| status.running);
+                (profile.id.as_str(), running)
+            }),
+            start,
+        );
+
+        for id in ids {
+            let result = if start {
+                control.start_bridge(id.clone()).await
+            } else {
+                control.stop_bridge(id.clone()).await
+            };
+            if let Err(error) = result {
+                tracing::warn!(
+                    target: "gui",
+                    op = "tray_routes",
+                    profile_id = %id,
+                    start,
+                    error = %error,
+                    "tray bridge batch item failed"
+                );
+            }
+        }
+    });
+}
+
 /// Create the tray icon with context menu. Call once from app setup.
 pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let show_i = MenuItem::with_id(app, MENU_SHOW, "打开 AgentHub", true, None::<&str>)?;
+    let open_routes_i = MenuItem::with_id(app, MENU_OPEN_ROUTES, "打开路由", true, None::<&str>)?;
+    let start_routes_i = MenuItem::with_id(app, MENU_START_ROUTES, "启动路由", true, None::<&str>)?;
+    let stop_routes_i = MenuItem::with_id(app, MENU_STOP_ROUTES, "停止路由", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app, MENU_QUIT, "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &show_i,
+            &open_routes_i,
+            &start_routes_i,
+            &stop_routes_i,
+            &quit_i,
+        ],
+    )?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
@@ -228,6 +373,12 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match tray_menu_action(event.id.as_ref()) {
             TrayMenuAction::Show => show_main_window(app),
+            TrayMenuAction::OpenRoutes => {
+                show_main_window(app);
+                emit_tray_navigate(app);
+            }
+            TrayMenuAction::StartRoutes => spawn_tray_bridge_batch(app.clone(), true),
+            TrayMenuAction::StopRoutes => spawn_tray_bridge_batch(app.clone(), false),
             TrayMenuAction::Quit => {
                 let _ = request_app_exit(app);
             }
@@ -266,9 +417,62 @@ mod tests {
     #[test]
     fn tray_menu_ids_map_to_actions() {
         assert_eq!(tray_menu_action(MENU_SHOW), TrayMenuAction::Show);
+        assert_eq!(
+            tray_menu_action(MENU_OPEN_ROUTES),
+            TrayMenuAction::OpenRoutes
+        );
+        assert_eq!(
+            tray_menu_action(MENU_START_ROUTES),
+            TrayMenuAction::StartRoutes
+        );
+        assert_eq!(
+            tray_menu_action(MENU_STOP_ROUTES),
+            TrayMenuAction::StopRoutes
+        );
         assert_eq!(tray_menu_action(MENU_QUIT), TrayMenuAction::Quit);
         assert_eq!(tray_menu_action("unknown"), TrayMenuAction::Ignore);
         assert_eq!(tray_menu_action(""), TrayMenuAction::Ignore);
+    }
+
+    #[test]
+    fn tray_bridge_batch_ids_empty() {
+        let none: [(&str, bool); 0] = [];
+        assert!(tray_bridge_batch_ids(none, true).is_empty());
+        assert!(tray_bridge_batch_ids(none, false).is_empty());
+    }
+
+    #[test]
+    fn tray_bridge_batch_ids_one_stopped_start() {
+        assert_eq!(
+            tray_bridge_batch_ids([("p1", false)], true),
+            vec!["p1".to_owned()]
+        );
+    }
+
+    #[test]
+    fn tray_bridge_batch_ids_one_running_start() {
+        assert!(tray_bridge_batch_ids([("p1", true)], true).is_empty());
+    }
+
+    #[test]
+    fn tray_bridge_batch_ids_one_running_stop() {
+        assert_eq!(
+            tray_bridge_batch_ids([("p1", true)], false),
+            vec!["p1".to_owned()]
+        );
+    }
+
+    #[test]
+    fn tray_bridge_batch_ids_mixed_only_matching() {
+        let profiles = [("a", false), ("b", true), ("c", false), ("d", true)];
+        assert_eq!(
+            tray_bridge_batch_ids(profiles, true),
+            vec!["a".to_owned(), "c".to_owned()]
+        );
+        assert_eq!(
+            tray_bridge_batch_ids(profiles, false),
+            vec!["b".to_owned(), "d".to_owned()]
+        );
     }
 
     #[test]
