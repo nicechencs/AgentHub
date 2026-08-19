@@ -88,6 +88,7 @@ pub fn encode_anthropic_sse(events: &[IrEvent]) -> ProtocolResult<Vec<String>> {
         output_tokens: 0,
         total_tokens: 0,
         cached_input_tokens: None,
+        reasoning_tokens: 0,
     };
     let mut saw_message_start = false;
     let mut saw_message_end = false;
@@ -324,6 +325,7 @@ pub fn encode_anthropic_message(events: &[IrEvent]) -> ProtocolResult<Value> {
                     output_tokens: *output_tokens,
                     total_tokens: input_tokens.saturating_add(*output_tokens),
                     cached_input_tokens: *cached_input_tokens,
+                    reasoning_tokens: 0,
                 };
             }
             IrEvent::MessageEnd {

@@ -711,9 +711,13 @@ fn response_object(
     );
     response.insert(
         "usage".to_owned(),
-        usage
-            .map(|usage| usage.to_responses_json())
-            .unwrap_or(Value::Null),
+        if completed {
+            Usage::completed_responses_json(usage.as_ref())
+        } else {
+            usage
+                .map(|usage| usage.to_responses_json())
+                .unwrap_or(Value::Null)
+        },
     );
     Value::Object(response)
 }

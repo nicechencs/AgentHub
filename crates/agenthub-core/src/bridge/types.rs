@@ -146,6 +146,9 @@ pub struct Usage {
     pub total_tokens: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_input_tokens: Option<u64>,
+    /// Codex ResponseCompleted requires this field (0 if the upstream omitted it).
+    #[serde(default)]
+    pub reasoning_tokens: u64,
 }
 
 impl Usage {
@@ -175,22 +178,44 @@ impl Usage {
             output_tokens,
             total_tokens,
             cached_input_tokens,
+            reasoning_tokens: usage_reasoning_tokens(object),
         })
     }
 
     pub fn to_responses_json(&self) -> Value {
-        let mut input_tokens_details = Map::new();
-        if let Some(cached_tokens) = self.cached_input_tokens {
-            input_tokens_details.insert("cached_tokens".to_owned(), Value::from(cached_tokens));
-        }
         serde_json::json!({
             "input_tokens": self.input_tokens,
-            "input_tokens_details": Value::Object(input_tokens_details),
+            "input_tokens_details": {
+                "cached_tokens": self.cached_input_tokens.unwrap_or(0),
+            },
             "output_tokens": self.output_tokens,
-            "output_tokens_details": {},
+            "output_tokens_details": {
+                "reasoning_tokens": self.reasoning_tokens,
+            },
             "total_tokens": self.total_tokens,
+            "reasoning_tokens": self.reasoning_tokens,
         })
     }
+
+    /// Completed Responses objects always carry usage so Codex can parse reasoning_tokens.
+    pub fn completed_responses_json(usage: Option<&Self>) -> Value {
+        usage.cloned().unwrap_or_default().to_responses_json()
+    }
+}
+
+fn usage_reasoning_tokens(object: &Map<String, Value>) -> u64 {
+    object
+        .get("reasoning_tokens")
+        .and_then(Value::as_u64)
+        .or_else(|| {
+            object
+                .get("output_tokens_details")
+                .or_else(|| object.get("completion_tokens_details"))
+                .and_then(Value::as_object)
+                .and_then(|details| details.get("reasoning_tokens"))
+                .and_then(Value::as_u64)
+        })
+        .unwrap_or(0)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -663,6 +688,7 @@ impl Usage {
             output_tokens,
             total_tokens: input_tokens.saturating_add(output_tokens),
             cached_input_tokens,
+            reasoning_tokens: 0,
         })
     }
 
@@ -687,6 +713,7 @@ impl Usage {
             output_tokens,
             total_tokens,
             cached_input_tokens,
+            reasoning_tokens: usage_reasoning_tokens(object),
         })
     }
 }
