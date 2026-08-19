@@ -73,6 +73,7 @@ async fn apply_local_bridge_locked(
     // live config only).
     force_switch_current: bool,
 ) -> Result<AdapterApplyResult, String> {
+    let target_agent_id = request.target_agent_id;
     let prepared = with_hub_blocking(hub.clone(), move |hub| {
         hub.adapter_bridge
             .prepare(&request)
@@ -161,7 +162,7 @@ async fn apply_local_bridge_locked(
             } else {
                 mark_needs_attention(hub, &profile_id, "adapter.bridge_rollback").await;
             }
-            Err(error)
+            Err(map_bridge_apply_error(&error, target_agent_id))
         }
     }
 }
@@ -904,6 +905,20 @@ fn map_bridge_host_error(error: BridgeHostError) -> String {
     // Host error implementations intentionally contain no bearer; still use a
     // stable GUI-facing code and do not serialize the Debug representation.
     format!("本机路由无法启动或停止 [{CODE_BRIDGE_START}]: {error}")
+}
+
+/// Replace the raw English resolver failure with a Chinese sentence the
+/// Connections confirm dialog can show. Other apply errors pass through.
+fn map_bridge_apply_error(error: &str, target_agent: AgentId) -> String {
+    if !error.contains("invalid adapter secret reference") {
+        return error.to_owned();
+    }
+    let message = if target_agent == AgentId::Claude {
+        "这份 Grok 登录没法解析成 Claude 路由要用的密钥"
+    } else {
+        "这份登录没法解析成目标路由要用的密钥"
+    };
+    format!("{message} [invalid_arg]")
 }
 
 #[cfg(test)]
