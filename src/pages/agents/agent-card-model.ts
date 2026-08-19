@@ -1,4 +1,17 @@
 import type { InstallChannelMeta } from '@/config/agents';
+import { handleMenuDialogSelect } from '@/pages/connections/ticket-wallet-model';
+
+export type AgentCardUninstallConfirmKind = 'program' | 'config';
+
+/** Same menu→Dialog path as Connections add-menu: preventDefault, arm, open, clear. */
+export function openAgentCardUninstallConfirm(
+  event: { preventDefault: () => void },
+  kind: AgentCardUninstallConfirmKind,
+  setConfirmDialog: (kind: AgentCardUninstallConfirmKind) => void,
+  ignoreRef: { current: boolean },
+): void {
+  handleMenuDialogSelect(event, ignoreRef, () => setConfirmDialog(kind));
+}
 
 export function resolveOfficialSetupUrl(
   updateSetupUrl: string | undefined,
