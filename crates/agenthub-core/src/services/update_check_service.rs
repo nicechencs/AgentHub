@@ -192,6 +192,9 @@ fn check_one(
         remote.source.clone(),
         remote.checked_at,
     );
+    if let Some(note) = node_too_old_update_note(agent, &detect.notes, &info) {
+        info.note = Some(note);
+    }
 
     // Annotate non-npm installs: remote probe source may differ from install channel.
     if channel != "npm" {
@@ -317,6 +320,37 @@ fn resolve_official_probe(
     })
 }
 
+const MISSING_LOCAL_VERSION_NOTE: &str = "已安装但未读到本机版本号";
+
+/// When Pi is installed but Node is too old, do not pretend the version
+/// string was merely unread — the CLI crashed on Node 20 (undici CacheStorage).
+fn node_too_old_update_note(
+    agent: AgentId,
+    detect_notes: &[String],
+    info: &AgentUpdateInfo,
+) -> Option<String> {
+    if agent != AgentId::Pi {
+        return None;
+    }
+    let current_missing = info
+        .current_version
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .is_none();
+    if !current_missing {
+        return None;
+    }
+    let node_too_old = detect_notes
+        .iter()
+        .any(|n| n.to_ascii_lowercase().contains("node too old"));
+    if node_too_old {
+        Some(crate::runtime::PI_NODE_TOO_OLD_NOTE.into())
+    } else {
+        None
+    }
+}
+
 fn compare_versions(
     agent: AgentId,
     current: Option<String>,
@@ -332,7 +366,7 @@ fn compare_versions(
             latest_version: Some(latest),
             source: Some(source),
             checked_at: Some(checked_at),
-            note: Some("已安装但未读到本机版本号".into()),
+            note: Some(MISSING_LOCAL_VERSION_NOTE.into()),
             setup_url: None,
         };
     };
@@ -982,5 +1016,40 @@ mod tests {
             .keys()
             .any(|k| k.contains("@anthropic-ai/claude-code")));
         assert!(loaded.entries.contains_key("@other/pkg"));
+    }
+
+    #[test]
+    fn missing_local_version_keeps_unread_note() {
+        let info = compare_versions(
+            AgentId::Codex,
+            None,
+            "1.2.3".into(),
+            "npm".into(),
+            Utc::now().to_rfc3339(),
+        );
+        assert_eq!(info.state, AgentUpdateState::Unknown);
+        assert_eq!(info.note.as_deref(), Some(MISSING_LOCAL_VERSION_NOTE));
+        assert!(node_too_old_update_note(AgentId::Codex, &[], &info).is_none());
+    }
+
+    #[test]
+    fn missing_local_version_pi_node_too_old_overrides_unread_note() {
+        let info = compare_versions(
+            AgentId::Pi,
+            None,
+            "0.83.0".into(),
+            "npm".into(),
+            Utc::now().to_rfc3339(),
+        );
+        assert_eq!(info.note.as_deref(), Some(MISSING_LOCAL_VERSION_NOTE));
+        let note = node_too_old_update_note(
+            AgentId::Pi,
+            &[crate::runtime::PI_NODE_TOO_OLD_NOTE.into()],
+            &info,
+        )
+        .expect("pi node-too-old note");
+        assert!(note.contains("Node too old"));
+        assert!(!note.contains(MISSING_LOCAL_VERSION_NOTE));
+        assert!(node_too_old_update_note(AgentId::Pi, &[], &info).is_none());
     }
 }

@@ -18,6 +18,26 @@ pub(crate) fn detect_binary(
     channel_hint: Option<&str>,
     env_ready: bool,
 ) -> DetectResult {
+    detect_binary_with_env(
+        agent,
+        candidates,
+        version_args,
+        channel_hint,
+        env_ready,
+        &[],
+    )
+}
+
+/// Same as [`detect_binary`], with extra child env for the version probe
+/// (Pi prefixes PATH with a Node 22 bin dir).
+pub(crate) fn detect_binary_with_env(
+    agent: AgentId,
+    candidates: &[&str],
+    version_args: &[&str],
+    channel_hint: Option<&str>,
+    env_ready: bool,
+    extra_env: &[(String, String)],
+) -> DetectResult {
     use crate::models::DetectStatus;
     use which::which;
 
@@ -50,6 +70,7 @@ pub(crate) fn detect_binary(
                 Some(channel.as_str()),
                 env_ready,
                 false,
+                extra_env,
             );
         }
     }
@@ -68,7 +89,15 @@ pub(crate) fn detect_binary(
                 path = %path.display(),
                 "agent binary found outside process PATH (well-known dir); restart may refresh PATH"
             );
-            return finish_detect(agent, path, version_args, Some(channel), env_ready, true);
+            return finish_detect(
+                agent,
+                path,
+                version_args,
+                Some(channel),
+                env_ready,
+                true,
+                extra_env,
+            );
         }
     }
 
@@ -399,9 +428,10 @@ fn finish_detect(
     channel_hint: Option<&str>,
     env_ready: bool,
     via_well_known: bool,
+    extra_env: &[(String, String)],
 ) -> DetectResult {
     use crate::models::DetectStatus;
-    use crate::utils::process::{run_capture, stdout_first_line};
+    use crate::utils::process::{run_capture_with_env, stdout_first_line};
 
     let mut notes = Vec::new();
     if via_well_known {
@@ -412,7 +442,7 @@ fn finish_detect(
         ));
     }
 
-    let version = match run_capture(&path, version_args) {
+    let version = match run_capture_with_env(&path, version_args, extra_env) {
         Ok(o) => {
             if o.status.success() {
                 stdout_first_line(&o)

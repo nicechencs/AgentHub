@@ -63,8 +63,11 @@ pub const PROJECT_SCAN_BYTES: u64 = 256 * 1024;
 
 // --- Runtime / logging / GUI ---
 
-/// Minimum supported Node.js major version.
+/// Minimum supported Node.js major version for shared doctor / package install.
+/// Do not raise this for Pi — Pi's `engines.node` is handled separately.
 pub const NODE_MIN_MAJOR: u64 = 18;
+/// Pi CLI `engines.node` floor (`>=22.19.0`). Probe + Chat must use this Node.
+pub const PI_NODE_MIN_MAJOR: u64 = 22;
 /// Default log file retention days.
 pub const DEFAULT_LOG_RETENTION_DAYS: u32 = 14;
 /// Default foreground usage collect interval (minutes). `0` = manual only.
