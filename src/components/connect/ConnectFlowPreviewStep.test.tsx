@@ -50,7 +50,7 @@ function previewState(): ConnectFlowState {
   });
 }
 
-const FOOTER = '去 Connections 导入';
+const FOOTER = '去连接页导入';
 const BANNED_PREVIEW_COPY = [
   '请保持 AgentHub',
   '只连这台电脑',

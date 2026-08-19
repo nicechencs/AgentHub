@@ -224,10 +224,10 @@ export function buildAgentCardView(
     ariaLabel += viaAdapter.sourceLabel
       ? t
         ? t('dashboard.overview.ariaViaSource', { source: viaAdapter.sourceLabel })
-        : `，经兼容路由 · ${viaAdapter.sourceLabel}`
+        : `，本机路由 · ${viaAdapter.sourceLabel}`
       : t
         ? t('dashboard.overview.ariaVia')
-        : '，经兼容路由';
+        : '，本机路由';
   }
   if (binding) {
     ariaLabel += t

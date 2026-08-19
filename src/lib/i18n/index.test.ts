@@ -67,6 +67,13 @@ describe('translate / interpolate', () => {
     expect(translate('zh', 'common.save')).toBe('保存');
     const t = createTranslator('en');
     expect(t('nav.routes')).toBe('Routes');
+    const zhNav = createTranslator('zh');
+    expect(zhNav('nav.dashboard')).toBe('总览');
+    expect(zhNav('nav.connections')).toBe('连接');
+    expect(zhNav('nav.routes')).toBe('本机路由');
+    expect(zhNav('nav.settings')).toBe('设置');
+    expect(zhNav('nav.chat')).toBe('Chat');
+    expect(zhNav('nav.agents')).toBe('Agents');
   });
 });
 

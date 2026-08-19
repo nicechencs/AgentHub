@@ -19,6 +19,21 @@ function fingerprint(alert: Omit<DashboardAlert, 'id'> & { id: string }): string
   return `${alert.level}|${alert.message}|${alert.actionKind}`;
 }
 
+function isUsefulConnectionLabel(value: string | undefined): boolean {
+  const label = value?.trim();
+  if (!label) return false;
+  return label !== '未配置' && label.toLowerCase() !== 'not configured';
+}
+
+/** Pool/route already configured — do not treat live probe authStatus none as empty. */
+function hasConfiguredConnection(a: AgentStatus): boolean {
+  if (a.effectiveKind === 'account' || a.effectiveKind === 'api') return true;
+  if (isUsefulConnectionLabel(a.effectiveLabel) || isUsefulConnectionLabel(a.currentProvider)) {
+    return true;
+  }
+  return a.authHealth === 'configured' || a.authHealth === 'renewable' || a.authHealth === 'verified';
+}
+
 function loadDismissed(): DismissMap {
   return loadJson<DismissMap>(DISMISS_KEY, {});
 }
@@ -53,7 +68,7 @@ export function buildAlertsFromAgents(agents: AgentStatus[]): DashboardAlert[] {
         actionKind: 'refresh-token',
         agentId: a.agentId,
       });
-    } else if (a.installed && a.authStatus === 'none') {
+    } else if (a.installed && a.authStatus === 'none' && !hasConfiguredConnection(a)) {
       out.push({
         id: `auth-none:${a.agentId}`,
         level: 'info',

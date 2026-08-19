@@ -244,7 +244,7 @@ export default function DashboardPage() {
     void loadWallet();
   }, [loadWallet]);
 
-  /** 生效 provider 命中 adapter 生成投影 → 「经兼容路由」徽标（profile 联结，不读 provider.meta） */
+  /** 生效 provider 命中 adapter 生成投影 → 「本机路由」徽标（profile 联结，不读 provider.meta） */
   const adapterBadgeHits = useMemo(() => {
     const hits = new Map<AgentId, { profile: AdapterProfile; sourceLabel?: string }>();
     if (profiles.length === 0) return hits;

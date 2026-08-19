@@ -44,7 +44,6 @@ export const createBackend: CreateBackend = () => {
     settings: createTauriSettingsPort(),
     skill: createTauriSkillPort(),
     usage: createTauriUsagePort(),
-    dashboard: createTauriDashboardPort(),
     doctor: createTauriDoctorPort(),
     install: createTauriInstallPort(),
     update: createTauriUpdatePort(),
@@ -54,6 +53,7 @@ export const createBackend: CreateBackend = () => {
 
   backend.env = createTauriEnvPort(backend);
   backend.agent = createTauriAgentPort(backend);
+  backend.dashboard = createTauriDashboardPort(backend);
   return backend;
 };
 

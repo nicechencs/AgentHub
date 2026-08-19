@@ -17,7 +17,11 @@ import { useAgentStatusesOptional } from '@/app/runtime';
 import { useConnectionPool } from '@/app/runtime/ConnectionPoolProvider';
 import { AGENT_IDS, agentDisplayName } from '@/config/agents';
 import { hiddenAgentIdSet } from '@/lib/agent-visibility';
-import { resolveEffectiveConnection } from '@/lib/api/agent-connection';
+import {
+  formatLocalRouteLabel,
+  isInternalGeneratedProvider,
+  resolveEffectiveConnection,
+} from '@/lib/api/agent-connection';
 import type { AdapterProfile } from '@/lib/api/adapter';
 import { buildConnectionsGuideUrl } from '@/lib/connect-flow/connect-intent';
 import type { AgentId } from '@/lib/types';
@@ -260,7 +264,27 @@ export function ConnectFlowDialog({
   const currentProvider = targetId
     ? pool.providers.find((item) => item.agentId === targetId && item.isCurrent)
     : undefined;
-  const effective = resolveEffectiveConnection(currentAccount, currentProvider);
+  const generatedProfile = currentProvider
+    ? profiles.find((profile) => profile.generatedProviderId === currentProvider.id)
+    : undefined;
+  const generatedSourceLabel = generatedProfile
+    ? generatedProfile.sourceKind === 'account'
+      ? pool.accounts.find((item) => item.id === generatedProfile.sourceId)?.email
+        ?? pool.accounts.find((item) => item.id === generatedProfile.sourceId)?.label
+      : pool.providers.find((item) => item.id === generatedProfile.sourceId)?.name
+    : undefined;
+  const resolved = resolveEffectiveConnection(currentAccount, currentProvider, {
+    t,
+    sourceLabel: generatedSourceLabel,
+  });
+  const effective = resolved.kind === 'api'
+    && currentProvider
+    && (generatedProfile || isInternalGeneratedProvider(currentProvider))
+    ? {
+        ...resolved,
+        label: formatLocalRouteLabel(generatedSourceLabel, t),
+      }
+    : resolved;
 
   const requestClose = React.useCallback(() => {
     if (state.busy !== 'idle') return;
