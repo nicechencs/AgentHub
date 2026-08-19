@@ -407,12 +407,18 @@ export interface TicketBindingDetailLine {
 
 const AUTH_LABEL_HUMAN: Record<string, string> = {
   '可续期·未验证': '可续期',
+  '可续期，尚未验证': '可续期',
   '已配置·未验证': '已配置',
+  '已配置，尚未验证': '已配置',
+  可续期: '可续期',
+  已配置: '已配置',
+  已验证: '已验证',
 };
 
-/** Human words for login health; map legacy ·未验证 tokens to 可续期 / 已配置. */
+/** Quiet header chip: 可续期 / 已配置 / 已验证 — never 未验证 / 尚未验证. */
 export function humanizeTicketAuthLabel(label: string): string {
-  return AUTH_LABEL_HUMAN[label] ?? label.replace(/·/g, '，');
+  const mapped = AUTH_LABEL_HUMAN[label] ?? label.replace(/·/g, '，');
+  return mapped.replace(/[·，]\s*(尚未验证|未验证)\s*$/u, '').trim() || mapped;
 }
 
 function endpointHostOnly(host: string): string {
@@ -498,22 +504,13 @@ export function extrasFromPoolSource(
 
 /**
  * Advanced-only facts for the ticket detail expand.
- * Header already shows 类型 / 来源 / 所属 / 官方账号 / email / 订阅.
+ * Header already shows type / surface / health chip; footer shows 导入自.
  */
 export function buildTicketDetailFields(
   ticket: TicketView,
   extras?: TicketDetailExtras | null,
 ): TicketDetailSections {
   const advanced: TicketDetailField[] = [];
-  if (ticket.importedFrom) {
-    advanced.push({ label: '导入自', value: agentDisplayName(ticket.importedFrom) });
-  }
-  if (extras?.authLabel) {
-    advanced.push({
-      label: '登录状态',
-      value: humanizeTicketAuthLabel(extras.authLabel),
-    });
-  }
 
   const customEndpoint = extras != null && extras.endpointMode === 'custom';
   if (customEndpoint) {

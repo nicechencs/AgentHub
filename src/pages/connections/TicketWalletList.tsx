@@ -44,6 +44,7 @@ import {
   buildTicketWalletRows,
   countTicketsByFilter,
   formatTicketBindingDetailLines,
+  humanizeTicketAuthLabel,
   ticketDetailEditLabel,
   TICKET_WALLET_FILTERS,
   type TicketAddMenuAgent,
@@ -62,11 +63,14 @@ function credentialBadgeVariant(
   return 'accent';
 }
 
+const HIDDEN_ADVANCED_LABELS = new Set(['导入自', '登录状态']);
+
 export function TicketDetailPanel({
   id,
   advanced,
   bindings,
   extras,
+  importedFromLabel,
   editLabel,
   onEdit,
   onDelete,
@@ -75,6 +79,7 @@ export function TicketDetailPanel({
   advanced: TicketDetailField[];
   bindings: TicketBindingDetailLine[];
   extras?: TicketDetailExtras | null;
+  importedFromLabel?: string | null;
   editLabel?: string | null;
   onEdit?: () => void;
   onDelete: () => void;
@@ -82,6 +87,7 @@ export function TicketDetailPanel({
   const has7d = extras?.quota7dPct != null;
   const has5h = extras?.quota5hPct != null;
   const hasQuota = has7d || has5h;
+  const visibleAdvanced = advanced.filter((field) => !HIDDEN_ADVANCED_LABELS.has(field.label));
 
   return (
     <Card
@@ -132,11 +138,11 @@ export function TicketDetailPanel({
         </div>
       </div>
 
-      {advanced.length > 0 ? (
+      {visibleAdvanced.length > 0 ? (
         <details>
           <summary className="cursor-pointer text-meta text-muted">更多</summary>
           <div className="mt-1.5 grid gap-1.5 text-secondary sm:grid-cols-2">
-            {advanced.map((field) => (
+            {visibleAdvanced.map((field) => (
               <DetailRow
                 key={`${field.label}:${field.value}`}
                 label={field.label}
@@ -148,20 +154,27 @@ export function TicketDetailPanel({
         </details>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-        {editLabel && onEdit ? (
-          <Button size="sm" variant="secondary" onClick={onEdit}>
-            <Pencil className="h-3.5 w-3.5" /> {editLabel}
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+        {importedFromLabel ? (
+          <p className="text-meta text-muted">{importedFromLabel}</p>
+        ) : (
+          <span />
+        )}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {editLabel && onEdit ? (
+            <Button size="sm" variant="secondary" onClick={onEdit}>
+              <Pencil className="h-3.5 w-3.5" /> {editLabel}
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="dangerOutline"
+            title={extras?.isCurrent ? '移入回收站；本机连接可能仍继续生效' : undefined}
+            onClick={onDelete}
+          >
+            <Trash2 className="h-3.5 w-3.5" /> 移入回收站
           </Button>
-        ) : null}
-        <Button
-          size="sm"
-          variant="dangerOutline"
-          title={extras?.isCurrent ? '移入回收站；本机连接可能仍继续生效' : undefined}
-          onClick={onDelete}
-        >
-          <Trash2 className="h-3.5 w-3.5" /> 移入回收站
-        </Button>
+        </div>
       </div>
     </Card>
   );
@@ -203,6 +216,9 @@ function TicketRow({
           <Badge variant={ticket.surface === 'unknown' ? 'accent' : 'default'}>
             {ticketSurfaceLabel(ticket.surface)}
           </Badge>
+          {extras?.authLabel ? (
+            <Badge variant="default">{humanizeTicketAuthLabel(extras.authLabel)}</Badge>
+          ) : null}
           <span className="text-meta text-secondary">
             {(usageParts ?? []).map((part, index) => (
               part.kind === 'bridge' ? (
@@ -244,6 +260,11 @@ function TicketRow({
           advanced={buildTicketDetailFields(ticket, extras).advanced}
           bindings={formatTicketBindingDetailLines(row.bindings)}
           extras={extras}
+          importedFromLabel={
+            ticket.importedFrom
+              ? `导入自 ${agentDisplayName(ticket.importedFrom)}`
+              : null
+          }
           editLabel={editLabel}
           onEdit={editLabel ? () => onEdit(ticket) : undefined}
           onDelete={() => onDelete(ticket)}
