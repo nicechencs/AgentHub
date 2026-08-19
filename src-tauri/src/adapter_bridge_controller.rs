@@ -796,19 +796,10 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
     let provider_id = input.id.clone();
 
     if let Err(error) = hub.providers.update_with_guard(&core_guard, &input) {
-        let rollback = rollback_bridge_projection(
-            hub,
-            &core_guard,
-            &provider_id,
-            &snapshot,
-            false,
-            target_agent,
-        );
-        return Err(composite_saga_error(
-            "update_adapter_bridge_restore_port",
-            map_err_string("update_adapter_bridge_restore_port", error),
-            rollback,
-        ));
+        // SQL ABORT leaves the pool unchanged. Restore-port projections are
+        // always demoted, so live config was not written and must not be
+        // rewritten here (that would replace the injected update error).
+        return Err(map_err_string("update_adapter_bridge_restore_port", error));
     }
     if was_current {
         if let Err(error) = hub
@@ -832,14 +823,14 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
     }
     if let Err(error) = hub.adapter_bridge.persist_restored_port(profile_id, port) {
         // persist_restored_port is last and transactional, so a failure leaves
-        // profile.local_port on the old preferred port. Compensate provider and
-        // live config so restore can stop the rebound listener safely.
-        let rollback = rollback_bridge_projection(
+        // profile.local_port on the old preferred port. Restore the generated
+        // provider row; rewrite live config only when switch already mutated it.
+        let rollback = rollback_restored_bridge_port(
             hub,
             &core_guard,
             &provider_id,
             &snapshot,
-            false,
+            was_current,
             target_agent,
         );
         return Err(composite_saga_error(
@@ -847,6 +838,39 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
             map_err_string("persist_adapter_bridge_restore_port", error),
             rollback,
         ));
+    }
+    Ok(())
+}
+
+/// Inverse of a restore-port apply after the demoted provider row was written.
+///
+/// Non-current restores never call `switch_with_guard`, so live config is
+/// untouched and a full [`rollback_bridge_projection`] would write the real
+/// Codex file unnecessarily. Current restores already switched, so they reuse
+/// the apply-saga inverse including live snapshot restore.
+fn rollback_restored_bridge_port(
+    hub: &AgentHub,
+    core_guard: &ProviderLiveSagaGuard<'_>,
+    provider_id: &str,
+    snapshot: &BridgeProviderSnapshot,
+    was_current: bool,
+    target_agent: AgentId,
+) -> Result<(), &'static str> {
+    if was_current {
+        return rollback_bridge_projection(
+            hub,
+            core_guard,
+            provider_id,
+            snapshot,
+            false,
+            target_agent,
+        );
+    }
+    if let Some(old) = &snapshot.generated {
+        let input = provider_to_non_current_input(old);
+        if hub.providers.update_with_guard(core_guard, &input).is_err() {
+            return Err("adapter.bridge_rollback");
+        }
     }
     Ok(())
 }
