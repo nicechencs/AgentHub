@@ -1,8 +1,13 @@
 //! Live backup snapshot / restore / delete service.
 //!
-//! Snapshots copy existing regular files from `AgentAdapter::live_backup_paths`
-//! into `backups_root/live/<agent>/<unique-id>/`, write a deterministic
-//! `manifest.json` for restore mapping, then insert a DB index row.
+//! Incremental live snapshots:
+//! - Same agent + same live source set + same SHA-256 content reuses the
+//!   newest matching historical snapshot (`created_at` bumped; no new
+//!   directory or DB row).
+//! - A partial change creates a new `backups_root/live/<agent>/<id>/`
+//!   snapshot. Unchanged file bytes are hardlinked from a prior snapshot
+//!   when the hash is already stored; `std::fs::copy` is the fallback
+//!   (never symlinks).
 //!
 //! Restore destinations are always derived from the registered adapter's
 //! `live_backup_paths` — never from untrusted absolute paths alone.
@@ -48,6 +53,16 @@ struct ManifestEntry {
     stored: String,
     /// Absolute live path that was copied (identity only; must match adapter).
     source: String,
+    /// SHA-256 hex of file bytes at snapshot time. Absent on legacy manifests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sha256: Option<String>,
+}
+
+/// One live file about to be snapshotted (allocated dest name + content hash).
+struct PlannedEntry {
+    stored: String,
+    source: PathBuf,
+    sha256: String,
 }
 
 /// Result of a successful restore.
@@ -132,10 +147,12 @@ impl BackupService {
     /// Snapshot live files for `agent`.
     ///
     /// - Candidate paths come only from the registered adapter.
-    /// - Only existing regular files are copied.
+    /// - Only existing regular files are snapshotted.
     /// - Zero existing files → [`AppError::NotFound`], no DB row.
-    /// - Writes `manifest.json` mapping stored basenames → live sources.
-    /// - DB index is written only after every copy succeeds.
+    /// - Identical content reuses the newest matching historical snapshot.
+    /// - Writes `manifest.json` mapping stored basenames → live sources
+    ///   (and SHA-256 when available).
+    /// - DB index is written only after every copy/hardlink succeeds.
     /// - On failure: no DB row; best-effort removal of the incomplete snapshot
     ///   directory when it is exactly under `backups_root`.
     pub fn snapshot(
@@ -159,6 +176,12 @@ impl BackupService {
         self.snapshot_inner(agent, kind, note)
     }
 
+    /// Incremental snapshot:
+    /// - If this agent's newest matching snapshot has the same live source set
+    ///   and SHA-256 content, bump `created_at` and reuse that row/dir.
+    /// - Otherwise create a new id/dir/row; unchanged bytes are hardlinked
+    ///   from a prior snapshot when the hash is already stored, else copied.
+    ///   Hardlink failure falls back to `std::fs::copy` (never symlinks).
     fn snapshot_inner(
         &self,
         agent: AgentId,
@@ -200,6 +223,14 @@ impl BackupService {
                 )));
             }
 
+            let (planned, total_size) = plan_snapshot_entries(&sources)?;
+            if let Some(existing) = self.find_identical_snapshot(agent, &planned, total_size)? {
+                let now = Utc::now().to_rfc3339();
+                return self.repo.touch_created_at(&existing.id, &now);
+            }
+
+            let mut hash_index = self.content_index_for_agent(agent)?;
+
             let id = Uuid::new_v4().to_string();
             let snapshot_dir = self
                 .backups_root
@@ -221,7 +252,7 @@ impl BackupService {
                 return Err(AppError::from(e));
             }
 
-            let copy_result = self.copy_sources(&sources, &snapshot_dir);
+            let copy_result = self.materialize_sources(&planned, &snapshot_dir, &mut hash_index);
             let (files, size, manifest) = match copy_result {
                 Ok(v) => v,
                 Err(e) => {
@@ -528,34 +559,108 @@ impl BackupService {
         result
     }
 
-    fn copy_sources(
+    /// Newest-first scan: reuse a completed snapshot whose stored basenames,
+    /// live sources, and content hashes match `planned`.
+    fn find_identical_snapshot(
         &self,
-        sources: &[PathBuf],
-        snapshot_dir: &Path,
-    ) -> Result<(Vec<String>, u64, BackupManifest)> {
-        let mut occupied: HashSet<String> = HashSet::new();
-        let mut files: Vec<String> = Vec::with_capacity(sources.len());
-        let mut total_size: u64 = 0;
-        let mut entries: Vec<ManifestEntry> = Vec::with_capacity(sources.len());
+        agent: AgentId,
+        planned: &[PlannedEntry],
+        total_size: u64,
+    ) -> Result<Option<BackupRecord>> {
+        let records = self.repo.list(Some(agent))?;
+        for rec in records {
+            if rec.size != total_size || rec.files.len() != planned.len() {
+                continue;
+            }
+            if !rec
+                .files
+                .iter()
+                .map(String::as_str)
+                .eq(planned.iter().map(|e| e.stored.as_str()))
+            {
+                continue;
+            }
+            let dir = match self.validate_snapshot_dir(&rec) {
+                Ok(dir) => dir,
+                Err(_) => continue,
+            };
+            let Ok(Some(manifest)) = read_manifest(&dir) else {
+                continue;
+            };
+            if planned_matches_manifest(planned, &manifest, &dir) {
+                return Ok(Some(rec));
+            }
+        }
+        Ok(None)
+    }
 
-        for src in sources {
-            let dest_name = allocate_dest_name(src, &mut occupied)?;
-            let dest = snapshot_dir.join(&dest_name);
+    /// Hash → stored regular file in a prior snapshot for this agent.
+    /// Newest snapshot wins when the same hash appears more than once.
+    fn content_index_for_agent(&self, agent: AgentId) -> Result<HashMap<String, PathBuf>> {
+        let mut index = HashMap::new();
+        let records = self.repo.list(Some(agent))?;
+        for rec in records {
+            let dir = match self.validate_snapshot_dir(&rec) {
+                Ok(dir) => dir,
+                Err(_) => continue,
+            };
+            match read_manifest(&dir) {
+                Ok(Some(manifest)) => {
+                    for entry in manifest.entries {
+                        index_stored_file(&mut index, &dir, &entry.stored, entry.sha256);
+                    }
+                }
+                Ok(None) => {
+                    for name in &rec.files {
+                        index_stored_file(&mut index, &dir, name, None);
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+        Ok(index)
+    }
+
+    fn materialize_sources(
+        &self,
+        planned: &[PlannedEntry],
+        snapshot_dir: &Path,
+        hash_index: &mut HashMap<String, PathBuf>,
+    ) -> Result<(Vec<String>, u64, BackupManifest)> {
+        let mut files: Vec<String> = Vec::with_capacity(planned.len());
+        let mut total_size: u64 = 0;
+        let mut entries: Vec<ManifestEntry> = Vec::with_capacity(planned.len());
+
+        for entry in planned {
+            let dest = snapshot_dir.join(&entry.stored);
             if !is_path_inside(&dest, snapshot_dir) {
                 return Err(AppError::InvalidArg(format!(
-                    "destination escapes snapshot dir: {dest_name}"
+                    "destination escapes snapshot dir: {}",
+                    entry.stored
                 )));
             }
-            ensure_regular_file(src)?;
-            std::fs::copy(src, &dest)?;
+            ensure_regular_file(&entry.source)?;
+
+            let hash_key = entry.sha256.to_ascii_lowercase();
+            let reused = hash_index.get(&hash_key).cloned();
+            let linked = reused.as_ref().is_some_and(|existing| {
+                ensure_regular_file(existing).is_ok()
+                    && sha256_file(existing).ok().as_deref() == Some(hash_key.as_str())
+                    && std::fs::hard_link(existing, &dest).is_ok()
+            });
+            if !linked {
+                std::fs::copy(&entry.source, &dest)?;
+            }
             ensure_regular_file(&dest)?;
             let len = std::fs::metadata(&dest)?.len();
             total_size = total_size.saturating_add(len);
-            files.push(dest_name.clone());
+            files.push(entry.stored.clone());
             entries.push(ManifestEntry {
-                stored: dest_name,
-                source: src.display().to_string(),
+                stored: entry.stored.clone(),
+                source: entry.source.display().to_string(),
+                sha256: Some(entry.sha256.clone()),
             });
+            hash_index.entry(hash_key).or_insert(dest);
         }
 
         Ok((
@@ -691,6 +796,117 @@ impl BackupService {
             let _ = std::fs::remove_dir_all(snapshot_dir);
         }
     }
+}
+
+fn plan_snapshot_entries(sources: &[PathBuf]) -> Result<(Vec<PlannedEntry>, u64)> {
+    let mut occupied: HashSet<String> = HashSet::new();
+    let mut planned = Vec::with_capacity(sources.len());
+    let mut total_size: u64 = 0;
+    for src in sources {
+        let dest_name = allocate_dest_name(src, &mut occupied)?;
+        ensure_regular_file(src)?;
+        let sha256 = sha256_file(src)?;
+        let len = std::fs::metadata(src)?.len();
+        total_size = total_size.saturating_add(len);
+        planned.push(PlannedEntry {
+            stored: dest_name,
+            source: src.clone(),
+            sha256,
+        });
+    }
+    Ok((planned, total_size))
+}
+
+fn planned_matches_manifest(
+    planned: &[PlannedEntry],
+    manifest: &BackupManifest,
+    dir: &Path,
+) -> bool {
+    if planned.len() != manifest.entries.len() {
+        return false;
+    }
+    for (p, e) in planned.iter().zip(&manifest.entries) {
+        if p.stored != e.stored {
+            return false;
+        }
+        if p.source.display().to_string() != e.source {
+            return false;
+        }
+        let stored_path = dir.join(&e.stored);
+        if !is_path_inside(&stored_path, dir) {
+            return false;
+        }
+        if ensure_regular_file(&stored_path).is_err() {
+            return false;
+        }
+        let hash = match e.sha256.as_deref() {
+            Some(h) if !h.is_empty() => h.to_string(),
+            _ => match sha256_file(&stored_path) {
+                Ok(h) => h,
+                Err(_) => return false,
+            },
+        };
+        if !hash.eq_ignore_ascii_case(&p.sha256) {
+            return false;
+        }
+    }
+    true
+}
+
+fn index_stored_file(
+    index: &mut HashMap<String, PathBuf>,
+    dir: &Path,
+    stored: &str,
+    sha256: Option<String>,
+) {
+    let Ok(base) = sanitize_basename(stored) else {
+        return;
+    };
+    if base != stored {
+        return;
+    }
+    let stored_path = dir.join(&base);
+    if !is_path_inside(&stored_path, dir) {
+        return;
+    }
+    if ensure_regular_file(&stored_path).is_err() {
+        return;
+    }
+    let hash = match sha256.as_deref() {
+        Some(h) if !h.is_empty() => h.to_ascii_lowercase(),
+        _ => match sha256_file(&stored_path) {
+            Ok(h) => h,
+            Err(_) => return,
+        },
+    };
+    index.entry(hash).or_insert(stored_path);
+}
+
+fn sha256_file(path: &Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex_encode(hasher.finalize().as_slice()))
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0xf) as usize] as char);
+    }
+    out
 }
 
 fn classify_path(path: &Path) -> Result<PathClass> {
