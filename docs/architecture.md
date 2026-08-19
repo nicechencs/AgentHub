@@ -213,7 +213,7 @@ struct InstallChannel {
 | `ticket_bind_service` | `bind` / `unbind` 写口 | LocalBridge bind 拒绝，必须走 desktop host saga |
 | `connection_service` | 当前指针 `ActiveBinding`（account/provider `is_current`） | 不是产品 `TicketBinding`；不写 live 文件 |
 | `live_write_authority` | 跨进程 live 写锁 | 不解释配置语义 |
-| `agent_visibility_service` | `dev` store-stamp 隐藏（仅 UI） | 不改 detect / install / 凭据；不是旧 release #22 软隐藏 |
+| `agent_visibility_service` | dest 上按商店标记隐藏，只影响界面 | 不改 detect / install / 凭据 |
 | `ConfigurationService`（platform） | 通用配置 schema / read / validate / apply | 不持有账号池 |
 | `AgentCatalogService`（platform） | Agent 目录（key / 能力 / 安装渠道） | 不执行安装 |
 | `skillhub_market` / `skillssh_market` | skillhub.cn / skills.sh 远程搜索与安装 | 不改投影矩阵真源 |
