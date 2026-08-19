@@ -1154,19 +1154,13 @@ fn project_paths(
         AgentId::Claude | AgentId::WorkBuddy => {
             let storage = home.join("projects").join(key);
             let relative = format!("projects/{key}");
+            let decoded = decode_claude_project_dir(key);
             let mut actual = verified_actual_path(key);
             if actual.is_none() {
                 actual = group
                     .iter()
                     .find_map(|s| s.cwd.clone())
                     .filter(|c| !c.is_empty() && Path::new(c).exists());
-                if actual.is_none() {
-                    // Fall back to decoded / session cwd for display even if missing on disk.
-                    actual = group
-                        .iter()
-                        .find_map(|s| s.cwd.clone())
-                        .or_else(|| decode_claude_project_dir(key));
-                }
             }
             // Prefer native separators when the path exists (open-in-explorer friendly).
             if let Some(ref a) = actual {
@@ -1177,7 +1171,7 @@ fn project_paths(
                     }
                 }
             }
-            let title = title_from_actual(actual.as_deref(), key);
+            let title = title_from_actual(actual.as_deref().or(decoded.as_deref()), key);
             (storage.display().to_string(), relative, actual, title)
         }
         _ => {
@@ -1209,21 +1203,14 @@ fn project_paths(
                         Some(cwd_win)
                     } else if Path::new(&fwd).exists() {
                         Some(fwd.replace('/', std::path::MAIN_SEPARATOR_STR))
-                    } else if !fwd.is_empty() {
-                        // Display fallback (may not open — UI hides icon when unusable).
-                        #[cfg(windows)]
-                        {
-                            Some(cwd_win)
-                        }
-                        #[cfg(not(windows))]
-                        {
-                            Some(fwd)
-                        }
                     } else {
                         None
                     }
                 };
-                let title = title_from_actual(actual.as_deref(), key);
+                let title = title_from_actual(
+                    actual.as_deref().or((!fwd.is_empty()).then_some(fwd.as_str())),
+                    key,
+                );
                 // Prefer project-level storage dirs for nested session trees.
                 let storage = match agent {
                     AgentId::Grok => group
@@ -1335,9 +1322,12 @@ pub(crate) fn list_cursor_projects(home: &Path) -> Result<Vec<AgentProject>> {
             .map(system_time_to_rfc3339)
             .unwrap_or_else(|| Utc::now().to_rfc3339());
         let size = dir_size_shallow(&path).unwrap_or(0);
-        // Keep decoded path for display even if missing; open falls back to storage_path.
-        let actual = cursor_actual_path(&name);
-        let title = title_from_actual(actual.as_deref(), &name);
+        let decoded = cursor_actual_path(&name);
+        let actual = decoded
+            .as_ref()
+            .filter(|p| Path::new(p).exists())
+            .cloned();
+        let title = title_from_actual(decoded.as_deref(), &name);
         let rel_str = format!("projects/{name}");
         out.push(AgentProject {
             id: make_project_id(AgentId::Cursor, &name),
@@ -1431,6 +1421,12 @@ fn build_session(
         if let Some(encoded) = encoded_dir {
             if let Some(v) = verified_actual_path(encoded) {
                 meta.cwd = Some(v);
+            } else if meta
+                .cwd
+                .as_ref()
+                .is_some_and(|c| !c.is_empty() && Path::new(c).exists())
+            {
+                // Keep a recorded cwd that exists; do not overwrite with a missing decode.
             } else if let Some(decoded) = decode_claude_project_dir(encoded) {
                 meta.cwd = Some(decoded);
             } else if meta.cwd.is_none() {

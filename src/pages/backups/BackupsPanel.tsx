@@ -196,35 +196,6 @@ export function BackupsPanel() {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="min-w-0">
-            <p className="text-sm">{t('settings.backups.enabledTitle')}</p>
-            <p className="mt-0.5 text-xs text-muted">
-              {t('settings.backups.enabledDesc')}
-            </p>
-          </div>
-        </div>
-        {agentMeta && (
-          <Button
-            disabled={creating || !isInstalled}
-            title={!isInstalled ? t('settings.backups.createTitleNotInstalled') : undefined}
-            onClick={() => void handleCreate()}
-          >
-            <Plus className="h-4 w-4" />
-            {creating
-              ? t('settings.backups.creating')
-              : isInstalled
-                ? t('settings.backups.backupAgent', { name: agentMeta.name.replace(' Code', '') })
-                : t('settings.backups.notInstalled')}
-          </Button>
-        )}
-      </div>
-
-      <p className="mb-4 text-xs text-muted">
-        {t('settings.backups.pageHint')}
-      </p>
-
       <div className="mb-5 flex flex-wrap items-center gap-3">
         {pageLoading ? (
           <Skeleton className="h-9 w-64 rounded-card" />
@@ -241,6 +212,17 @@ export function BackupsPanel() {
             {t('settings.backups.recordCount', { name: agentMeta.name, count: counts[agentId] ?? 0 })}
             {!isInstalled && t('settings.backups.uninstalledHint')}
           </span>
+        )}
+        {agentMeta && (
+          <Button
+            className="ml-auto"
+            disabled={creating || !isInstalled}
+            title={!isInstalled ? t('settings.backups.createTitleNotInstalled') : undefined}
+            onClick={() => void handleCreate()}
+          >
+            <Plus className="h-4 w-4" />
+            {creating ? t('settings.backups.creating') : t('settings.backups.backupNow')}
+          </Button>
         )}
       </div>
 
@@ -273,9 +255,7 @@ export function BackupsPanel() {
               : t('settings.backups.noBackupsUninstalled')
           }
           actionLabel={
-            isInstalled
-              ? t('settings.backups.backupAgent', { name: agentMeta.name.replace(' Code', '') })
-              : undefined
+            isInstalled ? t('settings.backups.backupNow') : undefined
           }
           onAction={isInstalled ? () => void handleCreate() : undefined}
         />

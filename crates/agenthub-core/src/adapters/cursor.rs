@@ -307,7 +307,7 @@ impl AgentAdapter for CursorAdapter {
             .map(|v| !v.is_empty())
             .unwrap_or(false);
         if api_key_set {
-            return Ok(AuthState {
+            let state = AuthState {
                 agent: AgentId::Cursor,
                 kind: Some("env-CURSOR_API_KEY".into()),
                 summary: "CURSOR_API_KEY is set in the environment".into(),
@@ -315,6 +315,12 @@ impl AgentAdapter for CursorAdapter {
                 health: crate::models::AuthHealth::Configured,
                 source: Some("env:CURSOR_API_KEY".into()),
                 revision: None,
+                also_present: Vec::new(),
+            };
+            return Ok(if cursor_cli_status_verified() {
+                state.with_also_present(["oauth"])
+            } else {
+                state
             });
         }
         // Optional non-destructive status probe when CLI is present.
@@ -335,6 +341,7 @@ impl AgentAdapter for CursorAdapter {
                         health,
                         source: Some("cursor-agent status".into()),
                         revision: None,
+                        also_present: Vec::new(),
                     });
                 }
                 if health == crate::models::AuthHealth::NeedsLogin {
@@ -346,6 +353,7 @@ impl AgentAdapter for CursorAdapter {
                         health,
                         source: Some("cursor-agent status".into()),
                         revision: None,
+                        also_present: Vec::new(),
                     });
                 }
                 return Ok(AuthState {
@@ -356,6 +364,7 @@ impl AgentAdapter for CursorAdapter {
                     health,
                     source: Some("cursor-agent status".into()),
                     revision: None,
+                    also_present: Vec::new(),
                 });
             }
         }
@@ -367,6 +376,7 @@ impl AgentAdapter for CursorAdapter {
             health: crate::models::AuthHealth::Missing,
             source: Some("cursor-agent".into()),
             revision: None,
+            also_present: Vec::new(),
         })
     }
 
@@ -625,6 +635,21 @@ fn path_is_rejected_non_cursor(path: &Path) -> bool {
         }
     }
     false
+}
+
+fn cursor_cli_status_verified() -> bool {
+    let Some((bin, _, _, _)) = resolve_cursor_agent_cli() else {
+        return false;
+    };
+    let Ok(out) = run_capture(&bin, &["status"]) else {
+        return false;
+    };
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    cursor_status_health(&text) == crate::models::AuthHealth::Verified
 }
 
 /// Parse only explicit Cursor Agent status wording. Structured booleans and

@@ -848,7 +848,9 @@ fn grok_native_reference_materializes_and_scrubs_toml_api_key() {
     let materialized = resolver.materialize_for_live(&target).unwrap();
     let live = materialized.settings_config["content"].as_str().unwrap();
     assert!(live.contains("api_key = \"sk-grok-secret\""));
-    assert!(!serde_json::to_string(&target).unwrap().contains("sk-grok-secret"));
+    assert!(!serde_json::to_string(&target)
+        .unwrap()
+        .contains("sk-grok-secret"));
     let scrubbed = resolver
         .scrub_for_backfill(&target, &materialized.settings_config)
         .unwrap();

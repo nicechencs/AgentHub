@@ -42,7 +42,9 @@ impl AccountService {
             if crate::services::account_identity_heal::heal_account_identity(item) {
                 dirty = true;
             }
-            if item.kind == AccountKind::Oauth && crate::services::account_quota::heal_token_expiry(item) {
+            if item.kind == AccountKind::Oauth
+                && crate::services::account_quota::heal_token_expiry(item)
+            {
                 dirty = true;
             }
             // Tick quota countdown from absolute reset timestamps (no network).

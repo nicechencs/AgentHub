@@ -1,5 +1,5 @@
-use super::*;
 use super::rules::*;
+use super::*;
 
 impl AdapterBridgeService {
     pub fn finalize(
@@ -225,10 +225,8 @@ impl AdapterBridgeService {
         })?;
         let upstream_auth = match rule.protocol {
             BridgeUpstreamProtocol::KimiChatCompletions if rule.rule_id == GROK_CLAUDE_RULE_ID => {
-                self.secrets.resolve_grok_subscription_auth(
-                    profile.source_kind,
-                    &profile.source_id,
-                )?
+                self.secrets
+                    .resolve_grok_subscription_auth(profile.source_kind, &profile.source_id)?
             }
             BridgeUpstreamProtocol::KimiChatCompletions => self
                 .secrets
@@ -254,5 +252,4 @@ impl AdapterBridgeService {
             profile,
         })
     }
-
 }

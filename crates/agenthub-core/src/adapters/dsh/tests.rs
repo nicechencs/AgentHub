@@ -106,11 +106,7 @@ fn write_config_merges_llm_row_and_preserves_other_rows() {
     let dir = tempfile::tempdir().unwrap();
     with_dsh_home(dir.path(), || {
         let patch = dir.path().join(HOME_PATCH_FILE);
-        std::fs::write(
-            &patch,
-            "- id: example.other\n  config:\n    keep: yes\n",
-        )
-        .unwrap();
+        std::fs::write(&patch, "- id: example.other\n  config:\n    keep: yes\n").unwrap();
         write_dsh_config(&AgentConfig {
             agent: AgentId::Dsh,
             raw: json!({

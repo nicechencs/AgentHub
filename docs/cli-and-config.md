@@ -317,7 +317,7 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 | OAuth 添加账号 | ✅ Claude/Codex/Grok | 🟡 oauth-url + refresh | 完整浏览器流以 GUI 为主 |
 | Skills 矩阵 / 同步 / 安装 | ✅ Skills 页 | ✅ 全树（含 install/market/project） | market 默认 skills.sh；依赖网络与 Git |
 | Usage 采集/图表 | ✅ Dashboard 用量段 | ✅ collect/stats/models/health | Cursor Unsupported |
-| Backup 列表/创建/恢复/删除 | ✅ /backups | ✅ list/create/restore/delete | **导出包**未实现 |
+| Backup 列表/创建/恢复/删除 | ✅ /settings?tab=backups | ✅ list/create/restore/delete | **导出包**未实现 |
 | Chat 多 Agent | ✅ /chat | ❌（用 `run` 一次性 headless） | 过程面板 Phase 0–2 现行契约；Phase 3 展示层已落地 |
 | Projects | ✅ /projects | ❌ | |
 | Settings 主题/日志等 | ✅ L1 白名单 + OS 自启 | ✅ config get/set 白名单 | 主题/用量间隔/托盘/语言落 SQLite；`autoStart` 为 OS 登录项；GUI Settings 可切换中/英 |

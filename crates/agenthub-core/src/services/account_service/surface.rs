@@ -376,5 +376,3 @@ pub(super) fn sort_accounts(items: &mut [Account]) {
             .then_with(|| a.id.cmp(&b.id))
     });
 }
-
-

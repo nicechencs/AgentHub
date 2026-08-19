@@ -16,10 +16,11 @@ import { Notice } from '@/components/shared/Notice';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -29,8 +30,11 @@ import type { AgentId, Conversation, Provider } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { extractModel } from './chat-format';
 import {
+  autoApproveFooter,
   blockerCopy,
   blockerPrimaryTarget,
+  chatAgentPickerEmptyCopy,
+  chatAgentPickerEmptyKind,
   type ChatAgentPickerRow,
   type ChatConnectionPickerView,
   type ChatSendBlocker,
@@ -52,11 +56,12 @@ export function ChatComposer({
   switchingProvider,
   hiddenIds,
   pickerRows,
+  agentsReady,
   blockers,
   connectionCaption,
   onSend,
   onCancel,
-  onToggleAgent,
+  onSelectAgent,
   onSwitchProvider,
   onOpenSettings,
   onPickWorkingDirectory,
@@ -73,11 +78,12 @@ export function ChatComposer({
   switchingProvider: boolean;
   hiddenIds: Set<AgentId>;
   pickerRows: ChatAgentPickerRow[];
+  agentsReady: boolean;
   blockers: ChatSendBlocker[];
   connectionCaption: string | null;
   onSend: () => void;
   onCancel: () => void;
-  onToggleAgent: (id: AgentId) => void;
+  onSelectAgent: (id: AgentId) => void;
   onSwitchProvider: (id: string) => void;
   onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
@@ -113,6 +119,13 @@ export function ChatComposer({
 
   const textareaDisabled = sending || hiddenBlocked || sendingElsewhere;
   const sendHint = firstBlocker ? blockerCopy(firstBlocker).text : '发送';
+  const selectedAgent = active.agentIds[0] ?? '';
+  const approveFooter = autoApproveFooter(active.allowDangerous, active.agentIds[0] ?? null);
+  const pickerEmpty = chatAgentPickerEmptyKind({
+    agentsReady,
+    rowCount: pickerRows.length,
+  });
+  const pickerEmptyCopy = pickerEmpty ? chatAgentPickerEmptyCopy(pickerEmpty) : null;
 
   return (
     <>
@@ -166,32 +179,47 @@ export function ChatComposer({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel>选择 Agent（可多选）</DropdownMenuLabel>
+              <DropdownMenuLabel>选择 Agent</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {pickerRows.map((row) => {
-                const checked = active.agentIds.includes(row.id);
-                return (
-                  <DropdownMenuCheckboxItem
+              <DropdownMenuRadioGroup
+                value={selectedAgent}
+                onValueChange={(id) => onSelectAgent(id as AgentId)}
+              >
+                {pickerRows.map((row) => (
+                  <DropdownMenuRadioItem
                     key={row.id}
-                    checked={checked}
-                    disabled={sending || sendingElsewhere || (!row.selectable && !checked)}
-                    onCheckedChange={() => onToggleAgent(row.id)}
+                    value={row.id}
+                    disabled={sending || sendingElsewhere || !row.selectable}
                   >
-                    <span className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        'flex items-center gap-2',
+                        !row.selectable && 'text-muted',
+                      )}
+                    >
                       <AgentLogo agentId={row.id} size="sm" />
                       {agentDisplayName(row.id)}
-                      {row.reason === 'hidden' && (
-                        <span className="text-meta text-muted">已隐藏</span>
-                      )}
                       {row.reason === 'noAuth' && (
                         <span className="text-meta text-muted">未配置授权</span>
                       )}
                     </span>
-                  </DropdownMenuCheckboxItem>
-                );
-              })}
-              {pickerRows.length === 0 && (
-                <div className="px-2 py-1.5 text-meta text-muted">尚未安装任何 Agent</div>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              {pickerEmptyCopy && (
+                <div className="px-2 py-2">
+                  <p className="text-meta text-muted">{pickerEmptyCopy.text}</p>
+                  {pickerEmptyCopy.action && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2"
+                      onClick={() => navigate('/agents')}
+                    >
+                      {pickerEmptyCopy.action}
+                    </Button>
+                  )}
+                </div>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -310,12 +338,10 @@ export function ChatComposer({
       <p
         className={cn(
           'mt-2 text-center text-meta',
-          active.allowDangerous ? 'text-warning' : 'text-muted',
+          approveFooter.warning ? 'text-warning' : 'text-muted',
         )}
       >
-        {active.allowDangerous
-          ? '自动批准已开启 · Agent 将不经确认修改文件'
-          : 'Agent 可能修改工作目录中的文件'}
+        {approveFooter.text}
       </p>
     </>
   );

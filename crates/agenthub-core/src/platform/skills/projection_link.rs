@@ -6,12 +6,15 @@ use std::path::Path;
 use crate::error::{AppError, Result};
 use crate::models::SkillLinkKind;
 
-use super::fs_safe::{collect_regular_files};
+use super::fs_safe::collect_regular_files;
 use super::packages::write_skill_tree;
 
 /// Create a projection link with platform fallbacks.
 /// Returns (applied_kind, fell_back).
-pub(crate) fn create_projection_link(source: &Path, target: &Path) -> Result<(SkillLinkKind, bool)> {
+pub(crate) fn create_projection_link(
+    source: &Path,
+    target: &Path,
+) -> Result<(SkillLinkKind, bool)> {
     let source = fs::canonicalize(source).map_err(|e| {
         AppError::InvalidArg(format!(
             "cannot canonicalize skill source {}: {e}",

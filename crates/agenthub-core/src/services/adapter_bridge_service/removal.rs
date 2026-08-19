@@ -1,5 +1,5 @@
-use super::*;
 use super::rules::*;
+use super::*;
 
 impl AdapterBridgeService {
     pub fn preflight_remove(&self, profile_id: &str) -> Result<AdapterBridgeRemoval> {

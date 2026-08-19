@@ -155,6 +155,26 @@ fn identity_label(
 - 每 agent 至多一条 `is_current=1`（现有 repo 不变量）  
 - switch：把选中授权写入 live，并设为 current；**池内其它授权行完整保留**  
 - 再 import live：只 upsert 与 **当前 live 授权指纹** 相同的那一行  
+- 本机同时有 Key 与官方登录：只导入胜出那份，另一份仅提醒（§4.6）
+
+### 4.6 双凭据并存提醒
+
+本机 live detect 可能同时看到 API Key 与官方登录（OAuth / CLI 登录态）。这是**提醒**，不是第二次导入，也不改入库规则。
+
+| 环节 | 行为 |
+|---|---|
+| 探测 | `read_auth` 报告胜出的 `kind`（与 `read_account` 当前票一致），并用 `alsoPresent` 列出本机还在的另一族（脱敏；典型值 `oauth` / `api_key`）。仅一族时为空 |
+| 导入 | `import_live` 仍只 upsert **当前胜出的 live 票**（`read_account` / 当前 `kind`） |
+| UI | Connections「导入当前登录」对话框用 Notice 标明会收入哪一份 |
+
+**不**自动删除另一份，**不**把两份合成一张票。
+
+各 Agent **运行时**认哪份由官方 CLI 决定（仅说明，不改变导入）：
+
+- Claude：API Key 压过订阅  
+- Grok：模型条目上的 Key 压过 session；全局 `XAI_API_KEY` 不压过  
+- Kimi：看当前 provider  
+- Codex TUI：多半认登录态  
 
 ---
 
@@ -164,7 +184,7 @@ fn identity_label(
 |---|---|---|---|
 | Claude | Full | API Key 材料 hash；勿用身份字段当票 | 脱敏 key / 自定义名 |
 | Grok | Full | 可轮换的 token 材料 hash；**不要**只用 user_id | email / user_id |
-| Pi | Full | provider 键控 body 中的票材料 hash | provider + 展示 hint |
+| Pi | Full | 可 import；写回 API Key 需官方槽；自定义 URL+Key 走 Provider / models.json | provider + 展示 hint |
 | Codex | Full | token 材料或整包 cred hash | 能抠则邮箱类 hint |
 | Kimi | Full | 可轮换 token 优先，否则整包 | 有则邮箱类 hint |
 | WorkBuddy | Unsup | 两边都不支持（无 import / 无 `add_api_key`） | — |
@@ -187,6 +207,7 @@ user@example.com
 
 - 展示：导入/更新时间、是否 current、后续可加 expired  
 - 文案：池内可多授权；**当前生效仅一条**（写入 live 的那条）
+- 导入当前登录时若本机同时有 Key 与官方登录：对话框 Notice 标明当前会收入哪一份（§4.6）；不自动删另一份
 
 ---
 
@@ -270,3 +291,5 @@ user@example.com
 | 2026-08-03 | 初版：产品定为「同人多授权并存」；去重仅限同授权票 |
 | 2026-08-03 | PR-A/B/C 落地：service 去重、adapter 指纹、Connections 分组 UI |
 | 2026-08-16 | 对照代码：补 dsh / Cursor 入池边界；§8 不再验收 `pages/accounts` 分组；Connections 已是票钱包 |
+| 2026-08-18 | 双凭据并存提醒：`read_auth.alsoPresent` + 导入仍只收胜出 live 票 |
+| 2026-08-18 | Pi：可 import；写回 API Key 需官方槽；自定义 URL+Key 走 Provider / models.json |

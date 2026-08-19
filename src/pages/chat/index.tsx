@@ -119,11 +119,12 @@ export default function ChatPage() {
                 switchingProvider={page.switchingProvider}
                 hiddenIds={page.hiddenIds}
                 pickerRows={page.pickerRows}
+                agentsReady={page.agentsReady}
                 blockers={page.blockers}
                 connectionCaption={page.connectionCaption}
                 onSend={() => void page.handleSend()}
                 onCancel={() => void page.cancelSending()}
-                onToggleAgent={(id) => void page.toggleConversationAgent(id)}
+                onSelectAgent={(id) => void page.selectConversationAgentId(id)}
                 onSwitchProvider={(id) => void page.handleSwitchProvider(id)}
                 onOpenSettings={() => page.setSettingsOpen(true)}
                 onPickWorkingDirectory={() => void page.pickWorkingDirectory()}

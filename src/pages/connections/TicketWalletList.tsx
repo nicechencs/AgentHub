@@ -7,6 +7,7 @@ import * as React from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronRight, KeyRound, Pencil, Plus, Share2, Trash2 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ListRow } from '@/components/shared/ListRow';
@@ -29,7 +30,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tip } from '@/components/ui/tooltip';
-import { agentDisplayName } from '@/config/agents';
+import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import type { TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
 import {
   ticketCredentialClassLabel,
@@ -158,15 +159,14 @@ function TicketRow({
   const editLabel = ticketDetailEditLabel(extras);
 
   return (
-    <ListRow active={highlighted} className="p-3">
+    <ListRow
+      active={highlighted}
+      indicatorColor={resolveAgentMeta(ticket.agentId).color}
+      className="p-3"
+    >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span
-            className={cn('text-meta', highlighted ? 'text-success' : 'text-muted')}
-            aria-hidden
-          >
-            {highlighted ? '●' : '○'}
-          </span>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+          <AgentDot agentId={ticket.agentId} />
           <Tip className="truncate text-body font-medium" label={ticket.label}>
             {ticket.label}
           </Tip>
@@ -176,8 +176,21 @@ function TicketRow({
           <Badge variant={ticket.surface === 'unknown' ? 'accent' : 'default'}>
             {ticketSurfaceLabel(ticket.surface)}
           </Badge>
-          <span className="truncate text-meta text-muted">
-            {agentDisplayName(ticket.agentId)}
+          <span className="text-meta text-secondary">
+            {usageParts.map((part, index) => (
+              part.kind === 'bridge' ? (
+                <Link
+                  key={`${part.href}:${index}`}
+                  to={part.href}
+                  className="text-info underline"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {part.label}
+                </Link>
+              ) : (
+                <span key={`text:${index}`}>{part.text}</span>
+              )
+            ))}
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -198,22 +211,6 @@ function TicketRow({
           </Button>
         </div>
       </div>
-      <p className="mt-1 pl-5 text-meta text-secondary">
-        {usageParts.map((part, index) => (
-          part.kind === 'bridge' ? (
-            <Link
-              key={`${part.href}:${index}`}
-              to={part.href}
-              className="text-info underline"
-              onClick={(event) => event.stopPropagation()}
-            >
-              {part.label}
-            </Link>
-          ) : (
-            <span key={`text:${index}`}>{part.text}</span>
-          )
-        ))}
-      </p>
       {expanded ? (
         <TicketDetailPanel
           id={detailsId}
@@ -291,7 +288,10 @@ export function TicketWalletList({
           addAgents.map((agent) => (
             <DropdownMenuSub key={agent.id}>
               <DropdownMenuSubTrigger className="justify-between gap-2">
-                <span className="truncate">{agent.name}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <AgentDot agentId={agent.id} size="sm" title={null} />
+                  <span className="truncate">{agent.name}</span>
+                </span>
                 <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted" />
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="min-w-[10rem]">

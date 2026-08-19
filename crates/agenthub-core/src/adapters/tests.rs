@@ -873,3 +873,408 @@ fn claude_keychain_oauth_apply_is_explicitly_unsupported() {
     )
     .is_ok());
 }
+
+fn assert_auth_state_hides_secrets(state: &crate::models::AuthState, secrets: &[&str]) {
+    let dumped = serde_json::to_string(state).expect("serialize auth state");
+    for secret in secrets {
+        assert!(
+            !dumped.contains(secret),
+            "live AuthState must not embed credential material"
+        );
+    }
+}
+
+fn assert_also_present_empty(state: &crate::models::AuthState) {
+    assert!(state.also_present.is_empty());
+    let value = serde_json::to_value(state).unwrap();
+    assert!(
+        value.get("alsoPresent").is_none(),
+        "empty also_present must be omitted from JSON"
+    );
+}
+
+#[test]
+fn claude_settings_token_and_oauth_sets_also_present() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("settings.json"),
+        r#"{
+  "env": { "ANTHROPIC_AUTH_TOKEN": "sk-settings-fixture" }
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join(".credentials.json"),
+        r#"{"claudeAiOauth":{"accessToken":"tok-oauth-fixture","expiresAt":9999999999}}"#,
+    )
+    .unwrap();
+    let state = claude::claude_auth_state(dir.path()).unwrap();
+
+    assert_eq!(state.kind.as_deref(), Some("api_key"));
+    assert!(state.also_present.iter().any(|kind| kind == "oauth"));
+    assert_auth_state_hides_secrets(&state, &["sk-settings-fixture", "tok-oauth-fixture"]);
+}
+
+#[test]
+fn claude_oauth_only_leaves_also_present_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join(".credentials.json"),
+        r#"{"claudeAiOauth":{"accessToken":"tok-oauth-only-fixture","expiresAt":9999999999}}"#,
+    )
+    .unwrap();
+    let state = claude::claude_auth_state(dir.path()).unwrap();
+
+    assert_eq!(state.kind.as_deref(), Some("oauth"));
+    assert_also_present_empty(&state);
+    assert_auth_state_hides_secrets(&state, &["tok-oauth-only-fixture"]);
+}
+
+#[test]
+fn claude_api_key_only_leaves_also_present_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("settings.json"),
+        r#"{
+  "env": { "ANTHROPIC_AUTH_TOKEN": "sk-settings-only-fixture" }
+}
+"#,
+    )
+    .unwrap();
+    let state = claude::claude_auth_state(dir.path()).unwrap();
+
+    assert_eq!(state.kind.as_deref(), Some("api_key"));
+    assert_also_present_empty(&state);
+    assert_auth_state_hides_secrets(&state, &["sk-settings-only-fixture"]);
+}
+
+#[test]
+fn claude_api_key_and_unclassifiable_credentials_leaves_also_present_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("settings.json"),
+        r#"{
+  "env": { "ANTHROPIC_AUTH_TOKEN": "sk-settings-dirty-fixture" }
+}
+"#,
+    )
+    .unwrap();
+    for dirty in [r#"{}"#, r#"{"mcpOAuth":{}}"#] {
+        std::fs::write(dir.path().join(".credentials.json"), dirty).unwrap();
+        let state = claude::claude_auth_state(dir.path()).unwrap();
+        assert_eq!(state.kind.as_deref(), Some("api_key"), "{dirty}");
+        assert_also_present_empty(&state);
+        assert_auth_state_hides_secrets(&state, &["sk-settings-dirty-fixture"]);
+    }
+}
+
+#[test]
+fn kimi_api_key_and_oauth_sets_also_present() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let cred = dir.path().join("credentials").join("kimi-code.json");
+    std::fs::write(
+        &config,
+        r#"default_provider = "moonshot"
+
+[providers.moonshot]
+api_key = "kimi-key-fixture"
+"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(cred.parent().unwrap()).unwrap();
+    std::fs::write(
+        &cred,
+        r#"{"access_token":"kimi-access-fixture","refresh_token":"kimi-refresh-fixture"}"#,
+    )
+    .unwrap();
+
+    let state = kimi::kimi_auth_state(&config, &cred);
+    assert_eq!(state.kind.as_deref(), Some("api_key"));
+    assert!(state.also_present.iter().any(|kind| kind == "oauth"));
+    assert_auth_state_hides_secrets(&state, &["kimi-key-fixture", "kimi-access-fixture"]);
+}
+
+#[test]
+fn kimi_api_key_only_leaves_also_present_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let cred = dir.path().join("credentials").join("kimi-code.json");
+    std::fs::write(
+        &config,
+        r#"default_provider = "moonshot"
+
+[providers.moonshot]
+api_key = "kimi-key-only-fixture"
+"#,
+    )
+    .unwrap();
+
+    let state = kimi::kimi_auth_state(&config, &cred);
+    assert_eq!(state.kind.as_deref(), Some("api_key"));
+    assert_also_present_empty(&state);
+    assert_auth_state_hides_secrets(&state, &["kimi-key-only-fixture"]);
+}
+
+#[test]
+fn kimi_oauth_only_leaves_also_present_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let cred = dir.path().join("credentials").join("kimi-code.json");
+    std::fs::write(&config, "default_provider = \"moonshot\"\n").unwrap();
+    std::fs::create_dir_all(cred.parent().unwrap()).unwrap();
+    std::fs::write(
+        &cred,
+        r#"{"access_token":"kimi-oauth-only-fixture","refresh_token":"kimi-refresh-only-fixture"}"#,
+    )
+    .unwrap();
+
+    let state = kimi::kimi_auth_state(&config, &cred);
+    assert_eq!(state.kind.as_deref(), Some("oauth"));
+    assert_also_present_empty(&state);
+    assert_auth_state_hides_secrets(
+        &state,
+        &["kimi-oauth-only-fixture", "kimi-refresh-only-fixture"],
+    );
+}
+
+#[test]
+fn kimi_api_key_and_garbage_credentials_leaves_also_present_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let cred = dir.path().join("credentials").join("kimi-code.json");
+    std::fs::write(
+        &config,
+        r#"default_provider = "moonshot"
+
+[providers.moonshot]
+api_key = "kimi-key-garbage-fixture"
+"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(cred.parent().unwrap()).unwrap();
+    std::fs::write(&cred, "this is not json {").unwrap();
+
+    let state = kimi::kimi_auth_state(&config, &cred);
+    assert_eq!(state.kind.as_deref(), Some("api_key"));
+    assert_also_present_empty(&state);
+    assert_auth_state_hides_secrets(&state, &["kimi-key-garbage-fixture"]);
+}
+
+#[test]
+fn codex_api_key_and_oauth_sets_also_present() {
+    let dir = tempfile::tempdir().unwrap();
+    let auth = dir.path().join("auth.json");
+    std::fs::write(
+        &auth,
+        r#"{
+  "OPENAI_API_KEY": "sk-codex-fixture",
+  "tokens": {
+    "access_token": "codex-access-fixture",
+    "refresh_token": "codex-refresh-fixture"
+  }
+}
+"#,
+    )
+    .unwrap();
+
+    let state = codex::codex_auth_state(&auth);
+    assert_eq!(state.kind.as_deref(), Some("api_key"));
+    assert!(state.also_present.iter().any(|kind| kind == "oauth"));
+    assert_auth_state_hides_secrets(&state, &["sk-codex-fixture", "codex-access-fixture"]);
+}
+
+#[test]
+fn codex_api_key_only_leaves_also_present_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let auth = dir.path().join("auth.json");
+    std::fs::write(
+        &auth,
+        r#"{
+  "OPENAI_API_KEY": "sk-codex-only-fixture"
+}
+"#,
+    )
+    .unwrap();
+
+    let state = codex::codex_auth_state(&auth);
+    assert_eq!(state.kind.as_deref(), Some("api_key"));
+    assert_also_present_empty(&state);
+    assert_auth_state_hides_secrets(&state, &["sk-codex-only-fixture"]);
+}
+
+#[test]
+fn codex_oauth_only_leaves_also_present_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let auth = dir.path().join("auth.json");
+    std::fs::write(
+        &auth,
+        r#"{
+  "tokens": {
+    "access_token": "codex-oauth-only-fixture",
+    "refresh_token": "codex-refresh-only-fixture"
+  }
+}
+"#,
+    )
+    .unwrap();
+
+    let state = codex::codex_auth_state(&auth);
+    assert_eq!(state.kind.as_deref(), Some("oauth"));
+    assert_also_present_empty(&state);
+    assert_auth_state_hides_secrets(
+        &state,
+        &["codex-oauth-only-fixture", "codex-refresh-only-fixture"],
+    );
+}
+
+#[test]
+fn pi_mixed_auth_sets_also_present() {
+    let dir = tempfile::tempdir().unwrap();
+    let auth = dir.path().join("auth.json");
+    std::fs::write(
+        &auth,
+        serde_json::to_vec(&json!({
+            "anthropic": {
+                "type": "oauth",
+                "access": "pi-access-fixture",
+                "refresh": "pi-refresh-fixture"
+            },
+            "openai": { "type": "api_key", "key": "pi-key-fixture" }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let state = pi::pi_auth_state(&auth);
+
+    assert_eq!(state.kind.as_deref(), Some("mixed"));
+    assert!(state.also_present.iter().any(|kind| kind == "oauth"));
+    assert!(state.also_present.iter().any(|kind| kind == "api_key"));
+    assert_auth_state_hides_secrets(&state, &["pi-access-fixture", "pi-key-fixture"]);
+}
+
+#[test]
+fn pi_oauth_only_leaves_also_present_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let auth = dir.path().join("auth.json");
+    std::fs::write(
+        &auth,
+        serde_json::to_vec(&json!({
+            "anthropic": {
+                "type": "oauth",
+                "access": "pi-oauth-only-fixture",
+                "refresh": "pi-refresh-only-fixture"
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let state = pi::pi_auth_state(&auth);
+
+    assert_eq!(state.kind.as_deref(), Some("oauth"));
+    assert_also_present_empty(&state);
+    assert_auth_state_hides_secrets(
+        &state,
+        &["pi-oauth-only-fixture", "pi-refresh-only-fixture"],
+    );
+}
+
+#[test]
+fn pi_auth_json_slots_match_official_api_key_keys() {
+    use super::pi_auth::{is_pi_auth_json_slot, pi_api_key_auth_entry, PI_AUTH_JSON_SLOTS};
+
+    assert_eq!(
+        PI_AUTH_JSON_SLOTS,
+        &[
+            "anthropic",
+            "ant-ling",
+            "azure-openai-responses",
+            "openai",
+            "deepseek",
+            "nvidia",
+            "google",
+            "amazon-bedrock",
+        ]
+    );
+    for id in PI_AUTH_JSON_SLOTS {
+        assert!(is_pi_auth_json_slot(id), "{id} must be an official slot");
+    }
+    assert!(!is_pi_auth_json_slot("custom"));
+    assert!(!is_pi_auth_json_slot("openai-codex"));
+    assert_eq!(
+        pi_api_key_auth_entry("sk-1"),
+        json!({ "type": "api_key", "key": "sk-1" })
+    );
+}
+
+#[test]
+fn apply_pi_api_key_to_dir_writes_openai_and_preserves_anthropic_oauth() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("auth.json"),
+        serde_json::to_vec_pretty(&json!({
+            "anthropic": {
+                "type": "oauth",
+                "access": "keep-access",
+                "refresh": "keep-refresh"
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    super::pi_auth::apply_pi_api_key_to_dir(dir.path(), "openai", "sk-test-openai").unwrap();
+
+    let body: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("auth.json")).unwrap())
+            .unwrap();
+    assert_eq!(body["openai"]["type"], "api_key");
+    assert_eq!(body["openai"]["key"], "sk-test-openai");
+    assert_eq!(body["anthropic"]["type"], "oauth");
+    assert_eq!(body["anthropic"]["access"], "keep-access");
+    assert_eq!(body["anthropic"]["refresh"], "keep-refresh");
+}
+
+#[test]
+fn apply_pi_api_key_to_dir_rejects_unknown_slot() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("auth.json"),
+        serde_json::to_vec_pretty(&json!({
+            "anthropic": { "type": "oauth", "access": "keep-access" }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let err = super::pi_auth::apply_pi_api_key_to_dir(dir.path(), "custom", "sk-x").unwrap_err();
+    assert_eq!(err.code(), "invalid_arg");
+    let message = err.to_string();
+    assert!(message.contains("custom"), "{message}");
+    assert!(message.contains("models.json"), "{message}");
+
+    let body: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("auth.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        body,
+        json!({ "anthropic": { "type": "oauth", "access": "keep-access" } })
+    );
+}
+
+#[test]
+fn apply_pi_api_key_to_dir_rejects_empty_provider() {
+    let dir = tempfile::tempdir().unwrap();
+    for provider in ["", "   "] {
+        let err =
+            super::pi_auth::apply_pi_api_key_to_dir(dir.path(), provider, "sk-x").unwrap_err();
+        assert_eq!(err.code(), "invalid_arg");
+        let message = err.to_string();
+        assert!(
+            message.contains("provider slot") || message.contains("anthropic/openai"),
+            "{message}"
+        );
+    }
+    assert!(!dir.path().join("auth.json").exists());
+}

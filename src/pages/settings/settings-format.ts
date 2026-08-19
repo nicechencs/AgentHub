@@ -8,17 +8,18 @@ export const SKILL_MARKET_VALUES: SkillMarketSource[] = ['auto', 'skills.sh', 's
 export const LOG_LEVEL_VALUES: LogLevel[] = ['error', 'warn', 'info', 'debug', 'trace'];
 
 /** Canonical Settings `?tab=` slugs. */
-export const SETTINGS_TABS = ['preferences', 'local', 'about'] as const;
+export const SETTINGS_TABS = ['preferences', 'local', 'backups', 'about'] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 /**
  * Legacy `?tab=` slugs → canonical tab.
  * `general` → Preferences; `security` → About (credential note);
- * `data` → Local. `backups` is not a Settings tab — see {@link settingsBackupsRedirect}.
+ * `data` → Local. `#backups` hash → Backups (see {@link resolveSettingsLocation}).
  */
 export const SETTINGS_TAB_REDIRECTS: Record<string, { tab: SettingsTab }> = {
   preferences: { tab: 'preferences' },
   local: { tab: 'local' },
+  backups: { tab: 'backups' },
   about: { tab: 'about' },
   general: { tab: 'preferences' },
   security: { tab: 'about' },
@@ -37,27 +38,24 @@ export function parseSettingsTab(raw: string | null): SettingsTab {
   return 'preferences';
 }
 
-/** Old Settings backups deep links → standalone `/backups`. */
-export function settingsBackupsRedirect(
-  rawTab: string | null,
-  hash?: string | null,
-): '/backups' | null {
-  if (rawTab === 'backups') return '/backups';
-  const value = (hash ?? '').replace(/^#/, '');
-  return value === 'backups' ? '/backups' : null;
-}
-
 export interface SettingsLocation {
   tab: SettingsTab;
-  /** True when the incoming `?tab=` is legacy or unknown. */
+  /** True when the incoming `?tab=` / hash is legacy or unknown. */
   shouldReplace: boolean;
 }
 
 /**
  * Central URL resolver: canonical tab.
- * Old slugs and illegal values are marked for replace-navigation.
+ * Old slugs, `#backups` hashes, and illegal values are marked for replace-navigation.
  */
-export function resolveSettingsLocation(rawTab: string | null): SettingsLocation {
+export function resolveSettingsLocation(
+  rawTab: string | null,
+  hash?: string | null,
+): SettingsLocation {
+  const hashValue = (hash ?? '').replace(/^#/, '');
+  if (hashValue === 'backups') {
+    return { tab: 'backups', shouldReplace: true };
+  }
   const mapped = rawTab ? SETTINGS_TAB_REDIRECTS[rawTab] : undefined;
   const tab = mapped?.tab ?? 'preferences';
   const shouldReplace = rawTab !== null && !isSettingsTab(rawTab);

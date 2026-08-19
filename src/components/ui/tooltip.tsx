@@ -1,41 +1,89 @@
 import * as React from 'react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
+import { TOOLTIP } from '@/styles/tokens';
 import { cn } from '@/lib/utils';
 
 const TooltipProvider = TooltipPrimitive.Provider;
 const Tooltip = TooltipPrimitive.Root;
 const TooltipTrigger = TooltipPrimitive.Trigger;
 
-/**
- * 浮层提示：相对触发器定位（默认上方 + 较大偏移），避免浏览器原生 title
- * 贴在指针旁被鼠标遮挡。内容经 Portal 渲染，不被 overflow 裁切。
- *
- * 全局视觉唯一真源：所有悬停提示应走 Hint / Tip / Button·Input 的 title→Hint，
- * 或本组件；**禁止业务侧原生 `title=` 当教学/操作提示**（黄框 + 双通道）。
- * 默认延迟与 `main.tsx` TooltipProvider 一致（200ms）；仅可用性证明必要时才覆盖
- * `Hint.delayDuration`。
- */
+/** 气泡铬层锁在此类；`contentClassName` 只排泡内，改不了宽高/底色/圆角。 */
+export const TOOLTIP_SURFACE_CLASS = [
+  'z-50 box-border w-max',
+  'max-w-[var(--tooltip-max-width)]',
+  'max-h-[min(var(--tooltip-max-height),calc(100vh-16px))]',
+  'overflow-x-hidden overflow-y-auto',
+  'break-words [overflow-wrap:anywhere]',
+  'rounded-btn border border-border bg-panel shadow-sm',
+  'px-[var(--tooltip-pad-x)] py-[var(--tooltip-pad-y)]',
+  'text-left font-sans text-meta font-normal leading-[var(--font-meta-leading)] text-primary',
+].join(' ');
+
+/** Recharts 等不能写 Tailwind class 的浮层，与 Hint 气泡同一套表面。 */
+export function tooltipSurfaceStyle(): React.CSSProperties {
+  return {
+    backgroundColor: 'var(--bg-panel)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-sm)',
+    boxShadow: 'var(--shadow-sm)',
+    color: 'var(--text-primary)',
+    fontFamily:
+      'system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
+    fontSize: 'var(--font-meta-size)',
+    fontWeight: 400,
+    lineHeight: 'var(--font-meta-leading)',
+    padding: `${TOOLTIP.paddingY} ${TOOLTIP.paddingX}`,
+    maxWidth: TOOLTIP.maxWidth,
+    maxHeight: `min(${TOOLTIP.maxHeight}, calc(100vh - 16px))`,
+    overflowX: 'hidden',
+    overflowY: 'auto',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
+    whiteSpace: 'normal',
+  };
+}
+
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
->(({ className, side = 'top', sideOffset = 8, collisionPadding = 8, ...props }, ref) => (
-  <TooltipPrimitive.Portal>
-    <TooltipPrimitive.Content
-      ref={ref}
-      side={side}
-      sideOffset={sideOffset}
-      collisionPadding={collisionPadding}
-      className={cn(
-        'z-50 max-w-xs rounded-btn border border-border bg-panel px-2.5 py-1.5 text-left text-meta leading-snug text-primary shadow-sm',
-        className,
-      )}
-      {...props}
-    />
-  </TooltipPrimitive.Portal>
-));
+>(
+  (
+    {
+      className,
+      side = 'top',
+      sideOffset = TOOLTIP.sideOffset,
+      collisionPadding = TOOLTIP.collisionPadding,
+      ...props
+    },
+    ref,
+  ) => (
+    <TooltipPrimitive.Portal>
+      <TooltipPrimitive.Content
+        ref={ref}
+        side={side}
+        sideOffset={sideOffset}
+        collisionPadding={collisionPadding}
+        avoidCollisions
+        className={cn(className, TOOLTIP_SURFACE_CLASS)}
+        {...props}
+      />
+    </TooltipPrimitive.Portal>
+  ),
+);
 TooltipContent.displayName = 'TooltipContent';
 
 type HintSide = NonNullable<React.ComponentPropsWithoutRef<typeof TooltipContent>['side']>;
+
+function TooltipBody({
+  contentClassName,
+  children,
+}: {
+  contentClassName?: string;
+  children: React.ReactNode;
+}) {
+  if (!contentClassName) return children;
+  return <div className={cn('min-w-0', contentClassName)}>{children}</div>;
+}
 
 /**
  * 交互控件悬停提示：优先用此替代原生 `title`。
@@ -46,7 +94,7 @@ export function Hint({
   label,
   children,
   side = 'top',
-  sideOffset = 8,
+  sideOffset = TOOLTIP.sideOffset,
   contentClassName,
   delayDuration,
 }: {
@@ -72,10 +120,10 @@ export function Hint({
   );
 
   return (
-    <Tooltip delayDuration={delayDuration} disableHoverableContent>
+    <Tooltip delayDuration={delayDuration}>
       <TooltipTrigger asChild>{trigger}</TooltipTrigger>
-      <TooltipContent side={side} sideOffset={sideOffset} className={contentClassName}>
-        {label}
+      <TooltipContent side={side} sideOffset={sideOffset}>
+        <TooltipBody contentClassName={contentClassName}>{label}</TooltipBody>
       </TooltipContent>
     </Tooltip>
   );
@@ -90,7 +138,7 @@ export function Tip({
   children,
   className,
   side = 'top',
-  sideOffset = 8,
+  sideOffset = TOOLTIP.sideOffset,
   contentClassName,
 }: {
   label?: React.ReactNode;
@@ -117,3 +165,4 @@ export function Tip({
 
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider };
 export type { HintSide };
+export { TOOLTIP };

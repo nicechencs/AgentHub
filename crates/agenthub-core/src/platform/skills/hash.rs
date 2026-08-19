@@ -8,8 +8,8 @@ use std::io::Read;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
-use super::fs_safe::is_link_or_reparse;
 use super::fs_index::join_normalized;
+use super::fs_safe::is_link_or_reparse;
 
 /// Shallow directory fingerprint: entry name + kind + mtime/size, plus `SKILL.md`
 /// when present. Deep content is intentionally not hashed (writes + watcher
@@ -95,7 +95,6 @@ pub(crate) fn hash_tree_files(
     }
     Ok(out)
 }
-
 
 pub(crate) fn stream_file_hash(path: &Path) -> std::result::Result<u64, ()> {
     let mut file = fs::File::open(path).map_err(|_| ())?;

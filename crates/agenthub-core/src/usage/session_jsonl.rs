@@ -361,9 +361,7 @@ pub(crate) fn line_might_have_usage_codex(line: &str) -> bool {
 }
 
 pub(crate) fn line_might_have_usage_dsh(line: &str) -> bool {
-    if line.contains("token-meter")
-        || line.contains("tokenMeter")
-        || line.contains("surfaceTokens")
+    if line.contains("token-meter") || line.contains("tokenMeter") || line.contains("surfaceTokens")
     {
         return false;
     }
@@ -936,10 +934,18 @@ pub(crate) fn extract_dsh(
         return Ok(None);
     }
 
-    let input = token_field(usage, &["input_tokens", "inputTokens", "prompt_tokens", "input"]);
+    let input = token_field(
+        usage,
+        &["input_tokens", "inputTokens", "prompt_tokens", "input"],
+    );
     let output = token_field(
         usage,
-        &["output_tokens", "outputTokens", "completion_tokens", "output"],
+        &[
+            "output_tokens",
+            "outputTokens",
+            "completion_tokens",
+            "output",
+        ],
     );
     let cache_read = token_field(
         usage,
@@ -2252,7 +2258,8 @@ mod tests {
         let header = r#"{"type":"request/header","model":"deepseek-v4-flash"}"#;
         let billed = r#"{"type":"assistant/message","usage":{"input_tokens":12,"output_tokens":34,"cache_read_input_tokens":2}}"#;
         let meter = r#"{"type":"token-meter","surfaceTokens":999,"estimated":true}"#;
-        let estimated = r#"{"type":"assistant/message","usage":{"surfaceTokens":80,"estimated":true}}"#;
+        let estimated =
+            r#"{"type":"assistant/message","usage":{"surfaceTokens":80,"estimated":true}}"#;
         let seed = r#"{"type":"assistant/message","seed":true,"usage":{"input_tokens":100,"output_tokens":100}}"#;
         let mut model = None;
         note_dsh_model_from_line(header, &mut model);

@@ -22,10 +22,7 @@ fn linux_family_from_os_release_classifies_common_distros() {
         linux_family_from_os_release("ID=fedora\n"),
         LinuxFamily::Fedora
     );
-    assert_eq!(
-        linux_family_from_os_release("ID=arch\n"),
-        LinuxFamily::Arch
-    );
+    assert_eq!(linux_family_from_os_release("ID=arch\n"), LinuxFamily::Arch);
     assert_eq!(
         linux_family_from_os_release("ID=alpine\n"),
         LinuxFamily::Alpine

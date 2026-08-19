@@ -15,14 +15,17 @@ use crate::services::adapter_route_constants::{
     DEEPSEEK_CODEX_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID,
     DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID, GLM_CODEX_BASE_URL,
     GLM_CODEX_RULE_ID, GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_BASE_URL,
-    KIMI_CLAUDE_RULE_ID, KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL,
-    OPENAI_GROK_BASE_URL, OPENAI_GROK_DEFAULT_MODEL,
+    KIMI_CLAUDE_RULE_ID, KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL, OPENAI_GROK_BASE_URL,
+    OPENAI_GROK_DEFAULT_MODEL,
 };
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
 use super::AdapterRouteService;
 
-pub(super) fn reuse_path_for(route: AdapterRoute, credential: AdapterCredentialClass) -> AdapterReusePath {
+pub(super) fn reuse_path_for(
+    route: AdapterRoute,
+    credential: AdapterCredentialClass,
+) -> AdapterReusePath {
     match route {
         AdapterRoute::Unsupported => AdapterReusePath::None,
         AdapterRoute::LocalBridge => AdapterReusePath::LocalBridge,
@@ -444,7 +447,8 @@ pub(super) fn actions_for(
                 false,
             ),
         ],
-        (RouteSourceLabel::XaiGrokSubscription, AgentId::Claude, AdapterRoute::LocalBridge) => vec![
+        (RouteSourceLabel::XaiGrokSubscription, AgentId::Claude, AdapterRoute::LocalBridge) => {
+            vec![
             action(
                 "requires_local_bridge",
                 "Claude Code",
@@ -459,7 +463,8 @@ pub(super) fn actions_for(
                 Some("ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN"),
                 false,
             ),
-        ],
+        ]
+        }
         (RouteSourceLabel::KimiMembership, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
             action(
                 "set_config",
@@ -738,7 +743,12 @@ pub(super) fn action(
     }
 }
 
-pub(super) fn change(target: &str, field: &str, value: Option<&str>, secret: bool) -> AdapterPlanChange {
+pub(super) fn change(
+    target: &str,
+    field: &str,
+    value: Option<&str>,
+    secret: bool,
+) -> AdapterPlanChange {
     debug_assert!(!secret || value.is_none());
     AdapterPlanChange {
         target: target.into(),
@@ -848,4 +858,3 @@ pub(super) fn adapter_compatibility_evidence() -> AdapterEvidence {
         verified_at: VERIFIED_AT.into(),
     }
 }
-
