@@ -22,7 +22,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { AGENT_MAP } from '@/config/agents';
@@ -40,11 +39,7 @@ import { openPathInFileManager } from '@/lib/api/skill';
 import { setChatBootstrap } from '@/lib/chat-bootstrap';
 import { isCapabilityUsable } from '@/lib/capability';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import {
-  normalizeOpenPath,
-  projectOpenCandidates,
-  verifiedProjectWorkspacePath,
-} from '@/lib/path-open';
+import { normalizeOpenPath, verifiedProjectWorkspacePath } from '@/lib/path-open';
 import type { AgentId, AgentProject, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { projectMatches, sessionMatches } from './project-filter';
@@ -82,8 +77,6 @@ export default function ProjectsPage() {
   const [deleteTarget, setDeleteTarget] = useState<AgentSession | null>(null);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
-  const [aliasTarget, setAliasTarget] = useState<AgentProject | null>(null);
-  const [aliasDraft, setAliasDraft] = useState('');
   /** 各 agent 项目数量（Tab 角标） */
   const [projectCounts, setProjectCounts] = useState<Partial<Record<AgentId, number>>>({});
 
@@ -292,58 +285,6 @@ export default function ProjectsPage() {
     } finally {
       setBusy(false);
     }
-  }
-
-  function openAliasDialog(p: AgentProject, e: React.MouseEvent) {
-    e.stopPropagation();
-    setAliasTarget(p);
-    setAliasDraft(p.alias ?? '');
-  }
-
-  async function saveAlias() {
-    if (!aliasTarget) return;
-    setBusy(true);
-    try {
-      await upsertProjectMeta(aliasTarget.id, { alias: aliasDraft });
-      toast({ title: '已保存别名', variant: 'success' });
-      setAliasTarget(null);
-      await reloadProjects();
-    } catch (err) {
-      toast({ title: err instanceof Error ? err.message : String(err), variant: 'danger' });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  /**
-   * Open project folder: verified workspace first, then storagePath.
-   * Restored Claude addresses are only opened when the backend verified they exist.
-   */
-  async function openProjectDir(p: AgentProject, e: React.MouseEvent) {
-    e.stopPropagation();
-    const candidates = projectOpenCandidates({
-      agentId: p.agentId,
-      actualPath: p.actualPath,
-      relativePath: p.relativePath,
-      storagePath: p.storagePath,
-    });
-    if (candidates.length === 0) {
-      toast({ title: '没有可打开的路径', variant: 'danger' });
-      return;
-    }
-    let lastErr: unknown;
-    for (const target of candidates) {
-      try {
-        await openPathInFileManager(target);
-        return;
-      } catch (err) {
-        lastErr = err;
-      }
-    }
-    toast({
-      title: lastErr instanceof Error ? lastErr.message : String(lastErr),
-      variant: 'danger',
-    });
   }
 
   async function openProjectWorkspace(p: AgentProject, e: React.MouseEvent) {
@@ -708,9 +649,7 @@ export default function ProjectsPage() {
           showDelete={showDelete}
           visibleSessions={visibleSessions}
           onToggleExpand={(p) => void toggleExpand(p)}
-          onOpenProjectDir={(p, e) => void openProjectDir(p, e)}
           onOpenProjectWorkspace={(p, e) => void openProjectWorkspace(p, e)}
-          onOpenAliasDialog={openAliasDialog}
           onToggleHideProject={(p, e) => void toggleHideProject(p, e)}
           onToggleOne={toggleOne}
           onCopySessionId={(s, e) => void copySessionId(s, e)}
@@ -768,37 +707,6 @@ export default function ProjectsPage() {
             <Button variant="danger" disabled={busy} onClick={() => void handleBatchDelete()}>
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
               确认删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!aliasTarget} onOpenChange={(o) => !o && setAliasTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>项目别名</DialogTitle>
-            <DialogDescription>
-              仅存于 AgentHub，不改原生日志。留空清除。
-            </DialogDescription>
-          </DialogHeader>
-          {aliasTarget && (
-            <div className="space-y-2">
-              <p className="text-xs text-muted">原标题：{aliasTarget.title}</p>
-              <Input
-                value={aliasDraft}
-                onChange={(e) => setAliasDraft(e.target.value)}
-                placeholder="显示别名"
-                autoFocus
-              />
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" disabled={busy} onClick={() => setAliasTarget(null)}>
-              取消
-            </Button>
-            <Button disabled={busy} onClick={() => void saveAlias()}>
-              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              保存
             </Button>
           </DialogFooter>
         </DialogContent>

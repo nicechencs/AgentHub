@@ -4,10 +4,8 @@ import {
   ChevronRight,
   Copy,
   EyeOff,
-  FolderOpen,
   Loader2,
   MessageSquarePlus,
-  Pencil,
   Trash2,
 } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
@@ -15,11 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import type { AgentMeta } from '@/config/agents';
-import {
-  normalizeOpenPath,
-  projectOpenCandidates,
-  verifiedProjectWorkspacePath,
-} from '@/lib/path-open';
+import { normalizeOpenPath, verifiedProjectWorkspacePath } from '@/lib/path-open';
 import type { AgentId, AgentProject, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -44,9 +38,7 @@ export type ProjectTreeProps = {
   showDelete: boolean;
   visibleSessions: (projectId: string) => AgentSession[];
   onToggleExpand: (project: AgentProject) => void;
-  onOpenProjectDir: (p: AgentProject, e: ReactMouseEvent) => void;
   onOpenProjectWorkspace: (p: AgentProject, e: ReactMouseEvent) => void;
-  onOpenAliasDialog: (p: AgentProject, e: ReactMouseEvent) => void;
   onToggleHideProject: (p: AgentProject, e: ReactMouseEvent) => void;
   onToggleOne: (id: string) => void;
   onCopySessionId: (s: AgentSession, e?: ReactMouseEvent) => void;
@@ -66,9 +58,7 @@ export function ProjectTree({
   showDelete,
   visibleSessions,
   onToggleExpand,
-  onOpenProjectDir,
   onOpenProjectWorkspace,
-  onOpenAliasDialog,
   onToggleHideProject,
   onToggleOne,
   onCopySessionId,
@@ -152,46 +142,6 @@ export function ProjectTree({
                     )}
                   </div>
                   <div className="flex shrink-0 gap-1" onClick={(e) => e.stopPropagation()}>
-                    {(() => {
-                      const openTargets = projectOpenCandidates({
-                        agentId: p.agentId,
-                        actualPath: p.actualPath,
-                        relativePath: p.relativePath,
-                        storagePath: p.storagePath,
-                      });
-                      // 路径格式修复后仍无法得到绝对路径 → 隐藏打开图标
-                      if (openTargets.length === 0) return null;
-                      const primary = openTargets[0];
-                      const isWorkspace =
-                        !!normalizeOpenPath(p.actualPath) &&
-                        normalizeOpenPath(p.actualPath) === primary;
-                      return (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          disabled={busy}
-                          aria-label={isWorkspace ? '打开工作区' : '打开存储目录'}
-                          title={
-                            isWorkspace
-                              ? `打开工作区：${primary}`
-                              : `打开存储目录：${primary}`
-                          }
-                          onClick={(e) => onOpenProjectDir(p, e)}
-                        >
-                          <FolderOpen className="h-3.5 w-3.5" />
-                        </Button>
-                      );
-                    })()}
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      disabled={busy}
-                      aria-label="设置别名"
-                      title="设置别名"
-                      onClick={(e) => onOpenAliasDialog(p, e)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
                     <Button
                       size="icon"
                       variant="ghost"
@@ -257,18 +207,6 @@ export function ProjectTree({
                                 ) : null}
                               </div>
                               <div className="flex shrink-0 gap-1">
-                                {record ? (
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    disabled={busy}
-                                    aria-label="定位记录文件"
-                                    title={`定位记录文件：${record}`}
-                                    onClick={(e) => onOpenSessionRecord(s, e)}
-                                  >
-                                    <FolderOpen className="h-3.5 w-3.5" />
-                                  </Button>
-                                ) : null}
                                 {(() => {
                                   const sid = nativeSessionId(s);
                                   if (!sid) return null;
