@@ -396,7 +396,7 @@ export default function ConnectionsPage() {
             ? `${visibleWallet.tickets.length} 份登录`
             : '官方登录 / API Key'
         }
-        descriptionTip="跨 Agent 的登录列表。每份登录都可「接到…」其他 Agent；生成投影不出现在本页。"
+        descriptionTip="跨 Agent 的登录列表。每份登录都可接到其他 Agent。"
       />
 
       {resumeAgentId ? (

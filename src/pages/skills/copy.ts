@@ -50,6 +50,7 @@ export const skillsCopy = {
 
   empty: {
     noMatchTitle: '没有匹配的技能',
+    emptyLibraryTitle: '还没有技能',
     noMatchFilter: '试试调整搜索或过滤',
     noMatchLibrary: '共享库还没有技能，点右上角「安装」添加',
     clearFilter: '清除搜索与过滤',
