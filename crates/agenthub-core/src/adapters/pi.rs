@@ -580,12 +580,10 @@ mod tests {
 
     #[test]
     fn skills_dir_is_under_agent_config() {
+        let _guard = PI_CONFIG_ENV_LOCK.lock().unwrap();
         let dir = PiAdapter.skills_dir().expect("skills_dir");
-        let s = dir.to_string_lossy().replace('\\', "/");
-        assert!(
-            s.ends_with("/.pi/agent/skills") || s.contains("/agent/skills"),
-            "unexpected skills_dir: {s}"
-        );
+        let expected = pi_config_dir().expect("pi_config_dir").join("skills");
+        assert_eq!(dir, expected);
     }
 
     #[test]
