@@ -9,6 +9,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Hint, Tip } from '@/components/ui/tooltip';
@@ -66,6 +67,7 @@ export function ProjectTree({
   onGoContinue,
   onRequestDelete,
 }: ProjectTreeProps) {
+  const { t } = useI18n();
   return (
         <div className={pageRhythm.stackDense}>
           {visibleProjects.map((p) => {
@@ -121,15 +123,19 @@ export function ProjectTree({
                     {p.alias?.trim() && (
                       <span className="shrink-0 text-xs text-muted">({p.title})</span>
                     )}
-                    {p.hidden && <span className="shrink-0 text-xs text-muted">已隐藏</span>}
+                    {p.hidden && <span className="shrink-0 text-xs text-muted">{t('projects.tree.hidden')}</span>}
                     <span className="shrink-0 text-xs text-muted tabular-nums">
-                      {relativeTime(p.updatedAt)} · {p.sessionCount} 会话 · {fmtBytes(p.sizeBytes)}
+                      {t('projects.tree.sessionMeta', {
+                        time: relativeTime(p.updatedAt, t),
+                        count: p.sessionCount,
+                        size: fmtBytes(p.sizeBytes),
+                      })}
                     </span>
                     {workspace ? (
                       <PathLink
                         path={workspace}
                         disabled={busy}
-                        ariaLabel={`打开项目文件夹：${workspace}`}
+                        ariaLabel={t('projects.tree.openFolder', { path: workspace })}
                         onOpen={(e) => onOpenProjectWorkspace(p, e)}
                       />
                     ) : (
@@ -146,8 +152,8 @@ export function ProjectTree({
                       size="icon"
                       variant="ghost"
                       disabled={busy}
-                      aria-label={p.hidden ? '取消隐藏' : '隐藏'}
-                      title={p.hidden ? '取消隐藏' : '隐藏'}
+                      aria-label={p.hidden ? t('projects.tree.unhide') : t('projects.tree.hide')}
+                      title={p.hidden ? t('projects.tree.unhide') : t('projects.tree.hide')}
                       onClick={(e) => onToggleHideProject(p, e)}
                     >
                       <EyeOff className="h-3.5 w-3.5" />
@@ -158,10 +164,10 @@ export function ProjectTree({
                 {open && (
                   <div className="border-t border-border bg-subtle/40">
                     {loadingKids ? (
-                      <div className="px-3 py-3 text-xs text-muted">加载会话…</div>
+                      <div className="px-3 py-3 text-xs text-muted">{t('projects.tree.loadingSessions')}</div>
                     ) : kids.length === 0 ? (
                       <div className="px-3 py-3 text-xs text-muted">
-                        {p.sessionCount === 0 ? '该项目下没有会话文件' : '没有匹配的会话'}
+                        {p.sessionCount === 0 ? t('projects.tree.noSessionFiles') : t('projects.tree.noMatch')}
                       </div>
                     ) : (
                       <ul className="divide-y divide-border/60">
@@ -179,7 +185,7 @@ export function ProjectTree({
                                   className="h-3.5 w-3.5 shrink-0 accent-[var(--accent)]"
                                   checked={isSel}
                                   onChange={() => onToggleOne(s.id)}
-                                  aria-label={`选择 ${s.title}`}
+                                  aria-label={t('projects.tree.selectSession', { title: s.title })}
                                 />
                               )}
                               <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -192,16 +198,16 @@ export function ProjectTree({
                                   </span>
                                 </Tip>
                                 <span className="shrink-0 text-xs text-muted tabular-nums">
-                                  {relativeTime(s.updatedAt)} · {fmtBytes(s.sizeBytes)}
+                                  {relativeTime(s.updatedAt, t)} · {fmtBytes(s.sizeBytes)}
                                   {s.messageCount != null && s.messageCount > 0
-                                    ? ` · ~${s.messageCount} 行`
+                                    ? t('projects.tree.lines', { n: s.messageCount })
                                     : ''}
                                 </span>
                                 {record ? (
                                   <PathLink
                                     path={record}
                                     disabled={busy}
-                                    ariaLabel={`定位记录文件：${record}`}
+                                    ariaLabel={t('projects.tree.locateRecord', { path: record })}
                                     onOpen={(e) => onOpenSessionRecord(s, e)}
                                   />
                                 ) : null}
@@ -215,8 +221,8 @@ export function ProjectTree({
                                       size="icon"
                                       variant="ghost"
                                       disabled={busy}
-                                      aria-label={`复制 Session ID：${sid}`}
-                                      title={`复制 Session ID：${sid}`}
+                                      aria-label={t('projects.tree.copySessionId', { id: sid })}
+                                      title={t('projects.tree.copySessionId', { id: sid })}
                                       onClick={(e) => onCopySessionId(s, e)}
                                     >
                                       <Copy className="h-3.5 w-3.5" />
@@ -230,7 +236,7 @@ export function ProjectTree({
                                   onClick={() => onGoContinue(s)}
                                 >
                                   <MessageSquarePlus className="h-3.5 w-3.5" />
-                                  继续
+                                  {t('projects.tree.continue')}
                                 </Button>
                                 {showDelete && (
                                   <Button
@@ -238,8 +244,8 @@ export function ProjectTree({
                                     variant="ghost"
                                     disabled={busy}
                                     className="text-danger hover:text-danger"
-                                    aria-label="删除会话"
-                                    title="删除会话"
+                                    aria-label={t('projects.tree.deleteSession')}
+                                    title={t('projects.tree.deleteSession')}
                                     onClick={() => onRequestDelete(s)}
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />

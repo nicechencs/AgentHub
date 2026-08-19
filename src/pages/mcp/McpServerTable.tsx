@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { ChevronDown, FolderOpen } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,6 +22,7 @@ import { agentDisplayName } from '@/config/agents';
 import type { McpServerEntry } from '@/lib/backend/contracts/mcp-types';
 import type { AgentId } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import type { TranslateFn } from '@/lib/i18n';
 import type { McpAgentGroup } from './group-servers';
 
 type ColumnKey = 'name' | 'transport' | 'endpoint' | 'actions';
@@ -32,17 +34,19 @@ const WIDTH_SPECS: ColumnWidthSpec<ColumnKey>[] = [
   { key: 'actions', defaultWidth: 96, minWidth: 80 },
 ];
 
-const COLUMN_LABELS: Record<ColumnKey, string> = {
-  name: 'Server',
-  transport: '连接',
-  endpoint: '命令 / 地址',
-  actions: '操作',
-};
+const COLUMN_KEYS: ColumnKey[] = ['name', 'transport', 'endpoint', 'actions'];
 
-const COLUMN_KEYS = Object.keys(COLUMN_LABELS) as ColumnKey[];
+function columnLabels(t: TranslateFn): Record<ColumnKey, string> {
+  return {
+    name: t('mcp.table.name'),
+    transport: t('mcp.table.transport'),
+    endpoint: t('mcp.table.endpoint'),
+    actions: t('mcp.table.actions'),
+  };
+}
 
-function transportLabel(t: string): string {
-  switch (t) {
+function transportLabel(transport: string, t: TranslateFn): string {
+  switch (transport) {
     case 'stdio':
       return 'stdio';
     case 'sse':
@@ -50,13 +54,13 @@ function transportLabel(t: string): string {
     case 'http':
       return 'HTTP';
     default:
-      return t || '未知';
+      return transport || t('mcp.table.unknown');
   }
 }
 
 function displayText(value?: string | null): string | null {
-  const t = value?.trim();
-  return t ? t : null;
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 function endpointOf(server: McpServerEntry): string | null {
@@ -72,6 +76,7 @@ function McpDetailsButton({
   detailsId: string;
   onToggle: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <Button
       size="sm"
@@ -81,7 +86,7 @@ function McpDetailsButton({
       aria-controls={detailsId}
       onClick={onToggle}
     >
-      详情
+      {t('mcp.table.details')}
       <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
     </Button>
   );
@@ -100,6 +105,7 @@ function FileGroupHeader({
   colSpan: number;
   onLocate: (path: string) => void;
 }) {
+  const { t } = useI18n();
   return (
     <TableRow className="bg-subtle hover:bg-subtle">
       <TableCell colSpan={colSpan} className="py-1.5">
@@ -123,7 +129,7 @@ function FileGroupHeader({
             onClick={() => void onLocate(path)}
           >
             <FolderOpen className="h-3 w-3" />
-            目录
+            {t('mcp.table.directory')}
           </Button>
         </div>
       </TableCell>
@@ -132,6 +138,7 @@ function FileGroupHeader({
 }
 
 function ServerTableRow({ server }: { server: McpServerEntry }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const detailsId = useId();
   const endpoint = endpointOf(server);
@@ -142,11 +149,11 @@ function ServerTableRow({ server }: { server: McpServerEntry }) {
         <TableCell className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate font-medium">{server.name}</span>
-            {server.enabled === false ? <Badge variant="warning">已禁用</Badge> : null}
+            {server.enabled === false ? <Badge variant="warning">{t('mcp.table.disabled')}</Badge> : null}
           </div>
         </TableCell>
         <TableCell className="truncate text-meta text-secondary">
-          {transportLabel(server.transport)}
+          {transportLabel(server.transport, t)}
         </TableCell>
         <TableCell className="min-w-0">
           {endpoint ? (
@@ -194,6 +201,8 @@ export function McpServerTable({
   showAgent: boolean;
   onLocate: (path: string) => void;
 }) {
+  const { t } = useI18n();
+  const labels = columnLabels(t);
   const { widths, onResizeStart, totalWidth } = useColumnWidths(WIDTH_SPECS);
   return (
     <TableShell>
@@ -207,10 +216,10 @@ export function McpServerTable({
           <TableHeaderRow>
             {COLUMN_KEYS.map((key) => (
               <TableHead key={key} className="relative select-none">
-                {COLUMN_LABELS[key]}
+                {labels[key]}
                 <ColumnResizeHandle
                   columnKey={key}
-                  label={COLUMN_LABELS[key]}
+                  label={labels[key]}
                   onResizeStart={onResizeStart}
                 />
               </TableHead>

@@ -1,3 +1,4 @@
+import type { TranslateFn } from '@/lib/i18n';
 import { restoreProjectWorkspacePath } from '@/lib/path-open';
 import type { AgentProject, AgentSession } from '@/lib/types';
 
@@ -55,18 +56,18 @@ export function fmtBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function relativeTime(iso: string): string {
-  const t = Date.parse(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
-  if (Number.isNaN(t)) return '';
-  const diff = Date.now() - t;
+export function relativeTime(iso: string, t: TranslateFn): string {
+  const parsed = Date.parse(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(parsed)) return '';
+  const diff = Date.now() - parsed;
   const m = Math.floor(diff / 60000);
-  if (m < 1) return '刚刚';
-  if (m < 60) return `${m} 分钟前`;
+  if (m < 1) return t('projects.time.justNow');
+  if (m < 60) return t('projects.time.minutes', { n: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h} 小时前`;
+  if (h < 24) return t('projects.time.hours', { n: h });
   const d = Math.floor(h / 24);
-  if (d < 30) return `${d} 天前`;
-  return new Date(t).toLocaleDateString();
+  if (d < 30) return t('projects.time.days', { n: d });
+  return new Date(parsed).toLocaleDateString();
 }
 
 export function shortPath(p: string, max = 48): string {

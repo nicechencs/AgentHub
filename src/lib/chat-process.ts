@@ -4,6 +4,7 @@
  * 设计见 docs/chat-process-streaming.md。
  */
 
+import type { TranslateFn } from '@/lib/i18n';
 import type { AgentId, ChatEvent, ChatMessageStatus, ProcessStep } from '@/lib/types';
 
 export type ProcessPhase =
@@ -55,41 +56,41 @@ export function phaseFromMessageStatus(status: ChatMessageStatus | string): Proc
   }
 }
 
-export function processPhaseLabel(phase: ProcessPhase): string {
+export function processPhaseLabel(phase: ProcessPhase, t: TranslateFn): string {
   switch (phase) {
     case 'queued':
-      return '排队中';
+      return t('chat.process.queued');
     case 'starting':
-      return '启动中';
+      return t('chat.process.starting');
     case 'running':
-      return '生成中';
+      return t('chat.process.running');
     case 'ok':
-      return '已完成';
+      return t('chat.process.ok');
     case 'failed':
-      return '失败';
+      return t('chat.process.failed');
     case 'cancelled':
-      return '已取消';
+      return t('chat.process.cancelled');
     case 'timeout':
-      return '超时';
+      return t('chat.process.timeout');
     default:
       return phase;
   }
 }
 
-export function stepSummary(step: ProcessStep): string {
+export function stepSummary(step: ProcessStep, t: TranslateFn): string {
   switch (step.type) {
     case 'status':
       return step.detail ? `${step.phase} · ${step.detail}` : step.phase;
     case 'thinking':
-      return step.done ? '思考完成' : '思考中';
+      return step.done ? t('chat.process.thinkingDone') : t('chat.process.thinking');
     case 'tool': {
       const st = step.status || '';
       return st ? `${step.name} (${st})` : step.name;
     }
     case 'text':
-      return '文本';
+      return t('chat.process.text');
     case 'raw':
-      return step.note || '原始事件';
+      return step.note || t('chat.process.rawEvent');
     case 'error':
       return step.message;
     default:

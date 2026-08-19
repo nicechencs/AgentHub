@@ -3,6 +3,7 @@ import { MessagesSquare } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ChatComposer } from './ChatComposer';
@@ -15,6 +16,7 @@ import { useChatPage } from './use-chat-page';
 export default function ChatPage() {
   const page = useChatPage();
   const navigate = useNavigate();
+  const { t } = useI18n();
 
   if (page.error && page.conversations.length === 0 && !page.listLoading) {
     return (
@@ -34,8 +36,8 @@ export default function ChatPage() {
       <div className="flex h-full items-center justify-center p-6">
         <EmptyState
           icon={MessagesSquare}
-          title="还没有可对话的 Agent"
-          description="安装或取消隐藏 Agent 后即可开始"
+          title={t('chat.page.emptyTitle')}
+          description={t('chat.page.emptyDesc')}
           action={
             <Button
               size="sm"
@@ -43,7 +45,7 @@ export default function ChatPage() {
               className="mt-2"
               onClick={() => navigate('/agents')}
             >
-              去 Agents 页
+              {t('chat.page.goAgents')}
             </Button>
           }
         />
