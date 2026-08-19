@@ -78,25 +78,22 @@ pub fn run() {
                     let _ = window.hide();
                     return;
                 }
-                if decide_close_action(state.should_exit(), state.close_to_tray())
-                    == CloseAction::HideToTray
+                let bridge_active =
+                    exit_coordinator::ExitCoordinator::requires_impact_confirmation(
+                        state.exit_coordinator().prepare_exit(&state.bridge_host()),
+                    );
+                if decide_close_action(
+                    state.should_exit(),
+                    state.close_to_tray(),
+                    bridge_active,
+                ) == CloseAction::HideToTray
                 {
                     api.prevent_close();
                     let _ = window.hide();
                     return;
                 }
-                // When this is a real close (rather than the normal
-                // close-to-tray setting), keep the window alive only while an
-                // active bridge impact dialog is resolved. An empty host keeps
-                // the pre-existing close -> RunEvent::ExitRequested path.
-                if !state.should_exit()
-                    && exit_coordinator::ExitCoordinator::requires_impact_confirmation(
-                        state.exit_coordinator().prepare_exit(&state.bridge_host()),
-                    )
-                {
-                    api.prevent_close();
-                    let _ = tray::request_app_exit(window.app_handle());
-                }
+                // Window close hides while a local bridge is running (above).
+                // Tray 退出 still uses request_app_exit so the impact prompt stays.
             }
         })
         .invoke_handler(tauri::generate_handler![
