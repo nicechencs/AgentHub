@@ -73,6 +73,42 @@ export function dispatchTicketAddAction(
   handlers.onAddKey?.(agentId);
 }
 
+/** After the originating click, so menu unmount cannot dismiss the new dialog. */
+export function scheduleAfterMenuClose(action: () => void, delayMs = 0): void {
+  const schedule = globalThis.setTimeout;
+  if (typeof schedule === 'function') {
+    schedule(action, delayMs);
+    return;
+  }
+  action();
+}
+
+/** Swallow a leftover Dialog `onOpenChange(false)` from the opening click. */
+export function shouldIgnoreMenuDialogDismiss(armed: boolean, nextOpen: boolean): boolean {
+  return armed && !nextOpen;
+}
+
+/**
+ * Menu item select for 导入当前登录 / 添加 API Key.
+ * preventDefault keeps the menu mounted through the click so the Dialog is
+ * not dismissed and the pointer cannot hit the segmented filter underneath.
+ */
+export function handleTicketAddMenuSelect(
+  event: { preventDefault: () => void },
+  kind: TicketAddKind,
+  agentId: AgentId,
+  handlers: {
+    onImportLogin?: (id: AgentId) => void;
+    onAddKey?: (id: AgentId) => void;
+    onMenuClose?: () => void;
+  },
+  schedule: (fn: () => void) => void = scheduleAfterMenuClose,
+): void {
+  event.preventDefault();
+  dispatchTicketAddAction(kind, agentId, handlers);
+  if (handlers.onMenuClose) schedule(handlers.onMenuClose);
+}
+
 export function ticketAddDialogState(
   kind: TicketAddKind,
   agentId: AgentId,
@@ -225,7 +261,7 @@ function ticketSearchHaystack(
     ticketCredentialClassLabel(ticket.credentialClass),
     ticketSurfaceLabel(ticket.surface),
     agentDisplayName(ticket.agentId),
-    ...(ticket.speaks ?? []),
+    ...(Array.isArray(ticket.speaks) ? ticket.speaks : []),
     usageText,
     ...bindingBits,
   ]
@@ -398,7 +434,11 @@ export function extrasFromPoolSource(
           ?? source.account.subjectId
           ?? '官方未提供账号信息'
         : source.account.email ?? source.account.identityLabel ?? source.account.label;
-    if (source.account.provider && !ticket.label.includes(source.account.provider)) {
+    if (
+      source.account.provider
+      && typeof ticket.label === 'string'
+      && !ticket.label.includes(source.account.provider)
+    ) {
       extras.accountProvider = source.account.provider;
     }
     extras.authLabel = row.auth.label;
@@ -453,11 +493,12 @@ export function buildTicketDetailFields(
     }
   }
 
+  const speaks = Array.isArray(ticket.speaks) ? ticket.speaks : [];
   const showProtocol =
-    ticket.speaks.length > 0
+    speaks.length > 0
     && (ticket.credentialClass === 'api_key' || customEndpoint);
   if (showProtocol) {
-    advanced.push({ label: '协议', value: ticket.speaks.join(' · ') });
+    advanced.push({ label: '协议', value: speaks.join(' · ') });
   }
 
   return { advanced };

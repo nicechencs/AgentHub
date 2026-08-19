@@ -6,6 +6,8 @@ import {
   activeBindingForAgent,
   buildTicketAddMenu,
   dispatchTicketAddAction,
+  handleTicketAddMenuSelect,
+  shouldIgnoreMenuDialogDismiss,
   ticketAddDialogState,
   buildTicketDetailFields,
   buildTicketWalletRows,
@@ -419,5 +421,120 @@ describe('ticketAddDialogState', () => {
       apiKeyDialogOpen: true,
       clearEditProvider: true,
     });
+  });
+});
+
+describe('handleTicketAddMenuSelect', () => {
+  it('swallows the menu select, opens the matching dialog, then closes the menu', () => {
+    const event = { preventDefault: vi.fn() };
+    const onImportLogin = vi.fn();
+    const onAddKey = vi.fn();
+    const onMenuClose = vi.fn();
+    const schedule = vi.fn<(fn: () => void) => void>();
+
+    handleTicketAddMenuSelect(event, 'import-login', 'kimi', {
+      onImportLogin,
+      onAddKey,
+      onMenuClose,
+    }, schedule);
+
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(onImportLogin).toHaveBeenCalledOnce();
+    expect(onImportLogin).toHaveBeenCalledWith('kimi');
+    expect(onAddKey).not.toHaveBeenCalled();
+    expect(onMenuClose).not.toHaveBeenCalled();
+    expect(schedule).toHaveBeenCalledOnce();
+    schedule.mock.calls[0]![0]();
+    expect(onMenuClose).toHaveBeenCalledOnce();
+  });
+
+  it('opens the add API Key dialog without touching the wallet filter', () => {
+    const event = { preventDefault: vi.fn() };
+    const onAddKey = vi.fn();
+    handleTicketAddMenuSelect(event, 'api-key', 'claude', { onAddKey });
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(onAddKey).toHaveBeenCalledOnce();
+    expect(onAddKey).toHaveBeenCalledWith('claude');
+    expect(ticketAddDialogState('api-key', 'claude')).toMatchObject({
+      apiKeyDialogOpen: true,
+      loginImportOpen: false,
+    });
+  });
+});
+
+describe('shouldIgnoreMenuDialogDismiss', () => {
+  it('ignores only a close while the opening click is still settling', () => {
+    expect(shouldIgnoreMenuDialogDismiss(true, false)).toBe(true);
+    expect(shouldIgnoreMenuDialogDismiss(true, true)).toBe(false);
+    expect(shouldIgnoreMenuDialogDismiss(false, false)).toBe(false);
+  });
+});
+
+describe('filter change after add-dialog leftover', () => {
+  it('does not throw when returning to 全部 with mixed or incomplete tickets', () => {
+    const wallet: TicketWallet = {
+      tickets: [
+        {
+          id: 'provider:kimi-1',
+          sourceKind: 'provider',
+          sourceId: 'kimi-1',
+          agentId: 'kimi',
+          label: 'Kimi 会员',
+          surface: 'kimi-code-membership',
+          credentialClass: 'api_key',
+          speaks: ['anthropic-messages'],
+          importedFrom: 'kimi',
+        },
+        {
+          id: 'account:codex-1',
+          sourceKind: 'account',
+          sourceId: 'codex-1',
+          agentId: 'codex',
+          label: 'ChatGPT Plus',
+          surface: 'codex-chatgpt-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'codex',
+        },
+        {
+          id: 'account:unknown-1',
+          sourceKind: 'account',
+          sourceId: 'u1',
+          agentId: 'pi',
+          label: '',
+          surface: 'unknown',
+          credentialClass: 'unknown',
+          speaks: undefined as unknown as string[],
+          importedFrom: null,
+        },
+      ],
+      bindings: [
+        {
+          ticketId: 'account:codex-1',
+          agentId: 'codex',
+          route: 'native',
+          active: true,
+          profileId: null,
+          bridge: null,
+        },
+        {
+          ticketId: 'provider:kimi-1',
+          agentId: 'claude',
+          route: 'bridge',
+          active: true,
+          profileId: null,
+          bridge: { port: null, running: false },
+        },
+      ],
+    };
+
+    expect(() => buildTicketWalletRows(wallet, { filter: 'api_key' })).not.toThrow();
+    expect(() => buildTicketWalletRows(wallet, { filter: 'all' })).not.toThrow();
+    const allRows = buildTicketWalletRows(wallet, { filter: 'all' });
+    expect(allRows).toHaveLength(3);
+    expect(() =>
+      extrasFromPoolSource(wallet.tickets[2]!, { account: undefined, provider: undefined }),
+    ).not.toThrow();
+    expect(() => buildTicketDetailFields(wallet.tickets[2]!)).not.toThrow();
   });
 });

@@ -36,6 +36,8 @@ import { TicketWalletList } from './TicketWalletList';
 import {
   extrasFromPoolSource,
   findTicketPoolSource,
+  scheduleAfterMenuClose,
+  shouldIgnoreMenuDialogDismiss,
   ticketAddDialogState,
   type TicketAddKind,
   type TicketWalletFilter,
@@ -112,6 +114,7 @@ export default function ConnectionsPage() {
   const [deleteTicket, setDeleteTicket] = useState<TicketView | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const guideOpenedApiKeyRef = useRef(false);
+  const ignoreMenuDialogDismissRef = useRef(false);
 
   useEffect(() => {
     if (pool.state === 'idle') void pool.ensureLoaded();
@@ -251,8 +254,16 @@ export default function ConnectionsPage() {
   }, []);
 
   const extrasForTicket = useCallback(
-    (ticket: TicketView) =>
-      extrasFromPoolSource(ticket, findTicketPoolSource(ticket, pool.accounts, pool.providers)),
+    (ticket: TicketView) => {
+      try {
+        return extrasFromPoolSource(
+          ticket,
+          findTicketPoolSource(ticket, pool.accounts, pool.providers),
+        );
+      } catch {
+        return null;
+      }
+    },
     [pool.accounts, pool.providers],
   );
 
@@ -260,8 +271,12 @@ export default function ConnectionsPage() {
     const next = ticketAddDialogState(kind, agentId);
     setAddAgentId(next.addAgentId);
     if (next.clearEditProvider) setEditProvider(null);
+    ignoreMenuDialogDismissRef.current = true;
     if (next.loginImportOpen) setLoginImportOpen(true);
     if (next.apiKeyDialogOpen) setApiKeyDialogOpen(true);
+    scheduleAfterMenuClose(() => {
+      ignoreMenuDialogDismissRef.current = false;
+    }, 100);
   }, []);
 
   const handleEditTicket = useCallback(
@@ -321,7 +336,7 @@ export default function ConnectionsPage() {
       setDeleteTicket(null);
       toast({
         title: '已移入回收站',
-        description: deleteConnectionToastDescription({ isCurrent: extras.isCurrent === true }),
+        description: deleteConnectionToastDescription({ isCurrent: extras?.isCurrent === true }),
         variant: 'success',
       });
       await loadWallet();
@@ -444,9 +459,10 @@ export default function ConnectionsPage() {
 
       <Dialog
         open={loginImportOpen}
-        onOpenChange={(open) =>
-          closeConfirmationOnOpenChange(open, importingAccount, () => setLoginImportOpen(false))
-        }
+        onOpenChange={(open) => {
+          if (shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, open)) return;
+          closeConfirmationOnOpenChange(open, importingAccount, () => setLoginImportOpen(false));
+        }}
       >
         <DialogContent
           className="max-w-sm"
@@ -500,7 +516,7 @@ export default function ConnectionsPage() {
             <DialogDescription>
               {deleteTicket
                 ? `${deleteTicket.label} · ${deleteConnectionDialogDescription({
-                    isCurrent: extrasForTicket(deleteTicket).isCurrent === true,
+                    isCurrent: extrasForTicket(deleteTicket)?.isCurrent === true,
                   })}`
                 : ''}
             </DialogDescription>
@@ -538,6 +554,7 @@ export default function ConnectionsPage() {
         provider={editProvider}
         open={apiKeyDialogOpen}
         onOpenChange={(v) => {
+          if (shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, v)) return;
           setApiKeyDialogOpen(v);
           if (!v) {
             setEditProvider(null);
