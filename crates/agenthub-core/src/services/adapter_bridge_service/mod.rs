@@ -137,6 +137,15 @@ const GROK_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
     mode: AdapterProfileMode::Oauth,
 };
 
+/// Live local-bridge writers. `rule_for_id` and the secret-resolver coverage
+/// test both read this slice so a new rule cannot ship without a matcher check.
+const LIVE_BRIDGE_RULES: &[CodexBridgeRule] = &[
+    KIMI_CODEX_RULE,
+    ANTHROPIC_CODEX_RULE,
+    CODEX_CLAUDE_RULE,
+    GROK_CLAUDE_RULE,
+];
+
 mod finalize;
 mod prepare;
 mod removal;
@@ -149,13 +158,17 @@ pub(super) use rules::*;
 mod tests;
 
 pub(super) fn rule_for_id(rule_id: &str) -> Option<CodexBridgeRule> {
-    match rule_id {
-        RULE_ID => Some(KIMI_CODEX_RULE),
-        ANTHROPIC_RULE_ID => Some(ANTHROPIC_CODEX_RULE),
-        CODEX_CLAUDE_RULE_ID => Some(CODEX_CLAUDE_RULE),
-        GROK_CLAUDE_RULE_ID => Some(GROK_CLAUDE_RULE),
-        _ => None,
-    }
+    LIVE_BRIDGE_RULES
+        .iter()
+        .copied()
+        .find(|rule| rule.rule_id == rule_id)
+}
+
+/// `(target_agent, rule_id)` for every live local-bridge writer.
+pub(crate) fn live_bridge_rule_projections() -> impl Iterator<Item = (AgentId, &'static str)> {
+    LIVE_BRIDGE_RULES
+        .iter()
+        .map(|rule| (rule.target_agent, rule.rule_id))
 }
 
 /// Safe input for beginning a local bridge saga. It contains no credentials.
