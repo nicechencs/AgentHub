@@ -226,7 +226,9 @@ impl AdapterBridgeService {
             AppError::InvalidArg("adapter profile is not a supported local bridge".into())
         })?;
         let upstream_auth = match rule.protocol {
-            BridgeUpstreamProtocol::KimiChatCompletions if rule.rule_id == GROK_CLAUDE_RULE_ID => {
+            BridgeUpstreamProtocol::KimiChatCompletions
+                if rule.rule_id == GROK_CLAUDE_RULE_ID || rule.rule_id == GROK_CODEX_RULE_ID =>
+            {
                 self.secrets
                     .resolve_grok_subscription_auth(profile.source_kind, &profile.source_id)?
             }

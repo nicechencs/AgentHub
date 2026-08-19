@@ -16,7 +16,7 @@ impl AdapterBridgeService {
         // token stays only in the returned in-memory material.
         let upstream_auth = match rule.protocol {
             BridgeUpstreamProtocol::KimiChatCompletions => {
-                if rule.rule_id == GROK_CLAUDE_RULE_ID {
+                if rule.rule_id == GROK_CLAUDE_RULE_ID || rule.rule_id == GROK_CODEX_RULE_ID {
                     self.secrets
                         .resolve_grok_subscription_auth(request.source_kind, source_id)?
                 } else {
@@ -176,13 +176,13 @@ impl AdapterBridgeService {
             .and_then(rule_for_id)
             .ok_or_else(|| {
                 AppError::Unsupported(
-                    "adapter bridge currently supports Kimi / Anthropic → Codex, Codex subscription → Claude, or Grok subscription → Claude"
+                    "adapter bridge currently supports Kimi / Anthropic → Codex, Codex subscription → Claude, or Grok subscription → Claude / Codex"
                         .into(),
                 )
             })?;
         let source_ok = match rule.protocol {
             BridgeUpstreamProtocol::KimiChatCompletions => {
-                if rule.rule_id == GROK_CLAUDE_RULE_ID {
+                if rule.rule_id == GROK_CLAUDE_RULE_ID || rule.rule_id == GROK_CODEX_RULE_ID {
                     request.source_kind == AdapterSourceKind::Account
                 } else {
                     matches!(
@@ -233,7 +233,9 @@ impl AdapterBridgeService {
                 AdapterSourceKind::Provider | AdapterSourceKind::Account
             ),
             CODEX_CLAUDE_RULE_ID => profile.source_kind == AdapterSourceKind::Account,
-            GROK_CLAUDE_RULE_ID => profile.source_kind == AdapterSourceKind::Account,
+            GROK_CLAUDE_RULE_ID | GROK_CODEX_RULE_ID => {
+                profile.source_kind == AdapterSourceKind::Account
+            }
             _ => false,
         };
         if !supported_source

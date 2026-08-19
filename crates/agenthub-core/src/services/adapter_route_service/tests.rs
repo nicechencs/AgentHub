@@ -588,7 +588,10 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
         xai_grok.analysis.reason,
         crate::models::SAME_PROTOCOL_NO_EDGE_REASON
     );
-    assert_eq!(xai_grok.analysis.reason, "这条接到方式还没做好，暂不能绑定。");
+    assert_eq!(
+        xai_grok.analysis.reason,
+        "这条接到方式还没做好，暂不能绑定。"
+    );
     assert!(!xai_grok.analysis.reason.contains("仅支持预览"));
 }
 
@@ -1201,10 +1204,7 @@ fn grok_subscription_to_claude_is_writable_local_bridge() {
         .unwrap();
     assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
     assert_eq!(plan.analysis.support, AdapterSupport::Experimental);
-    assert_eq!(
-        plan.reason,
-        "Grok 登录会经本机路由接到 Claude Code。"
-    );
+    assert_eq!(plan.reason, "Grok 登录会经本机路由接到 Claude Code。");
     assert_eq!(
         plan.reuse_path,
         crate::models::AdapterReusePath::LocalBridge
@@ -1215,6 +1215,95 @@ fn grok_subscription_to_claude_is_writable_local_bridge() {
         Some("http://127.0.0.1:<本机端口>")
     );
     assert!(plan.changes[1].secret);
+}
+
+#[test]
+fn grok_subscription_to_codex_is_writable_local_bridge() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "grok-subscription".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "Grok subscription".into(),
+            credentials: serde_json::json!({
+                "format": "oauth",
+                "access_token": "grok-access"
+            }),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+    let plan = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "grok-subscription",
+            AgentId::Codex,
+        ))
+        .unwrap();
+    assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
+    assert_eq!(plan.analysis.support, AdapterSupport::Experimental);
+    assert_eq!(
+        plan.reason,
+        crate::models::GROK_SUBSCRIPTION_TO_CODEX_REASON
+    );
+    assert_eq!(
+        plan.reuse_path,
+        crate::models::AdapterReusePath::LocalBridge
+    );
+    assert!(plan.can_apply);
+    assert_eq!(
+        plan.changes[0].value.as_deref(),
+        Some("AgentHub Grok 本机路由")
+    );
+}
+
+#[test]
+fn grok_subscription_to_kimi_and_dsh_are_closed() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "grok-subscription".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "Grok subscription".into(),
+            credentials: serde_json::json!({
+                "format": "oauth",
+                "access_token": "grok-access"
+            }),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+    let kimi = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "grok-subscription",
+            AgentId::Kimi,
+        ))
+        .unwrap();
+    assert_eq!(kimi.analysis.route, AdapterRoute::Unsupported);
+    assert!(!kimi.can_apply);
+    assert_eq!(kimi.reason, crate::models::GROK_SUBSCRIPTION_TO_KIMI_REASON);
+
+    let dsh = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "grok-subscription",
+            AgentId::Dsh,
+        ))
+        .unwrap();
+    assert_eq!(dsh.analysis.route, AdapterRoute::Unsupported);
+    assert!(!dsh.can_apply);
+    assert_eq!(dsh.reason, crate::models::GROK_SUBSCRIPTION_TO_DSH_REASON);
 }
 
 #[test]
@@ -1639,7 +1728,8 @@ fn source_kinds_for_rule(rule_id: &str) -> &'static [AdapterSourceKind] {
         | "codex-subscription-to-pi-v1"
         | "grok-subscription-to-pi-v1"
         | "codex-subscription-to-claude-responses-v1"
-        | "grok-subscription-to-claude-v1" => &[AdapterSourceKind::Account],
+        | "grok-subscription-to-claude-v1"
+        | "grok-subscription-to-codex-v1" => &[AdapterSourceKind::Account],
         "deepseek-api-to-dsh-v1" => &[AdapterSourceKind::Provider],
         _ => &[AdapterSourceKind::Provider, AdapterSourceKind::Account],
     }
