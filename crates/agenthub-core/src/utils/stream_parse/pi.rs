@@ -3,55 +3,216 @@
 //! Observed event types include: `session`, `agent_start`, `turn_start`,
 //! `message_start` / `message_update` / `message_end`, `turn_end`, `agent_end`,
 //! `agent_settled`, plus tool execution events when tools run.
+//!
+//! `message_end` is the authoritative complete assistant message. Some
+//! providers never emit `text_delta`; harvest final text there, but skip it
+//! when deltas already produced Text for this turn.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::models::ProcessStep;
+use crate::models::{AgentId, ProcessStep};
+use crate::platform::stream::StreamParser;
+use crate::platform::AgentKey;
 
-pub fn parse_line(line: &str) -> Option<Vec<ProcessStep>> {
-    let v: Value = serde_json::from_str(line).ok()?;
-    let ty = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+/// Stateful Pi NDJSON decoder. Flags are per session (see [`StreamParser::for_session`]).
+pub struct PiStreamParser {
+    saw_text: AtomicBool,
+    saw_thinking: AtomicBool,
+}
 
-    match ty {
-        "session" | "agent_start" | "turn_start" => Some(vec![ProcessStep::Status {
-            phase: "starting".into(),
-            detail: Some(ty.into()),
-        }]),
-        "agent_end" | "agent_settled" | "turn_end" => Some(vec![ProcessStep::Status {
+impl PiStreamParser {
+    pub fn new() -> Self {
+        Self {
+            saw_text: AtomicBool::new(false),
+            saw_thinking: AtomicBool::new(false),
+        }
+    }
+
+    fn reset_turn(&self) {
+        self.saw_text.store(false, Ordering::Relaxed);
+        self.saw_thinking.store(false, Ordering::Relaxed);
+    }
+
+    fn saw_text(&self) -> bool {
+        self.saw_text.load(Ordering::Relaxed)
+    }
+
+    fn saw_thinking(&self) -> bool {
+        self.saw_thinking.load(Ordering::Relaxed)
+    }
+
+    fn mark_text(&self) {
+        self.saw_text.store(true, Ordering::Relaxed);
+    }
+
+    fn mark_thinking(&self) {
+        self.saw_thinking.store(true, Ordering::Relaxed);
+    }
+
+    fn parse(&self, line: &str) -> Option<Vec<ProcessStep>> {
+        let v: Value = serde_json::from_str(line).ok()?;
+        let ty = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+        match ty {
+            "session" | "agent_start" | "turn_start" => {
+                self.reset_turn();
+                Some(vec![ProcessStep::Status {
+                    phase: "starting".into(),
+                    detail: Some(ty.into()),
+                }])
+            }
+            "agent_settled" => Some(vec![ProcessStep::Status {
+                phase: "result".into(),
+                detail: Some(ty.into()),
+            }]),
+            "turn_end" => Some(self.parse_turn_end(&v)),
+            "agent_end" => Some(self.parse_agent_end(&v)),
+            "message_update" => parse_message_update(&v, self),
+            "message_start" => {
+                let msg = v.get("message")?;
+                if msg.get("role").and_then(|r| r.as_str()) != Some("assistant") {
+                    return Some(vec![]);
+                }
+                Some(vec![])
+            }
+            "message_end" => {
+                let msg = v.get("message")?;
+                if msg.get("role").and_then(|r| r.as_str()) != Some("assistant") {
+                    return Some(vec![]);
+                }
+                Some(self.harvest_assistant(msg, true))
+            }
+            "tool_execution_start" | "tool_start" | "tool_call" => {
+                Some(vec![tool_event(&v, "start")])
+            }
+            "tool_execution_end" | "tool_end" | "tool_result" => Some(vec![tool_event(&v, "end")]),
+            "bash_execution_update" | "tool_execution_update" => {
+                Some(vec![tool_event(&v, "update")])
+            }
+            "error" => {
+                let message = v
+                    .get("error")
+                    .and_then(|e| e.as_str())
+                    .or_else(|| v.get("message").and_then(|m| m.as_str()))
+                    .unwrap_or("error")
+                    .to_string();
+                Some(vec![ProcessStep::Error { message }])
+            }
+            _ => None,
+        }
+    }
+
+    fn parse_turn_end(&self, v: &Value) -> Vec<ProcessStep> {
+        let mut steps = vec![ProcessStep::Status {
             phase: "result".into(),
-            detail: Some(ty.into()),
-        }]),
-        "message_update" => parse_message_update(&v),
-        "message_start" | "message_end" => {
-            // Prefer deltas from message_update to avoid double-counting full text.
-            // Still surface tools if present on the message.
-            let msg = v.get("message")?;
-            if msg.get("role").and_then(|r| r.as_str()) != Some("assistant") {
-                return Some(vec![]);
+            detail: Some("turn_end".into()),
+        }];
+        if !self.saw_text() {
+            if let Some(msg) = v.get("message") {
+                steps.extend(self.harvest_assistant(msg, false));
             }
-            if ty == "message_end" {
-                // Only extract tool blocks; text already streamed via deltas.
-                return Some(tools_from_message(msg));
+        }
+        steps
+    }
+
+    fn parse_agent_end(&self, v: &Value) -> Vec<ProcessStep> {
+        let mut steps = vec![ProcessStep::Status {
+            phase: "result".into(),
+            detail: Some("agent_end".into()),
+        }];
+        if !self.saw_text() {
+            if let Some(msg) = last_assistant_message(v.get("messages")) {
+                steps.extend(self.harvest_assistant(msg, false));
             }
-            Some(vec![])
         }
-        "tool_execution_start" | "tool_start" | "tool_call" => Some(vec![tool_event(&v, "start")]),
-        "tool_execution_end" | "tool_end" | "tool_result" => Some(vec![tool_event(&v, "end")]),
-        "bash_execution_update" | "tool_execution_update" => Some(vec![tool_event(&v, "update")]),
-        "error" => {
-            let message = v
-                .get("error")
-                .and_then(|e| e.as_str())
-                .or_else(|| v.get("message").and_then(|m| m.as_str()))
-                .unwrap_or("error")
-                .to_string();
-            Some(vec![ProcessStep::Error { message }])
+        steps
+    }
+
+    /// Harvest complete assistant content. `include_tools` is true for
+    /// `message_end` (authoritative); turn/agent fallbacks skip tools.
+    fn harvest_assistant(&self, msg: &Value, include_tools: bool) -> Vec<ProcessStep> {
+        if msg.get("role").and_then(|r| r.as_str()) != Some("assistant") {
+            return Vec::new();
         }
-        _ => None,
+        let mut steps = Vec::new();
+        if let Some(arr) = msg.get("content").and_then(|c| c.as_array()) {
+            for block in arr {
+                let bty = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                match bty {
+                    "text" => {
+                        if self.saw_text() {
+                            continue;
+                        }
+                        let t = block.get("text").and_then(|t| t.as_str()).unwrap_or("");
+                        if t.is_empty() {
+                            continue;
+                        }
+                        self.mark_text();
+                        steps.push(ProcessStep::Text { text: t.into() });
+                    }
+                    "thinking" => {
+                        if self.saw_thinking() {
+                            continue;
+                        }
+                        let t = block.get("thinking").and_then(|t| t.as_str()).unwrap_or("");
+                        if t.is_empty() {
+                            continue;
+                        }
+                        self.mark_thinking();
+                        steps.push(ProcessStep::Thinking {
+                            text: t.into(),
+                            done: true,
+                        });
+                    }
+                    "toolCall" | "tool_use" | "tool_call" | "functionCall" if include_tools => {
+                        steps.push(tool_event(block, "end"));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if !self.saw_text() {
+            if let Some(message) = assistant_error_text(msg) {
+                self.mark_text();
+                steps.push(ProcessStep::Error {
+                    message: message.clone(),
+                });
+                steps.push(ProcessStep::Text { text: message });
+            }
+        }
+        steps
     }
 }
 
-fn parse_message_update(v: &Value) -> Option<Vec<ProcessStep>> {
+impl Default for PiStreamParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StreamParser for PiStreamParser {
+    fn agent_key(&self) -> AgentKey {
+        AgentKey::from_agent_id(AgentId::Pi)
+    }
+
+    fn parse_line(&self, line: &str) -> Option<Vec<ProcessStep>> {
+        self.parse(line)
+    }
+
+    fn for_session(&self) -> Option<Arc<dyn StreamParser>> {
+        Some(Arc::new(PiStreamParser::new()))
+    }
+}
+
+/// Stateless convenience for unit tests that inspect a single line.
+pub fn parse_line(line: &str) -> Option<Vec<ProcessStep>> {
+    PiStreamParser::new().parse(line)
+}
+
+fn parse_message_update(v: &Value, state: &PiStreamParser) -> Option<Vec<ProcessStep>> {
     let ev = v.get("assistantMessageEvent")?;
     let ety = ev.get("type").and_then(|t| t.as_str()).unwrap_or("");
     match ety {
@@ -60,6 +221,7 @@ fn parse_message_update(v: &Value) -> Option<Vec<ProcessStep>> {
             if t.is_empty() {
                 Some(vec![])
             } else {
+                state.mark_text();
                 Some(vec![ProcessStep::Text { text: t.into() }])
             }
         }
@@ -69,6 +231,7 @@ fn parse_message_update(v: &Value) -> Option<Vec<ProcessStep>> {
             if t.is_empty() {
                 Some(vec![])
             } else {
+                state.mark_thinking();
                 Some(vec![ProcessStep::Thinking {
                     text: t.into(),
                     done: false,
@@ -89,17 +252,32 @@ fn parse_message_update(v: &Value) -> Option<Vec<ProcessStep>> {
     }
 }
 
-fn tools_from_message(msg: &Value) -> Vec<ProcessStep> {
-    let mut steps = Vec::new();
-    if let Some(arr) = msg.get("content").and_then(|c| c.as_array()) {
-        for block in arr {
-            let bty = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
-            if matches!(bty, "toolCall" | "tool_use" | "tool_call" | "functionCall") {
-                steps.push(tool_event(block, "end"));
-            }
-        }
+fn last_assistant_message(messages: Option<&Value>) -> Option<&Value> {
+    messages.and_then(|m| m.as_array()).and_then(|arr| {
+        arr.iter()
+            .rev()
+            .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("assistant"))
+    })
+}
+
+fn assistant_error_text(msg: &Value) -> Option<String> {
+    let stop = msg.get("stopReason").and_then(|s| s.as_str()).unwrap_or("");
+    let err = msg
+        .get("errorMessage")
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .trim();
+    let is_error = !err.is_empty() || matches!(stop, "error" | "aborted");
+    if !is_error {
+        return None;
     }
-    steps
+    if !err.is_empty() {
+        Some(err.to_string())
+    } else if !stop.is_empty() {
+        Some(stop.to_string())
+    } else {
+        None
+    }
 }
 
 fn tool_event(v: &Value, status: &str) -> ProcessStep {
