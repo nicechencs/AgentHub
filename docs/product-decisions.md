@@ -1,6 +1,6 @@
 # 把已有登录接到另一个编程工具
 
-> 状态：**2026-08-15**。本文是跨工具复用的**产品**真源，前半用日常说法，后半给实现对照。  
+> 状态：**2026-08-19**。本文是跨工具复用的**产品**真源，前半用日常说法，后半给实现对照。三种做法仍用 ①②③ 作模型名；**现行界面芯片**是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不再标圈号。界面说「登录」，不说「票」。  
 > 领域对象与规划器仍以 [connection-binding-model.md](connection-binding-model.md) 为准。  
 > 各家接口与**现在能不能写上去**以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为准。  
 > 实现清单以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
@@ -243,7 +243,7 @@ Claude 订阅 → Codex 是**产品不做**，不是「以后再转发」。
 | [connection-binding-model.md](connection-binding-model.md) | 登录 / 绑定 / 规划器的领域名字（票、槽、边） |
 | [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | 各家接口与现在能不能写上去；订阅 ≠ 要转发 |
 | [adapter-design.md](adapter-design.md) | 页面与转发运行时；转发只服务 ③ |
-| [ui-design.md](ui-design.md) | 「接到…」预览标 ① 只改配置 / ② 写进对方认的登录 / ③ 本机转发；② 不显示本机服务 |
+| [ui-design.md](ui-design.md) | 「接到…」预览按三种做法说明；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」；② 不显示本机服务 |
 | [adding-an-agent.md](adding-an-agent.md) | 新工具必须登记听哪种接口 **和** 认哪套订阅登录 |
 | [architecture.md](architecture.md) | 模块拆分；原则 12 按三种做法解释 `plan()` |
 | [agenthub-plan.md](agenthub-plan.md) | 总方案；§8 是实现清单 |

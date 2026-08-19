@@ -166,7 +166,7 @@ fn identity_label(
 | 环节 | 行为 |
 |---|---|
 | 探测 | `read_auth` 报告胜出的 `kind`（与 `read_account` 当前票一致），并用 `alsoPresent` 列出本机还在的另一族（脱敏；典型值 `oauth` / `api_key`）。仅一族时为空 |
-| 导入 | `import_live` 仍只 upsert **当前胜出的 live 票**（`read_account` / 当前 `kind`） |
+| 导入 | `import_live` 仍只 upsert **当前胜出的 live 登录**（`read_account` / 当前 `kind`）。loopback / 本机路由导入按 Agent upsert 同一槽，不每次新开一行 |
 | UI | Connections「导入当前登录」对话框用 Notice 标明会收入哪一份 |
 
 **不**自动删除另一份，**不**把两份合成一张票。
@@ -233,7 +233,7 @@ user@example.com
 | `AgentAdapter::authorization_key` / `identity_label` 默认实现 | `adapters/adapter_trait.rs` |
 | import / add_api_key / create 去重 | `AccountService` |
 | extra.identityLabel 写入 | `attach_identity_meta` |
-| `groupAccountsByIdentity` | 仅 `account-map` 映射/测试残留；Connections 已是票钱包，**不要**再验收 `pages/accounts` 按身份分组 |
+| `groupAccountsByIdentity` | 仅 `account-map` 映射/测试残留；Connections 已是登录列表，**不要**再验收 `pages/accounts` 按身份分组 |
 | 单测 | `account_service::tests`、`account-map.test.ts` |
 
 | 行为 | 结果 |
@@ -262,7 +262,7 @@ user@example.com
 ### PR-C — UI 分组（历史）
 
 - [x] `identityLabel` / `createdAt` 映射  
-- [x] `groupAccountsByIdentity` 仅映射/测试残留；Connections 已是票钱包，不再按身份分组验收  
+- [x] `groupAccountsByIdentity` 仅映射/测试残留；Connections 已是登录列表，不再按身份分组验收  
 - [x] 多授权副文案：授权时间 / 「当前生效仅一条」（映射层仍保留）  
 
 ### 验收清单
@@ -292,6 +292,6 @@ user@example.com
 |---|---|
 | 2026-08-03 | 初版：产品定为「同人多授权并存」；去重仅限同授权票 |
 | 2026-08-03 | PR-A/B/C 落地：service 去重、adapter 指纹、Connections 分组 UI |
-| 2026-08-16 | 对照代码：补 dsh / Cursor 入池边界；§8 不再验收 `pages/accounts` 分组；Connections 已是票钱包 |
+| 2026-08-16 | 对照代码：补 dsh / Cursor 入池边界；§8 不再验收 `pages/accounts` 分组；Connections 已是登录列表 |
 | 2026-08-18 | 双凭据并存提醒：`read_auth.alsoPresent` + 导入仍只收胜出 live 票 |
 | 2026-08-18 | Pi：可 import；写回 API Key 需官方槽；自定义 URL+Key 走 Provider / models.json |
