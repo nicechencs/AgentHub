@@ -15,10 +15,10 @@ export function QuotaBar({
   const color = pct >= 90 ? 'bg-danger' : pct >= 70 ? 'bg-warning' : 'bg-success';
   return (
     <div className="flex items-center gap-2">
-      <span className="w-8 shrink-0 text-xs text-muted">{label}</span>
+      <span className="w-8 shrink-0 text-meta text-muted">{label}</span>
       <Progress value={pct} className="h-1.5 w-20" indicatorClassName={cn(color)} />
-      <span className="text-xs text-secondary">{pct}%</span>
-      {resetIn && <span className="text-xs text-muted">{resetIn}</span>}
+      <span className="text-meta text-secondary">{pct}%</span>
+      {resetIn && <span className="text-meta text-muted">{resetIn}</span>}
     </div>
   );
 }

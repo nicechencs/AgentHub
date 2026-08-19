@@ -21,8 +21,8 @@ export function EmptyState({
   return (
     <div className="flex flex-col items-center justify-center gap-2 rounded-card border border-dashed border-border py-10 text-center">
       <Icon className="h-6 w-6 text-muted" />
-      <p className="text-sm font-medium text-secondary">{title}</p>
-      {description && <p className="max-w-sm text-xs text-muted">{description}</p>}
+      <p className="text-title font-medium text-primary">{title}</p>
+      {description && <p className="max-w-sm text-meta text-muted">{description}</p>}
       {action ?? (actionLabel && onAction ? (
         <Button size="sm" className="mt-2" onClick={onAction}>
           {actionLabel}

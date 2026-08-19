@@ -35,7 +35,7 @@ const NATIVE_TITLE_ON_TEXT =
 
 describe('tooltip channel (docs/ui-experience-alignment.md §5.2)', () => {
   it('pages and layout do not put native title on text or raw button nodes', () => {
-    const roots = ['pages', 'components/layout', 'components/shared'].map((rel) =>
+    const roots = ['pages', 'components/layout', 'components/shared', 'components/ui'].map((rel) =>
       path.join(srcRoot, rel),
     );
     const hits: string[] = [];
