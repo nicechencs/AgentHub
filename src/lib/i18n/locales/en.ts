@@ -1228,6 +1228,8 @@ export const en = {
       timeout: "Timed out",
       thinking: "Thinking",
       thinkingDone: "Thought complete",
+      thinkingLive: "Thinking · {duration}",
+      thinkingFor: "Thought for {duration}",
       text: "Text",
       rawEvent: "Raw event",
       truncated: "…truncated",

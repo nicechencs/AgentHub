@@ -111,7 +111,7 @@ fn build_run_spec_argv_snapshots() {
         .unwrap()
         .build_run_spec(bin, "p", &o)
         .unwrap();
-    assert_eq!(grok.args, vec!["-p", "p"]);
+    assert_eq!(grok.args, vec!["--no-auto-update", "-p", "p"]);
 
     let pi = reg
         .get(AgentId::Pi)
@@ -142,7 +142,13 @@ fn build_run_spec_argv_snapshots() {
         .unwrap();
     assert_eq!(
         grok_s.args,
-        vec!["-p", "p", "--output-format", "streaming-json"]
+        vec![
+            "--no-auto-update",
+            "-p",
+            "p",
+            "--output-format",
+            "streaming-json"
+        ]
     );
 
     let mut dang = o.clone();
@@ -180,7 +186,10 @@ fn build_run_spec_argv_snapshots() {
         .unwrap()
         .build_run_spec(bin, "p", &dang)
         .unwrap();
-    assert_eq!(grok_d.args[0], "--always-approve");
+    assert_eq!(
+        grok_d.args,
+        vec!["--always-approve", "--no-auto-update", "-p", "p"]
+    );
 }
 
 #[test]

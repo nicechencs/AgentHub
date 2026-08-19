@@ -194,7 +194,8 @@ impl StreamSession {
 
         match parsed {
             Some(events) if !events.is_empty() => self.map_steps(events),
-            _ => {
+            Some(_) => Vec::new(),
+            None => {
                 self.raw_fallback_lines += 1;
                 // If it looks like JSON but unknown shape, keep as raw step (not chat body).
                 if line.starts_with('{') {

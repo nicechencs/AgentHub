@@ -1222,6 +1222,8 @@ export const zh = {
       timeout: "超时",
       thinking: "思考中",
       thinkingDone: "思考完成",
+      thinkingLive: "思考中 · {duration}",
+      thinkingFor: "思考了 {duration}",
       text: "文本",
       rawEvent: "原始事件",
       truncated: "…已截断",

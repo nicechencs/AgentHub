@@ -52,6 +52,55 @@ fn grok_thought_and_text() {
 }
 
 #[test]
+fn grok_recognized_noop_is_not_raw_fallback() {
+    let mut s = StreamSession::new(AgentId::Grok, ProcessMode::Auto);
+    let out = s.feed(
+        OutputStream::Stdout,
+        "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"update\":{\"sessionUpdate\":\"available_commands_update\"}}}\n",
+    );
+    assert!(out.is_empty());
+    assert_eq!(s.assistant_text(), "");
+}
+
+#[test]
+fn grok_acp_jsonrpc_reaches_assistant_text() {
+    // Grok Build ≥ 0.2.117 streaming-json is ACP session/update, not {type,data}.
+    let mut s = StreamSession::new(AgentId::Grok, ProcessMode::Auto);
+    let ndjson = concat!(
+        r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"plan"}}}}"#,
+        "\n",
+        r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello "}}}}"#,
+        "\n",
+        r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"world."}}}}"#,
+        "\n",
+    );
+    let out = s.feed(OutputStream::Stdout, ndjson);
+    assert!(out.iter().any(|o| matches!(
+        o,
+        StreamOutput::Step(ProcessStep::Thinking { text, .. }) if text == "plan"
+    )));
+    assert_eq!(s.assistant_text(), "Hello world.");
+    assert!(!out.iter().any(|o| matches!(
+        o,
+        StreamOutput::Step(ProcessStep::Raw { note: Some(n), .. }) if n.contains("unrecognized")
+    )));
+}
+
+#[test]
+fn grok_unknown_legacy_type_is_raw_not_assistant_text() {
+    let mut s = StreamSession::new(AgentId::Grok, ProcessMode::Auto);
+    let out = s.feed(
+        OutputStream::Stdout,
+        "{\"type\":\"totally_unknown_event_xyz\"}\n",
+    );
+    assert!(out.iter().any(|o| matches!(
+        o,
+        StreamOutput::Step(ProcessStep::Raw { note: Some(n), .. }) if n.contains("unrecognized")
+    )));
+    assert_eq!(s.assistant_text(), "");
+}
+
+#[test]
 fn pi_text_delta() {
     let mut s = StreamSession::new(AgentId::Pi, ProcessMode::Auto);
     let line =
@@ -155,7 +204,7 @@ fn unknown_event_type_raw_fallback() {
         OutputStream::Stdout,
         "{\"type\":\"totally_unknown_event_xyz\"}\n",
     );
-    // Parser returns empty or None → unrecognized structured line as Raw.
+    // Unknown shape (`None`) is a raw step. Recognized no-ops (`Some([])`) emit nothing.
     assert!(
         out.iter().any(|o| matches!(
             o,

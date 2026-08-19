@@ -206,6 +206,203 @@ describe('chat-process reduceProcessEvent', () => {
     expect(b).toBe(empty);
   });
 
+  it('merges consecutive thinking deltas and marks done when a tool starts', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'agentStarted', turn: 1, agent: 'grok', command: 'grok -p' },
+      1,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'thinking', text: 'Hel', done: false },
+      },
+      2,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'thinking', text: 'lo', done: false },
+      },
+      3,
+    );
+    expect(map['1:grok']?.steps).toHaveLength(1);
+    expect(map['1:grok']?.steps[0]).toMatchObject({ type: 'thinking', text: 'Hello', done: false });
+
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'tool', id: 't1', name: 'Read', status: 'start' },
+      },
+      4,
+    );
+    expect(map['1:grok']?.steps).toHaveLength(2);
+    expect(map['1:grok']?.steps[0]).toMatchObject({ type: 'thinking', done: true });
+    expect(map['1:grok']?.steps[1]).toMatchObject({ type: 'tool', id: 't1', status: 'start' });
+  });
+
+  it('merges tool updates by id including later parallel tools', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'agentStarted', turn: 1, agent: 'grok', command: 'grok -p' },
+      1,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'tool', id: 't1', name: 'Read', status: 'start', input: { path: 'a.rs' } },
+      },
+      2,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'tool', id: 't2', name: 'Bash', status: 'start' },
+      },
+      3,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: {
+          type: 'tool',
+          id: 't1',
+          name: 'Read',
+          status: 'end',
+          result: 'fn main() {}',
+        },
+      },
+      4,
+    );
+    expect(map['1:grok']?.steps).toHaveLength(2);
+    expect(map['1:grok']?.steps[0]).toMatchObject({
+      type: 'tool',
+      id: 't1',
+      status: 'end',
+      result: 'fn main() {}',
+    });
+    expect(map['1:grok']?.steps[1]).toMatchObject({ type: 'tool', id: 't2', name: 'Bash' });
+  });
+
+  it('starts a new thinking episode after a tool', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'agentStarted', turn: 1, agent: 'grok', command: 'x' },
+      1,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'thinking', text: 'first', done: false },
+      },
+      2,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'tool', id: 't1', name: 'Read', status: 'start' },
+      },
+      3,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'thinking', text: 'second', done: false },
+      },
+      4,
+    );
+    expect(map['1:grok']?.steps).toHaveLength(3);
+    expect(map['1:grok']?.steps[0]).toMatchObject({ type: 'thinking', text: 'first', done: true });
+    expect(map['1:grok']?.steps[2]).toMatchObject({ type: 'thinking', text: 'second', done: false });
+  });
+
+  it('appends tools without id instead of merging', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'agentStarted', turn: 1, agent: 'grok', command: 'x' },
+      1,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'tool', name: 'Bash', status: 'start' },
+      },
+      2,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'tool', name: 'Bash', status: 'end', result: 'ok' },
+      },
+      3,
+    );
+    expect(map['1:grok']?.steps).toHaveLength(2);
+    expect(map['1:grok']?.steps[0]).toMatchObject({ type: 'tool', status: 'start' });
+    expect(map['1:grok']?.steps[1]).toMatchObject({ type: 'tool', status: 'end', result: 'ok' });
+  });
+
+  it('agentFinished marks leftover thinking done', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'agentStarted', turn: 1, agent: 'grok', command: 'x' },
+      1,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'thinking', text: 'hmm', done: false },
+      },
+      2,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentFinished',
+        turn: 1,
+        agent: 'grok',
+        message: finishedMsg({ status: 'ok', content: 'done', agentId: 'grok' }),
+      },
+      3,
+    );
+    expect(map['1:grok']?.steps[0]).toMatchObject({ type: 'thinking', done: true });
+  });
+
   it('finished finalizes still-active process views for the turn', () => {
     let map: ProcessMap = reduceProcessEvent(
       {},
@@ -220,5 +417,26 @@ describe('chat-process reduceProcessEvent', () => {
     map = reduceProcessEvent(map, { type: 'finished', turn: 2, ok: true }, 3);
     expect(map['2:claude']?.phase).toBe('ok');
     expect(map['2:codex']?.phase).toBe('ok');
+  });
+
+  it('finished marks leftover thinking done for the turn', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'agentStarted', turn: 3, agent: 'grok', command: 'x' },
+      1,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 3,
+        agent: 'grok',
+        step: { type: 'thinking', text: 'still', done: false },
+      },
+      2,
+    );
+    map = reduceProcessEvent(map, { type: 'finished', turn: 3, ok: true }, 3);
+    expect(map['3:grok']?.phase).toBe('ok');
+    expect(map['3:grok']?.steps[0]).toMatchObject({ type: 'thinking', text: 'still', done: true });
   });
 });

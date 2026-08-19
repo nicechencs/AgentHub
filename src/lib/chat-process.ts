@@ -126,8 +126,34 @@ function emptyView(turn: number, agent: AgentId, phase: ProcessPhase, now: numbe
   };
 }
 
+function markLastThinkingDone(steps: ProcessStep[]): ProcessStep[] {
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const row = steps[i];
+    if (row.type === 'thinking') {
+      if (row.done) return steps;
+      const next = steps.slice();
+      next[i] = { ...row, done: true };
+      return next;
+    }
+    if (row.type !== 'status') break;
+  }
+  return steps;
+}
+
+function mergeToolStep(prev: Extract<ProcessStep, { type: 'tool' }>, step: Extract<ProcessStep, { type: 'tool' }>): ProcessStep {
+  const name =
+    step.name && step.name !== 'tool' ? step.name : prev.name || step.name;
+  return {
+    type: 'tool',
+    id: step.id ?? prev.id,
+    name,
+    input: step.input !== undefined ? step.input : prev.input,
+    status: step.status || prev.status,
+    result: step.result != null && step.result !== '' ? step.result : prev.result,
+  };
+}
+
 function pushStep(steps: ProcessStep[], step: ProcessStep): ProcessStep[] {
-  // Collapse consecutive tiny text steps into one for UI noise control.
   if (step.type === 'text' && steps.length > 0) {
     const last = steps[steps.length - 1];
     if (last.type === 'text') {
@@ -136,8 +162,42 @@ function pushStep(steps: ProcessStep[], step: ProcessStep): ProcessStep[] {
       return next.length > MAX_STEPS ? next.slice(next.length - MAX_STEPS) : next;
     }
   }
-  const next = [...steps, step];
+
+  if (step.type === 'thinking') {
+    const last = steps[steps.length - 1];
+    if (last?.type === 'thinking') {
+      const next = steps.slice(0, -1);
+      next.push({
+        type: 'thinking',
+        text: `${last.text}${step.text}`,
+        done: Boolean(step.done),
+      });
+      return next.length > MAX_STEPS ? next.slice(next.length - MAX_STEPS) : next;
+    }
+  }
+
+  if (step.type === 'tool' && step.id) {
+    const idx = findLastIndex(steps, (row) => row.type === 'tool' && row.id === step.id);
+    if (idx >= 0) {
+      const prev = steps[idx];
+      if (prev.type === 'tool') {
+        const next = steps.slice();
+        next[idx] = mergeToolStep(prev, step);
+        return next;
+      }
+    }
+  }
+
+  const base = step.type === 'thinking' ? steps : markLastThinkingDone(steps);
+  const next = [...base, step];
   return next.length > MAX_STEPS ? next.slice(next.length - MAX_STEPS) : next;
+}
+
+function findLastIndex<T>(items: T[], pred: (item: T) => boolean): number {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    if (pred(items[i])) return i;
+  }
+  return -1;
 }
 
 /**
@@ -224,6 +284,7 @@ export function reduceProcessEvent(map: ProcessMap, ev: ChatEvent, now = Date.no
         ...prev,
         phase: phaseFromMessageStatus(ev.message.status),
         stdout: content || prev.stdout,
+        steps: markLastThinkingDone(prev.steps),
         updatedAt: now,
       },
     };
@@ -243,6 +304,7 @@ export function reduceProcessEvent(map: ProcessMap, ev: ChatEvent, now = Date.no
         next[key] = {
           ...view,
           phase: ev.ok ? 'ok' : 'failed',
+          steps: markLastThinkingDone(view.steps),
           updatedAt: now,
         };
         changed = true;
