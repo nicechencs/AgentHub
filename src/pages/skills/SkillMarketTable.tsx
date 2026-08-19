@@ -15,10 +15,10 @@ import {
 } from '@/components/ui/table';
 import { useToast } from '@/components/ui/toast';
 import { Hint, Tip } from '@/components/ui/tooltip';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import type { SkillListingDto } from '@/lib/api/skill';
 import { openExternalLink } from '@/lib/open-external';
 import { cn } from '@/lib/utils';
-import { skillsCopy } from './copy';
 
 type ColumnKey = 'name' | 'provider' | 'version' | 'actions';
 
@@ -29,12 +29,7 @@ const WIDTH_SPECS: ColumnWidthSpec<ColumnKey>[] = [
   { key: 'actions', defaultWidth: 168, minWidth: 140 },
 ];
 
-const COLUMN_LABELS: Record<ColumnKey, string> = {
-  name: '技能',
-  provider: '来源',
-  version: '版本',
-  actions: '操作',
-};
+const COLUMN_KEYS: ColumnKey[] = ['name', 'provider', 'version', 'actions'];
 
 /** Resolve market detail page URL (backend-provided, with client fallback). */
 export function resolveMarketDetailUrl(item: SkillListingDto): string | null {
@@ -85,7 +80,14 @@ export function SkillMarketTable({
   onInstall?: (item: SkillListingDto) => void;
 }) {
   const { toast } = useToast();
+  const { t } = useI18n();
   const { widths, onResizeStart, totalWidth } = useColumnWidths(WIDTH_SPECS);
+  const columnLabels: Record<ColumnKey, string> = {
+    name: t('skills.market.colName'),
+    provider: t('skills.market.colProvider'),
+    version: t('skills.market.colVersion'),
+    actions: t('skills.market.colActions'),
+  };
 
   const openDetail = (url: string) => {
     void (async () => {
@@ -93,9 +95,8 @@ export function SkillMarketTable({
         await openExternalLink(url);
       } catch (e) {
         toast({
-          ...skillsCopy.toast.openDetailFailed(
-            e instanceof Error ? e.message : String(e),
-          ),
+          title: t('skills.toast.openDetailFailed'),
+          description: e instanceof Error ? e.message : String(e),
           variant: 'danger',
         });
       }
@@ -112,12 +113,12 @@ export function SkillMarketTable({
         </colgroup>
         <TableHeader>
           <TableHeaderRow>
-            {(Object.keys(COLUMN_LABELS) as ColumnKey[]).map((key) => (
+            {COLUMN_KEYS.map((key) => (
               <TableHead key={key} className="relative select-none">
-                {COLUMN_LABELS[key]}
+                {columnLabels[key]}
                 <ColumnResizeHandle
                   columnKey={key}
-                  label={COLUMN_LABELS[key]}
+                  label={columnLabels[key]}
                   onResizeStart={onResizeStart}
                 />
               </TableHead>
@@ -165,7 +166,7 @@ export function SkillMarketTable({
                   </Tip>
                 </TableCell>
                 <TableCell className="truncate font-mono text-xs text-muted">
-                  {item.version ? `v${item.version}` : '未知'}
+                  {item.version ? `v${item.version}` : t('skills.market.versionUnknown')}
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -173,11 +174,11 @@ export function SkillMarketTable({
                       <Button
                         size="sm"
                         variant="outline"
-                        title={skillsCopy.market.openDetailHint}
+                        title={t('skills.market.openDetailHint')}
                         onClick={() => openDetail(detailUrl)}
                       >
                         <ExternalLink className="mr-1 h-3 w-3" />
-                        {skillsCopy.market.openDetail}
+                        {t('skills.market.openDetail')}
                       </Button>
                     ) : null}
                     <Button
@@ -186,16 +187,16 @@ export function SkillMarketTable({
                       disabled={item.installed || busy || !onInstall}
                       title={
                         item.installed
-                          ? skillsCopy.market.installedHint
-                          : skillsCopy.market.installHint
+                          ? t('skills.market.installedHint')
+                          : t('skills.market.installHint')
                       }
                       onClick={() => onInstall?.(item)}
                     >
                       {item.installed
-                        ? skillsCopy.market.installed
+                        ? t('skills.market.installed')
                         : busy
-                          ? skillsCopy.market.installing
-                          : skillsCopy.market.install}
+                          ? t('skills.market.installing')
+                          : t('skills.market.install')}
                     </Button>
                   </div>
                 </TableCell>

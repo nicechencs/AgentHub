@@ -1,3 +1,4 @@
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { AdapterProfilesList, type AdapterProfilesListProps } from './AdapterProfilesList';
 import {
   adapterErrorDetails,
@@ -12,8 +13,9 @@ export function AdapterErrorLines({
   error: unknown;
   fallback: string;
 }) {
+  const { t } = useI18n();
   const details = adapterErrorDetails(error);
-  const retryHint = adapterErrorRetryHint(error);
+  const retryHint = adapterErrorRetryHint(error, t);
   return (
     <>
       <p className="text-sm text-danger" role="alert">{errorMessage(error, fallback)}</p>

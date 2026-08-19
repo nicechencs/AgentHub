@@ -2,6 +2,7 @@ import { ArrowRight, Boxes, Copy } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { ListRow } from '@/components/shared/ListRow';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,9 +17,6 @@ import { AdapterErrorLines } from './adapter-components';
 import {
   adapterBridgeEndpointLabel,
   adapterFailurePresentation,
-  BRIDGES_EMPTY_DESCRIPTION,
-  BRIDGES_EMPTY_TITLE,
-  BRIDGES_MUTATION_FAILURE,
 } from './adapter-model';
 import {
   adapterProfilePrimaryAction,
@@ -70,6 +68,7 @@ export function AdapterProfilesList({
   onRetry,
   hiddenTargetIds,
 }: AdapterProfilesListProps) {
+  const { t } = useI18n();
   if (loading) {
     return (
       <div className="space-y-2" aria-live="polite">
@@ -82,7 +81,7 @@ export function AdapterProfilesList({
     return (
       <ErrorState
         error={loadError}
-        title="无法读取本机路由"
+        title={t('routes.loadError')}
         onRetry={onRetry}
       />
     );
@@ -91,8 +90,8 @@ export function AdapterProfilesList({
     return (
       <EmptyState
         icon={Boxes}
-        title={BRIDGES_EMPTY_TITLE}
-        description={BRIDGES_EMPTY_DESCRIPTION}
+        title={t('routes.empty.title')}
+        description={t('routes.empty.description')}
       />
     );
   }
@@ -140,12 +139,13 @@ function AdapterProfileRow({
   onShowDetail: (profile: AdapterProfile) => void;
   targetHidden: boolean;
 }) {
+  const { t } = useI18n();
   const source = resolveAdapterProfileSource(profile, entries);
   const runtimeStatus = bridgeRuntimeStatusView({
     route: profile.route,
     bridgeState: bridgeStatus?.state,
     statusUnavailable,
-  });
+  }, t);
   const endpoint = profile.route === 'local_bridge'
     ? adapterBridgeEndpointLabel(profile, bridgeStatus)
     : null;
@@ -154,10 +154,10 @@ function AdapterProfileRow({
     bridgeState: bridgeStatus?.state,
     lastErrorCode: profile.lastErrorCode,
     statusUnavailable,
-  });
+  }, t);
   const transitioning = bridgeStatus?.state === 'starting' || bridgeStatus?.state === 'stopping';
-  const recovery = adapterProfileRecoveryGuide(profile);
-  const failure = error ? adapterFailurePresentation(error, BRIDGES_MUTATION_FAILURE) : null;
+  const recovery = adapterProfileRecoveryGuide(profile, t);
+  const failure = error ? adapterFailurePresentation(error, t('routes.mutationFailure'), t) : null;
 
   return (
     <ListRow className="p-3">
@@ -176,10 +176,10 @@ function AdapterProfileRow({
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             {endpoint ? <EndpointCopy endpoint={endpoint} /> : null}
             {source.missing ? (
-              <span className="text-xs text-warning">来源连接已删除</span>
+              <span className="text-xs text-warning">{t('routes.sourceDeleted')}</span>
             ) : null}
             {targetHidden ? (
-              <span className="text-xs text-muted">目标已隐藏，仅可停止</span>
+              <span className="text-xs text-muted">{t('routes.targetHidden')}</span>
             ) : null}
           </div>
         </div>
@@ -191,27 +191,27 @@ function AdapterProfileRow({
               disabled={busy || transitioning || (targetHidden && action.kind !== 'stop')}
               title={
                 targetHidden && action.kind !== 'stop'
-                  ? '目标 Agent 已隐藏，仅可停止运行中的桥接'
+                  ? t('routes.targetHiddenHint')
                   : undefined
               }
               onClick={() => (action.kind === 'stop' ? onRequestStopBridge(profile) : onStartBridge(profile))}
             >
-              {busy ? '处理中…' : action.label}
+              {busy ? t('routes.busy') : action.label}
             </Button>
           ) : null}
           <Button variant="ghost" size="sm" onClick={() => onShowDetail(profile)}>
-            详情
+            {t('routes.detail')}
           </Button>
         </div>
       </div>
       {recovery ? (
         <p className="mt-2 text-xs text-warning" role="status">
-          {recovery.summary} 打开「详情」查看步骤。
+          {`${recovery.summary} ${t('routes.recovery.openDetail')}`}
         </p>
       ) : null}
       {failure ? (
         <div className="mt-2 space-y-1" role="alert">
-          <AdapterErrorLines error={error} fallback={BRIDGES_MUTATION_FAILURE} />
+          <AdapterErrorLines error={error} fallback={t('routes.mutationFailure')} />
           <p className="text-xs text-secondary">{failure.hint}</p>
         </div>
       ) : null}
@@ -233,12 +233,13 @@ function StatusLine({ view, emphasis = false }: { view: AdapterStatusView; empha
 
 function EndpointCopy({ endpoint }: { endpoint: string }) {
   const { toast } = useToast();
+  const { t } = useI18n();
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(`http://${endpoint}`);
-      toast({ title: '端点已复制', description: `http://${endpoint}` });
+      toast({ title: t('routes.endpointCopied'), description: `http://${endpoint}` });
     } catch {
-      toast({ title: '复制失败', variant: 'danger' });
+      toast({ title: t('routes.copyFailed'), variant: 'danger' });
     }
   };
   return (
@@ -246,7 +247,7 @@ function EndpointCopy({ endpoint }: { endpoint: string }) {
       type="button"
       className="inline-flex items-center gap-1 rounded-btn px-1 py-0.5 font-mono text-xs text-secondary hover:bg-hover hover:text-primary"
       onClick={() => { void copy(); }}
-      aria-label={`复制本地端点 ${endpoint}`}
+      aria-label={t('routes.copyEndpointAria', { endpoint })}
     >
       {endpoint}
       <Copy className="h-3 w-3" aria-hidden />
