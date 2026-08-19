@@ -217,7 +217,7 @@ OAuth access/refresh token 带有客户端、受众、范围和刷新语义。�
 
 ### 5.1.1 Grok subscription → Claude Code：第 3 路，xAI Chat experimental bind
 
-Grok 订阅同样走 `local_bridge`，但上游是 `https://api.x.ai/v1` 的 Chat Completions，默认模型 `grok-4.5`，复用 `BridgeUpstreamProtocol::KimiChatCompletions`。只允许带 access token 的 Grok OAuth Account；Claude 只写 loopback Base URL 与本地 bearer，xAI token 不进入 Claude 配置、IPC 或日志。Hub 本轮不自动 refresh，过期需重新同步 Grok 登录。
+Grok 订阅同样走 `local_bridge`，但上游是 `https://api.x.ai/v1` 的 Chat Completions，默认模型 `grok-4.5`，复用 `BridgeUpstreamProtocol::KimiChatCompletions`。只允许带 access token 的 Grok OAuth Account。写入走 `bind_ticket`；本机路由用 `local_token`，Claude 只写 loopback Base URL 与本地 bearer，xAI token 不进入 Claude 配置、IPC 或日志。Hub 本轮不自动 refresh，过期需重新同步 Grok 登录。loopback 导入按 Agent upsert 同一槽，不每次新开一行。
 
 Responses 已选为本轮上游 transport，并用 fixtures / host health 验证本地闭环。App Server 继续保持关闭：
 

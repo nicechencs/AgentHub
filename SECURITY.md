@@ -9,7 +9,7 @@ AgentHub is a **local desktop** multi-agent hub (Tauri + Rust core). This docume
 | Version | Supported |
 |---|---|
 | Latest release on [GitHub Releases](https://github.com/nicechencs/AgentHub/releases) | Yes |
-| `main` / active development branches | Best-effort |
+| `dev` (active development) | Best-effort |
 | Older releases | No fixed support window; upgrade when possible |
 
 ## Reporting a vulnerability

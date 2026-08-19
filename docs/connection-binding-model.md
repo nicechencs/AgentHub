@@ -1,5 +1,7 @@
 # 连接：票、绑定与协议图
 
+> **现行界面（2026-08-19）：** 用户看到的是「登录」，不是「票 / 钱包」。本文的票 / Ticket / 钱包是实现与领域名。生成投影不是登录卡。预览芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不再标 ①②③。
+
 > 状态：**§6 第 1–3 步已落地；§6.4 部分落地（Kimi/OpenAI API → Grok、OpenAI/xAI/GLM/DeepSeek API → Pi 属 ①；GLM/DeepSeek API → Codex 属 ①；Anthropic API Key → Codex 属 ③）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex 属 ①），GLM/DeepSeek → Pi 已可 experimental bind，② Claude/Codex/Grok 订阅 → Pi 已可 experimental bind，③ Codex Responses 与 Grok Chat 订阅 → Claude 已可 experimental bind；Claude 订阅 → Codex 产品不做，App Server/OauthOther 仍关闭；dsh writer 已接入（`AgentId::Dsh` + `deepseek-api-to-dsh-v1`）。未做的是 sidecar 迁移**。
 > 日期：2026-08-15。  
 > 本文是实现用的领域模型，不是给最终用户看的说明书。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。页面、Hub 入口、Adapter、厂商规则文档以本文为准改对象名；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
