@@ -143,10 +143,10 @@ fn looks_like_version_line_rejects_shell_errors() {
 #[test]
 fn not_found_firefighting_note_mentions_path_and_restart() {
     assert!(NOT_FOUND_FIREFIGHTING_NOTE.contains("PATH"));
-    assert!(NOT_FOUND_FIREFIGHTING_NOTE.contains("well-known"));
+    assert!(NOT_FOUND_FIREFIGHTING_NOTE.contains("常见安装目录") || NOT_FOUND_FIREFIGHTING_NOTE.contains("well-known"));
     assert!(
-        NOT_FOUND_FIREFIGHTING_NOTE.contains("restart")
-            || NOT_FOUND_FIREFIGHTING_NOTE.contains("re-detect")
+        NOT_FOUND_FIREFIGHTING_NOTE.contains("重启")
+            || NOT_FOUND_FIREFIGHTING_NOTE.contains("restart")
     );
 }
 
