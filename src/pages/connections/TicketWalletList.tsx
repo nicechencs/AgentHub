@@ -14,7 +14,6 @@ import { ListRow } from '@/components/shared/ListRow';
 import { QuotaBar } from '@/components/shared/QuotaBar';
 import { SearchField } from '@/components/shared/SearchField';
 import { SegmentedControl } from '@/components/shared/SegmentedControl';
-import { StatusDot } from '@/components/shared/StatusDot';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -47,6 +46,7 @@ import {
   formatTicketBindingDetailLines,
   ticketDetailEditLabel,
   TICKET_WALLET_FILTERS,
+  type TicketBindingDetailLine,
   type TicketDetailExtras,
   type TicketDetailField,
   type TicketWalletFilter,
@@ -63,62 +63,88 @@ function credentialBadgeVariant(
 
 export function TicketDetailPanel({
   id,
-  fields,
-  bindingLines,
+  advanced,
+  bindings,
   extras,
   editLabel,
   onEdit,
   onDelete,
 }: {
   id: string;
-  fields: TicketDetailField[];
-  bindingLines: string[];
+  advanced: TicketDetailField[];
+  bindings: TicketBindingDetailLine[];
   extras?: TicketDetailExtras | null;
   editLabel?: string | null;
   onEdit?: () => void;
   onDelete: () => void;
 }) {
+  const has7d = extras?.quota7dPct != null;
+  const has5h = extras?.quota5hPct != null;
+  const hasQuota = has7d || has5h;
+
   return (
     <Card
       id={id}
       variant="plain"
-      className="mt-3 flex flex-col gap-2.5 bg-canvas p-3 text-xs"
+      className="mt-3 flex flex-col gap-3 bg-canvas p-3 text-xs"
     >
-      <div className="grid gap-1.5 text-secondary sm:grid-cols-2">
-        {fields.map((field) => (
-          <DetailRow
-            key={`${field.label}:${field.value}`}
-            label={field.label}
-            value={field.value}
-            mono={field.mono}
-          />
-        ))}
-        {extras?.authLabel ? (
-          <span className="inline-flex items-center gap-1.5 sm:col-span-2">
-            登录态 {extras.authStatus ? <StatusDot status={extras.authStatus} /> : null}
-            <span className="text-xs text-secondary">{extras.authLabel}</span>
-          </span>
+      <div className={cn('grid gap-3', hasQuota && 'sm:grid-cols-2')}>
+        {hasQuota ? (
+          <div>
+            <p className="text-meta text-muted">用量</p>
+            <div className="mt-1.5 flex flex-col gap-1.5">
+              {has7d ? (
+                <QuotaBar
+                  label="7d"
+                  pct={extras?.quota7dPct}
+                  resetIn={extras?.quota7dResetIn}
+                />
+              ) : null}
+              {has5h ? (
+                <QuotaBar
+                  label="5h"
+                  pct={extras?.quota5hPct}
+                  resetIn={extras?.quotaResetIn}
+                />
+              ) : null}
+            </div>
+          </div>
         ) : null}
-      </div>
 
-      <div>
-        <p className="text-meta text-muted">正用于</p>
-        {bindingLines.length === 0 ? (
-          <p className="mt-1 text-secondary">未绑定任何 Agent</p>
-        ) : (
-          <ul className="mt-1 space-y-0.5 text-secondary">
-            {bindingLines.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {extras?.quota5hPct != null || extras?.quota7dPct != null ? (
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5">
-          <QuotaBar label="5h" pct={extras.quota5hPct} resetIn={extras.quotaResetIn} />
-          <QuotaBar label="7d" pct={extras.quota7dPct} resetIn={extras.quota7dResetIn} />
+        <div>
+          <p className="text-meta text-muted">用在哪</p>
+          {bindings.length === 0 ? (
+            <p className="mt-1.5 text-body text-secondary">还没接到任何工具</p>
+          ) : (
+            <ul className="mt-1.5 space-y-1">
+              {bindings.map((line) => (
+                <li
+                  key={`${line.agent}:${line.status}`}
+                  className="flex items-baseline justify-between gap-3"
+                >
+                  <span className="text-body text-secondary">{line.agent}</span>
+                  <span className="shrink-0 text-meta text-muted">{line.status}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
+      </div>
+
+      {advanced.length > 0 ? (
+        <details>
+          <summary className="cursor-pointer text-meta text-muted">更多</summary>
+          <div className="mt-1.5 grid gap-1.5 text-secondary sm:grid-cols-2">
+            {advanced.map((field) => (
+              <DetailRow
+                key={`${field.label}:${field.value}`}
+                label={field.label}
+                value={field.value}
+                mono={field.mono}
+              />
+            ))}
+          </div>
+        </details>
       ) : null}
 
       <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
@@ -214,8 +240,8 @@ function TicketRow({
       {expanded ? (
         <TicketDetailPanel
           id={detailsId}
-          fields={buildTicketDetailFields(ticket, extras)}
-          bindingLines={formatTicketBindingDetailLines(row.bindings)}
+          advanced={buildTicketDetailFields(ticket, extras).advanced}
+          bindings={formatTicketBindingDetailLines(row.bindings)}
           extras={extras}
           editLabel={editLabel}
           onEdit={editLabel ? () => onEdit(ticket) : undefined}
