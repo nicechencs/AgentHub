@@ -1,3 +1,4 @@
+import type { MessageKey, TranslateFn } from '@/lib/i18n';
 import type { Account, AgentStatus, AuthStatus } from '@/lib/types';
 
 /** Backend/frontend wire health states. These describe what is known, not token
@@ -43,8 +44,17 @@ export function normalizeAuthHealth(value: unknown): AuthHealth | undefined {
     : undefined;
 }
 
-export function authHealthLabel(health: AuthHealth): string {
-  return AUTH_HEALTH_LABEL[health];
+const AUTH_HEALTH_KEY: Record<AuthHealth, MessageKey> = {
+  verified: 'kind.health.verified',
+  renewable: 'kind.health.renewable',
+  configured: 'kind.health.configured',
+  needs_login: 'kind.health.needs_login',
+  unknown: 'kind.health.unknown',
+  missing: 'kind.health.missing',
+};
+
+export function authHealthLabel(health: AuthHealth, t?: TranslateFn): string {
+  return t ? t(AUTH_HEALTH_KEY[health]) : AUTH_HEALTH_LABEL[health];
 }
 
 /** Map new semantic states to the old status-dot colors without losing meaning. */
