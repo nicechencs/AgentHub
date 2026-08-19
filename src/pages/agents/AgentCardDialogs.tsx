@@ -22,6 +22,8 @@ export type AgentCardDialogsProps = {
   onClose: () => void;
   onUninstall: (deleteConfig: boolean) => void;
   onConfirmForceUpgrade: () => void;
+  /** Live read: leftover menu dismiss while the opening click is settling. */
+  shouldIgnoreDismiss?: (nextOpen: boolean) => boolean;
 };
 
 export function AgentCardDialogs({
@@ -35,10 +37,16 @@ export function AgentCardDialogs({
   onClose,
   onUninstall,
   onConfirmForceUpgrade,
+  shouldIgnoreDismiss,
 }: AgentCardDialogsProps) {
+  const onDialogOpenChange = (nextOpen: boolean) => {
+    if (shouldIgnoreDismiss?.(nextOpen)) return;
+    if (!nextOpen) onClose();
+  };
+
   return (
     <>
-      <Dialog open={confirmDialog === 'program'} onOpenChange={(o) => !o && onClose()}>
+      <Dialog open={confirmDialog === 'program'} onOpenChange={onDialogOpenChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>卸载 {agentName}？</DialogTitle>
@@ -59,7 +67,7 @@ export function AgentCardDialogs({
 
       <Dialog
         open={confirmDialog === 'force-upgrade'}
-        onOpenChange={(o) => !o && onClose()}
+        onOpenChange={onDialogOpenChange}
       >
         <DialogContent>
           <DialogHeader>
@@ -90,8 +98,9 @@ export function AgentCardDialogs({
 
       <Dialog
         open={confirmDialog === 'config'}
-        onOpenChange={(o) => {
-          if (!o) {
+        onOpenChange={(nextOpen) => {
+          if (shouldIgnoreDismiss?.(nextOpen)) return;
+          if (!nextOpen) {
             onClose();
             onConfirmNameChange('');
           }

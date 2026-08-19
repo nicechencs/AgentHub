@@ -34,8 +34,13 @@ import { checkChannelEnv, formatMissingList } from '@/lib/env';
 import { normalizeOpenPath } from '@/lib/path-open';
 import type { AgentStatus, RuntimeDetect } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { shouldIgnoreMenuDialogDismiss } from '@/pages/connections/ticket-wallet-model';
 import { buildAgentInstallPreview, buildEnvInstallPreview } from './install-preview';
-import { formatAgentVersion, resolveOfficialSetupUrl } from './agent-card-model';
+import {
+  formatAgentVersion,
+  openAgentCardUninstallConfirm,
+  resolveOfficialSetupUrl,
+} from './agent-card-model';
 import { AgentCardDialogs } from './AgentCardDialogs';
 import { useAgentCardLifecycle } from './use-agent-card-lifecycle';
 
@@ -102,6 +107,14 @@ export function AgentCard({
   const [hiding, setHiding] = React.useState(false);
   const hidden = Boolean(agent.hidden);
   const actionsBusy = busy || hiding;
+  const ignoreMenuDialogDismissRef = React.useRef(false);
+
+  const openUninstallConfirm = (
+    event: { preventDefault: () => void },
+    kind: 'program' | 'config',
+  ) => {
+    openAgentCardUninstallConfirm(event, kind, setConfirmDialog, ignoreMenuDialogDismissRef);
+  };
 
   const toggleHidden = async () => {
     setHiding(true);
@@ -483,7 +496,10 @@ export function AgentCard({
                     ···
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent
+                  align="end"
+                  onCloseAutoFocus={(event) => event.preventDefault()}
+                >
                   {agent.binPath?.trim() ? (
                     <>
                       <DropdownMenuItem
@@ -496,10 +512,15 @@ export function AgentCard({
                       <DropdownMenuSeparator />
                     </>
                   ) : null}
-                  <DropdownMenuItem onSelect={() => setConfirmDialog('program')}>
+                  <DropdownMenuItem
+                    onSelect={(event) => openUninstallConfirm(event, 'program')}
+                  >
                     仅卸载程序
                   </DropdownMenuItem>
-                  <DropdownMenuItem className="text-danger" onSelect={() => setConfirmDialog('config')}>
+                  <DropdownMenuItem
+                    className="text-danger"
+                    onSelect={(event) => openUninstallConfirm(event, 'config')}
+                  >
                     卸载并删除配置
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -673,6 +694,9 @@ export function AgentCard({
         }}
         onUninstall={(deleteConfig) => void doUninstall(deleteConfig)}
         onConfirmForceUpgrade={startUpgrade}
+        shouldIgnoreDismiss={(open) =>
+          shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, open)
+        }
       />
     </Card>
   );

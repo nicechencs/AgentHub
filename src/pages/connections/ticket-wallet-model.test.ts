@@ -6,7 +6,10 @@ import {
   activeBindingForAgent,
   buildTicketAddMenu,
   dispatchTicketAddAction,
+  armMenuDialogOpen,
+  handleMenuDialogSelect,
   handleTicketAddMenuSelect,
+  MENU_DIALOG_DISMISS_CLEAR_MS,
   shouldIgnoreMenuDialogDismiss,
   ticketAddDialogState,
   buildTicketDetailFields,
@@ -467,6 +470,42 @@ describe('shouldIgnoreMenuDialogDismiss', () => {
     expect(shouldIgnoreMenuDialogDismiss(true, false)).toBe(true);
     expect(shouldIgnoreMenuDialogDismiss(true, true)).toBe(false);
     expect(shouldIgnoreMenuDialogDismiss(false, false)).toBe(false);
+  });
+});
+
+describe('armMenuDialogOpen', () => {
+  it('arms, opens, then clears after the menu-close delay', () => {
+    const arm = { current: false };
+    const open = vi.fn();
+    const schedule = vi.fn<(fn: () => void, delayMs?: number) => void>();
+
+    armMenuDialogOpen(arm, open, MENU_DIALOG_DISMISS_CLEAR_MS, schedule);
+
+    expect(arm.current).toBe(true);
+    expect(open).toHaveBeenCalledOnce();
+    expect(schedule).toHaveBeenCalledOnce();
+    expect(schedule.mock.calls[0]![1]).toBe(100);
+    expect(shouldIgnoreMenuDialogDismiss(arm.current, false)).toBe(true);
+    schedule.mock.calls[0]![0]();
+    expect(arm.current).toBe(false);
+    expect(shouldIgnoreMenuDialogDismiss(arm.current, false)).toBe(false);
+  });
+});
+
+describe('handleMenuDialogSelect', () => {
+  it('preventDefault then arms the same openTicketAdd ignore window', () => {
+    const event = { preventDefault: vi.fn() };
+    const arm = { current: false };
+    const open = vi.fn();
+    const schedule = vi.fn<(fn: () => void, delayMs?: number) => void>();
+
+    handleMenuDialogSelect(event, arm, open, MENU_DIALOG_DISMISS_CLEAR_MS, schedule);
+
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(open).toHaveBeenCalledOnce();
+    expect(arm.current).toBe(true);
+    schedule.mock.calls[0]![0]();
+    expect(arm.current).toBe(false);
   });
 });
 
