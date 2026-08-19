@@ -328,7 +328,7 @@ UI 侧的具体变化：
 | 位置 | 现状 |
 |---|---|
 | `src/pages/accounts/` | 无 `index.tsx`；只剩 `ApiKeyAccountDialog` |
-| `src/pages/connections/` | 全局登录列表（`listTicketWallet`），不是按 Agent 分页的账号列表 |
+| `src/pages/connections/` | 全局票钱包（`listTicketWallet`），不是按 Agent 分页的账号列表 |
 | `src/pages/skills/SkillMatrix.tsx` | 已用 `skillsCap?.reason` 做单元格 tooltip |
 | Chat 危险模式开关 | `partial` 应渲染为黄色 badge + 提示（Kimi 不得静默失效） |
 | Dashboard 用量 / Chat 危险模式 | 由 `Usage` / `DangerousMode` 能力驱动（含 partial 提示） |

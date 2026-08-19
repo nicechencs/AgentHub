@@ -1,12 +1,10 @@
 # Chat 工作台重设计（Chat Page Redesign）
 
-> **现行状态（2026-08-19）：** 工作台表面已落地，但 **没有独立模型选择器**。线框里的 `[官方 · sonnet ▾]` 是连接/登录下拉，模型只是副标题。Projects「继续」≠ CLI `--resume`。MCP 注入未做。下文是实施记录，不要把线框当现行模型 picker。
-
 | 字段 | 值 |
 |---|---|
 | 作者 | — |
 | 日期 | 2026-08-16 |
-| 状态 | Implemented（2026-08）；无独立模型选择器 |
+| 状态 | Implemented（2026-08） |
 | 类型 | 产品 / UX / 界面重设计（无新后端能力、无 wire 变更） |
 | 范围 | Chat 页信息架构、会话 rail、会话 header、消息区与多 Agent 展示、过程面板 Phase 3 表面、Composer 与发送前置校验、消息轻操作、页面文件拆分、文档回写 |
 | 非范围 | Rust / Tauri 命令、`ChatEvent` wire、过程落库、CLI 原生 `--resume` 与交互式 tool 审批、Connections/Bridges 职责、凭据落盘加密（**无必要 / 项目范围外**）、国产 OAuth 开边 / OAuth→API（产品不做） |

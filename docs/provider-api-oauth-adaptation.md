@@ -2,17 +2,17 @@
 
 > 状态：**当前工作区规则**，不代表已发布版本。
 > 最近核对：2026-08-15。
-> 本文是厂商入口、凭据类型和**现在能不能写上去**的规则真源。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。实现用的对象名见 [connection-binding-model.md](connection-binding-model.md)；页面与运行时见 [adapter-design.md](adapter-design.md)、[ui-design.md](ui-design.md)。日常说法：直接改配置 / 写进对方认的登录 / 本机转发。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。§4 是**当前可执行矩阵**，不是 UI 白名单，也不是产品终点。
+> 本文是厂商入口、凭据类型和**现在能不能写上去**的规则真源。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。实现用的对象名见 [connection-binding-model.md](connection-binding-model.md)；页面与运行时见 [adapter-design.md](adapter-design.md)、[ui-design.md](ui-design.md)。日常说法：① = 直接改配置，② = 写进对方认的登录，③ = 本机转发。§4 是**当前可执行矩阵**，不是 UI 白名单，也不是产品终点。
 
 ## 1. 先看结论
 
-是否能够接到某个 Agent，由这份登录的表面和图上的边决定，而不是由「从哪个 Agent 导入」或「account 还是 provider」决定：
+是否能够接到某个 Agent，由票的表面和图上的边决定，而不是由「从哪个 Agent 导入」或「account 还是 provider」决定：
 
 ```text
-登录表面（产品 + 凭据类 + 上游协议） × Agent 入口（accepts + writer） → native | reshape | bridge | 不可行
+票面（产品 + 凭据类 + 上游协议） × Agent 入口（accepts + writer） → native | reshape | bridge | 不可行
 ```
 
-商品组合（如 Kimi 会员 → Claude）是图的一次求值。扩大靠登记新的登录表面、声明 Agent `accepts`/`writer`、给图加边。见 [connection-binding-model.md](connection-binding-model.md)。
+商品组合（如 Kimi 会员 → Claude）是图的一次求值。扩大靠登记新票面、声明 Agent `accepts`/`writer`、给图加边。见 [connection-binding-model.md](connection-binding-model.md)。
 
 是否能够适配，仍由下面四项共同决定：
 
@@ -36,8 +36,8 @@
 3. **同厂商不同产品不得混用**：Base URL、Key、额度和授权范围都可能不同。
 4. **只认显式来源标记**：进口写下 `surface`；不能根据名称、标签或 URL 猜测。未识别标 `unknown`，规划结果是不可行，而不是把「接到…」藏掉。
 5. **默认拒绝写入**：没有代码规则和测试的组合一律不能 `bind`。用户仍看得到原因。
-6. **不复制凭据**：绑定只引用登录；真实凭据只在写入 live 或请求上游时短暂解析。自动生成的配置不是新的登录。
-7. **国产 OAuth 产品不做**：不为中国产 AI 的 OAuth 开 Adapter 边（`native_endpoint` / `config_sync` / `local_bridge` 都不开），也不把这类 OAuth 转成 API Key 或 to-api。现有国产边只认官方 API Key。见 [product-decisions.md](product-decisions.md) 与根 [AGENTS.md](../AGENTS.md)。
+6. **不复制凭据**：绑定只引用票；真实凭据只在写入 live 或请求上游时短暂解析。生成投影不是新票。
+7. **国产 OAuth 产品不做**：不为中国产 AI 的 OAuth 开 Adapter 边（① `native_endpoint` / ② `config_sync` / ③ `local_bridge` 都不开），也不把这类 OAuth 转成 API Key 或 to-api。现有国产边只认官方 API Key。见 [product-decisions.md](product-decisions.md) 与根 [AGENTS.md](../AGENTS.md)。
 
 ### 1.1 跨 Agent 复用：三路，订阅不等于要起桥
 
@@ -45,9 +45,9 @@
 
 | 路 | 何时 | 起桥 |
 |---|---|---|
-| 直接改配置 | 上游 Key 已提供目标协议（双协议 Key 是典型） | 否 |
-| 写进对方认的登录 | 目标有同一 OAuth 契约槽（如 Pi 的 Anthropic / Codex / xAI 槽） | 否 |
-| 本机路由 | 协议或契约对不上，图上有转换边（如 Codex 订阅 → Claude） | 是，仅本机 |
+| ① API 端点直连 | 上游 Key 已提供目标协议（双协议 Key 是典型） | 否 |
+| ② 原生订阅复用 | 目标有同一 OAuth 契约槽（如 Pi 的 Anthropic / Codex / xAI 槽） | 否 |
+| ③ 本机协议桥 | 协议或契约对不上，图上有转换边（如 Codex 订阅 → Claude） | 是，仅 loopback |
 
 安全与运营边界（约束部署形态，不否决产品）：
 
@@ -211,7 +211,7 @@ OAuth access/refresh token 带有客户端、受众、范围和刷新语义。�
 
 ### 5.1 Codex / ChatGPT subscription → Claude Code：第 3 路，Responses experimental bind
 
-该组合是 **本机路由** 的旗舰边，**不是**「写进对方认的登录」：Claude Code 没有 ChatGPT 订阅槽。目标：Claude Code 通过 `ANTHROPIC_BASE_URL` 与 `ANTHROPIC_AUTH_TOKEN` 调用**本机** bridge，而不是把 ChatGPT OAuth token 写入 Claude Code。Codex 订阅 → Pi 走 ②，不要和本条混写。
+该组合是 **③ 本机协议桥** 的旗舰边，**不是** ②：Claude Code 没有 ChatGPT 订阅槽。目标：Claude Code 通过 `ANTHROPIC_BASE_URL` 与 `ANTHROPIC_AUTH_TOKEN` 调用**本机** bridge，而不是把 ChatGPT OAuth token 写入 Claude Code。Codex 订阅 → Pi 走 ②，不要和本条混写。
 
 **当前实现**已可 bind Responses `auth_json` Account：`canApply=true`，创建 `local_bridge` profile、启动 loopback，并写入 Claude 的 `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`。仅 access token 在进程内注入上游；ChatGPT OAuth token 不进入 Claude 配置、IPC 或日志。Hub 本轮不做 single-flight refresh，过期需重新同步 Codex 登录。见 [product-decisions.md](product-decisions.md)。
 

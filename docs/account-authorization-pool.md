@@ -1,8 +1,7 @@
 # 账号池：身份 × 授权 与去重方案
 
-> **现行界面（2026-08-19）：** 用户看到的是「登录 / 登录列表」；本文「授权票」是去重用的领域说法，不是界面名词。  
 > 状态：**产品决策已定；PR-A/B/C 已落地（2026-08-03）**。  
-> 关联：[capability-matrix.md](capability-matrix.md)（Agent 原生能力）、[product-decisions.md](product-decisions.md)（跨 Agent 复用三路）、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)（协议图上的边）、[connection-binding-model.md](connection-binding-model.md)（登录 / 绑定）、[architecture.md](architecture.md)、[cli-and-config.md](cli-and-config.md)（account 命令）。
+> 关联：[capability-matrix.md](capability-matrix.md)（Agent 原生能力）、[product-decisions.md](product-decisions.md)（跨 Agent 复用三路）、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)（协议图上的边）、[connection-binding-model.md](connection-binding-model.md)（票 / 绑定）、[architecture.md](architecture.md)、[cli-and-config.md](cli-and-config.md)（account 命令）。
 > **废止**：此前「同 email/user_id 必合并为一条」的草案；以本文为准。
 
 ## 1. 产品决策（硬约束）
@@ -28,14 +27,14 @@
 | 同一人，API Key A 与 Key B | **2** | 不同密钥 |
 | 不同人 | **2+** | 不同身份 |
 
-**例外（本机路由导入）**：`127.0.0.1` / `localhost` / `::1` 上的 bridge ticket 不是独立用户授权——bind 每次都会换端口和 bearer。同一 agent 只保留一个 loopback-bridge 槽位，再 import 覆盖（新端口、新 token），不按 token 指纹另开一行。不得与远端 API Key / 官方 OAuth 合并，也不得删 adapter 生成的 projection。
+**例外（本机 loopback 桥）**：`127.0.0.1` / `localhost` / `::1` 上的 bridge ticket 不是独立用户授权——bind 每次都会换端口和 bearer。同一 agent 只保留一个 loopback-bridge 槽位，再 import 覆盖（新端口、新 token），不按 token 指纹另开一行。不得与远端 API Key / 官方 OAuth 合并，也不得删 adapter 生成的 projection。
 
 一句话：
 
 > **身份可以重复出现在列表里；只有「同一张授权票」才去重。  
 > 多枚仍有效的 token = 多条池记录；本机 live 仍只有一个 current。**
 
-跨 Agent 复用时，这里的「授权」就是 [票（Ticket）](connection-binding-model.md)。`agent_id` / 从哪个 Agent 导入只表示出身，**不**决定能不能 `bind` 到别的 Agent，也不决定走直连、写进对方认的登录还是本机路由。每个 Agent 的 active 绑定至多一条，对应本节的 live 生效位。见 [product-decisions.md](product-decisions.md)。
+跨 Agent 复用时，这里的「授权」就是 [票（Ticket）](connection-binding-model.md)。`agent_id` / 从哪个 Agent 导入只表示出身，**不**决定能不能 `bind` 到别的 Agent，也不决定走 ① 直连、② 原生订阅还是 ③ 本机路由。每个 Agent 的 active 绑定至多一条，对应本节的 live 生效位。见 [product-decisions.md](product-decisions.md)。
 
 ---
 

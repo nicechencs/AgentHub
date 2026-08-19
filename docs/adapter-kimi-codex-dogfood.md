@@ -2,9 +2,9 @@
 
 > 关联：[adapter-design.md](adapter-design.md) Phase 1 / §11.4、[product-decisions.md](product-decisions.md)。  
 > 自动验收（bridge / restore / 退出协调器）已在工作区通过；**本清单只覆盖必须用桌面应用 + 真实连接完成的项**。  
-> 创建/应用的日常入口可以是 Dashboard 卡片「连接/切换」或 Connections「接到…」（ConnectFlow）；本机路由页（`/routes`，侧栏 Routes）只用于本机路由控件。  
-> 入口：Dashboard「连接/切换」与 Connections「接到…」（真登录常驻；不可行目标在对话框置灰 + 原因）。自动生成的配置不进登录列表。见 [connection-binding-model.md](connection-binding-model.md)。  
-> 本清单同时覆盖直连（Kimi→Claude、Anthropic Key→Pi）和本机路由（Kimi→Codex）。同一把 Kimi Key 对不同目标走不同路，不是「双协议 = 万能」。  
+> 创建/应用的日常入口可以是 Dashboard 卡片「连接/切换」或 Connections「接到…」（ConnectFlow）；本机路由页（`/routes`，侧栏 Routes）只用于 ③ 的桥控件。  
+> 入口：Dashboard「连接/切换」与 Connections「接到…」（真登录常驻；不可行目标在对话框置灰 + 原因）。生成投影不进登录列表。见 [connection-binding-model.md](connection-binding-model.md)。  
+> 本清单同时覆盖 ①（Kimi→Claude、Anthropic Key→Pi）和 ③（Kimi→Codex）。同一把 Kimi Key 对不同目标走不同路，不是「双协议 = 万能」。  
 > **禁止**把密钥、Authorization、prompt、工具参数或响应正文写入本文件或任何报告。只记 `profile_id`、端口、错误码、耗时、是否完成。
 
 ## Hub ConnectFlow 真机验收（最短）
@@ -13,21 +13,21 @@ mock 下 apply 正向链路不可达，必须 `pnpm tauri:dev` + 真实凭据。
 
 入口：Dashboard「连接/切换」与 Connections「接到…」（每份真登录常驻该按钮）。
 
-反例：自动生成的配置不出现在登录列表，故无「接到…」。OAuth / 未识别 / 无边等真登录仍显示「接到…」，对话框内不可行目标置灰 + 原因原文。
+反例：生成投影不出现在登录列表，故无「接到…」。OAuth / 未识别 / 无边等真登录仍显示「接到…」，对话框内不可行目标置灰 + 原因原文。
 
-### 1. Kimi 会员 Provider → Claude（直连）
+### 1. Kimi 会员 Provider → Claude（① API 直连）
 
 步骤：
 
 1. 从 Dashboard Claude 卡片「连接/切换」，或从 Connections 的 Kimi 会员行「接到…」进入。
 2. 选该 Kimi 会员为来源、Claude 为目标，预览后 apply。
-3. 核对 Claude 当前连接按直连生效（只记 profile / provider id 后缀）。
+3. 核对 Claude 当前连接按 ① 直连生效（只记 profile / provider id 后缀）。
 
 预期：直连可 apply；Claude 卡片显示直连 / 改配置，**不**显示桥；该 Kimi 行「正用于」含 Claude。
 
 - [ ]
 
-### 2. Kimi 会员 Provider → Codex（本机路由；Chat Completions ≠ Responses）
+### 2. Kimi 会员 Provider → Codex（③ 本机路由；Chat Completions ≠ Responses）
 
 步骤：
 
@@ -35,11 +35,11 @@ mock 下 apply 正向链路不可达，必须 `pnpm tauri:dev` + 真实凭据。
 2. 选该 Kimi 会员为来源、Codex 为目标，预览后 apply（本地桥）。
 3. 核对桥已创建/可启动，Codex 当前连接指向生成 Provider（只记 `profile_id`、端口）。
 
-预期：本机路由可 apply；Codex 卡片显示本机路由状态；该 Kimi 行「正用于」含 Codex。
+预期：③ 本机路由可 apply；Codex 卡片显示桥状态；该 Kimi 行「正用于」含 Codex。
 
 - [ ]
 
-### 3. Claude Anthropic Provider → Pi（直连 / 写槽；不是订阅 OAuth）
+### 3. Claude Anthropic Provider → Pi（① API 直连 / 写槽；不是订阅 OAuth）
 
 步骤：
 
@@ -47,7 +47,7 @@ mock 下 apply 正向链路不可达，必须 `pnpm tauri:dev` + 真实凭据。
 2. 选该 Anthropic Provider 为来源、Pi 为目标，预览后 apply。
 3. 核对 Pi 当前连接已同步（只记 profile / provider id 后缀）。
 
-预期：写槽可 apply；Pi 卡片显示直连 / 改配置，**不**显示本机路由；该 Anthropic 行「正用于」含 Pi。
+预期：① 写槽可 apply；Pi 卡片显示直连 / 改配置，**不**显示桥；该 Anthropic 行「正用于」含 Pi。
 
 - [ ]
 

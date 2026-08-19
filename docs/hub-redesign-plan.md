@@ -1,7 +1,6 @@
 # Hub 重构 Phase 1 实施方案（Agent 优先信息架构）v2
 
 > 状态：**Phase 1 已实施**（2026-08-14），本文保留为当时的实施记录。  
-> **现行状态（2026-08-19）：** Settings 四栏（偏好 / 本机 / 备份 / 关于）；picker 芯片「直连 / 用这份登录 / 本机路由 / 当前不支持」（界面不再标 ①②③）；托盘中文：打开 AgentHub / 打开路由 / 启动路由 / 停止路由 / 退出；i18n 仅 Settings chrome + 侧栏。界面说「登录」不说「票」。下文 §1–§10 是 Phase 1 实施记录，不是现行 IA。
 > **§3.2 过渡冻结已解除**（2026-08-15）：终态 IA 见 [bridges-page-redesign.md](bridges-page-redesign.md)。现行表面是 **Routes / 本机路由**（`/routes`）；`/adapter`、`/router`、`/bridges` 永久跳过来。页目录仍为 `src/pages/bridges/`。下文 §3.2「不移除 `/adapter`、不改路由结构、侧栏改名『桥与适配』」是当时护栏，不是现行约束。  
 > **现行状态**：Settings **四栏**（偏好 / 本机 / 备份 / 关于）；ConnectFlow 芯片 **直连 / 用这份登录 / 本机路由 / 当前不支持**（界面不再标 ①②③）；托盘菜单 **打开 AgentHub / 打开路由 / 启动路由 / 停止路由 / 退出**；i18n 仅 Settings chrome + 侧栏。下文 §1–§10 为 Phase 1 实施记录，不是现行 IA。  
 > **2026-08-15 起的领域与 UI 目标**改以 [connection-binding-model.md](connection-binding-model.md) 为准：票 / 绑定 / 协议图；Connections 改为全局钱包；真票常驻「接到…」；生成投影退出列表。**产品方向**以 [product-decisions.md](product-decisions.md) 为准（① API 直连 / ② 原生订阅 / ③ 本机路由）。下文「不改 OAuth 门禁」只约束当时 Phase 1 实施范围，不是「订阅一律不跨 Agent」。Phase 1 的对话框外壳仍可复用，**按 Agent tab 分页、行按钮白名单、诊断只放 Dashboard 不再是终态**，UI 允许按目标文档重做。
