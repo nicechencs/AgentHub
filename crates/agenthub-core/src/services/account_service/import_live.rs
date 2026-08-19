@@ -21,6 +21,7 @@ use crate::services::switch_undo::{
 use crate::services::{AdapterRouteService, BackupService, ConnectionService};
 use crate::storage::{AccountRepo, Database};
 use crate::utils::agent_lock::AgentWriteLock;
+use crate::utils::loopback::credentials_are_loopback;
 use crate::utils::redact::mask_secret_preview;
 
 use super::surface::*;
@@ -117,8 +118,8 @@ impl AccountService {
         }
         let extra = attach_identity_meta(adapter, live.kind, &live.credentials, &display, extra);
 
-        // 仅按「授权票」去重：同 token/key 再 import → upsert；
-        // 同人不同 token → 新行（见 docs/account-authorization-pool.md）。
+        // 远端票按授权指纹去重；loopback 桥票按 agent+kind 槽位 upsert
+        // （bind 会轮换 port+bearer，见 docs/account-authorization-pool.md）。
         if let Some(existing) =
             self.find_duplicate_authorization(adapter, agent, live.kind, &live.credentials)?
         {
@@ -156,6 +157,9 @@ impl AccountService {
     }
 
     /// 查找与给定凭据为「同一授权票」的已有行（非身份）。
+    ///
+    /// Loopback 桥票按 agent+kind 槽位匹配，不看 token 指纹。远端票仍按
+    /// `accounts_same_authorization`，且不会并进 loopback 行。
     pub(super) fn find_duplicate_authorization(
         &self,
         adapter: &dyn AgentAdapter,
@@ -163,17 +167,26 @@ impl AccountService {
         kind: AccountKind,
         credentials: &Value,
     ) -> Result<Option<Account>> {
+        let incoming_loopback = credentials_are_loopback(credentials);
         let candidates = self.repo.list(Some(agent))?;
         let matches: Vec<Account> = candidates
             .into_iter()
             .filter(|a| a.kind == kind)
             .filter(|a| same_live_slot(agent, credentials, &a.credentials))
-            .filter(|a| accounts_same_authorization(adapter, kind, credentials, a))
+            .filter(|a| {
+                let existing_loopback = credentials_are_loopback(&a.credentials);
+                if incoming_loopback {
+                    existing_loopback
+                } else {
+                    !existing_loopback && accounts_same_authorization(adapter, kind, credentials, a)
+                }
+            })
             .collect();
         Ok(pick_primary_authorization_match(matches))
     }
 
-    /// 合并进已有授权行；仅清理 **同授权指纹** 的冗余行，绝不按身份删其它授权。
+    /// 合并进已有授权行。远端票只清理同授权指纹冗余；loopback 桥票清理
+    /// 同 agent+kind 的其它 loopback 行。绝不按身份删其它授权。
     pub(super) fn merge_into_existing(
         &self,
         adapter: &dyn AgentAdapter,
@@ -203,14 +216,27 @@ impl AccountService {
             self.repo.update(&row)?
         };
 
+        let incoming_loopback = credentials_are_loopback(&updated.credentials);
         let leftovers = self.repo.list(Some(updated.agent_id))?;
         for other in leftovers {
             if other.id == updated.id || other.kind != updated.kind {
                 continue;
             }
-            if same_live_slot(updated.agent_id, &updated.credentials, &other.credentials)
-                && accounts_same_authorization(adapter, updated.kind, &updated.credentials, &other)
-            {
+            if !same_live_slot(updated.agent_id, &updated.credentials, &other.credentials) {
+                continue;
+            }
+            let should_delete = if incoming_loopback {
+                credentials_are_loopback(&other.credentials)
+            } else {
+                !credentials_are_loopback(&other.credentials)
+                    && accounts_same_authorization(
+                        adapter,
+                        updated.kind,
+                        &updated.credentials,
+                        &other,
+                    )
+            };
+            if should_delete {
                 // Prefer consistency path so an active leftover never leaves a dangling binding.
                 // Propagate delete errors — never report merge success with leftover rows.
                 self.connections

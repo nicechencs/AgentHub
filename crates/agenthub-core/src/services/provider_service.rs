@@ -22,6 +22,7 @@ use crate::services::{
     LiveWriteAuthority, LiveWriteGuard,
 };
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
+use crate::utils::loopback::is_loopback_base_url;
 use crate::utils::redact::redact_text;
 
 /// Maximum Unicode scalar values allowed in a provider id.
@@ -472,38 +473,69 @@ impl ProviderService {
         // existing live-import row instead of creating a UUID row on every
         // refresh. Manual providers are deliberately ignored: only rows whose
         // metadata explicitly identifies `source = live` participate here.
-        if let Some(existing) = self.find_live_import(agent)? {
+        let saved = if let Some(existing) = self.find_live_import(agent)? {
             let desired_name = name.unwrap_or(&existing.name);
             if existing.settings_config == live.raw
                 && existing.name == desired_name
                 && existing.is_current
             {
-                return self.stamp_provider_surface(existing);
+                self.stamp_provider_surface(existing)?
+            } else {
+                let input = ProviderInput {
+                    id: existing.id,
+                    agent_id: agent,
+                    name: desired_name.to_owned(),
+                    settings_config: live.raw,
+                    meta: existing.meta,
+                    is_current: true,
+                };
+                let updated = self.update_inner(&input)?;
+                self.stamp_provider_surface(updated)?
             }
-
+        } else {
             let input = ProviderInput {
-                id: existing.id,
+                id: format!("{}-live-{}", agent.as_str(), Uuid::new_v4()),
                 agent_id: agent,
-                name: desired_name.to_owned(),
+                name: display_name,
                 settings_config: live.raw,
-                meta: existing.meta,
+                meta: serde_json::json!({ "source": "live" }),
                 is_current: true,
             };
-            let updated = self.update_inner(&input)?;
-            return self.stamp_provider_surface(updated);
-        }
-
-        let input = ProviderInput {
-            id: format!("{}-live-{}", agent.as_str(), Uuid::new_v4()),
-            agent_id: agent,
-            name: display_name,
-            settings_config: live.raw,
-            meta: serde_json::json!({ "source": "live" }),
-            is_current: true,
+            // Use inner create so import is a single log op (not create + import).
+            let created = self.create_inner(&input)?;
+            self.stamp_provider_surface(created)?
         };
-        // Use inner create so import is a single log op (not create + import).
-        let created = self.create_inner(&input)?;
-        self.stamp_provider_surface(created)
+        self.collapse_extra_loopback_providers(agent, &saved)?;
+        Ok(saved)
+    }
+
+    /// After upserting the canonical live row, drop leftover same-agent
+    /// loopback providers. Adapter-generated projections stay hidden and are
+    /// not Connections tickets; remote-URL rows are left untouched.
+    fn collapse_extra_loopback_providers(&self, agent: AgentId, kept: &Provider) -> Result<()> {
+        let Some(url) = extract_probe_url(&kept.settings_config) else {
+            return Ok(());
+        };
+        if !is_loopback_base_url(&url) {
+            return Ok(());
+        }
+        let others = self.repo.list(Some(agent))?;
+        for other in others {
+            if other.id == kept.id {
+                continue;
+            }
+            if self.is_generated_projection(&other)? {
+                continue;
+            }
+            let Some(other_url) = extract_probe_url(&other.settings_config) else {
+                continue;
+            };
+            if !is_loopback_base_url(&other_url) {
+                continue;
+            }
+            self.delete_inner(&other.id, agent)?;
+        }
+        Ok(())
     }
 
     /// Classify the persisted row and write `meta.surface` before upsert /

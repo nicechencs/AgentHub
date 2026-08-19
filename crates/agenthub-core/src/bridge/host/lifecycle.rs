@@ -627,7 +627,7 @@ fn validate_start_spec(spec: &BridgeStartSpec) -> Result<Url, BridgeHostError> {
     }
     match upstream.scheme() {
         "https" => {}
-        "http" if is_loopback_host(upstream.host_str()) => {}
+        "http" if crate::utils::loopback::is_loopback_host(upstream.host_str()) => {}
         _ => return Err(BridgeHostError::InvalidUpstreamUrl),
     }
     // `Url::join` treats a path without a trailing slash as a file. Normalize it so a configured
@@ -637,13 +637,6 @@ fn validate_start_spec(spec: &BridgeStartSpec) -> Result<Url, BridgeHostError> {
         upstream.set_path(&path);
     }
     Ok(upstream)
-}
-
-fn is_loopback_host(host: Option<&str>) -> bool {
-    matches!(host, Some("localhost"))
-        || host
-            .and_then(|host| host.parse::<IpAddr>().ok())
-            .is_some_and(|address| address.is_loopback())
 }
 
 fn same_spec(left: &BridgeStartSpec, right: &BridgeStartSpec) -> bool {

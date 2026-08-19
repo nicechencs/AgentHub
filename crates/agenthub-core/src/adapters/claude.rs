@@ -74,18 +74,8 @@ impl AgentAdapter for ClaudeAdapter {
         let home = agent_home(AgentId::Claude)?;
         let settings_path = home.join("settings.json");
         // Prefer explicit API key in settings (provider-style live config).
-        if let Some((env_key, token)) = read_claude_settings_token(&settings_path)? {
-            return Ok(LiveAccount {
-                agent: AgentId::Claude,
-                kind: AccountKind::ApiKey,
-                credentials: serde_json::json!({
-                    "format": "api_key",
-                    "api_key": token,
-                    "env_key": env_key,
-                }),
-                label_hint: Some(format!("{} (API Key)", mask_secret_preview(&token))),
-                extra: serde_json::json!({ "source": "settings.json" }),
-            });
+        if let Some(account) = read_settings_api_key_account(&settings_path)? {
+            return Ok(account);
         }
 
         // Official OAuth — keychain / credentials file.
@@ -149,7 +139,8 @@ impl AgentAdapter for ClaudeAdapter {
                     .get("env_key")
                     .and_then(|v| v.as_str())
                     .unwrap_or("ANTHROPIC_AUTH_TOKEN");
-                write_claude_settings_token(&home.join("settings.json"), env_key, key)?;
+                let base_url = account.credentials.get("base_url").and_then(|v| v.as_str());
+                write_claude_settings_token(&home.join("settings.json"), env_key, key, base_url)?;
                 Ok(())
             }
             "credentials_json" => {
@@ -379,27 +370,73 @@ fn read_claude_oauth_for_home(home: &Path) -> Result<Option<ClaudeOauthBundle>> 
     read_claude_oauth_from_path(&home.join(".credentials.json"))
 }
 
-fn read_claude_settings_token(path: &Path) -> Result<Option<(String, String)>> {
+fn read_claude_settings_json(path: &Path) -> Result<Option<serde_json::Value>> {
     if !path.exists() {
         return Ok(None);
     }
     let text = std::fs::read_to_string(path)?;
-    let value: serde_json::Value = serde_json::from_str(&text)?;
-    let env = value.get("env").and_then(|v| v.as_object());
-    let Some(env) = env else {
-        return Ok(None);
-    };
+    Ok(Some(serde_json::from_str(&text)?))
+}
+
+fn claude_settings_token(settings: &serde_json::Value) -> Option<(String, String)> {
+    let env = settings.get("env")?.as_object()?;
     for key in ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"] {
         if let Some(token) = env.get(key).and_then(|v| v.as_str()) {
             if !token.is_empty() {
-                return Ok(Some((key.to_string(), token.to_string())));
+                return Some((key.to_string(), token.to_string()));
             }
         }
     }
-    Ok(None)
+    None
 }
 
-fn write_claude_settings_token(path: &Path, env_key: &str, token: &str) -> Result<()> {
+fn claude_settings_base_url(settings: &serde_json::Value) -> Option<String> {
+    settings
+        .get("env")
+        .and_then(|env| env.get("ANTHROPIC_BASE_URL"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+}
+
+fn read_claude_settings_token(path: &Path) -> Result<Option<(String, String)>> {
+    let Some(settings) = read_claude_settings_json(path)? else {
+        return Ok(None);
+    };
+    Ok(claude_settings_token(&settings))
+}
+
+fn read_settings_api_key_account(path: &Path) -> Result<Option<LiveAccount>> {
+    let Some(settings) = read_claude_settings_json(path)? else {
+        return Ok(None);
+    };
+    let Some((env_key, token)) = claude_settings_token(&settings) else {
+        return Ok(None);
+    };
+    let mut credentials = serde_json::json!({
+        "format": "api_key",
+        "api_key": token,
+        "env_key": env_key,
+    });
+    if let Some(base_url) = claude_settings_base_url(&settings) {
+        credentials["base_url"] = serde_json::json!(base_url);
+    }
+    Ok(Some(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials,
+        label_hint: Some(format!("{} (API Key)", mask_secret_preview(&token))),
+        extra: serde_json::json!({ "source": "settings.json" }),
+    }))
+}
+
+fn write_claude_settings_token(
+    path: &Path,
+    env_key: &str,
+    token: &str,
+    base_url: Option<&str>,
+) -> Result<()> {
     let mut value = if path.exists() {
         let text = std::fs::read_to_string(path)?;
         serde_json::from_str::<serde_json::Value>(&text)?
@@ -423,16 +460,35 @@ fn write_claude_settings_token(path: &Path, env_key: &str, token: &str) -> Resul
         }
     }
     env_obj.insert(env_key.to_string(), serde_json::Value::String(token.into()));
+    let base_url = base_url.map(str::trim).filter(|s| !s.is_empty());
+    if let Some(base_url) = base_url {
+        env_obj.insert(
+            "ANTHROPIC_BASE_URL".to_string(),
+            serde_json::Value::String(base_url.to_string()),
+        );
+    }
     let mut bytes = serde_json::to_vec_pretty(&value)?;
     bytes.push(b'\n');
     atomic_write(path, &bytes)?;
     match read_claude_settings_token(path)? {
-        Some((k, v)) if k == env_key && v == token => Ok(()),
-        _ => Err(AppError::message(
-            "account.verify",
-            "Claude settings token verification failed after write",
-        )),
+        Some((k, v)) if k == env_key && v == token => {}
+        _ => {
+            return Err(AppError::message(
+                "account.verify",
+                "Claude settings token verification failed after write",
+            ))
+        }
     }
+    if let Some(expected) = base_url {
+        let settings = read_claude_settings_json(path)?.unwrap_or_else(|| serde_json::json!({}));
+        if claude_settings_base_url(&settings).as_deref() != Some(expected) {
+            return Err(AppError::message(
+                "account.verify",
+                "Claude settings base URL verification failed after write",
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Remove API/relay auth env so official OAuth credentials take effect.
@@ -670,6 +726,56 @@ mod tests {
         assert_eq!(is_expired(&json!(1_000_u64)), Some(true));
         assert_eq!(is_expired(&json!("2099-01-01T00:00:00.000Z")), Some(false));
         assert_eq!(is_expired(&json!("2000-01-01T00:00:00Z")), Some(true));
+    }
+
+    #[test]
+    fn read_account_persists_loopback_base_url_from_settings() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "sk-bridge",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:43081"
+  }
+}
+"#,
+        )
+        .expect("write");
+        let account = read_settings_api_key_account(&path)
+            .expect("read")
+            .expect("api key account");
+        assert_eq!(account.agent, AgentId::Claude);
+        assert_eq!(account.kind, AccountKind::ApiKey);
+        assert_eq!(account.credentials["format"], "api_key");
+        assert_eq!(account.credentials["api_key"], "sk-bridge");
+        assert_eq!(account.credentials["env_key"], "ANTHROPIC_AUTH_TOKEN");
+        assert_eq!(account.credentials["base_url"], "http://127.0.0.1:43081");
+    }
+
+    #[test]
+    fn write_claude_settings_token_restores_base_url_when_present() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("settings.json");
+        write_claude_settings_token(
+            &path,
+            "ANTHROPIC_AUTH_TOKEN",
+            "sk-bridge",
+            Some("http://127.0.0.1:43081"),
+        )
+        .expect("write");
+        let text = std::fs::read_to_string(&path).expect("read");
+        let v: serde_json::Value = serde_json::from_str(&text).expect("json");
+        assert_eq!(v["env"]["ANTHROPIC_AUTH_TOKEN"], "sk-bridge");
+        assert_eq!(v["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:43081");
+
+        write_claude_settings_token(&path, "ANTHROPIC_AUTH_TOKEN", "sk-plain", None)
+            .expect("write without url");
+        let text = std::fs::read_to_string(&path).expect("read");
+        let v: serde_json::Value = serde_json::from_str(&text).expect("json");
+        assert_eq!(v["env"]["ANTHROPIC_AUTH_TOKEN"], "sk-plain");
+        assert_eq!(v["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:43081");
     }
 
     #[test]
