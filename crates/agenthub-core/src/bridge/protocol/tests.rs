@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::bridge::types::{
-    BridgeEvent, EmissionState, IrEvent, RetryClass, RetryGate, StopReason,
+    BridgeEvent, EmissionState, IrEvent, RetryClass, RetryGate, StopReason, Usage,
 };
 
 use super::{
@@ -74,6 +74,31 @@ fn fixture(name: &str) -> Value {
         _ => panic!("unknown fixture"),
     };
     serde_json::from_str(source).expect("fixture is valid JSON")
+}
+
+fn assert_codex_completed_usage(usage: &Value) {
+    #[derive(serde::Deserialize)]
+    struct CodexCompletedUsage {
+        input_tokens: i64,
+        output_tokens: i64,
+        total_tokens: i64,
+        reasoning_tokens: i64,
+        #[serde(default)]
+        output_tokens_details: Option<CodexOutputDetails>,
+    }
+    #[derive(serde::Deserialize)]
+    struct CodexOutputDetails {
+        reasoning_tokens: i64,
+    }
+    let parsed: CodexCompletedUsage = serde_json::from_value(usage.clone())
+        .expect("Codex ResponseCompleted usage must include reasoning_tokens");
+    assert_eq!(
+        parsed
+            .output_tokens_details
+            .as_ref()
+            .map(|details| details.reasoning_tokens),
+        Some(parsed.reasoning_tokens)
+    );
 }
 
 #[test]
@@ -258,6 +283,8 @@ fn non_streaming_text_response_has_responses_shape_and_usage() {
     assert_eq!(response["output"][0]["content"][0]["text"], "你好，世界。");
     assert_eq!(response["usage"]["input_tokens"], 8);
     assert_eq!(response["usage"]["output_tokens"], 4);
+    assert_eq!(response["usage"]["reasoning_tokens"], 0);
+    assert_codex_completed_usage(&response["usage"]);
 }
 
 #[test]
@@ -332,6 +359,11 @@ fn stream_text_split_emits_required_responses_event_sequence() {
         events.last().expect("completed").data()["response"]["usage"]["total_tokens"],
         9
     );
+    assert_eq!(
+        events.last().expect("completed").data()["response"]["usage"]["reasoning_tokens"],
+        0
+    );
+    assert_codex_completed_usage(&events.last().expect("completed").data()["response"]["usage"]);
     assert!(
         translator.finish().is_empty(),
         "completion is idempotent after the explicit terminal [DONE] handling"
@@ -934,7 +966,10 @@ fn anthropic_usage_maps_cache_tokens_and_malformed_usage_is_dropped() {
         "malformed usage must not be invented"
     );
     let response = encode_responses_from_ir(&ir, Some("resp_bad_usage")).expect("responses");
-    assert!(response["usage"].is_null());
+    assert_eq!(response["usage"]["input_tokens"], 0);
+    assert_eq!(response["usage"]["output_tokens"], 0);
+    assert_eq!(response["usage"]["reasoning_tokens"], 0);
+    assert_codex_completed_usage(&response["usage"]);
 }
 
 #[test]
@@ -1089,4 +1124,25 @@ fn anthropic_stream_error_is_generic_and_never_leaks_upstream_body() {
         }
         other => panic!("expected Error, got {other:?}"),
     }
+}
+
+#[test]
+fn completed_responses_usage_includes_reasoning_tokens_even_when_unknown() {
+    let unknown = Usage::completed_responses_json(None);
+    assert_eq!(unknown["reasoning_tokens"], 0);
+    assert_eq!(unknown["output_tokens_details"]["reasoning_tokens"], 0);
+    assert_codex_completed_usage(&unknown);
+
+    let from_chat = Usage::from_chat_usage(&json!({
+        "prompt_tokens": 3,
+        "completion_tokens": 2,
+        "total_tokens": 5,
+        "completion_tokens_details": { "reasoning_tokens": 7 }
+    }))
+    .expect("chat usage");
+    let encoded = from_chat.to_responses_json();
+    assert_eq!(encoded["input_tokens"], 3);
+    assert_eq!(encoded["reasoning_tokens"], 7);
+    assert_eq!(encoded["output_tokens_details"]["reasoning_tokens"], 7);
+    assert_codex_completed_usage(&encoded);
 }

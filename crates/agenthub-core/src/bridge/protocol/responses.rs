@@ -321,6 +321,7 @@ pub fn encode_responses_from_ir(
                     output_tokens: *output_tokens,
                     total_tokens: input_tokens.saturating_add(*output_tokens),
                     cached_input_tokens: *cached_input_tokens,
+                    reasoning_tokens: 0,
                 });
             }
             IrEvent::MessageEnd {
@@ -531,6 +532,7 @@ impl IrToResponsesSse {
                     output_tokens: *output_tokens,
                     total_tokens: input_tokens.saturating_add(*output_tokens),
                     cached_input_tokens: *cached_input_tokens,
+                    reasoning_tokens: 0,
                 });
             }
             IrEvent::MessageEnd { stop_reason } => {
@@ -809,9 +811,13 @@ fn responses_object(
     );
     response.insert(
         "usage".to_owned(),
-        usage
-            .map(|usage| usage.to_responses_json())
-            .unwrap_or(Value::Null),
+        if completed {
+            Usage::completed_responses_json(usage.as_ref())
+        } else {
+            usage
+                .map(|usage| usage.to_responses_json())
+                .unwrap_or(Value::Null)
+        },
     );
     Value::Object(response)
 }

@@ -1471,3 +1471,123 @@ async fn grok_chat_responses_hosted_tools_only_still_returns_responses_json() {
     host.stop("grok-hosted-only").await.expect("stop");
     upstream_task.abort();
 }
+
+fn completed_usage_from_responses_sse(body: &str) -> Value {
+    body.split("\n\n")
+        .filter_map(|frame| {
+            frame
+                .lines()
+                .find_map(|line| line.strip_prefix("data: "))
+                .and_then(|data| serde_json::from_str::<Value>(data).ok())
+        })
+        .find(|event| event["type"] == "response.completed")
+        .expect("completed SSE event")["response"]["usage"]
+        .clone()
+}
+
+fn assert_codex_completed_usage(usage: &Value) {
+    #[derive(serde::Deserialize)]
+    struct CodexCompletedUsage {
+        input_tokens: i64,
+        output_tokens: i64,
+        total_tokens: i64,
+        reasoning_tokens: i64,
+        #[serde(default)]
+        output_tokens_details: Option<CodexOutputDetails>,
+    }
+    #[derive(serde::Deserialize)]
+    struct CodexOutputDetails {
+        reasoning_tokens: i64,
+    }
+    let parsed: CodexCompletedUsage = serde_json::from_value(usage.clone())
+        .expect("Codex ResponseCompleted usage must include reasoning_tokens");
+    assert_eq!(
+        parsed
+            .output_tokens_details
+            .as_ref()
+            .map(|details| details.reasoning_tokens),
+        Some(parsed.reasoning_tokens)
+    );
+}
+
+#[tokio::test]
+async fn grok_chat_responses_completed_json_includes_reasoning_tokens() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_spec("grok-reasoning-tokens", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model": "grok-4.5", "input": "ping"}))
+        .send()
+        .await
+        .expect("responses request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("responses json");
+    assert_eq!(body["object"], "response");
+    assert_eq!(body["usage"]["reasoning_tokens"], 0);
+    assert_eq!(
+        body["usage"]["output_tokens_details"]["reasoning_tokens"],
+        0
+    );
+    assert_codex_completed_usage(&body["usage"]);
+
+    let messages = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header("x-api-key", "local-test-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("messages request");
+    assert_eq!(messages.status(), StatusCode::OK);
+    let messages_body: Value = messages.json().await.expect("anthropic json");
+    assert_eq!(messages_body["type"], "message");
+    assert!(messages_body["usage"].get("reasoning_tokens").is_none());
+
+    host.stop("grok-reasoning-tokens").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn grok_chat_responses_completed_sse_includes_reasoning_tokens() {
+    let (upstream_port, upstream_task) = sse_upstream(vec![
+        b"data: {\"id\":\"chat-stream\",\"model\":\"grok-test\",\"choices\":[{\"delta\":{\"content\":\"pong\"},\"finish_reason\":\"stop\"}]}\n\n",
+        b"data: {\"id\":\"chat-stream\",\"model\":\"grok-test\",\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}\n\n",
+        b"data: [DONE]\n\n",
+    ])
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_spec("grok-reasoning-tokens-sse", 0, upstream_port))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+    assert!(body.contains("response.completed"));
+    let usage = completed_usage_from_responses_sse(&body);
+    assert_eq!(usage["input_tokens"], 1);
+    assert_eq!(usage["output_tokens"], 1);
+    assert_eq!(usage["reasoning_tokens"], 0);
+    assert_eq!(usage["output_tokens_details"]["reasoning_tokens"], 0);
+    assert_codex_completed_usage(&usage);
+    host.stop("grok-reasoning-tokens-sse").await.expect("stop");
+    upstream_task.abort();
+}
