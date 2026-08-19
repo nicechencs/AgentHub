@@ -4,6 +4,7 @@ import { agentDisplayName } from '@/config/agents';
 import { tryLoadDoctorMapped } from '@/lib/api/doctor';
 import { missingPricingModels, parserHealth } from '@/lib/api/usage';
 import type { AgentId, ParserHealth } from '@/lib/types';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tip } from '@/components/ui/tooltip';
@@ -43,19 +44,22 @@ function toRowsFromParser(list: ParserHealth[]): Row[] {
 }
 
 function DashboardItem({ h }: { h: Row }) {
+  const { t } = useI18n();
   const name = agentDisplayName(h.agentId);
   if (!h.supported) {
     return (
-      <Tip className="text-muted" label="该 Agent 无本地会话日志解析源">
+      <Tip className="text-muted" label={t('dashboard.parse.unsupportedTip')}>
         {name} —
       </Tip>
     );
   }
   if (h.failRatePct != null && h.failRatePct > 0) {
+    const skipped =
+      h.skipped != null ? t('dashboard.parse.failSkipped', { n: h.skipped }) : '';
     return (
       <Tip
         className="text-warning"
-        label={`失败率 ${h.failRatePct}%${h.skipped != null ? `，跳过 ${h.skipped} 条` : ''}。日志格式可能已变更。`}
+        label={t('dashboard.parse.failTip', { pct: h.failRatePct, skipped })}
       >
         <AlertTriangle className="inline h-3 w-3 align-text-bottom" /> {name} {h.failRatePct}%
       </Tip>
@@ -86,6 +90,7 @@ export function UsageParserHealth({
   /** Installed && !hidden ids from `visibleInstalledIds`. Omit to show API rows as-is. */
   visibleAgentIds?: readonly string[];
 }) {
+  const { t } = useI18n();
   const [rows, setRows] = React.useState<Row[] | null>(null);
   const [missing, setMissing] = React.useState<string[]>([]);
   const [failed, setFailed] = React.useState(false);
@@ -152,9 +157,13 @@ export function UsageParserHealth({
         )}
       >
         <div className="mb-1 flex items-center justify-between gap-2">
-          <span className="font-medium text-primary">用量解析</span>
+          <span className="font-medium text-primary">{t('dashboard.parse.compactTitle')}</span>
           <span className="text-muted">
-            {withData.length}/{supported.length} 有数据 · 共 {totalRecords.toLocaleString()} 条
+            {t('dashboard.parse.compactMeta', {
+              withData: withData.length,
+              supported: supported.length,
+              n: totalRecords.toLocaleString(),
+            })}
           </span>
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-1">
@@ -169,9 +178,9 @@ export function UsageParserHealth({
             }
             const warn = h.failRatePct != null && h.failRatePct >= 10;
             const tip = warn
-              ? `失败率 ${h.failRatePct}%`
+              ? t('dashboard.parse.failRate', { pct: h.failRatePct ?? 0 })
               : h.records === 0
-                ? '可解析，尚无入库记录'
+                ? t('dashboard.parse.noRecords')
                 : undefined;
             return (
               <Tip
@@ -199,7 +208,7 @@ export function UsageParserHealth({
   if (failed) {
     return (
       <p className={cn('mt-4 text-xs text-muted', className)}>
-        数据源状态加载失败，其余数据不受影响。
+        {t('dashboard.parse.loadFailed')}
       </p>
     );
   }
@@ -210,9 +219,9 @@ export function UsageParserHealth({
   return (
     <div className={cn('mt-4 space-y-1.5', className)}>
       <p className="text-xs text-secondary">
-        <span className="text-muted">解析：</span>{' '}
+        <span className="text-muted">{t('dashboard.parse.prefix')}</span>{' '}
         {visibleRows.length === 0 ? (
-          <span>{DASHBOARD_PARSE_EMPTY}</span>
+          <span>{t('dashboard.parse.empty')}</span>
         ) : (
           visibleRows.map((h, i) => (
             <span key={h.agentId}>
@@ -225,11 +234,11 @@ export function UsageParserHealth({
       {missing.length > 0 && (
         <Tip
           className="text-xs text-warning"
-          label={`无内嵌单价，成本记为 $0：${missing.join(', ')}。可 pnpm pricing:update 从 LiteLLM 刷新，或在 scripts/pricing/overrides.json 补价。`}
+          label={t('dashboard.parse.missingPriceTip', { models: missing.join(', ') })}
         >
           <AlertTriangle className="mr-1 inline h-3 w-3 align-text-bottom" />
-          缺价（成本 $0）{missing.slice(0, 4).join(', ')}
-          {missing.length > 4 ? ` 等${missing.length}个` : ''}
+          {t('dashboard.parse.missingPrice', { models: missing.slice(0, 4).join(', ') })}
+          {missing.length > 4 ? t('dashboard.parse.missingPriceMore', { n: missing.length }) : ''}
         </Tip>
       )}
     </div>

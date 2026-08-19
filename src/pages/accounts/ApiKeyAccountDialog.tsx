@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SecretInput } from '@/components/shared/SecretInput';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { addApiKeyAccount, updateApiKeyAccount } from '@/lib/api/account';
 import { resolveAgentMeta } from '@/config/agents';
@@ -51,6 +52,7 @@ export function ApiKeyAccountDialog({
   account?: Account | null;
   onSaved: (acc: Account) => void;
 }) {
+  const { t } = useI18n();
   const { toast } = useToast();
   const [label, setLabel] = React.useState('');
   const [key, setKey] = React.useState('');
@@ -82,18 +84,18 @@ export function ApiKeyAccountDialog({
     setSaving(true);
     try {
       if (isEdit) {
-        if (!account) throw new Error('缺少待编辑账号');
+        if (!account) throw new Error(t('connections.apiKeyDialog.missingAccount'));
         const acc = await updateApiKeyAccount(agentId, account.id, {
           label: label.trim() || null,
           key: key.trim() || null,
         });
         toast({
-          title: 'API Key 账号已更新',
+          title: t('connections.apiKeyDialog.updated'),
           description: acc.isCurrent && key.trim()
-            ? `${acc.label} · 已写入本机配置`
+            ? t('connections.apiKeyDialog.updatedWrote', { label: acc.label })
             : acc.isCurrent
-              ? `${acc.label} · 仅更新名称，本机配置未改`
-              : `${acc.label} · 已保存到连接池，切换后才会写入本机`,
+              ? t('connections.apiKeyDialog.updatedNameOnly', { label: acc.label })
+              : t('connections.apiKeyDialog.updatedPool', { label: acc.label }),
           variant: 'success',
         });
         onSaved(acc);
@@ -105,7 +107,7 @@ export function ApiKeyAccountDialog({
           showClaudeEnv ? envKey : null,
         );
         toast({
-          title: 'API Key 账号已添加',
+          title: t('connections.apiKeyDialog.added'),
           description: acc.label,
           variant: 'success',
         });
@@ -114,7 +116,7 @@ export function ApiKeyAccountDialog({
       onOpenChange(false);
     } catch (e) {
       toast({
-        title: isEdit ? '更新失败' : '添加失败',
+        title: isEdit ? t('connections.apiKeyDialog.updateFailed') : t('connections.apiKeyDialog.addFailed'),
         description: String(e),
         variant: 'danger',
       });
@@ -128,42 +130,48 @@ export function ApiKeyAccountDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? '编辑 API Key' : '添加 API Key'} — {agentName}
+            {isEdit
+              ? t('connections.apiKeyDialog.editTitle', { name: agentName })
+              : t('connections.apiKeyDialog.addTitle', { name: agentName })}
           </DialogTitle>
           <DialogDescription>
             {isEdit
-              ? '可改名称；API Key 留空则保留原密钥。当前连接改密钥会写入本机。'
-              : '保存后可切换到本机生效。密钥默认脱敏。'}
+              ? t('connections.apiKeyDialog.editDesc')
+              : t('connections.apiKeyDialog.addDesc')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1.5">
             <span className="text-xs text-muted">
-              名称{isEdit ? '' : '（可选）'}
+              {isEdit ? t('connections.apiKeyDialog.name') : t('connections.apiKeyDialog.nameOptional')}
             </span>
             <Input
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder={isEdit ? '账号显示名' : '例如：工作号 / 个人号'}
+              placeholder={isEdit
+                ? t('connections.apiKeyDialog.namePlaceholderEdit')
+                : t('connections.apiKeyDialog.namePlaceholderAdd')}
               autoComplete="off"
             />
           </label>
 
           <label className="flex flex-col gap-1.5">
             <span className="text-xs text-muted">
-              API Key{isEdit ? '（留空保留原密钥）' : ''}
+              {isEdit ? t('connections.apiKeyDialog.keyKeep') : t('connections.apiKeyDialog.key')}
             </span>
             <SecretInput
               value={key}
               onChange={setKey}
-              placeholder={isEdit ? '输入新密钥以替换…' : 'sk-…'}
+              placeholder={isEdit
+                ? t('connections.apiKeyDialog.keyPlaceholderEdit')
+                : t('connections.apiKeyDialog.keyPlaceholderAdd')}
             />
           </label>
 
           {showClaudeEnv && !isEdit && (
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted">写入 settings 的字段</span>
+              <span className="text-xs text-muted">{t('connections.apiKeyDialog.envField')}</span>
               <Select value={envKey} onValueChange={setEnvKey}>
                 <SelectTrigger>
                   <SelectValue />
@@ -171,13 +179,15 @@ export function ApiKeyAccountDialog({
                 <SelectContent>
                   {CLAUDE_ENV_KEYS.map((item) => (
                     <SelectItem key={item.value} value={item.value}>
-                      {item.label}
+                      {item.value === 'ANTHROPIC_AUTH_TOKEN'
+                        ? t('connections.apiKeyDialog.envAuthToken')
+                        : t('connections.apiKeyDialog.envApiKey')}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <span className="text-meta text-muted">
-                切换生效时写入 Claude 配置中的该环境变量字段。
+                {t('connections.apiKeyDialog.envHint')}
               </span>
             </label>
           )}
@@ -185,10 +195,14 @@ export function ApiKeyAccountDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button disabled={!canSave || saving} onClick={save}>
-            {saving ? '保存中…' : isEdit ? '保存修改' : '保存'}
+            {saving
+              ? t('common.saving')
+              : isEdit
+                ? t('connections.apiKeyDialog.saveEdit')
+                : t('common.save')}
           </Button>
         </DialogFooter>
       </DialogContent>
