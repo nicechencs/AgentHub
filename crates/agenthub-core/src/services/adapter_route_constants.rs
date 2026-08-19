@@ -32,6 +32,7 @@ pub const DEEPSEEK_CODEX_RULE_ID: &str = "deepseek-api-to-codex-v1";
 pub const KIMI_GROK_RULE_ID: &str = "kimi-membership-to-grok-v1";
 pub const OPENAI_GROK_RULE_ID: &str = "openai-api-to-grok-v1";
 pub const GROK_CLAUDE_RULE_ID: &str = "grok-subscription-to-claude-v1";
+pub const GROK_CODEX_RULE_ID: &str = "grok-subscription-to-codex-v1";
 
 pub const GLM_CODEX_DEFAULT_MODEL: &str = "glm-5.3";
 pub const DEEPSEEK_CODEX_DEFAULT_MODEL: &str = "deepseek-v4-flash";
@@ -152,6 +153,7 @@ pub const PUBLISHED_ROUTE_RULE_IDS: &[&str] = &[
     KIMI_GROK_RULE_ID,
     OPENAI_GROK_RULE_ID,
     GROK_CLAUDE_RULE_ID,
+    GROK_CODEX_RULE_ID,
     GLM_PI_RULE_ID,
     DEEPSEEK_PI_RULE_ID,
 ];

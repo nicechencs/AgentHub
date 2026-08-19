@@ -386,7 +386,7 @@ pub(super) fn is_codex_local_token(provider: &Provider) -> bool {
         ),
         (
             AgentId::Codex,
-            Some(KIMI_TO_CODEX_BRIDGE_RULE | ANTHROPIC_TO_CODEX_BRIDGE_RULE)
+            Some(KIMI_TO_CODEX_BRIDGE_RULE | ANTHROPIC_TO_CODEX_BRIDGE_RULE | GROK_CODEX_RULE_ID,)
         ) | (
             AgentId::Claude,
             Some(CODEX_TO_CLAUDE_BRIDGE_RULE | GROK_CLAUDE_RULE_ID)

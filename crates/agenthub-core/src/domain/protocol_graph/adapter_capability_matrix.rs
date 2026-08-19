@@ -23,8 +23,18 @@ pub const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON: &str =
     "Codex / ChatGPT 订阅会经本机路由接到 Claude Code.";
 
 /// Shared public reason for the experimental Grok subscription → Claude Code edge.
-pub const GROK_SUBSCRIPTION_TO_CLAUDE_REASON: &str =
-    "Grok 登录会经本机路由接到 Claude Code。";
+pub const GROK_SUBSCRIPTION_TO_CLAUDE_REASON: &str = "Grok 登录会经本机路由接到 Claude Code。";
+
+/// Shared public reason for Grok subscription to Codex local route.
+pub const GROK_SUBSCRIPTION_TO_CODEX_REASON: &str = "Grok 登录会经本机路由接到 Codex。";
+
+/// Closed reason: Kimi has no Grok-login slot and no local-route adapter.
+pub const GROK_SUBSCRIPTION_TO_KIMI_REASON: &str =
+    "Kimi 只认自己的官方 Key，接下不了这份 Grok 登录。";
+
+/// Closed reason: DSH only accepts the official DeepSeek Key.
+pub const GROK_SUBSCRIPTION_TO_DSH_REASON: &str =
+    "DSH 只认 DeepSeek 官方 Key，接下不了这份 Grok 登录。";
 
 /// Product-closed reason for Claude subscription → Codex.
 pub const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON: &str =
@@ -406,6 +416,13 @@ const GROK_CLAUDE_LIMITS: &[&str] = &[
     "会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 xAI OAuth token 不进 Claude。",
     "实验性协议桥接：Claude Messages → xAI Chat Completions；AgentHub 需保持在托盘运行。",
     "Grok access token 过期后需重新同步 Grok 登录；Hub 本轮不自动 refresh。",
+    "固定端口被占用时会尝试重新分配端口并写回配置。",
+];
+
+const GROK_CODEX_LIMITS: &[&str] = &[
+    "会把 Codex 指到本机路由；上游 Grok 登录不会写入 Codex。",
+    "AgentHub 需保持在托盘运行。",
+    "Grok 登录过期后需重新同步；Hub 本轮不自动刷新。",
     "固定端口被占用时会尝试重新分配端口并写回配置。",
 ];
 
@@ -795,6 +812,24 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
     },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::XaiGrokSubscription,
+            credential: AdapterCredentialClass::OauthOther,
+            transport: AdapterUpstreamTransport::LocalBridgeChatCompletions,
+            target: AgentId::Codex,
+            protocol: AdapterTargetProtocol::OpenAiResponses,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::LocalBridge,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: GROK_SUBSCRIPTION_TO_CODEX_REASON,
+        limitations: GROK_CODEX_LIMITS,
+        rule_id: "grok-subscription-to-codex-v1",
+        verified_at: "2026-08-20",
+        gates: AdapterCapabilityGates::all_open(),
+    },
     // Codex OAuth Account → Claude Code App Server remains a closed candidate.
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -884,6 +919,18 @@ pub fn decide_adapter_capability(
             (AdapterSourceProduct::ClaudeSubscription, AgentId::Codex)
         ) {
             return AdapterCapabilityDecision::unsupported(CLAUDE_SUBSCRIPTION_TO_CODEX_REASON);
+        }
+        if matches!(
+            (source, target),
+            (AdapterSourceProduct::XaiGrokSubscription, AgentId::Kimi)
+        ) {
+            return AdapterCapabilityDecision::unsupported(GROK_SUBSCRIPTION_TO_KIMI_REASON);
+        }
+        if matches!(
+            (source, target),
+            (AdapterSourceProduct::XaiGrokSubscription, AgentId::Dsh)
+        ) {
+            return AdapterCapabilityDecision::unsupported(GROK_SUBSCRIPTION_TO_DSH_REASON);
         }
         // Recorded gated candidate: keep subscription messaging if the cell is absent.
         if matches!(

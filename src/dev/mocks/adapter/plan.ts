@@ -13,6 +13,7 @@ import {
   GLM_CODEX_BASE_URL,
   GLM_CODEX_RULE_ID,
   GROK_CLAUDE_RULE_ID,
+  GROK_CODEX_RULE_ID,
   GROK_NATIVE_RULE_IDS,
   KIMI_CLAUDE_BASE_URL,
   KIMI_GROK_BASE_URL,
@@ -88,7 +89,9 @@ export function buildPlan(
               'provider',
               analysis.ruleId === 'anthropic-api-to-codex-v1'
                 ? 'AgentHub Anthropic 本地桥接'
-                : 'AgentHub Kimi 本地桥接',
+                : analysis.ruleId === GROK_CODEX_RULE_ID
+                  ? 'AgentHub Grok 本机路由'
+                  : 'AgentHub Kimi 本地桥接',
             ),
             change('codex', 'baseUrl', 'http://127.0.0.1:<本机端口>/v1'),
           ]
@@ -146,6 +149,11 @@ export function buildPlan(
       && request.targetAgentId === 'claude'
       && analysis.ruleId === GROK_CLAUDE_RULE_ID
       && hasGrokAccessToken(resolver, request.sourceId))
+    || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
+      && request.sourceKind === 'account'
+      && request.targetAgentId === 'codex'
+      && analysis.ruleId === GROK_CODEX_RULE_ID
+      && hasGrokAccessToken(resolver, request.sourceId))
     || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'pi')
     || (analysis.route === 'config_sync' && analysis.support === 'experimental'
       && request.targetAgentId === 'pi'
@@ -201,6 +209,11 @@ export function buildPlan(
     && request.targetAgentId === 'claude'
     && analysis.ruleId === GROK_CLAUDE_RULE_ID
     && hasGrokAccessToken(resolver, request.sourceId);
+  const accountGrokCodexBridge = request.sourceKind === 'account'
+    && implementedPath
+    && request.targetAgentId === 'codex'
+    && analysis.ruleId === GROK_CODEX_RULE_ID
+    && hasGrokAccessToken(resolver, request.sourceId);
   const writeGate = (request.sourceKind === 'provider' && implementedPath)
     || accountKimiMembership
     || accountGrokNative
@@ -209,7 +222,8 @@ export function buildPlan(
     || accountClaudeNative
     || accountNativeSubscriptionPi
     || accountCodexClaudeBridge
-    || accountGrokClaudeBridge;
+    || accountGrokClaudeBridge
+    || accountGrokCodexBridge;
   const canApply = writeGate;
   const maturity = mockPlanMaturity(analysis);
   const reusePath = NATIVE_SUBSCRIPTION_PI_RULE_IDS.has(analysis.ruleId ?? '')
@@ -229,6 +243,7 @@ export function buildPlan(
     && !accountNativeSubscriptionPi
     && !accountCodexClaudeBridge
     && !accountGrokClaudeBridge
+    && !accountGrokCodexBridge
     ? `${analysis.reason} ${SAME_EDGE_UNWRITABLE_REASON}`
     : analysis.reason;
   return {

@@ -40,6 +40,7 @@ const RULE_ID: &str = "kimi-membership-to-codex-v1";
 const ANTHROPIC_RULE_ID: &str = "anthropic-api-to-codex-v1";
 const CODEX_CLAUDE_RULE_ID: &str = "codex-subscription-to-claude-responses-v1";
 const GROK_CLAUDE_RULE_ID: &str = "grok-subscription-to-claude-v1";
+const GROK_CODEX_RULE_ID: &str = "grok-subscription-to-codex-v1";
 const RULE_VERSION: &str = "1";
 const KIMI_CHAT_BASE_URL: &str = "https://api.kimi.com/coding/v1";
 const ANTHROPIC_MESSAGES_BASE_URL: &str = "https://api.anthropic.com/v1";
@@ -137,6 +138,22 @@ const GROK_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
     mode: AdapterProfileMode::Oauth,
 };
 
+const GROK_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: GROK_CODEX_RULE_ID,
+    profile_prefix: "adapter-grok-codex-bridge",
+    provider_prefix: "codex-grok-adapter-bridge",
+    profile_name: "Grok → Codex 本机路由",
+    provider_name: "Grok 本机路由",
+    toml_name: "AgentHub Grok Route",
+    provider_slug: "agenthub_grok_bridge",
+    upstream_base_url: GROK_CLAUDE_BASE_URL,
+    default_model: GROK_CLAUDE_DEFAULT_MODEL,
+    protocol: BridgeUpstreamProtocol::KimiChatCompletions,
+    bridge_kind: "responses_to_chat_completions",
+    target_agent: AgentId::Codex,
+    mode: AdapterProfileMode::Oauth,
+};
+
 /// Live local-bridge writers. `rule_for_id` and the secret-resolver coverage
 /// test both read this slice so a new rule cannot ship without a matcher check.
 const LIVE_BRIDGE_RULES: &[CodexBridgeRule] = &[
@@ -144,6 +161,7 @@ const LIVE_BRIDGE_RULES: &[CodexBridgeRule] = &[
     ANTHROPIC_CODEX_RULE,
     CODEX_CLAUDE_RULE,
     GROK_CLAUDE_RULE,
+    GROK_CODEX_RULE,
 ];
 
 mod finalize;

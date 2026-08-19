@@ -8,6 +8,7 @@ import { getRuleFixtureById, type MockMaterializeSpec } from './rule-fixtures';
 import {
   CODEX_CLAUDE_RULE_ID,
   GROK_CLAUDE_RULE_ID,
+  GROK_CODEX_RULE_ID,
 } from './types';
 
 /** Browser-only mirror of the core's explicit routing rules. */
@@ -263,12 +264,15 @@ export function materializeApply(
   if (plan.analysis.route === 'local_bridge') {
     const codexClaudeBridge = plan.analysis.ruleId === CODEX_CLAUDE_RULE_ID;
     const grokClaudeBridge = plan.analysis.ruleId === GROK_CLAUDE_RULE_ID;
+    const grokCodexBridge = plan.analysis.ruleId === GROK_CODEX_RULE_ID;
     const anthropicBridge = plan.analysis.ruleId === 'anthropic-api-to-codex-v1';
     const profile: AdapterProfile = existing ?? {
       id: codexClaudeBridge
         ? `adapter-codex-claude-bridge-${safeId}`
         : grokClaudeBridge
         ? `adapter-grok-claude-bridge-${safeId}`
+        : grokCodexBridge
+        ? `adapter-grok-codex-bridge-${safeId}`
         : anthropicBridge
         ? `adapter-anthropic-codex-bridge-${safeId}`
         : `adapter-kimi-codex-bridge-${safeId}`,
@@ -276,6 +280,8 @@ export function materializeApply(
         ? `Codex → Claude Code 本地桥接 (${safeId})`
         : grokClaudeBridge
         ? `Grok → Claude Code 本地桥接 (${safeId})`
+        : grokCodexBridge
+        ? `Grok → Codex 本机路由 (${safeId})`
         : anthropicBridge
         ? `Anthropic → Codex 本地桥接 (${safeId})`
         : `Kimi → Codex 本地桥接 (${safeId})`,
@@ -283,18 +289,22 @@ export function materializeApply(
       sourceId: request.sourceId,
       targetAgentId: request.targetAgentId,
       route: 'local_bridge',
-      mode: codexClaudeBridge || grokClaudeBridge ? 'oauth' : 'api',
+      mode: codexClaudeBridge || grokClaudeBridge || grokCodexBridge ? 'oauth' : 'api',
       status: 'active',
       ruleId: codexClaudeBridge
         ? CODEX_CLAUDE_RULE_ID
         : grokClaudeBridge
         ? GROK_CLAUDE_RULE_ID
+        : grokCodexBridge
+        ? GROK_CODEX_RULE_ID
         : anthropicBridge ? 'anthropic-api-to-codex-v1' : 'kimi-membership-to-codex-v1',
       ruleVersion: '1',
       generatedProviderId: codexClaudeBridge
         ? `claude-codex-bridge-${safeId}`
         : grokClaudeBridge
         ? `claude-grok-bridge-${safeId}`
+        : grokCodexBridge
+        ? `codex-grok-bridge-${safeId}`
         : anthropicBridge
         ? `codex-anthropic-bridge-${safeId}`
         : `codex-kimi-bridge-${safeId}`,
@@ -320,7 +330,7 @@ export function materializeApply(
               }
             : {
                 baseUrl: `http://127.0.0.1:${profile.localPort ?? 32123}/v1`,
-                model: anthropicBridge ? 'claude-sonnet-4-20250514' : 'kimi-k2.5',
+                model: anthropicBridge ? 'claude-sonnet-4-20250514' : grokCodexBridge ? 'grok-4.5' : 'kimi-k2.5',
               }),
         }),
         configFormat: 'json',

@@ -106,6 +106,7 @@ pub(super) fn subscription_account_secret_open(
                     | "grok-subscription-to-pi-v1"
                     | "codex-subscription-to-claude-responses-v1"
                     | "grok-subscription-to-claude-v1"
+                    | "grok-subscription-to-codex-v1"
             )
         )
     {
@@ -213,6 +214,13 @@ pub(crate) fn bind_implementation_open(
             Some("grok-subscription-to-claude-v1"),
             AdapterSourceKind::Account,
             AgentId::Claude,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("grok-subscription-to-codex-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Codex,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
@@ -465,6 +473,24 @@ pub(super) fn actions_for(
             ),
         ]
         }
+        (RouteSourceLabel::XaiGrokSubscription, AgentId::Codex, AdapterRoute::LocalBridge) => {
+            vec![
+                action(
+                    "requires_local_bridge",
+                    "Codex",
+                    "会把 Codex 指到本机路由；上游 Grok 登录不会写入 Codex。",
+                    None,
+                    false,
+                ),
+                action(
+                    "set_config",
+                    "Codex",
+                    "写入 Codex 的本机路由端点。",
+                    Some("AgentHub Grok 本机路由"),
+                    false,
+                ),
+            ]
+        }
         (RouteSourceLabel::KimiMembership, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
             action(
                 "set_config",
@@ -695,7 +721,7 @@ pub(super) fn evidence_for(
         (RouteSourceLabel::OpenaiApiKey, AgentId::Grok) => {
             vec![adapter_compatibility_evidence()]
         }
-        (RouteSourceLabel::XaiGrokSubscription, AgentId::Claude) => {
+        (RouteSourceLabel::XaiGrokSubscription, AgentId::Claude | AgentId::Codex) => {
             vec![adapter_compatibility_evidence()]
         }
         (RouteSourceLabel::OpenaiApiKey | RouteSourceLabel::XaiApiKey, _) => {

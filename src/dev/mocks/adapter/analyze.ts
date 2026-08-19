@@ -12,7 +12,11 @@ import {
   CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON,
   CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
   GROK_CLAUDE_RULE_ID,
+  GROK_CODEX_RULE_ID,
   GROK_SUBSCRIPTION_TO_CLAUDE_REASON,
+  GROK_SUBSCRIPTION_TO_CODEX_REASON,
+  GROK_SUBSCRIPTION_TO_DSH_REASON,
+  GROK_SUBSCRIPTION_TO_KIMI_REASON,
   KIMI_NON_MEMBERSHIP_REASON,
   action,
   agentBindCapability,
@@ -87,6 +91,41 @@ export function analyze(
 
   if (source === 'claude_subscription' && request.targetAgentId === 'codex') {
     return unsupported(CLAUDE_SUBSCRIPTION_TO_CODEX_REASON, compatibilityEvidence);
+  }
+  if (source === 'grok_xai_subscription' && request.targetAgentId === 'kimi') {
+    return unsupported(GROK_SUBSCRIPTION_TO_KIMI_REASON, compatibilityEvidence);
+  }
+  if (source === 'grok_xai_subscription' && request.targetAgentId === 'dsh') {
+    return unsupported(GROK_SUBSCRIPTION_TO_DSH_REASON, compatibilityEvidence);
+  }
+  if (source === 'grok_xai_subscription' && request.targetAgentId === 'codex') {
+    return {
+      route: 'local_bridge',
+      support: 'experimental',
+      reason: GROK_SUBSCRIPTION_TO_CODEX_REASON,
+      actions: [
+        action(
+          'requires_local_bridge',
+          'Codex',
+          '会把 Codex 指到本机路由；上游 Grok 登录不会写入 Codex。',
+        ),
+        action(
+          'set_config',
+          'Codex',
+          '写入 Codex 的本机路由端点。',
+          'AgentHub Grok 本机路由',
+        ),
+      ],
+      limitations: [
+        '会把 Codex 指到本机路由；上游 Grok 登录不会写入 Codex。',
+        'AgentHub 需保持在托盘运行。',
+        'Grok 登录过期后需重新同步；Hub 本轮不自动刷新。',
+        '固定端口被占用时会尝试重新分配端口并写回配置。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId: GROK_CODEX_RULE_ID,
+      gateKind: 'none',
+    };
   }
   if (source === 'grok_xai_subscription' && request.targetAgentId === 'claude') {
     return {

@@ -460,3 +460,44 @@ fn kimi_to_grok_is_an_open_native_endpoint() {
     assert!(decision.can_apply);
     assert_eq!(decision.rule_id, Some("kimi-membership-to-grok-v1"));
 }
+
+#[test]
+fn grok_subscription_to_codex_is_open_local_bridge() {
+    let decision = decide_adapter_capability(
+        AdapterSourceProduct::XaiGrokSubscription,
+        AdapterCredentialClass::OauthOther,
+        AgentId::Codex,
+    )
+    .public_surface();
+    assert_eq!(decision.route, AdapterRoute::LocalBridge);
+    assert!(decision.can_apply);
+    assert_eq!(decision.rule_id, Some("grok-subscription-to-codex-v1"));
+    assert_eq!(decision.reason, GROK_SUBSCRIPTION_TO_CODEX_REASON);
+    assert_eq!(
+        decision.transport,
+        AdapterUpstreamTransport::LocalBridgeChatCompletions
+    );
+}
+
+#[test]
+fn grok_subscription_to_kimi_and_dsh_stay_closed_with_clear_reasons() {
+    let kimi = decide_adapter_capability(
+        AdapterSourceProduct::XaiGrokSubscription,
+        AdapterCredentialClass::OauthOther,
+        AgentId::Kimi,
+    )
+    .public_surface();
+    assert_eq!(kimi.route, AdapterRoute::Unsupported);
+    assert!(!kimi.can_apply);
+    assert_eq!(kimi.reason, GROK_SUBSCRIPTION_TO_KIMI_REASON);
+
+    let dsh = decide_adapter_capability(
+        AdapterSourceProduct::XaiGrokSubscription,
+        AdapterCredentialClass::OauthOther,
+        AgentId::Dsh,
+    )
+    .public_surface();
+    assert_eq!(dsh.route, AdapterRoute::Unsupported);
+    assert!(!dsh.can_apply);
+    assert_eq!(dsh.reason, GROK_SUBSCRIPTION_TO_DSH_REASON);
+}
