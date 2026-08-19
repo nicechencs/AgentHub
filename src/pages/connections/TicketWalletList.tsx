@@ -291,7 +291,6 @@ function TicketAddMenu({
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent
                 className="min-w-[10rem]"
-                onCloseAutoFocus={(event) => event.preventDefault()}
               >
                 {agent.actions.map((action) => (
                   <DropdownMenuItem
