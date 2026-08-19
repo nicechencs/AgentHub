@@ -553,6 +553,141 @@ fn import_live_dedupes_identical_credentials() {
 }
 
 #[test]
+fn import_live_loopback_upserts_same_slot_when_port_and_token_rotate() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "token-aaa",
+            "env_key": "ANTHROPIC_AUTH_TOKEN",
+            "base_url": "http://127.0.0.1:43081"
+        }),
+        label_hint: Some("Claude bridge".into()),
+        extra: json!({}),
+    });
+    let first = svc
+        .import_live(AgentId::Claude, Some("Claude bridge"))
+        .unwrap();
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "token-bbb",
+            "env_key": "ANTHROPIC_AUTH_TOKEN",
+            "base_url": "http://127.0.0.1:44227"
+        }),
+        label_hint: Some("Claude bridge".into()),
+        extra: json!({}),
+    });
+    let second = svc.import_live(AgentId::Claude, None).unwrap();
+    assert_eq!(
+        first.id, second.id,
+        "rotating loopback port+token must keep one slot"
+    );
+    assert_eq!(second.credentials["api_key"], "token-bbb");
+    assert_eq!(second.credentials["base_url"], "http://127.0.0.1:44227");
+    assert_eq!(svc.list(Some(AgentId::Claude)).unwrap().len(), 1);
+}
+
+#[test]
+fn import_live_remote_api_keys_keep_separate_rows() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "sk-remote-aaa",
+            "base_url": "https://api.anthropic.com"
+        }),
+        label_hint: Some("Anthropic A".into()),
+        extra: json!({}),
+    });
+    let first = svc
+        .import_live(AgentId::Claude, Some("Anthropic A"))
+        .unwrap();
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "sk-remote-bbb"
+        }),
+        label_hint: Some("Anthropic B".into()),
+        extra: json!({}),
+    });
+    let second = svc
+        .import_live(AgentId::Claude, Some("Anthropic B"))
+        .unwrap();
+    assert_ne!(
+        first.id, second.id,
+        "distinct remote/no-url API keys stay on token fingerprints"
+    );
+    assert_eq!(svc.list(Some(AgentId::Claude)).unwrap().len(), 2);
+}
+
+#[test]
+fn import_live_loopback_does_not_swallow_oauth() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "credentials_json",
+            "body": {
+                "claudeAiOauth": {
+                    "accessToken": "oauth-access",
+                    "refreshToken": "oauth-refresh"
+                }
+            }
+        }),
+        label_hint: Some("Claude OAuth".into()),
+        extra: json!({}),
+    });
+    let oauth = svc
+        .import_live(AgentId::Claude, Some("Claude OAuth"))
+        .unwrap();
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "token-bridge",
+            "env_key": "ANTHROPIC_AUTH_TOKEN",
+            "base_url": "http://127.0.0.1:43081"
+        }),
+        label_hint: Some("Claude bridge".into()),
+        extra: json!({}),
+    });
+    let loopback = svc
+        .import_live(AgentId::Claude, Some("Claude bridge"))
+        .unwrap();
+    assert_ne!(oauth.id, loopback.id);
+    assert_eq!(oauth.kind, AccountKind::Oauth);
+    assert_eq!(loopback.kind, AccountKind::ApiKey);
+    let list = svc.list(Some(AgentId::Claude)).unwrap();
+    assert_eq!(list.len(), 2);
+    assert!(list
+        .iter()
+        .any(|row| row.id == oauth.id && row.kind == AccountKind::Oauth));
+    assert_eq!(
+        list.iter()
+            .filter(
+                |row| row.credentials.get("base_url").and_then(|v| v.as_str())
+                    == Some("http://127.0.0.1:43081")
+            )
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn import_live_keeps_same_identity_different_tokens() {
     let (_root, svc, adapter) = live_svc(AgentId::Grok);
     // First authorization
