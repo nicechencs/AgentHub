@@ -132,8 +132,9 @@ impl AgentHub {
         );
         let settings = SettingsService::new(data_dir.clone(), db.clone());
         let projects = ProjectService::new(registry.clone(), data_dir.clone());
-        let usage = UsageService::new(db.clone());
         let agent_visibility = AgentVisibilityService::new(data_dir.clone());
+        let usage =
+            UsageService::with_live_scope(db.clone(), agent_visibility.clone(), agents.clone());
         tracing::info!(
             target: logging::targets::BOOT,
             module = logging::targets::BOOT,
