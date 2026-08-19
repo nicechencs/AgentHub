@@ -1,6 +1,6 @@
 # AgentHub 目录结构与模块拆分
 
-> **现行状态（dest `02358a3` / 0.2.2）**：Linux 一等公民；官方船经 `release` 三文件版本 bump 后发布。`agenthub-adapterd` sidecar 是目标、未迁。Chat 模型选择 / Projects `--resume` / MCP 注入 / 全站 i18n 未做。
+> **现行状态（2026-08-19）**：Linux 一等公民；官方船经 `release` 三文件版本 bump 后发布。`agenthub-adapterd` sidecar 是目标、未迁。Chat 没有模型选择；Projects 不接 CLI `--resume`；MCP 注入未做；全站 i18n 未做。
 > 对应《AgentHub 项目方案 v1.3》第 4 节的落地细化。  
 > 目标 cargo workspace 为三 crate：`agenthub-core`（业务核心）/ `agenthub-gui`（Tauri 壳）/ `agenthub-cli`（命令行）；当前三者均已在仓库中（`src-tauri` = gui）。
 > v1.1 同步：Adapter 接口加厚（skills/backup 路径）、Service 职责表、Usage/模型列表边界。  
@@ -214,7 +214,7 @@ struct InstallChannel {
 | `ticket_bind_service` | `bind` / `unbind` 写口 | LocalBridge bind 拒绝，必须走 desktop host saga |
 | `connection_service` | 当前指针 `ActiveBinding`（account/provider `is_current`） | 不是产品 `TicketBinding`；不写 live 文件 |
 | `live_write_authority` | 跨进程 live 写锁 | 不解释配置语义 |
-| `agent_visibility_service` | dest store-stamp 隐藏：`{data_dir}/agent_visibility.json`（不是 release #22 软隐藏）。detect / install / 凭据 / 备份不变；Usage collect 与 parser_health 跳过 hidden | 不改 detect / install / 凭据 |
+| `agent_visibility_service` | `dev` 上按商店标记隐藏，只影响界面（`{data_dir}/agent_visibility.json`）。detect / install / 凭据 / 备份不变；Usage collect 与 parser_health 跳过 hidden | 不改 detect / install / 凭据 |
 | `ConfigurationService`（platform） | 通用配置 schema / read / validate / apply | 不持有账号池 |
 | `AgentCatalogService`（platform） | Agent 目录（key / 能力 / 安装渠道） | 不执行安装 |
 | `skillhub_market` / `skillssh_market` | skillhub.cn / skills.sh 远程搜索与安装 | 不改投影矩阵真源 |
@@ -510,7 +510,7 @@ DTO / mapper：`lib/backend/contracts/*-map.ts`。错误类型：`contracts/erro
 
 Connections 收拢凭据生命周期。目标领域是 **票（Ticket）+ 绑定（Binding）+ 协议图**，不是「account/provider 出身 × 商品白名单」；完整模型与可重做的 UI 见 [connection-binding-model.md](connection-binding-model.md)。
 
-当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`。日常入口仍是 Dashboard「连接/切换」与 Connections「接到…」，走 `ConnectFlowDialog`（`plan.canApply` 表示**现在能写入**）。预览按三种做法说明（模型 ①②③）；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，见 [product-decisions.md](product-decisions.md)。生成投影不进登录列表。`/routes` 只管理 ③ 的本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。各家接口与现在能不能写上去仍以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
+当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`。日常入口仍是 Dashboard「连接/切换」与 Connections「接到…」，走 `ConnectFlowDialog`（`plan.canApply` 表示**现在能写入**）。预览按三种做法说明（直接改配置 / 写进对方认的登录 / 本机转发）；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，见 [product-decisions.md](product-decisions.md)。自动生成的配置不进登录列表。`/routes` 只管理 ③ 的本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。各家接口与现在能不能写上去仍以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
 
 **未迁移 / 有意保留**：
 

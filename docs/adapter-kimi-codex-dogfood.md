@@ -1,6 +1,6 @@
 # Kimi Membership → Codex `local_bridge` 发布前实机 Dogfood
 
-> **现行状态（dest `02358a3` / 0.2.2）**：sidecar（`agenthub-adapterd`）仍是目标、未迁。版本仍 0.2.2；官方船经 `release` 三文件 bump。
+> **现行状态（2026-08-19）**：sidecar（`agenthub-adapterd`）仍是目标、未迁。官方船经 `release` 三文件 bump。
 > 关联：[adapter-design.md](adapter-design.md) Phase 1 / §11.4、[product-decisions.md](product-decisions.md)。  
 > 自动验收（bridge / restore / 退出协调器）已在工作区通过；**本清单只覆盖必须用桌面应用 + 真实连接完成的项**。  
 > 创建/应用的日常入口可以是 Dashboard 卡片「连接/切换」或 Connections「接到…」（ConnectFlow）；本机路由页（`/routes`，侧栏 Routes）只用于 ③ 的桥控件。  

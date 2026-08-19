@@ -1,6 +1,6 @@
 # 连接：票、绑定与协议图
 
-> **现行状态（dest `02358a3` / 0.2.2）：** 用户看到的是「登录」，不是「票 / 钱包」。票 / Ticket / 钱包是实现名。Grok→Claude 走 `local_token` / `bind_ticket`；生成投影隐藏；sidecar 未迁。预览芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不再标 ①②③。
+> **现行状态（2026-08-19）：** 用户看到的是「登录」，不是「票 / 钱包」。票 / Ticket / 钱包是实现名。Grok→Claude 走本机路由；自动生成的配置不出现在登录列表；sidecar 未迁。预览芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不再标圈号。
 > 状态：**§6 第 1–3 步已落地；§6.4 部分落地（Kimi/OpenAI API → Grok、OpenAI/xAI/GLM/DeepSeek API → Pi 属 ①；GLM/DeepSeek API → Codex 属 ①；Anthropic API Key → Codex 属 ③）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex 属 ①），GLM/DeepSeek → Pi 已可 experimental bind，② Claude/Codex/Grok 订阅 → Pi 已可 experimental bind，③ Codex Responses 与 Grok Chat 订阅 → Claude 已可 experimental bind；Claude 订阅 → Codex 产品不做，App Server/OauthOther 仍关闭；dsh writer 已接入（`AgentId::Dsh` + `deepseek-api-to-dsh-v1`）。未做的是 sidecar 迁移**。
 > 日期：2026-08-15。  
 > 本文是实现用的领域模型，不是给最终用户看的说明书。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。页面、Hub 入口、Adapter、厂商规则文档以本文为准改对象名；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
@@ -210,7 +210,7 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 规则：
 
 - 每一张**真票**都有「接到…」。未识别、无边、目标无 writer，都在对话框里置灰 + 原因，不在列表上假装这件事不存在。
-- 生成投影**不出现**在钱包。已有用途记在源票的「正用于」上，并标现行芯片 **直连 / 用这份登录 / 本机路由**（架构名仍是 ①②③；过渡期「经兼容路由」只表示 reshape，不要当成桥）。
+- 自动生成的配置**不出现**在登录列表。已有用途记在源登录的「正用于」上，并标现行芯片 **直连 / 用这份登录 / 本机路由**（三种做法仍是直接改配置 / 写进对方认的登录 / 本机转发；过渡期「经兼容路由」只表示改配置，不要当成转发）。
 - 「切换」只用于该票与其 `importedFrom` / 原生 Agent 的 `native` 绑定。接到别的 Agent 一律叫「接到…」（文案可再打磨，语义是 bind）。
 - 深链 `?agent=` 仍可用：打开钱包并高亮该 Agent 的 active 绑定，而不是把整个钱包切成该 Agent 的私有列表。
 - 添加票：导入登录态、新 API Key。进口必须写下 `surface`。
@@ -239,7 +239,7 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 
 规范路由 `/routes`。侧栏英文 Routes，有本机路由才出现；Settings → 本机永远有「本机路由」入口。
 
-列出全部 `route=local_bridge`（`partitionLocalBridgeRuntimes`）：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进孤立分区。行与详情都是**单层**进程健康 + 端口，不画「配置已生效 / 桥接运行中」。来源/目标是纯文字，**禁止**链到 `/connections?agent=`（生成投影不得出现在钱包）。
+列出全部 `route=local_bridge`（`partitionLocalBridgeRuntimes`）：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进孤立分区。行与详情都是**单层**进程健康 + 端口，不画「配置已生效 / 桥接运行中」。来源/目标是纯文字，**禁止**链到 `/connections?agent=`（自动生成的配置不得出现在登录列表）。
 
 没有「选来源 → 分析 → apply」创建区。解绑只走 `unbindTicket`，不要只删投影行而留下指向死端口的 live，也不走 `removeAdapter`。Connections「本机路由」点进对应 runtime（`/routes?profile=`）。
 

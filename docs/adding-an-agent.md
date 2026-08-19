@@ -1,6 +1,6 @@
 # 新增 Agent 步骤清单
 
-> **现行状态（dest `02358a3` / 0.2.2）**：sidecar（`agenthub-adapterd`）仍是目标、未迁。版本仍 0.2.2；官方船经 `release` 三文件 bump。
+> **现行状态（2026-08-19）**：sidecar（`agenthub-adapterd`）仍是目标、未迁。官方船经 `release` 三文件 bump。
 > 当前状态：R00-R08 已完成。本文同时描述生产兼容接入轨和 AgentKey test-only 验证轨；生产组合仍保留 `AgentId`/`AgentAdapter` façade，不代表旧身份模型已删除。
 
 > 更新：2026-08-15（补登记 `accepts` / `writer`，供票绑定规划器使用；并指向 DSH 接入方案）

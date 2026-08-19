@@ -1,6 +1,6 @@
 # Agent 能力矩阵设计（v1.0 已落地）
 
-> **现行状态（dest `02358a3` / 0.2.2）**：sidecar（`agenthub-adapterd`）仍是目标、未迁。版本仍 0.2.2；官方船经 `release` 三文件 bump。
+> **现行状态（2026-08-19）**：sidecar（`agenthub-adapterd`）仍是目标、未迁。官方船经 `release` 三文件 bump。
 > 状态：**P0-P4 与 R00-R08 已落地**（2026-08-07 与代码及测试对齐）；P13/OCP 已由 test-only `demo-agent` 验证。矩阵仍只回答“能不能”，平台端口收口与兼容边界见 [platform-capability-remediation.md](platform-capability-remediation.md)。
 > 真源在 adapter `capability()`；GUI/CLI 由 `registry.matrix()` 下发；CLI：`agenthub agent capabilities [--markdown]`。  
 > 关联：[architecture.md](architecture.md)、[platform-capability-refactor.md](platform-capability-refactor.md)、[adding-an-agent.md](adding-an-agent.md)。本文只回答「某个 Agent 自己能不能」；跨 Agent 复用三路见 [product-decisions.md](product-decisions.md)，不写进 Capability 枚举。  
@@ -329,7 +329,7 @@ UI 侧的具体变化：
 | 位置 | 现状 |
 |---|---|
 | `src/pages/accounts/` | 无 `index.tsx`；只剩 `ApiKeyAccountDialog` |
-| `src/pages/connections/` | 全局票钱包（`listTicketWallet`），不是按 Agent 分页的账号列表 |
+| `src/pages/connections/` | 全局登录列表（`listTicketWallet`），不是按 Agent 分页的账号列表 |
 | `src/pages/skills/SkillMatrix.tsx` | 已用 `skillsCap?.reason` 做单元格 tooltip |
 | Chat 危险模式开关 | `partial` 应渲染为黄色 badge + 提示（Kimi 不得静默失效） |
 | Dashboard 用量 / Chat 危险模式 | 由 `Usage` / `DangerousMode` 能力驱动（含 partial 提示） |
