@@ -157,40 +157,15 @@ export function ConnectFlowPreviewStep({
     <div className="space-y-3 text-sm">
       <div>
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-medium">{view.routeLabel}</h3>
-          <Badge variant="success">可应用</Badge>
+          <h3 className="font-medium">{view.title}</h3>
+          {view.experimental ? <Badge variant="warning">实验</Badge> : null}
         </div>
         {view.reason ? <p className="mt-1 text-secondary">{view.reason}</p> : null}
       </div>
-      <section>
-        <h4 className="text-xs font-medium text-secondary">将写入的配置</h4>
-        {view.writes.length > 0 ? (
-          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-secondary">
-            {view.writes.map((line) => <li key={line}>{line}</li>)}
-          </ul>
-        ) : (
-          <p className="mt-1 text-secondary">无需写入配置。</p>
-        )}
-      </section>
-      <section className="space-y-0.5 text-secondary">
-        <p>服务影响：{view.serviceImpact}</p>
-        {view.portNotes.map((line) => <p key={line}>端口：{line}</p>)}
-        {view.modelMappings.length > 0 ? (
-          <div>
-            <p>模型映射：</p>
-            <ul className="list-disc pl-5">
-              {view.modelMappings.map((line) => <li key={line}>{line}</li>)}
-            </ul>
-          </div>
-        ) : null}
-      </section>
-      {view.limitations.length > 0 ? (
-        <section>
-          <h4 className="text-xs font-medium text-secondary">限制</h4>
-          <ul className="mt-1 list-disc pl-5 text-secondary">
-            {view.limitations.map((line) => <li key={line}>{line}</li>)}
-          </ul>
-        </section>
+      {view.notes.length > 0 ? (
+        <ul className="list-disc space-y-0.5 pl-5 text-secondary">
+          {view.notes.map((line) => <li key={line}>{line}</li>)}
+        </ul>
       ) : null}
       {state.lastError ? <Notice tone="danger">{state.lastError}</Notice> : null}
       {showImportHint ? (
