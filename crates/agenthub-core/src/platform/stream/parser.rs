@@ -1,5 +1,7 @@
 //! StreamParser extension port — agent-specific line decoding only.
 
+use std::sync::Arc;
+
 use crate::models::{AgentId, ProcessStep};
 use crate::platform::AgentKey;
 
@@ -53,6 +55,15 @@ pub trait StreamParser: Send + Sync {
 
     /// Optional end-of-stream flush for partial parser state.
     fn flush(&self) -> Option<Vec<ProcessStep>> {
+        None
+    }
+
+    /// Fresh parser for one [`crate::utils::stream_parse::StreamSession`].
+    ///
+    /// `None` (default) reuses the registry Arc — correct for stateless parsers.
+    /// Stateful parsers must return a new instance so concurrent sessions and
+    /// tests do not share turn flags.
+    fn for_session(&self) -> Option<Arc<dyn StreamParser>> {
         None
     }
 }

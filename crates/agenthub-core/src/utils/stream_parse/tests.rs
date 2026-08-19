@@ -113,6 +113,50 @@ fn pi_text_delta() {
 }
 
 #[test]
+fn pi_message_end_assistant_text_fills_empty_bubble() {
+    let mut s = StreamSession::new(AgentId::Pi, ProcessMode::Auto);
+    let line = r#"{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"pong"}]}}"#;
+    let _ = s.feed(OutputStream::Stdout, &format!("{line}\n"));
+    assert_eq!(s.assistant_text(), "pong");
+}
+
+#[test]
+fn pi_message_end_thinking_block_emits_thinking_step() {
+    let mut s = StreamSession::new(AgentId::Pi, ProcessMode::Auto);
+    let line = r#"{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"plan"}]}}"#;
+    let out = s.feed(OutputStream::Stdout, &format!("{line}\n"));
+    assert!(out.iter().any(|o| matches!(
+        o,
+        StreamOutput::Step(ProcessStep::Thinking { text, done: true }) if text == "plan"
+    )));
+}
+
+#[test]
+fn pi_deltas_then_message_end_does_not_double_assistant_text() {
+    let mut s = StreamSession::new(AgentId::Pi, ProcessMode::Auto);
+    let ndjson = concat!(
+        r#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"pong"}}"#,
+        "\n",
+        r#"{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"pong"}]}}"#,
+        "\n",
+    );
+    let _ = s.feed(OutputStream::Stdout, ndjson);
+    assert_eq!(s.assistant_text(), "pong");
+}
+
+#[test]
+fn pi_message_end_error_without_text_fills_chat_and_error_step() {
+    let mut s = StreamSession::new(AgentId::Pi, ProcessMode::Auto);
+    let line = r#"{"type":"message_end","message":{"role":"assistant","content":[],"errorMessage":"provider failed","stopReason":"error"}}"#;
+    let out = s.feed(OutputStream::Stdout, &format!("{line}\n"));
+    assert!(out.iter().any(|o| matches!(
+        o,
+        StreamOutput::Step(ProcessStep::Error { message }) if message == "provider failed"
+    )));
+    assert_eq!(s.assistant_text(), "provider failed");
+}
+
+#[test]
 fn claude_tool_and_text() {
     let mut s = StreamSession::new(AgentId::Claude, ProcessMode::Auto);
     assert!(s.is_structured());
