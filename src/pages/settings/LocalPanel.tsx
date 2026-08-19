@@ -1,10 +1,10 @@
 import { useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { pageRhythm } from '@/components/layout/page-rhythm';
+import { useNavigate } from 'react-router-dom';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Tip } from '@/components/ui/tooltip';
 import {
   Select,
   SelectValue,
@@ -17,7 +17,6 @@ import { openLogsDir } from '@/lib/api/settings';
 import { openPathInFileManager } from '@/lib/api/skill';
 import { BRIDGES_PATH } from '@/lib/bridges-path';
 import type { AppSettings, LogLevel } from '@/lib/types';
-import { BackupsPanel } from '@/pages/backups/BackupsPanel';
 import { persistSettingsPatch } from './settings-persist';
 import {
   LOG_LEVEL_VALUES,
@@ -37,6 +36,7 @@ export function LocalPanel({
 }) {
   const { toast } = useToast();
   const { t } = useI18n();
+  const navigate = useNavigate();
   const retentionBaselineRef = useRef(settings.logRetentionDays);
 
   const persist = async (
@@ -55,20 +55,20 @@ export function LocalPanel({
   };
 
   return (
-    <div className={pageRhythm.stack}>
-      <Card>
+    <Card>
       <CardContent className="divide-y divide-border pt-1">
           <SettingsRow
+            wide
             label={t('settings.data.dataDirLabel')}
             description={t('settings.data.dataDirDescription')}
             descriptionTip={t('settings.data.dataDirTip')}
           >
-            <Input
-              className="w-full font-mono text-xs"
-              value={settings.dataDir}
-              readOnly
-              title={settings.dataDir}
-            />
+            <Tip
+              className="min-w-0 flex-1 break-all text-right font-mono text-xs text-secondary"
+              label={settings.dataDir}
+            >
+              {settings.dataDir}
+            </Tip>
             <Button
               size="sm"
               variant="outline"
@@ -158,16 +158,17 @@ export function LocalPanel({
             />
           </SettingsRow>
           <SettingsRow
+            wide
             label={t('settings.data.logsDirLabel')}
             description={t('settings.data.logsDirDescription')}
             descriptionTip={t('settings.data.logsDirTip')}
           >
-            <Input
-              className="w-full font-mono text-xs"
-              value={settings.logsDir}
-              readOnly
-              title={settings.logsDir}
-            />
+            <Tip
+              className="min-w-0 flex-1 break-all text-right font-mono text-xs text-secondary"
+              label={settings.logsDir}
+            >
+              {settings.logsDir}
+            </Tip>
             <Button
               size="sm"
               variant="outline"
@@ -194,18 +195,11 @@ export function LocalPanel({
             description={t('settings.data.routesDescription')}
             descriptionTip={t('settings.data.routesTip')}
           >
-            <Link
-              to={BRIDGES_PATH}
-              className="inline-flex h-7 items-center justify-center rounded-btn border border-border bg-transparent px-2.5 text-xs font-medium text-secondary transition-colors hover:bg-hover hover:text-primary"
-            >
+            <Button size="sm" variant="outline" onClick={() => navigate(BRIDGES_PATH)}>
               {t('common.open')}
-            </Link>
+            </Button>
           </SettingsRow>
       </CardContent>
-      </Card>
-      <div id="settings-backups">
-        <BackupsPanel />
-      </div>
-    </div>
+    </Card>
   );
 }

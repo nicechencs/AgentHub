@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
-import { fmtAbsoluteI18n, fmtRelativeI18n } from './backup-format';
+import {
+  backupNoteSubtitle,
+  backupRowTitle,
+  fmtAbsoluteI18n,
+  fmtRelativeI18n,
+  isInternalBackupNote,
+} from './backup-format';
 
 const tZh = createTranslator('zh');
 const tEn = createTranslator('en');
@@ -49,5 +55,44 @@ describe('fmtAbsoluteI18n', () => {
     expect(en).not.toMatch(/AM|PM/i);
     expect(zh).not.toMatch(/AM|PM/i);
     expect(en).not.toBe(zh);
+  });
+});
+
+describe('backupRowTitle', () => {
+  it('uses a human kind + time and ignores internal switch notes', () => {
+    vi.useFakeTimers({ now: NOW });
+    const title = backupRowTitle(
+      {
+        kind: 'auto-switch',
+        createdAt: isoMinutesAgo(120),
+      },
+      tZh,
+    );
+    expect(title).toBe('切换前自动 · 2 小时前');
+    expect(title).not.toMatch(/before provider|adapter-bridge|452e70db/i);
+    expect(
+      isInternalBackupNote(
+        'before provider switch to claude-grok-adapter-bridge-grok-live-452e70db-ffff',
+      ),
+    ).toBe(true);
+    expect(
+      backupNoteSubtitle(
+        'before provider switch to claude-grok-adapter-bridge-grok-live-452e70db-ffff',
+      ),
+    ).toBeNull();
+  });
+
+  it('labels blank Grok / manual notes', () => {
+    vi.useFakeTimers({ now: NOW });
+    expect(backupRowTitle({ kind: 'manual', createdAt: isoMinutesAgo(1) }, tZh)).toBe(
+      '手动备份 · 1 分钟前',
+    );
+    expect(backupRowTitle({ kind: 'manual', createdAt: isoMinutesAgo(1) }, tEn)).toBe(
+      'Manual backup · 1 min ago',
+    );
+    expect(isInternalBackupNote(undefined)).toBe(true);
+    expect(isInternalBackupNote('')).toBe(true);
+    expect(backupNoteSubtitle(undefined)).toBeNull();
+    expect(backupNoteSubtitle('Dashboard 手动备份')).toBe('Dashboard 手动备份');
   });
 });

@@ -25,6 +25,7 @@ import {
 } from '@/lib/api/update';
 import { applyTheme } from '@/lib/theme';
 import type { AppSettings } from '@/lib/types';
+import { BackupsPanel } from '@/pages/backups/BackupsPanel';
 import { AboutPanel } from './AboutPanel';
 import { LocalPanel } from './LocalPanel';
 import { PreferencesPanel } from './PreferencesPanel';
@@ -99,15 +100,6 @@ export default function SettingsPage({
       { replace: true },
     );
   }, [navigate, resolved.hash, resolved.shouldReplace, resolved.tab]);
-
-  useEffect(() => {
-    if (loading || tab !== 'local') return;
-    if (location.hash.replace(/^#/, '') !== 'backups') return;
-    const frame = requestAnimationFrame(() => {
-      document.getElementById('settings-backups')?.scrollIntoView({ block: 'start' });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [loading, location.hash, tab]);
 
   useEffect(() => {
     return () => {
@@ -232,6 +224,7 @@ export default function SettingsPage({
           <TabsList>
             <TabsTrigger value="preferences">{t('settings.page.tabPreferences')}</TabsTrigger>
             <TabsTrigger value="local">{t('settings.page.tabLocal')}</TabsTrigger>
+            <TabsTrigger value="backups">{t('settings.page.tabBackups')}</TabsTrigger>
             <TabsTrigger value="about" className="gap-1.5">
               {t('settings.page.tabAbout')}
               {pendingUpdate && (
@@ -261,6 +254,10 @@ export default function SettingsPage({
             patch={patch}
             setSettings={setSettings}
           />
+        </TabsContent>
+
+        <TabsContent value="backups">
+          <BackupsPanel />
         </TabsContent>
 
         <TabsContent value="about">

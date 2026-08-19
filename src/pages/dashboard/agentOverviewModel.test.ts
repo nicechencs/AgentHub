@@ -436,3 +436,37 @@ describe('mergeAgentsInOrder', () => {
     expect(ids[ids.length - 1]).toBe('pi');
   });
 });
+
+describe('stopped route status dot', () => {
+  const claude = meta('claude', 'Claude Code');
+
+  it('does not use a valid/green status dot when the route is 已停止', () => {
+    const view = buildAgentCardView(claude, status('claude'), { bridge: { state: 'stopped' } });
+    expect(view.bridge?.label).toBe('已停止');
+    expect(view.authStatus).toBe('none');
+    expect(view.statusDotTitle).toBe('已停止');
+  });
+
+  it('keeps expired / expiring dots when the route is stopped', () => {
+    const expired = buildAgentCardView(
+      claude,
+      status('claude', { authStatus: 'expired', authLabel: '已失效', effectiveKind: 'account' }),
+      { bridge: { state: 'stopped' } },
+    );
+    expect(expired.authStatus).toBe('expired');
+    expect(expired.bridge?.label).toBe('已停止');
+
+    const expiring = buildAgentCardView(
+      claude,
+      status('claude', { authStatus: 'expiring', authLabel: '即将过期', effectiveKind: 'account' }),
+      { bridge: { state: 'stopped' } },
+    );
+    expect(expiring.authStatus).toBe('expiring');
+  });
+
+  it('keeps a running route green when auth is valid', () => {
+    const view = buildAgentCardView(claude, status('claude'), { bridge: { state: 'running' } });
+    expect(view.authStatus).toBe('valid');
+    expect(view.bridge?.label).toBe('运行中');
+  });
+});

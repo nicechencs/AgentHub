@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tip } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 /** 表单行：左侧标签 + 短说明；细节用 descriptionTip 悬停展示 */
 export function SettingsRow({
@@ -9,15 +10,18 @@ export function SettingsRow({
   description,
   descriptionTip,
   children,
+  wide = false,
 }: {
   label: string;
   description?: string;
   descriptionTip?: string;
   children: ReactNode;
+  /** Path rows: children grow and wrap instead of a fixed 12rem slot. */
+  wide?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-6 py-3">
-      <div className="min-w-0">
+    <div className={cn('flex gap-6 py-3', wide ? 'items-start' : 'items-center justify-between')}>
+      <div className="min-w-0 shrink-0">
         <p className="text-sm">{label}</p>
         {description &&
           (descriptionTip ? (
@@ -28,7 +32,14 @@ export function SettingsRow({
             <p className="mt-0.5 text-xs text-muted">{description}</p>
           ))}
       </div>
-      <div className="flex w-48 shrink-0 items-center justify-end gap-2">{children}</div>
+      <div
+        className={cn(
+          'flex items-center gap-2',
+          wide ? 'min-w-0 flex-1 justify-end' : 'w-48 shrink-0 justify-end',
+        )}
+      >
+        {children}
+      </div>
     </div>
   );
 }
