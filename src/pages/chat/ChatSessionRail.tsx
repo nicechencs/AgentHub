@@ -1,4 +1,4 @@
-import { Loader2, PanelLeftClose, Plus, Trash2 } from 'lucide-react';
+import { Loader2, PanelLeftClose, Plus, Terminal, Trash2 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -165,6 +165,9 @@ export function ChatSessionRail({
                             {dots.extra > 0 && <span>+{dots.extra}</span>}
                           </span>
                           <span className="truncate">{cwdShortName(c.cwd, t)}</span>
+                          {c.nativeSessionId ? (
+                            <Terminal className="h-3 w-3 shrink-0" aria-hidden />
+                          ) : null}
                         </span>
                       </button>
                       <Hint label={t('chat.rail.deleteAria')}>

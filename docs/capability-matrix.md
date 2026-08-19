@@ -119,7 +119,7 @@ DeepSeek Harness（`dsh`）已进生产 registry。级别表以 `agenthub agent 
 | Usage | Full | Full | Full | Full | Full | Full | **Unsup** | Full |
 | Mcp | Planned | Planned | Planned | Planned | Planned | Planned | Planned | Planned |
 | ModelSelect | Planned | Planned | Planned | Planned | Planned | Planned | Planned | Planned |
-| SessionResume | Planned | Planned | Planned | Planned | Planned | Planned | Planned | Planned |
+| SessionResume | **Partial** | **Partial** | Planned | Planned | Planned | Planned | Planned | Planned |
 
 非 Full 单元格的依据与拟定 `reason`（路径/解析细节以 adapter 与 `project_service` 源码为准，不在此展开）：
 
@@ -160,11 +160,11 @@ DeepSeek Harness（`dsh`）已进生产 registry。级别表以 `agenthub agent 
 | `Usage` | token / 计费统计 | **已实现**：`UsageService` + session 日志解析；七家 Full（含 `dsh`）。Cursor **Unsupported**（IDE 内部用量库，范围外）。矩阵声明须与 `usage::supports_usage` 一致。 |
 | `Mcp` | MCP server 管理 / 注入 | **全 Planned**。当前已有独立的只读 MCP inventory（core scanner + Tauri command + 页面），只汇总本机配置，不管理或注入 server；因此不改变本矩阵状态。 |
 | `ModelSelect` | 运行时指定模型 | **全 Planned**。模型经 live config / provider 池切换，非独立运行时目录。 |
-| `SessionResume` | 续接历史会话 | **全 Planned**。Chat 不用各 CLI 原生续会话能力。 |
+| `SessionResume` | 续接历史会话 | Claude / Codex **Partial**：Chat 后续轮次在已捕获官方 session id 时走 print+resume，只发本轮用户文本；会话头可复制 TUI 续接命令。其余 Planned。 |
 
 **填表纪律**：无本地验证证据前不得把 Planned 改成 Full。依据 `adding-an-agent.md`——「本地验证 > 仅 README」。
 
-**约束**：`Mcp` 的**管理 / 注入调用方**、`ModelSelect`、`SessionResume` 在对应 Service 落地前不得产生；只读 MCP inventory 是独立扫描能力，不经过 `Capability::Mcp` 放行。`require` 遇 `Planned` 与 `Unsupported` 同样拒绝，错误文案不同。
+**约束**：`Mcp` 的**管理 / 注入调用方**、`ModelSelect` 在对应 Service 落地前不得产生；只读 MCP inventory 是独立扫描能力，不经过 `Capability::Mcp` 放行。`SessionResume` 已在 Claude/Codex Chat 路径落地（Partial）。`require` 遇 `Planned` 与 `Unsupported` 同样拒绝，错误文案不同。
 
 ## 7. 真源与防漂移
 
@@ -197,7 +197,8 @@ fn capability(&self, cap: Capability) -> CapabilityState {
         ProjectDelete => CapabilityState::unsupported("无安全浅删契约"),
         ProviderPresets => CapabilityState::unsupported("无 provider 配置契约"),
         Usage => CapabilityState::unsupported("IDE 内部用量库，明确范围外"),
-        Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
+        SessionResume => CapabilityState::partial("Chat 后续轮次走 print+resume"),
+        Mcp | ModelSelect => CapabilityState::planned("待验证接入"),
     }
 }
 ```

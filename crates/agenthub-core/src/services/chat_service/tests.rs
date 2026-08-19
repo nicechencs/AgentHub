@@ -577,3 +577,36 @@ fn map_run_status_covers_all_variants() {
         ChatMessageStatus::Cancelled
     );
 }
+
+#[test]
+fn print_resume_sends_only_the_new_user_turn() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let recorder = RecordingProcessRunner::new();
+    let calls = Arc::clone(&recorder.calls);
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(recorder),
+    ));
+    let chat = ChatService::new(db.clone(), run);
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    chat.send(&conv.id, "first question", &|_| {}).unwrap();
+
+    let repo = crate::storage::ChatRepo::new(db);
+    let mut stored = repo.get_conversation(&conv.id).unwrap().unwrap();
+    stored.native_session_id = Some("sess-1".into());
+    repo.update_conversation(&stored).unwrap();
+
+    calls.lock().unwrap().clear();
+    chat.send(&conv.id, "second", &|_| {}).unwrap();
+    let specs = calls.lock().unwrap().clone();
+    assert_eq!(specs.len(), 1);
+    let joined = specs[0].args.join(" ");
+    assert!(joined.contains("second"), "unexpected args: {joined}");
+    assert!(
+        !joined.contains("first question") && !joined.contains("[用户]"),
+        "resume must not resend Hub history: {joined}"
+    );
+}

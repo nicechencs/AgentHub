@@ -264,3 +264,30 @@ fn structured_requested_without_parser_falls_back_to_text() {
         }]
     );
 }
+
+#[test]
+fn captures_claude_and_codex_session_ids() {
+    let mut claude = StreamSession::new(AgentId::Claude, ProcessMode::Auto);
+    claude.feed(
+        OutputStream::Stdout,
+        "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"sess-claude\"}\n",
+    );
+    assert_eq!(claude.native_session_id(), Some("sess-claude"));
+
+    let mut codex = StreamSession::new(AgentId::Codex, ProcessMode::Auto);
+    codex.feed(
+        OutputStream::Stdout,
+        "{\"type\":\"thread.started\",\"thread_id\":\"sess-codex\"}\n",
+    );
+    assert_eq!(codex.native_session_id(), Some("sess-codex"));
+}
+
+#[test]
+fn extract_native_session_id_rejects_noise() {
+    assert!(extract_native_session_id("claude", "not-json").is_none());
+    assert!(extract_native_session_id("kimi", r#"{"session_id":"x"}"#).is_none());
+    assert_eq!(
+        extract_native_session_id("claude", r#"{"session_id":"  abc  "}"#).as_deref(),
+        Some("abc")
+    );
+}

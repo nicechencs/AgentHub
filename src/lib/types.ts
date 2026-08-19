@@ -394,6 +394,8 @@ export interface Conversation {
   allowDangerous: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Official CLI session id from the last print-mode run, when known. */
+  nativeSessionId?: string | null;
 }
 
 export interface ChatMessage {

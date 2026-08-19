@@ -1,6 +1,6 @@
 # AgentHub 目录结构与模块拆分
 
-> **现行状态（2026-08-19）**：Linux 一等公民；官方船经 `release` 三文件版本 bump 后发布。`agenthub-adapterd` sidecar 是目标、未迁。Chat 没有模型选择；Projects 不接 CLI `--resume`；MCP 注入未做；全站 i18n 未做。
+> **现行状态（2026-08-19）**：Linux 一等公民；官方船经 `release` 三文件版本 bump 后发布。`agenthub-adapterd` sidecar 是目标、未迁。Chat 没有模型选择；Claude/Codex Chat 后续轮次可走 print+resume。MCP 注入未做。
 > 对应《AgentHub 项目方案 v1.3》第 4 节的落地细化。  
 > 目标 cargo workspace 为三 crate：`agenthub-core`（业务核心）/ `agenthub-gui`（Tauri 壳）/ `agenthub-cli`（命令行）；当前三者均已在仓库中（`src-tauri` = gui）。
 > v1.1 同步：Adapter 接口加厚（skills/backup 路径）、Service 职责表、Usage/模型列表边界。  
@@ -228,7 +228,7 @@ struct InstallChannel {
 | `env_service` | Runtime detect/ensure/引导安装计划；doctor 的 runtimes 段（**仅 host_runtimes**） | 不装具体 Agent；不写 L2 live；非 Windows 不探测 PowerShell |
 | `agent_service` / install 管线 | detect；**install/upgrade = ensure_env → 平台渠道**（Windows ps1 / Unix sh / npm） | 不直接改 providers 表；不在各 Adapter 内复制 `which node` |
 | `run_service` | 多 Agent headless 执行（`run` / `run_each`）；流式 stdout 行推送 | 不维护多轮会话；不拼聊天上下文 |
-| `chat_service` | 会话 CRUD；按 Agent **隔离**拼接历史；调用 `run_each`；取消令牌 | 不使用各 CLI 原生 `--resume`；core 内无 Tauri 类型 |
+| `chat_service` | 会话 CRUD；按 Agent **隔离**拼接历史；调用 `run_each`；取消令牌 | Claude/Codex 在已关联官方 session 时后续轮次走 print+resume（只发本轮用户文本）；core 内无 Tauri 类型 |
 
 ### 2.3 调用关系（示意）
 

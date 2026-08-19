@@ -69,6 +69,7 @@ impl ChatService {
             allow_dangerous: false,
             created_at: now.clone(),
             updated_at: now,
+            native_session_id: None,
         };
         self.repo.create_conversation(&conv)?;
         Ok(conv)
@@ -87,11 +88,18 @@ impl ChatService {
             conv.title = t;
         }
         if let Some(agents) = agent_ids {
-            conv.agent_ids = require_single_agent(agents)?;
+            let next = require_single_agent(agents)?;
+            if next != conv.agent_ids {
+                conv.native_session_id = None;
+            }
+            conv.agent_ids = next;
         }
         if let Some(c) = cwd {
             if let Some(ref path) = c {
                 validate_cwd(path)?;
+            }
+            if conv.cwd != c {
+                conv.native_session_id = None;
             }
             conv.cwd = c;
         }
@@ -311,9 +319,24 @@ impl ChatService {
                 }
             }
 
+            let resume_id = conv
+                .native_session_id
+                .as_deref()
+                .and_then(crate::adapters::session_resume::valid_session_id)
+                .filter(|_| {
+                    agents
+                        .first()
+                        .is_some_and(|a| crate::adapters::supports_print_resume(*a))
+                })
+                .map(str::to_string);
+
             let mut jobs: Vec<(AgentId, String)> = Vec::with_capacity(agents.len());
             for &agent in &agents {
-                let prompt = build_agent_prompt(&history, agent, user_input);
+                let prompt = if resume_id.is_some() {
+                    user_input.to_string()
+                } else {
+                    build_agent_prompt(&history, agent, user_input)
+                };
                 jobs.push((agent, prompt));
             }
 
@@ -327,6 +350,7 @@ impl ChatService {
                 max_output_bytes: 2 * 1024 * 1024,
                 // Claude/Codex → stream-json / --json; others remain text.
                 process_mode: crate::models::ProcessMode::Auto,
+                native_session_id: resume_id,
             };
             let max_out = opts.max_output_bytes;
             tracing::debug!(
@@ -427,6 +451,24 @@ impl ChatService {
         }
 
         let (turn, report_ok, results, mut remaining) = send_result?;
+
+        if let Some(sid) = results.iter().find_map(|r| r.native_session_id.clone()) {
+            if let Ok(mut latest) = self.get_conversation(conversation_id) {
+                if latest.native_session_id.as_deref() != Some(sid.as_str()) {
+                    latest.native_session_id = Some(sid);
+                    latest.updated_at = Utc::now().to_rfc3339();
+                    if let Err(e) = self.repo.update_conversation(&latest) {
+                        tracing::warn!(
+                            module = targets::CHAT,
+                            op = "persist_native_session",
+                            conversation_id = conversation_id,
+                            error = %e,
+                            "failed to persist native session id"
+                        );
+                    }
+                }
+            }
+        }
 
         for result in &results {
             if let Some(msg) = finalize_agent_message(&mut remaining, result) {

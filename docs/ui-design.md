@@ -402,7 +402,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - **隐藏 / 别名**：写在 AgentHub `data_dir/project_metadata.json`，不改原生日志；「显示隐藏项」开关可找回。
 - **删除**：二次确认；按 capability 隐藏不支持的 Agent。
 - **打开目录**：优先打开项目工作区路径；无工作区时打开存储路径；会话行可打开 cwd。复用 `open_path_in_file_manager`。
-- **继续 Chat**：sessionStorage bootstrap → `/chat?from=projects`。**不是** CLI `--resume`。
+- **在 Chat 继续**：sessionStorage bootstrap → `/chat?from=projects`（摘录进 Hub Chat）。另可复制官方 TUI 续接命令。Claude/Codex 的 Hub Chat 在捕获官方 session 后，后续轮次走 print+resume。
 - **多选总结**：读取会话摘录 → bootstrap（无 transcript 的 Agent 不提供）。
 - **不**调用各 CLI 原生续会话能力。
 - **性能**：对解析成本高的 Agent 在 AgentHub `data_dir` 做 mtime 索引，避免重复解析会话头。
