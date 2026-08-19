@@ -7,6 +7,7 @@ import {
   setBackend,
 } from '@/app/runtime';
 import type { Backend } from '@/lib/backend/contracts';
+import type { AuthStatus } from '@/lib/types';
 import { setAgentHidden } from './agent';
 
 function agentBackend(overrides: {
@@ -32,7 +33,7 @@ describe('setAgentHidden', () => {
         agentId: 'claude',
         installed: true,
         hidden: false,
-        authStatus: 'none',
+        authStatus: 'none' as AuthStatus,
         authLabel: '未配置',
         running: false,
       },
@@ -57,7 +58,7 @@ describe('setAgentHidden', () => {
         agentId: 'claude',
         installed: true,
         hidden: false,
-        authStatus: 'none',
+        authStatus: 'none' as AuthStatus,
         authLabel: '未配置',
         running: false,
       },
