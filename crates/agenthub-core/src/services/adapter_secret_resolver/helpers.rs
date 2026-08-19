@@ -9,6 +9,9 @@ use crate::models::{AdapterSourceKind, AgentId, Provider};
 use crate::services::adapter_route_constants::*;
 use crate::storage::{AccountRepo, Database, ProviderRepo};
 
+/// Generated-provider allowlists. Every applyable matrix cell and live
+/// bridge rule must match one of these; the coverage test in `tests.rs`
+/// fails CI when a published rule id is omitted.
 pub(super) fn is_claude_source_reference(provider: &Provider) -> bool {
     provider.agent_id == AgentId::Claude
         && matches!(
