@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
 import { pickDirectory } from '@/lib/api/settings';
@@ -37,6 +38,7 @@ export function ChatSettingsDialog({
   onDangerConfirmChange: (open: boolean) => void;
   onPatch: (patch: { cwd?: string | null; allowDangerous?: boolean }) => void;
 }) {
+  const { t } = useI18n();
   const { toast } = useToast();
   const [cwdDraft, setCwdDraft] = useState(active?.cwd ?? '');
   const [picking, setPicking] = useState(false);
@@ -58,7 +60,7 @@ export function ChatSettingsDialog({
     setPicking(true);
     try {
       const picked = await pickDirectory({
-        title: '选择工作目录',
+        title: t('chat.settings.pickDirTitle'),
         defaultPath: cwdDraft || active?.cwd || null,
       });
       if (picked) {
@@ -67,7 +69,7 @@ export function ChatSettingsDialog({
       }
     } catch (e) {
       toast({
-        title: '无法选择目录',
+        title: t('chat.settings.pickDirFailed'),
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
@@ -81,21 +83,21 @@ export function ChatSettingsDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>会话设置</DialogTitle>
-            <DialogDescription>工作目录与自动批准</DialogDescription>
+            <DialogTitle>{t('chat.settings.title')}</DialogTitle>
+            <DialogDescription>{t('chat.settings.description')}</DialogDescription>
           </DialogHeader>
           {active && (
             <div className="space-y-4 py-2">
               <div>
                 <label className="mb-1.5 flex items-center gap-1.5 text-meta text-muted">
                   <FolderOpen className="h-3.5 w-3.5" />
-                  工作目录
+                  {t('chat.settings.cwd')}
                 </label>
                 <div className="flex gap-2">
                   <Input
                     value={cwdDraft}
-                    placeholder="选择本机目录，或粘贴完整路径"
-                    aria-label="工作目录"
+                    placeholder={t('chat.settings.cwdPlaceholder')}
+                    aria-label={t('chat.settings.cwd')}
                     onChange={(e) => setCwdDraft(e.target.value)}
                     onBlur={(e) => commitCwd(e.target.value)}
                   />
@@ -105,22 +107,22 @@ export function ChatSettingsDialog({
                     disabled={picking}
                     onClick={() => void handleBrowse()}
                   >
-                    {picking ? '选择中…' : '选择目录'}
+                    {picking ? t('chat.settings.picking') : t('chat.settings.pickDir')}
                   </Button>
                 </div>
               </div>
               <label className="flex items-center justify-between gap-3 text-body">
                 <span>
-                  <span className="block font-medium">自动批准</span>
+                  <span className="block font-medium">{t('chat.settings.autoApprove')}</span>
                   <Tip
                     className="text-meta text-muted"
                     label={
                       approveEnabled
-                        ? '关闭时 CLI 遇审批可能等到超时'
-                        : autoApproveHint('none')
+                        ? t('chat.settings.autoApproveOffHint')
+                        : autoApproveHint(t, 'none')
                     }
                   >
-                    {autoApproveHint(approveEffect)}
+                    {autoApproveHint(t, approveEffect)}
                   </Tip>
                 </span>
                 <Switch
@@ -140,7 +142,7 @@ export function ChatSettingsDialog({
           )}
           <DialogFooter>
             <Button variant="secondary" onClick={() => onOpenChange(false)}>
-              完成
+              {t('chat.settings.done')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -149,14 +151,14 @@ export function ChatSettingsDialog({
       <Dialog open={dangerConfirm} onOpenChange={onDangerConfirmChange}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>开启自动批准？</DialogTitle>
+            <DialogTitle>{t('chat.settings.enableTitle')}</DialogTitle>
             <DialogDescription>
-              {autoApproveConfirmCopy(approveEffect)}
+              {autoApproveConfirmCopy(t, approveEffect)}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={() => onDangerConfirmChange(false)}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button
               variant="danger"
@@ -165,7 +167,7 @@ export function ChatSettingsDialog({
                 onPatch({ allowDangerous: true });
               }}
             >
-              确认开启
+              {t('chat.settings.confirmEnable')}
             </Button>
           </DialogFooter>
         </DialogContent>

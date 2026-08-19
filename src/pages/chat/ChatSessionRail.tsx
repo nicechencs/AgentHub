@@ -1,6 +1,7 @@
 import { Loader2, PanelLeftClose, Plus, Trash2 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { SearchField } from '@/components/shared/SearchField';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -62,6 +63,7 @@ export function ChatSessionRail({
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
 }) {
+  const { t } = useI18n();
   const pending = conversations.find((c) => c.id === deleteConfirmId) ?? null;
 
   return (
@@ -72,17 +74,17 @@ export function ChatSessionRail({
       )}
     >
       <div className="flex items-center gap-1.5 p-2">
-        <Hint label="收起历史">
+        <Hint label={t('chat.rail.collapseHistory')}>
           <button
             type="button"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-btn text-muted hover:bg-hover hover:text-primary"
             onClick={onToggleRail}
-            aria-label="收起历史"
+            aria-label={t('chat.rail.collapseHistory')}
           >
             <PanelLeftClose className="h-4 w-4" />
           </button>
         </Hint>
-        <Hint label={agentsReady && !hasUsableAgent ? '请先安装或取消隐藏 Agent' : undefined}>
+        <Hint label={agentsReady && !hasUsableAgent ? t('chat.rail.newChatDisabled') : undefined}>
           <Button
             className="min-w-0 flex-1 justify-start gap-1.5"
             size="sm"
@@ -91,16 +93,16 @@ export function ChatSessionRail({
             onClick={onNewChat}
           >
             <Plus className="h-3.5 w-3.5" />
-            新建对话
+            {t('chat.rail.newChat')}
           </Button>
         </Hint>
       </div>
       <div className="px-2 pb-2">
         <SearchField
-          placeholder="搜索对话"
+          placeholder={t('chat.rail.searchPlaceholder')}
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-          aria-label="搜索对话"
+          aria-label={t('chat.rail.searchAria')}
         />
       </div>
       <div className="flex-1 overflow-y-auto px-1.5 pb-3">
@@ -112,12 +114,12 @@ export function ChatSessionRail({
           </div>
         ) : conversations.length === 0 ? (
           <div className="px-2 py-4 text-center">
-            <p className="text-meta text-muted">暂无对话</p>
-            <p className="mt-1 text-meta text-muted">点上方「新建对话」开始</p>
+            <p className="text-meta text-muted">{t('chat.rail.empty')}</p>
+            <p className="mt-1 text-meta text-muted">{t('chat.rail.emptyHint')}</p>
           </div>
         ) : filteredCount === 0 ? (
           <div className="px-2 py-4 text-center">
-            <p className="text-meta text-muted">没有匹配的对话</p>
+            <p className="text-meta text-muted">{t('chat.rail.noMatch')}</p>
           </div>
         ) : (
           groups.map((group) => (
@@ -132,7 +134,7 @@ export function ChatSessionRail({
                 return (
                   <Hint
                     key={c.id}
-                    label={`${c.cwd || '未设目录'} · ${relativeTime(c.updatedAt)}`}
+                    label={`${c.cwd || t('chat.cwd.unset')} · ${relativeTime(c.updatedAt, t)}`}
                     side="right"
                   >
                     <div
@@ -150,7 +152,7 @@ export function ChatSessionRail({
                         )}
                       >
                         <span className="flex items-center gap-1.5">
-                          <span className="truncate">{conversationTitle(c.title)}</span>
+                          <span className="truncate">{conversationTitle(t, c.title)}</span>
                           {sending && (
                             <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted" />
                           )}
@@ -162,14 +164,14 @@ export function ChatSessionRail({
                             ))}
                             {dots.extra > 0 && <span>+{dots.extra}</span>}
                           </span>
-                          <span className="truncate">{cwdShortName(c.cwd)}</span>
+                          <span className="truncate">{cwdShortName(c.cwd, t)}</span>
                         </span>
                       </button>
-                      <Hint label="删除">
+                      <Hint label={t('chat.rail.deleteAria')}>
                         <button
                           type="button"
                           className="mr-1 rounded-btn p-1 opacity-0 transition-opacity hover:bg-panel group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
-                          aria-label="删除"
+                          aria-label={t('chat.rail.deleteAria')}
                           onClick={() => onRequestDelete(c.id)}
                         >
                           <Trash2 className="h-3.5 w-3.5 text-muted hover:text-danger" />
@@ -187,17 +189,19 @@ export function ChatSessionRail({
       <Dialog open={Boolean(deleteConfirmId)} onOpenChange={(next) => !next && onCancelDelete()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>删除「{conversationTitle(pending?.title ?? '')}」？</DialogTitle>
+            <DialogTitle>
+              {t('chat.rail.deleteTitle', { title: conversationTitle(t, pending?.title ?? '') })}
+            </DialogTitle>
             <DialogDescription>
-              消息记录将一并删除；正在生成的回复会先停止。
+              {t('chat.rail.deleteDesc')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={onCancelDelete}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button variant="danger" onClick={onConfirmDelete}>
-              确认删除
+              {t('chat.rail.confirmDelete')}
             </Button>
           </DialogFooter>
         </DialogContent>

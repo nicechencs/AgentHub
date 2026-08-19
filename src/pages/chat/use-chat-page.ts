@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { AGENT_IDS } from '@/config/agents';
 import { listAgents } from '@/lib/api/agent';
@@ -44,6 +45,7 @@ import {
 const STICK_THRESHOLD_PX = 80;
 
 export function useChatPage() {
+  const { t } = useI18n();
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -233,8 +235,8 @@ export function useChatPage() {
               if (boot.prompt?.trim()) {
                 setDraft(boot.prompt);
                 toast({
-                  title: '已从 Projects 创建会话',
-                  description: '提示词已填入；确认工作目录后发送。',
+                  title: t('chat.toast.fromProjects'),
+                  description: t('chat.toast.fromProjectsDesc'),
                   variant: 'success',
                 });
               }
@@ -317,8 +319,8 @@ export function useChatPage() {
   const sendingTitle = useMemo(() => {
     if (!liveSendingConversationId) return '';
     const row = conversations.find((c) => c.id === liveSendingConversationId);
-    return conversationTitle(row?.title ?? '');
-  }, [conversations, liveSendingConversationId]);
+    return conversationTitle(t, row?.title ?? '');
+  }, [conversations, liveSendingConversationId, t]);
 
   const blockers = useMemo(() => {
     if (!active) return [];
@@ -333,8 +335,8 @@ export function useChatPage() {
 
   const railGroups = useMemo(() => {
     const filtered = filterConversations(conversations, railQuery);
-    return groupConversationsByDay(filtered, Date.now());
-  }, [conversations, railQuery]);
+    return groupConversationsByDay(filtered, Date.now(), t);
+  }, [conversations, railQuery, t]);
 
   const filteredCount = useMemo(
     () => filterConversations(conversations, railQuery).length,
@@ -343,7 +345,7 @@ export function useChatPage() {
 
   const retry = useMemo(() => retryTarget(turns, sending), [turns, sending]);
 
-  const agentPickerLabel = useMemo(() => agentPickerLabelOf(active), [active]);
+  const agentPickerLabel = useMemo(() => agentPickerLabelOf(t, active), [active, t]);
 
   const primaryStatus = useMemo(
     () => (primaryAgent ? agentStatus.find((a) => a.agentId === primaryAgent) : undefined),
@@ -352,25 +354,25 @@ export function useChatPage() {
 
   const connectionView = useMemo(
     () =>
-      chatConnectionPickerView({
+      chatConnectionPickerView(t, {
         primaryAgent,
         switching: switchingProvider,
         status: primaryStatus,
         currentProviderName: currentProvider?.name ?? null,
         currentProviderModel: currentProvider ? extractModel(currentProvider.configText) : null,
       }),
-    [primaryAgent, switchingProvider, primaryStatus, currentProvider],
+    [primaryAgent, switchingProvider, primaryStatus, currentProvider, t],
   );
 
   const connectionCaption = useMemo(
     () =>
       active
-        ? connectionPickerCaption({
+        ? connectionPickerCaption(t, {
             agentIds: active.agentIds,
             primaryAgent,
           })
         : null,
-    [active, primaryAgent],
+    [active, primaryAgent, t],
   );
 
   async function handleNewChat() {
@@ -453,7 +455,7 @@ export function useChatPage() {
     if (!active) return;
     try {
       const picked = await pickDirectory({
-        title: '选择工作目录',
+        title: t('chat.settings.pickDirTitle'),
         defaultPath: active.cwd ?? null,
       });
       if (picked) {
@@ -461,7 +463,7 @@ export function useChatPage() {
       }
     } catch (e) {
       toast({
-        title: '无法选择目录',
+        title: t('chat.settings.pickDirFailed'),
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
@@ -503,7 +505,7 @@ export function useChatPage() {
         loadProviders(primaryAgent),
         refreshAgents({ force: true }).catch(() => []),
       ]);
-      toast({ title: '已切换连接', variant: 'success' });
+      toast({ title: t('chat.connection.switched'), variant: 'success' });
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
     } finally {
@@ -652,8 +654,8 @@ export function useChatPage() {
     try {
       await chatCancel(sendingConversationId);
       toast({
-        title: '已请求取消',
-        description: '正在停止当前生成，过程面板将显示已取消。',
+        title: t('chat.toast.cancelRequested'),
+        description: t('chat.toast.cancelRequestedDesc'),
         variant: 'success',
         duration: 4000,
       });
