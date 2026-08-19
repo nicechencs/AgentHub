@@ -556,3 +556,64 @@ fn collect_missing_file_increments_failed_and_continues() {
     // empty/uninteresting line → skipped inside the good file
     assert!(stats.skipped >= 1 || stats.events.is_empty());
 }
+
+#[test]
+fn collect_and_parser_health_skip_uninstalled_and_hidden_agents() {
+    let (claude, claude_n) = no_file_source(AgentId::Claude.as_str());
+    let (codex, codex_n) = no_file_source(AgentId::Codex.as_str());
+    let (grok, grok_n) = no_file_source(AgentId::Grok.as_str());
+    let mut reg = UsageSourceRegistry::new();
+    reg.register(claude).unwrap();
+    reg.register(codex).unwrap();
+    reg.register(grok).unwrap();
+
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    // Only Grok is installed && !hidden — Claude uninstalled, Codex hidden.
+    let service = UsageService::with_visible_installed(db, reg, [AgentId::Grok]);
+
+    let result = service.collect(None).unwrap();
+    assert_eq!(
+        claude_n.load(Ordering::SeqCst),
+        0,
+        "uninstalled must not be scanned"
+    );
+    assert_eq!(
+        codex_n.load(Ordering::SeqCst),
+        0,
+        "hidden must not be scanned"
+    );
+    assert_eq!(
+        grok_n.load(Ordering::SeqCst),
+        1,
+        "visible installed must be scanned"
+    );
+    assert_eq!(result.agents.len(), 1);
+    assert_eq!(result.agents[0].agent_id, AgentId::Grok);
+
+    let health = service.parser_health().unwrap();
+    assert_eq!(
+        health.iter().map(|h| h.agent_id).collect::<Vec<_>>(),
+        vec![AgentId::Grok]
+    );
+
+    let skipped = service.collect(Some(AgentId::Claude)).unwrap();
+    assert_eq!(claude_n.load(Ordering::SeqCst), 0);
+    assert!(skipped.agents.is_empty());
+}
+
+#[test]
+fn collect_without_scope_still_walks_registered_agents() {
+    let (claude, claude_n) = no_file_source(AgentId::Claude.as_str());
+    let (grok, grok_n) = no_file_source(AgentId::Grok.as_str());
+    let mut reg = UsageSourceRegistry::new();
+    reg.register(claude).unwrap();
+    reg.register(grok).unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let service = UsageService::with_registry(db, reg);
+
+    service.collect(None).unwrap();
+    assert_eq!(claude_n.load(Ordering::SeqCst), 1);
+    assert_eq!(grok_n.load(Ordering::SeqCst), 1);
+}

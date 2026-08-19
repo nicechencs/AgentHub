@@ -417,7 +417,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
   - 空库时下拉仅「全部」，引导先「手动采集」。
 - 时间 + Agent 为页面级共享筛选；指标卡与趋势图只保留一套。
 - 成本为 `pricing` 估价（**与价表同单位，当前为 USD / 1M tokens**；不做汇率换算；价表为离线快照，由 LiteLLM 日更 CI / `pnpm pricing:update` 刷新，App 运行时不拉价），标注「估算」以免误解为账单原件。
-- 底部 **UsageParserHealth**（`variant="dashboard"`；兼容旧名 `ParserHealthBar`）：各 parser 采集条数与失败率；失败率高时提示「日志格式可能已变更」。
+- 底部 **UsageParserHealth**（`variant="dashboard"`；兼容旧名 `ParserHealthBar`）：只列出 **已安装且未隐藏** 的 Agent 的 parser 条数与失败率（与卡片同一套 `visibleInstalledIds`）；若无则「解析：暂无已安装的 Agent」；失败率高时提示「日志格式可能已变更」。手动/自动采集同样只扫这些 Agent。
 - **「手动采集」**：与筛选同行；进度条；首次引导用 `StorageKey.usageGuideDismissed`。
 - **同步状态文案**（同筛选项右侧）：`上次同步：… · 还有 x 分 y 秒 自动同步` / `仅手动采集`（`UsageSyncProvider` + `usage-sync` 纯函数）。
 - **前台自动采集**：`usageCollectIntervalMin`（默认 30；`0` = 仅手动）。App 在前台且 `document.visibilityState === 'visible'` 时按间隔调用 `collectUsage`；切后台暂停；回到前台若已到期则 grace 后补采。有新增条数时 toast「自动同步完成」。
