@@ -101,7 +101,7 @@ export const REFRESH_FAILED_SWITCHED = '已切换，但列表刷新失败';
 const ILLEGAL_SOURCE_MESSAGE = '来源参数非法';
 const DELETED_SOURCE_MESSAGE = '来源已删除';
 const ILLEGAL_TARGET_MESSAGE = '目标 Agent 参数非法';
-export const GENERATED_SOURCE_REUSE_MESSAGE = '该连接由兼容路由生成，不能再次用于其他 Agent';
+export const GENERATED_SOURCE_REUSE_MESSAGE = '该连接由本机路由生成，不能再次用于其他 Agent';
 
 export function sameSourceRef(left: ConnectSourceRef | null, right: ConnectSourceRef | null): boolean {
   if (!left || !right) return false;
@@ -675,8 +675,13 @@ export function resolveEmptyKind(input: EmptyKindInput): ConnectFlowEmptyKind {
 
   let pending = false;
   let anySelectable = false;
+  let anyCurrent = false;
   const target = input.entry.targetAgentId;
   for (const option of input.options) {
+    if (option.state.kind === 'current') {
+      anyCurrent = true;
+      continue;
+    }
     if (option.state.kind === 'switchable') {
       anySelectable = true;
       continue;
@@ -688,6 +693,7 @@ export function resolveEmptyKind(input: EmptyKindInput): ConnectFlowEmptyKind {
     }
   }
   if (pending) return { kind: 'none' };
+  if (anyCurrent) return { kind: 'none' };
   return anySelectable ? { kind: 'none' } : { kind: 'all_infeasible' };
 }
 

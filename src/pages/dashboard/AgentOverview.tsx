@@ -100,12 +100,15 @@ export function AgentOverview({
               }
               navigate(next.to);
             };
-            const viaLabel = view.viaAdapter
+            const viaTipLabel = view.viaAdapter
               ? view.viaAdapter.sourceLabel
                 ? t('dashboard.overview.viaCompatibleWithSource', {
                     source: view.viaAdapter.sourceLabel,
                   })
                 : t('dashboard.overview.viaCompatible')
+              : null;
+            const viaBadgeLabel = view.viaAdapter
+              ? t('dashboard.overview.viaCompatible')
               : null;
             return (
               <Card
@@ -153,10 +156,10 @@ export function AgentOverview({
                   >
                     {view.metaText}
                   </Tip>
-                  {viaLabel ? (
-                    <Tip className="shrink-0" label={viaLabel}>
-                      <Badge variant="info" className="h-5 max-w-[7rem] truncate px-1.5 text-meta">
-                        {viaLabel}
+                  {viaBadgeLabel && viaTipLabel ? (
+                    <Tip className="shrink-0" label={viaTipLabel}>
+                      <Badge variant="info" className="h-5 shrink-0 px-1.5 text-meta">
+                        {viaBadgeLabel}
                       </Badge>
                     </Tip>
                   ) : null}

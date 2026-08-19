@@ -556,7 +556,7 @@ describe('空态', () => {
     })).toEqual({ kind: 'wallet_empty' });
   });
 
-  it('有凭据但全部不可行', () => {
+  it('有当前登录时不判全部不可行', () => {
     const options: SourceOption[] = [
       option({
         ref: { kind: 'account', id: 'acc-claude' },
@@ -580,6 +580,33 @@ describe('空态', () => {
       poolState: 'ready',
       poolErrors: {},
       accounts: [claudeAccount, claudeSpare],
+      providers: [kimiProvider],
+      options,
+      eligibilities,
+      entry: forAgent,
+    })).toEqual({ kind: 'none' });
+  });
+
+  it('无当前登录且全部不可行', () => {
+    const options: SourceOption[] = [
+      option({
+        ref: { kind: 'account', id: 'acc-blocked' },
+        state: { kind: 'blocked_native', reason: '不可切换' },
+      }),
+      option({
+        ref: kimiSource,
+        state: { kind: 'plannable' },
+        agentId: 'kimi',
+        group: 'cross',
+      }),
+    ];
+    const eligibilities = new Map<string, PlanEligibility>([
+      [planFanoutKey({ source: kimiSource, targetAgentId: 'claude' }), readyEligibility(false)],
+    ]);
+    expect(resolveEmptyKind({
+      poolState: 'ready',
+      poolErrors: {},
+      accounts: [claudeSpare],
       providers: [kimiProvider],
       options,
       eligibilities,

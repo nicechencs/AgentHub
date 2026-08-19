@@ -7,6 +7,9 @@ import { looksLikeOfficialEndpoint } from '@/config/official-api';
 import {
   extractProviderEndpoint,
   formatEndpointHost,
+  formatLocalRouteLabel,
+  isInternalGeneratedName,
+  isInternalGeneratedProvider,
 } from '@/lib/backend/contracts/agent-connection';
 import {
   authDisplayForAccount,
@@ -128,14 +131,17 @@ function fromAccount(account: Account): CredentialRow {
 
 function fromProvider(provider: Provider): CredentialRow {
   const endpoint = extractProviderEndpoint(provider.configText, provider.configFormat);
+  const internal = isInternalGeneratedProvider(provider);
   const mode = providerEndpointMode(provider, endpoint);
+  const title = internal ? formatLocalRouteLabel() : provider.name;
+  const subtitleEndpoint = internal ? undefined : endpoint;
   return {
     key: `provider:${provider.id}`,
     source: 'provider',
     id: provider.id,
     agentId: provider.agentId,
-    title: provider.name,
-    subtitle: providerSubtitle(provider, endpoint, mode),
+    title,
+    subtitle: providerSubtitle(provider, subtitleEndpoint, mode),
     isCurrent: provider.isCurrent,
     auth: {
       status: 'valid',
@@ -154,7 +160,7 @@ function fromTicket(
     source: ticket.sourceKind,
     id: ticket.sourceId,
     agentId: ticket.agentId,
-    title: ticket.label,
+    title: isInternalGeneratedName(ticket.label) ? formatLocalRouteLabel() : ticket.label,
     subtitle: ticketSubtitle(ticket),
     isCurrent,
     auth: {
@@ -179,9 +185,10 @@ export function providerEndpointExtras(provider: Provider): {
   endpointMode: 'official' | 'custom';
 } {
   const endpoint = extractProviderEndpoint(provider.configText, provider.configFormat);
+  const internal = isInternalGeneratedProvider(provider);
   return {
-    endpoint,
-    endpointHost: endpoint ? formatEndpointHost(endpoint) : undefined,
+    endpoint: internal ? undefined : endpoint,
+    endpointHost: internal || !endpoint ? undefined : formatEndpointHost(endpoint),
     endpointMode: providerEndpointMode(provider, endpoint),
   };
 }
