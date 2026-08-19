@@ -640,6 +640,11 @@ describe('空态', () => {
 
 describe('plan 预览人话化', () => {
   const forbiddenPreviewCopy = [
+    '请保持 AgentHub',
+    '只连这台电脑',
+    '不会进 Claude',
+    '过期',
+    '会经本机路由',
     'ANTHROPIC_',
     'Messages',
     '将写入的配置',
@@ -672,9 +677,8 @@ describe('plan 预览人话化', () => {
     }));
     expect(view.title).toBe('本机路由');
     expect(view.experimental).toBe(true);
-    expect(view.reason).toBe('Grok 登录会经本机路由接到 Claude Code。');
-    expect(view.notes.some((line) => line.includes('请保持 AgentHub'))).toBe(true);
-    expect(view.notes.some((line) => line.includes('不会进 Claude'))).toBe(true);
+    expect(view.reason).toBe('用这份 Grok 登录接到 Claude Code。');
+    expect(view.notes).toEqual(['关掉会进托盘，路由继续跑。']);
     const text = previewText(view);
     for (const banned of forbiddenPreviewCopy) {
       expect(text).not.toContain(banned);

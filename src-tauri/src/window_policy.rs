@@ -12,11 +12,15 @@ pub enum CloseAction {
 /// Decide close behavior from in-process flags.
 ///
 /// - Explicit quit (tray "退出") always exits.
-/// - Otherwise, when `close_to_tray` is on, hide instead of destroy.
-pub fn decide_close_action(exit_requested: bool, close_to_tray: bool) -> CloseAction {
+/// - Otherwise hide when `close_to_tray` is on, or a local bridge is running.
+pub fn decide_close_action(
+    exit_requested: bool,
+    close_to_tray: bool,
+    bridge_active: bool,
+) -> CloseAction {
     if exit_requested {
         CloseAction::AllowExit
-    } else if close_to_tray {
+    } else if close_to_tray || bridge_active {
         CloseAction::HideToTray
     } else {
         CloseAction::AllowExit
@@ -55,10 +59,35 @@ mod tests {
 
     #[test]
     fn close_hides_only_when_flag_on_and_not_exiting() {
-        assert_eq!(decide_close_action(false, true), CloseAction::HideToTray);
-        assert_eq!(decide_close_action(false, false), CloseAction::AllowExit);
-        assert_eq!(decide_close_action(true, true), CloseAction::AllowExit);
-        assert_eq!(decide_close_action(true, false), CloseAction::AllowExit);
+        assert_eq!(
+            decide_close_action(false, true, false),
+            CloseAction::HideToTray
+        );
+        assert_eq!(
+            decide_close_action(false, false, false),
+            CloseAction::AllowExit
+        );
+        assert_eq!(
+            decide_close_action(true, true, false),
+            CloseAction::AllowExit
+        );
+        assert_eq!(
+            decide_close_action(true, false, false),
+            CloseAction::AllowExit
+        );
+    }
+
+    #[test]
+    fn close_hides_when_bridge_active_even_if_setting_off() {
+        assert_eq!(
+            decide_close_action(false, false, true),
+            CloseAction::HideToTray
+        );
+        assert_eq!(
+            decide_close_action(true, false, true),
+            CloseAction::AllowExit
+        );
+        assert_eq!(decide_close_action(true, true, true), CloseAction::AllowExit);
     }
 
     #[test]
