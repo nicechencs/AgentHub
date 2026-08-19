@@ -521,19 +521,8 @@ function sourceHintFromReason(reason: string): string {
   return '登录';
 }
 
-function notesForReusePath(
-  reusePath: AdapterReusePath,
-  plan: AdapterApplyPlan,
-  reason: string,
-): string[] {
-  if (reusePath === 'local_bridge') {
-    const { display, short } = localTargetLabels(plan.targetAgentId);
-    const sourceHint = sourceHintFromReason(reason);
-    return [
-      `${display} 只连这台电脑。这份 ${sourceHint}不会进 ${short}。`,
-      '请保持 AgentHub 开着。登录过期后，再同步一次即可。',
-    ];
-  }
+function notesForReusePath(reusePath: AdapterReusePath): string[] {
+  if (reusePath === 'local_bridge') return ['关掉会进托盘，路由继续跑。'];
   if (reusePath === 'api_endpoint') return ['会把这份连接写进目标 Agent。'];
   if (reusePath === 'native_subscription') return ['会把这份官方登录写进目标 Agent。'];
   return [];
@@ -541,12 +530,15 @@ function notesForReusePath(
 
 export function describePlanPreview(plan: AdapterApplyPlan): PlanPreviewView {
   const reusePath = reusePathForPlan(plan);
-  const reason = endReasonWithFullStop(plan.analysis.reason || plan.reason || '');
+  const analysisReason = plan.analysis.reason || plan.reason || '';
+  const reason = reusePath === 'local_bridge'
+    ? `用这份 ${sourceHintFromReason(analysisReason)}接到 ${localTargetLabels(plan.targetAgentId).display}。`
+    : endReasonWithFullStop(analysisReason);
   return {
     title: titleForReusePath(reusePath),
     experimental: plan.analysis.support === 'experimental',
     reason,
-    notes: notesForReusePath(reusePath, plan, reason),
+    notes: notesForReusePath(reusePath),
   };
 }
 
