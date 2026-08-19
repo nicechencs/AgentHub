@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { AppLogo } from '@/components/shared/AppLogo';
+import { createTranslator, loadStoredLanguage } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { AGENT_COLOR_VARS } from '@/styles/tokens';
 
@@ -47,11 +48,12 @@ export function BootSplash({
     return () => window.clearTimeout(t);
   }, [exiting]);
 
+  const t = createTranslator(loadStoredLanguage());
   const subtitle = exiting
-    ? '就绪'
+    ? t('chrome.boot.ready')
     : slow
-      ? '仍在加载，请稍候…'
-      : '正在启动…';
+      ? t('chrome.boot.slow')
+      : t('chrome.boot.starting');
 
   return (
     <div
@@ -65,7 +67,7 @@ export function BootSplash({
       role="status"
       aria-live="polite"
       aria-busy={!exiting}
-      aria-label="AgentHub 正在启动"
+      aria-label={t('chrome.boot.aria')}
       aria-valuemin={determinate ? 0 : undefined}
       aria-valuemax={determinate ? 100 : undefined}
       aria-valuenow={determinate ? Math.round(pct * 100) : undefined}

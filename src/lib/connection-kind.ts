@@ -5,6 +5,8 @@
  * Adapter profile wire mode still uses `api` (backend contract); map only at edges.
  */
 
+import type { TranslateFn } from '@/lib/i18n';
+
 export type ConnectionKind = 'oauth' | 'apikey';
 
 export type ConnectionKindFilter = 'all' | ConnectionKind;
@@ -15,13 +17,14 @@ export const CONNECTION_KIND_FILTERS: Array<{ value: ConnectionKindFilter; label
   { value: 'apikey', label: 'API Key' },
 ];
 
-export function connectionKindLabel(kind: ConnectionKind): string {
+export function connectionKindLabel(kind: ConnectionKind, t?: TranslateFn): string {
+  if (t) return t(kind === 'oauth' ? 'kind.oauth' : 'kind.apikey');
   return kind === 'oauth' ? '官方登录' : 'API Key';
 }
 
-export function connectionKindFilterLabel(filter: ConnectionKindFilter): string {
-  if (filter === 'all') return '全部';
-  return connectionKindLabel(filter);
+export function connectionKindFilterLabel(filter: ConnectionKindFilter, t?: TranslateFn): string {
+  if (filter === 'all') return t ? t('kind.all') : '全部';
+  return connectionKindLabel(filter, t);
 }
 
 export function kindBadge(kind: ConnectionKind): {
