@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { PackageSearch } from 'lucide-react';
+import { getAgentStatusSnapshot, useAgentStatuses } from '@/app/runtime';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -9,24 +10,22 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { Tip } from '@/components/ui/tooltip';
 import { sortAgentsForManagePage } from '@/lib/agent-visibility';
-import {
-  applyAgentUpdates,
-  checkAgentUpdates,
-  listAgents,
-} from '@/lib/api/agent';
+import { applyAgentUpdates, checkAgentUpdates } from '@/lib/api/agent';
 import { tryRefreshDoctor } from '@/lib/api/doctor';
 import { listRuntimes, resolveAutoInstallPlan } from '@/lib/api/env';
 import { hasEnvIssues } from '@/lib/env';
-import type { AgentId, AgentStatus, RuntimeDetect, RuntimeId } from '@/lib/types';
+import type { AgentId, AgentStatus, AgentUpdateInfo, RuntimeDetect, RuntimeId } from '@/lib/types';
 import { AgentCard } from './agent-card';
 
 /** Agents 安装管理页 — 环境检测 + Agent 安装（backend 由构建时 composition root 选择） */
 export default function AgentsPage() {
-  const [agents, setAgents] = React.useState<AgentStatus[]>([]);
+  const { state, statuses, error, reload } = useAgentStatuses();
+  const [updateById, setUpdateById] = React.useState<
+    Partial<Record<AgentId, AgentUpdateInfo>>
+  >({});
   const [runtimes, setRuntimes] = React.useState<RuntimeDetect[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [envLoading, setEnvLoading] = React.useState(false);
-  const [error, setError] = React.useState<unknown>(null);
+  const [envLoading, setEnvLoading] = React.useState(true);
+  const [envError, setEnvError] = React.useState<unknown>(null);
   /** 页级修复面板:focus + 是否自动开装 */
   const [pageFix, setPageFix] = React.useState<{
     runtimeId?: RuntimeId;
@@ -35,95 +34,119 @@ export default function AgentsPage() {
   /** 真实安装中态(勿用 autoStart 充当 busy,失败后会永久卡住) */
   const [envInstallRunning, setEnvInstallRunning] = React.useState(false);
   const updateSeq = React.useRef(0);
+  const initialUpdatesStarted = React.useRef(false);
+
+  const agents = React.useMemo(() => {
+    const updates = Object.values(updateById).filter(
+      (row): row is AgentUpdateInfo => row != null,
+    );
+    return applyAgentUpdates(statuses, updates);
+  }, [statuses, updateById]);
 
   const mergeUpdates = React.useCallback(async (list: AgentStatus[], force = false) => {
     const seq = ++updateSeq.current;
-    const installedIds = list.filter((a) => a.installed).map((a) => a.agentId);
-    if (!installedIds.length) return;
+    const installed = list.filter((a) => a.installed);
+    if (!installed.length) return;
 
     // Mark checking so cards can show loading on upgrade button
-    setAgents((prev) =>
-      prev.map((a) =>
-        installedIds.includes(a.agentId)
-          ? {
-              ...a,
-              update: {
-                agentId: a.agentId,
-                state: 'checking',
-                currentVersion: a.version,
-                latestVersion: a.latestVersion,
-              },
-            }
-          : a,
-      ),
-    );
+    setUpdateById((prev) => {
+      const next = { ...prev };
+      for (const agent of installed) {
+        next[agent.agentId] = {
+          agentId: agent.agentId,
+          state: 'checking',
+          currentVersion: agent.version,
+          latestVersion: agent.latestVersion,
+        };
+      }
+      return next;
+    });
 
     try {
-      const updates = await checkAgentUpdates(installedIds, force);
+      const updates = await checkAgentUpdates(
+        installed.map((a) => a.agentId),
+        force,
+      );
       if (seq !== updateSeq.current) return;
-      setAgents((prev) => applyAgentUpdates(prev, updates));
+      setUpdateById((prev) => {
+        const next = { ...prev };
+        for (const update of updates) next[update.agentId] = update;
+        return next;
+      });
     } catch {
       if (seq !== updateSeq.current) return;
       // Fail closed: unknown, never pretend up-to-date
-      setAgents((prev) =>
-        prev.map((a) =>
-          installedIds.includes(a.agentId)
-            ? {
-                ...a,
-                update: {
-                  agentId: a.agentId,
-                  state: 'unknown',
-                  currentVersion: a.version,
-                  note: '更新检查失败，仍可强制升级',
-                },
-              }
-            : a,
-        ),
-      );
+      setUpdateById((prev) => {
+        const next = { ...prev };
+        for (const agent of installed) {
+          next[agent.agentId] = {
+            agentId: agent.agentId,
+            state: 'unknown',
+            currentVersion: agent.version,
+            note: '更新检查失败，仍可强制升级',
+          };
+        }
+        return next;
+      });
     }
   }, []);
 
-  const load = React.useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const loadRuntimes = React.useCallback(async () => {
+    setEnvLoading(true);
+    setEnvError(null);
     try {
-      const [a, r] = await Promise.all([listAgents(), listRuntimes()]);
-      setAgents(a);
-      setRuntimes(r);
-      void mergeUpdates(a, false);
+      setRuntimes(await listRuntimes());
     } catch (e) {
-      setError(e);
+      setEnvError(e);
     } finally {
-      setLoading(false);
+      setEnvLoading(false);
     }
-  }, [mergeUpdates]);
+  }, []);
 
   React.useEffect(() => {
-    void load();
-  }, [load]);
+    void loadRuntimes();
+  }, [loadRuntimes]);
+
+  React.useEffect(() => {
+    if (initialUpdatesStarted.current) return;
+    if (state !== 'ready') return;
+    initialUpdatesStarted.current = true;
+    if (statuses.some((row) => row.installed)) {
+      void mergeUpdates(statuses, false);
+    }
+  }, [state, statuses, mergeUpdates]);
 
   const refreshAgents = React.useCallback(() => {
-    listAgents({ force: true })
-      .then((a) => {
-        setAgents(a);
-        void mergeUpdates(a, true);
-      })
-      .catch(() => {});
-  }, [mergeUpdates]);
+    void (async () => {
+      try {
+        await reload();
+        void mergeUpdates(getAgentStatusSnapshot().statuses, true);
+      } catch {
+        /* store keeps the last good snapshot */
+      }
+    })();
+  }, [reload, mergeUpdates]);
 
-  const refreshAgentUpdate = React.useCallback(
-    (agentId: AgentId) => {
-      void (async () => {
-        try {
-          const updates = await checkAgentUpdates([agentId], true);
-          setAgents((prev) => applyAgentUpdates(prev, updates));
-        } catch {
-          /* keep previous update state */
-        }
-      })();
-    },
-    [],
-  );
+  const refreshAgentUpdate = React.useCallback((agentId: AgentId) => {
+    void (async () => {
+      try {
+        const updates = await checkAgentUpdates([agentId], true);
+        setUpdateById((prev) => {
+          const next = { ...prev };
+          for (const update of updates) next[update.agentId] = update;
+          return next;
+        });
+      } catch {
+        /* keep previous update state */
+      }
+    })();
+  }, []);
+
+  const retry = React.useCallback(() => {
+    initialUpdatesStarted.current = false;
+    void reload().catch(() => {});
+    void loadRuntimes();
+  }, [reload, loadRuntimes]);
 
   const refreshEnv = React.useCallback(async () => {
     setEnvLoading(true);
@@ -132,9 +155,13 @@ export default function AgentsPage() {
       const forced = await tryRefreshDoctor();
       const r = forced?.runtimes ?? (await listRuntimes());
       setRuntimes(r);
-      const nextAgents = forced?.agents ?? (await listAgents({ force: true }));
-      setAgents(nextAgents);
-      void mergeUpdates(nextAgents, true);
+      setEnvError(null);
+      try {
+        await reload();
+      } catch {
+        /* store keeps the last good snapshot */
+      }
+      void mergeUpdates(getAgentStatusSnapshot().statuses, true);
       setPageFix((prev) => {
         if (!prev) return null;
         if (prev.runtimeId) {
@@ -150,7 +177,7 @@ export default function AgentsPage() {
     } finally {
       setEnvLoading(false);
     }
-  }, [mergeUpdates]);
+  }, [mergeUpdates, reload]);
 
   const pageFixRuntime = pageFix?.runtimeId
     ? runtimes.find((r) => r.id === pageFix.runtimeId)
@@ -158,6 +185,9 @@ export default function AgentsPage() {
 
   const showPagePanel = pageFix != null && hasEnvIssues(runtimes);
   const orderedAgents = React.useMemo(() => sortAgentsForManagePage(agents), [agents]);
+  const showAgentSkeleton = statuses.length === 0 && (state === 'idle' || state === 'loading');
+  const pageError =
+    statuses.length === 0 ? (state === 'error' ? error : envError) : null;
 
   return (
     <div>
@@ -170,7 +200,7 @@ export default function AgentsPage() {
       <div className={pageRhythm.lead}>
         <EnvStatusBar
           runtimes={runtimes}
-          loading={loading || envLoading}
+          loading={showAgentSkeleton || envLoading}
           onRefresh={() => void refreshEnv()}
           onFix={(r) => setPageFix({ runtimeId: r.id, autoStart: false })}
           onOneClickFix={() => setPageFix({ autoStart: true })}
@@ -196,7 +226,7 @@ export default function AgentsPage() {
             }}
           />
         )}
-        {!loading && hasEnvIssues(runtimes) && !showPagePanel && (
+        {!showAgentSkeleton && hasEnvIssues(runtimes) && !showPagePanel && (
           <Tip
             className="text-xs text-muted"
             label="「一键修复」仅安装可自动处理的 runtime（如 Node）。卸载 Agent 不会卸载共享环境。若 PATH 仍异常，请完全退出并重启 AgentHub 后再检测。"
@@ -206,17 +236,17 @@ export default function AgentsPage() {
         )}
       </div>
 
-      {loading ? (
+      {showAgentSkeleton ? (
         <ListSkeleton rows={4} />
-      ) : error ? (
-        <ErrorState error={error} onRetry={() => void load()} />
+      ) : pageError ? (
+        <ErrorState error={pageError} onRetry={retry} />
       ) : agents.length === 0 ? (
         <EmptyState
           icon={PackageSearch}
           title="未检测到 Agent"
           description="确认 CLI 已安装后重试"
           actionLabel="重新检测"
-          onAction={() => void load()}
+          onAction={retry}
         />
       ) : (
         <div className={pageRhythm.stack}>

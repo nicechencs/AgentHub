@@ -3,7 +3,7 @@
  * state, not a per-page query.  Consumers subscribe to this store so route
  * changes do not turn one detect pass into several competing requests.
  */
-import type { AgentStatus } from '@/lib/types';
+import type { AgentId, AgentStatus } from '@/lib/types';
 import type { Backend } from '@/lib/backend/contracts';
 import {
   authDisplayForAgentStatus,
@@ -47,6 +47,8 @@ let snapshot: AgentStatusSnapshot = {
 };
 
 let inflight: Promise<AgentStatus[]> | null = null;
+/** In-flight / unconfirmed visibility writes. Survives a stale listAgents. */
+const pendingHidden = new Map<AgentId, boolean>();
 const listeners = new Set<Listener>();
 
 function emit(): void {
@@ -82,6 +84,7 @@ export function liveAuthProbeForAgent(
 
 export function resetAgentStatusStore(): void {
   inflight = null;
+  pendingHidden.clear();
   clearLiveAuthProbeCache();
   setSnapshot({
     state: 'idle',
@@ -89,6 +92,52 @@ export function resetAgentStatusStore(): void {
     liveAuthProbes: {},
     refreshing: false,
     error: null,
+  });
+}
+
+/**
+ * Stamp a soft-hide preference onto the shared snapshot immediately.
+ * A later listAgents that still carries the old bit cannot clobber this
+ * until the backend result matches (or {@link revertAgentHidden} runs).
+ */
+export function applyAgentHidden(agentId: AgentId, hidden: boolean): void {
+  pendingHidden.set(agentId, hidden);
+  const current = snapshot.statuses.find((row) => row.agentId === agentId);
+  if (!current || Boolean(current.hidden) === hidden) return;
+  setSnapshot({
+    ...snapshot,
+    statuses: snapshot.statuses.map((row) =>
+      row.agentId === agentId ? { ...row, hidden } : row,
+    ),
+  });
+}
+
+/** Undo {@link applyAgentHidden} when persist fails. */
+export function revertAgentHidden(agentId: AgentId, previous: boolean): void {
+  pendingHidden.delete(agentId);
+  setSnapshot({
+    ...snapshot,
+    statuses: snapshot.statuses.map((row) =>
+      row.agentId === agentId ? { ...row, hidden: previous } : row,
+    ),
+  });
+}
+
+function settleConfirmedHidden(statuses: AgentStatus[]): void {
+  for (const status of statuses) {
+    const pending = pendingHidden.get(status.agentId);
+    if (pending !== undefined && Boolean(status.hidden) === pending) {
+      pendingHidden.delete(status.agentId);
+    }
+  }
+}
+
+function applyPendingHidden(statuses: AgentStatus[]): AgentStatus[] {
+  if (pendingHidden.size === 0) return statuses;
+  return statuses.map((status) => {
+    const pending = pendingHidden.get(status.agentId);
+    if (pending === undefined || Boolean(status.hidden) === pending) return status;
+    return { ...status, hidden: pending };
   });
 }
 
@@ -212,33 +261,42 @@ export async function loadAgentStatuses(
     .then(async (statuses) => {
       // 两阶段：先放出 detect/连接池结果，主界面可立刻渲染；
       // live-auth 随后补齐，避免启动被每个已装 agent 的凭据探测拖住。
+      // Confirm pending only against the raw listAgents payload.
+      settleConfirmedHidden(statuses);
       setSnapshot({
         state: 'ready',
-        statuses,
+        statuses: applyPendingHidden(statuses),
         liveAuthProbes: {},
         // 仍有 live-auth 在飞时保持 refreshing，消费者不必当整页重载。
         refreshing: true,
         error: null,
       });
 
+      // Enrich the raw listAgents rows. Overlay only at snapshot time so a
+      // revert that clears pendingHidden is not overwritten by a baked stamp.
       const enriched = await enrichWithLiveAuth(backend, statuses, opts.force === true);
+      const nextStatuses = applyPendingHidden(enriched.statuses);
       const next = {
         state: 'ready' as const,
-        statuses: enriched.statuses,
+        statuses: nextStatuses,
         liveAuthProbes: enriched.liveAuthProbes,
         refreshing: false,
         error: null,
       };
       setSnapshot(next);
-      return enriched.statuses;
+      return nextStatuses;
     })
     .catch((error) => {
       log.error('agent status load failed', { errorCode: errorCode(error) });
       if (isBackgroundRefresh) {
         // The last complete data remains a more truthful UI state than a
         // transient focus-refresh failure. Restore probes as well: the
-        // refresh never produced a replacement snapshot.
-        setSnapshot(previousSnapshot);
+        // refresh never produced a replacement snapshot. Re-apply a hide
+        // that landed while this refresh was in flight.
+        setSnapshot({
+          ...previousSnapshot,
+          statuses: applyPendingHidden(previousSnapshot.statuses),
+        });
       } else {
         setSnapshot({
           state: 'error',

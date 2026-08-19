@@ -114,7 +114,6 @@ export function AgentCard({
           : `${meta?.name ?? agent.agentId} 已从其他页面隐藏`,
         variant: 'success',
       });
-      onChanged();
     } catch (e) {
       toast({
         title: hidden ? '取消隐藏失败' : '隐藏失败',
