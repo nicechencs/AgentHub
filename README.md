@@ -31,7 +31,7 @@ AgentHub 是一个本地运行的多 Agent 桌面管理工具。它用统一的 
 cargo run -p agenthub-cli -- agent capabilities
 ```
 
-> 把已有登录接到另一个编程工具，只可能是三种做法：直接改配置 / 写进对方认的登录 / 本机转发。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。能改配置或写进对方认的登录，就不做转发。白话与图见 [产品决策](docs/product-decisions.md)。现在能不能写上去见[适配规则矩阵](docs/provider-api-oauth-adaptation.md#4-当前实现矩阵)。本机转发仍有未收口路径，端到端验收未完成；界面不再标「实验」。Cursor 只支持公开的 Agent CLI，不能作为写入目标。
+> 把已有登录接到另一个编程工具，只可能是三种做法：直接改配置、写进对方认的登录、本机转发。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。能改配置或写进对方认的登录，就不做转发。白话与图见 [产品决策](docs/product-decisions.md)。现在能不能写上去见[适配规则矩阵](docs/provider-api-oauth-adaptation.md#4-当前实现矩阵)。本机转发仍有未收口路径，端到端验收未完成。Cursor 只支持公开的 Agent CLI，不能作为写入目标。
 
 ## 快速开始
 
@@ -103,7 +103,7 @@ pnpm dev:mock
 | `cargo test -p agenthub-core` | 运行 Rust core 测试 |
 | `cargo run -p agenthub-cli -- --help` | 查看 CLI 帮助 |
 
-正式 Release 由 `release` 分支的 GitHub Actions 生成和发布，本地发布命令已禁用。
+正式 Release 由 `release` 分支的 GitHub Actions 生成和发布，本地发布命令已禁用。日常 PR 合入 `dev`。要出新版本，须同时 bump `package.json`、`Cargo.toml` 的 `[workspace.package]`、`src-tauri/tauri.conf.json`（当前都是 0.2.3；已有 tag `v0.2.2`，workflow 会拒绝覆盖已有 tag），再更新 `release` 分支。`dev` 与 `release` 是无关历史（`dev` 于 8 月中改写过），不要把 `dev` 合并进 `release`。
 
 ## 数据与隐私
 

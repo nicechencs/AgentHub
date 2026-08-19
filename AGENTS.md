@@ -4,10 +4,10 @@
 
 - 日常开发与 PR 的工作分支是 **`dev`**，不是 `main`，也不是 `release`。
 - 每日功能 PR 合入 `dev`。不要把 `release` 当日常集成线。
-- 正式发版：先同时改 `package.json`、`Cargo.toml` 的 `[workspace.package]`、`src-tauri/tauri.conf.json` 三个版本号，再推 `release`。GitHub Actions 只从 `release` 出包；已存在的 tag（当前 `v0.2.2`）会被拒绝覆盖。
-- Agent 隐藏以 `dev` 上按商店标记为准，只影响界面。
+- 正式发版：先同时改 `package.json`、`Cargo.toml` 的 `[workspace.package]`、`src-tauri/tauri.conf.json` 三个版本号，再更新 `release` 分支。`dev` 与 `release` 是无关历史（`dev` 于 8 月中改写过），不要把 `dev` 合并进 `release`。GitHub Actions 只从 `release` 出包；已存在的 tag（当前最新 `v0.2.2`）会被拒绝覆盖。
+- Agent 隐藏以 `dev` 的 store-stamp 为准，只影响界面；不是旧 `release` 线 #22 的软隐藏。
 - 本仓库编码用 **Grok Build**。不要用 CloudAgent 改这个仓库。
-- 当前界面说「登录」，不说「票」。
+- 当前界面说「登录」，不说「票」。实现里的 Ticket / TicketPort 仍是内部名字。
 
 ## 凭据存储决策
 
@@ -21,7 +21,7 @@
 
 - **产品关闭**：不为中国产 AI 的 OAuth（含 Kimi CLI `/login` managed OAuth、Pi `kimi-coding` device 残件，以及 GLM / DeepSeek / 通义 / 豆包等后续出现的登录态）开 Adapter 边。
 - 禁止把国产 OAuth 做成 `native_endpoint`、伪装成 API Key，或走任何「OAuth → API / to-api」转换。
-- 现有国产路由只认官方 **API Key** 票面（Kimi Code 会员、GLM Coding Plan、DeepSeek API）。不得把 Key 边扩成 OAuth 边。
+- 现有国产路由只认官方 **API Key** 登录（Kimi Code 会员、GLM Coding Plan、DeepSeek API）。不得把 Key 边扩成 OAuth 边。
 - 分析进展、整理待办或写开发提示词时，将「国产 OAuth 适配 / 转 API」标为「产品不做 / 项目范围外」，不能据此推导实施任务。
 - 只有用户明确推翻这一决策并重新授权后，才可以讨论国产 OAuth 开边。
 
@@ -58,7 +58,7 @@ src/
 - mock 只服务 `dev:mock`（及测试），不得打进生产 build。
 - 非 Tauri 的生产页面：明确报错或显示 **unavailable**，禁止静默 mock。
 - 页面层不直接 `invoke`；`lib/api/` 为过渡兼容层。
-- 产品写入走 plan/bind/unbind（`lib/api/tickets`）；`lib/api/adapter` 只服务预览与本机路由运行时。
+- 产品写入走 `lib/api/tickets` 的 plan/bind/unbind；`lib/api/adapter` 只服务预览与本机路由运行时。
 
 ## 测试约定（摘要）
 

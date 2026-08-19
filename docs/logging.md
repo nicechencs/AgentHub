@@ -196,7 +196,7 @@ agenthub -v doctor            # 本次进程 debug（文件 + stderr）
 | 命令 | 行为 |
 |---|---|
 | `config get [key]` | 白名单内可读；无 key 列出含 `log_level`、`log_retention_days` |
-| GUI 设置 → 数据 | 日志级别 / 保留天数 / 日志目录「打开」；级别下次启动生效 |
+| GUI 设置 → 本机 | 日志级别 / 保留天数 / 日志目录「打开」；级别下次启动生效 |
 | `config set <key> <value>` | 校验级别/天数范围后写入 settings |
 | `-v` | 本次抬高到至少 debug，不修改 settings |
 
