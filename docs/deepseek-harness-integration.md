@@ -1,5 +1,6 @@
 # DeepSeek Harness 接入方案
 
+> **现行状态（2026-08-19）**：sidecar（`agenthub-adapterd`）仍是目标、未迁。官方船经 `release` 三文件 bump。
 > 状态：**P1–P5 已接入代码**（2026-08-15）  
 > 调研依据：官方站点、开发者文档、GitHub `deepseek-ai/deepseek-harness`（MIT，developer preview）。  
 > 真源关系：本文是 **DSH 接入** 的唯一设计真源。实施时按 [adding-an-agent.md](adding-an-agent.md) 走生产接入轨；能力声明按 [capability-matrix.md](capability-matrix.md)；票面与跨 Agent 边按 [product-decisions.md](product-decisions.md)、[connection-binding-model.md](connection-binding-model.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)。DeepSeek API 票走 **① API 直连**，不要把 DSH 当 ③ 协议桥。  

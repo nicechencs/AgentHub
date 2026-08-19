@@ -1,8 +1,9 @@
 # 模型厂商、API 与 OAuth 适配规则
 
+> **现行状态（2026-08-19）**：§4 矩阵以代码为准；sidecar 未迁；Grok→Claude 走本机路由。
 > 状态：**当前工作区规则**，不代表已发布版本。
 > 最近核对：2026-08-15。
-> 本文是厂商入口、凭据类型和**现在能不能写上去**的规则真源。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。实现用的对象名见 [connection-binding-model.md](connection-binding-model.md)；页面与运行时见 [adapter-design.md](adapter-design.md)、[ui-design.md](ui-design.md)。日常说法：① = 直接改配置，② = 写进对方认的登录，③ = 本机转发。§4 是**当前可执行矩阵**，不是 UI 白名单，也不是产品终点。
+> 本文是厂商入口、凭据类型和**现在能不能写上去**的规则真源。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。实现用的对象名见 [connection-binding-model.md](connection-binding-model.md)；页面与运行时见 [adapter-design.md](adapter-design.md)、[ui-design.md](ui-design.md)。日常说法：① = 直接改配置，② = 写进对方认的登录，③ = 本机转发。现行 UI 芯片是 **直连 / 用这份登录 / 本机路由**（①②③ 仍是架构名，不出现在 picker）。§4 是**当前可执行矩阵**，不是 UI 白名单，也不是产品终点。
 
 ## 1. 先看结论
 
@@ -47,7 +48,7 @@
 |---|---|---|
 | ① API 端点直连 | 上游 Key 已提供目标协议（双协议 Key 是典型） | 否 |
 | ② 原生订阅复用 | 目标有同一 OAuth 契约槽（如 Pi 的 Anthropic / Codex / xAI 槽） | 否 |
-| ③ 本机协议桥 | 协议或契约对不上，图上有转换边（如 Codex 订阅 → Claude） | 是，仅 loopback |
+| ③ 本机路由 | 协议或契约对不上，图上有转换边（如 Codex 订阅 → Claude） | 是，仅 loopback |
 
 安全与运营边界（约束部署形态，不否决产品）：
 
@@ -211,7 +212,7 @@ OAuth access/refresh token 带有客户端、受众、范围和刷新语义。�
 
 ### 5.1 Codex / ChatGPT subscription → Claude Code：第 3 路，Responses experimental bind
 
-该组合是 **③ 本机协议桥** 的旗舰边，**不是** ②：Claude Code 没有 ChatGPT 订阅槽。目标：Claude Code 通过 `ANTHROPIC_BASE_URL` 与 `ANTHROPIC_AUTH_TOKEN` 调用**本机** bridge，而不是把 ChatGPT OAuth token 写入 Claude Code。Codex 订阅 → Pi 走 ②，不要和本条混写。
+该组合是 **③ 本机路由** 的旗舰边，**不是** ②：Claude Code 没有 ChatGPT 订阅槽。目标：Claude Code 通过 `ANTHROPIC_BASE_URL` 与 `ANTHROPIC_AUTH_TOKEN` 调用**本机** bridge，而不是把 ChatGPT OAuth token 写入 Claude Code。Codex 订阅 → Pi 走 ②，不要和本条混写。
 
 **当前实现**已可 bind Responses `auth_json` Account：`canApply=true`，创建 `local_bridge` profile、启动 loopback，并写入 Claude 的 `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`。仅 access token 在进程内注入上游；ChatGPT OAuth token 不进入 Claude 配置、IPC 或日志。Hub 本轮不做 single-flight refresh，过期需重新同步 Codex 登录。见 [product-decisions.md](product-decisions.md)。
 

@@ -1,5 +1,6 @@
 # AgentHub 项目方案 v1.5
 
+> **现行状态（2026-08-19）**：Linux 一等公民；官方船经 `release` 三文件版本 bump 后发布。定价表已合入（#32，不是 stale-open）。`agenthub-adapterd` 目标未迁。Chat 没有模型选择；Projects 不接 CLI `--resume`；MCP 注入未做；全站 i18n 未做。
 > 多 Agent 管理桌面工具：统一管理 Claude Code、Codex、Grok、Kimi 等 AI Agent 的安装、技能、API 配置、Token 统计与 OAuth 账号。  
 > 技术栈：Tauri v2 + React + Rust，GUI + CLI 双端。  
 > v1.1：补齐 Adapter / Service 职责边界、Skills 投影模型、备份流程、Token 统计与「模型列表」语义。  
@@ -388,7 +389,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 模块化收口（双真源 / 上帝文件 / 写入入口） | 📋 部分已收口 | integrations / Ticket 写口 / `adapter_control` 契约已落地；仍待削 `AgentAdapter` 厚表面、sidecar 二进制、Skills/Projects/AgentCard。见 [modularity-improvement.md](modularity-improvement.md)。不拆微服务，凭据落盘加密仍范围外 |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |
 | Token **后台自动刷新守护** | ❌ | 有手动 refresh |
-| Settings 语言切换 / i18n | ✅ | 轻量自研字典 + `LanguageProvider`；Settings 四面板（偏好 / 本机 / 备份 / 关于）与侧栏 chrome 可切换中/英。`language` 以 L1 core 为真源，localStorage 仅首屏缓存。首次启动按系统语言 seed 一次。业务页（Chat / Dashboard / Connections / Skills `copy.ts` 等）分期迁移。不引入 i18next |
+| Settings 语言切换 / **全站 i18n** | 🟡 部分 / **全站未做** | Settings 四面板与侧栏 chrome 可切换中/英（轻量自研字典 + `LanguageProvider`）。`language` 以 L1 core 为真源。业务页（Chat / Dashboard / Connections / Skills `copy.ts` 等）**未迁移**。Chat 模型选择、Projects `--resume`、MCP 注入均未做。不引入 i18next |
 | Usage **后台守护 / 文件监听** | ❌ | 仅前台 interval + 手动 |
 | 官方模型商店 / 账号可用模型探测 | ❌ | 明确非目标（用量去重模型列表除外） |
 | WebDAV / 代理模式 | P4 候选 | 桌面端已按 Windows / macOS / Linux 三平台交付（Linux 安装包可未签名；自动更新签名取决于 `TAURI_SIGNING_PRIVATE_KEY`）。WebDAV 与代理模式仍未做 |
