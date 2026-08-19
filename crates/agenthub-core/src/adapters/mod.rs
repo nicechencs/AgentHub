@@ -35,7 +35,6 @@ pub(crate) use workbuddy::detect_installation as detect_workbuddy_installation;
 pub(crate) use codex::normalize_oauth_credentials as normalize_codex_oauth_credentials;
 
 pub use adapter_trait::{default_authorization_key, default_identity_label, AgentAdapter};
-pub use session_resume::{plan_native_resume, supports_print_resume, NativeResumePlan};
 pub(crate) use auth_revision::{
     auth_file_revision, auth_files_revision, inspect_auth_credentials, oauth_auth_health,
     AuthCredentialMetadata,
@@ -45,12 +44,13 @@ pub(crate) use config_write::{
     write_verified_json_object,
 };
 pub(crate) use detect_binary::{
-    detect_binary, expand_binary_names, extract_version_token, infer_channel,
-    looks_like_version_line, well_known_bin_paths, NOT_FOUND_FIREFIGHTING_NOTE,
+    detect_binary, detect_binary_with_env, expand_binary_names, extract_version_token,
+    infer_channel, looks_like_version_line, well_known_bin_paths, NOT_FOUND_FIREFIGHTING_NOTE,
 };
 pub use registry::{
     register_all, supports_structured_stream, wants_structured_for, AdapterRegistry,
 };
+pub use session_resume::{plan_native_resume, supports_print_resume, NativeResumePlan};
 
 #[cfg(test)]
 mod tests;

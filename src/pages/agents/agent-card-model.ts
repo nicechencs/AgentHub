@@ -1,5 +1,34 @@
 import type { InstallChannelMeta } from '@/config/agents';
+import type { MessageKey } from '@/lib/i18n';
 import { handleMenuDialogSelect } from '@/pages/connections/ticket-wallet-model';
+
+export type AgentCardTaskAction = 'install' | 'upgrade' | 'oneclick';
+export type AgentCardTaskStatus = 'running' | 'done' | 'failed';
+
+/** Inline install-log header: branch on status (`done` / `failed`), not action alone. */
+export function agentTaskLogTitleKey(
+  action: AgentCardTaskAction,
+  status: AgentCardTaskStatus,
+): MessageKey {
+  if (status === 'done') {
+    if (action === 'oneclick') return 'agents.lifecycle.oneclickDone';
+    if (action === 'install') return 'agents.lifecycle.installComplete';
+    return 'agents.lifecycle.upgradeDone';
+  }
+  if (status === 'failed') {
+    if (action === 'oneclick') return 'agents.lifecycle.oneclickFailed';
+    if (action === 'install') return 'agents.lifecycle.installFailed';
+    return 'agents.lifecycle.upgradeFailed';
+  }
+  if (action === 'oneclick') return 'agents.card.oneclickProgress';
+  if (action === 'install') return 'agents.card.installing';
+  return 'agents.card.upgrading';
+}
+
+/** Update chip: Node-too-old (Pi) is not a generic "update unknown". */
+export function isNodeTooOldUpdateNote(note?: string | null): boolean {
+  return !!note && /node too old/i.test(note);
+}
 
 export type AgentCardUninstallConfirmKind = 'program' | 'config';
 

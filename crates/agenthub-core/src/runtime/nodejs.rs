@@ -1,15 +1,32 @@
 //! Node.js / npm / PowerShell / Git detection.
 
-#[cfg(windows)]
-use std::path::Path;
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use which::which;
 
 use crate::models::{EnvStatus, EnvStatusKind, RuntimeId};
 use crate::utils::process::{run_capture, stdout_first_line};
 
-use crate::catalog::limits::NODE_MIN_MAJOR;
+use crate::catalog::limits::{NODE_MIN_MAJOR, PI_NODE_MIN_MAJOR};
+
+/// Detect note / update-check copy when Pi is installed but Node < 22.
+pub const PI_NODE_TOO_OLD_NOTE: &str =
+    "Node too old: Pi requires Node.js >= 22 (engines.node >= 22.19.0)";
+
+/// A Node binary that satisfied [`resolve_node_at_least`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedNode {
+    pub path: PathBuf,
+    pub version: String,
+    pub major: u64,
+}
+
+impl ResolvedNode {
+    pub fn bin_dir(&self) -> Option<PathBuf> {
+        self.path.parent().map(Path::to_path_buf)
+    }
+}
 
 pub fn detect_nodejs() -> EnvStatus {
     match resolve_binary(&["node", "node.exe"]) {
@@ -401,6 +418,280 @@ pub fn resolve_powershell_for_native() -> Option<PathBuf> {
 fn parse_major(version: &str) -> Option<u64> {
     let major = version.split('.').next()?;
     major.parse().ok()
+}
+
+/// Discover a Node.js binary with `major >= min_major`.
+///
+/// Search order: PATH `node`, `~/.local/share/node-v22*/bin/node`, then
+/// nvm / fnm / volta / n. The first candidate whose `node -v` meets the
+/// floor wins. Global doctor still uses [`NODE_MIN_MAJOR`] (18).
+pub fn resolve_node_at_least(min_major: u64) -> Option<ResolvedNode> {
+    let path_node = resolve_binary(&["node", "node.exe"]);
+    let home = crate::utils::paths::home_dir().ok();
+    resolve_node_at_least_from(
+        path_node,
+        home.as_deref(),
+        min_major,
+        NodeManagerRoots::from_env_and_home(home.as_deref()),
+        probe_node_version,
+    )
+}
+
+/// Pi probe + Chat: Node 22+ if present anywhere we know how to look.
+pub fn resolve_pi_node() -> Option<ResolvedNode> {
+    resolve_node_at_least(PI_NODE_MIN_MAJOR)
+}
+
+/// `PATH=<bin_dir>:$PATH` (or `;` on Windows) so child processes see Node 22 first.
+pub fn path_with_prefixed_bin(bin_dir: &Path, current_path: &str) -> String {
+    let prefix = bin_dir.to_string_lossy();
+    if current_path.is_empty() {
+        return prefix.into_owned();
+    }
+    format!("{prefix}{sep}{current_path}", sep = path_list_sep())
+}
+
+/// Extra env so a child process prefers `bin_dir` over the inherited PATH.
+pub fn prefixed_path_env(bin_dir: Option<&Path>) -> Vec<(String, String)> {
+    let Some(dir) = bin_dir else {
+        return Vec::new();
+    };
+    let current = std::env::var("PATH").unwrap_or_default();
+    vec![("PATH".into(), path_with_prefixed_bin(dir, &current))]
+}
+
+/// Well-known Node 22+ locations under `home` (no env, so tests stay hermetic).
+pub fn node_versioned_home_candidates(home: &Path, min_major: u64) -> Vec<PathBuf> {
+    node_versioned_candidates(home, min_major, &NodeManagerRoots::from_home_only(home))
+}
+
+/// Testable resolver: PATH node first, then versioned home / manager trees.
+pub fn resolve_node_at_least_from(
+    path_node: Option<PathBuf>,
+    home: Option<&Path>,
+    min_major: u64,
+    roots: NodeManagerRoots,
+    mut probe: impl FnMut(&Path) -> Option<(String, u64)>,
+) -> Option<ResolvedNode> {
+    let mut seen = HashSet::new();
+    let mut candidates = Vec::new();
+    if let Some(p) = path_node {
+        candidates.push(p);
+    }
+    if let Some(home) = home {
+        candidates.extend(node_versioned_candidates(home, min_major, &roots));
+    }
+    for path in candidates {
+        if !seen.insert(path.clone()) {
+            continue;
+        }
+        if let Some((version, major)) = probe(&path) {
+            if major >= min_major {
+                return Some(ResolvedNode {
+                    path,
+                    version,
+                    major,
+                });
+            }
+        }
+    }
+    None
+}
+
+/// Roots for nvm / fnm / volta / n. Live detection merges env; tests pass home-only.
+#[derive(Debug, Clone, Default)]
+pub struct NodeManagerRoots {
+    pub nvm_dir: Option<PathBuf>,
+    pub fnm_dirs: Vec<PathBuf>,
+    pub volta_home: Option<PathBuf>,
+    pub n_prefix: Option<PathBuf>,
+}
+
+impl NodeManagerRoots {
+    pub fn from_home_only(home: &Path) -> Self {
+        Self {
+            nvm_dir: Some(home.join(".nvm")),
+            fnm_dirs: vec![
+                home.join(".local").join("share").join("fnm"),
+                home.join(".fnm"),
+            ],
+            volta_home: Some(home.join(".volta")),
+            n_prefix: Some(home.join("n")),
+        }
+    }
+
+    pub fn from_env_and_home(home: Option<&Path>) -> Self {
+        let mut roots = home.map(Self::from_home_only).unwrap_or_default();
+        if let Some(v) = nonempty_env("NVM_DIR") {
+            roots.nvm_dir = Some(v);
+        }
+        if let Some(v) = nonempty_env("FNM_DIR") {
+            roots.fnm_dirs.insert(0, v);
+        }
+        if let Some(v) = nonempty_env("VOLTA_HOME") {
+            roots.volta_home = Some(v);
+        }
+        if let Some(v) = nonempty_env("N_PREFIX") {
+            roots.n_prefix = Some(v);
+        }
+        roots
+    }
+}
+
+fn nonempty_env(key: &str) -> Option<PathBuf> {
+    std::env::var_os(key)
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+}
+
+fn node_versioned_candidates(
+    home: &Path,
+    min_major: u64,
+    roots: &NodeManagerRoots,
+) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+
+    // Official-ish unpacked trees: ~/.local/share/node-v22.19.0/bin/node
+    push_version_dir_nodes(
+        &mut out,
+        &home.join(".local").join("share"),
+        min_major,
+        &["bin"],
+        true,
+    );
+
+    if let Some(nvm) = &roots.nvm_dir {
+        push_version_dir_nodes(
+            &mut out,
+            &nvm.join("versions").join("node"),
+            min_major,
+            &["bin"],
+            false,
+        );
+    }
+
+    for fnm in &roots.fnm_dirs {
+        push_version_dir_nodes(
+            &mut out,
+            &fnm.join("node-versions"),
+            min_major,
+            &["installation", "bin"],
+            false,
+        );
+    }
+
+    if let Some(volta) = &roots.volta_home {
+        push_version_dir_nodes(
+            &mut out,
+            &volta.join("tools").join("image").join("node"),
+            min_major,
+            &["bin"],
+            false,
+        );
+        push_node_in_bin_dir(&mut out, &volta.join("bin"));
+    }
+
+    if let Some(n_prefix) = &roots.n_prefix {
+        push_node_in_bin_dir(&mut out, &n_prefix.join("bin"));
+        push_version_dir_nodes(
+            &mut out,
+            &n_prefix.join("versions").join("node"),
+            min_major,
+            &["bin"],
+            false,
+        );
+        push_version_dir_nodes(
+            &mut out,
+            &n_prefix.join("n").join("versions").join("node"),
+            min_major,
+            &["bin"],
+            false,
+        );
+    }
+    // System `n` default prefix (not under $HOME).
+    push_version_dir_nodes(
+        &mut out,
+        Path::new("/usr/local/n/versions/node"),
+        min_major,
+        &["bin"],
+        false,
+    );
+
+    out
+}
+
+fn push_version_dir_nodes(
+    out: &mut Vec<PathBuf>,
+    parent: &Path,
+    min_major: u64,
+    bin_suffix: &[&str],
+    require_node_v_prefix: bool,
+) {
+    let Ok(rd) = std::fs::read_dir(parent) else {
+        return;
+    };
+    let mut dirs: Vec<PathBuf> = rd
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.is_dir())
+        .filter(|p| {
+            let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            if require_node_v_prefix && !name.starts_with("node-v") {
+                return false;
+            }
+            dir_name_major(name).is_some_and(|m| m >= min_major)
+        })
+        .collect();
+    // Newest name last so pop-less iteration can still prefer higher versions:
+    // sort descending (v22.20 > v22.19).
+    dirs.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+    for dir in dirs {
+        let mut bin_dir = dir;
+        for part in bin_suffix {
+            bin_dir = bin_dir.join(part);
+        }
+        push_node_in_bin_dir(out, &bin_dir);
+    }
+}
+
+fn push_node_in_bin_dir(out: &mut Vec<PathBuf>, bin_dir: &Path) {
+    for name in node_bin_names() {
+        let candidate = bin_dir.join(name);
+        if candidate.is_file() {
+            out.push(candidate);
+        }
+    }
+}
+
+fn node_bin_names() -> &'static [&'static str] {
+    if cfg!(windows) {
+        &["node.exe", "node"]
+    } else {
+        &["node"]
+    }
+}
+
+fn dir_name_major(name: &str) -> Option<u64> {
+    let s = name.strip_prefix("node-").unwrap_or(name);
+    let s = s.trim_start_matches('v').trim_start_matches('V');
+    parse_major(s)
+}
+
+fn path_list_sep() -> &'static str {
+    if cfg!(windows) {
+        ";"
+    } else {
+        ":"
+    }
+}
+
+fn probe_node_version(path: &Path) -> Option<(String, u64)> {
+    let out = run_capture(path, &["-v"]).ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let version = stdout_first_line(&out)?.trim_start_matches('v').to_string();
+    let major = parse_major(&version)?;
+    Some((version, major))
 }
 
 /// `git version 2.43.0.windows.1` → `2.43.0.windows.1`

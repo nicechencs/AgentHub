@@ -38,7 +38,9 @@ import { cn } from '@/lib/utils';
 import { shouldIgnoreMenuDialogDismiss } from '@/pages/connections/ticket-wallet-model';
 import { buildAgentInstallPreview, buildEnvInstallPreview } from './install-preview';
 import {
+  agentTaskLogTitleKey,
   formatAgentVersion,
+  isNodeTooOldUpdateNote,
   openAgentCardUninstallConfirm,
   resolveOfficialSetupUrl,
 } from './agent-card-model';
@@ -333,7 +335,11 @@ export function AgentCard({
                     <span className="text-xs text-muted">{t('agents.card.upToDate')}</span>
                   )}
                   {updateState === 'unknown' && (
-                    <span className="text-xs text-muted">{t('agents.card.updateUnknown')}</span>
+                    <span className="text-xs text-muted">
+                      {isNodeTooOldUpdateNote(agent.update?.note)
+                        ? t('agents.card.needsNode22')
+                        : t('agents.card.updateUnknown')}
+                    </span>
                   )}
                   {updateUnsupported &&
                     (officialSetupUrl ? (
@@ -676,11 +682,7 @@ export function AgentCard({
         <div className="mt-3">
           <div className="mb-1 flex items-center justify-between">
             <span className="text-xs text-muted">
-              {task.action === 'oneclick'
-                ? t('agents.card.oneclickProgress')
-                : task.action === 'install'
-                  ? t('agents.card.installing')
-                  : t('agents.card.upgrading')}
+              {t(agentTaskLogTitleKey(task.action, task.status))}
             </span>
             <div className="flex items-center gap-1">
               <Button size="sm" variant="ghost" onClick={copyCommand} title={t('agents.card.copyCliCommand')}>

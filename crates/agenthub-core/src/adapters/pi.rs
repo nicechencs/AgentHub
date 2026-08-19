@@ -5,7 +5,7 @@ use super::pi_auth::{
     pi_config_dir, read_auth_json, write_verified_auth_json,
 };
 use super::{
-    api_key_live_account, auth_file_revision, detect_binary, inspect_auth_credentials,
+    api_key_live_account, auth_file_revision, detect_binary_with_env, inspect_auth_credentials,
     oauth_auth_health, require_api_key, AgentAdapter,
 };
 use crate::error::{AppError, Result};
@@ -24,9 +24,47 @@ pub(crate) fn detect_installation() -> DetectResult {
         .first()
         .map(|c| c.requires.clone())
         .unwrap_or_default();
-    let env_ready = runtime::is_ready(&requires);
+    let node22 = runtime::resolve_pi_node();
+    let extra_env =
+        runtime::prefixed_path_env(node22.as_ref().and_then(|n| n.bin_dir()).as_deref());
+    let env_ready = runtime::is_ready(&requires) && node22.is_some();
     // Prefer PATH `pi` (npm global shim); channel inferred from path / well-known.
-    detect_binary(AgentId::Pi, &["pi"], &["--version"], Some("npm"), env_ready)
+    // Version probe + Chat must see Node 22 first (PATH node may still be 20).
+    let detected = detect_binary_with_env(
+        AgentId::Pi,
+        &["pi"],
+        &["--version"],
+        Some("npm"),
+        env_ready,
+        &extra_env,
+    );
+    apply_pi_node_requirement(detected, node22.is_some())
+}
+
+/// PATH prefix for Pi Chat / probe. `bin_dir` is the Node 22 directory when found.
+pub(crate) fn pi_child_env(node22_bin_dir: Option<&Path>) -> Vec<(String, String)> {
+    runtime::prefixed_path_env(node22_bin_dir)
+}
+
+/// Pi `engines.node` is >= 22. Without Node 22, env is not ready and version
+/// probes must not look like a generic “installed but unread” miss.
+pub(crate) fn apply_pi_node_requirement(
+    mut detect: DetectResult,
+    has_node22: bool,
+) -> DetectResult {
+    if has_node22 {
+        return detect;
+    }
+    detect.env_ready = false;
+    if detect.status == crate::models::DetectStatus::Installed
+        && !detect
+            .notes
+            .iter()
+            .any(|n| n.to_ascii_lowercase().contains("node too old"))
+    {
+        detect.notes.push(runtime::PI_NODE_TOO_OLD_NOTE.into());
+    }
+    detect
 }
 
 impl AgentAdapter for PiAdapter {
@@ -219,12 +257,18 @@ impl AgentAdapter for PiAdapter {
             // Closest documented non-interactive trust flag for project files.
             args.push("--approve".into());
         }
+        let env = pi_child_env(
+            runtime::resolve_pi_node()
+                .as_ref()
+                .and_then(|n| n.bin_dir())
+                .as_deref(),
+        );
         Ok(RunSpec {
             agent: AgentId::Pi,
             program: binary.to_path_buf(),
             args,
             cwd: opts.cwd.clone(),
-            env: vec![],
+            env,
         })
     }
 }
@@ -622,6 +666,10 @@ mod tests {
             assert!(spec.args.iter().any(|a| a == "--no-session"));
             assert!(!spec.args.iter().any(|a| a == "--approve"));
             assert!(!spec.args.iter().any(|a| a == "--provider"));
+            for (k, v) in &spec.env {
+                assert_eq!(k, "PATH");
+                assert!(!v.is_empty());
+            }
         });
     }
 
@@ -936,5 +984,75 @@ mod tests {
             assert_eq!(auth["xai"]["access"], "new-access");
             assert_eq!(auth["keep"]["access"], "keep-access");
         });
+    }
+
+    #[test]
+    fn pi_child_env_prefixes_node22_bin_on_path() {
+        let dir = Path::new("/tmp/mock-node-v22.19.0/bin");
+        let env = pi_child_env(Some(dir));
+        assert_eq!(env.len(), 1);
+        assert_eq!(env[0].0, "PATH");
+        let prefixed = &env[0].1;
+        #[cfg(windows)]
+        {
+            assert!(
+                prefixed.starts_with(r"/tmp/mock-node-v22.19.0/bin;")
+                    || prefixed == r"/tmp/mock-node-v22.19.0/bin",
+                "PATH must start with Node 22 bin: {prefixed}"
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            assert!(
+                prefixed.starts_with("/tmp/mock-node-v22.19.0/bin:")
+                    || prefixed == "/tmp/mock-node-v22.19.0/bin",
+                "PATH must start with Node 22 bin: {prefixed}"
+            );
+        }
+    }
+
+    #[test]
+    fn pi_child_env_empty_without_node22() {
+        assert!(pi_child_env(None).is_empty());
+    }
+
+    #[test]
+    fn apply_pi_node_requirement_marks_env_not_ready_and_node_too_old() {
+        let detect = DetectResult {
+            agent: AgentId::Pi,
+            status: crate::models::DetectStatus::Installed,
+            version: None,
+            binary_path: Some(PathBuf::from("/usr/bin/pi")),
+            channel: Some("npm".into()),
+            env_ready: true,
+            notes: vec![],
+        };
+        let out = apply_pi_node_requirement(detect, false);
+        assert!(!out.env_ready, "env must not be ready without Node 22");
+        assert!(
+            out.notes.iter().any(|n| n.contains("Node too old")),
+            "notes={:?}",
+            out.notes
+        );
+        assert!(!out
+            .notes
+            .iter()
+            .any(|n| n.contains("已安装但未读到本机版本号")));
+    }
+
+    #[test]
+    fn apply_pi_node_requirement_keeps_ready_when_node22_present() {
+        let detect = DetectResult {
+            agent: AgentId::Pi,
+            status: crate::models::DetectStatus::Installed,
+            version: Some("0.83.0".into()),
+            binary_path: Some(PathBuf::from("/usr/bin/pi")),
+            channel: Some("npm".into()),
+            env_ready: true,
+            notes: vec![],
+        };
+        let out = apply_pi_node_requirement(detect, true);
+        assert!(out.env_ready);
+        assert!(out.notes.is_empty());
     }
 }

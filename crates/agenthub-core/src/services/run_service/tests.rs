@@ -80,7 +80,7 @@ fn build_run_spec_argv_snapshots() {
         .unwrap()
         .build_run_spec(bin, "p", &o)
         .unwrap();
-    assert_eq!(codex.args, vec!["exec", "p"]);
+    assert_eq!(codex.args, vec!["exec", "--skip-git-repo-check", "p"]);
 
     let mut structured = o.clone();
     structured.process_mode = crate::models::ProcessMode::Auto;
@@ -98,7 +98,10 @@ fn build_run_spec_argv_snapshots() {
         .unwrap()
         .build_run_spec(bin, "p", &structured)
         .unwrap();
-    assert_eq!(codex_s.args, vec!["exec", "--json", "p"]);
+    assert_eq!(
+        codex_s.args,
+        vec!["exec", "--skip-git-repo-check", "--json", "p"]
+    );
 
     let kimi = reg
         .get(AgentId::Kimi)
@@ -119,7 +122,11 @@ fn build_run_spec_argv_snapshots() {
         .unwrap()
         .build_run_spec(bin, "p", &o)
         .unwrap();
-    assert_eq!(pi.args, vec!["-p", "p", "--mode", "text", "--no-session"]);
+    assert_eq!(&pi.args[..5], ["-p", "p", "--mode", "text", "--no-session"]);
+    for (k, v) in &pi.env {
+        assert_eq!(k, "PATH");
+        assert!(!v.is_empty());
+    }
 
     let kimi_s = reg
         .get(AgentId::Kimi)
@@ -135,7 +142,10 @@ fn build_run_spec_argv_snapshots() {
         .unwrap()
         .build_run_spec(bin, "p", &structured)
         .unwrap();
-    assert_eq!(pi_s.args, vec!["-p", "p", "--mode", "json", "--no-session"]);
+    assert_eq!(
+        &pi_s.args[..5],
+        ["-p", "p", "--mode", "json", "--no-session"]
+    );
     let grok_s = reg
         .get(AgentId::Grok)
         .unwrap()
@@ -171,7 +181,12 @@ fn build_run_spec_argv_snapshots() {
         .unwrap();
     assert_eq!(
         codex_d.args,
-        vec!["exec", "--dangerously-bypass-approvals-and-sandbox", "p"]
+        vec![
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "p",
+        ]
     );
 
     // kimi -p cannot take --auto/--yolo (CLI rejects the combination).

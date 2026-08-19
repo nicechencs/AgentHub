@@ -1,4 +1,6 @@
 use super::*;
+use crate::catalog::limits::{NODE_MIN_MAJOR, PI_NODE_MIN_MAJOR};
+use std::path::Path;
 
 #[test]
 fn parse_major_ok() {
@@ -112,4 +114,185 @@ fn platform_binary_candidates_only_enable_homebrew_on_macos() {
     assert_eq!(candidates, homebrew_binary_candidates(&["node", "npm"]));
     #[cfg(not(target_os = "macos"))]
     assert!(candidates.is_empty());
+}
+
+fn touch_node(dir: &Path) -> PathBuf {
+    std::fs::create_dir_all(dir).unwrap();
+    let path = dir.join(if cfg!(windows) { "node.exe" } else { "node" });
+    std::fs::write(&path, b"").unwrap();
+    path
+}
+
+#[test]
+fn node_home_candidates_include_local_share_nvm_fnm_volta_n() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let share22 = touch_node(
+        &home
+            .join(".local")
+            .join("share")
+            .join("node-v22.19.0")
+            .join("bin"),
+    );
+    let _share20 = touch_node(
+        &home
+            .join(".local")
+            .join("share")
+            .join("node-v20.11.0")
+            .join("bin"),
+    );
+    let nvm22 = touch_node(
+        &home
+            .join(".nvm")
+            .join("versions")
+            .join("node")
+            .join("v22.20.0")
+            .join("bin"),
+    );
+    let _nvm18 = touch_node(
+        &home
+            .join(".nvm")
+            .join("versions")
+            .join("node")
+            .join("v18.20.0")
+            .join("bin"),
+    );
+    let fnm22 = touch_node(
+        &home
+            .join(".fnm")
+            .join("node-versions")
+            .join("v22.19.0")
+            .join("installation")
+            .join("bin"),
+    );
+    let volta = touch_node(&home.join(".volta").join("bin"));
+    let n_bin = touch_node(&home.join("n").join("bin"));
+    let n_ver = touch_node(
+        &home
+            .join("n")
+            .join("versions")
+            .join("node")
+            .join("22.19.0")
+            .join("bin"),
+    );
+
+    let cands = node_versioned_home_candidates(home, 22);
+    assert!(cands.contains(&share22), "missing local share: {cands:?}");
+    assert!(cands.contains(&nvm22), "missing nvm: {cands:?}");
+    assert!(cands.contains(&fnm22), "missing fnm: {cands:?}");
+    assert!(cands.contains(&volta), "missing volta: {cands:?}");
+    assert!(cands.contains(&n_bin), "missing n prefix: {cands:?}");
+    assert!(cands.contains(&n_ver), "missing n version: {cands:?}");
+    assert!(
+        !cands
+            .iter()
+            .any(|p| p.to_string_lossy().contains("node-v20")),
+        "Node 20 home tree must not be a >=22 candidate: {cands:?}"
+    );
+    assert!(
+        !cands
+            .iter()
+            .any(|p| p.to_string_lossy().contains("v18.20.0")),
+        "Node 18 nvm tree must not be a >=22 candidate: {cands:?}"
+    );
+}
+
+#[test]
+fn resolve_skips_path_node20_for_home_node22() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let home22 = touch_node(
+        &home
+            .join(".local")
+            .join("share")
+            .join("node-v22.19.0")
+            .join("bin"),
+    );
+    let path20 = PathBuf::from("/usr/bin/node");
+    let picked = resolve_node_at_least_from(
+        Some(path20.clone()),
+        Some(home),
+        22,
+        NodeManagerRoots::from_home_only(home),
+        |p| {
+            if p == &path20 {
+                Some(("20.18.0".into(), 20))
+            } else if p == &home22 {
+                Some(("22.19.0".into(), 22))
+            } else {
+                None
+            }
+        },
+    )
+    .expect("home Node 22");
+    assert_eq!(picked.path, home22);
+    assert_eq!(picked.major, 22);
+    assert_eq!(picked.version, "22.19.0");
+    assert_eq!(picked.bin_dir().as_deref(), home22.parent());
+}
+
+#[test]
+fn resolve_returns_none_when_only_node20_on_path() {
+    let path20 = PathBuf::from("/usr/bin/node");
+    let picked = resolve_node_at_least_from(
+        Some(path20.clone()),
+        None,
+        22,
+        NodeManagerRoots::default(),
+        |p| {
+            if p == &path20 {
+                Some(("20.18.0".into(), 20))
+            } else {
+                None
+            }
+        },
+    );
+    assert!(
+        picked.is_none(),
+        "PATH Node 20 must not satisfy Pi Node 22: {picked:?}"
+    );
+}
+
+#[test]
+fn resolve_prefers_path_node22() {
+    let path22 = PathBuf::from("/opt/node22/bin/node");
+    let picked = resolve_node_at_least_from(
+        Some(path22.clone()),
+        None,
+        22,
+        NodeManagerRoots::default(),
+        |p| {
+            if p == &path22 {
+                Some(("22.19.0".into(), 22))
+            } else {
+                Some(("20.0.0".into(), 20))
+            }
+        },
+    )
+    .expect("Node 22 on PATH");
+    assert_eq!(picked.path, path22);
+    assert_eq!(picked.major, 22);
+    assert_eq!(
+        picked.bin_dir().as_deref(),
+        Some(Path::new("/opt/node22/bin"))
+    );
+}
+
+#[test]
+fn path_prefix_puts_node22_bin_first() {
+    let prefixed = path_with_prefixed_bin(Path::new("/n22/bin"), "/usr/bin:/bin");
+    #[cfg(windows)]
+    assert_eq!(prefixed, r"/n22/bin;/usr/bin:/bin");
+    #[cfg(not(windows))]
+    assert_eq!(prefixed, "/n22/bin:/usr/bin:/bin");
+    assert_eq!(
+        path_with_prefixed_bin(Path::new("/n22/bin"), ""),
+        "/n22/bin"
+    );
+}
+
+#[test]
+fn global_node_min_major_stays_18() {
+    assert_eq!(NODE_MIN_MAJOR, 18);
+    assert_eq!(PI_NODE_MIN_MAJOR, 22);
 }
