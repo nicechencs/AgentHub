@@ -19,10 +19,11 @@ use crate::bridge::protocol::anthropic_messages::{
 use crate::bridge::protocol::chat::ChatStreamToIr;
 use crate::bridge::protocol::responses::{
     encode_responses_from_ir, parse_responses_request, responses_output_to_ir,
-    to_kimi_chat_request, to_responses_request, IrToResponsesSse, ResponsesStreamToIr,
+    to_grok_chat_request, to_kimi_chat_request, to_responses_request, IrToResponsesSse,
+    ResponsesStreamToIr,
 };
 use crate::bridge::runtime::BridgeUpstreamProtocol;
-use crate::bridge::types::{BridgeEvent, IrEvent, ProtocolError};
+use crate::bridge::types::{BridgeEvent, BridgeRequest, IrEvent, ProtocolError};
 
 use super::http::{
     error_response, has_valid_local_auth, log_protocol_error, protocol_error_response,
@@ -82,6 +83,14 @@ impl<'a> ProtocolSelector<'a> {
     pub(super) fn serves_messages(self) -> bool {
         self.local_endpoint() == LocalEndpoint::Messages || self.is_grok_chat_bridge()
     }
+
+    fn chat_completions_body(self, request: &BridgeRequest) -> Value {
+        if self.is_grok_chat_bridge() {
+            to_grok_chat_request(request)
+        } else {
+            to_kimi_chat_request(request)
+        }
+    }
 }
 
 pub(super) async fn handle_responses(state: ListenerState, request: Request) -> Response {
@@ -128,7 +137,9 @@ pub(super) async fn handle_responses(state: ListenerState, request: Request) -> 
     let stream_requested = request.stream;
     let protocol = state.upstream.protocol;
     let mut upstream_body = match protocol {
-        BridgeUpstreamProtocol::KimiChatCompletions => to_kimi_chat_request(&request),
+        BridgeUpstreamProtocol::KimiChatCompletions => {
+            ProtocolSelector::from_listener(&state).chat_completions_body(&request)
+        }
         BridgeUpstreamProtocol::AnthropicMessages => to_anthropic_messages_request(&request),
         BridgeUpstreamProtocol::CodexResponsesOauth => {
             unreachable!("messages handler owns Codex Responses OAuth")
