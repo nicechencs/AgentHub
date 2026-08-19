@@ -62,10 +62,20 @@ describe('skillsCopy', () => {
     expect(skillsCopy.matrix.sharedRootPresence(false, root)).toBe(`未加入 ${root}`);
   });
 
+  it('empty-library title differs from filter-miss title', () => {
+    expect(skillsCopy.empty.emptyLibraryTitle).toBe('还没有技能');
+    expect(skillsCopy.empty.noMatchTitle).toBe('没有匹配的技能');
+  });
+
   it('adopt toast stays on the local table', () => {
     const t = skillsCopy.toast.adoptOk(false);
     expect(t.description).toBe('已可在矩阵中启用');
     expect(t).not.toHaveProperty('actionLabel');
     expect(skillsCopy.toast.batchAdopt(1, 0, 0)).not.toHaveProperty('actionLabel');
+  });
+
+  it('splits first-run empty library title from filter-miss title', () => {
+    expect(skillsCopy.empty.emptyLibraryTitle).toBe('还没有技能');
+    expect(skillsCopy.empty.noMatchTitle).toBe('没有匹配的技能');
   });
 });

@@ -101,7 +101,7 @@ describe('planToEligibility', () => {
     expect(ready).toMatchObject({
       kind: 'ready',
       canApply: true,
-      routeSummary: '① API 端点直连',
+      routeSummary: '直连',
     });
     expect(ready.kind === 'ready' && ready.reason).toBeUndefined();
   });
@@ -147,7 +147,7 @@ describe('planToEligibility', () => {
     expect(eligibility).toMatchObject({
       kind: 'ready',
       canApply: true,
-      routeSummary: '① API 端点直连',
+      routeSummary: '直连',
     });
     expect(eligibility.kind === 'ready' && eligibility.reason).toBeUndefined();
   });
@@ -175,8 +175,8 @@ describe('planToEligibility', () => {
     }));
     expect(bridge.kind).toBe('ready');
     expect(sync.kind).toBe('ready');
-    if (bridge.kind === 'ready') expect(bridge.routeSummary).toBe('③ 本机协议桥');
-    if (sync.kind === 'ready') expect(sync.routeSummary).toBe('① API 端点直连');
+    if (bridge.kind === 'ready') expect(bridge.routeSummary).toBe('本机路由');
+    if (sync.kind === 'ready') expect(sync.routeSummary).toBe('直连');
   });
 
   it('prefers native subscription reusePath over config_sync route', () => {
@@ -187,7 +187,7 @@ describe('planToEligibility', () => {
     }));
     expect(preview.kind).toBe('ready');
     if (preview.kind === 'ready') {
-      expect(preview.routeSummary).toBe('② 原生订阅复用');
+      expect(preview.routeSummary).toBe('用这份登录');
       expect(preview.canApply).toBe(false);
     }
   });

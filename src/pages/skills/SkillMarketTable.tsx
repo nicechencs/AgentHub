@@ -165,7 +165,7 @@ export function SkillMarketTable({
                   </Tip>
                 </TableCell>
                 <TableCell className="truncate font-mono text-xs text-muted">
-                  {item.version ? `v${item.version}` : '—'}
+                  {item.version ? `v${item.version}` : '未知'}
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap items-center justify-end gap-1.5">
