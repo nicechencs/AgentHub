@@ -12,13 +12,13 @@
 | 概念 | 含义 | 例子 |
 |---|---|---|
 | **身份（Identity）** | 谁 | email、user_id、principal_id |
-| **授权（Authorization）** | 一次授权拿到的那组凭据（一张「票」） | 一组 refresh/access token，或一把 API Key |
+| **授权（Authorization）** | 一次授权拿到的那组凭据（一份登录；实现里叫票） | 一组 refresh/access token，或一把 API Key |
 
 ### 1.2 核心规则
 
 1. **同一身份可以保留多次授权**（多条池记录）。
 2. **尤其多枚 token 都仍有效时，必须分别保留**，不得因「同一个人」而合并或删除。
-3. **去重只针对「同一张授权票」**（同 token / 同 API Key 指纹），不是针对身份。
+3. **去重只针对「同一份登录」**（同 token / 同 API Key 指纹；实现里叫同一张授权票），不是针对身份。
 4. 每个 agent 的 **live 生效位仍只有一个**（`is_current` 至多一条）；其余授权留在池内供切换。
 
 | 场景 | 池内条数 | 说明 |
@@ -32,10 +32,10 @@
 
 一句话：
 
-> **身份可以重复出现在列表里；只有「同一张授权票」才去重。  
+> **身份可以重复出现在列表里；只有「同一份登录」才去重。  
 > 多枚仍有效的 token = 多条池记录；本机 live 仍只有一个 current。**
 
-跨 Agent 复用时，这里的「授权」就是 [票（Ticket）](connection-binding-model.md)。`agent_id` / 从哪个 Agent 导入只表示出身，**不**决定能不能 `bind` 到别的 Agent，也不决定走 ① 直连、② 原生订阅还是 ③ 本机路由。每个 Agent 的 active 绑定至多一条，对应本节的 live 生效位。见 [product-decisions.md](product-decisions.md)。
+跨 Agent 复用时，用户看到的是登录；这里的「授权」在实现里就是 [票（Ticket）](connection-binding-model.md)。`agent_id` / 从哪个 Agent 导入只表示出身，**不**决定能不能 `bind` 到别的 Agent，也不决定走直接改配置、写进对方认的登录还是本机转发。每个 Agent 的 active 绑定至多一条，对应本节的 live 生效位。见 [product-decisions.md](product-decisions.md)。
 
 ---
 

@@ -167,7 +167,7 @@ src/components/connect/   # ConnectFlow / OAuth
 
 | 内容 | 用 | 不用 |
 |---|---|---|
-| 独立内容块（设置分区、指标、钱包行外壳） | `Card default` 或 `ListRow` | 再外包一层 Card |
+| 独立内容块（设置分区、指标、登录列表行外壳） | `Card default` 或 `ListRow` | 再外包一层 Card |
 | 已在框内的工具条 / 嵌套 | `Card plain` / `subtle` | 再加 border |
 | 管理表（用量、Skills 库/市场） | `TableShell default` | 手写 table class；不要为了对标 IDE 把 Skills 改成 `flush`（本阶段不做） |
 | 工作台会话列表（Chat rail） | 页面自管行 + `bg-active` | `ListRow`（带卡边，会把 rail 做成后台） |
@@ -190,7 +190,7 @@ src/components/connect/   # ConnectFlow / OAuth
 
 ### 5.4 搜索
 
-列表筛选 **必须** `SearchField`。现行已收口：Skills、Chat、Projects、**Connections 钱包**。
+列表筛选 **必须** `SearchField`。现行已收口：Skills、Chat、Projects、**Connections 登录列表**。
 
 禁止再写 `relative + Search icon + Input`（旧方言：`h-8 w-44 pl-7 text-xs`）。
 
@@ -272,8 +272,8 @@ src/components/connect/   # ConnectFlow / OAuth
 
 | 项 | 原状 | 本标准 |
 |---|---|---|
-| Connections 钱包搜索 | 手写 `h-8 w-44 pl-7 text-xs` | 已改 `SearchField` |
-| 钱包 loading | 「正在加载钱包…」 | 已改 `ListSkeleton` |
+| Connections 登录列表搜索 | 手写 `h-8 w-44 pl-7 text-xs` | 已改 `SearchField` |
+| 登录列表 loading | 「正在加载钱包…」（历史文案） | 已改为 `ListSkeleton` / 登录列表 loading |
 | `EmptyState` / `ErrorState` / `Notice` / `QuotaBar` / `StatusDot` | `text-sm` / `text-xs` | 已改语义名；空态/错误主句升为 `text-title` |
 | 全站仍大量 `text-sm` / `text-xs` | 别名，像素相同 | 新代码写语义名；存量不搞大扫除 |
 
@@ -300,9 +300,9 @@ src/components/connect/   # ConnectFlow / OAuth
 ### 当前（Phase 3 收口，可拆 PR）
 
 1. **文档**：本文 + 回写 `ui-design.md` §1.3 / §5 + `docs/README.md` + 对标文档相关链接。  
-2. **SearchField 收口** Connections 钱包（本 PR 已做）。  
+2. **SearchField 收口** Connections 登录列表（本 PR 已做）。  
 3. **共享件字号**改语义 token；空态/错误主句用 `text-title`（本 PR 已做）。  
-4. **钱包 loading** 改 `ListSkeleton`（本 PR 已做）。  
+4. **登录列表 loading** 改 `ListSkeleton`（本 PR 已做）。  
 5. **提示通道决策**以本文 §5.5 为准；后续 PR 按检查表自检。
 
 ### 先不做

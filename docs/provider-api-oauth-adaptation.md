@@ -37,8 +37,8 @@
 3. **同厂商不同产品不得混用**：Base URL、Key、额度和授权范围都可能不同。
 4. **只认显式来源标记**：进口写下 `surface`；不能根据名称、标签或 URL 猜测。未识别标 `unknown`，规划结果是不可行，而不是把「接到…」藏掉。
 5. **默认拒绝写入**：没有代码规则和测试的组合一律不能 `bind`。用户仍看得到原因。
-6. **不复制凭据**：绑定只引用票；真实凭据只在写入 live 或请求上游时短暂解析。生成投影不是新票。
-7. **国产 OAuth 产品不做**：不为中国产 AI 的 OAuth 开 Adapter 边（① `native_endpoint` / ② `config_sync` / ③ `local_bridge` 都不开），也不把这类 OAuth 转成 API Key 或 to-api。现有国产边只认官方 API Key。见 [product-decisions.md](product-decisions.md) 与根 [AGENTS.md](../AGENTS.md)。
+6. **不复制凭据**：绑定只引用这份登录；真实凭据只在写入 live 或请求上游时短暂解析。自动生成的配置不是新登录，不出现在登录列表。
+7. **国产 OAuth 产品不做**：不为中国产 AI 的 OAuth 开 Adapter 边（直接改配置 / 写进对方认的登录 / 本机转发都不开），也不把这类 OAuth 转成 API Key 或 to-api。现有国产边只认官方 API Key。见 [product-decisions.md](product-decisions.md) 与根 [AGENTS.md](../AGENTS.md)。
 
 ### 1.1 跨 Agent 复用：三路，订阅不等于要起桥
 
@@ -52,12 +52,12 @@
 
 安全与运营边界（约束部署形态，不否决产品）：
 
-- ③ 的上游 token 不可导出、不可显示、不可复制到目标 Agent；目标只得到本地 loopback bearer。② 写的是目标自己的官方槽，不是把 token 翻译成另一家 Key。
+- 本机转发的上游 token 不可导出、不可显示、不可复制到目标 Agent；目标只得到本地 loopback bearer。写进对方认的登录写的是目标自己的官方槽，不是把 token 翻译成另一家 Key。
 - 不监听公网地址，不作为远程服务、团队共享端点、多租户网关、转售或额度池。
 - 每条边仍要单独做分类、refresh、协议 fixtures 与回滚；不能因为「同为订阅」或「同为双协议」就自动 `canApply=true`。
-- 打开 `bind` 的条件是工程就绪。③ 的非官方通道风险对用户可见并需 opt-in，**不再**当作「未获官方书面批准就不能做这条产品」。
+- 打开 `bind` 的条件是工程就绪。本机转发的非官方通道风险对用户可见并需 opt-in，**不再**当作「未获官方书面批准就不能做这条产品」。
 
-§4 里「③ App Server / OauthOther 仍关」只描述**当前实现**，不描述产品方向。Responses `auth_json` → Claude 已可 experimental bind；② → Pi 已可 experimental bind。规划结果应对用户可见。
+§4 里「本机转发 App Server / OauthOther 仍关」只描述**当前实现**，不描述产品方向。Responses `auth_json` → Claude 已可 experimental bind；写进对方认的登录 → Pi 已可 experimental bind。规划结果应对用户可见。
 
 ## 2. 厂商与产品入口
 
@@ -285,15 +285,15 @@ Claude Code
 选择票 + 目标 Agent
   → 票面（产品、凭据类、speaks）与 Agent（accepts、writer）
   → 票本来就是给这个 Agent？                         是：native
-  → OAuth 且目标有同一授权契约槽？                   是：reshape（② 原生订阅，不起桥）
-  → API Key 且 speaks ∩ accepts 非空？               是：reshape（① 直连，不起桥）
-  → 图上是否有已测试的转换边？                       是：bridge（③）
+  → OAuth 且目标有同一授权契约槽？                   是：reshape（写进对方认的登录，不起桥）
+  → API Key 且 speaks ∩ accepts 非空？               是：reshape（直接改配置，不起桥）
+  → 图上是否有已测试的转换边？                       是：bridge（本机转发）
   → 不可行，给出原因和替代路径
 ```
 
-规则分析、计划与执行必须使用同一规则版本。`bridge` 只服务 ③。新增边不得只在 UI 绕过 `plan`。`plan.canApply=false` 时用户仍应看见原因。
+规则分析、计划与执行必须使用同一规则版本。`bridge` 只服务本机转发。新增边不得只在 UI 绕过 `plan`。`plan.canApply=false` 时用户仍应看见原因。
 
-对于 ③，流程在“是否有已测试的转换器”前还必须检查 capability matrix 的工程门禁（分类、secret、fixtures、回滚）；任一门禁缺失则不能 `bind`，但规划结果应对用户可见。opt-in 不能替代这些工程门禁。订阅先判 ②，不要一上来当 ③。
+对于本机转发，流程在“是否有已测试的转换器”前还必须检查 capability matrix 的工程门禁（分类、secret、fixtures、回滚）；任一门禁缺失则不能 `bind`，但规划结果应对用户可见。opt-in 不能替代这些工程门禁。订阅先判写进对方认的登录，不要一上来当本机转发。
 
 ## 7. 新增或更新规则
 
