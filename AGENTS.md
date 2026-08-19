@@ -2,10 +2,10 @@
 
 ## 工作分支与发布
 
-- 日常开发与 PR 的工作分支是 **`dev`（dest）**，不是 `main`，也不是 `release`。
+- 日常开发与 PR 的工作分支是 **`dev`**，不是 `main`，也不是 `release`。
 - 每日功能 PR 合入 `dev`。不要把 `release` 当日常集成线。
 - 正式发版：先同时改 `package.json`、`Cargo.toml` 的 `[workspace.package]`、`src-tauri/tauri.conf.json` 三个版本号，再推 `release`。GitHub Actions 只从 `release` 出包；已存在的 tag（当前 `v0.2.2`）会被拒绝覆盖。
-- Agent 隐藏以 dest 的 store-stamp 为准，不是旧 `release` 线 #22 的软隐藏。
+- Agent 隐藏以 `dev` 的 store-stamp 为准，不是旧 `release` 线 #22 的软隐藏。
 - 本仓库编码用 **Grok Build**。不要用 CloudAgent 改这个仓库。
 - 当前界面说「登录」，不说「票」。实现里的 Ticket / TicketPort 仍是内部名字。
 
