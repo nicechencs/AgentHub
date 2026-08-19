@@ -24,7 +24,7 @@ pub const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON: &str =
 
 /// Shared public reason for the experimental Grok subscription → Claude Code edge.
 pub const GROK_SUBSCRIPTION_TO_CLAUDE_REASON: &str =
-    "Grok 订阅会经本机路由接到 Claude Code.";
+    "Grok 登录会经本机路由接到 Claude Code。";
 
 /// Product-closed reason for Claude subscription → Codex.
 pub const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON: &str =

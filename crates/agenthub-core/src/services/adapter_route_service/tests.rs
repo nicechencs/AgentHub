@@ -1203,7 +1203,7 @@ fn grok_subscription_to_claude_is_writable_local_bridge() {
     assert_eq!(plan.analysis.support, AdapterSupport::Experimental);
     assert_eq!(
         plan.reason,
-        "Grok 订阅会经本机路由接到 Claude Code."
+        "Grok 登录会经本机路由接到 Claude Code。"
     );
     assert_eq!(
         plan.reuse_path,

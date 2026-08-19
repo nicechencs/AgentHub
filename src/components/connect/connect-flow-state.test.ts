@@ -639,56 +639,49 @@ describe('空态', () => {
 });
 
 describe('plan 预览人话化', () => {
-  it('列出写入、桥与模型映射，且不重复端口 URL', () => {
-    const view = describePlanPreview(plan({
-      analysis: analysis({
-        route: 'local_bridge',
-        reason: '本地桥',
-        limitations: ['需保持托盘运行'],
-      }),
-      serviceImpact: 'requires_local_bridge',
-      changes: [
-        { target: 'codex', field: 'baseUrl', value: 'http://127.0.0.1:4123/v1', secret: false },
-        { target: 'codex', field: 'model', value: 'kimi-k2', secret: false },
-        { target: 'codex', field: 'apiKey', secret: true },
-      ],
-    }));
-    expect(view.routeLabel).toBe('③ 本机协议桥');
-    expect(view.startsBridge).toBe(true);
-    expect(view.serviceImpact).toBe('将启动本机路由');
-    expect(view.writes.some((line) => line.includes('使用已保存的密钥'))).toBe(true);
-    expect(view.portNotes).toEqual([]);
-    expect(view.modelMappings).toEqual(['model：kimi-k2']);
-    expect(view.limitations).toEqual(['需保持托盘运行']);
-  });
+  const forbiddenPreviewCopy = [
+    'ANTHROPIC_',
+    'Messages',
+    '将写入的配置',
+    '可应用',
+    '③ 本机协议桥',
+    '127.0.0.1',
+  ];
 
-  it('Grok→Claude 主句不含协议箭头，写入不露出 ANTHROPIC_*', () => {
+  function previewText(view: ReturnType<typeof describePlanPreview>): string {
+    return [view.title, view.reason, ...view.notes].join('\n');
+  }
+
+  it('Grok→Claude local_bridge 只保留三秒可读文案', () => {
     const view = describePlanPreview(plan({
       analysis: analysis({
         route: 'local_bridge',
-        reason: 'Grok 订阅会经本机路由接到 Claude Code.',
+        support: 'experimental',
+        reason: 'Grok 登录会经本机路由接到 Claude Code。',
         limitations: [
           '会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 xAI OAuth token 不进 Claude。',
           '实验性协议桥接：Claude Messages → xAI Chat Completions；AgentHub 需保持在托盘运行。',
         ],
       }),
+      reusePath: 'local_bridge',
       serviceImpact: 'requires_local_bridge',
       changes: [
         { target: 'claude', field: 'ANTHROPIC_BASE_URL', value: 'http://127.0.0.1:<本机端口>', secret: false },
         { target: 'claude', field: 'ANTHROPIC_AUTH_TOKEN', secret: true },
       ],
     }));
-    expect(view.reason).toBe('Grok 订阅会经本机路由接到 Claude Code.');
-    expect(view.reason).not.toMatch(/Messages/);
-    expect(view.writes[0]).not.toContain('ANTHROPIC_BASE_URL');
-    expect(view.writes[0]).toContain('本机接口地址');
-    expect(view.writes[1]).toContain('本机认证令牌');
-    expect(view.portNotes).toEqual([]);
-    expect(view.serviceImpact).toBe('将启动本机路由');
-    expect(view.limitations.some((line) => line.includes('ANTHROPIC'))).toBe(true);
+    expect(view.title).toBe('本机路由');
+    expect(view.experimental).toBe(true);
+    expect(view.reason).toBe('Grok 登录会经本机路由接到 Claude Code。');
+    expect(view.notes.some((line) => line.includes('请保持 AgentHub'))).toBe(true);
+    expect(view.notes.some((line) => line.includes('不会进 Claude'))).toBe(true);
+    const text = previewText(view);
+    for (const banned of forbiddenPreviewCopy) {
+      expect(text).not.toContain(banned);
+    }
   });
 
-  it('renders native subscription reuse without starting a local bridge', () => {
+  it('renders native subscription reuse as a single human note', () => {
     const view = describePlanPreview(plan({
       analysis: analysis({
         route: 'config_sync',
@@ -703,10 +696,10 @@ describe('plan 预览人话化', () => {
         { target: 'pi', field: 'apiKey', secret: true },
       ],
     }));
-    expect(view.routeLabel).toBe('② 原生订阅复用');
-    expect(view.startsBridge).toBe(false);
-    expect(view.serviceImpact).toBe('无需本地服务');
-    expect(view.portNotes).toEqual([]);
+    expect(view.title).toBe('用这份登录');
+    expect(view.notes).toHaveLength(1);
+    const text = previewText(view);
+    expect(text).not.toMatch(/桥|写入|ANTHROPIC_|本机协议|loopback/i);
   });
 });
 

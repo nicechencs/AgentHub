@@ -486,14 +486,10 @@ export function connectFlowResultMessage(result: ConnectFlowResultView): string 
 }
 
 export interface PlanPreviewView {
-  routeLabel: string;
-  writes: string[];
-  serviceImpact: string;
-  startsBridge: boolean;
-  portNotes: string[];
-  modelMappings: string[];
-  limitations: string[];
+  title: string;
+  experimental: boolean;
   reason: string;
+  notes: string[];
 }
 
 function reusePathForPlan(plan: AdapterApplyPlan): AdapterReusePath {
@@ -503,70 +499,54 @@ function reusePathForPlan(plan: AdapterApplyPlan): AdapterReusePath {
   return 'api_endpoint';
 }
 
-function humanizeWriteField(field: string): string {
-  if (field === 'ANTHROPIC_BASE_URL') return '本机接口地址';
-  if (field === 'ANTHROPIC_AUTH_TOKEN') return '本机认证令牌';
-  if (field === 'ANTHROPIC_API_KEY') return 'Claude API Key';
-  return field;
+function titleForReusePath(reusePath: AdapterReusePath): string {
+  if (reusePath === 'local_bridge') return '本机路由';
+  if (reusePath === 'api_endpoint') return '直连';
+  if (reusePath === 'native_subscription') return '用这份登录';
+  return '当前不支持';
 }
 
-function isUrlLikeWriteValue(value: string | undefined): boolean {
-  return value != null && /:\d{2,5}|127\.0\.0\.1|https?:\/\//i.test(value);
+function endReasonWithFullStop(reason: string): string {
+  return reason.endsWith('.') ? `${reason.slice(0, -1)}。` : reason;
+}
+
+function localTargetLabels(targetAgentId: string): { display: string; short: string } {
+  if (targetAgentId === 'claude') return { display: 'Claude Code', short: 'Claude' };
+  return { display: targetAgentId, short: targetAgentId };
+}
+
+function sourceHintFromReason(reason: string): string {
+  if (reason.includes('Grok')) return 'Grok 登录';
+  if (reason.includes('Codex')) return 'Codex / ChatGPT 登录';
+  return '登录';
+}
+
+function notesForReusePath(
+  reusePath: AdapterReusePath,
+  plan: AdapterApplyPlan,
+  reason: string,
+): string[] {
+  if (reusePath === 'local_bridge') {
+    const { display, short } = localTargetLabels(plan.targetAgentId);
+    const sourceHint = sourceHintFromReason(reason);
+    return [
+      `${display} 只连这台电脑。这份 ${sourceHint}不会进 ${short}。`,
+      '请保持 AgentHub 开着。登录过期后，再同步一次即可。',
+    ];
+  }
+  if (reusePath === 'api_endpoint') return ['会把这份连接写进目标 Agent。'];
+  if (reusePath === 'native_subscription') return ['会把这份官方登录写进目标 Agent。'];
+  return [];
 }
 
 export function describePlanPreview(plan: AdapterApplyPlan): PlanPreviewView {
   const reusePath = reusePathForPlan(plan);
-  const routeLabel = reusePath === 'api_endpoint'
-    ? '① API 端点直连'
-    : reusePath === 'native_subscription'
-      ? '② 原生订阅复用'
-      : reusePath === 'local_bridge'
-        ? '③ 本机协议桥'
-        : '当前不支持';
-  const startsBridge = reusePath === 'local_bridge';
-  const writes = plan.changes.map((change) => (
-    change.secret
-      ? `${change.target} · ${humanizeWriteField(change.field)}：使用已保存的密钥`
-      : `${change.target} · ${humanizeWriteField(change.field)}：${change.value ?? '保持默认'}`
-  ));
-  const writeValues = new Set(
-    plan.changes
-      .map((change) => change.value)
-      .filter((value): value is string => typeof value === 'string' && value.length > 0),
-  );
-  const portNotes = startsBridge
-    ? plan.changes
-      .filter((change) => {
-        const looksLikePort = /port|端口/i.test(change.field)
-          || (change.value != null && /:\d{2,5}|127\.0\.0\.1/i.test(change.value));
-        if (!looksLikePort) return false;
-        if (isUrlLikeWriteValue(change.value) && change.value && writeValues.has(change.value)) {
-          return false;
-        }
-        return true;
-      })
-      .map((change) => (
-        change.secret
-          ? `${humanizeWriteField(change.field)}：使用已保存的值`
-          : `${humanizeWriteField(change.field)}：${change.value ?? '待分配'}`
-      ))
-    : [];
-  const modelMappings = plan.changes
-    .filter((change) => /model|模型/i.test(change.field))
-    .map((change) => (
-      change.secret
-        ? `${change.field}：使用已保存的映射`
-        : `${change.field}：${change.value ?? '保持默认'}`
-    ));
+  const reason = endReasonWithFullStop(plan.analysis.reason || plan.reason || '');
   return {
-    routeLabel,
-    writes,
-    serviceImpact: startsBridge ? '将启动本机路由' : '无需本地服务',
-    startsBridge,
-    portNotes,
-    modelMappings,
-    limitations: [...plan.analysis.limitations],
-    reason: plan.analysis.reason,
+    title: titleForReusePath(reusePath),
+    experimental: plan.analysis.support === 'experimental',
+    reason,
+    notes: notesForReusePath(reusePath, plan, reason),
   };
 }
 

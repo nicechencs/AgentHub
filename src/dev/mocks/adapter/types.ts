@@ -60,7 +60,7 @@ export const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON =
 
 /** Keep in lockstep with `GROK_SUBSCRIPTION_TO_CLAUDE_REASON` in agenthub-core. */
 export const GROK_SUBSCRIPTION_TO_CLAUDE_REASON =
-  'Grok 订阅会经本机路由接到 Claude Code.';
+  'Grok 登录会经本机路由接到 Claude Code。';
 
 export const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON =
   'Claude 订阅 → Codex：产品不做。Codex 不吃 Anthropic PKCE，本产品不走这条边。';

@@ -10,7 +10,7 @@ function analysis(overrides: Partial<AdapterRouteAnalysis> = {}): AdapterRouteAn
   return {
     route: 'local_bridge',
     support: 'experimental',
-    reason: 'Grok 订阅会经本机路由接到 Claude Code.',
+    reason: 'Grok 登录会经本机路由接到 Claude Code。',
     actions: [],
     limitations: [],
     evidence: [],
@@ -51,6 +51,14 @@ function previewState(): ConnectFlowState {
 }
 
 const FOOTER = '去 Connections 导入';
+const BANNED_PREVIEW_COPY = [
+  'ANTHROPIC_',
+  'Messages',
+  '将写入的配置',
+  '可应用',
+  '③ 本机协议桥',
+  '127.0.0.1',
+];
 
 describe('ConnectFlowPreviewStep import footer', () => {
   it('hides the import hint on a live-ticket path', () => {
@@ -73,5 +81,24 @@ describe('ConnectFlowPreviewStep import footer', () => {
       onGoImport: () => undefined,
     }));
     expect(html).toContain(FOOTER);
+  });
+});
+
+describe('ConnectFlowPreviewStep Grok→Claude markup', () => {
+  it('shows 本机路由 copy and hides plan dumps', () => {
+    const html = renderToStaticMarkup(createElement(ConnectFlowPreviewStep, {
+      state: previewState(),
+      option: null,
+      previewInvalid: false,
+      showImportHint: false,
+      onGoImport: () => undefined,
+    }));
+    expect(html).toContain('本机路由');
+    expect(html).toContain('实验');
+    expect(html).toContain('请保持 AgentHub');
+    expect(html).toContain('不会进 Claude');
+    for (const banned of BANNED_PREVIEW_COPY) {
+      expect(html).not.toContain(banned);
+    }
   });
 });
