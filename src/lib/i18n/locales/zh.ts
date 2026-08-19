@@ -170,6 +170,7 @@ export const zh = {
       uninstalledHint: ' · 已卸载（可恢复备份）',
       noManageable: '无可管理 Agent',
       installFirst: '先到 Agents 页安装',
+      goAgents: '去 Agents',
       noBackups: '{name} 暂无备份',
       noBackupsInstalled: '切换或更新后会自动快照，也可立即备份',
       noBackupsUninstalled: '该 Agent 已卸载，且没有可恢复的备份',

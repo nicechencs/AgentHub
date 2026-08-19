@@ -176,6 +176,7 @@ export const en = {
       uninstalledHint: ' · Uninstalled (backups can be restored)',
       noManageable: 'No manageable agent',
       installFirst: 'Install one on the Agents page',
+      goAgents: 'Go to Agents',
       noBackups: '{name} has no backups',
       noBackupsInstalled: 'A snapshot is kept after switch or update. You can also back up now.',
       noBackupsUninstalled: 'This agent is uninstalled and has no backups to restore',

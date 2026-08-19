@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Database, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
 import { AgentDot } from '@/components/shared/AgentDot';
@@ -61,6 +62,7 @@ function shortPath(f: string): string {
 }
 
 export function BackupsPanel() {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const { t, lang } = useI18n();
   const {
@@ -242,6 +244,8 @@ export function BackupsPanel() {
           icon={Database}
           title={t('settings.backups.noManageable')}
           description={t('settings.backups.installFirst')}
+          actionLabel={t('settings.backups.goAgents')}
+          onAction={() => navigate('/agents')}
         />
       ) : !agentMeta || !agentId ? (
         <BackupsSkeleton />
