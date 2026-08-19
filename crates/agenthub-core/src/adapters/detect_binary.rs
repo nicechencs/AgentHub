@@ -94,8 +94,7 @@ pub(crate) fn detect_binary(
 
 /// Surfaced in DetectResult.notes and searchable in doctor / GUI when binary is missing.
 pub(crate) const NOT_FOUND_FIREFIGHTING_NOTE: &str =
-    "binary not on PATH and not found in well-known install dirs; \
-     if you just installed, restart AgentHub or click re-detect after PATH refresh";
+    "未在 PATH 或常见安装目录中找到该命令。若刚完成安装，请完全退出并重启 AgentHub。";
 
 /// Expand a base command name with platform-typical suffixes.
 pub(crate) fn expand_binary_names(base: &str) -> Vec<String> {
@@ -230,6 +229,10 @@ fn npm_global_bin_dirs(home: &Path) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     #[cfg(windows)]
     {
+        if let Ok(data) = crate::utils::paths::resolve_data_dir(None) {
+            dirs.push(data.join("npm"));
+        }
+        dirs.push(home.join(".agenthub").join("npm"));
         if let Ok(appdata) = std::env::var("APPDATA") {
             dirs.push(PathBuf::from(appdata).join("npm"));
         }
@@ -241,6 +244,10 @@ fn npm_global_bin_dirs(home: &Path) -> Vec<PathBuf> {
     }
     #[cfg(not(windows))]
     {
+        if let Ok(data) = crate::utils::paths::resolve_data_dir(None) {
+            dirs.push(data.join("npm").join("bin"));
+        }
+        dirs.push(home.join(".agenthub").join("npm").join("bin"));
         // Common npm global bin locations on macOS/Linux (PATH may omit them in GUI).
         dirs.push(PathBuf::from("/usr/local/bin"));
         dirs.push(home.join(".npm-global").join("bin"));
@@ -297,6 +304,7 @@ fn infer_channel_from_path(path: &Path) -> Option<&'static str> {
             || s.ends_with(".cmd")
             || s.contains("node_modules")
             || s.contains("npm-global")
+            || s.contains(".agenthub") && s.contains("npm")
         {
             Some("npm")
         } else if s.contains(".local")
