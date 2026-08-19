@@ -195,7 +195,10 @@ impl AgentAdapter for CodexAdapter {
             }
             ApiKeyAccount => CapabilityState::partial("可入池；live 应用仅支持 OAuth auth.json"),
             Usage => CapabilityState::full(),
-            Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
+            SessionResume => CapabilityState::partial(
+                "Chat 后续轮次走 print+resume；终端可复制官方续接命令",
+            ),
+            Mcp | ModelSelect => CapabilityState::planned("待验证接入"),
         }
     }
 
@@ -212,6 +215,14 @@ impl AgentAdapter for CodexAdapter {
         // text: codex exec <prompt>
         // structured (Chat): codex exec --json <prompt>  → JSONL process events
         let mut args = vec!["exec".into()];
+        if let Some(sid) = opts
+            .native_session_id
+            .as_deref()
+            .and_then(super::session_resume::valid_session_id)
+        {
+            args.push("resume".into());
+            args.push(sid.to_string());
+        }
         if super::wants_structured_for(opts.process_mode, AgentId::Codex) {
             args.push("--json".into());
         }

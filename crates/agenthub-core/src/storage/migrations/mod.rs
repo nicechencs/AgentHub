@@ -44,6 +44,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00014_adapter_profile_mode",
         include_str!("00014_adapter_profile_mode.sql"),
     ),
+    (
+        "00015_chat_native_session",
+        include_str!("00015_chat_native_session.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

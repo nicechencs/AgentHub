@@ -11,7 +11,7 @@
 
 本文是 Chat 页本期重设计的真源，风格与 [bridges-page-redesign.md](bridges-page-redesign.md) 对齐。产品契约回写至 [ui-design.md §4.4](ui-design.md)；过程协议仍以 [chat-process-streaming.md](chat-process-streaming.md) 为真源，本文拍板其 Phase 3 的**展示层**（已落地）。协议侧（过程落库、过程内 usage、Pi rpc 审批、diff 预览落库）仍未做。
 
-> **现行状态**：本文 Implemented 的是 Chat 工作台表面。Chat **没有**独立模型选择器；线框里 `[官方 · sonnet ▾]` 是**连接/登录**下拉（模型只作副标题），不是模型 picker。Projects「继续」走 sessionStorage bootstrap，**不是** CLI `--resume`。下文 Implemented 正文不改。
+> **现行状态**：本文 Implemented 的是 Chat 工作台表面。Chat **没有**独立模型选择器；线框里 `[官方 · sonnet ▾]` 是**连接/登录**下拉（模型只作副标题），不是模型 picker。Projects「在 Chat 继续」走 sessionStorage bootstrap（摘录）。Claude/Codex Chat 在捕获官方 session id 后，后续轮次走 print+resume。下文 Implemented 正文不改。
 
 ---
 
@@ -107,7 +107,7 @@ Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 pro
 - **不换 accent 色相**；一页至多一个 accent 主 CTA（发送）。
 - **凭据落盘加密：无必要 / 项目范围外**，不列待办不列风险。
 - **国产 OAuth 开边 / OAuth→API：产品不做**，不列待办。
-- **不接管** CLI 原生 `--resume` / 交互式 tool 审批 RPC。
+- **不接管** 交互式 tool 审批 RPC。Claude/Codex 后续轮次可走 print+resume；不打开对方 TUI。
 - **不把 Chat 做成 Connections/Bridges**：连接切换可深链 `/connections`；绑定走既有 ConnectFlow；不在 Chat 重建钱包。
 - 页面层不 `invoke`；mock 不进生产 build。
 - 测试与生产分文件；纯函数必须可单测。

@@ -202,7 +202,10 @@ impl AgentAdapter for ClaudeAdapter {
             | StructuredStream | DangerousMode | ProjectHistory | ProjectDelete
             | ProviderPresets => CapabilityState::full(),
             Usage => CapabilityState::full(),
-            Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
+            SessionResume => CapabilityState::partial(
+                "Chat 后续轮次走 print+resume；终端可复制官方续接命令",
+            ),
+            Mcp | ModelSelect => CapabilityState::planned("待验证接入"),
         }
     }
 
@@ -228,12 +231,18 @@ impl AgentAdapter for ClaudeAdapter {
         } else {
             "text"
         };
-        let mut args = vec![
-            "-p".into(),
-            prompt.to_string(),
-            "--output-format".into(),
-            format.into(),
-        ];
+        let mut args = vec!["-p".into()];
+        if let Some(sid) = opts
+            .native_session_id
+            .as_deref()
+            .and_then(super::session_resume::valid_session_id)
+        {
+            args.push("--resume".into());
+            args.push(sid.to_string());
+        }
+        args.push(prompt.to_string());
+        args.push("--output-format".into());
+        args.push(format.into());
         if format == "stream-json" {
             // Full turn-by-turn stream (tool_use / result); partial tokens optional later.
             args.push("--verbose".into());

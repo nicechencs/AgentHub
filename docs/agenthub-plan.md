@@ -1,6 +1,6 @@
 # AgentHub 项目方案 v1.5
 
-> **现行状态（2026-08-19）**：Linux 一等公民；官方船经 `release` 三文件版本 bump 后发布。定价表已合入（#32，不是 stale-open）。`agenthub-adapterd` 目标未迁。Chat 没有模型选择；Projects 不接 CLI `--resume`；MCP 注入未做；全站 i18n 未做。
+> **现行状态（2026-08-19）**：Linux 一等公民；官方船经 `release` 三文件版本 bump 后发布。定价表已合入（#32，不是 stale-open）。`agenthub-adapterd` 目标未迁。Chat 没有模型选择；Claude/Codex Chat 后续轮次可走 print+resume；Projects「在 Chat 继续」仍是摘录。MCP 注入未做。
 > 多 Agent 管理桌面工具：统一管理 Claude Code、Codex、Grok、Kimi 等 AI Agent 的安装、技能、API 配置、Token 统计与 OAuth 账号。  
 > 技术栈：Tauri v2 + React + Rust，GUI + CLI 双端。  
 > v1.1：补齐 Adapter / Service 职责边界、Skills 投影模型、备份流程、Token 统计与「模型列表」语义。  
@@ -382,14 +382,15 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | 自身 **DB 备份**（`backups/db/`） | ❌ | 仅 live 快照 |
 | Dashboard **生产告警** | 🟡 | 生产从 doctor 派生 auth/env/update 告警（本地 dismiss）；无独立告警总线。mock 可演示额外样例 |
 | Tauri **事件桥** | ❌ | 文档目标；现以前端 refetch 为主 |
-| MCP **管理 / 注入**、`ModelSelect`、`SessionResume` | Planned | `Mcp` 矩阵仍表示管理/注入能力；独立的只读 MCP inventory 已落地，不改变矩阵状态 |
+| MCP **管理 / 注入**、`ModelSelect` | Planned | `Mcp` 矩阵仍表示管理/注入能力；独立的只读 MCP inventory 已落地，不改变矩阵状态 |
+| `SessionResume` | 🟡 部分 | Claude/Codex Chat 后续轮次在已关联官方 session 时走 print+resume；Projects「在 Chat 继续」仍是摘录。其余 Agent Planned |
 | 登录 / 绑定读模型与登录列表 | ✅ 读模型、进口打标、`plan` 收口、拒自动生成的配置、`bind`/`unbind` 写入已落地；§6.4 部分落地（Kimi/OpenAI API → Grok，OpenAI/xAI/GLM/DeepSeek API → Pi，GLM/DeepSeek API → Codex）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex，属直接改配置）；写进对方认的登录——Claude/Codex/Grok 订阅 Account → Pi 已可 experimental bind；本机转发——Codex Responses 与 Grok Chat 订阅→Claude 已可 experimental `local_bridge` bind，Claude 订阅→Codex 产品关闭，App Server/OauthOther 仍关闭；见 [product-decisions.md](product-decisions.md)；dsh writer 已接入（`AgentId::Dsh` + `deepseek-api-to-dsh-v1`）；未做的是 sidecar 迁移 | [connection-binding-model.md](connection-binding-model.md)：`list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`。`canApply` = 现在 bind 会成功（有实现且 secret 可按票 `source_kind` 解析）。可写边：Kimi 会员 Provider / Account → Claude/Pi/Codex/Grok，OpenAI API Provider / Account → Grok/Pi，Anthropic / xAI API（Provider 与 Account）→ Pi，GLM Coding Plan / DeepSeek API（Provider 与 Account）→ Pi 自定义 provider 与 Codex 官方 Responses，Anthropic API（Provider 与 Account）→ Codex，GLM Coding Plan / DeepSeek API（Provider 与 Account）→ Claude，带 access token 的 Codex `auth_json` 或 Grok OAuth 订阅 → Claude Responses/Chat（本机转发）。Claude 订阅 → Codex 产品不做。写入走 bind，apply 为薄兼容委托 |
 | Adapter 本地 Bridge 产品接线 | 🟡 部分实现 | core host、协议转换、Tauri controller、UI 控件、auto-start 恢复与退出 drain 已进入当前工作区；具体可执行状态见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)，端到端验收尚未收口 |
 | Adapter 用户级 sidecar | 🎯 目标已决策 / 未实现 | Phase 1 控制契约已落地（core `adapter_control` + in-process `DesktopAdapterControl`）。仍待 `agenthub-adapterd`、本地 IPC、schema lease、更新/卸载 saga。见 [adapter-sidecar-design.md](adapter-sidecar-design.md) |
 | 模块化收口（双真源 / 上帝文件 / 写入入口） | 📋 部分已收口 | integrations / Ticket 写口 / `adapter_control` 契约已落地；仍待削 `AgentAdapter` 厚表面、sidecar 二进制、Skills/Projects/AgentCard。见 [modularity-improvement.md](modularity-improvement.md)。不拆微服务，凭据落盘加密仍范围外 |
 | 远程 Skill 市场 | 🟡 部分实现 | 已接线公开市场搜索/安装；依赖网络与本机 Git |
 | Token **后台自动刷新守护** | ❌ | 有手动 refresh |
-| Settings 语言切换 / **全站 i18n** | 🟡 部分 / **全站未做** | Settings 四面板与侧栏 chrome 可切换中/英（轻量自研字典 + `LanguageProvider`）。`language` 以 L1 core 为真源。业务页（Chat / Dashboard / Connections / Skills `copy.ts` 等）**未迁移**。Chat 模型选择、Projects `--resume`、MCP 注入均未做。不引入 i18next |
+| Settings 语言切换 / **全站 i18n** | 🟡 部分 / **全站未做** | Settings 四面板与侧栏 chrome 可切换中/英（轻量自研字典 + `LanguageProvider`）。`language` 以 L1 core 为真源。业务页（Chat / Dashboard / Connections / Skills `copy.ts` 等）**未迁移**。Chat 模型选择、MCP 注入均未做。不引入 i18next |
 | Usage **后台守护 / 文件监听** | ❌ | 仅前台 interval + 手动 |
 | 官方模型商店 / 账号可用模型探测 | ❌ | 明确非目标（用量去重模型列表除外） |
 | WebDAV / 代理模式 | P4 候选 | 桌面端已按 Windows / macOS / Linux 三平台交付（Linux 安装包可未签名；自动更新签名取决于 `TAURI_SIGNING_PRIVATE_KEY`）。WebDAV 与代理模式仍未做 |

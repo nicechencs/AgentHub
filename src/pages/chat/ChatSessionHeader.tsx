@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { FolderOpen, PanelLeftOpen, Settings2, ShieldAlert } from 'lucide-react';
+import { FolderOpen, PanelLeftOpen, Settings2, ShieldAlert, Terminal } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Input } from '@/components/ui/input';
+import { useToast } from '@/components/ui/toast';
 import { Hint } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import type { AgentId, Conversation } from '@/lib/types';
@@ -12,6 +13,7 @@ import {
   autoApproveActive,
   autoApproveEffect,
   autoApproveHint,
+  conversationResumeCommand,
   conversationTitle,
   cwdShortName,
 } from './chat-model';
@@ -34,6 +36,7 @@ export function ChatSessionHeader({
   onPickWorkingDirectory: () => void;
 }) {
   const { t } = useI18n();
+  const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(active?.title ?? '');
   const cancelledRef = useRef(false);
@@ -140,6 +143,39 @@ export function ChatSessionHeader({
               </span>
             </button>
           </Hint>
+          {active.nativeSessionId && (
+            <Hint
+              label={t('chat.header.nativeSession', {
+                id: shortenId(active.nativeSessionId, 16),
+              })}
+            >
+              <button
+                type="button"
+                className="inline-flex h-7 max-w-[11rem] items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-meta text-secondary hover:bg-hover"
+                onClick={() => {
+                  const command = conversationResumeCommand(active);
+                  if (!command) {
+                    toast({ title: t('chat.header.noResumeCommand'), variant: 'danger' });
+                    return;
+                  }
+                  void navigator.clipboard.writeText(command).then(
+                    () =>
+                      toast({
+                        title: t('chat.header.resumeCommandCopied'),
+                        description: command,
+                      }),
+                    () => toast({ title: t('chat.bubble.copyFailed'), variant: 'danger' }),
+                  );
+                }}
+                aria-label={t('chat.header.copyResumeCommand', {
+                  command: conversationResumeCommand(active) ?? active.nativeSessionId,
+                })}
+              >
+                <Terminal className="h-3 w-3 shrink-0" />
+                <span className="truncate">{shortenId(active.nativeSessionId, 10)}</span>
+              </button>
+            </Hint>
+          )}
           {approveOn && (
             <Hint label={autoApproveHint(t, autoApproveEffect(selectedAgent))}>
               <button
@@ -166,6 +202,10 @@ export function ChatSessionHeader({
       )}
     </header>
   );
+}
+
+function shortenId(id: string, max: number): string {
+  return id.length <= max ? id : `${id.slice(0, max - 1)}…`;
 }
 
 function AgentChip({ agentIds, hasHidden }: { agentIds: AgentId[]; hasHidden: boolean }) {

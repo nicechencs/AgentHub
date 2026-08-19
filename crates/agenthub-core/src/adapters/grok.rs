@@ -210,9 +210,11 @@ impl AgentAdapter for GrokAdapter {
     }
 
     fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec> {
-        // text: grok -p / --single <prompt> (default plain)
-        // structured (Chat): --output-format streaming-json (ACP NDJSON)
-        let mut args = vec!["-p".into(), prompt.to_string()];
+        // text: grok -p <prompt>
+        // structured (Chat): --output-format streaming-json (ACP NDJSON ≥ 0.2.117)
+        // --no-auto-update: same guard Grok App uses so a mid-turn CLI
+        // self-update cannot kill the headless child.
+        let mut args = vec!["--no-auto-update".into(), "-p".into(), prompt.to_string()];
         if super::wants_structured_for(opts.process_mode, AgentId::Grok) {
             args.push("--output-format".into());
             args.push("streaming-json".into());

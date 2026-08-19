@@ -24,8 +24,9 @@ impl ChatRepo {
             conn.execute(
                 r#"
                 INSERT INTO conversations (
-                    id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                    id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at,
+                    native_session_id
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                 "#,
                 params![
                     record.id,
@@ -35,6 +36,7 @@ impl ChatRepo {
                     allow,
                     record.created_at,
                     record.updated_at,
+                    record.native_session_id,
                 ],
             )?;
             Ok(())
@@ -46,7 +48,8 @@ impl ChatRepo {
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 r#"
-                SELECT id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at
+                SELECT id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at,
+                       native_session_id
                 FROM conversations
                 ORDER BY updated_at DESC, id DESC
                 "#,
@@ -64,7 +67,8 @@ impl ChatRepo {
         self.db.with_conn(|conn| {
             conn.query_row(
                 r#"
-                SELECT id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at
+                SELECT id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at,
+                       native_session_id
                 FROM conversations
                 WHERE id = ?1
                 "#,
@@ -87,7 +91,8 @@ impl ChatRepo {
                     agent_ids = ?3,
                     cwd = ?4,
                     allow_dangerous = ?5,
-                    updated_at = ?6
+                    updated_at = ?6,
+                    native_session_id = ?7
                 WHERE id = ?1
                 "#,
                 params![
@@ -97,6 +102,7 @@ impl ChatRepo {
                     record.cwd,
                     allow,
                     record.updated_at,
+                    record.native_session_id,
                 ],
             )?;
             if n == 0 {
@@ -280,6 +286,7 @@ fn map_conversation_row(row: &Row<'_>) -> rusqlite::Result<Conversation> {
     let allow_i: i64 = row.get(4)?;
     let created_at: String = row.get(5)?;
     let updated_at: String = row.get(6)?;
+    let native_session_id: Option<String> = row.get(7)?;
 
     let agent_ids: Vec<AgentId> = serde_json::from_str(&agent_ids_raw).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e))
@@ -293,6 +300,7 @@ fn map_conversation_row(row: &Row<'_>) -> rusqlite::Result<Conversation> {
         allow_dangerous: allow_i != 0,
         created_at,
         updated_at,
+        native_session_id,
     })
 }
 
@@ -385,6 +393,7 @@ mod tests {
             allow_dangerous: false,
             created_at: now.clone(),
             updated_at: now,
+            native_session_id: None,
         }
     }
 
@@ -417,6 +426,19 @@ mod tests {
         let c = sample_conv("c1", vec![AgentId::Claude, AgentId::Codex]);
         repo.create_conversation(&c).unwrap();
         assert_eq!(repo.list_conversations().unwrap().len(), 1);
+        assert!(repo.get_conversation("c1").unwrap().unwrap().native_session_id.is_none());
+
+        let mut stored = repo.get_conversation("c1").unwrap().unwrap();
+        stored.native_session_id = Some("sess-1".into());
+        repo.update_conversation(&stored).unwrap();
+        assert_eq!(
+            repo.get_conversation("c1")
+                .unwrap()
+                .unwrap()
+                .native_session_id
+                .as_deref(),
+            Some("sess-1")
+        );
         let got = repo.get_conversation("c1").unwrap().expect("found");
         assert_eq!(got.agent_ids, vec![AgentId::Claude, AgentId::Codex]);
         assert_eq!(got.cwd.as_deref(), Some("/tmp"));

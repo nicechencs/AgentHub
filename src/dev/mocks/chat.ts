@@ -60,6 +60,7 @@ export function createMockChatPort(): ChatPort {
         allowDangerous: false,
         createdAt: nowIso(),
         updatedAt: nowIso(),
+        nativeSessionId: null,
       };
       mockConversations.unshift(conv);
       mockMessages[conv.id] = [];
@@ -71,12 +72,17 @@ export function createMockChatPort(): ChatPort {
       const idx = mockConversations.findIndex((c) => c.id === id);
       if (idx < 0) throw new Error(`conversation not found: ${id}`);
       const cur = mockConversations[idx];
+      const agentIds = patch.agentIds ? requireSingleAgent(patch.agentIds) : cur.agentIds;
+      const cwd = patch.cwd !== undefined ? patch.cwd : cur.cwd;
+      const resetNative =
+        JSON.stringify(agentIds) !== JSON.stringify(cur.agentIds) || cwd !== cur.cwd;
       const next: Conversation = {
         ...cur,
         title: patch.title ?? cur.title,
-        agentIds: patch.agentIds ? requireSingleAgent(patch.agentIds) : cur.agentIds,
-        cwd: patch.cwd !== undefined ? patch.cwd : cur.cwd,
+        agentIds,
+        cwd,
         allowDangerous: patch.allowDangerous ?? cur.allowDangerous,
+        nativeSessionId: resetNative ? null : cur.nativeSessionId,
         updatedAt: nowIso(),
       };
       mockConversations[idx] = next;
@@ -211,6 +217,9 @@ export function createMockChatPort(): ChatPort {
         };
         msgs.push(finished);
         onEvent({ type: 'agentFinished', turn, agent, message: finished });
+        if (!conv.nativeSessionId && (agent === 'claude' || agent === 'codex')) {
+          conv.nativeSessionId = `mock-session-${conv.id}`;
+        }
       }
 
       onEvent({ type: 'finished', turn, ok: !mockCancel.has(conversationId) });

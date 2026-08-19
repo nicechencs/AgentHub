@@ -45,7 +45,7 @@ import type { AgentId, AgentProject, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { projectMatches, sessionMatches } from './project-filter';
 import { buildContinuePrompt, buildSummaryPrompt } from './project-prompts';
-import { nativeSessionId, shortSessionId } from './project-format';
+import { nativeResumeCommand, nativeSessionId, shortSessionId } from './project-format';
 import { resolveProjectFetchAgentId, resolveProjectTabAgents } from './project-tab-agents';
 import { ProjectTree } from './ProjectTree';
 
@@ -333,6 +333,24 @@ export default function ProjectsPage() {
     try {
       await navigator.clipboard.writeText(sid);
       toast({ title: t('projects.toast.sessionIdCopied'), description: shortSessionId(sid, 48) });
+    } catch {
+      toast({ title: t('projects.toast.copyFailed'), variant: 'danger' });
+    }
+  }
+
+  async function copyResumeCommand(s: AgentSession, e?: React.MouseEvent) {
+    e?.stopPropagation();
+    const command = nativeResumeCommand(s);
+    if (!command) {
+      toast({ title: t('projects.toast.noResumeCommand'), variant: 'danger' });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(command);
+      toast({
+        title: t('projects.toast.resumeCommandCopied'),
+        description: command,
+      });
     } catch {
       toast({ title: t('projects.toast.copyFailed'), variant: 'danger' });
     }
@@ -657,6 +675,7 @@ export default function ProjectsPage() {
           onToggleHideProject={(p, e) => void toggleHideProject(p, e)}
           onToggleOne={toggleOne}
           onCopySessionId={(s, e) => void copySessionId(s, e)}
+          onCopyResumeCommand={(s, e) => void copyResumeCommand(s, e)}
           onOpenSessionRecord={(s, e) => void openSessionRecord(s, e)}
           onGoContinue={goContinue}
           onRequestDelete={setDeleteTarget}

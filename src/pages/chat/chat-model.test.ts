@@ -15,6 +15,7 @@ import {
   chatConnectionKind,
   chatConnectionPickerView,
   connectionPickerCaption,
+  conversationResumeCommand,
   conversationTitle,
   cwdShortName,
   filterConversations,
@@ -35,6 +36,23 @@ import {
 } from './chat-model';
 
 const t = createTranslator('zh');
+
+describe('conversationResumeCommand', () => {
+  it('returns the official TUI command when a native session is linked', () => {
+    expect(
+      conversationResumeCommand({
+        agentIds: ['claude'],
+        nativeSessionId: 'abc',
+      }),
+    ).toBe('claude --resume abc');
+    expect(
+      conversationResumeCommand({
+        agentIds: ['claude'],
+        nativeSessionId: null,
+      }),
+    ).toBeNull();
+  });
+});
 
 function conv(partial: Partial<Conversation> & Pick<Conversation, 'id'>): Conversation {
   return {

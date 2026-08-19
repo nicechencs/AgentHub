@@ -8,6 +8,7 @@ mod auth_revision;
 mod config_write;
 mod detect_binary;
 mod registry;
+pub(crate) mod session_resume;
 
 mod claude;
 mod codex;
@@ -34,6 +35,7 @@ pub(crate) use workbuddy::detect_installation as detect_workbuddy_installation;
 pub(crate) use codex::normalize_oauth_credentials as normalize_codex_oauth_credentials;
 
 pub use adapter_trait::{default_authorization_key, default_identity_label, AgentAdapter};
+pub use session_resume::{plan_native_resume, supports_print_resume, NativeResumePlan};
 pub(crate) use auth_revision::{
     auth_file_revision, auth_files_revision, inspect_auth_credentials, oauth_auth_health,
     AuthCredentialMetadata,

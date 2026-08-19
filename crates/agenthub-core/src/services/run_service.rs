@@ -53,6 +53,9 @@ fn apply_structured_stdout(result: &mut AgentRunResult, session: &StreamSession)
         // when we successfully rewrote content from the decoder.
         result.truncated = false;
     }
+    if result.native_session_id.is_none() {
+        result.native_session_id = session.native_session_id().map(str::to_string);
+    }
 }
 
 fn log_failed_agent_results(op: &str, results: &[AgentRunResult]) {
@@ -342,6 +345,7 @@ impl RunService {
                                 command: String::new(),
                                 error: Some("worker thread panicked".into()),
                                 truncated: false,
+            native_session_id: None,
                             });
                         }
                     }
@@ -363,6 +367,7 @@ impl RunService {
                     command: String::new(),
                     error: Some("internal: missing result slot".into()),
                     truncated: false,
+            native_session_id: None,
                 })
             })
             .collect()
@@ -532,6 +537,7 @@ impl RunService {
                                     command: String::new(),
                                     error: Some("worker thread panicked".into()),
                                     truncated: false,
+            native_session_id: None,
                                 },
                             ));
                         }
@@ -557,6 +563,7 @@ impl RunService {
                         command: String::new(),
                         error: Some("worker thread panicked".into()),
                         truncated: false,
+            native_session_id: None,
                     });
                 }
             }
@@ -576,6 +583,7 @@ impl RunService {
                     command: String::new(),
                     error: Some("internal: missing result slot".into()),
                     truncated: false,
+            native_session_id: None,
                 })
             })
             .collect()
@@ -593,6 +601,7 @@ fn cancelled_result(agent: AgentId) -> AgentRunResult {
         command: String::new(),
         error: Some("cancelled".into()),
         truncated: false,
+            native_session_id: None,
     }
 }
 

@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Copy,
   EyeOff,
+  Terminal,
   Loader2,
   MessageSquarePlus,
   Trash2,
@@ -21,6 +22,7 @@ import { pageRhythm } from '@/components/layout/page-rhythm';
 import {
   displayTitle,
   fmtBytes,
+  nativeResumeCommand,
   nativeSessionId,
   projectDisplayPath,
   titleHoverLabel,
@@ -43,6 +45,7 @@ export type ProjectTreeProps = {
   onToggleHideProject: (p: AgentProject, e: ReactMouseEvent) => void;
   onToggleOne: (id: string) => void;
   onCopySessionId: (s: AgentSession, e?: ReactMouseEvent) => void;
+  onCopyResumeCommand: (s: AgentSession, e?: ReactMouseEvent) => void;
   onOpenSessionRecord: (s: AgentSession, e: ReactMouseEvent) => void;
   onGoContinue: (s: AgentSession) => void;
   onRequestDelete: (s: AgentSession) => void;
@@ -63,6 +66,7 @@ export function ProjectTree({
   onToggleHideProject,
   onToggleOne,
   onCopySessionId,
+  onCopyResumeCommand,
   onOpenSessionRecord,
   onGoContinue,
   onRequestDelete,
@@ -215,18 +219,38 @@ export function ProjectTree({
                               <div className="flex shrink-0 gap-1">
                                 {(() => {
                                   const sid = nativeSessionId(s);
-                                  if (!sid) return null;
+                                  const resume = nativeResumeCommand(s);
                                   return (
-                                    <Button
-                                      size="icon"
-                                      variant="ghost"
-                                      disabled={busy}
-                                      aria-label={t('projects.tree.copySessionId', { id: sid })}
-                                      title={t('projects.tree.copySessionId', { id: sid })}
-                                      onClick={(e) => onCopySessionId(s, e)}
-                                    >
-                                      <Copy className="h-3.5 w-3.5" />
-                                    </Button>
+                                    <>
+                                      {sid ? (
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          disabled={busy}
+                                          aria-label={t('projects.tree.copySessionId', { id: sid })}
+                                          title={t('projects.tree.copySessionId', { id: sid })}
+                                          onClick={(e) => onCopySessionId(s, e)}
+                                        >
+                                          <Copy className="h-3.5 w-3.5" />
+                                        </Button>
+                                      ) : null}
+                                      {resume ? (
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          disabled={busy}
+                                          aria-label={t('projects.tree.copyResumeCommand', {
+                                            command: resume,
+                                          })}
+                                          title={t('projects.tree.copyResumeCommand', {
+                                            command: resume,
+                                          })}
+                                          onClick={(e) => onCopyResumeCommand(s, e)}
+                                        >
+                                          <Terminal className="h-3.5 w-3.5" />
+                                        </Button>
+                                      ) : null}
+                                    </>
                                   );
                                 })()}
                                 <Button

@@ -199,6 +199,7 @@ impl ProcessRunner for RecordingProcessRunner {
                 None
             },
             truncated: false,
+            native_session_id: None,
         }
     }
 }
@@ -231,6 +232,7 @@ impl StreamingProcessRunner for RecordingProcessRunner {
                     command: spec.display_command(),
                     error: Some("cancelled".into()),
                     truncated: false,
+            native_session_id: None,
                 };
             }
             let remaining = delay.saturating_sub(started.elapsed());
@@ -250,6 +252,7 @@ impl StreamingProcessRunner for RecordingProcessRunner {
                 command: spec.display_command(),
                 error: Some("cancelled".into()),
                 truncated: false,
+            native_session_id: None,
             };
         }
         // Delay already applied above — avoid double-sleep in `run`.
@@ -282,6 +285,7 @@ impl StreamingProcessRunner for RecordingProcessRunner {
                 None
             },
             truncated: false,
+            native_session_id: None,
         };
         if !result.stdout.is_empty() {
             on_chunk(OutputStream::Stdout, &result.stdout);
@@ -329,6 +333,7 @@ fn run_spec_streaming(
                 command,
                 error: Some(format!("spawn failed: {e}")),
                 truncated: false,
+            native_session_id: None,
             };
         }
     };
@@ -407,6 +412,7 @@ fn run_spec_streaming(
                     command,
                     error: Some(format!("wait failed: {e}")),
                     truncated: false,
+            native_session_id: None,
                 };
             }
         }
@@ -439,6 +445,7 @@ fn run_spec_streaming(
                     Some(format!("exit code {}", code.unwrap_or(-1)))
                 },
                 truncated: st || se,
+                native_session_id: None,
             }
         }
         StreamPoll::TimedOut => {
@@ -463,6 +470,7 @@ fn run_spec_streaming(
                 command,
                 error: Some(format!("timed out after {}s", timeout.as_secs())),
                 truncated: st || se,
+                native_session_id: None,
             }
         }
         StreamPoll::Cancelled => {
@@ -485,6 +493,7 @@ fn run_spec_streaming(
                 command,
                 error: Some("cancelled".into()),
                 truncated: st || se,
+                native_session_id: None,
             }
         }
     }
@@ -591,6 +600,7 @@ fn run_spec_with_timeout(
                 command,
                 error: Some(format!("spawn failed: {e}")),
                 truncated: false,
+            native_session_id: None,
             };
         }
     };
@@ -618,6 +628,7 @@ fn run_spec_with_timeout(
                     Some(format!("exit code {}", code.unwrap_or(-1)))
                 },
                 truncated,
+                native_session_id: None,
             }
         }
         WaitOutcome::Timeout {
@@ -638,6 +649,7 @@ fn run_spec_with_timeout(
                 command,
                 error: Some(format!("timed out after {}s", timeout.as_secs())),
                 truncated,
+                native_session_id: None,
             }
         }
         WaitOutcome::IoError(e) => {
@@ -653,6 +665,7 @@ fn run_spec_with_timeout(
                 command,
                 error: Some(format!("wait failed: {e}")),
                 truncated: false,
+            native_session_id: None,
             }
         }
     }

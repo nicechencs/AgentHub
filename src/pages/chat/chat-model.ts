@@ -5,6 +5,7 @@
 import { agentDisplayName } from '@/config/agents';
 import type { TranslateFn } from '@/lib/i18n';
 import { processPhaseLabel, type AgentProcessView } from '@/lib/chat-process';
+import { nativeResumeCommand } from '@/lib/session-resume';
 import type { AgentId, AgentStatus, ChatMessage, ChatMessageStatus, Conversation } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
 
@@ -98,6 +99,13 @@ const DAY_KEYS: Record<ConversationDayKey, 'chat.day.today' | 'chat.day.yesterda
 };
 
 const RETRY_STATUSES = new Set<ChatMessageStatus>(['failed', 'cancelled', 'timeout']);
+
+/** Interactive TUI resume command for a Hub conversation, when a native id is known. */
+export function conversationResumeCommand(c: Pick<Conversation, 'agentIds' | 'nativeSessionId'>): string | null {
+  const agent = c.agentIds[0];
+  if (!agent) return null;
+  return nativeResumeCommand(agent, c.nativeSessionId);
+}
 
 export function cwdShortName(cwd: string | null | undefined, t: TranslateFn): string {
   if (cwd == null) return t('chat.cwd.unset');
