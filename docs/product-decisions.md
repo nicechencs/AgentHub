@@ -1,6 +1,6 @@
 # 把已有登录接到另一个编程工具
 
-> 状态：**2026-08-19**。本文是跨工具复用的**产品**真源，前半用日常说法，后半给实现对照。三种做法仍用 ①②③ 作模型名；**现行界面芯片**是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不再标圈号。界面说「登录」，不说「票」。  
+> 状态：**2026-08-19**。本文是跨工具复用的**产品**真源，前半用日常说法（直接改配置 / 写进对方认的登录 / 本机转发），不标圈号。现行界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。界面说「登录」，不说「票 / 钱包」。  
 > 领域对象与规划器仍以 [connection-binding-model.md](connection-binding-model.md) 为准。  
 > 各家接口与**现在能不能写上去**以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为准。  
 > 实现清单以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
@@ -18,7 +18,7 @@ Claude、Codex、Grok、Pi 是四个**编程工具**。
 
 ### 三种做法长什么样
 
-**① 直接改配置** — Key 已经会说那个工具听得懂的话，只填地址和模型，不另开程序。
+**直接改配置** — Key 已经会说那个工具听得懂的话，只填地址和模型，不另开程序。
 
 ```mermaid
 flowchart LR
@@ -26,7 +26,7 @@ flowchart LR
   fill --> tool["工具直接连官方"]
 ```
 
-**② 写进对方认的登录** — 对方自己就会用这套订阅，只把登录写过去，不另开程序。
+**写进对方认的登录** — 对方自己就会用这套订阅，只把登录写过去，不另开程序。
 
 ```mermaid
 flowchart LR
@@ -34,7 +34,7 @@ flowchart LR
   write --> tool["对方自己去用"]
 ```
 
-**③ 本机转发** — 两边说的话对不上，才在这台电脑上做一层转换。目标只连你家电脑，真正登录留在 AgentHub。
+**本机转发** — 两边说的话对不上，才在这台电脑上做一层转换。目标只连你家电脑，真正登录留在 AgentHub。
 
 ```mermaid
 flowchart LR
@@ -50,11 +50,11 @@ flowchart TB
   start --> native{"本来就是给它的？"}
   native -->|是| switch["换到这份登录"]
   native -->|否| sub{"订阅，且对方认这套登录？"}
-  sub -->|是| r2["② 写进去，不转发"]
+  sub -->|是| r2["写进去，不转发"]
   sub -->|否| key{"Key 已经会说对方听的话？"}
-  key -->|是| r1["① 只改配置，不转发"]
+  key -->|是| r1["只改配置，不转发"]
   key -->|否| conv{"测过这种转换？"}
-  conv -->|是| r3["③ 本机转发"]
+  conv -->|是| r3["本机转发"]
   conv -->|否| no["接不上，写明缺什么"]
 ```
 
@@ -76,7 +76,7 @@ flowchart TB
 Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口」，但同样只改配置、不转发。
 
 必须写全名：名字里带「OpenAI 兼容」的，多半是 Chat 这种接口，**不是** Codex 要的那种（Responses）。  
-所以同一把「兼容」Key 接到 Codex，常常只能走 ③，不是「兼容就万能」。
+所以同一把「兼容」Key 接到 Codex，常常只能走本机转发，不是「兼容就万能」。
 
 ### 1.2 写进对方认的登录
 
@@ -97,8 +97,8 @@ Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口
 |---|---|---|
 | Claude 订阅 → Codex | **产品不做** | Codex 不会用 Claude 这套登录，本产品不走这条 |
 | 任一国产 OAuth（Kimi `/login`、GLM / DeepSeek 登录等）→ 任意工具 | **产品不做** | 不为中国产 OAuth 开边，也不把它转成 API |
-| Grok 订阅 → Claude | **③** | Claude 听的话和 Grok 说的话不同，要本机转发 |
-| Codex 订阅 → Claude | **③** | Claude 只听自己那套接口；这是本机转发，不是写 Claude 官方登录 |
+| Grok 订阅 → Claude | **本机转发** | Claude 听的话和 Grok 说的话不同，要本机转发 |
+| Codex 订阅 → Claude | **本机转发** | Claude 只听自己那套接口；这是本机转发，不是写 Claude 官方登录 |
 
 如果刷新令牌只能用一次，原来的工具和目标工具各自刷新会互相打翻。逐条选「目标自己再登录」或「由 AgentHub 统一刷新，目标只拿引用」。
 
@@ -112,14 +112,14 @@ Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口
 | Kimi / Anthropic 的 Key → Codex | Codex 要的接口和上游不同，要转换 |
 | Grok 订阅 → Claude Code | Claude 听一种接口，上游是 Grok 的另一种 |
 
-③ 只在对不上时才转发。  
+本机转发只在对不上时才转发。  
 **不**默认先开一个一直挂着的兼容服务。
 
 ## 2. 图：三种做法分别接到谁
 
 下面只画「谁接到谁」。每种做法本身见文首三张小图。完整对照表在下一节。
 
-**① 只改配置**（不另开程序）
+**只改配置**（不另开程序）
 
 ```mermaid
 flowchart LR
@@ -132,14 +132,14 @@ flowchart LR
 
 智谱 / DeepSeek 还可以直接接到 DeepSeek 自己的工具。
 
-**② 写进对方认的登录**（目前只写进 Pi）
+**写进对方认的登录**（目前只写进 Pi）
 
 ```mermaid
 flowchart LR
   subs["Claude / Codex / Grok 订阅"] --> pi["Pi 里对应那一家"]
 ```
 
-**③ 本机转发**（中间多一截，目标只连你家电脑）
+**本机转发**（中间多一截，目标只连你家电脑）
 
 ```mermaid
 flowchart LR
