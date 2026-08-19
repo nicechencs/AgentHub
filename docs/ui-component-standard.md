@@ -85,7 +85,7 @@ src/components/connect/   # ConnectFlow / OAuth
 | `Dialog` | 默认 `max-w-lg`、`rounded-card`、`p-6`、`shadow-lg` | Footer 右对齐；取消=`ghost`，主操作靠右。忙碌中走 `busy-confirmation` + `hideClose` |
 | `DropdownMenu` | Radix | 添加菜单、行操作 |
 | `ContextMenu` | **自研 portal，不是 Radix** | **仅** Skills 矩阵右键。Chat rail / 侧栏不用它 |
-| `Tabs` | 与分段控件同灰轨 + 白底抬起 | 页级导航（Skills **两栏** library/market、Settings 三分区） |
+| `Tabs` | 与分段控件同灰轨 + 白底抬起 | 页级导航（Skills **两栏** library/market、Settings **四分区** 偏好 / 本机 / 备份 / 关于） |
 | `Switch` | 选中 = accent | Settings 即时开关 |
 | `Progress` | 细条 | 只经 `QuotaBar` 等复合件，页面少直接用 |
 | `Toast` | `default` / `success` / `danger`；默认 5s | 标题 ≤16 字；可带撤销 |
@@ -181,7 +181,7 @@ src/components/connect/   # ConnectFlow / OAuth
 
 | 场景 | 组件 | 尺寸 |
 |---|---|---|
-| 页级导航（Skills 两栏、Settings 分区） | `Tabs` | md |
+| 页级导航（Skills 两栏、Settings 四分区：偏好 / 本机 / 备份 / 关于） | `Tabs` | md |
 | 页内列表筛选（全部 / OAuth / API Key…） | `SegmentedControl` | sm + `count` |
 | 页内 Agent 过滤 | `AgentTabStrip` | md（不要再传 sm） |
 | 预览「预览 \| 源码」 | 允许手写扁段，`h-6` | 特例 |

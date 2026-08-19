@@ -1,7 +1,6 @@
-> **现行状态（2026-08-19）：** 用户表面已是 **Routes** / `/routes` / 本机路由；侧栏不再叫「桥与适配」。下文是历史终态设计文，不要当未完成改名任务。
-
 # 「桥与适配」页终态：本机桥运行时（Bridges）
 
+> **现行状态（2026-08-19）：** 侧栏 **Routes / 本机路由**、规范路由 `/routes`；侧栏不再叫「桥与适配」。Settings **四栏** 偏好 / 本机 / 备份 / 关于（备份不并入本机）。托盘菜单 **打开 AgentHub / 打开路由 / 启动路由 / 停止路由 / 退出**。ConnectFlow 芯片 **直连 / 用这份登录 / 本机路由 / 当前不支持**（界面不再标 ①②③）。下文是历史终态设计文，不要当未完成改名任务。  
 > **2026-08-16 表面更新**：用户可见名称改为 **本机路由**，侧栏英文 **Routes**，规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久跳到 `/routes`。  
 > **以下 Overview 起至文末为实施前原文 / 历史 IA**（2026-08-15）：当时规范路由写 `/bridges`、侧栏写 Bridges、页标题写「本机桥」、并按 PR 1–5 计划实施。阅读时把文中 `/bridges`、Bridges、「本机桥」理解为当时用词，不要当成现行路径或侧栏名。对象三分、单层健康、条件侧栏、`partitionLocalBridgeRuntimes` 等 IA 决策仍有效。  
 > 条件侧栏已落地：`src/app/runtime/bridge-presence-store.ts` 的 `shouldShowBridgesNav`（只做侧栏可见性，不算 bound/orphan）。页目录为 `src/pages/bridges/`。

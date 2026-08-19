@@ -156,10 +156,10 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 - Agent 卡片**只渲染已安装 Agent**（未安装去 Agents 页；未装卡不出「连接/切换」）。两行紧凑：第一行 logo + 名称 + 版本 + 右侧认证状态点（绿=已认证/黄=即将过期/红=失效/灰=未配置）；第二行当前连接 meta。顺序固定为 `AGENTS` 定义序，不按状态重排。
 - **主动作「连接/切换」**（点击卡片）：打开统一绑定对话框（现名 `ConnectFlowDialog`），目标固定为该编程工具，选一份登录。目标语义是 `bind(这份登录, 此工具)`，不是「在两套池里挑一行」。
-- 徽标（目标态按**当前绑定**展示，过渡期仍可用 profile 联结）：
-  - **① 直接改配置 / ② 写进对方认的登录**：`route=reshape`（或命中生成投影）。文案用「只改配置」或「写进对方认的登录」，不要显示转发。
-  - **③ 本机转发**：仅当前生效的 ③ 显示桥徽标；查询失败显示「状态不可用」，不得静默隐藏。点击徽标进入 `/routes?profile=`（无 id 则 `/routes`），tip「管理本机路由」（`stopPropagation`）。孤立 / 非当前桥没有徽标。
-- **ConnectFlow（工具侧）**：两组来源——**本来就是给它的登录**（走切换）+ **其他登录**（`plan(ticket, agent)`）。可执行权威是 `plan()` 的 route / maturity / canApply / reason（`canApply` 表示现在能写入）。预览必须标出三种做法之一；② 不得出现「需要本机服务」或转发启停。接不上的登录**留在列表**，置灰 + 原因原文，不从 Connections 藏起来再让本页单独诊断。OAuth 未完成：引导去钱包补登录。空态与「导入登录态 / 新 API Key」走深链 `intent=import-login|add-key`；成功后回 `/?connect=` 重开。导入仍是读官方 CLI 已完成的登录。
+- 徽标（目标态按**当前绑定**展示，过渡期仍可用 profile 联结；卡片 meta 现行 **直连 / 改配置 / 本机路由**，不在徽标上标圈号）：
+  - **① 直接改配置 / ② 写进对方认的登录**：`route=reshape`（或命中生成投影）。meta 用「直连」或「改配置」，不要显示转发。
+  - **③ 本机转发**：仅当前生效的 ③ 显示桥徽标（meta **本机路由**）；查询失败显示「状态不可用」，不得静默隐藏。点击徽标进入 `/routes?profile=`（无 id 则 `/routes`），tip「管理本机路由」（`stopPropagation`）。孤立 / 非当前桥没有徽标。
+- **ConnectFlow（工具侧）**：两组来源——**本来就是给它的登录**（走切换）+ **其他登录**（`plan(ticket, agent)`）。可执行权威是 `plan()` 的 route / maturity / canApply / reason（`canApply` 表示现在能写入）。产品模型仍是三种做法；界面芯片现行 **直连 / 用这份登录 / 本机路由 / 当前不支持**，不再标 ①②③。② 不得出现「需要本机服务」或转发启停。接不上的登录**留在列表**，置灰 + 原因原文，不从 Connections 藏起来再让本页单独诊断。OAuth 未完成：引导去钱包补登录。空态与「导入登录态 / 新 API Key」走深链 `intent=import-login|add-key`；成功后回 `/?connect=` 重开。导入仍是读官方 CLI 已完成的登录。
 - **共享筛选**（时间 + Agent）驱动一套指标卡与趋势图；筛选变更时 `queryUsage` / `usageTrend` 各请求一次，上下共用 records。
 - 用量图：堆叠 Area，按 agent 分色。选中单 agent 时分布条下钻到**按模型**拆分。
 - Agent 总览与用量分区处理 loading/error：用量失败不白屏上半。
@@ -265,7 +265,8 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 #### 4.3.2 mode=accounts — 账号与密钥（历史线框 / 过渡形态）
 
-> 当时按 Agent tab + `mode=accounts` 的账号卡列表。**现行是全局登录列表**（见 §4.3 目标线框），OAuth / API Key 仍是来源类型，但不再以本线框为第一导航。
+> 当时按 Agent tab + `mode=accounts` 的账号卡列表。**现行是全局登录列表**（见 §4.3 目标线框），OAuth / API Key 仍是来源类型，但不再以本线框为第一导航。  
+> **现行状态**：OAuth 主路径是 **浏览器登录** / **授权完成后会回到这台电脑。**；复制链接 / 粘贴回调是等待步降级，不是主文案。下文「进度三步」是当时线框。
 
 ```
 ┌─ 账号与密钥 ───────────────────────────────────────────────┐
@@ -336,7 +337,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 **会话 header**：标题就地编辑（Enter/blur 保存、Esc 取消、空值回退「新对话」；自动标题仅在 title 为空时由首条 prompt 生成）+ Agent 只读芯片（含「已隐藏」标记）+ cwd 芯片（Hint 完整路径，点击开设置；未设置为 warning 态）+ 自动批准芯片（**仅开启时显示**，warning 态）+ 设置按钮。修改 Agent 只在 composer picker。
 
-**Composer 与发送前置校验**：自动增高 textarea + 底栏（Agent 多选 / 连接切换 / 发送）。Agent picker 只让已安装、未隐藏且已配置授权的项可选；已隐藏 / 未配置授权的项置底（标「已隐藏」/「未配置授权」），不可新增，已在会话内可取消勾选移出。发送前置条件统一为 `sendBlockers` 纯函数，composer 上方渲染第一个 blocker 引导行（含修复动作），优先级：含隐藏 Agent > 未配置授权 > 无 cwd > 他会话发送中；空草稿只禁发送不出引导行。composer 下方仅一行安全提示（批准关：「Agent 可能修改工作目录中的文件」；批准开：warning「自动批准已开启 · Agent 将不经确认修改文件」）。连接切换仅作用于 `agentIds[0]`，多选时固定标注；无连接深链 `/connections?agent=`。发送按钮是页内唯一 accent 主 CTA；发送中变「停止」。
+**Composer 与发送前置校验**：自动增高 textarea + 底栏（Agent 多选 / 连接切换 / 发送）。**没有独立模型选择器**；composer 第二个控件是**连接/登录切换**，模型只作副标题。Agent picker 只让已安装、未隐藏且已配置授权的项可选；已隐藏 / 未配置授权的项置底（标「已隐藏」/「未配置授权」），不可新增，已在会话内可取消勾选移出。发送前置条件统一为 `sendBlockers` 纯函数，composer 上方渲染第一个 blocker 引导行（含修复动作），优先级：含隐藏 Agent > 未配置授权 > 无 cwd > 他会话发送中；空草稿只禁发送不出引导行。composer 下方仅一行安全提示（批准关：「Agent 可能修改工作目录中的文件」；批准开：warning「自动批准已开启 · Agent 将不经确认修改文件」）。连接切换仅作用于 `agentIds[0]`，多选时固定标注；无连接深链 `/connections?agent=`。发送按钮是页内唯一 accent 主 CTA；发送中变「停止」。
 
 **多 Agent 一轮**：默认纵向堆叠；同轮 ≥2 个 agent 消息时 user 气泡下出「本轮 N 个 Agent」对比条（logo + 状态点 + 耗时，点击定位），**不做左右分栏**。
 
@@ -401,7 +402,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - **隐藏 / 别名**：写在 AgentHub `data_dir/project_metadata.json`，不改原生日志；「显示隐藏项」开关可找回。
 - **删除**：二次确认；按 capability 隐藏不支持的 Agent。
 - **打开目录**：优先打开项目工作区路径；无工作区时打开存储路径；会话行可打开 cwd。复用 `open_path_in_file_manager`。
-- **继续 Chat**：sessionStorage bootstrap → `/chat?from=projects`。
+- **继续 Chat**：sessionStorage bootstrap → `/chat?from=projects`。**不是** CLI `--resume`。
 - **多选总结**：读取会话摘录 → bootstrap（无 transcript 的 Agent 不提供）。
 - **不**调用各 CLI 原生续会话能力。
 - **性能**：对解析成本高的 Agent 在 AgentHub `data_dir` 做 mtime 索引，避免重复解析会话头。
@@ -473,7 +474,7 @@ Chat 会话设置（`ChatSettingsDialog`：cwd / 自动批准）不进 Settings�
 - **主题**：core 为权威。Settings 页 Select 预览并立即 `set_setting`。启动时 ThemeProvider 用 localStorage 做首屏缓存，再 `getSettings` 对账。
 - **用量采集间隔**：在偏好页。已写入 SQLite，**不是**仅 localStorage。`None`=从未写入（前端默认 30）；`0`=仅手动；上限 1440。变更后 `notifyUsageSettingsChanged` 立即重排程（见 §4.6）。
 - **开机自启**（`autoStart`）：OS 登录项（Windows 启动项 / macOS Login Item），不进 L1 白名单。
-- **关闭到托盘**（`closeToTray`）：写 core，并同步 Tauri `AppState`。关窗隐藏到托盘的条件是 `close_to_tray` **或** 本机路由正在跑；托盘「退出」会确认。中文托盘：打开 AgentHub / 打开路由 / 启动路由 / 停止路由 / 退出。
+- **关闭到托盘**（`closeToTray`）：写 core，并同步 Tauri `AppState`。关窗隐藏到托盘：`close_to_tray` **或** 本机路由正在运行（即使该开关关着）。托盘「退出」会确认。中文托盘菜单：**打开 AgentHub / 打开路由 / 启动路由 / 停止路由 / 退出**（状态字符串仍可写「本机路由正在运行」，那不是菜单项）。
 - **语言**：core L1 为权威（`zh-CN` / `en`）。Settings Select 预览并立即 `set_setting`。启动时 `LanguageProvider` 用 localStorage 做首屏缓存，再 `getSettings` 对账；同步 `<html lang>`。**首次启动**（无语言缓存且尚未 seed）按 `navigator.languages` / `navigator.language` 选 zh/en，回落 zh，并一次性写入 core；已有用户选择不覆盖。不引入 i18next；字典在 `src/lib/i18n/locales/{zh,en}.ts`，第一期覆盖 Settings 四面板与侧栏 chrome。导航专有名（Chat / Agents / Skills / MCP / Projects / Dashboard / Connections / Routes / Settings）两种语言同值。业务页分期迁移。
 
 Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `backups` / `about`（解析集中在 `src/pages/settings/settings-format.ts` 的 `SETTINGS_TABS` / `parseSettingsTab` / `resolveSettingsLocation`）。非法或缺省值 fallback 到 Preferences。切换使用 `replace`，避免污染浏览器历史。旧 `#backups` / `?tab=local#backups` replace 到 `?tab=backups`。
@@ -505,7 +506,7 @@ Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `backups` /
 | `SecretInput` | 脱敏回显 + 眼睛切换明文。无二次确认、无自动再遮蔽 |
 | `ConfigEditor` | CodeMirror 封装：JSON/TOML 高亮、敏感键自动脱敏层 |
 | `QuotaBar` | 5h/7d 配额窗口进度条 + reset 倒计时 |
-| `OAuthFlowDialog` | 三步授权：等待态含**复制授权链接** + **手动粘贴回调 URL**。实现在 `components/connect/` |
+| `OAuthFlowDialog` | 主路径：**浏览器登录** / **授权完成后会回到这台电脑。** 等待步才提供复制授权链接 / 粘贴回调 URL 作降级。实现在 `components/connect/` |
 | `Notice` | 统一信息条；tone：`neutral` / `info` / `warning` / `danger` / `success` |
 | `EmptyState` / `ErrorState` / `ListSkeleton` / `TableSkeleton` | 四态载体；见本文 §6 |
 | `ListRow` | 管理列表行选中态（`bg-active` + 可选左边条） |
@@ -529,7 +530,7 @@ Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `backups` /
    - 未装任何 agent 且环境缺失时，Dashboard 空状态主 CTA 指向 **Agents 页环境修复**，而非直接「安装 Agent」。
 2. **安装 Agent（含环境）**：选渠道 → 若 `env_missing` 则先 EnvRemediationPanel → 成功/重新检测通过 → 确认安装 Agent → InlineTerminal → detect 刷新卡片。
 3. **切换供应商/账号**：选目标 → 确认对话框（backfill + 备份 + 进程警告）→ 执行 → toast 成功（含「撤销」按钮，5s 内回滚到刚写入的 auto-switch 备份）。
-4. **OAuth 添加账号**：选平台 → 打开浏览器 → 等待回调（**复制授权链接** / **手动粘贴回调 URL** 降级）→ 展示账号信息 → 按当前账号存储方案入库 → 询问「立即切换？」。**已接线** Claude / Codex / Grok；其余 Agent 对话框展示 unsupported，引导导入/API Key。
+4. **OAuth 添加账号**：选平台 → **浏览器登录** → 等待回调（主文案 **授权完成后会回到这台电脑。**；**复制授权链接** / **手动粘贴回调 URL** 为等待步降级）→ 展示账号信息 → 按当前账号存储方案入库 → 询问「立即切换？」。**已接线** Claude / Codex / Grok；其余 Agent 对话框展示 unsupported，引导导入/API Key。
 5. **Token 统计首用**：Dashboard 用量段引导条 → 触发采集（后台任务 + 进度）→ 完成后模型下拉与图表有数据 → 之后以增量为主。
 6. **技能同步**：矩阵点击 → 若冲突则对话框 → 复制/移除 → 刷新单元格；不修改真源除非用户显式「安装到真源」。
 7. **恢复备份**：选条目 → 确认（将先备份当前）→ 写回 live → 提示可能需重启 Agent。

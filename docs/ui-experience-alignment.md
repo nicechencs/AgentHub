@@ -5,7 +5,8 @@
 > **关系**：本文件是体验与视觉执行方案；页面线框与业务交互仍以 [ui-design.md](ui-design.md) 为产品契约。冲突时：**业务规则以 ui-design 为准，视觉执行以本文件收敛 token 与组件为准**。  
 > **版本**：v1.1 · 2026-08-06（实机核验版）  
 > **落地状态（2026-08）**：**Phase 0–2 大体已落地**（token / Skills 静音与预览一体 / 文案包）。Phase 3 里 ListRow / 分段同一族 / `PageHeader compact` 已落地；剩余方言收口与组件决策见 [ui-component-standard.md](ui-component-standard.md)。Phase 4–5（动效、深色精修、accent 换色）仍是 backlog。  
-> **截图**：仓库不存实机图，以 `pnpm dev:mock` 为准。当时核验条件见 §12.2 文字结论，不链本地 png。
+> **截图**：仓库不存实机图，以 `pnpm dev:mock` 为准。当时核验条件见 §12.2 文字结论，不链本地 png。  
+> **现行状态**：本文是视觉/体验对标，**不是**现行产品 IA。现行 Settings **四栏**（偏好 / 本机 / 备份 / 关于）、侧栏 **Routes / 本机路由**、picker 芯片 **直连 / 用这份登录 / 本机路由 / 当前不支持** 见 [ui-design.md](ui-design.md)。下文 Phase 写作为当时体验改造记录，勿当现行 IA。
 
 ---
 
