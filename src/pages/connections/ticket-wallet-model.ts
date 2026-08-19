@@ -342,7 +342,7 @@ const AUTH_LABEL_HUMAN: Record<string, string> = {
 
 /** Human words for login health; never dump「可续期·未验证」as a raw token. */
 export function humanizeTicketAuthLabel(label: string): string {
-  return AUTH_LABEL_HUMAN[label] ?? label.replaceAll('·', '，');
+  return AUTH_LABEL_HUMAN[label] ?? label.replace(/·/g, '，');
 }
 
 function endpointHostOnly(host: string): string {
