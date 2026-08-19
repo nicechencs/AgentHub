@@ -134,7 +134,7 @@ fn anthropic_ticket_and_grok_are_protocol_mismatch() {
         unsupported_reason_for_target(AgentId::Grok, speaks),
         PROTOCOL_MISMATCH_REASON
     );
-    assert!(PROTOCOL_MISMATCH_REASON.contains("协议不通"));
+    assert_eq!(PROTOCOL_MISMATCH_REASON, "这份登录接不到这个 Agent。");
 }
 
 #[test]

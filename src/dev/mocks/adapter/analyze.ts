@@ -12,6 +12,7 @@ import {
   CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON,
   CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
   GROK_CLAUDE_RULE_ID,
+  GROK_SUBSCRIPTION_TO_CLAUDE_REASON,
   KIMI_NON_MEMBERSHIP_REASON,
   action,
   agentBindCapability,
@@ -91,7 +92,7 @@ export function analyze(
     return {
       route: 'local_bridge',
       support: 'experimental',
-      reason: 'Grok 订阅可通过本机路由到 Claude Code（Messages → xAI Chat Completions）。',
+      reason: GROK_SUBSCRIPTION_TO_CLAUDE_REASON,
       actions: [
         action(
           'requires_local_bridge',
@@ -106,9 +107,10 @@ export function analyze(
         ),
       ],
       limitations: [
-        'Claude 只写入本机 loopback URL 与本地 bearer；xAI OAuth token 不进入 Claude 配置、IPC 或日志。',
+        '会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 xAI OAuth token 不进 Claude。',
         '实验性协议桥接：Claude Messages → xAI Chat Completions；AgentHub 需保持在托盘运行。',
         'Grok access token 过期后需重新同步 Grok 登录；Hub 本轮不自动 refresh。',
+        '固定端口被占用时会尝试重新分配端口并写回配置。',
       ],
       evidence: compatibilityEvidence,
       ruleId: GROK_CLAUDE_RULE_ID,

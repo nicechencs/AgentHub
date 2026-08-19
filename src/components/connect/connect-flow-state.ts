@@ -503,6 +503,17 @@ function reusePathForPlan(plan: AdapterApplyPlan): AdapterReusePath {
   return 'api_endpoint';
 }
 
+function humanizeWriteField(field: string): string {
+  if (field === 'ANTHROPIC_BASE_URL') return '本机接口地址';
+  if (field === 'ANTHROPIC_AUTH_TOKEN') return '本机认证令牌';
+  if (field === 'ANTHROPIC_API_KEY') return 'Claude API Key';
+  return field;
+}
+
+function isUrlLikeWriteValue(value: string | undefined): boolean {
+  return value != null && /:\d{2,5}|127\.0\.0\.1|https?:\/\//i.test(value);
+}
+
 export function describePlanPreview(plan: AdapterApplyPlan): PlanPreviewView {
   const reusePath = reusePathForPlan(plan);
   const routeLabel = reusePath === 'api_endpoint'
@@ -515,21 +526,31 @@ export function describePlanPreview(plan: AdapterApplyPlan): PlanPreviewView {
   const startsBridge = reusePath === 'local_bridge';
   const writes = plan.changes.map((change) => (
     change.secret
-      ? `${change.target} · ${change.field}：使用已保存的密钥`
-      : `${change.target} · ${change.field}：${change.value ?? '保持默认'}`
+      ? `${change.target} · ${humanizeWriteField(change.field)}：使用已保存的密钥`
+      : `${change.target} · ${humanizeWriteField(change.field)}：${change.value ?? '保持默认'}`
   ));
+  const writeValues = new Set(
+    plan.changes
+      .map((change) => change.value)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0),
+  );
   const portNotes = startsBridge
     ? plan.changes
-      .filter((change) => /port|端口/i.test(change.field) || (change.value != null && /:\d{2,5}|127\.0\.0\.1/i.test(change.value)))
+      .filter((change) => {
+        const looksLikePort = /port|端口/i.test(change.field)
+          || (change.value != null && /:\d{2,5}|127\.0\.0\.1/i.test(change.value));
+        if (!looksLikePort) return false;
+        if (isUrlLikeWriteValue(change.value) && change.value && writeValues.has(change.value)) {
+          return false;
+        }
+        return true;
+      })
       .map((change) => (
         change.secret
-          ? `${change.field}：使用已保存的值`
-          : `${change.field}：${change.value ?? '待分配'}`
+          ? `${humanizeWriteField(change.field)}：使用已保存的值`
+          : `${humanizeWriteField(change.field)}：${change.value ?? '待分配'}`
       ))
     : [];
-  if (startsBridge && portNotes.length === 0) {
-    portNotes.push('将启动本机路由并分配端口');
-  }
   const modelMappings = plan.changes
     .filter((change) => /model|模型/i.test(change.field))
     .map((change) => (
@@ -547,6 +568,32 @@ export function describePlanPreview(plan: AdapterApplyPlan): PlanPreviewView {
     limitations: [...plan.analysis.limitations],
     reason: plan.analysis.reason,
   };
+}
+
+/**
+ * Preview footer import hint: only when the selected source is missing or not logged in.
+ * Hidden for a for-source live imported ticket, and for a for-agent logged-in imported source.
+ */
+export function shouldShowPreviewImportHint(input: {
+  entry: ConnectFlowEntry;
+  option: SourceOption | null;
+  accounts?: readonly Account[];
+  providers?: readonly Provider[];
+}): boolean {
+  const source = input.entry.mode === 'for-source'
+    ? input.entry.source
+    : input.option?.ref ?? null;
+  const account = input.option?.account
+    ?? (source?.kind === 'account'
+      ? input.accounts?.find((item) => item.id === source.id)
+      : undefined);
+  if (account) return account.tokenValid !== true;
+  const provider = input.option?.provider
+    ?? (source?.kind === 'provider'
+      ? input.providers?.find((item) => item.id === source.id)
+      : undefined);
+  if (provider) return false;
+  return true;
 }
 
 export function eligibilityOf(

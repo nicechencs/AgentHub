@@ -20,7 +20,11 @@ use crate::models::{
 /// Claude Code Responses edge. Mock UI and core analyze must keep this string
 /// in lockstep.
 pub const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON: &str =
-    concat!("Codex / ChatGPT 订阅可通过本机路由到 Claude Code（Messages → Responses）。",);
+    "Codex / ChatGPT 订阅会经本机路由接到 Claude Code.";
+
+/// Shared public reason for the experimental Grok subscription → Claude Code edge.
+pub const GROK_SUBSCRIPTION_TO_CLAUDE_REASON: &str =
+    "Grok 订阅会经本机路由接到 Claude Code.";
 
 /// Product-closed reason for Claude subscription → Codex.
 pub const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON: &str =
@@ -785,7 +789,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::LocalBridge,
         support: AdapterSupport::Experimental,
         can_apply: true,
-        reason: "Grok 订阅可通过本机路由到 Claude Code（Messages → xAI Chat Completions）。",
+        reason: GROK_SUBSCRIPTION_TO_CLAUDE_REASON,
         limitations: GROK_CLAUDE_LIMITS,
         rule_id: "grok-subscription-to-claude-v1",
         verified_at: "2026-08-15",
