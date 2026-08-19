@@ -186,7 +186,7 @@ export function EnvRemediationPanel({
           </p>
         </div>
         {onDismiss && status !== 'running' && (
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={onDismiss}>
+          <Button size="icon" variant="ghost" onClick={onDismiss}>
             <X className="h-3.5 w-3.5" />
           </Button>
         )}

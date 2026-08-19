@@ -118,7 +118,7 @@ export function ConnectionTrashButton({
           type="button"
           variant="outline"
           size="sm"
-          className="gap-2 rounded-full shadow-lg"
+          className="gap-2 rounded-full shadow-md hover:shadow-md"
           onClick={() => {
             setOpen(true);
             void load();
