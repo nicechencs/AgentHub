@@ -1,6 +1,9 @@
 use super::*;
 
-use crate::models::{Account, AccountKind, Provider};
+use crate::models::{
+    Account, AccountKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
+    AdapterSourceKind, Provider,
+};
 use crate::services::ProviderService;
 use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo};
 use axum::http::StatusCode;
@@ -442,6 +445,57 @@ fn failed_first_apply_does_not_remain_applying() {
     );
     assert_eq!(failed.local_port, None);
     assert!(service.list_auto_start_profiles().unwrap().is_empty());
+}
+
+fn applying_profile_for_rule(rule: &super::CodexBridgeRule) -> AdapterProfile {
+    let source_kind = if rule.mode == AdapterProfileMode::Oauth {
+        AdapterSourceKind::Account
+    } else {
+        AdapterSourceKind::Provider
+    };
+    AdapterProfile {
+        id: format!("{}-audit", rule.profile_prefix),
+        name: rule.profile_name.into(),
+        source_kind,
+        source_id: "audit-source".into(),
+        target_agent_id: rule.target_agent,
+        route: AdapterRoute::LocalBridge,
+        mode: rule.mode,
+        status: AdapterProfileStatus::Applying,
+        rule_id: rule.rule_id.into(),
+        rule_version: super::RULE_VERSION.into(),
+        generated_provider_id: Some(format!("{}-generated", rule.provider_prefix)),
+        local_port: None,
+        auto_start: true,
+        last_error_code: None,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+#[test]
+fn failed_first_apply_does_not_remain_applying_for_every_live_bridge_rule() {
+    for rule in super::LIVE_BRIDGE_RULES {
+        let (_dir, db) = test_db();
+        let profile = applying_profile_for_rule(rule);
+        AdapterProfileRepo::new(db.clone())
+            .create(&profile)
+            .unwrap();
+        let failed = AdapterBridgeService::new(db)
+            .mark_retryable(&profile.id, "adapter.bridge_projection")
+            .unwrap();
+        assert_eq!(
+            failed.status,
+            AdapterProfileStatus::NeedsAttention,
+            "first-time apply for {} must not stay applying without a port",
+            rule.rule_id
+        );
+        assert_eq!(failed.local_port, None);
+        assert_eq!(
+            failed.last_error_code.as_deref(),
+            Some("retryable:adapter.bridge_projection")
+        );
+    }
 }
 
 #[test]

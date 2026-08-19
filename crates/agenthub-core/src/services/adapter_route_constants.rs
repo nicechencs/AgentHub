@@ -141,6 +141,21 @@ pub const GLM_CODING_RESPONSES_NEEDLE: &str = "open.bigmodel.cn/api/v1";
 /// Official DeepSeek HTTP host.
 pub const DEEPSEEK_API_ENDPOINT_NEEDLE: &str = "api.deepseek.com";
 
+/// Rule ids defined in this module. Append when adding a `*_RULE_ID`.
+/// Secret-resolver matchers must cover each applyable projection.
+pub const PUBLISHED_ROUTE_RULE_IDS: &[&str] = &[
+    KIMI_CLAUDE_RULE_ID,
+    GLM_CLAUDE_RULE_ID,
+    DEEPSEEK_CLAUDE_RULE_ID,
+    GLM_CODEX_RULE_ID,
+    DEEPSEEK_CODEX_RULE_ID,
+    KIMI_GROK_RULE_ID,
+    OPENAI_GROK_RULE_ID,
+    GROK_CLAUDE_RULE_ID,
+    GLM_PI_RULE_ID,
+    DEEPSEEK_PI_RULE_ID,
+];
+
 /// OpenAI env key accepted when reading a source provider.
 pub const OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
 

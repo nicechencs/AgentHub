@@ -1,14 +1,16 @@
 use super::*;
-use crate::models::{Account, AccountKind};
+use crate::models::{Account, AccountKind, AdapterRoute, ADAPTER_CAPABILITY_MATRIX};
+use crate::services::adapter_bridge_service::live_bridge_rule_projections;
 use crate::services::adapter_route_constants::{
     DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_CODEX_BASE_URL,
     DEEPSEEK_CODEX_PROVIDER_SLUG, DEEPSEEK_PI_PROVIDER_SLOT, DSH_API_KEY_ENV,
     DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CODEX_BASE_URL, GLM_CODEX_PROVIDER_SLUG,
     GLM_PI_BASE_URL, GLM_PI_PROVIDER_SLOT, GROK_CLAUDE_RULE_ID, KIMI_CLAUDE_BASE_URL,
-    KIMI_MEMBERSHIP_PRESET,
+    KIMI_MEMBERSHIP_PRESET, PUBLISHED_ROUTE_RULE_IDS,
 };
 use crate::storage::AccountRepo;
 use serde_json::json;
+use std::collections::BTreeSet;
 
 fn provider(id: &str, agent_id: AgentId, settings_config: Value, meta: Value) -> Provider {
     Provider {
@@ -1517,4 +1519,111 @@ fn glm_provider_and_deepseek_account_materialize_and_scrub_by_rule_url() {
         materialized.settings_config["env"]["ANTHROPIC_BASE_URL"],
         DEEPSEEK_CLAUDE_BASE_URL
     );
+}
+
+fn generated_stub(agent_id: AgentId, rule_id: &str, secret_mode: &str) -> Provider {
+    provider(
+        "generated-coverage-stub",
+        agent_id,
+        json!({}),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": rule_id,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": secret_mode,
+        }),
+    )
+}
+
+fn secret_matcher_name(provider: &Provider) -> Option<&'static str> {
+    if is_claude_source_reference(provider) {
+        Some("is_claude_source_reference")
+    } else if is_codex_source_reference(provider) {
+        Some("is_codex_source_reference")
+    } else if is_pi_source_reference(provider) {
+        Some("is_pi_source_reference")
+    } else if is_dsh_source_reference(provider) {
+        Some("is_dsh_source_reference")
+    } else if is_grok_source_reference(provider) {
+        Some("is_grok_source_reference")
+    } else if is_codex_local_token(provider) {
+        Some("is_codex_local_token")
+    } else {
+        None
+    }
+}
+
+fn expected_secret_mode(route: AdapterRoute) -> &'static str {
+    match route {
+        AdapterRoute::LocalBridge => LOCAL_TOKEN_MODE,
+        AdapterRoute::NativeEndpoint | AdapterRoute::ConfigSync => SOURCE_REFERENCE_MODE,
+        AdapterRoute::Unsupported => {
+            panic!("applyable adapter cell must not use the unsupported route")
+        }
+    }
+}
+
+/// Grok→Claude shipped in the matrix / UI as `local_token` but was omitted
+/// from `is_codex_local_token`. Walk every applyable cell plus live bridge
+/// and route-constant ids so the next published rule fails CI the same way.
+#[test]
+fn every_published_rule_id_is_recognized_by_a_secret_matcher() {
+    let mut covered: BTreeSet<(AgentId, &'static str, &'static str)> = BTreeSet::new();
+    let mut applyable_ids = BTreeSet::new();
+    let mut gaps = Vec::new();
+
+    for cell in ADAPTER_CAPABILITY_MATRIX {
+        if !(cell.can_apply && cell.gates.all_passed()) {
+            continue;
+        }
+        let secret_mode = expected_secret_mode(cell.route);
+        applyable_ids.insert(cell.rule_id);
+        let stub = generated_stub(cell.key.target, cell.rule_id, secret_mode);
+        match secret_matcher_name(&stub) {
+            Some(_) => {
+                covered.insert((cell.key.target, cell.rule_id, secret_mode));
+            }
+            None => gaps.push(format!(
+                "{} (agent={:?}, route={:?}, mode={secret_mode})",
+                cell.rule_id, cell.key.target, cell.route
+            )),
+        }
+    }
+
+    for (agent_id, rule_id) in live_bridge_rule_projections() {
+        assert!(
+            applyable_ids.contains(rule_id),
+            "live bridge {rule_id} must also be an applyable matrix cell"
+        );
+        let stub = generated_stub(agent_id, rule_id, LOCAL_TOKEN_MODE);
+        if secret_matcher_name(&stub).is_none() {
+            gaps.push(format!(
+                "{rule_id} (live bridge agent={agent_id:?}, mode={LOCAL_TOKEN_MODE})"
+            ));
+        }
+    }
+
+    assert!(
+        gaps.is_empty(),
+        "published adapter rules omitted from secret-resolver matchers: {gaps:?}"
+    );
+    assert!(
+        !covered.is_empty(),
+        "expected at least one applyable adapter rule"
+    );
+
+    let covered_ids: BTreeSet<&str> = covered.iter().map(|(_, rule_id, _)| *rule_id).collect();
+    for rule_id in PUBLISHED_ROUTE_RULE_IDS {
+        assert!(
+            covered_ids.contains(rule_id),
+            "adapter_route_constants rule {rule_id} is not an applyable matrix/bridge projection covered by a matcher"
+        );
+    }
+
+    let unknown = generated_stub(
+        AgentId::Claude,
+        "unpublished-rule-must-fail-closed-v1",
+        LOCAL_TOKEN_MODE,
+    );
+    assert_eq!(secret_matcher_name(&unknown), None);
 }
