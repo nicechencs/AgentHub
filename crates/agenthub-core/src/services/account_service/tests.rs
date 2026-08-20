@@ -1457,8 +1457,8 @@ fn leftover_shaped_codex_live_does_not_throw_identity_conflict() {
         r#"{ "OPENAI_API_KEY": "sk-leftover" }"#,
     )
     .unwrap();
-    let prev = std::env::var_os("HOME");
-    std::env::set_var("HOME", &home);
+    let prev = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &codex);
 
     let db = Database::open(&root.path().join("ah.db")).unwrap();
     let path = root.path().join("live").join("auth.json");
@@ -1491,8 +1491,8 @@ fn leftover_shaped_codex_live_does_not_throw_identity_conflict() {
     let live = adapter.read_account().unwrap();
     let result = svc.validate_live_switch_identity(adapter.as_ref(), AgentId::Codex, &live);
     match prev {
-        Some(value) => std::env::set_var("HOME", value),
-        None => std::env::remove_var("HOME"),
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
     }
     result.expect("leftover-shaped Codex live must not throw identity_conflict");
 }
@@ -1510,8 +1510,8 @@ fn switch_official_from_leftover_live_does_not_identity_conflict() {
         r#"{ "OPENAI_API_KEY": "sk-leftover" }"#,
     )
     .unwrap();
-    let prev = std::env::var_os("HOME");
-    std::env::set_var("HOME", &home);
+    let prev = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &codex);
 
     let db = Database::open(&root.path().join("ah.db")).unwrap();
     let registry = crate::adapters::register_all();
@@ -1563,8 +1563,8 @@ fn switch_official_from_leftover_live_does_not_identity_conflict() {
         .unwrap()
         .unwrap();
     match prev {
-        Some(value) => std::env::set_var("HOME", value),
-        None => std::env::remove_var("HOME"),
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
     }
 
     let switched = switched.expect("switch to 官方登录 must not throw");

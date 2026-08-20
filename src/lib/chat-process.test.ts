@@ -303,6 +303,94 @@ describe('chat-process reduceProcessEvent', () => {
     });
   });
 
+  it('does not merge a later thinking snapshot onto an already-done step', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'agentStarted', turn: 1, agent: 'codex', command: 'codex exec' },
+      1,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'codex',
+        step: { type: 'thinking', text: 'item1 complete thought', done: true },
+      },
+      2,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'codex',
+        step: { type: 'thinking', text: 'item2 unrelated snapshot', done: false },
+      },
+      3,
+    );
+    expect(map['1:codex']?.steps).toHaveLength(2);
+    expect(map['1:codex']?.steps[0]).toMatchObject({
+      type: 'thinking',
+      text: 'item1 complete thought',
+      done: true,
+    });
+    expect(map['1:codex']?.steps[1]).toMatchObject({
+      type: 'thinking',
+      text: 'item2 unrelated snapshot',
+      done: false,
+    });
+  });
+
+  it('still merges consecutive undone snapshots after a done step', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'agentStarted', turn: 1, agent: 'codex', command: 'codex exec' },
+      1,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'codex',
+        step: { type: 'thinking', text: 'item1 done', done: true },
+      },
+      2,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'codex',
+        step: { type: 'thinking', text: 'a', done: false },
+      },
+      3,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'codex',
+        step: { type: 'thinking', text: 'a b', done: false },
+      },
+      4,
+    );
+    expect(map['1:codex']?.steps).toHaveLength(2);
+    expect(map['1:codex']?.steps[0]).toMatchObject({
+      type: 'thinking',
+      text: 'item1 done',
+      done: true,
+    });
+    expect(map['1:codex']?.steps[1]).toMatchObject({
+      type: 'thinking',
+      text: 'a b',
+      done: false,
+    });
+  });
+
   it('merges tool updates by id including later parallel tools', () => {
     let map: ProcessMap = reduceProcessEvent(
       {},

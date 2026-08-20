@@ -107,6 +107,72 @@ fn slug_detects_agenthub_bridge_only() {
 }
 
 #[test]
+fn strip_is_noop_for_official_gpt_apikey_pref_without_leftover_slug() {
+    let official = "model = \"gpt-5.1-codex\"\npreferred_auth_method = \"apikey\"\n";
+    let mut doc = official.parse::<DocumentMut>().unwrap();
+    assert!(!toml_is_bridge_leftover(official));
+    assert!(!strip_bridge_leftovers_in_doc(&mut doc));
+    assert_eq!(doc.to_string(), official);
+}
+
+#[test]
+fn strip_keeps_effort_when_model_key_is_missing() {
+    let only_effort = "model_reasoning_effort = \"high\"\n";
+    let mut doc = only_effort.parse::<DocumentMut>().unwrap();
+    assert!(!toml_is_bridge_leftover(only_effort));
+    assert!(!strip_bridge_leftovers_in_doc(&mut doc));
+    assert_eq!(doc.to_string(), only_effort);
+}
+
+#[test]
+fn strip_keeps_custom_provider_grok_model_and_effort() {
+    let custom = "model_provider = \"custom\"\nmodel = \"grok-4\"\nmodel_reasoning_effort = \"high\"\n";
+    let mut doc = custom.parse::<DocumentMut>().unwrap();
+    assert!(!toml_is_bridge_leftover(custom));
+    assert!(!strip_bridge_leftovers_in_doc(&mut doc));
+    assert_eq!(doc.to_string(), custom);
+}
+
+#[test]
+fn strip_clears_apikey_pref_when_only_provider_table_slug_remains() {
+    let leftover = r#"preferred_auth_method = "apikey"
+
+[model_providers.agenthub_grok_bridge]
+base_url = "http://127.0.0.1:43121/v1"
+"#;
+    let mut doc = leftover.parse::<DocumentMut>().unwrap();
+    assert!(toml_is_bridge_leftover(leftover));
+    assert!(strip_bridge_leftovers_in_doc(&mut doc));
+    let stored = doc.to_string();
+    assert!(!stored.contains("preferred_auth_method"));
+    assert!(!stored.contains("agenthub_grok_bridge"));
+}
+
+#[test]
+fn strip_drops_bridge_table_but_keeps_grok_model_under_custom_provider() {
+    let mixed = r#"model_provider = "custom"
+model = "grok-4"
+model_reasoning_effort = "high"
+
+[model_providers.custom]
+base_url = "https://relay.example.com/v1"
+
+[model_providers.agenthub_grok_bridge]
+base_url = "http://127.0.0.1:43121/v1"
+"#;
+    let mut doc = mixed.parse::<DocumentMut>().unwrap();
+    assert!(toml_is_bridge_leftover(mixed));
+    assert!(strip_bridge_leftovers_in_doc(&mut doc));
+    let stored = doc.to_string();
+    assert!(stored.contains("model_provider = \"custom\""));
+    assert!(stored.contains("model = \"grok-4\""));
+    assert!(stored.contains("model_reasoning_effort"));
+    assert!(stored.contains("[model_providers.custom]"));
+    assert!(!stored.contains("agenthub_grok_bridge"));
+    assert!(!stored.contains("127.0.0.1"));
+}
+
+#[test]
 fn live_config_is_bridge_leftover_reads_codex_home() {
     let _lock = super::lock_codex_home();
     let dir = tempfile::tempdir().unwrap();
@@ -114,14 +180,14 @@ fn live_config_is_bridge_leftover_reads_codex_home() {
     let codex = home.join(".codex");
     std::fs::create_dir_all(&codex).unwrap();
     std::fs::write(codex.join("config.toml"), LEFTOVER).unwrap();
-    let prev = std::env::var_os("HOME");
-    std::env::set_var("HOME", &home);
+    let prev = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &codex);
     let leftover = live_config_is_bridge_leftover();
     std::fs::write(codex.join("config.toml"), "model = \"gpt-5\"\n").unwrap();
     let clean = live_config_is_bridge_leftover();
     match prev {
-        Some(value) => std::env::set_var("HOME", value),
-        None => std::env::remove_var("HOME"),
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
     }
     assert!(leftover);
     assert!(!clean);

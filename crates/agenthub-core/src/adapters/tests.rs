@@ -3,7 +3,18 @@ use crate::error::AppError;
 use crate::models::{AccountKind, AgentConfig, AgentId, Capability, CapabilityLevel};
 use crate::utils::atomic::atomic_write;
 use serde_json::json;
+use std::ffi::OsString;
 use std::path::PathBuf;
+use std::sync::Mutex;
+
+static DETECT_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+fn restore_env(key: &str, prev: Option<OsString>) {
+    match prev {
+        Some(value) => std::env::set_var(key, value),
+        None => std::env::remove_var(key),
+    }
+}
 
 #[test]
 fn expand_binary_names_adds_windows_suffixes() {
@@ -148,6 +159,122 @@ fn not_found_firefighting_note_mentions_path_and_restart() {
         NOT_FOUND_FIREFIGHTING_NOTE.contains("重启")
             || NOT_FOUND_FIREFIGHTING_NOTE.contains("restart")
     );
+}
+
+#[test]
+fn first_existing_named_bin_prefers_earlier_user_prefix_dir() {
+    let tmp = tempfile::tempdir().unwrap();
+    let user_prefix = tmp.path().join("agenthub").join("npm").join("bin");
+    let legacy_global = tmp.path().join("usr").join("local").join("bin");
+    std::fs::create_dir_all(&user_prefix).unwrap();
+    std::fs::create_dir_all(&legacy_global).unwrap();
+    std::fs::write(user_prefix.join("codex"), b"user-prefix").unwrap();
+    std::fs::write(legacy_global.join("codex"), b"legacy-global").unwrap();
+
+    let found = first_existing_named_bin(
+        &[user_prefix.clone(), legacy_global.clone()],
+        &["codex".into()],
+    );
+    assert_eq!(found, Some(user_prefix.join("codex")));
+}
+
+/// H4: user-prefix file must beat a different PATH/`which` hit.
+/// Helper-only tests still pass if this early return is deleted.
+#[cfg(unix)]
+#[test]
+fn detect_binary_prefers_user_npm_prefix_over_path_which() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let _guard = DETECT_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    let path_dir = tmp.path().join("path-bin");
+    let user_bin = data.join("npm").join("bin");
+    std::fs::create_dir_all(&user_bin).unwrap();
+    std::fs::create_dir_all(&path_dir).unwrap();
+
+    let name = "agenthub-h4-probe";
+    let user_probe = user_bin.join(name);
+    let path_probe = path_dir.join(name);
+    std::fs::write(&user_probe, "#!/bin/sh\necho 9.9.9\n").unwrap();
+    std::fs::write(&path_probe, "#!/bin/sh\necho 1.0.0\n").unwrap();
+    std::fs::set_permissions(&user_probe, PermissionsExt::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(&path_probe, PermissionsExt::from_mode(0o755)).unwrap();
+
+    let prev_home = std::env::var_os("AGENTHUB_HOME");
+    let prev_path = std::env::var_os("PATH");
+    std::env::set_var("AGENTHUB_HOME", &data);
+    let mut path = OsString::from(&path_dir);
+    path.push(":");
+    if let Some(rest) = &prev_path {
+        path.push(rest);
+    }
+    std::env::set_var("PATH", &path);
+
+    let found = std::panic::catch_unwind(|| {
+        detect_binary(AgentId::Codex, &[name], &["--version"], None, true)
+    });
+    restore_env("AGENTHUB_HOME", prev_home);
+    restore_env("PATH", prev_path);
+    let result = found.expect("detect_binary must not panic");
+
+    assert_eq!(
+        result.status,
+        crate::models::DetectStatus::Installed,
+        "user-prefix probe must count as Installed: {:?}",
+        result.notes
+    );
+    assert_eq!(
+        result.binary_path.as_deref(),
+        Some(user_probe.as_path()),
+        "PATH/which hit {path_probe:?} must not shadow AgentHub user npm prefix"
+    );
+    assert_eq!(
+        result.version.as_deref(),
+        Some("9.9.9"),
+        "version must come from the user-prefix binary, not PATH"
+    );
+}
+
+#[test]
+fn is_under_agenthub_user_npm_prefix_excludes_legacy_global() {
+    let roots = agenthub_user_npm_prefix_roots();
+    assert!(
+        !roots.is_empty(),
+        "user npm prefix roots must include data-dir and/or ~/.agenthub/npm"
+    );
+    for root in &roots {
+        let hit = if cfg!(windows) {
+            root.join("codex.cmd")
+        } else {
+            root.join("bin").join("codex")
+        };
+        assert!(
+            is_under_agenthub_user_npm_prefix(&hit),
+            "expected {} under user prefix",
+            hit.display()
+        );
+    }
+    assert!(!is_under_agenthub_user_npm_prefix(std::path::Path::new(
+        "/usr/local/bin/codex"
+    )));
+    if let Ok(home) = crate::utils::paths::home_dir() {
+        assert!(!is_under_agenthub_user_npm_prefix(
+            &home.join(".local").join("bin").join("codex")
+        ));
+        assert!(!is_under_agenthub_user_npm_prefix(
+            &home.join(".npm-global").join("bin").join("codex")
+        ));
+        #[cfg(windows)]
+        {
+            assert!(!is_under_agenthub_user_npm_prefix(
+                &home.join("AppData").join("Roaming").join("npm").join("codex.cmd")
+            ));
+        }
+    }
 }
 
 #[test]
