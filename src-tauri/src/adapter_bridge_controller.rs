@@ -442,13 +442,43 @@ fn persist_bridge_projection_inner(
         .unwrap_or(false);
     let should_switch = should_make_bridge_current(force_switch_current, generated_was_current);
 
+    let previous_current_id = snapshot
+        .current_provider
+        .as_ref()
+        .map(|provider| provider.id.as_str())
+        .filter(|id| *id != provider_id.as_str());
     let provider = if should_switch {
         match hub.providers.switch_with_guard(
             core_guard,
             &provider_id,
             prepared.profile().target_agent_id,
         ) {
-            Ok(result) => result.provider.redacted(),
+            Ok(result) => {
+                let backup_id = result.backup.as_ref().map(|backup| backup.id.as_str());
+                match hub.providers.persist_first_bind_restore_meta_with_guard(
+                    core_guard,
+                    &result.provider,
+                    previous_current_id,
+                    backup_id,
+                ) {
+                    Ok(provider) => provider.redacted(),
+                    Err(error) => {
+                        let rollback = rollback_bridge_projection(
+                            hub,
+                            core_guard,
+                            &provider_id,
+                            snapshot,
+                            created,
+                            prepared.profile().target_agent_id,
+                        );
+                        return Err(composite_saga_error(
+                            "persist_adapter_bridge_restore_meta",
+                            map_err_string("persist_adapter_bridge_restore_meta", error),
+                            rollback,
+                        ));
+                    }
+                }
+            }
             Err(error) => {
                 let rollback = rollback_bridge_projection(
                     hub,
@@ -644,7 +674,10 @@ async fn load_bridge_profile(
 ) -> Result<AdapterProfile, String> {
     let profile = load_adapter_profile(hub, profile_id).await?;
     if profile.route != AdapterRoute::LocalBridge
-        || !matches!(profile.target_agent_id, AgentId::Codex | AgentId::Claude)
+        || !matches!(
+            profile.target_agent_id,
+            AgentId::Codex | AgentId::Claude | AgentId::Grok | AgentId::Kimi | AgentId::Dsh
+        )
         || !matches!(
             profile.source_kind,
             AdapterSourceKind::Provider | AdapterSourceKind::Account

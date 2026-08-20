@@ -11,20 +11,12 @@ use crate::bridge::types::{
 
 /// Parse the subset of `POST /v1/responses` that this bridge can faithfully represent.
 ///
-/// Unsupported multimodal and hosted-tool inputs fail closed.  This is intentional: sending
-/// a text-only approximation would make it look as if the model saw data it never received.
+/// Unsupported multimodal inputs fail closed. Non-function tool types are dropped.
 pub fn parse_responses_request(value: &Value) -> ProtocolResult<BridgeRequest> {
     let object = value
         .as_object()
         .ok_or_else(|| ProtocolError::invalid_request("The request body must be a JSON object."))?;
-    if object.contains_key("reasoning") {
-        // Kimi's OpenAI-compatible endpoint has no verified equivalent for Responses
-        // reasoning controls.  Dropping it could change the requested model behavior.
-        return Err(ProtocolError::unsupported(
-            "unsupported_reasoning",
-            "Reasoning configuration is not supported by this bridge.",
-        ));
-    }
+    // Responses `reasoning` is not a Chat field; map effort only for xAI.
     let model = required_string(object, "model", "A non-empty model is required.")?;
     let input = match object.get("input") {
         Some(Value::String(text)) => vec![BridgeMessage {
@@ -54,11 +46,14 @@ pub fn parse_responses_request(value: &Value) -> ProtocolResult<BridgeRequest> {
     };
 
     let known = known_request_fields();
-    let passthrough = object
+    let mut passthrough = object
         .iter()
         .filter(|(key, _)| !known.contains(key.as_str()))
         .map(|(key, item)| (key.clone(), item.clone()))
-        .collect();
+        .collect::<Map<String, Value>>();
+    if let Some(effort) = grok_reasoning_effort(object.get("reasoning")) {
+        passthrough.insert("reasoning_effort".to_owned(), Value::String(effort));
+    }
 
     Ok(BridgeRequest {
         model,
@@ -148,6 +143,20 @@ pub fn to_kimi_chat_request(request: &BridgeRequest) -> Value {
     Value::Object(body)
 }
 
+/// Convert a parsed OpenAI Responses request to xAI/Grok Chat Completions.
+///
+/// Same Chat Completions shape as [`to_kimi_chat_request`], plus `reasoning_effort`
+/// when Codex sent a mappable Responses `reasoning.effort`.
+pub fn to_grok_chat_request(request: &BridgeRequest) -> Value {
+    let mut body = to_kimi_chat_request(request);
+    if let Some(effort) = request.passthrough.get("reasoning_effort") {
+        if let Some(object) = body.as_object_mut() {
+            object.insert("reasoning_effort".to_owned(), effort.clone());
+        }
+    }
+    body
+}
+
 /// Convenience entry point for HTTP handlers.
 pub fn translate_responses_request(value: &Value) -> ProtocolResult<(BridgeRequest, Value)> {
     let request = parse_responses_request(value)?;
@@ -229,6 +238,45 @@ pub fn to_responses_request(request: &BridgeRequest) -> Value {
     Value::Object(body)
 }
 
+/// Official ChatGPT / Codex Responses rejects leftover `grok-*` and `claude-*`
+/// model ids (400). Do not invent a ChatGPT model name to replace them — omit
+/// instead.
+pub fn is_leftover_grok_model(model: &str) -> bool {
+    let model = model.trim();
+    model.starts_with("grok-") || model.starts_with("claude-")
+}
+
+/// Write the Responses `model` for official Codex upstream.
+///
+/// Configured override wins when it is non-empty and not leftover `grok-*` /
+/// `claude-*`. Incoming leftovers are dropped rather than rewritten as `gpt-*`.
+pub fn apply_official_codex_model(body: &mut Value, incoming: &str, configured: Option<&str>) {
+    let configured = configured
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !is_leftover_grok_model(value));
+    let incoming = incoming
+        .trim()
+        .to_owned();
+    let incoming = if incoming.is_empty() || is_leftover_grok_model(&incoming) {
+        None
+    } else {
+        Some(incoming)
+    };
+    match (configured, incoming) {
+        (Some(model), _) => {
+            body["model"] = Value::String(model.to_owned());
+        }
+        (None, Some(model)) => {
+            body["model"] = Value::String(model);
+        }
+        (None, None) => {
+            if let Some(object) = body.as_object_mut() {
+                object.remove("model");
+            }
+        }
+    }
+}
+
 /// Build a non-streaming OpenAI Responses object from IR events.
 ///
 /// Used by the Anthropic API Key → Codex path after Anthropic Messages
@@ -307,6 +355,7 @@ pub fn encode_responses_from_ir(
                     output_tokens: *output_tokens,
                     total_tokens: input_tokens.saturating_add(*output_tokens),
                     cached_input_tokens: *cached_input_tokens,
+                    reasoning_tokens: 0,
                 });
             }
             IrEvent::MessageEnd {
@@ -517,6 +566,7 @@ impl IrToResponsesSse {
                     output_tokens: *output_tokens,
                     total_tokens: input_tokens.saturating_add(*output_tokens),
                     cached_input_tokens: *cached_input_tokens,
+                    reasoning_tokens: 0,
                 });
             }
             IrEvent::MessageEnd { stop_reason } => {
@@ -795,9 +845,13 @@ fn responses_object(
     );
     response.insert(
         "usage".to_owned(),
-        usage
-            .map(|usage| usage.to_responses_json())
-            .unwrap_or(Value::Null),
+        if completed {
+            Usage::completed_responses_json(usage.as_ref())
+        } else {
+            usage
+                .map(|usage| usage.to_responses_json())
+                .unwrap_or(Value::Null)
+        },
     );
     Value::Object(response)
 }
@@ -1706,21 +1760,16 @@ fn parse_tools(value: Option<&Value>) -> ProtocolResult<Vec<BridgeTool>> {
         .as_array()
         .ok_or_else(|| ProtocolError::invalid_request("`tools` must be an array."))?;
     let mut tools = Vec::with_capacity(items.len());
+    let mut dropped = HashSet::new();
     for item in items {
         let object = item
             .as_object()
             .ok_or_else(|| ProtocolError::invalid_request("Every tool must be an object."))?;
         let kind = required_string(object, "type", "Every tool requires a type.")?;
         if kind != "function" {
-            let code = match kind.as_str() {
-                "web_search" | "web_search_preview" => "unsupported_web_search",
-                "computer_use" | "computer" => "unsupported_computer_use",
-                _ => "unsupported_tool",
-            };
-            return Err(ProtocolError::unsupported(
-                code,
-                "This hosted tool type is not supported by this bridge.",
-            ));
+            // Non-function tool types are dropped.
+            dropped.insert(kind);
+            continue;
         }
         let parameters = object
             .get("parameters")
@@ -1747,6 +1796,13 @@ fn parse_tools(value: Option<&Value>) -> ProtocolResult<Vec<BridgeTool>> {
             strict,
         });
     }
+    if !dropped.is_empty() {
+        tracing::warn!(
+            target: "core.adapter",
+            dropped = ?dropped,
+            "dropping hosted Responses tool types that Chat Completions cannot take",
+        );
+    }
     Ok(tools)
 }
 
@@ -1761,10 +1817,8 @@ fn parse_tool_choice(value: Option<&Value>) -> ProtocolResult<Option<ToolChoice>
         },
         Value::Object(object) => {
             if object.get("type").and_then(Value::as_str) != Some("function") {
-                return Err(ProtocolError::unsupported(
-                    "unsupported_tool_choice",
-                    "Only function tool choice is supported by this bridge.",
-                ));
+                // Hosted tool_choice objects become None.
+                return Ok(None);
             }
             let name = object
                 .get("name")
@@ -1837,7 +1891,18 @@ fn known_request_fields() -> HashSet<&'static str> {
         "tools",
         "tool_choice",
         "stream",
+        "reasoning",
     ]
     .into_iter()
     .collect()
+}
+
+/// Responses `reasoning` is not a Chat field; map effort only for xAI.
+fn grok_reasoning_effort(value: Option<&Value>) -> Option<String> {
+    let effort = match value? {
+        Value::Object(object) => object.get("effort").and_then(Value::as_str)?,
+        Value::String(effort) => effort.as_str(),
+        _ => return None,
+    };
+    matches!(effort, "low" | "medium" | "high" | "xhigh").then(|| effort.to_owned())
 }

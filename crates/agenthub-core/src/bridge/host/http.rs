@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 use crate::bridge::runtime::BridgeUpstreamStatus;
 use crate::bridge::types::ProtocolError;
 
-use super::dispatch::{handle_messages, handle_responses, ProtocolSelector};
+use super::dispatch::{handle_chat_completions, handle_messages, handle_responses, ProtocolSelector};
 use super::{BODY_LIMIT_BYTES, REQUEST_BODY_TIMEOUT};
 
 #[derive(Clone)]
@@ -57,6 +57,8 @@ pub(super) fn router(state: ListenerState) -> Router {
         .route("/health", get(health))
         .route("/v1/responses", post(responses))
         .route("/v1/messages", post(messages))
+        .route("/v1/chat/completions", post(chat_completions))
+        .route("/chat/completions", post(chat_completions))
         .layer(axum::extract::DefaultBodyLimit::max(BODY_LIMIT_BYTES))
         .with_state(state)
 }
@@ -96,6 +98,13 @@ async fn messages(State(state): State<ListenerState>, request: Request) -> Respo
         return StatusCode::NOT_FOUND.into_response();
     }
     handle_messages(state, request).await
+}
+
+async fn chat_completions(State(state): State<ListenerState>, request: Request) -> Response {
+    if !ProtocolSelector::from_listener(&state).serves_chat_completions() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    handle_chat_completions(state, request).await
 }
 
 pub(super) async fn read_request_json(request: Request) -> Result<Value, Response> {

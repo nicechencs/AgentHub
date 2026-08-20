@@ -1,6 +1,7 @@
 //! Pure wire-protocol translation.  This module has no HTTP, credential, or runtime code.
 //!
-//! - [`chat`] / [`responses`]: Kimi local_bridge path (Responses downstream ↔ Chat).
+//! - [`chat`] / [`responses`]: Kimi local_bridge path (Responses downstream ↔ Chat)
+//!   and Codex official login → Grok / Kimi / DSH (Chat local ↔ Responses upstream).
 //! - [`anthropic_messages`] + Responses IR helpers:
 //!   - Codex subscription → Claude Code kernel (Messages downstream ↔ IR ↔ Responses upstream).
 //!   - Anthropic API Key → Codex local_bridge (Responses downstream ↔ IR ↔ Messages upstream).

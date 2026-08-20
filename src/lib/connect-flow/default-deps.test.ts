@@ -264,6 +264,32 @@ describe('createDefaultConnectFlowDeps', () => {
     expect(previewSpy).not.toHaveBeenCalled();
   });
 
+  it('apply accepts official Codex native self-bind without a generated provider', async () => {
+    seedAfterBackend();
+    vi.spyOn(ticketsApi, 'bindTicket').mockResolvedValue({
+      binding: {
+        ticketId: 'account:codex-live-1',
+        agentId: 'codex',
+        route: 'native',
+        active: true,
+        profileId: null,
+        bridge: null,
+      },
+    });
+    const listProfiles = vi.spyOn(adapterApi, 'listAdapterProfiles');
+    const deps = createDefaultConnectFlowDeps();
+    const result = await deps.apply({
+      sourceKind: 'account',
+      sourceId: 'codex-live-1',
+      targetAgentId: 'codex',
+    });
+    expect(result.profile.route).toBe('native_endpoint');
+    expect(result.profile.generatedProviderId).toBeNull();
+    expect(result.provider.name).toBe('官方登录');
+    expect(result.provider.name).not.toBe('本机路由');
+    expect(listProfiles).not.toHaveBeenCalled();
+  });
+
   it('createPlanFanout uses the wired plan and OAuth precheck', async () => {
     seedAfterBackend();
     upsertMockAccount({

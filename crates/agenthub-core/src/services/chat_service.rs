@@ -199,6 +199,38 @@ impl ChatService {
         result
     }
 
+    /// Best-effort: drop a stale native session so the next send uses full history.
+    /// Failures are warned only and never replace the original send error.
+    fn clear_native_session_id(&self, conversation_id: &str) {
+        match self.get_conversation(conversation_id) {
+            Ok(mut latest) => {
+                if latest.native_session_id.is_none() {
+                    return;
+                }
+                latest.native_session_id = None;
+                latest.updated_at = Utc::now().to_rfc3339();
+                if let Err(e) = self.repo.update_conversation(&latest) {
+                    tracing::warn!(
+                        module = targets::CHAT,
+                        op = "clear_native_session",
+                        conversation_id = conversation_id,
+                        error = %e,
+                        "failed to clear native session id after resume failure"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    module = targets::CHAT,
+                    op = "clear_native_session",
+                    conversation_id = conversation_id,
+                    error = %e,
+                    "failed to load conversation to clear native session id"
+                );
+            }
+        }
+    }
+
     fn send_inner(
         &self,
         conversation_id: &str,
@@ -236,6 +268,18 @@ impl ChatService {
             prompt_len = user_input.chars().count(),
             "send start"
         );
+        let send_agents = agents.clone();
+        let send_cwd = conv.cwd.clone();
+        let resume_id = conv
+            .native_session_id
+            .as_deref()
+            .and_then(crate::adapters::session_resume::valid_session_id)
+            .filter(|_| {
+                agents
+                    .first()
+                    .is_some_and(|a| crate::adapters::supports_print_resume(*a))
+            })
+            .map(str::to_string);
         let now = Utc::now().to_rfc3339();
 
         let mut user_msg = ChatMessage {
@@ -319,17 +363,6 @@ impl ChatService {
                 }
             }
 
-            let resume_id = conv
-                .native_session_id
-                .as_deref()
-                .and_then(crate::adapters::session_resume::valid_session_id)
-                .filter(|_| {
-                    agents
-                        .first()
-                        .is_some_and(|a| crate::adapters::supports_print_resume(*a))
-                })
-                .map(str::to_string);
-
             let mut jobs: Vec<(AgentId, String)> = Vec::with_capacity(agents.len());
             for &agent in &agents {
                 let prompt = if resume_id.is_some() {
@@ -350,7 +383,7 @@ impl ChatService {
                 max_output_bytes: 2 * 1024 * 1024,
                 // Claude/Codex → stream-json / --json; others remain text.
                 process_mode: crate::models::ProcessMode::Auto,
-                native_session_id: resume_id,
+                native_session_id: resume_id.clone(),
             };
             let max_out = opts.max_output_bytes;
             tracing::debug!(
@@ -431,6 +464,9 @@ impl ChatService {
                     on_event(ChatEvent::Error {
                         message: e.to_string(),
                     });
+                    if resume_id.is_some() {
+                        self.clear_native_session_id(conversation_id);
+                    }
                     return Err(e);
                 }
             };
@@ -452,9 +488,20 @@ impl ChatService {
 
         let (turn, report_ok, results, mut remaining) = send_result?;
 
-        if let Some(sid) = results.iter().find_map(|r| r.native_session_id.clone()) {
+        let resume_hard_fail =
+            resume_id.is_some() && results.iter().any(|r| r.status.is_hard_failure());
+        if resume_hard_fail {
+            self.clear_native_session_id(conversation_id);
+        } else if let Some(sid) = results.iter().find_map(|r| r.native_session_id.clone()) {
             if let Ok(mut latest) = self.get_conversation(conversation_id) {
-                if latest.native_session_id.as_deref() != Some(sid.as_str()) {
+                if latest.agent_ids != send_agents || latest.cwd != send_cwd {
+                    tracing::debug!(
+                        module = targets::CHAT,
+                        op = "persist_native_session",
+                        conversation_id = conversation_id,
+                        "discard native session id; cwd or agent changed during send"
+                    );
+                } else if latest.native_session_id.as_deref() != Some(sid.as_str()) {
                     latest.native_session_id = Some(sid);
                     latest.updated_at = Utc::now().to_rfc3339();
                     if let Err(e) = self.repo.update_conversation(&latest) {

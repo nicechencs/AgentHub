@@ -7,8 +7,10 @@ use crate::adapters::AgentAdapter;
 use crate::models::{ProcessMode, RunOptions};
 
 use super::{
-    clear_grok_field, grok_auth_state, read_grok_api_key, write_grok_api_key, GrokAdapter,
+    clear_grok_field, grok_auth_state, grok_cli_args, grok_supports_no_auto_update,
+    read_grok_api_key, write_grok_api_key, GrokAdapter,
 };
+use crate::models::{AgentConfig, AgentId};
 
 #[test]
 fn grok_account_key_reads_and_writes_active_nested_model() {
@@ -92,6 +94,44 @@ fn grok_api_key_and_missing_or_unparseable_auth_leaves_also_present_empty() {
 }
 
 #[test]
+fn grok_write_config_points_base_url_at_loopback_and_drops_leftover_grok_model() {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", dir.path());
+    fs::write(
+        dir.path().join("config.toml"),
+        r#"[models]
+default = "grok"
+
+[model."grok"]
+model = "grok-4.5"
+base_url = "https://api.x.ai/v1"
+api_key = "old"
+"#,
+    )
+    .unwrap();
+    let result = GrokAdapter.write_config(&AgentConfig {
+        agent: AgentId::Grok,
+        raw: serde_json::json!({
+            "format": "toml",
+            "content": "[models]\ndefault = \"agenthub_codex_bridge\"\n\n[model.\"agenthub_codex_bridge\"]\nbase_url = \"http://127.0.0.1:32123/v1\"\napi_key = \"ahb_local\"\napi_backend = \"chat_completions\"\n",
+        }),
+    });
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
+    result.unwrap();
+    let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert!(text.contains("http://127.0.0.1:32123/v1"));
+    assert!(text.contains("api_backend = \"chat_completions\""));
+    assert!(!text.contains("grok-4.5"));
+    assert!(!text.contains("gpt-"));
+}
+
+#[test]
 fn grok_oauth_only_leaves_also_present_empty() {
     let dir = tempdir().unwrap();
     let config = dir.path().join("config.toml");
@@ -116,6 +156,94 @@ fn grok_oauth_only_leaves_also_present_empty() {
 }
 
 #[test]
+fn grok_supports_no_auto_update_gates_old_semver() {
+    assert!(grok_supports_no_auto_update(None));
+    assert!(grok_supports_no_auto_update(Some("")));
+    assert!(grok_supports_no_auto_update(Some("not-a-version")));
+    assert!(grok_supports_no_auto_update(Some("0.2.117")));
+    assert!(grok_supports_no_auto_update(Some("0.2.118")));
+    assert!(grok_supports_no_auto_update(Some("grok 0.2.118 (1e1687c1cf)")));
+    assert!(grok_supports_no_auto_update(Some("1.0.0")));
+    assert!(!grok_supports_no_auto_update(Some("0.2.116")));
+    assert!(!grok_supports_no_auto_update(Some("0.2.0")));
+    assert!(!grok_supports_no_auto_update(Some("grok 0.2.116 (deadbeef)")));
+    assert!(
+        !grok_supports_no_auto_update(Some("0.2.117-beta.1")),
+        "semver prerelease of the min version is still older than 0.2.117"
+    );
+}
+
+#[test]
+fn grok_cli_args_include_no_auto_update_for_unknown_and_modern() {
+    let opts = RunOptions {
+        process_mode: ProcessMode::Auto,
+        ..RunOptions::default()
+    };
+    assert_eq!(
+        grok_cli_args("hi", &opts, None),
+        vec![
+            "--no-auto-update",
+            "-p",
+            "hi",
+            "--output-format",
+            "streaming-json"
+        ]
+    );
+    assert_eq!(
+        grok_cli_args("hi", &opts, Some("0.2.117")),
+        vec![
+            "--no-auto-update",
+            "-p",
+            "hi",
+            "--output-format",
+            "streaming-json"
+        ]
+    );
+}
+
+#[test]
+fn grok_cli_args_omit_no_auto_update_for_old_cli() {
+    let opts = RunOptions {
+        process_mode: ProcessMode::Auto,
+        ..RunOptions::default()
+    };
+    assert_eq!(
+        grok_cli_args("hi", &opts, Some("0.2.116")),
+        vec!["-p", "hi", "--output-format", "streaming-json"]
+    );
+}
+
+#[test]
+fn grok_cli_args_dangerous_prefixes_always_approve() {
+    let opts = RunOptions {
+        allow_dangerous: true,
+        process_mode: ProcessMode::Auto,
+        ..RunOptions::default()
+    };
+    assert_eq!(
+        grok_cli_args("hi", &opts, None),
+        vec![
+            "--always-approve",
+            "--no-auto-update",
+            "-p",
+            "hi",
+            "--output-format",
+            "streaming-json"
+        ]
+    );
+    assert_eq!(
+        grok_cli_args("hi", &opts, Some("0.2.116")),
+        vec![
+            "--always-approve",
+            "-p",
+            "hi",
+            "--output-format",
+            "streaming-json"
+        ]
+    );
+}
+
+#[test]
 fn build_run_spec_guards_auto_update_and_streams_json() {
     let spec = GrokAdapter
         .build_run_spec(
@@ -127,41 +255,15 @@ fn build_run_spec_guards_auto_update_and_streams_json() {
             },
         )
         .unwrap();
-    assert_eq!(
-        spec.args,
-        vec![
-            "--no-auto-update",
-            "-p",
-            "hi",
-            "--output-format",
-            "streaming-json"
-        ]
+    let detected = GrokAdapter.detect().version;
+    let expected = grok_cli_args(
+        "hi",
+        &RunOptions {
+            process_mode: ProcessMode::Auto,
+            ..RunOptions::default()
+        },
+        detected.as_deref(),
     );
+    assert_eq!(spec.args, expected);
     assert!(spec.env.is_empty());
-}
-
-#[test]
-fn build_run_spec_dangerous_prefixes_always_approve() {
-    let spec = GrokAdapter
-        .build_run_spec(
-            Path::new("grok"),
-            "hi",
-            &RunOptions {
-                allow_dangerous: true,
-                process_mode: ProcessMode::Auto,
-                ..RunOptions::default()
-            },
-        )
-        .unwrap();
-    assert_eq!(
-        spec.args,
-        vec![
-            "--always-approve",
-            "--no-auto-update",
-            "-p",
-            "hi",
-            "--output-format",
-            "streaming-json"
-        ]
-    );
 }

@@ -920,6 +920,39 @@ fn identical_snapshot_reuses_row_and_does_not_duplicate_payload() {
 }
 
 #[test]
+fn tampered_stored_payload_does_not_reuse_snapshot_even_when_manifest_hash_matches() {
+    let live = tempdir().unwrap();
+    let f = live.path().join("settings.json");
+    write_file(&f, b"same-bytes");
+    let (_root, svc, backups_root) = make_svc(AgentId::Claude, vec![f]);
+
+    let first = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, Some("keep"))
+        .unwrap();
+    assert_eq!(count_agent_snapshot_dirs(&backups_root, "claude"), 1);
+
+    let stored = PathBuf::from(&first.path).join("settings.json");
+    // Same length so size-based reuse still looks plausible; only a stored
+    // re-hash can detect the corruption while the manifest sha256 stays old.
+    std::fs::write(&stored, b"TAMPERED!!").unwrap();
+    assert_eq!(b"same-bytes".len(), b"TAMPERED!!".len());
+
+    let second = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, Some("again"))
+        .unwrap();
+
+    assert_ne!(second.id, first.id);
+    assert_ne!(second.path, first.path);
+    assert_eq!(svc.list(None).unwrap().len(), 2);
+    assert_eq!(count_agent_snapshot_dirs(&backups_root, "claude"), 2);
+    assert_eq!(std::fs::read(&stored).unwrap(), b"TAMPERED!!");
+    assert_eq!(
+        std::fs::read(PathBuf::from(&second.path).join("settings.json")).unwrap(),
+        b"same-bytes"
+    );
+}
+
+#[test]
 fn partial_change_hardlinks_unchanged_file() {
     let live = tempdir().unwrap();
     let changed = live.path().join("changed.json");

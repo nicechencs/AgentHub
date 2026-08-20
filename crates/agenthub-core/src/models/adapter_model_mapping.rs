@@ -246,6 +246,15 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
         allow_passthrough: false,
     },
     AdapterModelMappingTable {
+        id: "grok-subscription-codex-v1",
+        source: AdapterSourceProduct::XaiGrokSubscription,
+        target: AgentId::Codex,
+        target_protocol: AdapterTargetProtocol::OpenAiResponses,
+        default_target_model: Some("grok-4.5"),
+        entries: &[],
+        allow_passthrough: false,
+    },
+    AdapterModelMappingTable {
         id: "deepseek-api-dsh-v1",
         source: AdapterSourceProduct::DeepseekApi,
         target: AgentId::Dsh,

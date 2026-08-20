@@ -178,7 +178,7 @@ function pushStep(steps: ProcessStep[], step: ProcessStep): ProcessStep[] {
 
   if (step.type === 'thinking') {
     const last = steps[steps.length - 1];
-    if (last?.type === 'thinking') {
+    if (last?.type === 'thinking' && !last.done) {
       const next = steps.slice(0, -1);
       next.push({
         type: 'thinking',

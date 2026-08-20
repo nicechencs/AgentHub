@@ -94,3 +94,81 @@ fn debug_and_display_do_not_expose_credentials() {
     assert!(!display.contains("access-secret"));
     assert!(!display.contains("refresh-secret"));
 }
+
+#[test]
+fn oauth_other_top_level_access_token_resolves() {
+    let auth = resolve_codex_subscription_auth(&json!({
+        "access_token": "at-other"
+    }))
+    .expect("top-level OauthOther access_token should resolve");
+
+    assert_eq!(auth.token(), "at-other");
+}
+
+#[test]
+fn oauth_other_raw_access_token_resolves() {
+    let auth = resolve_codex_subscription_auth(&json!({
+        "raw": { "access_token": "at-from-raw" }
+    }))
+    .expect("/raw/access_token should resolve");
+
+    assert_eq!(auth.token(), "at-from-raw");
+}
+
+#[test]
+fn oauth_other_body_access_token_resolves() {
+    let auth = resolve_codex_subscription_auth(&json!({
+        "body": { "access_token": "at-from-body" }
+    }))
+    .expect("/body/access_token should resolve");
+
+    assert_eq!(auth.token(), "at-from-body");
+}
+
+#[test]
+fn empty_access_token_is_rejected() {
+    let error = resolve_codex_subscription_auth(&json!({
+        "access_token": ""
+    }))
+    .expect_err("empty access_token must fail");
+
+    assert!(matches!(error, AppError::InvalidArg(_)));
+    assert!(
+        format!("{error}").contains("not auth_json"),
+        "blank top-level token is not a Codex credential shape: {error}"
+    );
+
+    let error = resolve_codex_subscription_auth(&json!({
+        "raw": { "access_token": "" },
+        "body": { "access_token": "" }
+    }))
+    .expect_err("empty OauthOther pointers must fail");
+
+    assert!(matches!(error, AppError::InvalidArg(_)));
+}
+
+#[test]
+fn top_level_access_token_beats_tokens_access_token() {
+    let auth = resolve_codex_subscription_auth(&json!({
+        "access_token": "at-top",
+        "tokens": { "access_token": "at-nested" }
+    }))
+    .expect("top-level pointer is first, matching normalize_oauth_credentials");
+
+    assert_eq!(auth.token(), "at-top");
+}
+
+#[test]
+fn whitespace_token_is_trimmed_and_blank_rejected() {
+    let auth = resolve_codex_subscription_auth(&json!({
+        "access_token": "  at-trimmed  "
+    }))
+    .expect("leading/trailing whitespace should be trimmed");
+    assert_eq!(auth.token(), "at-trimmed");
+
+    let error = resolve_codex_subscription_auth(&json!({
+        "access_token": "   "
+    }))
+    .expect_err("whitespace-only token must fail");
+    assert!(matches!(error, AppError::InvalidArg(_)));
+}

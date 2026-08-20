@@ -386,10 +386,19 @@ pub(super) fn is_codex_local_token(provider: &Provider) -> bool {
         ),
         (
             AgentId::Codex,
-            Some(KIMI_TO_CODEX_BRIDGE_RULE | ANTHROPIC_TO_CODEX_BRIDGE_RULE)
+            Some(KIMI_TO_CODEX_BRIDGE_RULE | ANTHROPIC_TO_CODEX_BRIDGE_RULE | GROK_CODEX_RULE_ID,)
         ) | (
             AgentId::Claude,
             Some(CODEX_TO_CLAUDE_BRIDGE_RULE | GROK_CLAUDE_RULE_ID)
+        ) | (
+            AgentId::Grok,
+            Some(CODEX_TO_GROK_BRIDGE_RULE)
+        ) | (
+            AgentId::Kimi,
+            Some(CODEX_TO_KIMI_BRIDGE_RULE)
+        ) | (
+            AgentId::Dsh,
+            Some(CODEX_TO_DSH_BRIDGE_RULE)
         )
     ) && provider
         .meta
@@ -418,6 +427,20 @@ pub(super) fn valid_local_token_projection(provider: &Provider) -> bool {
             .is_some_and(|value| value.starts_with("http://127.0.0.1:"))
             && env
                 .get(ANTHROPIC_AUTH_TOKEN_ENV)
+                .and_then(Value::as_str)
+                .is_some_and(|token| usable_secret(token).is_some());
+    }
+
+    if provider.agent_id == AgentId::Dsh {
+        return provider
+            .settings_config
+            .get("baseURL")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value.starts_with("http://127.0.0.1:"))
+            && provider
+                .settings_config
+                .get("api_key")
+                .or_else(|| provider.settings_config.get("apiKey"))
                 .and_then(Value::as_str)
                 .is_some_and(|token| usable_secret(token).is_some());
     }

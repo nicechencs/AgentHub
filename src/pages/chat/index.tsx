@@ -114,7 +114,7 @@ export default function ChatPage() {
                 setDraft={page.setDraft}
                 sending={page.sendingHere}
                 active={page.active}
-                providers={page.providers}
+                connectionOptions={page.connectionOptions}
                 primaryAgent={page.primaryAgent}
                 agentPickerLabel={page.agentPickerLabel}
                 connectionView={page.connectionView}
@@ -128,6 +128,7 @@ export default function ChatPage() {
                 onCancel={() => void page.cancelSending()}
                 onSelectAgent={(id) => void page.selectConversationAgentId(id)}
                 onSwitchProvider={(id) => void page.handleSwitchProvider(id)}
+                onSwitchAccount={(id) => void page.handleSwitchAccount(id)}
                 onOpenSettings={() => page.setSettingsOpen(true)}
                 onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
                 onFocusConversation={page.focusConversation}

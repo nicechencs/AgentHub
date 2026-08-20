@@ -526,6 +526,52 @@ describe('mock adapter route preview', () => {
     expect(noToken.canApply).toBe(false);
   });
 
+  it('opens Grok subscription → Codex as a local route and keeps Kimi/DSH closed', async () => {
+    const accountId = 'grok-subscription';
+    const accounts = new Map<string, Account>([
+      [accountId, {
+        id: accountId,
+        agentId: 'grok',
+        kind: 'oauth',
+        label: 'Grok subscription',
+        isCurrent: false,
+        tokenValid: true,
+        credentials: { access_token: 'must-not-leak' },
+      } as Account & { credentials: Record<string, unknown> }],
+    ]);
+    const adapter = createMockAdapterPort({
+      getAccountById: (id) => accounts.get(id),
+      getProviderById: getMockProviderById,
+    });
+    const grokToCodex = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: accountId,
+      targetAgentId: 'codex',
+    });
+    expect(grokToCodex).toMatchObject({
+      analysis: { route: 'local_bridge', ruleId: 'grok-subscription-to-codex-v1' },
+      canApply: true,
+      reusePath: 'local_bridge',
+    });
+    expect(grokToCodex.reason).toBe('Grok 登录会经本机路由接到 Codex。');
+
+    const kimi = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: accountId,
+      targetAgentId: 'kimi',
+    });
+    expect(kimi.canApply).toBe(false);
+    expect(kimi.analysis.reason).toBe('Kimi 只认自己的官方 Key，接下不了这份 Grok 登录。');
+
+    const dsh = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: accountId,
+      targetAgentId: 'dsh',
+    });
+    expect(dsh.canApply).toBe(false);
+    expect(dsh.analysis.reason).toBe('DSH 只认 DeepSeek 官方 Key，接下不了这份 Grok 登录。');
+  });
+
   it('Account Anthropic → Pi is writable on the implemented bind path', async () => {
     const accountId = 'anthropic-account-same-edge';
     const adapter = createMockAdapterPort({

@@ -2,9 +2,10 @@ use super::*;
 use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::Result;
 use crate::models::{
-    ticket_id, Account, AccountKind, AdapterSupport, AgentConfig, AgentId, AuthState, Capability,
-    CapabilityState, DetectResult, DetectStatus, InstallChannel, Provider, RunOptions, RunSpec,
-    TicketBindingRoute, TicketPlanRequest, TicketUnbindRequest, PROJECTION_NOT_A_TICKET,
+    ticket_id, Account, AccountKind, AdapterRoute, AdapterSupport, AgentConfig, AgentId, AuthState,
+    Capability, CapabilityState, DetectResult, DetectStatus, InstallChannel, LiveAccount, Provider,
+    RunOptions, RunSpec, TicketBindingRoute, TicketPlanRequest, TicketUnbindRequest,
+    PROJECTION_NOT_A_TICKET,
 };
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
 use serde_json::json;
@@ -939,4 +940,165 @@ fn bind_glm_provider_and_deepseek_account_to_codex_native_responses() {
         .unwrap();
     assert_eq!(profile.rule_id, "glm-coding-plan-to-codex-v1");
     assert_eq!(profile.route, AdapterRoute::NativeEndpoint);
+}
+
+struct FakeCodexAdapter {
+    applied: Mutex<Vec<String>>,
+}
+
+impl FakeCodexAdapter {
+    fn new() -> Self {
+        Self {
+            applied: Mutex::new(vec![]),
+        }
+    }
+}
+
+impl AgentAdapter for FakeCodexAdapter {
+    fn id(&self) -> AgentId {
+        AgentId::Codex
+    }
+    fn detect(&self) -> DetectResult {
+        DetectResult {
+            agent: AgentId::Codex,
+            status: DetectStatus::NotFound,
+            version: None,
+            binary_path: None,
+            channel: None,
+            env_ready: true,
+            notes: vec![],
+        }
+    }
+    fn install_channels(&self) -> Vec<InstallChannel> {
+        vec![]
+    }
+    fn read_config(&self) -> Result<AgentConfig> {
+        Ok(AgentConfig {
+            agent: AgentId::Codex,
+            raw: json!({}),
+        })
+    }
+    fn write_config(&self, _config: &AgentConfig) -> Result<()> {
+        Ok(())
+    }
+    fn read_auth(&self) -> Result<AuthState> {
+        Err(crate::error::AppError::Unsupported("fake".into()))
+    }
+    fn read_account(&self) -> Result<LiveAccount> {
+        Err(crate::error::AppError::NotFound("no live Codex auth".into()))
+    }
+    fn apply_account(&self, account: &LiveAccount) -> Result<()> {
+        self.applied
+            .lock()
+            .unwrap()
+            .push(account.label_hint.clone().unwrap_or_default());
+        Ok(())
+    }
+    fn capability(&self, capability: Capability) -> CapabilityState {
+        match capability {
+            Capability::ConfigWrite | Capability::LiveBackup | Capability::AccountSwitch => {
+                CapabilityState::full()
+            }
+            _ => CapabilityState::unsupported("fake"),
+        }
+    }
+    fn skills_dir(&self) -> Option<PathBuf> {
+        None
+    }
+    fn live_backup_paths(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+    fn build_run_spec(
+        &self,
+        _binary: &Path,
+        _prompt: &str,
+        _options: &RunOptions,
+    ) -> Result<RunSpec> {
+        Err(crate::error::AppError::Unsupported("fake".into()))
+    }
+}
+
+#[test]
+fn official_codex_oauth_self_bind_uses_account_switch_not_generated_route() {
+    let (dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&subscription_account(
+            "codex-live-1",
+            AgentId::Codex,
+            "codex-access-secret",
+            "codex-refresh-secret",
+            true,
+        ))
+        .unwrap();
+    let adapter = Arc::new(FakeCodexAdapter::new());
+    let service = bind_service(
+        db.clone(),
+        dir.path().join("backups"),
+        vec![adapter.clone()],
+    );
+    let ticket = ticket_id(AdapterSourceKind::Account, "codex-live-1");
+    let plan = service
+        .tickets
+        .plan(&TicketPlanRequest {
+            ticket_id: ticket.clone(),
+            target_agent_id: AgentId::Codex,
+        })
+        .unwrap();
+    assert!(plan.can_apply);
+    assert_eq!(plan.analysis.route, AdapterRoute::NativeEndpoint);
+    assert_eq!(
+        plan.reuse_path,
+        crate::models::AdapterReusePath::NativeSubscription
+    );
+    assert!(!plan.reason.contains("本机路由"));
+
+    let binding = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket,
+            target_agent_id: AgentId::Codex,
+        })
+        .unwrap();
+    assert!(binding.active);
+    assert_eq!(binding.route, TicketBindingRoute::Native);
+    assert!(binding.profile_id.is_none());
+    assert_eq!(binding.ticket_id, "account:codex-live-1");
+    assert_eq!(adapter.applied.lock().unwrap().len(), 1);
+    let current = AccountRepo::new(db)
+        .get_current(AgentId::Codex)
+        .unwrap()
+        .unwrap();
+    assert_eq!(current.id, "codex-live-1");
+}
+
+#[test]
+fn unbind_codex_leftover_backup_does_not_reapply_loopback() {
+    let dir = tempfile::tempdir().unwrap();
+    let leftover = r#"model_provider = "agenthub_grok_bridge"
+preferred_auth_method = "apikey"
+
+[model_providers.agenthub_grok_bridge]
+base_url = "http://127.0.0.1:43121/v1"
+"#;
+    std::fs::write(dir.path().join("config.toml"), leftover).unwrap();
+    let record = crate::models::BackupRecord {
+        id: "bk-leftover".into(),
+        agent_id: Some(AgentId::Codex),
+        kind: crate::models::BackupKind::AutoSwitch,
+        path: dir.path().display().to_string(),
+        files: vec!["config.toml".into()],
+        size: 1,
+        note: None,
+        created_at: "now".into(),
+    };
+    assert!(
+        crate::integrations::agents::codex::leftover::backup_is_bridge_leftover(&record)
+    );
+    let mut doc = leftover.parse::<toml_edit::DocumentMut>().unwrap();
+    assert!(
+        crate::integrations::agents::codex::leftover::strip_bridge_leftovers_in_doc(&mut doc)
+    );
+    let cleaned = doc.to_string();
+    assert!(!cleaned.contains("127.0.0.1"));
+    assert!(!cleaned.contains("agenthub_grok_bridge"));
+    assert!(!cleaned.contains("preferred_auth_method"));
 }

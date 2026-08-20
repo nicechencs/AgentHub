@@ -213,15 +213,9 @@ impl AgentAdapter for GrokAdapter {
         // text: grok -p <prompt>
         // structured (Chat): --output-format streaming-json (ACP NDJSON ≥ 0.2.117)
         // --no-auto-update: same guard Grok App uses so a mid-turn CLI
-        // self-update cannot kill the headless child.
-        let mut args = vec!["--no-auto-update".into(), "-p".into(), prompt.to_string()];
-        if super::wants_structured_for(opts.process_mode, AgentId::Grok) {
-            args.push("--output-format".into());
-            args.push("streaming-json".into());
-        }
-        if opts.allow_dangerous {
-            args.insert(0, "--always-approve".into());
-        }
+        // self-update cannot kill the headless child. Old CLIs (< 0.2.117)
+        // reject the flag, so only emit it when version is unknown or modern.
+        let args = grok_cli_args(prompt, opts, self.detect().version.as_deref());
         Ok(RunSpec {
             agent: AgentId::Grok,
             program: binary.to_path_buf(),
@@ -230,6 +224,36 @@ impl AgentAdapter for GrokAdapter {
             env: vec![],
         })
     }
+}
+
+/// `--no-auto-update` exists on Grok CLI ≥ 0.2.117.
+/// Unparseable / missing versions keep the modern default (include the flag).
+fn grok_supports_no_auto_update(version: Option<&str>) -> bool {
+    let Some(raw) = version.map(str::trim).filter(|s| !s.is_empty()) else {
+        return true;
+    };
+    let token = crate::adapters::extract_version_token(raw);
+    match semver::Version::parse(&token) {
+        Ok(parsed) => parsed >= semver::Version::new(0, 2, 117),
+        Err(_) => true,
+    }
+}
+
+fn grok_cli_args(prompt: &str, opts: &RunOptions, version: Option<&str>) -> Vec<String> {
+    let mut args = Vec::new();
+    if grok_supports_no_auto_update(version) {
+        args.push("--no-auto-update".into());
+    }
+    args.push("-p".into());
+    args.push(prompt.to_string());
+    if super::wants_structured_for(opts.process_mode, AgentId::Grok) {
+        args.push("--output-format".into());
+        args.push("streaming-json".into());
+    }
+    if opts.allow_dangerous {
+        args.insert(0, "--always-approve".into());
+    }
+    args
 }
 
 pub(crate) fn grok_auth_state(config: &Path, auth: &Path) -> Result<AuthState> {

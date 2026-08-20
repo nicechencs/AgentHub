@@ -839,12 +839,9 @@ fn planned_matches_manifest(
         if ensure_regular_file(&stored_path).is_err() {
             return false;
         }
-        let hash = match e.sha256.as_deref() {
-            Some(h) if !h.is_empty() => h.to_string(),
-            _ => match sha256_file(&stored_path) {
-                Ok(h) => h,
-                Err(_) => return false,
-            },
+        let hash = match sha256_file(&stored_path) {
+            Ok(h) => h,
+            Err(_) => return false,
         };
         if !hash.eq_ignore_ascii_case(&p.sha256) {
             return false;

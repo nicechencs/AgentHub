@@ -64,14 +64,19 @@ impl AccountService {
         // A Pi LiveAccount here is deliberately the full auth.json snapshot:
         // it is safe for backup/rollback, but never safe to reconcile into a
         // single pool row. Provider reconciliation happens in list/sync only.
+        // Leftover 本机路由 live (config.toml still needs strip, or leftover
+        // provider is current) must not throw account.identity_conflict when
+        // switching back to 官方登录. apply_account still strips leftover keys.
         if agent != AgentId::Pi {
             if let Some(live) = live_before
                 .as_ref()
                 .filter(|live| !live_account_is_empty(live))
             {
-                self.validate_live_switch_identity(adapter.as_ref(), agent, live)?;
-                self.reconcile_live_account(adapter.as_ref(), agent, live.clone())?;
-                target = self.get(id_or_label, Some(agent))?;
+                if !self.leftover_live_skips_identity(agent) {
+                    self.validate_live_switch_identity(adapter.as_ref(), agent, live)?;
+                    self.reconcile_live_account(adapter.as_ref(), agent, live.clone())?;
+                    target = self.get(id_or_label, Some(agent))?;
+                }
             }
         }
 
