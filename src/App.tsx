@@ -54,9 +54,10 @@ export default function App() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isChat = pathname === '/chat';
-  /** 技能页需左右分栏铺满主区，不受 max-w-content 限制 */
+  /** Skills / Projects 左右分栏铺满主区，不受 max-w-content 限制 */
   const isSkills = pathname === '/skills';
-  const fullBleed = isChat || isSkills;
+  const isProjects = pathname === '/projects';
+  const fullBleed = isChat || isSkills || isProjects;
   const updateHandleRef = useRef<UpdatePromptHandle | null>(null);
 
   useEffect(() => {
@@ -101,7 +102,7 @@ export default function App() {
         <div className="flex min-w-0 flex-1 flex-col">
           {!isChat && <TopBar />}
           <main className={cn('flex-1', fullBleed ? 'overflow-hidden' : 'overflow-y-auto')}>
-            {/* max-w-content：普通页桌面阅读宽度；chat/skills 全宽全高 */}
+            {/* max-w-content：普通页桌面阅读宽度；chat/skills/projects 全宽全高 */}
             <div className={fullBleed ? 'h-full' : pageRhythm.pageShell}>
               <Routes>
                 <Route path="/" element={<DashboardPage />} />

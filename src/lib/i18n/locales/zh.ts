@@ -1478,7 +1478,7 @@ export const zh = {
       title: "项目",
       description: "本机会话与工作区",
       descriptionTip:
-        "按 Agent 浏览本地项目与会话；可打开目录、复制官方续接命令、在 Chat 继续、删除或批量总结。在 Chat 继续仍走摘录，不直接打开对方 TUI。",
+        "按 Agent 浏览本地项目与会话；可打开目录、复制官方续接命令、在 Chat 继续、删除或批量总结。单击会话在右侧分屏预览摘录。在 Chat 继续仍走摘录，不直接打开对方 TUI。",
       summarize: "总结 ({n})",
       delete: "删除 ({n})",
       refresh: "刷新",
@@ -1550,6 +1550,18 @@ export const zh = {
       copyResumeCommand: "复制官方续接命令：{command}",
       continue: "在 Chat 继续",
       deleteSession: "删除会话",
+      previewAria: "在右侧预览 {title} 的对话摘录",
+    },
+    preview: {
+      titleFallback: "会话预览",
+      collapse: "收起预览",
+      resizeAria: "调整预览宽度",
+      retry: "重试",
+      openRecord: "定位记录文件",
+      turns: "{n} 段摘录",
+      loading: "正在读取对话摘录…",
+      empty: "没有可读的对话摘录",
+      failed: "无法读取对话摘录",
     },
   },
   mcp: {

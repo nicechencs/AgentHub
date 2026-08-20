@@ -1484,7 +1484,7 @@ export const en = {
       title: "Projects",
       description: "Local sessions and workspaces",
       descriptionTip:
-        "Browse local projects and sessions by agent. Open folders, copy the official resume command, continue in Chat, delete, or summarize in batch. Continue in Chat uses an excerpt; it does not open the agent's TUI.",
+        "Browse local projects and sessions by agent. Open folders, copy the official resume command, continue in Chat, delete, or summarize in batch. Click a session to preview its excerpt in a right-hand pane. Continue in Chat uses an excerpt; it does not open the agent's TUI.",
       summarize: "Summarize ({n})",
       delete: "Delete ({n})",
       refresh: "Refresh",
@@ -1556,6 +1556,18 @@ export const en = {
       copyResumeCommand: "Copy official resume command: {command}",
       continue: "Continue in Chat",
       deleteSession: "Delete session",
+      previewAria: "Preview conversation excerpt for {title} on the right",
+    },
+    preview: {
+      titleFallback: "Session preview",
+      collapse: "Collapse preview",
+      resizeAria: "Resize preview",
+      retry: "Retry",
+      openRecord: "Locate record file",
+      turns: "{n} excerpt turns",
+      loading: "Reading conversation excerpt…",
+      empty: "No readable conversation excerpt",
+      failed: "Couldn't read the conversation excerpt",
     },
   },
   mcp: {
