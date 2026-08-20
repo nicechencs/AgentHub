@@ -67,6 +67,17 @@ fn codex_home_honors_codex_home_env() {
 }
 
 #[test]
+fn codex_home_blank_env_falls_back_to_dot_codex() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _codex = crate::integrations::agents::codex::leftover::lock_codex_home();
+    let prev = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", " , ");
+    let home = resolve_agent_home(AgentId::Codex).unwrap();
+    restore_env("CODEX_HOME", prev);
+    assert_eq!(home, crate::utils::paths::home_dir().unwrap().join(".codex"));
+}
+
+#[test]
 fn pi_config_dir_defaults_to_home_agent_and_honors_env() {
     let prev = std::env::var_os("PI_CODING_AGENT_DIR");
     std::env::remove_var("PI_CODING_AGENT_DIR");

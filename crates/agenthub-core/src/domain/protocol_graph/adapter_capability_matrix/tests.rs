@@ -572,6 +572,10 @@ fn grok_subscription_to_kimi_and_dsh_stay_closed_with_clear_reasons() {
     assert_eq!(kimi.route, AdapterRoute::Unsupported);
     assert!(!kimi.can_apply);
     assert_eq!(kimi.reason, GROK_SUBSCRIPTION_TO_KIMI_REASON);
+    assert!(
+        GROK_SUBSCRIPTION_TO_KIMI_REASON.contains("Codex 官方登录"),
+        "closed copy must name Codex official login as the supported upstream"
+    );
 
     let dsh = decide_adapter_capability(
         AdapterSourceProduct::XaiGrokSubscription,

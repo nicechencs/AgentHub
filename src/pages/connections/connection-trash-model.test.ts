@@ -265,9 +265,8 @@ describe('dedupTrashItems', () => {
         label: 'user@x.ai',
         email: 'user@x.ai',
       }),
-      // Generated (bridge name) so the old unscoped email: key would have applied.
       provider: prov({
-        id: 'grok-side-adapter',
+        id: 'grok-side-adapter-bridge',
         name: 'Grok Subscription Bridge',
       }),
     });
@@ -279,8 +278,8 @@ describe('dedupTrashItems', () => {
       label: 'user@x.ai',
       deletedAt: '2026-08-18T00:00:00.000Z',
       provider: prov({
-        id: 'claude-prov-1',
-        name: 'user@x.ai',
+        id: 'claude-email-adapter-bridge',
+        name: 'Grok Subscription Bridge',
       }),
       account: acc({
         id: 'claude-side-email',
@@ -291,49 +290,54 @@ describe('dedupTrashItems', () => {
     });
     const kept = dedupTrashItems([grokAccount, claudeProvider]);
     expect(kept).toHaveLength(2);
-    const ids = kept.map((row) => row.id);
-    expect(ids).toEqual(expect.arrayContaining(['grok-acc-1-trash', 'claude-prov-1-trash']));
+    expect(kept.map((row) => row.id).sort()).toEqual([
+      'claude-prov-1-trash',
+      'grok-acc-1-trash',
+    ]);
   });
 
-  it('exposes both row ids for restore/delete when only the email matches', () => {
-    const grokAccount = trash({
-      id: 'restore-grok-acc',
+  it('keeps two generated rows on the same agent that share only an email', () => {
+    const first = trash({
+      id: 'grok-live-a-trash',
       agentId: 'grok',
       kind: 'account',
-      sourceId: 'grok-acc-1',
+      sourceId: 'grok-live-aaa',
       label: 'user@x.ai',
-      deletedAt: '2026-08-01T00:00:00.000Z',
+      deletedAt: '2026-08-10T00:00:00.000Z',
       account: acc({
-        id: 'grok-acc-1',
+        id: 'grok-live-aaa',
         kind: 'oauth',
         label: 'user@x.ai',
         email: 'user@x.ai',
       }),
       provider: prov({
-        id: 'grok-side-adapter',
+        id: 'grok-aaa-adapter-bridge',
         name: 'Grok Subscription Bridge',
       }),
     });
-    const claudeProvider = trash({
-      id: 'restore-claude-prov',
-      agentId: 'claude',
-      kind: 'provider',
-      sourceId: 'claude-prov-1',
+    const second = trash({
+      id: 'grok-live-b-trash',
+      agentId: 'grok',
+      kind: 'account',
+      sourceId: 'grok-live-bbb',
       label: 'user@x.ai',
-      deletedAt: '2026-08-20T00:00:00.000Z',
-      provider: prov({
-        id: 'claude-prov-1',
-        name: 'user@x.ai',
-      }),
+      deletedAt: '2026-08-18T00:00:00.000Z',
       account: acc({
-        id: 'claude-side-email',
+        id: 'grok-live-bbb',
         kind: 'oauth',
         label: 'user@x.ai',
         email: 'user@x.ai',
       }),
+      provider: prov({
+        id: 'grok-bbb-adapter-bridge',
+        name: 'Grok Subscription Bridge',
+      }),
     });
-    const kept = dedupTrashItems([grokAccount, claudeProvider]);
+    const kept = dedupTrashItems([first, second]);
     expect(kept).toHaveLength(2);
-    expect(kept.map((row) => row.id).sort()).toEqual(['restore-claude-prov', 'restore-grok-acc']);
+    expect(kept.map((row) => row.id).sort()).toEqual([
+      'grok-live-a-trash',
+      'grok-live-b-trash',
+    ]);
   });
 });

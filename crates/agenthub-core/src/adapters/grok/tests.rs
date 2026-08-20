@@ -167,6 +167,10 @@ fn grok_supports_no_auto_update_gates_old_semver() {
     assert!(!grok_supports_no_auto_update(Some("0.2.116")));
     assert!(!grok_supports_no_auto_update(Some("0.2.0")));
     assert!(!grok_supports_no_auto_update(Some("grok 0.2.116 (deadbeef)")));
+    assert!(
+        !grok_supports_no_auto_update(Some("0.2.117-beta.1")),
+        "semver prerelease of the min version is still older than 0.2.117"
+    );
 }
 
 #[test]

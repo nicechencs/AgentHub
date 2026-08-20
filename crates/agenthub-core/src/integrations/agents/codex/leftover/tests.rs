@@ -134,6 +134,45 @@ fn strip_keeps_custom_provider_grok_model_and_effort() {
 }
 
 #[test]
+fn strip_clears_apikey_pref_when_only_provider_table_slug_remains() {
+    let leftover = r#"preferred_auth_method = "apikey"
+
+[model_providers.agenthub_grok_bridge]
+base_url = "http://127.0.0.1:43121/v1"
+"#;
+    let mut doc = leftover.parse::<DocumentMut>().unwrap();
+    assert!(toml_is_bridge_leftover(leftover));
+    assert!(strip_bridge_leftovers_in_doc(&mut doc));
+    let stored = doc.to_string();
+    assert!(!stored.contains("preferred_auth_method"));
+    assert!(!stored.contains("agenthub_grok_bridge"));
+}
+
+#[test]
+fn strip_drops_bridge_table_but_keeps_grok_model_under_custom_provider() {
+    let mixed = r#"model_provider = "custom"
+model = "grok-4"
+model_reasoning_effort = "high"
+
+[model_providers.custom]
+base_url = "https://relay.example.com/v1"
+
+[model_providers.agenthub_grok_bridge]
+base_url = "http://127.0.0.1:43121/v1"
+"#;
+    let mut doc = mixed.parse::<DocumentMut>().unwrap();
+    assert!(toml_is_bridge_leftover(mixed));
+    assert!(strip_bridge_leftovers_in_doc(&mut doc));
+    let stored = doc.to_string();
+    assert!(stored.contains("model_provider = \"custom\""));
+    assert!(stored.contains("model = \"grok-4\""));
+    assert!(stored.contains("model_reasoning_effort"));
+    assert!(stored.contains("[model_providers.custom]"));
+    assert!(!stored.contains("agenthub_grok_bridge"));
+    assert!(!stored.contains("127.0.0.1"));
+}
+
+#[test]
 fn live_config_is_bridge_leftover_reads_codex_home() {
     let _lock = super::lock_codex_home();
     let dir = tempfile::tempdir().unwrap();

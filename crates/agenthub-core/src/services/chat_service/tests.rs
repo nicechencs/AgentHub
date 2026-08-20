@@ -19,6 +19,13 @@ impl SidProcessRunner {
             session_id: session_id.into(),
         }
     }
+
+    fn with_status(session_id: impl Into<String>, status: RunStatus) -> Self {
+        Self {
+            inner: RecordingProcessRunner::with_status(status),
+            session_id: session_id.into(),
+        }
+    }
 }
 
 impl ProcessRunner for SidProcessRunner {
@@ -53,6 +60,7 @@ impl StreamingProcessRunner for SidProcessRunner {
 
 struct DeterministicAgentAdapter {
     id: AgentId,
+    fail_spec: bool,
 }
 
 impl AgentAdapter for DeterministicAgentAdapter {
@@ -98,6 +106,11 @@ impl AgentAdapter for DeterministicAgentAdapter {
         prompt: &str,
         opts: &crate::models::RunOptions,
     ) -> crate::error::Result<crate::models::RunSpec> {
+        if self.fail_spec {
+            return Err(crate::error::AppError::InvalidArg(
+                "forced spec failure".into(),
+            ));
+        }
         Ok(crate::models::RunSpec {
             agent: self.id,
             program: binary.to_path_buf(),
@@ -113,9 +126,13 @@ impl AgentAdapter for DeterministicAgentAdapter {
 }
 
 fn deterministic_registry() -> AdapterRegistry {
+    deterministic_registry_with_fail_spec(false)
+}
+
+fn deterministic_registry_with_fail_spec(fail_spec: bool) -> AdapterRegistry {
     let mut registry = AdapterRegistry::new();
     for id in AgentId::ALL {
-        registry.register(Arc::new(DeterministicAgentAdapter { id }));
+        registry.register(Arc::new(DeterministicAgentAdapter { id, fail_spec }));
     }
     registry
 }
@@ -705,6 +722,62 @@ fn resume_cancelled_keeps_native_session_id() {
         after.native_session_id.as_deref(),
         Some("dead-sid"),
         "Cancelled must not clear the native session id"
+    );
+}
+
+#[test]
+fn resume_run_error_clears_native_session_id() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry_with_fail_spec(true),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    let chat = ChatService::new(db.clone(), run);
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    let repo = crate::storage::ChatRepo::new(db);
+    let mut stored = repo.get_conversation(&conv.id).unwrap().unwrap();
+    stored.native_session_id = Some("dead-sid".into());
+    repo.update_conversation(&stored).unwrap();
+
+    let err = chat
+        .send(&conv.id, "resume spec fail", &|_| {})
+        .expect_err("build_run_spec failure must fail the send");
+    assert!(format!("{err}").contains("forced spec failure"));
+    let after = chat.get_conversation(&conv.id).unwrap();
+    assert!(
+        after.native_session_id.is_none(),
+        "run_each Err after resume must clear sid, got {:?}",
+        after.native_session_id
+    );
+}
+
+#[test]
+fn resume_hard_failure_discards_new_sid_from_results() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(SidProcessRunner::with_status("fresh-sid", RunStatus::Failed)),
+    ));
+    let chat = ChatService::new(db.clone(), run);
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    let repo = crate::storage::ChatRepo::new(db);
+    let mut stored = repo.get_conversation(&conv.id).unwrap().unwrap();
+    stored.native_session_id = Some("dead-sid".into());
+    repo.update_conversation(&stored).unwrap();
+
+    chat.send(&conv.id, "resume fail with fresh sid", &|_| {})
+        .unwrap();
+    let after = chat.get_conversation(&conv.id).unwrap();
+    assert!(
+        after.native_session_id.is_none(),
+        "hard failure must clear sid even if results carry a new one, got {:?}",
+        after.native_session_id
     );
 }
 
