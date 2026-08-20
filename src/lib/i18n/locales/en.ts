@@ -1207,6 +1207,7 @@ export const en = {
       inputAria: "Message input",
       selectAgent: "Select agent",
       noAuth: "Not signed in",
+      envNotReady: "Runtime not ready",
       switchConnection: "Switch connection",
       switchConnectionNamed: "{name} · switch connection",
       send: "Send",
@@ -1277,6 +1278,7 @@ export const en = {
     },
     blocker: {
       hidden: "This chat includes a hidden agent and cannot send yet",
+      envNotReady: "This chat includes an agent whose runtime is not ready and cannot send yet",
       unconfigured: "This chat includes an agent that is not signed in and cannot send yet",
       noCwd: "Working directory is not set — the agent needs a folder to work in",
       setCwd: "Set working directory",

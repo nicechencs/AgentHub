@@ -8,7 +8,7 @@ use which::which;
 use crate::models::{EnvStatus, EnvStatusKind, RuntimeId};
 use crate::utils::process::{run_capture, stdout_first_line};
 
-use crate::catalog::limits::{NODE_MIN_MAJOR, PI_NODE_MIN_MAJOR};
+use crate::catalog::limits::{NODE_MIN_MAJOR, PI_NODE_MIN_MAJOR, PI_NODE_MIN_MINOR};
 
 /// Detect note / update-check copy when Pi is installed but Node < 22.
 pub const PI_NODE_TOO_OLD_NOTE: &str =
@@ -420,26 +420,30 @@ fn parse_major(version: &str) -> Option<u64> {
     major.parse().ok()
 }
 
-/// Discover a Node.js binary with `major >= min_major`.
+/// Discover a Node.js binary with `major >= min_major` (minor `0`).
 ///
-/// Search order: PATH `node`, `~/.local/share/node-v22*/bin/node`, then
-/// nvm / fnm / volta / n. The first candidate whose `node -v` meets the
-/// floor wins. Global doctor still uses [`NODE_MIN_MAJOR`] (18).
+/// Search order: every PATH `node`/`node.exe`, then versioned manager /
+/// well-known trees. First candidate whose `node -v` meets the floor wins.
+/// Global doctor still uses [`NODE_MIN_MAJOR`] (18) and first-PATH `which`.
 pub fn resolve_node_at_least(min_major: u64) -> Option<ResolvedNode> {
-    let path_node = resolve_binary(&["node", "node.exe"]);
+    resolve_node_meeting(min_major, 0)
+}
+
+/// Pi probe + Chat: Node `>=22.19.0` if present anywhere we know how to look.
+pub fn resolve_pi_node() -> Option<ResolvedNode> {
+    resolve_node_meeting(PI_NODE_MIN_MAJOR, PI_NODE_MIN_MINOR)
+}
+
+fn resolve_node_meeting(min_major: u64, min_minor: u64) -> Option<ResolvedNode> {
     let home = crate::utils::paths::home_dir().ok();
     resolve_node_at_least_from(
-        path_node,
+        live_path_and_platform_nodes(),
         home.as_deref(),
         min_major,
+        min_minor,
         NodeManagerRoots::from_env_and_home(home.as_deref()),
         probe_node_version,
     )
-}
-
-/// Pi probe + Chat: Node 22+ if present anywhere we know how to look.
-pub fn resolve_pi_node() -> Option<ResolvedNode> {
-    resolve_node_at_least(PI_NODE_MIN_MAJOR)
 }
 
 /// `PATH=<bin_dir>:$PATH` (or `;` on Windows) so child processes see Node 22 first.
@@ -462,31 +466,31 @@ pub fn prefixed_path_env(bin_dir: Option<&Path>) -> Vec<(String, String)> {
 
 /// Well-known Node 22+ locations under `home` (no env, so tests stay hermetic).
 pub fn node_versioned_home_candidates(home: &Path, min_major: u64) -> Vec<PathBuf> {
-    node_versioned_candidates(home, min_major, &NodeManagerRoots::from_home_only(home))
+    node_versioned_candidates(
+        Some(home),
+        min_major,
+        &NodeManagerRoots::from_home_only(home),
+    )
 }
 
-/// Testable resolver: PATH node first, then versioned home / manager trees.
+/// Testable resolver: every PATH node first, then versioned home / manager trees.
 pub fn resolve_node_at_least_from(
-    path_node: Option<PathBuf>,
+    path_nodes: impl IntoIterator<Item = PathBuf>,
     home: Option<&Path>,
     min_major: u64,
+    min_minor: u64,
     roots: NodeManagerRoots,
-    mut probe: impl FnMut(&Path) -> Option<(String, u64)>,
+    mut probe: impl FnMut(&Path) -> Option<(String, u64, u64)>,
 ) -> Option<ResolvedNode> {
     let mut seen = HashSet::new();
-    let mut candidates = Vec::new();
-    if let Some(p) = path_node {
-        candidates.push(p);
-    }
-    if let Some(home) = home {
-        candidates.extend(node_versioned_candidates(home, min_major, &roots));
-    }
+    let mut candidates: Vec<PathBuf> = path_nodes.into_iter().collect();
+    candidates.extend(node_versioned_candidates(home, min_major, &roots));
     for path in candidates {
         if !seen.insert(path.clone()) {
             continue;
         }
-        if let Some((version, major)) = probe(&path) {
-            if major >= min_major {
+        if let Some((version, major, minor)) = probe(&path) {
+            if version_meets(major, minor, min_major, min_minor) {
                 return Some(ResolvedNode {
                     path,
                     version,
@@ -498,25 +502,33 @@ pub fn resolve_node_at_least_from(
     None
 }
 
-/// Roots for nvm / fnm / volta / n. Live detection merges env; tests pass home-only.
+/// Roots for nvm / fnm / volta / n / nvm-windows / Program Files.
+/// Live detection merges env; tests pass home-only (unix trees, no Windows roots).
 #[derive(Debug, Clone, Default)]
 pub struct NodeManagerRoots {
     pub nvm_dir: Option<PathBuf>,
+    /// nvm-windows root (`{NVM_HOME}\v22.x.x\node.exe`), not `versions/node`.
+    pub nvm_home: Option<PathBuf>,
     pub fnm_dirs: Vec<PathBuf>,
     pub volta_home: Option<PathBuf>,
     pub n_prefix: Option<PathBuf>,
+    /// Concrete `node.exe` files (Program Files).
+    pub system_nodes: Vec<PathBuf>,
 }
 
 impl NodeManagerRoots {
+    /// Unix-style trees only so unit tests stay hermetic.
     pub fn from_home_only(home: &Path) -> Self {
         Self {
             nvm_dir: Some(home.join(".nvm")),
+            nvm_home: None,
             fnm_dirs: vec![
                 home.join(".local").join("share").join("fnm"),
                 home.join(".fnm"),
             ],
             volta_home: Some(home.join(".volta")),
             n_prefix: Some(home.join("n")),
+            system_nodes: Vec::new(),
         }
     }
 
@@ -524,6 +536,9 @@ impl NodeManagerRoots {
         let mut roots = home.map(Self::from_home_only).unwrap_or_default();
         if let Some(v) = nonempty_env("NVM_DIR") {
             roots.nvm_dir = Some(v);
+        }
+        if let Some(v) = nonempty_env("NVM_HOME") {
+            roots.nvm_home = Some(v);
         }
         if let Some(v) = nonempty_env("FNM_DIR") {
             roots.fnm_dirs.insert(0, v);
@@ -533,6 +548,10 @@ impl NodeManagerRoots {
         }
         if let Some(v) = nonempty_env("N_PREFIX") {
             roots.n_prefix = Some(v);
+        }
+        #[cfg(windows)]
+        {
+            apply_windows_manager_fallbacks(&mut roots);
         }
         roots
     }
@@ -544,40 +563,120 @@ fn nonempty_env(key: &str) -> Option<PathBuf> {
         .filter(|p| !p.as_os_str().is_empty())
 }
 
+#[cfg(windows)]
+fn apply_windows_manager_fallbacks(roots: &mut NodeManagerRoots) {
+    if roots.nvm_home.is_none() {
+        if let Some(appdata) = nonempty_env("APPDATA") {
+            let candidate = appdata.join("nvm");
+            if candidate.is_dir() {
+                roots.nvm_home = Some(candidate);
+            }
+        }
+    }
+    append_existing_dir(
+        &mut roots.fnm_dirs,
+        nonempty_env("LOCALAPPDATA").map(|p| p.join("fnm")),
+    );
+    append_existing_dir(
+        &mut roots.fnm_dirs,
+        nonempty_env("APPDATA").map(|p| p.join("fnm")),
+    );
+    if roots.volta_home.is_none() {
+        if let Some(local) = nonempty_env("LOCALAPPDATA") {
+            let candidate = local.join("Volta");
+            if candidate.is_dir() {
+                roots.volta_home = Some(candidate);
+            }
+        }
+    }
+    push_program_files_node(&mut roots.system_nodes, nonempty_env("ProgramFiles"));
+    push_program_files_node(&mut roots.system_nodes, nonempty_env("ProgramFiles(x86)"));
+}
+
+#[cfg(windows)]
+fn append_existing_dir(dirs: &mut Vec<PathBuf>, candidate: Option<PathBuf>) {
+    let Some(path) = candidate else {
+        return;
+    };
+    if path.is_dir() && !dirs.iter().any(|d| d == &path) {
+        dirs.push(path);
+    }
+}
+
+#[cfg(windows)]
+fn push_program_files_node(out: &mut Vec<PathBuf>, prefix: Option<PathBuf>) {
+    let Some(prefix) = prefix else {
+        return;
+    };
+    let exe = prefix.join("nodejs").join("node.exe");
+    if exe.is_file() {
+        out.push(exe);
+    }
+}
+
+/// PATH nodes in order, then Homebrew prefixes the GUI PATH often omits.
+fn live_path_and_platform_nodes() -> Vec<PathBuf> {
+    let mut out = path_node_binaries();
+    for extra in platform_binary_candidates(node_bin_names()) {
+        if extra.is_file() && !out.iter().any(|p| p == &extra) {
+            out.push(extra);
+        }
+    }
+    out
+}
+
+/// Every `node`/`node.exe` on PATH, in PATH order. `which` would hide later Node 22.
+fn path_node_binaries() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    for dir in std::env::split_paths(&path) {
+        for name in node_bin_names() {
+            let candidate = dir.join(name);
+            if candidate.is_file() && seen.insert(candidate.clone()) {
+                out.push(candidate);
+            }
+        }
+    }
+    out
+}
+
+fn version_meets(major: u64, minor: u64, min_major: u64, min_minor: u64) -> bool {
+    major > min_major || (major == min_major && minor >= min_minor)
+}
+
 fn node_versioned_candidates(
-    home: &Path,
+    home: Option<&Path>,
     min_major: u64,
     roots: &NodeManagerRoots,
 ) -> Vec<PathBuf> {
     let mut out = Vec::new();
 
-    // Official-ish unpacked trees: ~/.local/share/node-v22.19.0/bin/node
-    push_version_dir_nodes(
-        &mut out,
-        &home.join(".local").join("share"),
-        min_major,
-        &["bin"],
-        true,
-    );
+    if let Some(home) = home {
+        // Official-ish unpacked trees: ~/.local/share/node-v22.19.0/bin/node
+        push_version_dir_nodes(
+            &mut out,
+            &home.join(".local").join("share"),
+            min_major,
+            true,
+        );
+    }
 
     if let Some(nvm) = &roots.nvm_dir {
         push_version_dir_nodes(
             &mut out,
             &nvm.join("versions").join("node"),
             min_major,
-            &["bin"],
             false,
         );
     }
 
+    if let Some(nvm_home) = &roots.nvm_home {
+        push_version_dir_nodes(&mut out, nvm_home, min_major, false);
+    }
+
     for fnm in &roots.fnm_dirs {
-        push_version_dir_nodes(
-            &mut out,
-            &fnm.join("node-versions"),
-            min_major,
-            &["installation", "bin"],
-            false,
-        );
+        push_version_dir_nodes(&mut out, &fnm.join("node-versions"), min_major, false);
     }
 
     if let Some(volta) = &roots.volta_home {
@@ -585,7 +684,6 @@ fn node_versioned_candidates(
             &mut out,
             &volta.join("tools").join("image").join("node"),
             min_major,
-            &["bin"],
             false,
         );
         push_node_in_bin_dir(&mut out, &volta.join("bin"));
@@ -597,14 +695,12 @@ fn node_versioned_candidates(
             &mut out,
             &n_prefix.join("versions").join("node"),
             min_major,
-            &["bin"],
             false,
         );
         push_version_dir_nodes(
             &mut out,
             &n_prefix.join("n").join("versions").join("node"),
             min_major,
-            &["bin"],
             false,
         );
     }
@@ -613,10 +709,10 @@ fn node_versioned_candidates(
         &mut out,
         Path::new("/usr/local/n/versions/node"),
         min_major,
-        &["bin"],
         false,
     );
 
+    out.extend(roots.system_nodes.iter().cloned());
     out
 }
 
@@ -624,7 +720,6 @@ fn push_version_dir_nodes(
     out: &mut Vec<PathBuf>,
     parent: &Path,
     min_major: u64,
-    bin_suffix: &[&str],
     require_node_v_prefix: bool,
 ) {
     let Ok(rd) = std::fs::read_dir(parent) else {
@@ -641,16 +736,19 @@ fn push_version_dir_nodes(
             dir_name_major(name).is_some_and(|m| m >= min_major)
         })
         .collect();
-    // Newest name last so pop-less iteration can still prefer higher versions:
-    // sort descending (v22.20 > v22.19).
-    dirs.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+    // Filename order ranks v22.9 above v22.10; parsed semver does not.
+    dirs.sort_by(|a, b| dir_semver(b).cmp(&dir_semver(a)));
     for dir in dirs {
-        let mut bin_dir = dir;
-        for part in bin_suffix {
-            bin_dir = bin_dir.join(part);
-        }
-        push_node_in_bin_dir(out, &bin_dir);
+        push_nodes_in_version_dir(out, &dir);
     }
+}
+
+/// Each manager uses a different bin layout under the version dir.
+fn push_nodes_in_version_dir(out: &mut Vec<PathBuf>, dir: &Path) {
+    push_node_in_bin_dir(out, dir);
+    push_node_in_bin_dir(out, &dir.join("bin"));
+    push_node_in_bin_dir(out, &dir.join("installation"));
+    push_node_in_bin_dir(out, &dir.join("installation").join("bin"));
 }
 
 fn push_node_in_bin_dir(out: &mut Vec<PathBuf>, bin_dir: &Path) {
@@ -671,9 +769,36 @@ fn node_bin_names() -> &'static [&'static str] {
 }
 
 fn dir_name_major(name: &str) -> Option<u64> {
+    parse_dir_semver(name).map(|(m, _, _)| m)
+}
+
+fn dir_semver(path: &Path) -> (u64, u64, u64) {
+    path.file_name()
+        .and_then(|s| s.to_str())
+        .and_then(parse_dir_semver)
+        .unwrap_or((0, 0, 0))
+}
+
+fn parse_dir_semver(name: &str) -> Option<(u64, u64, u64)> {
     let s = name.strip_prefix("node-").unwrap_or(name);
     let s = s.trim_start_matches('v').trim_start_matches('V');
-    parse_major(s)
+    parse_semver_parts(s)
+}
+
+fn parse_semver_parts(version: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = version.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().and_then(parse_numeric_prefix).unwrap_or(0);
+    let patch = parts.next().and_then(parse_numeric_prefix).unwrap_or(0);
+    Some((major, minor, patch))
+}
+
+fn parse_numeric_prefix(s: &str) -> Option<u64> {
+    let end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+    if end == 0 {
+        return None;
+    }
+    s[..end].parse().ok()
 }
 
 fn path_list_sep() -> &'static str {
@@ -684,14 +809,14 @@ fn path_list_sep() -> &'static str {
     }
 }
 
-fn probe_node_version(path: &Path) -> Option<(String, u64)> {
+fn probe_node_version(path: &Path) -> Option<(String, u64, u64)> {
     let out = run_capture(path, &["-v"]).ok()?;
     if !out.status.success() {
         return None;
     }
     let version = stdout_first_line(&out)?.trim_start_matches('v').to_string();
-    let major = parse_major(&version)?;
-    Some((version, major))
+    let (major, minor, _) = parse_semver_parts(&version)?;
+    Some((version, major, minor))
 }
 
 /// `git version 2.43.0.windows.1` → `2.43.0.windows.1`

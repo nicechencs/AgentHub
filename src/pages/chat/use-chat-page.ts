@@ -120,6 +120,13 @@ export function useChatPage() {
       ),
     [agentStatus],
   );
+  const envNotReadyIds = useMemo(
+    () =>
+      new Set(
+        agentStatus.filter((a) => a.installed && a.envReady === false).map((a) => a.agentId),
+      ),
+    [agentStatus],
+  );
   const pickerRows = useMemo(
     () =>
       chatAgentPickerRows({
@@ -327,11 +334,12 @@ export function useChatPage() {
     return sendBlockers({
       conversation: active,
       hiddenIds,
+      envNotReadyIds,
       unconfiguredAuthIds,
       sendingConversationId: liveSendingConversationId,
       sendingTitle,
     });
-  }, [active, hiddenIds, unconfiguredAuthIds, liveSendingConversationId, sendingTitle]);
+  }, [active, hiddenIds, envNotReadyIds, unconfiguredAuthIds, liveSendingConversationId, sendingTitle]);
 
   const railGroups = useMemo(() => {
     const filtered = filterConversations(conversations, railQuery);
@@ -589,6 +597,7 @@ export function useChatPage() {
     if (sendBlockers({
       conversation: active,
       hiddenIds,
+      envNotReadyIds,
       unconfiguredAuthIds,
       sendingConversationId: liveSendingConversationId,
       sendingTitle,

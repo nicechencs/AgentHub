@@ -204,28 +204,32 @@ describe('sendBlockers', () => {
     cwd: 'D:\\work',
   });
 
-  it('returns hiddenAgents before unconfiguredAuth before noCwd before sendingElsewhere', () => {
+  it('returns hiddenAgents before envNotReady before unconfiguredAuth before noCwd before sendingElsewhere', () => {
     const blockers = sendBlockers({
-      conversation: { ...base, cwd: null, agentIds: ['claude', 'kimi', 'grok'] },
+      conversation: { ...base, cwd: null, agentIds: ['claude', 'kimi', 'pi', 'grok'] },
       hiddenIds: new Set<AgentId>(['kimi']),
+      envNotReadyIds: new Set<AgentId>(['pi', 'kimi']),
       unconfiguredAuthIds: new Set<AgentId>(['grok']),
       sendingConversationId: 'other',
       sendingTitle: '别的会话',
     });
     expect(blockers.map((b) => b.kind)).toEqual([
       'hiddenAgents',
+      'envNotReady',
       'unconfiguredAuth',
       'noCwd',
       'sendingElsewhere',
     ]);
     expect(blockers[0]).toEqual({ kind: 'hiddenAgents', agentIds: ['kimi'] });
-    expect(blockers[1]).toEqual({ kind: 'unconfiguredAuth', agentIds: ['grok'] });
+    expect(blockers[1]).toEqual({ kind: 'envNotReady', agentIds: ['pi'] });
+    expect(blockers[2]).toEqual({ kind: 'unconfiguredAuth', agentIds: ['grok'] });
   });
 
-  it('does not list a hidden agent again as unconfiguredAuth', () => {
+  it('does not list a hidden agent again as envNotReady or unconfiguredAuth', () => {
     const blockers = sendBlockers({
       conversation: { ...base, agentIds: ['kimi'] },
       hiddenIds: new Set<AgentId>(['kimi']),
+      envNotReadyIds: new Set<AgentId>(['kimi']),
       unconfiguredAuthIds: new Set<AgentId>(['kimi']),
       sendingConversationId: null,
     });
@@ -467,6 +471,10 @@ describe('blockerCopy', () => {
       text: '会话包含已隐藏 Agent，暂不能发送',
       primaryAction: '去 Agents 页',
     });
+    expect(blockerCopy(t, { kind: 'envNotReady', agentIds: ['pi'] })).toEqual({
+      text: '会话包含运行环境未就绪的 Agent，暂不能发送',
+      primaryAction: '去 Agents 页',
+    });
     expect(blockerCopy(t, { kind: 'unconfiguredAuth', agentIds: ['grok'] })).toEqual({
       text: '会话包含未配置授权的 Agent，暂不能发送',
       primaryAction: '去 Connections 页',
@@ -488,6 +496,7 @@ describe('blockerCopy', () => {
 describe('blockerPrimaryTarget', () => {
   it('sends noCwd to the directory picker, not session settings', () => {
     expect(blockerPrimaryTarget({ kind: 'hiddenAgents' })).toBe('agents');
+    expect(blockerPrimaryTarget({ kind: 'envNotReady' })).toBe('agents');
     expect(blockerPrimaryTarget({ kind: 'unconfiguredAuth' })).toBe('connections');
     expect(blockerPrimaryTarget({ kind: 'noCwd' })).toBe('pick-directory');
     expect(blockerPrimaryTarget({ kind: 'sendingElsewhere' })).toBe('settings');
@@ -601,6 +610,12 @@ describe('agentHasConfiguredAuth / picker rows', () => {
     ).toBe(false);
   });
 
+  it('isChatAgentSelectable treats omitted or true envReady as ready, and false as blocked', () => {
+    expect(isChatAgentSelectable(status('claude', true))).toBe(true);
+    expect(isChatAgentSelectable(status('claude', true, false, { envReady: true }))).toBe(true);
+    expect(isChatAgentSelectable(status('pi', true, false, { envReady: false }))).toBe(false);
+  });
+
   it('omits hidden and uninstalled agents, and parks no-auth at the end as unselectable', () => {
     const rows = chatAgentPickerRows({
       catalogIds: ['claude', 'codex', 'kimi', 'grok', 'pi'],
@@ -619,6 +634,35 @@ describe('agentHasConfiguredAuth / picker rows', () => {
     expect(rows.map((r) => r.id)).toEqual(['claude', 'pi', 'kimi']);
     expect(rows.map((r) => r.selectable)).toEqual([true, true, false]);
     expect(rows.map((r) => r.reason)).toEqual([null, null, 'noAuth']);
+  });
+
+  it('keeps envReady-false Pi in the picker as unselectable envNotReady; Claude without envReady stays selectable', () => {
+    const rows = chatAgentPickerRows({
+      catalogIds: ['claude', 'pi'],
+      agentStatus: [
+        status('claude', true),
+        status('pi', true, false, { envReady: false }),
+      ],
+    });
+    expect(rows).toEqual([
+      { id: 'claude', selectable: true, reason: null },
+      { id: 'pi', selectable: false, reason: 'envNotReady' },
+    ]);
+  });
+
+  it('prefers envNotReady over noAuth when both would apply', () => {
+    const rows = chatAgentPickerRows({
+      catalogIds: ['pi'],
+      agentStatus: [
+        status('pi', true, false, {
+          envReady: false,
+          effectiveKind: 'none',
+          authStatus: 'none',
+          authHealth: 'missing',
+        }),
+      ],
+    });
+    expect(rows).toEqual([{ id: 'pi', selectable: false, reason: 'envNotReady' }]);
   });
 
   it('does not keep a selected hidden or uninstalled agent in the picker', () => {

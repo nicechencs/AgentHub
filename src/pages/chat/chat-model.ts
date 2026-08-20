@@ -11,17 +11,23 @@ import type { TurnGroup } from './chat-format';
 
 export type ChatSendBlocker =
   | { kind: 'hiddenAgents'; agentIds: AgentId[] }
+  | { kind: 'envNotReady'; agentIds: AgentId[] }
   | { kind: 'unconfiguredAuth'; agentIds: AgentId[] }
   | { kind: 'noCwd' }
   | { kind: 'sendingElsewhere'; conversationId: string; title: string };
 
-export type ChatAgentPickerReason = 'noAuth';
+export type ChatAgentPickerReason = 'noAuth' | 'envNotReady';
 
 export type ChatAgentPickerRow = {
   id: AgentId;
   selectable: boolean;
   reason: ChatAgentPickerReason | null;
 };
+
+/** envReady omitted (old payload) is treated as ready; only false is blocked. */
+export function agentEnvReady(status: AgentStatus | undefined): boolean {
+  return status?.envReady !== false;
+}
 
 /** 已绑定登录 / API Key 才算配置了授权；未配置或未登录不可选。 */
 export function agentHasConfiguredAuth(status: AgentStatus | undefined): boolean {
@@ -37,7 +43,9 @@ export function agentHasConfiguredAuth(status: AgentStatus | undefined): boolean
 }
 
 export function isChatAgentSelectable(status: AgentStatus | undefined): boolean {
-  return Boolean(status?.installed && !status.hidden && agentHasConfiguredAuth(status));
+  return Boolean(
+    status?.installed && !status.hidden && agentHasConfiguredAuth(status) && agentEnvReady(status),
+  );
 }
 
 /**
@@ -52,11 +60,17 @@ export function chatAgentPickerRows(input: {
   for (const id of input.catalogIds) {
     const status = byId.get(id);
     if (status?.installed !== true || status.hidden) continue;
+    const envNotReady = !agentEnvReady(status);
     const noAuth = !agentHasConfiguredAuth(status);
+    const reason: ChatAgentPickerReason | null = envNotReady
+      ? 'envNotReady'
+      : noAuth
+        ? 'noAuth'
+        : null;
     rows.push({
       id,
-      selectable: !noAuth,
-      reason: noAuth ? 'noAuth' : null,
+      selectable: reason === null,
+      reason,
     });
   }
   return [...rows.filter((r) => r.selectable), ...rows.filter((r) => !r.selectable)];
@@ -180,6 +194,7 @@ export function groupConversationsByDay(
 export function sendBlockers(input: {
   conversation: Conversation;
   hiddenIds: Set<AgentId>;
+  envNotReadyIds?: Set<AgentId>;
   unconfiguredAuthIds?: Set<AgentId>;
   sendingConversationId: string | null;
   sendingTitle?: string;
@@ -188,6 +203,12 @@ export function sendBlockers(input: {
   const hidden = input.conversation.agentIds.filter((id) => input.hiddenIds.has(id));
   if (hidden.length > 0) {
     out.push({ kind: 'hiddenAgents', agentIds: hidden });
+  }
+  const envNotReady = input.conversation.agentIds.filter(
+    (id) => !input.hiddenIds.has(id) && input.envNotReadyIds?.has(id),
+  );
+  if (envNotReady.length > 0) {
+    out.push({ kind: 'envNotReady', agentIds: envNotReady });
   }
   const unconfigured = input.conversation.agentIds.filter(
     (id) => !input.hiddenIds.has(id) && input.unconfiguredAuthIds?.has(id),
@@ -512,6 +533,7 @@ export function blockerPrimaryTarget(
 ): ChatBlockerPrimaryTarget {
   switch (blocker.kind) {
     case 'hiddenAgents':
+    case 'envNotReady':
       return 'agents';
     case 'unconfiguredAuth':
       return 'connections';
@@ -531,6 +553,11 @@ export function blockerCopy(t: TranslateFn, blocker: ChatSendBlocker): {
     case 'hiddenAgents':
       return {
         text: t('chat.blocker.hidden'),
+        primaryAction: t('chat.blocker.goAgents'),
+      };
+    case 'envNotReady':
+      return {
+        text: t('chat.blocker.envNotReady'),
         primaryAction: t('chat.blocker.goAgents'),
       };
     case 'unconfiguredAuth':

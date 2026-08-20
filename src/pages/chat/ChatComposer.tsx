@@ -204,6 +204,9 @@ export function ChatComposer({
                       {row.reason === 'noAuth' && (
                         <span className="text-meta text-muted">{t('chat.composer.noAuth')}</span>
                       )}
+                      {row.reason === 'envNotReady' && (
+                        <span className="text-meta text-muted">{t('chat.composer.envNotReady')}</span>
+                      )}
                     </span>
                   </DropdownMenuRadioItem>
                 ))}

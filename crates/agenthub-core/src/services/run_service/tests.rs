@@ -117,15 +117,15 @@ fn build_run_spec_argv_snapshots() {
         .unwrap();
     assert_eq!(grok.args, vec!["--no-auto-update", "-p", "p"]);
 
-    let pi = reg
-        .get(AgentId::Pi)
-        .unwrap()
-        .build_run_spec(bin, "p", &o)
-        .unwrap();
-    assert_eq!(&pi.args[..5], ["-p", "p", "--mode", "text", "--no-session"]);
-    for (k, v) in &pi.env {
-        assert_eq!(k, "PATH");
-        assert!(!v.is_empty());
+    match reg.get(AgentId::Pi).unwrap().build_run_spec(bin, "p", &o) {
+        Ok(pi) => {
+            assert_eq!(&pi.args[..5], ["-p", "p", "--mode", "text", "--no-session"]);
+            for (k, v) in &pi.env {
+                assert_eq!(k, "PATH");
+                assert!(!v.is_empty());
+            }
+        }
+        Err(err) => assert_eq!(err.code(), "env.not_ready"),
     }
 
     let kimi_s = reg
@@ -137,15 +137,19 @@ fn build_run_spec_argv_snapshots() {
         kimi_s.args,
         vec!["-p", "p", "--output-format", "stream-json"]
     );
-    let pi_s = reg
+    match reg
         .get(AgentId::Pi)
         .unwrap()
         .build_run_spec(bin, "p", &structured)
-        .unwrap();
-    assert_eq!(
-        &pi_s.args[..5],
-        ["-p", "p", "--mode", "json", "--no-session"]
-    );
+    {
+        Ok(pi_s) => {
+            assert_eq!(
+                &pi_s.args[..5],
+                ["-p", "p", "--mode", "json", "--no-session"]
+            );
+        }
+        Err(err) => assert_eq!(err.code(), "env.not_ready"),
+    }
     let grok_s = reg
         .get(AgentId::Grok)
         .unwrap()

@@ -46,6 +46,58 @@ pub(crate) fn pi_child_env(node22_bin_dir: Option<&Path>) -> Vec<(String, String
     runtime::prefixed_path_env(node22_bin_dir)
 }
 
+/// Refuse to spawn Pi when Node 22.19+ is missing — PATH Node 20 crashes undici.
+pub(crate) fn require_pi_node22_env(
+    node22: Option<&crate::runtime::ResolvedNode>,
+) -> Result<Vec<(String, String)>> {
+    match node22.and_then(|n| n.bin_dir()) {
+        Some(dir) => Ok(pi_child_env(Some(&dir))),
+        None => Err(AppError::EnvNotReady(
+            crate::runtime::PI_NODE_TOO_OLD_NOTE.into(),
+        )),
+    }
+}
+
+pub(crate) fn build_pi_run_spec(
+    binary: &Path,
+    prompt: &str,
+    opts: &RunOptions,
+    node22: Option<&crate::runtime::ResolvedNode>,
+) -> Result<RunSpec> {
+    // text: `pi -p "…"` `--mode text --no-session`
+    // structured (Chat): `--mode json` event stream (NDJSON session events)
+    // No public stable "always approve tools" flag — do not invent one.
+    // `--approve` only trusts project-local files for the run (not tool YOLO).
+    let mode = if super::wants_structured_for(opts.process_mode, AgentId::Pi) {
+        "json"
+    } else {
+        "text"
+    };
+    let mut args = vec![
+        "-p".into(),
+        prompt.to_string(),
+        "--mode".into(),
+        mode.into(),
+        "--no-session".into(),
+    ];
+    // Documented `--provider` / `--model`. Prefer settings.json; if that
+    // file has neither default, fall back to a single auth.json slot so
+    // Chat works after an auth-only bind (no re-bind required).
+    args.extend(pi_cli_provider_args());
+    if opts.allow_dangerous {
+        // Closest documented non-interactive trust flag for project files.
+        args.push("--approve".into());
+    }
+    let env = require_pi_node22_env(node22)?;
+    Ok(RunSpec {
+        agent: AgentId::Pi,
+        program: binary.to_path_buf(),
+        args,
+        cwd: opts.cwd.clone(),
+        env,
+    })
+}
+
 /// Pi `engines.node` is >= 22. Without Node 22, env is not ready and version
 /// probes must not look like a generic “installed but unread” miss.
 pub(crate) fn apply_pi_node_requirement(
@@ -233,43 +285,7 @@ impl AgentAdapter for PiAdapter {
     }
 
     fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec> {
-        // text: `pi -p "…"` `--mode text --no-session`
-        // structured (Chat): `--mode json` event stream (NDJSON session events)
-        // No public stable "always approve tools" flag — do not invent one.
-        // `--approve` only trusts project-local files for the run (not tool YOLO).
-        let mode = if super::wants_structured_for(opts.process_mode, AgentId::Pi) {
-            "json"
-        } else {
-            "text"
-        };
-        let mut args = vec![
-            "-p".into(),
-            prompt.to_string(),
-            "--mode".into(),
-            mode.into(),
-            "--no-session".into(),
-        ];
-        // Documented `--provider` / `--model`. Prefer settings.json; if that
-        // file has neither default, fall back to a single auth.json slot so
-        // Chat works after an auth-only bind (no re-bind required).
-        args.extend(pi_cli_provider_args());
-        if opts.allow_dangerous {
-            // Closest documented non-interactive trust flag for project files.
-            args.push("--approve".into());
-        }
-        let env = pi_child_env(
-            runtime::resolve_pi_node()
-                .as_ref()
-                .and_then(|n| n.bin_dir())
-                .as_deref(),
-        );
-        Ok(RunSpec {
-            agent: AgentId::Pi,
-            program: binary.to_path_buf(),
-            args,
-            cwd: opts.cwd.clone(),
-            env,
-        })
+        build_pi_run_spec(binary, prompt, opts, runtime::resolve_pi_node().as_ref())
     }
 }
 
@@ -650,13 +666,20 @@ mod tests {
         result
     }
 
+    fn fake_node22() -> crate::runtime::ResolvedNode {
+        crate::runtime::ResolvedNode {
+            path: PathBuf::from("/tmp/mock-node-v22.19.0/bin/node"),
+            version: "22.19.0".into(),
+            major: 22,
+        }
+    }
+
     #[test]
     fn build_run_spec_print_mode() {
         with_pi_config_dir(|_| {
-            let adapter = PiAdapter;
             let bin = PathBuf::from("pi");
             let opts = RunOptions::default();
-            let spec = adapter.build_run_spec(&bin, "hello", &opts).unwrap();
+            let spec = build_pi_run_spec(&bin, "hello", &opts, Some(&fake_node22())).unwrap();
             assert_eq!(spec.agent, AgentId::Pi);
             assert_eq!(spec.program, bin);
             assert_eq!(spec.args[0], "-p");
@@ -676,10 +699,10 @@ mod tests {
     #[test]
     fn build_run_spec_allow_dangerous_adds_approve() {
         with_pi_config_dir(|_| {
-            let adapter = PiAdapter;
             let mut opts = RunOptions::default();
             opts.allow_dangerous = true;
-            let spec = adapter.build_run_spec(Path::new("pi"), "x", &opts).unwrap();
+            let spec =
+                build_pi_run_spec(Path::new("pi"), "x", &opts, Some(&fake_node22())).unwrap();
             assert!(spec.args.iter().any(|a| a == "--approve"));
         });
     }
@@ -695,9 +718,13 @@ mod tests {
                 .unwrap(),
             )
             .unwrap();
-            let spec = PiAdapter
-                .build_run_spec(Path::new("pi"), "ping", &RunOptions::default())
-                .unwrap();
+            let spec = build_pi_run_spec(
+                Path::new("pi"),
+                "ping",
+                &RunOptions::default(),
+                Some(&fake_node22()),
+            )
+            .unwrap();
             let args = spec.args;
             let idx = args
                 .iter()
@@ -725,9 +752,13 @@ mod tests {
                 .unwrap(),
             )
             .unwrap();
-            let spec = PiAdapter
-                .build_run_spec(Path::new("pi"), "ping", &RunOptions::default())
-                .unwrap();
+            let spec = build_pi_run_spec(
+                Path::new("pi"),
+                "ping",
+                &RunOptions::default(),
+                Some(&fake_node22()),
+            )
+            .unwrap();
             let args = spec.args;
             let idx = args
                 .iter()
@@ -1014,6 +1045,39 @@ mod tests {
     #[test]
     fn pi_child_env_empty_without_node22() {
         assert!(pi_child_env(None).is_empty());
+    }
+
+    #[test]
+    fn require_pi_node22_env_none_is_env_not_ready() {
+        let err = require_pi_node22_env(None).unwrap_err();
+        assert_eq!(err.code(), "env.not_ready");
+        assert!(err.to_string().contains("Node too old"), "message={err}");
+    }
+
+    #[test]
+    fn require_pi_node22_env_prefixes_bin_dir() {
+        let node = fake_node22();
+        let env = require_pi_node22_env(Some(&node)).unwrap();
+        assert_eq!(env, pi_child_env(node.bin_dir().as_deref()));
+        assert_eq!(env.len(), 1);
+        assert_eq!(env[0].0, "PATH");
+        let bin = node.bin_dir().expect("fake node has a bin dir");
+        let prefix = bin.to_string_lossy();
+        assert!(
+            env[0].1 == prefix || env[0].1.starts_with(prefix.as_ref()),
+            "PATH must start with Node 22 bin: {}",
+            env[0].1
+        );
+    }
+
+    #[test]
+    fn build_pi_run_spec_without_node22_is_env_not_ready() {
+        with_pi_config_dir(|_| {
+            let err = build_pi_run_spec(Path::new("pi"), "hello", &RunOptions::default(), None)
+                .unwrap_err();
+            assert_eq!(err.code(), "env.not_ready");
+            assert!(err.to_string().contains("Node too old"), "message={err}");
+        });
     }
 
     #[test]

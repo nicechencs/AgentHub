@@ -1201,6 +1201,7 @@ export const zh = {
       inputAria: "消息输入",
       selectAgent: "选择 Agent",
       noAuth: "未配置授权",
+      envNotReady: "环境未就绪",
       switchConnection: "切换连接",
       switchConnectionNamed: "{name} · 切换连接",
       send: "发送",
@@ -1271,6 +1272,7 @@ export const zh = {
     },
     blocker: {
       hidden: "会话包含已隐藏 Agent，暂不能发送",
+      envNotReady: "会话包含运行环境未就绪的 Agent，暂不能发送",
       unconfigured: "会话包含未配置授权的 Agent，暂不能发送",
       noCwd: "未设置工作目录 — Agent 需要在指定目录内工作",
       setCwd: "设置工作目录",

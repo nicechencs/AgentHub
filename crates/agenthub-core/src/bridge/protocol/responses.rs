@@ -11,17 +11,12 @@ use crate::bridge::types::{
 
 /// Parse the subset of `POST /v1/responses` that this bridge can faithfully represent.
 ///
-/// Unsupported multimodal inputs fail closed: a text-only approximation would make
-/// it look as if the model saw data it never received. Hosted tool types that Chat
-/// Completions cannot take (web_search, computer, apply_patch, ...) are dropped so
-/// Codex Chat still completes; function tools keep translating.
+/// Unsupported multimodal inputs fail closed. Non-function tool types are dropped.
 pub fn parse_responses_request(value: &Value) -> ProtocolResult<BridgeRequest> {
     let object = value
         .as_object()
         .ok_or_else(|| ProtocolError::invalid_request("The request body must be a JSON object."))?;
-    // Codex always sends `reasoning` when model_reasoning_effort is set. Chat Completions
-    // upstreams do not take the Responses `reasoning` object, so never fail the request.
-    // Grok/xAI maps effort -> reasoning_effort; other Chat Completions upstreams drop it.
+    // Responses `reasoning` is not a Chat field; map effort only for xAI.
     let model = required_string(object, "model", "A non-empty model is required.")?;
     let input = match object.get("input") {
         Some(Value::String(text)) => vec![BridgeMessage {
@@ -1726,15 +1721,15 @@ fn parse_tools(value: Option<&Value>) -> ProtocolResult<Vec<BridgeTool>> {
         .as_array()
         .ok_or_else(|| ProtocolError::invalid_request("`tools` must be an array."))?;
     let mut tools = Vec::with_capacity(items.len());
+    let mut dropped = HashSet::new();
     for item in items {
         let object = item
             .as_object()
             .ok_or_else(|| ProtocolError::invalid_request("Every tool must be an object."))?;
         let kind = required_string(object, "type", "Every tool requires a type.")?;
         if kind != "function" {
-            // Codex sends hosted tools (web_search, computer, apply_patch, ...)
-            // that xAI/Kimi Chat Completions cannot take. Drop them instead of
-            // failing the request so Grok->Codex Chat still completes.
+            // Non-function tool types are dropped.
+            dropped.insert(kind);
             continue;
         }
         let parameters = object
@@ -1762,6 +1757,13 @@ fn parse_tools(value: Option<&Value>) -> ProtocolResult<Vec<BridgeTool>> {
             strict,
         });
     }
+    if !dropped.is_empty() {
+        tracing::warn!(
+            target: "core.adapter",
+            dropped = ?dropped,
+            "dropping hosted Responses tool types that Chat Completions cannot take",
+        );
+    }
     Ok(tools)
 }
 
@@ -1776,8 +1778,7 @@ fn parse_tool_choice(value: Option<&Value>) -> ProtocolResult<Option<ToolChoice>
         },
         Value::Object(object) => {
             if object.get("type").and_then(Value::as_str) != Some("function") {
-                // Hosted tool_choice has nothing to bind after hosted tools are
-                // dropped. Ignore it so the request still completes.
+                // Hosted tool_choice objects become None.
                 return Ok(None);
             }
             let name = object
@@ -1857,9 +1858,7 @@ fn known_request_fields() -> HashSet<&'static str> {
     .collect()
 }
 
-/// Map Responses `reasoning.effort` to xAI Chat Completions `reasoning_effort`.
-///
-/// Unknown shapes or effort values are ignored so Codex Chat still completes.
+/// Responses `reasoning` is not a Chat field; map effort only for xAI.
 fn grok_reasoning_effort(value: Option<&Value>) -> Option<String> {
     let effort = match value? {
         Value::Object(object) => object.get("effort").and_then(Value::as_str)?,
