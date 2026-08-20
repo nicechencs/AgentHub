@@ -56,7 +56,7 @@ pub(super) enum RouteSourceLabel {
 /// Kimi agent pool row that is not membership (open platform / custom compatible).
 pub(super) const KIMI_NON_MEMBERSHIP_REASON: &str = concat!(
     "当前 Kimi 连接不是「Kimi Code 会员」来源。",
-    "跨 Agent 适配仅支持会员：Connections 中选择 preset「Kimi Code 会员」，",
+    "跨 Agent 适配仅支持会员：连接页中选择 preset「Kimi Code 会员」，",
     "或配置端点包含 api.kimi.com/coding。",
     "开放平台（moonshot）与任意兼容 API 不会自动升级。",
     "当前不支持不等于连接失效。",

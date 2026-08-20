@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
  * 勿把长说明直接铺在页面上。
  *
  * - `default`：常规页（Dashboard / Settings…）
- * - `compact`：全高页（Skills / Chat 壳内）— 同档标题，只收底边距
+ * - `compact`：全高页（Skills / Projects / Chat 壳内）— 同档标题，只收底边距
  */
 export function PageHeader({
   title,

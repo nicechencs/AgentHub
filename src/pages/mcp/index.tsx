@@ -128,6 +128,7 @@ export default function McpPage() {
           <div className={pageRhythm.chrome}>
             <AgentTabStrip
               showAll
+              allLabel={t('kind.all')}
               value={filterAgent}
               onChange={setFilterAgent}
               agents={filterAgents}

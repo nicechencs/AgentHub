@@ -22,6 +22,7 @@ import {
   isUpdateAvailable,
   type UpdateInfo,
 } from '@/lib/api/update';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { cn } from '@/lib/utils';
 
 /** 旧 /providers、/accounts 深链兼容 → /connections */
@@ -51,12 +52,14 @@ function LegacyBackupsRedirect() {
 }
 
 export default function App() {
+  const { t } = useI18n();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isChat = pathname === '/chat';
-  /** 技能页需左右分栏铺满主区，不受 max-w-content 限制 */
+  /** Skills / Projects 左右分栏铺满主区，不受 max-w-content 限制 */
   const isSkills = pathname === '/skills';
-  const fullBleed = isChat || isSkills;
+  const isProjects = pathname === '/projects';
+  const fullBleed = isChat || isSkills || isProjects;
   const updateHandleRef = useRef<UpdatePromptHandle | null>(null);
 
   useEffect(() => {
@@ -89,10 +92,10 @@ export default function App() {
     }
     // Fallback: settings opened before prompt mounted (should be rare).
     if (!(await isUpdateAvailable())) {
-      throw new Error('仅桌面端支持自动更新');
+      throw new Error(t('settings.page.desktopOnlyUpdate'));
     }
     return checkForUpdate();
-  }, []);
+  }, [t]);
 
   return (
     <SidebarProvider>
@@ -101,7 +104,7 @@ export default function App() {
         <div className="flex min-w-0 flex-1 flex-col">
           {!isChat && <TopBar />}
           <main className={cn('flex-1', fullBleed ? 'overflow-hidden' : 'overflow-y-auto')}>
-            {/* max-w-content：普通页桌面阅读宽度；chat/skills 全宽全高 */}
+            {/* max-w-content：普通页桌面阅读宽度；chat/skills/projects 全宽全高 */}
             <div className={fullBleed ? 'h-full' : pageRhythm.pageShell}>
               <Routes>
                 <Route path="/" element={<DashboardPage />} />

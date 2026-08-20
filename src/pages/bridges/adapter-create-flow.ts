@@ -209,7 +209,7 @@ export function adapterPreviewOutcome(input: {
       title: t ? t('routes.create.preview.authTitle') : '先完成授权',
       badgeLabel: t ? t('routes.create.preview.authBadge') : '待授权',
       badgeVariant: 'warning',
-      nextStep: t ? t('routes.create.preview.authNext') : '到 Connections 完成授权。',
+      nextStep: t ? t('routes.create.preview.authNext') : '到连接页完成授权。',
     };
   }
   if (input.canApply && input.route === 'local_bridge') {
@@ -271,7 +271,7 @@ export function adapterApplyCommit(result: Pick<AdapterApplyResult, 'profile'>, 
 } {
   return {
     successMessage: result.profile.route === 'local_bridge'
-      ? (t ? t('routes.create.apply.localCreated') : '本地桥接已创建并启动，Codex Connection 已切换。')
+      ? (t ? t('routes.create.apply.localCreated') : '本地桥接已创建并启动，Codex 连接已切换。')
       : (t ? t('routes.create.apply.applied') : '适配已应用。'),
     shouldProbeBridge: result.profile.route === 'local_bridge',
     shouldRefresh: true,
