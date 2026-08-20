@@ -50,6 +50,30 @@ pub(crate) fn detect_binary_with_env(
         }
     }
 
+    // AgentHub user npm prefix first — PATH may still point at a leftover
+    // 0.2.3 global shim and would otherwise hide ~/.agenthub/npm.
+    if let Some(path) = first_existing_named_bin(&agenthub_user_npm_bin_dirs(), &names) {
+        tracing::debug!(
+            target: crate::logging::targets::DETECT,
+            module = crate::logging::targets::DETECT,
+            op = "detect_binary",
+            agent = agent.as_str(),
+            via = "user_npm_prefix",
+            channel = "npm",
+            path = %path.display(),
+            "agent binary resolved in AgentHub user npm prefix"
+        );
+        return finish_detect(
+            agent,
+            path,
+            version_args,
+            Some("npm"),
+            env_ready,
+            true,
+            extra_env,
+        );
+    }
+
     for name in &names {
         if let Ok(path) = which(name) {
             let channel = infer_channel(&path, channel_hint);
@@ -75,8 +99,12 @@ pub(crate) fn detect_binary_with_env(
         }
     }
 
-    // Well-known dirs: works when GUI PATH is incomplete after native/npm install.
+    // Remaining well-known dirs (legacy global npm, ~/.local/bin, …).
+    // User-prefix hits were already considered above.
     for (path, channel) in well_known_bin_paths(agent) {
+        if is_under_agenthub_user_npm_prefix(&path) {
+            continue;
+        }
         if path.is_file() {
             // PATH miss but disk hit — common after install without AgentHub restart.
             tracing::info!(
@@ -254,14 +282,70 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
     paths
 }
 
-fn npm_global_bin_dirs(home: &Path) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
+/// AgentHub-managed npm prefix roots (`<data>/npm` and `~/.agenthub/npm`).
+///
+/// These are **not** the OS/global npm prefix (AppData\Roaming\npm, /usr/local).
+pub(crate) fn agenthub_user_npm_prefix_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(data) = crate::utils::paths::resolve_data_dir(None) {
+        roots.push(data.join("npm"));
+    }
+    if let Ok(home) = crate::utils::paths::home_dir() {
+        let fallback = home.join(".agenthub").join("npm");
+        if !roots.iter().any(|p| p == &fallback) {
+            roots.push(fallback);
+        }
+    }
+    roots
+}
+
+fn npm_prefix_to_bin_dir(prefix: PathBuf) -> PathBuf {
     #[cfg(windows)]
     {
-        if let Ok(data) = crate::utils::paths::resolve_data_dir(None) {
-            dirs.push(data.join("npm"));
+        prefix
+    }
+    #[cfg(not(windows))]
+    {
+        prefix.join("bin")
+    }
+}
+
+/// Bin dirs under AgentHub user npm prefixes (Windows: prefix root; Unix: `prefix/bin`).
+pub(crate) fn agenthub_user_npm_bin_dirs() -> Vec<PathBuf> {
+    agenthub_user_npm_prefix_roots()
+        .into_iter()
+        .map(npm_prefix_to_bin_dir)
+        .collect()
+}
+
+/// True when `path` is inside an AgentHub user npm prefix (not legacy global npm).
+pub(crate) fn is_under_agenthub_user_npm_prefix(path: &Path) -> bool {
+    agenthub_user_npm_prefix_roots()
+        .iter()
+        .any(|root| path.starts_with(root))
+}
+
+/// First existing `names` entry under `dirs` (earlier dir wins). Does not call `which`.
+pub(crate) fn first_existing_named_bin(dirs: &[PathBuf], names: &[String]) -> Option<PathBuf> {
+    for dir in dirs {
+        for name in names {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
         }
-        dirs.push(home.join(".agenthub").join("npm"));
+    }
+    None
+}
+
+fn npm_global_bin_dirs(home: &Path) -> Vec<PathBuf> {
+    let mut dirs = agenthub_user_npm_bin_dirs();
+    let home_fallback = npm_prefix_to_bin_dir(home.join(".agenthub").join("npm"));
+    if !dirs.iter().any(|p| p == &home_fallback) {
+        dirs.push(home_fallback);
+    }
+    #[cfg(windows)]
+    {
         if let Ok(appdata) = std::env::var("APPDATA") {
             dirs.push(PathBuf::from(appdata).join("npm"));
         }
@@ -273,10 +357,6 @@ fn npm_global_bin_dirs(home: &Path) -> Vec<PathBuf> {
     }
     #[cfg(not(windows))]
     {
-        if let Ok(data) = crate::utils::paths::resolve_data_dir(None) {
-            dirs.push(data.join("npm").join("bin"));
-        }
-        dirs.push(home.join(".agenthub").join("npm").join("bin"));
         // Common npm global bin locations on macOS/Linux (PATH may omit them in GUI).
         dirs.push(PathBuf::from("/usr/local/bin"));
         dirs.push(home.join(".npm-global").join("bin"));

@@ -7,7 +7,8 @@ use crate::adapters::AgentAdapter;
 use crate::models::{ProcessMode, RunOptions};
 
 use super::{
-    clear_grok_field, grok_auth_state, read_grok_api_key, write_grok_api_key, GrokAdapter,
+    clear_grok_field, grok_auth_state, grok_cli_args, grok_supports_no_auto_update,
+    read_grok_api_key, write_grok_api_key, GrokAdapter,
 };
 use crate::models::{AgentConfig, AgentId};
 
@@ -155,6 +156,90 @@ fn grok_oauth_only_leaves_also_present_empty() {
 }
 
 #[test]
+fn grok_supports_no_auto_update_gates_old_semver() {
+    assert!(grok_supports_no_auto_update(None));
+    assert!(grok_supports_no_auto_update(Some("")));
+    assert!(grok_supports_no_auto_update(Some("not-a-version")));
+    assert!(grok_supports_no_auto_update(Some("0.2.117")));
+    assert!(grok_supports_no_auto_update(Some("0.2.118")));
+    assert!(grok_supports_no_auto_update(Some("grok 0.2.118 (1e1687c1cf)")));
+    assert!(grok_supports_no_auto_update(Some("1.0.0")));
+    assert!(!grok_supports_no_auto_update(Some("0.2.116")));
+    assert!(!grok_supports_no_auto_update(Some("0.2.0")));
+    assert!(!grok_supports_no_auto_update(Some("grok 0.2.116 (deadbeef)")));
+}
+
+#[test]
+fn grok_cli_args_include_no_auto_update_for_unknown_and_modern() {
+    let opts = RunOptions {
+        process_mode: ProcessMode::Auto,
+        ..RunOptions::default()
+    };
+    assert_eq!(
+        grok_cli_args("hi", &opts, None),
+        vec![
+            "--no-auto-update",
+            "-p",
+            "hi",
+            "--output-format",
+            "streaming-json"
+        ]
+    );
+    assert_eq!(
+        grok_cli_args("hi", &opts, Some("0.2.117")),
+        vec![
+            "--no-auto-update",
+            "-p",
+            "hi",
+            "--output-format",
+            "streaming-json"
+        ]
+    );
+}
+
+#[test]
+fn grok_cli_args_omit_no_auto_update_for_old_cli() {
+    let opts = RunOptions {
+        process_mode: ProcessMode::Auto,
+        ..RunOptions::default()
+    };
+    assert_eq!(
+        grok_cli_args("hi", &opts, Some("0.2.116")),
+        vec!["-p", "hi", "--output-format", "streaming-json"]
+    );
+}
+
+#[test]
+fn grok_cli_args_dangerous_prefixes_always_approve() {
+    let opts = RunOptions {
+        allow_dangerous: true,
+        process_mode: ProcessMode::Auto,
+        ..RunOptions::default()
+    };
+    assert_eq!(
+        grok_cli_args("hi", &opts, None),
+        vec![
+            "--always-approve",
+            "--no-auto-update",
+            "-p",
+            "hi",
+            "--output-format",
+            "streaming-json"
+        ]
+    );
+    assert_eq!(
+        grok_cli_args("hi", &opts, Some("0.2.116")),
+        vec![
+            "--always-approve",
+            "-p",
+            "hi",
+            "--output-format",
+            "streaming-json"
+        ]
+    );
+}
+
+#[test]
 fn build_run_spec_guards_auto_update_and_streams_json() {
     let spec = GrokAdapter
         .build_run_spec(
@@ -166,41 +251,15 @@ fn build_run_spec_guards_auto_update_and_streams_json() {
             },
         )
         .unwrap();
-    assert_eq!(
-        spec.args,
-        vec![
-            "--no-auto-update",
-            "-p",
-            "hi",
-            "--output-format",
-            "streaming-json"
-        ]
+    let detected = GrokAdapter.detect().version;
+    let expected = grok_cli_args(
+        "hi",
+        &RunOptions {
+            process_mode: ProcessMode::Auto,
+            ..RunOptions::default()
+        },
+        detected.as_deref(),
     );
+    assert_eq!(spec.args, expected);
     assert!(spec.env.is_empty());
-}
-
-#[test]
-fn build_run_spec_dangerous_prefixes_always_approve() {
-    let spec = GrokAdapter
-        .build_run_spec(
-            Path::new("grok"),
-            "hi",
-            &RunOptions {
-                allow_dangerous: true,
-                process_mode: ProcessMode::Auto,
-                ..RunOptions::default()
-            },
-        )
-        .unwrap();
-    assert_eq!(
-        spec.args,
-        vec![
-            "--always-approve",
-            "--no-auto-update",
-            "-p",
-            "hi",
-            "--output-format",
-            "streaming-json"
-        ]
-    );
 }

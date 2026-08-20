@@ -44,8 +44,10 @@ pub(crate) use config_write::{
     write_verified_json_object,
 };
 pub(crate) use detect_binary::{
-    detect_binary, detect_binary_with_env, expand_binary_names, extract_version_token,
-    infer_channel, looks_like_version_line, well_known_bin_paths, NOT_FOUND_FIREFIGHTING_NOTE,
+    agenthub_user_npm_prefix_roots, detect_binary, detect_binary_with_env, expand_binary_names,
+    extract_version_token, first_existing_named_bin, infer_channel,
+    is_under_agenthub_user_npm_prefix, looks_like_version_line, well_known_bin_paths,
+    NOT_FOUND_FIREFIGHTING_NOTE,
 };
 pub use registry::{
     register_all, supports_structured_stream, wants_structured_for, AdapterRegistry,

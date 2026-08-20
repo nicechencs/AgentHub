@@ -151,6 +151,61 @@ fn not_found_firefighting_note_mentions_path_and_restart() {
 }
 
 #[test]
+fn first_existing_named_bin_prefers_earlier_user_prefix_dir() {
+    let tmp = tempfile::tempdir().unwrap();
+    let user_prefix = tmp.path().join("agenthub").join("npm").join("bin");
+    let legacy_global = tmp.path().join("usr").join("local").join("bin");
+    std::fs::create_dir_all(&user_prefix).unwrap();
+    std::fs::create_dir_all(&legacy_global).unwrap();
+    std::fs::write(user_prefix.join("codex"), b"user-prefix").unwrap();
+    std::fs::write(legacy_global.join("codex"), b"legacy-global").unwrap();
+
+    let found = first_existing_named_bin(
+        &[user_prefix.clone(), legacy_global.clone()],
+        &["codex".into()],
+    );
+    assert_eq!(found, Some(user_prefix.join("codex")));
+}
+
+#[test]
+fn is_under_agenthub_user_npm_prefix_excludes_legacy_global() {
+    let roots = agenthub_user_npm_prefix_roots();
+    assert!(
+        !roots.is_empty(),
+        "user npm prefix roots must include data-dir and/or ~/.agenthub/npm"
+    );
+    for root in &roots {
+        let hit = if cfg!(windows) {
+            root.join("codex.cmd")
+        } else {
+            root.join("bin").join("codex")
+        };
+        assert!(
+            is_under_agenthub_user_npm_prefix(&hit),
+            "expected {} under user prefix",
+            hit.display()
+        );
+    }
+    assert!(!is_under_agenthub_user_npm_prefix(std::path::Path::new(
+        "/usr/local/bin/codex"
+    )));
+    if let Ok(home) = crate::utils::paths::home_dir() {
+        assert!(!is_under_agenthub_user_npm_prefix(
+            &home.join(".local").join("bin").join("codex")
+        ));
+        assert!(!is_under_agenthub_user_npm_prefix(
+            &home.join(".npm-global").join("bin").join("codex")
+        ));
+        #[cfg(windows)]
+        {
+            assert!(!is_under_agenthub_user_npm_prefix(
+                &home.join("AppData").join("Roaming").join("npm").join("codex.cmd")
+            ));
+        }
+    }
+}
+
+#[test]
 fn detect_binary_prefers_path_or_well_known_when_agent_installed() {
     // Integration smoke on developer machines: at least one of claude/codex/kimi/grok
     // is commonly present. If none, still validates NotFound note shape.

@@ -1464,17 +1464,14 @@ fn uninstall_agent_inner(
         let mut removed_program = false;
         if is_npm {
             if let Some(pkg) = contribution.npm_package() {
-                logs.push(format!("# npm uninstall -g --prefix ~/.agenthub/npm {pkg}"));
-                let npm = resolve_bin(&["npm", "npm.cmd"])?;
-                let req = ExecRequest {
-                    program: npm,
-                    args: vec!["uninstall".into(), "-g".into(), "--prefix".into(), ensure_user_npm_prefix()?.display().to_string(), pkg.into()],
-                    timeout: AGENT_TIMEOUT,
-                    max_output_bytes: MAX_OUTPUT,
-                };
-                let res = executor.run(&req);
-                push_exec_logs(&mut logs, &res, AGENT_TIMEOUT.as_secs());
-                removed_program = res.success();
+                removed_program = npm_uninstall_user_then_legacy(pkg, executor, &mut logs, || {
+                    runtime::invalidate_cache();
+                    crate::services::agent_service::invalidate_detect_cache();
+                    registry
+                        .get(agent)
+                        .map(|a| a.detect().status == DetectStatus::Installed)
+                        .unwrap_or(false)
+                })?;
             }
         } else {
             // 1) Prefer official silent uninstaller when allowlisted (e.g. WorkBuddy).
@@ -1656,17 +1653,8 @@ pub fn uninstall_from_contribution(
 
         let removed_program;
         if let Some(pkg) = contribution.npm_package() {
-            logs.push(format!("# npm uninstall -g --prefix ~/.agenthub/npm {pkg}"));
-            let npm = resolve_bin(&["npm", "npm.cmd"])?;
-            let req = ExecRequest {
-                program: npm,
-                args: vec!["uninstall".into(), "-g".into(), "--prefix".into(), ensure_user_npm_prefix()?.display().to_string(), pkg.into()],
-                timeout: AGENT_TIMEOUT,
-                max_output_bytes: MAX_OUTPUT,
-            };
-            let res = executor.run(&req);
-            push_exec_logs(&mut logs, &res, AGENT_TIMEOUT.as_secs());
-            removed_program = res.success();
+            // Contribution path has no adapter detect; always try legacy global too.
+            removed_program = npm_uninstall_user_then_legacy(pkg, executor, &mut logs, || true)?;
         } else {
             let mut any_removed = false;
             let mut any_found = false;
@@ -1734,6 +1722,68 @@ pub fn uninstall_from_contribution(
         &result,
     );
     result
+}
+
+fn npm_uninstall_user_then_legacy(
+    pkg: &str,
+    executor: &dyn CommandExecutor,
+    logs: &mut Vec<String>,
+    still_installed: impl Fn() -> bool,
+) -> Result<bool> {
+    let prefix_res = npm_uninstall_with_prefix(pkg, executor, logs)?;
+    let mut removed = prefix_res.success();
+    if still_installed() {
+        let legacy_res = npm_uninstall_legacy_global(pkg, executor, logs)?;
+        removed = removed || legacy_res.success();
+    }
+    Ok(removed)
+}
+
+fn npm_uninstall_with_prefix(
+    pkg: &str,
+    executor: &dyn CommandExecutor,
+    logs: &mut Vec<String>,
+) -> Result<ExecResult> {
+    let prefix = ensure_user_npm_prefix()?;
+    let prefix_text = prefix.display().to_string();
+    push_log(
+        logs,
+        format!("# npm uninstall -g --prefix {prefix_text} {pkg}"),
+    );
+    let npm = resolve_bin(&["npm", "npm.cmd"])?;
+    let req = ExecRequest {
+        program: npm,
+        args: vec![
+            "uninstall".into(),
+            "-g".into(),
+            "--prefix".into(),
+            prefix_text,
+            pkg.into(),
+        ],
+        timeout: AGENT_TIMEOUT,
+        max_output_bytes: MAX_OUTPUT,
+    };
+    let res = executor.run(&req);
+    push_exec_logs(logs, &res, AGENT_TIMEOUT.as_secs());
+    Ok(res)
+}
+
+fn npm_uninstall_legacy_global(
+    pkg: &str,
+    executor: &dyn CommandExecutor,
+    logs: &mut Vec<String>,
+) -> Result<ExecResult> {
+    push_log(logs, format!("# npm uninstall -g {pkg}"));
+    let npm = resolve_bin(&["npm", "npm.cmd"])?;
+    let req = ExecRequest {
+        program: npm,
+        args: vec!["uninstall".into(), "-g".into(), pkg.into()],
+        timeout: AGENT_TIMEOUT,
+        max_output_bytes: MAX_OUTPUT,
+    };
+    let res = executor.run(&req);
+    push_exec_logs(logs, &res, AGENT_TIMEOUT.as_secs());
+    Ok(res)
 }
 
 fn run_npm_install(
