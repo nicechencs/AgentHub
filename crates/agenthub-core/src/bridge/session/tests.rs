@@ -94,3 +94,51 @@ fn debug_and_display_do_not_expose_credentials() {
     assert!(!display.contains("access-secret"));
     assert!(!display.contains("refresh-secret"));
 }
+
+#[test]
+fn oauth_other_top_level_access_token_resolves() {
+    let auth = resolve_codex_subscription_auth(&json!({
+        "access_token": "at-other"
+    }))
+    .expect("top-level OauthOther access_token should resolve");
+
+    assert_eq!(auth.token(), "at-other");
+}
+
+#[test]
+fn oauth_other_raw_access_token_resolves() {
+    let auth = resolve_codex_subscription_auth(&json!({
+        "raw": { "access_token": "at-from-raw" }
+    }))
+    .expect("/raw/access_token should resolve");
+
+    assert_eq!(auth.token(), "at-from-raw");
+}
+
+#[test]
+fn oauth_other_body_access_token_resolves() {
+    let auth = resolve_codex_subscription_auth(&json!({
+        "body": { "access_token": "at-from-body" }
+    }))
+    .expect("/body/access_token should resolve");
+
+    assert_eq!(auth.token(), "at-from-body");
+}
+
+#[test]
+fn empty_access_token_is_rejected() {
+    let error = resolve_codex_subscription_auth(&json!({
+        "access_token": ""
+    }))
+    .expect_err("empty access_token must fail");
+
+    assert!(matches!(error, AppError::InvalidArg(_)));
+
+    let error = resolve_codex_subscription_auth(&json!({
+        "raw": { "access_token": "" },
+        "body": { "access_token": "" }
+    }))
+    .expect_err("empty OauthOther pointers must fail");
+
+    assert!(matches!(error, AppError::InvalidArg(_)));
+}

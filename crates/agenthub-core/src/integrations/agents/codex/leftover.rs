@@ -5,6 +5,15 @@
 //! `model` / `model_reasoning_effort`. Switching back to 官方登录 must drop
 //! those keys or Codex sends the ChatGPT token at loopback (401) or rejects
 //! leftover `grok-*` models (400). Do not invent a ChatGPT model name.
+//!
+//! Boundaries:
+//! - `preferred_auth_method = "apikey"` is removed only when a leftover
+//!   `agenthub_*_bridge` slug is present. Without a slug it stays
+//!   (GLM / DeepSeek restore).
+//! - A leftover `grok-*` model is stripped even when bridge slugs are
+//!   empty, unless `model_provider` is a non-leftover slug (e.g. `custom`).
+//! - `model_reasoning_effort` is removed only when `model` is `grok-*`.
+//!   A missing `model` key does not drop effort.
 
 use std::path::Path;
 
@@ -41,7 +50,9 @@ pub fn live_config_is_bridge_leftover() -> bool {
 /// Remove AgentHub leftover keys. Returns whether the document changed.
 ///
 /// Bridge slugs may already be empty while a leftover `grok-*` model remains;
-/// 官方登录 still drops that model and leftover `model_reasoning_effort`.
+/// 官方登录 still drops that model (and its effort) unless `model_provider` is
+/// a non-leftover slug. `preferred_auth_method = "apikey"` is cleared only
+/// when leftover slugs are present.
 pub fn strip_bridge_leftovers_in_doc(doc: &mut DocumentMut) -> bool {
     let slugs: Vec<String> = leftover_slugs(doc).collect();
     let mut changed = false;
@@ -72,7 +83,7 @@ pub fn strip_bridge_leftovers_in_doc(doc: &mut DocumentMut) -> bool {
         }
     }
 
-    if clear_apikey_auth_preference(doc) {
+    if clear_apikey_auth_preference(doc, !slugs.is_empty()) {
         changed = true;
     }
     if clear_leftover_grok_model_keys(doc) {
@@ -177,7 +188,10 @@ fn is_leftover_provider_table(slug: &str, _table: Option<&toml_edit::Table>) -> 
     is_agenthub_bridge_slug(slug)
 }
 
-fn clear_apikey_auth_preference(doc: &mut DocumentMut) -> bool {
+fn clear_apikey_auth_preference(doc: &mut DocumentMut, has_leftover_slug: bool) -> bool {
+    if !has_leftover_slug {
+        return false;
+    }
     let pref = doc
         .get("preferred_auth_method")
         .and_then(|item| item.as_str())
@@ -193,9 +207,21 @@ fn is_leftover_grok_model(model: &str) -> bool {
     model.trim().starts_with("grok-")
 }
 
-/// Drop leftover Grok `model` (`grok-*`) and `model_reasoning_effort`.
+fn model_provider_is_non_leftover_slug(doc: &DocumentMut) -> bool {
+    doc.get("model_provider")
+        .and_then(|item| item.as_str())
+        .is_some_and(|slug| !is_leftover_slug(slug))
+}
+
+/// Drop leftover Grok `model` (`grok-*`) and its `model_reasoning_effort`.
+///
 /// Keep official `gpt-*` models, `mcp_servers`, and `disable_response_storage`.
+/// A non-leftover `model_provider` (e.g. `custom`) keeps `grok-*` and effort.
+/// A missing `model` key does not drop effort (`None => false`).
 fn clear_leftover_grok_model_keys(doc: &mut DocumentMut) -> bool {
+    if model_provider_is_non_leftover_slug(doc) {
+        return false;
+    }
     let mut changed = false;
     let model = doc
         .get("model")
@@ -207,7 +233,7 @@ fn clear_leftover_grok_model_keys(doc: &mut DocumentMut) -> bool {
     }
     let leftover_reasoning = match model.as_deref() {
         Some(value) => is_leftover_grok_model(value),
-        None => true,
+        None => false,
     };
     if leftover_reasoning && doc.get("model_reasoning_effort").is_some() {
         doc.remove("model_reasoning_effort");

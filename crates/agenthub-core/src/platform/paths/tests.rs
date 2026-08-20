@@ -2,9 +2,12 @@
 
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use crate::models::AgentId;
 use crate::platform::paths::{builtin_path_registry, resolve_agent_config_dir, resolve_agent_home};
+
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn restore_env(key: &str, prev: Option<OsString>) {
     match prev {
@@ -44,6 +47,22 @@ fn claude_home_honors_claude_config_dir_env() {
     std::env::set_var("CLAUDE_CONFIG_DIR", &expected);
     let home = resolve_agent_home(AgentId::Claude).unwrap();
     restore_env("CLAUDE_CONFIG_DIR", prev);
+    assert_eq!(home, expected);
+}
+
+#[test]
+fn codex_home_honors_codex_home_env() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _codex = crate::integrations::agents::codex::leftover::lock_codex_home();
+    let expected = PathBuf::from(if cfg!(windows) {
+        r"D:\tmp\agenthub-codex-home-test"
+    } else {
+        "/tmp/agenthub-codex-home-test"
+    });
+    let prev = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &expected);
+    let home = resolve_agent_home(AgentId::Codex).unwrap();
+    restore_env("CODEX_HOME", prev);
     assert_eq!(home, expected);
 }
 

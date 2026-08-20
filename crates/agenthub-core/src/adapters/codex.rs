@@ -687,8 +687,8 @@ wire_api = "responses"
 "#,
         )
         .unwrap();
-        let prev = std::env::var_os("HOME");
-        std::env::set_var("HOME", &home);
+        let prev = std::env::var_os("CODEX_HOME");
+        std::env::set_var("CODEX_HOME", &codex);
         let account = LiveAccount {
             agent: AgentId::Codex,
             kind: AccountKind::Oauth,
@@ -710,8 +710,8 @@ wire_api = "responses"
         };
         let result = CodexAdapter.apply_account(&account);
         match prev {
-            Some(value) => std::env::set_var("HOME", value),
-            None => std::env::remove_var("HOME"),
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
         }
         result.unwrap();
         let stored = std::fs::read_to_string(codex.join("config.toml")).unwrap();

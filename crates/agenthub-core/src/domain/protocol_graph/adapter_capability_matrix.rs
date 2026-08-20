@@ -38,13 +38,13 @@ pub const CODEX_SUBSCRIPTION_TO_GROK_RULE_ID: &str = "codex-subscription-to-grok
 pub const CODEX_SUBSCRIPTION_TO_KIMI_RULE_ID: &str = "codex-subscription-to-kimi-v1";
 pub const CODEX_SUBSCRIPTION_TO_DSH_RULE_ID: &str = "codex-subscription-to-dsh-v1";
 
-/// Closed reason: Kimi has no Grok-login slot and no local-route adapter.
+/// Closed reason: Grok login is not a supported upstream for Kimi.
 pub const GROK_SUBSCRIPTION_TO_KIMI_REASON: &str =
-    "Kimi 只认自己的官方 Key，接下不了这份 Grok 登录。";
+    "当前只支持 Codex 官方登录作上游，接下不了这份 Grok 登录。";
 
-/// Closed reason: DSH only accepts the official DeepSeek Key.
+/// Closed reason: Grok login is not a supported upstream for DSH.
 pub const GROK_SUBSCRIPTION_TO_DSH_REASON: &str =
-    "DSH 只认 DeepSeek 官方 Key，接下不了这份 Grok 登录。";
+    "当前只支持 Codex 官方登录作上游，接下不了这份 Grok 登录。";
 
 /// Product-closed reason for Claude subscription → Codex.
 pub const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON: &str =
