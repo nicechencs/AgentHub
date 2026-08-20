@@ -29,6 +29,14 @@ pub fn toml_is_bridge_leftover(content: &str) -> bool {
     leftover
 }
 
+/// True when live `~/.codex/config.toml` still has leftover 本机路由 keys
+/// that official apply would strip.
+pub fn live_config_is_bridge_leftover() -> bool {
+    agent_home(AgentId::Codex)
+        .ok()
+        .is_some_and(|home| toml_file_is_leftover(&home.join("config.toml")))
+}
+
 /// Remove AgentHub leftover keys. Returns whether the document changed.
 pub fn strip_bridge_leftovers_in_doc(doc: &mut DocumentMut) -> bool {
     let slugs: Vec<String> = leftover_slugs(doc).collect();
@@ -182,6 +190,12 @@ fn toml_file_is_leftover(path: &Path) -> bool {
     std::fs::read_to_string(path)
         .ok()
         .is_some_and(|text| toml_is_bridge_leftover(&text))
+}
+
+#[cfg(test)]
+pub(crate) fn lock_codex_home() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 #[cfg(test)]

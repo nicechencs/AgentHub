@@ -72,6 +72,9 @@ impl AccountService {
                 }
             };
             for live in lives {
+                if self.leftover_live_skips_identity(id) {
+                    continue;
+                }
                 if let Err(error) = self.reconcile_live_account(adapter.as_ref(), id, live) {
                     tracing::warn!(
                         module = targets::ACCOUNT,
@@ -129,6 +132,11 @@ impl AccountService {
         live: LiveAccount,
     ) -> Result<Option<Account>> {
         if live.agent != agent || live_account_is_empty(&live) {
+            return Ok(None);
+        }
+        // Leftover-shaped Codex live is 本机路由 config, not an official grant.
+        // Do not import or re-promote it after 官方登录 activate.
+        if leftover_shaped_codex_live(agent) {
             return Ok(None);
         }
         let rows = self.repo.list(Some(agent))?;
@@ -313,6 +321,15 @@ impl AccountService {
         if !changed && row.is_current {
             return Ok(row);
         }
+        if leftover_shaped_codex_live(agent) && !row.is_current {
+            return if changed {
+                let expected_updated_at = row.updated_at.clone();
+                self.repo
+                    .update_healed_fields(&row, &expected_updated_at, &now_ts())
+            } else {
+                Ok(row)
+            };
+        }
         row.is_current = true;
         row.updated_at = now_ts();
         Ok(self.connections.update_and_activate_account(&row)?.0)
@@ -364,12 +381,31 @@ impl AccountService {
         }
     }
 
+    /// Leftover 本机路由 live must not block switching back to 官方登录.
+    pub(super) fn leftover_live_skips_identity(&self, agent: AgentId) -> bool {
+        if agent != AgentId::Codex {
+            return false;
+        }
+        use crate::integrations::agents::codex::leftover;
+        if leftover::live_config_is_bridge_leftover() {
+            return true;
+        }
+        crate::storage::ProviderRepo::new(self.db.clone())
+            .get_current(agent)
+            .ok()
+            .flatten()
+            .is_some_and(|provider| leftover::provider_is_bridge_leftover(&provider))
+    }
+
     pub(super) fn validate_live_switch_identity(
         &self,
         adapter: &dyn AgentAdapter,
         agent: AgentId,
         live: &LiveAccount,
     ) -> Result<()> {
+        if leftover_shaped_codex_live(agent) {
+            return Ok(());
+        }
         let rows = self.repo.list(Some(agent))?;
         let exact = rows.iter().any(|row| {
             row.kind == live.kind
@@ -474,4 +510,9 @@ impl AccountService {
         }
         Ok(())
     }
+}
+
+fn leftover_shaped_codex_live(agent: AgentId) -> bool {
+    agent == AgentId::Codex
+        && crate::integrations::agents::codex::leftover::live_config_is_bridge_leftover()
 }

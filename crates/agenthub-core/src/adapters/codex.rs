@@ -671,8 +671,7 @@ mod tests {
 
     #[test]
     fn apply_account_strips_leftover_bridge_keys() {
-        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::integrations::agents::codex::leftover::lock_codex_home();
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("home");
         let codex = home.join(".codex");

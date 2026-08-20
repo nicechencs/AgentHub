@@ -79,3 +79,24 @@ fn slug_detects_agenthub_bridge_only() {
     assert!(!is_agenthub_bridge_slug("custom"));
     assert!(!is_agenthub_bridge_slug("agenthub_notes"));
 }
+
+#[test]
+fn live_config_is_bridge_leftover_reads_codex_home() {
+    let _lock = super::lock_codex_home();
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let codex = home.join(".codex");
+    std::fs::create_dir_all(&codex).unwrap();
+    std::fs::write(codex.join("config.toml"), LEFTOVER).unwrap();
+    let prev = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+    let leftover = live_config_is_bridge_leftover();
+    std::fs::write(codex.join("config.toml"), "model = \"gpt-5\"\n").unwrap();
+    let clean = live_config_is_bridge_leftover();
+    match prev {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+    assert!(leftover);
+    assert!(!clean);
+}
