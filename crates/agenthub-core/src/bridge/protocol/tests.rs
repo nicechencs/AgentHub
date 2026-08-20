@@ -546,6 +546,29 @@ fn chat_request_maps_to_responses_and_strips_leftover_grok_model() {
 }
 
 #[test]
+fn messages_request_maps_to_responses_and_strips_leftover_claude_model() {
+    let request = parse_messages_request(&json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 64,
+        "messages": [
+            { "role": "user", "content": "你好" }
+        ]
+    }))
+    .expect("parse messages");
+    assert_eq!(request.model, "claude-sonnet-4-20250514");
+    assert_eq!(request.passthrough["max_output_tokens"], 64);
+
+    let mut responses = to_responses_request(&request);
+    apply_official_codex_model(&mut responses, &request.model, Some(""));
+    assert!(responses.get("model").is_none());
+    assert_eq!(responses["input"][0]["content"][0]["text"], "你好");
+    assert_eq!(responses["max_output_tokens"], 64);
+
+    apply_official_codex_model(&mut responses, "gpt-4o", None);
+    assert_eq!(responses["model"], "gpt-4o");
+}
+
+#[test]
 fn responses_ir_encodes_chat_completion_without_inventing_model() {
     let ir = responses_output_to_ir(&fixture("responses_upstream_text")).expect("ir");
     let chat = encode_chat_from_ir(&ir, Some("chatcmpl_test")).expect("chat");

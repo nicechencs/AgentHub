@@ -238,16 +238,18 @@ pub fn to_responses_request(request: &BridgeRequest) -> Value {
     Value::Object(body)
 }
 
-/// Official ChatGPT / Codex Responses rejects leftover `grok-*` model ids (400).
-/// Do not invent a ChatGPT model name to replace them — omit instead.
+/// Official ChatGPT / Codex Responses rejects leftover `grok-*` and `claude-*`
+/// model ids (400). Do not invent a ChatGPT model name to replace them — omit
+/// instead.
 pub fn is_leftover_grok_model(model: &str) -> bool {
-    model.trim().starts_with("grok-")
+    let model = model.trim();
+    model.starts_with("grok-") || model.starts_with("claude-")
 }
 
 /// Write the Responses `model` for official Codex upstream.
 ///
-/// Configured override wins when it is non-empty and not leftover `grok-*`.
-/// Incoming Grok leftovers are dropped rather than rewritten as `gpt-*`.
+/// Configured override wins when it is non-empty and not leftover `grok-*` /
+/// `claude-*`. Incoming leftovers are dropped rather than rewritten as `gpt-*`.
 pub fn apply_official_codex_model(body: &mut Value, incoming: &str, configured: Option<&str>) {
     let configured = configured
         .map(str::trim)

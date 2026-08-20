@@ -305,8 +305,22 @@ pub(super) async fn handle_messages(state: ListenerState, request: Request) -> R
             unreachable!("messages handler does not accept Anthropic upstream")
         }
     };
-    if let Some(model) = &state.upstream.model {
-        upstream_body["model"] = Value::String(model.clone());
+    match protocol {
+        BridgeUpstreamProtocol::CodexResponsesOauth => {
+            apply_official_codex_model(
+                &mut upstream_body,
+                &request.model,
+                state.upstream.model.as_deref(),
+            );
+        }
+        BridgeUpstreamProtocol::KimiChatCompletions => {
+            if let Some(model) = &state.upstream.model {
+                upstream_body["model"] = Value::String(model.clone());
+            }
+        }
+        BridgeUpstreamProtocol::AnthropicMessages => {
+            unreachable!("messages handler does not accept Anthropic upstream")
+        }
     }
     let path = match protocol {
         BridgeUpstreamProtocol::KimiChatCompletions => "chat/completions",
