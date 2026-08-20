@@ -287,6 +287,7 @@ export function buildPlan(
     && !accountGrokClaudeBridge
     && !accountGrokCodexBridge
     && !accountCodexOfficialSelf
+    && !accountCodexChatBridge
     ? `${analysis.reason} ${SAME_EDGE_UNWRITABLE_REASON}`
     : analysis.reason;
   return {
@@ -310,20 +311,12 @@ export function hasCodexAccessToken(
   const credentials = account.credentials;
   if (!credentials || typeof credentials !== 'object') return false;
   const record = credentials as Record<string, unknown>;
-  const tokens = record.tokens;
-  if (tokens && typeof tokens === 'object' && !Array.isArray(tokens)) {
-    const accessToken = (tokens as Record<string, unknown>).access_token;
-    if (typeof accessToken === 'string' && accessToken.trim()) return true;
-  }
-  const body = record.body;
-  if (body && typeof body === 'object' && !Array.isArray(body)) {
-    const bodyTokens = (body as Record<string, unknown>).tokens;
-    if (bodyTokens && typeof bodyTokens === 'object' && !Array.isArray(bodyTokens)) {
-      const accessToken = (bodyTokens as Record<string, unknown>).access_token;
-      return typeof accessToken === 'string' && Boolean(accessToken.trim());
-    }
-  }
-  return false;
+  const candidates = [
+    record.access_token,
+    (record.tokens as Record<string, unknown> | undefined)?.access_token,
+    ((record.body as Record<string, unknown> | undefined)?.tokens as Record<string, unknown> | undefined)?.access_token,
+  ];
+  return candidates.some((token) => typeof token === 'string' && Boolean(token.trim()));
 }
 
 export function hasGrokAccessToken(

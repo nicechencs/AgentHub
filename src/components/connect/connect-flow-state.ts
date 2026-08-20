@@ -540,8 +540,21 @@ function localTargetLabels(targetAgentId: string): { display: string; short: str
 }
 
 function sourceHintFromReason(reason: string, t?: TranslateFn): string {
-  if (reason.includes('Grok')) return t ? t('connect.preview.sourceGrok') : 'Grok 登录';
-  if (reason.includes('Codex')) return t ? t('connect.preview.sourceCodex') : 'Codex / ChatGPT 登录';
+  // Match the source, not the target ("接到 Grok" must not become "Grok 登录").
+  if (
+    reason.startsWith('Grok')
+    || reason.includes('Grok 登录')
+    || reason.includes('Grok login')
+  ) {
+    return t ? t('connect.preview.sourceGrok') : 'Grok 登录';
+  }
+  if (
+    reason.startsWith('Codex')
+    || reason.includes('Codex 官方')
+    || reason.includes('Codex / ChatGPT')
+  ) {
+    return t ? t('connect.preview.sourceCodex') : 'Codex / ChatGPT 登录';
+  }
   return t ? t('connect.preview.sourceLogin') : '登录';
 }
 
