@@ -1173,6 +1173,14 @@ fn current_codex_leftover_does_not_become_native_ticket_when_oauth_account_curre
         .bindings
         .iter()
         .any(|binding| binding.ticket_id == "provider:codex-leftover"));
+    assert!(!wallet
+        .bindings
+        .iter()
+        .any(|binding| binding.agent_id == AgentId::Codex && binding.active));
+    assert!(!wallet
+        .bindings
+        .iter()
+        .any(|binding| binding.ticket_id == "account:codex-oauth" && binding.active));
 }
 
 #[test]

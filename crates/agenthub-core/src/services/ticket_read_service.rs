@@ -283,6 +283,16 @@ fn derive_bindings(
         }
         let ticket = ticket_id(AdapterSourceKind::Provider, &provider.id);
         if !ticket_ids.contains(&ticket) {
+            // Leftover / orphan projection is current: do not keep oauth as 正用于.
+            if leftover::provider_is_bridge_leftover(provider)
+                || provider
+                    .meta
+                    .get("generatedBy")
+                    .and_then(|value| value.as_str())
+                    == Some("adapter")
+            {
+                active_by_agent.remove(&provider.agent_id);
+            }
             continue;
         }
         active_by_agent.insert(

@@ -5,7 +5,7 @@
 import { agentDisplayName } from '@/config/agents';
 import {
   formatLocalRouteLabel,
-  isInternalGeneratedProvider,
+  isInternalGeneratedName,
 } from '@/lib/backend/contracts/agent-connection';
 import { ticketIdFor } from '@/lib/backend/contracts/ticket';
 import type { TranslateFn } from '@/lib/i18n';
@@ -480,15 +480,13 @@ export type ChatConnectionOption = {
 
 const AGENTHUB_BRIDGE_SLUG = /agenthub_[^\s"'\\]*_bridge/i;
 
-/** Leftover generated 本机路由 rows — never labeled 官方登录. */
+/** Leftover generated 本机路由 rows — never labeled 官方登录. Loopback URL alone is not leftover. */
 export function isLeftoverLocalRouteProvider(
   provider: Pick<Provider, 'id' | 'name' | 'preset' | 'configText' | 'configFormat'>,
 ): boolean {
-  if (isInternalGeneratedProvider(provider)) return true;
+  if (isInternalGeneratedName(provider.name) || isInternalGeneratedName(provider.id)) return true;
   const haystack = `${provider.id}\n${provider.name}\n${provider.preset ?? ''}\n${provider.configText ?? ''}`;
-  return haystack.includes('本机路由')
-    || AGENTHUB_BRIDGE_SLUG.test(haystack)
-    || haystack.includes('127.0.0.1');
+  return haystack.includes('本机路由') || AGENTHUB_BRIDGE_SLUG.test(haystack);
 }
 
 export function officialOauthAccountTitle(account: Pick<Account, 'email' | 'label'>): string {
@@ -506,7 +504,7 @@ export function leftoverProviderIsCurrent(providers: readonly Provider[]): boole
   return providers.some((provider) => provider.isCurrent && isLeftoverLocalRouteProvider(provider));
 }
 
-/** At most one leftover 本机路由 row: current if any, else latest updatedAt. */
+/** Prefer leftover current so official oauth stays clickable. */
 export function pickLeftoverLocalRouteProvider(
   providers: readonly Provider[],
 ): Provider | undefined {
@@ -540,6 +538,27 @@ export type LeftoverSwitchPlan =
   | { kind: 'unavailable' }
   | { kind: 'native' };
 
+/** Clicked leftover first; then any leftover whose id is still a live generated projection. */
+export function leftoverBindTicketIdAmong(
+  leftoverProviderId: string,
+  leftoverProviderIds: readonly string[],
+  profiles: readonly {
+    generatedProviderId?: string | null;
+    sourceKind: 'account' | 'provider';
+    sourceId: string;
+  }[],
+): string | null {
+  const ordered = [
+    leftoverProviderId,
+    ...leftoverProviderIds.filter((id) => id !== leftoverProviderId),
+  ];
+  for (const id of ordered) {
+    const ticketId = leftoverBindTicketId(id, profiles);
+    if (ticketId) return ticketId;
+  }
+  return null;
+}
+
 export function leftoverSwitchPlan(
   provider: Pick<Provider, 'id' | 'name' | 'preset' | 'configText' | 'configFormat'> | undefined,
   leftoverProviderId: string,
@@ -548,14 +567,16 @@ export function leftoverSwitchPlan(
     sourceKind: 'account' | 'provider';
     sourceId: string;
   }[],
+  leftoverProviderIds: readonly string[] = [],
 ): LeftoverSwitchPlan {
   if (!provider || !isLeftoverLocalRouteProvider(provider)) {
     return { kind: 'native' };
   }
-  const ticketId = leftoverBindTicketId(leftoverProviderId, profiles);
+  const ticketId = leftoverBindTicketIdAmong(leftoverProviderId, leftoverProviderIds, profiles);
   if (!ticketId) return { kind: 'unavailable' };
   return { kind: 'bind', ticketId };
 }
+
 
 function officialOauthWinners(accounts: readonly Account[]): Account[] {
   const winners: Account[] = [];
@@ -576,11 +597,7 @@ function officialOauthWinners(accounts: readonly Account[]): Account[] {
   return winners;
 }
 
-/**
- * Chat switch-connection options: official oauth and leftover local-route as
- * separate entries. Leftover rows collapse to at most one. Leftover current
- * wins the checkmark so official rows stay clickable.
- */
+/** Official oauth plus at most one leftover 本机路由. Leftover current wins the checkmark. */
 export function chatConnectionOptions(t: TranslateFn, input: {
   accounts: readonly Account[];
   providers: readonly Provider[];

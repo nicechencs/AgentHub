@@ -15,6 +15,7 @@ import {
   chatConnectionKind,
   chatConnectionOptions,
   leftoverBindTicketId,
+  leftoverBindTicketIdAmong,
   leftoverProviderIsCurrent,
   leftoverSwitchPlan,
   pickLeftoverLocalRouteProvider,
@@ -491,7 +492,7 @@ describe('blockerCopy', () => {
     });
     expect(blockerCopy(t, { kind: 'unconfiguredAuth', agentIds: ['grok'] })).toEqual({
       text: '会话包含未配置授权的 Agent，暂不能发送',
-      primaryAction: '去 Connections 页',
+      primaryAction: '去连接页',
     });
     expect(blockerCopy(t, { kind: 'noCwd' })).toEqual({
       text: '未设置工作目录 — Agent 需要在指定目录内工作',
@@ -732,7 +733,7 @@ describe('chatConnectionPickerView', () => {
     expect(view.currentLoginTitle).toBe('user@example.com');
     expect(view.currentLoginSubtitle).toBe('当前登录');
     expect(view.emptyHint).toBeNull();
-    expect(view.manageLabel).toBe('去 Connections 管理');
+    expect(view.manageLabel).toBe('去连接页管理');
   });
 
   it('keeps API provider name and model when that is the effective connection', () => {
@@ -749,7 +750,7 @@ describe('chatConnectionPickerView', () => {
     expect(view.label).toBe('api.example.com');
     expect(view.subtitle).toBe('sonnet');
     expect(view.currentLoginTitle).toBeNull();
-    expect(view.manageLabel).toBe('去 Connections 管理');
+    expect(view.manageLabel).toBe('去连接页管理');
   });
 
   it('prefers the bound account over a leftover provider row', () => {
@@ -816,7 +817,7 @@ describe('chatConnectionPickerView', () => {
     expect(view.kind).toBe('none');
     expect(view.label).toBe('未配置连接');
     expect(view.emptyHint).toBe('暂无连接');
-    expect(view.manageLabel).toBe('去 Connections 添加');
+    expect(view.manageLabel).toBe('去连接页添加');
   });
 
   it('replaces the chip label while switching', () => {
@@ -877,6 +878,27 @@ describe('chatConnectionOptions', () => {
     });
     expect(options[0].title).not.toContain('本机路由');
     expect(options[0].subtitle).not.toContain('本机路由');
+  });
+
+  it('does not treat a generic loopback API as leftover 本机路由', () => {
+    const localApi = providerRow({
+      id: 'litellm-local',
+      name: 'LiteLLM',
+      configText: 'base_url = "http://127.0.0.1:4000/v1"',
+    });
+    expect(isLeftoverLocalRouteProvider(localApi)).toBe(false);
+    const options = chatConnectionOptions(t, {
+      accounts: [],
+      providers: [localApi],
+    });
+    expect(options).toEqual([
+      expect.objectContaining({
+        kind: 'provider',
+        id: 'litellm-local',
+        title: 'LiteLLM',
+      }),
+    ]);
+    expect(options[0].title).not.toBe('本机路由');
   });
 
   it('labels leftover generated providers 本机路由, never 官方登录', () => {
@@ -1226,6 +1248,18 @@ describe('leftoverBindTicketId', () => {
   it('returns null for empty profiles', () => {
     expect(leftoverBindTicketId('gen-1', [])).toBeNull();
   });
+
+  it('tries sibling leftover ids when the clicked row is not the live projection', () => {
+    expect(
+      leftoverBindTicketIdAmong(
+        'stale-leftover',
+        ['stale-leftover', 'live-leftover'],
+        [
+          { generatedProviderId: 'live-leftover', sourceKind: 'account', sourceId: 'src-1' },
+        ],
+      ),
+    ).toBe('account:src-1');
+  });
 });
 
 describe('leftoverSwitchPlan', () => {
@@ -1258,6 +1292,14 @@ describe('leftoverSwitchPlan', () => {
 
   it('uses native when provider is undefined', () => {
     expect(leftoverSwitchPlan(undefined, 'missing', [])).toEqual({ kind: 'native' });
+  });
+
+  it('binds a sibling leftover when the clicked row is stale', () => {
+    expect(
+      leftoverSwitchPlan(leftover, leftover.id, [
+        { generatedProviderId: 'live-leftover', sourceKind: 'account', sourceId: 'src-1' },
+      ], [leftover.id, 'live-leftover']),
+    ).toEqual({ kind: 'bind', ticketId: 'account:src-1' });
   });
 });
 

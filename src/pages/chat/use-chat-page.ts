@@ -545,11 +545,14 @@ export function useChatPage() {
     setSwitchingProvider(true);
     try {
       const provider = providers.find((row) => row.id === providerId);
+      const leftoverIds = providers
+        .filter(isLeftoverLocalRouteProvider)
+        .map((row) => row.id);
       const profiles =
         provider && isLeftoverLocalRouteProvider(provider)
           ? await listAdapterProfiles({ targetAgentId: primaryAgent })
           : [];
-      const plan = leftoverSwitchPlan(provider, providerId, profiles);
+      const plan = leftoverSwitchPlan(provider, providerId, profiles, leftoverIds);
       if (plan.kind === 'unavailable') {
         toast({ title: t('chat.connection.leftoverUnavailable'), variant: 'danger' });
         return;

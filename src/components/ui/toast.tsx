@@ -2,6 +2,7 @@ import * as React from 'react';
 import * as ToastPrimitive from '@radix-ui/react-toast';
 import { Check, Copy, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Hint } from '@/components/ui/tooltip';
 import { ToastAutoDismissController } from './toast-auto-dismiss';
 
@@ -84,6 +85,7 @@ function ToastItem({
   t: ToastData;
   onRemove: (id: string) => void;
 }) {
+  const { t: i18n } = useI18n();
   const [open, setOpen] = React.useState(true);
   const [copied, setCopied] = React.useState(false);
   const copiedTimer = React.useRef<number | null>(null);
@@ -175,10 +177,10 @@ function ToastItem({
           {t.actionLabel}
         </ToastPrimitive.Action>
       )}
-      <Hint label={copied ? '已复制' : '复制消息'}>
+      <Hint label={copied ? i18n('common.copied') : i18n('common.copyMessage')}>
         <button
           type="button"
-          aria-label={copied ? '已复制' : '复制消息'}
+          aria-label={copied ? i18n('common.copied') : i18n('common.copyMessage')}
           onClick={() => void copyText()}
           onPointerDown={(e) => e.stopPropagation()}
           className="mt-0.5 shrink-0 text-muted hover:text-primary"
@@ -188,7 +190,7 @@ function ToastItem({
       </Hint>
       <ToastPrimitive.Close
         className="mt-0.5 shrink-0 text-muted hover:text-primary"
-        aria-label="关闭"
+        aria-label={i18n('common.close')}
       >
         <X className="h-3.5 w-3.5" />
       </ToastPrimitive.Close>

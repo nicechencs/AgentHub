@@ -22,6 +22,7 @@ import {
   isUpdateAvailable,
   type UpdateInfo,
 } from '@/lib/api/update';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { cn } from '@/lib/utils';
 
 /** 旧 /providers、/accounts 深链兼容 → /connections */
@@ -51,6 +52,7 @@ function LegacyBackupsRedirect() {
 }
 
 export default function App() {
+  const { t } = useI18n();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isChat = pathname === '/chat';
@@ -90,10 +92,10 @@ export default function App() {
     }
     // Fallback: settings opened before prompt mounted (should be rare).
     if (!(await isUpdateAvailable())) {
-      throw new Error('仅桌面端支持自动更新');
+      throw new Error(t('settings.page.desktopOnlyUpdate'));
     }
     return checkForUpdate();
-  }, []);
+  }, [t]);
 
   return (
     <SidebarProvider>

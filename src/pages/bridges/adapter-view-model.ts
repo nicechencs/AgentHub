@@ -276,7 +276,7 @@ export function adapterProfileRecoveryGuide(
       ...(profile.route === 'local_bridge'
         ? [t ? t('routes.recovery.startOnlyRuntime') : '启动只恢复桥接运行时，不会修复配置不一致。']
         : []),
-      t ? t('routes.recovery.unbindReconnect') : '解除绑定后，到 Dashboard 重新连接。',
+      t ? t('routes.recovery.unbindReconnect') : '解除绑定后，到总览重新连接。',
       t ? t('routes.recovery.noAutoRetry') : '不会自动反复重试。',
     ],
   };
