@@ -43,7 +43,7 @@ import {
   groupConversationsByDay,
   isChatAgentSelectable,
   isLeftoverLocalRouteProvider,
-  leftoverBindTicketId,
+  leftoverSwitchPlan,
   newConversationDefaults,
   selectConversationAgent,
   retryTarget,
@@ -545,14 +545,17 @@ export function useChatPage() {
     setSwitchingProvider(true);
     try {
       const provider = providers.find((row) => row.id === providerId);
-      if (provider && isLeftoverLocalRouteProvider(provider)) {
-        const profiles = await listAdapterProfiles({ targetAgentId: primaryAgent });
-        const ticketId = leftoverBindTicketId(providerId, profiles);
-        if (!ticketId) {
-          toast({ title: t('chat.connection.leftoverUnavailable'), variant: 'danger' });
-          return;
-        }
-        await bindTicket(ticketId, primaryAgent);
+      const profiles =
+        provider && isLeftoverLocalRouteProvider(provider)
+          ? await listAdapterProfiles({ targetAgentId: primaryAgent })
+          : [];
+      const plan = leftoverSwitchPlan(provider, providerId, profiles);
+      if (plan.kind === 'unavailable') {
+        toast({ title: t('chat.connection.leftoverUnavailable'), variant: 'danger' });
+        return;
+      }
+      if (plan.kind === 'bind') {
+        await bindTicket(plan.ticketId, primaryAgent);
       } else {
         await switchProvider(primaryAgent, providerId);
       }

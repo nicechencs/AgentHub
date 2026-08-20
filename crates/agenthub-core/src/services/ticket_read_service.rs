@@ -3,7 +3,7 @@
 //! Builds a wallet from accounts + providers + adapter profiles. Prefers
 //! persisted `extra.surface` / `meta.surface`. A missing key is classified and
 //! best-effort written back; an unrecognized value displays as `unknown` and
-//! is not overwritten. `plan` rejects generated projection providers.
+//! is not overwritten. `plan` rejects generated projection and leftover 本机路由 providers.
 
 use std::collections::{HashMap, HashSet};
 
@@ -90,7 +90,7 @@ impl TicketReadService {
         })
     }
 
-    /// Parse `account:<id>` / `provider:<id>` and reject generated projections.
+    /// Parse `account:<id>` / `provider:<id>` and reject generated / leftover projections.
     pub fn parse_bindable_ticket(&self, ticket_id: &str) -> Result<(AdapterSourceKind, String)> {
         let (source_kind, source_id) = parse_ticket_id(ticket_id).map_err(AppError::InvalidArg)?;
         if source_kind == AdapterSourceKind::Provider && self.is_projection_provider(&source_id)? {
@@ -112,11 +112,15 @@ impl TicketReadService {
         let Some(provider) = self.providers.get_by_id(provider_id)? else {
             return Ok(false);
         };
-        Ok(provider
+        if provider
             .meta
             .get("generatedBy")
             .and_then(|value| value.as_str())
-            == Some("adapter"))
+            == Some("adapter")
+        {
+            return Ok(true);
+        }
+        Ok(leftover::provider_is_bridge_leftover(&provider))
     }
 
     fn ticket_from_account(&self, account: &Account) -> Result<Ticket> {

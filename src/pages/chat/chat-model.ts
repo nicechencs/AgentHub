@@ -535,6 +535,28 @@ export function leftoverBindTicketId(
   return ticketIdFor(profile.sourceKind, profile.sourceId);
 }
 
+export type LeftoverSwitchPlan =
+  | { kind: 'bind'; ticketId: string }
+  | { kind: 'unavailable' }
+  | { kind: 'native' };
+
+export function leftoverSwitchPlan(
+  provider: Pick<Provider, 'id' | 'name' | 'preset' | 'configText' | 'configFormat'> | undefined,
+  leftoverProviderId: string,
+  profiles: readonly {
+    generatedProviderId?: string | null;
+    sourceKind: 'account' | 'provider';
+    sourceId: string;
+  }[],
+): LeftoverSwitchPlan {
+  if (!provider || !isLeftoverLocalRouteProvider(provider)) {
+    return { kind: 'native' };
+  }
+  const ticketId = leftoverBindTicketId(leftoverProviderId, profiles);
+  if (!ticketId) return { kind: 'unavailable' };
+  return { kind: 'bind', ticketId };
+}
+
 function officialOauthWinners(accounts: readonly Account[]): Account[] {
   const winners: Account[] = [];
   const indexByKey = new Map<string, number>();

@@ -990,7 +990,7 @@ wire_api = "responses"
 "#;
 
 #[test]
-fn orphan_generatedBy_adapter_provider_is_not_a_ticket() {
+fn orphan_generated_by_adapter_provider_is_not_a_ticket() {
     let (_dir, db) = test_db();
     let mut generated = provider(
         "orphan-gen",
@@ -1058,6 +1058,113 @@ fn orphan_codex_leftover_provider_is_not_a_ticket() {
     let wallet = TicketReadService::new(db).list_wallet().unwrap();
     let ids: Vec<_> = wallet.tickets.iter().map(|t| t.id.as_str()).collect();
     assert_eq!(ids, vec!["provider:kimi-src"]);
+    assert!(!wallet
+        .tickets
+        .iter()
+        .any(|ticket| ticket.source_id == "codex-leftover"));
+    assert!(!wallet
+        .bindings
+        .iter()
+        .any(|binding| binding.ticket_id == "provider:codex-leftover"));
+}
+
+#[test]
+fn orphan_codex_leftover_toml_only_is_not_a_ticket() {
+    let (_dir, db) = test_db();
+    let mut leftover = provider(
+        "codex-leftover",
+        AgentId::Codex,
+        "AgentHub Grok Route",
+        "custom",
+        false,
+    );
+    leftover.settings_config = serde_json::json!({
+        "format": "toml",
+        "content": CODEX_LEFTOVER_TOML
+    });
+    leftover.meta = serde_json::json!({"preset": "custom"});
+    ProviderRepo::new(db.clone()).create(&leftover).unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "kimi-src",
+            AgentId::Kimi,
+            "Kimi membership",
+            "kimi-code-membership",
+            false,
+        ))
+        .unwrap();
+
+    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    let ids: Vec<_> = wallet.tickets.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, vec!["provider:kimi-src"]);
+    assert!(!wallet
+        .tickets
+        .iter()
+        .any(|ticket| ticket.source_id == "codex-leftover"));
+    assert!(!wallet
+        .bindings
+        .iter()
+        .any(|binding| binding.ticket_id == "provider:codex-leftover"));
+}
+
+#[test]
+fn plan_ticket_rejects_codex_leftover_toml_only() {
+    let (_dir, db) = test_db();
+    let mut leftover = provider(
+        "codex-leftover",
+        AgentId::Codex,
+        "AgentHub Grok Route",
+        "custom",
+        false,
+    );
+    leftover.settings_config = serde_json::json!({
+        "format": "toml",
+        "content": CODEX_LEFTOVER_TOML
+    });
+    leftover.meta = serde_json::json!({"preset": "custom"});
+    ProviderRepo::new(db.clone()).create(&leftover).unwrap();
+
+    let err = TicketReadService::new(db)
+        .plan(&TicketPlanRequest {
+            ticket_id: "provider:codex-leftover".into(),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap_err();
+    assert!(matches!(err, AppError::InvalidArg(_)));
+    assert!(err.to_string().contains(PROJECTION_NOT_A_TICKET));
+}
+
+#[test]
+fn current_codex_leftover_does_not_become_native_ticket_when_oauth_account_current() {
+    let (_dir, db) = test_db();
+    let mut leftover = provider(
+        "codex-leftover",
+        AgentId::Codex,
+        "AgentHub Grok Route",
+        "custom",
+        true,
+    );
+    leftover.settings_config = serde_json::json!({
+        "format": "toml",
+        "content": CODEX_LEFTOVER_TOML
+    });
+    leftover.meta = serde_json::json!({"preset": "custom"});
+    ProviderRepo::new(db.clone()).create(&leftover).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "codex-oauth",
+            AgentId::Codex,
+            AccountKind::Oauth,
+            "me@example.com",
+            true,
+        ))
+        .unwrap();
+
+    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    assert!(wallet
+        .tickets
+        .iter()
+        .any(|ticket| ticket.id == "account:codex-oauth"));
     assert!(!wallet
         .tickets
         .iter()
