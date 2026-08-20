@@ -107,6 +107,7 @@ pub(super) fn subscription_account_secret_open(
                     | "codex-subscription-to-claude-responses-v1"
                     | "grok-subscription-to-claude-v1"
                     | "grok-subscription-to-codex-v1"
+                    | "codex-subscription-to-codex-v1"
             )
         )
     {
@@ -223,6 +224,13 @@ pub(crate) fn bind_implementation_open(
             AgentId::Codex,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
+        )
+        | (
+            Some("codex-subscription-to-codex-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Codex,
+            AdapterRoute::NativeEndpoint,
+            AdapterSupport::Stable,
         )
         | (
             Some("kimi-membership-to-grok-v1") | Some("openai-api-to-grok-v1"),

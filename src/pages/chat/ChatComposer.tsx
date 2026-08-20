@@ -27,9 +27,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Hint } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
-import type { AgentId, Conversation, Provider } from '@/lib/types';
+import type { AgentId, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { extractModel } from './chat-format';
 import {
   autoApproveFooter,
   blockerCopy,
@@ -37,6 +36,7 @@ import {
   chatAgentPickerEmptyCopy,
   chatAgentPickerEmptyKind,
   type ChatAgentPickerRow,
+  type ChatConnectionOption,
   type ChatConnectionPickerView,
   type ChatSendBlocker,
 } from './chat-model';
@@ -50,7 +50,7 @@ export function ChatComposer({
   setDraft,
   sending,
   active,
-  providers,
+  connectionOptions,
   primaryAgent,
   agentPickerLabel,
   connectionView,
@@ -64,6 +64,7 @@ export function ChatComposer({
   onCancel,
   onSelectAgent,
   onSwitchProvider,
+  onSwitchAccount,
   onOpenSettings,
   onPickWorkingDirectory,
   onFocusConversation,
@@ -72,7 +73,7 @@ export function ChatComposer({
   setDraft: (v: string) => void;
   sending: boolean;
   active: Conversation;
-  providers: Provider[];
+  connectionOptions: ChatConnectionOption[];
   primaryAgent: AgentId | null;
   agentPickerLabel: string;
   connectionView: ChatConnectionPickerView;
@@ -86,6 +87,7 @@ export function ChatComposer({
   onCancel: () => void;
   onSelectAgent: (id: AgentId) => void;
   onSwitchProvider: (id: string) => void;
+  onSwitchAccount: (id: string) => void;
   onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
   onFocusConversation: (id: string) => void;
@@ -264,7 +266,8 @@ export function ChatComposer({
                 <p className="px-2 pb-1.5 text-meta text-muted">{connectionCaption}</p>
               )}
               <DropdownMenuSeparator />
-              {connectionView.currentLoginTitle && (
+              {connectionView.currentLoginTitle &&
+                !connectionOptions.some((option) => option.kind === 'account') && (
                 <DropdownMenuItem disabled>
                   <span className="flex min-w-0 flex-1 items-center gap-2">
                     <Check className="h-3.5 w-3.5 shrink-0 text-accent" />
@@ -279,14 +282,16 @@ export function ChatComposer({
                   </span>
                 </DropdownMenuItem>
               )}
-              {providers.map((p) => {
-                const model = extractModel(p.configText);
-                const isCurrent = connectionView.kind === 'api' && p.isCurrent;
+              {connectionOptions.map((option) => {
+                const isCurrent = option.isCurrent;
                 return (
                   <DropdownMenuItem
-                    key={p.id}
+                    key={`${option.kind}:${option.id}`}
                     disabled={isCurrent || switchingProvider}
-                    onClick={() => onSwitchProvider(p.id)}
+                    onClick={() => {
+                      if (option.kind === 'account') onSwitchAccount(option.id);
+                      else onSwitchProvider(option.id);
+                    }}
                   >
                     <span className="flex min-w-0 flex-1 items-center gap-2">
                       {isCurrent ? (
@@ -295,16 +300,18 @@ export function ChatComposer({
                         <span className="w-3.5 shrink-0" />
                       )}
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate">{p.name}</span>
-                        {model ? (
-                          <span className="block truncate text-meta text-muted">{model}</span>
+                        <span className="block truncate">{option.title}</span>
+                        {option.subtitle ? (
+                          <span className="block truncate text-meta text-muted">
+                            {option.subtitle}
+                          </span>
                         ) : null}
                       </span>
                     </span>
                   </DropdownMenuItem>
                 );
               })}
-              {connectionView.emptyHint && providers.length === 0 && (
+              {connectionView.emptyHint && connectionOptions.length === 0 && (
                 <p className="px-2 py-1.5 text-meta text-muted">{connectionView.emptyHint}</p>
               )}
               {primaryAgent && (

@@ -351,6 +351,15 @@ const CODEX_NATIVE_API_LIMITS: &[&str] = &[
     "当前未写入官方 ~/.codex/models.json；使用默认 model 与显式 Provider 配置。",
 ];
 
+/// Official Codex / ChatGPT OAuth used on Codex itself.
+pub const CODEX_SUBSCRIPTION_TO_CODEX_REASON: &str = "用这份官方登录接到 Codex。";
+pub const CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID: &str = "codex-subscription-to-codex-v1";
+
+const CODEX_OFFICIAL_SELF_LIMITS: &[&str] = &[
+    "会把这份官方登录写进 Codex；不会改到本机路由。",
+    "应用后这份登录成为 Codex 当前登录。",
+];
+
 const KIMI_PI_LIMITS: &[&str] = &[
     "将写入 Pi models.json 的 kimi-for-coding 槽与凭据引用标记；不会在预览中传输明文 Key。",
     "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
@@ -867,6 +876,42 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         limitations: CODEX_CLAUDE_LIMITS,
         rule_id: "codex-subscription-to-claude-responses-v1",
         verified_at: "2026-08-15",
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::CodexChatGptSubscription,
+            credential: AdapterCredentialClass::OauthAuthJson,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Codex,
+            protocol: AdapterTargetProtocol::OpenAiResponses,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::NativeEndpoint,
+        support: AdapterSupport::Stable,
+        can_apply: true,
+        reason: CODEX_SUBSCRIPTION_TO_CODEX_REASON,
+        limitations: CODEX_OFFICIAL_SELF_LIMITS,
+        rule_id: CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
+        verified_at: "2026-08-20",
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::CodexChatGptSubscription,
+            credential: AdapterCredentialClass::OauthOther,
+            transport: AdapterUpstreamTransport::NativeHttp,
+            target: AgentId::Codex,
+            protocol: AdapterTargetProtocol::OpenAiResponses,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::NativeEndpoint,
+        support: AdapterSupport::Stable,
+        can_apply: true,
+        reason: CODEX_SUBSCRIPTION_TO_CODEX_REASON,
+        limitations: CODEX_OFFICIAL_SELF_LIMITS,
+        rule_id: CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
+        verified_at: "2026-08-20",
         gates: AdapterCapabilityGates::all_open(),
     },
 ];

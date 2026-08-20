@@ -339,6 +339,56 @@
       }
     },
     {
+      "id": "codex-oauth-auth-json-to-codex",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentialFormat": "auth_json",
+        "credentials": {
+          "format": "auth_json",
+          "tokens": {
+            "access_token": "must-not-leak",
+            "refresh_token": "must-not-leak"
+          }
+        }
+      },
+      "target": "codex",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "stable",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "codex-subscription-to-codex-v1",
+        "gateKind": "none",
+        "reason": "用这份官方登录接到 Codex。",
+        "reusePath": "native_subscription"
+      }
+    },
+    {
+      "id": "codex-oauth-other-to-codex",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentials": {
+          "access_token": "must-not-leak",
+          "refresh_token": "must-not-leak"
+        }
+      },
+      "target": "codex",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "stable",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "codex-subscription-to-codex-v1",
+        "gateKind": "none",
+        "reason": "用这份官方登录接到 Codex。",
+        "reusePath": "native_subscription"
+      }
+    },
+    {
       "id": "codex-oauth-without-auth-json-to-claude",
       "source": {
         "kind": "account",

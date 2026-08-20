@@ -31,6 +31,7 @@ import {
   describePlanPreview,
   eligibilityOf,
   excludeOwnAgentTargets,
+  isOfficialCodexOauthAccount,
   isBoundPlanStale,
   isConnectFlowEntryStale,
   isGeneratedAdapterSource,
@@ -238,6 +239,26 @@ describe('进入模式 × 预选参数矩阵', () => {
 describe('for-source 排除自身 Agent', () => {
   it('目标网格去掉来源所属 Agent', () => {
     expect(excludeOwnAgentTargets(['claude', 'kimi', 'codex'], 'kimi')).toEqual(['claude', 'codex']);
+  });
+
+  it('keeps Codex for official Codex oauth self-bind', () => {
+    expect(isOfficialCodexOauthAccount({ agentId: 'codex', kind: 'oauth' })).toBe(true);
+    expect(isOfficialCodexOauthAccount({ agentId: 'codex', kind: 'apikey' })).toBe(false);
+    expect(excludeOwnAgentTargets(['claude', 'kimi', 'codex'], 'codex', true))
+      .toEqual(['claude', 'kimi', 'codex']);
+    expect(excludeOwnAgentTargets(['claude', 'kimi', 'codex'], 'codex'))
+      .toEqual(['claude', 'kimi']);
+  });
+
+  it('select_target accepts own Codex when allowOwnAgent', () => {
+    const state = createConnectFlowState(forSource);
+    const allowed = reduceConnectFlow(state, {
+      type: 'select_target',
+      agentId: 'kimi',
+      sourceAgentId: 'kimi',
+      allowOwnAgent: true,
+    });
+    expect(allowed.selectedTargetAgentId).toBe('kimi');
   });
 
   it('select_target 忽略来源自身 Agent', () => {

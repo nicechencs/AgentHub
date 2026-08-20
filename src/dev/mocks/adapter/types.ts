@@ -66,6 +66,10 @@ export const GROK_SUBSCRIPTION_TO_CLAUDE_REASON =
 export const GROK_SUBSCRIPTION_TO_CODEX_REASON =
   'Grok 登录会经本机路由接到 Codex。';
 
+/** Keep in lockstep with `CODEX_SUBSCRIPTION_TO_CODEX_REASON` in agenthub-core. */
+export const CODEX_SUBSCRIPTION_TO_CODEX_REASON = '用这份官方登录接到 Codex。';
+export const CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID = 'codex-subscription-to-codex-v1';
+
 /** Keep in lockstep with `GROK_SUBSCRIPTION_TO_KIMI_REASON` in agenthub-core. */
 export const GROK_SUBSCRIPTION_TO_KIMI_REASON =
   'Kimi 只认自己的官方 Key，接下不了这份 Grok 登录。';

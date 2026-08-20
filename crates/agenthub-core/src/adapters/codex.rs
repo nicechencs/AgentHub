@@ -160,9 +160,11 @@ impl AgentAdapter for CodexAdapter {
                 "Codex auth.json verification failed after write",
             ));
         }
-        // Drop preferred_auth_method=apikey so OAuth auth.json is used
-        // after switching back from an API provider.
-        clear_codex_apikey_auth_preference(&home.join("config.toml"))?;
+        // Official ChatGPT OAuth: drop leftover AgentHub 本机路由 keys so
+        // Codex does not send this token at 127.0.0.1.
+        crate::integrations::agents::codex::leftover::strip_bridge_leftovers_in_path(
+            &home.join("config.toml"),
+        )?;
         Ok(())
     }
 
@@ -372,29 +374,7 @@ fn write_codex_api_key_auth(path: &Path, api_key: &str) -> Result<()> {
     crate::integrations::agents::codex::write_api_key_auth(path, api_key)
 }
 
-/// When switching to official OAuth, remove API-key auth preference left by provider mode.
-fn clear_codex_apikey_auth_preference(path: &Path) -> Result<()> {
-    if !path.exists() {
-        return Ok(());
-    }
-    let live = std::fs::read_to_string(path)?;
-    if live.trim().is_empty() {
-        return Ok(());
-    }
-    let mut doc = live
-        .parse::<toml_edit::DocumentMut>()
-        .map_err(|e| AppError::InvalidArg(format!("existing Codex config.toml is invalid: {e}")))?;
-    let pref = doc
-        .get("preferred_auth_method")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    if pref.as_deref() != Some("apikey") {
-        return Ok(());
-    }
-    doc.remove("preferred_auth_method");
-    atomic_write(path, doc.to_string().as_bytes())?;
-    Ok(())
-}
+
 
 /// Convert generic OAuth token fields into the Codex pool/live shape:
 /// `{ format: "auth_json", body: { auth_mode, OPENAI_API_KEY, tokens, last_refresh }, ... }`.
@@ -687,5 +667,59 @@ mod tests {
         .unwrap_err();
         assert_eq!(err.code(), "invalid_arg");
         assert!(err.to_string().contains("access_token"));
+    }
+
+    #[test]
+    fn apply_account_strips_leftover_bridge_keys() {
+        let _guard = crate::integrations::agents::codex::leftover::lock_codex_home();
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let codex = home.join(".codex");
+        std::fs::create_dir_all(&codex).unwrap();
+        std::fs::write(
+            codex.join("config.toml"),
+            r#"model_provider = "agenthub_grok_bridge"
+preferred_auth_method = "apikey"
+
+[model_providers.agenthub_grok_bridge]
+base_url = "http://127.0.0.1:43121/v1"
+wire_api = "responses"
+"#,
+        )
+        .unwrap();
+        let prev = std::env::var_os("HOME");
+        std::env::set_var("HOME", &home);
+        let account = LiveAccount {
+            agent: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "auth_mode": "chatgpt",
+                    "OPENAI_API_KEY": null,
+                    "tokens": {
+                        "access_token": "at-official",
+                        "refresh_token": "rt-official"
+                    },
+                    "last_refresh": "2026-08-20T00:00:00Z"
+                },
+                "email": "41375197@qq.com"
+            }),
+            label_hint: Some("41375197@qq.com".into()),
+            extra: json!({}),
+        };
+        let result = CodexAdapter.apply_account(&account);
+        match prev {
+            Some(value) => std::env::set_var("HOME", value),
+            None => std::env::remove_var("HOME"),
+        }
+        result.unwrap();
+        let stored = std::fs::read_to_string(codex.join("config.toml")).unwrap();
+        assert!(!stored.contains("agenthub_grok_bridge"));
+        assert!(!stored.contains("preferred_auth_method"));
+        assert!(!stored.contains("127.0.0.1"));
+        let auth: Value =
+            serde_json::from_str(&std::fs::read_to_string(codex.join("auth.json")).unwrap()).unwrap();
+        assert_eq!(auth["tokens"]["access_token"], "at-official");
     }
 }

@@ -13,11 +13,13 @@ import {
   listConversations,
   updateConversation,
 } from '@/lib/api/chat';
+import { listAccounts, switchAccount } from '@/lib/api/account';
 import { listProviders, switchProvider } from '@/lib/api/provider';
 import { pickDirectory } from '@/lib/api/settings';
 import { takeChatBootstrap } from '@/lib/chat-bootstrap';
 import { processKey, reduceProcessEvent, type ProcessMap } from '@/lib/chat-process';
 import type {
+  Account,
   AgentId,
   AgentStatus,
   ChatEvent,
@@ -31,6 +33,7 @@ import {
   agentHasConfiguredAuth,
   agentPickerLabel as agentPickerLabelOf,
   chatAgentPickerRows,
+  chatConnectionOptions,
   chatConnectionPickerView,
   connectionPickerCaption,
   conversationTitle,
@@ -56,7 +59,9 @@ export function useChatPage() {
   /** listAgents 成功后才为 true；失败/未完成时不得把「未知」当成「没有可用 Agent」 */
   const [agentsReady, setAgentsReady] = useState(false);
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const providersGenRef = useRef(0);
+  const accountsGenRef = useRef(0);
   const [error, setError] = useState<unknown>(null);
   /** 会话列表骨架（不再用整页 spinner 挡住消息区） */
   const [listLoading, setListLoading] = useState(true);
@@ -211,6 +216,18 @@ export function useChatPage() {
     }
   }, []);
 
+  const loadAccounts = useCallback(async (agentId: AgentId) => {
+    const gen = ++accountsGenRef.current;
+    try {
+      const list = await listAccounts(agentId);
+      if (gen !== accountsGenRef.current) return;
+      setAccounts(list);
+    } catch {
+      if (gen !== accountsGenRef.current) return;
+      setAccounts([]);
+    }
+  }, []);
+
   useEffect(() => {
     setListLoading(true);
     setError(null);
@@ -296,12 +313,16 @@ export function useChatPage() {
   useEffect(() => {
     if (!primaryAgent) {
       providersGenRef.current += 1;
+      accountsGenRef.current += 1;
       setProviders([]);
+      setAccounts([]);
       return;
     }
     setProviders([]);
+    setAccounts([]);
     void loadProviders(primaryAgent);
-  }, [primaryAgent, loadProviders]);
+    void loadAccounts(primaryAgent);
+  }, [primaryAgent, loadProviders, loadAccounts]);
 
   const onTranscriptScroll = useCallback(() => {
     const el = transcriptRef.current;
@@ -371,6 +392,16 @@ export function useChatPage() {
         currentProviderModel: currentProvider ? extractModel(currentProvider.configText) : null,
       }),
     [primaryAgent, switchingProvider, primaryStatus, currentProvider, t],
+  );
+
+  const connectionOptions = useMemo(
+    () =>
+      chatConnectionOptions(t, {
+        accounts,
+        providers,
+        connectionKind: connectionView.kind,
+      }),
+    [accounts, providers, connectionView.kind, t],
   );
 
   const connectionCaption = useMemo(
@@ -512,6 +543,25 @@ export function useChatPage() {
       await switchProvider(primaryAgent, providerId);
       await Promise.all([
         loadProviders(primaryAgent),
+        loadAccounts(primaryAgent),
+        refreshAgents({ force: true }).catch(() => []),
+      ]);
+      toast({ title: t('chat.connection.switched'), variant: 'success' });
+    } catch (e) {
+      toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
+    } finally {
+      setSwitchingProvider(false);
+    }
+  }
+
+  async function handleSwitchAccount(accountId: string) {
+    if (!primaryAgent || switchingProvider || hiddenIds.has(primaryAgent)) return;
+    setSwitchingProvider(true);
+    try {
+      await switchAccount(primaryAgent, accountId);
+      await Promise.all([
+        loadProviders(primaryAgent),
+        loadAccounts(primaryAgent),
         refreshAgents({ force: true }).catch(() => []),
       ]);
       toast({ title: t('chat.connection.switched'), variant: 'success' });
@@ -728,6 +778,7 @@ export function useChatPage() {
     activeHasHidden,
     agentPickerLabel,
     connectionView,
+    connectionOptions,
     connectionCaption,
     blockers,
     railGroups,
@@ -743,6 +794,7 @@ export function useChatPage() {
     renameTitle,
     selectConversationAgentId,
     handleSwitchProvider,
+    handleSwitchAccount,
     handleSend,
     retryLast,
     handleCancel,

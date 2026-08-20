@@ -4,6 +4,7 @@ mod adapter_facade;
 pub(crate) mod auth;
 mod config;
 mod install;
+pub(crate) mod leftover;
 pub(crate) mod managed;
 mod paths;
 mod project;
