@@ -700,6 +700,32 @@ fn resume_hard_failure_clears_native_session_id() {
 }
 
 #[test]
+fn resume_timeout_clears_native_session_id() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::with_status(RunStatus::Timeout)),
+    ));
+    let chat = ChatService::new(db.clone(), run);
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    let repo = crate::storage::ChatRepo::new(db);
+    let mut stored = repo.get_conversation(&conv.id).unwrap().unwrap();
+    stored.native_session_id = Some("dead-sid".into());
+    repo.update_conversation(&stored).unwrap();
+
+    chat.send(&conv.id, "resume timeout", &|_| {}).unwrap();
+    let after = chat.get_conversation(&conv.id).unwrap();
+    assert!(
+        after.native_session_id.is_none(),
+        "Timeout is a hard failure and must clear sid, got {:?}",
+        after.native_session_id
+    );
+}
+
+#[test]
 fn resume_cancelled_keeps_native_session_id() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
