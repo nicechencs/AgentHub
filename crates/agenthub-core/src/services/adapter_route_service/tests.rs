@@ -1809,7 +1809,9 @@ fn open_matrix_cells_have_bind_and_apply_arms() {
                 continue;
             }
             any_open = true;
-            if cell.route == AdapterRoute::LocalBridge {
+            if cell.route == AdapterRoute::LocalBridge
+                || cell.rule_id == crate::models::CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID
+            {
                 assert!(
                     !AdapterApplyService::apply_has_arm(
                         cell.rule_id,
@@ -1817,7 +1819,7 @@ fn open_matrix_cells_have_bind_and_apply_arms() {
                         cell.key.target,
                         cell.route,
                     ),
-                    "LocalBridge cell {} must not have an apply arm (host saga)",
+                    "host/account-switch cell {} must not have an apply arm",
                     cell.rule_id
                 );
                 assert!(
@@ -1829,7 +1831,7 @@ fn open_matrix_cells_have_bind_and_apply_arms() {
                         cell.support,
                         analysis.gate_kind,
                     ),
-                    "LocalBridge cell {} must fail ensure_supported",
+                    "host/account-switch cell {} must fail ensure_supported",
                     cell.rule_id
                 );
                 continue;

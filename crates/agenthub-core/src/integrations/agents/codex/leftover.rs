@@ -24,8 +24,9 @@ pub fn is_agenthub_bridge_slug(slug: &str) -> bool {
 pub fn toml_is_bridge_leftover(content: &str) -> bool {
     let Ok(doc) = content.parse::<DocumentMut>() else {
         return content_has_agenthub_bridge_marker(content);
-    }
-    leftover_slugs(&doc).next().is_some()
+    };
+    let leftover = leftover_slugs(&doc).next().is_some();
+    leftover
 }
 
 /// Remove AgentHub leftover keys. Returns whether the document changed.
