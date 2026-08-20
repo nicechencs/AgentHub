@@ -1,10 +1,55 @@
 use super::*;
 use crate::adapters::{AdapterRegistry, AgentAdapter};
-use crate::utils::process::RecordingProcessRunner;
+use crate::utils::process::{ProcessRunner, RecordingProcessRunner, StreamingProcessRunner};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 use tempfile::tempdir;
+
+/// Test runner that returns a canned native session id on top of [`RecordingProcessRunner`].
+struct SidProcessRunner {
+    inner: RecordingProcessRunner,
+    session_id: String,
+}
+
+impl SidProcessRunner {
+    fn new(session_id: impl Into<String>) -> Self {
+        Self {
+            inner: RecordingProcessRunner::new(),
+            session_id: session_id.into(),
+        }
+    }
+}
+
+impl ProcessRunner for SidProcessRunner {
+    fn run(
+        &self,
+        spec: &crate::models::RunSpec,
+        timeout: Duration,
+        max_output_bytes: usize,
+    ) -> AgentRunResult {
+        let mut result = self.inner.run(spec, timeout, max_output_bytes);
+        result.native_session_id = Some(self.session_id.clone());
+        result
+    }
+}
+
+impl StreamingProcessRunner for SidProcessRunner {
+    fn run_streaming(
+        &self,
+        spec: &crate::models::RunSpec,
+        timeout: Duration,
+        max_output_bytes: usize,
+        cancel: &crate::utils::process::CancelToken,
+        on_chunk: &(dyn Fn(OutputStream, &str) + Send + Sync),
+    ) -> AgentRunResult {
+        let mut result =
+            self.inner
+                .run_streaming(spec, timeout, max_output_bytes, cancel, on_chunk);
+        result.native_session_id = Some(self.session_id.clone());
+        result
+    }
+}
 
 struct DeterministicAgentAdapter {
     id: AgentId,
@@ -608,5 +653,147 @@ fn print_resume_sends_only_the_new_user_turn() {
     assert!(
         !joined.contains("first question") && !joined.contains("[用户]"),
         "resume must not resend Hub history: {joined}"
+    );
+}
+
+#[test]
+fn resume_hard_failure_clears_native_session_id() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::with_status(RunStatus::Failed)),
+    ));
+    let chat = ChatService::new(db.clone(), run);
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    let repo = crate::storage::ChatRepo::new(db);
+    let mut stored = repo.get_conversation(&conv.id).unwrap().unwrap();
+    stored.native_session_id = Some("dead-sid".into());
+    repo.update_conversation(&stored).unwrap();
+
+    chat.send(&conv.id, "resume fail", &|_| {}).unwrap();
+    let after = chat.get_conversation(&conv.id).unwrap();
+    assert!(
+        after.native_session_id.is_none(),
+        "hard failure after resume must clear sid, got {:?}",
+        after.native_session_id
+    );
+}
+
+#[test]
+fn resume_cancelled_keeps_native_session_id() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::with_status(RunStatus::Cancelled)),
+    ));
+    let chat = ChatService::new(db.clone(), run);
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    let repo = crate::storage::ChatRepo::new(db);
+    let mut stored = repo.get_conversation(&conv.id).unwrap().unwrap();
+    stored.native_session_id = Some("dead-sid".into());
+    repo.update_conversation(&stored).unwrap();
+
+    chat.send(&conv.id, "resume cancel", &|_| {}).unwrap();
+    let after = chat.get_conversation(&conv.id).unwrap();
+    assert_eq!(
+        after.native_session_id.as_deref(),
+        Some("dead-sid"),
+        "Cancelled must not clear the native session id"
+    );
+}
+
+#[test]
+fn persist_native_session_id_when_cwd_and_agent_unchanged() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(SidProcessRunner::new("fresh-sid")),
+    ));
+    let chat = ChatService::new(db, run);
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    chat.send(&conv.id, "first", &|_| {}).unwrap();
+    let after = chat.get_conversation(&conv.id).unwrap();
+    assert_eq!(after.native_session_id.as_deref(), Some("fresh-sid"));
+}
+
+#[test]
+fn persist_skips_native_session_when_cwd_changes_during_send() {
+    let dir = tempdir().unwrap();
+    let work_a = dir.path().join("a");
+    let work_b = dir.path().join("b");
+    std::fs::create_dir_all(&work_a).unwrap();
+    std::fs::create_dir_all(&work_b).unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(SidProcessRunner::new("sid-from-old-cwd")),
+    ));
+    let chat = Arc::new(ChatService::new(db, run));
+    let cwd_a = work_a.to_string_lossy().into_owned();
+    let cwd_b = work_b.to_string_lossy().into_owned();
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], Some(cwd_a))
+        .unwrap();
+
+    let chat2 = Arc::clone(&chat);
+    let id = conv.id.clone();
+    let cwd_b_cb = cwd_b.clone();
+    chat.send(&conv.id, "hello", &move |ev| {
+        if matches!(ev, ChatEvent::AgentStarted { .. }) {
+            chat2
+                .update_conversation(&id, None, None, Some(Some(cwd_b_cb.clone())), None)
+                .unwrap();
+        }
+    })
+    .unwrap();
+
+    let after = chat.get_conversation(&conv.id).unwrap();
+    assert_eq!(after.cwd.as_deref(), Some(cwd_b.as_str()));
+    assert!(
+        after.native_session_id.is_none(),
+        "sid from old cwd must not be persisted, got {:?}",
+        after.native_session_id
+    );
+}
+
+#[test]
+fn persist_skips_native_session_when_agent_changes_during_send() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(SidProcessRunner::new("sid-from-old-agent")),
+    ));
+    let chat = Arc::new(ChatService::new(db, run));
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+
+    let chat2 = Arc::clone(&chat);
+    let id = conv.id.clone();
+    chat.send(&conv.id, "hello", &move |ev| {
+        if matches!(ev, ChatEvent::AgentStarted { .. }) {
+            chat2
+                .update_conversation(&id, None, Some(vec![AgentId::Codex]), None, None)
+                .unwrap();
+        }
+    })
+    .unwrap();
+
+    let after = chat.get_conversation(&conv.id).unwrap();
+    assert_eq!(after.agent_ids, vec![AgentId::Codex]);
+    assert!(
+        after.native_session_id.is_none(),
+        "sid from old agent must not be persisted, got {:?}",
+        after.native_session_id
     );
 }
