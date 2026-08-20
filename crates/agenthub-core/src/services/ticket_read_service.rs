@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::Utc;
 
 use crate::error::{AppError, Result};
+use crate::integrations::agents::codex::leftover;
 use crate::logging::targets;
 use crate::models::{
     attach_persisted_surface, parse_ticket_id, ticket_id, Account, AccountKind, AdapterApplyPlan,
@@ -40,8 +41,8 @@ impl TicketReadService {
         }
     }
 
-    /// List all true tickets and derived bindings. Generated projection providers
-    /// are excluded from the ticket list.
+    /// List all true tickets and derived bindings. Generated projection and
+    /// leftover 本机路由 providers are not tickets.
     pub fn list_wallet(&self) -> Result<TicketWallet> {
         let accounts = self.accounts.list(None)?;
         let providers = self.providers.list(None)?;
@@ -57,7 +58,14 @@ impl TicketReadService {
             tickets.push(self.ticket_from_account(account)?);
         }
         for provider in &providers {
-            if generated_provider_ids.contains(&provider.id) {
+            if generated_provider_ids.contains(&provider.id)
+                || provider
+                    .meta
+                    .get("generatedBy")
+                    .and_then(|value| value.as_str())
+                    == Some("adapter")
+                || leftover::provider_is_bridge_leftover(provider)
+            {
                 continue;
             }
             tickets.push(self.ticket_from_provider(provider)?);

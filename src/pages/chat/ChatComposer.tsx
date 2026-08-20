@@ -35,15 +35,15 @@ import {
   blockerPrimaryTarget,
   chatAgentPickerEmptyCopy,
   chatAgentPickerEmptyKind,
+  COMPOSER_TEXTAREA_MAX_PX,
+  COMPOSER_TEXTAREA_MIN_PX,
+  composerTextareaMeasuredStyle,
+  composerUsesCssFieldSizing,
   type ChatAgentPickerRow,
   type ChatConnectionOption,
   type ChatConnectionPickerView,
   type ChatSendBlocker,
 } from './chat-model';
-
-/** Composer 正文区：约 1 行起、最多 ~12 行；超出后内部滚动，工具条始终贴底。 */
-const COMPOSER_MIN_PX = 56;
-const COMPOSER_MAX_PX = 240;
 
 export function ChatComposer({
   draft,
@@ -102,13 +102,14 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const syncTextareaHeight = useCallback(() => {
+    if (composerUsesCssFieldSizing()) return;
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = 'auto';
-    const contentH = el.scrollHeight;
-    const next = Math.min(Math.max(contentH, COMPOSER_MIN_PX), COMPOSER_MAX_PX);
-    el.style.height = `${next}px`;
-    el.style.overflowY = contentH > COMPOSER_MAX_PX ? 'auto' : 'hidden';
+    el.style.overflowY = 'hidden';
+    el.style.height = '0px';
+    const layout = composerTextareaMeasuredStyle(el.scrollHeight);
+    el.style.height = layout.height;
+    el.style.overflowY = layout.overflowY;
   }, []);
 
   useLayoutEffect(() => {
@@ -150,11 +151,12 @@ export function ChatComposer({
         <textarea
           ref={textareaRef}
           className={cn(
-            'block w-full resize-none overflow-x-hidden break-words bg-transparent',
+            'block w-full resize-none overflow-x-hidden overflow-y-auto break-words bg-transparent',
+            '[field-sizing:content]',
             'px-4 pb-2 pt-3 text-body leading-[1.45] outline-none placeholder:text-muted',
             'disabled:cursor-not-allowed disabled:opacity-60',
           )}
-          style={{ minHeight: COMPOSER_MIN_PX, maxHeight: COMPOSER_MAX_PX }}
+          style={{ minHeight: COMPOSER_TEXTAREA_MIN_PX, maxHeight: COMPOSER_TEXTAREA_MAX_PX }}
           placeholder={t('chat.composer.placeholder')}
           rows={1}
           value={draft}

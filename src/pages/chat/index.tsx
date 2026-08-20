@@ -6,6 +6,7 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { chatComposerChromeClass } from './chat-model';
 import { ChatComposer } from './ChatComposer';
 import { ChatSessionHeader } from './ChatSessionHeader';
 import { ChatSessionRail } from './ChatSessionRail';
@@ -76,7 +77,7 @@ export default function ChatPage() {
         onConfirmDelete={() => void page.confirmDelete()}
       />
 
-      <section className="relative flex min-w-0 flex-1 flex-col bg-panel">
+      <section className="relative flex min-w-0 flex-1 flex-col bg-canvas">
         <ChatSessionHeader
           active={page.active}
           railOpen={page.railOpen}
@@ -104,7 +105,7 @@ export default function ChatPage() {
         {page.active && (
           <div
             className={cn(
-              'shrink-0 border-t border-border/60 bg-canvas pb-4 pt-2',
+              chatComposerChromeClass(page.turns.length > 0),
               pageRhythm.chatChromeX,
             )}
           >

@@ -1300,6 +1300,7 @@ export const en = {
       unconfiguredLabel: "Not configured",
       caption: "Applies to the first agent only ({name})",
       switched: "Connection switched",
+      leftoverUnavailable: "Local route is gone. Reconnect it in Connections.",
     },
     status: {
       generating: "Generating",

@@ -1294,6 +1294,7 @@ export const zh = {
       unconfiguredLabel: "未配置",
       caption: "仅作用于首位 Agent（{name}）",
       switched: "已切换连接",
+      leftoverUnavailable: "本机路由已失效，请到 Connections 重新接到",
     },
     status: {
       generating: "生成中",

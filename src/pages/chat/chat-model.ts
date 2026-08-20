@@ -7,6 +7,7 @@ import {
   formatLocalRouteLabel,
   isInternalGeneratedProvider,
 } from '@/lib/backend/contracts/agent-connection';
+import { ticketIdFor } from '@/lib/backend/contracts/ticket';
 import type { TranslateFn } from '@/lib/i18n';
 import { processPhaseLabel, type AgentProcessView } from '@/lib/chat-process';
 import { nativeResumeCommand } from '@/lib/session-resume';
@@ -505,6 +506,35 @@ export function leftoverProviderIsCurrent(providers: readonly Provider[]): boole
   return providers.some((provider) => provider.isCurrent && isLeftoverLocalRouteProvider(provider));
 }
 
+/** At most one leftover 本机路由 row: current if any, else latest updatedAt. */
+export function pickLeftoverLocalRouteProvider(
+  providers: readonly Provider[],
+): Provider | undefined {
+  const leftovers = providers.filter(isLeftoverLocalRouteProvider);
+  if (leftovers.length === 0) return undefined;
+  const current = leftovers.find((provider) => provider.isCurrent);
+  if (current) return current;
+  return leftovers.reduce((best, next) => {
+    const bestAt = best.updatedAt ?? '';
+    const nextAt = next.updatedAt ?? '';
+    if (nextAt !== bestAt) return nextAt > bestAt ? next : best;
+    return next.id.localeCompare(best.id) < 0 ? next : best;
+  });
+}
+
+export function leftoverBindTicketId(
+  leftoverProviderId: string,
+  profiles: readonly {
+    generatedProviderId?: string | null;
+    sourceKind: 'account' | 'provider';
+    sourceId: string;
+  }[],
+): string | null {
+  const profile = profiles.find((row) => row.generatedProviderId === leftoverProviderId);
+  if (!profile) return null;
+  return ticketIdFor(profile.sourceKind, profile.sourceId);
+}
+
 function officialOauthWinners(accounts: readonly Account[]): Account[] {
   const winners: Account[] = [];
   const indexByKey = new Map<string, number>();
@@ -526,7 +556,8 @@ function officialOauthWinners(accounts: readonly Account[]): Account[] {
 
 /**
  * Chat switch-connection options: official oauth and leftover local-route as
- * separate entries. Leftover current wins the checkmark so official rows stay clickable.
+ * separate entries. Leftover rows collapse to at most one. Leftover current
+ * wins the checkmark so official rows stay clickable.
  */
 export function chatConnectionOptions(t: TranslateFn, input: {
   accounts: readonly Account[];
@@ -535,6 +566,7 @@ export function chatConnectionOptions(t: TranslateFn, input: {
 }): ChatConnectionOption[] {
   const leftoverCurrent = leftoverProviderIsCurrent(input.providers);
   const preferAccount = input.connectionKind === 'account' && !leftoverCurrent;
+  const leftoverPick = pickLeftoverLocalRouteProvider(input.providers);
   const options: ChatConnectionOption[] = [];
   for (const account of officialOauthWinners(input.accounts)) {
     options.push({
@@ -547,6 +579,7 @@ export function chatConnectionOptions(t: TranslateFn, input: {
   }
   for (const provider of input.providers) {
     const leftover = isLeftoverLocalRouteProvider(provider);
+    if (leftover && provider.id !== leftoverPick?.id) continue;
     options.push({
       kind: 'provider',
       id: provider.id,
@@ -681,4 +714,48 @@ export function blockerCopy(t: TranslateFn, blocker: ChatSendBlocker): {
         secondaryAction: t('chat.blocker.stop'),
       };
   }
+}
+
+/** Composer 正文区：约 1 行起、最多 ~12 行；超出后内部滚动。 */
+export const COMPOSER_TEXTAREA_MIN_PX = 56;
+export const COMPOSER_TEXTAREA_MAX_PX = 240;
+
+type CssSupports = { supports?(property: string, value: string): boolean };
+
+export function clampComposerTextareaHeight(contentPx: number): number {
+  return Math.min(Math.max(contentPx, COMPOSER_TEXTAREA_MIN_PX), COMPOSER_TEXTAREA_MAX_PX);
+}
+
+export function composerTextareaOverflowY(contentPx: number): 'auto' | 'hidden' {
+  return contentPx > COMPOSER_TEXTAREA_MAX_PX ? 'auto' : 'hidden';
+}
+
+/** JS fallback layout after measuring `scrollHeight` (when `field-sizing` is missing). */
+export function composerTextareaMeasuredStyle(contentPx: number): {
+  height: string;
+  overflowY: 'auto' | 'hidden';
+} {
+  return {
+    height: `${clampComposerTextareaHeight(contentPx)}px`,
+    overflowY: composerTextareaOverflowY(contentPx),
+  };
+}
+
+/** Pass `css` in tests; omit to read the runtime `CSS` object. */
+export function composerUsesCssFieldSizing(css?: CssSupports | null): boolean {
+  const api = css === undefined ? (typeof CSS === 'undefined' ? undefined : CSS) : css ?? undefined;
+  return typeof api?.supports === 'function' && api.supports('field-sizing', 'content');
+}
+
+/**
+ * 空转录与 composer 周围同色（canvas）；有消息后消息区与输入壳同色（panel）。
+ */
+export function chatTranscriptSurfaceClass(hasMessages: boolean): string {
+  return hasMessages ? 'bg-panel' : 'bg-canvas';
+}
+
+export function chatComposerChromeClass(hasMessages: boolean): string {
+  return hasMessages
+    ? 'shrink-0 border-t border-border/60 bg-canvas pb-4 pt-2'
+    : 'shrink-0 bg-canvas pb-4 pt-2';
 }
