@@ -250,4 +250,90 @@ describe('dedupTrashItems', () => {
     expect(kept).toHaveLength(1);
     expect(kept[0].id).toBe('restore-new');
   });
+
+  it('does not collapse the same email across agents without a shared grok-live id', () => {
+    const grokAccount = trash({
+      id: 'grok-acc-1-trash',
+      agentId: 'grok',
+      kind: 'account',
+      sourceId: 'grok-acc-1',
+      label: 'user@x.ai',
+      deletedAt: '2026-08-10T00:00:00.000Z',
+      account: acc({
+        id: 'grok-acc-1',
+        kind: 'oauth',
+        label: 'user@x.ai',
+        email: 'user@x.ai',
+      }),
+      // Generated (bridge name) so the old unscoped email: key would have applied.
+      provider: prov({
+        id: 'grok-side-adapter',
+        name: 'Grok Subscription Bridge',
+      }),
+    });
+    const claudeProvider = trash({
+      id: 'claude-prov-1-trash',
+      agentId: 'claude',
+      kind: 'provider',
+      sourceId: 'claude-prov-1',
+      label: 'user@x.ai',
+      deletedAt: '2026-08-18T00:00:00.000Z',
+      provider: prov({
+        id: 'claude-prov-1',
+        name: 'user@x.ai',
+      }),
+      account: acc({
+        id: 'claude-side-email',
+        kind: 'oauth',
+        label: 'user@x.ai',
+        email: 'user@x.ai',
+      }),
+    });
+    const kept = dedupTrashItems([grokAccount, claudeProvider]);
+    expect(kept).toHaveLength(2);
+    const ids = kept.map((row) => row.id);
+    expect(ids).toEqual(expect.arrayContaining(['grok-acc-1-trash', 'claude-prov-1-trash']));
+  });
+
+  it('exposes both row ids for restore/delete when only the email matches', () => {
+    const grokAccount = trash({
+      id: 'restore-grok-acc',
+      agentId: 'grok',
+      kind: 'account',
+      sourceId: 'grok-acc-1',
+      label: 'user@x.ai',
+      deletedAt: '2026-08-01T00:00:00.000Z',
+      account: acc({
+        id: 'grok-acc-1',
+        kind: 'oauth',
+        label: 'user@x.ai',
+        email: 'user@x.ai',
+      }),
+      provider: prov({
+        id: 'grok-side-adapter',
+        name: 'Grok Subscription Bridge',
+      }),
+    });
+    const claudeProvider = trash({
+      id: 'restore-claude-prov',
+      agentId: 'claude',
+      kind: 'provider',
+      sourceId: 'claude-prov-1',
+      label: 'user@x.ai',
+      deletedAt: '2026-08-20T00:00:00.000Z',
+      provider: prov({
+        id: 'claude-prov-1',
+        name: 'user@x.ai',
+      }),
+      account: acc({
+        id: 'claude-side-email',
+        kind: 'oauth',
+        label: 'user@x.ai',
+        email: 'user@x.ai',
+      }),
+    });
+    const kept = dedupTrashItems([grokAccount, claudeProvider]);
+    expect(kept).toHaveLength(2);
+    expect(kept.map((row) => row.id).sort()).toEqual(['restore-claude-prov', 'restore-grok-acc']);
+  });
 });
