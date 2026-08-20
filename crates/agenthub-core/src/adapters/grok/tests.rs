@@ -9,6 +9,7 @@ use crate::models::{ProcessMode, RunOptions};
 use super::{
     clear_grok_field, grok_auth_state, read_grok_api_key, write_grok_api_key, GrokAdapter,
 };
+use crate::models::{AgentConfig, AgentId};
 
 #[test]
 fn grok_account_key_reads_and_writes_active_nested_model() {
@@ -89,6 +90,44 @@ fn grok_api_key_and_missing_or_unparseable_auth_leaves_also_present_empty() {
     assert!(unparseable.also_present.is_empty());
     let dumped = serde_json::to_string(&unparseable).unwrap();
     assert!(!dumped.contains("xai-only-fixture"));
+}
+
+#[test]
+fn grok_write_config_points_base_url_at_loopback_and_drops_leftover_grok_model() {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", dir.path());
+    fs::write(
+        dir.path().join("config.toml"),
+        r#"[models]
+default = "grok"
+
+[model."grok"]
+model = "grok-4.5"
+base_url = "https://api.x.ai/v1"
+api_key = "old"
+"#,
+    )
+    .unwrap();
+    let result = GrokAdapter.write_config(&AgentConfig {
+        agent: AgentId::Grok,
+        raw: serde_json::json!({
+            "format": "toml",
+            "content": "[models]\ndefault = \"agenthub_codex_bridge\"\n\n[model.\"agenthub_codex_bridge\"]\nbase_url = \"http://127.0.0.1:32123/v1\"\napi_key = \"ahb_local\"\napi_backend = \"chat_completions\"\n",
+        }),
+    });
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
+    result.unwrap();
+    let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert!(text.contains("http://127.0.0.1:32123/v1"));
+    assert!(text.contains("api_backend = \"chat_completions\""));
+    assert!(!text.contains("grok-4.5"));
+    assert!(!text.contains("gpt-"));
 }
 
 #[test]

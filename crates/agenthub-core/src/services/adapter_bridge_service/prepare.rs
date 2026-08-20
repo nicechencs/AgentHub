@@ -176,7 +176,7 @@ impl AdapterBridgeService {
             .and_then(rule_for_id)
             .ok_or_else(|| {
                 AppError::Unsupported(
-                    "adapter bridge currently supports Kimi / Anthropic → Codex, Codex subscription → Claude, or Grok subscription → Claude / Codex"
+                    "adapter bridge currently supports Kimi / Anthropic → Codex, Codex subscription → Claude / Grok / Kimi / DSH, or Grok subscription → Claude / Codex"
                         .into(),
                 )
             })?;
@@ -232,7 +232,10 @@ impl AdapterBridgeService {
                 profile.source_kind,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account
             ),
-            CODEX_CLAUDE_RULE_ID => profile.source_kind == AdapterSourceKind::Account,
+            CODEX_CLAUDE_RULE_ID
+            | CODEX_GROK_RULE_ID
+            | CODEX_KIMI_RULE_ID
+            | CODEX_DSH_RULE_ID => profile.source_kind == AdapterSourceKind::Account,
             GROK_CLAUDE_RULE_ID | GROK_CODEX_RULE_ID => {
                 profile.source_kind == AdapterSourceKind::Account
             }

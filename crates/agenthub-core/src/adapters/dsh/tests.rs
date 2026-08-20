@@ -1,5 +1,7 @@
 use super::*;
-use crate::models::{AccountKind, AgentId, AuthHealth, Capability, CapabilityLevel, RuntimeId};
+use crate::models::{
+    AccountKind, AgentConfig, AgentId, AuthHealth, Capability, CapabilityLevel, RuntimeId,
+};
 use crate::utils::paths::home_dir;
 use serde_json::json;
 use std::sync::Mutex;
@@ -98,6 +100,28 @@ fn apply_account_writes_credential_ref_not_key_into_patch() {
         assert!(patch.contains(LLM_PLUGIN_ID));
         assert!(patch.contains(DEFAULT_API_KEY_ENV));
         assert!(!patch.contains("sk-live-secret"));
+    });
+}
+
+#[test]
+fn write_config_can_point_base_url_at_loopback_without_inventing_chatgpt_model() {
+    let dir = tempfile::tempdir().unwrap();
+    with_dsh_home(dir.path(), || {
+        write_dsh_config(&AgentConfig {
+            agent: AgentId::Dsh,
+            raw: json!({
+                "baseURL": "http://127.0.0.1:32123",
+                "api_key": "ahb_local"
+            }),
+        })
+        .unwrap();
+        let text = std::fs::read_to_string(dir.path().join(HOME_PATCH_FILE)).unwrap();
+        assert!(text.contains("http://127.0.0.1:32123"));
+        assert!(!text.contains("gpt-"));
+        assert!(!text.contains("grok-"));
+        let creds = std::fs::read_to_string(dir.path().join(CREDENTIALS_FILE)).unwrap();
+        assert!(creds.contains("ahb_local"));
+        assert!(!text.contains("ahb_local"));
     });
 }
 

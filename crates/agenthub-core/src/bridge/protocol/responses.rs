@@ -238,6 +238,43 @@ pub fn to_responses_request(request: &BridgeRequest) -> Value {
     Value::Object(body)
 }
 
+/// Official ChatGPT / Codex Responses rejects leftover `grok-*` model ids (400).
+/// Do not invent a ChatGPT model name to replace them — omit instead.
+pub fn is_leftover_grok_model(model: &str) -> bool {
+    model.trim().starts_with("grok-")
+}
+
+/// Write the Responses `model` for official Codex upstream.
+///
+/// Configured override wins when it is non-empty and not leftover `grok-*`.
+/// Incoming Grok leftovers are dropped rather than rewritten as `gpt-*`.
+pub fn apply_official_codex_model(body: &mut Value, incoming: &str, configured: Option<&str>) {
+    let configured = configured
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !is_leftover_grok_model(value));
+    let incoming = incoming
+        .trim()
+        .to_owned();
+    let incoming = if incoming.is_empty() || is_leftover_grok_model(&incoming) {
+        None
+    } else {
+        Some(incoming)
+    };
+    match (configured, incoming) {
+        (Some(model), _) => {
+            body["model"] = Value::String(model.to_owned());
+        }
+        (None, Some(model)) => {
+            body["model"] = Value::String(model);
+        }
+        (None, None) => {
+            if let Some(object) = body.as_object_mut() {
+                object.remove("model");
+            }
+        }
+    }
+}
+
 /// Build a non-streaming OpenAI Responses object from IR events.
 ///
 /// Used by the Anthropic API Key → Codex path after Anthropic Messages

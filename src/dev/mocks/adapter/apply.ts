@@ -7,6 +7,9 @@ import type { Provider } from '@/lib/types';
 import { getRuleFixtureById, type MockMaterializeSpec } from './rule-fixtures';
 import {
   CODEX_CLAUDE_RULE_ID,
+  CODEX_DSH_RULE_ID,
+  CODEX_GROK_RULE_ID,
+  CODEX_KIMI_RULE_ID,
   GROK_CLAUDE_RULE_ID,
   GROK_CODEX_RULE_ID,
 } from './types';
@@ -266,6 +269,9 @@ export function materializeApply(
     const grokClaudeBridge = plan.analysis.ruleId === GROK_CLAUDE_RULE_ID;
     const grokCodexBridge = plan.analysis.ruleId === GROK_CODEX_RULE_ID;
     const anthropicBridge = plan.analysis.ruleId === 'anthropic-api-to-codex-v1';
+    const codexGrokBridge = plan.analysis.ruleId === CODEX_GROK_RULE_ID;
+    const codexKimiBridge = plan.analysis.ruleId === CODEX_KIMI_RULE_ID;
+    const codexDshBridge = plan.analysis.ruleId === CODEX_DSH_RULE_ID;
     const profile: AdapterProfile = existing ?? {
       id: codexClaudeBridge
         ? `adapter-codex-claude-bridge-${safeId}`
@@ -275,6 +281,12 @@ export function materializeApply(
         ? `adapter-grok-codex-bridge-${safeId}`
         : anthropicBridge
         ? `adapter-anthropic-codex-bridge-${safeId}`
+        : codexGrokBridge
+        ? `adapter-codex-grok-bridge-${safeId}`
+        : codexKimiBridge
+        ? `adapter-codex-kimi-bridge-${safeId}`
+        : codexDshBridge
+        ? `adapter-codex-dsh-bridge-${safeId}`
         : `adapter-kimi-codex-bridge-${safeId}`,
       name: codexClaudeBridge
         ? `Codex → Claude Code 本地桥接 (${safeId})`
@@ -284,12 +296,20 @@ export function materializeApply(
         ? `Grok → Codex 本机路由 (${safeId})`
         : anthropicBridge
         ? `Anthropic → Codex 本地桥接 (${safeId})`
+        : codexGrokBridge
+        ? `Codex → Grok 本机路由 (${safeId})`
+        : codexKimiBridge
+        ? `Codex → Kimi 本机路由 (${safeId})`
+        : codexDshBridge
+        ? `Codex → DeepSeek Harness 本机路由 (${safeId})`
         : `Kimi → Codex 本地桥接 (${safeId})`,
       sourceKind: request.sourceKind,
       sourceId: request.sourceId,
       targetAgentId: request.targetAgentId,
       route: 'local_bridge',
-      mode: codexClaudeBridge || grokClaudeBridge || grokCodexBridge ? 'oauth' : 'api',
+      mode: codexClaudeBridge || grokClaudeBridge || grokCodexBridge
+        || codexGrokBridge || codexKimiBridge || codexDshBridge
+        ? 'oauth' : 'api',
       status: 'active',
       ruleId: codexClaudeBridge
         ? CODEX_CLAUDE_RULE_ID
@@ -297,7 +317,15 @@ export function materializeApply(
         ? GROK_CLAUDE_RULE_ID
         : grokCodexBridge
         ? GROK_CODEX_RULE_ID
-        : anthropicBridge ? 'anthropic-api-to-codex-v1' : 'kimi-membership-to-codex-v1',
+        : anthropicBridge
+        ? 'anthropic-api-to-codex-v1'
+        : codexGrokBridge
+        ? CODEX_GROK_RULE_ID
+        : codexKimiBridge
+        ? CODEX_KIMI_RULE_ID
+        : codexDshBridge
+        ? CODEX_DSH_RULE_ID
+        : 'kimi-membership-to-codex-v1',
       ruleVersion: '1',
       generatedProviderId: codexClaudeBridge
         ? `claude-codex-bridge-${safeId}`
@@ -307,6 +335,12 @@ export function materializeApply(
         ? `codex-grok-bridge-${safeId}`
         : anthropicBridge
         ? `codex-anthropic-bridge-${safeId}`
+        : codexGrokBridge
+        ? `grok-codex-bridge-${safeId}`
+        : codexKimiBridge
+        ? `kimi-codex-bridge-${safeId}`
+        : codexDshBridge
+        ? `dsh-codex-bridge-${safeId}`
         : `codex-kimi-bridge-${safeId}`,
       localPort: 32123,
       autoStart: false,
@@ -317,9 +351,23 @@ export function materializeApply(
       profile,
       provider: {
         id: profile.generatedProviderId!,
-        agentId: codexClaudeBridge || grokClaudeBridge ? 'claude' : 'codex',
+        agentId: codexClaudeBridge || grokClaudeBridge
+          ? 'claude'
+          : codexGrokBridge
+            ? 'grok'
+            : codexKimiBridge
+              ? 'kimi'
+              : codexDshBridge
+                ? 'dsh'
+                : 'codex',
         name: profile.name,
-        preset: codexClaudeBridge || grokClaudeBridge ? 'anthropic' : 'openai-compatible',
+        preset: codexClaudeBridge || grokClaudeBridge
+          ? 'anthropic'
+          : codexGrokBridge || codexKimiBridge
+            ? 'openai-chat'
+            : codexDshBridge
+              ? 'deepseek'
+              : 'openai-compatible',
         configText: JSON.stringify({
           ...(codexClaudeBridge || grokClaudeBridge
             ? {
@@ -329,8 +377,14 @@ export function materializeApply(
                 },
               }
             : {
-                baseUrl: `http://127.0.0.1:${profile.localPort ?? 32123}/v1`,
-                model: anthropicBridge ? 'claude-sonnet-4-20250514' : grokCodexBridge ? 'grok-4.5' : 'kimi-k2.5',
+                baseUrl: `http://127.0.0.1:${profile.localPort ?? 32123}${codexDshBridge ? '' : '/v1'}`,
+                ...(anthropicBridge || grokCodexBridge
+                  ? {
+                      model: anthropicBridge
+                        ? 'claude-sonnet-4-20250514'
+                        : 'grok-4.5',
+                    }
+                  : {}),
               }),
         }),
         configFormat: 'json',

@@ -1330,3 +1330,30 @@ fn codex_chat_run_spec_skips_git_repo_trust_check() {
     );
     assert_eq!(spec.args.last().map(String::as_str), Some("ping"));
 }
+
+#[test]
+fn kimi_write_config_points_base_url_at_loopback() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "default_provider = \"moonshot\"\n\n[providers.moonshot]\nbase_url = \"https://api.moonshot.cn/v1\"\napi_key = \"old\"\n",
+    )
+    .unwrap();
+    write_toml_config(
+        AgentId::Kimi,
+        &path,
+        &AgentConfig {
+            agent: AgentId::Kimi,
+            raw: json!({
+                "format": "toml",
+                "content": "default_provider = \"agenthub_codex_bridge\"\n\n[providers.agenthub_codex_bridge]\nname = \"AgentHub Codex Route\"\nbase_url = \"http://127.0.0.1:32123/v1\"\napi_key = \"ahb_local\"\n",
+            }),
+        },
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("http://127.0.0.1:32123/v1"));
+    assert!(text.contains("agenthub_codex_bridge"));
+    assert!(!text.contains("gpt-"));
+}

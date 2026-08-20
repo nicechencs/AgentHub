@@ -1196,6 +1196,82 @@ fn official_codex_oauth_to_codex_is_native_self_bind() {
 }
 
 #[test]
+fn official_codex_oauth_to_grok_kimi_dsh_is_writable_local_bridge() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "codex-live-1".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "chatgpt".into(),
+            credentials: serde_json::json!({
+                "format": "auth_json",
+                "body": {
+                    "auth_mode": "chatgpt",
+                    "tokens": {
+                        "access_token": "must-not-leak",
+                        "refresh_token": "must-not-leak"
+                    }
+                }
+            }),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+    for (target, reason, field) in [
+        (
+            AgentId::Grok,
+            crate::models::CODEX_SUBSCRIPTION_TO_GROK_REASON,
+            "baseUrl",
+        ),
+        (
+            AgentId::Kimi,
+            crate::models::CODEX_SUBSCRIPTION_TO_KIMI_REASON,
+            "baseUrl",
+        ),
+        (
+            AgentId::Dsh,
+            crate::models::CODEX_SUBSCRIPTION_TO_DSH_REASON,
+            "baseURL",
+        ),
+    ] {
+        let plan = service
+            .plan(&request(
+                AdapterSourceKind::Account,
+                "codex-live-1",
+                target,
+            ))
+            .unwrap();
+        assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge, "{target:?}");
+        assert!(plan.can_apply, "{target:?}");
+        assert_eq!(plan.reason, reason, "{target:?}");
+        assert_eq!(
+            plan.reuse_path,
+            crate::models::AdapterReusePath::LocalBridge,
+            "{target:?}"
+        );
+        assert!(
+            plan.changes.iter().any(|change| change.field == field
+                && change
+                    .value
+                    .as_deref()
+                    .is_some_and(|value| value.contains("127.0.0.1"))),
+            "{target:?} plan must write loopback {field}: {:?}",
+            plan.changes
+        );
+        assert!(!plan.reason.contains("实验"), "{target:?}");
+        assert!(!plan.reason.contains("未验证"), "{target:?}");
+        assert!(!serde_json::to_string(&plan)
+            .unwrap()
+            .contains("must-not-leak"));
+    }
+}
+
+#[test]
 fn claude_subscription_to_codex_is_product_closed() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())
@@ -1785,7 +1861,10 @@ fn source_kinds_for_rule(rule_id: &str) -> &'static [AdapterSourceKind] {
         | "grok-subscription-to-pi-v1"
         | "codex-subscription-to-claude-responses-v1"
         | "grok-subscription-to-claude-v1"
-        | "grok-subscription-to-codex-v1" => &[AdapterSourceKind::Account],
+        | "grok-subscription-to-codex-v1"
+        | "codex-subscription-to-grok-v1"
+        | "codex-subscription-to-kimi-v1"
+        | "codex-subscription-to-dsh-v1" => &[AdapterSourceKind::Account],
         "deepseek-api-to-dsh-v1" => &[AdapterSourceKind::Provider],
         _ => &[AdapterSourceKind::Provider, AdapterSourceKind::Account],
     }

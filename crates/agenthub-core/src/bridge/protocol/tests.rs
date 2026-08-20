@@ -10,10 +10,13 @@ use super::{
         parse_messages_request, to_anthropic_messages_request,
         translate_responses_to_anthropic_request, AnthropicStreamToIr,
     },
-    chat::{sse_frame, translate_chat_response, ChatStreamToIr, ResponsesSseTranslator},
+    chat::{
+        encode_chat_from_ir, parse_chat_request, sse_frame, translate_chat_response, ChatStreamToIr,
+        ResponsesSseTranslator,
+    },
     responses::{
-        encode_responses_from_ir, parse_responses_request, responses_output_to_ir,
-        to_grok_chat_request, to_kimi_chat_request, to_responses_request,
+        apply_official_codex_model, encode_responses_from_ir, parse_responses_request,
+        responses_output_to_ir, to_grok_chat_request, to_kimi_chat_request, to_responses_request,
         translate_responses_request, IrToResponsesSse, ResponsesStreamToIr,
     },
 };
@@ -514,6 +517,42 @@ fn upstream_error_is_generic_and_never_leaks_sensitive_upstream_data() {
     assert_eq!(error.code, "upstream_error");
     assert!(!error.message.contains("sk-secret-key"));
     assert!(!error.message.contains("private input"));
+}
+
+#[test]
+fn chat_request_maps_to_responses_and_strips_leftover_grok_model() {
+    let request = parse_chat_request(&json!({
+        "model": "grok-4.5",
+        "messages": [
+            { "role": "system", "content": "Be brief." },
+            { "role": "user", "content": "你好" }
+        ],
+        "stream": false,
+        "max_tokens": 64
+    }))
+    .expect("parse chat");
+    assert_eq!(request.model, "grok-4.5");
+    assert_eq!(request.instructions.as_deref(), Some("Be brief."));
+    assert_eq!(request.passthrough["max_output_tokens"], 64);
+
+    let mut responses = to_responses_request(&request);
+    apply_official_codex_model(&mut responses, &request.model, Some(""));
+    assert!(responses.get("model").is_none());
+    assert_eq!(responses["input"][0]["content"][0]["text"], "你好");
+    assert_eq!(responses["max_output_tokens"], 64);
+
+    apply_official_codex_model(&mut responses, "gpt-4o", None);
+    assert_eq!(responses["model"], "gpt-4o");
+}
+
+#[test]
+fn responses_ir_encodes_chat_completion_without_inventing_model() {
+    let ir = responses_output_to_ir(&fixture("responses_upstream_text")).expect("ir");
+    let chat = encode_chat_from_ir(&ir, Some("chatcmpl_test")).expect("chat");
+    assert_eq!(chat["object"], "chat.completion");
+    assert_eq!(chat["choices"][0]["message"]["content"], "你好，世界。");
+    assert_eq!(chat["choices"][0]["finish_reason"], "stop");
+    assert_eq!(chat["id"], "chatcmpl_test");
 }
 
 #[test]

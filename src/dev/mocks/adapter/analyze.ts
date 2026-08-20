@@ -13,6 +13,12 @@ import {
   CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
   CODEX_SUBSCRIPTION_TO_CODEX_REASON,
   CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
+  CODEX_DSH_RULE_ID,
+  CODEX_GROK_RULE_ID,
+  CODEX_KIMI_RULE_ID,
+  CODEX_SUBSCRIPTION_TO_DSH_REASON,
+  CODEX_SUBSCRIPTION_TO_GROK_REASON,
+  CODEX_SUBSCRIPTION_TO_KIMI_REASON,
   GROK_CLAUDE_RULE_ID,
   GROK_CODEX_RULE_ID,
   GROK_SUBSCRIPTION_TO_CLAUDE_REASON,
@@ -175,6 +181,46 @@ export function analyze(
       ],
       evidence: compatibilityEvidence,
       ruleId: CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
+      gateKind: 'none',
+    };
+  }
+  if (
+    (source === 'codex_subscription' || source === 'codex_subscription_oauth_other')
+    && (request.targetAgentId === 'grok' || request.targetAgentId === 'kimi' || request.targetAgentId === 'dsh')
+  ) {
+    const target = request.targetAgentId;
+    const reason = target === 'grok'
+      ? CODEX_SUBSCRIPTION_TO_GROK_REASON
+      : target === 'kimi'
+        ? CODEX_SUBSCRIPTION_TO_KIMI_REASON
+        : CODEX_SUBSCRIPTION_TO_DSH_REASON;
+    const ruleId = target === 'grok'
+      ? CODEX_GROK_RULE_ID
+      : target === 'kimi'
+        ? CODEX_KIMI_RULE_ID
+        : CODEX_DSH_RULE_ID;
+    const label = target === 'dsh' ? 'DeepSeek Harness' : target === 'kimi' ? 'Kimi' : 'Grok';
+    const loopback = target === 'dsh' ? 'http://127.0.0.1:<本机端口>' : 'http://127.0.0.1:<本机端口>/v1';
+    return {
+      route: 'local_bridge',
+      support: 'experimental',
+      reason,
+      actions: [
+        action(
+          'requires_local_bridge',
+          label,
+          `会把 ${label} 指到本机路由；上游 Codex 官方登录不会写入对方。`,
+        ),
+        action('set_config', label, `写入 ${label} 的本机路由端点。`, loopback),
+      ],
+      limitations: [
+        '会把目标 Agent 指到本机路由；上游 Codex 官方登录不会写入对方。',
+        'AgentHub 需保持在托盘运行。',
+        'Codex 登录过期后需重新同步；Hub 本轮不自动刷新。',
+        '固定端口被占用时会尝试重新分配端口并写回配置。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId,
       gateKind: 'none',
     };
   }

@@ -469,6 +469,19 @@ fn cursor_target_uses_no_writer_reason_not_source_copy() {
 }
 
 #[test]
+fn workbuddy_hears_no_protocol_so_codex_login_stays_closed() {
+    let decision = decide_adapter_capability(
+        AdapterSourceProduct::CodexChatGptSubscription,
+        AdapterCredentialClass::OauthAuthJson,
+        AgentId::WorkBuddy,
+    )
+    .public_surface();
+    assert_eq!(decision.route, AdapterRoute::Unsupported);
+    assert!(!decision.can_apply);
+    assert_eq!(decision.reason, PROTOCOL_MISMATCH_REASON);
+}
+
+#[test]
 fn kimi_to_grok_is_an_open_native_endpoint() {
     let decision = decide_adapter_capability(
         AdapterSourceProduct::KimiCodeMembership,
@@ -497,6 +510,55 @@ fn grok_subscription_to_codex_is_open_local_bridge() {
         decision.transport,
         AdapterUpstreamTransport::LocalBridgeChatCompletions
     );
+}
+
+#[test]
+fn codex_subscription_to_grok_kimi_dsh_is_open_local_bridge() {
+    for (target, rule_id, reason) in [
+        (
+            AgentId::Grok,
+            CODEX_SUBSCRIPTION_TO_GROK_RULE_ID,
+            CODEX_SUBSCRIPTION_TO_GROK_REASON,
+        ),
+        (
+            AgentId::Kimi,
+            CODEX_SUBSCRIPTION_TO_KIMI_RULE_ID,
+            CODEX_SUBSCRIPTION_TO_KIMI_REASON,
+        ),
+        (
+            AgentId::Dsh,
+            CODEX_SUBSCRIPTION_TO_DSH_RULE_ID,
+            CODEX_SUBSCRIPTION_TO_DSH_REASON,
+        ),
+    ] {
+        for credential in [
+            AdapterCredentialClass::OauthAuthJson,
+            AdapterCredentialClass::OauthOther,
+        ] {
+            let decision = decide_adapter_capability(
+                AdapterSourceProduct::CodexChatGptSubscription,
+                credential,
+                target,
+            )
+            .public_surface();
+            assert_eq!(decision.route, AdapterRoute::LocalBridge, "{target:?}");
+            assert!(decision.can_apply, "{target:?}");
+            assert_eq!(decision.rule_id, Some(rule_id), "{target:?}");
+            assert_eq!(decision.reason, reason, "{target:?}");
+            assert_eq!(
+                decision.transport,
+                AdapterUpstreamTransport::CodexResponsesOauth,
+                "{target:?}"
+            );
+            assert_eq!(
+                decision.protocol,
+                Some(AdapterTargetProtocol::OpenAiChatCompletions),
+                "{target:?}"
+            );
+            assert!(!decision.reason.contains("实验"));
+            assert!(!decision.reason.contains("未验证"));
+        }
+    }
 }
 
 #[test]

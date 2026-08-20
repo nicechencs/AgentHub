@@ -674,7 +674,10 @@ async fn load_bridge_profile(
 ) -> Result<AdapterProfile, String> {
     let profile = load_adapter_profile(hub, profile_id).await?;
     if profile.route != AdapterRoute::LocalBridge
-        || !matches!(profile.target_agent_id, AgentId::Codex | AgentId::Claude)
+        || !matches!(
+            profile.target_agent_id,
+            AgentId::Codex | AgentId::Claude | AgentId::Grok | AgentId::Kimi | AgentId::Dsh
+        )
         || !matches!(
             profile.source_kind,
             AdapterSourceKind::Provider | AdapterSourceKind::Account

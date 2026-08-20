@@ -70,6 +70,19 @@ export const GROK_SUBSCRIPTION_TO_CODEX_REASON =
 export const CODEX_SUBSCRIPTION_TO_CODEX_REASON = '用这份官方登录接到 Codex。';
 export const CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID = 'codex-subscription-to-codex-v1';
 
+export const CODEX_SUBSCRIPTION_TO_GROK_REASON = 'Codex 官方登录会经本机路由接到 Grok。';
+export const CODEX_SUBSCRIPTION_TO_KIMI_REASON = 'Codex 官方登录会经本机路由接到 Kimi。';
+export const CODEX_SUBSCRIPTION_TO_DSH_REASON =
+  'Codex 官方登录会经本机路由接到 DeepSeek Harness。';
+export const CODEX_GROK_RULE_ID = 'codex-subscription-to-grok-v1';
+export const CODEX_KIMI_RULE_ID = 'codex-subscription-to-kimi-v1';
+export const CODEX_DSH_RULE_ID = 'codex-subscription-to-dsh-v1';
+export const CODEX_CHAT_BRIDGE_RULE_IDS = new Set([
+  CODEX_GROK_RULE_ID,
+  CODEX_KIMI_RULE_ID,
+  CODEX_DSH_RULE_ID,
+]);
+
 /** Keep in lockstep with `GROK_SUBSCRIPTION_TO_KIMI_REASON` in agenthub-core. */
 export const GROK_SUBSCRIPTION_TO_KIMI_REASON =
   'Kimi 只认自己的官方 Key，接下不了这份 Grok 登录。';

@@ -169,6 +169,43 @@ impl AdapterRouteService {
                     change("claude", "ANTHROPIC_AUTH_TOKEN", None, true),
                 ],
             ),
+            AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Grok => (
+                AdapterServiceImpact::RequiresLocalBridge,
+                vec![
+                    change(
+                        "grok",
+                        "baseUrl",
+                        Some("http://127.0.0.1:<本机端口>/v1"),
+                        false,
+                    ),
+                    change("grok", "apiBackend", Some("chat_completions"), false),
+                    change("grok", "apiKey", None, true),
+                ],
+            ),
+            AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Kimi => (
+                AdapterServiceImpact::RequiresLocalBridge,
+                vec![
+                    change(
+                        "kimi",
+                        "baseUrl",
+                        Some("http://127.0.0.1:<本机端口>/v1"),
+                        false,
+                    ),
+                    change("kimi", "apiKey", None, true),
+                ],
+            ),
+            AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Dsh => (
+                AdapterServiceImpact::RequiresLocalBridge,
+                vec![
+                    change(
+                        "dsh",
+                        "baseURL",
+                        Some("http://127.0.0.1:<本机端口>"),
+                        false,
+                    ),
+                    change("dsh", "apiKey", None, true),
+                ],
+            ),
             AdapterRoute::LocalBridge => (AdapterServiceImpact::RequiresLocalBridge, vec![]),
             AdapterRoute::Unsupported | AdapterRoute::ConfigSync | AdapterRoute::NativeEndpoint => {
                 (AdapterServiceImpact::None, vec![])

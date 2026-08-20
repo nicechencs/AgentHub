@@ -5,8 +5,9 @@
 //! `can_apply = false`. This is separate from the per-agent feature matrix in
 //! [`crate::models::capability`].
 //!
-//! Codex / ChatGPT subscription OAuth → Claude Code Responses is an
-//! experimental local-bridge edge. The App Server candidate remains closed.
+//! Codex / ChatGPT official login → Claude is Messages local-bridge.
+//! Codex / ChatGPT official login → Grok / Kimi / DSH is Chat Completions
+//! local-bridge to Responses OAuth upstream. The App Server candidate remains closed.
 
 use super::{
     agent_bind_capability, speaks_intersect_accepts, AGENT_NO_WRITER_REASON,
@@ -27,6 +28,15 @@ pub const GROK_SUBSCRIPTION_TO_CLAUDE_REASON: &str = "Grok 登录会经本机路
 
 /// Shared public reason for Grok subscription to Codex local route.
 pub const GROK_SUBSCRIPTION_TO_CODEX_REASON: &str = "Grok 登录会经本机路由接到 Codex。";
+
+/// Codex / ChatGPT official login → Grok / Kimi / DSH local route.
+pub const CODEX_SUBSCRIPTION_TO_GROK_REASON: &str = "Codex 官方登录会经本机路由接到 Grok。";
+pub const CODEX_SUBSCRIPTION_TO_KIMI_REASON: &str = "Codex 官方登录会经本机路由接到 Kimi。";
+pub const CODEX_SUBSCRIPTION_TO_DSH_REASON: &str =
+    "Codex 官方登录会经本机路由接到 DeepSeek Harness。";
+pub const CODEX_SUBSCRIPTION_TO_GROK_RULE_ID: &str = "codex-subscription-to-grok-v1";
+pub const CODEX_SUBSCRIPTION_TO_KIMI_RULE_ID: &str = "codex-subscription-to-kimi-v1";
+pub const CODEX_SUBSCRIPTION_TO_DSH_RULE_ID: &str = "codex-subscription-to-dsh-v1";
 
 /// Closed reason: Kimi has no Grok-login slot and no local-route adapter.
 pub const GROK_SUBSCRIPTION_TO_KIMI_REASON: &str =
@@ -432,6 +442,13 @@ const GROK_CODEX_LIMITS: &[&str] = &[
     "会把 Codex 指到本机路由；上游 Grok 登录不会写入 Codex。",
     "AgentHub 需保持在托盘运行。",
     "Grok 登录过期后需重新同步；Hub 本轮不自动刷新。",
+    "固定端口被占用时会尝试重新分配端口并写回配置。",
+];
+
+const CODEX_CHAT_LIMITS: &[&str] = &[
+    "会把目标 Agent 指到本机路由；上游 Codex 官方登录不会写入对方。",
+    "AgentHub 需保持在托盘运行。",
+    "Codex 登录过期后需重新同步；Hub 本轮不自动刷新。",
     "固定端口被占用时会尝试重新分配端口并写回配置。",
 ];
 
@@ -911,6 +928,114 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         reason: CODEX_SUBSCRIPTION_TO_CODEX_REASON,
         limitations: CODEX_OFFICIAL_SELF_LIMITS,
         rule_id: CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
+        verified_at: "2026-08-20",
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::CodexChatGptSubscription,
+            credential: AdapterCredentialClass::OauthAuthJson,
+            transport: AdapterUpstreamTransport::CodexResponsesOauth,
+            target: AgentId::Grok,
+            protocol: AdapterTargetProtocol::OpenAiChatCompletions,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::LocalBridge,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: CODEX_SUBSCRIPTION_TO_GROK_REASON,
+        limitations: CODEX_CHAT_LIMITS,
+        rule_id: CODEX_SUBSCRIPTION_TO_GROK_RULE_ID,
+        verified_at: "2026-08-20",
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::CodexChatGptSubscription,
+            credential: AdapterCredentialClass::OauthOther,
+            transport: AdapterUpstreamTransport::CodexResponsesOauth,
+            target: AgentId::Grok,
+            protocol: AdapterTargetProtocol::OpenAiChatCompletions,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::LocalBridge,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: CODEX_SUBSCRIPTION_TO_GROK_REASON,
+        limitations: CODEX_CHAT_LIMITS,
+        rule_id: CODEX_SUBSCRIPTION_TO_GROK_RULE_ID,
+        verified_at: "2026-08-20",
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::CodexChatGptSubscription,
+            credential: AdapterCredentialClass::OauthAuthJson,
+            transport: AdapterUpstreamTransport::CodexResponsesOauth,
+            target: AgentId::Kimi,
+            protocol: AdapterTargetProtocol::OpenAiChatCompletions,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::LocalBridge,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: CODEX_SUBSCRIPTION_TO_KIMI_REASON,
+        limitations: CODEX_CHAT_LIMITS,
+        rule_id: CODEX_SUBSCRIPTION_TO_KIMI_RULE_ID,
+        verified_at: "2026-08-20",
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::CodexChatGptSubscription,
+            credential: AdapterCredentialClass::OauthOther,
+            transport: AdapterUpstreamTransport::CodexResponsesOauth,
+            target: AgentId::Kimi,
+            protocol: AdapterTargetProtocol::OpenAiChatCompletions,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::LocalBridge,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: CODEX_SUBSCRIPTION_TO_KIMI_REASON,
+        limitations: CODEX_CHAT_LIMITS,
+        rule_id: CODEX_SUBSCRIPTION_TO_KIMI_RULE_ID,
+        verified_at: "2026-08-20",
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::CodexChatGptSubscription,
+            credential: AdapterCredentialClass::OauthAuthJson,
+            transport: AdapterUpstreamTransport::CodexResponsesOauth,
+            target: AgentId::Dsh,
+            protocol: AdapterTargetProtocol::OpenAiChatCompletions,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::LocalBridge,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: CODEX_SUBSCRIPTION_TO_DSH_REASON,
+        limitations: CODEX_CHAT_LIMITS,
+        rule_id: CODEX_SUBSCRIPTION_TO_DSH_RULE_ID,
+        verified_at: "2026-08-20",
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::CodexChatGptSubscription,
+            credential: AdapterCredentialClass::OauthOther,
+            transport: AdapterUpstreamTransport::CodexResponsesOauth,
+            target: AgentId::Dsh,
+            protocol: AdapterTargetProtocol::OpenAiChatCompletions,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::LocalBridge,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: CODEX_SUBSCRIPTION_TO_DSH_REASON,
+        limitations: CODEX_CHAT_LIMITS,
+        rule_id: CODEX_SUBSCRIPTION_TO_DSH_RULE_ID,
         verified_at: "2026-08-20",
         gates: AdapterCapabilityGates::all_open(),
     },

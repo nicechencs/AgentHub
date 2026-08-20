@@ -16,11 +16,13 @@ use crate::bridge::protocol::anthropic_messages::{
     anthropic_message_to_ir, encode_anthropic_message, encode_anthropic_sse,
     parse_messages_request, to_anthropic_messages_request, AnthropicStreamToIr,
 };
-use crate::bridge::protocol::chat::ChatStreamToIr;
+use crate::bridge::protocol::chat::{
+    encode_chat_from_ir, encode_chat_sse, parse_chat_request, ChatStreamToIr,
+};
 use crate::bridge::protocol::responses::{
-    encode_responses_from_ir, parse_responses_request, responses_output_to_ir,
-    to_grok_chat_request, to_kimi_chat_request, to_responses_request, IrToResponsesSse,
-    ResponsesStreamToIr,
+    apply_official_codex_model, encode_responses_from_ir, parse_responses_request,
+    responses_output_to_ir, to_grok_chat_request, to_kimi_chat_request, to_responses_request,
+    IrToResponsesSse, ResponsesStreamToIr,
 };
 use crate::bridge::runtime::BridgeUpstreamProtocol;
 use crate::bridge::types::{BridgeEvent, BridgeRequest, IrEvent, ProtocolError};
@@ -82,6 +84,11 @@ impl<'a> ProtocolSelector<'a> {
 
     pub(super) fn serves_messages(self) -> bool {
         self.local_endpoint() == LocalEndpoint::Messages || self.is_grok_chat_bridge()
+    }
+
+    /// Grok / Kimi / DSH talk Chat Completions to loopback; Claude still uses Messages.
+    pub(super) fn serves_chat_completions(self) -> bool {
+        self.protocol == BridgeUpstreamProtocol::CodexResponsesOauth
     }
 
     fn chat_completions_body(self, request: &BridgeRequest) -> Value {
@@ -404,6 +411,149 @@ pub(super) async fn handle_messages(state: ListenerState, request: Request) -> R
     }
 }
 
+pub(super) async fn handle_chat_completions(state: ListenerState, request: Request) -> Response {
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let started = Instant::now();
+    if !has_valid_local_auth(request.headers(), &state.local_token) {
+        tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "chat", code = "unauthorized", status = 401_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge request rejected");
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "invalid_api_key",
+            "Invalid local bearer token.",
+            None,
+        );
+    }
+    if state.force_shutdown.is_cancelled() {
+        return stopping_response();
+    }
+    let permit = match state.admission.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "chat", code = "overloaded", status = 429_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge profile is at request capacity");
+            return error_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                "bridge_overloaded",
+                "The local bridge is temporarily busy.",
+                None,
+            );
+        }
+    };
+    let body = match read_request_json(request).await {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let request = match parse_chat_request(&body) {
+        Ok(request) => request,
+        Err(error) => {
+            log_protocol_error(&state, &request_id, started, &error);
+            return protocol_error_response(error);
+        }
+    };
+    let stream_requested = request.stream;
+    let protocol = state.upstream.protocol;
+    let mut upstream_body = match protocol {
+        BridgeUpstreamProtocol::CodexResponsesOauth => to_responses_request(&request),
+        BridgeUpstreamProtocol::KimiChatCompletions
+        | BridgeUpstreamProtocol::AnthropicMessages => {
+            unreachable!("chat completions handler owns Codex Responses OAuth")
+        }
+    };
+    apply_official_codex_model(
+        &mut upstream_body,
+        &request.model,
+        state.upstream.model.as_deref(),
+    );
+    let url = match state.upstream_url.join("responses") {
+        Ok(url) => url,
+        Err(_) => {
+            state.record_upstream_failure();
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "upstream_error",
+                "The upstream model provider is unavailable.",
+                None,
+            );
+        }
+    };
+    let builder = state
+        .client
+        .post(url)
+        .json(&upstream_body)
+        .bearer_auth(state.upstream.auth.token());
+    let upstream = tokio::select! {
+        _ = state.force_shutdown.cancelled() => return stopping_response(),
+        result = tokio::time::timeout(
+            UPSTREAM_RESPONSE_HEADER_TIMEOUT,
+            builder.send(),
+        ) => match result {
+            Ok(result) => result,
+            Err(_) => {
+                tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "header_timeout", status = 504_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream response headers timed out");
+                state.record_upstream_failure();
+                return error_response(
+                    StatusCode::GATEWAY_TIMEOUT,
+                    "upstream_timeout",
+                    "The upstream model provider timed out.",
+                    None,
+                );
+            }
+        },
+    };
+    let response = match upstream {
+        Ok(response) => response,
+        Err(_) => {
+            tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "unavailable", status = 502_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream unavailable");
+            state.record_upstream_failure();
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "upstream_unavailable",
+                "The upstream model provider is unavailable.",
+                None,
+            );
+        }
+    };
+    if !response.status().is_success() {
+        let status = response.status();
+        let retry_after = response.headers().get(header::RETRY_AFTER).cloned();
+        let local_status = if status == StatusCode::TOO_MANY_REQUESTS {
+            StatusCode::TOO_MANY_REQUESTS
+        } else {
+            StatusCode::BAD_GATEWAY
+        };
+        tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "upstream_status", status = status.as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream returned an error");
+        state.record_upstream_failure();
+        return error_response(
+            local_status,
+            "upstream_error",
+            "The upstream model provider returned an error.",
+            retry_after,
+        );
+    }
+    if stream_requested {
+        chat_stream_response(state, response, request_id, started, permit)
+    } else {
+        let force_shutdown = state.force_shutdown.clone();
+        tokio::select! {
+            _ = force_shutdown.cancelled() => stopping_response(),
+            result = tokio::time::timeout(
+                UPSTREAM_NON_STREAM_TIMEOUT,
+                chat_non_stream_response(state.clone(), response, request_id, started, permit),
+            ) => match result {
+                Ok(response) => response,
+                Err(_) => {
+                    state.record_upstream_failure();
+                    error_response(
+                        StatusCode::GATEWAY_TIMEOUT,
+                        "upstream_timeout",
+                        "The upstream model provider timed out.",
+                        None,
+                    )
+                }
+            },
+        }
+    }
+}
+
 pub(super) async fn messages_non_stream_response(
     state: ListenerState,
     response: reqwest::Response,
@@ -444,6 +594,48 @@ pub(super) async fn messages_non_stream_response(
         Ok(value) => {
             state.record_upstream_success();
             tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, op = "messages", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
+            Json(value).into_response()
+        }
+        Err(error) => {
+            state.record_upstream_failure();
+            log_protocol_error(&state, &request_id, started, &error);
+            protocol_error_response(error)
+        }
+    }
+}
+
+pub(super) async fn chat_non_stream_response(
+    state: ListenerState,
+    response: reqwest::Response,
+    request_id: String,
+    started: Instant,
+    _permit: OwnedSemaphorePermit,
+) -> Response {
+    let upstream_body = match read_bounded_upstream_json(response, &state.force_shutdown).await {
+        Ok(value) => value,
+        Err(UpstreamBodyError::Stopping) => return stopping_response(),
+        Err(UpstreamBodyError::InvalidOrTooLarge) => {
+            state.record_upstream_failure();
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "upstream_error",
+                "The upstream model provider returned an invalid response.",
+                None,
+            );
+        }
+    };
+    let translated = match state.upstream.protocol {
+        BridgeUpstreamProtocol::CodexResponsesOauth => responses_output_to_ir(&upstream_body)
+            .and_then(|ir| encode_chat_from_ir(&ir, Some(&request_id))),
+        BridgeUpstreamProtocol::KimiChatCompletions
+        | BridgeUpstreamProtocol::AnthropicMessages => {
+            unreachable!("chat completions handler owns Codex Responses OAuth")
+        }
+    };
+    match translated {
+        Ok(value) => {
+            state.record_upstream_success();
+            tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, op = "chat", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
             Json(value).into_response()
         }
         Err(error) => {
@@ -914,6 +1106,152 @@ pub(super) fn messages_stream_response(
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, op = "messages_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
+    };
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/event-stream"),
+    );
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    headers.insert(header::CONNECTION, HeaderValue::from_static("keep-alive"));
+    (StatusCode::OK, headers, Body::from_stream(output)).into_response()
+}
+
+pub(super) fn chat_stream_response(
+    state: ListenerState,
+    response: reqwest::Response,
+    request_id: String,
+    started: Instant,
+    permit: OwnedSemaphorePermit,
+) -> Response {
+    let profile_id = state.profile_id.clone();
+    let force_shutdown = state.force_shutdown.clone();
+    let observed = state.clone();
+    let bytes = response.bytes_stream();
+    let output = stream! {
+        let model = state.upstream.model.clone().unwrap_or_default();
+        let protocol = state.upstream.protocol;
+        let mut translator = MessagesStreamCodec::new(protocol, request_id.clone(), model);
+        let mut ir_events: Vec<IrEvent> = Vec::new();
+        let mut emitted_frames = 0usize;
+        let mut buffer = std::collections::VecDeque::new();
+        let mut upstream_bytes = 0usize;
+        let mut output_bytes = 0usize;
+        let _permit = permit;
+        let mut saw_done = false;
+        futures_util::pin_mut!(bytes);
+        'upstream: loop {
+            let next = tokio::select! {
+                _ = force_shutdown.cancelled() => {
+                    yield Ok::<_, Infallible>(stream_error_frame());
+                    return;
+                }
+                next = tokio::time::timeout(UPSTREAM_STREAM_IDLE_TIMEOUT, bytes.next()) => match next {
+                    Ok(next) => next,
+                    Err(_) => {
+                        observed.record_upstream_failure();
+                        yield Ok::<_, Infallible>(stream_error_frame());
+                        return;
+                    }
+                },
+            };
+            let Some(chunk) = next else { break; };
+            let Ok(chunk) = chunk else {
+                observed.record_upstream_failure();
+                yield Ok::<_, Infallible>(stream_error_frame());
+                return;
+            };
+            if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
+                observed.record_upstream_failure();
+                yield Ok::<_, Infallible>(stream_error_frame());
+                return;
+            }
+            upstream_bytes += chunk.len();
+            buffer.extend(chunk.iter().copied());
+            while let Some((frame_end, delimiter_len)) = sse_frame_end_deque(&buffer) {
+                let frame = buffer.drain(..frame_end).collect::<Vec<_>>();
+                for _ in 0..delimiter_len {
+                    let _ = buffer.pop_front();
+                }
+                let payload = match sse_data_payload(&frame) {
+                    Ok(payload) => payload,
+                    Err(()) => {
+                        observed.record_upstream_failure();
+                        yield Ok::<_, Infallible>(stream_error_frame());
+                        return;
+                    }
+                };
+                let Some(payload) = payload else { continue; };
+                if payload.is_empty() { continue; };
+                if payload == "[DONE]" {
+                    continue;
+                }
+                let Ok(value) = serde_json::from_str::<Value>(&payload) else {
+                    observed.record_upstream_failure();
+                    yield Ok::<_, Infallible>(stream_error_frame());
+                    return;
+                };
+                let events = match translator.push(&value) {
+                    Ok(events) => events,
+                    Err(_) => {
+                        observed.record_upstream_failure();
+                        yield Ok::<_, Infallible>(stream_error_frame());
+                        return;
+                    }
+                };
+                let completed = events
+                    .iter()
+                    .any(|event| matches!(event, IrEvent::MessageEnd { .. }));
+                ir_events.extend(events);
+                let frames = match encode_chat_sse(&ir_events, Some(&request_id)) {
+                    Ok(frames) => frames,
+                    Err(_) => {
+                        observed.record_upstream_failure();
+                        yield Ok::<_, Infallible>(stream_error_frame());
+                        return;
+                    }
+                };
+                for frame in frames.iter().skip(emitted_frames) {
+                    if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
+                        observed.record_upstream_failure();
+                        yield Ok::<_, Infallible>(stream_error_frame());
+                        return;
+                    }
+                    output_bytes += frame.len();
+                    yield Ok::<_, Infallible>(axum::body::Bytes::from(frame.clone()));
+                }
+                emitted_frames = frames.len();
+                if completed {
+                    saw_done = true;
+                    break 'upstream;
+                }
+            }
+        }
+        if !saw_done || !buffer.is_empty() {
+            observed.record_upstream_failure();
+            yield Ok::<_, Infallible>(stream_error_frame());
+            return;
+        }
+        ir_events.extend(translator.finish());
+        let frames = match encode_chat_sse(&ir_events, Some(&request_id)) {
+            Ok(frames) => frames,
+            Err(_) => {
+                observed.record_upstream_failure();
+                yield Ok::<_, Infallible>(stream_error_frame());
+                return;
+            }
+        };
+        for frame in frames.iter().skip(emitted_frames) {
+            if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
+                observed.record_upstream_failure();
+                yield Ok::<_, Infallible>(stream_error_frame());
+                return;
+            }
+            output_bytes += frame.len();
+            yield Ok::<_, Infallible>(axum::body::Bytes::from(frame.clone()));
+        }
+        observed.record_upstream_success();
+        tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, op = "chat_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
     };
     let mut headers = HeaderMap::new();
     headers.insert(
