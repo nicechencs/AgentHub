@@ -16,6 +16,8 @@ import {
   chatConnectionOptions,
   leftoverBindTicketId,
   leftoverProviderIsCurrent,
+  leftoverSwitchPlan,
+  pickLeftoverLocalRouteProvider,
   clampComposerTextareaHeight,
   COMPOSER_TEXTAREA_MAX_PX,
   COMPOSER_TEXTAREA_MIN_PX,
@@ -1122,6 +1124,78 @@ describe('chatConnectionOptions', () => {
   });
 });
 
+describe('pickLeftoverLocalRouteProvider', () => {
+  it('returns undefined for empty providers', () => {
+    expect(pickLeftoverLocalRouteProvider([])).toBeUndefined();
+  });
+
+  it('returns the only leftover provider', () => {
+    const leftover = providerRow({
+      id: 'agenthub_grok_bridge',
+      name: 'AgentHub Grok 本机路由',
+      configText: 'base_url = "http://127.0.0.1:43121/v1"',
+    });
+    expect(pickLeftoverLocalRouteProvider([leftover])).toBe(leftover);
+  });
+
+  it('prefers the current leftover even when another leftover has a later updatedAt', () => {
+    const olderCurrent = providerRow({
+      id: 'agenthub_codex_bridge_current',
+      name: 'AgentHub Codex 本机路由',
+      configText: 'base_url = "http://127.0.0.1:43121/v1"',
+      isCurrent: true,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const later = providerRow({
+      id: 'agenthub_codex_bridge_old',
+      name: 'AgentHub Codex 本机路由',
+      configText: 'base_url = "http://127.0.0.1:32123/v1"',
+      isCurrent: false,
+      updatedAt: '2026-08-19T00:00:00.000Z',
+    });
+    expect(pickLeftoverLocalRouteProvider([later, olderCurrent])).toBe(olderCurrent);
+  });
+
+  it('picks the smaller id via localeCompare when neither is current and updatedAt ties', () => {
+    const stamp = '2026-08-10T00:00:00.000Z';
+    const a = providerRow({
+      id: 'agenthub_bridge_a',
+      name: 'AgentHub 本机路由',
+      configText: 'base_url = "http://127.0.0.1:32123/v1"',
+      updatedAt: stamp,
+    });
+    const b = providerRow({
+      id: 'agenthub_bridge_b',
+      name: 'AgentHub 本机路由',
+      configText: 'base_url = "http://127.0.0.1:43121/v1"',
+      updatedAt: stamp,
+    });
+    expect(pickLeftoverLocalRouteProvider([b, a])).toBe(a);
+  });
+
+  it('sorts missing or empty updatedAt last vs a dated leftover', () => {
+    const dated = providerRow({
+      id: 'agenthub_bridge_dated',
+      name: 'AgentHub 本机路由',
+      configText: 'base_url = "http://127.0.0.1:32123/v1"',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    });
+    const missing = providerRow({
+      id: 'agenthub_bridge_missing',
+      name: 'AgentHub 本机路由',
+      configText: 'base_url = "http://127.0.0.1:43121/v1"',
+    });
+    const empty = providerRow({
+      id: 'agenthub_bridge_empty',
+      name: 'AgentHub 本机路由',
+      configText: 'base_url = "http://127.0.0.1:43122/v1"',
+      updatedAt: '',
+    });
+    expect(pickLeftoverLocalRouteProvider([missing, dated])).toBe(dated);
+    expect(pickLeftoverLocalRouteProvider([empty, dated])).toBe(dated);
+  });
+});
+
 describe('leftoverBindTicketId', () => {
   it('returns account:src-1 when a profile generatedProviderId matches', () => {
     expect(
@@ -1132,6 +1206,14 @@ describe('leftoverBindTicketId', () => {
     ).toBe('account:src-1');
   });
 
+  it('returns provider:p-1 for a matching sourceKind provider profile', () => {
+    expect(
+      leftoverBindTicketId('gen-1', [
+        { generatedProviderId: 'gen-1', sourceKind: 'provider', sourceId: 'p-1' },
+      ]),
+    ).toBe('provider:p-1');
+  });
+
   it('returns null when no profile matches', () => {
     expect(
       leftoverBindTicketId('gen-1', [
@@ -1139,6 +1221,43 @@ describe('leftoverBindTicketId', () => {
         { generatedProviderId: null, sourceKind: 'provider', sourceId: 'p-1' },
       ]),
     ).toBeNull();
+  });
+
+  it('returns null for empty profiles', () => {
+    expect(leftoverBindTicketId('gen-1', [])).toBeNull();
+  });
+});
+
+describe('leftoverSwitchPlan', () => {
+  const leftover = providerRow({
+    id: 'agenthub_grok_bridge',
+    name: 'AgentHub Grok 本机路由',
+    configText: 'base_url = "http://127.0.0.1:43121/v1"',
+  });
+
+  it('binds the matching leftover profile ticket', () => {
+    expect(
+      leftoverSwitchPlan(leftover, leftover.id, [
+        { generatedProviderId: leftover.id, sourceKind: 'account', sourceId: 'src-1' },
+      ]),
+    ).toEqual({ kind: 'bind', ticketId: 'account:src-1' });
+  });
+
+  it('is unavailable when leftover has no matching profile', () => {
+    expect(leftoverSwitchPlan(leftover, leftover.id, [])).toEqual({ kind: 'unavailable' });
+  });
+
+  it('uses native for a non-leftover API provider', () => {
+    const openai = providerRow({
+      id: 'openai-official',
+      name: 'OpenAI',
+      configText: 'model = "gpt-4"',
+    });
+    expect(leftoverSwitchPlan(openai, openai.id, [])).toEqual({ kind: 'native' });
+  });
+
+  it('uses native when provider is undefined', () => {
+    expect(leftoverSwitchPlan(undefined, 'missing', [])).toEqual({ kind: 'native' });
   });
 });
 
