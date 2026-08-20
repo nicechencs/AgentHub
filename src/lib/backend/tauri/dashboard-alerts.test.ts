@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createTranslator } from '@/lib/i18n';
 import type { AgentStatus } from '@/lib/types';
 import {
   __resetDismissedAlertsForTests,
@@ -157,5 +158,31 @@ describe('buildAlertsFromAgents', () => {
     expect(filterDismissedAlerts(changed).map((a) => a.id)).toEqual([
       'auth-expired:claude',
     ]);
+  });
+
+  it('uses Chinese action labels that match the 连接页 nav name', () => {
+    const alerts = buildAlertsFromAgents([
+      base({ agentId: 'claude', authStatus: 'expired' }),
+    ]);
+    expect(alerts[0]?.actionLabel).toBe('去连接页处理');
+    expect(alerts[0]?.message).toContain('登录已失效');
+  });
+
+  it('does not resurface dismissed alerts when language changes', () => {
+    const zh = createTranslator('zh');
+    const first = buildAlertsFromAgents(
+      [base({ agentId: 'claude', authStatus: 'expired' })],
+      zh,
+    );
+    dismissAlertLocal(first[0].id, first);
+    expect(filterDismissedAlerts(first)).toEqual([]);
+
+    const en = createTranslator('en');
+    const again = buildAlertsFromAgents(
+      [base({ agentId: 'claude', authStatus: 'expired' })],
+      en,
+    );
+    expect(filterDismissedAlerts(again)).toEqual([]);
+    expect(again[0]?.actionLabel).toBe('Fix in Connections');
   });
 });

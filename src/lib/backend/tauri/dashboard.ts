@@ -1,5 +1,6 @@
 import type { Backend, DashboardPort } from '@/lib/backend/contracts';
 import type { DashboardAlert } from '@/lib/types';
+import { createTranslator, loadStoredLanguage } from '@/lib/i18n';
 import { logger } from '@/lib/logger';
 import {
   buildAlertsFromAgents,
@@ -20,7 +21,7 @@ export function createTauriDashboardPort(backend: Backend): DashboardPort {
     async listAlerts(): Promise<DashboardAlert[]> {
       try {
         const agents = await backend.agent.listAgents();
-        lastBuilt = buildAlertsFromAgents(agents);
+        lastBuilt = buildAlertsFromAgents(agents, createTranslator(loadStoredLanguage()));
         return filterDismissedAlerts(lastBuilt);
       } catch (e) {
         log.warn('listAlerts failed; returning empty', e);

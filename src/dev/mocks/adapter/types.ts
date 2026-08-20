@@ -230,7 +230,7 @@ export const SAME_EDGE_UNWRITABLE_REASON =
 
 /** Keep lockstep with core `KIMI_NON_MEMBERSHIP_REASON`. */
 export const KIMI_NON_MEMBERSHIP_REASON =
-  '当前 Kimi 连接不是「Kimi Code 会员」来源。跨 Agent 适配仅支持会员：Connections 中选择 preset「Kimi Code 会员」，或配置端点包含 api.kimi.com/coding。开放平台（moonshot）与任意兼容 API 不会自动升级。当前不支持不等于连接失效。';
+  '当前 Kimi 连接不是「Kimi Code 会员」来源。跨 Agent 适配仅支持会员：连接页中选择 preset「Kimi Code 会员」，或配置端点包含 api.kimi.com/coding。开放平台（moonshot）与任意兼容 API 不会自动升级。当前不支持不等于连接失效。';
 
 /** Keep lockstep with core `KIMI_MEMBERSHIP_PRESET` / `KIMI_CODING_ENDPOINT_NEEDLE`. */
 export const KIMI_MEMBERSHIP_PRESET = 'kimi-code-membership';

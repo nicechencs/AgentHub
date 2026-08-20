@@ -7,7 +7,7 @@
  * |------|------|------|
  * | 常规页（App main） | 24 (`px-6`) | 24 (`py-6`) |
  * | TopBar | 24 (`px-6`) | h-10 |
- * | Skills 全高工作台 | 24 (`px-6`) | 列表 `py-3`；预览见 `pageEdgePx` |
+ * | Skills / Projects 全高工作台 | 24 (`px-6`) | 列表 `py-3`；预览见 `pageEdgePx` |
  * | Chat 全高 | 主区 chrome 16 (`px-4`) | 会话 rail 自管 |
  *
  * 层级（自上而下）：
@@ -20,7 +20,7 @@
 export const pageRhythm = {
   /** 常规页外壳：App 对非 fullBleed 路由施加 */
   pageShell: 'mx-auto max-w-content px-6 py-6',
-  /** 全高工作台水平 inset（Skills 页眉 / 列表）— 与常规页水平一致 */
+  /** 全高工作台水平 inset（Skills / Projects 页眉 / 列表）— 与常规页水平一致 */
   workbenchX: 'px-6',
   /** 全高工作台内容区垂直（列表） */
   workbenchY: 'py-3',
@@ -58,9 +58,9 @@ export const pageRhythm = {
 
 /** 像素常量：分栏/预览壳等无法用 Tailwind class 表达时 */
 export const pageEdgePx = {
-  /** 与 px-6 一致：常规页 / Skills 预览距窗边 */
+  /** 与 px-6 一致：常规页 / Skills / Projects 预览距窗边 */
   x: 24,
-  /** Skills 预览卡片上下距画布 */
+  /** Skills / Projects 预览卡片上下距画布 */
   previewY: 12,
   /** 分隔条约宽 */
   separator: 6,

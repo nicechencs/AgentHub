@@ -14,7 +14,19 @@ import {
   chatAgentPickerRows,
   chatConnectionKind,
   chatConnectionOptions,
+  leftoverBindTicketId,
+  leftoverBindTicketIdAmong,
   leftoverProviderIsCurrent,
+  leftoverSwitchPlan,
+  pickLeftoverLocalRouteProvider,
+  clampComposerTextareaHeight,
+  COMPOSER_TEXTAREA_MAX_PX,
+  COMPOSER_TEXTAREA_MIN_PX,
+  composerTextareaMeasuredStyle,
+  composerTextareaOverflowY,
+  composerUsesCssFieldSizing,
+  chatTranscriptSurfaceClass,
+  chatComposerChromeClass,
   chatConnectionPickerView,
   connectionPickerCaption,
   isLeftoverLocalRouteProvider,
@@ -480,7 +492,7 @@ describe('blockerCopy', () => {
     });
     expect(blockerCopy(t, { kind: 'unconfiguredAuth', agentIds: ['grok'] })).toEqual({
       text: '会话包含未配置授权的 Agent，暂不能发送',
-      primaryAction: '去 Connections 页',
+      primaryAction: '去连接页',
     });
     expect(blockerCopy(t, { kind: 'noCwd' })).toEqual({
       text: '未设置工作目录 — Agent 需要在指定目录内工作',
@@ -721,7 +733,7 @@ describe('chatConnectionPickerView', () => {
     expect(view.currentLoginTitle).toBe('user@example.com');
     expect(view.currentLoginSubtitle).toBe('当前登录');
     expect(view.emptyHint).toBeNull();
-    expect(view.manageLabel).toBe('去 Connections 管理');
+    expect(view.manageLabel).toBe('去连接页管理');
   });
 
   it('keeps API provider name and model when that is the effective connection', () => {
@@ -738,7 +750,7 @@ describe('chatConnectionPickerView', () => {
     expect(view.label).toBe('api.example.com');
     expect(view.subtitle).toBe('sonnet');
     expect(view.currentLoginTitle).toBeNull();
-    expect(view.manageLabel).toBe('去 Connections 管理');
+    expect(view.manageLabel).toBe('去连接页管理');
   });
 
   it('prefers the bound account over a leftover provider row', () => {
@@ -805,7 +817,7 @@ describe('chatConnectionPickerView', () => {
     expect(view.kind).toBe('none');
     expect(view.label).toBe('未配置连接');
     expect(view.emptyHint).toBe('暂无连接');
-    expect(view.manageLabel).toBe('去 Connections 添加');
+    expect(view.manageLabel).toBe('去连接页添加');
   });
 
   it('replaces the chip label while switching', () => {
@@ -866,6 +878,27 @@ describe('chatConnectionOptions', () => {
     });
     expect(options[0].title).not.toContain('本机路由');
     expect(options[0].subtitle).not.toContain('本机路由');
+  });
+
+  it('does not treat a generic loopback API as leftover 本机路由', () => {
+    const localApi = providerRow({
+      id: 'litellm-local',
+      name: 'LiteLLM',
+      configText: 'base_url = "http://127.0.0.1:4000/v1"',
+    });
+    expect(isLeftoverLocalRouteProvider(localApi)).toBe(false);
+    const options = chatConnectionOptions(t, {
+      accounts: [],
+      providers: [localApi],
+    });
+    expect(options).toEqual([
+      expect.objectContaining({
+        kind: 'provider',
+        id: 'litellm-local',
+        title: 'LiteLLM',
+      }),
+    ]);
+    expect(options[0].title).not.toBe('本机路由');
   });
 
   it('labels leftover generated providers 本机路由, never 官方登录', () => {
@@ -1036,5 +1069,311 @@ describe('chatConnectionOptions', () => {
     expect(official[0].subtitle).toBe('官方登录');
     expect(official[0].isCurrent).toBe(false);
     expect(options.filter((row) => row.kind === 'provider')).toHaveLength(1);
+  });
+
+  it('collapses leftover providers to the current leftover', () => {
+    const options = chatConnectionOptions(t, {
+      accounts: [
+        oauthAccount({
+          id: 'codex-live-1',
+          email: 'user@openai.com',
+          isCurrent: true,
+        }),
+      ],
+      providers: [
+        providerRow({
+          id: 'agenthub_codex_bridge_old',
+          name: 'AgentHub Codex 本机路由',
+          configText: 'base_url = "http://127.0.0.1:32123/v1"',
+          isCurrent: false,
+          updatedAt: '2026-08-19T00:00:00.000Z',
+        }),
+        providerRow({
+          id: 'agenthub_codex_bridge_current',
+          name: 'AgentHub Codex 本机路由',
+          configText: 'base_url = "http://127.0.0.1:43121/v1"',
+          isCurrent: true,
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        }),
+      ],
+      connectionKind: 'api',
+    });
+    const leftovers = options.filter((row) => row.kind === 'provider');
+    expect(leftovers).toHaveLength(1);
+    expect(leftovers[0]).toMatchObject({
+      id: 'agenthub_codex_bridge_current',
+      title: '本机路由',
+      subtitle: null,
+      isCurrent: true,
+    });
+    expect(options.find((row) => row.kind === 'account')).toMatchObject({
+      title: 'user@openai.com',
+      isCurrent: false,
+    });
+  });
+
+  it('collapses leftover providers to the latest updatedAt when none is current', () => {
+    const options = chatConnectionOptions(t, {
+      accounts: [],
+      providers: [
+        providerRow({
+          id: 'agenthub_bridge_a',
+          name: 'AgentHub 本机路由',
+          configText: 'base_url = "http://127.0.0.1:32123/v1"',
+          updatedAt: '2026-08-01T00:00:00.000Z',
+        }),
+        providerRow({
+          id: 'openai-official',
+          name: 'OpenAI',
+          configText: 'model = "gpt-4"',
+        }),
+        providerRow({
+          id: 'agenthub_bridge_b',
+          name: 'AgentHub 本机路由',
+          configText: 'base_url = "http://127.0.0.1:43121/v1"',
+          updatedAt: '2026-08-10T00:00:00.000Z',
+        }),
+      ],
+    });
+    expect(options.map((row) => row.id)).toEqual(['openai-official', 'agenthub_bridge_b']);
+    expect(options[1]).toMatchObject({
+      kind: 'provider',
+      id: 'agenthub_bridge_b',
+      title: '本机路由',
+      subtitle: null,
+      isCurrent: false,
+    });
+  });
+});
+
+describe('pickLeftoverLocalRouteProvider', () => {
+  it('returns undefined for empty providers', () => {
+    expect(pickLeftoverLocalRouteProvider([])).toBeUndefined();
+  });
+
+  it('returns the only leftover provider', () => {
+    const leftover = providerRow({
+      id: 'agenthub_grok_bridge',
+      name: 'AgentHub Grok 本机路由',
+      configText: 'base_url = "http://127.0.0.1:43121/v1"',
+    });
+    expect(pickLeftoverLocalRouteProvider([leftover])).toBe(leftover);
+  });
+
+  it('prefers the current leftover even when another leftover has a later updatedAt', () => {
+    const olderCurrent = providerRow({
+      id: 'agenthub_codex_bridge_current',
+      name: 'AgentHub Codex 本机路由',
+      configText: 'base_url = "http://127.0.0.1:43121/v1"',
+      isCurrent: true,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const later = providerRow({
+      id: 'agenthub_codex_bridge_old',
+      name: 'AgentHub Codex 本机路由',
+      configText: 'base_url = "http://127.0.0.1:32123/v1"',
+      isCurrent: false,
+      updatedAt: '2026-08-19T00:00:00.000Z',
+    });
+    expect(pickLeftoverLocalRouteProvider([later, olderCurrent])).toBe(olderCurrent);
+  });
+
+  it('picks the smaller id via localeCompare when neither is current and updatedAt ties', () => {
+    const stamp = '2026-08-10T00:00:00.000Z';
+    const a = providerRow({
+      id: 'agenthub_bridge_a',
+      name: 'AgentHub 本机路由',
+      configText: 'base_url = "http://127.0.0.1:32123/v1"',
+      updatedAt: stamp,
+    });
+    const b = providerRow({
+      id: 'agenthub_bridge_b',
+      name: 'AgentHub 本机路由',
+      configText: 'base_url = "http://127.0.0.1:43121/v1"',
+      updatedAt: stamp,
+    });
+    expect(pickLeftoverLocalRouteProvider([b, a])).toBe(a);
+  });
+
+  it('sorts missing or empty updatedAt last vs a dated leftover', () => {
+    const dated = providerRow({
+      id: 'agenthub_bridge_dated',
+      name: 'AgentHub 本机路由',
+      configText: 'base_url = "http://127.0.0.1:32123/v1"',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    });
+    const missing = providerRow({
+      id: 'agenthub_bridge_missing',
+      name: 'AgentHub 本机路由',
+      configText: 'base_url = "http://127.0.0.1:43121/v1"',
+    });
+    const empty = providerRow({
+      id: 'agenthub_bridge_empty',
+      name: 'AgentHub 本机路由',
+      configText: 'base_url = "http://127.0.0.1:43122/v1"',
+      updatedAt: '',
+    });
+    expect(pickLeftoverLocalRouteProvider([missing, dated])).toBe(dated);
+    expect(pickLeftoverLocalRouteProvider([empty, dated])).toBe(dated);
+  });
+});
+
+describe('leftoverBindTicketId', () => {
+  it('returns account:src-1 when a profile generatedProviderId matches', () => {
+    expect(
+      leftoverBindTicketId('gen-1', [
+        { generatedProviderId: 'other', sourceKind: 'provider', sourceId: 'p-1' },
+        { generatedProviderId: 'gen-1', sourceKind: 'account', sourceId: 'src-1' },
+      ]),
+    ).toBe('account:src-1');
+  });
+
+  it('returns provider:p-1 for a matching sourceKind provider profile', () => {
+    expect(
+      leftoverBindTicketId('gen-1', [
+        { generatedProviderId: 'gen-1', sourceKind: 'provider', sourceId: 'p-1' },
+      ]),
+    ).toBe('provider:p-1');
+  });
+
+  it('returns null when no profile matches', () => {
+    expect(
+      leftoverBindTicketId('gen-1', [
+        { generatedProviderId: 'other', sourceKind: 'account', sourceId: 'src-1' },
+        { generatedProviderId: null, sourceKind: 'provider', sourceId: 'p-1' },
+      ]),
+    ).toBeNull();
+  });
+
+  it('returns null for empty profiles', () => {
+    expect(leftoverBindTicketId('gen-1', [])).toBeNull();
+  });
+
+  it('tries sibling leftover ids when the clicked row is not the live projection', () => {
+    expect(
+      leftoverBindTicketIdAmong(
+        'stale-leftover',
+        ['stale-leftover', 'live-leftover'],
+        [
+          { generatedProviderId: 'live-leftover', sourceKind: 'account', sourceId: 'src-1' },
+        ],
+      ),
+    ).toBe('account:src-1');
+  });
+});
+
+describe('leftoverSwitchPlan', () => {
+  const leftover = providerRow({
+    id: 'agenthub_grok_bridge',
+    name: 'AgentHub Grok 本机路由',
+    configText: 'base_url = "http://127.0.0.1:43121/v1"',
+  });
+
+  it('binds the matching leftover profile ticket', () => {
+    expect(
+      leftoverSwitchPlan(leftover, leftover.id, [
+        { generatedProviderId: leftover.id, sourceKind: 'account', sourceId: 'src-1' },
+      ]),
+    ).toEqual({ kind: 'bind', ticketId: 'account:src-1' });
+  });
+
+  it('is unavailable when leftover has no matching profile', () => {
+    expect(leftoverSwitchPlan(leftover, leftover.id, [])).toEqual({ kind: 'unavailable' });
+  });
+
+  it('uses native for a non-leftover API provider', () => {
+    const openai = providerRow({
+      id: 'openai-official',
+      name: 'OpenAI',
+      configText: 'model = "gpt-4"',
+    });
+    expect(leftoverSwitchPlan(openai, openai.id, [])).toEqual({ kind: 'native' });
+  });
+
+  it('uses native when provider is undefined', () => {
+    expect(leftoverSwitchPlan(undefined, 'missing', [])).toEqual({ kind: 'native' });
+  });
+
+  it('binds a sibling leftover when the clicked row is stale', () => {
+    expect(
+      leftoverSwitchPlan(leftover, leftover.id, [
+        { generatedProviderId: 'live-leftover', sourceKind: 'account', sourceId: 'src-1' },
+      ], [leftover.id, 'live-leftover']),
+    ).toEqual({ kind: 'bind', ticketId: 'account:src-1' });
+  });
+});
+
+describe('clampComposerTextareaHeight', () => {
+  it('keeps a short draft at the min row height', () => {
+    expect(clampComposerTextareaHeight(0)).toBe(COMPOSER_TEXTAREA_MIN_PX);
+    expect(clampComposerTextareaHeight(-12)).toBe(COMPOSER_TEXTAREA_MIN_PX);
+    expect(clampComposerTextareaHeight(COMPOSER_TEXTAREA_MIN_PX - 1)).toBe(COMPOSER_TEXTAREA_MIN_PX);
+    expect(clampComposerTextareaHeight(COMPOSER_TEXTAREA_MIN_PX)).toBe(COMPOSER_TEXTAREA_MIN_PX);
+  });
+
+  it('grows with content until the max, then caps', () => {
+    expect(clampComposerTextareaHeight(COMPOSER_TEXTAREA_MIN_PX + 1)).toBe(COMPOSER_TEXTAREA_MIN_PX + 1);
+    expect(clampComposerTextareaHeight(120)).toBe(120);
+    expect(clampComposerTextareaHeight(COMPOSER_TEXTAREA_MAX_PX - 1)).toBe(COMPOSER_TEXTAREA_MAX_PX - 1);
+    expect(clampComposerTextareaHeight(COMPOSER_TEXTAREA_MAX_PX)).toBe(COMPOSER_TEXTAREA_MAX_PX);
+    expect(clampComposerTextareaHeight(COMPOSER_TEXTAREA_MAX_PX + 80)).toBe(COMPOSER_TEXTAREA_MAX_PX);
+  });
+});
+
+describe('composerTextareaOverflowY', () => {
+  it('scrolls only after the cap', () => {
+    expect(composerTextareaOverflowY(0)).toBe('hidden');
+    expect(composerTextareaOverflowY(COMPOSER_TEXTAREA_MIN_PX)).toBe('hidden');
+    expect(composerTextareaOverflowY(COMPOSER_TEXTAREA_MAX_PX)).toBe('hidden');
+    expect(composerTextareaOverflowY(COMPOSER_TEXTAREA_MAX_PX + 1)).toBe('auto');
+  });
+});
+
+describe('composerTextareaMeasuredStyle', () => {
+  it('emits the clamped height and overflow the textarea should apply', () => {
+    expect(composerTextareaMeasuredStyle(24)).toEqual({
+      height: `${COMPOSER_TEXTAREA_MIN_PX}px`,
+      overflowY: 'hidden',
+    });
+    expect(composerTextareaMeasuredStyle(120)).toEqual({
+      height: '120px',
+      overflowY: 'hidden',
+    });
+    expect(composerTextareaMeasuredStyle(COMPOSER_TEXTAREA_MAX_PX + 40)).toEqual({
+      height: `${COMPOSER_TEXTAREA_MAX_PX}px`,
+      overflowY: 'auto',
+    });
+  });
+});
+
+describe('composerUsesCssFieldSizing', () => {
+  it('is false without CSS.supports', () => {
+    expect(composerUsesCssFieldSizing(null)).toBe(false);
+    expect(composerUsesCssFieldSizing({})).toBe(false);
+  });
+
+  it('follows CSS.supports for field-sizing: content', () => {
+    expect(composerUsesCssFieldSizing({ supports: () => true })).toBe(true);
+    expect(
+      composerUsesCssFieldSizing({
+        supports: (property, value) => property === 'field-sizing' && value === 'content',
+      }),
+    ).toBe(true);
+    expect(composerUsesCssFieldSizing({ supports: () => false })).toBe(false);
+  });
+});
+
+describe('chat transcript / composer surfaces', () => {
+  it('uses canvas when empty so the transcript matches the composer chrome', () => {
+    expect(chatTranscriptSurfaceClass(false)).toBe('bg-canvas');
+    expect(chatComposerChromeClass(false)).toBe('shrink-0 bg-canvas pb-4 pt-2');
+    expect(chatComposerChromeClass(false)).not.toContain('border-t');
+  });
+
+  it('uses panel for the transcript once messages exist, matching the input shell', () => {
+    expect(chatTranscriptSurfaceClass(true)).toBe('bg-panel');
+    expect(chatComposerChromeClass(true)).toBe(
+      'shrink-0 border-t border-border/60 bg-canvas pb-4 pt-2',
+    );
   });
 });

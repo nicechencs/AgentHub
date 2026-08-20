@@ -14,8 +14,10 @@ import {
   updateConversation,
 } from '@/lib/api/chat';
 import { listAccounts, switchAccount } from '@/lib/api/account';
+import { listAdapterProfiles } from '@/lib/api/adapter';
 import { listProviders, switchProvider } from '@/lib/api/provider';
 import { pickDirectory } from '@/lib/api/settings';
+import { bindTicket } from '@/lib/api/tickets';
 import { takeChatBootstrap } from '@/lib/chat-bootstrap';
 import { processKey, reduceProcessEvent, type ProcessMap } from '@/lib/chat-process';
 import type {
@@ -40,6 +42,8 @@ import {
   filterConversations,
   groupConversationsByDay,
   isChatAgentSelectable,
+  isLeftoverLocalRouteProvider,
+  leftoverSwitchPlan,
   newConversationDefaults,
   selectConversationAgent,
   retryTarget,
@@ -540,7 +544,24 @@ export function useChatPage() {
     if (!primaryAgent || switchingProvider || hiddenIds.has(primaryAgent)) return;
     setSwitchingProvider(true);
     try {
-      await switchProvider(primaryAgent, providerId);
+      const provider = providers.find((row) => row.id === providerId);
+      const leftoverIds = providers
+        .filter(isLeftoverLocalRouteProvider)
+        .map((row) => row.id);
+      const profiles =
+        provider && isLeftoverLocalRouteProvider(provider)
+          ? await listAdapterProfiles({ targetAgentId: primaryAgent })
+          : [];
+      const plan = leftoverSwitchPlan(provider, providerId, profiles, leftoverIds);
+      if (plan.kind === 'unavailable') {
+        toast({ title: t('chat.connection.leftoverUnavailable'), variant: 'danger' });
+        return;
+      }
+      if (plan.kind === 'bind') {
+        await bindTicket(plan.ticketId, primaryAgent);
+      } else {
+        await switchProvider(primaryAgent, providerId);
+      }
       await Promise.all([
         loadProviders(primaryAgent),
         loadAccounts(primaryAgent),

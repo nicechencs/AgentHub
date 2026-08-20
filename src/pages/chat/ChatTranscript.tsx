@@ -10,7 +10,7 @@ import type { ChatMessageStatus, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import type { TranslateFn } from '@/lib/i18n';
 import { formatDurationMs, type TurnGroup } from './chat-format';
-import { agentPickerLabel, turnComparisonChips } from './chat-model';
+import { agentPickerLabel, chatTranscriptSurfaceClass, turnComparisonChips } from './chat-model';
 import { ChatMessageBubble } from './ChatMessageBubble';
 
 export function ChatTranscript({
@@ -52,7 +52,14 @@ export function ChatTranscript({
   const lastTurn = turns[turns.length - 1]?.turn;
 
   return (
-    <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
+    <div
+      ref={scrollRef}
+      onScroll={onScroll}
+      className={cn(
+        'min-h-0 flex-1 overflow-y-auto',
+        chatTranscriptSurfaceClass(turns.length > 0),
+      )}
+    >
       {messagesLoading && turns.length === 0 ? (
         <div className="flex h-full flex-col justify-center p-6">
           <ListSkeleton rows={3} className="mx-auto w-full max-w-2xl" />

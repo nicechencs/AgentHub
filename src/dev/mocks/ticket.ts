@@ -2,6 +2,7 @@
  * Mock ticket wallet: aggregate accounts + providers → tickets;
  * is_current + profiles → bindings. Generated providers are excluded.
  * Keep lockstep with crates/agenthub-core TicketReadService derive rules.
+ * Generated projections and leftover 本机路由 providers are not tickets.
  */
 import {
   adapterCommandError,
@@ -262,6 +263,19 @@ function ticketId(kind: 'account' | 'provider', id: string): string {
   return `${kind}:${id}`;
 }
 
+const AGENTHUB_BRIDGE_SLUG = /agenthub_[^\s"'\\]*_bridge/i;
+
+function providerIsNotATicket(
+  provider: Provider,
+  generatedIds: ReadonlySet<string>,
+): boolean {
+  if (generatedIds.has(provider.id)) return true;
+  const meta = (provider as ClassifiableProvider).meta;
+  if (meta?.generatedBy === 'adapter') return true;
+  const haystack = `${provider.id}\n${provider.name}\n${provider.configText ?? ''}`;
+  return AGENTHUB_BRIDGE_SLUG.test(haystack);
+}
+
 function rejectIfProjection(
   ticketIdValue: string,
   sourceKind: 'account' | 'provider',
@@ -270,10 +284,8 @@ function rejectIfProjection(
 ): void {
   if (sourceKind !== 'provider') return;
   const generated = generatedProviderIds(resolver.listProfiles());
-  const provider = resolver.listProviders().find((row) => row.id === sourceId) as
-    | ClassifiableProvider
-    | undefined;
-  if (generated.has(sourceId) || provider?.meta?.generatedBy === 'adapter') {
+  const provider = resolver.listProviders().find((row) => row.id === sourceId);
+  if (provider && providerIsNotATicket(provider, generated)) {
     throw adapterCommandError({
       code: 'invalid_arg',
       message: `${PROJECTION_NOT_A_TICKET}: ${ticketIdValue}`,
@@ -390,7 +402,7 @@ function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
   const generatedIds = generatedProviderIds(profiles);
   const accounts = resolver.listAccounts();
   const allProviders = resolver.listProviders();
-  const ticketProviders = allProviders.filter((p) => !generatedIds.has(p.id));
+  const ticketProviders = allProviders.filter((p) => !providerIsNotATicket(p, generatedIds));
 
   const tickets: TicketView[] = [
     ...accounts.map(accountToTicket),
@@ -440,7 +452,12 @@ function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
       continue;
     }
     const tid = ticketId('provider', provider.id);
-    if (!ticketIds.has(tid)) continue;
+    if (!ticketIds.has(tid)) {
+      if (providerIsNotATicket(provider, generatedIds)) {
+        activeByAgent.delete(provider.agentId);
+      }
+      continue;
+    }
     activeByAgent.set(provider.agentId, {
       ticketId: tid,
       agentId: provider.agentId,

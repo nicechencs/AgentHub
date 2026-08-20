@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -49,6 +50,7 @@ export function Notice({
   onAction?: () => void;
   onDismiss?: () => void;
 }) {
+  const { t } = useI18n();
   const conf = TONE[tone];
   const Icon = conf.Icon;
 
@@ -74,7 +76,7 @@ export function Notice({
               type="button"
               onClick={onDismiss}
               className="rounded-btn p-1 text-muted hover:bg-hover hover:text-primary"
-              aria-label="关闭"
+              aria-label={t('common.close')}
             >
               <X className="h-3.5 w-3.5" />
             </button>

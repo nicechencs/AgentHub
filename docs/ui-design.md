@@ -117,7 +117,7 @@ Agent 品牌色（logo 点、图表系列；改 tokens.ts 的 AGENT_COLORS）:
 
 - 常规页：主区 `mx-auto max-w-content`（theme token = **1200px**）+ 内边距；含 TopBar。
 - **Chat 特例**：无 TopBar / 无 PageHeader，主区 `h-full` 全高铺满，不受 `max-w-content` 限制。
-- **Skills 特例**：保留页内 Header/Tabs，但与 Chat 一样走 `fullBleed`、主区 `h-full overflow-hidden`；列表与右侧预览在页内独立滚动，不受 `max-w-content` 限制。
+- **Skills / Projects 特例**：保留页内 Header，与 Chat 一样走 `fullBleed`、主区 `h-full overflow-hidden`；左侧列表与右侧预览在页内独立滚动，不受 `max-w-content` 限制。
 - 侧栏底部迷你状态条：品牌色圆点（数量随 `AGENTS`）+ 已安装计数，hover 显示各 agent 版本；有更新时圆点带黄环。折叠/展开态均允许换行，避免 agent 增多时溢出。
 
 ## 4. 页面设计
@@ -386,14 +386,13 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 导航：**项目树可展开会话**（同页内联，无需下钻）。删除 / 总结作用在会话上；Cursor 为 Partial（仅工作区目录，无 transcript，隐藏删除与总结）。
 
 ```
-┌─ Projects ─────────────────────────────────────────────────┐
-│ 树状展开本地会话                  [总结] [删除] [刷新]      │
-│ AgentTabStrip …   Claude · N 个项目                        │
-│ 搜索 [____________]                                         │
-│ ▸ app  2h前 · 2 会话 · 128KB   actualPath …               │
-│ ▼ other …                                                 │
-│     ☐ 会话标题  继续 / 删除                                │
-└────────────────────────────────────────────────────────────┘
+┌─ Projects (fullBleed) ────────────┬─┬──────────────────────┐
+│ 树状展开本地会话   [总结][删除][刷新]│┆│ 预览 chrome          │
+│ AgentTabStrip · 搜索               │┆│ 标题 · Agent · 收起   │
+│ ▸ app  2h前 · 2 会话 · 路径         │┆│                      │
+│ ▼ other …                         │┆│ 摘录按段还原成对话     │
+│     ☐ 会话标题  继续 / 删除         │┆│ footer: cwd / 路径    │
+└────────────────────────────────────┴─┴──────────────────────┘
 ```
 
 - **数据源**：只读扫描各 Agent 本地项目/会话布局（Adapter + `project_service`）；删除仅限 agent home 下已声明安全路径。各家目录与字段映射**不在 UI 文档展开**，以 core 实现为准。
@@ -402,6 +401,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - **隐藏 / 别名**：写在 AgentHub `data_dir/project_metadata.json`，不改原生日志；「显示隐藏项」开关可找回。
 - **删除**：二次确认；按 capability 隐藏不支持的 Agent。
 - **打开目录**：优先打开项目工作区路径；无工作区时打开存储路径；会话行可打开 cwd。复用 `open_path_in_file_manager`。
+- **分屏预览**：与 Skills 相同的全高工作台。左侧仍是原来的单行项目树；单击会话标题在右侧打开只读摘录预览，把 `getAgentProjectExcerpts` 按段还原成对话气泡。可拖宽、Esc / 收起关闭；同时只开一条。Cursor 无 transcript 时不可展开。
 - **在 Chat 继续**：sessionStorage bootstrap → `/chat?from=projects`（摘录进 Hub Chat）。另可复制官方 TUI 续接命令。Claude/Codex 的 Hub Chat 在捕获官方 session 后，后续轮次走 print+resume。
 - **多选总结**：读取会话摘录 → bootstrap（无 transcript 的 Agent 不提供）。
 - **不**调用各 CLI 原生续会话能力。

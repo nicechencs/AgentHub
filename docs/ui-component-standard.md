@@ -247,8 +247,9 @@ src/components/connect/   # ConnectFlow / OAuth
 | 常规页 | 有 | `pageRhythm.pageShell` = `mx-auto max-w-content px-6 py-6`（1200） |
 | `/chat` | 无 | fullBleed，无 `PageHeader` |
 | `/skills` | 有 | fullBleed；`PageHeader size="compact"` + Tabs |
+| `/projects` | 有 | fullBleed；`PageHeader size="compact"` + 左侧列表 / 右侧会话预览 |
 
-区块自上而下：`PageHeader` → `chrome` / `chromeRow` → `lead`（环境条、Notice）→ `stack` / `blocks` → `PageSection`。Chat / Skills 自管布局，但水平 inset 须走 `pageRhythm` / `pageEdgePx`，禁止硬编码 `px-4`（Chat chrome 除外，它的真源是 `chatChromeX`）。
+区块自上而下：`PageHeader` → `chrome` / `chromeRow` → `lead`（环境条、Notice）→ `stack` / `blocks` → `PageSection`。Chat / Skills / Projects 自管布局，但水平 inset 须走 `pageRhythm` / `pageEdgePx`，禁止硬编码 `px-4`（Chat chrome 除外，它的真源是 `chatChromeX`）。
 
 导航专有名词保持英文（Dashboard / Agents / …）；页面标题与正文用中文。
 

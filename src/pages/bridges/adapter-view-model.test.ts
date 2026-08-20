@@ -232,7 +232,7 @@ describe('managed adapter profiles view model', () => {
     }));
     expect(guide?.summary).toContain('adapter.rollback_incomplete');
     expect(guide?.steps.some((step) => step.includes('不会修复配置不一致'))).toBe(true);
-    expect(guide?.steps.some((step) => step.includes('解除绑定后，到 Dashboard 重新连接'))).toBe(true);
+    expect(guide?.steps.some((step) => step.includes('解除绑定后，到总览重新连接'))).toBe(true);
 
     const directGuide = adapterProfileRecoveryGuide({
       route: 'native_endpoint',
