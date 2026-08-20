@@ -1,5 +1,8 @@
 use super::*;
-use crate::models::{Account, AccountKind, AdapterRoute, ADAPTER_CAPABILITY_MATRIX};
+use crate::models::{
+    Account, AccountKind, AdapterRoute, ADAPTER_CAPABILITY_MATRIX,
+    CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
+};
 use crate::services::adapter_bridge_service::live_bridge_rule_projections;
 use crate::services::adapter_route_constants::{
     DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_CODEX_BASE_URL,
@@ -1574,6 +1577,10 @@ fn every_published_rule_id_is_recognized_by_a_secret_matcher() {
 
     for cell in ADAPTER_CAPABILITY_MATRIX {
         if !(cell.can_apply && cell.gates.all_passed()) {
+            continue;
+        }
+        // Official Codex oauth on Codex is account switch — no generated provider.
+        if cell.rule_id == CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID {
             continue;
         }
         let secret_mode = expected_secret_mode(cell.route);
