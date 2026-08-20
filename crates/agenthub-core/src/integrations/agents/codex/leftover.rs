@@ -1,9 +1,10 @@
 //! Strip leftover AgentHub 本机路由 keys from official Codex config.
 //!
 //! Official ChatGPT OAuth uses auth.json. AgentHub 本机路由 writes
-//! `model_provider = agenthub_*_bridge` plus a 127.0.0.1 table. Switching
-//! back to official login must drop those keys or Codex sends the ChatGPT
-//! token at loopback and 401s.
+//! `model_provider = agenthub_*_bridge` plus a 127.0.0.1 table, and a Grok
+//! `model` / `model_reasoning_effort`. Switching back to 官方登录 must drop
+//! those keys or Codex sends the ChatGPT token at loopback (401) or rejects
+//! leftover `grok-*` models (400). Do not invent a ChatGPT model name.
 
 use std::path::Path;
 
@@ -38,38 +39,44 @@ pub fn live_config_is_bridge_leftover() -> bool {
 }
 
 /// Remove AgentHub leftover keys. Returns whether the document changed.
+///
+/// Bridge slugs may already be empty while a leftover `grok-*` model remains;
+/// 官方登录 still drops that model and leftover `model_reasoning_effort`.
 pub fn strip_bridge_leftovers_in_doc(doc: &mut DocumentMut) -> bool {
     let slugs: Vec<String> = leftover_slugs(doc).collect();
-    if slugs.is_empty() {
-        return clear_apikey_auth_preference(doc);
-    }
-
     let mut changed = false;
-    let top = doc
-        .get("model_provider")
-        .and_then(|item| item.as_str())
-        .map(str::to_string);
-    if top.as_deref().is_some_and(is_leftover_slug) {
-        doc.remove("model_provider");
-        changed = true;
-    }
-    if clear_apikey_auth_preference(doc) {
-        changed = true;
-    }
-    if let Some(providers) = doc
-        .get_mut("model_providers")
-        .and_then(|item| item.as_table_like_mut())
-    {
-        for slug in &slugs {
-            if providers.remove(slug).is_some() {
+
+    if !slugs.is_empty() {
+        let top = doc
+            .get("model_provider")
+            .and_then(|item| item.as_str())
+            .map(str::to_string);
+        if top.as_deref().is_some_and(is_leftover_slug) {
+            doc.remove("model_provider");
+            changed = true;
+        }
+        if let Some(providers) = doc
+            .get_mut("model_providers")
+            .and_then(|item| item.as_table_like_mut())
+        {
+            for slug in &slugs {
+                if providers.remove(slug).is_some() {
+                    changed = true;
+                }
+            }
+            if providers.is_empty() {
+                drop(providers);
+                doc.remove("model_providers");
                 changed = true;
             }
         }
-        if providers.is_empty() {
-            drop(providers);
-            doc.remove("model_providers");
-            changed = true;
-        }
+    }
+
+    if clear_apikey_auth_preference(doc) {
+        changed = true;
+    }
+    if clear_leftover_grok_model_keys(doc) {
+        changed = true;
     }
     changed
 }
@@ -180,6 +187,33 @@ fn clear_apikey_auth_preference(doc: &mut DocumentMut) -> bool {
     }
     doc.remove("preferred_auth_method");
     true
+}
+
+fn is_leftover_grok_model(model: &str) -> bool {
+    model.trim().starts_with("grok-")
+}
+
+/// Drop leftover Grok `model` (`grok-*`) and `model_reasoning_effort`.
+/// Keep official `gpt-*` models, `mcp_servers`, and `disable_response_storage`.
+fn clear_leftover_grok_model_keys(doc: &mut DocumentMut) -> bool {
+    let mut changed = false;
+    let model = doc
+        .get("model")
+        .and_then(|item| item.as_str())
+        .map(str::to_string);
+    if model.as_deref().is_some_and(is_leftover_grok_model) {
+        doc.remove("model");
+        changed = true;
+    }
+    let leftover_reasoning = match model.as_deref() {
+        Some(value) => is_leftover_grok_model(value),
+        None => true,
+    };
+    if leftover_reasoning && doc.get("model_reasoning_effort").is_some() {
+        doc.remove("model_reasoning_effort");
+        changed = true;
+    }
+    changed
 }
 
 fn content_has_agenthub_bridge_marker(content: &str) -> bool {

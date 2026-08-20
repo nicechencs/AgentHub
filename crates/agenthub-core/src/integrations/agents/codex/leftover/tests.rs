@@ -16,7 +16,7 @@ command = "keep"
 "#;
 
 #[test]
-fn strip_drops_agenthub_bridge_and_apikey_pref_but_keeps_mcp() {
+fn strip_drops_agenthub_bridge_grok_model_and_apikey_pref_but_keeps_mcp() {
     let mut doc = LEFTOVER.parse::<DocumentMut>().unwrap();
     assert!(toml_is_bridge_leftover(LEFTOVER));
     assert!(strip_bridge_leftovers_in_doc(&mut doc));
@@ -25,14 +25,40 @@ fn strip_drops_agenthub_bridge_and_apikey_pref_but_keeps_mcp() {
     assert!(!stored.contains("preferred_auth_method"));
     assert!(!stored.contains("agenthub_grok_bridge"));
     assert!(!stored.contains("127.0.0.1"));
+    assert!(!stored.contains("grok-4"));
+    assert!(!stored.contains("grok-4.5"));
+    assert!(!stored.contains("model_reasoning_effort"));
     assert!(stored.contains("[mcp_servers.keep]"));
-    assert!(stored.contains("model = \"grok-4\""));
+    assert!(stored.contains("disable_response_storage"));
     assert!(!toml_is_bridge_leftover(&stored));
+}
+
+#[test]
+fn strip_drops_leftover_grok_model_even_when_bridge_slugs_are_empty() {
+    let leftover = "model = \"grok-4.5\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n";
+    let mut doc = leftover.parse::<DocumentMut>().unwrap();
+    assert!(!toml_is_bridge_leftover(leftover));
+    assert!(strip_bridge_leftovers_in_doc(&mut doc));
+    let stored = doc.to_string();
+    assert!(!stored.contains("grok-4"));
+    assert!(!stored.contains("grok-4.5"));
+    assert!(!stored.contains("127.0.0.1"));
+    assert!(!stored.contains("model_reasoning_effort"));
+    assert!(stored.contains("disable_response_storage"));
 }
 
 #[test]
 fn strip_is_noop_for_clean_official_toml() {
     let official = "model = \"gpt-5.1-codex\"\n";
+    let mut doc = official.parse::<DocumentMut>().unwrap();
+    assert!(!toml_is_bridge_leftover(official));
+    assert!(!strip_bridge_leftovers_in_doc(&mut doc));
+    assert_eq!(doc.to_string(), official);
+}
+
+#[test]
+fn strip_keeps_official_gpt_model_and_reasoning() {
+    let official = "model = \"gpt-5.1-codex\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n";
     let mut doc = official.parse::<DocumentMut>().unwrap();
     assert!(!toml_is_bridge_leftover(official));
     assert!(!strip_bridge_leftovers_in_doc(&mut doc));
