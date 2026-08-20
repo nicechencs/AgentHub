@@ -14,6 +14,7 @@ import {
   chatAgentPickerRows,
   chatConnectionKind,
   chatConnectionOptions,
+  leftoverProviderIsCurrent,
   chatConnectionPickerView,
   connectionPickerCaption,
   isLeftoverLocalRouteProvider,
@@ -911,11 +912,11 @@ describe('chatConnectionOptions', () => {
     expect(oauth).toMatchObject({
       title: 'user@openai.com',
       subtitle: '官方登录',
-      isCurrent: true,
+      isCurrent: false,
     });
     expect(leftover).toMatchObject({
       title: '本机路由',
-      isCurrent: false,
+      isCurrent: true,
     });
     expect(options.map((row) => row.kind)).toEqual(['account', 'provider']);
   });
@@ -927,5 +928,113 @@ describe('chatConnectionOptions', () => {
     });
     expect(options[0].title).toBe('ChatGPT Plus');
     expect(options[0].subtitle).toBe('官方登录');
+  });
+
+  it('makes official oauth clickable when leftover local-route is current', () => {
+    const leftover = providerRow({
+      id: 'agenthub_grok_bridge',
+      name: 'AgentHub Grok 本机路由',
+      configText: 'base_url = "http://127.0.0.1:43121/v1"',
+      isCurrent: true,
+    });
+    expect(leftoverProviderIsCurrent([leftover])).toBe(true);
+    const options = chatConnectionOptions(t, {
+      accounts: [
+        oauthAccount({
+          id: 'codex-live-1',
+          email: '41375197@qq.com',
+          isCurrent: true,
+        }),
+      ],
+      providers: [leftover],
+      connectionKind: 'api',
+    });
+    const oauth = options.find((row) => row.kind === 'account');
+    const route = options.find((row) => row.kind === 'provider');
+    expect(oauth).toMatchObject({
+      title: '41375197@qq.com',
+      isCurrent: false,
+    });
+    expect(route).toMatchObject({
+      title: '本机路由',
+      isCurrent: true,
+    });
+    expect(oauth?.title).not.toContain('本机路由');
+  });
+
+  it('switch-back marks official current and leftover not current', () => {
+    const leftover = providerRow({
+      id: 'agenthub_grok_bridge',
+      name: 'AgentHub Grok 本机路由',
+      configText: 'base_url = "http://127.0.0.1:43121/v1"',
+      isCurrent: false,
+    });
+    expect(leftoverProviderIsCurrent([leftover])).toBe(false);
+    const options = chatConnectionOptions(t, {
+      accounts: [
+        oauthAccount({
+          id: 'codex-live-1',
+          email: '41375197@qq.com',
+          isCurrent: true,
+        }),
+      ],
+      providers: [leftover],
+      connectionKind: 'account',
+    });
+    const oauth = options.find((row) => row.kind === 'account');
+    const route = options.find((row) => row.kind === 'provider');
+    expect(oauth).toMatchObject({
+      title: '41375197@qq.com',
+      subtitle: '官方登录',
+      isCurrent: true,
+    });
+    expect(route).toMatchObject({
+      title: '本机路由',
+      isCurrent: false,
+    });
+    expect(oauth?.title).not.toContain('本机路由');
+    expect(oauth?.subtitle).not.toContain('本机路由');
+    const chip = chatConnectionPickerView(t, {
+      primaryAgent: 'codex',
+      status: status('codex', true, false, {
+        effectiveKind: 'account',
+        effectiveLabel: '41375197@qq.com',
+      }),
+    });
+    expect(chip.label).toBe('41375197@qq.com');
+    expect(chip.label).not.toContain('本机路由');
+  });
+
+  it('dedupes official oauth rows with the same email', () => {
+    const options = chatConnectionOptions(t, {
+      accounts: [
+        oauthAccount({
+          id: 'codex-live-1',
+          email: '41375197@qq.com',
+          isCurrent: false,
+        }),
+        oauthAccount({
+          id: 'codex-live-2',
+          email: '41375197@qq.com',
+          isCurrent: true,
+        }),
+      ],
+      providers: [
+        providerRow({
+          id: 'agenthub_grok_bridge',
+          name: 'AgentHub Grok 本机路由',
+          configText: 'base_url = "http://127.0.0.1:43121/v1"',
+          isCurrent: true,
+        }),
+      ],
+      connectionKind: 'api',
+    });
+    const official = options.filter((row) => row.kind === 'account');
+    expect(official).toHaveLength(1);
+    expect(official[0].id).toBe('codex-live-2');
+    expect(official[0].title).toBe('41375197@qq.com');
+    expect(official[0].subtitle).toBe('官方登录');
+    expect(official[0].isCurrent).toBe(false);
+    expect(options.filter((row) => row.kind === 'provider')).toHaveLength(1);
   });
 });

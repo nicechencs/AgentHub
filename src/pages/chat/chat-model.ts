@@ -496,25 +496,53 @@ export function officialOauthAccountTitle(account: Pick<Account, 'email' | 'labe
   return account.label;
 }
 
+function officialOauthDedupeKey(account: Pick<Account, 'email' | 'identityLabel' | 'label' | 'id'>): string {
+  const key = account.email?.trim() || account.identityLabel?.trim() || account.label.trim() || account.id;
+  return key.toLowerCase();
+}
+
+export function leftoverProviderIsCurrent(providers: readonly Provider[]): boolean {
+  return providers.some((provider) => provider.isCurrent && isLeftoverLocalRouteProvider(provider));
+}
+
+function officialOauthWinners(accounts: readonly Account[]): Account[] {
+  const winners: Account[] = [];
+  const indexByKey = new Map<string, number>();
+  for (const account of accounts) {
+    if (account.kind !== 'oauth') continue;
+    const key = officialOauthDedupeKey(account);
+    const existing = indexByKey.get(key);
+    if (existing == null) {
+      indexByKey.set(key, winners.length);
+      winners.push(account);
+      continue;
+    }
+    if (account.isCurrent && !winners[existing].isCurrent) {
+      winners[existing] = account;
+    }
+  }
+  return winners;
+}
+
 /**
- * Chat 切换连接 options: official oauth accounts and provider rows as
- * separate entries. Leftover 本机路由 stays 本机路由; oauth stays 官方登录.
+ * Chat switch-connection options: official oauth and leftover local-route as
+ * separate entries. Leftover current wins the checkmark so official rows stay clickable.
  */
 export function chatConnectionOptions(t: TranslateFn, input: {
   accounts: readonly Account[];
   providers: readonly Provider[];
   connectionKind?: ChatConnectionPickerKind;
 }): ChatConnectionOption[] {
-  const preferAccount = input.connectionKind === 'account';
+  const leftoverCurrent = leftoverProviderIsCurrent(input.providers);
+  const preferAccount = input.connectionKind === 'account' && !leftoverCurrent;
   const options: ChatConnectionOption[] = [];
-  for (const account of input.accounts) {
-    if (account.kind !== 'oauth') continue;
+  for (const account of officialOauthWinners(input.accounts)) {
     options.push({
       kind: 'account',
       id: account.id,
       title: officialOauthAccountTitle(account),
       subtitle: t('kind.oauth'),
-      isCurrent: account.isCurrent,
+      isCurrent: leftoverCurrent ? false : account.isCurrent,
     });
   }
   for (const provider of input.providers) {
@@ -524,7 +552,7 @@ export function chatConnectionOptions(t: TranslateFn, input: {
       id: provider.id,
       title: leftover ? formatLocalRouteLabel(undefined, t) : provider.name,
       subtitle: leftover ? null : extractModel(provider.configText),
-      isCurrent: preferAccount ? false : provider.isCurrent,
+      isCurrent: leftoverCurrent ? leftover && provider.isCurrent : preferAccount ? false : provider.isCurrent,
     });
   }
   return options;
