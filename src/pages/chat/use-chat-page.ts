@@ -27,6 +27,7 @@ import type {
 } from '@/lib/types';
 import { extractModel, groupByTurn } from './chat-format';
 import {
+  agentChatEnvReady,
   agentHasConfiguredAuth,
   agentPickerLabel as agentPickerLabelOf,
   chatAgentPickerRows,
@@ -123,7 +124,7 @@ export function useChatPage() {
   const envNotReadyIds = useMemo(
     () =>
       new Set(
-        agentStatus.filter((a) => a.installed && a.envReady === false).map((a) => a.agentId),
+        agentStatus.filter((a) => a.installed && !agentChatEnvReady(a)).map((a) => a.agentId),
       ),
     [agentStatus],
   );

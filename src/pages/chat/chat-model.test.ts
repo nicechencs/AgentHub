@@ -610,10 +610,12 @@ describe('agentHasConfiguredAuth / picker rows', () => {
     ).toBe(false);
   });
 
-  it('isChatAgentSelectable treats omitted or true envReady as ready, and false as blocked', () => {
+  it('isChatAgentSelectable only treats Pi envReady=false as blocked', () => {
     expect(isChatAgentSelectable(status('claude', true))).toBe(true);
     expect(isChatAgentSelectable(status('claude', true, false, { envReady: true }))).toBe(true);
+    expect(isChatAgentSelectable(status('claude', true, false, { envReady: false }))).toBe(true);
     expect(isChatAgentSelectable(status('pi', true, false, { envReady: false }))).toBe(false);
+    expect(isChatAgentSelectable(status('pi', true, false, { envReady: true }))).toBe(true);
   });
 
   it('omits hidden and uninstalled agents, and parks no-auth at the end as unselectable', () => {
@@ -636,11 +638,11 @@ describe('agentHasConfiguredAuth / picker rows', () => {
     expect(rows.map((r) => r.reason)).toEqual([null, null, 'noAuth']);
   });
 
-  it('keeps envReady-false Pi in the picker as unselectable envNotReady; Claude without envReady stays selectable', () => {
+  it('keeps envReady-false Pi unselectable; Claude envReady-false stays selectable', () => {
     const rows = chatAgentPickerRows({
       catalogIds: ['claude', 'pi'],
       agentStatus: [
-        status('claude', true),
+        status('claude', true, false, { envReady: false }),
         status('pi', true, false, { envReady: false }),
       ],
     });

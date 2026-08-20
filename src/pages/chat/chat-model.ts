@@ -24,9 +24,10 @@ export type ChatAgentPickerRow = {
   reason: ChatAgentPickerReason | null;
 };
 
-/** envReady omitted (old payload) is treated as ready; only false is blocked. */
-export function agentEnvReady(status: AgentStatus | undefined): boolean {
-  return status?.envReady !== false;
+/** Pi Chat needs Node 22.19 (`envReady`); other agents' envReady is install-channel only. */
+export function agentChatEnvReady(status: AgentStatus | undefined): boolean {
+  if (!status || status.agentId !== 'pi') return true;
+  return status.envReady !== false;
 }
 
 /** 已绑定登录 / API Key 才算配置了授权；未配置或未登录不可选。 */
@@ -44,7 +45,7 @@ export function agentHasConfiguredAuth(status: AgentStatus | undefined): boolean
 
 export function isChatAgentSelectable(status: AgentStatus | undefined): boolean {
   return Boolean(
-    status?.installed && !status.hidden && agentHasConfiguredAuth(status) && agentEnvReady(status),
+    status?.installed && !status.hidden && agentHasConfiguredAuth(status) && agentChatEnvReady(status),
   );
 }
 
@@ -60,7 +61,7 @@ export function chatAgentPickerRows(input: {
   for (const id of input.catalogIds) {
     const status = byId.get(id);
     if (status?.installed !== true || status.hidden) continue;
-    const envNotReady = !agentEnvReady(status);
+    const envNotReady = !agentChatEnvReady(status);
     const noAuth = !agentHasConfiguredAuth(status);
     const reason: ChatAgentPickerReason | null = envNotReady
       ? 'envNotReady'
