@@ -772,15 +772,16 @@ fn responses_sse_to_ir_to_anthropic_sse_tool_call_deltas() {
 }
 
 #[test]
-fn anthropic_thinking_configuration_fails_closed() {
-    let error = parse_messages_request(&json!({
+fn anthropic_thinking_configuration_is_dropped() {
+    let request = parse_messages_request(&json!({
         "model": "gpt-5",
         "max_tokens": 32,
         "messages": [{ "role": "user", "content": "hi" }],
         "thinking": { "type": "enabled", "budget_tokens": 1024 }
     }))
-    .expect_err("thinking must not be silently dropped");
-    assert_eq!(error.code, "unsupported_thinking");
+    .expect("thinking configuration must be ignored so Claude Code ping is not 400");
+    assert_eq!(request.model, "gpt-5");
+    assert!(request.passthrough.get("thinking").is_none());
 }
 
 #[test]
