@@ -41,6 +41,7 @@ import {
   currentTargetAgentId,
   eligibilityOf,
   excludeOwnAgentTargets,
+  isOfficialCodexOauthAccount,
   fanoutRequestsForAgent,
   fanoutRequestsForSource,
   findOption,
@@ -189,9 +190,16 @@ export function ConnectFlowDialog({
     const ids = AGENT_IDS.length > 0 ? [...AGENT_IDS] : uniquePoolAgentIds(pool.accounts, pool.providers);
     return ids.filter((id) => !hiddenSet.has(id));
   }, [pool.accounts, pool.providers, hiddenSet]);
+  const keepOwnCodexTarget = Boolean(
+    entry?.mode === 'for-source'
+    && entry.source.kind === 'account'
+    && isOfficialCodexOauthAccount(pool.accounts.find((item) => item.id === entry.source.id)),
+  );
   const targetAgentIds = React.useMemo(
-    () => (entry?.mode === 'for-source' ? excludeOwnAgentTargets(catalogIds, sourceAgentId) : []),
-    [entry, catalogIds, sourceAgentId],
+    () => (entry?.mode === 'for-source'
+      ? excludeOwnAgentTargets(catalogIds, sourceAgentId, keepOwnCodexTarget)
+      : []),
+    [entry, catalogIds, sourceAgentId, keepOwnCodexTarget],
   );
 
   const generatedSourceBlocked = Boolean(
@@ -421,6 +429,7 @@ export function ConnectFlowDialog({
                     type: 'select_target',
                     agentId,
                     sourceAgentId,
+                    allowOwnAgent: keepOwnCodexTarget,
                   })}
                   onRetryEligibility={(request) => fanout?.retry(request)}
                   onRetryResources={retryResources}
@@ -454,9 +463,10 @@ export function ConnectFlowDialog({
             <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
               {entryStale || state.step === 'select' ? (
                 <>
-                  <Button variant="secondary" disabled={busy} onClick={requestClose}>{t('common.cancel')}</Button>
+                  <Button type="button" variant="secondary" disabled={busy} onClick={requestClose}>{t('common.cancel')}</Button>
                   {!entryStale ? (
                     <Button
+                      type="button"
                       disabled={busy || !canEnterPreview(state, selectedOption, selectedEligibility)}
                       onClick={() => dispatch({
                         type: 'enter_preview',
@@ -471,10 +481,10 @@ export function ConnectFlowDialog({
               ) : null}
               {!entryStale && state.step === 'preview' ? (
                 <>
-                  <Button variant="secondary" disabled={busy} onClick={() => dispatch({ type: 'back_to_select' })}>
+                  <Button type="button" variant="secondary" disabled={busy} onClick={() => dispatch({ type: 'back_to_select' })}>
                     {t('connect.dialog.back')}
                   </Button>
-                  <Button disabled={!canConfirm(state) || previewInvalid} onClick={handleConfirm}>
+                  <Button type="button" disabled={!canConfirm(state) || previewInvalid} onClick={handleConfirm}>
                     {busy
                       ? (state.busy === 'switching' ? t('connect.dialog.switching') : t('connect.dialog.applying'))
                       : (state.previewKind === 'switch' ? t('connect.dialog.confirmSwitch') : t('connect.dialog.confirmApply'))}
@@ -484,11 +494,11 @@ export function ConnectFlowDialog({
               {!entryStale && state.step === 'result' ? (
                 <>
                   {canRetry(state) ? (
-                    <Button onClick={() => dispatch({ type: 'retry_from_result' })}>
+                    <Button type="button" onClick={() => dispatch({ type: 'retry_from_result' })}>
                       {t('chrome.error.retry')}
                     </Button>
                   ) : null}
-                  <Button variant="secondary" onClick={requestClose}>{t('connect.dialog.close')}</Button>
+                  <Button type="button" variant="secondary" onClick={requestClose}>{t('connect.dialog.close')}</Button>
                 </>
               ) : null}
             </DialogFooter>

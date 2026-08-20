@@ -45,6 +45,26 @@ fn kimi_claude_and_codex_cells_are_applicable() {
 }
 
 #[test]
+fn official_codex_oauth_can_apply_onto_codex() {
+    for credential in [
+        AdapterCredentialClass::OauthAuthJson,
+        AdapterCredentialClass::OauthOther,
+    ] {
+        let decision = decide_adapter_capability(
+            AdapterSourceProduct::CodexChatGptSubscription,
+            credential,
+            AgentId::Codex,
+        )
+        .public_surface();
+        assert_eq!(decision.route, AdapterRoute::NativeEndpoint);
+        assert!(decision.can_apply);
+        assert_eq!(decision.rule_id, Some(CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID));
+        assert_eq!(decision.reason, CODEX_SUBSCRIPTION_TO_CODEX_REASON);
+        assert!(!decision.reason.contains("本机路由"));
+    }
+}
+
+#[test]
 fn codex_oauth_to_claude_opens_only_the_responses_cell() {
     let decision = decide_adapter_capability(
         AdapterSourceProduct::CodexChatGptSubscription,
@@ -449,6 +469,19 @@ fn cursor_target_uses_no_writer_reason_not_source_copy() {
 }
 
 #[test]
+fn workbuddy_hears_no_protocol_so_codex_login_stays_closed() {
+    let decision = decide_adapter_capability(
+        AdapterSourceProduct::CodexChatGptSubscription,
+        AdapterCredentialClass::OauthAuthJson,
+        AgentId::WorkBuddy,
+    )
+    .public_surface();
+    assert_eq!(decision.route, AdapterRoute::Unsupported);
+    assert!(!decision.can_apply);
+    assert_eq!(decision.reason, PROTOCOL_MISMATCH_REASON);
+}
+
+#[test]
 fn kimi_to_grok_is_an_open_native_endpoint() {
     let decision = decide_adapter_capability(
         AdapterSourceProduct::KimiCodeMembership,
@@ -459,4 +492,102 @@ fn kimi_to_grok_is_an_open_native_endpoint() {
     assert_eq!(decision.route, AdapterRoute::NativeEndpoint);
     assert!(decision.can_apply);
     assert_eq!(decision.rule_id, Some("kimi-membership-to-grok-v1"));
+}
+
+#[test]
+fn grok_subscription_to_codex_is_open_local_bridge() {
+    let decision = decide_adapter_capability(
+        AdapterSourceProduct::XaiGrokSubscription,
+        AdapterCredentialClass::OauthOther,
+        AgentId::Codex,
+    )
+    .public_surface();
+    assert_eq!(decision.route, AdapterRoute::LocalBridge);
+    assert!(decision.can_apply);
+    assert_eq!(decision.rule_id, Some("grok-subscription-to-codex-v1"));
+    assert_eq!(decision.reason, GROK_SUBSCRIPTION_TO_CODEX_REASON);
+    assert_eq!(
+        decision.transport,
+        AdapterUpstreamTransport::LocalBridgeChatCompletions
+    );
+}
+
+#[test]
+fn codex_subscription_to_grok_kimi_dsh_is_open_local_bridge() {
+    for (target, rule_id, reason) in [
+        (
+            AgentId::Grok,
+            CODEX_SUBSCRIPTION_TO_GROK_RULE_ID,
+            CODEX_SUBSCRIPTION_TO_GROK_REASON,
+        ),
+        (
+            AgentId::Kimi,
+            CODEX_SUBSCRIPTION_TO_KIMI_RULE_ID,
+            CODEX_SUBSCRIPTION_TO_KIMI_REASON,
+        ),
+        (
+            AgentId::Dsh,
+            CODEX_SUBSCRIPTION_TO_DSH_RULE_ID,
+            CODEX_SUBSCRIPTION_TO_DSH_REASON,
+        ),
+    ] {
+        for credential in [
+            AdapterCredentialClass::OauthAuthJson,
+            AdapterCredentialClass::OauthOther,
+        ] {
+            let decision = decide_adapter_capability(
+                AdapterSourceProduct::CodexChatGptSubscription,
+                credential,
+                target,
+            )
+            .public_surface();
+            assert_eq!(decision.route, AdapterRoute::LocalBridge, "{target:?}");
+            assert!(decision.can_apply, "{target:?}");
+            assert_eq!(decision.rule_id, Some(rule_id), "{target:?}");
+            assert_eq!(decision.reason, reason, "{target:?}");
+            assert_eq!(
+                decision.transport,
+                AdapterUpstreamTransport::CodexResponsesOauth,
+                "{target:?}"
+            );
+            assert_eq!(
+                decision.protocol,
+                Some(AdapterTargetProtocol::OpenAiChatCompletions),
+                "{target:?}"
+            );
+            assert!(!decision.reason.contains("实验"));
+            assert!(!decision.reason.contains("未验证"));
+        }
+    }
+}
+
+#[test]
+fn grok_subscription_to_kimi_and_dsh_stay_closed_with_clear_reasons() {
+    let kimi = decide_adapter_capability(
+        AdapterSourceProduct::XaiGrokSubscription,
+        AdapterCredentialClass::OauthOther,
+        AgentId::Kimi,
+    )
+    .public_surface();
+    assert_eq!(kimi.route, AdapterRoute::Unsupported);
+    assert!(!kimi.can_apply);
+    assert_eq!(kimi.reason, GROK_SUBSCRIPTION_TO_KIMI_REASON);
+    assert!(
+        GROK_SUBSCRIPTION_TO_KIMI_REASON.contains("Codex 官方登录"),
+        "closed copy must name Codex official login as the supported upstream"
+    );
+
+    let dsh = decide_adapter_capability(
+        AdapterSourceProduct::XaiGrokSubscription,
+        AdapterCredentialClass::OauthOther,
+        AgentId::Dsh,
+    )
+    .public_surface();
+    assert_eq!(dsh.route, AdapterRoute::Unsupported);
+    assert!(!dsh.can_apply);
+    assert_eq!(dsh.reason, GROK_SUBSCRIPTION_TO_DSH_REASON);
+    assert!(
+        GROK_SUBSCRIPTION_TO_DSH_REASON.contains("Codex 官方登录"),
+        "closed copy must name Codex official login as the supported upstream"
+    );
 }

@@ -1418,6 +1418,182 @@ fn account_and_provider_current_are_mutually_exclusive() {
     assert_eq!(pool[0].id, provider.id);
 }
 
+const CODEX_LEFTOVER_TOML: &str = r#"model_provider = "agenthub_grok_bridge"
+model = "grok-4"
+preferred_auth_method = "apikey"
+
+[model_providers.agenthub_grok_bridge]
+name = "AgentHub Grok Route"
+base_url = "http://127.0.0.1:43121/v1"
+wire_api = "responses"
+"#;
+
+fn official_codex_oauth_credentials() -> serde_json::Value {
+    json!({
+        "format": "auth_json",
+        "body": {
+            "auth_mode": "chatgpt",
+            "OPENAI_API_KEY": null,
+            "tokens": {
+                "access_token": "at-official",
+                "refresh_token": "rt-official"
+            },
+            "last_refresh": "2026-08-20T00:00:00Z"
+        },
+        "email": "41375197@qq.com"
+    })
+}
+
+#[test]
+fn leftover_shaped_codex_live_does_not_throw_identity_conflict() {
+    let _home = crate::integrations::agents::codex::leftover::lock_codex_home();
+    let root = tempdir().unwrap();
+    let home = root.path().join("home");
+    let codex = home.join(".codex");
+    std::fs::create_dir_all(&codex).unwrap();
+    std::fs::write(codex.join("config.toml"), CODEX_LEFTOVER_TOML).unwrap();
+    std::fs::write(
+        codex.join("auth.json"),
+        r#"{ "OPENAI_API_KEY": "sk-leftover" }"#,
+    )
+    .unwrap();
+    let prev = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &codex);
+
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let path = root.path().join("live").join("auth.json");
+    let adapter = Arc::new(FakeAdapter::new(AgentId::Codex, path));
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Codex,
+        kind: AccountKind::Oauth,
+        credentials: json!({"format": "auth_json", "body": {"OPENAI_API_KEY": "sk-leftover"}}),
+        label_hint: None,
+        extra: json!({}),
+    });
+    let mut registry = AdapterRegistry::new();
+    registry.register(adapter.clone());
+    let svc = AccountService::with_live(db, registry, root.path().join("backups"));
+    svc.repo()
+        .create(&Account {
+            id: "codex-official".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "41375197@qq.com".into(),
+            credentials: official_codex_oauth_credentials(),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: true,
+            created_at: "2026-01-01 00:00:00.000000".into(),
+            updated_at: "2026-01-01 00:00:00.000000".into(),
+        })
+        .unwrap();
+
+    let live = adapter.read_account().unwrap();
+    let result = svc.validate_live_switch_identity(adapter.as_ref(), AgentId::Codex, &live);
+    match prev {
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
+    }
+    result.expect("leftover-shaped Codex live must not throw identity_conflict");
+}
+
+#[test]
+fn switch_official_from_leftover_live_does_not_identity_conflict() {
+    let _home = crate::integrations::agents::codex::leftover::lock_codex_home();
+    let root = tempdir().unwrap();
+    let home = root.path().join("home");
+    let codex = home.join(".codex");
+    std::fs::create_dir_all(&codex).unwrap();
+    std::fs::write(codex.join("config.toml"), CODEX_LEFTOVER_TOML).unwrap();
+    std::fs::write(
+        codex.join("auth.json"),
+        r#"{ "OPENAI_API_KEY": "sk-leftover" }"#,
+    )
+    .unwrap();
+    let prev = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &codex);
+
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let registry = crate::adapters::register_all();
+    let svc = AccountService::with_live(db.clone(), registry, root.path().join("backups"));
+
+    let official = svc
+        .repo()
+        .create(&Account {
+            id: "codex-official".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "41375197@qq.com".into(),
+            credentials: official_codex_oauth_credentials(),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: true,
+            created_at: "2026-01-01 00:00:00.000000".into(),
+            updated_at: "2026-01-01 00:00:00.000000".into(),
+        })
+        .unwrap();
+    crate::storage::ProviderRepo::new(db.clone())
+        .create(&crate::models::Provider {
+            id: "codex-leftover".into(),
+            agent_id: AgentId::Codex,
+            name: "AgentHub Grok Route".into(),
+            settings_config: json!({
+                "format": "toml",
+                "content": CODEX_LEFTOVER_TOML
+            }),
+            meta: json!({
+                "generatedBy": "adapter",
+                "adapterBridge": { "loopbackOnly": true }
+            }),
+            is_current: true,
+            created_at: "2026-01-01 00:00:00.000000".into(),
+            updated_at: "2026-01-01 00:00:00.000000".into(),
+        })
+        .unwrap();
+
+    let switched = svc.switch(&official.id, AgentId::Codex);
+    let config = std::fs::read_to_string(codex.join("config.toml")).unwrap();
+    let leftover_after = crate::storage::ProviderRepo::new(db.clone())
+        .get_by_id("codex-leftover")
+        .unwrap()
+        .unwrap();
+    let listed = svc.list(Some(AgentId::Codex)).unwrap();
+    let leftover_after_list = crate::storage::ProviderRepo::new(db)
+        .get_by_id("codex-leftover")
+        .unwrap()
+        .unwrap();
+    match prev {
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
+    }
+
+    let switched = switched.expect("switch to 官方登录 must not throw");
+    assert!(switched.account.is_current);
+    assert_eq!(switched.account.id, official.id);
+    assert!(
+        !leftover_after.is_current,
+        "activate_account must demote leftover 本机路由"
+    );
+    assert!(
+        !config.contains("agenthub_grok_bridge"),
+        "leftover keys must be stripped from live config.toml"
+    );
+    assert!(!config.contains("preferred_auth_method"));
+    assert!(!config.contains("127.0.0.1"));
+    assert_eq!(listed.iter().filter(|row| row.is_current).count(), 1);
+    assert!(
+        listed
+            .iter()
+            .find(|row| row.id == official.id)
+            .unwrap()
+            .is_current
+    );
+    assert!(
+        !leftover_after_list.is_current,
+        "list/sync must not re-promote leftover after official activate"
+    );
+}
+
 #[test]
 fn merge_dedup_delete_failure_is_not_reported_as_success() {
     use crate::storage::AccountRepo;

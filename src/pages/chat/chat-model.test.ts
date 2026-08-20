@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { agentDisplayName } from '@/config/agents';
 import { createTranslator } from '@/lib/i18n';
-import type { AgentId, AgentStatus, ChatMessage, Conversation } from '@/lib/types';
+import type { Account, AgentId, AgentStatus, ChatMessage, Conversation, Provider } from '@/lib/types';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { TurnGroup } from './chat-format';
 import {
@@ -13,8 +13,11 @@ import {
   chatAgentPickerEmptyKind,
   chatAgentPickerRows,
   chatConnectionKind,
+  chatConnectionOptions,
+  leftoverProviderIsCurrent,
   chatConnectionPickerView,
   connectionPickerCaption,
+  isLeftoverLocalRouteProvider,
   conversationResumeCommand,
   conversationTitle,
   cwdShortName,
@@ -204,28 +207,32 @@ describe('sendBlockers', () => {
     cwd: 'D:\\work',
   });
 
-  it('returns hiddenAgents before unconfiguredAuth before noCwd before sendingElsewhere', () => {
+  it('returns hiddenAgents before envNotReady before unconfiguredAuth before noCwd before sendingElsewhere', () => {
     const blockers = sendBlockers({
-      conversation: { ...base, cwd: null, agentIds: ['claude', 'kimi', 'grok'] },
+      conversation: { ...base, cwd: null, agentIds: ['claude', 'kimi', 'pi', 'grok'] },
       hiddenIds: new Set<AgentId>(['kimi']),
+      envNotReadyIds: new Set<AgentId>(['pi', 'kimi']),
       unconfiguredAuthIds: new Set<AgentId>(['grok']),
       sendingConversationId: 'other',
       sendingTitle: '别的会话',
     });
     expect(blockers.map((b) => b.kind)).toEqual([
       'hiddenAgents',
+      'envNotReady',
       'unconfiguredAuth',
       'noCwd',
       'sendingElsewhere',
     ]);
     expect(blockers[0]).toEqual({ kind: 'hiddenAgents', agentIds: ['kimi'] });
-    expect(blockers[1]).toEqual({ kind: 'unconfiguredAuth', agentIds: ['grok'] });
+    expect(blockers[1]).toEqual({ kind: 'envNotReady', agentIds: ['pi'] });
+    expect(blockers[2]).toEqual({ kind: 'unconfiguredAuth', agentIds: ['grok'] });
   });
 
-  it('does not list a hidden agent again as unconfiguredAuth', () => {
+  it('does not list a hidden agent again as envNotReady or unconfiguredAuth', () => {
     const blockers = sendBlockers({
       conversation: { ...base, agentIds: ['kimi'] },
       hiddenIds: new Set<AgentId>(['kimi']),
+      envNotReadyIds: new Set<AgentId>(['kimi']),
       unconfiguredAuthIds: new Set<AgentId>(['kimi']),
       sendingConversationId: null,
     });
@@ -467,6 +474,10 @@ describe('blockerCopy', () => {
       text: '会话包含已隐藏 Agent，暂不能发送',
       primaryAction: '去 Agents 页',
     });
+    expect(blockerCopy(t, { kind: 'envNotReady', agentIds: ['pi'] })).toEqual({
+      text: '会话包含运行环境未就绪的 Agent，暂不能发送',
+      primaryAction: '去 Agents 页',
+    });
     expect(blockerCopy(t, { kind: 'unconfiguredAuth', agentIds: ['grok'] })).toEqual({
       text: '会话包含未配置授权的 Agent，暂不能发送',
       primaryAction: '去 Connections 页',
@@ -488,6 +499,7 @@ describe('blockerCopy', () => {
 describe('blockerPrimaryTarget', () => {
   it('sends noCwd to the directory picker, not session settings', () => {
     expect(blockerPrimaryTarget({ kind: 'hiddenAgents' })).toBe('agents');
+    expect(blockerPrimaryTarget({ kind: 'envNotReady' })).toBe('agents');
     expect(blockerPrimaryTarget({ kind: 'unconfiguredAuth' })).toBe('connections');
     expect(blockerPrimaryTarget({ kind: 'noCwd' })).toBe('pick-directory');
     expect(blockerPrimaryTarget({ kind: 'sendingElsewhere' })).toBe('settings');
@@ -601,6 +613,14 @@ describe('agentHasConfiguredAuth / picker rows', () => {
     ).toBe(false);
   });
 
+  it('isChatAgentSelectable only treats Pi envReady=false as blocked', () => {
+    expect(isChatAgentSelectable(status('claude', true))).toBe(true);
+    expect(isChatAgentSelectable(status('claude', true, false, { envReady: true }))).toBe(true);
+    expect(isChatAgentSelectable(status('claude', true, false, { envReady: false }))).toBe(true);
+    expect(isChatAgentSelectable(status('pi', true, false, { envReady: false }))).toBe(false);
+    expect(isChatAgentSelectable(status('pi', true, false, { envReady: true }))).toBe(true);
+  });
+
   it('omits hidden and uninstalled agents, and parks no-auth at the end as unselectable', () => {
     const rows = chatAgentPickerRows({
       catalogIds: ['claude', 'codex', 'kimi', 'grok', 'pi'],
@@ -619,6 +639,35 @@ describe('agentHasConfiguredAuth / picker rows', () => {
     expect(rows.map((r) => r.id)).toEqual(['claude', 'pi', 'kimi']);
     expect(rows.map((r) => r.selectable)).toEqual([true, true, false]);
     expect(rows.map((r) => r.reason)).toEqual([null, null, 'noAuth']);
+  });
+
+  it('keeps envReady-false Pi unselectable; Claude envReady-false stays selectable', () => {
+    const rows = chatAgentPickerRows({
+      catalogIds: ['claude', 'pi'],
+      agentStatus: [
+        status('claude', true, false, { envReady: false }),
+        status('pi', true, false, { envReady: false }),
+      ],
+    });
+    expect(rows).toEqual([
+      { id: 'claude', selectable: true, reason: null },
+      { id: 'pi', selectable: false, reason: 'envNotReady' },
+    ]);
+  });
+
+  it('prefers envNotReady over noAuth when both would apply', () => {
+    const rows = chatAgentPickerRows({
+      catalogIds: ['pi'],
+      agentStatus: [
+        status('pi', true, false, {
+          envReady: false,
+          effectiveKind: 'none',
+          authStatus: 'none',
+          authHealth: 'missing',
+        }),
+      ],
+    });
+    expect(rows).toEqual([{ id: 'pi', selectable: false, reason: 'envNotReady' }]);
   });
 
   it('does not keep a selected hidden or uninstalled agent in the picker', () => {
@@ -768,5 +817,224 @@ describe('chatConnectionPickerView', () => {
     });
     expect(view.label).toBe('切换中…');
     expect(view.subtitle).toBeNull();
+  });
+});
+
+function oauthAccount(partial: Partial<Account> & Pick<Account, 'id'>): Account {
+  return {
+    agentId: 'codex',
+    kind: 'oauth',
+    label: partial.label ?? partial.email ?? partial.id,
+    isCurrent: false,
+    tokenValid: true,
+    ...partial,
+  };
+}
+
+function providerRow(partial: Partial<Provider> & Pick<Provider, 'id' | 'name'>): Provider {
+  return {
+    agentId: 'codex',
+    preset: 'custom',
+    configText: '{}',
+    configFormat: 'toml',
+    isCurrent: false,
+    ...partial,
+  };
+}
+
+describe('chatConnectionOptions', () => {
+  it('labels official oauth with email / 官方登录, not 本机路由', () => {
+    const options = chatConnectionOptions(t, {
+      accounts: [
+        oauthAccount({
+          id: 'codex-live-1',
+          email: 'user@openai.com',
+          label: 'codex-live-1',
+          isCurrent: true,
+        }),
+      ],
+      providers: [],
+      connectionKind: 'account',
+    });
+    expect(options).toHaveLength(1);
+    expect(options[0]).toMatchObject({
+      kind: 'account',
+      id: 'codex-live-1',
+      title: 'user@openai.com',
+      subtitle: '官方登录',
+      isCurrent: true,
+    });
+    expect(options[0].title).not.toContain('本机路由');
+    expect(options[0].subtitle).not.toContain('本机路由');
+  });
+
+  it('labels leftover generated providers 本机路由, never 官方登录', () => {
+    const leftover = providerRow({
+      id: 'agenthub_grok_bridge',
+      name: 'AgentHub Grok 本机路由',
+      configText: 'model_provider = "agenthub_grok_bridge"\n[model_providers.agenthub_grok_bridge]\nbase_url = "http://127.0.0.1:32123/v1"',
+      isCurrent: true,
+    });
+    expect(isLeftoverLocalRouteProvider(leftover)).toBe(true);
+    const options = chatConnectionOptions(t, {
+      accounts: [],
+      providers: [leftover],
+      connectionKind: 'api',
+    });
+    expect(options).toHaveLength(1);
+    expect(options[0].kind).toBe('provider');
+    expect(options[0].title).toBe('本机路由');
+    expect(options[0].subtitle).not.toBe('官方登录');
+    expect(options[0].title).not.toBe('官方登录');
+  });
+
+  it('lists official oauth and leftover 本机路由 as separate options', () => {
+    const options = chatConnectionOptions(t, {
+      accounts: [
+        oauthAccount({
+          id: 'codex-live-1',
+          email: 'user@openai.com',
+          isCurrent: true,
+        }),
+      ],
+      providers: [
+        providerRow({
+          id: 'agenthub_codex_bridge',
+          name: 'agenthub_codex_bridge',
+          configText: 'base_url = "http://127.0.0.1:32123/v1"',
+          isCurrent: true,
+        }),
+      ],
+      connectionKind: 'account',
+    });
+    const oauth = options.find((row) => row.kind === 'account');
+    const leftover = options.find((row) => row.kind === 'provider');
+    expect(oauth).toMatchObject({
+      title: 'user@openai.com',
+      subtitle: '官方登录',
+      isCurrent: false,
+    });
+    expect(leftover).toMatchObject({
+      title: '本机路由',
+      isCurrent: true,
+    });
+    expect(options.map((row) => row.kind)).toEqual(['account', 'provider']);
+  });
+
+  it('falls back to account.label when oauth has no email', () => {
+    const options = chatConnectionOptions(t, {
+      accounts: [oauthAccount({ id: 'codex-live-2', label: 'ChatGPT Plus' })],
+      providers: [],
+    });
+    expect(options[0].title).toBe('ChatGPT Plus');
+    expect(options[0].subtitle).toBe('官方登录');
+  });
+
+  it('makes official oauth clickable when leftover local-route is current', () => {
+    const leftover = providerRow({
+      id: 'agenthub_grok_bridge',
+      name: 'AgentHub Grok 本机路由',
+      configText: 'base_url = "http://127.0.0.1:43121/v1"',
+      isCurrent: true,
+    });
+    expect(leftoverProviderIsCurrent([leftover])).toBe(true);
+    const options = chatConnectionOptions(t, {
+      accounts: [
+        oauthAccount({
+          id: 'codex-live-1',
+          email: '41375197@qq.com',
+          isCurrent: true,
+        }),
+      ],
+      providers: [leftover],
+      connectionKind: 'api',
+    });
+    const oauth = options.find((row) => row.kind === 'account');
+    const route = options.find((row) => row.kind === 'provider');
+    expect(oauth).toMatchObject({
+      title: '41375197@qq.com',
+      isCurrent: false,
+    });
+    expect(route).toMatchObject({
+      title: '本机路由',
+      isCurrent: true,
+    });
+    expect(oauth?.title).not.toContain('本机路由');
+  });
+
+  it('switch-back marks official current and leftover not current', () => {
+    const leftover = providerRow({
+      id: 'agenthub_grok_bridge',
+      name: 'AgentHub Grok 本机路由',
+      configText: 'base_url = "http://127.0.0.1:43121/v1"',
+      isCurrent: false,
+    });
+    expect(leftoverProviderIsCurrent([leftover])).toBe(false);
+    const options = chatConnectionOptions(t, {
+      accounts: [
+        oauthAccount({
+          id: 'codex-live-1',
+          email: '41375197@qq.com',
+          isCurrent: true,
+        }),
+      ],
+      providers: [leftover],
+      connectionKind: 'account',
+    });
+    const oauth = options.find((row) => row.kind === 'account');
+    const route = options.find((row) => row.kind === 'provider');
+    expect(oauth).toMatchObject({
+      title: '41375197@qq.com',
+      subtitle: '官方登录',
+      isCurrent: true,
+    });
+    expect(route).toMatchObject({
+      title: '本机路由',
+      isCurrent: false,
+    });
+    expect(oauth?.title).not.toContain('本机路由');
+    expect(oauth?.subtitle).not.toContain('本机路由');
+    const chip = chatConnectionPickerView(t, {
+      primaryAgent: 'codex',
+      status: status('codex', true, false, {
+        effectiveKind: 'account',
+        effectiveLabel: '41375197@qq.com',
+      }),
+    });
+    expect(chip.label).toBe('41375197@qq.com');
+    expect(chip.label).not.toContain('本机路由');
+  });
+
+  it('dedupes official oauth rows with the same email', () => {
+    const options = chatConnectionOptions(t, {
+      accounts: [
+        oauthAccount({
+          id: 'codex-live-1',
+          email: '41375197@qq.com',
+          isCurrent: false,
+        }),
+        oauthAccount({
+          id: 'codex-live-2',
+          email: '41375197@qq.com',
+          isCurrent: true,
+        }),
+      ],
+      providers: [
+        providerRow({
+          id: 'agenthub_grok_bridge',
+          name: 'AgentHub Grok 本机路由',
+          configText: 'base_url = "http://127.0.0.1:43121/v1"',
+          isCurrent: true,
+        }),
+      ],
+      connectionKind: 'api',
+    });
+    const official = options.filter((row) => row.kind === 'account');
+    expect(official).toHaveLength(1);
+    expect(official[0].id).toBe('codex-live-2');
+    expect(official[0].title).toBe('41375197@qq.com');
+    expect(official[0].subtitle).toBe('官方登录');
+    expect(official[0].isCurrent).toBe(false);
+    expect(options.filter((row) => row.kind === 'provider')).toHaveLength(1);
   });
 });

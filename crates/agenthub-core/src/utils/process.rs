@@ -46,17 +46,38 @@ pub fn run_capture<S: AsRef<OsStr>>(program: S, args: &[&str]) -> io::Result<Out
     run_capture_timeout(program, args, DETECT_CAPTURE_TIMEOUT)
 }
 
+/// Like [`run_capture`], with extra child env (e.g. PATH prefixed with Node 22).
+pub fn run_capture_with_env<S: AsRef<OsStr>>(
+    program: S,
+    args: &[&str],
+    extra_env: &[(String, String)],
+) -> io::Result<Output> {
+    run_capture_timeout_env(program, args, DETECT_CAPTURE_TIMEOUT, extra_env)
+}
+
 /// Like [`run_capture`] with an explicit timeout.
 pub fn run_capture_timeout<S: AsRef<OsStr>>(
     program: S,
     args: &[&str],
     timeout: Duration,
 ) -> io::Result<Output> {
+    run_capture_timeout_env(program, args, timeout, &[])
+}
+
+fn run_capture_timeout_env<S: AsRef<OsStr>>(
+    program: S,
+    args: &[&str],
+    timeout: Duration,
+    extra_env: &[(String, String)],
+) -> io::Result<Output> {
     let mut cmd = Command::new(program);
     cmd.args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    for (k, v) in extra_env {
+        cmd.env(k, v);
+    }
     apply_no_window(&mut cmd);
     let mut child = cmd.spawn()?;
     match wait_with_timeout(&mut child, timeout, DETECT_CAPTURE_MAX_BYTES) {
@@ -232,7 +253,7 @@ impl StreamingProcessRunner for RecordingProcessRunner {
                     command: spec.display_command(),
                     error: Some("cancelled".into()),
                     truncated: false,
-            native_session_id: None,
+                    native_session_id: None,
                 };
             }
             let remaining = delay.saturating_sub(started.elapsed());
@@ -252,7 +273,7 @@ impl StreamingProcessRunner for RecordingProcessRunner {
                 command: spec.display_command(),
                 error: Some("cancelled".into()),
                 truncated: false,
-            native_session_id: None,
+                native_session_id: None,
             };
         }
         // Delay already applied above — avoid double-sleep in `run`.
@@ -333,7 +354,7 @@ fn run_spec_streaming(
                 command,
                 error: Some(format!("spawn failed: {e}")),
                 truncated: false,
-            native_session_id: None,
+                native_session_id: None,
             };
         }
     };
@@ -412,7 +433,7 @@ fn run_spec_streaming(
                     command,
                     error: Some(format!("wait failed: {e}")),
                     truncated: false,
-            native_session_id: None,
+                    native_session_id: None,
                 };
             }
         }
@@ -600,7 +621,7 @@ fn run_spec_with_timeout(
                 command,
                 error: Some(format!("spawn failed: {e}")),
                 truncated: false,
-            native_session_id: None,
+                native_session_id: None,
             };
         }
     };
@@ -665,7 +686,7 @@ fn run_spec_with_timeout(
                 command,
                 error: Some(format!("wait failed: {e}")),
                 truncated: false,
-            native_session_id: None,
+                native_session_id: None,
             }
         }
     }

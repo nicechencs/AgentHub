@@ -95,6 +95,15 @@ fn account_request(source_id: &str) -> AdapterBridgePrepareRequest {
     }
 }
 
+fn grok_codex_account_request(source_id: &str) -> AdapterBridgePrepareRequest {
+    AdapterBridgePrepareRequest {
+        source_kind: AdapterSourceKind::Account,
+        source_id: source_id.into(),
+        target_agent_id: AgentId::Codex,
+        auto_start: true,
+    }
+}
+
 fn grok_claude_account_request(source_id: &str) -> AdapterBridgePrepareRequest {
     AdapterBridgePrepareRequest {
         source_kind: AdapterSourceKind::Account,
@@ -145,6 +154,53 @@ fn grok_subscription_prepare_uses_xai_chat_and_projects_only_loopback() {
     };
     let serialized = serde_json::to_string(&input.settings_config).unwrap();
     assert!(serialized.contains("127.0.0.1:43123"));
+    assert!(!serialized.contains("grok-upstream-secret"));
+    assert!(!serialized.contains("grok-refresh-secret"));
+}
+
+#[test]
+fn grok_subscription_prepare_codex_uses_xai_chat_and_codex_toml() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "grok-subscription".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "Grok subscription".into(),
+            credentials: json!({
+                "format": "oauth",
+                "access_token": "grok-upstream-secret",
+                "refresh_token": "grok-refresh-secret"
+            }),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterBridgeService::new(db);
+    let prepared = service
+        .prepare(&grok_codex_account_request("grok-subscription"))
+        .unwrap();
+    let spec = prepared.runtime_material().start_spec(Some(0));
+    assert_eq!(spec.upstream.base_url, "https://api.x.ai/v1");
+    assert_eq!(spec.upstream.model.as_deref(), Some("grok-4.5"));
+    assert_eq!(
+        spec.upstream.protocol,
+        BridgeUpstreamProtocol::KimiChatCompletions
+    );
+    assert_eq!(spec.upstream.auth.token(), "grok-upstream-secret");
+
+    let projection = prepared.provider_projection(43123).unwrap();
+    let input = match projection {
+        AdapterBridgeProviderProjection::Create(input) => input,
+        other => panic!("expected create projection, got {other:?}"),
+    };
+    assert_eq!(input.agent_id, AgentId::Codex);
+    let serialized = serde_json::to_string(&input.settings_config).unwrap();
+    assert!(serialized.contains("127.0.0.1:43123"));
+    assert!(serialized.contains("agenthub_grok_bridge"));
     assert!(!serialized.contains("grok-upstream-secret"));
     assert!(!serialized.contains("grok-refresh-secret"));
 }
@@ -856,6 +912,15 @@ fn codex_claude_request(source_id: &str) -> AdapterBridgePrepareRequest {
     }
 }
 
+fn codex_chat_request(source_id: &str, target: AgentId) -> AdapterBridgePrepareRequest {
+    AdapterBridgePrepareRequest {
+        source_kind: AdapterSourceKind::Account,
+        source_id: source_id.into(),
+        target_agent_id: target,
+        auto_start: true,
+    }
+}
+
 fn codex_subscription_account(id: &str, access_token: &str) -> Account {
     Account {
         id: id.into(),
@@ -949,6 +1014,65 @@ fn prepare_codex_subscription_projects_only_claude_loopback_env() {
     assert!(!serde_json::to_string(&input)
         .unwrap()
         .contains("refresh-must-not-enter-bridge"));
+}
+
+#[test]
+fn prepare_codex_subscription_projects_chat_loopback_for_grok_kimi_dsh() {
+    for (target, field, expected) in [
+        (AgentId::Grok, "content", "http://127.0.0.1:43145/v1"),
+        (AgentId::Kimi, "content", "http://127.0.0.1:43145/v1"),
+        (AgentId::Dsh, "baseURL", "http://127.0.0.1:43145"),
+    ] {
+        let (_dir, db) = test_db();
+        AccountRepo::new(db.clone())
+            .create(&codex_subscription_account(
+                "codex-subscription",
+                "codex-upstream-access-secret",
+            ))
+            .unwrap();
+        let service = AdapterBridgeService::new(db);
+        let prepared = service
+            .prepare(&codex_chat_request("codex-subscription", target))
+            .unwrap();
+        assert_eq!(prepared.profile().target_agent_id, target);
+        assert_eq!(prepared.profile().route, AdapterRoute::LocalBridge);
+        assert_eq!(
+            prepared
+                .runtime_material()
+                .start_spec(None)
+                .upstream
+                .protocol,
+            BridgeUpstreamProtocol::CodexResponsesOauth
+        );
+        assert_eq!(
+            prepared
+                .runtime_material()
+                .start_spec(None)
+                .upstream
+                .model
+                .as_deref(),
+            Some("")
+        );
+        let input = match prepared.provider_projection(43145).unwrap() {
+            AdapterBridgeProviderProjection::Create(input) => input,
+            other => panic!("expected create projection, got {other:?}"),
+        };
+        assert_eq!(input.agent_id, target);
+        let haystack = if field == "content" {
+            input.settings_config["content"].as_str().unwrap_or("")
+        } else {
+            input.settings_config[field].as_str().unwrap_or("")
+        };
+        assert!(
+            haystack.contains(expected),
+            "{target:?} missing {expected} in {field}: {haystack}"
+        );
+        assert!(!haystack.contains("grok-"), "{target:?} leftover grok-*");
+        assert!(!haystack.contains("gpt-"), "{target:?} invented ChatGPT model");
+        assert!(!serde_json::to_string(&input)
+            .unwrap()
+            .contains("codex-upstream-access-secret"));
+    }
 }
 
 #[test]

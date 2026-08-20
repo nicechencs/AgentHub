@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::bridge::types::{
-    BridgeEvent, EmissionState, IrEvent, RetryClass, RetryGate, StopReason,
+    BridgeEvent, EmissionState, IrEvent, RetryClass, RetryGate, StopReason, Usage,
 };
 
 use super::{
@@ -10,11 +10,14 @@ use super::{
         parse_messages_request, to_anthropic_messages_request,
         translate_responses_to_anthropic_request, AnthropicStreamToIr,
     },
-    chat::{sse_frame, translate_chat_response, ChatStreamToIr, ResponsesSseTranslator},
+    chat::{
+        encode_chat_from_ir, parse_chat_request, sse_frame, translate_chat_response, ChatStreamToIr,
+        ResponsesSseTranslator,
+    },
     responses::{
-        encode_responses_from_ir, parse_responses_request, responses_output_to_ir,
-        to_kimi_chat_request, to_responses_request, translate_responses_request, IrToResponsesSse,
-        ResponsesStreamToIr,
+        apply_official_codex_model, encode_responses_from_ir, parse_responses_request,
+        responses_output_to_ir, to_grok_chat_request, to_kimi_chat_request, to_responses_request,
+        translate_responses_request, IrToResponsesSse, ResponsesStreamToIr,
     },
 };
 
@@ -76,6 +79,31 @@ fn fixture(name: &str) -> Value {
     serde_json::from_str(source).expect("fixture is valid JSON")
 }
 
+fn assert_codex_completed_usage(usage: &Value) {
+    #[derive(serde::Deserialize)]
+    struct CodexCompletedUsage {
+        input_tokens: i64,
+        output_tokens: i64,
+        total_tokens: i64,
+        reasoning_tokens: i64,
+        #[serde(default)]
+        output_tokens_details: Option<CodexOutputDetails>,
+    }
+    #[derive(serde::Deserialize)]
+    struct CodexOutputDetails {
+        reasoning_tokens: i64,
+    }
+    let parsed: CodexCompletedUsage = serde_json::from_value(usage.clone())
+        .expect("Codex ResponseCompleted usage must include reasoning_tokens");
+    assert_eq!(
+        parsed
+            .output_tokens_details
+            .as_ref()
+            .map(|details| details.reasoning_tokens),
+        Some(parsed.reasoning_tokens)
+    );
+}
+
 #[test]
 fn responses_request_maps_text_tools_options_and_unicode() {
     let request = fixture("responses_text");
@@ -102,15 +130,52 @@ fn streaming_request_opt_in_preserves_final_usage_chunk() {
 }
 
 #[test]
-fn reasoning_configuration_fails_closed_without_a_verified_kimi_mapping() {
-    let error = parse_responses_request(&fixture("responses_reasoning"))
-        .expect_err("reasoning must not be silently dropped");
+fn reasoning_is_dropped_on_kimi_chat_and_mapped_for_grok() {
+    let request = fixture("responses_reasoning");
+    let bridge = parse_responses_request(&request).expect("reasoning must not reject the request");
+    assert_eq!(bridge.passthrough["reasoning_effort"], "medium");
 
-    assert_eq!(error.code, "unsupported_reasoning");
-    assert_eq!(
-        error.message,
-        "Reasoning configuration is not supported by this bridge."
-    );
+    let kimi = to_kimi_chat_request(&bridge);
+    assert!(kimi.get("reasoning").is_none());
+    assert!(kimi.get("reasoning_effort").is_none());
+    assert_eq!(kimi["messages"][0]["content"], "Explain the result.");
+
+    let grok = to_grok_chat_request(&bridge);
+    assert!(grok.get("reasoning").is_none());
+    assert_eq!(grok["reasoning_effort"], "medium");
+    assert_eq!(grok["messages"][0]["content"], "Explain the result.");
+}
+
+#[test]
+fn unknown_or_malformed_reasoning_is_ignored_and_request_still_parses() {
+    for reasoning in [
+        json!({"effort": "minimal"}),
+        json!({"summary": "auto"}),
+        json!(null),
+        json!("fast"),
+        json!(1),
+    ] {
+        let mut request = fixture("responses_text");
+        request["reasoning"] = reasoning;
+        let bridge = parse_responses_request(&request)
+            .expect("malformed reasoning must not reject the request");
+        assert!(bridge.passthrough.get("reasoning_effort").is_none());
+        let kimi = to_kimi_chat_request(&bridge);
+        assert!(kimi.get("reasoning").is_none());
+        assert!(kimi.get("reasoning_effort").is_none());
+    }
+}
+
+#[test]
+fn codex_high_reasoning_with_summary_maps_only_effort_for_grok() {
+    let mut request = fixture("responses_text");
+    request["reasoning"] = json!({"effort": "high", "summary": "auto"});
+    let bridge = parse_responses_request(&request).expect("codex reasoning parses");
+    assert_eq!(bridge.passthrough["reasoning_effort"], "high");
+    let grok = to_grok_chat_request(&bridge);
+    assert_eq!(grok["reasoning_effort"], "high");
+    assert!(grok.get("reasoning").is_none());
+    assert!(grok.get("summary").is_none());
 }
 
 #[test]
@@ -161,14 +226,53 @@ fn unsupported_or_non_text_function_call_output_fails_closed() {
 }
 
 #[test]
-fn unsupported_multimodal_and_hosted_tools_fail_closed() {
+fn unsupported_multimodal_fails_closed() {
     let error = parse_responses_request(&fixture("unsupported_input")).expect_err("image rejected");
     assert_eq!(error.code, "unsupported_image_input");
     assert!(!error.message.contains("example.invalid"));
+}
 
-    let error = parse_responses_request(&fixture("unsupported_web_search"))
-        .expect_err("web search rejected");
-    assert_eq!(error.code, "unsupported_web_search");
+#[test]
+fn hosted_tools_are_dropped_and_function_tools_still_translate() {
+    let request = parse_responses_request(&fixture("unsupported_web_search"))
+        .expect("hosted tools must not reject the request");
+    assert!(request.tools.is_empty());
+
+    let mut mixed = fixture("unsupported_web_search");
+    mixed["tools"] = json!([
+        { "type": "web_search" },
+        { "type": "computer" },
+        { "type": "apply_patch" },
+        { "type": "local_shell" },
+        { "type": "custom", "name": "custom_tool" },
+        {
+            "type": "function",
+            "name": "lookup",
+            "description": "Look something up",
+            "parameters": { "type": "object", "properties": {} }
+        }
+    ]);
+    mixed["tool_choice"] = json!({ "type": "web_search" });
+    let request = parse_responses_request(&mixed).expect("mixed tools parse");
+    assert_eq!(request.tools.len(), 1);
+    assert_eq!(request.tools[0].name, "lookup");
+    assert!(request.tool_choice.is_none());
+
+    let kimi = to_kimi_chat_request(&request);
+    assert_eq!(
+        kimi["tools"]
+            .as_array()
+            .expect("function tools forwarded")
+            .len(),
+        1
+    );
+    assert_eq!(kimi["tools"][0]["type"], "function");
+    assert_eq!(kimi["tools"][0]["function"]["name"], "lookup");
+    assert!(kimi.get("tool_choice").is_none());
+
+    let grok = to_grok_chat_request(&request);
+    assert_eq!(grok["tools"][0]["function"]["name"], "lookup");
+    assert_eq!(grok["tools"].as_array().unwrap().len(), 1);
 }
 
 #[test]
@@ -182,6 +286,8 @@ fn non_streaming_text_response_has_responses_shape_and_usage() {
     assert_eq!(response["output"][0]["content"][0]["text"], "你好，世界。");
     assert_eq!(response["usage"]["input_tokens"], 8);
     assert_eq!(response["usage"]["output_tokens"], 4);
+    assert_eq!(response["usage"]["reasoning_tokens"], 0);
+    assert_codex_completed_usage(&response["usage"]);
 }
 
 #[test]
@@ -256,6 +362,11 @@ fn stream_text_split_emits_required_responses_event_sequence() {
         events.last().expect("completed").data()["response"]["usage"]["total_tokens"],
         9
     );
+    assert_eq!(
+        events.last().expect("completed").data()["response"]["usage"]["reasoning_tokens"],
+        0
+    );
+    assert_codex_completed_usage(&events.last().expect("completed").data()["response"]["usage"]);
     assert!(
         translator.finish().is_empty(),
         "completion is idempotent after the explicit terminal [DONE] handling"
@@ -406,6 +517,65 @@ fn upstream_error_is_generic_and_never_leaks_sensitive_upstream_data() {
     assert_eq!(error.code, "upstream_error");
     assert!(!error.message.contains("sk-secret-key"));
     assert!(!error.message.contains("private input"));
+}
+
+#[test]
+fn chat_request_maps_to_responses_and_strips_leftover_grok_model() {
+    let request = parse_chat_request(&json!({
+        "model": "grok-4.5",
+        "messages": [
+            { "role": "system", "content": "Be brief." },
+            { "role": "user", "content": "你好" }
+        ],
+        "stream": false,
+        "max_tokens": 64
+    }))
+    .expect("parse chat");
+    assert_eq!(request.model, "grok-4.5");
+    assert_eq!(request.instructions.as_deref(), Some("Be brief."));
+    assert_eq!(request.passthrough["max_output_tokens"], 64);
+
+    let mut responses = to_responses_request(&request);
+    apply_official_codex_model(&mut responses, &request.model, Some(""));
+    assert!(responses.get("model").is_none());
+    assert_eq!(responses["input"][0]["content"][0]["text"], "你好");
+    assert_eq!(responses["max_output_tokens"], 64);
+
+    apply_official_codex_model(&mut responses, "gpt-4o", None);
+    assert_eq!(responses["model"], "gpt-4o");
+}
+
+#[test]
+fn messages_request_maps_to_responses_and_strips_leftover_claude_model() {
+    let request = parse_messages_request(&json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 64,
+        "messages": [
+            { "role": "user", "content": "你好" }
+        ]
+    }))
+    .expect("parse messages");
+    assert_eq!(request.model, "claude-sonnet-4-20250514");
+    assert_eq!(request.passthrough["max_output_tokens"], 64);
+
+    let mut responses = to_responses_request(&request);
+    apply_official_codex_model(&mut responses, &request.model, Some(""));
+    assert!(responses.get("model").is_none());
+    assert_eq!(responses["input"][0]["content"][0]["text"], "你好");
+    assert_eq!(responses["max_output_tokens"], 64);
+
+    apply_official_codex_model(&mut responses, "gpt-4o", None);
+    assert_eq!(responses["model"], "gpt-4o");
+}
+
+#[test]
+fn responses_ir_encodes_chat_completion_without_inventing_model() {
+    let ir = responses_output_to_ir(&fixture("responses_upstream_text")).expect("ir");
+    let chat = encode_chat_from_ir(&ir, Some("chatcmpl_test")).expect("chat");
+    assert_eq!(chat["object"], "chat.completion");
+    assert_eq!(chat["choices"][0]["message"]["content"], "你好，世界。");
+    assert_eq!(chat["choices"][0]["finish_reason"], "stop");
+    assert_eq!(chat["id"], "chatcmpl_test");
 }
 
 #[test]
@@ -625,15 +795,16 @@ fn responses_sse_to_ir_to_anthropic_sse_tool_call_deltas() {
 }
 
 #[test]
-fn anthropic_thinking_configuration_fails_closed() {
-    let error = parse_messages_request(&json!({
+fn anthropic_thinking_configuration_is_dropped() {
+    let request = parse_messages_request(&json!({
         "model": "gpt-5",
         "max_tokens": 32,
         "messages": [{ "role": "user", "content": "hi" }],
         "thinking": { "type": "enabled", "budget_tokens": 1024 }
     }))
-    .expect_err("thinking must not be silently dropped");
-    assert_eq!(error.code, "unsupported_thinking");
+    .expect("thinking configuration must be ignored so Claude Code ping is not 400");
+    assert_eq!(request.model, "gpt-5");
+    assert!(request.passthrough.get("thinking").is_none());
 }
 
 #[test]
@@ -746,11 +917,14 @@ fn responses_tool_history_becomes_anthropic_tool_use_and_results() {
 }
 
 #[test]
-fn responses_to_anthropic_rejects_image_and_hosted_tools() {
+fn responses_to_anthropic_rejects_image_and_drops_hosted_tools() {
     let error = parse_responses_request(&fixture("unsupported_input")).expect_err("image");
     assert_eq!(error.code, "unsupported_image_input");
-    let error = parse_responses_request(&fixture("unsupported_web_search")).expect_err("search");
-    assert_eq!(error.code, "unsupported_web_search");
+    let request =
+        parse_responses_request(&fixture("unsupported_web_search")).expect("hosted tools dropped");
+    assert!(request.tools.is_empty());
+    let anthropic = to_anthropic_messages_request(&request);
+    assert!(anthropic.get("tools").is_none());
 }
 
 #[test]
@@ -855,7 +1029,10 @@ fn anthropic_usage_maps_cache_tokens_and_malformed_usage_is_dropped() {
         "malformed usage must not be invented"
     );
     let response = encode_responses_from_ir(&ir, Some("resp_bad_usage")).expect("responses");
-    assert!(response["usage"].is_null());
+    assert_eq!(response["usage"]["input_tokens"], 0);
+    assert_eq!(response["usage"]["output_tokens"], 0);
+    assert_eq!(response["usage"]["reasoning_tokens"], 0);
+    assert_codex_completed_usage(&response["usage"]);
 }
 
 #[test]
@@ -1010,4 +1187,25 @@ fn anthropic_stream_error_is_generic_and_never_leaks_upstream_body() {
         }
         other => panic!("expected Error, got {other:?}"),
     }
+}
+
+#[test]
+fn completed_responses_usage_includes_reasoning_tokens_even_when_unknown() {
+    let unknown = Usage::completed_responses_json(None);
+    assert_eq!(unknown["reasoning_tokens"], 0);
+    assert_eq!(unknown["output_tokens_details"]["reasoning_tokens"], 0);
+    assert_codex_completed_usage(&unknown);
+
+    let from_chat = Usage::from_chat_usage(&json!({
+        "prompt_tokens": 3,
+        "completion_tokens": 2,
+        "total_tokens": 5,
+        "completion_tokens_details": { "reasoning_tokens": 7 }
+    }))
+    .expect("chat usage");
+    let encoded = from_chat.to_responses_json();
+    assert_eq!(encoded["input_tokens"], 3);
+    assert_eq!(encoded["reasoning_tokens"], 7);
+    assert_eq!(encoded["output_tokens_details"]["reasoning_tokens"], 7);
+    assert_codex_completed_usage(&encoded);
 }

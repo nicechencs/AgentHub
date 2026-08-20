@@ -3,25 +3,44 @@
  * 不 import React、不碰 lib/api。
  */
 import { agentDisplayName } from '@/config/agents';
+import {
+  formatLocalRouteLabel,
+  isInternalGeneratedProvider,
+} from '@/lib/backend/contracts/agent-connection';
 import type { TranslateFn } from '@/lib/i18n';
 import { processPhaseLabel, type AgentProcessView } from '@/lib/chat-process';
 import { nativeResumeCommand } from '@/lib/session-resume';
-import type { AgentId, AgentStatus, ChatMessage, ChatMessageStatus, Conversation } from '@/lib/types';
-import type { TurnGroup } from './chat-format';
+import type {
+  Account,
+  AgentId,
+  AgentStatus,
+  ChatMessage,
+  ChatMessageStatus,
+  Conversation,
+  Provider,
+} from '@/lib/types';
+import { extractModel, type TurnGroup } from './chat-format';
 
 export type ChatSendBlocker =
   | { kind: 'hiddenAgents'; agentIds: AgentId[] }
+  | { kind: 'envNotReady'; agentIds: AgentId[] }
   | { kind: 'unconfiguredAuth'; agentIds: AgentId[] }
   | { kind: 'noCwd' }
   | { kind: 'sendingElsewhere'; conversationId: string; title: string };
 
-export type ChatAgentPickerReason = 'noAuth';
+export type ChatAgentPickerReason = 'noAuth' | 'envNotReady';
 
 export type ChatAgentPickerRow = {
   id: AgentId;
   selectable: boolean;
   reason: ChatAgentPickerReason | null;
 };
+
+/** Pi Chat needs Node 22.19 (`envReady`); other agents' envReady is install-channel only. */
+export function agentChatEnvReady(status: AgentStatus | undefined): boolean {
+  if (!status || status.agentId !== 'pi') return true;
+  return status.envReady !== false;
+}
 
 /** 已绑定登录 / API Key 才算配置了授权；未配置或未登录不可选。 */
 export function agentHasConfiguredAuth(status: AgentStatus | undefined): boolean {
@@ -37,7 +56,9 @@ export function agentHasConfiguredAuth(status: AgentStatus | undefined): boolean
 }
 
 export function isChatAgentSelectable(status: AgentStatus | undefined): boolean {
-  return Boolean(status?.installed && !status.hidden && agentHasConfiguredAuth(status));
+  return Boolean(
+    status?.installed && !status.hidden && agentHasConfiguredAuth(status) && agentChatEnvReady(status),
+  );
 }
 
 /**
@@ -52,11 +73,17 @@ export function chatAgentPickerRows(input: {
   for (const id of input.catalogIds) {
     const status = byId.get(id);
     if (status?.installed !== true || status.hidden) continue;
+    const envNotReady = !agentChatEnvReady(status);
     const noAuth = !agentHasConfiguredAuth(status);
+    const reason: ChatAgentPickerReason | null = envNotReady
+      ? 'envNotReady'
+      : noAuth
+        ? 'noAuth'
+        : null;
     rows.push({
       id,
-      selectable: !noAuth,
-      reason: noAuth ? 'noAuth' : null,
+      selectable: reason === null,
+      reason,
     });
   }
   return [...rows.filter((r) => r.selectable), ...rows.filter((r) => !r.selectable)];
@@ -180,6 +207,7 @@ export function groupConversationsByDay(
 export function sendBlockers(input: {
   conversation: Conversation;
   hiddenIds: Set<AgentId>;
+  envNotReadyIds?: Set<AgentId>;
   unconfiguredAuthIds?: Set<AgentId>;
   sendingConversationId: string | null;
   sendingTitle?: string;
@@ -188,6 +216,12 @@ export function sendBlockers(input: {
   const hidden = input.conversation.agentIds.filter((id) => input.hiddenIds.has(id));
   if (hidden.length > 0) {
     out.push({ kind: 'hiddenAgents', agentIds: hidden });
+  }
+  const envNotReady = input.conversation.agentIds.filter(
+    (id) => !input.hiddenIds.has(id) && input.envNotReadyIds?.has(id),
+  );
+  if (envNotReady.length > 0) {
+    out.push({ kind: 'envNotReady', agentIds: envNotReady });
   }
   const unconfigured = input.conversation.agentIds.filter(
     (id) => !input.hiddenIds.has(id) && input.unconfiguredAuthIds?.has(id),
@@ -433,6 +467,97 @@ export function chatConnectionPickerView(t: TranslateFn, input: {
   };
 }
 
+export type ChatConnectionOptionKind = 'account' | 'provider';
+
+export type ChatConnectionOption = {
+  kind: ChatConnectionOptionKind;
+  id: string;
+  title: string;
+  subtitle: string | null;
+  isCurrent: boolean;
+};
+
+const AGENTHUB_BRIDGE_SLUG = /agenthub_[^\s"'\\]*_bridge/i;
+
+/** Leftover generated 本机路由 rows — never labeled 官方登录. */
+export function isLeftoverLocalRouteProvider(
+  provider: Pick<Provider, 'id' | 'name' | 'preset' | 'configText' | 'configFormat'>,
+): boolean {
+  if (isInternalGeneratedProvider(provider)) return true;
+  const haystack = `${provider.id}\n${provider.name}\n${provider.preset ?? ''}\n${provider.configText ?? ''}`;
+  return haystack.includes('本机路由')
+    || AGENTHUB_BRIDGE_SLUG.test(haystack)
+    || haystack.includes('127.0.0.1');
+}
+
+export function officialOauthAccountTitle(account: Pick<Account, 'email' | 'label'>): string {
+  const email = account.email?.trim();
+  if (email) return email;
+  return account.label;
+}
+
+function officialOauthDedupeKey(account: Pick<Account, 'email' | 'identityLabel' | 'label' | 'id'>): string {
+  const key = account.email?.trim() || account.identityLabel?.trim() || account.label.trim() || account.id;
+  return key.toLowerCase();
+}
+
+export function leftoverProviderIsCurrent(providers: readonly Provider[]): boolean {
+  return providers.some((provider) => provider.isCurrent && isLeftoverLocalRouteProvider(provider));
+}
+
+function officialOauthWinners(accounts: readonly Account[]): Account[] {
+  const winners: Account[] = [];
+  const indexByKey = new Map<string, number>();
+  for (const account of accounts) {
+    if (account.kind !== 'oauth') continue;
+    const key = officialOauthDedupeKey(account);
+    const existing = indexByKey.get(key);
+    if (existing == null) {
+      indexByKey.set(key, winners.length);
+      winners.push(account);
+      continue;
+    }
+    if (account.isCurrent && !winners[existing].isCurrent) {
+      winners[existing] = account;
+    }
+  }
+  return winners;
+}
+
+/**
+ * Chat switch-connection options: official oauth and leftover local-route as
+ * separate entries. Leftover current wins the checkmark so official rows stay clickable.
+ */
+export function chatConnectionOptions(t: TranslateFn, input: {
+  accounts: readonly Account[];
+  providers: readonly Provider[];
+  connectionKind?: ChatConnectionPickerKind;
+}): ChatConnectionOption[] {
+  const leftoverCurrent = leftoverProviderIsCurrent(input.providers);
+  const preferAccount = input.connectionKind === 'account' && !leftoverCurrent;
+  const options: ChatConnectionOption[] = [];
+  for (const account of officialOauthWinners(input.accounts)) {
+    options.push({
+      kind: 'account',
+      id: account.id,
+      title: officialOauthAccountTitle(account),
+      subtitle: t('kind.oauth'),
+      isCurrent: leftoverCurrent ? false : account.isCurrent,
+    });
+  }
+  for (const provider of input.providers) {
+    const leftover = isLeftoverLocalRouteProvider(provider);
+    options.push({
+      kind: 'provider',
+      id: provider.id,
+      title: leftover ? formatLocalRouteLabel(undefined, t) : provider.name,
+      subtitle: leftover ? null : extractModel(provider.configText),
+      isCurrent: leftoverCurrent ? leftover && provider.isCurrent : preferAccount ? false : provider.isCurrent,
+    });
+  }
+  return options;
+}
+
 export function messageStatusLabel(
   t: TranslateFn,
   status: string,
@@ -512,6 +637,7 @@ export function blockerPrimaryTarget(
 ): ChatBlockerPrimaryTarget {
   switch (blocker.kind) {
     case 'hiddenAgents':
+    case 'envNotReady':
       return 'agents';
     case 'unconfiguredAuth':
       return 'connections';
@@ -531,6 +657,11 @@ export function blockerCopy(t: TranslateFn, blocker: ChatSendBlocker): {
     case 'hiddenAgents':
       return {
         text: t('chat.blocker.hidden'),
+        primaryAction: t('chat.blocker.goAgents'),
+      };
+    case 'envNotReady':
+      return {
+        text: t('chat.blocker.envNotReady'),
         primaryAction: t('chat.blocker.goAgents'),
       };
     case 'unconfiguredAuth':

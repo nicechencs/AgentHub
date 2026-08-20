@@ -22,6 +22,7 @@ import {
   eligibilityOf,
   isOptionSelectable,
   isTargetSelectable,
+  planEligibilityAllowsApply,
   resolveEmptyKind,
   shouldShowSelectSkeleton,
   splitSourceOptions,
@@ -487,7 +488,7 @@ function EligibilityBody({
   const routeLine = maturity
     ? `${routeTitle} · ${maturity}`
     : routeTitle;
-  if (eligibility.canApply) {
+  if (planEligibilityAllowsApply(eligibility)) {
     return <p className="mt-1 text-xs text-secondary">{routeLine}</p>;
   }
   return <p className="mt-1 text-xs text-warning">{eligibility.reason ?? routeLine}</p>;

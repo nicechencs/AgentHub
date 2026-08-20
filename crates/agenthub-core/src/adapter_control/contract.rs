@@ -101,7 +101,7 @@ pub fn resolve_bind_action(
             source_kind,
             source_id,
             target_agent_id,
-            auto_start: false,
+            auto_start: true,
         }));
     }
     Ok(BindAction::Reshape(TicketPlanRequest {

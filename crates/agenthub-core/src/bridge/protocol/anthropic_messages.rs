@@ -13,19 +13,14 @@ use crate::bridge::types::{
 
 /// Parse the subset of `POST /v1/messages` that the Codex→Claude kernel can represent.
 ///
-/// Multimodal blocks, server tools, and thinking blocks fail closed rather than silently
-/// dropping information Claude Code would assume the model received.
+/// Top-level `thinking` configuration is ignored and dropped (Claude Code always sends
+/// it). `thinking` / `redacted_thinking` content blocks in history still fail closed
+/// rather than silently dropping information Claude Code would assume the model received.
+/// Multimodal blocks and server tools also fail closed.
 pub fn parse_messages_request(value: &Value) -> ProtocolResult<BridgeRequest> {
     let object = value
         .as_object()
         .ok_or_else(|| ProtocolError::invalid_request("The request body must be a JSON object."))?;
-
-    if object.contains_key("thinking") {
-        return Err(ProtocolError::unsupported(
-            "unsupported_thinking",
-            "Thinking configuration is not supported by this bridge.",
-        ));
-    }
 
     let model = required_string(object, "model", "A non-empty model is required.")?;
     let max_tokens = object.get("max_tokens").ok_or_else(|| {
@@ -88,6 +83,7 @@ pub fn encode_anthropic_sse(events: &[IrEvent]) -> ProtocolResult<Vec<String>> {
         output_tokens: 0,
         total_tokens: 0,
         cached_input_tokens: None,
+        reasoning_tokens: 0,
     };
     let mut saw_message_start = false;
     let mut saw_message_end = false;
@@ -324,6 +320,7 @@ pub fn encode_anthropic_message(events: &[IrEvent]) -> ProtocolResult<Value> {
                     output_tokens: *output_tokens,
                     total_tokens: input_tokens.saturating_add(*output_tokens),
                     cached_input_tokens: *cached_input_tokens,
+                    reasoning_tokens: 0,
                 };
             }
             IrEvent::MessageEnd {

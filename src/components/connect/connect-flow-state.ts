@@ -79,7 +79,7 @@ export interface ConnectFlowState {
 export type ConnectFlowEvent =
   | { type: 'reset'; entry: ConnectFlowEntry }
   | { type: 'select_source'; option: SourceOption }
-  | { type: 'select_target'; agentId: AgentId; sourceAgentId: AgentId | null }
+  | { type: 'select_target'; agentId: AgentId; sourceAgentId: AgentId | null; allowOwnAgent?: boolean }
   | { type: 'enter_preview'; option?: SourceOption | null; eligibility?: PlanEligibility }
   | { type: 'back_to_select' }
   | { type: 'begin_apply' }
@@ -163,13 +163,21 @@ export function sourceAgentIdOf(
   return lookupSourceRecord(entry.source, accounts, providers)?.agentId ?? null;
 }
 
-/** for-source 目标网格：排除来源自身所属 Agent。 */
+/** for-source 目标网格：排除来源自身所属 Agent。官方 Codex 登录可接到自己。 */
 export function excludeOwnAgentTargets(
   candidates: readonly AgentId[],
   sourceAgentId: AgentId | null,
+  keepOwnAgent = false,
 ): AgentId[] {
-  if (!sourceAgentId) return [...candidates];
+  if (!sourceAgentId || keepOwnAgent) return [...candidates];
   return candidates.filter((id) => id !== sourceAgentId);
+}
+
+/** Official Codex OAuth may 直连 / 用这份登录 onto Codex itself. */
+export function isOfficialCodexOauthAccount(
+  account: { agentId: AgentId; kind: string } | null | undefined,
+): boolean {
+  return account?.agentId === 'codex' && account.kind === 'oauth';
 }
 
 export function currentTargetAgentId(state: ConnectFlowState): AgentId | null {
@@ -244,15 +252,14 @@ export function canEnterPreview(
 ): boolean {
   if (isBusy(state) || state.step !== 'select') return false;
   if (state.entry.mode === 'for-source') {
-    const target = currentTargetAgentId(state);
-    if (!target || !state.selectedSource) return false;
-    return isTargetSelectable(eligibility);
+    // Same gate as enter_preview: 下一步 enabled iff preview can bind the plan.
+    return bindPlanFromEligibility(state, eligibility) !== null;
   }
   if (!option) return false;
   if (!sameSourceRef(state.selectedSource, option.ref)) return false;
   if (option.state.kind === 'switchable') return true;
   if (option.state.kind === 'plannable') {
-    return planEligibilityAllowsApply(eligibility);
+    return bindPlanFromEligibility(state, eligibility) !== null;
   }
   return false;
 }
@@ -323,7 +330,13 @@ export function reduceConnectFlow(state: ConnectFlowState, event: ConnectFlowEve
     }
     case 'select_target': {
       if (state.entry.mode !== 'for-source') return state;
-      if (event.sourceAgentId && event.agentId === event.sourceAgentId) return state;
+      if (
+        event.sourceAgentId
+        && event.agentId === event.sourceAgentId
+        && !event.allowOwnAgent
+      ) {
+        return state;
+      }
       if (isBlankId(event.agentId)) return state;
       if (state.selectedTargetAgentId === event.agentId && state.step === 'select') {
         return state;
@@ -333,6 +346,7 @@ export function reduceConnectFlow(state: ConnectFlowState, event: ConnectFlowEve
     case 'enter_preview': {
       if (state.step !== 'select') return state;
       if (state.entry.mode === 'for-source') {
+        if (!canEnterPreview(state, event.option, event.eligibility)) return state;
         const bound = bindPlanFromEligibility(state, event.eligibility);
         if (!bound) return state;
         return {
@@ -345,6 +359,7 @@ export function reduceConnectFlow(state: ConnectFlowState, event: ConnectFlowEve
       }
       const option = event.option;
       if (!option || !sameSourceRef(state.selectedSource, option.ref)) return state;
+      if (!canEnterPreview(state, option, event.eligibility)) return state;
       if (option.state.kind === 'switchable') {
         return {
           ...state,
@@ -516,12 +531,30 @@ function endReasonWithFullStop(reason: string): string {
 
 function localTargetLabels(targetAgentId: string): { display: string; short: string } {
   if (targetAgentId === 'claude') return { display: 'Claude Code', short: 'Claude' };
+  if (targetAgentId === 'codex') return { display: 'Codex', short: 'Codex' };
+  if (targetAgentId === 'pi') return { display: 'Pi', short: 'Pi' };
+  if (targetAgentId === 'grok') return { display: 'Grok', short: 'Grok' };
+  if (targetAgentId === 'kimi') return { display: 'Kimi', short: 'Kimi' };
+  if (targetAgentId === 'dsh') return { display: 'DeepSeek Harness', short: 'DSH' };
   return { display: targetAgentId, short: targetAgentId };
 }
 
 function sourceHintFromReason(reason: string, t?: TranslateFn): string {
-  if (reason.includes('Grok')) return t ? t('connect.preview.sourceGrok') : 'Grok 登录';
-  if (reason.includes('Codex')) return t ? t('connect.preview.sourceCodex') : 'Codex / ChatGPT 登录';
+  // Match the source, not the target ("接到 Grok" must not become "Grok 登录").
+  if (
+    reason.startsWith('Grok')
+    || reason.includes('Grok 登录')
+    || reason.includes('Grok login')
+  ) {
+    return t ? t('connect.preview.sourceGrok') : 'Grok 登录';
+  }
+  if (
+    reason.startsWith('Codex')
+    || reason.includes('Codex 官方')
+    || reason.includes('Codex / ChatGPT')
+  ) {
+    return t ? t('connect.preview.sourceCodex') : 'Codex / ChatGPT 登录';
+  }
   return t ? t('connect.preview.sourceLogin') : '登录';
 }
 

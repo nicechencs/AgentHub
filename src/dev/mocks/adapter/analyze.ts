@@ -11,8 +11,20 @@ import {
   CODEX_CLAUDE_RULE_ID,
   CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON,
   CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
+  CODEX_SUBSCRIPTION_TO_CODEX_REASON,
+  CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
+  CODEX_DSH_RULE_ID,
+  CODEX_GROK_RULE_ID,
+  CODEX_KIMI_RULE_ID,
+  CODEX_SUBSCRIPTION_TO_DSH_REASON,
+  CODEX_SUBSCRIPTION_TO_GROK_REASON,
+  CODEX_SUBSCRIPTION_TO_KIMI_REASON,
   GROK_CLAUDE_RULE_ID,
+  GROK_CODEX_RULE_ID,
   GROK_SUBSCRIPTION_TO_CLAUDE_REASON,
+  GROK_SUBSCRIPTION_TO_CODEX_REASON,
+  GROK_SUBSCRIPTION_TO_DSH_REASON,
+  GROK_SUBSCRIPTION_TO_KIMI_REASON,
   KIMI_NON_MEMBERSHIP_REASON,
   action,
   agentBindCapability,
@@ -88,6 +100,41 @@ export function analyze(
   if (source === 'claude_subscription' && request.targetAgentId === 'codex') {
     return unsupported(CLAUDE_SUBSCRIPTION_TO_CODEX_REASON, compatibilityEvidence);
   }
+  if (source === 'grok_xai_subscription' && request.targetAgentId === 'kimi') {
+    return unsupported(GROK_SUBSCRIPTION_TO_KIMI_REASON, compatibilityEvidence);
+  }
+  if (source === 'grok_xai_subscription' && request.targetAgentId === 'dsh') {
+    return unsupported(GROK_SUBSCRIPTION_TO_DSH_REASON, compatibilityEvidence);
+  }
+  if (source === 'grok_xai_subscription' && request.targetAgentId === 'codex') {
+    return {
+      route: 'local_bridge',
+      support: 'experimental',
+      reason: GROK_SUBSCRIPTION_TO_CODEX_REASON,
+      actions: [
+        action(
+          'requires_local_bridge',
+          'Codex',
+          '会把 Codex 指到本机路由；上游 Grok 登录不会写入 Codex。',
+        ),
+        action(
+          'set_config',
+          'Codex',
+          '写入 Codex 的本机路由端点。',
+          'AgentHub Grok 本机路由',
+        ),
+      ],
+      limitations: [
+        '会把 Codex 指到本机路由；上游 Grok 登录不会写入 Codex。',
+        'AgentHub 需保持在托盘运行。',
+        'Grok 登录过期后需重新同步；Hub 本轮不自动刷新。',
+        '固定端口被占用时会尝试重新分配端口并写回配置。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId: GROK_CODEX_RULE_ID,
+      gateKind: 'none',
+    };
+  }
   if (source === 'grok_xai_subscription' && request.targetAgentId === 'claude') {
     return {
       route: 'local_bridge',
@@ -114,6 +161,66 @@ export function analyze(
       ],
       evidence: compatibilityEvidence,
       ruleId: GROK_CLAUDE_RULE_ID,
+      gateKind: 'none',
+    };
+  }
+  if (
+    (source === 'codex_subscription' || source === 'codex_subscription_oauth_other')
+    && request.targetAgentId === 'codex'
+  ) {
+    return {
+      route: 'native_endpoint',
+      support: 'stable',
+      reason: CODEX_SUBSCRIPTION_TO_CODEX_REASON,
+      actions: [
+        action('set_config', 'Codex', '写入 Codex 官方登录，不改本机路由。', '官方登录'),
+      ],
+      limitations: [
+        '会把这份官方登录写进 Codex；不会改到本机路由。',
+        '应用后这份登录成为 Codex 当前登录。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId: CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
+      gateKind: 'none',
+    };
+  }
+  if (
+    (source === 'codex_subscription' || source === 'codex_subscription_oauth_other')
+    && (request.targetAgentId === 'grok' || request.targetAgentId === 'kimi' || request.targetAgentId === 'dsh')
+  ) {
+    const target = request.targetAgentId;
+    const reason = target === 'grok'
+      ? CODEX_SUBSCRIPTION_TO_GROK_REASON
+      : target === 'kimi'
+        ? CODEX_SUBSCRIPTION_TO_KIMI_REASON
+        : CODEX_SUBSCRIPTION_TO_DSH_REASON;
+    const ruleId = target === 'grok'
+      ? CODEX_GROK_RULE_ID
+      : target === 'kimi'
+        ? CODEX_KIMI_RULE_ID
+        : CODEX_DSH_RULE_ID;
+    const label = target === 'dsh' ? 'DeepSeek Harness' : target === 'kimi' ? 'Kimi' : 'Grok';
+    const loopback = target === 'dsh' ? 'http://127.0.0.1:<本机端口>' : 'http://127.0.0.1:<本机端口>/v1';
+    return {
+      route: 'local_bridge',
+      support: 'experimental',
+      reason,
+      actions: [
+        action(
+          'requires_local_bridge',
+          label,
+          `会把 ${label} 指到本机路由；上游 Codex 官方登录不会写入对方。`,
+        ),
+        action('set_config', label, `写入 ${label} 的本机路由端点。`, loopback),
+      ],
+      limitations: [
+        '会把目标 Agent 指到本机路由；上游 Codex 官方登录不会写入对方。',
+        'AgentHub 需保持在托盘运行。',
+        'Codex 登录过期后需重新同步；Hub 本轮不自动刷新。',
+        '固定端口被占用时会尝试重新分配端口并写回配置。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId,
       gateKind: 'none',
     };
   }

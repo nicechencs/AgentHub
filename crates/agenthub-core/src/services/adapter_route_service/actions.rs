@@ -106,6 +106,11 @@ pub(super) fn subscription_account_secret_open(
                     | "grok-subscription-to-pi-v1"
                     | "codex-subscription-to-claude-responses-v1"
                     | "grok-subscription-to-claude-v1"
+                    | "grok-subscription-to-codex-v1"
+                    | "codex-subscription-to-codex-v1"
+                    | "codex-subscription-to-grok-v1"
+                    | "codex-subscription-to-kimi-v1"
+                    | "codex-subscription-to-dsh-v1"
             )
         )
     {
@@ -213,6 +218,41 @@ pub(crate) fn bind_implementation_open(
             Some("grok-subscription-to-claude-v1"),
             AdapterSourceKind::Account,
             AgentId::Claude,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("grok-subscription-to-codex-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Codex,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("codex-subscription-to-codex-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Codex,
+            AdapterRoute::NativeEndpoint,
+            AdapterSupport::Stable,
+        )
+        | (
+            Some("codex-subscription-to-grok-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Grok,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("codex-subscription-to-kimi-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Kimi,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("codex-subscription-to-dsh-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Dsh,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
@@ -465,6 +505,72 @@ pub(super) fn actions_for(
             ),
         ]
         }
+        (RouteSourceLabel::XaiGrokSubscription, AgentId::Codex, AdapterRoute::LocalBridge) => {
+            vec![
+                action(
+                    "requires_local_bridge",
+                    "Codex",
+                    "会把 Codex 指到本机路由；上游 Grok 登录不会写入 Codex。",
+                    None,
+                    false,
+                ),
+                action(
+                    "set_config",
+                    "Codex",
+                    "写入 Codex 的本机路由端点。",
+                    Some("AgentHub Grok 本机路由"),
+                    false,
+                ),
+            ]
+        }
+        (RouteSourceLabel::CodexSubscription, AgentId::Grok, AdapterRoute::LocalBridge) => vec![
+            action(
+                "requires_local_bridge",
+                "Grok",
+                "会把 Grok 指到本机路由；上游 Codex 官方登录不会写入 Grok。",
+                None,
+                false,
+            ),
+            action(
+                "set_config",
+                "Grok",
+                "写入 Grok 的本机路由端点。",
+                Some("http://127.0.0.1:<本机端口>/v1"),
+                false,
+            ),
+        ],
+        (RouteSourceLabel::CodexSubscription, AgentId::Kimi, AdapterRoute::LocalBridge) => vec![
+            action(
+                "requires_local_bridge",
+                "Kimi",
+                "会把 Kimi 指到本机路由；上游 Codex 官方登录不会写入 Kimi。",
+                None,
+                false,
+            ),
+            action(
+                "set_config",
+                "Kimi",
+                "写入 Kimi 的本机路由端点。",
+                Some("http://127.0.0.1:<本机端口>/v1"),
+                false,
+            ),
+        ],
+        (RouteSourceLabel::CodexSubscription, AgentId::Dsh, AdapterRoute::LocalBridge) => vec![
+            action(
+                "requires_local_bridge",
+                "DeepSeek Harness",
+                "会把 DeepSeek Harness 指到本机路由；上游 Codex 官方登录不会写入 DSH。",
+                None,
+                false,
+            ),
+            action(
+                "set_config",
+                "DeepSeek Harness",
+                "写入 DSH 的本机路由端点。",
+                Some("http://127.0.0.1:<本机端口>"),
+                false,
+            ),
+        ],
         (RouteSourceLabel::KimiMembership, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
             action(
                 "set_config",
@@ -695,9 +801,13 @@ pub(super) fn evidence_for(
         (RouteSourceLabel::OpenaiApiKey, AgentId::Grok) => {
             vec![adapter_compatibility_evidence()]
         }
-        (RouteSourceLabel::XaiGrokSubscription, AgentId::Claude) => {
+        (RouteSourceLabel::XaiGrokSubscription, AgentId::Claude | AgentId::Codex) => {
             vec![adapter_compatibility_evidence()]
         }
+        (
+            RouteSourceLabel::CodexSubscription,
+            AgentId::Grok | AgentId::Kimi | AgentId::Dsh,
+        ) => vec![adapter_compatibility_evidence()],
         (RouteSourceLabel::OpenaiApiKey | RouteSourceLabel::XaiApiKey, _) => {
             vec![anthropic_pi_evidence()]
         }
