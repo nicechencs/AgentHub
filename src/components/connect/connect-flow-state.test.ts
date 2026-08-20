@@ -733,6 +733,29 @@ describe('plan 预览人话化', () => {
     }
   });
 
+  it('Codex 官方登录接到 Grok / Kimi / DSH 预览标题是本机路由', () => {
+    for (const [agentId, display] of [
+      ['grok', 'Grok'],
+      ['kimi', 'Kimi'],
+      ['dsh', 'DeepSeek Harness'],
+    ] as const) {
+      const view = describePlanPreview(plan({
+        targetAgentId: agentId,
+        analysis: analysis({
+          route: 'local_bridge',
+          support: 'experimental',
+          reason: `Codex 官方登录会经本机路由接到 ${display}。`,
+        }),
+        reusePath: 'local_bridge',
+        serviceImpact: 'requires_local_bridge',
+      }));
+      expect(view.title).toBe('本机路由');
+      expect(view.reason).toBe(`用这份 Codex / ChatGPT 登录接到 ${display}。`);
+      expect(view.reason).not.toContain('实验');
+      expect(view.reason).not.toContain('未验证');
+    }
+  });
+
   it('Grok→Codex local_bridge 用 Codex 展示名而不是 raw id', () => {
     const view = describePlanPreview(plan({
       targetAgentId: 'codex',
@@ -784,6 +807,68 @@ describe('eligibility 查找含 kind 防碰撞', () => {
 });
 
 describe('for-source 预览与 apply', () => {
+  it('下一步 canEnterPreview 与 enter_preview 同门禁（含 Codex 本机路由目标）', () => {
+    const codexSource: ConnectFlowEntry = {
+      mode: 'for-source',
+      source: { kind: 'account', id: 'codex-live-1' },
+    };
+    const targets = ['claude', 'grok', 'kimi', 'dsh'] as const;
+    for (const agentId of targets) {
+      let state = createConnectFlowState(codexSource);
+      state = reduceConnectFlow(state, {
+        type: 'select_target',
+        agentId,
+        sourceAgentId: 'codex',
+        allowOwnAgent: true,
+      });
+      const localPlan = plan({
+        canApply: true,
+        targetAgentId: agentId,
+        analysis: analysis({
+          route: 'local_bridge',
+          support: 'experimental',
+          reason: 'Codex 官方登录会经本机路由接到目标。',
+        }),
+        reusePath: 'local_bridge',
+      });
+      const ready: PlanEligibility = {
+        kind: 'ready',
+        plan: localPlan,
+        canApply: true,
+        routeSummary: '本机路由',
+      };
+      const displayTruePlanFalse: PlanEligibility = {
+        kind: 'ready',
+        plan: { ...localPlan, canApply: false },
+        canApply: true,
+        routeSummary: '本机路由',
+      };
+      const cases: Array<{ eligibility: PlanEligibility | undefined; wantPreview: boolean }> = [
+        { eligibility: ready, wantPreview: true },
+        { eligibility: displayTruePlanFalse, wantPreview: false },
+        { eligibility: { kind: 'loading' }, wantPreview: false },
+        { eligibility: { kind: 'error', message: 'fail' }, wantPreview: false },
+        { eligibility: undefined, wantPreview: false },
+      ];
+      for (const item of cases) {
+        expect(canEnterPreview(state, null, item.eligibility)).toBe(item.wantPreview);
+        expect(isTargetSelectable(item.eligibility)).toBe(item.wantPreview);
+        const next = reduceConnectFlow(state, {
+          type: 'enter_preview',
+          eligibility: item.eligibility,
+        });
+        expect(next.step).toBe(item.wantPreview ? 'preview' : 'select');
+        if (item.wantPreview) {
+          expect(next.previewKind).toBe('apply');
+          expect(next.boundPlan?.targetAgentId).toBe(agentId);
+          expect(next.boundPlan?.plan.canApply).toBe(true);
+        } else {
+          expect(next).toBe(state);
+        }
+      }
+    }
+  });
+
   it('选中可行目标后绑定 plan 并 apply', async () => {
     const eligibility = readyEligibility(true, { targetAgentId: 'claude' });
     let state = createConnectFlowState(forSource);

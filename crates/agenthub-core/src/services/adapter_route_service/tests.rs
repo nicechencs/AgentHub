@@ -1,12 +1,13 @@
 use super::*;
 use crate::models::{
-    Account, AccountKind, AdapterCapabilityDecision, AdapterMaturity, AdapterRoute,
-    AdapterRouteAnalysis, AdapterServiceImpact, AdapterSupport, Provider,
+    Account, AccountKind, AdapterCapabilityDecision, AdapterMaturity, AdapterProfile,
+    AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteAnalysis,
+    AdapterServiceImpact, AdapterSourceKind, AdapterSupport, AgentId, Provider,
     ADAPTER_CAPABILITY_MATRIX,
 };
 use crate::services::adapter_apply_service::apply_request_supported;
 use crate::services::AdapterApplyService;
-use crate::storage::{AccountRepo, Database, ProviderRepo};
+use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
 
 fn test_db() -> (tempfile::TempDir, Database) {
     let dir = tempfile::tempdir().unwrap();
@@ -1268,6 +1269,120 @@ fn official_codex_oauth_to_grok_kimi_dsh_is_writable_local_bridge() {
         assert!(!serde_json::to_string(&plan)
             .unwrap()
             .contains("must-not-leak"));
+    }
+}
+
+#[test]
+fn stopped_grok_claude_route_does_not_block_codex_official_login_binds() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "grok-subscription".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "Grok subscription".into(),
+            credentials: serde_json::json!({
+                "format": "oauth",
+                "access_token": "grok-access"
+            }),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "codex-live-1".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "41375197@qq.com".into(),
+            credentials: serde_json::json!({
+                "format": "auth_json",
+                "body": {
+                    "auth_mode": "chatgpt",
+                    "tokens": {
+                        "access_token": "must-not-leak",
+                        "refresh_token": "must-not-leak"
+                    }
+                }
+            }),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "claude-grok-adapter-bridge-generated".into(),
+            agent_id: AgentId::Claude,
+            name: "Grok 本机路由".into(),
+            settings_config: serde_json::json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "http://127.0.0.1:43121",
+                    "ANTHROPIC_AUTH_TOKEN": "ahb_local"
+                }
+            }),
+            meta: serde_json::json!({
+                "generatedBy": "adapter",
+                "adapterRuleId": "grok-subscription-to-claude-v1",
+                "adapterSecretMode": "local_token"
+            }),
+            is_current: true,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    AdapterProfileRepo::new(db.clone())
+        .create(&AdapterProfile {
+            id: "adapter-grok-claude-bridge-stopped".into(),
+            name: "Grok → Claude 本机路由".into(),
+            source_kind: AdapterSourceKind::Account,
+            source_id: "grok-subscription".into(),
+            target_agent_id: AgentId::Claude,
+            route: AdapterRoute::LocalBridge,
+            mode: AdapterProfileMode::Oauth,
+            status: AdapterProfileStatus::Active,
+            rule_id: "grok-subscription-to-claude-v1".into(),
+            rule_version: "1".into(),
+            generated_provider_id: Some("claude-grok-adapter-bridge-generated".into()),
+            local_port: Some(43121),
+            auto_start: false,
+            last_error_code: None,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+    let claude = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "codex-live-1",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert!(
+        claude.can_apply,
+        "stopped Grok→Claude must not block Codex→Claude"
+    );
+    assert_eq!(claude.analysis.route, AdapterRoute::LocalBridge);
+    assert_eq!(
+        claude.analysis.rule_id.as_deref(),
+        Some("codex-subscription-to-claude-responses-v1")
+    );
+    for target in [AgentId::Grok, AgentId::Kimi, AgentId::Dsh] {
+        let plan = service
+            .plan(&request(
+                AdapterSourceKind::Account,
+                "codex-live-1",
+                target,
+            ))
+            .unwrap();
+        assert!(plan.can_apply, "{target:?}");
+        assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge, "{target:?}");
     }
 }
 
