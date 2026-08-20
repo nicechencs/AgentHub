@@ -45,6 +45,26 @@ fn kimi_claude_and_codex_cells_are_applicable() {
 }
 
 #[test]
+fn official_codex_oauth_can_apply_onto_codex() {
+    for credential in [
+        AdapterCredentialClass::OauthAuthJson,
+        AdapterCredentialClass::OauthOther,
+    ] {
+        let decision = decide_adapter_capability(
+            AdapterSourceProduct::CodexChatGptSubscription,
+            credential,
+            AgentId::Codex,
+        )
+        .public_surface();
+        assert_eq!(decision.route, AdapterRoute::NativeEndpoint);
+        assert!(decision.can_apply);
+        assert_eq!(decision.rule_id, Some(CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID));
+        assert_eq!(decision.reason, CODEX_SUBSCRIPTION_TO_CODEX_REASON);
+        assert!(!decision.reason.contains("本机路由"));
+    }
+}
+
+#[test]
 fn codex_oauth_to_claude_opens_only_the_responses_cell() {
     let decision = decide_adapter_capability(
         AdapterSourceProduct::CodexChatGptSubscription,

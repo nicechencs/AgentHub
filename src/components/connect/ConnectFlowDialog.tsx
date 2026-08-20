@@ -41,6 +41,7 @@ import {
   currentTargetAgentId,
   eligibilityOf,
   excludeOwnAgentTargets,
+  isOfficialCodexOauthAccount,
   fanoutRequestsForAgent,
   fanoutRequestsForSource,
   findOption,
@@ -189,9 +190,16 @@ export function ConnectFlowDialog({
     const ids = AGENT_IDS.length > 0 ? [...AGENT_IDS] : uniquePoolAgentIds(pool.accounts, pool.providers);
     return ids.filter((id) => !hiddenSet.has(id));
   }, [pool.accounts, pool.providers, hiddenSet]);
+  const keepOwnCodexTarget = Boolean(
+    entry?.mode === 'for-source'
+    && entry.source.kind === 'account'
+    && isOfficialCodexOauthAccount(pool.accounts.find((item) => item.id === entry.source.id)),
+  );
   const targetAgentIds = React.useMemo(
-    () => (entry?.mode === 'for-source' ? excludeOwnAgentTargets(catalogIds, sourceAgentId) : []),
-    [entry, catalogIds, sourceAgentId],
+    () => (entry?.mode === 'for-source'
+      ? excludeOwnAgentTargets(catalogIds, sourceAgentId, keepOwnCodexTarget)
+      : []),
+    [entry, catalogIds, sourceAgentId, keepOwnCodexTarget],
   );
 
   const generatedSourceBlocked = Boolean(
@@ -421,6 +429,7 @@ export function ConnectFlowDialog({
                     type: 'select_target',
                     agentId,
                     sourceAgentId,
+                    allowOwnAgent: keepOwnCodexTarget,
                   })}
                   onRetryEligibility={(request) => fanout?.retry(request)}
                   onRetryResources={retryResources}

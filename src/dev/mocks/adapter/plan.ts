@@ -7,6 +7,7 @@ import { getRuleFixtureById } from './rule-fixtures';
 import {
   CLAUDE_NATIVE_EXPERIMENTAL_RULES,
   CODEX_CLAUDE_RULE_ID,
+  CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
   DEEPSEEK_CODEX_BASE_URL,
   EXPLICIT_API_TO_CODEX_RULES,
   EXPLICIT_API_TO_PI_RULES,
@@ -101,15 +102,17 @@ export function buildPlan(
               secretChange('claude', 'ANTHROPIC_AUTH_TOKEN'),
             ]
         : analysis.route === 'native_endpoint' && request.targetAgentId === 'codex'
-          ? [
-              change(
-                'codex',
-                'provider',
-                analysis.ruleId === GLM_CODEX_RULE_ID ? 'GLM Coding Plan' : 'DeepSeek API',
-              ),
-              change('codex', 'baseUrl', codexBaseUrl),
-              change('codex', 'wireApi', 'responses'),
-            ]
+          ? analysis.ruleId === CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID
+            ? [change('codex', 'login', '官方登录')]
+            : [
+                change(
+                  'codex',
+                  'provider',
+                  analysis.ruleId === GLM_CODEX_RULE_ID ? 'GLM Coding Plan' : 'DeepSeek API',
+                ),
+                change('codex', 'baseUrl', codexBaseUrl),
+                change('codex', 'wireApi', 'responses'),
+              ]
         : analysis.route === 'config_sync' && request.targetAgentId === 'pi'
       ? [
           change('pi', 'provider', configuredProvider ?? 'anthropic'),
@@ -135,6 +138,9 @@ export function buildPlan(
     || (analysis.route === 'native_endpoint' && analysis.support === 'experimental'
       && request.targetAgentId === 'codex'
       && !!analysis.ruleId && EXPLICIT_API_TO_CODEX_RULES.has(analysis.ruleId))
+    || (analysis.route === 'native_endpoint' && analysis.support === 'stable'
+      && request.targetAgentId === 'codex'
+      && analysis.ruleId === CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID)
     || (analysis.route === 'native_endpoint' && analysis.support === 'experimental'
       && request.targetAgentId === 'grok'
       && !!analysis.ruleId && GROK_NATIVE_RULE_IDS.has(analysis.ruleId))
@@ -214,6 +220,11 @@ export function buildPlan(
     && request.targetAgentId === 'codex'
     && analysis.ruleId === GROK_CODEX_RULE_ID
     && hasGrokAccessToken(resolver, request.sourceId);
+  const accountCodexOfficialSelf = request.sourceKind === 'account'
+    && implementedPath
+    && request.targetAgentId === 'codex'
+    && analysis.ruleId === CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID
+    && hasCodexAccessToken(resolver, request.sourceId);
   const writeGate = (request.sourceKind === 'provider' && implementedPath)
     || accountKimiMembership
     || accountGrokNative
@@ -223,10 +234,12 @@ export function buildPlan(
     || accountNativeSubscriptionPi
     || accountCodexClaudeBridge
     || accountGrokClaudeBridge
-    || accountGrokCodexBridge;
+    || accountGrokCodexBridge
+    || accountCodexOfficialSelf;
   const canApply = writeGate;
   const maturity = mockPlanMaturity(analysis);
   const reusePath = NATIVE_SUBSCRIPTION_PI_RULE_IDS.has(analysis.ruleId ?? '')
+    || analysis.ruleId === CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID
     ? 'native_subscription' as const
     : analysis.route === 'unsupported'
       ? 'none' as const
@@ -244,6 +257,7 @@ export function buildPlan(
     && !accountCodexClaudeBridge
     && !accountGrokClaudeBridge
     && !accountGrokCodexBridge
+    && !accountCodexOfficialSelf
     ? `${analysis.reason} ${SAME_EDGE_UNWRITABLE_REASON}`
     : analysis.reason;
   return {

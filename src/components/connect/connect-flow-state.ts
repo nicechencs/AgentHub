@@ -79,7 +79,7 @@ export interface ConnectFlowState {
 export type ConnectFlowEvent =
   | { type: 'reset'; entry: ConnectFlowEntry }
   | { type: 'select_source'; option: SourceOption }
-  | { type: 'select_target'; agentId: AgentId; sourceAgentId: AgentId | null }
+  | { type: 'select_target'; agentId: AgentId; sourceAgentId: AgentId | null; allowOwnAgent?: boolean }
   | { type: 'enter_preview'; option?: SourceOption | null; eligibility?: PlanEligibility }
   | { type: 'back_to_select' }
   | { type: 'begin_apply' }
@@ -163,13 +163,21 @@ export function sourceAgentIdOf(
   return lookupSourceRecord(entry.source, accounts, providers)?.agentId ?? null;
 }
 
-/** for-source 目标网格：排除来源自身所属 Agent。 */
+/** for-source 目标网格：排除来源自身所属 Agent。官方 Codex 登录可接到自己。 */
 export function excludeOwnAgentTargets(
   candidates: readonly AgentId[],
   sourceAgentId: AgentId | null,
+  keepOwnAgent = false,
 ): AgentId[] {
-  if (!sourceAgentId) return [...candidates];
+  if (!sourceAgentId || keepOwnAgent) return [...candidates];
   return candidates.filter((id) => id !== sourceAgentId);
+}
+
+/** Official Codex OAuth may 直连 / 用这份登录 onto Codex itself. */
+export function isOfficialCodexOauthAccount(
+  account: { agentId: AgentId; kind: string } | null | undefined,
+): boolean {
+  return account?.agentId === 'codex' && account.kind === 'oauth';
 }
 
 export function currentTargetAgentId(state: ConnectFlowState): AgentId | null {
@@ -323,7 +331,13 @@ export function reduceConnectFlow(state: ConnectFlowState, event: ConnectFlowEve
     }
     case 'select_target': {
       if (state.entry.mode !== 'for-source') return state;
-      if (event.sourceAgentId && event.agentId === event.sourceAgentId) return state;
+      if (
+        event.sourceAgentId
+        && event.agentId === event.sourceAgentId
+        && !event.allowOwnAgent
+      ) {
+        return state;
+      }
       if (isBlankId(event.agentId)) return state;
       if (state.selectedTargetAgentId === event.agentId && state.step === 'select') {
         return state;

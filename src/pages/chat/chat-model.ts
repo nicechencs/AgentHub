@@ -3,11 +3,23 @@
  * 不 import React、不碰 lib/api。
  */
 import { agentDisplayName } from '@/config/agents';
+import {
+  formatLocalRouteLabel,
+  isInternalGeneratedProvider,
+} from '@/lib/backend/contracts/agent-connection';
 import type { TranslateFn } from '@/lib/i18n';
 import { processPhaseLabel, type AgentProcessView } from '@/lib/chat-process';
 import { nativeResumeCommand } from '@/lib/session-resume';
-import type { AgentId, AgentStatus, ChatMessage, ChatMessageStatus, Conversation } from '@/lib/types';
-import type { TurnGroup } from './chat-format';
+import type {
+  Account,
+  AgentId,
+  AgentStatus,
+  ChatMessage,
+  ChatMessageStatus,
+  Conversation,
+  Provider,
+} from '@/lib/types';
+import { extractModel, type TurnGroup } from './chat-format';
 
 export type ChatSendBlocker =
   | { kind: 'hiddenAgents'; agentIds: AgentId[] }
@@ -453,6 +465,69 @@ export function chatConnectionPickerView(t: TranslateFn, input: {
     emptyHint: t('chat.connection.none'),
     manageLabel: t('chat.connection.add'),
   };
+}
+
+export type ChatConnectionOptionKind = 'account' | 'provider';
+
+export type ChatConnectionOption = {
+  kind: ChatConnectionOptionKind;
+  id: string;
+  title: string;
+  subtitle: string | null;
+  isCurrent: boolean;
+};
+
+const AGENTHUB_BRIDGE_SLUG = /agenthub_[^\s"'\\]*_bridge/i;
+
+/** Leftover generated 本机路由 rows — never labeled 官方登录. */
+export function isLeftoverLocalRouteProvider(
+  provider: Pick<Provider, 'id' | 'name' | 'preset' | 'configText' | 'configFormat'>,
+): boolean {
+  if (isInternalGeneratedProvider(provider)) return true;
+  const haystack = `${provider.id}\n${provider.name}\n${provider.preset ?? ''}\n${provider.configText ?? ''}`;
+  return haystack.includes('本机路由')
+    || AGENTHUB_BRIDGE_SLUG.test(haystack)
+    || haystack.includes('127.0.0.1');
+}
+
+export function officialOauthAccountTitle(account: Pick<Account, 'email' | 'label'>): string {
+  const email = account.email?.trim();
+  if (email) return email;
+  return account.label;
+}
+
+/**
+ * Chat 切换连接 options: official oauth accounts and provider rows as
+ * separate entries. Leftover 本机路由 stays 本机路由; oauth stays 官方登录.
+ */
+export function chatConnectionOptions(t: TranslateFn, input: {
+  accounts: readonly Account[];
+  providers: readonly Provider[];
+  connectionKind?: ChatConnectionPickerKind;
+}): ChatConnectionOption[] {
+  const preferAccount = input.connectionKind === 'account';
+  const options: ChatConnectionOption[] = [];
+  for (const account of input.accounts) {
+    if (account.kind !== 'oauth') continue;
+    options.push({
+      kind: 'account',
+      id: account.id,
+      title: officialOauthAccountTitle(account),
+      subtitle: t('kind.oauth'),
+      isCurrent: account.isCurrent,
+    });
+  }
+  for (const provider of input.providers) {
+    const leftover = isLeftoverLocalRouteProvider(provider);
+    options.push({
+      kind: 'provider',
+      id: provider.id,
+      title: leftover ? formatLocalRouteLabel(undefined, t) : provider.name,
+      subtitle: leftover ? null : extractModel(provider.configText),
+      isCurrent: preferAccount ? false : provider.isCurrent,
+    });
+  }
+  return options;
 }
 
 export function messageStatusLabel(

@@ -116,20 +116,29 @@ impl AdapterRouteService {
                 )
             }
             AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Codex => {
-                let (provider, base_url) = if analysis.rule_id.as_deref() == Some(GLM_CODEX_RULE_ID)
+                if analysis.rule_id.as_deref()
+                    == Some(crate::models::CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID)
                 {
-                    ("GLM Coding Plan", GLM_CODEX_BASE_URL)
+                    (
+                        AdapterServiceImpact::None,
+                        vec![change("codex", "login", Some("官方登录"), false)],
+                    )
                 } else {
-                    ("DeepSeek API", DEEPSEEK_CODEX_BASE_URL)
-                };
-                (
-                    AdapterServiceImpact::None,
-                    vec![
-                        change("codex", "provider", Some(provider), false),
-                        change("codex", "baseUrl", Some(base_url), false),
-                        change("codex", "wireApi", Some("responses"), false),
-                    ],
-                )
+                    let (provider, base_url) =
+                        if analysis.rule_id.as_deref() == Some(GLM_CODEX_RULE_ID) {
+                            ("GLM Coding Plan", GLM_CODEX_BASE_URL)
+                        } else {
+                            ("DeepSeek API", DEEPSEEK_CODEX_BASE_URL)
+                        };
+                    (
+                        AdapterServiceImpact::None,
+                        vec![
+                            change("codex", "provider", Some(provider), false),
+                            change("codex", "baseUrl", Some(base_url), false),
+                            change("codex", "wireApi", Some("responses"), false),
+                        ],
+                    )
+                }
             }
             AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Grok => {
                 let (base_url, model) =

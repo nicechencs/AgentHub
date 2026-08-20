@@ -11,6 +11,8 @@ import {
   CODEX_CLAUDE_RULE_ID,
   CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON,
   CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
+  CODEX_SUBSCRIPTION_TO_CODEX_REASON,
+  CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
   GROK_CLAUDE_RULE_ID,
   GROK_CODEX_RULE_ID,
   GROK_SUBSCRIPTION_TO_CLAUDE_REASON,
@@ -153,6 +155,26 @@ export function analyze(
       ],
       evidence: compatibilityEvidence,
       ruleId: GROK_CLAUDE_RULE_ID,
+      gateKind: 'none',
+    };
+  }
+  if (
+    (source === 'codex_subscription' || source === 'codex_subscription_oauth_other')
+    && request.targetAgentId === 'codex'
+  ) {
+    return {
+      route: 'native_endpoint',
+      support: 'stable',
+      reason: CODEX_SUBSCRIPTION_TO_CODEX_REASON,
+      actions: [
+        action('set_config', 'Codex', '写入 Codex 官方登录，不改本机路由。', '官方登录'),
+      ],
+      limitations: [
+        '会把这份官方登录写进 Codex；不会改到本机路由。',
+        '应用后这份登录成为 Codex 当前登录。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId: CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
       gateKind: 'none',
     };
   }

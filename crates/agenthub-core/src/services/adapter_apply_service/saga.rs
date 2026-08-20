@@ -508,6 +508,17 @@ impl AdapterApplyService {
         provider: &Provider,
         backup_id: &str,
     ) -> Result<Provider> {
+        let already = provider
+            .meta
+            .get(PREVIOUS_BACKUP_ID)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .is_some_and(|id| !id.is_empty());
+        if already {
+            // First-bind snapshot wins. Later repair/re-switch must not
+            // replace it with a leftover 本机路由 projection.
+            return Ok(provider.clone());
+        }
         let mut input = provider_input(provider);
         let Some(meta) = input.meta.as_object_mut() else {
             return Ok(provider.clone());
@@ -544,7 +555,7 @@ impl AdapterApplyService {
         if is_subscription_oauth {
             if let Some(backup_id) = backup_id {
                 self.providers
-                    .restore_named_backup_with_guard(saga_guard, backup_id)?;
+                    .restore_named_backup_or_clean_codex(saga_guard, backup_id, target_agent)?;
             }
         }
         if let Some(previous_id) = previous_id {
@@ -552,6 +563,9 @@ impl AdapterApplyService {
                 Ok(_) => {
                     self.providers
                         .switch_with_guard(saga_guard, previous_id, target_agent)?;
+                    if target_agent == AgentId::Codex {
+                        crate::integrations::agents::codex::leftover::strip_live_bridge_leftovers()?;
+                    }
                     return Ok(());
                 }
                 Err(AppError::NotFound(_)) => {}
@@ -560,7 +574,9 @@ impl AdapterApplyService {
         }
         if let Some(backup_id) = backup_id.filter(|_| !is_subscription_oauth) {
             self.providers
-                .restore_named_backup_with_guard(saga_guard, backup_id)?;
+                .restore_named_backup_or_clean_codex(saga_guard, backup_id, target_agent)?;
+        } else if target_agent == AgentId::Codex {
+            crate::integrations::agents::codex::leftover::strip_live_bridge_leftovers()?;
         }
         Ok(())
     }

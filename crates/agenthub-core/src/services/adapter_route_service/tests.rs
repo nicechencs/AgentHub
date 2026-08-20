@@ -1140,6 +1140,62 @@ fn subscriptions_are_native_pi_reuse_with_opening_bind() {
 }
 
 #[test]
+fn official_codex_oauth_to_codex_is_native_self_bind() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "codex-live-1".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "41375197@qq.com".into(),
+            credentials: serde_json::json!({
+                "format": "auth_json",
+                "body": {
+                    "auth_mode": "chatgpt",
+                    "tokens": {
+                        "access_token": "must-not-leak",
+                        "refresh_token": "must-not-leak"
+                    }
+                }
+            }),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+    let plan = service
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "codex-live-1",
+            AgentId::Codex,
+        ))
+        .unwrap();
+    assert!(plan.can_apply);
+    assert_eq!(plan.analysis.route, AdapterRoute::NativeEndpoint);
+    assert_eq!(
+        plan.analysis.rule_id.as_deref(),
+        Some(crate::models::CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID)
+    );
+    assert_eq!(
+        plan.reuse_path,
+        crate::models::AdapterReusePath::NativeSubscription
+    );
+    assert_eq!(
+        plan.reason,
+        crate::models::CODEX_SUBSCRIPTION_TO_CODEX_REASON
+    );
+    assert!(!plan.reason.contains("本机路由"));
+    assert_eq!(plan.changes[0].field, "login");
+    assert_eq!(plan.changes[0].value.as_deref(), Some("官方登录"));
+    assert!(!serde_json::to_string(&plan)
+        .unwrap()
+        .contains("must-not-leak"));
+}
+
+#[test]
 fn claude_subscription_to_codex_is_product_closed() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())

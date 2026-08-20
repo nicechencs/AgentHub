@@ -56,6 +56,35 @@ async function bindViaTicket(request: AdapterApplyRequest): Promise<AdapterApply
   if (!isActiveBindingForAgent(binding, request.targetAgentId)) {
     throw new Error('绑定未成为该 Agent 的当前连接');
   }
+  if (binding.route === 'native' && !binding.profileId) {
+    return {
+      profile: {
+        id: `native:${ticketId}:${request.targetAgentId}`,
+        name: '官方登录',
+        sourceKind: request.sourceKind,
+        sourceId: request.sourceId,
+        targetAgentId: request.targetAgentId,
+        route: 'native_endpoint',
+        mode: 'oauth',
+        status: 'active',
+        ruleId: 'codex-subscription-to-codex-v1',
+        ruleVersion: '1',
+        generatedProviderId: null,
+        autoStart: false,
+        createdAt: '',
+        updatedAt: '',
+      },
+      provider: {
+        id: `native:${ticketId}`,
+        agentId: request.targetAgentId,
+        name: '官方登录',
+        preset: 'official',
+        configText: '',
+        configFormat: 'toml',
+        isCurrent: true,
+      },
+    };
+  }
   const profiles = await listAdapterProfiles();
   const profile = binding.profileId
     ? profiles.find((row) => row.id === binding.profileId)
