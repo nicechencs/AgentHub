@@ -1900,6 +1900,34 @@ fn cli_owned_follow_rereads_rotated_access_from_temp_auth_json() {
 }
 
 #[test]
+fn cli_owned_follow_unchanged_auth_json_does_not_set_token_expired() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "email": "a@example.com",
+                "user_id": "uid-1",
+                "key": "access-a",
+                "refresh_token": "refresh-shared"
+            }
+        }),
+        label_hint: Some("a@example.com".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    let followed = svc
+        .follow_cli_owned_access(&imported.id, AgentId::Grok)
+        .unwrap();
+    assert!(followed.is_none());
+    let stored = svc.get(&imported.id, Some(AgentId::Grok)).unwrap();
+    assert_ne!(stored.extra.get("health").and_then(|v| v.as_str()), Some("needs_login"));
+    assert_ne!(stored.extra.get("tokenExpired").and_then(|v| v.as_bool()), Some(true));
+}
+
+#[test]
 fn codex_imported_auth_json_refresh_is_refused() {
     let (_root, svc, _) = live_svc(AgentId::Codex);
     let created = svc

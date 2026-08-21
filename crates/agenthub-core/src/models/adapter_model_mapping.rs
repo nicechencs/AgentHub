@@ -13,7 +13,17 @@
 //! - Codex ChatGPT subscription → Grok (local GET /models)
 
 use super::{AdapterSourceProduct, AdapterTargetProtocol, AgentId};
-use crate::bridge::protocol::responses::is_leftover_bridge_model;
+
+/// Official ChatGPT / Codex Responses 400 leftover / CN model ids.
+/// Kept next to the listing table so `models` does not import `bridge`.
+fn is_leftover_bridge_model(model: &str) -> bool {
+    let model = model.trim();
+    model.starts_with("grok-")
+        || model.starts_with("claude-")
+        || model.starts_with("kimi-")
+        || model.starts_with("deepseek-")
+        || (model.starts_with("agenthub_") && model.ends_with("_bridge"))
+}
 
 /// One source-model → target-model mapping row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -352,14 +362,16 @@ pub fn list_local_bridge_models(
     default_model: Option<&str>,
 ) -> Vec<String> {
     let configured = nonempty_model(default_model);
+    let drop_leftover = source == AdapterSourceProduct::CodexChatGptSubscription;
     let Some(table) = find_adapter_model_mapping(source, target) else {
         return match configured {
-            Some(model) if !is_leftover_bridge_model(model) => vec![model.to_owned()],
+            Some(model) if !(drop_leftover && is_leftover_bridge_model(model)) => {
+                vec![model.to_owned()]
+            }
             _ => Vec::new(),
         };
     };
 
-    let drop_leftover = source == AdapterSourceProduct::CodexChatGptSubscription;
     let mut listed = Vec::with_capacity(table.entries.len() + 2);
     for entry in table.entries {
         push_listed_model(&mut listed, entry.target_model, drop_leftover);
@@ -566,9 +578,13 @@ mod tests {
             list_local_bridge_models(AdapterSourceProduct::Other, AgentId::Grok, Some("gpt-5.4")),
             vec!["gpt-5.4".to_string()]
         );
+        assert_eq!(
+            list_local_bridge_models(AdapterSourceProduct::Other, AgentId::Grok, Some("grok-4.5")),
+            vec!["grok-4.5".to_string()]
+        );
         assert!(list_local_bridge_models(
-            AdapterSourceProduct::Other,
-            AgentId::Grok,
+            AdapterSourceProduct::CodexChatGptSubscription,
+            AgentId::Kimi,
             Some("grok-4.5")
         )
         .is_empty());

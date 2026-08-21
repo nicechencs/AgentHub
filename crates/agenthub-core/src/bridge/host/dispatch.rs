@@ -278,11 +278,11 @@ async fn send_upstream_with_grok_recovery(
     }
     let retry_gate = RetryGate::default();
     let mut auth_reloaded = false;
-    // CLI-owned file-follow / Hub refresh before the access JWT is actually rejected.
+    // Only consume the 401 retry slot when a follow/refresh actually swapped
+    // the in-memory bearer. A no-op near-expiry reread must still allow one 401 retry.
     if oauth_subscription_protocol(protocol) && access_jwt_near_expiry(&state.upstream.auth.token())
     {
-        let _ = try_reload_upstream_auth(state);
-        auth_reloaded = true;
+        auth_reloaded = try_reload_upstream_auth(state);
     }
     let mut attempt = 0u8;
     loop {

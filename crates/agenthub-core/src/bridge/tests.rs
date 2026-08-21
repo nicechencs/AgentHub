@@ -64,6 +64,15 @@ fn codex_chat_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeSta
     spec
 }
 
+fn unsigned_jwt_exp_offset(seconds_from_now: i64) -> String {
+    use base64::Engine;
+    let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
+    let exp = chrono::Utc::now().timestamp() + seconds_from_now;
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(format!(r#"{{"exp":{exp}}}"#).as_bytes());
+    format!("{header}.{payload}.sig")
+}
+
 fn grok_claude_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
     let mut spec = spec(profile_id, port, upstream_port);
     spec.upstream.base_url = format!("http://127.0.0.1:{upstream_port}/v1/");
@@ -2461,6 +2470,52 @@ async fn oauth_401_reloads_upstream_bearer_and_retries_before_first_event() {
     assert_eq!(still_local.status(), StatusCode::OK);
 
     host.stop("grok-401-retry").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn oauth_401_retries_after_noop_near_expiry_preload() {
+    let (upstream_port, captured, upstream_task) =
+        grok_401_then_ok_upstream("rotated-upstream-token").await;
+    let hits = Arc::new(AtomicUsize::new(0));
+    let hits_cb = hits.clone();
+    let reload: UpstreamAuthReload = Arc::new(move || {
+        let n = hits_cb.fetch_add(1, Ordering::SeqCst) + 1;
+        if n == 1 {
+            None
+        } else {
+            Some("rotated-upstream-token".into())
+        }
+    });
+    let near_expiry = unsigned_jwt_exp_offset(30);
+    let mut spec = grok_claude_spec("grok-401-near-exp", 0, upstream_port)
+        .with_reload_upstream_auth(Some(reload));
+    spec.upstream.auth = ResolvedAuth::bearer(near_expiry.clone());
+    let host = BridgeRuntimeHost::new();
+    let status = host.start(spec).await.expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header("x-api-key", "local-test-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("messages request");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
+    let bearers = captured.lock().expect("lock").clone();
+    assert_eq!(
+        bearers,
+        vec![
+            format!("Bearer {near_expiry}"),
+            "Bearer rotated-upstream-token".to_owned()
+        ]
+    );
+    host.stop("grok-401-near-exp").await.expect("stop");
     upstream_task.abort();
 }
 

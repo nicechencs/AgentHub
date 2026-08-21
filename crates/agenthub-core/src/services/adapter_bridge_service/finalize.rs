@@ -236,6 +236,8 @@ impl AdapterBridgeService {
                 upstream_model: rule.default_model.into(),
                 protocol: rule.protocol,
                 local_surface: rule.local_surface,
+                source: rule.source,
+                target_agent: rule.target_agent,
                 upstream_auth,
                 local_bearer: local_bearer_from_provider(&provider)?,
             },

@@ -19,6 +19,19 @@ use crate::services::adapter_secret_resolver::AdapterSecretResolver;
 use super::surface::live_reconcile_lock;
 use super::AccountService;
 
+fn access_jwt_expired(token: Option<&str>) -> bool {
+    let Some(token) = token.map(str::trim).filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    let Some(claims) = crate::oauth::decode_jwt_payload(token) else {
+        return false;
+    };
+    let Some(exp) = claims.get("exp").and_then(|value| value.as_i64()) else {
+        return false;
+    };
+    exp <= chrono::Utc::now().timestamp()
+}
+
 fn oauth_source(account: &Account) -> &str {
     account
         .extra
@@ -135,7 +148,11 @@ impl AccountService {
         if next.as_deref() != prior.as_deref() && next.is_some() {
             return Ok(next);
         }
-        self.mark_cli_oauth_needs_login(&latest)?;
+        // Unchanged access after a follow is a no-op. NeedsLogin only when the
+        // live file is gone or the stored access JWT is already expired.
+        if access_jwt_expired(prior.as_deref()) {
+            self.mark_cli_oauth_needs_login(&latest)?;
+        }
         Ok(None)
     }
 

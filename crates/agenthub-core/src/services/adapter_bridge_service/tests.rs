@@ -2,7 +2,7 @@ use super::*;
 
 use crate::models::{
     Account, AccountKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
-    AdapterSourceKind, Provider,
+    AdapterSourceKind, AdapterSourceProduct, Provider,
 };
 use crate::services::ProviderService;
 use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo};
@@ -701,6 +701,8 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         upstream_model: "kimi-k2.5".into(),
         protocol: crate::bridge::BridgeUpstreamProtocol::KimiChatCompletions,
         local_surface: BridgeLocalSurface::Responses,
+        source: AdapterSourceProduct::KimiCodeMembership,
+        target_agent: AgentId::Codex,
         upstream_auth: ResolvedAuth::bearer("upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -727,6 +729,8 @@ async fn codex_responses_health_probe_does_not_request_models() {
         upstream_model: CODEX_DEFAULT_MODEL.into(),
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
         local_surface: BridgeLocalSurface::Messages,
+        source: AdapterSourceProduct::CodexChatGptSubscription,
+        target_agent: AgentId::Claude,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -751,6 +755,8 @@ async fn xai_responses_health_probe_does_not_request_models() {
         upstream_model: crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.into(),
         protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
         local_surface: BridgeLocalSurface::Messages,
+        source: AdapterSourceProduct::XaiGrokSubscription,
+        target_agent: AgentId::Claude,
         upstream_auth: ResolvedAuth::bearer("grok-upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -775,6 +781,8 @@ fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
         upstream_model: String::new(),
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
         local_surface: BridgeLocalSurface::Responses,
+        source: AdapterSourceProduct::CodexChatGptSubscription,
+        target_agent: AgentId::Grok,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -799,6 +807,8 @@ fn start_spec_lists_grok_default_when_mapping_entries_empty() {
         upstream_model: crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.into(),
         protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
         local_surface: BridgeLocalSurface::Messages,
+        source: AdapterSourceProduct::XaiGrokSubscription,
+        target_agent: AgentId::Claude,
         upstream_auth: ResolvedAuth::bearer("grok-upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -818,6 +828,8 @@ fn start_spec_empty_when_mapping_and_default_are_missing() {
         upstream_model: String::new(),
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
         local_surface: BridgeLocalSurface::ChatCompletions,
+        source: AdapterSourceProduct::CodexChatGptSubscription,
+        target_agent: AgentId::Kimi,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -834,6 +846,8 @@ fn start_spec_lists_configured_default_when_mapping_is_missing() {
         upstream_model: "gpt-5.4".into(),
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
         local_surface: BridgeLocalSurface::ChatCompletions,
+        source: AdapterSourceProduct::CodexChatGptSubscription,
+        target_agent: AgentId::Kimi,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -841,6 +855,26 @@ fn start_spec_lists_configured_default_when_mapping_is_missing() {
         material.start_spec(Some(0)).listed_models,
         vec!["gpt-5.4".to_string()]
     );
+}
+
+#[test]
+fn start_spec_lists_openai_to_codex_without_kimi_ids() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "openai-codex-models".into(),
+        source_connection_id: "openai-api".into(),
+        preferred_port: None,
+        upstream_base_url: OPENAI_CHAT_BASE_URL.into(),
+        upstream_model: OPENAI_DEFAULT_MODEL.into(),
+        protocol: BridgeUpstreamProtocol::KimiChatCompletions,
+        local_surface: BridgeLocalSurface::Responses,
+        source: AdapterSourceProduct::OpenaiApi,
+        target_agent: AgentId::Codex,
+        upstream_auth: ResolvedAuth::bearer("openai-upstream-secret"),
+        local_bearer: "local-secret".into(),
+    };
+    let listed = material.start_spec(Some(0)).listed_models;
+    assert_eq!(listed, vec![OPENAI_DEFAULT_MODEL.to_string()]);
+    assert!(listed.iter().all(|model| !model.starts_with("kimi-")));
 }
 
 #[test]
