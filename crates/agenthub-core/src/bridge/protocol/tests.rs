@@ -570,6 +570,33 @@ fn messages_request_maps_to_responses_and_strips_leftover_claude_model() {
 }
 
 #[test]
+fn official_codex_model_omits_bridge_slug_and_cn_models() {
+    for incoming in ["agenthub_codex_bridge", "kimi-k2.5", "deepseek-chat", ""] {
+        let mut body = json!({"model": incoming});
+        apply_official_codex_model(&mut body, incoming, Some(""));
+        assert!(
+            body.get("model").is_none(),
+            "expected omit for {incoming:?}, got {body}"
+        );
+    }
+}
+
+#[test]
+fn official_codex_model_keeps_official_ids_and_override() {
+    let mut gpt = json!({});
+    apply_official_codex_model(&mut gpt, "gpt-5.4", None);
+    assert_eq!(gpt["model"], "gpt-5.4");
+
+    let mut o3 = json!({});
+    apply_official_codex_model(&mut o3, "o3", None);
+    assert_eq!(o3["model"], "o3");
+
+    let mut overridden = json!({});
+    apply_official_codex_model(&mut overridden, "o3", Some("gpt-4o"));
+    assert_eq!(overridden["model"], "gpt-4o");
+}
+
+#[test]
 fn responses_ir_encodes_chat_completion_without_inventing_model() {
     let ir = responses_output_to_ir(&fixture("responses_upstream_text")).expect("ir");
     let chat = encode_chat_from_ir(&ir, Some("chatcmpl_test")).expect("chat");
