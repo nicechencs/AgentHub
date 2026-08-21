@@ -403,7 +403,7 @@ log_level = "info"              # error | warn | info | debug | trace
 
 只读展示（get 可给，set 拒绝）：`app_version`。当前版本不提供主密码或凭据存储方式切换。
 
-日志优先级摘要：`-v` > 可选 env > settings > 默认。详见 [logging.md](logging.md)。
+日志优先级摘要：`-v` > settings > 默认。环境变量 / `agenthub.toml` 的 `log_level` 为契约预留、**未实现**。详见 [logging.md](logging.md) §5。
 
 ### 7.4 层 L2 — 各 Agent live 文件（第三方，Adapter 读写）
 
