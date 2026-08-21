@@ -11,6 +11,7 @@ use tokio::sync::{watch, Mutex as AsyncMutex, Semaphore};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+use crate::bridge::grok_cli::GrokReasoningReplay;
 use crate::bridge::runtime::{
     BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamStatus,
 };
@@ -223,6 +224,7 @@ impl BridgeRuntimeHost {
             force_shutdown: force_shutdown.clone(),
             admission: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS_PER_PROFILE)),
             observed_upstream: Arc::clone(&observed_upstream),
+            grok_replay: Arc::new(GrokReasoningReplay::new()),
         };
         let app = router(state);
         let task_shutdown = accept_shutdown.clone();

@@ -1121,6 +1121,18 @@ async fn grok_responses_upstream() -> (u16, tokio::task::JoinHandle<()>) {
                 .and_then(|value| value.to_str().ok()),
             Some(crate::bridge::grok_cli::GROK_CLI_VERSION)
         );
+        assert_eq!(
+            headers
+                .get("x-grok-client-identifier")
+                .and_then(|value| value.to_str().ok()),
+            Some(crate::bridge::grok_cli::GROK_CLI_IDENTIFIER)
+        );
+        assert_eq!(
+            headers
+                .get("x-grok-client-mode")
+                .and_then(|value| value.to_str().ok()),
+            Some(crate::bridge::grok_cli::GROK_CLI_MODE)
+        );
         Json(grok_completed_response("hello"))
     }
     let listener =
@@ -1139,8 +1151,8 @@ async fn grok_responses_upstream() -> (u16, tokio::task::JoinHandle<()>) {
     (port, task)
 }
 
-async fn capturing_grok_responses_upstream() -> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>)
-{
+async fn capturing_grok_responses_upstream(
+) -> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
     async fn responses(
         State(captured): State<Arc<Mutex<Vec<Value>>>>,
         Json(body): Json<Value>,
@@ -1164,6 +1176,148 @@ async fn capturing_grok_responses_upstream() -> (u16, Arc<Mutex<Vec<Value>>>, to
         )
         .await
         .expect("serve capturing Grok Responses");
+    });
+    (port, captured, task)
+}
+
+#[derive(Clone)]
+struct CapturedGrokRequest {
+    headers: axum::http::HeaderMap,
+    body: Value,
+}
+
+async fn capturing_grok_requests() -> (
+    u16,
+    Arc<Mutex<Vec<CapturedGrokRequest>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    async fn responses(
+        State(captured): State<Arc<Mutex<Vec<CapturedGrokRequest>>>>,
+        headers: axum::http::HeaderMap,
+        Json(body): Json<Value>,
+    ) -> Json<Value> {
+        captured
+            .lock()
+            .expect("lock")
+            .push(CapturedGrokRequest { headers, body });
+        Json(grok_completed_response("hello"))
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind capturing Grok requests");
+    let port = listener.local_addr().expect("addr").port();
+    let captured_clone = captured.clone();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state(captured_clone),
+        )
+        .await
+        .expect("serve capturing Grok requests");
+    });
+    (port, captured, task)
+}
+
+#[derive(Clone)]
+struct GrokCaptureReply {
+    captured: Arc<Mutex<Vec<CapturedGrokRequest>>>,
+    reply: Value,
+}
+
+async fn capturing_grok_requests_with_reply(
+    reply: Value,
+) -> (
+    u16,
+    Arc<Mutex<Vec<CapturedGrokRequest>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    async fn responses(
+        State(state): State<GrokCaptureReply>,
+        headers: axum::http::HeaderMap,
+        Json(body): Json<Value>,
+    ) -> Json<Value> {
+        state
+            .captured
+            .lock()
+            .expect("lock")
+            .push(CapturedGrokRequest { headers, body });
+        Json(state.reply.clone())
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind capturing Grok reply");
+    let port = listener.local_addr().expect("addr").port();
+    let captured_clone = captured.clone();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state(GrokCaptureReply {
+                    captured: captured_clone,
+                    reply,
+                }),
+        )
+        .await
+        .expect("serve capturing Grok reply");
+    });
+    (port, captured, task)
+}
+
+#[derive(Clone)]
+struct GrokDecodeRetryState {
+    captured: Arc<Mutex<Vec<Value>>>,
+    hits: Arc<Mutex<u32>>,
+}
+
+async fn grok_decode_then_ok_upstream() -> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>)
+{
+    async fn responses(
+        State(state): State<GrokDecodeRetryState>,
+        Json(body): Json<Value>,
+    ) -> Response {
+        state.captured.lock().expect("lock").push(body);
+        let hit = {
+            let mut hits = state.hits.lock().expect("hits");
+            *hits += 1;
+            *hits
+        };
+        if hit == 1 {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": { "message": "could not decrypt the provided encrypted_content" }
+                })),
+            )
+                .into_response();
+        }
+        Json(grok_completed_response("hello")).into_response()
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind Grok decode retry");
+    let port = listener.local_addr().expect("addr").port();
+    let captured_clone = captured.clone();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state(GrokDecodeRetryState {
+                    captured: captured_clone,
+                    hits: Arc::new(Mutex::new(0)),
+                }),
+        )
+        .await
+        .expect("serve Grok decode retry");
     });
     (port, captured, task)
 }
@@ -1734,6 +1888,232 @@ async fn grok_codex_passthrough_keeps_hosted_tools_only() {
     upstream_task.abort();
 }
 
+#[tokio::test]
+async fn grok_claude_thinking_maps_to_upstream_reasoning() {
+    let (upstream_port, captured, upstream_task) = capturing_grok_requests().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_claude_spec("grok-thinking", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header("x-api-key", "local-test-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "thinking": { "type": "enabled", "effort": "high" },
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("messages request");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let captured = captured.lock().expect("lock").clone();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(captured[0].body["reasoning"]["effort"], "high");
+    assert_eq!(captured[0].body["reasoning"]["summary"], "detailed");
+    let include = captured[0].body["include"].as_array().expect("include");
+    assert!(include
+        .iter()
+        .any(|item| item == "reasoning.encrypted_content"));
+    assert!(captured[0].body.get("thinking").is_none());
+    assert_eq!(captured[0].body["model"], "grok-4.5");
+
+    host.stop("grok-thinking").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn grok_codex_local_shell_is_upgraded_for_build() {
+    let (upstream_port, captured, upstream_task) = capturing_grok_requests().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec("grok-shell-tool", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "input": "hello",
+            "tools": [
+                { "type": "local_shell" },
+                { "type": "apply_patch" }
+            ]
+        }))
+        .send()
+        .await
+        .expect("responses request");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let captured = captured.lock().expect("lock").clone();
+    assert_eq!(captured.len(), 1);
+    let tools = captured[0].body["tools"].as_array().expect("tools");
+    assert_eq!(tools.len(), 2);
+    assert_eq!(tools[0]["type"], "shell");
+    assert_eq!(tools[0]["environment"]["type"], "local");
+    assert_eq!(tools[1]["type"], "function");
+    assert_eq!(tools[1]["name"], "apply_patch");
+
+    host.stop("grok-shell-tool").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn grok_claude_session_header_sets_stable_cli_session() {
+    let (upstream_port, captured, upstream_task) = capturing_grok_requests().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_claude_spec("grok-session", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header("x-api-key", "local-test-token")
+        .header("X-Claude-Code-Session-Id", "sess-abc")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("messages request");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let captured = captured.lock().expect("lock").clone();
+    assert_eq!(captured.len(), 1);
+    let expected =
+        crate::bridge::grok_cli::grok_session_id("claude:sess-abc:agent:main").expect("session id");
+    assert_eq!(
+        captured[0]
+            .headers
+            .get("x-grok-session-id")
+            .and_then(|value| value.to_str().ok()),
+        Some(expected.as_str())
+    );
+    assert_eq!(
+        captured[0]
+            .headers
+            .get("x-grok-conv-id")
+            .and_then(|value| value.to_str().ok()),
+        Some(expected.as_str())
+    );
+    assert_eq!(
+        captured[0].body["prompt_cache_key"],
+        "claude:sess-abc:agent:main"
+    );
+    assert!(captured[0].headers.get("x-grok-turn-idx").is_none());
+    assert!(captured[0].headers.get("x-grok-req-id").is_some());
+    assert!(captured[0].headers.get("x-grok-agent-id").is_some());
+
+    host.stop("grok-session").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn grok_claude_replays_encrypted_reasoning_on_next_turn() {
+    let reply = json!({
+        "id": "resp_grok",
+        "object": "response",
+        "created_at": 1,
+        "model": "grok-4.5",
+        "status": "completed",
+        "output": [
+            { "id": "rs_1", "type": "reasoning", "encrypted_content": "enc-turn-1" },
+            {
+                "id": "msg_grok",
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [{ "type": "output_text", "text": "hello" }]
+            }
+        ],
+        "usage": {
+            "input_tokens": 2,
+            "output_tokens": 3,
+            "total_tokens": 5,
+            "reasoning_tokens": 0,
+            "output_tokens_details": { "reasoning_tokens": 0 }
+        }
+    });
+    let (upstream_port, captured, upstream_task) = capturing_grok_requests_with_reply(reply).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_claude_spec("grok-replay", 0, upstream_port))
+        .await
+        .expect("start");
+    let url = format!("http://127.0.0.1:{}/v1/messages", status.port);
+    for _ in 0..2 {
+        let response = client()
+            .await
+            .post(&url)
+            .header("x-api-key", "local-test-token")
+            .header("X-Claude-Code-Session-Id", "sess-replay")
+            .json(&json!({
+                "model": "claude-test",
+                "max_tokens": 32,
+                "messages": [{ "role": "user", "content": "hello" }]
+            }))
+            .send()
+            .await
+            .expect("messages request");
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+    let captured = captured.lock().expect("lock").clone();
+    assert_eq!(captured.len(), 2);
+    let second_input = captured[1].body["input"].as_array().expect("input");
+    assert_eq!(second_input[0]["type"], "reasoning");
+    assert_eq!(second_input[0]["encrypted_content"], "enc-turn-1");
+
+    host.stop("grok-replay").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn grok_codex_retries_after_encrypted_reasoning_400() {
+    let (upstream_port, captured, upstream_task) = grok_decode_then_ok_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec("grok-decode-retry", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "input": [
+                { "type": "reasoning", "encrypted_content": "stale-blob" },
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hello" }]
+                }
+            ]
+        }))
+        .send()
+        .await
+        .expect("responses request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let captured = captured.lock().expect("lock").clone();
+    assert_eq!(captured.len(), 2);
+    let first = captured[0]["input"].as_array().expect("first input");
+    assert!(first.iter().any(|item| item["type"] == "reasoning"));
+    let second = captured[1]["input"].as_array().expect("second input");
+    assert!(second.iter().all(|item| item["type"] != "reasoning"));
+
+    host.stop("grok-decode-retry").await.expect("stop");
+    upstream_task.abort();
+}
+
 fn completed_usage_from_responses_sse(body: &str) -> Value {
     body.split("\n\n")
         .filter_map(|frame| {
@@ -1801,7 +2181,9 @@ async fn grok_codex_passthrough_completed_json_includes_reasoning_tokens() {
     upstream_task.abort();
 }
 
-async fn grok_responses_sse_upstream(chunks: Vec<&'static [u8]>) -> (u16, tokio::task::JoinHandle<()>) {
+async fn grok_responses_sse_upstream(
+    chunks: Vec<&'static [u8]>,
+) -> (u16, tokio::task::JoinHandle<()>) {
     async fn responses(State(chunks): State<Vec<&'static [u8]>>) -> Response {
         let output = stream! {
             for chunk in chunks {
@@ -1840,7 +2222,11 @@ async fn grok_codex_passthrough_sse_forwards_completed_event() {
     .await;
     let host = BridgeRuntimeHost::new();
     let status = host
-        .start(grok_codex_spec("grok-reasoning-tokens-sse", 0, upstream_port))
+        .start(grok_codex_spec(
+            "grok-reasoning-tokens-sse",
+            0,
+            upstream_port,
+        ))
         .await
         .expect("start");
     let body = client()
