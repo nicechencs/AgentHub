@@ -70,12 +70,16 @@ impl AdapterBridgeService {
             ));
         }
 
-        let generated_provider_exists = if let Some(provider) = existing_provider.as_ref() {
-            validate_generated_provider(provider, &profile, profile.local_port)?;
-            true
-        } else {
-            false
-        };
+        let (generated_provider_exists, generated_provider_is_current) =
+            if let Some(provider) = existing_provider.as_ref() {
+                validate_generated_provider(provider, &profile, profile.local_port)?;
+                (
+                    true,
+                    provider_matches_current_projection(provider, &profile, profile.local_port),
+                )
+            } else {
+                (false, false)
+            };
 
         if profile.status == AdapterProfileStatus::NeedsAttention {
             profile.status = AdapterProfileStatus::Applying;
@@ -102,6 +106,7 @@ impl AdapterBridgeService {
             },
             profile,
             generated_provider_exists,
+            generated_provider_is_current,
         })
     }
 
@@ -147,6 +152,7 @@ impl AdapterBridgeService {
                 }
                 if profile.status == AdapterProfileStatus::Active
                     && profile.local_port == Some(port)
+                    && provider_matches_current_projection(&provider, &profile, Some(port))
                 {
                     Ok(AdapterBridgeProviderProjection::None)
                 } else {

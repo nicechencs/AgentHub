@@ -238,26 +238,29 @@ pub fn to_responses_request(request: &BridgeRequest) -> Value {
     Value::Object(body)
 }
 
-/// Official ChatGPT / Codex Responses rejects leftover `grok-*` and `claude-*`
-/// model ids (400). Do not invent a ChatGPT model name to replace them — omit
-/// instead.
-pub fn is_leftover_grok_model(model: &str) -> bool {
+/// Official ChatGPT / Codex Responses rejects leftover bridge / CN model ids
+/// (400). Do not invent a ChatGPT model name to replace them — omit instead.
+pub fn is_leftover_bridge_model(model: &str) -> bool {
     let model = model.trim();
-    model.starts_with("grok-") || model.starts_with("claude-")
+    model.starts_with("grok-")
+        || model.starts_with("claude-")
+        || model.starts_with("kimi-")
+        || model.starts_with("deepseek-")
+        || (model.starts_with("agenthub_") && model.ends_with("_bridge"))
 }
 
 /// Write the Responses `model` for official Codex upstream.
 ///
-/// Configured override wins when it is non-empty and not leftover `grok-*` /
-/// `claude-*`. Incoming leftovers are dropped rather than rewritten as `gpt-*`.
+/// Configured override wins when it is non-empty and not leftover. Incoming
+/// leftovers are dropped rather than rewritten as `gpt-*`.
 pub fn apply_official_codex_model(body: &mut Value, incoming: &str, configured: Option<&str>) {
     let configured = configured
         .map(str::trim)
-        .filter(|value| !value.is_empty() && !is_leftover_grok_model(value));
+        .filter(|value| !value.is_empty() && !is_leftover_bridge_model(value));
     let incoming = incoming
         .trim()
         .to_owned();
-    let incoming = if incoming.is_empty() || is_leftover_grok_model(&incoming) {
+    let incoming = if incoming.is_empty() || is_leftover_bridge_model(&incoming) {
         None
     } else {
         Some(incoming)

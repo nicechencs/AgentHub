@@ -134,6 +134,36 @@ fn strip_keeps_custom_provider_grok_model_and_effort() {
 }
 
 #[test]
+fn strip_drops_leftover_claude_model_and_effort() {
+    let leftover = "model = \"claude-sonnet-4-20250514\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n";
+    let mut doc = leftover.parse::<DocumentMut>().unwrap();
+    assert!(strip_bridge_leftovers_in_doc(&mut doc));
+    let stored = doc.to_string();
+    assert!(!stored.contains("claude-"));
+    assert!(!stored.contains("model_reasoning_effort"));
+    assert!(stored.contains("disable_response_storage"));
+}
+
+#[test]
+fn strip_drops_leftover_kimi_model() {
+    let leftover = "model = \"kimi-k2.5\"\ndisable_response_storage = true\n";
+    let mut doc = leftover.parse::<DocumentMut>().unwrap();
+    assert!(strip_bridge_leftovers_in_doc(&mut doc));
+    let stored = doc.to_string();
+    assert!(!stored.contains("kimi-k2.5"));
+    assert!(stored.contains("disable_response_storage"));
+}
+
+#[test]
+fn strip_keeps_custom_provider_claude_model() {
+    let custom = "model_provider = \"custom\"\nmodel = \"claude-sonnet-4-20250514\"\nmodel_reasoning_effort = \"high\"\n";
+    let mut doc = custom.parse::<DocumentMut>().unwrap();
+    assert!(!toml_is_bridge_leftover(custom));
+    assert!(!strip_bridge_leftovers_in_doc(&mut doc));
+    assert_eq!(doc.to_string(), custom);
+}
+
+#[test]
 fn strip_clears_apikey_pref_when_only_provider_table_slug_remains() {
     let leftover = r#"preferred_auth_method = "apikey"
 

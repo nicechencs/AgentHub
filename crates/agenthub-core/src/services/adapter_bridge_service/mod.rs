@@ -75,6 +75,7 @@ struct CodexBridgeRule {
     protocol: BridgeUpstreamProtocol,
     local_surface: BridgeLocalSurface,
     bridge_kind: &'static str,
+    legacy_bridge_kinds: &'static [&'static str],
     target_agent: AgentId,
     mode: AdapterProfileMode,
 }
@@ -92,6 +93,7 @@ const KIMI_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
     protocol: BridgeUpstreamProtocol::KimiChatCompletions,
     local_surface: BridgeLocalSurface::Responses,
     bridge_kind: "responses_to_chat_completions",
+    legacy_bridge_kinds: &[],
     target_agent: AgentId::Codex,
     mode: AdapterProfileMode::Api,
 };
@@ -109,6 +111,7 @@ const ANTHROPIC_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
     protocol: BridgeUpstreamProtocol::AnthropicMessages,
     local_surface: BridgeLocalSurface::Responses,
     bridge_kind: "responses_to_anthropic_messages",
+    legacy_bridge_kinds: &[],
     target_agent: AgentId::Codex,
     mode: AdapterProfileMode::Api,
 };
@@ -126,6 +129,7 @@ const CODEX_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
     protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
     local_surface: BridgeLocalSurface::Messages,
     bridge_kind: "messages_to_codex_responses",
+    legacy_bridge_kinds: &[],
     target_agent: AgentId::Claude,
     mode: AdapterProfileMode::Oauth,
 };
@@ -143,6 +147,7 @@ const GROK_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
     protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
     local_surface: BridgeLocalSurface::Messages,
     bridge_kind: "messages_to_xai_responses",
+    legacy_bridge_kinds: &["messages_to_xai_chat_completions"],
     target_agent: AgentId::Claude,
     mode: AdapterProfileMode::Oauth,
 };
@@ -160,6 +165,7 @@ const GROK_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
     protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
     local_surface: BridgeLocalSurface::Responses,
     bridge_kind: "responses_to_xai_responses",
+    legacy_bridge_kinds: &["responses_to_chat_completions"],
     target_agent: AgentId::Codex,
     mode: AdapterProfileMode::Oauth,
 };
@@ -177,6 +183,7 @@ const CODEX_GROK_RULE: CodexBridgeRule = CodexBridgeRule {
     protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
     local_surface: BridgeLocalSurface::Responses,
     bridge_kind: "responses_to_codex_responses",
+    legacy_bridge_kinds: &["chat_completions_to_codex_responses"],
     target_agent: AgentId::Grok,
     mode: AdapterProfileMode::Oauth,
 };
@@ -194,6 +201,7 @@ const CODEX_KIMI_RULE: CodexBridgeRule = CodexBridgeRule {
     protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
     local_surface: BridgeLocalSurface::ChatCompletions,
     bridge_kind: "chat_completions_to_codex_responses",
+    legacy_bridge_kinds: &[],
     target_agent: AgentId::Kimi,
     mode: AdapterProfileMode::Oauth,
 };
@@ -211,6 +219,7 @@ const CODEX_DSH_RULE: CodexBridgeRule = CodexBridgeRule {
     protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
     local_surface: BridgeLocalSurface::ChatCompletions,
     bridge_kind: "chat_completions_to_codex_responses",
+    legacy_bridge_kinds: &[],
     target_agent: AgentId::Dsh,
     mode: AdapterProfileMode::Oauth,
 };
@@ -449,6 +458,7 @@ pub struct AdapterBridgePrepared {
     profile: AdapterProfile,
     material: AdapterBridgeRuntimeMaterial,
     generated_provider_exists: bool,
+    generated_provider_is_current: bool,
 }
 
 impl std::fmt::Debug for AdapterBridgePrepared {
@@ -458,6 +468,10 @@ impl std::fmt::Debug for AdapterBridgePrepared {
             .field("profile", &self.profile)
             .field("material", &self.material)
             .field("generated_provider_exists", &self.generated_provider_exists)
+            .field(
+                "generated_provider_is_current",
+                &self.generated_provider_is_current,
+            )
             .finish()
     }
 }
@@ -478,7 +492,8 @@ impl AdapterBridgePrepared {
         validate_bound_port(port)?;
         let input = projected_provider_input(&self.profile, &self.material.local_bearer, port)?;
         if self.generated_provider_exists {
-            if self.profile.status == AdapterProfileStatus::Active
+            if self.generated_provider_is_current
+                && self.profile.status == AdapterProfileStatus::Active
                 && self.profile.local_port == Some(port)
             {
                 Ok(AdapterBridgeProviderProjection::None)
@@ -524,6 +539,7 @@ impl std::fmt::Debug for AdapterBridgeProviderProjection {
 pub struct AdapterBridgeRestoreMaterial {
     profile: AdapterProfile,
     material: AdapterBridgeRuntimeMaterial,
+    needs_reprojection: bool,
 }
 
 impl std::fmt::Debug for AdapterBridgeRestoreMaterial {
@@ -532,6 +548,7 @@ impl std::fmt::Debug for AdapterBridgeRestoreMaterial {
             .debug_struct("AdapterBridgeRestoreMaterial")
             .field("profile", &self.profile)
             .field("material", &self.material)
+            .field("needs_reprojection", &self.needs_reprojection)
             .finish()
     }
 }
@@ -543,6 +560,10 @@ impl AdapterBridgeRestoreMaterial {
 
     pub fn runtime_material(&self) -> &AdapterBridgeRuntimeMaterial {
         &self.material
+    }
+
+    pub fn needs_reprojection(&self) -> bool {
+        self.needs_reprojection
     }
 }
 

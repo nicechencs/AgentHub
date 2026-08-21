@@ -153,6 +153,19 @@ pub(super) fn grok_bridge_toml(rule: &CodexBridgeRule, port: u16, local_bearer: 
     )
 }
 
+/// Pre-159e8cd Grok TOML: same as [`grok_bridge_toml`] except `chat_completions`.
+pub(super) fn legacy_grok_bridge_toml(
+    rule: &CodexBridgeRule,
+    port: u16,
+    local_bearer: &str,
+) -> String {
+    format!(
+        "[models]\ndefault = \"{slug}\"\n\n[model.\"{slug}\"]\nbase_url = \"http://127.0.0.1:{port}/v1\"\napi_key = \"{token}\"\napi_backend = \"chat_completions\"\n",
+        slug = rule.provider_slug,
+        token = local_bearer,
+    )
+}
+
 /// Kimi config.toml for Codex official login. No invented ChatGPT `default_model`.
 pub(super) fn kimi_bridge_toml(rule: &CodexBridgeRule, port: u16, local_bearer: &str) -> String {
     format!(
@@ -235,12 +248,13 @@ pub(super) fn validate_generated_provider(
             return Err(invalid_projection());
         }
         if let Some(port) = expected_port {
-            let expected = if rule.target_agent == AgentId::Grok {
-                grok_bridge_toml(&rule, port, &local_bearer)
+            let matches_current = if rule.target_agent == AgentId::Grok {
+                content == grok_bridge_toml(&rule, port, &local_bearer)
+                    || content == legacy_grok_bridge_toml(&rule, port, &local_bearer)
             } else {
-                kimi_bridge_toml(&rule, port, &local_bearer)
+                content == kimi_bridge_toml(&rule, port, &local_bearer)
             };
-            if content != expected {
+            if !matches_current {
                 return Err(AppError::message(
                     "adapter.provider_conflict",
                     "generated bridge provider does not match the bound port",
@@ -376,18 +390,45 @@ pub(super) fn provider_owned_by(provider: &Provider, profile: &AdapterProfile) -
             .and_then(|value| value.get("id"))
             .and_then(Value::as_str)
             == Some(profile.source_id.as_str())
-        && provider
-            .meta
-            .get("adapterBridge")
-            .and_then(|value| value.get("kind"))
-            .and_then(Value::as_str)
-            == Some(rule.bridge_kind)
+        && adapter_bridge_kind_matches(provider, &rule)
         && provider
             .meta
             .get("adapterBridge")
             .and_then(|value| value.get("loopbackOnly"))
             .and_then(Value::as_bool)
             == Some(true)
+}
+
+fn adapter_bridge_kind_matches(provider: &Provider, rule: &CodexBridgeRule) -> bool {
+    let Some(kind) = provider
+        .meta
+        .get("adapterBridge")
+        .and_then(|value| value.get("kind"))
+        .and_then(Value::as_str)
+    else {
+        return false;
+    };
+    kind == rule.bridge_kind || rule.legacy_bridge_kinds.contains(&kind)
+}
+
+/// Compare generated provider `settings_config` and `meta` to the current
+/// projection. Display `name` is not part of the contract. Missing port is
+/// never current.
+pub(super) fn provider_matches_current_projection(
+    provider: &Provider,
+    profile: &AdapterProfile,
+    port: Option<u16>,
+) -> bool {
+    let Some(port) = port else {
+        return false;
+    };
+    let Ok(local_bearer) = local_bearer_from_provider(provider) else {
+        return false;
+    };
+    let Ok(projected) = projected_provider_input(profile, &local_bearer, port) else {
+        return false;
+    };
+    provider.settings_config == projected.settings_config && provider.meta == projected.meta
 }
 
 /// 幂等判定：已有桥投影是否已是当前规则的完整契约。

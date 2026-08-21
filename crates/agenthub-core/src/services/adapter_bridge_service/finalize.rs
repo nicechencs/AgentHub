@@ -251,6 +251,11 @@ impl AdapterBridgeService {
                 upstream_auth,
                 local_bearer: local_bearer_from_provider(&provider)?,
             },
+            needs_reprojection: !provider_matches_current_projection(
+                &provider,
+                &profile,
+                Some(local_port),
+            ),
             profile,
         })
     }
