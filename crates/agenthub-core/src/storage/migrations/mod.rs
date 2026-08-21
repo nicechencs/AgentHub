@@ -1,6 +1,12 @@
-use rusqlite::Connection;
+use std::thread;
+use std::time::Duration;
 
-use crate::error::Result;
+use rusqlite::{Connection, Error as SqliteError, Transaction, TransactionBehavior};
+
+use crate::error::{AppError, Result};
+
+const MIGRATION_RETRY_ATTEMPTS: usize = 3;
+const MIGRATION_RETRY_DELAY: Duration = Duration::from_millis(50);
 
 const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_init", include_str!("0001_init.sql")),
@@ -51,7 +57,30 @@ const MIGRATIONS: &[(&str, &str)] = &[
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {
-    conn.execute_batch(
+    for attempt in 0..MIGRATION_RETRY_ATTEMPTS {
+        match run_once(conn, MIGRATIONS) {
+            Ok(()) => return Ok(()),
+            Err(error)
+                if is_busy(&error) && attempt + 1 < MIGRATION_RETRY_ATTEMPTS =>
+            {
+                thread::sleep(MIGRATION_RETRY_DELAY);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    unreachable!("migration retry loop always returns")
+}
+
+/// Run the pending migration list while holding one SQLite write transaction.
+///
+/// `BEGIN IMMEDIATE` makes the schema check and every DDL/DML/version marker
+/// update observe one serialized writer. If any migration fails, dropping the
+/// transaction rolls back the complete batch, including `schema_migrations`
+/// creation and all earlier migration steps in this invocation.
+fn run_once(conn: &Connection, migrations: &[(&str, &str)]) -> Result<()> {
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    tx.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS schema_migrations (
             version TEXT PRIMARY KEY,
@@ -60,8 +89,8 @@ pub fn run(conn: &Connection) -> Result<()> {
         "#,
     )?;
 
-    for (version, sql) in MIGRATIONS {
-        let already: bool = conn.query_row(
+    for (version, sql) in migrations {
+        let already: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = ?1)",
             [version],
             |row| row.get(0),
@@ -69,23 +98,45 @@ pub fn run(conn: &Connection) -> Result<()> {
         if already {
             continue;
         }
-        apply_migration(conn, version, sql)?;
+        apply_migration_in_transaction(&tx, version, sql)?;
     }
+    tx.commit()?;
     Ok(())
 }
 
-/// Applies a migration and records its version as one indivisible database
-/// change.  If either the SQL script or marker insert fails, dropping the
-/// transaction rolls the whole migration back.
+/// Applies one migration and records its version as one indivisible database
+/// change. This helper remains useful for focused migration tests; production
+/// startup uses `run_once`, which wraps the complete pending batch in one
+/// `BEGIN IMMEDIATE` transaction.
 fn apply_migration(conn: &Connection, version: &str, sql: &str) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
-    tx.execute_batch(sql)?;
-    tx.execute(
+    apply_migration_in_transaction(&tx, version, sql)?;
+    tx.commit()?;
+    Ok(())
+}
+
+fn apply_migration_in_transaction(
+    conn: &Connection,
+    version: &str,
+    sql: &str,
+) -> Result<()> {
+    conn.execute_batch(sql)?;
+    conn.execute(
         "INSERT INTO schema_migrations (version) VALUES (?1)",
         [version],
     )?;
-    tx.commit()?;
     Ok(())
+}
+
+fn is_busy(error: &AppError) -> bool {
+    matches!(
+        error,
+        AppError::Db(SqliteError::SqliteFailure(sqlite_error, _))
+            if matches!(
+                sqlite_error.code,
+                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+            )
+    )
 }
 
 #[cfg(test)]

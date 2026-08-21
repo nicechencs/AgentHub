@@ -8,6 +8,7 @@ use crate::platform::AgentKey;
 use crate::services::{BackupService, LiveWriteAuthority};
 use crate::storage::Database;
 use crate::utils::command_exec::CommandExecutor;
+use std::path::Path;
 
 /// Executes lifecycle mutations after key-native resolve/capability checks.
 ///
@@ -36,6 +37,7 @@ pub trait LifecycleInstallExecutor: Send + Sync {
         key: &AgentKey,
         contribution: &dyn InstallContribution,
         purge_config: bool,
+        actual_data_dir: &Path,
         command_executor: &dyn CommandExecutor,
     ) -> Result<InstallOutcome>;
 }
@@ -142,6 +144,7 @@ impl LifecycleInstallExecutor for BuiltinLifecycleInstallExecutor {
         key: &AgentKey,
         contribution: &dyn InstallContribution,
         purge_config: bool,
+        actual_data_dir: &Path,
         command_executor: &dyn CommandExecutor,
     ) -> Result<InstallOutcome> {
         require_contribution_matches(key, contribution)?;
@@ -157,19 +160,21 @@ impl LifecycleInstallExecutor for BuiltinLifecycleInstallExecutor {
                     Ok(_) | Err(crate::error::AppError::NotFound(_)) => {}
                     Err(error) => return Err(error),
                 }
-                return crate::services::install_service::uninstall_agent_with_contribution_and_guard(
+                return crate::services::install_service::uninstall_agent_with_contribution_and_guard_at_data_dir(
                     &self.adapters,
                     &self.authority,
                     &guard,
+                    actual_data_dir,
                     agent,
                     contribution,
                     true,
                     command_executor,
                 );
             }
-            return crate::services::install_service::uninstall_agent_with_contribution_and_authority(
+            return crate::services::install_service::uninstall_agent_with_contribution_and_authority_at_data_dir(
                 &self.adapters,
                 &self.authority,
+                actual_data_dir,
                 agent,
                 contribution,
                 purge_config,

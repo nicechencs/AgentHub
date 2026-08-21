@@ -76,6 +76,34 @@ impl ChatService {
         Ok(conv)
     }
 
+    /// Ensure the UI's initial blank conversation exists without creating a
+    /// duplicate when initialization is replayed or concurrent.  Explicit
+    /// `create_conversation` calls intentionally keep their existing
+    /// always-insert behavior.
+    pub fn ensure_default_conversation(
+        &self,
+        agent_ids: Vec<AgentId>,
+        cwd: Option<String>,
+    ) -> Result<Conversation> {
+        let agent_ids = require_single_agent(agent_ids)?;
+        if let Some(ref c) = cwd {
+            validate_cwd(c)?;
+        }
+        let now = Utc::now().to_rfc3339();
+        let candidate = Conversation {
+            id: format!("conv-{}", Uuid::new_v4()),
+            title: String::new(),
+            agent_ids,
+            cwd,
+            allow_dangerous: false,
+            created_at: now.clone(),
+            updated_at: now,
+            native_session_id: None,
+            sending: false,
+        };
+        self.repo.ensure_default_conversation(&candidate)
+    }
+
     pub fn update_conversation(
         &self,
         id: &str,

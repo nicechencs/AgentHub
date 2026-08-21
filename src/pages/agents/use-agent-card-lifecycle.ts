@@ -27,6 +27,50 @@ export type AgentCardTask = {
 
 const DONE_HOLD_MS = 500;
 
+type ProgressSubscribe = (
+  handler: Parameters<typeof onInstallProgress>[0],
+) => Promise<unknown>;
+type Unsubscribe = () => void;
+
+function isUnsubscribe(value: unknown): value is Unsubscribe {
+  return typeof value === 'function';
+}
+
+/**
+ * Keep the unsubscribe local to one install attempt. If the async listener
+ * setup resolves after disposal, its late unsubscribe is invoked immediately
+ * instead of leaking a listener into the next attempt.
+ */
+export function createInstallProgressSubscription(
+  subscribe: ProgressSubscribe,
+  handler: Parameters<ProgressSubscribe>[0],
+) {
+  let disposed = false;
+  let unsubscribe: Unsubscribe | null = null;
+
+  const dispose = () => {
+    disposed = true;
+    const stop = unsubscribe;
+    unsubscribe = null;
+    stop?.();
+  };
+
+  const ready = Promise.resolve()
+    .then(() => subscribe(handler))
+    .then((candidate) => {
+      if (!isUnsubscribe(candidate)) {
+        throw new Error('install progress subscription did not return an unsubscribe function');
+      }
+      if (disposed) {
+        candidate();
+        return;
+      }
+      unsubscribe = candidate;
+    });
+
+  return { ready, dispose };
+}
+
 export function useAgentCardLifecycle(input: {
   agent: AgentStatus;
   agentName: string;
@@ -100,7 +144,9 @@ export function useAgentCardLifecycle(input: {
     run: () => Promise<{ ok: boolean; logs: string[]; message: string }>,
     onOk: () => void,
   ) => {
-    cancelRef.current = { cancelled: false };
+    cancelRef.current.cancelled = true;
+    const cancelToken = { cancelled: false };
+    cancelRef.current = cancelToken;
     setElapsedSec(0);
     const executingLine = t('agents.lifecycle.executing');
     setTask({
@@ -116,8 +162,8 @@ export function useAgentCardLifecycle(input: {
 
     releaseProgressUnsub();
     const agentId = agent.agentId;
-    void onInstallProgress((payload) => {
-      if (cancelRef.current.cancelled) return;
+    const progressSubscription = createInstallProgressSubscription(onInstallProgress, (payload) => {
+      if (cancelToken.cancelled) return;
       if (payload.action === 'runtime') {
         if (action !== 'oneclick') return;
       } else if (!isProgressForAgent(payload, agentId)) {
@@ -137,14 +183,14 @@ export function useAgentCardLifecycle(input: {
           lines: next.length > 400 ? next.slice(next.length - 400) : next,
         };
       });
-    }).then((unsub) => {
-      progressUnsubRef.current =
-        typeof unsub === 'function' ? () => { unsub(); } : null;
     });
+    progressUnsubRef.current = progressSubscription.dispose;
 
     try {
+      await progressSubscription.ready;
+      if (cancelToken.cancelled) return;
       const outcome = await run();
-      if (cancelRef.current.cancelled) return;
+      if (cancelToken.cancelled) return;
       setTask({
         action,
         command,
@@ -158,6 +204,7 @@ export function useAgentCardLifecycle(input: {
         toast({ title: t('agents.lifecycle.notOk'), description: outcome.message, variant: 'danger' });
       }
     } catch (e) {
+      if (cancelToken.cancelled) return;
       if (e instanceof InstallFailedError) {
         setTask({
           action,
@@ -171,7 +218,10 @@ export function useAgentCardLifecycle(input: {
       setTask((prev) => (prev ? { ...prev, status: 'failed', lines: [String(e)] } : prev));
       toast({ title: t('agents.lifecycle.failed'), description: String(e), variant: 'danger' });
     } finally {
-      releaseProgressUnsub();
+      progressSubscription.dispose();
+      if (progressUnsubRef.current === progressSubscription.dispose) {
+        progressUnsubRef.current = null;
+      }
     }
   };
 

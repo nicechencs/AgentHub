@@ -12,6 +12,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::services::emit_install_log;
+use super::process::{
+    configure_process_group, finish_reader, join_reader_bounded, kill_process_tree, mark_truncated,
+    poll_child, ChildPoll, ProcessControl, Utf8ChunkDecoder,
+};
 
 /// Request to run an external program with timeout.
 #[derive(Debug, Clone)]
@@ -98,16 +102,6 @@ fn quote_if_needed(s: &str) -> String {
     }
 }
 
-fn apply_no_window(cmd: &mut Command) {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-    let _ = cmd;
-}
-
 fn run_timed(
     program: &str,
     args: &[String],
@@ -127,7 +121,19 @@ fn run_timed(
     cmd.env("PYTHONUNBUFFERED", "1");
     cmd.env("NPM_CONFIG_PROGRESS", "true");
     cmd.env("NPM_CONFIG_LOGLEVEL", "info");
-    apply_no_window(&mut cmd);
+    let process_control = match configure_process_group(&mut cmd) {
+        Ok(control) => control,
+        Err(e) => {
+            return ExecResult {
+                command,
+                exit_code: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                timed_out: false,
+                spawn_error: Some(format!("process-group setup failed: {e}")),
+            };
+        }
+    };
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
@@ -142,8 +148,21 @@ fn run_timed(
             };
         }
     };
+    if let Err(e) = process_control.attach(&child) {
+        let _ = child.kill();
+        process_control.terminate(&mut child);
+        let _ = child.wait();
+        return ExecResult {
+            command,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            timed_out: false,
+            spawn_error: Some(format!("process-group attach failed: {e}")),
+        };
+    }
 
-    match wait_with_timeout_streaming(&mut child, timeout, max_output_bytes) {
+    match wait_with_timeout_streaming(&mut child, timeout, max_output_bytes, &process_control) {
         WaitOutcome::Finished {
             status,
             stdout,
@@ -192,6 +211,7 @@ fn wait_with_timeout_streaming(
     child: &mut Child,
     timeout: Duration,
     max_output_bytes: usize,
+    process_control: &ProcessControl,
 ) -> WaitOutcome {
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -202,8 +222,9 @@ fn wait_with_timeout_streaming(
     let stdout_trunc = Arc::new(AtomicBool::new(false));
     let stderr_trunc = Arc::new(AtomicBool::new(false));
 
-    // Fan-in so emit_install_log is only called from this wait thread (orderly).
-    let (tx, rx) = mpsc::channel::<String>();
+    // Bounded fan-in prevents a newline storm from flooding the UI queue.
+    // The accumulator remains authoritative for the final capped output.
+    let (tx, rx) = mpsc::sync_channel::<String>(32);
 
     let stdout_acc_r = Arc::clone(&stdout_acc);
     let stdout_trunc_r = Arc::clone(&stdout_trunc);
@@ -221,136 +242,189 @@ fn wait_with_timeout_streaming(
     drop(tx);
 
     let started = Instant::now();
+    const MAX_LIVE_CHUNKS_PER_TICK: usize = 16;
     let poll = Duration::from_millis(50);
     loop {
-        // Drain available lines for live GUI progress.
-        while let Ok(line) = rx.try_recv() {
-            emit_install_log(&line);
+        // Drain a bounded number of chunks, and skip live delivery once the
+        // deadline is reached so timeout handling cannot be starved by output.
+        if started.elapsed() < timeout {
+            for _ in 0..MAX_LIVE_CHUNKS_PER_TICK {
+                let Ok(line) = rx.try_recv() else {
+                    break;
+                };
+                emit_install_log(&line);
+            }
         }
 
-        match child.try_wait() {
-            Ok(Some(status)) => {
+        match poll_child(child, process_control) {
+            Ok(ChildPoll::Exited(observed_status)) => {
                 // Readers finish; flush remaining lines.
-                let _ = stdout_handle.join();
-                let _ = stderr_handle.join();
+                let mut terminated = false;
+                let stdout_incomplete = finish_reader(
+                    join_reader_bounded(stdout_handle, Duration::from_millis(250)),
+                    Duration::from_secs(2),
+                    process_control,
+                    child,
+                    &mut terminated,
+                );
+                let stderr_incomplete = finish_reader(
+                    join_reader_bounded(stderr_handle, Duration::from_millis(250)),
+                    Duration::from_secs(2),
+                    process_control,
+                    child,
+                    &mut terminated,
+                );
                 while let Ok(line) = rx.try_recv() {
                     emit_install_log(&line);
                 }
-                let stdout = acc_to_string(&stdout_acc, stdout_trunc.load(Ordering::Relaxed));
-                let stderr = acc_to_string(&stderr_acc, stderr_trunc.load(Ordering::Relaxed));
+                let stdout = acc_to_string(
+                    &stdout_acc,
+                    stdout_trunc.load(Ordering::Relaxed),
+                    stdout_incomplete,
+                );
+                let stderr = acc_to_string(
+                    &stderr_acc,
+                    stderr_trunc.load(Ordering::Relaxed),
+                    stderr_incomplete,
+                );
+                let status = match observed_status {
+                    Some(status) => status,
+                    None => match child.wait() {
+                        Ok(status) => status,
+                        Err(error) => return WaitOutcome::IoError(error),
+                    },
+                };
                 return WaitOutcome::Finished {
                     status,
                     stdout,
                     stderr,
                 };
             }
-            Ok(None) => {
+            Ok(ChildPoll::Running) => {
                 if started.elapsed() >= timeout {
                     // Kill first so reader threads unblock on pipe EOF, then join.
-                    kill_process_tree(child);
+                    kill_process_tree(process_control, child);
                     let _ = child.wait();
-                    let _ = stdout_handle.join();
-                    let _ = stderr_handle.join();
+                    let mut terminated = true;
+                    let stdout_incomplete = finish_reader(
+                        join_reader_bounded(stdout_handle, Duration::from_secs(2)),
+                        Duration::from_secs(2),
+                        process_control,
+                        child,
+                        &mut terminated,
+                    );
+                    let stderr_incomplete = finish_reader(
+                        join_reader_bounded(stderr_handle, Duration::from_secs(2)),
+                        Duration::from_secs(2),
+                        process_control,
+                        child,
+                        &mut terminated,
+                    );
                     while let Ok(line) = rx.try_recv() {
                         emit_install_log(&line);
                     }
-                    let stdout = acc_to_string(&stdout_acc, stdout_trunc.load(Ordering::Relaxed));
-                    let stderr = acc_to_string(&stderr_acc, stderr_trunc.load(Ordering::Relaxed));
+                    let stdout = acc_to_string(
+                        &stdout_acc,
+                        stdout_trunc.load(Ordering::Relaxed),
+                        stdout_incomplete,
+                    );
+                    let stderr = acc_to_string(
+                        &stderr_acc,
+                        stderr_trunc.load(Ordering::Relaxed),
+                        stderr_incomplete,
+                    );
                     return WaitOutcome::Timeout { stdout, stderr };
                 }
                 thread::sleep(poll);
             }
             Err(e) => {
-                kill_process_tree(child);
+                let _ = child.kill();
                 let _ = child.wait();
+                let mut terminated = true;
+                let _ = finish_reader(
+                    join_reader_bounded(stdout_handle, Duration::from_secs(2)),
+                    Duration::from_secs(2),
+                    process_control,
+                    child,
+                    &mut terminated,
+                );
+                let _ = finish_reader(
+                    join_reader_bounded(stderr_handle, Duration::from_secs(2)),
+                    Duration::from_secs(2),
+                    process_control,
+                    child,
+                    &mut terminated,
+                );
                 return WaitOutcome::IoError(e);
             }
         }
     }
 }
 
-fn acc_to_string(acc: &Mutex<Vec<u8>>, truncated: bool) -> String {
+fn acc_to_string(acc: &Mutex<Vec<u8>>, truncated: bool, incomplete: bool) -> String {
     let bytes = acc.lock().map(|g| g.clone()).unwrap_or_default();
     let mut s = String::from_utf8_lossy(&bytes).into_owned();
-    if truncated {
+    if incomplete {
+        s.push_str("\n…(output incomplete)");
+    } else if truncated {
         s.push_str("\n…(output truncated)");
     }
     s
 }
 
-/// Read pipe bytes, emit complete lines (split on `\n` / `\r`), accumulate capped body.
+/// Read pipe bytes, emit bounded chunks, and accumulate a capped body.
 fn read_stream_lines<R: Read>(
     reader: Option<R>,
     max: usize,
-    tx: &mpsc::Sender<String>,
+    tx: &mpsc::SyncSender<String>,
     acc: &Mutex<Vec<u8>>,
     truncated: &AtomicBool,
 ) {
     let Some(mut r) = reader else {
         return;
     };
-    let mut pending = String::new();
-    let mut chunk = [0u8; 8192];
+    const READ_CHUNK_BYTES: usize = 8192;
+    const EMIT_CHUNK_BYTES: usize = 8192;
+    let mut output = Vec::with_capacity(EMIT_CHUNK_BYTES);
+    let mut chunk = [0u8; READ_CHUNK_BYTES];
+    let mut decoder = Utf8ChunkDecoder::new();
     loop {
         match r.read(&mut chunk) {
             Ok(0) => break,
             Ok(n) => {
-                {
+                let accepted = {
                     let mut buf = acc.lock().unwrap_or_else(|e| e.into_inner());
-                    let remain = max.saturating_sub(buf.len());
-                    if remain == 0 {
-                        truncated.store(true, Ordering::Relaxed);
-                    } else {
-                        let take = n.min(remain);
-                        buf.extend_from_slice(&chunk[..take]);
-                        if take < n {
-                            truncated.store(true, Ordering::Relaxed);
-                        }
-                    }
+                    let room = max.saturating_sub(buf.len());
+                    let take = n.min(room);
+                    buf.extend_from_slice(&chunk[..take]);
+                    take
+                };
+                if accepted < n {
+                    mark_truncated(truncated);
+                    // Continue draining the pipe, but never enqueue after cap.
                 }
-                let text = String::from_utf8_lossy(&chunk[..n]);
-                for ch in text.chars() {
-                    if ch == '\n' || ch == '\r' {
-                        let line = std::mem::take(&mut pending);
-                        let trimmed = line.trim_end();
-                        if !trimmed.is_empty() {
-                            let _ = tx.send(trimmed.to_string());
+                for byte in &chunk[..accepted] {
+                    output.push(*byte);
+                    if output.len() == EMIT_CHUNK_BYTES {
+                        let text = decoder.push(&output);
+                        if !text.is_empty() {
+                            let _ = tx.try_send(text);
                         }
-                    } else {
-                        pending.push(ch);
-                        // Progress spinners may stay on one long line; flush occasionally.
-                        if pending.len() >= 200 {
-                            let line = std::mem::take(&mut pending);
-                            let trimmed = line.trim_end();
-                            if !trimmed.is_empty() {
-                                let _ = tx.send(trimmed.to_string());
-                            }
-                        }
+                        output.clear();
                     }
                 }
             }
             Err(_) => break,
         }
     }
-    let line = pending.trim_end();
-    if !line.is_empty() {
-        let _ = tx.send(line.to_string());
+    if !output.is_empty() {
+        let text = decoder.push(&output);
+        if !text.is_empty() {
+            let _ = tx.try_send(text);
+        }
     }
-}
-
-fn kill_process_tree(child: &mut Child) {
-    #[cfg(windows)]
-    {
-        let pid = child.id();
-        let _ = Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = child.kill();
+    let text = decoder.finish();
+    if !text.is_empty() {
+        let _ = tx.try_send(text);
     }
 }

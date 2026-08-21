@@ -17,7 +17,11 @@ import { invalidateSkills } from '@/lib/hooks/useSkills';
 import type { AppSettings } from '@/lib/types';
 import { applyTheme } from '@/lib/theme';
 import { notifyUsageSettingsChanged } from '@/lib/usage-sync';
-import { persistSettingsPatch } from './settings-persist';
+import {
+  createSettingsPersistenceTracker,
+  mergeSettingsResponse,
+  persistSettingsPatch,
+} from './settings-persist';
 import {
   SKILL_MARKET_VALUES,
   clampUsageIntervalMin,
@@ -34,7 +38,7 @@ export function PreferencesPanel({
 }: {
   settings: AppSettings;
   patch: (p: Partial<AppSettings>) => void;
-  setSettings: (s: AppSettings) => void;
+  setSettings: React.Dispatch<React.SetStateAction<AppSettings | null>>;
   committedThemeRef: React.MutableRefObject<AppSettings['theme']>;
   committedLanguageRef: React.MutableRefObject<AppSettings['language']>;
 }) {
@@ -42,20 +46,55 @@ export function PreferencesPanel({
   const { setTheme } = useTheme();
   const { t, setLanguage } = useI18n();
   const usageBaselineRef = useRef(settings.usageCollectIntervalMin);
+  const persistenceTrackerRef = useRef<ReturnType<typeof createSettingsPersistenceTracker> | null>(null);
 
   const persist = async (
     nextPatch: Partial<AppSettings>,
-    revert: () => void,
     after?: (saved: AppSettings) => void,
   ) => {
+    const tracker =
+      persistenceTrackerRef.current ??
+      (persistenceTrackerRef.current = createSettingsPersistenceTracker());
+    const generation = tracker.begin(nextPatch, {
+      ...settings,
+      theme: committedThemeRef.current,
+      language: committedLanguageRef.current,
+    });
+    const requestedKeys = Object.keys(nextPatch) as Array<keyof AppSettings>;
     try {
       const saved = await persistSettingsPatch(nextPatch);
-      setSettings(saved);
-      committedThemeRef.current = saved.theme;
-      committedLanguageRef.current = saved.language;
-      after?.(saved);
+      const settlement = tracker.settleSuccess(generation, saved, requestedKeys);
+      if (settlement.committedPatch.theme !== undefined) {
+        committedThemeRef.current = settlement.committedPatch.theme;
+      }
+      if (settlement.committedPatch.language !== undefined) {
+        committedLanguageRef.current = settlement.committedPatch.language;
+      }
+      if (settlement.ownedKeys.length === 0) return;
+      const ownedPatch = Object.fromEntries(
+        settlement.ownedKeys.map((key) => [key, saved[key]]),
+      ) as Partial<AppSettings>;
+      setSettings((current) =>
+        current ? mergeSettingsResponse(current, saved, ownedPatch) : current,
+      );
+      if (settlement.ownedKeys.length === requestedKeys.length) after?.(saved);
     } catch (e) {
-      revert();
+      const settlement = tracker.settleFailure(generation);
+      if (settlement.ownedKeys.length === 0) return;
+      setSettings((current) =>
+        current ? { ...current, ...settlement.rollbackPatch } : current,
+      );
+      if (settlement.rollbackPatch.theme !== undefined) {
+        const theme = settlement.rollbackPatch.theme;
+        committedThemeRef.current = theme;
+        applyTheme(theme);
+        setTheme(theme);
+      }
+      if (settlement.rollbackPatch.language !== undefined) {
+        const language = settlement.rollbackPatch.language;
+        committedLanguageRef.current = language;
+        setLanguage(language);
+      }
       toast({
         title: t('common.saveFailed'),
         description: String(e),
@@ -75,13 +114,9 @@ export function PreferencesPanel({
             value={settings.language}
             onValueChange={(v) => {
               const language = v as AppSettings['language'];
-              const prev = settings.language;
               patch({ language });
               setLanguage(language);
-              void persist({ language }, () => {
-                patch({ language: prev });
-                setLanguage(prev);
-              });
+              void persist({ language });
             }}
           >
             <SelectTrigger className="w-full">
@@ -101,13 +136,9 @@ export function PreferencesPanel({
             value={settings.theme}
             onValueChange={(v) => {
               const theme = v as AppSettings['theme'];
-              const prev = settings.theme;
               patch({ theme });
               applyTheme(theme);
-              void persist({ theme }, () => {
-                patch({ theme: prev });
-                applyTheme(prev);
-              }, (saved) => {
+              void persist({ theme }, (saved) => {
                 setTheme(saved.theme);
               });
             }}
@@ -130,9 +161,8 @@ export function PreferencesPanel({
           <Switch
             checked={settings.autoStart}
             onCheckedChange={(v) => {
-              const prev = settings.autoStart;
               patch({ autoStart: v });
-              void persist({ autoStart: v }, () => patch({ autoStart: prev }));
+              void persist({ autoStart: v });
             }}
           />
         </SettingsRow>
@@ -144,9 +174,8 @@ export function PreferencesPanel({
           <Switch
             checked={settings.closeToTray}
             onCheckedChange={(v) => {
-              const prev = settings.closeToTray;
               patch({ closeToTray: v });
-              void persist({ closeToTray: v }, () => patch({ closeToTray: prev }));
+              void persist({ closeToTray: v });
             }}
           />
         </SettingsRow>
@@ -159,9 +188,8 @@ export function PreferencesPanel({
             value={settings.skillMarketSource ?? 'auto'}
             onValueChange={(v) => {
               const skillMarketSource = v as AppSettings['skillMarketSource'];
-              const prev = settings.skillMarketSource;
               patch({ skillMarketSource });
-              void persist({ skillMarketSource }, () => patch({ skillMarketSource: prev }), () => {
+              void persist({ skillMarketSource }, () => {
                 invalidateSkills('market');
               });
             }}
@@ -205,7 +233,6 @@ export function PreferencesPanel({
               if (value === usageBaselineRef.current) return;
               void persist(
                 { usageCollectIntervalMin: value },
-                () => patch({ usageCollectIntervalMin: usageBaselineRef.current }),
                 () => {
                   notifyUsageSettingsChanged();
                 },

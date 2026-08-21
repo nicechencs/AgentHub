@@ -9,7 +9,7 @@
  * - inflight 去重：同 key 并发只打一次后端
  * - loading = 无 data 且无 error（有 stale 时不闪 skeleton）
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   importPrivateSkillToShared,
   installMarketSkill,
@@ -32,6 +32,16 @@ import type { AgentId, Skill } from '@/lib/types';
 
 export type SkillsCacheKey = 'skills' | 'catalog' | 'market';
 
+/** Guard every market continuation against both query and request order. */
+export function isCurrentSkillsMarketRequest(
+  currentQuery: string,
+  requestQuery: string,
+  currentGeneration: number,
+  requestGeneration: number,
+): boolean {
+  return currentQuery === requestQuery && currentGeneration === requestGeneration;
+}
+
 const ALL_KEYS: SkillsCacheKey[] = ['skills', 'catalog', 'market'];
 
 const listeners = new Set<() => void>();
@@ -40,9 +50,54 @@ const versions: Record<SkillsCacheKey, number> = {
   catalog: 0,
   market: 0,
 };
-let fsWatchStarted = false;
-let fsWatchSubscribers = 0;
-let fsWatchUnsub: (() => void) | null = null;
+
+/**
+ * Single-flight async subscription with stale-resolution cleanup. The
+ * coordinator is deliberately independent from React so StrictMode replay
+ * can be tested without a DOM renderer.
+ */
+export function createAsyncSubscriptionCoordinator(
+  subscribe: (handler: () => void) => Promise<() => void>,
+) {
+  let subscribers = 0;
+  let unsubscribe: (() => void) | null = null;
+  let pending: Promise<void> | null = null;
+  let generation = 0;
+
+  const retain = (handler: () => void) => {
+    subscribers += 1;
+    if (unsubscribe || pending) return;
+
+    const currentGeneration = ++generation;
+    const next = Promise.resolve()
+      .then(() => subscribe(handler))
+      .then((unsub) => {
+        if (currentGeneration !== generation || subscribers === 0) {
+          unsub();
+          return;
+        }
+        unsubscribe = unsub;
+      })
+      .catch(() => {});
+    pending = next;
+    next.then(() => {
+      if (pending === next) pending = null;
+    });
+  };
+
+  const release = () => {
+    subscribers = Math.max(0, subscribers - 1);
+    if (subscribers > 0) return;
+    generation += 1;
+    unsubscribe?.();
+    unsubscribe = null;
+    // A stale pending resolution will unsubscribe itself. Clearing this
+    // allows a new StrictMode mount to start a fresh single-flight request.
+    pending = null;
+  };
+
+  return { retain, release };
+}
 
 /** 进程内最后一次成功结果（跨路由 unmount 仍保留） */
 let skillsData: Skill[] | null = null;
@@ -54,6 +109,7 @@ let marketData: { query: string; rows: SkillListingDto[] } | null = null;
  * 防止旧 inflight 写回错误源结果。
  */
 let marketGeneration = 0;
+let marketLatestQuery: string | null = null;
 
 /** 同 key 请求合并 */
 let skillsInflight: Promise<Skill[]> | null = null;
@@ -69,6 +125,7 @@ function bump(keys: SkillsCacheKey[]) {
 
 function dropMarketCache() {
   marketGeneration += 1;
+  marketLatestQuery = null;
   marketData = null;
   marketInflight.clear();
 }
@@ -98,35 +155,21 @@ export function useSkillsCacheVersion(key: SkillsCacheKey = 'skills'): number {
   return useCacheVersion(key);
 }
 
+const fsWatchCoordinator = createAsyncSubscriptionCoordinator((handler) =>
+  onSkillsFsChanged(handler),
+);
+
 /** Subscribe to skill-directory changes while any hook consumer is mounted. */
 function retainSkillsFsWatch() {
   if (typeof window === 'undefined') return;
-  fsWatchSubscribers += 1;
-  if (fsWatchStarted) return;
-  fsWatchStarted = true;
-  void onSkillsFsChanged(() => {
-    // 外部目录变更：共享库矩阵 + agent 目录都可能变
+  fsWatchCoordinator.retain(() => {
     invalidateSkills(['skills', 'catalog']);
-  }).then((unsub) => {
-    fsWatchUnsub = unsub;
-    if (fsWatchSubscribers === 0) {
-      releaseSkillsFsWatch(true);
-    }
-  }).catch(() => {
-    fsWatchStarted = false;
   });
 }
 
-function releaseSkillsFsWatch(force = false) {
-  if (!force) {
-    fsWatchSubscribers = Math.max(0, fsWatchSubscribers - 1);
-    if (fsWatchSubscribers > 0) return;
-  } else {
-    fsWatchSubscribers = 0;
-  }
-  fsWatchUnsub?.();
-  fsWatchUnsub = null;
-  fsWatchStarted = false;
+function releaseSkillsFsWatch() {
+  if (typeof window === 'undefined') return;
+  fsWatchCoordinator.release();
 }
 
 function useCacheVersion(key: SkillsCacheKey): number {
@@ -180,13 +223,14 @@ async function fetchCatalogShared(): Promise<InstalledSkillDto[]> {
 
 async function fetchMarketShared(query: string): Promise<SkillListingDto[]> {
   const gen = marketGeneration;
+  marketLatestQuery = query;
   const key = `${gen}::${query}`;
   let p = marketInflight.get(key);
   if (!p) {
     p = searchSkillMarket(query)
       .then((rows) => {
         // 仅在仍是当前代数时写入；设置切换后旧请求不得污染缓存
-        if (gen === marketGeneration) {
+        if (gen === marketGeneration && marketLatestQuery === query) {
           marketData = { query, rows };
         }
         return rows;
@@ -304,26 +348,71 @@ export function useSkillMarket(query: string, opts: SkillsQueryOptions = {}) {
   );
   const [error, setError] = useState<unknown>(null);
   const [fetching, setFetching] = useState(false);
+  const requestGenerationRef = useRef(0);
+  const queryRef = useRef(query);
+  const enabledRef = useRef(enabled);
+  if (queryRef.current !== query || enabledRef.current !== enabled) {
+    queryRef.current = query;
+    enabledRef.current = enabled;
+    requestGenerationRef.current += 1;
+    marketLatestQuery = query;
+  }
 
   const reload = useCallback(async () => {
-    if (!enabled) return;
-    const gen = marketGeneration;
+    if (!enabled || queryRef.current !== query) return;
+    const requestGeneration = ++requestGenerationRef.current;
+    const sourceGeneration = marketGeneration;
     setFetching(true);
     try {
       const rows = await fetchMarketShared(query);
       // 源已切换则丢弃本次结果（由新 effect / reload 接管）
-      if (gen !== marketGeneration) return;
+      if (
+        sourceGeneration !== marketGeneration ||
+        marketLatestQuery !== query ||
+        !isCurrentSkillsMarketRequest(
+          queryRef.current,
+          query,
+          requestGenerationRef.current,
+          requestGeneration,
+        )
+      ) {
+        return;
+      }
       setDataState(rows);
       setError(null);
     } catch (e) {
-      if (gen !== marketGeneration) return;
+      if (
+        sourceGeneration !== marketGeneration ||
+        marketLatestQuery !== query ||
+        !isCurrentSkillsMarketRequest(
+          queryRef.current,
+          query,
+          requestGenerationRef.current,
+          requestGeneration,
+        )
+      ) {
+        return;
+      }
       if (!(marketData && marketData.query === query)) setError(e);
     } finally {
-      if (gen === marketGeneration) setFetching(false);
+      if (
+        sourceGeneration === marketGeneration &&
+        marketLatestQuery === query &&
+        isCurrentSkillsMarketRequest(
+          queryRef.current,
+          query,
+          requestGenerationRef.current,
+          requestGeneration,
+        )
+      ) {
+        setFetching(false);
+      }
     }
   }, [enabled, query]);
 
   useEffect(() => {
+    requestGenerationRef.current += 1;
+    marketLatestQuery = query;
     if (!enabled) return;
     if (marketData && marketData.query === query) {
       setDataState(marketData.rows);

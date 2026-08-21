@@ -82,6 +82,19 @@ const DEFAULTS: AppSettings = {
 };
 
 const SETTINGS_KEY = 'agenthub:settings';
+// All settings patches share one write lane. Without serialization, two
+// quick UI saves can complete in reverse order and each follow-up getSettings
+// may return a full snapshot that rolls back an unrelated newer field.
+let settingsWriteQueue: Promise<void> = Promise.resolve();
+
+function enqueueSettingsWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const run = settingsWriteQueue.then(operation, operation);
+  settingsWriteQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
 
 interface CoreAppSettings {
   theme: string;
@@ -176,7 +189,7 @@ const LOG_LEVEL_OPTIONS: { value: LogLevel; label: string }[] = [
 ];
 
 export function createTauriSettingsPort(): SettingsPort {
-  return {
+  const port: SettingsPort = {
     logLevelOptions: LOG_LEVEL_OPTIONS,
 
     async getSettings() {
@@ -251,80 +264,82 @@ export function createTauriSettingsPort(): SettingsPort {
     },
 
     async updateSettings(patch) {
-      try {
-        if (patch.theme !== undefined) {
-          await invoke('set_setting', { key: 'theme', value: patch.theme });
-          saveString(StorageKey.theme, patch.theme);
-          applyTheme(patch.theme);
-        }
-        if (patch.language !== undefined) {
-          await invoke('set_setting', {
-            key: 'language',
-            value: mapLanguageToCore(patch.language),
-          });
-          saveString(StorageKey.language, patch.language);
-        }
-        if (patch.logLevel !== undefined) {
-          await invoke('set_setting', { key: 'log_level', value: patch.logLevel });
-        }
-        if (patch.logRetentionDays !== undefined) {
-          await invoke('set_setting', {
-            key: 'log_retention_days',
-            value: String(patch.logRetentionDays),
-          });
-        }
-        if (patch.skillMarketSource !== undefined) {
-          await invoke('set_setting', {
-            key: 'skill_market_source',
-            value: patch.skillMarketSource,
-          });
-        }
-        if (patch.closeToTray !== undefined) {
-          await invoke('set_setting', {
-            key: 'close_to_tray',
-            value: closeToTraySettingValue(patch.closeToTray),
-          });
-        }
-        if (patch.usageCollectIntervalMin !== undefined) {
-          const mins = normalizeIntervalMin(patch.usageCollectIntervalMin);
-          await invoke('set_setting', {
-            key: 'usage_collect_interval_min',
-            value: String(mins),
-          });
-          saveBool(StorageKey.usageIntervalMigrated, true);
-          patch = { ...patch, usageCollectIntervalMin: mins };
-        }
-        // OS login-item last so a failure does not roll back already-written core keys.
-        if (patch.autoStart !== undefined) {
-          try {
-            await writeOsAutoStart(patch.autoStart);
-          } catch (e) {
-            log.error('OS autostart update failed', e);
-            throw new Error(
-              `无法写入系统开机自启：${e instanceof Error ? e.message : String(e)}`,
-            );
+      return enqueueSettingsWrite(async () => {
+        try {
+          if (patch.theme !== undefined) {
+            await invoke('set_setting', { key: 'theme', value: patch.theme });
+            saveString(StorageKey.theme, patch.theme);
+            applyTheme(patch.theme);
           }
+          if (patch.language !== undefined) {
+            await invoke('set_setting', {
+              key: 'language',
+              value: mapLanguageToCore(patch.language),
+            });
+            saveString(StorageKey.language, patch.language);
+          }
+          if (patch.logLevel !== undefined) {
+            await invoke('set_setting', { key: 'log_level', value: patch.logLevel });
+          }
+          if (patch.logRetentionDays !== undefined) {
+            await invoke('set_setting', {
+              key: 'log_retention_days',
+              value: String(patch.logRetentionDays),
+            });
+          }
+          if (patch.skillMarketSource !== undefined) {
+            await invoke('set_setting', {
+              key: 'skill_market_source',
+              value: patch.skillMarketSource,
+            });
+          }
+          if (patch.closeToTray !== undefined) {
+            await invoke('set_setting', {
+              key: 'close_to_tray',
+              value: closeToTraySettingValue(patch.closeToTray),
+            });
+          }
+          if (patch.usageCollectIntervalMin !== undefined) {
+            const mins = normalizeIntervalMin(patch.usageCollectIntervalMin);
+            await invoke('set_setting', {
+              key: 'usage_collect_interval_min',
+              value: String(mins),
+            });
+            saveBool(StorageKey.usageIntervalMigrated, true);
+            patch = { ...patch, usageCollectIntervalMin: mins };
+          }
+          // OS login-item last so a failure does not roll back already-written core keys.
+          if (patch.autoStart !== undefined) {
+            try {
+              await writeOsAutoStart(patch.autoStart);
+            } catch (e) {
+              log.error('OS autostart update failed', e);
+              throw new Error(
+                `无法写入系统开机自启：${e instanceof Error ? e.message : String(e)}`,
+              );
+            }
+          }
+
+          const local = loadUiLocal();
+          // Only persist UI-local fields. Leftover keys (hasMasterPassword /
+          // credentialStore / autoBackup) from older clients are ignored.
+          const mergedLocal = {
+            autoStart: patch.autoStart ?? local.autoStart ?? DEFAULTS.autoStart,
+            // Mirror for offline UI; core DB is authoritative after successful set.
+            closeToTray: patch.closeToTray ?? local.closeToTray ?? DEFAULTS.closeToTray,
+            usageCollectIntervalMin:
+              patch.usageCollectIntervalMin ??
+              local.usageCollectIntervalMin ??
+              DEFAULTS.usageCollectIntervalMin,
+          };
+          saveJson(SETTINGS_KEY, mergedLocal);
+
+          return await port.getSettings();
+        } catch (e) {
+          log.error('updateSettings failed', e);
+          throw e;
         }
-
-        const local = loadUiLocal();
-        // Only persist UI-local fields. Leftover keys (hasMasterPassword /
-        // credentialStore / autoBackup) from older clients are ignored.
-        const mergedLocal = {
-          autoStart: patch.autoStart ?? local.autoStart ?? DEFAULTS.autoStart,
-          // Mirror for offline UI; core DB is authoritative after successful set.
-          closeToTray: patch.closeToTray ?? local.closeToTray ?? DEFAULTS.closeToTray,
-          usageCollectIntervalMin:
-            patch.usageCollectIntervalMin ??
-            local.usageCollectIntervalMin ??
-            DEFAULTS.usageCollectIntervalMin,
-        };
-        saveJson(SETTINGS_KEY, mergedLocal);
-
-        return await this.getSettings();
-      } catch (e) {
-        log.error('updateSettings failed', e);
-        throw e;
-      }
+      });
     },
 
     async openLogsDir() {
@@ -360,4 +375,5 @@ export function createTauriSettingsPort(): SettingsPort {
       }
     },
   };
+  return port;
 }

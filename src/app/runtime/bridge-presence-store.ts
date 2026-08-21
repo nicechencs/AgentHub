@@ -31,6 +31,9 @@ const initialSnapshot: BridgePresenceSnapshot = {
 let snapshot: BridgePresenceSnapshot = { ...initialSnapshot };
 const listeners = new Set<Listener>();
 let inflight: Promise<void> | null = null;
+let loadGeneration = 0;
+let pendingRerun = false;
+let pendingLoaders: BridgePresenceLoaders | undefined;
 
 function emit(): void {
   for (const listener of listeners) listener();
@@ -73,49 +76,77 @@ function defaultLoaders(): BridgePresenceLoaders {
 }
 
 export async function loadBridgePresence(loaders: BridgePresenceLoaders = defaultLoaders()): Promise<void> {
+  const requestGeneration = ++loadGeneration;
   if (snapshot.status === 'idle') {
     setSnapshot({ ...snapshot, status: 'loading' });
   }
 
-  const [profilesResult, walletResult] = await Promise.allSettled([
-    Promise.resolve().then(loaders.listProfiles),
-    Promise.resolve().then(loaders.listWallet),
-  ]);
+  const request = (async () => {
+    const [profilesResult, walletResult] = await Promise.allSettled([
+      Promise.resolve().then(loaders.listProfiles),
+      Promise.resolve().then(loaders.listWallet),
+    ]);
 
-  let { hasLocalBridgeProfile, walletBridgeCount } = snapshot;
-  let failed = false;
+    // A newer load (for example, one queued after bind/unbind) owns the
+    // snapshot. Older responses may settle, but must not roll it back.
+    if (requestGeneration !== loadGeneration) return;
 
-  if (profilesResult.status === 'fulfilled') {
-    hasLocalBridgeProfile = profilesResult.value.some((profile) => profile.route === 'local_bridge');
-  } else {
-    failed = true;
+    let { hasLocalBridgeProfile, walletBridgeCount } = snapshot;
+    let failed = false;
+
+    if (profilesResult.status === 'fulfilled') {
+      hasLocalBridgeProfile = profilesResult.value.some((profile) => profile.route === 'local_bridge');
+    } else {
+      failed = true;
+    }
+
+    if (walletResult.status === 'fulfilled') {
+      walletBridgeCount = walletResult.value.bindings.filter((binding) => binding.route === 'bridge').length;
+    } else {
+      failed = true;
+    }
+
+    const lastNonZero = snapshot.lastNonZero || hasLocalBridgeProfile || walletBridgeCount > 0;
+    setSnapshot({
+      status: failed ? 'error' : 'ready',
+      hasLocalBridgeProfile,
+      walletBridgeCount,
+      lastNonZero,
+    });
+  })();
+
+  inflight = request;
+  await request;
+  if (inflight === request) {
+    inflight = null;
+    if (pendingRerun) {
+      const rerunLoaders = pendingLoaders;
+      pendingRerun = false;
+      pendingLoaders = undefined;
+      void loadBridgePresence(rerunLoaders);
+    }
   }
-
-  if (walletResult.status === 'fulfilled') {
-    walletBridgeCount = walletResult.value.bindings.filter((binding) => binding.route === 'bridge').length;
-  } else {
-    failed = true;
-  }
-
-  const lastNonZero = snapshot.lastNonZero || hasLocalBridgeProfile || walletBridgeCount > 0;
-  setSnapshot({
-    status: failed ? 'error' : 'ready',
-    hasLocalBridgeProfile,
-    walletBridgeCount,
-    lastNonZero,
-  });
 }
 
 /** Re-read profiles + wallet after bind/unbind. */
-export function notifyBridgePresenceChanged(): void {
-  if (inflight) return;
-  inflight = loadBridgePresence().finally(() => {
-    inflight = null;
-  });
+export function notifyBridgePresenceChanged(loaders?: BridgePresenceLoaders): void {
+  if (inflight) {
+    // Invalidate the in-flight response immediately. Otherwise the old load
+    // can publish a stale ready/error snapshot before the queued refresh
+    // starts.
+    loadGeneration += 1;
+    pendingRerun = true;
+    pendingLoaders = loaders ?? defaultLoaders();
+    return;
+  }
+  void loadBridgePresence(loaders ?? defaultLoaders());
 }
 
 /** Test-only. */
 export function resetBridgePresenceStore(): void {
+  loadGeneration += 1;
   inflight = null;
+  pendingRerun = false;
+  pendingLoaders = undefined;
   setSnapshot({ ...initialSnapshot });
 }

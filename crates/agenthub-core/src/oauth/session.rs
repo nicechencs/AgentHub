@@ -32,6 +32,8 @@ pub struct OAuthSession {
     pub code: Option<String>,
     pub error: Option<String>,
     pub created_at: Instant,
+    /// Set while the one allowed token exchange is in flight.
+    pub(crate) completing: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,18 +65,25 @@ impl SessionStore {
             .lock()
             .map_err(|_| AppError::message("oauth.store", "session store poisoned"))?;
         self.purge_locked(&mut g);
+        if g.contains_key(&session.state) {
+            return Err(AppError::message(
+                "oauth.state",
+                "OAuth state is already active",
+            ));
+        }
         g.insert(session.state.clone(), session);
         Ok(())
     }
 
     pub fn get_info(&self, state: &str) -> Result<OAuthSessionInfo> {
-        let g = self
+        let mut g = self
             .inner
             .lock()
             .map_err(|_| AppError::message("oauth.store", "session store poisoned"))?;
+        self.purge_locked(&mut g);
         let s = g
             .get(state)
-            .ok_or_else(|| AppError::NotFound(format!("oauth session not found: {state}")))?;
+            .ok_or_else(|| AppError::NotFound("oauth session not found".into()))?;
         Ok(OAuthSessionInfo {
             state: s.state.clone(),
             agent_id: s.agent,
@@ -88,12 +97,27 @@ impl SessionStore {
             .inner
             .lock()
             .map_err(|_| AppError::message("oauth.store", "session store poisoned"))?;
+        self.purge_locked(&mut g);
         let s = g
             .get_mut(state)
-            .ok_or_else(|| AppError::NotFound(format!("oauth session not found: {state}")))?;
-        s.code = Some(code);
-        s.status = OAuthStatus::CallbackReceived;
-        Ok(())
+            .ok_or_else(|| AppError::NotFound("oauth session not found".into()))?;
+        match s.status {
+            OAuthStatus::Waiting => {
+                let code = code.trim().to_string();
+                if code.is_empty() {
+                    return Err(AppError::message("oauth.code", "OAuth callback code is empty"));
+                }
+                s.code = Some(code);
+                s.status = OAuthStatus::CallbackReceived;
+                Ok(())
+            }
+            OAuthStatus::CallbackReceived
+            | OAuthStatus::Succeeded
+            | OAuthStatus::Failed => Err(AppError::message(
+                "oauth.replay",
+                "OAuth session is no longer accepting callbacks",
+            )),
+        }
     }
 
     pub fn mark_error(&self, state: &str, err: impl Into<String>) -> Result<()> {
@@ -101,9 +125,14 @@ impl SessionStore {
             .inner
             .lock()
             .map_err(|_| AppError::message("oauth.store", "session store poisoned"))?;
+        self.purge_locked(&mut g);
+        let _ = err.into();
         if let Some(s) = g.get_mut(state) {
-            s.status = OAuthStatus::Failed;
-            s.error = Some(err.into());
+            if !matches!(s.status, OAuthStatus::Succeeded) && !s.completing {
+                s.status = OAuthStatus::Failed;
+                s.error = Some("OAuth authorization failed".into());
+                s.scrub_secrets();
+            }
         }
         Ok(())
     }
@@ -113,33 +142,83 @@ impl SessionStore {
             .inner
             .lock()
             .map_err(|_| AppError::message("oauth.store", "session store poisoned"))?;
+        self.purge_locked(&mut g);
         if let Some(s) = g.get_mut(state) {
-            s.status = OAuthStatus::Succeeded;
+            if s.completing {
+                s.status = OAuthStatus::Succeeded;
+                s.completing = false;
+                s.scrub_secrets();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn mark_completion_failed(&self, state: &str) -> Result<()> {
+        let mut g = self
+            .inner
+            .lock()
+            .map_err(|_| AppError::message("oauth.store", "session store poisoned"))?;
+        self.purge_locked(&mut g);
+        if let Some(s) = g.get_mut(state) {
+            if s.completing {
+                s.status = OAuthStatus::Failed;
+                s.completing = false;
+                s.error = Some("OAuth completion failed".into());
+                s.scrub_secrets();
+            }
         }
         Ok(())
     }
 
     /// Take session for token exchange (must have code).
     pub fn take_ready(&self, state: &str) -> Result<OAuthSession> {
-        let g = self
+        let mut g = self
             .inner
             .lock()
             .map_err(|_| AppError::message("oauth.store", "session store poisoned"))?;
+        self.purge_locked(&mut g);
         let s = g
-            .get(state)
-            .ok_or_else(|| AppError::NotFound(format!("oauth session not found: {state}")))?
-            .clone();
+            .get_mut(state)
+            .ok_or_else(|| AppError::NotFound("oauth session not found".into()))?;
+        if s.completing || matches!(s.status, OAuthStatus::Succeeded | OAuthStatus::Failed) {
+            return Err(AppError::message(
+                "oauth.replay",
+                "OAuth session has already been consumed",
+            ));
+        }
+        if s.status != OAuthStatus::CallbackReceived {
+            return Err(AppError::message(
+                "oauth.not_ready",
+                "OAuth callback has not completed",
+            ));
+        }
         if s.code.is_none() {
             return Err(AppError::message(
                 "oauth.not_ready",
                 "OAuth 回调尚未到达，请完成浏览器授权",
             ));
         }
-        Ok(s)
+        s.completing = true;
+        Ok(s.clone())
     }
 
     fn purge_locked(&self, g: &mut HashMap<String, OAuthSession>) {
         let now = Instant::now();
-        g.retain(|_, s| now.duration_since(s.created_at) < TTL);
+        g.retain(|_, s| {
+            now.checked_duration_since(s.created_at)
+                .is_some_and(|age| age < TTL)
+        });
     }
 }
+
+impl OAuthSession {
+    fn scrub_secrets(&mut self) {
+        self.verifier.clear();
+        self.redirect_uri.clear();
+        self.provider_key = None;
+        self.code = None;
+    }
+}
+
+#[cfg(test)]
+mod tests;

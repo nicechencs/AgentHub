@@ -1,30 +1,122 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::Utc;
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::adapters::{AdapterRegistry, AgentAdapter};
+use crate::adapters::AgentAdapter;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult,
-    AdapterSourceKind, AgentId, BackupKind, Capability, LiveAccount, PersistedTicketSurface,
-    TicketSurface,
+    Account, AccountInput, AccountKind, AgentId, BackupKind, Capability, Provider,
 };
-use crate::services::switch_undo::{
-    clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
+use crate::services::ConnectionService;
+use crate::storage::{
+    account_get_by_id_conn, account_list_for_agent_conn, provider_get_by_id_conn,
+    provider_list_for_agent_conn,
 };
-use crate::services::{AdapterRouteService, BackupService, ConnectionService};
-use crate::storage::{AccountRepo, Database};
-use crate::utils::agent_lock::AgentWriteLock;
+use crate::utils::loopback::credentials_are_loopback;
 use crate::utils::redact::mask_secret_preview;
 
+use super::live_reconcile::compensated_current_account_apply_error_with_db;
 use super::surface::*;
 use super::{AccountService, MAX_ACCOUNT_ID_LEN, MAX_ACCOUNT_LABEL_LEN};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct BindingRowSnapshot {
+    agent_key: String,
+    account_id: Option<String>,
+    provider_id: Option<String>,
+    model_id: Option<String>,
+    config_profile_id: Option<String>,
+    revision: i64,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TrashRowSnapshot {
+    id: String,
+    agent_id: String,
+    source_kind: String,
+    source_id: String,
+    label: String,
+    was_current: i64,
+    payload: String,
+    deleted_at: String,
+    expires_at: String,
+}
+
+#[derive(Clone, Default)]
+struct AccountMutationFootprint {
+    /// Exact ids this transaction owns. Compensation never infers ownership
+    /// by scanning the rest of the agent pool.
+    affected_account_ids: Vec<String>,
+    before_accounts: Vec<Account>,
+    after_accounts: Vec<Account>,
+    before_providers: Vec<Provider>,
+    after_providers: Vec<Provider>,
+    before_binding: Option<BindingRowSnapshot>,
+    after_binding: Option<BindingRowSnapshot>,
+    before_trash: Vec<TrashRowSnapshot>,
+    after_trash: Vec<TrashRowSnapshot>,
+}
+
+struct AccountCommittedMutation {
+    stored: Account,
+    deleted: Vec<Account>,
+    footprint: AccountMutationFootprint,
+}
+
+struct ApiKeyUpdatePayload {
+    label: String,
+    credentials: Option<Value>,
+    extra: Value,
+}
+
+/// Distinguishes a rolled-back IMMEDIATE transaction from a committed one.
+/// Compensation is allowed only after commit (live-apply / post-commit
+/// failures). Pre-commit errors, including in-transaction CAS conflicts that
+/// abort the transaction, must not restore stale extra-transaction snapshots.
+#[derive(Debug)]
+pub(super) struct AccountMutationError {
+    error: AppError,
+    #[allow(dead_code)]
+    committed: bool,
+}
+
+impl AccountMutationError {
+    pub(super) fn pre(error: AppError) -> Self {
+        Self {
+            error,
+            committed: false,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn post(error: AppError) -> Self {
+        Self {
+            error,
+            committed: true,
+        }
+    }
+
+    pub(super) fn code(&self) -> &str {
+        self.error.code()
+    }
+
+    pub(super) fn into_error(self) -> AppError {
+        self.error
+    }
+}
+
+impl From<AppError> for AccountMutationError {
+    fn from(error: AppError) -> Self {
+        Self::pre(error)
+    }
+}
 
 impl AccountService {
     pub fn list(&self, agent: Option<AgentId>) -> Result<Vec<Account>> {
@@ -174,8 +266,22 @@ impl AccountService {
         api_key: &str,
         env_key: Option<&str>,
     ) -> Result<Account> {
+        self.add_api_key_with_env_and_marker(agent, label, api_key, env_key, None)
+    }
+
+    /// Add an API Key account with an explicit product marker. The marker is
+    /// optional for backward compatibility; the GUI supplies it for official
+    /// Anthropic/OpenAI/xAI and Kimi Code/API products.
+    pub fn add_api_key_with_env_and_marker(
+        &self,
+        agent: AgentId,
+        label: Option<&str>,
+        api_key: &str,
+        env_key: Option<&str>,
+        product_marker: Option<&str>,
+    ) -> Result<Account> {
         let started = Instant::now();
-        let result = self.add_api_key_inner(agent, label, api_key, env_key);
+        let result = self.add_api_key_inner(agent, label, api_key, env_key, product_marker);
         log_account_op("add_api_key", agent, started, &result);
         result
     }
@@ -186,6 +292,7 @@ impl AccountService {
         label: Option<&str>,
         api_key: &str,
         env_key: Option<&str>,
+        product_marker: Option<&str>,
     ) -> Result<Account> {
         let adapter = self.adapter(agent)?;
         let live = adapter.build_api_key_account(api_key)?;
@@ -209,13 +316,22 @@ impl AccountService {
             .unwrap_or_else(|| format!("{} (API Key)", mask_secret_preview(api_key)));
         validate_label(&display, "account label", MAX_ACCOUNT_LABEL_LEN)?;
 
-        let extra = attach_identity_meta(
+        let mut extra = attach_identity_meta(
             adapter.as_ref(),
             AccountKind::ApiKey,
             &credentials,
             &display,
             live.extra,
         );
+        if let Some(marker) = product_marker
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            validate_api_key_product_marker(agent, marker)?;
+            if let Some(obj) = extra.as_object_mut() {
+                obj.insert("provider".into(), json!(marker));
+            }
+        }
 
         // 同一 agent 下相同授权票（同一 API Key）不重复建池。
         if let Some(existing) = self.find_duplicate_authorization(
@@ -248,8 +364,8 @@ impl AccountService {
             created_at: now.clone(),
             updated_at: now,
         };
-        let created = self.repo.create(&row)?;
-        self.stamp_account_surface(created)
+        let row = self.prepare_account_surface(row);
+        self.repo.create(&row)
     }
 
     /// Update an existing API Key account (label and/or key).
@@ -269,49 +385,136 @@ impl AccountService {
     ) -> Result<Account> {
         let started = Instant::now();
         let result = (|| {
-            let stored = self.update_api_key_inner(agent, id_or_label, label, api_key)?;
-            self.sync_current_account_live(&stored, api_key, "after API Key account update")?;
-            Ok(stored)
+            let key_changed = api_key
+                .map(str::trim)
+                .is_some_and(|value| !value.is_empty());
+
+            // Keep the same per-agent lock across the live snapshot, DB write,
+            // live apply and any compensation. The old implementation only
+            // acquired it after the DB mutation, allowing another process to
+            // observe a half-committed account rotation.
+            let _live_lock = if key_changed {
+                self.acquire_live_lock(agent)?
+            } else {
+                None
+            };
+            let before = self.get(id_or_label, Some(agent))?;
+            if before.kind != AccountKind::ApiKey {
+                return Err(AppError::InvalidArg(
+                    "only API Key accounts can be updated via update_api_key".into(),
+                ));
+            }
+
+            let new_label = label
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let new_key = api_key
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            if new_label.is_none() && new_key.is_none() {
+                return Err(AppError::InvalidArg(
+                    "update_api_key requires a non-empty label and/or api_key".into(),
+                ));
+            }
+
+            let adapter = self.adapter(agent)?;
+            let payload = self.materialize_api_key_update(&adapter, &before, new_label, new_key.as_deref())?;
+
+            let live_saga = if before.is_current && key_changed {
+                let backup = self.backup.as_ref();
+                adapter
+                    .capability(Capability::AccountSwitch)
+                    .is_usable()
+                    .then_some(())
+                    .and(backup)
+                    .map(|backup| (adapter.clone(), backup))
+            } else {
+                None
+            };
+            let live_before = if let Some((adapter, backup)) = live_saga.as_ref() {
+                let live_before = match adapter.read_account() {
+                    Ok(live) => Some(live),
+                    Err(error) if error.code() == "not_found" => None,
+                    Err(error) => return Err(error),
+                };
+                if let Err(error) = backup.snapshot(
+                    agent,
+                    BackupKind::AutoSwitch,
+                    Some(&format!("before applying current account {}", before.id)),
+                ) {
+                    if error.code() != "not_found" {
+                        return Err(error);
+                    }
+                }
+                Some((adapter.clone(), live_before))
+            } else {
+                None
+            };
+
+            // Adapter/materialization failures above never compensate. The
+            // IMMEDIATE transaction below either commits a precise footprint
+            // or rolls back; its errors are therefore also pre-commit.
+            let committed = match self.commit_api_key_update(
+                adapter.as_ref(),
+                agent,
+                &before.id,
+                &before.updated_at,
+                &payload,
+            ) {
+                Ok(committed) => committed,
+                Err(progress) => return Err(progress.into_error()),
+            };
+            if let Some((adapter, live_before)) = live_before {
+                let apply_live = committed.stored.to_live();
+                if live_before
+                    .as_ref()
+                    .is_some_and(|before| before.credentials == apply_live.credentials)
+                {
+                    return Ok(committed.stored);
+                }
+                if let Err(error) = adapter.apply_account(&apply_live) {
+                    // Keep the established pool-only behavior for adapters
+                    // that can store a key but cannot apply it to live files.
+                    if error.code() == "unsupported" {
+                        self.snapshot_after_pool_change(agent, "after API Key account update");
+                        return Ok(committed.stored);
+                    }
+                    let live_rollback = live_before
+                        .as_ref()
+                        .and_then(|before| adapter.apply_account(before).err());
+                    let db_rollback = self
+                        .restore_committed_account_mutation(agent, &committed)
+                        .err();
+                    return Err(compensated_current_account_apply_error_with_db(
+                        error,
+                        live_rollback,
+                        db_rollback,
+                    ));
+                }
+            } else {
+                self.sync_current_account_live(
+                    &committed.stored,
+                    api_key,
+                    "after API Key account update",
+                )?;
+            }
+            Ok(committed.stored)
         })();
         log_account_op("update_api_key", agent, started, &result);
         result
     }
 
-    pub(super) fn update_api_key_inner(
+    fn materialize_api_key_update(
         &self,
-        agent: AgentId,
-        id_or_label: &str,
-        label: Option<&str>,
-        api_key: Option<&str>,
-    ) -> Result<Account> {
-        let mut account = self.get(id_or_label, Some(agent))?;
-        if account.kind != AccountKind::ApiKey {
-            return Err(AppError::InvalidArg(
-                "only API Key accounts can be updated via update_api_key".into(),
-            ));
-        }
-
-        let new_label = label
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
-        let new_key = api_key
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
-
-        if new_label.is_none() && new_key.is_none() {
-            return Err(AppError::InvalidArg(
-                "update_api_key requires a non-empty label and/or api_key".into(),
-            ));
-        }
-
-        let adapter = self.adapter(agent)?;
-
-        if let Some(ref key) = new_key {
+        adapter: &std::sync::Arc<dyn AgentAdapter>,
+        account: &Account,
+        new_label: Option<String>,
+        new_key: Option<&str>,
+    ) -> Result<ApiKeyUpdatePayload> {
+        if let Some(key) = new_key {
             let live = adapter.build_api_key_account(key)?;
-            // Preserve env_key from existing credentials when the new live
-            // snapshot does not set one (adapter default still applied).
             let mut creds = live.credentials;
             if let Some(prev_env) = account
                 .credentials
@@ -325,61 +528,516 @@ impl AccountService {
                     }
                 }
             }
-            let display = new_label.clone().unwrap_or_else(|| {
+            let display = new_label.unwrap_or_else(|| {
                 live.label_hint
                     .clone()
                     .unwrap_or_else(|| format!("{} (API Key)", mask_secret_preview(key)))
             });
             validate_label(&display, "account label", MAX_ACCOUNT_LABEL_LEN)?;
-            let extra = attach_identity_meta(
+            let mut extra = attach_identity_meta(
                 adapter.as_ref(),
                 AccountKind::ApiKey,
                 &creds,
                 &display,
                 live.extra,
             );
-
-            // Same key as another pool row → merge into that row and drop this one.
-            if let Some(existing) = self.find_duplicate_authorization(
-                adapter.as_ref(),
-                agent,
-                AccountKind::ApiKey,
-                &creds,
-            )? {
-                if existing.id != account.id {
-                    let merged = self.merge_into_existing(
-                        adapter.as_ref(),
-                        existing,
-                        AccountKind::ApiKey,
-                        display,
-                        creds,
-                        extra,
-                        account.is_current,
-                    )?;
-                    self.connections.delete_account(&account.id, agent)?;
-                    return Ok(merged);
+            if let Some(provider) = account.extra.get("provider").cloned() {
+                if let Some(obj) = extra.as_object_mut() {
+                    obj.entry("provider").or_insert(provider);
                 }
             }
-
-            account.credentials = creds;
-            account.extra = extra;
-            account.label = display;
-        } else if let Some(display) = new_label {
+            Ok(ApiKeyUpdatePayload {
+                label: display,
+                credentials: Some(creds),
+                extra,
+            })
+        } else {
+            let display = new_label.ok_or_else(|| {
+                AppError::InvalidArg(
+                    "update_api_key requires a non-empty label and/or api_key".into(),
+                )
+            })?;
             validate_label(&display, "account label", MAX_ACCOUNT_LABEL_LEN)?;
-            account.label = display;
-            // Refresh identity meta with new label without changing credentials.
-            account.extra = attach_identity_meta(
+            let extra = attach_identity_meta(
                 adapter.as_ref(),
                 AccountKind::ApiKey,
                 &account.credentials,
-                &account.label,
+                &display,
                 account.extra.clone(),
             );
+            Ok(ApiKeyUpdatePayload {
+                label: display,
+                credentials: None,
+                extra,
+            })
+        }
+    }
+
+    /// One IMMEDIATE transaction: snapshot the agent pool, decide source /
+    /// target / leftover duplicates from that snapshot, mutate those exact
+    /// ids with expected-revision CAS, and return the precise before/after
+    /// footprint. The transaction never re-lists the pool to guess leftovers.
+    fn commit_api_key_update(
+        &self,
+        adapter: &dyn AgentAdapter,
+        agent: AgentId,
+        source_id: &str,
+        expected_source_updated_at: &str,
+        payload: &ApiKeyUpdatePayload,
+    ) -> std::result::Result<AccountCommittedMutation, AccountMutationError> {
+        self.db
+            .with_conn(|conn| {
+                let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+                let now = now_ts();
+                let accounts = account_list_for_agent_conn(&tx, agent)?;
+                let providers = provider_list_for_agent_conn(&tx, agent)?;
+                let binding = get_binding_row(&tx, agent)?;
+                let trash = list_trash_conn(&tx, agent)?;
+
+                let source = accounts
+                    .iter()
+                    .find(|row| row.id == source_id)
+                    .cloned()
+                    .ok_or_else(|| AppError::NotFound(format!("account not found: {source_id}")))?;
+                if source.updated_at != expected_source_updated_at {
+                    return Err(AppError::message(
+                        "account.merge.conflict",
+                        "account changed before API key merge",
+                    ));
+                }
+                if source.kind != AccountKind::ApiKey {
+                    return Err(AppError::InvalidArg(
+                        "only API Key accounts can be updated via update_api_key".into(),
+                    ));
+                }
+
+                let mut next = source.clone();
+                next.label = payload.label.clone();
+                if let Some(credentials) = &payload.credentials {
+                    next.credentials = credentials.clone();
+                }
+                next.extra = payload.extra.clone();
+                next.status = "active".into();
+                next.updated_at = now.clone();
+                next = self.prepare_account_surface(next);
+
+                let duplicates = if payload.credentials.is_some() {
+                    authorization_duplicates(
+                        adapter,
+                        agent,
+                        AccountKind::ApiKey,
+                        &next.credentials,
+                        &accounts,
+                    )
+                    .into_iter()
+                    .filter(|row| row.id != source.id)
+                    .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                };
+
+                let mark_current = source.is_current;
+                let committed = if let Some(target_existing) =
+                    pick_primary_authorization_match(duplicates.clone())
+                {
+                    next.id = target_existing.id.clone();
+                    next.created_at = target_existing.created_at.clone();
+                    next.is_current = mark_current || target_existing.is_current;
+                    let mut deletes = duplicates
+                        .into_iter()
+                        .filter(|row| row.id != target_existing.id)
+                        .collect::<Vec<_>>();
+                    if !deletes.iter().any(|row| row.id == source.id) {
+                        deletes.push(source.clone());
+                    }
+                    apply_frozen_account_plan(
+                        &self.connections,
+                        &tx,
+                        agent,
+                        &next,
+                        &target_existing,
+                        &deletes,
+                        &source.id,
+                        next.is_current,
+                        &now,
+                        &accounts,
+                        &providers,
+                        &binding,
+                        &trash,
+                    )?
+                } else {
+                    next.is_current = source.is_current;
+                    apply_frozen_account_plan(
+                        &self.connections,
+                        &tx,
+                        agent,
+                        &next,
+                        &source,
+                        &[],
+                        &source.id,
+                        next.is_current,
+                        &now,
+                        &accounts,
+                        &providers,
+                        &binding,
+                        &trash,
+                    )?
+                };
+                tx.commit()?;
+                Ok(committed)
+            })
+            .map_err(AccountMutationError::pre)
+    }
+
+    /// Adopt an already-known duplicate target inside one IMMEDIATE
+    /// transaction. Target membership is re-derived from the transaction
+    /// snapshot; leftover cleanup never re-lists the pool.
+    pub(super) fn commit_authorization_merge(
+        &self,
+        adapter: &dyn AgentAdapter,
+        existing: &Account,
+        kind: AccountKind,
+        label: String,
+        credentials: Value,
+        extra: Value,
+        mark_current: bool,
+    ) -> std::result::Result<AccountCommittedMutation, AccountMutationError> {
+        self.db
+            .with_conn(|conn| {
+                let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+                let now = now_ts();
+                let agent = existing.agent_id;
+                let accounts = account_list_for_agent_conn(&tx, agent)?;
+                let providers = provider_list_for_agent_conn(&tx, agent)?;
+                let binding = get_binding_row(&tx, agent)?;
+                let trash = list_trash_conn(&tx, agent)?;
+
+                let duplicates = authorization_duplicates(
+                    adapter,
+                    agent,
+                    kind,
+                    &credentials,
+                    &accounts,
+                );
+                let target_existing = pick_primary_authorization_match(duplicates.clone())
+                    .or_else(|| accounts.iter().find(|row| row.id == existing.id).cloned())
+                    .ok_or_else(|| {
+                        AppError::NotFound(format!("account not found: {}", existing.id))
+                    })?;
+                let deletes = duplicates
+                    .into_iter()
+                    .filter(|row| row.id != target_existing.id)
+                    .collect::<Vec<_>>();
+
+                let mut next = target_existing.clone();
+                next.kind = kind;
+                next.label = label;
+                next.credentials = credentials;
+                next.extra = extra;
+                next.status = "active".into();
+                next.updated_at = now.clone();
+                if mark_current {
+                    next.is_current = true;
+                }
+                next = self.prepare_account_surface(next);
+
+                let committed = apply_frozen_account_plan(
+                    &self.connections,
+                    &tx,
+                    agent,
+                    &next,
+                    &target_existing,
+                    &deletes,
+                    &target_existing.id,
+                    next.is_current,
+                    &now,
+                    &accounts,
+                    &providers,
+                    &binding,
+                    &trash,
+                )?;
+                tx.commit()?;
+                Ok(committed)
+            })
+            .map_err(AccountMutationError::pre)
+    }
+
+    /// Restore only the precise committed footprint after a live apply fails.
+    /// Live database rows must still match the post-commit expected state;
+    /// any concurrent change fails closed.
+    fn restore_committed_account_mutation(
+        &self,
+        agent: AgentId,
+        committed: &AccountCommittedMutation,
+    ) -> Result<()> {
+        self.restore_account_rows_with_footprint(
+            agent,
+            &committed.footprint.before_accounts,
+            &committed.footprint.after_accounts,
+            &committed.stored,
+            &committed.deleted,
+            &committed.footprint,
+            &committed.footprint.after_binding,
+            &committed.footprint.after_trash,
+        )
+    }
+
+    pub(super) fn restore_account_rows(
+        &self,
+        agent: AgentId,
+        before: &[Account],
+        after: &[Account],
+        stored: &Account,
+        deleted_rows: &[Account],
+    ) -> Result<()> {
+        let mut affected_account_ids = before.iter().map(|row| row.id.clone()).collect::<Vec<_>>();
+        if !affected_account_ids.iter().any(|id| id == &stored.id) {
+            affected_account_ids.push(stored.id.clone());
+        }
+        let footprint = AccountMutationFootprint {
+            affected_account_ids,
+            before_accounts: before.to_vec(),
+            after_accounts: after.to_vec(),
+            ..AccountMutationFootprint::default()
+        };
+        self.restore_account_rows_with_footprint(
+            agent,
+            before,
+            after,
+            stored,
+            deleted_rows,
+            &footprint,
+            &None,
+            &[],
+        )
+    }
+
+    fn restore_account_rows_with_footprint(
+        &self,
+        agent: AgentId,
+        before: &[Account],
+        _after: &[Account],
+        stored: &Account,
+        deleted_rows: &[Account],
+        footprint: &AccountMutationFootprint,
+        after_binding: &Option<BindingRowSnapshot>,
+        after_trash: &[TrashRowSnapshot],
+    ) -> Result<()> {
+        // Restore the surviving merge target first. If the deleted source was
+        // current, inserting it while the target is still current can violate
+        // the active-row invariant in callers that enforce it.
+        let mut affected_ids = if footprint.affected_account_ids.is_empty() {
+            let mut ids = vec![stored.id.clone()];
+            for row in deleted_rows {
+                if !ids.iter().any(|id| id == &row.id) {
+                    ids.push(row.id.clone());
+                }
+            }
+            ids
+        } else {
+            footprint.affected_account_ids.clone()
+        };
+        // A current write may demote the previously-current row(s). Those
+        // rows are part of this mutation even when the target was an upsert.
+        for row in before.iter().filter(|row| {
+            row.is_current
+                && (footprint.affected_account_ids.is_empty()
+                    || footprint.affected_account_ids.iter().any(|id| id == &row.id))
+        }) {
+            if !affected_ids.iter().any(|id| id == &row.id) {
+                affected_ids.push(row.id.clone());
+            }
         }
 
-        account.updated_at = now_ts();
-        account.status = "active".into();
-        self.repo.update(&account)
+        if affected_ids.is_empty() {
+            return Ok(());
+        }
+
+        self.db.with_conn(|conn| {
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+            for id in affected_ids {
+                let original = before.iter().find(|row| row.id == id);
+                let explicitly_deleted = deleted_rows.iter().any(|row| row.id == id);
+
+                match original {
+                    Some(original) if explicitly_deleted => {
+                        if get_account_row(&tx, &original.id)?.is_some() {
+                            return Err(account_compensation_conflict(&original.id));
+                        }
+                        let credentials = serde_json::to_string(&original.credentials)?;
+                        let extra = serde_json::to_string(&original.extra)?;
+                        tx.execute(
+                            r#"
+                            INSERT INTO accounts (
+                                id, agent_id, kind, label, credentials, extra,
+                                status, is_current, created_at, updated_at
+                            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                            "#,
+                            params![
+                                &original.id,
+                                original.agent_id.as_str(),
+                                original.kind.as_str(),
+                                &original.label,
+                                credentials,
+                                extra,
+                                &original.status,
+                                if original.is_current { 1 } else { 0 },
+                                &original.created_at,
+                                &original.updated_at,
+                            ],
+                        )?;
+                    }
+                    Some(original) => {
+                        // The target row is fully described by `stored`. A
+                        // pre-existing current row is only demoted, so its
+                        // pre-mutation fields must otherwise remain intact.
+                        let expected = footprint
+                            .after_accounts
+                            .iter()
+                            .find(|row| row.id == original.id)
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                if original.id == stored.id {
+                                    stored.clone()
+                                } else {
+                                    let mut demoted = original.clone();
+                                    demoted.is_current = false;
+                                    demoted
+                                }
+                            });
+                        if original == &expected {
+                            continue;
+                        }
+                        ensure_account_row_matches(&tx, &expected)?;
+                        let credentials = serde_json::to_string(&original.credentials)?;
+                        let extra = serde_json::to_string(&original.extra)?;
+                        let updated = tx.execute(
+                            r#"
+                            UPDATE accounts SET
+                                agent_id = ?2, kind = ?3, label = ?4, credentials = ?5,
+                                extra = ?6, status = ?7, is_current = ?8,
+                                created_at = ?9, updated_at = ?10
+                            WHERE id = ?1 AND agent_id = ?11 AND updated_at = ?12
+                            "#,
+                            params![
+                                &original.id,
+                                original.agent_id.as_str(),
+                                original.kind.as_str(),
+                                &original.label,
+                                credentials,
+                                extra,
+                                &original.status,
+                                if original.is_current { 1 } else { 0 },
+                                &original.created_at,
+                                &original.updated_at,
+                                agent.as_str(),
+                                &expected.updated_at,
+                            ],
+                        )?;
+                        if updated != 1 {
+                            return Err(account_compensation_conflict(&original.id));
+                        }
+                    }
+                    None => {
+                        // Account update/merge never creates a row. A row
+                        // appearing for an affected id is an external write.
+                        return Err(account_compensation_conflict(&id));
+                    }
+                }
+            }
+            let expected_after_binding = if footprint.after_binding.is_some()
+                || footprint.before_binding.is_some()
+            {
+                &footprint.after_binding
+            } else {
+                after_binding
+            };
+            let binding_changed =
+                footprint.before_binding.as_ref() != expected_after_binding.as_ref();
+            if binding_changed && !footprint.before_providers.is_empty() {
+                if footprint.after_providers.is_empty() {
+                    restore_demoted_provider_rows(&tx, agent, &footprint.before_providers)?;
+                } else {
+                    restore_provider_rows_from_footprint(
+                        &tx,
+                        agent,
+                        &footprint.before_providers,
+                        &footprint.after_providers,
+                    )?;
+                }
+            }
+            if binding_changed {
+                restore_account_binding(
+                    &tx,
+                    agent,
+                    stored,
+                    footprint.before_binding.as_ref(),
+                    expected_after_binding.as_ref(),
+                )?;
+            }
+            let expected_after_trash = if footprint.after_trash.is_empty() {
+                after_trash
+            } else {
+                footprint.after_trash.as_slice()
+            };
+            if footprint.before_trash != expected_after_trash {
+                remove_new_trash_rows(
+                    &tx,
+                    agent,
+                    &footprint.before_trash,
+                    expected_after_trash,
+                    deleted_rows,
+                )?;
+            }
+            tx.commit()?;
+            Ok(())
+        })
+    }
+
+    pub(super) fn update_api_key_inner(
+        &self,
+        agent: AgentId,
+        id_or_label: &str,
+        label: Option<&str>,
+        api_key: Option<&str>,
+        expected_source_updated_at: &str,
+    ) -> std::result::Result<(Account, Vec<Account>), AccountMutationError> {
+        let account = self.get(id_or_label, Some(agent))?;
+        if account.kind != AccountKind::ApiKey {
+            return Err(AppError::InvalidArg(
+                "only API Key accounts can be updated via update_api_key".into(),
+            )
+            .into());
+        }
+        let new_label = label
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        let new_key = api_key
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        if new_label.is_none() && new_key.is_none() {
+            return Err(AppError::InvalidArg(
+                "update_api_key requires a non-empty label and/or api_key".into(),
+            )
+            .into());
+        }
+        let adapter = self.adapter(agent)?;
+        let payload = self.materialize_api_key_update(
+            &adapter,
+            &account,
+            new_label,
+            new_key.as_deref(),
+        )?;
+        self.commit_api_key_update(
+            adapter.as_ref(),
+            agent,
+            &account.id,
+            expected_source_updated_at,
+            &payload,
+        )
+        .map(|committed| (committed.stored, committed.deleted))
     }
 
     /// Create a pool account from a fully formed input (e.g. OAuth PKCE result).
@@ -440,12 +1098,13 @@ impl AccountService {
             created_at: now.clone(),
             updated_at: now,
         };
+        let row = self.prepare_account_surface(row);
         if row.is_current {
             let (created, _binding) = self.connections.create_and_activate_account(&row)?;
-            self.stamp_account_surface(created)
+            Ok(created)
         } else {
             let created = self.repo.create(&row)?;
-            self.stamp_account_surface(created)
+            Ok(created)
         }
     }
 
@@ -622,9 +1281,606 @@ impl AccountService {
 
         account.updated_at = now_ts();
         account.status = "active".into();
+        account = self.prepare_account_surface(account);
         if agent == AgentId::Pi {
             return self.persist_pi_oauth_account_update(&account, &expected_updated_at);
         }
         self.persist_healed_fields(&account, &expected_updated_at)
+    }
+}
+
+fn authorization_duplicates(
+    adapter: &dyn AgentAdapter,
+    agent: AgentId,
+    kind: AccountKind,
+    credentials: &Value,
+    snapshot: &[Account],
+) -> Vec<Account> {
+    let incoming_loopback = credentials_are_loopback(credentials);
+    snapshot
+        .iter()
+        .filter(|candidate| {
+            candidate.kind == kind
+                && same_live_slot(agent, credentials, &candidate.credentials)
+                && if incoming_loopback {
+                    credentials_are_loopback(&candidate.credentials)
+                } else {
+                    !credentials_are_loopback(&candidate.credentials)
+                        && accounts_same_authorization(adapter, kind, credentials, candidate)
+                }
+        })
+        .cloned()
+        .collect()
+}
+
+fn freeze_account_mutation_plan(
+    tx: &Transaction<'_>,
+    items: &[(String, String, String)],
+) -> Result<()> {
+    tx.execute_batch(
+        r#"
+        CREATE TEMP TABLE IF NOT EXISTS account_mutation_plan (
+            role TEXT NOT NULL,
+            id TEXT NOT NULL,
+            expected_updated_at TEXT NOT NULL
+        );
+        DELETE FROM account_mutation_plan;
+        "#,
+    )?;
+    for (role, id, expected) in items {
+        tx.execute(
+            "INSERT INTO account_mutation_plan (role, id, expected_updated_at) VALUES (?1, ?2, ?3)",
+            params![role, id, expected],
+        )?;
+    }
+    Ok(())
+}
+
+fn revalidate_frozen_account_plan(
+    conn: &Connection,
+    items: &[(String, String, String)],
+) -> Result<()> {
+    for (_role, id, expected) in items {
+        let live = account_get_by_id_conn(conn, id)?.ok_or_else(|| {
+            AppError::NotFound(format!("account not found: {id}"))
+        })?;
+        if live.updated_at != *expected {
+            return Err(AppError::message(
+                "account.merge.conflict",
+                format!("account {id} changed after merge snapshot"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn apply_frozen_account_plan(
+    connections: &ConnectionService,
+    tx: &Transaction<'_>,
+    agent: AgentId,
+    next: &Account,
+    target_before: &Account,
+    deletes: &[Account],
+    source_id: &str,
+    mark_current: bool,
+    now: &str,
+    snapshot_accounts: &[Account],
+    snapshot_providers: &[Provider],
+    snapshot_binding: &Option<BindingRowSnapshot>,
+    snapshot_trash: &[TrashRowSnapshot],
+) -> Result<AccountCommittedMutation> {
+    let mut items = vec![(
+        "target".to_string(),
+        target_before.id.clone(),
+        target_before.updated_at.clone(),
+    )];
+    for row in deletes {
+        if row.id == target_before.id {
+            continue;
+        }
+        let role = if row.id == source_id {
+            "source"
+        } else {
+            "extra"
+        };
+        items.push((role.to_string(), row.id.clone(), row.updated_at.clone()));
+    }
+    freeze_account_mutation_plan(tx, &items)?;
+    revalidate_frozen_account_plan(tx, &items)?;
+
+    let stored = if mark_current {
+        connections
+            .activate_account_if_revision_conn(tx, next, &target_before.updated_at)?
+            .0
+    } else {
+        connections.update_account_if_revision_conn(tx, next, &target_before.updated_at)?
+    };
+
+    let mut deleted = Vec::new();
+    let mut source_deletes = Vec::new();
+    let mut extra_deletes = Vec::new();
+    for row in deletes {
+        if row.id == stored.id {
+            continue;
+        }
+        if row.id == source_id {
+            source_deletes.push(row);
+        } else {
+            extra_deletes.push(row);
+        }
+    }
+    for row in source_deletes.into_iter().chain(extra_deletes) {
+        connections.trash_delete_account_if_revision_conn(
+            tx,
+            &row.id,
+            agent,
+            &row.updated_at,
+            now,
+        )?;
+        deleted.push(row.clone());
+    }
+
+    let mut affected_account_ids = vec![target_before.id.clone()];
+    for row in &deleted {
+        if !affected_account_ids.iter().any(|id| id == &row.id) {
+            affected_account_ids.push(row.id.clone());
+        }
+    }
+    if mark_current {
+        for row in snapshot_accounts.iter().filter(|row| row.is_current) {
+            if !affected_account_ids.iter().any(|id| id == &row.id) {
+                affected_account_ids.push(row.id.clone());
+            }
+        }
+    }
+
+    let before_accounts = affected_account_ids
+        .iter()
+        .filter_map(|id| snapshot_accounts.iter().find(|row| row.id == *id).cloned())
+        .collect::<Vec<_>>();
+    let after_accounts = affected_account_ids
+        .iter()
+        .filter_map(|id| account_get_by_id_conn(tx, id).ok().flatten())
+        .collect::<Vec<_>>();
+    let before_providers = if mark_current {
+        snapshot_providers
+            .iter()
+            .filter(|row| row.is_current)
+            .cloned()
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let after_providers = before_providers
+        .iter()
+        .filter_map(|row| provider_get_by_id_conn(tx, &row.id).ok().flatten())
+        .collect::<Vec<_>>();
+    let after_binding = get_binding_row(tx, agent)?;
+    let after_trash = list_trash_conn(tx, agent)?;
+
+    Ok(AccountCommittedMutation {
+        stored,
+        deleted,
+        footprint: AccountMutationFootprint {
+            affected_account_ids,
+            before_accounts,
+            after_accounts,
+            before_providers,
+            after_providers,
+            before_binding: snapshot_binding.clone(),
+            after_binding,
+            before_trash: snapshot_trash.to_vec(),
+            after_trash,
+        },
+    })
+}
+
+fn list_trash_conn(conn: &Connection, agent: AgentId) -> Result<Vec<TrashRowSnapshot>> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT id, agent_id, source_kind, source_id, label, was_current,
+               payload, deleted_at, expires_at
+        FROM connection_trash WHERE agent_id = ?1
+        "#,
+    )?;
+    let rows = stmt.query_map(params![agent.as_str()], |row| {
+        Ok(TrashRowSnapshot {
+            id: row.get(0)?,
+            agent_id: row.get(1)?,
+            source_kind: row.get(2)?,
+            source_id: row.get(3)?,
+            label: row.get(4)?,
+            was_current: row.get(5)?,
+            payload: row.get(6)?,
+            deleted_at: row.get(7)?,
+            expires_at: row.get(8)?,
+        })
+    })?;
+    rows.collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(AppError::from)
+}
+
+fn restore_provider_rows_from_footprint(
+    conn: &Connection,
+    agent: AgentId,
+    before: &[Provider],
+    after: &[Provider],
+) -> Result<()> {
+    for original in before {
+        let expected = after.iter().find(|row| row.id == original.id).cloned();
+        match expected {
+            Some(expected) => {
+                if original == &expected {
+                    continue;
+                }
+                ensure_provider_row_matches_for_compensation(conn, &expected)?;
+                let settings = serde_json::to_string(&original.settings_config)?;
+                let meta = serde_json::to_string(&original.meta)?;
+                let restored = conn.execute(
+                    r#"
+                    UPDATE providers SET
+                        agent_id = ?2, name = ?3, settings_config = ?4,
+                        meta = ?5, is_current = ?6, created_at = ?7,
+                        updated_at = ?8
+                    WHERE id = ?1 AND agent_id = ?9 AND updated_at = ?10
+                    "#,
+                    params![
+                        &original.id,
+                        original.agent_id.as_str(),
+                        &original.name,
+                        settings,
+                        meta,
+                        if original.is_current { 1 } else { 0 },
+                        &original.created_at,
+                        &original.updated_at,
+                        agent.as_str(),
+                        &expected.updated_at,
+                    ],
+                )?;
+                if restored != 1 {
+                    return Err(account_compensation_conflict(&original.id));
+                }
+            }
+            None => return Err(account_compensation_conflict(&original.id)),
+        }
+    }
+    Ok(())
+}
+
+type AccountRowSnapshot = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    i64,
+    String,
+    String,
+);
+
+fn get_account_row(conn: &Connection, id: &str) -> Result<Option<AccountRowSnapshot>> {
+    conn.query_row(
+        r#"
+        SELECT agent_id, kind, label, credentials, extra, status,
+               is_current, created_at, updated_at
+        FROM accounts WHERE id = ?1
+        "#,
+        params![id],
+        |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get(8)?,
+            ))
+        },
+    )
+    .optional()
+    .map_err(AppError::from)
+}
+
+fn ensure_account_row_matches(
+    conn: &Connection,
+    expected: &Account,
+) -> Result<()> {
+    let actual = get_account_row(conn, &expected.id)?;
+    let credentials = serde_json::to_string(&expected.credentials)?;
+    let extra = serde_json::to_string(&expected.extra)?;
+    let matches = actual == Some((
+        expected.agent_id.as_str().to_string(),
+        expected.kind.as_str().to_string(),
+        expected.label.clone(),
+        credentials,
+        extra,
+        expected.status.clone(),
+        if expected.is_current { 1 } else { 0 },
+        expected.created_at.clone(),
+        expected.updated_at.clone(),
+    ));
+    if matches {
+        Ok(())
+    } else {
+        Err(account_compensation_conflict(&expected.id))
+    }
+}
+
+fn account_compensation_conflict(id: &str) -> AppError {
+    AppError::message(
+        "account.current.apply.rollback.database",
+        format!("account compensation CAS failed for {id}; database changed concurrently"),
+    )
+}
+
+type ProviderRowSnapshot = (
+    String,
+    String,
+    String,
+    String,
+    i64,
+    String,
+    String,
+    String,
+);
+
+fn get_provider_row_for_compensation(
+    conn: &Connection,
+    id: &str,
+) -> Result<Option<ProviderRowSnapshot>> {
+    conn.query_row(
+        r#"
+        SELECT agent_id, name, settings_config, meta,
+               is_current, created_at, updated_at, id
+        FROM providers WHERE id = ?1
+        "#,
+        params![id],
+        |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+            ))
+        },
+    )
+    .optional()
+    .map_err(AppError::from)
+}
+
+fn ensure_provider_row_matches_for_compensation(
+    conn: &Connection,
+    expected: &Provider,
+) -> Result<()> {
+    let actual = get_provider_row_for_compensation(conn, &expected.id)?;
+    let settings = serde_json::to_string(&expected.settings_config)?;
+    let meta = serde_json::to_string(&expected.meta)?;
+    let matches = actual == Some((
+        expected.agent_id.as_str().to_string(),
+        expected.name.clone(),
+        settings,
+        meta,
+        if expected.is_current { 1 } else { 0 },
+        expected.created_at.clone(),
+        expected.updated_at.clone(),
+        expected.id.clone(),
+    ));
+    if matches {
+        Ok(())
+    } else {
+        Err(account_compensation_conflict(&expected.id))
+    }
+}
+
+fn restore_demoted_provider_rows(
+    conn: &Connection,
+    agent: AgentId,
+    before: &[Provider],
+) -> Result<()> {
+    for original in before.iter().filter(|row| row.is_current) {
+        let mut expected = original.clone();
+        expected.is_current = false;
+        ensure_provider_row_matches_for_compensation(conn, &expected)?;
+        let settings = serde_json::to_string(&original.settings_config)?;
+        let meta = serde_json::to_string(&original.meta)?;
+        let restored = conn.execute(
+            r#"
+            UPDATE providers SET
+                agent_id = ?2, name = ?3, settings_config = ?4,
+                meta = ?5, is_current = ?6, created_at = ?7,
+                updated_at = ?8
+            WHERE id = ?1 AND agent_id = ?9 AND updated_at = ?10
+            "#,
+            params![
+                &original.id,
+                original.agent_id.as_str(),
+                &original.name,
+                settings,
+                meta,
+                if original.is_current { 1 } else { 0 },
+                &original.created_at,
+                &original.updated_at,
+                agent.as_str(),
+                &expected.updated_at,
+            ],
+        )?;
+        if restored != 1 {
+            return Err(account_compensation_conflict(&original.id));
+        }
+    }
+    Ok(())
+}
+
+fn get_binding_row(conn: &Connection, agent: AgentId) -> Result<Option<BindingRowSnapshot>> {
+    let key = crate::platform::AgentKey::from_agent_id(agent).into_string();
+    conn.query_row(
+        r#"
+        SELECT agent_key, account_id, provider_id, model_id, config_profile_id,
+               revision, created_at, updated_at
+        FROM agent_active_bindings WHERE agent_key = ?1
+        "#,
+        params![key],
+        |row| {
+            Ok(BindingRowSnapshot {
+                agent_key: row.get(0)?,
+                account_id: row.get(1)?,
+                provider_id: row.get(2)?,
+                model_id: row.get(3)?,
+                config_profile_id: row.get(4)?,
+                revision: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(AppError::from)
+}
+
+fn restore_account_binding(
+    conn: &Connection,
+    agent: AgentId,
+    stored: &Account,
+    before: Option<&BindingRowSnapshot>,
+    after: Option<&BindingRowSnapshot>,
+) -> Result<()> {
+    let Some(after) = after else {
+        return Err(account_compensation_conflict(stored.id.as_str()));
+    };
+    let expected_revision = before.map(|row| row.revision + 1).unwrap_or(1);
+    if after.revision != expected_revision
+        || after.account_id.as_deref() != Some(stored.id.as_str())
+        || after.provider_id.is_some()
+    {
+        return Err(account_compensation_conflict(stored.id.as_str()));
+    }
+    if get_binding_row(conn, agent)?.as_ref() != Some(after) {
+        return Err(account_compensation_conflict(stored.id.as_str()));
+    }
+
+    if let Some(original) = before {
+        let changed = conn.execute(
+            r#"
+            UPDATE agent_active_bindings SET
+                account_id = ?2, provider_id = ?3, model_id = ?4,
+                config_profile_id = ?5, revision = ?6, created_at = ?7,
+                updated_at = ?8
+            WHERE agent_key = ?1 AND revision = ?9 AND updated_at = ?10
+            "#,
+            params![
+                &original.agent_key,
+                &original.account_id,
+                &original.provider_id,
+                &original.model_id,
+                &original.config_profile_id,
+                original.revision,
+                &original.created_at,
+                &original.updated_at,
+                after.revision,
+                &after.updated_at,
+            ],
+        )?;
+        if changed != 1 {
+            return Err(account_compensation_conflict(stored.id.as_str()));
+        }
+    } else {
+        let removed = conn.execute(
+            "DELETE FROM agent_active_bindings WHERE agent_key = ?1 AND revision = ?2 AND updated_at = ?3",
+            params![&after.agent_key, after.revision, &after.updated_at],
+        )?;
+        if removed != 1 {
+            return Err(account_compensation_conflict(stored.id.as_str()));
+        }
+    }
+    Ok(())
+}
+
+fn get_trash_row(conn: &Connection, id: &str) -> Result<Option<TrashRowSnapshot>> {
+    conn.query_row(
+        r#"
+        SELECT id, agent_id, source_kind, source_id, label, was_current,
+               payload, deleted_at, expires_at
+        FROM connection_trash WHERE id = ?1
+        "#,
+        params![id],
+        |row| {
+            Ok(TrashRowSnapshot {
+                id: row.get(0)?,
+                agent_id: row.get(1)?,
+                source_kind: row.get(2)?,
+                source_id: row.get(3)?,
+                label: row.get(4)?,
+                was_current: row.get(5)?,
+                payload: row.get(6)?,
+                deleted_at: row.get(7)?,
+                expires_at: row.get(8)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(AppError::from)
+}
+
+fn remove_new_trash_rows(
+    conn: &Connection,
+    agent: AgentId,
+    before: &[TrashRowSnapshot],
+    after: &[TrashRowSnapshot],
+    deleted_rows: &[Account],
+) -> Result<()> {
+    let expected = after
+        .iter()
+        .filter(|row| {
+            row.agent_id == agent.as_str()
+                && row.source_kind == "account"
+                && !before.iter().any(|old| old.id == row.id)
+                && deleted_rows.iter().any(|deleted| deleted.id == row.source_id)
+        })
+        .collect::<Vec<_>>();
+    if expected.len() != deleted_rows.len() {
+        return Err(account_compensation_conflict("connection_trash"));
+    }
+    for row in expected {
+        if get_trash_row(conn, &row.id)?.as_ref() != Some(row) {
+            return Err(account_compensation_conflict(&row.id));
+        }
+        let removed = conn.execute(
+            "DELETE FROM connection_trash WHERE id = ?1",
+            params![&row.id],
+        )?;
+        if removed != 1 {
+            return Err(account_compensation_conflict(&row.id));
+        }
+    }
+    Ok(())
+}
+
+fn validate_api_key_product_marker(agent: AgentId, marker: &str) -> Result<()> {
+    let allowed = match agent {
+        AgentId::Claude => ["anthropic"].as_slice(),
+        AgentId::Codex => ["openai", "openai-api"].as_slice(),
+        AgentId::Grok => ["xai", "xai-api"].as_slice(),
+        AgentId::Kimi => ["kimi-code-membership", "kimi-api"].as_slice(),
+        _ => [].as_slice(),
+    };
+    if allowed
+        .iter()
+        .any(|value| marker.eq_ignore_ascii_case(value))
+    {
+        Ok(())
+    } else {
+        Err(AppError::InvalidArg(format!(
+            "unsupported API key product marker for {}: {}",
+            agent.as_str(),
+            marker
+        )))
     }
 }

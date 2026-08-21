@@ -36,10 +36,6 @@ pub fn with_install_log_hook<R>(hook: InstallLogHook, f: impl FnOnce() -> R) -> 
 
 /// Emit a live progress line when a hook is registered. No-op otherwise.
 pub fn emit_install_log(line: &str) {
-    let line = line.trim_end();
-    if line.is_empty() {
-        return;
-    }
     let hook = {
         let g = match hook_slot().lock() {
             Ok(g) => g,
@@ -51,3 +47,6 @@ pub fn emit_install_log(line: &str) {
         h(line);
     }
 }
+
+#[cfg(test)]
+mod install_progress_tests;

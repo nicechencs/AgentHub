@@ -397,6 +397,69 @@ fn purge_is_excluded_by_a_provider_live_saga_before_uninstall_preflight() {
 }
 
 #[test]
+fn custom_agent_home_purge_fails_before_external_executor() {
+    let _codex = crate::integrations::agents::codex::leftover::lock_codex_home();
+    let previous = std::env::var_os("CODEX_HOME");
+    let custom = tempfile::tempdir().unwrap();
+    std::env::set_var("CODEX_HOME", custom.path());
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let executor = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = crate::storage::Database::open(&db_dir.path().join("ah.db")).unwrap();
+    let error = uninstall_agent(
+        &AdapterRegistry::new(),
+        &db,
+        AgentId::Codex,
+        true,
+        &executor,
+    )
+    .expect_err("custom config roots must fail closed");
+
+    match previous {
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
+    }
+    assert_eq!(error.code(), "invalid_arg");
+    assert!(error.to_string().contains("custom agent config"));
+    assert!(calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn public_purge_entry_rejects_data_dir_unrelated_to_database_authority() {
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = crate::storage::Database::open(&db_dir.path().join("ah.db")).unwrap();
+    let authority = LiveWriteAuthority::try_from_database(&db).unwrap();
+    let unrelated_dir = tempfile::tempdir().unwrap();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let executor = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+
+    let error = uninstall_agent_with_authority_at_data_dir(
+        &AdapterRegistry::new(),
+        &authority,
+        unrelated_dir.path(),
+        AgentId::Codex,
+        true,
+        &executor,
+    )
+    .expect_err("purge must use the database authority's data root");
+
+    assert_eq!(error.code(), "invalid_arg");
+    assert!(error.to_string().contains("does not match"));
+    assert!(calls.lock().unwrap().is_empty());
+}
+
+#[test]
 fn upgrade_not_installed_fails_closed() {
     let registry = register_all();
     let calls = Arc::new(Mutex::new(Vec::new()));

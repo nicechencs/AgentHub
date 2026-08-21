@@ -120,9 +120,10 @@ export function createMockAccountPort(): AccountPort {
       return true;
     },
 
-    async addApiKeyAccount(agentId, key, label, envKey) {
+    async addApiKeyAccount(agentId, key, label, envKey, productMarker) {
       await delay(randomLatency());
       void envKey;
+      void productMarker;
       const masked =
         key.length > 7
           ? `${key.slice(0, 3)}-••••${key.slice(-4)}`

@@ -39,7 +39,9 @@ use services::{
 use logging::targets;
 use storage::{ChatRepo, Database};
 use utils::command_exec::SystemCommandExecutor;
-use utils::paths::{backups_dir, db_path, ensure_data_layout, home_dir, resolve_data_dir};
+use utils::paths::{
+    backups_dir, db_path, ensure_data_layout, home_dir, normalize_data_dir, resolve_data_dir,
+};
 
 // Re-export catalog + configuration types for GUI and CLI shells.
 pub use platform::{
@@ -90,7 +92,7 @@ pub struct AgentHub {
 impl AgentHub {
     /// Open hub with optional data-dir override (`--data-dir` / `AGENTHUB_HOME`).
     pub fn open(data_dir_override: Option<&Path>) -> Result<Self> {
-        let data_dir = resolve_data_dir(data_dir_override)?;
+        let data_dir = normalize_data_dir(&resolve_data_dir(data_dir_override)?)?;
         ensure_data_layout(&data_dir)?;
         // STORAGE module logs open success/failure (including migrate).
         let db = Database::open(&db_path(&data_dir))?;
@@ -108,7 +110,11 @@ impl AgentHub {
         }
         let registry = register_all();
         let catalog = AgentCatalogService::from_registry(&registry)?;
-        let lifecycle = LifecycleCoordinator::new(db.clone(), registry.clone());
+        let lifecycle = LifecycleCoordinator::new_with_data_dir(
+            db.clone(),
+            registry.clone(),
+            data_dir.clone(),
+        );
         let configuration = ConfigurationService::new(db.clone());
         let connections = ConnectionService::new(db.clone());
         // AgentService keeps a cheap Arc clone of the same adapters; do not call register_all twice.
@@ -136,12 +142,17 @@ impl AgentHub {
             AccountService::with_live(db.clone(), registry.clone(), backups_dir(&data_dir)),
         );
         let backups = BackupService::new(db.clone(), registry.clone(), backups_dir(&data_dir));
+        let skills_root = home_dir()?.join(".agents").join("skills");
         let skills = SkillService::with_db_and_target_registry(
-            home_dir()?.join(".agents").join("skills"),
+            skills_root,
             registry.clone(),
             db.clone(),
             crate::platform::skills::builtin_skill_target_registry().clone(),
         );
+        // Recover a durable package commit before exposing any skill operation.
+        // This is deliberately narrower than bootstrap_assignments(): startup
+        // must not import projections or mutate assignment intent implicitly.
+        skills.recover_pending_commit()?;
         let settings = SettingsService::new(data_dir.clone(), db.clone());
         let projects = ProjectService::new(registry.clone(), data_dir.clone());
         let agent_visibility = AgentVisibilityService::new(data_dir.clone());
