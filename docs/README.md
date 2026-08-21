@@ -28,6 +28,7 @@
 | [logging.md](logging.md) | **日志规范**：级别、文件路径、保留、module 字段、脱敏、排查与 `config` 键（**v1.0**） |
 | [chat-process-streaming.md](chat-process-streaming.md) | **Chat 过程流式**：Phase 0–2 现行契约；Phase 3 **展示层已落地**；过程落库等协议侧未做 |
 | [chat-page-redesign.md](chat-page-redesign.md) | **Chat 工作台已落地**：会话 rail / header 芯片 / 多 Agent 对比 / 过程面板展示层 / 文件拆分 |
+| [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) | **对照笔记**（2026-08-21）：AgentHub Chat × DSH Desktop 的 UI↔Agent 机制；§6 逐条深挖（结构差/实现差）。**不是** backlog，不派生实施任务 |
 | [capability-matrix.md](capability-matrix.md) | **能力矩阵**：`Capability` 枚举 + 四级状态、现状矩阵、防漂移测试、P0–P4（**v1.0 已落地**） |
 | [account-authorization-pool.md](account-authorization-pool.md) | **账号池身份×授权**：同人可多授权并存；去重仅限同一份登录；与能力矩阵边界（**已落地**） |
 | [adding-an-agent.md](adding-an-agent.md) | 新增 Agent 适配器清单；`accepts[]` 须登记 wire 协议 **和** OAuth 契约槽 |
@@ -47,5 +48,6 @@
 - 「把已有登录接到另一个工具」的领域模型（界面说登录；实现里仍叫票 / 绑定 / 协议图）以 [connection-binding-model.md](connection-binding-model.md) 为唯一真源。读模型 + `plan` / `bind` / `unbind` 已落地；sidecar 迁移未做。实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
 - 各家接口、凭据类型与现在能不能写上去以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。日常 UI 页面线框与业务交互以 [ui-design.md](ui-design.md) 为准；组件用法、决策树与现行清单以 [ui-component-standard.md](ui-component-standard.md) 为准。Phase 1 实施记录见 [hub-redesign-plan.md](hub-redesign-plan.md)。该文的实现矩阵描述**当前能否写入**，不表示产品否决某一种做法。
 - DeepSeek Harness（Agent `dsh`）的安装、会话、用量、Skills 与模型配置以 [deepseek-harness-integration.md](deepseek-harness-integration.md) 为设计真源；未实现前不得把该文能力表抄进 CLI 矩阵快照。
+- Chat UI↔Agent 与 DSH Desktop 的机制对照以 [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) 为笔记；不替代过程契约、Chat IA 与 DSH 接入方案，不派生实施任务。凭据落盘加密与国产 OAuth 仍为范围外。
 - `local_bridge` 的进程所有权、控制面和 sidecar 迁移契约以 [adapter-sidecar-design.md](adapter-sidecar-design.md) 为唯一真源；当前实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
 - 新的一次性任务可以临时创建提示词文件；任务完成后删除提示词和任务拆分，并同步更新对应稳定文档。

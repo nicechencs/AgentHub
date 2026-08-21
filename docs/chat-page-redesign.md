@@ -9,7 +9,7 @@
 | 范围 | Chat 页信息架构、会话 rail、会话 header、消息区与多 Agent 展示、过程面板 Phase 3 表面、Composer 与发送前置校验、消息轻操作、页面文件拆分、文档回写 |
 | 非范围 | Rust / Tauri 命令、`ChatEvent` wire、过程落库、CLI 原生 `--resume` 与交互式 tool 审批、Connections/Bridges 职责、凭据落盘加密（**无必要 / 项目范围外**）、国产 OAuth 开边 / OAuth→API（产品不做） |
 
-本文是 Chat 页本期重设计的真源，风格与 [bridges-page-redesign.md](bridges-page-redesign.md) 对齐。产品契约回写至 [ui-design.md §4.4](ui-design.md)；过程协议仍以 [chat-process-streaming.md](chat-process-streaming.md) 为真源，本文拍板其 Phase 3 的**展示层**（已落地）。协议侧（过程落库、过程内 usage、Pi rpc 审批、diff 预览落库）仍未做。
+本文是 Chat 页本期重设计的真源，风格与 [bridges-page-redesign.md](bridges-page-redesign.md) 对齐。产品契约回写至 [ui-design.md §4.4](ui-design.md)；过程协议仍以 [chat-process-streaming.md](chat-process-streaming.md) 为真源，本文拍板其 Phase 3 的**展示层**（已落地）。协议侧（过程落库、过程内 usage、Pi rpc 审批、diff 预览落库）仍未做。与 DSH Desktop 的机制对照见 [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md)（对照笔记，不改本期 IA）。
 
 > **现行状态**：本文 Implemented 的是 Chat 工作台表面。Chat **没有**独立模型选择器；线框里 `[官方 · sonnet ▾]` 是**连接/登录**下拉（模型只作副标题），不是模型 picker。Projects「在 Chat 继续」走 sessionStorage bootstrap（摘录）。Claude/Codex Chat 在捕获官方 session id 后，后续轮次走 print+resume。下文 Implemented 正文不改。
 

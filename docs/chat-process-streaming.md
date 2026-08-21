@@ -4,7 +4,8 @@
 > **现行状态**：本文管过程协议与展示契约，不是 Chat 页 IA。Chat **没有**独立模型选择器；chrome 见 [ui-design.md](ui-design.md) §4.4。  
 > 范围：GUI Chat 的「Cursor 式过程」——命令、状态、stderr、结构化工具/thinking 步骤  
 > 非目标：接管各 CLI 原生多轮 session、交互式 tool 审批（RPC）、凭据加密  
-> mock 路径：`src/dev/mocks/chat.ts`。`src/lib/api/chat.ts` 是生产 façade，不是 mock。
+> mock 路径：`src/dev/mocks/chat.ts`。`src/lib/api/chat.ts` 是生产 façade，不是 mock。  
+> 与 DSH Desktop 的 UI↔Agent 对照见 [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md)（对照笔记，不改本文契约）。
 
 ## 1. 背景与问题（历史；Phase 0–2 已修复主体）
 
