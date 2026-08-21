@@ -1,6 +1,6 @@
 # 模型厂商、API 与 OAuth 适配规则
 
-> **现行状态（2026-08-19）**：§4 矩阵以代码为准；sidecar 未迁；Grok→Claude 走本机路由。
+> **现行状态（2026-08-21）**：§4 矩阵以代码为准；sidecar 未迁；Grok→Claude 走本机路由。新增 §5.1.2 / §5.1.3 两个**已拍板、未实现**方案：Grok OAuth refresh 按 owner 分治（文件跟随同步，不与官方 CLI 互踢；凭据来源可选「跟随 Grok CLI 登录文件 / 复制一份保存」两模式）、本机路由动态 `GET /models`。
 > 状态：**当前工作区规则**，不代表已发布版本。
 > 最近核对：2026-08-15。
 > 本文是厂商入口、凭据类型和**现在能不能写上去**的规则真源。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。实现用的对象名见 [connection-binding-model.md](connection-binding-model.md)；页面与运行时见 [adapter-design.md](adapter-design.md)、[ui-design.md](ui-design.md)。日常说法：① = 直接改配置，② = 写进对方认的登录，③ = 本机转发。现行 UI 芯片是 **直连 / 用这份登录 / 本机路由**（①②③ 仍是架构名，不出现在 picker）。§4 是**当前可执行矩阵**，不是 UI 白名单，也不是产品终点。
@@ -204,8 +204,8 @@ AgentHub 当前可发起的登录与跨 Agent 适配是两套能力：
 | 登录目标 | AgentHub 当前入口 | 跨 Agent 复用（产品 / 实现） |
 |---|---|---|
 | Claude | PKCE | ② → Pi Anthropic 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。→ Codex 产品不做 |
-| Codex / ChatGPT | PKCE | ② → Pi `openai-codex` 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → Claude Responses 本机路由（已可 experimental bind；Hub 本轮不自动 refresh，过期需重新同步 Codex 登录） |
-| Grok / xAI | PKCE | ② → Pi xAI 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → Claude / Codex xAI Responses 本机路由（experimental bind）；Codex 订阅 → Grok 本机 `api_backend=responses` |
+| Codex / ChatGPT | PKCE | ② → Pi `openai-codex` 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → Claude Responses 本机路由（已可 experimental bind；Hub 本轮不自动 refresh，过期需重新同步 Codex 登录；改进沿 §5.1.2 owner 分治） |
+| Grok / xAI | PKCE | ② → Pi xAI 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → Claude / Codex xAI Responses 本机路由（experimental bind）；Codex 订阅 → Grok 本机 `api_backend=responses`。refresh 方案见 §5.1.2（owner 分治，不与官方 CLI 互踢） |
 | Pi | Anthropic PKCE、OpenAI Codex PKCE、xAI device code | **第 2 路的标准落点**：只写入 Pi 对应槽；不能推导其他 Agent 也有这些槽 |
 | Kimi | 当前没有 AgentHub OAuth 登录入口 | **产品不做**国产 OAuth 开边或转 API。会员 API Key 走 ①/③；Kimi CLI managed OAuth / Pi `kimi-coding` 不得升成会员 Key，也不得登记 Adapter 边 |
 | 其他国产登录（GLM / DeepSeek / 通义 / 豆包等） | 无 AgentHub OAuth 入口 | **产品不做**。已登记的只有官方 API Key 票面；OAuth 不进矩阵 |
@@ -220,7 +220,7 @@ OAuth access/refresh token 带有客户端、受众、范围和刷新语义。�
 
 ### 5.1.1 Grok subscription → Claude Code / Codex：第 3 路，xAI Responses experimental bind
 
-Grok 订阅同样走 `local_bridge`，上游是 `https://cli-chat-proxy.grok.com/v1` 的 xAI Responses（`BridgeUpstreamProtocol::XaiResponsesOauth`），默认模型 `grok-4.5`。→ Claude 的本机表面是 Messages；→ Codex 的本机表面是 Responses。只允许带 access token 的 Grok OAuth Account。写入走 `bind_ticket`；本机路由用 `local_token`，目标只写 loopback 地址与本地 bearer，xAI token 不进入目标配置、IPC 或日志。上游请求带 Grok CLI 身份头（`x-xai-token-auth`、`x-grok-client-version` / `identifier` / `mode`、`x-authenticateresponse`）；会话 ID 从 Claude/Codex cache seed 哈希，禁止每请求随机 UUID。Claude `thinking` 映射为 Grok `reasoning`；本机桥按会话缓存 `encrypted_content` 并在下一轮补回，上游 400 解码失败则去掉密文重试。Codex `local_shell` / `apply_patch` 在透传前规范化。Hub 本轮不自动 refresh（Build refresh 会轮换，不能和官方 Grok CLI 互踢），过期需重新同步 Grok 登录。loopback 导入按 Agent upsert 同一槽，不每次新开一行。Codex 订阅 → Grok 是对称的第 3 路边：上游 Codex Responses，Grok `config.toml` 写 `api_backend=responses`。
+Grok 订阅同样走 `local_bridge`，上游是 `https://cli-chat-proxy.grok.com/v1` 的 xAI Responses（`BridgeUpstreamProtocol::XaiResponsesOauth`），默认模型 `grok-4.5`。→ Claude 的本机表面是 Messages；→ Codex 的本机表面是 Responses。只允许带 access token 的 Grok OAuth Account。写入走 `bind_ticket`；本机路由用 `local_token`，目标只写 loopback 地址与本地 bearer，xAI token 不进入目标配置、IPC 或日志。上游请求带 Grok CLI 身份头（`x-xai-token-auth`、`x-grok-client-version` / `identifier` / `mode`、`x-authenticateresponse`）；会话 ID 从 Claude/Codex cache seed 哈希，禁止每请求随机 UUID。Claude `thinking` 映射为 Grok `reasoning`；本机桥按会话缓存 `encrypted_content` 并在下一轮补回，上游 400 解码失败则去掉密文重试。Codex `local_shell` / `apply_patch` 在透传前规范化。refresh 现行行为仍是「Hub 不自动 refresh，过期需重新同步 Grok 登录」（Build refresh 会轮换，不能和官方 Grok CLI 互踢）；改进方案已拍板为 §5.1.2 的 owner 分治 + 文件跟随同步，未实现。loopback 导入按 Agent upsert 同一槽，不每次新开一行。Codex 订阅 → Grok 是对称的第 3 路边：上游 Codex Responses，Grok `config.toml` 写 `api_backend=responses`。
 
 Responses 已选为本轮上游 transport，并用 fixtures / host health 验证本地闭环。App Server 继续保持关闭：
 
@@ -230,6 +230,72 @@ Responses 已选为本轮上游 transport，并用 fixtures / host health 验证
 | Codex Responses transport（含本机 Responses 反代） | OAuth + Responses 流式/工具/取消闭环、失败补偿与 secret 隔离 | `codex-subscription-to-claude-responses-v1` 已开放为 experimental；本轮不实现自动 refresh |
 
 被选定的 transport 必须证明：身份只用于当前用户，token 不跨 IPC 泄露，刷新不导致并发风暴，协议闭环正确，且失败不会留下可用的 Claude Code loopback 配置。两条都未就绪时，UI 仍展示这条产品边为可预览，并给出 Claude 自身登录或已支持 API Key 作为临时替代。
+
+### 5.1.2 Grok OAuth 复用：自动 refresh 方案（不与官方 Grok CLI 互踢）
+
+> 状态：**已拍板方案（2026-08-21），未实现**。现行行为仍是「不自动 refresh，过期需重新同步 Grok 登录」；bridge 遇上游 401 映射为本地 502 `upstream_error`，不重试、不 refresh。
+
+事实（以代码为准）：
+
+- Grok OAuth grant 的主来源是官方 CLI 的 `~/.grok/auth.json`（`GROK_HOME` 可覆写；池内包装为 `format=auth_json`，`extra.source=auth.json`）。Hub 也能以同一 `client_id=grok-cli` 发起 PKCE，但那是**另一个 grant**、另一对 token。
+- xAI refresh 会轮换 access/refresh 对。官方 CLI 自己会就地续期 `auth.json`；如果 Hub 拿**同一个** refresh token 去调 token 端点，轮换会使 CLI 手里的 refresh token 失效——这就是互踢。互踢只发生在两方共用同一对 token 时，不同 grant 之间不互踢。
+- 现有缓解已在代码：`account list` 时 `sync_current_live` / `live_reconcile` 把 CLI 轮换后的 token 对认作同一行更新；`account refresh` 对 Grok 显式拒绝并引导「同步当前登录」；bridge secret resolver 只解析 access token，故意不返回、不持久化 refresh token。
+
+方案（owner 分治：**谁登录的，谁续期**；Hub 永不刷新不属于自己的 refresh token）：
+
+| 凭据 owner | 判定 | refresh 行为 |
+|---|---|---|
+| 官方 Grok CLI（`extra.source=auth.json` 导入/同步） | 主路径 | **文件跟随同步**：请求前 access JWT `exp` 临期、或上游 401 时，按账户 single-flight（复用 `live_reconcile_lock`）走一次 live reconcile 重读 `auth.json`；token 变了就替换上游 auth 并重试一次（仅限首个有效流事件前，遵守 §5.3 重试边界）；没变则维持 502，账户健康标 `NeedsLogin`，UI 引导「同步当前登录」。**不调 `accounts.x.ai/oauth/token`** |
+| Hub 自己（Hub PKCE 登录产生的 grant，非 live 导入） | `extra.source` 非 `auth.json` | 可做标准按账户 single-flight refresh：轮换只影响 Hub 自己的 token 对，不触碰 CLI 的 `auth.json`，不互踢；刷新结果只写账户池，**不写 CLI live 文件** |
+
+不变式：refresh token 不进 bridge、下游、IPC 或日志；listener 替换上游 auth 时 local bearer 不变（既有测试锚点 `ensure_listener_replaces_upstream_auth_while_keeping_local_bearer`）；文件跟随同步失败不得把其余账户或 token 暴露给调用方；Codex 订阅边继续沿用同一 owner 原则（`auth_json` 导入的 grant 归 Codex CLI 续期，Hub 跟随文件）。
+
+**凭据来源两种模式（用户可选，2026-08-21 拍板，未实现）**：owner=CLI 的 grant 在账户层有两种存放方式，创建账户时由用户选择。这是**凭据来源模式**，不是第四种 route，UI 不得叫「路由」（避免与本机路由混淆）；绑定走哪条边仍由 §4 矩阵与 `plan()` 决定，两种模式下可绑的边完全相同。
+
+| 模式 | 存什么 | 保鲜方式 | 适用 |
+|---|---|---|---|
+| **跟随 Grok CLI 登录文件（不复制）**——Grok OAuth 建议默认 | 账户行只存 `auth.json` 引用（路径 + profile key）与身份标识（email / `user_id`），**不拷贝 token**；secret 在请求 / health 时现读文件（新 `credentials.format=live_ref` 或同义标记） | 天然跟随：CLI 续期即生效，无同步动作、无过期窗口，结构上不可能互踢 | 装有官方 Grok CLI 且由它维持登录的主路径 |
+| **复制一份保存（快照，现行行为）** | 拷贝 `auth.json` 入池成独立行（`format=auth_json`） | list reconcile + 上表文件跟随同步 | 想钉住某个 grant（之后 CLI 换号，Hub 仍用旧登录）；Hub PKCE grant 只能入池 |
+
+跟随模式的护栏（缺一不可，fail-closed）：
+
+- **身份钉住**：创建时记录文件内 email / `user_id`；请求时文件身份变了**不静默切换**（计费与额度主体变了），账户标 `NeedsAttention`，用户确认后才更新引用。
+- **文件缺失 / CLI 登出**：稳定错误 + `NeedsLogin`；没有旧 token 可回落，不得缓存上一次读到的 token 继续用（最多允许单请求生命周期内复用一次读取结果）。
+- 跟随行自身不含 secret：列表、导出、日志、IPC 均无 token；`account refresh` 对跟随行同样拒绝。
+- 只允许指向本机受支持的官方 CLI 凭据文件（`GROK_HOME` / `~/.grok`），不接受任意路径；这是把 §1 硬规则「不复制凭据、绑定只引用」推进到账户层，不是新的凭据类。
+
+排查清单（token 过期 / 疑似互踢）：
+
+1. 症状分辨：下游 Claude/Codex 收到 **502 `code=upstream_error`** 才是上游 token 问题；**401 `invalid_api_key`** 是本机 bearer 错（查目标配置里的 loopback `api_key`），与上游无关。
+2. 看账户健康：`Renewable` / `NeedsLogin`（由 access JWT `exp` 推导，不看相对 `expires_in`）。
+3. 对照 `~/.grok/auth.json` 的 mtime 与账户池 token 是否一致；打开账户列表即触发 reconcile。跟随模式没有池内拷贝，本步改为直接看文件身份与 access JWT `exp`。
+4. 让官方 Grok CLI 自己跑一轮请求（它会就地续期 `auth.json`），然后 Hub「同步当前登录」，再重试 bridge 请求。跟随模式无需同步动作，CLI 续期后直接重试；若仍 502，查文件身份是否与账户钉住的身份一致（`NeedsAttention`）。
+5. 官方 CLI 自己也登录失效 → 在官方 CLI 重新登录，再同步；这是唯一需要用户重登的情况。
+6. 判定互踢：官方 CLI 报 refresh token 失效，且时间点与 Hub 的 token 端点调用吻合。现行实现对导入 grant **不调** token 端点；若发生即为回归，按本节方案修复，不得靠加重试掩盖。
+
+### 5.1.3 本机路由动态 GET /models（Grok 模型选择仍 Planned）
+
+> 状态：**已拍板方案（2026-08-21），未实现**。现行 listener 只挂 `GET /health` 与三条 POST 协议面，`GET /models` 落 axum 默认 404。
+
+事实（以代码为准）：
+
+- 上游 cli-chat-proxy 与 ChatGPT Codex Responses **都没有** `/models` 端点（bridge health 探针对这两类协议显式跳过 `/models`）；所以动态 `/models` 不能是上游透传，只能本机按边合成。
+- 主要消费方是 **Codex 订阅 → Grok** 边：`config.toml` 写 `api_backend=responses` + loopback `base_url`，且投影**故意不写 model**；Grok CLI 若按 OpenAI 习惯 `GET {base_url}/models` 列模型，现在拿到 404。
+- Grok→Codex / Grok→Claude 方向不受影响：目标配置直接写 `model = "grok-4.5"`（rule `default_model`），不走 /models。
+
+方案：
+
+- listener 新增 `GET /v1/models`（`/models` 别名），要求 local bearer，未认证同 `/health` 一样拒绝。
+- 响应为 OpenAI 列表形状 `{"object":"list","data":[{"id":…,"object":"model"}]}`；内容从该 profile 的 rule **本机合成**：接线 `adapter_model_mapping.rs`（为 Codex→Grok 边补 entries）+ rule `default_model`。列出的 id 必须与 dispatch 改写规则（`apply_official_codex_model` / `is_leftover_bridge_model`）接受的集合一致——不能列一个发出去会被上游 400 的名字。
+- fail-closed：映射表缺失时，有非空 `default_model` 就只返回该单项，否则返回空 `data` 并记结构化日志；不猜上游、不发明 `gpt-*` / `grok-*` 名字。
+- 产品边界：这是本机路由表面的枚举能力，**不改变** `Capability::ModelSelect` 的 Planned 状态，也不经 `Capability::ModelSelect` 放行（先例：只读 MCP inventory 不改变 `Mcp` 状态）。`ModelSelect` 转 Full 仍需对应 Service 落地 + 本地验证。
+
+排查清单（模型选择 / 列表异常）：
+
+1. Grok CLI 指向 loopback 后列不出模型：带 local bearer `curl http://127.0.0.1:{port}/v1/models`。**404** = 当前版本未含该端点（现行预期，方案未实现，Grok CLI 需手动依赖 `[models] default` slug）；**401** = bearer 不对，查 `config.toml` 的 `api_key`。
+2. 200 但清单与预期不符：查该边 rule 的 `adapter_model_mapping` entries 与 `default_model`；Codex→Grok 边 `default_model` 故意为空，映射表未接线前空列表是预期。
+3. 选中的模型上游 400：确认该 id 经 dispatch 改写后仍被上游接受；leftover 前缀（`grok-*` / `claude-*` / `kimi-*` / `deepseek-*` / `agenthub_*_bridge`）会被 omit 而不是重写。
+4. dogfood 需实测并记录 Grok CLI 对 404 与空列表两种回答的行为差异（只记状态码与行为，不记正文）。
 
 ### 5.2 订阅桥接的分层契约
 
