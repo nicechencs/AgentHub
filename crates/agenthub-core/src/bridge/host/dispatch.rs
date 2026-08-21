@@ -25,7 +25,7 @@ use crate::bridge::protocol::chat::{
     encode_chat_from_ir, encode_chat_sse, parse_chat_request, ChatStreamToIr,
 };
 use crate::bridge::protocol::responses::{
-    apply_official_codex_model, encode_responses_from_ir, parse_responses_request,
+    encode_responses_from_ir, parse_responses_request, prepare_official_codex_request,
     responses_output_to_ir, to_grok_responses_request, to_kimi_chat_request, to_responses_request,
     IrToResponsesSse, ResponsesStreamToIr,
 };
@@ -33,6 +33,7 @@ use crate::bridge::runtime::{BridgeLocalSurface, BridgeUpstreamProtocol};
 use crate::bridge::types::{
     BridgeEvent, EmissionState, IrEvent, ProtocolError, RetryClass, RetryGate,
 };
+use crate::utils::redact::redact_text;
 
 use super::http::{
     error_response, has_valid_local_auth, log_protocol_error, protocol_error_response,
@@ -166,13 +167,25 @@ fn map_upstream_http_error(
     started: Instant,
     status: StatusCode,
     retry_after: Option<HeaderValue>,
+    upstream_detail: Option<&str>,
 ) -> Response {
     let local_status = if status == StatusCode::TOO_MANY_REQUESTS {
         StatusCode::TOO_MANY_REQUESTS
     } else {
         StatusCode::BAD_GATEWAY
     };
-    tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "upstream_status", status = status.as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream returned an error");
+    tracing::warn!(
+        target: "core.adapter",
+        profile_id = %state.profile_id,
+        request_id = %request_id,
+        op = "upstream",
+        code = "upstream_status",
+        status = status.as_u16(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        upstream_detail = upstream_detail.unwrap_or(""),
+        detail = upstream_detail.unwrap_or(""),
+        "bridge upstream returned an error"
+    );
     state.record_upstream_failure();
     error_response(
         local_status,
@@ -183,6 +196,32 @@ fn map_upstream_http_error(
 }
 
 const ACCESS_JWT_EXPIRY_SKEW_SECS: i64 = 60;
+const UPSTREAM_ERROR_BODY_LIMIT_BYTES: usize = 8 * 1024;
+
+fn extract_upstream_error_detail(body: &[u8]) -> Option<String> {
+    let value = serde_json::from_slice::<Value>(body).ok()?;
+    let detail = value.get("detail").and_then(Value::as_str).or_else(|| {
+        value
+            .get("error")
+            .and_then(Value::as_object)
+            .and_then(|error| error.get("message"))
+            .and_then(Value::as_str)
+    })?;
+    let redacted = redact_text(detail);
+    let flattened = redacted
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    let flattened = flattened.split_whitespace().collect::<Vec<_>>().join(" ");
+    let truncated = flattened.chars().take(512).collect::<String>();
+    (!truncated.is_empty()).then_some(truncated)
+}
 
 fn oauth_subscription_protocol(protocol: BridgeUpstreamProtocol) -> bool {
     matches!(
@@ -216,6 +255,30 @@ fn try_reload_upstream_auth(state: &ListenerState) -> bool {
     }
     state.upstream.auth.replace_token(next);
     true
+}
+
+async fn read_bounded_upstream_error(
+    response: reqwest::Response,
+    force_shutdown: &CancellationToken,
+) -> Result<Vec<u8>, UpstreamBodyError> {
+    let mut body = Vec::with_capacity(UPSTREAM_ERROR_BODY_LIMIT_BYTES);
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = tokio::select! {
+        _ = force_shutdown.cancelled() => return Err(UpstreamBodyError::Stopping),
+        next = tokio::time::timeout(UPSTREAM_BODY_IDLE_TIMEOUT, stream.next()) => match next {
+            Ok(next) => next,
+            Err(_) => return Err(UpstreamBodyError::InvalidOrTooLarge),
+        },
+    } {
+        let chunk = chunk.map_err(|_| UpstreamBodyError::InvalidOrTooLarge)?;
+        let remaining = UPSTREAM_ERROR_BODY_LIMIT_BYTES.saturating_sub(body.len());
+        if chunk.len() > remaining {
+            body.extend_from_slice(&chunk[..remaining]);
+            break;
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 async fn post_upstream(
@@ -310,23 +373,32 @@ async fn send_upstream_with_grok_recovery(
         let can_recover = protocol == BridgeUpstreamProtocol::XaiResponsesOauth
             && status == StatusCode::BAD_REQUEST
             && attempt < 2;
+        let error_body = match read_bounded_upstream_error(response, &state.force_shutdown).await {
+            Ok(body) => body,
+            Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
+            Err(UpstreamBodyError::InvalidOrTooLarge) => Vec::new(),
+        };
         if !can_recover {
+            let detail = extract_upstream_error_detail(&error_body);
             return Err(map_upstream_http_error(
                 state,
                 request_id,
                 started,
                 status,
                 retry_after,
+                detail.as_deref(),
             ));
         }
-        let err_text = response.text().await.unwrap_or_default();
+        let err_text = String::from_utf8_lossy(&error_body);
         if !is_reasoning_decode_failure(&err_text) {
+            let detail = extract_upstream_error_detail(&error_body);
             return Err(map_upstream_http_error(
                 state,
                 request_id,
                 started,
                 status,
                 retry_after,
+                detail.as_deref(),
             ));
         }
         let model = grok_replay_model(&body, state.upstream.model.as_deref());
@@ -510,7 +582,7 @@ fn passthrough_responses_body(
     let mut upstream_body = body;
     match state.upstream.protocol {
         BridgeUpstreamProtocol::CodexResponsesOauth => {
-            apply_official_codex_model(
+            prepare_official_codex_request(
                 &mut upstream_body,
                 &incoming_model,
                 state.upstream.model.as_deref(),
@@ -594,7 +666,7 @@ pub(super) async fn handle_messages(state: ListenerState, request: Request) -> R
     }
     match protocol {
         BridgeUpstreamProtocol::CodexResponsesOauth => {
-            apply_official_codex_model(
+            prepare_official_codex_request(
                 &mut upstream_body,
                 &request.model,
                 state.upstream.model.as_deref(),
@@ -718,7 +790,7 @@ pub(super) async fn handle_chat_completions(state: ListenerState, request: Reque
             unreachable!("chat completions handler owns Codex Responses OAuth")
         }
     };
-    apply_official_codex_model(
+    prepare_official_codex_request(
         &mut upstream_body,
         &request.model,
         state.upstream.model.as_deref(),

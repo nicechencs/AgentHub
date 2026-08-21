@@ -1494,6 +1494,112 @@ async fn codex_responses_sse_upstream() -> (u16, tokio::task::JoinHandle<()>) {
     (port, task)
 }
 
+async fn capturing_codex_responses_sse_upstream(
+) -> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
+    async fn responses(
+        State(captured): State<Arc<Mutex<Vec<Value>>>>,
+        headers: axum::http::HeaderMap,
+        Json(body): Json<Value>,
+    ) -> Response {
+        let bearer = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        assert_eq!(bearer, "Bearer oauth-upstream-token");
+        captured
+            .lock()
+            .expect("lock captured Codex bodies")
+            .push(body.clone());
+        if body.get("store").and_then(Value::as_bool) != Some(false) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Store must be set to false"})),
+            )
+                .into_response();
+        }
+        if body.get("stream").and_then(Value::as_bool) != Some(true) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Stream must be set to true"})),
+            )
+                .into_response();
+        }
+        let chunks: Vec<&'static [u8]> = vec![
+            br#"data: {"type":"response.created","response":{"id":"resp_stream","model":"gpt-5","status":"in_progress"}}
+
+"#,
+            br#"data: {"type":"response.output_text.delta","delta":"pong"}
+
+"#,
+            br#"data: {"type":"response.completed","response":{"id":"resp_stream","model":"gpt-5","status":"completed","output":[]}}
+
+"#,
+        ];
+        let output = stream! {
+            for chunk in chunks {
+                yield Ok::<_, Infallible>(axum::body::Bytes::from_static(chunk));
+            }
+        };
+        (
+            [(header::CONTENT_TYPE, "text/event-stream")],
+            Body::from_stream(output),
+        )
+            .into_response()
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind capturing Codex Responses SSE upstream");
+    let port = listener.local_addr().expect("addr").port();
+    let captured_clone = captured.clone();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state(captured_clone),
+        )
+        .await
+        .expect("serve capturing Codex Responses SSE upstream");
+    });
+    (port, captured, task)
+}
+
+#[tokio::test]
+async fn codex_responses_oauth_messages_stream_sends_store_false_and_stream_true() {
+    let (upstream_port, captured, upstream_task) = capturing_codex_responses_sse_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(codex_spec("codex-messages-store-stream", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 32,
+            "stream": true,
+            "messages": [{ "role": "user", "content": "ping" }]
+        }))
+        .send()
+        .await
+        .expect("streaming messages request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("Anthropic SSE body");
+    assert!(body.contains("pong"), "expected pong in SSE body: {body}");
+    let upstream = captured.lock().expect("lock captured Codex bodies").clone();
+    assert_eq!(upstream.len(), 1);
+    assert_eq!(upstream[0]["store"], false);
+    assert_eq!(upstream[0]["stream"], true);
+    host.stop("codex-messages-store-stream")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
 #[tokio::test]
 async fn anthropic_protocol_uses_messages_and_x_api_key() {
     let (upstream_port, upstream_task) = anthropic_upstream().await;
