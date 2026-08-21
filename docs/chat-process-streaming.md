@@ -248,7 +248,7 @@ frontend
 
 ## 12. 已知问题（2026-08-21 已收口）
 
-对照笔记 [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) §6.14 只作机制指针。下列不是 Phase 3 协议侧待办（落库 / usage / Pi rpc / diff 预览）。
+对照笔记 [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) §6.14 / §6.15 只作机制指针。下列不是 Phase 3 协议侧待办（落库 / usage / Pi rpc / diff 预览）。
 
 1. **崩溃残留 `status=running`（已修）**：`AgentHub::open` 在 lifecycle interrupt 之后把所有 `chat_messages.status=running` 收成 `cancelled`（不清 `native_session_id`、不改 error）。不在 `list_messages` 上 interrupt（与 persist 竞态）。`Conversation.sending` 是运行时投影（存在 running 行），Chat 页 `loadList` 用它恢复 Stop。
 2. **过程 cap（已修）**：UI `MAX_STEPS=200` 仍在，但 `capSteps` 优先保留 `tool` / `error`；软步（thinking / status / raw / text）从最旧丢。tool+error 自身超过 200 时只留最近 200 条。无 `step.id` 的 tool 仍不 merge（parser 必须给稳定 id）。

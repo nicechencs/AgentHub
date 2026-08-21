@@ -28,7 +28,7 @@
 | [logging.md](logging.md) | **日志规范**：级别、文件路径、保留、module 字段、脱敏、排查与 `config` 键（**v1.0**） |
 | [chat-process-streaming.md](chat-process-streaming.md) | **Chat 过程流式**：Phase 0–2 现行契约；Phase 3 **展示层已落地**；协议侧未做；§12 三条实现缺口已收口 |
 | [chat-page-redesign.md](chat-page-redesign.md) | **Chat 工作台已落地**：会话 rail / header 芯片 / **一会话一 Agent** / 过程面板展示层 / 文件拆分 |
-| [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) | **对照笔记**（2026-08-21）：AgentHub Chat × DSH Desktop 的 UI↔Agent 机制；§6 逐条深挖（结构差/实现差）。**不是** backlog，不派生实施任务 |
+| [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) | **对照笔记**（2026-08-21，同日按 `d7da2f5` 复核）：AgentHub Chat × DSH Desktop 的 UI↔Agent 机制；§6 逐条深挖，§6.15 代码复核表。**不是** backlog，不派生实施任务 |
 | [capability-matrix.md](capability-matrix.md) | **能力矩阵**：`Capability` 枚举 + 四级状态、现状矩阵、防漂移测试、P0–P4（**v1.0 已落地**） |
 | [account-authorization-pool.md](account-authorization-pool.md) | **账号池身份×授权**：同人可多授权并存；去重仅限同一份登录；与能力矩阵边界（**已落地**） |
 | [adding-an-agent.md](adding-an-agent.md) | 新增 Agent 适配器清单；`accepts[]` 须登记 wire 协议 **和** OAuth 契约槽 |

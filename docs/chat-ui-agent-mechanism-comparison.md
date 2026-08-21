@@ -1,9 +1,9 @@
 # Chat UI ↔ Agent 处理机制对照（AgentHub × DSH Desktop）
 
 > **定位**：对照笔记。记录 AgentHub Chat 与参考仓库 DeepSeek Harness Desktop 的 UI↔Agent 处理机制，以及可学习经验。  
-> **日期**：2026-08-21（同日补 §6 逐条深挖）  
+> **日期**：2026-08-21 初稿（同日补 §6）；**同日按 `d7da2f5` 及后续 Chat 代码复核**（cold-repair、`Finished.cancelled`、`capSteps`、`Conversation.sending`）。复核表见 **§6.15**。  
 > **不是**产品方案、不是 backlog、**不派生实施任务**。过程落库 / 交互式 tool 审批 / print+resume 范围仍以既有契约为准。  
-> 总览在 §0–§5；逐条机制、不变量与「结构差 / 实现差」在 **§6**。  
+> 总览在 §0–§5；逐条机制、不变量与「结构差 / 实现差」在 **§6**；按现代码复核在 **§6.15**。  
 > **真源关系**：
 >
 > | 主题 | 真源 |
@@ -17,7 +17,7 @@
 > 冲突时以上表为准，不以本文覆盖产品决策。  
 > **范围外（本文亦不推导任务）**：凭据落盘加密（无必要）；国产 OAuth 开边 / OAuth→API（产品不做）。
 
-对照对象：本仓库 Chat，与参考仓库 `deepseek-harness-desktop`（当时本机路径 `D:\demo_github\AgentHub_Ref\deepseek-harness-desktop`，上游 pin `deepseek-ai/deepseek-harness@141eb6fe` / `0.1.0-rc.8`）。当时 `deepseek-harness/` 子模块未检出；Harness Loop / Web Client 机制以该 commit 的官方文档、桌面壳源码和 `@deepseek-ai/dsh-*` 类型合同为准。
+对照对象：本仓库 Chat，与参考仓库 `deepseek-harness-desktop`（本机路径 `D:\demo_github\AgentHub_Ref\deepseek-harness-desktop`，上游 pin 仍是 `deepseek-ai/deepseek-harness@141eb6fe` / `0.1.0-rc.8`，`upstream.json` 未变）。`deepseek-harness/` 子模块仍未检出；Harness Loop / Web Client 机制仍以该 commit 的官方文档、桌面壳源码和 `@deepseek-ai/dsh-*` 类型合同为准。本次复核的是 **Hub 侧** 代码与文档，不是 DSH Desktop 新版本。
 
 ---
 
@@ -75,7 +75,9 @@ ChatComposer.onSend
 | 运行 | `crates/agenthub-core/src/services/run_service.rs` | `run_each` + `StreamSession` |
 | 解析 | `crates/agenthub-core/src/utils/stream_parse/` | Claude / Codex / Kimi / Grok / Pi |
 
-连接 picker **不是**模型选择器：选项来自 `listAccounts` + `listProviders`。切账号 / provider 写的是该 Agent 的 live 登录；下一轮 `build_run_spec` 才吃到。`/routes` 本机转发不在 `chat_send` 路径上。
+连接 picker **不是**模型选择器：选项来自 `listAccounts` + `listProviders`。切账号 / provider 写的是该 Agent 的 live 登录；下一轮 `build_run_spec` 才吃到。`/routes` 本机转发不在 `chat_send` 路径上。leftover **本机路由**行在 picker 里收成一项（文案「本机路由」，不叫「官方登录」）；点它走 `leftoverSwitchPlan` → `bindTicket`，不是 `switchProvider`。这只改下一轮凭据，不改发送单元。
+
+启动时 `AgentHub::open` 在 lifecycle interrupt 之后把 leftover `chat_messages.status=running` 收成 `cancelled`（`ChatRepo::interrupt_stale_running`，不清 `native_session_id`）。`Conversation.sending` 是运行时投影（存在 running 行），不落盘；Chat 页 `loadList` 用它恢复页级 Stop。
 
 ### 1.2 DSH Desktop：RPC 叫醒 inbox，UI 订阅读日志
 
@@ -147,7 +149,7 @@ Chat 节点用 `ConversationNodeDefinition` 装配：每个业务节点必须有
 
 AgentHub：
 
-- Claude / Codex / Kimi / Grok / Pi：各家 NDJSON → 统一 `ProcessStep`
+- Claude / Codex / Kimi / Grok / Pi：各家 NDJSON → 统一 `ProcessStep`。Grok Build ≥ 0.2.117 另吃 ACP JSON-RPC（`session/update` / `_x.ai/session/update`）；未知 method / kind 吞成空列表，不把信封当 raw 喷进时间线。旧 `{type,data}` 仍认。
 - WorkBuddy / Cursor：纯 text
 - `ChatProcessPanel` 渲染 thinking / tool / stderr
 - **没有** tool 审批 RPC；`allowDangerous` 只是给 CLI 加 skip-permissions 一类 flag（Kimi / DSH headless 无对应 flag）
@@ -177,7 +179,7 @@ tool/call 落日志 → presentCall(args)
 | 取消 | `CancelToken` 杀进程树，best-effort | `Agent.cancel(cause, { keepInbox })`，first-cause-wins |
 | 队列 | 页级全局一 turn；后端按 conversation single-flight | 取消当前 turn，FIFO 队列 idle 后续跑 |
 | 观察完成 | `chat_send` Promise settle | `whenIdle()` 看整个 Agent |
-| 离开 Chat 页 | Channel 回调丢了；过程 UI 没了 | Session 对象常驻，切走再回来立刻渲 |
+| 离开 Chat 页 | Channel 回调仍丢、过程 UI 仍没了；`Conversation.sending` 让再进页能恢复 Stop | Session 对象常驻，切走再回来立刻渲 |
 
 Hub 的「一页同时只跑一轮」（`sendBlockers` 的 `sendingElsewhere`）更简单，也更符合工作台。DSH 的 inbox 是给真正的多步 Agent 用的。
 
@@ -233,7 +235,7 @@ DSH 把这四层拆开，所以插件能在不改 Loop 的情况下换模型、�
 
 - 页面不 `invoke`；生产 build 扫到 mock 直接失败
 - `chat-model.ts` / `chat-process.ts` 纯函数 + vitest，和 DSH 的 presenter / assembler 同族
-- `sendBlockers` 把「隐藏 / 未配置授权 / 环境未就绪 / 无 cwd / 别的会话在跑」做成 composer 内嵌引导，而不是点了再 toast
+- `sendBlockers` 把「隐藏 / 未配置授权 / **仅 Pi** 环境未就绪 / 无 cwd / 别的会话在跑」做成 composer 内嵌引导，而不是点了再 toast。`agentChatEnvReady` 只拦 Pi（Node 22.19）；别的 Agent 的 `envReady` 不是 Chat 发送门。
 - 结构化模式下 **强制** 用 decoder 的 assistant 文本替换 NDJSON，气泡不喷协议垃圾
 - cancel 在 core 删除会话时也会挂钩
 - 对 DSH 不发明 always-approve（fail-closed）
@@ -258,7 +260,7 @@ DSH 把这四层拆开，所以插件能在不改 Loop 的情况下换模型、�
 1. **过程事件至少能回放当轮。** `ProcessStep` 已有 wire 类型；切会话 / 刷新丢掉 thinking / tool 是与 DSH 体验差最大的一块。若做，按过程文档的协议侧走，不另开产品。
 2. **节点身份用稳定 id，不要「最新 running」。** 工具卡用 `turn + agent + toolId`。`mergeToolStep` 已按 id merge，保持这条。
 3. **presenter 与 reducer 继续纯函数。** 新 Agent 的 parser 只产出 `ProcessStep`；UI 不要再 `switch(agentId)` 画卡片。
-4. **Chat 状态可以从页面实例里拔出来。** 不必上 Cordis。一个「当前 in-flight turn」的模块级投影（messages + processMap + sendingConversationId）就能让离开 `/chat` 再回来不丢过程。这接近 DSH「Session 常驻、React 只投影」。
+4. **Chat 状态可以从页面实例里拔出来。** 不必上 Cordis。`Conversation.sending` 已经让离开 `/chat` 再回来能恢复 Stop；过程条 / chunk 仍绑在 hook 上。若要把过程也留下来，最小形状仍是按 conversation id 的模块级投影（messages + processMap + sending），页面只订阅读。这接近 DSH「Session 常驻、React 只投影」。
 5. **连接切换要有事件。** [architecture.md](architecture.md) 写了 `provider-switched`，实现仍靠 Chat 自己 refetch。Hub 至少可让 Dashboard / Connections / Chat 订同一条「live 登录变了」。
 6. **流式工具 id / name 的粘连规则**写成跨 Agent 的共享测试，不要每家 parser 各写一遍。
 
@@ -400,7 +402,7 @@ Hub 不落过程是契约（过程文档 Phase 3 协议侧未做），不是 par
 - `started` 补 running 占位；`agentChunk` stdout 写 `streamingRef` 再刷气泡；`agentFinished` 删 local/running 换后端行。
 - `text` 型 `ProcessStep` 不进时间线（已在气泡）。
 
-离开 `/chat`：hook 卸载，Channel 的 `setState` 失去合法订阅者；后端子进程仍跑，回来只靠 refetch 终稿。切会话清空 `processMap`，即使 send 还在原会话上跑——切回去也接不住已经过去的 step。
+离开 `/chat`：hook 卸载，Channel 的 `setState` 失去合法订阅者；后端子进程仍跑。再进页：`loadList` 凭 `Conversation.sending` 恢复 Stop，`listChatMessages` 拉终稿或仍 running 的占位；**过程条接不上**已经过去的 step。切会话清空 `processMap`，即使 send 还在原会话上跑——切回去也接不住中间帧。
 
 滚动：距底 ≤80px 才跟随，避免流式打断回看。这是对象层不存在时，UI 自己做的一点「投影纪律」。
 
@@ -416,11 +418,12 @@ Hub 的 Channel 对「这一枪」更干净：没有全局事件风暴，send �
 
 Hub 已经做对的投影纪律：`reduceProcessEvent` 未知事件返回同一引用（React bail-out）；thinking/tool merge 纯函数且有单测。缺的是 **窗口**：没有 seq，没有 open-buffer，没有「切走仍把帧接到那个 conversation 的投影上」。
 
-另外两条竞态（实现差）：
+另外几条竞态（实现差）：
 
-1. **切走再切回**：`applyEvent` 把中间 chunk 全丢；`loadMessages` 可能在后续 chunk 之后 resolve，用 DB 里仍为空的 `running` 行盖掉刚恢复的流式正文，直到下一 chunk 或结束 refetch。
-2. **`Finished.ok` 与取消**：`RunStatus::is_hard_failure` 只有 Failed/Timeout，取消时报告 `ok=true`。若过程项仍停在 running，`reduceProcessEvent('finished')` 会按 ok 标成成功。mock 取消则 `ok=false`，生产/mock 不一致。
-3. **Channel `send` 失败静默**（`let _ = on_event.send(ev)`）：前端挂了后端仍跑完并落库，UI 只能靠事后 list 看见终稿。
+1. **切走再切回**（仍在）：`applyEvent` 把中间 chunk 全丢；`loadMessages` 可能在后续 chunk 之后 resolve，用 DB 里仍为空的 `running` 行盖掉刚恢复的流式正文，直到下一 chunk 或结束 refetch。
+2. **`Finished` 与取消（已修）**：`ok` 仍是 `!is_hard_failure`（取消时 true）。新增 `cancelled: bool`（任一 `RunStatus::Cancelled`）。`reduceProcessEvent('finished')`：`cancelled` → `cancelled`，否则 `ok` → `ok`，否则 `failed`。mock 与生产对齐为 `ok: true, cancelled: true`。`AgentFinished` 仍无 `ok` 字段，取消终态在 `message.status`。
+3. **Channel `send` 失败静默**（仍在）：`let _ = on_event.send(ev)`。前端挂了后端仍跑完并落库。
+4. **离开 `/chat` 再进（core 仍活）**：新 hook 的 Channel 接不上旧 `chat_send`。`loadList` 能凭 `sending` 投影恢复 Stop，`chatCancel` 仍打到 core 的 `CancelToken` map。过程条是空的。若后台在新页挂载之后才结束，旧实例的 `finally` 清不掉新实例的 `sending`；新页也收不到 `agentFinished`，可能短暂停在 running + Stop，直到切会话触发 `loadMessages` 或再进页。这是「投影绑在页面实例」的剩余面，不是「再也按不了取消」。
 
 DSH reconnect = **rebuild**（清窗再 `open` 尾页），没有 resume cursor；mux `since` 是预留座位。审批/提问帧从不进 history，靠 `pendingBuffers` 在 Session 实例化时 replay。Hub 没有对等缓冲，切走等于丢控制面。
 
@@ -442,7 +445,7 @@ DSH reconnect = **rebuild**（清窗再 `open` 尾页），没有 resume cursor�
 - JSON 但未知 shape → `ProcessStep::Raw`，不进正文
 - 非 JSON 行在 structured 模式 → 既进 assistant 文本，又记 raw（兼容）
 - 单行 >256KiB / 行缓冲溢出 → raw 并丢弃残行
-- 步骤 cap：core `MAX_EMITTED_STEPS=2000`（Error/Tool 可突破；超长行 / 行缓冲溢出的 `Raw` 同样不受 cap），UI reducer `MAX_STEPS=200` 滑窗。前后端 cap 不一致：长 turn 的早期 tool 卡会被 UI 丢掉，即便 core 发过。
+- 步骤 cap：core `MAX_EMITTED_STEPS=2000`（Error/Tool 可突破；超长行 / 行缓冲溢出的 `Raw` 同样不受 cap）。UI reducer `MAX_STEPS=200` 走 `capSteps`：优先留 `tool` / `error`，软步（thinking / status / raw / text）从最旧丢；若 tool+error 自己超过 200，只留最近 200 条并丢掉全部软步。长 turn 的早期 **工具卡**不再被软步挤掉；无 `step.id` 的 tool 仍不 merge。
 
 `ChatProcessPanel`：tool 行展示 name/status/input/result；result 用 `DiffAwarePre` 做 `+/-/@@` 着色。截断分两条互斥路径：普通文本约 4000 字符；识别为 diff 时约 200 行。**不能**批准、不能重跑单步、不能点开文件。
 
@@ -463,7 +466,7 @@ Hub 看到的「⚙ web_search · end」是事后考古：CLI 已经执行完（
 可学的实现差：
 
 1. 稳定 `tool.id`（已在 merge 路径里，parser 必须给）
-2. UI cap 不要 silently 丢掉早期 tool（滑窗 vs 保留 tool/error）
+2. UI cap 不要 silently 丢掉早期 tool（`capSteps` 已优先留 tool/error；core 2000 与 UI 200 的量级差仍在）
 3. presenter 继续纯函数，不要在 `ChatProcessPanel` 里 `switch(agentId)`
 
 ---
@@ -513,7 +516,15 @@ Hub 已经从 DSH 学到的那一半：Kimi/DSH headless 不开 yolo。缺的那
 
 没有 inbox。没有 `whenIdle()`。没有「取消当前 turn、队列接着跑」。超时默认 300s（`DEFAULT_RUN_TIMEOUT`）。输出 cap 2MiB。
 
-刷新或离开 `/chat`：页级 `sending` 丢失。后端可能仍 inflight。新挂载既看不到 `sendingElsewhere`，也没有取消按钮。再点发送会打到 `conversation already has an in-flight send`。`messagesLoading` 期间仍可发送，`turnGuess` 在 `messages=[]` 时为 1，与 DB 的 `MAX+1` 更容易分叉。
+刷新 / 离开要分两条路径，不要混成「sending 丢失」：
+
+| 路径 | 现在 |
+|---|---|
+| **core 重启**（关应用 / `AgentHub::open`） | `interrupt_stale_running` 把 leftover `running` 收成 `cancelled`。页级 Stop 不必恢复——已经没有活进程。 |
+| **只卸载 Chat 页**（路由离开再进，core 仍活） | 后端 `CancelToken` 与子进程还在。`loadList` 凭 `Conversation.sending` 恢复 Stop；`chatCancel` 仍有效。Channel 与 `processMap` 是新实例，接不上旧帧。 |
+| **停在 `/chat` 切会话** | Channel 还活着；`applyEvent` 丢掉非当前会话的 chunk（error toast 除外）。 |
+
+`messagesLoading` 期间仍可发送，`turnGuess` 在 `messages=[]` 时为 1，与 DB 的 `MAX+1` 更容易分叉。这与 sending 投影无关。
 
 **DSH**
 
@@ -580,11 +591,13 @@ print-resume 路径反而更诚实：Hub 承认自己不是真相。UI 今天只
 
 **Hub**
 
-`mergeThinkingText`：若 `next.startsWith(prev)` 当快照替换（Codex `item.updated`）；若 `prev.startsWith(next)` 当回放忽略；否则拼接（Claude/Grok/Pi 增量）。有单测。
+`mergeThinkingText`：若 `next.startsWith(prev)` 当快照替换（Codex `item.updated`）；若 `prev.startsWith(next)` 当回放忽略；否则拼接（Claude/Grok/Pi 增量，含 Grok ACP `agent_thought_chunk`）。有单测。
 
 `mergeToolStep`：空名不覆盖已有名；空 result 不覆盖；id 缺则用旧 id。
 
-Bridge 侧 `ChatStreamToIr::push_tool_delta`：按 index 建状态；空 id 用 `call_{index}`；后续 delta 追加 arguments，后到的非空 `name` 也会更新内存里的 tool 名。这是 **本机路由** 的 Chat Completions→IR，不是 Chat 页 parser，但同一类 bug。
+Grok Chat parser（`stream_parse/grok.rs`）双形状：legacy `{type,data}` 与 ACP JSON-RPC。`agent_thought_chunk` → `Thinking`；`tool_call` / `tool_call_update` → `Tool`（id 取 `toolCallId`）。未知 ACP 信封吞掉。这是 **Chat CLI stdout**，不是本机路由。
+
+Bridge 侧 `ChatStreamToIr::push_tool_delta`：按 index 建状态；空 id 用 `call_{index}`；后续 delta 追加 arguments，后到的非空 `name` 也会更新内存里的 tool 名。Grok 加密 `reasoning.encrypted_content` 的跨 turn replay 在 cli-chat-proxy / bridge，**不进** Chat 气泡。同一类粘连 bug，两条栈。
 
 **DSH**
 
@@ -594,7 +607,7 @@ LLM 层 `StreamChunk` 是闭合判别联合：`index` 绑 delta 到 block，`blo
 
 两边都在打「流式工具调用的空字符串续包」。DSH 把它放在 **LLM adapter**，一次修好所有 UI；Hub 分散在 `stream_parse/*`、`chat-process.ts`、`bridge/protocol/chat.rs` 三处。这是实现差，也是最便宜的对齐：共享「空 id/name 不是新 call」测试夹具，parser / bridge / reducer 各跑一遍。
 
-cap 纪律也属实现差：core 2000 vs UI 200。DSH 的窗口是按 seq 的 history 页，不是「最后 200 个 step」——早期 `tool/call` 仍能通过分页回来。Hub 滑窗等于主动忘掉本轮开头的工具。
+cap 纪律也属实现差：core 2000 vs UI 200。DSH 的窗口是按 seq 的 history 页，不是「最后 200 个 step」——早期 `tool/call` 仍能通过分页回来。Hub 的 UI 200 现在优先留 tool/error，不再用单纯滑窗切掉本轮开头的工具卡；软步仍会从最旧丢。量级差和「刷新不能回放」都还在。
 
 ---
 
@@ -664,7 +677,7 @@ Host 在 `127.0.0.1` 随机端口（可固定）。Renderer 加载同源页面�
 | 6.2 发送 | invoke 直到进程结束 | inbox 叫醒，RPC 先返回 | 结构 |
 | 6.3 真源 | 终稿行 + 可选 sid 指针 | append-only 事件 + 持久化 seam | 结构（落过程则实现） |
 | 6.3 崩溃 | 启动收成 cancelled | cold 合成 interrupted | 实现（已修） |
-| 6.4 投影 | 页 hook + Channel | 常驻 Session + seq 窗口 | 实现（可拔 store） |
+| 6.4 投影 | 页 hook + Channel；`sending` 投影可恢复 Stop | 常驻 Session + seq 窗口 | 实现（可拔 store；过程窗口仍绑页面） |
 | 6.5 工具 | 解析 stdout | 先 `tool/call` 再执行 | 结构（对黑盒 CLI） |
 | 6.6 审批 | 启动 flag | per-call waterfall + rpcId | 结构 |
 | 6.7 取消 | 杀进程树 | AbortSignal + keepInbox | 结构（对象不同） |
@@ -681,13 +694,44 @@ Host 在 `127.0.0.1` 随机端口（可固定）。Renderer 加载同源页面�
 若只从实现差里挑「对照后最值得记住」的，顺序是。其中 1 / 3 / 6 已在 [chat-process-streaming.md](chat-process-streaming.md) §12 收口（2026-08-21）；本文仍不派工其余项。
 
 1. **崩溃与悬挂 running（已修）**：Hub 启动 cold repair 把 stale `running` 收成 `cancelled`；`Conversation.sending` 投影活 inflight，重新进 Chat 页可恢复 Stop。仍无法区分「工具未开始 / 结果未知」（黑盒 CLI 的结构差）。
-2. **in-flight 投影不要绑在页面实例**：Channel 可保留，订阅者换成按 conversation id 的模块；切走应缓冲而非丢帧。
+2. **in-flight 过程窗口仍绑在页面实例**：Stop 已能靠 `sending` 投影恢复；Channel / `processMap` / 流式 chunk 仍随 hook 卸载丢掉。切走应缓冲而非丢帧——这条还在。
 3. **过程 cap 与稳定 tool id（cap 已修）**：UI 200 优先留 tool/error；无 id 的 tool 仍不 merge。core 2000 的突破不只 Error/Tool，超长 `Raw` 也不受 cap。
-4. **三处流式粘连测试夹具**：parser / reducer / bridge。后续 delta 除追加 arguments 外，非空 `name` 也会更新 tool 状态。
+4. **三处流式粘连测试夹具**：parser / reducer / bridge。后续 delta 除追加 arguments 外，非空 `name` 也会更新 tool 状态。Grok Chat 已吃 ACP；加密 reasoning replay 仍只在 cli-chat-proxy / 本机路由，**不进** Chat 气泡。
 5. **气泡标明本轮走官方 resume 还是 Hub 拼接**：避免用户以为 Hub 库等于 CLI 上下文。resume 失败当轮不重试 stitch。
 6. **取消与 `Finished`（已修）**：`ok` 仍是 `!is_hard_failure`；新增 `cancelled`。reducer 按 `cancelled` 收相，mock 与生产对齐。
 
 本地对照时 `deepseek-harness/` 子模块未检出，DSH Loop / Client 的逐行源码以 pin `141eb6fe` 官方文档与类型声明为准，不是本机 `packages/**/*.ts`。若要做字节级 diff，需先检出子模块再读 `packages/core/{session,agent,tools,agent-loop}` 与 `packages/client/runtime/src/client/sessions/`。
 
-这些不改变「一会话一 CLI」模型，也不授权过程落库或 HITL。过程落库、Pi rpc、diff 预览仍只列在 [chat-process-streaming.md](chat-process-streaming.md) Phase 3 协议侧。已知实现缺口见该文 §12。凭据落盘加密、国产 OAuth 仍为范围外。
+这些不改变「一会话一 CLI」模型，也不授权过程落库或 HITL。过程落库、Pi rpc、diff 预览仍只列在 [chat-process-streaming.md](chat-process-streaming.md) Phase 3 协议侧。§12 三条实现缺口（崩溃 running / UI cap / `Finished.cancelled`）已收口；剩余的页面绑定与切会话丢帧见上文 6.4 / 6.14.2。凭据落盘加密、国产 OAuth 仍为范围外。
+
+---
+
+### 6.15 2026-08-21 代码复核
+
+对照 `d7da2f5`（cold-repair / capSteps / `Finished.cancelled`）、`9ea0f3e`（单 Agent 文档收口）、leftover 连接切换、Pi `envReady`、composer 自动增高、Grok 本机路由协议。DSH Desktop pin 未变。**仍不派工。**
+
+| 条 | 复核前笔记 | 现代码 | 判定 |
+|---|---|---|---|
+| 0 / 6.1 / 6.11 | 一会话一 Agent | `require_single_agent` 仍拒 create/update `len>1`；`send_inner` 只取首位并 truncate；打开旧多选行非 sending 时折成 `[agentIds[0]]` | 仍成立 |
+| 6.2 发送单元 | 一次 Channel invoke = 一轮子进程 | `createTauriChatPort().chatSend` 仍新建 `Channel`；single-flight 仍在分配 turn 之前插入 `CancelToken` | 仍成立 |
+| 6.3 真源 | 终稿表；过程不落库 | `chat_messages.content`；`processMap` 切 `activeId` 仍 `setProcessMap({})` | 仍成立（契约） |
+| 6.3 崩溃 | 启动收成 cancelled | `AgentHub::open` → `ChatRepo::interrupt_stale_running`：全部 `running` → `cancelled`，不清 sid、不改 error；**不**在 `list_messages` 上 interrupt | 已修，属实 |
+| 6.4 Stop | 离开 Chat 没有取消按钮 | `Conversation.sending` 投影 + `loadList` 恢复 `sendingConversationId`；`handleCancel` 仍 `chatCancel` | 已修 Stop；过程窗口未修 |
+| 6.4 切会话丢帧 | `activeIdRef !== sendConvId` 丢 chunk | `applyEvent` 仍如此（error toast 除外） | 仍成立 |
+| 6.5 工具 | stdout 考古；无 HITL | 无 tool 审批 RPC；`allowDangerous` 仍是启动 flag | 仍成立（结构差） |
+| 6.5 UI cap | 200 滑窗切掉早期 tool | `capSteps` 优先 `tool`/`error` | 已修；量级 200 vs 2000 仍在 |
+| 6.6 审批 | Kimi/DSH 不加 yolo | `DshAdapter::build_run_spec` 仍 `dsh --profile headless`，`let _ = opts.allow_dangerous` | 仍成立 |
+| 6.7 取消 | 杀进程树；`Cancelled` 不是 hard failure | `kill_process_tree`；sid 取消保留、Timeout/Failed 才清 | 仍成立 |
+| 6.8 历史 | print+resume 仅 Claude/Codex | `supports_print_resume` 未扩到 Kimi/Grok/Pi/DSH | 仍成立 |
+| 6.8 cwd | UI 强制 cwd，core 允许 None | `sendBlockers` 仍 `noCwd`；`send_inner` 仅在 `Some` 时 `validate_cwd` | 仍成立 |
+| 6.9 粘连 | 三处各写 | Chat parser / reducer / `ChatStreamToIr::push_tool_delta` 仍分家。Grok Chat 现双形状（legacy + ACP `session/update`）；未知 method 吞空列表。加密 reasoning replay 只在 cli-chat-proxy，不进气泡 | Chat 解析已变；粘连分家仍成立 |
+| 6.10 扩展 | Adapter + parser registry | `StreamSession` 仍按 `AgentKey` 查 registry | 仍成立 |
+| 6.12 壳 | Chat 不走 sidecar | 未改 | 仍成立 |
+| DSH 能力 | StructuredStream / SessionResume Planned | `capability()` 仍 Planned | 仍成立 |
+| 连接 leftover | （笔记未写） | picker 折叠 leftover「本机路由」；`leftoverSwitchPlan` → `bindTicket` | **新事实**；不改 Loop |
+| Pi 发送门闩 | 环境未就绪 | `agentChatEnvReady` **只拦 Pi**（Node 22.19）；别的 Agent 的 `envReady` 不是 Chat 门闩 | 写清粒度 |
+| composer 高度 | chrome | `COMPOSER_TEXTAREA_MIN_PX=56` / `MAX=240` + `field-sizing` | chrome only |
+| 过程落库 / HITL / 国产 OAuth / 凭据加密 | 范围外 | 未做，也不从本文派工 | 仍范围外 |
+
+Hub 侧仍没有 Chat store、没有过程表、没有 inbox/steer、没有把 DSH 嵌成 in-process Loop。DSH 对照结论（四层模型、`tool/call` 不进 `deriveMessages`、发送 2×2、`keepInbox`）不因 Hub 这次修复而改变。
 
