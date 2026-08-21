@@ -8,7 +8,7 @@
 //! Reserved for:
 //! - existing Kimi Code membership paths (Claude / Codex / Pi / Grok)
 //! - Anthropic API Key → Pi
-//! - OpenAI API → Grok
+//! - OpenAI API → Grok / Codex
 //! - Grok subscription → Claude Code
 
 use super::{AdapterSourceProduct, AdapterTargetProtocol, AgentId};
@@ -118,6 +118,11 @@ const OPENAI_GROK_MODELS: &[AdapterModelMapEntry] = &[AdapterModelMapEntry {
     target_model: "gpt-4o",
     notes: Some("Grok OpenAI Chat Completions model slot"),
 }];
+const OPENAI_CODEX_MODELS: &[AdapterModelMapEntry] = &[AdapterModelMapEntry {
+    source_model: "gpt-4o",
+    target_model: "gpt-4o",
+    notes: Some("Local bridge presents the same model id to Codex"),
+}];
 
 const DEEPSEEK_DSH_MODELS: &[AdapterModelMapEntry] = &[
     AdapterModelMapEntry {
@@ -207,6 +212,15 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
         target_protocol: AdapterTargetProtocol::OpenAiChatCompletions,
         default_target_model: Some("gpt-4o"),
         entries: OPENAI_GROK_MODELS,
+        allow_passthrough: false,
+    },
+    AdapterModelMappingTable {
+        id: "openai-api-codex-v1",
+        source: AdapterSourceProduct::OpenaiApi,
+        target: AgentId::Codex,
+        target_protocol: AdapterTargetProtocol::OpenAiResponses,
+        default_target_model: Some("gpt-4o"),
+        entries: OPENAI_CODEX_MODELS,
         allow_passthrough: false,
     },
     AdapterModelMappingTable {
@@ -363,6 +377,23 @@ mod tests {
             assert!(table.allow_passthrough);
             assert!(table.default_target_model.is_none());
         }
+
+        let openai_codex =
+            find_adapter_model_mapping(AdapterSourceProduct::OpenaiApi, AgentId::Codex)
+                .expect("openai→codex table");
+        assert_eq!(openai_codex.default_target_model, Some("gpt-4o"));
+        assert_eq!(
+            openai_codex.map_model(""),
+            AdapterModelMapResult::Mapped("gpt-4o")
+        );
+        assert_eq!(
+            map_adapter_model(AdapterSourceProduct::OpenaiApi, AgentId::Codex, "gpt-4o"),
+            Some("gpt-4o")
+        );
+        assert_eq!(
+            openai_codex.map_model("unknown-model"),
+            AdapterModelMapResult::Missing
+        );
     }
 
     #[test]

@@ -97,6 +97,8 @@ impl AdapterRouteService {
             AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Codex => {
                 let provider = if analysis.rule_id.as_deref() == Some("anthropic-api-to-codex-v1") {
                     "AgentHub Anthropic 本地桥接"
+                } else if analysis.rule_id.as_deref() == Some("openai-api-to-codex-v1") {
+                    "AgentHub OpenAI 本地桥接"
                 } else if analysis.rule_id.as_deref() == Some("grok-subscription-to-codex-v1") {
                     "AgentHub Grok 本机路由"
                 } else {
@@ -197,12 +199,7 @@ impl AdapterRouteService {
             AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Dsh => (
                 AdapterServiceImpact::RequiresLocalBridge,
                 vec![
-                    change(
-                        "dsh",
-                        "baseURL",
-                        Some("http://127.0.0.1:<本机端口>"),
-                        false,
-                    ),
+                    change("dsh", "baseURL", Some("http://127.0.0.1:<本机端口>"), false),
                     change("dsh", "apiKey", None, true),
                 ],
             ),

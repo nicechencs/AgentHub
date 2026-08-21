@@ -41,6 +41,7 @@ use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
 
 const RULE_ID: &str = "kimi-membership-to-codex-v1";
 const ANTHROPIC_RULE_ID: &str = "anthropic-api-to-codex-v1";
+const OPENAI_RULE_ID: &str = "openai-api-to-codex-v1";
 const CODEX_CLAUDE_RULE_ID: &str = "codex-subscription-to-claude-responses-v1";
 const GROK_CLAUDE_RULE_ID: &str = "grok-subscription-to-claude-v1";
 const GROK_CODEX_RULE_ID: &str = "grok-subscription-to-codex-v1";
@@ -50,12 +51,16 @@ const CODEX_DSH_RULE_ID: &str = "codex-subscription-to-dsh-v1";
 const RULE_VERSION: &str = "1";
 const KIMI_CHAT_BASE_URL: &str = "https://api.kimi.com/coding/v1";
 const ANTHROPIC_MESSAGES_BASE_URL: &str = "https://api.anthropic.com/v1";
+const OPENAI_CHAT_BASE_URL: &str = crate::services::adapter_route_constants::OPENAI_GROK_BASE_URL;
 const CHATGPT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex/";
 const DEFAULT_MODEL: &str = "kimi-k2.5";
 const ANTHROPIC_DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
+const OPENAI_DEFAULT_MODEL: &str =
+    crate::services::adapter_route_constants::OPENAI_GROK_DEFAULT_MODEL;
 const CODEX_DEFAULT_MODEL: &str = "gpt-5.4";
 const PROVIDER_SLUG: &str = "agenthub_kimi_bridge";
 const ANTHROPIC_PROVIDER_SLUG: &str = "agenthub_anthropic_bridge";
+const OPENAI_PROVIDER_SLUG: &str = "agenthub_openai_bridge";
 const CODEX_CLAUDE_PROVIDER_SLUG: &str = "claude-codex-adapter-bridge";
 const GENERATED_BY: &str = "adapter";
 const BRIDGE_HEALTH_TIMEOUT: Duration = Duration::from_secs(4);
@@ -111,6 +116,24 @@ const ANTHROPIC_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
     protocol: BridgeUpstreamProtocol::AnthropicMessages,
     local_surface: BridgeLocalSurface::Responses,
     bridge_kind: "responses_to_anthropic_messages",
+    legacy_bridge_kinds: &[],
+    target_agent: AgentId::Codex,
+    mode: AdapterProfileMode::Api,
+};
+
+const OPENAI_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: OPENAI_RULE_ID,
+    profile_prefix: "adapter-openai-codex-bridge",
+    provider_prefix: "codex-openai-adapter-bridge",
+    profile_name: "OpenAI → Codex Bridge",
+    provider_name: "OpenAI Bridge",
+    toml_name: "AgentHub OpenAI Bridge",
+    provider_slug: OPENAI_PROVIDER_SLUG,
+    upstream_base_url: OPENAI_CHAT_BASE_URL,
+    default_model: OPENAI_DEFAULT_MODEL,
+    protocol: BridgeUpstreamProtocol::KimiChatCompletions,
+    local_surface: BridgeLocalSurface::Responses,
+    bridge_kind: "responses_to_chat_completions",
     legacy_bridge_kinds: &[],
     target_agent: AgentId::Codex,
     mode: AdapterProfileMode::Api,
@@ -229,6 +252,7 @@ const CODEX_DSH_RULE: CodexBridgeRule = CodexBridgeRule {
 const LIVE_BRIDGE_RULES: &[CodexBridgeRule] = &[
     KIMI_CODEX_RULE,
     ANTHROPIC_CODEX_RULE,
+    OPENAI_CODEX_RULE,
     CODEX_CLAUDE_RULE,
     GROK_CLAUDE_RULE,
     GROK_CODEX_RULE,
@@ -405,8 +429,7 @@ impl AdapterBridgeRuntimeMaterial {
         // preflight; the first real request remains the upstream probe.
         if matches!(
             self.protocol,
-            BridgeUpstreamProtocol::CodexResponsesOauth
-                | BridgeUpstreamProtocol::XaiResponsesOauth
+            BridgeUpstreamProtocol::CodexResponsesOauth | BridgeUpstreamProtocol::XaiResponsesOauth
         ) {
             return Ok(());
         }

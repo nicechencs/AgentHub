@@ -267,8 +267,10 @@ export const EXPLICIT_API_TO_PI_RULES = new Set([
   'glm-coding-plan-to-pi-v1',
   'deepseek-api-to-pi-v1',
 ]);
+export const OPENAI_CODEX_RULE_ID = 'openai-api-to-codex-v1';
 export const EXPLICIT_API_TO_CODEX_RULES = new Set([
   'anthropic-api-to-codex-v1',
+  OPENAI_CODEX_RULE_ID,
   GLM_CODEX_RULE_ID,
   DEEPSEEK_CODEX_RULE_ID,
 ]);

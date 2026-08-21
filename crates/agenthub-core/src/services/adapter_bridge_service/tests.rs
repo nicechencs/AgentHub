@@ -925,6 +925,43 @@ fn anthropic_account(id: &str, api_key: &str) -> Account {
     }
 }
 
+fn openai_source(id: &str, api_key: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Codex,
+        name: "OpenAI API".into(),
+        settings_config: json!({"apiKey": api_key}),
+        meta: json!({"preset": "openai"}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+fn openai_account(id: &str, api_key: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        label: "OpenAI key".into(),
+        credentials: json!({"format": "api_key", "api_key": api_key}),
+        extra: json!({"provider": "openai"}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+fn openai_request(source_kind: AdapterSourceKind, source_id: &str) -> AdapterBridgePrepareRequest {
+    AdapterBridgePrepareRequest {
+        source_kind,
+        source_id: source_id.into(),
+        target_agent_id: AgentId::Codex,
+        auto_start: true,
+    }
+}
+
 fn anthropic_request(
     source_kind: AdapterSourceKind,
     source_id: &str,
@@ -1116,7 +1153,10 @@ fn prepare_codex_subscription_projects_chat_loopback_for_grok_kimi_dsh() {
             );
         }
         assert!(!haystack.contains("grok-"), "{target:?} leftover grok-*");
-        assert!(!haystack.contains("gpt-"), "{target:?} invented ChatGPT model");
+        assert!(
+            !haystack.contains("gpt-"),
+            "{target:?} invented ChatGPT model"
+        );
         assert!(!serde_json::to_string(&input)
             .unwrap()
             .contains("codex-upstream-access-secret"));
@@ -1229,6 +1269,100 @@ fn prepare_anthropic_account_reuses_secret_resolver_and_projects_account_ref() {
         BridgeUpstreamProtocol::AnthropicMessages
     );
     assert!(!format!("{restored:?}").contains("sk-ant-account"));
+}
+
+#[test]
+fn prepare_openai_provider_projects_chat_completions_bridge() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&openai_source("openai-key", "sk-openai-secret"))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+
+    let prepared = service
+        .prepare(&openai_request(AdapterSourceKind::Provider, "openai-key"))
+        .unwrap();
+    assert_eq!(prepared.profile().rule_id, OPENAI_RULE_ID);
+    assert_eq!(prepared.profile().source_kind, AdapterSourceKind::Provider);
+    let start = prepared.runtime_material().start_spec(None);
+    assert_eq!(start.upstream.base_url, OPENAI_CHAT_BASE_URL);
+    assert_eq!(
+        start.upstream.protocol,
+        BridgeUpstreamProtocol::KimiChatCompletions
+    );
+    assert_eq!(start.upstream.model.as_deref(), Some(OPENAI_DEFAULT_MODEL));
+    assert!(!format!("{prepared:?}").contains("sk-openai-secret"));
+
+    let generated = create_projection(&db, &prepared, 43133);
+    assert_eq!(generated.meta["adapterRuleId"], OPENAI_RULE_ID);
+    assert_eq!(
+        generated.meta["adapterBridge"]["kind"],
+        "responses_to_chat_completions"
+    );
+    assert_eq!(generated.meta["adapterSourceRef"]["kind"], "provider");
+    let content = generated.settings_config["content"].as_str().unwrap();
+    assert!(content.contains(OPENAI_PROVIDER_SLUG));
+    assert!(content.contains("AgentHub OpenAI Bridge"));
+    assert!(content.contains(OPENAI_DEFAULT_MODEL));
+    assert!(!content.contains(PROVIDER_SLUG));
+    assert!(!content.contains("kimi-k2.5"));
+    assert!(!content.contains("grok-"));
+    assert!(!serde_json::to_string(&generated)
+        .unwrap()
+        .contains("sk-openai-secret"));
+}
+
+#[test]
+fn prepare_openai_account_reuses_secret_resolver_and_projects_account_ref() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&openai_account("openai-account", "sk-openai-account"))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+
+    let prepared = service
+        .prepare(&openai_request(
+            AdapterSourceKind::Account,
+            "openai-account",
+        ))
+        .unwrap();
+    assert_eq!(prepared.profile().rule_id, OPENAI_RULE_ID);
+    assert_eq!(prepared.profile().source_kind, AdapterSourceKind::Account);
+    assert_eq!(
+        prepared
+            .runtime_material()
+            .start_spec(None)
+            .upstream
+            .protocol,
+        BridgeUpstreamProtocol::KimiChatCompletions
+    );
+    assert!(!format!("{prepared:?}").contains("sk-openai-account"));
+
+    let generated = create_projection(&db, &prepared, 43134);
+    assert_eq!(generated.meta["adapterSourceRef"]["kind"], "account");
+    assert_eq!(generated.meta["adapterSourceRef"]["id"], "openai-account");
+    assert_eq!(generated.meta["adapterRuleId"], OPENAI_RULE_ID);
+    service.finalize(&prepared, 43134).unwrap();
+    let restored = service
+        .resolve_restore_material(prepared.profile().id.as_str())
+        .unwrap();
+    assert_eq!(
+        restored
+            .runtime_material()
+            .start_spec(None)
+            .upstream
+            .protocol,
+        BridgeUpstreamProtocol::KimiChatCompletions
+    );
+    assert_eq!(
+        restored
+            .runtime_material()
+            .start_spec(None)
+            .upstream
+            .base_url,
+        OPENAI_CHAT_BASE_URL
+    );
+    assert!(!format!("{restored:?}").contains("sk-openai-account"));
 }
 
 #[test]

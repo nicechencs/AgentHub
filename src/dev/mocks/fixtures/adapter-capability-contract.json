@@ -811,6 +811,51 @@
       }
     },
     {
+      "id": "openai-api-to-codex",
+      "source": {
+        "kind": "provider",
+        "agentId": "codex",
+        "preset": "openai"
+      },
+      "target": "codex",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "openai-api-to-codex-v1",
+        "gateKind": "none",
+        "reason": "显式 OpenAI API Key 到 Codex 需要本地协议桥接。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "openai-api-account-to-codex",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "apikey",
+        "extra": {
+          "provider": "openai"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "codex",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "openai-api-to-codex-v1",
+        "gateKind": "none",
+        "reason": "显式 OpenAI API Key 到 Codex 需要本地协议桥接。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
       "id": "grok-subscription-to-claude",
       "source": {
         "kind": "account",
