@@ -10,8 +10,10 @@
 //! - Anthropic API Key → Pi
 //! - OpenAI API → Grok
 //! - Grok subscription → Claude Code
+//! - Codex ChatGPT subscription → Grok (local GET /models)
 
 use super::{AdapterSourceProduct, AdapterTargetProtocol, AgentId};
+use crate::bridge::protocol::responses::is_leftover_bridge_model;
 
 /// One source-model → target-model mapping row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,6 +137,27 @@ const DEEPSEEK_DSH_MODELS: &[AdapterModelMapEntry] = &[
 /// Future Codex → Claude table: structure only, no active mappings.
 const CODEX_CLAUDE_MODELS: &[AdapterModelMapEntry] = &[];
 
+/// Official ChatGPT / Codex ids Grok CLI may pick on the loopback Responses
+/// surface. Leftover prefixes (`grok-*` / `claude-*` / `kimi-*` / `deepseek-*`
+/// / `agenthub_*_bridge`) are omitted by dispatch, so they must not appear.
+const CODEX_GROK_MODELS: &[AdapterModelMapEntry] = &[
+    AdapterModelMapEntry {
+        source_model: "gpt-5.4",
+        target_model: "gpt-5.4",
+        notes: Some("ChatGPT Codex default; accepted by official Responses"),
+    },
+    AdapterModelMapEntry {
+        source_model: "gpt-5.1-codex",
+        target_model: "gpt-5.1-codex",
+        notes: Some("Official Codex CLI model id"),
+    },
+    AdapterModelMapEntry {
+        source_model: "gpt-5",
+        target_model: "gpt-5",
+        notes: Some("Official ChatGPT Responses model"),
+    },
+];
+
 /// All known mapping tables. Lookup is fail-closed when no table matches.
 pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
     AdapterModelMappingTable {
@@ -255,6 +278,15 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
         allow_passthrough: false,
     },
     AdapterModelMappingTable {
+        id: "codex-subscription-grok-v1",
+        source: AdapterSourceProduct::CodexChatGptSubscription,
+        target: AgentId::Grok,
+        target_protocol: AdapterTargetProtocol::OpenAiResponses,
+        default_target_model: Some("gpt-5.4"),
+        entries: CODEX_GROK_MODELS,
+        allow_passthrough: false,
+    },
+    AdapterModelMappingTable {
         id: "deepseek-api-dsh-v1",
         source: AdapterSourceProduct::DeepseekApi,
         target: AgentId::Dsh,
@@ -288,6 +320,61 @@ pub fn map_adapter_model(
         AdapterModelMapResult::Mapped(model) => Some(model),
         AdapterModelMapResult::Passthrough | AdapterModelMapResult::Missing => None,
     }
+}
+
+/// Model ids the local bridge may advertise on `GET /v1/models`.
+///
+/// Union of mapping `entries[].target_model`, non-empty `default_target_model`,
+/// and a non-empty configured profile/upstream default. Dedup preserves first
+/// seen order. Missing tables fail closed: only a non-leftover configured
+/// default is returned.
+///
+/// Leftover prefixes 400 on official Codex Responses, so ChatGPT-subscription
+/// sources drop them. Other upstreams use those prefixes as real ids
+/// (`grok-4.5`, `kimi-k2.5`).
+pub fn list_local_bridge_models(
+    source: AdapterSourceProduct,
+    target: AgentId,
+    default_model: Option<&str>,
+) -> Vec<String> {
+    let configured = nonempty_model(default_model);
+    let Some(table) = find_adapter_model_mapping(source, target) else {
+        return match configured {
+            Some(model) if !is_leftover_bridge_model(model) => vec![model.to_owned()],
+            _ => Vec::new(),
+        };
+    };
+
+    let drop_leftover = source == AdapterSourceProduct::CodexChatGptSubscription;
+    let mut listed = Vec::with_capacity(table.entries.len() + 2);
+    for entry in table.entries {
+        push_listed_model(&mut listed, entry.target_model, drop_leftover);
+    }
+    if let Some(model) = table.default_target_model {
+        push_listed_model(&mut listed, model, drop_leftover);
+    }
+    if let Some(model) = configured {
+        push_listed_model(&mut listed, model, drop_leftover);
+    }
+    listed
+}
+
+fn nonempty_model(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|model| !model.is_empty())
+}
+
+fn push_listed_model(listed: &mut Vec<String>, model: &str, drop_leftover: bool) {
+    let model = model.trim();
+    if model.is_empty() {
+        return;
+    }
+    if drop_leftover && is_leftover_bridge_model(model) {
+        return;
+    }
+    if listed.iter().any(|existing| existing == model) {
+        return;
+    }
+    listed.push(model.to_owned());
 }
 
 #[cfg(test)]
@@ -401,6 +488,78 @@ mod tests {
         assert_eq!(
             table.map_model("deepseek-reasoner"),
             AdapterModelMapResult::Passthrough
+        );
+    }
+
+    #[test]
+    fn codex_to_grok_listed_models_are_dispatch_accepted() {
+        let listed = list_local_bridge_models(
+            AdapterSourceProduct::CodexChatGptSubscription,
+            AgentId::Grok,
+            Some("grok-4.5"),
+        );
+        assert!(!listed.is_empty());
+        for model in &listed {
+            assert!(
+                !is_leftover_bridge_model(model),
+                "leftover id must not be listed: {model}"
+            );
+        }
+        for leftover in [
+            "grok-4.5",
+            "claude-sonnet-4",
+            "kimi-k2.5",
+            "deepseek-chat",
+            "agenthub_codex_bridge",
+        ] {
+            assert!(
+                !listed.iter().any(|model| model == leftover),
+                "leftover {leftover} must not appear in {listed:?}"
+            );
+        }
+        assert_eq!(listed[0], "gpt-5.4");
+        assert!(listed.iter().any(|model| model == "gpt-5.1-codex"));
+        assert!(listed.iter().any(|model| model == "gpt-5"));
+    }
+
+    #[test]
+    fn missing_mapping_lists_configured_default_or_empty() {
+        assert!(
+            list_local_bridge_models(AdapterSourceProduct::Other, AgentId::Grok, None).is_empty()
+        );
+        assert!(
+            list_local_bridge_models(AdapterSourceProduct::Other, AgentId::Grok, Some(""))
+                .is_empty()
+        );
+        assert_eq!(
+            list_local_bridge_models(AdapterSourceProduct::Other, AgentId::Grok, Some("gpt-5.4")),
+            vec!["gpt-5.4".to_string()]
+        );
+        assert!(list_local_bridge_models(
+            AdapterSourceProduct::Other,
+            AgentId::Grok,
+            Some("grok-4.5")
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn grok_edges_list_default_when_mapping_entries_empty() {
+        assert_eq!(
+            list_local_bridge_models(
+                AdapterSourceProduct::XaiGrokSubscription,
+                AgentId::Claude,
+                Some("grok-4.5")
+            ),
+            vec!["grok-4.5".to_string()]
+        );
+        assert_eq!(
+            list_local_bridge_models(
+                AdapterSourceProduct::XaiGrokSubscription,
+                AgentId::Codex,
+                Some("grok-4.5")
+            ),
+            vec!["grok-4.5".to_string()]
         );
     }
 }

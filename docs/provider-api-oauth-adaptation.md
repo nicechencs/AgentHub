@@ -1,6 +1,6 @@
 # 模型厂商、API 与 OAuth 适配规则
 
-> **现行状态（2026-08-21）**：§4 矩阵以代码为准；sidecar 未迁；Grok→Claude 走本机路由。新增 §5.1.2 / §5.1.3 两个**已拍板、未实现**方案：Grok OAuth refresh 按 owner 分治（文件跟随同步，不与官方 CLI 互踢；凭据来源可选「跟随 Grok CLI 登录文件 / 复制一份保存」两模式）、本机路由动态 `GET /models`。
+> **现行状态（2026-08-21）**：§4 矩阵以代码为准；sidecar 未迁；Grok→Claude 走本机路由。§5.1.2 Grok OAuth refresh 按 owner 分治仍为**已拍板、未实现**；§5.1.3 本机路由动态 `GET /models` **已在当前工作区实现**。`Capability::ModelSelect` 仍为 Planned。
 > 状态：**当前工作区规则**，不代表已发布版本。
 > 最近核对：2026-08-15。
 > 本文是厂商入口、凭据类型和**现在能不能写上去**的规则真源。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。实现用的对象名见 [connection-binding-model.md](connection-binding-model.md)；页面与运行时见 [adapter-design.md](adapter-design.md)、[ui-design.md](ui-design.md)。日常说法：① = 直接改配置，② = 写进对方认的登录，③ = 本机转发。现行 UI 芯片是 **直连 / 用这份登录 / 本机路由**（①②③ 仍是架构名，不出现在 picker）。§4 是**当前可执行矩阵**，不是 UI 白名单，也不是产品终点。
@@ -277,12 +277,12 @@ Responses 已选为本轮上游 transport，并用 fixtures / host health 验证
 
 ### 5.1.3 本机路由动态 GET /models（Grok 模型选择仍 Planned）
 
-> 状态：**已拍板方案（2026-08-21），未实现**。现行 listener 只挂 `GET /health` 与三条 POST 协议面，`GET /models` 落 axum 默认 404。
+> 状态：**已在当前工作区实现（2026-08-21）**。listener 提供 `GET /v1/models` 与 `GET /models` 别名，要求 local bearer；清单从 `adapter_model_mapping` + rule `default_model` **本机合成**，不透传上游。`Capability::ModelSelect` 仍为 Planned，也不经该能力放行。
 
 事实（以代码为准）：
 
 - 上游 cli-chat-proxy 与 ChatGPT Codex Responses **都没有** `/models` 端点（bridge health 探针对这两类协议显式跳过 `/models`）；所以动态 `/models` 不能是上游透传，只能本机按边合成。
-- 主要消费方是 **Codex 订阅 → Grok** 边：`config.toml` 写 `api_backend=responses` + loopback `base_url`，且投影**故意不写 model**；Grok CLI 若按 OpenAI 习惯 `GET {base_url}/models` 列模型，现在拿到 404。
+- 主要消费方是 **Codex 订阅 → Grok** 边：`config.toml` 写 `api_backend=responses` + loopback `base_url`，且投影**故意不写 model**；Grok CLI 若按 OpenAI 习惯 `GET {base_url}/models` 列模型，现在拿到本机合成清单。
 - Grok→Codex / Grok→Claude 方向不受影响：目标配置直接写 `model = "grok-4.5"`（rule `default_model`），不走 /models。
 
 方案：
@@ -294,8 +294,8 @@ Responses 已选为本轮上游 transport，并用 fixtures / host health 验证
 
 排查清单（模型选择 / 列表异常）：
 
-1. Grok CLI 指向 loopback 后列不出模型：带 local bearer `curl http://127.0.0.1:{port}/v1/models`。**404** = 当前版本未含该端点（现行预期，方案未实现，Grok CLI 需手动依赖 `[models] default` slug）；**401** = bearer 不对，查 `config.toml` 的 `api_key`。
-2. 200 但清单与预期不符：查该边 rule 的 `adapter_model_mapping` entries 与 `default_model`；Codex→Grok 边 `default_model` 故意为空，映射表未接线前空列表是预期。
+1. Grok CLI 指向 loopback 后列不出模型：带 local bearer `curl http://127.0.0.1:{port}/v1/models`。**401** = bearer 不对，查 `config.toml` 的 `api_key`；**404** = 回归（端点应存在）；**200 且 `data: []`** = 该边无映射表且无非空 `default_model`（fail-closed，不是 404）。
+2. 200 但清单与预期不符：查该边 rule 的 `adapter_model_mapping` entries 与 `default_model`；Codex→Grok 边投影仍故意不写 model，清单来自 `codex-subscription-grok-v1` 映射表。
 3. 选中的模型上游 400：确认该 id 经 dispatch 改写后仍被上游接受；leftover 前缀（`grok-*` / `claude-*` / `kimi-*` / `deepseek-*` / `agenthub_*_bridge`）会被 omit 而不是重写。
 4. dogfood 需实测并记录 Grok CLI 对 404 与空列表两种回答的行为差异（只记状态码与行为，不记正文）。
 

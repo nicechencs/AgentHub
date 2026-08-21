@@ -83,6 +83,9 @@ pub struct BridgeStartSpec {
     /// Bearer token accepted by the local HTTP endpoint. This value is never returned by status.
     pub local_token: String,
     pub upstream: BridgeUpstreamConfig,
+    /// Credential-free model ids served by `GET /v1/models`. Synthesized from
+    /// the adapter mapping table; never a secret.
+    pub listed_models: Vec<String>,
 }
 
 impl fmt::Debug for BridgeStartSpec {
@@ -93,6 +96,7 @@ impl fmt::Debug for BridgeStartSpec {
             .field("port", &self.port)
             .field("local_token", &"REDACTED")
             .field("upstream", &self.upstream)
+            .field("listed_models", &self.listed_models)
             .finish()
     }
 }
@@ -109,7 +113,13 @@ impl BridgeStartSpec {
             port,
             local_token: local_token.into(),
             upstream,
+            listed_models: Vec::new(),
         }
+    }
+
+    pub fn with_listed_models(mut self, listed_models: Vec<String>) -> Self {
+        self.listed_models = listed_models;
+        self
     }
 }
 

@@ -33,8 +33,9 @@ use crate::bridge::{
 };
 use crate::error::{AppError, Result};
 use crate::models::{
-    AdapterProfile, AdapterProfileFilter, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
-    AdapterRouteRequest, AdapterSourceKind, AdapterSupport, AgentId, Provider, ProviderInput,
+    list_local_bridge_models, AdapterProfile, AdapterProfileFilter, AdapterProfileMode,
+    AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
+    AdapterSourceProduct, AdapterSupport, AgentId, Provider, ProviderInput,
 };
 use crate::services::{AdapterRouteService, AdapterSecretResolver};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
@@ -262,6 +263,40 @@ pub(crate) fn live_bridge_rule_projections() -> impl Iterator<Item = (AgentId, &
         .map(|rule| (rule.target_agent, rule.rule_id))
 }
 
+/// Protocol + local surface identify each live bridge edge for GET /models.
+/// Codex ChatCompletions (Kimi vs DSH) share an empty listing today.
+fn listed_models_for_bridge(
+    protocol: BridgeUpstreamProtocol,
+    local_surface: BridgeLocalSurface,
+    default_model: &str,
+) -> Vec<String> {
+    let (source, target) = match protocol {
+        BridgeUpstreamProtocol::KimiChatCompletions => {
+            (AdapterSourceProduct::KimiCodeMembership, AgentId::Codex)
+        }
+        BridgeUpstreamProtocol::AnthropicMessages => {
+            (AdapterSourceProduct::AnthropicApi, AgentId::Codex)
+        }
+        BridgeUpstreamProtocol::CodexResponsesOauth => {
+            let target = match local_surface {
+                BridgeLocalSurface::Messages => AgentId::Claude,
+                BridgeLocalSurface::Responses => AgentId::Grok,
+                BridgeLocalSurface::ChatCompletions => AgentId::Kimi,
+            };
+            (AdapterSourceProduct::CodexChatGptSubscription, target)
+        }
+        BridgeUpstreamProtocol::XaiResponsesOauth => {
+            let target = match local_surface {
+                BridgeLocalSurface::Messages => AgentId::Claude,
+                BridgeLocalSurface::Responses => AgentId::Codex,
+                BridgeLocalSurface::ChatCompletions => AgentId::Kimi,
+            };
+            (AdapterSourceProduct::XaiGrokSubscription, target)
+        }
+    };
+    list_local_bridge_models(source, target, Some(default_model))
+}
+
 /// Safe input for beginning a local bridge saga. It contains no credentials.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -362,6 +397,11 @@ impl AdapterBridgeRuntimeMaterial {
                 local_surface: self.local_surface,
             },
         )
+        .with_listed_models(listed_models_for_bridge(
+            self.protocol,
+            self.local_surface,
+            &self.upstream_model,
+        ))
     }
 
     /// Verify a freshly bound listener before its generated provider becomes
@@ -405,8 +445,7 @@ impl AdapterBridgeRuntimeMaterial {
         // preflight; the first real request remains the upstream probe.
         if matches!(
             self.protocol,
-            BridgeUpstreamProtocol::CodexResponsesOauth
-                | BridgeUpstreamProtocol::XaiResponsesOauth
+            BridgeUpstreamProtocol::CodexResponsesOauth | BridgeUpstreamProtocol::XaiResponsesOauth
         ) {
             return Ok(());
         }

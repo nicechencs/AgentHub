@@ -225,6 +225,7 @@ impl BridgeRuntimeHost {
             admission: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS_PER_PROFILE)),
             observed_upstream: Arc::clone(&observed_upstream),
             grok_replay: Arc::new(GrokReasoningReplay::new()),
+            listed_models: spec.listed_models.clone().into(),
         };
         let app = router(state);
         let task_shutdown = accept_shutdown.clone();
@@ -651,4 +652,5 @@ fn same_spec(left: &BridgeStartSpec, right: &BridgeStartSpec) -> bool {
         && left.upstream.auth.token() == right.upstream.auth.token()
         && left.upstream.protocol == right.upstream.protocol
         && left.upstream.local_surface == right.upstream.local_surface
+        && left.listed_models == right.listed_models
 }

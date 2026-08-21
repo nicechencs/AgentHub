@@ -19,9 +19,11 @@ use tokio::{
 
 use super::host::CleanupCompletion;
 use super::{
-    BridgeHostError, BridgeLocalSurface, BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec,
-    BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus, ResolvedAuth,
+    protocol::responses::is_leftover_bridge_model, BridgeHostError, BridgeLocalSurface,
+    BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec, BridgeUpstreamConfig,
+    BridgeUpstreamProtocol, BridgeUpstreamStatus, ResolvedAuth,
 };
+use crate::models::{list_local_bridge_models, AdapterSourceProduct, AgentId};
 
 fn spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
     BridgeStartSpec::new(
@@ -290,6 +292,119 @@ async fn health_requires_the_local_bearer_token() {
             .running
     );
     host.stop("health").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn models_requires_the_local_bearer_token() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(spec("models-auth", 0, upstream_port).with_listed_models(vec!["gpt-5.4".into()]))
+        .await
+        .expect("start");
+    let url = format!("http://127.0.0.1:{}/v1/models", status.port);
+    let response = client()
+        .await
+        .get(&url)
+        .send()
+        .await
+        .expect("models request");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = response.json::<Value>().await.expect("models json");
+    assert_eq!(body["error"]["code"], "invalid_api_key");
+    host.stop("models-auth").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn models_returns_openai_list_shape_on_both_paths() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            spec("models-list", 0, upstream_port)
+                .with_listed_models(vec!["gpt-5.4".into(), "gpt-5".into()]),
+        )
+        .await
+        .expect("start");
+    let http = client().await;
+    for path in ["/v1/models", "/models"] {
+        let response = http
+            .get(format!("http://127.0.0.1:{}{path}", status.port))
+            .header(header::AUTHORIZATION, "Bearer local-test-token")
+            .send()
+            .await
+            .expect("authorized models request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.json::<Value>().await.expect("models json");
+        assert_eq!(body["object"], "list");
+        assert_eq!(body["data"][0]["id"], "gpt-5.4");
+        assert_eq!(body["data"][0]["object"], "model");
+        assert_eq!(body["data"][1]["id"], "gpt-5");
+        assert_eq!(body["data"].as_array().map(Vec::len), Some(2));
+    }
+    host.stop("models-list").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn models_returns_empty_list_when_mapping_and_default_are_missing() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(spec("models-empty", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .get(format!("http://127.0.0.1:{}/v1/models", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .send()
+        .await
+        .expect("authorized models request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.json::<Value>().await.expect("models json");
+    assert_eq!(body["object"], "list");
+    assert_eq!(body["data"], json!([]));
+    host.stop("models-empty").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn models_lists_codex_to_grok_dispatch_accepted_ids() {
+    let listed = list_local_bridge_models(
+        AdapterSourceProduct::CodexChatGptSubscription,
+        AgentId::Grok,
+        None,
+    );
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(spec("models-codex-grok", 0, upstream_port).with_listed_models(listed.clone()))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .get(format!("http://127.0.0.1:{}/v1/models", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .send()
+        .await
+        .expect("authorized models request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.json::<Value>().await.expect("models json");
+    let ids: Vec<String> = body["data"]
+        .as_array()
+        .expect("data array")
+        .iter()
+        .map(|item| item["id"].as_str().expect("id").to_owned())
+        .collect();
+    assert_eq!(ids, listed);
+    assert!(!ids.is_empty());
+    for id in &ids {
+        assert!(!is_leftover_bridge_model(id), "leftover listed: {id}");
+    }
+    host.stop("models-codex-grok").await.expect("stop");
     upstream_task.abort();
 }
 

@@ -766,6 +766,84 @@ async fn xai_responses_health_probe_does_not_request_models() {
 }
 
 #[test]
+fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "codex-grok-models".into(),
+        source_connection_id: "codex-subscription".into(),
+        preferred_port: None,
+        upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
+        upstream_model: String::new(),
+        protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
+        local_surface: BridgeLocalSurface::Responses,
+        upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
+        local_bearer: "local-secret".into(),
+    };
+    let listed = material.start_spec(Some(0)).listed_models;
+    assert!(!listed.is_empty());
+    for model in &listed {
+        assert!(
+            !crate::bridge::protocol::responses::is_leftover_bridge_model(model),
+            "leftover listed: {model}"
+        );
+    }
+    assert_eq!(listed[0], "gpt-5.4");
+}
+
+#[test]
+fn start_spec_lists_grok_default_when_mapping_entries_empty() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "grok-claude-models".into(),
+        source_connection_id: "grok-subscription".into(),
+        preferred_port: None,
+        upstream_base_url: crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL.into(),
+        upstream_model: crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.into(),
+        protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
+        local_surface: BridgeLocalSurface::Messages,
+        upstream_auth: ResolvedAuth::bearer("grok-upstream-secret"),
+        local_bearer: "local-secret".into(),
+    };
+    assert_eq!(
+        material.start_spec(Some(0)).listed_models,
+        vec![crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.to_string()]
+    );
+}
+
+#[test]
+fn start_spec_empty_when_mapping_and_default_are_missing() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "codex-kimi-empty-models".into(),
+        source_connection_id: "codex-subscription".into(),
+        preferred_port: None,
+        upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
+        upstream_model: String::new(),
+        protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
+        local_surface: BridgeLocalSurface::ChatCompletions,
+        upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
+        local_bearer: "local-secret".into(),
+    };
+    assert!(material.start_spec(Some(0)).listed_models.is_empty());
+}
+
+#[test]
+fn start_spec_lists_configured_default_when_mapping_is_missing() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "codex-kimi-default-models".into(),
+        source_connection_id: "codex-subscription".into(),
+        preferred_port: None,
+        upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
+        upstream_model: "gpt-5.4".into(),
+        protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
+        local_surface: BridgeLocalSurface::ChatCompletions,
+        upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
+        local_bearer: "local-secret".into(),
+    };
+    assert_eq!(
+        material.start_spec(Some(0)).listed_models,
+        vec!["gpt-5.4".to_string()]
+    );
+}
+
+#[test]
 fn restore_uses_a_rotated_source_key_without_changing_the_local_bearer() {
     let (_dir, db) = test_db();
     ProviderRepo::new(db.clone())
@@ -1116,7 +1194,10 @@ fn prepare_codex_subscription_projects_chat_loopback_for_grok_kimi_dsh() {
             );
         }
         assert!(!haystack.contains("grok-"), "{target:?} leftover grok-*");
-        assert!(!haystack.contains("gpt-"), "{target:?} invented ChatGPT model");
+        assert!(
+            !haystack.contains("gpt-"),
+            "{target:?} invented ChatGPT model"
+        );
         assert!(!serde_json::to_string(&input)
             .unwrap()
             .contains("codex-upstream-access-secret"));
