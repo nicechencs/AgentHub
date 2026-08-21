@@ -2,8 +2,8 @@ use super::*;
 use crate::models::{
     Account, AccountKind, AdapterCapabilityDecision, AdapterMaturity, AdapterProfile,
     AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteAnalysis,
-    AdapterServiceImpact, AdapterSourceKind, AdapterSupport, AgentId, Provider,
-    ADAPTER_CAPABILITY_MATRIX,
+    AdapterRouteRequest, AdapterServiceImpact, AdapterSourceKind, AdapterSupport, AgentId,
+    Provider, ADAPTER_CAPABILITY_MATRIX,
 };
 use crate::services::adapter_apply_service::apply_request_supported;
 use crate::services::AdapterApplyService;
@@ -726,6 +726,57 @@ fn anthropic_provider_and_account_plan_for_codex_and_stay_closed_for_claude() {
 }
 
 #[test]
+fn openai_provider_and_account_plan_for_codex_local_bridge() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider("openai-provider", AgentId::Codex, "openai"))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&api_key_account("openai-account", "openai"))
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+
+    for (source_kind, source_id) in [
+        (AdapterSourceKind::Provider, "openai-provider"),
+        (AdapterSourceKind::Account, "openai-account"),
+    ] {
+        let plan = service
+            .plan(&request(source_kind, source_id, AgentId::Codex))
+            .unwrap();
+        assert_eq!(
+            plan.analysis.route,
+            AdapterRoute::LocalBridge,
+            "{source_id}"
+        );
+        assert_eq!(
+            plan.analysis.support,
+            AdapterSupport::Experimental,
+            "{source_id}"
+        );
+        assert_eq!(plan.maturity, AdapterMaturity::Experimental, "{source_id}");
+        assert!(plan.can_apply, "{source_id}");
+        assert_eq!(
+            plan.analysis.rule_id.as_deref(),
+            Some("openai-api-to-codex-v1"),
+            "{source_id}"
+        );
+        assert_eq!(
+            plan.changes[0].value.as_deref(),
+            Some("AgentHub OpenAI 本地桥接"),
+            "{source_id}"
+        );
+        assert_eq!(
+            plan.service_impact,
+            AdapterServiceImpact::RequiresLocalBridge,
+            "{source_id}"
+        );
+        assert!(!serde_json::to_string(&plan)
+            .unwrap()
+            .contains("must-not-leak"));
+    }
+}
+
+#[test]
 fn kimi_coding_endpoint_without_preset_classifies_as_membership() {
     let (_dir, db) = test_db();
     ProviderRepo::new(db.clone())
@@ -1241,11 +1292,7 @@ fn official_codex_oauth_to_grok_kimi_dsh_is_writable_local_bridge() {
         ),
     ] {
         let plan = service
-            .plan(&request(
-                AdapterSourceKind::Account,
-                "codex-live-1",
-                target,
-            ))
+            .plan(&request(AdapterSourceKind::Account, "codex-live-1", target))
             .unwrap();
         assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge, "{target:?}");
         assert!(plan.can_apply, "{target:?}");
@@ -1266,8 +1313,10 @@ fn official_codex_oauth_to_grok_kimi_dsh_is_writable_local_bridge() {
         );
         if target == AgentId::Grok {
             assert!(
-                plan.changes.iter().any(|change| change.field == "apiBackend"
-                    && change.value.as_deref() == Some("responses")),
+                plan.changes
+                    .iter()
+                    .any(|change| change.field == "apiBackend"
+                        && change.value.as_deref() == Some("responses")),
                 "Codex→Grok local_bridge must plan apiBackend=responses: {:?}",
                 plan.changes
             );
@@ -1383,11 +1432,7 @@ fn stopped_grok_claude_route_does_not_block_codex_official_login_binds() {
     );
     for target in [AgentId::Grok, AgentId::Kimi, AgentId::Dsh] {
         let plan = service
-            .plan(&request(
-                AdapterSourceKind::Account,
-                "codex-live-1",
-                target,
-            ))
+            .plan(&request(AdapterSourceKind::Account, "codex-live-1", target))
             .unwrap();
         assert!(plan.can_apply, "{target:?}");
         assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge, "{target:?}");
@@ -1975,6 +2020,44 @@ fn analysis_from_cell(cell: &crate::models::AdapterCapabilityCell) -> AdapterRou
         rule_id: Some(cell.rule_id.to_string()),
         gate_kind: decision.gate_kind,
     }
+}
+
+#[test]
+fn openai_api_to_codex_matrix_write_gate_has_bridge_arm() {
+    const RULE: &str = "openai-api-to-codex-v1";
+    let cell = ADAPTER_CAPABILITY_MATRIX
+        .iter()
+        .find(|cell| cell.rule_id == RULE)
+        .expect("openai-api-to-codex-v1 cell");
+    assert!(cell.can_apply && cell.gates.all_passed());
+    assert_eq!(cell.route, AdapterRoute::LocalBridge);
+    let analysis = analysis_from_cell(cell);
+    let mut any_open = false;
+    for &kind in source_kinds_for_rule(RULE) {
+        let req = AdapterRouteRequest {
+            source_kind: kind,
+            source_id: "openai-codex-consistency".into(),
+            target_agent_id: cell.key.target,
+        };
+        assert!(
+            bind_implementation_open(&req, &analysis),
+            "{kind:?} must open write_gate bind for {RULE}"
+        );
+        any_open = true;
+        assert!(
+            !AdapterApplyService::apply_has_arm(RULE, kind, cell.key.target, cell.route),
+            "{RULE} is local_bridge and must not have an AdapterApplyService arm"
+        );
+        assert!(
+            crate::services::adapter_bridge_service::live_bridge_rule_projections()
+                .any(|(agent, rule_id)| agent == AgentId::Codex && rule_id == RULE),
+            "{RULE} must have a live bridge arm"
+        );
+    }
+    assert!(
+        any_open,
+        "{RULE} has no bind_implementation_open source kind"
+    );
 }
 
 fn source_kinds_for_rule(rule_id: &str) -> &'static [AdapterSourceKind] {

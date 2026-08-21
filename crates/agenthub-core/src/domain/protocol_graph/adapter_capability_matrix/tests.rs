@@ -24,6 +24,33 @@ fn missing_key_is_fail_closed() {
 }
 
 #[test]
+fn openai_api_to_codex_is_experimental_local_bridge() {
+    let key = AdapterCapabilityKey {
+        source: AdapterSourceProduct::OpenaiApi,
+        credential: AdapterCredentialClass::ApiKey,
+        transport: AdapterUpstreamTransport::NativeHttp,
+        target: AgentId::Codex,
+        protocol: AdapterTargetProtocol::OpenAiResponses,
+        version: MATRIX_VERSION,
+    };
+    assert!(lookup_adapter_capability(&key).is_none());
+    let decision = decide_adapter_capability(
+        AdapterSourceProduct::OpenaiApi,
+        AdapterCredentialClass::ApiKey,
+        AgentId::Codex,
+    )
+    .public_surface();
+    assert_eq!(decision.route, AdapterRoute::LocalBridge);
+    assert_eq!(decision.support, AdapterSupport::Experimental);
+    assert!(decision.can_apply);
+    assert_eq!(decision.rule_id, Some("openai-api-to-codex-v1"));
+    assert_eq!(
+        decision.transport,
+        AdapterUpstreamTransport::LocalBridgeChatCompletions
+    );
+}
+
+#[test]
 fn kimi_claude_and_codex_cells_are_applicable() {
     let claude = decide_adapter_capability(
         AdapterSourceProduct::KimiCodeMembership,
@@ -581,11 +608,7 @@ fn codex_subscription_to_grok_kimi_dsh_is_open_local_bridge() {
             } else {
                 AdapterTargetProtocol::OpenAiChatCompletions
             };
-            assert_eq!(
-                decision.protocol,
-                Some(expected_protocol),
-                "{target:?}"
-            );
+            assert_eq!(decision.protocol, Some(expected_protocol), "{target:?}");
             assert!(!decision.reason.contains("实验"));
             assert!(!decision.reason.contains("未验证"));
         }

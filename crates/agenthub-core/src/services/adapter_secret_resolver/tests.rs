@@ -499,6 +499,29 @@ fn local_token_bridge_passes_through_but_unknown_generated_metadata_fails_closed
         anthropic_bridge
     );
 
+    let openai_bridge = provider(
+        "generated-codex-openai",
+        AgentId::Codex,
+        json!({
+            "format": "toml",
+            "content": "model_provider = 'agenthub_openai_bridge'\n",
+            "auth": { "OPENAI_API_KEY": "local-openai-bridge-token" },
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": OPENAI_TO_CODEX_BRIDGE_RULE,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": LOCAL_TOKEN_MODE,
+            "adapterProfileId": "openai-bridge-profile",
+            "adapterSourceRef": { "kind": SOURCE_KIND_ACCOUNT, "id": "openai-account" },
+        }),
+    );
+    assert!(!resolver.is_reference_provider(&openai_bridge).unwrap());
+    assert_eq!(
+        resolver.materialize_for_live(&openai_bridge).unwrap(),
+        openai_bridge
+    );
+
     let grok_claude_bridge = provider(
         "generated-claude-grok",
         AgentId::Claude,

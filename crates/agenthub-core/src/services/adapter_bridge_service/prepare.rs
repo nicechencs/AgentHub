@@ -14,20 +14,7 @@ impl AdapterBridgeService {
         let source_id = request.source_id.trim();
         // Validate/retrieve the source before any profile row is written. The
         // token stays only in the returned in-memory material.
-        let upstream_auth = match rule.protocol {
-            BridgeUpstreamProtocol::KimiChatCompletions => self
-                .secrets
-                .resolve_kimi_membership_auth(request.source_kind, source_id)?,
-            BridgeUpstreamProtocol::AnthropicMessages => self
-                .secrets
-                .resolve_anthropic_auth(request.source_kind, source_id)?,
-            BridgeUpstreamProtocol::CodexResponsesOauth => self
-                .secrets
-                .resolve_codex_subscription_auth(request.source_kind, source_id)?,
-            BridgeUpstreamProtocol::XaiResponsesOauth => self
-                .secrets
-                .resolve_grok_subscription_auth(request.source_kind, source_id)?,
-        };
+        let upstream_auth = self.resolve_upstream_auth(&rule, request.source_kind, source_id)?;
         let profile_id = stable_id(rule.profile_prefix, source_id);
         let provider_id = stable_id(rule.provider_prefix, source_id);
         let stamp = now();
@@ -180,7 +167,7 @@ impl AdapterBridgeService {
             .and_then(rule_for_id)
             .ok_or_else(|| {
                 AppError::Unsupported(
-                    "adapter bridge currently supports Kimi / Anthropic → Codex, Codex subscription → Claude / Grok / Kimi / DSH, or Grok subscription → Claude / Codex"
+                    "adapter bridge currently supports Kimi / Anthropic / OpenAI → Codex, Codex subscription → Claude / Grok / Kimi / DSH, or Grok subscription → Claude / Codex"
                         .into(),
                 )
             })?;
@@ -207,8 +194,33 @@ impl AdapterBridgeService {
             Ok(rule)
         } else {
             Err(AppError::Unsupported(
-                "adapter bridge currently supports Kimi / Anthropic → Codex or Codex subscription → Claude".into(),
+                "adapter bridge currently supports Kimi / Anthropic / OpenAI → Codex or Codex subscription → Claude".into(),
             ))
+        }
+    }
+
+    pub(super) fn resolve_upstream_auth(
+        &self,
+        rule: &CodexBridgeRule,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<crate::bridge::ResolvedAuth> {
+        match (rule.protocol, rule.rule_id) {
+            (BridgeUpstreamProtocol::KimiChatCompletions, OPENAI_RULE_ID) => {
+                self.secrets.resolve_openai_auth(source_kind, source_id)
+            }
+            (BridgeUpstreamProtocol::KimiChatCompletions, _) => self
+                .secrets
+                .resolve_kimi_membership_auth(source_kind, source_id),
+            (BridgeUpstreamProtocol::AnthropicMessages, _) => {
+                self.secrets.resolve_anthropic_auth(source_kind, source_id)
+            }
+            (BridgeUpstreamProtocol::CodexResponsesOauth, _) => self
+                .secrets
+                .resolve_codex_subscription_auth(source_kind, source_id),
+            (BridgeUpstreamProtocol::XaiResponsesOauth, _) => self
+                .secrets
+                .resolve_grok_subscription_auth(source_kind, source_id),
         }
     }
 
@@ -223,18 +235,13 @@ impl AdapterBridgeService {
             AppError::NotFound(format!("adapter profile not found: {profile_id}"))
         })?;
         let supported_source = match profile.rule_id.as_str() {
-            RULE_ID => matches!(
+            RULE_ID | ANTHROPIC_RULE_ID | OPENAI_RULE_ID => matches!(
                 profile.source_kind,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account
             ),
-            ANTHROPIC_RULE_ID => matches!(
-                profile.source_kind,
-                AdapterSourceKind::Provider | AdapterSourceKind::Account
-            ),
-            CODEX_CLAUDE_RULE_ID
-            | CODEX_GROK_RULE_ID
-            | CODEX_KIMI_RULE_ID
-            | CODEX_DSH_RULE_ID => profile.source_kind == AdapterSourceKind::Account,
+            CODEX_CLAUDE_RULE_ID | CODEX_GROK_RULE_ID | CODEX_KIMI_RULE_ID | CODEX_DSH_RULE_ID => {
+                profile.source_kind == AdapterSourceKind::Account
+            }
             GROK_CLAUDE_RULE_ID | GROK_CODEX_RULE_ID => {
                 profile.source_kind == AdapterSourceKind::Account
             }

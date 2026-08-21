@@ -159,7 +159,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  keys["Kimi / Anthropic 的 Key"] --> fwd1["本机转发"] --> codex["Codex"]
+  keys["Kimi / Anthropic / OpenAI 的 Key"] --> fwd1["本机转发"] --> codex["Codex"]
   grokSub["Grok 订阅"] --> fwdGrok["本机转发"] --> grokTargets["Claude · Codex"]
   codexSub["Codex 订阅"] --> fwdCodex["本机转发"] --> codexTargets["Claude · Grok"]
 ```
@@ -175,7 +175,7 @@ Kimi 会员 OAuth 接到任何工具：**产品不做**（不写进对方、也�
 |---|---|---|---|---|
 | Kimi 会员 Key | 只改配置：填 Claude 能用的地址 | 只改配置：写进 Pi | 本机转发 | 可写 |
 | Kimi 会员 OAuth | **产品不做** | **产品不做** | **产品不做** | **产品不做** |
-| OpenAI Key | — | 只改配置：写进 Pi | 本机转发（还没做） | 可写 |
+| OpenAI Key | — | 只改配置：写进 Pi | 本机转发 | 可写 |
 | xAI Key | — | 只改配置：写进 Pi | — | 换到这份登录 |
 | GLM / DeepSeek Key | 只改配置：填 Claude 能用的地址 | 只改配置：写进 Pi | 只改配置：官方有 Codex 要的接口 | — |
 | Anthropic Key | 换到这份登录 | 只改配置：写进 Pi | 本机转发 | — |

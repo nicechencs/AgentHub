@@ -187,6 +187,17 @@ impl AdapterSecretResolver {
             .map(ResolvedAuth::bearer)
     }
 
+    /// Internal bridge boundary: resolve an OpenAI API key without exposing
+    /// the plaintext to GUI/Tauri DTO layers.
+    pub(crate) fn resolve_openai_auth(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<ResolvedAuth> {
+        self.resolve_explicit_api_key(OPENAI_TO_PI_RULE, source_kind, source_id)
+            .map(ResolvedAuth::bearer)
+    }
+
     /// Resolve only the current Codex OAuth access token for a bridge upstream.
     /// Refresh is intentionally owned by the next Codex login sync; this
     /// adapter does not persist or return refresh material.
