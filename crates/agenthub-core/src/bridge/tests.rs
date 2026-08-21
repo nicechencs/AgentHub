@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -19,9 +20,11 @@ use tokio::{
 
 use super::host::CleanupCompletion;
 use super::{
-    BridgeHostError, BridgeLocalSurface, BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec,
-    BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus, ResolvedAuth,
+    protocol::responses::is_leftover_bridge_model, BridgeHostError, BridgeLocalSurface,
+    BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec, BridgeUpstreamConfig,
+    BridgeUpstreamProtocol, BridgeUpstreamStatus, ResolvedAuth, UpstreamAuthReload,
 };
+use crate::models::{list_local_bridge_models, AdapterSourceProduct, AgentId};
 
 fn spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
     BridgeStartSpec::new(
@@ -59,6 +62,15 @@ fn codex_chat_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeSta
     let mut spec = codex_spec(profile_id, port, upstream_port);
     spec.upstream.local_surface = BridgeLocalSurface::ChatCompletions;
     spec
+}
+
+fn unsigned_jwt_exp_offset(seconds_from_now: i64) -> String {
+    use base64::Engine;
+    let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
+    let exp = chrono::Utc::now().timestamp() + seconds_from_now;
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(format!(r#"{{"exp":{exp}}}"#).as_bytes());
+    format!("{header}.{payload}.sig")
 }
 
 fn grok_claude_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
@@ -290,6 +302,119 @@ async fn health_requires_the_local_bearer_token() {
             .running
     );
     host.stop("health").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn models_requires_the_local_bearer_token() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(spec("models-auth", 0, upstream_port).with_listed_models(vec!["gpt-5.4".into()]))
+        .await
+        .expect("start");
+    let url = format!("http://127.0.0.1:{}/v1/models", status.port);
+    let response = client()
+        .await
+        .get(&url)
+        .send()
+        .await
+        .expect("models request");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = response.json::<Value>().await.expect("models json");
+    assert_eq!(body["error"]["code"], "invalid_api_key");
+    host.stop("models-auth").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn models_returns_openai_list_shape_on_both_paths() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            spec("models-list", 0, upstream_port)
+                .with_listed_models(vec!["gpt-5.4".into(), "gpt-5".into()]),
+        )
+        .await
+        .expect("start");
+    let http = client().await;
+    for path in ["/v1/models", "/models"] {
+        let response = http
+            .get(format!("http://127.0.0.1:{}{path}", status.port))
+            .header(header::AUTHORIZATION, "Bearer local-test-token")
+            .send()
+            .await
+            .expect("authorized models request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.json::<Value>().await.expect("models json");
+        assert_eq!(body["object"], "list");
+        assert_eq!(body["data"][0]["id"], "gpt-5.4");
+        assert_eq!(body["data"][0]["object"], "model");
+        assert_eq!(body["data"][1]["id"], "gpt-5");
+        assert_eq!(body["data"].as_array().map(Vec::len), Some(2));
+    }
+    host.stop("models-list").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn models_returns_empty_list_when_mapping_and_default_are_missing() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(spec("models-empty", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .get(format!("http://127.0.0.1:{}/v1/models", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .send()
+        .await
+        .expect("authorized models request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.json::<Value>().await.expect("models json");
+    assert_eq!(body["object"], "list");
+    assert_eq!(body["data"], json!([]));
+    host.stop("models-empty").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn models_lists_codex_to_grok_dispatch_accepted_ids() {
+    let listed = list_local_bridge_models(
+        AdapterSourceProduct::CodexChatGptSubscription,
+        AgentId::Grok,
+        None,
+    );
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(spec("models-codex-grok", 0, upstream_port).with_listed_models(listed.clone()))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .get(format!("http://127.0.0.1:{}/v1/models", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .send()
+        .await
+        .expect("authorized models request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.json::<Value>().await.expect("models json");
+    let ids: Vec<String> = body["data"]
+        .as_array()
+        .expect("data array")
+        .iter()
+        .map(|item| item["id"].as_str().expect("id").to_owned())
+        .collect();
+    assert_eq!(ids, listed);
+    assert!(!ids.is_empty());
+    for id in &ids {
+        assert!(!is_leftover_bridge_model(id), "leftover listed: {id}");
+    }
+    host.stop("models-codex-grok").await.expect("stop");
     upstream_task.abort();
 }
 
@@ -1369,6 +1494,112 @@ async fn codex_responses_sse_upstream() -> (u16, tokio::task::JoinHandle<()>) {
     (port, task)
 }
 
+async fn capturing_codex_responses_sse_upstream(
+) -> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
+    async fn responses(
+        State(captured): State<Arc<Mutex<Vec<Value>>>>,
+        headers: axum::http::HeaderMap,
+        Json(body): Json<Value>,
+    ) -> Response {
+        let bearer = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        assert_eq!(bearer, "Bearer oauth-upstream-token");
+        captured
+            .lock()
+            .expect("lock captured Codex bodies")
+            .push(body.clone());
+        if body.get("store").and_then(Value::as_bool) != Some(false) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Store must be set to false"})),
+            )
+                .into_response();
+        }
+        if body.get("stream").and_then(Value::as_bool) != Some(true) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Stream must be set to true"})),
+            )
+                .into_response();
+        }
+        let chunks: Vec<&'static [u8]> = vec![
+            br#"data: {"type":"response.created","response":{"id":"resp_stream","model":"gpt-5","status":"in_progress"}}
+
+"#,
+            br#"data: {"type":"response.output_text.delta","delta":"pong"}
+
+"#,
+            br#"data: {"type":"response.completed","response":{"id":"resp_stream","model":"gpt-5","status":"completed","output":[]}}
+
+"#,
+        ];
+        let output = stream! {
+            for chunk in chunks {
+                yield Ok::<_, Infallible>(axum::body::Bytes::from_static(chunk));
+            }
+        };
+        (
+            [(header::CONTENT_TYPE, "text/event-stream")],
+            Body::from_stream(output),
+        )
+            .into_response()
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind capturing Codex Responses SSE upstream");
+    let port = listener.local_addr().expect("addr").port();
+    let captured_clone = captured.clone();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state(captured_clone),
+        )
+        .await
+        .expect("serve capturing Codex Responses SSE upstream");
+    });
+    (port, captured, task)
+}
+
+#[tokio::test]
+async fn codex_responses_oauth_messages_stream_sends_store_false_and_stream_true() {
+    let (upstream_port, captured, upstream_task) = capturing_codex_responses_sse_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(codex_spec("codex-messages-store-stream", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 32,
+            "stream": true,
+            "messages": [{ "role": "user", "content": "ping" }]
+        }))
+        .send()
+        .await
+        .expect("streaming messages request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("Anthropic SSE body");
+    assert!(body.contains("pong"), "expected pong in SSE body: {body}");
+    let upstream = captured.lock().expect("lock captured Codex bodies").clone();
+    assert_eq!(upstream.len(), 1);
+    assert_eq!(upstream[0]["store"], false);
+    assert_eq!(upstream[0]["stream"], true);
+    host.stop("codex-messages-store-stream")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
 #[tokio::test]
 async fn anthropic_protocol_uses_messages_and_x_api_key() {
     let (upstream_port, upstream_task) = anthropic_upstream().await;
@@ -2246,5 +2477,191 @@ async fn grok_codex_passthrough_sse_forwards_completed_event() {
     assert_eq!(usage["output_tokens"], 1);
     assert_eq!(usage["reasoning_tokens"], 0);
     host.stop("grok-reasoning-tokens-sse").await.expect("stop");
+    upstream_task.abort();
+}
+
+async fn grok_401_then_ok_upstream(
+    expected_retry_bearer: &'static str,
+) -> (u16, Arc<Mutex<Vec<String>>>, tokio::task::JoinHandle<()>) {
+    async fn responses(
+        State((expected, captured)): State<(&'static str, Arc<Mutex<Vec<String>>>)>,
+        headers: axum::http::HeaderMap,
+    ) -> Response {
+        let bearer = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        captured.lock().expect("lock").push(bearer.clone());
+        if bearer != format!("Bearer {expected}") {
+            return (StatusCode::UNAUTHORIZED, "expired").into_response();
+        }
+        Json(grok_completed_response("hello")).into_response()
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind grok 401 upstream");
+    let port = listener.local_addr().expect("addr").port();
+    let state = (expected_retry_bearer, captured.clone());
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state(state),
+        )
+        .await
+        .expect("serve grok 401 upstream");
+    });
+    (port, captured, task)
+}
+
+#[tokio::test]
+async fn oauth_401_reloads_upstream_bearer_and_retries_before_first_event() {
+    let (upstream_port, captured, upstream_task) =
+        grok_401_then_ok_upstream("rotated-upstream-token").await;
+    let hits = Arc::new(AtomicUsize::new(0));
+    let hits_cb = hits.clone();
+    let reload: UpstreamAuthReload = Arc::new(move || {
+        hits_cb.fetch_add(1, Ordering::SeqCst);
+        Some("rotated-upstream-token".into())
+    });
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            grok_claude_spec("grok-401-retry", 0, upstream_port)
+                .with_reload_upstream_auth(Some(reload)),
+        )
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header("x-api-key", "local-test-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("messages request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("anthropic response");
+    assert_eq!(body["content"][0]["text"], "hello");
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
+    let bearers = captured.lock().expect("lock").clone();
+    assert_eq!(
+        bearers,
+        vec![
+            "Bearer upstream-test-token".to_owned(),
+            "Bearer rotated-upstream-token".to_owned()
+        ]
+    );
+
+    let still_local = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header("x-api-key", "local-test-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("local bearer still accepted");
+    assert_eq!(still_local.status(), StatusCode::OK);
+
+    host.stop("grok-401-retry").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn oauth_401_retries_after_noop_near_expiry_preload() {
+    let (upstream_port, captured, upstream_task) =
+        grok_401_then_ok_upstream("rotated-upstream-token").await;
+    let hits = Arc::new(AtomicUsize::new(0));
+    let hits_cb = hits.clone();
+    let reload: UpstreamAuthReload = Arc::new(move || {
+        let n = hits_cb.fetch_add(1, Ordering::SeqCst) + 1;
+        if n == 1 {
+            None
+        } else {
+            Some("rotated-upstream-token".into())
+        }
+    });
+    let near_expiry = unsigned_jwt_exp_offset(30);
+    let mut spec = grok_claude_spec("grok-401-near-exp", 0, upstream_port)
+        .with_reload_upstream_auth(Some(reload));
+    spec.upstream.auth = ResolvedAuth::bearer(near_expiry.clone());
+    let host = BridgeRuntimeHost::new();
+    let status = host.start(spec).await.expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header("x-api-key", "local-test-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("messages request");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
+    let bearers = captured.lock().expect("lock").clone();
+    assert_eq!(
+        bearers,
+        vec![
+            format!("Bearer {near_expiry}"),
+            "Bearer rotated-upstream-token".to_owned()
+        ]
+    );
+    host.stop("grok-401-near-exp").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn oauth_401_without_new_token_stays_upstream_error() {
+    let (upstream_port, captured, upstream_task) =
+        grok_401_then_ok_upstream("rotated-upstream-token").await;
+    let hits = Arc::new(AtomicUsize::new(0));
+    let hits_cb = hits.clone();
+    let reload: UpstreamAuthReload = Arc::new(move || {
+        hits_cb.fetch_add(1, Ordering::SeqCst);
+        None
+    });
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            grok_claude_spec("grok-401-none", 0, upstream_port)
+                .with_reload_upstream_auth(Some(reload)),
+        )
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header("x-api-key", "local-test-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("messages request");
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body: Value = response.json().await.expect("error json");
+    assert_eq!(body["error"]["code"], "upstream_error");
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
+    let bearers = captured.lock().expect("lock").clone();
+    assert_eq!(bearers, vec!["Bearer upstream-test-token".to_owned()]);
+
+    host.stop("grok-401-none").await.expect("stop");
     upstream_task.abort();
 }

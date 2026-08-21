@@ -14,6 +14,7 @@ pub use host::{BridgeHostError, BridgeRuntimeHost};
 pub use runtime::{
     BridgeLocalSurface, BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec,
     BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus, ResolvedAuth,
+    UpstreamAuthReload,
 };
 
 #[cfg(test)]

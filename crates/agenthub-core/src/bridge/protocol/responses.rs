@@ -316,6 +316,21 @@ pub fn apply_official_codex_model(body: &mut Value, incoming: &str, configured: 
     }
 }
 
+/// Prepare a request for the official ChatGPT / Codex Responses upstream.
+///
+/// The official endpoint requires storage to be disabled for this local
+/// subscription route. Keep this policy next to the model policy so callers
+/// cannot accidentally omit it while leaving the provider-neutral request
+/// conversion unchanged.
+pub fn prepare_official_codex_request(
+    body: &mut Value,
+    incoming_model: &str,
+    configured_model: Option<&str>,
+) {
+    apply_official_codex_model(body, incoming_model, configured_model);
+    body["store"] = Value::Bool(false);
+}
+
 /// Build a non-streaming OpenAI Responses object from IR events.
 ///
 /// Used by the Anthropic API Key → Codex path after Anthropic Messages

@@ -166,13 +166,38 @@ function mergeToolStep(prev: Extract<ProcessStep, { type: 'tool' }>, step: Extra
   };
 }
 
+function isPriorityStep(step: ProcessStep): boolean {
+  return step.type === 'tool' || step.type === 'error';
+}
+
+/**
+ * 过程步封顶：优先保留 tool / error（对齐 core MAX_EMITTED_STEPS 对 Error/Tool 的突破）。
+ * 其余类型从最旧开始丢；若 tool+error 本身超过上限，只留最近 MAX_STEPS 条并丢掉全部 soft 步。
+ */
+function capSteps(steps: ProcessStep[]): ProcessStep[] {
+  if (steps.length <= MAX_STEPS) return steps;
+
+  const priority = steps.filter(isPriorityStep);
+  if (priority.length >= MAX_STEPS) {
+    return priority.slice(priority.length - MAX_STEPS);
+  }
+
+  const dropSoft = steps.length - MAX_STEPS;
+  let dropped = 0;
+  return steps.filter((step) => {
+    if (dropped >= dropSoft || isPriorityStep(step)) return true;
+    dropped += 1;
+    return false;
+  });
+}
+
 function pushStep(steps: ProcessStep[], step: ProcessStep): ProcessStep[] {
   if (step.type === 'text' && steps.length > 0) {
     const last = steps[steps.length - 1];
     if (last.type === 'text') {
       const next = steps.slice(0, -1);
       next.push({ type: 'text', text: last.text + step.text });
-      return next.length > MAX_STEPS ? next.slice(next.length - MAX_STEPS) : next;
+      return capSteps(next);
     }
   }
 
@@ -185,7 +210,7 @@ function pushStep(steps: ProcessStep[], step: ProcessStep): ProcessStep[] {
         text: mergeThinkingText(last.text, step.text),
         done: Boolean(step.done),
       });
-      return next.length > MAX_STEPS ? next.slice(next.length - MAX_STEPS) : next;
+      return capSteps(next);
     }
   }
 
@@ -202,8 +227,7 @@ function pushStep(steps: ProcessStep[], step: ProcessStep): ProcessStep[] {
   }
 
   const base = step.type === 'thinking' ? steps : markLastThinkingDone(steps);
-  const next = [...base, step];
-  return next.length > MAX_STEPS ? next.slice(next.length - MAX_STEPS) : next;
+  return capSteps([...base, step]);
 }
 
 function findLastIndex<T>(items: T[], pred: (item: T) => boolean): number {
@@ -316,7 +340,8 @@ export function reduceProcessEvent(map: ProcessMap, ev: ChatEvent, now = Date.no
       ) {
         next[key] = {
           ...view,
-          phase: ev.ok ? 'ok' : 'failed',
+          // 生产取消时 ok=true；缺省 cancelled 当 false，兼容旧事件
+          phase: ev.cancelled ? 'cancelled' : ev.ok ? 'ok' : 'failed',
           steps: markLastThinkingDone(view.steps),
           updatedAt: now,
         };

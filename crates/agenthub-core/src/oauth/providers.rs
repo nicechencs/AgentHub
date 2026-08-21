@@ -12,6 +12,19 @@ use crate::models::AgentId;
 use super::identity::{apply_identity_to_credentials, extract_oauth_identity, identity_extra};
 use super::TokenBundle;
 
+#[cfg(test)]
+thread_local! {
+    static TOKEN_URL_OVERRIDE: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+}
+
+#[cfg(test)]
+pub fn with_token_url_override<T>(url: impl Into<String>, f: impl FnOnce() -> T) -> T {
+    TOKEN_URL_OVERRIDE.with(|slot| *slot.borrow_mut() = Some(url.into()));
+    let result = f();
+    TOKEN_URL_OVERRIDE.with(|slot| *slot.borrow_mut() = None);
+    result
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenBodyStyle {
     /// application/x-www-form-urlencoded (RFC 6749 default)
@@ -183,10 +196,21 @@ impl OAuthProvider {
         self.bundle_from_token_json(body)
     }
 
+    fn token_endpoint(&self) -> String {
+        #[cfg(test)]
+        {
+            if let Some(url) = TOKEN_URL_OVERRIDE.with(|slot| slot.borrow().clone()) {
+                return url;
+            }
+        }
+        self.token_url.to_string()
+    }
+
     fn token_request(&self, fields: &[(&str, &str)]) -> Result<Value> {
+        let token_url = self.token_endpoint();
         let result = match self.body_style {
             TokenBodyStyle::Form => {
-                let mut req = ureq::post(self.token_url)
+                let mut req = ureq::post(&token_url)
                     .set("Content-Type", "application/x-www-form-urlencoded")
                     .set("Accept", "application/json");
                 req = req.timeout(crate::catalog::limits::OAUTH_TOKEN_HTTP_TIMEOUT);
@@ -197,7 +221,7 @@ impl OAuthProvider {
                 for (k, v) in fields {
                     map.insert((*k).into(), Value::String((*v).into()));
                 }
-                let mut req = ureq::post(self.token_url)
+                let mut req = ureq::post(&token_url)
                     .set("Content-Type", "application/json")
                     .set("Accept", "application/json");
                 req = req.timeout(crate::catalog::limits::OAUTH_TOKEN_HTTP_TIMEOUT);

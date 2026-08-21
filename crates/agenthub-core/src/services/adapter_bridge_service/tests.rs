@@ -2,7 +2,7 @@ use super::*;
 
 use crate::models::{
     Account, AccountKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
-    AdapterSourceKind, Provider,
+    AdapterSourceKind, AdapterSourceProduct, Provider,
 };
 use crate::services::ProviderService;
 use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo};
@@ -701,6 +701,8 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         upstream_model: "kimi-k2.5".into(),
         protocol: crate::bridge::BridgeUpstreamProtocol::KimiChatCompletions,
         local_surface: BridgeLocalSurface::Responses,
+        source: AdapterSourceProduct::KimiCodeMembership,
+        target_agent: AgentId::Codex,
         upstream_auth: ResolvedAuth::bearer("upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -727,6 +729,8 @@ async fn codex_responses_health_probe_does_not_request_models() {
         upstream_model: CODEX_DEFAULT_MODEL.into(),
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
         local_surface: BridgeLocalSurface::Messages,
+        source: AdapterSourceProduct::CodexChatGptSubscription,
+        target_agent: AgentId::Claude,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -751,6 +755,8 @@ async fn xai_responses_health_probe_does_not_request_models() {
         upstream_model: crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.into(),
         protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
         local_surface: BridgeLocalSurface::Messages,
+        source: AdapterSourceProduct::XaiGrokSubscription,
+        target_agent: AgentId::Claude,
         upstream_auth: ResolvedAuth::bearer("grok-upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -763,6 +769,112 @@ async fn xai_responses_health_probe_does_not_request_models() {
         .expect("local health is sufficient for xAI Responses");
 
     host.shutdown().await.unwrap();
+}
+
+#[test]
+fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "codex-grok-models".into(),
+        source_connection_id: "codex-subscription".into(),
+        preferred_port: None,
+        upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
+        upstream_model: String::new(),
+        protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
+        local_surface: BridgeLocalSurface::Responses,
+        source: AdapterSourceProduct::CodexChatGptSubscription,
+        target_agent: AgentId::Grok,
+        upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
+        local_bearer: "local-secret".into(),
+    };
+    let listed = material.start_spec(Some(0)).listed_models;
+    assert!(!listed.is_empty());
+    for model in &listed {
+        assert!(
+            !crate::bridge::protocol::responses::is_leftover_bridge_model(model),
+            "leftover listed: {model}"
+        );
+    }
+    assert_eq!(listed[0], "gpt-5.4");
+}
+
+#[test]
+fn start_spec_lists_grok_default_when_mapping_entries_empty() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "grok-claude-models".into(),
+        source_connection_id: "grok-subscription".into(),
+        preferred_port: None,
+        upstream_base_url: crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL.into(),
+        upstream_model: crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.into(),
+        protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
+        local_surface: BridgeLocalSurface::Messages,
+        source: AdapterSourceProduct::XaiGrokSubscription,
+        target_agent: AgentId::Claude,
+        upstream_auth: ResolvedAuth::bearer("grok-upstream-secret"),
+        local_bearer: "local-secret".into(),
+    };
+    assert_eq!(
+        material.start_spec(Some(0)).listed_models,
+        vec![crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.to_string()]
+    );
+}
+
+#[test]
+fn start_spec_empty_when_mapping_and_default_are_missing() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "codex-kimi-empty-models".into(),
+        source_connection_id: "codex-subscription".into(),
+        preferred_port: None,
+        upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
+        upstream_model: String::new(),
+        protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
+        local_surface: BridgeLocalSurface::ChatCompletions,
+        source: AdapterSourceProduct::CodexChatGptSubscription,
+        target_agent: AgentId::Kimi,
+        upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
+        local_bearer: "local-secret".into(),
+    };
+    assert!(material.start_spec(Some(0)).listed_models.is_empty());
+}
+
+#[test]
+fn start_spec_lists_configured_default_when_mapping_is_missing() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "codex-kimi-default-models".into(),
+        source_connection_id: "codex-subscription".into(),
+        preferred_port: None,
+        upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
+        upstream_model: "gpt-5.4".into(),
+        protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
+        local_surface: BridgeLocalSurface::ChatCompletions,
+        source: AdapterSourceProduct::CodexChatGptSubscription,
+        target_agent: AgentId::Kimi,
+        upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
+        local_bearer: "local-secret".into(),
+    };
+    assert_eq!(
+        material.start_spec(Some(0)).listed_models,
+        vec!["gpt-5.4".to_string()]
+    );
+}
+
+#[test]
+fn start_spec_lists_openai_to_codex_without_kimi_ids() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "openai-codex-models".into(),
+        source_connection_id: "openai-api".into(),
+        preferred_port: None,
+        upstream_base_url: OPENAI_CHAT_BASE_URL.into(),
+        upstream_model: OPENAI_DEFAULT_MODEL.into(),
+        protocol: BridgeUpstreamProtocol::KimiChatCompletions,
+        local_surface: BridgeLocalSurface::Responses,
+        source: AdapterSourceProduct::OpenaiApi,
+        target_agent: AgentId::Codex,
+        upstream_auth: ResolvedAuth::bearer("openai-upstream-secret"),
+        local_bearer: "local-secret".into(),
+    };
+    let listed = material.start_spec(Some(0)).listed_models;
+    assert_eq!(listed, vec![OPENAI_DEFAULT_MODEL.to_string()]);
+    assert!(listed.iter().all(|model| !model.starts_with("kimi-")));
 }
 
 #[test]
@@ -922,6 +1034,43 @@ fn anthropic_account(id: &str, api_key: &str) -> Account {
         is_current: false,
         created_at: "now".into(),
         updated_at: "now".into(),
+    }
+}
+
+fn openai_source(id: &str, api_key: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Codex,
+        name: "OpenAI API".into(),
+        settings_config: json!({"apiKey": api_key}),
+        meta: json!({"preset": "openai"}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+fn openai_account(id: &str, api_key: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        label: "OpenAI key".into(),
+        credentials: json!({"format": "api_key", "api_key": api_key}),
+        extra: json!({"provider": "openai"}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+fn openai_request(source_kind: AdapterSourceKind, source_id: &str) -> AdapterBridgePrepareRequest {
+    AdapterBridgePrepareRequest {
+        source_kind,
+        source_id: source_id.into(),
+        target_agent_id: AgentId::Codex,
+        auto_start: true,
     }
 }
 
@@ -1116,7 +1265,10 @@ fn prepare_codex_subscription_projects_chat_loopback_for_grok_kimi_dsh() {
             );
         }
         assert!(!haystack.contains("grok-"), "{target:?} leftover grok-*");
-        assert!(!haystack.contains("gpt-"), "{target:?} invented ChatGPT model");
+        assert!(
+            !haystack.contains("gpt-"),
+            "{target:?} invented ChatGPT model"
+        );
         assert!(!serde_json::to_string(&input)
             .unwrap()
             .contains("codex-upstream-access-secret"));
@@ -1229,6 +1381,100 @@ fn prepare_anthropic_account_reuses_secret_resolver_and_projects_account_ref() {
         BridgeUpstreamProtocol::AnthropicMessages
     );
     assert!(!format!("{restored:?}").contains("sk-ant-account"));
+}
+
+#[test]
+fn prepare_openai_provider_projects_chat_completions_bridge() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&openai_source("openai-key", "sk-openai-secret"))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+
+    let prepared = service
+        .prepare(&openai_request(AdapterSourceKind::Provider, "openai-key"))
+        .unwrap();
+    assert_eq!(prepared.profile().rule_id, OPENAI_RULE_ID);
+    assert_eq!(prepared.profile().source_kind, AdapterSourceKind::Provider);
+    let start = prepared.runtime_material().start_spec(None);
+    assert_eq!(start.upstream.base_url, OPENAI_CHAT_BASE_URL);
+    assert_eq!(
+        start.upstream.protocol,
+        BridgeUpstreamProtocol::KimiChatCompletions
+    );
+    assert_eq!(start.upstream.model.as_deref(), Some(OPENAI_DEFAULT_MODEL));
+    assert!(!format!("{prepared:?}").contains("sk-openai-secret"));
+
+    let generated = create_projection(&db, &prepared, 43133);
+    assert_eq!(generated.meta["adapterRuleId"], OPENAI_RULE_ID);
+    assert_eq!(
+        generated.meta["adapterBridge"]["kind"],
+        "responses_to_chat_completions"
+    );
+    assert_eq!(generated.meta["adapterSourceRef"]["kind"], "provider");
+    let content = generated.settings_config["content"].as_str().unwrap();
+    assert!(content.contains(OPENAI_PROVIDER_SLUG));
+    assert!(content.contains("AgentHub OpenAI Bridge"));
+    assert!(content.contains(OPENAI_DEFAULT_MODEL));
+    assert!(!content.contains(PROVIDER_SLUG));
+    assert!(!content.contains("kimi-k2.5"));
+    assert!(!content.contains("grok-"));
+    assert!(!serde_json::to_string(&generated)
+        .unwrap()
+        .contains("sk-openai-secret"));
+}
+
+#[test]
+fn prepare_openai_account_reuses_secret_resolver_and_projects_account_ref() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&openai_account("openai-account", "sk-openai-account"))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+
+    let prepared = service
+        .prepare(&openai_request(
+            AdapterSourceKind::Account,
+            "openai-account",
+        ))
+        .unwrap();
+    assert_eq!(prepared.profile().rule_id, OPENAI_RULE_ID);
+    assert_eq!(prepared.profile().source_kind, AdapterSourceKind::Account);
+    assert_eq!(
+        prepared
+            .runtime_material()
+            .start_spec(None)
+            .upstream
+            .protocol,
+        BridgeUpstreamProtocol::KimiChatCompletions
+    );
+    assert!(!format!("{prepared:?}").contains("sk-openai-account"));
+
+    let generated = create_projection(&db, &prepared, 43134);
+    assert_eq!(generated.meta["adapterSourceRef"]["kind"], "account");
+    assert_eq!(generated.meta["adapterSourceRef"]["id"], "openai-account");
+    assert_eq!(generated.meta["adapterRuleId"], OPENAI_RULE_ID);
+    service.finalize(&prepared, 43134).unwrap();
+    let restored = service
+        .resolve_restore_material(prepared.profile().id.as_str())
+        .unwrap();
+    assert_eq!(
+        restored
+            .runtime_material()
+            .start_spec(None)
+            .upstream
+            .protocol,
+        BridgeUpstreamProtocol::KimiChatCompletions
+    );
+    assert_eq!(
+        restored
+            .runtime_material()
+            .start_spec(None)
+            .upstream
+            .base_url,
+        OPENAI_CHAT_BASE_URL
+    );
+    assert!(!format!("{restored:?}").contains("sk-openai-account"));
 }
 
 #[test]

@@ -4,7 +4,8 @@
 > 状态：**P1–P5 已接入代码**（2026-08-15）  
 > 调研依据：官方站点、开发者文档、GitHub `deepseek-ai/deepseek-harness`（MIT，developer preview）。  
 > 真源关系：本文是 **DSH 接入** 的唯一设计真源。实施时按 [adding-an-agent.md](adding-an-agent.md) 走生产接入轨；能力声明按 [capability-matrix.md](capability-matrix.md)；票面与跨 Agent 边按 [product-decisions.md](product-decisions.md)、[connection-binding-model.md](connection-binding-model.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)。DeepSeek API 走直接改配置，不要把 DSH 当本机转发。  
-> 实现状态以 adapter `capability()`、`integrations/agents/dsh/` 与测试为准（`platform/*/sources` 只是兼容转发）。本文保留设计约束；能力级别以代码声明为准。
+> 实现状态以 adapter `capability()`、`integrations/agents/dsh/` 与测试为准（`platform/*/sources` 只是兼容转发）。本文保留设计约束；能力级别以代码声明为准。  
+> Hub Chat 与 DSH Desktop 运行时/UI 机制对照见 [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md)（对照笔记；不改变本文接入范围，不把 Desktop 嵌成 in-process Loop）。
 
 ---
 
