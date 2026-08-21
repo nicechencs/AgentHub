@@ -1,7 +1,7 @@
 # Chat 过程流式展示设计
 
 > 状态：**Phase 0–2 是现行契约**（2026-08-03）；Phase 3 **展示层已落地**（2026-08，见 [chat-page-redesign.md](chat-page-redesign.md)）。协议侧未做：过程落库、过程内 usage、Pi rpc 审批、diff 预览落库。  
-> **现行状态**：本文管过程协议与展示契约，不是 Chat 页 IA。Chat **没有**独立模型选择器；chrome 见 [ui-design.md](ui-design.md) §4.4。Chat **一会话一 Agent**（过程仍按 `(turn, agent)` 隔离）。已知实现问题见 §12。  
+> **现行状态**：本文管过程协议与展示契约，不是 Chat 页 IA。Chat **没有**独立模型选择器；chrome 见 [ui-design.md](ui-design.md) §4.4。Chat **一会话一 Agent**（过程仍按 `(turn, agent)` 隔离）。§12 三条实现缺口已于 2026-08-21 收口。  
 > 范围：GUI Chat 的「Cursor 式过程」——命令、状态、stderr、结构化工具/thinking 步骤  
 > 非目标：接管各 CLI 原生多轮 session、交互式 tool 审批（RPC）、凭据加密  
 > mock 路径：`src/dev/mocks/chat.ts`。`src/lib/api/chat.ts` 是生产 façade，不是 mock。  
@@ -246,10 +246,10 @@ frontend
 - **Pi 暂不默认 rpc**：json print 模式成本更低；rpc 留给交互审批。  
 - **不静默跨模式重试**：避免重复扣费/双跑；错误显式暴露。
 
-## 12. 已知问题（现行实现）
+## 12. 已知问题（2026-08-21 已收口）
 
-登记于 2026-08-21。对照笔记 [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) §6.14 只作指针，**不**从该文派工。下列不是 Phase 3 协议侧待办（落库 / usage / Pi rpc / diff 预览），是已经存在的实现缺口；是否修、何时修由产品与过程契约决定。
+对照笔记 [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) §6.14 只作机制指针。下列不是 Phase 3 协议侧待办（落库 / usage / Pi rpc / diff 预览）。
 
-1. **崩溃残留 `status=running`**：占位行写入后若 GUI 被杀，`CancelToken` 与子进程监督同死。没有 cold repair 把 running 收成 interrupted。再次打开 Chat，`listChatMessages` 原样返回：content 为空则气泡永久转圈（`ChatMessageBubble`：`status === 'running'` **且 content 为空** 才 Loader）；若残留了部分正文则显示「生成中」不转圈。两种情况页级 `sending` 都是 false，没有 Stop。启动恢复 `interrupt_stale_running` 只扫安装审计表，不修 `chat_messages`。离开 `/chat` 后再回来，同样看不见取消按钮。
-2. **过程 cap 前后端不一致**：core `MAX_EMITTED_STEPS=2000`（Error / Tool 可突破；超长行与行缓冲溢出的 `Raw` 同样不受 cap）；UI reducer `MAX_STEPS=200` 滑窗。长 turn 的早期 tool 卡会被 UI 丢掉，即便 core 发过。无 `step.id` 的 tool 不 merge。
-3. **取消时 `Finished.ok` 生产 / mock 不一致**：生产 `Cancelled` 不是 `is_hard_failure`，`ChatEvent::Finished.ok === true`。`AgentFinished` **没有** `ok` 字段，取消终态在 `message.status = cancelled`。mock 取消发 `ok: false`。正常路径会先发 `agentFinished(cancelled)` 再 `finished`，过程项通常已不在 running；若仍停在 running，`reduceProcessEvent('finished')` 会按 `ev.ok` 把该项标成成功。
+1. **崩溃残留 `status=running`（已修）**：`AgentHub::open` 在 lifecycle interrupt 之后把所有 `chat_messages.status=running` 收成 `cancelled`（不清 `native_session_id`、不改 error）。不在 `list_messages` 上 interrupt（与 persist 竞态）。`Conversation.sending` 是运行时投影（存在 running 行），Chat 页 `loadList` 用它恢复 Stop。
+2. **过程 cap（已修）**：UI `MAX_STEPS=200` 仍在，但 `capSteps` 优先保留 `tool` / `error`；软步（thinking / status / raw / text）从最旧丢。tool+error 自身超过 200 时只留最近 200 条。无 `step.id` 的 tool 仍不 merge（parser 必须给稳定 id）。
+3. **取消时 `Finished` 信号（已修）**：`ok` 仍是 `!is_hard_failure`（取消时 true）。新增 `cancelled: bool`（任一 `RunStatus::Cancelled`）。`reduceProcessEvent('finished')`：`cancelled` → `cancelled`，否则 `ok` → `ok`，否则 `failed`。mock 与生产对齐：取消时 `ok: true, cancelled: true`。

@@ -360,7 +360,7 @@ Hub 没有 `steer` 不是漏做：没有活 Agent 对象，就没有「当前 st
 
 过程 UI 的 `ProcessMap` 纯内存。切 `activeId` 的 effect 里 `setProcessMap({})`。刷新 / 杀进程后只剩终稿气泡。
 
-崩溃窗口：占位行以 `status=running` 写入后，若 GUI 被杀，`CancelToken`（`Arc<AtomicBool>`）与子进程监督同死。没有 cold repair 把 running 收成 interrupted。再次打开 Chat，`listChatMessages` 原样返回：content 为空则气泡永久转圈（`ChatMessageBubble`：`status === 'running'` **且 content 为空** 才 Loader）；若残留了部分正文则显示「生成中」不转圈。两种情况都没有 Stop——因为页级 `sending` 是 false。启动恢复 `interrupt_stale_running` 只扫安装审计，不修 `chat_messages`。
+崩溃窗口：占位行以 `status=running` 写入后，若 GUI 被杀，`CancelToken` 与子进程监督同死。**启动 cold repair**（2026-08-21）把 leftover `running` 收成 `cancelled`（不清 native sid）。再次打开 Chat 不再永久转圈。活着的 inflight 由 `Conversation.sending` 投影，重新进页可恢复 Stop。仍无法区分 CLI 是否已经动过文件系统（黑盒结构差）。
 
 DSH 崩溃语义更细：只有 assistant 请求、没有耐久 `tool/call` → `TOOL_NOT_STARTED`；有 `tool/call` 无 `tool/result` → `TOOL_OUTCOME_UNKNOWN`（禁止盲着重试副作用）。Hub 只有一种悬挂：`status=running` 的气泡，无法区分 CLI 是否已经动过文件系统。
 
@@ -377,7 +377,7 @@ DSH 崩溃语义更细：只有 assistant 请求、没有耐久 `tool/call` → 
 | 问题 | Hub | DSH |
 |---|---|---|
 | 刷新后工具卡还在吗 | 不在 | 在（log replay + `presentResult`） |
-| 崩溃后 turn 平衡吗 | running 行可永久悬挂 | cold repair 合成 interrupted |
+| 崩溃后 turn 平衡吗 | 启动把 stale running 收成 cancelled | cold repair 合成 interrupted |
 | 模型下一轮看见什么 | Hub 拼的文本，或 CLI 自己的 session | 只能是 log 能重建的 |
 | 指针 vs 日志 | `native_session_id` 是外键到 CLI | 没有外键，log 就是历史 |
 
@@ -663,7 +663,7 @@ Host 在 `127.0.0.1` 随机端口（可固定）。Renderer 加载同源页面�
 | 6.1 所有权 | 八家 CLI 工作台 | 一个 Harness 的壳 | 结构 |
 | 6.2 发送 | invoke 直到进程结束 | inbox 叫醒，RPC 先返回 | 结构 |
 | 6.3 真源 | 终稿行 + 可选 sid 指针 | append-only 事件 + 持久化 seam | 结构（落过程则实现） |
-| 6.3 崩溃 | running 可悬挂 | cold 合成 interrupted | 实现 |
+| 6.3 崩溃 | 启动收成 cancelled | cold 合成 interrupted | 实现（已修） |
 | 6.4 投影 | 页 hook + Channel | 常驻 Session + seq 窗口 | 实现（可拔 store） |
 | 6.5 工具 | 解析 stdout | 先 `tool/call` 再执行 | 结构（对黑盒 CLI） |
 | 6.6 审批 | 启动 flag | per-call waterfall + rpcId | 结构 |
@@ -678,14 +678,14 @@ Host 在 `127.0.0.1` 随机端口（可固定）。Renderer 加载同源页面�
 
 ### 6.14 观察收口（仍不派工）
 
-若只从实现差里挑「对照后最值得记住」的，顺序是。其中 1 / 3 / 6 已登记为 [chat-process-streaming.md](chat-process-streaming.md) §12 已知问题；本文仍不授权开工。
+若只从实现差里挑「对照后最值得记住」的，顺序是。其中 1 / 3 / 6 已在 [chat-process-streaming.md](chat-process-streaming.md) §12 收口（2026-08-21）；本文仍不派工其余项。
 
-1. **崩溃与悬挂 running**：DSH 证明「未闭合 turn 必须在 cold 路径有终结」，并区分 tool 未开始 / 结果未知。Hub 今日可出现永久悬挂的 running 气泡（空 content 转圈；有正文则「生成中」），且离开 Chat 页后无法再点取消。启动恢复不扫 `chat_messages`。
+1. **崩溃与悬挂 running（已修）**：Hub 启动 cold repair 把 stale `running` 收成 `cancelled`；`Conversation.sending` 投影活 inflight，重新进 Chat 页可恢复 Stop。仍无法区分「工具未开始 / 结果未知」（黑盒 CLI 的结构差）。
 2. **in-flight 投影不要绑在页面实例**：Channel 可保留，订阅者换成按 conversation id 的模块；切走应缓冲而非丢帧。
-3. **过程 cap 与稳定 tool id**：UI 200 滑窗会切掉本轮早期工具；无 id 的 tool 不 merge。core 2000 的突破不只 Error/Tool，超长 `Raw` 也不受 cap。
+3. **过程 cap 与稳定 tool id（cap 已修）**：UI 200 优先留 tool/error；无 id 的 tool 仍不 merge。core 2000 的突破不只 Error/Tool，超长 `Raw` 也不受 cap。
 4. **三处流式粘连测试夹具**：parser / reducer / bridge。后续 delta 除追加 arguments 外，非空 `name` 也会更新 tool 状态。
 5. **气泡标明本轮走官方 resume 还是 Hub 拼接**：避免用户以为 Hub 库等于 CLI 上下文。resume 失败当轮不重试 stitch。
-6. **取消与 `Finished.ok`**：生产取消时 `ChatEvent::Finished.ok=true`（`Cancelled` 不是 hard failure）；`AgentFinished` 无 `ok` 字段，终态在 `message.status=cancelled`。mock 取消为 `ok=false`。正常路径 `agentFinished(cancelled)` 会先收终态；过程项若仍 running，reducer 会按 `Finished.ok` 标成成功。
+6. **取消与 `Finished`（已修）**：`ok` 仍是 `!is_hard_failure`；新增 `cancelled`。reducer 按 `cancelled` 收相，mock 与生产对齐。
 
 本地对照时 `deepseek-harness/` 子模块未检出，DSH Loop / Client 的逐行源码以 pin `141eb6fe` 官方文档与类型声明为准，不是本机 `packages/**/*.ts`。若要做字节级 diff，需先检出子模块再读 `packages/core/{session,agent,tools,agent-loop}` 与 `packages/client/runtime/src/client/sessions/`。
 

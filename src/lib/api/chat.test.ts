@@ -161,7 +161,8 @@ describe('chat API (browser mock)', () => {
     const last = events.at(-1);
     expect(last?.type).toBe('finished');
     if (last?.type === 'finished') {
-      expect(last.ok).toBe(false);
+      expect(last.ok).toBe(true);
+      expect(last.cancelled).toBe(true);
     }
   });
 

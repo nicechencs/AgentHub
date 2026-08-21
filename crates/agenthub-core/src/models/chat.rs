@@ -80,6 +80,9 @@ pub struct Conversation {
     /// Official CLI session id captured from the last print-mode run, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_session_id: Option<String>,
+    /// Runtime projection: a live `status=running` message exists (not persisted).
+    #[serde(default)]
+    pub sending: bool,
 }
 
 /// One message in a conversation.
@@ -202,7 +205,12 @@ pub enum ChatEvent {
         message: ChatMessage,
     },
     #[serde(rename_all = "camelCase")]
-    Finished { turn: i64, ok: bool },
+    Finished {
+        turn: i64,
+        ok: bool,
+        #[serde(default)]
+        cancelled: bool,
+    },
     #[serde(rename_all = "camelCase")]
     Error { message: String },
 }

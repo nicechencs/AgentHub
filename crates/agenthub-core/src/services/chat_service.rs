@@ -70,6 +70,7 @@ impl ChatService {
             created_at: now.clone(),
             updated_at: now,
             native_session_id: None,
+            sending: false,
         };
         self.repo.create_conversation(&conv)?;
         Ok(conv)
@@ -561,6 +562,7 @@ impl ChatService {
         on_event(ChatEvent::Finished {
             turn,
             ok: report_ok,
+            cancelled: results.iter().any(|r| r.status == RunStatus::Cancelled),
         });
         Ok(())
     }
