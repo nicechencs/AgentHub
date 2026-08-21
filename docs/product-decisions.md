@@ -96,7 +96,8 @@ Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口
 | 组合 | 实际 | 原因 |
 |---|---|---|
 | Claude 订阅 → Codex | **产品不做** | Codex 不会用 Claude 这套登录，本产品不走这条 |
-| 任一国产 OAuth（Kimi `/login`、GLM / DeepSeek 登录等）→ 任意工具 | **产品不做** | 不为中国产 OAuth 开边，也不把它转成 API |
+| Kimi 会员 OAuth（Kimi CLI `/login`）→ 任意工具 | **产品不做** | 会员登录不能写给别人、也不能本机转发；Kimi 接到其他工具只用会员 **Key** |
+| 其他国产 OAuth（GLM / DeepSeek 登录等）→ 任意工具 | **产品不做** | 不为中国产 OAuth 开边，也不把它转成 API |
 | Grok 订阅 → Claude | **本机转发** | Claude 听 Messages，上游是 Grok Responses |
 | Grok 订阅 → Codex | **本机转发** | Codex 连本机转发，上游是 Grok Responses（cli-chat-proxy） |
 | Codex 订阅 → Claude | **本机转发** | Claude 只听自己那套接口；这是本机转发，不是写 Claude 官方登录 |
@@ -138,7 +139,7 @@ Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口
 
 ```mermaid
 flowchart LR
-  kimi["Kimi 会员"] --> kTargets["Claude · Pi · Grok"]
+  kimi["Kimi 会员 Key"] --> kTargets["Claude · Pi · Grok"]
   glm["智谱 / DeepSeek"] --> gTargets["Claude · Pi · Codex"]
   oai["OpenAI Key"] --> oTargets["Pi · Grok"]
   anth["Anthropic Key"] --> pi1["Pi"]
@@ -164,7 +165,7 @@ flowchart LR
 ```
 
 Claude 订阅接到 Codex：**产品不做**（不是「以后再转发」）。  
-中国产 AI 的 OAuth（含 Kimi CLI managed OAuth）接到任何工具：**产品不做**（不开边，也不转成 API）。现有国产路由只认官方 API Key。
+Kimi 会员 OAuth 接到任何工具：**产品不做**（不写进对方、也不本机转发）。Kimi 接到其他工具只用会员 Key。其他国产 OAuth 同样不开边、不转成 API。
 
 ## 3. 同一份登录，接到谁，做法可以不同
 
@@ -173,6 +174,7 @@ Claude 订阅接到 Codex：**产品不做**（不是「以后再转发」）。
 | 这份登录 | → Claude | → Pi | → Codex | → Grok |
 |---|---|---|---|---|
 | Kimi 会员 Key | 只改配置：填 Claude 能用的地址 | 只改配置：写进 Pi | 本机转发 | 可写 |
+| Kimi 会员 OAuth | **产品不做** | **产品不做** | **产品不做** | **产品不做** |
 | OpenAI Key | — | 只改配置：写进 Pi | 本机转发（还没做） | 可写 |
 | xAI Key | — | 只改配置：写进 Pi | — | 换到这份登录 |
 | GLM / DeepSeek Key | 只改配置：填 Claude 能用的地址 | 只改配置：写进 Pi | 只改配置：官方有 Codex 要的接口 | — |
@@ -198,7 +200,8 @@ DeepSeek 还可以直接接到 DeepSeek 自己的工具（直接改配置）。
   → 否则接不上（写明缺的是什么）
 ```
 
-Claude 订阅 → Codex 是**产品不做**，不是「以后再转发」。
+Claude 订阅 → Codex 是**产品不做**，不是「以后再转发」。  
+Kimi 会员 OAuth → 任意工具是**产品不做**（不转发、不写进对方）。Kimi 接到其他工具只用会员 Key。
 
 ## 4. 和本产品的边界
 
@@ -228,7 +231,7 @@ Claude 订阅 → Codex 是**产品不做**，不是「以后再转发」。
 
 1. **直接改配置补齐**：一把 Key 接到更多已登记的工具；GLM / DeepSeek → Pi、→ Codex 已可试写。单接口 Key 按图继续补。
 2. **写进对方认的登录，先用已有的**：Claude / Codex / Grok 订阅 → Pi。**当前**：这三条已可试写（写进 Pi 自己的登录，之后由 Pi 刷新）。再看别的工具有没有同类位置。
-3. **本机转发旗舰**：Codex 订阅 → Claude Code / Grok；Grok 订阅 → Claude / Codex。Claude 订阅 → Codex 明确产品不做。国产 OAuth 不开边、不转 API，不是待评估候选。
+3. **本机转发旗舰**：Codex 订阅 → Claude Code / Grok；Grok 订阅 → Claude / Codex。Claude 订阅 → Codex 明确产品不做。Kimi 会员 OAuth 不开边、不转发；Kimi 接到其他工具只用会员 Key。其他国产 OAuth 同样不开边、不转 API，不是待评估候选。
 4. 管理面：登录状态、额度、最小探测、转发启停放在现有页面，不另做工作台。
 
 ## 7. 给实现的对照
