@@ -492,7 +492,7 @@ pub(super) fn actions_for(
             action(
                 "requires_local_bridge",
                 "Claude Code",
-                "Claude Messages 与 xAI Chat Completions 需要本地双向协议转换。",
+                "Claude Messages 与 xAI Responses 需要本地双向协议转换。",
                 None,
                 false,
             ),

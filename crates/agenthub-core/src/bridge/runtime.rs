@@ -36,8 +36,24 @@ pub enum BridgeUpstreamProtocol {
     KimiChatCompletions,
     /// Anthropic API Key → Codex: Messages + `x-api-key` / `anthropic-version`.
     AnthropicMessages,
-    /// Codex subscription OAuth → Claude Code: Messages downstream, Responses upstream.
+    /// Codex subscription OAuth: Responses upstream (ChatGPT). Local surface is
+    /// per-target ([`BridgeLocalSurface`]).
     CodexResponsesOauth,
+    /// Grok / xAI subscription OAuth: Responses upstream (CLI chat proxy).
+    XaiResponsesOauth,
+}
+
+/// Local HTTP dialect this listener exposes. One listener, one surface.
+///
+/// Chosen from the *target* Agent, not sniffed from the upstream host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BridgeLocalSurface {
+    /// `POST /v1/responses` (Codex, Grok CLI `api_backend=responses`).
+    Responses,
+    /// `POST /v1/messages` (Claude Code).
+    Messages,
+    /// `POST /v1/chat/completions` (Kimi / DSH).
+    ChatCompletions,
 }
 
 impl Default for BridgeUpstreamProtocol {
@@ -55,6 +71,7 @@ pub struct BridgeUpstreamConfig {
     pub source_connection_id: Option<String>,
     pub auth: ResolvedAuth,
     pub protocol: BridgeUpstreamProtocol,
+    pub local_surface: BridgeLocalSurface,
 }
 
 /// Inputs required to start one independent local bridge instance.

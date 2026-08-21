@@ -6,8 +6,10 @@
 //! [`crate::models::capability`].
 //!
 //! Codex / ChatGPT official login → Claude is Messages local-bridge.
-//! Codex / ChatGPT official login → Grok / Kimi / DSH is Chat Completions
-//! local-bridge to Responses OAuth upstream. The App Server candidate remains closed.
+//! Codex / ChatGPT official login → Grok is Responses local-bridge; → Kimi / DSH
+//! is Chat Completions local-bridge to Responses OAuth upstream. Grok subscription
+//! → Claude / Codex is xAI Responses OAuth (cli-chat-proxy). The App Server
+//! candidate remains closed.
 
 use super::{
     agent_bind_capability, speaks_intersect_accepts, AGENT_NO_WRITER_REASON,
@@ -125,6 +127,8 @@ pub enum AdapterUpstreamTransport {
     CodexAppServer,
     /// Future Codex → Claude candidate: approved Responses + OAuth (gate closed).
     CodexResponsesOauth,
+    /// Grok / xAI subscription OAuth: Responses upstream (CLI chat proxy).
+    XaiResponsesOauth,
     /// No transport selected / not applicable.
     None,
 }
@@ -293,7 +297,9 @@ fn surface_from_cell(
 ) -> (AdapterRoute, AdapterSupport, AdapterGateKind) {
     let subscription_transport = matches!(
         cell.key.transport,
-        AdapterUpstreamTransport::CodexAppServer | AdapterUpstreamTransport::CodexResponsesOauth
+        AdapterUpstreamTransport::CodexAppServer
+            | AdapterUpstreamTransport::CodexResponsesOauth
+            | AdapterUpstreamTransport::XaiResponsesOauth
     );
 
     // Closed experimental subscription candidates always surface as unsupported.
@@ -433,7 +439,7 @@ const CODEX_CLAUDE_LIMITS: &[&str] = &[
 
 const GROK_CLAUDE_LIMITS: &[&str] = &[
     "会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 xAI OAuth token 不进 Claude。",
-    "实验性协议桥接：Claude Messages → xAI Chat Completions；AgentHub 需保持在托盘运行。",
+    "实验性协议桥接：Claude Messages → xAI Responses (cli-chat-proxy)；AgentHub 需保持在托盘运行。",
     "Grok access token 过期后需重新同步 Grok 登录；Hub 本轮不自动 refresh。",
     "固定端口被占用时会尝试重新分配端口并写回配置。",
 ];
@@ -824,7 +830,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         key: AdapterCapabilityKey {
             source: AdapterSourceProduct::XaiGrokSubscription,
             credential: AdapterCredentialClass::OauthOther,
-            transport: AdapterUpstreamTransport::LocalBridgeChatCompletions,
+            transport: AdapterUpstreamTransport::XaiResponsesOauth,
             target: AgentId::Claude,
             protocol: AdapterTargetProtocol::AnthropicMessages,
             version: MATRIX_VERSION,
@@ -842,7 +848,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         key: AdapterCapabilityKey {
             source: AdapterSourceProduct::XaiGrokSubscription,
             credential: AdapterCredentialClass::OauthOther,
-            transport: AdapterUpstreamTransport::LocalBridgeChatCompletions,
+            transport: AdapterUpstreamTransport::XaiResponsesOauth,
             target: AgentId::Codex,
             protocol: AdapterTargetProtocol::OpenAiResponses,
             version: MATRIX_VERSION,
@@ -937,7 +943,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
             credential: AdapterCredentialClass::OauthAuthJson,
             transport: AdapterUpstreamTransport::CodexResponsesOauth,
             target: AgentId::Grok,
-            protocol: AdapterTargetProtocol::OpenAiChatCompletions,
+            protocol: AdapterTargetProtocol::OpenAiResponses,
             version: MATRIX_VERSION,
         },
         route: AdapterRoute::LocalBridge,
@@ -955,7 +961,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
             credential: AdapterCredentialClass::OauthOther,
             transport: AdapterUpstreamTransport::CodexResponsesOauth,
             target: AgentId::Grok,
-            protocol: AdapterTargetProtocol::OpenAiChatCompletions,
+            protocol: AdapterTargetProtocol::OpenAiResponses,
             version: MATRIX_VERSION,
         },
         route: AdapterRoute::LocalBridge,
@@ -1170,6 +1176,7 @@ impl AdapterCapabilityDecision {
                 self.transport,
                 AdapterUpstreamTransport::CodexAppServer
                     | AdapterUpstreamTransport::CodexResponsesOauth
+                    | AdapterUpstreamTransport::XaiResponsesOauth
             )
         {
             self.route = AdapterRoute::Unsupported;

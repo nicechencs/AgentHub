@@ -105,7 +105,7 @@ export function buildPlan(
         : analysis.route === 'local_bridge' && request.targetAgentId === 'grok'
           ? [
               change('grok', 'baseUrl', 'http://127.0.0.1:<本机端口>/v1'),
-              change('grok', 'apiBackend', 'chat_completions'),
+              change('grok', 'apiBackend', 'responses'),
               secretChange('grok', 'apiKey'),
             ]
         : analysis.route === 'local_bridge' && request.targetAgentId === 'kimi'

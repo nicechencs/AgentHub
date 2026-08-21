@@ -31,7 +31,7 @@ pub enum AgentAccept {
     PiCodexOauthSlot,
     /// Pi xAI OAuth / subscription login slot.
     PiXaiOauthSlot,
-    /// OpenAI Chat Completions via Grok `config.toml`.
+    /// Grok `config.toml` (`api_backend` is `responses` | `chat_completions` | `messages`).
     OpenAiChatToml,
     /// OpenAI Chat Completions (Kimi `config.toml`).
     OpenAiChat,
@@ -55,7 +55,12 @@ impl AgentAccept {
             Self::PiAnthropicOauthSlot => &[TicketProtocol::AnthropicPkce],
             Self::PiCodexOauthSlot => &[TicketProtocol::OpenaiCodexPkce],
             Self::PiXaiOauthSlot => &[TicketProtocol::XaiDeviceCode],
-            Self::OpenAiChatToml | Self::OpenAiChat => &[TicketProtocol::OpenaiChat],
+            Self::OpenAiChatToml => &[
+                TicketProtocol::OpenaiResponses,
+                TicketProtocol::OpenaiChat,
+                TicketProtocol::AnthropicMessages,
+            ],
+            Self::OpenAiChat => &[TicketProtocol::OpenaiChat],
             // workbuddy.rs writes models.json; ProviderPresets is unsupported
             // and no ticket wire protocol is documented for that slot.
             Self::WorkBuddyModelsJson => &[],

@@ -713,7 +713,7 @@ describe('plan 预览人话化', () => {
         reason: 'Grok 登录会经本机路由接到 Claude Code。',
         limitations: [
           '会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 xAI OAuth token 不进 Claude。',
-          '实验性协议桥接：Claude Messages → xAI Chat Completions；AgentHub 需保持在托盘运行。',
+          '实验性协议桥接：Claude Messages → xAI Responses (cli-chat-proxy)；AgentHub 需保持在托盘运行。',
         ],
       }),
       reusePath: 'local_bridge',

@@ -286,6 +286,7 @@ fn claude_and_grok_oauth_accounts_have_subscription_surfaces_and_contract_speaks
         .find(|ticket| ticket.id == "account:grok-oauth")
         .unwrap();
     assert_eq!(grok.surface, TicketSurface::GrokXaiSubscription);
+    assert!(grok.speaks.contains(&TicketProtocol::OpenaiResponses));
     assert!(grok.speaks.contains(&TicketProtocol::OpenaiChat));
     assert!(grok.speaks.contains(&TicketProtocol::XaiDeviceCode));
 }

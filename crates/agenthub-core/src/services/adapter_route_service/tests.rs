@@ -1264,6 +1264,14 @@ fn official_codex_oauth_to_grok_kimi_dsh_is_writable_local_bridge() {
             "{target:?} plan must write loopback {field}: {:?}",
             plan.changes
         );
+        if target == AgentId::Grok {
+            assert!(
+                plan.changes.iter().any(|change| change.field == "apiBackend"
+                    && change.value.as_deref() == Some("responses")),
+                "Codex→Grok local_bridge must plan apiBackend=responses: {:?}",
+                plan.changes
+            );
+        }
         assert!(!plan.reason.contains("实验"), "{target:?}");
         assert!(!plan.reason.contains("未验证"), "{target:?}");
         assert!(!serde_json::to_string(&plan)

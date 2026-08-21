@@ -238,7 +238,7 @@ describe('mock ticket wallet', () => {
 
     const grok = wallet.tickets.find((t) => t.id === 'account:grok-oauth');
     expect(grok?.surface).toBe('grok-xai-subscription');
-    expect(grok?.speaks).toEqual(['openai-chat', 'xai-device-code']);
+    expect(grok?.speaks).toEqual(['openai-responses', 'openai-chat', 'xai-device-code']);
     expect(grok?.importedFrom).toBe('grok');
 
     const pi = wallet.tickets.find((t) => t.id === 'account:pi-oauth');
@@ -330,7 +330,7 @@ describe('mock ticket wallet', () => {
     });
     expect(wallet.tickets.find((t) => t.id === 'provider:xai-host')).toMatchObject({
       surface: 'xai-api',
-      speaks: ['openai-chat'],
+      speaks: ['openai-responses', 'openai-chat'],
     });
     expect(wallet.tickets.find((t) => t.id === 'account:glm-acc')).toMatchObject({
       surface: 'glm-coding-plan',
