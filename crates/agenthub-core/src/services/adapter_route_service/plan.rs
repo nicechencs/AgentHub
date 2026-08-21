@@ -178,7 +178,7 @@ impl AdapterRouteService {
                         Some("http://127.0.0.1:<本机端口>/v1"),
                         false,
                     ),
-                    change("grok", "apiBackend", Some("chat_completions"), false),
+                    change("grok", "apiBackend", Some("responses"), false),
                     change("grok", "apiKey", None, true),
                 ],
             ),

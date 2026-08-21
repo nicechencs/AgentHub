@@ -238,26 +238,65 @@ pub fn to_responses_request(request: &BridgeRequest) -> Value {
     Value::Object(body)
 }
 
-/// Official ChatGPT / Codex Responses rejects leftover `grok-*` and `claude-*`
-/// model ids (400). Do not invent a ChatGPT model name to replace them — omit
-/// instead.
-pub fn is_leftover_grok_model(model: &str) -> bool {
+/// Same Responses shape as [`to_responses_request`], plus Grok `reasoning` when
+/// passthrough has a mappable `reasoning_effort`. Codex / Kimi keep using
+/// [`to_responses_request`] so they never receive this object.
+pub fn to_grok_responses_request(request: &BridgeRequest) -> Value {
+    let mut body = to_responses_request(request);
+    let Some(object) = body.as_object_mut() else {
+        return body;
+    };
+
+    if let Some(effort) = grok_reasoning_effort(request.passthrough.get("reasoning_effort")) {
+        object.insert(
+            "reasoning".to_owned(),
+            json!({ "effort": effort, "summary": "detailed" }),
+        );
+        let include_item = "reasoning.encrypted_content";
+        if let Some(Value::Array(items)) = object.get_mut("include") {
+            if !items.iter().any(|item| item.as_str() == Some(include_item)) {
+                items.push(Value::String(include_item.to_owned()));
+            }
+        } else {
+            object.insert("include".to_owned(), json!([include_item]));
+        }
+    }
+
+    if !object.contains_key("prompt_cache_key") {
+        if let Some(key) = request
+            .passthrough
+            .get("prompt_cache_key")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        {
+            object.insert("prompt_cache_key".to_owned(), Value::String(key.to_owned()));
+        }
+    }
+
+    body
+}
+
+/// Official ChatGPT / Codex Responses rejects leftover bridge / CN model ids
+/// (400). Do not invent a ChatGPT model name to replace them — omit instead.
+pub fn is_leftover_bridge_model(model: &str) -> bool {
     let model = model.trim();
-    model.starts_with("grok-") || model.starts_with("claude-")
+    model.starts_with("grok-")
+        || model.starts_with("claude-")
+        || model.starts_with("kimi-")
+        || model.starts_with("deepseek-")
+        || (model.starts_with("agenthub_") && model.ends_with("_bridge"))
 }
 
 /// Write the Responses `model` for official Codex upstream.
 ///
-/// Configured override wins when it is non-empty and not leftover `grok-*` /
-/// `claude-*`. Incoming leftovers are dropped rather than rewritten as `gpt-*`.
+/// Configured override wins when it is non-empty and not leftover. Incoming
+/// leftovers are dropped rather than rewritten as `gpt-*`.
 pub fn apply_official_codex_model(body: &mut Value, incoming: &str, configured: Option<&str>) {
     let configured = configured
         .map(str::trim)
-        .filter(|value| !value.is_empty() && !is_leftover_grok_model(value));
-    let incoming = incoming
-        .trim()
-        .to_owned();
-    let incoming = if incoming.is_empty() || is_leftover_grok_model(&incoming) {
+        .filter(|value| !value.is_empty() && !is_leftover_bridge_model(value));
+    let incoming = incoming.trim().to_owned();
+    let incoming = if incoming.is_empty() || is_leftover_bridge_model(&incoming) {
         None
     } else {
         Some(incoming)
@@ -1904,5 +1943,43 @@ fn grok_reasoning_effort(value: Option<&Value>) -> Option<String> {
         Value::String(effort) => effort.as_str(),
         _ => return None,
     };
-    matches!(effort, "low" | "medium" | "high" | "xhigh").then(|| effort.to_owned())
+    grok_effort_name(effort)
+}
+
+fn grok_effort_name(effort: &str) -> Option<String> {
+    matches!(effort, "low" | "medium" | "high" | "xhigh" | "max").then(|| effort.to_owned())
+}
+
+/// Map Anthropic Messages top-level `thinking` to Grok `reasoning_effort`.
+///
+/// The original `thinking` object is never copied into passthrough.
+pub(crate) fn grok_reasoning_effort_from_thinking(value: Option<&Value>) -> Option<String> {
+    let object = value?.as_object()?;
+    match object.get("type").and_then(Value::as_str)? {
+        "disabled" => None,
+        "enabled" | "adaptive" => {
+            if let Some(effort) = object.get("effort").and_then(Value::as_str) {
+                match effort {
+                    "minimal" => return Some("low".to_owned()),
+                    "low" | "medium" | "high" | "xhigh" | "max" => return Some(effort.to_owned()),
+                    _ => {}
+                }
+            }
+            Some(grok_effort_from_thinking_budget(
+                object.get("budget_tokens"),
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn grok_effort_from_thinking_budget(value: Option<&Value>) -> String {
+    let budget = value.and_then(Value::as_f64).unwrap_or(0.0);
+    if budget > 0.0 && budget <= 2048.0 {
+        "low".to_owned()
+    } else if budget > 10000.0 {
+        "high".to_owned()
+    } else {
+        "medium".to_owned()
+    }
 }

@@ -365,7 +365,7 @@ pub(crate) fn restore_adapter_bridges(
 
             // Preferred-port rebind must rewrite profile.local_port and the
             // generated target endpoint; otherwise restore leaves a dead endpoint.
-            if Some(runtime.status.port) != profile.local_port {
+            if Some(runtime.status.port) != profile.local_port || material.needs_reprojection() {
                 let _target_guard = coordinator.lock_target(profile.target_agent_id).await;
                 if let Err(error) = with_hub_blocking(hub.clone(), {
                     let profile_id = profile.id.clone();

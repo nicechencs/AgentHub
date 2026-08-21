@@ -6,6 +6,7 @@ use std::collections::HashSet;
 
 use serde_json::{json, Map, Value};
 
+use crate::bridge::protocol::responses::grok_reasoning_effort_from_thinking;
 use crate::bridge::types::{
     BridgeContent, BridgeMessage, BridgeRequest, BridgeTool, IrEvent, MessageRole, ProtocolError,
     ProtocolResult, StopReason, ToolChoice, Usage,
@@ -13,10 +14,11 @@ use crate::bridge::types::{
 
 /// Parse the subset of `POST /v1/messages` that the Codex→Claude kernel can represent.
 ///
-/// Top-level `thinking` configuration is ignored and dropped (Claude Code always sends
-/// it). `thinking` / `redacted_thinking` content blocks in history still fail closed
-/// rather than silently dropping information Claude Code would assume the model received.
-/// Multimodal blocks and server tools also fail closed.
+/// Top-level `thinking` is mapped to passthrough `reasoning_effort` for Grok; the
+/// original object is never forwarded. `thinking` / `redacted_thinking` content
+/// blocks in history still fail closed rather than silently dropping information
+/// Claude Code would assume the model received. Multimodal blocks and server
+/// tools also fail closed.
 pub fn parse_messages_request(value: &Value) -> ProtocolResult<BridgeRequest> {
     let object = value
         .as_object()
@@ -58,6 +60,9 @@ pub fn parse_messages_request(value: &Value) -> ProtocolResult<BridgeRequest> {
         .map(|(key, item)| (key.clone(), item.clone()))
         .collect::<Map<String, Value>>();
     passthrough.insert("max_output_tokens".to_owned(), max_tokens.clone());
+    if let Some(effort) = grok_reasoning_effort_from_thinking(object.get("thinking")) {
+        passthrough.insert("reasoning_effort".to_owned(), Value::String(effort));
+    }
 
     // Anthropic stop_sequences / metadata / temperature etc. stay in passthrough for a
     // deliberate future mapping policy rather than being silently applied upstream.

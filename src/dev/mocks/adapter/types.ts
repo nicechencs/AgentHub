@@ -77,6 +77,7 @@ export const CODEX_SUBSCRIPTION_TO_DSH_REASON =
 export const CODEX_GROK_RULE_ID = 'codex-subscription-to-grok-v1';
 export const CODEX_KIMI_RULE_ID = 'codex-subscription-to-kimi-v1';
 export const CODEX_DSH_RULE_ID = 'codex-subscription-to-dsh-v1';
+/** Codex subscription → Grok/Kimi/DSH local-bridge rules (Grok local is Responses; Kimi/DSH stay Chat). */
 export const CODEX_CHAT_BRIDGE_RULE_IDS = new Set([
   CODEX_GROK_RULE_ID,
   CODEX_KIMI_RULE_ID,
@@ -138,7 +139,7 @@ export function agentBindCapability(id: string): { accepts: TicketProtocol[]; wr
         writer: true,
       };
     case 'grok':
-      return { accepts: ['openai-chat'], writer: true };
+      return { accepts: ['openai-responses', 'openai-chat', 'anthropic-messages'], writer: true };
     case 'kimi':
       return { accepts: ['openai-chat'], writer: true };
     case 'dsh':
@@ -161,15 +162,16 @@ export function sourceSpeaks(source: RouteSourceLabel): TicketProtocol[] {
     case 'anthropic_api_key':
       return ['anthropic-messages'];
     case 'openai_api_key':
-    case 'xai_api_key':
       return ['openai-chat'];
+    case 'xai_api_key':
+      return ['openai-responses', 'openai-chat'];
     case 'codex_subscription':
     case 'codex_subscription_oauth_other':
       return ['openai-responses', 'openai-codex-pkce'];
     case 'claude_subscription':
       return ['anthropic-messages', 'anthropic-pkce'];
     case 'grok_xai_subscription':
-      return ['openai-chat', 'xai-device-code'];
+      return ['openai-responses', 'openai-chat', 'xai-device-code'];
     default:
       return [];
   }

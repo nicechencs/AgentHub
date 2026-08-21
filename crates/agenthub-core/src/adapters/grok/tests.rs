@@ -116,7 +116,7 @@ api_key = "old"
         agent: AgentId::Grok,
         raw: serde_json::json!({
             "format": "toml",
-            "content": "[models]\ndefault = \"agenthub_codex_bridge\"\n\n[model.\"agenthub_codex_bridge\"]\nbase_url = \"http://127.0.0.1:32123/v1\"\napi_key = \"ahb_local\"\napi_backend = \"chat_completions\"\n",
+            "content": "[models]\ndefault = \"agenthub_codex_bridge\"\n\n[model.\"agenthub_codex_bridge\"]\nbase_url = \"http://127.0.0.1:32123/v1\"\napi_key = \"ahb_local\"\napi_backend = \"responses\"\n",
         }),
     });
     match prev {
@@ -126,7 +126,7 @@ api_key = "old"
     result.unwrap();
     let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
     assert!(text.contains("http://127.0.0.1:32123/v1"));
-    assert!(text.contains("api_backend = \"chat_completions\""));
+    assert!(text.contains("api_backend = \"responses\""));
     assert!(!text.contains("grok-4.5"));
     assert!(!text.contains("gpt-"));
 }

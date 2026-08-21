@@ -12,6 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde_json::{json, Map, Value};
 
+use crate::bridge::grok_cli::{grok_cli_identity_header_pairs, GROK_CLI_PROXY_BASE_URL};
 use crate::catalog::limits::{ACCOUNT_QUOTA_CACHE_TTL, ACCOUNT_QUOTA_HTTP_TIMEOUT};
 use crate::error::{AppError, Result};
 use crate::logging::targets;
@@ -404,12 +405,6 @@ fn fetch_claude_quota(account: &Account) -> Result<QuotaSnapshot> {
 // Monthly: GET https://cli-chat-proxy.grok.com/v1/billing
 // Does not consume model tokens (list-safe).
 
-const GROK_CLI_BASE: &str = "https://cli-chat-proxy.grok.com/v1";
-const GROK_BILLING_WEEKLY: &str = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
-const GROK_BILLING_MONTHLY: &str = "https://cli-chat-proxy.grok.com/v1/billing";
-/// User-Agent identity sent with the Grok billing probe.
-const GROK_CLI_VERSION: &str = "0.2.114";
-
 fn fetch_grok_quota(account: &Account) -> Result<QuotaSnapshot> {
     let access = extract_access_token(account).ok_or_else(|| {
         AppError::message(
@@ -419,8 +414,12 @@ fn fetch_grok_quota(account: &Account) -> Result<QuotaSnapshot> {
     })?;
     let now = Utc::now();
 
-    let weekly = http_get_json_grok_billing(GROK_BILLING_WEEKLY, &access);
-    let monthly = http_get_json_grok_billing(GROK_BILLING_MONTHLY, &access);
+    let weekly = http_get_json_grok_billing(
+        &format!("{GROK_CLI_PROXY_BASE_URL}/billing?format=credits"),
+        &access,
+    );
+    let monthly =
+        http_get_json_grok_billing(&format!("{GROK_CLI_PROXY_BASE_URL}/billing"), &access);
 
     let weekly_body = weekly.ok();
     let monthly_body = monthly.ok();
@@ -438,19 +437,17 @@ fn fetch_grok_quota(account: &Account) -> Result<QuotaSnapshot> {
             "Grok billing returned no usage percent / plan",
         ));
     }
-    let _ = GROK_CLI_BASE; // documented base for future responses probe
     Ok(snap)
 }
 
 fn http_get_json_grok_billing(url: &str, access: &str) -> Result<Value> {
-    let ua = format!("grok-pager/{GROK_CLI_VERSION} grok-shell/{GROK_CLI_VERSION}");
     let mut req = ureq::get(url)
         .set("Authorization", &format!("Bearer {access}"))
         .set("Accept", "application/json")
-        .set("Content-Type", "application/json")
-        .set("x-xai-token-auth", "xai-grok-cli")
-        .set("x-grok-client-version", GROK_CLI_VERSION)
-        .set("User-Agent", &ua);
+        .set("Content-Type", "application/json");
+    for (name, value) in grok_cli_identity_header_pairs() {
+        req = req.set(name, &value);
+    }
     req = req.timeout(ACCOUNT_QUOTA_HTTP_TIMEOUT);
     let resp = req.call().map_err(|e| {
         AppError::message("account.quota", format!("Grok billing request failed: {e}"))

@@ -113,38 +113,54 @@ fn grok_claude_account_request(source_id: &str) -> AdapterBridgePrepareRequest {
     }
 }
 
+fn grok_subscription_account(id: &str, access_token: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        label: "Grok subscription".into(),
+        credentials: json!({
+            "format": "oauth",
+            "access_token": access_token,
+            "refresh_token": "grok-refresh-secret"
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+fn persist_mutated_provider(db: &Database, mut provider: Provider) {
+    provider.updated_at = "mutated".into();
+    ProviderRepo::new(db.clone()).update(&provider).unwrap();
+}
+
 #[test]
 fn grok_subscription_prepare_uses_xai_chat_and_projects_only_loopback() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())
-        .create(&Account {
-            id: "grok-subscription".into(),
-            agent_id: AgentId::Grok,
-            kind: AccountKind::Oauth,
-            label: "Grok subscription".into(),
-            credentials: json!({
-                "format": "oauth",
-                "access_token": "grok-upstream-secret",
-                "refresh_token": "grok-refresh-secret"
-            }),
-            extra: json!({}),
-            status: "active".into(),
-            is_current: false,
-            created_at: "now".into(),
-            updated_at: "now".into(),
-        })
+        .create(&grok_subscription_account(
+            "grok-subscription",
+            "grok-upstream-secret",
+        ))
         .unwrap();
     let service = AdapterBridgeService::new(db);
     let prepared = service
         .prepare(&grok_claude_account_request("grok-subscription"))
         .unwrap();
     let spec = prepared.runtime_material().start_spec(Some(0));
-    assert_eq!(spec.upstream.base_url, "https://api.x.ai/v1");
+    assert_eq!(
+        spec.upstream.base_url,
+        crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL
+    );
     assert_eq!(spec.upstream.model.as_deref(), Some("grok-4.5"));
     assert_eq!(
         spec.upstream.protocol,
-        BridgeUpstreamProtocol::KimiChatCompletions
+        BridgeUpstreamProtocol::XaiResponsesOauth
     );
+    assert_eq!(spec.upstream.local_surface, BridgeLocalSurface::Messages);
     assert_eq!(spec.upstream.auth.token(), "grok-upstream-secret");
 
     let projection = prepared.provider_projection(43123).unwrap();
@@ -162,34 +178,26 @@ fn grok_subscription_prepare_uses_xai_chat_and_projects_only_loopback() {
 fn grok_subscription_prepare_codex_uses_xai_chat_and_codex_toml() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())
-        .create(&Account {
-            id: "grok-subscription".into(),
-            agent_id: AgentId::Grok,
-            kind: AccountKind::Oauth,
-            label: "Grok subscription".into(),
-            credentials: json!({
-                "format": "oauth",
-                "access_token": "grok-upstream-secret",
-                "refresh_token": "grok-refresh-secret"
-            }),
-            extra: json!({}),
-            status: "active".into(),
-            is_current: false,
-            created_at: "now".into(),
-            updated_at: "now".into(),
-        })
+        .create(&grok_subscription_account(
+            "grok-subscription",
+            "grok-upstream-secret",
+        ))
         .unwrap();
     let service = AdapterBridgeService::new(db);
     let prepared = service
         .prepare(&grok_codex_account_request("grok-subscription"))
         .unwrap();
     let spec = prepared.runtime_material().start_spec(Some(0));
-    assert_eq!(spec.upstream.base_url, "https://api.x.ai/v1");
+    assert_eq!(
+        spec.upstream.base_url,
+        crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL
+    );
     assert_eq!(spec.upstream.model.as_deref(), Some("grok-4.5"));
     assert_eq!(
         spec.upstream.protocol,
-        BridgeUpstreamProtocol::KimiChatCompletions
+        BridgeUpstreamProtocol::XaiResponsesOauth
     );
+    assert_eq!(spec.upstream.local_surface, BridgeLocalSurface::Responses);
     assert_eq!(spec.upstream.auth.token(), "grok-upstream-secret");
 
     let projection = prepared.provider_projection(43123).unwrap();
@@ -692,6 +700,7 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         upstream_base_url: format!("http://127.0.0.1:{upstream_port}"),
         upstream_model: "kimi-k2.5".into(),
         protocol: crate::bridge::BridgeUpstreamProtocol::KimiChatCompletions,
+        local_surface: BridgeLocalSurface::Responses,
         upstream_auth: ResolvedAuth::bearer("upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -717,6 +726,7 @@ async fn codex_responses_health_probe_does_not_request_models() {
         upstream_base_url: "http://127.0.0.1:9/should-not-be-called".into(),
         upstream_model: CODEX_DEFAULT_MODEL.into(),
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
+        local_surface: BridgeLocalSurface::Messages,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -727,6 +737,30 @@ async fn codex_responses_health_probe_does_not_request_models() {
         .verify_bound_health(runtime.port)
         .await
         .expect("local health is sufficient for Codex Responses");
+
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn xai_responses_health_probe_does_not_request_models() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "grok-health-profile".into(),
+        source_connection_id: "grok-subscription".into(),
+        preferred_port: None,
+        upstream_base_url: "http://127.0.0.1:9/should-not-be-called".into(),
+        upstream_model: crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.into(),
+        protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
+        local_surface: BridgeLocalSurface::Messages,
+        upstream_auth: ResolvedAuth::bearer("grok-upstream-secret"),
+        local_bearer: "local-secret".into(),
+    };
+    let host = crate::bridge::BridgeRuntimeHost::new();
+    let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
+
+    material
+        .verify_bound_health(runtime.port)
+        .await
+        .expect("local health is sufficient for xAI Responses");
 
     host.shutdown().await.unwrap();
 }
@@ -1067,6 +1101,20 @@ fn prepare_codex_subscription_projects_chat_loopback_for_grok_kimi_dsh() {
             haystack.contains(expected),
             "{target:?} missing {expected} in {field}: {haystack}"
         );
+        if target == AgentId::Grok {
+            assert!(
+                haystack.contains("api_backend = \"responses\""),
+                "Codex→Grok projection must write api_backend=responses: {haystack}"
+            );
+            assert_eq!(
+                prepared
+                    .runtime_material()
+                    .start_spec(None)
+                    .upstream
+                    .local_surface,
+                BridgeLocalSurface::Responses
+            );
+        }
         assert!(!haystack.contains("grok-"), "{target:?} leftover grok-*");
         assert!(!haystack.contains("gpt-"), "{target:?} invented ChatGPT model");
         assert!(!serde_json::to_string(&input)
@@ -1181,4 +1229,208 @@ fn prepare_anthropic_account_reuses_secret_resolver_and_projects_account_ref() {
         BridgeUpstreamProtocol::AnthropicMessages
     );
     assert!(!format!("{restored:?}").contains("sk-ant-account"));
+}
+
+#[test]
+fn legacy_grok_claude_kind_is_migratable_on_prepare() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&grok_subscription_account(
+            "grok-subscription",
+            "grok-upstream-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&grok_claude_account_request("grok-subscription"))
+        .unwrap();
+    let generated = create_projection(&db, &prepared, 43123);
+    let mut legacy = generated.clone();
+    legacy.meta["adapterBridge"]["kind"] = json!("messages_to_xai_chat_completions");
+    persist_mutated_provider(&db, legacy);
+
+    let retried = service
+        .prepare(&grok_claude_account_request("grok-subscription"))
+        .unwrap();
+    let input = match retried.provider_projection(43123).unwrap() {
+        AdapterBridgeProviderProjection::Update(input) => input,
+        other => panic!("expected update projection, got {other:?}"),
+    };
+    assert_eq!(
+        input.meta["adapterBridge"]["kind"],
+        "messages_to_xai_responses"
+    );
+    assert_eq!(input.meta["adapterRuleVersion"], 1);
+}
+
+#[test]
+fn legacy_grok_codex_kind_forces_meta_rewrite() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&grok_subscription_account(
+            "grok-subscription",
+            "grok-upstream-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&grok_codex_account_request("grok-subscription"))
+        .unwrap();
+    let generated = create_projection(&db, &prepared, 43123);
+    service.finalize(&prepared, 43123).unwrap();
+    let mut legacy = generated.clone();
+    legacy.meta["adapterBridge"]["kind"] = json!("responses_to_chat_completions");
+    persist_mutated_provider(&db, legacy);
+
+    let retried = service
+        .prepare(&grok_codex_account_request("grok-subscription"))
+        .unwrap();
+    assert_eq!(retried.profile().status, AdapterProfileStatus::Active);
+    assert_eq!(retried.profile().local_port, Some(43123));
+    let input = match retried.provider_projection(43123).unwrap() {
+        AdapterBridgeProviderProjection::Update(input) => input,
+        other => panic!("legacy kind must force Update even when Active+port match: {other:?}"),
+    };
+    assert_eq!(
+        input.meta["adapterBridge"]["kind"],
+        "responses_to_xai_responses"
+    );
+}
+
+#[test]
+fn legacy_codex_grok_chat_completions_toml_rewrites_to_responses() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&codex_subscription_account(
+            "codex-subscription",
+            "codex-upstream-access-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&codex_chat_request("codex-subscription", AgentId::Grok))
+        .unwrap();
+    let generated = create_projection(&db, &prepared, 43145);
+    service.finalize(&prepared, 43145).unwrap();
+    let mut legacy = generated.clone();
+    let content = legacy.settings_config["content"].as_str().unwrap();
+    legacy.settings_config["content"] = json!(content.replace(
+        "api_backend = \"responses\"",
+        "api_backend = \"chat_completions\""
+    ));
+    persist_mutated_provider(&db, legacy);
+
+    let retried = service
+        .prepare(&codex_chat_request("codex-subscription", AgentId::Grok))
+        .unwrap();
+    let input = match retried.provider_projection(43145).unwrap() {
+        AdapterBridgeProviderProjection::Update(input) => input,
+        other => panic!("expected update projection, got {other:?}"),
+    };
+    let content = input.settings_config["content"].as_str().unwrap();
+    assert!(content.contains("api_backend = \"responses\""));
+    assert!(!content.contains("api_backend = \"chat_completions\""));
+}
+
+#[test]
+fn legacy_projection_preflight_remove_succeeds() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&grok_subscription_account(
+            "grok-subscription",
+            "grok-upstream-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&grok_claude_account_request("grok-subscription"))
+        .unwrap();
+    let generated = create_projection(&db, &prepared, 43123);
+    let profile = service.finalize(&prepared, 43123).unwrap();
+    let mut legacy = generated.clone();
+    legacy.meta["adapterBridge"]["kind"] = json!("messages_to_xai_chat_completions");
+    persist_mutated_provider(&db, legacy);
+
+    let removal = service.preflight_remove(&profile.id).unwrap();
+    assert_eq!(removal.profile().id, profile.id);
+}
+
+#[test]
+fn legacy_projection_restore_flags_reprojection() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&grok_subscription_account(
+            "grok-subscription",
+            "grok-upstream-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&grok_codex_account_request("grok-subscription"))
+        .unwrap();
+    let generated = create_projection(&db, &prepared, 43123);
+    let profile = service.finalize(&prepared, 43123).unwrap();
+    let mut legacy = generated.clone();
+    legacy.meta["adapterBridge"]["kind"] = json!("responses_to_chat_completions");
+    persist_mutated_provider(&db, legacy);
+
+    let restored = service.resolve_restore_material(&profile.id).unwrap();
+    assert!(restored.needs_reprojection());
+}
+
+#[test]
+fn unknown_bridge_kind_fails_closed() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source(
+            "kimi-membership",
+            "upstream-membership-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service.prepare(&request("kimi-membership")).unwrap();
+    let generated = create_projection(&db, &prepared, 43121);
+    let mut unknown = generated.clone();
+    unknown.meta["adapterBridge"]["kind"] = json!("not_a_supported_kind");
+    persist_mutated_provider(&db, unknown);
+    assert_eq!(
+        service
+            .prepare(&request("kimi-membership"))
+            .unwrap_err()
+            .code(),
+        "adapter.provider_conflict"
+    );
+}
+
+#[test]
+fn legacy_toml_with_drifted_port_still_conflicts() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&codex_subscription_account(
+            "codex-subscription",
+            "codex-upstream-access-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&codex_chat_request("codex-subscription", AgentId::Grok))
+        .unwrap();
+    let generated = create_projection(&db, &prepared, 43145);
+    service.finalize(&prepared, 43145).unwrap();
+    let mut drifted = generated.clone();
+    let content = drifted.settings_config["content"].as_str().unwrap();
+    drifted.settings_config["content"] = json!(content
+        .replace(
+            "api_backend = \"responses\"",
+            "api_backend = \"chat_completions\""
+        )
+        .replace("43145", "43199"));
+    persist_mutated_provider(&db, drifted);
+    assert_eq!(
+        service
+            .prepare(&codex_chat_request("codex-subscription", AgentId::Grok))
+            .unwrap_err()
+            .code(),
+        "adapter.provider_conflict"
+    );
 }

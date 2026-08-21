@@ -134,7 +134,9 @@ impl TicketSurface {
                 TicketProtocol::OpenaiChat,
             ],
             Self::AnthropicApi => &[TicketProtocol::AnthropicMessages],
-            Self::OpenaiApi | Self::XaiApi => &[TicketProtocol::OpenaiChat],
+            Self::OpenaiApi => &[TicketProtocol::OpenaiChat],
+            // Responses is the native xAI surface; Chat Completions is legacy.
+            Self::XaiApi => &[TicketProtocol::OpenaiResponses, TicketProtocol::OpenaiChat],
             Self::GlmCodingPlan | Self::DeepseekApi => &[
                 TicketProtocol::AnthropicMessages,
                 TicketProtocol::OpenaiChat,
@@ -148,9 +150,11 @@ impl TicketSurface {
                 TicketProtocol::AnthropicMessages,
                 TicketProtocol::AnthropicPkce,
             ],
-            Self::GrokXaiSubscription => {
-                &[TicketProtocol::OpenaiChat, TicketProtocol::XaiDeviceCode]
-            }
+            Self::GrokXaiSubscription => &[
+                TicketProtocol::OpenaiResponses,
+                TicketProtocol::OpenaiChat,
+                TicketProtocol::XaiDeviceCode,
+            ],
             Self::Unknown => &[],
         }
     }
