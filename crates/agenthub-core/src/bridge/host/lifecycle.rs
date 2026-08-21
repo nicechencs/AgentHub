@@ -226,6 +226,7 @@ impl BridgeRuntimeHost {
             observed_upstream: Arc::clone(&observed_upstream),
             grok_replay: Arc::new(GrokReasoningReplay::new()),
             listed_models: spec.listed_models.clone().into(),
+            reload_upstream_auth: spec.reload_upstream_auth.clone(),
         };
         let app = router(state);
         let task_shutdown = accept_shutdown.clone();

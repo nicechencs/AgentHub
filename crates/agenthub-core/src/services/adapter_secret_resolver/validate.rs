@@ -243,6 +243,8 @@ impl AdapterSecretResolver {
                 "/access_token",
                 "/tokens/access_token",
                 "/body/tokens/access_token",
+                "/body/key",
+                "/key",
             ],
         )
         .ok_or_else(invalid_reference)?;

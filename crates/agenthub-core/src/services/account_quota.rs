@@ -919,7 +919,7 @@ fn parse_reset_field(w: &Value, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
 
 // ── Credential helpers ──────────────────────────────────────────────────────
 
-fn extract_access_token(account: &Account) -> Option<String> {
+pub(crate) fn extract_access_token(account: &Account) -> Option<String> {
     let c = &account.credentials;
     c.get("access_token")
         .or_else(|| c.get("access"))
@@ -930,6 +930,13 @@ fn extract_access_token(account: &Account) -> Option<String> {
         .map(|s| s.to_string())
         .or_else(|| {
             c.pointer("/body/tokens/access_token")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+        })
+        .or_else(|| {
+            c.pointer("/body/key")
                 .and_then(|v| v.as_str())
                 .map(str::trim)
                 .filter(|s| !s.is_empty())

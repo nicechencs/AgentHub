@@ -32,6 +32,7 @@ pub(super) struct ListenerState {
     pub(super) observed_upstream: Arc<Mutex<BridgeUpstreamStatus>>,
     pub(super) grok_replay: Arc<GrokReasoningReplay>,
     pub(super) listed_models: Arc<[String]>,
+    pub(super) reload_upstream_auth: Option<crate::bridge::UpstreamAuthReload>,
 }
 
 impl ListenerState {

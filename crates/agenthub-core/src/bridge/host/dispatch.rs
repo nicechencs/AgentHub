@@ -30,7 +30,9 @@ use crate::bridge::protocol::responses::{
     IrToResponsesSse, ResponsesStreamToIr,
 };
 use crate::bridge::runtime::{BridgeLocalSurface, BridgeUpstreamProtocol};
-use crate::bridge::types::{BridgeEvent, BridgeRequest, IrEvent, ProtocolError};
+use crate::bridge::types::{
+    BridgeEvent, EmissionState, IrEvent, ProtocolError, RetryClass, RetryGate,
+};
 
 use super::http::{
     error_response, has_valid_local_auth, log_protocol_error, protocol_error_response,
@@ -180,6 +182,42 @@ fn map_upstream_http_error(
     )
 }
 
+const ACCESS_JWT_EXPIRY_SKEW_SECS: i64 = 60;
+
+fn oauth_subscription_protocol(protocol: BridgeUpstreamProtocol) -> bool {
+    matches!(
+        protocol,
+        BridgeUpstreamProtocol::CodexResponsesOauth | BridgeUpstreamProtocol::XaiResponsesOauth
+    )
+}
+
+fn access_jwt_near_expiry(token: &str) -> bool {
+    let Some(claims) = crate::oauth::decode_jwt_payload(token) else {
+        return false;
+    };
+    let Some(exp) = claims.get("exp").and_then(|value| value.as_i64()) else {
+        return false;
+    };
+    let now = chrono::Utc::now().timestamp();
+    exp <= now + ACCESS_JWT_EXPIRY_SKEW_SECS
+}
+
+fn try_reload_upstream_auth(state: &ListenerState) -> bool {
+    let Some(reload) = state.reload_upstream_auth.as_ref() else {
+        return false;
+    };
+    let current = state.upstream.auth.token();
+    let Some(next) = reload() else {
+        return false;
+    };
+    let next = next.trim();
+    if next.is_empty() || next == current {
+        return false;
+    }
+    state.upstream.auth.replace_token(next);
+    true
+}
+
 async fn post_upstream(
     state: &ListenerState,
     url: &reqwest::Url,
@@ -187,10 +225,11 @@ async fn post_upstream(
     grok_identity: Option<&GrokCliRequestIdentity>,
     body: &Value,
 ) -> Result<reqwest::Response, Response> {
+    let token = state.upstream.auth.token();
     let builder = apply_upstream_auth(
         state.client.post(url.clone()).json(body),
         protocol,
-        state.upstream.auth.token(),
+        &token,
         grok_identity,
     );
     let result = tokio::select! {
@@ -237,6 +276,14 @@ async fn send_upstream_with_grok_recovery(
     if protocol == BridgeUpstreamProtocol::XaiResponsesOauth {
         apply_grok_replay(state, &mut body, cache_seed);
     }
+    let retry_gate = RetryGate::default();
+    let mut auth_reloaded = false;
+    // CLI-owned file-follow / Hub refresh before the access JWT is actually rejected.
+    if oauth_subscription_protocol(protocol) && access_jwt_near_expiry(&state.upstream.auth.token())
+    {
+        let _ = try_reload_upstream_auth(state);
+        auth_reloaded = true;
+    }
     let mut attempt = 0u8;
     loop {
         let response = post_upstream(state, &url, protocol, identity.as_ref(), &body).await?;
@@ -245,6 +292,21 @@ async fn send_upstream_with_grok_recovery(
         }
         let status = response.status();
         let retry_after = response.headers().get(header::RETRY_AFTER).cloned();
+        let auth_attempts = if auth_reloaded { 1 } else { 0 };
+        if status == StatusCode::UNAUTHORIZED
+            && oauth_subscription_protocol(protocol)
+            && retry_gate.can_retry(EmissionState::Idle, RetryClass::Transient, auth_attempts)
+            && try_reload_upstream_auth(state)
+        {
+            auth_reloaded = true;
+            tracing::info!(
+                target: "core.adapter",
+                profile_id = %state.profile_id,
+                request_id = %request_id,
+                "retrying upstream request after oauth access reload"
+            );
+            continue;
+        }
         let can_recover = protocol == BridgeUpstreamProtocol::XaiResponsesOauth
             && status == StatusCode::BAD_REQUEST
             && attempt < 2;
@@ -673,60 +735,21 @@ pub(super) async fn handle_chat_completions(state: ListenerState, request: Reque
             );
         }
     };
-    let builder = state
-        .client
-        .post(url)
-        .json(&upstream_body)
-        .bearer_auth(state.upstream.auth.token());
-    let upstream = tokio::select! {
-        _ = state.force_shutdown.cancelled() => return stopping_response(),
-        result = tokio::time::timeout(
-            UPSTREAM_RESPONSE_HEADER_TIMEOUT,
-            builder.send(),
-        ) => match result {
-            Ok(result) => result,
-            Err(_) => {
-                tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "header_timeout", status = 504_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream response headers timed out");
-                state.record_upstream_failure();
-                return error_response(
-                    StatusCode::GATEWAY_TIMEOUT,
-                    "upstream_timeout",
-                    "The upstream model provider timed out.",
-                    None,
-                );
-            }
-        },
-    };
-    let response = match upstream {
+    let response = match send_upstream_with_grok_recovery(
+        &state,
+        url,
+        protocol,
+        &request_id,
+        started,
+        None,
+        upstream_body,
+        None,
+    )
+    .await
+    {
         Ok(response) => response,
-        Err(_) => {
-            tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "unavailable", status = 502_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream unavailable");
-            state.record_upstream_failure();
-            return error_response(
-                StatusCode::BAD_GATEWAY,
-                "upstream_unavailable",
-                "The upstream model provider is unavailable.",
-                None,
-            );
-        }
+        Err(response) => return response,
     };
-    if !response.status().is_success() {
-        let status = response.status();
-        let retry_after = response.headers().get(header::RETRY_AFTER).cloned();
-        let local_status = if status == StatusCode::TOO_MANY_REQUESTS {
-            StatusCode::TOO_MANY_REQUESTS
-        } else {
-            StatusCode::BAD_GATEWAY
-        };
-        tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "upstream_status", status = status.as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream returned an error");
-        state.record_upstream_failure();
-        return error_response(
-            local_status,
-            "upstream_error",
-            "The upstream model provider returned an error.",
-            retry_after,
-        );
-    }
     if stream_requested {
         chat_stream_response(state, response, request_id, started, permit)
     } else {

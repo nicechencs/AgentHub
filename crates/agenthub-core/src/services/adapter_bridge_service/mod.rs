@@ -383,6 +383,14 @@ impl AdapterBridgeRuntimeMaterial {
         self.preferred_port
     }
 
+    pub fn protocol(&self) -> BridgeUpstreamProtocol {
+        self.protocol
+    }
+
+    pub fn source_connection_id(&self) -> &str {
+        &self.source_connection_id
+    }
+
     /// Construct material for host/controller tests without a full prepare saga.
     /// Production callers must use `prepare` / restore paths only.
     pub fn for_test(

@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use agenthub_core::adapter_control::AdapterBridgeStatus;
+use agenthub_core::bridge::UpstreamAuthReload;
 use agenthub_core::bridge::{
     BridgeHostError, BridgeRuntimeHost, BridgeRuntimeState, BridgeRuntimeStatus,
     BridgeUpstreamStatus,
@@ -23,7 +24,8 @@ use agenthub_core::models::{
     AgentId, Provider, ProviderInput,
 };
 use agenthub_core::services::{
-    AdapterBridgePrepareRequest, AdapterBridgePrepared, AdapterBridgeProviderProjection,
+    oauth_bridge_reload_callback, AdapterBridgePrepareRequest, AdapterBridgePrepared,
+    AdapterBridgeProviderProjection, AdapterBridgeRuntimeMaterial, AdapterSecretResolver,
     ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
 };
 use agenthub_core::AgentHub;
@@ -82,18 +84,25 @@ async fn apply_local_bridge_locked(
     .await?;
 
     let profile_id = prepared.profile().id.clone();
-    let runtime = match ensure_bridge_listener(host.as_ref(), prepared.runtime_material()).await {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            let code = if matches!(error, BridgeHostError::Bind(_)) {
-                CODE_BRIDGE_PORT_IN_USE
-            } else {
-                CODE_BRIDGE_START
-            };
-            mark_retryable(hub, &profile_id, code).await;
-            return Err(map_bridge_host_error(error));
-        }
-    };
+    let reload = oauth_reload_for_material(
+        hub.as_ref(),
+        prepared.runtime_material(),
+        prepared.profile().source_kind,
+        &prepared.profile().source_id,
+    );
+    let runtime =
+        match ensure_bridge_listener(host.as_ref(), prepared.runtime_material(), reload).await {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                let code = if matches!(error, BridgeHostError::Bind(_)) {
+                    CODE_BRIDGE_PORT_IN_USE
+                } else {
+                    CODE_BRIDGE_START
+                };
+                mark_retryable(hub, &profile_id, code).await;
+                return Err(map_bridge_host_error(error));
+            }
+        };
     // Own any listener this saga started or replaced. An idempotent reuse of an
     // already-running identical spec is not compensated on later projection failure.
     let owns_listener = runtime.owned_by_saga;
@@ -328,8 +337,18 @@ pub(crate) fn restore_adapter_bridges(
                 }
             };
 
-            let runtime = match ensure_bridge_listener(host.as_ref(), material.runtime_material())
-                .await
+            let reload = oauth_reload_for_material(
+                hub.as_ref(),
+                material.runtime_material(),
+                material.profile().source_kind,
+                &material.profile().source_id,
+            );
+            let runtime = match ensure_bridge_listener(
+                host.as_ref(),
+                material.runtime_material(),
+                reload,
+            )
+            .await
             {
                 Ok(runtime) => runtime,
                 Err(error) => {
@@ -754,15 +773,33 @@ pub(crate) struct EnsuredBridgeListener {
 /// - `ConflictingStart` (token/port drift) stops the old listener then starts
 ///   with the new material so credential rotation can take effect.
 /// - `Bind` on the preferred port retries once with port `0`.
+fn oauth_reload_for_material(
+    hub: &AgentHub,
+    material: &AdapterBridgeRuntimeMaterial,
+    source_kind: AdapterSourceKind,
+    source_id: &str,
+) -> Option<UpstreamAuthReload> {
+    oauth_bridge_reload_callback(
+        hub.accounts.clone(),
+        AdapterSecretResolver::new(hub.db.clone()),
+        source_kind,
+        source_id.to_owned(),
+        material.protocol(),
+    )
+}
+
 pub(crate) async fn ensure_bridge_listener(
     host: &BridgeRuntimeHost,
-    material: &agenthub_core::services::AdapterBridgeRuntimeMaterial,
+    material: &AdapterBridgeRuntimeMaterial,
+    reload: Option<UpstreamAuthReload>,
 ) -> Result<EnsuredBridgeListener, BridgeHostError> {
     let profile_id = material.profile_id().to_owned();
     let had_running = host
         .status(&profile_id)?
         .is_some_and(|status| status.running);
-    let preferred = material.start_spec(None);
+    let preferred = material
+        .start_spec(None)
+        .with_reload_upstream_auth(reload.clone());
     match host.start(preferred).await {
         Ok(status) => {
             // host.start is idempotent for an identical live instance; ownership
@@ -777,14 +814,20 @@ pub(crate) async fn ensure_bridge_listener(
                 Ok(_) | Err(BridgeHostError::NotRunning) => {}
                 Err(error) => return Err(error),
             }
-            let status = start_with_bind_fallback(host, material).await?;
+            let status = start_with_bind_fallback(host, material, reload).await?;
             Ok(EnsuredBridgeListener {
                 status,
                 owned_by_saga: true,
             })
         }
         Err(BridgeHostError::Bind(_)) => {
-            let status = host.start(material.start_spec(Some(0))).await?;
+            let status = host
+                .start(
+                    material
+                        .start_spec(Some(0))
+                        .with_reload_upstream_auth(reload),
+                )
+                .await?;
             Ok(EnsuredBridgeListener {
                 status,
                 owned_by_saga: true,
@@ -796,11 +839,26 @@ pub(crate) async fn ensure_bridge_listener(
 
 async fn start_with_bind_fallback(
     host: &BridgeRuntimeHost,
-    material: &agenthub_core::services::AdapterBridgeRuntimeMaterial,
+    material: &AdapterBridgeRuntimeMaterial,
+    reload: Option<UpstreamAuthReload>,
 ) -> Result<BridgeRuntimeStatus, BridgeHostError> {
-    match host.start(material.start_spec(None)).await {
+    match host
+        .start(
+            material
+                .start_spec(None)
+                .with_reload_upstream_auth(reload.clone()),
+        )
+        .await
+    {
         Ok(status) => Ok(status),
-        Err(BridgeHostError::Bind(_)) => host.start(material.start_spec(Some(0))).await,
+        Err(BridgeHostError::Bind(_)) => {
+            host.start(
+                material
+                    .start_spec(Some(0))
+                    .with_reload_upstream_auth(reload),
+            )
+            .await
+        }
         Err(error) => Err(error),
     }
 }
