@@ -917,6 +917,32 @@ fn to_responses_request_does_not_forward_reasoning_effort() {
 }
 
 #[test]
+fn responses_output_skips_encrypted_reasoning_items() {
+    let ir = responses_output_to_ir(&json!({
+        "id": "resp_grok",
+        "status": "completed",
+        "output": [
+            {
+                "id": "rs_1",
+                "type": "reasoning",
+                "encrypted_content": "opaque-blob",
+                "summary": [{ "type": "summary_text", "text": "plan" }]
+            },
+            {
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "content": [{ "type": "output_text", "text": "hello" }]
+            }
+        ],
+        "usage": { "input_tokens": 1, "output_tokens": 1, "total_tokens": 2 }
+    }))
+    .expect("reasoning items must not fail Messages translation");
+    let encoded = encode_anthropic_message(&ir).expect("anthropic");
+    assert_eq!(encoded["content"][0]["text"], "hello");
+}
+
+#[test]
 fn responses_reasoning_max_effort_is_mapped() {
     let mut request = fixture("responses_text");
     request["reasoning"] = json!({"effort": "max"});

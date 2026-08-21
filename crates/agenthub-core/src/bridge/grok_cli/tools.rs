@@ -2,7 +2,6 @@
 
 use serde_json::{json, Value};
 
-/// In-place normalize of a Grok Build Responses JSON body (Codex → cli-chat-proxy).
 pub fn normalize_grok_build_tools(body: &mut Value) {
     let Some(Value::Array(tools)) = body.get("tools") else {
         return;
@@ -61,7 +60,7 @@ fn apply_patch_function_tool() -> Value {
     json!({
         "type": "function",
         "name": "apply_patch",
-        "description": "Apply a file change. operation.type is one of create_file, update_file, or delete_file. operation.path is the target path; operation.diff is the patch text for create_file and update_file.",
+        "description": "Apply a file change. operation.type is one of create_file, update_file, or delete_file. operation.path is the target path. operation.diff is the patch text for create_file and update_file; use an empty string for delete_file.",
         "strict": true,
         "parameters": {
             "type": "object",
@@ -81,7 +80,7 @@ fn apply_patch_function_tool() -> Value {
                             "type": "string"
                         }
                     },
-                    "required": ["type", "path"],
+                    "required": ["type", "path", "diff"],
                     "additionalProperties": false
                 }
             },

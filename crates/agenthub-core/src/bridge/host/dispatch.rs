@@ -14,7 +14,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::bridge::grok_cli::{
     apply_grok_cli_identity_with, extract_prompt_cache_seed, grok_cli_request_identity,
-    inject_prompt_cache_key, normalize_grok_build_tools, GrokCliRequestIdentity,
+    inject_prompt_cache_key, is_reasoning_decode_failure, normalize_grok_build_tools,
+    strip_encrypted_reasoning, GrokCliRequestIdentity,
 };
 use crate::bridge::protocol::anthropic_messages::{
     anthropic_message_to_ir, encode_anthropic_message, encode_anthropic_sse,
@@ -118,6 +119,176 @@ fn prepare_grok_build_body(protocol: BridgeUpstreamProtocol, body: &mut Value, s
     inject_prompt_cache_key(body, seed);
 }
 
+fn grok_replay_model(body: &Value, fallback: Option<&str>) -> String {
+    body.get("model")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            fallback
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+        })
+        .unwrap_or_default()
+}
+
+fn apply_grok_replay(state: &ListenerState, body: &mut Value, seed: Option<&str>) {
+    if state.upstream.protocol != BridgeUpstreamProtocol::XaiResponsesOauth {
+        return;
+    }
+    let model = grok_replay_model(body, state.upstream.model.as_deref());
+    state.grok_replay.apply(body, &model, seed);
+}
+
+fn capture_grok_completed(state: &ListenerState, seed: Option<&str>, completed: &Value) {
+    if state.upstream.protocol != BridgeUpstreamProtocol::XaiResponsesOauth {
+        return;
+    }
+    let model = grok_replay_model(completed, state.upstream.model.as_deref());
+    state.grok_replay.store_completed(&model, seed, completed);
+}
+
+fn capture_grok_sse(state: &ListenerState, seed: Option<&str>, sse: &str) {
+    if state.upstream.protocol != BridgeUpstreamProtocol::XaiResponsesOauth {
+        return;
+    }
+    let model = grok_replay_model(&Value::Null, state.upstream.model.as_deref());
+    state.grok_replay.store_sse(&model, seed, sse);
+}
+
+fn map_upstream_http_error(
+    state: &ListenerState,
+    request_id: &str,
+    started: Instant,
+    status: StatusCode,
+    retry_after: Option<HeaderValue>,
+) -> Response {
+    let local_status = if status == StatusCode::TOO_MANY_REQUESTS {
+        StatusCode::TOO_MANY_REQUESTS
+    } else {
+        StatusCode::BAD_GATEWAY
+    };
+    tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "upstream_status", status = status.as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream returned an error");
+    state.record_upstream_failure();
+    error_response(
+        local_status,
+        "upstream_error",
+        "The upstream model provider returned an error.",
+        retry_after,
+    )
+}
+
+async fn post_upstream(
+    state: &ListenerState,
+    url: &reqwest::Url,
+    protocol: BridgeUpstreamProtocol,
+    grok_identity: Option<&GrokCliRequestIdentity>,
+    body: &Value,
+) -> Result<reqwest::Response, Response> {
+    let builder = apply_upstream_auth(
+        state.client.post(url.clone()).json(body),
+        protocol,
+        state.upstream.auth.token(),
+        grok_identity,
+    );
+    let result = tokio::select! {
+        _ = state.force_shutdown.cancelled() => return Err(stopping_response()),
+        result = tokio::time::timeout(UPSTREAM_RESPONSE_HEADER_TIMEOUT, builder.send()) => match result {
+            Ok(result) => result,
+            Err(_) => {
+                tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, op = "upstream", code = "header_timeout", status = 504_u16, "bridge upstream response headers timed out");
+                state.record_upstream_failure();
+                return Err(error_response(
+                    StatusCode::GATEWAY_TIMEOUT,
+                    "upstream_timeout",
+                    "The upstream model provider timed out.",
+                    None,
+                ));
+            }
+        },
+    };
+    match result {
+        Ok(response) => Ok(response),
+        Err(_) => {
+            tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, op = "upstream", code = "unavailable", status = 502_u16, "bridge upstream unavailable");
+            state.record_upstream_failure();
+            Err(error_response(
+                StatusCode::BAD_GATEWAY,
+                "upstream_unavailable",
+                "The upstream model provider is unavailable.",
+                None,
+            ))
+        }
+    }
+}
+
+async fn send_upstream_with_grok_recovery(
+    state: &ListenerState,
+    url: reqwest::Url,
+    protocol: BridgeUpstreamProtocol,
+    request_id: &str,
+    started: Instant,
+    mut identity: Option<GrokCliRequestIdentity>,
+    mut body: Value,
+    cache_seed: Option<&str>,
+) -> Result<reqwest::Response, Response> {
+    if protocol == BridgeUpstreamProtocol::XaiResponsesOauth {
+        apply_grok_replay(state, &mut body, cache_seed);
+    }
+    let mut attempt = 0u8;
+    loop {
+        let response = post_upstream(state, &url, protocol, identity.as_ref(), &body).await?;
+        if response.status().is_success() {
+            return Ok(response);
+        }
+        let status = response.status();
+        let retry_after = response.headers().get(header::RETRY_AFTER).cloned();
+        let can_recover = protocol == BridgeUpstreamProtocol::XaiResponsesOauth
+            && status == StatusCode::BAD_REQUEST
+            && attempt < 2;
+        if !can_recover {
+            return Err(map_upstream_http_error(
+                state,
+                request_id,
+                started,
+                status,
+                retry_after,
+            ));
+        }
+        let err_text = response.text().await.unwrap_or_default();
+        if !is_reasoning_decode_failure(&err_text) {
+            return Err(map_upstream_http_error(
+                state,
+                request_id,
+                started,
+                status,
+                retry_after,
+            ));
+        }
+        let model = grok_replay_model(&body, state.upstream.model.as_deref());
+        state.grok_replay.clear(&model, cache_seed);
+        strip_encrypted_reasoning(&mut body);
+        attempt += 1;
+        if attempt >= 2 {
+            if let Some(identity) = identity.as_mut() {
+                identity.session_id = None;
+            }
+            if let Some(object) = body.as_object_mut() {
+                object.remove("prompt_cache_key");
+            }
+        }
+        tracing::info!(
+            target: "core.adapter",
+            profile_id = %state.profile_id,
+            request_id = %request_id,
+            attempt,
+            "retrying Grok request after encrypted reasoning rejection"
+        );
+    }
+}
+
 pub(super) async fn handle_responses(state: ListenerState, request: Request) -> Response {
     let request_id = uuid::Uuid::new_v4().to_string();
     let started = Instant::now();
@@ -212,62 +383,24 @@ pub(super) async fn handle_responses(state: ListenerState, request: Request) -> 
             );
         }
     };
-    let builder = apply_upstream_auth(
-        state.client.post(url).json(&upstream_body),
+    let response = match send_upstream_with_grok_recovery(
+        &state,
+        url,
         protocol,
-        state.upstream.auth.token(),
-        grok_identity.as_ref(),
-    );
-    let upstream_request = builder.send();
-    let upstream = tokio::select! {
-        _ = state.force_shutdown.cancelled() => return stopping_response(),
-        result = tokio::time::timeout(UPSTREAM_RESPONSE_HEADER_TIMEOUT, upstream_request) => match result {
-            Ok(result) => result,
-            Err(_) => {
-                tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "header_timeout", status = 504_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream response headers timed out");
-                state.record_upstream_failure();
-                return error_response(
-                    StatusCode::GATEWAY_TIMEOUT,
-                    "upstream_timeout",
-                    "The upstream model provider timed out.",
-                    None,
-                );
-            }
-        },
-    };
-    let response = match upstream {
+        &request_id,
+        started,
+        grok_identity,
+        upstream_body,
+        cache_seed.as_deref(),
+    )
+    .await
+    {
         Ok(response) => response,
-        Err(_) => {
-            tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "unavailable", status = 502_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream unavailable");
-            state.record_upstream_failure();
-            return error_response(
-                StatusCode::BAD_GATEWAY,
-                "upstream_unavailable",
-                "The upstream model provider is unavailable.",
-                None,
-            );
-        }
+        Err(response) => return response,
     };
-    if !response.status().is_success() {
-        let status = response.status();
-        let retry_after = response.headers().get(header::RETRY_AFTER).cloned();
-        let local_status = if status == StatusCode::TOO_MANY_REQUESTS {
-            StatusCode::TOO_MANY_REQUESTS
-        } else {
-            StatusCode::BAD_GATEWAY
-        };
-        tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "upstream_status", status = status.as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream returned an error");
-        state.record_upstream_failure();
-        return error_response(
-            local_status,
-            "upstream_error",
-            "The upstream model provider returned an error.",
-            retry_after,
-        );
-    }
     if stream_requested {
         if selector.responses_passthrough() {
-            passthrough_sse_response(state, response, request_id, started, permit)
+            passthrough_sse_response(state, response, request_id, started, permit, cache_seed)
         } else {
             stream_response(state, response, request_id, started, permit)
         }
@@ -277,7 +410,7 @@ pub(super) async fn handle_responses(state: ListenerState, request: Request) -> 
             _ = force_shutdown.cancelled() => stopping_response(),
             result = tokio::time::timeout(
                 UPSTREAM_NON_STREAM_TIMEOUT,
-                non_stream_response(state.clone(), response, request_id, started, permit),
+                non_stream_response(state.clone(), response, request_id, started, permit, cache_seed),
             ) => match result {
                 Ok(response) => response,
                 Err(_) => {
@@ -435,70 +568,30 @@ pub(super) async fn handle_messages(state: ListenerState, request: Request) -> R
             );
         }
     };
-    let builder = apply_upstream_auth(
-        state.client.post(url).json(&upstream_body),
+    let response = match send_upstream_with_grok_recovery(
+        &state,
+        url,
         protocol,
-        state.upstream.auth.token(),
-        grok_identity.as_ref(),
-    );
-    let upstream = tokio::select! {
-        _ = state.force_shutdown.cancelled() => return stopping_response(),
-        result = tokio::time::timeout(
-            UPSTREAM_RESPONSE_HEADER_TIMEOUT,
-            builder.send(),
-        ) => match result {
-            Ok(result) => result,
-            Err(_) => {
-                tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "header_timeout", status = 504_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream response headers timed out");
-                state.record_upstream_failure();
-                return error_response(
-                    StatusCode::GATEWAY_TIMEOUT,
-                    "upstream_timeout",
-                    "The upstream model provider timed out.",
-                    None,
-                );
-            }
-        },
-    };
-    let response = match upstream {
+        &request_id,
+        started,
+        grok_identity,
+        upstream_body,
+        cache_seed.as_deref(),
+    )
+    .await
+    {
         Ok(response) => response,
-        Err(_) => {
-            tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "unavailable", status = 502_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream unavailable");
-            state.record_upstream_failure();
-            return error_response(
-                StatusCode::BAD_GATEWAY,
-                "upstream_unavailable",
-                "The upstream model provider is unavailable.",
-                None,
-            );
-        }
+        Err(response) => return response,
     };
-    if !response.status().is_success() {
-        let status = response.status();
-        let retry_after = response.headers().get(header::RETRY_AFTER).cloned();
-        let local_status = if status == StatusCode::TOO_MANY_REQUESTS {
-            StatusCode::TOO_MANY_REQUESTS
-        } else {
-            StatusCode::BAD_GATEWAY
-        };
-        tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "upstream_status", status = status.as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "bridge upstream returned an error");
-        state.record_upstream_failure();
-        return error_response(
-            local_status,
-            "upstream_error",
-            "The upstream model provider returned an error.",
-            retry_after,
-        );
-    }
     if stream_requested {
-        messages_stream_response(state, response, request_id, started, permit)
+        messages_stream_response(state, response, request_id, started, permit, cache_seed)
     } else {
         let force_shutdown = state.force_shutdown.clone();
         tokio::select! {
             _ = force_shutdown.cancelled() => stopping_response(),
             result = tokio::time::timeout(
                 UPSTREAM_NON_STREAM_TIMEOUT,
-                messages_non_stream_response(state.clone(), response, request_id, started, permit),
+                messages_non_stream_response(state.clone(), response, request_id, started, permit, cache_seed),
             ) => match result {
                 Ok(response) => response,
                 Err(_) => {
@@ -665,6 +758,7 @@ pub(super) async fn messages_non_stream_response(
     request_id: String,
     started: Instant,
     _permit: OwnedSemaphorePermit,
+    replay_seed: Option<String>,
 ) -> Response {
     let upstream_body = match read_bounded_upstream_json(response, &state.force_shutdown).await {
         Ok(value) => value,
@@ -679,6 +773,7 @@ pub(super) async fn messages_non_stream_response(
             );
         }
     };
+    capture_grok_completed(&state, replay_seed.as_deref(), &upstream_body);
     let translated = match state.upstream.protocol {
         BridgeUpstreamProtocol::KimiChatCompletions => {
             crate::bridge::protocol::chat::translate_chat_response(
@@ -758,6 +853,7 @@ pub(super) async fn non_stream_response(
     request_id: String,
     started: Instant,
     _permit: OwnedSemaphorePermit,
+    replay_seed: Option<String>,
 ) -> Response {
     let upstream_body = match read_bounded_upstream_json(response, &state.force_shutdown).await {
         Ok(value) => value,
@@ -772,6 +868,7 @@ pub(super) async fn non_stream_response(
             );
         }
     };
+    capture_grok_completed(&state, replay_seed.as_deref(), &upstream_body);
     let translated = match state.upstream.protocol {
         BridgeUpstreamProtocol::KimiChatCompletions => {
             crate::bridge::protocol::chat::translate_chat_response(
@@ -904,6 +1001,7 @@ fn passthrough_sse_response(
     request_id: String,
     started: Instant,
     permit: OwnedSemaphorePermit,
+    replay_seed: Option<String>,
 ) -> Response {
     let profile_id = state.profile_id.clone();
     let force_shutdown = state.force_shutdown.clone();
@@ -912,6 +1010,7 @@ fn passthrough_sse_response(
     let output = stream! {
         let _permit = permit;
         let mut upstream_bytes = 0usize;
+        let mut capture = Vec::new();
         futures_util::pin_mut!(bytes);
         loop {
             let next = tokio::select! {
@@ -940,7 +1039,13 @@ fn passthrough_sse_response(
                 return;
             }
             upstream_bytes += chunk.len();
+            if capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
+                capture.extend_from_slice(&chunk);
+            }
             yield Ok::<_, Infallible>(chunk);
+        }
+        if let Ok(sse) = std::str::from_utf8(&capture) {
+            capture_grok_sse(&observed, replay_seed.as_deref(), sse);
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, op = "responses_passthrough_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
@@ -1138,6 +1243,7 @@ pub(super) fn messages_stream_response(
     request_id: String,
     started: Instant,
     permit: OwnedSemaphorePermit,
+    replay_seed: Option<String>,
 ) -> Response {
     let profile_id = state.profile_id.clone();
     let force_shutdown = state.force_shutdown.clone();
@@ -1152,6 +1258,7 @@ pub(super) fn messages_stream_response(
         let mut buffer = std::collections::VecDeque::new();
         let mut upstream_bytes = 0usize;
         let mut output_bytes = 0usize;
+        let mut capture = Vec::new();
         let _permit = permit;
         let mut saw_done = false;
         futures_util::pin_mut!(bytes);
@@ -1182,6 +1289,9 @@ pub(super) fn messages_stream_response(
                 return;
             }
             upstream_bytes += chunk.len();
+            if capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
+                capture.extend_from_slice(&chunk);
+            }
             buffer.extend(chunk.iter().copied());
             while let Some((frame_end, delimiter_len)) = sse_frame_end_deque(&buffer) {
                 let frame = buffer.drain(..frame_end).collect::<Vec<_>>();
@@ -1268,6 +1378,9 @@ pub(super) fn messages_stream_response(
             }
             output_bytes += frame.len();
             yield Ok::<_, Infallible>(axum::body::Bytes::from(frame.clone()));
+        }
+        if let Ok(sse) = std::str::from_utf8(&capture) {
+            capture_grok_sse(&observed, replay_seed.as_deref(), sse);
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, op = "messages_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");

@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
+use crate::bridge::grok_cli::GrokReasoningReplay;
 use crate::bridge::runtime::BridgeUpstreamStatus;
 use crate::bridge::types::ProtocolError;
 
@@ -27,6 +28,7 @@ pub(super) struct ListenerState {
     pub(super) force_shutdown: CancellationToken,
     pub(super) admission: Arc<Semaphore>,
     pub(super) observed_upstream: Arc<Mutex<BridgeUpstreamStatus>>,
+    pub(super) grok_replay: Arc<GrokReasoningReplay>,
 }
 
 impl ListenerState {

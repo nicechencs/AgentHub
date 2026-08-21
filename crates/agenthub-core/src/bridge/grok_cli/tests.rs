@@ -43,6 +43,7 @@ fn identity_headers_include_token_auth_version_identifier_mode() {
     assert_eq!(get("x-grok-client-version"), Some(GROK_CLI_VERSION));
     assert_eq!(get("x-grok-client-identifier"), Some(GROK_CLI_IDENTIFIER));
     assert_eq!(get("x-grok-client-mode"), Some(GROK_CLI_MODE));
+    assert_eq!(get("x-authenticateresponse"), Some("authenticate-response"));
     assert_eq!(
         get("User-Agent").as_deref(),
         Some(grok_cli_user_agent().as_str())
@@ -133,6 +134,41 @@ fn claude_title_request_returns_none() {
 }
 
 #[test]
+fn claude_title_request_in_user_message_returns_none() {
+    let headers = header_map(&[("X-Claude-Code-Session-Id", "sess-title")]);
+    let messages_body = json!({
+        "messages": [{
+            "role": "user",
+            "content": "Generate a concise title for this coding session."
+        }]
+    });
+    assert_eq!(extract_prompt_cache_seed(&headers, &messages_body), None);
+
+    let input_body = json!({
+        "input": [{
+            "role": "user",
+            "text": "Generate a concise title for this coding session."
+        }]
+    });
+    assert_eq!(extract_prompt_cache_seed(&headers, &input_body), None);
+}
+
+#[test]
+fn claude_ordinary_user_message_keeps_session_seed() {
+    let headers = header_map(&[("X-Claude-Code-Session-Id", "sess-1")]);
+    let body = json!({
+        "messages": [{
+            "role": "user",
+            "content": "How do I add a login page?"
+        }]
+    });
+    assert_eq!(
+        extract_prompt_cache_seed(&headers, &body).as_deref(),
+        Some("claude:sess-1:agent:main")
+    );
+}
+
+#[test]
 fn codex_turn_metadata_prompt_cache_key() {
     let headers = header_map(&[(
         "X-Codex-Turn-Metadata",
@@ -187,6 +223,7 @@ fn apply_patch_becomes_function() {
     assert!(description.contains("create_file"));
     assert!(description.contains("update_file"));
     assert!(description.contains("delete_file"));
+    assert!(description.contains("empty string"));
     assert_eq!(tool["parameters"]["type"], "object");
     assert_eq!(tool["parameters"]["required"], json!(["operation"]));
     assert_eq!(tool["parameters"]["additionalProperties"], false);
@@ -196,7 +233,7 @@ fn apply_patch_becomes_function() {
     );
     assert_eq!(
         tool["parameters"]["properties"]["operation"]["required"],
-        json!(["type", "path"])
+        json!(["type", "path", "diff"])
     );
     assert_eq!(
         tool["parameters"]["properties"]["operation"]["properties"]["path"]["minLength"],
@@ -251,4 +288,43 @@ fn normalize_skips_body_without_tools() {
     let mut body = json!({ "model": "grok-4.5" });
     normalize_grok_build_tools(&mut body);
     assert_eq!(body, json!({ "model": "grok-4.5" }));
+}
+
+#[test]
+fn reasoning_replay_injects_and_skips_when_already_present() {
+    let replay = GrokReasoningReplay::new();
+    let completed = json!({
+        "output": [
+            { "type": "reasoning", "encrypted_content": "enc-1" },
+            { "type": "message", "role": "assistant", "content": [{ "type": "output_text", "text": "hi" }] }
+        ]
+    });
+    replay.store_completed("grok-4.5", Some("sess"), &completed);
+
+    let mut body = json!({ "model": "grok-4.5", "input": "hello" });
+    replay.apply(&mut body, "grok-4.5", Some("sess"));
+    let input = body["input"].as_array().expect("array");
+    assert_eq!(input[0]["type"], "reasoning");
+    assert_eq!(input[0]["encrypted_content"], "enc-1");
+    assert_eq!(input[1]["role"], "user");
+
+    let mut already = json!({
+        "model": "grok-4.5",
+        "input": [{ "type": "reasoning", "encrypted_content": "enc-1" }]
+    });
+    replay.apply(&mut already, "grok-4.5", Some("sess"));
+    assert_eq!(already["input"].as_array().map(Vec::len), Some(1));
+
+    assert!(is_reasoning_decode_failure(
+        r#"{"error":{"message":"could not decrypt the provided encrypted_content"}}"#
+    ));
+    let mut strip = json!({
+        "input": [
+            { "type": "reasoning", "encrypted_content": "enc-1" },
+            { "type": "message", "role": "user" }
+        ]
+    });
+    assert!(strip_encrypted_reasoning(&mut strip));
+    assert_eq!(strip["input"].as_array().map(Vec::len), Some(1));
+    assert_eq!(strip["input"][0]["role"], "user");
 }

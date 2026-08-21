@@ -5,13 +5,15 @@
 //! client headers. Quota probes reuse the same identity pairs.
 //!
 //! Session IDs are hashed from a client cache seed; never invent a random UUID
-//! per request (that zeroes prompt cache). Hub does not auto-refresh Build
-//! tokens here — refresh tokens rotate and must not be shared with the official
-//! Grok CLI.
+//! per request (that zeroes prompt cache).
 
+mod replay;
 mod session;
 mod tools;
 
+pub use replay::{
+    is_reasoning_decode_failure, strip_encrypted_reasoning, GrokReasoningReplay,
+};
 pub use session::{extract_prompt_cache_seed, grok_session_id};
 pub use tools::{inject_prompt_cache_key, normalize_grok_build_tools};
 
@@ -42,6 +44,7 @@ pub fn grok_cli_identity_header_pairs() -> Vec<(&'static str, String)> {
         ("x-grok-client-version", GROK_CLI_VERSION.to_string()),
         ("x-grok-client-identifier", GROK_CLI_IDENTIFIER.to_string()),
         ("x-grok-client-mode", GROK_CLI_MODE.to_string()),
+        ("x-authenticateresponse", "authenticate-response".to_string()),
         ("User-Agent", grok_cli_user_agent()),
     ]
 }
@@ -81,7 +84,6 @@ pub fn apply_grok_cli_identity_with(
     };
 
     builder = builder
-        .header("x-authenticateresponse", "authenticate-response")
         .header("x-grok-agent-id", grok_cli_agent_id())
         .header("x-grok-req-id", identity.request_id.as_str());
 

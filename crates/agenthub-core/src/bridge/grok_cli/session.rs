@@ -5,6 +5,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 const MAX_SEED_LEN: usize = 1024;
+/// Bound title-heuristic scan so large system prompts are not fully lowercased.
+const MAX_TITLE_SCAN_LEN: usize = 4096;
 
 pub fn extract_prompt_cache_seed(headers: &HeaderMap, body: &Value) -> Option<String> {
     let claude_session = header_nonempty(headers, "x-claude-code-session-id");
@@ -156,12 +158,16 @@ fn seed_from_codex_metadata_object(value: &Value) -> Option<String> {
 }
 
 fn is_claude_title_request(body: &Value) -> bool {
-    let text = collect_system_text(body).to_ascii_lowercase();
+    let text = collect_title_scan_text(body).to_ascii_lowercase();
     text.contains("generate a concise") && text.contains("title") && text.contains("coding session")
 }
 
-fn collect_system_text(body: &Value) -> String {
+fn collect_title_scan_text(body: &Value) -> String {
     let mut out = String::new();
+    // User first: Claude Code title prompts live there, and a large system
+    // prompt would otherwise exhaust MAX_TITLE_SCAN_LEN before we see them.
+    append_role_text(&mut out, body.get("messages"), &["user"]);
+    append_role_text(&mut out, body.get("input"), &["user"]);
     push_text(&mut out, body.get("system"));
     push_text(&mut out, body.get("instructions"));
     append_role_text(&mut out, body.get("messages"), &["system"]);
@@ -170,10 +176,16 @@ fn collect_system_text(body: &Value) -> String {
 }
 
 fn append_role_text(out: &mut String, items: Option<&Value>, roles: &[&str]) {
+    if out.len() >= MAX_TITLE_SCAN_LEN {
+        return;
+    }
     let Some(Value::Array(items)) = items else {
         return;
     };
     for item in items {
+        if out.len() >= MAX_TITLE_SCAN_LEN {
+            return;
+        }
         let role = item.get("role").and_then(Value::as_str).unwrap_or("");
         if roles.iter().any(|wanted| role.eq_ignore_ascii_case(wanted)) {
             push_text(out, item.get("content"));
@@ -183,6 +195,9 @@ fn append_role_text(out: &mut String, items: Option<&Value>, roles: &[&str]) {
 }
 
 fn push_text(out: &mut String, value: Option<&Value>) {
+    if out.len() >= MAX_TITLE_SCAN_LEN {
+        return;
+    }
     let Some(value) = value else {
         return;
     };
@@ -190,6 +205,9 @@ fn push_text(out: &mut String, value: Option<&Value>) {
         Value::String(text) => append_chunk(out, text),
         Value::Array(items) => {
             for item in items {
+                if out.len() >= MAX_TITLE_SCAN_LEN {
+                    return;
+                }
                 match item {
                     Value::String(text) => append_chunk(out, text),
                     Value::Object(obj) => {
@@ -209,11 +227,21 @@ fn push_text(out: &mut String, value: Option<&Value>) {
 }
 
 fn append_chunk(out: &mut String, text: &str) {
-    if text.is_empty() {
+    if text.is_empty() || out.len() >= MAX_TITLE_SCAN_LEN {
         return;
     }
     if !out.is_empty() {
         out.push(' ');
+        if out.len() >= MAX_TITLE_SCAN_LEN {
+            return;
+        }
     }
-    out.push_str(text);
+    let remaining = MAX_TITLE_SCAN_LEN - out.len();
+    let mut end = remaining.min(text.len());
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    if end > 0 {
+        out.push_str(&text[..end]);
+    }
 }
