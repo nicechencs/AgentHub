@@ -225,20 +225,8 @@ impl AdapterBridgeService {
         let rule = rule_for_id(&profile.rule_id).ok_or_else(|| {
             AppError::InvalidArg("adapter profile is not a supported local bridge".into())
         })?;
-        let upstream_auth = match rule.protocol {
-            BridgeUpstreamProtocol::KimiChatCompletions => self
-                .secrets
-                .resolve_kimi_membership_auth(profile.source_kind, &profile.source_id)?,
-            BridgeUpstreamProtocol::AnthropicMessages => self
-                .secrets
-                .resolve_anthropic_auth(profile.source_kind, &profile.source_id)?,
-            BridgeUpstreamProtocol::CodexResponsesOauth => self
-                .secrets
-                .resolve_codex_subscription_auth(profile.source_kind, &profile.source_id)?,
-            BridgeUpstreamProtocol::XaiResponsesOauth => self
-                .secrets
-                .resolve_grok_subscription_auth(profile.source_kind, &profile.source_id)?,
-        };
+        let upstream_auth =
+            self.resolve_upstream_auth(&rule, profile.source_kind, &profile.source_id)?;
         Ok(AdapterBridgeRestoreMaterial {
             material: AdapterBridgeRuntimeMaterial {
                 profile_id: profile.id.clone(),

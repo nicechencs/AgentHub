@@ -30,7 +30,7 @@ pub mod ticket_read_service;
 pub mod update_check_service;
 pub mod usage_service;
 
-pub use account_service::AccountService;
+pub use account_service::{oauth_bridge_reload_callback, AccountService};
 pub use adapter_apply_service::AdapterApplyService;
 pub use adapter_bridge_service::{
     AdapterBridgePrepareRequest, AdapterBridgePrepared, AdapterBridgeProviderProjection,
