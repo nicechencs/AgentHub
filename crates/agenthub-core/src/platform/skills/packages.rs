@@ -258,7 +258,9 @@ pub(crate) fn replace_target_with_staging(
     staging: &Path,
 ) -> Result<()> {
     let swap = swap_staging_keep_backup(skills_root, skill_id, Some(existing), target, staging)?;
-    finalize_retained_backup(skills_root, swap);
+    if let Err(e) = finalize_retained_backup(skills_root, swap) {
+        logging::log_app_error(targets::SKILL, "finalize_backup", &e);
+    }
     Ok(())
 }
 
@@ -273,6 +275,24 @@ pub(crate) fn swap_staging_keep_backup(
     existing: Option<&Path>,
     target: &Path,
     staging: &Path,
+) -> Result<RetainedLiveSwap> {
+    let backup = match existing {
+        Some(_) => Some(allocate_backup_path(skills_root, skill_id)?),
+        None => None,
+    };
+    swap_staging_keep_backup_at(skills_root, skill_id, existing, target, staging, backup)
+}
+
+/// Variant used by the durable commit journal.  The backup name is allocated
+/// before the journal is written, so the first rename is covered by a durable
+/// record containing every path involved in the swap.
+pub(crate) fn swap_staging_keep_backup_at(
+    skills_root: &Path,
+    skill_id: &str,
+    existing: Option<&Path>,
+    target: &Path,
+    staging: &Path,
+    backup_path: Option<PathBuf>,
 ) -> Result<RetainedLiveSwap> {
     if let Err(e) = validate_skills_root(skills_root) {
         best_effort_remove_dir(staging, skills_root);
@@ -368,13 +388,30 @@ pub(crate) fn swap_staging_keep_backup(
                 }
             }
 
-            let backup = match allocate_backup_path(skills_root, skill_id) {
-                Ok(path) => path,
-                Err(e) => {
-                    best_effort_remove_dir(staging, skills_root);
-                    return Err(e);
-                }
-            };
+            let backup = backup_path.ok_or_else(|| {
+                AppError::message(
+                    "skill.backup",
+                    "missing preallocated backup path for skill replacement",
+                )
+            })?;
+            if !is_exact_child(
+                &backup,
+                skills_root,
+                backup
+                    .file_name()
+                    .and_then(|v| v.to_str())
+                    .unwrap_or_default(),
+            ) || backup.exists()
+            {
+                best_effort_remove_dir(staging, skills_root);
+                return Err(AppError::message(
+                    "skill.backup",
+                    format!(
+                        "invalid or occupied skill backup path: {}",
+                        backup.display()
+                    ),
+                ));
+            }
 
             if let Err(e) = fs::rename(existing, &backup) {
                 best_effort_remove_dir(staging, skills_root);
@@ -417,23 +454,17 @@ pub(crate) fn swap_staging_keep_backup(
 
 /// Drop retained backup after lock + package metadata both committed.
 ///
-/// Cleanup failure does **not** roll back committed metadata; it only warns so
-/// operators can remove the leftover helper directory.
-pub(crate) fn finalize_retained_backup(skills_root: &Path, swap: RetainedLiveSwap) {
+/// Cleanup failure does **not** roll back committed metadata.  The caller can
+/// retain its durable journal and retry when the helper cannot be inspected or
+/// removed.
+pub(crate) fn finalize_retained_backup(
+    skills_root: &Path,
+    swap: RetainedLiveSwap,
+) -> Result<()> {
     if let Some(backup) = swap.backup {
-        if !try_remove_helper_dir(&backup, skills_root) {
-            logging::log_warn(
-                targets::SKILL,
-                "finalize_backup",
-                &format!(
-                    "skill package metadata committed but backup cleanup failed; \
-                     backup retained for manual cleanup: backup={} skills_root={}",
-                    backup.display(),
-                    skills_root.display()
-                ),
-            );
-        }
+        remove_helper_dir(&backup, skills_root)?;
     }
+    Ok(())
 }
 
 /// Restore live from retained backup (or remove first-install live).
@@ -516,44 +547,125 @@ pub(crate) fn rollback_retained_swap(
     Ok(())
 }
 
-pub(crate) fn best_effort_remove_dir(path: &Path, root: &Path) {
-    let _ = try_remove_helper_dir(path, root);
+/// Idempotent live rollback used by durable journal recovery.
+///
+/// A crash after the backup has been renamed back to `target` can leave the
+/// journal at its previous phase while the backup path is already gone. In
+/// that state, never remove `target`: its presence is the only durable proof
+/// that the old live tree was restored. Recovery can safely continue with the
+/// lock/package/helper steps. If neither copy is present, keep the journal and
+/// report the loss instead of guessing.
+pub(crate) fn rollback_retained_swap_idempotent(
+    skills_root: &Path,
+    target: &Path,
+    swap: RetainedLiveSwap,
+) -> Result<()> {
+    if swap.first_install {
+        return rollback_retained_swap(skills_root, target, swap);
+    }
+
+    let Some(backup) = swap.backup.clone() else {
+        return Err(AppError::message(
+            "skill.commit",
+            format!(
+                "cannot roll back skill overwrite: no backup retained for {}",
+                target.display()
+            ),
+        ));
+    };
+
+    match fs::symlink_metadata(&backup) {
+        Ok(meta) => {
+            if is_link_or_reparse(&meta) || !meta.is_dir() {
+                return Err(AppError::message(
+                    "skill.commit",
+                    format!("refusing unsafe skill backup: {}", backup.display()),
+                ));
+            }
+            rollback_retained_swap(skills_root, target, swap)
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            let meta = fs::symlink_metadata(target).map_err(|target_error| {
+                AppError::message(
+                    "skill.commit",
+                    format!(
+                        "cannot confirm restored skill target {} after backup disappeared: {target_error}",
+                        target.display()
+                    ),
+                )
+            })?;
+            if is_link_or_reparse(&meta) || !meta.is_dir() {
+                return Err(AppError::message(
+                    "skill.commit",
+                    format!(
+                        "cannot confirm restored skill target is safe: {}",
+                        target.display()
+                    ),
+                ));
+            }
+            validate_tree_entries_safe(target, "skill source")?;
+            Ok(())
+        }
+        Err(e) => Err(AppError::from(e)),
+    }
 }
 
-/// Remove a helper dir (staging/backup) under `root`. Returns `true` when the
-/// path is gone or was never a removable helper; `false` when removal failed.
-fn try_remove_helper_dir(path: &Path, root: &Path) -> bool {
-    let Ok(root_meta) = fs::symlink_metadata(root) else {
-        return true;
+pub(crate) fn best_effort_remove_dir(path: &Path, root: &Path) {
+    let _ = remove_helper_dir(path, root);
+}
+
+/// Remove a helper dir (staging/backup) under `root`.
+///
+/// `NotFound` for the helper itself is success: the cleanup already happened.
+/// Any other metadata or removal error is returned so a durable caller can
+/// retain its journal instead of guessing that the helper is gone.
+fn remove_helper_dir(path: &Path, root: &Path) -> Result<()> {
+    let root_meta = match fs::symlink_metadata(root) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(AppError::from(e)),
     };
     if is_link_or_reparse(&root_meta) || !root_meta.is_dir() {
-        return true;
+        return Err(AppError::message(
+            "skill.backup",
+            format!("refusing to clean helper under unsafe skills root: {}", root.display()),
+        ));
     }
     let Some(parent) = path.parent() else {
-        return true;
+        return Err(AppError::message(
+            "skill.backup",
+            format!("helper has no parent: {}", path.display()),
+        ));
     };
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return true;
+        return Err(AppError::message(
+            "skill.backup",
+            format!("helper has invalid name: {}", path.display()),
+        ));
     };
     if !paths_equal_lexical(parent, root)
         || !(name.starts_with(".agenthub-stage-") || name.starts_with(".agenthub-bak-"))
     {
-        return true;
+        return Err(AppError::message(
+            "skill.backup",
+            format!("refusing to clean non-helper path: {}", path.display()),
+        ));
     }
     let meta = match fs::symlink_metadata(path) {
         Ok(m) => m,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return true,
-        Err(_) => return false,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(AppError::from(e)),
     };
     if is_link_or_reparse(&meta) || !meta.is_dir() {
-        return false;
+        return Err(AppError::message(
+            "skill.backup",
+            format!("refusing to clean unsafe helper path: {}", path.display()),
+        ));
     }
-    if validate_tree_entries_safe(path, "skill helper").is_err() {
-        return false;
-    }
+    validate_tree_entries_safe(path, "skill helper")?;
     match fs::remove_dir_all(path) {
-        Ok(()) => true,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => true,
-        Err(_) => false,
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(AppError::from(e)),
     }
 }

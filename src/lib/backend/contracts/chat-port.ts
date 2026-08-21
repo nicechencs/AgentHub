@@ -3,6 +3,7 @@ import type { AgentId, ChatEvent, ChatMessage, Conversation } from '@/lib/types'
 export interface ChatPort {
   listConversations(): Promise<Conversation[]>;
   createConversation(agentIds: AgentId[], cwd?: string | null): Promise<Conversation>;
+  ensureDefaultConversation(agentIds: AgentId[], cwd?: string | null): Promise<Conversation>;
   updateConversation(
     id: string,
     patch: {

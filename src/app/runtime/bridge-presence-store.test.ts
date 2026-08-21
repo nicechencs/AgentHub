@@ -2,10 +2,22 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   getBridgePresenceSnapshot,
   loadBridgePresence,
+  notifyBridgePresenceChanged,
   resetBridgePresenceStore,
+  subscribeBridgePresence,
   shouldShowBridgesNav,
   type BridgePresenceLoaders,
 } from './bridge-presence-store';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 function loaders(input: {
   profiles?: Array<{ route: 'local_bridge' | 'native_endpoint' }>;
@@ -133,5 +145,78 @@ describe('loadBridgePresence', () => {
     }));
     expect(getBridgePresenceSnapshot().walletBridgeCount).toBe(1);
     expect(getBridgePresenceSnapshot().status).toBe('error');
+  });
+
+  it('lets the latest overlapping load win', async () => {
+    const oldProfiles = deferred<readonly [{ route: 'local_bridge' }]>();
+    const oldWallet = deferred<{ bindings: [] }>();
+    const oldLoad = loadBridgePresence({
+      listProfiles: () => oldProfiles.promise,
+      listWallet: () => oldWallet.promise,
+    });
+
+    await loadBridgePresence(loaders({ profiles: [], walletBridgeCount: 0 }));
+    oldProfiles.resolve([{ route: 'local_bridge' }]);
+    oldWallet.resolve({ bindings: [] });
+    await oldLoad;
+
+    expect(getBridgePresenceSnapshot()).toMatchObject({
+      status: 'ready',
+      hasLocalBridgeProfile: false,
+      walletBridgeCount: 0,
+    });
+  });
+
+  it('queues a notification during an in-flight load and refreshes afterward', async () => {
+    const initialProfiles = deferred<readonly []>();
+    const initialWallet = deferred<{ bindings: [] }>();
+    const refreshedProfiles = deferred<readonly [{ route: 'local_bridge' }]>();
+    const refreshedWallet = deferred<{ bindings: [] }>();
+    const refreshedStarted = deferred<void>();
+    const refreshedReady = deferred<void>();
+    let refreshedLoaderCount = 0;
+    const snapshots: string[] = [];
+    const unsubscribe = subscribeBridgePresence(() => {
+      const status = getBridgePresenceSnapshot().status;
+      snapshots.push(status);
+      if (status === 'ready') refreshedReady.resolve(undefined);
+    });
+    const initialLoad = loadBridgePresence({
+      listProfiles: () => initialProfiles.promise,
+      listWallet: () => initialWallet.promise,
+    });
+
+    notifyBridgePresenceChanged({
+      listProfiles: () => {
+        if (++refreshedLoaderCount === 2) refreshedStarted.resolve(undefined);
+        return refreshedProfiles.promise;
+      },
+      listWallet: () => {
+        if (++refreshedLoaderCount === 2) refreshedStarted.resolve(undefined);
+        return refreshedWallet.promise;
+      },
+    });
+    initialProfiles.resolve([]);
+    initialWallet.resolve({ bindings: [] });
+    await initialLoad;
+
+    // The queued notification invalidates the initial generation before it
+    // settles, so its empty result must never be published.
+    expect(snapshots).not.toContain('ready');
+
+    // Let the queued rerun attach both loaders. It must not publish a ready
+    // snapshot until both of the second request's promises resolve.
+    await refreshedStarted.promise;
+    expect(snapshots).not.toContain('ready');
+
+    refreshedProfiles.resolve([{ route: 'local_bridge' }]);
+    refreshedWallet.resolve({ bindings: [] });
+    await refreshedReady.promise;
+    expect(getBridgePresenceSnapshot()).toMatchObject({
+      status: 'ready',
+      hasLocalBridgeProfile: true,
+      lastNonZero: true,
+    });
+    unsubscribe();
   });
 });

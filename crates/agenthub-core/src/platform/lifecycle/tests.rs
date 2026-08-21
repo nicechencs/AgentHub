@@ -3,6 +3,7 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::time::Duration;
+use std::path::PathBuf;
 
 use crate::adapters::register_all;
 use crate::error::{AppError, Result};
@@ -205,6 +206,7 @@ impl LifecycleInstallExecutor for FakeLifecycleExecutor {
         key: &AgentKey,
         _contribution: &dyn InstallContribution,
         _purge_config: bool,
+        _actual_data_dir: &std::path::Path,
         _command_executor: &dyn CommandExecutor,
     ) -> Result<InstallOutcome> {
         self.installed.store(false, Ordering::SeqCst);
@@ -261,6 +263,7 @@ impl LifecycleInstallExecutor for BlockingLifecycleExecutor {
         key: &AgentKey,
         _contribution: &dyn InstallContribution,
         _purge_config: bool,
+        _actual_data_dir: &std::path::Path,
         _command_executor: &dyn CommandExecutor,
     ) -> Result<InstallOutcome> {
         Ok(InstallOutcome {
@@ -321,6 +324,55 @@ fn open_hub_db() -> (tempfile::TempDir, Database, LifecycleCoordinator) {
     let reg = register_all();
     let lc = LifecycleCoordinator::new(db.clone(), reg);
     (dir, db, lc)
+}
+
+#[test]
+fn compatibility_constructor_derives_file_backed_data_dir() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("compat.db")).unwrap();
+    let lifecycle = LifecycleCoordinator::new(db, register_all());
+
+    assert_eq!(lifecycle.data_dir.as_deref(), Some(dir.path()));
+    assert!(lifecycle.data_dir_error.is_none());
+}
+
+#[test]
+fn invalid_explicit_data_dir_is_reported_when_purge_is_requested() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("invalid-data-dir.db")).unwrap();
+    let key = AgentKey::parse("invalid-data-dir-agent").unwrap();
+    let installed = Arc::new(AtomicBool::new(false));
+    let mut detectors = DetectorRegistry::new();
+    detectors
+        .register(Arc::new(MutableDetector {
+            key: key.clone(),
+            installed: Arc::clone(&installed),
+        }))
+        .unwrap();
+    let mut installs = InstallContributionRegistry::new();
+    installs
+        .register(Arc::new(FakeInstallContribution { key: key.clone() }))
+        .unwrap();
+
+    let mut invalid = PathBuf::new();
+    for _ in 0..128 {
+        invalid.push("..");
+    }
+    let lifecycle = LifecycleCoordinator::with_registries_and_data_dir(
+        db,
+        detectors,
+        installs,
+        Arc::new(FakeLifecycleExecutor { installed }),
+        invalid,
+    );
+    let executor = CountingExecutor::new();
+    let error = lifecycle
+        .uninstall_agent_key(&key, true, &executor, None)
+        .expect_err("invalid explicit data dir must fail closed");
+
+    assert_eq!(error.code(), "invalid_arg");
+    assert!(error.to_string().contains("invalid AgentHub data directory"));
+    assert_eq!(executor.calls(), 0, "purge executor must not be called");
 }
 
 /// BuiltinLifecycleInstallExecutor + non-AgentId key + npm contribution.

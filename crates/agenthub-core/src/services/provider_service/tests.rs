@@ -1343,6 +1343,159 @@ fn updating_current_provider_writes_new_pool_value_not_stale_live() {
 }
 
 #[test]
+fn updating_current_provider_apply_failure_restores_db_and_live() {
+    let live = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "old-live"}}),
+    };
+    let (_root, _db, svc, adapter, _backups) = live_svc(AgentId::Claude, live.clone());
+    let current = svc
+        .create(&input("c1", AgentId::Claude, "Current", true))
+        .unwrap();
+    adapter.fail_on_write(1);
+
+    let mut updated = input("c1", AgentId::Claude, "Current rotated", true);
+    updated.settings_config = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "new-live"}});
+    let error = svc.update(&updated).unwrap_err();
+    assert_eq!(error.code(), "test.write");
+    assert_eq!(adapter.config(), live);
+    assert_eq!(svc.get("c1", None).unwrap(), current);
+}
+
+#[test]
+fn provider_compensation_fails_closed_when_another_writer_changes_the_row() {
+    let (_root, _db, svc, _adapter, _backups) = live_svc(
+        AgentId::Claude,
+        AgentConfig {
+            agent: AgentId::Claude,
+            raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "live"}}),
+        },
+    );
+    let original = svc
+        .create(&input("c1", AgentId::Claude, "Original", false))
+        .unwrap();
+    let mut external = original.clone();
+    external.name = "external-writer".into();
+    external.updated_at = "external-revision".into();
+    svc.repo().update(&external).unwrap();
+
+    let mut expected_after = original.clone();
+    expected_after.name = "mutation-result".into();
+    expected_after.updated_at = "mutation-revision".into();
+    let error = svc
+        .restore_provider_rows(
+            AgentId::Claude,
+            std::slice::from_ref(&original),
+            std::slice::from_ref(&expected_after),
+            &expected_after,
+            false,
+            std::slice::from_ref(&original.id),
+        )
+        .unwrap_err();
+
+    assert_eq!(error.code(), "provider.current.apply.rollback.database");
+    assert_eq!(svc.repo().get_by_id(&original.id).unwrap().unwrap(), external);
+}
+
+#[test]
+fn provider_pre_mutation_failure_does_not_rollback_concurrent_writer() {
+    let live = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "live"}}),
+    };
+    let (_root, _db, svc, _adapter, _backups) = live_svc(AgentId::Claude, live);
+    let current = svc
+        .create(&input("c1", AgentId::Claude, "Current", true))
+        .unwrap();
+    let mut external = current.clone();
+    external.name = "concurrent-writer".into();
+    external.updated_at = "concurrent-revision".into();
+    svc.repo().update(&external).unwrap();
+
+    let error = svc
+        .update(&input("missing-provider", AgentId::Claude, "Missing", true))
+        .unwrap_err();
+    assert_eq!(error.code(), "not_found");
+    assert_eq!(
+        svc.repo().get_by_id(&current.id).unwrap().unwrap(),
+        external,
+        "pre-commit provider failure must not restore a concurrent writer's row"
+    );
+}
+
+#[test]
+fn upserting_current_provider_apply_failure_removes_new_row_and_restores_db() {
+    let live = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "old-live"}}),
+    };
+    let (_root, _db, svc, adapter, _backups) = live_svc(AgentId::Claude, live.clone());
+    let current = svc
+        .create(&input("c1", AgentId::Claude, "Current", true))
+        .unwrap();
+    let binding_before = svc.connections.get_active(AgentId::Claude).unwrap();
+    adapter.fail_on_write(1);
+
+    let mut target = input("c2", AgentId::Claude, "Target", true);
+    target.settings_config = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "new-live"}});
+    let error = svc.upsert(&target).unwrap_err();
+    assert_eq!(error.code(), "test.write");
+    assert_eq!(adapter.config(), live);
+    assert_eq!(svc.get("c1", None).unwrap(), current);
+    assert!(svc.get("c2", None).is_err());
+    assert_eq!(
+        svc.connections.get_active(AgentId::Claude).unwrap(),
+        binding_before,
+        "provider upsert compensation must restore the active binding"
+    );
+}
+
+#[test]
+fn provider_apply_failure_restores_active_account_counterpart_and_binding() {
+    let live = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "old-live"}}),
+    };
+    let (_root, db, svc, adapter, _backups) = live_svc(AgentId::Claude, live.clone());
+    let account_repo = crate::storage::AccountRepo::new(db);
+    let account = crate::models::Account {
+        id: "account-before-provider".into(),
+        agent_id: AgentId::Claude,
+        kind: crate::models::AccountKind::ApiKey,
+        label: "Account before provider".into(),
+        credentials: json!({"format": "api_key", "api_key": "account-key"}),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: true,
+        created_at: "2026-08-21T00:00:00Z".into(),
+        updated_at: "2026-08-21T00:00:00Z".into(),
+    };
+    let (account_before, binding_before) = svc
+        .connections
+        .create_and_activate_account(&account)
+        .unwrap();
+    let provider_before = svc.create(&input("c1", AgentId::Claude, "Provider", false)).unwrap();
+
+    let mut update = input("c1", AgentId::Claude, "Provider", true);
+    update.settings_config = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "new-live"}});
+    adapter.fail_on_write(1);
+    let error = svc.upsert(&update).unwrap_err();
+    assert_eq!(error.code(), "test.write");
+    assert_eq!(svc.get("c1", None).unwrap(), provider_before);
+    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(
+        account_repo.get_by_id(&account_before.id).unwrap().unwrap(),
+        account_before
+    );
+    assert!(account_repo
+        .get_current(AgentId::Claude)
+        .unwrap()
+        .unwrap()
+        .is_current);
+    assert_eq!(adapter.config(), live);
+}
+
+#[test]
 fn updating_non_current_provider_does_not_touch_live() {
     let live = AgentConfig {
         agent: AgentId::Claude,
@@ -1406,6 +1559,57 @@ fn create_skips_surface_for_adapter_generated_projection() {
 }
 
 #[test]
+fn profile_linked_legacy_projection_skips_surface_precompute() {
+    let (_root, db, svc, _adapter, _backups) = live_svc(
+        AgentId::Claude,
+        AgentConfig {
+            agent: AgentId::Claude,
+            raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "live"}}),
+        },
+    );
+    let provider = svc.create(&input("legacy-profile-provider", AgentId::Claude, "Legacy", false)).unwrap();
+    let profile = crate::models::AdapterProfile {
+        id: "legacy-profile".into(),
+        name: "Legacy projection profile".into(),
+        source_kind: crate::models::AdapterSourceKind::Provider,
+        source_id: provider.id.clone(),
+        target_agent_id: AgentId::Claude,
+        route: crate::models::AdapterRoute::ConfigSync,
+        mode: crate::models::AdapterProfileMode::Api,
+        status: crate::models::AdapterProfileStatus::Active,
+        rule_id: "legacy".into(),
+        rule_version: "v1".into(),
+        generated_provider_id: Some(provider.id.clone()),
+        local_port: None,
+        auto_start: false,
+        last_error_code: None,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    };
+    crate::storage::AdapterProfileRepo::new(db)
+        .create(&profile)
+        .unwrap();
+
+    let updated = svc.upsert(&input(
+        "legacy-profile-provider",
+        AgentId::Claude,
+        "Legacy renamed",
+        false,
+    ))
+    .unwrap();
+    assert!(updated.meta.get("surface").is_none());
+    let stored = svc
+        .repo()
+        .get_by_id("legacy-profile-provider")
+        .unwrap()
+        .unwrap();
+    assert!(
+        stored.meta.get("surface").is_none(),
+        "legacy projection identified by generated_provider_id must not persist a ticket surface"
+    );
+}
+
+#[test]
 fn create_writes_classified_surface() {
     let (_dir, svc) = svc();
     let created = svc
@@ -1464,4 +1668,58 @@ fn import_live_writes_kimi_membership_surface() {
     let imported = svc.import_live(AgentId::Kimi, Some("Kimi live")).unwrap();
     assert_eq!(imported.meta["source"], "live");
     assert_eq!(imported.meta["surface"], "kimi-code-membership");
+}
+
+#[test]
+fn import_live_does_not_persist_ticket_surface_on_generated_provider_id_projection() {
+    let live = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "live"}}),
+    };
+    let (_root, db, svc, _adapter, _backups) = live_svc(AgentId::Claude, live.clone());
+    let provider = crate::models::Provider {
+        id: "legacy-generated-provider".into(),
+        agent_id: AgentId::Claude,
+        name: "Imported".into(),
+        settings_config: live.raw,
+        meta: json!({"source": "live"}),
+        is_current: true,
+        created_at: "2026-08-21T00:00:00Z".into(),
+        updated_at: "2026-08-21T00:00:00Z".into(),
+    };
+    crate::storage::ProviderRepo::new(db.clone())
+        .create(&provider)
+        .unwrap();
+    crate::storage::AdapterProfileRepo::new(db)
+        .create(&crate::models::AdapterProfile {
+            id: "legacy-generated-profile".into(),
+            name: "Legacy generated".into(),
+            source_kind: crate::models::AdapterSourceKind::Provider,
+            source_id: "kimi-source".into(),
+            target_agent_id: AgentId::Claude,
+            route: crate::models::AdapterRoute::ConfigSync,
+            mode: crate::models::AdapterProfileMode::Api,
+            status: crate::models::AdapterProfileStatus::Active,
+            rule_id: "legacy".into(),
+            rule_version: "v1".into(),
+            generated_provider_id: Some(provider.id.clone()),
+            local_port: None,
+            auto_start: false,
+            last_error_code: None,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+
+    let imported = svc.import_live(AgentId::Claude, Some("Imported")).unwrap();
+    assert!(
+        imported.meta.get("surface").is_none(),
+        "projection heal must not stamp a ticket surface: {}",
+        imported.meta
+    );
+    let stored = svc.repo().get_by_id(&provider.id).unwrap().unwrap();
+    assert!(
+        stored.meta.get("surface").is_none(),
+        "legacy surface heal must persist the skip to sqlite, not only the in-memory object"
+    );
 }

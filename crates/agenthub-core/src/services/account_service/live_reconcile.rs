@@ -231,6 +231,7 @@ impl AccountService {
             created_at: now.clone(),
             updated_at: now,
         };
+        let row = self.prepare_account_surface(row);
         let created = if row.is_current {
             self.connections.create_and_activate_account(&row)?.0
         } else {
@@ -268,6 +269,7 @@ impl AccountService {
         row.status = "active".into();
         let _ = crate::services::account_identity_heal::heal_account_identity(&mut row);
         let _ = crate::services::account_quota::heal_token_expiry(&mut row);
+        row = self.prepare_account_surface(row);
         (row, true)
     }
 
@@ -306,9 +308,16 @@ impl AccountService {
     pub(super) fn persist_reconciled_live_row(
         &self,
         agent: AgentId,
-        mut row: Account,
+        row: Account,
         changed: bool,
     ) -> Result<Account> {
+        let original = row.clone();
+        let original_extra = row.extra.clone();
+        let mut row = self.prepare_account_surface(row);
+        let surface_changed = row.extra != original_extra;
+        if surface_changed && !changed {
+            return self.stamp_account_surface(original);
+        }
         if agent == AgentId::Pi {
             return if changed {
                 let expected_updated_at = row.updated_at.clone();
@@ -471,7 +480,11 @@ impl AccountService {
             return Ok(());
         }
 
-        let live_before = adapter.read_account().ok();
+        let live_before = match adapter.read_account() {
+            Ok(live) => Some(live),
+            Err(error) if error.code() == "not_found" => None,
+            Err(error) => return Err(error),
+        };
         let apply_live = stored.to_live();
         if live_before
             .as_ref()
@@ -515,4 +528,23 @@ impl AccountService {
 fn leftover_shaped_codex_live(agent: AgentId) -> bool {
     agent == AgentId::Codex
         && crate::integrations::agents::codex::leftover::live_config_is_bridge_leftover()
+}
+
+pub(super) fn compensated_current_account_apply_error_with_db(
+    primary: AppError,
+    live_rollback: Option<AppError>,
+    db_rollback: Option<AppError>,
+) -> AppError {
+    if live_rollback.is_none() && db_rollback.is_none() {
+        return primary;
+    }
+    let live = live_rollback.as_ref().map_or("ok", AppError::code);
+    let database = db_rollback.as_ref().map_or("ok", AppError::code);
+    AppError::message(
+        "account.current.apply.rollback",
+        format!(
+            "applying the current account failed [{}]; compensation status: live={live}, database={database}",
+            primary.code()
+        ),
+    )
 }

@@ -63,13 +63,14 @@ export function createTauriAccountPort(): AccountPort {
       }
     },
 
-    async addApiKeyAccount(agentId, key, label, envKey) {
+    async addApiKeyAccount(agentId, key, label, envKey, productMarker) {
       try {
         const row = await invoke<CoreAccount>('add_api_key_account', {
           agentId,
           key,
           label: label?.trim() ? label.trim() : null,
           envKey: envKey?.trim() ? envKey.trim() : null,
+          productMarker: productMarker?.trim() ? productMarker.trim() : null,
         });
         return mapCoreAccount(row);
       } catch (e) {

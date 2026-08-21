@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -9,9 +9,43 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const script = path.join(root, 'scripts', 'check-linux-prereqs.sh');
 const launcher = path.join(root, 'run.sh');
+const fixtureRoot = fs.mkdtempSync(path.join(root, '.check-linux-prereqs-test-'));
+const fixtureScript = path.join(fixtureRoot, 'scripts', 'check-linux-prereqs.sh');
+const fixtureLauncher = path.join(fixtureRoot, 'run.sh');
+
+function normalizeShell(text) {
+  return text.replace(/\r\n?/g, '\n');
+}
+
+fs.mkdirSync(path.dirname(fixtureScript), { recursive: true });
+fs.writeFileSync(fixtureScript, normalizeShell(fs.readFileSync(script, 'utf8')));
+fs.writeFileSync(fixtureLauncher, normalizeShell(fs.readFileSync(launcher, 'utf8')));
+
+after(() => {
+  fs.rmSync(fixtureRoot, { recursive: true, force: true });
+});
+
+function bashRelativePath(file) {
+  const relative = path.relative(root, path.resolve(file));
+  if (
+    !relative ||
+    path.isAbsolute(relative) ||
+    relative === '..' ||
+    relative.startsWith(`..${path.sep}`)
+  ) {
+    throw new Error(`expected a path inside the repository root: ${file}`);
+  }
+  return relative.split(path.sep).join('/');
+}
 
 function run(file, args, extra = {}) {
-  return spawnSync('bash', [file, ...args], {
+  const resolved = path.resolve(file);
+  const fixture = resolved === path.resolve(script)
+    ? fixtureScript
+    : resolved === path.resolve(launcher)
+      ? fixtureLauncher
+      : file;
+  return spawnSync('bash', [bashRelativePath(fixture), ...args], {
     encoding: 'utf8',
     cwd: root,
     env: { ...process.env, ...(extra.env ?? {}) },
@@ -58,7 +92,17 @@ test('--check fails closed on non-Linux hosts', () => {
   }
   const result = run(script, ['--check']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /for Linux/);
+  const output = `${result.stdout}\n${result.stderr}`;
+  // Git Bash/WSL can report Linux even when Node is running on Windows, so
+  // assert the exact branch reached by the checker rather than inferring it
+  // from os.platform(). Both branches have a specific, actionable error.
+  if (/Linux native build dependencies are incomplete\./.test(output)) {
+    assert.match(output, /\[ERROR\] Linux native build dependencies are incomplete\./);
+    assert.match(output, /apt-get|dnf|pacman/);
+  } else {
+    assert.match(output, /\[ERROR\] This checker is for Linux\. Detected [^\r\n]+\./);
+  }
+  assert.equal(fs.readFileSync(fixtureScript, 'utf8').includes('\r'), false);
 });
 
 test('unknown flags fail with usage, not a package-manager mutation', () => {

@@ -47,11 +47,11 @@ fn emit_stream_outputs(
 /// assistant text (may be empty). Never leave raw NDJSON as final content —
 /// even when truncated or when only tool/status events arrived.
 fn apply_structured_stdout(result: &mut AgentRunResult, session: &StreamSession) {
-    if session.is_structured() {
+    if session.is_structured()
+        && !result.truncated
+        && !matches!(result.status, RunStatus::Timeout | RunStatus::Cancelled)
+    {
         result.stdout = session.assistant_text().to_string();
-        // Captured bytes were NDJSON, not user-facing text; clear truncated flag
-        // when we successfully rewrote content from the decoder.
-        result.truncated = false;
     }
     if result.native_session_id.is_none() {
         result.native_session_id = session.native_session_id().map(str::to_string);

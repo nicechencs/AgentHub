@@ -57,6 +57,40 @@ function readCargoWorkspaceVersion(cargoToml) {
   return versions[0];
 }
 
+/** Read versions for the three local workspace packages from Cargo.lock. */
+function readCargoLockWorkspaceVersions(cargoLock) {
+  const expected = ['agenthub-cli', 'agenthub-core', 'agenthub-gui'];
+  const versions = new Map();
+  let packageName = null;
+
+  for (const line of cargoLock.split(/\r?\n/)) {
+    if (/^\s*\[\[package\]\]\s*$/.test(line)) {
+      packageName = null;
+      continue;
+    }
+    const name = line.match(/^\s*name\s*=\s*"([^"]+)"\s*$/);
+    if (name) {
+      packageName = expected.includes(name[1]) ? name[1] : null;
+      continue;
+    }
+    if (packageName) {
+      const version = line.match(/^\s*version\s*=\s*"([^"]+)"\s*$/);
+      if (version) {
+        if (versions.has(packageName)) {
+          throw new Error(`Cargo.lock contains duplicate workspace package entry: ${packageName}`);
+        }
+        versions.set(packageName, version[1]);
+      }
+    }
+  }
+
+  const missing = expected.filter((name) => !versions.has(name));
+  if (missing.length > 0) {
+    throw new Error(`Cargo.lock is missing workspace package entries: ${missing.join(', ')}`);
+  }
+  return Object.fromEntries(expected.map((name) => [name, versions.get(name)]));
+}
+
 function assertStrictSemVer(version, source) {
   if (!STRICT_SEMVER.test(version)) {
     throw new Error(`${source} version '${version}' is not strict SemVer (use X.Y.Z without a leading v)`);
@@ -78,6 +112,13 @@ function readReleaseMetadata(root = defaultRoot) {
     throw new Error(`Unable to read Cargo.toml: ${error instanceof Error ? error.message : String(error)}`);
   }
   const cargoVersion = readCargoWorkspaceVersion(cargoContents);
+  let cargoLockContents;
+  try {
+    cargoLockContents = fs.readFileSync(path.join(root, 'Cargo.lock'), 'utf8');
+  } catch (error) {
+    throw new Error(`Unable to read Cargo.lock: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const cargoLockVersions = readCargoLockWorkspaceVersions(cargoLockContents);
   const tauriVersion = readJsonVersion(path.join(root, 'src-tauri', 'tauri.conf.json'), 'src-tauri/tauri.conf.json');
 
   for (const [source, version] of [
@@ -91,6 +132,15 @@ function readReleaseMetadata(root = defaultRoot) {
   if (packageVersion !== cargoVersion || packageVersion !== tauriVersion) {
     throw new Error(
       `Release versions must match: package.json=${packageVersion}, Cargo.toml [workspace.package]=${cargoVersion}, src-tauri/tauri.conf.json=${tauriVersion}`,
+    );
+  }
+
+  const lockMismatches = Object.entries(cargoLockVersions)
+    .filter(([, version]) => version !== packageVersion)
+    .map(([name, version]) => `${name}=${version}`);
+  if (lockMismatches.length > 0) {
+    throw new Error(
+      `Cargo.lock workspace package versions must match: expected=${packageVersion}, ${lockMismatches.join(', ')}`,
     );
   }
 
@@ -136,7 +186,15 @@ function main() {
   console.log(JSON.stringify(metadata));
 }
 
-export { STRICT_SEMVER, assertStrictSemVer, isPrerelease, parseCliArgs, readCargoWorkspaceVersion, readReleaseMetadata };
+export {
+  STRICT_SEMVER,
+  assertStrictSemVer,
+  isPrerelease,
+  parseCliArgs,
+  readCargoLockWorkspaceVersions,
+  readCargoWorkspaceVersion,
+  readReleaseMetadata,
+};
 
 const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : null;
 if (invokedPath === import.meta.url) {

@@ -19,6 +19,14 @@ impl AgentPathContribution for ClaudePaths {
         }
         Ok(home_dir()?.join(".claude"))
     }
+
+    fn default_home_dir(&self) -> Result<PathBuf> {
+        Ok(home_dir()?.join(".claude"))
+    }
+
+    fn home_dir_is_default(&self) -> bool {
+        first_env_path("CLAUDE_CONFIG_DIR").is_none()
+    }
 }
 
 pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {

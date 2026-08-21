@@ -7,9 +7,7 @@
 
 use std::time::{Duration, Instant};
 
-use std::path::PathBuf;
-#[cfg(not(windows))]
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::adapters::AdapterRegistry;
 use crate::catalog::limits::{
@@ -27,7 +25,9 @@ use crate::runtime;
 use crate::services::{LiveWriteAuthority, LiveWriteGuard};
 use crate::storage::Database;
 use crate::utils::command_exec::{CommandExecutor, ExecRequest, ExecResult, SystemCommandExecutor};
-use crate::utils::paths::agent_home;
+use crate::utils::paths::{
+    same_path_identity, validate_default_agent_config_purge_target,
+};
 use crate::utils::redact::redact_text;
 
 fn elapsed_ms(started: Instant) -> u64 {
@@ -1311,8 +1311,20 @@ pub fn uninstall_agent(
     purge_config: bool,
     executor: &dyn CommandExecutor,
 ) -> Result<InstallOutcome> {
-    let authority = LiveWriteAuthority::from_database(db);
-    uninstall_agent_with_authority(registry, &authority, agent, purge_config, executor)
+    let authority = LiveWriteAuthority::try_from_database(db)?;
+    let data_dir = if purge_config {
+        crate::utils::paths::normalize_data_dir(authority.data_root())?
+    } else {
+        PathBuf::new()
+    };
+    uninstall_agent_with_authority_at_data_dir(
+        registry,
+        &authority,
+        &data_dir,
+        agent,
+        purge_config,
+        executor,
+    )
 }
 
 /// Uninstall using a caller-composed shared live-write authority.
@@ -1327,6 +1339,30 @@ pub fn uninstall_agent_with_authority(
     purge_config: bool,
     executor: &dyn CommandExecutor,
 ) -> Result<InstallOutcome> {
+    let data_dir = if purge_config {
+        crate::utils::paths::normalize_data_dir(authority.data_root())?
+    } else {
+        PathBuf::new()
+    };
+    uninstall_agent_with_authority_at_data_dir(
+        registry,
+        authority,
+        &data_dir,
+        agent,
+        purge_config,
+        executor,
+    )
+}
+
+/// Uninstall with the owning AgentHub's already-resolved data directory.
+pub fn uninstall_agent_with_authority_at_data_dir(
+    registry: &AdapterRegistry,
+    authority: &LiveWriteAuthority,
+    actual_data_dir: &Path,
+    agent: AgentId,
+    purge_config: bool,
+    executor: &dyn CommandExecutor,
+) -> Result<InstallOutcome> {
     let contribution = builtin_install_registry()
         .get_agent_id(agent)
         .ok_or_else(|| {
@@ -1335,9 +1371,10 @@ pub fn uninstall_agent_with_authority(
                 agent.as_str()
             ))
         })?;
-    uninstall_agent_with_contribution_and_authority(
+    uninstall_agent_with_contribution_and_authority_at_data_dir(
         registry,
         authority,
+        &actual_data_dir,
         agent,
         contribution.as_ref(),
         purge_config,
@@ -1354,21 +1391,60 @@ pub fn uninstall_agent_with_contribution_and_authority(
     purge_config: bool,
     executor: &dyn CommandExecutor,
 ) -> Result<InstallOutcome> {
+    let data_dir = if purge_config {
+        crate::utils::paths::normalize_data_dir(authority.data_root())?
+    } else {
+        PathBuf::new()
+    };
+    uninstall_agent_with_contribution_and_authority_at_data_dir(
+        registry,
+        authority,
+        &data_dir,
+        agent,
+        contribution,
+        purge_config,
+        executor,
+    )
+}
+
+/// Explicit-contribution uninstall using the owning AgentHub data directory.
+pub fn uninstall_agent_with_contribution_and_authority_at_data_dir(
+    registry: &AdapterRegistry,
+    authority: &LiveWriteAuthority,
+    actual_data_dir: &Path,
+    agent: AgentId,
+    contribution: &dyn InstallContribution,
+    purge_config: bool,
+    executor: &dyn CommandExecutor,
+) -> Result<InstallOutcome> {
+    let actual_data_dir = if purge_config {
+        normalize_purge_data_dir(authority, actual_data_dir)?
+    } else {
+        PathBuf::new()
+    };
     let key = AgentKey::from_agent_id(agent);
     require_contribution_key(&key, contribution)?;
     if purge_config {
         let guard = authority.acquire(agent)?;
-        return uninstall_agent_with_contribution_and_guard(
+        return uninstall_agent_with_contribution_and_guard_at_data_dir(
             registry,
             authority,
             &guard,
+            &actual_data_dir,
             agent,
             contribution,
             true,
             executor,
         );
     }
-    uninstall_agent_inner(registry, agent, contribution, false, executor)
+    uninstall_agent_inner(
+        registry,
+        &actual_data_dir,
+        agent,
+        contribution,
+        false,
+        executor,
+    )
 }
 
 /// Guarded purge counterpart for an enclosing Core lifecycle saga that has
@@ -1381,6 +1457,37 @@ pub fn uninstall_agent_with_guard(
     purge_config: bool,
     executor: &dyn CommandExecutor,
 ) -> Result<InstallOutcome> {
+    let data_dir = if purge_config {
+        crate::utils::paths::normalize_data_dir(authority.data_root())?
+    } else {
+        PathBuf::new()
+    };
+    uninstall_agent_with_guard_at_data_dir(
+        registry,
+        authority,
+        guard,
+        &data_dir,
+        agent,
+        purge_config,
+        executor,
+    )
+}
+
+/// Guarded uninstall using the owning AgentHub data directory.
+pub fn uninstall_agent_with_guard_at_data_dir(
+    registry: &AdapterRegistry,
+    authority: &LiveWriteAuthority,
+    guard: &LiveWriteGuard,
+    actual_data_dir: &Path,
+    agent: AgentId,
+    purge_config: bool,
+    executor: &dyn CommandExecutor,
+) -> Result<InstallOutcome> {
+    let actual_data_dir = if purge_config {
+        crate::utils::paths::normalize_data_dir(actual_data_dir)?
+    } else {
+        PathBuf::new()
+    };
     let contribution = builtin_install_registry()
         .get_agent_id(agent)
         .ok_or_else(|| {
@@ -1389,10 +1496,11 @@ pub fn uninstall_agent_with_guard(
                 agent.as_str()
             ))
         })?;
-    uninstall_agent_with_contribution_and_guard(
+    uninstall_agent_with_contribution_and_guard_at_data_dir(
         registry,
         authority,
         guard,
+        &actual_data_dir,
         agent,
         contribution.as_ref(),
         purge_config,
@@ -1410,6 +1518,39 @@ pub fn uninstall_agent_with_contribution_and_guard(
     purge_config: bool,
     executor: &dyn CommandExecutor,
 ) -> Result<InstallOutcome> {
+    let data_dir = if purge_config {
+        crate::utils::paths::normalize_data_dir(authority.data_root())?
+    } else {
+        PathBuf::new()
+    };
+    uninstall_agent_with_contribution_and_guard_at_data_dir(
+        registry,
+        authority,
+        guard,
+        &data_dir,
+        agent,
+        contribution,
+        purge_config,
+        executor,
+    )
+}
+
+/// Explicit-contribution guarded uninstall using the owning AgentHub data dir.
+pub fn uninstall_agent_with_contribution_and_guard_at_data_dir(
+    registry: &AdapterRegistry,
+    authority: &LiveWriteAuthority,
+    guard: &LiveWriteGuard,
+    actual_data_dir: &Path,
+    agent: AgentId,
+    contribution: &dyn InstallContribution,
+    purge_config: bool,
+    executor: &dyn CommandExecutor,
+) -> Result<InstallOutcome> {
+    let actual_data_dir = if purge_config {
+        normalize_purge_data_dir(authority, actual_data_dir)?
+    } else {
+        PathBuf::new()
+    };
     let key = AgentKey::from_agent_id(agent);
     require_contribution_key(&key, contribution)?;
     if !purge_config {
@@ -1418,11 +1559,39 @@ pub fn uninstall_agent_with_contribution_and_guard(
         ));
     }
     authority.validate_guard(guard, agent)?;
-    uninstall_agent_inner(registry, agent, contribution, true, executor)
+    uninstall_agent_inner(
+        registry,
+        &actual_data_dir,
+        agent,
+        contribution,
+        true,
+        executor,
+    )
+}
+
+/// A purge must use the data directory belonging to the same database-backed
+/// authority.  This keeps explicit composition paths honest and prevents a
+/// caller from supplying an unrelated safe-looking directory to bypass the
+/// data-dir overlap policy.
+fn normalize_purge_data_dir(
+    authority: &LiveWriteAuthority,
+    actual_data_dir: &Path,
+) -> Result<PathBuf> {
+    let actual = crate::utils::paths::normalize_data_dir(actual_data_dir)?;
+    let authority_root = crate::utils::paths::normalize_data_dir(authority.data_root())?;
+    if !same_path_identity(&actual, &authority_root)? {
+        return Err(AppError::InvalidArg(format!(
+            "cannot purge config: data directory {} does not match the database authority root {}",
+            actual.display(),
+            authority_root.display()
+        )));
+    }
+    Ok(actual)
 }
 
 fn uninstall_agent_inner(
     registry: &AdapterRegistry,
+    actual_data_dir: &Path,
     agent: AgentId,
     contribution: &dyn InstallContribution,
     purge_config: bool,
@@ -1440,6 +1609,17 @@ fn uninstall_agent_inner(
     let result = (|| {
         let mut logs = Vec::new();
         let action = "agent_uninstall";
+
+        // Resolve and validate the fixed default target before any uninstall
+        // side effect. Custom agent-owned environment roots fail closed.
+        let mut purge_home = if purge_config {
+            Some(validate_default_agent_config_purge_target(
+                agent,
+                actual_data_dir,
+            )?)
+        } else {
+            None
+        };
 
         let before = registry
             .get(agent)
@@ -1551,23 +1731,42 @@ fn uninstall_agent_inner(
             }
         }
 
+        // The external uninstall command may mutate the filesystem or an
+        // agent-owned environment override. Resolve and validate again before
+        // recursive deletion, and require the same filesystem identity.
         if purge_config {
-            let home = agent_home(agent)?;
-            if home.exists() {
-                logs.push(format!("# remove config dir {}", home.display()));
-                match std::fs::remove_dir_all(&home) {
-                    Ok(()) => logs.push(format!("✓ removed {}", home.display())),
-                    Err(e) => {
-                        logs.push(format!("✗ remove failed: {e}"));
-                        return Ok(InstallOutcome::failure(
-                            action,
-                            logs,
-                            format!("删除配置目录失败: {e}"),
-                        ));
+            let initial = purge_home
+                .as_deref()
+                .ok_or_else(|| AppError::InvalidArg("missing purge target".into()))?;
+            let revalidated = validate_default_agent_config_purge_target(
+                agent,
+                actual_data_dir,
+            )?;
+            if !same_path_identity(initial, &revalidated)? {
+                return Err(AppError::InvalidArg(format!(
+                    "unsafe config purge path {}: target changed during uninstall",
+                    revalidated.display()
+                )));
+            }
+            purge_home = Some(revalidated);
+
+            if let Some(home) = purge_home.as_deref() {
+                if home.exists() {
+                    logs.push(format!("# remove config dir {}", home.display()));
+                    match std::fs::remove_dir_all(home) {
+                        Ok(()) => logs.push(format!("✓ removed {}", home.display())),
+                        Err(e) => {
+                            logs.push(format!("✗ remove failed: {e}"));
+                            return Ok(InstallOutcome::failure(
+                                action,
+                                logs,
+                                format!("删除配置目录失败: {e}"),
+                            ));
+                        }
                     }
+                } else {
+                    logs.push(format!("config dir missing: {}", home.display()));
                 }
-            } else {
-                logs.push(format!("config dir missing: {}", home.display()));
             }
         }
 
@@ -1584,7 +1783,7 @@ fn uninstall_agent_inner(
         let ok = if removed_program || is_npm {
             detect.status == DetectStatus::NotFound
         } else if purge_config {
-            !agent_home(agent).map(|p| p.exists()).unwrap_or(false)
+            purge_home.as_deref().is_some_and(|home| !home.exists())
         } else {
             false
         };

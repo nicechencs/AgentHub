@@ -28,6 +28,33 @@ pub fn resolve_agent_home(agent: AgentId) -> Result<PathBuf> {
         .home_dir()
 }
 
+/// Resolve the fixed default root for an agent, ignoring any agent-owned
+/// environment override.  This is used by destructive purge policy only.
+pub fn resolve_default_agent_home(agent: AgentId) -> Result<PathBuf> {
+    builtin_path_registry()
+        .get(agent)
+        .ok_or_else(|| {
+            crate::error::AppError::NotFound(format!(
+                "no path contribution for agent {}",
+                agent.as_str()
+            ))
+        })?
+        .default_home_dir()
+}
+
+/// Whether the resolved agent home came from its fixed contribution default.
+pub fn agent_home_is_default(agent: AgentId) -> Result<bool> {
+    Ok(builtin_path_registry()
+        .get(agent)
+        .ok_or_else(|| {
+            crate::error::AppError::NotFound(format!(
+                "no path contribution for agent {}",
+                agent.as_str()
+            ))
+        })?
+        .home_dir_is_default())
+}
+
 /// Resolve directory to open for manual verification (may differ from home).
 pub fn resolve_agent_config_dir(agent: AgentId) -> Result<PathBuf> {
     builtin_path_registry()

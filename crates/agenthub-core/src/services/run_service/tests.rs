@@ -26,6 +26,33 @@ fn empty_prompt_rejected() {
 }
 
 #[test]
+fn truncated_structured_result_keeps_captured_stdout() {
+    let mut session = crate::utils::stream_parse::StreamSession::new(
+        AgentId::Claude,
+        crate::models::ProcessMode::Auto,
+    );
+    let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}"#;
+    let _ = session.feed(crate::models::OutputStream::Stdout, &format!("{line}\n"));
+
+    let mut result = AgentRunResult {
+        agent: AgentId::Claude,
+        status: RunStatus::Ok,
+        exit_code: Some(0),
+        duration_ms: 0,
+        stdout: "raw captured NDJSON".into(),
+        stderr: String::new(),
+        command: "claude".into(),
+        error: None,
+        truncated: true,
+        native_session_id: None,
+    };
+    apply_structured_stdout(&mut result, &session);
+
+    assert_eq!(result.stdout, "raw captured NDJSON");
+    assert!(result.truncated);
+}
+
+#[test]
 fn dry_run_does_not_call_runner() {
     let recorder = RecordingProcessRunner::new();
     let calls = Arc::clone(&recorder.calls);

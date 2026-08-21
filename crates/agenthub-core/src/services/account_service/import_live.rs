@@ -12,7 +12,7 @@ use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
     attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult,
-    AdapterSourceKind, AgentId, BackupKind, Capability, LiveAccount, PersistedTicketSurface,
+    AgentId, BackupKind, Capability, LiveAccount, PersistedTicketSurface,
     TicketSurface,
 };
 use crate::services::switch_undo::{
@@ -147,12 +147,13 @@ impl AccountService {
             created_at: now.clone(),
             updated_at: now,
         };
+        let row = self.prepare_account_surface(row);
         if make_current {
             let (created, _binding) = self.connections.create_and_activate_account(&row)?;
-            self.stamp_account_surface(created)
+            Ok(created)
         } else {
             let created = self.repo.create(&row)?;
-            self.stamp_account_surface(created)
+            Ok(created)
         }
     }
 
@@ -197,71 +198,94 @@ impl AccountService {
         extra: Value,
         mark_current: bool,
     ) -> Result<Account> {
-        let now = now_ts();
-        let mut row = existing.clone();
-        row.kind = kind;
-        row.label = label;
-        row.credentials = credentials;
-        row.extra = extra;
-        row.status = "active".into();
-        row.updated_at = now;
-        if mark_current {
-            row.is_current = true;
-        }
-
-        let updated = if row.is_current {
-            let (updated, _binding) = self.connections.update_and_activate_account(&row)?;
-            updated
-        } else {
-            self.repo.update(&row)?
-        };
-
-        let incoming_loopback = credentials_are_loopback(&updated.credentials);
-        let leftovers = self.repo.list(Some(updated.agent_id))?;
-        for other in leftovers {
-            if other.id == updated.id || other.kind != updated.kind {
-                continue;
-            }
-            if !same_live_slot(updated.agent_id, &updated.credentials, &other.credentials) {
-                continue;
-            }
-            let should_delete = if incoming_loopback {
-                credentials_are_loopback(&other.credentials)
-            } else {
-                !credentials_are_loopback(&other.credentials)
-                    && accounts_same_authorization(
-                        adapter,
-                        updated.kind,
-                        &updated.credentials,
-                        &other,
-                    )
-            };
-            if should_delete {
-                // Prefer consistency path so an active leftover never leaves a dangling binding.
-                // Propagate delete errors — never report merge success with leftover rows.
-                self.connections
-                    .delete_account(&other.id, updated.agent_id)?;
-            }
-        }
-
-        self.stamp_account_surface(updated)
+        self.merge_into_existing_with_footprint(
+            adapter,
+            existing,
+            kind,
+            label,
+            credentials,
+            extra,
+            mark_current,
+            None,
+            None,
+        )
+        .map(|(updated, _deleted)| updated)
+        .map_err(|error| error.into_error())
     }
 
-    /// Classify the persisted row and write `extra.surface` before the import
-    /// / add path returns. `classify_source_product` reads the stored row, so
-    /// this runs after the first successful persist.
-    pub(super) fn stamp_account_surface(&self, account: Account) -> Result<Account> {
-        let product = AdapterRouteService::new(self.db.clone())
-            .classify_source_product(AdapterSourceKind::Account, &account.id)?;
+    pub(super) fn merge_into_existing_with_footprint(
+        &self,
+        adapter: &dyn AgentAdapter,
+        existing: Account,
+        kind: AccountKind,
+        label: String,
+        credentials: Value,
+        extra: Value,
+        mark_current: bool,
+        _expected_target_updated_at: Option<&str>,
+        _expected_current: Option<(&str, &str)>,
+    ) -> std::result::Result<
+        (Account, Vec<Account>),
+        super::pool_crud::AccountMutationError,
+    > {
+        self.commit_authorization_merge(
+            adapter,
+            &existing,
+            kind,
+            label,
+            credentials,
+            extra,
+            mark_current,
+        )
+        .map(|committed| (committed.stored, committed.deleted))
+    }
+
+    /// Add the ticket surface to a prospective row before its first database
+    /// mutation. This keeps create/import/merge activation atomic with the
+    /// product marker and avoids a post-commit full-row rewrite.
+    pub(super) fn prepare_account_surface(&self, mut account: Account) -> Account {
+        let product = AdapterRouteService::classify_account_source_product(&account);
         let surface = TicketSurface::from_product(product);
         if TicketSurface::from_persisted_json(&account.extra)
-            == PersistedTicketSurface::Known(surface)
+            != PersistedTicketSurface::Known(surface)
         {
+            attach_persisted_surface(&mut account.extra, surface);
+        }
+        account
+    }
+
+    /// Repair a legacy row's surface using a narrow optimistic update. Only
+    /// `extra.surface` and `updated_at` are written; credentials, label,
+    /// current state and active binding are never copied from a stale caller.
+    pub(super) fn stamp_account_surface(&self, account: Account) -> Result<Account> {
+        let prepared = self.prepare_account_surface(account.clone());
+        if prepared.extra == account.extra {
             return Ok(account);
         }
-        let mut stamped = account;
-        attach_persisted_surface(&mut stamped.extra, surface);
-        stamped.updated_at = now_ts();
-        self.repo.update(&stamped)
+        let expected_updated_at = account.updated_at.clone();
+        let updated_at = now_ts();
+        let extra = serde_json::to_string(&prepared.extra)?;
+        let changed = self.db.with_conn(|conn| {
+            conn.execute(
+                "UPDATE accounts SET extra = ?2, updated_at = ?3 WHERE id = ?1 AND agent_id = ?4 AND updated_at = ?5",
+                rusqlite::params![
+                    &account.id,
+                    extra,
+                    &updated_at,
+                    account.agent_id.as_str(),
+                    &expected_updated_at,
+                ],
+            )
+            .map_err(AppError::from)
+        })?;
+        if changed != 1 {
+            return Err(AppError::message(
+                "account.conflict",
+                format!("account changed before surface update: {}", account.id),
+            ));
+        }
+        self.repo
+            .get_by_id(&account.id)?
+            .ok_or_else(|| AppError::NotFound(format!("account not found: {}", account.id)))
     }
 }
