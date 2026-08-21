@@ -139,12 +139,16 @@ fn grok_subscription_prepare_uses_xai_chat_and_projects_only_loopback() {
         .prepare(&grok_claude_account_request("grok-subscription"))
         .unwrap();
     let spec = prepared.runtime_material().start_spec(Some(0));
-    assert_eq!(spec.upstream.base_url, "https://api.x.ai/v1");
+    assert_eq!(
+        spec.upstream.base_url,
+        crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL
+    );
     assert_eq!(spec.upstream.model.as_deref(), Some("grok-4.5"));
     assert_eq!(
         spec.upstream.protocol,
-        BridgeUpstreamProtocol::KimiChatCompletions
+        BridgeUpstreamProtocol::XaiResponsesOauth
     );
+    assert_eq!(spec.upstream.local_surface, BridgeLocalSurface::Messages);
     assert_eq!(spec.upstream.auth.token(), "grok-upstream-secret");
 
     let projection = prepared.provider_projection(43123).unwrap();
@@ -184,12 +188,16 @@ fn grok_subscription_prepare_codex_uses_xai_chat_and_codex_toml() {
         .prepare(&grok_codex_account_request("grok-subscription"))
         .unwrap();
     let spec = prepared.runtime_material().start_spec(Some(0));
-    assert_eq!(spec.upstream.base_url, "https://api.x.ai/v1");
+    assert_eq!(
+        spec.upstream.base_url,
+        crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL
+    );
     assert_eq!(spec.upstream.model.as_deref(), Some("grok-4.5"));
     assert_eq!(
         spec.upstream.protocol,
-        BridgeUpstreamProtocol::KimiChatCompletions
+        BridgeUpstreamProtocol::XaiResponsesOauth
     );
+    assert_eq!(spec.upstream.local_surface, BridgeLocalSurface::Responses);
     assert_eq!(spec.upstream.auth.token(), "grok-upstream-secret");
 
     let projection = prepared.provider_projection(43123).unwrap();
@@ -692,6 +700,7 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         upstream_base_url: format!("http://127.0.0.1:{upstream_port}"),
         upstream_model: "kimi-k2.5".into(),
         protocol: crate::bridge::BridgeUpstreamProtocol::KimiChatCompletions,
+        local_surface: BridgeLocalSurface::Responses,
         upstream_auth: ResolvedAuth::bearer("upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -717,6 +726,7 @@ async fn codex_responses_health_probe_does_not_request_models() {
         upstream_base_url: "http://127.0.0.1:9/should-not-be-called".into(),
         upstream_model: CODEX_DEFAULT_MODEL.into(),
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
+        local_surface: BridgeLocalSurface::Messages,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
     };
@@ -727,6 +737,30 @@ async fn codex_responses_health_probe_does_not_request_models() {
         .verify_bound_health(runtime.port)
         .await
         .expect("local health is sufficient for Codex Responses");
+
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn xai_responses_health_probe_does_not_request_models() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "grok-health-profile".into(),
+        source_connection_id: "grok-subscription".into(),
+        preferred_port: None,
+        upstream_base_url: "http://127.0.0.1:9/should-not-be-called".into(),
+        upstream_model: crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.into(),
+        protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
+        local_surface: BridgeLocalSurface::Messages,
+        upstream_auth: ResolvedAuth::bearer("grok-upstream-secret"),
+        local_bearer: "local-secret".into(),
+    };
+    let host = crate::bridge::BridgeRuntimeHost::new();
+    let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
+
+    material
+        .verify_bound_health(runtime.port)
+        .await
+        .expect("local health is sufficient for xAI Responses");
 
     host.shutdown().await.unwrap();
 }
@@ -1067,6 +1101,20 @@ fn prepare_codex_subscription_projects_chat_loopback_for_grok_kimi_dsh() {
             haystack.contains(expected),
             "{target:?} missing {expected} in {field}: {haystack}"
         );
+        if target == AgentId::Grok {
+            assert!(
+                haystack.contains("api_backend = \"responses\""),
+                "Codex→Grok projection must write api_backend=responses: {haystack}"
+            );
+            assert_eq!(
+                prepared
+                    .runtime_material()
+                    .start_spec(None)
+                    .upstream
+                    .local_surface,
+                BridgeLocalSurface::Responses
+            );
+        }
         assert!(!haystack.contains("grok-"), "{target:?} leftover grok-*");
         assert!(!haystack.contains("gpt-"), "{target:?} invented ChatGPT model");
         assert!(!serde_json::to_string(&input)

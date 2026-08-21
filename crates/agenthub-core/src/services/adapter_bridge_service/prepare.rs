@@ -15,21 +15,18 @@ impl AdapterBridgeService {
         // Validate/retrieve the source before any profile row is written. The
         // token stays only in the returned in-memory material.
         let upstream_auth = match rule.protocol {
-            BridgeUpstreamProtocol::KimiChatCompletions => {
-                if rule.rule_id == GROK_CLAUDE_RULE_ID || rule.rule_id == GROK_CODEX_RULE_ID {
-                    self.secrets
-                        .resolve_grok_subscription_auth(request.source_kind, source_id)?
-                } else {
-                    self.secrets
-                        .resolve_kimi_membership_auth(request.source_kind, source_id)?
-                }
-            }
+            BridgeUpstreamProtocol::KimiChatCompletions => self
+                .secrets
+                .resolve_kimi_membership_auth(request.source_kind, source_id)?,
             BridgeUpstreamProtocol::AnthropicMessages => self
                 .secrets
                 .resolve_anthropic_auth(request.source_kind, source_id)?,
             BridgeUpstreamProtocol::CodexResponsesOauth => self
                 .secrets
                 .resolve_codex_subscription_auth(request.source_kind, source_id)?,
+            BridgeUpstreamProtocol::XaiResponsesOauth => self
+                .secrets
+                .resolve_grok_subscription_auth(request.source_kind, source_id)?,
         };
         let profile_id = stable_id(rule.profile_prefix, source_id);
         let provider_id = stable_id(rule.provider_prefix, source_id);
@@ -99,6 +96,7 @@ impl AdapterBridgeService {
                 upstream_base_url: rule.upstream_base_url.into(),
                 upstream_model: rule.default_model.into(),
                 protocol: rule.protocol,
+                local_surface: rule.local_surface,
                 upstream_auth,
                 local_bearer,
             },
@@ -181,21 +179,16 @@ impl AdapterBridgeService {
                 )
             })?;
         let source_ok = match rule.protocol {
-            BridgeUpstreamProtocol::KimiChatCompletions => {
-                if rule.rule_id == GROK_CLAUDE_RULE_ID || rule.rule_id == GROK_CODEX_RULE_ID {
-                    request.source_kind == AdapterSourceKind::Account
-                } else {
-                    matches!(
-                        request.source_kind,
-                        AdapterSourceKind::Provider | AdapterSourceKind::Account
-                    )
-                }
-            }
+            BridgeUpstreamProtocol::KimiChatCompletions => matches!(
+                request.source_kind,
+                AdapterSourceKind::Provider | AdapterSourceKind::Account
+            ),
             BridgeUpstreamProtocol::AnthropicMessages => matches!(
                 request.source_kind,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account
             ),
-            BridgeUpstreamProtocol::CodexResponsesOauth => {
+            BridgeUpstreamProtocol::CodexResponsesOauth
+            | BridgeUpstreamProtocol::XaiResponsesOauth => {
                 request.source_kind == AdapterSourceKind::Account
             }
         };

@@ -648,4 +648,5 @@ fn same_spec(left: &BridgeStartSpec, right: &BridgeStartSpec) -> bool {
         && left.upstream.source_connection_id == right.upstream.source_connection_id
         && left.upstream.auth.token() == right.upstream.auth.token()
         && left.upstream.protocol == right.upstream.protocol
+        && left.upstream.local_surface == right.upstream.local_surface
 }

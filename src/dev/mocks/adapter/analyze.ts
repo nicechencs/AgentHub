@@ -144,7 +144,7 @@ export function analyze(
         action(
           'requires_local_bridge',
           'Claude Code',
-          'Claude Messages 与 xAI Chat Completions 需要本地双向协议转换。',
+          'Claude Messages 与 xAI Responses 需要本地双向协议转换。',
         ),
         action(
           'set_env',
@@ -155,7 +155,7 @@ export function analyze(
       ],
       limitations: [
         '会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 xAI OAuth token 不进 Claude。',
-        '实验性协议桥接：Claude Messages → xAI Chat Completions；AgentHub 需保持在托盘运行。',
+        '实验性协议桥接：Claude Messages → xAI Responses (cli-chat-proxy)；AgentHub 需保持在托盘运行。',
         'Grok access token 过期后需重新同步 Grok 登录；Hub 本轮不自动 refresh。',
         '固定端口被占用时会尝试重新分配端口并写回配置。',
       ],

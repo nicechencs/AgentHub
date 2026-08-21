@@ -249,13 +249,16 @@ function speaksOf(surface: TicketSurface): string[] {
     return ['anthropic-messages', 'openai-chat'];
   }
   if (surface === 'anthropic-api') return ['anthropic-messages'];
-  if (surface === 'openai-api' || surface === 'xai-api') return ['openai-chat'];
+  if (surface === 'openai-api') return ['openai-chat'];
+  if (surface === 'xai-api') return ['openai-responses', 'openai-chat'];
   if (surface === 'glm-coding-plan' || surface === 'deepseek-api') {
     return ['anthropic-messages', 'openai-chat'];
   }
   if (surface === 'codex-chatgpt-subscription') return ['openai-responses', 'openai-codex-pkce'];
   if (surface === 'claude-subscription') return ['anthropic-messages', 'anthropic-pkce'];
-  if (surface === 'grok-xai-subscription') return ['openai-chat', 'xai-device-code'];
+  if (surface === 'grok-xai-subscription') {
+    return ['openai-responses', 'openai-chat', 'xai-device-code'];
+  }
   return [];
 }
 

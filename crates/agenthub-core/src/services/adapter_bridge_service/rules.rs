@@ -143,10 +143,11 @@ pub(super) fn codex_bridge_toml(rule: &CodexBridgeRule, port: u16) -> String {
     )
 }
 
-/// Grok config.toml for Codex official login. No ChatGPT model name, no leftover `grok-*`.
+/// Grok config.toml for Codex official login. Local surface is Responses.
+/// No ChatGPT model name, no leftover `grok-*`.
 pub(super) fn grok_bridge_toml(rule: &CodexBridgeRule, port: u16, local_bearer: &str) -> String {
     format!(
-        "[models]\ndefault = \"{slug}\"\n\n[model.\"{slug}\"]\nbase_url = \"http://127.0.0.1:{port}/v1\"\napi_key = \"{token}\"\napi_backend = \"chat_completions\"\n",
+        "[models]\ndefault = \"{slug}\"\n\n[model.\"{slug}\"]\nbase_url = \"http://127.0.0.1:{port}/v1\"\napi_key = \"{token}\"\napi_backend = \"responses\"\n",
         slug = rule.provider_slug,
         token = local_bearer,
     )

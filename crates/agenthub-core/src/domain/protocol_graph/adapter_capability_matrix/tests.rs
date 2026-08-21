@@ -495,6 +495,28 @@ fn kimi_to_grok_is_an_open_native_endpoint() {
 }
 
 #[test]
+fn grok_subscription_to_claude_uses_xai_responses_oauth() {
+    let decision = decide_adapter_capability(
+        AdapterSourceProduct::XaiGrokSubscription,
+        AdapterCredentialClass::OauthOther,
+        AgentId::Claude,
+    )
+    .public_surface();
+    assert_eq!(decision.route, AdapterRoute::LocalBridge);
+    assert!(decision.can_apply);
+    assert_eq!(decision.rule_id, Some("grok-subscription-to-claude-v1"));
+    assert_eq!(decision.reason, GROK_SUBSCRIPTION_TO_CLAUDE_REASON);
+    assert_eq!(
+        decision.transport,
+        AdapterUpstreamTransport::XaiResponsesOauth
+    );
+    assert_eq!(
+        decision.protocol,
+        Some(AdapterTargetProtocol::AnthropicMessages)
+    );
+}
+
+#[test]
 fn grok_subscription_to_codex_is_open_local_bridge() {
     let decision = decide_adapter_capability(
         AdapterSourceProduct::XaiGrokSubscription,
@@ -508,7 +530,11 @@ fn grok_subscription_to_codex_is_open_local_bridge() {
     assert_eq!(decision.reason, GROK_SUBSCRIPTION_TO_CODEX_REASON);
     assert_eq!(
         decision.transport,
-        AdapterUpstreamTransport::LocalBridgeChatCompletions
+        AdapterUpstreamTransport::XaiResponsesOauth
+    );
+    assert_eq!(
+        decision.protocol,
+        Some(AdapterTargetProtocol::OpenAiResponses)
     );
 }
 
@@ -550,9 +576,14 @@ fn codex_subscription_to_grok_kimi_dsh_is_open_local_bridge() {
                 AdapterUpstreamTransport::CodexResponsesOauth,
                 "{target:?}"
             );
+            let expected_protocol = if target == AgentId::Grok {
+                AdapterTargetProtocol::OpenAiResponses
+            } else {
+                AdapterTargetProtocol::OpenAiChatCompletions
+            };
             assert_eq!(
                 decision.protocol,
-                Some(AdapterTargetProtocol::OpenAiChatCompletions),
+                Some(expected_protocol),
                 "{target:?}"
             );
             assert!(!decision.reason.contains("实验"));

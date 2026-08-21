@@ -97,8 +97,10 @@ Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口
 |---|---|---|
 | Claude 订阅 → Codex | **产品不做** | Codex 不会用 Claude 这套登录，本产品不走这条 |
 | 任一国产 OAuth（Kimi `/login`、GLM / DeepSeek 登录等）→ 任意工具 | **产品不做** | 不为中国产 OAuth 开边，也不把它转成 API |
-| Grok 订阅 → Claude | **本机转发** | Claude 听的话和 Grok 说的话不同，要本机转发 |
+| Grok 订阅 → Claude | **本机转发** | Claude 听 Messages，上游是 Grok Responses |
+| Grok 订阅 → Codex | **本机转发** | Codex 连本机转发，上游是 Grok Responses（cli-chat-proxy） |
 | Codex 订阅 → Claude | **本机转发** | Claude 只听自己那套接口；这是本机转发，不是写 Claude 官方登录 |
+| Codex 订阅 → Grok | **本机转发** | Grok 用 `api_backend=responses` 连本机，不是写 Grok 官方登录 |
 
 如果刷新令牌只能用一次，原来的工具和目标工具各自刷新会互相打翻。逐条选「目标自己再登录」或「由 AgentHub 统一刷新，目标只拿引用」。
 
@@ -110,7 +112,9 @@ Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口
 |---|---|
 | Codex 订阅 → Claude Code | Claude 连到本机转发，额度来自 ChatGPT 订阅 |
 | Kimi / Anthropic 的 Key → Codex | Codex 要的接口和上游不同，要转换 |
-| Grok 订阅 → Claude Code | Claude 听一种接口，上游是 Grok 的另一种 |
+| Grok 订阅 → Claude Code | Claude 听 Messages，上游是 Grok Responses（cli-chat-proxy） |
+| Grok 订阅 → Codex | Codex 连本机转发，上游是 Grok Responses |
+| Codex 订阅 → Grok | Grok 用 `api_backend=responses` 连本机转发 |
 
 本机转发只在对不上时才转发。  
 **不**默认先开一个一直挂着的兼容服务。
@@ -144,7 +148,8 @@ flowchart LR
 ```mermaid
 flowchart LR
   keys["Kimi / Anthropic 的 Key"] --> fwd1["本机转发"] --> codex["Codex"]
-  subs["Codex / Grok 订阅"] --> fwd2["本机转发"] --> claude["Claude"]
+  grokSub["Grok 订阅"] --> fwdGrok["本机转发"] --> grokTargets["Claude · Codex"]
+  codexSub["Codex 订阅"] --> fwdCodex["本机转发"] --> codexTargets["Claude · Grok"]
 ```
 
 Claude 订阅接到 Codex：**产品不做**（不是「以后再转发」）。  
@@ -161,9 +166,9 @@ Claude 订阅接到 Codex：**产品不做**（不是「以后再转发」）。
 | xAI Key | — | 只改配置：写进 Pi | — | 换到这份登录 |
 | GLM / DeepSeek Key | 只改配置：填 Claude 能用的地址 | 只改配置：写进 Pi | 只改配置：官方有 Codex 要的接口 | — |
 | Anthropic Key | 换到这份登录 | 只改配置：写进 Pi | 本机转发 | — |
-| Codex 订阅 | 本机转发 | 写进对方认的登录 | 换到这份登录 | — |
+| Codex 订阅 | 本机转发 | 写进对方认的登录 | 换到这份登录 | 本机转发（`api_backend=responses`） |
 | Claude 订阅 | 换到这份登录 | 写进对方认的登录 | **产品不做** | — |
-| Grok 订阅 | 本机转发 | 写进对方认的登录 | — | 换到这份登录 |
+| Grok 订阅 | 本机转发 | 写进对方认的登录 | 本机转发 | 换到这份登录 |
 
 DeepSeek 还可以直接接到 DeepSeek 自己的工具（直接改配置）。
 
@@ -212,7 +217,7 @@ Claude 订阅 → Codex 是**产品不做**，不是「以后再转发」。
 
 1. **直接改配置补齐**：一把 Key 接到更多已登记的工具；GLM / DeepSeek → Pi、→ Codex 已可试写。单接口 Key 按图继续补。
 2. **写进对方认的登录，先用已有的**：Claude / Codex / Grok 订阅 → Pi。**当前**：这三条已可试写（写进 Pi 自己的登录，之后由 Pi 刷新）。再看别的工具有没有同类位置。
-3. **本机转发旗舰**：Codex 订阅 → Claude Code；Grok 订阅 → Claude。Claude 订阅 → Codex 明确产品不做。国产 OAuth 不开边、不转 API，不是待评估候选。
+3. **本机转发旗舰**：Codex 订阅 → Claude Code / Grok；Grok 订阅 → Claude / Codex。Claude 订阅 → Codex 明确产品不做。国产 OAuth 不开边、不转 API，不是待评估候选。
 4. 管理面：登录状态、额度、最小探测、转发启停放在现有页面，不另做工作台。
 
 ## 7. 给实现的对照
