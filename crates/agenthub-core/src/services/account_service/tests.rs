@@ -1767,3 +1767,183 @@ fn import_live_writes_anthropic_and_grok_subscription_surface() {
         .unwrap();
     assert_eq!(grok_imported.extra["surface"], "grok-xai-subscription");
 }
+
+fn spawn_oauth_token_server(access: &str, refresh: &str) -> (u16, std::thread::JoinHandle<()>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let access = access.to_string();
+    let refresh = refresh.to_string();
+    let handle = std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let body = format!(
+                r#"{{"access_token":"{access}","refresh_token":"{refresh}","token_type":"Bearer","expires_in":3600}}"#
+            );
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(resp.as_bytes());
+        }
+    });
+    (port, handle)
+}
+
+#[test]
+fn grok_hub_pkce_refresh_updates_pool_without_writing_auth_json() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let created = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "hub-pkce".into(),
+            credentials: json!({
+                "type": "oauth",
+                "provider": "xai",
+                "access_token": "old-access",
+                "refresh_token": "old-refresh"
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+    let (port, server) = spawn_oauth_token_server("new-access", "new-refresh");
+    let refreshed = crate::oauth::with_token_url_override(
+        format!("http://127.0.0.1:{port}/oauth/token"),
+        || svc.refresh_token(&created.id, AgentId::Grok),
+    )
+    .unwrap();
+    let _ = server.join();
+    assert_eq!(refreshed.credentials["access_token"], "new-access");
+    assert_eq!(refreshed.credentials["refresh_token"], "new-refresh");
+    assert_eq!(refreshed.extra["source"], "oauth_refresh");
+    assert_eq!(
+        adapter.write_attempts.load(Ordering::SeqCst),
+        0,
+        "hub-owned refresh must not write grok auth.json"
+    );
+}
+
+#[test]
+fn grok_cli_owned_auth_json_refresh_is_refused_without_token_endpoint() {
+    let (_root, svc, _) = live_svc(AgentId::Grok);
+    let created = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "cli-owned".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "email": "a@example.com",
+                    "key": "cli-access",
+                    "refresh_token": "cli-refresh"
+                }
+            }),
+            extra: json!({ "source": "auth.json" }),
+            is_current: false,
+        })
+        .unwrap();
+    let err = crate::oauth::with_token_url_override("http://127.0.0.1:1/oauth/token", || {
+        svc.refresh_token(&created.id, AgentId::Grok)
+    })
+    .unwrap_err();
+    assert_eq!(err.code(), "unsupported");
+    assert!(
+        err.to_string().contains("同步当前登录"),
+        "cli-owned grok refresh must guide 同步当前登录, got {err}"
+    );
+}
+
+#[test]
+fn cli_owned_follow_rereads_rotated_access_from_temp_auth_json() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "email": "a@example.com",
+                "user_id": "uid-1",
+                "key": "access-a",
+                "refresh_token": "refresh-shared"
+            }
+        }),
+        label_hint: Some("a@example.com".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "email": "a@example.com",
+                "user_id": "uid-1",
+                "key": "access-b",
+                "refresh_token": "refresh-shared"
+            }
+        }),
+        label_hint: Some("a@example.com".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+    let followed = svc
+        .follow_cli_owned_access(&imported.id, AgentId::Grok)
+        .unwrap();
+    assert_eq!(followed.as_deref(), Some("access-b"));
+    let stored = svc.get(&imported.id, Some(AgentId::Grok)).unwrap();
+    assert_eq!(stored.credentials["body"]["key"], "access-b");
+}
+
+#[test]
+fn cli_owned_follow_unchanged_auth_json_does_not_set_token_expired() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "email": "a@example.com",
+                "user_id": "uid-1",
+                "key": "access-a",
+                "refresh_token": "refresh-shared"
+            }
+        }),
+        label_hint: Some("a@example.com".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    let followed = svc
+        .follow_cli_owned_access(&imported.id, AgentId::Grok)
+        .unwrap();
+    assert!(followed.is_none());
+    let stored = svc.get(&imported.id, Some(AgentId::Grok)).unwrap();
+    assert_ne!(stored.extra.get("health").and_then(|v| v.as_str()), Some("needs_login"));
+    assert_ne!(stored.extra.get("tokenExpired").and_then(|v| v.as_bool()), Some(true));
+}
+
+#[test]
+fn codex_imported_auth_json_refresh_is_refused() {
+    let (_root, svc, _) = live_svc(AgentId::Codex);
+    let created = svc
+        .create(AccountInput {
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "codex-cli".into(),
+            credentials: official_codex_oauth_credentials(),
+            extra: json!({ "source": "auth.json" }),
+            is_current: false,
+        })
+        .unwrap();
+    let err = crate::oauth::with_token_url_override("http://127.0.0.1:1/oauth/token", || {
+        svc.refresh_token(&created.id, AgentId::Codex)
+    })
+    .unwrap_err();
+    assert_eq!(err.code(), "unsupported");
+    assert!(err.to_string().contains("同步当前登录"));
+}

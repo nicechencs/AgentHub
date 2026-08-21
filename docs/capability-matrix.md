@@ -159,12 +159,12 @@ DeepSeek Harness（`dsh`）已进生产 registry。级别表以 `agenthub agent 
 |---|---|---|
 | `Usage` | token / 计费统计 | **已实现**：`UsageService` + session 日志解析；七家 Full（含 `dsh`）。Cursor **Unsupported**（IDE 内部用量库，范围外）。矩阵声明须与 `usage::supports_usage` 一致。 |
 | `Mcp` | MCP server 管理 / 注入 | **全 Planned**。当前已有独立的只读 MCP inventory（core scanner + Tauri command + 页面），只汇总本机配置，不管理或注入 server；因此不改变本矩阵状态。 |
-| `ModelSelect` | 运行时指定模型 | **全 Planned**。模型经 live config / provider 池切换，非独立运行时目录。 |
+| `ModelSelect` | 运行时指定模型 | **全 Planned**。模型经 live config / provider 池切换，非独立运行时目录。本机路由 listener 计划提供 `GET /v1/models` 枚举（服务 Codex 订阅 → Grok 边的 Grok CLI，见 [provider-api-oauth-adaptation.md §5.1.3](provider-api-oauth-adaptation.md)），属 bridge 表面能力，不经 `Capability::ModelSelect` 放行，也不改变本矩阵状态（先例：只读 MCP inventory 之于 `Mcp`）。 |
 | `SessionResume` | 续接历史会话 | Claude / Codex **Partial**：Chat 后续轮次在已捕获官方 session id 时走 print+resume，只发本轮用户文本；会话头可复制 TUI 续接命令。其余 Planned。 |
 
 **填表纪律**：无本地验证证据前不得把 Planned 改成 Full。依据 `adding-an-agent.md`——「本地验证 > 仅 README」。
 
-**约束**：`Mcp` 的**管理 / 注入调用方**、`ModelSelect` 在对应 Service 落地前不得产生；只读 MCP inventory 是独立扫描能力，不经过 `Capability::Mcp` 放行。`SessionResume` 已在 Claude/Codex Chat 路径落地（Partial）。`require` 遇 `Planned` 与 `Unsupported` 同样拒绝，错误文案不同。
+**约束**：`Mcp` 的**管理 / 注入调用方**、`ModelSelect` 在对应 Service 落地前不得产生；只读 MCP inventory 是独立扫描能力，不经过 `Capability::Mcp` 放行；计划中的本机路由 `GET /models` 同理，不经过 `Capability::ModelSelect` 放行。`SessionResume` 已在 Claude/Codex Chat 路径落地（Partial）。`require` 遇 `Planned` 与 `Unsupported` 同样拒绝，错误文案不同。
 
 ## 7. 真源与防漂移
 

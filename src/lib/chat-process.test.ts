@@ -580,4 +580,107 @@ describe('chat-process reduceProcessEvent', () => {
     expect(map['3:grok']?.phase).toBe('ok');
     expect(map['3:grok']?.steps[0]).toMatchObject({ type: 'thinking', text: 'still', done: true });
   });
+
+  it('finished with cancelled stays cancelled even when ok is true', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'started', turn: 4, agents: ['claude'] },
+      1,
+    );
+    map = reduceProcessEvent(
+      map,
+      { type: 'agentStarted', turn: 4, agent: 'claude', command: 'x' },
+      2,
+    );
+    map = reduceProcessEvent(
+      map,
+      { type: 'finished', turn: 4, ok: true, cancelled: true },
+      3,
+    );
+    expect(map['4:claude']?.phase).toBe('cancelled');
+  });
+
+  it('finished ok:false marks still-active views failed', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'started', turn: 5, agents: ['claude'] },
+      1,
+    );
+    map = reduceProcessEvent(
+      map,
+      { type: 'agentStarted', turn: 5, agent: 'claude', command: 'x' },
+      2,
+    );
+    map = reduceProcessEvent(map, { type: 'finished', turn: 5, ok: false }, 3);
+    expect(map['5:claude']?.phase).toBe('failed');
+  });
+
+  it('caps soft steps first and keeps early tools', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'agentStarted', turn: 1, agent: 'claude', command: 'x' },
+      1,
+    );
+    let tick = 2;
+    for (const id of ['t1', 't2', 't3']) {
+      map = reduceProcessEvent(
+        map,
+        {
+          type: 'agentProcess',
+          turn: 1,
+          agent: 'claude',
+          step: { type: 'tool', id, name: 'Read', status: 'start' },
+        },
+        tick,
+      );
+      tick += 1;
+    }
+    for (let i = 0; i < 201; i += 1) {
+      map = reduceProcessEvent(
+        map,
+        {
+          type: 'agentProcess',
+          turn: 1,
+          agent: 'claude',
+          step: { type: 'thinking', text: `think-${i}`, done: true },
+        },
+        tick,
+      );
+      tick += 1;
+    }
+    const steps = map['1:claude']?.steps ?? [];
+    expect(steps).toHaveLength(200);
+    expect(steps.filter((s) => s.type === 'tool')).toEqual([
+      expect.objectContaining({ type: 'tool', id: 't1' }),
+      expect.objectContaining({ type: 'tool', id: 't2' }),
+      expect.objectContaining({ type: 'tool', id: 't3' }),
+    ]);
+    expect(steps.filter((s) => s.type === 'thinking').length).toBeLessThan(201);
+    expect(steps.some((s) => s.type === 'thinking' && s.text === 'think-0')).toBe(false);
+  });
+
+  it('caps overflowing tools to the newest MAX_STEPS and drops the oldest', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'agentStarted', turn: 1, agent: 'claude', command: 'x' },
+      1,
+    );
+    for (let i = 0; i < 201; i += 1) {
+      map = reduceProcessEvent(
+        map,
+        {
+          type: 'agentProcess',
+          turn: 1,
+          agent: 'claude',
+          step: { type: 'tool', id: `tool-${i}`, name: 'Read', status: 'start' },
+        },
+        i + 2,
+      );
+    }
+    const steps = map['1:claude']?.steps ?? [];
+    expect(steps).toHaveLength(200);
+    expect(steps[0]).toMatchObject({ type: 'tool', id: 'tool-1' });
+    expect(steps[199]).toMatchObject({ type: 'tool', id: 'tool-200' });
+    expect(steps.some((s) => s.type === 'tool' && s.id === 'tool-0')).toBe(false);
+  });
 });

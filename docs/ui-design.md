@@ -303,7 +303,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 ### 4.4 Chat（会话）
 
-全高特例布局（`App` 中 `pathname === '/chat'`）：**无 TopBar / 无 PageHeader**，主区 `overflow-hidden` + 子树 `h-full`，会话列表与消息区自行分配高度；**不**套用 `max-w-content` 居中内容壳。其余功能页保持标准壳（TopBar + max-w-content）。本节为产品契约摘要；完整方案（已落地，见 [chat-page-redesign.md](chat-page-redesign.md) Implemented 2026-08）。
+全高特例布局（`App` 中 `pathname === '/chat'`）：**无 TopBar / 无 PageHeader**，主区 `overflow-hidden` + 子树 `h-full`，会话列表与消息区自行分配高度；**不**套用 `max-w-content` 居中内容壳。其余功能页保持标准壳（TopBar + max-w-content）。本节为产品契约摘要；完整方案（已落地，见 [chat-page-redesign.md](chat-page-redesign.md) Implemented 2026-08）。**现行一会话一 Agent**（core `require_single_agent`；打开旧多选行折叠为首位）。线框里的对比条 / Agent 多选是历史表面残留，只对旧数据生效。
 
 **目标线框：**
 
@@ -321,7 +321,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 │                       │ （blocker 引导行：无 cwd / 隐藏 Agent / 他处发送中）│
 │                       │ ┌ composer（rounded-composer）─────────────────┐ │
 │                       │ │ textarea 自动增高 56–240px                    │ │
-│                       │ │ [Agent 多选 ▾] [连接 ▾（仅首位 Agent）]  [➤] │ │
+│                       │ │ [Agent ▾] [连接 ▾]                    [➤] │ │
 │                       │ └───────────────────────────────────────────────┘ │
 │                       │          Agent 可能修改工作目录中的文件           │
 └───────────────────────┴─────────────────────────────────────────────────┘
@@ -337,13 +337,13 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 **会话 header**：标题就地编辑（Enter/blur 保存、Esc 取消、空值回退「新对话」；自动标题仅在 title 为空时由首条 prompt 生成）+ Agent 只读芯片（含「已隐藏」标记）+ cwd 芯片（Hint 完整路径，点击开设置；未设置为 warning 态）+ 自动批准芯片（**仅开启时显示**，warning 态）+ 设置按钮。修改 Agent 只在 composer picker。
 
-**Composer 与发送前置校验**：自动增高 textarea + 底栏（Agent 多选 / 连接切换 / 发送）。**没有独立模型选择器**；composer 第二个控件是**连接/登录切换**，模型只作副标题。Agent picker 只让已安装、未隐藏且已配置授权的项可选；已隐藏 / 未配置授权的项置底（标「已隐藏」/「未配置授权」），不可新增，已在会话内可取消勾选移出。发送前置条件统一为 `sendBlockers` 纯函数，composer 上方渲染第一个 blocker 引导行（含修复动作），优先级：含隐藏 Agent > 未配置授权 > 无 cwd > 他会话发送中；空草稿只禁发送不出引导行。composer 下方仅一行安全提示（批准关：「Agent 可能修改工作目录中的文件」；批准开：warning「自动批准已开启 · Agent 将不经确认修改文件」）。连接切换仅作用于 `agentIds[0]`，多选时固定标注；无连接深链 `/connections?agent=`。发送按钮是页内唯一 accent 主 CTA；发送中变「停止」。
+**Composer 与发送前置校验**：自动增高 textarea + 底栏（Agent 单选 / 连接切换 / 发送）。**没有独立模型选择器**；composer 第二个控件是**连接/登录切换**，模型只作副标题。Agent picker 只让已安装、未隐藏且已配置授权的项可选；已隐藏 / 未配置授权的项置底（标「已隐藏」/「未配置授权」），不可选为当前 Agent。发送前置条件统一为 `sendBlockers` 纯函数，composer 上方渲染第一个 blocker 引导行（含修复动作），优先级：含隐藏 Agent > 未配置授权 > 无 cwd > 他会话发送中；空草稿只禁发送不出引导行。composer 下方仅一行安全提示（批准关：「Agent 可能修改工作目录中的文件」；批准开：warning「自动批准已开启 · Agent 将不经确认修改文件」）。连接切换作用于当前唯一 Agent；无连接深链 `/connections?agent=`。发送按钮是页内唯一 accent 主 CTA；发送中变「停止」。
 
-**多 Agent 一轮**：默认纵向堆叠；同轮 ≥2 个 agent 消息时 user 气泡下出「本轮 N 个 Agent」对比条（logo + 状态点 + 耗时，点击定位），**不做左右分栏**。
+**一轮消息**：现行一会话一 Agent，气泡纵向排列。同轮 ≥2 条 agent 消息（仅历史多选 turn）时 user 气泡下仍可能出「本轮 N 个 Agent」对比条（logo + 状态点 + 耗时，点击定位）；**不做左右分栏，也不把并跑加回来**。
 
 **过程面板**（展示层规则；协议见 [chat-process-streaming.md](chat-process-streaming.md)）：摘要行 = `阶段 · N 步 · 耗时`（不含命令）；展开 = 无边框步骤时间线（tool/thinking/status/error）；命令 / stderr / exit 收进「运行详情」次级折叠。进行中/失败/超时默认展开，成功/取消默认折叠，用户手动开合记忆到阶段变化。
 
-**消息轻操作**：user / agent 气泡 hover 复制（运行中不显示）；最后一轮失败/取消/超时气泡可「重试」（同一 prompt 作为新 turn 重发给会话全部 Agent，不新增 API）。流式仅在贴近底部时跟随滚动。
+**消息轻操作**：user / agent 气泡 hover 复制（运行中不显示）；最后一轮失败/取消/超时气泡可「重试」（同一 prompt 作为新 turn 重发给会话当前 Agent，不新增 API）。流式仅在贴近底部时跟随滚动。
 
 **空态矩阵**：无已装未隐藏 Agent 且无会话 → 页级 EmptyState「还没有可对话的 Agent」+「去 Agents 页」；空转录 → 「开始对话」居中引导；无 cwd / 含隐藏 Agent / 他处发送中 → composer 引导行（不再只靠 toast）；Projects bootstrap 无 cwd 不自动弹 Dialog，由引导行接管。
 

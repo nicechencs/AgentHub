@@ -398,6 +398,13 @@ const OPENAI_PI_LIMITS: &[&str] = &[
     "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
 ];
 
+const OPENAI_CODEX_LIMITS: &[&str] = &[
+    "将在本机 loopback 启动协议桥接，并切换 Codex 到该本地端点。",
+    "AgentHub 需保持在托盘运行；退出前会尝试排空监听。",
+    "桥接为实验性协议覆盖：下游 Responses，上游 OpenAI Chat Completions。",
+    "固定端口被占用时会尝试重新分配端口并写回配置。",
+];
+
 const XAI_PI_LIMITS: &[&str] = &[
     "将写入 Pi models.json 的 xai 槽与凭据引用标记；不会在预览中传输明文 Key。",
     "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
@@ -608,6 +615,24 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         limitations: OPENAI_PI_LIMITS,
         rule_id: "openai-api-to-pi-v1",
         verified_at: VERIFIED_AT,
+        gates: AdapterCapabilityGates::all_open(),
+    },
+    AdapterCapabilityCell {
+        key: AdapterCapabilityKey {
+            source: AdapterSourceProduct::OpenaiApi,
+            credential: AdapterCredentialClass::ApiKey,
+            transport: AdapterUpstreamTransport::LocalBridgeChatCompletions,
+            target: AgentId::Codex,
+            protocol: AdapterTargetProtocol::OpenAiResponses,
+            version: MATRIX_VERSION,
+        },
+        route: AdapterRoute::LocalBridge,
+        support: AdapterSupport::Experimental,
+        can_apply: true,
+        reason: "显式 OpenAI API Key 到 Codex 需要本地协议桥接。",
+        limitations: OPENAI_CODEX_LIMITS,
+        rule_id: "openai-api-to-codex-v1",
+        verified_at: "2026-08-21",
         gates: AdapterCapabilityGates::all_open(),
     },
     AdapterCapabilityCell {

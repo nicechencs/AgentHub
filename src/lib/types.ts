@@ -396,6 +396,8 @@ export interface Conversation {
   updatedAt: string;
   /** Official CLI session id from the last print-mode run, when known. */
   nativeSessionId?: string | null;
+  /** True when this conversation has a live in-flight send (running message row). */
+  sending?: boolean;
 }
 
 export interface ChatMessage {
@@ -435,7 +437,7 @@ export type ChatEvent =
   | { type: 'agentChunk'; turn: number; agent: AgentId; stream: OutputStream; text: string }
   | { type: 'agentProcess'; turn: number; agent: AgentId; step: ProcessStep }
   | { type: 'agentFinished'; turn: number; agent: AgentId; message: ChatMessage }
-  | { type: 'finished'; turn: number; ok: boolean }
+  | { type: 'finished'; turn: number; ok: boolean; cancelled?: boolean }
   | { type: 'error'; message: string };
 
 // ---------------------------------------------------------------------------

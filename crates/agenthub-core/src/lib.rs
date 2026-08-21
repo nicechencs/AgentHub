@@ -36,7 +36,8 @@ use services::{
     ProjectService, ProviderService, RunService, SettingsService, SkillService, TicketBindService,
     TicketReadService, UsageService,
 };
-use storage::Database;
+use logging::targets;
+use storage::{ChatRepo, Database};
 use utils::command_exec::SystemCommandExecutor;
 use utils::paths::{backups_dir, db_path, ensure_data_layout, home_dir, resolve_data_dir};
 
@@ -95,6 +96,16 @@ impl AgentHub {
         let db = Database::open(&db_path(&data_dir))?;
         // Recover audit rows left running after crash (never auto-retry dangerous steps).
         let _ = LifecycleCoordinator::interrupt_stale_running(&db);
+        // Recover chat placeholders left running after crash. Cancelled is not a hard failure.
+        if let Ok(n) = ChatRepo::new(db.clone()).interrupt_stale_running() {
+            if n > 0 {
+                logging::log_warn(
+                    targets::CHAT,
+                    "chat_interrupt",
+                    &format!("marked {n} running chat messages as cancelled after restart"),
+                );
+            }
+        }
         let registry = register_all();
         let catalog = AgentCatalogService::from_registry(&registry)?;
         let lifecycle = LifecycleCoordinator::new(db.clone(), registry.clone());

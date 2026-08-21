@@ -1,22 +1,39 @@
 use std::fmt;
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
+
+/// Opaque callback that may rotate the in-memory upstream bearer.
+/// The host must not depend on AccountService types.
+pub type UpstreamAuthReload = Arc<dyn Fn() -> Option<String> + Send + Sync>;
 
 /// An already resolved upstream credential. It is intentionally supplied by the caller and
 /// retained only in the live runtime process; do not persist or serialise it.
+///
+/// The inner cell is shared across spec/listener clones so a 401 retry can swap
+/// the upstream bearer in place without restarting the loopback listener.
 #[derive(Clone)]
 pub struct ResolvedAuth {
-    bearer_token: String,
+    bearer_token: Arc<Mutex<String>>,
 }
 
 impl ResolvedAuth {
     pub fn bearer(token: impl Into<String>) -> Self {
         Self {
-            bearer_token: token.into(),
+            bearer_token: Arc::new(Mutex::new(token.into())),
         }
     }
 
-    pub(crate) fn token(&self) -> &str {
-        &self.bearer_token
+    pub(crate) fn token(&self) -> String {
+        self.bearer_token
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn replace_token(&self, token: impl Into<String>) {
+        if let Ok(mut guard) = self.bearer_token.lock() {
+            *guard = token.into();
+        }
     }
 }
 
@@ -83,6 +100,11 @@ pub struct BridgeStartSpec {
     /// Bearer token accepted by the local HTTP endpoint. This value is never returned by status.
     pub local_token: String,
     pub upstream: BridgeUpstreamConfig,
+    /// Credential-free model ids served by `GET /v1/models`. Synthesized from
+    /// the adapter mapping table; never a secret.
+    pub listed_models: Vec<String>,
+    /// Optional owner-split follow/refresh. Identity is ignored when comparing live specs.
+    pub reload_upstream_auth: Option<UpstreamAuthReload>,
 }
 
 impl fmt::Debug for BridgeStartSpec {
@@ -93,6 +115,8 @@ impl fmt::Debug for BridgeStartSpec {
             .field("port", &self.port)
             .field("local_token", &"REDACTED")
             .field("upstream", &self.upstream)
+            .field("listed_models", &self.listed_models)
+            .field("reload_upstream_auth", &self.reload_upstream_auth.is_some())
             .finish()
     }
 }
@@ -109,7 +133,19 @@ impl BridgeStartSpec {
             port,
             local_token: local_token.into(),
             upstream,
+            listed_models: Vec::new(),
+            reload_upstream_auth: None,
         }
+    }
+
+    pub fn with_listed_models(mut self, listed_models: Vec<String>) -> Self {
+        self.listed_models = listed_models;
+        self
+    }
+
+    pub fn with_reload_upstream_auth(mut self, reload: Option<UpstreamAuthReload>) -> Self {
+        self.reload_upstream_auth = reload;
+        self
     }
 }
 

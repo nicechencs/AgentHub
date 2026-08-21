@@ -444,9 +444,10 @@ fn send_events_include_turn_and_no_running_left() {
             | ChatEvent::AgentFinished { turn: t, .. } => {
                 assert_eq!(*t, turn);
             }
-            ChatEvent::Finished { turn: t, ok } => {
+            ChatEvent::Finished { turn: t, ok, cancelled } => {
                 assert_eq!(*t, turn);
                 assert!(*ok);
+                assert!(!*cancelled);
             }
             _ => {}
         }
@@ -895,4 +896,152 @@ fn persist_skips_native_session_when_agent_changes_during_send() {
         "sid from old agent must not be persisted, got {:?}",
         after.native_session_id
     );
+}
+
+fn insert_running_agent_message(repo: &crate::storage::ChatRepo, conversation_id: &str) {
+    repo.insert_message(&ChatMessage {
+        id: format!("m-running-{conversation_id}"),
+        conversation_id: conversation_id.into(),
+        turn: 1,
+        role: ChatRole::Agent,
+        agent_id: Some(AgentId::Claude),
+        content: String::new(),
+        status: ChatMessageStatus::Running,
+        exit_code: None,
+        duration_ms: 0,
+        error: None,
+        created_at: Utc::now().to_rfc3339(),
+    })
+    .unwrap();
+}
+
+#[test]
+fn interrupt_stale_running_marks_cancelled_and_keeps_native_session() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let repo = crate::storage::ChatRepo::new(db.clone());
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    let chat = ChatService::new(db, run);
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    let mut stored = repo.get_conversation(&conv.id).unwrap().unwrap();
+    stored.native_session_id = Some("keep-sid".into());
+    repo.update_conversation(&stored).unwrap();
+    insert_running_agent_message(&repo, &conv.id);
+
+    let n = repo.interrupt_stale_running().unwrap();
+    assert_eq!(n, 1);
+
+    let agents: Vec<_> = chat
+        .list_messages(&conv.id)
+        .unwrap()
+        .into_iter()
+        .filter(|m| m.role == ChatRole::Agent)
+        .collect();
+    assert_eq!(agents.len(), 1);
+    assert_eq!(agents[0].status, ChatMessageStatus::Cancelled);
+    assert!(agents[0].error.is_none());
+
+    let after = chat.get_conversation(&conv.id).unwrap();
+    assert_eq!(after.native_session_id.as_deref(), Some("keep-sid"));
+}
+
+#[test]
+fn agent_hub_open_repairs_stale_running_messages() {
+    let dir = tempdir().unwrap();
+    let conv_id = {
+        let db = Database::open(&crate::utils::paths::db_path(dir.path())).unwrap();
+        let repo = crate::storage::ChatRepo::new(db.clone());
+        let run = Arc::new(RunService::with_runner(
+            deterministic_registry(),
+            Arc::new(RecordingProcessRunner::new()),
+        ));
+        let chat = ChatService::new(db, run);
+        let conv = chat
+            .create_conversation(vec![AgentId::Claude], None)
+            .unwrap();
+        insert_running_agent_message(&repo, &conv.id);
+        conv.id
+    };
+
+    let hub = crate::AgentHub::open(Some(dir.path())).expect("open hub");
+    let agents: Vec<_> = hub
+        .chat
+        .list_messages(&conv_id)
+        .unwrap()
+        .into_iter()
+        .filter(|m| m.role == ChatRole::Agent)
+        .collect();
+    assert_eq!(agents.len(), 1);
+    assert_eq!(agents[0].status, ChatMessageStatus::Cancelled);
+}
+
+#[test]
+fn list_conversations_sending_tracks_running_until_interrupt() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let repo = crate::storage::ChatRepo::new(db.clone());
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    let chat = ChatService::new(db, run);
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+
+    let listed = chat.list_conversations().unwrap();
+    let row = listed.iter().find(|c| c.id == conv.id).expect("listed");
+    assert!(!row.sending);
+    assert!(!chat.get_conversation(&conv.id).unwrap().sending);
+
+    insert_running_agent_message(&repo, &conv.id);
+    let listed = chat.list_conversations().unwrap();
+    let row = listed.iter().find(|c| c.id == conv.id).expect("listed");
+    assert!(row.sending);
+    assert!(chat.get_conversation(&conv.id).unwrap().sending);
+
+    assert_eq!(repo.interrupt_stale_running().unwrap(), 1);
+    let listed = chat.list_conversations().unwrap();
+    let row = listed.iter().find(|c| c.id == conv.id).expect("listed");
+    assert!(!row.sending);
+    assert!(!chat.get_conversation(&conv.id).unwrap().sending);
+}
+
+#[test]
+fn finished_event_cancelled_true_and_ok_true() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(SidProcessRunner::with_status("sid", RunStatus::Cancelled)),
+    ));
+    let chat = ChatService::new(db, run);
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+
+    let events = Mutex::new(Vec::new());
+    chat.send(&conv.id, "cancel path", &|ev| {
+        events.lock().unwrap().push(ev);
+    })
+    .unwrap();
+
+    let events = events.into_inner().unwrap();
+    let finished = events.iter().find_map(|e| match e {
+        ChatEvent::Finished {
+            turn,
+            ok,
+            cancelled,
+        } => Some((*turn, *ok, *cancelled)),
+        _ => None,
+    });
+    let (turn, ok, cancelled) = finished.expect("Finished event");
+    assert_eq!(turn, 1);
+    assert!(ok, "Cancelled is not a hard failure");
+    assert!(cancelled);
 }

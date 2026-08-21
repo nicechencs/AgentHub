@@ -1,5 +1,7 @@
 //! Conversations + chat_messages repository — storage boundary only.
 
+use std::collections::HashSet;
+
 use rusqlite::{params, OptionalExtension, Row};
 
 use crate::error::{AppError, Result};
@@ -46,6 +48,7 @@ impl ChatRepo {
     /// Newest-first by `updated_at`, then `id`.
     pub fn list_conversations(&self) -> Result<Vec<Conversation>> {
         self.db.with_conn(|conn| {
+            let sending_ids = load_sending_ids(conn)?;
             let mut stmt = conn.prepare(
                 r#"
                 SELECT id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at,
@@ -57,7 +60,9 @@ impl ChatRepo {
             let rows = stmt.query_map([], map_conversation_row)?;
             let mut out = Vec::new();
             for row in rows {
-                out.push(row?);
+                let mut conv = row?;
+                conv.sending = sending_ids.contains(&conv.id);
+                out.push(conv);
             }
             Ok(out)
         })
@@ -65,18 +70,23 @@ impl ChatRepo {
 
     pub fn get_conversation(&self, id: &str) -> Result<Option<Conversation>> {
         self.db.with_conn(|conn| {
-            conn.query_row(
-                r#"
-                SELECT id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at,
-                       native_session_id
-                FROM conversations
-                WHERE id = ?1
-                "#,
-                params![id],
-                map_conversation_row,
-            )
-            .optional()
-            .map_err(AppError::from)
+            let mut conv = conn
+                .query_row(
+                    r#"
+                    SELECT id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at,
+                           native_session_id
+                    FROM conversations
+                    WHERE id = ?1
+                    "#,
+                    params![id],
+                    map_conversation_row,
+                )
+                .optional()
+                .map_err(AppError::from)?;
+            if let Some(ref mut c) = conv {
+                c.sending = conversation_is_sending(conn, &c.id)?;
+            }
+            Ok(conv)
         })
     }
 
@@ -194,6 +204,21 @@ impl ChatRepo {
             .with_conn(|conn| next_turn_conn(conn, conversation_id))
     }
 
+    /// Crash recovery: fold leftover `running` placeholders into `cancelled`.
+    /// Does not clear `native_session_id` or rewrite error fields.
+    pub fn interrupt_stale_running(&self) -> Result<u64> {
+        self.db.with_conn(|conn| {
+            let n = conn.execute(
+                "UPDATE chat_messages SET status = ?1 WHERE status = ?2",
+                params![
+                    ChatMessageStatus::Cancelled.as_str(),
+                    ChatMessageStatus::Running.as_str(),
+                ],
+            )?;
+            Ok(n as u64)
+        })
+    }
+
     /// Atomically allocate the next turn and insert the user message plus agent
     /// placeholders. Holds the DB lock for the whole sequence so concurrent sends
     /// cannot observe the same `MAX(turn)`. Uses an explicit transaction so a
@@ -232,6 +257,32 @@ impl ChatRepo {
             }
         })
     }
+}
+
+fn load_sending_ids(conn: &rusqlite::Connection) -> Result<HashSet<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT conversation_id FROM chat_messages WHERE status = 'running'",
+    )?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    let mut ids = HashSet::new();
+    for row in rows {
+        ids.insert(row?);
+    }
+    Ok(ids)
+}
+
+fn conversation_is_sending(conn: &rusqlite::Connection, id: &str) -> Result<bool> {
+    let n: i64 = conn.query_row(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM chat_messages
+            WHERE conversation_id = ?1 AND status = 'running'
+        )
+        "#,
+        params![id],
+        |row| row.get(0),
+    )?;
+    Ok(n != 0)
 }
 
 fn next_turn_conn(conn: &rusqlite::Connection, conversation_id: &str) -> Result<i64> {
@@ -301,6 +352,7 @@ fn map_conversation_row(row: &Row<'_>) -> rusqlite::Result<Conversation> {
         created_at,
         updated_at,
         native_session_id,
+        sending: false,
     })
 }
 
@@ -394,6 +446,7 @@ mod tests {
             created_at: now.clone(),
             updated_at: now,
             native_session_id: None,
+            sending: false,
         }
     }
 

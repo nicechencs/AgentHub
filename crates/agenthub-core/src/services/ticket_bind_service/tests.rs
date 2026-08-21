@@ -527,6 +527,64 @@ fn bind_openai_and_xai_provider_and_account_to_pi_then_unbind() {
 }
 
 #[test]
+fn bind_openai_provider_and_account_to_codex_is_hosted_local_bridge() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&explicit_api_source(
+            "openai-codex-source",
+            "openai",
+            "OPENAI_API_KEY",
+            "sk-openai-codex-secret",
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&explicit_api_account(
+            "openai-codex-account",
+            "openai",
+            "sk-openai-codex-account",
+        ))
+        .unwrap();
+    let tickets = TicketReadService::new(db.clone());
+    let service = bind_service(
+        db,
+        dir.path().join("backups"),
+        vec![Arc::new(FakeClaudeAdapter::new_for(AgentId::Codex))],
+    );
+
+    for (kind, source_id) in [
+        (AdapterSourceKind::Provider, "openai-codex-source"),
+        (AdapterSourceKind::Account, "openai-codex-account"),
+    ] {
+        let ticket = ticket_id(kind, source_id);
+        let plan = tickets
+            .plan(&TicketPlanRequest {
+                ticket_id: ticket.clone(),
+                target_agent_id: AgentId::Codex,
+            })
+            .unwrap();
+        assert!(plan.can_apply, "{source_id}");
+        assert_eq!(
+            plan.analysis.route,
+            AdapterRoute::LocalBridge,
+            "{source_id}"
+        );
+        assert_eq!(
+            plan.analysis.rule_id.as_deref(),
+            Some("openai-api-to-codex-v1"),
+            "{source_id}"
+        );
+        let error = service
+            .bind(&TicketPlanRequest {
+                ticket_id: ticket,
+                target_agent_id: AgentId::Codex,
+            })
+            .unwrap_err();
+        assert_eq!(error.code(), "ticket.bind_hosted_bridge", "{source_id}");
+        assert!(!error.to_string().contains("sk-openai"));
+    }
+}
+
+#[test]
 fn bind_glm_provider_and_deepseek_account_to_pi_then_unbind() {
     let (dir, db) = test_db();
     ProviderRepo::new(db.clone())
@@ -985,7 +1043,9 @@ impl AgentAdapter for FakeCodexAdapter {
         Err(crate::error::AppError::Unsupported("fake".into()))
     }
     fn read_account(&self) -> Result<LiveAccount> {
-        Err(crate::error::AppError::NotFound("no live Codex auth".into()))
+        Err(crate::error::AppError::NotFound(
+            "no live Codex auth".into(),
+        ))
     }
     fn apply_account(&self, account: &LiveAccount) -> Result<()> {
         self.applied
@@ -1090,13 +1150,9 @@ base_url = "http://127.0.0.1:43121/v1"
         note: None,
         created_at: "now".into(),
     };
-    assert!(
-        crate::integrations::agents::codex::leftover::backup_is_bridge_leftover(&record)
-    );
+    assert!(crate::integrations::agents::codex::leftover::backup_is_bridge_leftover(&record));
     let mut doc = leftover.parse::<toml_edit::DocumentMut>().unwrap();
-    assert!(
-        crate::integrations::agents::codex::leftover::strip_bridge_leftovers_in_doc(&mut doc)
-    );
+    assert!(crate::integrations::agents::codex::leftover::strip_bridge_leftovers_in_doc(&mut doc));
     let cleaned = doc.to_string();
     assert!(!cleaned.contains("127.0.0.1"));
     assert!(!cleaned.contains("agenthub_grok_bridge"));

@@ -16,9 +16,9 @@ use super::{
     },
     responses::{
         apply_official_codex_model, encode_responses_from_ir, parse_responses_request,
-        responses_output_to_ir, to_grok_chat_request, to_grok_responses_request,
-        to_kimi_chat_request, to_responses_request, translate_responses_request, IrToResponsesSse,
-        ResponsesStreamToIr,
+        prepare_official_codex_request, responses_output_to_ir, to_grok_chat_request,
+        to_grok_responses_request, to_kimi_chat_request, to_responses_request,
+        translate_responses_request, IrToResponsesSse, ResponsesStreamToIr,
     },
 };
 
@@ -594,6 +594,28 @@ fn official_codex_model_keeps_official_ids_and_override() {
     let mut overridden = json!({});
     apply_official_codex_model(&mut overridden, "o3", Some("gpt-4o"));
     assert_eq!(overridden["model"], "gpt-4o");
+}
+
+#[test]
+fn prepare_official_codex_request_forces_store_false_without_changing_model_policy() {
+    let mut missing_store = json!({"model": "claude-sonnet-4-20250514"});
+    prepare_official_codex_request(
+        &mut missing_store,
+        "claude-sonnet-4-20250514",
+        Some("gpt-5.4"),
+    );
+    assert_eq!(missing_store["store"], false);
+    assert_eq!(missing_store["model"], "gpt-5.4");
+
+    let mut true_store = json!({"model": "gpt-5.4", "store": true});
+    prepare_official_codex_request(&mut true_store, "gpt-5.4", None);
+    assert_eq!(true_store["store"], false);
+    assert_eq!(true_store["model"], "gpt-5.4");
+
+    let mut leftover_model = json!({"model": "claude-sonnet-4-20250514"});
+    prepare_official_codex_request(&mut leftover_model, "claude-sonnet-4-20250514", Some(""));
+    assert_eq!(leftover_model["store"], false);
+    assert!(leftover_model.get("model").is_none());
 }
 
 #[test]

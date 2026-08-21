@@ -25,6 +25,8 @@ pub use identity::{
     identity_from_credentials, OAuthIdentity,
 };
 pub use pi_refresh::refresh_pi_provider;
+#[cfg(test)]
+pub use providers::with_token_url_override;
 pub use providers::{oauth_provider_for, OAuthProvider};
 pub use server::open_in_browser;
 pub use session::{OAuthSessionInfo, OAuthStart, OAuthStatus};

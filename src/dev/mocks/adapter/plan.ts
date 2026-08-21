@@ -91,9 +91,11 @@ export function buildPlan(
               'provider',
               analysis.ruleId === 'anthropic-api-to-codex-v1'
                 ? 'AgentHub Anthropic 本地桥接'
-                : analysis.ruleId === GROK_CODEX_RULE_ID
-                  ? 'AgentHub Grok 本机路由'
-                  : 'AgentHub Kimi 本地桥接',
+                : analysis.ruleId === 'openai-api-to-codex-v1'
+                  ? 'AgentHub OpenAI 本地桥接'
+                  : analysis.ruleId === GROK_CODEX_RULE_ID
+                    ? 'AgentHub Grok 本机路由'
+                    : 'AgentHub Kimi 本地桥接',
             ),
             change('codex', 'baseUrl', 'http://127.0.0.1:<本机端口>/v1'),
           ]

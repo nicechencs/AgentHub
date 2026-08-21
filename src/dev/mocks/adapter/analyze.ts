@@ -96,6 +96,23 @@ export function analyze(
       gateKind: 'none',
     };
   }
+  if (source === 'openai_api_key' && request.targetAgentId === 'codex') {
+    return {
+      route: 'local_bridge',
+      support: 'experimental',
+      reason: '显式 OpenAI API Key 到 Codex 需要本地协议桥接。',
+      actions: [action('requires_local_bridge', 'Codex', 'Codex Responses 与 OpenAI Chat Completions 需要本地双向协议转换。')],
+      limitations: [
+        '将在本机 loopback 启动协议桥接，并切换 Codex 到该本地端点。',
+        'AgentHub 需保持在托盘运行；退出前会尝试排空监听。',
+        '桥接为实验性协议覆盖：下游 Responses，上游 OpenAI Chat Completions。',
+        '固定端口被占用时会尝试重新分配端口并写回配置。',
+      ],
+      evidence: [evidence('OpenAI Chat Completions API', 'https://platform.openai.com/docs/api-reference/chat')],
+      ruleId: 'openai-api-to-codex-v1',
+      gateKind: 'none',
+    };
+  }
 
   if (source === 'claude_subscription' && request.targetAgentId === 'codex') {
     return unsupported(CLAUDE_SUBSCRIPTION_TO_CODEX_REASON, compatibilityEvidence);

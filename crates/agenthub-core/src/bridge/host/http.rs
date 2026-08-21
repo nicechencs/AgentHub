@@ -15,7 +15,9 @@ use crate::bridge::grok_cli::GrokReasoningReplay;
 use crate::bridge::runtime::BridgeUpstreamStatus;
 use crate::bridge::types::ProtocolError;
 
-use super::dispatch::{handle_chat_completions, handle_messages, handle_responses, ProtocolSelector};
+use super::dispatch::{
+    handle_chat_completions, handle_messages, handle_responses, ProtocolSelector,
+};
 use super::{BODY_LIMIT_BYTES, REQUEST_BODY_TIMEOUT};
 
 #[derive(Clone)]
@@ -29,6 +31,8 @@ pub(super) struct ListenerState {
     pub(super) admission: Arc<Semaphore>,
     pub(super) observed_upstream: Arc<Mutex<BridgeUpstreamStatus>>,
     pub(super) grok_replay: Arc<GrokReasoningReplay>,
+    pub(super) listed_models: Arc<[String]>,
+    pub(super) reload_upstream_auth: Option<crate::bridge::UpstreamAuthReload>,
 }
 
 impl ListenerState {
@@ -57,6 +61,8 @@ impl ListenerState {
 pub(super) fn router(state: ListenerState) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/v1/models", get(list_models))
+        .route("/models", get(list_models))
         .route("/v1/responses", post(responses))
         .route("/v1/messages", post(messages))
         .route("/v1/chat/completions", post(chat_completions))
@@ -86,6 +92,35 @@ async fn health(State(state): State<ListenerState>, headers: HeaderMap) -> Respo
         "upstream_status": upstream_status.as_str()
     }))
     .into_response()
+}
+
+async fn list_models(State(state): State<ListenerState>, headers: HeaderMap) -> Response {
+    if !has_valid_local_auth(&headers, &state.local_token) {
+        tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, op = "models", code = "unauthorized", status = 401_u16, "bridge models request rejected");
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "invalid_api_key",
+            "Invalid local bearer token.",
+            None,
+        );
+    }
+    // Synthesized from the profile mapping table at start; never proxied.
+    if state.listed_models.is_empty() {
+        tracing::info!(
+            target: "core.adapter",
+            profile_id = %state.profile_id,
+            op = "models",
+            code = "empty_models",
+            count = 0_usize,
+            "bridge models list is empty"
+        );
+    }
+    let data: Vec<Value> = state
+        .listed_models
+        .iter()
+        .map(|id| json!({ "id": id, "object": "model" }))
+        .collect();
+    Json(json!({ "object": "list", "data": data })).into_response()
 }
 
 async fn responses(State(state): State<ListenerState>, request: Request) -> Response {

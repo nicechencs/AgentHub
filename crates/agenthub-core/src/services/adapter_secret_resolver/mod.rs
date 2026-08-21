@@ -35,6 +35,7 @@ pub(super) const GLM_TO_CODEX_RULE: &str = GLM_CODEX_RULE_ID;
 pub(super) const DEEPSEEK_TO_CODEX_RULE: &str = DEEPSEEK_CODEX_RULE_ID;
 pub(super) const KIMI_TO_CODEX_BRIDGE_RULE: &str = "kimi-membership-to-codex-v1";
 pub(super) const ANTHROPIC_TO_CODEX_BRIDGE_RULE: &str = "anthropic-api-to-codex-v1";
+pub(super) const OPENAI_TO_CODEX_BRIDGE_RULE: &str = "openai-api-to-codex-v1";
 pub(super) const CODEX_TO_CLAUDE_BRIDGE_RULE: &str = "codex-subscription-to-claude-responses-v1";
 pub(super) const CODEX_TO_GROK_BRIDGE_RULE: &str = CODEX_GROK_RULE_ID;
 pub(super) const CODEX_TO_KIMI_BRIDGE_RULE: &str = CODEX_KIMI_RULE_ID;

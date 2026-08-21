@@ -168,7 +168,7 @@ fn ensure_listener_replaces_conflicting_running_spec() {
             "local-bearer-original-value-xxxxxxx",
             "upstream-bearer-original-value-xxxxx",
         );
-        let first_status = ensure_bridge_listener(&host, &first).await.unwrap();
+        let first_status = ensure_bridge_listener(&host, &first, None).await.unwrap();
         assert!(first_status.status.running);
         assert!(first_status.owned_by_saga);
 
@@ -184,11 +184,11 @@ fn ensure_listener_replaces_conflicting_running_spec() {
             BridgeHostError::ConflictingStart
         ));
 
-        let replaced = ensure_bridge_listener(&host, &rotated).await.unwrap();
+        let replaced = ensure_bridge_listener(&host, &rotated, None).await.unwrap();
         assert!(replaced.status.running);
         assert!(replaced.owned_by_saga);
         // Reuse of the same rotated material is not owned by a later saga.
-        let reused = ensure_bridge_listener(&host, &rotated).await.unwrap();
+        let reused = ensure_bridge_listener(&host, &rotated, None).await.unwrap();
         assert!(reused.status.running);
         assert!(!reused.owned_by_saga);
 
@@ -209,7 +209,9 @@ fn ensure_listener_rebinds_when_preferred_port_is_busy() {
             "upstream-bearer-rebind-value-xxxxxxx",
         );
 
-        let ensured = ensure_bridge_listener(&host, &material).await.unwrap();
+        let ensured = ensure_bridge_listener(&host, &material, None)
+            .await
+            .unwrap();
         assert!(ensured.status.running);
         assert!(ensured.owned_by_saga);
         assert_ne!(
@@ -235,7 +237,7 @@ fn ensure_listener_replaces_upstream_auth_while_keeping_local_bearer() {
             LOCAL,
             "upstream-bearer-original-value-xxxxx",
         );
-        let started = ensure_bridge_listener(&host, &first).await.unwrap();
+        let started = ensure_bridge_listener(&host, &first, None).await.unwrap();
         assert!(started.status.running);
         let first_port = started.status.port;
 
@@ -252,7 +254,7 @@ fn ensure_listener_replaces_upstream_auth_while_keeping_local_bearer() {
             BridgeHostError::ConflictingStart
         ));
 
-        let replaced = ensure_bridge_listener(&host, &rotated).await.unwrap();
+        let replaced = ensure_bridge_listener(&host, &rotated, None).await.unwrap();
         assert!(replaced.status.running);
         assert!(replaced.owned_by_saga);
         assert!(
@@ -263,7 +265,7 @@ fn ensure_listener_replaces_upstream_auth_while_keeping_local_bearer() {
         );
 
         // Identical rotated material is reused; local bearer remains the stable loopback token.
-        let reused = ensure_bridge_listener(&host, &rotated).await.unwrap();
+        let reused = ensure_bridge_listener(&host, &rotated, None).await.unwrap();
         assert!(reused.status.running);
         assert!(!reused.owned_by_saga);
         assert_eq!(rotated.start_spec(None).local_token, LOCAL);
@@ -301,7 +303,9 @@ fn busy_preferred_port_rebind_then_realign_updates_projection() {
             "upstream-membership-secret",
         );
         let host = BridgeRuntimeHost::new();
-        let ensured = ensure_bridge_listener(&host, &material).await.unwrap();
+        let ensured = ensure_bridge_listener(&host, &material, None)
+            .await
+            .unwrap();
         assert!(ensured.status.running);
         assert_ne!(
             ensured.status.port, preferred,

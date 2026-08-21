@@ -269,6 +269,7 @@ export function materializeApply(
     const grokClaudeBridge = plan.analysis.ruleId === GROK_CLAUDE_RULE_ID;
     const grokCodexBridge = plan.analysis.ruleId === GROK_CODEX_RULE_ID;
     const anthropicBridge = plan.analysis.ruleId === 'anthropic-api-to-codex-v1';
+    const openaiBridge = plan.analysis.ruleId === 'openai-api-to-codex-v1';
     const codexGrokBridge = plan.analysis.ruleId === CODEX_GROK_RULE_ID;
     const codexKimiBridge = plan.analysis.ruleId === CODEX_KIMI_RULE_ID;
     const codexDshBridge = plan.analysis.ruleId === CODEX_DSH_RULE_ID;
@@ -281,6 +282,8 @@ export function materializeApply(
         ? `adapter-grok-codex-bridge-${safeId}`
         : anthropicBridge
         ? `adapter-anthropic-codex-bridge-${safeId}`
+        : openaiBridge
+        ? `adapter-openai-codex-bridge-${safeId}`
         : codexGrokBridge
         ? `adapter-codex-grok-bridge-${safeId}`
         : codexKimiBridge
@@ -296,6 +299,8 @@ export function materializeApply(
         ? `Grok → Codex 本机路由 (${safeId})`
         : anthropicBridge
         ? `Anthropic → Codex 本地桥接 (${safeId})`
+        : openaiBridge
+        ? `OpenAI → Codex 本地桥接 (${safeId})`
         : codexGrokBridge
         ? `Codex → Grok 本机路由 (${safeId})`
         : codexKimiBridge
@@ -319,6 +324,8 @@ export function materializeApply(
         ? GROK_CODEX_RULE_ID
         : anthropicBridge
         ? 'anthropic-api-to-codex-v1'
+        : openaiBridge
+        ? 'openai-api-to-codex-v1'
         : codexGrokBridge
         ? CODEX_GROK_RULE_ID
         : codexKimiBridge
@@ -335,6 +342,8 @@ export function materializeApply(
         ? `codex-grok-bridge-${safeId}`
         : anthropicBridge
         ? `codex-anthropic-bridge-${safeId}`
+        : openaiBridge
+        ? `codex-openai-bridge-${safeId}`
         : codexGrokBridge
         ? `grok-codex-bridge-${safeId}`
         : codexKimiBridge

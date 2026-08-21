@@ -192,16 +192,24 @@ export function useChatPage() {
    */
   const loadList = useCallback(async () => {
     const convs = await listConversations();
+    let next = convs;
     if (convs.length > 0) {
       setConversations(convs);
       // agent 状态异步填充 picker，不挡列表；失败记 ready=false，允许重试
       void refreshAgents().catch(() => {});
-      return convs;
+    } else {
+      const agents = await refreshAgents();
+      next = await ensureConversation(convs, agents);
+      setConversations(next);
     }
-    const agents = await refreshAgents();
-    const ensured = await ensureConversation(convs, agents);
-    setConversations(ensured);
-    return ensured;
+    // 以服务端 sending 为准恢复页级 Stop；list 尚未带上 sending 时不要清掉进行中的本地 send
+    const inflight = next.find((c) => c.sending)?.id ?? null;
+    if (inflight) {
+      sendingConversationIdRef.current = inflight;
+      setSendingConversationId(inflight);
+      setSending(true);
+    }
+    return next;
   }, [ensureConversation, refreshAgents]);
 
   const loadMessages = useCallback(async (id: string) => {

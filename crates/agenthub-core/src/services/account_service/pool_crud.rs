@@ -459,18 +459,22 @@ impl AccountService {
     }
 
     pub(super) fn refresh_token_inner(&self, id_or_label: &str, agent: AgentId) -> Result<Account> {
-        if agent == AgentId::Grok {
-            return Err(AppError::Unsupported(
-                "Grok CLI 会在本机 auth.json 中自动续期，请使用“同步当前登录”".into(),
-            ));
-        }
         let mut account = self.get(id_or_label, Some(agent))?;
-        let expected_updated_at = account.updated_at.clone();
         if account.kind != AccountKind::Oauth {
             return Err(AppError::Unsupported(
                 "token refresh is only supported for OAuth accounts".into(),
             ));
         }
+        // CLI-owned grants rotate in the official auth.json. Hitting the token
+        // endpoint here would invalidate the CLI's refresh token.
+        self.refuse_cli_owned_oauth_refresh(&account)?;
+        let refresh_lock = self.acquire_oauth_refresh_lock(&account.id);
+        let _refresh_lock = refresh_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        account = self.get(id_or_label, Some(agent))?;
+        self.refuse_cli_owned_oauth_refresh(&account)?;
+        let expected_updated_at = account.updated_at.clone();
 
         // Heal first so Pi body.refresh is promoted to refresh_token.
         let _ = crate::services::account_identity_heal::heal_account_identity(&mut account);

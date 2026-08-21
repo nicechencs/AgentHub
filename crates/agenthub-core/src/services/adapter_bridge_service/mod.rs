@@ -33,14 +33,16 @@ use crate::bridge::{
 };
 use crate::error::{AppError, Result};
 use crate::models::{
-    AdapterProfile, AdapterProfileFilter, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
-    AdapterRouteRequest, AdapterSourceKind, AdapterSupport, AgentId, Provider, ProviderInput,
+    list_local_bridge_models, AdapterProfile, AdapterProfileFilter, AdapterProfileMode,
+    AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
+    AdapterSourceProduct, AdapterSupport, AgentId, Provider, ProviderInput,
 };
 use crate::services::{AdapterRouteService, AdapterSecretResolver};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
 
 const RULE_ID: &str = "kimi-membership-to-codex-v1";
 const ANTHROPIC_RULE_ID: &str = "anthropic-api-to-codex-v1";
+const OPENAI_RULE_ID: &str = "openai-api-to-codex-v1";
 const CODEX_CLAUDE_RULE_ID: &str = "codex-subscription-to-claude-responses-v1";
 const GROK_CLAUDE_RULE_ID: &str = "grok-subscription-to-claude-v1";
 const GROK_CODEX_RULE_ID: &str = "grok-subscription-to-codex-v1";
@@ -50,12 +52,16 @@ const CODEX_DSH_RULE_ID: &str = "codex-subscription-to-dsh-v1";
 const RULE_VERSION: &str = "1";
 const KIMI_CHAT_BASE_URL: &str = "https://api.kimi.com/coding/v1";
 const ANTHROPIC_MESSAGES_BASE_URL: &str = "https://api.anthropic.com/v1";
+const OPENAI_CHAT_BASE_URL: &str = crate::services::adapter_route_constants::OPENAI_GROK_BASE_URL;
 const CHATGPT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex/";
 const DEFAULT_MODEL: &str = "kimi-k2.5";
 const ANTHROPIC_DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
+const OPENAI_DEFAULT_MODEL: &str =
+    crate::services::adapter_route_constants::OPENAI_GROK_DEFAULT_MODEL;
 const CODEX_DEFAULT_MODEL: &str = "gpt-5.4";
 const PROVIDER_SLUG: &str = "agenthub_kimi_bridge";
 const ANTHROPIC_PROVIDER_SLUG: &str = "agenthub_anthropic_bridge";
+const OPENAI_PROVIDER_SLUG: &str = "agenthub_openai_bridge";
 const CODEX_CLAUDE_PROVIDER_SLUG: &str = "claude-codex-adapter-bridge";
 const GENERATED_BY: &str = "adapter";
 const BRIDGE_HEALTH_TIMEOUT: Duration = Duration::from_secs(4);
@@ -76,6 +82,7 @@ struct CodexBridgeRule {
     local_surface: BridgeLocalSurface,
     bridge_kind: &'static str,
     legacy_bridge_kinds: &'static [&'static str],
+    source: AdapterSourceProduct,
     target_agent: AgentId,
     mode: AdapterProfileMode,
 }
@@ -94,6 +101,7 @@ const KIMI_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
     local_surface: BridgeLocalSurface::Responses,
     bridge_kind: "responses_to_chat_completions",
     legacy_bridge_kinds: &[],
+    source: AdapterSourceProduct::KimiCodeMembership,
     target_agent: AgentId::Codex,
     mode: AdapterProfileMode::Api,
 };
@@ -112,6 +120,26 @@ const ANTHROPIC_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
     local_surface: BridgeLocalSurface::Responses,
     bridge_kind: "responses_to_anthropic_messages",
     legacy_bridge_kinds: &[],
+    source: AdapterSourceProduct::AnthropicApi,
+    target_agent: AgentId::Codex,
+    mode: AdapterProfileMode::Api,
+};
+
+const OPENAI_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: OPENAI_RULE_ID,
+    profile_prefix: "adapter-openai-codex-bridge",
+    provider_prefix: "codex-openai-adapter-bridge",
+    profile_name: "OpenAI → Codex Bridge",
+    provider_name: "OpenAI Bridge",
+    toml_name: "AgentHub OpenAI Bridge",
+    provider_slug: OPENAI_PROVIDER_SLUG,
+    upstream_base_url: OPENAI_CHAT_BASE_URL,
+    default_model: OPENAI_DEFAULT_MODEL,
+    protocol: BridgeUpstreamProtocol::KimiChatCompletions,
+    local_surface: BridgeLocalSurface::Responses,
+    bridge_kind: "responses_to_chat_completions",
+    legacy_bridge_kinds: &[],
+    source: AdapterSourceProduct::OpenaiApi,
     target_agent: AgentId::Codex,
     mode: AdapterProfileMode::Api,
 };
@@ -130,6 +158,7 @@ const CODEX_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
     local_surface: BridgeLocalSurface::Messages,
     bridge_kind: "messages_to_codex_responses",
     legacy_bridge_kinds: &[],
+    source: AdapterSourceProduct::CodexChatGptSubscription,
     target_agent: AgentId::Claude,
     mode: AdapterProfileMode::Oauth,
 };
@@ -148,6 +177,7 @@ const GROK_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
     local_surface: BridgeLocalSurface::Messages,
     bridge_kind: "messages_to_xai_responses",
     legacy_bridge_kinds: &["messages_to_xai_chat_completions"],
+    source: AdapterSourceProduct::XaiGrokSubscription,
     target_agent: AgentId::Claude,
     mode: AdapterProfileMode::Oauth,
 };
@@ -166,6 +196,7 @@ const GROK_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
     local_surface: BridgeLocalSurface::Responses,
     bridge_kind: "responses_to_xai_responses",
     legacy_bridge_kinds: &["responses_to_chat_completions"],
+    source: AdapterSourceProduct::XaiGrokSubscription,
     target_agent: AgentId::Codex,
     mode: AdapterProfileMode::Oauth,
 };
@@ -184,6 +215,7 @@ const CODEX_GROK_RULE: CodexBridgeRule = CodexBridgeRule {
     local_surface: BridgeLocalSurface::Responses,
     bridge_kind: "responses_to_codex_responses",
     legacy_bridge_kinds: &["chat_completions_to_codex_responses"],
+    source: AdapterSourceProduct::CodexChatGptSubscription,
     target_agent: AgentId::Grok,
     mode: AdapterProfileMode::Oauth,
 };
@@ -202,6 +234,7 @@ const CODEX_KIMI_RULE: CodexBridgeRule = CodexBridgeRule {
     local_surface: BridgeLocalSurface::ChatCompletions,
     bridge_kind: "chat_completions_to_codex_responses",
     legacy_bridge_kinds: &[],
+    source: AdapterSourceProduct::CodexChatGptSubscription,
     target_agent: AgentId::Kimi,
     mode: AdapterProfileMode::Oauth,
 };
@@ -220,6 +253,7 @@ const CODEX_DSH_RULE: CodexBridgeRule = CodexBridgeRule {
     local_surface: BridgeLocalSurface::ChatCompletions,
     bridge_kind: "chat_completions_to_codex_responses",
     legacy_bridge_kinds: &[],
+    source: AdapterSourceProduct::CodexChatGptSubscription,
     target_agent: AgentId::Dsh,
     mode: AdapterProfileMode::Oauth,
 };
@@ -229,6 +263,7 @@ const CODEX_DSH_RULE: CodexBridgeRule = CodexBridgeRule {
 const LIVE_BRIDGE_RULES: &[CodexBridgeRule] = &[
     KIMI_CODEX_RULE,
     ANTHROPIC_CODEX_RULE,
+    OPENAI_CODEX_RULE,
     CODEX_CLAUDE_RULE,
     GROK_CLAUDE_RULE,
     GROK_CODEX_RULE,
@@ -260,6 +295,14 @@ pub(crate) fn live_bridge_rule_projections() -> impl Iterator<Item = (AgentId, &
     LIVE_BRIDGE_RULES
         .iter()
         .map(|rule| (rule.target_agent, rule.rule_id))
+}
+
+fn listed_models_for_bridge(
+    source: AdapterSourceProduct,
+    target: AgentId,
+    default_model: &str,
+) -> Vec<String> {
+    list_local_bridge_models(source, target, Some(default_model))
 }
 
 /// Safe input for beginning a local bridge saga. It contains no credentials.
@@ -294,6 +337,8 @@ pub struct AdapterBridgeRuntimeMaterial {
     upstream_model: String,
     protocol: BridgeUpstreamProtocol,
     local_surface: BridgeLocalSurface,
+    source: AdapterSourceProduct,
+    target_agent: AgentId,
     upstream_auth: ResolvedAuth,
     local_bearer: String,
 }
@@ -309,6 +354,8 @@ impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
             .field("upstream_model", &self.upstream_model)
             .field("protocol", &self.protocol)
             .field("local_surface", &self.local_surface)
+            .field("source", &self.source)
+            .field("target_agent", &self.target_agent)
             .field("upstream_auth", &self.upstream_auth)
             .field("local_bearer", &"REDACTED")
             .finish()
@@ -322,6 +369,14 @@ impl AdapterBridgeRuntimeMaterial {
 
     pub fn preferred_port(&self) -> Option<u16> {
         self.preferred_port
+    }
+
+    pub fn protocol(&self) -> BridgeUpstreamProtocol {
+        self.protocol
+    }
+
+    pub fn source_connection_id(&self) -> &str {
+        &self.source_connection_id
     }
 
     /// Construct material for host/controller tests without a full prepare saga.
@@ -340,6 +395,8 @@ impl AdapterBridgeRuntimeMaterial {
             upstream_model: DEFAULT_MODEL.into(),
             protocol: BridgeUpstreamProtocol::KimiChatCompletions,
             local_surface: BridgeLocalSurface::Responses,
+            source: AdapterSourceProduct::KimiCodeMembership,
+            target_agent: AgentId::Codex,
             upstream_auth: ResolvedAuth::bearer(upstream_token),
             local_bearer: local_bearer.into(),
         }
@@ -362,6 +419,11 @@ impl AdapterBridgeRuntimeMaterial {
                 local_surface: self.local_surface,
             },
         )
+        .with_listed_models(listed_models_for_bridge(
+            self.source,
+            self.target_agent,
+            &self.upstream_model,
+        ))
     }
 
     /// Verify a freshly bound listener before its generated provider becomes
@@ -405,8 +467,7 @@ impl AdapterBridgeRuntimeMaterial {
         // preflight; the first real request remains the upstream probe.
         if matches!(
             self.protocol,
-            BridgeUpstreamProtocol::CodexResponsesOauth
-                | BridgeUpstreamProtocol::XaiResponsesOauth
+            BridgeUpstreamProtocol::CodexResponsesOauth | BridgeUpstreamProtocol::XaiResponsesOauth
         ) {
             return Ok(());
         }

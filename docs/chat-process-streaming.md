@@ -1,10 +1,11 @@
 # Chat 过程流式展示设计
 
 > 状态：**Phase 0–2 是现行契约**（2026-08-03）；Phase 3 **展示层已落地**（2026-08，见 [chat-page-redesign.md](chat-page-redesign.md)）。协议侧未做：过程落库、过程内 usage、Pi rpc 审批、diff 预览落库。  
-> **现行状态**：本文管过程协议与展示契约，不是 Chat 页 IA。Chat **没有**独立模型选择器；chrome 见 [ui-design.md](ui-design.md) §4.4。  
+> **现行状态**：本文管过程协议与展示契约，不是 Chat 页 IA。Chat **没有**独立模型选择器；chrome 见 [ui-design.md](ui-design.md) §4.4。Chat **一会话一 Agent**（过程仍按 `(turn, agent)` 隔离）。§12 三条实现缺口已于 2026-08-21 收口。  
 > 范围：GUI Chat 的「Cursor 式过程」——命令、状态、stderr、结构化工具/thinking 步骤  
 > 非目标：接管各 CLI 原生多轮 session、交互式 tool 审批（RPC）、凭据加密  
-> mock 路径：`src/dev/mocks/chat.ts`。`src/lib/api/chat.ts` 是生产 façade，不是 mock。
+> mock 路径：`src/dev/mocks/chat.ts`。`src/lib/api/chat.ts` 是生产 façade，不是 mock。  
+> 与 DSH Desktop 的 UI↔Agent 对照见 [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md)（对照笔记，不改本文契约）。
 
 ## 1. 背景与问题（历史；Phase 0–2 已修复主体）
 
@@ -25,7 +26,7 @@ Chat 链路支持子进程流式（`StreamingProcessRunner` → `RunEvent` → `
 1. **统一过程模型**：前端与 core 用同一套语义事件展示「过程」，与各家原始 JSON schema 解耦。  
 2. **按 Agent 能力分级**：有结构化 parser 的 Agent 走结构化流；否则 text；未知事件降级为 raw。  
 3. **可回退**：解析失败或旧 CLI 仍可按 text 流展示，不中断对话。  
-4. **多 Agent 并行**：过程按 `(turn, agent)` 隔离，禁止混成单时间线。
+4. **过程按 `(turn, agent)` 隔离**：禁止混成单时间线。现行产品一会话一 Agent；隔离键保留是为了历史行与 `run_each` 形状。
 
 ## 3. 现状数据流（真源）
 
@@ -211,7 +212,7 @@ frontend
 |------|------|
 | 各家 schema 漂移 | parser 容错 + raw；版本探测可选 |
 | 结构化事件流体积大 | 行 cap + max_output_bytes |
-| 多 Agent 并行写同 cwd | 既有产品风险；过程 UI 不解决；后续 worktree |
+| 多 Agent 并行写同 cwd | 现行一会话一 Agent，并跑风险已收口；过程 UI 不解决 cwd 冲突；后续 worktree |
 | 危险 auto-approve | 与过程展示正交；仍默认关闭 |
 | 把 tool 参数当可信 UI | 展示时转义；不自动执行 |
 
@@ -244,3 +245,11 @@ frontend
 - **过程不落库（Phase 0–1）**：降低迁移成本；终稿仍在 `chat_messages.content`。  
 - **Pi 暂不默认 rpc**：json print 模式成本更低；rpc 留给交互审批。  
 - **不静默跨模式重试**：避免重复扣费/双跑；错误显式暴露。
+
+## 12. 已知问题（2026-08-21 已收口）
+
+对照笔记 [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) §6.14 / §6.15 只作机制指针。下列不是 Phase 3 协议侧待办（落库 / usage / Pi rpc / diff 预览）。
+
+1. **崩溃残留 `status=running`（已修）**：`AgentHub::open` 在 lifecycle interrupt 之后把所有 `chat_messages.status=running` 收成 `cancelled`（不清 `native_session_id`、不改 error）。不在 `list_messages` 上 interrupt（与 persist 竞态）。`Conversation.sending` 是运行时投影（存在 running 行），Chat 页 `loadList` 用它恢复 Stop。
+2. **过程 cap（已修）**：UI `MAX_STEPS=200` 仍在，但 `capSteps` 优先保留 `tool` / `error`；软步（thinking / status / raw / text）从最旧丢。tool+error 自身超过 200 时只留最近 200 条。无 `step.id` 的 tool 仍不 merge（parser 必须给稳定 id）。
+3. **取消时 `Finished` 信号（已修）**：`ok` 仍是 `!is_hard_failure`（取消时 true）。新增 `cancelled: bool`（任一 `RunStatus::Cancelled`）。`reduceProcessEvent('finished')`：`cancelled` → `cancelled`，否则 `ok` → `ok`，否则 `failed`。mock 与生产对齐：取消时 `ok: true, cancelled: true`。

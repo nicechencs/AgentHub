@@ -164,7 +164,9 @@ pub(crate) fn bind_implementation_open(
             AdapterSupport::Stable,
         )
         | (
-            Some("kimi-membership-to-codex-v1"),
+            Some("kimi-membership-to-codex-v1")
+            | Some("anthropic-api-to-codex-v1")
+            | Some("openai-api-to-codex-v1"),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Codex,
             AdapterRoute::LocalBridge,
@@ -191,13 +193,6 @@ pub(crate) fn bind_implementation_open(
             AdapterSourceKind::Account,
             AgentId::Pi,
             AdapterRoute::ConfigSync,
-            AdapterSupport::Experimental,
-        )
-        | (
-            Some("anthropic-api-to-codex-v1"),
-            AdapterSourceKind::Provider | AdapterSourceKind::Account,
-            AgentId::Codex,
-            AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
@@ -417,6 +412,15 @@ pub(super) fn actions_for(
                 "requires_local_bridge",
                 "Codex",
                 "Codex Responses 与 Anthropic Messages 需要本地双向协议转换。",
+                None,
+                false,
+            )]
+        }
+        (RouteSourceLabel::OpenaiApiKey, AgentId::Codex, AdapterRoute::LocalBridge) => {
+            vec![action(
+                "requires_local_bridge",
+                "Codex",
+                "Codex Responses 与 OpenAI Chat Completions 需要本地双向协议转换。",
                 None,
                 false,
             )]
@@ -798,16 +802,16 @@ pub(super) fn evidence_for(
         (RouteSourceLabel::KimiMembership, _) => vec![kimi_pi_evidence()],
         (RouteSourceLabel::AnthropicApiKey, AgentId::Codex) => vec![anthropic_codex_evidence()],
         (RouteSourceLabel::AnthropicApiKey, _) => vec![anthropic_pi_evidence()],
+        (RouteSourceLabel::OpenaiApiKey, AgentId::Codex) => vec![openai_codex_evidence()],
         (RouteSourceLabel::OpenaiApiKey, AgentId::Grok) => {
             vec![adapter_compatibility_evidence()]
         }
         (RouteSourceLabel::XaiGrokSubscription, AgentId::Claude | AgentId::Codex) => {
             vec![adapter_compatibility_evidence()]
         }
-        (
-            RouteSourceLabel::CodexSubscription,
-            AgentId::Grok | AgentId::Kimi | AgentId::Dsh,
-        ) => vec![adapter_compatibility_evidence()],
+        (RouteSourceLabel::CodexSubscription, AgentId::Grok | AgentId::Kimi | AgentId::Dsh) => {
+            vec![adapter_compatibility_evidence()]
+        }
         (RouteSourceLabel::OpenaiApiKey | RouteSourceLabel::XaiApiKey, _) => {
             vec![anthropic_pi_evidence()]
         }
@@ -915,6 +919,14 @@ pub(super) fn anthropic_codex_evidence() -> AdapterEvidence {
         label: "Anthropic Messages API".into(),
         url: "https://docs.anthropic.com/en/api/messages".into(),
         verified_at: VERIFIED_AT.into(),
+    }
+}
+
+pub(super) fn openai_codex_evidence() -> AdapterEvidence {
+    AdapterEvidence {
+        label: "OpenAI Chat Completions API".into(),
+        url: "https://platform.openai.com/docs/api-reference/chat".into(),
+        verified_at: "2026-08-21".into(),
     }
 }
 

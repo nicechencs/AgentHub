@@ -5,7 +5,7 @@
 > 自动验收（bridge / restore / 退出协调器）已在工作区通过；**本清单只覆盖必须用桌面应用 + 真实连接完成的项**。  
 > 创建/应用的日常入口可以是 Dashboard 卡片「连接/切换」或 Connections「接到…」（ConnectFlow）；本机路由页（`/routes`，侧栏 Routes）只用于本机转发的运行时控件。  
 > 入口：Dashboard「连接/切换」与 Connections「接到…」（真登录常驻；不可行目标在对话框置灰 + 原因）。自动生成的配置不出现在登录列表。见 [connection-binding-model.md](connection-binding-model.md)。  
-> 本清单同时覆盖直接改配置（Kimi→Claude、Anthropic Key→Pi）和本机转发（Kimi→Codex）。同一把 Kimi Key 对不同目标走不同路，不是「双协议 = 万能」。  
+> 本清单同时覆盖直接改配置（Kimi 会员 Key→Claude、Anthropic Key→Pi）和本机转发（Kimi 会员 Key→Codex）。同一把 Kimi Key 对不同目标走不同路，不是「双协议 = 万能」。Kimi 会员 OAuth 不在本清单：产品不做反代、不写进其他 Agent。  
 > **禁止**把密钥、Authorization、prompt、工具参数或响应正文写入本文件或任何报告。只记 `profile_id`、端口、错误码、耗时、是否完成。
 
 ## Hub ConnectFlow 真机验收（最短）
