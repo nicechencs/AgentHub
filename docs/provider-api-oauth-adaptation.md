@@ -220,7 +220,7 @@ OAuth access/refresh token 带有客户端、受众、范围和刷新语义。�
 
 ### 5.1.1 Grok subscription → Claude Code / Codex：第 3 路，xAI Responses experimental bind
 
-Grok 订阅同样走 `local_bridge`，上游是 `https://cli-chat-proxy.grok.com/v1` 的 xAI Responses（`BridgeUpstreamProtocol::XaiResponsesOauth`），默认模型 `grok-4.5`。→ Claude 的本机表面是 Messages；→ Codex 的本机表面是 Responses。只允许带 access token 的 Grok OAuth Account。写入走 `bind_ticket`；本机路由用 `local_token`，目标只写 loopback 地址与本地 bearer，xAI token 不进入目标配置、IPC 或日志。Hub 本轮不自动 refresh，过期需重新同步 Grok 登录。loopback 导入按 Agent upsert 同一槽，不每次新开一行。Codex 订阅 → Grok 是对称的第 3 路边：上游 Codex Responses，Grok `config.toml` 写 `api_backend=responses`。
+Grok 订阅同样走 `local_bridge`，上游是 `https://cli-chat-proxy.grok.com/v1` 的 xAI Responses（`BridgeUpstreamProtocol::XaiResponsesOauth`），默认模型 `grok-4.5`。→ Claude 的本机表面是 Messages；→ Codex 的本机表面是 Responses。只允许带 access token 的 Grok OAuth Account。写入走 `bind_ticket`；本机路由用 `local_token`，目标只写 loopback 地址与本地 bearer，xAI token 不进入目标配置、IPC 或日志。上游请求带 Grok CLI 身份头（`x-xai-token-auth`、`x-grok-client-version` / `identifier` / `mode`）；会话 ID 从 Claude/Codex cache seed 哈希，禁止每请求随机 UUID。Claude `thinking` 映射为 Grok `reasoning`；Codex `local_shell` / `apply_patch` 在透传前规范化。Hub 本轮不自动 refresh（Build refresh 会轮换，不能和官方 Grok CLI 互踢），过期需重新同步 Grok 登录。loopback 导入按 Agent upsert 同一槽，不每次新开一行。Codex 订阅 → Grok 是对称的第 3 路边：上游 Codex Responses，Grok `config.toml` 写 `api_backend=responses`。
 
 Responses 已选为本轮上游 transport，并用 fixtures / host health 验证本地闭环。App Server 继续保持关闭：
 

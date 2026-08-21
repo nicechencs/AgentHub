@@ -12,6 +12,10 @@ use serde_json::Value;
 use tokio::sync::OwnedSemaphorePermit;
 use tokio_util::sync::CancellationToken;
 
+use crate::bridge::grok_cli::{
+    apply_grok_cli_identity_with, extract_prompt_cache_seed, grok_cli_request_identity,
+    inject_prompt_cache_key, normalize_grok_build_tools, GrokCliRequestIdentity,
+};
 use crate::bridge::protocol::anthropic_messages::{
     anthropic_message_to_ir, encode_anthropic_message, encode_anthropic_sse,
     parse_messages_request, to_anthropic_messages_request, AnthropicStreamToIr,
@@ -19,11 +23,10 @@ use crate::bridge::protocol::anthropic_messages::{
 use crate::bridge::protocol::chat::{
     encode_chat_from_ir, encode_chat_sse, parse_chat_request, ChatStreamToIr,
 };
-use crate::bridge::grok_cli::apply_grok_cli_identity;
 use crate::bridge::protocol::responses::{
     apply_official_codex_model, encode_responses_from_ir, parse_responses_request,
-    responses_output_to_ir, to_kimi_chat_request, to_responses_request, IrToResponsesSse,
-    ResponsesStreamToIr,
+    responses_output_to_ir, to_grok_responses_request, to_kimi_chat_request, to_responses_request,
+    IrToResponsesSse, ResponsesStreamToIr,
 };
 use crate::bridge::runtime::{BridgeLocalSurface, BridgeUpstreamProtocol};
 use crate::bridge::types::{BridgeEvent, BridgeRequest, IrEvent, ProtocolError};
@@ -80,17 +83,39 @@ fn apply_upstream_auth(
     builder: reqwest::RequestBuilder,
     protocol: BridgeUpstreamProtocol,
     token: &str,
+    grok_identity: Option<&GrokCliRequestIdentity>,
 ) -> reqwest::RequestBuilder {
     match protocol {
         BridgeUpstreamProtocol::KimiChatCompletions
         | BridgeUpstreamProtocol::CodexResponsesOauth => builder.bearer_auth(token),
         BridgeUpstreamProtocol::XaiResponsesOauth => {
-            apply_grok_cli_identity(builder.bearer_auth(token))
+            apply_grok_cli_identity_with(builder.bearer_auth(token), grok_identity)
         }
         BridgeUpstreamProtocol::AnthropicMessages => builder
             .header("x-api-key", token)
             .header("anthropic-version", ANTHROPIC_API_VERSION),
     }
+}
+
+fn grok_identity_for(
+    protocol: BridgeUpstreamProtocol,
+    request_id: &str,
+    headers: &HeaderMap,
+    body: &Value,
+    model: Option<&str>,
+) -> Option<GrokCliRequestIdentity> {
+    if protocol != BridgeUpstreamProtocol::XaiResponsesOauth {
+        return None;
+    }
+    Some(grok_cli_request_identity(request_id, headers, body, model))
+}
+
+fn prepare_grok_build_body(protocol: BridgeUpstreamProtocol, body: &mut Value, seed: Option<&str>) {
+    if protocol != BridgeUpstreamProtocol::XaiResponsesOauth {
+        return;
+    }
+    normalize_grok_build_tools(body);
+    inject_prompt_cache_key(body, seed);
 }
 
 pub(super) async fn handle_responses(state: ListenerState, request: Request) -> Response {
@@ -122,6 +147,7 @@ pub(super) async fn handle_responses(state: ListenerState, request: Request) -> 
             );
         }
     };
+    let incoming_headers = request.headers().clone();
     let body = match read_request_json(request).await {
         Ok(body) => body,
         Err(response) => return response,
@@ -129,7 +155,17 @@ pub(super) async fn handle_responses(state: ListenerState, request: Request) -> 
 
     let selector = ProtocolSelector::from_listener(&state);
     let protocol = state.upstream.protocol;
-    let (upstream_body, stream_requested) = if selector.responses_passthrough() {
+    let grok_identity = grok_identity_for(
+        protocol,
+        &request_id,
+        &incoming_headers,
+        &body,
+        state.upstream.model.as_deref(),
+    );
+    let cache_seed = grok_identity
+        .as_ref()
+        .and_then(|_| extract_prompt_cache_seed(&incoming_headers, &body));
+    let (mut upstream_body, stream_requested) = if selector.responses_passthrough() {
         match passthrough_responses_body(body, &state) {
             Ok(pair) => pair,
             Err(response) => return response,
@@ -156,11 +192,13 @@ pub(super) async fn handle_responses(state: ListenerState, request: Request) -> 
         }
         (upstream_body, stream_requested)
     };
+    prepare_grok_build_body(protocol, &mut upstream_body, cache_seed.as_deref());
     let path = match protocol {
         BridgeUpstreamProtocol::KimiChatCompletions => "chat/completions",
         BridgeUpstreamProtocol::AnthropicMessages => "messages",
-        BridgeUpstreamProtocol::CodexResponsesOauth
-        | BridgeUpstreamProtocol::XaiResponsesOauth => "responses",
+        BridgeUpstreamProtocol::CodexResponsesOauth | BridgeUpstreamProtocol::XaiResponsesOauth => {
+            "responses"
+        }
     };
     let url = match state.upstream_url.join(path) {
         Ok(url) => url,
@@ -178,6 +216,7 @@ pub(super) async fn handle_responses(state: ListenerState, request: Request) -> 
         state.client.post(url).json(&upstream_body),
         protocol,
         state.upstream.auth.token(),
+        grok_identity.as_ref(),
     );
     let upstream_request = builder.send();
     let upstream = tokio::select! {
@@ -289,8 +328,7 @@ fn passthrough_responses_body(
                 }
             }
         }
-        BridgeUpstreamProtocol::KimiChatCompletions
-        | BridgeUpstreamProtocol::AnthropicMessages => {
+        BridgeUpstreamProtocol::KimiChatCompletions | BridgeUpstreamProtocol::AnthropicMessages => {
             unreachable!("passthrough is Responses-to-Responses only")
         }
     }
@@ -324,10 +362,21 @@ pub(super) async fn handle_messages(state: ListenerState, request: Request) -> R
             );
         }
     };
+    let incoming_headers = request.headers().clone();
     let body = match read_request_json(request).await {
         Ok(body) => body,
         Err(response) => return response,
     };
+    let grok_identity = grok_identity_for(
+        state.upstream.protocol,
+        &request_id,
+        &incoming_headers,
+        &body,
+        state.upstream.model.as_deref(),
+    );
+    let cache_seed = grok_identity
+        .as_ref()
+        .and_then(|_| extract_prompt_cache_seed(&incoming_headers, &body));
     let request = match parse_messages_request(&body) {
         Ok(request) => request,
         Err(error) => {
@@ -339,12 +388,15 @@ pub(super) async fn handle_messages(state: ListenerState, request: Request) -> R
     let protocol = state.upstream.protocol;
     let mut upstream_body = match protocol {
         BridgeUpstreamProtocol::KimiChatCompletions => to_kimi_chat_request(&request),
-        BridgeUpstreamProtocol::CodexResponsesOauth
-        | BridgeUpstreamProtocol::XaiResponsesOauth => to_responses_request(&request),
+        BridgeUpstreamProtocol::CodexResponsesOauth => to_responses_request(&request),
+        BridgeUpstreamProtocol::XaiResponsesOauth => to_grok_responses_request(&request),
         BridgeUpstreamProtocol::AnthropicMessages => {
             unreachable!("messages handler does not accept Anthropic upstream")
         }
     };
+    if protocol == BridgeUpstreamProtocol::XaiResponsesOauth {
+        inject_prompt_cache_key(&mut upstream_body, cache_seed.as_deref());
+    }
     match protocol {
         BridgeUpstreamProtocol::CodexResponsesOauth => {
             apply_official_codex_model(
@@ -353,8 +405,7 @@ pub(super) async fn handle_messages(state: ListenerState, request: Request) -> R
                 state.upstream.model.as_deref(),
             );
         }
-        BridgeUpstreamProtocol::KimiChatCompletions
-        | BridgeUpstreamProtocol::XaiResponsesOauth => {
+        BridgeUpstreamProtocol::KimiChatCompletions | BridgeUpstreamProtocol::XaiResponsesOauth => {
             if let Some(model) = &state.upstream.model {
                 upstream_body["model"] = Value::String(model.clone());
             }
@@ -365,8 +416,9 @@ pub(super) async fn handle_messages(state: ListenerState, request: Request) -> R
     }
     let path = match protocol {
         BridgeUpstreamProtocol::KimiChatCompletions => "chat/completions",
-        BridgeUpstreamProtocol::CodexResponsesOauth
-        | BridgeUpstreamProtocol::XaiResponsesOauth => "responses",
+        BridgeUpstreamProtocol::CodexResponsesOauth | BridgeUpstreamProtocol::XaiResponsesOauth => {
+            "responses"
+        }
         BridgeUpstreamProtocol::AnthropicMessages => {
             unreachable!("messages handler does not accept Anthropic upstream")
         }
@@ -387,6 +439,7 @@ pub(super) async fn handle_messages(state: ListenerState, request: Request) -> R
         state.client.post(url).json(&upstream_body),
         protocol,
         state.upstream.auth.token(),
+        grok_identity.as_ref(),
     );
     let upstream = tokio::select! {
         _ = state.force_shutdown.cancelled() => return stopping_response(),
@@ -635,8 +688,7 @@ pub(super) async fn messages_non_stream_response(
             .and_then(|responses| responses_output_to_ir(&responses))
             .and_then(|ir| encode_anthropic_message(&ir))
         }
-        BridgeUpstreamProtocol::CodexResponsesOauth
-        | BridgeUpstreamProtocol::XaiResponsesOauth => {
+        BridgeUpstreamProtocol::CodexResponsesOauth | BridgeUpstreamProtocol::XaiResponsesOauth => {
             responses_output_to_ir(&upstream_body).and_then(|ir| encode_anthropic_message(&ir))
         }
         BridgeUpstreamProtocol::AnthropicMessages => {
@@ -729,8 +781,9 @@ pub(super) async fn non_stream_response(
         }
         BridgeUpstreamProtocol::AnthropicMessages => anthropic_message_to_ir(&upstream_body)
             .and_then(|ir| encode_responses_from_ir(&ir, Some(&request_id))),
-        BridgeUpstreamProtocol::CodexResponsesOauth
-        | BridgeUpstreamProtocol::XaiResponsesOauth => Ok(upstream_body),
+        BridgeUpstreamProtocol::CodexResponsesOauth | BridgeUpstreamProtocol::XaiResponsesOauth => {
+            Ok(upstream_body)
+        }
     };
     match translated {
         Ok(value) => {

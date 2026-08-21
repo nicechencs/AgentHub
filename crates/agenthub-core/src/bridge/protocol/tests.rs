@@ -11,13 +11,14 @@ use super::{
         translate_responses_to_anthropic_request, AnthropicStreamToIr,
     },
     chat::{
-        encode_chat_from_ir, parse_chat_request, sse_frame, translate_chat_response, ChatStreamToIr,
-        ResponsesSseTranslator,
+        encode_chat_from_ir, parse_chat_request, sse_frame, translate_chat_response,
+        ChatStreamToIr, ResponsesSseTranslator,
     },
     responses::{
         apply_official_codex_model, encode_responses_from_ir, parse_responses_request,
-        responses_output_to_ir, to_grok_chat_request, to_kimi_chat_request, to_responses_request,
-        translate_responses_request, IrToResponsesSse, ResponsesStreamToIr,
+        responses_output_to_ir, to_grok_chat_request, to_grok_responses_request,
+        to_kimi_chat_request, to_responses_request, translate_responses_request, IrToResponsesSse,
+        ResponsesStreamToIr,
     },
 };
 
@@ -802,9 +803,129 @@ fn anthropic_thinking_configuration_is_dropped() {
         "messages": [{ "role": "user", "content": "hi" }],
         "thinking": { "type": "enabled", "budget_tokens": 1024 }
     }))
-    .expect("thinking configuration must be ignored so Claude Code ping is not 400");
+    .expect("thinking configuration must parse so Claude Code ping is not 400");
     assert_eq!(request.model, "gpt-5");
     assert!(request.passthrough.get("thinking").is_none());
+    assert_eq!(request.passthrough["reasoning_effort"], "low");
+}
+
+#[test]
+fn anthropic_thinking_maps_to_passthrough_reasoning_effort() {
+    let cases: &[(&str, Value, Option<&str>)] = &[
+        ("invalid type", json!({"type": "bogus"}), None),
+        ("disabled", json!({"type": "disabled"}), None),
+        (
+            "effort high",
+            json!({"type": "enabled", "effort": "high"}),
+            Some("high"),
+        ),
+        (
+            "effort minimal",
+            json!({"type": "enabled", "effort": "minimal"}),
+            Some("low"),
+        ),
+        (
+            "budget 12000",
+            json!({"type": "enabled", "budget_tokens": 12000}),
+            Some("high"),
+        ),
+        (
+            "budget default enabled",
+            json!({"type": "enabled"}),
+            Some("medium"),
+        ),
+    ];
+    for (label, thinking, expected) in cases {
+        let request = parse_messages_request(&json!({
+            "model": "gpt-5",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hi" }],
+            "thinking": thinking,
+        }))
+        .unwrap_or_else(|error| panic!("{label}: {error:?}"));
+        assert!(
+            request.passthrough.get("thinking").is_none(),
+            "{label}: thinking must not be forwarded"
+        );
+        match expected {
+            Some(effort) => {
+                assert_eq!(request.passthrough["reasoning_effort"], *effort, "{label}")
+            }
+            None => assert!(
+                request.passthrough.get("reasoning_effort").is_none(),
+                "{label}: reasoning_effort must be omitted"
+            ),
+        }
+    }
+}
+
+#[test]
+fn to_grok_responses_request_maps_thinking_to_reasoning_and_include() {
+    let request = parse_messages_request(&json!({
+        "model": "gpt-5",
+        "max_tokens": 32,
+        "messages": [{ "role": "user", "content": "hi" }],
+        "thinking": { "type": "enabled", "effort": "high" },
+        "prompt_cache_key": "cache-1"
+    }))
+    .expect("parse");
+    assert_eq!(request.passthrough["reasoning_effort"], "high");
+
+    let grok = to_grok_responses_request(&request);
+    assert_eq!(grok["reasoning"]["effort"], "high");
+    assert_eq!(grok["reasoning"]["summary"], "detailed");
+    assert_eq!(grok["include"], json!(["reasoning.encrypted_content"]));
+    assert_eq!(grok["prompt_cache_key"], "cache-1");
+    assert!(grok.get("thinking").is_none());
+    assert!(grok.get("reasoning_effort").is_none());
+
+    let kimi = to_kimi_chat_request(&request);
+    assert!(kimi.get("reasoning").is_none());
+    assert!(kimi.get("thinking").is_none());
+    assert!(kimi.get("reasoning_effort").is_none());
+}
+
+#[test]
+fn to_grok_responses_request_does_not_invent_reasoning_without_thinking() {
+    let request = parse_messages_request(&json!({
+        "model": "gpt-5",
+        "max_tokens": 32,
+        "messages": [{ "role": "user", "content": "hi" }]
+    }))
+    .expect("parse");
+    assert!(request.passthrough.get("reasoning_effort").is_none());
+    let grok = to_grok_responses_request(&request);
+    assert!(grok.get("reasoning").is_none());
+    assert!(grok.get("include").is_none());
+}
+
+#[test]
+fn to_responses_request_does_not_forward_reasoning_effort() {
+    let request = parse_messages_request(&json!({
+        "model": "gpt-5",
+        "max_tokens": 32,
+        "messages": [{ "role": "user", "content": "hi" }],
+        "thinking": { "type": "enabled", "effort": "high" }
+    }))
+    .expect("parse");
+    assert_eq!(request.passthrough["reasoning_effort"], "high");
+    let responses = to_responses_request(&request);
+    assert!(responses.get("reasoning").is_none());
+    assert!(responses.get("include").is_none());
+    assert!(responses.get("reasoning_effort").is_none());
+    assert!(responses.get("thinking").is_none());
+}
+
+#[test]
+fn responses_reasoning_max_effort_is_mapped() {
+    let mut request = fixture("responses_text");
+    request["reasoning"] = json!({"effort": "max"});
+    let bridge = parse_responses_request(&request).expect("max effort");
+    assert_eq!(bridge.passthrough["reasoning_effort"], "max");
+    let grok = to_grok_responses_request(&bridge);
+    assert_eq!(grok["reasoning"]["effort"], "max");
+    assert_eq!(grok["reasoning"]["summary"], "detailed");
+    assert_eq!(grok["include"], json!(["reasoning.encrypted_content"]));
 }
 
 #[test]
