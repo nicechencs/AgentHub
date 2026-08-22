@@ -599,7 +599,6 @@ describe('createTauriSettingsPort usage interval and theme', () => {
 });
 
 describe('createTauriSettingsPort write vs snapshot refresh', () => {
-  const settingsKey = 'agenthub:settings';
   let memory: ReturnType<typeof installMemoryLocalStorage>;
 
   beforeEach(() => {

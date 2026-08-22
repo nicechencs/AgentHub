@@ -706,6 +706,18 @@ fn skill_service_startup_recovery_is_narrow_and_root_locked() {
 }
 
 #[test]
+fn recover_pending_commit_without_journal_does_not_create_lock_dir() {
+    let tmp = crate::utils::test_temp::real_tempdir();
+    let root = tmp.path().join("skills");
+    let (_db_dir, db) = tmp_db();
+    let a = SkillService::with_db(root.clone(), AdapterRegistry::new(), db.clone());
+    let b = SkillService::with_db(root.clone(), AdapterRegistry::new(), db);
+    a.recover_pending_commit().unwrap();
+    b.recover_pending_commit().unwrap();
+    assert!(!root.join(".locks").exists());
+}
+
+#[test]
 fn first_install_metadata_failure_leaves_no_live_or_lock_or_package() {
     let tmp = crate::utils::test_temp::real_tempdir();
     let skills_root = tmp.path().join("skills");

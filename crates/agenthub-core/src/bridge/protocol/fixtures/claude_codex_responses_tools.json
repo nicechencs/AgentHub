@@ -1,0 +1,32 @@
+{
+  "model": "claude-sonnet-4-20250514",
+  "input": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": [{"type": "input_text", "text": "Check weather and calendar. 你好"}]
+    },
+    {
+      "type": "function_call",
+      "call_id": "call_weather",
+      "name": "weather",
+      "arguments": "{\"city\":\"Taipei\"}"
+    },
+    {
+      "type": "function_call",
+      "call_id": "call_calendar",
+      "name": "calendar",
+      "arguments": "{\"date\":\"2026-08-12\"}"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_weather",
+      "output": "Sunny 世界"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_calendar",
+      "output": "No meetings"
+    }
+  ]
+}

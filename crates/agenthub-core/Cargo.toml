@@ -10,6 +10,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 dirs = { workspace = true }
+dunce = { workspace = true }
 rusqlite = { workspace = true }
 which = { workspace = true }
 semver = { workspace = true }

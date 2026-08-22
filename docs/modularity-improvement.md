@@ -86,7 +86,8 @@ AgentHub **不需要推倒重来**。三 crate 边界、`core` 无 Tauri、前�
 | 层 | 文件 | 2026-08-16 回写 | 角色 |
 |---|---|---|---|
 | core | `adapters/mod.rs` | **已收口**（薄 façade，约 52 行） | trait / registry / detect / auth / config_write 已拆出 |
-| core | `services/account_service` | **已收口**（按域拆目录） | `pool_crud` / `live_reconcile` / `switch_saga` / `import_live` / `surface` |
+| core | `services/account_service` | **已收口**（按域拆目录；`pool_crud` 于 2026-08-22 再切） | `pool_crud/{query,api_key,create,refresh,merge,compensate,types}` / `live_reconcile` / `switch_saga` / `import_live` / `surface` |
+| core | `services/connection_service` | **已收口**（2026-08-22 拆目录） | `mod` / `active` / `account` / `provider` / `trash`（`tests.rs` 原位） |
 | core | `services/adapter_{apply,route,bridge,secret}` | **已收口**（按域拆目录） | classify / plan / saga / prepare / finalize 等 |
 | core | `bridge/host.rs` | **已收口** | 已拆 `host/{lifecycle,http,dispatch}` |
 | 前端 | `pages/chat/index.tsx` | **已收口**（约 147 行编排） | `use-chat-page` + 同目录组件 |
@@ -283,7 +284,7 @@ platform/{detection,skills,agent_catalog,lifecycle} → adapters
 
 #### P1-5 拆 Account / Adapter* 上帝文件
 
-- **状态（2026-08-16）**：**已收口**按域拆目录。`account_service/{pool_crud,live_reconcile,switch_saga,import_live,surface}`；`adapter_{route,apply,bridge,secret}` 已按 classify / plan / saga / prepare / finalize 等切开。`TicketBindService::from_parts` / `AdapterApplyService::from_parts` 注入 hub 实例；`ConnectionTrashRepo` 已落地。
+- **状态（2026-08-16 / 核对 2026-08-22）**：**已收口**按域拆目录。`account_service/{pool_crud,live_reconcile,switch_saga,import_live,surface}`；`pool_crud` 已再切为 `query` / `api_key` / `create` / `refresh` / `merge` / `compensate` / `types`（2026-08-22）。`connection_service` 已升级为目录模块：`active` / `account` / `provider` / `trash`（2026-08-22；公开路径 `ActiveBinding` / `ConnectionService` 不变）。`adapter_{route,apply,bridge,secret}` 已按 classify / plan / saga / prepare / finalize 等切开。`TicketBindService::from_parts` / `AdapterApplyService::from_parts` 注入 hub 实例；`ConnectionTrashRepo` 已落地。
 - **建议**：`new()` 兼容构造仍可 `with_live`；生产 `AgentHub::open` 走 `from_parts`。
 - **验收**：公开 API 签名不变；`account_*` / `adapter_*` / `ticket_*` 过滤测试绿；`open` 后无第二套 `ProviderService::with_live`（测试除外）。
 
@@ -422,6 +423,7 @@ platform/{detection,skills,agent_catalog,lifecycle} → adapters
 | `Ticket` | 钱包读模型（`account:<id>` / `provider:<id>`） | 新表 |
 | `TicketBinding` | 票接到某 Agent 的路线（native / reshape / bridge） | Agent 当前指针 |
 | `ActiveBinding` | `ConnectionService` 的 current 指针 | 产品「绑定」 |
+| 前端 `connection-pool-store` | accounts + providers 列表缓存（`src/app/runtime/connection-pool-store.ts`） | `ConnectionService`（ActiveBinding 事务 owner）；同名不同物，禁止混称（核对日期 2026-08-22） |
 | `AdapterProfile` | reshape/bridge 的持久化痕迹 | 钱包里的第二套票 |
 | `apply_adapter` | 内部 reshape / host 兼容运输 | 产品写入入口（已 `@deprecated`；页面不得调用） |
 | `bind` / `unbind` | 产品唯一写入 | — |
@@ -469,7 +471,7 @@ integrations/agents/<agent_key>/
 | 胖 trait（过渡 façade） | `crates/agenthub-core/src/adapters/mod.rs`（薄 re-export） |
 | 平台入口 | `crates/agenthub-core/src/platform/mod.rs` |
 | 反向依赖 | `platform/config` 不再 import `adapters`；`sources/dsh.rs` **不存在** |
-| 连接写入 | `services/{ticket_bind,ticket_read,adapter_*,account,provider,connection}_service.rs` |
+| 连接写入 | `services/{ticket_bind,ticket_read,adapter_*}_service`；`account_service/`；`connection_service/`；`provider_service.rs` |
 | 规划矩阵 | `domain/protocol_graph/{adapter_capability_matrix,agent_capability}.rs` |
 | 控制契约 | `crates/agenthub-core/src/adapter_control/`、`src-tauri/src/adapter_control_host.rs` |
 | 壳层 saga | `src-tauri/src/adapter_bridge_controller.rs`、`commands/adapter.rs`、`state.rs` |

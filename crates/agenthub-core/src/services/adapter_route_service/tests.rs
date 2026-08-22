@@ -1440,7 +1440,7 @@ fn stopped_grok_claude_route_does_not_block_codex_official_login_binds() {
 }
 
 #[test]
-fn claude_subscription_to_codex_is_product_closed() {
+fn claude_subscription_to_codex_is_open_but_unwritable() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())
         .create(&Account {
@@ -1464,13 +1464,29 @@ fn claude_subscription_to_codex_is_product_closed() {
             AgentId::Codex,
         ))
         .unwrap();
-    assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
-    assert_eq!(plan.analysis.support, AdapterSupport::Unsupported);
+    assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
+    assert_eq!(plan.analysis.support, AdapterSupport::Experimental);
+    assert_eq!(
+        plan.analysis.gate_kind,
+        crate::models::AdapterGateKind::PreviewOnly
+    );
+    assert_eq!(
+        plan.analysis.rule_id.as_deref(),
+        Some(crate::models::CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID)
+    );
     assert_eq!(
         plan.reason,
         crate::models::CLAUDE_SUBSCRIPTION_TO_CODEX_REASON
     );
-    assert_eq!(plan.reuse_path, crate::models::AdapterReusePath::None);
+    assert_eq!(plan.maturity, AdapterMaturity::Preview);
+    assert!(
+        !plan.reason.contains("产品不做"),
+        "Claude → Codex is ③-open; reason must not say product-closed"
+    );
+    assert_eq!(
+        plan.reuse_path,
+        crate::models::AdapterReusePath::LocalBridge
+    );
     assert!(!plan.can_apply);
 }
 
@@ -2070,7 +2086,8 @@ fn source_kinds_for_rule(rule_id: &str) -> &'static [AdapterSourceKind] {
         | "grok-subscription-to-codex-v1"
         | "codex-subscription-to-grok-v1"
         | "codex-subscription-to-kimi-v1"
-        | "codex-subscription-to-dsh-v1" => &[AdapterSourceKind::Account],
+        | "codex-subscription-to-dsh-v1"
+        | "claude-subscription-to-codex-v1" => &[AdapterSourceKind::Account],
         "deepseek-api-to-dsh-v1" => &[AdapterSourceKind::Provider],
         _ => &[AdapterSourceKind::Provider, AdapterSourceKind::Account],
     }

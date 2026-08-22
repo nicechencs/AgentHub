@@ -2,11 +2,12 @@ use super::*;
 use std::fs;
 use std::sync::{Arc, Barrier};
 use std::thread;
-use tempfile::tempdir;
+
+use crate::utils::test_temp::real_tempdir;
 
 #[test]
 fn acquire_and_drop_releases_lock() {
-    let dir = tempdir().unwrap();
+    let dir = real_tempdir();
     {
         let _lock = acquire_skill_lock(dir.path(), "demo").unwrap();
         assert!(acquire_skill_lock(dir.path(), "demo").is_err());
@@ -16,7 +17,7 @@ fn acquire_and_drop_releases_lock() {
 
 #[test]
 fn leftover_or_malformed_metadata_does_not_block_acquire() {
-    let dir = tempdir().unwrap();
+    let dir = real_tempdir();
     let path = dir.path().join(".locks/skill-demo.lock");
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, b"not a valid owner record").unwrap();
@@ -32,7 +33,7 @@ fn leftover_or_malformed_metadata_does_not_block_acquire() {
 
 #[test]
 fn concurrent_acquire_has_at_most_one_holder() {
-    let dir = tempdir().unwrap();
+    let dir = real_tempdir();
     let held = acquire_skill_lock(dir.path(), "demo").unwrap();
     let barrier = Arc::new(Barrier::new(3));
     let mut workers = Vec::new();
@@ -54,7 +55,7 @@ fn concurrent_acquire_has_at_most_one_holder() {
 
 #[test]
 fn panic_while_holding_releases_lock() {
-    let dir = tempdir().unwrap();
+    let dir = real_tempdir();
     let root = dir.path().to_path_buf();
     let panicked = std::panic::catch_unwind(|| {
         let _lock = acquire_skill_lock(&root, "demo").unwrap();
@@ -66,22 +67,30 @@ fn panic_while_holding_releases_lock() {
 
 #[test]
 fn root_lock_conflicts_with_itself_not_other_skills() {
-    let dir = tempdir().unwrap();
+    let dir = real_tempdir();
     let _root = acquire_skill_root_lock(dir.path()).unwrap();
     assert!(acquire_skill_root_lock(dir.path()).is_err());
     let _other = acquire_skill_lock(dir.path(), "demo").unwrap();
 }
 
 #[test]
+fn distinct_source_roots_do_not_share_root_lock() {
+    let a = real_tempdir();
+    let b = real_tempdir();
+    let _la = acquire_skill_root_lock(a.path()).unwrap();
+    let _lb = acquire_skill_root_lock(b.path()).unwrap();
+}
+
+#[test]
 fn different_skill_ids_do_not_block_each_other() {
-    let dir = tempdir().unwrap();
+    let dir = real_tempdir();
     let _a = acquire_skill_lock(dir.path(), "one").unwrap();
     let _b = acquire_skill_lock(dir.path(), "two").unwrap();
 }
 
 #[test]
 fn sanitized_keys_do_not_collide() {
-    let dir = tempdir().unwrap();
+    let dir = real_tempdir();
     let _slash = acquire_skill_lock(dir.path(), "a/b").unwrap();
     assert!(acquire_skill_lock(dir.path(), "a_b").is_ok());
 }
@@ -98,7 +107,7 @@ fn sanitize_escapes_instead_of_dropping_characters() {
 fn symlink_skill_lock_leaves_fail_closed_without_touching_target() {
     use std::os::unix::fs::symlink;
 
-    let dir = tempdir().unwrap();
+    let dir = real_tempdir();
     let target = dir.path().join("sentinel");
     fs::write(&target, b"must remain unchanged").unwrap();
     fs::create_dir_all(dir.path().join(".locks")).unwrap();

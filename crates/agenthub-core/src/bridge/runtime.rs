@@ -2,6 +2,8 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+use super::account::{AccountPicker, BridgeMemberSpec, MemberHealth, PickedMember};
+
 /// Opaque callback that may rotate the in-memory upstream bearer.
 /// The host must not depend on AccountService types.
 pub type UpstreamAuthReload = Arc<dyn Fn() -> Option<String> + Send + Sync>;
@@ -30,6 +32,14 @@ impl ResolvedAuth {
             .unwrap_or_default()
     }
 
+    /// Whether the cell currently holds a non-empty bearer. Does not expose the secret.
+    pub fn has_token(&self) -> bool {
+        self.bearer_token
+            .lock()
+            .map(|guard| !guard.trim().is_empty())
+            .unwrap_or(false)
+    }
+
     pub(crate) fn replace_token(&self, token: impl Into<String>) {
         if let Ok(mut guard) = self.bearer_token.lock() {
             *guard = token.into();
@@ -49,8 +59,9 @@ impl std::fmt::Debug for ResolvedAuth {
 /// downstream Responses request. Downstream identity stays the local bearer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BridgeUpstreamProtocol {
-    /// Existing Kimi membership path: Chat Completions + bearer auth.
-    KimiChatCompletions,
+    /// OpenAI-compatible Chat Completions upstream (Kimi Code membership, OpenAI API, and similar).
+    /// Formerly `KimiChatCompletions`; this enum is not serde, so no persisted schema change.
+    OpenAiChatCompletions,
     /// Anthropic API Key → Codex: Messages + `x-api-key` / `anthropic-version`.
     AnthropicMessages,
     /// Codex subscription OAuth: Responses upstream (ChatGPT). Local surface is
@@ -60,7 +71,7 @@ pub enum BridgeUpstreamProtocol {
     XaiResponsesOauth,
 }
 
-/// Local HTTP dialect this listener exposes. One listener, one surface.
+/// Local HTTP dialect this edge exposes. One edge, one surface.
 ///
 /// Chosen from the *target* Agent, not sniffed from the upstream host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,7 +86,7 @@ pub enum BridgeLocalSurface {
 
 impl Default for BridgeUpstreamProtocol {
     fn default() -> Self {
-        Self::KimiChatCompletions
+        Self::OpenAiChatCompletions
     }
 }
 
@@ -105,6 +116,10 @@ pub struct BridgeStartSpec {
     pub listed_models: Vec<String>,
     /// Optional owner-split follow/refresh. Identity is ignored when comparing live specs.
     pub reload_upstream_auth: Option<UpstreamAuthReload>,
+    /// Ordered C1 members. Empty means synthesize a single lead from `upstream.auth`.
+    pub members: Vec<BridgeMemberSpec>,
+    /// RFC §7 matrix cell. Closed (default) keeps only the lead even if `members` is longer.
+    pub multi_account: bool,
 }
 
 impl fmt::Debug for BridgeStartSpec {
@@ -117,6 +132,8 @@ impl fmt::Debug for BridgeStartSpec {
             .field("upstream", &self.upstream)
             .field("listed_models", &self.listed_models)
             .field("reload_upstream_auth", &self.reload_upstream_auth.is_some())
+            .field("members", &self.members)
+            .field("multi_account", &self.multi_account)
             .finish()
     }
 }
@@ -135,7 +152,51 @@ impl BridgeStartSpec {
             upstream,
             listed_models: Vec::new(),
             reload_upstream_auth: None,
+            members: Vec::new(),
+            multi_account: false,
         }
+    }
+
+    pub fn with_members(mut self, members: Vec<BridgeMemberSpec>) -> Self {
+        self.members = members;
+        self
+    }
+
+    pub fn with_multi_account(mut self, multi_account: bool) -> Self {
+        self.multi_account = multi_account;
+        self
+    }
+
+    /// Live picker for this spec. Closed gate keeps only the lead.
+    pub fn account_picker(&self) -> AccountPicker {
+        let members = if self.members.is_empty() {
+            vec![self.lead_member()]
+        } else {
+            self.members.iter().map(PickedMember::from).collect()
+        };
+        AccountPicker::from_members(members, self.multi_account, None)
+    }
+
+    fn lead_member(&self) -> PickedMember {
+        let source_id = self
+            .upstream
+            .source_connection_id
+            .clone()
+            .unwrap_or_default();
+        let ticket_id = if source_id.is_empty() {
+            String::new()
+        } else {
+            format!("account:{source_id}")
+        };
+        PickedMember::new(
+            ticket_id,
+            "account",
+            source_id,
+            self.profile_id.clone(),
+            self.upstream.auth.clone(),
+            self.reload_upstream_auth.clone(),
+            MemberHealth::Renewable,
+        )
     }
 
     pub fn with_listed_models(mut self, listed_models: Vec<String>) -> Self {

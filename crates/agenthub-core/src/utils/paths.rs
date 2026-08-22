@@ -345,6 +345,10 @@ fn path_identity(path: &Path) -> Result<PathBuf> {
                 for component in missing.iter().rev() {
                     identity.push(component);
                 }
+                // Windows canonicalize adds `\\?\`; simplify for user-facing
+                // data_dir. dunce keeps the prefix when the path cannot be
+                // represented safely (long paths, reserved device names).
+                let identity = dunce::simplified(&identity).to_path_buf();
                 return normalize_absolute_path(&identity).map_err(|reason| {
                     AppError::InvalidArg(format!(
                         "cannot normalize path identity {}: {reason}",

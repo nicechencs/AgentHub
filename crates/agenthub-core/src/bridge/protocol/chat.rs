@@ -838,9 +838,10 @@ pub fn parse_chat_request(value: &Value) -> ProtocolResult<BridgeRequest> {
         }
         None => false,
     };
-    let messages = object.get("messages").and_then(Value::as_array).ok_or_else(
-        || ProtocolError::invalid_request("`messages` must be an array."),
-    )?;
+    let messages = object
+        .get("messages")
+        .and_then(Value::as_array)
+        .ok_or_else(|| ProtocolError::invalid_request("`messages` must be an array."))?;
     let (instructions, input) = parse_chat_messages(messages)?;
     let tools = parse_chat_tools(object.get("tools"))?;
     let tool_choice = parse_chat_tool_choice(object.get("tool_choice"))?;
@@ -952,9 +953,7 @@ pub fn encode_chat_from_ir(events: &[IrEvent], response_id: Option<&str>) -> Pro
         ));
     }
 
-    let id = response_id
-        .map(ToOwned::to_owned)
-        .unwrap_or(message_id);
+    let id = response_id.map(ToOwned::to_owned).unwrap_or(message_id);
     Ok(chat_completion_object(
         &id,
         &model,
@@ -966,7 +965,10 @@ pub fn encode_chat_from_ir(events: &[IrEvent], response_id: Option<&str>) -> Pro
 }
 
 /// Encode IR events as Chat Completions SSE `data:` frames, including a terminal `[DONE]`.
-pub fn encode_chat_sse(events: &[IrEvent], response_id: Option<&str>) -> ProtocolResult<Vec<String>> {
+pub fn encode_chat_sse(
+    events: &[IrEvent],
+    response_id: Option<&str>,
+) -> ProtocolResult<Vec<String>> {
     let mut frames = Vec::new();
     let mut id = response_id
         .map(ToOwned::to_owned)
@@ -1023,10 +1025,7 @@ pub fn encode_chat_sse(events: &[IrEvent], response_id: Option<&str>) -> Protoco
                     None,
                 )));
             }
-            IrEvent::ToolCallStart {
-                id: call_id,
-                name,
-            } => {
+            IrEvent::ToolCallStart { id: call_id, name } => {
                 if !started {
                     started = true;
                     frames.push(chat_sse_data(chat_chunk(
@@ -1119,9 +1118,7 @@ pub fn encode_chat_sse(events: &[IrEvent], response_id: Option<&str>) -> Protoco
     Ok(frames)
 }
 
-fn parse_chat_messages(
-    messages: &[Value],
-) -> ProtocolResult<(Option<String>, Vec<BridgeMessage>)> {
+fn parse_chat_messages(messages: &[Value]) -> ProtocolResult<(Option<String>, Vec<BridgeMessage>)> {
     let mut instructions = None;
     let mut input = Vec::new();
     for message in messages {
@@ -1255,7 +1252,9 @@ fn parse_chat_tools(value: Option<&Value>) -> ProtocolResult<Vec<BridgeTool>> {
         let function = object
             .get("function")
             .and_then(Value::as_object)
-            .ok_or_else(|| ProtocolError::invalid_request("Chat tools require a function object."))?;
+            .ok_or_else(|| {
+                ProtocolError::invalid_request("Chat tools require a function object.")
+            })?;
         let name = function
             .get("name")
             .and_then(Value::as_str)
@@ -1353,10 +1352,7 @@ fn chat_text_content(value: Option<&Value>) -> ProtocolResult<String> {
     }
 }
 
-fn optional_chat_string(
-    object: &Map<String, Value>,
-    key: &str,
-) -> ProtocolResult<Option<String>> {
+fn optional_chat_string(object: &Map<String, Value>, key: &str) -> ProtocolResult<Option<String>> {
     match object.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) => {

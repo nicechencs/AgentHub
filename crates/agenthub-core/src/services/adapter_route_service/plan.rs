@@ -101,6 +101,10 @@ impl AdapterRouteService {
                     "AgentHub OpenAI 本地桥接"
                 } else if analysis.rule_id.as_deref() == Some("grok-subscription-to-codex-v1") {
                     "AgentHub Grok 本机路由"
+                } else if analysis.rule_id.as_deref()
+                    == Some(crate::models::CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID)
+                {
+                    "AgentHub Claude 本机路由"
                 } else {
                     "AgentHub Kimi 本地桥接"
                 };

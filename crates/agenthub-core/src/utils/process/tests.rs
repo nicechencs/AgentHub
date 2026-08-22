@@ -571,9 +571,13 @@ fn windows_job_kills_descendant_after_parent_exits() {
     )
     .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+    // Hang detector only — not a latency SLA. `run_capture_timeout` does not
+    // return a pid, so we cannot cheaply wait for the spawned tree to vanish.
+    // Without the job object, `ping -n 30` occupies ~30s and the waiter can
+    // hang on descendant pipes; returning well before that is the reaping check.
     assert!(
-        started.elapsed() < Duration::from_secs(3),
-        "job cleanup took {:?}",
+        started.elapsed() < Duration::from_secs(20),
+        "job cleanup hung (ping -n 30 would occupy ~30s without a job kill): {:?}",
         started.elapsed()
     );
 }

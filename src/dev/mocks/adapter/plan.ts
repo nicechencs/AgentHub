@@ -6,6 +6,7 @@ import type {
 import { getRuleFixtureById } from './rule-fixtures';
 import {
   CLAUDE_NATIVE_EXPERIMENTAL_RULES,
+  CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID,
   CODEX_CHAT_BRIDGE_RULE_IDS,
   CODEX_CLAUDE_RULE_ID,
   CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
@@ -95,7 +96,9 @@ export function buildPlan(
                   ? 'AgentHub OpenAI 本地桥接'
                   : analysis.ruleId === GROK_CODEX_RULE_ID
                     ? 'AgentHub Grok 本机路由'
-                    : 'AgentHub Kimi 本地桥接',
+                    : analysis.ruleId === CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID
+                      ? 'AgentHub Claude 本机路由'
+                      : 'AgentHub Kimi 本地桥接',
             ),
             change('codex', 'baseUrl', 'http://127.0.0.1:<本机端口>/v1'),
           ]
@@ -163,7 +166,9 @@ export function buildPlan(
     || (analysis.route === 'native_endpoint' && analysis.support === 'experimental'
       && request.targetAgentId === 'grok'
       && !!analysis.ruleId && GROK_NATIVE_RULE_IDS.has(analysis.ruleId))
-    || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
+    || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
+      && request.targetAgentId === 'codex'
+      && analysis.gateKind === 'none')
     || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
       && request.sourceKind === 'account'
       && (request.targetAgentId === 'grok' || request.targetAgentId === 'kimi' || request.targetAgentId === 'dsh')

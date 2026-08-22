@@ -1,7 +1,7 @@
 # 连接：票、绑定与协议图
 
 > **现行状态（2026-08-19）：** 用户看到的是「登录」，不是「票 / 钱包」。票 / Ticket / 钱包是实现名。Grok→Claude 走本机路由；自动生成的配置不出现在登录列表；sidecar 未迁。预览芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不再标圈号。
-> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（Kimi/OpenAI API → Grok、OpenAI/xAI/GLM/DeepSeek API → Pi 属直接改配置；GLM/DeepSeek API → Codex 属直接改配置；Anthropic API Key → Codex 属本机转发）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex 属直接改配置），GLM/DeepSeek → Pi 已可 experimental bind，写进对方认的登录——Claude/Codex/Grok 订阅 → Pi 已可 experimental bind，本机转发——Codex Responses 与 Grok Responses 订阅 → Claude / Codex 已可 experimental bind，Codex 订阅 → Grok 写 `api_backend=responses`；Claude 订阅 → Codex 产品不做，App Server/OauthOther 仍关闭；dsh writer 已接入（`AgentId::Dsh` + `deepseek-api-to-dsh-v1`）。未做的是 sidecar 迁移**。
+> 状态：**§6 第 1–3 步已落地；§6.4 部分落地（Kimi/OpenAI API → Grok、OpenAI/xAI/GLM/DeepSeek API → Pi 属直接改配置；GLM/DeepSeek API → Codex 属直接改配置；Anthropic API Key → Codex 属本机转发）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex 属直接改配置），GLM/DeepSeek → Pi 已可 experimental bind，写进对方认的登录——Claude/Codex/Grok 订阅 → Pi 已可 experimental bind，本机转发——Codex Responses 与 Grok Responses 订阅 → Claude / Codex 已可 experimental bind，Codex 订阅 → Grok 写 `api_backend=responses`；Claude 订阅 → Codex 原「产品不做」已于 2026-08-21 改判为可路由（③ 方向开放，待落地），App Server/OauthOther 仍关闭；dsh writer 已接入（`AgentId::Dsh` + `deepseek-api-to-dsh-v1`）。未做的是 sidecar 迁移**。
 > 日期：2026-08-15。  
 > 本文是实现用的领域模型，不是给最终用户看的说明书。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。页面、Hub 入口、Adapter、厂商规则文档以本文为准改对象名；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
 > 关联：[product-decisions.md](product-decisions.md)、[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[adapter-design.md](adapter-design.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[account-authorization-pool.md](account-authorization-pool.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)。
@@ -98,6 +98,7 @@ AgentHub 不「共享链接」，它把**一份登录**接到一个编程工具�
 | Ticket | `accounts` + `providers` 两行模型 | 先做只读聚合；进口打 `surface`；生成 Provider 从登录列表剔除 |
 | Binding（`TicketBinding`） | `is_current` + `AdapterProfile` + 生成 Provider | 先做读模型；再 `bind`/`unbind` 成为唯一写入 |
 | ActiveBinding（勿简称 Binding） | `ConnectionService` 的 Agent 当前行指针 | 与产品 Binding 同词不同物；改 current 不得误伤登录绑定 |
+| 前端 `connection-pool-store` | `src/app/runtime/connection-pool-store.ts`：accounts + providers 列表缓存 | 与 `ConnectionService`（ActiveBinding 事务 owner）**同名不同物**，禁止混称；缓存不是 current 指针，也不是 `TicketBinding`（核对日期 2026-08-22） |
 | 规划器 | `plan()` 唯一出口；内部矩阵 ∩ 私有 write_gate（有 bind 实现且 secret 可按 `source_kind` 解析） | `plan(ticket, agent)` 为唯一真理；Anthropic / OpenAI / xAI API Account → Pi 可写 |
 
 Account / Provider / live 事务仍由 core service 单点负责，不建设 `connectionsd`。`local_bridge` 的目标为用户级 sidecar（见 [sidecar 契约](adapter-sidecar-design.md)）；当前仍由 Tauri `AppState` / `BridgeRuntimeHost` 进程内托管。
@@ -165,11 +166,11 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 
 - `reshape` / `native`：不常驻进程
 - `bridge`：只听 loopback；目标只持短寿命本地 bearer；上游 secret 留在 Hub / sidecar
-- 不监听公网，不多账号轮换，不把一张票拆成多人 Key
-- refresh single-flight 发生在**票**这一层，所有绑定共享同一次刷新
+- 不监听公网，不把一张票拆成多人 Key；本人多账号轮询见 [provider-api-oauth-adaptation.md §5.5](provider-api-oauth-adaptation.md#55-多账号并发路由轮询与故障切换规划)（规划），切换只在请求边界/首事件前
+- refresh single-flight 按 **account 行（授权）**，不是按票（核对日期 2026-08-22）。owner 分治见 `account_service/oauth_owner.rs` 与 [provider-api-oauth-adaptation.md §5.1.2](provider-api-oauth-adaptation.md#512-grok-oauth-复用自动-refresh-方案不与官方-grok-cli-互踢)：Hub-owned grant 以 `account_id` 为锁键做账户池续期；CLI-owned grant 不调 token 端点，跟随官方文件。同一授权的绑定共享该行一次刷新，不同 account 行各自 single-flight。
 - 流式：首字节前可换路线/重试，写出后禁止重放
 
-产品能力：三路复用、协议成图、下游身份与上游 secret 分离、首字节边界、按账号 refresh、管理面的登录/配额/探测。本产品不做公网入口、多账号拼车、默认常驻代理，也不把本机转发自动生成的配置再当作登录列表里的登录。凭据落盘加密仍为项目范围外。产品真源：[product-decisions.md](product-decisions.md)。
+产品能力：三路复用、协议成图、下游身份与上游 secret 分离、首字节边界、按账号 refresh、管理面的登录/配额/探测。本产品不做公网入口、多人共用一份登录、转售、默认一直挂着的兼容服务，也不把本机转发自动生成的配置再当作登录列表里的登录。凭据落盘加密仍为项目范围外。产品真源：[product-decisions.md](product-decisions.md)。
 
 ## 5. 界面（目标态，允许重做）
 
@@ -262,7 +263,7 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 4. 加边：Anthropic→Codex 桥（协议腿 + experimental bind 已开）、Kimi/OpenAI API → Grok native、Grok 订阅 → Claude / Codex Responses 本机路由、Codex 订阅 → Grok `api_backend=responses`、OpenAI/xAI Key → Pi。
 5. 新 surface：GLM / DeepSeek 按双协议入口登记。
 6. 新 Agent writer：DeepSeek Harness（`dsh`）已接入；**DeepSeek API → `dsh` `config_sync`**、**DeepSeek API → Claude experimental `native_endpoint`** 与 **DeepSeek API → Codex experimental `native_endpoint`** 都走现有 `AdapterCapabilityMatrix` / `AdapterApplyService`。不要把 Harness 当本机转发。
-7. **跨 Agent 复用三路**（产品已定，见 [product-decisions.md](product-decisions.md)）：直接改配置——Kimi/OpenAI API → Grok 已写官方 Chat TOML；写进对方认的登录——Claude / Codex / Grok 订阅 → Pi 已写契约槽；本机转发——Codex Responses 与 Grok Responses 订阅 → Claude / Codex 的本机路由已可 experimental bind，Codex 订阅 → Grok 写 `api_backend=responses`，App Server/OauthOther 仍关闭；Claude 订阅 → Codex 是产品关闭，不是待评估候选。
+7. **跨 Agent 复用三路**（产品已定，见 [product-decisions.md](product-decisions.md)）：直接改配置——Kimi/OpenAI API → Grok 已写官方 Chat TOML；写进对方认的登录——Claude / Codex / Grok 订阅 → Pi 已写契约槽；本机转发——Codex Responses 与 Grok Responses 订阅 → Claude / Codex 的本机路由已可 experimental bind，Codex 订阅 → Grok 写 `api_backend=responses`，App Server/OauthOther 仍关闭；Claude 订阅 → Codex 原产品关闭已改为可路由（2026-08-21 改判，本机转发方向，待落地取证），不是「永远不做」。
 
 做不到、且应看得见的上限：Cursor 当目标（无 writer）、未标记的自定义中转、把自动生成的配置再当登录、公网多账号共享。暂时不能当 HTTP 上游的登录态要写明缺哪一跳，不能写成「订阅一律不做」。
 

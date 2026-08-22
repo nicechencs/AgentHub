@@ -5,7 +5,7 @@
 //! best-effort written back; an unrecognized value displays as `unknown` and
 //! is not overwritten. `plan` rejects generated projection and leftover 本机路由 providers.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::Utc;
 
@@ -16,8 +16,8 @@ use crate::models::{
     attach_persisted_surface, parse_ticket_id, ticket_id, Account, AccountKind, AdapterApplyPlan,
     AdapterProfile, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
     AgentId, PersistedTicketSurface, Provider, Ticket, TicketBinding, TicketBindingRoute,
-    TicketBridgeRuntime, TicketCredentialClass, TicketPlanRequest, TicketSurface, TicketWallet,
-    PROJECTION_NOT_A_TICKET,
+    TicketBridgeRuntime, TicketCredentialClass, TicketPlanRequest, TicketSurface,
+    TicketSurfaceGroup, TicketSurfaceMember, TicketWallet, PROJECTION_NOT_A_TICKET,
 };
 use crate::services::AdapterRouteService;
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
@@ -74,8 +74,13 @@ impl TicketReadService {
 
         let ticket_ids: HashSet<String> = tickets.iter().map(|t| t.id.clone()).collect();
         let bindings = derive_bindings(&accounts, &providers, &profiles, &ticket_ids);
+        let surface_groups = group_ticket_surface_members(&tickets);
 
-        Ok(TicketWallet { tickets, bindings })
+        Ok(TicketWallet {
+            tickets,
+            bindings,
+            surface_groups,
+        })
     }
 
     /// Resolve `ticketId` and delegate to [`AdapterRouteService::plan`].
@@ -229,6 +234,44 @@ impl TicketReadService {
 
 fn now_ts() -> String {
     Utc::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string()
+}
+
+/// Group known-surface tickets by `(surface, credential_class)` for §5.5.
+///
+/// Projection providers never reach `tickets`, so they cannot enter a group.
+/// `unknown` surface and `unknown` credential class stay on the wallet as
+/// tickets but are not pooled. Account and Provider rows mix when the key
+/// matches. Member order is `ticket_id` so AccountPicker can consume this
+/// list as a fixed rotation without a new table.
+pub(crate) fn group_ticket_surface_members(tickets: &[Ticket]) -> Vec<TicketSurfaceGroup> {
+    let mut buckets: BTreeMap<(&str, &str), Vec<&Ticket>> = BTreeMap::new();
+    for ticket in tickets {
+        if ticket.surface == TicketSurface::Unknown {
+            continue;
+        }
+        if ticket.credential_class == TicketCredentialClass::Unknown {
+            continue;
+        }
+        buckets
+            .entry((ticket.surface.as_str(), ticket.credential_class.as_str()))
+            .or_default()
+            .push(ticket);
+    }
+    buckets
+        .into_iter()
+        .filter_map(|(_, mut members)| {
+            members.sort_by(|left, right| left.id.cmp(&right.id));
+            let first = members.first()?;
+            Some(TicketSurfaceGroup {
+                surface: first.surface,
+                credential_class: first.credential_class,
+                members: members
+                    .into_iter()
+                    .map(TicketSurfaceMember::from_ticket)
+                    .collect(),
+            })
+        })
+        .collect()
 }
 
 fn derive_bindings(

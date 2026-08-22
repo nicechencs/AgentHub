@@ -44,8 +44,9 @@ impl TicketBindService {
         )
     }
 
-    /// Inject hub-owned instances. Callers must not build a second
-    /// [`ProviderService::with_live`] solely for ticket bind.
+    /// Assemble from hub-owned parts so [`crate::AgentHub::open`] shares one
+    /// [`ProviderService`] and one [`AccountService`] instead of constructing
+    /// a second `with_live` for ticket bind.
     pub fn from_parts(
         tickets: TicketReadService,
         apply: AdapterApplyService,

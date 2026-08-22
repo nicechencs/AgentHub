@@ -1,7 +1,8 @@
-//! Read-only Ticket / Binding wallet DTOs (connection-binding-model §6 step 1).
+//! Read-only Ticket / Binding / surface-group wallet DTOs
+//! (connection-binding-model §6 step 1; §5.5 member pool).
 //!
 //! Aggregation lives in [`crate::services::TicketReadService`]. These types are
-//! pure serde wire shapes — no business logic.
+//! serde wire shapes. `TicketSurfaceMember::from_ticket` is a field copy.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -17,6 +18,42 @@ pub const PROJECTION_NOT_A_TICKET: &str = "投影不是登录 / 禁止二次投�
 pub struct TicketWallet {
     pub tickets: Vec<Ticket>,
     pub bindings: Vec<TicketBinding>,
+    /// Same-surface member sets for §5.5 AccountPicker. Derived; never stored.
+    #[serde(default)]
+    pub surface_groups: Vec<TicketSurfaceGroup>,
+}
+
+/// One known `(surface, credentialClass)` pool. Unknown surfaces are not grouped.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TicketSurfaceGroup {
+    pub surface: TicketSurface,
+    pub credential_class: TicketCredentialClass,
+    /// Stable poll order: `ticket_id` lexicographic (`account:` before `provider:`).
+    pub members: Vec<TicketSurfaceMember>,
+}
+
+/// Enough for runtime secret resolve + audit without re-walking the wallet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TicketSurfaceMember {
+    pub ticket_id: String,
+    pub source_kind: AdapterSourceKind,
+    pub source_id: String,
+    pub agent_id: AgentId,
+    pub label: String,
+}
+
+impl TicketSurfaceMember {
+    pub fn from_ticket(ticket: &Ticket) -> Self {
+        Self {
+            ticket_id: ticket.id.clone(),
+            source_kind: ticket.source_kind,
+            source_id: ticket.source_id.clone(),
+            agent_id: ticket.agent_id,
+            label: ticket.label.clone(),
+        }
+    }
 }
 
 /// One authorization ticket aggregated from an account or provider row.

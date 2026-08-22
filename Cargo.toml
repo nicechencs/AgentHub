@@ -26,6 +26,7 @@ semver = "1"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
 tempfile = "3"
+dunce = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry", "std"] }
 tracing-appender = "0.2"

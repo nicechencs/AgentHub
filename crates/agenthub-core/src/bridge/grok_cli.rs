@@ -14,7 +14,7 @@ mod tools;
 pub use replay::{
     is_reasoning_decode_failure, strip_encrypted_reasoning, GrokReasoningReplay,
 };
-pub use session::{extract_prompt_cache_seed, grok_session_id};
+pub use session::{extract_prompt_cache_seed, grok_session_id, grok_session_id_for_account};
 pub use tools::{inject_prompt_cache_key, normalize_grok_build_tools};
 
 use std::sync::OnceLock;
@@ -55,10 +55,22 @@ pub fn grok_cli_request_identity(
     body: &serde_json::Value,
     model_override: Option<&str>,
 ) -> GrokCliRequestIdentity {
+    grok_cli_request_identity_for_account(request_id, headers, body, model_override, None)
+}
+
+pub fn grok_cli_request_identity_for_account(
+    request_id: impl Into<String>,
+    headers: &axum::http::HeaderMap,
+    body: &serde_json::Value,
+    model_override: Option<&str>,
+    account_id: Option<&str>,
+) -> GrokCliRequestIdentity {
     let seed = extract_prompt_cache_seed(headers, body);
     GrokCliRequestIdentity {
         request_id: request_id.into(),
-        session_id: seed.as_deref().and_then(grok_session_id),
+        session_id: seed
+            .as_deref()
+            .and_then(|seed| grok_session_id_for_account(seed, account_id)),
         model_override: model_override
             .map(str::trim)
             .filter(|model| !model.is_empty())
