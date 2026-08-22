@@ -35,7 +35,7 @@
 1. **API Key 与 OAuth 分开判断**：支持某厂商 API Key，不等于支持其订阅 OAuth。
 2. **协议必须写全名**：`OpenAI-compatible` 必须进一步区分 Chat Completions 与 Responses。
 3. **同厂商不同产品不得混用**：Base URL、Key、额度和授权范围都可能不同。
-4. **只认显式来源标记**：进口写下 `surface`；不能根据名称、标签或 URL 猜测。未识别标 `unknown`，规划结果是不可行，而不是把「接到…」藏掉。
+4. **只认显式来源标记**：进口写下 `surface`；不能根据名称、标签或 URL 猜测。未识别标 `unknown`，规划结果是不可行，而不是把「分享 / 路由」藏掉。
 5. **默认拒绝写入**：没有代码规则和测试的组合一律不能 `bind`。用户仍看得到原因。
 6. **不复制凭据**：绑定只引用这份登录；真实凭据只在写入 live 或请求上游时短暂解析。自动生成的配置不是新登录，不出现在登录列表。
 7. **国产 OAuth 产品不做**：不为中国产 AI 的 OAuth 开 Adapter 边（直接改配置 / 写进对方认的登录 / 本机转发都不开），也不把这类 OAuth 转成 API Key 或 to-api。**Kimi 会员 OAuth（Kimi CLI `/login`）不得反代给其他 Agent**；Kimi 接到其他 Agent 只用会员 **API Key**（① 直连 / ③ 本机转发均可）。现有国产边只认官方 API Key。见 [product-decisions.md](product-decisions.md) 与根 [AGENTS.md](../AGENTS.md)。

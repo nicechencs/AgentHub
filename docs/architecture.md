@@ -510,7 +510,7 @@ DTO / mapper：`lib/backend/contracts/*-map.ts`。错误类型：`contracts/erro
 
 Connections 收拢凭据生命周期。目标领域是 **票（Ticket）+ 绑定（Binding）+ 协议图**，不是「account/provider 出身 × 商品白名单」；完整模型与可重做的 UI 见 [connection-binding-model.md](connection-binding-model.md)。
 
-当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`。日常入口仍是 Dashboard「连接/切换」与 Connections「接到…」，走 `ConnectFlowDialog`（`plan.canApply` 表示**现在能写入**）。预览按三种做法说明（直接改配置 / 写进对方认的登录 / 本机转发）；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，见 [product-decisions.md](product-decisions.md)。自动生成的配置不进登录列表。`/routes` 只管理本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。各家接口与现在能不能写上去仍以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
+当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`。日常入口仍是 Dashboard「连接/切换」与 Connections「分享 / 路由」，走 `ConnectFlowDialog`（Connections 入口按分享/路由过滤可见目标；`plan.canApply` 表示**现在能写入**）。预览按三种做法说明（直接改配置 / 写进对方认的登录 / 本机转发）；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，见 [product-decisions.md](product-decisions.md)。自动生成的配置不进登录列表。`/routes` 只管理本机转发运行时（侧栏永久显示，中文「路由」、英文 Routes；列表/详情显示 127.0.0.1 + 端口；旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。各家接口与现在能不能写上去仍以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
 
 **未迁移 / 有意保留**：
 

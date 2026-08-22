@@ -1,9 +1,9 @@
 # Hub 重构 Phase 1 实施方案（Agent 优先信息架构）v2
 
 > 状态：**Phase 1 已实施**（2026-08-14），本文保留为当时的实施记录。  
-> **§3.2 过渡冻结已解除**（2026-08-15）：终态 IA 见 [bridges-page-redesign.md](bridges-page-redesign.md)。现行表面是 **Routes / 本机路由**（`/routes`）；`/adapter`、`/router`、`/bridges` 永久跳过来。页目录仍为 `src/pages/bridges/`。下文 §3.2「不移除 `/adapter`、不改路由结构、侧栏改名『桥与适配』」是当时护栏，不是现行约束。  
-> **现行状态**：Settings **四栏**（偏好 / 本机 / 备份 / 关于）；ConnectFlow 芯片 **直连 / 用这份登录 / 本机路由 / 当前不支持**（界面不再标 ①②③）；托盘菜单 **打开 AgentHub / 打开路由 / 启动路由 / 停止路由 / 退出**；i18n 仅 Settings chrome + 侧栏。下文 §1–§10 为 Phase 1 实施记录，不是现行 IA。  
-> **2026-08-15 起的领域与 UI 目标**改以 [connection-binding-model.md](connection-binding-model.md) 为准：票 / 绑定 / 协议图；Connections 改为全局钱包；真票常驻「接到…」；生成投影退出列表。**产品方向**以 [product-decisions.md](product-decisions.md) 为准（① API 直连 / ② 原生订阅 / ③ 本机路由）。下文「不改 OAuth 门禁」只约束当时 Phase 1 实施范围，不是「订阅一律不跨 Agent」。Phase 1 的对话框外壳仍可复用，**按 Agent tab 分页、行按钮白名单、诊断只放 Dashboard 不再是终态**，UI 允许按目标文档重做。
+> **§3.2 过渡冻结已解除**（2026-08-15）：终态 IA 见 [bridges-page-redesign.md](bridges-page-redesign.md)。现行表面是 **Routes / 本机路由**（`/routes`）；侧栏英文 Routes、中文「路由」，永久显示。`/adapter`、`/router`、`/bridges` 永久跳过来。页目录仍为 `src/pages/bridges/`。下文 §3.2「不移除 `/adapter`、不改路由结构、侧栏改名『桥与适配』」是当时护栏，不是现行约束。  
+> **现行状态（2026-08-23）**：Connections 为**全局登录列表**；页内 Agent 过滤走 **AgentTabStrip**（无「官方登录 / API Key / 未识别」芯片）；OAuth 用人形图标、API Key 用钥匙图标；真登录行入口为「**分享** / **路由**」（OAuth 刷新走 `oauthListAction`）。Dashboard「连接/切换」。ConnectFlow 芯片 **直连 / 用这份登录 / 本机路由 / 当前不支持**（界面不再标 ①②③）。侧栏英文 Routes、中文「路由」，永久显示；页标题「本机路由」；Routes 列表/详情显示 IP+端口。Settings **四栏**（偏好 / 本机 / 备份 / 关于）；托盘菜单 **打开 AgentHub / 打开路由 / 启动路由 / 停止路由 / 退出**；i18n 仅 Settings chrome + 侧栏。下文 **§1–§10 仍是 Phase 1 实施记录**，不是现行 IA。  
+> **领域与现行 UI**以 [connection-binding-model.md](connection-binding-model.md) / [ui-design.md](ui-design.md) 为准：票 / 绑定 / 协议图；Connections 全局登录列表；真登录「分享 / 路由」+ AgentTabStrip；侧栏中文「路由」永久显示；生成投影退出列表。**产品方向**以 [product-decisions.md](product-decisions.md) 为准（① API 直连 / ② 原生订阅 / ③ 本机路由）。下文「不改 OAuth 门禁」只约束当时 Phase 1 实施范围，不是「订阅一律不跨 Agent」。Phase 1 的对话框外壳仍可复用，**按 Agent tab 分页、行按钮白名单、诊断只放 Dashboard 不再是终态**。
 > 验收：pnpm typecheck / typecheck:test / test（627 用例，含集成 bug 防回归）/ build 全绿；cargo test 79 用例全绿（Rust 未改动）；dev:mock 冒烟通过（空态引导、非空可行性置灰+原因、无控制台错误）。
 > 关联文档同步：docs/ui-design.md、docs/adapter-design.md 正文定位、docs/architecture.md §4.1 目录树（lib/connect-flow、components/connect）与 §4.6、README.md、docs/README.md、docs/agenthub-plan.md、docs/testing.md、docs/adapter-kimi-codex-dogfood.md。
 > v2 修订要点：plan.canApply 为可执行权威；补同 Agent 原生切换分流；用途/徽标改用 profile 联结（不读 provider.meta）；apply 自动切换语义如实；排除 adapter 生成 Provider 作为来源；两层 OAuth 门禁；可注入 helper 保证 Node 环境可测。
@@ -28,8 +28,8 @@
 ```
 
 Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 仍按 Agent tab，行按钮只给可 apply 的 Provider。  
-**「Agent tab + 行按钮白名单」已被后续 Connections 全局钱包取代**（真票常驻「接到…」，不可行在对话框置灰 + 原因，不再靠行上藏按钮）。  
-**此后的目标形态**见 [connection-binding-model.md](connection-binding-model.md) / [ui-design.md](ui-design.md)：全局钱包、真票常驻「接到…」、不可行在同一对话框说明。下文 §3 是 Phase 1 冻结范围，不是下一轮 UI 约束。
+**「Agent tab + 行按钮白名单」已被后续 Connections 全局登录列表取代**（真登录「分享 / 路由」、页内 Agent 过滤走 AgentTabStrip，不可行在对话框置灰 + 原因，不再靠行上藏按钮）。  
+**此后的目标形态**见 [connection-binding-model.md](connection-binding-model.md) / [ui-design.md](ui-design.md)：全局登录列表、真登录「分享 / 路由」+ AgentTabStrip、侧栏中文「路由」永久显示。下文 §3 是 Phase 1 冻结范围，不是下一轮 UI 约束。
 
 ## 3. Phase 1 范围
 
@@ -75,14 +75,14 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
   - 桥状态：命中的 profile 为 bridge 型时显示；**沿用 `use-adapter-resources.ts` 的既有轮询模式**（运行/降级态轮询 + generation 防竞态），查询失败显示"状态不可用"，不得静默隐藏。
 - profiles 由页面挂载时一次 `listAdapterProfiles()` 全量拉取后前端归并；桥状态仅对命中的 profile 查询。
 
-#### C. Connections 钱包化增量（Phase 1 已做；全局钱包与常驻「接到…」见目标文档）
+#### C. Connections 钱包化增量（Phase 1 已做；现行入口见目标文档的「分享 / 路由」）
 
 - 每行增加"用途"：该凭据正被哪些 Agent 使用。算法（纯函数）：
   - 直接用途：该 account/provider 自身 `isCurrent=true` → 用于其 agentId。
   - 兼容路由用途：存在 profile 满足 `profile.sourceKind/sourceId` 指向该凭据（按 `(kind, id)` 匹配，防 account/provider id 碰撞）**且** `generatedProviderId` 对应的 Provider 当前 `isCurrent=true` → 用于 `profile.targetAgentId`。
   - 同一 Agent 同时命中直接与兼容用途时去重（显示一次，直接用途优先）。
   - profile/生成 Provider/来源缺失或数据部分加载失败 → 该行用途显示"未知/不完整"，不得显示为"未使用"。
-- 行动作增加"用于其他 Agent"→ 打开 ConnectFlowDialog（来源预选）。入口仅对存在后端可 apply 路径的 Provider 显示：Kimi Code 会员 Provider、Claude 的 Anthropic Provider；account 来源（含 apikey）与 adapter 生成 Provider、无规则来源一律不显示。行按钮是可行动作入口；不可行诊断由 Dashboard「连接/切换」承担。**此白名单已被后续 Connections 全局钱包取代**（真票常驻「接到…」）。
+- 行动作增加"用于其他 Agent"→ 打开 ConnectFlowDialog（来源预选）。入口仅对存在后端可 apply 路径的 Provider 显示：Kimi Code 会员 Provider、Claude 的 Anthropic Provider；account 来源（含 apikey）与 adapter 生成 Provider、无规则来源一律不显示。行按钮是可行动作入口；不可行诊断由 Dashboard「连接/切换」承担。**此白名单已被后续 Connections 全局登录列表取代**（真登录常驻「分享 / 路由」）。
 - **不改动现有 agent tab 过滤结构**（当时把跨 Agent 全局钱包视图标为 Phase 2；**现已被全局钱包取代**，本期只做行级增强是当时回归面控制，不是现行约束）。
 
 ### 3.2 非目标（明确不做，Review 请勿要求扩入）
@@ -219,16 +219,16 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 
 ## 10. 后续：票 / 绑定（取代原 Phase 2 展望）
 
-原「Phase 2 再合并 binding / 再做全局钱包」已升格为已决策的目标架构，细节见 [connection-binding-model.md](connection-binding-model.md)。不再把全局钱包和常驻「接到…」当成可选项。
+原「Phase 2 再合并 binding / 再做全局钱包」已升格为已决策的目标架构，细节见 [connection-binding-model.md](connection-binding-model.md) / [ui-design.md](ui-design.md)。不再把全局登录列表和真登录「分享 / 路由」当成可选项。
 
 实施顺序（与目标文档 §6、§8 一致）：
 
 1. 读模型：accounts+providers 聚成票；`is_current`+profile 聚成绑定；钱包不展示生成投影。
 2. 进口打 `surface`；`plan(ticket, agent)` 收口，废掉前端第二份白名单。
-3. UI 重做：Connections 默认跨 Agent 钱包；行上真票都有「接到…」；不可行在对话框置灰 + 原因；Dashboard 展示当前绑定而非「当前 Provider 行」。
+3. UI 重做：Connections 默认跨 Agent 登录列表；真登录「分享 / 路由」+ AgentTabStrip；不可行在对话框置灰 + 原因；Dashboard 展示当前绑定而非「当前 Provider 行」。
 4. 写入收成 `bind` / `unbind`；现有四条 apply 路径先改写成绑定实现。
 5. 再按协议图加边（Anthropic→Codex、Kimi→Grok、新 surface……）。
 
-仍有效、且已落地的 Phase 1 资产：ConnectFlow 双入口外壳、①② 深链、本机路由页不做日常创建。现行表面是 `/routes`（侧栏 Routes，永久显示），只管理 ③ 运行时。
+仍有效、且已落地的 Phase 1 资产：ConnectFlow 双入口外壳、①② 深链、本机路由页不做日常创建。现行表面是 `/routes`（侧栏英文 Routes、中文「路由」，永久显示），只管理 ③ 运行时。
 
 OAuthFlowDialog 收编进 Connections 仍未做，可并进钱包「添加票」。

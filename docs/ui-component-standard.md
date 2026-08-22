@@ -132,7 +132,7 @@ src/components/connect/   # ConnectFlow / OAuth
 
 | 组件 | 职责 |
 |---|---|
-| `Sidebar` | Workspace：Chat / Agents / Skills / MCP / Projects。Manage：Dashboard / Connections / Routes（**永久显示**）/ Settings。备份在 Settings `?tab=backups`，不占侧栏 |
+| `Sidebar` | Workspace：Chat / Agents / Skills / MCP / Projects。Manage：Dashboard / Connections / Routes（英文 Routes、中文「路由」，**永久显示**）/ Settings。备份在 Settings `?tab=backups`，不占侧栏 |
 | `TopBar` | Chat 不渲染 |
 | `PageHeader` | `default` / `compact`（全高页只收底距）。标题一律 `text-title` |
 | `PageSection` | 段距 / 可选分割线 / 段标题（body + semibold） |
@@ -143,7 +143,7 @@ src/components/connect/   # ConnectFlow / OAuth
 
 | 组件 | 职责 |
 |---|---|
-| `ConnectFlowDialog` | 绑定。Dashboard 点工具 = 固定选登录；Connections「分享 / 路由」= 登录固定、选工具。确认走 `bind` |
+| `ConnectFlowDialog` | 绑定。Dashboard 点工具 = 固定选登录；Connections「分享 / 路由」= 登录固定、按目的过滤工具。确认走 `bind` |
 | `OAuthFlowDialog` | 仅已开边 OAuth（Claude / Codex / Gemini / Antigravity 等）。国产 OAuth **不开边** |
 
 ---
@@ -182,11 +182,11 @@ src/components/connect/   # ConnectFlow / OAuth
 | 场景 | 组件 | 尺寸 |
 |---|---|---|
 | 页级导航（Skills 两栏、Settings 四分区：偏好 / 本机 / 备份 / 关于） | `Tabs` | md |
-| 页内列表筛选（全部 / OAuth / API Key…） | `SegmentedControl` | sm + `count` |
-| 页内 Agent 过滤 | `AgentTabStrip` | md（不要再传 sm） |
+| 页内列表筛选（全部 / OAuth / API Key…） | `SegmentedControl` | sm + `count`。仍是需要类型芯片的页面的通用件 |
+| 页内 Agent 过滤 | `AgentTabStrip` | md（不要再传 sm）。Connections 走此件，**不再**用 `SegmentedControl` 做「官方登录 / API Key / 未识别」 |
 | 预览「预览 \| 源码」 | 允许手写扁段，`h-6` | 特例 |
 
-普通数量用 `segmentedCountClass`。琥珀行动角标用 `actionCountClass`，不要再画一遍明文数字。
+普通数量用 `segmentedCountClass`。琥珀行动角标用 `actionCountClass`，不要再画一遍明文数字。凭据类型在 Connections 用行内 OAuth 人头 / API Key 钥匙，不另开类型芯片。
 
 ### 5.4 搜索
 

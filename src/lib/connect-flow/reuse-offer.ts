@@ -1,8 +1,8 @@
 /**
- * 是否在 Connections 行展示「接到…」。
+ * 是否在 Connections 行展示「分享 / 路由」。
  *
  * 目标语义（docs/connection-binding-model.md §5.2）：
- * - 每一张**真票**都有「接到…」
+ * - 每一张**真票**都有「分享」和「路由」
  * - 生成投影与非票行不展示入口
  * - 不可行目标在 ConnectFlow 对话框内置灰 + 原因，不在列表隐藏入口
  *
@@ -47,7 +47,7 @@ export function isAnthropicApiProvider(provider: Pick<Provider, 'agentId' | 'pre
 }
 
 /**
- * 是否视为可展示「接到…」的真票行。
+ * 是否视为可展示「分享 / 路由」的真票行。
  * account 与非投影 provider 均为真票；生成投影由 shouldShowReuseAction 排除。
  */
 export function connectionCanReuseToOtherAgents(entry: ReuseOfferEntry): boolean {
@@ -57,7 +57,7 @@ export function connectionCanReuseToOtherAgents(entry: ReuseOfferEntry): boolean
 }
 
 /**
- * 真票常驻「接到…」；仅排除生成投影与未接线页面。
+ * 真票常驻「分享 / 路由」；仅排除生成投影与未接线页面。
  */
 export function shouldShowReuseAction(
   entry: ReuseOfferEntry,

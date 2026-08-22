@@ -14,12 +14,12 @@
 | [platform-capability-refactor.md](platform-capability-refactor.md) | **平台能力架构改造方案**：解耦边界、稀疏端口、生命周期/Skills/连接/用量；P01-P13 与 R00-R08 已完成 |
 | [platform-capability-remediation.md](platform-capability-remediation.md) | **2026-08-07 审查修正方案**：Active Binding、配置 fail-closed、Skills 安全/原子性、Lifecycle 审计与 AgentKey/OCP 真验证 |
 | [testing.md](testing.md) | **测试约定**：测试与生产分文件、vitest/cargo 命令、mock 边界、Markdown 预览用例索引 |
-| [ui-design.md](ui-design.md) | 前端布局、页面线框、交互与组件；三种做法是直接改配置 / 写进对方认的登录 / 本机转发。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。写进对方认的登录时不显示本机服务 |
+| [ui-design.md](ui-design.md) | 前端布局、页面线框、交互与组件；三种做法是直接改配置 / 写进对方认的登录 / 本机转发。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。Connections 真登录「分享 / 路由」+ AgentTabStrip；侧栏中文「路由」永久显示。写进对方认的登录时不显示本机服务 |
 | [ui-component-standard.md](ui-component-standard.md) | **UI 组件与体验标准**（**v1.0**）：现行清单、决策树、提示通道、对照审计与 Phase 3 收口；不替代页面线框 |
 | [connection-binding-model.md](connection-binding-model.md) | 实现用的领域模型（一份登录 / 绑定 / 规划器）。**读模型 + plan/bind/unbind 已落地；sidecar 迁移未做**。读者向说明见 [product-decisions.md](product-decisions.md) |
-| [hub-redesign-plan.md](hub-redesign-plan.md) | **Hub 重构 Phase 1 已实施**（历史）：ConnectFlowDialog；后续以 [connection-binding-model.md](connection-binding-model.md) 为 UI 与领域目标 |
-| [adapter-design.md](adapter-design.md) | **Adapter 设计与进度**：用户表面 Routes / 本机路由，模块仍叫 Adapter；本页只服务本机转发；能改配置或写进对方认的登录就不另开程序；创建绑定走 Hub |
-| [bridges-page-redesign.md](bridges-page-redesign.md) | **本机路由页终态 IA**（已落地，表面已改为 Routes / `/routes`）：对象是 loopback 进程；侧栏 Routes 永久显示；单层健康+端口。稳定文档已回写 ui-design / adapter-design / connection-binding-model |
+| [hub-redesign-plan.md](hub-redesign-plan.md) | **Hub 重构 Phase 1 已实施**（历史实施记录，§1–§10 不是现行 IA）：ConnectFlowDialog。现行 UI 见 [connection-binding-model.md](connection-binding-model.md) / [ui-design.md](ui-design.md) |
+| [adapter-design.md](adapter-design.md) | **Adapter 设计与进度**：用户表面 Routes / 中文「路由」，模块仍叫 Adapter；本页只服务本机转发；创建绑定走 Dashboard「连接/切换」与 Connections「分享 / 路由」 |
+| [bridges-page-redesign.md](bridges-page-redesign.md) | **本机路由页终态 IA**（已落地，表面已改为 Routes / `/routes`）：对象是 loopback 进程；侧栏英文 Routes、中文「路由」永久显示；单层健康+端口。稳定文档已回写 ui-design / adapter-design / connection-binding-model |
 | [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | **真机 dogfood**：直接改配置（Kimi→Claude / Anthropic→Pi）；本机转发（Kimi→Codex）。禁止记录密钥 / prompt / 正文 |
 | [adapter-sidecar-design.md](adapter-sidecar-design.md) | **Adapter Sidecar 目标架构**：`agenthub-adapterd` 所有权、IPC、状态机、单主/并发、升级恢复与三阶段迁移（目标已决策，当前未迁移） |
 | [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | **厂商 / API / OAuth 适配规则**：产品与协议边界、Kimi 双端点、当前路由矩阵和维护方法 |

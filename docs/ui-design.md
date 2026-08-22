@@ -6,8 +6,9 @@
 > v1.1：Usage 模型筛选语义、Backups 流程、Dashboard/侧栏与当前 agent 集合对齐。  
 > v1.3：Agents / 首次引导增加 **「环境未就绪」** 态；安装链路先 Runtime 再 Agent。  
 > v1.4：环境条/安装预览按宿主平台分流——macOS/Linux 不展示 PowerShell；native 命令预览 Windows=`irm|iex`、macOS/Linux=`curl|bash`；Runtime 修复默认 Windows=`winget`、macOS=`brew`、Linux=`manual`。  
-> 2026-08-14 Hub Phase 1：推荐入口为 Dashboard「连接/切换」与 Connections「接到…」，统一 `ConnectFlowDialog`。  
-> 2026-08-15：Connections 全局登录列表与真登录「接到…」、Dashboard 当前绑定读模型已落地（见 [connection-binding-model.md](connection-binding-model.md) §5–§6 第 1 步）；ConnectFlow 确认步走 `bind`，本机路由解绑走 `unbind`。用户表面是 **Routes / 本机路由**（`/routes`）；内部模块仍叫 Adapter。下文 §4.1 / §4.3 为目标线框。现行界面说「登录」不说「票/钱包」；预览芯片不再标 ①②③。  
+> 2026-08-23 表面：Connections 顶部 AgentTabStrip（`?agent=` 高亮并把 Tab 落到该 Agent）；行上「分享 / 路由」拆开（分享 = 直连或写进对方登录，路由 = 本机转发）；OAuth 头像 / API Key 钥匙；无登录类型筛选芯片。侧栏中文「路由」、英文 Routes，永久显示；页标题仍「本机路由」；运行时行显示 127.0.0.1 与端口。MCP 同样顶部 Agent 筛选。  
+> 2026-08-14 Hub Phase 1：推荐入口为 Dashboard「连接/切换」与 Connections 登录行，统一 `ConnectFlowDialog`。  
+> 2026-08-15：Connections 全局登录列表与 Dashboard 当前绑定读模型已落地（见 [connection-binding-model.md](connection-binding-model.md) §5–§6 第 1 步）；ConnectFlow 确认步走 `bind`，本机路由解绑走 `unbind`。用户表面是 **Routes / 本机路由**（`/routes`）；侧栏中文现为「路由」。内部模块仍叫 Adapter。下文 §4.1 / §4.3 为目标线框。现行界面说「登录」不说「票/钱包」；预览芯片不再标 ①②③。  
 > 把已有登录接到另一个工具的产品模型仍是三种做法：直接改配置 / 写进对方认的登录 / 本机转发，见 [product-decisions.md](product-decisions.md)。**现行界面芯片**是「直连 / 用这份登录 / 本机路由 / 当前不支持」。预览不得把「直接改配置 / 写进对方认的登录」写成「需要本机服务」。
 
 ## 1. 设计原则
@@ -222,12 +223,14 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 │   [分享] [路由] [详情]                                     │
 │ 👤 me@…                                                    │
 │   正用于：Claude（切换）                                   │
-│   [分享] [路由] → 对话框按目的过滤目标                     │
+│   [分享] [路由] [刷新] → 对话框按目的过滤目标              │
 └────────────────────────────────────────────────────────────┘
 ```
 
+- 顶部 **AgentTabStrip**（含「全部」）；无「官方登录 / API Key / 未识别」类型芯片。OAuth 用人头（账号登录），API Key 用钥匙（密钥授权）。
 - 「正用于」来自绑定：native / reshape / bridge，不是手写 account/provider 出身。
-- **每一份真登录都有「分享」和「路由」**：分享走直连 / 写进对方登录；路由走本机转发。接不上、工具不能写入、未识别：对话框内置灰 + 原因，不在行上隐藏动作。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。不要把订阅默认写成转发。
+- **每一份真登录都有「分享」和「路由」**：分享打开绑定对话框并只列出直连 / 写进对方登录；路由只列本机转发。接不上、工具不能写入、未识别：对话框内置灰 + 原因，不在行上隐藏动作。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。不要把订阅默认写成转发。
+- **OAuth 刷新**（有 `oauthListAction` 才出现）：Grok「同步当前登录」；Pi「刷新凭据」；Codex / Claude 只探配额（Hub 不刷新 CLI 拥有的 token）；Kimi 不显示刷新。
 - 「切换」只用于这份登录对它本来所属工具的 native 绑定。接到其他工具一律走 `bind`。
 - 添加登录时写下它是哪一家。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意工具）。**Pi 无单一官方 URL**：弹窗选厂商槽，官方槽（anthropic / openai / …）只写 `~/.pi/agent/auth.json`，自定义 URL 写 `models.json`。
 - **已落地（读模型 + 写入）**：跨工具登录列表 + 真登录常驻「分享 / 路由」+ Dashboard 当前绑定；自动生成的配置不出现在登录列表。确认步走 `bind`，成功以该工具的当前绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
@@ -293,9 +296,9 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 用户表面是 **本机路由运行时**：协议对不上时在这台电脑上开的一层转发。登录在 Connections，绑定在 Dashboard / ConnectFlow；本页只服务本机转发。内部模块仍叫 Adapter（`lib/api/adapter`），不得漏进侧栏、页标题、空态、确认框、徽标、托盘。
 
-规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。侧栏英文 **Routes**，仅当本机确有本机路由（含孤立）或登录列表仍有 `route=bridge` 时出现；Settings → 本机有一条永远在的「本机路由运行时」回收链。页头无「去 Dashboard / 去 Connections」。创建区不在本页。
+规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。侧栏英文 **Routes**、中文 **「路由」**，永久显示；页标题仍「本机路由」。Settings → 本机有一条永远在的「本机路由」入口。页头无「去 Dashboard / 去 Connections」。创建区不在本页。
 
-列出全部 `route=local_bridge`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机路由」。行与详情都是**单层**进程健康 + 端口，不画「配置已生效 / 桥接运行中」。解绑只走 unbind，不提供 `removeAdapter`。健康空态（profile 与登录列表均已结算且 `bound+orphan===0` 且 last-known 本机路由数为 0）标题「没有本机路由」，**无按钮**——这是对 §1.4 的显式例外。
+列出全部 `route=local_bridge`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机路由」。行与详情都是**单层**进程健康 + **本机 IP（127.0.0.1）+ 端口**，不画「配置已生效 / 桥接运行中」。无端口时标「待分配端口」，不复制无端口的地址。解绑只走 unbind，不提供 `removeAdapter`。健康空态（profile 与登录列表均已结算且 `bound+orphan===0` 且 last-known 本机路由数为 0）标题「没有本机路由」，**无按钮**——这是对 §1.4 的显式例外。
 
 - 与 ConnectFlow 两处 bind 同源（`lib/api/adapter` / `lib/api/tickets`）；可执行权威是 `plan.canApply`，禁止以 `analysis.support` 推断可执行。
 - 规则名称、route 和可执行状态以[当前实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)为准。
@@ -498,7 +501,7 @@ Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `backups` /
 | 组件 | 职责 |
 |---|---|
 | `AgentTabStrip` | 页内 agent 切换条，能力位置灰（如 Kimi 不支持账号切换/技能） |
-| `ConnectFlowDialog` | 绑定对话框：Dashboard（工具固定，选一份登录）与 Connections「分享 / 路由」（登录固定，选工具）；目标语义 `bind`；预览按三种做法说明，界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」；`plan.canApply` 只表示现在能写入 |
+| `ConnectFlowDialog` | 绑定对话框：Dashboard（工具固定，选一份登录）与 Connections「分享 / 路由」（登录固定、按目的过滤工具）；目标语义 `bind`；预览按三种做法说明，界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」；`plan.canApply` 只表示现在能写入 |
 | `AgentDot` | Agent 品牌色圆点（侧栏/列表等轻量标识） |
 | `StatusDot` | 四态认证状态（有效/临期/失效/未配置） |
 | `SearchField` | 统一搜索输入（左图标 + `h-7`）。列表筛选禁止手写搜索框 |

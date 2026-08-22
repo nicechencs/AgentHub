@@ -1,6 +1,7 @@
 # 连接：票、绑定与协议图
 
 > **现行状态（2026-08-19）：** 用户看到的是「登录」，不是「票 / 钱包」。票 / Ticket / 钱包是实现名。Grok→Claude 走本机路由；自动生成的配置不出现在登录列表；sidecar 未迁。预览芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不再标圈号。
+> **2026-08-23 表面：** Connections 顶部 AgentTabStrip（`?agent=` 高亮并把 Tab 落到该 Agent）；行上常驻「分享 / 路由」，无类型芯片（官方登录 / API Key / 未识别）；OAuth 用人头、API Key 用钥匙。侧栏英文 Routes、中文「路由」，永久显示；页标题仍「本机路由」；列表与详情显示 127.0.0.1 与端口，无端口不复制。
 > 状态：**§6 第 1–3 步已落地；§6.4 部分落地（Kimi/OpenAI API → Grok、OpenAI/xAI/GLM/DeepSeek API → Pi 属直接改配置；GLM/DeepSeek API → Codex 属直接改配置；Anthropic API Key → Codex 属本机转发）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex 属直接改配置），GLM/DeepSeek → Pi 已可 experimental bind，写进对方认的登录——Claude/Codex/Grok 订阅 → Pi 已可 experimental bind，本机转发——Codex Responses 与 Grok Responses 订阅 → Claude / Codex 已可 experimental bind，Codex 订阅 → Grok 写 `api_backend=responses`；Claude 订阅 → Codex 原「产品不做」已于 2026-08-21 改判为可路由（③ 方向开放，待落地），App Server/OauthOther 仍关闭；dsh writer 已接入（`AgentId::Dsh` + `deepseek-api-to-dsh-v1`）。未做的是 sidecar 迁移**。
 > 日期：2026-08-15。  
 > 本文是实现用的领域模型，不是给最终用户看的说明书。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。页面、Hub 入口、Adapter、厂商规则文档以本文为准改对象名；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
@@ -181,7 +182,7 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 | 入口 | 用户问题 | 对话框 |
 |---|---|---|
 | Dashboard 卡片 | 这个工具用哪份登录？ | `bind`，target 固定，选登录 |
-| Connections 登录列表 | 这份登录再接到谁？ | `bind`，ticket 固定，选 Agent |
+| Connections 登录列表 | 这份登录再接到谁？ | 「分享 / 路由」，登录固定、按目的选工具 |
 
 不再要求用户理解 Adapter。`/routes` 只管理本机路由运行时：端口、启停、自动恢复、失败详情、解绑。创建绑定不在本页。`/adapter`、`/router`、`/bridges` 永久跳过来。
 
@@ -191,29 +192,27 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 
 ```
 ┌─ 连接 ─────────────────────────────────────────────────────┐
-│ 登录列表 · 5 份登录                                         [+ 添加] │
-│ 筛选 [全部] [官方登录] [API Key] [未识别]   搜登录 / 搜用途        │
-│                                                                   │
-│ ● Kimi 会员          [API Key] [会员]                             │
-│   正用于：Claude（改配置）· Codex（本机路由 · 运行中）               │
-│   [接到…] [详情]                                                  │
-│                                                                   │
-│ ○ Anthropic Key      [API Key] [官方]                             │
-│   正用于：Pi（改配置）                                            │
-│   [接到…] [设为某 Agent 当前] [详情]                              │
-│                                                                   │
-│ ○ me@…               [官方登录] [Claude]                          │
-│   正用于：Claude（切换）                                          │
-│   [接到…]  → 打开后不可行的目标置灰 + 原因                        │
-└─────────────────────────────────────────────────────────────┘
+│ 连接 · n 份登录                               [+ 添加]     │
+│ [全部] [Claude] [Codex] …                                  │
+│ 🔑 Kimi 会员     [会员]                                    │
+│   正用于：Claude（只改配置）· Codex（本机转发 · 运行中）     │
+│   [分享] [路由] [详情]                                     │
+│ 🔑 Anthropic     [官方]                                    │
+│   正用于：Pi（改配置）                                     │
+│   [分享] [路由] [详情]                                     │
+│ 👤 me@…                                                    │
+│   正用于：Claude（切换）                                   │
+│   [分享] [路由] [刷新] [详情] → 对话框按目的过滤目标        │
+└────────────────────────────────────────────────────────────┘
 ```
 
 规则：
 
-- 每一张**真票**都有「接到…」。未识别、无边、目标无 writer，都在对话框里置灰 + 原因，不在列表上假装这件事不存在。
+- 每一份**真登录**都有「分享」和「路由」。分享打开 ConnectFlow `purpose=share`（只出直连 / 写进对方登录）；路由打开 `purpose=route`（只出本机转发）。未识别、无边、目标无 writer，都在对话框里置灰 + 原因，不在列表上假装这件事不存在。
+- **OAuth 刷新**只在有 `oauthListAction` 时出现：Grok「同步当前登录」；Pi「刷新凭据」；Codex / Claude 只探配额（Hub 不刷新 CLI 拥有的 token）；Kimi 不显示刷新。
 - 自动生成的配置**不出现**在登录列表。已有用途记在源登录的「正用于」上，并标现行芯片 **直连 / 用这份登录 / 本机路由**（三种做法仍是直接改配置 / 写进对方认的登录 / 本机转发；过渡期「经兼容路由」只表示改配置，不要当成转发）。
-- 「切换」只用于该票与其 `importedFrom` / 原生 Agent 的 `native` 绑定。接到别的 Agent 一律叫「接到…」（文案可再打磨，语义是 bind）。
-- 深链 `?agent=` 仍可用：打开登录列表并高亮该 Agent 的 active 绑定，而不是把整个登录列表切成该 Agent 的私有列表。
+- 「切换」只用于该票与其 `importedFrom` / 原生 Agent 的 `native` 绑定。接到其他工具一律走 `bind`。
+- 深链 `?agent=` 高亮该 Agent 的 active 绑定，并把顶部 Tab 落到该 Agent（软筛）。
 - 添加票：导入登录态、新 API Key。进口必须写下 `surface`。
 
 ### 5.3 Dashboard = Agent 的绑定
@@ -234,13 +233,13 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 3. 确认 → `bind()`。成功以「该 Agent 的 active 绑定」为准，不说「去登录列表里再切一次自动生成的配置」。
 4. 失败保留现场；busy 禁止关窗重提。
 
-OAuth 未完成：引导去补登录，不在对话框里发起新授权。空登录列表：引导添加登录。资源加载失败：错误 + 重试，不得当成空池，也不得整页藏「接到…」。
+OAuth 未完成：引导去补登录，不在对话框里发起新授权。空登录列表：引导添加登录。资源加载失败：错误 + 重试，不得当成空池，也不得整页藏「分享 / 路由」。
 
 ### 5.5 Routes（本机路由）
 
-规范路由 `/routes`。侧栏英文 Routes，永久显示；Settings → 本机永远有「本机路由」入口。
+规范路由 `/routes`。侧栏英文 **Routes**、中文「**路由**」，永久显示；页标题仍是「本机路由」。Settings → 本机永远有「本机路由」入口。
 
-列出全部 `route=local_bridge`（`partitionLocalBridgeRuntimes`）：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进孤立分区。行与详情都是**单层**进程健康 + 端口，不画「配置已生效 / 桥接运行中」。来源/目标是纯文字，**禁止**链到 `/connections?agent=`（自动生成的配置不得出现在登录列表）。
+列出全部 `route=local_bridge`（`partitionLocalBridgeRuntimes`）：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进孤立分区。行与详情都是**单层**进程健康 + 本机 IP（127.0.0.1）+ 端口，不画「配置已生效 / 桥接运行中」。无端口时显示「待分配端口」，不提供复制。来源/目标是纯文字，**禁止**链到 `/connections?agent=`（自动生成的配置不得出现在登录列表）。
 
 没有「选来源 → 分析 → apply」创建区。解绑只走 unbind，不要只删自动生成的配置行而留下指向死端口的 live，也不走 `removeAdapter`。Connections「本机路由」点进对应 runtime（`/routes?profile=`）。
 
@@ -257,7 +256,7 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 
 建议顺序（工程，不是再讨论「能不能做」）：
 
-1. 读模型：Ticket / Binding 聚合；登录列表去掉自动生成的配置；「接到…」对真登录常驻。
+1. 读模型：Ticket / Binding 聚合；登录列表去掉自动生成的配置；「分享 / 路由」对真登录常驻。
 2. 进口打标；规划器收口。
 3. 现有四条可 apply 路径改写成 `bind` 实现（Kimi→Claude/Pi reshape，Kimi→Codex bridge，Anthropic→Pi reshape）。
 4. 加边：Anthropic→Codex 桥（协议腿 + experimental bind 已开）、Kimi/OpenAI API → Grok native、Grok 订阅 → Claude / Codex Responses 本机路由、Codex 订阅 → Grok `api_backend=responses`、OpenAI/xAI Key → Pi。
@@ -275,7 +274,7 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 | 谁在用 | `is_current` + profile 反查 | Binding |
 | 规划 | 前端走 `plan_ticket`；`plan()` 唯一出口；write_gate = 有 bind 实现 ∧ secret 可按 `source_kind` 解析 | `plan(ticket, agent)` 为唯一真理 |
 | 写入 | `bind_ticket` / `unbind_ticket`；`apply_adapter` 薄委托 bind | `bind` / `unbind` |
-| Connections | 全局登录列表；真登录都有「接到…」；写入是 bind/unbind | 全局登录列表；真登录都有「接到…」 |
+| Connections | 全局登录列表；真登录都有「分享 / 路由」；写入是 bind/unbind | 全局登录列表；真登录都有「分享 / 路由」 |
 | 诊断 | 同一对话框里置灰 + plan 原因 | 同一对话框里置灰 + 原因 |
 | 生成物 | 不进登录列表；记在源登录「正用于」 | 绑定的私有 runtime |
 | 扩大 | 加商品白名单 | 加 surface / writer / 图边 |

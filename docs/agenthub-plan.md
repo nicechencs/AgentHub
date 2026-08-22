@@ -329,7 +329,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 
 - 技术：React + TypeScript + Vite + Tailwind + shadcn/Radix（**只选一套 UI**）+ recharts + react-router + CodeMirror。**当前未**引入 TanStack Query / i18next（方案历史提及，以 `package.json` 为准）。
 - 结构：`lib/backend/tauri`（唯一 invoke）→ `lib/api` façade → 页面本地 state；mock 仅 `dev:mock`。事件桥为目标态，现以前端主动拉取为主。
-- 页面：Dashboard（含用量）/ Chat / Agents / Connections（跨工具登录列表；界面说登录不说票/钱包）/ Routes（侧栏英文，永久显示；页标题「本机路由」，只管本机转发运行时）/ Skills / MCP（只读清单）/ Projects / Settings（四个 tab：偏好 / 本机 / 备份 / 关于；本机区永远有「本机路由」入口，备份不并入本机）。日常绑定从 Dashboard「连接/切换」、Connections「接到…」发起。领域目标见 [connection-binding-model.md](connection-binding-model.md)。
+- 页面：Dashboard（含用量）/ Chat / Agents / Connections（跨工具登录列表；界面说登录不说票/钱包；顶部 AgentTabStrip；行上「分享 / 路由」）/ Routes（侧栏英文 Routes、中文「路由」，永久显示；页标题「本机路由」，只管本机转发运行时）/ Skills / MCP（只读清单，顶部 Agent 筛选）/ Projects / Settings（四个 tab：偏好 / 本机 / 备份 / 关于；本机区永远有「本机路由」入口，备份不并入本机）。日常绑定从 Dashboard「连接/切换」、Connections「分享 / 路由」发起。领域目标见 [connection-binding-model.md](connection-binding-model.md)。
 - 详细交互见 [ui-design.md](ui-design.md)。
 
 ## 7. 分期路线图
@@ -368,7 +368,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | CLI `run` 多 Agent headless | ✅ |
 | 日志 tracing 文件 + 脱敏 | ✅ 见 logging.md |
 | Adapter 规则分析 / 预览 / profile 管理 | ✅ 当前可 bind：Kimi Provider→Claude/Pi reshape、Kimi Provider→Codex bridge、Anthropic Provider/Account→Pi reshape；Kimi/OpenAI API Provider/Account→Grok 官方 Chat TOML `native_endpoint`；GLM/DeepSeek Provider/Account→Codex 官方 Responses `native_endpoint` 与→Claude/Pi 已可 experimental bind；写进对方认的登录——Claude/Codex/Grok OAuth Account→Pi 已可 experimental bind；本机转发——带 access token 的 Codex `auth_json` 或 Grok OAuth 订阅→Claude 已可 experimental `local_bridge` bind，目标只写 loopback URL 与本地 bearer；Claude 订阅→Codex 原「产品不做」已于 2026-08-21 改判为可路由（③ 方向开放，待取证落地），App Server/OauthOther 仍关闭。其余见[适配规则矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)。写入入口 `bind`/`unbind`，自动生成的配置不进登录列表，见 [connection-binding-model.md](connection-binding-model.md) |
-| Hub 统一连接流程 ConnectFlowDialog | ✅ Phase 1 外壳已落地。现行 UI：全局登录列表 + 真登录「接到…」；芯片「直连 / 用这份登录 / 本机路由 / 当前不支持」。`plan.canApply` 只表示现在能写入 |
+| Hub 统一连接流程 ConnectFlowDialog | ✅ Phase 1 外壳已落地。现行 UI：全局登录列表 + 真登录「分享 / 路由」+ AgentTabStrip；芯片「直连 / 用这份登录 / 本机路由 / 当前不支持」。`plan.canApply` 只表示现在能写入 |
 | MCP 本机配置清单 | ✅ core 只读扫描 + Tauri command + 前端页面；不修改或注入配置；管理/注入仍 Planned，无假 UI |
 | Settings 持久化 | ✅ L1 SQLite 白名单（`SETTINGS_WHITELIST`）：`theme` / `language` / `log_level` / `log_retention_days` / `skill_market_source` / `close_to_tray` / `usage_collect_interval_min`。用量间隔：`None`=从未写入（前端默认 30）、`0`=仅手动、上限 1440。主题/语言以 core 为准：Settings 变更即落盘，启动 `getSettings` 对账。`autoStart` 为 OS 登录项；`closeToTray` 写 core 并同步 AppState |
 | 凭据落盘加密 | **范围外**（不实现，非待办） |
@@ -405,8 +405,8 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 ### 8.3 前端导航（与代码 `App.tsx` 一致）
 
 - Workspace：Chat / Agents / Skills / MCP / Projects。
-- Manage：Dashboard（含用量）/ Connections / Routes（永久显示）/ Settings（含备份 tab）。
-- 推荐发起入口：Dashboard 卡片「连接/切换」、Connections「接到…」。`/routes` 只管理本机路由运行时。登录/绑定领域见 [connection-binding-model.md](connection-binding-model.md)。
+- Manage：Dashboard（含用量）/ Connections / Routes（侧栏英文 Routes、中文「路由」，永久显示）/ Settings（含备份 tab）。
+- 推荐发起入口：Dashboard 卡片「连接/切换」、Connections「分享 / 路由」。`/routes` 只管理本机路由运行时。登录/绑定领域见 [connection-binding-model.md](connection-binding-model.md)。
 
 旧路由 `/adapter`、`/router`、`/bridges` → `/routes`；`/usage` → `/?section=usage`；`/backups` → `/settings?tab=backups`；`/providers`·`/accounts` → `/connections`。
 

@@ -169,7 +169,7 @@ Kimi 会员 OAuth 接到任何工具：**产品不做**（不写进对方、也�
 
 ## 3. 同一份登录，接到谁，做法可以不同
 
-三种做法不是登录上的固定标签。登录列表只标明这份登录**对上游能说什么**；走哪一种只出现在「接到…」的预览里。
+三种做法不是登录上的固定标签。登录列表只标明这份登录**对上游能说什么**；走哪一种只出现在「分享 / 路由」打开的预览里（分享只出直连 / 写进对方登录，路由只出本机转发）。
 
 | 这份登录 | → Claude | → Pi | → Codex | → Grok |
 |---|---|---|---|---|
@@ -263,7 +263,7 @@ Kimi 会员 OAuth → 任意工具是**产品不做**（不转发、不写进对
 | [connection-binding-model.md](connection-binding-model.md) | 登录 / 绑定 / 规划器的领域名字（票、槽、边） |
 | [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | 各家接口与现在能不能写上去；订阅 ≠ 要转发 |
 | [adapter-design.md](adapter-design.md) | 页面与转发运行时；本页只服务本机转发 |
-| [ui-design.md](ui-design.md) | 「接到…」预览按三种做法说明；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」；写进对方认的登录时不显示本机服务 |
+| [ui-design.md](ui-design.md) | 「分享 / 路由」预览按三种做法说明；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」；写进对方认的登录时不显示本机服务 |
 | [adding-an-agent.md](adding-an-agent.md) | 新工具必须登记听哪种接口 **和** 认哪套订阅登录 |
 | [architecture.md](architecture.md) | 模块拆分；原则 12 按三种做法解释 `plan()` |
 | [agenthub-plan.md](agenthub-plan.md) | 总方案；§8 是实现清单 |
