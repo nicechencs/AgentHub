@@ -151,6 +151,8 @@ git worktree add ..\worktrees\agenthub-cleanup -b refactor/connection-cleanup  d
 ## 第二波派工（A4/C2 实施与测试债）
 
 > 前提：A4 设计稿（仓库根 `DESIGN.md`）与 C2 RFC（[multi-account-routing-rfc.md](multi-account-routing-rfc.md)，选定方案 C 运行时纯读模型）已于 2026-08-22 拍板。提示词按拍板口径固化，agent 不得偏离设计另起方案。
+>
+> **进度**：P5、P7 已于 2026-08-22 验收合入 dev。**P6 开工条件已满足**——派工前先把 `agenthub-polling` worktree 更新到最新 dev（`git -C ..\worktrees\agenthub-polling merge dev`，或删掉重建）。
 
 ### 准备（主线操作）
 

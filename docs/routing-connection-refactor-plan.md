@@ -123,7 +123,7 @@ flowchart LR
 
 ### A4 统一网关 listener（§5.4 落地主件）
 
-- **状态**：设计稿已拍板（2026-08-22，仓库根 `DESIGN.md`；双听兼容迁移、bearer→边识别、401/404 顺序契约改写、per-edge admission）。**实施派工中**（[派工 P5](routing-connection-dispatch-prompts.md)，分支 `refactor/gateway-listener`）。
+- **状态**：已实施合入 dev（2026-08-22，`refactor/gateway-listener`：`Gateway`/`EdgeState` + bearer 唯一 middleware + 401 先于 404 契约改写 + 双听收敛 + per-edge admission，7 个网关契约测试）。`DESIGN.md` 可在收尾时归档删除。
 - **目标**：从「一 profile 一 listener 一 surface」演进为拍板的「一个网关进程内三种对话端点 + `/v1/models`」：多 profile 共享统一 listener，local bearer → 边（profile）识别，端点 → surface 分派；错 surface 404 契约改写为「bearer 对应边不服务该端点」的等价拒绝。设计稿必须回答：端口与已写入目标配置的兼容迁移（存量 profile 写的是各自端口的 loopback URL）、`/v1/models` 按 bearer 合成、health 语义、并发 admission 从 per-listener 改 per-edge。
 - **文件**：`bridge/host/{lifecycle,http,dispatch,surface}.rs`、`bridge/runtime.rs`、`adapter_bridge_service`（投影 URL）、`bridge/tests.rs`（契约整体改写）。
 - **限制**：仅 loopback；有绑定才起，不默认常驻；不因表面统一打开任何边的 `canApply`；存量绑定不得因升级失联（需迁移或兼容期双听方案，设计稿里定）。
