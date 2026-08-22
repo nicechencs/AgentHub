@@ -422,6 +422,7 @@ platform/{detection,skills,agent_catalog,lifecycle} → adapters
 | `Ticket` | 钱包读模型（`account:<id>` / `provider:<id>`） | 新表 |
 | `TicketBinding` | 票接到某 Agent 的路线（native / reshape / bridge） | Agent 当前指针 |
 | `ActiveBinding` | `ConnectionService` 的 current 指针 | 产品「绑定」 |
+| 前端 `connection-pool-store` | accounts + providers 列表缓存（`src/app/runtime/connection-pool-store.ts`） | `ConnectionService`（ActiveBinding 事务 owner）；同名不同物，禁止混称（核对日期 2026-08-22） |
 | `AdapterProfile` | reshape/bridge 的持久化痕迹 | 钱包里的第二套票 |
 | `apply_adapter` | 内部 reshape / host 兼容运输 | 产品写入入口（已 `@deprecated`；页面不得调用） |
 | `bind` / `unbind` | 产品唯一写入 | — |

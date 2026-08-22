@@ -200,13 +200,21 @@ fn identity_label(
 
 ## 6. UI 建议（非阻塞 core）
 
-同 `identity_label` 可分组，避免多条 `grok-oauth` 难辨：
+> 核对日期：2026-08-22。以 [§8](#8-实现对照已落地) 为准：Connections 已是登录列表，**不要**再验收按身份分组。
+
+现行 Connections 按**一份登录一行**列出（同人多授权 = 多行并列）。`identity_label` 仍可作行上展示标签，不参与去重，也不是分组验收项。
+
+（历史）曾建议同 `identity_label` 折叠分组，避免多条 `grok-oauth` 难辨：
 
 ```text
 user@example.com
   ● 授权 2026-08-02 10:00:49  （当前）
   ○ 授权 2026-08-02 09:02:10
 ```
+
+该分组 UI **未作为现行验收**（见 §8）；不是 `pages/accounts` 身份通讯录。
+
+仍成立（与是否分组无关）：
 
 - 展示：导入/更新时间、是否 current、后续可加 expired  
 - 文案：池内可多授权；**当前生效仅一条**（写入 live 的那条）
@@ -262,11 +270,15 @@ user@example.com
 
 ### PR-C — UI 分组（历史）
 
-- [x] `identityLabel` / `createdAt` 映射  
-- [x] `groupAccountsByIdentity` 仅映射/测试残留；Connections 已是登录列表，不再按身份分组验收  
-- [x] 多授权副文案：授权时间 / 「当前生效仅一条」（映射层仍保留）  
+> 核对日期：2026-08-22。以 §8 为准：Connections 已是登录列表；下列映射已落地，**不再验收**按身份分组。
+
+- [x] `identityLabel` / `createdAt` 映射（行上展示，不参与去重）  
+- [x] （历史）`groupAccountsByIdentity` 仅 `account-map` 映射/测试残留；**不要**再验收 `pages/accounts` 或 Connections 按身份分组  
+- [x] 多授权副文案：授权时间 / 「当前生效仅一条」（映射层仍保留；登录列表一行一份登录）  
 
 ### 验收清单
+
+> 核对日期：2026-08-22。清单**不含**按 identity 分组 UI（已标（历史），见 §8）。
 
 - [x] 同 live 连点两次 import → 1 条（单测）  
 - [x] 同人不同 token → 2 条（单测）  
@@ -296,3 +308,4 @@ user@example.com
 | 2026-08-16 | 对照代码：补 dsh / Cursor 入池边界；§8 不再验收 `pages/accounts` 分组；Connections 已是登录列表 |
 | 2026-08-18 | 双凭据并存提醒：`read_auth.alsoPresent` + 导入仍只收胜出 live 票 |
 | 2026-08-18 | Pi：可 import；写回 API Key 需官方槽；自定义 URL+Key 走 Provider / models.json |
+| 2026-08-22 | D1 核对：§6/§9 以 §8 为准，按身份分组 UI 标为（历史），不再验收 |
