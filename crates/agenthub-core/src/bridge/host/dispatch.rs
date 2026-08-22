@@ -36,9 +36,9 @@ use crate::bridge::types::{
 use crate::utils::redact::redact_text;
 
 use super::http::{
-    error_response, has_valid_local_auth, log_protocol_error, protocol_error_response,
-    read_request_json, sse_data_payload, sse_frame_end_deque, stopping_response,
-    stream_error_frame, ListenerState,
+    error_response, has_valid_local_auth, log_protocol_error, overloaded_response,
+    protocol_error_response, read_request_json, sse_data_payload, sse_frame_end_deque,
+    stopping_response, stream_error_frame, ListenerState,
 };
 use super::{
     ANTHROPIC_API_VERSION, BODY_LIMIT_BYTES, STREAM_LIMIT_BYTES, UPSTREAM_BODY_IDLE_TIMEOUT,
@@ -444,12 +444,7 @@ pub(super) async fn handle_responses(state: ListenerState, request: Request) -> 
         Ok(permit) => permit,
         Err(_) => {
             tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "responses", code = "overloaded", status = 429_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge profile is at request capacity");
-            return error_response(
-                StatusCode::TOO_MANY_REQUESTS,
-                "bridge_overloaded",
-                "The local bridge is temporarily busy.",
-                None,
-            );
+            return overloaded_response();
         }
     };
     let incoming_headers = request.headers().clone();
@@ -621,12 +616,7 @@ pub(super) async fn handle_messages(state: ListenerState, request: Request) -> R
         Ok(permit) => permit,
         Err(_) => {
             tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "messages", code = "overloaded", status = 429_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge profile is at request capacity");
-            return error_response(
-                StatusCode::TOO_MANY_REQUESTS,
-                "bridge_overloaded",
-                "The local bridge is temporarily busy.",
-                None,
-            );
+            return overloaded_response();
         }
     };
     let incoming_headers = request.headers().clone();
@@ -761,12 +751,7 @@ pub(super) async fn handle_chat_completions(state: ListenerState, request: Reque
         Ok(permit) => permit,
         Err(_) => {
             tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "chat", code = "overloaded", status = 429_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge profile is at request capacity");
-            return error_response(
-                StatusCode::TOO_MANY_REQUESTS,
-                "bridge_overloaded",
-                "The local bridge is temporarily busy.",
-                None,
-            );
+            return overloaded_response();
         }
     };
     let body = match read_request_json(request).await {

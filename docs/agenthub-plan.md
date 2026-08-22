@@ -21,7 +21,7 @@
 | MVP 范围 | Agent 安装/卸载（含**前置运行时检测与引导**）、API 配置管理、技能/插件管理、Token 统计、**登录接到其他工具（直连 / 用这份登录 / 本机路由）** |
 | 产品形态 | GUI + CLI 双端，核心逻辑抽成 `agenthub-core` crate 共享 |
 | OAuth 账号管理 | 支持多账号池 + 一键切换；订阅先写进对方认的登录，对不上再本机转发 |
-| 跨 Agent 复用 | **核心产品**，三路都要做。能直连就直连，不默认常驻代理。实现未开 ≠ 产品不做。不做公网入口、多账号拼车、转售 |
+| 跨 Agent 复用 | **核心产品**，三路都要做。能直连就直连，不默认常驻代理。实现未开 ≠ 产品不做。不做公网入口、多人共用一份登录、转售。本人多账号轮询见 [provider-api-oauth-adaptation.md §5.5](provider-api-oauth-adaptation.md#55-多账号并发路由轮询与故障切换规划) |
 | Token 统计来源 | **零侵入**：解析各 agent 本地日志/会话文件。这只约束 Usage，**不禁止**本机转发 |
 | Agent 范围 | **当前八家**：Claude / Codex / Kimi / Grok / Pi / WorkBuddy / **Cursor Agent**（半套 CLI）/ **DeepSeek Harness（`dsh`）**；不支持 Cursor IDE 私有库账号池。`dsh` 专项约束见 [deepseek-harness-integration.md](deepseek-harness-integration.md) |
 | 分层原则 | **Service 管编排**（备份/锁/backfill/投影/聚合）；**Adapter 管差异**（路径、读写格式、解析器挂接） |
@@ -32,7 +32,7 @@
 ### 配置与状态管理类工具 — 最直接参照系
 - **借鉴**：按应用封装「路径 + 读取 + 校验 + 原子写」；供应商配置用灵活 JSON/`Value`，由前端预设模板决定；SQLite 存自身状态（带 schema 迁移）；backfill 机制（切换前把用户手改的 live 配置回存）；原子写（tempfile+rename）、TOML 编辑保留注释格式；前端 API 封装层。AgentHub **实际**为 `lib/backend` 分层 + 页面本地 state。
 - **避坑**：Windows 下不要用 `HOME` 环境变量取 home dir（Git Bash 会注入错误值），用 `dirs::home_dir()`；巨型 `match` 分支散布多处（我们用 trait + 注册表替代）；官方 OAuth 登录态不能被配置切换覆盖，需识别保护。
-- **差异化空间**：多工具登录列表 + 三路复用（直接改配置 / 写进对方认的登录 / 本机转发），而不是只做单一 CLI 的供应商预设，也不默认常驻代理。不做公网网关或多账号拼车。产品取舍见 [product-decisions.md](product-decisions.md)。
+- **差异化空间**：多工具登录列表 + 三路复用（直接改配置 / 写进对方认的登录 / 本机转发），而不是只做单一 CLI 的供应商预设，也不默认常驻代理。不做公网网关或多人共用一份登录。产品取舍见 [product-decisions.md](product-decisions.md)。
 
 ### 账号管理与工程实践类工具
 - **借鉴**：后端分层（commands 薄层 → models → modules → utils）；索引 + 分文件 + SQLite 统计库的混合存储；OAuth loopback 回调（双栈监听、ephemeral 端口、state 校验）；token 提前刷新 + 每账号互斥锁防并发重复刷新；写第三方配置前必备份 + 原子写 + 路径白名单校验。

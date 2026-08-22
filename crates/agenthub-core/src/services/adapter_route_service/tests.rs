@@ -1440,7 +1440,7 @@ fn stopped_grok_claude_route_does_not_block_codex_official_login_binds() {
 }
 
 #[test]
-fn claude_subscription_to_codex_is_product_closed() {
+fn claude_subscription_to_codex_is_open_but_unwritable() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())
         .create(&Account {
@@ -1469,6 +1469,10 @@ fn claude_subscription_to_codex_is_product_closed() {
     assert_eq!(
         plan.reason,
         crate::models::CLAUDE_SUBSCRIPTION_TO_CODEX_REASON
+    );
+    assert!(
+        !plan.reason.contains("产品不做"),
+        "Claude → Codex is ③-open; reason must not say product-closed"
     );
     assert_eq!(plan.reuse_path, crate::models::AdapterReusePath::None);
     assert!(!plan.can_apply);

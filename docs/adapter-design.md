@@ -18,7 +18,7 @@
 | 规则分析与预览 | ✅ | contracts、mock、`analyze`、`plan`、ConnectFlowDialog 已接线；本机路由页只列 `local_bridge` 运行时（含孤立）；limitations 与 `canApply` 对齐真实能力 |
 | 稳定规则应用 | ✅ | Kimi Code 会员 Provider → Claude Code `native_endpoint` 可 `bindTicket`；finalize 失败会回滚 live/current；返回值脱敏 |
 | 其它直连 / 配置同步规则 | ✅ | Kimi 会员 / Anthropic API Key → Pi `config_sync` 可 bind；未显式 `canApply=true` 的组合一律不可写 |
-| Bridge core | ✅ | `BridgeRuntimeHost`（per-profile gate、admission、超时与 cancellation-safe drain）、Responses ↔ Chat / Responses ↔ Anthropic Messages 协议与 fixtures |
+| Bridge core | ✅ | `BridgeRuntimeHost`（per-profile gate、admission 桌面安全上限 256 而非对话配额、超时与 cancellation-safe drain）、Responses ↔ Chat / Responses ↔ Anthropic Messages 协议与 fixtures |
 | Bridge 产品接线 | ✅ | Codex `local_bridge` 的 `canApply`、产品写入走 `bindTicket`、桥运行时 start/stop/status、健康检查、失败补偿、凭证轮转 stop→restart、端口 rebind、opt-in auto-start 恢复、退出 drain；UI 已拆分 wire/model/components |
 | Bridge 进程边界 | 🎯 已决策 / 未迁移 | 目标为同包用户级 `agenthub-adapterd`；当前 `BridgeRuntimeHost` 仍由 Tauri `AppState` 持有，详细契约见 [Adapter Sidecar 目标架构](adapter-sidecar-design.md) |
 
@@ -77,7 +77,7 @@ Adapter 负责把 **登录列表里已有的登录**接到另一个 Agent。机�
 
 - 不把 ChatGPT、Claude 等订阅 OAuth **导出成可复制的通用 API Key**，也不转售、不共享给其他人。
 - 不承诺「任意 OAuth 自动能接到任意 Agent」。每条边仍要分类 + fixtures；未就绪的边 `canApply=false`。产品方向是三路复用（能直连或写原生槽就不起桥），见 [product-decisions.md](product-decisions.md)。
-- 不建设公网网关、团队租户、计费、多号轮询/权重/冷却池或配额调度平台。
+- 不建设公网网关、团队租户、计费、按压力/余额的负载均衡或对外配额调度平台。本人多账号按序轮询与故障切换见 [provider-api-oauth-adaptation.md §5.5](provider-api-oauth-adaptation.md#55-多账号并发路由轮询与故障切换规划)（规划）。
 - 不在 Adapter 首屏建设完整协议矩阵、监控大盘、日志控制台或 Provider 多栏工作台。
 - 不记录请求/响应正文，不展示或复制完整 Token。
 - 不把凭据落盘加密列为本功能任务；按项目既有决策继续沿用当前存储方案。
@@ -186,7 +186,7 @@ PageHeader  本机路由 · 本机协议转换 · 仅 127.0.0.1
 - 来源 OAuth 未完成时整体阻断：不 fan-out、不 plan，目标区只显示「先完成授权」Notice 与去 Connections 的 CTA。
 - 用户点选目标卡后才运行 `plan`，局部显示 skeleton，不锁住已有适配列表。
 - 分析结果按 `(sourceKind, sourceId, target)` 做会话级缓存；换来源或重试时按生成计数丢弃过期响应。
-- 对尚未 `canApply` 的边，按三路说明缺的工程项：写进对方认的登录仍未开放的边写「目标有槽、写入未开」；已开放的 Claude/Codex/Grok 订阅 → Pi 写明写入 `auth.json` 且由 Pi 刷新；Kimi/OpenAI API → Grok 属直接改配置，写入官方 Chat TOML；GLM/DeepSeek API → Pi 属直接改配置，已开放 experimental `config_sync`，写入 Pi 自定义 provider 槽；本机转发——Codex Responses / Grok Responses → Claude 写「要起本机路由、experimental bind」，Claude 订阅 → Codex 写明「已改判为可路由、待落地取证」（2026-08-21），App Server/OauthOther 仍写关闭原因，App Server/OauthOther 仍写关闭原因，并链接[第 3 路边](provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code第-3-路responses-experimental-bind) 与 [产品决策](product-decisions.md)。不得对「写进对方认的登录」显示「需要本机服务」，也不得把原因写成「订阅不是产品」。
+- 对尚未 `canApply` 的边，按三路说明缺的工程项：写进对方认的登录仍未开放的边写「目标有槽、写入未开」；已开放的 Claude/Codex/Grok 订阅 → Pi 写明写入 `auth.json` 且由 Pi 刷新；Kimi/OpenAI API → Grok 属直接改配置，写入官方 Chat TOML；GLM/DeepSeek API → Pi 属直接改配置，已开放 experimental `config_sync`，写入 Pi 自定义 provider 槽；本机转发——Codex Responses / Grok Responses → Claude 写「要起本机路由、experimental bind」，Claude 订阅 → Codex 写明「已改判为可路由、待落地取证」（2026-08-21），App Server/OauthOther 仍写关闭原因，并链接[第 3 路边](provider-api-oauth-adaptation.md#51-codex--chatgpt-subscription--claude-code第-3-路responses-experimental-bind) 与 [产品决策](product-decisions.md)。不得对「写进对方认的登录」显示「需要本机服务」，也不得把原因写成「订阅不是产品」。
 
 #### 步骤 C：确认配置
 

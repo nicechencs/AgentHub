@@ -897,7 +897,7 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "Claude 订阅 → Codex：产品不做。Codex 不吃 Anthropic PKCE，本产品不走这条边。",
+        "reason": "Claude 订阅 → Codex：本机转发方向已开放，规则与 fixtures 未落地，暂不能绑定。",
         "reusePath": "none"
       }
     },
@@ -1121,7 +1121,7 @@
         "ruleId": null,
         "gateKind": "unsupported",
         "reusePath": "none",
-        "reason": "Claude 订阅 → Codex：产品不做。Codex 不吃 Anthropic PKCE，本产品不走这条边。"
+        "reason": "Claude 订阅 → Codex：本机转发方向已开放，规则与 fixtures 未落地，暂不能绑定。"
       }
     },
     {

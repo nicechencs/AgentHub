@@ -165,11 +165,11 @@ unbind(binding)     → 停桥、恢复该 Agent 上一份 live、票还在
 
 - `reshape` / `native`：不常驻进程
 - `bridge`：只听 loopback；目标只持短寿命本地 bearer；上游 secret 留在 Hub / sidecar
-- 不监听公网，不多账号轮换，不把一张票拆成多人 Key
+- 不监听公网，不把一张票拆成多人 Key；本人多账号轮询见 [provider-api-oauth-adaptation.md §5.5](provider-api-oauth-adaptation.md#55-多账号并发路由轮询与故障切换规划)（规划），切换只在请求边界/首事件前
 - refresh single-flight 发生在**票**这一层，所有绑定共享同一次刷新
 - 流式：首字节前可换路线/重试，写出后禁止重放
 
-产品能力：三路复用、协议成图、下游身份与上游 secret 分离、首字节边界、按账号 refresh、管理面的登录/配额/探测。本产品不做公网入口、多账号拼车、默认常驻代理，也不把本机转发自动生成的配置再当作登录列表里的登录。凭据落盘加密仍为项目范围外。产品真源：[product-decisions.md](product-decisions.md)。
+产品能力：三路复用、协议成图、下游身份与上游 secret 分离、首字节边界、按账号 refresh、管理面的登录/配额/探测。本产品不做公网入口、多人共用一份登录、转售、默认一直挂着的兼容服务，也不把本机转发自动生成的配置再当作登录列表里的登录。凭据落盘加密仍为项目范围外。产品真源：[product-decisions.md](product-decisions.md)。
 
 ## 5. 界面（目标态，允许重做）
 

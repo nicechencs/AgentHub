@@ -48,9 +48,9 @@ pub const GROK_SUBSCRIPTION_TO_KIMI_REASON: &str =
 pub const GROK_SUBSCRIPTION_TO_DSH_REASON: &str =
     "当前只支持 Codex 官方登录作上游，接下不了这份 Grok 登录。";
 
-/// Product-closed reason for Claude subscription → Codex.
+/// Claude subscription → Codex is ③-open; bind waits on fixtures.
 pub const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON: &str =
-    "Claude 订阅 → Codex：产品不做。Codex 不吃 Anthropic PKCE，本产品不走这条边。";
+    "Claude 订阅 → Codex：本机转发方向已开放，规则与 fixtures 未落地，暂不能绑定。";
 
 /// Closed fallback reason for Codex subscription shapes without the
 /// `OauthAuthJson` Responses cell.

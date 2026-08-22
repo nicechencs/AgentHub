@@ -249,6 +249,15 @@ pub(super) fn stopping_response() -> Response {
     )
 }
 
+pub(super) fn overloaded_response() -> Response {
+    error_response(
+        StatusCode::TOO_MANY_REQUESTS,
+        "bridge_overloaded",
+        "The local bridge is temporarily busy.",
+        Some(HeaderValue::from_static("1")),
+    )
+}
+
 pub(super) fn has_valid_local_auth(headers: &HeaderMap, expected: &str) -> bool {
     let bearer = headers
         .get(header::AUTHORIZATION)

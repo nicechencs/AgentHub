@@ -18,7 +18,7 @@ use tokio::{
     net::TcpStream,
 };
 
-use super::host::CleanupCompletion;
+use super::host::{CleanupCompletion, MAX_IN_FLIGHT_REQUESTS_PER_PROFILE};
 use super::{
     protocol::responses::is_leftover_bridge_model, BridgeHostError, BridgeLocalSurface,
     BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec, BridgeUpstreamConfig,
@@ -758,7 +758,7 @@ async fn profile_admission_rejects_overload_without_affecting_a_second_profile()
         .await
         .expect("start second profile");
     let mut requests = Vec::new();
-    for _ in 0..4 {
+    for _ in 0..MAX_IN_FLIGHT_REQUESTS_PER_PROFILE {
         let client = client().await;
         let url = format!("http://127.0.0.1:{}/v1/responses", first.port);
         requests.push(tokio::spawn(async move {
@@ -771,8 +771,8 @@ async fn profile_admission_rejects_overload_without_affecting_a_second_profile()
         }));
     }
     reached_upstream.await;
-    // The first notification proves the upstream is holding a permit. Give the other three
-    // local client tasks a short scheduling window before asking for the fifth permit.
+    // First notify means one permit is held upstream. Give the remaining in-flight
+    // tasks a short window to acquire before the overflow request.
     tokio::time::sleep(Duration::from_millis(30)).await;
     let overloaded = client()
         .await
@@ -783,6 +783,13 @@ async fn profile_admission_rejects_overload_without_affecting_a_second_profile()
         .await
         .expect("overload request");
     assert_eq!(overloaded.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        overloaded
+            .headers()
+            .get(header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok()),
+        Some("1")
+    );
     assert_eq!(
         client()
             .await

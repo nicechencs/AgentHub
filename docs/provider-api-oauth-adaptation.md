@@ -354,7 +354,7 @@ Claude Code
 
 > 状态：**2026-08-21 拍板的规划方向，未实现**。本节只描述 `local_bridge` 的目标表面与程序结构，不改变任何边的 `canApply`；每条边仍走 `plan()` + capability matrix。
 >
-> **路由开放原则（2026-08-21 拍板）**：除国产模型 OAuth（产品关闭，硬规则 7）外，所有已登记票面——OAuth 订阅（Claude / Codex / Grok）与 API Key——都可作为 ③ 本机路由的来源与目标；不再有「产品不做」类路由边。方向开放 ≠ 立即可写：每条新边仍需登记票面、实现 transport、fixtures 取证后才 `canApply=true`。首个按此原则改判的边是 Claude 订阅 → Codex（原产品关闭，见 [product-decisions.md](product-decisions.md)）。
+> **路由开放原则（2026-08-21 拍板）**：③ 本机转发对已登记票面**方向开放**，不再把「不是 API Key」或「订阅接到另一家工具」写成产品关闭。② 写对方原生 OAuth 槽仍须目标自己认这套登录，不能类推。国产 OAuth 仍产品关闭（硬规则 7）。方向开放 ≠ 立即可写：每条新边仍须登记票面、实现 transport、fixtures 取证后才 `canApply=true`。禁止导出 token、公网监听、转售。首个按此原则改判的边是 Claude 订阅 → Codex（原关闭是因为 ② 写 Codex 原生槽；改走 ③ 后待落地，见 [product-decisions.md](product-decisions.md)）。
 
 #### 5.4.1 统一的下游端点集合
 
@@ -391,11 +391,13 @@ Claude Code
   → IR → 下游 SSE 回写
 ```
 
+这是 **bind 之后才起** 的本机 listener，不是默认一直挂着的兼容服务。
+
 分层职责沿用 [§5.2](#52-订阅桥接的分层契约)：`DownstreamSurface` 只认端点形状，`ProtocolKernel` 只做纯映射，按边差异全部收在 `UpstreamTransport` 与规则层。新增一条边 = 登记票面 + 实现/复用 transport + fixtures 取证，不再新写 listener 或鉴权。
 
 不变式（全部保留）：
 
-1. 仅 loopback，不监听公网；对外只发 local bearer。
+1. 仅 loopback，不监听公网；对外只发 local bearer。有绑定才起，不默认开机常开。
 2. 上游 token 不进入目标配置、IPC 或日志；refresh token 不进 bridge。
 3. 表面统一 ≠ 通用转发：端点形状是公共设施，**每条边仍需单独分类、fixtures、回滚取证**，「同为订阅 / 同端点」不自动 `canApply=true`。
 4. `/v1/models` 保持本机合成 + fail-closed（§5.1.3），不透传上游。
