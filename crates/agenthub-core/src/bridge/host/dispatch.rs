@@ -11,7 +11,7 @@ use super::stream::{
     chat_non_stream_response, chat_stream_response, messages_non_stream_response,
     messages_stream_response, non_stream_response, passthrough_sse_response, stream_response,
 };
-use super::surface::{DownstreamSurface, ProtocolSelector};
+use super::surface::DownstreamSurface;
 use super::transport::{send_upstream, UpstreamChannel, UpstreamPrepare};
 use super::upstream::join_upstream;
 use super::UPSTREAM_NON_STREAM_TIMEOUT;
@@ -79,7 +79,14 @@ async fn forward_upstream(
     };
     if stream_requested {
         return forward_stream(
-            surface, state, response, request_id, started, permit, cache_seed,
+            surface,
+            channel,
+            state,
+            response,
+            request_id,
+            started,
+            permit,
+            cache_seed,
         );
     }
     let force_shutdown = state.force_shutdown.clone();
@@ -105,6 +112,7 @@ async fn forward_upstream(
 
 fn forward_stream(
     surface: DownstreamSurface,
+    channel: UpstreamChannel,
     state: ListenerState,
     response: reqwest::Response,
     request_id: String,
@@ -113,9 +121,7 @@ fn forward_stream(
     cache_seed: Option<String>,
 ) -> Response {
     match surface {
-        DownstreamSurface::Responses
-            if ProtocolSelector::from_listener(&state).responses_passthrough() =>
-        {
+        DownstreamSurface::Responses if channel.passthrough() => {
             passthrough_sse_response(state, response, request_id, started, permit, cache_seed)
         }
         DownstreamSurface::Responses => {

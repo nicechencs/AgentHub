@@ -1,8 +1,9 @@
 //! Upstream channel: path/body reshape, auth inject, and recovery policy.
 //!
-//! Dispatch matches downstream surface (and Responses passthrough) after this
-//! module has already chosen the upstream request. Async send stays on the
-//! enum so it does not need `async-trait` or boxing.
+//! Dispatch matches downstream surface after this module has already chosen
+//! the upstream request. Responses↔Responses passthrough is declared only on
+//! [`UpstreamChannel::passthrough`]. Async send stays on the enum so it does
+//! not need `async-trait` or boxing.
 
 mod anthropic;
 mod codex;
@@ -80,10 +81,6 @@ impl RecoveryPolicy {
 
 /// Sync per-channel policy. Async send lives on [`UpstreamChannel`] instead.
 pub(super) trait UpstreamTransport {
-    fn passthrough(&self) -> bool {
-        false
-    }
-
     fn path(&self) -> &'static str;
 
     fn apply_auth(
@@ -160,21 +157,14 @@ impl UpstreamChannel {
         UpstreamTransport::path(&self)
     }
 
+    /// Responses↔Responses identity path (Grok↔Codex). Other downstream
+    /// surfaces still map through IR. This is the only passthrough declaration.
     pub(super) fn passthrough(self) -> bool {
-        UpstreamTransport::passthrough(&self)
+        matches!(self, Self::CodexResponses | Self::Grok)
     }
 }
 
 impl UpstreamTransport for UpstreamChannel {
-    fn passthrough(&self) -> bool {
-        match self {
-            Self::OpenAiChat => OpenAiChatTransport.passthrough(),
-            Self::Anthropic => AnthropicTransport.passthrough(),
-            Self::CodexResponses => CodexTransport.passthrough(),
-            Self::Grok => GrokTransport.passthrough(),
-        }
-    }
-
     fn path(&self) -> &'static str {
         match self {
             Self::OpenAiChat => OpenAiChatTransport.path(),

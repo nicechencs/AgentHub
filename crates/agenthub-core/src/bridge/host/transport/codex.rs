@@ -15,10 +15,6 @@ use super::{
 pub(super) struct CodexTransport;
 
 impl UpstreamTransport for CodexTransport {
-    fn passthrough(&self) -> bool {
-        true
-    }
-
     fn path(&self) -> &'static str {
         "responses"
     }

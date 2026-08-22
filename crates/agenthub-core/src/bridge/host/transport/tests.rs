@@ -96,10 +96,19 @@ fn prepare_selects_upstream_path_by_channel() {
     assert_eq!(UpstreamChannel::Anthropic.path(), "messages");
     assert_eq!(UpstreamChannel::CodexResponses.path(), "responses");
     assert_eq!(UpstreamChannel::Grok.path(), "responses");
-    assert!(!UpstreamChannel::OpenAiChat.passthrough());
-    assert!(!UpstreamChannel::Anthropic.passthrough());
-    assert!(UpstreamChannel::CodexResponses.passthrough());
-    assert!(UpstreamChannel::Grok.passthrough());
+}
+
+#[test]
+fn passthrough_is_declared_only_for_responses_oauth_channels() {
+    assert_eq!(
+        [
+            UpstreamChannel::OpenAiChat.passthrough(),
+            UpstreamChannel::Anthropic.passthrough(),
+            UpstreamChannel::CodexResponses.passthrough(),
+            UpstreamChannel::Grok.passthrough(),
+        ],
+        [false, false, true, true]
+    );
 }
 
 #[test]

@@ -5,7 +5,7 @@ use serde_json::Value;
 use crate::bridge::protocol::anthropic_messages::parse_messages_request;
 use crate::bridge::protocol::chat::parse_chat_request;
 use crate::bridge::protocol::responses::parse_responses_request;
-use crate::bridge::runtime::{BridgeLocalSurface, BridgeUpstreamProtocol};
+use crate::bridge::runtime::BridgeLocalSurface;
 use crate::bridge::types::{BridgeRequest, ProtocolError};
 
 use super::http::ListenerState;
@@ -62,44 +62,6 @@ impl DownstreamSurface {
                 unreachable!("models are synthesized locally and do not parse a conversation body")
             }
         }
-    }
-}
-
-/// Centralizes local surface / upstream protocol so route handlers do not
-/// sniff host or model names.
-#[derive(Debug, Clone, Copy)]
-pub(super) struct ProtocolSelector {
-    protocol: BridgeUpstreamProtocol,
-    local_surface: BridgeLocalSurface,
-}
-
-impl ProtocolSelector {
-    pub(super) fn from_listener(state: &ListenerState) -> Self {
-        Self {
-            protocol: state.upstream.protocol,
-            local_surface: state.upstream.local_surface,
-        }
-    }
-
-    pub(super) fn serves_responses(self) -> bool {
-        self.local_surface == BridgeLocalSurface::Responses
-    }
-
-    pub(super) fn serves_messages(self) -> bool {
-        self.local_surface == BridgeLocalSurface::Messages
-    }
-
-    pub(super) fn serves_chat_completions(self) -> bool {
-        self.local_surface == BridgeLocalSurface::ChatCompletions
-    }
-
-    pub(super) fn responses_passthrough(self) -> bool {
-        self.serves_responses()
-            && matches!(
-                self.protocol,
-                BridgeUpstreamProtocol::CodexResponsesOauth
-                    | BridgeUpstreamProtocol::XaiResponsesOauth
-            )
     }
 }
 

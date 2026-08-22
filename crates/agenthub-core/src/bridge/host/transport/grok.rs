@@ -19,10 +19,6 @@ use super::{
 pub(super) struct GrokTransport;
 
 impl UpstreamTransport for GrokTransport {
-    fn passthrough(&self) -> bool {
-        true
-    }
-
     fn path(&self) -> &'static str {
         "responses"
     }
