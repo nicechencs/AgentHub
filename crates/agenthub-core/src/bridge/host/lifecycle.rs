@@ -173,6 +173,23 @@ impl BridgeRuntimeHost {
         Ok(Some(runtime.status(registry.sockets_live())))
     }
 
+    /// Re-admit an isolated member after reconcile / re-login. Does not restart
+    /// the listener or rotate the local bearer.
+    pub fn restore_member_health(
+        &self,
+        profile_id: &str,
+        source_id: &str,
+        health: crate::bridge::account::MemberHealth,
+    ) -> Result<(), BridgeHostError> {
+        let registry = self.gateway.lock()?;
+        let runtime = registry
+            .runtimes
+            .get(profile_id)
+            .ok_or(BridgeHostError::NotRunning)?;
+        runtime.state.account_picker.restore(source_id, health);
+        Ok(())
+    }
+
     fn profile_gate(&self, profile_id: &str) -> Result<Arc<AsyncMutex<()>>, BridgeHostError> {
         let mut gates = self
             .profile_gates
@@ -536,4 +553,19 @@ fn same_spec(left: &BridgeStartSpec, right: &BridgeStartSpec) -> bool {
         && left.upstream.protocol == right.upstream.protocol
         && left.upstream.local_surface == right.upstream.local_surface
         && left.listed_models == right.listed_models
+        && left.multi_account == right.multi_account
+        && member_fingerprint(left) == member_fingerprint(right)
+}
+
+fn member_fingerprint(spec: &BridgeStartSpec) -> Vec<(String, String, String)> {
+    spec.members
+        .iter()
+        .map(|member| {
+            (
+                member.ticket_id.clone(),
+                member.source_id.clone(),
+                member.auth.token(),
+            )
+        })
+        .collect()
 }

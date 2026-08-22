@@ -13,8 +13,9 @@ use super::stream::{
     messages_stream_response, non_stream_response, passthrough_sse_response, stream_response,
 };
 use super::surface::DownstreamSurface;
-use super::transport::{send_upstream, UpstreamChannel, UpstreamPrepare};
+use super::transport::{send_upstream, UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome};
 use super::upstream::join_upstream;
+use crate::bridge::account::PickedMember;
 use super::UPSTREAM_NON_STREAM_TIMEOUT;
 
 pub(super) async fn handle_conversation(
@@ -38,16 +39,40 @@ pub(super) async fn handle_conversation(
     if let Some(response) = surface.reject_if_unserved(&state) {
         return response;
     }
-    let admitted = match admit_conversation(state, request, surface, request_id, started).await {
+    let mut admitted = match admit_conversation(state, request, surface, request_id, started).await {
         Ok(admitted) => admitted,
         Err(response) => return response,
     };
+    let Some(member) = admitted.state.account_picker.pick_new() else {
+        return no_eligible_member(&admitted.state, &admitted.request_id, admitted.started);
+    };
+    admitted.member = Some(member);
     let channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
     let prepared = match channel.prepare(surface, &admitted) {
         Ok(prepared) => prepared,
         Err(response) => return response,
     };
     forward_upstream(surface, admitted, channel, prepared).await
+}
+
+fn no_eligible_member(state: &EdgeState, request_id: &str, started: Instant) -> Response {
+    tracing::warn!(
+        target: "core.adapter",
+        profile_id = %state.profile_id,
+        request_id = %request_id,
+        op = "upstream",
+        code = "upstream_unavailable",
+        status = 502_u16,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "bridge has no eligible upstream account"
+    );
+    state.record_upstream_failure();
+    error_response(
+        StatusCode::BAD_GATEWAY,
+        "upstream_error",
+        "The upstream model provider returned an error.",
+        None,
+    )
 }
 
 async fn forward_upstream(
@@ -63,7 +88,9 @@ async fn forward_upstream(
         permit,
         headers: _,
         body: _,
+        member,
     } = admitted;
+    let member = member.expect("handle_conversation always picks before forward");
     let UpstreamPrepare {
         path,
         body,
@@ -75,7 +102,10 @@ async fn forward_upstream(
         Ok(url) => url,
         Err(response) => return response,
     };
-    let response = match send_upstream(
+    let UpstreamSendOutcome {
+        response,
+        member,
+    } = match send_upstream(
         &state,
         url,
         channel,
@@ -84,15 +114,16 @@ async fn forward_upstream(
         grok_identity,
         body,
         cache_seed.as_deref(),
+        member,
     )
     .await
     {
-        Ok(response) => response,
+        Ok(outcome) => outcome,
         Err(response) => return response,
     };
     if stream_requested {
         return forward_stream(
-            surface, channel, state, response, request_id, started, permit, cache_seed,
+            surface, channel, state, response, request_id, started, permit, cache_seed, member,
         );
     }
     let force_shutdown = state.force_shutdown.clone();
@@ -100,7 +131,7 @@ async fn forward_upstream(
         _ = force_shutdown.cancelled() => stopping_response(),
         result = tokio::time::timeout(
             UPSTREAM_NON_STREAM_TIMEOUT,
-            forward_non_stream(surface, state.clone(), response, request_id, started, permit, cache_seed),
+            forward_non_stream(surface, state.clone(), response, request_id, started, permit, cache_seed, member),
         ) => match result {
             Ok(response) => response,
             Err(_) => {
@@ -125,19 +156,24 @@ fn forward_stream(
     started: Instant,
     permit: OwnedSemaphorePermit,
     cache_seed: Option<String>,
+    member: PickedMember,
 ) -> Response {
     match surface {
         DownstreamSurface::Responses if channel.passthrough() => {
-            passthrough_sse_response(state, response, request_id, started, permit, cache_seed)
+            passthrough_sse_response(
+                state, response, request_id, started, permit, cache_seed, member,
+            )
         }
         DownstreamSurface::Responses => {
-            stream_response(state, response, request_id, started, permit)
+            stream_response(state, response, request_id, started, permit, member)
         }
         DownstreamSurface::Messages => {
-            messages_stream_response(state, response, request_id, started, permit, cache_seed)
+            messages_stream_response(
+                state, response, request_id, started, permit, cache_seed, member,
+            )
         }
         DownstreamSurface::ChatCompletions => {
-            chat_stream_response(state, response, request_id, started, permit)
+            chat_stream_response(state, response, request_id, started, permit, member)
         }
         DownstreamSurface::Models => {
             unreachable!("models are synthesized by list_models, not handle_conversation")
@@ -153,17 +189,23 @@ async fn forward_non_stream(
     started: Instant,
     permit: OwnedSemaphorePermit,
     cache_seed: Option<String>,
+    member: PickedMember,
 ) -> Response {
     match surface {
         DownstreamSurface::Responses => {
-            non_stream_response(state, response, request_id, started, permit, cache_seed).await
+            non_stream_response(
+                state, response, request_id, started, permit, cache_seed, member,
+            )
+            .await
         }
         DownstreamSurface::Messages => {
-            messages_non_stream_response(state, response, request_id, started, permit, cache_seed)
-                .await
+            messages_non_stream_response(
+                state, response, request_id, started, permit, cache_seed, member,
+            )
+            .await
         }
         DownstreamSurface::ChatCompletions => {
-            chat_non_stream_response(state, response, request_id, started, permit).await
+            chat_non_stream_response(state, response, request_id, started, permit, member).await
         }
         DownstreamSurface::Models => {
             unreachable!("models are synthesized by list_models, not handle_conversation")

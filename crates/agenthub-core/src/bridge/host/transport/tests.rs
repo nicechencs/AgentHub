@@ -44,6 +44,20 @@ fn listener_state(
         grok_replay: Arc::new(GrokReasoningReplay::new()),
         listed_models: Arc::from(Vec::<String>::new()),
         reload_upstream_auth: None,
+        account_picker: crate::bridge::runtime::BridgeStartSpec::new(
+            "transport-test",
+            0,
+            "local-dummy",
+            BridgeUpstreamConfig {
+                base_url: "http://127.0.0.1/v1/".to_owned(),
+                model: Some("configured-model".to_owned()),
+                source_connection_id: None,
+                auth: ResolvedAuth::bearer("upstream-dummy-token"),
+                protocol,
+                local_surface,
+            },
+        )
+        .account_picker(),
     }
 }
 
@@ -65,6 +79,7 @@ fn admitted(
         permit,
         headers: HeaderMap::new(),
         body,
+        member: None,
     }
 }
 

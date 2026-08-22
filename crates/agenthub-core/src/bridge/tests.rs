@@ -1,6 +1,6 @@
 use std::convert::Infallible;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -21,8 +21,8 @@ use tokio::{
 use super::host::{CleanupCompletion, MAX_IN_FLIGHT_REQUESTS_PER_PROFILE};
 use super::{
     protocol::responses::is_leftover_bridge_model, BridgeHostError, BridgeLocalSurface,
-    BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec, BridgeUpstreamConfig,
-    BridgeUpstreamProtocol, BridgeUpstreamStatus, ResolvedAuth, UpstreamAuthReload,
+    BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec, BridgeUpstreamConfig,
+    BridgeUpstreamProtocol, BridgeUpstreamStatus, MemberHealth, ResolvedAuth, UpstreamAuthReload,
 };
 use crate::models::{list_local_bridge_models, AdapterSourceProduct, AgentId};
 
@@ -3022,5 +3022,157 @@ async fn new_start_projects_existing_gateway_port() {
         .expect("start second");
     assert_eq!(second.port, first.port);
     host.shutdown().await.expect("shutdown");
+    upstream_task.abort();
+}
+
+fn pool_member(id: &str, token: &str) -> BridgeMemberSpec {
+    BridgeMemberSpec {
+        ticket_id: format!("account:{id}"),
+        source_kind: "account".into(),
+        source_id: id.into(),
+        label: id.into(),
+        auth: ResolvedAuth::bearer(token),
+        reload: None,
+        health: MemberHealth::Renewable,
+    }
+}
+
+async fn grok_account_gated_upstream(
+    reject_a: Arc<std::sync::atomic::AtomicBool>,
+) -> (u16, Arc<Mutex<Vec<String>>>, tokio::task::JoinHandle<()>) {
+    async fn responses(
+        State((reject_a, captured)): State<(
+            Arc<std::sync::atomic::AtomicBool>,
+            Arc<Mutex<Vec<String>>>,
+        )>,
+        headers: axum::http::HeaderMap,
+    ) -> Response {
+        let bearer = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        captured.lock().expect("lock").push(bearer.clone());
+        if bearer == "Bearer token-a" && reject_a.load(Ordering::SeqCst) {
+            return (StatusCode::UNAUTHORIZED, "expired-a").into_response();
+        }
+        if bearer == "Bearer token-a" || bearer == "Bearer token-b" {
+            return Json(grok_completed_response("hello")).into_response();
+        }
+        (StatusCode::UNAUTHORIZED, "unknown").into_response()
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind gated upstream");
+    let port = listener.local_addr().expect("addr").port();
+    let state = (reject_a, captured.clone());
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state(state),
+        )
+        .await
+        .expect("serve gated upstream");
+    });
+    (port, captured, task)
+}
+
+fn two_member_grok_spec(profile_id: &str, upstream_port: u16) -> BridgeStartSpec {
+    grok_claude_spec(profile_id, 0, upstream_port)
+        .with_members(vec![
+            pool_member("acc-a", "token-a"),
+            pool_member("acc-b", "token-b"),
+        ])
+        .with_multi_account(true)
+}
+
+async fn post_claude_hello(port: u16) -> reqwest::Response {
+    client()
+        .await
+        .post(format!("http://127.0.0.1:{port}/v1/messages"))
+        .header("x-api-key", "local-test-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("messages request")
+}
+
+#[tokio::test]
+async fn multi_account_isolates_a_then_b_serves_and_a_returns_after_restore() {
+    let reject_a = Arc::new(AtomicBool::new(true));
+    let (upstream_port, captured, upstream_task) =
+        grok_account_gated_upstream(reject_a.clone()).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(two_member_grok_spec("pool-failover", upstream_port))
+        .await
+        .expect("start");
+
+    let first = post_claude_hello(status.port).await;
+    assert_eq!(first.status(), StatusCode::OK);
+    let body: Value = first.json().await.expect("anthropic");
+    assert_eq!(body["content"][0]["text"], "hello");
+    assert_eq!(
+        captured.lock().expect("lock").clone(),
+        vec![
+            "Bearer token-a".to_owned(),
+            "Bearer token-b".to_owned()
+        ]
+    );
+
+    captured.lock().expect("lock").clear();
+    let second = post_claude_hello(status.port).await;
+    assert_eq!(second.status(), StatusCode::OK);
+    assert_eq!(
+        captured.lock().expect("lock").clone(),
+        vec!["Bearer token-b".to_owned()]
+    );
+
+    reject_a.store(false, Ordering::SeqCst);
+    host.restore_member_health("pool-failover", "acc-a", MemberHealth::Renewable)
+        .expect("restore A");
+    captured.lock().expect("lock").clear();
+    let third = post_claude_hello(status.port).await;
+    assert_eq!(third.status(), StatusCode::OK);
+    assert_eq!(
+        captured.lock().expect("lock").clone(),
+        vec!["Bearer token-a".to_owned()]
+    );
+
+    host.stop("pool-failover").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn single_member_spec_keeps_legacy_oauth_reload_cell() {
+    let (upstream_port, captured, upstream_task) =
+        grok_401_then_ok_upstream("rotated-upstream-token").await;
+    let reload: UpstreamAuthReload = Arc::new(|| Some("rotated-upstream-token".into()));
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            grok_claude_spec("single-member-reload", 0, upstream_port)
+                .with_reload_upstream_auth(Some(reload)),
+        )
+        .await
+        .expect("start");
+    let response = post_claude_hello(status.port).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        captured.lock().expect("lock").clone(),
+        vec![
+            "Bearer upstream-test-token".to_owned(),
+            "Bearer rotated-upstream-token".to_owned()
+        ]
+    );
+    host.stop("single-member-reload").await.expect("stop");
     upstream_task.abort();
 }

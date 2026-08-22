@@ -1,7 +1,7 @@
 //! In-process loopback gateway: sockets, edges, and local-bearer lookup.
 //!
 //! One [`Gateway`] per [`super::BridgeRuntimeHost`]. Local bearer is the only
-//! request-path identity; C2 will hang an AccountPicker off [`EdgeState`].
+//! request-path identity; AccountPicker hangs off [`EdgeState`].
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,6 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 use thiserror::Error;
 
+use crate::bridge::account::AccountPicker;
 use crate::bridge::grok_cli::GrokReasoningReplay;
 use crate::bridge::runtime::{
     BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamStatus,
@@ -111,8 +112,9 @@ pub(super) struct EdgeRuntime {
     pub(super) stop_completion: Option<Arc<CleanupCompletion>>,
 }
 
-/// Per-profile edge. C2 will hang AccountPicker here; A4 keeps a single
-/// [`crate::bridge::ResolvedAuth`] on `upstream.auth`.
+/// Per-profile edge. AccountPicker (C2) is the member poller; A4 keeps a single
+/// lead [`crate::bridge::ResolvedAuth`] on `upstream.auth` for single-member
+/// in-place 401 reload.
 #[derive(Clone)]
 pub(super) struct EdgeState {
     pub(super) profile_id: Arc<str>,
@@ -128,6 +130,7 @@ pub(super) struct EdgeState {
     pub(super) grok_replay: Arc<GrokReasoningReplay>,
     pub(super) listed_models: Arc<[String]>,
     pub(super) reload_upstream_auth: Option<crate::bridge::UpstreamAuthReload>,
+    pub(super) account_picker: AccountPicker,
 }
 
 pub(super) enum GatewayAuthError {
@@ -277,6 +280,7 @@ impl EdgeState {
             grok_replay: Arc::new(GrokReasoningReplay::new()),
             listed_models: spec.listed_models.clone().into(),
             reload_upstream_auth: spec.reload_upstream_auth.clone(),
+            account_picker: spec.account_picker(),
         }
     }
 

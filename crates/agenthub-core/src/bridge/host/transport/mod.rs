@@ -16,11 +16,13 @@ use axum::http::{header, StatusCode};
 use axum::response::Response;
 use serde_json::Value;
 
+use crate::bridge::account::PickedMember;
 use crate::bridge::grok_cli::{
-    is_reasoning_decode_failure, strip_encrypted_reasoning, GrokCliRequestIdentity,
+    grok_session_id_for_account, is_reasoning_decode_failure, strip_encrypted_reasoning,
+    GrokCliRequestIdentity,
 };
+use crate::bridge::request_fsm::{RequestDecision, RequestFsm, SwitchClass};
 use crate::bridge::runtime::BridgeUpstreamProtocol;
-use crate::bridge::types::{EmissionState, RetryClass, RetryGate};
 
 use super::admission::AdmittedRequest;
 use super::http::{
@@ -30,7 +32,8 @@ use super::stream::UpstreamBodyError;
 use super::surface::DownstreamSurface;
 use super::upstream::{
     access_jwt_near_expiry, apply_grok_replay, extract_upstream_error_detail, grok_replay_model,
-    map_upstream_http_error, post_upstream, read_bounded_upstream_error, try_reload_upstream_auth,
+    map_upstream_http_error, post_upstream, read_bounded_upstream_error, replay_session,
+    try_reload_member_auth,
 };
 
 use anthropic::AnthropicTransport;
@@ -220,106 +223,286 @@ impl UpstreamTransport for UpstreamChannel {
     }
 }
 
+pub(super) struct UpstreamSendOutcome {
+    pub response: reqwest::Response,
+    pub member: PickedMember,
+}
+
 pub(super) async fn send_upstream(
     state: &EdgeState,
     url: reqwest::Url,
     channel: UpstreamChannel,
     request_id: &str,
     started: Instant,
-    mut identity: Option<GrokCliRequestIdentity>,
-    mut body: Value,
+    identity: Option<GrokCliRequestIdentity>,
+    body: Value,
     cache_seed: Option<&str>,
-) -> Result<reqwest::Response, Response> {
+    member: PickedMember,
+) -> Result<UpstreamSendOutcome, Response> {
     let recovery = channel.recovery();
-    if recovery.strips_grok_reasoning() {
-        apply_grok_replay(state, &mut body, cache_seed);
-    }
-    let retry_gate = RetryGate::default();
-    let mut auth_reloaded = false;
-    // Only consume the 401 retry slot when a follow/refresh actually swapped
-    // the in-memory bearer. A no-op near-expiry reread must still allow one 401 retry.
-    if recovery.reloads_on_401() && access_jwt_near_expiry(&state.upstream.auth.token()) {
-        auth_reloaded = try_reload_upstream_auth(state);
-    }
-    let mut attempt = 0u8;
+    let original_body = body;
+    let original_identity = identity;
+    let mut member = member;
+    let mut failover_from: Option<String> = None;
+    let mut fsm = RequestFsm::new(state.account_picker.multi_account());
+    let mut grok_strip_attempt = 0u8;
+
     loop {
-        let token = state.upstream.auth.token();
-        let builder = channel.apply_auth(
-            state.client.post(url.clone()).json(&body),
-            &token,
-            identity.as_ref(),
-        );
-        let response = post_upstream(state, builder).await?;
-        if response.status().is_success() {
-            return Ok(response);
+        let account_id = state
+            .account_picker
+            .partition_account_id(&member)
+            .map(str::to_owned);
+        let account_id = account_id.as_deref();
+        let mut identity = identity_for_member(&original_identity, cache_seed, account_id);
+        let mut body = original_body.clone();
+        if recovery.strips_grok_reasoning() {
+            apply_grok_replay(state, &mut body, cache_seed, account_id);
         }
-        let status = response.status();
-        let retry_after = response.headers().get(header::RETRY_AFTER).cloned();
-        let auth_attempts = if auth_reloaded { 1 } else { 0 };
-        if status == StatusCode::UNAUTHORIZED
-            && recovery.reloads_on_401()
-            && retry_gate.can_retry(EmissionState::Idle, RetryClass::Transient, auth_attempts)
-            && try_reload_upstream_auth(state)
+        // Same-account near-expiry preload. A no-op must still allow one 401 retry.
+        if recovery.reloads_on_401()
+            && !fsm.retry_used()
+            && access_jwt_near_expiry(&member.auth.token())
+            && try_reload_member_auth(&member)
         {
-            auth_reloaded = true;
+            fsm.record_retry();
+        }
+
+        loop {
+            let token = member.auth.token();
+            let builder = channel.apply_auth(
+                state.client.post(url.clone()).json(&body),
+                &token,
+                identity.as_ref(),
+            );
+            let response = post_upstream(state, builder).await?;
+            if response.status().is_success() {
+                log_serving_account(
+                    state,
+                    request_id,
+                    &member,
+                    failover_from.is_some(),
+                    failover_from.as_deref(),
+                );
+                return Ok(UpstreamSendOutcome { response, member });
+            }
+            let status = response.status();
+            let retry_after = response.headers().get(header::RETRY_AFTER).cloned();
+            if status == StatusCode::UNAUTHORIZED {
+                match switch_or_reload(
+                    state,
+                    request_id,
+                    &mut fsm,
+                    recovery.reloads_on_401(),
+                    &mut member,
+                    &mut failover_from,
+                    &mut grok_strip_attempt,
+                ) {
+                    AuthFollowup::Reload => continue,
+                    AuthFollowup::Switch => break,
+                    AuthFollowup::Fail => {
+                        let detail = read_error_detail(response, &state.force_shutdown).await?;
+                        return Err(map_upstream_http_error(
+                            state,
+                            request_id,
+                            started,
+                            status,
+                            retry_after,
+                            detail.as_deref(),
+                            Some(&member),
+                            failover_from.as_deref(),
+                        ));
+                    }
+                }
+            }
+
+            let can_recover = recovery.strips_grok_reasoning()
+                && status == StatusCode::BAD_REQUEST
+                && grok_strip_attempt < 2;
+            let error_body = match read_bounded_upstream_error(response, &state.force_shutdown).await
+            {
+                Ok(body) => body,
+                Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
+                Err(UpstreamBodyError::InvalidOrTooLarge) => Vec::new(),
+            };
+            if !can_recover {
+                let detail = extract_upstream_error_detail(&error_body);
+                return Err(map_upstream_http_error(
+                    state,
+                    request_id,
+                    started,
+                    status,
+                    retry_after,
+                    detail.as_deref(),
+                    Some(&member),
+                    failover_from.as_deref(),
+                ));
+            }
+            let err_text = String::from_utf8_lossy(&error_body);
+            if !is_reasoning_decode_failure(&err_text) {
+                let detail = extract_upstream_error_detail(&error_body);
+                return Err(map_upstream_http_error(
+                    state,
+                    request_id,
+                    started,
+                    status,
+                    retry_after,
+                    detail.as_deref(),
+                    Some(&member),
+                    failover_from.as_deref(),
+                ));
+            }
+            let replay_seed = replay_session(cache_seed, account_id);
+            let model = grok_replay_model(&body, state.upstream.model.as_deref());
+            state.grok_replay.clear(&model, replay_seed.as_deref());
+            strip_encrypted_reasoning(&mut body);
+            grok_strip_attempt += 1;
+            if grok_strip_attempt >= 2 {
+                if let Some(identity) = identity.as_mut() {
+                    identity.session_id = None;
+                }
+                if let Some(object) = body.as_object_mut() {
+                    object.remove("prompt_cache_key");
+                }
+            }
             tracing::info!(
                 target: "core.adapter",
                 profile_id = %state.profile_id,
                 request_id = %request_id,
-                "retrying upstream request after oauth access reload"
+                account_id = %member.source_id,
+                attempt = grok_strip_attempt,
+                "retrying Grok request after encrypted reasoning rejection"
             );
-            continue;
         }
-        let can_recover =
-            recovery.strips_grok_reasoning() && status == StatusCode::BAD_REQUEST && attempt < 2;
-        let error_body = match read_bounded_upstream_error(response, &state.force_shutdown).await {
-            Ok(body) => body,
-            Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
-            Err(UpstreamBodyError::InvalidOrTooLarge) => Vec::new(),
-        };
-        if !can_recover {
-            let detail = extract_upstream_error_detail(&error_body);
-            return Err(map_upstream_http_error(
-                state,
-                request_id,
-                started,
-                status,
-                retry_after,
-                detail.as_deref(),
-            ));
-        }
-        let err_text = String::from_utf8_lossy(&error_body);
-        if !is_reasoning_decode_failure(&err_text) {
-            let detail = extract_upstream_error_detail(&error_body);
-            return Err(map_upstream_http_error(
-                state,
-                request_id,
-                started,
-                status,
-                retry_after,
-                detail.as_deref(),
-            ));
-        }
-        let model = grok_replay_model(&body, state.upstream.model.as_deref());
-        state.grok_replay.clear(&model, cache_seed);
-        strip_encrypted_reasoning(&mut body);
-        attempt += 1;
-        if attempt >= 2 {
-            if let Some(identity) = identity.as_mut() {
-                identity.session_id = None;
-            }
-            if let Some(object) = body.as_object_mut() {
-                object.remove("prompt_cache_key");
-            }
-        }
-        tracing::info!(
-            target: "core.adapter",
-            profile_id = %state.profile_id,
-            request_id = %request_id,
-            attempt,
-            "retrying Grok request after encrypted reasoning rejection"
-        );
     }
+}
+
+enum AuthFollowup {
+    Reload,
+    Switch,
+    Fail,
+}
+
+/// Reload stays on this member (inner loop). Switch restarts the outer loop
+/// so identity/body are rebuilt for the next account.
+fn switch_or_reload(
+    state: &EdgeState,
+    request_id: &str,
+    fsm: &mut RequestFsm,
+    oauth_401: bool,
+    member: &mut PickedMember,
+    failover_from: &mut Option<String>,
+    grok_strip_attempt: &mut u8,
+) -> AuthFollowup {
+    let has_failover = state.account_picker.failover(&member.source_id).is_some();
+    match fsm.on_failure(oauth_401, SwitchClass::AccountFailure, has_failover) {
+        RequestDecision::ReloadSameAccount => {
+            fsm.record_retry();
+            if try_reload_member_auth(member) {
+                tracing::info!(
+                    target: "core.adapter",
+                    profile_id = %state.profile_id,
+                    request_id = %request_id,
+                    account_id = %member.source_id,
+                    "retrying upstream request after oauth access reload"
+                );
+                return AuthFollowup::Reload;
+            }
+            let has_failover = state.account_picker.failover(&member.source_id).is_some();
+            if fsm.on_failure(false, SwitchClass::AccountFailure, has_failover)
+                == RequestDecision::SwitchAccount
+            {
+                return take_switch(
+                    state,
+                    request_id,
+                    fsm,
+                    member,
+                    failover_from,
+                    grok_strip_attempt,
+                );
+            }
+            AuthFollowup::Fail
+        }
+        RequestDecision::SwitchAccount => take_switch(
+            state,
+            request_id,
+            fsm,
+            member,
+            failover_from,
+            grok_strip_attempt,
+        ),
+        RequestDecision::Fail => AuthFollowup::Fail,
+    }
+}
+
+fn take_switch(
+    state: &EdgeState,
+    request_id: &str,
+    fsm: &mut RequestFsm,
+    member: &mut PickedMember,
+    failover_from: &mut Option<String>,
+    grok_strip_attempt: &mut u8,
+) -> AuthFollowup {
+    state.account_picker.isolate(&member.source_id);
+    let Some(next) = state.account_picker.failover(&member.source_id) else {
+        return AuthFollowup::Fail;
+    };
+    tracing::info!(
+        target: "core.adapter",
+        profile_id = %state.profile_id,
+        request_id = %request_id,
+        account_id = %next.source_id,
+        failover = true,
+        failover_from = %member.source_id,
+        "switching upstream account before first stream event"
+    );
+    if failover_from.is_none() {
+        *failover_from = Some(member.source_id.clone());
+    }
+    *member = next;
+    fsm.record_switch();
+    *grok_strip_attempt = 0;
+    AuthFollowup::Switch
+}
+
+fn identity_for_member(
+    base: &Option<GrokCliRequestIdentity>,
+    cache_seed: Option<&str>,
+    account_id: Option<&str>,
+) -> Option<GrokCliRequestIdentity> {
+    let mut identity = base.clone()?;
+    identity.session_id = cache_seed.and_then(|seed| grok_session_id_for_account(seed, account_id));
+    Some(identity)
+}
+
+fn log_serving_account(
+    state: &EdgeState,
+    request_id: &str,
+    member: &PickedMember,
+    failover: bool,
+    failover_from: Option<&str>,
+) {
+    tracing::debug!(
+        target: "core.adapter",
+        profile_id = %state.profile_id,
+        request_id = %request_id,
+        account_id = %member.source_id,
+        ticket_id = %member.ticket_id,
+        failover,
+        failover_from = failover_from.unwrap_or(""),
+        "bridge upstream accepted"
+    );
+}
+
+async fn read_error_detail(
+    response: reqwest::Response,
+    force_shutdown: &tokio_util::sync::CancellationToken,
+) -> Result<Option<String>, Response> {
+    let error_body = match read_bounded_upstream_error(response, force_shutdown).await {
+        Ok(body) => body,
+        Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
+        Err(UpstreamBodyError::InvalidOrTooLarge) => Vec::new(),
+    };
+    Ok(extract_upstream_error_detail(&error_body))
 }
 
 fn parse_bridge_request(

@@ -224,6 +224,8 @@ pub struct AdapterCapabilityCell {
     pub rule_id: &'static str,
     pub verified_at: &'static str,
     pub gates: AdapterCapabilityGates,
+    /// RFC §7: polling stays fail-closed until an edge is evidenced.
+    pub multi_account: bool,
 }
 
 /// Safe decision returned to analyze / plan. Secrets never appear here.
@@ -506,6 +508,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "kimi-membership-to-claude-v1",
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -524,6 +527,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "glm-coding-plan-to-codex-v1",
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -542,6 +546,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "deepseek-api-to-codex-v1",
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     KIMI_CODEX_EDGE.to_cell(),
     AdapterCapabilityCell {
@@ -561,6 +566,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "kimi-membership-to-pi-v1",
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -579,6 +585,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "anthropic-api-to-pi-v1",
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     ANTHROPIC_CODEX_EDGE.to_cell(),
     AdapterCapabilityCell {
@@ -598,6 +605,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "openai-api-to-pi-v1",
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     OPENAI_CODEX_EDGE.to_cell(),
     AdapterCapabilityCell {
@@ -617,6 +625,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "xai-api-to-pi-v1",
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -635,6 +644,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "glm-coding-plan-to-pi-v1",
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -653,6 +663,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "deepseek-api-to-pi-v1",
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -671,6 +682,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "glm-coding-plan-to-claude-v1",
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -689,6 +701,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "deepseek-api-to-claude-v1",
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -707,6 +720,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "deepseek-api-to-dsh-v1",
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -725,6 +739,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "claude-subscription-to-pi-v1",
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -743,6 +758,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "codex-subscription-to-pi-v1",
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -761,6 +777,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "codex-subscription-to-pi-v1",
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -779,6 +796,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "grok-subscription-to-pi-v1",
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -797,6 +815,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "kimi-membership-to-grok-v1",
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -815,6 +834,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: "openai-api-to-grok-v1",
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     GROK_CLAUDE_EDGE.to_cell(),
     GROK_CODEX_EDGE.to_cell(),
@@ -840,6 +860,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
         verified_at: "2026-08-20",
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
@@ -858,6 +879,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         rule_id: CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
         verified_at: "2026-08-20",
         gates: AdapterCapabilityGates::all_open(),
+        multi_account: false,
     },
     CODEX_GROK_EDGE.to_cell(),
     CODEX_GROK_OAUTH_OTHER_EDGE.to_cell(),
@@ -875,6 +897,14 @@ pub fn lookup_adapter_capability(
     ADAPTER_CAPABILITY_MATRIX
         .iter()
         .find(|cell| cell.key == *key)
+}
+
+/// RFC §7: polling is fail-closed. Unknown rules do not open the gate.
+pub fn local_bridge_multi_account(rule_id: &str) -> bool {
+    ADAPTER_CAPABILITY_MATRIX
+        .iter()
+        .find(|cell| cell.rule_id == rule_id)
+        .is_some_and(|cell| cell.multi_account)
 }
 
 /// Evaluate the primary route for a classified source/target pair.

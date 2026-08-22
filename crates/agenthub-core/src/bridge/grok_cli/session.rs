@@ -89,17 +89,37 @@ pub fn extract_prompt_cache_seed(headers: &HeaderMap, body: &Value) -> Option<St
 }
 
 pub fn grok_session_id(seed: &str) -> Option<String> {
+    grok_session_id_for_account(seed, None)
+}
+
+/// Mix `account_id` into the session hash so prompt-cache / replay cannot
+/// cross accounts. `None` keeps the historical single-account hash.
+pub fn grok_session_id_for_account(seed: &str, account_id: Option<&str>) -> Option<String> {
     let seed = seed.trim();
     if seed.is_empty() {
         return None;
     }
-    if let Ok(uuid) = Uuid::parse_str(seed) {
-        return Some(uuid.to_string());
+    let account = account_id.map(str::trim).filter(|value| !value.is_empty());
+    if account.is_none() {
+        if let Ok(uuid) = Uuid::parse_str(seed) {
+            return Some(uuid.to_string());
+        }
+        return Some(
+            Uuid::new_v5(
+                &Uuid::NAMESPACE_URL,
+                format!("agenthub:grok-session:{seed}").as_bytes(),
+            )
+            .to_string(),
+        );
     }
     Some(
         Uuid::new_v5(
             &Uuid::NAMESPACE_URL,
-            format!("agenthub:grok-session:{seed}").as_bytes(),
+            format!(
+                "agenthub:grok-session:{}:{seed}",
+                account.expect("filtered")
+            )
+            .as_bytes(),
         )
         .to_string(),
     )

@@ -152,7 +152,23 @@ fn every_matrix_cell_has_reason_and_version() {
                 cell.rule_id
             );
         }
+        assert!(
+            !cell.multi_account,
+            "{} must keep multi_account closed until evidenced",
+            cell.rule_id
+        );
     }
+}
+
+#[test]
+fn local_bridge_multi_account_stays_fail_closed() {
+    assert!(!local_bridge_multi_account(
+        "grok-subscription-to-claude-v1"
+    ));
+    assert!(!local_bridge_multi_account(
+        "codex-subscription-to-claude-responses-v1"
+    ));
+    assert!(!local_bridge_multi_account("missing-rule"));
 }
 
 #[test]

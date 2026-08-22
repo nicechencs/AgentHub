@@ -35,28 +35,59 @@ pub(super) fn grok_replay_model(body: &Value, fallback: Option<&str>) -> String 
         .unwrap_or_default()
 }
 
-pub(super) fn apply_grok_replay(state: &EdgeState, body: &mut Value, seed: Option<&str>) {
+pub(super) fn apply_grok_replay(
+    state: &EdgeState,
+    body: &mut Value,
+    seed: Option<&str>,
+    account_id: Option<&str>,
+) {
     if !grok_upstream(state) {
         return;
     }
     let model = grok_replay_model(body, state.upstream.model.as_deref());
-    state.grok_replay.apply(body, &model, seed);
+    state
+        .grok_replay
+        .apply(body, &model, replay_session(seed, account_id).as_deref());
 }
 
-pub(super) fn capture_grok_completed(state: &EdgeState, seed: Option<&str>, completed: &Value) {
+pub(super) fn capture_grok_completed(
+    state: &EdgeState,
+    seed: Option<&str>,
+    account_id: Option<&str>,
+    completed: &Value,
+) {
     if !grok_upstream(state) {
         return;
     }
     let model = grok_replay_model(completed, state.upstream.model.as_deref());
-    state.grok_replay.store_completed(&model, seed, completed);
+    state.grok_replay.store_completed(
+        &model,
+        replay_session(seed, account_id).as_deref(),
+        completed,
+    );
 }
 
-pub(super) fn capture_grok_sse(state: &EdgeState, seed: Option<&str>, sse: &str) {
+pub(super) fn capture_grok_sse(
+    state: &EdgeState,
+    seed: Option<&str>,
+    account_id: Option<&str>,
+    sse: &str,
+) {
     if !grok_upstream(state) {
         return;
     }
     let model = grok_replay_model(&Value::Null, state.upstream.model.as_deref());
-    state.grok_replay.store_sse(&model, seed, sse);
+    state
+        .grok_replay
+        .store_sse(&model, replay_session(seed, account_id).as_deref(), sse);
+}
+
+pub(super) fn replay_session(seed: Option<&str>, account_id: Option<&str>) -> Option<String> {
+    let seed = seed.map(str::trim).filter(|value| !value.is_empty())?;
+    match account_id.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(account) => Some(format!("{account}\0{seed}")),
+        None => Some(seed.to_string()),
+    }
 }
 
 pub(super) fn map_upstream_http_error(
@@ -66,6 +97,8 @@ pub(super) fn map_upstream_http_error(
     status: StatusCode,
     retry_after: Option<HeaderValue>,
     upstream_detail: Option<&str>,
+    member: Option<&crate::bridge::account::PickedMember>,
+    failover_from: Option<&str>,
 ) -> Response {
     let local_status = if status == StatusCode::TOO_MANY_REQUESTS {
         StatusCode::TOO_MANY_REQUESTS
@@ -76,6 +109,10 @@ pub(super) fn map_upstream_http_error(
         target: "core.adapter",
         profile_id = %state.profile_id,
         request_id = %request_id,
+        account_id = member.map(|m| m.source_id.as_str()).unwrap_or(""),
+        ticket_id = member.map(|m| m.ticket_id.as_str()).unwrap_or(""),
+        failover = failover_from.is_some(),
+        failover_from = failover_from.unwrap_or(""),
         op = "upstream",
         code = "upstream_status",
         status = status.as_u16(),
@@ -129,11 +166,11 @@ pub(super) fn access_jwt_near_expiry(token: &str) -> bool {
     exp <= now + ACCESS_JWT_EXPIRY_SKEW_SECS
 }
 
-pub(super) fn try_reload_upstream_auth(state: &EdgeState) -> bool {
-    let Some(reload) = state.reload_upstream_auth.as_ref() else {
+pub(super) fn try_reload_member_auth(member: &crate::bridge::account::PickedMember) -> bool {
+    let Some(reload) = member.reload.as_ref() else {
         return false;
     };
-    let current = state.upstream.auth.token();
+    let current = member.auth.token();
     let Some(next) = reload() else {
         return false;
     };
@@ -141,7 +178,7 @@ pub(super) fn try_reload_upstream_auth(state: &EdgeState) -> bool {
     if next.is_empty() || next == current {
         return false;
     }
-    state.upstream.auth.replace_token(next);
+    member.auth.replace_token(next);
     true
 }
 

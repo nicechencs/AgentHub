@@ -14,14 +14,13 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use agenthub_core::adapter_control::AdapterBridgeStatus;
-use agenthub_core::bridge::UpstreamAuthReload;
 use agenthub_core::bridge::{
-    BridgeHostError, BridgeRuntimeHost, BridgeRuntimeState, BridgeRuntimeStatus,
-    BridgeUpstreamStatus,
+    BridgeHostError, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState, BridgeRuntimeStatus,
+    BridgeUpstreamStatus, MemberHealth, UpstreamAuthReload,
 };
 use agenthub_core::models::{
-    AdapterApplyResult, AdapterProfile, AdapterProfileStatus, AdapterRoute, AdapterSourceKind,
-    AgentId, Provider, ProviderInput,
+    local_bridge_multi_account, ticket_id, AdapterApplyResult, AdapterProfile, AdapterProfileStatus,
+    AdapterRoute, AdapterSourceKind, AgentId, Provider, ProviderInput,
 };
 use agenthub_core::services::{
     oauth_bridge_reload_callback, AdapterBridgePrepareRequest, AdapterBridgePrepared,
@@ -90,8 +89,20 @@ async fn apply_local_bridge_locked(
         prepared.profile().source_kind,
         &prepared.profile().source_id,
     );
-    let runtime =
-        match ensure_bridge_listener(host.as_ref(), prepared.runtime_material(), reload).await {
+    let members = resolve_pool_members(
+        hub.as_ref(),
+        prepared.profile(),
+        prepared.runtime_material(),
+        reload.clone(),
+    );
+    let runtime = match ensure_bridge_listener(
+        host.as_ref(),
+        prepared.runtime_material(),
+        reload,
+        members,
+        local_bridge_multi_account(&prepared.profile().rule_id),
+    )
+    .await {
             Ok(runtime) => runtime,
             Err(error) => {
                 let code = if matches!(error, BridgeHostError::Bind(_)) {
@@ -343,10 +354,18 @@ pub(crate) fn restore_adapter_bridges(
                 material.profile().source_kind,
                 &material.profile().source_id,
             );
+            let members = resolve_pool_members(
+                hub.as_ref(),
+                material.profile(),
+                material.runtime_material(),
+                reload.clone(),
+            );
             let runtime = match ensure_bridge_listener(
                 host.as_ref(),
                 material.runtime_material(),
                 reload,
+                members,
+                local_bridge_multi_account(&material.profile().rule_id),
             )
             .await
             {
@@ -788,10 +807,108 @@ fn oauth_reload_for_material(
     )
 }
 
+/// Resolve C1 surface-group siblings. A closed multi_account gate returns an
+/// empty list so the host synthesizes the lead (byte-equivalent start spec).
+/// A sibling secret failure isolates that member instead of failing start.
+fn resolve_pool_members(
+    hub: &AgentHub,
+    profile: &AdapterProfile,
+    material: &AdapterBridgeRuntimeMaterial,
+    lead_reload: Option<UpstreamAuthReload>,
+) -> Vec<BridgeMemberSpec> {
+    if !local_bridge_multi_account(&profile.rule_id) {
+        return Vec::new();
+    }
+    let lead_ticket = ticket_id(profile.source_kind, &profile.source_id);
+    let Ok(wallet) = hub.tickets.list_wallet() else {
+        return Vec::new();
+    };
+    let Some(lead_ticket_row) = wallet
+        .tickets
+        .iter()
+        .find(|ticket| ticket.id == lead_ticket)
+    else {
+        return Vec::new();
+    };
+    let Some(group) = wallet.surface_groups.iter().find(|group| {
+        group.surface == lead_ticket_row.surface
+            && group.credential_class == lead_ticket_row.credential_class
+    }) else {
+        return Vec::new();
+    };
+
+    let protocol = material.protocol();
+    let mut members = Vec::with_capacity(group.members.len());
+    for member in &group.members {
+        if member.ticket_id == lead_ticket {
+            members.push(BridgeMemberSpec {
+                ticket_id: member.ticket_id.clone(),
+                source_kind: member.source_kind.as_str().to_owned(),
+                source_id: member.source_id.clone(),
+                label: member.label.clone(),
+                auth: material.start_spec(None).upstream.auth,
+                reload: lead_reload.clone(),
+                health: MemberHealth::Renewable,
+            });
+            continue;
+        }
+        match hub.adapter_bridge.resolve_member_auth(
+            &profile.rule_id,
+            member.source_kind,
+            &member.source_id,
+        ) {
+            Ok(auth) if auth.has_token() => {
+                members.push(BridgeMemberSpec {
+                    ticket_id: member.ticket_id.clone(),
+                    source_kind: member.source_kind.as_str().to_owned(),
+                    source_id: member.source_id.clone(),
+                    label: member.label.clone(),
+                    auth,
+                    reload: oauth_bridge_reload_callback(
+                        hub.accounts.clone(),
+                        AdapterSecretResolver::new(hub.db.clone()),
+                        member.source_kind,
+                        member.source_id.clone(),
+                        protocol,
+                    ),
+                    health: MemberHealth::Renewable,
+                });
+            }
+            _ => {
+                tracing::info!(
+                    target: "gui",
+                    op = "adapter_bridge_member_isolated",
+                    profile_id = %profile.id,
+                    account_id = %member.source_id,
+                    "isolating pool member whose secret could not be resolved"
+                );
+                members.push(BridgeMemberSpec {
+                    ticket_id: member.ticket_id.clone(),
+                    source_kind: member.source_kind.as_str().to_owned(),
+                    source_id: member.source_id.clone(),
+                    label: member.label.clone(),
+                    auth: agenthub_core::bridge::ResolvedAuth::bearer(""),
+                    reload: oauth_bridge_reload_callback(
+                        hub.accounts.clone(),
+                        AdapterSecretResolver::new(hub.db.clone()),
+                        member.source_kind,
+                        member.source_id.clone(),
+                        protocol,
+                    ),
+                    health: MemberHealth::NeedsLogin,
+                });
+            }
+        }
+    }
+    members
+}
+
 pub(crate) async fn ensure_bridge_listener(
     host: &BridgeRuntimeHost,
     material: &AdapterBridgeRuntimeMaterial,
     reload: Option<UpstreamAuthReload>,
+    members: Vec<BridgeMemberSpec>,
+    multi_account: bool,
 ) -> Result<EnsuredBridgeListener, BridgeHostError> {
     let profile_id = material.profile_id().to_owned();
     let had_running = host
@@ -799,11 +916,11 @@ pub(crate) async fn ensure_bridge_listener(
         .is_some_and(|status| status.running);
     let preferred = material
         .start_spec(None)
-        .with_reload_upstream_auth(reload.clone());
+        .with_reload_upstream_auth(reload.clone())
+        .with_members(members.clone())
+        .with_multi_account(multi_account);
     match host.start(preferred).await {
         Ok(status) => {
-            // host.start is idempotent for an identical live instance; ownership
-            // only attaches when we did not already have a running listener.
             Ok(EnsuredBridgeListener {
                 owned_by_saga: !had_running,
                 status,
@@ -814,7 +931,8 @@ pub(crate) async fn ensure_bridge_listener(
                 Ok(_) | Err(BridgeHostError::NotRunning) => {}
                 Err(error) => return Err(error),
             }
-            let status = start_with_bind_fallback(host, material, reload).await?;
+            let status =
+                start_with_bind_fallback(host, material, reload, members, multi_account).await?;
             Ok(EnsuredBridgeListener {
                 status,
                 owned_by_saga: true,
@@ -825,7 +943,9 @@ pub(crate) async fn ensure_bridge_listener(
                 .start(
                     material
                         .start_spec(Some(0))
-                        .with_reload_upstream_auth(reload),
+                        .with_reload_upstream_auth(reload)
+                        .with_members(members)
+                        .with_multi_account(multi_account),
                 )
                 .await?;
             Ok(EnsuredBridgeListener {
@@ -841,12 +961,16 @@ async fn start_with_bind_fallback(
     host: &BridgeRuntimeHost,
     material: &AdapterBridgeRuntimeMaterial,
     reload: Option<UpstreamAuthReload>,
+    members: Vec<BridgeMemberSpec>,
+    multi_account: bool,
 ) -> Result<BridgeRuntimeStatus, BridgeHostError> {
     match host
         .start(
             material
                 .start_spec(None)
-                .with_reload_upstream_auth(reload.clone()),
+                .with_reload_upstream_auth(reload.clone())
+                .with_members(members.clone())
+                .with_multi_account(multi_account),
         )
         .await
     {
@@ -855,7 +979,9 @@ async fn start_with_bind_fallback(
             host.start(
                 material
                     .start_spec(Some(0))
-                    .with_reload_upstream_auth(reload),
+                    .with_reload_upstream_auth(reload)
+                    .with_members(members)
+                    .with_multi_account(multi_account),
             )
             .await
         }

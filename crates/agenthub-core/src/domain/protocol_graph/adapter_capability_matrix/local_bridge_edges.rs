@@ -27,6 +27,8 @@ pub struct LocalBridgeEdge {
     /// Model id presented on the local loopback / listed by `/v1/models`.
     /// Empty means the projection deliberately omits a default model.
     pub default_model: &'static str,
+    /// RFC §7. Opening an edge is a later evidence step; keep closed here.
+    pub multi_account: bool,
 }
 
 impl LocalBridgeEdge {
@@ -48,6 +50,7 @@ impl LocalBridgeEdge {
             rule_id: self.rule_id,
             verified_at: self.verified_at,
             gates: self.gates,
+            multi_account: self.multi_account,
         }
     }
 }
@@ -67,6 +70,7 @@ pub const KIMI_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     verified_at: VERIFIED_AT,
     gates: AdapterCapabilityGates::all_open(),
     default_model: "kimi-k2.5",
+    multi_account: false,
 };
 
 pub const ANTHROPIC_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
@@ -84,6 +88,7 @@ pub const ANTHROPIC_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     verified_at: VERIFIED_AT,
     gates: AdapterCapabilityGates::all_open(),
     default_model: "claude-sonnet-4-20250514",
+    multi_account: false,
 };
 
 pub const OPENAI_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
@@ -101,6 +106,7 @@ pub const OPENAI_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     verified_at: "2026-08-21",
     gates: AdapterCapabilityGates::all_open(),
     default_model: "gpt-4o",
+    multi_account: false,
 };
 
 pub const GROK_CLAUDE_EDGE: LocalBridgeEdge = LocalBridgeEdge {
@@ -118,6 +124,7 @@ pub const GROK_CLAUDE_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     verified_at: "2026-08-15",
     gates: AdapterCapabilityGates::all_open(),
     default_model: "grok-4.5",
+    multi_account: false,
 };
 
 pub const GROK_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
@@ -135,6 +142,7 @@ pub const GROK_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     verified_at: "2026-08-20",
     gates: AdapterCapabilityGates::all_open(),
     default_model: "grok-4.5",
+    multi_account: false,
 };
 
 /// Closed App Server candidate. Not a live writer.
@@ -153,6 +161,7 @@ pub const CODEX_CLAUDE_APP_SERVER_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     verified_at: VERIFIED_AT,
     gates: AdapterCapabilityGates::all_closed(),
     default_model: "",
+    multi_account: false,
 };
 
 pub const CODEX_CLAUDE_RESPONSES_EDGE: LocalBridgeEdge = LocalBridgeEdge {
@@ -170,6 +179,7 @@ pub const CODEX_CLAUDE_RESPONSES_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     verified_at: "2026-08-15",
     gates: AdapterCapabilityGates::all_open(),
     default_model: "gpt-5.4",
+    multi_account: false,
 };
 
 pub const CODEX_GROK_EDGE: LocalBridgeEdge = LocalBridgeEdge {
@@ -187,6 +197,7 @@ pub const CODEX_GROK_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     verified_at: "2026-08-20",
     gates: AdapterCapabilityGates::all_open(),
     default_model: "",
+    multi_account: false,
 };
 
 pub const CODEX_GROK_OAUTH_OTHER_EDGE: LocalBridgeEdge = LocalBridgeEdge {
@@ -204,6 +215,7 @@ pub const CODEX_GROK_OAUTH_OTHER_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     verified_at: "2026-08-20",
     gates: AdapterCapabilityGates::all_open(),
     default_model: "",
+    multi_account: false,
 };
 
 pub const CODEX_KIMI_EDGE: LocalBridgeEdge = LocalBridgeEdge {
@@ -221,6 +233,7 @@ pub const CODEX_KIMI_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     verified_at: "2026-08-20",
     gates: AdapterCapabilityGates::all_open(),
     default_model: "",
+    multi_account: false,
 };
 
 pub const CODEX_KIMI_OAUTH_OTHER_EDGE: LocalBridgeEdge = LocalBridgeEdge {
@@ -238,6 +251,7 @@ pub const CODEX_KIMI_OAUTH_OTHER_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     verified_at: "2026-08-20",
     gates: AdapterCapabilityGates::all_open(),
     default_model: "",
+    multi_account: false,
 };
 
 pub const CODEX_DSH_EDGE: LocalBridgeEdge = LocalBridgeEdge {
@@ -255,6 +269,7 @@ pub const CODEX_DSH_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     verified_at: "2026-08-20",
     gates: AdapterCapabilityGates::all_open(),
     default_model: "",
+    multi_account: false,
 };
 
 pub const CODEX_DSH_OAUTH_OTHER_EDGE: LocalBridgeEdge = LocalBridgeEdge {
@@ -272,6 +287,7 @@ pub const CODEX_DSH_OAUTH_OTHER_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     verified_at: "2026-08-20",
     gates: AdapterCapabilityGates::all_open(),
     default_model: "",
+    multi_account: false,
 };
 
 /// Claude subscription → Codex. Direction is ③-open; bind waits on fixtures / e2e.
@@ -290,6 +306,7 @@ pub const CLAUDE_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     verified_at: "2026-08-22",
     gates: AdapterCapabilityGates::all_closed(),
     default_model: "claude-sonnet-4-20250514",
+    multi_account: false,
 };
 
 /// Every local-bridge matrix cell. Order does not matter for lookup.
