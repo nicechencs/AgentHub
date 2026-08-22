@@ -2,6 +2,7 @@ import { ArrowRight, ChevronDown, Copy } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { StatusPin } from '@/components/shared/StatusPin';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,8 +21,11 @@ import type {
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
 } from '@/lib/backend/contracts/adapter';
+import type { TicketSurfaceGroupView } from '@/lib/backend/contracts/ticket';
 import type { ConnectionEntry } from '@/lib/connection-entry';
+import { cn } from '@/lib/utils';
 import { AdapterErrorLines } from './adapter-components';
+import { bridgeMemberRows, memberPinTone } from './adapter-member-model';
 import {
   adapterBridgeEndpointLabel,
   adapterBridgeUpstreamLabel,
@@ -46,6 +50,7 @@ export function AdapterProfileDetailDialog({
   bridgeStatus,
   statusUnavailable,
   entries,
+  surfaceGroups = [],
   busy,
   error,
   onClose,
@@ -57,6 +62,7 @@ export function AdapterProfileDetailDialog({
   bridgeStatus?: AdapterBridgeRuntimeStatus;
   statusUnavailable: boolean;
   entries: ConnectionEntry[];
+  surfaceGroups?: readonly TicketSurfaceGroupView[];
   busy: boolean;
   error: unknown;
   onClose: () => void;
@@ -73,6 +79,7 @@ export function AdapterProfileDetailDialog({
             bridgeStatus={bridgeStatus}
             statusUnavailable={statusUnavailable}
             entries={entries}
+            surfaceGroups={surfaceGroups}
             busy={busy}
             error={error}
             onClose={onClose}
@@ -91,6 +98,7 @@ function ProfileDetailBody({
   bridgeStatus,
   statusUnavailable,
   entries,
+  surfaceGroups,
   busy,
   error,
   onClose,
@@ -102,6 +110,7 @@ function ProfileDetailBody({
   bridgeStatus?: AdapterBridgeRuntimeStatus;
   statusUnavailable: boolean;
   entries: ConnectionEntry[];
+  surfaceGroups: readonly TicketSurfaceGroupView[];
   busy: boolean;
   error: unknown;
   onClose: () => void;
@@ -120,6 +129,9 @@ function ProfileDetailBody({
   const isBridge = profile.route === 'local_bridge';
   const endpoint = isBridge ? adapterBridgeEndpointLabel(profile, bridgeStatus) : null;
   const recovery = adapterProfileRecoveryGuide(profile, t);
+  const members = isBridge
+    ? bridgeMemberRows({ profile, groups: surfaceGroups, entries, t })
+    : [];
 
   const copyEndpoint = async () => {
     if (!endpoint) return;
@@ -154,6 +166,43 @@ function ProfileDetailBody({
             {runtimeStatus ? <DetailStatusLine view={runtimeStatus} /> : null}
           </div>
         </section>
+
+        {members.length > 0 ? (
+          <section className="space-y-1.5">
+            <h3 className="text-body font-medium">{t('routes.members.title')}</h3>
+            <ul className="space-y-1.5 rounded-btn border border-border bg-subtle p-3">
+              {members.map((member) => (
+                <li
+                  key={member.ticketId}
+                  className={cn(
+                    'flex min-w-0 items-start gap-2',
+                    member.isolated && 'text-muted',
+                  )}
+                >
+                  <StatusPin
+                    tone={memberPinTone(member)}
+                    size="md"
+                    className="mt-1.5"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      {member.agentId ? (
+                        <AgentDot agentId={member.agentId} size="sm" title={null} />
+                      ) : null}
+                      <span className={cn('truncate text-body', member.isolated ? 'text-muted' : 'text-primary')}>
+                        {member.label}
+                      </span>
+                      {member.lead ? (
+                        <Badge variant="default">{t('routes.members.lead')}</Badge>
+                      ) : null}
+                    </div>
+                    <p className="text-meta text-muted">{member.reason}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         {isBridge ? (
           <section className="space-y-1.5">

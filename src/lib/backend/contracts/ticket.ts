@@ -8,6 +8,7 @@ import {
   mapAdapterApplyPlan,
   type AdapterApplyPlanWire,
 } from './adapter-wire';
+import type { AuthHealth } from './auth-state';
 
 /** Product surface recognized at import time (or unknown). */
 export type TicketSurface =
@@ -62,6 +63,12 @@ export interface BindingView {
   bridge: BindingBridgeRuntime | null;
 }
 
+/**
+ * Picker snapshot health (RFC §3.2). Optional on the C1 wire so old callers
+ * keep working; when absent the UI overlays account-row AuthHealth.
+ */
+export type TicketMemberHealth = 'renewable' | 'needs_login' | 'try_once';
+
 /** One known-surface wallet row inside a §5.5 poll pool. */
 export interface TicketSurfaceMemberView {
   ticketId: string;
@@ -69,6 +76,8 @@ export interface TicketSurfaceMemberView {
   sourceId: string;
   agentId: AgentId;
   label: string;
+  /** Present when mock / future live wire attaches picker health. */
+  health?: TicketMemberHealth;
 }
 
 /** Same `(surface, credentialClass)` members. Unknown surfaces are omitted. */
@@ -117,6 +126,7 @@ export interface TicketSurfaceMemberViewWire {
   sourceId: string;
   agentId: AgentId;
   label: string;
+  health?: string;
 }
 
 export interface TicketSurfaceGroupViewWire {
@@ -208,13 +218,59 @@ export function mapBindingView(wire: BindingViewWire): BindingView {
   };
 }
 
+/** Accept camel, snake, or Rust enum names; unknown values stay unset. */
+export function mapTicketMemberHealth(value: unknown): TicketMemberHealth | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase().replace(/[- ]/g, '_');
+  if (normalized === 'renewable') return 'renewable';
+  if (normalized === 'needs_login' || normalized === 'needslogin') return 'needs_login';
+  if (normalized === 'try_once' || normalized === 'tryonce') return 'try_once';
+  return undefined;
+}
+
+/** RFC §3.2: AuthHealth → picker health. Unknown / NeedsAttention = one try. */
+export function memberHealthFromAuthHealth(
+  health?: AuthHealth | null,
+): TicketMemberHealth {
+  if (health === 'needs_login' || health === 'missing') return 'needs_login';
+  if (health === 'unknown') return 'try_once';
+  return 'renewable';
+}
+
+export function ticketMemberHealthLabel(health: TicketMemberHealth): string {
+  if (health === 'needs_login') return '需要重新登录';
+  if (health === 'try_once') return '可试一次';
+  return '可接单';
+}
+
+export function isIsolatedMemberHealth(health: TicketMemberHealth): boolean {
+  return health === 'needs_login';
+}
+
+export function surfaceGroupForTicketId(
+  groups: readonly TicketSurfaceGroupView[],
+  ticketId: string,
+): TicketSurfaceGroupView | undefined {
+  return groups.find((group) => group.members.some((member) => member.ticketId === ticketId));
+}
+
+export function surfaceGroupMemberCount(
+  groups: readonly TicketSurfaceGroupView[],
+  ticketId: string,
+): number {
+  const count = surfaceGroupForTicketId(groups, ticketId)?.members.length ?? 0;
+  return count > 0 ? count : 1;
+}
+
 export function mapTicketSurfaceMember(wire: TicketSurfaceMemberViewWire): TicketSurfaceMemberView {
+  const health = mapTicketMemberHealth(wire.health);
   return {
     ticketId: wire.ticketId,
     sourceKind: mapSourceKind(wire.sourceKind),
     sourceId: wire.sourceId,
     agentId: wire.agentId,
     label: typeof wire.label === 'string' ? wire.label : '',
+    ...(health ? { health } : {}),
   };
 }
 

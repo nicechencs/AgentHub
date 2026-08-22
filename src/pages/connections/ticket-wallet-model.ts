@@ -15,6 +15,7 @@ import type {
 import {
   bindingRouteDashboardLabel,
   bindingRouteUsageLabel,
+  surfaceGroupMemberCount,
   ticketCredentialClassLabel,
   ticketSurfaceLabel,
 } from '@/lib/backend/contracts/ticket';
@@ -254,15 +255,21 @@ export function bindingsForTicket(
 export function formatBindingUsageParts(
   binding: BindingView,
   t?: TranslateFn,
+  memberCount = 1,
 ): TicketUsagePart[] {
   const route = bindingUsageRouteLabel(binding.route, t);
   const name = agentDisplayName(binding.agentId);
+  const poolSuffix = binding.route === 'bridge' && memberCount > 1
+    ? (t
+      ? t('connections.list.poolSuffix', { n: memberCount })
+      : ` · ${memberCount} 个登录轮询承接`)
+    : '';
   if (binding.route === 'bridge') {
     const suffix = binding.bridge?.running
-      ? (t ? t('connections.list.runningSuffix') : ' · 运行中')
+      ? `${poolSuffix}${t ? t('connections.list.runningSuffix') : ' · 运行中'}`
       : binding.bridge && !binding.bridge.running
-        ? (t ? t('connections.list.stoppedSuffix') : ' · 已停止')
-        : '';
+        ? `${poolSuffix}${t ? t('connections.list.stoppedSuffix') : ' · 已停止'}`
+        : poolSuffix;
     return [
       { kind: 'text', text: t ? t('connections.list.usageOpen', { name }) : `${name}（` },
       { kind: 'bridge', label: route, href: bridgesHrefForProfile(binding.profileId) },
@@ -275,8 +282,12 @@ export function formatBindingUsageParts(
   }];
 }
 
-export function formatBindingUsagePart(binding: BindingView, t?: TranslateFn): string {
-  return formatBindingUsageParts(binding, t)
+export function formatBindingUsagePart(
+  binding: BindingView,
+  t?: TranslateFn,
+  memberCount = 1,
+): string {
+  return formatBindingUsageParts(binding, t, memberCount)
     .map((part) => (part.kind === 'bridge' ? part.label : part.text))
     .join('');
 }
@@ -285,6 +296,7 @@ export function formatTicketUsageParts(
   bindings: readonly BindingView[],
   ownerAgentId?: AgentId,
   t?: TranslateFn,
+  memberCount = 1,
 ): TicketUsagePart[] {
   const active = bindings.filter((b) => b.active);
   if (active.length === 0) {
@@ -302,7 +314,7 @@ export function formatTicketUsageParts(
     && active.length === 1
     && active[0]!.agentId === ownerAgentId;
   if (selfOnly) {
-    return formatBindingUsageParts(active[0]!, t);
+    return formatBindingUsageParts(active[0]!, t, memberCount);
   }
   const parts: TicketUsagePart[] = [{
     kind: 'text',
@@ -310,7 +322,7 @@ export function formatTicketUsageParts(
   }];
   active.forEach((binding, index) => {
     if (index > 0) parts.push({ kind: 'text', text: ' · ' });
-    parts.push(...formatBindingUsageParts(binding, t));
+    parts.push(...formatBindingUsageParts(binding, t, memberCount));
   });
   return parts;
 }
@@ -319,8 +331,9 @@ export function formatTicketUsageText(
   bindings: readonly BindingView[],
   ownerAgentId?: AgentId,
   t?: TranslateFn,
+  memberCount = 1,
 ): string {
-  return formatTicketUsageParts(bindings, ownerAgentId, t)
+  return formatTicketUsageParts(bindings, ownerAgentId, t, memberCount)
     .map((part) => (part.kind === 'bridge' ? part.label : part.text))
     .join('');
 }
@@ -358,9 +371,10 @@ export function filterTickets(
 function ticketSearchHaystack(
   ticket: TicketView,
   bindings: readonly BindingView[],
+  memberCount = 1,
 ): string {
   const own = bindings.filter((binding) => binding.ticketId === ticket.id);
-  const usageText = formatTicketUsageText(own);
+  const usageText = formatTicketUsageText(own, undefined, undefined, memberCount);
   const bindingBits = own.flatMap((binding) => [
     binding.agentId,
     agentDisplayName(binding.agentId),
@@ -389,10 +403,14 @@ export function searchTickets(
   tickets: readonly TicketView[],
   query: string,
   bindings: readonly BindingView[] = [],
+  groups: TicketWallet['surfaceGroups'] = [],
 ): TicketView[] {
   const q = query.trim().toLowerCase();
   if (!q) return [...tickets];
-  return tickets.filter((ticket) => ticketSearchHaystack(ticket, bindings).includes(q));
+  return tickets.filter((ticket) => {
+    const memberCount = surfaceGroupMemberCount(groups, ticket.id);
+    return ticketSearchHaystack(ticket, bindings, memberCount).includes(q);
+  });
 }
 
 /** Soft agent filter: tickets that belong to or bind to the agent. */
@@ -427,13 +445,14 @@ export function buildTicketWalletRows(
   const t = options.t;
 
   let tickets = filterTickets(wallet.tickets, filter);
-  tickets = searchTickets(tickets, query, wallet.bindings);
+  tickets = searchTickets(tickets, query, wallet.bindings, wallet.surfaceGroups);
   if (agentFilterId) {
     tickets = filterTicketsByAgentUsage(wallet, tickets, agentFilterId);
   }
 
   return tickets.map((ticket) => {
     const bindings = bindingsForTicket(wallet, ticket.id);
+    const memberCount = surfaceGroupMemberCount(wallet.surfaceGroups, ticket.id);
     const highlighted = Boolean(
       highlightAgentId
       && bindings.some((b) => b.active && b.agentId === highlightAgentId),
@@ -442,8 +461,8 @@ export function buildTicketWalletRows(
       ticket,
       bindings,
       highlighted,
-      usageText: formatTicketUsageText(bindings, ticket.agentId, t),
-      usageParts: formatTicketUsageParts(bindings, ticket.agentId, t),
+      usageText: formatTicketUsageText(bindings, ticket.agentId, t, memberCount),
+      usageParts: formatTicketUsageParts(bindings, ticket.agentId, t, memberCount),
     };
   });
 }
