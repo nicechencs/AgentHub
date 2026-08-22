@@ -179,43 +179,57 @@ impl ConnectionService {
         &self,
         account: &Account,
     ) -> Result<(Account, ActiveBinding)> {
-        self.require_current_flag(account.is_current, "account")?;
         self.db.with_conn(|conn| {
             let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-            let created = account_create_conn(&tx, account)?;
-            provider_clear_current_conn(&tx, created.agent_id)?;
-            let binding = binding_set_connection_refs_conn(
-                &tx,
-                &Self::key(created.agent_id),
-                Some(created.id.clone()),
-                None,
-                &created.updated_at,
-            )?;
+            let result = self.create_and_activate_account_conn(&tx, account)?;
             tx.commit()?;
-            Ok((created, binding.into()))
+            Ok(result)
         })
     }
 
-    /// Update an existing account and make it the sole active connection.
-    pub fn update_and_activate_account(
+    /// Insert + activate inside an already-open IMMEDIATE transaction.
+    pub(crate) fn create_and_activate_account_conn(
         &self,
+        conn: &Connection,
         account: &Account,
     ) -> Result<(Account, ActiveBinding)> {
         self.require_current_flag(account.is_current, "account")?;
-        self.db.with_conn(|conn| {
-            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-            let updated = account_update_conn(&tx, account)?;
-            provider_clear_current_conn(&tx, updated.agent_id)?;
-            let binding = binding_set_connection_refs_conn(
-                &tx,
-                &Self::key(updated.agent_id),
-                Some(updated.id.clone()),
-                None,
-                &updated.updated_at,
-            )?;
-            tx.commit()?;
-            Ok((updated, binding.into()))
-        })
+        let created = account_create_conn(conn, account)?;
+        provider_clear_current_conn(conn, created.agent_id)?;
+        let binding = binding_set_connection_refs_conn(
+            conn,
+            &Self::key(created.agent_id),
+            Some(created.id.clone()),
+            None,
+            &created.updated_at,
+        )?;
+        Ok((created, binding.into()))
+    }
+
+    /// Insert a non-current account inside an already-open IMMEDIATE transaction.
+    pub(crate) fn create_account_conn(
+        &self,
+        conn: &Connection,
+        account: &Account,
+    ) -> Result<Account> {
+        if account.is_current {
+            return Err(AppError::InvalidArg(
+                "create_account_conn requires is_current=false".into(),
+            ));
+        }
+        account_create_conn(conn, account)
+    }
+
+    /// Update an existing account and make it the sole active connection.
+    ///
+    /// `expected_updated_at` is the caller's snapshot CAS token. A mismatch
+    /// means another writer already committed; the caller must re-read.
+    pub fn update_and_activate_account(
+        &self,
+        account: &Account,
+        expected_updated_at: &str,
+    ) -> Result<(Account, ActiveBinding)> {
+        self.update_and_activate_account_with_revisions(account, expected_updated_at, None)
     }
 
     /// Duplicate-merge variant with transaction-local optimistic checks. The

@@ -64,9 +64,9 @@ struct AccountMutationFootprint {
     after_trash: Vec<TrashRowSnapshot>,
 }
 
-struct AccountCommittedMutation {
-    stored: Account,
-    deleted: Vec<Account>,
+pub(super) struct AccountCommittedMutation {
+    pub(super) stored: Account,
+    pub(super) deleted: Vec<Account>,
     footprint: AccountMutationFootprint,
 }
 
@@ -333,39 +333,31 @@ impl AccountService {
             }
         }
 
-        // 同一 agent 下相同授权票（同一 API Key）不重复建池。
-        if let Some(existing) = self.find_duplicate_authorization(
-            adapter.as_ref(),
-            agent,
-            AccountKind::ApiKey,
-            &credentials,
-        )? {
-            return self.merge_into_existing(
-                adapter.as_ref(),
-                existing,
-                AccountKind::ApiKey,
-                display,
-                credentials,
-                extra,
-                false,
-            );
-        }
-
         let now = now_ts();
         let row = Account {
             id: format!("{}-acc-{}", agent.as_str(), Uuid::new_v4()),
             agent_id: agent,
             kind: AccountKind::ApiKey,
-            label: display,
-            credentials,
-            extra,
+            label: display.clone(),
+            credentials: credentials.clone(),
+            extra: extra.clone(),
             status: "active".into(),
             is_current: false,
             created_at: now.clone(),
             updated_at: now,
         };
         let row = self.prepare_account_surface(row);
-        self.repo.create(&row)
+        self.commit_authorization_merge(
+            adapter.as_ref(),
+            &row,
+            AccountKind::ApiKey,
+            display,
+            credentials,
+            extra,
+            false,
+        )
+        .map(|committed| committed.stored)
+        .map_err(AccountMutationError::into_error)
     }
 
     /// Update an existing API Key account (label and/or key).
@@ -616,7 +608,9 @@ impl AccountService {
                 if let Some(credentials) = &payload.credentials {
                     next.credentials = credentials.clone();
                 }
-                next.extra = payload.extra.clone();
+                let mut extra = payload.extra.clone();
+                Self::copy_persisted_surface(&source.extra, &mut extra);
+                next.extra = extra;
                 next.status = "active".into();
                 next.updated_at = now.clone();
                 next = self.prepare_account_surface(next);
@@ -643,6 +637,8 @@ impl AccountService {
                     next.id = target_existing.id.clone();
                     next.created_at = target_existing.created_at.clone();
                     next.is_current = mark_current || target_existing.is_current;
+                    Self::copy_persisted_surface(&target_existing.extra, &mut next.extra);
+                    next = self.prepare_account_surface(next);
                     let mut deletes = duplicates
                         .into_iter()
                         .filter(|row| row.id != target_existing.id)
@@ -689,13 +685,13 @@ impl AccountService {
             .map_err(AccountMutationError::pre)
     }
 
-    /// Adopt an already-known duplicate target inside one IMMEDIATE
-    /// transaction. Target membership is re-derived from the transaction
-    /// snapshot; leftover cleanup never re-lists the pool.
+    /// Snapshot the agent pool, decide insert vs merge from that snapshot, and
+    /// commit inside one IMMEDIATE transaction. Duplicate membership is never
+    /// taken from an outer stale `existing.id`.
     pub(super) fn commit_authorization_merge(
         &self,
         adapter: &dyn AgentAdapter,
-        existing: &Account,
+        incoming: &Account,
         kind: AccountKind,
         label: String,
         credentials: Value,
@@ -706,7 +702,7 @@ impl AccountService {
             .with_conn(|conn| {
                 let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
                 let now = now_ts();
-                let agent = existing.agent_id;
+                let agent = incoming.agent_id;
                 let accounts = account_list_for_agent_conn(&tx, agent)?;
                 let providers = provider_list_for_agent_conn(&tx, agent)?;
                 let binding = get_binding_row(&tx, agent)?;
@@ -719,43 +715,65 @@ impl AccountService {
                     &credentials,
                     &accounts,
                 );
-                let target_existing = pick_primary_authorization_match(duplicates.clone())
-                    .or_else(|| accounts.iter().find(|row| row.id == existing.id).cloned())
-                    .ok_or_else(|| {
-                        AppError::NotFound(format!("account not found: {}", existing.id))
-                    })?;
-                let deletes = duplicates
-                    .into_iter()
-                    .filter(|row| row.id != target_existing.id)
-                    .collect::<Vec<_>>();
+                let committed = if let Some(target_existing) =
+                    pick_primary_authorization_match(duplicates.clone())
+                {
+                    let deletes = duplicates
+                        .into_iter()
+                        .filter(|row| row.id != target_existing.id)
+                        .collect::<Vec<_>>();
 
-                let mut next = target_existing.clone();
-                next.kind = kind;
-                next.label = label;
-                next.credentials = credentials;
-                next.extra = extra;
-                next.status = "active".into();
-                next.updated_at = now.clone();
-                if mark_current {
-                    next.is_current = true;
-                }
-                next = self.prepare_account_surface(next);
+                    let mut merged_extra = extra;
+                    Self::copy_persisted_surface(&target_existing.extra, &mut merged_extra);
+                    let mut next = target_existing.clone();
+                    next.kind = kind;
+                    next.label = label;
+                    next.credentials = credentials;
+                    next.extra = merged_extra;
+                    next.status = "active".into();
+                    next.updated_at = now.clone();
+                    if mark_current {
+                        next.is_current = true;
+                    }
+                    next = self.prepare_account_surface(next);
 
-                let committed = apply_frozen_account_plan(
-                    &self.connections,
-                    &tx,
-                    agent,
-                    &next,
-                    &target_existing,
-                    &deletes,
-                    &target_existing.id,
-                    next.is_current,
-                    &now,
-                    &accounts,
-                    &providers,
-                    &binding,
-                    &trash,
-                )?;
+                    apply_frozen_account_plan(
+                        &self.connections,
+                        &tx,
+                        agent,
+                        &next,
+                        &target_existing,
+                        &deletes,
+                        &target_existing.id,
+                        next.is_current,
+                        &now,
+                        &accounts,
+                        &providers,
+                        &binding,
+                        &trash,
+                    )?
+                } else {
+                    let mut next = incoming.clone();
+                    next.kind = kind;
+                    next.label = label;
+                    next.credentials = credentials;
+                    next.extra = extra;
+                    next.status = "active".into();
+                    next.updated_at = now.clone();
+                    next.is_current = mark_current;
+                    next = self.prepare_account_surface(next);
+                    apply_frozen_account_insert(
+                        &self.connections,
+                        &tx,
+                        agent,
+                        &next,
+                        mark_current,
+                        &accounts,
+                        &providers,
+                        &binding,
+                        &trash,
+                    )?
+                };
                 tx.commit()?;
                 Ok(committed)
             })
@@ -1066,39 +1084,34 @@ impl AccountService {
             input.extra
         };
 
-        if let Some(ref ad) = adapter {
-            if let Some(existing) = self.find_duplicate_authorization(
-                ad.as_ref(),
-                input.agent_id,
-                input.kind,
-                &input.credentials,
-            )? {
-                return self.merge_into_existing(
-                    ad.as_ref(),
-                    existing,
-                    input.kind,
-                    label,
-                    input.credentials,
-                    extra,
-                    input.is_current,
-                );
-            }
-        }
-
         let now = now_ts();
         let row = Account {
             id: format!("{}-acc-{}", input.agent_id.as_str(), Uuid::new_v4()),
             agent_id: input.agent_id,
             kind: input.kind,
-            label,
-            credentials: input.credentials,
-            extra,
+            label: label.clone(),
+            credentials: input.credentials.clone(),
+            extra: extra.clone(),
             status: "active".into(),
             is_current: input.is_current,
             created_at: now.clone(),
             updated_at: now,
         };
         let row = self.prepare_account_surface(row);
+        if let Some(ref ad) = adapter {
+            return self
+                .commit_authorization_merge(
+                    ad.as_ref(),
+                    &row,
+                    input.kind,
+                    label,
+                    input.credentials,
+                    extra,
+                    input.is_current,
+                )
+                .map(|committed| committed.stored)
+                .map_err(AccountMutationError::into_error);
+        }
         if row.is_current {
             let (created, _binding) = self.connections.create_and_activate_account(&row)?;
             Ok(created)
@@ -1282,10 +1295,51 @@ impl AccountService {
         account.updated_at = now_ts();
         account.status = "active".into();
         account = self.prepare_account_surface(account);
-        if agent == AgentId::Pi {
-            return self.persist_pi_oauth_account_update(&account, &expected_updated_at);
+        let adapter = self.adapter(agent).ok();
+        self.persist_refreshed_account(
+            adapter.as_deref(),
+            account,
+            &expected_updated_at,
+            agent == AgentId::Pi,
+        )
+    }
+
+    fn persist_refreshed_account(
+        &self,
+        adapter: Option<&dyn AgentAdapter>,
+        account: Account,
+        expected_updated_at: &str,
+        pi: bool,
+    ) -> Result<Account> {
+        let intended = account.clone();
+        let persisted = if pi {
+            self.persist_pi_oauth_account_update(&account, expected_updated_at)?
+        } else {
+            self.persist_healed_fields(&account, expected_updated_at)?
+        };
+        if persisted.credentials == intended.credentials {
+            return Ok(persisted);
         }
-        self.persist_healed_fields(&account, &expected_updated_at)
+        let same_grant = adapter.is_some_and(|adapter| {
+            accounts_same_authorization(adapter, intended.kind, &intended.credentials, &persisted)
+        });
+        if !same_grant {
+            return Ok(persisted);
+        }
+        let expected = persisted.updated_at.clone();
+        let mut extra = intended.extra;
+        Self::copy_persisted_surface(&persisted.extra, &mut extra);
+        let mut retry = persisted;
+        retry.credentials = intended.credentials;
+        retry.label = intended.label;
+        retry.extra = extra;
+        retry.status = "active".into();
+        retry = self.prepare_account_surface(retry);
+        if pi {
+            self.persist_pi_oauth_account_update(&retry, &expected)
+        } else {
+            self.persist_healed_fields(&retry, &expected)
+        }
     }
 }
 
@@ -1474,6 +1528,74 @@ fn apply_frozen_account_plan(
         },
     })
 }
+
+fn apply_frozen_account_insert(
+    connections: &ConnectionService,
+    tx: &Transaction<'_>,
+    agent: AgentId,
+    next: &Account,
+    mark_current: bool,
+    snapshot_accounts: &[Account],
+    snapshot_providers: &[Provider],
+    snapshot_binding: &Option<BindingRowSnapshot>,
+    snapshot_trash: &[TrashRowSnapshot],
+) -> Result<AccountCommittedMutation> {
+    let stored = if mark_current {
+        connections.create_and_activate_account_conn(tx, next)?.0
+    } else {
+        connections.create_account_conn(tx, next)?
+    };
+
+    let mut affected_account_ids = vec![stored.id.clone()];
+    if mark_current {
+        for row in snapshot_accounts.iter().filter(|row| row.is_current) {
+            if !affected_account_ids.iter().any(|id| id == &row.id) {
+                affected_account_ids.push(row.id.clone());
+            }
+        }
+    }
+    let before_accounts = affected_account_ids
+        .iter()
+        .filter_map(|id| snapshot_accounts.iter().find(|row| row.id == *id).cloned())
+        .collect::<Vec<_>>();
+    let after_accounts = affected_account_ids
+        .iter()
+        .filter_map(|id| account_get_by_id_conn(tx, id).ok().flatten())
+        .collect::<Vec<_>>();
+    let before_providers = if mark_current {
+        snapshot_providers
+            .iter()
+            .filter(|row| row.is_current)
+            .cloned()
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let after_providers = before_providers
+        .iter()
+        .filter_map(|row| provider_get_by_id_conn(tx, &row.id).ok().flatten())
+        .collect::<Vec<_>>();
+    let after_binding = get_binding_row(tx, agent)?;
+    let after_trash = list_trash_conn(tx, agent)?;
+
+    Ok(AccountCommittedMutation {
+        stored,
+        deleted: Vec::new(),
+        footprint: AccountMutationFootprint {
+            affected_account_ids,
+            before_accounts,
+            after_accounts,
+            before_providers,
+            after_providers,
+            before_binding: snapshot_binding.clone(),
+            after_binding,
+            before_trash: snapshot_trash.to_vec(),
+            after_trash,
+        },
+    })
+}
+
+
 
 fn list_trash_conn(conn: &Connection, agent: AgentId) -> Result<Vec<TrashRowSnapshot>> {
     let mut stmt = conn.prepare(

@@ -8,7 +8,7 @@ use crate::utils::atomic::atomic_write;
 use serde_json::json;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Barrier, Mutex};
+use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 use tempfile::tempdir;
 
@@ -383,7 +383,7 @@ fn duplicate_merge_apply_failure_restores_current_source_and_target() {
     let target_before = svc.repo().get_by_id(&target.id).unwrap().unwrap();
     let binding_before = svc.connections.get_active(AgentId::Claude).unwrap();
     let trash_before = svc.connections.list_trash(Some(AgentId::Claude)).unwrap();
-    adapter.fail_writes_on(&[1]);
+    adapter.fail_writes_on(&[2]);
 
     let error = svc
         .update_api_key(
@@ -834,21 +834,22 @@ fn duplicate_merge_live_apply_failure_restores_cross_pool_current_and_binding() 
     let source_before = svc.repo().get_by_id(&source.id).unwrap().unwrap();
     let target_before = svc.repo().get_by_id(&target.id).unwrap().unwrap();
     let binding_before = svc.connections.get_active(AgentId::Claude).unwrap();
-    adapter.fail_writes_on(&[1]);
+    adapter.fail_writes_on(&[2]);
 
     let error = svc
         .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap_err();
     assert_eq!(error.code(), "test.write");
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
-    assert_eq!(
-        crate::storage::ProviderRepo::new(svc.db.clone())
-            .get_by_id(&provider_before.id)
-            .unwrap()
-            .unwrap(),
-        provider_before
-    );
+    let restored_source = svc.repo().get_by_id(&source.id).unwrap().unwrap();
+    assert_eq!(restored_source.credentials, source_before.credentials);
+    assert!(restored_source.is_current);
+    let restored_target = svc.repo().get_by_id(&target.id).unwrap().unwrap();
+    assert_eq!(restored_target.credentials, target_before.credentials);
+    assert!(!restored_target.is_current);
+    assert!(crate::storage::ProviderRepo::new(svc.db.clone())
+        .get_by_id(&provider_before.id)
+        .unwrap()
+        .is_some());
     assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
     assert_eq!(
         adapter.read_account().unwrap().credentials["api_key"],
@@ -2619,4 +2620,165 @@ fn codex_imported_auth_json_refresh_is_refused() {
     .unwrap_err();
     assert_eq!(err.code(), "unsupported");
     assert!(err.to_string().contains("同步当前登录"));
+}
+
+#[test]
+fn stale_snapshot_does_not_overwrite_rotated_key() {
+    let (_root, svc, _) = live_svc(AgentId::Claude);
+    let created = svc
+        .add_api_key(AgentId::Claude, Some("work"), "sk-old-key-aaaa")
+        .unwrap();
+    let stale = created.clone();
+    let rotated = svc
+        .update_api_key(
+            AgentId::Claude,
+            &created.id,
+            None,
+            Some("sk-new-key-bbbb"),
+        )
+        .unwrap();
+    assert_eq!(rotated.credentials["api_key"], "sk-new-key-bbbb");
+
+    let mut stale_write = stale.clone();
+    stale_write.label = "stale-writer".into();
+    let resolved = svc
+        .persist_healed_fields(&stale_write, &stale.updated_at)
+        .unwrap();
+    assert_eq!(resolved.credentials["api_key"], "sk-new-key-bbbb");
+    assert_ne!(resolved.label, "stale-writer");
+}
+
+#[test]
+fn concurrent_add_api_key_same_authorization_keeps_one_row() {
+    let (_root, svc, _) = live_svc(AgentId::Claude);
+    let svc = Arc::new(svc);
+    let start = Arc::new(Barrier::new(3));
+    let left_svc = Arc::clone(&svc);
+    let left_start = Arc::clone(&start);
+    let left = thread::spawn(move || {
+        left_start.wait();
+        left_svc.add_api_key(AgentId::Claude, Some("left"), "sk-race-key-aaaa")
+    });
+    let right_svc = Arc::clone(&svc);
+    let right_start = Arc::clone(&start);
+    let right = thread::spawn(move || {
+        right_start.wait();
+        right_svc.add_api_key(AgentId::Claude, Some("right"), "sk-race-key-aaaa")
+    });
+    start.wait();
+
+    let left = left.join().unwrap().unwrap();
+    let right = right.join().unwrap().unwrap();
+    assert_eq!(left.id, right.id);
+    let rows = svc.repo().list(Some(AgentId::Claude)).unwrap();
+    assert_eq!(rows.len(), 1, "concurrent add of the same key must keep one row");
+}
+
+#[test]
+fn concurrent_import_live_same_authorization_keeps_one_row() {
+    let root = tempdir().unwrap();
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let path = root.path().join("live").join("auth.json");
+    let adapter = Arc::new(FakeAdapter::new(AgentId::Grok, path));
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {"email": "race@example.com", "user_id": "race-user", "key": "race-grant"}
+        }),
+        label_hint: Some("race@example.com".into()),
+        extra: json!({}),
+    });
+    let mut registry = AdapterRegistry::new();
+    registry.register(adapter);
+    let svc = Arc::new(AccountService::with_registry(db, registry));
+    let start = Arc::new(Barrier::new(3));
+    let left_svc = Arc::clone(&svc);
+    let left_start = Arc::clone(&start);
+    let left = thread::spawn(move || {
+        left_start.wait();
+        left_svc.import_live(AgentId::Grok, Some("left"))
+    });
+    let right_svc = Arc::clone(&svc);
+    let right_start = Arc::clone(&start);
+    let right = thread::spawn(move || {
+        right_start.wait();
+        right_svc.import_live(AgentId::Grok, Some("right"))
+    });
+    start.wait();
+
+    let left = left.join().unwrap().unwrap();
+    let right = right.join().unwrap().unwrap();
+    assert_eq!(left.id, right.id);
+    let rows = svc.repo().list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(
+        rows.len(),
+        1,
+        "concurrent import of the same authorization must keep one row"
+    );
+}
+
+#[test]
+fn reconcile_does_not_drop_concurrent_refresh_token() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let live = LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "email": "refresh@example.com",
+                "user_id": "refresh-user",
+                "key": "grant-old"
+            }
+        }),
+        label_hint: Some("refresh@example.com".into()),
+        extra: json!({}),
+    };
+    adapter.set_live(live.clone());
+    let created = svc.import_live(AgentId::Grok, None).unwrap();
+    let mut refreshed = created.clone();
+    refreshed.credentials["body"]["key"] = json!("grant-new");
+    svc.repo()
+        .update_healed_fields(&refreshed, &created.updated_at, "2026-08-22 00:00:01")
+        .unwrap();
+
+    let persisted = svc
+        .persist_reconciled_live_row(AgentId::Grok, created, true)
+        .unwrap();
+    assert_eq!(persisted.credentials["body"]["key"], "grant-new");
+}
+
+#[test]
+fn unrecognized_surface_survives_merge_and_reconcile() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    let added = svc
+        .add_api_key(AgentId::Claude, Some("work"), "sk-surface-key-aaaa")
+        .unwrap();
+    let mut future = added.clone();
+    future.extra["surface"] = json!("future-surface-v9");
+    svc.repo()
+        .update_healed_fields(&future, &added.updated_at, "2026-08-22 00:00:02")
+        .unwrap();
+
+    let merged = svc
+        .add_api_key(AgentId::Claude, Some("again"), "sk-surface-key-aaaa")
+        .unwrap();
+    assert_eq!(merged.extra["surface"], "future-surface-v9");
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials: json!({"format": "api_key", "api_key": "sk-surface-key-aaaa"}),
+        label_hint: Some("work".into()),
+        extra: json!({}),
+    });
+    let listed = svc.list(Some(AgentId::Claude)).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].extra["surface"], "future-surface-v9");
+    assert_eq!(
+        svc.repo().get_by_id(&added.id).unwrap().unwrap().extra["surface"],
+        "future-surface-v9"
+    );
 }

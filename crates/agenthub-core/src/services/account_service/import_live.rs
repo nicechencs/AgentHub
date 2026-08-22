@@ -118,43 +118,31 @@ impl AccountService {
         }
         let extra = attach_identity_meta(adapter, live.kind, &live.credentials, &display, extra);
 
-        // 远端票按授权指纹去重；loopback 桥票按 agent+kind 槽位 upsert
-        // （bind 会轮换 port+bearer，见 docs/account-authorization-pool.md）。
-        if let Some(existing) =
-            self.find_duplicate_authorization(adapter, agent, live.kind, &live.credentials)?
-        {
-            return self.merge_into_existing(
-                adapter,
-                existing,
-                live.kind,
-                display,
-                live.credentials,
-                extra,
-                make_current,
-            );
-        }
-
         let now = now_ts();
         let row = Account {
             id: format!("{}-live-{}", agent.as_str(), Uuid::new_v4()),
             agent_id: agent,
             kind: live.kind,
-            label: display,
-            credentials: live.credentials,
-            extra,
+            label: display.clone(),
+            credentials: live.credentials.clone(),
+            extra: extra.clone(),
             status: "active".into(),
             is_current: make_current,
             created_at: now.clone(),
             updated_at: now,
         };
         let row = self.prepare_account_surface(row);
-        if make_current {
-            let (created, _binding) = self.connections.create_and_activate_account(&row)?;
-            Ok(created)
-        } else {
-            let created = self.repo.create(&row)?;
-            Ok(created)
-        }
+        self.commit_authorization_merge(
+            adapter,
+            &row,
+            live.kind,
+            display,
+            live.credentials,
+            extra,
+            make_current,
+        )
+        .map(|committed| committed.stored)
+        .map_err(|error| error.into_error())
     }
 
     /// 查找与给定凭据为「同一授权票」的已有行（非身份）。
@@ -241,17 +229,28 @@ impl AccountService {
     }
 
     /// Add the ticket surface to a prospective row before its first database
-    /// mutation. This keeps create/import/merge activation atomic with the
-    /// product marker and avoids a post-commit full-row rewrite.
+    /// mutation. Only a missing `extra.surface` is filled; Unrecognized and
+    /// Known values are left untouched so a newer/future surface cannot be
+    /// overwritten by this version's classifier.
     pub(super) fn prepare_account_surface(&self, mut account: Account) -> Account {
-        let product = AdapterRouteService::classify_account_source_product(&account);
-        let surface = TicketSurface::from_product(product);
-        if TicketSurface::from_persisted_json(&account.extra)
-            != PersistedTicketSurface::Known(surface)
-        {
-            attach_persisted_surface(&mut account.extra, surface);
+        if TicketSurface::from_persisted_json(&account.extra) != PersistedTicketSurface::Missing {
+            return account;
         }
+        let product = AdapterRouteService::classify_account_source_product(&account);
+        attach_persisted_surface(
+            &mut account.extra,
+            TicketSurface::from_product(product),
+        );
         account
+    }
+
+    pub(super) fn copy_persisted_surface(from: &Value, into: &mut Value) {
+        let Some(surface) = from.get("surface") else {
+            return;
+        };
+        if let Some(obj) = into.as_object_mut() {
+            obj.insert("surface".into(), surface.clone());
+        }
     }
 
     /// Repair a legacy row's surface using a narrow optimistic update. Only

@@ -12,8 +12,7 @@ use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
     attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult,
-    AdapterSourceKind, AgentId, BackupKind, Capability, LiveAccount, PersistedTicketSurface,
-    TicketSurface,
+    AdapterSourceKind, AgentId, BackupKind, Capability, LiveAccount,
 };
 use crate::services::switch_undo::{
     clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
@@ -223,20 +222,27 @@ impl AccountService {
             id: format!("{}-live-{}", agent.as_str(), Uuid::new_v4()),
             agent_id: agent,
             kind: live.kind,
-            label,
-            credentials: live.credentials,
-            extra,
+            label: label.clone(),
+            credentials: live.credentials.clone(),
+            extra: extra.clone(),
             status: "active".into(),
             is_current: agent != AgentId::Pi,
             created_at: now.clone(),
             updated_at: now,
         };
         let row = self.prepare_account_surface(row);
-        let created = if row.is_current {
-            self.connections.create_and_activate_account(&row)?.0
-        } else {
-            self.repo.create(&row)?
-        };
+        let created = self
+            .commit_authorization_merge(
+                adapter,
+                &row,
+                live.kind,
+                label,
+                live.credentials,
+                extra,
+                row.is_current,
+            )
+            .map(|committed| committed.stored)
+            .map_err(|error| error.into_error())?;
         Ok(Some(created))
     }
 
@@ -249,6 +255,7 @@ impl AccountService {
         if !live_credentials_changed(&row, &live) {
             return (row, false);
         }
+        let persisted_extra = row.extra.clone();
         let display =
             if row.kind == AccountKind::Oauth && is_generic_oauth_label(&row.label, row.agent_id) {
                 live.label_hint
@@ -265,6 +272,7 @@ impl AccountService {
         row.label = display.clone();
         row.credentials = live.credentials;
         row.extra = attach_identity_meta(adapter, live.kind, &row.credentials, &display, extra);
+        Self::copy_persisted_surface(&persisted_extra, &mut row.extra);
         row.kind = live.kind;
         row.status = "active".into();
         let _ = crate::services::account_identity_heal::heal_account_identity(&mut row);
@@ -312,17 +320,23 @@ impl AccountService {
         changed: bool,
     ) -> Result<Account> {
         let original = row.clone();
+        let expected_updated_at = row.updated_at.clone();
         let original_extra = row.extra.clone();
         let mut row = self.prepare_account_surface(row);
         let surface_changed = row.extra != original_extra;
         if surface_changed && !changed {
-            return self.stamp_account_surface(original);
+            return match self.stamp_account_surface(original) {
+                Ok(account) => Ok(account),
+                Err(error) if error.code() == "account.conflict" => self
+                    .repo
+                    .get_by_id(&row.id)?
+                    .ok_or_else(|| AppError::NotFound(format!("account not found: {}", row.id))),
+                Err(error) => Err(error),
+            };
         }
         if agent == AgentId::Pi {
             return if changed {
-                let expected_updated_at = row.updated_at.clone();
-                self.repo
-                    .update_healed_fields(&row, &expected_updated_at, &now_ts())
+                self.persist_healed_fields(&row, &expected_updated_at)
             } else {
                 Ok(row)
             };
@@ -332,16 +346,27 @@ impl AccountService {
         }
         if leftover_shaped_codex_live(agent) && !row.is_current {
             return if changed {
-                let expected_updated_at = row.updated_at.clone();
-                self.repo
-                    .update_healed_fields(&row, &expected_updated_at, &now_ts())
+                self.persist_healed_fields(&row, &expected_updated_at)
             } else {
                 Ok(row)
             };
         }
         row.is_current = true;
         row.updated_at = now_ts();
-        Ok(self.connections.update_and_activate_account(&row)?.0)
+        match self
+            .connections
+            .update_and_activate_account(&row, &expected_updated_at)
+        {
+            Ok((updated, _)) => Ok(updated),
+            Err(error)
+                if error.code() == "account.merge.conflict" || error.code() == "account.conflict" =>
+            {
+                self.repo
+                    .get_by_id(&row.id)?
+                    .ok_or_else(|| AppError::NotFound(format!("account not found: {}", row.id)))
+            }
+            Err(error) => Err(error),
+        }
     }
 
     /// Add a transient, desensitized AuthState view to the current pool row.
