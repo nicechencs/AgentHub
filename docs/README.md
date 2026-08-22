@@ -33,6 +33,7 @@
 | [account-authorization-pool.md](account-authorization-pool.md) | **账号池身份×授权**：同人可多授权并存；去重仅限同一份登录；与能力矩阵边界（**已落地**） |
 | [adding-an-agent.md](adding-an-agent.md) | 新增 Agent 适配器清单；`accepts[]` 须登记 wire 协议 **和** OAuth 契约槽 |
 | [deepseek-harness-integration.md](deepseek-harness-integration.md) | **DeepSeek Harness（`dsh`）**：DeepSeek API 走直接改配置；DSH 不是本机转发。P1–P5 已落地；StructuredStream 仍 Planned |
+| [tray-background-modes.md](tray-background-modes.md) | **托盘后台模式**：低内存后台 vs 隐藏界面；hide 不降内存的原因、三档设置设计与实施要点（**未来优化点，未实施**，不派生当前任务） |
 | [privacy.md](privacy.md) | **发布与隐私边界**：禁止提交项、截图规范、OAuth 常量勿外泄、docs 写法 |
 
 ## 文档管理规则
@@ -50,4 +51,5 @@
 - DeepSeek Harness（Agent `dsh`）的安装、会话、用量、Skills 与模型配置以 [deepseek-harness-integration.md](deepseek-harness-integration.md) 为设计真源；未实现前不得把该文能力表抄进 CLI 矩阵快照。
 - Chat UI↔Agent 与 DSH Desktop 的机制对照以 [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) 为笔记；不替代过程契约、Chat IA 与 DSH 接入方案，不派生实施任务。凭据落盘加密与国产 OAuth 仍为范围外。
 - `local_bridge` 的进程所有权、控制面和 sidecar 迁移契约以 [adapter-sidecar-design.md](adapter-sidecar-design.md) 为唯一真源；当前实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
+- 托盘后台内存模式（省电 / 深度低内存）以 [tray-background-modes.md](tray-background-modes.md) 为设计记录；**未实施**，实现前不进入能力矩阵与 CLI 矩阵。
 - 新的一次性任务可以临时创建提示词文件；任务完成后删除提示词和任务拆分，并同步更新对应稳定文档。
