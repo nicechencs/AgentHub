@@ -157,7 +157,7 @@ flowchart LR
 
 ### C2 多账号轮询与故障切换运行时（§5.5 主件）
 
-- **状态**：RFC 已拍板（[multi-account-routing-rfc.md](multi-account-routing-rfc.md)）。**实施派工中**（[派工 P6](routing-connection-dispatch-prompts.md)，分支 `refactor/multi-account-runtime`，**须待 P5 合入 dev 后开工**）。稿内选定成员存储方案 C（运行时纯读模型），矩阵加 `multi_account` 维，RetryGate 与切号闸正交。
+- **状态**：已实施合入 dev（2026-08-22，`refactor/multi-account-runtime`：`AccountPicker` + `RequestFsm` 挂 `EdgeState`，矩阵 `multi_account` 默认全关；单成员与旧行为等价）。遗留小项：隔离健康态回写账号行（`MemberHealthSink` 未接线）、启动时 account 行 Unknown/NeedsAttention 映射 `TryOnce`、实机取证后开闸。稿内选定成员存储方案 C（运行时纯读模型），矩阵加 `multi_account` 维，RetryGate 与切号闸正交。
 - **目标**：`local_bridge` 运行时支持同票面多成员：`BridgeStartSpec` 从单 `ResolvedAuth` 扩展为有序成员列表；新增 AccountPicker（固定顺序轮询游标、成员健康态 `Renewable`/`NeedsLogin`、失效隔离）；请求边界 FSM——新请求在请求边界选号，**切换仅限首个有效流事件前且单请求最多一次**，与既有同账号 401 reload 正交合入；绑定语义扩展（`bind` 后 attach 成员或 profile 多 `source_id`，设计稿定）。每请求日志记**实际承接账号**（`account_id` 字段），上游身份头/会话 seed 按实际承接账号生成。
 - **文件**：`bridge/runtime.rs`、`bridge/host/{dispatch,transport}.rs`、`services/adapter_bridge_service/*`、`storage/`（如需 profile 成员存储）、`src-tauri/adapter_bridge_controller.rs`（secret 解析多成员）、两侧 tests。
 - **限制**：仅本人账号、仅 loopback；负载均衡不做；每成员 refresh 独立 single-flight（owner 分治不变，§5.1.2）；失效只标该成员，不向调用方暴露其余账号；每条边的轮询支持仍需随 fixtures 取证后才开（矩阵可加 multi-account 维度或按边白名单，设计稿定）。
@@ -166,7 +166,7 @@ flowchart LR
 
 ### C3 成员健康 UI 与审计展示
 
-- **状态**：未开始
+- **状态**：派工中（2026-08-22，分支 `feature/member-health-ui`）
 - **目标**：Routes 详情展示同票面成员及健康态；Connections 钱包「正用于」表达多成员承接；不新增页面，不做管理大盘。
 - **文件**：`src/pages/bridges/*`、`src/pages/connections/*`、contracts/mock 对应扩展。
 - **限制**：遵守 [ui-design.md](ui-design.md) / [ui-component-standard.md](ui-component-standard.md)；不显示 token 或完整凭据；孤立/失效成员置灰 + 原因，不藏行。
