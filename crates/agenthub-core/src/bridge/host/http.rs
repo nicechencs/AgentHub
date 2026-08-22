@@ -15,9 +15,8 @@ use crate::bridge::grok_cli::GrokReasoningReplay;
 use crate::bridge::runtime::BridgeUpstreamStatus;
 use crate::bridge::types::ProtocolError;
 
-use super::dispatch::{
-    handle_chat_completions, handle_messages, handle_responses, ProtocolSelector,
-};
+use super::dispatch::handle_conversation;
+use super::surface::DownstreamSurface;
 use super::{BODY_LIMIT_BYTES, REQUEST_BODY_TIMEOUT};
 
 #[derive(Clone)]
@@ -73,13 +72,7 @@ pub(super) fn router(state: ListenerState) -> Router {
 
 async fn health(State(state): State<ListenerState>, headers: HeaderMap) -> Response {
     if !has_valid_local_auth(&headers, &state.local_token) {
-        tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, op = "health", code = "unauthorized", status = 401_u16, "bridge health request rejected");
-        return error_response(
-            StatusCode::UNAUTHORIZED,
-            "invalid_api_key",
-            "Invalid local bearer token.",
-            None,
-        );
+        return reject_invalid_local_auth(&state, "health", None);
     }
     // Local health is a listener liveness check. It reports the last stored
     // upstream outcome and never issues a new billable provider probe.
@@ -96,13 +89,7 @@ async fn health(State(state): State<ListenerState>, headers: HeaderMap) -> Respo
 
 async fn list_models(State(state): State<ListenerState>, headers: HeaderMap) -> Response {
     if !has_valid_local_auth(&headers, &state.local_token) {
-        tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, op = "models", code = "unauthorized", status = 401_u16, "bridge models request rejected");
-        return error_response(
-            StatusCode::UNAUTHORIZED,
-            "invalid_api_key",
-            "Invalid local bearer token.",
-            None,
-        );
+        return reject_invalid_local_auth(&state, DownstreamSurface::Models.op(), None);
     }
     // Synthesized from the profile mapping table at start; never proxied.
     if state.listed_models.is_empty() {
@@ -124,24 +111,15 @@ async fn list_models(State(state): State<ListenerState>, headers: HeaderMap) -> 
 }
 
 async fn responses(State(state): State<ListenerState>, request: Request) -> Response {
-    if !ProtocolSelector::from_listener(&state).serves_responses() {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    handle_responses(state, request).await
+    handle_conversation(DownstreamSurface::Responses, state, request).await
 }
 
 async fn messages(State(state): State<ListenerState>, request: Request) -> Response {
-    if !ProtocolSelector::from_listener(&state).serves_messages() {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    handle_messages(state, request).await
+    handle_conversation(DownstreamSurface::Messages, state, request).await
 }
 
 async fn chat_completions(State(state): State<ListenerState>, request: Request) -> Response {
-    if !ProtocolSelector::from_listener(&state).serves_chat_completions() {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    handle_chat_completions(state, request).await
+    handle_conversation(DownstreamSurface::ChatCompletions, state, request).await
 }
 
 pub(super) async fn read_request_json(request: Request) -> Result<Value, Response> {
@@ -255,6 +233,30 @@ pub(super) fn overloaded_response() -> Response {
         "bridge_overloaded",
         "The local bridge is temporarily busy.",
         Some(HeaderValue::from_static("1")),
+    )
+}
+
+pub(super) fn reject_invalid_local_auth(
+    state: &ListenerState,
+    op: &'static str,
+    conversation: Option<(&str, Instant)>,
+) -> Response {
+    match conversation {
+        Some((request_id, started)) => {
+            tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op, code = "unauthorized", status = 401_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge request rejected");
+        }
+        None if op == "health" => {
+            tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, op = "health", code = "unauthorized", status = 401_u16, "bridge health request rejected");
+        }
+        None => {
+            tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, op = "models", code = "unauthorized", status = 401_u16, "bridge models request rejected");
+        }
+    }
+    error_response(
+        StatusCode::UNAUTHORIZED,
+        "invalid_api_key",
+        "Invalid local bearer token.",
+        None,
     )
 }
 

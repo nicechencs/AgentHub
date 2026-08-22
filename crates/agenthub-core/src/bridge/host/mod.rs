@@ -3,9 +3,13 @@
 //! Split for maintainability only — public paths stay
 //! [`crate::bridge::host::{BridgeRuntimeHost, BridgeHostError}`].
 
+mod admission;
 mod dispatch;
 mod http;
 mod lifecycle;
+mod stream;
+mod surface;
+mod upstream;
 
 pub use lifecycle::{BridgeHostError, BridgeRuntimeHost};
 
