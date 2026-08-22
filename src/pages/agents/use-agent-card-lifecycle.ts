@@ -36,6 +36,22 @@ function isUnsubscribe(value: unknown): value is Unsubscribe {
   return typeof value === 'function';
 }
 
+const INSTALL_OUTPUT_LINE_CAP = 400;
+
+/** Append a raw UTF-8 install chunk. Empty / whitespace / newline-only stay. */
+export function recordInstallOutputChunk(chunks: string[], chunk: string): string[] {
+  chunks.push(chunk);
+  return chunks;
+}
+
+/** Join raw chunks then split on `\n` so mid-line splits are not extra rows. */
+export function installOutputChunksToLines(chunks: string[]): string[] {
+  const lines = chunks.join('').split('\n');
+  return lines.length > INSTALL_OUTPUT_LINE_CAP
+    ? lines.slice(lines.length - INSTALL_OUTPUT_LINE_CAP)
+    : lines;
+}
+
 /**
  * Keep the unsubscribe local to one install attempt. If the async listener
  * setup resolves after disposal, its late unsubscribe is invoked immediately
@@ -98,6 +114,7 @@ export function useAgentCardLifecycle(input: {
   const cancelRef = React.useRef({ cancelled: false });
   const [elapsedSec, setElapsedSec] = React.useState(0);
   const progressUnsubRef = React.useRef<(() => void) | null>(null);
+  const liveOutputChunksRef = React.useRef<string[]>([]);
   const releaseProgressUnsub = React.useCallback(() => {
     const stop = progressUnsubRef.current;
     progressUnsubRef.current = null;
@@ -161,6 +178,7 @@ export function useAgentCardLifecycle(input: {
     setShowEnvPanel(false);
 
     releaseProgressUnsub();
+    liveOutputChunksRef.current = [];
     const agentId = agent.agentId;
     const progressSubscription = createInstallProgressSubscription(onInstallProgress, (payload) => {
       if (cancelToken.cancelled) return;
@@ -169,18 +187,14 @@ export function useAgentCardLifecycle(input: {
       } else if (!isProgressForAgent(payload, agentId)) {
         return;
       }
-      const line = payload.line?.trimEnd();
-      if (!line) return;
+      if (typeof payload.line !== 'string') return;
+      recordInstallOutputChunk(liveOutputChunksRef.current, payload.line);
+      const lines = installOutputChunksToLines(liveOutputChunksRef.current);
       setTask((prev) => {
         if (!prev || prev.status !== 'running') return prev;
-        const base =
-          prev.lines.length === 2 && prev.lines[0] === executingLine
-            ? []
-            : prev.lines;
-        const next = [...base, line];
         return {
           ...prev,
-          lines: next.length > 400 ? next.slice(next.length - 400) : next,
+          lines,
         };
       });
     });

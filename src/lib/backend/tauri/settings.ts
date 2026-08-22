@@ -188,7 +188,25 @@ const LOG_LEVEL_OPTIONS: { value: LogLevel; label: string }[] = [
   { value: 'trace', label: 'trace — 极细' },
 ];
 
+function snapshotAfterCommittedWrite(
+  previous: AppSettings | null,
+  patch: Partial<AppSettings>,
+): AppSettings {
+  const local = loadUiLocal();
+  const base: AppSettings = previous ?? {
+    ...DEFAULTS,
+    autoStart: typeof local.autoStart === 'boolean' ? local.autoStart : DEFAULTS.autoStart,
+    closeToTray: typeof local.closeToTray === 'boolean' ? local.closeToTray : DEFAULTS.closeToTray,
+    usageCollectIntervalMin:
+      typeof local.usageCollectIntervalMin === 'number'
+        ? local.usageCollectIntervalMin
+        : DEFAULTS.usageCollectIntervalMin,
+  };
+  return { ...base, ...patch };
+}
+
 export function createTauriSettingsPort(): SettingsPort {
+  let lastSuccessfulSnapshot: AppSettings | null = null;
   const port: SettingsPort = {
     logLevelOptions: LOG_LEVEL_OPTIONS,
 
@@ -256,6 +274,7 @@ export function createTauriSettingsPort(): SettingsPort {
           appVersion: appVersion || DEFAULTS.appVersion,
         };
         applyTheme(next.theme);
+        lastSuccessfulSnapshot = { ...next };
         return { ...next };
       } catch (e) {
         log.error('getSettings failed', e);
@@ -334,7 +353,17 @@ export function createTauriSettingsPort(): SettingsPort {
           };
           saveJson(SETTINGS_KEY, mergedLocal);
 
-          return await port.getSettings();
+          // Phase 2: refresh the full snapshot. A refresh failure must not
+          // undo a durable write — return the committed patch on top of the
+          // last known snapshot so UI rollback does not fire.
+          try {
+            return await port.getSettings();
+          } catch (refreshError) {
+            log.error('getSettings after successful update failed', refreshError);
+            const fallback = snapshotAfterCommittedWrite(lastSuccessfulSnapshot, patch);
+            lastSuccessfulSnapshot = fallback;
+            return fallback;
+          }
         } catch (e) {
           log.error('updateSettings failed', e);
           throw e;

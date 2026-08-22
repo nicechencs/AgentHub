@@ -26,9 +26,9 @@ export async function onInstallProgress(
   try {
     const { listen } = await import('@tauri-apps/api/event');
     const unlisten = await listen<InstallProgressPayload>(INSTALL_PROGRESS_EVENT, (event) => {
-      if (event.payload?.line) {
-        handler(event.payload);
-      }
+      const payload = event.payload;
+      if (!payload || typeof payload.line !== 'string') return;
+      handler(payload);
     });
     return unlisten;
   } catch (error) {

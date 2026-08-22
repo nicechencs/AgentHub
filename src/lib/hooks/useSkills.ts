@@ -42,6 +42,14 @@ export function isCurrentSkillsMarketRequest(
   return currentQuery === requestQuery && currentGeneration === requestGeneration;
 }
 
+/** Guard skills/catalog cache writes against invalidate generation. */
+export function isCurrentSkillsResourceRequest(
+  requestGeneration: number,
+  currentGeneration: number,
+): boolean {
+  return requestGeneration === currentGeneration;
+}
+
 const ALL_KEYS: SkillsCacheKey[] = ['skills', 'catalog', 'market'];
 
 const listeners = new Set<() => void>();
@@ -111,7 +119,9 @@ let marketData: { query: string; rows: SkillListingDto[] } | null = null;
 let marketGeneration = 0;
 let marketLatestQuery: string | null = null;
 
-/** 同 key 请求合并 */
+/** 同 key 请求合并；invalidate 递增 generation 并丢弃 inflight 指针。 */
+let skillsGeneration = 0;
+let catalogGeneration = 0;
 let skillsInflight: Promise<Skill[]> | null = null;
 let catalogInflight: Promise<InstalledSkillDto[]> | null = null;
 const marketInflight = new Map<string, Promise<SkillListingDto[]>>();
@@ -138,6 +148,14 @@ export function invalidateSkills(keys?: SkillsCacheKey | SkillsCacheKey[]) {
   if (list.includes('market')) {
     dropMarketCache();
   }
+  if (list.includes('skills')) {
+    skillsGeneration += 1;
+    skillsInflight = null;
+  }
+  if (list.includes('catalog')) {
+    catalogGeneration += 1;
+    catalogInflight = null;
+  }
   bump(list);
 }
 
@@ -146,8 +164,17 @@ export function clearSkillsDataCache() {
   skillsData = null;
   catalogData = null;
   dropMarketCache();
+  skillsGeneration += 1;
+  catalogGeneration += 1;
   skillsInflight = null;
   catalogInflight = null;
+}
+
+export function getSkillsModuleCache(): {
+  skills: Skill[] | null;
+  catalog: InstalledSkillDto[] | null;
+} {
+  return { skills: skillsData, catalog: catalogData };
 }
 
 /** 当前某 key 的缓存版本；技能页本地 state 可随此值重载。 */
@@ -193,30 +220,42 @@ export type SkillsQueryOptions = {
 
 type SetStateAction<T> = T | ((prev: T) => T);
 
-async function fetchSkillsShared(): Promise<Skill[]> {
+export function fetchSkillsShared(): Promise<Skill[]> {
   if (!skillsInflight) {
-    skillsInflight = listSkills()
+    const requestGeneration = skillsGeneration;
+    const request = listSkills()
       .then((rows) => {
-        skillsData = rows;
+        if (isCurrentSkillsResourceRequest(requestGeneration, skillsGeneration)) {
+          skillsData = rows;
+        }
         return rows;
       })
       .finally(() => {
-        skillsInflight = null;
+        if (skillsInflight === request) {
+          skillsInflight = null;
+        }
       });
+    skillsInflight = request;
   }
   return skillsInflight;
 }
 
-async function fetchCatalogShared(): Promise<InstalledSkillDto[]> {
+export function fetchCatalogShared(): Promise<InstalledSkillDto[]> {
   if (!catalogInflight) {
-    catalogInflight = listSkillCatalog()
+    const requestGeneration = catalogGeneration;
+    const request = listSkillCatalog()
       .then((rows) => {
-        catalogData = rows;
+        if (isCurrentSkillsResourceRequest(requestGeneration, catalogGeneration)) {
+          catalogData = rows;
+        }
         return rows;
       })
       .finally(() => {
-        catalogInflight = null;
+        if (catalogInflight === request) {
+          catalogInflight = null;
+        }
       });
+    catalogInflight = request;
   }
   return catalogInflight;
 }
@@ -260,18 +299,23 @@ export function useSkillsList(opts: SkillsQueryOptions = {}) {
 
   const reload = useCallback(async () => {
     if (!enabled) return;
+    const requestGeneration = versions.skills;
     setFetching(true);
     try {
       const rows = await fetchSkillsShared();
+      if (!isCurrentSkillsResourceRequest(requestGeneration, versions.skills)) return;
       setDataState(rows);
       setError(null);
     } catch (e) {
+      if (!isCurrentSkillsResourceRequest(requestGeneration, versions.skills)) return;
       // 有 stale 时保留旧表，只记 error（ErrorState 由调用方决定是否盖住）
       if (skillsData == null) {
         setError(e);
       }
     } finally {
-      setFetching(false);
+      if (isCurrentSkillsResourceRequest(requestGeneration, versions.skills)) {
+        setFetching(false);
+      }
     }
   }, [enabled]);
 
@@ -311,15 +355,20 @@ export function useSkillCatalog(opts: SkillsQueryOptions = {}) {
 
   const reload = useCallback(async () => {
     if (!enabled) return;
+    const requestGeneration = versions.catalog;
     setFetching(true);
     try {
       const rows = await fetchCatalogShared();
+      if (!isCurrentSkillsResourceRequest(requestGeneration, versions.catalog)) return;
       setDataState(rows);
       setError(null);
     } catch (e) {
+      if (!isCurrentSkillsResourceRequest(requestGeneration, versions.catalog)) return;
       if (catalogData == null) setError(e);
     } finally {
-      setFetching(false);
+      if (isCurrentSkillsResourceRequest(requestGeneration, versions.catalog)) {
+        setFetching(false);
+      }
     }
   }, [enabled]);
 

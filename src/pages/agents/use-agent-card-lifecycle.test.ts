@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createInstallProgressSubscription } from './use-agent-card-lifecycle';
+import {
+  createInstallProgressSubscription,
+  installOutputChunksToLines,
+  recordInstallOutputChunk,
+} from './use-agent-card-lifecycle';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -34,5 +38,34 @@ describe('install progress subscription lifecycle', () => {
     );
 
     await expect(subscription.ready).rejects.toBe(error);
+  });
+});
+
+describe('install output raw chunks', () => {
+  it('keeps an empty chunk instead of dropping it', () => {
+    const chunks: string[] = [];
+    recordInstallOutputChunk(chunks, '');
+    expect(chunks).toEqual(['']);
+    expect(installOutputChunksToLines(chunks)).toEqual(['']);
+  });
+
+  it('keeps whitespace and multiple newlines and joins mid-line splits', () => {
+    const chunks: string[] = [];
+    recordInstallOutputChunk(chunks, '   ');
+    recordInstallOutputChunk(chunks, '\n');
+    recordInstallOutputChunk(chunks, '\n');
+    recordInstallOutputChunk(chunks, 'hel');
+    recordInstallOutputChunk(chunks, 'lo\n');
+    recordInstallOutputChunk(chunks, 'wor');
+    recordInstallOutputChunk(chunks, 'ld');
+
+    expect(chunks).toEqual(['   ', '\n', '\n', 'hel', 'lo\n', 'wor', 'ld']);
+    expect(installOutputChunksToLines(chunks)).toEqual(['   ', '', 'hello', 'world']);
+  });
+
+  it('does not trimEnd trailing spaces on a chunk', () => {
+    const chunks: string[] = [];
+    recordInstallOutputChunk(chunks, 'keep  ');
+    expect(installOutputChunksToLines(chunks)).toEqual(['keep  ']);
   });
 });

@@ -87,6 +87,16 @@ describe('settings persistence concurrency', () => {
     });
   });
 
+  it('commits a post-write fallback snapshot instead of rolling the field back', () => {
+    const tracker = createSettingsPersistenceTracker();
+    const generation = tracker.begin({ closeToTray: false }, baseSettings);
+    const fallback = { ...baseSettings, closeToTray: false, dataDir: '/data' };
+    const success = tracker.settleSuccess(generation, fallback, ['closeToTray']);
+    expect(success.ownedKeys).toEqual(['closeToTray']);
+    expect(success.committedPatch.closeToTray).toBe(false);
+    expect(success.rollbackPatch.closeToTray).toBe(false);
+  });
+
   it('keeps field ownership when unrelated deferred saves complete in reverse order', async () => {
     let generation = 0;
     const committed: AppSettings[] = [];

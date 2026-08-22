@@ -29,4 +29,26 @@ describe('tauri install events', () => {
       code: 'backend.unavailable',
     });
   });
+
+  it('forwards raw UTF-8 chunks including empty, whitespace, and newline-only payloads', async () => {
+    isTauriMock.mockReturnValue(true);
+    let listener: ((event: { payload: { line: string } }) => void) | undefined;
+    listenMock.mockImplementation(async (_event: string, handler: (event: { payload: { line: string } }) => void) => {
+      listener = handler;
+      return () => {};
+    });
+
+    const seen: string[] = [];
+    await onInstallProgress((payload) => {
+      seen.push(payload.line);
+    });
+
+    listener?.({ payload: { line: '' } });
+    listener?.({ payload: { line: '   ' } });
+    listener?.({ payload: { line: '\n' } });
+    listener?.({ payload: { line: 'hel' } });
+    listener?.({ payload: { line: 'lo\n' } });
+
+    expect(seen).toEqual(['', '   ', '\n', 'hel', 'lo\n']);
+  });
 });

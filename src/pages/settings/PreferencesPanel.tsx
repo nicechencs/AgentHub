@@ -62,6 +62,8 @@ export function PreferencesPanel({
     });
     const requestedKeys = Object.keys(nextPatch) as Array<keyof AppSettings>;
     try {
+      // updateSettings splits durable write from snapshot refresh. A resolved
+      // value is already committed; only a thrown write error rolls the UI back.
       const saved = await persistSettingsPatch(nextPatch);
       const settlement = tracker.settleSuccess(generation, saved, requestedKeys);
       if (settlement.committedPatch.theme !== undefined) {

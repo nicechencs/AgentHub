@@ -535,6 +535,86 @@ describe('createTauriSettingsPort usage interval and theme', () => {
   });
 });
 
+describe('createTauriSettingsPort write vs snapshot refresh', () => {
+  const settingsKey = 'agenthub:settings';
+  let memory: ReturnType<typeof installMemoryLocalStorage>;
+
+  beforeEach(() => {
+    tauriRuntime = true;
+    invokeMock.mockReset();
+    autostartIsEnabled.mockReset().mockResolvedValue(false);
+    autostartEnable.mockReset().mockResolvedValue(undefined);
+    autostartDisable.mockReset().mockResolvedValue(undefined);
+    memory = installMemoryLocalStorage();
+  });
+
+  afterEach(() => {
+    memory.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it('resolves the committed patch when writes succeed but getSettings fails', async () => {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'set_setting') return;
+      if (cmd === 'get_app_settings' || cmd === 'get_path_info') {
+        throw new Error('snapshot refresh failed');
+      }
+      throw new Error(`unexpected invoke: ${cmd}`);
+    });
+
+    const port = createTauriSettingsPort();
+    const saved = await port.updateSettings({ closeToTray: false, theme: 'dark' });
+    expect(saved.closeToTray).toBe(false);
+    expect(saved.theme).toBe('dark');
+    expect(invokeMock).toHaveBeenCalledWith('set_setting', {
+      key: 'close_to_tray',
+      value: 'false',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('set_setting', {
+      key: 'theme',
+      value: 'dark',
+    });
+  });
+
+  it('keeps previously loaded snapshot fields after a post-write refresh failure', async () => {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'set_setting') return;
+      if (cmd === 'get_app_settings') {
+        return {
+          theme: 'system',
+          language: 'zh-CN',
+          logLevel: 'info',
+          logRetentionDays: 14,
+          closeToTray: true,
+        };
+      }
+      if (cmd === 'get_path_info') {
+        return {
+          dataDir: 'D:/data',
+          dbPath: 'D:/data/agenthub.db',
+          backupsDir: 'D:/data/backups',
+          logsDir: 'D:/data/logs',
+        };
+      }
+      throw new Error(`unexpected invoke: ${cmd}`);
+    });
+
+    const port = createTauriSettingsPort();
+    const loaded = await port.getSettings();
+    expect(loaded.dataDir).toBe('D:/data');
+
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'set_setting') return;
+      throw new Error('snapshot refresh failed');
+    });
+
+    const saved = await port.updateSettings({ closeToTray: false });
+    expect(saved.closeToTray).toBe(false);
+    expect(saved.dataDir).toBe('D:/data');
+    expect(saved.theme).toBe('system');
+  });
+});
+
 describe('createTauriSettingsPort pickDirectory', () => {
   beforeEach(() => {
     tauriRuntime = true;
