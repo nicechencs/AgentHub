@@ -174,7 +174,7 @@ impl AdapterBridgeService {
                 )
             })?;
         let source_ok = match rule.protocol {
-            BridgeUpstreamProtocol::KimiChatCompletions => matches!(
+            BridgeUpstreamProtocol::OpenAiChatCompletions => matches!(
                 request.source_kind,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account
             ),
@@ -208,10 +208,10 @@ impl AdapterBridgeService {
         source_id: &str,
     ) -> Result<crate::bridge::ResolvedAuth> {
         match (rule.protocol, rule.rule_id) {
-            (BridgeUpstreamProtocol::KimiChatCompletions, OPENAI_RULE_ID) => {
+            (BridgeUpstreamProtocol::OpenAiChatCompletions, OPENAI_RULE_ID) => {
                 self.secrets.resolve_openai_auth(source_kind, source_id)
             }
-            (BridgeUpstreamProtocol::KimiChatCompletions, _) => self
+            (BridgeUpstreamProtocol::OpenAiChatCompletions, _) => self
                 .secrets
                 .resolve_kimi_membership_auth(source_kind, source_id),
             (BridgeUpstreamProtocol::AnthropicMessages, _) => {

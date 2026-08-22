@@ -97,7 +97,7 @@ const KIMI_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
     provider_slug: PROVIDER_SLUG,
     upstream_base_url: KIMI_CHAT_BASE_URL,
     default_model: DEFAULT_MODEL,
-    protocol: BridgeUpstreamProtocol::KimiChatCompletions,
+    protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
     local_surface: BridgeLocalSurface::Responses,
     bridge_kind: "responses_to_chat_completions",
     legacy_bridge_kinds: &[],
@@ -135,7 +135,7 @@ const OPENAI_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
     provider_slug: OPENAI_PROVIDER_SLUG,
     upstream_base_url: OPENAI_CHAT_BASE_URL,
     default_model: OPENAI_DEFAULT_MODEL,
-    protocol: BridgeUpstreamProtocol::KimiChatCompletions,
+    protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
     local_surface: BridgeLocalSurface::Responses,
     bridge_kind: "responses_to_chat_completions",
     legacy_bridge_kinds: &[],
@@ -393,7 +393,7 @@ impl AdapterBridgeRuntimeMaterial {
             preferred_port,
             upstream_base_url: KIMI_CHAT_BASE_URL.into(),
             upstream_model: DEFAULT_MODEL.into(),
-            protocol: BridgeUpstreamProtocol::KimiChatCompletions,
+            protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
             local_surface: BridgeLocalSurface::Responses,
             source: AdapterSourceProduct::KimiCodeMembership,
             target_agent: AgentId::Codex,
@@ -475,7 +475,7 @@ impl AdapterBridgeRuntimeMaterial {
         let upstream_url = format!("{}/models", self.upstream_base_url.trim_end_matches('/'));
         let mut upstream_req = client.get(upstream_url);
         upstream_req = match self.protocol {
-            BridgeUpstreamProtocol::KimiChatCompletions => {
+            BridgeUpstreamProtocol::OpenAiChatCompletions => {
                 upstream_req.bearer_auth(self.upstream_auth.token())
             }
             BridgeUpstreamProtocol::AnthropicMessages => upstream_req

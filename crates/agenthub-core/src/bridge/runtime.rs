@@ -49,8 +49,9 @@ impl std::fmt::Debug for ResolvedAuth {
 /// downstream Responses request. Downstream identity stays the local bearer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BridgeUpstreamProtocol {
-    /// Existing Kimi membership path: Chat Completions + bearer auth.
-    KimiChatCompletions,
+    /// OpenAI-compatible Chat Completions upstream (Kimi Code membership, OpenAI API, and similar).
+    /// Formerly `KimiChatCompletions`; this enum is not serde, so no persisted schema change.
+    OpenAiChatCompletions,
     /// Anthropic API Key → Codex: Messages + `x-api-key` / `anthropic-version`.
     AnthropicMessages,
     /// Codex subscription OAuth: Responses upstream (ChatGPT). Local surface is
@@ -75,7 +76,7 @@ pub enum BridgeLocalSurface {
 
 impl Default for BridgeUpstreamProtocol {
     fn default() -> Self {
-        Self::KimiChatCompletions
+        Self::OpenAiChatCompletions
     }
 }
 

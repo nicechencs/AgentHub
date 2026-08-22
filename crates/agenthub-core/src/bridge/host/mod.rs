@@ -9,6 +9,7 @@ mod http;
 mod lifecycle;
 mod stream;
 mod surface;
+mod transport;
 mod upstream;
 
 pub use lifecycle::{BridgeHostError, BridgeRuntimeHost};

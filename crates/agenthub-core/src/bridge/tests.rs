@@ -36,7 +36,7 @@ fn spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
             model: None,
             source_connection_id: Some("connection-test".to_owned()),
             auth: ResolvedAuth::bearer("upstream-test-token"),
-            protocol: BridgeUpstreamProtocol::KimiChatCompletions,
+            protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
             local_surface: BridgeLocalSurface::Responses,
         },
     )

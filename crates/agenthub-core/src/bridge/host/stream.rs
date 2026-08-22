@@ -18,17 +18,21 @@ use crate::bridge::protocol::chat::{encode_chat_from_ir, encode_chat_sse, ChatSt
 use crate::bridge::protocol::responses::{
     encode_responses_from_ir, responses_output_to_ir, IrToResponsesSse, ResponsesStreamToIr,
 };
-use crate::bridge::runtime::BridgeUpstreamProtocol;
 use crate::bridge::types::{BridgeEvent, IrEvent, ProtocolError};
 
 use super::http::{
     error_response, log_protocol_error, protocol_error_response, sse_data_payload,
     sse_frame_end_deque, stopping_response, stream_error_frame, ListenerState,
 };
+use super::transport::{UpstreamChannel, UpstreamDecode};
 use super::upstream::{capture_grok_completed, capture_grok_sse};
 use super::{
     BODY_LIMIT_BYTES, STREAM_LIMIT_BYTES, UPSTREAM_BODY_IDLE_TIMEOUT, UPSTREAM_STREAM_IDLE_TIMEOUT,
 };
+
+fn upstream_decode(state: &ListenerState) -> UpstreamDecode {
+    UpstreamChannel::from_protocol(state.upstream.protocol).decode_kind()
+}
 
 pub(super) async fn messages_non_stream_response(
     state: ListenerState,
@@ -52,19 +56,17 @@ pub(super) async fn messages_non_stream_response(
         }
     };
     capture_grok_completed(&state, replay_seed.as_deref(), &upstream_body);
-    let translated = match state.upstream.protocol {
-        BridgeUpstreamProtocol::KimiChatCompletions => {
-            crate::bridge::protocol::chat::translate_chat_response(
-                &upstream_body,
-                Some(&request_id),
-            )
-            .and_then(|responses| responses_output_to_ir(&responses))
-            .and_then(|ir| encode_anthropic_message(&ir))
-        }
-        BridgeUpstreamProtocol::CodexResponsesOauth | BridgeUpstreamProtocol::XaiResponsesOauth => {
+    let translated = match upstream_decode(&state) {
+        UpstreamDecode::ChatCompletions => crate::bridge::protocol::chat::translate_chat_response(
+            &upstream_body,
+            Some(&request_id),
+        )
+        .and_then(|responses| responses_output_to_ir(&responses))
+        .and_then(|ir| encode_anthropic_message(&ir)),
+        UpstreamDecode::OpenAiResponses => {
             responses_output_to_ir(&upstream_body).and_then(|ir| encode_anthropic_message(&ir))
         }
-        BridgeUpstreamProtocol::AnthropicMessages => {
+        UpstreamDecode::AnthropicMessages => {
             unreachable!("messages handler does not accept Anthropic upstream")
         }
     };
@@ -102,12 +104,10 @@ pub(super) async fn chat_non_stream_response(
             );
         }
     };
-    let translated = match state.upstream.protocol {
-        BridgeUpstreamProtocol::CodexResponsesOauth => responses_output_to_ir(&upstream_body)
+    let translated = match upstream_decode(&state) {
+        UpstreamDecode::OpenAiResponses => responses_output_to_ir(&upstream_body)
             .and_then(|ir| encode_chat_from_ir(&ir, Some(&request_id))),
-        BridgeUpstreamProtocol::KimiChatCompletions
-        | BridgeUpstreamProtocol::AnthropicMessages
-        | BridgeUpstreamProtocol::XaiResponsesOauth => {
+        UpstreamDecode::ChatCompletions | UpstreamDecode::AnthropicMessages => {
             unreachable!("chat completions handler owns Codex Responses OAuth")
         }
     };
@@ -147,18 +147,14 @@ pub(super) async fn non_stream_response(
         }
     };
     capture_grok_completed(&state, replay_seed.as_deref(), &upstream_body);
-    let translated = match state.upstream.protocol {
-        BridgeUpstreamProtocol::KimiChatCompletions => {
-            crate::bridge::protocol::chat::translate_chat_response(
-                &upstream_body,
-                Some(&request_id),
-            )
-        }
-        BridgeUpstreamProtocol::AnthropicMessages => anthropic_message_to_ir(&upstream_body)
+    let translated = match upstream_decode(&state) {
+        UpstreamDecode::ChatCompletions => crate::bridge::protocol::chat::translate_chat_response(
+            &upstream_body,
+            Some(&request_id),
+        ),
+        UpstreamDecode::AnthropicMessages => anthropic_message_to_ir(&upstream_body)
             .and_then(|ir| encode_responses_from_ir(&ir, Some(&request_id))),
-        BridgeUpstreamProtocol::CodexResponsesOauth | BridgeUpstreamProtocol::XaiResponsesOauth => {
-            Ok(upstream_body)
-        }
+        UpstreamDecode::OpenAiResponses => Ok(upstream_body),
     };
     match translated {
         Ok(value) => {
@@ -216,17 +212,16 @@ enum StreamCodec {
 }
 
 impl StreamCodec {
-    fn new(protocol: BridgeUpstreamProtocol, request_id: String, model: String) -> Self {
-        match protocol {
-            BridgeUpstreamProtocol::KimiChatCompletions => Self::Kimi(
+    fn new(kind: UpstreamDecode, request_id: String, model: String) -> Self {
+        match kind {
+            UpstreamDecode::ChatCompletions => Self::Kimi(
                 crate::bridge::protocol::chat::ResponsesSseTranslator::new(request_id, model),
             ),
-            BridgeUpstreamProtocol::AnthropicMessages => Self::Anthropic {
+            UpstreamDecode::AnthropicMessages => Self::Anthropic {
                 ir: AnthropicStreamToIr::new(),
                 out: IrToResponsesSse::new(request_id, model),
             },
-            BridgeUpstreamProtocol::CodexResponsesOauth
-            | BridgeUpstreamProtocol::XaiResponsesOauth => {
+            UpstreamDecode::OpenAiResponses => {
                 unreachable!("Responses passthrough owns this protocol")
             }
         }
@@ -355,10 +350,10 @@ pub(super) fn stream_response(
     let profile_id = state.profile_id.clone();
     let force_shutdown = state.force_shutdown.clone();
     let observed = state.clone();
-    let protocol = state.upstream.protocol;
+    let decode_kind = upstream_decode(&state);
     let bytes = response.bytes_stream();
     let output = stream! {
-        let mut translator = StreamCodec::new(protocol, request_id.clone(), model);
+        let mut translator = StreamCodec::new(decode_kind, request_id.clone(), model);
         // `VecDeque` lets us consume complete SSE frames from the front without repeatedly
         // moving the unread tail. The cap counts all upstream bytes, not merely the current
         // partial frame, and the output cap protects a pathological translator expansion.
@@ -484,16 +479,11 @@ enum MessagesStreamCodec {
 }
 
 impl MessagesStreamCodec {
-    fn new(protocol: BridgeUpstreamProtocol, request_id: String, model: String) -> Self {
-        match protocol {
-            BridgeUpstreamProtocol::KimiChatCompletions => {
-                Self::Chat(ChatStreamToIr::new(request_id, model))
-            }
-            BridgeUpstreamProtocol::CodexResponsesOauth
-            | BridgeUpstreamProtocol::XaiResponsesOauth => {
-                Self::Responses(ResponsesStreamToIr::new())
-            }
-            BridgeUpstreamProtocol::AnthropicMessages => {
+    fn new(kind: UpstreamDecode, request_id: String, model: String) -> Self {
+        match kind {
+            UpstreamDecode::ChatCompletions => Self::Chat(ChatStreamToIr::new(request_id, model)),
+            UpstreamDecode::OpenAiResponses => Self::Responses(ResponsesStreamToIr::new()),
+            UpstreamDecode::AnthropicMessages => {
                 unreachable!("messages handler does not accept Anthropic upstream")
             }
         }
@@ -528,8 +518,8 @@ pub(super) fn messages_stream_response(
     let bytes = response.bytes_stream();
     let output = stream! {
         let model = state.upstream.model.clone().unwrap_or_default();
-        let protocol = state.upstream.protocol;
-        let mut translator = MessagesStreamCodec::new(protocol, request_id.clone(), model);
+        let decode_kind = upstream_decode(&state);
+        let mut translator = MessagesStreamCodec::new(decode_kind, request_id.clone(), model);
         let mut ir_events: Vec<IrEvent> = Vec::new();
         let mut emitted_frames = 0usize;
         let mut buffer = std::collections::VecDeque::new();
@@ -586,7 +576,7 @@ pub(super) fn messages_stream_response(
                 let Some(payload) = payload else { continue; };
                 if payload.is_empty() { continue; }
                 if payload == "[DONE]" {
-                    if protocol == BridgeUpstreamProtocol::KimiChatCompletions {
+                    if decode_kind == UpstreamDecode::ChatCompletions {
                         saw_done = true;
                         break 'upstream;
                     }
@@ -678,8 +668,8 @@ pub(super) fn chat_stream_response(
     let bytes = response.bytes_stream();
     let output = stream! {
         let model = state.upstream.model.clone().unwrap_or_default();
-        let protocol = state.upstream.protocol;
-        let mut translator = MessagesStreamCodec::new(protocol, request_id.clone(), model);
+        let decode_kind = upstream_decode(&state);
+        let mut translator = MessagesStreamCodec::new(decode_kind, request_id.clone(), model);
         let mut ir_events: Vec<IrEvent> = Vec::new();
         let mut emitted_frames = 0usize;
         let mut buffer = std::collections::VecDeque::new();
