@@ -24,7 +24,7 @@ use crate::bridge::types::{EmissionState, RetryClass, RetryGate};
 
 use super::admission::AdmittedRequest;
 use super::http::{
-    error_response, log_protocol_error, protocol_error_response, stopping_response, ListenerState,
+    error_response, log_protocol_error, protocol_error_response, stopping_response, EdgeState,
 };
 use super::stream::UpstreamBodyError;
 use super::surface::DownstreamSurface;
@@ -221,7 +221,7 @@ impl UpstreamTransport for UpstreamChannel {
 }
 
 pub(super) async fn send_upstream(
-    state: &ListenerState,
+    state: &EdgeState,
     url: reqwest::Url,
     channel: UpstreamChannel,
     request_id: &str,

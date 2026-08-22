@@ -8,7 +8,7 @@ use crate::bridge::protocol::responses::parse_responses_request;
 use crate::bridge::runtime::BridgeLocalSurface;
 use crate::bridge::types::{BridgeRequest, ProtocolError};
 
-use super::http::ListenerState;
+use super::http::EdgeState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DownstreamSurface {
@@ -37,7 +37,7 @@ impl DownstreamSurface {
     }
 
     /// Models always served. Conversation surfaces served iff they match the
-    /// listener's BridgeLocalSurface. Wrong conversation surface → 404.
+    /// edge's BridgeLocalSurface. Wrong conversation surface → 404 (after auth).
     pub(super) fn served_by(self, local: BridgeLocalSurface) -> bool {
         match self {
             Self::Models => true,
@@ -45,7 +45,7 @@ impl DownstreamSurface {
         }
     }
 
-    pub(super) fn reject_if_unserved(self, state: &ListenerState) -> Option<Response> {
+    pub(super) fn reject_if_unserved(self, state: &EdgeState) -> Option<Response> {
         if self.served_by(state.upstream.local_surface) {
             None
         } else {

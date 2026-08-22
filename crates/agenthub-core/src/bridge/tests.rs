@@ -26,11 +26,16 @@ use super::{
 };
 use crate::models::{list_local_bridge_models, AdapterSourceProduct, AgentId};
 
-fn spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
+fn spec_with_token(
+    profile_id: &str,
+    port: u16,
+    upstream_port: u16,
+    local_token: &str,
+) -> BridgeStartSpec {
     BridgeStartSpec::new(
         profile_id,
         port,
-        "local-test-token",
+        local_token,
         BridgeUpstreamConfig {
             base_url: format!("http://127.0.0.1:{upstream_port}"),
             model: None,
@@ -40,6 +45,10 @@ fn spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
             local_surface: BridgeLocalSurface::Responses,
         },
     )
+}
+
+fn spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
+    spec_with_token(profile_id, port, upstream_port, "local-test-token")
 }
 
 fn anthropic_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
@@ -750,11 +759,21 @@ async fn profile_admission_rejects_overload_without_affecting_a_second_profile()
     let (other_upstream_port, other_upstream_task) = upstream().await;
     let host = BridgeRuntimeHost::new();
     let first = host
-        .start(spec("admission-a", 0, upstream_port))
+        .start(spec_with_token(
+            "admission-a",
+            0,
+            upstream_port,
+            "local-token-a-aaaaaaaaaaaa",
+        ))
         .await
         .expect("start first profile");
     let second = host
-        .start(spec("admission-b", 0, other_upstream_port))
+        .start(spec_with_token(
+            "admission-b",
+            0,
+            other_upstream_port,
+            "local-token-b-bbbbbbbbbbbb",
+        ))
         .await
         .expect("start second profile");
     let mut requests = Vec::new();
@@ -764,7 +783,7 @@ async fn profile_admission_rejects_overload_without_affecting_a_second_profile()
         requests.push(tokio::spawn(async move {
             client
                 .post(url)
-                .header(header::AUTHORIZATION, "Bearer local-test-token")
+                .header(header::AUTHORIZATION, "Bearer local-token-a-aaaaaaaaaaaa")
                 .json(&json!({"model":"test","input":"hello"}))
                 .send()
                 .await
@@ -777,7 +796,7 @@ async fn profile_admission_rejects_overload_without_affecting_a_second_profile()
     let overloaded = client()
         .await
         .post(format!("http://127.0.0.1:{}/v1/responses", first.port))
-        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .header(header::AUTHORIZATION, "Bearer local-token-a-aaaaaaaaaaaa")
         .json(&json!({"model":"test","input":"hello"}))
         .send()
         .await
@@ -794,7 +813,7 @@ async fn profile_admission_rejects_overload_without_affecting_a_second_profile()
         client()
             .await
             .post(format!("http://127.0.0.1:{}/v1/responses", second.port))
-            .header(header::AUTHORIZATION, "Bearer local-test-token")
+            .header(header::AUTHORIZATION, "Bearer local-token-b-bbbbbbbbbbbb")
             .json(&json!({"model":"test","input":"hello"}))
             .send()
             .await
@@ -837,7 +856,12 @@ async fn stopping_one_profile_does_not_block_starting_or_stopping_another() {
     let stop = tokio::spawn(async move { draining_host.stop("cross-a").await });
     assert!(tokio::time::timeout(
         Duration::from_millis(100),
-        host.start(spec("cross-b", 0, upstream_port)),
+        host.start(spec_with_token(
+            "cross-b",
+            0,
+            upstream_port,
+            "local-token-cross-b-bbbbbb",
+        )),
     )
     .await
     .expect("unrelated profile start must not queue")
@@ -885,19 +909,32 @@ async fn repeated_shutdown_joins_the_same_inflight_cleanup() {
 }
 
 #[tokio::test]
-async fn port_conflict_fails_and_non_streaming_response_translates() {
+async fn shared_port_second_profile_starts_and_non_streaming_response_translates() {
     let (upstream_port, upstream_task) = upstream().await;
     let host = BridgeRuntimeHost::new();
     let first = host
-        .start(spec("first", 0, upstream_port))
+        .start(spec_with_token(
+            "first",
+            0,
+            upstream_port,
+            "local-token-first-aaaaaaaa",
+        ))
         .await
         .expect("first start");
-    let conflict = host.start(spec("second", first.port, upstream_port)).await;
-    assert!(matches!(conflict, Err(super::BridgeHostError::Bind(_))));
+    let second = host
+        .start(spec_with_token(
+            "second",
+            first.port,
+            upstream_port,
+            "local-token-second-bbbbbbb",
+        ))
+        .await
+        .expect("second profile shares the bound port");
+    assert_eq!(second.port, first.port);
     let response = client()
         .await
         .post(format!("http://127.0.0.1:{}/v1/responses", first.port))
-        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .header(header::AUTHORIZATION, "Bearer local-token-first-aaaaaaaa")
         .json(&json!({"model":"test","input":"hello"}))
         .send()
         .await
@@ -2670,5 +2707,320 @@ async fn oauth_401_without_new_token_stays_upstream_error() {
     assert_eq!(bearers, vec!["Bearer upstream-test-token".to_owned()]);
 
     host.stop("grok-401-none").await.expect("stop");
+    upstream_task.abort();
+}
+
+const TOKEN_A: &str = "local-token-edge-a-aaaaaaaa";
+const TOKEN_B: &str = "local-token-edge-b-bbbbbbbb";
+
+fn grok_claude_with_token(
+    profile_id: &str,
+    port: u16,
+    upstream_port: u16,
+    token: &str,
+) -> BridgeStartSpec {
+    let mut spec = grok_claude_spec(profile_id, port, upstream_port);
+    spec.local_token = token.to_owned();
+    spec
+}
+
+fn grok_codex_with_token(
+    profile_id: &str,
+    port: u16,
+    upstream_port: u16,
+    token: &str,
+) -> BridgeStartSpec {
+    let mut spec = grok_codex_spec(profile_id, port, upstream_port);
+    spec.local_token = token.to_owned();
+    spec
+}
+
+async fn free_loopback_port() -> u16 {
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("probe loopback port");
+    listener.local_addr().expect("probe addr").port()
+}
+
+#[tokio::test]
+async fn two_profiles_two_bearers_two_surfaces_do_not_cross() {
+    let (upstream_port, upstream_task) = grok_responses_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let messages = host
+        .start(grok_claude_with_token(
+            "edge-messages",
+            0,
+            upstream_port,
+            TOKEN_A,
+        ))
+        .await
+        .expect("start messages edge");
+    let responses = host
+        .start(grok_codex_with_token(
+            "edge-responses",
+            0,
+            upstream_port,
+            TOKEN_B,
+        ))
+        .await
+        .expect("start responses edge");
+    assert_eq!(
+        responses.port, messages.port,
+        "new start projects onto the existing gateway socket"
+    );
+    let http = client().await;
+    let port = messages.port;
+
+    let served_messages = http
+        .post(format!("http://127.0.0.1:{port}/v1/messages"))
+        .header("x-api-key", TOKEN_A)
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("messages for A");
+    assert_eq!(served_messages.status(), StatusCode::OK);
+
+    let cross_responses = http
+        .post(format!("http://127.0.0.1:{port}/v1/responses"))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .json(&json!({"model": "grok-4.5", "input": "hello"}))
+        .send()
+        .await
+        .expect("responses for A");
+    assert_eq!(cross_responses.status(), StatusCode::NOT_FOUND);
+    assert!(cross_responses.text().await.expect("empty 404").is_empty());
+
+    let served_responses = http
+        .post(format!("http://127.0.0.1:{port}/v1/responses"))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_B}"))
+        .json(&json!({"model": "grok-4.5", "input": "hello"}))
+        .send()
+        .await
+        .expect("responses for B");
+    assert_eq!(served_responses.status(), StatusCode::OK);
+
+    let cross_messages = http
+        .post(format!("http://127.0.0.1:{port}/v1/messages"))
+        .header("x-api-key", TOKEN_B)
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("messages for B");
+    assert_eq!(cross_messages.status(), StatusCode::NOT_FOUND);
+
+    host.shutdown().await.expect("shutdown");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn shared_port_tokens_do_not_cross_on_models() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let first = host
+        .start(
+            spec_with_token("models-a", 0, upstream_port, TOKEN_A)
+                .with_listed_models(vec!["model-a".into()]),
+        )
+        .await
+        .expect("start A");
+    let second = host
+        .start(
+            spec_with_token("models-b", first.port, upstream_port, TOKEN_B)
+                .with_listed_models(vec!["model-b".into()]),
+        )
+        .await
+        .expect("start B on shared port");
+    assert_eq!(second.port, first.port);
+    let http = client().await;
+    let listed_a = http
+        .get(format!("http://127.0.0.1:{}/v1/models", first.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .send()
+        .await
+        .expect("models A")
+        .json::<Value>()
+        .await
+        .expect("models A json");
+    assert_eq!(listed_a["data"][0]["id"], "model-a");
+    assert_eq!(listed_a["data"].as_array().map(Vec::len), Some(1));
+    let listed_b = http
+        .get(format!("http://127.0.0.1:{}/v1/models", first.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_B}"))
+        .send()
+        .await
+        .expect("models B")
+        .json::<Value>()
+        .await
+        .expect("models B json");
+    assert_eq!(listed_b["data"][0]["id"], "model-b");
+    host.shutdown().await.expect("shutdown");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn alias_port_reaches_the_same_edge() {
+    let (upstream_port, upstream_task) = grok_responses_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let primary = host
+        .start(grok_claude_with_token(
+            "alias-primary",
+            0,
+            upstream_port,
+            TOKEN_A,
+        ))
+        .await
+        .expect("start primary");
+    let alias_port = free_loopback_port().await;
+    let aliased = host
+        .start(grok_codex_with_token(
+            "alias-historical",
+            alias_port,
+            upstream_port,
+            TOKEN_B,
+        ))
+        .await
+        .expect("bind historical alias");
+    assert_eq!(aliased.port, alias_port);
+    assert_ne!(alias_port, primary.port);
+    let http = client().await;
+
+    let via_alias = http
+        .post(format!("http://127.0.0.1:{alias_port}/v1/messages"))
+        .header("x-api-key", TOKEN_A)
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("A via alias port");
+    assert_eq!(via_alias.status(), StatusCode::OK);
+
+    let via_primary = http
+        .post(format!("http://127.0.0.1:{}/v1/responses", primary.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_B}"))
+        .json(&json!({"model": "grok-4.5", "input": "hello"}))
+        .send()
+        .await
+        .expect("B via primary port");
+    assert_eq!(via_primary.status(), StatusCode::OK);
+
+    host.shutdown().await.expect("shutdown");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn missing_bearer_is_401_on_every_registered_path() {
+    let (upstream_port, upstream_task) = grok_responses_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_claude_spec("unauth-paths", 0, upstream_port))
+        .await
+        .expect("start");
+    let http = client().await;
+    let port = status.port;
+    for path in [
+        "/health",
+        "/v1/models",
+        "/models",
+        "/v1/responses",
+        "/v1/messages",
+        "/v1/chat/completions",
+        "/chat/completions",
+    ] {
+        let builder = if path == "/health" || path.ends_with("models") {
+            http.get(format!("http://127.0.0.1:{port}{path}"))
+        } else {
+            http.post(format!("http://127.0.0.1:{port}{path}"))
+                .json(&json!({"model": "test", "input": "hello"}))
+        };
+        let response = builder.send().await.expect(path);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        let body = response.json::<Value>().await.expect("error json");
+        assert_eq!(body["error"]["code"], "invalid_api_key", "{path}");
+    }
+    let wrong_surface = http
+        .post(format!("http://127.0.0.1:{port}/v1/responses"))
+        .header(header::AUTHORIZATION, "Bearer wrong-token")
+        .json(&json!({"model": "test", "input": "hello"}))
+        .send()
+        .await
+        .expect("wrong token on unserved path");
+    assert_eq!(wrong_surface.status(), StatusCode::UNAUTHORIZED);
+    host.stop("unauth-paths").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn health_upstream_status_depends_on_bearer() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let first = host
+        .start(spec_with_token("health-a", 0, upstream_port, TOKEN_A))
+        .await
+        .expect("start A");
+    host.start(spec_with_token(
+        "health-b",
+        first.port,
+        upstream_port,
+        TOKEN_B,
+    ))
+    .await
+    .expect("start B");
+    host.record_upstream_outcome("health-a", BridgeUpstreamStatus::Connected)
+        .expect("record A")
+        .expect("A running");
+    host.record_upstream_outcome("health-b", BridgeUpstreamStatus::Degraded)
+        .expect("record B")
+        .expect("B running");
+    let http = client().await;
+    let health_a = http
+        .get(format!("http://127.0.0.1:{}/health", first.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .send()
+        .await
+        .expect("health A")
+        .json::<Value>()
+        .await
+        .expect("health A json");
+    assert_eq!(health_a["upstream_status"], "connected");
+    let health_b = http
+        .get(format!("http://127.0.0.1:{}/health", first.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_B}"))
+        .send()
+        .await
+        .expect("health B")
+        .json::<Value>()
+        .await
+        .expect("health B json");
+    assert_eq!(health_b["upstream_status"], "degraded");
+    host.shutdown().await.expect("shutdown");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn new_start_projects_existing_gateway_port() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let first = host
+        .start(spec_with_token("project-a", 0, upstream_port, TOKEN_A))
+        .await
+        .expect("start first");
+    let second = host
+        .start(spec_with_token("project-b", 0, upstream_port, TOKEN_B))
+        .await
+        .expect("start second");
+    assert_eq!(second.port, first.port);
+    host.shutdown().await.expect("shutdown");
     upstream_task.abort();
 }

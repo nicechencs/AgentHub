@@ -1,10 +1,11 @@
-//! Loopback bridge HTTP host: listener lifecycle, auth, and upstream dispatch.
+//! Loopback bridge HTTP host: gateway lifecycle, auth, and upstream dispatch.
 //!
 //! Split for maintainability only — public paths stay
 //! [`crate::bridge::host::{BridgeRuntimeHost, BridgeHostError}`].
 
 mod admission;
 mod dispatch;
+mod gateway;
 mod http;
 mod lifecycle;
 mod stream;
@@ -12,11 +13,12 @@ mod surface;
 mod transport;
 mod upstream;
 
-pub use lifecycle::{BridgeHostError, BridgeRuntimeHost};
+pub use gateway::BridgeHostError;
+pub use lifecycle::BridgeRuntimeHost;
 
+pub(super) use gateway::CleanupCompletion;
 #[cfg(test)]
 pub(super) use http::sse_frame_end;
-pub(super) use lifecycle::CleanupCompletion;
 
 use std::time::Duration;
 

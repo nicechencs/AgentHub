@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -14,7 +15,7 @@ use crate::bridge::runtime::{
 };
 
 use super::super::admission::AdmittedRequest;
-use super::super::http::ListenerState;
+use super::super::http::EdgeState;
 use super::super::surface::DownstreamSurface;
 use super::super::ANTHROPIC_API_VERSION;
 use super::{RecoveryPolicy, UpstreamChannel};
@@ -22,8 +23,8 @@ use super::{RecoveryPolicy, UpstreamChannel};
 fn listener_state(
     protocol: BridgeUpstreamProtocol,
     local_surface: BridgeLocalSurface,
-) -> ListenerState {
-    ListenerState {
+) -> EdgeState {
+    EdgeState {
         profile_id: Arc::from("transport-test"),
         local_token: Arc::from("local-dummy"),
         upstream: BridgeUpstreamConfig {
@@ -37,6 +38,7 @@ fn listener_state(
         upstream_url: reqwest::Url::parse("http://127.0.0.1/v1/").expect("test url"),
         client: reqwest::Client::new(),
         force_shutdown: CancellationToken::new(),
+        stopping: Arc::new(AtomicBool::new(false)),
         admission: Arc::new(Semaphore::new(1)),
         observed_upstream: Arc::new(Mutex::new(BridgeUpstreamStatus::Unknown)),
         grok_replay: Arc::new(GrokReasoningReplay::new()),

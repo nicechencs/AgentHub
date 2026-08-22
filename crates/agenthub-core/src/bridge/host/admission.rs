@@ -6,14 +6,11 @@ use axum::response::Response;
 use serde_json::Value;
 use tokio::sync::OwnedSemaphorePermit;
 
-use super::http::{
-    has_valid_local_auth, overloaded_response, read_request_json, reject_invalid_local_auth,
-    stopping_response, ListenerState,
-};
+use super::http::{overloaded_response, read_request_json, stopping_response, EdgeState};
 use super::surface::DownstreamSurface;
 
 pub(super) struct AdmittedRequest {
-    pub state: ListenerState,
+    pub state: EdgeState,
     pub request_id: String,
     pub started: Instant,
     pub permit: OwnedSemaphorePermit,
@@ -21,24 +18,15 @@ pub(super) struct AdmittedRequest {
     pub body: Value,
 }
 
-/// Auth (after 404), shutdown, semaphore, read JSON. Logs op from surface.op().
+/// Shutdown, per-edge semaphore, read JSON. Auth has already bound the edge.
 pub(super) async fn admit_conversation(
-    state: ListenerState,
+    state: EdgeState,
     request: Request,
     surface: DownstreamSurface,
+    request_id: String,
+    started: Instant,
 ) -> Result<AdmittedRequest, Response> {
-    let request_id = uuid::Uuid::new_v4().to_string();
-    let started = Instant::now();
     let op = surface.op();
-    // Do this before extracting JSON. Axum's Json extractor would otherwise read a potentially
-    // slow or oversized body for an unauthenticated peer.
-    if !has_valid_local_auth(request.headers(), &state.local_token) {
-        return Err(reject_invalid_local_auth(
-            &state,
-            op,
-            Some((&request_id, started)),
-        ));
-    }
     if state.force_shutdown.is_cancelled() {
         return Err(stopping_response());
     }

@@ -1,0 +1,323 @@
+//! In-process loopback gateway: sockets, edges, and local-bearer lookup.
+//!
+//! One [`Gateway`] per [`super::BridgeRuntimeHost`]. Local bearer is the only
+//! request-path identity; C2 will hang an AccountPicker off [`EdgeState`].
+
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
+
+use axum::http::{header, HeaderMap};
+use reqwest::Url;
+use tokio::sync::{watch, Semaphore};
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
+
+use thiserror::Error;
+
+use crate::bridge::grok_cli::GrokReasoningReplay;
+use crate::bridge::runtime::{
+    BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamStatus,
+};
+
+use super::{MAX_IN_FLIGHT_REQUESTS_PER_PROFILE, UPSTREAM_CONNECT_TIMEOUT};
+
+#[derive(Debug, Error)]
+pub enum BridgeHostError {
+    #[error("bridge profile id must not be empty")]
+    EmptyProfileId,
+    #[error("bridge local bearer token must not be empty")]
+    EmptyLocalToken,
+    #[error("bridge upstream base URL must not be empty")]
+    EmptyUpstreamUrl,
+    #[error("bridge upstream base URL is invalid or not permitted")]
+    InvalidUpstreamUrl,
+    #[error("bridge upstream bearer token must not be empty")]
+    EmptyUpstreamToken,
+    #[error("bridge host is shutting down and cannot start listeners")]
+    HostClosing,
+    #[error("bridge instance already runs with a different configuration")]
+    ConflictingStart,
+    #[error("bridge instance is stopping")]
+    Stopping,
+    #[error("bridge instance is not running")]
+    NotRunning,
+    #[error("bridge host state is unavailable")]
+    StatePoisoned,
+    #[error("failed to bind loopback bridge listener: {0}")]
+    Bind(#[from] std::io::Error),
+}
+
+/// A tiny cancellation-safe completion primitive. The cleanup task, rather than an RPC caller,
+/// owns listener JoinHandles; callers can therefore be dropped without abandoning a stop.
+pub struct CleanupCompletion {
+    /// `watch` retains the terminal result. A waiter that subscribes after `finish`, or while
+    /// `finish` races registration, observes the latest value instead of depending on an edge-
+    /// triggered notification that can be lost.
+    result: watch::Sender<Option<bool>>,
+}
+
+impl CleanupCompletion {
+    pub fn new() -> Self {
+        let (result, _receiver) = watch::channel(None);
+        Self { result }
+    }
+
+    pub fn finish(&self, failed: bool) {
+        self.result.send_replace(Some(failed));
+    }
+
+    pub async fn wait(&self) -> Result<(), BridgeHostError> {
+        let mut result = self.result.subscribe();
+        loop {
+            if let Some(failed) = *result.borrow_and_update() {
+                return if failed {
+                    Err(BridgeHostError::StatePoisoned)
+                } else {
+                    Ok(())
+                };
+            }
+            result
+                .changed()
+                .await
+                .map_err(|_| BridgeHostError::StatePoisoned)?;
+        }
+    }
+}
+
+/// Shared axum state. All loopback sockets serve this table.
+#[derive(Clone)]
+pub(super) struct Gateway {
+    pub(super) registry: Arc<Mutex<GatewayRegistry>>,
+}
+
+pub(super) struct GatewayRegistry {
+    pub(super) sockets: HashMap<u16, SocketInstance>,
+    pub(super) runtimes: HashMap<String, EdgeRuntime>,
+    pub(super) primary_port: Option<u16>,
+}
+
+pub(super) struct SocketInstance {
+    pub(super) accept_shutdown: CancellationToken,
+    pub(super) task: Option<JoinHandle<Result<(), ()>>>,
+}
+
+pub(super) struct EdgeRuntime {
+    pub(super) spec: BridgeStartSpec,
+    pub(super) cited_port: u16,
+    pub(super) started_at: std::time::SystemTime,
+    pub(super) lifecycle: BridgeRuntimeState,
+    pub(super) state: EdgeState,
+    pub(super) stop_completion: Option<Arc<CleanupCompletion>>,
+}
+
+/// Per-profile edge. C2 will hang AccountPicker here; A4 keeps a single
+/// [`crate::bridge::ResolvedAuth`] on `upstream.auth`.
+#[derive(Clone)]
+pub(super) struct EdgeState {
+    pub(super) profile_id: Arc<str>,
+    pub(super) local_token: Arc<str>,
+    pub(super) upstream: crate::bridge::runtime::BridgeUpstreamConfig,
+    pub(super) upstream_url: Url,
+    pub(super) client: reqwest::Client,
+    pub(super) force_shutdown: CancellationToken,
+    /// New requests 503 once stop begins; in-flight keep going until drain timeout.
+    pub(super) stopping: Arc<AtomicBool>,
+    pub(super) admission: Arc<Semaphore>,
+    pub(super) observed_upstream: Arc<Mutex<BridgeUpstreamStatus>>,
+    pub(super) grok_replay: Arc<GrokReasoningReplay>,
+    pub(super) listed_models: Arc<[String]>,
+    pub(super) reload_upstream_auth: Option<crate::bridge::UpstreamAuthReload>,
+}
+
+pub(super) enum GatewayAuthError {
+    Unauthorized,
+    Stopping,
+    Poisoned,
+}
+
+impl Gateway {
+    pub(super) fn new() -> Self {
+        Self {
+            registry: Arc::new(Mutex::new(GatewayRegistry {
+                sockets: HashMap::new(),
+                runtimes: HashMap::new(),
+                primary_port: None,
+            })),
+        }
+    }
+
+    pub(super) fn lock(&self) -> Result<MutexGuard<'_, GatewayRegistry>, BridgeHostError> {
+        self.registry
+            .lock()
+            .map_err(|_| BridgeHostError::StatePoisoned)
+    }
+
+    /// Constant-time compare against every live local bearer. A miss is 401;
+    /// a hit whose edge is draining is 503. Does not reveal whether the path
+    /// would have been 404.
+    pub(super) fn authenticate(&self, headers: &HeaderMap) -> Result<EdgeState, GatewayAuthError> {
+        let presented = presented_local_token(headers);
+        let registry = self
+            .registry
+            .lock()
+            .map_err(|_| GatewayAuthError::Poisoned)?;
+        let presented_bytes = presented.unwrap_or("");
+        let mut matched: Option<EdgeState> = None;
+        for runtime in registry.runtimes.values() {
+            if constant_time_eq(
+                presented_bytes.as_bytes(),
+                runtime.state.local_token.as_bytes(),
+            ) {
+                matched = Some(runtime.state.clone());
+            }
+        }
+        let Some(edge) = matched else {
+            return Err(GatewayAuthError::Unauthorized);
+        };
+        if edge.stopping.load(Ordering::SeqCst) || edge.force_shutdown.is_cancelled() {
+            return Err(GatewayAuthError::Stopping);
+        }
+        Ok(edge)
+    }
+}
+
+impl GatewayRegistry {
+    pub(super) fn sockets_live(&self) -> bool {
+        self.sockets
+            .values()
+            .any(|socket| socket.task.as_ref().is_some_and(|task| !task.is_finished()))
+    }
+
+    pub(super) fn token_owned_by_other(&self, spec: &BridgeStartSpec) -> bool {
+        self.runtimes.values().any(|runtime| {
+            runtime.spec.profile_id != spec.profile_id
+                && runtime.state.local_token.as_ref() == spec.local_token
+        })
+    }
+
+    pub(super) fn remaining_citers(&self, port: u16, except_profile: Option<&str>) -> usize {
+        self.runtimes
+            .values()
+            .filter(|runtime| {
+                runtime.cited_port == port
+                    && except_profile.is_none_or(|id| runtime.spec.profile_id != id)
+            })
+            .count()
+    }
+}
+
+impl EdgeRuntime {
+    pub(super) fn status(&self, sockets_live: bool) -> BridgeRuntimeStatus {
+        let state = match self.lifecycle {
+            BridgeRuntimeState::Stopping => BridgeRuntimeState::Stopping,
+            BridgeRuntimeState::Running | BridgeRuntimeState::Starting if !sockets_live => {
+                BridgeRuntimeState::Error
+            }
+            state => state,
+        };
+        BridgeRuntimeStatus {
+            profile_id: self.spec.profile_id.clone(),
+            port: self.cited_port,
+            running: matches!(
+                state,
+                BridgeRuntimeState::Running | BridgeRuntimeState::Degraded
+            ),
+            started_at: self.started_at,
+            source_connection_id: self.spec.upstream.source_connection_id.clone(),
+            state,
+            upstream_status: self.public_upstream_status(state),
+        }
+    }
+
+    pub(super) fn stopped_status(&self) -> BridgeRuntimeStatus {
+        BridgeRuntimeStatus {
+            profile_id: self.spec.profile_id.clone(),
+            port: self.cited_port,
+            running: false,
+            started_at: self.started_at,
+            source_connection_id: self.spec.upstream.source_connection_id.clone(),
+            state: BridgeRuntimeState::Stopped,
+            upstream_status: BridgeUpstreamStatus::Stopped,
+        }
+    }
+
+    fn public_upstream_status(&self, state: BridgeRuntimeState) -> BridgeUpstreamStatus {
+        match state {
+            BridgeRuntimeState::Stopped | BridgeRuntimeState::Stopping => {
+                BridgeUpstreamStatus::Stopped
+            }
+            BridgeRuntimeState::Error => BridgeUpstreamStatus::Unavailable,
+            _ => self.state.observed_upstream(),
+        }
+    }
+}
+
+impl EdgeState {
+    pub(super) fn from_spec(
+        spec: &BridgeStartSpec,
+        upstream_url: Url,
+        force_shutdown: CancellationToken,
+    ) -> Self {
+        Self {
+            profile_id: Arc::from(spec.profile_id.clone()),
+            local_token: Arc::from(spec.local_token.clone()),
+            upstream: spec.upstream.clone(),
+            upstream_url,
+            client: reqwest::Client::builder()
+                // Streaming requests deliberately have no reqwest-wide total timeout: a healthy
+                // long-running SSE response is bounded by per-chunk idle time instead.
+                .connect_timeout(UPSTREAM_CONNECT_TIMEOUT)
+                .build()
+                .expect("reqwest client builder uses static valid settings"),
+            force_shutdown,
+            stopping: Arc::new(AtomicBool::new(false)),
+            admission: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS_PER_PROFILE)),
+            observed_upstream: Arc::new(Mutex::new(BridgeUpstreamStatus::Unknown)),
+            grok_replay: Arc::new(GrokReasoningReplay::new()),
+            listed_models: spec.listed_models.clone().into(),
+            reload_upstream_auth: spec.reload_upstream_auth.clone(),
+        }
+    }
+
+    pub(super) fn observed_upstream(&self) -> BridgeUpstreamStatus {
+        self.observed_upstream
+            .lock()
+            .map(|status| *status)
+            .unwrap_or(BridgeUpstreamStatus::Unavailable)
+    }
+
+    pub(super) fn record_upstream(&self, status: BridgeUpstreamStatus) {
+        if let Ok(mut observed) = self.observed_upstream.lock() {
+            *observed = status;
+        }
+    }
+
+    pub(super) fn record_upstream_success(&self) {
+        self.record_upstream(BridgeUpstreamStatus::Connected);
+    }
+
+    pub(super) fn record_upstream_failure(&self) {
+        self.record_upstream(BridgeUpstreamStatus::Degraded);
+    }
+}
+
+fn presented_local_token(headers: &HeaderMap) -> Option<&str> {
+    let bearer = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+    let api_key = headers
+        .get("x-api-key")
+        .and_then(|value| value.to_str().ok());
+    bearer.or(api_key)
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    let mut mismatch = left.len() ^ right.len();
+    let width = left.len().max(right.len());
+    for index in 0..width {
+        mismatch |= usize::from(*left.get(index).unwrap_or(&0) ^ *right.get(index).unwrap_or(&0));
+    }
+    mismatch == 0
+}

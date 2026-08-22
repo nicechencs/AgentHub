@@ -9,14 +9,14 @@ use tokio_util::sync::CancellationToken;
 use crate::bridge::runtime::BridgeUpstreamProtocol;
 use crate::utils::redact::redact_text;
 
-use super::http::{error_response, stopping_response, ListenerState};
+use super::http::{error_response, stopping_response, EdgeState};
 use super::stream::UpstreamBodyError;
 use super::{UPSTREAM_BODY_IDLE_TIMEOUT, UPSTREAM_RESPONSE_HEADER_TIMEOUT};
 
 const ACCESS_JWT_EXPIRY_SKEW_SECS: i64 = 60;
 const UPSTREAM_ERROR_BODY_LIMIT_BYTES: usize = 8 * 1024;
 
-fn grok_upstream(state: &ListenerState) -> bool {
+fn grok_upstream(state: &EdgeState) -> bool {
     state.upstream.protocol == BridgeUpstreamProtocol::XaiResponsesOauth
 }
 
@@ -35,7 +35,7 @@ pub(super) fn grok_replay_model(body: &Value, fallback: Option<&str>) -> String 
         .unwrap_or_default()
 }
 
-pub(super) fn apply_grok_replay(state: &ListenerState, body: &mut Value, seed: Option<&str>) {
+pub(super) fn apply_grok_replay(state: &EdgeState, body: &mut Value, seed: Option<&str>) {
     if !grok_upstream(state) {
         return;
     }
@@ -43,7 +43,7 @@ pub(super) fn apply_grok_replay(state: &ListenerState, body: &mut Value, seed: O
     state.grok_replay.apply(body, &model, seed);
 }
 
-pub(super) fn capture_grok_completed(state: &ListenerState, seed: Option<&str>, completed: &Value) {
+pub(super) fn capture_grok_completed(state: &EdgeState, seed: Option<&str>, completed: &Value) {
     if !grok_upstream(state) {
         return;
     }
@@ -51,7 +51,7 @@ pub(super) fn capture_grok_completed(state: &ListenerState, seed: Option<&str>, 
     state.grok_replay.store_completed(&model, seed, completed);
 }
 
-pub(super) fn capture_grok_sse(state: &ListenerState, seed: Option<&str>, sse: &str) {
+pub(super) fn capture_grok_sse(state: &EdgeState, seed: Option<&str>, sse: &str) {
     if !grok_upstream(state) {
         return;
     }
@@ -60,7 +60,7 @@ pub(super) fn capture_grok_sse(state: &ListenerState, seed: Option<&str>, sse: &
 }
 
 pub(super) fn map_upstream_http_error(
-    state: &ListenerState,
+    state: &EdgeState,
     request_id: &str,
     started: Instant,
     status: StatusCode,
@@ -129,7 +129,7 @@ pub(super) fn access_jwt_near_expiry(token: &str) -> bool {
     exp <= now + ACCESS_JWT_EXPIRY_SKEW_SECS
 }
 
-pub(super) fn try_reload_upstream_auth(state: &ListenerState) -> bool {
+pub(super) fn try_reload_upstream_auth(state: &EdgeState) -> bool {
     let Some(reload) = state.reload_upstream_auth.as_ref() else {
         return false;
     };
@@ -170,7 +170,7 @@ pub(super) async fn read_bounded_upstream_error(
 }
 
 pub(super) async fn post_upstream(
-    state: &ListenerState,
+    state: &EdgeState,
     builder: reqwest::RequestBuilder,
 ) -> Result<reqwest::Response, Response> {
     let result = tokio::select! {
@@ -204,7 +204,7 @@ pub(super) async fn post_upstream(
     }
 }
 
-pub(super) fn join_upstream(state: &ListenerState, path: &str) -> Result<reqwest::Url, Response> {
+pub(super) fn join_upstream(state: &EdgeState, path: &str) -> Result<reqwest::Url, Response> {
     match state.upstream_url.join(path) {
         Ok(url) => Ok(url),
         Err(_) => {

@@ -22,7 +22,7 @@ use crate::bridge::types::{BridgeEvent, IrEvent, ProtocolError};
 
 use super::http::{
     error_response, log_protocol_error, protocol_error_response, sse_data_payload,
-    sse_frame_end_deque, stopping_response, stream_error_frame, ListenerState,
+    sse_frame_end_deque, stopping_response, stream_error_frame, EdgeState,
 };
 use super::transport::{UpstreamChannel, UpstreamDecode};
 use super::upstream::{capture_grok_completed, capture_grok_sse};
@@ -30,12 +30,12 @@ use super::{
     BODY_LIMIT_BYTES, STREAM_LIMIT_BYTES, UPSTREAM_BODY_IDLE_TIMEOUT, UPSTREAM_STREAM_IDLE_TIMEOUT,
 };
 
-fn upstream_decode(state: &ListenerState) -> UpstreamDecode {
+fn upstream_decode(state: &EdgeState) -> UpstreamDecode {
     UpstreamChannel::from_protocol(state.upstream.protocol).decode_kind()
 }
 
 pub(super) async fn messages_non_stream_response(
-    state: ListenerState,
+    state: EdgeState,
     response: reqwest::Response,
     request_id: String,
     started: Instant,
@@ -85,7 +85,7 @@ pub(super) async fn messages_non_stream_response(
 }
 
 pub(super) async fn chat_non_stream_response(
-    state: ListenerState,
+    state: EdgeState,
     response: reqwest::Response,
     request_id: String,
     started: Instant,
@@ -126,7 +126,7 @@ pub(super) async fn chat_non_stream_response(
 }
 
 pub(super) async fn non_stream_response(
-    state: ListenerState,
+    state: EdgeState,
     response: reqwest::Response,
     request_id: String,
     started: Instant,
@@ -282,7 +282,7 @@ fn event_stream_response(
 }
 
 pub(super) fn passthrough_sse_response(
-    state: ListenerState,
+    state: EdgeState,
     response: reqwest::Response,
     request_id: String,
     started: Instant,
@@ -340,7 +340,7 @@ pub(super) fn passthrough_sse_response(
 }
 
 pub(super) fn stream_response(
-    state: ListenerState,
+    state: EdgeState,
     response: reqwest::Response,
     request_id: String,
     started: Instant,
@@ -505,7 +505,7 @@ impl MessagesStreamCodec {
 }
 
 pub(super) fn messages_stream_response(
-    state: ListenerState,
+    state: EdgeState,
     response: reqwest::Response,
     request_id: String,
     started: Instant,
@@ -656,7 +656,7 @@ pub(super) fn messages_stream_response(
 }
 
 pub(super) fn chat_stream_response(
-    state: ListenerState,
+    state: EdgeState,
     response: reqwest::Response,
     request_id: String,
     started: Instant,

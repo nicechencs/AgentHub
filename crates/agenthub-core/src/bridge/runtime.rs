@@ -61,7 +61,7 @@ pub enum BridgeUpstreamProtocol {
     XaiResponsesOauth,
 }
 
-/// Local HTTP dialect this listener exposes. One listener, one surface.
+/// Local HTTP dialect this edge exposes. One edge, one surface.
 ///
 /// Chosen from the *target* Agent, not sniffed from the upstream host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -6,7 +6,8 @@ use axum::response::Response;
 use tokio::sync::OwnedSemaphorePermit;
 
 use super::admission::{admit_conversation, AdmittedRequest};
-use super::http::{error_response, stopping_response, ListenerState};
+use super::gateway::{Gateway, GatewayAuthError};
+use super::http::{error_response, reject_invalid_local_auth, stopping_response, EdgeState};
 use super::stream::{
     chat_non_stream_response, chat_stream_response, messages_non_stream_response,
     messages_stream_response, non_stream_response, passthrough_sse_response, stream_response,
@@ -18,14 +19,26 @@ use super::UPSTREAM_NON_STREAM_TIMEOUT;
 
 pub(super) async fn handle_conversation(
     surface: DownstreamSurface,
-    state: ListenerState,
+    gateway: Gateway,
     request: Request,
 ) -> Response {
-    // Wrong-surface 404 is decided before local auth (401).
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let started = Instant::now();
+    // Bearer is the only middleware: invalid/missing token is always 401, even
+    // when this path would later 404 for the bound edge.
+    let state = match gateway.authenticate(request.headers()) {
+        Ok(state) => state,
+        Err(GatewayAuthError::Unauthorized) => {
+            return reject_invalid_local_auth(surface.op(), Some((&request_id, started)));
+        }
+        Err(GatewayAuthError::Stopping | GatewayAuthError::Poisoned) => {
+            return stopping_response();
+        }
+    };
     if let Some(response) = surface.reject_if_unserved(&state) {
         return response;
     }
-    let admitted = match admit_conversation(state, request, surface).await {
+    let admitted = match admit_conversation(state, request, surface, request_id, started).await {
         Ok(admitted) => admitted,
         Err(response) => return response,
     };
@@ -79,14 +92,7 @@ async fn forward_upstream(
     };
     if stream_requested {
         return forward_stream(
-            surface,
-            channel,
-            state,
-            response,
-            request_id,
-            started,
-            permit,
-            cache_seed,
+            surface, channel, state, response, request_id, started, permit, cache_seed,
         );
     }
     let force_shutdown = state.force_shutdown.clone();
@@ -113,7 +119,7 @@ async fn forward_upstream(
 fn forward_stream(
     surface: DownstreamSurface,
     channel: UpstreamChannel,
-    state: ListenerState,
+    state: EdgeState,
     response: reqwest::Response,
     request_id: String,
     started: Instant,
@@ -141,7 +147,7 @@ fn forward_stream(
 
 async fn forward_non_stream(
     surface: DownstreamSurface,
-    state: ListenerState,
+    state: EdgeState,
     response: reqwest::Response,
     request_id: String,
     started: Instant,
