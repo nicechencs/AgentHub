@@ -703,10 +703,12 @@ fn apply_restore_plan_rolls_back_partial_live_writes() {
         RestoreItem {
             stored_path: src_a,
             dest: dest_a.clone(),
+            expected_sha256: None,
         },
         RestoreItem {
             stored_path: src_b,
             dest: dest_b.clone(),
+            expected_sha256: None,
         },
     ];
     let err = apply_restore_plan(&plan).unwrap_err();
@@ -740,6 +742,47 @@ fn restore_rejects_corrupt_snapshot_file_before_overwrite() {
     assert_eq!(err.code(), "invalid_arg");
     assert_eq!(std::fs::read(&a).unwrap(), b"A-live");
     assert_eq!(std::fs::read(&b).unwrap(), b"B-live");
+}
+
+#[test]
+fn restore_rejects_tampered_payload_before_overwrite() {
+    let live = tempdir().unwrap();
+    let file = live.path().join("settings.json");
+    write_file(&file, b"original");
+    let (_root, svc, _) = make_svc(AgentId::Claude, vec![file.clone()]);
+    let snap = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, None)
+        .unwrap();
+
+    write_file(&file, b"live-data");
+    // Keep the payload length unchanged so a size-only check cannot accept it.
+    let stored = PathBuf::from(&snap.path).join("settings.json");
+    write_file(&stored, b"tampered");
+
+    let err = svc.restore(&snap.id).unwrap_err();
+    assert_eq!(err.code(), "invalid_arg");
+    assert_eq!(std::fs::read(&file).unwrap(), b"live-data");
+    // Validation fails before the automatic PreRestore can be created.
+    assert_eq!(svc.list(None).unwrap().len(), 1);
+}
+
+#[test]
+fn restore_rejects_missing_payload_before_overwrite() {
+    let live = tempdir().unwrap();
+    let file = live.path().join("settings.json");
+    write_file(&file, b"original");
+    let (_root, svc, _) = make_svc(AgentId::Claude, vec![file.clone()]);
+    let snap = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, None)
+        .unwrap();
+
+    write_file(&file, b"live-data");
+    std::fs::remove_file(PathBuf::from(&snap.path).join("settings.json")).unwrap();
+
+    let err = svc.restore(&snap.id).unwrap_err();
+    assert_eq!(err.code(), "not_found");
+    assert_eq!(std::fs::read(&file).unwrap(), b"live-data");
+    assert_eq!(svc.list(None).unwrap().len(), 1);
 }
 
 #[test]
@@ -853,7 +896,77 @@ fn unique_payload_bytes(backups_root: &Path) -> u64 {
         }
         total
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        use std::collections::HashSet;
+        use std::os::windows::fs::MetadataExt;
+        use std::os::windows::io::AsRawHandle;
+
+        #[repr(C)]
+        struct ByHandleFileInformation {
+            file_attributes: u32,
+            creation_time: [u32; 2],
+            last_access_time: [u32; 2],
+            last_write_time: [u32; 2],
+            volume_serial_number: u32,
+            file_size_high: u32,
+            file_size_low: u32,
+            number_of_links: u32,
+            file_index_high: u32,
+            file_index_low: u32,
+        }
+
+        unsafe extern "system" {
+            fn GetFileInformationByHandle(
+                file: *mut std::ffi::c_void,
+                info: *mut ByHandleFileInformation,
+            ) -> i32;
+        }
+
+        fn windows_file_key(path: &std::path::Path) -> Option<(u32, u64)> {
+            let file = std::fs::File::open(path).ok()?;
+            let mut info = unsafe { std::mem::zeroed::<ByHandleFileInformation>() };
+            let ok = unsafe {
+                GetFileInformationByHandle(file.as_raw_handle() as *mut std::ffi::c_void, &mut info)
+            };
+            if ok == 0 {
+                return None;
+            }
+            let index = ((info.file_index_high as u64) << 32) | u64::from(info.file_index_low);
+            Some((info.volume_serial_number, index))
+        }
+
+        let mut seen = HashSet::new();
+        let mut total = 0u64;
+        let mut pending = vec![live];
+        while let Some(dir) = pending.pop() {
+            let Ok(rd) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for ent in rd.flatten() {
+                let path = ent.path();
+                let Ok(meta) = std::fs::symlink_metadata(&path) else {
+                    continue;
+                };
+                if meta.is_dir() {
+                    pending.push(path);
+                    continue;
+                }
+                if !meta.is_file() {
+                    continue;
+                }
+                if path.file_name().and_then(|s| s.to_str()) == Some(MANIFEST_FILE) {
+                    continue;
+                }
+                let key = windows_file_key(&path).unwrap_or((0, 0));
+                if seen.insert(key) {
+                    total = total.saturating_add(meta.file_size());
+                }
+            }
+        }
+        total
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let mut total = 0u64;
         let mut pending = vec![live];

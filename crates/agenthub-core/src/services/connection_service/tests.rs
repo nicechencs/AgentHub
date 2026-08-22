@@ -374,6 +374,32 @@ fn binding_write_failure_rolls_back_cross_type_demotion() {
 }
 
 #[test]
+fn update_and_activate_account_rejects_stale_revision() {
+    let (_d, db) = tmp();
+    let conn = ConnectionService::new(db.clone());
+    let created = conn
+        .create_and_activate_account(&account("acc-cas", AgentId::Claude, true, "t1"))
+        .unwrap()
+        .0;
+    let mut next = created.clone();
+    next.label = "newer".into();
+    next.updated_at = "t2".into();
+    conn.update_and_activate_account(&next, "t1").unwrap();
+
+    next.label = "stale".into();
+    next.updated_at = "t3".into();
+    let err = conn
+        .update_and_activate_account(&next, "t1")
+        .unwrap_err();
+    assert_eq!(err.code(), "account.merge.conflict");
+    let stored = AccountRepo::new(db)
+        .get_by_id("acc-cas")
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.label, "newer");
+}
+
+#[test]
 fn clear_clears_binding_and_legacy_currents_without_backfill() {
     let (_d, db) = tmp();
     let accounts = AccountRepo::new(db.clone());

@@ -87,6 +87,7 @@ import {
   type AgentCardBridgeState,
 } from './agentOverviewModel';
 import { UsageDetailsTable } from './UsageDetailsTable';
+import { isLatestUsageRequest } from './usage-request';
 
 /** 日期筛选预设：today / 24h 均按 days=1 拉取，today 再按本地日历日收窄 */
 type DateRange = 'today' | '24h' | '7d' | '30d';
@@ -160,6 +161,7 @@ export default function DashboardPage() {
   const [usageLoading, setUsageLoading] = useState(true);
   const [usageRefreshing, setUsageRefreshing] = useState(false);
   const [usageError, setUsageError] = useState<unknown>(null);
+  const usageGenerationRef = useRef(0);
 
   const days =
     DATE_RANGE_OPTIONS.find((o) => o.value === dateRange)?.days ?? 7;
@@ -388,11 +390,13 @@ export default function DashboardPage() {
   /** days / agentFilter 变化时各请求一次，上下共用 */
   const loadUsage = useCallback(
     async (initial: boolean) => {
+      const generation = ++usageGenerationRef.current;
       if (initial) setUsageLoading(true);
       else setUsageRefreshing(true);
       setUsageError(null);
       try {
         const availability = await getUsageAvailability();
+        if (!isLatestUsageRequest(usageGenerationRef.current, generation)) return;
         setUsageAvailability(availability);
         if (availability.status === 'unavailable') {
           setTrend([]);
@@ -405,14 +409,17 @@ export default function DashboardPage() {
           queryUsage({ days, agentId: agentFilter }),
           listModels().catch(() => [] as string[]),
         ]);
+        if (!isLatestUsageRequest(usageGenerationRef.current, generation)) return;
         setTrend(trendData);
         setUsage(records);
         setModels(modelList);
       } catch (e) {
-        setUsageError(e);
+        if (isLatestUsageRequest(usageGenerationRef.current, generation)) setUsageError(e);
       } finally {
-        setUsageLoading(false);
-        setUsageRefreshing(false);
+        if (isLatestUsageRequest(usageGenerationRef.current, generation)) {
+          setUsageLoading(false);
+          setUsageRefreshing(false);
+        }
       }
     },
     [days, agentFilter],

@@ -36,19 +36,39 @@ export function startAdapterBridgeStatusPoll(host: AdapterBridgeStatusPollHost):
   const getBridgeStatus = host.getBridgeStatus ?? getAdapterBridgeStatus;
   const setIntervalFn = host.setIntervalFn ?? setInterval;
   const clearIntervalFn = host.clearIntervalFn ?? clearInterval;
-  const timer = setIntervalFn(() => {
+  let disposed = false;
+  let pollInFlight = false;
+  let pollToken = 0;
+
+  const poll = () => {
+    if (disposed || pollInFlight) return;
     const pollGeneration = host.getGeneration();
     const current = host.getResources();
     const targets = adapterBridgeProfilesToPoll(current.profiles, current.bridgeStatuses);
     if (targets.length === 0) return;
+
+    pollInFlight = true;
+    const requestToken = ++pollToken;
     void Promise.allSettled(
       targets.map((profile) => getBridgeStatus(profile.id)),
     ).then((results) => {
-      if (pollGeneration !== host.getGeneration()) return;
+      if (
+        disposed
+        || requestToken !== pollToken
+        || pollGeneration !== host.getGeneration()
+      ) return;
       host.apply((latest) => applyAdapterBridgeStatusPoll(latest, targets, results));
+    }).finally(() => {
+      if (requestToken === pollToken) pollInFlight = false;
     });
+  };
+
+  const timer = setIntervalFn(() => {
+    poll();
   }, ADAPTER_BRIDGE_STATUS_POLL_MS);
   return () => {
+    disposed = true;
+    pollToken += 1;
     clearIntervalFn(timer);
   };
 }
@@ -122,6 +142,9 @@ export function useAdapterResources() {
   }, [pool.accounts, pool.errors, pool.providers, pool.state]);
 
   const updateBridgeStatus = useCallback((status: AdapterBridgeRuntimeStatus) => {
+    // Start/stop responses are mutations, so invalidate any poll that began
+    // before the mutation completed. The mutation result is authoritative.
+    generation.current += 1;
     setResources((current) => ({
       ...current,
       bridgeStatuses: {
@@ -138,6 +161,7 @@ export function useAdapterResources() {
   }, []);
 
   const updateProfile = useCallback((profile: AdapterProfile) => {
+    generation.current += 1;
     setResources((current) => ({
       ...current,
       profiles: current.profiles.map((item) => (item.id === profile.id ? profile : item)),
@@ -145,6 +169,7 @@ export function useAdapterResources() {
   }, []);
 
   const removeProfile = useCallback((profileId: string) => {
+    generation.current += 1;
     setResources((current) => ({
       ...current,
       profiles: current.profiles.filter((profile) => profile.id !== profileId),

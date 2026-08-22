@@ -22,6 +22,15 @@ import {
   readStoredProjectPreviewWidth,
 } from './projects-preview-model';
 
+export function createIdempotentCleanup<T extends unknown[]>(cleanup: (...args: T) => void) {
+  let completed = false;
+  return (...args: T) => {
+    if (completed) return;
+    completed = true;
+    cleanup(...args);
+  };
+}
+
 export function useProjectPreview() {
   const reduceMotion = usePrefersReducedMotion();
   const [session, setSession] = useState<AgentSession | null>(null);
@@ -34,6 +43,13 @@ export function useProjectPreview() {
   const epochRef = useRef(0);
   const closingEpochRef = useRef(0);
   const openRafRef = useRef<number | null>(null);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+
+  const cancelPreviewResize = useCallback(() => {
+    resizeCleanupRef.current?.();
+  }, []);
+
+  useEffect(() => () => cancelPreviewResize(), [cancelPreviewResize]);
 
   const cancelOpenRaf = () => {
     if (openRafRef.current == null) return;
@@ -80,6 +96,7 @@ export function useProjectPreview() {
 
   const open = useCallback(
     (next: AgentSession) => {
+      cancelPreviewResize();
       const epoch = ++epochRef.current;
       closingEpochRef.current = 0;
       cancelOpenRaf();
@@ -97,10 +114,11 @@ export function useProjectPreview() {
         });
       });
     },
-    [reduceMotion],
+    [cancelPreviewResize, reduceMotion],
   );
 
   const close = useCallback(() => {
+    cancelPreviewResize();
     closingEpochRef.current = ++epochRef.current;
     cancelOpenRaf();
     setPreviewExpanded(false);
@@ -108,16 +126,17 @@ export function useProjectPreview() {
       setSession(null);
       setPreviewShellMounted(false);
     }
-  }, [reduceMotion]);
+  }, [cancelPreviewResize, reduceMotion]);
 
   const reset = useCallback(() => {
+    cancelPreviewResize();
     epochRef.current += 1;
     closingEpochRef.current = 0;
     cancelOpenRaf();
     setSession(null);
     setPreviewExpanded(false);
     setPreviewShellMounted(false);
-  }, []);
+  }, [cancelPreviewResize]);
 
   const onPreviewPaneTransitionEnd = useCallback(
     (e: ReactTransitionEvent<HTMLElement>) => {
@@ -133,30 +152,67 @@ export function useProjectPreview() {
   const onPreviewResizeStart = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       e.preventDefault();
+      cancelPreviewResize();
       const startX = e.clientX;
       const startW = previewWidth;
       const prevCursor = document.body.style.cursor;
       const prevSelect = document.body.style.userSelect;
+      const pointerTarget = e.currentTarget;
+      const pointerId = e.pointerId;
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
       setPreviewResizing(true);
 
-      const onMove = (ev: PointerEvent) => {
+      const onMove = (ev: globalThis.PointerEvent): void => {
+        if (ev.pointerId !== pointerId) return;
         setPreviewWidth(clampWidth(startW + (startX - ev.clientX)));
       };
-      const onUp = (ev: PointerEvent) => {
-        persistWidth(startW + (startX - ev.clientX));
-        document.body.style.cursor = prevCursor;
-        document.body.style.userSelect = prevSelect;
-        setPreviewResizing(false);
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-      };
+      const cleanup = createIdempotentCleanup<[boolean, number?]>(
+        (commit: boolean, clientX: number = startX) => {
+          if (resizeCleanupRef.current !== cancel) return;
+          resizeCleanupRef.current = null;
+          if (commit) persistWidth(startW + (startX - clientX));
+          document.body.style.cursor = prevCursor;
+          document.body.style.userSelect = prevSelect;
+          setPreviewResizing(false);
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+          window.removeEventListener('pointercancel', onCancel);
+          window.removeEventListener('blur', onBlur);
+          try {
+            pointerTarget.releasePointerCapture(pointerId);
+          } catch {
+            // The pointer may already have been released by the browser.
+          }
+        },
+      );
+      function onUp(ev: globalThis.PointerEvent): void {
+        if (ev.pointerId !== pointerId) return;
+        cleanup(true, ev.clientX);
+      }
+      function onCancel(ev: globalThis.PointerEvent): void {
+        if (ev.pointerId !== pointerId) return;
+        cleanup(false);
+      }
+      function onBlur() {
+        cleanup(false);
+      }
+      function cancel() {
+        cleanup(false);
+      }
+      resizeCleanupRef.current = cancel;
 
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onCancel);
+      window.addEventListener('blur', onBlur);
+      try {
+        pointerTarget.setPointerCapture(pointerId);
+      } catch {
+        // Keep the window listeners as a compatibility fallback.
+      }
     },
-    [previewWidth, clampWidth, persistWidth],
+    [cancelPreviewResize, previewWidth, clampWidth, persistWidth],
   );
 
   const onPreviewSeparatorKeyDown = useCallback(

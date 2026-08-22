@@ -57,6 +57,9 @@ export function ApiKeyAccountDialog({
   const [label, setLabel] = React.useState('');
   const [key, setKey] = React.useState('');
   const [envKey, setEnvKey] = React.useState<string>('ANTHROPIC_AUTH_TOKEN');
+  const [kimiProduct, setKimiProduct] = React.useState<'kimi-code-membership' | 'kimi-api'>(
+    'kimi-api',
+  );
   const [saving, setSaving] = React.useState(false);
 
   const isEdit = mode === 'edit';
@@ -69,10 +72,12 @@ export function ApiKeyAccountDialog({
       setLabel(account.label ?? '');
       setKey('');
       setEnvKey('ANTHROPIC_AUTH_TOKEN');
+      setKimiProduct('kimi-api');
     } else {
       setLabel('');
       setKey('');
       setEnvKey('ANTHROPIC_AUTH_TOKEN');
+      setKimiProduct('kimi-api');
     }
   }, [open, isEdit, account]);
 
@@ -105,6 +110,15 @@ export function ApiKeyAccountDialog({
           key.trim(),
           label.trim() || null,
           showClaudeEnv ? envKey : null,
+          agentId === 'claude'
+            ? 'anthropic'
+            : agentId === 'codex'
+              ? 'openai'
+              : agentId === 'grok'
+                ? 'xai'
+                : agentId === 'kimi'
+                  ? kimiProduct
+                  : null,
         );
         toast({
           title: t('connections.apiKeyDialog.added'),
@@ -188,6 +202,24 @@ export function ApiKeyAccountDialog({
               </Select>
               <span className="text-meta text-muted">
                 {t('connections.apiKeyDialog.envHint')}
+              </span>
+            </label>
+          )}
+
+          {agentId === 'kimi' && !isEdit && (
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted">Kimi Key 类型</span>
+              <Select value={kimiProduct} onValueChange={(value) => setKimiProduct(value as typeof kimiProduct)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="kimi-api">Kimi 开放平台 API Key</SelectItem>
+                  <SelectItem value="kimi-code-membership">Kimi Code 会员 Key</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-meta text-muted">
+                仅选择「Kimi Code 会员 Key」才会进入会员连接边；开放平台 Key 保持为普通 API Key。
               </span>
             </label>
           )}

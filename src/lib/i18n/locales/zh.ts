@@ -1109,7 +1109,7 @@ export const zh = {
       noteLocalRoute: "关掉会进托盘，路由继续跑。",
       noteDirect: "会把这份连接写进目标 Agent。",
       noteReuse: "会把这份官方登录写进目标 Agent。",
-      localReason: "用这份 {source} 接到 {target}。",
+      localReason: "用这份 {source}接到 {target}。",
       sourceGrok: "Grok 登录",
       sourceCodex: "Codex / ChatGPT 登录",
       sourceLogin: "登录",

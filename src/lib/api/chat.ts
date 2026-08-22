@@ -22,6 +22,13 @@ export async function createConversation(
   return getBackend().chat.createConversation(agentIds, cwd);
 }
 
+export async function ensureDefaultConversation(
+  agentIds: AgentId[],
+  cwd?: string | null,
+): Promise<Conversation> {
+  return getBackend().chat.ensureDefaultConversation(agentIds, cwd);
+}
+
 export async function updateConversation(
   id: string,
   patch: {

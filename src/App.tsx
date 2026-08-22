@@ -24,6 +24,7 @@ import {
 } from '@/lib/api/update';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { cn } from '@/lib/utils';
+import { logger } from '@/lib/logger';
 
 /** 旧 /providers、/accounts 深链兼容 → /connections */
 function LegacyConnectionsRedirect({ mode }: { mode: 'providers' | 'accounts' }) {
@@ -73,6 +74,11 @@ export default function App() {
         return;
       }
       unsub = fn;
+    }).catch((error) => {
+      // Tray navigation is Tauri-only. In browser/mock mode this rejection is
+      // expected; in production it must remain fail-closed rather than
+      // installing a mock listener or turning into an unhandled rejection.
+      logger.scope('tray').error('tray navigation subscription unavailable', error);
     });
     return () => {
       cancelled = true;

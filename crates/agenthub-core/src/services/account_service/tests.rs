@@ -8,7 +8,7 @@ use crate::utils::atomic::atomic_write;
 use serde_json::json;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Barrier, Mutex};
+use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 use tempfile::tempdir;
 
@@ -231,6 +231,32 @@ fn add_list_delete_api_key() {
 }
 
 #[test]
+fn api_key_add_persists_explicit_product_marker() {
+    let (_root, svc, _) = live_svc(AgentId::Kimi);
+    let kimi_api = svc
+        .add_api_key_with_env_and_marker(
+            AgentId::Kimi,
+            Some("open platform"),
+            "sk-kimi-api",
+            None,
+            Some("kimi-api"),
+        )
+        .unwrap();
+    assert_eq!(kimi_api.extra["provider"], "kimi-api");
+
+    let kimi_code = svc
+        .add_api_key_with_env_and_marker(
+            AgentId::Kimi,
+            Some("code membership"),
+            "sk-kimi-code",
+            None,
+            Some("kimi-code-membership"),
+        )
+        .unwrap();
+    assert_eq!(kimi_code.extra["provider"], "kimi-code-membership");
+}
+
+#[test]
 fn update_api_key_label_and_key() {
     let (_root, svc, adapter) = live_svc(AgentId::Grok);
     let a = svc
@@ -296,6 +322,567 @@ fn updating_current_api_key_writes_new_credentials_not_stale_live() {
         "sk-new-secret-key",
         "saving the current API key must apply the new pool value"
     );
+}
+
+#[test]
+fn updating_current_api_key_apply_failure_restores_db_and_live() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials: json!({"format": "api_key", "api_key": "old-key"}),
+        label_hint: Some("old".into()),
+        extra: json!({}),
+    });
+    let current = svc.import_live(AgentId::Claude, Some("old")).unwrap();
+    let provider_before = crate::storage::ProviderRepo::new(svc.db.clone())
+        .create(&crate::models::Provider {
+            id: "provider-before-account-rotation".into(),
+            agent_id: AgentId::Claude,
+            name: "Provider before account rotation".into(),
+            settings_config: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "provider-key"}}),
+            meta: json!({}),
+            is_current: true,
+            created_at: "2026-08-21T00:00:00Z".into(),
+            updated_at: "2026-08-21T00:00:00Z".into(),
+        })
+        .unwrap();
+    adapter.fail_writes_on(&[1]);
+
+    let error = svc
+        .update_api_key(AgentId::Claude, &current.id, None, Some("new-key"))
+        .unwrap_err();
+    assert_eq!(error.code(), "test.write");
+    assert_eq!(
+        adapter.read_account().unwrap().credentials["api_key"],
+        "old-key"
+    );
+    assert_eq!(svc.repo().get_by_id(&current.id).unwrap().unwrap(), current);
+    assert_eq!(
+        crate::storage::ProviderRepo::new(svc.db.clone())
+            .get_by_id(&provider_before.id)
+            .unwrap()
+            .unwrap(),
+        provider_before,
+        "account live failure must restore the active provider counterpart"
+    );
+}
+
+#[test]
+fn duplicate_merge_apply_failure_restores_current_source_and_target() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    let source = svc
+        .add_api_key(AgentId::Claude, Some("source"), "sk-source-key")
+        .unwrap();
+    svc.switch(&source.id, AgentId::Claude).unwrap();
+    let target = svc
+        .add_api_key(AgentId::Claude, Some("target"), "sk-target-key")
+        .unwrap();
+
+    let source_before = svc.repo().get_by_id(&source.id).unwrap().unwrap();
+    let target_before = svc.repo().get_by_id(&target.id).unwrap().unwrap();
+    let binding_before = svc.connections.get_active(AgentId::Claude).unwrap();
+    let trash_before = svc.connections.list_trash(Some(AgentId::Claude)).unwrap();
+    adapter.fail_writes_on(&[2]);
+
+    let error = svc
+        .update_api_key(
+            AgentId::Claude,
+            &source.id,
+            None,
+            Some("sk-target-key"),
+        )
+        .unwrap_err();
+    assert_eq!(error.code(), "test.write");
+    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
+    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
+    assert_eq!(
+        svc.repo().get_current(AgentId::Claude).unwrap().unwrap().id,
+        source.id
+    );
+    assert_eq!(
+        adapter.read_account().unwrap().credentials["api_key"],
+        "sk-source-key"
+    );
+    assert_eq!(
+        svc.connections.get_active(AgentId::Claude).unwrap(),
+        binding_before,
+        "duplicate merge compensation must restore the active binding"
+    );
+    assert_eq!(
+        svc.connections.list_trash(Some(AgentId::Claude)).unwrap(),
+        trash_before,
+        "duplicate merge compensation must not leave a recovery-trash row"
+    );
+}
+
+#[test]
+fn duplicate_merge_delete_failure_restores_current_source_target_binding_and_live() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    let source = svc
+        .add_api_key(AgentId::Claude, Some("source"), "sk-source-key")
+        .unwrap();
+    svc.switch(&source.id, AgentId::Claude).unwrap();
+    let target = svc
+        .add_api_key(AgentId::Claude, Some("target"), "sk-target-key")
+        .unwrap();
+
+    let source_before = svc.repo().get_by_id(&source.id).unwrap().unwrap();
+    let target_before = svc.repo().get_by_id(&target.id).unwrap().unwrap();
+    let binding_before = svc.connections.get_active(AgentId::Claude).unwrap();
+    let live_before = adapter.read_account().unwrap();
+
+    // Target activation and source deletion share one transaction. Force the
+    // source delete to fail so the transaction must leave both rows,
+    // including the active binding, unchanged.
+    svc.db
+        .with_conn(|conn| {
+            conn.execute_batch(
+                "CREATE TRIGGER fail_account_delete BEFORE DELETE ON accounts BEGIN SELECT RAISE(ABORT, 'delete failure'); END;",
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+    let error = svc
+        .update_api_key(
+            AgentId::Claude,
+            &source.id,
+            None,
+            Some("sk-target-key"),
+        )
+        .unwrap_err();
+    assert!(error.code().starts_with("db"));
+    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
+    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
+    assert_eq!(svc.repo().get_current(AgentId::Claude).unwrap().unwrap().id, source.id);
+    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(adapter.read_account().unwrap(), live_before);
+}
+
+#[test]
+fn duplicate_merge_mid_cleanup_failure_restores_all_duplicate_rows() {
+    use crate::storage::AccountRepo;
+
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    let source = svc
+        .add_api_key(AgentId::Claude, Some("source"), "sk-source-key")
+        .unwrap();
+    svc.switch(&source.id, AgentId::Claude).unwrap();
+    let target = svc
+        .add_api_key(AgentId::Claude, Some("target-a"), "sk-target-key")
+        .unwrap();
+    let duplicate = AccountRepo::new(svc.db.clone())
+        .create(&crate::models::Account {
+            id: "claude-acc-target-b".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::ApiKey,
+            label: "target-b".into(),
+            credentials: json!({"format": "api_key", "api_key": "sk-target-key"}),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "2000-01-01 00:00:00".into(),
+            updated_at: "2000-01-01 00:00:00".into(),
+        })
+        .unwrap();
+    let source_before = svc.repo().get_by_id(&source.id).unwrap().unwrap();
+    let target_before = svc.repo().get_by_id(&target.id).unwrap().unwrap();
+    let duplicate_before = svc.repo().get_by_id(&duplicate.id).unwrap().unwrap();
+    let binding_before = svc.connections.get_active(AgentId::Claude).unwrap();
+    let live_before = adapter.read_account().unwrap();
+
+    svc.db
+        .with_conn(|conn| {
+            conn.execute_batch(
+                r#"
+                CREATE TEMP TABLE account_delete_count (count INTEGER NOT NULL);
+                INSERT INTO account_delete_count VALUES (0);
+                CREATE TRIGGER fail_second_account_delete
+                BEFORE DELETE ON accounts
+                BEGIN
+                    UPDATE account_delete_count SET count = count + 1;
+                    SELECT CASE WHEN (SELECT count FROM account_delete_count) > 1
+                        THEN RAISE(ABORT, 'second duplicate delete failure') END;
+                END;
+                "#,
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+    let error = svc
+        .update_api_key(
+            AgentId::Claude,
+            &source.id,
+            None,
+            Some("sk-target-key"),
+        )
+        .unwrap_err();
+    assert!(error.code().starts_with("db"));
+    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
+    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
+    assert_eq!(svc.repo().get_by_id(&duplicate.id).unwrap().unwrap(), duplicate_before);
+    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(adapter.read_account().unwrap(), live_before);
+    assert!(svc.connections.list_trash(Some(AgentId::Claude)).unwrap().is_empty());
+}
+
+fn install_account_mutation_plan_trigger(svc: &AccountService, body: &str) {
+    let sql = String::from(
+        r#"
+        CREATE TEMP TABLE IF NOT EXISTS account_mutation_plan (
+            role TEXT NOT NULL,
+            id TEXT NOT NULL,
+            expected_updated_at TEXT NOT NULL
+        );
+        "#,
+    ) + body;
+    svc.db
+        .with_conn(|conn| {
+            conn.execute_batch(&sql)?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+fn extra_api_key_row(id: &str, label: &str, key: &str) -> crate::models::Account {
+    crate::models::Account {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        label: label.into(),
+        credentials: json!({"format": "api_key", "api_key": key}),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "2000-01-01 00:00:00".into(),
+        updated_at: "2000-01-01 00:00:00".into(),
+    }
+}
+
+#[test]
+fn duplicate_merge_pre_mutation_failure_does_not_rollback_concurrent_writer() {
+    let (_root, svc, _) = live_svc(AgentId::Claude);
+    let source = svc
+        .add_api_key(AgentId::Claude, Some("source"), "sk-source-key")
+        .unwrap();
+    svc.switch(&source.id, AgentId::Claude).unwrap();
+    let source_before = svc.repo().get_by_id(&source.id).unwrap().unwrap();
+    let mut external = source_before.clone();
+    external.label = "concurrent-writer".into();
+    external.updated_at = "concurrent-revision".into();
+    svc.repo().update(&external).unwrap();
+
+    let error = svc
+        .update_api_key_inner(
+            AgentId::Claude,
+            &source.id,
+            None,
+            Some("sk-new-key"),
+            &source_before.updated_at,
+        )
+        .unwrap_err();
+    assert_eq!(error.code(), "account.merge.conflict");
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        external,
+        "pre-commit conflict must not restore a concurrent writer's row"
+    );
+}
+
+#[test]
+fn duplicate_merge_ignores_duplicate_inserted_after_snapshot() {
+    use crate::storage::AccountRepo;
+
+    let (_root, svc, _) = live_svc(AgentId::Claude);
+    let source = svc
+        .add_api_key(AgentId::Claude, Some("source"), "sk-source-key")
+        .unwrap();
+    svc.switch(&source.id, AgentId::Claude).unwrap();
+    let target = svc
+        .add_api_key(AgentId::Claude, Some("target"), "sk-target-key")
+        .unwrap();
+    install_account_mutation_plan_trigger(
+        &svc,
+        r#"
+        CREATE TEMP TRIGGER insert_after_snapshot
+        AFTER INSERT ON account_mutation_plan
+        WHEN NEW.role = 'target'
+        BEGIN
+            INSERT INTO accounts (
+                id, agent_id, kind, label, credentials, extra,
+                status, is_current, created_at, updated_at
+            ) VALUES (
+                'claude-acc-concurrent-dup',
+                'claude',
+                'apikey',
+                'concurrent-dup',
+                '{"format":"api_key","api_key":"sk-target-key"}',
+                '{}',
+                'active',
+                0,
+                '2000-01-02 00:00:00',
+                '2000-01-02 00:00:00'
+            );
+        END;
+        "#,
+    );
+
+    svc.update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
+        .unwrap();
+    assert!(svc.repo().get_by_id(&source.id).unwrap().is_none());
+    assert!(svc.repo().get_by_id(&target.id).unwrap().unwrap().is_current);
+    assert!(
+        AccountRepo::new(svc.db.clone())
+            .get_by_id("claude-acc-concurrent-dup")
+            .unwrap()
+            .is_some(),
+        "a duplicate inserted after the frozen snapshot must not be deleted"
+    );
+}
+
+#[test]
+fn duplicate_merge_source_revision_mismatch_fails_before_db_mutation() {
+    let (_root, svc, _) = live_svc(AgentId::Claude);
+    let source = svc
+        .add_api_key(AgentId::Claude, Some("source"), "sk-source-key")
+        .unwrap();
+    svc.switch(&source.id, AgentId::Claude).unwrap();
+    let target = svc
+        .add_api_key(AgentId::Claude, Some("target"), "sk-target-key")
+        .unwrap();
+    let source_before = svc.repo().get_by_id(&source.id).unwrap().unwrap();
+    let target_before = svc.repo().get_by_id(&target.id).unwrap().unwrap();
+    install_account_mutation_plan_trigger(
+        &svc,
+        &format!(
+            r#"
+            CREATE TEMP TRIGGER bump_source_after_snapshot
+            AFTER INSERT ON account_mutation_plan
+            WHEN NEW.role = 'source'
+            BEGIN
+                UPDATE accounts SET updated_at = 'concurrent-source' WHERE id = '{id}';
+            END;
+            "#,
+            id = source.id
+        ),
+    );
+
+    let error = svc
+        .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
+        .unwrap_err();
+    assert_eq!(error.code(), "account.merge.conflict");
+    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
+    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
+}
+
+#[test]
+fn duplicate_merge_target_revision_mismatch_fails_before_db_mutation() {
+    let (_root, svc, _) = live_svc(AgentId::Claude);
+    let source = svc
+        .add_api_key(AgentId::Claude, Some("source"), "sk-source-key")
+        .unwrap();
+    svc.switch(&source.id, AgentId::Claude).unwrap();
+    let target = svc
+        .add_api_key(AgentId::Claude, Some("target"), "sk-target-key")
+        .unwrap();
+    let source_before = svc.repo().get_by_id(&source.id).unwrap().unwrap();
+    let target_before = svc.repo().get_by_id(&target.id).unwrap().unwrap();
+    install_account_mutation_plan_trigger(
+        &svc,
+        &format!(
+            r#"
+            CREATE TEMP TRIGGER bump_target_after_snapshot
+            AFTER INSERT ON account_mutation_plan
+            WHEN NEW.role = 'target'
+            BEGIN
+                UPDATE accounts SET updated_at = 'concurrent-target' WHERE id = '{id}';
+            END;
+            "#,
+            id = target.id
+        ),
+    );
+
+    let error = svc
+        .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
+        .unwrap_err();
+    assert_eq!(error.code(), "account.merge.conflict");
+    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
+    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
+}
+
+#[test]
+fn duplicate_merge_source_cas_delete_conflict_is_not_pre_mutation_conflict() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    let source = svc
+        .add_api_key(AgentId::Claude, Some("source"), "sk-source-key")
+        .unwrap();
+    svc.switch(&source.id, AgentId::Claude).unwrap();
+    let target = svc
+        .add_api_key(AgentId::Claude, Some("target"), "sk-target-key")
+        .unwrap();
+    let source_before = svc.repo().get_by_id(&source.id).unwrap().unwrap();
+    let target_before = svc.repo().get_by_id(&target.id).unwrap().unwrap();
+    let binding_before = svc.connections.get_active(AgentId::Claude).unwrap();
+    let live_before = adapter.read_account().unwrap();
+    svc.db
+        .with_conn(|conn| {
+            conn.execute_batch(&format!(
+                r#"
+                CREATE TEMP TRIGGER steal_source_after_target
+                AFTER UPDATE ON accounts
+                WHEN NEW.id = '{target}' AND NEW.is_current = 1
+                BEGIN
+                    UPDATE accounts SET updated_at = 'stolen-source' WHERE id = '{source}';
+                END;
+                "#,
+                target = target.id,
+                source = source.id
+            ))?;
+            Ok(())
+        })
+        .unwrap();
+
+    let error = svc
+        .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
+        .unwrap_err();
+    assert_eq!(error.code(), "account.merge.delete.conflict");
+    assert_ne!(error.code(), "account.merge.conflict");
+    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
+    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
+    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(adapter.read_account().unwrap(), live_before);
+}
+
+#[test]
+fn duplicate_merge_three_duplicates_mid_cleanup_restores_all_rows() {
+    use crate::storage::AccountRepo;
+
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    let source = svc
+        .add_api_key(AgentId::Claude, Some("source"), "sk-source-key")
+        .unwrap();
+    svc.switch(&source.id, AgentId::Claude).unwrap();
+    let target = svc
+        .add_api_key(AgentId::Claude, Some("target-a"), "sk-target-key")
+        .unwrap();
+    let repo = AccountRepo::new(svc.db.clone());
+    let extra_b = repo.create(&extra_api_key_row("claude-acc-target-b", "target-b", "sk-target-key")).unwrap();
+    let extra_c = repo.create(&extra_api_key_row("claude-acc-target-c", "target-c", "sk-target-key")).unwrap();
+    let source_before = svc.repo().get_by_id(&source.id).unwrap().unwrap();
+    let target_before = svc.repo().get_by_id(&target.id).unwrap().unwrap();
+    let extra_b_before = svc.repo().get_by_id(&extra_b.id).unwrap().unwrap();
+    let extra_c_before = svc.repo().get_by_id(&extra_c.id).unwrap().unwrap();
+    let binding_before = svc.connections.get_active(AgentId::Claude).unwrap();
+    let live_before = adapter.read_account().unwrap();
+
+    svc.db
+        .with_conn(|conn| {
+            conn.execute_batch(
+                r#"
+                CREATE TEMP TABLE account_delete_count (count INTEGER NOT NULL);
+                INSERT INTO account_delete_count VALUES (0);
+                CREATE TRIGGER fail_second_account_delete
+                BEFORE DELETE ON accounts
+                BEGIN
+                    UPDATE account_delete_count SET count = count + 1;
+                    SELECT CASE WHEN (SELECT count FROM account_delete_count) > 1
+                        THEN RAISE(ABORT, 'second duplicate delete failure') END;
+                END;
+                "#,
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+    let error = svc
+        .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
+        .unwrap_err();
+    assert!(error.code().starts_with("db"));
+    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
+    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
+    assert_eq!(svc.repo().get_by_id(&extra_b.id).unwrap().unwrap(), extra_b_before);
+    assert_eq!(svc.repo().get_by_id(&extra_c.id).unwrap().unwrap(), extra_c_before);
+    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(adapter.read_account().unwrap(), live_before);
+    assert!(svc.connections.list_trash(Some(AgentId::Claude)).unwrap().is_empty());
+}
+
+#[test]
+fn duplicate_merge_live_apply_failure_restores_cross_pool_current_and_binding() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    let source = svc
+        .add_api_key(AgentId::Claude, Some("source"), "sk-source-key")
+        .unwrap();
+    svc.switch(&source.id, AgentId::Claude).unwrap();
+    let target = svc
+        .add_api_key(AgentId::Claude, Some("target"), "sk-target-key")
+        .unwrap();
+    let provider_before = crate::storage::ProviderRepo::new(svc.db.clone())
+        .create(&crate::models::Provider {
+            id: "provider-before-duplicate-merge".into(),
+            agent_id: AgentId::Claude,
+            name: "Provider before merge".into(),
+            settings_config: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "provider-key"}}),
+            meta: json!({}),
+            is_current: true,
+            created_at: "2026-08-21T00:00:00Z".into(),
+            updated_at: "2026-08-21T00:00:00Z".into(),
+        })
+        .unwrap();
+    let source_before = svc.repo().get_by_id(&source.id).unwrap().unwrap();
+    let target_before = svc.repo().get_by_id(&target.id).unwrap().unwrap();
+    let binding_before = svc.connections.get_active(AgentId::Claude).unwrap();
+    adapter.fail_writes_on(&[2]);
+
+    let error = svc
+        .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
+        .unwrap_err();
+    assert_eq!(error.code(), "test.write");
+    let restored_source = svc.repo().get_by_id(&source.id).unwrap().unwrap();
+    assert_eq!(restored_source.credentials, source_before.credentials);
+    assert!(restored_source.is_current);
+    let restored_target = svc.repo().get_by_id(&target.id).unwrap().unwrap();
+    assert_eq!(restored_target.credentials, target_before.credentials);
+    assert!(!restored_target.is_current);
+    assert!(crate::storage::ProviderRepo::new(svc.db.clone())
+        .get_by_id(&provider_before.id)
+        .unwrap()
+        .is_some());
+    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(
+        adapter.read_account().unwrap().credentials["api_key"],
+        "sk-source-key"
+    );
+}
+
+#[test]
+fn account_compensation_fails_closed_when_another_writer_changes_the_row() {
+    let (_root, svc, _) = live_svc(AgentId::Claude);
+    let original = svc
+        .add_api_key(AgentId::Claude, Some("original"), "sk-original")
+        .unwrap();
+    let mut external = original.clone();
+    external.label = "external-writer".into();
+    external.updated_at = "external-revision".into();
+    svc.repo().update(&external).unwrap();
+
+    let mut expected_after = original.clone();
+    expected_after.label = "mutation-result".into();
+    expected_after.updated_at = "mutation-revision".into();
+    let error = svc
+        .restore_account_rows(
+            AgentId::Claude,
+            std::slice::from_ref(&original),
+            std::slice::from_ref(&expected_after),
+            &expected_after,
+            &[],
+        )
+        .unwrap_err();
+
+    assert_eq!(error.code(), "account.current.apply.rollback.database");
+    assert_eq!(svc.repo().get_by_id(&original.id).unwrap().unwrap(), external);
 }
 
 #[test]
@@ -1768,6 +2355,79 @@ fn import_live_writes_anthropic_and_grok_subscription_surface() {
     assert_eq!(grok_imported.extra["surface"], "grok-xai-subscription");
 }
 
+#[test]
+fn live_reconcile_new_row_and_rotation_keep_account_surface() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "access_token": "access-1",
+            "refresh_token": "refresh-1",
+            "email": "surface@example.com"
+        }),
+        label_hint: Some("surface@example.com".into()),
+        extra: json!({}),
+    });
+    let first = svc.list(Some(AgentId::Claude)).unwrap();
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].extra["surface"], "claude-subscription");
+    let id = first[0].id.clone();
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "access_token": "access-2",
+            "refresh_token": "refresh-2",
+            "email": "surface@example.com"
+        }),
+        label_hint: Some("surface@example.com".into()),
+        extra: json!({}),
+    });
+    let second = svc.list(Some(AgentId::Claude)).unwrap();
+    assert_eq!(second.len(), 1);
+    assert_eq!(second[0].id, id);
+    assert_eq!(second[0].extra["surface"], "claude-subscription");
+}
+
+#[test]
+fn live_reconcile_matching_legacy_row_heals_missing_surface() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    let credentials = json!({
+        "access_token": "legacy-access",
+        "refresh_token": "legacy-refresh",
+        "email": "legacy-surface@example.com"
+    });
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::Oauth,
+        credentials: credentials.clone(),
+        label_hint: Some("legacy-surface@example.com".into()),
+        extra: json!({}),
+    });
+    let legacy = Account {
+        id: "legacy-surface-account".into(),
+        agent_id: AgentId::Claude,
+        kind: AccountKind::Oauth,
+        label: "legacy-surface@example.com".into(),
+        credentials,
+        extra: json!({}),
+        status: "active".into(),
+        is_current: true,
+        created_at: "2026-08-21T00:00:00Z".into(),
+        updated_at: "2026-08-21T00:00:00Z".into(),
+    };
+    svc.repo().create(&legacy).unwrap();
+    let rows = svc.list(Some(AgentId::Claude)).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].extra["surface"], "claude-subscription");
+    assert_eq!(
+        svc.repo().get_by_id(&legacy.id).unwrap().unwrap().extra["surface"],
+        "claude-subscription"
+    );
+}
+
 fn spawn_oauth_token_server(access: &str, refresh: &str) -> (u16, std::thread::JoinHandle<()>) {
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1819,6 +2479,14 @@ fn grok_hub_pkce_refresh_updates_pool_without_writing_auth_json() {
     assert_eq!(refreshed.credentials["access_token"], "new-access");
     assert_eq!(refreshed.credentials["refresh_token"], "new-refresh");
     assert_eq!(refreshed.extra["source"], "oauth_refresh");
+    assert_eq!(
+        refreshed.extra["surface"], "grok-xai-subscription",
+        "token refresh must keep the classified ticket surface"
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&created.id).unwrap().unwrap().extra["surface"],
+        "grok-xai-subscription"
+    );
     assert_eq!(
         adapter.write_attempts.load(Ordering::SeqCst),
         0,
@@ -1923,8 +2591,14 @@ fn cli_owned_follow_unchanged_auth_json_does_not_set_token_expired() {
         .unwrap();
     assert!(followed.is_none());
     let stored = svc.get(&imported.id, Some(AgentId::Grok)).unwrap();
-    assert_ne!(stored.extra.get("health").and_then(|v| v.as_str()), Some("needs_login"));
-    assert_ne!(stored.extra.get("tokenExpired").and_then(|v| v.as_bool()), Some(true));
+    assert_ne!(
+        stored.extra.get("health").and_then(|v| v.as_str()),
+        Some("needs_login")
+    );
+    assert_ne!(
+        stored.extra.get("tokenExpired").and_then(|v| v.as_bool()),
+        Some(true)
+    );
 }
 
 #[test]
@@ -1946,4 +2620,165 @@ fn codex_imported_auth_json_refresh_is_refused() {
     .unwrap_err();
     assert_eq!(err.code(), "unsupported");
     assert!(err.to_string().contains("同步当前登录"));
+}
+
+#[test]
+fn stale_snapshot_does_not_overwrite_rotated_key() {
+    let (_root, svc, _) = live_svc(AgentId::Claude);
+    let created = svc
+        .add_api_key(AgentId::Claude, Some("work"), "sk-old-key-aaaa")
+        .unwrap();
+    let stale = created.clone();
+    let rotated = svc
+        .update_api_key(
+            AgentId::Claude,
+            &created.id,
+            None,
+            Some("sk-new-key-bbbb"),
+        )
+        .unwrap();
+    assert_eq!(rotated.credentials["api_key"], "sk-new-key-bbbb");
+
+    let mut stale_write = stale.clone();
+    stale_write.label = "stale-writer".into();
+    let resolved = svc
+        .persist_healed_fields(&stale_write, &stale.updated_at)
+        .unwrap();
+    assert_eq!(resolved.credentials["api_key"], "sk-new-key-bbbb");
+    assert_ne!(resolved.label, "stale-writer");
+}
+
+#[test]
+fn concurrent_add_api_key_same_authorization_keeps_one_row() {
+    let (_root, svc, _) = live_svc(AgentId::Claude);
+    let svc = Arc::new(svc);
+    let start = Arc::new(Barrier::new(3));
+    let left_svc = Arc::clone(&svc);
+    let left_start = Arc::clone(&start);
+    let left = thread::spawn(move || {
+        left_start.wait();
+        left_svc.add_api_key(AgentId::Claude, Some("left"), "sk-race-key-aaaa")
+    });
+    let right_svc = Arc::clone(&svc);
+    let right_start = Arc::clone(&start);
+    let right = thread::spawn(move || {
+        right_start.wait();
+        right_svc.add_api_key(AgentId::Claude, Some("right"), "sk-race-key-aaaa")
+    });
+    start.wait();
+
+    let left = left.join().unwrap().unwrap();
+    let right = right.join().unwrap().unwrap();
+    assert_eq!(left.id, right.id);
+    let rows = svc.repo().list(Some(AgentId::Claude)).unwrap();
+    assert_eq!(rows.len(), 1, "concurrent add of the same key must keep one row");
+}
+
+#[test]
+fn concurrent_import_live_same_authorization_keeps_one_row() {
+    let root = tempdir().unwrap();
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let path = root.path().join("live").join("auth.json");
+    let adapter = Arc::new(FakeAdapter::new(AgentId::Grok, path));
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {"email": "race@example.com", "user_id": "race-user", "key": "race-grant"}
+        }),
+        label_hint: Some("race@example.com".into()),
+        extra: json!({}),
+    });
+    let mut registry = AdapterRegistry::new();
+    registry.register(adapter);
+    let svc = Arc::new(AccountService::with_registry(db, registry));
+    let start = Arc::new(Barrier::new(3));
+    let left_svc = Arc::clone(&svc);
+    let left_start = Arc::clone(&start);
+    let left = thread::spawn(move || {
+        left_start.wait();
+        left_svc.import_live(AgentId::Grok, Some("left"))
+    });
+    let right_svc = Arc::clone(&svc);
+    let right_start = Arc::clone(&start);
+    let right = thread::spawn(move || {
+        right_start.wait();
+        right_svc.import_live(AgentId::Grok, Some("right"))
+    });
+    start.wait();
+
+    let left = left.join().unwrap().unwrap();
+    let right = right.join().unwrap().unwrap();
+    assert_eq!(left.id, right.id);
+    let rows = svc.repo().list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(
+        rows.len(),
+        1,
+        "concurrent import of the same authorization must keep one row"
+    );
+}
+
+#[test]
+fn reconcile_does_not_drop_concurrent_refresh_token() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let live = LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "email": "refresh@example.com",
+                "user_id": "refresh-user",
+                "key": "grant-old"
+            }
+        }),
+        label_hint: Some("refresh@example.com".into()),
+        extra: json!({}),
+    };
+    adapter.set_live(live.clone());
+    let created = svc.import_live(AgentId::Grok, None).unwrap();
+    let mut refreshed = created.clone();
+    refreshed.credentials["body"]["key"] = json!("grant-new");
+    svc.repo()
+        .update_healed_fields(&refreshed, &created.updated_at, "2026-08-22 00:00:01")
+        .unwrap();
+
+    let persisted = svc
+        .persist_reconciled_live_row(AgentId::Grok, created, true)
+        .unwrap();
+    assert_eq!(persisted.credentials["body"]["key"], "grant-new");
+}
+
+#[test]
+fn unrecognized_surface_survives_merge_and_reconcile() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    let added = svc
+        .add_api_key(AgentId::Claude, Some("work"), "sk-surface-key-aaaa")
+        .unwrap();
+    let mut future = added.clone();
+    future.extra["surface"] = json!("future-surface-v9");
+    svc.repo()
+        .update_healed_fields(&future, &added.updated_at, "2026-08-22 00:00:02")
+        .unwrap();
+
+    let merged = svc
+        .add_api_key(AgentId::Claude, Some("again"), "sk-surface-key-aaaa")
+        .unwrap();
+    assert_eq!(merged.extra["surface"], "future-surface-v9");
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials: json!({"format": "api_key", "api_key": "sk-surface-key-aaaa"}),
+        label_hint: Some("work".into()),
+        extra: json!({}),
+    });
+    let listed = svc.list(Some(AgentId::Claude)).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].extra["surface"], "future-surface-v9");
+    assert_eq!(
+        svc.repo().get_by_id(&added.id).unwrap().unwrap().extra["surface"],
+        "future-surface-v9"
+    );
 }

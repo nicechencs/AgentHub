@@ -230,6 +230,22 @@ fn chunk_boundary_across_feeds() {
         StreamOutput::Chunk { text, .. } if text == "hello"
     )));
     assert_eq!(s.assistant_text(), "hello");
+    assert!(s.consumed_complete());
+}
+
+#[test]
+fn leftover_partial_line_is_not_consumed_complete() {
+    let mut s = StreamSession::new(AgentId::Grok, ProcessMode::Auto);
+    let _ = s.feed(OutputStream::Stdout, "{\"type\":\"text\",\"data\":\"hel");
+    assert!(!s.consumed_complete());
+}
+
+#[test]
+fn line_buffer_overflow_is_not_consumed_complete() {
+    let mut s = StreamSession::new(AgentId::Claude, ProcessMode::Auto);
+    let huge = "x".repeat(256 * 1024 + 32);
+    let _ = s.feed(OutputStream::Stdout, &huge);
+    assert!(!s.consumed_complete());
 }
 
 #[test]
@@ -239,6 +255,20 @@ fn malformed_json_becomes_raw_step_not_panic() {
     assert!(out
         .iter()
         .any(|o| matches!(o, StreamOutput::Step(ProcessStep::Raw { .. }))));
+    assert!(!s.consumed_complete());
+}
+
+#[test]
+fn malformed_json_after_assistant_does_not_count_as_intact() {
+    let mut s = StreamSession::new(AgentId::Claude, ProcessMode::Auto);
+    let good = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}"#;
+    let _ = s.feed(OutputStream::Stdout, &format!("{good}\n"));
+    assert_eq!(s.assistant_text(), "hi");
+    assert!(s.consumed_complete());
+    let _ = s.feed(OutputStream::Stdout, "{not-json\n");
+    let _ = s.flush();
+    assert_eq!(s.assistant_text(), "hi");
+    assert!(!s.consumed_complete());
 }
 
 #[test]

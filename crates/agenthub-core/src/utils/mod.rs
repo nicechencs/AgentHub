@@ -11,4 +11,10 @@ pub mod redact;
 pub mod stream_parse;
 
 #[cfg(test)]
+mod command_exec_tests;
+
+#[cfg(test)]
 pub mod test_temp;
+
+#[cfg(test)]
+pub(crate) mod test_env;
