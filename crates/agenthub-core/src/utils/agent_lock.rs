@@ -1,12 +1,14 @@
 //! Per-agent exclusive live-write lock shared by provider and account switches.
 //!
-//! The lock file is a persistent rendezvous/diagnostic file. Mutual exclusion
-//! is provided by the OS advisory lock held by the open file descriptor; the
-//! owner metadata is never used to reclaim or release that lock.
+//! AgentHub is a single-process app. Mutual exclusion is process-local; the
+//! lock file is owner metadata for diagnostics and is never a cross-process
+//! protocol. Crash leftovers and malformed metadata are reclaimed on acquire.
 
-use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::collections::HashSet;
+use std::fs::OpenOptions;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -17,342 +19,34 @@ use crate::logging::{self, targets};
 use crate::models::AgentId;
 use crate::platform::AgentKey;
 
-pub(crate) const LOCK_PROTOCOL_VERSION: u32 = 2;
-
-/// OS advisory lock held for the lifetime of an owning lock object.
-///
-/// A hidden sidecar inode is intentionally kept after release. This prevents
-/// a pathname replacement race: all contenders open and lock the same sidecar
-/// inode, while the visible metadata file may be removed after a normal drop.
-#[derive(Debug)]
-pub(crate) struct AdvisoryFileLock {
-    #[allow(dead_code)]
-    file: File,
-    #[cfg(windows)]
-    overlapped: Box<WindowsOverlapped>,
+pub(crate) fn try_claim_lock_path(path: &Path) -> bool {
+    held_lock_paths().insert(lock_identity(path))
 }
 
-#[cfg(windows)]
-#[repr(C)]
-#[derive(Debug)]
-struct WindowsOverlapped {
-    internal: usize,
-    internal_high: usize,
-    offset: u32,
-    offset_high: u32,
-    h_event: *mut core::ffi::c_void,
+pub(crate) fn release_lock_path(path: &Path) {
+    held_lock_paths().remove(&lock_identity(path));
 }
 
-impl AdvisoryFileLock {
-    /// Open `path` and try to acquire an exclusive, non-blocking OS lock.
-    /// `Ok(None)` means another handle currently owns the lock.
-    pub(crate) fn try_acquire(path: &Path) -> io::Result<Option<Self>> {
-        let file = open_lock_leaf(path)?;
+fn lock_path_is_held(path: &Path) -> bool {
+    held_lock_paths().contains(&lock_identity(path))
+}
 
-        #[cfg(unix)]
-        {
-            if !try_lock_unix(&file)? {
-                return Ok(None);
-            }
-            return Ok(Some(Self { file }));
-        }
-
-        #[cfg(windows)]
-        {
-            let mut overlapped = Box::new(WindowsOverlapped {
-                internal: 0,
-                internal_high: 0,
-                offset: 0,
-                offset_high: 0,
-                h_event: std::ptr::null_mut(),
-            });
-            match try_lock_windows(&file, &mut overlapped)? {
-                true => return Ok(Some(Self { file, overlapped })),
-                false => return Ok(None),
-            }
-        }
-
-        #[cfg(not(any(unix, windows)))]
-        {
-            drop(file);
-            Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "advisory lock is unsupported on this platform",
-            ))
-        }
+fn lock_identity(path: &Path) -> PathBuf {
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => parent
+            .canonicalize()
+            .unwrap_or_else(|_| parent.to_path_buf())
+            .join(name),
+        _ => path.to_path_buf(),
     }
 }
 
-/// Open a lock or metadata leaf without following a pre-existing link.
-///
-/// The OS handle is the authority for both the advisory lock and metadata
-/// writes.  Opening with no-follow/reparse protection before checking the
-/// resulting handle closes the check-then-open race against a symlink,
-/// junction, or other reparse-point replacement.
-fn open_lock_leaf(path: &Path) -> io::Result<File> {
-    let mut options = OpenOptions::new();
-    options.read(true).write(true).create(true);
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-
-        options.custom_flags(libc::O_NOFOLLOW);
-    }
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-
-        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
-        const FILE_SHARE_READ: u32 = 0x0000_0001;
-        const FILE_SHARE_WRITE: u32 = 0x0000_0002;
-
-        // Do not share delete: an open lock/metadata leaf cannot be renamed
-        // or unlinked underneath the handle while it is being used.
-        options
-            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
-            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
-    }
-
-    let file = options.open(path)?;
-    ensure_regular_lock_leaf(&file)?;
-    Ok(file)
-}
-
-fn open_existing_lock_leaf(path: &Path) -> io::Result<File> {
-    let mut options = OpenOptions::new();
-    options.read(true);
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-
-        options.custom_flags(libc::O_NOFOLLOW);
-    }
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-
-        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
-        const FILE_SHARE_READ: u32 = 0x0000_0001;
-        const FILE_SHARE_WRITE: u32 = 0x0000_0002;
-
-        options
-            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
-            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
-    }
-
-    let file = options.open(path)?;
-    ensure_regular_lock_leaf(&file)?;
-    Ok(file)
-}
-
-pub(crate) fn read_metadata_file(path: &Path) -> io::Result<String> {
-    let mut file = open_existing_lock_leaf(path)?;
-    let mut raw = String::new();
-    file.read_to_string(&mut raw)?;
-    Ok(raw)
-}
-
-#[cfg(unix)]
-fn ensure_regular_lock_leaf(file: &File) -> io::Result<()> {
-    use std::os::fd::AsRawFd;
-
-    // Validate the opened descriptor itself. This is deliberately fstat,
-    // rather than a path-based metadata call, so a concurrent path swap
-    // cannot turn the check into a symlink-following check-then-open race.
-    let mut stat = unsafe { std::mem::zeroed::<libc::stat>() };
-    if unsafe { libc::fstat(file.as_raw_fd(), &mut stat) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    if stat.st_mode & libc::S_IFMT == libc::S_IFREG {
-        Ok(())
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "lock leaf is not a regular file",
-        ))
-    }
-}
-
-#[cfg(windows)]
-fn ensure_regular_lock_leaf(file: &File) -> io::Result<()> {
-    use std::os::windows::io::AsRawHandle;
-
-    const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x0000_0010;
-    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
-
-    #[repr(C)]
-    struct FileAttributeTagInfo {
-        file_attributes: u32,
-        reparse_tag: u32,
-    }
-
-    unsafe extern "system" {
-        #[link_name = "GetFileInformationByHandleEx"]
-        fn get_file_information_by_handle_ex(
-            file: *mut core::ffi::c_void,
-            information_class: u32,
-            information: *mut core::ffi::c_void,
-            information_size: u32,
-        ) -> i32;
-    }
-
-    const FILE_ATTRIBUTE_TAG_INFO_CLASS: u32 = 9;
-    let mut information = FileAttributeTagInfo {
-        file_attributes: 0,
-        reparse_tag: 0,
-    };
-    let ok = unsafe {
-        get_file_information_by_handle_ex(
-            file.as_raw_handle() as *mut core::ffi::c_void,
-            FILE_ATTRIBUTE_TAG_INFO_CLASS,
-            (&mut information as *mut FileAttributeTagInfo).cast(),
-            std::mem::size_of::<FileAttributeTagInfo>() as u32,
-        )
-    };
-    if ok == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    if information.file_attributes
-        & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)
-        != 0
-        || information.reparse_tag != 0
-    {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "lock leaf is a directory or reparse point",
-        ));
-    }
-    Ok(())
-}
-
-#[cfg(not(any(unix, windows)))]
-fn ensure_regular_lock_leaf(file: &File) -> io::Result<()> {
-    let metadata = file.metadata()?;
-    if metadata.file_type().is_file() {
-        Ok(())
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "lock leaf is not a regular file",
-        ))
-    }
-}
-
-/// Write diagnostic metadata to the public `.lock` pathname. The caller must
-/// hold the corresponding advisory sidecar lock before calling this helper.
-pub(crate) fn write_metadata_file(path: &Path, metadata: &str) -> io::Result<()> {
-    let mut file = open_lock_leaf(path)?;
-    file.set_len(0)?;
-    file.seek(SeekFrom::Start(0))?;
-    file.write_all(metadata.as_bytes())?;
-    file.sync_all()
-}
-
-/// Stable inode used for the real OS lock. The visible `.lock` file remains
-/// diagnostics and may be removed after a normal owner drop without opening a
-/// pathname-replacement race: contenders always lock this sidecar first.
-pub(crate) fn advisory_path(path: &Path) -> PathBuf {
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("lock");
-    path.with_file_name(format!(".{name}.os-lock"))
-}
-
-#[cfg(unix)]
-fn try_lock_unix(file: &File) -> io::Result<bool> {
-    use std::os::fd::AsRawFd;
-
-    const LOCK_EX: i32 = 2;
-    const LOCK_NB: i32 = 4;
-
-    unsafe extern "C" {
-        fn flock(fd: i32, operation: i32) -> i32;
-    }
-
-    let result = unsafe { flock(file.as_raw_fd(), LOCK_EX | LOCK_NB) };
-    if result == 0 {
-        return Ok(true);
-    }
-
-    let error = io::Error::last_os_error();
-    match error.raw_os_error() {
-        // Linux uses EWOULDBLOCK == EAGAIN == 11; macOS uses 35.
-        Some(11) | Some(35) => Ok(false),
-        _ => Err(error),
-    }
-}
-
-#[cfg(windows)]
-fn try_lock_windows(file: &File, overlapped: &mut WindowsOverlapped) -> io::Result<bool> {
-    use std::os::windows::io::AsRawHandle;
-
-    const LOCKFILE_FAIL_IMMEDIATELY: u32 = 0x0000_0001;
-    const LOCKFILE_EXCLUSIVE_LOCK: u32 = 0x0000_0002;
-    const ERROR_LOCK_VIOLATION: i32 = 33;
-
-    unsafe extern "system" {
-        fn LockFileEx(
-            file: *mut core::ffi::c_void,
-            flags: u32,
-            reserved: u32,
-            bytes_to_lock_low: u32,
-            bytes_to_lock_high: u32,
-            overlapped: *mut WindowsOverlapped,
-        ) -> i32;
-    }
-
-    let ok = unsafe {
-        LockFileEx(
-            file.as_raw_handle() as *mut core::ffi::c_void,
-            LOCKFILE_FAIL_IMMEDIATELY | LOCKFILE_EXCLUSIVE_LOCK,
-            0,
-            u32::MAX,
-            u32::MAX,
-            overlapped,
-        )
-    };
-    if ok != 0 {
-        return Ok(true);
-    }
-
-    let error = io::Error::last_os_error();
-    if error.raw_os_error() == Some(ERROR_LOCK_VIOLATION) {
-        Ok(false)
-    } else {
-        Err(error)
-    }
-}
-
-#[cfg(windows)]
-impl Drop for AdvisoryFileLock {
-    fn drop(&mut self) {
-        use std::os::windows::io::AsRawHandle;
-
-        unsafe extern "system" {
-            fn UnlockFileEx(
-                file: *mut core::ffi::c_void,
-                reserved: u32,
-                bytes_to_unlock_low: u32,
-                bytes_to_unlock_high: u32,
-                overlapped: *mut WindowsOverlapped,
-            ) -> i32;
-        }
-
-        unsafe {
-            let _ = UnlockFileEx(
-                self.file.as_raw_handle() as *mut core::ffi::c_void,
-                0,
-                u32::MAX,
-                u32::MAX,
-                &mut *self.overlapped,
-            );
-        }
-    }
+fn held_lock_paths() -> std::sync::MutexGuard<'static, HashSet<PathBuf>> {
+    static HELD_LOCK_PATHS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+    HELD_LOCK_PATHS
+        .get_or_init(|| Mutex::new(HashSet::new()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Doctor / CLI view of one live-write lock file.
@@ -368,7 +62,7 @@ pub struct LockInspection {
     pub note: Option<String>,
 }
 
-/// Scan `{data_dir}/locks/provider-*.lock` without changing lock ownership.
+/// Scan `{data_dir}/locks/provider-*.lock` without acquiring them.
 pub fn inspect_locks(lock_dir: &Path) -> Vec<LockInspection> {
     let mut out = Vec::new();
     let Ok(entries) = std::fs::read_dir(lock_dir) else {
@@ -393,7 +87,7 @@ pub fn inspect_locks(lock_dir: &Path) -> Vec<LockInspection> {
 
 fn inspect_one(path: &Path, agent: &str) -> LockInspection {
     let display = path.display().to_string();
-    let raw = match read_metadata_file(path) {
+    let raw = match std::fs::read_to_string(path) {
         Ok(raw) => raw,
         Err(error) => {
             return LockInspection {
@@ -407,62 +101,48 @@ fn inspect_one(path: &Path, agent: &str) -> LockInspection {
         }
     };
 
-    let Some(owner) = LockOwner::parse(&raw) else {
+    if lock_path_is_held(path) {
+        let owner = LockOwner::parse(&raw);
         return LockInspection {
+            agent: agent.to_string(),
+            path: display,
+            status: "held".into(),
+            pid: owner.as_ref().map(|owner| owner.pid),
+            created_unix_ms: owner.as_ref().map(|owner| owner.created_unix_ms),
+            note: None,
+        };
+    }
+
+    match LockOwner::parse(&raw) {
+        Some(owner) => LockInspection {
+            agent: agent.to_string(),
+            path: display,
+            status: "stale".into(),
+            pid: Some(owner.pid),
+            created_unix_ms: Some(owner.created_unix_ms),
+            note: Some("lock file is leftover and not held in this process".into()),
+        },
+        None => LockInspection {
             agent: agent.to_string(),
             path: display,
             status: "malformed".into(),
             pid: None,
             created_unix_ms: None,
-            note: Some("lock metadata is missing required pid/created_unix_ms/token".into()),
-        };
-    };
-
-    let os_path = advisory_path(path);
-    if !os_path.exists() {
-        return LockInspection {
-            agent: agent.to_string(),
-            path: display,
-            status: "stale".into(),
-            pid: Some(owner.pid),
-            created_unix_ms: Some(owner.created_unix_ms),
-            note: Some("legacy lock metadata has no active OS lock".into()),
-        };
-    }
-
-    match AdvisoryFileLock::try_acquire(&os_path) {
-        Ok(Some(_probe)) => LockInspection {
-            agent: agent.to_string(),
-            path: display,
-            status: "stale".into(),
-            pid: Some(owner.pid),
-            created_unix_ms: Some(owner.created_unix_ms),
-            note: Some("lock file is not currently held".into()),
-        },
-        Ok(None) => LockInspection {
-            agent: agent.to_string(),
-            path: display,
-            status: "held".into(),
-            pid: Some(owner.pid),
-            created_unix_ms: Some(owner.created_unix_ms),
-            note: None,
-        },
-        Err(error) => LockInspection {
-            agent: agent.to_string(),
-            path: display,
-            // If the OS cannot confirm that the lock is free, report it as
-            // held rather than suggesting an unsafe reclaim.
-            status: "held".into(),
-            pid: Some(owner.pid),
-            created_unix_ms: Some(owner.created_unix_ms),
-            note: Some(format!("could not inspect OS lock: {error}")),
+            note: Some("lock file missing required pid/created_unix_ms/token".into()),
         },
     }
 }
 
+/// Per-agent exclusive live-write lock with owner metadata.
+#[derive(Debug)]
+pub struct AgentWriteLock {
+    path: PathBuf,
+    file: Option<std::fs::File>,
+    token: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LockOwner {
-    protocol: u32,
     pid: u32,
     created_unix_ms: u64,
     token: String,
@@ -471,31 +151,22 @@ struct LockOwner {
 impl LockOwner {
     fn current() -> Self {
         Self {
-            protocol: LOCK_PROTOCOL_VERSION,
             pid: std::process::id(),
-            created_unix_ms: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|duration| duration.as_millis() as u64)
-                .unwrap_or(0),
+            created_unix_ms: unix_now_ms(),
             token: Uuid::new_v4().to_string(),
         }
     }
 
     fn serialize(&self) -> String {
         format!(
-            "protocol={}\npid={}\ncreated_unix_ms={}\ntoken={}\n",
-            self.protocol, self.pid, self.created_unix_ms, self.token
+            "pid={}\ncreated_unix_ms={}\ntoken={}\n",
+            self.pid, self.created_unix_ms, self.token
         )
     }
 
-    /// Metadata is diagnostic only. Invalid/partial metadata never authorizes
-    /// reclaim, but it also never prevents the OS lock from being acquired
-    /// after the previous handle has closed.
+    /// Parse owner metadata. Unknown keys are ignored; missing required fields
+    /// fail the parse (the leftover file is still reclaimable on acquire).
     fn parse(raw: &str) -> Option<Self> {
-        // Protocol 1 is the pre-sidecar visible-only lock format. Keeping it
-        // parseable lets inspection remain useful, while acquisition can
-        // conservatively reject it during the migration handshake.
-        let mut protocol = Some(1);
         let mut pid = None;
         let mut created_unix_ms = None;
         let mut token = None;
@@ -506,55 +177,38 @@ impl LockOwner {
                 continue;
             }
             let (key, value) = line.split_once('=')?;
-            match key.trim() {
-                "protocol" => protocol = Some(value.trim().parse::<u32>().ok()?),
-                "pid" => pid = Some(value.trim().parse::<u32>().ok()?),
+            let key = key.trim();
+            let value = value.trim();
+            match key {
+                "pid" => {
+                    pid = Some(value.parse::<u32>().ok()?);
+                }
                 "created_unix_ms" => {
-                    created_unix_ms = Some(value.trim().parse::<u64>().ok()?)
+                    created_unix_ms = Some(value.parse::<u64>().ok()?);
                 }
                 "token" => {
-                    let value = value.trim();
                     if value.is_empty() {
                         return None;
                     }
-                    token = Some(value.to_owned());
+                    token = Some(value.to_string());
                 }
                 _ => {}
             }
         }
 
         Some(Self {
-            protocol: protocol?,
             pid: pid?,
             created_unix_ms: created_unix_ms?,
             token: token?,
         })
     }
-
-    fn same_identity(&self, other: &Self) -> bool {
-        self == other
-    }
-
-    fn is_current_protocol(&self) -> bool {
-        self.protocol == LOCK_PROTOCOL_VERSION
-    }
-}
-
-/// Per-agent exclusive live-write lock. The OS handle, not owner metadata,
-/// controls ownership and is automatically released when this value drops or
-/// its process exits.
-#[derive(Debug)]
-pub struct AgentWriteLock {
-    path: PathBuf,
-    owner: LockOwner,
-    pub(crate) _advisory: AdvisoryFileLock,
 }
 
 impl AgentWriteLock {
     /// Acquire the shared per-agent live-write lock.
     ///
-    /// The historical `provider-{agent}.lock` filename is retained so provider
-    /// and account switches mutually exclude on the same path.
+    /// Uses the historical `provider-{agent}.lock` filename so provider and
+    /// account switches mutually exclude on the same path (no second lock set).
     pub fn acquire(lock_dir: &Path, agent: AgentId) -> Result<Self> {
         Self::acquire_key(lock_dir, &AgentKey::from_agent_id(agent))
     }
@@ -592,47 +246,46 @@ impl AgentWriteLock {
     }
 
     fn try_create(path: &Path) -> io::Result<Option<Self>> {
-        let os_path = advisory_path(path);
-        let Some(advisory) = AdvisoryFileLock::try_acquire(&os_path)? else {
+        if !try_claim_lock_path(path) {
             return Ok(None);
-        };
-
-        // A visible file without the protocol marker is owned by (or may be
-        // the interrupted write of) a pre-sidecar binary. The old binary
-        // cannot lock the sidecar, so never overwrite that metadata merely
-        // because the sidecar exists. A protocol-v2 file is safe to replace
-        // once this process owns the sidecar; an absent file is the first
-        // acquisition. All other read/parse failures fail closed.
-        match read_metadata_file(path) {
-            Ok(raw)
-                if LockOwner::parse(&raw)
-                    .is_some_and(|owner| owner.is_current_protocol()) => {}
-            Ok(_) => return Ok(None),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
         }
-
         let owner = LockOwner::current();
-        write_metadata_file(path, &owner.serialize())?;
-        Ok(Some(Self {
-            path: path.to_path_buf(),
-            owner,
-            _advisory: advisory,
-        }))
+        match write_owner_file(path, &owner.serialize()) {
+            Ok(file) => Ok(Some(Self {
+                path: path.to_path_buf(),
+                file: Some(file),
+                token: owner.token,
+            })),
+            Err(error) => {
+                release_lock_path(path);
+                let _ = std::fs::remove_file(path);
+                Err(error)
+            }
+        }
     }
 }
 
 impl Drop for AgentWriteLock {
     fn drop(&mut self) {
-        // The sidecar remains held until this Drop body finishes. A normal
-        // owner removes only matching metadata; replacement content is left
-        // untouched. The sidecar itself is intentionally persistent.
-        if let Ok(raw) = read_metadata_file(&self.path) {
-            if LockOwner::parse(&raw).is_some_and(|owner| owner.same_identity(&self.owner)) {
+        drop(self.file.take());
+        if let Ok(raw) = std::fs::read_to_string(&self.path) {
+            if LockOwner::parse(&raw).is_some_and(|owner| owner.token == self.token) {
                 let _ = std::fs::remove_file(&self.path);
             }
         }
+        release_lock_path(&self.path);
     }
+}
+
+fn write_owner_file(path: &Path, metadata: &str) -> io::Result<std::fs::File> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)?;
+    file.write_all(metadata.as_bytes())?;
+    let _ = file.sync_all();
+    Ok(file)
 }
 
 fn lock_held_error(agent_key: &str) -> AppError {
@@ -643,6 +296,13 @@ fn lock_held_error(agent_key: &str) -> AppError {
             agent_key
         ),
     )
+}
+
+fn unix_now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

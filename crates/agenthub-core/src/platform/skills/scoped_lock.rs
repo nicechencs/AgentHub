@@ -1,14 +1,15 @@
 //! Per-skill / root exclusive locks under `<source_root>/.locks/`.
+//!
+//! Mutual exclusion is process-local, matching [`crate::utils::agent_lock`].
+//! Leftover or malformed lock files do not block a later acquire.
 
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::{AppError, Result};
-use crate::utils::agent_lock::{
-    advisory_path, read_metadata_file, write_metadata_file, AdvisoryFileLock,
-    LOCK_PROTOCOL_VERSION,
-};
+use crate::utils::agent_lock::{release_lock_path, try_claim_lock_path};
 
 /// Per-skill exclusive lock under `<source_root>/.locks/skill-<id>.lock`.
 pub(crate) fn acquire_skill_lock(source_root: &Path, skill_id: &str) -> Result<SkillScopedLock> {
@@ -25,7 +26,6 @@ pub(crate) fn acquire_skill_root_lock(source_root: &Path) -> Result<SkillScopedL
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SkillLockOwner {
-    protocol: u32,
     pid: u32,
     created_unix_ms: u64,
     token: String,
@@ -34,7 +34,6 @@ struct SkillLockOwner {
 impl SkillLockOwner {
     fn current() -> Self {
         Self {
-            protocol: LOCK_PROTOCOL_VERSION,
             pid: std::process::id(),
             created_unix_ms: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -46,17 +45,12 @@ impl SkillLockOwner {
 
     fn serialize(&self) -> String {
         format!(
-            "protocol={}\npid={}\ncreated_unix_ms={}\ntoken={}\n",
-            self.protocol, self.pid, self.created_unix_ms, self.token
+            "pid={}\ncreated_unix_ms={}\ntoken={}\n",
+            self.pid, self.created_unix_ms, self.token
         )
     }
 
-    /// Metadata is diagnostic only. It is never used to reclaim or release
-    /// the advisory lock, so empty/partial content cannot create a race.
     fn parse(raw: &str) -> Option<Self> {
-        // Protocol 1 is the pre-sidecar visible-only skill lock. It remains
-        // parseable for diagnostics but is never overwritten during acquire.
-        let mut protocol = Some(1);
         let mut pid = None;
         let mut created_unix_ms = None;
         let mut token = None;
@@ -67,11 +61,8 @@ impl SkillLockOwner {
             }
             let (key, value) = line.split_once('=')?;
             match key.trim() {
-                "protocol" => protocol = Some(value.trim().parse::<u32>().ok()?),
                 "pid" => pid = Some(value.trim().parse::<u32>().ok()?),
-                "created_unix_ms" => {
-                    created_unix_ms = Some(value.trim().parse::<u64>().ok()?)
-                }
+                "created_unix_ms" => created_unix_ms = Some(value.trim().parse::<u64>().ok()?),
                 "token" => {
                     let value = value.trim();
                     if value.is_empty() {
@@ -83,30 +74,18 @@ impl SkillLockOwner {
             }
         }
         Some(Self {
-            protocol: protocol?,
             pid: pid?,
             created_unix_ms: created_unix_ms?,
             token: token?,
         })
     }
-
-    fn same_identity(&self, other: &Self) -> bool {
-        self == other
-    }
-
-    fn is_current_protocol(&self) -> bool {
-        self.protocol == LOCK_PROTOCOL_VERSION
-    }
 }
 
 /// Lightweight exclusive lock for a skill id or the shared skill root.
-/// The OS handle is the ownership token and releases automatically on Drop or
-/// process exit. The OS-lock sidecar is never renamed or unlinked during
-/// release; only matching diagnostic metadata may be removed.
 pub(crate) struct SkillScopedLock {
     path: PathBuf,
-    owner: SkillLockOwner,
-    pub(crate) _advisory: AdvisoryFileLock,
+    file: Option<std::fs::File>,
+    token: String,
 }
 
 impl SkillScopedLock {
@@ -124,48 +103,47 @@ impl SkillScopedLock {
             .collect();
         let path = lock_dir.join(format!("skill-{safe}.lock"));
 
-        let os_path = advisory_path(&path);
-        let Some(advisory) = AdvisoryFileLock::try_acquire(&os_path)? else {
+        if !try_claim_lock_path(&path) {
             return Err(lock_held_error(key));
-        };
-
-        // Never let a new sidecar lock overwrite a visible lock left by the
-        // old create-new-only protocol. Protocol-v2 metadata is safe to
-        // replace after the sidecar has been acquired; absent metadata is a
-        // first acquisition. Read/parse failures remain fail-closed.
-        match read_metadata_file(&path) {
-            Ok(raw)
-                if SkillLockOwner::parse(&raw)
-                    .is_some_and(|owner| owner.is_current_protocol()) => {}
-            Ok(_) => return Err(lock_held_error(key)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
         }
 
-        // Metadata is written only after the OS lock has been acquired. A
-        // crash while writing may leave malformed content, but the next
-        // contender still relies solely on the OS lock result.
         let owner = SkillLockOwner::current();
-        write_metadata_file(&path, &owner.serialize())?;
-
-        Ok(Self {
-            path,
-            owner,
-            _advisory: advisory,
-        })
+        match write_owner_file(&path, &owner.serialize()) {
+            Ok(file) => Ok(Self {
+                path,
+                file: Some(file),
+                token: owner.token,
+            }),
+            Err(error) => {
+                release_lock_path(&path);
+                let _ = fs::remove_file(&path);
+                Err(error.into())
+            }
+        }
     }
 }
 
 impl Drop for SkillScopedLock {
     fn drop(&mut self) {
-        if let Ok(raw) = read_metadata_file(&self.path) {
-            if SkillLockOwner::parse(&raw)
-                .is_some_and(|owner| owner.same_identity(&self.owner))
-            {
+        drop(self.file.take());
+        if let Ok(raw) = fs::read_to_string(&self.path) {
+            if SkillLockOwner::parse(&raw).is_some_and(|owner| owner.token == self.token) {
                 let _ = fs::remove_file(&self.path);
             }
         }
+        release_lock_path(&self.path);
     }
+}
+
+fn write_owner_file(path: &Path, metadata: &str) -> io::Result<std::fs::File> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)?;
+    file.write_all(metadata.as_bytes())?;
+    let _ = file.sync_all();
+    Ok(file)
 }
 
 fn lock_held_error(key: &str) -> AppError {
