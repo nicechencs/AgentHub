@@ -10,6 +10,8 @@ import {
   mapTicketView,
   mapTicketWallet,
   mapUnbindTicketResult,
+  memberHealthFromAuthHealth,
+  surfaceGroupMemberCount,
   ticketCredentialClassLabel,
   ticketIdFor,
   ticketSurfaceLabel,
@@ -141,6 +143,78 @@ describe('Ticket Rust wire mappers', () => {
       'account:g1',
       'account:g2',
     ]);
+  });
+
+  it('maps optional member health and ignores unknown health tokens', () => {
+    const wallet = mapTicketWallet({
+      tickets: [],
+      bindings: [],
+      surfaceGroups: [
+        {
+          surface: 'kimi-code-membership',
+          credentialClass: 'api_key',
+          members: [
+            {
+              ticketId: 'provider:kimi-1',
+              sourceKind: 'provider',
+              sourceId: 'kimi-1',
+              agentId: 'kimi',
+              label: 'Kimi 会员',
+              health: 'Renewable',
+            },
+            {
+              ticketId: 'account:kimi-stale',
+              sourceKind: 'account',
+              sourceId: 'kimi-stale',
+              agentId: 'kimi',
+              label: 'Kimi 会员（失效号）',
+              health: 'NeedsLogin',
+            },
+            {
+              ticketId: 'account:kimi-try',
+              sourceKind: 'account',
+              sourceId: 'kimi-try',
+              agentId: 'kimi',
+              label: 'try',
+              health: 'not-a-health',
+            },
+          ],
+        },
+      ],
+    });
+    expect(wallet.surfaceGroups[0]?.members.map((member) => member.health)).toEqual([
+      'renewable',
+      'needs_login',
+      undefined,
+    ]);
+  });
+
+  it('maps AuthHealth onto picker health and counts a C1 pool', () => {
+    expect(memberHealthFromAuthHealth('needs_login')).toBe('needs_login');
+    expect(memberHealthFromAuthHealth('missing')).toBe('needs_login');
+    expect(memberHealthFromAuthHealth('unknown')).toBe('try_once');
+    expect(memberHealthFromAuthHealth('configured')).toBe('renewable');
+    expect(surfaceGroupMemberCount([], 'provider:kimi-1')).toBe(1);
+    expect(surfaceGroupMemberCount([{
+      surface: 'kimi-code-membership',
+      credentialClass: 'api_key',
+      members: [
+        {
+          ticketId: 'account:kimi-stale',
+          sourceKind: 'account',
+          sourceId: 'kimi-stale',
+          agentId: 'kimi',
+          label: 'stale',
+        },
+        {
+          ticketId: 'provider:kimi-1',
+          sourceKind: 'provider',
+          sourceId: 'kimi-1',
+          agentId: 'kimi',
+          label: 'kimi',
+        },
+      ],
+    }], 'provider:kimi-1')).toBe(2);
   });
 
   it('groups same surface+class, mixes account/provider, skips unknown', () => {
