@@ -106,7 +106,7 @@ const fn local_surface_of(edge: &LocalBridgeEdge) -> BridgeLocalSurface {
 const fn upstream_protocol_of(edge: &LocalBridgeEdge) -> BridgeUpstreamProtocol {
     match edge.transport {
         AdapterUpstreamTransport::LocalBridgeChatCompletions => {
-            BridgeUpstreamProtocol::KimiChatCompletions
+            BridgeUpstreamProtocol::OpenAiChatCompletions
         }
         AdapterUpstreamTransport::LocalBridgeAnthropicMessages => {
             BridgeUpstreamProtocol::AnthropicMessages
@@ -117,7 +117,7 @@ const fn upstream_protocol_of(edge: &LocalBridgeEdge) -> BridgeUpstreamProtocol 
         AdapterUpstreamTransport::XaiResponsesOauth => BridgeUpstreamProtocol::XaiResponsesOauth,
         AdapterUpstreamTransport::NativeHttp
         | AdapterUpstreamTransport::CodexAppServer
-        | AdapterUpstreamTransport::None => BridgeUpstreamProtocol::KimiChatCompletions,
+        | AdapterUpstreamTransport::None => BridgeUpstreamProtocol::OpenAiChatCompletions,
     }
 }
 
@@ -436,7 +436,7 @@ impl AdapterBridgeRuntimeMaterial {
             preferred_port,
             upstream_base_url: KIMI_CHAT_BASE_URL.into(),
             upstream_model: DEFAULT_MODEL.into(),
-            protocol: BridgeUpstreamProtocol::KimiChatCompletions,
+            protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
             local_surface: BridgeLocalSurface::Responses,
             source: AdapterSourceProduct::KimiCodeMembership,
             target_agent: AgentId::Codex,
@@ -518,7 +518,7 @@ impl AdapterBridgeRuntimeMaterial {
         let upstream_url = format!("{}/models", self.upstream_base_url.trim_end_matches('/'));
         let mut upstream_req = client.get(upstream_url);
         upstream_req = match self.protocol {
-            BridgeUpstreamProtocol::KimiChatCompletions => {
+            BridgeUpstreamProtocol::OpenAiChatCompletions => {
                 upstream_req.bearer_auth(self.upstream_auth.token())
             }
             BridgeUpstreamProtocol::AnthropicMessages => upstream_req

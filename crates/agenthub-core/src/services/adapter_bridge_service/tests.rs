@@ -580,7 +580,7 @@ fn live_bridge_rules_match_local_bridge_catalog() {
         };
         let expected_protocol = match edge.transport {
             AdapterUpstreamTransport::LocalBridgeChatCompletions => {
-                super::BridgeUpstreamProtocol::KimiChatCompletions
+                super::BridgeUpstreamProtocol::OpenAiChatCompletions
             }
             AdapterUpstreamTransport::LocalBridgeAnthropicMessages => {
                 super::BridgeUpstreamProtocol::AnthropicMessages
@@ -775,7 +775,7 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         preferred_port: None,
         upstream_base_url: format!("http://127.0.0.1:{upstream_port}"),
         upstream_model: "kimi-k2.5".into(),
-        protocol: crate::bridge::BridgeUpstreamProtocol::KimiChatCompletions,
+        protocol: crate::bridge::BridgeUpstreamProtocol::OpenAiChatCompletions,
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::KimiCodeMembership,
         target_agent: AgentId::Codex,
@@ -941,7 +941,7 @@ fn start_spec_lists_openai_to_codex_without_kimi_ids() {
         preferred_port: None,
         upstream_base_url: OPENAI_CHAT_BASE_URL.into(),
         upstream_model: OPENAI_DEFAULT_MODEL.into(),
-        protocol: BridgeUpstreamProtocol::KimiChatCompletions,
+        protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::OpenaiApi,
         target_agent: AgentId::Codex,
@@ -1476,7 +1476,7 @@ fn prepare_openai_provider_projects_chat_completions_bridge() {
     assert_eq!(start.upstream.base_url, OPENAI_CHAT_BASE_URL);
     assert_eq!(
         start.upstream.protocol,
-        BridgeUpstreamProtocol::KimiChatCompletions
+        BridgeUpstreamProtocol::OpenAiChatCompletions
     );
     assert_eq!(start.upstream.model.as_deref(), Some(OPENAI_DEFAULT_MODEL));
     assert!(!format!("{prepared:?}").contains("sk-openai-secret"));
@@ -1522,7 +1522,7 @@ fn prepare_openai_account_reuses_secret_resolver_and_projects_account_ref() {
             .start_spec(None)
             .upstream
             .protocol,
-        BridgeUpstreamProtocol::KimiChatCompletions
+        BridgeUpstreamProtocol::OpenAiChatCompletions
     );
     assert!(!format!("{prepared:?}").contains("sk-openai-account"));
 
@@ -1540,7 +1540,7 @@ fn prepare_openai_account_reuses_secret_resolver_and_projects_account_ref() {
             .start_spec(None)
             .upstream
             .protocol,
-        BridgeUpstreamProtocol::KimiChatCompletions
+        BridgeUpstreamProtocol::OpenAiChatCompletions
     );
     assert_eq!(
         restored
