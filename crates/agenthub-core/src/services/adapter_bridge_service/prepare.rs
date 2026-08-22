@@ -226,6 +226,20 @@ impl AdapterBridgeService {
         }
     }
 
+    /// Resolve one pool member's upstream secret. A sibling failure is isolated
+    /// by the caller rather than failing the whole start.
+    pub fn resolve_member_auth(
+        &self,
+        rule_id: &str,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<crate::bridge::ResolvedAuth> {
+        let rule = rule_for_id(rule_id).ok_or_else(|| {
+            AppError::InvalidArg("adapter profile is not a supported local bridge".into())
+        })?;
+        self.resolve_upstream_auth(&rule, source_kind, source_id)
+    }
+
     pub(super) fn bridge_profile(&self, profile_id: &str) -> Result<AdapterProfile> {
         let profile_id = profile_id.trim();
         if profile_id.is_empty() {
