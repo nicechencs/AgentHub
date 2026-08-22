@@ -139,7 +139,7 @@ impl AgentHub {
             adapter_apply.clone(),
             crate::storage::AdapterProfileRepo::new(db.clone()),
             providers.clone(),
-            AccountService::with_live(db.clone(), registry.clone(), backups_dir(&data_dir)),
+            accounts.clone(),
         );
         let backups = BackupService::new(db.clone(), registry.clone(), backups_dir(&data_dir));
         let skills_root = home_dir()?.join(".agents").join("skills");
