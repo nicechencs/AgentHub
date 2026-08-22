@@ -8,7 +8,12 @@
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-/// Callback invoked for each install log line (already redacted by callers when needed).
+/// Callback invoked for each live install chunk.
+///
+/// Contract: `command_exec` emits raw UTF-8 prefixes (~8KiB), including empty
+/// lines and newline boundaries. The hook must not `trim_end` / drop blank
+/// pieces — that would splice adjacent text. Best-effort UI may skip chunks;
+/// the process accumulator is authoritative.
 pub type InstallLogHook = Arc<dyn Fn(&str) + Send + Sync>;
 
 fn hook_slot() -> &'static Mutex<Option<InstallLogHook>> {
@@ -34,8 +39,9 @@ pub fn with_install_log_hook<R>(hook: InstallLogHook, f: impl FnOnce() -> R) -> 
     f()
 }
 
-/// Emit a live progress line when a hook is registered. No-op otherwise.
-pub fn emit_install_log(line: &str) {
+/// Emit a live progress chunk when a hook is registered. No-op otherwise.
+/// Passes `chunk` through unchanged (no trim).
+pub fn emit_install_log(chunk: &str) {
     let hook = {
         let g = match hook_slot().lock() {
             Ok(g) => g,
@@ -44,9 +50,10 @@ pub fn emit_install_log(line: &str) {
         g.clone()
     };
     if let Some(h) = hook {
-        h(line);
+        h(chunk);
     }
 }
 
 #[cfg(test)]
+#[path = "install_progress_tests.rs"]
 mod install_progress_tests;

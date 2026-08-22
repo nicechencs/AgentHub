@@ -86,7 +86,7 @@ fn run_capture_timeout_env<S: AsRef<OsStr>>(
     if let Err(error) = process_control.attach(&child) {
         let _ = child.kill();
         process_control.terminate(&mut child);
-        let _ = child.wait();
+        reap_child_lossy(&mut child, &process_control);
         return Err(error);
     }
     match wait_with_timeout(
@@ -212,6 +212,7 @@ pub(crate) fn poll_child(
     }
     #[cfg(not(unix))]
     {
+        let _ = process_control;
         match child.try_wait()? {
             Some(status) => Ok(ChildPoll::Exited(Some(status))),
             None => Ok(ChildPoll::Running),
@@ -239,8 +240,13 @@ pub(crate) fn poll_child(
     )
 ))]
 fn observe_unix_child_exit(pid: i32) -> io::Result<bool> {
-    let mut info = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
+    if pid <= 0 {
+        return Ok(false);
+    }
     loop {
+        // WNOHANG with no waitable child leaves infop unspecified; start from zero
+        // so a leftover si_pid cannot look like an exit.
+        let mut info = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
         let result = unsafe {
             libc::waitid(
                 libc::P_PID,
@@ -250,14 +256,13 @@ fn observe_unix_child_exit(pid: i32) -> io::Result<bool> {
             )
         };
         if result == 0 {
-            // libc exposes the platform-specific siginfo_t layout and accessor;
-            // do not interpret the blob at a hard-coded offset.
-            return Ok(unsafe { info.si_pid() } == pid as libc::pid_t);
+            // libc's platform accessor — never a hand-rolled siginfo offset.
+            let observed = unsafe { info.si_pid() };
+            return Ok(observed == pid as libc::pid_t && observed != 0);
         }
 
         let error = io::Error::last_os_error();
         if error.raw_os_error() == Some(libc::EINTR) {
-            info = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
             continue;
         }
         return Err(error);
@@ -266,8 +271,8 @@ fn observe_unix_child_exit(pid: i32) -> io::Result<bool> {
 
 #[cfg(test)]
 thread_local! {
-    // The fault injection is consumed by the thread that performs attach.
-    // A process-wide flag would let unrelated parallel spawn tests consume it.
+    // Thread-bound fault injection: consumed by the same thread that calls
+    // `attach`. A process-wide AtomicBool would be stolen by a parallel test.
     static FORCE_ATTACH_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
@@ -466,7 +471,8 @@ fn resume_suspended_process(process_id: u32) -> io::Result<()> {
         size: size_of::<ThreadEntry32>() as u32,
         ..ThreadEntry32::default()
     };
-    let mut result = Err(io::Error::last_os_error());
+    let mut last_error = io::Error::last_os_error();
+    let mut resumed_any = false;
     let mut has_entry = unsafe { Thread32First(snapshot, &mut entry) } != 0;
     while has_entry {
         if entry.owner_process_id == process_id {
@@ -476,13 +482,13 @@ fn resume_suspended_process(process_id: u32) -> io::Result<()> {
                 unsafe {
                     CloseHandle(thread);
                 }
-                if resumed != u32::MAX {
-                    result = Ok(());
-                    break;
+                if resumed == u32::MAX {
+                    last_error = io::Error::last_os_error();
+                } else {
+                    resumed_any = true;
                 }
-                result = Err(io::Error::last_os_error());
             } else {
-                result = Err(io::Error::last_os_error());
+                last_error = io::Error::last_os_error();
             }
         }
         has_entry = unsafe { Thread32Next(snapshot, &mut entry) } != 0;
@@ -490,7 +496,11 @@ fn resume_suspended_process(process_id: u32) -> io::Result<()> {
     unsafe {
         CloseHandle(snapshot);
     }
-    result
+    if resumed_any {
+        Ok(())
+    } else {
+        Err(last_error)
+    }
 }
 
 #[cfg(windows)]
@@ -559,13 +569,15 @@ impl ProcessControl {
     pub(crate) fn terminate(&self, child: &mut Child) {
         #[cfg(unix)]
         {
-            const SIGKILL: i32 = 9;
             let pid = self.pid.get();
             if pid > 0 {
+                // Leader identity is still the process-group id until we reap.
+                // Never call this after `disarm` / `reap_child`.
                 unsafe {
-                    let _ = libc_kill(-pid, SIGKILL);
+                    let _ = libc::kill(-pid, libc::SIGKILL);
                 }
             }
+            let _ = child;
         }
         #[cfg(windows)]
         {
@@ -577,17 +589,20 @@ impl ProcessControl {
             let _ = child.kill();
         }
     }
-}
 
-#[cfg(unix)]
-#[link(name = "c")]
-unsafe extern "C" {
-    fn kill(pid: i32, signal: i32) -> i32;
-}
+    /// Drop the Unix leader/PGID so later cleanup cannot signal a recycled pid.
+    pub(crate) fn disarm(&self) {
+        #[cfg(unix)]
+        self.pid.set(0);
+        #[cfg(not(unix))]
+        let _ = self;
+    }
 
-#[cfg(unix)]
-unsafe fn libc_kill(pid: i32, signal: i32) -> i32 {
-    kill(pid, signal)
+    /// Kill remaining Unix process-group members (or the Windows job) while
+    /// the leader identity is still valid. Must run before [`Self::disarm`].
+    pub(crate) fn cleanup_remaining_group(&self, child: &mut Child) {
+        self.terminate(child);
+    }
 }
 
 /// Pluggable process runner (production = system; tests = mock).
@@ -595,7 +610,11 @@ pub trait ProcessRunner: Send + Sync {
     fn run(&self, spec: &RunSpec, timeout: Duration, max_output_bytes: usize) -> AgentRunResult;
 }
 
-/// Streaming runner: line-level stdout/stderr chunks + cooperative cancel.
+/// Streaming runner: UTF-8 chunk callbacks + cooperative cancel.
+///
+/// `on_chunk` is a lossless feed (structured NDJSON parsers consume it), not
+/// best-effort UI. Chunks are complete UTF-8 prefixes and keep newline
+/// boundaries, including empty lines.
 pub trait StreamingProcessRunner: Send + Sync {
     fn run_streaming(
         &self,
@@ -850,7 +869,7 @@ fn run_spec_streaming(
     if let Err(e) = process_control.attach(&child) {
         let _ = child.kill();
         process_control.terminate(&mut child);
-        let _ = child.wait();
+        reap_child_lossy(&mut child, &process_control);
         return AgentRunResult {
             agent: spec.agent,
             status: RunStatus::Failed,
@@ -872,15 +891,19 @@ fn run_spec_streaming(
     let stdout_acc = Arc::new(Mutex::new(Vec::<u8>::new()));
     let stderr_acc = Arc::new(Mutex::new(Vec::<u8>::new()));
 
-    // Bounded fan-in keeps a newline storm from turning live output into an
-    // unbounded allocation queue. The accumulator remains the authoritative
-    // capped result; this channel is only for best-effort live delivery.
+    // Bounded lossless channel: readers block on send instead of dropping
+    // chunks. The main loop drains a bounded number of items per tick (so
+    // cancel/timeout stay reachable) and fully drains while joining readers
+    // after the child exits.
     let (tx, rx) = std::sync::mpsc::sync_channel::<(OutputStream, String)>(32);
     let stdout_trunc = Arc::new(AtomicBool::new(false));
     let stderr_trunc = Arc::new(AtomicBool::new(false));
+    let stdout_read_inc = Arc::new(AtomicBool::new(false));
+    let stderr_read_inc = Arc::new(AtomicBool::new(false));
 
     let stdout_acc_r = Arc::clone(&stdout_acc);
     let stdout_trunc_r = Arc::clone(&stdout_trunc);
+    let stdout_inc_r = Arc::clone(&stdout_read_inc);
     let tx_out = tx.clone();
     let stdout_handle = thread::spawn(move || {
         read_lines_capped(
@@ -890,10 +913,12 @@ fn run_spec_streaming(
             &tx_out,
             &stdout_acc_r,
             &stdout_trunc_r,
+            &stdout_inc_r,
         )
     });
     let stderr_acc_r = Arc::clone(&stderr_acc);
     let stderr_trunc_r = Arc::clone(&stderr_trunc);
+    let stderr_inc_r = Arc::clone(&stderr_read_inc);
     let stderr_handle = thread::spawn(move || {
         read_lines_capped(
             stderr,
@@ -902,6 +927,7 @@ fn run_spec_streaming(
             &tx,
             &stderr_acc_r,
             &stderr_trunc_r,
+            &stderr_inc_r,
         )
     });
 
@@ -930,9 +956,9 @@ fn run_spec_streaming(
             }
             Err(e) => {
                 let _ = child.kill();
-                let _ = child.wait();
+                reap_child_lossy(&mut child, &process_control);
                 let mut terminated = true;
-                let _ = finish_reader_draining(
+                let stdout_incomplete = finish_reader_draining(
                     join_reader_bounded_draining(stdout_handle, Duration::from_secs(2), || {
                         drain_streaming_chunks(&rx, on_chunk)
                     }),
@@ -941,8 +967,8 @@ fn run_spec_streaming(
                     &mut child,
                     &mut terminated,
                     || drain_streaming_chunks(&rx, on_chunk),
-                );
-                let _ = finish_reader_draining(
+                ) || stdout_read_inc.load(Ordering::SeqCst);
+                let stderr_incomplete = finish_reader_draining(
                     join_reader_bounded_draining(stderr_handle, Duration::from_secs(2), || {
                         drain_streaming_chunks(&rx, on_chunk)
                     }),
@@ -951,20 +977,22 @@ fn run_spec_streaming(
                     &mut child,
                     &mut terminated,
                     || drain_streaming_chunks(&rx, on_chunk),
-                );
+                ) || stderr_read_inc.load(Ordering::SeqCst);
                 while let Ok((stream, text)) = rx.try_recv() {
                     on_chunk(stream, &text);
                 }
+                let st = stdout_trunc.load(Ordering::SeqCst);
+                let se = stderr_trunc.load(Ordering::SeqCst);
                 return AgentRunResult {
                     agent: spec.agent,
                     status: RunStatus::Failed,
                     exit_code: None,
                     duration_ms: started.elapsed().as_millis() as u64,
-                    stdout: String::new(),
-                    stderr: String::new(),
+                    stdout: string_from_acc(&stdout_acc, st, stdout_incomplete),
+                    stderr: string_from_acc(&stderr_acc, se, stderr_incomplete),
                     command,
                     error: Some(format!("wait failed: {e}")),
-                    truncated: false,
+                    truncated: true,
                     native_session_id: None,
                 };
             }
@@ -983,7 +1011,7 @@ fn run_spec_streaming(
                 &mut child,
                 &mut terminated,
                 || drain_streaming_chunks(&rx, on_chunk),
-            );
+            ) || stdout_read_inc.load(Ordering::SeqCst);
             let stderr_incomplete = finish_reader_draining(
                 join_reader_bounded_draining(stderr_handle, Duration::from_millis(250), || {
                     drain_streaming_chunks(&rx, on_chunk)
@@ -993,7 +1021,7 @@ fn run_spec_streaming(
                 &mut child,
                 &mut terminated,
                 || drain_streaming_chunks(&rx, on_chunk),
-            );
+            ) || stderr_read_inc.load(Ordering::SeqCst);
             while let Ok((stream, text)) = rx.try_recv() {
                 on_chunk(stream, &text);
             }
@@ -1001,9 +1029,13 @@ fn run_spec_streaming(
             let se = stderr_trunc.load(Ordering::SeqCst);
             let stdout = string_from_acc(&stdout_acc, st, stdout_incomplete);
             let stderr = string_from_acc(&stderr_acc, se, stderr_incomplete);
+            process_control.cleanup_remaining_group(&mut child);
             let status = match observed_status {
-                Some(status) => status,
-                None => match child.wait() {
+                Some(status) => {
+                    process_control.disarm();
+                    status
+                }
+                None => match reap_child(&mut child, &process_control) {
                     Ok(status) => status,
                     Err(e) => {
                         return AgentRunResult {
@@ -1023,6 +1055,7 @@ fn run_spec_streaming(
             };
             let code = status.code();
             let ok = status.success();
+            let truncated = st || se || stdout_incomplete || stderr_incomplete;
             AgentRunResult {
                 agent: spec.agent,
                 status: if ok { RunStatus::Ok } else { RunStatus::Failed },
@@ -1036,13 +1069,13 @@ fn run_spec_streaming(
                 } else {
                     Some(format!("exit code {}", code.unwrap_or(-1)))
                 },
-                truncated: st || se || stdout_incomplete || stderr_incomplete,
+                truncated,
                 native_session_id: None,
             }
         }
         StreamPoll::TimedOut => {
             kill_process_tree(&process_control, &mut child);
-            let _ = child.wait();
+            reap_child_lossy(&mut child, &process_control);
             let mut terminated = true;
             let stdout_incomplete = finish_reader_draining(
                 join_reader_bounded_draining(stdout_handle, Duration::from_secs(2), || {
@@ -1053,7 +1086,7 @@ fn run_spec_streaming(
                 &mut child,
                 &mut terminated,
                 || drain_streaming_chunks(&rx, on_chunk),
-            );
+            ) || stdout_read_inc.load(Ordering::SeqCst);
             let stderr_incomplete = finish_reader_draining(
                 join_reader_bounded_draining(stderr_handle, Duration::from_secs(2), || {
                     drain_streaming_chunks(&rx, on_chunk)
@@ -1063,7 +1096,7 @@ fn run_spec_streaming(
                 &mut child,
                 &mut terminated,
                 || drain_streaming_chunks(&rx, on_chunk),
-            );
+            ) || stderr_read_inc.load(Ordering::SeqCst);
             while let Ok((stream, text)) = rx.try_recv() {
                 on_chunk(stream, &text);
             }
@@ -1086,7 +1119,7 @@ fn run_spec_streaming(
         }
         StreamPoll::Cancelled => {
             kill_process_tree(&process_control, &mut child);
-            let _ = child.wait();
+            reap_child_lossy(&mut child, &process_control);
             let mut terminated = true;
             let stdout_incomplete = finish_reader_draining(
                 join_reader_bounded_draining(stdout_handle, Duration::from_secs(2), || {
@@ -1097,7 +1130,7 @@ fn run_spec_streaming(
                 &mut child,
                 &mut terminated,
                 || drain_streaming_chunks(&rx, on_chunk),
-            );
+            ) || stdout_read_inc.load(Ordering::SeqCst);
             let stderr_incomplete = finish_reader_draining(
                 join_reader_bounded_draining(stderr_handle, Duration::from_secs(2), || {
                     drain_streaming_chunks(&rx, on_chunk)
@@ -1107,7 +1140,7 @@ fn run_spec_streaming(
                 &mut child,
                 &mut terminated,
                 || drain_streaming_chunks(&rx, on_chunk),
-            );
+            ) || stderr_read_inc.load(Ordering::SeqCst);
             while let Ok((stream, text)) = rx.try_recv() {
                 on_chunk(stream, &text);
             }
@@ -1138,41 +1171,83 @@ enum StreamPoll {
 }
 
 /// Converts bounded raw output blocks without splitting a valid UTF-8 code
-/// point across live callback messages. Invalid bytes are still rendered
-/// lossily, while an incomplete suffix is carried into the next block.
+/// point across live callback messages. Incomplete suffixes are carried into
+/// the next block; only a real illegal sequence is lossy-replaced.
 pub(crate) struct Utf8ChunkDecoder {
     pending: Vec<u8>,
+    lossy: bool,
 }
 
 impl Utf8ChunkDecoder {
     pub(crate) fn new() -> Self {
         Self {
             pending: Vec::new(),
+            lossy: false,
         }
+    }
+
+    pub(crate) fn saw_lossy(&self) -> bool {
+        self.lossy
     }
 
     pub(crate) fn push(&mut self, bytes: &[u8]) -> String {
         if bytes.is_empty() && self.pending.is_empty() {
             return String::new();
         }
-        let mut combined = Vec::with_capacity(self.pending.len() + bytes.len());
-        combined.extend_from_slice(&self.pending);
-        combined.extend_from_slice(bytes);
-        self.pending.clear();
-
-        let complete = match std::str::from_utf8(&combined) {
-            Ok(_) => combined.len(),
-            Err(error) if error.error_len().is_none() => error.valid_up_to(),
-            Err(_) => combined.len(),
-        };
-        self.pending.extend_from_slice(&combined[complete..]);
-        String::from_utf8_lossy(&combined[..complete]).into_owned()
+        self.pending.extend_from_slice(bytes);
+        let (text, consumed, lossy) = decode_utf8_prefix(&self.pending);
+        if lossy {
+            self.lossy = true;
+        }
+        self.pending.drain(..consumed);
+        text
     }
 
     pub(crate) fn finish(&mut self) -> String {
+        if self.pending.is_empty() {
+            return String::new();
+        }
         let pending = std::mem::take(&mut self.pending);
+        if std::str::from_utf8(&pending).is_err() {
+            self.lossy = true;
+        }
         String::from_utf8_lossy(&pending).into_owned()
     }
+}
+
+/// Decode every complete UTF-8 prefix in `buf`. An incomplete tail is left
+/// unconsumed; illegal sequences become U+FFFD and are consumed.
+fn decode_utf8_prefix(buf: &[u8]) -> (String, usize, bool) {
+    let mut out = String::new();
+    let mut i = 0;
+    let mut lossy = false;
+    while i < buf.len() {
+        match std::str::from_utf8(&buf[i..]) {
+            Ok(s) => {
+                out.push_str(s);
+                i = buf.len();
+                break;
+            }
+            Err(err) => {
+                let valid = err.valid_up_to();
+                if valid > 0 {
+                    if let Ok(ok) = std::str::from_utf8(&buf[i..i + valid]) {
+                        out.push_str(ok);
+                    }
+                    i += valid;
+                }
+                match err.error_len() {
+                    None => break,
+                    Some(len) => {
+                        out.push(char::REPLACEMENT_CHARACTER);
+                        i += len;
+                        lossy = true;
+                    }
+                }
+            }
+        }
+    }
+    (out, i, lossy)
 }
 
 fn drain_streaming_chunks(
@@ -1191,6 +1266,27 @@ fn read_lines_capped<R: Read>(
     tx: &std::sync::mpsc::SyncSender<(OutputStream, String)>,
     acc: &Mutex<Vec<u8>>,
     trunc: &AtomicBool,
+    incomplete: &AtomicBool,
+) {
+    // Lossless: block on send rather than drop. The waiter drains the channel
+    // while joining this reader after child exit / timeout.
+    read_pipe_capped(stream, max, acc, trunc, incomplete, |text| {
+        tx.send((which, text)).is_ok()
+    });
+}
+
+/// Read a pipe into a capped accumulator and emit ~8KiB UTF-8 prefixes.
+///
+/// `on_text` returning `false` means the live consumer dropped the chunk
+/// (lossless paths must treat that as incomplete). After the cap, further
+/// reads drain the pipe without locking the accumulator.
+pub(crate) fn read_pipe_capped<R: Read>(
+    stream: Option<R>,
+    max: usize,
+    acc: &Mutex<Vec<u8>>,
+    trunc: &AtomicBool,
+    incomplete: &AtomicBool,
+    mut on_text: impl FnMut(String) -> bool,
 ) {
     let Some(mut r) = stream else {
         return;
@@ -1200,55 +1296,64 @@ fn read_lines_capped<R: Read>(
     let mut chunk = [0u8; READ_CHUNK_BYTES];
     let mut output = Vec::with_capacity(EMIT_CHUNK_BYTES);
     let mut decoder = Utf8ChunkDecoder::new();
+    let mut capped = false;
     loop {
         match r.read(&mut chunk) {
             Ok(0) => break,
             Ok(n) => {
-                let accepted = {
+                let accepted = if capped {
+                    0
+                } else {
                     let mut guard = acc.lock().unwrap_or_else(|e| e.into_inner());
                     let room = max.saturating_sub(guard.len());
                     let take = n.min(room);
                     guard.extend_from_slice(&chunk[..take]);
+                    if take < n {
+                        capped = true;
+                        mark_flag(trunc);
+                    }
                     take
                 };
                 if accepted < n {
-                    mark_truncated(trunc);
-                    // Keep draining the pipe, but do not enqueue anything after
-                    // the cap has been reached.
+                    capped = true;
+                    mark_flag(trunc);
                 }
-                for byte in &chunk[..accepted] {
-                    output.push(*byte);
-                    if output.len() == EMIT_CHUNK_BYTES {
-                        let text = decoder.push(&output);
-                        if !text.is_empty() {
-                            // Process streaming is also consumed by the
-                            // structured output parser, so every accepted
-                            // block must reach the callback. The bounded queue
-                            // is made safe by draining it while readers are
-                            // joined below.
-                            let _ = tx.send((which, text));
-                        }
-                        output.clear();
+                if accepted == 0 {
+                    continue;
+                }
+                output.extend_from_slice(&chunk[..accepted]);
+                while output.len() >= EMIT_CHUNK_BYTES {
+                    let text = decoder.push(&output[..EMIT_CHUNK_BYTES]);
+                    output.drain(..EMIT_CHUNK_BYTES);
+                    if !text.is_empty() && !on_text(text) {
+                        mark_flag(incomplete);
                     }
                 }
             }
-            Err(_) => break,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(_) => {
+                mark_flag(incomplete);
+                break;
+            }
         }
     }
     if !output.is_empty() {
         let text = decoder.push(&output);
-        if !text.is_empty() {
-            let _ = tx.send((which, text));
+        if !text.is_empty() && !on_text(text) {
+            mark_flag(incomplete);
         }
     }
     let text = decoder.finish();
-    if !text.is_empty() {
-        let _ = tx.send((which, text));
+    if decoder.saw_lossy() {
+        mark_flag(incomplete);
+    }
+    if !text.is_empty() && !on_text(text) {
+        mark_flag(incomplete);
     }
 }
 
-pub(crate) fn mark_truncated(trunc: &AtomicBool) {
-    let _ = trunc.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
+pub(crate) fn mark_flag(flag: &AtomicBool) {
+    let _ = flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
 }
 
 fn string_from_acc(acc: &Mutex<Vec<u8>>, truncated: bool, incomplete: bool) -> String {
@@ -1320,7 +1425,7 @@ fn run_spec_with_timeout(
     if let Err(e) = process_control.attach(&child) {
         let _ = child.kill();
         process_control.terminate(&mut child);
-        let _ = child.wait();
+        reap_child_lossy(&mut child, &process_control);
         return AgentRunResult {
             agent: spec.agent,
             status: RunStatus::Failed,
@@ -1426,15 +1531,19 @@ fn wait_with_timeout(
     let stderr_acc = Arc::new(Mutex::new(Vec::new()));
     let stdout_trunc = Arc::new(AtomicBool::new(false));
     let stderr_trunc = Arc::new(AtomicBool::new(false));
+    let stdout_read_inc = Arc::new(AtomicBool::new(false));
+    let stderr_read_inc = Arc::new(AtomicBool::new(false));
     let stdout_acc_r = Arc::clone(&stdout_acc);
     let stderr_acc_r = Arc::clone(&stderr_acc);
     let stdout_trunc_r = Arc::clone(&stdout_trunc);
     let stderr_trunc_r = Arc::clone(&stderr_trunc);
+    let stdout_inc_r = Arc::clone(&stdout_read_inc);
+    let stderr_inc_r = Arc::clone(&stderr_read_inc);
     let stdout_handle = thread::spawn(move || {
-        read_capped_into(stdout, max, &stdout_acc_r, &stdout_trunc_r);
+        read_capped_into(stdout, max, &stdout_acc_r, &stdout_trunc_r, &stdout_inc_r);
     });
     let stderr_handle = thread::spawn(move || {
-        read_capped_into(stderr, max, &stderr_acc_r, &stderr_trunc_r);
+        read_capped_into(stderr, max, &stderr_acc_r, &stderr_trunc_r, &stderr_inc_r);
     });
 
     let started = Instant::now();
@@ -1452,7 +1561,7 @@ fn wait_with_timeout(
                 // Do not signal a Unix process group when observation failed:
                 // its leader state is unknown, so only target the owned Child.
                 let _ = child.kill();
-                let _ = child.wait();
+                reap_child_lossy(child, process_control);
                 let mut terminated = true;
                 let _ = finish_reader(
                     join_reader_bounded(stdout_handle, Duration::from_secs(2)),
@@ -1482,17 +1591,21 @@ fn wait_with_timeout(
                 process_control,
                 child,
                 &mut terminated,
-            );
+            ) || stdout_read_inc.load(Ordering::SeqCst);
             let stderr_incomplete = finish_reader(
                 join_reader_bounded(stderr_handle, Duration::from_millis(250)),
                 Duration::from_secs(2),
                 process_control,
                 child,
                 &mut terminated,
-            );
+            ) || stderr_read_inc.load(Ordering::SeqCst);
+            process_control.cleanup_remaining_group(child);
             let status = match observed_status {
-                Some(status) => status,
-                None => match child.wait() {
+                Some(status) => {
+                    process_control.disarm();
+                    status
+                }
+                None => match reap_child(child, process_control) {
                     Ok(status) => status,
                     Err(error) => return WaitOutcome::IoError(error),
                 },
@@ -1510,7 +1623,7 @@ fn wait_with_timeout(
         WaitPoll::TimedOut => {
             // Kill first so readers see EOF, then join with a short deadline.
             kill_process_tree(process_control, child);
-            let _ = child.wait();
+            reap_child_lossy(child, process_control);
             let mut terminated = true;
             let stdout_incomplete = finish_reader(
                 join_reader_bounded(stdout_handle, Duration::from_secs(2)),
@@ -1518,14 +1631,14 @@ fn wait_with_timeout(
                 process_control,
                 child,
                 &mut terminated,
-            );
+            ) || stdout_read_inc.load(Ordering::SeqCst);
             let stderr_incomplete = finish_reader(
                 join_reader_bounded(stderr_handle, Duration::from_secs(2)),
                 Duration::from_secs(2),
                 process_control,
                 child,
                 &mut terminated,
-            );
+            ) || stderr_read_inc.load(Ordering::SeqCst);
             WaitOutcome::Timeout {
                 stdout: string_from_acc(&stdout_acc, stdout_trunc.load(Ordering::SeqCst), stdout_incomplete),
                 stderr: string_from_acc(&stderr_acc, stderr_trunc.load(Ordering::SeqCst), stderr_incomplete),
@@ -1547,9 +1660,10 @@ enum WaitPoll {
 fn read_capped<R: Read>(stream: Option<R>, max: usize) -> (Vec<u8>, bool) {
     let acc = Mutex::new(Vec::new());
     let trunc = AtomicBool::new(false);
-    read_capped_into(stream, max, &acc, &trunc);
+    let incomplete = AtomicBool::new(false);
+    read_capped_into(stream, max, &acc, &trunc, &incomplete);
     let buf = acc.lock().map(|g| g.clone()).unwrap_or_default();
-    (buf, trunc.load(Ordering::SeqCst))
+    (buf, trunc.load(Ordering::SeqCst) || incomplete.load(Ordering::SeqCst))
 }
 
 fn read_capped_into<R: Read>(
@@ -1557,25 +1671,35 @@ fn read_capped_into<R: Read>(
     max: usize,
     acc: &Mutex<Vec<u8>>,
     trunc: &AtomicBool,
+    incomplete: &AtomicBool,
 ) {
     let Some(mut r) = stream else {
         return;
     };
     let mut chunk = [0u8; 8192];
+    let mut capped = false;
     loop {
         match r.read(&mut chunk) {
             Ok(0) => break,
             Ok(n) => {
+                if capped {
+                    continue;
+                }
                 let mut guard = acc.lock().unwrap_or_else(|e| e.into_inner());
                 let room = max.saturating_sub(guard.len());
                 let take = n.min(room);
                 guard.extend_from_slice(&chunk[..take]);
                 drop(guard);
                 if take < n {
-                    mark_truncated(trunc);
+                    capped = true;
+                    mark_flag(trunc);
                 }
             }
-            Err(_) => break,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(_) => {
+                mark_flag(incomplete);
+                break;
+            }
         }
     }
 }
@@ -1627,29 +1751,9 @@ pub(crate) fn finish_reader<T: Send + 'static>(
     child: &mut Child,
     terminated: &mut bool,
 ) -> bool {
-    let pending = match first {
-        ReaderJoin::Complete(Ok(_)) => return false,
-        ReaderJoin::Complete(Err(_)) => {
-            if !*terminated {
-                kill_process_tree(process_control, child);
-                *terminated = true;
-            }
-            return true;
-        }
-        ReaderJoin::Pending(handle) => handle,
-    };
-    if !*terminated {
-        kill_process_tree(process_control, child);
-        *terminated = true;
-    }
-    match join_reader_bounded(pending, second_timeout) {
-        ReaderJoin::Complete(Ok(_)) => false,
-        ReaderJoin::Complete(Err(_)) => true,
-        ReaderJoin::Pending(handle) => {
-            drop(handle);
-            true
-        }
-    }
+    finish_reader_after_first(first, process_control, child, terminated, |pending| {
+        join_reader_bounded(pending, second_timeout)
+    })
 }
 
 pub(crate) fn finish_reader_draining<T: Send + 'static, F: FnMut()>(
@@ -1660,33 +1764,72 @@ pub(crate) fn finish_reader_draining<T: Send + 'static, F: FnMut()>(
     terminated: &mut bool,
     mut drain: F,
 ) -> bool {
+    finish_reader_after_first(first, process_control, child, terminated, |pending| {
+        join_reader_bounded_draining(pending, second_timeout, &mut drain)
+    })
+}
+
+/// First bounded join timeout, reader panic, or tree termination marks the
+/// stream incomplete. A later successful join does not clear that mark.
+fn finish_reader_after_first<T: Send + 'static>(
+    first: ReaderJoin<T>,
+    process_control: &ProcessControl,
+    child: &mut Child,
+    terminated: &mut bool,
+    second_join: impl FnOnce(thread::JoinHandle<T>) -> ReaderJoin<T>,
+) -> bool {
     let pending = match first {
         ReaderJoin::Complete(Ok(_)) => return false,
         ReaderJoin::Complete(Err(_)) => {
-            if !*terminated {
-                kill_process_tree(process_control, child);
-                *terminated = true;
-            }
+            ensure_tree_terminated(process_control, child, terminated);
             return true;
         }
         ReaderJoin::Pending(handle) => handle,
     };
-    if !*terminated {
-        kill_process_tree(process_control, child);
-        *terminated = true;
-    }
-    match join_reader_bounded_draining(pending, second_timeout, &mut drain) {
-        ReaderJoin::Complete(Ok(_)) => false,
-        ReaderJoin::Complete(Err(_)) => true,
+    ensure_tree_terminated(process_control, child, terminated);
+    match second_join(pending) {
+        ReaderJoin::Complete(_) => true,
         ReaderJoin::Pending(handle) => {
-            drop(handle);
+            reap_reader_in_background(handle);
             true
         }
     }
 }
 
+fn ensure_tree_terminated(
+    process_control: &ProcessControl,
+    child: &mut Child,
+    terminated: &mut bool,
+) {
+    if !*terminated {
+        kill_process_tree(process_control, child);
+        *terminated = true;
+    }
+}
+
+fn reap_reader_in_background<T: Send + 'static>(handle: thread::JoinHandle<T>) {
+    let _ = thread::Builder::new()
+        .name("agenthub-reap-reader".into())
+        .spawn(move || {
+            let _ = handle.join();
+        });
+}
+
 pub(crate) fn kill_process_tree(process_control: &ProcessControl, child: &mut Child) {
     process_control.terminate(child);
+}
+
+pub(crate) fn reap_child(
+    child: &mut Child,
+    process_control: &ProcessControl,
+) -> io::Result<std::process::ExitStatus> {
+    let status = child.wait()?;
+    process_control.disarm();
+    Ok(status)
+}
+
+pub(crate) fn reap_child_lossy(child: &mut Child, process_control: &ProcessControl) {
+    let _ = reap_child(child, process_control);
 }
 
 /// Truncate raw bytes to max length; returns (lossy utf-8 string, truncated flag).

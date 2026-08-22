@@ -332,8 +332,9 @@ fn compatibility_constructor_derives_file_backed_data_dir() {
     let db = Database::open(&dir.path().join("compat.db")).unwrap();
     let lifecycle = LifecycleCoordinator::new(db, register_all());
 
-    assert_eq!(lifecycle.data_dir.as_deref(), Some(dir.path()));
-    assert!(lifecycle.data_dir_error.is_none());
+    let expected = crate::utils::paths::normalize_data_dir(dir.path()).unwrap();
+    assert_eq!(lifecycle.data_dir(), Some(expected.as_path()));
+    assert!(lifecycle.data_dir_error().is_none());
 }
 
 #[test]

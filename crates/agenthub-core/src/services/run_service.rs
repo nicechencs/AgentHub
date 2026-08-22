@@ -43,11 +43,13 @@ fn emit_stream_outputs(
     }
 }
 
-/// Structured mode: **always** replace runner-captured stdout with decoded
-/// assistant text (may be empty). Never leave raw NDJSON as final content —
-/// even when truncated or when only tool/status events arrived.
+/// Structured mode: replace captured stdout with decoded assistant text only
+/// when the parser consumed every byte (no truncation, reader error, live
+/// drop, UTF-8 error, or leftover/overflow). Incomplete signals stay on the
+/// result; native session id is still copied.
 fn apply_structured_stdout(result: &mut AgentRunResult, session: &StreamSession) {
     if session.is_structured()
+        && session.consumed_complete()
         && !result.truncated
         && !matches!(result.status, RunStatus::Timeout | RunStatus::Cancelled)
     {

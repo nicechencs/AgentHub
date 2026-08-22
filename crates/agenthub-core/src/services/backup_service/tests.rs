@@ -900,6 +900,42 @@ fn unique_payload_bytes(backups_root: &Path) -> u64 {
     {
         use std::collections::HashSet;
         use std::os::windows::fs::MetadataExt;
+        use std::os::windows::io::AsRawHandle;
+
+        #[repr(C)]
+        struct ByHandleFileInformation {
+            file_attributes: u32,
+            creation_time: [u32; 2],
+            last_access_time: [u32; 2],
+            last_write_time: [u32; 2],
+            volume_serial_number: u32,
+            file_size_high: u32,
+            file_size_low: u32,
+            number_of_links: u32,
+            file_index_high: u32,
+            file_index_low: u32,
+        }
+
+        unsafe extern "system" {
+            fn GetFileInformationByHandle(
+                file: *mut std::ffi::c_void,
+                info: *mut ByHandleFileInformation,
+            ) -> i32;
+        }
+
+        fn windows_file_key(path: &std::path::Path) -> Option<(u32, u64)> {
+            let file = std::fs::File::open(path).ok()?;
+            let mut info = unsafe { std::mem::zeroed::<ByHandleFileInformation>() };
+            let ok = unsafe {
+                GetFileInformationByHandle(file.as_raw_handle() as *mut std::ffi::c_void, &mut info)
+            };
+            if ok == 0 {
+                return None;
+            }
+            let index = ((info.file_index_high as u64) << 32) | u64::from(info.file_index_low);
+            Some((info.volume_serial_number, index))
+        }
+
         let mut seen = HashSet::new();
         let mut total = 0u64;
         let mut pending = vec![live];
@@ -922,7 +958,7 @@ fn unique_payload_bytes(backups_root: &Path) -> u64 {
                 if path.file_name().and_then(|s| s.to_str()) == Some(MANIFEST_FILE) {
                     continue;
                 }
-                let key = (meta.volume_serial_number(), meta.file_index());
+                let key = windows_file_key(&path).unwrap_or((0, 0));
                 if seen.insert(key) {
                     total = total.saturating_add(meta.file_size());
                 }

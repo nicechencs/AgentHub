@@ -75,6 +75,14 @@ pub struct LifecycleCoordinator {
 }
 
 impl LifecycleCoordinator {
+    pub(crate) fn data_dir(&self) -> Option<&std::path::Path> {
+        self.data_dir.as_deref()
+    }
+
+    pub(crate) fn data_dir_error(&self) -> Option<&str> {
+        self.data_dir_error.as_deref()
+    }
+
     pub fn new(db: Database, registry: AdapterRegistry) -> Self {
         let executor = Arc::new(BuiltinLifecycleInstallExecutor::new(&db, registry));
         let data_dir = normalized_database_data_dir(&db);
