@@ -15,3 +15,6 @@ mod command_exec_tests;
 
 #[cfg(test)]
 pub mod test_temp;
+
+#[cfg(test)]
+pub(crate) mod test_env;

@@ -398,10 +398,11 @@ fn purge_is_excluded_by_a_provider_live_saga_before_uninstall_preflight() {
 
 #[test]
 fn custom_agent_home_purge_fails_before_external_executor() {
+    let _env = crate::utils::test_env::lock_test_env();
     let _codex = crate::integrations::agents::codex::leftover::lock_codex_home();
-    let previous = std::env::var_os("CODEX_HOME");
     let custom = tempfile::tempdir().unwrap();
-    std::env::set_var("CODEX_HOME", custom.path());
+    let _codex_home =
+        crate::utils::test_env::EnvVarGuard::set("CODEX_HOME", custom.path());
 
     let calls = Arc::new(Mutex::new(Vec::new()));
     let executor = MockExecutor {
@@ -421,19 +422,16 @@ fn custom_agent_home_purge_fails_before_external_executor() {
     )
     .expect_err("custom config roots must fail closed");
 
-    match previous {
-        Some(value) => std::env::set_var("CODEX_HOME", value),
-        None => std::env::remove_var("CODEX_HOME"),
-    }
     assert_eq!(error.code(), "invalid_arg");
     assert!(error.to_string().contains("custom agent config"));
     assert!(calls.lock().unwrap().is_empty());
 }
 
-fn purge_must_fail_closed_for_env_override(agent: AgentId, key: &str) {
-    let previous = std::env::var_os(key);
+fn purge_must_fail_closed_for_env_override(agent: AgentId, key: &'static str) {
+    // Caller holds the shared test-env lock; the guard restores the key even
+    // if the expect_err below panics.
     let custom = tempfile::tempdir().unwrap();
-    std::env::set_var(key, custom.path());
+    let _guard = crate::utils::test_env::EnvVarGuard::set(key, custom.path());
 
     let calls = Arc::new(Mutex::new(Vec::new()));
     let executor = MockExecutor {
@@ -447,10 +445,6 @@ fn purge_must_fail_closed_for_env_override(agent: AgentId, key: &str) {
     let error = uninstall_agent(&AdapterRegistry::new(), &db, agent, true, &executor)
         .expect_err("custom config roots must fail closed");
 
-    match previous {
-        Some(value) => std::env::set_var(key, value),
-        None => std::env::remove_var(key),
-    }
     assert_eq!(error.code(), "invalid_arg");
     assert!(error.to_string().contains("custom agent config"));
     assert!(calls.lock().unwrap().is_empty());
@@ -458,23 +452,21 @@ fn purge_must_fail_closed_for_env_override(agent: AgentId, key: &str) {
 
 #[test]
 fn custom_pi_config_dir_purge_fails_before_external_executor() {
+    let _env = crate::utils::test_env::lock_test_env();
     purge_must_fail_closed_for_env_override(AgentId::Pi, "PI_CODING_AGENT_DIR");
 }
 
 #[test]
 fn custom_workbuddy_config_dir_purge_fails_before_external_executor() {
+    let _env = crate::utils::test_env::lock_test_env();
     purge_must_fail_closed_for_env_override(AgentId::WorkBuddy, "WORKBUDDY_CONFIG_DIR");
 }
 
 #[test]
 fn custom_codebuddy_config_dir_purge_fails_before_external_executor() {
-    let previous_wb = std::env::var_os("WORKBUDDY_CONFIG_DIR");
-    std::env::remove_var("WORKBUDDY_CONFIG_DIR");
+    let _env = crate::utils::test_env::lock_test_env();
+    let _workbuddy = crate::utils::test_env::EnvVarGuard::remove("WORKBUDDY_CONFIG_DIR");
     purge_must_fail_closed_for_env_override(AgentId::WorkBuddy, "CODEBUDDY_CONFIG_DIR");
-    match previous_wb {
-        Some(value) => std::env::set_var("WORKBUDDY_CONFIG_DIR", value),
-        None => std::env::remove_var("WORKBUDDY_CONFIG_DIR"),
-    }
 }
 
 #[test]

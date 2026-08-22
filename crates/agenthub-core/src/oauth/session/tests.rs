@@ -3,6 +3,29 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+impl SessionStore {
+    /// Test helper: inspect a session as of an explicit clock instant so expiry
+    /// tests never subtract `TTL` from `Instant::now()` (that panics when the
+    /// clock origin is within one TTL of now). Lives in the test module per the
+    /// repo rule that test code stays out of production files.
+    fn get_info_at(&self, state: &str, now: Instant) -> Result<OAuthSessionInfo> {
+        let mut g = self
+            .inner
+            .lock()
+            .map_err(|_| AppError::message("oauth.store", "session store poisoned"))?;
+        purge_at(&mut g, now);
+        let s = g
+            .get(state)
+            .ok_or_else(|| AppError::NotFound("oauth session not found".into()))?;
+        Ok(OAuthSessionInfo {
+            state: s.state.clone(),
+            agent_id: s.agent,
+            status: s.status,
+            error: s.error.clone(),
+        })
+    }
+}
+
 fn session(state: &str, created_at: Instant) -> OAuthSession {
     OAuthSession {
         state: state.into(),

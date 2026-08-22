@@ -205,27 +205,6 @@ impl SessionStore {
     fn purge_locked(&self, g: &mut HashMap<String, OAuthSession>) {
         purge_at(g, Instant::now());
     }
-
-    /// Test helper: inspect a session as of an explicit clock instant so expiry
-    /// tests never subtract `TTL` from `Instant::now()` (that panics when the
-    /// clock origin is within one TTL of now).
-    #[cfg(test)]
-    pub(crate) fn get_info_at(&self, state: &str, now: Instant) -> Result<OAuthSessionInfo> {
-        let mut g = self
-            .inner
-            .lock()
-            .map_err(|_| AppError::message("oauth.store", "session store poisoned"))?;
-        purge_at(&mut g, now);
-        let s = g
-            .get(state)
-            .ok_or_else(|| AppError::NotFound("oauth session not found".into()))?;
-        Ok(OAuthSessionInfo {
-            state: s.state.clone(),
-            agent_id: s.agent,
-            status: s.status,
-            error: s.error.clone(),
-        })
-    }
 }
 
 fn purge_at(g: &mut HashMap<String, OAuthSession>, now: Instant) {

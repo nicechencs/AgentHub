@@ -2,7 +2,6 @@
 
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use crate::models::AgentId;
 use crate::platform::paths::{builtin_path_registry, resolve_agent_config_dir, resolve_agent_home};
@@ -10,8 +9,6 @@ use crate::utils::paths::{
     home_dir, validate_config_purge_target, validate_config_purge_target_with_data_dir,
     validate_default_agent_config_purge_target,
 };
-
-static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn restore_env(key: &str, prev: Option<OsString>) {
     match prev {
@@ -42,7 +39,7 @@ fn resolve_agent_home_matches_registry() {
 
 #[test]
 fn claude_home_honors_claude_config_dir_env() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = crate::utils::test_env::lock_test_env();
     let expected = PathBuf::from(if cfg!(windows) {
         r"D:\tmp\agenthub-claude-config-test"
     } else {
@@ -57,7 +54,7 @@ fn claude_home_honors_claude_config_dir_env() {
 
 #[test]
 fn codex_home_honors_codex_home_env() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = crate::utils::test_env::lock_test_env();
     let _codex = crate::integrations::agents::codex::leftover::lock_codex_home();
     let expected = PathBuf::from(if cfg!(windows) {
         r"D:\tmp\agenthub-codex-home-test"
@@ -73,7 +70,7 @@ fn codex_home_honors_codex_home_env() {
 
 #[test]
 fn codex_home_blank_env_falls_back_to_dot_codex() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = crate::utils::test_env::lock_test_env();
     let _codex = crate::integrations::agents::codex::leftover::lock_codex_home();
     let prev = std::env::var_os("CODEX_HOME");
     std::env::set_var("CODEX_HOME", " , ");
@@ -87,7 +84,7 @@ fn codex_home_blank_env_falls_back_to_dot_codex() {
 
 #[test]
 fn pi_config_dir_defaults_to_home_agent_and_honors_env() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = crate::utils::test_env::lock_test_env();
     let prev = std::env::var_os("PI_CODING_AGENT_DIR");
     std::env::remove_var("PI_CODING_AGENT_DIR");
     let default_cfg = resolve_agent_config_dir(AgentId::Pi).unwrap();
@@ -107,7 +104,7 @@ fn pi_config_dir_defaults_to_home_agent_and_honors_env() {
 
 #[test]
 fn workbuddy_config_dir_honors_env_overrides() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = crate::utils::test_env::lock_test_env();
     let prev_wb = std::env::var_os("WORKBUDDY_CONFIG_DIR");
     let prev_cb = std::env::var_os("CODEBUDDY_CONFIG_DIR");
     std::env::remove_var("WORKBUDDY_CONFIG_DIR");
@@ -131,7 +128,7 @@ fn workbuddy_config_dir_honors_env_overrides() {
 
 #[test]
 fn grok_home_honors_grok_home_env() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = crate::utils::test_env::lock_test_env();
     let expected = PathBuf::from(if cfg!(windows) {
         r"D:\tmp\agenthub-grok-home-test"
     } else {
@@ -264,7 +261,7 @@ fn default_agent_purge_accepts_only_fixed_home() {
 
 #[test]
 fn default_agent_purge_rejects_pi_coding_agent_dir_override() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = crate::utils::test_env::lock_test_env();
     let data_dir = tempfile::tempdir().unwrap();
     let prev = std::env::var_os("PI_CODING_AGENT_DIR");
     std::env::set_var(
@@ -284,7 +281,7 @@ fn default_agent_purge_rejects_pi_coding_agent_dir_override() {
 
 #[test]
 fn default_agent_purge_rejects_workbuddy_config_dir_overrides() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = crate::utils::test_env::lock_test_env();
     let data_dir = tempfile::tempdir().unwrap();
     let prev_wb = std::env::var_os("WORKBUDDY_CONFIG_DIR");
     let prev_cb = std::env::var_os("CODEBUDDY_CONFIG_DIR");

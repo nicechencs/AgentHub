@@ -202,6 +202,69 @@ describe('createTauriSettingsPort closeToTray', () => {
     expect(localStorage.getItem(StorageKey.theme)).toBe('system');
   });
 
+  it('serializes concurrent updateSettings writes through one lane', async () => {
+    // Core mirrors the last applied close_to_tray so phase-2 getSettings
+    // reflects whatever the core actually stored.
+    let coreCloseToTray = false;
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const closeToTrayWrites: string[] = [];
+
+    invokeMock.mockImplementation(async (cmd: string, args?: { key?: string; value?: string }) => {
+      if (cmd === 'set_setting') {
+        if (args?.key === 'close_to_tray') {
+          closeToTrayWrites.push(args.value ?? '');
+          // The first (older) write blocks inside set_setting.
+          if (closeToTrayWrites.length === 1) await firstGate;
+          coreCloseToTray = args.value === 'true';
+        }
+        return;
+      }
+      if (cmd === 'get_app_settings') {
+        return {
+          theme: 'system',
+          language: 'zh-CN',
+          logLevel: 'info',
+          logRetentionDays: 14,
+          closeToTray: coreCloseToTray,
+        };
+      }
+      if (cmd === 'get_path_info') {
+        return {
+          dataDir: 'D:/data',
+          dbPath: 'D:/data/agenthub.db',
+          backupsDir: 'D:/data/backups',
+          logsDir: 'D:/data/logs',
+        };
+      }
+      throw new Error(`unexpected invoke: ${cmd} ${JSON.stringify(args)}`);
+    });
+
+    const port = createTauriSettingsPort();
+    const first = port.updateSettings({ closeToTray: true });
+    await vi.waitFor(() => expect(closeToTrayWrites).toHaveLength(1));
+
+    const second = port.updateSettings({ closeToTray: false });
+    // Give a broken (unserialized) implementation every chance to start the
+    // second write while the first is still blocked.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(closeToTrayWrites).toHaveLength(1); // second write must still be queued
+
+    releaseFirst();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    // Writes ran in call order, not completion order.
+    expect(closeToTrayWrites).toEqual(['true', 'false']);
+    // Each write's snapshot reflects core as of its own serialized turn:
+    // the older write saw its own value before the newer write started.
+    expect(firstResult.closeToTray).toBe(true);
+    expect(secondResult.closeToTray).toBe(false);
+    const stored = JSON.parse(localStorage.getItem(settingsKey) ?? '{}') as { closeToTray?: boolean };
+    expect(stored.closeToTray).toBe(false);
+  });
+
   it('reads autoStart from OS login item when plugin is available', async () => {
     autostartIsEnabled.mockResolvedValue(true);
     invokeMock.mockImplementation(async (cmd: string) => {
