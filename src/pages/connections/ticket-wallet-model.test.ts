@@ -107,6 +107,7 @@ function sampleWallet(): TicketWallet {
         bridge: null,
       },
     ],
+    surfaceGroups: [],
   };
 }
 
@@ -581,6 +582,7 @@ describe('filter change after add-dialog leftover', () => {
           bridge: { port: null, running: false },
         },
       ],
+      surfaceGroups: [],
     };
 
     expect(() => buildTicketWalletRows(wallet, { filter: 'api_key' })).not.toThrow();

@@ -35,6 +35,7 @@ function wallet(): TicketWallet {
         bridge: null,
       },
     ],
+    surfaceGroups: [],
   };
 }
 

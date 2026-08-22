@@ -141,6 +141,108 @@ describe('mock ticket wallet', () => {
 
     expect(wallet.tickets).toEqual([]);
     expect(wallet.bindings).toEqual([]);
+    expect(wallet.surfaceGroups).toEqual([]);
+  });
+
+  it('groups same surface+class, mixes account/provider, skips unknown and projections', () => {
+    const generated: AdapterProfile = {
+      id: 'proj-p',
+      name: 'Generated',
+      sourceKind: 'provider',
+      sourceId: 'kimi-a',
+      targetAgentId: 'claude',
+      route: 'native_endpoint',
+      mode: 'api',
+      status: 'active',
+      ruleId: 'kimi-membership-to-claude-v1',
+      ruleVersion: '1',
+      generatedProviderId: 'proj-claude',
+      localPort: null,
+      autoStart: false,
+      createdAt: '2026-08-15T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z',
+    };
+    const wallet = buildMockTicketWallet({
+      listAccounts: () => [
+        {
+          id: 'kimi-key',
+          agentId: 'kimi',
+          kind: 'apikey',
+          label: 'Kimi key',
+          isCurrent: false,
+          tokenValid: true,
+          extra: { surface: 'kimi-code-membership' },
+        } as Account,
+        {
+          id: 'grok-a',
+          agentId: 'grok',
+          kind: 'oauth',
+          label: 'a@x.com',
+          isCurrent: false,
+          tokenValid: true,
+        },
+        {
+          id: 'grok-b',
+          agentId: 'grok',
+          kind: 'oauth',
+          label: 'b@x.com',
+          isCurrent: false,
+          tokenValid: true,
+        },
+      ],
+      listProviders: () => [
+        {
+          id: 'kimi-a',
+          agentId: 'kimi',
+          name: 'Kimi membership',
+          preset: 'kimi-code-membership',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: false,
+        },
+        {
+          id: 'relay',
+          agentId: 'claude',
+          name: 'Custom relay',
+          preset: 'openai-compatible',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: false,
+        },
+        {
+          id: 'proj-claude',
+          agentId: 'claude',
+          name: 'Generated',
+          preset: 'custom',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: true,
+        },
+      ],
+      listProfiles: () => [generated],
+      getBridgeStatus: () => undefined,
+      planAdapter: async () => {
+        throw new Error('not used');
+      },
+    });
+
+    expect(wallet.tickets.some((t) => t.id === 'provider:proj-claude')).toBe(false);
+    const kimi = wallet.surfaceGroups.find(
+      (g) => g.surface === 'kimi-code-membership' && g.credentialClass === 'api_key',
+    );
+    expect(kimi?.members.map((m) => m.ticketId)).toEqual([
+      'account:kimi-key',
+      'provider:kimi-a',
+    ]);
+    const grok = wallet.surfaceGroups.find(
+      (g) => g.surface === 'grok-xai-subscription' && g.credentialClass === 'oauth',
+    );
+    expect(grok?.members.map((m) => m.ticketId)).toEqual([
+      'account:grok-a',
+      'account:grok-b',
+    ]);
+    expect(wallet.surfaceGroups.some((g) => g.surface === 'unknown')).toBe(false);
+    expect(wallet.tickets.some((t) => t.surface === 'unknown')).toBe(true);
   });
 
   it('sets speaks and importedFrom lockstep with core TicketSurface rules', () => {

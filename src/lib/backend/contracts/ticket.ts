@@ -62,9 +62,26 @@ export interface BindingView {
   bridge: BindingBridgeRuntime | null;
 }
 
+/** One known-surface wallet row inside a §5.5 poll pool. */
+export interface TicketSurfaceMemberView {
+  ticketId: string;
+  sourceKind: TicketSourceKind;
+  sourceId: string;
+  agentId: AgentId;
+  label: string;
+}
+
+/** Same `(surface, credentialClass)` members. Unknown surfaces are omitted. */
+export interface TicketSurfaceGroupView {
+  surface: TicketSurface;
+  credentialClass: TicketCredentialClass;
+  members: TicketSurfaceMemberView[];
+}
+
 export interface TicketWallet {
   tickets: TicketView[];
   bindings: BindingView[];
+  surfaceGroups: TicketSurfaceGroupView[];
 }
 
 /** Exact camelCase shape from Rust `list_ticket_wallet`. */
@@ -94,9 +111,24 @@ export interface BindingViewWire {
   bridge?: BindingBridgeRuntimeWire | null;
 }
 
+export interface TicketSurfaceMemberViewWire {
+  ticketId: string;
+  sourceKind: string;
+  sourceId: string;
+  agentId: AgentId;
+  label: string;
+}
+
+export interface TicketSurfaceGroupViewWire {
+  surface: string;
+  credentialClass: string;
+  members: TicketSurfaceMemberViewWire[];
+}
+
 export interface TicketWalletWire {
   tickets: TicketViewWire[];
   bindings: BindingViewWire[];
+  surfaceGroups?: TicketSurfaceGroupViewWire[];
 }
 
 function invalidWireValue(field: string, value: unknown): never {
@@ -176,11 +208,69 @@ export function mapBindingView(wire: BindingViewWire): BindingView {
   };
 }
 
-export function mapTicketWallet(wire: TicketWalletWire): TicketWallet {
+export function mapTicketSurfaceMember(wire: TicketSurfaceMemberViewWire): TicketSurfaceMemberView {
   return {
-    tickets: (wire.tickets ?? []).map(mapTicketView),
-    bindings: (wire.bindings ?? []).map(mapBindingView),
+    ticketId: wire.ticketId,
+    sourceKind: mapSourceKind(wire.sourceKind),
+    sourceId: wire.sourceId,
+    agentId: wire.agentId,
+    label: typeof wire.label === 'string' ? wire.label : '',
   };
+}
+
+export function mapTicketSurfaceGroup(wire: TicketSurfaceGroupViewWire): TicketSurfaceGroupView {
+  return {
+    surface: mapSurface(wire.surface),
+    credentialClass: mapCredentialClass(wire.credentialClass),
+    members: (wire.members ?? []).map(mapTicketSurfaceMember),
+  };
+}
+
+/**
+ * Group known-surface tickets by `(surface, credentialClass)`.
+ * Lockstep with Rust `group_ticket_surface_members`: skip unknown surface /
+ * unknown credential class; mix account+provider; sort members by ticket id.
+ */
+export function groupTicketSurfaceMembers(
+  tickets: readonly TicketView[],
+): TicketSurfaceGroupView[] {
+  const buckets = new Map<string, TicketView[]>();
+  for (const ticket of tickets) {
+    if (ticket.surface === 'unknown' || ticket.credentialClass === 'unknown') continue;
+    const key = `${ticket.surface}\0${ticket.credentialClass}`;
+    const list = buckets.get(key);
+    if (list) list.push(ticket);
+    else buckets.set(key, [ticket]);
+  }
+  return [...buckets.keys()]
+    .sort((left, right) => left.localeCompare(right))
+    .flatMap((key) => {
+      const members = (buckets.get(key) ?? [])
+        .slice()
+        .sort((left, right) => left.id.localeCompare(right.id));
+      const first = members[0];
+      if (!first) return [];
+      return [{
+        surface: first.surface,
+        credentialClass: first.credentialClass,
+        members: members.map((ticket) => ({
+          ticketId: ticket.id,
+          sourceKind: ticket.sourceKind,
+          sourceId: ticket.sourceId,
+          agentId: ticket.agentId,
+          label: ticket.label,
+        })),
+      }];
+    });
+}
+
+export function mapTicketWallet(wire: TicketWalletWire): TicketWallet {
+  const tickets = (wire.tickets ?? []).map(mapTicketView);
+  const bindings = (wire.bindings ?? []).map(mapBindingView);
+  const surfaceGroups = Array.isArray(wire.surfaceGroups)
+    ? wire.surfaceGroups.map(mapTicketSurfaceGroup)
+    : groupTicketSurfaceMembers(tickets);
+  return { tickets, bindings, surfaceGroups };
 }
 
 const BIND_RESULT_UNREADABLE = '绑定结果无法识别，请重试';

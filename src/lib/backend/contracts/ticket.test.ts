@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   bindingRouteDashboardLabel,
   bindingRouteUsageLabel,
+  groupTicketSurfaceMembers,
   isActiveBindingForAgent,
   mapBindTicketResult,
   mapBindingView,
@@ -91,6 +92,112 @@ describe('Ticket Rust wire mappers', () => {
       profileId: 'prof-2',
       bridge: { port: 8123, running: true },
     });
+    expect(wallet.surfaceGroups).toEqual([
+      {
+        surface: 'kimi-code-membership',
+        credentialClass: 'api_key',
+        members: [
+          {
+            ticketId: 'provider:kimi-1',
+            sourceKind: 'provider',
+            sourceId: 'kimi-1',
+            agentId: 'kimi',
+            label: 'Kimi 会员',
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('maps explicit surfaceGroups and does not regroup unknown surfaces', () => {
+    const wallet = mapTicketWallet({
+      tickets: [],
+      bindings: [],
+      surfaceGroups: [
+        {
+          surface: 'grok-xai-subscription',
+          credentialClass: 'oauth',
+          members: [
+            {
+              ticketId: 'account:g1',
+              sourceKind: 'account',
+              sourceId: 'g1',
+              agentId: 'grok',
+              label: 'a@x.com',
+            },
+            {
+              ticketId: 'account:g2',
+              sourceKind: 'account',
+              sourceId: 'g2',
+              agentId: 'grok',
+              label: 'b@x.com',
+            },
+          ],
+        },
+      ],
+    });
+    expect(wallet.surfaceGroups).toHaveLength(1);
+    expect(wallet.surfaceGroups[0]?.members.map((m) => m.ticketId)).toEqual([
+      'account:g1',
+      'account:g2',
+    ]);
+  });
+
+  it('groups same surface+class, mixes account/provider, skips unknown', () => {
+    const groups = groupTicketSurfaceMembers([
+      {
+        id: 'provider:kimi-b',
+        sourceKind: 'provider',
+        sourceId: 'kimi-b',
+        agentId: 'kimi',
+        label: 'B',
+        surface: 'kimi-code-membership',
+        credentialClass: 'api_key',
+        speaks: [],
+        importedFrom: 'kimi',
+      },
+      {
+        id: 'account:kimi-a',
+        sourceKind: 'account',
+        sourceId: 'kimi-a',
+        agentId: 'kimi',
+        label: 'A',
+        surface: 'kimi-code-membership',
+        credentialClass: 'api_key',
+        speaks: [],
+        importedFrom: 'kimi',
+      },
+      {
+        id: 'provider:anth',
+        sourceKind: 'provider',
+        sourceId: 'anth',
+        agentId: 'claude',
+        label: 'Anth',
+        surface: 'anthropic-api',
+        credentialClass: 'api_key',
+        speaks: [],
+        importedFrom: 'claude',
+      },
+      {
+        id: 'account:unk',
+        sourceKind: 'account',
+        sourceId: 'unk',
+        agentId: 'pi',
+        label: 'x',
+        surface: 'unknown',
+        credentialClass: 'oauth',
+        speaks: [],
+        importedFrom: 'pi',
+      },
+    ]);
+    expect(groups.map((g) => `${g.surface}:${g.credentialClass}`)).toEqual([
+      'anthropic-api:api_key',
+      'kimi-code-membership:api_key',
+    ]);
+    expect(groups[1]?.members.map((m) => m.ticketId)).toEqual([
+      'account:kimi-a',
+      'provider:kimi-b',
+    ]);
   });
 
   it('fails closed: unknown surface/credentialClass → unknown; invalid route throws', () => {

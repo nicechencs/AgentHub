@@ -149,7 +149,7 @@ flowchart LR
 
 ### C1 票面成员集读模型
 
-- **状态**：未开始
+- **状态**：本分支已落地（`refactor/ticket-members`，2026-08-22）。聚合键 `(surface, credentialClass)`；Account+Provider 混组；unknown / 投影不入组；成员序 `ticket_id`。见 `TicketSurfaceGroup` / `group_ticket_surface_members`。
 - **目标**：为 §5.5 提供「同票面多账号」的成员枚举：按 `surface` + `credentialClass` 聚合同票面的多条 account/provider 行，产出读模型（如 `TicketSurfaceGroup { surface, members[] }`），**只做读模型，不改存储 schema、不改去重规则**。前端 contracts 如需暴露则同步 wire 映射与 mock。
 - **文件**：`services/ticket_read_service.rs`、`models/ticket.rs`、（可选）`src/lib/backend/contracts/ticket.ts`、`src/dev/mocks/ticket.ts`。
 - **限制**：投影 Provider 永不入组；`unknown` surface 不聚组；不引入新表；不动 `authorization_key` 去重语义（同人多授权仍并存）。
@@ -157,7 +157,7 @@ flowchart LR
 
 ### C2 多账号轮询与故障切换运行时（§5.5 主件）
 
-- **状态**：未开始（**schema 与绑定语义先出设计稿，主 Agent 拍板**）
+- **状态**：设计稿已出（本分支 [multi-account-routing-rfc.md](multi-account-routing-rfc.md)，**主 Agent 拍板前不落运行时**）。稿内选定成员存储方案 C（运行时纯读模型），矩阵加 `multi_account` 维，RetryGate 与切号闸正交。
 - **目标**：`local_bridge` 运行时支持同票面多成员：`BridgeStartSpec` 从单 `ResolvedAuth` 扩展为有序成员列表；新增 AccountPicker（固定顺序轮询游标、成员健康态 `Renewable`/`NeedsLogin`、失效隔离）；请求边界 FSM——新请求在请求边界选号，**切换仅限首个有效流事件前且单请求最多一次**，与既有同账号 401 reload 正交合入；绑定语义扩展（`bind` 后 attach 成员或 profile 多 `source_id`，设计稿定）。每请求日志记**实际承接账号**（`account_id` 字段），上游身份头/会话 seed 按实际承接账号生成。
 - **文件**：`bridge/runtime.rs`、`bridge/host/{dispatch,transport}.rs`、`services/adapter_bridge_service/*`、`storage/`（如需 profile 成员存储）、`src-tauri/adapter_bridge_controller.rs`（secret 解析多成员）、两侧 tests。
 - **限制**：仅本人账号、仅 loopback；负载均衡不做；每成员 refresh 独立 single-flight（owner 分治不变，§5.1.2）；失效只标该成员，不向调用方暴露其余账号；每条边的轮询支持仍需随 fixtures 取证后才开（矩阵可加 multi-account 维度或按边白名单，设计稿定）。
@@ -183,7 +183,7 @@ flowchart LR
 
 ### D3 绑定真相一致性契约 + 写面盘点
 
-- **状态**：未开始
+- **状态**：本分支已落地测试 + 盘点（2026-08-22）。契约在 `ticket_read_service/tests.rs`（`ticket_connection_*`）；写面盘点见 [multi-account-routing-rfc.md 附录 A](multi-account-routing-rfc.md#附录-a-d3-绑定真相写面盘点只盘点不改写入)。不改写入行为。
 - **目标**：「谁在用」当前有三处真相：`TicketBinding`（由 `is_current` + `adapter_profiles` 派生，`derive_bindings`）、`agent_active_bindings`（ActiveBinding）、前端 `connection-pool-store` 缓存——而 `list_wallet` **不读** `agent_active_bindings`。交付两件事：① 一致性契约测试——对同一 DB 状态断言钱包派生绑定与 ActiveBinding 指针一致，故意制造漂移（只改一侧）时测试能红；② 写面盘点——列出仍绕过 `bind_ticket` 的写入口（`AccountService.switch`、import activate、`apply_adapter` 兼容口）及各自是否维持派生一致性，产出结论供主 Agent 决定是否在后续轮收口为 `bind(native)`。**本任务只加测试和盘点报告，不改写入行为。**
 - **文件**：`services/ticket_read_service.rs` 测试区、`services/connection_service` tests、盘点结论回写本文本卡。
 - **限制**：不改 `derive_bindings` 语义、不动 `bind`/`switch` 行为；`pool_crud.rs`（~1913 行）与 `connection_service.rs`（~1026 行）的机械拆分不在本卡（归 [modularity-improvement.md](modularity-improvement.md) 管辖）。
