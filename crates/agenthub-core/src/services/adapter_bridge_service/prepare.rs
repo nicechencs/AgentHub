@@ -174,7 +174,7 @@ impl AdapterBridgeService {
                 )
             })?;
         let source_ok = match rule.protocol {
-            BridgeUpstreamProtocol::KimiChatCompletions => matches!(
+            BridgeUpstreamProtocol::OpenAiChatCompletions => matches!(
                 request.source_kind,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account
             ),
@@ -208,10 +208,10 @@ impl AdapterBridgeService {
         source_id: &str,
     ) -> Result<crate::bridge::ResolvedAuth> {
         match (rule.protocol, rule.rule_id) {
-            (BridgeUpstreamProtocol::KimiChatCompletions, OPENAI_RULE_ID) => {
+            (BridgeUpstreamProtocol::OpenAiChatCompletions, OPENAI_RULE_ID) => {
                 self.secrets.resolve_openai_auth(source_kind, source_id)
             }
-            (BridgeUpstreamProtocol::KimiChatCompletions, _) => self
+            (BridgeUpstreamProtocol::OpenAiChatCompletions, _) => self
                 .secrets
                 .resolve_kimi_membership_auth(source_kind, source_id),
             (BridgeUpstreamProtocol::AnthropicMessages, _) => {
@@ -224,6 +224,20 @@ impl AdapterBridgeService {
                 .secrets
                 .resolve_grok_subscription_auth(source_kind, source_id),
         }
+    }
+
+    /// Resolve one pool member's upstream secret. A sibling failure is isolated
+    /// by the caller rather than failing the whole start.
+    pub fn resolve_member_auth(
+        &self,
+        rule_id: &str,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<crate::bridge::ResolvedAuth> {
+        let rule = rule_for_id(rule_id).ok_or_else(|| {
+            AppError::InvalidArg("adapter profile is not a supported local bridge".into())
+        })?;
+        self.resolve_upstream_auth(&rule, source_kind, source_id)
     }
 
     pub(super) fn bridge_profile(&self, profile_id: &str) -> Result<AdapterProfile> {

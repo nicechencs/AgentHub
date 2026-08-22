@@ -37,6 +37,7 @@ function sampleWallet(): TicketWallet {
         bridge: null,
       },
     ],
+    surfaceGroups: [],
   };
 }
 
@@ -91,6 +92,7 @@ describe('TicketWalletList details', () => {
         profileId: null,
         bridge: null,
       }],
+      surfaceGroups: [],
     };
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
@@ -130,6 +132,52 @@ describe('TicketWalletList details', () => {
     expect(markup).toContain('接到…');
   });
 
+  it('shows N-member poll-pool copy on the bound ticket usage line', () => {
+    const wallet = sampleWallet();
+    wallet.bindings = [{
+      ticketId: 'provider:kimi-1',
+      agentId: 'codex',
+      route: 'bridge',
+      active: true,
+      profileId: 'bridge-1',
+      bridge: { port: 43121, running: true },
+    }];
+    wallet.surfaceGroups = [{
+      surface: 'kimi-code-membership',
+      credentialClass: 'api_key',
+      members: [
+        {
+          ticketId: 'account:kimi-stale',
+          sourceKind: 'account',
+          sourceId: 'kimi-stale',
+          agentId: 'kimi',
+          label: 'Kimi 会员（失效号）',
+          health: 'needs_login',
+        },
+        {
+          ticketId: 'provider:kimi-1',
+          sourceKind: 'provider',
+          sourceId: 'kimi-1',
+          agentId: 'kimi',
+          label: 'Kimi 会员',
+          health: 'renewable',
+        },
+      ],
+    }];
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        onConnectTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('2 个登录轮询承接');
+    expect(markup).toContain('本机路由');
+    expect(markup).toContain('运行中');
+    expect(markup).not.toContain('sk-');
+  });
+
   it('shows ListSkeleton while the wallet is loading', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
@@ -147,7 +195,7 @@ describe('TicketWalletList details', () => {
   it('uses 登录 copy for an empty wallet', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
-        wallet: { tickets: [], bindings: [] },
+        wallet: { tickets: [], bindings: [], surfaceGroups: [] },
         onConnectTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
@@ -235,6 +283,7 @@ describe('TicketWalletList details', () => {
           bridge: null,
         },
       ],
+      surfaceGroups: [],
     };
 
     expect(() =>

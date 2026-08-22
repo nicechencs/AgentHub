@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { AdapterCommandError } from '@/lib/backend/contracts/adapter';
 import type { Account, AgentId, Provider } from '@/lib/types';
 import {
+  CLAUDE_SUBSCRIPTION_TO_CODEX_REASON,
   CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
   createMockAdapterPort,
   resetMockAdapters,
@@ -453,7 +454,7 @@ describe('mock adapter route preview', () => {
     expect((await adapter.listProfiles()).length).toBe(4);
   });
 
-  it('closes Claude subscription → Codex as a product decision', async () => {
+  it('keeps Claude subscription → Codex unwritable until fixtures land', async () => {
     const accounts = new Map<string, Account>([
       ['claude-subscription', {
         id: 'claude-subscription',
@@ -475,11 +476,15 @@ describe('mock adapter route preview', () => {
     });
     expect(claudeToCodex).toMatchObject({
       analysis: {
-        route: 'unsupported',
-        reason: 'Claude 订阅 → Codex：产品不做。Codex 不吃 Anthropic PKCE，本产品不走这条边。',
+        route: 'local_bridge',
+        support: 'experimental',
+        reason: CLAUDE_SUBSCRIPTION_TO_CODEX_REASON,
+        ruleId: 'claude-subscription-to-codex-v1',
+        gateKind: 'preview_only',
       },
       canApply: false,
-      reusePath: 'none',
+      maturity: 'preview',
+      reusePath: 'local_bridge',
     });
   });
 

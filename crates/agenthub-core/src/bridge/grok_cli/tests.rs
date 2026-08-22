@@ -106,6 +106,17 @@ fn grok_session_id_hashes_non_uuid_seed_stably() {
 }
 
 #[test]
+fn grok_session_id_mixes_account_and_keeps_single_account_hash() {
+    let seed = "codex:window:abc";
+    let without = grok_session_id(seed).expect("base");
+    let with_a = grok_session_id_for_account(seed, Some("acc-a")).expect("a");
+    let with_b = grok_session_id_for_account(seed, Some("acc-b")).expect("b");
+    assert_eq!(grok_session_id_for_account(seed, None).as_deref(), Some(without.as_str()));
+    assert_ne!(without, with_a);
+    assert_ne!(with_a, with_b);
+}
+
+#[test]
 fn claude_session_header_maps_to_claude_agent_seed() {
     let body = json!({});
     let headers = header_map(&[("X-Claude-Code-Session-Id", "sess-1")]);

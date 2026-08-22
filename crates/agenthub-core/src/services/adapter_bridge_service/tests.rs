@@ -2,7 +2,8 @@ use super::*;
 
 use crate::models::{
     Account, AccountKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
-    AdapterSourceKind, AdapterSourceProduct, Provider,
+    AdapterSourceKind, AdapterSourceProduct, AdapterTargetProtocol, AdapterUpstreamTransport,
+    Provider, LOCAL_BRIDGE_EDGES,
 };
 use crate::services::ProviderService;
 use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo};
@@ -538,6 +539,81 @@ fn applying_profile_for_rule(rule: &super::CodexBridgeRule) -> AdapterProfile {
 }
 
 #[test]
+fn live_bridge_rules_match_local_bridge_catalog() {
+    use std::collections::BTreeSet;
+
+    let live_ids: BTreeSet<&str> = super::LIVE_BRIDGE_RULES
+        .iter()
+        .map(|rule| rule.rule_id)
+        .collect();
+    for edge in LOCAL_BRIDGE_EDGES {
+        if !(edge.can_apply && edge.gates.all_passed()) {
+            assert!(
+                !live_ids.contains(edge.rule_id),
+                "closed catalog edge {} must not be a live writer until can_apply opens",
+                edge.rule_id
+            );
+            continue;
+        }
+        let rule = super::LIVE_BRIDGE_RULES
+            .iter()
+            .find(|rule| rule.rule_id == edge.rule_id)
+            .unwrap_or_else(|| {
+                panic!(
+                    "applyable catalog edge {} missing from LIVE_BRIDGE_RULES",
+                    edge.rule_id
+                )
+            });
+        assert_eq!(rule.source, edge.source, "{}", edge.rule_id);
+        assert_eq!(rule.target_agent, edge.target, "{}", edge.rule_id);
+        assert_eq!(rule.default_model, edge.default_model, "{}", edge.rule_id);
+        let expected_surface = match edge.protocol {
+            AdapterTargetProtocol::AnthropicMessages => super::BridgeLocalSurface::Messages,
+            AdapterTargetProtocol::OpenAiResponses => super::BridgeLocalSurface::Responses,
+            AdapterTargetProtocol::OpenAiChatCompletions => {
+                super::BridgeLocalSurface::ChatCompletions
+            }
+            other => panic!(
+                "{}: local-bridge protocol {other:?} is not a wire surface",
+                edge.rule_id
+            ),
+        };
+        let expected_protocol = match edge.transport {
+            AdapterUpstreamTransport::LocalBridgeChatCompletions => {
+                super::BridgeUpstreamProtocol::OpenAiChatCompletions
+            }
+            AdapterUpstreamTransport::LocalBridgeAnthropicMessages => {
+                super::BridgeUpstreamProtocol::AnthropicMessages
+            }
+            AdapterUpstreamTransport::CodexResponsesOauth => {
+                super::BridgeUpstreamProtocol::CodexResponsesOauth
+            }
+            AdapterUpstreamTransport::XaiResponsesOauth => {
+                super::BridgeUpstreamProtocol::XaiResponsesOauth
+            }
+            other => panic!(
+                "{}: transport {other:?} is not a live upstream",
+                edge.rule_id
+            ),
+        };
+        assert_eq!(rule.local_surface, expected_surface, "{}", edge.rule_id);
+        assert_eq!(rule.protocol, expected_protocol, "{}", edge.rule_id);
+    }
+
+    for rule in super::LIVE_BRIDGE_RULES {
+        assert!(
+            LOCAL_BRIDGE_EDGES
+                .iter()
+                .any(|edge| edge.rule_id == rule.rule_id
+                    && edge.can_apply
+                    && edge.gates.all_passed()),
+            "live writer {} has no applyable catalog row",
+            rule.rule_id
+        );
+    }
+}
+
+#[test]
 fn failed_first_apply_does_not_remain_applying_for_every_live_bridge_rule() {
     for rule in super::LIVE_BRIDGE_RULES {
         let (_dir, db) = test_db();
@@ -699,7 +775,7 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         preferred_port: None,
         upstream_base_url: format!("http://127.0.0.1:{upstream_port}"),
         upstream_model: "kimi-k2.5".into(),
-        protocol: crate::bridge::BridgeUpstreamProtocol::KimiChatCompletions,
+        protocol: crate::bridge::BridgeUpstreamProtocol::OpenAiChatCompletions,
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::KimiCodeMembership,
         target_agent: AgentId::Codex,
@@ -865,7 +941,7 @@ fn start_spec_lists_openai_to_codex_without_kimi_ids() {
         preferred_port: None,
         upstream_base_url: OPENAI_CHAT_BASE_URL.into(),
         upstream_model: OPENAI_DEFAULT_MODEL.into(),
-        protocol: BridgeUpstreamProtocol::KimiChatCompletions,
+        protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::OpenaiApi,
         target_agent: AgentId::Codex,
@@ -1400,7 +1476,7 @@ fn prepare_openai_provider_projects_chat_completions_bridge() {
     assert_eq!(start.upstream.base_url, OPENAI_CHAT_BASE_URL);
     assert_eq!(
         start.upstream.protocol,
-        BridgeUpstreamProtocol::KimiChatCompletions
+        BridgeUpstreamProtocol::OpenAiChatCompletions
     );
     assert_eq!(start.upstream.model.as_deref(), Some(OPENAI_DEFAULT_MODEL));
     assert!(!format!("{prepared:?}").contains("sk-openai-secret"));
@@ -1446,7 +1522,7 @@ fn prepare_openai_account_reuses_secret_resolver_and_projects_account_ref() {
             .start_spec(None)
             .upstream
             .protocol,
-        BridgeUpstreamProtocol::KimiChatCompletions
+        BridgeUpstreamProtocol::OpenAiChatCompletions
     );
     assert!(!format!("{prepared:?}").contains("sk-openai-account"));
 
@@ -1464,7 +1540,7 @@ fn prepare_openai_account_reuses_secret_resolver_and_projects_account_ref() {
             .start_spec(None)
             .upstream
             .protocol,
-        BridgeUpstreamProtocol::KimiChatCompletions
+        BridgeUpstreamProtocol::OpenAiChatCompletions
     );
     assert_eq!(
         restored

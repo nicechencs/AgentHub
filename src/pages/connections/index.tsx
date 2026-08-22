@@ -180,11 +180,16 @@ export default function ConnectionsPage() {
   const visibleWallet = useMemo(() => {
     if (!wallet) return null;
     if (hiddenSet.size === 0) return wallet;
-    return {
-      ...wallet,
-      tickets: wallet.tickets.filter((ticket) => !hiddenSet.has(ticket.agentId)),
-      bindings: wallet.bindings.filter((binding) => !hiddenSet.has(binding.agentId)),
-    };
+    const tickets = wallet.tickets.filter((ticket) => !hiddenSet.has(ticket.agentId));
+    const bindings = wallet.bindings.filter((binding) => !hiddenSet.has(binding.agentId));
+    const ticketIds = new Set(tickets.map((ticket) => ticket.id));
+    const surfaceGroups = (wallet.surfaceGroups ?? [])
+      .map((group) => ({
+        ...group,
+        members: group.members.filter((member) => ticketIds.has(member.ticketId)),
+      }))
+      .filter((group) => group.members.length > 0);
+    return { ...wallet, tickets, bindings, surfaceGroups };
   }, [hiddenSet, wallet]);
 
   const poolReload = pool.reload;

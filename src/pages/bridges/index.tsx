@@ -16,6 +16,7 @@ import {
 } from '@/lib/api/adapter';
 import { listTicketWallet, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
+import type { TicketSurfaceGroupView } from '@/lib/backend/contracts/ticket';
 import { AdapterErrorLines, AdapterProfiles } from './adapter-components';
 import { AdapterProfileDetailDialog } from './AdapterProfileDetailDialog';
 import {
@@ -48,6 +49,7 @@ type WalletSnapshot = {
   settled: boolean;
   lastWalletBridgeCount: number;
   bindingProfileIds: ReadonlySet<string>;
+  surfaceGroups: readonly TicketSurfaceGroupView[];
 };
 
 /**
@@ -77,6 +79,7 @@ export default function BridgesPage() {
     settled: false,
     lastWalletBridgeCount: 0,
     bindingProfileIds: new Set(),
+    surfaceGroups: [],
   });
   const [removeConfirm, setRemoveConfirm] = useState<AdapterProfile | null>(null);
   const [stopConfirm, setStopConfirm] = useState<AdapterProfile | null>(null);
@@ -182,6 +185,7 @@ export default function BridgesPage() {
               .map((binding) => binding.profileId)
               .filter((id): id is string => typeof id === 'string' && id.length > 0),
           ),
+          surfaceGroups: next.surfaceGroups ?? [],
         });
       })
       .catch(() => {
@@ -326,6 +330,7 @@ export default function BridgesPage() {
         bridgeStatus={detailProfile ? bridgeStatuses[detailProfile.id] : undefined}
         statusUnavailable={detailProfile ? Boolean(resourceErrors.bridgeStatuses[detailProfile.id]) : false}
         entries={entries}
+        surfaceGroups={wallet.surfaceGroups}
         busy={detailProfile
           ? busyProfileIds[detailProfile.id] === true || removingProfileId === detailProfile.id
           : false}

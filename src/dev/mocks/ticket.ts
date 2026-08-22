@@ -20,7 +20,10 @@ import {
   type TicketView,
   type TicketWallet,
   type BindingView,
+  groupTicketSurfaceMembers,
+  memberHealthFromAuthHealth,
 } from '@/lib/backend/contracts';
+import { authDisplayForAccount } from '@/lib/backend/contracts/auth-state';
 import type { Account, AgentId, Provider } from '@/lib/types';
 import { delay } from './delay';
 import { getMockAccountById } from './account';
@@ -499,7 +502,38 @@ function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
     return Number(b.active) - Number(a.active);
   });
 
-  return { tickets, bindings };
+  return {
+    tickets,
+    bindings,
+    surfaceGroups: attachSurfaceMemberHealth(
+      groupTicketSurfaceMembers(tickets),
+      accounts,
+    ),
+  };
+}
+
+function attachSurfaceMemberHealth(
+  groups: TicketWallet['surfaceGroups'],
+  accounts: readonly Account[],
+): TicketWallet['surfaceGroups'] {
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
+  return groups.map((group) => ({
+    ...group,
+    members: group.members.map((member) => {
+      if (member.health) return member;
+      if (member.sourceKind === 'account') {
+        const account = accountById.get(member.sourceId);
+        if (account) {
+          return {
+            ...member,
+            health: memberHealthFromAuthHealth(authDisplayForAccount(account).health),
+          };
+        }
+        return { ...member, health: 'needs_login' as const };
+      }
+      return { ...member, health: 'renewable' as const };
+    }),
+  }));
 }
 
 export function createMockTicketPort(resolver: MockTicketSourceResolver): TicketPort {

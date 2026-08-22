@@ -1,0 +1,19 @@
+{
+  "id": "msg_claude_codex_text",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-4-20250514",
+  "content": [
+    {
+      "type": "text",
+      "text": "你好，世界。"
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 8,
+    "output_tokens": 4,
+    "cache_read_input_tokens": 2
+  }
+}

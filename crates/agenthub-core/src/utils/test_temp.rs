@@ -27,6 +27,14 @@ pub fn real_tempdir() -> TempDir {
         .expect("create real tempdir")
 }
 
+/// Unique shared-skills source root. Never `~/.agents/skills`.
+pub fn isolated_skills_root() -> (TempDir, PathBuf) {
+    let dir = real_tempdir();
+    let skills = dir.path().join("skills");
+    fs::create_dir_all(&skills).expect("create isolated skills root");
+    (dir, skills)
+}
+
 fn canonical_temp_base() -> PathBuf {
     let candidates = [
         std::env::temp_dir(),

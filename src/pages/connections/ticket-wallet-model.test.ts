@@ -107,6 +107,7 @@ function sampleWallet(): TicketWallet {
         bridge: null,
       },
     ],
+    surfaceGroups: [],
   };
 }
 
@@ -169,6 +170,41 @@ describe('binding usage text', () => {
       profileId: null,
       bridge: { port: 8123, running: true },
     }]).some((part) => part.kind === 'bridge' && part.href === '/routes')).toBe(true);
+  });
+
+  it('annotates bridge usage with N-member poll pool copy', () => {
+    const wallet = sampleWallet();
+    wallet.surfaceGroups = [{
+      surface: 'kimi-code-membership',
+      credentialClass: 'api_key',
+      members: [
+        {
+          ticketId: 'account:kimi-stale',
+          sourceKind: 'account',
+          sourceId: 'kimi-stale',
+          agentId: 'kimi',
+          label: 'Kimi 会员（失效号）',
+          health: 'needs_login',
+        },
+        {
+          ticketId: 'provider:kimi-1',
+          sourceKind: 'provider',
+          sourceId: 'kimi-1',
+          agentId: 'kimi',
+          label: 'Kimi 会员',
+          health: 'renewable',
+        },
+      ],
+    }];
+    const rows = buildTicketWalletRows(wallet);
+    const kimi = rows.find((row) => row.ticket.id === 'provider:kimi-1');
+    expect(kimi?.usageText).toContain('2 个登录轮询承接');
+    expect(kimi?.usageText).toContain('本机路由');
+    expect(kimi?.usageText).toContain('运行中');
+    const ant = rows.find((row) => row.ticket.id === 'provider:ant-1');
+    expect(ant?.usageText).not.toContain('轮询承接');
+    expect(searchTickets(wallet.tickets, '轮询承接', wallet.bindings, wallet.surfaceGroups).map((t) => t.id))
+      .toEqual(['provider:kimi-1']);
   });
 
   it('keeps self-use on one phrase so the row does not repeat the owner', () => {
@@ -581,6 +617,7 @@ describe('filter change after add-dialog leftover', () => {
           bridge: { port: null, running: false },
         },
       ],
+      surfaceGroups: [],
     };
 
     expect(() => buildTicketWalletRows(wallet, { filter: 'api_key' })).not.toThrow();
