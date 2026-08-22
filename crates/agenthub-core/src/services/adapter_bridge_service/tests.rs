@@ -2,7 +2,8 @@ use super::*;
 
 use crate::models::{
     Account, AccountKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
-    AdapterSourceKind, AdapterSourceProduct, Provider,
+    AdapterSourceKind, AdapterSourceProduct, AdapterTargetProtocol, AdapterUpstreamTransport,
+    Provider, LOCAL_BRIDGE_EDGES,
 };
 use crate::services::ProviderService;
 use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo};
@@ -534,6 +535,81 @@ fn applying_profile_for_rule(rule: &super::CodexBridgeRule) -> AdapterProfile {
         last_error_code: None,
         created_at: "now".into(),
         updated_at: "now".into(),
+    }
+}
+
+#[test]
+fn live_bridge_rules_match_local_bridge_catalog() {
+    use std::collections::BTreeSet;
+
+    let live_ids: BTreeSet<&str> = super::LIVE_BRIDGE_RULES
+        .iter()
+        .map(|rule| rule.rule_id)
+        .collect();
+    for edge in LOCAL_BRIDGE_EDGES {
+        if !(edge.can_apply && edge.gates.all_passed()) {
+            assert!(
+                !live_ids.contains(edge.rule_id),
+                "closed catalog edge {} must not be a live writer until can_apply opens",
+                edge.rule_id
+            );
+            continue;
+        }
+        let rule = super::LIVE_BRIDGE_RULES
+            .iter()
+            .find(|rule| rule.rule_id == edge.rule_id)
+            .unwrap_or_else(|| {
+                panic!(
+                    "applyable catalog edge {} missing from LIVE_BRIDGE_RULES",
+                    edge.rule_id
+                )
+            });
+        assert_eq!(rule.source, edge.source, "{}", edge.rule_id);
+        assert_eq!(rule.target_agent, edge.target, "{}", edge.rule_id);
+        assert_eq!(rule.default_model, edge.default_model, "{}", edge.rule_id);
+        let expected_surface = match edge.protocol {
+            AdapterTargetProtocol::AnthropicMessages => super::BridgeLocalSurface::Messages,
+            AdapterTargetProtocol::OpenAiResponses => super::BridgeLocalSurface::Responses,
+            AdapterTargetProtocol::OpenAiChatCompletions => {
+                super::BridgeLocalSurface::ChatCompletions
+            }
+            other => panic!(
+                "{}: local-bridge protocol {other:?} is not a wire surface",
+                edge.rule_id
+            ),
+        };
+        let expected_protocol = match edge.transport {
+            AdapterUpstreamTransport::LocalBridgeChatCompletions => {
+                super::BridgeUpstreamProtocol::KimiChatCompletions
+            }
+            AdapterUpstreamTransport::LocalBridgeAnthropicMessages => {
+                super::BridgeUpstreamProtocol::AnthropicMessages
+            }
+            AdapterUpstreamTransport::CodexResponsesOauth => {
+                super::BridgeUpstreamProtocol::CodexResponsesOauth
+            }
+            AdapterUpstreamTransport::XaiResponsesOauth => {
+                super::BridgeUpstreamProtocol::XaiResponsesOauth
+            }
+            other => panic!(
+                "{}: transport {other:?} is not a live upstream",
+                edge.rule_id
+            ),
+        };
+        assert_eq!(rule.local_surface, expected_surface, "{}", edge.rule_id);
+        assert_eq!(rule.protocol, expected_protocol, "{}", edge.rule_id);
+    }
+
+    for rule in super::LIVE_BRIDGE_RULES {
+        assert!(
+            LOCAL_BRIDGE_EDGES
+                .iter()
+                .any(|edge| edge.rule_id == rule.rule_id
+                    && edge.can_apply
+                    && edge.gates.all_passed()),
+            "live writer {} has no applyable catalog row",
+            rule.rule_id
+        );
     }
 }
 

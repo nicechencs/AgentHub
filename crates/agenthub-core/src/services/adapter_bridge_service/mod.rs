@@ -27,38 +27,40 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use toml_edit::DocumentMut;
 
-use crate::bridge::grok_cli::{GROK_CLI_DEFAULT_MODEL, GROK_CLI_PROXY_BASE_URL};
+use crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL;
 use crate::bridge::{
     BridgeLocalSurface, BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamProtocol, ResolvedAuth,
 };
 use crate::error::{AppError, Result};
 use crate::models::{
-    list_local_bridge_models, AdapterProfile, AdapterProfileFilter, AdapterProfileMode,
-    AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
-    AdapterSourceProduct, AdapterSupport, AgentId, Provider, ProviderInput,
+    list_local_bridge_models, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
+    AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
+    AdapterSourceProduct, AdapterSupport, AdapterTargetProtocol, AdapterUpstreamTransport, AgentId,
+    LocalBridgeEdge, Provider, ProviderInput, ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE,
+    CODEX_DSH_EDGE, CODEX_GROK_EDGE, CODEX_KIMI_EDGE, GROK_CLAUDE_EDGE, GROK_CODEX_EDGE,
+    KIMI_CODEX_EDGE, OPENAI_CODEX_EDGE,
 };
 use crate::services::{AdapterRouteService, AdapterSecretResolver};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
 
-const RULE_ID: &str = "kimi-membership-to-codex-v1";
-const ANTHROPIC_RULE_ID: &str = "anthropic-api-to-codex-v1";
-const OPENAI_RULE_ID: &str = "openai-api-to-codex-v1";
-const CODEX_CLAUDE_RULE_ID: &str = "codex-subscription-to-claude-responses-v1";
-const GROK_CLAUDE_RULE_ID: &str = "grok-subscription-to-claude-v1";
-const GROK_CODEX_RULE_ID: &str = "grok-subscription-to-codex-v1";
-const CODEX_GROK_RULE_ID: &str = "codex-subscription-to-grok-v1";
-const CODEX_KIMI_RULE_ID: &str = "codex-subscription-to-kimi-v1";
-const CODEX_DSH_RULE_ID: &str = "codex-subscription-to-dsh-v1";
+const RULE_ID: &str = KIMI_CODEX_EDGE.rule_id;
+const ANTHROPIC_RULE_ID: &str = ANTHROPIC_CODEX_EDGE.rule_id;
+const OPENAI_RULE_ID: &str = OPENAI_CODEX_EDGE.rule_id;
+const CODEX_CLAUDE_RULE_ID: &str = CODEX_CLAUDE_RESPONSES_EDGE.rule_id;
+const GROK_CLAUDE_RULE_ID: &str = GROK_CLAUDE_EDGE.rule_id;
+const GROK_CODEX_RULE_ID: &str = GROK_CODEX_EDGE.rule_id;
+const CODEX_GROK_RULE_ID: &str = CODEX_GROK_EDGE.rule_id;
+const CODEX_KIMI_RULE_ID: &str = CODEX_KIMI_EDGE.rule_id;
+const CODEX_DSH_RULE_ID: &str = CODEX_DSH_EDGE.rule_id;
 const RULE_VERSION: &str = "1";
 const KIMI_CHAT_BASE_URL: &str = "https://api.kimi.com/coding/v1";
 const ANTHROPIC_MESSAGES_BASE_URL: &str = "https://api.anthropic.com/v1";
 const OPENAI_CHAT_BASE_URL: &str = crate::services::adapter_route_constants::OPENAI_GROK_BASE_URL;
 const CHATGPT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex/";
-const DEFAULT_MODEL: &str = "kimi-k2.5";
-const ANTHROPIC_DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
-const OPENAI_DEFAULT_MODEL: &str =
-    crate::services::adapter_route_constants::OPENAI_GROK_DEFAULT_MODEL;
-const CODEX_DEFAULT_MODEL: &str = "gpt-5.4";
+const DEFAULT_MODEL: &str = KIMI_CODEX_EDGE.default_model;
+const ANTHROPIC_DEFAULT_MODEL: &str = ANTHROPIC_CODEX_EDGE.default_model;
+const OPENAI_DEFAULT_MODEL: &str = OPENAI_CODEX_EDGE.default_model;
+const CODEX_DEFAULT_MODEL: &str = CODEX_CLAUDE_RESPONSES_EDGE.default_model;
 const PROVIDER_SLUG: &str = "agenthub_kimi_bridge";
 const ANTHROPIC_PROVIDER_SLUG: &str = "agenthub_anthropic_bridge";
 const OPENAI_PROVIDER_SLUG: &str = "agenthub_openai_bridge";
@@ -87,8 +89,49 @@ struct CodexBridgeRule {
     mode: AdapterProfileMode,
 }
 
+/// Map catalog target protocol → listener surface. Local-bridge edges never
+/// use Pi/DSH config protocols; those variants are a compile-time hole.
+const fn local_surface_of(edge: &LocalBridgeEdge) -> BridgeLocalSurface {
+    match edge.protocol {
+        AdapterTargetProtocol::AnthropicMessages => BridgeLocalSurface::Messages,
+        AdapterTargetProtocol::OpenAiResponses => BridgeLocalSurface::Responses,
+        AdapterTargetProtocol::OpenAiChatCompletions => BridgeLocalSurface::ChatCompletions,
+        AdapterTargetProtocol::PiProviderConfig | AdapterTargetProtocol::DshProviderConfig => {
+            BridgeLocalSurface::Responses
+        }
+    }
+}
+
+/// Map catalog upstream transport → runtime protocol.
+const fn upstream_protocol_of(edge: &LocalBridgeEdge) -> BridgeUpstreamProtocol {
+    match edge.transport {
+        AdapterUpstreamTransport::LocalBridgeChatCompletions => {
+            BridgeUpstreamProtocol::KimiChatCompletions
+        }
+        AdapterUpstreamTransport::LocalBridgeAnthropicMessages => {
+            BridgeUpstreamProtocol::AnthropicMessages
+        }
+        AdapterUpstreamTransport::CodexResponsesOauth => {
+            BridgeUpstreamProtocol::CodexResponsesOauth
+        }
+        AdapterUpstreamTransport::XaiResponsesOauth => BridgeUpstreamProtocol::XaiResponsesOauth,
+        AdapterUpstreamTransport::NativeHttp
+        | AdapterUpstreamTransport::CodexAppServer
+        | AdapterUpstreamTransport::None => BridgeUpstreamProtocol::KimiChatCompletions,
+    }
+}
+
+const fn live_writer_mode(edge: &LocalBridgeEdge) -> AdapterProfileMode {
+    match edge.credential {
+        AdapterCredentialClass::ApiKey => AdapterProfileMode::Api,
+        AdapterCredentialClass::OauthAuthJson
+        | AdapterCredentialClass::OauthOther
+        | AdapterCredentialClass::Unknown => AdapterProfileMode::Oauth,
+    }
+}
+
 const KIMI_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
-    rule_id: RULE_ID,
+    rule_id: KIMI_CODEX_EDGE.rule_id,
     profile_prefix: "adapter-kimi-codex-bridge",
     provider_prefix: "codex-kimi-adapter-bridge",
     profile_name: "Kimi → Codex Bridge",
@@ -96,18 +139,18 @@ const KIMI_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
     toml_name: "AgentHub Kimi Bridge",
     provider_slug: PROVIDER_SLUG,
     upstream_base_url: KIMI_CHAT_BASE_URL,
-    default_model: DEFAULT_MODEL,
-    protocol: BridgeUpstreamProtocol::KimiChatCompletions,
-    local_surface: BridgeLocalSurface::Responses,
+    default_model: KIMI_CODEX_EDGE.default_model,
+    protocol: upstream_protocol_of(&KIMI_CODEX_EDGE),
+    local_surface: local_surface_of(&KIMI_CODEX_EDGE),
     bridge_kind: "responses_to_chat_completions",
     legacy_bridge_kinds: &[],
-    source: AdapterSourceProduct::KimiCodeMembership,
-    target_agent: AgentId::Codex,
-    mode: AdapterProfileMode::Api,
+    source: KIMI_CODEX_EDGE.source,
+    target_agent: KIMI_CODEX_EDGE.target,
+    mode: live_writer_mode(&KIMI_CODEX_EDGE),
 };
 
 const ANTHROPIC_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
-    rule_id: ANTHROPIC_RULE_ID,
+    rule_id: ANTHROPIC_CODEX_EDGE.rule_id,
     profile_prefix: "adapter-anthropic-codex-bridge",
     provider_prefix: "codex-anthropic-adapter-bridge",
     profile_name: "Anthropic → Codex Bridge",
@@ -115,18 +158,18 @@ const ANTHROPIC_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
     toml_name: "AgentHub Anthropic Bridge",
     provider_slug: ANTHROPIC_PROVIDER_SLUG,
     upstream_base_url: ANTHROPIC_MESSAGES_BASE_URL,
-    default_model: ANTHROPIC_DEFAULT_MODEL,
-    protocol: BridgeUpstreamProtocol::AnthropicMessages,
-    local_surface: BridgeLocalSurface::Responses,
+    default_model: ANTHROPIC_CODEX_EDGE.default_model,
+    protocol: upstream_protocol_of(&ANTHROPIC_CODEX_EDGE),
+    local_surface: local_surface_of(&ANTHROPIC_CODEX_EDGE),
     bridge_kind: "responses_to_anthropic_messages",
     legacy_bridge_kinds: &[],
-    source: AdapterSourceProduct::AnthropicApi,
-    target_agent: AgentId::Codex,
-    mode: AdapterProfileMode::Api,
+    source: ANTHROPIC_CODEX_EDGE.source,
+    target_agent: ANTHROPIC_CODEX_EDGE.target,
+    mode: live_writer_mode(&ANTHROPIC_CODEX_EDGE),
 };
 
 const OPENAI_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
-    rule_id: OPENAI_RULE_ID,
+    rule_id: OPENAI_CODEX_EDGE.rule_id,
     profile_prefix: "adapter-openai-codex-bridge",
     provider_prefix: "codex-openai-adapter-bridge",
     profile_name: "OpenAI → Codex Bridge",
@@ -134,18 +177,18 @@ const OPENAI_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
     toml_name: "AgentHub OpenAI Bridge",
     provider_slug: OPENAI_PROVIDER_SLUG,
     upstream_base_url: OPENAI_CHAT_BASE_URL,
-    default_model: OPENAI_DEFAULT_MODEL,
-    protocol: BridgeUpstreamProtocol::KimiChatCompletions,
-    local_surface: BridgeLocalSurface::Responses,
+    default_model: OPENAI_CODEX_EDGE.default_model,
+    protocol: upstream_protocol_of(&OPENAI_CODEX_EDGE),
+    local_surface: local_surface_of(&OPENAI_CODEX_EDGE),
     bridge_kind: "responses_to_chat_completions",
     legacy_bridge_kinds: &[],
-    source: AdapterSourceProduct::OpenaiApi,
-    target_agent: AgentId::Codex,
-    mode: AdapterProfileMode::Api,
+    source: OPENAI_CODEX_EDGE.source,
+    target_agent: OPENAI_CODEX_EDGE.target,
+    mode: live_writer_mode(&OPENAI_CODEX_EDGE),
 };
 
 const CODEX_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
-    rule_id: CODEX_CLAUDE_RULE_ID,
+    rule_id: CODEX_CLAUDE_RESPONSES_EDGE.rule_id,
     profile_prefix: "adapter-codex-claude-bridge",
     provider_prefix: CODEX_CLAUDE_PROVIDER_SLUG,
     profile_name: "Codex → Claude Code Bridge",
@@ -153,18 +196,18 @@ const CODEX_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
     toml_name: "",
     provider_slug: "",
     upstream_base_url: CHATGPT_CODEX_BASE_URL,
-    default_model: CODEX_DEFAULT_MODEL,
-    protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
-    local_surface: BridgeLocalSurface::Messages,
+    default_model: CODEX_CLAUDE_RESPONSES_EDGE.default_model,
+    protocol: upstream_protocol_of(&CODEX_CLAUDE_RESPONSES_EDGE),
+    local_surface: local_surface_of(&CODEX_CLAUDE_RESPONSES_EDGE),
     bridge_kind: "messages_to_codex_responses",
     legacy_bridge_kinds: &[],
-    source: AdapterSourceProduct::CodexChatGptSubscription,
-    target_agent: AgentId::Claude,
-    mode: AdapterProfileMode::Oauth,
+    source: CODEX_CLAUDE_RESPONSES_EDGE.source,
+    target_agent: CODEX_CLAUDE_RESPONSES_EDGE.target,
+    mode: live_writer_mode(&CODEX_CLAUDE_RESPONSES_EDGE),
 };
 
 const GROK_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
-    rule_id: GROK_CLAUDE_RULE_ID,
+    rule_id: GROK_CLAUDE_EDGE.rule_id,
     profile_prefix: "adapter-grok-claude-bridge",
     provider_prefix: "claude-grok-adapter-bridge",
     profile_name: "Grok → Claude Code Bridge",
@@ -172,18 +215,18 @@ const GROK_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
     toml_name: "",
     provider_slug: "",
     upstream_base_url: GROK_CLI_PROXY_BASE_URL,
-    default_model: GROK_CLI_DEFAULT_MODEL,
-    protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
-    local_surface: BridgeLocalSurface::Messages,
+    default_model: GROK_CLAUDE_EDGE.default_model,
+    protocol: upstream_protocol_of(&GROK_CLAUDE_EDGE),
+    local_surface: local_surface_of(&GROK_CLAUDE_EDGE),
     bridge_kind: "messages_to_xai_responses",
     legacy_bridge_kinds: &["messages_to_xai_chat_completions"],
-    source: AdapterSourceProduct::XaiGrokSubscription,
-    target_agent: AgentId::Claude,
-    mode: AdapterProfileMode::Oauth,
+    source: GROK_CLAUDE_EDGE.source,
+    target_agent: GROK_CLAUDE_EDGE.target,
+    mode: live_writer_mode(&GROK_CLAUDE_EDGE),
 };
 
 const GROK_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
-    rule_id: GROK_CODEX_RULE_ID,
+    rule_id: GROK_CODEX_EDGE.rule_id,
     profile_prefix: "adapter-grok-codex-bridge",
     provider_prefix: "codex-grok-adapter-bridge",
     profile_name: "Grok → Codex 本机路由",
@@ -191,18 +234,18 @@ const GROK_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
     toml_name: "AgentHub Grok Route",
     provider_slug: "agenthub_grok_bridge",
     upstream_base_url: GROK_CLI_PROXY_BASE_URL,
-    default_model: GROK_CLI_DEFAULT_MODEL,
-    protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
-    local_surface: BridgeLocalSurface::Responses,
+    default_model: GROK_CODEX_EDGE.default_model,
+    protocol: upstream_protocol_of(&GROK_CODEX_EDGE),
+    local_surface: local_surface_of(&GROK_CODEX_EDGE),
     bridge_kind: "responses_to_xai_responses",
     legacy_bridge_kinds: &["responses_to_chat_completions"],
-    source: AdapterSourceProduct::XaiGrokSubscription,
-    target_agent: AgentId::Codex,
-    mode: AdapterProfileMode::Oauth,
+    source: GROK_CODEX_EDGE.source,
+    target_agent: GROK_CODEX_EDGE.target,
+    mode: live_writer_mode(&GROK_CODEX_EDGE),
 };
 
 const CODEX_GROK_RULE: CodexBridgeRule = CodexBridgeRule {
-    rule_id: CODEX_GROK_RULE_ID,
+    rule_id: CODEX_GROK_EDGE.rule_id,
     profile_prefix: "adapter-codex-grok-bridge",
     provider_prefix: "grok-codex-adapter-bridge",
     profile_name: "Codex → Grok 本机路由",
@@ -210,18 +253,18 @@ const CODEX_GROK_RULE: CodexBridgeRule = CodexBridgeRule {
     toml_name: "AgentHub Codex Route",
     provider_slug: "agenthub_codex_bridge",
     upstream_base_url: CHATGPT_CODEX_BASE_URL,
-    default_model: "",
-    protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
-    local_surface: BridgeLocalSurface::Responses,
+    default_model: CODEX_GROK_EDGE.default_model,
+    protocol: upstream_protocol_of(&CODEX_GROK_EDGE),
+    local_surface: local_surface_of(&CODEX_GROK_EDGE),
     bridge_kind: "responses_to_codex_responses",
     legacy_bridge_kinds: &["chat_completions_to_codex_responses"],
-    source: AdapterSourceProduct::CodexChatGptSubscription,
-    target_agent: AgentId::Grok,
-    mode: AdapterProfileMode::Oauth,
+    source: CODEX_GROK_EDGE.source,
+    target_agent: CODEX_GROK_EDGE.target,
+    mode: live_writer_mode(&CODEX_GROK_EDGE),
 };
 
 const CODEX_KIMI_RULE: CodexBridgeRule = CodexBridgeRule {
-    rule_id: CODEX_KIMI_RULE_ID,
+    rule_id: CODEX_KIMI_EDGE.rule_id,
     profile_prefix: "adapter-codex-kimi-bridge",
     provider_prefix: "kimi-codex-adapter-bridge",
     profile_name: "Codex → Kimi 本机路由",
@@ -229,18 +272,18 @@ const CODEX_KIMI_RULE: CodexBridgeRule = CodexBridgeRule {
     toml_name: "AgentHub Codex Route",
     provider_slug: "agenthub_codex_bridge",
     upstream_base_url: CHATGPT_CODEX_BASE_URL,
-    default_model: "",
-    protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
-    local_surface: BridgeLocalSurface::ChatCompletions,
+    default_model: CODEX_KIMI_EDGE.default_model,
+    protocol: upstream_protocol_of(&CODEX_KIMI_EDGE),
+    local_surface: local_surface_of(&CODEX_KIMI_EDGE),
     bridge_kind: "chat_completions_to_codex_responses",
     legacy_bridge_kinds: &[],
-    source: AdapterSourceProduct::CodexChatGptSubscription,
-    target_agent: AgentId::Kimi,
-    mode: AdapterProfileMode::Oauth,
+    source: CODEX_KIMI_EDGE.source,
+    target_agent: CODEX_KIMI_EDGE.target,
+    mode: live_writer_mode(&CODEX_KIMI_EDGE),
 };
 
 const CODEX_DSH_RULE: CodexBridgeRule = CodexBridgeRule {
-    rule_id: CODEX_DSH_RULE_ID,
+    rule_id: CODEX_DSH_EDGE.rule_id,
     profile_prefix: "adapter-codex-dsh-bridge",
     provider_prefix: "dsh-codex-adapter-bridge",
     profile_name: "Codex → DeepSeek Harness 本机路由",
@@ -248,14 +291,14 @@ const CODEX_DSH_RULE: CodexBridgeRule = CodexBridgeRule {
     toml_name: "",
     provider_slug: "",
     upstream_base_url: CHATGPT_CODEX_BASE_URL,
-    default_model: "",
-    protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
-    local_surface: BridgeLocalSurface::ChatCompletions,
+    default_model: CODEX_DSH_EDGE.default_model,
+    protocol: upstream_protocol_of(&CODEX_DSH_EDGE),
+    local_surface: local_surface_of(&CODEX_DSH_EDGE),
     bridge_kind: "chat_completions_to_codex_responses",
     legacy_bridge_kinds: &[],
-    source: AdapterSourceProduct::CodexChatGptSubscription,
-    target_agent: AgentId::Dsh,
-    mode: AdapterProfileMode::Oauth,
+    source: CODEX_DSH_EDGE.source,
+    target_agent: CODEX_DSH_EDGE.target,
+    mode: live_writer_mode(&CODEX_DSH_EDGE),
 };
 
 /// Live local-bridge writers. `rule_for_id` and the secret-resolver coverage
