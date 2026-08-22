@@ -93,3 +93,33 @@ fn restore_env(key: &str, prev: Option<std::ffi::OsString>) {
         None => std::env::remove_var(key),
     }
 }
+
+#[test]
+fn normalize_data_dir_of_existing_tempdir_is_not_windows_verbatim() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let got = normalize_data_dir(dir.path()).expect("normalize existing temp dir");
+    let canon = std::fs::canonicalize(dir.path()).expect("canonicalize");
+    assert_eq!(got.as_path(), dunce::simplified(&canon));
+    #[cfg(windows)]
+    {
+        let raw = got.to_string_lossy();
+        assert!(
+            !raw.starts_with(r"\\?\"),
+            "user-facing data_dir should not keep verbatim prefix: {raw}"
+        );
+    }
+}
+
+#[test]
+fn same_path_identity_matches_verbatim_and_normal_forms() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let normal = dir.path();
+    assert!(same_path_identity(normal, normal).expect("same path"));
+
+    let canon = std::fs::canonicalize(normal).expect("canonicalize");
+    assert!(
+        same_path_identity(normal, &canon).expect("normal vs canonicalize"),
+        "mixed verbatim/normal identities must match"
+    );
+    assert!(same_path_identity(normal, dunce::simplified(&canon)).expect("normal vs simplified"));
+}
