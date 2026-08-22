@@ -46,6 +46,9 @@ pub struct StreamSession {
     step_count: usize,
     raw_fallback_lines: usize,
     native_session_id: Option<String>,
+    /// False when a line was discarded (overflow / oversize) so not every fed
+    /// byte was parsed. Leftover `line_buf` also means the feed is incomplete.
+    parse_intact: bool,
 }
 
 impl StreamSession {
@@ -101,6 +104,7 @@ impl StreamSession {
             step_count: 0,
             raw_fallback_lines: 0,
             native_session_id: None,
+            parse_intact: true,
         }
     }
 
@@ -122,6 +126,12 @@ impl StreamSession {
 
     pub fn native_session_id(&self) -> Option<&str> {
         self.native_session_id.as_deref()
+    }
+
+    /// True only when every fed stdout byte was kept for parsing (no overflow
+    /// discard and no unflushed remainder).
+    pub fn consumed_complete(&self) -> bool {
+        self.parse_intact && self.line_buf.is_empty()
     }
 
     /// Feed a raw process chunk; returns decoded outputs for the UI / chat content.
@@ -156,6 +166,7 @@ impl StreamSession {
         if self.line_buf.len() > MAX_LINE_BYTES {
             let truncated: String = self.line_buf.chars().take(200).collect();
             self.line_buf.clear();
+            self.parse_intact = false;
             self.raw_fallback_lines += 1;
             out.push(StreamOutput::Step(ProcessStep::Raw {
                 text: truncated,
@@ -194,6 +205,7 @@ impl StreamSession {
             }
         }
         if line.len() > MAX_LINE_BYTES {
+            self.parse_intact = false;
             self.raw_fallback_lines += 1;
             self.step_count += 1;
             return vec![StreamOutput::Step(ProcessStep::Raw {
@@ -211,7 +223,10 @@ impl StreamSession {
             None => {
                 self.raw_fallback_lines += 1;
                 // If it looks like JSON but unknown shape, keep as raw step (not chat body).
-                if line.starts_with('{') {
+                if line.starts_with('{') || line.starts_with('[') {
+                    if serde_json::from_str::<serde_json::Value>(line).is_err() {
+                        self.parse_intact = false;
+                    }
                     if self.step_count < MAX_EMITTED_STEPS {
                         self.step_count += 1;
                         vec![StreamOutput::Step(ProcessStep::Raw {

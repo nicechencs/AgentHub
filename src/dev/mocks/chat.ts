@@ -69,6 +69,30 @@ export function createMockChatPort(): ChatPort {
       return { ...conv };
     },
 
+    async ensureDefaultConversation(agentIds, cwd) {
+      await delay(120);
+      const normalizedAgentIds = requireSingleAgent(agentIds);
+      const existing = mockConversations.find(
+        (c) => c.title.trim() === '' && (mockMessages[c.id] ?? []).length === 0,
+      );
+      if (existing) {
+        return { ...existing, sending: mockInflight.has(existing.id) };
+      }
+      const conv: Conversation = {
+        id: `conv-mock-${mockSeq++}`,
+        title: '',
+        agentIds: normalizedAgentIds,
+        cwd: cwd ?? null,
+        allowDangerous: false,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+        nativeSessionId: null,
+      };
+      mockConversations.unshift(conv);
+      mockMessages[conv.id] = [];
+      return { ...conv };
+    },
+
     async updateConversation(id, patch) {
       await delay(80);
       const idx = mockConversations.findIndex((c) => c.id === id);

@@ -238,6 +238,96 @@ fn create_dedupes_same_agent_and_rejects_multiple() {
 }
 
 #[test]
+fn ensure_default_does_not_merge_titled_or_used_conversations() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    let chat = ChatService::new(db.clone(), run);
+
+    let titled = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    chat.update_conversation(&titled.id, Some("real conversation".into()), None, None, None)
+        .unwrap();
+
+    let used = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    let repo = ChatRepo::new(db);
+    repo.insert_message(&ChatMessage {
+        id: "used-message".into(),
+        conversation_id: used.id.clone(),
+        turn: 1,
+        role: ChatRole::User,
+        agent_id: None,
+        content: "already used".into(),
+        status: ChatMessageStatus::Ok,
+        exit_code: None,
+        duration_ms: 0,
+        error: None,
+        created_at: Utc::now().to_rfc3339(),
+    })
+    .unwrap();
+
+    let ensured = chat
+        .ensure_default_conversation(vec![AgentId::Codex], None)
+        .unwrap();
+    assert_ne!(ensured.id, titled.id);
+    assert_ne!(ensured.id, used.id);
+    assert_eq!(chat.list_conversations().unwrap().len(), 3);
+
+    let repeated = chat
+        .ensure_default_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    assert_eq!(repeated.id, ensured.id);
+    assert_eq!(chat.list_conversations().unwrap().len(), 3);
+}
+
+#[test]
+fn ensure_default_is_idempotent_under_concurrent_service_calls() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    let chat = Arc::new(ChatService::new(db, run));
+    let barrier = Arc::new(std::sync::Barrier::new(8));
+    let mut handles = Vec::new();
+
+    for _ in 0..8 {
+        let chat = Arc::clone(&chat);
+        let barrier = Arc::clone(&barrier);
+        handles.push(thread::spawn(move || {
+            barrier.wait();
+            chat.ensure_default_conversation(vec![AgentId::Claude], None)
+                .unwrap()
+        }));
+    }
+
+    let results: Vec<_> = handles
+        .into_iter()
+        .map(|handle| handle.join().unwrap())
+        .collect();
+    assert!(results.windows(2).all(|rows| rows[0].id == rows[1].id));
+    assert_eq!(chat.list_conversations().unwrap().len(), 1);
+
+    // The explicit API remains an always-insert operation for user-requested
+    // new chats; only the dedicated ensure API is idempotent.
+    let explicit_a = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    let explicit_b = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    assert_ne!(explicit_a.id, explicit_b.id);
+    assert_eq!(chat.list_conversations().unwrap().len(), 3);
+}
+
+#[test]
 fn send_persists_and_isolates_prompts() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();

@@ -512,44 +512,50 @@ export interface TicketPort {
 
 ## 8. 日志与诊断
 
+级别、检索口径、必打事件、脱敏与分期补点以 **[logging.md](logging.md) v1.1** 为准。本节只列 Adapter 多出来的字段和页面体验，不再单独定义一套 error/warn。
+
 ### 8.1 延续现有日志体系
 
-继续使用 agenthub-core 的 tracing、按日日志、`log_level`、`log_retention_days`、`redact_text` 和 `redact_json`。新增 target：
+继续使用 agenthub-core 的 tracing、按日日志、`log_level`、`log_retention_days`、`redact_text` 和 `redact_json`。
 
-| target | 用途 |
+| target / `module` | 用途 |
 |---|---|
-| `core.adapter` | analyze、plan、apply、start/stop、补偿、目标配置验证 |
-| `core.adapter.protocol` | 协议转换阶段、SSE/工具事件统计、映射失败 |
+| `core.adapter` | analyze、plan、apply、start/stop、补偿、目标配置验证、listener、upstream HTTP |
+| `core.adapter.protocol` | 协议转换、SSE 结束、映射失败 |
 
-稳定字段：
+`logging::targets` 应收录 `ADAPTER` / `ADAPTER_PROTOCOL`（见 logging.md §6 / P0）。每条日志同时写 `target:` 与 `module=`，同值。
+
+稳定字段（通用字段见 logging.md §7；这里是 Adapter 扩展）：
 
 | 字段 | 含义 |
 |---|---|
-| `module` | `core.adapter` / `core.adapter.protocol` |
 | `code` | 稳定错误码，如 `adapter.unsupported`、`adapter.port_in_use`、`adapter.upstream_auth` |
-| `op` | `analyze`、`apply`、`start`、`stop`、`probe`、`translate`、`rollback` |
+| `op` | `analyze`、`apply`、`start`、`stop`、`probe`、`translate`、`rollback`、`responses` / `messages` / `chat` |
 | `profile_id` | Adapter profile id |
 | `agent` | 目标 Agent id |
 | `route` | config_sync/native_endpoint/local_bridge |
-| `source_protocol` / `target_protocol` | 协议标识 |
-| `request_id` | 本地生成的关联 id；向上游传递时遵守对方 Header 规则 |
-| `upstream_status` | 上游 HTTP 状态，可选 |
+| `protocol` | 数据面上游协议短名 |
+| `request_id` | 本地生成的关联 id |
+| `status` | 本地或上游 HTTP 状态 |
+| `upstream_detail` | 上游错误短句（脱敏、≤512）；空则省略。不回传给下游 CLI |
 | `elapsed_ms` | 操作或请求耗时 |
-| `outcome` | success/error/cancelled/rolled_back |
+| `outcome` | 控制面：success/error/cancelled/rolled_back |
 
-### 8.2 级别
+本机 401 = 本地 bearer；上游 401（reload 耗尽）= `upstream_auth` 且打 **error**。对照见 logging.md §3.1。
 
-- `info`：profile 应用、启动、停止、恢复、探测结果与请求摘要。
-- `warn`：能力降级、端口冲突后重新分配、上游限流、自动恢复失败但可重试。
-- `error`：授权失败、协议转换失败、配置写入失败、补偿失败。
-- `debug`：阶段与字段级映射结果，只记录字段名/数量/类型，不记录值。
-- `trace`：SSE 事件类型与序号，仍禁止正文、工具参数和凭据。
+禁止记录：Authorization、Cookie、完整 API Key/OAuth token、原始凭据 JSON、请求/响应正文、system prompt、用户消息、工具参数/结果、图片内容。模型名、token 计数、状态码、`store`/`stream` 布尔和耗时可以记录。
 
-禁止记录：Authorization、Cookie、完整 API Key/OAuth token、原始凭据 JSON、请求/响应正文、system prompt、用户消息、工具参数/结果、图片内容。模型名、token 计数、状态码和耗时可以记录。
+### 8.2 数据面最低可观测性
+
+默认 `info` 下：成功请求只在结束打一条 info；失败必须有 warn/error，且带 `profile_id` + `request_id`。流式 idle/截断/非法 SSE 不得静默（当前缺口，logging.md §8.4 / P0）。
+
+请求开始（rewrite 后的 store/stream/model）走 **debug**，避免和成功结束 info 双份刷屏。
 
 ### 8.3 页面日志体验
 
-Adapter 详情只展示最近 5 条结构化事件：时间、阶段、结果、耗时、request id、短错误。提供：
+**当前**：详情内联错误 +「打开日志目录」（复用 settings `openLogsDir`）。前端 `logger.ts` 生产静默，不读 `log_level`。
+
+**目标 UX**（非 P0）：详情最近 5 条结构化事件（时间、阶段、结果、耗时、request id、短错误），以及：
 
 - `复制 request id`；
 - `查看诊断`（脱敏详情）；
@@ -643,7 +649,7 @@ sidecar 目标已经确认，但不进行 big-bang 重写：
 4. 应用前能看到写入对象、服务影响和能力损失。
 5. 任一失败均可回到操作前状态；补偿失败有明确恢复动作。
 6. Connections 可看到生成的目标 Provider，现有切换/备份体验不分叉。
-7. 默认日志不含请求正文或凭据，能以 `profile_id + request_id + code` 完成排查。
+7. 默认日志不含请求正文或凭据，能以 `profile_id + request_id + code` 完成排查（含流式中途失败）。口径见 [logging.md](logging.md) §8.4。
 
 ## 12. 建议文件落点
 

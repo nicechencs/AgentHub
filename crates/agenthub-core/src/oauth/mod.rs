@@ -144,6 +144,7 @@ pub fn start_oauth(
         code: None,
         error: None,
         created_at: std::time::Instant::now(),
+        completing: false,
     })?;
 
     let st2 = Arc::clone(&st);
@@ -202,7 +203,12 @@ pub fn start_oauth(
 /// Poll session until success/error/timeout.
 pub fn wait_oauth(state: &str, timeout_secs: u64) -> Result<OAuthSessionInfo> {
     let st = store();
-    let deadline = std::time::Instant::now() + Duration::from_secs(timeout_secs.max(1));
+    // A caller cannot hold a blocking worker forever by passing u64::MAX;
+    // the in-memory session lifetime is the hard upper bound.
+    let timeout_secs = timeout_secs
+        .max(1)
+        .min(crate::catalog::limits::OAUTH_SESSION_TTL.as_secs().max(1));
+    let deadline = std::time::Instant::now() + Duration::from_secs(timeout_secs);
     loop {
         let info = st.get_info(state)?;
         match info.status {
@@ -211,7 +217,8 @@ pub fn wait_oauth(state: &str, timeout_secs: u64) -> Result<OAuthSessionInfo> {
                     st.mark_error(state, "OAuth 等待超时")?;
                     return Err(AppError::message("oauth.timeout", "OAuth 等待回调超时"));
                 }
-                thread::sleep(Duration::from_millis(200));
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                thread::sleep(remaining.min(Duration::from_millis(200)));
             }
             OAuthStatus::CallbackReceived | OAuthStatus::Succeeded | OAuthStatus::Failed => {
                 return Ok(info);
@@ -231,6 +238,7 @@ pub fn oauth_session_info(state: &str) -> Result<OAuthSessionInfo> {
 pub fn complete_oauth(accounts: &AccountService, state: &str) -> Result<Account> {
     let st = store();
     let session = st.take_ready(state)?;
+    let result = (|| -> Result<Account> {
     let code = session
         .code
         .clone()
@@ -245,12 +253,14 @@ pub fn complete_oauth(accounts: &AccountService, state: &str) -> Result<Account>
             ))
         })?;
 
-    let tokens = provider.exchange_code_with_state(
-        &code,
-        &session.verifier,
-        &session.redirect_uri,
-        Some(&session.state),
-    )?;
+    let tokens = provider
+        .exchange_code_with_state(
+            &code,
+            &session.verifier,
+            &session.redirect_uri,
+            Some(&session.state),
+        )
+        .map_err(|error| AppError::message(error.code(), "OAuth token exchange failed"))?;
 
     let account = if session.agent == AgentId::Pi {
         complete_pi_oauth(accounts, &session, tokens)?
@@ -285,15 +295,31 @@ pub fn complete_oauth(accounts: &AccountService, state: &str) -> Result<Account>
         })?
     };
 
-    st.mark_succeeded(state)?;
-    tracing::info!(
-        module = targets::OAUTH,
-        op = "complete",
-        agent = session.agent.as_str(),
-        account_id = %account.id,
-        "oauth account stored"
-    );
     Ok(account)
+    })();
+
+    match result {
+        Ok(account) => {
+            // The account is already persisted; a store cleanup failure must
+            // not turn a successful completion into a misleading error. The
+            // in-flight claim still prevents replay if the lock is poisoned.
+            let _ = st.mark_succeeded(state);
+            tracing::info!(
+                module = targets::OAUTH,
+                op = "complete",
+                agent = session.agent.as_str(),
+                account_id = %account.id,
+                "oauth account stored"
+            );
+            Ok(account)
+        }
+        Err(error) => {
+            // Completion is single-use: a failed exchange is terminal and
+            // cannot be replayed with the same authorization code.
+            let _ = st.mark_completion_failed(state);
+            Err(error)
+        }
+    }
 }
 
 fn complete_pi_oauth(

@@ -69,6 +69,38 @@ describe('production Account OAuth', () => {
   });
 });
 
+describe('production Chat default conversation', () => {
+  beforeEach(() => {
+    tauriRuntime = true;
+    invokeMock.mockReset();
+    setBackend(createTauriBackend());
+  });
+
+  afterEach(() => {
+    resetBackend();
+  });
+
+  it('forwards ensureDefaultConversation to the dedicated command', async () => {
+    invokeMock.mockResolvedValueOnce({
+      id: 'conv-1',
+      title: '',
+      agentIds: ['claude'],
+      cwd: null,
+      allowDangerous: false,
+      createdAt: 'a',
+      updatedAt: 'b',
+    });
+    const backend = createTauriBackend();
+    await expect(backend.chat.ensureDefaultConversation(['claude'], null)).resolves.toMatchObject({
+      id: 'conv-1',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('ensure_default_conversation', {
+      agentIds: ['claude'],
+      cwd: null,
+    });
+  });
+});
+
 describe('production Usage availability (Tauri port shape)', () => {
   beforeEach(() => {
     tauriRuntime = true;
@@ -129,10 +161,15 @@ describe('production Dashboard alerts', () => {
     resetBackend();
   });
 
-  it('derives alerts from live agents (no demo fixtures)', async () => {
+  it('propagates live-agent failures instead of returning demo alerts', async () => {
+    const doctorError = new Error('doctor unavailable');
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'get_doctor_report') return Promise.reject(doctorError);
+      if (command === 'list_hidden_agents') return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
     const backend = createTauriBackend();
-    // Without Tauri invoke the agent list fails → empty (not mock demos).
-    await expect(backend.dashboard.listAlerts()).resolves.toEqual([]);
+    await expect(backend.dashboard.listAlerts()).rejects.toBe(doctorError);
   });
 });
 
@@ -176,6 +213,7 @@ describe('Tauri & Mock satisfy same production Backend shape', () => {
       expect(backend.env).toBeDefined();
       expect(backend.usage).toBeDefined();
       expect(backend.chat).toBeDefined();
+      expect(typeof backend.chat.ensureDefaultConversation).toBe('function');
       expect(backend.project).toBeDefined();
       expect(backend.dashboard).toBeDefined();
       expect(backend.update).toBeDefined();

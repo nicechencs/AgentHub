@@ -25,6 +25,7 @@ base64 = { workspace = true }
 urlencoding = { workspace = true }
 ureq = { workspace = true }
 getrandom = { workspace = true }
+libc = { workspace = true }
 trash = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

@@ -26,6 +26,120 @@ fn empty_prompt_rejected() {
 }
 
 #[test]
+fn truncated_structured_result_keeps_captured_stdout() {
+    let mut session = crate::utils::stream_parse::StreamSession::new(
+        AgentId::Claude,
+        crate::models::ProcessMode::Auto,
+    );
+    let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}"#;
+    let _ = session.feed(crate::models::OutputStream::Stdout, &format!("{line}\n"));
+
+    let mut result = AgentRunResult {
+        agent: AgentId::Claude,
+        status: RunStatus::Ok,
+        exit_code: Some(0),
+        duration_ms: 0,
+        stdout: "raw captured NDJSON".into(),
+        stderr: String::new(),
+        command: "claude".into(),
+        error: None,
+        truncated: true,
+        native_session_id: None,
+    };
+    apply_structured_stdout(&mut result, &session);
+
+    assert_eq!(result.stdout, "raw captured NDJSON");
+    assert!(result.truncated);
+}
+
+fn claude_text_line(text: &str) -> String {
+    format!(
+        r#"{{"type":"assistant","message":{{"content":[{{"type":"text","text":"{text}"}}]}}}}"#
+    )
+}
+
+fn ok_result(stdout: impl Into<String>) -> AgentRunResult {
+    AgentRunResult {
+        agent: AgentId::Claude,
+        status: RunStatus::Ok,
+        exit_code: Some(0),
+        duration_ms: 0,
+        stdout: stdout.into(),
+        stderr: String::new(),
+        command: "claude".into(),
+        error: None,
+        truncated: false,
+        native_session_id: None,
+    }
+}
+
+#[test]
+fn malformed_json_after_assistant_keeps_captured_stdout() {
+    let mut session = crate::utils::stream_parse::StreamSession::new(
+        AgentId::Claude,
+        crate::models::ProcessMode::Auto,
+    );
+    let good = claude_text_line("hi");
+    let raw = format!("{good}\n{{not-json\n");
+    let _ = session.feed(crate::models::OutputStream::Stdout, &raw);
+    let _ = session.flush();
+    assert!(!session.consumed_complete());
+    assert_eq!(session.assistant_text(), "hi");
+
+    let mut result = ok_result(raw.clone());
+    apply_structured_stdout(&mut result, &session);
+    assert_eq!(result.stdout, raw);
+}
+
+#[test]
+fn incomplete_parse_does_not_replace_captured_stdout() {
+    let mut session = crate::utils::stream_parse::StreamSession::new(
+        AgentId::Claude,
+        crate::models::ProcessMode::Auto,
+    );
+    let huge = "x".repeat(256 * 1024 + 32);
+    let _ = session.feed(crate::models::OutputStream::Stdout, &huge);
+    assert!(!session.consumed_complete());
+
+    let mut result = ok_result("raw captured NDJSON");
+    apply_structured_stdout(&mut result, &session);
+    assert_eq!(result.stdout, "raw captured NDJSON");
+}
+
+#[test]
+fn large_ndjson_stream_replaces_stdout_when_fully_consumed() {
+    let mut session = crate::utils::stream_parse::StreamSession::new(
+        AgentId::Claude,
+        crate::models::ProcessMode::Auto,
+    );
+    let line = claude_text_line("x");
+    let mut body = String::new();
+    while body.len() < 256 * 1024 {
+        body.push_str(&line);
+        body.push('\n');
+    }
+    let expected = body.lines().count();
+    let bytes = body.as_bytes();
+    let mut off = 0;
+    while off < bytes.len() {
+        let end = (off + 8192).min(bytes.len());
+        session.feed(
+            crate::models::OutputStream::Stdout,
+            std::str::from_utf8(&bytes[off..end]).expect("ascii ndjson"),
+        );
+        off = end;
+    }
+    let _ = session.flush();
+    assert!(session.consumed_complete());
+    assert_eq!(session.assistant_text().len(), expected);
+
+    let mut result = ok_result(body);
+    apply_structured_stdout(&mut result, &session);
+    assert_eq!(result.stdout.len(), expected);
+    assert!(result.stdout.bytes().all(|b| b == b'x'));
+}
+
+#[test]
 fn dry_run_does_not_call_runner() {
     let recorder = RecordingProcessRunner::new();
     let calls = Arc::clone(&recorder.calls);

@@ -25,7 +25,7 @@
 | [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | **厂商 / API / OAuth 适配规则**：产品与协议边界、Kimi 双端点、当前路由矩阵和维护方法 |
 | [ui-experience-alignment.md](ui-experience-alignment.md) | **UI 风格/体验对标 Cursor·Codex**：颜色层级、边框、字号、预览与提示体系、分阶段优化方案（**v1.1**） |
 | [cli-and-config.md](cli-and-config.md) | **CLI 命令树 / 退出码 / GUI 矩阵 / 配置 L0–L3 契约与验收清单**（**v1.4**；doctor/env 宿主 Runtime） |
-| [logging.md](logging.md) | **日志规范**：级别、文件路径、保留、module 字段、脱敏、排查与 `config` 键（**v1.0**） |
+| [logging.md](logging.md) | **日志规范**：级别、文件路径、保留、target=module、必打事件、脱敏、排查与分期补点（**v1.1**） |
 | [chat-process-streaming.md](chat-process-streaming.md) | **Chat 过程流式**：Phase 0–2 现行契约；Phase 3 **展示层已落地**；协议侧未做；§12 三条实现缺口已收口 |
 | [chat-page-redesign.md](chat-page-redesign.md) | **Chat 工作台已落地**：会话 rail / header 芯片 / **一会话一 Agent** / 过程面板展示层 / 文件拆分 |
 | [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) | **对照笔记**（2026-08-21，同日按 `d7da2f5` 复核）：AgentHub Chat × DSH Desktop 的 UI↔Agent 机制；§6 逐条深挖，§6.15 代码复核表。**不是** backlog，不派生实施任务 |
@@ -33,6 +33,7 @@
 | [account-authorization-pool.md](account-authorization-pool.md) | **账号池身份×授权**：同人可多授权并存；去重仅限同一份登录；与能力矩阵边界（**已落地**） |
 | [adding-an-agent.md](adding-an-agent.md) | 新增 Agent 适配器清单；`accepts[]` 须登记 wire 协议 **和** OAuth 契约槽 |
 | [deepseek-harness-integration.md](deepseek-harness-integration.md) | **DeepSeek Harness（`dsh`）**：DeepSeek API 走直接改配置；DSH 不是本机转发。P1–P5 已落地；StructuredStream 仍 Planned |
+| [tray-background-modes.md](tray-background-modes.md) | **托盘后台模式**：低内存后台 vs 隐藏界面；hide 不降内存的原因、三档设置设计与实施要点（**未来优化点，未实施**，不派生当前任务） |
 | [privacy.md](privacy.md) | **发布与隐私边界**：禁止提交项、截图规范、OAuth 常量勿外泄、docs 写法 |
 
 ## 文档管理规则
@@ -50,4 +51,5 @@
 - DeepSeek Harness（Agent `dsh`）的安装、会话、用量、Skills 与模型配置以 [deepseek-harness-integration.md](deepseek-harness-integration.md) 为设计真源；未实现前不得把该文能力表抄进 CLI 矩阵快照。
 - Chat UI↔Agent 与 DSH Desktop 的机制对照以 [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) 为笔记；不替代过程契约、Chat IA 与 DSH 接入方案，不派生实施任务。凭据落盘加密与国产 OAuth 仍为范围外。
 - `local_bridge` 的进程所有权、控制面和 sidecar 迁移契约以 [adapter-sidecar-design.md](adapter-sidecar-design.md) 为唯一真源；当前实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
+- 托盘后台内存模式（省电 / 深度低内存）以 [tray-background-modes.md](tray-background-modes.md) 为设计记录；**未实施**，实现前不进入能力矩阵与 CLI 矩阵。
 - 新的一次性任务可以临时创建提示词文件；任务完成后删除提示词和任务拆分，并同步更新对应稳定文档。

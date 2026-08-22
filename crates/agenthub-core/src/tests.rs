@@ -1,4 +1,5 @@
 use super::*;
+use std::path::Path;
 
 #[test]
 fn agent_hub_open_doctor_has_all_runtimes_and_agents() {
@@ -48,6 +49,24 @@ fn agent_hub_open_doctor_has_all_runtimes_and_agents() {
         report.capabilities[&crate::models::AgentId::Kimi][&crate::models::Capability::Skills]
             .level,
         crate::models::CapabilityLevel::Unsupported
+    );
+}
+
+#[test]
+fn agent_hub_open_freezes_relative_data_dir_before_lifecycle_use() {
+    let cwd = std::env::current_dir().expect("current directory");
+    let dir = tempfile::tempdir_in(&cwd).expect("relative data-dir fixture");
+    let relative = Path::new(
+        dir.path()
+            .file_name()
+            .expect("temp directory has a name"),
+    );
+
+    let hub = AgentHub::open(Some(relative)).expect("open relative data dir");
+    assert!(hub.data_dir.is_absolute());
+    assert_eq!(
+        hub.data_dir,
+        crate::utils::paths::normalize_data_dir(relative).expect("normalize relative data dir")
     );
 }
 

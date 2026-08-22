@@ -11,6 +11,7 @@ use crate::services::adapter_route_constants::{
     KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL, KIMI_GROK_RULE_ID, OPENAI_GROK_BASE_URL,
     OPENAI_GROK_DEFAULT_MODEL, OPENAI_GROK_RULE_ID,
 };
+use crate::services::LiveWriteAuthority;
 use crate::storage::{AccountRepo, ActiveBindingRepo, ProviderRepo};
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -294,9 +295,9 @@ fn apply_acquires_the_live_guard_before_reading_or_creating_profile_state() {
     let (dir, db) = test_db();
     let source = kimi_source("kimi-source", "test-kimi-secret");
     ProviderRepo::new(db.clone()).create(&source).unwrap();
-    let lock_dir = dir.path().join("locks");
-    std::fs::create_dir_all(&lock_dir).unwrap();
-    std::fs::write(lock_dir.join("provider-claude.lock"), b"held").unwrap();
+    let _held = LiveWriteAuthority::from_database(&db)
+        .acquire(AgentId::Claude)
+        .unwrap();
     let service = AdapterApplyService::new(
         db.clone(),
         AdapterRegistry::new(),
@@ -820,9 +821,9 @@ fn remove_is_excluded_by_the_claude_live_write_lock_before_profile_read() {
     AdapterProfileRepo::new(db.clone())
         .create(&profile)
         .unwrap();
-    let lock_dir = dir.path().join("locks");
-    std::fs::create_dir_all(&lock_dir).unwrap();
-    std::fs::write(lock_dir.join("provider-claude.lock"), b"held").unwrap();
+    let _held = LiveWriteAuthority::from_database(&db)
+        .acquire(AgentId::Claude)
+        .unwrap();
     let service = AdapterApplyService::new(
         db.clone(),
         AdapterRegistry::new(),
@@ -1255,9 +1256,8 @@ fn remove_uses_target_agent_lock_not_hardcoded_claude() {
     AdapterProfileRepo::new(db.clone())
         .create(&profile)
         .unwrap();
-    let lock_dir = dir.path().join("locks");
-    std::fs::create_dir_all(&lock_dir).unwrap();
-    std::fs::write(lock_dir.join("provider-claude.lock"), b"held").unwrap();
+    let authority = LiveWriteAuthority::from_database(&db);
+    let _held_claude = authority.acquire(AgentId::Claude).unwrap();
     let service = AdapterApplyService::new(
         db.clone(),
         AdapterRegistry::new(),
@@ -1273,7 +1273,7 @@ fn remove_uses_target_agent_lock_not_hardcoded_claude() {
     AdapterProfileRepo::new(db.clone())
         .create(&remaining)
         .unwrap();
-    std::fs::write(lock_dir.join("provider-pi.lock"), b"held").unwrap();
+    let _held_pi = authority.acquire(AgentId::Pi).unwrap();
     assert_eq!(
         service.remove(&remaining.id).unwrap_err().code(),
         "provider.lock"

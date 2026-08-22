@@ -6,6 +6,7 @@ import {
   chatSend,
   createConversation,
   deleteConversation,
+  ensureDefaultConversation,
   listChatMessages,
   listConversations,
   mapChatMessage,
@@ -59,6 +60,21 @@ describe('chat API (browser mock)', () => {
     const rejected = expect(createP).rejects.toThrow(/only one agent/);
     await vi.runAllTimersAsync();
     await rejected;
+  });
+
+  it('ensureDefaultConversation reuses the initial blank conversation', async () => {
+    const firstP = ensureDefaultConversation(['claude']);
+    await vi.runAllTimersAsync();
+    const first = await firstP;
+
+    const secondP = ensureDefaultConversation(['codex']);
+    await vi.runAllTimersAsync();
+    const second = await secondP;
+
+    expect(second.id).toBe(first.id);
+    const listP = listConversations();
+    await vi.runAllTimersAsync();
+    expect((await listP).map((c) => c.id)).toEqual([first.id]);
   });
 
   it('create / list / update / delete conversation', async () => {

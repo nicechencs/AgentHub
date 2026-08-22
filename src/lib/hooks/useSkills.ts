@@ -9,7 +9,7 @@
  * - inflight 去重：同 key 并发只打一次后端
  * - loading = 无 data 且无 error（有 stale 时不闪 skeleton）
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   importPrivateSkillToShared,
   installMarketSkill,
@@ -32,6 +32,24 @@ import type { AgentId, Skill } from '@/lib/types';
 
 export type SkillsCacheKey = 'skills' | 'catalog' | 'market';
 
+/** Guard every market continuation against both query and request order. */
+export function isCurrentSkillsMarketRequest(
+  currentQuery: string,
+  requestQuery: string,
+  currentGeneration: number,
+  requestGeneration: number,
+): boolean {
+  return currentQuery === requestQuery && currentGeneration === requestGeneration;
+}
+
+/** Guard skills/catalog cache writes against invalidate generation. */
+export function isCurrentSkillsResourceRequest(
+  requestGeneration: number,
+  currentGeneration: number,
+): boolean {
+  return requestGeneration === currentGeneration;
+}
+
 const ALL_KEYS: SkillsCacheKey[] = ['skills', 'catalog', 'market'];
 
 const listeners = new Set<() => void>();
@@ -40,9 +58,54 @@ const versions: Record<SkillsCacheKey, number> = {
   catalog: 0,
   market: 0,
 };
-let fsWatchStarted = false;
-let fsWatchSubscribers = 0;
-let fsWatchUnsub: (() => void) | null = null;
+
+/**
+ * Single-flight async subscription with stale-resolution cleanup. The
+ * coordinator is deliberately independent from React so StrictMode replay
+ * can be tested without a DOM renderer.
+ */
+export function createAsyncSubscriptionCoordinator(
+  subscribe: (handler: () => void) => Promise<() => void>,
+) {
+  let subscribers = 0;
+  let unsubscribe: (() => void) | null = null;
+  let pending: Promise<void> | null = null;
+  let generation = 0;
+
+  const retain = (handler: () => void) => {
+    subscribers += 1;
+    if (unsubscribe || pending) return;
+
+    const currentGeneration = ++generation;
+    const next = Promise.resolve()
+      .then(() => subscribe(handler))
+      .then((unsub) => {
+        if (currentGeneration !== generation || subscribers === 0) {
+          unsub();
+          return;
+        }
+        unsubscribe = unsub;
+      })
+      .catch(() => {});
+    pending = next;
+    next.then(() => {
+      if (pending === next) pending = null;
+    });
+  };
+
+  const release = () => {
+    subscribers = Math.max(0, subscribers - 1);
+    if (subscribers > 0) return;
+    generation += 1;
+    unsubscribe?.();
+    unsubscribe = null;
+    // A stale pending resolution will unsubscribe itself. Clearing this
+    // allows a new StrictMode mount to start a fresh single-flight request.
+    pending = null;
+  };
+
+  return { retain, release };
+}
 
 /** 进程内最后一次成功结果（跨路由 unmount 仍保留） */
 let skillsData: Skill[] | null = null;
@@ -54,8 +117,11 @@ let marketData: { query: string; rows: SkillListingDto[] } | null = null;
  * 防止旧 inflight 写回错误源结果。
  */
 let marketGeneration = 0;
+let marketLatestQuery: string | null = null;
 
-/** 同 key 请求合并 */
+/** 同 key 请求合并；invalidate 递增 generation 并丢弃 inflight 指针。 */
+let skillsGeneration = 0;
+let catalogGeneration = 0;
 let skillsInflight: Promise<Skill[]> | null = null;
 let catalogInflight: Promise<InstalledSkillDto[]> | null = null;
 const marketInflight = new Map<string, Promise<SkillListingDto[]>>();
@@ -69,6 +135,7 @@ function bump(keys: SkillsCacheKey[]) {
 
 function dropMarketCache() {
   marketGeneration += 1;
+  marketLatestQuery = null;
   marketData = null;
   marketInflight.clear();
 }
@@ -81,6 +148,14 @@ export function invalidateSkills(keys?: SkillsCacheKey | SkillsCacheKey[]) {
   if (list.includes('market')) {
     dropMarketCache();
   }
+  if (list.includes('skills')) {
+    skillsGeneration += 1;
+    skillsInflight = null;
+  }
+  if (list.includes('catalog')) {
+    catalogGeneration += 1;
+    catalogInflight = null;
+  }
   bump(list);
 }
 
@@ -89,8 +164,17 @@ export function clearSkillsDataCache() {
   skillsData = null;
   catalogData = null;
   dropMarketCache();
+  skillsGeneration += 1;
+  catalogGeneration += 1;
   skillsInflight = null;
   catalogInflight = null;
+}
+
+export function getSkillsModuleCache(): {
+  skills: Skill[] | null;
+  catalog: InstalledSkillDto[] | null;
+} {
+  return { skills: skillsData, catalog: catalogData };
 }
 
 /** 当前某 key 的缓存版本；技能页本地 state 可随此值重载。 */
@@ -98,35 +182,21 @@ export function useSkillsCacheVersion(key: SkillsCacheKey = 'skills'): number {
   return useCacheVersion(key);
 }
 
+const fsWatchCoordinator = createAsyncSubscriptionCoordinator((handler) =>
+  onSkillsFsChanged(handler),
+);
+
 /** Subscribe to skill-directory changes while any hook consumer is mounted. */
 function retainSkillsFsWatch() {
   if (typeof window === 'undefined') return;
-  fsWatchSubscribers += 1;
-  if (fsWatchStarted) return;
-  fsWatchStarted = true;
-  void onSkillsFsChanged(() => {
-    // 外部目录变更：共享库矩阵 + agent 目录都可能变
+  fsWatchCoordinator.retain(() => {
     invalidateSkills(['skills', 'catalog']);
-  }).then((unsub) => {
-    fsWatchUnsub = unsub;
-    if (fsWatchSubscribers === 0) {
-      releaseSkillsFsWatch(true);
-    }
-  }).catch(() => {
-    fsWatchStarted = false;
   });
 }
 
-function releaseSkillsFsWatch(force = false) {
-  if (!force) {
-    fsWatchSubscribers = Math.max(0, fsWatchSubscribers - 1);
-    if (fsWatchSubscribers > 0) return;
-  } else {
-    fsWatchSubscribers = 0;
-  }
-  fsWatchUnsub?.();
-  fsWatchUnsub = null;
-  fsWatchStarted = false;
+function releaseSkillsFsWatch() {
+  if (typeof window === 'undefined') return;
+  fsWatchCoordinator.release();
 }
 
 function useCacheVersion(key: SkillsCacheKey): number {
@@ -150,43 +220,56 @@ export type SkillsQueryOptions = {
 
 type SetStateAction<T> = T | ((prev: T) => T);
 
-async function fetchSkillsShared(): Promise<Skill[]> {
+export function fetchSkillsShared(): Promise<Skill[]> {
   if (!skillsInflight) {
-    skillsInflight = listSkills()
+    const requestGeneration = skillsGeneration;
+    const request = listSkills()
       .then((rows) => {
-        skillsData = rows;
+        if (isCurrentSkillsResourceRequest(requestGeneration, skillsGeneration)) {
+          skillsData = rows;
+        }
         return rows;
       })
       .finally(() => {
-        skillsInflight = null;
+        if (skillsInflight === request) {
+          skillsInflight = null;
+        }
       });
+    skillsInflight = request;
   }
   return skillsInflight;
 }
 
-async function fetchCatalogShared(): Promise<InstalledSkillDto[]> {
+export function fetchCatalogShared(): Promise<InstalledSkillDto[]> {
   if (!catalogInflight) {
-    catalogInflight = listSkillCatalog()
+    const requestGeneration = catalogGeneration;
+    const request = listSkillCatalog()
       .then((rows) => {
-        catalogData = rows;
+        if (isCurrentSkillsResourceRequest(requestGeneration, catalogGeneration)) {
+          catalogData = rows;
+        }
         return rows;
       })
       .finally(() => {
-        catalogInflight = null;
+        if (catalogInflight === request) {
+          catalogInflight = null;
+        }
       });
+    catalogInflight = request;
   }
   return catalogInflight;
 }
 
 async function fetchMarketShared(query: string): Promise<SkillListingDto[]> {
   const gen = marketGeneration;
+  marketLatestQuery = query;
   const key = `${gen}::${query}`;
   let p = marketInflight.get(key);
   if (!p) {
     p = searchSkillMarket(query)
       .then((rows) => {
         // 仅在仍是当前代数时写入；设置切换后旧请求不得污染缓存
-        if (gen === marketGeneration) {
+        if (gen === marketGeneration && marketLatestQuery === query) {
           marketData = { query, rows };
         }
         return rows;
@@ -216,18 +299,26 @@ export function useSkillsList(opts: SkillsQueryOptions = {}) {
 
   const reload = useCallback(async () => {
     if (!enabled) return;
+    const requestGeneration = versions.skills;
     setFetching(true);
     try {
       const rows = await fetchSkillsShared();
+      if (!isCurrentSkillsResourceRequest(requestGeneration, versions.skills)) return;
       setDataState(rows);
       setError(null);
     } catch (e) {
-      // 有 stale 时保留旧表，只记 error（ErrorState 由调用方决定是否盖住）
+      if (!isCurrentSkillsResourceRequest(requestGeneration, versions.skills)) return;
+      // 有 stale 时保留旧表，只记 error（ErrorState 由调用方决定是否盖住）；
+      // 静默保留旧表的同时至少留下日志，避免刷新失败完全不可见。
       if (skillsData == null) {
         setError(e);
+      } else {
+        console.error('[useSkills] refresh failed, keeping stale rows', e);
       }
     } finally {
-      setFetching(false);
+      if (isCurrentSkillsResourceRequest(requestGeneration, versions.skills)) {
+        setFetching(false);
+      }
     }
   }, [enabled]);
 
@@ -267,15 +358,21 @@ export function useSkillCatalog(opts: SkillsQueryOptions = {}) {
 
   const reload = useCallback(async () => {
     if (!enabled) return;
+    const requestGeneration = versions.catalog;
     setFetching(true);
     try {
       const rows = await fetchCatalogShared();
+      if (!isCurrentSkillsResourceRequest(requestGeneration, versions.catalog)) return;
       setDataState(rows);
       setError(null);
     } catch (e) {
+      if (!isCurrentSkillsResourceRequest(requestGeneration, versions.catalog)) return;
       if (catalogData == null) setError(e);
+      else console.error('[useSkillCatalog] refresh failed, keeping stale rows', e);
     } finally {
-      setFetching(false);
+      if (isCurrentSkillsResourceRequest(requestGeneration, versions.catalog)) {
+        setFetching(false);
+      }
     }
   }, [enabled]);
 
@@ -304,26 +401,72 @@ export function useSkillMarket(query: string, opts: SkillsQueryOptions = {}) {
   );
   const [error, setError] = useState<unknown>(null);
   const [fetching, setFetching] = useState(false);
+  const requestGenerationRef = useRef(0);
+  const queryRef = useRef(query);
+  const enabledRef = useRef(enabled);
+  if (queryRef.current !== query || enabledRef.current !== enabled) {
+    queryRef.current = query;
+    enabledRef.current = enabled;
+    requestGenerationRef.current += 1;
+    marketLatestQuery = query;
+  }
 
   const reload = useCallback(async () => {
-    if (!enabled) return;
-    const gen = marketGeneration;
+    if (!enabled || queryRef.current !== query) return;
+    const requestGeneration = ++requestGenerationRef.current;
+    const sourceGeneration = marketGeneration;
     setFetching(true);
     try {
       const rows = await fetchMarketShared(query);
       // 源已切换则丢弃本次结果（由新 effect / reload 接管）
-      if (gen !== marketGeneration) return;
+      if (
+        sourceGeneration !== marketGeneration ||
+        marketLatestQuery !== query ||
+        !isCurrentSkillsMarketRequest(
+          queryRef.current,
+          query,
+          requestGenerationRef.current,
+          requestGeneration,
+        )
+      ) {
+        return;
+      }
       setDataState(rows);
       setError(null);
     } catch (e) {
-      if (gen !== marketGeneration) return;
+      if (
+        sourceGeneration !== marketGeneration ||
+        marketLatestQuery !== query ||
+        !isCurrentSkillsMarketRequest(
+          queryRef.current,
+          query,
+          requestGenerationRef.current,
+          requestGeneration,
+        )
+      ) {
+        return;
+      }
       if (!(marketData && marketData.query === query)) setError(e);
+      else console.error('[useSkillMarket] refresh failed, keeping stale rows', e);
     } finally {
-      if (gen === marketGeneration) setFetching(false);
+      if (
+        sourceGeneration === marketGeneration &&
+        marketLatestQuery === query &&
+        isCurrentSkillsMarketRequest(
+          queryRef.current,
+          query,
+          requestGenerationRef.current,
+          requestGeneration,
+        )
+      ) {
+        setFetching(false);
+      }
     }
   }, [enabled, query]);
 
   useEffect(() => {
+    requestGenerationRef.current += 1;
+    marketLatestQuery = query;
     if (!enabled) return;
     if (marketData && marketData.query === query) {
       setDataState(marketData.rows);

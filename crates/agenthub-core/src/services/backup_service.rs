@@ -82,6 +82,8 @@ pub struct RestoreResult {
 struct RestoreItem {
     stored_path: PathBuf,
     dest: PathBuf,
+    /// Hash recorded by a v1 manifest. Legacy manifests omit this field.
+    expected_sha256: Option<String>,
 }
 
 #[derive(Debug)]
@@ -365,11 +367,12 @@ impl BackupService {
             ))
         })?;
         self.authority.validate_guard(guard, agent)?;
-        self.restore_record(id, record, agent)
+        self.restore_record(guard, id, record, agent)
     }
 
     fn restore_record(
         &self,
+        guard: &LiveWriteGuard,
         id: &str,
         record: BackupRecord,
         agent: AgentId,
@@ -393,7 +396,8 @@ impl BackupService {
         }
 
         // PreRestore of current live — soft-skip when nothing exists yet.
-        let pre_restore = match self.snapshot(
+        let pre_restore = match self.snapshot_with_guard(
+            guard,
             agent,
             BackupKind::PreRestore,
             Some(&format!("auto before restore of {id}")),
@@ -652,6 +656,7 @@ impl BackupService {
                 std::fs::copy(&entry.source, &dest)?;
             }
             ensure_regular_file(&dest)?;
+            verify_sha256(&dest, &entry.sha256)?;
             let len = std::fs::metadata(&dest)?.len();
             total_size = total_size.saturating_add(len);
             files.push(entry.stored.clone());
@@ -843,6 +848,14 @@ fn planned_matches_manifest(
             Ok(h) => h,
             Err(_) => return false,
         };
+        if let Some(manifest_hash) = e.sha256.as_deref() {
+            let Ok(manifest_hash) = normalize_sha256(manifest_hash) else {
+                return false;
+            };
+            if !manifest_hash.eq_ignore_ascii_case(&p.sha256) {
+                return false;
+            }
+        }
         if !hash.eq_ignore_ascii_case(&p.sha256) {
             return false;
         }
@@ -869,14 +882,19 @@ fn index_stored_file(
     if ensure_regular_file(&stored_path).is_err() {
         return;
     }
-    let hash = match sha256.as_deref() {
-        Some(h) if !h.is_empty() => h.to_ascii_lowercase(),
-        _ => match sha256_file(&stored_path) {
-            Ok(h) => h,
-            Err(_) => return,
-        },
+    let actual_hash = match sha256_file(&stored_path) {
+        Ok(h) => h,
+        Err(_) => return,
     };
-    index.entry(hash).or_insert(stored_path);
+    if let Some(declared) = sha256.as_deref() {
+        let Ok(declared) = normalize_sha256(declared) else {
+            return;
+        };
+        if !declared.eq_ignore_ascii_case(&actual_hash) {
+            return;
+        }
+    }
+    index.entry(actual_hash).or_insert(stored_path);
 }
 
 fn sha256_file(path: &Path) -> Result<String> {
@@ -894,6 +912,26 @@ fn sha256_file(path: &Path) -> Result<String> {
         hasher.update(&buf[..n]);
     }
     Ok(hex_encode(hasher.finalize().as_slice()))
+}
+
+fn normalize_sha256(raw: &str) -> Result<String> {
+    if raw.len() != 64 || !raw.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(AppError::InvalidArg(format!(
+            "invalid SHA-256 digest in backup manifest: {raw:?}"
+        )));
+    }
+    Ok(raw.to_ascii_lowercase())
+}
+
+fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
+    let actual = sha256_file(path)?;
+    if !actual.eq_ignore_ascii_case(expected) {
+        return Err(AppError::InvalidArg(format!(
+            "backup payload hash mismatch for {}",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -1119,8 +1157,20 @@ fn plan_from_manifest(
 
         let stored_path = snapshot_dir.join(&stored);
         ensure_regular_file(&stored_path)?;
+        let expected_sha256 = match entry.sha256.as_deref() {
+            Some(raw) => {
+                let expected = normalize_sha256(raw)?;
+                verify_sha256(&stored_path, &expected)?;
+                Some(expected)
+            }
+            None => None,
+        };
         dest_to_stored.insert(dest_key, stored.clone());
-        plan.push(RestoreItem { stored_path, dest });
+        plan.push(RestoreItem {
+            stored_path,
+            dest,
+            expected_sha256,
+        });
     }
 
     if seen_stored != *stored_ok {
@@ -1242,6 +1292,7 @@ fn plan_from_legacy(
         plan.push(RestoreItem {
             stored_path,
             dest: live.clone(),
+            expected_sha256: None,
         });
     }
     plan.sort_by(|a, b| a.stored_path.cmp(&b.stored_path));
@@ -1294,6 +1345,9 @@ fn apply_restore_plan(plan: &[RestoreItem]) -> Result<()> {
 
 fn stage_replace_one(item: &RestoreItem, staging_root: &Path, idx: usize) -> Result<AppliedOp> {
     ensure_regular_file(&item.stored_path)?;
+    if let Some(expected) = item.expected_sha256.as_deref() {
+        verify_sha256(&item.stored_path, expected)?;
+    }
     validate_dest_type(&item.dest)?;
 
     if let Some(parent) = item.dest.parent() {
@@ -1302,6 +1356,9 @@ fn stage_replace_one(item: &RestoreItem, staging_root: &Path, idx: usize) -> Res
 
     let staged = staging_root.join(format!("new-{idx}"));
     std::fs::copy(&item.stored_path, &staged)?;
+    if let Some(expected) = item.expected_sha256.as_deref() {
+        verify_sha256(&staged, expected)?;
+    }
 
     match classify_path(&item.dest)? {
         PathClass::Missing => {

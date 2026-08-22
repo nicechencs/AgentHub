@@ -399,6 +399,7 @@ EnvNotReady               : missing[] + remediations[]（winget|brew|命令|url�
 | CLI Provider create/update/delete | ❌ | 与 GUI 不对称，脚本侧靠 import-live + switch |
 | TanStack Query / i18next 等 | ❌ | 方案提及；`package.json` 未依赖 |
 | 凭据 keyring/AES/主密码 | 范围外 | 见 AGENTS.md |
+| 托盘后台内存模式（省电 / 深度低内存） | 📋 未来优化点 / 未实施 | 现状 hide-to-tray 不降内存（WebView2 驻留）。设计：`background_mode` 设置三档（标准 / 省电 / 深度低内存），深度档销毁重建窗口。见 [tray-background-modes.md](tray-background-modes.md)，不派生当前任务 |
 | DeepSeek Harness（`dsh`）生产接入 | ✅ P1–P5 | `AgentId::Dsh`、npm detect/install、home patch + 凭据引用、Skills/Usage/Projects、headless text run、DeepSeek API → `dsh` `config_sync`。DeepSeek→Claude experimental `native_endpoint` 已开。StructuredStream 仍 Planned，见 [deepseek-harness-integration.md](deepseek-harness-integration.md) |
 
 ### 8.3 前端导航（与代码 `App.tsx` 一致）

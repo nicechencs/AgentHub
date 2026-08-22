@@ -14,6 +14,7 @@ mod fs_index;
 mod fs_safe;
 mod git_update;
 mod hash;
+mod journal;
 mod lockfile;
 mod ownership;
 mod packages;
@@ -44,7 +45,9 @@ pub(crate) use catalog::{
     map_status_agent_vs_shared,
 };
 pub(crate) use classify::classify_projection;
-pub(crate) use commit::{commit_skill_package, PreparedSkillTree, SkillCommitFaults};
+pub(crate) use commit::{
+    commit_skill_package, recover_skill_commit_journal, PreparedSkillTree, SkillCommitFaults,
+};
 pub(crate) use fs_index::collect_file_index;
 pub(crate) use fs_safe::{
     collect_regular_files, detect_link_kind, ensure_no_symlink_in_ancestors,

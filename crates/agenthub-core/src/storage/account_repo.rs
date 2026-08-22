@@ -408,6 +408,114 @@ pub(crate) fn list_current_conn(conn: &Connection, agent: AgentId) -> Result<Vec
     Ok(out)
 }
 
+/// Connection-scoped list of every account for one agent.
+pub(crate) fn list_for_agent_conn(conn: &Connection, agent: AgentId) -> Result<Vec<Account>> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT id, agent_id, kind, label, credentials, extra,
+               status, is_current, created_at, updated_at
+        FROM accounts
+        WHERE agent_id = ?1
+        ORDER BY agent_id ASC, label ASC, id ASC
+        "#,
+    )?;
+    let rows = stmt.query_map(params![agent.as_str()], map_account_row)?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+/// Update one account only when `updated_at` still matches the caller's snapshot.
+pub(crate) fn update_if_revision_conn(
+    conn: &Connection,
+    account: &Account,
+    expected_updated_at: &str,
+) -> Result<Account> {
+    let existing = get_by_id_conn(conn, &account.id)?.ok_or_else(|| {
+        AppError::NotFound(format!("account not found: {}", account.id))
+    })?;
+    if existing.agent_id != account.agent_id {
+        return Err(AppError::InvalidArg(format!(
+            "account agent_id is immutable (id={}, existing={}, requested={})",
+            account.id,
+            existing.agent_id.as_str(),
+            account.agent_id.as_str()
+        )));
+    }
+    let mut row = account.clone();
+    row.created_at = existing.created_at;
+    let credentials = serde_json::to_string(&row.credentials)?;
+    let extra = serde_json::to_string(&row.extra)?;
+    let is_current: i64 = if row.is_current { 1 } else { 0 };
+    let n = conn.execute(
+        r#"
+        UPDATE accounts SET
+            agent_id = ?2,
+            kind = ?3,
+            label = ?4,
+            credentials = ?5,
+            extra = ?6,
+            status = ?7,
+            is_current = ?8,
+            created_at = ?9,
+            updated_at = ?10
+        WHERE id = ?1 AND agent_id = ?11 AND updated_at = ?12
+        "#,
+        params![
+            row.id,
+            row.agent_id.as_str(),
+            row.kind.as_str(),
+            row.label,
+            credentials,
+            extra,
+            row.status,
+            is_current,
+            row.created_at,
+            row.updated_at,
+            row.agent_id.as_str(),
+            expected_updated_at,
+        ],
+    )?;
+    if n != 1 {
+        return Err(AppError::message(
+            "account.merge.conflict",
+            format!("account changed before update: {}", account.id),
+        ));
+    }
+    clear_other_currents_if_needed(conn, &row)?;
+    get_by_id_conn(conn, &row.id)?
+        .ok_or_else(|| AppError::message("db.account", "account missing after revision update"))
+}
+
+/// Delete one account only when `updated_at` still matches the caller's snapshot.
+pub(crate) fn delete_if_revision_conn(
+    conn: &Connection,
+    id: &str,
+    agent: AgentId,
+    expected_updated_at: &str,
+) -> Result<()> {
+    let n = conn.execute(
+        "DELETE FROM accounts WHERE id = ?1 AND agent_id = ?2 AND updated_at = ?3",
+        params![id, agent.as_str(), expected_updated_at],
+    )?;
+    if n == 1 {
+        return Ok(());
+    }
+    if get_by_id_conn(conn, id)?.is_some() {
+        Err(AppError::message(
+            "account.merge.delete.conflict",
+            format!("account changed before duplicate deletion: {id}"),
+        ))
+    } else {
+        Err(AppError::NotFound(format!(
+            "account not found: {id} (agent filter: {})",
+            agent.as_str()
+        )))
+    }
+}
+
 /// Connection-scoped create (insert + same-table current demotion).
 pub(crate) fn create_conn(conn: &Connection, account: &Account) -> Result<Account> {
     if get_by_id_conn(conn, &account.id)?.is_some() {

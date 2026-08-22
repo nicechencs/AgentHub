@@ -19,6 +19,14 @@ impl AgentPathContribution for CodexPaths {
         }
         Ok(home_dir()?.join(".codex"))
     }
+
+    fn default_home_dir(&self) -> Result<PathBuf> {
+        Ok(home_dir()?.join(".codex"))
+    }
+
+    fn home_dir_is_default(&self) -> bool {
+        first_env_path("CODEX_HOME").is_none()
+    }
 }
 
 pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {

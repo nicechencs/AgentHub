@@ -150,6 +150,54 @@ export const filterUnsafeMarkdownPlugins: NonNullable<
 };
 
 /**
+ * Scroll a same-document markdown anchor without mutating the URL. HashRouter
+ * owns `location.hash`, so letting the browser handle `#section` would replace
+ * the application route. Missing targets are intentionally a no-op.
+ */
+export function scrollMarkdownAnchor(href: string): boolean {
+  if (!href.startsWith('#') || typeof document === 'undefined') return false;
+  let id: string;
+  try {
+    id = decodeURIComponent(href.slice(1));
+  } catch {
+    return false;
+  }
+  if (!id) return false;
+  const target = document.getElementById(id);
+  if (!target) return false;
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  return true;
+}
+
+/** Handle clicks before the webview/browser gets a chance to navigate. */
+export function handleMarkdownClick(e: MouseEvent<HTMLDivElement>): void {
+  const target = e.target;
+  if (!target || typeof (target as Element).closest !== 'function') return;
+  const anchor = (target as Element).closest('a');
+  if (!anchor || !e.currentTarget.contains(anchor)) return;
+
+  const href = anchor.getAttribute('href')?.trim() ?? '';
+  // Every non-http(s) href is intercepted first. Unsafe, fragment, absolute
+  // local, and relative links must never fall through to webview navigation.
+  if (!href || !isSafeMarkdownUrl(href) || !isHttpUrl(href)) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (href.startsWith('#') && isSafeMarkdownUrl(href)) {
+      scrollMarkdownAnchor(href);
+    }
+    return;
+  }
+
+  // Tauri webview: open http(s) in the system browser instead of navigating
+  // the app document.
+  e.preventDefault();
+  e.stopPropagation();
+  void openExternalLink(href).catch((err) => {
+    console.error('[MarkdownView] open external failed', err);
+  });
+}
+
+/**
  * Shared markdown preview powered by `@uiw/react-markdown-preview`
  * (same family as the project's CodeMirror). GFM + code highlight + dark/light
  * come from the library; this wrapper only binds theme tokens and density.
@@ -164,30 +212,8 @@ export function MarkdownView({
   const text = content ?? '';
   if (!text.trim()) return null;
 
-  const onMarkdownClick = (e: MouseEvent<HTMLDivElement>) => {
-    const el = e.target;
-    if (!(el instanceof Element)) return;
-    const a = el.closest('a');
-    if (!a || !e.currentTarget.contains(a)) return;
-    const href = a.getAttribute('href')?.trim() ?? '';
-    if (!href || !isSafeMarkdownUrl(href)) {
-      // Unsafe schemes must never reach the browser's default navigation.
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-    if (href.startsWith('#') || href.startsWith('/')) return;
-    if (!isHttpUrl(href)) return;
-    // Tauri webview: open system browser instead of navigating in-app.
-    e.preventDefault();
-    e.stopPropagation();
-    void openExternalLink(href).catch((err) => {
-      console.error('[MarkdownView] open external failed', err);
-    });
-  };
-
   return (
-    <div onClick={onMarkdownClick}>
+    <div onClick={handleMarkdownClick}>
       <MarkdownPreview
         source={text}
         // v5 inverts this prop before passing it to react-markdown. Combined

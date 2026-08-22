@@ -56,12 +56,20 @@ pub async fn add_api_key_account(
     key: String,
     label: Option<String>,
     env_key: Option<String>,
+    product_marker: Option<String>,
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
-        add_api_key_account_inner(hub, &agent_id, &key, label.as_deref(), env_key.as_deref())
+        add_api_key_account_inner_with_marker(
+            hub,
+            &agent_id,
+            &key,
+            label.as_deref(),
+            env_key.as_deref(),
+            product_marker.as_deref(),
+        )
     })
     .await
 }
@@ -221,10 +229,21 @@ fn add_api_key_account_inner(
     label: Option<&str>,
     env_key: Option<&str>,
 ) -> Result<Account, String> {
+    add_api_key_account_inner_with_marker(hub, agent_id, key, label, env_key, None)
+}
+
+fn add_api_key_account_inner_with_marker(
+    hub: &AgentHub,
+    agent_id: &str,
+    key: &str,
+    label: Option<&str>,
+    env_key: Option<&str>,
+    product_marker: Option<&str>,
+) -> Result<Account, String> {
     let agent = parse_agent(agent_id)?;
     let item = hub
         .accounts
-        .add_api_key_with_env(agent, label, key, env_key)
+        .add_api_key_with_env_and_marker(agent, label, key, env_key, product_marker)
         .map_err(|e| map_err_string("add_api_key_account", e))?;
     Ok(item.redacted())
 }
@@ -265,29 +284,4 @@ fn delete_account_inner(hub: &AgentHub, agent_id: &str, id_or_label: &str) -> Re
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[test]
-    fn add_apikey_is_redacted_without_live_reconcile() {
-        let dir = tempdir().unwrap();
-        let hub = AgentHub::open(Some(dir.path())).unwrap();
-        let created =
-            add_api_key_account_inner(&hub, "grok", "xai-super-secret-key", Some("work"), None)
-                .unwrap();
-        assert_eq!(created.label, "work");
-        let creds = serde_json::to_string(&created.credentials).unwrap();
-        assert!(!creds.contains("xai-super-secret-key"));
-        assert!(creds.contains("***"));
-
-        // Do not call `list_accounts_inner` here: the production list path
-        // intentionally reconciles live adapter homes, which would make this
-        // GUI command test depend on the host's real credentials.  The command
-        // boundary's redaction contract is exercised directly on the returned
-        // DTO instead.
-        let listed = serde_json::to_string(&created.redacted().credentials).unwrap();
-        assert!(!listed.contains("xai-super-secret-key"));
-        assert!(listed.contains("***"));
-    }
-}
+mod tests;

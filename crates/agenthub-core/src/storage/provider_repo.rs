@@ -589,6 +589,83 @@ pub(crate) fn list_current_conn(conn: &Connection, agent: AgentId) -> Result<Vec
     Ok(out)
 }
 
+/// Connection-scoped list of every provider for one agent.
+pub(crate) fn list_for_agent_conn(conn: &Connection, agent: AgentId) -> Result<Vec<Provider>> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT id, agent_id, name, settings_config, meta,
+               is_current, created_at, updated_at
+        FROM providers
+        WHERE agent_id = ?1
+        ORDER BY agent_id ASC, name ASC, id ASC
+        "#,
+    )?;
+    let rows = stmt.query_map(params![agent.as_str()], map_provider_row)?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+/// Update one provider only when `updated_at` still matches the caller's snapshot.
+pub(crate) fn update_if_revision_conn(
+    conn: &Connection,
+    provider: &Provider,
+    expected_updated_at: &str,
+) -> Result<Provider> {
+    let existing = get_by_id_conn(conn, &provider.id)?.ok_or_else(|| {
+        AppError::NotFound(format!("provider not found: {}", provider.id))
+    })?;
+    if existing.agent_id != provider.agent_id {
+        return Err(AppError::InvalidArg(format!(
+            "provider agent_id is immutable (id={}, existing={}, requested={})",
+            provider.id,
+            existing.agent_id.as_str(),
+            provider.agent_id.as_str()
+        )));
+    }
+    let mut row = provider.clone();
+    row.created_at = existing.created_at;
+    let settings = serde_json::to_string(&row.settings_config)?;
+    let meta = serde_json::to_string(&row.meta)?;
+    let is_current: i64 = if row.is_current { 1 } else { 0 };
+    let n = conn.execute(
+        r#"
+        UPDATE providers SET
+            agent_id = ?2,
+            name = ?3,
+            settings_config = ?4,
+            meta = ?5,
+            is_current = ?6,
+            created_at = ?7,
+            updated_at = ?8
+        WHERE id = ?1 AND agent_id = ?9 AND updated_at = ?10
+        "#,
+        params![
+            row.id,
+            row.agent_id.as_str(),
+            row.name,
+            settings,
+            meta,
+            is_current,
+            row.created_at,
+            row.updated_at,
+            row.agent_id.as_str(),
+            expected_updated_at,
+        ],
+    )?;
+    if n != 1 {
+        return Err(AppError::message(
+            "provider.merge.conflict",
+            format!("provider changed before update: {}", provider.id),
+        ));
+    }
+    clear_other_currents_if_needed(conn, &row)?;
+    get_by_id_conn(conn, &row.id)?
+        .ok_or_else(|| AppError::message("db.provider", "provider missing after revision update"))
+}
+
 /// Connection-scoped create (insert + same-table current demotion).
 pub(crate) fn create_conn(conn: &Connection, provider: &Provider) -> Result<Provider> {
     if get_by_id_conn(conn, &provider.id)?.is_some() {

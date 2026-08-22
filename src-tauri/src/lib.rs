@@ -201,6 +201,7 @@ pub fn run() {
             // Chat
             commands::chat::list_conversations,
             commands::chat::create_conversation,
+            commands::chat::ensure_default_conversation,
             commands::chat::update_conversation,
             commands::chat::delete_conversation,
             commands::chat::list_chat_messages,

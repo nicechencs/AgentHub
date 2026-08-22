@@ -111,6 +111,15 @@ import {
 import { SkillsLibraryPanel } from './SkillsLibraryPanel';
 import { SkillsMarketPanel } from './SkillsMarketPanel';
 
+export function createIdempotentCleanup<T extends unknown[]>(cleanup: (...args: T) => void) {
+  let completed = false;
+  return (...args: T) => {
+    if (completed) return;
+    completed = true;
+    cleanup(...args);
+  };
+}
+
 export default function SkillsPage() {
   const { toast } = useToast();
   const { t } = useI18n();
@@ -161,6 +170,13 @@ export default function SkillsPage() {
   const reduceMotion = usePrefersReducedMotion();
   const splitRef = useRef<HTMLDivElement>(null);
   const previewBodyRef = useRef<HTMLDivElement>(null);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+
+  const cancelPreviewResize = useCallback(() => {
+    resizeCleanupRef.current?.();
+  }, []);
+
+  useEffect(() => () => cancelPreviewResize(), [cancelPreviewResize]);
 
   const clampPreviewWidth = useCallback((w: number) => {
     const containerW = splitRef.current?.getBoundingClientRect().width ?? window.innerWidth;
@@ -210,6 +226,7 @@ export default function SkillsPage() {
   }, [previewShellMounted, previewExpanded, clampPreviewWidth]);
 
   const requestOpenPreview = useCallback((target: SkillPreviewTarget) => {
+    cancelPreviewResize();
     setPreviewTarget(target);
     setPreviewShellMounted(true);
     if (reduceMotion) {
@@ -220,15 +237,16 @@ export default function SkillsPage() {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => setPreviewExpanded(true));
     });
-  }, [reduceMotion]);
+  }, [cancelPreviewResize, reduceMotion]);
 
   const requestClosePreview = useCallback(() => {
+    cancelPreviewResize();
     setPreviewExpanded(false);
     if (reduceMotion) {
       setPreviewTarget(null);
       setPreviewShellMounted(false);
     }
-  }, [reduceMotion]);
+  }, [cancelPreviewResize, reduceMotion]);
 
   const onPreviewPaneTransitionEnd = useCallback(
     (e: ReactTransitionEvent<HTMLElement>) => {
@@ -243,32 +261,69 @@ export default function SkillsPage() {
   const onPreviewResizeStart = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       e.preventDefault();
+      cancelPreviewResize();
       const startX = e.clientX;
       const startW = previewWidth;
 
       const prevCursor = document.body.style.cursor;
       const prevSelect = document.body.style.userSelect;
+      const pointerTarget = e.currentTarget;
+      const pointerId = e.pointerId;
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
       setPreviewResizing(true);
 
-      const onMove = (ev: PointerEvent) => {
+      const onMove = (ev: globalThis.PointerEvent): void => {
+        if (ev.pointerId !== pointerId) return;
         // Dragging the left edge of the preview: mouse left → wider panel
         setPreviewWidth(clampPreviewWidth(startW + (startX - ev.clientX)));
       };
-      const onUp = (ev: PointerEvent) => {
-        persistPreviewWidth(startW + (startX - ev.clientX));
-        document.body.style.cursor = prevCursor;
-        document.body.style.userSelect = prevSelect;
-        setPreviewResizing(false);
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-      };
+      const cleanup = createIdempotentCleanup<[boolean, number?]>(
+        (commit: boolean, clientX: number = startX) => {
+          if (resizeCleanupRef.current !== cancel) return;
+          resizeCleanupRef.current = null;
+          if (commit) persistPreviewWidth(startW + (startX - clientX));
+          document.body.style.cursor = prevCursor;
+          document.body.style.userSelect = prevSelect;
+          setPreviewResizing(false);
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+          window.removeEventListener('pointercancel', onCancel);
+          window.removeEventListener('blur', onBlur);
+          try {
+            pointerTarget.releasePointerCapture(pointerId);
+          } catch {
+            // The pointer may already have been released by the browser.
+          }
+        },
+      );
+      function onUp(ev: globalThis.PointerEvent): void {
+        if (ev.pointerId !== pointerId) return;
+        cleanup(true, ev.clientX);
+      }
+      function onCancel(ev: globalThis.PointerEvent): void {
+        if (ev.pointerId !== pointerId) return;
+        cleanup(false);
+      }
+      function onBlur() {
+        cleanup(false);
+      }
+      function cancel() {
+        cleanup(false);
+      }
+      resizeCleanupRef.current = cancel;
 
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onCancel);
+      window.addEventListener('blur', onBlur);
+      try {
+        pointerTarget.setPointerCapture(pointerId);
+      } catch {
+        // Keep the window listeners as a compatibility fallback.
+      }
     },
-    [previewWidth, clampPreviewWidth, persistPreviewWidth],
+    [cancelPreviewResize, previewWidth, clampPreviewWidth, persistPreviewWidth],
   );
 
   const onPreviewSeparatorKeyDown = useCallback(

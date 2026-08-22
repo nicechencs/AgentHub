@@ -95,6 +95,7 @@ impl LifecycleInstallExecutor for FakeLifecycleInstallExecutor {
         key: &AgentKey,
         _contribution: &dyn InstallContribution,
         _purge_config: bool,
+        _actual_data_dir: &std::path::Path,
         _command_executor: &dyn CommandExecutor,
     ) -> Result<InstallOutcome> {
         self.installed.store(false, Ordering::SeqCst);

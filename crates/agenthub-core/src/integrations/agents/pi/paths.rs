@@ -23,6 +23,10 @@ impl AgentPathContribution for PiPaths {
         }
         Ok(self.home_dir()?.join("agent"))
     }
+
+    fn config_dir_is_default(&self) -> bool {
+        first_env_path("PI_CODING_AGENT_DIR").is_none()
+    }
 }
 
 pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {

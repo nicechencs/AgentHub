@@ -24,7 +24,8 @@ use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::Skill;
 use crate::platform::skills::{
-    bootstrap_skill_assignments, SkillBootstrapReport, SkillTargetRegistry,
+    acquire_skill_root_lock, bootstrap_skill_assignments, recover_skill_commit_journal,
+    SkillBootstrapReport, SkillTargetRegistry,
 };
 use crate::storage::Database;
 
@@ -211,6 +212,21 @@ impl SkillService {
             &repo,
             &crate::platform::skills::chrono_now(),
         )
+    }
+
+    /// Recover an interrupted shared-skill package commit under the root lock.
+    ///
+    /// This intentionally does not import assignments or reconcile projections;
+    /// startup must only restore the commit's live/lock/package state.  The
+    /// normal bootstrap path may be called separately when assignment import is
+    /// desired.
+    pub fn recover_pending_commit(&self) -> Result<()> {
+        let _root_lock = acquire_skill_root_lock(&self.source_root)?;
+        let repo = self
+            .db
+            .as_ref()
+            .map(|db| crate::storage::SkillRepo::new(db.clone()));
+        recover_skill_commit_journal(&self.source_root, repo.as_ref()).map(|_| ())
     }
 
     /// Drop cached `list()` results (writes, external FS watcher).
