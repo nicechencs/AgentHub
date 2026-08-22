@@ -103,3 +103,51 @@ fn panic_while_holding_releases_lock() {
     assert!(panicked.is_err());
     let _again = AgentWriteLock::acquire(dir.path(), AgentId::Claude).unwrap();
 }
+
+#[cfg(unix)]
+#[test]
+fn symlink_lock_leaves_fail_closed_without_touching_target() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempdir().unwrap();
+    let target = dir.path().join("sentinel");
+    fs::write(&target, b"must remain unchanged").unwrap();
+
+    let visible = dir.path().join("provider-claude.lock");
+    symlink(&target, &visible).unwrap();
+    assert!(AgentWriteLock::acquire(dir.path(), AgentId::Claude).is_err());
+    assert_eq!(fs::read(&target).unwrap(), b"must remain unchanged");
+
+    // The failed acquire must not strand the in-process claim.
+    fs::remove_file(&visible).unwrap();
+    let _recovered = AgentWriteLock::acquire(dir.path(), AgentId::Claude).unwrap();
+}
+
+#[cfg(windows)]
+#[test]
+fn reparse_lock_leaves_fail_closed_without_touching_target() {
+    use std::os::windows::fs::symlink_file;
+
+    let dir = tempdir().unwrap();
+    let target = dir.path().join("sentinel");
+    fs::write(&target, b"must remain unchanged").unwrap();
+
+    let visible = dir.path().join("provider-claude.lock");
+    if let Err(error) = symlink_file(&target, &visible) {
+        // Creating a symlink needs the SeCreateSymbolicLink privilege; skip
+        // on hosts without it (CI often runs unelevated).
+        const ERROR_PRIVILEGE_NOT_HELD: i32 = 1314;
+        if error.kind() == std::io::ErrorKind::PermissionDenied
+            || error.raw_os_error() == Some(ERROR_PRIVILEGE_NOT_HELD)
+        {
+            return;
+        }
+        panic!("could not create reparse-point fixture: {error}");
+    }
+    assert!(AgentWriteLock::acquire(dir.path(), AgentId::Claude).is_err());
+    assert_eq!(fs::read(&target).unwrap(), b"must remain unchanged");
+
+    // The failed acquire must not strand the in-process claim.
+    fs::remove_file(&visible).unwrap();
+    let _recovered = AgentWriteLock::acquire(dir.path(), AgentId::Claude).unwrap();
+}

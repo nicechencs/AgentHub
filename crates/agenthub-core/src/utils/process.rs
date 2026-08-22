@@ -767,9 +767,7 @@ impl StreamingProcessRunner for RecordingProcessRunner {
                 native_session_id: None,
             };
         }
-        // Delay already applied above — avoid double-sleep in `run`.
-        let saved_delay = self.delay;
-        // Temporarily zero delay via unsafe is wrong; clone-less approach: call body inline.
+        // Delay already applied above, so record the call directly.
         if let Ok(mut g) = self.calls.lock() {
             g.push(spec.clone());
         }
@@ -778,7 +776,7 @@ impl StreamingProcessRunner for RecordingProcessRunner {
             .lock()
             .map(|g| *g)
             .unwrap_or(RunStatus::Ok);
-        let _ = (timeout, max_output_bytes, saved_delay);
+        let _ = (timeout, max_output_bytes);
         let result = AgentRunResult {
             agent: spec.agent,
             status,

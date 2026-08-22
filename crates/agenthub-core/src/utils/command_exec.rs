@@ -42,34 +42,6 @@ impl ExecResult {
     pub fn success(&self) -> bool {
         self.spawn_error.is_none() && !self.timed_out && self.exit_code == Some(0)
     }
-
-    pub fn display_lines(&self) -> Vec<String> {
-        let mut lines = vec![format!("$ {}", self.command)];
-        if let Some(err) = &self.spawn_error {
-            lines.push(format!("spawn failed: {err}"));
-            return lines;
-        }
-        for line in self.stdout.lines() {
-            lines.push(line.to_string());
-        }
-        for line in self.stderr.lines() {
-            lines.push(line.to_string());
-        }
-        if self.timed_out {
-            lines.push(format!(
-                "✗ timed out after {}s",
-                // timeout not stored; caller may add context
-                0
-            ));
-        } else if let Some(code) = self.exit_code {
-            if code == 0 {
-                lines.push("✓ exit 0".into());
-            } else {
-                lines.push(format!("✗ exit {code}"));
-            }
-        }
-        lines
-    }
 }
 
 /// Pluggable executor (production = system; tests = mock).

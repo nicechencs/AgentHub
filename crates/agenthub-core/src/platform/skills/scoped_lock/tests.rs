@@ -78,3 +78,33 @@ fn different_skill_ids_do_not_block_each_other() {
     let _a = acquire_skill_lock(dir.path(), "one").unwrap();
     let _b = acquire_skill_lock(dir.path(), "two").unwrap();
 }
+
+#[test]
+fn sanitized_keys_do_not_collide() {
+    let dir = tempdir().unwrap();
+    let _slash = acquire_skill_lock(dir.path(), "a/b").unwrap();
+    assert!(acquire_skill_lock(dir.path(), "a_b").is_ok());
+}
+
+#[test]
+fn sanitize_escapes_instead_of_dropping_characters() {
+    assert_eq!(sanitize_lock_key("a/b"), "a%2Fb");
+    assert_eq!(sanitize_lock_key("a_b"), "a_b");
+    assert_eq!(sanitize_lock_key(""), "%00");
+}
+
+#[cfg(unix)]
+#[test]
+fn symlink_skill_lock_leaves_fail_closed_without_touching_target() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempdir().unwrap();
+    let target = dir.path().join("sentinel");
+    fs::write(&target, b"must remain unchanged").unwrap();
+    fs::create_dir_all(dir.path().join(".locks")).unwrap();
+
+    let lock_path = dir.path().join(".locks/skill-demo.lock");
+    symlink(&target, &lock_path).unwrap();
+    assert!(acquire_skill_lock(dir.path(), "demo").is_err());
+    assert_eq!(fs::read(&target).unwrap(), b"must remain unchanged");
+}

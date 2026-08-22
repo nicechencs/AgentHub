@@ -38,9 +38,21 @@ function isUnsubscribe(value: unknown): value is Unsubscribe {
 
 const INSTALL_OUTPUT_LINE_CAP = 400;
 
+/**
+ * Bound on retained raw chunks. The display cap above only trims rendered
+ * lines, so without this the chunk array (and the per-event join+split over
+ * it) would grow without limit across a long, noisy install.
+ */
+const INSTALL_OUTPUT_CHUNK_CAP = 2000;
+
 /** Append a raw UTF-8 install chunk. Empty / whitespace / newline-only stay. */
 export function recordInstallOutputChunk(chunks: string[], chunk: string): string[] {
   chunks.push(chunk);
+  if (chunks.length > INSTALL_OUTPUT_CHUNK_CAP) {
+    // Trim from the head in chunks; a dropped head chunk can at most clip one
+    // partial line, never lose mid-line content of retained chunks.
+    chunks.splice(0, chunks.length - INSTALL_OUTPUT_CHUNK_CAP);
+  }
   return chunks;
 }
 

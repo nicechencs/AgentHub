@@ -278,14 +278,115 @@ impl Drop for AgentWriteLock {
 }
 
 fn write_owner_file(path: &Path, metadata: &str) -> io::Result<std::fs::File> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(path)?;
+    let mut file = open_lock_leaf(path)?;
     file.write_all(metadata.as_bytes())?;
     let _ = file.sync_all();
     Ok(file)
+}
+
+/// Open a lock leaf without following a pre-existing link, then validate the
+/// opened handle itself is a regular file.
+///
+/// Opening with no-follow/reparse protection before validating the resulting
+/// handle closes the check-then-open race against a symlink, junction, or
+/// other reparse-point replacement of the lock path: such leaves fail closed
+/// instead of truncating an unrelated target file.
+pub(crate) fn open_lock_leaf(path: &Path) -> io::Result<std::fs::File> {
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+
+    let file = options.open(path)?;
+    ensure_regular_lock_leaf(&file)?;
+    Ok(file)
+}
+
+#[cfg(unix)]
+fn ensure_regular_lock_leaf(file: &std::fs::File) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+
+    // Validate the opened descriptor itself. This is deliberately fstat,
+    // rather than a path-based metadata call, so a concurrent path swap
+    // cannot turn the check into a symlink-following check-then-open race.
+    let mut stat = unsafe { std::mem::zeroed::<libc::stat>() };
+    if unsafe { libc::fstat(file.as_raw_fd(), &mut stat) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if stat.st_mode & libc::S_IFMT == libc::S_IFREG {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "lock leaf is not a regular file",
+        ))
+    }
+}
+
+#[cfg(windows)]
+fn ensure_regular_lock_leaf(file: &std::fs::File) -> io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+
+    const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x0000_0010;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+
+    #[repr(C)]
+    struct FileAttributeTagInfo {
+        file_attributes: u32,
+        reparse_tag: u32,
+    }
+
+    unsafe extern "system" {
+        #[link_name = "GetFileInformationByHandleEx"]
+        fn get_file_information_by_handle_ex(
+            file: *mut core::ffi::c_void,
+            information_class: u32,
+            information: *mut core::ffi::c_void,
+            information_size: u32,
+        ) -> i32;
+    }
+
+    const FILE_ATTRIBUTE_TAG_INFO_CLASS: u32 = 9;
+    let mut information = FileAttributeTagInfo {
+        file_attributes: 0,
+        reparse_tag: 0,
+    };
+    let ok = unsafe {
+        get_file_information_by_handle_ex(
+            file.as_raw_handle() as *mut core::ffi::c_void,
+            FILE_ATTRIBUTE_TAG_INFO_CLASS,
+            (&mut information as *mut FileAttributeTagInfo).cast(),
+            std::mem::size_of::<FileAttributeTagInfo>() as u32,
+        )
+    };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if information.file_attributes
+        & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)
+        != 0
+        || information.reparse_tag != 0
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "lock leaf is a directory or reparse point",
+        ));
+    }
+    Ok(())
 }
 
 fn lock_held_error(agent_key: &str) -> AppError {

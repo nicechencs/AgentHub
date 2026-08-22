@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::{AppError, Result};
-use crate::utils::agent_lock::{release_lock_path, try_claim_lock_path};
+use crate::utils::agent_lock::{open_lock_leaf, release_lock_path, try_claim_lock_path};
 
 /// Per-skill exclusive lock under `<source_root>/.locks/skill-<id>.lock`.
 pub(crate) fn acquire_skill_lock(source_root: &Path, skill_id: &str) -> Result<SkillScopedLock> {
@@ -91,17 +91,7 @@ pub(crate) struct SkillScopedLock {
 impl SkillScopedLock {
     fn acquire(lock_dir: &Path, key: &str) -> Result<Self> {
         fs::create_dir_all(lock_dir)?;
-        let safe: String = key
-            .chars()
-            .map(|c| {
-                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-        let path = lock_dir.join(format!("skill-{safe}.lock"));
+        let path = lock_dir.join(format!("skill-{}.lock", sanitize_lock_key(key)));
 
         if !try_claim_lock_path(&path) {
             return Err(lock_held_error(key));
@@ -136,14 +126,29 @@ impl Drop for SkillScopedLock {
 }
 
 fn write_owner_file(path: &Path, metadata: &str) -> io::Result<std::fs::File> {
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(path)?;
+    let mut file = open_lock_leaf(path)?;
     file.write_all(metadata.as_bytes())?;
     let _ = file.sync_all();
     Ok(file)
+}
+
+/// Map a skill id to a collision-free lock filename body.
+///
+/// Allowed characters pass through; every other byte is percent-escaped so
+/// distinct ids (e.g. `a/b` vs `a_b`) never collapse onto the same lock file.
+pub(crate) fn sanitize_lock_key(key: &str) -> String {
+    let mut safe = String::with_capacity(key.len());
+    for &byte in key.as_bytes() {
+        if byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_' {
+            safe.push(byte as char);
+        } else {
+            safe.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    if safe.is_empty() {
+        safe.push_str("%00");
+    }
+    safe
 }
 
 fn lock_held_error(key: &str) -> AppError {

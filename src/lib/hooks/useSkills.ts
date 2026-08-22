@@ -308,9 +308,12 @@ export function useSkillsList(opts: SkillsQueryOptions = {}) {
       setError(null);
     } catch (e) {
       if (!isCurrentSkillsResourceRequest(requestGeneration, versions.skills)) return;
-      // 有 stale 时保留旧表，只记 error（ErrorState 由调用方决定是否盖住）
+      // 有 stale 时保留旧表，只记 error（ErrorState 由调用方决定是否盖住）；
+      // 静默保留旧表的同时至少留下日志，避免刷新失败完全不可见。
       if (skillsData == null) {
         setError(e);
+      } else {
+        console.error('[useSkills] refresh failed, keeping stale rows', e);
       }
     } finally {
       if (isCurrentSkillsResourceRequest(requestGeneration, versions.skills)) {
@@ -365,6 +368,7 @@ export function useSkillCatalog(opts: SkillsQueryOptions = {}) {
     } catch (e) {
       if (!isCurrentSkillsResourceRequest(requestGeneration, versions.catalog)) return;
       if (catalogData == null) setError(e);
+      else console.error('[useSkillCatalog] refresh failed, keeping stale rows', e);
     } finally {
       if (isCurrentSkillsResourceRequest(requestGeneration, versions.catalog)) {
         setFetching(false);
@@ -443,6 +447,7 @@ export function useSkillMarket(query: string, opts: SkillsQueryOptions = {}) {
         return;
       }
       if (!(marketData && marketData.query === query)) setError(e);
+      else console.error('[useSkillMarket] refresh failed, keeping stale rows', e);
     } finally {
       if (
         sourceGeneration === marketGeneration &&

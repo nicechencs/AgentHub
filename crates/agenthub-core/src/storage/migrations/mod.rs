@@ -148,12 +148,37 @@ fn sqlite_error_is_busy(error: &SqliteError) -> bool {
 }
 
 fn io_error_is_lock(error: &std::io::Error) -> bool {
-    matches!(
+    if matches!(
         error.kind(),
         std::io::ErrorKind::WouldBlock
             | std::io::ErrorKind::TimedOut
             | std::io::ErrorKind::Interrupted
-    ) || matches!(error.raw_os_error(), Some(11) | Some(16) | Some(32) | Some(33))
+    ) {
+        return true;
+    }
+    // Raw errno values are platform-specific: 32 is EPIPE on Unix but
+    // ERROR_SHARING_VIOLATION on Windows, and 11/16 mean entirely different
+    // things per platform. Only compare codes guarded by the target OS.
+    #[cfg(unix)]
+    {
+        const EINTR: i32 = 4;
+        const EAGAIN: i32 = 11;
+        const EBUSY: i32 = 16;
+        matches!(error.raw_os_error(), Some(EINTR | EAGAIN | EBUSY))
+    }
+    #[cfg(windows)]
+    {
+        const ERROR_SHARING_VIOLATION: i32 = 32;
+        const ERROR_LOCK_VIOLATION: i32 = 33;
+        matches!(
+            error.raw_os_error(),
+            Some(ERROR_SHARING_VIOLATION | ERROR_LOCK_VIOLATION)
+        )
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        false
+    }
 }
 
 #[cfg(test)]

@@ -69,3 +69,41 @@ describe('install output raw chunks', () => {
     expect(installOutputChunksToLines(chunks)).toEqual(['keep  ']);
   });
 });
+
+describe('install output chunk cap', () => {
+  it('trims the chunk array to the cap while keeping the tail and line cap', () => {
+    const chunks: string[] = [];
+    for (let i = 0; i < 2500; i += 1) {
+      recordInstallOutputChunk(chunks, `chunk-${i}\n`);
+    }
+
+    expect(chunks.length).toBe(2000);
+    expect(chunks[0]).toBe('chunk-500\n');
+    expect(chunks.at(-1)).toBe('chunk-2499\n');
+
+    const lines = installOutputChunksToLines(chunks);
+    expect(lines.length).toBeLessThanOrEqual(400);
+    // Trailing '' from the final newline is part of the last-400 window.
+    expect(lines[0]).toBe('chunk-2101');
+    expect(lines.at(-2)).toBe('chunk-2499');
+  });
+
+  it('does not lose mid-line content across a head trim', () => {
+    const chunks: string[] = [];
+    recordInstallOutputChunk(chunks, 'head-that-will-be-trimmed ');
+    for (let i = 0; i < 2000; i += 1) {
+      recordInstallOutputChunk(chunks, `\nrow-${i}`);
+    }
+    // This chunk splits a line whose start lives in an already-retained
+    // chunk; joining must still produce complete rows without duplication.
+    recordInstallOutputChunk(chunks, '-suffix\n');
+    expect(chunks.length).toBe(2000);
+    expect(chunks[0]).toBe('\nrow-1');
+
+    const lines = installOutputChunksToLines(chunks);
+    expect(lines.at(-2)).toBe(`row-${1999}-suffix`);
+    // No retained row was split by the head trim (the trailing '' comes from
+    // the final newline and is expected).
+    expect(lines.some((line) => line === '-suffix')).toBe(false);
+  });
+});
