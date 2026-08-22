@@ -37,6 +37,7 @@ function sampleWallet(): TicketWallet {
         bridge: null,
       },
     ],
+    surfaceGroups: [],
   };
 }
 
@@ -91,6 +92,7 @@ describe('TicketWalletList details', () => {
         profileId: null,
         bridge: null,
       }],
+      surfaceGroups: [],
     };
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
@@ -147,7 +149,7 @@ describe('TicketWalletList details', () => {
   it('uses 登录 copy for an empty wallet', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
-        wallet: { tickets: [], bindings: [] },
+        wallet: { tickets: [], bindings: [], surfaceGroups: [] },
         onConnectTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
@@ -235,6 +237,7 @@ describe('TicketWalletList details', () => {
           bridge: null,
         },
       ],
+      surfaceGroups: [],
     };
 
     expect(() =>

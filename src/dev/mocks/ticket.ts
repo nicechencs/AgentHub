@@ -20,6 +20,7 @@ import {
   type TicketView,
   type TicketWallet,
   type BindingView,
+  groupTicketSurfaceMembers,
 } from '@/lib/backend/contracts';
 import type { Account, AgentId, Provider } from '@/lib/types';
 import { delay } from './delay';
@@ -499,7 +500,7 @@ function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
     return Number(b.active) - Number(a.active);
   });
 
-  return { tickets, bindings };
+  return { tickets, bindings, surfaceGroups: groupTicketSurfaceMembers(tickets) };
 }
 
 export function createMockTicketPort(resolver: MockTicketSourceResolver): TicketPort {
