@@ -1,6 +1,6 @@
 # 路由 × 连接重构：任务拆分与派工计划
 
-> 状态：**执行中（2026-08-22 制定；同日第一波 A1–A3、B1、B2 kernel 腿、C1、D1–D3 已验收合入 dev；A4 设计稿与 C2 RFC 已拍板，第二波 P5/P6/P7 派工中）**。未开始：C3、B2 实机取证。全部完成后按 [docs/README.md](README.md) 管理规则回写稳定文档并删除本文。
+> 状态：**收尾中（2026-08-22 制定；同日 A1–A4、B1、B2 kernel 腿、C1–C3、D1–D3 全部验收合入 dev；测试债修复与连接域模块化拆分亦已合入）**。未完成：B2 实机取证（等真实 Claude 订阅账号）、C2 遗留小项（健康态回写账号行、启动映射 TryOnce、实机取证后开闸）。全部完成后按 [docs/README.md](README.md) 管理规则回写稳定文档并删除本文。
 > 真源关系：**本文只做任务拆分，不新增决策**。产品与协议决策以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)（§5.4 表面统一、§5.5 多账号轮询均为 2026-08-21 拍板的规划）为准；领域模型以 [connection-binding-model.md](connection-binding-model.md) 为准；模块化债以 [modularity-improvement.md](modularity-improvement.md) 为准；sidecar 迁移契约以 [adapter-sidecar-design.md](adapter-sidecar-design.md) 为准；实现状态以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
 > 依据：2026-08-22 对 `bridge/`、`adapter_route_service/`、`protocol_graph/`、`ticket_*` / `account_service/` / `connection_service` 及相关文档的三路深度审查（结论摘录见 §1–§2；审查为只读，未改代码）。
 
@@ -166,7 +166,7 @@ flowchart LR
 
 ### C3 成员健康 UI 与审计展示
 
-- **状态**：派工中（2026-08-22，分支 `feature/member-health-ui`）
+- **状态**：已合入 dev（2026-08-22，`feature/member-health-ui`：contracts/mock 扩展可选 `health`，Routes 详情成员健康态、Connections 钱包多成员承接展示；vitest 145 文件 / 1246 用例全绿）
 - **目标**：Routes 详情展示同票面成员及健康态；Connections 钱包「正用于」表达多成员承接；不新增页面，不做管理大盘。
 - **文件**：`src/pages/bridges/*`、`src/pages/connections/*`、contracts/mock 对应扩展。
 - **限制**：遵守 [ui-design.md](ui-design.md) / [ui-component-standard.md](ui-component-standard.md)；不显示 token 或完整凭据；孤立/失效成员置灰 + 原因，不藏行。
