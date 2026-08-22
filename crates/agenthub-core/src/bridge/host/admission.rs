@@ -8,6 +8,7 @@ use tokio::sync::OwnedSemaphorePermit;
 
 use super::http::{overloaded_response, read_request_json, stopping_response, EdgeState};
 use super::surface::DownstreamSurface;
+use crate::bridge::account::PickedMember;
 
 pub(super) struct AdmittedRequest {
     pub state: EdgeState,
@@ -16,6 +17,7 @@ pub(super) struct AdmittedRequest {
     pub permit: OwnedSemaphorePermit,
     pub headers: HeaderMap,
     pub body: Value,
+    pub member: Option<PickedMember>,
 }
 
 /// Shutdown, per-edge semaphore, read JSON. Auth has already bound the edge.
@@ -49,5 +51,6 @@ pub(super) async fn admit_conversation(
         permit,
         headers,
         body,
+        member: None,
     })
 }

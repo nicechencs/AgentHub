@@ -18,6 +18,7 @@ use crate::bridge::protocol::chat::{encode_chat_from_ir, encode_chat_sse, ChatSt
 use crate::bridge::protocol::responses::{
     encode_responses_from_ir, responses_output_to_ir, IrToResponsesSse, ResponsesStreamToIr,
 };
+use crate::bridge::account::PickedMember;
 use crate::bridge::types::{BridgeEvent, IrEvent, ProtocolError};
 
 use super::http::{
@@ -34,6 +35,10 @@ fn upstream_decode(state: &EdgeState) -> UpstreamDecode {
     UpstreamChannel::from_protocol(state.upstream.protocol).decode_kind()
 }
 
+fn partition_account<'a>(state: &'a EdgeState, member: &'a PickedMember) -> Option<&'a str> {
+    state.account_picker.partition_account_id(member)
+}
+
 pub(super) async fn messages_non_stream_response(
     state: EdgeState,
     response: reqwest::Response,
@@ -41,6 +46,7 @@ pub(super) async fn messages_non_stream_response(
     started: Instant,
     _permit: OwnedSemaphorePermit,
     replay_seed: Option<String>,
+    member: PickedMember,
 ) -> Response {
     let upstream_body = match read_bounded_upstream_json(response, &state.force_shutdown).await {
         Ok(value) => value,
@@ -55,7 +61,12 @@ pub(super) async fn messages_non_stream_response(
             );
         }
     };
-    capture_grok_completed(&state, replay_seed.as_deref(), &upstream_body);
+    capture_grok_completed(
+        &state,
+        replay_seed.as_deref(),
+        partition_account(&state, &member),
+        &upstream_body,
+    );
     let translated = match upstream_decode(&state) {
         UpstreamDecode::ChatCompletions => crate::bridge::protocol::chat::translate_chat_response(
             &upstream_body,
@@ -73,7 +84,7 @@ pub(super) async fn messages_non_stream_response(
     match translated {
         Ok(value) => {
             state.record_upstream_success();
-            tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, op = "messages", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
+            tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, account_id = %member.source_id, ticket_id = %member.ticket_id, op = "messages", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
             Json(value).into_response()
         }
         Err(error) => {
@@ -90,6 +101,7 @@ pub(super) async fn chat_non_stream_response(
     request_id: String,
     started: Instant,
     _permit: OwnedSemaphorePermit,
+    member: PickedMember,
 ) -> Response {
     let upstream_body = match read_bounded_upstream_json(response, &state.force_shutdown).await {
         Ok(value) => value,
@@ -114,7 +126,7 @@ pub(super) async fn chat_non_stream_response(
     match translated {
         Ok(value) => {
             state.record_upstream_success();
-            tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, op = "chat", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
+            tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, account_id = %member.source_id, ticket_id = %member.ticket_id, op = "chat", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
             Json(value).into_response()
         }
         Err(error) => {
@@ -132,6 +144,7 @@ pub(super) async fn non_stream_response(
     started: Instant,
     _permit: OwnedSemaphorePermit,
     replay_seed: Option<String>,
+    member: PickedMember,
 ) -> Response {
     let upstream_body = match read_bounded_upstream_json(response, &state.force_shutdown).await {
         Ok(value) => value,
@@ -146,7 +159,12 @@ pub(super) async fn non_stream_response(
             );
         }
     };
-    capture_grok_completed(&state, replay_seed.as_deref(), &upstream_body);
+    capture_grok_completed(
+        &state,
+        replay_seed.as_deref(),
+        partition_account(&state, &member),
+        &upstream_body,
+    );
     let translated = match upstream_decode(&state) {
         UpstreamDecode::ChatCompletions => crate::bridge::protocol::chat::translate_chat_response(
             &upstream_body,
@@ -159,7 +177,7 @@ pub(super) async fn non_stream_response(
     match translated {
         Ok(value) => {
             state.record_upstream_success();
-            tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, op = "responses", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
+            tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, account_id = %member.source_id, ticket_id = %member.ticket_id, op = "responses", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
             Json(value).into_response()
         }
         Err(error) => {
@@ -288,8 +306,12 @@ pub(super) fn passthrough_sse_response(
     started: Instant,
     permit: OwnedSemaphorePermit,
     replay_seed: Option<String>,
+    member: PickedMember,
 ) -> Response {
     let profile_id = state.profile_id.clone();
+    let account_id = member.source_id.clone();
+    let ticket_id = member.ticket_id.clone();
+    let partition = partition_account(&state, &member).map(str::to_owned);
     let force_shutdown = state.force_shutdown.clone();
     let observed = state.clone();
     let bytes = response.bytes_stream();
@@ -331,10 +353,10 @@ pub(super) fn passthrough_sse_response(
             yield Ok::<_, Infallible>(chunk);
         }
         if let Ok(sse) = std::str::from_utf8(&capture) {
-            capture_grok_sse(&observed, replay_seed.as_deref(), sse);
+            capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
         }
         observed.record_upstream_success();
-        tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, op = "responses_passthrough_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
+        tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "responses_passthrough_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
     };
     event_stream_response(output)
 }
@@ -345,9 +367,12 @@ pub(super) fn stream_response(
     request_id: String,
     started: Instant,
     permit: OwnedSemaphorePermit,
+    member: PickedMember,
 ) -> Response {
     let model = state.upstream.model.clone().unwrap_or_default();
     let profile_id = state.profile_id.clone();
+    let account_id = member.source_id.clone();
+    let ticket_id = member.ticket_id.clone();
     let force_shutdown = state.force_shutdown.clone();
     let observed = state.clone();
     let decode_kind = upstream_decode(&state);
@@ -468,7 +493,7 @@ pub(super) fn stream_response(
             }
         }
         observed.record_upstream_success();
-        tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, op = "stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
+        tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
     };
     event_stream_response(output)
 }
@@ -511,8 +536,12 @@ pub(super) fn messages_stream_response(
     started: Instant,
     permit: OwnedSemaphorePermit,
     replay_seed: Option<String>,
+    member: PickedMember,
 ) -> Response {
     let profile_id = state.profile_id.clone();
+    let account_id = member.source_id.clone();
+    let ticket_id = member.ticket_id.clone();
+    let partition = partition_account(&state, &member).map(str::to_owned);
     let force_shutdown = state.force_shutdown.clone();
     let observed = state.clone();
     let bytes = response.bytes_stream();
@@ -647,10 +676,10 @@ pub(super) fn messages_stream_response(
             yield Ok::<_, Infallible>(axum::body::Bytes::from(frame.clone()));
         }
         if let Ok(sse) = std::str::from_utf8(&capture) {
-            capture_grok_sse(&observed, replay_seed.as_deref(), sse);
+            capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
         }
         observed.record_upstream_success();
-        tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, op = "messages_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
+        tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "messages_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
     };
     event_stream_response(output)
 }
@@ -661,8 +690,11 @@ pub(super) fn chat_stream_response(
     request_id: String,
     started: Instant,
     permit: OwnedSemaphorePermit,
+    member: PickedMember,
 ) -> Response {
     let profile_id = state.profile_id.clone();
+    let account_id = member.source_id.clone();
+    let ticket_id = member.ticket_id.clone();
     let force_shutdown = state.force_shutdown.clone();
     let observed = state.clone();
     let bytes = response.bytes_stream();
@@ -789,7 +821,7 @@ pub(super) fn chat_stream_response(
             yield Ok::<_, Infallible>(axum::body::Bytes::from(frame.clone()));
         }
         observed.record_upstream_success();
-        tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, op = "chat_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
+        tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "chat_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
     };
     event_stream_response(output)
 }

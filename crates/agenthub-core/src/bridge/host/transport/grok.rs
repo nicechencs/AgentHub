@@ -3,7 +3,7 @@ use reqwest::RequestBuilder;
 use serde_json::Value;
 
 use crate::bridge::grok_cli::{
-    apply_grok_cli_identity_with, extract_prompt_cache_seed, grok_cli_request_identity,
+    apply_grok_cli_identity_with, extract_prompt_cache_seed, grok_cli_request_identity_for_account,
     inject_prompt_cache_key, normalize_grok_build_tools, GrokCliRequestIdentity,
 };
 use crate::bridge::protocol::responses::to_grok_responses_request;
@@ -90,10 +90,15 @@ impl UpstreamTransport for GrokTransport {
 }
 
 fn grok_identity(admitted: &AdmittedRequest) -> GrokCliRequestIdentity {
-    grok_cli_request_identity(
+    let account_id = admitted
+        .member
+        .as_ref()
+        .and_then(|member| admitted.state.account_picker.partition_account_id(member));
+    grok_cli_request_identity_for_account(
         &admitted.request_id,
         &admitted.headers,
         &admitted.body,
         admitted.state.upstream.model.as_deref(),
+        account_id,
     )
 }
