@@ -1,0 +1,10 @@
+{
+  "model": "claude-sonnet-4-20250514",
+  "input": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": [{"type": "input_image", "image_url": "https://example.invalid/claude-codex.png"}]
+    }
+  ]
+}

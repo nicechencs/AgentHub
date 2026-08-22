@@ -1,0 +1,7 @@
+{
+  "type": "error",
+  "error": {
+    "type": "authentication_error",
+    "message": "invalid x-api-key sk-ant-claude-codex-secret; prompt: user private input"
+  }
+}

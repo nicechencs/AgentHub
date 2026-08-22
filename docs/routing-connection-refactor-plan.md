@@ -24,7 +24,7 @@
 - **`bridge/host/dispatch.rs`（~1573 行）是上帝模块**：鉴权重复调用、admission、按 `(surface × upstream protocol)` 的塑形分支、上游 POST、OAuth 401 reload、Grok 身份/encrypted-reasoning 特例、三套流编解码全部在一起。三个 handler 的 auth → overload → shutdown → read body 模板高度复制。
 - 协议内核（`bridge/protocol/{responses,chat,anthropic_messages}.rs` + `types::IrEvent` / `RetryGate`）相对干净、fixtures 厚实（`protocol/tests.rs` ~57 用例），是重构安全网。但 **Responses↔Responses passthrough 绕过 IR**，Grok 特例仍嵌在 host 而非独立 Transport。
 - **规则双真源**：capability matrix cell（`transport`/`protocol`）与 `adapter_bridge_service::LIVE_BRIDGE_RULES`（`local_surface`/`upstream protocol`）需要人工对齐；新边要改两处 + dispatch match 臂。
-- Claude 订阅 → Codex：矩阵**无 cell**，`decide_adapter_capability` 特判返回「方向已开放、fixtures 未落地」reason（工作区未提交文案已同步），无 transport、无 fixtures。
+- Claude 订阅 → Codex：`refactor/edge-rules` 已登记 experimental cell（gates 全关、`canApply=false`）+ protocol fixtures；`decide_adapter_capability` 改查表。LIVE_BRIDGE_RULES 仍无 writer 行（secret-resolver 要求 live 行必须是 applyable cell）。取证前不 bind。
 - 多账号轮询/故障切换**零实现**：`ListenerState` 单 `ResolvedAuth`；仅有同账号 401 换 token 首事件前重试一次（`RetryGate`）。
 
 ### 1.2 连接（票 / 绑定 / 账号池）
@@ -132,7 +132,7 @@ flowchart LR
 
 ### B1 matrix ↔ LIVE_BRIDGE_RULES 防漂移收口
 
-- **状态**：未开始
+- **状态**：进行中（`refactor/edge-rules`：登记表 `LOCAL_BRIDGE_EDGES` 为重叠字段唯一声明点）
 - **目标**：消除「新边改两处」的双真源风险：为每个 `LocalBridge` 开放 cell 与 `LIVE_BRIDGE_RULES` 建立一致性契约测试（rule_id、上游协议、local_surface、默认模型逐项对账）；评估把 `LIVE_BRIDGE_RULES` 的键改为从 matrix cell 派生（若改动过大，本轮只做契约测试）。
 - **文件**：`services/adapter_bridge_service/mod.rs`、`domain/protocol_graph/adapter_capability_matrix.rs` 及两侧 tests。
 - **限制**：不改任何边的开放状态；已有 `open_matrix_cells_have_bind_and_apply_arms` 防漂移测试保持通过。
@@ -140,8 +140,8 @@ flowchart LR
 
 ### B2 Claude 订阅 → Codex 边落地（③，2026-08-21 改判）
 
-- **状态**：未开始（分两步：kernel/fixtures 腿可先行；实机取证后才开 bind）
-- **目标**：按 §5.4 路由开放原则落地首个改判边：下游 Responses（Codex）→ IR → 上游 Anthropic Messages OAuth（Claude 订阅）。交付：matrix 新增 experimental cell（初始 gates 关、`canApply=false`）、上游 transport（Anthropic Messages + PKCE access token 注入，refresh 按 §5.1.2 owner 分治）、正反例 fixtures、`LIVE_BRIDGE_RULES` 新行、`decide_adapter_capability` 特判改为查表。取证通过后按 §7.1 门槛逐 gate 打开。
+- **状态**：进行中（kernel/fixtures 腿：cell + 登记表行 + protocol fixtures；`canApply` 仍关。实机取证后才开 bind）
+- **目标**：按 §5.4 路由开放原则落地首个改判边：下游 Responses（Codex）→ IR → 上游 Anthropic Messages OAuth（Claude 订阅）。交付：matrix 新增 experimental cell（初始 gates 关、`canApply=false`）、上游 transport（Anthropic Messages + PKCE access token 注入，refresh 按 §5.1.2 owner 分治）、正反例 fixtures、登记表新行（live writer 行等 `canApply` 打开后再进 `LIVE_BRIDGE_RULES`）、`decide_adapter_capability` 特判改为查表。取证通过后按 §7.1 门槛逐 gate 打开。
 - **文件**：`adapter_capability_matrix.rs`、`adapter_bridge_service`、`bridge/protocol/fixtures/`、`adapter_route_service` tests、`src/dev/mocks/adapter/*`（reason/contract 锁步）、`provider-api-oauth-adaptation.md` §4 矩阵行。
 - **限制**：fixtures 未取证前 `canApply=false`（reason 保持「规则与 fixtures 未落地」口径）；thinking 无可验证签名时降级关闭；不写 Claude OAuth token 进 Codex 配置。
 - **验收**：`cargo test -p agenthub-core adapter` + `cargo test -p agenthub-core protocol` 全绿；plan 对该边显示 experimental/preview 与正确 reason；mock 契约 JSON 同步（`pnpm test -- adapter`）。

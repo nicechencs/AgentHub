@@ -879,7 +879,7 @@
       }
     },
     {
-      "id": "claude-subscription-to-codex-product-closed",
+      "id": "claude-subscription-to-codex-preview",
       "source": {
         "kind": "account",
         "agentId": "claude",
@@ -891,14 +891,14 @@
       },
       "target": "codex",
       "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
+        "route": "local_bridge",
+        "support": "experimental",
         "canApply": false,
         "applyPath": "rejected",
-        "ruleId": null,
-        "gateKind": "unsupported",
+        "ruleId": "claude-subscription-to-codex-v1",
+        "gateKind": "preview_only",
         "reason": "Claude 订阅 → Codex：本机转发方向已开放，规则与 fixtures 未落地，暂不能绑定。",
-        "reusePath": "none"
+        "reusePath": "local_bridge"
       }
     },
     {
@@ -1114,13 +1114,13 @@
       },
       "target": "codex",
       "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
+        "route": "local_bridge",
+        "support": "experimental",
         "canApply": false,
         "applyPath": "rejected",
-        "ruleId": null,
-        "gateKind": "unsupported",
-        "reusePath": "none",
+        "ruleId": "claude-subscription-to-codex-v1",
+        "gateKind": "preview_only",
+        "reusePath": "local_bridge",
         "reason": "Claude 订阅 → Codex：本机转发方向已开放，规则与 fixtures 未落地，暂不能绑定。"
       }
     },

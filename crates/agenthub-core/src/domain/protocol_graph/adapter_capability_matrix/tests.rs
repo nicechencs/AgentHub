@@ -645,3 +645,57 @@ fn grok_subscription_to_kimi_and_dsh_stay_closed_with_clear_reasons() {
         "closed copy must name Codex official login as the supported upstream"
     );
 }
+
+#[test]
+fn local_bridge_matrix_cells_are_exactly_the_catalog() {
+    let mut from_catalog: Vec<_> = LOCAL_BRIDGE_EDGES
+        .iter()
+        .map(|edge| edge.to_cell())
+        .collect();
+    let mut from_matrix: Vec<_> = ADAPTER_CAPABILITY_MATRIX
+        .iter()
+        .copied()
+        .filter(|cell| cell.route == AdapterRoute::LocalBridge)
+        .collect();
+    from_catalog.sort_by_key(|cell| (cell.rule_id, format!("{:?}", cell.key.credential)));
+    from_matrix.sort_by_key(|cell| (cell.rule_id, format!("{:?}", cell.key.credential)));
+    assert_eq!(
+        from_catalog, from_matrix,
+        "every LocalBridge matrix cell must be LocalBridgeEdge::to_cell(); do not hand-write cells"
+    );
+}
+
+#[test]
+fn claude_subscription_to_codex_is_preview_local_bridge_from_catalog() {
+    let cell = lookup_adapter_capability(&CLAUDE_CODEX_EDGE.to_cell().key).expect("cell");
+    assert_eq!(cell.rule_id, CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID);
+    assert_eq!(
+        cell.key.transport,
+        AdapterUpstreamTransport::LocalBridgeAnthropicMessages
+    );
+    assert_eq!(cell.key.protocol, AdapterTargetProtocol::OpenAiResponses);
+    assert!(!cell.can_apply);
+    assert_eq!(cell.gates, AdapterCapabilityGates::all_closed());
+    assert_eq!(cell.reason, CLAUDE_SUBSCRIPTION_TO_CODEX_REASON);
+
+    let decision = decide_adapter_capability(
+        AdapterSourceProduct::ClaudeSubscription,
+        AdapterCredentialClass::OauthOther,
+        AgentId::Codex,
+    )
+    .public_surface();
+    assert_eq!(decision.route, AdapterRoute::LocalBridge);
+    assert_eq!(decision.support, AdapterSupport::Experimental);
+    assert!(!decision.can_apply);
+    assert_eq!(decision.gate_kind, AdapterGateKind::PreviewOnly);
+    assert_eq!(decision.rule_id, Some(CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID));
+    assert_eq!(decision.reason, CLAUDE_SUBSCRIPTION_TO_CODEX_REASON);
+    assert_eq!(
+        adapter_maturity_from_decision(&decision),
+        AdapterMaturity::Preview
+    );
+    assert!(
+        !decision.reason.contains("产品不做"),
+        "Claude → Codex is ③-open; reason must not say product-closed"
+    );
+}

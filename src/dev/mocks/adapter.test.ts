@@ -476,11 +476,15 @@ describe('mock adapter route preview', () => {
     });
     expect(claudeToCodex).toMatchObject({
       analysis: {
-        route: 'unsupported',
+        route: 'local_bridge',
+        support: 'experimental',
         reason: CLAUDE_SUBSCRIPTION_TO_CODEX_REASON,
+        ruleId: 'claude-subscription-to-codex-v1',
+        gateKind: 'preview_only',
       },
       canApply: false,
-      reusePath: 'none',
+      maturity: 'preview',
+      reusePath: 'local_bridge',
     });
   });
 

@@ -92,6 +92,9 @@ export const GROK_SUBSCRIPTION_TO_KIMI_REASON =
 export const GROK_SUBSCRIPTION_TO_DSH_REASON =
   'DSH 只认 DeepSeek 官方 Key，接下不了这份 Grok 登录。';
 
+/** Keep in lockstep with `CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID` in agenthub-core. */
+export const CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID = 'claude-subscription-to-codex-v1';
+
 /** Keep in lockstep with `CLAUDE_SUBSCRIPTION_TO_CODEX_REASON` in agenthub-core. */
 export const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON =
   'Claude 订阅 → Codex：本机转发方向已开放，规则与 fixtures 未落地，暂不能绑定。';

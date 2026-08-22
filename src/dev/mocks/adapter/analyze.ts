@@ -8,6 +8,7 @@ import { classify } from './classify';
 import {
   AGENT_NO_WRITER_REASON,
   CLAUDE_SUBSCRIPTION_TO_CODEX_REASON,
+  CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID,
   CODEX_CLAUDE_RULE_ID,
   CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON,
   CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
@@ -115,7 +116,21 @@ export function analyze(
   }
 
   if (source === 'claude_subscription' && request.targetAgentId === 'codex') {
-    return unsupported(CLAUDE_SUBSCRIPTION_TO_CODEX_REASON, compatibilityEvidence);
+    return {
+      route: 'local_bridge',
+      support: 'experimental',
+      reason: CLAUDE_SUBSCRIPTION_TO_CODEX_REASON,
+      actions: [],
+      limitations: [
+        '会把 Codex 指到本机路由；上游 Claude 订阅 token 不会写入 Codex。',
+        '实验性协议桥接：下游 Responses，上游 Anthropic Messages OAuth。',
+        '规则与 fixtures 尚未完成取证，暂不能绑定；thinking 无签名时降级关闭。',
+        'Claude access token 过期后需重新同步登录；Hub 本轮不自动 refresh。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId: CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID,
+      gateKind: 'preview_only',
+    };
   }
   if (source === 'grok_xai_subscription' && request.targetAgentId === 'kimi') {
     return unsupported(GROK_SUBSCRIPTION_TO_KIMI_REASON, compatibilityEvidence);

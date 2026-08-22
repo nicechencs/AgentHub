@@ -185,7 +185,7 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 | Grok OAuth Account（有 `access_token`） | Claude Code | experimental `local_bridge` | **③ 已可 experimental bind**；`ruleId=grok-subscription-to-claude-v1`，上游 `https://cli-chat-proxy.grok.com/v1` xAI Responses（`XaiResponsesOauth`）、默认 `grok-4.5`；只写 Claude loopback env，上游 token 不写入 Claude |
 | Grok OAuth Account（有 `access_token`） | Codex | experimental `local_bridge` | **③ 已可 experimental bind**；`ruleId=grok-subscription-to-codex-v1`，上游 cli-chat-proxy Responses；只写 Codex loopback，上游 token 不写入 Codex |
 | Codex OAuth Account（`auth_json`） | Grok | experimental `local_bridge` | **③ 已可 experimental bind**；`ruleId=codex-subscription-to-grok-v1`，Grok `api_backend=responses` 指向本机 loopback；上游 Codex token 不写入 Grok |
-| Claude OAuth Account | Codex | `unsupported` → **改判可路由（规划）** | **2026-08-21 拍板：不再产品关闭**。原 reason「Codex 不吃 Anthropic PKCE」仅适用于 ② 写原生槽；改走 ③ 本机路由（上游 Anthropic Messages OAuth，下游 Responses），方向开放但**尚未实现**：`canApply=false` 的原因从「产品关闭」改为「规则与 fixtures 未落地」。落地前 UI 展示为可预览 + 替代路径 |
+| Claude OAuth Account | Codex | experimental `local_bridge`（preview） | **③ 方向已开放，暂不能 bind**。`ruleId=claude-subscription-to-codex-v1`，gates 全关、`canApply=false`；reason 为「规则与 fixtures 未落地」。下游 Responses → 上游 Anthropic Messages OAuth。取证通过前不打开 apply；thinking 无签名时降级关闭 |
 | Kimi managed OAuth（Kimi CLI `/login`、Pi `kimi-coding`） | 任意 | `unsupported` | **产品不做**；不得升成会员 Key，不得 ①/②/③，不得反代。Kimi 接到其他 Agent 只用会员 API Key |
 | 其他来源、目标或未标记记录 | 任意 | `unsupported` | 不产生写操作 |
 
