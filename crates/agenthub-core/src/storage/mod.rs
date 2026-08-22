@@ -59,6 +59,8 @@ mod tests;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 use rusqlite::Connection;
 
@@ -73,7 +75,7 @@ pub struct Database {
 
 impl Database {
     pub fn open(db_path: &Path) -> Result<Self> {
-        match Self::open_inner(db_path) {
+        match Self::open_with_lock_retry(db_path) {
             Ok(db) => {
                 crate::logging::log_info(
                     crate::logging::targets::STORAGE,
@@ -89,18 +91,38 @@ impl Database {
         }
     }
 
+    fn open_with_lock_retry(db_path: &Path) -> Result<Self> {
+        for attempt in 0..migrations::MIGRATION_RETRY_ATTEMPTS {
+            match Self::open_inner(db_path) {
+                Ok(db) => return Ok(db),
+                Err(error)
+                    if migrations::is_busy(&error)
+                        && attempt + 1 < migrations::MIGRATION_RETRY_ATTEMPTS =>
+                {
+                    thread::sleep(migrations::MIGRATION_RETRY_DELAY);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        unreachable!("database open retry loop always returns")
+    }
+
     fn open_inner(db_path: &Path) -> Result<Self> {
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let conn = Connection::open(db_path)?;
+        // The C busy handler is what SQLite actually waits on; keep the PRAGMA
+        // as well so `PRAGMA busy_timeout` readers observe the same value.
+        conn.busy_timeout(Duration::from_millis(5000))?;
         conn.execute_batch(
             r#"
             PRAGMA foreign_keys = ON;
             PRAGMA busy_timeout = 5000;
-            PRAGMA journal_mode = WAL;
             "#,
         )?;
+        set_wal_journal_mode(&conn)?;
         let db = Self {
             conn: Arc::new(Mutex::new(conn)),
         };
@@ -189,6 +211,27 @@ impl Database {
         }
         Ok(s)
     }
+}
+
+fn set_wal_journal_mode(conn: &Connection) -> Result<()> {
+    for attempt in 0..migrations::MIGRATION_RETRY_ATTEMPTS {
+        // `sqlite3_exec` / execute_batch consumes the journal_mode result row.
+        match conn.execute_batch("PRAGMA journal_mode = WAL;") {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                let error = AppError::from(error);
+                if migrations::is_busy(&error)
+                    && attempt + 1 < migrations::MIGRATION_RETRY_ATTEMPTS
+                {
+                    thread::sleep(migrations::MIGRATION_RETRY_DELAY);
+                    continue;
+                }
+                return Err(error);
+            }
+        }
+    }
+
+    unreachable!("WAL journal_mode retry loop always returns")
 }
 
 fn parse_stored_bool(raw: &str) -> bool {

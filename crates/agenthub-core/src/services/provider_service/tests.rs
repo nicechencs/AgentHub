@@ -8,6 +8,7 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use crate::services::LiveWriteAuthority;
 use tempfile::tempdir;
 
 struct FakeAdapter {
@@ -1198,12 +1199,12 @@ fn switch_fails_closed_when_live_dependencies_or_lock_are_unavailable() {
         agent: AgentId::Claude,
         raw: json!({"env": {}}),
     };
-    let (_root, _db, svc, adapter, backups_root) = live_svc(AgentId::Claude, live);
+    let (_root, _db, svc, adapter, _backups_root) = live_svc(AgentId::Claude, live);
     svc.create(&input("c1", AgentId::Claude, "Current", true))
         .unwrap();
-    let lock_dir = backups_root.parent().unwrap().join("locks");
-    std::fs::create_dir_all(&lock_dir).unwrap();
-    std::fs::write(lock_dir.join("provider-claude.lock"), b"held").unwrap();
+    let _held = LiveWriteAuthority::from_database(&_db)
+        .acquire(AgentId::Claude)
+        .unwrap();
 
     let error = svc.switch("c1", AgentId::Claude).unwrap_err();
     assert_eq!(error.code(), "provider.lock");
@@ -1257,10 +1258,10 @@ fn import_live_uses_same_agent_lock_and_unregistered_agents_fail_closed() {
         agent: AgentId::Claude,
         raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "live"}}),
     };
-    let (_root, _db, svc, _adapter, backups_root) = live_svc(AgentId::Claude, live);
-    let lock_dir = backups_root.parent().unwrap().join("locks");
-    std::fs::create_dir_all(&lock_dir).unwrap();
-    std::fs::write(lock_dir.join("provider-claude.lock"), b"held").unwrap();
+    let (_root, _db, svc, _adapter, _backups_root) = live_svc(AgentId::Claude, live);
+    let _held = LiveWriteAuthority::from_database(&_db)
+        .acquire(AgentId::Claude)
+        .unwrap();
     assert_eq!(
         svc.import_live(AgentId::Claude, None).unwrap_err().code(),
         "provider.lock"
@@ -1482,7 +1483,10 @@ fn provider_apply_failure_restores_active_account_counterpart_and_binding() {
     let error = svc.upsert(&update).unwrap_err();
     assert_eq!(error.code(), "test.write");
     assert_eq!(svc.get("c1", None).unwrap(), provider_before);
-    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(
+        svc.connections.get_active(AgentId::Claude).unwrap(),
+        Some(binding_before)
+    );
     assert_eq!(
         account_repo.get_by_id(&account_before.id).unwrap().unwrap(),
         account_before

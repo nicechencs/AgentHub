@@ -5,8 +5,8 @@ use rusqlite::{Connection, Error as SqliteError, Transaction, TransactionBehavio
 
 use crate::error::{AppError, Result};
 
-const MIGRATION_RETRY_ATTEMPTS: usize = 3;
-const MIGRATION_RETRY_DELAY: Duration = Duration::from_millis(50);
+pub(super) const MIGRATION_RETRY_ATTEMPTS: usize = 16;
+pub(super) const MIGRATION_RETRY_DELAY: Duration = Duration::from_millis(50);
 
 const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_init", include_str!("0001_init.sql")),
@@ -74,12 +74,13 @@ pub fn run(conn: &Connection) -> Result<()> {
 
 /// Run the pending migration list while holding one SQLite write transaction.
 ///
-/// `BEGIN IMMEDIATE` makes the schema check and every DDL/DML/version marker
-/// update observe one serialized writer. If any migration fails, dropping the
+/// `BEGIN EXCLUSIVE` makes the schema check and every DDL/DML/version marker
+/// update observe one serialized writer, including against concurrent readers
+/// still converting the file to WAL. If any migration fails, dropping the
 /// transaction rolls back the complete batch, including `schema_migrations`
 /// creation and all earlier migration steps in this invocation.
 fn run_once(conn: &Connection, migrations: &[(&str, &str)]) -> Result<()> {
-    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Exclusive)?;
     tx.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -128,15 +129,31 @@ fn apply_migration_in_transaction(
     Ok(())
 }
 
-fn is_busy(error: &AppError) -> bool {
+pub(super) fn is_busy(error: &AppError) -> bool {
+    match error {
+        AppError::Db(err) => sqlite_error_is_busy(err),
+        AppError::Io(err) => io_error_is_lock(err),
+        _ => false,
+    }
+}
+
+fn sqlite_error_is_busy(error: &SqliteError) -> bool {
+    match error {
+        SqliteError::SqliteFailure(sqlite_error, _) => matches!(
+            sqlite_error.code,
+            rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+        ),
+        _ => false,
+    }
+}
+
+fn io_error_is_lock(error: &std::io::Error) -> bool {
     matches!(
-        error,
-        AppError::Db(SqliteError::SqliteFailure(sqlite_error, _))
-            if matches!(
-                sqlite_error.code,
-                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
-            )
-    )
+        error.kind(),
+        std::io::ErrorKind::WouldBlock
+            | std::io::ErrorKind::TimedOut
+            | std::io::ErrorKind::Interrupted
+    ) || matches!(error.raw_os_error(), Some(11) | Some(16) | Some(32) | Some(33))
 }
 
 #[cfg(test)]

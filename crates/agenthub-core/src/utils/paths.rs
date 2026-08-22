@@ -100,6 +100,11 @@ pub fn agent_home_is_default(agent: AgentId) -> Result<bool> {
     crate::platform::paths::agent_home_is_default(agent)
 }
 
+/// Whether the resolved live config directory is the contribution's fixed default.
+pub fn agent_config_dir_is_default(agent: AgentId) -> Result<bool> {
+    crate::platform::paths::agent_config_dir_is_default(agent)
+}
+
 /// Directory to open in the OS file manager for manual verification.
 ///
 /// Prefer the directory that actually holds settings/credentials when it differs
@@ -218,7 +223,7 @@ pub fn validate_default_agent_config_purge_target(
 ) -> Result<PathBuf> {
     let requested = agent_home(agent)?;
     let display = normalized_display_path(&requested);
-    if !agent_home_is_default(agent)? {
+    if !agent_home_is_default(agent)? || !agent_config_dir_is_default(agent)? {
         return Err(AppError::InvalidArg(format!(
             "unsafe config purge path {}: custom agent config directory overrides cannot be purged",
             display.display()

@@ -36,4 +36,14 @@ pub trait AgentPathContribution: Send + Sync {
     fn config_dir(&self) -> Result<PathBuf> {
         self.home_dir()
     }
+
+    /// Whether `config_dir` is the contribution's fixed default.
+    ///
+    /// Contributions that honor an agent-owned environment override for the
+    /// live config directory must return `false` whenever that override is
+    /// present, even if it happens to point at the default path. Destructive
+    /// purge uses this together with [`Self::home_dir_is_default`].
+    fn config_dir_is_default(&self) -> bool {
+        true
+    }
 }

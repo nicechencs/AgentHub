@@ -150,6 +150,10 @@ impl LifecycleInstallExecutor for BuiltinLifecycleInstallExecutor {
         require_contribution_matches(key, contribution)?;
         if let Some(agent) = legacy_builtin_agent_id(key) {
             if purge_config {
+                crate::utils::paths::validate_default_agent_config_purge_target(
+                    agent,
+                    actual_data_dir,
+                )?;
                 let guard = self.authority.acquire(agent)?;
                 match self.backups.snapshot_with_guard(
                     &guard,

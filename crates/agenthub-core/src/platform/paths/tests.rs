@@ -261,3 +261,63 @@ fn default_agent_purge_accepts_only_fixed_home() {
         crate::utils::paths::default_agent_home(AgentId::Codex).unwrap()
     );
 }
+
+#[test]
+fn default_agent_purge_rejects_pi_coding_agent_dir_override() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let data_dir = tempfile::tempdir().unwrap();
+    let prev = std::env::var_os("PI_CODING_AGENT_DIR");
+    std::env::set_var(
+        "PI_CODING_AGENT_DIR",
+        if cfg!(windows) {
+            r"D:\tmp\agenthub-pi-purge-test"
+        } else {
+            "/tmp/agenthub-pi-purge-test"
+        },
+    );
+    let error = validate_default_agent_config_purge_target(AgentId::Pi, data_dir.path())
+        .expect_err("PI_CODING_AGENT_DIR must fail closed before purge");
+    restore_env("PI_CODING_AGENT_DIR", prev);
+    assert_eq!(error.code(), "invalid_arg");
+    assert!(error.to_string().contains("custom agent config"));
+}
+
+#[test]
+fn default_agent_purge_rejects_workbuddy_config_dir_overrides() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let data_dir = tempfile::tempdir().unwrap();
+    let prev_wb = std::env::var_os("WORKBUDDY_CONFIG_DIR");
+    let prev_cb = std::env::var_os("CODEBUDDY_CONFIG_DIR");
+    std::env::remove_var("CODEBUDDY_CONFIG_DIR");
+    std::env::set_var(
+        "WORKBUDDY_CONFIG_DIR",
+        if cfg!(windows) {
+            r"D:\tmp\agenthub-workbuddy-purge-test"
+        } else {
+            "/tmp/agenthub-workbuddy-purge-test"
+        },
+    );
+    let workbuddy_error =
+        validate_default_agent_config_purge_target(AgentId::WorkBuddy, data_dir.path())
+            .expect_err("WORKBUDDY_CONFIG_DIR must fail closed before purge");
+
+    std::env::remove_var("WORKBUDDY_CONFIG_DIR");
+    std::env::set_var(
+        "CODEBUDDY_CONFIG_DIR",
+        if cfg!(windows) {
+            r"D:\tmp\agenthub-codebuddy-purge-test"
+        } else {
+            "/tmp/agenthub-codebuddy-purge-test"
+        },
+    );
+    let codebuddy_error =
+        validate_default_agent_config_purge_target(AgentId::WorkBuddy, data_dir.path())
+            .expect_err("CODEBUDDY_CONFIG_DIR must fail closed before purge");
+    restore_env("WORKBUDDY_CONFIG_DIR", prev_wb);
+    restore_env("CODEBUDDY_CONFIG_DIR", prev_cb);
+
+    assert_eq!(workbuddy_error.code(), "invalid_arg");
+    assert!(workbuddy_error.to_string().contains("custom agent config"));
+    assert_eq!(codebuddy_error.code(), "invalid_arg");
+    assert!(codebuddy_error.to_string().contains("custom agent config"));
+}

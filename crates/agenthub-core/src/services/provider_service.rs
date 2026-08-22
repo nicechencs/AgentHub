@@ -283,6 +283,19 @@ impl ProviderService {
         self.update_and_snapshot(input)
     }
 
+    /// Persist a provider row and its active binding without writing live config.
+    ///
+    /// Adapter-apply compensation uses this so a later live-restore failure cannot
+    /// roll the pool snapshot back through [`Self::update_with_guard`].
+    pub(crate) fn update_pool_with_guard(
+        &self,
+        guard: &ProviderLiveSagaGuard<'_>,
+        input: &ProviderInput,
+    ) -> Result<Provider> {
+        self.validate_live_saga_guard(guard, input.agent_id)?;
+        self.update_inner(input)
+    }
+
     fn update_and_snapshot(&self, input: &ProviderInput) -> Result<Provider> {
         let live_saga = self.prepare_current_provider_live(
             input.agent_id,
@@ -367,16 +380,27 @@ impl ProviderService {
         self.db.with_conn(|conn| {
             let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
             let agent = input.agent_id;
+            let existing = match provider_get_by_id_conn(&tx, &input.id)? {
+                Some(existing) if existing.agent_id != input.agent_id => {
+                    return Err(AppError::InvalidArg(format!(
+                        "provider agent_id is immutable (id={}, existing={}, requested={})",
+                        input.id,
+                        existing.agent_id.as_str(),
+                        input.agent_id.as_str()
+                    )));
+                }
+                Some(existing) => Some(existing),
+                None if upsert => None,
+                None => {
+                    return Err(AppError::NotFound(format!(
+                        "provider not found: {}",
+                        input.id
+                    )));
+                }
+            };
             let providers = provider_list_for_agent_conn(&tx, agent)?;
             let accounts = account_list_for_agent_conn(&tx, agent)?;
             let binding = get_provider_binding_row(&tx, agent)?;
-            let existing = providers.iter().find(|row| row.id == input.id).cloned();
-            if !upsert && existing.is_none() {
-                return Err(AppError::NotFound(format!(
-                    "provider not found: {}",
-                    input.id
-                )));
-            }
             let target_was_new = existing.is_none();
             let expected_updated_at = existing.as_ref().map(|row| row.updated_at.clone());
             freeze_provider_mutation_plan(

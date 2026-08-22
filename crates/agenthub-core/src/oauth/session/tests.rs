@@ -1,5 +1,4 @@
 use super::*;
-use super::*;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -23,14 +22,16 @@ fn session(state: &str, created_at: Instant) -> OAuthSession {
 fn expired_sessions_are_purged_on_read() {
     let store = SessionStore::new();
     let state = "expired-session";
-    store
-        .insert(session(
-            state,
-            Instant::now() - TTL - Duration::from_secs(1),
-        ))
-        .unwrap();
+    let created_at = Instant::now();
+    store.insert(session(state, created_at)).unwrap();
 
-    let error = store.get_info(state).unwrap_err();
+    // Adding TTL never underflows. Subtracting TTL from Instant::now() panics
+    // when the clock origin is within one TTL of now (fresh boot / short-lived
+    // hosts) and must not be used to construct an expired session.
+    let expired_at = created_at
+        .checked_add(TTL + Duration::from_secs(1))
+        .expect("OAuth TTL offset should fit in Instant");
+    let error = store.get_info_at(state, expired_at).unwrap_err();
     assert_eq!(error.code(), "not_found");
 }
 

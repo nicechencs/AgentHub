@@ -55,6 +55,19 @@ pub fn agent_home_is_default(agent: AgentId) -> Result<bool> {
         .home_dir_is_default())
 }
 
+/// Whether the resolved live config directory came from its fixed default.
+pub fn agent_config_dir_is_default(agent: AgentId) -> Result<bool> {
+    Ok(builtin_path_registry()
+        .get(agent)
+        .ok_or_else(|| {
+            crate::error::AppError::NotFound(format!(
+                "no path contribution for agent {}",
+                agent.as_str()
+            ))
+        })?
+        .config_dir_is_default())
+}
+
 /// Resolve directory to open for manual verification (may differ from home).
 pub fn resolve_agent_config_dir(agent: AgentId) -> Result<PathBuf> {
     builtin_path_registry()

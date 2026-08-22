@@ -430,6 +430,53 @@ fn custom_agent_home_purge_fails_before_external_executor() {
     assert!(calls.lock().unwrap().is_empty());
 }
 
+fn purge_must_fail_closed_for_env_override(agent: AgentId, key: &str) {
+    let previous = std::env::var_os(key);
+    let custom = tempfile::tempdir().unwrap();
+    std::env::set_var(key, custom.path());
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let executor = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = crate::storage::Database::open(&db_dir.path().join("ah.db")).unwrap();
+    let error = uninstall_agent(&AdapterRegistry::new(), &db, agent, true, &executor)
+        .expect_err("custom config roots must fail closed");
+
+    match previous {
+        Some(value) => std::env::set_var(key, value),
+        None => std::env::remove_var(key),
+    }
+    assert_eq!(error.code(), "invalid_arg");
+    assert!(error.to_string().contains("custom agent config"));
+    assert!(calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn custom_pi_config_dir_purge_fails_before_external_executor() {
+    purge_must_fail_closed_for_env_override(AgentId::Pi, "PI_CODING_AGENT_DIR");
+}
+
+#[test]
+fn custom_workbuddy_config_dir_purge_fails_before_external_executor() {
+    purge_must_fail_closed_for_env_override(AgentId::WorkBuddy, "WORKBUDDY_CONFIG_DIR");
+}
+
+#[test]
+fn custom_codebuddy_config_dir_purge_fails_before_external_executor() {
+    let previous_wb = std::env::var_os("WORKBUDDY_CONFIG_DIR");
+    std::env::remove_var("WORKBUDDY_CONFIG_DIR");
+    purge_must_fail_closed_for_env_override(AgentId::WorkBuddy, "CODEBUDDY_CONFIG_DIR");
+    match previous_wb {
+        Some(value) => std::env::set_var("WORKBUDDY_CONFIG_DIR", value),
+        None => std::env::remove_var("WORKBUDDY_CONFIG_DIR"),
+    }
+}
+
 #[test]
 fn public_purge_entry_rejects_data_dir_unrelated_to_database_authority() {
     let db_dir = tempfile::tempdir().unwrap();
