@@ -91,7 +91,19 @@ pub struct AgentHub {
 
 impl AgentHub {
     /// Open hub with optional data-dir override (`--data-dir` / `AGENTHUB_HOME`).
+    ///
+    /// Skills stay at `~/.agents/skills` regardless of data-dir.
     pub fn open(data_dir_override: Option<&Path>) -> Result<Self> {
+        Self::open_with_skills_root(data_dir_override, None)
+    }
+
+    /// Same as [`open`], with an optional skills source root.
+    ///
+    /// `skills_root == None` uses `~/.agents/skills` (production).
+    pub fn open_with_skills_root(
+        data_dir_override: Option<&Path>,
+        skills_root: Option<&Path>,
+    ) -> Result<Self> {
         let data_dir = normalize_data_dir(&resolve_data_dir(data_dir_override)?)?;
         ensure_data_layout(&data_dir)?;
         // STORAGE module logs open success/failure (including migrate).
@@ -142,7 +154,10 @@ impl AgentHub {
             accounts.clone(),
         );
         let backups = BackupService::new(db.clone(), registry.clone(), backups_dir(&data_dir));
-        let skills_root = home_dir()?.join(".agents").join("skills");
+        let skills_root = match skills_root {
+            Some(path) => path.to_path_buf(),
+            None => home_dir()?.join(".agents").join("skills"),
+        };
         let skills = SkillService::with_db_and_target_registry(
             skills_root,
             registry.clone(),

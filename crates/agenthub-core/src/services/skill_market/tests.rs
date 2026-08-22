@@ -5,9 +5,9 @@ use crate::services::SkillService;
 use crate::storage::Database;
 
 fn test_skills() -> (tempfile::TempDir, SkillService) {
-    let dir = tempfile::tempdir().unwrap();
+    let (dir, source) = crate::utils::test_temp::isolated_skills_root();
     let db = Database::open(&dir.path().join("skills.db")).unwrap();
-    let skills = SkillService::with_db(dir.path().join("skills"), register_all(), db);
+    let skills = SkillService::with_db(source, register_all(), db);
     (dir, skills)
 }
 
