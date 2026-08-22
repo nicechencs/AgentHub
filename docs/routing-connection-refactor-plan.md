@@ -1,6 +1,6 @@
 # 路由 × 连接重构：任务拆分与派工计划
 
-> 状态：**执行中（2026-08-22 制定；同日第一波 A1–A3、B1、B2 kernel 腿、C1、D1–D3 已验收合入 dev）**。待拍板：A4 设计稿（仓库根 `DESIGN.md`）、C2 RFC（[multi-account-routing-rfc.md](multi-account-routing-rfc.md)）。未开始：C3、B2 实机取证。全部完成后按 [docs/README.md](README.md) 管理规则回写稳定文档并删除本文。
+> 状态：**执行中（2026-08-22 制定；同日第一波 A1–A3、B1、B2 kernel 腿、C1、D1–D3 已验收合入 dev；A4 设计稿与 C2 RFC 已拍板，第二波 P5/P6/P7 派工中）**。未开始：C3、B2 实机取证。全部完成后按 [docs/README.md](README.md) 管理规则回写稳定文档并删除本文。
 > 真源关系：**本文只做任务拆分，不新增决策**。产品与协议决策以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)（§5.4 表面统一、§5.5 多账号轮询均为 2026-08-21 拍板的规划）为准；领域模型以 [connection-binding-model.md](connection-binding-model.md) 为准；模块化债以 [modularity-improvement.md](modularity-improvement.md) 为准；sidecar 迁移契约以 [adapter-sidecar-design.md](adapter-sidecar-design.md) 为准；实现状态以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
 > 依据：2026-08-22 对 `bridge/`、`adapter_route_service/`、`protocol_graph/`、`ticket_*` / `account_service/` / `connection_service` 及相关文档的三路深度审查（结论摘录见 §1–§2；审查为只读，未改代码）。
 
@@ -123,7 +123,7 @@ flowchart LR
 
 ### A4 统一网关 listener（§5.4 落地主件）
 
-- **状态**：设计稿已出并合入 dev（2026-08-22，仓库根 `DESIGN.md`；含双听兼容迁移、bearer→边识别、401/404 顺序契约改写、per-edge admission）。**等拍板后再实施**。
+- **状态**：设计稿已拍板（2026-08-22，仓库根 `DESIGN.md`；双听兼容迁移、bearer→边识别、401/404 顺序契约改写、per-edge admission）。**实施派工中**（[派工 P5](routing-connection-dispatch-prompts.md)，分支 `refactor/gateway-listener`）。
 - **目标**：从「一 profile 一 listener 一 surface」演进为拍板的「一个网关进程内三种对话端点 + `/v1/models`」：多 profile 共享统一 listener，local bearer → 边（profile）识别，端点 → surface 分派；错 surface 404 契约改写为「bearer 对应边不服务该端点」的等价拒绝。设计稿必须回答：端口与已写入目标配置的兼容迁移（存量 profile 写的是各自端口的 loopback URL）、`/v1/models` 按 bearer 合成、health 语义、并发 admission 从 per-listener 改 per-edge。
 - **文件**：`bridge/host/{lifecycle,http,dispatch,surface}.rs`、`bridge/runtime.rs`、`adapter_bridge_service`（投影 URL）、`bridge/tests.rs`（契约整体改写）。
 - **限制**：仅 loopback；有绑定才起，不默认常驻；不因表面统一打开任何边的 `canApply`；存量绑定不得因升级失联（需迁移或兼容期双听方案，设计稿里定）。
@@ -157,7 +157,7 @@ flowchart LR
 
 ### C2 多账号轮询与故障切换运行时（§5.5 主件）
 
-- **状态**：设计稿已出并合入 dev（[multi-account-routing-rfc.md](multi-account-routing-rfc.md)，**拍板前不落运行时**）。稿内选定成员存储方案 C（运行时纯读模型），矩阵加 `multi_account` 维，RetryGate 与切号闸正交。
+- **状态**：RFC 已拍板（[multi-account-routing-rfc.md](multi-account-routing-rfc.md)）。**实施派工中**（[派工 P6](routing-connection-dispatch-prompts.md)，分支 `refactor/multi-account-runtime`，**须待 P5 合入 dev 后开工**）。稿内选定成员存储方案 C（运行时纯读模型），矩阵加 `multi_account` 维，RetryGate 与切号闸正交。
 - **目标**：`local_bridge` 运行时支持同票面多成员：`BridgeStartSpec` 从单 `ResolvedAuth` 扩展为有序成员列表；新增 AccountPicker（固定顺序轮询游标、成员健康态 `Renewable`/`NeedsLogin`、失效隔离）；请求边界 FSM——新请求在请求边界选号，**切换仅限首个有效流事件前且单请求最多一次**，与既有同账号 401 reload 正交合入；绑定语义扩展（`bind` 后 attach 成员或 profile 多 `source_id`，设计稿定）。每请求日志记**实际承接账号**（`account_id` 字段），上游身份头/会话 seed 按实际承接账号生成。
 - **文件**：`bridge/runtime.rs`、`bridge/host/{dispatch,transport}.rs`、`services/adapter_bridge_service/*`、`storage/`（如需 profile 成员存储）、`src-tauri/adapter_bridge_controller.rs`（secret 解析多成员）、两侧 tests。
 - **限制**：仅本人账号、仅 loopback；负载均衡不做；每成员 refresh 独立 single-flight（owner 分治不变，§5.1.2）；失效只标该成员，不向调用方暴露其余账号；每条边的轮询支持仍需随 fixtures 取证后才开（矩阵可加 multi-account 维度或按边白名单，设计稿定）。
