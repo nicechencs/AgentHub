@@ -352,7 +352,7 @@ Claude Code
 
 ### 5.4 本机路由下游表面统一（规划）
 
-> 状态：**2026-08-21 拍板的规划方向，未实现**。本节只描述 `local_bridge` 的目标表面与程序结构，不改变任何边的 `canApply`；每条边仍走 `plan()` + capability matrix。
+> 状态：**2026-08-21 拍板的规划方向，未实现**。本节只描述 `local_bridge` 的目标表面与程序结构，不改变任何边的 `canApply`；每条边仍走 `plan()` + capability matrix。实施任务拆分见 [routing-connection-refactor-plan.md](routing-connection-refactor-plan.md)（泳道 A / B）。
 >
 > **路由开放原则（2026-08-21 拍板）**：③ 本机转发对已登记票面**方向开放**，不再把「不是 API Key」或「订阅接到另一家工具」写成产品关闭。② 写对方原生 OAuth 槽仍须目标自己认这套登录，不能类推。国产 OAuth 仍产品关闭（硬规则 7）。方向开放 ≠ 立即可写：每条新边仍须登记票面、实现 transport、fixtures 取证后才 `canApply=true`。禁止导出 token、公网监听、转售。首个按此原则改判的边是 Claude 订阅 → Codex（原关闭是因为 ② 写 Codex 原生槽；改走 ③ 后待落地，见 [product-decisions.md](product-decisions.md)）。
 
@@ -405,7 +405,7 @@ Claude Code
 
 ### 5.5 多账号并发路由：轮询与故障切换（规划）
 
-> 状态：**2026-08-21 拍板的产品方向，未实现**。适用于 ③ 本机路由的各边；② 写原生槽与 ① 直连不涉及。
+> 状态：**2026-08-21 拍板的产品方向，未实现**。适用于 ③ 本机路由的各边；② 写原生槽与 ① 直连不涉及。实施任务拆分见 [routing-connection-refactor-plan.md](routing-connection-refactor-plan.md)（泳道 C）。
 
 同一票面可挂多个自己的账号，网关按序自动轮询与故障切换：
 

@@ -34,6 +34,7 @@
 | [adding-an-agent.md](adding-an-agent.md) | 新增 Agent 适配器清单；`accepts[]` 须登记 wire 协议 **和** OAuth 契约槽 |
 | [deepseek-harness-integration.md](deepseek-harness-integration.md) | **DeepSeek Harness（`dsh`）**：DeepSeek API 走直接改配置；DSH 不是本机转发。P1–P5 已落地；StructuredStream 仍 Planned |
 | [tray-background-modes.md](tray-background-modes.md) | **托盘后台模式**：低内存后台 vs 隐藏界面；hide 不降内存的原因、三档设置设计与实施要点（**未来优化点，未实施**，不派生当前任务） |
+| [routing-connection-refactor-plan.md](routing-connection-refactor-plan.md) | **路由 × 连接重构任务拆分**（2026-08-22 制定，**未实施**）：对齐 §5.4 表面统一与 §5.5 多账号轮询的四条泳道任务卡与派工波次；完成后回写稳定文档并删除本文 |
 | [privacy.md](privacy.md) | **发布与隐私边界**：禁止提交项、截图规范、OAuth 常量勿外泄、docs 写法 |
 
 ## 文档管理规则
