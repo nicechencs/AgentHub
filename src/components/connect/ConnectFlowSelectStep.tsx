@@ -65,10 +65,15 @@ export function FixedSourceSummary({
     ? ('label' in record ? record.label : record.name)
     : `${entry.source.kind}:${entry.source.id}`;
   const agentId = record?.agentId;
+  const attach = entry.purpose === 'route'
+    ? t('connect.dialog.attachRoute', { label })
+    : entry.purpose === 'share'
+      ? t('connect.dialog.attachShare', { label })
+      : t('connect.dialog.attachToOthers', { label });
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       {agentId ? <AgentDot agentId={agentId} size="sm" title={null} /> : null}
-      <span>{t('connect.dialog.attachToOthers', { label })}</span>
+      <span>{attach}</span>
     </span>
   );
 }
@@ -198,7 +203,11 @@ export function ConnectFlowSelectStep({
       {emptyKind.kind === 'all_infeasible' ? (
         <Notice tone="warning">
           {entry.mode === 'for-source'
-            ? t('connect.select.allInfeasibleSource')
+            ? entry.purpose === 'share'
+              ? t('connect.select.allInfeasibleShare')
+              : entry.purpose === 'route'
+                ? t('connect.select.allInfeasibleRoute')
+                : t('connect.select.allInfeasibleSource')
             : t('connect.select.allInfeasibleAgent')}
         </Notice>
       ) : null}

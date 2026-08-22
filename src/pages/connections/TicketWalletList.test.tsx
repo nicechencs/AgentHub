@@ -46,21 +46,25 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
-        onConnectTicket() {},
+        onShareTicket() {},
+        onRouteTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
       }),
     );
     expect(markup).toContain('aria-expanded="false"');
-    expect(markup).toContain('接到…');
+    expect(markup).toContain('分享');
+    expect(markup).toContain('路由');
+    expect(markup).not.toContain('接到…');
     expect(markup).toContain('详情');
     expect(markup).toContain('搜索登录或用途');
     expect(markup).toContain('aria-label="搜索登录"');
     expect(markup).toContain('pl-8');
     expect(markup).not.toContain('pl-7');
-    expect(markup).toContain('aria-label="登录类型筛选"');
+    expect(markup).not.toContain('aria-label="登录类型筛选"');
     expect(markup).toContain('1 份登录');
     expect(markup).not.toContain('钱包');
+    expect(markup).toContain('密钥授权');
     expect(markup).toContain('var(--agent-kimi)');
     expect(markup).not.toContain('●');
     expect(markup).not.toContain('○');
@@ -97,12 +101,19 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet,
-        onConnectTicket() {},
+        onShareTicket() {},
+        onRouteTicket() {},
+        onRefreshTicket() {},
+        extrasForTicket: () => ({
+          oauthAction: { kind: 'refresh-quota', label: '刷新' },
+        }),
         onEditTicket() {},
         onDeleteTicket() {},
       }),
     );
     expect(markup).toContain('ChatGPT Plus');
+    expect(markup).toContain('账号登录');
+    expect(markup).toContain('aria-label="刷新"');
     expect(markup).toContain('var(--agent-codex)');
     expect(markup).toContain('Codex（切换）');
     expect(markup).not.toContain('正用于：');
@@ -122,14 +133,17 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet,
-        onConnectTicket() {},
+        onShareTicket() {},
+        onRouteTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
       }),
     );
     expect(markup).toContain('href="/routes?profile=bridge-1"');
     expect(markup).toContain('本机路由');
-    expect(markup).toContain('接到…');
+    expect(markup).toContain('分享');
+    expect(markup).toContain('路由');
+    expect(markup).not.toContain('接到…');
   });
 
   it('shows N-member poll-pool copy on the bound ticket usage line', () => {
@@ -167,7 +181,8 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet,
-        onConnectTicket() {},
+        onShareTicket() {},
+        onRouteTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -183,7 +198,8 @@ describe('TicketWalletList details', () => {
       createElement(TicketWalletList, {
         wallet: null,
         loading: true,
-        onConnectTicket() {},
+        onShareTicket() {},
+        onRouteTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -196,7 +212,8 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: { tickets: [], bindings: [], surfaceGroups: [] },
-        onConnectTicket() {},
+        onShareTicket() {},
+        onRouteTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -204,9 +221,7 @@ describe('TicketWalletList details', () => {
     expect(markup).toContain('还没有登录');
     expect(markup).toContain('0 份登录');
     expect(markup).not.toContain('钱包');
-    expect(markup).toContain('官方登录');
-    expect(markup).toContain('API Key');
-    expect(markup).toContain('未识别');
+    expect(markup).not.toContain('aria-label="登录类型筛选"');
     expect(markup).not.toContain('钱包还没有票');
   });
 
@@ -214,8 +229,9 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
-        initialFilter: 'oauth',
-        onConnectTicket() {},
+        agentFilterId: 'grok',
+        onShareTicket() {},
+        onRouteTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -231,7 +247,8 @@ describe('TicketWalletList details', () => {
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
         installedAgentIds: ['claude'],
-        onConnectTicket() {},
+        onShareTicket() {},
+        onRouteTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
         onAddKey() {},
@@ -239,9 +256,7 @@ describe('TicketWalletList details', () => {
       }),
     );
     expect(markup).toContain('添加');
-    expect(markup).toContain('aria-label="登录类型筛选"');
-    expect(markup).toContain('全部');
-    expect(markup).toContain('API Key');
+    expect(markup).not.toContain('aria-label="登录类型筛选"');
     expect(markup).not.toContain('新 API Key');
   });
 
@@ -290,8 +305,9 @@ describe('TicketWalletList details', () => {
       renderWithTooltip(
         createElement(TicketWalletList, {
           wallet: mixed,
-          initialFilter: 'api_key',
-          onConnectTicket() {},
+          agentFilterId: 'kimi',
+          onShareTicket() {},
+        onRouteTicket() {},
           onEditTicket() {},
           onDeleteTicket() {},
         }),
@@ -302,8 +318,9 @@ describe('TicketWalletList details', () => {
       renderWithTooltip(
         createElement(TicketWalletList, {
           wallet: mixed,
-          initialFilter: 'all',
-          onConnectTicket() {},
+          agentFilterId: null,
+          onShareTicket() {},
+        onRouteTicket() {},
           onEditTicket() {},
           onDeleteTicket() {},
         }),
@@ -313,8 +330,9 @@ describe('TicketWalletList details', () => {
     const allMarkup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: mixed,
-        initialFilter: 'all',
-        onConnectTicket() {},
+        agentFilterId: null,
+        onShareTicket() {},
+        onRouteTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -421,7 +439,8 @@ describe('TicketWalletList header health chip', () => {
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
         extrasForTicket: () => ({ authLabel: '可续期·未验证' }),
-        onConnectTicket() {},
+        onShareTicket() {},
+        onRouteTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
       }),

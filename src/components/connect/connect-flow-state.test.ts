@@ -53,6 +53,7 @@ import {
   shouldShowSelectSkeleton,
   sourceAgentIdOf,
   tryAcquireConfirmLock,
+  visibleTargetsForPurpose,
   type ConnectFlowState,
 } from './connect-flow-state';
 
@@ -1018,7 +1019,13 @@ describe('选中项失效退回 select', () => {
 describe('首帧 entry 不同步', () => {
   it('state.entry 与当前 entry 的 key 不同则视为过期', () => {
     expect(connectFlowEntryKey(forAgent)).toBe('for-agent:claude');
-    expect(connectFlowEntryKey(forSource)).toBe('for-source:provider:prov-kimi');
+    expect(connectFlowEntryKey(forSource)).toBe('for-source:provider:prov-kimi:all');
+    expect(connectFlowEntryKey({ ...forSource, purpose: 'share' })).toBe(
+      'for-source:provider:prov-kimi:share',
+    );
+    expect(connectFlowEntryKey({ ...forSource, purpose: 'route' })).toBe(
+      'for-source:provider:prov-kimi:route',
+    );
     expect(isConnectFlowEntryStale(forAgent, { mode: 'for-agent', targetAgentId: 'kimi' })).toBe(true);
     expect(isConnectFlowEntryStale(forAgent, forAgent)).toBe(false);
     expect(isConnectFlowEntryStale(forAgent, null)).toBe(true);
@@ -1189,5 +1196,65 @@ describe('preview 同步失效与确认占锁', () => {
     releaseConfirmLock(lock);
     expect(lock.current).toBe(false);
     expect(tryAcquireConfirmLock(lock)).toBe(true);
+  });
+});
+
+describe('purpose-gated preview', () => {
+  it('for-source share cannot preview a local_bridge plan', () => {
+    const entry: ConnectFlowEntry = {
+      mode: 'for-source',
+      source: kimiSource,
+      purpose: 'share',
+    };
+    let state = createConnectFlowState(entry);
+    state = reduceConnectFlow(state, {
+      type: 'select_target',
+      agentId: 'codex',
+      sourceAgentId: 'kimi',
+    });
+    const elig = readyEligibility(true, {
+      analysis: analysis({ route: 'local_bridge' }),
+    });
+    expect(canEnterPreview(state, null, elig)).toBe(false);
+  });
+
+  it('for-source route can preview a local_bridge plan', () => {
+    const entry: ConnectFlowEntry = {
+      mode: 'for-source',
+      source: kimiSource,
+      purpose: 'route',
+    };
+    let state = createConnectFlowState(entry);
+    state = reduceConnectFlow(state, {
+      type: 'select_target',
+      agentId: 'codex',
+      sourceAgentId: 'kimi',
+    });
+    const elig = readyEligibility(true, {
+      analysis: analysis({ route: 'local_bridge' }),
+    });
+    expect(canEnterPreview(state, null, elig)).toBe(true);
+  });
+});
+
+describe('visibleTargetsForPurpose', () => {
+  it('keeps loading rows and drops ready plans for the other purpose', () => {
+    const map = new Map<string, PlanEligibility>([
+      [planFanoutKey({ source: kimiSource, targetAgentId: 'claude' }), readyEligibility(true, {
+        analysis: analysis({ route: 'config_sync' }),
+      })],
+      [planFanoutKey({ source: kimiSource, targetAgentId: 'codex' }), readyEligibility(true, {
+        analysis: analysis({ route: 'local_bridge' }),
+      })],
+      [planFanoutKey({ source: kimiSource, targetAgentId: 'grok' }), { kind: 'loading' }],
+    ]);
+    expect(visibleTargetsForPurpose(['claude', 'codex', 'grok'], kimiSource, map, 'share')).toEqual([
+      'claude',
+      'grok',
+    ]);
+    expect(visibleTargetsForPurpose(['claude', 'codex', 'grok'], kimiSource, map, 'route')).toEqual([
+      'codex',
+      'grok',
+    ]);
   });
 });

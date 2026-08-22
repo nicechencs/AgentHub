@@ -1,8 +1,9 @@
 // Connections：全局票钱包（docs/connection-binding-model.md §5.2）
-// Agent 只作筛选/高亮，不作第一导航；?agent= 高亮 active 绑定行。
+// AgentTabStrip 筛选；?agent= 高亮并把 Tab 落到该 Agent。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Cable } from 'lucide-react';
+import { AgentTabStrip, type AgentTabId } from '@/components/layout/AgentTabStrip';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -11,7 +12,7 @@ import { Notice } from '@/components/shared/Notice';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
-import { agentDisplayName } from '@/config/agents';
+import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import { listTicketWallet, type TicketView, type TicketWallet } from '@/lib/api/tickets';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
 import {
@@ -28,7 +29,7 @@ import {
   useConnectionPool,
 } from '@/app/runtime';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { parseConnectionFocusFilter } from '@/lib/connection-kind';
+import { oauthListAction } from '@/lib/backend/contracts/account-actions';
 import type { AgentId } from '@/lib/types';
 import { ApiKeyAccountDialog } from '@/pages/accounts/ApiKeyAccountDialog';
 import { ProviderEditDialog } from '@/pages/providers/ProviderEditDialog';
@@ -36,12 +37,12 @@ import { ConnectionTrashButton } from './ConnectionTrashButton';
 import { TicketWalletList } from './TicketWalletList';
 import {
   extrasFromPoolSource,
+  filterTicketsByAgentUsage,
   findTicketPoolSource,
   scheduleAfterMenuClose,
   shouldIgnoreMenuDialogDismiss,
   ticketAddDialogState,
   type TicketAddKind,
-  type TicketWalletFilter,
 } from './ticket-wallet-model';
 import {
   deleteConnectionDialogDescription,
@@ -61,21 +62,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { deleteAccount, importCurrentLogin, probeLiveAuth, type LiveAuthProbe } from '@/lib/api/account';
+import {
+  deleteAccount,
+  importCurrentLogin,
+  probeLiveAuth,
+  refreshQuota,
+  refreshToken,
+  type LiveAuthProbe,
+} from '@/lib/api/account';
 import { deleteProvider } from '@/lib/api/provider';
 import type { Account, Provider } from '@/lib/types';
 
 function parseAgentParam(raw: string | null, allowed: AgentId[]): AgentId | null {
   if (raw && allowed.includes(raw as AgentId)) return raw as AgentId;
   return null;
-}
-
-function parseWalletFilter(raw: string | null): TicketWalletFilter {
-  const focus = parseConnectionFocusFilter(raw);
-  if (focus === 'oauth') return 'oauth';
-  if (focus === 'apikey') return 'api_key';
-  if (raw?.trim().toLowerCase() === 'unknown') return 'unknown';
-  return 'all';
 }
 
 export default function ConnectionsPage() {
@@ -89,8 +89,10 @@ export default function ConnectionsPage() {
   const allowedAgents = installedIds.length ? installedIds : visibleIds;
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const highlightAgentId = parseAgentParam(searchParams.get('agent'), allowedAgents);
-  const initialFilter = parseWalletFilter(searchParams.get('mode'));
   const resumeAgentId = parseResumeAgentId(searchParams.get('resume'), allowedAgents);
+  const [filterAgent, setFilterAgent] = useState<AgentTabId>(highlightAgentId ?? 'all');
+  const [refreshingTicketId, setRefreshingTicketId] = useState<string | null>(null);
+  const refreshGen = useRef(0);
 
   const [pendingGuide, setPendingGuide] = useState<ConnectGuide | null>(null);
   const consumedGuideKeyRef = useRef<string | null>(null);
@@ -123,8 +125,17 @@ export default function ConnectionsPage() {
   }, [pool.ensureLoaded, pool.state]);
 
   useEffect(() => {
-    if (highlightAgentId) setAddAgentId(highlightAgentId);
+    if (highlightAgentId) {
+      setAddAgentId(highlightAgentId);
+      setFilterAgent(highlightAgentId);
+    }
   }, [highlightAgentId]);
+
+  useEffect(() => {
+    if (filterAgent !== 'all' && hiddenSet.has(filterAgent)) {
+      setFilterAgent('all');
+    }
+  }, [filterAgent, hiddenSet]);
 
   useEffect(() => {
     if (!loginImportOpen) {
@@ -192,6 +203,24 @@ export default function ConnectionsPage() {
     return { ...wallet, tickets, bindings, surfaceGroups };
   }, [hiddenSet, wallet]);
 
+  const tabAgents = useMemo(
+    () => visibleIds.map((id) => resolveAgentMeta(id)),
+    [visibleIds],
+  );
+
+  const agentCounts = useMemo(() => {
+    const tickets = visibleWallet?.tickets ?? [];
+    const counts: Partial<Record<AgentTabId, number>> = { all: tickets.length };
+    if (!visibleWallet) {
+      for (const id of visibleIds) counts[id] = 0;
+      return counts;
+    }
+    for (const id of visibleIds) {
+      counts[id] = filterTicketsByAgentUsage(visibleWallet, tickets, id).length;
+    }
+    return counts;
+  }, [visibleIds, visibleWallet]);
+
   const poolReload = pool.reload;
 
   const handleConnectionChanged = useCallback(async () => {
@@ -253,12 +282,55 @@ export default function ConnectionsPage() {
     if (resume) navigate(buildResumeConnectUrl(resume));
   }, [navigate, pendingGuide, resumeAgentId]);
 
-  const handleConnectTicket = useCallback((ticket: TicketView) => {
+  const handleShareTicket = useCallback((ticket: TicketView) => {
     setConnectEntry({
       mode: 'for-source',
       source: { kind: ticket.sourceKind, id: ticket.sourceId },
+      purpose: 'share',
     });
   }, []);
+
+  const handleRouteTicket = useCallback((ticket: TicketView) => {
+    setConnectEntry({
+      mode: 'for-source',
+      source: { kind: ticket.sourceKind, id: ticket.sourceId },
+      purpose: 'route',
+    });
+  }, []);
+
+  const handleRefreshTicket = useCallback(async (ticket: TicketView) => {
+    if (ticket.sourceKind !== 'account') return;
+    const source = findTicketPoolSource(ticket, pool.accounts, pool.providers);
+    const account = source.account;
+    if (!account) return;
+    const action = oauthListAction(account);
+    if (!action) return;
+    const generation = ++refreshGen.current;
+    setRefreshingTicketId(ticket.id);
+    try {
+      if (action.kind === 'sync-current-login') {
+        await importCurrentLogin(account.agentId);
+      } else if (action.kind === 'refresh-credentials') {
+        await refreshToken(account.agentId, account.id);
+        await refreshQuota(account.agentId, account.id).catch(() => undefined);
+      } else {
+        await refreshQuota(account.agentId, account.id);
+      }
+      if (refreshGen.current !== generation) return;
+      toast({ title: t('connections.list.refreshOk'), variant: 'success' });
+      await loadWallet();
+      await poolReload().catch(() => {});
+    } catch (e) {
+      if (refreshGen.current !== generation) return;
+      toast({
+        title: t('connections.list.refreshFail'),
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
+    } finally {
+      if (refreshGen.current === generation) setRefreshingTicketId(null);
+    }
+  }, [loadWallet, pool.accounts, pool.providers, poolReload, t, toast]);
 
   const extrasForTicket = useCallback(
     (ticket: TicketView) => {
@@ -419,6 +491,25 @@ export default function ConnectionsPage() {
         descriptionTip={t('connections.page.descriptionTip')}
       />
 
+      <div className={pageRhythm.chrome}>
+        <AgentTabStrip
+          showAll
+          allLabel={t('kind.all')}
+          value={filterAgent}
+          onChange={setFilterAgent}
+          agents={tabAgents}
+          counts={agentCounts}
+          countMode="defined"
+          countTitle={(id, n) =>
+            id === 'all'
+              ? t('connections.page.countAll', { n })
+              : t('connections.page.countAgent', { name: agentDisplayName(id), n })
+          }
+          emptyLabel={t('connections.page.emptyTitle')}
+          aria-label={t('connections.page.filterAria')}
+        />
+      </div>
+
       {resumeAgentId ? (
         <div className={pageRhythm.lead}>
           <Notice
@@ -453,11 +544,15 @@ export default function ConnectionsPage() {
             wallet={visibleWallet}
             loading={walletLoading}
             highlightAgentId={highlightAgentId}
-            initialFilter={initialFilter}
-            onConnectTicket={handleConnectTicket}
+            agentFilterId={filterAgent === 'all' ? null : filterAgent}
+            onShareTicket={handleShareTicket}
+            onRouteTicket={handleRouteTicket}
+            onRefreshTicket={handleRefreshTicket}
+            refreshingTicketId={refreshingTicketId}
             extrasForTicket={extrasForTicket}
             onEditTicket={handleEditTicket}
             onDeleteTicket={setDeleteTicket}
+            onClearAgentFilter={() => setFilterAgent('all')}
             installedAgentIds={allowedAgents}
             onAddKey={(id) => openTicketAdd('api-key', id)}
             onImportLogin={(id) => openTicketAdd('import-login', id)}

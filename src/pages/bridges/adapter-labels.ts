@@ -32,12 +32,21 @@ export function adapterBridgeUpstreamLabel(
   if (status === 'unavailable') return t ? t('routes.upstream.unavailable') : '不可用';
   return t ? t('routes.upstream.unknown') : '未知';
 }
+export function adapterBridgeHostPort(
+  profile: AdapterProfile,
+  status?: AdapterBridgeRuntimeStatus,
+): { host: '127.0.0.1'; port: number | null } {
+  const raw = status?.port ?? profile.localPort;
+  const port = typeof raw === 'number' && raw > 0 ? raw : null;
+  return { host: '127.0.0.1', port };
+}
+
 export function adapterBridgeEndpointLabel(
   profile: AdapterProfile,
   status?: AdapterBridgeRuntimeStatus,
 ): string | null {
-  const port = status?.port ?? profile.localPort;
-  return port ? `127.0.0.1:${port}` : null;
+  const { host, port } = adapterBridgeHostPort(profile, status);
+  return port ? `${host}:${port}` : null;
 }
 
 export function bridgeStatusBadge(state: AdapterBridgeRuntimeState | undefined, t?: TranslateFn): {

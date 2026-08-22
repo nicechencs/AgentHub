@@ -28,6 +28,7 @@ import { AdapterErrorLines } from './adapter-components';
 import { bridgeMemberRows, memberPinTone } from './adapter-member-model';
 import {
   adapterBridgeEndpointLabel,
+  adapterBridgeHostPort,
   adapterBridgeUpstreamLabel,
   adapterCredentialKindLabel,
 } from './adapter-model';
@@ -127,6 +128,7 @@ function ProfileDetailBody({
     statusUnavailable,
   }, t);
   const isBridge = profile.route === 'local_bridge';
+  const endpointParts = isBridge ? adapterBridgeHostPort(profile, bridgeStatus) : null;
   const endpoint = isBridge ? adapterBridgeEndpointLabel(profile, bridgeStatus) : null;
   const recovery = adapterProfileRecoveryGuide(profile, t);
   const members = isBridge
@@ -220,10 +222,19 @@ function ProfileDetailBody({
                     {endpoint}
                     <Copy className="h-3 w-3" aria-hidden />
                   </button>
-                ) : (
-                  <span className="text-xs text-muted">{t('routes.pendingPort')}</span>
-                )}
+                ) : null}
               </div>
+              {endpointParts ? (
+                <>
+                  <DetailRow label={t('routes.hostIp')} value={endpointParts.host} />
+                  <DetailRow
+                    label={t('routes.port')}
+                    value={endpointParts.port != null
+                      ? String(endpointParts.port)
+                      : t('routes.pendingPort')}
+                  />
+                </>
+              ) : null}
               {bridgeStatus?.upstreamStatus ? (
                 <DetailRow
                   label={t('routes.upstreamStatus')}

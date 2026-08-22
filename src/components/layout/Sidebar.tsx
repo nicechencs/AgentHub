@@ -18,11 +18,8 @@ import { AppLogo } from '@/components/shared/AppLogo';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { AGENTS } from '@/config/agents';
 import {
-  loadBridgePresence,
-  shouldShowBridgesNav,
   useAgentStatusesOptional,
   useAppUpdateAvailable,
-  useBridgePresence,
 } from '@/app/runtime';
 import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
@@ -156,18 +153,9 @@ export function Sidebar() {
   const { t } = useI18n();
   const { statuses: agents } = useAgentStatusesOptional();
   const appUpdate = useAppUpdateAvailable();
-  const bridgePresence = useBridgePresence();
   const settingsNotice = appUpdate
     ? { label: t('nav.updateAvailable', { version: appUpdate.version }) }
     : null;
-
-  React.useEffect(() => {
-    void loadBridgePresence();
-  }, []);
-
-  const manageItems = NAV_MANAGE.filter((item) => (
-    item.to !== BRIDGES_PATH || shouldShowBridgesNav(bridgePresence)
-  ));
 
   const hiddenIds = React.useMemo(
     () => new Set(agents.filter((a) => a.hidden).map((a) => a.agentId)),
@@ -253,7 +241,7 @@ export function Sidebar() {
           ))}
         </NavGroup>
         <NavGroup label={t('nav.manage')} collapsed={collapsed} className="mt-auto pb-2">
-          {manageItems.map((item) => (
+          {NAV_MANAGE.map((item) => (
             <SidebarNavLink
               key={item.to}
               item={item}

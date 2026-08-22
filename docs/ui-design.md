@@ -12,7 +12,7 @@
 
 ## 1. 设计原则
 
-1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / **Routes**（有本机路由才出现） / Settings）；备份在 Settings `?tab=backups`，不占侧栏。用量合并进 Dashboard。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。**例外：Connections 现行是跨工具登录列表**（一份份登录），Agent 只作筛选/高亮，不作第一导航；见 §4.3 与 [connection-binding-model.md](connection-binding-model.md)。底层 accounts/providers 可继续分表，UI 与规划器谈的是登录和绑定。连接从 Agent 卡片或登录行「接到…」发起；`/routes` 只做本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。
+1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / **Routes**（永久显示） / Settings）；备份在 Settings `?tab=backups`，不占侧栏。用量合并进 Dashboard。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。Connections 是跨工具登录列表，顶部 AgentTabStrip 可筛；`?agent=` 高亮并把 Tab 落到该 Agent。底层 accounts/providers 可继续分表，UI 与规划器谈的是登录和绑定。登录行拆成「分享」（直连 / 写进对方登录）与「路由」（本机转发）；`/routes` 只做本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。
 2. **危险操作必有前置信息**：切换供应商/账号前展示 backfill 摘要、备份位置、运行中进程警告。
 3. **凭据永不明文回显**：`SecretInput` 统一脱敏回显（`sk-••••3f2a` 一类掩码）；点眼睛切换明文。现行实现无二次确认、无自动再遮蔽。聚焦已遮蔽值会清空以便重新输入。
 4. **空状态给动作**：每个空列表都有明确的下一步按钮（添加供应商/导入账号/安装 Agent / 安装运行环境）。**例外：Routes 健康空态没有按钮**——多数连接不需要本机转发，空是常态，不是待转化漏斗。
@@ -107,7 +107,7 @@ Agent 品牌色（logo 点、图表系列；改 tokens.ts 的 AGENT_COLORS）:
 │ │ Manage         │   │                                      │
 │ │ ▣ Dashboard    │   │                                      │
 │ │ ⇄ Connections  │   │                                      │
-│ │ ▦ Routes       │   │  （有本机路由才出现；Settings 本机区常驻入口）│
+│ │ ▦ Routes       │   │  （侧栏永久显示；Settings 本机区常驻入口）│
 │ │ ⚙ Settings     │   │                                      │
 │ ├────────────────┤   │                                      │
 │ │ ● N/M agents   │   │   (侧栏底部:agent 在线状态迷你条)      │
@@ -206,34 +206,34 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 侧栏只保留一个入口。目标态：**跨工具的登录列表**，不是按工具切开的两套池。底层 accounts/providers 可继续分表；UI 谈一份登录和「正用于」哪些绑定。自动生成的配置不出现在登录列表。完整规则见 [connection-binding-model.md §5](connection-binding-model.md#51-两个入口一个对象)。
 
-路由：`/connections`；`/connections?agent=codex` 高亮该 Agent 的 active 绑定（**不**再把整页收成该 Agent 私有列表）；`?mode=` 仍可筛到 API Key。旧 `/providers`、`/accounts` 重定向至此。
+路由：`/connections`；`/connections?agent=codex` 高亮该 Agent 的 active 绑定，并把顶部 Tab 落到该 Agent。旧 `/providers`、`/accounts` 重定向至此。
 
 **目标线框：**
 
 ```
 ┌─ 连接 ─────────────────────────────────────────────────────┐
 │ 连接 · n 份登录                               [+ 添加]     │
-│ 筛选 [全部] [官方登录] [API Key] [未识别]                   │
-│ ● Kimi 会员     [API Key] [会员]                           │
+│ [全部] [Claude] [Codex] …                                  │
+│ 🔑 Kimi 会员     [会员]                                    │
 │   正用于：Claude（只改配置）· Codex（本机转发 · 运行中）     │
-│   [接到…] [详情]                                           │
-│ ○ Anthropic     [API Key] [官方]                           │
+│   [分享] [路由] [详情]                                     │
+│ 🔑 Anthropic     [官方]                                    │
 │   正用于：Pi（改配置）                                     │
-│   [接到…] [详情]                                           │
-│ ○ me@…          [官方登录]                                 │
+│   [分享] [路由] [详情]                                     │
+│ 👤 me@…                                                    │
 │   正用于：Claude（切换）                                   │
-│   [接到…]  → 不可行目标在对话框置灰 + 原因                 │
+│   [分享] [路由] → 对话框按目的过滤目标                     │
 └────────────────────────────────────────────────────────────┘
 ```
 
 - 「正用于」来自绑定：native / reshape / bridge，不是手写 account/provider 出身。
-- **每一份真登录都有「接到…」**，打开同一绑定对话框（登录固定，选工具）。接不上、工具不能写入、未识别：对话框内置灰 + 原因，不在行上隐藏动作。选目标后预览按三种做法说明（直接改配置 / 写进对方认的登录 / 本机转发）；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。不要把订阅默认写成转发。
+- **每一份真登录都有「分享」和「路由」**：分享走直连 / 写进对方登录；路由走本机转发。接不上、工具不能写入、未识别：对话框内置灰 + 原因，不在行上隐藏动作。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。不要把订阅默认写成转发。
 - 「切换」只用于这份登录对它本来所属工具的 native 绑定。接到其他工具一律走 `bind`。
 - 添加登录时写下它是哪一家。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意工具）。**Pi 无单一官方 URL**：弹窗选厂商槽，官方槽（anthropic / openai / …）只写 `~/.pi/agent/auth.json`，自定义 URL 写 `models.json`。
-- **已落地（读模型 + 写入）**：跨工具登录列表 + 真登录常驻「接到…」+ Dashboard 当前绑定；自动生成的配置不出现在登录列表。确认步走 `bind`，成功以该工具的当前绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
+- **已落地（读模型 + 写入）**：跨工具登录列表 + 真登录常驻「分享 / 路由」+ Dashboard 当前绑定；自动生成的配置不出现在登录列表。确认步走 `bind`，成功以该工具的当前绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
 - 导入当前登录时若本机同时有 Key 与官方登录，对话框警告条说明当前会收入哪一份。
 - **详情展开**：不是字段堆。行头在官方登录 / 订阅旁放安静健康 chip（可续期 / 已配置；不写实验 / 未验证）。`sm+` 两栏 **用量**（有配额才出现，QuotaBar 先 7d 再 5h + reset）| **用在哪**（每行一个绑定：左 Agent 名，右「当前使用 / 本机路由运行中 / 本机路由已停止 / 未使用」；空态「还没接到任何工具」）。**更多**仅在有自定义端点 / 协议时出现（默认折叠）；仅 import + 登录状态时不渲染。页脚一行：左「导入自 …」，右编辑配置或编辑密钥（若可）+「移入回收站」。
-- 实现落点：`TicketWalletList` / `ticket-wallet-model` / `lib/api/tickets`；`reuse-offer` 为登录常驻「接到…」语义。
+- 实现落点：`TicketWalletList` / `ticket-wallet-model` / `lib/api/tickets`；`reuse-offer` 为登录常驻「分享 / 路由」语义。
 
 #### 4.3.1 mode=providers — API 配置（历史线框 / 过渡形态）
 
@@ -498,11 +498,11 @@ Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `backups` /
 | 组件 | 职责 |
 |---|---|
 | `AgentTabStrip` | 页内 agent 切换条，能力位置灰（如 Kimi 不支持账号切换/技能） |
-| `ConnectFlowDialog` | 绑定对话框：Dashboard（工具固定，选一份登录）与 Connections「接到…」（登录固定，选工具）；目标语义 `bind`；预览按三种做法说明，界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」；`plan.canApply` 只表示现在能写入 |
+| `ConnectFlowDialog` | 绑定对话框：Dashboard（工具固定，选一份登录）与 Connections「分享 / 路由」（登录固定，选工具）；目标语义 `bind`；预览按三种做法说明，界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」；`plan.canApply` 只表示现在能写入 |
 | `AgentDot` | Agent 品牌色圆点（侧栏/列表等轻量标识） |
 | `StatusDot` | 四态认证状态（有效/临期/失效/未配置） |
 | `SearchField` | 统一搜索输入（左图标 + `h-7`）。列表筛选禁止手写搜索框 |
-| `SegmentedControl` | 页内列表筛选（Connections 登录类型等）；页级导航用 `Tabs` |
+| `SegmentedControl` | 页内列表筛选；页级导航用 `Tabs` |
 | `SecretInput` | 脱敏回显 + 眼睛切换明文。无二次确认、无自动再遮蔽 |
 | `ConfigEditor` | CodeMirror 封装：JSON/TOML 高亮、敏感键自动脱敏层 |
 | `QuotaBar` | 5h/7d 配额窗口进度条 + reset 倒计时 |

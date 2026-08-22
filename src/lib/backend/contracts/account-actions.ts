@@ -1,7 +1,10 @@
 import type { Account, AgentId } from '@/lib/types';
 import { isPiRefreshProvider } from './oauth-constants';
 
-export type AccountActionKind = 'sync-current-login' | 'refresh-credentials';
+export type AccountActionKind =
+  | 'sync-current-login'
+  | 'refresh-credentials'
+  | 'refresh-quota';
 
 export interface AccountAction {
   kind: AccountActionKind;
@@ -30,6 +33,23 @@ export function accountActionPolicy(account: Pick<
     isPiRefreshProvider(account.provider)
   ) {
     return { kind: 'refresh-credentials', label: '刷新凭据' };
+  }
+  return undefined;
+}
+
+/**
+ * Connections row control. Token refresh stays on accountActionPolicy;
+ * Codex/Claude still get a quota probe (5h/7d) because the CLI owns the grant.
+ */
+export function oauthListAction(account: Pick<
+  Account,
+  'agentId' | 'kind' | 'provider' | 'refreshable'
+>): AccountAction | undefined {
+  const policy = accountActionPolicy(account);
+  if (policy) return policy;
+  if (account.kind !== 'oauth') return undefined;
+  if (account.agentId === 'codex' || account.agentId === 'claude') {
+    return { kind: 'refresh-quota', label: '刷新' };
   }
   return undefined;
 }

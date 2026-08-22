@@ -82,7 +82,7 @@ const emptyListProps = {
 
 describe('Bridges page', () => {
   it('describes the page as local-bridge runtime ops', () => {
-    expect(adapterPageDescription()).toBe('本机协议转换 · 仅 127.0.0.1');
+    expect(adapterPageDescription()).toBe('本机协议转换 · 127.0.0.1 · 含端口');
   });
 
   it('rewrites /adapter, /router and /bridges bookmarks onto /routes and drops ?tab=', () => {

@@ -16,6 +16,7 @@ import type { ConnectionEntry } from '@/lib/connection-entry';
 import { AdapterErrorLines } from './adapter-components';
 import {
   adapterBridgeEndpointLabel,
+  adapterBridgeHostPort,
   adapterFailurePresentation,
 } from './adapter-model';
 import {
@@ -146,6 +147,9 @@ function AdapterProfileRow({
     bridgeState: bridgeStatus?.state,
     statusUnavailable,
   }, t);
+  const endpointParts = profile.route === 'local_bridge'
+    ? adapterBridgeHostPort(profile, bridgeStatus)
+    : null;
   const endpoint = profile.route === 'local_bridge'
     ? adapterBridgeEndpointLabel(profile, bridgeStatus)
     : null;
@@ -175,6 +179,9 @@ function AdapterProfileRow({
           </p>
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             {endpoint ? <EndpointCopy endpoint={endpoint} /> : null}
+            {endpointParts && !endpointParts.port ? (
+              <span className="text-xs text-muted">{t('routes.pendingPort')}</span>
+            ) : null}
             {source.missing ? (
               <span className="text-xs text-warning">{t('routes.sourceDeleted')}</span>
             ) : null}

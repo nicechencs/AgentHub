@@ -375,7 +375,7 @@ React Routes UI（本机路由页）
 src/
 ├── app/
 │   └── runtime/                 # 应用组合入口 + catalog / agent-status /
-│                                # connection-pool / bridge-presence / app-update stores
+│                                # connection-pool / app-update stores
 ├── lib/
 │   ├── backend/
 │   │   ├── contracts/           # DTO、接口、纯映射（不碰 Tauri）

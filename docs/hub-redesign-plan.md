@@ -90,7 +90,7 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 - **不动 Rust 后端**：analyze/plan/apply/bridge/OAuth/switch 命令与能力矩阵原样使用。若实施中发现必须改后端才能达成目标，停下上报，不得绕过。
 - **不做 AdapterProfile 与 agent_active_bindings 的物理合并**（推迟 Phase 2；本期只做前端读模型聚合）。
 - **不改 OAuth 门禁**：`canApply=false` 的路线保持不可用，UI 呈现为置灰+原因。
-- **不移除 `/adapter` 页与侧栏入口**（**2026-08-15 已解除**：现行规范路由 `/routes`，侧栏英文 Routes 有本机路由才出现；见 [bridges-page-redesign.md](bridges-page-redesign.md)）。过渡期职责定位：Dashboard/Connections 为推荐入口，本页只管理桥 runtime；两处 apply 行为同源（同一 lib/api 门面），不允许行为分叉。侧栏文案当时改为「桥与适配」，创建区已收掉。
+- **不移除 `/adapter` 页与侧栏入口**（**2026-08-15 已解除**：现行规范路由 `/routes`，侧栏英文 Routes 永久显示；见 [bridges-page-redesign.md](bridges-page-redesign.md)）。过渡期职责定位：Dashboard/Connections 为推荐入口，本页只管理桥 runtime；两处 apply 行为同源（同一 lib/api 门面），不允许行为分叉。侧栏文案当时改为「桥与适配」，创建区已收掉。
 - **不重做 OAuth 授权 UI**、不做 ①② 引导跳转的自动弹窗与回跳闭环（Phase 2）。
 - **不重构 Connections 页 tab 信息架构**（全局钱包视图属 Phase 2）。
 - **不修改 `src/lib/api/adapter.ts` 既有行为**（含 apply 后连接池刷新异常被吞的既有语义——对话框通过 `onApplied` 自行补偿刷新并呈现刷新失败）。
@@ -99,7 +99,7 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 
 ## 4. 现状锚点（实施者必读，v2 已按评审核实修正）
 
-- 路由与页面：`src/App.tsx`（`/` Dashboard、`/connections`、`/routes`；`/adapter`、`/router`、`/bridges` 永久跳到 `/routes`）。侧栏 `src/components/layout/Sidebar.tsx`（英文 Routes，有本机路由才出现）。
+- 路由与页面：`src/App.tsx`（`/` Dashboard、`/connections`、`/routes`；`/adapter`、`/router`、`/bridges` 永久跳到 `/routes`）。侧栏 `src/components/layout/Sidebar.tsx`（英文 Routes，永久显示）。
 - Dashboard 卡片：`src/pages/dashboard/AgentOverview.tsx` + `agentOverviewModel.ts`。**注意：AgentOverview 只渲染已安装 Agent**；`buildAgentCardView.target` 现为 URL 字符串且被测试断言（改动作模型时同步改测试）。
 - 生效连接解析：`src/lib/api/agent-connection.ts`（基于 accounts/providers 的 isCurrent）。**Dashboard 的 agents 状态来自页面自身的 `listAgents()` 加载，不随连接池自动刷新**——apply 后需显式触发重载。
 - 连接池 store：`src/app/runtime/connection-pool-store.ts`（accounts+providers 缓存与 `notifyConnectionPoolChanged`）。
@@ -229,6 +229,6 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 4. 写入收成 `bind` / `unbind`；现有四条 apply 路径先改写成绑定实现。
 5. 再按协议图加边（Anthropic→Codex、Kimi→Grok、新 surface……）。
 
-仍有效、且已落地的 Phase 1 资产：ConnectFlow 双入口外壳、①② 深链、本机路由页不做日常创建。现行表面是 `/routes`（侧栏 Routes，有本机路由才出现），只管理 ③ 运行时。
+仍有效、且已落地的 Phase 1 资产：ConnectFlow 双入口外壳、①② 深链、本机路由页不做日常创建。现行表面是 `/routes`（侧栏 Routes，永久显示），只管理 ③ 运行时。
 
 OAuthFlowDialog 收编进 Connections 仍未做，可并进钱包「添加票」。

@@ -59,6 +59,7 @@ import {
   shouldShowPreviewImportHint,
   sourceAgentIdOf,
   tryAcquireConfirmLock,
+  visibleTargetsForPurpose,
 } from './connect-flow-state';
 import {
   ConnectFlowSelectStep,
@@ -195,11 +196,22 @@ export function ConnectFlowDialog({
     && entry.source.kind === 'account'
     && isOfficialCodexOauthAccount(pool.accounts.find((item) => item.id === entry.source.id)),
   );
-  const targetAgentIds = React.useMemo(
+  const allTargetAgentIds = React.useMemo(
     () => (entry?.mode === 'for-source'
       ? excludeOwnAgentTargets(catalogIds, sourceAgentId, keepOwnCodexTarget)
       : []),
     [entry, catalogIds, sourceAgentId, keepOwnCodexTarget],
+  );
+  const targetAgentIds = React.useMemo(
+    () => (entry?.mode === 'for-source'
+      ? visibleTargetsForPurpose(
+          allTargetAgentIds,
+          entry.source,
+          eligibilities,
+          entry.purpose,
+        )
+      : []),
+    [entry, allTargetAgentIds, eligibilities],
   );
 
   const generatedSourceBlocked = Boolean(
@@ -212,8 +224,8 @@ export function ConnectFlowDialog({
     if (!entry || !optionsReady || generatedSourceBlocked) return [];
     return entry.mode === 'for-agent'
       ? fanoutRequestsForAgent(options, entry.targetAgentId)
-      : fanoutRequestsForSource(entry.source, targetAgentIds);
-  }, [entry, options, targetAgentIds, optionsReady, generatedSourceBlocked]);
+      : fanoutRequestsForSource(entry.source, allTargetAgentIds);
+  }, [entry, options, allTargetAgentIds, optionsReady, generatedSourceBlocked]);
 
   React.useEffect(() => {
     if (!fanout || !entry) return;
@@ -375,7 +387,11 @@ export function ConnectFlowDialog({
     ? t('connect.dialog.title')
     : entry.mode === 'for-agent'
       ? t('connect.dialog.titleAgent', { name: agentDisplayName(entry.targetAgentId) })
-      : t('connect.dialog.titleSource');
+      : entry.purpose === 'route'
+        ? t('connect.dialog.titleRoute')
+        : entry.purpose === 'share'
+          ? t('connect.dialog.titleShare')
+          : t('connect.dialog.titleSource');
 
   return (
     <Dialog

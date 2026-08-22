@@ -3,6 +3,7 @@
  * Filter / search / binding usage lines — pure functions for vitest.
  */
 import { agentDisplayName } from '@/config/agents';
+import { oauthListAction, type AccountAction } from '@/lib/backend/contracts/account-actions';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
 import type {
   BindingRoute,
@@ -431,9 +432,9 @@ export function buildTicketWalletRows(
   options: {
     filter?: TicketWalletFilter;
     query?: string;
-    /** Deep-link agent: highlight active binding rows; does not privatize the list. */
+    /** Deep-link highlight for that Agent's active binding. */
     highlightAgentId?: AgentId | null;
-    /** Optional soft filter by agent (UI chip); omit for full wallet. */
+    /** Agent tab filter; omit for the full wallet. */
     agentFilterId?: AgentId | null;
     t?: TranslateFn;
   } = {},
@@ -490,6 +491,7 @@ export interface TicketDetailExtras {
   canEditKey?: boolean;
   canEditConfig?: boolean;
   isCurrent?: boolean;
+  oauthAction?: AccountAction;
 }
 
 export interface TicketDetailField {
@@ -597,6 +599,7 @@ export function extrasFromPoolSource(
     extras.quotaResetIn = source.account.quotaResetIn;
     extras.quota7dResetIn = source.account.quota7dResetIn;
     extras.endpointMode = source.account.kind === 'apikey' ? 'official' : undefined;
+    extras.oauthAction = oauthListAction(source.account);
   }
 
   if (source.provider) {

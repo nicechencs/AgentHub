@@ -238,7 +238,7 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 
 ### 5.5 Routes（本机路由）
 
-规范路由 `/routes`。侧栏英文 Routes，有本机路由才出现；Settings → 本机永远有「本机路由」入口。
+规范路由 `/routes`。侧栏英文 Routes，永久显示；Settings → 本机永远有「本机路由」入口。
 
 列出全部 `route=local_bridge`（`partitionLocalBridgeRuntimes`）：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进孤立分区。行与详情都是**单层**进程健康 + 端口，不画「配置已生效 / 桥接运行中」。来源/目标是纯文字，**禁止**链到 `/connections?agent=`（自动生成的配置不得出现在登录列表）。
 

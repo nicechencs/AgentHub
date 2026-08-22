@@ -406,6 +406,7 @@ describe('ticket detail fields', () => {
     expect(extras.identity).toBe('me@example.com');
     expect(extras.canEditKey).toBe(false);
     expect(extras.canEditConfig).toBe(false);
+    expect(extras.oauthAction).toEqual({ kind: 'refresh-quota', label: '刷新' });
     expect(ticketDetailEditLabel(extras)).toBeNull();
 
     const keyTicket = ticket({ id: 'provider:kimi-1' });

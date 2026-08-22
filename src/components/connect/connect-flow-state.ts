@@ -5,6 +5,7 @@
 import type { Account, AgentId, Provider } from '@/lib/types';
 import type { AdapterApplyPlan, AdapterApplyResult, AdapterProfile } from '@/lib/api/adapter';
 import type {
+  ConnectBindPurpose,
   ConnectFlowDeps,
   ConnectFlowEntry,
   ConnectOutcome,
@@ -290,6 +291,13 @@ function bindPlanFromEligibility(
   const target = currentTargetAgentId(state);
   if (!source || !target) return null;
   if (eligibility?.kind !== 'ready' || eligibility.plan.canApply !== true) return null;
+  if (
+    state.entry.mode === 'for-source'
+    && state.entry.purpose
+    && !adapterRouteMatchesPurpose(eligibility.plan.analysis.route, state.entry.purpose)
+  ) {
+    return null;
+  }
   return {
     generation: state.selectionGeneration,
     source,
@@ -831,9 +839,36 @@ export function findOption(
 
 export function connectFlowEntryKey(entry: ConnectFlowEntry | null): string | null {
   if (!entry) return null;
-  return entry.mode === 'for-agent'
-    ? `for-agent:${entry.targetAgentId}`
-    : `for-source:${entry.source.kind}:${entry.source.id}`;
+  if (entry.mode === 'for-agent') return `for-agent:${entry.targetAgentId}`;
+  const purpose = entry.purpose ?? 'all';
+  return `for-source:${entry.source.kind}:${entry.source.id}:${purpose}`;
+}
+
+export function adapterRouteMatchesPurpose(
+  route: AdapterApplyPlan['analysis']['route'] | undefined,
+  purpose: ConnectBindPurpose,
+): boolean {
+  if (purpose === 'route') return route === 'local_bridge';
+  return route === 'native_endpoint' || route === 'config_sync';
+}
+
+/** Keep loading/error rows; drop ready plans that belong to the other purpose. */
+export function visibleTargetsForPurpose(
+  targetIds: readonly AgentId[],
+  source: ConnectSourceRef,
+  eligibilities: ReadonlyMap<string, PlanEligibility>,
+  purpose: ConnectBindPurpose | undefined,
+): AgentId[] {
+  if (!purpose) return [...targetIds];
+  return targetIds.filter((id) => {
+    const eligibility = eligibilityOf(eligibilities, source, id);
+    if (!eligibility || eligibility.kind === 'loading') return true;
+    if (eligibility.kind === 'error' || eligibility.kind === 'blocked_oauth') return true;
+    if (eligibility.kind === 'ready') {
+      return adapterRouteMatchesPurpose(eligibility.plan.analysis.route, purpose);
+    }
+    return false;
+  });
 }
 
 /** 状态机 entry 与当前打开的 entry 不同步（首帧旧会话）。 */

@@ -48,7 +48,7 @@ export function adapterTabLabel(tab: AdapterTab | AdapterCredentialFilter): stri
 }
 
 export const BRIDGES_PAGE_TITLE = '本机路由';
-export const BRIDGES_PAGE_DESCRIPTION = '本机协议转换 · 仅 127.0.0.1';
+export const BRIDGES_PAGE_DESCRIPTION = '本机协议转换 · 127.0.0.1 · 含端口';
 export const BRIDGES_PAGE_DESCRIPTION_TIP =
   '凭据在连接页，不展示不复制。多数连接不需要本机转发。需保持托盘运行。日志不记请求正文。';
 export const BRIDGES_EMPTY_TITLE = '没有本机路由';

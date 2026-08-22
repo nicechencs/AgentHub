@@ -1,11 +1,22 @@
 /**
  * Global ticket wallet list UI (Connections).
- * Data from listTicketWallet; per-row「接到…」always for true tickets.
+ * Data from listTicketWallet; per-row 分享 / 路由 for true tickets.
  * 「详情」is a read-only expand; edit/delete stay secondary actions inside it.
  */
 import * as React from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, ChevronRight, KeyRound, Pencil, Plus, Share2, Trash2 } from 'lucide-react';
+import {
+  Cable,
+  ChevronDown,
+  ChevronRight,
+  CircleUser,
+  KeyRound,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Share2,
+  Trash2,
+} from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailRow } from '@/components/shared/DetailRow';
@@ -13,7 +24,6 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { ListRow } from '@/components/shared/ListRow';
 import { QuotaBar } from '@/components/shared/QuotaBar';
 import { SearchField } from '@/components/shared/SearchField';
-import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -28,7 +38,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Tip } from '@/components/ui/tooltip';
+import { Hint, Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import type { TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
@@ -39,29 +49,44 @@ import {
   handleTicketAddMenuSelect,
   buildTicketDetailFields,
   buildTicketWalletRows,
-  countTicketsByFilter,
   formatTicketBindingDetailLines,
   humanizeTicketAuthLabel,
   ticketAddActionLabel,
   ticketCredentialClassChipLabel,
   ticketDetailEditLabel,
   ticketSurfaceChipLabel,
-  ticketWalletFilterLabel,
-  TICKET_WALLET_FILTERS,
   type TicketAddMenuAgent,
   type TicketBindingDetailLine,
   type TicketDetailExtras,
   type TicketDetailField,
-  type TicketWalletFilter,
   type TicketWalletRow,
 } from './ticket-wallet-model';
 
-function credentialBadgeVariant(
-  cls: TicketView['credentialClass'],
-): 'default' | 'info' | 'accent' {
-  if (cls === 'oauth') return 'default';
-  if (cls === 'api_key') return 'info';
-  return 'accent';
+function CredentialMark({ cls }: { cls: TicketView['credentialClass'] }) {
+  const { t } = useI18n();
+  if (cls === 'oauth') {
+    const label = t('connections.list.oauthAccount');
+    return (
+      <Hint label={label}>
+        <span className="inline-flex text-secondary" aria-label={label}>
+          <CircleUser className="h-4 w-4" strokeWidth={1.8} />
+        </span>
+      </Hint>
+    );
+  }
+  if (cls === 'api_key') {
+    const label = t('connections.list.apiKeyAuth');
+    return (
+      <Hint label={label}>
+        <span className="inline-flex text-secondary" aria-label={label}>
+          <KeyRound className="h-4 w-4" strokeWidth={1.8} />
+        </span>
+      </Hint>
+    );
+  }
+  return (
+    <Badge variant="accent">{ticketCredentialClassChipLabel(cls, t)}</Badge>
+  );
 }
 
 const HIDDEN_ADVANCED_LABELS = new Set(['导入自', '登录状态', 'Imported from', 'Login status']);
@@ -185,13 +210,19 @@ export function TicketDetailPanel({
 function TicketRow({
   row,
   extras,
-  onConnect,
+  refreshingId,
+  onShare,
+  onRoute,
+  onRefresh,
   onEdit,
   onDelete,
 }: {
   row: TicketWalletRow;
   extras: TicketDetailExtras | null;
-  onConnect: (ticket: TicketView) => void;
+  refreshingId: string | null;
+  onShare: (ticket: TicketView) => void;
+  onRoute: (ticket: TicketView) => void;
+  onRefresh?: (ticket: TicketView) => void;
   onEdit: (ticket: TicketView) => void;
   onDelete: (ticket: TicketView) => void;
 }) {
@@ -210,12 +241,10 @@ function TicketRow({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
           <AgentDot agentId={ticket.agentId} />
+          <CredentialMark cls={ticket.credentialClass} />
           <Tip className="truncate text-body font-medium" label={ticket.label}>
             {ticket.label}
           </Tip>
-          <Badge variant={credentialBadgeVariant(ticket.credentialClass)}>
-            {ticketCredentialClassChipLabel(ticket.credentialClass, t)}
-          </Badge>
           <Badge variant={ticket.surface === 'unknown' ? 'accent' : 'default'}>
             {ticketSurfaceChipLabel(ticket.surface, t)}
           </Badge>
@@ -240,8 +269,36 @@ function TicketRow({
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => onConnect(ticket)}>
-            <Share2 className="h-3.5 w-3.5" /> {t('connections.list.connect')}
+          {extras?.oauthAction && onRefresh ? (
+            <Hint
+              label={
+                extras.oauthAction.kind === 'sync-current-login'
+                  ? t('connections.list.syncCurrentLogin')
+                  : t('connections.list.refresh')
+              }
+            >
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={refreshingId !== null}
+                aria-label={
+                  extras.oauthAction.kind === 'sync-current-login'
+                    ? t('connections.list.syncCurrentLogin')
+                    : t('connections.list.refresh')
+                }
+                onClick={() => onRefresh(ticket)}
+              >
+                <RefreshCw
+                  className={cn('h-3.5 w-3.5', refreshingId === ticket.id && 'animate-spin')}
+                />
+              </Button>
+            </Hint>
+          ) : null}
+          <Button size="sm" variant="outline" onClick={() => onShare(ticket)}>
+            <Share2 className="h-3.5 w-3.5" /> {t('connections.list.share')}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => onRoute(ticket)}>
+            <Cable className="h-3.5 w-3.5" /> {t('connections.list.route')}
           </Button>
           <Button
             size="sm"
@@ -345,50 +402,52 @@ export function TicketWalletList({
   wallet,
   loading,
   highlightAgentId,
-  initialFilter = 'all',
-  onConnectTicket,
+  agentFilterId = null,
+  onShareTicket,
+  onRouteTicket,
+  onRefreshTicket,
+  refreshingTicketId,
   extrasForTicket,
   onEditTicket,
   onDeleteTicket,
   onAddKey,
   onImportLogin,
+  onClearAgentFilter,
   installedAgentIds,
 }: {
   wallet: TicketWallet | null;
   loading?: boolean;
   highlightAgentId?: AgentId | null;
-  initialFilter?: TicketWalletFilter;
-  onConnectTicket: (ticket: TicketView) => void;
+  agentFilterId?: AgentId | null;
+  onShareTicket: (ticket: TicketView) => void;
+  onRouteTicket: (ticket: TicketView) => void;
+  onRefreshTicket?: (ticket: TicketView) => void;
+  refreshingTicketId?: string | null;
   extrasForTicket?: (ticket: TicketView) => TicketDetailExtras | null;
   onEditTicket: (ticket: TicketView) => void;
   onDeleteTicket: (ticket: TicketView) => void;
   onAddKey?: (agentId: AgentId) => void;
   onImportLogin?: (agentId: AgentId) => void;
+  onClearAgentFilter?: () => void;
   installedAgentIds?: readonly AgentId[];
 }) {
   const { t } = useI18n();
-  const [filter, setFilter] = React.useState<TicketWalletFilter>(initialFilter);
   const [query, setQuery] = React.useState('');
 
-  React.useEffect(() => {
-    setFilter(initialFilter);
-  }, [initialFilter]);
-
   const tickets = wallet?.tickets ?? [];
-  const counts = React.useMemo(() => countTicketsByFilter(tickets), [tickets]);
   const rows = React.useMemo(() => {
     if (!wallet) return [];
     try {
       return buildTicketWalletRows(wallet, {
-        filter,
         query,
         highlightAgentId: highlightAgentId ?? null,
+        agentFilterId,
         t,
       });
     } catch {
       return [];
     }
-  }, [wallet, filter, query, highlightAgentId, t]);
+  }, [wallet, query, highlightAgentId, agentFilterId, t]);
   const addAgents = React.useMemo(
     () => buildTicketAddMenu(installedAgentIds),
     [installedAgentIds],
@@ -404,17 +463,7 @@ export function TicketWalletList({
 
   return (
     <div>
-      <div className={cn(pageRhythm.chromeRow, 'flex-wrap justify-between gap-2')}>
-        <SegmentedControl
-          value={filter}
-          onChange={setFilter}
-          aria-label={t('connections.list.filterAria')}
-          options={TICKET_WALLET_FILTERS.map((f) => ({
-            value: f.value,
-            label: ticketWalletFilterLabel(f.value, t),
-            count: counts[f.value],
-          }))}
-        />
+      <div className={cn(pageRhythm.chromeRow, 'flex-wrap justify-end gap-2')}>
         <div className="flex items-center gap-2">
           <SearchField
             value={query}
@@ -449,8 +498,8 @@ export function TicketWalletList({
               variant="outline"
               className="mt-2"
               onClick={() => {
-                setFilter('all');
                 setQuery('');
+                onClearAgentFilter?.();
               }}
             >
               {t('connections.list.showAll')}
@@ -466,7 +515,10 @@ export function TicketWalletList({
               key={row.ticket.id}
               row={row}
               extras={extrasForTicket?.(row.ticket) ?? null}
-              onConnect={onConnectTicket}
+              refreshingId={refreshingTicketId ?? null}
+              onShare={onShareTicket}
+              onRoute={onRouteTicket}
+              onRefresh={onRefreshTicket}
               onEdit={onEditTicket}
               onDelete={onDeleteTicket}
             />

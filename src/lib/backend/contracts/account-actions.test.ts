@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accountActionPolicy } from './account-actions';
+import { accountActionPolicy, oauthListAction } from './account-actions';
 import type { Account } from '@/lib/types';
 
 function account(overrides: Partial<Account> = {}): Pick<
@@ -43,5 +43,28 @@ describe('account action policy', () => {
     expect(accountActionPolicy(account({ agentId: 'pi', provider: 'google' }))).toBeUndefined();
     expect(accountActionPolicy(account({ agentId: 'pi', provider: 'openrouter' }))).toBeUndefined();
     expect(accountActionPolicy(account({ agentId: 'pi', kind: 'apikey', provider: 'xai' }))).toBeUndefined();
+  });
+});
+
+describe('oauthListAction', () => {
+  it('keeps Grok as sync-current-login', () => {
+    expect(oauthListAction(account({ agentId: 'grok' }))?.kind).toBe('sync-current-login');
+  });
+
+  it('keeps Pi credential refresh', () => {
+    expect(oauthListAction(account({ agentId: 'pi', provider: 'anthropic' }))?.kind).toBe(
+      'refresh-credentials',
+    );
+  });
+
+  it.each(['codex', 'claude'] as const)('exposes quota refresh for %s', (agentId) => {
+    expect(oauthListAction(account({ agentId }))).toEqual({
+      kind: 'refresh-quota',
+      label: '刷新',
+    });
+  });
+
+  it('hides Kimi CLI-owned OAuth', () => {
+    expect(oauthListAction(account({ agentId: 'kimi' }))).toBeUndefined();
   });
 });
