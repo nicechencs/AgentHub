@@ -220,7 +220,14 @@ impl SkillService {
     /// startup must only restore the commit's live/lock/package state.  The
     /// normal bootstrap path may be called separately when assignment import is
     /// desired.
+    ///
+    /// No journal means there is nothing to recover, so this returns without
+    /// creating `{source_root}/.locks` or taking `__root__`.  `AgentHub::open`
+    /// would otherwise serialize every test hub on `~/.agents/skills`.
     pub fn recover_pending_commit(&self) -> Result<()> {
+        if !crate::platform::skills::skill_commit_journal_path(&self.source_root).exists() {
+            return Ok(());
+        }
         let _root_lock = acquire_skill_root_lock(&self.source_root)?;
         let repo = self
             .db
