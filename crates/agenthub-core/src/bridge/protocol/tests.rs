@@ -618,6 +618,271 @@ fn prepare_official_codex_request_forces_store_false_without_changing_model_poli
     assert!(leftover_model.get("model").is_none());
 }
 
+fn assert_no_system_input_items(body: &Value) {
+    let Some(items) = body.get("input").and_then(Value::as_array) else {
+        return;
+    };
+    for item in items {
+        assert_ne!(
+            item.get("role").and_then(Value::as_str),
+            Some("system"),
+            "official Codex Responses must not send role=system items: {item}"
+        );
+        assert_ne!(
+            item.get("role").and_then(Value::as_str),
+            Some("developer"),
+            "official Codex Responses must fold developer items: {item}"
+        );
+    }
+}
+
+#[test]
+fn to_responses_request_folds_claude_system_and_developer_into_instructions() {
+    let request = parse_messages_request(&json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 32,
+        "system": "Top-level Claude system.",
+        "messages": [
+            { "role": "system", "content": "Inline Claude system." },
+            { "role": "user", "content": "ping" }
+        ]
+    }))
+    .expect("parse messages");
+    assert_eq!(
+        request.instructions.as_deref(),
+        Some("Top-level Claude system.")
+    );
+    assert!(request
+        .input
+        .iter()
+        .any(|message| matches!(message.role, crate::bridge::types::MessageRole::System)));
+
+    let responses = to_responses_request(&request);
+    assert_no_system_input_items(&responses);
+    let instructions = responses["instructions"].as_str().expect("instructions");
+    assert!(
+        instructions.contains("Top-level Claude system."),
+        "{instructions}"
+    );
+    assert!(
+        instructions.contains("Inline Claude system."),
+        "{instructions}"
+    );
+    assert_eq!(responses["input"][0]["role"], "user");
+    assert_eq!(responses["input"][0]["content"][0]["text"], "ping");
+}
+
+#[test]
+fn to_responses_request_folds_chat_developer_after_user_into_instructions() {
+    let request = parse_chat_request(&json!({
+        "model": "claude-sonnet-4-20250514",
+        "messages": [
+            { "role": "user", "content": "hello" },
+            { "role": "developer", "content": "Be terse." },
+            { "role": "user", "content": "again" }
+        ]
+    }))
+    .expect("parse chat");
+    assert!(request.instructions.is_none());
+    assert!(request
+        .input
+        .iter()
+        .any(|message| matches!(message.role, crate::bridge::types::MessageRole::Developer)));
+
+    let responses = to_responses_request(&request);
+    assert_no_system_input_items(&responses);
+    assert_eq!(responses["instructions"], "Be terse.");
+    assert_eq!(responses["input"][0]["role"], "user");
+    assert_eq!(responses["input"][0]["content"][0]["text"], "hello");
+    assert_eq!(responses["input"][1]["role"], "user");
+    assert_eq!(responses["input"][1]["content"][0]["text"], "again");
+}
+
+#[test]
+fn prepare_official_codex_request_strips_system_items_into_existing_instructions() {
+    let mut body = json!({
+        "model": "claude-sonnet-4-20250514",
+        "instructions": "Keep going.",
+        "max_output_tokens": 64,
+        "input": [
+            {
+                "type": "message",
+                "role": "system",
+                "content": [{ "type": "input_text", "text": "You are a coding agent." }]
+            },
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{ "type": "input_text", "text": "ping" }]
+            }
+        ]
+    });
+    prepare_official_codex_request(&mut body, "claude-sonnet-4-20250514", Some(""));
+    assert_eq!(body["store"], false);
+    assert!(body.get("model").is_none(), "must not invent gpt-* models");
+    assert_no_system_input_items(&body);
+    assert!(
+        body.get("max_output_tokens").is_none(),
+        "official Codex Responses rejects max_output_tokens: {body}"
+    );
+    let instructions = body["instructions"].as_str().expect("instructions");
+    assert!(instructions.contains("Keep going."), "{instructions}");
+    assert!(
+        instructions.contains("You are a coding agent."),
+        "{instructions}"
+    );
+    assert_eq!(body["input"][0]["role"], "user");
+    assert_eq!(body["input"][0]["content"][0]["text"], "ping");
+}
+
+#[test]
+fn prepare_official_codex_request_folds_system_into_first_user_without_instructions() {
+    let mut body = json!({
+        "model": "claude-sonnet-4-20250514",
+        "input": [
+            {
+                "type": "message",
+                "role": "system",
+                "content": [{ "type": "input_text", "text": "Inline system." }]
+            },
+            {
+                "type": "message",
+                "role": "developer",
+                "content": [{ "type": "input_text", "text": "Developer note." }]
+            },
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{ "type": "input_text", "text": "ping" }]
+            }
+        ]
+    });
+    prepare_official_codex_request(&mut body, "claude-sonnet-4-20250514", None);
+    assert_eq!(body["store"], false);
+    assert!(body.get("model").is_none(), "must not invent gpt-* models");
+    assert_no_system_input_items(&body);
+    assert!(body.get("instructions").is_none());
+    let user_text = body["input"][0]["content"][0]["text"]
+        .as_str()
+        .expect("user text");
+    assert!(user_text.contains("Inline system."), "{user_text}");
+    assert!(user_text.contains("Developer note."), "{user_text}");
+    assert!(user_text.contains("ping"), "{user_text}");
+}
+
+#[test]
+fn official_codex_messages_path_has_no_system_items_after_prepare() {
+    let request = parse_messages_request(&json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 32,
+        "system": "Claude Code system prompt.",
+        "messages": [
+            { "role": "system", "content": "Extra system." },
+            { "role": "user", "content": "ping" }
+        ]
+    }))
+    .expect("parse messages");
+    let mut body = to_responses_request(&request);
+    prepare_official_codex_request(&mut body, &request.model, Some(""));
+    assert_eq!(body["store"], false);
+    assert!(body.get("model").is_none(), "must not invent gpt-* models");
+    assert_no_system_input_items(&body);
+    let instructions = body["instructions"].as_str().expect("instructions");
+    assert!(
+        instructions.contains("Claude Code system prompt."),
+        "{instructions}"
+    );
+    assert!(instructions.contains("Extra system."), "{instructions}");
+    assert_eq!(body["input"][0]["role"], "user");
+    assert_eq!(body["input"][0]["content"][0]["text"], "ping");
+    assert!(
+        body.get("max_output_tokens").is_none(),
+        "official Codex Responses rejects max_output_tokens: {body}"
+    );
+}
+
+#[test]
+fn prepare_official_codex_request_omits_max_output_tokens_from_passthrough() {
+    let request = parse_messages_request(&json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 64,
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "messages": [
+            { "role": "user", "content": "ping" }
+        ]
+    }))
+    .expect("parse messages");
+    assert_eq!(request.passthrough["max_output_tokens"], 64);
+
+    let mut body = to_responses_request(&request);
+    assert_eq!(body["max_output_tokens"], 64);
+    assert_eq!(body["temperature"], 0.2);
+    assert_eq!(body["top_p"], 0.9);
+
+    prepare_official_codex_request(&mut body, &request.model, Some(""));
+    assert_eq!(body["store"], false);
+    assert!(body.get("model").is_none(), "must not invent gpt-* models");
+    assert_no_system_input_items(&body);
+    assert!(
+        body.get("max_output_tokens").is_none(),
+        "official Codex Responses rejects max_output_tokens: {body}"
+    );
+    assert_eq!(body["temperature"], 0.2);
+    assert_eq!(body["top_p"], 0.9);
+    assert_eq!(body["input"][0]["content"][0]["text"], "ping");
+}
+
+#[test]
+fn prepare_official_codex_request_allowlists_responses_keys() {
+    let mut body = json!({
+        "model": "claude-sonnet-4-20250514",
+        "instructions": "Be brief.",
+        "stream": true,
+        "store": true,
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{ "type": "input_text", "text": "ping" }]
+            }
+        ],
+        "tools": [{ "type": "function", "name": "echo", "parameters": { "type": "object" } }],
+        "tool_choice": "auto",
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "max_output_tokens": 64,
+        "metadata": { "user_id": "u1", "session": "s1" },
+        "presence_penalty": 0.1,
+        "frequency_penalty": 0.2,
+        "seed": 7,
+        "user": "alice"
+    });
+    prepare_official_codex_request(&mut body, "claude-sonnet-4-20250514", Some(""));
+    assert_eq!(body["store"], false);
+    assert!(body.get("model").is_none(), "must not invent gpt-* models");
+    assert_eq!(body["stream"], true);
+    assert_eq!(body["instructions"], "Be brief.");
+    assert_eq!(body["tool_choice"], "auto");
+    assert_eq!(body["tools"][0]["name"], "echo");
+    assert_eq!(body["temperature"], 0.2);
+    assert_eq!(body["top_p"], 0.9);
+    assert_eq!(body["input"][0]["content"][0]["text"], "ping");
+    for key in [
+        "max_output_tokens",
+        "metadata",
+        "presence_penalty",
+        "frequency_penalty",
+        "seed",
+        "user",
+    ] {
+        assert!(
+            body.get(key).is_none(),
+            "official Codex Responses must drop {key}: {body}"
+        );
+    }
+}
+
 #[test]
 fn responses_ir_encodes_chat_completion_without_inventing_model() {
     let ir = responses_output_to_ir(&fixture("responses_upstream_text")).expect("ir");
