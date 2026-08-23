@@ -15,7 +15,6 @@ import {
   canSubmitCreateRoute,
   CREATE_ROUTE_TARGETS,
   DEFAULT_CREATE_ROUTE_MODEL,
-  isCreateRouteUrlValid,
   submitCreateRoute,
   type CreateRouteTarget,
 } from './create-route-flow';
