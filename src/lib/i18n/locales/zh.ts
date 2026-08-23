@@ -886,6 +886,14 @@ export const zh = {
       toastOkDesc: "{label} 已加入列表",
       toastOkCoexist: "{label} 已加入列表。另一份本机登录未导入，仍留在本机。",
       toastFail: "导入失败",
+      apiKeyTitle: "导入本机 API Key？",
+      apiKeyDescription: "将读取 {name} 本机 auth.json 中的 API Key；AgentHub 不会在此发起新的授权。",
+      apiKeyConfirm: "确认导入 Key",
+    },
+    discovery: {
+      providerBanner: "检测到 {name} 本机的 API Key 尚未收入连接列表。",
+      accountBanner: "检测到 {name} 本机的登录态尚未收入连接列表。",
+      action: "导入",
     },
     delete: {
       title: "移入回收站？",

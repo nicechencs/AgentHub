@@ -60,6 +60,9 @@ import {
   deleteConnectionToastDescription,
   liveAuthCoexistenceNotice,
   liveAuthImportGate,
+  liveApiKeyImportGate,
+  liveAuthDiscoveryKind,
+  liveImportDialogMode,
 } from './connection-model';
 import {
   closeConfirmationOnOpenChange,
@@ -131,6 +134,10 @@ export default function ConnectionsPage() {
   const [importProbeLoading, setImportProbeLoading] = useState(false);
   const importProbeGen = useRef(0);
   const [importingAccount, setImportingAccount] = useState(false);
+  const [discoveryProbe, setDiscoveryProbe] = useState<LiveAuthProbe | null>(null);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [discoveryDismissed, setDiscoveryDismissed] = useState(false);
+  const discoveryProbeGen = useRef(0);
   const [deleteTicket, setDeleteTicket] = useState<TicketView | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const guideOpenedApiKeyRef = useRef(false);
@@ -177,6 +184,28 @@ export default function ConnectionsPage() {
       },
     );
   }, [addAgentId, loginImportOpen]);
+
+  // Discovery banner: cached live-auth probe once a pool snapshot exists.
+  // Explicit-only per product rules — this only surfaces a prompt, never
+  // imports anything on its own.
+  useEffect(() => {
+    if (pool.state !== 'ready' && pool.state !== 'partial') return;
+    setDiscoveryDismissed(false);
+    const generation = ++discoveryProbeGen.current;
+    setDiscoveryLoading(true);
+    void probeLiveAuth(addAgentId).then(
+      (probe) => {
+        if (discoveryProbeGen.current !== generation) return;
+        setDiscoveryProbe(probe);
+        setDiscoveryLoading(false);
+      },
+      () => {
+        if (discoveryProbeGen.current !== generation) return;
+        setDiscoveryProbe(null);
+        setDiscoveryLoading(false);
+      },
+    );
+  }, [addAgentId, pool.state]);
 
   const walletGeneration = useRef(0);
   const loadWallet = useCallback(async (): Promise<boolean> => {
@@ -477,15 +506,32 @@ export default function ConnectionsPage() {
   );
 
   const importCoexistenceNotice = liveAuthCoexistenceNotice(importLiveProbe, addAgentId, t);
-  const importGate = liveAuthImportGate(
+  const oauthImportGate = liveAuthImportGate(
     importLiveProbe,
     importProbeLoading,
     addAgentId,
     t,
   );
+  const apiKeyImportGate = liveApiKeyImportGate(
+    importLiveProbe,
+    importProbeLoading,
+    addAgentId,
+    t,
+  );
+  const importDialogMode = liveImportDialogMode(importLiveProbe);
+  const activeImportGate = importDialogMode === 'api-key' ? apiKeyImportGate : oauthImportGate;
+
+  const discoveryKind = liveAuthDiscoveryKind({
+    poolState: pool.state,
+    probe: discoveryProbe,
+    accounts: pool.accounts,
+    providers: pool.providers,
+  });
+  const showDiscoveryBanner =
+    !discoveryLoading && !discoveryDismissed && !loginImportOpen && discoveryKind !== null;
 
   const confirmImportLogin = async () => {
-    if (!importGate.enabled) return;
+    if (!activeImportGate.enabled) return;
     const coexistenceNotice = importCoexistenceNotice;
     setImportingAccount(true);
     try {
@@ -499,6 +545,7 @@ export default function ConnectionsPage() {
         variant: 'success',
       });
       await poolReload().catch(() => {});
+      setDiscoveryDismissed(true);
       await loadWallet();
       handleGuideSucceeded();
     } catch (e) {
@@ -627,6 +674,21 @@ export default function ConnectionsPage() {
         />
       </div>
 
+      {showDiscoveryBanner && discoveryKind ? (
+        <div className={pageRhythm.lead}>
+          <Notice
+            tone="info"
+            actionLabel={t('connections.discovery.action')}
+            onAction={() => setLoginImportOpen(true)}
+            onDismiss={() => setDiscoveryDismissed(true)}
+          >
+            {discoveryKind === 'provider'
+              ? t('connections.discovery.providerBanner', { name: agentDisplayName(addAgentId) })
+              : t('connections.discovery.accountBanner', { name: agentDisplayName(addAgentId) })}
+          </Notice>
+        </div>
+      ) : null}
+
       {resumeAgentId ? (
         <div className={pageRhythm.lead}>
           <Notice
@@ -706,16 +768,22 @@ export default function ConnectionsPage() {
           onInteractOutside={(event) => preventBusyConfirmationDismissal(importingAccount, event)}
         >
           <DialogHeader>
-            <DialogTitle>{t('connections.import.title')}</DialogTitle>
+            <DialogTitle>
+              {importDialogMode === 'api-key'
+                ? t('connections.import.apiKeyTitle')
+                : t('connections.import.title')}
+            </DialogTitle>
             <DialogDescription>
-              {t('connections.import.description', { name: agentDisplayName(addAgentId) })}
+              {importDialogMode === 'api-key'
+                ? t('connections.import.apiKeyDescription', { name: agentDisplayName(addAgentId) })
+                : t('connections.import.description', { name: agentDisplayName(addAgentId) })}
             </DialogDescription>
           </DialogHeader>
           {importProbeLoading ? (
             <p className="text-xs text-muted">{t('connections.import.probing')}</p>
           ) : null}
-          {!importProbeLoading && !importGate.enabled && importGate.reason ? (
-            <Notice tone="warning">{importGate.reason}</Notice>
+          {!importProbeLoading && !activeImportGate.enabled && activeImportGate.reason ? (
+            <Notice tone="warning">{activeImportGate.reason}</Notice>
           ) : null}
           {importCoexistenceNotice ? (
             <Notice tone="warning">{importCoexistenceNotice}</Notice>
@@ -729,10 +797,14 @@ export default function ConnectionsPage() {
               {t('common.cancel')}
             </Button>
             <Button
-              disabled={importingAccount || !importGate.enabled}
+              disabled={importingAccount || !activeImportGate.enabled}
               onClick={() => void confirmImportLogin()}
             >
-              {importingAccount ? t('connections.import.importing') : t('connections.import.confirm')}
+              {importingAccount
+                ? t('connections.import.importing')
+                : importDialogMode === 'api-key'
+                  ? t('connections.import.apiKeyConfirm')
+                  : t('connections.import.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
