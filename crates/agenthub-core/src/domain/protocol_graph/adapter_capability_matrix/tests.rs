@@ -24,6 +24,33 @@ fn missing_key_is_fail_closed() {
 }
 
 #[test]
+fn openai_api_to_codex_is_experimental_local_bridge() {
+    let key = AdapterCapabilityKey {
+        source: AdapterSourceProduct::OpenaiApi,
+        credential: AdapterCredentialClass::ApiKey,
+        transport: AdapterUpstreamTransport::NativeHttp,
+        target: AgentId::Codex,
+        protocol: AdapterTargetProtocol::OpenAiResponses,
+        version: MATRIX_VERSION,
+    };
+    assert!(lookup_adapter_capability(&key).is_none());
+    let decision = decide_adapter_capability(
+        AdapterSourceProduct::OpenaiApi,
+        AdapterCredentialClass::ApiKey,
+        AgentId::Codex,
+    )
+    .public_surface();
+    assert_eq!(decision.route, AdapterRoute::LocalBridge);
+    assert_eq!(decision.support, AdapterSupport::Experimental);
+    assert!(decision.can_apply);
+    assert_eq!(decision.rule_id, Some("openai-api-to-codex-v1"));
+    assert_eq!(
+        decision.transport,
+        AdapterUpstreamTransport::LocalBridgeChatCompletions
+    );
+}
+
+#[test]
 fn kimi_claude_and_codex_cells_are_applicable() {
     let claude = decide_adapter_capability(
         AdapterSourceProduct::KimiCodeMembership,
@@ -42,6 +69,26 @@ fn kimi_claude_and_codex_cells_are_applicable() {
     assert_eq!(codex.route, AdapterRoute::LocalBridge);
     assert!(codex.can_apply);
     assert_eq!(codex.support, AdapterSupport::Experimental);
+}
+
+#[test]
+fn official_codex_oauth_can_apply_onto_codex() {
+    for credential in [
+        AdapterCredentialClass::OauthAuthJson,
+        AdapterCredentialClass::OauthOther,
+    ] {
+        let decision = decide_adapter_capability(
+            AdapterSourceProduct::CodexChatGptSubscription,
+            credential,
+            AgentId::Codex,
+        )
+        .public_surface();
+        assert_eq!(decision.route, AdapterRoute::NativeEndpoint);
+        assert!(decision.can_apply);
+        assert_eq!(decision.rule_id, Some(CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID));
+        assert_eq!(decision.reason, CODEX_SUBSCRIPTION_TO_CODEX_REASON);
+        assert!(!decision.reason.contains("本机路由"));
+    }
 }
 
 #[test]
@@ -105,7 +152,23 @@ fn every_matrix_cell_has_reason_and_version() {
                 cell.rule_id
             );
         }
+        assert!(
+            !cell.multi_account,
+            "{} must keep multi_account closed until evidenced",
+            cell.rule_id
+        );
     }
+}
+
+#[test]
+fn local_bridge_multi_account_stays_fail_closed() {
+    assert!(!local_bridge_multi_account(
+        "grok-subscription-to-claude-v1"
+    ));
+    assert!(!local_bridge_multi_account(
+        "codex-subscription-to-claude-responses-v1"
+    ));
+    assert!(!local_bridge_multi_account("missing-rule"));
 }
 
 #[test]
@@ -410,7 +473,7 @@ fn registered_surfaces_have_writable_pi_cells() {
     assert_eq!(xai_grok.route, AdapterRoute::Unsupported);
     assert!(!xai_grok.can_apply);
     assert_eq!(xai_grok.reason, SAME_PROTOCOL_NO_EDGE_REASON);
-    assert_eq!(xai_grok.reason, "这条接到方式还没做好，暂不能绑定。");
+    assert_eq!(xai_grok.reason, "这条接法还没做好，现在接不上。");
     assert!(!xai_grok.reason.contains("仅支持预览"));
 }
 
@@ -449,6 +512,19 @@ fn cursor_target_uses_no_writer_reason_not_source_copy() {
 }
 
 #[test]
+fn workbuddy_hears_no_protocol_so_codex_login_stays_closed() {
+    let decision = decide_adapter_capability(
+        AdapterSourceProduct::CodexChatGptSubscription,
+        AdapterCredentialClass::OauthAuthJson,
+        AgentId::WorkBuddy,
+    )
+    .public_surface();
+    assert_eq!(decision.route, AdapterRoute::Unsupported);
+    assert!(!decision.can_apply);
+    assert_eq!(decision.reason, PROTOCOL_MISMATCH_REASON);
+}
+
+#[test]
 fn kimi_to_grok_is_an_open_native_endpoint() {
     let decision = decide_adapter_capability(
         AdapterSourceProduct::KimiCodeMembership,
@@ -459,4 +535,183 @@ fn kimi_to_grok_is_an_open_native_endpoint() {
     assert_eq!(decision.route, AdapterRoute::NativeEndpoint);
     assert!(decision.can_apply);
     assert_eq!(decision.rule_id, Some("kimi-membership-to-grok-v1"));
+}
+
+#[test]
+fn grok_subscription_to_claude_uses_xai_responses_oauth() {
+    let decision = decide_adapter_capability(
+        AdapterSourceProduct::XaiGrokSubscription,
+        AdapterCredentialClass::OauthOther,
+        AgentId::Claude,
+    )
+    .public_surface();
+    assert_eq!(decision.route, AdapterRoute::LocalBridge);
+    assert!(decision.can_apply);
+    assert_eq!(decision.rule_id, Some("grok-subscription-to-claude-v1"));
+    assert_eq!(decision.reason, GROK_SUBSCRIPTION_TO_CLAUDE_REASON);
+    assert_eq!(
+        decision.transport,
+        AdapterUpstreamTransport::XaiResponsesOauth
+    );
+    assert_eq!(
+        decision.protocol,
+        Some(AdapterTargetProtocol::AnthropicMessages)
+    );
+}
+
+#[test]
+fn grok_subscription_to_codex_is_open_local_bridge() {
+    let decision = decide_adapter_capability(
+        AdapterSourceProduct::XaiGrokSubscription,
+        AdapterCredentialClass::OauthOther,
+        AgentId::Codex,
+    )
+    .public_surface();
+    assert_eq!(decision.route, AdapterRoute::LocalBridge);
+    assert!(decision.can_apply);
+    assert_eq!(decision.rule_id, Some("grok-subscription-to-codex-v1"));
+    assert_eq!(decision.reason, GROK_SUBSCRIPTION_TO_CODEX_REASON);
+    assert_eq!(
+        decision.transport,
+        AdapterUpstreamTransport::XaiResponsesOauth
+    );
+    assert_eq!(
+        decision.protocol,
+        Some(AdapterTargetProtocol::OpenAiResponses)
+    );
+}
+
+#[test]
+fn codex_subscription_to_grok_kimi_dsh_is_open_local_bridge() {
+    for (target, rule_id, reason) in [
+        (
+            AgentId::Grok,
+            CODEX_SUBSCRIPTION_TO_GROK_RULE_ID,
+            CODEX_SUBSCRIPTION_TO_GROK_REASON,
+        ),
+        (
+            AgentId::Kimi,
+            CODEX_SUBSCRIPTION_TO_KIMI_RULE_ID,
+            CODEX_SUBSCRIPTION_TO_KIMI_REASON,
+        ),
+        (
+            AgentId::Dsh,
+            CODEX_SUBSCRIPTION_TO_DSH_RULE_ID,
+            CODEX_SUBSCRIPTION_TO_DSH_REASON,
+        ),
+    ] {
+        for credential in [
+            AdapterCredentialClass::OauthAuthJson,
+            AdapterCredentialClass::OauthOther,
+        ] {
+            let decision = decide_adapter_capability(
+                AdapterSourceProduct::CodexChatGptSubscription,
+                credential,
+                target,
+            )
+            .public_surface();
+            assert_eq!(decision.route, AdapterRoute::LocalBridge, "{target:?}");
+            assert!(decision.can_apply, "{target:?}");
+            assert_eq!(decision.rule_id, Some(rule_id), "{target:?}");
+            assert_eq!(decision.reason, reason, "{target:?}");
+            assert_eq!(
+                decision.transport,
+                AdapterUpstreamTransport::CodexResponsesOauth,
+                "{target:?}"
+            );
+            let expected_protocol = if target == AgentId::Grok {
+                AdapterTargetProtocol::OpenAiResponses
+            } else {
+                AdapterTargetProtocol::OpenAiChatCompletions
+            };
+            assert_eq!(decision.protocol, Some(expected_protocol), "{target:?}");
+            assert!(!decision.reason.contains("实验"));
+            assert!(!decision.reason.contains("未验证"));
+        }
+    }
+}
+
+#[test]
+fn grok_subscription_to_kimi_and_dsh_stay_closed_with_clear_reasons() {
+    let kimi = decide_adapter_capability(
+        AdapterSourceProduct::XaiGrokSubscription,
+        AdapterCredentialClass::OauthOther,
+        AgentId::Kimi,
+    )
+    .public_surface();
+    assert_eq!(kimi.route, AdapterRoute::Unsupported);
+    assert!(!kimi.can_apply);
+    assert_eq!(kimi.reason, GROK_SUBSCRIPTION_TO_KIMI_REASON);
+    assert!(
+        GROK_SUBSCRIPTION_TO_KIMI_REASON.contains("官方 Key"),
+        "closed copy must say Kimi only accepts its own official key"
+    );
+
+    let dsh = decide_adapter_capability(
+        AdapterSourceProduct::XaiGrokSubscription,
+        AdapterCredentialClass::OauthOther,
+        AgentId::Dsh,
+    )
+    .public_surface();
+    assert_eq!(dsh.route, AdapterRoute::Unsupported);
+    assert!(!dsh.can_apply);
+    assert_eq!(dsh.reason, GROK_SUBSCRIPTION_TO_DSH_REASON);
+    assert!(
+        GROK_SUBSCRIPTION_TO_DSH_REASON.contains("DeepSeek 官方 Key"),
+        "closed copy must say DSH only accepts the DeepSeek official key"
+    );
+}
+
+#[test]
+fn local_bridge_matrix_cells_are_exactly_the_catalog() {
+    let mut from_catalog: Vec<_> = LOCAL_BRIDGE_EDGES
+        .iter()
+        .map(|edge| edge.to_cell())
+        .collect();
+    let mut from_matrix: Vec<_> = ADAPTER_CAPABILITY_MATRIX
+        .iter()
+        .copied()
+        .filter(|cell| cell.route == AdapterRoute::LocalBridge)
+        .collect();
+    from_catalog.sort_by_key(|cell| (cell.rule_id, format!("{:?}", cell.key.credential)));
+    from_matrix.sort_by_key(|cell| (cell.rule_id, format!("{:?}", cell.key.credential)));
+    assert_eq!(
+        from_catalog, from_matrix,
+        "every LocalBridge matrix cell must be LocalBridgeEdge::to_cell(); do not hand-write cells"
+    );
+}
+
+#[test]
+fn claude_subscription_to_codex_is_preview_local_bridge_from_catalog() {
+    let cell = lookup_adapter_capability(&CLAUDE_CODEX_EDGE.to_cell().key).expect("cell");
+    assert_eq!(cell.rule_id, CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID);
+    assert_eq!(
+        cell.key.transport,
+        AdapterUpstreamTransport::LocalBridgeAnthropicMessages
+    );
+    assert_eq!(cell.key.protocol, AdapterTargetProtocol::OpenAiResponses);
+    assert!(!cell.can_apply);
+    assert_eq!(cell.gates, AdapterCapabilityGates::all_closed());
+    assert_eq!(cell.reason, CLAUDE_SUBSCRIPTION_TO_CODEX_REASON);
+
+    let decision = decide_adapter_capability(
+        AdapterSourceProduct::ClaudeSubscription,
+        AdapterCredentialClass::OauthOther,
+        AgentId::Codex,
+    )
+    .public_surface();
+    assert_eq!(decision.route, AdapterRoute::LocalBridge);
+    assert_eq!(decision.support, AdapterSupport::Experimental);
+    assert!(!decision.can_apply);
+    assert_eq!(decision.gate_kind, AdapterGateKind::PreviewOnly);
+    assert_eq!(decision.rule_id, Some(CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID));
+    assert_eq!(decision.reason, CLAUDE_SUBSCRIPTION_TO_CODEX_REASON);
+    assert_eq!(
+        adapter_maturity_from_decision(&decision),
+        AdapterMaturity::Preview
+    );
+    assert!(
+        !decision.reason.contains("产品不做"),
+        "Claude → Codex is ③-open; reason must not say product-closed"
+    );
 }

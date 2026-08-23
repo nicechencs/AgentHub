@@ -5,7 +5,7 @@ use super::pi_auth::{
     pi_config_dir, read_auth_json, write_verified_auth_json,
 };
 use super::{
-    api_key_live_account, auth_file_revision, detect_binary, inspect_auth_credentials,
+    api_key_live_account, auth_file_revision, detect_binary_with_env, inspect_auth_credentials,
     oauth_auth_health, require_api_key, AgentAdapter,
 };
 use crate::error::{AppError, Result};
@@ -24,9 +24,99 @@ pub(crate) fn detect_installation() -> DetectResult {
         .first()
         .map(|c| c.requires.clone())
         .unwrap_or_default();
-    let env_ready = runtime::is_ready(&requires);
+    let node22 = runtime::resolve_pi_node();
+    let extra_env =
+        runtime::prefixed_path_env(node22.as_ref().and_then(|n| n.bin_dir()).as_deref());
+    let env_ready = runtime::is_ready(&requires) && node22.is_some();
     // Prefer PATH `pi` (npm global shim); channel inferred from path / well-known.
-    detect_binary(AgentId::Pi, &["pi"], &["--version"], Some("npm"), env_ready)
+    // Version probe + Chat must see Node 22 first (PATH node may still be 20).
+    let detected = detect_binary_with_env(
+        AgentId::Pi,
+        &["pi"],
+        &["--version"],
+        Some("npm"),
+        env_ready,
+        &extra_env,
+    );
+    apply_pi_node_requirement(detected, node22.is_some())
+}
+
+/// PATH prefix for Pi Chat / probe. `bin_dir` is the Node 22 directory when found.
+pub(crate) fn pi_child_env(node22_bin_dir: Option<&Path>) -> Vec<(String, String)> {
+    runtime::prefixed_path_env(node22_bin_dir)
+}
+
+/// Refuse to spawn Pi when Node 22.19+ is missing — PATH Node 20 crashes undici.
+pub(crate) fn require_pi_node22_env(
+    node22: Option<&crate::runtime::ResolvedNode>,
+) -> Result<Vec<(String, String)>> {
+    match node22.and_then(|n| n.bin_dir()) {
+        Some(dir) => Ok(pi_child_env(Some(&dir))),
+        None => Err(AppError::EnvNotReady(
+            crate::runtime::PI_NODE_TOO_OLD_NOTE.into(),
+        )),
+    }
+}
+
+pub(crate) fn build_pi_run_spec(
+    binary: &Path,
+    prompt: &str,
+    opts: &RunOptions,
+    node22: Option<&crate::runtime::ResolvedNode>,
+) -> Result<RunSpec> {
+    // text: `pi -p "…"` `--mode text --no-session`
+    // structured (Chat): `--mode json` event stream (NDJSON session events)
+    // No public stable "always approve tools" flag — do not invent one.
+    // `--approve` only trusts project-local files for the run (not tool YOLO).
+    let mode = if super::wants_structured_for(opts.process_mode, AgentId::Pi) {
+        "json"
+    } else {
+        "text"
+    };
+    let mut args = vec![
+        "-p".into(),
+        prompt.to_string(),
+        "--mode".into(),
+        mode.into(),
+        "--no-session".into(),
+    ];
+    // Documented `--provider` / `--model`. Prefer settings.json; if that
+    // file has neither default, fall back to a single auth.json slot so
+    // Chat works after an auth-only bind (no re-bind required).
+    args.extend(pi_cli_provider_args());
+    if opts.allow_dangerous {
+        // Closest documented non-interactive trust flag for project files.
+        args.push("--approve".into());
+    }
+    let env = require_pi_node22_env(node22)?;
+    Ok(RunSpec {
+        agent: AgentId::Pi,
+        program: binary.to_path_buf(),
+        args,
+        cwd: opts.cwd.clone(),
+        env,
+    })
+}
+
+/// Pi `engines.node` is >= 22. Without Node 22, env is not ready and version
+/// probes must not look like a generic “installed but unread” miss.
+pub(crate) fn apply_pi_node_requirement(
+    mut detect: DetectResult,
+    has_node22: bool,
+) -> DetectResult {
+    if has_node22 {
+        return detect;
+    }
+    detect.env_ready = false;
+    if detect.status == crate::models::DetectStatus::Installed
+        && !detect
+            .notes
+            .iter()
+            .any(|n| n.to_ascii_lowercase().contains("node too old"))
+    {
+        detect.notes.push(runtime::PI_NODE_TOO_OLD_NOTE.into());
+    }
+    detect
 }
 
 impl AgentAdapter for PiAdapter {
@@ -174,7 +264,7 @@ impl AgentAdapter for PiAdapter {
             | ProjectDelete => CapabilityState::full(),
             ConfigWrite => CapabilityState::full(),
             ApiKeyAccount => CapabilityState::partial(
-                "可入池；写回 auth.json 需带官方厂商槽（anthropic/openai/…）；自定义 URL 走 models.json / 供应商切换",
+                "可入池；写回 auth.json 需带官方厂商（anthropic/openai/…）；自定义 URL 走 models.json / 供应商切换",
             ),
             DangerousMode => CapabilityState::partial("--approve 仅信任项目文件，非完全跳过确认"),
             ProviderPresets => CapabilityState::unsupported("暂无内置 Pi provider 预设"),
@@ -195,33 +285,7 @@ impl AgentAdapter for PiAdapter {
     }
 
     fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec> {
-        // text: `pi -p "…"` `--mode text --no-session`
-        // structured (Chat): `--mode json` event stream (NDJSON session events)
-        // No public stable "always approve tools" flag — do not invent one.
-        // `--approve` only trusts project-local files for the run (not tool YOLO).
-        let mode = if super::wants_structured_for(opts.process_mode, AgentId::Pi) {
-            "json"
-        } else {
-            "text"
-        };
-        let mut args = vec![
-            "-p".into(),
-            prompt.to_string(),
-            "--mode".into(),
-            mode.into(),
-            "--no-session".into(),
-        ];
-        if opts.allow_dangerous {
-            // Closest documented non-interactive trust flag for project files.
-            args.push("--approve".into());
-        }
-        Ok(RunSpec {
-            agent: AgentId::Pi,
-            program: binary.to_path_buf(),
-            args,
-            cwd: opts.cwd.clone(),
-            env: vec![],
-        })
+        build_pi_run_spec(binary, prompt, opts, runtime::resolve_pi_node().as_ref())
     }
 }
 
@@ -360,6 +424,51 @@ where
         .into_iter()
         .max_by_key(rank)
         .unwrap_or(AuthHealth::Missing)
+}
+
+/// Resolve Pi `--provider` / `--model` from live config when we can.
+/// Missing files or unreadable JSON are ignored — the CLI still launches.
+fn pi_cli_provider_args() -> Vec<String> {
+    let Ok(dir) = pi_config_dir() else {
+        return Vec::new();
+    };
+    let settings =
+        read_json_object_or_empty(&dir.join("settings.json")).unwrap_or(serde_json::json!({}));
+    let provider = nonempty_json_str(&settings, "defaultProvider");
+    let model = nonempty_json_str(&settings, "defaultModel");
+    if provider.is_some() || model.is_some() {
+        let mut args = Vec::new();
+        if let Some(provider) = provider {
+            args.push("--provider".into());
+            args.push(provider);
+        }
+        if let Some(model) = model {
+            args.push("--model".into());
+            args.push(model);
+        }
+        return args;
+    }
+    let auth = read_json_object_or_empty(&dir.join("auth.json")).unwrap_or(serde_json::json!({}));
+    let Some(obj) = auth.as_object() else {
+        return Vec::new();
+    };
+    let slots: Vec<&str> = obj
+        .iter()
+        .filter(|(_, v)| v.is_object())
+        .map(|(k, _)| k.as_str())
+        .collect();
+    if slots.len() == 1 {
+        return vec!["--provider".into(), slots[0].to_string()];
+    }
+    Vec::new()
+}
+
+fn nonempty_json_str(v: &serde_json::Value, key: &str) -> Option<String> {
+    v.get(key)
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
 }
 
 fn read_json_object_or_empty(path: &Path) -> Result<serde_json::Value> {
@@ -544,29 +653,119 @@ mod tests {
 
     static PI_CONFIG_ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    fn with_pi_config_dir<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
+        let _guard = PI_CONFIG_ENV_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("PI_CODING_AGENT_DIR");
+        std::env::set_var("PI_CODING_AGENT_DIR", dir.path());
+        let result = f(dir.path());
+        match previous {
+            Some(value) => std::env::set_var("PI_CODING_AGENT_DIR", value),
+            None => std::env::remove_var("PI_CODING_AGENT_DIR"),
+        }
+        result
+    }
+
+    fn fake_node22() -> crate::runtime::ResolvedNode {
+        crate::runtime::ResolvedNode {
+            path: PathBuf::from("/tmp/mock-node-v22.19.0/bin/node"),
+            version: "22.19.0".into(),
+            major: 22,
+        }
+    }
+
     #[test]
     fn build_run_spec_print_mode() {
-        let adapter = PiAdapter;
-        let bin = PathBuf::from("pi");
-        let opts = RunOptions::default();
-        let spec = adapter.build_run_spec(&bin, "hello", &opts).unwrap();
-        assert_eq!(spec.agent, AgentId::Pi);
-        assert_eq!(spec.program, bin);
-        assert_eq!(spec.args[0], "-p");
-        assert_eq!(spec.args[1], "hello");
-        assert!(spec.args.iter().any(|a| a == "--mode"));
-        assert!(spec.args.iter().any(|a| a == "text"));
-        assert!(spec.args.iter().any(|a| a == "--no-session"));
-        assert!(!spec.args.iter().any(|a| a == "--approve"));
+        with_pi_config_dir(|_| {
+            let bin = PathBuf::from("pi");
+            let opts = RunOptions::default();
+            let spec = build_pi_run_spec(&bin, "hello", &opts, Some(&fake_node22())).unwrap();
+            assert_eq!(spec.agent, AgentId::Pi);
+            assert_eq!(spec.program, bin);
+            assert_eq!(spec.args[0], "-p");
+            assert_eq!(spec.args[1], "hello");
+            assert!(spec.args.iter().any(|a| a == "--mode"));
+            assert!(spec.args.iter().any(|a| a == "text"));
+            assert!(spec.args.iter().any(|a| a == "--no-session"));
+            assert!(!spec.args.iter().any(|a| a == "--approve"));
+            assert!(!spec.args.iter().any(|a| a == "--provider"));
+            for (k, v) in &spec.env {
+                assert_eq!(k, "PATH");
+                assert!(!v.is_empty());
+            }
+        });
     }
 
     #[test]
     fn build_run_spec_allow_dangerous_adds_approve() {
-        let adapter = PiAdapter;
-        let mut opts = RunOptions::default();
-        opts.allow_dangerous = true;
-        let spec = adapter.build_run_spec(Path::new("pi"), "x", &opts).unwrap();
-        assert!(spec.args.iter().any(|a| a == "--approve"));
+        with_pi_config_dir(|_| {
+            let mut opts = RunOptions::default();
+            opts.allow_dangerous = true;
+            let spec =
+                build_pi_run_spec(Path::new("pi"), "x", &opts, Some(&fake_node22())).unwrap();
+            assert!(spec.args.iter().any(|a| a == "--approve"));
+        });
+    }
+
+    #[test]
+    fn build_run_spec_uses_sole_auth_json_provider() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("auth.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "xai": { "type": "oauth", "access": "test-access" }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let spec = build_pi_run_spec(
+                Path::new("pi"),
+                "ping",
+                &RunOptions::default(),
+                Some(&fake_node22()),
+            )
+            .unwrap();
+            let args = spec.args;
+            let idx = args
+                .iter()
+                .position(|a| a == "--provider")
+                .expect("--provider");
+            assert_eq!(args[idx + 1], "xai");
+            assert!(!args.iter().any(|a| a == "--model"));
+        });
+    }
+
+    #[test]
+    fn build_run_spec_uses_settings_default_provider() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({ "defaultProvider": "xai" })).unwrap(),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.join("auth.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "anthropic": { "type": "oauth", "access": "other-access" },
+                    "xai": { "type": "oauth", "access": "test-access" }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let spec = build_pi_run_spec(
+                Path::new("pi"),
+                "ping",
+                &RunOptions::default(),
+                Some(&fake_node22()),
+            )
+            .unwrap();
+            let args = spec.args;
+            let idx = args
+                .iter()
+                .position(|a| a == "--provider")
+                .expect("--provider");
+            assert_eq!(args[idx + 1], "xai");
+        });
     }
 
     #[test]
@@ -736,7 +935,10 @@ mod tests {
             "https://relay.example/v1"
         );
         assert_eq!(models["providers"]["keep"]["apiKey"], "keep-secret");
-        assert!(models.get("auth").is_none(), "auth must not leak into models.json");
+        assert!(
+            models.get("auth").is_none(),
+            "auth must not leak into models.json"
+        );
 
         let auth = read_json_object_or_empty(&dir.path().join("auth.json")).unwrap();
         assert_eq!(auth["openai"]["type"], "api_key");
@@ -757,7 +959,10 @@ mod tests {
         })
         .unwrap();
         let models = read_json_object_or_empty(&dir.path().join("models.json")).unwrap();
-        assert_eq!(models["providers"]["extra"]["baseUrl"], "https://extra.example");
+        assert_eq!(
+            models["providers"]["extra"]["baseUrl"],
+            "https://extra.example"
+        );
         assert!(models.get("auth").is_none());
         let auth = read_json_object_or_empty(&dir.path().join("auth.json")).unwrap();
         assert_eq!(auth["deepseek"]["key"], "sk-ds");
@@ -767,5 +972,151 @@ mod tests {
             Some(value) => std::env::set_var("PI_CODING_AGENT_DIR", value),
             None => std::env::remove_var("PI_CODING_AGENT_DIR"),
         }
+    }
+
+    #[test]
+    fn write_config_settings_default_provider_merges_without_clobber() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "theme": "dark",
+                    "defaultThinkingLevel": "low"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.join("auth.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "keep": { "type": "oauth", "access": "keep-access" }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+
+            write_pi_config(&AgentConfig {
+                agent: AgentId::Pi,
+                raw: json!({
+                    "settings": { "defaultProvider": "xai" },
+                    "auth": {
+                        "xai": { "type": "oauth", "access": "new-access" }
+                    }
+                }),
+            })
+            .unwrap();
+
+            let settings = read_json_object_or_empty(&dir.join("settings.json")).unwrap();
+            assert_eq!(settings["defaultProvider"], "xai");
+            assert_eq!(settings["theme"], "dark");
+            assert_eq!(settings["defaultThinkingLevel"], "low");
+
+            let auth = read_json_object_or_empty(&dir.join("auth.json")).unwrap();
+            assert_eq!(auth["xai"]["access"], "new-access");
+            assert_eq!(auth["keep"]["access"], "keep-access");
+        });
+    }
+
+    #[test]
+    fn pi_child_env_prefixes_node22_bin_on_path() {
+        let dir = Path::new("/tmp/mock-node-v22.19.0/bin");
+        let env = pi_child_env(Some(dir));
+        assert_eq!(env.len(), 1);
+        assert_eq!(env[0].0, "PATH");
+        let prefixed = &env[0].1;
+        #[cfg(windows)]
+        {
+            assert!(
+                prefixed.starts_with(r"/tmp/mock-node-v22.19.0/bin;")
+                    || prefixed == r"/tmp/mock-node-v22.19.0/bin",
+                "PATH must start with Node 22 bin: {prefixed}"
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            assert!(
+                prefixed.starts_with("/tmp/mock-node-v22.19.0/bin:")
+                    || prefixed == "/tmp/mock-node-v22.19.0/bin",
+                "PATH must start with Node 22 bin: {prefixed}"
+            );
+        }
+    }
+
+    #[test]
+    fn pi_child_env_empty_without_node22() {
+        assert!(pi_child_env(None).is_empty());
+    }
+
+    #[test]
+    fn require_pi_node22_env_none_is_env_not_ready() {
+        let err = require_pi_node22_env(None).unwrap_err();
+        assert_eq!(err.code(), "env.not_ready");
+        assert!(err.to_string().contains("Node too old"), "message={err}");
+    }
+
+    #[test]
+    fn require_pi_node22_env_prefixes_bin_dir() {
+        let node = fake_node22();
+        let env = require_pi_node22_env(Some(&node)).unwrap();
+        assert_eq!(env, pi_child_env(node.bin_dir().as_deref()));
+        assert_eq!(env.len(), 1);
+        assert_eq!(env[0].0, "PATH");
+        let bin = node.bin_dir().expect("fake node has a bin dir");
+        let prefix = bin.to_string_lossy();
+        assert!(
+            env[0].1 == prefix || env[0].1.starts_with(prefix.as_ref()),
+            "PATH must start with Node 22 bin: {}",
+            env[0].1
+        );
+    }
+
+    #[test]
+    fn build_pi_run_spec_without_node22_is_env_not_ready() {
+        with_pi_config_dir(|_| {
+            let err = build_pi_run_spec(Path::new("pi"), "hello", &RunOptions::default(), None)
+                .unwrap_err();
+            assert_eq!(err.code(), "env.not_ready");
+            assert!(err.to_string().contains("Node too old"), "message={err}");
+        });
+    }
+
+    #[test]
+    fn apply_pi_node_requirement_marks_env_not_ready_and_node_too_old() {
+        let detect = DetectResult {
+            agent: AgentId::Pi,
+            status: crate::models::DetectStatus::Installed,
+            version: None,
+            binary_path: Some(PathBuf::from("/usr/bin/pi")),
+            channel: Some("npm".into()),
+            env_ready: true,
+            notes: vec![],
+        };
+        let out = apply_pi_node_requirement(detect, false);
+        assert!(!out.env_ready, "env must not be ready without Node 22");
+        assert!(
+            out.notes.iter().any(|n| n.contains("Node too old")),
+            "notes={:?}",
+            out.notes
+        );
+        assert!(!out
+            .notes
+            .iter()
+            .any(|n| n.contains("已安装但未读到本机版本号")));
+    }
+
+    #[test]
+    fn apply_pi_node_requirement_keeps_ready_when_node22_present() {
+        let detect = DetectResult {
+            agent: AgentId::Pi,
+            status: crate::models::DetectStatus::Installed,
+            version: Some("0.83.0".into()),
+            binary_path: Some(PathBuf::from("/usr/bin/pi")),
+            channel: Some("npm".into()),
+            env_ready: true,
+            notes: vec![],
+        };
+        let out = apply_pi_node_requirement(detect, true);
+        assert!(out.env_ready);
+        assert!(out.notes.is_empty());
     }
 }

@@ -22,7 +22,9 @@ import {
   isUpdateAvailable,
   type UpdateInfo,
 } from '@/lib/api/update';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { cn } from '@/lib/utils';
+import { logger } from '@/lib/logger';
 
 /** 旧 /providers、/accounts 深链兼容 → /connections */
 function LegacyConnectionsRedirect({ mode }: { mode: 'providers' | 'accounts' }) {
@@ -51,12 +53,14 @@ function LegacyBackupsRedirect() {
 }
 
 export default function App() {
+  const { t } = useI18n();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isChat = pathname === '/chat';
-  /** 技能页需左右分栏铺满主区，不受 max-w-content 限制 */
+  /** Skills / Projects 左右分栏需要全高 overflow-hidden，不套 pageShell 内边距 */
   const isSkills = pathname === '/skills';
-  const fullBleed = isChat || isSkills;
+  const isProjects = pathname === '/projects';
+  const fullBleed = isChat || isSkills || isProjects;
   const updateHandleRef = useRef<UpdatePromptHandle | null>(null);
 
   useEffect(() => {
@@ -70,6 +74,11 @@ export default function App() {
         return;
       }
       unsub = fn;
+    }).catch((error) => {
+      // Tray navigation is Tauri-only. In browser/mock mode this rejection is
+      // expected; in production it must remain fail-closed rather than
+      // installing a mock listener or turning into an unhandled rejection.
+      logger.scope('tray').error('tray navigation subscription unavailable', error);
     });
     return () => {
       cancelled = true;
@@ -89,20 +98,25 @@ export default function App() {
     }
     // Fallback: settings opened before prompt mounted (should be rare).
     if (!(await isUpdateAvailable())) {
-      throw new Error('仅桌面端支持自动更新');
+      throw new Error(t('settings.page.desktopOnlyUpdate'));
     }
     return checkForUpdate();
-  }, []);
+  }, [t]);
 
   return (
     <SidebarProvider>
-      <div className="flex h-full bg-canvas">
+      <div className={pageRhythm.shell}>
         <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className={pageRhythm.shellMain}>
           {!isChat && <TopBar />}
-          <main className={cn('flex-1', fullBleed ? 'overflow-hidden' : 'overflow-y-auto')}>
-            {/* max-w-content：普通页桌面阅读宽度；chat/skills 全宽全高 */}
-            <div className={fullBleed ? 'h-full' : pageRhythm.pageShell}>
+          <main
+            className={cn(
+              'min-h-0 flex-1',
+              fullBleed ? 'overflow-hidden' : 'overflow-y-auto',
+            )}
+          >
+            {/* 常规页铺满主列 + 18px inset；chat/skills/projects 全高自管 */}
+            <div className={fullBleed ? 'h-full min-h-0' : pageRhythm.pageShell}>
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/chat" element={<ChatPage />} />

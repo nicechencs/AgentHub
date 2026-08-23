@@ -165,6 +165,8 @@ export interface Provider {
    * true = 官方 URL/模型；false = 自定义中转。未设置时由 URL 推断。
    */
   official?: boolean;
+  /** 脱敏密钥结尾，如 `**JF6Q`，仅展示用 */
+  secretTail?: string;
 }
 
 export type AccountKind = 'oauth' | 'apikey';
@@ -224,6 +226,10 @@ export interface Account {
   envKey?: string;
   /** 脱敏后的凭据摘要字段（不含明文密钥） */
   credentialSummary?: string;
+  /** OAuth 刷新令牌脱敏预览（头尾，不含明文） */
+  refreshTokenPreview?: string;
+  /** 脱敏密钥结尾，如 `**JF6Q`（OAuth = refresh token，API Key = key） */
+  secretTail?: string;
 }
 
 /** 投影状态（与 core SkillSyncState 对齐） */
@@ -394,6 +400,10 @@ export interface Conversation {
   allowDangerous: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Official CLI session id from the last print-mode run, when known. */
+  nativeSessionId?: string | null;
+  /** True when this conversation has a live in-flight send (running message row). */
+  sending?: boolean;
 }
 
 export interface ChatMessage {
@@ -433,7 +443,7 @@ export type ChatEvent =
   | { type: 'agentChunk'; turn: number; agent: AgentId; stream: OutputStream; text: string }
   | { type: 'agentProcess'; turn: number; agent: AgentId; step: ProcessStep }
   | { type: 'agentFinished'; turn: number; agent: AgentId; message: ChatMessage }
-  | { type: 'finished'; turn: number; ok: boolean }
+  | { type: 'finished'; turn: number; ok: boolean; cancelled?: boolean }
   | { type: 'error'; message: string };
 
 // ---------------------------------------------------------------------------

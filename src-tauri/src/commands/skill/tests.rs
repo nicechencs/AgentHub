@@ -4,11 +4,19 @@ use super::*;
 use std::fs;
 use tempfile::tempdir;
 
-fn hub_with_skills(skill_names: &[&str]) -> (tempfile::TempDir, AgentHub) {
+/// Hub whose skills source is a unique temp dir, never `~/.agents/skills`.
+fn isolated_hub() -> (tempfile::TempDir, AgentHub) {
     let dir = tempdir().unwrap();
-    let hub = AgentHub::open(Some(dir.path())).unwrap();
-    let _ = skill_names;
+    let base = fs::canonicalize(dir.path()).unwrap_or_else(|_| dir.path().to_path_buf());
+    let skills_root = base.join("skills");
+    fs::create_dir_all(&skills_root).unwrap();
+    let hub = AgentHub::open_with_skills_root(Some(dir.path()), Some(&skills_root)).unwrap();
     (dir, hub)
+}
+
+fn hub_with_skills(skill_names: &[&str]) -> (tempfile::TempDir, AgentHub) {
+    let _ = skill_names;
+    isolated_hub()
 }
 
 #[test]
@@ -46,7 +54,7 @@ fn list_skill_catalog_empty_source_is_empty_or_shared_only() {
 #[test]
 fn sync_rejects_invalid_agent() {
     let (_dir, hub) = hub_with_skills(&[]);
-    let err = sync_skill_inner(&hub, "any", "bad-agent", false).unwrap_err();
+    let err = sync_skill_inner(&hub, "any", "bad-agent", false, None).unwrap_err();
     assert!(err.contains("invalid agent"));
 }
 
@@ -59,8 +67,7 @@ fn disable_rejects_invalid_agent() {
 
 #[test]
 fn sync_all_report_shape() {
-    let dir = tempdir().unwrap();
-    let hub = AgentHub::open(Some(dir.path())).unwrap();
+    let (_dir, hub) = isolated_hub();
     let report = sync_all_skills_inner(&hub, Some("kimi"), false).unwrap();
     let v = serde_json::to_value(&report).unwrap();
     assert!(v["synced"].is_array());
@@ -96,9 +103,7 @@ fn read_skill_markdown_shared_via_command_inner() {
     use agenthub_core::adapters::register_all;
     use agenthub_core::services::SkillService;
 
-    let root = tempdir().unwrap();
-    // AgentHub::open puts skills under data dir; also exercise hub.skills after seeding.
-    let hub = AgentHub::open(Some(root.path())).unwrap();
+    let (_root, hub) = isolated_hub();
     let source = hub.skills.source_root().to_path_buf();
     let skill_dir = source.join("preview-demo");
     fs::create_dir_all(&skill_dir).unwrap();

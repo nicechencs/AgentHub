@@ -1,5 +1,8 @@
 use super::*;
-use crate::models::{Account, AccountKind, AdapterRoute, ADAPTER_CAPABILITY_MATRIX};
+use crate::models::{
+    Account, AccountKind, AdapterRoute, ADAPTER_CAPABILITY_MATRIX,
+    CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
+};
 use crate::services::adapter_bridge_service::live_bridge_rule_projections;
 use crate::services::adapter_route_constants::{
     DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_CODEX_BASE_URL,
@@ -494,6 +497,29 @@ fn local_token_bridge_passes_through_but_unknown_generated_metadata_fails_closed
     assert_eq!(
         resolver.materialize_for_live(&anthropic_bridge).unwrap(),
         anthropic_bridge
+    );
+
+    let openai_bridge = provider(
+        "generated-codex-openai",
+        AgentId::Codex,
+        json!({
+            "format": "toml",
+            "content": "model_provider = 'agenthub_openai_bridge'\n",
+            "auth": { "OPENAI_API_KEY": "local-openai-bridge-token" },
+        }),
+        json!({
+            "generatedBy": GENERATED_BY,
+            "adapterRuleId": OPENAI_TO_CODEX_BRIDGE_RULE,
+            "adapterRuleVersion": 1,
+            "adapterSecretMode": LOCAL_TOKEN_MODE,
+            "adapterProfileId": "openai-bridge-profile",
+            "adapterSourceRef": { "kind": SOURCE_KIND_ACCOUNT, "id": "openai-account" },
+        }),
+    );
+    assert!(!resolver.is_reference_provider(&openai_bridge).unwrap());
+    assert_eq!(
+        resolver.materialize_for_live(&openai_bridge).unwrap(),
+        openai_bridge
     );
 
     let grok_claude_bridge = provider(
@@ -1574,6 +1600,10 @@ fn every_published_rule_id_is_recognized_by_a_secret_matcher() {
 
     for cell in ADAPTER_CAPABILITY_MATRIX {
         if !(cell.can_apply && cell.gates.all_passed()) {
+            continue;
+        }
+        // Official Codex oauth on Codex is account switch — no generated provider.
+        if cell.rule_id == CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID {
             continue;
         }
         let secret_mode = expected_secret_mode(cell.route);

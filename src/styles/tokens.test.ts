@@ -13,6 +13,7 @@ import {
   buildDesignTokensCss,
   buildTailwindFontSize,
   BUTTON,
+  RADIUS,
   TOOLTIP,
   typeScalePx,
   typeScaleTw,
@@ -45,6 +46,7 @@ describe('design tokens SSOT', () => {
     expect(css).toContain(`--agent-grok: ${AGENT_COLORS.grok.light};`);
     expect(css).toContain(`--agent-kimi: ${AGENT_COLORS.kimi.dark};`);
     expect(css).toContain('--radius-sm:');
+    expect(css).toContain('--radius-mark:');
     expect(css).toContain('--shadow-md:');
     expect(css).toContain(`--font-body-size: ${TYPE_SCALE.body.size};`);
     expect(css).toContain(`--font-title-leading: ${TYPE_SCALE.title.lineHeight};`);
@@ -62,6 +64,18 @@ describe('design tokens SSOT', () => {
     expect(boot).toContain(`--agent-claude: ${AGENT_COLORS.claude.light};`);
     expect(boot).toContain(`--agent-claude: ${AGENT_COLORS.claude.dark};`);
     expect(boot).toContain(`--font-meta-size: ${TYPE_SCALE.meta.size};`);
+    expect(boot).toContain(`--radius-mark: ${RADIUS.mark};`);
+  });
+});
+
+describe('RADIUS (docs/ui-design.md §2)', () => {
+  it('keeps three px steps plus the product-mark squircle', () => {
+    expect(RADIUS).toEqual({
+      sm: '6px',
+      DEFAULT: '8px',
+      lg: '12px',
+      mark: '22%',
+    });
   });
 });
 

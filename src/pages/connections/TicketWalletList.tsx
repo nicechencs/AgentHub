@@ -1,19 +1,28 @@
 /**
  * Global ticket wallet list UI (Connections).
- * Data from listTicketWallet; per-row「接到…」always for true tickets.
+ * Data from listTicketWallet; per-row 用到其他工具 / 本机转发 for true tickets.
  * 「详情」is a read-only expand; edit/delete stay secondary actions inside it.
  */
 import * as React from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, ChevronRight, KeyRound, Pencil, Plus, Share2, Trash2 } from 'lucide-react';
+import {
+  Cable,
+  ChevronDown,
+  ChevronRight,
+  CircleUser,
+  KeyRound,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Share2,
+  Trash2,
+} from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ListRow } from '@/components/shared/ListRow';
 import { QuotaBar } from '@/components/shared/QuotaBar';
-import { SearchField } from '@/components/shared/SearchField';
-import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -28,40 +37,66 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Tip } from '@/components/ui/tooltip';
+import { Hint, Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import type { TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
 import type { AgentId } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
   buildTicketAddMenu,
+  focusedTicketAddAgent,
   handleTicketAddMenuSelect,
   buildTicketDetailFields,
   buildTicketWalletRows,
-  countTicketsByFilter,
-  formatTicketBindingDetailLines,
-  humanizeTicketAuthLabel,
+  hasOfficialQuotaWindow,
   ticketAddActionLabel,
+  ticketAuthChip,
+  ticketCardTitle,
+  showsNativeSwitch,
+  ticketSwitchChip,
   ticketCredentialClassChipLabel,
   ticketDetailEditLabel,
   ticketSurfaceChipLabel,
-  ticketWalletFilterLabel,
-  TICKET_WALLET_FILTERS,
   type TicketAddMenuAgent,
-  type TicketBindingDetailLine,
   type TicketDetailExtras,
   type TicketDetailField,
-  type TicketWalletFilter,
   type TicketWalletRow,
 } from './ticket-wallet-model';
 
-function credentialBadgeVariant(
-  cls: TicketView['credentialClass'],
-): 'default' | 'info' | 'accent' {
-  if (cls === 'oauth') return 'default';
-  if (cls === 'api_key') return 'info';
-  return 'accent';
+function CredentialMark({
+  cls,
+  agentId,
+}: {
+  cls: TicketView['credentialClass'];
+  agentId: AgentId;
+}) {
+  const { t } = useI18n();
+  const color = resolveAgentMeta(agentId).color;
+  if (cls === 'oauth') {
+    const label = t('connections.list.oauthAccount');
+    return (
+      <Hint label={label}>
+        <span className="inline-flex" style={{ color }} aria-label={label}>
+          <CircleUser className="h-4 w-4" strokeWidth={1.8} />
+        </span>
+      </Hint>
+    );
+  }
+  if (cls === 'api_key') {
+    const label = t('connections.list.apiKeyAuth');
+    return (
+      <Hint label={label}>
+        <span className="inline-flex" style={{ color }} aria-label={label}>
+          <KeyRound className="h-4 w-4" strokeWidth={1.8} />
+        </span>
+      </Hint>
+    );
+  }
+  return (
+    <Badge variant="accent">{ticketCredentialClassChipLabel(cls, t)}</Badge>
+  );
 }
 
 const HIDDEN_ADVANCED_LABELS = new Set(['导入自', '登录状态', 'Imported from', 'Login status']);
@@ -69,27 +104,37 @@ const HIDDEN_ADVANCED_LABELS = new Set(['导入自', '登录状态', 'Imported f
 export function TicketDetailPanel({
   id,
   advanced,
-  bindings,
   extras,
-  importedFromLabel,
   editLabel,
+  refreshing,
+  refreshLocked,
+  onRefresh,
   onEdit,
   onDelete,
 }: {
   id: string;
   advanced: TicketDetailField[];
-  bindings: TicketBindingDetailLine[];
   extras?: TicketDetailExtras | null;
-  importedFromLabel?: string | null;
   editLabel?: string | null;
+  refreshing?: boolean;
+  refreshLocked?: boolean;
+  onRefresh?: () => void;
   onEdit?: () => void;
   onDelete: () => void;
 }) {
   const { t } = useI18n();
-  const has7d = extras?.quota7dPct != null;
-  const has5h = extras?.quota5hPct != null;
+  // 5h is official-only. Missing quota5hPct hides the bar; never copy 7d into 5h.
+  const has7d = hasOfficialQuotaWindow(extras?.quota7dPct);
+  const has5h = hasOfficialQuotaWindow(extras?.quota5hPct);
   const hasQuota = has7d || has5h;
   const visibleAdvanced = advanced.filter((field) => !HIDDEN_ADVANCED_LABELS.has(field.label));
+  const isSyncLogin = extras?.oauthAction?.kind === 'sync-current-login';
+  const refreshLabel = isSyncLogin
+    ? t('connections.list.syncCurrentLogin')
+    : t('connections.list.refresh');
+  const refreshBusyLabel = isSyncLogin
+    ? t('connections.list.syncing')
+    : t('connections.list.refreshing');
 
   return (
     <Card
@@ -97,48 +142,35 @@ export function TicketDetailPanel({
       variant="plain"
       className="mt-3 flex flex-col gap-3 bg-canvas p-3 text-xs"
     >
-      <div className={cn('grid gap-3', hasQuota && 'sm:grid-cols-2')}>
-        {hasQuota ? (
-          <div>
-            <p className="text-meta text-muted">{t('connections.list.usage')}</p>
-            <div className="mt-1.5 flex flex-col gap-1.5">
-              {has7d ? (
-                <QuotaBar
-                  label="7d"
-                  pct={extras?.quota7dPct}
-                  resetIn={extras?.quota7dResetIn}
-                />
-              ) : null}
-              {has5h ? (
-                <QuotaBar
-                  label="5h"
-                  pct={extras?.quota5hPct}
-                  resetIn={extras?.quotaResetIn}
-                />
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-
+      {hasQuota ? (
         <div>
-          <p className="text-meta text-muted">{t('connections.list.usedOn')}</p>
-          {bindings.length === 0 ? (
-            <p className="mt-1.5 text-body text-secondary">{t('connections.list.unusedTools')}</p>
-          ) : (
-            <ul className="mt-1.5 space-y-1">
-              {bindings.map((line) => (
-                <li
-                  key={`${line.agent}:${line.status}`}
-                  className="flex items-baseline justify-between gap-3"
-                >
-                  <span className="text-body text-secondary">{line.agent}</span>
-                  <span className="shrink-0 text-meta text-muted">{line.status}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <p className="text-meta text-muted">{t('connections.list.usage')}</p>
+          <div className="mt-1.5 flex flex-col gap-1.5">
+            {has7d ? (
+              <QuotaBar
+                label="7d"
+                pct={extras?.quota7dPct}
+                resetIn={extras?.quota7dResetIn}
+              />
+            ) : null}
+            {has5h ? (
+              <QuotaBar
+                label="5h"
+                pct={extras?.quota5hPct}
+                resetIn={extras?.quotaResetIn}
+              />
+            ) : null}
+          </div>
         </div>
-      </div>
+      ) : null}
+
+      {extras?.refreshTokenPreview ? (
+        <DetailRow
+          label={t('connections.list.refreshToken')}
+          value={extras.refreshTokenPreview}
+          mono
+        />
+      ) : null}
 
       {visibleAdvanced.length > 0 ? (
         <details>
@@ -156,13 +188,20 @@ export function TicketDetailPanel({
         </details>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-        {importedFromLabel ? (
-          <p className="text-meta text-muted">{importedFromLabel}</p>
-        ) : (
-          <span />
-        )}
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+        <div className="flex flex-wrap items-center gap-2">
+          {extras?.oauthAction && onRefresh ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={refreshLocked || refreshing}
+              aria-label={refreshLabel}
+              onClick={onRefresh}
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+              {refreshing ? refreshBusyLabel : refreshLabel}
+            </Button>
+          ) : null}
           {editLabel && onEdit ? (
             <Button size="sm" variant="secondary" onClick={onEdit}>
               <Pencil className="h-3.5 w-3.5" /> {editLabel}
@@ -185,13 +224,25 @@ export function TicketDetailPanel({
 function TicketRow({
   row,
   extras,
-  onConnect,
+  refreshingId,
+  switchingId,
+  nativeSwitch,
+  onShare,
+  onRoute,
+  onSwitch,
+  onRefresh,
   onEdit,
   onDelete,
 }: {
   row: TicketWalletRow;
   extras: TicketDetailExtras | null;
-  onConnect: (ticket: TicketView) => void;
+  refreshingId: string | null;
+  switchingId: string | null;
+  nativeSwitch: boolean;
+  onShare: (ticket: TicketView) => void;
+  onRoute: (ticket: TicketView) => void;
+  onSwitch?: (ticket: TicketView) => void;
+  onRefresh?: (ticket: TicketView) => void;
   onEdit: (ticket: TicketView) => void;
   onDelete: (ticket: TicketView) => void;
 }) {
@@ -200,6 +251,11 @@ function TicketRow({
   const [expanded, setExpanded] = React.useState(false);
   const detailsId = React.useId();
   const editLabel = ticketDetailEditLabel(extras, t);
+  const authChip = ticketAuthChip(extras);
+  const switchChip = ticketSwitchChip(extras, t);
+  const switching = switchingId === ticket.id;
+  const switchBusy = switchingId !== null;
+  const title = ticketCardTitle(ticket, extras);
 
   return (
     <ListRow
@@ -210,17 +266,17 @@ function TicketRow({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
           <AgentDot agentId={ticket.agentId} />
-          <Tip className="truncate text-body font-medium" label={ticket.label}>
-            {ticket.label}
+          <CredentialMark cls={ticket.credentialClass} agentId={ticket.agentId} />
+          <Tip className="truncate text-body font-medium" label={title}>
+            {title}
           </Tip>
-          <Badge variant={credentialBadgeVariant(ticket.credentialClass)}>
-            {ticketCredentialClassChipLabel(ticket.credentialClass, t)}
-          </Badge>
           <Badge variant={ticket.surface === 'unknown' ? 'accent' : 'default'}>
             {ticketSurfaceChipLabel(ticket.surface, t)}
           </Badge>
-          {extras?.authLabel ? (
-            <Badge variant="default">{humanizeTicketAuthLabel(extras.authLabel)}</Badge>
+          {authChip ? (
+            <Badge variant="default" className={authChip.mono ? 'font-mono' : undefined}>
+              {authChip.label}
+            </Badge>
           ) : null}
           <span className="text-meta text-secondary">
             {(usageParts ?? []).map((part, index) => (
@@ -233,6 +289,14 @@ function TicketRow({
                 >
                   {part.label}
                 </Link>
+              ) : part.kind === 'endpoint' ? (
+                <RouteEndpointUrl
+                  key={`endpoint:${index}`}
+                  path={part.path}
+                  port={part.port}
+                  endpointId={part.endpointId}
+                  className="text-meta"
+                />
               ) : (
                 <span key={`text:${index}`}>{part.text}</span>
               )
@@ -240,8 +304,25 @@ function TicketRow({
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => onConnect(ticket)}>
-            <Share2 className="h-3.5 w-3.5" /> {t('connections.list.connect')}
+          {nativeSwitch ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={switchChip.kind === 'in-use' || switchBusy || !onSwitch}
+              aria-label={switchChip.label}
+              onClick={() => {
+                if (switchChip.kind === 'in-use' || !onSwitch) return;
+                onSwitch(ticket);
+              }}
+            >
+              {switching ? t('connections.list.switching') : switchChip.label}
+            </Button>
+          ) : null}
+          <Button size="sm" variant="outline" onClick={() => onShare(ticket)}>
+            <Share2 className="h-3.5 w-3.5" /> {t('connections.list.share')}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => onRoute(ticket)}>
+            <Cable className="h-3.5 w-3.5" /> {t('connections.list.route')}
           </Button>
           <Button
             size="sm"
@@ -261,14 +342,11 @@ function TicketRow({
         <TicketDetailPanel
           id={detailsId}
           advanced={buildTicketDetailFields(ticket, extras, t).advanced}
-          bindings={formatTicketBindingDetailLines(row.bindings, t)}
           extras={extras}
-          importedFromLabel={
-            ticket.importedFrom
-              ? t('connections.list.importedFrom', { name: agentDisplayName(ticket.importedFrom) })
-              : null
-          }
           editLabel={editLabel}
+          refreshing={refreshingId === ticket.id}
+          refreshLocked={refreshingId !== null}
+          onRefresh={extras?.oauthAction && onRefresh ? () => onRefresh(ticket) : undefined}
           onEdit={editLabel ? () => onEdit(ticket) : undefined}
           onDelete={() => onDelete(ticket)}
         />
@@ -277,20 +355,40 @@ function TicketRow({
   );
 }
 
-function TicketAddMenu({
+export function TicketAddMenu({
   agents,
+  focusedAgentId = null,
   onImportLogin,
   onAddKey,
 }: {
   agents: TicketAddMenuAgent[];
+  focusedAgentId?: AgentId | null;
   onImportLogin?: (agentId: AgentId) => void;
   onAddKey?: (agentId: AgentId) => void;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = React.useState(false);
+  const focused = focusedTicketAddAgent(agents, focusedAgentId);
+
+  const renderActions = (agent: TicketAddMenuAgent) =>
+    agent.actions.map((action) => (
+      <DropdownMenuItem
+        key={action.kind}
+        disabled={action.kind === 'import-login' ? !onImportLogin : !onAddKey}
+        onSelect={(event) =>
+          handleTicketAddMenuSelect(event, action.kind, agent.id, {
+            onImportLogin,
+            onAddKey,
+            onMenuClose: () => setOpen(false),
+          })
+        }
+      >
+        {ticketAddActionLabel(action.kind, t)}
+      </DropdownMenuItem>
+    ));
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button>
           <Plus className="h-4 w-4" /> {t('connections.list.add')} <ChevronDown className="h-3.5 w-3.5" />
@@ -301,40 +399,39 @@ function TicketAddMenu({
         className="min-w-[12rem]"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        <DropdownMenuLabel>{t('connections.list.addAgent')}</DropdownMenuLabel>
         {agents.length === 0 ? (
-          <DropdownMenuItem disabled>{t('connections.list.noAddAgent')}</DropdownMenuItem>
+          <>
+            <DropdownMenuLabel>{t('connections.list.addAgent')}</DropdownMenuLabel>
+            <DropdownMenuItem disabled>{t('connections.list.noAddAgent')}</DropdownMenuItem>
+          </>
+        ) : focused ? (
+          <>
+            <DropdownMenuLabel>
+              <span className="flex min-w-0 items-center gap-2">
+                <AgentDot agentId={focused.id} size="sm" title={null} />
+                <span className="truncate">{focused.name}</span>
+              </span>
+            </DropdownMenuLabel>
+            {renderActions(focused)}
+          </>
         ) : (
-          agents.map((agent) => (
-            <DropdownMenuSub key={agent.id}>
-              <DropdownMenuSubTrigger className="justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-2">
-                  <AgentDot agentId={agent.id} size="sm" title={null} />
-                  <span className="truncate">{agent.name}</span>
-                </span>
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted" />
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent
-                className="min-w-[10rem]"
-              >
-                {agent.actions.map((action) => (
-                  <DropdownMenuItem
-                    key={action.kind}
-                    disabled={action.kind === 'import-login' ? !onImportLogin : !onAddKey}
-                    onSelect={(event) =>
-                      handleTicketAddMenuSelect(event, action.kind, agent.id, {
-                        onImportLogin,
-                        onAddKey,
-                        onMenuClose: () => setOpen(false),
-                      })
-                    }
-                  >
-                    {ticketAddActionLabel(action.kind, t)}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          ))
+          <>
+            <DropdownMenuLabel>{t('connections.list.addAgent')}</DropdownMenuLabel>
+            {agents.map((agent) => (
+              <DropdownMenuSub key={agent.id}>
+                <DropdownMenuSubTrigger className="justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <AgentDot agentId={agent.id} size="sm" title={null} />
+                    <span className="truncate">{agent.name}</span>
+                  </span>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted" />
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="min-w-[10rem]">
+                  {renderActions(agent)}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ))}
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -345,50 +442,54 @@ export function TicketWalletList({
   wallet,
   loading,
   highlightAgentId,
-  initialFilter = 'all',
-  onConnectTicket,
+  agentFilterId = null,
+  onShareTicket,
+  onRouteTicket,
+  onSwitchTicket,
+  onRefreshTicket,
+  refreshingTicketId,
+  switchingTicketId,
   extrasForTicket,
   onEditTicket,
   onDeleteTicket,
   onAddKey,
   onImportLogin,
+  onClearAgentFilter,
   installedAgentIds,
 }: {
   wallet: TicketWallet | null;
   loading?: boolean;
   highlightAgentId?: AgentId | null;
-  initialFilter?: TicketWalletFilter;
-  onConnectTicket: (ticket: TicketView) => void;
+  agentFilterId?: AgentId | null;
+  onShareTicket: (ticket: TicketView) => void;
+  onRouteTicket: (ticket: TicketView) => void;
+  onSwitchTicket?: (ticket: TicketView) => void;
+  onRefreshTicket?: (ticket: TicketView) => void;
+  refreshingTicketId?: string | null;
+  switchingTicketId?: string | null;
   extrasForTicket?: (ticket: TicketView) => TicketDetailExtras | null;
   onEditTicket: (ticket: TicketView) => void;
   onDeleteTicket: (ticket: TicketView) => void;
   onAddKey?: (agentId: AgentId) => void;
   onImportLogin?: (agentId: AgentId) => void;
+  onClearAgentFilter?: () => void;
   installedAgentIds?: readonly AgentId[];
 }) {
   const { t } = useI18n();
-  const [filter, setFilter] = React.useState<TicketWalletFilter>(initialFilter);
-  const [query, setQuery] = React.useState('');
-
-  React.useEffect(() => {
-    setFilter(initialFilter);
-  }, [initialFilter]);
 
   const tickets = wallet?.tickets ?? [];
-  const counts = React.useMemo(() => countTicketsByFilter(tickets), [tickets]);
   const rows = React.useMemo(() => {
     if (!wallet) return [];
     try {
       return buildTicketWalletRows(wallet, {
-        filter,
-        query,
         highlightAgentId: highlightAgentId ?? null,
+        agentFilterId,
         t,
       });
     } catch {
       return [];
     }
-  }, [wallet, filter, query, highlightAgentId, t]);
+  }, [wallet, highlightAgentId, agentFilterId, t]);
   const addAgents = React.useMemo(
     () => buildTicketAddMenu(installedAgentIds),
     [installedAgentIds],
@@ -397,6 +498,7 @@ export function TicketWalletList({
   const renderAddMenu = () => (
     <TicketAddMenu
       agents={addAgents}
+      focusedAgentId={agentFilterId}
       onImportLogin={onImportLogin}
       onAddKey={onAddKey}
     />
@@ -404,29 +506,6 @@ export function TicketWalletList({
 
   return (
     <div>
-      <div className={cn(pageRhythm.chromeRow, 'flex-wrap justify-between gap-2')}>
-        <SegmentedControl
-          value={filter}
-          onChange={setFilter}
-          aria-label={t('connections.list.filterAria')}
-          options={TICKET_WALLET_FILTERS.map((f) => ({
-            value: f.value,
-            label: ticketWalletFilterLabel(f.value, t),
-            count: counts[f.value],
-          }))}
-        />
-        <div className="flex items-center gap-2">
-          <SearchField
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t('connections.list.searchPlaceholder')}
-            className="w-44"
-            aria-label={t('connections.list.searchAria')}
-          />
-          {renderAddMenu()}
-        </div>
-      </div>
-
       {loading && !wallet ? <ListSkeleton rows={4} /> : null}
 
       {wallet && tickets.length === 0 ? (
@@ -449,8 +528,7 @@ export function TicketWalletList({
               variant="outline"
               className="mt-2"
               onClick={() => {
-                setFilter('all');
-                setQuery('');
+                onClearAgentFilter?.();
               }}
             >
               {t('connections.list.showAll')}
@@ -466,7 +544,13 @@ export function TicketWalletList({
               key={row.ticket.id}
               row={row}
               extras={extrasForTicket?.(row.ticket) ?? null}
-              onConnect={onConnectTicket}
+              refreshingId={refreshingTicketId ?? null}
+              switchingId={switchingTicketId ?? null}
+              nativeSwitch={showsNativeSwitch(row.ticket.agentId, agentFilterId)}
+              onShare={onShareTicket}
+              onRoute={onRouteTicket}
+              onSwitch={onSwitchTicket}
+              onRefresh={onRefreshTicket}
               onEdit={onEditTicket}
               onDelete={onDeleteTicket}
             />
@@ -476,7 +560,7 @@ export function TicketWalletList({
 
       {wallet ? (
         <p className="mt-3 text-meta text-muted">
-          {t('connections.list.count', { n: tickets.length })}
+          {t('connections.list.count', { n: rows.length })}
           {highlightAgentId
             ? t('connections.list.highlighted', { name: agentDisplayName(highlightAgentId) })
             : ''}

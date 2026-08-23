@@ -734,15 +734,18 @@ pub(crate) fn finalize_link_projection_ownership(
     }
 }
 
-/// Move a verified directory projection to the operating system recycle bin.
+/// Move a real skill directory to the operating system recycle bin.
+///
+/// User-facing deletes (shared uninstall, private/conflict folder remove,
+/// verified copy unproject) go through here. Links are unlinked, not recycled.
 #[cfg(not(test))]
-fn recycle_projection_dir(target_dir: &Path) -> Result<()> {
-    trash::delete(target_dir).map_err(|e| {
+pub(crate) fn recycle_skill_dir(path: &Path) -> Result<()> {
+    trash::delete(path).map_err(|e| {
         AppError::message(
             "skill.recycle",
             format!(
-                "failed to move verified skill projection to the recycle bin at {}: {e}",
-                target_dir.display()
+                "failed to move skill folder to the recycle bin at {}: {e}",
+                path.display()
             ),
         )
     })
@@ -750,8 +753,16 @@ fn recycle_projection_dir(target_dir: &Path) -> Result<()> {
 
 /// Unit tests must not add temporary fixtures to the user's real recycle bin.
 #[cfg(test)]
+pub(crate) fn recycle_skill_dir(path: &Path) -> Result<()> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(AppError::from(e)),
+    }
+}
+
 fn recycle_projection_dir(target_dir: &Path) -> Result<()> {
-    fs::remove_dir_all(target_dir).map_err(AppError::from)
+    recycle_skill_dir(target_dir)
 }
 
 /// Remove a projection only when ownership can be proven.

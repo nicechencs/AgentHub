@@ -7,7 +7,6 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tip } from '@/components/ui/tooltip';
@@ -18,9 +17,9 @@ import { bridgesHrefForProfile } from '@/lib/bridges-path';
 
 import {
   AGENT_OVERVIEW_GRID,
+  installedOverviewScope,
   mergeAgentsInOrder,
   resolveAgentCardInteraction,
-  summarizeAgentOverview,
   type AgentCardBadgeInput,
   type AgentCardBridgeState,
 } from './agentOverviewModel';
@@ -56,31 +55,14 @@ export function AgentOverview({
 }: AgentOverviewProps) {
   const navigate = useNavigate();
   const { t } = useI18n();
-  // Dashboard 只展示已安装 Agent；未安装的去 Agents 页安装。
-  const installedMetas = AGENTS.filter((m) =>
-    agents.some((a) => a.agentId === m.id && a.installed && !a.hidden),
+  const { metas: installedMetas, statuses: installedStatuses } = installedOverviewScope(
+    AGENTS,
+    agents,
   );
-  const installedStatuses = agents.filter((a) => a.installed && !a.hidden);
-  const { summaryText } = summarizeAgentOverview(installedMetas, installedStatuses, t);
   const cards = mergeAgentsInOrder(installedMetas, installedStatuses, badgeInputs, t);
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-2 text-sm">
-        <span>
-          <span className="font-medium text-primary">{t('dashboard.overview.title')}</span>
-          <span className="text-muted"> {summaryText}</span>
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ml-auto h-6 px-2 text-xs"
-          onClick={() => navigate('/agents')}
-        >
-          {t('dashboard.overview.manage')}
-        </Button>
-      </div>
-
       {cards.length === 0 ? (
         <EmptyState
           icon={Bot}
@@ -100,12 +82,15 @@ export function AgentOverview({
               }
               navigate(next.to);
             };
-            const viaLabel = view.viaAdapter
+            const viaTipLabel = view.viaAdapter
               ? view.viaAdapter.sourceLabel
                 ? t('dashboard.overview.viaCompatibleWithSource', {
                     source: view.viaAdapter.sourceLabel,
                   })
                 : t('dashboard.overview.viaCompatible')
+              : null;
+            const viaBadgeLabel = view.viaAdapter
+              ? t('dashboard.overview.viaCompatible')
               : null;
             return (
               <Card
@@ -153,10 +138,10 @@ export function AgentOverview({
                   >
                     {view.metaText}
                   </Tip>
-                  {viaLabel ? (
-                    <Tip className="shrink-0" label={viaLabel}>
-                      <Badge variant="info" className="h-5 max-w-[7rem] truncate px-1.5 text-meta">
-                        {viaLabel}
+                  {viaBadgeLabel && viaTipLabel ? (
+                    <Tip className="shrink-0" label={viaTipLabel}>
+                      <Badge variant="info" className="h-5 shrink-0 px-1.5 text-meta">
+                        {viaBadgeLabel}
                       </Badge>
                     </Tip>
                   ) : null}
@@ -188,23 +173,17 @@ export function AgentOverview({
 export function AgentOverviewSkeleton({ count }: { count: number }) {
   const n = Math.max(0, count);
   return (
-    <div>
-      <div className="mb-3 flex items-center gap-2">
-        <Skeleton className="h-3 w-40" />
-        <Skeleton className="ml-auto h-6 w-10" />
-      </div>
-      <div className={AGENT_OVERVIEW_GRID}>
-        {Array.from({ length: n }).map((_, i) => (
-          <Card key={i} className="p-3">
-            <div className="flex items-center gap-2">
-              <Skeleton className="h-6 w-6 shrink-0 rounded-full" />
-              <Skeleton className="h-4 w-20" />
-              <Skeleton className="ml-auto h-2 w-2 shrink-0 rounded-full" />
-            </div>
-            <Skeleton className="mt-1.5 h-3 w-28" />
-          </Card>
-        ))}
-      </div>
+    <div className={AGENT_OVERVIEW_GRID}>
+      {Array.from({ length: n }).map((_, i) => (
+        <Card key={i} className="p-3">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-6 w-6 shrink-0 rounded-full" />
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="ml-auto h-2 w-2 shrink-0 rounded-full" />
+          </div>
+          <Skeleton className="mt-1.5 h-3 w-28" />
+        </Card>
+      ))}
     </div>
   );
 }

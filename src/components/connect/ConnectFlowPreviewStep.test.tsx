@@ -50,7 +50,7 @@ function previewState(): ConnectFlowState {
   });
 }
 
-const FOOTER = '去 Connections 导入';
+const FOOTER = '去连接页导入';
 const BANNED_PREVIEW_COPY = [
   '请保持 AgentHub',
   '只连这台电脑',
@@ -100,7 +100,7 @@ describe('ConnectFlowPreviewStep Grok→Claude markup', () => {
     }));
     expect(html).toContain('本机路由');
     expect(html).not.toContain('实验');
-    expect(html).toContain('用这份 Grok 登录接到 Claude Code。');
+    expect(html).toContain('用这份 Grok 登录接到 /v1/messages。');
     expect(html).toContain('关掉会进托盘，路由继续跑。');
     for (const banned of BANNED_PREVIEW_COPY) {
       expect(html).not.toContain(banned);

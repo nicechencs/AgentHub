@@ -29,9 +29,12 @@ pub use provider_repo::ProviderRepo;
 pub(crate) use account_repo::{
     clear_current_conn as account_clear_current_conn, create_conn as account_create_conn,
     delete_for_agent_conn as account_delete_for_agent_conn,
+    delete_if_revision_conn as account_delete_if_revision_conn,
     force_sole_current_conn as account_force_sole_current_conn,
     get_by_id_conn_pub as account_get_by_id_conn, list_current_conn as account_list_current_conn,
+    list_for_agent_conn as account_list_for_agent_conn,
     select_current_conn as account_select_current_conn, update_conn as account_update_conn,
+    update_if_revision_conn as account_update_if_revision_conn,
 };
 pub(crate) use binding_repo::{
     clear_conn as binding_clear_conn,
@@ -43,14 +46,21 @@ pub(crate) use provider_repo::{
     delete_for_agent_conn as provider_delete_for_agent_conn,
     force_sole_current_conn as provider_force_sole_current_conn,
     get_by_id_conn_pub as provider_get_by_id_conn, list_current_conn as provider_list_current_conn,
+    list_for_agent_conn as provider_list_for_agent_conn,
     select_current_conn as provider_select_current_conn, update_conn as provider_update_conn,
+    update_if_revision_conn as provider_update_if_revision_conn,
     upsert_conn as provider_upsert_conn,
 };
 pub use skill_repo::{SkillAssignmentRow, SkillPackageRow, SkillRepo};
 pub use usage_repo::{UsageCursor, UsageRepo};
 
+#[cfg(test)]
+mod tests;
+
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 use rusqlite::Connection;
 
@@ -65,7 +75,7 @@ pub struct Database {
 
 impl Database {
     pub fn open(db_path: &Path) -> Result<Self> {
-        match Self::open_inner(db_path) {
+        match Self::open_with_lock_retry(db_path) {
             Ok(db) => {
                 crate::logging::log_info(
                     crate::logging::targets::STORAGE,
@@ -81,18 +91,38 @@ impl Database {
         }
     }
 
+    fn open_with_lock_retry(db_path: &Path) -> Result<Self> {
+        for attempt in 0..migrations::MIGRATION_RETRY_ATTEMPTS {
+            match Self::open_inner(db_path) {
+                Ok(db) => return Ok(db),
+                Err(error)
+                    if migrations::is_busy(&error)
+                        && attempt + 1 < migrations::MIGRATION_RETRY_ATTEMPTS =>
+                {
+                    thread::sleep(migrations::MIGRATION_RETRY_DELAY);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        unreachable!("database open retry loop always returns")
+    }
+
     fn open_inner(db_path: &Path) -> Result<Self> {
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let conn = Connection::open(db_path)?;
+        // The C busy handler is what SQLite actually waits on; keep the PRAGMA
+        // as well so `PRAGMA busy_timeout` readers observe the same value.
+        conn.busy_timeout(Duration::from_millis(5000))?;
         conn.execute_batch(
             r#"
             PRAGMA foreign_keys = ON;
-            PRAGMA journal_mode = WAL;
             PRAGMA busy_timeout = 5000;
             "#,
         )?;
+        set_wal_journal_mode(&conn)?;
         let db = Self {
             conn: Arc::new(Mutex::new(conn)),
         };
@@ -183,97 +213,29 @@ impl Database {
     }
 }
 
+fn set_wal_journal_mode(conn: &Connection) -> Result<()> {
+    for attempt in 0..migrations::MIGRATION_RETRY_ATTEMPTS {
+        // `sqlite3_exec` / execute_batch consumes the journal_mode result row.
+        match conn.execute_batch("PRAGMA journal_mode = WAL;") {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                let error = AppError::from(error);
+                if migrations::is_busy(&error) && attempt + 1 < migrations::MIGRATION_RETRY_ATTEMPTS
+                {
+                    thread::sleep(migrations::MIGRATION_RETRY_DELAY);
+                    continue;
+                }
+                return Err(error);
+            }
+        }
+    }
+
+    unreachable!("WAL journal_mode retry loop always returns")
+}
+
 fn parse_stored_bool(raw: &str) -> bool {
     match raw.trim().to_ascii_lowercase().as_str() {
         "0" | "false" | "no" | "off" => false,
         _ => true,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn database_open_creates_schema_and_settings_roundtrip() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("agenthub.db");
-        let db = Database::open(&path).expect("open db");
-        assert!(path.exists());
-        db.ping().expect("ping");
-
-        // Migration seeds theme/language/log_level/log_retention_days.
-        assert_eq!(
-            db.get_setting("theme").expect("get seeded").as_deref(),
-            Some("system")
-        );
-        assert_eq!(
-            db.get_setting("log_level")
-                .expect("get log_level")
-                .as_deref(),
-            Some("info")
-        );
-        assert_eq!(
-            db.get_setting("log_retention_days")
-                .expect("get retention")
-                .as_deref(),
-            Some("14")
-        );
-        let settings = db.load_app_settings().expect("load settings");
-        assert_eq!(settings.log_level, "info");
-        assert_eq!(settings.log_retention_days, 14);
-        assert_eq!(db.get_setting("missing_key").expect("get missing"), None);
-
-        assert!(
-            db.load_app_settings().expect("load").close_to_tray,
-            "default close_to_tray is true when key missing"
-        );
-        db.set_setting("close_to_tray", "false").expect("set close");
-        assert!(!db.load_app_settings().expect("load false").close_to_tray);
-        db.set_setting("close_to_tray", "true")
-            .expect("set close true");
-        assert!(db.load_app_settings().expect("load true").close_to_tray);
-        // Loose false tokens
-        db.set_setting("close_to_tray", "off").expect("set off");
-        assert!(!db.load_app_settings().expect("load off").close_to_tray);
-        db.set_setting("close_to_tray", "no").expect("set no");
-        assert!(!db.load_app_settings().expect("load no").close_to_tray);
-
-        db.set_setting("theme", "dark").expect("set");
-        assert_eq!(
-            db.get_setting("theme").expect("get after set").as_deref(),
-            Some("dark")
-        );
-        db.set_setting("theme", "light").expect("update");
-        assert_eq!(
-            db.get_setting("theme")
-                .expect("get after update")
-                .as_deref(),
-            Some("light")
-        );
-        db.set_setting("custom_key", "custom_value")
-            .expect("insert");
-        assert_eq!(
-            db.get_setting("custom_key").expect("get custom").as_deref(),
-            Some("custom_value")
-        );
-
-        // Schema migration marker should exist after open.
-        db.with_conn(|conn| {
-            let count: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM schema_migrations WHERE version = '0001_init'",
-                [],
-                |row| row.get(0),
-            )?;
-            assert_eq!(count, 1);
-            let settings_ok: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='settings'",
-                [],
-                |row| row.get(0),
-            )?;
-            assert_eq!(settings_ok, 1);
-            Ok(())
-        })
-        .expect("schema checks");
     }
 }

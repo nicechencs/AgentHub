@@ -19,6 +19,19 @@ describe('provider-map codex dual shape', () => {
     expect(p.configText).toContain('gpt-5');
     expect(p.authApiKey).toBe('***');
     expect(p.preset).toBe('openai-compatible');
+    expect(p.secretTail).toBeUndefined();
+  });
+
+  it('maps redacted API key tail from meta', () => {
+    const p = mapCoreProvider({
+      id: 'k2',
+      agentId: 'kimi',
+      name: 'Relay',
+      settingsConfig: { api_key: '***' },
+      meta: { secretTail: '**JF6Q' },
+      isCurrent: false,
+    });
+    expect(p.secretTail).toBe('**JF6Q');
   });
 
   it('accepts dual-shape config alias', () => {

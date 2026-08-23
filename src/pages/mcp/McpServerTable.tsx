@@ -181,7 +181,7 @@ function ServerTableRow({ server }: { server: McpServerEntry }) {
           <TableCell colSpan={4} className="bg-subtle/50">
             <pre
               id={detailsId}
-              className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-meta leading-relaxed text-secondary"
+              className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-card font-mono text-meta leading-relaxed text-secondary"
             >
               {server.snippet}
             </pre>

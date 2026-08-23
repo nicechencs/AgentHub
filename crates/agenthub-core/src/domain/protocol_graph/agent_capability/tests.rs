@@ -55,10 +55,22 @@ fn table_registers_every_agent_accepts_and_writer() {
         grok.writer,
         "Grok has a toml/account writer; that is not a cross-Agent edge"
     );
+    assert_eq!(
+        AgentAccept::OpenAiChatToml.hears(),
+        &[
+            TicketProtocol::OpenaiResponses,
+            TicketProtocol::OpenaiChat,
+            TicketProtocol::AnthropicMessages
+        ]
+    );
 
     let kimi = agent_bind_capability(AgentId::Kimi);
     assert_eq!(kimi.accepts, &[AgentAccept::OpenAiChat]);
     assert!(kimi.writer);
+    assert_eq!(
+        AgentAccept::OpenAiChat.hears(),
+        &[TicketProtocol::OpenaiChat]
+    );
 
     let cursor = agent_bind_capability(AgentId::Cursor);
     assert!(cursor.accepts.is_empty());
@@ -103,7 +115,7 @@ fn cursor_reason_is_no_writer_for_any_ticket_speaks() {
     ] {
         let reason = unsupported_reason_for_target(AgentId::Cursor, surface.speaks());
         assert_eq!(reason, AGENT_NO_WRITER_REASON, "{surface:?}");
-        assert!(reason.contains("无配置写入"));
+        assert!(reason.contains("不能写入配置"));
     }
 }
 
@@ -124,17 +136,28 @@ fn kimi_ticket_and_grok_use_the_verified_native_edge() {
 }
 
 #[test]
-fn anthropic_ticket_and_grok_are_protocol_mismatch() {
+fn anthropic_ticket_and_grok_are_same_protocol_no_edge() {
     let speaks = TicketSurface::AnthropicApi.speaks();
-    assert!(!speaks_intersect_accepts(
+    assert!(speaks_intersect_accepts(
         speaks,
         agent_bind_capability(AgentId::Grok).accepts
     ));
     assert_eq!(
         unsupported_reason_for_target(AgentId::Grok, speaks),
-        PROTOCOL_MISMATCH_REASON
+        SAME_PROTOCOL_NO_EDGE_REASON
     );
-    assert_eq!(PROTOCOL_MISMATCH_REASON, "这份登录接不到这个 Agent。");
+    assert_eq!(
+        SAME_PROTOCOL_NO_EDGE_REASON,
+        "这条接法还没做好，现在接不上。"
+    );
+
+    let decision = decide_adapter_capability(
+        AdapterSourceProduct::AnthropicApi,
+        AdapterCredentialClass::ApiKey,
+        AgentId::Grok,
+    );
+    assert!(!decision.can_apply);
+    assert_eq!(decision.rule_id, None);
 }
 
 #[test]

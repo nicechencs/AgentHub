@@ -1,8 +1,8 @@
 //! Best-effort account identity extraction from OAuth token responses.
 //!
-//! Display only (email / subject / plan). Never used for authorization dedupe.
-//! JWT payloads are decoded without signature verification — same approach as
-//! common desktop tooling; do not treat results as a security boundary.
+//! Feeds `stable_live_identity` and same-agent OAuth overwrite (email vs email,
+//! subject-like ids vs each other). JWT payloads are decoded without signature
+//! verification; missing fields stay fail-closed.
 
 use serde_json::{json, Map, Value};
 
@@ -303,7 +303,8 @@ fn identity_from_openai_auth_claims(claims: &Value) -> OAuthIdentity {
     id
 }
 
-/// Decode JWT payload without verifying the signature (display only).
+/// Decode JWT payload without verifying the signature.
+/// Unverified claims feed identity extraction; missing payload stays fail-closed.
 pub fn decode_jwt_payload(token: &str) -> Option<Value> {
     // Some providers return `header.payload.signature` with URL-safe base64 and
     // optional padding. Reject only when we cannot recover a JSON payload.

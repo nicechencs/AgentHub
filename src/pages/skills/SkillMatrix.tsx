@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   Circle,
+  Copy,
   Eye,
   FolderOpen,
   Link2,
@@ -33,15 +34,15 @@ import {
   isMappedState,
   mapCoreSkill,
   type InstalledSkillDto,
+  type SkillCopyLocation,
 } from '@/lib/api/skill';
 import { isCapabilityUsable } from '@/lib/capability';
-import { normalizeOpenPath } from '@/lib/path-open';
-import { privateSkillActiveKey, sharedSkillActiveKey } from '@/lib/skills/preview-keys';
 import type { AgentColumn } from '@/lib/hooks/useInstalledAgents';
 import type { AgentId, Skill, SkillMapStatus, SkillSyncState } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { skillCellTip, sharedRootPresence } from './copy';
+import type { SkillPreviewCopy, SkillPreviewTarget } from './SkillMarkdownPreviewPanel';
 
 /** checkbox 固定；技能名 / 共享根 / Agent 列可拖（Agent 列共用宽度，矩阵对齐） */
 const CHECK_COL_W = 40;
@@ -93,8 +94,13 @@ function cellTitle(
   return skillCellTip(t, agentName, state, mapStatus, linkKind, reason);
 }
 
-export function catalogRowKey(row: Pick<InstalledSkillDto, 'origin' | 'id'>): string {
-  return `${row.origin}:${row.id}`;
+export function catalogRowKey(
+  row: Pick<InstalledSkillDto, 'origin' | 'id' | 'contentHash'>,
+): string {
+  if (row.origin === 'shared') return `shared:${row.id}`;
+  const hash = row.contentHash?.trim();
+  if (hash) return `private:${row.id}:${hash}`;
+  return `private:${row.origin}:${row.id}`;
 }
 
 export function isSharedCatalogRow(row: InstalledSkillDto): boolean {
@@ -117,16 +123,130 @@ export function isPrivateSourceRow(row: InstalledSkillDto): boolean {
 
 /** 私有行归属的工具列；必须画在该列，不得塞进第一列（Claude）占位。 */
 export function privateRowOriginId(row: InstalledSkillDto): AgentId | null {
-  return isPrivateSourceRow(row) ? (row.origin as AgentId) : null;
+  return privateRowCopies(row)[0]?.agentId ?? null;
+}
+
+export function privateRowCopies(row: InstalledSkillDto): SkillCopyLocation[] {
+  if (!isPrivateSourceRow(row)) return [];
+  if (row.copies && row.copies.length > 0) return row.copies;
+  return [
+    {
+      agentId: row.origin as AgentId,
+      sourceDir: row.sourceDir,
+      rootDir: row.rootDir,
+      rootLabel: row.rootLabel,
+    },
+  ];
+}
+
+function privateGroupKey(row: InstalledSkillDto): string {
+  const hash = row.contentHash?.trim();
+  if (hash) return `${row.id}\0${hash}`;
+  return `${row.id}\0origin:${row.origin}`;
+}
+
+function mappedProjectionCopies(row: InstalledSkillDto): SkillPreviewCopy[] {
+  return (row.projections ?? [])
+    .filter((proj) => proj.state === 'linked' || proj.state === 'copied')
+    .map((proj) => ({
+      agentId: proj.agent,
+      sourceDir: proj.targetDir ?? proj.resolvedTarget ?? '',
+    }));
+}
+
+export function previewTargetFromCatalogRow(
+  row: InstalledSkillDto,
+  agentId?: AgentId,
+): SkillPreviewTarget {
+  if (isSharedCatalogRow(row)) {
+    const copies = mappedProjectionCopies(row);
+    const selected =
+      agentId && copies.some((copy) => copy.agentId === agentId) ? agentId : null;
+    const loc = copies.find((copy) => copy.agentId === selected);
+    return {
+      skillId: row.id,
+      name: row.name,
+      sourceDir: loc?.sourceDir || row.sourceDir,
+      libraryDir: row.sourceDir,
+      privateAgent: selected,
+      copies,
+      includeShared: true,
+      rowKey: catalogRowKey(row),
+    };
+  }
+  const copies = privateRowCopies(row).map((copy) => ({
+    agentId: copy.agentId,
+    sourceDir: copy.sourceDir,
+  }));
+  const selected =
+    (agentId && copies.some((copy) => copy.agentId === agentId) ? agentId : undefined) ??
+    copies[0]?.agentId ??
+    (row.origin as AgentId);
+  const loc = copies.find((copy) => copy.agentId === selected);
+  return {
+    skillId: row.id,
+    name: row.name,
+    sourceDir: loc?.sourceDir ?? row.sourceDir,
+    privateAgent: selected,
+    copies,
+    includeShared: false,
+    rowKey: catalogRowKey(row),
+  };
+}
+
+function mergePrivateGroup(members: InstalledSkillDto[]): InstalledSkillDto {
+  const primary = members[0]!;
+  const copies: SkillCopyLocation[] = members.map((member) => ({
+    agentId: member.origin as AgentId,
+    sourceDir: member.sourceDir,
+    rootDir: member.rootDir,
+    rootLabel: member.rootLabel,
+  }));
+  return { ...primary, copies };
 }
 
 /** 所有状态格同一盒子，避免勾/圈/横杠对不齐。 */
 const STATUS_GLYPH_CLASS =
   'relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-btn';
 
-/** 本地表可见行：共享矩阵 + 私有占位（不含已在共享库 / 冲突副本行） */
-export function visibleCatalogRows(rows: InstalledSkillDto[]): InstalledSkillDto[] {
-  return rows.filter((row) => isSharedCatalogRow(row) || isPrivateSourceRow(row));
+/**
+ * 本地表可见行：共享矩阵 + 私有占位（不含已在共享库 / 冲突副本行）。
+ * 传入 `visibleAgentIds` 时，丢掉当前工具列里没有的私有真源行。
+ * 同 id 且 contentHash 相同的私有副本合成一行（`copies` 列出各物理文件）。
+ */
+export function visibleCatalogRows(
+  rows: InstalledSkillDto[],
+  visibleAgentIds?: Iterable<string>,
+): InstalledSkillDto[] {
+  const visible =
+    visibleAgentIds === undefined
+      ? null
+      : visibleAgentIds instanceof Set
+        ? visibleAgentIds
+        : new Set(visibleAgentIds);
+
+  const eligible = rows.filter((row) => {
+    if (isSharedCatalogRow(row)) return true;
+    if (!isPrivateSourceRow(row)) return false;
+    return visible === null || visible.has(row.origin);
+  });
+
+  const emitted = new Set<string>();
+  const out: InstalledSkillDto[] = [];
+  for (const row of eligible) {
+    if (isSharedCatalogRow(row)) {
+      out.push(row.copies ? { ...row, copies: [] } : row);
+      continue;
+    }
+    const key = privateGroupKey(row);
+    if (emitted.has(key)) continue;
+    emitted.add(key);
+    const members = eligible.filter(
+      (item) => isPrivateSourceRow(item) && privateGroupKey(item) === key,
+    );
+    out.push(mergePrivateGroup(members));
+  }
+  return out;
 }
 
 export function catalogRowHasMapped(row: InstalledSkillDto): boolean {
@@ -153,7 +273,7 @@ function isRealDescription(name: string, description?: string): boolean {
 }
 
 interface SkillMatrixProps {
-  /** catalog 行（共享 + 私有占位）；React key 为 `${origin}:${id}` */
+  /** catalog 行（共享 + 合成后的私有占位）；React key 为 catalogRowKey */
   rows: InstalledSkillDto[];
   selected: Set<string>;
   allSelected: boolean;
@@ -162,14 +282,20 @@ interface SkillMatrixProps {
   onToggleSelect: (skillId: string) => void;
   onToggleSelectAll: () => void;
   onCellClick: (skill: Skill, agentId: AgentId) => void;
-  /** 打开技能真源目录（sourceDir） */
-  onOpenDir?: (path: string) => void;
-  /** 预览本地 SKILL.md（Markdown） */
-  onPreview?: (row: InstalledSkillDto) => void;
-  /** 当前预览复合 key（`shared:id` / `agent:id:skill`），与 checkbox selected 分离 */
+  /** Right-click a projection cell: persist link/copy, or disable. */
+  onCellProject?: (
+    skill: Skill,
+    agentId: AgentId,
+    mode: 'link' | 'copy' | 'disable',
+  ) => void;
+  /** 预览本地 SKILL.md；私有行可带上要点亮的那一份 Agent */
+  onPreview?: (row: InstalledSkillDto, agentId?: AgentId) => void;
+  /** 当前预览行 key（catalogRowKey），与 checkbox selected 分离 */
   activeKey?: string | null;
   onAdopt: (skillId: string, agentId: AgentId, name: string) => void;
-  onUninstall: (skillId: string, agentId: AgentId, name: string, inLibrary: boolean) => void;
+  onOpenDir?: (path: string) => void;
+  onDeleteShared?: (row: InstalledSkillDto) => void;
+  onDeleteFromTool?: (skillId: string, agentId: AgentId, name: string) => void;
   /**
    * 矩阵列：推荐传入「已安装」Agent（含不支持 skills 的，如 Kimi）。
    * 灰色单元格用后端 mapStatus 解释；未安装列仅在调用方显式传入时出现。
@@ -185,25 +311,36 @@ function StatusGlyph({
   disabled,
   busy,
   onClick,
+  onContextMenu,
 }: {
   hint: string;
   children: ReactNode;
   disabled?: boolean;
   busy?: boolean;
   onClick?: () => void;
+  onContextMenu?: (e: { preventDefault: () => void; clientX: number; clientY: number }) => void;
 }) {
-  if (onClick) {
+  if (onClick || onContextMenu) {
     return (
       <Hint label={hint}>
         <button
           type="button"
           disabled={disabled || busy}
           onClick={onClick}
+          onContextMenu={
+            onContextMenu
+              ? (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onContextMenu(e);
+                }
+              : undefined
+          }
           aria-label={hint}
           className={cn(
             STATUS_GLYPH_CLASS,
             'transition-colors',
-            disabled
+            disabled && !onContextMenu
               ? 'cursor-not-allowed text-disabled'
               : 'cursor-pointer hover:bg-hover',
             busy && 'opacity-50',
@@ -229,25 +366,27 @@ function SharedRootCell({
   privateRow,
   importing,
   onAdopt,
+  onContextMenu,
 }: {
   inLibrary: boolean;
   label: string;
   privateRow: boolean;
   importing: boolean;
   onAdopt?: () => void;
+  onContextMenu?: (e: { preventDefault: () => void; clientX: number; clientY: number }) => void;
 }) {
   const { t } = useI18n();
   if (privateRow && onAdopt) {
     const hint = importing ? t('skills.workspace.adoptBusy') : t('skills.workspace.adoptHint');
     return (
-      <StatusGlyph hint={hint} busy={importing} onClick={onAdopt}>
+      <StatusGlyph hint={hint} busy={importing} onClick={onAdopt} onContextMenu={onContextMenu}>
         <Share2 className={cn('h-3.5 w-3.5', importing && 'animate-pulse')} />
       </StatusGlyph>
     );
   }
   const hint = sharedRootPresence(t, inLibrary, label);
   return (
-    <StatusGlyph hint={hint}>
+    <StatusGlyph hint={hint} onContextMenu={onContextMenu}>
       {inLibrary ? (
         <Check className="h-3.5 w-3.5 text-success" strokeWidth={2.5} />
       ) : (
@@ -257,13 +396,21 @@ function SharedRootCell({
   );
 }
 
-function PrivateOriginCell({ agentId }: { agentId: AgentId }) {
+function PrivateOriginCell({
+  agentId,
+  onClick,
+  onContextMenu,
+}: {
+  agentId: AgentId;
+  onClick?: () => void;
+  onContextMenu?: (e: { preventDefault: () => void; clientX: number; clientY: number }) => void;
+}) {
   const { t } = useI18n();
   const agentName = agentDisplayName(agentId);
   const hint = skillCellTip(t, agentName, 'absent', 'private_source');
   return (
-    <StatusGlyph hint={hint}>
-      <Circle className="h-3.5 w-3.5 text-muted" strokeWidth={1.8} />
+    <StatusGlyph hint={hint} onClick={onClick} onContextMenu={onContextMenu}>
+      <AgentDot agentId={agentId} title={null} className="h-3.5 w-3.5" />
     </StatusGlyph>
   );
 }
@@ -342,7 +489,7 @@ export function SkillMatrixLegend({ className }: { className?: string }) {
         {t('skills.legend.toggle')}
       </button>
       {open ? (
-        <div className="mt-1.5 rounded-btn border border-border/60 bg-subtle/40 px-3 py-2">
+        <div className="mt-1.5 rounded-card border border-border/60 bg-subtle/40 px-3 py-2">
           <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
             {items.map((item) => (
               <li key={item.key} className="flex min-w-[10rem] max-w-xs items-start gap-1.5">
@@ -376,11 +523,13 @@ export function SkillMatrix({
   onToggleSelect,
   onToggleSelectAll,
   onCellClick,
-  onOpenDir,
+  onCellProject,
   onPreview,
   activeKey = null,
   onAdopt,
-  onUninstall,
+  onOpenDir,
+  onDeleteShared,
+  onDeleteFromTool,
   agents,
   installedAgentIds,
   showLegend = true,
@@ -406,8 +555,28 @@ export function SkillMatrix({
     x: number;
     y: number;
     row: InstalledSkillDto;
-    path: string | null;
   } | null>(null);
+  const [cellMenu, setCellMenu] = useState<{
+    x: number;
+    y: number;
+    skill: Skill;
+    agentId: AgentId;
+    state: SkillSyncState;
+    folderPath: string | null;
+  } | null>(null);
+  const [folderMenu, setFolderMenu] = useState<{
+    x: number;
+    y: number;
+    path: string;
+    sharedRow?: InstalledSkillDto;
+    fromTool?: { skillId: string; agentId: AgentId; name: string };
+  } | null>(null);
+
+  const openFolder = (path: string | null | undefined) => {
+    const next = path?.trim();
+    if (!next || !onOpenDir) return;
+    onOpenDir(next);
+  };
 
   return (
     <div className="space-y-2">
@@ -470,28 +639,22 @@ export function SkillMatrix({
           <TableBody>
             {rows.map((row) => {
               const realDesc = isRealDescription(row.name, row.description);
-              const openPath =
-                normalizeOpenPath(row.sourceDir) ??
-                (isPrivateSourceRow(row) ? normalizeOpenPath(row.rootDir) : null);
-              const canOpenDir = Boolean(openPath && onOpenDir);
               const privateRow = isPrivateSourceRow(row);
-              const originId = privateRowOriginId(row);
-              const canContext = Boolean(onPreview) || canOpenDir || privateRow;
+              const copies = privateRowCopies(row);
+              const originId = copies[0]?.agentId ?? null;
+              const copyIds = new Set(copies.map((copy) => copy.agentId));
+              const canContext = Boolean(onPreview);
               const skill = privateRow ? null : asMatrixSkill(row);
-              const rowActive = Boolean(
-                activeKey &&
-                  (privateRow
-                    ? activeKey === privateSkillActiveKey(row.origin as AgentId, row.id)
-                    : activeKey === sharedSkillActiveKey(row.id)),
-              );
+              const rowActive = Boolean(activeKey && activeKey === catalogRowKey(row));
               const openRowMenu = canContext
                 ? (e: { preventDefault: () => void; clientX: number; clientY: number }) => {
                     e.preventDefault();
+                    setCellMenu(null);
+                    setFolderMenu(null);
                     setRowMenu({
                       x: e.clientX,
                       y: e.clientY,
                       row,
-                      path: canOpenDir ? openPath : null,
                     });
                   }
                 : undefined;
@@ -509,55 +672,38 @@ export function SkillMatrix({
                     )}
                   </TableCell>
                   <TableCell className="min-w-0" onContextMenu={openRowMenu}>
-                    <div className="flex min-w-0 items-start gap-1">
-                      <div className="min-w-0 flex-1">
-                        {onPreview ? (
-                          <button
-                            type="button"
-                            className={cn(
-                              'block max-w-full truncate text-left text-sm font-medium text-primary',
-                              'rounded-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
-                            )}
-                            onClick={() => onPreview(row)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                onPreview(row);
-                              }
-                            }}
-                          >
-                            <Tip className="truncate" label={row.name}>
-                              {row.name}
-                            </Tip>
-                          </button>
-                        ) : (
-                          <Tip className="truncate font-medium text-primary" label={row.name}>
+                    <div className="min-w-0">
+                      {onPreview ? (
+                        <button
+                          type="button"
+                          className={cn(
+                            'block max-w-full truncate text-left text-sm font-medium text-primary',
+                            'rounded-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
+                          )}
+                          onClick={() => onPreview(row)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              onPreview(row);
+                            }
+                          }}
+                        >
+                          <Tip className="truncate" label={row.name}>
                             {row.name}
                           </Tip>
-                        )}
-                        {realDesc ? (
-                          <Tip
-                            className="mt-0.5 line-clamp-1 truncate text-sm text-secondary"
-                            label={row.description}
-                          >
-                            {row.description}
-                          </Tip>
-                        ) : null}
-                      </div>
-                      {privateRow && originId ? (
-                        <Hint label={t('skills.workspace.remove')}>
-                          <button
-                            type="button"
-                            className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-btn text-danger hover:bg-hover"
-                            aria-label={t('skills.workspace.removeAria')}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onUninstall(row.id, originId, row.name, false);
-                            }}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </Hint>
+                        </button>
+                      ) : (
+                        <Tip className="truncate font-medium text-primary" label={row.name}>
+                          {row.name}
+                        </Tip>
+                      )}
+                      {realDesc ? (
+                        <Tip
+                          className="mt-0.5 line-clamp-1 truncate text-sm text-secondary"
+                          label={row.description}
+                        >
+                          {row.description}
+                        </Tip>
                       ) : null}
                     </div>
                   </TableCell>
@@ -566,10 +712,26 @@ export function SkillMatrix({
                       inLibrary={isSharedCatalogRow(row)}
                       label={sharedRootLabel}
                       privateRow={privateRow}
-                      importing={importingIds.has(`${row.origin}:${row.id}`)}
+                      importing={copies.some((copy) =>
+                        importingIds.has(`${copy.agentId}:${row.id}`),
+                      ) || importingIds.has(`${row.origin}:${row.id}`)}
                       onAdopt={
                         privateRow && originId
                           ? () => onAdopt(row.id, originId, row.name)
+                          : undefined
+                      }
+                      onContextMenu={
+                        isSharedCatalogRow(row) && row.sourceDir && (onOpenDir || onDeleteShared)
+                          ? (e) => {
+                              setRowMenu(null);
+                              setCellMenu(null);
+                              setFolderMenu({
+                                x: e.clientX,
+                                y: e.clientY,
+                                path: row.sourceDir,
+                                sharedRow: row,
+                              });
+                            }
                           : undefined
                       }
                     />
@@ -581,11 +743,37 @@ export function SkillMatrix({
                   ) : (
                     columns.map((agent) => {
                       if (privateRow) {
-                        const isOrigin = originId === agent.id;
+                        const isOrigin = copyIds.has(agent.id);
                         return (
                           <TableCell key={agent.id} className="text-center">
                             {isOrigin ? (
-                              <PrivateOriginCell agentId={agent.id} />
+                              <PrivateOriginCell
+                                agentId={agent.id}
+                                onClick={
+                                  onPreview ? () => onPreview(row, agent.id) : undefined
+                                }
+                                onContextMenu={
+                                  onOpenDir || onDeleteFromTool
+                                    ? (e) => {
+                                        const loc = copies.find((copy) => copy.agentId === agent.id);
+                                        const path = loc?.sourceDir ?? row.sourceDir;
+                                        if (!path) return;
+                                        setRowMenu(null);
+                                        setCellMenu(null);
+                                        setFolderMenu({
+                                          x: e.clientX,
+                                          y: e.clientY,
+                                          path,
+                                          fromTool: {
+                                            skillId: row.id,
+                                            agentId: agent.id,
+                                            name: row.name,
+                                          },
+                                        });
+                                      }
+                                    : undefined
+                                }
+                              />
                             ) : (
                               <StatusGlyph
                                 hint={sharedRootPresence(
@@ -643,6 +831,23 @@ export function SkillMatrix({
                                 ? undefined
                                 : () => onCellClick(matrixSkill, agent.id)
                             }
+                            onContextMenu={
+                              (!blocked && !pending && (onCellProject || onOpenDir))
+                                ? (e) => {
+                                    setRowMenu(null);
+                                    setFolderMenu(null);
+                                    setCellMenu({
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                      skill: matrixSkill,
+                                      agentId: agent.id,
+                                      state,
+                                      folderPath:
+                                        proj?.targetDir ?? proj?.resolvedTarget ?? null,
+                                    });
+                                  }
+                                : undefined
+                            }
                           >
                             {state === 'linked' && !blocked && (
                               <Link2 className="h-3.5 w-3.5 text-success" strokeWidth={2.5} />
@@ -665,12 +870,6 @@ export function SkillMatrix({
                                 </>
                               )}
                             {blocked && <Minus className="h-3.5 w-3.5 text-muted/50" />}
-                            {isMappedState(state) &&
-                              !blocked &&
-                              proj?.linkKind &&
-                              proj.linkKind !== 'none' && (
-                                <span className="sr-only">{proj.linkKind}</span>
-                              )}
                           </StatusGlyph>
                         </TableCell>
                       );
@@ -701,33 +900,138 @@ export function SkillMatrix({
             {t('skills.menu.preview')}
           </ContextMenuItem>
         ) : null}
-        {rowMenu?.path && onOpenDir ? (
-          <ContextMenuItem
-            onSelect={() => {
-              if (!rowMenu?.path || !onOpenDir) return;
-              onOpenDir(rowMenu.path);
-              setRowMenu(null);
-            }}
-          >
-            <FolderOpen className="h-3.5 w-3.5" />
-            {t('skills.menu.openFolder')}
-          </ContextMenuItem>
-        ) : null}
-        {rowMenu && isPrivateSourceRow(rowMenu.row) ? (
+        <ContextMenuItem
+          disabled={!rowMenu?.row.sourceDir || !onOpenDir}
+          onSelect={() => {
+            if (!rowMenu) return;
+            openFolder(rowMenu.row.sourceDir);
+            setRowMenu(null);
+          }}
+        >
+          <FolderOpen className="h-3.5 w-3.5" />
+          {t('skills.menu.openFolder')}
+        </ContextMenuItem>
+        {onDeleteShared && rowMenu && isSharedCatalogRow(rowMenu.row) ? (
           <ContextMenuItem
             onSelect={() => {
               if (!rowMenu) return;
-              onUninstall(
-                rowMenu.row.id,
-                rowMenu.row.origin as AgentId,
-                rowMenu.row.name,
-                false,
-              );
+              onDeleteShared(rowMenu.row);
               setRowMenu(null);
             }}
           >
-            <Trash2 className="h-3.5 w-3.5 text-danger" />
-            {t('skills.menu.removePrivate')}
+            <Trash2 className="h-3.5 w-3.5" />
+            {t('skills.menu.deleteShared')}
+          </ContextMenuItem>
+        ) : null}
+      </ContextMenu>
+      <ContextMenu
+        open={cellMenu !== null}
+        point={cellMenu}
+        onClose={() => setCellMenu(null)}
+      >
+        {onCellProject ? (
+          <>
+            <ContextMenuItem
+              disabled={cellMenu?.state === 'linked'}
+              onSelect={() => {
+                if (!cellMenu || !onCellProject) return;
+                onCellProject(cellMenu.skill, cellMenu.agentId, 'link');
+                setCellMenu(null);
+              }}
+            >
+              <Link2 className="h-3.5 w-3.5" />
+              {t('skills.menu.enableLink')}
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={cellMenu?.state === 'copied'}
+              onSelect={() => {
+                if (!cellMenu || !onCellProject) return;
+                onCellProject(cellMenu.skill, cellMenu.agentId, 'copy');
+                setCellMenu(null);
+              }}
+            >
+              <Copy className="h-3.5 w-3.5" />
+              {t('skills.menu.enableCopy')}
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={!cellMenu || !isMappedState(cellMenu.state)}
+              onSelect={() => {
+                if (!cellMenu || !onCellProject) return;
+                onCellProject(cellMenu.skill, cellMenu.agentId, 'disable');
+                setCellMenu(null);
+              }}
+            >
+              <Minus className="h-3.5 w-3.5" />
+              {t('skills.menu.disable')}
+            </ContextMenuItem>
+          </>
+        ) : null}
+        {onDeleteFromTool &&
+        (cellMenu?.state === 'foreign' || cellMenu?.state === 'conflict') ? (
+          <ContextMenuItem
+            onSelect={() => {
+              if (!cellMenu || !onDeleteFromTool) return;
+              onDeleteFromTool(cellMenu.skill.id, cellMenu.agentId, cellMenu.skill.name);
+              setCellMenu(null);
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {t('skills.menu.deleteFromTool')}
+          </ContextMenuItem>
+        ) : null}
+        <ContextMenuItem
+          disabled={!cellMenu?.folderPath || !onOpenDir}
+          onSelect={() => {
+            if (!cellMenu) return;
+            openFolder(cellMenu.folderPath);
+            setCellMenu(null);
+          }}
+        >
+          <FolderOpen className="h-3.5 w-3.5" />
+          {t('skills.menu.openFolder')}
+        </ContextMenuItem>
+      </ContextMenu>
+      <ContextMenu
+        open={folderMenu !== null}
+        point={folderMenu}
+        onClose={() => setFolderMenu(null)}
+      >
+        {onDeleteFromTool && folderMenu?.fromTool ? (
+          <ContextMenuItem
+            onSelect={() => {
+              if (!folderMenu?.fromTool || !onDeleteFromTool) return;
+              onDeleteFromTool(
+                folderMenu.fromTool.skillId,
+                folderMenu.fromTool.agentId,
+                folderMenu.fromTool.name,
+              );
+              setFolderMenu(null);
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {t('skills.menu.deleteFromTool')}
+          </ContextMenuItem>
+        ) : null}
+        <ContextMenuItem
+          onSelect={() => {
+            if (!folderMenu) return;
+            openFolder(folderMenu.path);
+            setFolderMenu(null);
+          }}
+        >
+          <FolderOpen className="h-3.5 w-3.5" />
+          {t('skills.menu.openFolder')}
+        </ContextMenuItem>
+        {onDeleteShared && folderMenu?.sharedRow ? (
+          <ContextMenuItem
+            onSelect={() => {
+              if (!folderMenu?.sharedRow || !onDeleteShared) return;
+              onDeleteShared(folderMenu.sharedRow);
+              setFolderMenu(null);
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {t('skills.menu.deleteShared')}
           </ContextMenuItem>
         ) : null}
       </ContextMenu>

@@ -1,5 +1,7 @@
 //! Conversations + chat_messages repository — storage boundary only.
 
+use std::collections::HashSet;
+
 use rusqlite::{params, OptionalExtension, Row};
 
 use crate::error::{AppError, Result};
@@ -19,34 +21,77 @@ impl ChatRepo {
 
     pub fn create_conversation(&self, record: &Conversation) -> Result<()> {
         let agent_ids = serde_json::to_string(&record.agent_ids)?;
-        let allow = if record.allow_dangerous { 1 } else { 0 };
         self.db.with_conn(|conn| {
-            conn.execute(
-                r#"
-                INSERT INTO conversations (
-                    id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                "#,
-                params![
-                    record.id,
-                    record.title,
-                    agent_ids,
-                    record.cwd,
-                    allow,
-                    record.created_at,
-                    record.updated_at,
-                ],
-            )?;
+            insert_conversation_conn(conn, record, &agent_ids)?;
             Ok(())
+        })
+    }
+
+    /// Return the existing blank conversation or create exactly one atomically.
+    ///
+    /// A conversation is eligible only while it has no title (apart from
+    /// whitespace) and no messages.  This intentionally leaves titled or
+    /// already-used conversations untouched, even when they are otherwise
+    /// configured like the requested default.  The immediate transaction
+    /// serializes the check-and-insert across callers and processes.
+    pub fn ensure_default_conversation(&self, record: &Conversation) -> Result<Conversation> {
+        let agent_ids = serde_json::to_string(&record.agent_ids)?;
+        self.db.with_conn(|conn| {
+            conn.execute_batch("BEGIN IMMEDIATE")?;
+            let result = (|| {
+                let existing = conn
+                    .query_row(
+                        r#"
+                        SELECT c.id, c.title, c.agent_ids, c.cwd, c.allow_dangerous,
+                               c.created_at, c.updated_at, c.native_session_id
+                        FROM conversations AS c
+                        WHERE TRIM(c.title) = ''
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM chat_messages AS m
+                              WHERE m.conversation_id = c.id
+                          )
+                        ORDER BY c.updated_at DESC, c.id DESC
+                        LIMIT 1
+                        "#,
+                        [],
+                        map_conversation_row,
+                    )
+                    .optional()?;
+
+                if let Some(mut conversation) = existing {
+                    conversation.sending = false;
+                    return Ok(conversation);
+                }
+
+                insert_conversation_conn(conn, record, &agent_ids)?;
+                Ok(record.clone())
+            })();
+
+            match result {
+                Ok(conversation) => match conn.execute_batch("COMMIT") {
+                    Ok(()) => Ok(conversation),
+                    Err(error) => {
+                        let _ = conn.execute_batch("ROLLBACK");
+                        Err(error.into())
+                    }
+                },
+                Err(error) => {
+                    let _ = conn.execute_batch("ROLLBACK");
+                    Err(error)
+                }
+            }
         })
     }
 
     /// Newest-first by `updated_at`, then `id`.
     pub fn list_conversations(&self) -> Result<Vec<Conversation>> {
         self.db.with_conn(|conn| {
+            let sending_ids = load_sending_ids(conn)?;
             let mut stmt = conn.prepare(
                 r#"
-                SELECT id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at
+                SELECT id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at,
+                       native_session_id
                 FROM conversations
                 ORDER BY updated_at DESC, id DESC
                 "#,
@@ -54,7 +99,9 @@ impl ChatRepo {
             let rows = stmt.query_map([], map_conversation_row)?;
             let mut out = Vec::new();
             for row in rows {
-                out.push(row?);
+                let mut conv = row?;
+                conv.sending = sending_ids.contains(&conv.id);
+                out.push(conv);
             }
             Ok(out)
         })
@@ -62,17 +109,23 @@ impl ChatRepo {
 
     pub fn get_conversation(&self, id: &str) -> Result<Option<Conversation>> {
         self.db.with_conn(|conn| {
-            conn.query_row(
-                r#"
-                SELECT id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at
-                FROM conversations
-                WHERE id = ?1
-                "#,
-                params![id],
-                map_conversation_row,
-            )
-            .optional()
-            .map_err(AppError::from)
+            let mut conv = conn
+                .query_row(
+                    r#"
+                    SELECT id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at,
+                           native_session_id
+                    FROM conversations
+                    WHERE id = ?1
+                    "#,
+                    params![id],
+                    map_conversation_row,
+                )
+                .optional()
+                .map_err(AppError::from)?;
+            if let Some(ref mut c) = conv {
+                c.sending = conversation_is_sending(conn, &c.id)?;
+            }
+            Ok(conv)
         })
     }
 
@@ -87,7 +140,8 @@ impl ChatRepo {
                     agent_ids = ?3,
                     cwd = ?4,
                     allow_dangerous = ?5,
-                    updated_at = ?6
+                    updated_at = ?6,
+                    native_session_id = ?7
                 WHERE id = ?1
                 "#,
                 params![
@@ -97,6 +151,7 @@ impl ChatRepo {
                     record.cwd,
                     allow,
                     record.updated_at,
+                    record.native_session_id,
                 ],
             )?;
             if n == 0 {
@@ -188,6 +243,21 @@ impl ChatRepo {
             .with_conn(|conn| next_turn_conn(conn, conversation_id))
     }
 
+    /// Crash recovery: fold leftover `running` placeholders into `cancelled`.
+    /// Does not clear `native_session_id` or rewrite error fields.
+    pub fn interrupt_stale_running(&self) -> Result<u64> {
+        self.db.with_conn(|conn| {
+            let n = conn.execute(
+                "UPDATE chat_messages SET status = ?1 WHERE status = ?2",
+                params![
+                    ChatMessageStatus::Cancelled.as_str(),
+                    ChatMessageStatus::Running.as_str(),
+                ],
+            )?;
+            Ok(n as u64)
+        })
+    }
+
     /// Atomically allocate the next turn and insert the user message plus agent
     /// placeholders. Holds the DB lock for the whole sequence so concurrent sends
     /// cannot observe the same `MAX(turn)`. Uses an explicit transaction so a
@@ -226,6 +296,58 @@ impl ChatRepo {
             }
         })
     }
+}
+
+fn load_sending_ids(conn: &rusqlite::Connection) -> Result<HashSet<String>> {
+    let mut stmt = conn
+        .prepare("SELECT DISTINCT conversation_id FROM chat_messages WHERE status = 'running'")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    let mut ids = HashSet::new();
+    for row in rows {
+        ids.insert(row?);
+    }
+    Ok(ids)
+}
+
+fn insert_conversation_conn(
+    conn: &rusqlite::Connection,
+    record: &Conversation,
+    agent_ids: &str,
+) -> Result<()> {
+    let allow = if record.allow_dangerous { 1 } else { 0 };
+    conn.execute(
+        r#"
+        INSERT INTO conversations (
+            id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at,
+            native_session_id
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        "#,
+        params![
+            record.id,
+            record.title,
+            agent_ids,
+            record.cwd,
+            allow,
+            record.created_at,
+            record.updated_at,
+            record.native_session_id,
+        ],
+    )?;
+    Ok(())
+}
+
+fn conversation_is_sending(conn: &rusqlite::Connection, id: &str) -> Result<bool> {
+    let n: i64 = conn.query_row(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM chat_messages
+            WHERE conversation_id = ?1 AND status = 'running'
+        )
+        "#,
+        params![id],
+        |row| row.get(0),
+    )?;
+    Ok(n != 0)
 }
 
 fn next_turn_conn(conn: &rusqlite::Connection, conversation_id: &str) -> Result<i64> {
@@ -280,6 +402,7 @@ fn map_conversation_row(row: &Row<'_>) -> rusqlite::Result<Conversation> {
     let allow_i: i64 = row.get(4)?;
     let created_at: String = row.get(5)?;
     let updated_at: String = row.get(6)?;
+    let native_session_id: Option<String> = row.get(7)?;
 
     let agent_ids: Vec<AgentId> = serde_json::from_str(&agent_ids_raw).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e))
@@ -293,6 +416,8 @@ fn map_conversation_row(row: &Row<'_>) -> rusqlite::Result<Conversation> {
         allow_dangerous: allow_i != 0,
         created_at,
         updated_at,
+        native_session_id,
+        sending: false,
     })
 }
 
@@ -369,173 +494,4 @@ fn map_message_row(row: &Row<'_>) -> rusqlite::Result<ChatMessage> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::Utc;
-    use tempfile::tempdir;
-    use uuid::Uuid;
-
-    fn sample_conv(id: &str, agents: Vec<AgentId>) -> Conversation {
-        let now = Utc::now().to_rfc3339();
-        Conversation {
-            id: id.into(),
-            title: "t".into(),
-            agent_ids: agents,
-            cwd: Some("/tmp".into()),
-            allow_dangerous: false,
-            created_at: now.clone(),
-            updated_at: now,
-        }
-    }
-
-    fn sample_msg(id: &str, conv: &str, turn: i64, role: ChatRole) -> ChatMessage {
-        ChatMessage {
-            id: id.into(),
-            conversation_id: conv.into(),
-            turn,
-            role,
-            agent_id: if role == ChatRole::Agent {
-                Some(AgentId::Claude)
-            } else {
-                None
-            },
-            content: "hi".into(),
-            status: ChatMessageStatus::Ok,
-            exit_code: None,
-            duration_ms: 0,
-            error: None,
-            created_at: Utc::now().to_rfc3339(),
-        }
-    }
-
-    #[test]
-    fn crud_and_cascade_delete() {
-        let dir = tempdir().unwrap();
-        let db = Database::open(&dir.path().join("t.db")).unwrap();
-        let repo = ChatRepo::new(db);
-
-        let c = sample_conv("c1", vec![AgentId::Claude, AgentId::Codex]);
-        repo.create_conversation(&c).unwrap();
-        assert_eq!(repo.list_conversations().unwrap().len(), 1);
-        let got = repo.get_conversation("c1").unwrap().expect("found");
-        assert_eq!(got.agent_ids, vec![AgentId::Claude, AgentId::Codex]);
-        assert_eq!(got.cwd.as_deref(), Some("/tmp"));
-
-        repo.insert_message(&sample_msg("m1", "c1", 1, ChatRole::User))
-            .unwrap();
-        repo.insert_message(&sample_msg("m2", "c1", 1, ChatRole::Agent))
-            .unwrap();
-        assert_eq!(repo.list_messages("c1").unwrap().len(), 2);
-        assert_eq!(repo.next_turn("c1").unwrap(), 2);
-
-        assert!(repo.delete_conversation("c1").unwrap());
-        assert!(repo.get_conversation("c1").unwrap().is_none());
-        assert!(repo.list_messages("c1").unwrap().is_empty());
-    }
-
-    #[test]
-    fn insert_turn_messages_allocates_monotonic_turn() {
-        let dir = tempdir().unwrap();
-        let db = Database::open(&dir.path().join("t.db")).unwrap();
-        let repo = ChatRepo::new(db);
-        let c = sample_conv("c1", vec![AgentId::Claude]);
-        repo.create_conversation(&c).unwrap();
-
-        let mut user1 = sample_msg("u1", "c1", 0, ChatRole::User);
-        let mut agents1 = [sample_msg("a1", "c1", 0, ChatRole::Agent)];
-        agents1[0].status = ChatMessageStatus::Running;
-        let t1 = repo
-            .insert_turn_messages("c1", &mut user1, &mut agents1)
-            .unwrap();
-        assert_eq!(t1, 1);
-        assert_eq!(user1.turn, 1);
-        assert_eq!(agents1[0].turn, 1);
-
-        let mut user2 = sample_msg("u2", "c1", 0, ChatRole::User);
-        let mut agents2 = [sample_msg("a2", "c1", 0, ChatRole::Agent)];
-        let t2 = repo
-            .insert_turn_messages("c1", &mut user2, &mut agents2)
-            .unwrap();
-        assert_eq!(t2, 2);
-        assert_eq!(repo.list_messages("c1").unwrap().len(), 4);
-    }
-
-    #[test]
-    fn next_turn_empty_is_one_and_update_message_roundtrip() {
-        let dir = tempdir().unwrap();
-        let db = Database::open(&dir.path().join("t.db")).unwrap();
-        let repo = ChatRepo::new(db);
-        let c = sample_conv("c1", vec![AgentId::Claude]);
-        repo.create_conversation(&c).unwrap();
-        assert_eq!(repo.next_turn("c1").unwrap(), 1);
-
-        let mut msg = sample_msg("m1", "c1", 1, ChatRole::Agent);
-        msg.status = ChatMessageStatus::Running;
-        msg.content = String::new();
-        repo.insert_message(&msg).unwrap();
-
-        msg.content = "done".into();
-        msg.status = ChatMessageStatus::Ok;
-        msg.exit_code = Some(0);
-        msg.duration_ms = 42;
-        repo.update_message(&msg).unwrap();
-
-        let got = repo.list_messages("c1").unwrap();
-        assert_eq!(got.len(), 1);
-        assert_eq!(got[0].content, "done");
-        assert_eq!(got[0].status, ChatMessageStatus::Ok);
-        assert_eq!(got[0].exit_code, Some(0));
-        assert_eq!(got[0].duration_ms, 42);
-        assert_eq!(repo.next_turn("c1").unwrap(), 2);
-    }
-
-    #[test]
-    fn update_missing_message_is_not_found() {
-        let dir = tempdir().unwrap();
-        let db = Database::open(&dir.path().join("t.db")).unwrap();
-        let repo = ChatRepo::new(db);
-        let msg = sample_msg("missing", "nope", 1, ChatRole::User);
-        let err = repo.update_message(&msg).unwrap_err();
-        assert_eq!(err.code(), "not_found");
-    }
-
-    #[test]
-    fn update_missing_conversation_is_not_found() {
-        let dir = tempdir().unwrap();
-        let db = Database::open(&dir.path().join("t.db")).unwrap();
-        let repo = ChatRepo::new(db);
-        let mut c = sample_conv("ghost", vec![AgentId::Claude]);
-        c.title = "x".into();
-        let err = repo.update_conversation(&c).unwrap_err();
-        assert_eq!(err.code(), "not_found");
-    }
-
-    #[test]
-    fn invalid_role_errors() {
-        let dir = tempdir().unwrap();
-        let db = Database::open(&dir.path().join("t.db")).unwrap();
-        let repo = ChatRepo::new(db.clone());
-        let c = sample_conv("c1", vec![AgentId::Grok]);
-        repo.create_conversation(&c).unwrap();
-
-        db.with_conn(|conn| {
-            conn.execute(
-                r#"
-                INSERT INTO chat_messages (
-                    id, conversation_id, turn, role, content, status
-                ) VALUES (?1, ?2, 1, 'bogus', 'x', 'ok')
-                "#,
-                params![Uuid::new_v4().to_string(), "c1"],
-            )?;
-            Ok(())
-        })
-        .unwrap();
-
-        let err = repo.list_messages("c1").unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("invalid chat role") || msg.contains("bogus"),
-            "unexpected: {msg}"
-        );
-    }
-}
+mod tests;

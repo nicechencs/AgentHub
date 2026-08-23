@@ -2,10 +2,11 @@ use serde_json::Value;
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    adapter_maturity_from_decision, decide_adapter_capability, AccountKind, AdapterAction,
+    adapter_maturity_from_decision, decide_adapter_capability, Account, AccountKind, AdapterAction,
     AdapterApplyPlan, AdapterCapabilityDecision, AdapterCredentialClass, AdapterEvidence,
     AdapterPlanChange, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
     AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
+    Provider,
 };
 use crate::services::adapter_route_constants::{
     claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
@@ -24,6 +25,94 @@ use super::actions::*;
 use super::{AdapterRouteService, ClassifiedRoute};
 
 impl AdapterRouteService {
+    /// Classify a prospective account without reading it back from SQLite.
+    ///
+    /// Create/import/update sagas use this before their first transaction so
+    /// the persisted ticket surface is part of the atomic row write.
+    pub fn classify_account_source_product(account: &Account) -> AdapterSourceProduct {
+        let explicit_provider = json_string(&account.extra, "provider")
+            .or_else(|| json_string(&account.credentials, "provider"));
+        let credential_format = json_string(&account.credentials, "format")
+            .or_else(|| json_string(&account.extra, "format"));
+
+        if account.kind == AccountKind::ApiKey
+            && (explicit_provider.is_some_and(|value| value.eq_ignore_ascii_case("anthropic"))
+                || settings_contain_anthropic_api_endpoint(&account.credentials)
+                || settings_contain_anthropic_api_endpoint(&account.extra))
+        {
+            AdapterSourceProduct::AnthropicApi
+        } else if account.kind == AccountKind::ApiKey
+            && (is_openai_api_marker(explicit_provider, &account.credentials)
+                || is_openai_api_marker(explicit_provider, &account.extra))
+        {
+            AdapterSourceProduct::OpenaiApi
+        } else if account.kind == AccountKind::ApiKey
+            && (is_xai_api_marker(explicit_provider, &account.credentials)
+                || is_xai_api_marker(explicit_provider, &account.extra))
+        {
+            AdapterSourceProduct::XaiApi
+        } else if account.kind == AccountKind::ApiKey
+            && (is_glm_coding_plan_marker(explicit_provider, &account.credentials)
+                || is_glm_coding_plan_marker(explicit_provider, &account.extra))
+        {
+            AdapterSourceProduct::GlmCodingPlan
+        } else if account.kind == AccountKind::ApiKey
+            && (is_deepseek_api_marker(explicit_provider, &account.credentials)
+                || is_deepseek_api_marker(explicit_provider, &account.extra))
+        {
+            AdapterSourceProduct::DeepseekApi
+        } else if account.kind == AccountKind::ApiKey
+            && is_kimi_code_membership_account(
+                account.agent_id,
+                &account.extra,
+                &account.credentials,
+            )
+        {
+            AdapterSourceProduct::KimiCodeMembership
+        } else if account.agent_id == AgentId::Codex
+            && account.kind == AccountKind::Oauth
+            && is_codex_auth_json(credential_format, &account.credentials)
+        {
+            AdapterSourceProduct::CodexChatGptSubscription
+        } else if account.agent_id == AgentId::Codex && account.kind == AccountKind::Oauth {
+            AdapterSourceProduct::CodexChatGptSubscription
+        } else if account.agent_id == AgentId::Claude && account.kind == AccountKind::Oauth {
+            AdapterSourceProduct::ClaudeSubscription
+        } else if account.agent_id == AgentId::Grok && account.kind == AccountKind::Oauth {
+            AdapterSourceProduct::XaiGrokSubscription
+        } else {
+            AdapterSourceProduct::Other
+        }
+    }
+
+    /// Classify a prospective provider without reading it back from SQLite.
+    pub fn classify_provider_source_product(provider: &Provider) -> AdapterSourceProduct {
+        let preset = json_string(&provider.meta, "preset");
+        let explicit_tag = preset.or_else(|| json_string(&provider.meta, "provider"));
+        if is_kimi_code_membership_source(
+            provider.agent_id,
+            &provider.meta,
+            &provider.settings_config,
+        ) {
+            AdapterSourceProduct::KimiCodeMembership
+        } else if provider.agent_id == AgentId::Claude
+            && (preset == Some("anthropic")
+                || settings_contain_anthropic_api_endpoint(&provider.settings_config))
+        {
+            AdapterSourceProduct::AnthropicApi
+        } else if is_openai_api_marker(explicit_tag, &provider.settings_config) {
+            AdapterSourceProduct::OpenaiApi
+        } else if is_xai_api_marker(explicit_tag, &provider.settings_config) {
+            AdapterSourceProduct::XaiApi
+        } else if is_glm_coding_plan_marker(explicit_tag, &provider.settings_config) {
+            AdapterSourceProduct::GlmCodingPlan
+        } else if is_deepseek_api_marker(explicit_tag, &provider.settings_config) {
+            AdapterSourceProduct::DeepseekApi
+        } else {
+            AdapterSourceProduct::Other
+        }
+    }
+
     /// analyze/plan. Does not inspect or return credentials.
     pub fn classify_source_product(
         &self,

@@ -17,6 +17,16 @@ export function resetProjectMock() {
   mockMeta = { version: 1, showHiddenProjects: false, projects: {} };
 }
 
+function mockExcerpt(p: AgentSession): string {
+  const topic = p.preview?.trim() || p.title;
+  const cwd = p.cwd ?? '未知';
+  return [
+    topic,
+    `工作目录：${cwd}`,
+    `已按这条会话继续，下一步建议先核对现有实现再改。`,
+  ].join('\n---\n');
+}
+
 function applyMeta(rows: AgentProject[]): AgentProject[] {
   return rows.map((p) => {
     const m = mockMeta.projects[p.id];
@@ -120,9 +130,7 @@ export function createMockProjectPort(): ProjectPort {
           title: p.title,
           cwd: p.cwd,
           updatedAt: p.updatedAt,
-          excerpt:
-            p.preview ??
-            `（mock）会话 ${p.title}\n路径: ${p.path}\n工作目录: ${p.cwd ?? '未知'}`,
+          excerpt: mockExcerpt(p),
         }));
     },
   };

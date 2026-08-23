@@ -14,6 +14,7 @@ mod fs_index;
 mod fs_safe;
 mod git_update;
 mod hash;
+mod journal;
 mod lockfile;
 mod ownership;
 mod packages;
@@ -44,21 +45,26 @@ pub(crate) use catalog::{
     map_status_agent_vs_shared,
 };
 pub(crate) use classify::classify_projection;
-pub(crate) use commit::{commit_skill_package, PreparedSkillTree, SkillCommitFaults};
+pub(crate) use commit::{
+    commit_skill_package, recover_skill_commit_journal, PreparedSkillTree, SkillCommitFaults,
+};
 pub(crate) use fs_index::collect_file_index;
 pub(crate) use fs_safe::{
     collect_regular_files, detect_link_kind, ensure_no_symlink_in_ancestors,
     ensure_no_symlink_in_existing_prefix, inspect_projection_target, is_exact_child,
     is_link_or_reparse, link_resolves_to_source, normalize_rel_path, paths_equal_lexical,
-    reject_source_target_overlap, remove_projection_link, resolve_link_path, validate_skill_id,
-    validate_skills_root, validate_tree_entries_safe, TargetPresence,
+    reject_source_target_overlap, remove_projection_link, resolve_link_path,
+    resolve_readable_skill_dir, validate_skill_id, validate_skills_root,
+    validate_tree_entries_safe, TargetPresence,
 };
 pub(crate) use git_update::prepare_git_skill_staging;
-pub(crate) use hash::hash_skill_root_shallow;
+pub(crate) use hash::{fingerprint_skill_tree, hash_skill_root_shallow};
+pub(crate) use journal::journal_path as skill_commit_journal_path;
 pub(crate) use lockfile::{skill_lock_load, skill_lock_remove, skill_lock_upsert};
 pub(crate) use ownership::{
     clear_managed_target_for_reproject, finalize_link_projection_ownership,
-    project_copy_with_ownership, record_copy_ownership, unproject_with_ownership,
+    project_copy_with_ownership, record_copy_ownership, recycle_skill_dir,
+    unproject_with_ownership,
 };
 pub(crate) use packages::{materialize_projection, validate_and_collect_source, write_skill_tree};
 pub(crate) use projection_link::create_projection_link;

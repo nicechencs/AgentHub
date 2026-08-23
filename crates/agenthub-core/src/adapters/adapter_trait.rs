@@ -66,7 +66,8 @@ pub trait AgentAdapter: Send + Sync {
         default_authorization_key(kind, credentials)
     }
 
-    /// Identity label for UI grouping only — never used for dedupe/delete.
+    /// Identity label. With `label_hint = None` this is the stable person
+    /// (email / user_id / sub) used for same-agent OAuth overwrite.
     fn identity_label(
         &self,
         kind: AccountKind,
@@ -127,7 +128,10 @@ pub fn default_authorization_key(
     }
 }
 
-/// Shared default for [`AgentAdapter::identity_label`] (display only).
+/// Shared default for [`AgentAdapter::identity_label`].
+///
+/// Prefers stable credential fields (email / user_id / sub). `label_hint` is
+/// display-only and is not an identity proof.
 pub fn default_identity_label(
     _kind: AccountKind,
     credentials: &serde_json::Value,

@@ -6,6 +6,7 @@ use std::collections::HashSet;
 
 use serde_json::{json, Map, Value};
 
+use crate::bridge::protocol::responses::grok_reasoning_effort_from_thinking;
 use crate::bridge::types::{
     BridgeContent, BridgeMessage, BridgeRequest, BridgeTool, IrEvent, MessageRole, ProtocolError,
     ProtocolResult, StopReason, ToolChoice, Usage,
@@ -13,19 +14,15 @@ use crate::bridge::types::{
 
 /// Parse the subset of `POST /v1/messages` that the Codex→Claude kernel can represent.
 ///
-/// Multimodal blocks, server tools, and thinking blocks fail closed rather than silently
-/// dropping information Claude Code would assume the model received.
+/// Top-level `thinking` is mapped to passthrough `reasoning_effort` for Grok; the
+/// original object is never forwarded. `thinking` / `redacted_thinking` content
+/// blocks in history still fail closed rather than silently dropping information
+/// Claude Code would assume the model received. Multimodal blocks and server
+/// tools also fail closed.
 pub fn parse_messages_request(value: &Value) -> ProtocolResult<BridgeRequest> {
     let object = value
         .as_object()
         .ok_or_else(|| ProtocolError::invalid_request("The request body must be a JSON object."))?;
-
-    if object.contains_key("thinking") {
-        return Err(ProtocolError::unsupported(
-            "unsupported_thinking",
-            "Thinking configuration is not supported by this bridge.",
-        ));
-    }
 
     let model = required_string(object, "model", "A non-empty model is required.")?;
     let max_tokens = object.get("max_tokens").ok_or_else(|| {
@@ -63,6 +60,9 @@ pub fn parse_messages_request(value: &Value) -> ProtocolResult<BridgeRequest> {
         .map(|(key, item)| (key.clone(), item.clone()))
         .collect::<Map<String, Value>>();
     passthrough.insert("max_output_tokens".to_owned(), max_tokens.clone());
+    if let Some(effort) = grok_reasoning_effort_from_thinking(object.get("thinking")) {
+        passthrough.insert("reasoning_effort".to_owned(), Value::String(effort));
+    }
 
     // Anthropic stop_sequences / metadata / temperature etc. stay in passthrough for a
     // deliberate future mapping policy rather than being silently applied upstream.
@@ -88,6 +88,7 @@ pub fn encode_anthropic_sse(events: &[IrEvent]) -> ProtocolResult<Vec<String>> {
         output_tokens: 0,
         total_tokens: 0,
         cached_input_tokens: None,
+        reasoning_tokens: 0,
     };
     let mut saw_message_start = false;
     let mut saw_message_end = false;
@@ -324,6 +325,7 @@ pub fn encode_anthropic_message(events: &[IrEvent]) -> ProtocolResult<Value> {
                     output_tokens: *output_tokens,
                     total_tokens: input_tokens.saturating_add(*output_tokens),
                     cached_input_tokens: *cached_input_tokens,
+                    reasoning_tokens: 0,
                 };
             }
             IrEvent::MessageEnd {

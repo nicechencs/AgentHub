@@ -264,6 +264,10 @@ pub struct InstalledSkill {
     /// Skill-level mappability: `available` for shared, `private_source` for private.
     #[serde(default)]
     pub map_status: SkillMapStatus,
+    /// Content fingerprint of a private agent tree (regular files, streamed).
+    /// GUI groups identical private copies by `(id, content_hash)`. Shared rows omit this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_hash: Option<String>,
     pub source: Option<SkillSourceRecord>,
     pub projections: Vec<SkillProjection>,
 }

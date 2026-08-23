@@ -42,7 +42,6 @@ import { useToast } from '@/components/ui/toast';
 
 import {
   filterVisibleTrend,
-  filterVisibleUsage,
   hiddenAgentIdSet,
   visibleCatalogAgents,
   visibleInstalledIds,
@@ -57,12 +56,12 @@ import {
 import { listRuntimes } from '@/lib/api/env';
 import {
   getUsageAvailability,
-  listModels,
   queryUsage,
+  usageOverview as fetchUsageOverview,
   usageTrend,
   type UsageAvailability,
+  type UsageOverview,
 } from '@/lib/api/usage';
-import { createBackup } from '@/lib/api/backup';
 import { listTicketWallet, type TicketWallet } from '@/lib/api/tickets';
 import type { MessageKey } from '@/lib/i18n';
 import { activeBindingForAgent } from '@/lib/ticket-wallet';
@@ -78,18 +77,31 @@ import { loadBool, saveBool, StorageKey } from '@/lib/ui-preferences';
 import type { AgentId, AgentStatus, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import { typeScalePx } from '@/styles/tokens';
 import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
-import { usageTokenParts } from '@/lib/usage-tokens';
 import { cn, fmtTokens } from '@/lib/utils';
 import { AgentOverview, AgentOverviewSkeleton } from './AgentOverview';
 import {
   dashboardOverviewSkeletonCount,
+  dashboardPageDescription,
+  installedOverviewScope,
+  summarizeAgentOverview,
   type AgentCardBadgeInput,
   type AgentCardBridgeState,
 } from './agentOverviewModel';
 import { UsageDetailsTable } from './UsageDetailsTable';
-
-/** 日期筛选预设：today / 24h 均按 days=1 拉取，today 再按本地日历日收窄 */
-type DateRange = 'today' | '24h' | '7d' | '30d';
+import { isLatestUsageRequest } from './usage-request';
+import {
+  coerceModelFilter,
+  decorateUsageDistribution,
+  filterByAgent,
+  filterByModel,
+  filterHiddenUsageOverview,
+  filterWindowUsage,
+  overviewToUsageMetrics,
+  sortUsageRowsDesc,
+  usageWindowBound,
+  type DateRange,
+} from './usageOverviewModel';
+import { dashboardBackupNowHref } from './dashboard-actions';
 
 const DATE_RANGE_OPTIONS: { value: DateRange; days: number }[] = [
   { value: 'today', days: 1 },
@@ -104,22 +116,6 @@ const DATE_RANGE_LABEL_KEYS: Record<DateRange, MessageKey> = {
   '7d': 'dashboard.range.last7d',
   '30d': 'dashboard.range.last30d',
 };
-
-function isLocalToday(iso: string): boolean {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return false;
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
-}
-
-function localDateKey(d = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
 
 /** 桥运行态 → 卡片徽标四态：starting 乐观归 running，error 归 degraded（可见异常） */
 function mapBridgeState(state: AdapterBridgeRuntimeState): AgentCardBridgeState {
@@ -145,24 +141,25 @@ export default function DashboardPage() {
   const [runtimes, setRuntimes] = useState<RuntimeDetect[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(true);
   const [agentsError, setAgentsError] = useState<unknown>(null);
-  const [backingUp, setBackingUp] = useState(false);
+  const hiddenIds = useMemo(() => hiddenAgentIdSet(agents ?? []), [agents]);
+  const hiddenAgentList = useMemo(() => [...hiddenIds].sort(), [hiddenIds]);
 
-  // —— 页面级共享筛选（时间 + Agent；模型仅作用于明细表，但 UI 与前两者并排）——
+  // —— 页面级共享筛选（时间 + Agent + 模型；指标 / 趋势 / 分布 / 明细共用）——
   const [dateRange, setDateRange] = useState<DateRange>('7d');
   const [agentFilter, setAgentFilter] = useState<AgentId | 'all'>('all');
   const [modelFilter, setModelFilter] = useState<string>('all');
-  const [models, setModels] = useState<string[]>([]);
 
-  // —— 用量数据（全页一份）——
+  // —— 用量：overview/trend 先画图；明细表另拉 capped 页 ——
   const [usageAvailability, setUsageAvailability] = useState<UsageAvailability | null>(null);
+  const [usageOverview, setUsageOverview] = useState<UsageOverview | null>(null);
+  const [usageTrendPoints, setUsageTrendPoints] = useState<UsageTrendPoint[]>([]);
   const [usage, setUsage] = useState<UsageRecord[] | null>(null);
-  const [trend, setTrend] = useState<UsageTrendPoint[]>([]);
   const [usageLoading, setUsageLoading] = useState(true);
+  const [tableLoading, setTableLoading] = useState(true);
   const [usageRefreshing, setUsageRefreshing] = useState(false);
   const [usageError, setUsageError] = useState<unknown>(null);
+  const usageGenerationRef = useRef(0);
 
-  const days =
-    DATE_RANGE_OPTIONS.find((o) => o.value === dateRange)?.days ?? 7;
   const dayLabel = t(DATE_RANGE_LABEL_KEYS[dateRange]);
 
   // —— 采集（状态由 UsageSyncProvider 统一管理）——
@@ -244,7 +241,7 @@ export default function DashboardPage() {
     void loadWallet();
   }, [loadWallet]);
 
-  /** 生效 provider 命中 adapter 生成投影 → 「经兼容路由」徽标（profile 联结，不读 provider.meta） */
+  /** 生效 provider 命中 adapter 生成投影 → 「本机路由」徽标（profile 联结，不读 provider.meta） */
   const adapterBadgeHits = useMemo(() => {
     const hits = new Map<AgentId, { profile: AdapterProfile; sourceLabel?: string }>();
     if (profiles.length === 0) return hits;
@@ -385,37 +382,65 @@ export default function DashboardPage() {
     }
   }, [loadAgents, poolReload, loadProfiles, loadWallet, t]);
 
-  /** days / agentFilter 变化时各请求一次，上下共用 */
+  /** overview+trend 先画图；明细表另拉 capped 页。筛选变化走后端。 */
   const loadUsage = useCallback(
     async (initial: boolean) => {
+      const generation = ++usageGenerationRef.current;
       if (initial) setUsageLoading(true);
       else setUsageRefreshing(true);
+      setTableLoading(true);
       setUsageError(null);
+      const { days, since } = usageWindowBound(dateRange);
+      const agentId = agentFilter === 'all' ? undefined : agentFilter;
+      const model = modelFilter === 'all' || modelFilter === '' ? undefined : modelFilter;
+      const excludeAgentIds = hiddenAgentList.length > 0 ? hiddenAgentList : undefined;
       try {
-        const availability = await getUsageAvailability();
+        const [availability, overview, trend] = await Promise.all([
+          getUsageAvailability(),
+          fetchUsageOverview({ days, agentId, model, since, excludeAgentIds }),
+          usageTrend(days, agentId, model, since, excludeAgentIds),
+        ]);
+        if (!isLatestUsageRequest(usageGenerationRef.current, generation)) return;
         setUsageAvailability(availability);
         if (availability.status === 'unavailable') {
-          setTrend([]);
+          setUsageOverview(null);
+          setUsageTrendPoints([]);
           setUsage([]);
-          setModels([]);
+          setTableLoading(false);
           return;
         }
-        const [trendData, records, modelList] = await Promise.all([
-          usageTrend(days, agentFilter),
-          queryUsage({ days, agentId: agentFilter }),
-          listModels().catch(() => [] as string[]),
-        ]);
-        setTrend(trendData);
-        setUsage(records);
-        setModels(modelList);
-      } catch (e) {
-        setUsageError(e);
-      } finally {
+        setUsageOverview(overview);
+        setUsageTrendPoints(trend);
         setUsageLoading(false);
         setUsageRefreshing(false);
+
+        try {
+          const records = await queryUsage({
+            days,
+            agentId,
+            model,
+            since,
+            limit: 2000,
+            excludeAgentIds,
+          });
+          if (!isLatestUsageRequest(usageGenerationRef.current, generation)) return;
+          setUsage(records);
+        } catch {
+          if (isLatestUsageRequest(usageGenerationRef.current, generation)) setUsage([]);
+        } finally {
+          if (isLatestUsageRequest(usageGenerationRef.current, generation)) setTableLoading(false);
+        }
+      } catch (e) {
+        if (isLatestUsageRequest(usageGenerationRef.current, generation)) setUsageError(e);
+      } finally {
+        if (isLatestUsageRequest(usageGenerationRef.current, generation)) {
+          setUsageLoading(false);
+          setUsageRefreshing(false);
+          setTableLoading(false);
+        }
       }
     },
-    [days, agentFilter],
+    [dateRange, agentFilter, modelFilter, hiddenAgentList],
   );
 
   useEffect(() => {
@@ -436,27 +461,8 @@ export default function DashboardPage() {
     return () => window.clearTimeout(scrollTimer);
   }, [searchParams, agentsLoading, usageLoading]);
 
-  const handleBackupAll = async () => {
-    if (!agents) return;
-    const installed = agents.filter((a) => a.installed && !a.hidden);
-    if (installed.length === 0) {
-      toast({ title: t('dashboard.page.noInstalledAgent'), variant: 'danger' });
-      return;
-    }
-    setBackingUp(true);
-    try {
-      await Promise.all(installed.map((a) => createBackup(a.agentId, t('dashboard.page.backupNote'))));
-      toast({
-        title: t('dashboard.page.backupDone'),
-        description: t('dashboard.page.backupDoneDesc', { n: installed.length }),
-        variant: 'success',
-      });
-      navigate('/settings?tab=backups');
-    } catch (e) {
-      toast({ title: t('dashboard.page.backupFailed'), description: String(e), variant: 'danger' });
-    } finally {
-      setBackingUp(false);
-    }
+  const handleBackupNow = () => {
+    navigate(dashboardBackupNowHref());
   };
 
   const usageUnavailable = usageAvailability?.status === 'unavailable';
@@ -487,7 +493,6 @@ export default function DashboardPage() {
     return () => window.removeEventListener(USAGE_COLLECTED_EVENT, onCollected);
   }, [loadUsage]);
 
-  const hiddenIds = useMemo(() => hiddenAgentIdSet(agents ?? []), [agents]);
   const visibleAgentMetas = useMemo(() => visibleCatalogAgents(hiddenIds), [hiddenIds]);
   const parseVisibleIds = useMemo(
     () => (agents == null ? undefined : visibleInstalledIds(agents)),
@@ -500,76 +505,61 @@ export default function DashboardPage() {
     }
   }, [agentFilter, hiddenIds]);
 
-  /** 「今天」在 days=1 拉取后再按本地日历日收窄；其余范围直接用后端窗口 */
-  const rangedUsage = useMemo(() => {
-    const list = usage ?? [];
-    const scoped = dateRange !== 'today' ? list : list.filter((r) => isLocalToday(r.timestamp));
-    return filterVisibleUsage(scoped, hiddenIds);
-  }, [usage, dateRange, hiddenIds]);
+  const groupedByAgent = agentFilter === 'all';
+  const visibleOverview = useMemo(() => {
+    if (!usageOverview) return null;
+    return filterHiddenUsageOverview(usageOverview, hiddenIds, groupedByAgent);
+  }, [usageOverview, hiddenIds, groupedByAgent]);
 
-  const rangedTrend = useMemo(() => {
-    const scoped =
-      dateRange !== 'today' ? trend : trend.filter((p) => p.date === localDateKey());
-    return filterVisibleTrend(scoped, hiddenIds);
-  }, [trend, dateRange, hiddenIds]);
+  const modelOptions = visibleOverview?.models ?? [];
+  const effectiveModelFilter = coerceModelFilter(modelFilter, modelOptions);
+
+  useEffect(() => {
+    if (modelFilter !== effectiveModelFilter) {
+      setModelFilter(effectiveModelFilter);
+    }
+  }, [modelFilter, effectiveModelFilter]);
+
+  const rangedTrend = useMemo(
+    () => filterVisibleTrend(usageTrendPoints, hiddenIds),
+    [usageTrendPoints, hiddenIds],
+  );
 
   const metrics = useMemo(() => {
-    const list = rangedUsage;
-    // 输入 = 计费/non-cached（与 ccusage 一致）；缓存命中按 full prompt
-    let billableIn = 0;
-    let fullIn = 0;
-    let output = 0;
-    let cacheRead = 0;
-    let cost = 0;
-    for (const r of list) {
-      const p = usageTokenParts(r);
-      billableIn += p.billableInput;
-      fullIn += p.fullInput;
-      output += r.outputTokens;
-      cacheRead += p.cache;
-      cost += r.costUsd;
-    }
+    const m = overviewToUsageMetrics(
+      visibleOverview?.metrics ?? { billableInput: 0, output: 0, cache: 0, costUsd: 0 },
+    );
     return {
-      input: fmtTokens(billableIn),
-      output: fmtTokens(output),
-      cacheHit: fullIn > 0 ? `${Math.round((cacheRead / fullIn) * 100)}%` : '—',
-      cost: `$${cost.toFixed(2)}`,
-      totalIn: billableIn,
-      totalOut: output,
-      totalCost: cost,
+      input: fmtTokens(m.billableInput),
+      output: fmtTokens(m.output),
+      cacheHit: m.cacheHitPct == null ? '—' : `${m.cacheHitPct}%`,
+      cost: `$${m.cost.toFixed(2)}`,
+      totalIn: m.billableInput,
+      totalOut: m.output,
+      totalCost: m.cost,
     };
-  }, [rangedUsage]);
+  }, [visibleOverview]);
 
-  /** 分布:全部 agent 时按 agent 聚合;选中单个 agent 时按模型聚合 */
-  const distribution = useMemo(() => {
-    const list = rangedUsage;
-    const byKey = new Map<string, { label: string; color: string; tokens: number; cost: number }>();
-    for (const r of list) {
-      const key = agentFilter === 'all' ? r.agentId : r.model;
-      const meta = AGENT_MAP[r.agentId];
-      const entry = byKey.get(key) ?? {
-        label: agentFilter === 'all' ? meta.name : r.model,
-        color: meta.color,
-        tokens: 0,
-        cost: 0,
-      };
-      const p = usageTokenParts(r);
-      // total tokens ≈ billable input + cache + output (ccusage totalTokens)
-      entry.tokens += p.billableInput + p.cache + r.outputTokens;
-      entry.cost += r.costUsd;
-      byKey.set(key, entry);
-    }
-    return [...byKey.values()].sort((a, b) => b.tokens - a.tokens);
-  }, [rangedUsage, agentFilter]);
+  const distribution = useMemo(
+    () =>
+      decorateUsageDistribution(visibleOverview?.distribution ?? [], agentFilter, AGENT_MAP),
+    [visibleOverview, agentFilter],
+  );
 
-  /** 模型筛选仅作用于明细表，不改 metrics / trend */
-  const tableRows = useMemo(() => {
-    const filtered =
-      modelFilter === 'all'
-        ? rangedUsage
-        : rangedUsage.filter((r) => r.model === modelFilter);
-    return [...filtered].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-  }, [rangedUsage, modelFilter]);
+  /** 明细表仍用 capped rows + 既有客户端过滤（隐藏 Agent / 分页） */
+  const windowUsage = useMemo(
+    () => filterWindowUsage(usage ?? [], dateRange, hiddenIds),
+    [usage, dateRange, hiddenIds],
+  );
+  const agentScopedUsage = useMemo(
+    () => filterByAgent(windowUsage, agentFilter),
+    [windowUsage, agentFilter],
+  );
+  const scopedUsage = useMemo(
+    () => filterByModel(agentScopedUsage, effectiveModelFilter),
+    [agentScopedUsage, effectiveModelFilter],
+  );
+  const tableRows = useMemo(() => sortUsageRowsDesc(scopedUsage), [scopedUsage]);
 
   const trendAgents = agentFilter === 'all' ? visibleAgentMetas : [AGENT_MAP[agentFilter]];
   const maxTokens = distribution[0]?.tokens ?? 0;
@@ -578,6 +568,11 @@ export default function DashboardPage() {
     agents,
     installedIds.length,
   );
+  const pageDescription = useMemo(() => {
+    if (!agents) return dashboardPageDescription(null, t);
+    const { metas, statuses } = installedOverviewScope(AGENTS, agents);
+    return dashboardPageDescription(summarizeAgentOverview(metas, statuses, t), t);
+  }, [agents, t]);
   const envBad = hasEnvIssues(runtimes);
   const showEnvCta = !agentsLoading && agents !== null && installedCount === 0 && envBad;
 
@@ -585,7 +580,7 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title={t('dashboard.page.title')}
-        description={t('dashboard.page.description')}
+        description={pageDescription}
         descriptionTip={t('dashboard.page.descriptionTip')}
       />
 
@@ -643,13 +638,13 @@ export default function DashboardPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={modelFilter} onValueChange={setModelFilter}>
+          <Select value={effectiveModelFilter} onValueChange={setModelFilter}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder={t('dashboard.page.allModels')} />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t('dashboard.page.allModels')}</SelectItem>
-              {models.map((m) => (
+              {modelOptions.map((m) => (
                 <SelectItem key={m} value={m}>
                   {m}
                 </SelectItem>
@@ -717,7 +712,7 @@ export default function DashboardPage() {
               <p className="text-sm font-medium text-primary">{t('dashboard.page.usageUnavailable')}</p>
               <p className="text-xs text-secondary">{usageUnavailableReason}</p>
               <p className="text-xs text-muted">
-                {t('dashboard.page.usageUnavailableDemo', { cmd: 'pnpm dev:mock' })}
+                {t('dashboard.page.usageUnavailableDemo')}
               </p>
             </div>
           </Card>
@@ -838,11 +833,10 @@ export default function DashboardPage() {
                   <Button
                     variant="outline"
                     className="justify-start"
-                    disabled={backingUp || !agents}
-                    onClick={() => void handleBackupAll()}
+                    onClick={handleBackupNow}
                   >
                     <DatabaseBackup className="h-4 w-4" />
-                    {backingUp ? t('dashboard.page.backingUp') : t('dashboard.page.backupNow')}
+                    {t('dashboard.page.backupNow')}
                   </Button>
                 </CardContent>
               </Card>
@@ -862,7 +856,7 @@ export default function DashboardPage() {
                 ) : (
                   <ul className="space-y-1.5">
                     {distribution.map((d) => (
-                      <li key={d.label} className="flex h-7 items-center gap-3">
+                      <li key={d.key} className="flex h-7 items-center gap-3">
                         <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm">
                           <AgentDot color={d.color} size="md" title={null} />
                           <span className="truncate">{d.label}</span>
@@ -921,7 +915,7 @@ export default function DashboardPage() {
           </Notice>
         )}
 
-        {usageLoading ? (
+        {tableLoading ? (
           <TableSkeleton rows={8} cols={8} />
         ) : usageUnavailable ? (
           <EmptyState

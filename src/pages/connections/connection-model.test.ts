@@ -16,6 +16,8 @@ import {
   liveAuthCoexistenceNotice,
   liveAuthDiscoveryKind,
   liveAuthImportGate,
+  liveImportAction,
+  liveImportDialogMode,
   mergeConnectionEntries,
   providerToEntry,
 } from './connection-model';
@@ -187,6 +189,20 @@ describe('connection-model', () => {
     }
   });
 
+  it('shows a Chinese empty reason when 导入当前授权 has no live probe', () => {
+    expect(liveAuthImportGate(null, false, 'claude')).toEqual({
+      enabled: false,
+      reason: '无法确认本机登录态，已禁用导入',
+    });
+    expect(liveAuthImportGate(undefined, false, 'codex')).toEqual({
+      enabled: false,
+      reason: '无法确认本机登录态，已禁用导入',
+    });
+    expect(liveAuthImportGate({ agentId: 'claude' }, false, 'claude').reason).toMatch(
+      /未检测到可导入的 OAuth 登录态/,
+    );
+  });
+
   it('only enables current-login import for credentialed OAuth/file-auth probes', () => {
     expect(liveAuthImportGate(undefined, true, 'claude')).toEqual({
       enabled: false,
@@ -196,6 +212,33 @@ describe('connection-model', () => {
       liveAuthImportGate({ agentId: 'claude', kind: 'api_key', hasCredentials: true }, false, 'claude')
         .reason,
     ).toContain('API Key');
+    expect(
+      liveAuthImportGate(
+        {
+          agentId: 'claude',
+          kind: 'api_key',
+          hasCredentials: true,
+          isAdapterProjection: true,
+        },
+        false,
+        'claude',
+      ),
+    ).toEqual({
+      enabled: false,
+      reason: '当前是本机路由写进去的配置，不是一份新登录',
+    });
+    expect(
+      liveAuthImportGate(
+        {
+          agentId: 'claude',
+          kind: 'api_key',
+          hasCredentials: true,
+          alsoPresent: ['adapter_projection'],
+        },
+        false,
+        'claude',
+      ).enabled,
+    ).toBe(false);
     expect(
       liveAuthImportGate(
         { agentId: 'claude', kind: 'desktop-login', hasCredentials: true },
@@ -235,8 +278,37 @@ describe('connection-model', () => {
     });
   });
 
+  it('disables both import gates when live is a local-route projection', () => {
+    const probe = {
+      agentId: 'claude' as const,
+      kind: 'api_key',
+      hasCredentials: true,
+      isAdapterProjection: true,
+    };
+    expect(liveAuthImportGate(probe, false, 'claude')).toEqual({
+      enabled: false,
+      reason: '当前是本机路由写进去的配置，不是一份新登录',
+    });
+    expect(liveApiKeyImportGate(probe, false, 'claude')).toEqual({
+      enabled: false,
+      reason: '当前是本机路由写进去的配置，不是一份新登录',
+    });
+  });
+
   describe('live-auth coexistence', () => {
     it('does not warn when a second credential family is absent', () => {
+      expect(
+        liveAuthCoexistenceNotice(
+          {
+            agentId: 'claude',
+            kind: 'api_key',
+            hasCredentials: true,
+            alsoPresent: ['oauth', 'adapter_projection'],
+            isAdapterProjection: true,
+          },
+          'claude',
+        ),
+      ).toBeNull();
       expect(
         liveAuthCoexistenceNotice(
           { agentId: 'claude', kind: 'oauth', hasCredentials: true, alsoPresent: [] },
@@ -287,7 +359,7 @@ describe('connection-model', () => {
       });
       expect(liveApiKeyImportGate(oauthAlsoApiKey, false, 'claude')).toEqual({
         enabled: false,
-        reason: '当前本机为 OAuth 登录态，请导入当前登录态',
+        reason: '当前本机为 OAuth 登录态，请导入当前授权',
       });
     });
 
@@ -346,7 +418,7 @@ describe('connection-model', () => {
     });
     expect(
       liveApiKeyImportGate({ agentId: 'claude', kind: 'oauth', hasCredentials: true }, false, 'claude'),
-    ).toEqual({ enabled: false, reason: '当前本机为 OAuth 登录态，请导入当前登录态' });
+    ).toEqual({ enabled: false, reason: '当前本机为 OAuth 登录态，请导入当前授权' });
     expect(
       liveApiKeyImportGate({ agentId: 'claude', kind: 'api_key', hasCredentials: false }, false, 'claude')
         .enabled,
@@ -421,6 +493,141 @@ describe('connection-model', () => {
       providers: [],
       accountsFailed: false,
     })).toBe('account');
+  });
+
+  it('does not report discovery for an adapter projection', () => {
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe: { kind: 'oauth', hasCredentials: true, isAdapterProjection: true },
+      accounts: [],
+      providers: [],
+    })).toBeNull();
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe: { kind: 'api_key', hasCredentials: true, alsoPresent: ['adapter_projection'] },
+      accounts: [],
+      providers: [],
+    })).toBeNull();
+  });
+
+  it('still reports api_key discovery when the pool only has leftover 本机路由 providers', () => {
+    const leftoverBridge = {
+      id: 'agenthub_grok_bridge',
+      name: 'AgentHub Grok 本机路由',
+      preset: 'custom',
+      configText: 'base_url = "http://127.0.0.1:32123/v1"',
+      configFormat: 'toml' as const,
+    };
+    const leftoverNamed = {
+      id: 'p-leftover',
+      name: 'generated leftover 本机路由',
+      preset: 'custom',
+      configText: '',
+      configFormat: 'json' as const,
+    };
+    const probe = { kind: 'api_key', hasCredentials: true };
+
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [],
+      providers: [leftoverBridge],
+    })).toBe('provider');
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [],
+      providers: [leftoverBridge, leftoverNamed],
+    })).toBe('provider');
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [{ kind: 'oauth' }],
+      providers: [leftoverBridge, leftoverNamed],
+    })).toBe('provider');
+  });
+
+  it('does not treat leftover or adapter-projection providers as an existing Key', () => {
+    const leftover = {
+      id: 'agenthub_codex_bridge',
+      name: 'AgentHub Codex 本机路由',
+      preset: 'custom',
+      configText: '',
+      configFormat: 'json' as const,
+    };
+    const projection = {
+      id: 'p-proj',
+      name: 'relay',
+      preset: 'custom',
+      configText: '',
+      configFormat: 'json' as const,
+      isAdapterProjection: true,
+    };
+    const alsoPresentProjection = {
+      id: 'p-also',
+      name: 'relay-2',
+      alsoPresent: ['adapter_projection'],
+    };
+    const probe = { kind: 'api_key', hasCredentials: true };
+
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [],
+      providers: [leftover, projection, alsoPresentProjection],
+    })).toBe('provider');
+  });
+
+  it('still suppresses api_key discovery when a real user Key is in the pool', () => {
+    const leftover = {
+      id: 'agenthub_grok_bridge',
+      name: 'AgentHub Grok 本机路由',
+      preset: 'custom',
+      configText: '',
+      configFormat: 'json' as const,
+    };
+    const userKey = {
+      id: 'p-openai',
+      name: 'OpenAI',
+      preset: 'openai',
+      configText: JSON.stringify({ env: { OPENAI_API_KEY: '***' } }),
+      configFormat: 'json' as const,
+    };
+    const probe = { kind: 'api_key', hasCredentials: true };
+
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [],
+      providers: [userKey],
+    })).toBeNull();
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [],
+      providers: [leftover, userKey],
+    })).toBeNull();
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [{ kind: 'apikey' }],
+      providers: [leftover],
+    })).toBeNull();
+  });
+
+  it('reports the probed family when only the other family is already in the pool', () => {
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe: { kind: 'oauth', hasCredentials: true },
+      accounts: [{ kind: 'apikey' }],
+      providers: [{}],
+    })).toBe('account');
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe: { kind: 'api_key', hasCredentials: true },
+      accounts: [{ kind: 'oauth' }],
+      providers: [],
+    })).toBe('provider');
   });
 
   it('ignores a stale switch-preview result after the selected agent changes', () => {
@@ -523,5 +730,35 @@ describe('connection-model', () => {
     });
     expect(accountToEntry(acc({ id: 'same', kind: 'oauth', label: 'acc' })).usage).toBeUndefined();
     expect(providerToEntry(prov({ id: 'same', name: 'prov' })).usage).toBeUndefined();
+  });
+});
+
+describe('liveImportDialogMode', () => {
+  it('picks the api-key variant only for probed api key kinds', () => {
+    expect(liveImportDialogMode({ agentId: 'pi', kind: 'api_key', hasCredentials: true })).toBe('api-key');
+    expect(liveImportDialogMode({ agentId: 'pi', kind: 'API-KEY', hasCredentials: true })).toBe('api-key');
+    expect(liveImportDialogMode({ agentId: 'pi', kind: 'apikey' })).toBe('api-key');
+    expect(liveImportDialogMode({ agentId: 'pi', kind: 'oauth', hasCredentials: true })).toBe('login');
+    expect(liveImportDialogMode({ agentId: 'pi', kind: 'file-auth.json', hasCredentials: true })).toBe('login');
+    expect(liveImportDialogMode({ agentId: 'pi', kind: 'desktop-login' })).toBe('login');
+    expect(liveImportDialogMode(null)).toBe('login');
+    expect(liveImportDialogMode(undefined)).toBe('login');
+  });
+});
+
+describe('liveImportAction', () => {
+  it('imports a provider-pool Key for the api-key dialog and an account otherwise', () => {
+    expect(liveImportAction('api-key')).toBe('provider');
+    expect(liveImportAction('login')).toBe('account');
+    expect(
+      liveImportAction(
+        liveImportDialogMode({ agentId: 'codex', kind: 'api_key', hasCredentials: true }),
+      ),
+    ).toBe('provider');
+    expect(
+      liveImportAction(
+        liveImportDialogMode({ agentId: 'codex', kind: 'oauth', hasCredentials: true }),
+      ),
+    ).toBe('account');
   });
 });

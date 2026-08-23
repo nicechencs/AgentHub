@@ -1,4 +1,3 @@
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use axum::extract::{Request, State};
@@ -6,73 +5,49 @@ use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use reqwest::Url;
 use serde_json::{json, Value};
-use tokio::sync::Semaphore;
-use tokio_util::sync::CancellationToken;
 
-use crate::bridge::runtime::BridgeUpstreamStatus;
 use crate::bridge::types::ProtocolError;
 
-use super::dispatch::{handle_messages, handle_responses, ProtocolSelector};
+use super::dispatch::handle_conversation;
+use super::gateway::{Gateway, GatewayAuthError};
+use super::surface::DownstreamSurface;
 use super::{BODY_LIMIT_BYTES, REQUEST_BODY_TIMEOUT};
 
-#[derive(Clone)]
-pub(super) struct ListenerState {
-    pub(super) profile_id: Arc<str>,
-    pub(super) local_token: Arc<str>,
-    pub(super) upstream: crate::bridge::runtime::BridgeUpstreamConfig,
-    pub(super) upstream_url: Url,
-    pub(super) client: reqwest::Client,
-    pub(super) force_shutdown: CancellationToken,
-    pub(super) admission: Arc<Semaphore>,
-    pub(super) observed_upstream: Arc<Mutex<BridgeUpstreamStatus>>,
-}
+pub(super) use super::gateway::EdgeState;
 
-impl ListenerState {
-    pub(super) fn observed_upstream(&self) -> BridgeUpstreamStatus {
-        self.observed_upstream
-            .lock()
-            .map(|status| *status)
-            .unwrap_or(BridgeUpstreamStatus::Unavailable)
-    }
-
-    pub(super) fn record_upstream(&self, status: BridgeUpstreamStatus) {
-        if let Ok(mut observed) = self.observed_upstream.lock() {
-            *observed = status;
-        }
-    }
-
-    pub(super) fn record_upstream_success(&self) {
-        self.record_upstream(BridgeUpstreamStatus::Connected);
-    }
-
-    pub(super) fn record_upstream_failure(&self) {
-        self.record_upstream(BridgeUpstreamStatus::Degraded);
-    }
-}
-
-pub(super) fn router(state: ListenerState) -> Router {
+pub(super) fn router(gateway: Gateway) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/v1/models", get(list_models))
+        .route("/models", get(list_models))
         .route("/v1/responses", post(responses))
         .route("/v1/messages", post(messages))
+        .route("/v1/chat/completions", post(chat_completions))
+        .route("/chat/completions", post(chat_completions))
         .layer(axum::extract::DefaultBodyLimit::max(BODY_LIMIT_BYTES))
-        .with_state(state)
+        .with_state(gateway)
 }
 
-async fn health(State(state): State<ListenerState>, headers: HeaderMap) -> Response {
-    if !has_valid_local_auth(&headers, &state.local_token) {
-        tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, op = "health", code = "unauthorized", status = 401_u16, "bridge health request rejected");
-        return error_response(
-            StatusCode::UNAUTHORIZED,
-            "invalid_api_key",
-            "Invalid local bearer token.",
-            None,
-        );
+fn edge_from_headers(
+    gateway: &Gateway,
+    headers: &HeaderMap,
+    op: &'static str,
+) -> Result<EdgeState, Response> {
+    match gateway.authenticate(headers) {
+        Ok(edge) => Ok(edge),
+        Err(GatewayAuthError::Unauthorized) => Err(reject_invalid_local_auth(op, None)),
+        Err(GatewayAuthError::Stopping | GatewayAuthError::Poisoned) => Err(stopping_response()),
     }
-    // Local health is a listener liveness check. It reports the last stored
-    // upstream outcome and never issues a new billable provider probe.
+}
+
+async fn health(State(gateway): State<Gateway>, headers: HeaderMap) -> Response {
+    let state = match edge_from_headers(&gateway, &headers, "health") {
+        Ok(state) => state,
+        Err(response) => return response,
+    };
+    // Local health is a non-billable liveness check. It reports that edge's last
+    // stored upstream outcome and never issues a new provider probe.
     let upstream_status = state.observed_upstream();
     tracing::debug!(target: "core.adapter", profile_id = %state.profile_id, op = "health", upstream_status = upstream_status.as_str(), "bridge health check");
     Json(json!({
@@ -84,18 +59,40 @@ async fn health(State(state): State<ListenerState>, headers: HeaderMap) -> Respo
     .into_response()
 }
 
-async fn responses(State(state): State<ListenerState>, request: Request) -> Response {
-    if !ProtocolSelector::from_listener(&state).serves_responses() {
-        return StatusCode::NOT_FOUND.into_response();
+async fn list_models(State(gateway): State<Gateway>, headers: HeaderMap) -> Response {
+    let state = match edge_from_headers(&gateway, &headers, DownstreamSurface::Models.op()) {
+        Ok(state) => state,
+        Err(response) => return response,
+    };
+    // Synthesized from the edge mapping table at start; never proxied.
+    if state.listed_models.is_empty() {
+        tracing::info!(
+            target: "core.adapter",
+            profile_id = %state.profile_id,
+            op = "models",
+            code = "empty_models",
+            count = 0_usize,
+            "bridge models list is empty"
+        );
     }
-    handle_responses(state, request).await
+    let data: Vec<Value> = state
+        .listed_models
+        .iter()
+        .map(|id| json!({ "id": id, "object": "model" }))
+        .collect();
+    Json(json!({ "object": "list", "data": data })).into_response()
 }
 
-async fn messages(State(state): State<ListenerState>, request: Request) -> Response {
-    if !ProtocolSelector::from_listener(&state).serves_messages() {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    handle_messages(state, request).await
+async fn responses(State(gateway): State<Gateway>, request: Request) -> Response {
+    handle_conversation(DownstreamSurface::Responses, gateway, request).await
+}
+
+async fn messages(State(gateway): State<Gateway>, request: Request) -> Response {
+    handle_conversation(DownstreamSurface::Messages, gateway, request).await
+}
+
+async fn chat_completions(State(gateway): State<Gateway>, request: Request) -> Response {
+    handle_conversation(DownstreamSurface::ChatCompletions, gateway, request).await
 }
 
 pub(super) async fn read_request_json(request: Request) -> Result<Value, Response> {
@@ -203,26 +200,37 @@ pub(super) fn stopping_response() -> Response {
     )
 }
 
-pub(super) fn has_valid_local_auth(headers: &HeaderMap, expected: &str) -> bool {
-    let bearer = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "));
-    let api_key = headers
-        .get("x-api-key")
-        .and_then(|value| value.to_str().ok());
-    bearer
-        .or(api_key)
-        .is_some_and(|token| constant_time_eq(token.as_bytes(), expected.as_bytes()))
+pub(super) fn overloaded_response() -> Response {
+    error_response(
+        StatusCode::TOO_MANY_REQUESTS,
+        "bridge_overloaded",
+        "The local bridge is temporarily busy.",
+        Some(HeaderValue::from_static("1")),
+    )
 }
 
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    let mut mismatch = left.len() ^ right.len();
-    let width = left.len().max(right.len());
-    for index in 0..width {
-        mismatch |= usize::from(*left.get(index).unwrap_or(&0) ^ *right.get(index).unwrap_or(&0));
+pub(super) fn reject_invalid_local_auth(
+    op: &'static str,
+    conversation: Option<(&str, Instant)>,
+) -> Response {
+    // Unauthenticated requests are not bound to an edge; do not log a profile_id.
+    match conversation {
+        Some((request_id, started)) => {
+            tracing::warn!(target: "core.adapter", request_id = %request_id, op, code = "unauthorized", status = 401_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge request rejected");
+        }
+        None if op == "health" => {
+            tracing::warn!(target: "core.adapter", op = "health", code = "unauthorized", status = 401_u16, "bridge health request rejected");
+        }
+        None => {
+            tracing::warn!(target: "core.adapter", op = "models", code = "unauthorized", status = 401_u16, "bridge models request rejected");
+        }
     }
-    mismatch == 0
+    error_response(
+        StatusCode::UNAUTHORIZED,
+        "invalid_api_key",
+        "Invalid local bearer token.",
+        None,
+    )
 }
 
 pub(super) fn protocol_error_response(error: ProtocolError) -> Response {
@@ -230,7 +238,7 @@ pub(super) fn protocol_error_response(error: ProtocolError) -> Response {
 }
 
 pub(super) fn log_protocol_error(
-    state: &ListenerState,
+    state: &EdgeState,
     request_id: &str,
     started: Instant,
     error: &ProtocolError,

@@ -6,6 +6,7 @@ import type { TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
 import {
   activeBindingForAgent,
   buildTicketAddMenu,
+  focusedTicketAddAgent,
   dispatchTicketAddAction,
   armMenuDialogOpen,
   handleMenuDialogSelect,
@@ -19,13 +20,17 @@ import {
   dashboardBindingMetaText,
   extrasFromPoolSource,
   filterTickets,
+  hasOfficialQuotaWindow,
   findTicketPoolSource,
   formatTicketBindingDetailLines,
   formatTicketUsageParts,
   formatTicketUsageText,
   humanizeTicketAuthLabel,
+  ticketAuthChip,
+  ticketCardTitle,
+  ticketSwitchChip,
+  showsNativeSwitch,
   isUnrecognizedTicket,
-  searchTickets,
   ticketBindingStatus,
   ticketDetailEditLabel,
   ticketWalletFilterLabel,
@@ -107,10 +112,11 @@ function sampleWallet(): TicketWallet {
         bridge: null,
       },
     ],
+    surfaceGroups: [],
   };
 }
 
-describe('ticket wallet filter / search', () => {
+describe('ticket wallet filter', () => {
   it('counts and filters 未识别 by surface (production unknown + api_key shape)', () => {
     const tickets = sampleWallet().tickets;
     expect(isUnrecognizedTicket(tickets[2]!)).toBe(true);
@@ -126,27 +132,15 @@ describe('ticket wallet filter / search', () => {
       'account:oauth-1',
     ]);
   });
+});
 
-  it('searches by label and surface synonyms', () => {
-    const tickets = sampleWallet().tickets;
-    expect(searchTickets(tickets, '会员').map((t) => t.id)).toEqual(['provider:kimi-1']);
-    expect(searchTickets(tickets, '官方登录').map((t) => t.id)).toEqual(['account:oauth-1']);
-    expect(searchTickets(tickets, '未识别').map((t) => t.id)).toEqual([
-      'provider:unk-1',
-      'account:oauth-1',
-    ]);
-  });
-
-  it('matches「正用于」agent and route labels (Codex / 本机路由)', () => {
-    const wallet = sampleWallet();
-    expect(searchTickets(wallet.tickets, 'Codex', wallet.bindings).map((t) => t.id))
-      .toEqual(['provider:kimi-1']);
-    expect(searchTickets(wallet.tickets, '本机路由', wallet.bindings).map((t) => t.id))
-      .toEqual(['provider:kimi-1']);
-    expect(searchTickets(wallet.tickets, '改配置', wallet.bindings).map((t) => t.id))
-      .toEqual(['provider:kimi-1']);
-    expect(buildTicketWalletRows(wallet, { query: 'Codex' }).map((r) => r.ticket.id))
-      .toEqual(['provider:kimi-1']);
+describe('hasOfficialQuotaWindow', () => {
+  it('hides missing official percents and shows 0 as a real value', () => {
+    expect(hasOfficialQuotaWindow(undefined)).toBe(false);
+    expect(hasOfficialQuotaWindow(null)).toBe(false);
+    expect(hasOfficialQuotaWindow(Number.NaN)).toBe(false);
+    expect(hasOfficialQuotaWindow(0)).toBe(true);
+    expect(hasOfficialQuotaWindow(40)).toBe(true);
   });
 });
 
@@ -169,6 +163,39 @@ describe('binding usage text', () => {
       profileId: null,
       bridge: { port: 8123, running: true },
     }]).some((part) => part.kind === 'bridge' && part.href === '/routes')).toBe(true);
+  });
+
+  it('annotates bridge usage with N-member poll pool copy', () => {
+    const wallet = sampleWallet();
+    wallet.surfaceGroups = [{
+      surface: 'kimi-code-membership',
+      credentialClass: 'api_key',
+      members: [
+        {
+          ticketId: 'account:kimi-stale',
+          sourceKind: 'account',
+          sourceId: 'kimi-stale',
+          agentId: 'kimi',
+          label: 'Kimi 会员（失效号）',
+          health: 'needs_login',
+        },
+        {
+          ticketId: 'provider:kimi-1',
+          sourceKind: 'provider',
+          sourceId: 'kimi-1',
+          agentId: 'kimi',
+          label: 'Kimi 会员',
+          health: 'renewable',
+        },
+      ],
+    }];
+    const rows = buildTicketWalletRows(wallet);
+    const kimi = rows.find((row) => row.ticket.id === 'provider:kimi-1');
+    expect(kimi?.usageText).toContain('2 份同类登录可轮换');
+    expect(kimi?.usageText).toContain('本机路由');
+    expect(kimi?.usageText).toContain('运行中');
+    const ant = rows.find((row) => row.ticket.id === 'provider:ant-1');
+    expect(ant?.usageText).not.toContain('可轮换');
   });
 
   it('keeps self-use on one phrase so the row does not repeat the owner', () => {
@@ -206,6 +233,78 @@ describe('buildTicketWalletRows', () => {
     const oauth = rows.find((r) => r.ticket.id === 'account:oauth-1');
     expect(kimi?.highlighted).toBe(true);
     expect(oauth?.highlighted).toBe(false);
+  });
+
+  it('filters cards to the selected agent', () => {
+    const wallet = sampleWallet();
+    const claude = buildTicketWalletRows(wallet, { agentFilterId: 'claude' });
+    const grok = buildTicketWalletRows(wallet, { agentFilterId: 'grok' });
+    expect(claude.map((row) => row.ticket.id).sort()).toEqual([
+      'account:oauth-1',
+      'provider:ant-1',
+      'provider:kimi-1',
+      'provider:unk-1',
+    ].sort());
+    expect(claude.some((row) => row.ticket.agentId === 'kimi')).toBe(true);
+    expect(grok).toEqual([]);
+  });
+
+  it('does not keep a Grok ticket for a leftover inactive Claude binding; keeps a Codex ticket with an active Claude binding', () => {
+    const wallet: TicketWallet = {
+      tickets: [
+        {
+          id: 'account:grok-1',
+          sourceKind: 'account',
+          sourceId: 'grok-1',
+          agentId: 'grok',
+          label: 'user@x.ai',
+          surface: 'grok-xai-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'grok',
+        },
+        {
+          id: 'account:codex-1',
+          sourceKind: 'account',
+          sourceId: 'codex-1',
+          agentId: 'codex',
+          label: 'me@openai.com',
+          surface: 'codex-chatgpt-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'codex',
+        },
+      ],
+      bindings: [
+        {
+          ticketId: 'account:grok-1',
+          agentId: 'claude',
+          route: 'native',
+          active: false,
+          profileId: null,
+          bridge: null,
+        },
+        {
+          ticketId: 'account:codex-1',
+          agentId: 'claude',
+          route: 'bridge',
+          active: true,
+          profileId: 'p-claude',
+          bridge: { port: 8123, running: true },
+        },
+      ],
+      surfaceGroups: [],
+    };
+
+    const claude = buildTicketWalletRows(wallet, { agentFilterId: 'claude' });
+    expect(claude.map((row) => row.ticket.id)).toEqual(['account:codex-1']);
+    expect(claude.some((row) => row.ticket.agentId === 'grok')).toBe(false);
+
+    const grok = buildTicketWalletRows(wallet, { agentFilterId: 'grok' });
+    expect(grok.map((row) => row.ticket.id)).toEqual(['account:grok-1']);
+
+    const codex = buildTicketWalletRows(wallet, { agentFilterId: 'codex' });
+    expect(codex.map((row) => row.ticket.id)).toEqual(['account:codex-1']);
   });
 
   it('finds active binding for dashboard agent', () => {
@@ -264,7 +363,7 @@ describe('ticket detail fields', () => {
     });
     expect(advanced).toEqual(expect.arrayContaining([
       { label: '端点', value: '自定义' },
-      { label: 'Endpoint', value: 'relay.example.com', mono: true },
+      { label: '主机', value: 'relay.example.com', mono: true },
       { label: '协议', value: 'anthropic-messages' },
     ]));
     const customLabels = advanced.map((field) => field.label);
@@ -320,13 +419,59 @@ describe('ticket detail fields', () => {
     expect(humanizeTicketAuthLabel('已验证')).toBe('已验证');
   });
 
+  it('replaces 可续期 / 已配置 chips with the secret tail', () => {
+    expect(ticketAuthChip({
+      authLabel: '可续期·未验证',
+      secretTail: '**JF6Q',
+    })).toEqual({ label: '**JF6Q', mono: true });
+    expect(ticketAuthChip({
+      authLabel: '已配置',
+      secretTail: '**wxyz',
+    })).toEqual({ label: '**wxyz', mono: true });
+    expect(ticketAuthChip({ authLabel: '可续期·未验证' })).toEqual({
+      label: '可续期',
+      mono: false,
+    });
+    expect(ticketAuthChip({ authLabel: '已验证', secretTail: '**JF6Q' })).toEqual({
+      label: '已验证',
+      mono: false,
+    });
+  });
+
+  it('prefers healed email over placeholder ticket labels', () => {
+    expect(ticketCardTitle(
+      { label: 'codex oauth' },
+      { identity: 'user@example.com' },
+    )).toBe('user@example.com');
+    expect(ticketCardTitle(
+      { label: 'codex-oauth' },
+      { accountLabel: 'user@example.com' },
+    )).toBe('user@example.com');
+    expect(ticketCardTitle(
+      { label: 'codex oauth' },
+      { identity: '官方未提供账号信息', accountLabel: 'codex-oauth' },
+    )).toBe('codex oauth');
+  });
+
+  it('hides native 切换 on a foreign Agent usage tab', () => {
+    expect(showsNativeSwitch('kimi', null)).toBe(true);
+    expect(showsNativeSwitch('kimi', 'kimi')).toBe(true);
+    expect(showsNativeSwitch('kimi', 'codex')).toBe(false);
+  });
+
+  it('uses 切换 for idle grants and 使用中 when current', () => {
+    expect(ticketSwitchChip()).toEqual({ kind: 'switch', label: '切换' });
+    expect(ticketSwitchChip({ isCurrent: false })).toEqual({ kind: 'switch', label: '切换' });
+    expect(ticketSwitchChip({ isCurrent: true })).toEqual({ kind: 'in-use', label: '使用中' });
+  });
+
   it('lists bindings as agent + one short status', () => {
     const wallet = sampleWallet();
     expect(formatTicketBindingDetailLines(
       wallet.bindings.filter((binding) => binding.ticketId === 'provider:kimi-1'),
     )).toEqual([
       { agent: agentDisplayName('claude'), status: '当前使用' },
-      { agent: agentDisplayName('codex'), status: '本机路由运行中' },
+      { agent: 'http://127.0.0.1:8123/v1/responses', status: '本机路由运行中' },
     ]);
     expect(formatTicketBindingDetailLines(
       wallet.bindings.filter((binding) => binding.ticketId === 'account:oauth-1'),
@@ -368,20 +513,106 @@ describe('ticket detail fields', () => {
     ], []);
     const extras = extrasFromPoolSource(oauth, source);
     expect(extras.identity).toBe('me@example.com');
+    expect(extras.accountLabel).toBe('me@example.com');
+    expect(extras.isCurrent).toBe(false);
+    expect(extrasFromPoolSource(oauth, source, undefined, 'account:oauth-1').isCurrent).toBe(true);
+    expect(extrasFromPoolSource(oauth, source, undefined, 'provider:kimi-1').isCurrent).toBe(false);
     expect(extras.canEditKey).toBe(false);
     expect(extras.canEditConfig).toBe(false);
+    expect(extras.oauthAction).toEqual({ kind: 'refresh-quota', label: '刷新' });
+    expect(extras.refreshTokenPreview).toBeUndefined();
     expect(ticketDetailEditLabel(extras)).toBeNull();
+
+    const previewExtras = extrasFromPoolSource(oauth, {
+      account: account({
+        id: 'oauth-1',
+        kind: 'oauth',
+        label: 'me@example.com',
+        email: 'me@example.com',
+        refreshTokenPreview: 'rt--••••wxyz',
+        secretTail: '**wxyz',
+      }),
+    });
+    expect(previewExtras.refreshTokenPreview).toBe('rt--••••wxyz');
+    expect(previewExtras.secretTail).toBe('**wxyz');
+
+    const keyExtrasFromAccount = extrasFromPoolSource(
+      ticket({
+        id: 'account:key-1',
+        sourceKind: 'account',
+        sourceId: 'key-1',
+        agentId: 'kimi',
+        label: 'Kimi key',
+        surface: 'kimi-code-membership',
+        credentialClass: 'api_key',
+        speaks: [],
+      }),
+      {
+        account: account({
+          id: 'key-1',
+          kind: 'apikey',
+          label: 'Kimi key',
+          secretTail: '**here',
+        }),
+      },
+    );
+    expect(keyExtrasFromAccount.secretTail).toBe('**here');
 
     const keyTicket = ticket({ id: 'provider:kimi-1' });
     const keyExtras = extrasFromPoolSource(
       keyTicket,
       findTicketPoolSource(keyTicket, [], [
-        provider({ id: 'kimi-1', agentId: 'kimi', name: 'Kimi 会员' }),
+        provider({ id: 'kimi-1', agentId: 'kimi', name: 'Kimi 会员', secretTail: '**wxyz' }),
       ]),
     );
     expect(keyExtras.canEditConfig).toBe(true);
     expect(keyExtras.endpointHost).toBe('relay.example.com');
+    expect(keyExtras.secretTail).toBe('**wxyz');
     expect(ticketDetailEditLabel(keyExtras)).toBe('编辑配置');
+  });
+
+  it('splits Grok oauth extras by Hub vs CLI ownership', () => {
+    const grokTicket = ticket({
+      id: 'account:grok-1',
+      sourceKind: 'account',
+      sourceId: 'grok-1',
+      agentId: 'grok',
+      label: 'user@x.ai',
+      surface: 'grok-xai-subscription',
+      credentialClass: 'oauth',
+      speaks: [],
+      importedFrom: 'grok',
+    });
+    expect(extrasFromPoolSource(grokTicket, {
+      account: account({
+        id: 'grok-1',
+        agentId: 'grok',
+        kind: 'oauth',
+        label: 'user@x.ai',
+        source: 'oauth_pkce',
+        refreshable: true,
+      }),
+    }).oauthAction).toEqual({ kind: 'refresh-credentials', label: '刷新' });
+    expect(extrasFromPoolSource(grokTicket, {
+      account: account({
+        id: 'grok-1',
+        agentId: 'grok',
+        kind: 'oauth',
+        label: 'user@x.ai',
+        source: 'live',
+        isCurrent: true,
+      }),
+    }).oauthAction).toEqual({ kind: 'sync-current-login', label: '同步当前登录' });
+    expect(extrasFromPoolSource(grokTicket, {
+      account: account({
+        id: 'grok-1',
+        agentId: 'grok',
+        kind: 'oauth',
+        label: 'user@x.ai',
+        source: 'auth.json',
+        isCurrent: false,
+      }),
+    }).oauthAction).toEqual({ kind: 'refresh-quota', label: '刷新' });
   });
 });
 
@@ -394,13 +625,20 @@ describe('buildTicketAddMenu', () => {
       ['import-login', 'api-key'],
       ['import-login', 'api-key'],
     ]);
-    expect(menu[0]?.actions.map((a) => a.label)).toEqual(['导入当前登录', '添加 API Key']);
+    expect(menu[0]?.actions.map((a) => a.label)).toEqual(['导入当前授权', '添加 API Key']);
   });
 
   it('is empty when no Agent is installed', () => {
     expect(buildTicketAddMenu([])).toEqual([]);
     expect(buildTicketAddMenu(null)).toEqual([]);
     expect(buildTicketAddMenu()).toEqual([]);
+  });
+
+  it('focuses the selected Agent tab so Add skips the picker', () => {
+    const menu = buildTicketAddMenu(['claude', 'kimi']);
+    expect(focusedTicketAddAgent(menu, null)).toBeNull();
+    expect(focusedTicketAddAgent(menu, 'kimi')?.id).toBe('kimi');
+    expect(focusedTicketAddAgent(menu, 'grok')).toBeNull();
   });
 });
 
@@ -445,11 +683,11 @@ describe('ticketAddDialogState', () => {
 
 describe('handleTicketAddMenuSelect', () => {
   it('swallows the menu select, opens the matching dialog, then closes the menu', () => {
-    const event = { preventDefault: vi.fn() };
+    const event = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
     const onImportLogin = vi.fn();
     const onAddKey = vi.fn();
     const onMenuClose = vi.fn();
-    const schedule = vi.fn<(fn: () => void) => void>();
+    const schedule = vi.fn<(fn: () => void, delayMs?: number) => void>();
 
     handleTicketAddMenuSelect(event, 'import-login', 'kimi', {
       onImportLogin,
@@ -458,13 +696,27 @@ describe('handleTicketAddMenuSelect', () => {
     }, schedule);
 
     expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(event.stopPropagation).toHaveBeenCalledOnce();
     expect(onImportLogin).toHaveBeenCalledOnce();
     expect(onImportLogin).toHaveBeenCalledWith('kimi');
     expect(onAddKey).not.toHaveBeenCalled();
     expect(onMenuClose).not.toHaveBeenCalled();
     expect(schedule).toHaveBeenCalledOnce();
+    expect(schedule).toHaveBeenCalledWith(expect.any(Function), MENU_DIALOG_DISMISS_CLEAR_MS);
     schedule.mock.calls[0]![0]();
     expect(onMenuClose).toHaveBeenCalledOnce();
+  });
+
+  it('opens the import dialog for 导入当前授权 instead of failing silently', () => {
+    const event = { preventDefault: vi.fn() };
+    const onImportLogin = vi.fn();
+    handleTicketAddMenuSelect(event, 'import-login', 'claude', { onImportLogin });
+    expect(onImportLogin).toHaveBeenCalledWith('claude');
+    expect(ticketAddDialogState('import-login', 'claude')).toMatchObject({
+      addAgentId: 'claude',
+      loginImportOpen: true,
+      apiKeyDialogOpen: false,
+    });
   });
 
   it('opens the add API Key dialog without touching the wallet filter', () => {
@@ -581,6 +833,7 @@ describe('filter change after add-dialog leftover', () => {
           bridge: { port: null, running: false },
         },
       ],
+      surfaceGroups: [],
     };
 
     expect(() => buildTicketWalletRows(wallet, { filter: 'api_key' })).not.toThrow();

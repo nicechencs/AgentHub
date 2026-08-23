@@ -160,9 +160,11 @@ impl AgentAdapter for CodexAdapter {
                 "Codex auth.json verification failed after write",
             ));
         }
-        // Drop preferred_auth_method=apikey so OAuth auth.json is used
-        // after switching back from an API provider.
-        clear_codex_apikey_auth_preference(&home.join("config.toml"))?;
+        // Official ChatGPT OAuth: drop leftover AgentHub 本机路由 keys so
+        // Codex does not send this token at 127.0.0.1.
+        crate::integrations::agents::codex::leftover::strip_bridge_leftovers_in_path(
+            &home.join("config.toml"),
+        )?;
         Ok(())
     }
 
@@ -195,7 +197,10 @@ impl AgentAdapter for CodexAdapter {
             }
             ApiKeyAccount => CapabilityState::partial("可入池；live 应用仅支持 OAuth auth.json"),
             Usage => CapabilityState::full(),
-            Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
+            SessionResume => {
+                CapabilityState::partial("Chat 后续轮次走 print+resume；终端可复制官方续接命令")
+            }
+            Mcp | ModelSelect => CapabilityState::planned("待验证接入"),
         }
     }
 
@@ -211,7 +216,19 @@ impl AgentAdapter for CodexAdapter {
     fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec> {
         // text: codex exec <prompt>
         // structured (Chat): codex exec --json <prompt>  → JSONL process events
-        let mut args = vec!["exec".into()];
+        // AgentHub Chat chooses the workdir (often not a trusted git repo).
+        // Pass Codex's trust skip only on this AgentHub-managed spawn so a
+        // user-picked folder works. Does not change `codex` invoked outside
+        // AgentHub.
+        let mut args = vec!["exec".into(), "--skip-git-repo-check".into()];
+        if let Some(sid) = opts
+            .native_session_id
+            .as_deref()
+            .and_then(super::session_resume::valid_session_id)
+        {
+            args.push("resume".into());
+            args.push(sid.to_string());
+        }
         if super::wants_structured_for(opts.process_mode, AgentId::Codex) {
             args.push("--json".into());
         }
@@ -355,30 +372,6 @@ fn extract_settings_openai_api_key(raw: &Value) -> Option<String> {
 /// Write API-key mode auth.json. Replaces OAuth blob.
 fn write_codex_api_key_auth(path: &Path, api_key: &str) -> Result<()> {
     crate::integrations::agents::codex::write_api_key_auth(path, api_key)
-}
-
-/// When switching to official OAuth, remove API-key auth preference left by provider mode.
-fn clear_codex_apikey_auth_preference(path: &Path) -> Result<()> {
-    if !path.exists() {
-        return Ok(());
-    }
-    let live = std::fs::read_to_string(path)?;
-    if live.trim().is_empty() {
-        return Ok(());
-    }
-    let mut doc = live
-        .parse::<toml_edit::DocumentMut>()
-        .map_err(|e| AppError::InvalidArg(format!("existing Codex config.toml is invalid: {e}")))?;
-    let pref = doc
-        .get("preferred_auth_method")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    if pref.as_deref() != Some("apikey") {
-        return Ok(());
-    }
-    doc.remove("preferred_auth_method");
-    atomic_write(path, doc.to_string().as_bytes())?;
-    Ok(())
 }
 
 /// Convert generic OAuth token fields into the Codex pool/live shape:
@@ -672,5 +665,60 @@ mod tests {
         .unwrap_err();
         assert_eq!(err.code(), "invalid_arg");
         assert!(err.to_string().contains("access_token"));
+    }
+
+    #[test]
+    fn apply_account_strips_leftover_bridge_keys() {
+        let _guard = crate::integrations::agents::codex::leftover::lock_codex_home();
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let codex = home.join(".codex");
+        std::fs::create_dir_all(&codex).unwrap();
+        std::fs::write(
+            codex.join("config.toml"),
+            r#"model_provider = "agenthub_grok_bridge"
+preferred_auth_method = "apikey"
+
+[model_providers.agenthub_grok_bridge]
+base_url = "http://127.0.0.1:43121/v1"
+wire_api = "responses"
+"#,
+        )
+        .unwrap();
+        let prev = std::env::var_os("CODEX_HOME");
+        std::env::set_var("CODEX_HOME", &codex);
+        let account = LiveAccount {
+            agent: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "auth_mode": "chatgpt",
+                    "OPENAI_API_KEY": null,
+                    "tokens": {
+                        "access_token": "at-official",
+                        "refresh_token": "rt-official"
+                    },
+                    "last_refresh": "2026-08-20T00:00:00Z"
+                },
+                "email": "41375197@qq.com"
+            }),
+            label_hint: Some("41375197@qq.com".into()),
+            extra: json!({}),
+        };
+        let result = CodexAdapter.apply_account(&account);
+        match prev {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+        result.unwrap();
+        let stored = std::fs::read_to_string(codex.join("config.toml")).unwrap();
+        assert!(!stored.contains("agenthub_grok_bridge"));
+        assert!(!stored.contains("preferred_auth_method"));
+        assert!(!stored.contains("127.0.0.1"));
+        let auth: Value =
+            serde_json::from_str(&std::fs::read_to_string(codex.join("auth.json")).unwrap())
+                .unwrap();
+        assert_eq!(auth["tokens"]["access_token"], "at-official");
     }
 }

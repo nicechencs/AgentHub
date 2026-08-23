@@ -4,15 +4,33 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { isPrerelease, readCargoWorkspaceVersion, readReleaseMetadata } from './release-metadata.mjs';
+import {
+  assertTagMatchesMetadata,
+  isPrerelease,
+  parseCliArgs,
+  readCargoLockWorkspaceVersions,
+  readCargoWorkspaceVersion,
+  readReleaseMetadata,
+} from './release-metadata.mjs';
 
-function writeReleaseFixture({ packageVersion = '1.2.3', cargoVersion = packageVersion, tauriVersion = packageVersion } = {}) {
+function writeReleaseFixture({
+  packageVersion = '1.2.3',
+  cargoVersion = packageVersion,
+  tauriVersion = packageVersion,
+  lockVersions = { 'agenthub-cli': packageVersion, 'agenthub-core': packageVersion, 'agenthub-gui': packageVersion },
+} = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agenthub-release-metadata-'));
   fs.mkdirSync(path.join(root, 'src-tauri'));
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: packageVersion }));
   fs.writeFileSync(
     path.join(root, 'Cargo.toml'),
     `[workspace]\nresolver = "2"\nversion = "99.99.99"\n\n[workspace.package]\nversion = "${cargoVersion}"\n\n[workspace.dependencies]\nserde = "1"\n`,
+  );
+  fs.writeFileSync(
+    path.join(root, 'Cargo.lock'),
+    Object.entries(lockVersions)
+      .map(([name, version]) => `[[package]]\nname = "${name}"\nversion = "${version}"\n`)
+      .join('\n'),
   );
   fs.writeFileSync(path.join(root, 'src-tauri', 'tauri.conf.json'), JSON.stringify({ version: tauriVersion }));
   return root;
@@ -38,11 +56,43 @@ test('rejects a version mismatch across release metadata files', () => {
   assert.throws(() => readReleaseMetadata(root), /Release versions must match.*Cargo\.toml \[workspace\.package\]=1\.2\.4/);
 });
 
+test('rejects a workspace package lock mismatch', () => {
+  const root = writeReleaseFixture({
+    lockVersions: { 'agenthub-cli': '1.2.3', 'agenthub-core': '1.2.4', 'agenthub-gui': '1.2.3' },
+  });
+  assert.throws(() => readReleaseMetadata(root), /Cargo\.lock workspace package versions must match/);
+});
+
+test('reads exactly the three workspace package lock entries', () => {
+  assert.deepEqual(
+    readCargoLockWorkspaceVersions(
+      '[[package]]\nname = "other"\nversion = "9.9.9"\n\n[[package]]\nname = "agenthub-core"\nversion = "1.2.3"\n\n[[package]]\nname = "agenthub-cli"\nversion = "1.2.3"\n\n[[package]]\nname = "agenthub-gui"\nversion = "1.2.3"\n',
+    ),
+    { 'agenthub-cli': '1.2.3', 'agenthub-core': '1.2.3', 'agenthub-gui': '1.2.3' },
+  );
+});
+
 test('rejects non-strict SemVer, including a leading v and numeric leading zeroes', () => {
   for (const version of ['v1.2.3', '01.2.3', '1.2', '1.2.3-01']) {
     const root = writeReleaseFixture({ packageVersion: version });
     assert.throws(() => readReleaseMetadata(root), /not strict SemVer/);
   }
+});
+
+test('rejects a git tag that does not match release metadata', () => {
+  const metadata = readReleaseMetadata(writeReleaseFixture({ packageVersion: '1.2.3' }));
+  assert.equal(metadata.tag, 'v1.2.3');
+  assert.doesNotThrow(() => assertTagMatchesMetadata(metadata, 'v1.2.3'));
+  assert.throws(
+    () => assertTagMatchesMetadata(metadata, 'v1.2.4'),
+    /does not match release metadata tag 'v1\.2\.3'/,
+  );
+  assert.throws(() => assertTagMatchesMetadata(metadata, ''), /Git tag is required/);
+});
+
+test('parses --expect-tag', () => {
+  assert.equal(parseCliArgs(['--expect-tag', 'v1.2.3']).expectTag, 'v1.2.3');
+  assert.throws(() => parseCliArgs(['--expect-tag']), /--expect-tag requires a tag name/);
 });
 
 test('reads version specifically from the Cargo workspace.package section', () => {

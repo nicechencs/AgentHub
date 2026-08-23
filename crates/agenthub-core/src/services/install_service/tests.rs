@@ -1,17 +1,26 @@
 use super::*;
-use crate::adapters::register_all;
+use crate::adapters::{register_all, AgentAdapter};
 use crate::catalog::install::{
     native_ps1_url, native_setup_url, native_sh_url, npm_install_extra_flags, npm_package,
 };
-use crate::platform::install::builtin_install_registry;
+use crate::error::AppError;
+use crate::models::{
+    AgentConfig, AuthState, Capability, CapabilityState, DetectResult, InstallChannel, RunOptions,
+    RunSpec,
+};
+use crate::platform::install::{builtin_install_registry, InstallContribution};
+use crate::platform::AgentKey;
 use crate::services::ProviderService;
 use crate::utils::command_exec::ExecRequest;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 struct MockExecutor {
     calls: Arc<Mutex<Vec<String>>>,
     exit_code: i32,
     stdout: String,
+    stderr: String,
 }
 
 impl CommandExecutor for MockExecutor {
@@ -22,7 +31,7 @@ impl CommandExecutor for MockExecutor {
             command: cmd,
             exit_code: Some(self.exit_code),
             stdout: self.stdout.clone(),
-            stderr: String::new(),
+            stderr: self.stderr.clone(),
             timed_out: false,
             spawn_error: None,
         }
@@ -35,6 +44,7 @@ fn install_runtime_powershell_refuses() {
         calls: Arc::new(Mutex::new(Vec::new())),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
     let out = install_runtime(RuntimeId::PowerShell, "winget", &ex).unwrap();
     assert!(!out.ok);
@@ -63,6 +73,7 @@ fn native_sh_install_does_not_probe_powershell() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
 
     // Grok has an allowlisted install.sh URL.  The mock executor prevents any
@@ -116,6 +127,7 @@ fn install_agent_env_not_ready_without_deps() {
         calls: Arc::new(Mutex::new(Vec::new())),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
     // Force path: if env is ready on this machine, the test still asserts shape.
     let out = install_agent(&registry, AgentId::Codex, "npm", false, &ex).unwrap();
@@ -153,6 +165,7 @@ fn install_from_contribution_uses_npm_allowlist_without_agent_id() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
 
     if !runtime::is_ready(&[RuntimeId::NodeJs, RuntimeId::Npm]) {
@@ -170,6 +183,7 @@ fn install_from_contribution_uses_npm_allowlist_without_agent_id() {
         commands.iter().any(|c| {
             c.contains("install")
                 && c.contains("-g")
+                && c.contains("--prefix")
                 && c.contains("--ignore-scripts")
                 && c.contains("@agenthub/p1-2-fake-npm")
         }),
@@ -198,6 +212,7 @@ fn install_agent_with_contribution_prefers_passed_npm_package() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
 
     if !runtime::is_ready(&[RuntimeId::NodeJs, RuntimeId::Npm]) {
@@ -330,6 +345,7 @@ fn uninstall_not_installed_fails_without_exec() {
         calls: calls.clone(),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
     // Use a unique fake: if all real agents are installed on this machine,
     // still assert failure path for NotFound by checking message shape when
@@ -364,6 +380,7 @@ fn purge_is_excluded_by_a_provider_live_saga_before_uninstall_preflight() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
 
     let error = uninstall_agent(
@@ -380,6 +397,107 @@ fn purge_is_excluded_by_a_provider_live_saga_before_uninstall_preflight() {
 }
 
 #[test]
+fn custom_agent_home_purge_fails_before_external_executor() {
+    let _env = crate::utils::test_env::lock_test_env();
+    let _codex = crate::integrations::agents::codex::leftover::lock_codex_home();
+    let custom = tempfile::tempdir().unwrap();
+    let _codex_home = crate::utils::test_env::EnvVarGuard::set("CODEX_HOME", custom.path());
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let executor = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = crate::storage::Database::open(&db_dir.path().join("ah.db")).unwrap();
+    let error = uninstall_agent(
+        &AdapterRegistry::new(),
+        &db,
+        AgentId::Codex,
+        true,
+        &executor,
+    )
+    .expect_err("custom config roots must fail closed");
+
+    assert_eq!(error.code(), "invalid_arg");
+    assert!(error.to_string().contains("custom agent config"));
+    assert!(calls.lock().unwrap().is_empty());
+}
+
+fn purge_must_fail_closed_for_env_override(agent: AgentId, key: &'static str) {
+    // Caller holds the shared test-env lock; the guard restores the key even
+    // if the expect_err below panics.
+    let custom = tempfile::tempdir().unwrap();
+    let _guard = crate::utils::test_env::EnvVarGuard::set(key, custom.path());
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let executor = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = crate::storage::Database::open(&db_dir.path().join("ah.db")).unwrap();
+    let error = uninstall_agent(&AdapterRegistry::new(), &db, agent, true, &executor)
+        .expect_err("custom config roots must fail closed");
+
+    assert_eq!(error.code(), "invalid_arg");
+    assert!(error.to_string().contains("custom agent config"));
+    assert!(calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn custom_pi_config_dir_purge_fails_before_external_executor() {
+    let _env = crate::utils::test_env::lock_test_env();
+    purge_must_fail_closed_for_env_override(AgentId::Pi, "PI_CODING_AGENT_DIR");
+}
+
+#[test]
+fn custom_workbuddy_config_dir_purge_fails_before_external_executor() {
+    let _env = crate::utils::test_env::lock_test_env();
+    purge_must_fail_closed_for_env_override(AgentId::WorkBuddy, "WORKBUDDY_CONFIG_DIR");
+}
+
+#[test]
+fn custom_codebuddy_config_dir_purge_fails_before_external_executor() {
+    let _env = crate::utils::test_env::lock_test_env();
+    let _workbuddy = crate::utils::test_env::EnvVarGuard::remove("WORKBUDDY_CONFIG_DIR");
+    purge_must_fail_closed_for_env_override(AgentId::WorkBuddy, "CODEBUDDY_CONFIG_DIR");
+}
+
+#[test]
+fn public_purge_entry_rejects_data_dir_unrelated_to_database_authority() {
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = crate::storage::Database::open(&db_dir.path().join("ah.db")).unwrap();
+    let authority = LiveWriteAuthority::try_from_database(&db).unwrap();
+    let unrelated_dir = tempfile::tempdir().unwrap();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let executor = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+
+    let error = uninstall_agent_with_authority_at_data_dir(
+        &AdapterRegistry::new(),
+        &authority,
+        unrelated_dir.path(),
+        AgentId::Codex,
+        true,
+        &executor,
+    )
+    .expect_err("purge must use the database authority's data root");
+
+    assert_eq!(error.code(), "invalid_arg");
+    assert!(error.to_string().contains("does not match"));
+    assert!(calls.lock().unwrap().is_empty());
+}
+
+#[test]
 fn upgrade_not_installed_fails_closed() {
     let registry = register_all();
     let calls = Arc::new(Mutex::new(Vec::new()));
@@ -387,6 +505,7 @@ fn upgrade_not_installed_fails_closed() {
         calls: calls.clone(),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
     // Pick agent that is NotFound if any; otherwise skip to avoid network install.
     for agent in AgentId::ALL {
@@ -410,6 +529,7 @@ fn workbuddy_setup_channel_never_reports_success() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
     let mut logs = Vec::new();
 
@@ -446,6 +566,7 @@ fn install_runtime_powershell_logs_dual_version_context() {
         calls: Arc::new(Mutex::new(Vec::new())),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
     let out = install_runtime(RuntimeId::PowerShell, "winget", &ex).unwrap();
     assert!(!out.ok);
@@ -466,6 +587,7 @@ fn install_runtime_git_uses_winget_git_package() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: "Successfully installed".into(),
+        stderr: String::new(),
     };
     // Even if git is already present, we still invoke the platform package
     // manager (then redetect). If it is missing, resolution fails before the
@@ -614,6 +736,7 @@ fn install_runtime_unsupported_channel_is_coded() {
         calls: Arc::new(Mutex::new(Vec::new())),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
     let channel = if cfg!(all(not(windows), not(target_os = "macos"))) {
         "chocolatey"
@@ -654,6 +777,7 @@ fn install_runtime_brew_channel_unsupported_off_macos() {
         calls: Arc::new(Mutex::new(Vec::new())),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
     let out = install_runtime(RuntimeId::Git, "brew", &ex).unwrap();
     assert!(!out.ok);
@@ -669,6 +793,7 @@ fn install_runtime_missing_winget_is_env_not_ready() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
     let out = install_runtime(RuntimeId::Npm, "winget", &ex).unwrap();
     let cmds = calls.lock().unwrap();
@@ -717,6 +842,7 @@ fn install_runtime_missing_brew_is_env_not_ready() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
     let out = install_runtime(RuntimeId::Git, "brew", &ex).unwrap();
     let cmds = calls.lock().unwrap();
@@ -791,6 +917,7 @@ fn linux_default_runtime_install_is_manual_and_does_not_spawn() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
     let out = install_runtime(RuntimeId::NodeJs, "", &ex).unwrap();
     assert!(calls.lock().unwrap().is_empty());
@@ -821,6 +948,7 @@ fn linux_rejects_explicit_winget_and_brew_without_spawning() {
         calls: Arc::new(Mutex::new(Vec::new())),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
     for channel in ["winget", "brew"] {
         let out = install_runtime(RuntimeId::Git, channel, &ex).unwrap();
@@ -839,6 +967,7 @@ fn linux_accepts_apt_as_copy_command_channel_without_spawning() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
+        stderr: String::new(),
     };
     for channel in ["apt", "dnf", "pacman", "zypper", "apk"] {
         let out = install_runtime(RuntimeId::Git, channel, &ex).unwrap();
@@ -854,4 +983,253 @@ fn linux_accepts_apt_as_copy_command_channel_without_spawning() {
         }
         assert!(calls.lock().unwrap().is_empty(), "{channel}");
     }
+}
+
+#[test]
+fn user_npm_prefix_is_under_agenthub_data_dir() {
+    let prefix = user_npm_prefix().unwrap();
+    let data = crate::utils::paths::resolve_data_dir(None).unwrap();
+    assert_eq!(prefix, data.join("npm"));
+}
+
+#[test]
+fn npm_nonzero_permission_failure_is_not_blamed_on_path() {
+    let registry = register_all();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 243,
+        stdout: String::new(),
+        stderr: "npm ERR! code EACCES\nnpm ERR! syscall mkdir".into(),
+    };
+    if !runtime::is_ready(&[RuntimeId::NodeJs, RuntimeId::Npm]) {
+        return;
+    }
+    let out = install_agent(&registry, AgentId::Codex, "npm", false, &ex).unwrap();
+    assert!(!out.ok);
+    assert!(out.message.contains("失败"), "msg={}", out.message);
+    assert!(
+        out.message.contains("EACCES") || out.message.contains("权限"),
+        "msg={}",
+        out.message
+    );
+    let joined = out.logs.join("\n");
+    assert!(!joined.contains("可能已成功"), "logs={joined}");
+    assert!(
+        !out.message.contains("重新检测未找到二进制"),
+        "msg={}",
+        out.message
+    );
+    assert!(!out.message.contains("请检查 PATH"), "msg={}", out.message);
+    let commands = calls.lock().unwrap();
+    assert!(
+        commands.iter().any(|c| c.contains("--prefix")),
+        "expected prefix, got {commands:?}"
+    );
+}
+
+struct StickyNpmAdapter {
+    id: AgentId,
+    /// Number of `detect` calls already observed. 0 = preflight (Installed).
+    detect_calls: Arc<AtomicUsize>,
+    /// After this many detect calls (inclusive start), report NotFound.
+    not_found_from: usize,
+}
+
+impl AgentAdapter for StickyNpmAdapter {
+    fn id(&self) -> AgentId {
+        self.id
+    }
+
+    fn detect(&self) -> DetectResult {
+        let n = self.detect_calls.fetch_add(1, Ordering::SeqCst);
+        let installed = n < self.not_found_from;
+        DetectResult {
+            agent: self.id,
+            status: if installed {
+                DetectStatus::Installed
+            } else {
+                DetectStatus::NotFound
+            },
+            version: Some("1.0.0".into()),
+            binary_path: installed.then(|| PathBuf::from("/tmp/fake-npm-agent")),
+            channel: Some("npm".into()),
+            env_ready: true,
+            notes: vec![],
+        }
+    }
+
+    fn install_channels(&self) -> Vec<InstallChannel> {
+        vec![]
+    }
+
+    fn read_config(&self) -> Result<AgentConfig> {
+        Err(AppError::Unsupported("fake".into()))
+    }
+
+    fn read_auth(&self) -> Result<AuthState> {
+        Err(AppError::Unsupported("fake".into()))
+    }
+
+    fn capability(&self, _cap: Capability) -> CapabilityState {
+        CapabilityState::unsupported("fake")
+    }
+
+    fn skills_dir(&self) -> Option<PathBuf> {
+        None
+    }
+
+    fn live_backup_paths(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
+    fn build_run_spec(&self, _binary: &Path, _prompt: &str, _opts: &RunOptions) -> Result<RunSpec> {
+        Err(AppError::Unsupported("fake".into()))
+    }
+}
+
+fn uninstall_calls_for(
+    not_found_from: usize,
+    executor: &MockExecutor,
+) -> (InstallOutcome, Vec<String>) {
+    let detect_calls = Arc::new(AtomicUsize::new(0));
+    let mut registry = AdapterRegistry::new();
+    registry.register(Arc::new(StickyNpmAdapter {
+        id: AgentId::Codex,
+        detect_calls,
+        not_found_from,
+    }));
+    let dir = tempfile::tempdir().unwrap();
+    let db = crate::storage::Database::open(&dir.path().join("ah.db")).unwrap();
+    let out = uninstall_agent(&registry, &db, AgentId::Codex, false, executor).unwrap();
+    let commands = executor.calls.lock().unwrap().clone();
+    (out, commands)
+}
+
+#[test]
+fn npm_uninstall_retries_without_prefix_when_detect_still_installed() {
+    if !runtime::is_ready(&[RuntimeId::NodeJs, RuntimeId::Npm]) {
+        return;
+    }
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    // detect 0 preflight Installed; after prefix still Installed → second uninstall.
+    let (out, commands) = uninstall_calls_for(usize::MAX, &ex);
+    let uninstalls: Vec<_> = commands
+        .iter()
+        .filter(|c| c.contains("uninstall"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        uninstalls.len(),
+        2,
+        "prefix success + still Installed must retry legacy global; got {commands:?}"
+    );
+    assert!(
+        uninstalls[0].contains("--prefix"),
+        "first uninstall must use user prefix: {}",
+        uninstalls[0]
+    );
+    assert!(
+        !uninstalls[1].contains("--prefix"),
+        "second uninstall must be legacy global: {}",
+        uninstalls[1]
+    );
+    assert!(
+        out.logs
+            .iter()
+            .any(|l| l.contains("uninstall") && l.contains("--prefix")),
+        "logs must record prefix uninstall with actual path: {:?}",
+        out.logs
+    );
+    assert!(
+        out.logs
+            .iter()
+            .any(|l| l.contains("# npm uninstall -g ") && !l.contains("--prefix")),
+        "logs must record legacy uninstall: {:?}",
+        out.logs
+    );
+    assert!(
+        out.logs.iter().all(|l| !l.contains("~/.agenthub/npm")),
+        "must not hardcode ~/.agenthub/npm: {:?}",
+        out.logs
+    );
+}
+
+#[test]
+fn npm_uninstall_skips_legacy_when_prefix_clears_detect() {
+    if !runtime::is_ready(&[RuntimeId::NodeJs, RuntimeId::Npm]) {
+        return;
+    }
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    // detect 0 preflight Installed; after prefix (detect 1) NotFound → no retry.
+    let (_out, commands) = uninstall_calls_for(1, &ex);
+    let uninstalls: Vec<_> = commands
+        .iter()
+        .filter(|c| c.contains("uninstall"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        uninstalls.len(),
+        1,
+        "clean prefix uninstall must not emit legacy global; got {commands:?}"
+    );
+    assert!(uninstalls[0].contains("--prefix"), "{}", uninstalls[0]);
+}
+
+#[test]
+fn contribution_uninstall_retries_legacy_global_without_prefix() {
+    if !runtime::is_ready(&[RuntimeId::NodeJs, RuntimeId::Npm]) {
+        return;
+    }
+
+    struct FakeContrib;
+    impl InstallContribution for FakeContrib {
+        fn agent_key(&self) -> AgentKey {
+            AgentKey::parse("p1-2-fake-npm").unwrap()
+        }
+        fn npm_package(&self) -> Option<&'static str> {
+            Some("@agenthub/p1-2-fake-npm")
+        }
+    }
+
+    let key = AgentKey::parse("p1-2-fake-npm").unwrap();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let out = uninstall_from_contribution(&key, &FakeContrib, false, &ex).unwrap();
+    let commands = calls.lock().unwrap();
+    let uninstalls: Vec<_> = commands
+        .iter()
+        .filter(|c| c.contains("uninstall"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        uninstalls.len(),
+        2,
+        "contribution uninstall has no detect; must try prefix then legacy: {commands:?}"
+    );
+    assert!(uninstalls[0].contains("--prefix"), "{}", uninstalls[0]);
+    assert!(!uninstalls[1].contains("--prefix"), "{}", uninstalls[1]);
+    assert!(out.ok, "msg={}", out.message);
+    assert!(
+        out.logs.iter().all(|l| !l.contains("~/.agenthub/npm")),
+        "must not hardcode ~/.agenthub/npm: {:?}",
+        out.logs
+    );
 }

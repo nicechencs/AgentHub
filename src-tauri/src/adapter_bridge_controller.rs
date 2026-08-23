@@ -1,11 +1,12 @@
 //! Desktop-process control plane for Adapter local bridges.
 //!
 //! `agenthub-core` owns profile persistence, source-secret resolution and the
-//! generated target provider projection.  This module deliberately owns the
-//! cross-boundary saga: the loopback listener must bind before the generated
-//! provider is made current, and a failed apply must not leave a newly-started
-//! listener running.  Neither upstream nor local bearer tokens cross the
-//! Tauri command boundary.
+//! generated target provider projection.  This module owns the cross-boundary
+//! saga: the loopback listener must bind before the generated provider is
+//! persisted, and a failed apply must not leave a newly-started listener
+//! running. Generated loopback is persisted non-current; live config is
+//! refreshed only if that row is already current. Neither upstream nor local
+//! bearer tokens cross the Tauri command boundary.
 //!
 //! Process-local profile / target gates and the credential-free status DTO live
 //! in [`agenthub_core::adapter_control`] so commands stay Tauri-neutral.
@@ -15,15 +16,16 @@ use std::time::SystemTime;
 
 use agenthub_core::adapter_control::AdapterBridgeStatus;
 use agenthub_core::bridge::{
-    BridgeHostError, BridgeRuntimeHost, BridgeRuntimeState, BridgeRuntimeStatus,
-    BridgeUpstreamStatus,
+    BridgeHostError, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState, BridgeRuntimeStatus,
+    BridgeUpstreamStatus, MemberHealth, UpstreamAuthReload,
 };
 use agenthub_core::models::{
-    AdapterApplyResult, AdapterProfile, AdapterProfileStatus, AdapterRoute, AdapterSourceKind,
-    AgentId, Provider, ProviderInput,
+    local_bridge_multi_account, ticket_id, AdapterApplyResult, AdapterProfile,
+    AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AgentId, Provider, ProviderInput,
 };
 use agenthub_core::services::{
-    AdapterBridgePrepareRequest, AdapterBridgePrepared, AdapterBridgeProviderProjection,
+    oauth_bridge_reload_callback, AdapterBridgePrepareRequest, AdapterBridgePrepared,
+    AdapterBridgeProviderProjection, AdapterBridgeRuntimeMaterial, AdapterSecretResolver,
     ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
 };
 use agenthub_core::AgentHub;
@@ -58,8 +60,7 @@ pub(crate) async fn apply_local_bridge(
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let profile_id = bridge_profile_id_for_request(hub.clone(), request.clone()).await?;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
-    // First-time apply must make the generated target Connection current.
-    apply_local_bridge_locked(hub, host, coordinator, request, true).await
+    apply_local_bridge_locked(hub, host, coordinator, request).await
 }
 
 async fn apply_local_bridge_locked(
@@ -67,11 +68,6 @@ async fn apply_local_bridge_locked(
     host: Arc<BridgeRuntimeHost>,
     coordinator: Arc<AdapterBridgeSagaCoordinator>,
     request: AdapterBridgePrepareRequest,
-    // When true (initial apply), always switch the target Agent to the
-    // generated bridge. Manual start keeps the user's current Connection
-    // unless the generated bridge provider was already current (then refresh
-    // live config only).
-    force_switch_current: bool,
 ) -> Result<AdapterApplyResult, String> {
     let target_agent_id = request.target_agent_id;
     let prepared = with_hub_blocking(hub.clone(), move |hub| {
@@ -82,7 +78,27 @@ async fn apply_local_bridge_locked(
     .await?;
 
     let profile_id = prepared.profile().id.clone();
-    let runtime = match ensure_bridge_listener(host.as_ref(), prepared.runtime_material()).await {
+    let reload = oauth_reload_for_material(
+        hub.as_ref(),
+        prepared.runtime_material(),
+        prepared.profile().source_kind,
+        &prepared.profile().source_id,
+    );
+    let members = resolve_pool_members(
+        hub.as_ref(),
+        prepared.profile(),
+        prepared.runtime_material(),
+        reload.clone(),
+    );
+    let runtime = match ensure_bridge_listener(
+        host.as_ref(),
+        prepared.runtime_material(),
+        reload,
+        members,
+        local_bridge_multi_account(&prepared.profile().rule_id),
+    )
+    .await
+    {
         Ok(runtime) => runtime,
         Err(error) => {
             let code = if matches!(error, BridgeHostError::Bind(_)) {
@@ -132,15 +148,7 @@ async fn apply_local_bridge_locked(
         let provider_id = prepared.profile().generated_provider_id.clone();
         let snapshot =
             capture_provider_snapshot(hub, &core_guard, provider_id.as_deref(), target_agent)?;
-        persist_bridge_projection_inner(
-            hub,
-            &core_guard,
-            &prepared,
-            projection,
-            port,
-            &snapshot,
-            force_switch_current,
-        )
+        persist_bridge_projection_inner(hub, &core_guard, &prepared, projection, port, &snapshot)
     })
     .await;
 
@@ -185,8 +193,7 @@ pub(crate) async fn start_local_bridge(
         target_agent_id: profile.target_agent_id,
         auto_start: profile.auto_start,
     };
-    // Manual start must not steal Codex current if the user already switched away.
-    let applied = apply_local_bridge_locked(hub, host.clone(), coordinator, request, false).await?;
+    let applied = apply_local_bridge_locked(hub, host.clone(), coordinator, request).await?;
     let status = host
         .status(&applied.profile.id)
         .map_err(map_bridge_host_error)?
@@ -328,8 +335,26 @@ pub(crate) fn restore_adapter_bridges(
                 }
             };
 
-            let runtime = match ensure_bridge_listener(host.as_ref(), material.runtime_material())
-                .await
+            let reload = oauth_reload_for_material(
+                hub.as_ref(),
+                material.runtime_material(),
+                material.profile().source_kind,
+                &material.profile().source_id,
+            );
+            let members = resolve_pool_members(
+                hub.as_ref(),
+                material.profile(),
+                material.runtime_material(),
+                reload.clone(),
+            );
+            let runtime = match ensure_bridge_listener(
+                host.as_ref(),
+                material.runtime_material(),
+                reload,
+                members,
+                local_bridge_multi_account(&material.profile().rule_id),
+            )
+            .await
             {
                 Ok(runtime) => runtime,
                 Err(error) => {
@@ -365,7 +390,7 @@ pub(crate) fn restore_adapter_bridges(
 
             // Preferred-port rebind must rewrite profile.local_port and the
             // generated target endpoint; otherwise restore leaves a dead endpoint.
-            if Some(runtime.status.port) != profile.local_port {
+            if Some(runtime.status.port) != profile.local_port || material.needs_reprojection() {
                 let _target_guard = coordinator.lock_target(profile.target_agent_id).await;
                 if let Err(error) = with_hub_blocking(hub.clone(), {
                     let profile_id = profile.id.clone();
@@ -404,7 +429,6 @@ fn persist_bridge_projection_inner(
     projection: AdapterBridgeProviderProjection,
     port: u16,
     snapshot: &BridgeProviderSnapshot,
-    force_switch_current: bool,
 ) -> Result<AdapterApplyResult, String> {
     let provider_id = prepared
         .profile()
@@ -440,15 +464,46 @@ fn persist_bridge_projection_inner(
         .as_ref()
         .map(|provider| provider.is_current)
         .unwrap_or(false);
-    let should_switch = should_make_bridge_current(force_switch_current, generated_was_current);
+    let should_switch = should_make_bridge_current(generated_was_current);
 
+    let previous_current_id = snapshot
+        .current_provider
+        .as_ref()
+        .map(|provider| provider.id.as_str())
+        .filter(|id| *id != provider_id.as_str());
     let provider = if should_switch {
         match hub.providers.switch_with_guard(
             core_guard,
             &provider_id,
             prepared.profile().target_agent_id,
         ) {
-            Ok(result) => result.provider.redacted(),
+            Ok(result) => {
+                let backup_id = result.backup.as_ref().map(|backup| backup.id.as_str());
+                match hub.providers.persist_first_bind_restore_meta_with_guard(
+                    core_guard,
+                    &result.provider,
+                    previous_current_id,
+                    backup_id,
+                ) {
+                    Ok(provider) => provider.redacted(),
+                    Err(error) => {
+                        let rollback = rollback_bridge_projection(
+                            hub,
+                            core_guard,
+                            &provider_id,
+                            snapshot,
+                            created,
+                            should_switch,
+                            prepared.profile().target_agent_id,
+                        );
+                        return Err(composite_saga_error(
+                            "persist_adapter_bridge_restore_meta",
+                            map_err_string("persist_adapter_bridge_restore_meta", error),
+                            rollback,
+                        ));
+                    }
+                }
+            }
             Err(error) => {
                 let rollback = rollback_bridge_projection(
                     hub,
@@ -456,6 +511,7 @@ fn persist_bridge_projection_inner(
                     &provider_id,
                     snapshot,
                     created,
+                    should_switch,
                     prepared.profile().target_agent_id,
                 );
                 return Err(composite_saga_error(
@@ -487,6 +543,7 @@ fn persist_bridge_projection_inner(
                 &provider_id,
                 snapshot,
                 created,
+                should_switch,
                 prepared.profile().target_agent_id,
             );
             return Err(composite_saga_error(
@@ -499,10 +556,9 @@ fn persist_bridge_projection_inner(
     Ok(AdapterApplyResult { profile, provider })
 }
 
-/// Initial apply always promotes the generated bridge; manual start only
-/// refreshes live config when that bridge was already the current Connection.
-fn should_make_bridge_current(force_switch_current: bool, generated_was_current: bool) -> bool {
-    force_switch_current || generated_was_current
+/// Refresh live only if the generated loopback is already current.
+fn should_make_bridge_current(generated_was_current: bool) -> bool {
+    generated_was_current
 }
 
 #[derive(Clone)]
@@ -542,15 +598,15 @@ fn capture_provider_snapshot(
     })
 }
 
-/// Restore the persisted provider pool through `ProviderService`; it is the
-/// sole live-config owner.  We intentionally try every inverse action so a
-/// retry starts from the best possible state, then return a stable code only.
+/// Inverse of persist: restore the generated pool row. Reverse live switch
+/// only when this saga actually refreshed current (`switched_live`).
 fn rollback_bridge_projection(
     hub: &AgentHub,
     core_guard: &ProviderLiveSagaGuard<'_>,
     provider_id: &str,
     snapshot: &BridgeProviderSnapshot,
     created: bool,
+    switched_live: bool,
     target_agent: AgentId,
 ) -> Result<(), &'static str> {
     let mut failed = false;
@@ -569,6 +625,14 @@ fn rollback_bridge_projection(
         failed = true;
     }
 
+    if !switched_live {
+        return if failed {
+            Err("adapter.bridge_rollback")
+        } else {
+            Ok(())
+        };
+    }
+
     if let Some(old_current) = &snapshot.current_provider {
         if hub
             .providers
@@ -581,9 +645,8 @@ fn rollback_bridge_projection(
 
     // A provider switch back to an old current row may backfill a drifted
     // value rather than the byte-exact snapshot captured before this saga.
-    // Always restore the snapshot last, whether or not there was an old
-    // current provider, so failed finalize/switch cannot leave live config
-    // changed.
+    // Restore the snapshot last so failed finalize/switch cannot leave live
+    // config changed.
     if hub
         .providers
         .restore_live_config_snapshot_with_guard(core_guard, &snapshot.live_config)
@@ -644,7 +707,10 @@ async fn load_bridge_profile(
 ) -> Result<AdapterProfile, String> {
     let profile = load_adapter_profile(hub, profile_id).await?;
     if profile.route != AdapterRoute::LocalBridge
-        || !matches!(profile.target_agent_id, AgentId::Codex | AgentId::Claude)
+        || !matches!(
+            profile.target_agent_id,
+            AgentId::Codex | AgentId::Claude | AgentId::Grok | AgentId::Kimi | AgentId::Dsh
+        )
         || !matches!(
             profile.source_kind,
             AdapterSourceKind::Provider | AdapterSourceKind::Account
@@ -721,37 +787,160 @@ pub(crate) struct EnsuredBridgeListener {
 /// - `ConflictingStart` (token/port drift) stops the old listener then starts
 ///   with the new material so credential rotation can take effect.
 /// - `Bind` on the preferred port retries once with port `0`.
+fn oauth_reload_for_material(
+    hub: &AgentHub,
+    material: &AdapterBridgeRuntimeMaterial,
+    source_kind: AdapterSourceKind,
+    source_id: &str,
+) -> Option<UpstreamAuthReload> {
+    oauth_bridge_reload_callback(
+        hub.accounts.clone(),
+        AdapterSecretResolver::new(hub.db.clone()),
+        source_kind,
+        source_id.to_owned(),
+        material.protocol(),
+    )
+}
+
+/// Resolve C1 surface-group siblings. A closed multi_account gate returns an
+/// empty list so the host synthesizes the lead (byte-equivalent start spec).
+/// A sibling secret failure isolates that member instead of failing start.
+fn resolve_pool_members(
+    hub: &AgentHub,
+    profile: &AdapterProfile,
+    material: &AdapterBridgeRuntimeMaterial,
+    lead_reload: Option<UpstreamAuthReload>,
+) -> Vec<BridgeMemberSpec> {
+    if !local_bridge_multi_account(&profile.rule_id) {
+        return Vec::new();
+    }
+    let lead_ticket = ticket_id(profile.source_kind, &profile.source_id);
+    let Ok(wallet) = hub.tickets.list_wallet() else {
+        return Vec::new();
+    };
+    let Some(lead_ticket_row) = wallet
+        .tickets
+        .iter()
+        .find(|ticket| ticket.id == lead_ticket)
+    else {
+        return Vec::new();
+    };
+    let Some(group) = wallet.surface_groups.iter().find(|group| {
+        group.surface == lead_ticket_row.surface
+            && group.credential_class == lead_ticket_row.credential_class
+    }) else {
+        return Vec::new();
+    };
+
+    let protocol = material.protocol();
+    let mut members = Vec::with_capacity(group.members.len());
+    for member in &group.members {
+        if member.ticket_id == lead_ticket {
+            members.push(BridgeMemberSpec {
+                ticket_id: member.ticket_id.clone(),
+                source_kind: member.source_kind.as_str().to_owned(),
+                source_id: member.source_id.clone(),
+                label: member.label.clone(),
+                auth: material.start_spec(None).upstream.auth,
+                reload: lead_reload.clone(),
+                health: MemberHealth::Renewable,
+            });
+            continue;
+        }
+        match hub.adapter_bridge.resolve_member_auth(
+            &profile.rule_id,
+            member.source_kind,
+            &member.source_id,
+        ) {
+            Ok(auth) if auth.has_token() => {
+                members.push(BridgeMemberSpec {
+                    ticket_id: member.ticket_id.clone(),
+                    source_kind: member.source_kind.as_str().to_owned(),
+                    source_id: member.source_id.clone(),
+                    label: member.label.clone(),
+                    auth,
+                    reload: oauth_bridge_reload_callback(
+                        hub.accounts.clone(),
+                        AdapterSecretResolver::new(hub.db.clone()),
+                        member.source_kind,
+                        member.source_id.clone(),
+                        protocol,
+                    ),
+                    health: MemberHealth::Renewable,
+                });
+            }
+            _ => {
+                tracing::info!(
+                    target: "gui",
+                    op = "adapter_bridge_member_isolated",
+                    profile_id = %profile.id,
+                    account_id = %member.source_id,
+                    "isolating pool member whose secret could not be resolved"
+                );
+                members.push(BridgeMemberSpec {
+                    ticket_id: member.ticket_id.clone(),
+                    source_kind: member.source_kind.as_str().to_owned(),
+                    source_id: member.source_id.clone(),
+                    label: member.label.clone(),
+                    auth: agenthub_core::bridge::ResolvedAuth::bearer(""),
+                    reload: oauth_bridge_reload_callback(
+                        hub.accounts.clone(),
+                        AdapterSecretResolver::new(hub.db.clone()),
+                        member.source_kind,
+                        member.source_id.clone(),
+                        protocol,
+                    ),
+                    health: MemberHealth::NeedsLogin,
+                });
+            }
+        }
+    }
+    members
+}
+
 pub(crate) async fn ensure_bridge_listener(
     host: &BridgeRuntimeHost,
-    material: &agenthub_core::services::AdapterBridgeRuntimeMaterial,
+    material: &AdapterBridgeRuntimeMaterial,
+    reload: Option<UpstreamAuthReload>,
+    members: Vec<BridgeMemberSpec>,
+    multi_account: bool,
 ) -> Result<EnsuredBridgeListener, BridgeHostError> {
     let profile_id = material.profile_id().to_owned();
     let had_running = host
         .status(&profile_id)?
         .is_some_and(|status| status.running);
-    let preferred = material.start_spec(None);
+    let preferred = material
+        .start_spec(None)
+        .with_reload_upstream_auth(reload.clone())
+        .with_members(members.clone())
+        .with_multi_account(multi_account);
     match host.start(preferred).await {
-        Ok(status) => {
-            // host.start is idempotent for an identical live instance; ownership
-            // only attaches when we did not already have a running listener.
-            Ok(EnsuredBridgeListener {
-                owned_by_saga: !had_running,
-                status,
-            })
-        }
+        Ok(status) => Ok(EnsuredBridgeListener {
+            owned_by_saga: !had_running,
+            status,
+        }),
         Err(BridgeHostError::ConflictingStart) => {
             match host.stop(&profile_id).await {
                 Ok(_) | Err(BridgeHostError::NotRunning) => {}
                 Err(error) => return Err(error),
             }
-            let status = start_with_bind_fallback(host, material).await?;
+            let status =
+                start_with_bind_fallback(host, material, reload, members, multi_account).await?;
             Ok(EnsuredBridgeListener {
                 status,
                 owned_by_saga: true,
             })
         }
         Err(BridgeHostError::Bind(_)) => {
-            let status = host.start(material.start_spec(Some(0))).await?;
+            let status = host
+                .start(
+                    material
+                        .start_spec(Some(0))
+                        .with_reload_upstream_auth(reload)
+                        .with_members(members)
+                        .with_multi_account(multi_account),
+                )
+                .await?;
             Ok(EnsuredBridgeListener {
                 status,
                 owned_by_saga: true,
@@ -763,11 +952,32 @@ pub(crate) async fn ensure_bridge_listener(
 
 async fn start_with_bind_fallback(
     host: &BridgeRuntimeHost,
-    material: &agenthub_core::services::AdapterBridgeRuntimeMaterial,
+    material: &AdapterBridgeRuntimeMaterial,
+    reload: Option<UpstreamAuthReload>,
+    members: Vec<BridgeMemberSpec>,
+    multi_account: bool,
 ) -> Result<BridgeRuntimeStatus, BridgeHostError> {
-    match host.start(material.start_spec(None)).await {
+    match host
+        .start(
+            material
+                .start_spec(None)
+                .with_reload_upstream_auth(reload.clone())
+                .with_members(members.clone())
+                .with_multi_account(multi_account),
+        )
+        .await
+    {
         Ok(status) => Ok(status),
-        Err(BridgeHostError::Bind(_)) => host.start(material.start_spec(Some(0))).await,
+        Err(BridgeHostError::Bind(_)) => {
+            host.start(
+                material
+                    .start_spec(Some(0))
+                    .with_reload_upstream_auth(reload)
+                    .with_members(members)
+                    .with_multi_account(multi_account),
+            )
+            .await
+        }
         Err(error) => Err(error),
     }
 }
@@ -812,6 +1022,7 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
                 &provider_id,
                 &snapshot,
                 false,
+                true,
                 target_agent,
             );
             return Err(composite_saga_error(
@@ -863,6 +1074,7 @@ fn rollback_restored_bridge_port(
             provider_id,
             snapshot,
             false,
+            true,
             target_agent,
         );
     }

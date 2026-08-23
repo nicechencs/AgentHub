@@ -232,6 +232,7 @@ fn token_layout_repair_runs_once_then_skips() {
             days: 30,
             agent_id: Some(AgentId::Codex),
             model: None,
+            ..Default::default()
         })
         .unwrap()
         .len(),
@@ -251,6 +252,7 @@ fn token_layout_repair_runs_once_then_skips() {
                 days: 30,
                 agent_id: Some(AgentId::Codex),
                 model: None,
+                ..Default::default()
             })
             .unwrap()
             .is_empty(),
@@ -270,6 +272,7 @@ fn token_layout_repair_runs_once_then_skips() {
                 days: 30,
                 agent_id: Some(AgentId::Codex),
                 model: None,
+                ..Default::default()
             })
             .unwrap()
             .len(),
@@ -320,6 +323,7 @@ fn grok_parser_repair_clears_only_grok_rows_once() {
                 days: 30,
                 agent_id: Some(AgentId::Grok),
                 model: None,
+                ..Default::default()
             })
             .unwrap()
             .is_empty(),
@@ -331,6 +335,7 @@ fn grok_parser_repair_clears_only_grok_rows_once() {
                 days: 30,
                 agent_id: Some(AgentId::Claude),
                 model: None,
+                ..Default::default()
             })
             .unwrap()
             .len(),
@@ -346,6 +351,7 @@ fn grok_parser_repair_clears_only_grok_rows_once() {
                 days: 30,
                 agent_id: Some(AgentId::Grok),
                 model: None,
+                ..Default::default()
             })
             .unwrap()
             .len(),
@@ -406,6 +412,7 @@ fn usage_repo_clears_and_resets_one_agent() {
             days: 30,
             agent_id: Some(AgentId::Grok),
             model: None,
+            ..Default::default()
         })
         .unwrap();
     let claude_left = repo
@@ -413,6 +420,7 @@ fn usage_repo_clears_and_resets_one_agent() {
             days: 30,
             agent_id: Some(AgentId::Claude),
             model: None,
+            ..Default::default()
         })
         .unwrap();
     assert!(grok_left.is_empty());
@@ -469,6 +477,7 @@ fn recompute_costs_preserves_codex_billable_input() {
             days: 30,
             agent_id: Some(AgentId::Codex),
             model: None,
+            ..Default::default()
         })
         .unwrap();
     assert_eq!(rows.len(), 1);
@@ -517,6 +526,7 @@ fn usage_upsert_repairs_token_fields_on_conflict() {
             days: 30,
             agent_id: Some(AgentId::Codex),
             model: None,
+            ..Default::default()
         })
         .unwrap();
     assert_eq!(rows.len(), 1);
@@ -616,4 +626,289 @@ fn collect_without_scope_still_walks_registered_agents() {
     service.collect(None).unwrap();
     assert_eq!(claude_n.load(Ordering::SeqCst), 1);
     assert_eq!(grok_n.load(Ordering::SeqCst), 1);
+}
+
+fn recent_ts(hours_ago: i64) -> String {
+    (chrono::Utc::now() - chrono::Duration::hours(hours_ago))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+fn overview_row(
+    agent: AgentId,
+    model: &str,
+    input: i64,
+    output: i64,
+    cache: i64,
+    cost: f64,
+    ts: &str,
+    hash: &str,
+) -> crate::models::UsageRecord {
+    crate::models::UsageRecord {
+        id: uuid::Uuid::new_v4().to_string(),
+        agent_id: agent,
+        account_id: None,
+        model: model.into(),
+        input_tokens: input,
+        output_tokens: output,
+        cache_tokens: cache,
+        cost_usd: Some(cost),
+        session_id: Some("s".into()),
+        ts: ts.into(),
+        raw_hash: Some(hash.into()),
+    }
+}
+
+#[test]
+fn usage_overview_sums_and_groups_by_agent_or_model() {
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+    let ts = recent_ts(2);
+    repo.insert_batch(&[
+        overview_row(AgentId::Claude, "opus", 100, 20, 10, 1.5, &ts, "h1"),
+        overview_row(AgentId::Claude, "sonnet", 50, 5, 0, 0.5, &ts, "h2"),
+        overview_row(AgentId::Kimi, "k2", 30, 3, 2, 0.25, &ts, "h3"),
+    ])
+    .unwrap();
+
+    let all = repo.overview(7, None, None, None, &[]).unwrap();
+    assert_eq!(all.metrics.billable_input, 180);
+    assert_eq!(all.metrics.output, 28);
+    assert_eq!(all.metrics.cache, 12);
+    assert!((all.metrics.cost_usd - 2.25).abs() < 1e-9);
+    assert_eq!(
+        all.distribution
+            .iter()
+            .map(|s| s.key.as_str())
+            .collect::<Vec<_>>(),
+        vec!["claude", "kimi"]
+    );
+    assert_eq!(all.distribution[0].tokens, 185);
+    assert_eq!(all.distribution[0].billable_input, 150);
+    assert_eq!(all.distribution[1].tokens, 35);
+    assert_eq!(all.models, vec!["k2", "opus", "sonnet"]);
+
+    let claude = repo
+        .overview(7, Some(AgentId::Claude), None, None, &[])
+        .unwrap();
+    assert_eq!(claude.metrics.billable_input, 150);
+    assert_eq!(
+        claude
+            .distribution
+            .iter()
+            .map(|s| s.key.as_str())
+            .collect::<Vec<_>>(),
+        vec!["opus", "sonnet"]
+    );
+    assert_eq!(claude.distribution[0].tokens, 130);
+    assert_eq!(claude.models, vec!["opus", "sonnet"]);
+
+    let opus = repo
+        .overview(7, Some(AgentId::Claude), Some("opus"), None, &[])
+        .unwrap();
+    assert_eq!(opus.metrics.billable_input, 100);
+    assert_eq!(opus.distribution.len(), 1);
+    assert_eq!(opus.distribution[0].key, "opus");
+    assert_eq!(
+        opus.models,
+        vec!["opus", "sonnet"],
+        "models list ignores the selected model filter"
+    );
+}
+
+#[test]
+fn usage_query_honors_limit_and_since() {
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+    let older = recent_ts(20);
+    let newer = recent_ts(1);
+    repo.insert_batch(&[
+        overview_row(AgentId::Claude, "opus", 1, 1, 0, 0.1, &older, "old"),
+        overview_row(AgentId::Claude, "opus", 2, 2, 0, 0.2, &newer, "new-a"),
+        overview_row(AgentId::Claude, "opus", 3, 3, 0, 0.3, &newer, "new-b"),
+    ])
+    .unwrap();
+
+    let limited = repo
+        .query(&crate::models::UsageQuery {
+            days: 2,
+            agent_id: Some(AgentId::Claude),
+            limit: Some(2),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(limited.len(), 2);
+
+    let since = recent_ts(5);
+    let since_rows = repo
+        .query(&crate::models::UsageQuery {
+            days: 2,
+            agent_id: Some(AgentId::Claude),
+            since: Some(since.clone()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(since_rows.len(), 2);
+    assert!(since_rows.iter().all(|r| r.ts >= since));
+}
+
+#[test]
+fn usage_trend_filters_by_model_and_since() {
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+    let older = recent_ts(20);
+    let newer = recent_ts(1);
+    repo.insert_batch(&[
+        overview_row(AgentId::Claude, "opus", 100, 10, 0, 1.0, &newer, "opus"),
+        overview_row(AgentId::Claude, "sonnet", 50, 5, 0, 0.5, &newer, "sonnet"),
+        overview_row(AgentId::Claude, "opus", 20, 2, 0, 0.2, &older, "old-opus"),
+    ])
+    .unwrap();
+
+    fn claude_tokens(points: &[crate::models::UsageTrendPoint]) -> i64 {
+        points
+            .iter()
+            .map(|p| p.0.get("claude").and_then(|v| v.as_i64()).unwrap_or(0))
+            .sum()
+    }
+
+    let all = repo
+        .trend(2, Some(AgentId::Claude), None, None, &[])
+        .unwrap();
+    assert_eq!(
+        claude_tokens(&all),
+        187,
+        "input+output for all models in the 2-day window"
+    );
+
+    let opus = repo
+        .trend(2, Some(AgentId::Claude), Some("opus"), None, &[])
+        .unwrap();
+    assert_eq!(claude_tokens(&opus), 132);
+
+    let since = recent_ts(5);
+    let recent = repo
+        .trend(
+            2,
+            Some(AgentId::Claude),
+            Some("opus"),
+            Some(since.as_str()),
+            &[],
+        )
+        .unwrap();
+    assert_eq!(claude_tokens(&recent), 110);
+}
+
+#[test]
+fn usage_overview_and_query_exclude_hidden_agents() {
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+    let ts = recent_ts(1);
+    repo.insert_batch(&[
+        overview_row(AgentId::Claude, "opus", 100, 10, 0, 1.0, &ts, "c"),
+        overview_row(AgentId::Kimi, "k2", 999, 9, 0, 9.0, &ts, "k"),
+    ])
+    .unwrap();
+
+    let hidden = [AgentId::Kimi];
+    let overview = repo.overview(7, None, None, None, &hidden).unwrap();
+    assert_eq!(overview.metrics.billable_input, 100);
+    assert_eq!(overview.distribution.len(), 1);
+    assert_eq!(overview.distribution[0].key, "claude");
+    assert_eq!(overview.models, vec!["opus"]);
+
+    let rows = repo
+        .query(&crate::models::UsageQuery {
+            days: 7,
+            limit: Some(1),
+            exclude_agent_ids: hidden.to_vec(),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].agent_id, AgentId::Claude);
+}
+
+#[test]
+fn usage_trend_days1_rolling_includes_20h_unless_since_clips() {
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+    let older = recent_ts(20);
+    let newer = recent_ts(1);
+    repo.insert_batch(&[
+        overview_row(AgentId::Claude, "opus", 20, 2, 0, 0.2, &older, "old"),
+        overview_row(AgentId::Claude, "opus", 100, 10, 0, 1.0, &newer, "new"),
+    ])
+    .unwrap();
+
+    fn claude_tokens(points: &[crate::models::UsageTrendPoint]) -> i64 {
+        points
+            .iter()
+            .map(|p| p.0.get("claude").and_then(|v| v.as_i64()).unwrap_or(0))
+            .sum()
+    }
+
+    fn point_dates(points: &[crate::models::UsageTrendPoint]) -> Vec<String> {
+        points
+            .iter()
+            .filter_map(|p| p.0.get("date").and_then(|v| v.as_str()).map(str::to_string))
+            .collect()
+    }
+
+    fn local_day(ts: &str) -> String {
+        chrono::DateTime::parse_from_rfc3339(ts)
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .format("%Y-%m-%d")
+            .to_string()
+    }
+
+    let rolling = repo
+        .trend(1, Some(AgentId::Claude), None, None, &[])
+        .unwrap();
+    assert_eq!(
+        claude_tokens(&rolling),
+        132,
+        "days=1 without since is rolling 24h, so a 20h-ago row stays"
+    );
+    for ts in [&older, &newer] {
+        assert!(
+            point_dates(&rolling).contains(&local_day(ts)),
+            "trend day is local %Y-%m-%d of the row, not a UTC prefix"
+        );
+    }
+
+    let since = chrono::Local::now()
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight")
+        .and_local_timezone(chrono::Local)
+        .earliest()
+        .expect("resolvable local midnight")
+        .with_timezone(&chrono::Utc)
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let today = repo
+        .trend(
+            1,
+            Some(AgentId::Claude),
+            None,
+            Some(since.as_str()),
+            &[],
+        )
+        .unwrap();
+    let expected_today = [(&older, 22_i64), (&newer, 110)]
+        .into_iter()
+        .filter(|(ts, _)| *ts >= &since)
+        .map(|(_, tokens)| tokens)
+        .sum::<i64>();
+    assert_eq!(claude_tokens(&today), expected_today);
+    for ts in [&older, &newer] {
+        if ts.as_str() >= since.as_str() {
+            assert!(point_dates(&today).contains(&local_day(ts)));
+        }
+    }
 }

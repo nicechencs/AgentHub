@@ -65,12 +65,12 @@ function Fail([string]$msg) {
 }
 
 # Publishing from a developer worktree is intentionally disabled. GitHub
-# Actions is the single release authority: it validates a clean release branch,
-# claims an exact commit tag, and refuses existing releases/assets before any
-# write. Keeping this guard before version/build work also makes accidental
+# Actions is the single release authority: it validates a v* tag on the
+# release branch and refuses existing releases/assets before any write.
+# Keeping this guard before version/build work also makes accidental
 # `-Publish` invocations side-effect free.
 if ($Publish) {
-    Fail "Local publishing is disabled. Push the release branch and let .github/workflows/release.yml publish the release."
+    Fail "Local publishing is disabled. Push a matching v* tag after updating the release branch and let .github/workflows/release.yml publish the release."
 }
 
 function Read-PackageVersion {
@@ -80,10 +80,14 @@ function Read-PackageVersion {
     return [string]$pkg.version
 }
 
-function Assert-ReleaseVersionsAligned {
+function Assert-ReleaseVersionsAligned([switch]$ThrowOnError) {
     $metaScript = Join-Path $Root "scripts\release-metadata.mjs"
-    if (-not (Test-Path $metaScript)) { Fail "scripts/release-metadata.mjs not found" }
+    if (-not (Test-Path $metaScript)) {
+        if ($ThrowOnError) { throw "scripts/release-metadata.mjs not found" }
+        Fail "scripts/release-metadata.mjs not found"
+    }
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        if ($ThrowOnError) { throw "Node.js not found (needed to validate release versions)" }
         Fail "Node.js not found (needed to validate release versions)"
     }
     $prevEap = $ErrorActionPreference
@@ -92,9 +96,224 @@ function Assert-ReleaseVersionsAligned {
     $code = $LASTEXITCODE
     $ErrorActionPreference = $prevEap
     if ($code -ne 0) {
-        Fail ("Release version metadata invalid:`n" + ($output | Out-String).Trim())
+        $message = "Release version metadata invalid:`n" + ($output | Out-String).Trim()
+        if ($ThrowOnError) { throw $message }
+        Fail $message
     }
     return ($output | Out-String).Trim()
+}
+
+function Get-Utf8NoBomText([string]$Path) {
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        return [System.Text.Encoding]::UTF8.GetString($bytes, 3, $bytes.Length - 3)
+    }
+    return [System.Text.Encoding]::UTF8.GetString($bytes)
+}
+
+function Write-Utf8NoBomTemp([string]$Path, [string]$Content) {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding -ArgumentList $false
+    $stream = New-Object System.IO.FileStream -ArgumentList @(
+        $Path,
+        [System.IO.FileMode]::CreateNew,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::None
+    )
+    try {
+        $bytes = $utf8NoBom.GetBytes($Content)
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush($true)
+    } finally {
+        $stream.Dispose()
+    }
+}
+
+function Get-CargoLockWorkspaceText([string]$ver) {
+    $lockPath = Join-Path $Root "Cargo.lock"
+    if (-not (Test-Path -LiteralPath $lockPath)) {
+        Fail "Cargo.lock not found"
+    }
+    $lockText = Get-Utf8NoBomText $lockPath
+    $updated = $lockText
+    $workspacePackages = @('agenthub-cli', 'agenthub-core', 'agenthub-gui')
+    foreach ($name in $workspacePackages) {
+        $namePattern = [regex]::Escape($name)
+        $pattern = '(?ms)(\[\[package\]\]\s*name\s*=\s*"' + $namePattern + '"\s*version\s*=\s*")[^"]+(")'
+        $matches = [regex]::Matches($updated, $pattern)
+        if ($matches.Count -ne 1) {
+            Fail "Cargo.lock must contain exactly one workspace package entry for $name"
+        }
+        $updated = [regex]::Replace($updated, $pattern, ('${1}' + $ver + '$2'), 1)
+    }
+    return $updated
+}
+
+function Assert-ReleaseContentPlan($plan, [string]$ver) {
+    if ($plan.Count -ne 4) {
+        throw "Release version transaction must contain exactly four files"
+    }
+
+    $package = $plan | Where-Object { $_.Name -eq 'package.json' }
+    $cargo = $plan | Where-Object { $_.Name -eq 'Cargo.toml' }
+    $tauri = $plan | Where-Object { $_.Name -eq 'src-tauri/tauri.conf.json' }
+    $lock = $plan | Where-Object { $_.Name -eq 'Cargo.lock' }
+    if (-not $package -or -not $cargo -or -not $tauri -or -not $lock) {
+        throw "Release version transaction is missing one of package.json, Cargo.toml, src-tauri/tauri.conf.json, Cargo.lock"
+    }
+
+    try {
+        $packageVersion = [string]((ConvertFrom-Json -InputObject $package.Updated).version)
+    } catch {
+        $packageVersion = ''
+    }
+    if ($packageVersion -ne $ver) {
+        throw "Generated package.json version '$packageVersion' does not equal '$ver'"
+    }
+
+    $cargoVersionMatch = [regex]::Match(
+        $cargo.Updated,
+        '(?ms)\[workspace\.package\]\s*?version\s*=\s*"([^"]+)"'
+    )
+    if (-not $cargoVersionMatch.Success -or $cargoVersionMatch.Groups[1].Value -ne $ver) {
+        throw "Generated Cargo.toml workspace version does not equal '$ver'"
+    }
+
+    try {
+        $tauriVersion = [string]((ConvertFrom-Json -InputObject $tauri.Updated).version)
+    } catch {
+        $tauriVersion = ''
+    }
+    if ($tauriVersion -ne $ver) {
+        throw "Generated tauri.conf.json version '$tauriVersion' does not equal '$ver'"
+    }
+
+    foreach ($name in @('agenthub-cli', 'agenthub-core', 'agenthub-gui')) {
+        $pattern = '(?ms)\[\[package\]\]\s*name\s*=\s*"' + [regex]::Escape($name) + '"\s*version\s*=\s*"([^"]+)"'
+        $matches = [regex]::Matches($lock.Updated, $pattern)
+        if ($matches.Count -ne 1 -or $matches[0].Groups[1].Value -ne $ver) {
+            throw "Generated Cargo.lock workspace package '$name' does not equal '$ver'"
+        }
+    }
+}
+
+function Assert-ReleaseFilesOnDisk($plan, [string]$ver) {
+    $diskPlan = @()
+    foreach ($item in $plan) {
+        $diskPlan += [pscustomobject]@{
+            Name = $item.Name
+            Path = $item.Path
+            Updated = Get-Utf8NoBomText $item.Path
+        }
+    }
+    Assert-ReleaseContentPlan $diskPlan $ver
+    if ($env:AGENTHUB_RELEASE_FAIL_POSTCHECK -eq '1') {
+        throw 'Injected release post-check failure'
+    }
+}
+
+function Restore-ReleaseVersionTransaction($plan) {
+    $restoreErrors = @()
+    $restoreCount = 0
+    for ($index = $plan.Count - 1; $index -ge 0; $index--) {
+        $item = $plan[$index]
+        if (-not (Test-Path -LiteralPath $item['Backup'])) {
+            continue
+        }
+        $restoreCount++
+        $scratch = "$($item['Backup']).rollback-new"
+        try {
+            if ($env:AGENTHUB_RELEASE_FAIL_ROLLBACK_AT -and [int]$env:AGENTHUB_RELEASE_FAIL_ROLLBACK_AT -eq $restoreCount) {
+                throw "Injected release rollback failure at file $restoreCount"
+            }
+            if (Test-Path -LiteralPath $scratch) {
+                throw "Rollback scratch already exists: $([System.IO.Path]::GetFullPath($scratch))"
+            }
+            $item['RollbackScratch'] = $scratch
+            if (Test-Path -LiteralPath $item['Path']) {
+                # .NET Framework rejects a null destination backup path. Keep
+                # the displaced new file in a unique scratch path, then let
+                # finally remove that non-authoritative copy.
+                [System.IO.File]::Replace($item['Backup'], $item['Path'], $scratch, $true)
+            } else {
+                [System.IO.File]::Move($item['Backup'], $item['Path'])
+            }
+        } catch {
+            $absoluteBackup = [System.IO.Path]::GetFullPath($item['Backup'])
+            $restoreErrors += "$($item['Name']): $($_.Exception.Message); backup retained at $absoluteBackup"
+        } finally {
+            if ($item['RollbackScratch'] -and (Test-Path -LiteralPath $item['RollbackScratch'])) {
+                Remove-Item -LiteralPath $item['RollbackScratch'] -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    if ($restoreErrors.Count -gt 0) {
+        throw "Release version rollback failed: $($restoreErrors -join '; ')"
+    }
+}
+
+function Set-ReleaseVersionTransaction([string]$ver, $plan) {
+    $transactionId = "$PID-$([Guid]::NewGuid().ToString('N'))"
+    foreach ($item in $plan) {
+        $item['Temp'] = Join-Path (Split-Path -Parent $item['Path']) ".$(Split-Path -Leaf $item['Path']).agenthub-$transactionId.tmp"
+        $item['Backup'] = Join-Path (Split-Path -Parent $item['Path']) ".$(Split-Path -Leaf $item['Path']).agenthub-$transactionId.bak"
+    }
+
+    $transactionSucceeded = $false
+    try {
+        # Prepare every temp file before replacing any destination. This is the
+        # transaction's pre-commit phase: parse/shape/version validation must
+        # succeed while all original files are still untouched.
+        Assert-ReleaseContentPlan $plan $ver
+        foreach ($item in $plan) {
+            if (-not (Test-Path -LiteralPath $item['Path'])) {
+                throw "Release file not found: $($item['Path'])"
+            }
+            Write-Utf8NoBomTemp $item['Temp'] $item['Updated']
+        }
+
+        $replaceCount = 0
+        foreach ($item in $plan) {
+            $replaceCount++
+            if ($env:AGENTHUB_RELEASE_FAIL_REPLACE_AT -and [int]$env:AGENTHUB_RELEASE_FAIL_REPLACE_AT -eq $replaceCount) {
+                throw "Injected release replace failure at file $replaceCount"
+            }
+            # Every destination exists in a valid checkout. File.Replace moves
+            # the original into the transaction backup and atomically installs
+            # the prepared no-BOM temp file in its place.
+            [System.IO.File]::Replace($item['Temp'], $item['Path'], $item['Backup'], $true)
+        }
+
+        Assert-ReleaseFilesOnDisk $plan $ver
+        # Run the same repository-level metadata validator used before and
+        # after the bump while rollback backups are still available. The
+        # ThrowOnError mode is essential here: Fail exits the process and
+        # would bypass this transaction's recovery path.
+        Assert-ReleaseVersionsAligned -ThrowOnError | Out-Null
+        $transactionSucceeded = $true
+    } catch {
+        $failure = $_.Exception.Message
+        try {
+            Restore-ReleaseVersionTransaction $plan
+        } catch {
+            throw "$failure; $($_.Exception.Message)"
+        }
+        throw $failure
+    } finally {
+        foreach ($item in $plan) {
+            if ($item['Temp'] -and (Test-Path -LiteralPath $item['Temp'])) {
+                Remove-Item -LiteralPath $item['Temp'] -Force -ErrorAction SilentlyContinue
+            }
+            if ($item['RollbackScratch'] -and (Test-Path -LiteralPath $item['RollbackScratch'])) {
+                Remove-Item -LiteralPath $item['RollbackScratch'] -Force -ErrorAction SilentlyContinue
+            }
+            # A backup is the only durable copy of the original after a
+            # successful File.Replace. On failure, never remove one that still
+            # exists: a rollback error intentionally leaves it for recovery.
+            if ($transactionSucceeded -and $item['Backup'] -and (Test-Path -LiteralPath $item['Backup'])) {
+                Remove-Item -LiteralPath $item['Backup'] -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }
 
 function Get-CoreSemVerParts([string]$ver) {
@@ -179,16 +398,19 @@ function Set-ProjectVersion([string]$ver) {
         Fail "Invalid semver: $ver (expect X.Y.Z)"
     }
 
+    # Build all four new file contents in memory first. No destination is
+    # opened for writing until every generated version and lock entry has been
+    # validated by Set-ReleaseVersionTransaction.
     # package.json
     $pkgPath = Join-Path $Root "package.json"
-    $pkgText = Get-Content $pkgPath -Raw -Encoding UTF8
+    $pkgText = Get-Utf8NoBomText $pkgPath
     $pkgNew = [regex]::Replace($pkgText, '("version"\s*:\s*")[^"]+(")', "`${1}$ver`${2}", 1)
     if ($pkgNew -eq $pkgText) { Fail "Failed to patch package.json version" }
-    Set-Content -Path $pkgPath -Value $pkgNew -Encoding UTF8 -NoNewline
+
 
     # Cargo.toml workspace.package.version
     $cargoPath = Join-Path $Root "Cargo.toml"
-    $cargoText = Get-Content $cargoPath -Raw -Encoding UTF8
+    $cargoText = Get-Utf8NoBomText $cargoPath
     $cargoNew = [regex]::Replace(
         $cargoText,
         '(?ms)(\[workspace\.package\]\s*?version\s*=\s*")[^"]+(")',
@@ -200,16 +422,34 @@ function Set-ProjectVersion([string]$ver) {
         $cargoNew = [regex]::Replace($cargoText, '(?m)^(version\s*=\s*")[^"]+(")', "`${1}$ver`${2}", 1)
     }
     if ($cargoNew -eq $cargoText) { Fail "Failed to patch Cargo.toml version" }
-    Set-Content -Path $cargoPath -Value $cargoNew -Encoding UTF8 -NoNewline
 
     # tauri.conf.json
     $tauriPath = Join-Path $Root "src-tauri\tauri.conf.json"
-    $tauriText = Get-Content $tauriPath -Raw -Encoding UTF8
+    $tauriText = Get-Utf8NoBomText $tauriPath
     $tauriNew = [regex]::Replace($tauriText, '("version"\s*:\s*")[^"]+(")', "`${1}$ver`${2}", 1)
     if ($tauriNew -eq $tauriText) { Fail "Failed to patch tauri.conf.json version" }
-    Set-Content -Path $tauriPath -Value $tauriNew -Encoding UTF8 -NoNewline
 
-    Write-Info "Bumped version -> $ver (package.json, Cargo.toml, tauri.conf.json)"
+    # Cargo.lock contains package records for all three local workspace
+    # crates. Refresh only those version fields; dependency resolution and
+    # registry checks must remain untouched by a release version bump.
+    $lockPath = Join-Path $Root "Cargo.lock"
+    $lockNew = Get-CargoLockWorkspaceText $ver
+
+    $plan = @(
+        [ordered]@{ Name = 'package.json'; Path = $pkgPath; Updated = $pkgNew; Temp = $null; Backup = $null; RollbackScratch = $null },
+        [ordered]@{ Name = 'Cargo.toml'; Path = $cargoPath; Updated = $cargoNew; Temp = $null; Backup = $null; RollbackScratch = $null },
+        [ordered]@{ Name = 'src-tauri/tauri.conf.json'; Path = $tauriPath; Updated = $tauriNew; Temp = $null; Backup = $null; RollbackScratch = $null },
+        [ordered]@{ Name = 'Cargo.lock'; Path = $lockPath; Updated = $lockNew; Temp = $null; Backup = $null; RollbackScratch = $null }
+    )
+    try {
+        Set-ReleaseVersionTransaction $ver $plan
+    } catch {
+        # Keep transaction failures as one deliberate line. Letting an
+        # unhandled PowerShell ErrorRecord format the exception would add
+        # invocation/stack text and can split the retained backup path.
+        Fail $_.Exception.Message
+    }
+    Write-Info "Bumped version -> $ver (package.json, Cargo.toml, tauri.conf.json, Cargo.lock)"
 }
 
 function Resolve-SigningKey {
@@ -489,5 +729,5 @@ Write-Host "Tag     : $tag"
 Write-Host "OutDir  : $OutDir"
 Write-Host "Feed URL: https://github.com/$Repo/releases/latest/download/latest.json"
 Write-Host ""
-Write-Host "Publishing is CI-only: push the release branch and let .github/workflows/release.yml publish the release." -ForegroundColor Yellow
+Write-Host "Publishing is CI-only: push a matching v* tag after updating the release branch and let .github/workflows/release.yml publish the release." -ForegroundColor Yellow
 Write-Host ""

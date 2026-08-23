@@ -96,9 +96,17 @@ impl AdapterRouteService {
             ),
             AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Codex => {
                 let provider = if analysis.rule_id.as_deref() == Some("anthropic-api-to-codex-v1") {
-                    "AgentHub Anthropic 本地桥接"
+                    "AgentHub Anthropic 本机路由"
+                } else if analysis.rule_id.as_deref() == Some("openai-api-to-codex-v1") {
+                    "AgentHub OpenAI 本机路由"
+                } else if analysis.rule_id.as_deref() == Some("grok-subscription-to-codex-v1") {
+                    "AgentHub Grok 本机路由"
+                } else if analysis.rule_id.as_deref()
+                    == Some(crate::models::CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID)
+                {
+                    "AgentHub Claude 本机路由"
                 } else {
-                    "AgentHub Kimi 本地桥接"
+                    "AgentHub Kimi 本机路由"
                 };
                 (
                     AdapterServiceImpact::RequiresLocalBridge,
@@ -114,20 +122,29 @@ impl AdapterRouteService {
                 )
             }
             AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Codex => {
-                let (provider, base_url) = if analysis.rule_id.as_deref() == Some(GLM_CODEX_RULE_ID)
+                if analysis.rule_id.as_deref()
+                    == Some(crate::models::CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID)
                 {
-                    ("GLM Coding Plan", GLM_CODEX_BASE_URL)
+                    (
+                        AdapterServiceImpact::None,
+                        vec![change("codex", "login", Some("官方登录"), false)],
+                    )
                 } else {
-                    ("DeepSeek API", DEEPSEEK_CODEX_BASE_URL)
-                };
-                (
-                    AdapterServiceImpact::None,
-                    vec![
-                        change("codex", "provider", Some(provider), false),
-                        change("codex", "baseUrl", Some(base_url), false),
-                        change("codex", "wireApi", Some("responses"), false),
-                    ],
-                )
+                    let (provider, base_url) =
+                        if analysis.rule_id.as_deref() == Some(GLM_CODEX_RULE_ID) {
+                            ("GLM Coding Plan", GLM_CODEX_BASE_URL)
+                        } else {
+                            ("DeepSeek API", DEEPSEEK_CODEX_BASE_URL)
+                        };
+                    (
+                        AdapterServiceImpact::None,
+                        vec![
+                            change("codex", "provider", Some(provider), false),
+                            change("codex", "baseUrl", Some(base_url), false),
+                            change("codex", "wireApi", Some("responses"), false),
+                        ],
+                    )
+                }
             }
             AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Grok => {
                 let (base_url, model) =
@@ -156,6 +173,38 @@ impl AdapterRouteService {
                         false,
                     ),
                     change("claude", "ANTHROPIC_AUTH_TOKEN", None, true),
+                ],
+            ),
+            AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Grok => (
+                AdapterServiceImpact::RequiresLocalBridge,
+                vec![
+                    change(
+                        "grok",
+                        "baseUrl",
+                        Some("http://127.0.0.1:<本机端口>/v1"),
+                        false,
+                    ),
+                    change("grok", "apiBackend", Some("responses"), false),
+                    change("grok", "apiKey", None, true),
+                ],
+            ),
+            AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Kimi => (
+                AdapterServiceImpact::RequiresLocalBridge,
+                vec![
+                    change(
+                        "kimi",
+                        "baseUrl",
+                        Some("http://127.0.0.1:<本机端口>/v1"),
+                        false,
+                    ),
+                    change("kimi", "apiKey", None, true),
+                ],
+            ),
+            AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Dsh => (
+                AdapterServiceImpact::RequiresLocalBridge,
+                vec![
+                    change("dsh", "baseURL", Some("http://127.0.0.1:<本机端口>"), false),
+                    change("dsh", "apiKey", None, true),
                 ],
             ),
             AdapterRoute::LocalBridge => (AdapterServiceImpact::RequiresLocalBridge, vec![]),

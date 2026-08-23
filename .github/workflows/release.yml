@@ -2,12 +2,14 @@ name: Release
 
 on:
   push:
-    branches:
-      - release
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
 
-# Build runs must never be cancelled midway after a later release push. Only
-# the publish job receives a write token, and it runs after both builds pass.
+# Releases start from a v* tag whose commit is on origin/release.
+# Build runs must never be cancelled midway after a later run of the same
+# tag. Only the publish job receives a write token, and it runs after
+# every platform build. CI never creates or moves tags.
 permissions:
   contents: read
 
@@ -25,35 +27,61 @@ jobs:
       tag: ${{ steps.metadata.outputs.tag }}
       prerelease: ${{ steps.metadata.outputs.prerelease }}
     steps:
-      - name: Require the release branch
+      - name: Require a version tag
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$GITHUB_REF" != "refs/heads/release" ]; then
-            echo "Releases may only run from refs/heads/release; received $GITHUB_REF" >&2
-            exit 1
-          fi
+          case "$GITHUB_REF" in
+            refs/tags/v*) ;;
+            *)
+              echo "Releases may only run from a v* tag; received $GITHUB_REF" >&2
+              exit 1
+              ;;
+          esac
 
-      - name: Checkout release commit
-        uses: actions/checkout@v5
+      - name: Checkout tagged commit
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           fetch-depth: 0
 
+      - name: Require tagged commit is on origin/release
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=0
+          for attempt in 1 2 3 4 5 6; do
+            if git fetch --no-tags origin release; then
+              if git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+                found=1
+                break
+              fi
+            fi
+            if [ "$attempt" -lt 6 ]; then
+              sleep 5
+            fi
+          done
+          if [ "$found" -ne 1 ]; then
+            echo "Tag $GITHUB_REF_NAME ($GITHUB_SHA) is not on origin/release; refusing to release." >&2
+            exit 1
+          fi
+
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           version: 9
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: |
             .
@@ -78,10 +106,12 @@ jobs:
 
       - name: Validate release version
         id: metadata
-        run: node scripts/release-metadata.mjs --github-output "$GITHUB_OUTPUT"
+        run: node scripts/release-metadata.mjs --github-output "$GITHUB_OUTPUT" --expect-tag "$GITHUB_REF_NAME"
 
       - name: Test release scripts
-        run: pnpm release:test
+        run: |
+          pnpm release:test
+          node --test scripts/release-update.test.mjs
 
       - name: Type check
         run: pnpm typecheck
@@ -95,10 +125,11 @@ jobs:
       - name: Run Rust workspace tests
         run: cargo test --workspace --locked
 
-      - name: Refuse an existing tag or release
+      - name: Validate existing tag and release state
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.metadata.outputs.tag }}
+          PRERELEASE: ${{ steps.metadata.outputs.prerelease }}
         shell: bash
         run: |
           set -euo pipefail
@@ -106,22 +137,51 @@ jobs:
             echo "Unable to query remote tag $TAG; refusing to release without a definitive result." >&2
             exit 1
           fi
-          if [ -n "$tag_line" ]; then
-            echo "Release tag $TAG already exists; bump all three release versions before retrying." >&2
+          tag_sha="$(printf '%s\n' "$tag_line" | awk 'NF {print $1; exit}')"
+          if [ -z "$tag_sha" ]; then
+            echo "Release tag $TAG is missing on origin; CI does not create tags." >&2
             exit 1
           fi
-          if ! release_id="$(gh api graphql \
-            -f query='query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { id } } }' \
+          if [ -n "$tag_sha" ]; then
+            if ! peeled_line="$(git ls-remote origin "refs/tags/$TAG^{}")"; then
+              echo "Unable to resolve annotated tag $TAG; refusing to release without a definitive result." >&2
+              exit 1
+            fi
+            peeled_sha="$(printf '%s\n' "$peeled_line" | awk 'NF {print $1; exit}')"
+            if [ -n "$peeled_sha" ]; then
+              tag_sha="$peeled_sha"
+            fi
+            if [ "$tag_sha" != "$GITHUB_SHA" ]; then
+              echo "Release tag $TAG points to $tag_sha, expected $GITHUB_SHA; refusing to release." >&2
+              exit 1
+            fi
+          fi
+          if ! release_record="$(gh api graphql \
+            -f query='query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { id isDraft isPrerelease publishedAt } } }' \
             -F owner="$GITHUB_REPOSITORY_OWNER" \
             -F name="${GITHUB_REPOSITORY#*/}" \
             -F tag="$TAG" \
-            --jq '.data.repository.release.id // empty')"; then
+            --jq '.data.repository.release | if . == null then "" else "\(.id)\t\(.isDraft)\t\(.isPrerelease)\t\(.publishedAt // "")" end')"; then
             echo "Unable to query GitHub Release $TAG; refusing to release without a definitive result." >&2
             exit 1
           fi
-          if [ -n "$release_id" ]; then
-            echo "GitHub Release $TAG already exists; refusing to overwrite it." >&2
-            exit 1
+          if [ -n "$release_record" ]; then
+            IFS=$'\t' read -r release_id release_draft release_prerelease release_published_at <<< "$release_record"
+            if [ -z "$tag_sha" ]; then
+              echo "GitHub Release $TAG exists but its tag is missing; refusing to guess the release commit." >&2
+              exit 1
+            fi
+            if [ "$release_draft" = "true" ] && [ "$release_prerelease" != "$PRERELEASE" ]; then
+              echo "GitHub Release $TAG draft prerelease state is $release_prerelease, expected $PRERELEASE; refusing to resume it." >&2
+              exit 1
+            fi
+            if [ "$release_draft" != "true" ] || [ -n "$release_published_at" ]; then
+              echo "GitHub Release $TAG is already published; its tag and final asset set will be verified after the build."
+            else
+              echo "Resuming existing draft GitHub Release $TAG at $GITHUB_SHA."
+            fi
+          elif [ -n "$tag_sha" ]; then
+            echo "Resuming existing tag $TAG at $GITHUB_SHA; a draft release will be created after builds."
           fi
 
   build-windows:
@@ -131,25 +191,27 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout validated commit
-        uses: actions/checkout@v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           ref: ${{ github.sha }}
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           version: 9
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: |
             .
@@ -215,7 +277,7 @@ jobs:
           Get-ChildItem -Recurse -File $out | Select-Object FullName, Length
 
       - name: Upload Windows release assets
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: release-windows
           path: release-assets/windows
@@ -229,25 +291,27 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout validated commit
-        uses: actions/checkout@v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           ref: ${{ github.sha }}
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           version: 9
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: |
             .
@@ -345,7 +409,7 @@ jobs:
           find "release-assets/macos" -type f -print | LC_ALL=C sort
 
       - name: Upload macOS release assets
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: release-macos
           path: release-assets/macos
@@ -359,25 +423,27 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout validated commit
-        uses: actions/checkout@v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           ref: ${{ github.sha }}
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           version: 9
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: |
             .
@@ -475,7 +541,7 @@ jobs:
           find "release-assets/linux" -type f -print | LC_ALL=C sort
 
       - name: Upload Linux release assets
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: release-linux
           path: release-assets/linux
@@ -495,30 +561,30 @@ jobs:
       contents: write
     steps:
       - name: Checkout release commit
-        uses: actions/checkout@v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
 
       - name: Download Windows release assets
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: release-windows
           path: build-tree/target/release/bundle
 
       - name: Download macOS release assets
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: release-macos
           path: build-tree/target/release/bundle
 
       - name: Download Linux release assets
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: release-linux
           path: build-tree/target/release/bundle
@@ -532,8 +598,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$GITHUB_REF" != "refs/heads/release" ]; then
-            echo "Releases may only publish from refs/heads/release; received $GITHUB_REF" >&2
+          if [ "$GITHUB_REF" != "refs/tags/$TAG" ]; then
+            echo "Releases may only publish from refs/tags/$TAG; received $GITHUB_REF" >&2
             exit 1
           fi
           case "$PRERELEASE" in
@@ -544,23 +610,56 @@ jobs:
             echo "Unable to query remote tag $TAG; refusing to release without a definitive result." >&2
             exit 1
           fi
-          if [ -n "$tag_line" ]; then
-            echo "Release tag $TAG appeared during this workflow; refusing to overwrite it." >&2
+          tag_sha="$(printf '%s\n' "$tag_line" | awk 'NF {print $1; exit}')"
+          if [ -z "$tag_sha" ]; then
+            echo "Release tag $TAG is missing on origin; CI does not create tags." >&2
             exit 1
           fi
-          if ! release_id="$(gh api graphql \
-            -f query='query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { id } } }' \
+          if [ -n "$tag_sha" ]; then
+            if ! peeled_line="$(git ls-remote origin "refs/tags/$TAG^{}")"; then
+              echo "Unable to resolve annotated tag $TAG; refusing to release without a definitive result." >&2
+              exit 1
+            fi
+            peeled_sha="$(printf '%s\n' "$peeled_line" | awk 'NF {print $1; exit}')"
+            if [ -n "$peeled_sha" ]; then
+              tag_sha="$peeled_sha"
+            fi
+            if [ "$tag_sha" != "$GITHUB_SHA" ]; then
+              echo "Release tag $TAG points to $tag_sha, expected $GITHUB_SHA; refusing to release." >&2
+              exit 1
+            fi
+          fi
+          RELEASE_STATE=none
+          if ! release_record="$(gh api graphql \
+            -f query='query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { id isDraft isPrerelease publishedAt } } }' \
             -F owner="$GITHUB_REPOSITORY_OWNER" \
             -F name="${GITHUB_REPOSITORY#*/}" \
             -F tag="$TAG" \
-            --jq '.data.repository.release.id // empty')"; then
+            --jq '.data.repository.release | if . == null then "" else "\(.id)\t\(.isDraft)\t\(.isPrerelease)\t\(.publishedAt // "")" end')"; then
             echo "Unable to query GitHub Release $TAG; refusing to release without a definitive result." >&2
             exit 1
           fi
-          if [ -n "$release_id" ]; then
-            echo "GitHub Release $TAG appeared during this workflow; refusing to overwrite it." >&2
-            exit 1
+          if [ -n "$release_record" ]; then
+            IFS=$'\t' read -r release_id release_draft release_prerelease release_published_at <<< "$release_record"
+            if [ -z "$tag_sha" ]; then
+              echo "GitHub Release $TAG exists but its tag is missing; refusing to guess the release commit." >&2
+              exit 1
+            fi
+            if [ "$release_draft" = "true" ] && [ "$release_prerelease" != "$PRERELEASE" ]; then
+              echo "GitHub Release $TAG draft prerelease state is $release_prerelease, expected $PRERELEASE; refusing to resume it." >&2
+              exit 1
+            fi
+            if [ "$release_draft" != "true" ] || [ -n "$release_published_at" ]; then
+              RELEASE_STATE=published
+              echo "GitHub Release $TAG is already published; its final asset set will be verified before the retry completes."
+            else
+              RELEASE_STATE=draft
+              echo "Resuming existing draft GitHub Release $TAG at $GITHUB_SHA."
+            fi
+          elif [ -n "$tag_sha" ]; then
+            echo "Resuming existing tag $TAG at $GITHUB_SHA; a draft release will be created."
           fi
+          echo "RELEASE_STATE=$RELEASE_STATE" >> "$GITHUB_ENV"
 
           BUNDLE="build-tree/target/release/bundle"
           ASSETS="release-assets"
@@ -622,20 +721,77 @@ jobs:
           }
           NODE
 
+          if [ "$RELEASE_STATE" = published ]; then
+            # A previous publish request may have succeeded while its client
+            # lost the response. Treat that state as idempotently complete
+            # only when the remote release still points at this exact commit
+            # and contains exactly the asset set prepared by this run.
+            if ! published_release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"; then
+              echo "Unable to read the already-published GitHub Release $TAG; refusing to guess its state." >&2
+              exit 1
+            fi
+            published_tag="$(printf '%s' "$published_release_json" | jq -r '.tag_name // empty')"
+            published_draft="$(printf '%s' "$published_release_json" | jq -r '.draft // empty')"
+            published_prerelease="$(printf '%s' "$published_release_json" | jq -r '.prerelease // empty')"
+            if [ "$published_tag" != "$TAG" ] || [ "$published_draft" != "false" ] || [ "$published_prerelease" != "$PRERELEASE" ]; then
+              echo "GitHub Release $TAG changed state while assets were prepared; refusing to overwrite it." >&2
+              exit 1
+            fi
+            expected_assets="$(find "$ASSETS" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
+            remote_assets="$(printf '%s' "$published_release_json" | jq -r '.assets[]?.name' | LC_ALL=C sort)"
+            if ! diff -u <(printf '%s\n' "$expected_assets") <(printf '%s\n' "$remote_assets"); then
+              echo "Published GitHub Release $TAG assets do not match this run's expected asset set; refusing to overwrite it." >&2
+              exit 1
+            fi
+            echo "Verified published GitHub Release $TAG at $GITHUB_SHA with the expected asset set; retry is idempotently complete."
+          fi
+
+          if [ "$RELEASE_STATE" = draft ]; then
+            # A draft retry may have a partial asset upload from an earlier
+            # request. Allow missing expected assets so the upload can repair
+            # it, but reject every remote asset outside this run's allowlist.
+            if ! draft_release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"; then
+              echo "Unable to read the existing draft GitHub Release $TAG; refusing to resume it." >&2
+              exit 1
+            fi
+            draft_tag="$(printf '%s' "$draft_release_json" | jq -r '.tag_name // empty')"
+            draft_state="$(printf '%s' "$draft_release_json" | jq -r '.draft // empty')"
+            draft_prerelease="$(printf '%s' "$draft_release_json" | jq -r '.prerelease // empty')"
+            if [ "$draft_tag" != "$TAG" ] || [ "$draft_state" != "true" ] || [ "$draft_prerelease" != "$PRERELEASE" ]; then
+              echo "Existing draft GitHub Release $TAG does not match this tag or prerelease state; refusing to resume it." >&2
+              exit 1
+            fi
+            expected_assets="$(find "$ASSETS" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
+            remote_assets="$(printf '%s' "$draft_release_json" | jq -r '.assets[]?.name' | LC_ALL=C sort)"
+            unexpected_assets="$(comm -23 <(printf '%s\n' "$remote_assets") <(printf '%s\n' "$expected_assets"))"
+            if [ -n "$unexpected_assets" ]; then
+              echo "Existing draft GitHub Release $TAG contains unexpected assets; refusing to delete or overwrite them:" >&2
+              printf '%s\n' "$unexpected_assets" >&2
+              exit 1
+            fi
+          fi
+
           find "$ASSETS" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort
 
-          # Claim the tag only after every asset and latest.json is ready. A
-          # lightweight tag push is the atomic remote ownership check.
-          git tag "$TAG" "$GITHUB_SHA"
-          if ! git push origin "refs/tags/$TAG"; then
-            echo "Unable to claim release tag $TAG; it may have been created concurrently." >&2
+          # The triggering v* tag is the release identity. CI never creates
+          # or moves tags; a missing tag is a hard failure, not a claim.
+          if [ -z "$tag_sha" ]; then
+            echo "Release tag $TAG is missing on origin; CI does not create tags." >&2
             exit 1
           fi
           if ! tag_line="$(git ls-remote --refs origin "refs/tags/$TAG")"; then
-            echo "Unable to confirm remote tag $TAG after claiming it." >&2
+            echo "Unable to confirm remote tag $TAG before creating the release." >&2
             exit 1
           fi
-          remote_tag_sha="$(printf '%s\n' "$tag_line" | awk '{print $1}')"
+          remote_tag_sha="$(printf '%s\n' "$tag_line" | awk 'NF {print $1; exit}')"
+          if ! peeled_line="$(git ls-remote origin "refs/tags/$TAG^{}")"; then
+            echo "Unable to resolve remote tag $TAG before creating the release." >&2
+            exit 1
+          fi
+          peeled_sha="$(printf '%s\n' "$peeled_line" | awk 'NF {print $1; exit}')"
+          if [ -n "$peeled_sha" ]; then
+            remote_tag_sha="$peeled_sha"
+          fi
           if [ "$remote_tag_sha" != "$GITHUB_SHA" ]; then
             echo "Remote tag $TAG points to $remote_tag_sha, expected $GITHUB_SHA; refusing to publish." >&2
             exit 1
@@ -649,7 +805,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$PRERELEASE" = true ]; then
+          if [ "$RELEASE_STATE" = published ]; then
+            echo "GitHub Release $TAG is already published with the expected assets; skipping release creation."
+          elif [ "$RELEASE_STATE" = draft ]; then
+            gh release upload "$TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+            gh release edit "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "AgentHub $TAG" \
+              --notes "AgentHub $TAG"
+          elif [ "$PRERELEASE" = true ]; then
             gh release create "$TAG" release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --title "AgentHub $TAG" \
@@ -666,6 +832,37 @@ jobs:
               --verify-tag
           fi
 
+      - name: Verify release assets before publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_STATE" = published ]; then
+            echo "Published release $TAG was already verified; skipping draft asset verification."
+            exit 0
+          fi
+          if ! release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"; then
+            echo "Unable to read GitHub Release $TAG after uploading assets; refusing to publish." >&2
+            exit 1
+          fi
+          release_tag="$(printf '%s' "$release_json" | jq -r '.tag_name // empty')"
+          release_draft="$(printf '%s' "$release_json" | jq -r '.draft // empty')"
+          release_prerelease="$(printf '%s' "$release_json" | jq -r '.prerelease // empty')"
+          if [ "$release_tag" != "$TAG" ] || [ "$release_draft" != "true" ] || [ "$release_prerelease" != "$PRERELEASE" ]; then
+            echo "GitHub Release $TAG is not the expected draft/prerelease after asset upload; refusing to publish." >&2
+            exit 1
+          fi
+          expected_assets="$(find release-assets -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
+          remote_assets="$(printf '%s' "$release_json" | jq -r '.assets[]?.name' | LC_ALL=C sort)"
+          if ! diff -u <(printf '%s\n' "$expected_assets") <(printf '%s\n' "$remote_assets"); then
+            echo "GitHub Release $TAG assets do not exactly match this run after upload; refusing to publish." >&2
+            exit 1
+          fi
+          echo "Verified GitHub Release $TAG draft metadata and exact asset names before publishing."
+
       - name: Publish release and mark latest
         env:
           GH_TOKEN: ${{ github.token }}
@@ -674,11 +871,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ "$RELEASE_STATE" = published ]; then
+            echo "GitHub Release $TAG is already published with the expected assets; skipping publish mutation."
+            exit 0
+          fi
           if ! tag_line="$(git ls-remote --refs origin "refs/tags/$TAG")"; then
             echo "Unable to confirm remote tag $TAG before publishing the draft." >&2
             exit 1
           fi
-          remote_tag_sha="$(printf '%s\n' "$tag_line" | awk '{print $1}')"
+          remote_tag_sha="$(printf '%s\n' "$tag_line" | awk 'NF {print $1; exit}')"
+          if ! peeled_line="$(git ls-remote origin "refs/tags/$TAG^{}")"; then
+            echo "Unable to resolve remote tag $TAG before publishing the draft." >&2
+            exit 1
+          fi
+          peeled_sha="$(printf '%s\n' "$peeled_line" | awk 'NF {print $1; exit}')"
+          if [ -n "$peeled_sha" ]; then
+            remote_tag_sha="$peeled_sha"
+          fi
           if [ "$remote_tag_sha" != "$GITHUB_SHA" ]; then
             echo "Remote tag $TAG points to $remote_tag_sha, expected $GITHUB_SHA; refusing to publish." >&2
             exit 1
@@ -697,7 +906,11 @@ jobs:
         shell: bash
         run: |
           {
-            echo "### Release published"
+            if [ "${RELEASE_STATE:-}" = published ]; then
+              echo "### Release already published (idempotent retry)"
+            else
+              echo "### Release published"
+            fi
             echo
             echo "- Version: \`$VERSION\`"
             echo "- Tag: \`$TAG\`"

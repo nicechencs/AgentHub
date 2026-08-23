@@ -101,9 +101,10 @@ fn handle_connection(
         return Err(AppError::message("oauth.state", "OAuth state mismatch"));
     }
     if let Some(e) = err {
-        let body = html_page("授权失败", &e);
+        let _ = e;
+        let body = html_page("授权失败", "授权失败，请返回 AgentHub 重试");
         write_response(&mut stream, 400, &body)?;
-        store.mark_error(expected_state, e)?;
+        store.mark_error(expected_state, "OAuth authorization failed")?;
         return Ok(());
     }
     let Some(code) = code else {

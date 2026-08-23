@@ -17,7 +17,11 @@ import { useAgentStatusesOptional } from '@/app/runtime';
 import { useConnectionPool } from '@/app/runtime/ConnectionPoolProvider';
 import { AGENT_IDS, agentDisplayName } from '@/config/agents';
 import { hiddenAgentIdSet } from '@/lib/agent-visibility';
-import { resolveEffectiveConnection } from '@/lib/api/agent-connection';
+import {
+  formatLocalRouteLabel,
+  isInternalGeneratedProvider,
+  resolveEffectiveConnection,
+} from '@/lib/api/agent-connection';
 import type { AdapterProfile } from '@/lib/api/adapter';
 import { buildConnectionsGuideUrl } from '@/lib/connect-flow/connect-intent';
 import type { AgentId } from '@/lib/types';
@@ -37,6 +41,7 @@ import {
   currentTargetAgentId,
   eligibilityOf,
   excludeOwnAgentTargets,
+  keepOwnAgentTarget,
   fanoutRequestsForAgent,
   fanoutRequestsForSource,
   findOption,
@@ -54,6 +59,7 @@ import {
   shouldShowPreviewImportHint,
   sourceAgentIdOf,
   tryAcquireConfirmLock,
+  visibleTargetsForPurpose,
 } from './connect-flow-state';
 import {
   ConnectFlowSelectStep,
@@ -185,9 +191,23 @@ export function ConnectFlowDialog({
     const ids = AGENT_IDS.length > 0 ? [...AGENT_IDS] : uniquePoolAgentIds(pool.accounts, pool.providers);
     return ids.filter((id) => !hiddenSet.has(id));
   }, [pool.accounts, pool.providers, hiddenSet]);
+  const keepOwnAgent = keepOwnAgentTarget(entry, pool.accounts);
+  const allTargetAgentIds = React.useMemo(
+    () => (entry?.mode === 'for-source'
+      ? excludeOwnAgentTargets(catalogIds, sourceAgentId, keepOwnAgent)
+      : []),
+    [entry, catalogIds, sourceAgentId, keepOwnAgent],
+  );
   const targetAgentIds = React.useMemo(
-    () => (entry?.mode === 'for-source' ? excludeOwnAgentTargets(catalogIds, sourceAgentId) : []),
-    [entry, catalogIds, sourceAgentId],
+    () => (entry?.mode === 'for-source'
+      ? visibleTargetsForPurpose(
+          allTargetAgentIds,
+          entry.source,
+          eligibilities,
+          entry.purpose,
+        )
+      : []),
+    [entry, allTargetAgentIds, eligibilities],
   );
 
   const generatedSourceBlocked = Boolean(
@@ -200,8 +220,8 @@ export function ConnectFlowDialog({
     if (!entry || !optionsReady || generatedSourceBlocked) return [];
     return entry.mode === 'for-agent'
       ? fanoutRequestsForAgent(options, entry.targetAgentId)
-      : fanoutRequestsForSource(entry.source, targetAgentIds);
-  }, [entry, options, targetAgentIds, optionsReady, generatedSourceBlocked]);
+      : fanoutRequestsForSource(entry.source, allTargetAgentIds);
+  }, [entry, options, allTargetAgentIds, optionsReady, generatedSourceBlocked]);
 
   React.useEffect(() => {
     if (!fanout || !entry) return;
@@ -260,7 +280,27 @@ export function ConnectFlowDialog({
   const currentProvider = targetId
     ? pool.providers.find((item) => item.agentId === targetId && item.isCurrent)
     : undefined;
-  const effective = resolveEffectiveConnection(currentAccount, currentProvider);
+  const generatedProfile = currentProvider
+    ? profiles.find((profile) => profile.generatedProviderId === currentProvider.id)
+    : undefined;
+  const generatedSourceLabel = generatedProfile
+    ? generatedProfile.sourceKind === 'account'
+      ? pool.accounts.find((item) => item.id === generatedProfile.sourceId)?.email
+        ?? pool.accounts.find((item) => item.id === generatedProfile.sourceId)?.label
+      : pool.providers.find((item) => item.id === generatedProfile.sourceId)?.name
+    : undefined;
+  const resolved = resolveEffectiveConnection(currentAccount, currentProvider, {
+    t,
+    sourceLabel: generatedSourceLabel,
+  });
+  const effective = resolved.kind === 'api'
+    && currentProvider
+    && (generatedProfile || isInternalGeneratedProvider(currentProvider))
+    ? {
+        ...resolved,
+        label: formatLocalRouteLabel(generatedSourceLabel, t),
+      }
+    : resolved;
 
   const requestClose = React.useCallback(() => {
     if (state.busy !== 'idle') return;
@@ -343,7 +383,11 @@ export function ConnectFlowDialog({
     ? t('connect.dialog.title')
     : entry.mode === 'for-agent'
       ? t('connect.dialog.titleAgent', { name: agentDisplayName(entry.targetAgentId) })
-      : t('connect.dialog.titleSource');
+      : entry.purpose === 'route'
+        ? t('connect.dialog.titleRoute')
+        : entry.purpose === 'share'
+          ? t('connect.dialog.titleShare')
+          : t('connect.dialog.titleSource');
 
   return (
     <Dialog
@@ -397,6 +441,7 @@ export function ConnectFlowDialog({
                     type: 'select_target',
                     agentId,
                     sourceAgentId,
+                    allowOwnAgent: keepOwnAgent,
                   })}
                   onRetryEligibility={(request) => fanout?.retry(request)}
                   onRetryResources={retryResources}
@@ -430,9 +475,10 @@ export function ConnectFlowDialog({
             <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
               {entryStale || state.step === 'select' ? (
                 <>
-                  <Button variant="secondary" disabled={busy} onClick={requestClose}>{t('common.cancel')}</Button>
+                  <Button type="button" variant="secondary" disabled={busy} onClick={requestClose}>{t('common.cancel')}</Button>
                   {!entryStale ? (
                     <Button
+                      type="button"
                       disabled={busy || !canEnterPreview(state, selectedOption, selectedEligibility)}
                       onClick={() => dispatch({
                         type: 'enter_preview',
@@ -447,10 +493,10 @@ export function ConnectFlowDialog({
               ) : null}
               {!entryStale && state.step === 'preview' ? (
                 <>
-                  <Button variant="secondary" disabled={busy} onClick={() => dispatch({ type: 'back_to_select' })}>
+                  <Button type="button" variant="secondary" disabled={busy} onClick={() => dispatch({ type: 'back_to_select' })}>
                     {t('connect.dialog.back')}
                   </Button>
-                  <Button disabled={!canConfirm(state) || previewInvalid} onClick={handleConfirm}>
+                  <Button type="button" disabled={!canConfirm(state) || previewInvalid} onClick={handleConfirm}>
                     {busy
                       ? (state.busy === 'switching' ? t('connect.dialog.switching') : t('connect.dialog.applying'))
                       : (state.previewKind === 'switch' ? t('connect.dialog.confirmSwitch') : t('connect.dialog.confirmApply'))}
@@ -460,11 +506,11 @@ export function ConnectFlowDialog({
               {!entryStale && state.step === 'result' ? (
                 <>
                   {canRetry(state) ? (
-                    <Button onClick={() => dispatch({ type: 'retry_from_result' })}>
+                    <Button type="button" onClick={() => dispatch({ type: 'retry_from_result' })}>
                       {t('chrome.error.retry')}
                     </Button>
                   ) : null}
-                  <Button variant="secondary" onClick={requestClose}>{t('connect.dialog.close')}</Button>
+                  <Button type="button" variant="secondary" onClick={requestClose}>{t('connect.dialog.close')}</Button>
                 </>
               ) : null}
             </DialogFooter>

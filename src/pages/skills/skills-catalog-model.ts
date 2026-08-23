@@ -1,5 +1,5 @@
 import type { InstalledSkillDto } from '@/lib/api/skill';
-import type { AgentId, SkillSyncState } from '@/lib/types';
+import type { AgentId, SkillLinkKind, SkillSyncState } from '@/lib/types';
 
 export const cellKey = (skillId: string, agentId: AgentId) => `${skillId}:${agentId}`;
 
@@ -17,7 +17,11 @@ export function applyCatalogCellState(
         ? {
             ...p,
             state,
-            linkKind: state === 'linked' ? p.linkKind : 'none',
+            linkKind: (state === 'linked'
+              ? p.linkKind && p.linkKind !== 'none'
+                ? p.linkKind
+                : 'junction'
+              : 'none') as SkillLinkKind,
           }
         : p,
     );

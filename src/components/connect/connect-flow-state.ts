@@ -5,6 +5,7 @@
 import type { Account, AgentId, Provider } from '@/lib/types';
 import type { AdapterApplyPlan, AdapterApplyResult, AdapterProfile } from '@/lib/api/adapter';
 import type {
+  ConnectBindPurpose,
   ConnectFlowDeps,
   ConnectFlowEntry,
   ConnectOutcome,
@@ -15,6 +16,12 @@ import type {
 import { connectSourceKey, planFanoutKey } from '@/lib/connect-flow/types';
 import type { AdapterReusePath } from '@/lib/backend/contracts/adapter';
 import type { TranslateFn } from '@/lib/i18n';
+import {
+  routeEndpointIdForBinding,
+  routeEndpointIdForTargetAgent,
+  routeEndpointPath,
+  type RouteEndpointId,
+} from '@/lib/route-endpoints';
 
 export type ConnectFlowStep = 'select' | 'preview' | 'result';
 export type ConnectFlowBusy = 'idle' | 'applying' | 'switching';
@@ -79,7 +86,7 @@ export interface ConnectFlowState {
 export type ConnectFlowEvent =
   | { type: 'reset'; entry: ConnectFlowEntry }
   | { type: 'select_source'; option: SourceOption }
-  | { type: 'select_target'; agentId: AgentId; sourceAgentId: AgentId | null }
+  | { type: 'select_target'; agentId: AgentId; sourceAgentId: AgentId | null; allowOwnAgent?: boolean }
   | { type: 'enter_preview'; option?: SourceOption | null; eligibility?: PlanEligibility }
   | { type: 'back_to_select' }
   | { type: 'begin_apply' }
@@ -100,8 +107,8 @@ export const REFRESH_FAILED_SWITCHED = '已切换，但列表刷新失败';
 
 const ILLEGAL_SOURCE_MESSAGE = '来源参数非法';
 const DELETED_SOURCE_MESSAGE = '来源已删除';
-const ILLEGAL_TARGET_MESSAGE = '目标 Agent 参数非法';
-export const GENERATED_SOURCE_REUSE_MESSAGE = '该连接由兼容路由生成，不能再次用于其他 Agent';
+const ILLEGAL_TARGET_MESSAGE = '目标工具参数非法';
+export const GENERATED_SOURCE_REUSE_MESSAGE = '这是本机自动生成的地址，不是登录，不能再接到其他工具';
 
 export function sameSourceRef(left: ConnectSourceRef | null, right: ConnectSourceRef | null): boolean {
   if (!left || !right) return false;
@@ -163,13 +170,32 @@ export function sourceAgentIdOf(
   return lookupSourceRecord(entry.source, accounts, providers)?.agentId ?? null;
 }
 
-/** for-source 目标网格：排除来源自身所属 Agent。 */
+/** for-source 目标网格：排除来源自身所属 Agent，除非 keepOwnAgent。 */
 export function excludeOwnAgentTargets(
   candidates: readonly AgentId[],
   sourceAgentId: AgentId | null,
+  keepOwnAgent = false,
 ): AgentId[] {
-  if (!sourceAgentId) return [...candidates];
+  if (!sourceAgentId || keepOwnAgent) return [...candidates];
   return candidates.filter((id) => id !== sourceAgentId);
+}
+
+/** Official Codex OAuth may 直连 / 用这份登录 onto Codex itself. */
+export function isOfficialCodexOauthAccount(
+  account: { agentId: AgentId; kind: string } | null | undefined,
+): boolean {
+  return account?.agentId === 'codex' && account.kind === 'oauth';
+}
+
+/** Route keeps own agent; share keeps it only for official Codex OAuth. */
+export function keepOwnAgentTarget(
+  entry: ConnectFlowEntry | null | undefined,
+  accounts: readonly Account[],
+): boolean {
+  if (!entry || entry.mode !== 'for-source') return false;
+  if (entry.purpose === 'route') return true;
+  if (entry.source.kind !== 'account') return false;
+  return isOfficialCodexOauthAccount(accounts.find((item) => item.id === entry.source.id));
 }
 
 export function currentTargetAgentId(state: ConnectFlowState): AgentId | null {
@@ -244,15 +270,14 @@ export function canEnterPreview(
 ): boolean {
   if (isBusy(state) || state.step !== 'select') return false;
   if (state.entry.mode === 'for-source') {
-    const target = currentTargetAgentId(state);
-    if (!target || !state.selectedSource) return false;
-    return isTargetSelectable(eligibility);
+    // Same gate as enter_preview: 下一步 enabled iff preview can bind the plan.
+    return bindPlanFromEligibility(state, eligibility) !== null;
   }
   if (!option) return false;
   if (!sameSourceRef(state.selectedSource, option.ref)) return false;
   if (option.state.kind === 'switchable') return true;
   if (option.state.kind === 'plannable') {
-    return planEligibilityAllowsApply(eligibility);
+    return bindPlanFromEligibility(state, eligibility) !== null;
   }
   return false;
 }
@@ -283,6 +308,13 @@ function bindPlanFromEligibility(
   const target = currentTargetAgentId(state);
   if (!source || !target) return null;
   if (eligibility?.kind !== 'ready' || eligibility.plan.canApply !== true) return null;
+  if (
+    state.entry.mode === 'for-source'
+    && state.entry.purpose
+    && !adapterRouteMatchesPurpose(eligibility.plan.analysis.route, state.entry.purpose)
+  ) {
+    return null;
+  }
   return {
     generation: state.selectionGeneration,
     source,
@@ -323,7 +355,13 @@ export function reduceConnectFlow(state: ConnectFlowState, event: ConnectFlowEve
     }
     case 'select_target': {
       if (state.entry.mode !== 'for-source') return state;
-      if (event.sourceAgentId && event.agentId === event.sourceAgentId) return state;
+      if (
+        event.sourceAgentId
+        && event.agentId === event.sourceAgentId
+        && !event.allowOwnAgent
+      ) {
+        return state;
+      }
       if (isBlankId(event.agentId)) return state;
       if (state.selectedTargetAgentId === event.agentId && state.step === 'select') {
         return state;
@@ -333,6 +371,7 @@ export function reduceConnectFlow(state: ConnectFlowState, event: ConnectFlowEve
     case 'enter_preview': {
       if (state.step !== 'select') return state;
       if (state.entry.mode === 'for-source') {
+        if (!canEnterPreview(state, event.option, event.eligibility)) return state;
         const bound = bindPlanFromEligibility(state, event.eligibility);
         if (!bound) return state;
         return {
@@ -345,6 +384,7 @@ export function reduceConnectFlow(state: ConnectFlowState, event: ConnectFlowEve
       }
       const option = event.option;
       if (!option || !sameSourceRef(state.selectedSource, option.ref)) return state;
+      if (!canEnterPreview(state, option, event.eligibility)) return state;
       if (option.state.kind === 'switchable') {
         return {
           ...state,
@@ -470,11 +510,24 @@ export function reduceConnectFlow(state: ConnectFlowState, event: ConnectFlowEve
 }
 
 export function formatConnectFlowError(error: unknown, t?: TranslateFn): string {
+  let message = '';
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
-    return error.message;
+    message = error.message;
+  } else if (typeof error === 'string' && error.trim()) {
+    message = error;
   }
-  if (typeof error === 'string' && error.trim()) return error;
-  return t ? t('connect.result.opFailed') : '操作失败';
+  if (!message) return t ? t('connect.result.opFailed') : '操作失败';
+  if (
+    message.includes('投影不是登录')
+    || message.includes('禁止二次投影')
+    || message.includes('自动生成的配置不是登录')
+  ) {
+    return t ? t('connect.result.generatedReuse') : GENERATED_SOURCE_REUSE_MESSAGE;
+  }
+  if (/invalid ticket id/i.test(message) || /Invalid ticket/.test(message)) {
+    return t ? t('connect.result.illegalSource') : ILLEGAL_SOURCE_MESSAGE;
+  }
+  return message;
 }
 
 export function connectFlowResultMessage(result: ConnectFlowResultView, t?: TranslateFn): string {
@@ -516,19 +569,37 @@ function endReasonWithFullStop(reason: string): string {
 
 function localTargetLabels(targetAgentId: string): { display: string; short: string } {
   if (targetAgentId === 'claude') return { display: 'Claude Code', short: 'Claude' };
+  if (targetAgentId === 'codex') return { display: 'Codex', short: 'Codex' };
+  if (targetAgentId === 'pi') return { display: 'Pi', short: 'Pi' };
+  if (targetAgentId === 'grok') return { display: 'Grok', short: 'Grok' };
+  if (targetAgentId === 'kimi') return { display: 'Kimi', short: 'Kimi' };
+  if (targetAgentId === 'dsh') return { display: 'DeepSeek Harness', short: 'DSH' };
   return { display: targetAgentId, short: targetAgentId };
 }
 
 function sourceHintFromReason(reason: string, t?: TranslateFn): string {
-  if (reason.includes('Grok')) return t ? t('connect.preview.sourceGrok') : 'Grok 登录';
-  if (reason.includes('Codex')) return t ? t('connect.preview.sourceCodex') : 'Codex / ChatGPT 登录';
+  // Match the source, not the target ("接到 Grok" must not become "Grok 登录").
+  if (
+    reason.startsWith('Grok')
+    || reason.includes('Grok 登录')
+    || reason.includes('Grok login')
+  ) {
+    return t ? t('connect.preview.sourceGrok') : 'Grok 登录';
+  }
+  if (
+    reason.startsWith('Codex')
+    || reason.includes('Codex 官方')
+    || reason.includes('Codex / ChatGPT')
+  ) {
+    return t ? t('connect.preview.sourceCodex') : 'Codex / ChatGPT 登录';
+  }
   return t ? t('connect.preview.sourceLogin') : '登录';
 }
 
 function notesForReusePath(reusePath: AdapterReusePath, t?: TranslateFn): string[] {
   if (reusePath === 'local_bridge') return [t ? t('connect.preview.noteLocalRoute') : '关掉会进托盘，路由继续跑。'];
-  if (reusePath === 'api_endpoint') return [t ? t('connect.preview.noteDirect') : '会把这份连接写进目标 Agent。'];
-  if (reusePath === 'native_subscription') return [t ? t('connect.preview.noteReuse') : '会把这份官方登录写进目标 Agent。'];
+  if (reusePath === 'api_endpoint') return [t ? t('connect.preview.noteDirect') : '会把这份登录写进目标工具。'];
+  if (reusePath === 'native_subscription') return [t ? t('connect.preview.noteReuse') : '会把这份官方登录写进目标工具。'];
   return [];
 }
 
@@ -536,7 +607,12 @@ export function describePlanPreview(plan: AdapterApplyPlan, t?: TranslateFn): Pl
   const reusePath = reusePathForPlan(plan);
   const analysisReason = plan.analysis.reason || plan.reason || '';
   const sourceHint = sourceHintFromReason(analysisReason, t);
-  const display = localTargetLabels(plan.targetAgentId).display;
+  const display = reusePath === 'local_bridge'
+    ? routeEndpointPath(routeEndpointIdForBinding({
+        agentId: plan.targetAgentId,
+        ruleId: plan.analysis.ruleId,
+      }))
+    : localTargetLabels(plan.targetAgentId).display;
   const reason = reusePath === 'local_bridge'
     ? (t
       ? t('connect.preview.localReason', { source: sourceHint, target: display })
@@ -611,9 +687,9 @@ function poolFailureMessage(
   t?: TranslateFn,
 ): string {
   const parts: string[] = [];
-  if (errors.accounts) parts.push(t ? t('connect.result.partAccounts') : '账户');
+  if (errors.accounts) parts.push(t ? t('connect.result.partAccounts') : '账号');
   if (errors.providers) parts.push(t ? t('connect.result.partProviders') : '供应商');
-  if (profilesError) parts.push(t ? t('connect.result.partProfiles') : '绑定档案');
+  if (profilesError) parts.push(t ? t('connect.result.partProfiles') : '本机路由记录');
   if (parts.length === 0) return t ? t('connect.result.poolPartial') : '部分资源加载失败';
   return t
     ? t('connect.result.poolPartialParts', { parts: parts.join('、') })
@@ -675,8 +751,13 @@ export function resolveEmptyKind(input: EmptyKindInput): ConnectFlowEmptyKind {
 
   let pending = false;
   let anySelectable = false;
+  let anyCurrent = false;
   const target = input.entry.targetAgentId;
   for (const option of input.options) {
+    if (option.state.kind === 'current') {
+      anyCurrent = true;
+      continue;
+    }
     if (option.state.kind === 'switchable') {
       anySelectable = true;
       continue;
@@ -688,6 +769,7 @@ export function resolveEmptyKind(input: EmptyKindInput): ConnectFlowEmptyKind {
     }
   }
   if (pending) return { kind: 'none' };
+  if (anyCurrent) return { kind: 'none' };
   return anySelectable ? { kind: 'none' } : { kind: 'all_infeasible' };
 }
 
@@ -792,9 +874,97 @@ export function findOption(
 
 export function connectFlowEntryKey(entry: ConnectFlowEntry | null): string | null {
   if (!entry) return null;
-  return entry.mode === 'for-agent'
-    ? `for-agent:${entry.targetAgentId}`
-    : `for-source:${entry.source.kind}:${entry.source.id}`;
+  if (entry.mode === 'for-agent') return `for-agent:${entry.targetAgentId}`;
+  const purpose = entry.purpose ?? 'all';
+  return `for-source:${entry.source.kind}:${entry.source.id}:${purpose}`;
+}
+
+export function adapterRouteMatchesPurpose(
+  route: AdapterApplyPlan['analysis']['route'] | undefined,
+  purpose: ConnectBindPurpose,
+): boolean {
+  if (purpose === 'route') return route === 'local_bridge';
+  return route === 'native_endpoint' || route === 'config_sync';
+}
+
+/** Route picker binds an existing login onto loopback endpoints; extra import/key CTAs do not apply. */
+export function shouldShowConnectGuideActions(entry: ConnectFlowEntry): boolean {
+  return entry.mode !== 'for-source' || entry.purpose !== 'route';
+}
+
+/** Keep loading/error rows; drop ready plans that belong to the other purpose. */
+export function visibleTargetsForPurpose(
+  targetIds: readonly AgentId[],
+  source: ConnectSourceRef,
+  eligibilities: ReadonlyMap<string, PlanEligibility>,
+  purpose: ConnectBindPurpose | undefined,
+): AgentId[] {
+  if (!purpose) return [...targetIds];
+  return targetIds.filter((id) => {
+    const eligibility = eligibilityOf(eligibilities, source, id);
+    if (!eligibility || eligibility.kind === 'loading') return true;
+    if (eligibility.kind === 'error' || eligibility.kind === 'blocked_oauth') return true;
+    if (eligibility.kind === 'ready') {
+      return adapterRouteMatchesPurpose(eligibility.plan.analysis.route, purpose);
+    }
+    return false;
+  });
+}
+
+function routeEndpointIdForAgentEligibility(
+  agentId: AgentId,
+  eligibility: PlanEligibility | undefined,
+): RouteEndpointId {
+  if (eligibility?.kind === 'ready') {
+    return routeEndpointIdForBinding({
+      agentId,
+      ruleId: eligibility.plan.analysis.ruleId,
+    });
+  }
+  return routeEndpointIdForTargetAgent(agentId);
+}
+
+/** Writer agents that currently sit on this unified downstream surface. */
+export function agentsForRouteEndpoint(
+  endpointId: RouteEndpointId,
+  targetAgentIds: readonly AgentId[],
+  source: ConnectSourceRef,
+  eligibilities: ReadonlyMap<string, PlanEligibility>,
+): AgentId[] {
+  return targetAgentIds.filter((agentId) => {
+    const eligibility = eligibilityOf(eligibilities, source, agentId);
+    return routeEndpointIdForAgentEligibility(agentId, eligibility) === endpointId;
+  });
+}
+
+/** Prefer a canApply writer; otherwise the first agent still listed for the surface. */
+export function representativeAgentForRouteEndpoint(
+  endpointId: RouteEndpointId,
+  targetAgentIds: readonly AgentId[],
+  source: ConnectSourceRef,
+  eligibilities: ReadonlyMap<string, PlanEligibility>,
+): AgentId | null {
+  const agents = agentsForRouteEndpoint(endpointId, targetAgentIds, source, eligibilities);
+  const applyable = agents.find((agentId) => (
+    isTargetSelectable(eligibilityOf(eligibilities, source, agentId))
+  ));
+  return applyable ?? agents[0] ?? null;
+}
+
+export function eligibilityForRouteEndpoint(
+  endpointId: RouteEndpointId,
+  targetAgentIds: readonly AgentId[],
+  source: ConnectSourceRef,
+  eligibilities: ReadonlyMap<string, PlanEligibility>,
+): PlanEligibility | undefined {
+  const agentId = representativeAgentForRouteEndpoint(
+    endpointId,
+    targetAgentIds,
+    source,
+    eligibilities,
+  );
+  if (!agentId) return undefined;
+  return eligibilityOf(eligibilities, source, agentId);
 }
 
 /** 状态机 entry 与当前打开的 entry 不同步（首帧旧会话）。 */
@@ -853,7 +1023,7 @@ export function shouldRevertPreviewToSelect(input: {
   return findOption(input.options, input.selectedSource) === null;
 }
 
-export const PREVIEW_SELECTION_STALE_MESSAGE = '所选凭据已变化，请返回重新选择';
+export const PREVIEW_SELECTION_STALE_MESSAGE = '所选登录已变化，请返回重新选择';
 
 /**
  * 渲染层同步判定：预览步选中来源已失效时，确认必须立刻禁用（不能等 effect 回退）。

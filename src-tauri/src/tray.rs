@@ -360,15 +360,17 @@ fn current_tray_language<R: Runtime>(app: &AppHandle<R>) -> TrayUiLanguage {
     parse_tray_language(&raw)
 }
 
-fn build_tray_menu<R: Runtime>(
-    app: &AppHandle<R>,
-    copy: &TrayMenuCopy,
-) -> tauri::Result<Menu<R>> {
+fn build_tray_menu<R: Runtime>(app: &AppHandle<R>, copy: &TrayMenuCopy) -> tauri::Result<Menu<R>> {
     let show_i = MenuItem::with_id(app, MENU_SHOW, copy.show, true, None::<&str>)?;
     let open_routes_i =
         MenuItem::with_id(app, MENU_OPEN_ROUTES, copy.open_routes, true, None::<&str>)?;
-    let start_routes_i =
-        MenuItem::with_id(app, MENU_START_ROUTES, copy.start_routes, true, None::<&str>)?;
+    let start_routes_i = MenuItem::with_id(
+        app,
+        MENU_START_ROUTES,
+        copy.start_routes,
+        true,
+        None::<&str>,
+    )?;
     let stop_routes_i =
         MenuItem::with_id(app, MENU_STOP_ROUTES, copy.stop_routes, true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app, MENU_QUIT, copy.quit, true, None::<&str>)?;
@@ -563,9 +565,9 @@ mod tests {
         use crate::tray_i18n::tray_menu_copy;
         let copy = tray_menu_copy(TrayUiLanguage::Zh);
         assert_eq!(copy.show, "打开 AgentHub");
-        assert_eq!(copy.open_routes, "打开路由");
-        assert_eq!(copy.start_routes, "启动路由");
-        assert_eq!(copy.stop_routes, "停止路由");
+        assert_eq!(copy.open_routes, "打开本机转发");
+        assert_eq!(copy.start_routes, "启动本机转发");
+        assert_eq!(copy.stop_routes, "停止本机转发");
         assert_eq!(copy.quit, "退出");
     }
 
@@ -574,9 +576,9 @@ mod tests {
         use crate::tray_i18n::tray_menu_copy;
         let copy = tray_menu_copy(TrayUiLanguage::En);
         assert_eq!(copy.show, "Open AgentHub");
-        assert_eq!(copy.open_routes, "Open routes");
-        assert_eq!(copy.start_routes, "Start routes");
-        assert_eq!(copy.stop_routes, "Stop routes");
+        assert_eq!(copy.open_routes, "Open local forward");
+        assert_eq!(copy.start_routes, "Start local forward");
+        assert_eq!(copy.stop_routes, "Stop local forward");
         assert_eq!(copy.quit, "Quit");
     }
 

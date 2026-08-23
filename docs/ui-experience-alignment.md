@@ -6,7 +6,7 @@
 > **版本**：v1.1 · 2026-08-06（实机核验版）  
 > **落地状态（2026-08）**：**Phase 0–2 大体已落地**（token / Skills 静音与预览一体 / 文案包）。Phase 3 里 ListRow / 分段同一族 / `PageHeader compact` 已落地；剩余方言收口与组件决策见 [ui-component-standard.md](ui-component-standard.md)。Phase 4–5（动效、深色精修、accent 换色）仍是 backlog。  
 > **截图**：仓库不存实机图，以 `pnpm dev:mock` 为准。当时核验条件见 §12.2 文字结论，不链本地 png。  
-> **现行状态**：本文是视觉/体验对标，**不是**现行产品 IA。现行 Settings **四栏**（偏好 / 本机 / 备份 / 关于）、侧栏 **Routes / 本机路由**、picker 芯片 **直连 / 用这份登录 / 本机路由 / 当前不支持** 见 [ui-design.md](ui-design.md)。下文 Phase 写作为当时体验改造记录，勿当现行 IA。
+> **现行状态**：本文是视觉/体验对标，**不是**现行产品 IA。现行 Settings **四栏**（偏好 / 本机 / 备份 / 关于）、侧栏与页标题 **Routes / 路由**、picker 芯片 **直连 / 用这份登录 / 本机路由 / 当前不支持** 见 [ui-design.md](ui-design.md)。下文 Phase 写作为当时体验改造记录，勿当现行 IA。
 
 ---
 
@@ -193,7 +193,7 @@ Skills 单页可同时出现：`PageHeader`、Tabs、SegmentedControl、AgentTab
 | 默认分隔 | `1px solid var(--border)`，透明度可 80% 于表行 |
 | 强分隔（少用） | `--border-strong`，仅输入框 focus 外框、危险区 |
 | 禁止 | Card 外包 Table 再外包 border 的三层框（TableShell 审视） |
-| 圆角 | 控件 **5–6px**；卡片 **8px**；大面板 **0–6px**（全高侧栏建议 **无大圆角**，贴边更 IDE） |
+| 圆角 | 控件 **5–6px**；卡片 **8px**；应用壳列 **8px**（侧栏 + 主列，窗内 8px 画布缝；不再贴边方角） |
 
 ### 4.3 文字色阶（四阶 + 禁用）
 
@@ -447,7 +447,7 @@ checkbox 多选 ⟂ activeKey  // 两套状态，禁止混用
 
 **仍做（以 [ui-component-standard.md](ui-component-standard.md) §8 为准，不按「天」排期）**：
 
-1. SearchField 收口（Connections 钱包已收；禁止再手写搜索框）。  
+1. SearchField 收口（Skills / Chat / Projects；Connections 无搜索框；禁止再手写搜索框）。  
 2. 共享件字号改语义 token（`text-title` / `text-body` / `text-meta`）；存量页面别名不搞大扫除。  
 3. loading 用 Skeleton，不用一句「正在加载…」。  
 4. Accent 面积：一页一主 CTA，随 PR 自检。  

@@ -2,25 +2,51 @@
  * Chat 页纯函数：会话分组 / 发送前置 / 展示文案。
  * 不 import React、不碰 lib/api。
  */
+import { pageRhythm } from '@/components/layout/page-rhythm';
 import { agentDisplayName } from '@/config/agents';
+import { isInternalGeneratedName } from '@/lib/backend/contracts/agent-connection';
+import type {
+  BindingRoute,
+  TicketView,
+  TicketWallet,
+} from '@/lib/backend/contracts/ticket';
 import type { TranslateFn } from '@/lib/i18n';
 import { processPhaseLabel, type AgentProcessView } from '@/lib/chat-process';
-import type { AgentId, AgentStatus, ChatMessage, ChatMessageStatus, Conversation } from '@/lib/types';
+import { nativeResumeCommand } from '@/lib/session-resume';
+import {
+  activeBindingForAgent,
+  filterTicketsByAgentUsage,
+} from '@/lib/ticket-wallet';
+import type {
+  AgentId,
+  AgentStatus,
+  ChatMessage,
+  ChatMessageStatus,
+  Conversation,
+  Provider,
+} from '@/lib/types';
 import type { TurnGroup } from './chat-format';
 
 export type ChatSendBlocker =
   | { kind: 'hiddenAgents'; agentIds: AgentId[] }
+  | { kind: 'envNotReady'; agentIds: AgentId[] }
   | { kind: 'unconfiguredAuth'; agentIds: AgentId[] }
   | { kind: 'noCwd' }
   | { kind: 'sendingElsewhere'; conversationId: string; title: string };
 
-export type ChatAgentPickerReason = 'noAuth';
+export type ChatAgentPickerReason = 'noAuth' | 'envNotReady';
 
 export type ChatAgentPickerRow = {
   id: AgentId;
   selectable: boolean;
   reason: ChatAgentPickerReason | null;
 };
+
+/** Pi Chat needs Node 22.19 (`envReady`); other agents' envReady is install-channel only. */
+export function agentChatEnvReady(status: AgentStatus | undefined): boolean {
+  if (!status || status.agentId !== 'pi') return true;
+  return status.envReady !== false;
+}
 
 /** 已绑定登录 / API Key 才算配置了授权；未配置或未登录不可选。 */
 export function agentHasConfiguredAuth(status: AgentStatus | undefined): boolean {
@@ -36,7 +62,9 @@ export function agentHasConfiguredAuth(status: AgentStatus | undefined): boolean
 }
 
 export function isChatAgentSelectable(status: AgentStatus | undefined): boolean {
-  return Boolean(status?.installed && !status.hidden && agentHasConfiguredAuth(status));
+  return Boolean(
+    status?.installed && !status.hidden && agentHasConfiguredAuth(status) && agentChatEnvReady(status),
+  );
 }
 
 /**
@@ -51,11 +79,17 @@ export function chatAgentPickerRows(input: {
   for (const id of input.catalogIds) {
     const status = byId.get(id);
     if (status?.installed !== true || status.hidden) continue;
+    const envNotReady = !agentChatEnvReady(status);
     const noAuth = !agentHasConfiguredAuth(status);
+    const reason: ChatAgentPickerReason | null = envNotReady
+      ? 'envNotReady'
+      : noAuth
+        ? 'noAuth'
+        : null;
     rows.push({
       id,
-      selectable: !noAuth,
-      reason: noAuth ? 'noAuth' : null,
+      selectable: reason === null,
+      reason,
     });
   }
   return [...rows.filter((r) => r.selectable), ...rows.filter((r) => !r.selectable)];
@@ -98,6 +132,13 @@ const DAY_KEYS: Record<ConversationDayKey, 'chat.day.today' | 'chat.day.yesterda
 };
 
 const RETRY_STATUSES = new Set<ChatMessageStatus>(['failed', 'cancelled', 'timeout']);
+
+/** Interactive TUI resume command for a Hub conversation, when a native id is known. */
+export function conversationResumeCommand(c: Pick<Conversation, 'agentIds' | 'nativeSessionId'>): string | null {
+  const agent = c.agentIds[0];
+  if (!agent) return null;
+  return nativeResumeCommand(agent, c.nativeSessionId);
+}
 
 export function cwdShortName(cwd: string | null | undefined, t: TranslateFn): string {
   if (cwd == null) return t('chat.cwd.unset');
@@ -172,6 +213,7 @@ export function groupConversationsByDay(
 export function sendBlockers(input: {
   conversation: Conversation;
   hiddenIds: Set<AgentId>;
+  envNotReadyIds?: Set<AgentId>;
   unconfiguredAuthIds?: Set<AgentId>;
   sendingConversationId: string | null;
   sendingTitle?: string;
@@ -180,6 +222,12 @@ export function sendBlockers(input: {
   const hidden = input.conversation.agentIds.filter((id) => input.hiddenIds.has(id));
   if (hidden.length > 0) {
     out.push({ kind: 'hiddenAgents', agentIds: hidden });
+  }
+  const envNotReady = input.conversation.agentIds.filter(
+    (id) => !input.hiddenIds.has(id) && input.envNotReadyIds?.has(id),
+  );
+  if (envNotReady.length > 0) {
+    out.push({ kind: 'envNotReady', agentIds: envNotReady });
   }
   const unconfigured = input.conversation.agentIds.filter(
     (id) => !input.hiddenIds.has(id) && input.unconfiguredAuthIds?.has(id),
@@ -362,6 +410,10 @@ export function chatConnectionPickerView(t: TranslateFn, input: {
   status?: AgentStatus;
   currentProviderName?: string | null;
   currentProviderModel?: string | null;
+  /** Current wallet login for this Agent; wins over leftover provider names. */
+  activeLogin?: { title: string; subtitle: string | null } | null;
+  leftoverCurrent?: boolean;
+  walletReady?: boolean;
 }): ChatConnectionPickerView {
   if (!input.primaryAgent) {
     return {
@@ -388,14 +440,40 @@ export function chatConnectionPickerView(t: TranslateFn, input: {
     };
   }
 
+  if (input.activeLogin) {
+    return {
+      kind,
+      label: input.activeLogin.title,
+      subtitle: input.activeLogin.subtitle,
+      currentLoginTitle: null,
+      currentLoginSubtitle: null,
+      emptyHint: null,
+      manageLabel: t('chat.connection.manage'),
+    };
+  }
+
+  if (input.leftoverCurrent) {
+    return {
+      kind,
+      label: t('chat.connection.unconfigured'),
+      subtitle: null,
+      currentLoginTitle: null,
+      currentLoginSubtitle: null,
+      emptyHint: null,
+      manageLabel: t('chat.connection.manage'),
+    };
+  }
+
+  const allowUnimported = input.walletReady !== false;
+
   if (kind === 'account') {
     const title = accountConnectionTitle(t, input.status);
     return {
       kind,
       label: title,
       subtitle: null,
-      currentLoginTitle: title,
-      currentLoginSubtitle: t('chat.connection.currentLogin'),
+      currentLoginTitle: allowUnimported ? title : null,
+      currentLoginSubtitle: allowUnimported ? t('chat.connection.currentLogin') : null,
       emptyHint: null,
       manageLabel: t('chat.connection.manage'),
     };
@@ -403,12 +481,13 @@ export function chatConnectionPickerView(t: TranslateFn, input: {
 
   if (kind === 'api') {
     const title = input.currentProviderName?.trim() || input.status?.effectiveLabel?.trim() || 'API';
+    const unimported = allowUnimported && !input.currentProviderName;
     return {
       kind,
       label: title,
       subtitle: input.currentProviderModel?.trim() || null,
-      currentLoginTitle: input.currentProviderName ? null : title,
-      currentLoginSubtitle: input.currentProviderName ? null : 'API',
+      currentLoginTitle: unimported ? title : null,
+      currentLoginSubtitle: unimported ? 'API' : null,
       emptyHint: null,
       manageLabel: t('chat.connection.manage'),
     };
@@ -423,6 +502,87 @@ export function chatConnectionPickerView(t: TranslateFn, input: {
     emptyHint: t('chat.connection.none'),
     manageLabel: t('chat.connection.add'),
   };
+}
+
+export type ChatConnectionSwitchAction =
+  | { type: 'switch-account'; accountId: string }
+  | { type: 'switch-provider'; providerId: string }
+  | { type: 'bind'; ticketId: string };
+
+export type ChatConnectionOption = {
+  ticketId: string;
+  title: string;
+  subtitle: string | null;
+  isCurrent: boolean;
+  action: ChatConnectionSwitchAction;
+};
+
+const AGENTHUB_BRIDGE_SLUG = /agenthub_[^\s"'\\]*_bridge/i;
+
+/** Leftover generated 本机路由 rows — never labeled 官方登录. Loopback URL alone is not leftover. */
+export function isLeftoverLocalRouteProvider(
+  provider: Pick<Provider, 'id' | 'name' | 'preset' | 'configText' | 'configFormat'>,
+): boolean {
+  if (isInternalGeneratedName(provider.name) || isInternalGeneratedName(provider.id)) return true;
+  const haystack = `${provider.id}\n${provider.name}\n${provider.preset ?? ''}\n${provider.configText ?? ''}`;
+  return haystack.includes('本机路由') || AGENTHUB_BRIDGE_SLUG.test(haystack);
+}
+
+export function leftoverProviderIsCurrent(providers: readonly Provider[]): boolean {
+  return providers.some((provider) => provider.isCurrent && isLeftoverLocalRouteProvider(provider));
+}
+
+/** Native pool row → switch; a login born on another Agent → bind. */
+export function chatConnectionSwitchAction(
+  ticket: TicketView,
+  agentId: AgentId,
+): ChatConnectionSwitchAction {
+  if (ticket.agentId === agentId) {
+    if (ticket.sourceKind === 'account') {
+      return { type: 'switch-account', accountId: ticket.sourceId };
+    }
+    return { type: 'switch-provider', providerId: ticket.sourceId };
+  }
+  return { type: 'bind', ticketId: ticket.id };
+}
+
+function chatTicketSubtitle(
+  t: TranslateFn,
+  ticket: TicketView,
+  route: BindingRoute | undefined,
+): string {
+  if (route === 'bridge') return t('kind.route.localRoute');
+  if (ticket.credentialClass === 'oauth') return t('kind.oauth');
+  if (ticket.credentialClass === 'api_key') return t('kind.apikey');
+  return t('connections.list.unrecognized');
+}
+
+/** Leftover generated providers are not tickets and must not appear here. */
+export function chatConnectionOptions(t: TranslateFn, input: {
+  wallet: TicketWallet | null | undefined;
+  agentId: AgentId | null;
+}): ChatConnectionOption[] {
+  if (!input.wallet || !input.agentId) return [];
+  const agentId = input.agentId;
+  const tickets = filterTicketsByAgentUsage(input.wallet, input.wallet.tickets, agentId);
+  const active = activeBindingForAgent(input.wallet, agentId);
+  return tickets.map((ticket) => {
+    const isCurrent = active?.ticket.id === ticket.id;
+    return {
+      ticketId: ticket.id,
+      title: ticket.label,
+      subtitle: chatTicketSubtitle(t, ticket, isCurrent ? active?.binding.route : undefined),
+      isCurrent,
+      action: chatConnectionSwitchAction(ticket, agentId),
+    };
+  });
+}
+
+export function chatShowsUnimportedCurrent(
+  options: readonly Pick<ChatConnectionOption, 'isCurrent'>[],
+  currentLoginTitle: string | null | undefined,
+): boolean {
+  return Boolean(currentLoginTitle) && !options.some((option) => option.isCurrent);
 }
 
 export function messageStatusLabel(
@@ -504,6 +664,7 @@ export function blockerPrimaryTarget(
 ): ChatBlockerPrimaryTarget {
   switch (blocker.kind) {
     case 'hiddenAgents':
+    case 'envNotReady':
       return 'agents';
     case 'unconfiguredAuth':
       return 'connections';
@@ -525,6 +686,11 @@ export function blockerCopy(t: TranslateFn, blocker: ChatSendBlocker): {
         text: t('chat.blocker.hidden'),
         primaryAction: t('chat.blocker.goAgents'),
       };
+    case 'envNotReady':
+      return {
+        text: t('chat.blocker.envNotReady'),
+        primaryAction: t('chat.blocker.goAgents'),
+      };
     case 'unconfiguredAuth':
       return {
         text: t('chat.blocker.unconfigured'),
@@ -542,4 +708,48 @@ export function blockerCopy(t: TranslateFn, blocker: ChatSendBlocker): {
         secondaryAction: t('chat.blocker.stop'),
       };
   }
+}
+
+/** Composer 正文区：约 1 行起、最多 ~12 行；超出后内部滚动。 */
+export const COMPOSER_TEXTAREA_MIN_PX = 56;
+export const COMPOSER_TEXTAREA_MAX_PX = 240;
+
+type CssSupports = { supports?(property: string, value: string): boolean };
+
+export function clampComposerTextareaHeight(contentPx: number): number {
+  return Math.min(Math.max(contentPx, COMPOSER_TEXTAREA_MIN_PX), COMPOSER_TEXTAREA_MAX_PX);
+}
+
+export function composerTextareaOverflowY(contentPx: number): 'auto' | 'hidden' {
+  return contentPx > COMPOSER_TEXTAREA_MAX_PX ? 'auto' : 'hidden';
+}
+
+/** JS fallback layout after measuring `scrollHeight` (when `field-sizing` is missing). */
+export function composerTextareaMeasuredStyle(contentPx: number): {
+  height: string;
+  overflowY: 'auto' | 'hidden';
+} {
+  return {
+    height: `${clampComposerTextareaHeight(contentPx)}px`,
+    overflowY: composerTextareaOverflowY(contentPx),
+  };
+}
+
+/** Pass `css` in tests; omit to read the runtime `CSS` object. */
+export function composerUsesCssFieldSizing(css?: CssSupports | null): boolean {
+  const api = css === undefined ? (typeof CSS === 'undefined' ? undefined : CSS) : css ?? undefined;
+  return typeof api?.supports === 'function' && api.supports('field-sizing', 'content');
+}
+
+/** 对话记录与 composer 共用的主列宽，与 Settings 共用 `pageRhythm.readingColumn`。 */
+export const chatMainColumnClass = pageRhythm.readingColumn;
+
+/** 对话记录与输入壳外侧同一圈 16px 缝（水平再叠 `chatChromeX`）。 */
+export const chatStageClass = 'flex min-h-0 flex-1 flex-col py-4';
+
+/**
+ * 空转录与 composer 周围同色（canvas）；有消息后对话记录列与输入壳同色（panel）。
+ */
+export function chatTranscriptSurfaceClass(hasMessages: boolean): string {
+  return hasMessages ? 'bg-panel' : 'bg-canvas';
 }

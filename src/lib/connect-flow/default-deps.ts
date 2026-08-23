@@ -54,7 +54,36 @@ async function bindViaTicket(request: AdapterApplyRequest): Promise<AdapterApply
   const ticketId = ticketIdFor(request.sourceKind, request.sourceId);
   const { binding } = await bindTicket(ticketId, request.targetAgentId);
   if (!isActiveBindingForAgent(binding, request.targetAgentId)) {
-    throw new Error('绑定未成为该 Agent 的当前连接');
+    throw new Error('还没有切到这份登录');
+  }
+  if (binding.route === 'native' && !binding.profileId) {
+    return {
+      profile: {
+        id: `native:${ticketId}:${request.targetAgentId}`,
+        name: '官方登录',
+        sourceKind: request.sourceKind,
+        sourceId: request.sourceId,
+        targetAgentId: request.targetAgentId,
+        route: 'native_endpoint',
+        mode: 'oauth',
+        status: 'active',
+        ruleId: 'codex-subscription-to-codex-v1',
+        ruleVersion: '1',
+        generatedProviderId: null,
+        autoStart: false,
+        createdAt: '',
+        updatedAt: '',
+      },
+      provider: {
+        id: `native:${ticketId}`,
+        agentId: request.targetAgentId,
+        name: '官方登录',
+        preset: 'official',
+        configText: '',
+        configFormat: 'toml',
+        isCurrent: true,
+      },
+    };
   }
   const profiles = await listAdapterProfiles();
   const profile = binding.profileId
@@ -65,14 +94,14 @@ async function bindViaTicket(request: AdapterApplyRequest): Promise<AdapterApply
       && row.targetAgentId === request.targetAgentId
     ));
   if (!profile) {
-    throw new Error('绑定已生效，但未找到对应的绑定配置');
+    throw new Error('已接上，但找不到对应的本机路由记录');
   }
   const providers = await providerApi.listProviders(request.targetAgentId);
   const provider = profile.generatedProviderId
     ? providers.find((row) => row.id === profile.generatedProviderId)
     : undefined;
   if (!provider) {
-    throw new Error('绑定已生效，但未找到生成连接');
+    throw new Error('已接上，但找不到写入目标工具的本机地址');
   }
   return { profile, provider };
 }

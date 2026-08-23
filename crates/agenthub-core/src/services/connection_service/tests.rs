@@ -374,6 +374,27 @@ fn binding_write_failure_rolls_back_cross_type_demotion() {
 }
 
 #[test]
+fn update_and_activate_account_rejects_stale_revision() {
+    let (_d, db) = tmp();
+    let conn = ConnectionService::new(db.clone());
+    let created = conn
+        .create_and_activate_account(&account("acc-cas", AgentId::Claude, true, "t1"))
+        .unwrap()
+        .0;
+    let mut next = created.clone();
+    next.label = "newer".into();
+    next.updated_at = "t2".into();
+    conn.update_and_activate_account(&next, "t1").unwrap();
+
+    next.label = "stale".into();
+    next.updated_at = "t3".into();
+    let err = conn.update_and_activate_account(&next, "t1").unwrap_err();
+    assert_eq!(err.code(), "account.merge.conflict");
+    let stored = AccountRepo::new(db).get_by_id("acc-cas").unwrap().unwrap();
+    assert_eq!(stored.label, "newer");
+}
+
+#[test]
 fn clear_clears_binding_and_legacy_currents_without_backfill() {
     let (_d, db) = tmp();
     let accounts = AccountRepo::new(db.clone());
@@ -989,4 +1010,35 @@ fn provider_trash_can_be_permanently_deleted() {
     assert_eq!(trash[0].provider.as_ref().unwrap().id, created.id);
     conn.delete_trash(&trash[0].id).unwrap();
     assert!(conn.list_trash(Some(AgentId::Codex)).unwrap().is_empty());
+}
+
+/// D3: official activate dual-writes is_current + agent_active_bindings.
+/// AccountRepo.update flips only is_current (no pointer write).
+#[test]
+fn ticket_connection_pointer_stays_when_account_repo_flips_is_current() {
+    let (_d, db) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    accounts
+        .create(&account("acc-a", AgentId::Claude, false, "t1"))
+        .unwrap();
+    accounts
+        .create(&account("acc-b", AgentId::Claude, false, "t2"))
+        .unwrap();
+    let conn = ConnectionService::new(db.clone());
+    conn.record_account_active(AgentId::Claude, "acc-a")
+        .unwrap();
+    let pointer = ActiveBindingRepo::new(db.clone())
+        .get("claude")
+        .unwrap()
+        .unwrap();
+    assert_eq!(pointer.account_id.as_deref(), Some("acc-a"));
+    assert!(accounts.get_by_id("acc-a").unwrap().unwrap().is_current);
+
+    let mut b = accounts.get_by_id("acc-b").unwrap().unwrap();
+    b.is_current = true;
+    accounts.update(&b).unwrap();
+    assert!(accounts.get_by_id("acc-b").unwrap().unwrap().is_current);
+    assert!(!accounts.get_by_id("acc-a").unwrap().unwrap().is_current);
+    let drifted = ActiveBindingRepo::new(db).get("claude").unwrap().unwrap();
+    assert_eq!(drifted.account_id.as_deref(), Some("acc-a"));
 }

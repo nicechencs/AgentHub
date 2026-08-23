@@ -45,6 +45,10 @@ pub struct StreamSession {
     assistant_text: String,
     step_count: usize,
     raw_fallback_lines: usize,
+    native_session_id: Option<String>,
+    /// False when a line was discarded (overflow / oversize) so not every fed
+    /// byte was parsed. Leftover `line_buf` also means the feed is incomplete.
+    parse_intact: bool,
 }
 
 impl StreamSession {
@@ -65,7 +69,9 @@ impl StreamSession {
         structured_requested: bool,
         registry: &StreamParserRegistry,
     ) -> Self {
-        let parser = registry.get(&agent_key);
+        let parser = registry
+            .get(&agent_key)
+            .map(|p| p.for_session().unwrap_or(p));
         // Text mode always remains passthrough. Other modes require both the
         // caller's capability decision and a registered parser.
         let structured =
@@ -97,6 +103,8 @@ impl StreamSession {
             assistant_text: String::new(),
             step_count: 0,
             raw_fallback_lines: 0,
+            native_session_id: None,
+            parse_intact: true,
         }
     }
 
@@ -114,6 +122,16 @@ impl StreamSession {
 
     pub fn step_count(&self) -> usize {
         self.step_count
+    }
+
+    pub fn native_session_id(&self) -> Option<&str> {
+        self.native_session_id.as_deref()
+    }
+
+    /// True only when every fed stdout byte was kept for parsing (no overflow
+    /// discard and no unflushed remainder).
+    pub fn consumed_complete(&self) -> bool {
+        self.parse_intact && self.line_buf.is_empty()
     }
 
     /// Feed a raw process chunk; returns decoded outputs for the UI / chat content.
@@ -148,6 +166,7 @@ impl StreamSession {
         if self.line_buf.len() > MAX_LINE_BYTES {
             let truncated: String = self.line_buf.chars().take(200).collect();
             self.line_buf.clear();
+            self.parse_intact = false;
             self.raw_fallback_lines += 1;
             out.push(StreamOutput::Step(ProcessStep::Raw {
                 text: truncated,
@@ -180,7 +199,13 @@ impl StreamSession {
         if line.is_empty() {
             return Vec::new();
         }
+        if self.native_session_id.is_none() {
+            if let Some(id) = extract_native_session_id(self.agent_key.as_str(), line) {
+                self.native_session_id = Some(id);
+            }
+        }
         if line.len() > MAX_LINE_BYTES {
+            self.parse_intact = false;
             self.raw_fallback_lines += 1;
             self.step_count += 1;
             return vec![StreamOutput::Step(ProcessStep::Raw {
@@ -194,10 +219,14 @@ impl StreamSession {
 
         match parsed {
             Some(events) if !events.is_empty() => self.map_steps(events),
-            _ => {
+            Some(_) => Vec::new(),
+            None => {
                 self.raw_fallback_lines += 1;
                 // If it looks like JSON but unknown shape, keep as raw step (not chat body).
-                if line.starts_with('{') {
+                if line.starts_with('{') || line.starts_with('[') {
+                    if serde_json::from_str::<serde_json::Value>(line).is_err() {
+                        self.parse_intact = false;
+                    }
                     if self.step_count < MAX_EMITTED_STEPS {
                         self.step_count += 1;
                         vec![StreamOutput::Step(ProcessStep::Raw {
@@ -271,6 +300,37 @@ impl StreamSession {
             "structured stream session closed"
         );
     }
+}
+
+/// Pull an official session/thread id from one structured stdout line.
+pub fn extract_native_session_id(agent_key: &str, line: &str) -> Option<String> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    let raw = match agent_key {
+        "claude" => first_json_str(&v, &["session_id", "sessionId"]),
+        "codex" => first_json_str(&v, &["thread_id", "session_id", "sessionId"]).or_else(|| {
+            v.pointer("/thread/id")
+                .and_then(|x| x.as_str())
+                .map(str::to_string)
+        }),
+        _ => None,
+    }?;
+    crate::adapters::session_resume::valid_session_id(&raw).map(str::to_string)
+}
+
+fn first_json_str(v: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(s) = v.get(*key).and_then(|x| x.as_str()) {
+            let t = s.trim();
+            if !t.is_empty() {
+                return Some(t.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn append_assistant(dest: &mut String, chunk: &str) {

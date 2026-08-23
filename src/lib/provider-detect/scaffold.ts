@@ -176,7 +176,7 @@ export function liveConfigPaths(agentId: string): {
         auth: '~/.pi/agent/auth.json',
         extra: ['~/.pi/agent/models.json'],
         openDir: '~/.pi/agent（或 PI_CODING_AGENT_DIR）',
-        hint: '官方厂商槽 Key 写回 auth.json；自定义 URL+Key 写回 models.json。保存到连接池后需切换才落盘',
+        hint: '官方厂商的 Key 写回 auth.json；自定义地址+Key 写回 models.json。保存到登录列表后需切换才会写到本机',
       };
     case 'workbuddy':
       return {

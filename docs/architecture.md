@@ -1,6 +1,6 @@
 # AgentHub 目录结构与模块拆分
 
-> **现行状态（2026-08-19）**：Linux 一等公民；官方船经 `release` 三文件版本 bump 后发布。`agenthub-adapterd` sidecar 是目标、未迁。Chat 没有模型选择；Projects 不接 CLI `--resume`；MCP 注入未做；全站 i18n 未做。
+> **现行状态（2026-08-19）**：Linux 一等公民；官方船经 `release` 三文件版本 bump 后发布。`agenthub-adapterd` sidecar 是目标、未迁。Chat 没有模型选择；Claude/Codex Chat 后续轮次可走 print+resume。MCP 注入未做。
 > 对应《AgentHub 项目方案 v1.3》第 4 节的落地细化。  
 > 目标 cargo workspace 为三 crate：`agenthub-core`（业务核心）/ `agenthub-gui`（Tauri 壳）/ `agenthub-cli`（命令行）；当前三者均已在仓库中（`src-tauri` = gui）。
 > v1.1 同步：Adapter 接口加厚（skills/backup 路径）、Service 职责表、Usage/模型列表边界。  
@@ -8,7 +8,7 @@
 > v1.3：`runtime/` + `env_service` —— 安装 Agent 前的共享运行时（Node/npm 等）检测与引导。  
 > 2026-08-12 同步：Adapter 规则分析/稳定直连、Bridge core 与只读 MCP inventory 的当前工作区结构。
 > 2026-08-12 决策同步：`local_bridge` 的目标宿主确定为用户级 `agenthub-adapterd` sidecar；当前实现仍由 Tauri `AppState` 进程内托管，迁移契约见 [adapter-sidecar-design.md](adapter-sidecar-design.md)。
-> 日志：core 统一 tracing（文件 + 可选 stderr）→ [logging.md](logging.md)。  
+> 日志：core 统一 tracing（文件 + 可选 stderr）；必打事件与分期见 [logging.md](logging.md) **v1.1**。  
 > **前端 backend 分层（已落地）**：`lib/backend/{contracts,tauri,current}` + `dev/mocks` + `app/runtime`；命令与 adapter 选择见 **§4.1–§4.2**。
 > 2026-08-14：Hub 重构 Phase 1 入口（ConnectFlow）已落地，详见 [hub-redesign-plan.md](hub-redesign-plan.md) / [ui-design.md](ui-design.md)。
 > 2026-08-19：用户看到的是「登录」，不是「票 / 钱包」。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不标圈号。三种做法是直接改配置 / 写进对方认的登录 / 本机转发，见 [product-decisions.md](product-decisions.md)。领域对象仍是票 / 绑定 / 协议图（实现名），见 [connection-binding-model.md](connection-binding-model.md)。当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`；`canApply` 仍按「现在能不能写上去」打开。
@@ -228,7 +228,7 @@ struct InstallChannel {
 | `env_service` | Runtime detect/ensure/引导安装计划；doctor 的 runtimes 段（**仅 host_runtimes**） | 不装具体 Agent；不写 L2 live；非 Windows 不探测 PowerShell |
 | `agent_service` / install 管线 | detect；**install/upgrade = ensure_env → 平台渠道**（Windows ps1 / Unix sh / npm） | 不直接改 providers 表；不在各 Adapter 内复制 `which node` |
 | `run_service` | 多 Agent headless 执行（`run` / `run_each`）；流式 stdout 行推送 | 不维护多轮会话；不拼聊天上下文 |
-| `chat_service` | 会话 CRUD；按 Agent **隔离**拼接历史；调用 `run_each`；取消令牌 | 不使用各 CLI 原生 `--resume`；core 内无 Tauri 类型 |
+| `chat_service` | 会话 CRUD；按 Agent **隔离**拼接历史；调用 `run_each`；取消令牌 | Claude/Codex 在已关联官方 session 时后续轮次走 print+resume（只发本轮用户文本）；core 内无 Tauri 类型 |
 
 ### 2.3 调用关系（示意）
 
@@ -375,7 +375,7 @@ React Routes UI（本机路由页）
 src/
 ├── app/
 │   └── runtime/                 # 应用组合入口 + catalog / agent-status /
-│                                # connection-pool / bridge-presence / app-update stores
+│                                # connection-pool / app-update stores
 ├── lib/
 │   ├── backend/
 │   │   ├── contracts/           # DTO、接口、纯映射（不碰 Tauri）
@@ -510,7 +510,7 @@ DTO / mapper：`lib/backend/contracts/*-map.ts`。错误类型：`contracts/erro
 
 Connections 收拢凭据生命周期。目标领域是 **票（Ticket）+ 绑定（Binding）+ 协议图**，不是「account/provider 出身 × 商品白名单」；完整模型与可重做的 UI 见 [connection-binding-model.md](connection-binding-model.md)。
 
-当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`。日常入口仍是 Dashboard「连接/切换」与 Connections「接到…」，走 `ConnectFlowDialog`（`plan.canApply` 表示**现在能写入**）。预览按三种做法说明（直接改配置 / 写进对方认的登录 / 本机转发）；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，见 [product-decisions.md](product-decisions.md)。自动生成的配置不进登录列表。`/routes` 只管理本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。各家接口与现在能不能写上去仍以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
+当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`。日常入口仍是 Dashboard「连接/切换」与 Connections「分享 / 路由」，走 `ConnectFlowDialog`（Connections 入口按分享/路由过滤可见目标；`plan.canApply` 表示**现在能写入**）。预览按三种做法说明（直接改配置 / 写进对方认的登录 / 本机转发）；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，见 [product-decisions.md](product-decisions.md)。自动生成的配置不进登录列表。`/routes` 只管理本机转发运行时（侧栏永久显示，中文「路由」、英文 Routes；列表/详情显示 127.0.0.1 + 端口；旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。各家接口与现在能不能写上去仍以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
 
 **未迁移 / 有意保留**：
 

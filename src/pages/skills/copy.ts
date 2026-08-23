@@ -16,7 +16,7 @@ export function skillCellTip(
   agentName: string,
   state: SkillSyncState,
   mapStatus: SkillMapStatus,
-  linkKind?: string,
+  _linkKind?: string,
   reason?: string,
 ): string {
   switch (mapStatus) {
@@ -39,9 +39,7 @@ export function skillCellTip(
   }
   switch (state) {
     case 'linked':
-      return linkKind && linkKind !== 'none'
-        ? t('skills.cell.linkedWithKind', { linkKind })
-        : t('skills.cell.linked');
+      return t('skills.cell.linked');
     case 'copied':
       return t('skills.cell.copied');
     case 'absent':
@@ -233,6 +231,23 @@ export function removeFailedToast(
   reason: string,
 ): { title: string; description?: string } {
   return { title: t('skills.toast.removeFailed'), description: reason };
+}
+
+export function deleteSharedOkToast(
+  t: TranslateFn,
+  skillName: string,
+): { title: string; description?: string } {
+  return {
+    title: t('skills.toast.deleteSharedOk'),
+    description: t('skills.toast.deleteSharedOkDesc', { skillName }),
+  };
+}
+
+export function deleteSharedFailedToast(
+  t: TranslateFn,
+  reason: string,
+): { title: string; description?: string } {
+  return { title: t('skills.toast.deleteSharedFailed'), description: reason };
 }
 
 export function marketInstallOkToast(

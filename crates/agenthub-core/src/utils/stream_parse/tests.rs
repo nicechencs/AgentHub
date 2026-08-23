@@ -52,6 +52,55 @@ fn grok_thought_and_text() {
 }
 
 #[test]
+fn grok_recognized_noop_is_not_raw_fallback() {
+    let mut s = StreamSession::new(AgentId::Grok, ProcessMode::Auto);
+    let out = s.feed(
+        OutputStream::Stdout,
+        "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"update\":{\"sessionUpdate\":\"available_commands_update\"}}}\n",
+    );
+    assert!(out.is_empty());
+    assert_eq!(s.assistant_text(), "");
+}
+
+#[test]
+fn grok_acp_jsonrpc_reaches_assistant_text() {
+    // Grok Build ≥ 0.2.117 streaming-json is ACP session/update, not {type,data}.
+    let mut s = StreamSession::new(AgentId::Grok, ProcessMode::Auto);
+    let ndjson = concat!(
+        r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"plan"}}}}"#,
+        "\n",
+        r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello "}}}}"#,
+        "\n",
+        r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"world."}}}}"#,
+        "\n",
+    );
+    let out = s.feed(OutputStream::Stdout, ndjson);
+    assert!(out.iter().any(|o| matches!(
+        o,
+        StreamOutput::Step(ProcessStep::Thinking { text, .. }) if text == "plan"
+    )));
+    assert_eq!(s.assistant_text(), "Hello world.");
+    assert!(!out.iter().any(|o| matches!(
+        o,
+        StreamOutput::Step(ProcessStep::Raw { note: Some(n), .. }) if n.contains("unrecognized")
+    )));
+}
+
+#[test]
+fn grok_unknown_legacy_type_is_raw_not_assistant_text() {
+    let mut s = StreamSession::new(AgentId::Grok, ProcessMode::Auto);
+    let out = s.feed(
+        OutputStream::Stdout,
+        "{\"type\":\"totally_unknown_event_xyz\"}\n",
+    );
+    assert!(out.iter().any(|o| matches!(
+        o,
+        StreamOutput::Step(ProcessStep::Raw { note: Some(n), .. }) if n.contains("unrecognized")
+    )));
+    assert_eq!(s.assistant_text(), "");
+}
+
+#[test]
 fn pi_text_delta() {
     let mut s = StreamSession::new(AgentId::Pi, ProcessMode::Auto);
     let line =
@@ -61,6 +110,50 @@ fn pi_text_delta() {
         o,
         StreamOutput::Chunk { text, .. } if text == "ok"
     )));
+}
+
+#[test]
+fn pi_message_end_assistant_text_fills_empty_bubble() {
+    let mut s = StreamSession::new(AgentId::Pi, ProcessMode::Auto);
+    let line = r#"{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"pong"}]}}"#;
+    let _ = s.feed(OutputStream::Stdout, &format!("{line}\n"));
+    assert_eq!(s.assistant_text(), "pong");
+}
+
+#[test]
+fn pi_message_end_thinking_block_emits_thinking_step() {
+    let mut s = StreamSession::new(AgentId::Pi, ProcessMode::Auto);
+    let line = r#"{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"plan"}]}}"#;
+    let out = s.feed(OutputStream::Stdout, &format!("{line}\n"));
+    assert!(out.iter().any(|o| matches!(
+        o,
+        StreamOutput::Step(ProcessStep::Thinking { text, done: true }) if text == "plan"
+    )));
+}
+
+#[test]
+fn pi_deltas_then_message_end_does_not_double_assistant_text() {
+    let mut s = StreamSession::new(AgentId::Pi, ProcessMode::Auto);
+    let ndjson = concat!(
+        r#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"pong"}}"#,
+        "\n",
+        r#"{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"pong"}]}}"#,
+        "\n",
+    );
+    let _ = s.feed(OutputStream::Stdout, ndjson);
+    assert_eq!(s.assistant_text(), "pong");
+}
+
+#[test]
+fn pi_message_end_error_without_text_fills_chat_and_error_step() {
+    let mut s = StreamSession::new(AgentId::Pi, ProcessMode::Auto);
+    let line = r#"{"type":"message_end","message":{"role":"assistant","content":[],"errorMessage":"provider failed","stopReason":"error"}}"#;
+    let out = s.feed(OutputStream::Stdout, &format!("{line}\n"));
+    assert!(out.iter().any(|o| matches!(
+        o,
+        StreamOutput::Step(ProcessStep::Error { message }) if message == "provider failed"
+    )));
+    assert_eq!(s.assistant_text(), "provider failed");
 }
 
 #[test]
@@ -137,6 +230,22 @@ fn chunk_boundary_across_feeds() {
         StreamOutput::Chunk { text, .. } if text == "hello"
     )));
     assert_eq!(s.assistant_text(), "hello");
+    assert!(s.consumed_complete());
+}
+
+#[test]
+fn leftover_partial_line_is_not_consumed_complete() {
+    let mut s = StreamSession::new(AgentId::Grok, ProcessMode::Auto);
+    let _ = s.feed(OutputStream::Stdout, "{\"type\":\"text\",\"data\":\"hel");
+    assert!(!s.consumed_complete());
+}
+
+#[test]
+fn line_buffer_overflow_is_not_consumed_complete() {
+    let mut s = StreamSession::new(AgentId::Claude, ProcessMode::Auto);
+    let huge = "x".repeat(256 * 1024 + 32);
+    let _ = s.feed(OutputStream::Stdout, &huge);
+    assert!(!s.consumed_complete());
 }
 
 #[test]
@@ -146,6 +255,20 @@ fn malformed_json_becomes_raw_step_not_panic() {
     assert!(out
         .iter()
         .any(|o| matches!(o, StreamOutput::Step(ProcessStep::Raw { .. }))));
+    assert!(!s.consumed_complete());
+}
+
+#[test]
+fn malformed_json_after_assistant_does_not_count_as_intact() {
+    let mut s = StreamSession::new(AgentId::Claude, ProcessMode::Auto);
+    let good = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}"#;
+    let _ = s.feed(OutputStream::Stdout, &format!("{good}\n"));
+    assert_eq!(s.assistant_text(), "hi");
+    assert!(s.consumed_complete());
+    let _ = s.feed(OutputStream::Stdout, "{not-json\n");
+    let _ = s.flush();
+    assert_eq!(s.assistant_text(), "hi");
+    assert!(!s.consumed_complete());
 }
 
 #[test]
@@ -155,7 +278,7 @@ fn unknown_event_type_raw_fallback() {
         OutputStream::Stdout,
         "{\"type\":\"totally_unknown_event_xyz\"}\n",
     );
-    // Parser returns empty or None → unrecognized structured line as Raw.
+    // Unknown shape (`None`) is a raw step. Recognized no-ops (`Some([])`) emit nothing.
     assert!(
         out.iter().any(|o| matches!(
             o,
@@ -213,5 +336,32 @@ fn structured_requested_without_parser_falls_back_to_text() {
             stream: OutputStream::Stdout,
             text: "hello\n".into()
         }]
+    );
+}
+
+#[test]
+fn captures_claude_and_codex_session_ids() {
+    let mut claude = StreamSession::new(AgentId::Claude, ProcessMode::Auto);
+    claude.feed(
+        OutputStream::Stdout,
+        "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"sess-claude\"}\n",
+    );
+    assert_eq!(claude.native_session_id(), Some("sess-claude"));
+
+    let mut codex = StreamSession::new(AgentId::Codex, ProcessMode::Auto);
+    codex.feed(
+        OutputStream::Stdout,
+        "{\"type\":\"thread.started\",\"thread_id\":\"sess-codex\"}\n",
+    );
+    assert_eq!(codex.native_session_id(), Some("sess-codex"));
+}
+
+#[test]
+fn extract_native_session_id_rejects_noise() {
+    assert!(extract_native_session_id("claude", "not-json").is_none());
+    assert!(extract_native_session_id("kimi", r#"{"session_id":"x"}"#).is_none());
+    assert_eq!(
+        extract_native_session_id("claude", r#"{"session_id":"  abc  "}"#).as_deref(),
+        Some("abc")
     );
 }

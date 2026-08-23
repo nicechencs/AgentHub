@@ -42,44 +42,46 @@ describe('listSkillCatalog (browser mock)', () => {
     }
   });
 
-  it('omits claude copies of dbs-action (available) and pdf (conflict)', async () => {
+  it('omits claude copies of notes (available) and pdf (conflict)', async () => {
     const catalog = await listSkillCatalog();
     expect(
-      catalog.some((row) => row.origin === 'claude' && row.id === 'dbs-action'),
+      catalog.some((row) => row.origin === 'claude' && row.id === 'notes'),
     ).toBe(false);
     expect(catalog.some((row) => row.origin === 'claude' && row.id === 'pdf')).toBe(
       false,
     );
-    expect(catalog.some((row) => row.origin === 'shared' && row.id === 'dbs-action')).toBe(
+    expect(catalog.some((row) => row.origin === 'shared' && row.id === 'notes')).toBe(
       true,
     );
     expect(catalog.some((row) => row.origin === 'shared' && row.id === 'pdf')).toBe(true);
   });
 
-  it('includes private-only rows such as hatch-pet (codex)', async () => {
+  it('includes private-only rows such as sample-pet (codex)', async () => {
     const catalog = await listSkillCatalog();
-    const hatch = catalog.find((row) => row.id === 'hatch-pet');
-    expect(hatch).toMatchObject({
-      id: 'hatch-pet',
-      origin: 'codex',
+    const pet = catalog.filter((row) => row.id === 'sample-pet');
+    expect(pet).toHaveLength(2);
+    expect(pet.map((row) => row.origin).sort()).toEqual(['codex', 'cursor']);
+    expect(pet[0]?.contentHash).toBe(pet[1]?.contentHash);
+    expect(pet[0]).toMatchObject({
+      id: 'sample-pet',
       mapStatus: 'private_source',
       projectable: false,
       projections: [],
     });
-    expect(catalog.some((row) => row.id === 'changelog-generator')).toBe(true);
-    expect(catalog.some((row) => row.id === 'local-review')).toBe(true);
-    expect(catalog.some((row) => row.id === 'grok-session-notes')).toBe(true);
+    expect(catalog.some((row) => row.id === 'sample-changelog')).toBe(true);
+    expect(catalog.some((row) => row.id === 'sample-review')).toBe(true);
+    expect(catalog.some((row) => row.id === 'sample-notes')).toBe(true);
   });
 
   it('does not change listInstalledSkills semantics (still includes available/conflict copies)', async () => {
     const installed = await listInstalledSkills();
     expect(
-      installed.some((row) => row.origin === 'claude' && row.id === 'dbs-action'),
+      installed.some((row) => row.origin === 'claude' && row.id === 'notes'),
     ).toBe(true);
     expect(installed.some((row) => row.origin === 'claude' && row.id === 'pdf')).toBe(
       true,
     );
-    expect(installed.some((row) => row.origin === 'codex' && row.id === 'hatch-pet')).toBe(
+    expect(installed.some((row) => row.origin === 'codex' && row.id === 'sample-pet')).toBe(
       true,
     );
   });

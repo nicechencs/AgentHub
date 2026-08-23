@@ -26,10 +26,13 @@ export function connectSourceKey(ref: ConnectSourceRef): string {
   return `${ref.kind}:${ref.id}`;
 }
 
+/** for-source：分享 = 直连 / 写进对方登录；路由 = 本机转发。 */
+export type ConnectBindPurpose = 'share' | 'route';
+
 /** 对话框进入模式（判别联合）。 */
 export type ConnectFlowEntry =
   | { mode: 'for-agent'; targetAgentId: AgentId }
-  | { mode: 'for-source'; source: ConnectSourceRef };
+  | { mode: 'for-source'; source: ConnectSourceRef; purpose?: ConnectBindPurpose };
 
 /**
  * 来源条目状态：
@@ -170,7 +173,7 @@ export interface ConnectFlowDialogProps {
 /** 用途反查（钱包行"正用于哪些 Agent"）。 */
 export interface ConnectionUsageEntry {
   agentId: AgentId;
-  /** direct = 自身 isCurrent 生效；adapter = 经兼容路由投影生效 */
+  /** direct = 自身 isCurrent 生效；adapter = 本机路由生效 */
   via: 'direct' | 'adapter';
 }
 

@@ -23,6 +23,14 @@ export function createTauriChatPort(): ChatPort {
       return mapConversation(row);
     },
 
+    async ensureDefaultConversation(agentIds, cwd) {
+      const row = await invoke<CoreConversation>('ensure_default_conversation', {
+        agentIds,
+        cwd: cwd ?? null,
+      });
+      return mapConversation(row);
+    },
+
     async updateConversation(id, patch) {
       const cwdArg =
         patch.cwd === undefined ? null : patch.cwd === null || patch.cwd === '' ? '' : patch.cwd;

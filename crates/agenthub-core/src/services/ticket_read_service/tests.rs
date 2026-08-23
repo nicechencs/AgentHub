@@ -1,10 +1,12 @@
 use super::*;
 use crate::models::{
-    AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterSourceKind,
-    AdapterSupport, AgentId, PersistedTicketSurface, TicketBindingRoute, TicketCredentialClass,
-    TicketProtocol, TicketSurface, PROJECTION_NOT_A_TICKET,
+    parse_ticket_id, Account, AccountKind, AdapterProfile, AdapterProfileMode,
+    AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AdapterSupport, AgentId,
+    PersistedTicketSurface, Provider, Ticket, TicketBindingRoute, TicketCredentialClass,
+    TicketPlanRequest, TicketProtocol, TicketSurface, PROJECTION_NOT_A_TICKET,
 };
-use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
+use crate::services::ConnectionService;
+use crate::storage::{AccountRepo, ActiveBindingRepo, AdapterProfileRepo, Database, ProviderRepo};
 
 fn test_db() -> (tempfile::TempDir, Database) {
     let dir = tempfile::tempdir().unwrap();
@@ -106,6 +108,96 @@ fn generated_projection_providers_are_excluded_from_tickets() {
     let ids: Vec<_> = wallet.tickets.iter().map(|t| t.id.as_str()).collect();
     assert_eq!(ids, vec!["provider:kimi-src"]);
     assert!(!ids.iter().any(|id| id.contains("proj-claude")));
+    assert!(wallet.surface_groups.iter().all(|group| group
+        .members
+        .iter()
+        .all(|member| member.source_id != "proj-claude")));
+}
+
+#[test]
+fn generated_projection_accounts_are_excluded_from_tickets() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "claude-bridge-acc".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::ApiKey,
+            label: "loopback leftover".into(),
+            credentials: serde_json::json!({
+                "format": "api_key",
+                "api_key": "ahb_local",
+                "base_url": "http://127.0.0.1:43081"
+            }),
+            extra: serde_json::json!({"source": "live"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "codex-oauth",
+            AgentId::Codex,
+            AccountKind::Oauth,
+            "me@example.com",
+            false,
+        ))
+        .unwrap();
+
+    let wallet = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    let ids: Vec<_> = wallet.tickets.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, vec!["account:codex-oauth"]);
+
+    let error = TicketReadService::new(db)
+        .plan(&TicketPlanRequest {
+            ticket_id: "account:claude-bridge-acc".into(),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains(PROJECTION_NOT_A_TICKET));
+}
+
+#[test]
+fn current_generated_provider_does_not_hide_unrelated_account_tickets() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "claude-oauth",
+            AgentId::Claude,
+            AccountKind::Oauth,
+            "a@x.com",
+            false,
+        ))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "claude-gen".into(),
+            agent_id: AgentId::Claude,
+            name: "Generated Claude".into(),
+            settings_config: serde_json::json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "http://127.0.0.1:43081",
+                    "ANTHROPIC_AUTH_TOKEN": "ahb_local"
+                }
+            }),
+            meta: serde_json::json!({
+                "generatedBy": "adapter",
+                "adapterBridge": { "loopbackOnly": true }
+            }),
+            is_current: true,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+
+    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    let ids: Vec<_> = wallet.tickets.iter().map(|t| t.id.as_str()).collect();
+    assert!(
+        ids.contains(&"account:claude-oauth"),
+        "source oauth must stay listed while a generated provider is current: {ids:?}"
+    );
+    assert!(!ids.iter().any(|id| *id == "provider:claude-gen"));
 }
 
 #[test]
@@ -286,6 +378,7 @@ fn claude_and_grok_oauth_accounts_have_subscription_surfaces_and_contract_speaks
         .find(|ticket| ticket.id == "account:grok-oauth")
         .unwrap();
     assert_eq!(grok.surface, TicketSurface::GrokXaiSubscription);
+    assert!(grok.speaks.contains(&TicketProtocol::OpenaiResponses));
     assert!(grok.speaks.contains(&TicketProtocol::OpenaiChat));
     assert!(grok.speaks.contains(&TicketProtocol::XaiDeviceCode));
 }
@@ -564,6 +657,12 @@ fn wallet_wire_shape_uses_camel_case_and_kebab_surfaces() {
         serde_json::json!(["anthropic-messages", "openai-chat"])
     );
     assert_eq!(ticket["importedFrom"], "kimi");
+    let group = &v["surfaceGroups"][0];
+    assert_eq!(group["surface"], "kimi-code-membership");
+    assert_eq!(group["credentialClass"], "api_key");
+    assert_eq!(group["members"][0]["ticketId"], "provider:kimi-src");
+    assert_eq!(group["members"][0]["sourceKind"], "provider");
+    assert_eq!(group["members"][0]["sourceId"], "kimi-src");
     assert!(!serde_json::to_string(&wallet)
         .unwrap()
         .contains("must-not-leak"));
@@ -977,4 +1076,672 @@ fn plan_ticket_rejects_generated_by_adapter_meta() {
         .unwrap_err();
     assert!(matches!(err, AppError::InvalidArg(_)));
     assert!(err.to_string().contains(PROJECTION_NOT_A_TICKET));
+}
+
+const CODEX_LEFTOVER_TOML: &str = r#"model_provider = "agenthub_grok_bridge"
+model = "grok-4"
+preferred_auth_method = "apikey"
+
+[model_providers.agenthub_grok_bridge]
+name = "AgentHub Grok Route"
+base_url = "http://127.0.0.1:43121/v1"
+wire_api = "responses"
+"#;
+
+#[test]
+fn orphan_generated_by_adapter_provider_is_not_a_ticket() {
+    let (_dir, db) = test_db();
+    let mut generated = provider(
+        "orphan-gen",
+        AgentId::Claude,
+        "Orphan generated",
+        "custom",
+        true,
+    );
+    generated.meta = serde_json::json!({
+        "preset": "custom",
+        "generatedBy": "adapter"
+    });
+    ProviderRepo::new(db.clone()).create(&generated).unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "kimi-src",
+            AgentId::Kimi,
+            "Kimi membership",
+            "kimi-code-membership",
+            false,
+        ))
+        .unwrap();
+
+    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    let ids: Vec<_> = wallet.tickets.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, vec!["provider:kimi-src"]);
+    assert!(!wallet
+        .tickets
+        .iter()
+        .any(|ticket| ticket.source_id == "orphan-gen"));
+    assert!(!wallet
+        .bindings
+        .iter()
+        .any(|binding| binding.ticket_id == "provider:orphan-gen"));
+}
+
+#[test]
+fn orphan_codex_leftover_provider_is_not_a_ticket() {
+    let (_dir, db) = test_db();
+    let mut leftover = provider(
+        "codex-leftover",
+        AgentId::Codex,
+        "AgentHub Grok Route",
+        "custom",
+        true,
+    );
+    leftover.settings_config = serde_json::json!({
+        "format": "toml",
+        "content": CODEX_LEFTOVER_TOML
+    });
+    leftover.meta = serde_json::json!({
+        "adapterBridge": { "loopbackOnly": true }
+    });
+    ProviderRepo::new(db.clone()).create(&leftover).unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "kimi-src",
+            AgentId::Kimi,
+            "Kimi membership",
+            "kimi-code-membership",
+            false,
+        ))
+        .unwrap();
+
+    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    let ids: Vec<_> = wallet.tickets.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, vec!["provider:kimi-src"]);
+    assert!(!wallet
+        .tickets
+        .iter()
+        .any(|ticket| ticket.source_id == "codex-leftover"));
+    assert!(!wallet
+        .bindings
+        .iter()
+        .any(|binding| binding.ticket_id == "provider:codex-leftover"));
+}
+
+#[test]
+fn orphan_codex_leftover_toml_only_is_not_a_ticket() {
+    let (_dir, db) = test_db();
+    let mut leftover = provider(
+        "codex-leftover",
+        AgentId::Codex,
+        "AgentHub Grok Route",
+        "custom",
+        false,
+    );
+    leftover.settings_config = serde_json::json!({
+        "format": "toml",
+        "content": CODEX_LEFTOVER_TOML
+    });
+    leftover.meta = serde_json::json!({"preset": "custom"});
+    ProviderRepo::new(db.clone()).create(&leftover).unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "kimi-src",
+            AgentId::Kimi,
+            "Kimi membership",
+            "kimi-code-membership",
+            false,
+        ))
+        .unwrap();
+
+    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    let ids: Vec<_> = wallet.tickets.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, vec!["provider:kimi-src"]);
+    assert!(!wallet
+        .tickets
+        .iter()
+        .any(|ticket| ticket.source_id == "codex-leftover"));
+    assert!(!wallet
+        .bindings
+        .iter()
+        .any(|binding| binding.ticket_id == "provider:codex-leftover"));
+}
+
+#[test]
+fn plan_ticket_rejects_codex_leftover_toml_only() {
+    let (_dir, db) = test_db();
+    let mut leftover = provider(
+        "codex-leftover",
+        AgentId::Codex,
+        "AgentHub Grok Route",
+        "custom",
+        false,
+    );
+    leftover.settings_config = serde_json::json!({
+        "format": "toml",
+        "content": CODEX_LEFTOVER_TOML
+    });
+    leftover.meta = serde_json::json!({"preset": "custom"});
+    ProviderRepo::new(db.clone()).create(&leftover).unwrap();
+
+    let err = TicketReadService::new(db)
+        .plan(&TicketPlanRequest {
+            ticket_id: "provider:codex-leftover".into(),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap_err();
+    assert!(matches!(err, AppError::InvalidArg(_)));
+    assert!(err.to_string().contains(PROJECTION_NOT_A_TICKET));
+}
+
+#[test]
+fn current_codex_leftover_does_not_become_native_ticket_when_oauth_account_current() {
+    let (_dir, db) = test_db();
+    let mut leftover = provider(
+        "codex-leftover",
+        AgentId::Codex,
+        "AgentHub Grok Route",
+        "custom",
+        true,
+    );
+    leftover.settings_config = serde_json::json!({
+        "format": "toml",
+        "content": CODEX_LEFTOVER_TOML
+    });
+    leftover.meta = serde_json::json!({"preset": "custom"});
+    ProviderRepo::new(db.clone()).create(&leftover).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "codex-oauth",
+            AgentId::Codex,
+            AccountKind::Oauth,
+            "me@example.com",
+            true,
+        ))
+        .unwrap();
+
+    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    assert!(wallet
+        .tickets
+        .iter()
+        .any(|ticket| ticket.id == "account:codex-oauth"));
+    assert!(!wallet
+        .tickets
+        .iter()
+        .any(|ticket| ticket.source_id == "codex-leftover"));
+    assert!(!wallet
+        .bindings
+        .iter()
+        .any(|binding| binding.ticket_id == "provider:codex-leftover"));
+    assert!(!wallet
+        .bindings
+        .iter()
+        .any(|binding| binding.agent_id == AgentId::Codex && binding.active));
+    assert!(!wallet
+        .bindings
+        .iter()
+        .any(|binding| binding.ticket_id == "account:codex-oauth" && binding.active));
+}
+
+#[test]
+fn imported_api_key_provider_is_still_a_ticket() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "openai-key",
+            AgentId::Codex,
+            "OpenAI API",
+            "openai",
+            false,
+        ))
+        .unwrap();
+
+    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    let ticket = wallet
+        .tickets
+        .iter()
+        .find(|ticket| ticket.id == "provider:openai-key")
+        .expect("imported API key remains a ticket");
+    assert_eq!(ticket.surface, TicketSurface::OpenaiApi);
+    assert_eq!(ticket.credential_class, TicketCredentialClass::ApiKey);
+}
+
+fn sample_ticket(
+    id: &str,
+    kind: AdapterSourceKind,
+    source_id: &str,
+    agent: AgentId,
+    label: &str,
+    surface: TicketSurface,
+    class: TicketCredentialClass,
+) -> Ticket {
+    Ticket {
+        id: id.into(),
+        source_kind: kind,
+        source_id: source_id.into(),
+        agent_id: agent,
+        label: label.into(),
+        surface,
+        credential_class: class,
+        speaks: surface.speaks().to_vec(),
+        imported_from: Some(agent),
+    }
+}
+
+#[test]
+fn same_surface_two_accounts_form_one_group_in_ticket_id_order() {
+    let groups = group_ticket_surface_members(&[
+        sample_ticket(
+            "account:g2",
+            AdapterSourceKind::Account,
+            "g2",
+            AgentId::Grok,
+            "b@x.com",
+            TicketSurface::GrokXaiSubscription,
+            TicketCredentialClass::Oauth,
+        ),
+        sample_ticket(
+            "account:g1",
+            AdapterSourceKind::Account,
+            "g1",
+            AgentId::Grok,
+            "a@x.com",
+            TicketSurface::GrokXaiSubscription,
+            TicketCredentialClass::Oauth,
+        ),
+    ]);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].surface, TicketSurface::GrokXaiSubscription);
+    assert_eq!(groups[0].credential_class, TicketCredentialClass::Oauth);
+    let ids: Vec<_> = groups[0]
+        .members
+        .iter()
+        .map(|member| member.ticket_id.as_str())
+        .collect();
+    assert_eq!(ids, vec!["account:g1", "account:g2"]);
+}
+
+#[test]
+fn different_surfaces_do_not_share_a_group() {
+    let groups = group_ticket_surface_members(&[
+        sample_ticket(
+            "provider:kimi",
+            AdapterSourceKind::Provider,
+            "kimi",
+            AgentId::Kimi,
+            "Kimi",
+            TicketSurface::KimiCodeMembership,
+            TicketCredentialClass::ApiKey,
+        ),
+        sample_ticket(
+            "provider:anth",
+            AdapterSourceKind::Provider,
+            "anth",
+            AgentId::Claude,
+            "Anth",
+            TicketSurface::AnthropicApi,
+            TicketCredentialClass::ApiKey,
+        ),
+    ]);
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].surface, TicketSurface::AnthropicApi);
+    assert_eq!(groups[1].surface, TicketSurface::KimiCodeMembership);
+    assert_eq!(groups[0].members.len(), 1);
+    assert_eq!(groups[1].members.len(), 1);
+}
+
+#[test]
+fn account_and_provider_of_same_surface_mix_in_one_group() {
+    let groups = group_ticket_surface_members(&[
+        sample_ticket(
+            "provider:kimi-src",
+            AdapterSourceKind::Provider,
+            "kimi-src",
+            AgentId::Kimi,
+            "Kimi membership",
+            TicketSurface::KimiCodeMembership,
+            TicketCredentialClass::ApiKey,
+        ),
+        sample_ticket(
+            "account:kimi-key",
+            AdapterSourceKind::Account,
+            "kimi-key",
+            AgentId::Kimi,
+            "Kimi key",
+            TicketSurface::KimiCodeMembership,
+            TicketCredentialClass::ApiKey,
+        ),
+    ]);
+    assert_eq!(groups.len(), 1);
+    let ids: Vec<_> = groups[0]
+        .members
+        .iter()
+        .map(|member| member.ticket_id.as_str())
+        .collect();
+    assert_eq!(ids, vec!["account:kimi-key", "provider:kimi-src"]);
+}
+
+#[test]
+fn unknown_surface_and_unknown_credential_class_are_not_grouped() {
+    let groups = group_ticket_surface_members(&[
+        sample_ticket(
+            "provider:relay",
+            AdapterSourceKind::Provider,
+            "relay",
+            AgentId::Claude,
+            "relay",
+            TicketSurface::Unknown,
+            TicketCredentialClass::ApiKey,
+        ),
+        sample_ticket(
+            "account:odd",
+            AdapterSourceKind::Account,
+            "odd",
+            AgentId::Pi,
+            "odd",
+            TicketSurface::AnthropicApi,
+            TicketCredentialClass::Unknown,
+        ),
+    ]);
+    assert!(groups.is_empty());
+}
+
+#[test]
+fn list_wallet_groups_known_surfaces_and_excludes_unknown_and_projections() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "grok-a",
+            AgentId::Grok,
+            AccountKind::Oauth,
+            "a@x.com",
+            false,
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "grok-b",
+            AgentId::Grok,
+            AccountKind::Oauth,
+            "b@x.com",
+            false,
+        ))
+        .unwrap();
+    let mut kimi_key = account(
+        "kimi-key",
+        AgentId::Kimi,
+        AccountKind::ApiKey,
+        "Kimi key",
+        false,
+    );
+    kimi_key.credentials = serde_json::json!({"api_key": "sk-x"});
+    kimi_key.extra = serde_json::json!({"surface": "kimi-code-membership"});
+    AccountRepo::new(db.clone()).create(&kimi_key).unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "kimi-src",
+            AgentId::Kimi,
+            "Kimi membership",
+            "kimi-code-membership",
+            false,
+        ))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "relay",
+            AgentId::Claude,
+            "Custom relay",
+            "openai-compatible",
+            false,
+        ))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "proj-claude",
+            AgentId::Claude,
+            "Generated",
+            "custom",
+            true,
+        ))
+        .unwrap();
+    AdapterProfileRepo::new(db.clone())
+        .create(&profile(
+            "p1",
+            AdapterSourceKind::Provider,
+            "kimi-src",
+            AgentId::Claude,
+            AdapterRoute::NativeEndpoint,
+            Some("proj-claude"),
+            None,
+        ))
+        .unwrap();
+
+    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    assert!(wallet
+        .tickets
+        .iter()
+        .any(|t| t.surface == TicketSurface::Unknown));
+    assert!(!wallet.tickets.iter().any(|t| t.source_id == "proj-claude"));
+    let grok = wallet
+        .surface_groups
+        .iter()
+        .find(|g| {
+            g.surface == TicketSurface::GrokXaiSubscription
+                && g.credential_class == TicketCredentialClass::Oauth
+        })
+        .expect("grok oauth group");
+    let grok_ids: Vec<_> = grok.members.iter().map(|m| m.ticket_id.as_str()).collect();
+    assert_eq!(grok_ids, vec!["account:grok-a", "account:grok-b"]);
+    let kimi = wallet
+        .surface_groups
+        .iter()
+        .find(|g| {
+            g.surface == TicketSurface::KimiCodeMembership
+                && g.credential_class == TicketCredentialClass::ApiKey
+        })
+        .expect("kimi api group");
+    let kimi_ids: Vec<_> = kimi.members.iter().map(|m| m.ticket_id.as_str()).collect();
+    assert_eq!(kimi_ids, vec!["account:kimi-key", "provider:kimi-src"]);
+    assert!(wallet
+        .surface_groups
+        .iter()
+        .all(|g| g.surface != TicketSurface::Unknown));
+}
+
+/// Wallet-derived connection pointer for one Agent.
+/// Native tickets map 1:1 to account_id / provider_id.
+/// Reshape/bridge map to the generated projection id (the live current row),
+/// not the source ticket.
+fn wallet_active_connection_pointer(
+    wallet: &crate::models::TicketWallet,
+    profiles: &[AdapterProfile],
+    agent: AgentId,
+) -> (Option<String>, Option<String>) {
+    let Some(binding) = wallet
+        .bindings
+        .iter()
+        .find(|binding| binding.agent_id == agent && binding.active)
+    else {
+        return (None, None);
+    };
+    match binding.route {
+        TicketBindingRoute::Native => match parse_ticket_id(&binding.ticket_id) {
+            Ok((AdapterSourceKind::Account, id)) => (Some(id), None),
+            Ok((AdapterSourceKind::Provider, id)) => (None, Some(id)),
+            Err(_) => (None, None),
+        },
+        TicketBindingRoute::Reshape | TicketBindingRoute::Bridge => {
+            let generated = binding.profile_id.as_deref().and_then(|profile_id| {
+                profiles
+                    .iter()
+                    .find(|profile| profile.id == profile_id)
+                    .and_then(|profile| profile.generated_provider_id.clone())
+            });
+            (None, generated)
+        }
+    }
+}
+
+fn raw_active_pointer(db: &Database, agent: AgentId) -> (Option<String>, Option<String>) {
+    match ActiveBindingRepo::new(db.clone())
+        .get(agent.as_str())
+        .unwrap()
+    {
+        Some(row) => (row.account_id, row.provider_id),
+        None => (None, None),
+    }
+}
+
+#[test]
+fn ticket_connection_active_binding_matches_wallet_native_account() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "codex-oauth",
+            AgentId::Codex,
+            AccountKind::Oauth,
+            "me@example.com",
+            false,
+        ))
+        .unwrap();
+    ConnectionService::new(db.clone())
+        .record_account_active(AgentId::Codex, "codex-oauth")
+        .unwrap();
+
+    let wallet = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    let derived = wallet_active_connection_pointer(&wallet, &[], AgentId::Codex);
+    let pointer = raw_active_pointer(&db, AgentId::Codex);
+    assert_eq!(derived, (Some("codex-oauth".into()), None));
+    assert_eq!(derived, pointer);
+}
+
+#[test]
+fn ticket_connection_active_binding_matches_wallet_native_provider() {
+    let (_dir, db) = test_db();
+    let row = ProviderRepo::new(db.clone())
+        .create(&provider(
+            "anth",
+            AgentId::Claude,
+            "Anthropic",
+            "anthropic",
+            false,
+        ))
+        .unwrap();
+    ConnectionService::new(db.clone())
+        .activate_provider(AgentId::Claude, "anth", &row.updated_at, "t-act")
+        .unwrap();
+
+    let wallet = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    let derived = wallet_active_connection_pointer(&wallet, &[], AgentId::Claude);
+    let pointer = raw_active_pointer(&db, AgentId::Claude);
+    assert_eq!(derived, (None, Some("anth".into())));
+    assert_eq!(derived, pointer);
+}
+
+#[test]
+fn ticket_connection_active_binding_matches_wallet_reshape_projection() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "kimi-src",
+            AgentId::Kimi,
+            "Kimi membership",
+            "kimi-code-membership",
+            false,
+        ))
+        .unwrap();
+    let generated = ProviderRepo::new(db.clone())
+        .create(&provider(
+            "proj-claude",
+            AgentId::Claude,
+            "Generated",
+            "custom",
+            false,
+        ))
+        .unwrap();
+    let reshape = profile(
+        "reshape-p",
+        AdapterSourceKind::Provider,
+        "kimi-src",
+        AgentId::Claude,
+        AdapterRoute::NativeEndpoint,
+        Some("proj-claude"),
+        None,
+    );
+    AdapterProfileRepo::new(db.clone())
+        .create(&reshape)
+        .unwrap();
+    ConnectionService::new(db.clone())
+        .activate_provider(
+            AgentId::Claude,
+            "proj-claude",
+            &generated.updated_at,
+            "t-act",
+        )
+        .unwrap();
+
+    let wallet = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    let derived = wallet_active_connection_pointer(&wallet, &[reshape], AgentId::Claude);
+    let pointer = raw_active_pointer(&db, AgentId::Claude);
+    assert_eq!(derived, (None, Some("proj-claude".into())));
+    assert_eq!(derived, pointer);
+    let active = wallet
+        .bindings
+        .iter()
+        .find(|binding| binding.agent_id == AgentId::Claude && binding.active)
+        .expect("claude active");
+    assert_eq!(active.ticket_id, "provider:kimi-src");
+    assert_eq!(active.route, TicketBindingRoute::Reshape);
+}
+
+/// Detector for D3: mutating only `accounts.is_current` (AccountRepo.update,
+/// which does not dual-write `agent_active_bindings`) must diverge from the
+/// raw pointer. The committed assertion is the divergence itself. To demo a
+/// red PR: change the final `assert_ne` to `assert_eq` after the same mutate.
+#[test]
+fn ticket_connection_wallet_vs_pointer_detects_one_sided_is_current_drift() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "acc-a",
+            AgentId::Claude,
+            AccountKind::Oauth,
+            "a@x.com",
+            false,
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "acc-b",
+            AgentId::Claude,
+            AccountKind::Oauth,
+            "b@x.com",
+            false,
+        ))
+        .unwrap();
+    ConnectionService::new(db.clone())
+        .record_account_active(AgentId::Claude, "acc-a")
+        .unwrap();
+
+    let before = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    assert_eq!(
+        wallet_active_connection_pointer(&before, &[], AgentId::Claude),
+        raw_active_pointer(&db, AgentId::Claude)
+    );
+
+    let mut b = AccountRepo::new(db.clone())
+        .get_by_id("acc-b")
+        .unwrap()
+        .unwrap();
+    b.is_current = true;
+    AccountRepo::new(db.clone()).update(&b).unwrap();
+
+    let after = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    let derived = wallet_active_connection_pointer(&after, &[], AgentId::Claude);
+    let pointer = raw_active_pointer(&db, AgentId::Claude);
+    assert_eq!(derived, (Some("acc-b".into()), None));
+    assert_eq!(pointer, (Some("acc-a".into()), None));
+    assert_ne!(
+        derived, pointer,
+        "one-sided is_current write must diverge from agent_active_bindings"
+    );
 }

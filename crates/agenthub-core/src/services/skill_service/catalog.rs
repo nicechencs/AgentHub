@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::error::Result;
 use crate::models::{InstalledSkill, SkillMapStatus};
 use crate::platform::skills::{
-    for_each_agent_skill_dir, installed_skill_from_agent, installed_skill_from_shared,
-    map_status_agent_vs_shared, skill_lock_load,
+    fingerprint_skill_tree, for_each_agent_skill_dir, installed_skill_from_agent,
+    installed_skill_from_shared, map_status_agent_vs_shared, skill_lock_load,
 };
 
 use super::SkillService;
@@ -53,7 +53,7 @@ impl SkillService {
             } else {
                 SkillMapStatus::PrivateSource
             };
-            out.push(installed_skill_from_agent(entry, map_status));
+            out.push(installed_skill_from_agent(entry, map_status, None));
         });
 
         out.sort_by(|a, b| a.id.cmp(&b.id).then(a.origin.cmp(&b.origin)));
@@ -61,11 +61,13 @@ impl SkillService {
     }
 
     /// Catalog view: shared library rows plus agent-private skills that are **not**
-    /// already in the shared library (id match only — no content-hash compare).
+    /// already in the shared library (id match only — no cross-agent merge here).
     ///
     /// - Shared rows match [`Self::list`] content: `origin=shared`, projectable, full projections.
     /// - Agent-only ids emit one row per agent directory (`projections` is empty).
-    /// - Same id under two agents (and not in shared) stays two rows.
+    /// - Same id under two agents (and not in shared) stays two rows; private rows
+    ///   carry `content_hash` so the GUI can merge identical copies after visibility
+    ///   filtering.
     /// - Agent copies / conflicts of a shared id are omitted.
     pub fn list_catalog(&self) -> Result<Vec<InstalledSkill>> {
         let mut out: Vec<InstalledSkill> = Vec::new();
@@ -86,9 +88,11 @@ impl SkillService {
             if shared_ids.contains(&entry.skill_id) {
                 return;
             }
+            let content_hash = fingerprint_skill_tree(&entry.path);
             out.push(installed_skill_from_agent(
                 entry,
                 SkillMapStatus::PrivateSource,
+                content_hash,
             ));
         });
 

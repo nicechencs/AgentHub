@@ -38,7 +38,9 @@ import { cn } from '@/lib/utils';
 import { shouldIgnoreMenuDialogDismiss } from '@/pages/connections/ticket-wallet-model';
 import { buildAgentInstallPreview, buildEnvInstallPreview } from './install-preview';
 import {
+  agentTaskLogTitleKey,
   formatAgentVersion,
+  isNodeTooOldUpdateNote,
   openAgentCardUninstallConfirm,
   resolveOfficialSetupUrl,
 } from './agent-card-model';
@@ -201,6 +203,12 @@ export function AgentCard({
     })();
   };
 
+  const installFailed = task?.status === 'failed';
+  const retryAction = () => {
+    if (task?.action === 'upgrade') startUpgrade();
+    else if (task?.action === 'oneclick') startOneClickFull();
+    else startAgentInstall(selectedChannel);
+  };
   const cardState: 'installed' | 'ready_to_install' | 'env_missing' = agent.installed
     ? 'installed'
     : envCheck.ready
@@ -327,7 +335,11 @@ export function AgentCard({
                     <span className="text-xs text-muted">{t('agents.card.upToDate')}</span>
                   )}
                   {updateState === 'unknown' && (
-                    <span className="text-xs text-muted">{t('agents.card.updateUnknown')}</span>
+                    <span className="text-xs text-muted">
+                      {isNodeTooOldUpdateNote(agent.update?.note)
+                        ? t('agents.card.needsNode22')
+                        : t('agents.card.updateUnknown')}
+                    </span>
                   )}
                   {updateUnsupported &&
                     (officialSetupUrl ? (
@@ -546,7 +558,7 @@ export function AgentCard({
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={canOneClickEnv ? startOneClickFull : startOneClickEnvOnly}
+                onClick={canOneClickEnv ? () => setConfirmDialog('oneclick') : startOneClickEnvOnly}
                 disabled={busy}
                 title={
                   canOneClickEnv
@@ -596,13 +608,13 @@ export function AgentCard({
             <>
               <Button
                 size="sm"
-                variant="secondary"
-                onClick={() => startAgentInstall(selectedChannel)}
+                variant={installFailed ? 'default' : 'secondary'}
+                onClick={() => (installFailed ? retryAction() : setConfirmDialog('install'))}
                 disabled={busy}
-                title={t('agents.card.installWithChannel', { id: selectedChannel.id })}
+                title={installFailed ? t('agents.card.retry') : t('agents.card.installWithChannel', { id: selectedChannel.id })}
               >
                 <Zap className="h-3.5 w-3.5" />
-                {t('agents.card.install')}
+                {installFailed ? t('agents.card.retry') : t('agents.card.install')}
               </Button>
               <Button
                 size="icon"
@@ -628,7 +640,7 @@ export function AgentCard({
                         key={ch.id}
                         onSelect={() => {
                           setSelectedChannelId(ch.id);
-                          startAgentInstall(ch);
+                          setConfirmDialog('install');
                         }}
                       >
                         {ch.label}
@@ -670,16 +682,17 @@ export function AgentCard({
         <div className="mt-3">
           <div className="mb-1 flex items-center justify-between">
             <span className="text-xs text-muted">
-              {task.action === 'oneclick'
-                ? t('agents.card.oneclickProgress')
-                : task.action === 'install'
-                  ? t('agents.card.installing')
-                  : t('agents.card.upgrading')}
+              {t(agentTaskLogTitleKey(task.action, task.status))}
             </span>
             <div className="flex items-center gap-1">
               <Button size="sm" variant="ghost" onClick={copyCommand} title={t('agents.card.copyCliCommand')}>
                 <Copy className="h-3.5 w-3.5" /> {t('agents.card.copy')}
               </Button>
+              {task.status === 'failed' && (
+                <Button size="sm" variant="default" onClick={retryAction}>
+                  {t('agents.card.retry')}
+                </Button>
+              )}
               {task.status !== 'running' && (
                 <Button size="sm" variant="ghost" onClick={() => setTask(null)}>
                   <X className="h-3.5 w-3.5" /> {t('agents.card.close')}
@@ -709,6 +722,8 @@ export function AgentCard({
         }}
         onUninstall={(deleteConfig) => void doUninstall(deleteConfig)}
         onConfirmForceUpgrade={startUpgrade}
+        onConfirmInstall={() => startAgentInstall(selectedChannel)}
+        onConfirmOneClick={startOneClickFull}
         shouldIgnoreDismiss={(open) =>
           shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, open)
         }

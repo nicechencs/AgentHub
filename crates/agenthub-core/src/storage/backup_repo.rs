@@ -97,6 +97,23 @@ impl BackupRepo {
         })
     }
 
+    /// Bump `created_at` on an existing row. All other columns stay unchanged.
+    /// Used when a new live snapshot is byte-identical to a historical one.
+    pub fn touch_created_at(&self, id: &str, created_at: &str) -> Result<BackupRecord> {
+        self.db.with_conn(|conn| {
+            let n = conn.execute(
+                "UPDATE backups SET created_at = ?1 WHERE id = ?2",
+                params![created_at, id],
+            )?;
+            if n == 0 {
+                return Err(AppError::NotFound(format!("backup not found: {id}")));
+            }
+            Ok(())
+        })?;
+        self.get_by_id(id)?
+            .ok_or_else(|| AppError::NotFound(format!("backup not found: {id}")))
+    }
+
     /// Delete a backup index row by id. Returns `true` if a row was removed.
     pub fn delete(&self, id: &str) -> Result<bool> {
         self.db.with_conn(|conn| {
@@ -242,5 +259,34 @@ mod tests {
         assert!(repo.get_by_id("c").unwrap().is_none());
         assert!(!repo.delete("c").unwrap());
         assert!(!repo.delete("missing").unwrap());
+    }
+
+    #[test]
+    fn touch_created_at_updates_only_timestamp() {
+        let dir = tempdir().unwrap();
+        let db = Database::open(&dir.path().join("t.db")).unwrap();
+        let repo = BackupRepo::new(db);
+        let rec = sample(
+            "a",
+            AgentId::Claude,
+            BackupKind::Manual,
+            "2026-01-01T10:00:00Z",
+        );
+        repo.insert(&rec).unwrap();
+
+        let updated = repo.touch_created_at("a", "2026-02-01T10:00:00Z").unwrap();
+        assert_eq!(updated.id, "a");
+        assert_eq!(updated.created_at, "2026-02-01T10:00:00Z");
+        assert_eq!(updated.kind, BackupKind::Manual);
+        assert_eq!(updated.size, 10);
+        assert_eq!(updated.files, rec.files);
+        assert_eq!(updated.path, rec.path);
+        assert_eq!(updated.note, rec.note);
+        assert_eq!(updated.agent_id, rec.agent_id);
+
+        let err = repo
+            .touch_created_at("missing", "2026-03-01T00:00:00Z")
+            .unwrap_err();
+        assert_eq!(err.code(), "not_found");
     }
 }

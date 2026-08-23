@@ -14,23 +14,7 @@ impl AdapterBridgeService {
         let source_id = request.source_id.trim();
         // Validate/retrieve the source before any profile row is written. The
         // token stays only in the returned in-memory material.
-        let upstream_auth = match rule.protocol {
-            BridgeUpstreamProtocol::KimiChatCompletions => {
-                if rule.rule_id == GROK_CLAUDE_RULE_ID {
-                    self.secrets
-                        .resolve_grok_subscription_auth(request.source_kind, source_id)?
-                } else {
-                    self.secrets
-                        .resolve_kimi_membership_auth(request.source_kind, source_id)?
-                }
-            }
-            BridgeUpstreamProtocol::AnthropicMessages => self
-                .secrets
-                .resolve_anthropic_auth(request.source_kind, source_id)?,
-            BridgeUpstreamProtocol::CodexResponsesOauth => self
-                .secrets
-                .resolve_codex_subscription_auth(request.source_kind, source_id)?,
-        };
+        let upstream_auth = self.resolve_upstream_auth(&rule, request.source_kind, source_id)?;
         let profile_id = stable_id(rule.profile_prefix, source_id);
         let provider_id = stable_id(rule.provider_prefix, source_id);
         let stamp = now();
@@ -73,12 +57,16 @@ impl AdapterBridgeService {
             ));
         }
 
-        let generated_provider_exists = if let Some(provider) = existing_provider.as_ref() {
-            validate_generated_provider(provider, &profile, profile.local_port)?;
-            true
-        } else {
-            false
-        };
+        let (generated_provider_exists, generated_provider_is_current) =
+            if let Some(provider) = existing_provider.as_ref() {
+                validate_generated_provider(provider, &profile, profile.local_port)?;
+                (
+                    true,
+                    provider_matches_current_projection(provider, &profile, profile.local_port),
+                )
+            } else {
+                (false, false)
+            };
 
         if profile.status == AdapterProfileStatus::NeedsAttention {
             profile.status = AdapterProfileStatus::Applying;
@@ -99,11 +87,15 @@ impl AdapterBridgeService {
                 upstream_base_url: rule.upstream_base_url.into(),
                 upstream_model: rule.default_model.into(),
                 protocol: rule.protocol,
+                local_surface: rule.local_surface,
+                source: rule.source,
+                target_agent: rule.target_agent,
                 upstream_auth,
                 local_bearer,
             },
             profile,
             generated_provider_exists,
+            generated_provider_is_current,
         })
     }
 
@@ -149,6 +141,7 @@ impl AdapterBridgeService {
                 }
                 if profile.status == AdapterProfileStatus::Active
                     && profile.local_port == Some(port)
+                    && provider_matches_current_projection(&provider, &profile, Some(port))
                 {
                     Ok(AdapterBridgeProviderProjection::None)
                 } else {
@@ -176,26 +169,21 @@ impl AdapterBridgeService {
             .and_then(rule_for_id)
             .ok_or_else(|| {
                 AppError::Unsupported(
-                    "adapter bridge currently supports Kimi / Anthropic → Codex, Codex subscription → Claude, or Grok subscription → Claude"
+                    "adapter bridge currently supports Kimi / Anthropic / OpenAI → Codex, Codex subscription → Claude / Grok / Kimi / DSH, or Grok subscription → Claude / Codex"
                         .into(),
                 )
             })?;
         let source_ok = match rule.protocol {
-            BridgeUpstreamProtocol::KimiChatCompletions => {
-                if rule.rule_id == GROK_CLAUDE_RULE_ID {
-                    request.source_kind == AdapterSourceKind::Account
-                } else {
-                    matches!(
-                        request.source_kind,
-                        AdapterSourceKind::Provider | AdapterSourceKind::Account
-                    )
-                }
-            }
+            BridgeUpstreamProtocol::OpenAiChatCompletions => matches!(
+                request.source_kind,
+                AdapterSourceKind::Provider | AdapterSourceKind::Account
+            ),
             BridgeUpstreamProtocol::AnthropicMessages => matches!(
                 request.source_kind,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account
             ),
-            BridgeUpstreamProtocol::CodexResponsesOauth => {
+            BridgeUpstreamProtocol::CodexResponsesOauth
+            | BridgeUpstreamProtocol::XaiResponsesOauth => {
                 request.source_kind == AdapterSourceKind::Account
             }
         };
@@ -208,9 +196,48 @@ impl AdapterBridgeService {
             Ok(rule)
         } else {
             Err(AppError::Unsupported(
-                "adapter bridge currently supports Kimi / Anthropic → Codex or Codex subscription → Claude".into(),
+                "adapter bridge currently supports Kimi / Anthropic / OpenAI → Codex or Codex subscription → Claude".into(),
             ))
         }
+    }
+
+    pub(super) fn resolve_upstream_auth(
+        &self,
+        rule: &CodexBridgeRule,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<crate::bridge::ResolvedAuth> {
+        match (rule.protocol, rule.rule_id) {
+            (BridgeUpstreamProtocol::OpenAiChatCompletions, OPENAI_RULE_ID) => {
+                self.secrets.resolve_openai_auth(source_kind, source_id)
+            }
+            (BridgeUpstreamProtocol::OpenAiChatCompletions, _) => self
+                .secrets
+                .resolve_kimi_membership_auth(source_kind, source_id),
+            (BridgeUpstreamProtocol::AnthropicMessages, _) => {
+                self.secrets.resolve_anthropic_auth(source_kind, source_id)
+            }
+            (BridgeUpstreamProtocol::CodexResponsesOauth, _) => self
+                .secrets
+                .resolve_codex_subscription_auth(source_kind, source_id),
+            (BridgeUpstreamProtocol::XaiResponsesOauth, _) => self
+                .secrets
+                .resolve_grok_subscription_auth(source_kind, source_id),
+        }
+    }
+
+    /// Resolve one pool member's upstream secret. A sibling failure is isolated
+    /// by the caller rather than failing the whole start.
+    pub fn resolve_member_auth(
+        &self,
+        rule_id: &str,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<crate::bridge::ResolvedAuth> {
+        let rule = rule_for_id(rule_id).ok_or_else(|| {
+            AppError::InvalidArg("adapter profile is not a supported local bridge".into())
+        })?;
+        self.resolve_upstream_auth(&rule, source_kind, source_id)
     }
 
     pub(super) fn bridge_profile(&self, profile_id: &str) -> Result<AdapterProfile> {
@@ -224,16 +251,16 @@ impl AdapterBridgeService {
             AppError::NotFound(format!("adapter profile not found: {profile_id}"))
         })?;
         let supported_source = match profile.rule_id.as_str() {
-            RULE_ID => matches!(
+            RULE_ID | ANTHROPIC_RULE_ID | OPENAI_RULE_ID => matches!(
                 profile.source_kind,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account
             ),
-            ANTHROPIC_RULE_ID => matches!(
-                profile.source_kind,
-                AdapterSourceKind::Provider | AdapterSourceKind::Account
-            ),
-            CODEX_CLAUDE_RULE_ID => profile.source_kind == AdapterSourceKind::Account,
-            GROK_CLAUDE_RULE_ID => profile.source_kind == AdapterSourceKind::Account,
+            CODEX_CLAUDE_RULE_ID | CODEX_GROK_RULE_ID | CODEX_KIMI_RULE_ID | CODEX_DSH_RULE_ID => {
+                profile.source_kind == AdapterSourceKind::Account
+            }
+            GROK_CLAUDE_RULE_ID | GROK_CODEX_RULE_ID => {
+                profile.source_kind == AdapterSourceKind::Account
+            }
             _ => false,
         };
         if !supported_source

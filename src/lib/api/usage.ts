@@ -7,10 +7,17 @@ import type { AgentId, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/
 
 export type {
   UsageAvailability,
+  UsageOverview,
+  UsageOverviewDistributionSlice,
+  UsageOverviewMetrics,
   UsageQuery,
 } from '@/lib/backend/contracts/usage-types';
 export type { UsageCollectResult };
-import type { UsageAvailability, UsageQuery } from '@/lib/backend/contracts/usage-types';
+import type {
+  UsageAvailability,
+  UsageOverview,
+  UsageQuery,
+} from '@/lib/backend/contracts/usage-types';
 
 export async function getUsageAvailability(): Promise<UsageAvailability> {
   return getBackend().usage.getAvailability();
@@ -20,11 +27,18 @@ export async function queryUsage(q: UsageQuery): Promise<UsageRecord[]> {
   return getBackend().usage.queryUsage(q);
 }
 
+export async function usageOverview(q: UsageQuery): Promise<UsageOverview> {
+  return getBackend().usage.usageOverview(q);
+}
+
 export async function usageTrend(
   days: number,
   agentId?: AgentId | 'all',
+  model?: string,
+  since?: string,
+  excludeAgentIds?: AgentId[],
 ): Promise<UsageTrendPoint[]> {
-  return getBackend().usage.usageTrend(days, agentId);
+  return getBackend().usage.usageTrend(days, agentId, model, since, excludeAgentIds);
 }
 
 export async function listModels(): Promise<string[]> {

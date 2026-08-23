@@ -7,6 +7,7 @@ import {
   segmentedTrackClass,
   type SegmentedSize,
 } from '@/components/ui/segmented-styles';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { AGENTS, type AgentMeta } from '@/config/agents';
 import type { AgentId } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -78,23 +79,24 @@ function resolveCountDisplay(
  * 有的页只切换 Agent；有的页多带 counts；特例状态走 renderEnd。
  */
 export function AgentTabStrip(props: AgentTabStripProps) {
+  const { t } = useI18n();
   const {
     value,
     onChange,
     disabled,
     disabledReason,
     agents,
-    emptyLabel = '尚未安装任何 Agent',
+    emptyLabel = t('dashboard.overview.emptyTitle'),
     size = 'md',
     counts,
     countMode = 'positive',
     countTitle,
     renderEnd,
     className,
-    'aria-label': ariaLabel = 'Agent 切换',
+    'aria-label': ariaLabel = t('nav.agentTabs'),
   } = props;
   const showAll = props.showAll === true;
-  const allLabel = showAll ? (props.allLabel ?? '全部') : '全部';
+  const allLabel = showAll ? (props.allLabel ?? t('kind.all')) : t('kind.all');
 
   const list = agents ?? AGENTS;
   if (list.length === 0 && !showAll) {
@@ -161,7 +163,7 @@ export function AgentTabStrip(props: AgentTabStripProps) {
         const isDisabled = disabled?.includes(meta.id) ?? false;
         const active = value === meta.id;
         const tip = isDisabled
-          ? (disabledReason ?? `${meta.name} 暂不支持此功能`)
+          ? (disabledReason ?? t('nav.featureUnsupported', { name: meta.name }))
           : [meta.name, countHint(meta.id)].filter(Boolean).join(' · ');
         return (
           <Hint key={meta.id} label={tip}>

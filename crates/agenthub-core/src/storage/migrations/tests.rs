@@ -1,4 +1,7 @@
 use super::*;
+use crate::storage::Database;
+use std::sync::Arc;
+use std::thread;
 
 fn prepare_migration_table(conn: &Connection) {
     conn.execute_batch(
@@ -65,4 +68,45 @@ fn marker_insert_failure_rolls_back_the_migration_schema() {
 
     assert!(!table_exists(&conn, "migration_marker_probe"));
     assert!(migration_exists(&conn, "test_duplicate_marker"));
+}
+
+#[test]
+fn migration_batch_failure_rolls_back_schema_and_all_markers() {
+    let conn = Connection::open_in_memory().unwrap();
+    let migrations = [
+        (
+            "test_batch_first",
+            "CREATE TABLE migration_batch_probe (id INTEGER);",
+        ),
+        (
+            "test_batch_failing",
+            "CREATE TABLE migration_batch_second (id INTEGER); INSERT INTO no_such_table VALUES (1);",
+        ),
+    ];
+
+    assert!(run_once(&conn, &migrations).is_err());
+    assert!(!table_exists(&conn, "schema_migrations"));
+    assert!(!table_exists(&conn, "migration_batch_probe"));
+    assert!(!table_exists(&conn, "migration_batch_second"));
+}
+
+#[test]
+fn concurrent_database_open_serializes_migrations() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = Arc::new(dir.path().join("concurrent-open.db"));
+    let handles = (0..4)
+        .map(|_| {
+            let path = Arc::clone(&path);
+            thread::spawn(move || Database::open(path.as_ref()).is_ok())
+        })
+        .collect::<Vec<_>>();
+
+    for handle in handles {
+        assert!(handle.join().unwrap());
+    }
+
+    let conn = Connection::open(path.as_ref()).unwrap();
+    for (version, _) in MIGRATIONS {
+        assert!(migration_exists(&conn, version));
+    }
 }

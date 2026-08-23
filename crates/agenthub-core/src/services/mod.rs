@@ -3,6 +3,7 @@ pub mod account_quota;
 pub mod account_service;
 pub mod adapter_apply_service;
 pub mod adapter_bridge_service;
+pub mod adapter_projection;
 pub mod adapter_route_constants;
 pub mod adapter_route_service;
 pub mod adapter_secret_resolver;
@@ -30,11 +31,15 @@ pub mod ticket_read_service;
 pub mod update_check_service;
 pub mod usage_service;
 
-pub use account_service::AccountService;
+pub use account_service::{oauth_bridge_reload_callback, AccountService};
 pub use adapter_apply_service::AdapterApplyService;
 pub use adapter_bridge_service::{
     AdapterBridgePrepareRequest, AdapterBridgePrepared, AdapterBridgeProviderProjection,
     AdapterBridgeRestoreMaterial, AdapterBridgeRuntimeMaterial, AdapterBridgeService,
+};
+pub use adapter_projection::{
+    classify_account_live, classify_provider_config, leftover_live_flag, LiveOrigin,
+    ADAPTER_PROJECTION_KIND,
 };
 pub use adapter_route_service::AdapterRouteService;
 pub use adapter_secret_resolver::AdapterSecretResolver;

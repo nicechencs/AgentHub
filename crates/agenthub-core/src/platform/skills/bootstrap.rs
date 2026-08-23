@@ -10,11 +10,13 @@ use std::path::Path;
 
 use crate::error::Result;
 use crate::platform::skills::assignment::SkillAssignmentService;
+use crate::platform::skills::commit::recover_skill_commit_journal;
 use crate::platform::skills::fs_safe::{
     inspect_projection_target, validate_skill_id, TargetPresence,
 };
 use crate::platform::skills::lockfile::skill_lock_load;
 use crate::platform::skills::ownership::is_managed_projection;
+use crate::platform::skills::scoped_lock::acquire_skill_root_lock;
 use crate::platform::skills::target::SkillTargetRegistry;
 use crate::storage::{SkillAssignmentRow, SkillRepo};
 
@@ -42,6 +44,11 @@ pub fn bootstrap_skill_assignments(
     repo: &SkillRepo,
     now: &str,
 ) -> Result<SkillBootstrapReport> {
+    // Startup recovery and import must observe one coherent source root.  The
+    // same lock is held by install/update/uninstall before any rename.
+    let _root_lock = acquire_skill_root_lock(source_root)?;
+    recover_skill_commit_journal(source_root, Some(repo))?;
+
     let mut report = SkillBootstrapReport::default();
     let assign = SkillAssignmentService::new(repo.clone());
     let lock = skill_lock_load(source_root)?;

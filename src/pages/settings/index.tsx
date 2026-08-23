@@ -187,32 +187,36 @@ export default function SettingsPage({
 
   if (loading) {
     return (
-      <div>
+      <>
         <PageHeader
           title={t('settings.page.title')}
           description={t('settings.page.description')}
           descriptionTip={t('settings.page.descriptionTip')}
         />
-        <SettingsSkeleton />
-      </div>
+        <div className={pageRhythm.readingColumn}>
+          <SettingsSkeleton />
+        </div>
+      </>
     );
   }
 
   if (error || !settings) {
     return (
-      <div>
+      <>
         <PageHeader
           title={t('settings.page.title')}
           description={t('settings.page.description')}
           descriptionTip={t('settings.page.descriptionTip')}
         />
-        <ErrorState error={error ?? new Error(t('settings.page.emptyError'))} onRetry={() => void load()} />
-      </div>
+        <div className={pageRhythm.readingColumn}>
+          <ErrorState error={error ?? new Error(t('settings.page.emptyError'))} onRetry={() => void load()} />
+        </div>
+      </>
     );
   }
 
   return (
-    <div>
+    <>
       <PageHeader
         title={t('settings.page.title')}
         description={t('settings.page.description')}
@@ -238,39 +242,41 @@ export default function SettingsPage({
           </TabsList>
         </div>
 
-        <TabsContent value="preferences">
-          <PreferencesPanel
-            settings={settings}
-            patch={patch}
-            setSettings={setSettings}
-            committedThemeRef={committedThemeRef}
-            committedLanguageRef={committedLanguageRef}
-          />
-        </TabsContent>
+        <div className={pageRhythm.readingColumn}>
+          <TabsContent value="preferences">
+            <PreferencesPanel
+              settings={settings}
+              patch={patch}
+              setSettings={setSettings}
+              committedThemeRef={committedThemeRef}
+              committedLanguageRef={committedLanguageRef}
+            />
+          </TabsContent>
 
-        <TabsContent value="local">
-          <LocalPanel
-            settings={settings}
-            patch={patch}
-            setSettings={setSettings}
-          />
-        </TabsContent>
+          <TabsContent value="local">
+            <LocalPanel
+              settings={settings}
+              patch={patch}
+              setSettings={setSettings}
+            />
+          </TabsContent>
 
-        <TabsContent value="backups">
-          <BackupsPanel />
-        </TabsContent>
+          <TabsContent value="backups">
+            <BackupsPanel />
+          </TabsContent>
 
-        <TabsContent value="about">
-          <AboutPanel
-            settings={settings}
-            pendingUpdate={pendingUpdate}
-            checking={checking}
-            installing={installing}
-            checkUpdate={checkUpdate}
-            installUpdate={installUpdate}
-          />
-        </TabsContent>
+          <TabsContent value="about">
+            <AboutPanel
+              settings={settings}
+              pendingUpdate={pendingUpdate}
+              checking={checking}
+              installing={installing}
+              checkUpdate={checkUpdate}
+              installUpdate={installUpdate}
+            />
+          </TabsContent>
+        </div>
       </Tabs>
-    </div>
+    </>
   );
 }

@@ -3,6 +3,7 @@
  * 产品层：供应商已并入「API Key」（官方端点 / 自定义端点）；存储仍分表。
  */
 import { formatApiConnectionLabel } from '@/lib/backend/contracts/agent-connection';
+import { probeIsAdapterProjection } from '@/lib/backend/contracts/account-port';
 import type { AuthHealth } from '@/lib/backend/contracts/auth-state';
 import {
   CONNECTION_KIND_FILTERS,
@@ -14,6 +15,7 @@ import {
 } from '@/lib/connection-kind';
 import type { TranslateFn } from '@/lib/i18n';
 import type { AgentId, Provider } from '@/lib/types';
+import { isLeftoverLocalRouteProvider } from '@/pages/chat/chat-model';
 
 export type { ConnectionKind };
 export type {
@@ -139,6 +141,7 @@ export type LiveAuthProbeLike = {
   source?: string | null;
   revision?: string | null;
   alsoPresent?: string[] | null;
+  isAdapterProjection?: boolean | null;
 };
 
 export type LiveAuthImportGate = {
@@ -165,6 +168,12 @@ export function liveAuthImportGate(
   }
   if (probe.agentId !== agentId) {
     return { enabled: false, reason: t ? t('connections.list.loginSwitching') : '本机登录态正在切换，已禁用导入' };
+  }
+  if (probeIsAdapterProjection(probe)) {
+    return {
+      enabled: false,
+      reason: t ? t('connections.list.liveIsLocalRoute') : '当前是本机路由写进去的配置，不是一份新登录',
+    };
   }
 
   const kind = probe.kind?.trim().toLowerCase() ?? '';
@@ -205,6 +214,12 @@ export function liveApiKeyImportGate(
   if (probe.agentId !== agentId) {
     return { enabled: false, reason: t ? t('connections.list.authSwitching') : '本机认证方式正在切换，已禁用 API Key 导入' };
   }
+  if (probeIsAdapterProjection(probe)) {
+    return {
+      enabled: false,
+      reason: t ? t('connections.list.liveIsLocalRoute') : '当前是本机路由写进去的配置，不是一份新登录',
+    };
+  }
 
   const kind = probe.kind?.trim().toLowerCase() ?? '';
   const isApiKey = kind === 'api_key' || kind === 'api-key' || kind === 'apikey';
@@ -212,7 +227,7 @@ export function liveApiKeyImportGate(
     return { enabled: true, reason: '' };
   }
   if (kind === 'oauth' || kind === 'file-auth' || kind === 'file-auth.json') {
-    return { enabled: false, reason: t ? t('connections.list.isOauthImportLogin') : '当前本机为 OAuth 登录态，请导入当前登录态' };
+    return { enabled: false, reason: t ? t('connections.list.isOauthImportLogin') : '当前本机为 OAuth 登录态，请导入当前授权' };
   }
   if (kind === 'desktop-login') {
     return { enabled: false, reason: t ? t('connections.list.desktopNoApiKey') : '当前为桌面登录态，无法直接导入 API Key' };
@@ -242,6 +257,29 @@ function isApiKeyLiveAuthKind(kind: string): boolean {
   return kind === 'api_key' || kind === 'api-key' || kind === 'apikey';
 }
 
+/** Which import dialog variant applies for the probed live credential kind. */
+export type LiveImportDialogMode = 'login' | 'api-key';
+
+/** Shared import dialog writes an Account (OAuth) or a provider-pool Key. */
+export type LiveImportAction = 'account' | 'provider';
+
+/**
+ * The import entry point is shared; the probed auth kind decides whether it
+ * reads as an OAuth login import or an API Key import. Anything unknown or
+ * still loading stays on the login variant so behavior is unchanged.
+ */
+export function liveImportDialogMode(
+  probe: LiveAuthProbeLike | null | undefined,
+): LiveImportDialogMode {
+  const kind = probe?.kind?.trim().toLowerCase() ?? '';
+  return isApiKeyLiveAuthKind(kind) ? 'api-key' : 'login';
+}
+
+/** `api-key` dialog must import a provider-pool Key, never an OAuth account. */
+export function liveImportAction(mode: LiveImportDialogMode): LiveImportAction {
+  return mode === 'api-key' ? 'provider' : 'account';
+}
+
 const GENERIC_LIVE_AUTH_COEXISTENCE_NOTICE =
   '本机同时有 API Key 和官方登录，它们不在同一处。导入只会收入当前检测为生效的那一份；另一份仍留在本机。';
 
@@ -262,6 +300,7 @@ export function liveAuthCoexistenceNotice(
   t?: TranslateFn,
 ): string | null {
   if (!probe) return null;
+  if (probeIsAdapterProjection(probe)) return null;
   const kind = liveAuthProbeKind(probe);
   const also = alsoPresentKinds(probe);
   const alsoHasOAuth = also.some(isOAuthLiveAuthKind);
@@ -315,21 +354,52 @@ export function isLiveAuthDiscoveryDeferred(input: {
   return false;
 }
 
+/**
+ * Enough of a pool provider to skip leftover / adapter-projection rows when
+ * deciding whether a live API Key is already imported.
+ */
+export type DiscoveryProviderLike = {
+  id?: string | null;
+  name?: string | null;
+  preset?: string | null;
+  configText?: string | null;
+  configFormat?: string | null;
+  isAdapterProjection?: boolean | null;
+  alsoPresent?: string[] | null;
+};
+
+function leftoverOrProjectionProvider(provider: DiscoveryProviderLike): boolean {
+  if (probeIsAdapterProjection(provider)) return true;
+  return isLeftoverLocalRouteProvider({
+    id: provider.id ?? '',
+    name: provider.name ?? '',
+    preset: provider.preset ?? '',
+    configText: provider.configText ?? '',
+    configFormat: provider.configFormat === 'toml' ? 'toml' : 'json',
+  });
+}
+
+function hasUserApiKeyProvider(providers: readonly DiscoveryProviderLike[]): boolean {
+  return providers.some((provider) => !leftoverOrProjectionProvider(provider));
+}
+
 export function liveAuthDiscoveryKind(input: {
   poolState: ConnectionPoolDiscoveryState;
-  probe?: Pick<LiveAuthProbeLike, 'kind' | 'hasCredentials'> | null;
+  probe?: Pick<LiveAuthProbeLike, 'kind' | 'hasCredentials' | 'isAdapterProjection' | 'alsoPresent'> | null;
   accounts: readonly { kind: string }[];
-  providers: readonly unknown[];
+  providers: readonly DiscoveryProviderLike[];
   accountsFailed?: boolean;
   providersFailed?: boolean;
 }): DiscoveredAuthKind | null {
   if (isLiveAuthDiscoveryDeferred(input)) return null;
   if (!input.probe?.hasCredentials) return null;
+  if (probeIsAdapterProjection(input.probe)) return null;
 
   const kind = liveAuthProbeKind(input.probe);
   const hasExistingOAuth = input.accounts.some((account) => account.kind === 'oauth');
   const hasExistingApiKey =
-    input.accounts.some((account) => account.kind === 'apikey') || input.providers.length > 0;
+    input.accounts.some((account) => account.kind === 'apikey') ||
+    hasUserApiKeyProvider(input.providers);
 
   if (isOAuthLiveAuthKind(kind) && !hasExistingOAuth) return 'account';
   if (isApiKeyLiveAuthKind(kind) && !hasExistingApiKey) return 'provider';

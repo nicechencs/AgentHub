@@ -12,3 +12,18 @@ export function activeBindingForAgent(
   if (!ticket) return null;
   return { ticket, binding };
 }
+
+/** Agent filter: tickets owned by the agent or with an active binding to it. */
+export function filterTicketsByAgentUsage(
+  wallet: TicketWallet,
+  tickets: readonly TicketView[],
+  agentId: AgentId | null,
+): TicketView[] {
+  if (!agentId) return [...tickets];
+  const ticketIds = new Set(
+    wallet.bindings
+      .filter((b) => b.agentId === agentId && b.active)
+      .map((b) => b.ticketId),
+  );
+  return tickets.filter((t) => ticketIds.has(t.id) || t.agentId === agentId);
+}

@@ -9,8 +9,8 @@ use uuid::Uuid;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    AgentId, CollectResult, DetectResult, DetectStatus, ParserHealth, UsageQuery, UsageRecord,
-    UsageTrendPoint,
+    AgentId, CollectResult, DetectResult, DetectStatus, ParserHealth, UsageOverview, UsageQuery,
+    UsageRecord, UsageTrendPoint,
 };
 use crate::platform::usage::{
     builtin_usage_registry, collect_with_source, collect_with_source_for_agent_id, TokenAccounting,
@@ -331,8 +331,28 @@ impl UsageService {
         self.repo.query(&q)
     }
 
-    pub fn trend(&self, days: u32, agent: Option<AgentId>) -> Result<Vec<UsageTrendPoint>> {
-        self.repo.trend(days, agent)
+    pub fn trend(
+        &self,
+        days: u32,
+        agent: Option<AgentId>,
+        model: Option<&str>,
+        since: Option<&str>,
+        exclude_agent_ids: &[AgentId],
+    ) -> Result<Vec<UsageTrendPoint>> {
+        self.repo
+            .trend(days, agent, model, since, exclude_agent_ids)
+    }
+
+    pub fn overview(
+        &self,
+        days: u32,
+        agent: Option<AgentId>,
+        model: Option<&str>,
+        since: Option<&str>,
+        exclude_agent_ids: &[AgentId],
+    ) -> Result<UsageOverview> {
+        self.repo
+            .overview(days, agent, model, since, exclude_agent_ids)
     }
 
     pub fn list_models(&self) -> Result<Vec<String>> {

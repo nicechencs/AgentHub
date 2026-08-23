@@ -14,6 +14,7 @@ fn opts() -> RunOptions {
         allow_dangerous: false,
         max_output_bytes: 1024,
         process_mode: crate::models::ProcessMode::Text,
+        native_session_id: None,
     }
 }
 
@@ -22,6 +23,118 @@ fn empty_prompt_rejected() {
     let svc = RunService::new(register_all());
     let err = svc.run(&[AgentId::Claude], "  ", &opts()).unwrap_err();
     assert_eq!(err.code(), "invalid_arg");
+}
+
+#[test]
+fn truncated_structured_result_keeps_captured_stdout() {
+    let mut session = crate::utils::stream_parse::StreamSession::new(
+        AgentId::Claude,
+        crate::models::ProcessMode::Auto,
+    );
+    let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}"#;
+    let _ = session.feed(crate::models::OutputStream::Stdout, &format!("{line}\n"));
+
+    let mut result = AgentRunResult {
+        agent: AgentId::Claude,
+        status: RunStatus::Ok,
+        exit_code: Some(0),
+        duration_ms: 0,
+        stdout: "raw captured NDJSON".into(),
+        stderr: String::new(),
+        command: "claude".into(),
+        error: None,
+        truncated: true,
+        native_session_id: None,
+    };
+    apply_structured_stdout(&mut result, &session);
+
+    assert_eq!(result.stdout, "raw captured NDJSON");
+    assert!(result.truncated);
+}
+
+fn claude_text_line(text: &str) -> String {
+    format!(r#"{{"type":"assistant","message":{{"content":[{{"type":"text","text":"{text}"}}]}}}}"#)
+}
+
+fn ok_result(stdout: impl Into<String>) -> AgentRunResult {
+    AgentRunResult {
+        agent: AgentId::Claude,
+        status: RunStatus::Ok,
+        exit_code: Some(0),
+        duration_ms: 0,
+        stdout: stdout.into(),
+        stderr: String::new(),
+        command: "claude".into(),
+        error: None,
+        truncated: false,
+        native_session_id: None,
+    }
+}
+
+#[test]
+fn malformed_json_after_assistant_keeps_captured_stdout() {
+    let mut session = crate::utils::stream_parse::StreamSession::new(
+        AgentId::Claude,
+        crate::models::ProcessMode::Auto,
+    );
+    let good = claude_text_line("hi");
+    let raw = format!("{good}\n{{not-json\n");
+    let _ = session.feed(crate::models::OutputStream::Stdout, &raw);
+    let _ = session.flush();
+    assert!(!session.consumed_complete());
+    assert_eq!(session.assistant_text(), "hi");
+
+    let mut result = ok_result(raw.clone());
+    apply_structured_stdout(&mut result, &session);
+    assert_eq!(result.stdout, raw);
+}
+
+#[test]
+fn incomplete_parse_does_not_replace_captured_stdout() {
+    let mut session = crate::utils::stream_parse::StreamSession::new(
+        AgentId::Claude,
+        crate::models::ProcessMode::Auto,
+    );
+    let huge = "x".repeat(256 * 1024 + 32);
+    let _ = session.feed(crate::models::OutputStream::Stdout, &huge);
+    assert!(!session.consumed_complete());
+
+    let mut result = ok_result("raw captured NDJSON");
+    apply_structured_stdout(&mut result, &session);
+    assert_eq!(result.stdout, "raw captured NDJSON");
+}
+
+#[test]
+fn large_ndjson_stream_replaces_stdout_when_fully_consumed() {
+    let mut session = crate::utils::stream_parse::StreamSession::new(
+        AgentId::Claude,
+        crate::models::ProcessMode::Auto,
+    );
+    let line = claude_text_line("x");
+    let mut body = String::new();
+    while body.len() < 256 * 1024 {
+        body.push_str(&line);
+        body.push('\n');
+    }
+    let expected = body.lines().count();
+    let bytes = body.as_bytes();
+    let mut off = 0;
+    while off < bytes.len() {
+        let end = (off + 8192).min(bytes.len());
+        session.feed(
+            crate::models::OutputStream::Stdout,
+            std::str::from_utf8(&bytes[off..end]).expect("ascii ndjson"),
+        );
+        off = end;
+    }
+    let _ = session.flush();
+    assert!(session.consumed_complete());
+    assert_eq!(session.assistant_text().len(), expected);
+
+    let mut result = ok_result(body);
+    apply_structured_stdout(&mut result, &session);
+    assert_eq!(result.stdout.len(), expected);
+    assert!(result.stdout.bytes().all(|b| b == b'x'));
 }
 
 #[test]
@@ -79,7 +192,7 @@ fn build_run_spec_argv_snapshots() {
         .unwrap()
         .build_run_spec(bin, "p", &o)
         .unwrap();
-    assert_eq!(codex.args, vec!["exec", "p"]);
+    assert_eq!(codex.args, vec!["exec", "--skip-git-repo-check", "p"]);
 
     let mut structured = o.clone();
     structured.process_mode = crate::models::ProcessMode::Auto;
@@ -97,7 +210,10 @@ fn build_run_spec_argv_snapshots() {
         .unwrap()
         .build_run_spec(bin, "p", &structured)
         .unwrap();
-    assert_eq!(codex_s.args, vec!["exec", "--json", "p"]);
+    assert_eq!(
+        codex_s.args,
+        vec!["exec", "--skip-git-repo-check", "--json", "p"]
+    );
 
     let kimi = reg
         .get(AgentId::Kimi)
@@ -111,14 +227,18 @@ fn build_run_spec_argv_snapshots() {
         .unwrap()
         .build_run_spec(bin, "p", &o)
         .unwrap();
-    assert_eq!(grok.args, vec!["-p", "p"]);
+    assert_eq!(grok.args, vec!["--no-auto-update", "-p", "p"]);
 
-    let pi = reg
-        .get(AgentId::Pi)
-        .unwrap()
-        .build_run_spec(bin, "p", &o)
-        .unwrap();
-    assert_eq!(pi.args, vec!["-p", "p", "--mode", "text", "--no-session"]);
+    match reg.get(AgentId::Pi).unwrap().build_run_spec(bin, "p", &o) {
+        Ok(pi) => {
+            assert_eq!(&pi.args[..5], ["-p", "p", "--mode", "text", "--no-session"]);
+            for (k, v) in &pi.env {
+                assert_eq!(k, "PATH");
+                assert!(!v.is_empty());
+            }
+        }
+        Err(err) => assert_eq!(err.code(), "env.not_ready"),
+    }
 
     let kimi_s = reg
         .get(AgentId::Kimi)
@@ -129,12 +249,19 @@ fn build_run_spec_argv_snapshots() {
         kimi_s.args,
         vec!["-p", "p", "--output-format", "stream-json"]
     );
-    let pi_s = reg
+    match reg
         .get(AgentId::Pi)
         .unwrap()
         .build_run_spec(bin, "p", &structured)
-        .unwrap();
-    assert_eq!(pi_s.args, vec!["-p", "p", "--mode", "json", "--no-session"]);
+    {
+        Ok(pi_s) => {
+            assert_eq!(
+                &pi_s.args[..5],
+                ["-p", "p", "--mode", "json", "--no-session"]
+            );
+        }
+        Err(err) => assert_eq!(err.code(), "env.not_ready"),
+    }
     let grok_s = reg
         .get(AgentId::Grok)
         .unwrap()
@@ -142,7 +269,13 @@ fn build_run_spec_argv_snapshots() {
         .unwrap();
     assert_eq!(
         grok_s.args,
-        vec!["-p", "p", "--output-format", "streaming-json"]
+        vec![
+            "--no-auto-update",
+            "-p",
+            "p",
+            "--output-format",
+            "streaming-json"
+        ]
     );
 
     let mut dang = o.clone();
@@ -164,7 +297,12 @@ fn build_run_spec_argv_snapshots() {
         .unwrap();
     assert_eq!(
         codex_d.args,
-        vec!["exec", "--dangerously-bypass-approvals-and-sandbox", "p"]
+        vec![
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "p",
+        ]
     );
 
     // kimi -p cannot take --auto/--yolo (CLI rejects the combination).
@@ -180,7 +318,10 @@ fn build_run_spec_argv_snapshots() {
         .unwrap()
         .build_run_spec(bin, "p", &dang)
         .unwrap();
-    assert_eq!(grok_d.args[0], "--always-approve");
+    assert_eq!(
+        grok_d.args,
+        vec!["--always-approve", "--no-auto-update", "-p", "p"]
+    );
 }
 
 #[test]

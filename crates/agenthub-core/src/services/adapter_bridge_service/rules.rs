@@ -41,6 +41,60 @@ pub(super) fn projected_provider_input(
             is_current: false,
         });
     }
+    if rule.target_agent == AgentId::Grok {
+        return Ok(ProviderInput {
+            id: provider_id.into(),
+            agent_id: AgentId::Grok,
+            name: format!(
+                "{} ({})",
+                rule.provider_name,
+                safe_label(&profile.source_id)
+            ),
+            settings_config: json!({
+                "format": "toml",
+                "content": grok_bridge_toml(&rule, port, local_bearer),
+                "auth": { "OPENAI_API_KEY": local_bearer },
+            }),
+            meta: generated_provider_meta(profile, &rule),
+            is_current: false,
+        });
+    }
+    if rule.target_agent == AgentId::Kimi {
+        return Ok(ProviderInput {
+            id: provider_id.into(),
+            agent_id: AgentId::Kimi,
+            name: format!(
+                "{} ({})",
+                rule.provider_name,
+                safe_label(&profile.source_id)
+            ),
+            settings_config: json!({
+                "format": "toml",
+                "content": kimi_bridge_toml(&rule, port, local_bearer),
+                "auth": { "OPENAI_API_KEY": local_bearer },
+            }),
+            meta: generated_provider_meta(profile, &rule),
+            is_current: false,
+        });
+    }
+    if rule.target_agent == AgentId::Dsh {
+        return Ok(ProviderInput {
+            id: provider_id.into(),
+            agent_id: AgentId::Dsh,
+            name: format!(
+                "{} ({})",
+                rule.provider_name,
+                safe_label(&profile.source_id)
+            ),
+            settings_config: json!({
+                "baseURL": format!("http://127.0.0.1:{port}"),
+                "apiKeyEnv": crate::services::adapter_route_constants::DSH_API_KEY_ENV,
+                "api_key": local_bearer,
+            }),
+            meta: generated_provider_meta(profile, &rule),
+            is_current: false,
+        });
+    }
     Ok(ProviderInput {
         id: provider_id.into(),
         agent_id: rule.target_agent,
@@ -61,7 +115,12 @@ pub(super) fn projected_provider_input(
 
 pub(super) fn generated_provider_meta(profile: &AdapterProfile, rule: &CodexBridgeRule) -> Value {
     json!({
-        "preset": if rule.target_agent == AgentId::Claude { "anthropic" } else { "openai-compatible" },
+        "preset": match rule.target_agent {
+            AgentId::Claude => "anthropic",
+            AgentId::Grok | AgentId::Kimi => "openai-chat",
+            AgentId::Dsh => "deepseek",
+            _ => "openai-compatible",
+        },
         "generatedBy": GENERATED_BY,
         "adapterRuleId": rule.rule_id,
         "adapterRuleVersion": 1,
@@ -84,6 +143,39 @@ pub(super) fn codex_bridge_toml(rule: &CodexBridgeRule, port: u16) -> String {
     )
 }
 
+/// Grok config.toml for Codex official login. Local surface is Responses.
+/// No ChatGPT model name, no leftover `grok-*`.
+pub(super) fn grok_bridge_toml(rule: &CodexBridgeRule, port: u16, local_bearer: &str) -> String {
+    format!(
+        "[models]\ndefault = \"{slug}\"\n\n[model.\"{slug}\"]\nbase_url = \"http://127.0.0.1:{port}/v1\"\napi_key = \"{token}\"\napi_backend = \"responses\"\n",
+        slug = rule.provider_slug,
+        token = local_bearer,
+    )
+}
+
+/// Pre-159e8cd Grok TOML: same as [`grok_bridge_toml`] except `chat_completions`.
+pub(super) fn legacy_grok_bridge_toml(
+    rule: &CodexBridgeRule,
+    port: u16,
+    local_bearer: &str,
+) -> String {
+    format!(
+        "[models]\ndefault = \"{slug}\"\n\n[model.\"{slug}\"]\nbase_url = \"http://127.0.0.1:{port}/v1\"\napi_key = \"{token}\"\napi_backend = \"chat_completions\"\n",
+        slug = rule.provider_slug,
+        token = local_bearer,
+    )
+}
+
+/// Kimi config.toml for Codex official login. No invented ChatGPT `default_model`.
+pub(super) fn kimi_bridge_toml(rule: &CodexBridgeRule, port: u16, local_bearer: &str) -> String {
+    format!(
+        "default_provider = \"{slug}\"\n\n[providers.{slug}]\nname = \"{name}\"\nbase_url = \"http://127.0.0.1:{port}/v1\"\napi_key = \"{token}\"\n",
+        slug = rule.provider_slug,
+        name = rule.toml_name,
+        token = local_bearer,
+    )
+}
+
 pub(super) fn validate_generated_provider(
     provider: &Provider,
     profile: &AdapterProfile,
@@ -96,7 +188,7 @@ pub(super) fn validate_generated_provider(
         ));
     }
     let rule = rule_for_id(&profile.rule_id).ok_or_else(invalid_projection)?;
-    let _ = local_bearer_from_provider(provider)?;
+    let local_bearer = local_bearer_from_provider(provider)?;
     if rule.target_agent == AgentId::Claude {
         let env = provider
             .settings_config
@@ -117,6 +209,52 @@ pub(super) fn validate_generated_provider(
         }
         if let Some(port) = expected_port {
             if base_url != format!("http://127.0.0.1:{port}") {
+                return Err(AppError::message(
+                    "adapter.provider_conflict",
+                    "generated bridge provider does not match the bound port",
+                ));
+            }
+        }
+        return Ok(());
+    }
+
+    if rule.target_agent == AgentId::Dsh {
+        let base_url = provider
+            .settings_config
+            .get("baseURL")
+            .and_then(Value::as_str)
+            .ok_or_else(invalid_projection)?;
+        if !base_url.starts_with("http://127.0.0.1:") {
+            return Err(invalid_projection());
+        }
+        if let Some(port) = expected_port {
+            if base_url != format!("http://127.0.0.1:{port}") {
+                return Err(AppError::message(
+                    "adapter.provider_conflict",
+                    "generated bridge provider does not match the bound port",
+                ));
+            }
+        }
+        return Ok(());
+    }
+
+    if matches!(rule.target_agent, AgentId::Grok | AgentId::Kimi) {
+        let content = provider
+            .settings_config
+            .get("content")
+            .and_then(Value::as_str)
+            .ok_or_else(invalid_projection)?;
+        if !content.contains("127.0.0.1") || !content.contains("base_url") {
+            return Err(invalid_projection());
+        }
+        if let Some(port) = expected_port {
+            let matches_current = if rule.target_agent == AgentId::Grok {
+                content == grok_bridge_toml(&rule, port, &local_bearer)
+                    || content == legacy_grok_bridge_toml(&rule, port, &local_bearer)
+            } else {
+                content == kimi_bridge_toml(&rule, port, &local_bearer)
+            };
+            if !matches_current {
                 return Err(AppError::message(
                     "adapter.provider_conflict",
                     "generated bridge provider does not match the bound port",
@@ -179,6 +317,17 @@ pub(super) fn local_bearer_from_provider(provider: &Provider) -> Result<String> 
             .map(str::to_owned)
             .ok_or_else(invalid_projection);
     }
+    if provider.agent_id == AgentId::Dsh {
+        return provider
+            .settings_config
+            .get("api_key")
+            .or_else(|| provider.settings_config.get("apiKey"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && *value != "***")
+            .map(str::to_owned)
+            .ok_or_else(invalid_projection);
+    }
     if provider
         .settings_config
         .get("format")
@@ -206,10 +355,11 @@ pub(super) fn provider_owned_by(provider: &Provider, profile: &AdapterProfile) -
     provider.id == stable_id(rule.provider_prefix, &profile.source_id)
         && provider.agent_id == rule.target_agent
         && provider.meta.get("preset").and_then(Value::as_str)
-            == Some(if rule.target_agent == AgentId::Claude {
-                "anthropic"
-            } else {
-                "openai-compatible"
+            == Some(match rule.target_agent {
+                AgentId::Claude => "anthropic",
+                AgentId::Grok | AgentId::Kimi => "openai-chat",
+                AgentId::Dsh => "deepseek",
+                _ => "openai-compatible",
             })
         && provider.meta.get("generatedBy").and_then(Value::as_str) == Some(GENERATED_BY)
         && provider.meta.get("adapterRuleId").and_then(Value::as_str) == Some(rule.rule_id)
@@ -240,18 +390,45 @@ pub(super) fn provider_owned_by(provider: &Provider, profile: &AdapterProfile) -
             .and_then(|value| value.get("id"))
             .and_then(Value::as_str)
             == Some(profile.source_id.as_str())
-        && provider
-            .meta
-            .get("adapterBridge")
-            .and_then(|value| value.get("kind"))
-            .and_then(Value::as_str)
-            == Some(rule.bridge_kind)
+        && adapter_bridge_kind_matches(provider, &rule)
         && provider
             .meta
             .get("adapterBridge")
             .and_then(|value| value.get("loopbackOnly"))
             .and_then(Value::as_bool)
             == Some(true)
+}
+
+fn adapter_bridge_kind_matches(provider: &Provider, rule: &CodexBridgeRule) -> bool {
+    let Some(kind) = provider
+        .meta
+        .get("adapterBridge")
+        .and_then(|value| value.get("kind"))
+        .and_then(Value::as_str)
+    else {
+        return false;
+    };
+    kind == rule.bridge_kind || rule.legacy_bridge_kinds.contains(&kind)
+}
+
+/// Compare generated provider `settings_config` and `meta` to the current
+/// projection. Display `name` is not part of the contract. Missing port is
+/// never current.
+pub(super) fn provider_matches_current_projection(
+    provider: &Provider,
+    profile: &AdapterProfile,
+    port: Option<u16>,
+) -> bool {
+    let Some(port) = port else {
+        return false;
+    };
+    let Ok(local_bearer) = local_bearer_from_provider(provider) else {
+        return false;
+    };
+    let Ok(projected) = projected_provider_input(profile, &local_bearer, port) else {
+        return false;
+    };
+    provider.settings_config == projected.settings_config && provider.meta == projected.meta
 }
 
 /// 幂等判定：已有桥投影是否已是当前规则的完整契约。

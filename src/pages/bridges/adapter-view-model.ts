@@ -2,7 +2,6 @@
  * Pure view-model helpers for the Bridges page: partition, single-layer
  * runtime status, source resolution, fleet, and recovery. No IO, no React.
  */
-import { agentDisplayName } from '@/config/agents';
 import type {
   AdapterBridgeRuntimeState,
   AdapterProfile,
@@ -10,6 +9,7 @@ import type {
 import type { AgentId } from '@/lib/types';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { TranslateFn } from '@/lib/i18n';
+import { formatRouteEndpointHttpUrl, routeEndpointPathForBinding } from '@/lib/route-endpoints';
 
 export type AdapterStatusTone = 'success' | 'warning' | 'danger' | 'info' | 'muted';
 
@@ -245,13 +245,20 @@ export function adapterProfilePrimaryAction(input: {
   return { kind: 'start', label: retry ? (t ? t('routes.action.retryStart') : '重试启动') : startLabel };
 }
 
-/** Human-readable "source → target" one-liner for confirmations. */
+/** Human-readable "source → endpoint" one-liner for confirmations. */
 export function adapterProfileFlowLabel(
-  profile: Pick<AdapterProfile, 'sourceKind' | 'sourceId' | 'name' | 'targetAgentId'>,
+  profile: Pick<AdapterProfile, 'sourceKind' | 'sourceId' | 'name' | 'targetAgentId' | 'ruleId' | 'localPort'>,
   entries: readonly Pick<ConnectionEntry, 'source' | 'id' | 'title' | 'agentId'>[],
 ): string {
   const source = resolveAdapterProfileSource(profile, entries);
-  return `${source.title} → ${agentDisplayName(profile.targetAgentId)}`;
+  const path = routeEndpointPathForBinding({
+    agentId: profile.targetAgentId,
+    ruleId: profile.ruleId,
+  });
+  return `${source.title} → ${formatRouteEndpointHttpUrl({
+    path,
+    port: profile.localPort,
+  })}`;
 }
 
 /**
@@ -274,9 +281,9 @@ export function adapterProfileRecoveryGuide(
       : (t ? t('routes.recovery.summaryUnknown') : '上次可能未完成。'),
     steps: [
       ...(profile.route === 'local_bridge'
-        ? [t ? t('routes.recovery.startOnlyRuntime') : '启动只恢复桥接运行时，不会修复配置不一致。']
+        ? [t ? t('routes.recovery.startOnlyRuntime') : '启动只会恢复转发服务，不会修好配置不一致。']
         : []),
-      t ? t('routes.recovery.unbindReconnect') : '解除绑定后，到 Dashboard 重新连接。',
+      t ? t('routes.recovery.unbindReconnect') : '停止并还原后，到总览重新连接。',
       t ? t('routes.recovery.noAutoRetry') : '不会自动反复重试。',
     ],
   };

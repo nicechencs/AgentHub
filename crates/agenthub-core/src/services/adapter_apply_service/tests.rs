@@ -11,6 +11,7 @@ use crate::services::adapter_route_constants::{
     KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL, KIMI_GROK_RULE_ID, OPENAI_GROK_BASE_URL,
     OPENAI_GROK_DEFAULT_MODEL, OPENAI_GROK_RULE_ID,
 };
+use crate::services::LiveWriteAuthority;
 use crate::storage::{AccountRepo, ActiveBindingRepo, ProviderRepo};
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -294,9 +295,9 @@ fn apply_acquires_the_live_guard_before_reading_or_creating_profile_state() {
     let (dir, db) = test_db();
     let source = kimi_source("kimi-source", "test-kimi-secret");
     ProviderRepo::new(db.clone()).create(&source).unwrap();
-    let lock_dir = dir.path().join("locks");
-    std::fs::create_dir_all(&lock_dir).unwrap();
-    std::fs::write(lock_dir.join("provider-claude.lock"), b"held").unwrap();
+    let _held = LiveWriteAuthority::from_database(&db)
+        .acquire(AgentId::Claude)
+        .unwrap();
     let service = AdapterApplyService::new(
         db.clone(),
         AdapterRegistry::new(),
@@ -820,9 +821,9 @@ fn remove_is_excluded_by_the_claude_live_write_lock_before_profile_read() {
     AdapterProfileRepo::new(db.clone())
         .create(&profile)
         .unwrap();
-    let lock_dir = dir.path().join("locks");
-    std::fs::create_dir_all(&lock_dir).unwrap();
-    std::fs::write(lock_dir.join("provider-claude.lock"), b"held").unwrap();
+    let _held = LiveWriteAuthority::from_database(&db)
+        .acquire(AgentId::Claude)
+        .unwrap();
     let service = AdapterApplyService::new(
         db.clone(),
         AdapterRegistry::new(),
@@ -957,7 +958,8 @@ fn generated_pi_kimi_provider(profile_id: &str, source_id: &str, current: bool) 
                         "models": [{ "id": "kimi-k2.5" }],
                     }
                 }
-            }
+            },
+            "settings": { "defaultProvider": KIMI_PI_PROVIDER_SLOT },
         }),
         meta: json!({
             "generatedBy": "adapter",
@@ -1109,6 +1111,14 @@ fn pi_kimi_apply_sets_current_and_keeps_secret_out_of_dto() {
         KIMI_PI_BASE_URL
     );
     assert_eq!(
+        stored.settings_config["settings"]["defaultProvider"],
+        KIMI_PI_PROVIDER_SLOT
+    );
+    assert_eq!(
+        live.raw["settings"]["defaultProvider"],
+        KIMI_PI_PROVIDER_SLOT
+    );
+    assert_eq!(
         stored.settings_config["models"]["providers"][KIMI_PI_PROVIDER_SLOT]["apiKey"],
         CONNECTION_SECRET_MARKER
     );
@@ -1204,6 +1214,10 @@ fn pi_anthropic_apply_sets_current_and_keeps_secret_out_of_dto() {
         stored.settings_config["models"]["providers"][ANTHROPIC_PI_PROVIDER_SLOT]["apiKey"],
         CONNECTION_SECRET_MARKER
     );
+    assert_eq!(
+        stored.settings_config["settings"]["defaultProvider"],
+        ANTHROPIC_PI_PROVIDER_SLOT
+    );
     assert!(!serde_json::to_string(&result)
         .unwrap()
         .contains("sk-anthropic-secret"));
@@ -1242,9 +1256,8 @@ fn remove_uses_target_agent_lock_not_hardcoded_claude() {
     AdapterProfileRepo::new(db.clone())
         .create(&profile)
         .unwrap();
-    let lock_dir = dir.path().join("locks");
-    std::fs::create_dir_all(&lock_dir).unwrap();
-    std::fs::write(lock_dir.join("provider-claude.lock"), b"held").unwrap();
+    let authority = LiveWriteAuthority::from_database(&db);
+    let _held_claude = authority.acquire(AgentId::Claude).unwrap();
     let service = AdapterApplyService::new(
         db.clone(),
         AdapterRegistry::new(),
@@ -1260,7 +1273,7 @@ fn remove_uses_target_agent_lock_not_hardcoded_claude() {
     AdapterProfileRepo::new(db.clone())
         .create(&remaining)
         .unwrap();
-    std::fs::write(lock_dir.join("provider-pi.lock"), b"held").unwrap();
+    let _held_pi = authority.acquire(AgentId::Pi).unwrap();
     assert_eq!(
         service.remove(&remaining.id).unwrap_err().code(),
         "provider.lock"
@@ -1454,6 +1467,10 @@ fn pi_anthropic_account_apply_sets_source_ref_account_and_keeps_secret_out() {
         stored.settings_config["models"]["providers"][ANTHROPIC_PI_PROVIDER_SLOT]["apiKey"],
         CONNECTION_SECRET_MARKER
     );
+    assert_eq!(
+        stored.settings_config["settings"]["defaultProvider"],
+        ANTHROPIC_PI_PROVIDER_SLOT
+    );
     assert!(!serde_json::to_string(&result)
         .unwrap()
         .contains("sk-anthropic-secret"));
@@ -1556,6 +1573,8 @@ fn pi_subscription_account_apply_uses_oauth_auth_slot_without_persisting_tokens(
             stored.settings_config["auth"][slot]["refresh"],
             CONNECTION_SECRET_MARKER
         );
+        assert_eq!(stored.settings_config["settings"]["defaultProvider"], slot);
+        assert_eq!(live.raw["settings"]["defaultProvider"], slot);
         let serialized = serde_json::to_string(&result).unwrap();
         assert!(!serialized.contains(access));
         assert!(!serialized.contains(refresh));
@@ -1637,6 +1656,10 @@ fn pi_openai_and_xai_apply_sets_slot_and_keeps_secret_out() {
         CONNECTION_SECRET_MARKER
     );
     assert_eq!(
+        openai_stored.settings_config["settings"]["defaultProvider"],
+        OPENAI_PI_PROVIDER_SLOT
+    );
+    assert_eq!(
         fake.read_config().unwrap().raw["models"]["providers"][OPENAI_PI_PROVIDER_SLOT]["apiKey"],
         "sk-openai-secret"
     );
@@ -1658,6 +1681,10 @@ fn pi_openai_and_xai_apply_sets_slot_and_keeps_secret_out() {
     assert_eq!(
         xai_stored.settings_config["models"]["providers"][XAI_PI_PROVIDER_SLOT]["apiKey"],
         CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(
+        xai_stored.settings_config["settings"]["defaultProvider"],
+        XAI_PI_PROVIDER_SLOT
     );
     assert!(!serde_json::to_string(&openai)
         .unwrap()
@@ -1729,6 +1756,10 @@ fn pi_glm_and_deepseek_apply_sets_custom_provider_contract_and_keeps_secret_out(
         CONNECTION_SECRET_MARKER
     );
     assert_eq!(
+        glm_stored.settings_config["settings"]["defaultProvider"],
+        GLM_PI_PROVIDER_SLOT
+    );
+    assert_eq!(
         fake.read_config().unwrap().raw["models"]["providers"][GLM_PI_PROVIDER_SLOT]["apiKey"],
         "glm-pi-secret"
     );
@@ -1762,6 +1793,10 @@ fn pi_glm_and_deepseek_apply_sets_custom_provider_contract_and_keeps_secret_out(
     assert_eq!(
         deepseek_stored.settings_config["models"]["providers"][DEEPSEEK_PI_PROVIDER_SLOT]["apiKey"],
         CONNECTION_SECRET_MARKER
+    );
+    assert_eq!(
+        deepseek_stored.settings_config["settings"]["defaultProvider"],
+        DEEPSEEK_PI_PROVIDER_SLOT
     );
     assert_eq!(
         fake.read_config().unwrap().raw["models"]["providers"][DEEPSEEK_PI_PROVIDER_SLOT]["apiKey"],

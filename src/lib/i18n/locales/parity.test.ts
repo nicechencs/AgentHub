@@ -3,7 +3,7 @@ import { flattenKeys, translate } from '../index';
 import { en } from './en';
 import { zh } from './zh';
 
-const BANNED = /票|钱包|投影|协议桥|PKCE|loopback|[①②③]|实验|未验证/;
+const BANNED = /票|钱包|投影|协议桥|PKCE|loopback|[①②③]|实验|未验证|接单|票面|桥接|原生端点|厂商槽|轮询承接|矩阵|frontmatter|sidecar|keyring|LiteLLM|pnpm |junction|symlink/;
 
 function lookup(obj: unknown, key: string): string {
   let cur: unknown = obj;
@@ -42,17 +42,9 @@ describe('locale key parity', () => {
     expect(keys).toContain('connections.providerDialog.useOfficial');
   });
 
-  it('dashboard / connections / connect / chat / agents / projects / mcp user copy avoids banned jargon', () => {
-    const keys = flattenKeys(zh).filter((k) =>
-      k.startsWith('dashboard.')
-      || k.startsWith('connections.')
-      || k.startsWith('connect.')
-      || k.startsWith('chat.')
-      || k.startsWith('agents.')
-      || k.startsWith('projects.')
-      || k.startsWith('mcp.'),
-    );
-    expect(keys.length).toBeGreaterThan(20);
+  it('all user copy avoids banned jargon', () => {
+    const keys = flattenKeys(zh);
+    expect(keys.length).toBeGreaterThan(50);
     for (const key of keys) {
       expect(lookup(zh, key), key).not.toMatch(BANNED);
       expect(lookup(en, key), key).not.toMatch(BANNED);

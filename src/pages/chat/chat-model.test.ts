@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { pageRhythm } from '@/components/layout/page-rhythm';
 import { agentDisplayName } from '@/config/agents';
 import { createTranslator } from '@/lib/i18n';
-import type { AgentId, AgentStatus, ChatMessage, Conversation } from '@/lib/types';
+import type { BindingView, TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
+import type { AgentId, AgentStatus, ChatMessage, Conversation, Provider } from '@/lib/types';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { TurnGroup } from './chat-format';
 import {
@@ -13,8 +15,23 @@ import {
   chatAgentPickerEmptyKind,
   chatAgentPickerRows,
   chatConnectionKind,
+  chatConnectionOptions,
+  chatConnectionSwitchAction,
+  chatShowsUnimportedCurrent,
+  clampComposerTextareaHeight,
+  COMPOSER_TEXTAREA_MAX_PX,
+  COMPOSER_TEXTAREA_MIN_PX,
+  composerTextareaMeasuredStyle,
+  composerTextareaOverflowY,
+  composerUsesCssFieldSizing,
+  chatMainColumnClass,
+  chatStageClass,
+  chatTranscriptSurfaceClass,
   chatConnectionPickerView,
   connectionPickerCaption,
+  isLeftoverLocalRouteProvider,
+  leftoverProviderIsCurrent,
+  conversationResumeCommand,
   conversationTitle,
   cwdShortName,
   filterConversations,
@@ -35,6 +52,23 @@ import {
 } from './chat-model';
 
 const t = createTranslator('zh');
+
+describe('conversationResumeCommand', () => {
+  it('returns the official TUI command when a native session is linked', () => {
+    expect(
+      conversationResumeCommand({
+        agentIds: ['claude'],
+        nativeSessionId: 'abc',
+      }),
+    ).toBe('claude --resume abc');
+    expect(
+      conversationResumeCommand({
+        agentIds: ['claude'],
+        nativeSessionId: null,
+      }),
+    ).toBeNull();
+  });
+});
 
 function conv(partial: Partial<Conversation> & Pick<Conversation, 'id'>): Conversation {
   return {
@@ -186,28 +220,32 @@ describe('sendBlockers', () => {
     cwd: 'D:\\work',
   });
 
-  it('returns hiddenAgents before unconfiguredAuth before noCwd before sendingElsewhere', () => {
+  it('returns hiddenAgents before envNotReady before unconfiguredAuth before noCwd before sendingElsewhere', () => {
     const blockers = sendBlockers({
-      conversation: { ...base, cwd: null, agentIds: ['claude', 'kimi', 'grok'] },
+      conversation: { ...base, cwd: null, agentIds: ['claude', 'kimi', 'pi', 'grok'] },
       hiddenIds: new Set<AgentId>(['kimi']),
+      envNotReadyIds: new Set<AgentId>(['pi', 'kimi']),
       unconfiguredAuthIds: new Set<AgentId>(['grok']),
       sendingConversationId: 'other',
       sendingTitle: '别的会话',
     });
     expect(blockers.map((b) => b.kind)).toEqual([
       'hiddenAgents',
+      'envNotReady',
       'unconfiguredAuth',
       'noCwd',
       'sendingElsewhere',
     ]);
     expect(blockers[0]).toEqual({ kind: 'hiddenAgents', agentIds: ['kimi'] });
-    expect(blockers[1]).toEqual({ kind: 'unconfiguredAuth', agentIds: ['grok'] });
+    expect(blockers[1]).toEqual({ kind: 'envNotReady', agentIds: ['pi'] });
+    expect(blockers[2]).toEqual({ kind: 'unconfiguredAuth', agentIds: ['grok'] });
   });
 
-  it('does not list a hidden agent again as unconfiguredAuth', () => {
+  it('does not list a hidden agent again as envNotReady or unconfiguredAuth', () => {
     const blockers = sendBlockers({
       conversation: { ...base, agentIds: ['kimi'] },
       hiddenIds: new Set<AgentId>(['kimi']),
+      envNotReadyIds: new Set<AgentId>(['kimi']),
       unconfiguredAuthIds: new Set<AgentId>(['kimi']),
       sendingConversationId: null,
     });
@@ -449,9 +487,13 @@ describe('blockerCopy', () => {
       text: '会话包含已隐藏 Agent，暂不能发送',
       primaryAction: '去 Agents 页',
     });
+    expect(blockerCopy(t, { kind: 'envNotReady', agentIds: ['pi'] })).toEqual({
+      text: '会话包含运行环境未就绪的 Agent，暂不能发送',
+      primaryAction: '去 Agents 页',
+    });
     expect(blockerCopy(t, { kind: 'unconfiguredAuth', agentIds: ['grok'] })).toEqual({
       text: '会话包含未配置授权的 Agent，暂不能发送',
-      primaryAction: '去 Connections 页',
+      primaryAction: '去连接页',
     });
     expect(blockerCopy(t, { kind: 'noCwd' })).toEqual({
       text: '未设置工作目录 — Agent 需要在指定目录内工作',
@@ -470,6 +512,7 @@ describe('blockerCopy', () => {
 describe('blockerPrimaryTarget', () => {
   it('sends noCwd to the directory picker, not session settings', () => {
     expect(blockerPrimaryTarget({ kind: 'hiddenAgents' })).toBe('agents');
+    expect(blockerPrimaryTarget({ kind: 'envNotReady' })).toBe('agents');
     expect(blockerPrimaryTarget({ kind: 'unconfiguredAuth' })).toBe('connections');
     expect(blockerPrimaryTarget({ kind: 'noCwd' })).toBe('pick-directory');
     expect(blockerPrimaryTarget({ kind: 'sendingElsewhere' })).toBe('settings');
@@ -583,6 +626,14 @@ describe('agentHasConfiguredAuth / picker rows', () => {
     ).toBe(false);
   });
 
+  it('isChatAgentSelectable only treats Pi envReady=false as blocked', () => {
+    expect(isChatAgentSelectable(status('claude', true))).toBe(true);
+    expect(isChatAgentSelectable(status('claude', true, false, { envReady: true }))).toBe(true);
+    expect(isChatAgentSelectable(status('claude', true, false, { envReady: false }))).toBe(true);
+    expect(isChatAgentSelectable(status('pi', true, false, { envReady: false }))).toBe(false);
+    expect(isChatAgentSelectable(status('pi', true, false, { envReady: true }))).toBe(true);
+  });
+
   it('omits hidden and uninstalled agents, and parks no-auth at the end as unselectable', () => {
     const rows = chatAgentPickerRows({
       catalogIds: ['claude', 'codex', 'kimi', 'grok', 'pi'],
@@ -601,6 +652,35 @@ describe('agentHasConfiguredAuth / picker rows', () => {
     expect(rows.map((r) => r.id)).toEqual(['claude', 'pi', 'kimi']);
     expect(rows.map((r) => r.selectable)).toEqual([true, true, false]);
     expect(rows.map((r) => r.reason)).toEqual([null, null, 'noAuth']);
+  });
+
+  it('keeps envReady-false Pi unselectable; Claude envReady-false stays selectable', () => {
+    const rows = chatAgentPickerRows({
+      catalogIds: ['claude', 'pi'],
+      agentStatus: [
+        status('claude', true, false, { envReady: false }),
+        status('pi', true, false, { envReady: false }),
+      ],
+    });
+    expect(rows).toEqual([
+      { id: 'claude', selectable: true, reason: null },
+      { id: 'pi', selectable: false, reason: 'envNotReady' },
+    ]);
+  });
+
+  it('prefers envNotReady over noAuth when both would apply', () => {
+    const rows = chatAgentPickerRows({
+      catalogIds: ['pi'],
+      agentStatus: [
+        status('pi', true, false, {
+          envReady: false,
+          effectiveKind: 'none',
+          authStatus: 'none',
+          authHealth: 'missing',
+        }),
+      ],
+    });
+    expect(rows).toEqual([{ id: 'pi', selectable: false, reason: 'envNotReady' }]);
   });
 
   it('does not keep a selected hidden or uninstalled agent in the picker', () => {
@@ -654,7 +734,7 @@ describe('chatConnectionPickerView', () => {
     expect(view.currentLoginTitle).toBe('user@example.com');
     expect(view.currentLoginSubtitle).toBe('当前登录');
     expect(view.emptyHint).toBeNull();
-    expect(view.manageLabel).toBe('去 Connections 管理');
+    expect(view.manageLabel).toBe('去连接页管理');
   });
 
   it('keeps API provider name and model when that is the effective connection', () => {
@@ -671,7 +751,7 @@ describe('chatConnectionPickerView', () => {
     expect(view.label).toBe('api.example.com');
     expect(view.subtitle).toBe('sonnet');
     expect(view.currentLoginTitle).toBeNull();
-    expect(view.manageLabel).toBe('去 Connections 管理');
+    expect(view.manageLabel).toBe('去连接页管理');
   });
 
   it('prefers the bound account over a leftover provider row', () => {
@@ -738,7 +818,7 @@ describe('chatConnectionPickerView', () => {
     expect(view.kind).toBe('none');
     expect(view.label).toBe('未配置连接');
     expect(view.emptyHint).toBe('暂无连接');
-    expect(view.manageLabel).toBe('去 Connections 添加');
+    expect(view.manageLabel).toBe('去连接页添加');
   });
 
   it('replaces the chip label while switching', () => {
@@ -750,5 +830,383 @@ describe('chatConnectionPickerView', () => {
     });
     expect(view.label).toBe('切换中…');
     expect(view.subtitle).toBeNull();
+  });
+
+  it('does not treat leftover 本机路由 as an unimported current login', () => {
+    const view = chatConnectionPickerView(t, {
+      primaryAgent: 'codex',
+      leftoverCurrent: true,
+      walletReady: true,
+      status: status('codex', true, false, {
+        effectiveKind: 'api',
+        effectiveLabel: 'AgentHub Codex 本机路由',
+      }),
+    });
+    expect(view.currentLoginTitle).toBeNull();
+    expect(view.label).toBe('未配置连接');
+    expect(view.label).not.toContain('本机路由');
+  });
+
+  it('hides the unimported-current row until the wallet has loaded', () => {
+    const view = chatConnectionPickerView(t, {
+      primaryAgent: 'grok',
+      walletReady: false,
+      status: status('grok', true, false, {
+        effectiveKind: 'account',
+        effectiveLabel: 'user@example.com',
+      }),
+    });
+    expect(view.label).toBe('user@example.com');
+    expect(view.currentLoginTitle).toBeNull();
+  });
+});
+
+function providerRow(partial: Partial<Provider> & Pick<Provider, 'id' | 'name'>): Provider {
+  return {
+    agentId: 'codex',
+    preset: 'custom',
+    configText: '{}',
+    configFormat: 'toml',
+    isCurrent: false,
+    ...partial,
+  };
+}
+
+function ticket(partial: Partial<TicketView> & Pick<TicketView, 'id'>): TicketView {
+  const sourceKind = partial.sourceKind ?? (partial.id.startsWith('provider:') ? 'provider' : 'account');
+  const sourceId = partial.sourceId ?? partial.id.slice(partial.id.indexOf(':') + 1);
+  return {
+    sourceKind,
+    sourceId,
+    agentId: 'codex',
+    label: partial.label ?? partial.id,
+    surface: sourceKind === 'account' ? 'codex-chatgpt-subscription' : 'openai-api',
+    credentialClass: sourceKind === 'account' ? 'oauth' : 'api_key',
+    speaks: [],
+    importedFrom: 'codex',
+    ...partial,
+  };
+}
+
+function binding(
+  partial: Partial<BindingView> & Pick<BindingView, 'ticketId' | 'agentId'>,
+): BindingView {
+  return {
+    route: 'native',
+    active: false,
+    profileId: null,
+    bridge: null,
+    ...partial,
+  };
+}
+
+function wallet(tickets: TicketView[], bindings: BindingView[] = []): TicketWallet {
+  return { tickets, bindings, surfaceGroups: [] };
+}
+
+describe('isLeftoverLocalRouteProvider', () => {
+  it('does not treat a generic loopback API as leftover 本机路由', () => {
+    expect(
+      isLeftoverLocalRouteProvider(
+        providerRow({
+          id: 'litellm-local',
+          name: 'LiteLLM',
+          configText: 'base_url = "http://127.0.0.1:4000/v1"',
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('detects generated leftover 本机路由 rows', () => {
+    const leftover = providerRow({
+      id: 'agenthub_grok_bridge',
+      name: 'AgentHub Grok 本机路由',
+      configText: 'base_url = "http://127.0.0.1:32123/v1"',
+      isCurrent: true,
+    });
+    expect(isLeftoverLocalRouteProvider(leftover)).toBe(true);
+    expect(leftoverProviderIsCurrent([leftover])).toBe(true);
+    expect(leftoverProviderIsCurrent([{ ...leftover, isCurrent: false }])).toBe(false);
+  });
+});
+
+describe('chatConnectionSwitchAction', () => {
+  it('switches a native account or provider and binds a login born on another Agent', () => {
+    expect(
+      chatConnectionSwitchAction(ticket({ id: 'account:codex-1', agentId: 'codex' }), 'codex'),
+    ).toEqual({ type: 'switch-account', accountId: 'codex-1' });
+    expect(
+      chatConnectionSwitchAction(
+        ticket({ id: 'provider:openai-1', sourceKind: 'provider', agentId: 'codex' }),
+        'codex',
+      ),
+    ).toEqual({ type: 'switch-provider', providerId: 'openai-1' });
+    expect(
+      chatConnectionSwitchAction(
+        ticket({
+          id: 'provider:kimi-1',
+          sourceKind: 'provider',
+          agentId: 'kimi',
+          importedFrom: 'kimi',
+        }),
+        'codex',
+      ),
+    ).toEqual({ type: 'bind', ticketId: 'provider:kimi-1' });
+  });
+});
+
+describe('chatConnectionOptions', () => {
+  it('lists official oauth, API Key accounts, and API providers for this Agent', () => {
+    const options = chatConnectionOptions(t, {
+      agentId: 'codex',
+      wallet: wallet([
+        ticket({
+          id: 'account:codex-live-1',
+          label: 'user@openai.com',
+          credentialClass: 'oauth',
+        }),
+        ticket({
+          id: 'account:codex-key-1',
+          sourceKind: 'account',
+          sourceId: 'codex-key-1',
+          label: 'sk-codex',
+          surface: 'openai-api',
+          credentialClass: 'api_key',
+        }),
+        ticket({
+          id: 'provider:openai-1',
+          sourceKind: 'provider',
+          label: 'OpenAI',
+        }),
+      ]),
+    });
+    expect(options.map((row) => row.ticketId)).toEqual([
+      'account:codex-live-1',
+      'account:codex-key-1',
+      'provider:openai-1',
+    ]);
+    expect(options[0]).toMatchObject({
+      title: 'user@openai.com',
+      subtitle: '官方登录',
+      action: { type: 'switch-account', accountId: 'codex-live-1' },
+    });
+    expect(options[1]).toMatchObject({
+      title: 'sk-codex',
+      subtitle: 'API Key',
+      action: { type: 'switch-account', accountId: 'codex-key-1' },
+    });
+    expect(options[2]).toMatchObject({
+      title: 'OpenAI',
+      subtitle: 'API Key',
+      action: { type: 'switch-provider', providerId: 'openai-1' },
+    });
+  });
+
+  it('keeps two official logins with the same email instead of collapsing them', () => {
+    const options = chatConnectionOptions(t, {
+      agentId: 'codex',
+      wallet: wallet([
+        ticket({ id: 'account:codex-live-1', label: '41375197@qq.com' }),
+        ticket({ id: 'account:codex-live-2', label: '41375197@qq.com' }),
+      ]),
+    });
+    expect(options).toHaveLength(2);
+    expect(options.map((row) => row.ticketId)).toEqual([
+      'account:codex-live-1',
+      'account:codex-live-2',
+    ]);
+  });
+
+  it('includes a login bound to this Agent even when it was born on another Agent', () => {
+    const kimi = ticket({
+      id: 'provider:kimi-1',
+      sourceKind: 'provider',
+      agentId: 'kimi',
+      label: 'Kimi 会员',
+      surface: 'kimi-code-membership',
+      importedFrom: 'kimi',
+    });
+    const options = chatConnectionOptions(t, {
+      agentId: 'codex',
+      wallet: wallet(
+        [kimi, ticket({ id: 'account:codex-live-1', label: 'user@openai.com' })],
+        [binding({ ticketId: kimi.id, agentId: 'codex', route: 'bridge', active: true })],
+      ),
+    });
+    expect(options.map((row) => row.ticketId)).toEqual([
+      'provider:kimi-1',
+      'account:codex-live-1',
+    ]);
+    expect(options[0]).toMatchObject({
+      title: 'Kimi 会员',
+      subtitle: '本机路由',
+      isCurrent: true,
+      action: { type: 'bind', ticketId: 'provider:kimi-1' },
+    });
+    expect(options[1]).toMatchObject({
+      title: 'user@openai.com',
+      isCurrent: false,
+      action: { type: 'switch-account', accountId: 'codex-live-1' },
+    });
+  });
+
+  it('does not list an unbound login that belongs to another Agent', () => {
+    const options = chatConnectionOptions(t, {
+      agentId: 'codex',
+      wallet: wallet([
+        ticket({
+          id: 'provider:kimi-1',
+          sourceKind: 'provider',
+          agentId: 'kimi',
+          label: 'Kimi 会员',
+          importedFrom: 'kimi',
+        }),
+        ticket({ id: 'account:codex-live-1', label: 'user@openai.com' }),
+      ]),
+    });
+    expect(options.map((row) => row.ticketId)).toEqual(['account:codex-live-1']);
+  });
+
+  it('does not invent a leftover 本机路由 login', () => {
+    const options = chatConnectionOptions(t, {
+      agentId: 'codex',
+      wallet: wallet([
+        ticket({ id: 'account:codex-live-1', label: 'user@openai.com' }),
+      ]),
+    });
+    expect(options).toHaveLength(1);
+    expect(options[0].title).not.toContain('本机路由');
+    expect(options.some((row) => row.title === '本机路由')).toBe(false);
+  });
+
+  it('puts the checkmark on the active binding ticket, not a leftover provider name', () => {
+    const options = chatConnectionOptions(t, {
+      agentId: 'codex',
+      wallet: wallet(
+        [ticket({ id: 'account:codex-live-1', label: '41375197@qq.com' })],
+        [
+          binding({
+            ticketId: 'account:codex-live-1',
+            agentId: 'codex',
+            route: 'native',
+            active: true,
+          }),
+        ],
+      ),
+    });
+    expect(options[0]).toMatchObject({
+      title: '41375197@qq.com',
+      subtitle: '官方登录',
+      isCurrent: true,
+    });
+    const chip = chatConnectionPickerView(t, {
+      primaryAgent: 'codex',
+      status: status('codex', true, false, {
+        effectiveKind: 'api',
+        effectiveLabel: 'AgentHub Codex 本机路由',
+      }),
+      currentProviderName: 'agenthub_codex_bridge',
+      activeLogin: { title: options[0].title, subtitle: options[0].subtitle },
+    });
+    expect(chip.label).toBe('41375197@qq.com');
+    expect(chip.label).not.toContain('本机路由');
+    expect(chip.currentLoginTitle).toBeNull();
+  });
+
+  it('returns no options without a wallet or Agent', () => {
+    expect(chatConnectionOptions(t, { wallet: null, agentId: 'codex' })).toEqual([]);
+    expect(chatConnectionOptions(t, { wallet: wallet([]), agentId: null })).toEqual([]);
+  });
+});
+
+describe('chatShowsUnimportedCurrent', () => {
+  it('shows the live login only when no wallet row is current', () => {
+    expect(chatShowsUnimportedCurrent([], 'user@example.com')).toBe(true);
+    expect(
+      chatShowsUnimportedCurrent(
+        [{ isCurrent: true }],
+        'user@example.com',
+      ),
+    ).toBe(false);
+    expect(chatShowsUnimportedCurrent([], null)).toBe(false);
+  });
+});
+
+describe('clampComposerTextareaHeight', () => {
+  it('keeps a short draft at the min row height', () => {
+    expect(clampComposerTextareaHeight(0)).toBe(COMPOSER_TEXTAREA_MIN_PX);
+    expect(clampComposerTextareaHeight(-12)).toBe(COMPOSER_TEXTAREA_MIN_PX);
+    expect(clampComposerTextareaHeight(COMPOSER_TEXTAREA_MIN_PX - 1)).toBe(COMPOSER_TEXTAREA_MIN_PX);
+    expect(clampComposerTextareaHeight(COMPOSER_TEXTAREA_MIN_PX)).toBe(COMPOSER_TEXTAREA_MIN_PX);
+  });
+
+  it('grows with content until the max, then caps', () => {
+    expect(clampComposerTextareaHeight(COMPOSER_TEXTAREA_MIN_PX + 1)).toBe(COMPOSER_TEXTAREA_MIN_PX + 1);
+    expect(clampComposerTextareaHeight(120)).toBe(120);
+    expect(clampComposerTextareaHeight(COMPOSER_TEXTAREA_MAX_PX - 1)).toBe(COMPOSER_TEXTAREA_MAX_PX - 1);
+    expect(clampComposerTextareaHeight(COMPOSER_TEXTAREA_MAX_PX)).toBe(COMPOSER_TEXTAREA_MAX_PX);
+    expect(clampComposerTextareaHeight(COMPOSER_TEXTAREA_MAX_PX + 80)).toBe(COMPOSER_TEXTAREA_MAX_PX);
+  });
+});
+
+describe('composerTextareaOverflowY', () => {
+  it('scrolls only after the cap', () => {
+    expect(composerTextareaOverflowY(0)).toBe('hidden');
+    expect(composerTextareaOverflowY(COMPOSER_TEXTAREA_MIN_PX)).toBe('hidden');
+    expect(composerTextareaOverflowY(COMPOSER_TEXTAREA_MAX_PX)).toBe('hidden');
+    expect(composerTextareaOverflowY(COMPOSER_TEXTAREA_MAX_PX + 1)).toBe('auto');
+  });
+});
+
+describe('composerTextareaMeasuredStyle', () => {
+  it('emits the clamped height and overflow the textarea should apply', () => {
+    expect(composerTextareaMeasuredStyle(24)).toEqual({
+      height: `${COMPOSER_TEXTAREA_MIN_PX}px`,
+      overflowY: 'hidden',
+    });
+    expect(composerTextareaMeasuredStyle(120)).toEqual({
+      height: '120px',
+      overflowY: 'hidden',
+    });
+    expect(composerTextareaMeasuredStyle(COMPOSER_TEXTAREA_MAX_PX + 40)).toEqual({
+      height: `${COMPOSER_TEXTAREA_MAX_PX}px`,
+      overflowY: 'auto',
+    });
+  });
+});
+
+describe('composerUsesCssFieldSizing', () => {
+  it('is false without CSS.supports', () => {
+    expect(composerUsesCssFieldSizing(null)).toBe(false);
+    expect(composerUsesCssFieldSizing({})).toBe(false);
+  });
+
+  it('follows CSS.supports for field-sizing: content', () => {
+    expect(composerUsesCssFieldSizing({ supports: () => true })).toBe(true);
+    expect(
+      composerUsesCssFieldSizing({
+        supports: (property, value) => property === 'field-sizing' && value === 'content',
+      }),
+    ).toBe(true);
+    expect(composerUsesCssFieldSizing({ supports: () => false })).toBe(false);
+  });
+});
+
+describe('chat transcript / composer surfaces', () => {
+  it('shares one main-column width for transcript and composer', () => {
+    expect(chatMainColumnClass).toBe(pageRhythm.readingColumn);
+    expect(chatMainColumnClass).toBe('mx-auto w-full max-w-3xl');
+  });
+
+  it('uses a 16px outer stage so transcript and composer share the same inset', () => {
+    expect(chatStageClass).toContain('py-4');
+  });
+
+  it('uses canvas when empty so the transcript matches the composer chrome', () => {
+    expect(chatTranscriptSurfaceClass(false)).toBe('bg-canvas');
+  });
+
+  it('uses panel for the transcript once messages exist, matching the input shell', () => {
+    expect(chatTranscriptSurfaceClass(true)).toBe('bg-panel');
   });
 });

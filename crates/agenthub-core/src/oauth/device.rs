@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::catalog::limits::OAUTH_REFRESH_SKEW_MS;
+use crate::catalog::limits::{OAUTH_REFRESH_SKEW_MS, OAUTH_SESSION_TTL};
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{Account, AgentId};
@@ -22,6 +22,7 @@ const XAI_SCOPE: &str = "openid profile email offline_access grok-cli:access api
 const XAI_DEVICE_CODE_URL: &str = "https://auth.x.ai/oauth2/device/code";
 const XAI_TOKEN_URL: &str = "https://auth.x.ai/oauth2/token";
 const DEFAULT_POLL_INTERVAL_SECS: u64 = 5;
+const DEVICE_COMPLETION_TTL_SECS: u64 = 300;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,6 +71,9 @@ struct DeviceSession {
     status: DeviceOAuthStatus,
     error: Option<String>,
     completing: bool,
+    completion_expires_at: Option<Instant>,
+    poll_generation: u64,
+    poll_claim: Option<u64>,
 }
 
 static DEVICE_STORE: std::sync::OnceLock<Mutex<HashMap<String, DeviceSession>>> =
@@ -79,16 +83,74 @@ fn store() -> &'static Mutex<HashMap<String, DeviceSession>> {
     DEVICE_STORE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn purge_locked(sessions: &mut HashMap<String, DeviceSession>, keep: Option<&str>) {
+    let now = Instant::now();
+    sessions.retain(|state, session| {
+        if session.poll_claim.is_some()
+            && matches!(
+                session.status,
+                DeviceOAuthStatus::Pending | DeviceOAuthStatus::SlowDown
+            )
+        {
+            return true;
+        }
+        if keep == Some(state.as_str())
+            && matches!(
+                session.status,
+                DeviceOAuthStatus::Pending
+                    | DeviceOAuthStatus::SlowDown
+                    | DeviceOAuthStatus::Failed
+                    | DeviceOAuthStatus::Expired
+            )
+        {
+            return true;
+        }
+        if matches!(
+            session.status,
+            DeviceOAuthStatus::Failed | DeviceOAuthStatus::Expired
+        ) {
+            return false;
+        }
+        let expires_at = match session.status {
+            DeviceOAuthStatus::Complete | DeviceOAuthStatus::Completing => {
+                session.completion_expires_at.unwrap_or(session.expires_at)
+            }
+            _ => session.expires_at,
+        };
+        now < expires_at
+    });
+}
+
+fn scrub_session(session: &mut DeviceSession) {
+    session.device_code.clear();
+    session.access = None;
+    session.refresh = None;
+    session.expires_at_ms = None;
+    session.poll_claim = None;
+}
+
+fn expired_poll(state: &str, session: &mut DeviceSession) -> DeviceOAuthPoll {
+    session.status = DeviceOAuthStatus::Expired;
+    session.error = Some("device code expired".into());
+    scrub_session(session);
+    DeviceOAuthPoll {
+        state: state.into(),
+        status: DeviceOAuthStatus::Expired,
+        error: session.error.clone(),
+    }
+}
+
 /// Resolve a device-flow target without mutating the session.  Completion is
 /// serialized by the GUI's per-agent live-config coordinator using this value.
 pub fn device_oauth_agent(state: &str) -> Result<AgentId> {
-    let guard = store()
+    let mut guard = store()
         .lock()
         .map_err(|_| AppError::message("oauth.device", "device store poisoned"))?;
+    purge_locked(&mut guard, None);
     guard
         .get(state)
         .map(|session| session.agent)
-        .ok_or_else(|| AppError::NotFound(format!("device oauth session not found: {state}")))
+        .ok_or_else(|| AppError::NotFound("device oauth session not found".into()))
 }
 
 /// Start xAI (or future) device-code login for Pi.
@@ -127,12 +189,14 @@ pub fn start_device_oauth(agent: AgentId, provider_key: &str) -> Result<DeviceOA
         .get("interval")
         .and_then(|v| v.as_u64())
         .filter(|n| *n > 0)
-        .unwrap_or(DEFAULT_POLL_INTERVAL_SECS);
+        .unwrap_or(DEFAULT_POLL_INTERVAL_SECS)
+        .min(OAUTH_SESSION_TTL.as_secs().max(1));
     let expires_in = body
         .get("expires_in")
         .and_then(|v| v.as_u64())
         .filter(|n| *n > 0)
-        .unwrap_or(900);
+        .unwrap_or(900)
+        .min(OAUTH_SESSION_TTL.as_secs().max(1));
 
     let state = format!("dev-{}", uuid::Uuid::new_v4());
     let session = DeviceSession {
@@ -148,11 +212,21 @@ pub fn start_device_oauth(agent: AgentId, provider_key: &str) -> Result<DeviceOA
         status: DeviceOAuthStatus::Pending,
         error: None,
         completing: false,
+        completion_expires_at: None,
+        poll_generation: 0,
+        poll_claim: None,
     };
-    store()
+    let mut guard = store()
         .lock()
-        .map_err(|_| AppError::message("oauth.device", "device store poisoned"))?
-        .insert(state.clone(), session);
+        .map_err(|_| AppError::message("oauth.device", "device store poisoned"))?;
+    purge_locked(&mut guard, None);
+    if guard.contains_key(&state) {
+        return Err(AppError::message(
+            "oauth.state",
+            "device OAuth state is already active",
+        ));
+    }
+    guard.insert(state.clone(), session);
 
     tracing::info!(
         module = targets::OAUTH,
@@ -176,12 +250,29 @@ pub fn start_device_oauth(agent: AgentId, provider_key: &str) -> Result<DeviceOA
 
 /// Poll device authorization once (caller should honor interval_secs).
 pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
+    poll_device_oauth_with(state, |device_code| {
+        post_form(
+            XAI_TOKEN_URL,
+            &[
+                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+                ("client_id", XAI_CLIENT_ID),
+                ("device_code", device_code),
+            ],
+        )
+    })
+}
+
+fn poll_device_oauth_with<F>(state: &str, request: F) -> Result<DeviceOAuthPoll>
+where
+    F: FnOnce(&str) -> Result<Value>,
+{
     let mut guard = store()
         .lock()
         .map_err(|_| AppError::message("oauth.device", "device store poisoned"))?;
+    purge_locked(&mut guard, Some(state));
     let session = guard
         .get_mut(state)
-        .ok_or_else(|| AppError::NotFound(format!("device oauth session not found: {state}")))?;
+        .ok_or_else(|| AppError::NotFound("device oauth session not found".into()))?;
 
     if session.status == DeviceOAuthStatus::Complete {
         return Ok(DeviceOAuthPoll {
@@ -197,14 +288,29 @@ pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
             error: Some("device oauth completion is already in progress".into()),
         });
     }
-    if Instant::now() >= session.expires_at {
-        session.status = DeviceOAuthStatus::Expired;
-        session.error = Some("device code expired".into());
+    if session.status == DeviceOAuthStatus::Failed {
+        return Ok(DeviceOAuthPoll {
+            state: state.into(),
+            status: DeviceOAuthStatus::Failed,
+            error: session.error.clone(),
+        });
+    }
+    if session.status == DeviceOAuthStatus::Expired {
         return Ok(DeviceOAuthPoll {
             state: state.into(),
             status: DeviceOAuthStatus::Expired,
             error: session.error.clone(),
         });
+    }
+    if session.poll_claim.is_some() {
+        return Ok(DeviceOAuthPoll {
+            state: state.into(),
+            status: DeviceOAuthStatus::Pending,
+            error: Some("device oauth poll is already in progress".into()),
+        });
+    }
+    if Instant::now() >= session.expires_at {
+        return Ok(expired_poll(state, session));
     }
     if Instant::now() < session.last_poll + session.interval {
         return Ok(DeviceOAuthPoll {
@@ -214,29 +320,64 @@ pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
         });
     }
     session.last_poll = Instant::now();
+    session.poll_generation = session.poll_generation.wrapping_add(1);
+    let generation = session.poll_generation;
+    session.poll_claim = Some(generation);
 
     let device_code = session.device_code.clone();
     drop(guard);
 
-    let body = post_form(
-        XAI_TOKEN_URL,
-        &[
-            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-            ("client_id", XAI_CLIENT_ID),
-            ("device_code", &device_code),
-        ],
-    );
+    let body = request(&device_code);
 
     let mut guard = store()
         .lock()
         .map_err(|_| AppError::message("oauth.device", "device store poisoned"))?;
+    purge_locked(&mut guard, Some(state));
     let session = guard
         .get_mut(state)
-        .ok_or_else(|| AppError::NotFound(format!("device oauth session not found: {state}")))?;
+        .ok_or_else(|| AppError::NotFound("device oauth session not found".into()))?;
+
+    let claim_matches = session.poll_claim == Some(generation)
+        && session.poll_generation == generation
+        && matches!(
+            session.status,
+            DeviceOAuthStatus::Pending | DeviceOAuthStatus::SlowDown
+        );
+    if !claim_matches {
+        let (status, error) = match session.status {
+            DeviceOAuthStatus::Complete => (DeviceOAuthStatus::Complete, None),
+            DeviceOAuthStatus::Completing => (
+                DeviceOAuthStatus::Completing,
+                Some("device oauth completion is already in progress".into()),
+            ),
+            DeviceOAuthStatus::Failed => (DeviceOAuthStatus::Failed, session.error.clone()),
+            DeviceOAuthStatus::Expired => (DeviceOAuthStatus::Expired, session.error.clone()),
+            DeviceOAuthStatus::Pending | DeviceOAuthStatus::SlowDown => (
+                session.status,
+                Some("device oauth poll result was superseded".into()),
+            ),
+        };
+        return Ok(DeviceOAuthPoll {
+            state: state.into(),
+            status,
+            error,
+        });
+    }
+    session.poll_claim = None;
+    if Instant::now() >= session.expires_at {
+        return Ok(expired_poll(state, session));
+    }
 
     match body {
         Ok(json) => {
-            if let Some(access) = json.get("access_token").and_then(|v| v.as_str()) {
+            if let Some(access) = json
+                .get("access_token")
+                .and_then(|v| v.as_str())
+                .filter(|value| !value.is_empty())
+            {
+                if Instant::now() >= session.expires_at {
+                    return Ok(expired_poll(state, session));
+                }
                 let refresh = json
                     .get("refresh_token")
                     .and_then(|v| v.as_str())
@@ -244,13 +385,18 @@ pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
                 let expires_in = json
                     .get("expires_in")
                     .and_then(|v| v.as_i64())
-                    .unwrap_or(3600);
+                    .unwrap_or(3600)
+                    .max(0);
                 session.access = Some(access.to_string());
                 session.refresh = refresh;
                 session.expires_at_ms = Some(
-                    chrono::Utc::now().timestamp_millis() + expires_in * 1000
-                        - OAUTH_REFRESH_SKEW_MS,
+                    chrono::Utc::now()
+                        .timestamp_millis()
+                        .saturating_add(expires_in.saturating_mul(1000))
+                        .saturating_sub(OAUTH_REFRESH_SKEW_MS),
                 );
+                session.completion_expires_at =
+                    Some(Instant::now() + Duration::from_secs(DEVICE_COMPLETION_TTL_SECS));
                 session.status = DeviceOAuthStatus::Complete;
                 return Ok(DeviceOAuthPoll {
                     state: state.into(),
@@ -273,9 +419,12 @@ pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
                 }
                 "slow_down" => {
                     if let Some(secs) = json.get("interval").and_then(|v| v.as_u64()) {
-                        session.interval = Duration::from_secs(secs.max(1));
+                        session.interval = Duration::from_secs(
+                            secs.max(1).min(OAUTH_SESSION_TTL.as_secs().max(1)),
+                        );
                     } else {
-                        session.interval += Duration::from_secs(5);
+                        session.interval =
+                            (session.interval + Duration::from_secs(5)).min(OAUTH_SESSION_TTL);
                     }
                     session.status = DeviceOAuthStatus::SlowDown;
                     Ok(DeviceOAuthPoll {
@@ -284,22 +433,11 @@ pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
                         error: None,
                     })
                 }
-                "expired_token" | "expired" => {
-                    session.status = DeviceOAuthStatus::Expired;
-                    session.error = Some("device code expired".into());
-                    Ok(DeviceOAuthPoll {
-                        state: state.into(),
-                        status: DeviceOAuthStatus::Expired,
-                        error: session.error.clone(),
-                    })
-                }
-                other => {
+                "expired_token" | "expired" => Ok(expired_poll(state, session)),
+                _other => {
                     session.status = DeviceOAuthStatus::Failed;
-                    let desc = json
-                        .get("error_description")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(other);
-                    session.error = Some(desc.to_string());
+                    session.error = Some("device authorization failed".into());
+                    scrub_session(session);
                     Ok(DeviceOAuthPoll {
                         state: state.into(),
                         status: DeviceOAuthStatus::Failed,
@@ -314,7 +452,7 @@ pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
             tracing::warn!(
                 module = targets::OAUTH,
                 op = "device_poll",
-                error = %e,
+                error = %crate::utils::redact::redact_text(&e.to_string()),
                 "device poll request failed; will retry"
             );
             Ok(DeviceOAuthPoll {
@@ -325,8 +463,9 @@ pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
         }
         Err(e) => {
             session.status = DeviceOAuthStatus::Failed;
-            session.error = Some(e.to_string());
-            Err(e)
+            session.error = Some("device authorization failed".into());
+            scrub_session(session);
+            Err(AppError::message(e.code(), "device OAuth request failed"))
         }
     }
 }
@@ -336,9 +475,10 @@ pub fn complete_device_oauth(accounts: &AccountService, state: &str) -> Result<A
     let mut guard = store()
         .lock()
         .map_err(|_| AppError::message("oauth.device", "device store poisoned"))?;
+    purge_locked(&mut guard, Some(state));
     let session = guard
         .get_mut(state)
-        .ok_or_else(|| AppError::NotFound(format!("device oauth session not found: {state}")))?;
+        .ok_or_else(|| AppError::NotFound("device oauth session not found".into()))?;
     if session.status != DeviceOAuthStatus::Complete || session.completing {
         return Err(AppError::message(
             "oauth.device",
@@ -378,21 +518,24 @@ pub fn complete_device_oauth(accounts: &AccountService, state: &str) -> Result<A
 
     let account = match attempt {
         Ok(account) => {
-            store()
-                .lock()
-                .map_err(|_| AppError::message("oauth.device", "device store poisoned"))?
-                .remove(state);
+            if let Ok(mut guard) = store().lock() {
+                guard.remove(state);
+            }
             account
         }
         Err(error) => {
             if let Ok(mut guard) = store().lock() {
                 if let Some(session) = guard.get_mut(state) {
                     session.completing = false;
-                    session.status = DeviceOAuthStatus::Complete;
-                    session.error = Some(error.to_string());
+                    session.status = DeviceOAuthStatus::Failed;
+                    session.error = Some("device OAuth completion failed".into());
+                    scrub_session(session);
                 }
             }
-            return Err(error);
+            return Err(AppError::message(
+                error.code(),
+                "device OAuth completion failed",
+            ));
         }
     };
 

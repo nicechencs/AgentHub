@@ -33,6 +33,15 @@ export const tableStyles = {
 export type TableShellVariant = 'default' | 'workbench' | 'flush';
 export type TableDensity = 'default' | 'workbench';
 
+export function createIdempotentCleanup<T extends unknown[]>(cleanup: (...args: T) => void) {
+  let completed = false;
+  return (...args: T) => {
+    if (completed) return;
+    completed = true;
+    cleanup(...args);
+  };
+}
+
 type TableShellContextValue = {
   variant: TableShellVariant;
   density: TableDensity;
@@ -78,40 +87,98 @@ export function useColumnWidths<K extends string>(specs: ColumnWidthSpec<K>[]) {
     startX: number;
     startWidth: number;
     minWidth: number;
+    pointerId: number | null;
+    cleanup: () => void;
   } | null>(null);
 
   const onResizeStart = React.useCallback(
-    (key: K, e: React.MouseEvent) => {
+    (key: K, e: React.MouseEvent | React.PointerEvent) => {
+      if (dragRef.current) return;
       e.preventDefault();
       e.stopPropagation();
+      const isPointer = 'pointerId' in e;
+      const pointerId = isPointer ? e.pointerId : null;
+      const pointerTarget = e.currentTarget as HTMLElement;
+      const previousCursor = document.body.style.cursor;
+      const previousUserSelect = document.body.style.userSelect;
+
       dragRef.current = {
         key,
         startX: e.clientX,
         startWidth: widths[key],
         minWidth: minByKey[key] ?? 48,
+        pointerId,
+        cleanup: () => undefined,
       };
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
 
-      const onMove = (ev: MouseEvent) => {
+      const applyMove = (clientX: number) => {
         const drag = dragRef.current;
         if (!drag) return;
-        const next = Math.max(drag.minWidth, drag.startWidth + (ev.clientX - drag.startX));
+        const next = Math.max(drag.minWidth, drag.startWidth + (clientX - drag.startX));
         setWidths((prev) => (prev[drag.key] === next ? prev : { ...prev, [drag.key]: next }));
       };
 
-      const onUp = () => {
-        dragRef.current = null;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
+      const onPointerMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        applyMove(ev.clientX);
       };
+      const onMouseMove = (ev: MouseEvent) => applyMove(ev.clientX);
+      let cleanup: () => void;
+      const onPointerUp = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        cleanup();
+      };
+      const onPointerCancel = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        cleanup();
+      };
+      cleanup = createIdempotentCleanup(() => {
+        if (dragRef.current?.cleanup !== cleanup) return;
+        dragRef.current = null;
+        document.body.style.cursor = previousCursor;
+        document.body.style.userSelect = previousUserSelect;
+        window.removeEventListener('blur', cleanup);
+        if (isPointer) {
+          document.removeEventListener('pointermove', onPointerMove);
+          document.removeEventListener('pointerup', onPointerUp);
+          document.removeEventListener('pointercancel', onPointerCancel);
+          try {
+            pointerTarget.releasePointerCapture(pointerId!);
+          } catch {
+            // The pointer may already have been released by the browser.
+          }
+        } else {
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', cleanup);
+        }
+      });
+      dragRef.current.cleanup = cleanup;
 
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      window.addEventListener('blur', cleanup);
+      if (isPointer) {
+        document.addEventListener('pointermove', onPointerMove);
+        document.addEventListener('pointerup', onPointerUp);
+        document.addEventListener('pointercancel', onPointerCancel);
+        try {
+          pointerTarget.setPointerCapture(pointerId!);
+        } catch {
+          // Keep the document listeners as a compatibility fallback.
+        }
+      } else {
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', cleanup);
+      }
     },
     [minByKey, widths],
+  );
+
+  React.useEffect(
+    () => () => {
+      dragRef.current?.cleanup();
+    },
+    [],
   );
 
   const totalWidth = React.useMemo(
@@ -129,7 +196,7 @@ export function ColumnResizeHandle<K extends string>({
 }: {
   columnKey: K;
   label: string;
-  onResizeStart: (key: K, e: React.MouseEvent) => void;
+  onResizeStart: (key: K, e: React.MouseEvent | React.PointerEvent) => void;
 }) {
   return (
     <Hint label="拖动调整列宽">
@@ -137,6 +204,7 @@ export function ColumnResizeHandle<K extends string>({
         role="separator"
         aria-orientation="vertical"
         aria-label={`调整${label}列宽`}
+        onPointerDown={(e) => onResizeStart(columnKey, e)}
         onMouseDown={(e) => onResizeStart(columnKey, e)}
         className={tableStyles.resizeHandle}
       />

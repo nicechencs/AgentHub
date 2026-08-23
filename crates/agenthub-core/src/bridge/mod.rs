@@ -3,16 +3,22 @@
 //! Protocol translation is deliberately kept in [`protocol`].  The runtime host owns
 //! listeners and in-memory credentials only; it never reads profiles or the database.
 
+pub mod account;
+pub mod grok_cli;
 pub mod host;
 pub mod protocol;
+pub mod request_fsm;
 pub mod runtime;
 pub mod session;
 pub mod types;
 
+pub use account::{AccountPicker, BridgeMemberSpec, MemberHealth, MemberHealthSink, PickedMember};
 pub use host::{BridgeHostError, BridgeRuntimeHost};
+pub use request_fsm::{AccountSwitchGate, RequestDecision, RequestFsm, SwitchClass};
 pub use runtime::{
-    BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamConfig,
-    BridgeUpstreamProtocol, BridgeUpstreamStatus, ResolvedAuth,
+    BridgeLocalSurface, BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec,
+    BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus, ResolvedAuth,
+    UpstreamAuthReload,
 };
 
 #[cfg(test)]
