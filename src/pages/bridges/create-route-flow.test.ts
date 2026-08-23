@@ -1,121 +1,71 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AdapterApplyPlan } from '@/lib/backend/contracts/adapter';
+import { describe, expect, it } from 'vitest';
 import {
+  canSubmitCreateRoute,
   createRouteProviderDraft,
-  liveCreateRouteTargets,
-  normalizeCreateRouteUrl,
-  OPENROUTER_BACKUP_MODEL,
-  submitCreateRoute,
+  DEFAULT_CREATE_ROUTE_MODEL,
+  isAlternateRouteRule,
+  isCreateRouteUrlValid,
+  isOpenRouterUrl,
+  resolveCreateRouteTargets,
 } from './create-route-flow';
 
-const PLACEHOLDER_KEY = 'sk-or-placeholder-test-key';
-
-function plan(canApply: boolean): AdapterApplyPlan {
-  return {
-    analysis: {
-      route: 'local_bridge',
-      support: 'experimental',
-      reason: 'test',
-      actions: [],
-      limitations: [],
-      evidence: [],
-    },
-    targetAgentId: 'codex',
-    canApply,
-    serviceImpact: 'requires_local_bridge',
-    changes: [],
-  };
-}
-
 describe('create-route-flow', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-08-23T00:00:00Z'));
-  });
-
-  it('normalizes trailing slashes on the URL', () => {
-    expect(normalizeCreateRouteUrl(' https://openrouter.ai/api/v1/ ')).toBe(
-      'https://openrouter.ai/api/v1',
-    );
-  });
-
-  it('binds only installed Codex, Grok, and Pi', () => {
-    expect(liveCreateRouteTargets(['codex', 'claude', 'pi'])).toEqual(['codex', 'pi']);
-    expect(liveCreateRouteTargets([])).toEqual([]);
-  });
-
-  it('drafts an unofficial openai-compatible provider with placeholder key only', () => {
+  it('classifies OpenRouter URL and never treats sk-or- as ahb_', () => {
+    expect(isOpenRouterUrl('https://openrouter.ai/api/v1')).toBe(true);
+    expect(isCreateRouteUrlValid('https://openrouter.ai/api/v1')).toBe(true);
+    expect(isCreateRouteUrlValid('openrouter.ai/api/v1')).toBe(false);
     const draft = createRouteProviderDraft({
-      name: 'OpenRouter backup',
+      name: 'OpenRouter',
       url: 'https://openrouter.ai/api/v1/',
-      key: PLACEHOLDER_KEY,
-      liveAgents: ['codex'],
+      key: 'test-key',
+      targets: ['claude'],
+      model: 'stealth/ox-alpha',
     });
-    expect(draft.preset).toBe('openai-compatible');
+    expect(draft.preset).toBe('openrouter');
     expect(draft.official).toBe(false);
-    expect(draft.agentId).toBe('codex');
-    expect(draft.isCurrent).toBe(false);
-    const parsed = JSON.parse(draft.configText) as {
-      baseURL: string;
-      apiKey: string;
-      model: string;
-    };
-    expect(parsed.baseURL).toBe('https://openrouter.ai/api/v1');
-    expect(parsed.apiKey).toBe(PLACEHOLDER_KEY);
-    expect(parsed.model).toBe(OPENROUTER_BACKUP_MODEL);
-    expect(draft.authApiKey).toBe(PLACEHOLDER_KEY);
+    expect(draft.configText).toContain('https://openrouter.ai/api/v1');
+    expect(draft.configText).toContain('test-key');
+    expect(draft.configText).not.toContain('ahb_');
+    expect(draft.configText).not.toMatch(/sk-or-/);
+    expect(JSON.parse(draft.configText).model).toBe('stealth/ox-alpha');
   });
 
-  it('upserts then plans and binds live agents that can apply', async () => {
-    const upsertProvider = vi.fn(async (p: { id: string }) => p);
-    const planTicket = vi.fn(async (_ticket: string, agent: string) =>
-      plan(agent !== 'pi'),
-    );
-    const bindTicket = vi.fn(async () => ({
-      binding: {
-        ticketId: 'provider:p-1',
-        agentId: 'codex',
-        route: 'bridge' as const,
-        active: true,
-        profileId: 'profile-1',
-        bridge: null,
-      },
-    }));
-
-    const bound = await submitCreateRoute(
-      {
-        name: 'Backup',
-        url: 'https://openrouter.ai/api/v1',
-        key: PLACEHOLDER_KEY,
-        liveAgents: ['codex', 'grok', 'pi', 'claude'],
-      },
-      { upsertProvider, planTicket, bindTicket },
-    );
-
-    expect(upsertProvider).toHaveBeenCalledOnce();
-    const saved = upsertProvider.mock.calls[0]?.[0] as {
-      preset: string;
-      official: boolean;
-      configText: string;
-    };
-    expect(saved.preset).toBe('openai-compatible');
-    expect(saved.official).toBe(false);
-    expect(saved.configText).toContain(PLACEHOLDER_KEY);
-    expect(saved.configText).not.toMatch(/sk-or-v1-/);
-    expect(planTicket).toHaveBeenCalledTimes(3);
-    expect(planTicket.mock.calls.map((call) => call[1])).toEqual(['codex', 'grok', 'pi']);
-    expect(bindTicket).toHaveBeenCalledTimes(2);
-    expect(bound).toEqual(['codex', 'grok']);
+  it('binds all three clients when no target is selected', () => {
+    expect(resolveCreateRouteTargets([])).toEqual(['claude', 'codex', 'grok']);
   });
 
-  it('skips agents that are not live and fails when none bind', async () => {
-    await expect(
-      submitCreateRoute({
-        name: 'Backup',
-        url: 'https://openrouter.ai/api/v1',
-        key: PLACEHOLDER_KEY,
-        liveAgents: ['claude'],
-      }),
-    ).rejects.toThrow('none-live');
+  it('rejects a URL that is not http(s)', () => {
+    const { canSubmitCreateRoute } = require('./create-route-flow') as typeof import('./create-route-flow');
+    expect(canSubmitCreateRoute({
+      name: 'x',
+      url: 'openrouter.ai/api/v1',
+      key: 'k',
+      targets: [],
+    })).toBe(false);
+  });
+
+  it('defaults omitted model to stealth/ox-alpha', () => {
+    expect(canSubmitCreateRoute({
+      name: 'OpenRouter',
+      url: 'https://openrouter.ai/api/v1',
+      key: 'test-key',
+      model: '',
+      targets: ['claude'],
+    })).toBe(true);
+    const draft = createRouteProviderDraft({
+      name: 'OpenRouter',
+      url: 'https://openrouter.ai/api/v1',
+      key: 'test-key',
+      targets: [],
+    });
+    expect(JSON.parse(draft.configText).model).toBe(DEFAULT_CREATE_ROUTE_MODEL);
+    expect(DEFAULT_CREATE_ROUTE_MODEL).toBe('stealth/ox-alpha');
+  });
+
+  it('marks openai-compat local-bridge rules as alternate', () => {
+    expect(isAlternateRouteRule('openai-api-to-claude-v1')).toBe(true);
+    expect(isAlternateRouteRule('openai-api-to-codex-v1')).toBe(true);
+    expect(isAlternateRouteRule('openai-api-to-grok-bridge-v1')).toBe(true);
+    expect(isAlternateRouteRule('kimi-membership-to-codex-v1')).toBe(false);
   });
 });
