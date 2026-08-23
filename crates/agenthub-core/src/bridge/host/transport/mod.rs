@@ -537,6 +537,20 @@ fn passthrough_responses_object(body: Value) -> Result<(Value, bool), Response> 
 }
 
 fn overwrite_configured_model(body: &mut Value, model: Option<&str>) {
+    overwrite_configured_model_with(body, model, false);
+}
+
+fn overwrite_configured_model_with(body: &mut Value, model: Option<&str>, keep_request_model: bool) {
+    if keep_request_model {
+        let has_request = body
+            .get("model")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty());
+        if has_request {
+            return;
+        }
+    }
     if let Some(model) = model {
         body["model"] = Value::String(model.to_owned());
     }

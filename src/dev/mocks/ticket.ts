@@ -140,6 +140,8 @@ function classifyProviderSurface(provider: Provider): TicketSurface {
   if (
     explicitTagMatches(tag, ['openai', 'openai-api'])
     || blobContains(provider.configText, OPENAI_API_ENDPOINT_NEEDLE)
+    || blobContains(provider.configText, 'openrouter.ai')
+    || explicitTagMatches(tag, ['openai-compat', 'openai-compatible', 'openrouter'])
   ) {
     return 'openai-api';
   }
@@ -195,9 +197,11 @@ function classifyAccountSurface(account: Account): TicketSurface {
   }
   if (
     account.kind === 'apikey'
-    && (explicitTagMatches(explicitProvider, ['openai', 'openai-api'])
+    && (explicitTagMatches(explicitProvider, ['openai', 'openai-api', 'openai-compat', 'openai-compatible', 'openrouter'])
       || blobContains(row.credentials, OPENAI_API_ENDPOINT_NEEDLE)
-      || blobContains(row.extra, OPENAI_API_ENDPOINT_NEEDLE))
+      || blobContains(row.credentials, 'openrouter.ai')
+      || blobContains(row.extra, OPENAI_API_ENDPOINT_NEEDLE)
+      || blobContains(row.extra, 'openrouter.ai'))
   ) {
     return 'openai-api';
   }

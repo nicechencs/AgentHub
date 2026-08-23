@@ -44,6 +44,9 @@ fn listener_state(
         grok_replay: Arc::new(GrokReasoningReplay::new()),
         listed_models: Arc::from(Vec::<String>::new()),
         reload_upstream_auth: None,
+        mapping_source: None,
+        mapping_target: None,
+        custom_openai: false,
         account_picker: crate::bridge::runtime::BridgeStartSpec::new(
             "transport-test",
             0,

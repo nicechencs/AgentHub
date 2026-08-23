@@ -7,7 +7,7 @@ use crate::bridge::protocol::responses::to_kimi_chat_request;
 use super::super::admission::AdmittedRequest;
 use super::super::surface::DownstreamSurface;
 use super::{
-    models_surface_unreachable, overwrite_configured_model, parse_bridge_request, RecoveryPolicy,
+    models_surface_unreachable, overwrite_configured_model_with, parse_bridge_request, RecoveryPolicy,
     UpstreamDecode, UpstreamPrepare, UpstreamTransport,
 };
 
@@ -37,7 +37,11 @@ impl UpstreamTransport for OpenAiChatTransport {
                 let request = parse_bridge_request(surface, admitted)?;
                 let stream = request.stream;
                 let mut body = to_kimi_chat_request(&request);
-                overwrite_configured_model(&mut body, admitted.state.upstream.model.as_deref());
+                overwrite_configured_model_with(
+                    &mut body,
+                    admitted.state.upstream.model.as_deref(),
+                    admitted.state.custom_openai,
+                );
                 Ok(UpstreamPrepare {
                     path: self.path(),
                     body,

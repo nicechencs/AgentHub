@@ -19,6 +19,7 @@ import {
   adapterBridgeHostPort,
   adapterFailurePresentation,
 } from './adapter-model';
+import { isAlternateRouteRule } from './create-route-flow';
 import {
   adapterProfilePrimaryAction,
   adapterProfileRecoveryGuide,
@@ -181,6 +182,11 @@ function AdapterProfileRow({
           <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-medium">
             {source.agentId ? <AgentDot agentId={source.agentId} size="sm" title={null} /> : null}
             <span className="truncate">{source.title}</span>
+            {isAlternateRouteRule(profile.ruleId) ? (
+              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-secondary">
+                {t('routes.create.alternate')}
+              </span>
+            ) : null}
             <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
             {endpointPath && endpointId ? (
               <CopyableRouteEndpointUrl
@@ -201,6 +207,9 @@ function AdapterProfileRow({
             ) : null}
             {targetHidden ? (
               <span className="text-xs text-muted">{t('routes.targetHidden')}</span>
+            ) : null}
+            {isAlternateRouteRule(profile.ruleId) ? (
+              <span className="text-xs text-muted">{t('routes.create.alternate')}</span>
             ) : null}
           </div>
         </div>

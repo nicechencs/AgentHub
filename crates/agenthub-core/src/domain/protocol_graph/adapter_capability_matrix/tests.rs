@@ -460,9 +460,9 @@ fn registered_surfaces_have_writable_pi_cells() {
         AgentId::Grok,
     )
     .public_surface();
-    assert_eq!(openai_grok.route, AdapterRoute::NativeEndpoint);
+    assert_eq!(openai_grok.route, AdapterRoute::LocalBridge);
     assert!(openai_grok.can_apply);
-    assert_eq!(openai_grok.rule_id, Some("openai-api-to-grok-v1"));
+    assert_eq!(openai_grok.rule_id, Some("openai-api-to-grok-bridge-v1"));
 
     let xai_grok = decide_adapter_capability(
         AdapterSourceProduct::XaiApi,
