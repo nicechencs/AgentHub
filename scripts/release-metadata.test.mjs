@@ -5,7 +5,9 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+  assertTagMatchesMetadata,
   isPrerelease,
+  parseCliArgs,
   readCargoLockWorkspaceVersions,
   readCargoWorkspaceVersion,
   readReleaseMetadata,
@@ -75,6 +77,22 @@ test('rejects non-strict SemVer, including a leading v and numeric leading zeroe
     const root = writeReleaseFixture({ packageVersion: version });
     assert.throws(() => readReleaseMetadata(root), /not strict SemVer/);
   }
+});
+
+test('rejects a git tag that does not match release metadata', () => {
+  const metadata = readReleaseMetadata(writeReleaseFixture({ packageVersion: '1.2.3' }));
+  assert.equal(metadata.tag, 'v1.2.3');
+  assert.doesNotThrow(() => assertTagMatchesMetadata(metadata, 'v1.2.3'));
+  assert.throws(
+    () => assertTagMatchesMetadata(metadata, 'v1.2.4'),
+    /does not match release metadata tag 'v1\.2\.3'/,
+  );
+  assert.throws(() => assertTagMatchesMetadata(metadata, ''), /Git tag is required/);
+});
+
+test('parses --expect-tag', () => {
+  assert.equal(parseCliArgs(['--expect-tag', 'v1.2.3']).expectTag, 'v1.2.3');
+  assert.throws(() => parseCliArgs(['--expect-tag']), /--expect-tag requires a tag name/);
 });
 
 test('reads version specifically from the Cargo workspace.package section', () => {

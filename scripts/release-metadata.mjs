@@ -151,8 +151,17 @@ function readReleaseMetadata(root = defaultRoot) {
   };
 }
 
+function assertTagMatchesMetadata(metadata, gitTag) {
+  if (typeof gitTag !== 'string' || gitTag.length === 0) {
+    throw new Error('Git tag is required');
+  }
+  if (gitTag !== metadata.tag) {
+    throw new Error(`Git tag '${gitTag}' does not match release metadata tag '${metadata.tag}'`);
+  }
+}
+
 function parseCliArgs(argv) {
-  const options = { root: defaultRoot, githubOutput: null };
+  const options = { root: defaultRoot, githubOutput: null, expectTag: null };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--root') {
@@ -163,8 +172,14 @@ function parseCliArgs(argv) {
       const value = argv[++index];
       if (!value) throw new Error('--github-output requires a file path');
       options.githubOutput = path.resolve(value);
+    } else if (argument === '--expect-tag') {
+      const value = argv[++index];
+      if (!value) throw new Error('--expect-tag requires a tag name');
+      options.expectTag = value;
     } else if (argument === '--help' || argument === '-h') {
-      console.log('Usage: node scripts/release-metadata.mjs [--root DIR] [--github-output FILE]');
+      console.log(
+        'Usage: node scripts/release-metadata.mjs [--root DIR] [--github-output FILE] [--expect-tag TAG]',
+      );
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${argument}`);
@@ -176,6 +191,9 @@ function parseCliArgs(argv) {
 function main() {
   const options = parseCliArgs(process.argv.slice(2));
   const metadata = readReleaseMetadata(options.root);
+  if (options.expectTag) {
+    assertTagMatchesMetadata(metadata, options.expectTag);
+  }
   if (options.githubOutput) {
     fs.appendFileSync(
       options.githubOutput,
@@ -189,6 +207,7 @@ function main() {
 export {
   STRICT_SEMVER,
   assertStrictSemVer,
+  assertTagMatchesMetadata,
   isPrerelease,
   parseCliArgs,
   readCargoLockWorkspaceVersions,
