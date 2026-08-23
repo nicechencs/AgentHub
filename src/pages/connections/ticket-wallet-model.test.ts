@@ -17,6 +17,7 @@ import {
   buildTicketDetailFields,
   buildTicketWalletRows,
   countTicketsByFilter,
+  filterTicketsByAgentUsage,
   dashboardBindingMetaText,
   extrasFromPoolSource,
   filterTickets,
@@ -305,6 +306,72 @@ describe('buildTicketWalletRows', () => {
 
     const codex = buildTicketWalletRows(wallet, { agentFilterId: 'codex' });
     expect(codex.map((row) => row.ticket.id)).toEqual(['account:codex-1']);
+  });
+
+  it('uses leftover-inactive filtered length for chips and footer; header descriptionCount stays unfiltered', () => {
+    const wallet: TicketWallet = {
+      tickets: [
+        {
+          id: 'account:grok-1',
+          sourceKind: 'account',
+          sourceId: 'grok-1',
+          agentId: 'grok',
+          label: 'user@x.ai',
+          surface: 'grok-xai-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'grok',
+        },
+        {
+          id: 'account:codex-1',
+          sourceKind: 'account',
+          sourceId: 'codex-1',
+          agentId: 'codex',
+          label: 'me@openai.com',
+          surface: 'codex-chatgpt-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'codex',
+        },
+      ],
+      bindings: [
+        {
+          ticketId: 'account:grok-1',
+          agentId: 'claude',
+          route: 'native',
+          active: false,
+          profileId: null,
+          bridge: null,
+        },
+        {
+          ticketId: 'account:codex-1',
+          agentId: 'claude',
+          route: 'bridge',
+          active: true,
+          profileId: 'p-claude',
+          bridge: { port: 8123, running: true },
+        },
+      ],
+      surfaceGroups: [],
+    };
+
+    const t = createTranslator('zh');
+    const claudeFiltered = filterTicketsByAgentUsage(wallet, wallet.tickets, 'claude');
+    const claudeRows = buildTicketWalletRows(wallet, { agentFilterId: 'claude' });
+    const chipCount = claudeFiltered.length;
+    const footerCount = claudeRows.length;
+    expect(chipCount).toBe(1);
+    expect(footerCount).toBe(1);
+    expect(footerCount).toBe(chipCount);
+    expect(t('connections.page.countAgent', { name: agentDisplayName('claude'), n: chipCount })).toBe(
+      `${agentDisplayName('claude')} 1 份`,
+    );
+    expect(t('connections.list.count', { n: footerCount })).toBe('1 份登录');
+
+    const descriptionCount = wallet.tickets.length;
+    expect(descriptionCount).toBe(2);
+    expect(descriptionCount).not.toBe(chipCount);
+    expect(t('connections.page.descriptionCount', { n: descriptionCount })).toBe('2 份登录');
   });
 
   it('finds active binding for dashboard agent', () => {
