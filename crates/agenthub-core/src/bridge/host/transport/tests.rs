@@ -242,3 +242,110 @@ fn recovery_policy_matches_channel() {
     ));
     assert!(!is_reasoning_decode_failure("unrelated 400"));
 }
+
+fn assert_no_system_or_developer_items(body: &serde_json::Value) {
+    let Some(items) = body.get("input").and_then(serde_json::Value::as_array) else {
+        return;
+    };
+    for item in items {
+        let role = item.get("role").and_then(serde_json::Value::as_str);
+        assert_ne!(role, Some("system"), "{item}");
+        assert_ne!(role, Some("developer"), "{item}");
+    }
+}
+
+#[test]
+fn official_codex_messages_prepare_folds_system_and_forces_store_false() {
+    let body = json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 32,
+        "system": "Claude Code system prompt.",
+        "messages": [
+            { "role": "system", "content": "Extra system." },
+            { "role": "user", "content": "ping" }
+        ]
+    });
+    let admitted = admitted(
+        BridgeUpstreamProtocol::CodexResponsesOauth,
+        BridgeLocalSurface::Messages,
+        body,
+    );
+    let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::CodexResponsesOauth)
+        .prepare(DownstreamSurface::Messages, &admitted)
+        .expect("prepare messages");
+    assert_eq!(prepared.body["store"], false);
+    assert_no_system_or_developer_items(&prepared.body);
+    let instructions = prepared.body["instructions"]
+        .as_str()
+        .expect("instructions");
+    assert!(
+        instructions.contains("Claude Code system prompt."),
+        "{instructions}"
+    );
+    assert!(instructions.contains("Extra system."), "{instructions}");
+    assert_eq!(prepared.body["input"][0]["role"], "user");
+    assert_eq!(prepared.body["input"][0]["content"][0]["text"], "ping");
+}
+
+#[test]
+fn official_codex_chat_prepare_folds_developer_and_forces_store_false() {
+    let body = json!({
+        "model": "claude-sonnet-4-20250514",
+        "messages": [
+            { "role": "system", "content": "Be brief." },
+            { "role": "user", "content": "hello" },
+            { "role": "developer", "content": "Stay in English." }
+        ]
+    });
+    let admitted = admitted(
+        BridgeUpstreamProtocol::CodexResponsesOauth,
+        BridgeLocalSurface::ChatCompletions,
+        body,
+    );
+    let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::CodexResponsesOauth)
+        .prepare(DownstreamSurface::ChatCompletions, &admitted)
+        .expect("prepare chat");
+    assert_eq!(prepared.body["store"], false);
+    assert_no_system_or_developer_items(&prepared.body);
+    let instructions = prepared.body["instructions"]
+        .as_str()
+        .expect("instructions");
+    assert!(instructions.contains("Be brief."), "{instructions}");
+    assert!(instructions.contains("Stay in English."), "{instructions}");
+    assert_eq!(prepared.body["input"][0]["role"], "user");
+    assert_eq!(prepared.body["input"][0]["content"][0]["text"], "hello");
+}
+
+#[test]
+fn official_codex_responses_passthrough_strips_system_items() {
+    let body = json!({
+        "model": "claude-sonnet-4-20250514",
+        "input": [
+            {
+                "type": "message",
+                "role": "system",
+                "content": [{ "type": "input_text", "text": "You are a coding agent." }]
+            },
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{ "type": "input_text", "text": "hello" }]
+            }
+        ]
+    });
+    let admitted = admitted(
+        BridgeUpstreamProtocol::CodexResponsesOauth,
+        BridgeLocalSurface::Responses,
+        body,
+    );
+    let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::CodexResponsesOauth)
+        .prepare(DownstreamSurface::Responses, &admitted)
+        .expect("prepare responses");
+    assert_eq!(prepared.body["store"], false);
+    assert_no_system_or_developer_items(&prepared.body);
+    let user_text = prepared.body["input"][0]["content"][0]["text"]
+        .as_str()
+        .expect("user text");
+    assert!(user_text.contains("You are a coding agent."), "{user_text}");
+    assert!(user_text.contains("hello"), "{user_text}");
+}

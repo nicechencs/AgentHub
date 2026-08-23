@@ -169,20 +169,27 @@ pub fn translate_responses_request(value: &Value) -> ProtocolResult<(BridgeReque
 /// Used by the Codex subscription → Claude Code kernel when the approved upstream
 /// transport is Responses. Unlike [`to_kimi_chat_request`], this keeps Responses
 /// shapes (`input` items, `max_output_tokens`, function tools without Chat wrapping).
+///
+/// Official ChatGPT / Codex Responses rejects `role=system` input items (400
+/// "System messages are not allowed"). Fold system and developer text into
+/// `instructions` instead of emitting those roles.
 pub fn to_responses_request(request: &BridgeRequest) -> Value {
     let mut body = Map::new();
     body.insert("model".to_owned(), Value::String(request.model.clone()));
     body.insert("stream".to_owned(), Value::Bool(request.stream));
-    if let Some(instructions) = &request.instructions {
-        body.insert(
-            "instructions".to_owned(),
-            Value::String(instructions.clone()),
-        );
-    }
 
+    let mut instructions = request.instructions.clone();
     let mut input = Vec::new();
     for message in &request.input {
-        append_responses_input(&mut input, message);
+        match message.role {
+            MessageRole::System | MessageRole::Developer => {
+                fold_text_into_instructions(&mut instructions, &bridge_message_text(message));
+            }
+            _ => append_responses_input(&mut input, message),
+        }
+    }
+    if let Some(instructions) = instructions {
+        body.insert("instructions".to_owned(), Value::String(instructions));
     }
     body.insert("input".to_owned(), Value::Array(input));
 
@@ -319,9 +326,9 @@ pub fn apply_official_codex_model(body: &mut Value, incoming: &str, configured: 
 /// Prepare a request for the official ChatGPT / Codex Responses upstream.
 ///
 /// The official endpoint requires storage to be disabled for this local
-/// subscription route. Keep this policy next to the model policy so callers
-/// cannot accidentally omit it while leaving the provider-neutral request
-/// conversion unchanged.
+/// subscription route and rejects `role=system` input items. Keep both
+/// policies next to the model policy so callers cannot accidentally omit
+/// them while leaving the provider-neutral request conversion unchanged.
 pub fn prepare_official_codex_request(
     body: &mut Value,
     incoming_model: &str,
@@ -329,6 +336,139 @@ pub fn prepare_official_codex_request(
 ) {
     apply_official_codex_model(body, incoming_model, configured_model);
     body["store"] = Value::Bool(false);
+    fold_official_codex_system_items(body);
+}
+
+/// Drop leftover `role=system` / `role=developer` input items.
+///
+/// Fold their text into `instructions` when that field is already present.
+/// Otherwise prepend onto the first user message so a Claude-style inline
+/// system prompt is not discarded. Official ChatGPT Responses 400s on
+/// system input items; developer is folded here for the same Claude/Chat
+/// conversion path.
+fn fold_official_codex_system_items(body: &mut Value) {
+    let Some(object) = body.as_object_mut() else {
+        return;
+    };
+    let folded_text = {
+        let Some(Value::Array(input)) = object.get_mut("input") else {
+            return;
+        };
+        let mut folded = Vec::new();
+        input.retain(|item| match item.get("role").and_then(Value::as_str) {
+            Some("system") | Some("developer") => {
+                let text = responses_item_text(item);
+                if !text.is_empty() {
+                    folded.push(text);
+                }
+                false
+            }
+            _ => true,
+        });
+        folded.join("\n")
+    };
+    if folded_text.is_empty() {
+        return;
+    }
+
+    let existing = object
+        .get("instructions")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    if !existing.is_empty() {
+        object.insert(
+            "instructions".to_owned(),
+            Value::String(merge_instruction_text(&existing, &folded_text)),
+        );
+        return;
+    }
+    if let Some(Value::Array(input)) = object.get_mut("input") {
+        if prepend_text_to_first_user_item(input, &folded_text) {
+            return;
+        }
+    }
+    object.insert("instructions".to_owned(), Value::String(folded_text));
+}
+
+fn responses_item_text(item: &Value) -> String {
+    match item.get("content") {
+        Some(Value::String(text)) => text.clone(),
+        Some(Value::Array(parts)) => parts
+            .iter()
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join(""),
+        _ => String::new(),
+    }
+}
+
+fn prepend_text_to_first_user_item(input: &mut [Value], text: &str) -> bool {
+    let Some(item) = input
+        .iter_mut()
+        .find(|item| item.get("role").and_then(Value::as_str) == Some("user"))
+    else {
+        return false;
+    };
+    match item.get_mut("content") {
+        Some(Value::String(existing)) => {
+            *existing = merge_instruction_text(text, existing);
+            true
+        }
+        Some(Value::Array(parts)) => {
+            if let Some(part) = parts
+                .iter_mut()
+                .find(|part| part.get("text").and_then(Value::as_str).is_some())
+            {
+                let existing = part
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned();
+                part["text"] = Value::String(merge_instruction_text(text, &existing));
+                return true;
+            }
+            parts.insert(0, json!({ "type": "input_text", "text": text }));
+            true
+        }
+        _ => {
+            item["content"] = json!([{ "type": "input_text", "text": text }]);
+            true
+        }
+    }
+}
+
+fn fold_text_into_instructions(instructions: &mut Option<String>, text: &str) {
+    if text.is_empty() {
+        return;
+    }
+    match instructions {
+        Some(existing) => {
+            let merged = merge_instruction_text(existing, text);
+            *existing = merged;
+        }
+        None => *instructions = Some(text.to_owned()),
+    }
+}
+
+fn merge_instruction_text(first: &str, second: &str) -> String {
+    match (first.is_empty(), second.is_empty()) {
+        (true, _) => second.to_owned(),
+        (_, true) => first.to_owned(),
+        _ => format!("{first}\n{second}"),
+    }
+}
+
+fn bridge_message_text(message: &BridgeMessage) -> String {
+    message
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            BridgeContent::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Build a non-streaming OpenAI Responses object from IR events.
