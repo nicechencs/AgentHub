@@ -235,6 +235,78 @@ describe('buildTicketWalletRows', () => {
     expect(oauth?.highlighted).toBe(false);
   });
 
+  it('filters cards to the selected agent', () => {
+    const wallet = sampleWallet();
+    const claude = buildTicketWalletRows(wallet, { agentFilterId: 'claude' });
+    const grok = buildTicketWalletRows(wallet, { agentFilterId: 'grok' });
+    expect(claude.map((row) => row.ticket.id).sort()).toEqual([
+      'account:oauth-1',
+      'provider:ant-1',
+      'provider:kimi-1',
+      'provider:unk-1',
+    ].sort());
+    expect(claude.some((row) => row.ticket.agentId === 'kimi')).toBe(true);
+    expect(grok).toEqual([]);
+  });
+
+  it('does not keep a Grok ticket for a leftover inactive Claude binding; keeps a Codex ticket with an active Claude binding', () => {
+    const wallet: TicketWallet = {
+      tickets: [
+        {
+          id: 'account:grok-1',
+          sourceKind: 'account',
+          sourceId: 'grok-1',
+          agentId: 'grok',
+          label: 'user@x.ai',
+          surface: 'grok-xai-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'grok',
+        },
+        {
+          id: 'account:codex-1',
+          sourceKind: 'account',
+          sourceId: 'codex-1',
+          agentId: 'codex',
+          label: 'me@openai.com',
+          surface: 'codex-chatgpt-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'codex',
+        },
+      ],
+      bindings: [
+        {
+          ticketId: 'account:grok-1',
+          agentId: 'claude',
+          route: 'native',
+          active: false,
+          profileId: null,
+          bridge: null,
+        },
+        {
+          ticketId: 'account:codex-1',
+          agentId: 'claude',
+          route: 'bridge',
+          active: true,
+          profileId: 'p-claude',
+          bridge: { port: 8123, running: true },
+        },
+      ],
+      surfaceGroups: [],
+    };
+
+    const claude = buildTicketWalletRows(wallet, { agentFilterId: 'claude' });
+    expect(claude.map((row) => row.ticket.id)).toEqual(['account:codex-1']);
+    expect(claude.some((row) => row.ticket.agentId === 'grok')).toBe(false);
+
+    const grok = buildTicketWalletRows(wallet, { agentFilterId: 'grok' });
+    expect(grok.map((row) => row.ticket.id)).toEqual(['account:grok-1']);
+
+    const codex = buildTicketWalletRows(wallet, { agentFilterId: 'codex' });
+    expect(codex.map((row) => row.ticket.id)).toEqual(['account:codex-1']);
+  });
+
   it('finds active binding for dashboard agent', () => {
     const wallet = sampleWallet();
     const hit = activeBindingForAgent(wallet, 'codex');
@@ -611,11 +683,11 @@ describe('ticketAddDialogState', () => {
 
 describe('handleTicketAddMenuSelect', () => {
   it('swallows the menu select, opens the matching dialog, then closes the menu', () => {
-    const event = { preventDefault: vi.fn() };
+    const event = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
     const onImportLogin = vi.fn();
     const onAddKey = vi.fn();
     const onMenuClose = vi.fn();
-    const schedule = vi.fn<(fn: () => void) => void>();
+    const schedule = vi.fn<(fn: () => void, delayMs?: number) => void>();
 
     handleTicketAddMenuSelect(event, 'import-login', 'kimi', {
       onImportLogin,
@@ -624,13 +696,27 @@ describe('handleTicketAddMenuSelect', () => {
     }, schedule);
 
     expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(event.stopPropagation).toHaveBeenCalledOnce();
     expect(onImportLogin).toHaveBeenCalledOnce();
     expect(onImportLogin).toHaveBeenCalledWith('kimi');
     expect(onAddKey).not.toHaveBeenCalled();
     expect(onMenuClose).not.toHaveBeenCalled();
     expect(schedule).toHaveBeenCalledOnce();
+    expect(schedule).toHaveBeenCalledWith(expect.any(Function), MENU_DIALOG_DISMISS_CLEAR_MS);
     schedule.mock.calls[0]![0]();
     expect(onMenuClose).toHaveBeenCalledOnce();
+  });
+
+  it('opens the import dialog for 导入当前授权 instead of failing silently', () => {
+    const event = { preventDefault: vi.fn() };
+    const onImportLogin = vi.fn();
+    handleTicketAddMenuSelect(event, 'import-login', 'claude', { onImportLogin });
+    expect(onImportLogin).toHaveBeenCalledWith('claude');
+    expect(ticketAddDialogState('import-login', 'claude')).toMatchObject({
+      addAgentId: 'claude',
+      loginImportOpen: true,
+      apiKeyDialogOpen: false,
+    });
   });
 
   it('opens the add API Key dialog without touching the wallet filter', () => {

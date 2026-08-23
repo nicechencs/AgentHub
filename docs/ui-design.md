@@ -261,7 +261,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - 添加登录时写下它是哪一家。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意工具）。**Pi 无单一官方 URL**：弹窗选厂商槽，官方槽（anthropic / openai / …）只写 `~/.pi/agent/auth.json`，自定义 URL 写 `models.json`。
 - **已落地（读模型 + 写入）**：跨工具登录列表 + 真登录常驻「分享 / 路由」+ Dashboard 当前绑定；自动生成的配置不出现在登录列表。确认步走 `bind`，成功以该工具的当前绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
 - 导入当前登录时若本机同时有 Key 与官方登录，对话框警告条说明当前会收入哪一份。
-- **详情展开**：不是字段堆。行头在官方登录 / 订阅旁放安静健康 chip（可续期 / 已配置；不写实验 / 未验证）。**用量**有配额才出现（QuotaBar 先 7d 再 5h + reset）；用途已在行上，详情不再列「用在哪」。OAuth 详情显示脱敏 Refresh token（头尾预览，不含明文），方便区分同一身份下的多份授权。**更多**仅在有自定义端点 / 协议时出现（默认折叠）；仅 import + 登录状态时不渲染。页脚只放编辑配置或编辑密钥（若可）+「移入回收站」；行头已有 Agent，不再写「导入自 …」。
+- **详情展开**：不是字段堆。行头在官方登录 / 订阅旁放安静健康 chip（可续期 / 已配置；不写实验 / 未验证）。**用量**有配额才出现（QuotaBar 先 7d 再 5h + reset）。Codex OAuth 的 5h 条只在上游返回 `quota5hPct` 时绘制；上游只给 7d 时不要用 7d 数据假装一条 5h。用途已在行上，详情不再列「用在哪」。OAuth 详情显示脱敏 Refresh token（头尾预览，不含明文），方便区分同一身份下的多份授权。**更多**仅在有自定义端点 / 协议时出现（默认折叠）；仅 import + 登录状态时不渲染。页脚只放编辑配置或编辑密钥（若可）+「移入回收站」；行头已有 Agent，不再写「导入自 …」。
 - 实现落点：`TicketWalletList` / `ticket-wallet-model` / `lib/api/tickets`；`reuse-offer` 为登录常驻「分享 / 路由」语义。
 
 #### 4.3.1 mode=providers — API 配置（历史线框 / 过渡形态）

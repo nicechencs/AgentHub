@@ -64,6 +64,7 @@ import {
   liveAuthImportGate,
   liveApiKeyImportGate,
   liveAuthDiscoveryKind,
+  liveImportAction,
   liveImportDialogMode,
 } from './connection-model';
 import {
@@ -88,7 +89,7 @@ import {
   switchAccount,
   type LiveAuthProbe,
 } from '@/lib/api/account';
-import { deleteProvider, switchPreview, switchProvider } from '@/lib/api/provider';
+import { deleteProvider, importProviderLive, switchPreview, switchProvider } from '@/lib/api/provider';
 import type { Account, Provider } from '@/lib/types';
 
 function parseAgentParam(raw: string | null, allowed: AgentId[]): AgentId | null {
@@ -543,13 +544,17 @@ export default function ConnectionsPage() {
     const coexistenceNotice = importCoexistenceNotice;
     setImportingAccount(true);
     try {
-      const acc = await importCurrentLogin(addAgentId);
+      const imported =
+        liveImportAction(importDialogMode) === 'provider'
+          ? await importProviderLive(addAgentId)
+          : await importCurrentLogin(addAgentId);
+      const label = 'label' in imported ? imported.label : imported.name;
       setLoginImportOpen(false);
       toast({
         title: t('connections.import.toastOk'),
         description: coexistenceNotice
-          ? t('connections.import.toastOkCoexist', { label: acc.label })
-          : t('connections.import.toastOkDesc', { label: acc.label }),
+          ? t('connections.import.toastOkCoexist', { label })
+          : t('connections.import.toastOkDesc', { label }),
         variant: 'success',
       });
       await poolReload().catch(() => {});

@@ -67,7 +67,7 @@ describe('ticket-wallet', () => {
     expect(activeBindingForAgent(dup, 'claude')?.binding.profileId).toBe('p1');
   });
 
-  it('filters tickets owned by or bound to the agent', () => {
+  it('filters tickets owned by the agent or with an active binding to it', () => {
     const all = wallet();
     all.tickets.push({
       id: 't2',
@@ -98,7 +98,67 @@ describe('ticket-wallet', () => {
     ]);
     expect(filterTicketsByAgentUsage(all, all.tickets, 'claude').map((row) => row.id)).toEqual(['t1']);
     expect(filterTicketsByAgentUsage(all, all.tickets, 'codex').map((row) => row.id)).toEqual(['t2']);
-    expect(filterTicketsByAgentUsage(all, all.tickets, 'pi').map((row) => row.id)).toEqual(['t1']);
+    expect(filterTicketsByAgentUsage(all, all.tickets, 'kimi').map((row) => row.id)).toEqual(['t1']);
+    expect(filterTicketsByAgentUsage(all, all.tickets, 'grok').map((row) => row.id)).toEqual(['t3']);
+    expect(filterTicketsByAgentUsage(all, all.tickets, 'pi')).toEqual([]);
     expect(filterTicketsByAgentUsage(all, all.tickets, 'cursor')).toEqual([]);
+  });
+
+  it('drops a leftover inactive Claude binding on a Grok ticket and keeps a Codex ticket with an active Claude binding', () => {
+    const all: TicketWallet = {
+      tickets: [
+        {
+          id: 't-grok',
+          sourceKind: 'account',
+          sourceId: 'grok-1',
+          agentId: 'grok',
+          label: 'user@x.ai',
+          surface: 'grok-xai-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'grok',
+        },
+        {
+          id: 't-codex',
+          sourceKind: 'account',
+          sourceId: 'codex-1',
+          agentId: 'codex',
+          label: 'me@openai.com',
+          surface: 'codex-chatgpt-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'codex',
+        },
+      ],
+      bindings: [
+        {
+          ticketId: 't-grok',
+          agentId: 'claude',
+          route: 'native',
+          active: false,
+          profileId: null,
+          bridge: null,
+        },
+        {
+          ticketId: 't-codex',
+          agentId: 'claude',
+          route: 'bridge',
+          active: true,
+          profileId: 'p-claude',
+          bridge: { port: 8123, running: true },
+        },
+      ],
+      surfaceGroups: [],
+    };
+
+    expect(filterTicketsByAgentUsage(all, all.tickets, 'claude').map((row) => row.id)).toEqual([
+      't-codex',
+    ]);
+    expect(filterTicketsByAgentUsage(all, all.tickets, 'grok').map((row) => row.id)).toEqual([
+      't-grok',
+    ]);
+    expect(filterTicketsByAgentUsage(all, all.tickets, 'codex').map((row) => row.id)).toEqual([
+      't-codex',
+    ]);
   });
 });

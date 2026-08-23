@@ -213,9 +213,11 @@ export function handleMenuDialogSelect(
  * Menu item select for 导入当前授权 / 添加 API Key.
  * preventDefault keeps the menu mounted through the click so the Dialog is
  * not dismissed and the pointer cannot hit the segmented filter underneath.
+ * Close is delayed until after the click settles — timeout 0 unmounts the
+ * submenu in time for the same click to hit AgentTabStrip (silence).
  */
 export function handleTicketAddMenuSelect(
-  event: { preventDefault: () => void },
+  event: { preventDefault: () => void; stopPropagation?: () => void },
   kind: TicketAddKind,
   agentId: AgentId,
   handlers: {
@@ -223,11 +225,13 @@ export function handleTicketAddMenuSelect(
     onAddKey?: (id: AgentId) => void;
     onMenuClose?: () => void;
   },
-  schedule: (fn: () => void) => void = scheduleAfterMenuClose,
+  schedule: (fn: () => void, delayMs?: number) => void = scheduleAfterMenuClose,
+  closeDelayMs = MENU_DIALOG_DISMISS_CLEAR_MS,
 ): void {
   event.preventDefault();
+  event.stopPropagation?.();
   dispatchTicketAddAction(kind, agentId, handlers);
-  if (handlers.onMenuClose) schedule(handlers.onMenuClose);
+  if (handlers.onMenuClose) schedule(handlers.onMenuClose, closeDelayMs);
 }
 
 export function ticketAddDialogState(
@@ -447,7 +451,10 @@ export function dashboardBindingMetaText(
   return `${ticketLabel} · ${bindingDashboardRouteLabel(route, t)}`;
 }
 
-/** Show a quota bar only when upstream returned a percent. `0` is a real value. */
+/**
+ * Show a quota bar only when upstream returned a percent. `0` is a real value.
+ * Codex 5h is not inferred from 7d: missing quota5hPct hides that bar.
+ */
 export function hasOfficialQuotaWindow(pct: number | undefined | null): boolean {
   return typeof pct === 'number' && Number.isFinite(pct);
 }
