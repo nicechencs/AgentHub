@@ -119,26 +119,27 @@ impl AccountService {
         let extra = attach_identity_meta(adapter, live.kind, &live.credentials, &display, extra);
 
         let now = now_ts();
-        let row = Account {
+        let mut row = Account {
             id: format!("{}-live-{}", agent.as_str(), Uuid::new_v4()),
             agent_id: agent,
             kind: live.kind,
-            label: display.clone(),
-            credentials: live.credentials.clone(),
-            extra: extra.clone(),
+            label: display,
+            credentials: live.credentials,
+            extra,
             status: "active".into(),
             is_current: make_current,
             created_at: now.clone(),
             updated_at: now,
         };
-        let row = self.prepare_account_surface(row);
+        row = self.prepare_account_surface(row);
+        let _ = crate::services::account_identity_heal::heal_account_identity(&mut row);
         self.commit_authorization_merge(
             adapter,
             &row,
             live.kind,
-            display,
-            live.credentials,
-            extra,
+            row.label.clone(),
+            row.credentials.clone(),
+            row.extra.clone(),
             make_current,
         )
         .map(|committed| committed.stored)

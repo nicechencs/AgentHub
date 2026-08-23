@@ -50,8 +50,11 @@ import {
   handleTicketAddMenuSelect,
   buildTicketDetailFields,
   buildTicketWalletRows,
-  humanizeTicketAuthLabel,
   ticketAddActionLabel,
+  ticketAuthChip,
+  ticketCardTitle,
+  showsNativeSwitch,
+  ticketSwitchChip,
   ticketCredentialClassChipLabel,
   ticketDetailEditLabel,
   ticketSurfaceChipLabel,
@@ -102,6 +105,9 @@ export function TicketDetailPanel({
   advanced,
   extras,
   editLabel,
+  refreshing,
+  refreshLocked,
+  onRefresh,
   onEdit,
   onDelete,
 }: {
@@ -109,6 +115,9 @@ export function TicketDetailPanel({
   advanced: TicketDetailField[];
   extras?: TicketDetailExtras | null;
   editLabel?: string | null;
+  refreshing?: boolean;
+  refreshLocked?: boolean;
+  onRefresh?: () => void;
   onEdit?: () => void;
   onDelete: () => void;
 }) {
@@ -117,6 +126,9 @@ export function TicketDetailPanel({
   const has5h = extras?.quota5hPct != null;
   const hasQuota = has7d || has5h;
   const visibleAdvanced = advanced.filter((field) => !HIDDEN_ADVANCED_LABELS.has(field.label));
+  const refreshLabel = extras?.oauthAction?.kind === 'sync-current-login'
+    ? t('connections.list.syncCurrentLogin')
+    : t('connections.list.refresh');
 
   return (
     <Card
@@ -172,6 +184,18 @@ export function TicketDetailPanel({
 
       <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
         <div className="flex flex-wrap items-center gap-2">
+          {extras?.oauthAction && onRefresh ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={refreshLocked || refreshing}
+              aria-label={refreshLabel}
+              onClick={onRefresh}
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+              {refreshing ? t('connections.list.refreshing') : refreshLabel}
+            </Button>
+          ) : null}
           {editLabel && onEdit ? (
             <Button size="sm" variant="secondary" onClick={onEdit}>
               <Pencil className="h-3.5 w-3.5" /> {editLabel}
@@ -195,8 +219,11 @@ function TicketRow({
   row,
   extras,
   refreshingId,
+  switchingId,
+  nativeSwitch,
   onShare,
   onRoute,
+  onSwitch,
   onRefresh,
   onEdit,
   onDelete,
@@ -204,8 +231,11 @@ function TicketRow({
   row: TicketWalletRow;
   extras: TicketDetailExtras | null;
   refreshingId: string | null;
+  switchingId: string | null;
+  nativeSwitch: boolean;
   onShare: (ticket: TicketView) => void;
   onRoute: (ticket: TicketView) => void;
+  onSwitch?: (ticket: TicketView) => void;
   onRefresh?: (ticket: TicketView) => void;
   onEdit: (ticket: TicketView) => void;
   onDelete: (ticket: TicketView) => void;
@@ -215,6 +245,11 @@ function TicketRow({
   const [expanded, setExpanded] = React.useState(false);
   const detailsId = React.useId();
   const editLabel = ticketDetailEditLabel(extras, t);
+  const authChip = ticketAuthChip(extras);
+  const switchChip = ticketSwitchChip(extras, t);
+  const switching = switchingId === ticket.id;
+  const switchBusy = switchingId !== null;
+  const title = ticketCardTitle(ticket, extras);
 
   return (
     <ListRow
@@ -226,14 +261,16 @@ function TicketRow({
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
           <AgentDot agentId={ticket.agentId} />
           <CredentialMark cls={ticket.credentialClass} agentId={ticket.agentId} />
-          <Tip className="truncate text-body font-medium" label={ticket.label}>
-            {ticket.label}
+          <Tip className="truncate text-body font-medium" label={title}>
+            {title}
           </Tip>
           <Badge variant={ticket.surface === 'unknown' ? 'accent' : 'default'}>
             {ticketSurfaceChipLabel(ticket.surface, t)}
           </Badge>
-          {extras?.authLabel ? (
-            <Badge variant="default">{humanizeTicketAuthLabel(extras.authLabel)}</Badge>
+          {authChip ? (
+            <Badge variant="default" className={authChip.mono ? 'font-mono' : undefined}>
+              {authChip.label}
+            </Badge>
           ) : null}
           <span className="text-meta text-secondary">
             {(usageParts ?? []).map((part, index) => (
@@ -261,30 +298,19 @@ function TicketRow({
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {extras?.oauthAction && onRefresh ? (
-            <Hint
-              label={
-                extras.oauthAction.kind === 'sync-current-login'
-                  ? t('connections.list.syncCurrentLogin')
-                  : t('connections.list.refresh')
-              }
+          {nativeSwitch ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={switchChip.kind === 'in-use' || switchBusy || !onSwitch}
+              aria-label={switchChip.label}
+              onClick={() => {
+                if (switchChip.kind === 'in-use' || !onSwitch) return;
+                onSwitch(ticket);
+              }}
             >
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={refreshingId !== null}
-                aria-label={
-                  extras.oauthAction.kind === 'sync-current-login'
-                    ? t('connections.list.syncCurrentLogin')
-                    : t('connections.list.refresh')
-                }
-                onClick={() => onRefresh(ticket)}
-              >
-                <RefreshCw
-                  className={cn('h-3.5 w-3.5', refreshingId === ticket.id && 'animate-spin')}
-                />
-              </Button>
-            </Hint>
+              {switching ? t('connections.list.switching') : switchChip.label}
+            </Button>
           ) : null}
           <Button size="sm" variant="outline" onClick={() => onShare(ticket)}>
             <Share2 className="h-3.5 w-3.5" /> {t('connections.list.share')}
@@ -312,6 +338,9 @@ function TicketRow({
           advanced={buildTicketDetailFields(ticket, extras, t).advanced}
           extras={extras}
           editLabel={editLabel}
+          refreshing={refreshingId === ticket.id}
+          refreshLocked={refreshingId !== null}
+          onRefresh={extras?.oauthAction && onRefresh ? () => onRefresh(ticket) : undefined}
           onEdit={editLabel ? () => onEdit(ticket) : undefined}
           onDelete={() => onDelete(ticket)}
         />
@@ -410,8 +439,10 @@ export function TicketWalletList({
   agentFilterId = null,
   onShareTicket,
   onRouteTicket,
+  onSwitchTicket,
   onRefreshTicket,
   refreshingTicketId,
+  switchingTicketId,
   extrasForTicket,
   onEditTicket,
   onDeleteTicket,
@@ -426,8 +457,10 @@ export function TicketWalletList({
   agentFilterId?: AgentId | null;
   onShareTicket: (ticket: TicketView) => void;
   onRouteTicket: (ticket: TicketView) => void;
+  onSwitchTicket?: (ticket: TicketView) => void;
   onRefreshTicket?: (ticket: TicketView) => void;
   refreshingTicketId?: string | null;
+  switchingTicketId?: string | null;
   extrasForTicket?: (ticket: TicketView) => TicketDetailExtras | null;
   onEditTicket: (ticket: TicketView) => void;
   onDeleteTicket: (ticket: TicketView) => void;
@@ -506,8 +539,11 @@ export function TicketWalletList({
               row={row}
               extras={extrasForTicket?.(row.ticket) ?? null}
               refreshingId={refreshingTicketId ?? null}
+              switchingId={switchingTicketId ?? null}
+              nativeSwitch={showsNativeSwitch(row.ticket.agentId, agentFilterId)}
               onShare={onShareTicket}
               onRoute={onRouteTicket}
+              onSwitch={onSwitchTicket}
               onRefresh={onRefreshTicket}
               onEdit={onEditTicket}
               onDelete={onDeleteTicket}

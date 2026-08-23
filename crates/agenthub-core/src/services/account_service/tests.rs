@@ -923,6 +923,46 @@ fn updating_current_codex_api_key_account_stays_pool_only() {
 }
 
 #[test]
+fn import_live_heals_codex_email_from_id_token() {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+
+    let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(
+        json!({
+            "email": "imported@example.com",
+            "https://api.openai.com/auth": { "chatgpt_account_id": "acc-1" }
+        })
+        .to_string()
+        .as_bytes(),
+    );
+    let id_token = format!("{header}.{payload}.sig");
+    let (_root, svc, adapter) = live_svc(AgentId::Codex);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Codex,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "tokens": {
+                    "id_token": id_token,
+                    "access_token": "at-imported",
+                    "refresh_token": "rt-imported-secret"
+                }
+            }
+        }),
+        label_hint: None,
+        extra: json!({}),
+    });
+    let imported = svc.import_live(AgentId::Codex, None).unwrap();
+    assert_eq!(imported.label, "imported@example.com");
+    assert_eq!(
+        imported.extra.get("email").and_then(|v| v.as_str()),
+        Some("imported@example.com")
+    );
+}
+
+#[test]
 fn import_and_switch_with_single_current() {
     let (_root, svc, adapter) = live_svc(AgentId::Codex);
     adapter.set_live(LiveAccount {

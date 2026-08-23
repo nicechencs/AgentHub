@@ -37,18 +37,27 @@ export function accountActionPolicy(account: Pick<
   return undefined;
 }
 
-/**
- * Connections row control. Token refresh stays on accountActionPolicy;
- * Codex/Claude still get a quota probe (5h/7d) because the CLI owns the grant.
- */
+function isHubOwnedOauthSource(source?: string): boolean {
+  return source === 'oauth_pkce' || source === 'oauth_refresh';
+}
+
 export function oauthListAction(account: Pick<
   Account,
-  'agentId' | 'kind' | 'provider' | 'refreshable'
+  'agentId' | 'kind' | 'provider' | 'refreshable' | 'source' | 'isCurrent'
 >): AccountAction | undefined {
   const policy = accountActionPolicy(account);
   if (policy) return policy;
   if (account.kind !== 'oauth') return undefined;
-  if (account.agentId === 'codex' || account.agentId === 'claude') {
+  if (account.agentId === 'codex') {
+    if (account.refreshable === true && isHubOwnedOauthSource(account.source)) {
+      return { kind: 'refresh-credentials', label: '刷新' };
+    }
+    if (account.isCurrent) {
+      return { kind: 'sync-current-login', label: '同步当前登录' };
+    }
+    return { kind: 'refresh-quota', label: '刷新' };
+  }
+  if (account.agentId === 'claude') {
     return { kind: 'refresh-quota', label: '刷新' };
   }
   return undefined;

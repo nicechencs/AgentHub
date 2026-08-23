@@ -13,7 +13,13 @@ import { ListSkeleton } from '@/components/ui/skeleton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
-import { listTicketWallet, type TicketView, type TicketWallet } from '@/lib/api/tickets';
+import {
+  bindTicket,
+  isActiveBindingForAgent,
+  listTicketWallet,
+  type TicketView,
+  type TicketWallet,
+} from '@/lib/api/tickets';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
 import {
   buildResumeConnectUrl,
@@ -36,6 +42,7 @@ import { ProviderEditDialog } from '@/pages/providers/ProviderEditDialog';
 import { ConnectionTrashButton } from './ConnectionTrashButton';
 import { TicketAddMenu, TicketWalletList } from './TicketWalletList';
 import {
+  activeBindingForAgent,
   buildTicketAddMenu,
   extrasFromPoolSource,
   filterTicketsByAgentUsage,
@@ -69,9 +76,10 @@ import {
   probeLiveAuth,
   refreshQuota,
   refreshToken,
+  switchAccount,
   type LiveAuthProbe,
 } from '@/lib/api/account';
-import { deleteProvider } from '@/lib/api/provider';
+import { deleteProvider, switchPreview, switchProvider } from '@/lib/api/provider';
 import type { Account, Provider } from '@/lib/types';
 
 function parseAgentParam(raw: string | null, allowed: AgentId[]): AgentId | null {
@@ -94,6 +102,8 @@ export default function ConnectionsPage() {
   const [filterAgent, setFilterAgent] = useState<AgentTabId>(highlightAgentId ?? 'all');
   const [refreshingTicketId, setRefreshingTicketId] = useState<string | null>(null);
   const refreshGen = useRef(0);
+  const [switchingTicketId, setSwitchingTicketId] = useState<string | null>(null);
+  const switchGen = useRef(0);
 
   const [pendingGuide, setPendingGuide] = useState<ConnectGuide | null>(null);
   const consumedGuideKeyRef = useRef<string | null>(null);
@@ -299,6 +309,44 @@ export default function ConnectionsPage() {
     });
   }, []);
 
+  const handleSwitchTicket = useCallback(async (ticket: TicketView) => {
+    const targetAgent = filterAgent === 'all' ? ticket.agentId : filterAgent;
+    const tabCurrentId = wallet
+      ? activeBindingForAgent(wallet, targetAgent)?.ticket.id ?? null
+      : null;
+    if (tabCurrentId === ticket.id) return;
+    const generation = ++switchGen.current;
+    setSwitchingTicketId(ticket.id);
+    try {
+      if (ticket.agentId === targetAgent) {
+        if (ticket.sourceKind === 'account') {
+          await switchAccount(ticket.agentId, ticket.sourceId);
+        } else {
+          await switchPreview(ticket.agentId, ticket.sourceId);
+          await switchProvider(ticket.agentId, ticket.sourceId);
+        }
+      } else {
+        const { binding } = await bindTicket(ticket.id, targetAgent);
+        if (!isActiveBindingForAgent(binding, targetAgent)) {
+          throw new Error(t('connections.list.switchFail'));
+        }
+      }
+      if (switchGen.current !== generation) return;
+      toast({ title: t('connections.list.switchOk'), variant: 'success' });
+      await poolReload().catch(() => {});
+      await loadWallet();
+    } catch (e) {
+      if (switchGen.current !== generation) return;
+      toast({
+        title: t('connections.list.switchFail'),
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
+    } finally {
+      if (switchGen.current === generation) setSwitchingTicketId(null);
+    }
+  }, [filterAgent, loadWallet, poolReload, t, toast, wallet]);
+
   const handleRefreshTicket = useCallback(async (ticket: TicketView) => {
     if (ticket.sourceKind !== 'account') return;
     const source = findTicketPoolSource(ticket, pool.accounts, pool.providers);
@@ -319,8 +367,8 @@ export default function ConnectionsPage() {
       }
       if (refreshGen.current !== generation) return;
       toast({ title: t('connections.list.refreshOk'), variant: 'success' });
-      await loadWallet();
       await poolReload().catch(() => {});
+      await loadWallet();
     } catch (e) {
       if (refreshGen.current !== generation) return;
       toast({
@@ -336,16 +384,20 @@ export default function ConnectionsPage() {
   const extrasForTicket = useCallback(
     (ticket: TicketView) => {
       try {
+        const tabCurrentTicketId = filterAgent === 'all' || !wallet
+          ? undefined
+          : activeBindingForAgent(wallet, filterAgent)?.ticket.id ?? null;
         return extrasFromPoolSource(
           ticket,
           findTicketPoolSource(ticket, pool.accounts, pool.providers),
           t,
+          tabCurrentTicketId,
         );
       } catch {
         return null;
       }
     },
-    [pool.accounts, pool.providers, t],
+    [filterAgent, pool.accounts, pool.providers, t, wallet],
   );
 
   const openTicketAdd = useCallback((kind: TicketAddKind, agentId: AgentId) => {
@@ -390,8 +442,8 @@ export default function ConnectionsPage() {
           : t('connections.import.toastOkDesc', { label: acc.label }),
         variant: 'success',
       });
-      await loadWallet();
       await poolReload().catch(() => {});
+      await loadWallet();
       handleGuideSucceeded();
     } catch (e) {
       toast({
@@ -556,8 +608,10 @@ export default function ConnectionsPage() {
             agentFilterId={filterAgent === 'all' ? null : filterAgent}
             onShareTicket={handleShareTicket}
             onRouteTicket={handleRouteTicket}
+            onSwitchTicket={handleSwitchTicket}
             onRefreshTicket={handleRefreshTicket}
             refreshingTicketId={refreshingTicketId}
+            switchingTicketId={switchingTicketId}
             extrasForTicket={extrasForTicket}
             onEditTicket={handleEditTicket}
             onDeleteTicket={setDeleteTicket}

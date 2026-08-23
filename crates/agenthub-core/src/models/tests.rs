@@ -92,6 +92,7 @@ fn oauth_account_redacted_adds_refresh_token_preview() {
         preview,
         crate::utils::redact::mask_secret_preview(secret)
     );
+    assert_eq!(r.extra["secretTail"], "**wxyz");
     let dumped = serde_json::to_string(&r).unwrap();
     assert!(!dumped.contains(secret));
 
@@ -101,5 +102,7 @@ fn oauth_account_redacted_adds_refresh_token_preview() {
         extra: serde_json::json!({}),
         ..a
     };
-    assert!(key.redacted().extra.get("refreshTokenPreview").is_none());
+    let redacted_key = key.redacted();
+    assert!(redacted_key.extra.get("refreshTokenPreview").is_none());
+    assert_eq!(redacted_key.extra["secretTail"], "**here");
 }

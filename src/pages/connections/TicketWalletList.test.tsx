@@ -105,15 +105,16 @@ describe('TicketWalletList details', () => {
         onRouteTicket() {},
         onRefreshTicket() {},
         extrasForTicket: () => ({
-          oauthAction: { kind: 'refresh-quota', label: '刷新' },
+          oauthAction: { kind: 'refresh-credentials', label: '刷新' },
+          identity: 'user@example.com',
         }),
         onEditTicket() {},
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('ChatGPT Plus');
+    expect(markup).toContain('user@example.com');
     expect(markup).toContain('账号登录');
-    expect(markup).toContain('aria-label="刷新"');
+    expect(markup).not.toContain('aria-label="刷新"');
     expect(markup).toContain('var(--agent-codex)');
     expect(markup).toMatch(/color:\s*var\(--agent-codex\)/);
     expect(markup).toContain('Codex（切换）');
@@ -408,6 +409,21 @@ describe('TicketDetailPanel', () => {
     expect(protocolIndex).toBeGreaterThan(moreIndex);
   });
 
+  it('puts refresh in details, not on the card', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketDetailPanel, {
+        id: 'oauth-refresh-detail',
+        advanced: [],
+        extras: { oauthAction: { kind: 'refresh-credentials', label: '刷新' } },
+        onRefresh() {},
+        onDelete() {},
+      }),
+    );
+    expect(markup).toContain('aria-label="刷新"');
+    expect(markup).toContain('刷新');
+    expect(markup).toContain('移入回收站');
+  });
+
   it('shows a redacted refresh token for OAuth details and never the full secret', () => {
     const secret = 'rt-abcdefghijklmnopqrstuvwxyz';
     const markup = renderWithTooltip(
@@ -471,6 +487,61 @@ describe('TicketDetailPanel', () => {
   });
 });
 
+describe('TicketWalletList switch action', () => {
+  it('hides native 切换 when the card is on another Agent tab', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: sampleWallet(),
+        agentFilterId: 'codex',
+        extrasForTicket: () => ({ isCurrent: false }),
+        onShareTicket() {},
+        onRouteTicket() {},
+        onSwitchTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).not.toContain('aria-label="切换"');
+    expect(markup).not.toContain('aria-label="使用中"');
+  });
+
+  it('shows an enabled 切换 button for unused grants', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: sampleWallet(),
+        extrasForTicket: () => ({ isCurrent: false }),
+        onShareTicket() {},
+        onRouteTicket() {},
+        onSwitchTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('aria-label="切换"');
+    expect(markup).toContain('>切换<');
+    expect(markup).not.toContain('aria-label="使用中"');
+    expect(markup).not.toMatch(/\sdisabled(=""|\s)[^>]*aria-label="切换"/);
+  });
+
+  it('shows a disabled 使用中 button for the live grant', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: sampleWallet(),
+        extrasForTicket: () => ({ isCurrent: true }),
+        onShareTicket() {},
+        onRouteTicket() {},
+        onSwitchTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('aria-label="使用中"');
+    expect(markup).toContain('>使用中<');
+    expect(markup).toMatch(/disabled[^>]*aria-label="使用中"/);
+    expect(markup).not.toContain('aria-label="切换"');
+  });
+});
+
 describe('TicketWalletList header health chip', () => {
   it('shows a quiet 可续期 chip and never 未验证', () => {
     const markup = renderWithTooltip(
@@ -487,5 +558,37 @@ describe('TicketWalletList header health chip', () => {
     expect(markup).not.toContain('尚未验证');
     expect(markup).not.toContain('未验证');
     expect(markup).not.toContain('可续期·未验证');
+  });
+
+  it('shows the refresh-token tail instead of 可续期', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: sampleWallet(),
+        extrasForTicket: () => ({ authLabel: '可续期·未验证', secretTail: '**JF6Q' }),
+        onShareTicket() {},
+        onRouteTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('**JF6Q');
+    expect(markup).toContain('font-mono');
+    expect(markup).not.toContain('可续期');
+    expect(markup).not.toContain('未验证');
+  });
+
+  it('shows the API key tail instead of 已配置', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: sampleWallet(),
+        extrasForTicket: () => ({ authLabel: '已配置', secretTail: '**wxyz' }),
+        onShareTicket() {},
+        onRouteTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('**wxyz');
+    expect(markup).not.toContain('已配置');
   });
 });

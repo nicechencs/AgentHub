@@ -32,8 +32,12 @@ import {
 } from '@/lib/credential-row';
 import { bridgesHrefForProfile } from '@/lib/bridges-path';
 import type { TranslateFn } from '@/lib/i18n';
+import {
+  activeBindingForAgent,
+  filterTicketsByAgentUsage,
+} from '@/lib/ticket-wallet';
 
-export { activeBindingForAgent } from '@/lib/ticket-wallet';
+export { activeBindingForAgent, filterTicketsByAgentUsage };
 
 export type TicketWalletFilter = 'all' | TicketCredentialClass;
 
@@ -397,19 +401,6 @@ export function filterTickets(
   return tickets.filter((t) => t.credentialClass === filter);
 }
 
-/** Soft agent filter: tickets that belong to or bind to the agent. */
-export function filterTicketsByAgentUsage(
-  wallet: TicketWallet,
-  tickets: readonly TicketView[],
-  agentId: AgentId | null,
-): TicketView[] {
-  if (!agentId) return [...tickets];
-  const ticketIds = new Set(
-    wallet.bindings.filter((b) => b.agentId === agentId).map((b) => b.ticketId),
-  );
-  return tickets.filter((t) => ticketIds.has(t.id) || t.agentId === agentId);
-}
-
 export function buildTicketWalletRows(
   wallet: TicketWallet,
   options: {
@@ -473,6 +464,10 @@ export interface TicketDetailExtras {
   isCurrent?: boolean;
   oauthAction?: AccountAction;
   refreshTokenPreview?: string;
+  /** `**XXXX` chip replacing 可续期 / 已配置 when a secret tail is known. */
+  secretTail?: string;
+  /** Pool-row display title (email when identity heal succeeded). */
+  accountLabel?: string;
 }
 
 export interface TicketDetailField {
@@ -505,6 +500,76 @@ const AUTH_LABEL_HUMAN: Record<string, string> = {
 export function humanizeTicketAuthLabel(label: string): string {
   const mapped = AUTH_LABEL_HUMAN[label] ?? label.replace(/·/g, '，');
   return mapped.replace(/[·，]\s*(尚未验证|未验证)\s*$/u, '').trim() || mapped;
+}
+
+const SECRET_TAIL_HEALTH = new Set(['可续期', '已配置', 'Renewable', 'Configured']);
+
+/** Card chip: secret tail (`**JF6Q`) in place of 可续期 / 已配置 when known. */
+export function ticketAuthChip(
+  extras?: TicketDetailExtras | null,
+): { label: string; mono: boolean } | null {
+  if (!extras) return null;
+  const health = extras.authLabel ? humanizeTicketAuthLabel(extras.authLabel) : '';
+  const tail = extras.secretTail?.trim();
+  if (tail && (!health || SECRET_TAIL_HEALTH.has(health))) {
+    return { label: tail, mono: true };
+  }
+  if (health) return { label: health, mono: false };
+  return null;
+}
+
+export type TicketSwitchChip = {
+  kind: 'switch' | 'in-use';
+  label: string;
+};
+
+function isPlaceholderOAuthLabel(label: string): boolean {
+  const t = label.trim().toLowerCase();
+  return (
+    !t
+    || t === '官方未提供账号信息'
+    || t === 'codex-oauth'
+    || t === 'codex oauth'
+    || t === 'grok-oauth'
+    || t === 'kimi-oauth'
+    || t === 'claude-oauth'
+    || t === 'pi-auth'
+    || /\(oauth\)$/i.test(t)
+    || / · oauth$/i.test(t)
+    || / oauth$/i.test(t)
+    || /-oauth$/i.test(t)
+  );
+}
+
+/** Card title prefers healed account email over placeholder ticket labels. */
+export function ticketCardTitle(
+  ticket: Pick<TicketView, 'label'>,
+  extras?: TicketDetailExtras | null,
+): string {
+  const identity = extras?.identity?.trim();
+  if (identity && identity.includes('@')) return identity;
+  const fromAccount = extras?.accountLabel?.trim();
+  if (fromAccount && !isPlaceholderOAuthLabel(fromAccount)) return fromAccount;
+  return ticket.label;
+}
+
+/** Native 切换 applies to the ticket's owner Agent, not a foreign usage tab. */
+export function showsNativeSwitch(
+  ticketAgentId: AgentId,
+  agentFilterId?: AgentId | null,
+): boolean {
+  return !agentFilterId || agentFilterId === ticketAgentId;
+}
+
+/** Card action: unused → 切换; current live grant → disabled 使用中. */
+export function ticketSwitchChip(
+  extras?: Pick<TicketDetailExtras, 'isCurrent'> | null,
+  t?: TranslateFn,
+): TicketSwitchChip {
+  if (extras?.isCurrent) {
+    return { kind: 'in-use', label: t ? t('connections.list.inUse') : '使用中' };
+  }
+  return { kind: 'switch', label: t ? t('connections.list.switch') : '切换' };
 }
 
 function endpointHostOnly(host: string): string {
@@ -550,11 +615,14 @@ export function extrasFromPoolSource(
   ticket: TicketView,
   source: { account?: Account; provider?: Provider },
   t?: TranslateFn,
+  tabCurrentTicketId?: string | null,
 ): TicketDetailExtras {
   const extras: TicketDetailExtras = {
     canEditKey: ticket.sourceKind === 'account' && source.account?.kind === 'apikey',
     canEditConfig: ticket.sourceKind === 'provider' && Boolean(source.provider),
-    isCurrent: source.account?.isCurrent === true || source.provider?.isCurrent === true,
+    isCurrent: tabCurrentTicketId === undefined
+      ? source.account?.isCurrent === true || source.provider?.isCurrent === true
+      : ticket.id === tabCurrentTicketId,
   };
 
   if (source.account) {
@@ -584,6 +652,10 @@ export function extrasFromPoolSource(
     if (ticket.credentialClass === 'oauth' && source.account.refreshTokenPreview) {
       extras.refreshTokenPreview = source.account.refreshTokenPreview;
     }
+    if (source.account.secretTail) {
+      extras.secretTail = source.account.secretTail;
+    }
+    extras.accountLabel = source.account.label;
   }
 
   if (source.provider) {
@@ -593,6 +665,9 @@ export function extrasFromPoolSource(
     extras.endpointHost = endpoint.endpointHost;
     extras.authLabel = row.auth.label;
     extras.authStatus = row.auth.status;
+    if (source.provider.secretTail) {
+      extras.secretTail = source.provider.secretTail;
+    }
   }
 
   return extras;

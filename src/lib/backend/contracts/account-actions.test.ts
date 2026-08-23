@@ -4,7 +4,7 @@ import type { Account } from '@/lib/types';
 
 function account(overrides: Partial<Account> = {}): Pick<
   Account,
-  'agentId' | 'kind' | 'provider' | 'refreshable'
+  'agentId' | 'kind' | 'provider' | 'refreshable' | 'source' | 'isCurrent'
 > {
   return {
     agentId: 'claude',
@@ -57,8 +57,33 @@ describe('oauthListAction', () => {
     );
   });
 
-  it.each(['codex', 'claude'] as const)('exposes quota refresh for %s', (agentId) => {
-    expect(oauthListAction(account({ agentId }))).toEqual({
+  it('rotates Hub-owned Codex refresh tokens', () => {
+    expect(oauthListAction(account({
+      agentId: 'codex',
+      source: 'oauth_pkce',
+    }))).toEqual({
+      kind: 'refresh-credentials',
+      label: '刷新',
+    });
+  });
+
+  it('syncs current CLI-owned Codex and quotas unused imported rows', () => {
+    expect(oauthListAction(account({
+      agentId: 'codex',
+      source: 'live',
+      isCurrent: true,
+    }))).toEqual({
+      kind: 'sync-current-login',
+      label: '同步当前登录',
+    });
+    expect(oauthListAction(account({ agentId: 'codex', source: 'live' }))).toEqual({
+      kind: 'refresh-quota',
+      label: '刷新',
+    });
+  });
+
+  it('falls back to quota refresh for Claude', () => {
+    expect(oauthListAction(account({ agentId: 'claude' }))).toEqual({
       kind: 'refresh-quota',
       label: '刷新',
     });

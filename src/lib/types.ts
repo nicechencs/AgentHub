@@ -165,6 +165,8 @@ export interface Provider {
    * true = 官方 URL/模型；false = 自定义中转。未设置时由 URL 推断。
    */
   official?: boolean;
+  /** 脱敏密钥结尾，如 `**JF6Q`，仅展示用 */
+  secretTail?: string;
 }
 
 export type AccountKind = 'oauth' | 'apikey';
@@ -226,6 +228,8 @@ export interface Account {
   credentialSummary?: string;
   /** OAuth 刷新令牌脱敏预览（头尾，不含明文） */
   refreshTokenPreview?: string;
+  /** 脱敏密钥结尾，如 `**JF6Q`（OAuth = refresh token，API Key = key） */
+  secretTail?: string;
 }
 
 /** 投影状态（与 core SkillSyncState 对齐） */

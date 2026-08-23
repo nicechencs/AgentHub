@@ -106,20 +106,22 @@ describe('mapCoreAccount', () => {
       core({
         id: 'codex-rt',
         agentId: 'codex',
-        extra: { refreshTokenPreview: 'rt--••••wxyz', email: 'c@x.com' },
+        extra: { refreshTokenPreview: 'rt--••••wxyz', secretTail: '**wxyz', email: 'c@x.com' },
       }),
     );
     expect(oauth.refreshTokenPreview).toBe('rt--••••wxyz');
+    expect(oauth.secretTail).toBe('**wxyz');
 
     const key = mapCoreAccount(
       core({
         id: 'kimi-key',
         agentId: 'kimi',
         kind: 'apikey',
-        extra: { refreshTokenPreview: 'rt--••••wxyz' },
+        extra: { refreshTokenPreview: 'rt--••••wxyz', secretTail: '**here' },
       }),
     );
     expect(key.refreshTokenPreview).toBeUndefined();
+    expect(key.secretTail).toBe('**here');
   });
 
   it('derives tokenRemainingSec from expiresAt (RFC3339)', () => {

@@ -25,6 +25,10 @@ import {
   formatTicketUsageParts,
   formatTicketUsageText,
   humanizeTicketAuthLabel,
+  ticketAuthChip,
+  ticketCardTitle,
+  ticketSwitchChip,
+  showsNativeSwitch,
   isUnrecognizedTicket,
   ticketBindingStatus,
   ticketDetailEditLabel,
@@ -332,6 +336,52 @@ describe('ticket detail fields', () => {
     expect(humanizeTicketAuthLabel('已验证')).toBe('已验证');
   });
 
+  it('replaces 可续期 / 已配置 chips with the secret tail', () => {
+    expect(ticketAuthChip({
+      authLabel: '可续期·未验证',
+      secretTail: '**JF6Q',
+    })).toEqual({ label: '**JF6Q', mono: true });
+    expect(ticketAuthChip({
+      authLabel: '已配置',
+      secretTail: '**wxyz',
+    })).toEqual({ label: '**wxyz', mono: true });
+    expect(ticketAuthChip({ authLabel: '可续期·未验证' })).toEqual({
+      label: '可续期',
+      mono: false,
+    });
+    expect(ticketAuthChip({ authLabel: '已验证', secretTail: '**JF6Q' })).toEqual({
+      label: '已验证',
+      mono: false,
+    });
+  });
+
+  it('prefers healed email over placeholder ticket labels', () => {
+    expect(ticketCardTitle(
+      { label: 'codex oauth' },
+      { identity: 'user@example.com' },
+    )).toBe('user@example.com');
+    expect(ticketCardTitle(
+      { label: 'codex-oauth' },
+      { accountLabel: 'user@example.com' },
+    )).toBe('user@example.com');
+    expect(ticketCardTitle(
+      { label: 'codex oauth' },
+      { identity: '官方未提供账号信息', accountLabel: 'codex-oauth' },
+    )).toBe('codex oauth');
+  });
+
+  it('hides native 切换 on a foreign Agent usage tab', () => {
+    expect(showsNativeSwitch('kimi', null)).toBe(true);
+    expect(showsNativeSwitch('kimi', 'kimi')).toBe(true);
+    expect(showsNativeSwitch('kimi', 'codex')).toBe(false);
+  });
+
+  it('uses 切换 for idle grants and 使用中 when current', () => {
+    expect(ticketSwitchChip()).toEqual({ kind: 'switch', label: '切换' });
+    expect(ticketSwitchChip({ isCurrent: false })).toEqual({ kind: 'switch', label: '切换' });
+    expect(ticketSwitchChip({ isCurrent: true })).toEqual({ kind: 'in-use', label: '使用中' });
+  });
+
   it('lists bindings as agent + one short status', () => {
     const wallet = sampleWallet();
     expect(formatTicketBindingDetailLines(
@@ -380,6 +430,7 @@ describe('ticket detail fields', () => {
     ], []);
     const extras = extrasFromPoolSource(oauth, source);
     expect(extras.identity).toBe('me@example.com');
+    expect(extras.accountLabel).toBe('me@example.com');
     expect(extras.canEditKey).toBe(false);
     expect(extras.canEditConfig).toBe(false);
     expect(extras.oauthAction).toEqual({ kind: 'refresh-quota', label: '刷新' });
@@ -393,19 +444,44 @@ describe('ticket detail fields', () => {
         label: 'me@example.com',
         email: 'me@example.com',
         refreshTokenPreview: 'rt--••••wxyz',
+        secretTail: '**wxyz',
       }),
     });
     expect(previewExtras.refreshTokenPreview).toBe('rt--••••wxyz');
+    expect(previewExtras.secretTail).toBe('**wxyz');
+
+    const keyExtrasFromAccount = extrasFromPoolSource(
+      ticket({
+        id: 'account:key-1',
+        sourceKind: 'account',
+        sourceId: 'key-1',
+        agentId: 'kimi',
+        label: 'Kimi key',
+        surface: 'kimi-code-membership',
+        credentialClass: 'api_key',
+        speaks: [],
+      }),
+      {
+        account: account({
+          id: 'key-1',
+          kind: 'apikey',
+          label: 'Kimi key',
+          secretTail: '**here',
+        }),
+      },
+    );
+    expect(keyExtrasFromAccount.secretTail).toBe('**here');
 
     const keyTicket = ticket({ id: 'provider:kimi-1' });
     const keyExtras = extrasFromPoolSource(
       keyTicket,
       findTicketPoolSource(keyTicket, [], [
-        provider({ id: 'kimi-1', agentId: 'kimi', name: 'Kimi 会员' }),
+        provider({ id: 'kimi-1', agentId: 'kimi', name: 'Kimi 会员', secretTail: '**wxyz' }),
       ]),
     );
     expect(keyExtras.canEditConfig).toBe(true);
     expect(keyExtras.endpointHost).toBe('relay.example.com');
+    expect(keyExtras.secretTail).toBe('**wxyz');
     expect(ticketDetailEditLabel(keyExtras)).toBe('编辑配置');
   });
 });
