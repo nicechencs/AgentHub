@@ -1,33 +1,24 @@
-import type { DashboardPort } from '@/lib/backend/contracts';
+import type { Backend, DashboardPort } from '@/lib/backend/contracts';
 import type { DashboardAlert } from '@/lib/types';
-import { logger } from '@/lib/logger';
-import { createTauriDoctorPort } from './doctor';
+import { createTranslator, loadStoredLanguage } from '@/lib/i18n';
 import {
   buildAlertsFromAgents,
   dismissAlertLocal,
   filterDismissedAlerts,
 } from './dashboard-alerts';
 
-const log = logger.scope('backend:tauri:dashboard');
-
 /**
- * Production alerts derived from doctor-mapped agent status (auth / env / updates).
+ * Production alerts derived from listAgents (doctor + pool enrichment).
  * No demo notifications. Dismiss is local until the condition fingerprint changes.
  */
-export function createTauriDashboardPort(): DashboardPort {
-  const doctor = createTauriDoctorPort();
+export function createTauriDashboardPort(backend: Backend): DashboardPort {
   let lastBuilt: DashboardAlert[] = [];
 
   return {
     async listAlerts(): Promise<DashboardAlert[]> {
-      try {
-        const mapped = await doctor.loadDoctorMapped();
-        lastBuilt = buildAlertsFromAgents(mapped.agents);
-        return filterDismissedAlerts(lastBuilt);
-      } catch (e) {
-        log.warn('listAlerts failed; returning empty', e);
-        return [];
-      }
+      const agents = await backend.agent.listAgents();
+      lastBuilt = buildAlertsFromAgents(agents, createTranslator(loadStoredLanguage()));
+      return filterDismissedAlerts(lastBuilt);
     },
 
     async dismissAlert(id: string): Promise<void> {

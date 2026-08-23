@@ -126,18 +126,115 @@ function emptyView(turn: number, agent: AgentId, phase: ProcessPhase, now: numbe
   };
 }
 
+function markLastThinkingDone(steps: ProcessStep[]): ProcessStep[] {
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const row = steps[i];
+    if (row.type === 'thinking') {
+      if (row.done) return steps;
+      const next = steps.slice();
+      next[i] = { ...row, done: true };
+      return next;
+    }
+    if (row.type !== 'status') break;
+  }
+  return steps;
+}
+
+/**
+ * Codex `item.updated` reasoning is a full snapshot; Grok/Pi/Claude thinking
+ * chunks are deltas. If the new text already contains the previous text as a
+ * prefix, replace; a later shorter prefix is a replay and is ignored.
+ */
+export function mergeThinkingText(prev: string, next: string): string {
+  if (!next) return prev;
+  if (!prev) return next;
+  if (next.startsWith(prev)) return next;
+  if (prev.startsWith(next)) return prev;
+  return `${prev}${next}`;
+}
+
+function mergeToolStep(prev: Extract<ProcessStep, { type: 'tool' }>, step: Extract<ProcessStep, { type: 'tool' }>): ProcessStep {
+  const name =
+    step.name && step.name !== 'tool' ? step.name : prev.name || step.name;
+  return {
+    type: 'tool',
+    id: step.id ?? prev.id,
+    name,
+    input: step.input !== undefined ? step.input : prev.input,
+    status: step.status || prev.status,
+    result: step.result != null && step.result !== '' ? step.result : prev.result,
+  };
+}
+
+function isPriorityStep(step: ProcessStep): boolean {
+  return step.type === 'tool' || step.type === 'error';
+}
+
+/**
+ * 过程步封顶：优先保留 tool / error（对齐 core MAX_EMITTED_STEPS 对 Error/Tool 的突破）。
+ * 其余类型从最旧开始丢；若 tool+error 本身超过上限，只留最近 MAX_STEPS 条并丢掉全部 soft 步。
+ */
+function capSteps(steps: ProcessStep[]): ProcessStep[] {
+  if (steps.length <= MAX_STEPS) return steps;
+
+  const priority = steps.filter(isPriorityStep);
+  if (priority.length >= MAX_STEPS) {
+    return priority.slice(priority.length - MAX_STEPS);
+  }
+
+  const dropSoft = steps.length - MAX_STEPS;
+  let dropped = 0;
+  return steps.filter((step) => {
+    if (dropped >= dropSoft || isPriorityStep(step)) return true;
+    dropped += 1;
+    return false;
+  });
+}
+
 function pushStep(steps: ProcessStep[], step: ProcessStep): ProcessStep[] {
-  // Collapse consecutive tiny text steps into one for UI noise control.
   if (step.type === 'text' && steps.length > 0) {
     const last = steps[steps.length - 1];
     if (last.type === 'text') {
       const next = steps.slice(0, -1);
       next.push({ type: 'text', text: last.text + step.text });
-      return next.length > MAX_STEPS ? next.slice(next.length - MAX_STEPS) : next;
+      return capSteps(next);
     }
   }
-  const next = [...steps, step];
-  return next.length > MAX_STEPS ? next.slice(next.length - MAX_STEPS) : next;
+
+  if (step.type === 'thinking') {
+    const last = steps[steps.length - 1];
+    if (last?.type === 'thinking' && !last.done) {
+      const next = steps.slice(0, -1);
+      next.push({
+        type: 'thinking',
+        text: mergeThinkingText(last.text, step.text),
+        done: Boolean(step.done),
+      });
+      return capSteps(next);
+    }
+  }
+
+  if (step.type === 'tool' && step.id) {
+    const idx = findLastIndex(steps, (row) => row.type === 'tool' && row.id === step.id);
+    if (idx >= 0) {
+      const prev = steps[idx];
+      if (prev.type === 'tool') {
+        const next = steps.slice();
+        next[idx] = mergeToolStep(prev, step);
+        return next;
+      }
+    }
+  }
+
+  const base = step.type === 'thinking' ? steps : markLastThinkingDone(steps);
+  return capSteps([...base, step]);
+}
+
+function findLastIndex<T>(items: T[], pred: (item: T) => boolean): number {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    if (pred(items[i])) return i;
+  }
+  return -1;
 }
 
 /**
@@ -224,6 +321,7 @@ export function reduceProcessEvent(map: ProcessMap, ev: ChatEvent, now = Date.no
         ...prev,
         phase: phaseFromMessageStatus(ev.message.status),
         stdout: content || prev.stdout,
+        steps: markLastThinkingDone(prev.steps),
         updatedAt: now,
       },
     };
@@ -242,7 +340,9 @@ export function reduceProcessEvent(map: ProcessMap, ev: ChatEvent, now = Date.no
       ) {
         next[key] = {
           ...view,
-          phase: ev.ok ? 'ok' : 'failed',
+          // 生产取消时 ok=true；缺省 cancelled 当 false，兼容旧事件
+          phase: ev.cancelled ? 'cancelled' : ev.ok ? 'ok' : 'failed',
+          steps: markLastThinkingDone(view.steps),
           updatedAt: now,
         };
         changed = true;

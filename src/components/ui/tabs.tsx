@@ -39,11 +39,12 @@ const TabsTrigger = React.forwardRef<
 ));
 TabsTrigger.displayName = 'TabsTrigger';
 
+/** 段距由 `pageRhythm.chrome` 承担，避免与页头底距叠一层。 */
 const TabsContent = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Content>
 >(({ className, ...props }, ref) => (
-  <TabsPrimitive.Content ref={ref} className={cn('mt-4 focus:outline-none', className)} {...props} />
+  <TabsPrimitive.Content ref={ref} className={cn('focus:outline-none', className)} {...props} />
 ));
 TabsContent.displayName = 'TabsContent';
 

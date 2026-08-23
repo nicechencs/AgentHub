@@ -82,6 +82,35 @@ export function summarizeAgentOverview(
   return { total, readyCount, issueCount, summaryText };
 }
 
+/** Dashboard 卡片只含已安装且未隐藏的 Agent；未安装的去 Agents 页。 */
+export function installedOverviewScope(
+  agentMetas: readonly AgentMeta[],
+  agents: readonly AgentStatus[],
+): { metas: AgentMeta[]; statuses: AgentStatus[] } {
+  const statuses = agents.filter((a) => a.installed && !a.hidden);
+  const ids = new Set(statuses.map((a) => a.agentId));
+  return {
+    metas: agentMetas.filter((m) => ids.has(m.id)),
+    statuses,
+  };
+}
+
+/**
+ * 页头副标题：把就绪计数并进「状态与用量」。
+ * 加载中、失败、尚未安装时不加括号，避免 0/0。
+ */
+export function dashboardPageDescription(
+  summary: { total: number; summaryText: string } | null,
+  t?: TranslateFn,
+): string {
+  if (!summary || summary.total === 0) {
+    return t ? t('dashboard.page.description') : '状态与用量';
+  }
+  return t
+    ? t('dashboard.page.descriptionWithSummary', { summary: summary.summaryText })
+    : `状态与用量（${summary.summaryText}）`;
+}
+
 export function cardAuthStatus(
   status: AgentStatus | undefined,
   missing: boolean,
@@ -224,15 +253,15 @@ export function buildAgentCardView(
     ariaLabel += viaAdapter.sourceLabel
       ? t
         ? t('dashboard.overview.ariaViaSource', { source: viaAdapter.sourceLabel })
-        : `，经兼容路由 · ${viaAdapter.sourceLabel}`
+        : `，本机路由 · ${viaAdapter.sourceLabel}`
       : t
         ? t('dashboard.overview.ariaVia')
-        : '，经兼容路由';
+        : '，本机路由';
   }
   if (binding) {
     ariaLabel += t
       ? t('dashboard.overview.ariaBinding', { label: binding.ticketLabel, route: binding.routeLabel })
-      : `，当前绑定 ${binding.ticketLabel}（${binding.routeLabel}）`;
+      : `，当前使用 ${binding.ticketLabel}（${binding.routeLabel}）`;
   }
   if (bridge) {
     ariaLabel += t ? t('dashboard.overview.ariaBridge', { label: bridge.label }) : `，${bridge.label}`;

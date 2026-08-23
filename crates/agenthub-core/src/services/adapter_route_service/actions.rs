@@ -56,7 +56,7 @@ pub(super) enum RouteSourceLabel {
 /// Kimi agent pool row that is not membership (open platform / custom compatible).
 pub(super) const KIMI_NON_MEMBERSHIP_REASON: &str = concat!(
     "当前 Kimi 连接不是「Kimi Code 会员」来源。",
-    "跨 Agent 适配仅支持会员：Connections 中选择 preset「Kimi Code 会员」，",
+    "跨 Agent 适配仅支持会员：连接页中选择 preset「Kimi Code 会员」，",
     "或配置端点包含 api.kimi.com/coding。",
     "开放平台（moonshot）与任意兼容 API 不会自动升级。",
     "当前不支持不等于连接失效。",
@@ -106,6 +106,11 @@ pub(super) fn subscription_account_secret_open(
                     | "grok-subscription-to-pi-v1"
                     | "codex-subscription-to-claude-responses-v1"
                     | "grok-subscription-to-claude-v1"
+                    | "grok-subscription-to-codex-v1"
+                    | "codex-subscription-to-codex-v1"
+                    | "codex-subscription-to-grok-v1"
+                    | "codex-subscription-to-kimi-v1"
+                    | "codex-subscription-to-dsh-v1"
             )
         )
     {
@@ -159,7 +164,9 @@ pub(crate) fn bind_implementation_open(
             AdapterSupport::Stable,
         )
         | (
-            Some("kimi-membership-to-codex-v1"),
+            Some("kimi-membership-to-codex-v1")
+            | Some("anthropic-api-to-codex-v1")
+            | Some("openai-api-to-codex-v1"),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Codex,
             AdapterRoute::LocalBridge,
@@ -189,13 +196,6 @@ pub(crate) fn bind_implementation_open(
             AdapterSupport::Experimental,
         )
         | (
-            Some("anthropic-api-to-codex-v1"),
-            AdapterSourceKind::Provider | AdapterSourceKind::Account,
-            AgentId::Codex,
-            AdapterRoute::LocalBridge,
-            AdapterSupport::Experimental,
-        )
-        | (
             Some(GLM_CODEX_RULE_ID) | Some(DEEPSEEK_CODEX_RULE_ID),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Codex,
@@ -213,6 +213,41 @@ pub(crate) fn bind_implementation_open(
             Some("grok-subscription-to-claude-v1"),
             AdapterSourceKind::Account,
             AgentId::Claude,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("grok-subscription-to-codex-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Codex,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("codex-subscription-to-codex-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Codex,
+            AdapterRoute::NativeEndpoint,
+            AdapterSupport::Stable,
+        )
+        | (
+            Some("codex-subscription-to-grok-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Grok,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("codex-subscription-to-kimi-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Kimi,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("codex-subscription-to-dsh-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Dsh,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
@@ -260,7 +295,7 @@ pub(super) fn analysis_from_decision(
     let limitations = if decision.limitations.is_empty() {
         vec![
             "当前不支持此组合；不会改动来源连接、本机服务或配置。".into(),
-            "plan.canApply=false：无 Apply、启动 Bridge 或强制继续入口。".into(),
+            "现在还写不上去；不会改配置，也不会开本机转发。".into(),
         ]
     } else {
         decision
@@ -367,7 +402,7 @@ pub(super) fn actions_for(
             vec![action(
                 "requires_local_bridge",
                 "Codex",
-                "Codex Responses 与 Kimi Chat Completions 需要本地双向协议转换。",
+                "Codex 和 Kimi 说的话对不上，需要本机转发。",
                 None,
                 false,
             )]
@@ -376,7 +411,16 @@ pub(super) fn actions_for(
             vec![action(
                 "requires_local_bridge",
                 "Codex",
-                "Codex Responses 与 Anthropic Messages 需要本地双向协议转换。",
+                "Codex 和 Anthropic 说的话对不上，需要本机转发。",
+                None,
+                false,
+            )]
+        }
+        (RouteSourceLabel::OpenaiApiKey, AgentId::Codex, AdapterRoute::LocalBridge) => {
+            vec![action(
+                "requires_local_bridge",
+                "Codex",
+                "Codex 和 OpenAI 说的话对不上，需要本机转发。",
                 None,
                 false,
             )]
@@ -435,14 +479,14 @@ pub(super) fn actions_for(
             action(
                 "requires_local_bridge",
                 "Claude Code",
-                "Claude Messages 与 Codex Responses 需要本地双向协议转换。",
+                "Claude 和 Codex 说的话对不上，需要本机转发。",
                 None,
                 false,
             ),
             action(
                 "set_env",
                 "Claude Code",
-                "写入 Claude Code 的 loopback Base URL 与本机 bearer；不会写入上游 OAuth token。",
+                "写入 Claude Code 的本机地址 Base URL 与本机 bearer；不会写入上游 OAuth token。",
                 Some("ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN"),
                 false,
             ),
@@ -452,19 +496,85 @@ pub(super) fn actions_for(
             action(
                 "requires_local_bridge",
                 "Claude Code",
-                "Claude Messages 与 xAI Chat Completions 需要本地双向协议转换。",
+                "Claude 和 Grok 说的话对不上，需要本机转发。",
                 None,
                 false,
             ),
             action(
                 "set_env",
                 "Claude Code",
-                "写入 Claude Code 的 loopback Base URL 与本机 bearer；不会写入上游 OAuth token。",
+                "写入 Claude Code 的本机地址 Base URL 与本机 bearer；不会写入上游 OAuth token。",
                 Some("ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN"),
                 false,
             ),
         ]
         }
+        (RouteSourceLabel::XaiGrokSubscription, AgentId::Codex, AdapterRoute::LocalBridge) => {
+            vec![
+                action(
+                    "requires_local_bridge",
+                    "Codex",
+                    "会把 Codex 指到本机路由；上游 Grok 登录不会写入 Codex。",
+                    None,
+                    false,
+                ),
+                action(
+                    "set_config",
+                    "Codex",
+                    "写入 Codex 的本机路由端点。",
+                    Some("AgentHub Grok 本机路由"),
+                    false,
+                ),
+            ]
+        }
+        (RouteSourceLabel::CodexSubscription, AgentId::Grok, AdapterRoute::LocalBridge) => vec![
+            action(
+                "requires_local_bridge",
+                "Grok",
+                "会把 Grok 指到本机路由；上游 Codex 官方登录不会写入 Grok。",
+                None,
+                false,
+            ),
+            action(
+                "set_config",
+                "Grok",
+                "写入 Grok 的本机路由端点。",
+                Some("http://127.0.0.1:<本机端口>/v1"),
+                false,
+            ),
+        ],
+        (RouteSourceLabel::CodexSubscription, AgentId::Kimi, AdapterRoute::LocalBridge) => vec![
+            action(
+                "requires_local_bridge",
+                "Kimi",
+                "会把 Kimi 指到本机路由；上游 Codex 官方登录不会写入 Kimi。",
+                None,
+                false,
+            ),
+            action(
+                "set_config",
+                "Kimi",
+                "写入 Kimi 的本机路由端点。",
+                Some("http://127.0.0.1:<本机端口>/v1"),
+                false,
+            ),
+        ],
+        (RouteSourceLabel::CodexSubscription, AgentId::Dsh, AdapterRoute::LocalBridge) => vec![
+            action(
+                "requires_local_bridge",
+                "DeepSeek Harness",
+                "会把 DeepSeek Harness 指到本机路由；上游 Codex 官方登录不会写入 DSH。",
+                None,
+                false,
+            ),
+            action(
+                "set_config",
+                "DeepSeek Harness",
+                "写入 DSH 的本机路由端点。",
+                Some("http://127.0.0.1:<本机端口>"),
+                false,
+            ),
+        ],
         (RouteSourceLabel::KimiMembership, AgentId::Pi, AdapterRoute::ConfigSync) => vec![
             action(
                 "set_config",
@@ -533,7 +643,7 @@ pub(super) fn actions_for(
             action(
                 "set_config",
                 "Pi",
-                "写入 Pi 的 GLM Coding Plan 自定义 provider 槽。",
+                "写入 Pi 的 GLM Coding Plan 自定义 provider 位置。",
                 Some(GLM_PI_PROVIDER_SLOT),
                 false,
             ),
@@ -549,7 +659,7 @@ pub(super) fn actions_for(
             action(
                 "set_config",
                 "Pi",
-                "写入 Pi 的 DeepSeek 自定义 provider 槽。",
+                "写入 Pi 的 DeepSeek 自定义 provider 位置。",
                 Some(DEEPSEEK_PI_PROVIDER_SLOT),
                 false,
             ),
@@ -565,7 +675,7 @@ pub(super) fn actions_for(
             action(
                 "set_config",
                 "Pi",
-                "选择 Pi 的 anthropic 登录槽。",
+                "选择 Pi 的 anthropic 登录位置。",
                 Some("anthropic"),
                 false,
             ),
@@ -581,7 +691,7 @@ pub(super) fn actions_for(
             action(
                 "set_config",
                 "Pi",
-                "选择 Pi 的 openai-codex 登录槽。",
+                "选择 Pi 的 openai-codex 登录位置。",
                 Some("openai-codex"),
                 false,
             ),
@@ -597,7 +707,7 @@ pub(super) fn actions_for(
             action(
                 "set_config",
                 "Pi",
-                "选择 Pi 的 xai 登录槽。",
+                "选择 Pi 的 xai 登录位置。",
                 Some("xai"),
                 false,
             ),
@@ -692,10 +802,14 @@ pub(super) fn evidence_for(
         (RouteSourceLabel::KimiMembership, _) => vec![kimi_pi_evidence()],
         (RouteSourceLabel::AnthropicApiKey, AgentId::Codex) => vec![anthropic_codex_evidence()],
         (RouteSourceLabel::AnthropicApiKey, _) => vec![anthropic_pi_evidence()],
+        (RouteSourceLabel::OpenaiApiKey, AgentId::Codex) => vec![openai_codex_evidence()],
         (RouteSourceLabel::OpenaiApiKey, AgentId::Grok) => {
             vec![adapter_compatibility_evidence()]
         }
-        (RouteSourceLabel::XaiGrokSubscription, AgentId::Claude) => {
+        (RouteSourceLabel::XaiGrokSubscription, AgentId::Claude | AgentId::Codex) => {
+            vec![adapter_compatibility_evidence()]
+        }
+        (RouteSourceLabel::CodexSubscription, AgentId::Grok | AgentId::Kimi | AgentId::Dsh) => {
             vec![adapter_compatibility_evidence()]
         }
         (RouteSourceLabel::OpenaiApiKey | RouteSourceLabel::XaiApiKey, _) => {
@@ -805,6 +919,14 @@ pub(super) fn anthropic_codex_evidence() -> AdapterEvidence {
         label: "Anthropic Messages API".into(),
         url: "https://docs.anthropic.com/en/api/messages".into(),
         verified_at: VERIFIED_AT.into(),
+    }
+}
+
+pub(super) fn openai_codex_evidence() -> AdapterEvidence {
+    AdapterEvidence {
+        label: "OpenAI Chat Completions API".into(),
+        url: "https://platform.openai.com/docs/api-reference/chat".into(),
+        verified_at: "2026-08-21".into(),
     }
 }
 

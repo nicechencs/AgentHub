@@ -13,12 +13,14 @@ import { seedMockAdapterProfiles } from './adapter';
  *
  * Seeded tickets (at least):
  * - Kimi membership (bound Claude reshape + Codex bridge when profiles seeded)
+ * - Kimi membership stale sibling (NeedsLogin; same-surface poll-pool demo)
  * - Anthropic API
  * - unknown custom provider
  * - official-login account (Claude OAuth)
  */
 export const CONNECT_FLOW_FIXTURE_IDS = {
   kimiMembership: 'kimi-code-membership',
+  kimiMembershipStale: 'kimi-code-membership-stale',
   anthropic: 'anthropic-api',
   unknownProvider: 'unknown-custom-relay',
   claudeOauth: 'claude-official-login',
@@ -79,6 +81,21 @@ export function connectFlowClaudeOauthAccount(): Account {
   };
 }
 
+/** Same-surface sibling of the Kimi membership provider: isolated NeedsLogin member. */
+export function connectFlowKimiMembershipStaleAccount(): Account {
+  return {
+    id: CONNECT_FLOW_FIXTURE_IDS.kimiMembershipStale,
+    agentId: 'kimi',
+    kind: 'apikey',
+    label: 'Kimi 会员（失效号）',
+    identityLabel: 'Kimi 会员（失效号）',
+    isCurrent: false,
+    tokenValid: false,
+    authHealth: 'needs_login',
+    extra: { surface: 'kimi-code-membership' },
+  } as Account;
+}
+
 /**
  * Seed demo profiles so wallet bindings show Kimi → Claude reshape + Codex bridge.
  * Requires at least one live mock adapter port (createBackend already created).
@@ -109,7 +126,7 @@ export function seedTicketWalletBindingProfiles(): {
   upsertMockProvider({
     id: codexGenId,
     agentId: 'codex',
-    name: 'Kimi → Codex 本地桥接 (demo)',
+    name: 'Kimi → Codex 本机路由 (demo)',
     preset: 'openai-compatible',
     configText: JSON.stringify({
       baseUrl: 'http://127.0.0.1:32123/v1',
@@ -138,7 +155,7 @@ export function seedTicketWalletBindingProfiles(): {
   };
   const codexProfile: AdapterProfile = {
     id: `adapter-kimi-codex-bridge-${kimiId}`,
-    name: `Kimi → Codex 本地桥接 (${kimiId})`,
+    name: `Kimi → Codex 本机路由 (${kimiId})`,
     sourceKind: 'provider',
     sourceId: kimiId,
     targetAgentId: 'codex',
@@ -178,8 +195,10 @@ export function seedConnectFlowAdapterFixtures(options?: {
   anthropic?: Provider;
   unknown?: Provider;
   oauthAccount?: Account;
+  staleKimiAccount: Account;
 } {
   const kimiMembership = upsertMockProvider(connectFlowKimiMembershipProvider());
+  const staleKimiAccount = upsertMockAccount(connectFlowKimiMembershipStaleAccount());
   const anthropic = options?.includeAnthropic === false
     ? undefined
     : upsertMockProvider(connectFlowAnthropicProvider());
@@ -195,5 +214,5 @@ export function seedConnectFlowAdapterFixtures(options?: {
   if (options?.seedBindings === true) {
     seedTicketWalletBindingProfiles();
   }
-  return { kimiMembership, anthropic, unknown, oauthAccount };
+  return { kimiMembership, anthropic, unknown, oauthAccount, staleKimiAccount };
 }

@@ -25,6 +25,7 @@ describe('mock ticket wallet', () => {
     expect(ids).toContain(`provider:${CONNECT_FLOW_FIXTURE_IDS.anthropic}`);
     expect(ids).toContain(`provider:${CONNECT_FLOW_FIXTURE_IDS.unknownProvider}`);
     expect(ids).toContain(`account:${CONNECT_FLOW_FIXTURE_IDS.claudeOauth}`);
+    expect(ids).toContain(`account:${CONNECT_FLOW_FIXTURE_IDS.kimiMembershipStale}`);
     expect(ids.some((id) => id.includes('claude-kimi-adapter'))).toBe(false);
     expect(ids.some((id) => id.includes('codex-kimi-bridge'))).toBe(false);
 
@@ -33,6 +34,25 @@ describe('mock ticket wallet', () => {
     );
     expect(kimiBindings.some((b) => b.agentId === 'claude' && b.route === 'reshape')).toBe(true);
     expect(kimiBindings.some((b) => b.agentId === 'codex' && b.route === 'bridge')).toBe(true);
+  });
+
+  it('seeds a two-member kimi pool with one NeedsLogin member', async () => {
+    getBackend();
+    seedConnectFlowAdapterFixtures({ seedBindings: true });
+    const wallet = await getBackend().ticket.listWallet();
+    const kimi = wallet.surfaceGroups.find(
+      (group) => group.surface === 'kimi-code-membership' && group.credentialClass === 'api_key',
+    );
+    expect(kimi?.members.map((member) => member.ticketId).sort()).toEqual([
+      `account:${CONNECT_FLOW_FIXTURE_IDS.kimiMembershipStale}`,
+      `provider:${CONNECT_FLOW_FIXTURE_IDS.kimiMembership}`,
+    ]);
+    expect(kimi?.members.find((member) => member.sourceId === CONNECT_FLOW_FIXTURE_IDS.kimiMembership)?.health)
+      .toBe('renewable');
+    expect(kimi?.members.find((member) => member.sourceId === CONNECT_FLOW_FIXTURE_IDS.kimiMembershipStale)?.health)
+      .toBe('needs_login');
+    expect(kimi?.members.find((member) => member.health === 'needs_login')?.label)
+      .toBe('Kimi 会员（失效号）');
   });
 
   it('plan_ticket delegates to adapter plan for the same source', async () => {
@@ -141,6 +161,108 @@ describe('mock ticket wallet', () => {
 
     expect(wallet.tickets).toEqual([]);
     expect(wallet.bindings).toEqual([]);
+    expect(wallet.surfaceGroups).toEqual([]);
+  });
+
+  it('groups same surface+class, mixes account/provider, skips unknown and projections', () => {
+    const generated: AdapterProfile = {
+      id: 'proj-p',
+      name: 'Generated',
+      sourceKind: 'provider',
+      sourceId: 'kimi-a',
+      targetAgentId: 'claude',
+      route: 'native_endpoint',
+      mode: 'api',
+      status: 'active',
+      ruleId: 'kimi-membership-to-claude-v1',
+      ruleVersion: '1',
+      generatedProviderId: 'proj-claude',
+      localPort: null,
+      autoStart: false,
+      createdAt: '2026-08-15T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z',
+    };
+    const wallet = buildMockTicketWallet({
+      listAccounts: () => [
+        {
+          id: 'kimi-key',
+          agentId: 'kimi',
+          kind: 'apikey',
+          label: 'Kimi key',
+          isCurrent: false,
+          tokenValid: true,
+          extra: { surface: 'kimi-code-membership' },
+        } as Account,
+        {
+          id: 'grok-a',
+          agentId: 'grok',
+          kind: 'oauth',
+          label: 'a@x.com',
+          isCurrent: false,
+          tokenValid: true,
+        },
+        {
+          id: 'grok-b',
+          agentId: 'grok',
+          kind: 'oauth',
+          label: 'b@x.com',
+          isCurrent: false,
+          tokenValid: true,
+        },
+      ],
+      listProviders: () => [
+        {
+          id: 'kimi-a',
+          agentId: 'kimi',
+          name: 'Kimi membership',
+          preset: 'kimi-code-membership',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: false,
+        },
+        {
+          id: 'relay',
+          agentId: 'claude',
+          name: 'Custom relay',
+          preset: 'openai-compatible',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: false,
+        },
+        {
+          id: 'proj-claude',
+          agentId: 'claude',
+          name: 'Generated',
+          preset: 'custom',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: true,
+        },
+      ],
+      listProfiles: () => [generated],
+      getBridgeStatus: () => undefined,
+      planAdapter: async () => {
+        throw new Error('not used');
+      },
+    });
+
+    expect(wallet.tickets.some((t) => t.id === 'provider:proj-claude')).toBe(false);
+    const kimi = wallet.surfaceGroups.find(
+      (g) => g.surface === 'kimi-code-membership' && g.credentialClass === 'api_key',
+    );
+    expect(kimi?.members.map((m) => m.ticketId)).toEqual([
+      'account:kimi-key',
+      'provider:kimi-a',
+    ]);
+    const grok = wallet.surfaceGroups.find(
+      (g) => g.surface === 'grok-xai-subscription' && g.credentialClass === 'oauth',
+    );
+    expect(grok?.members.map((m) => m.ticketId)).toEqual([
+      'account:grok-a',
+      'account:grok-b',
+    ]);
+    expect(wallet.surfaceGroups.some((g) => g.surface === 'unknown')).toBe(false);
+    expect(wallet.tickets.some((t) => t.surface === 'unknown')).toBe(true);
   });
 
   it('sets speaks and importedFrom lockstep with core TicketSurface rules', () => {
@@ -238,7 +360,7 @@ describe('mock ticket wallet', () => {
 
     const grok = wallet.tickets.find((t) => t.id === 'account:grok-oauth');
     expect(grok?.surface).toBe('grok-xai-subscription');
-    expect(grok?.speaks).toEqual(['openai-chat', 'xai-device-code']);
+    expect(grok?.speaks).toEqual(['openai-responses', 'openai-chat', 'xai-device-code']);
     expect(grok?.importedFrom).toBe('grok');
 
     const pi = wallet.tickets.find((t) => t.id === 'account:pi-oauth');
@@ -330,7 +452,7 @@ describe('mock ticket wallet', () => {
     });
     expect(wallet.tickets.find((t) => t.id === 'provider:xai-host')).toMatchObject({
       surface: 'xai-api',
-      speaks: ['openai-chat'],
+      speaks: ['openai-responses', 'openai-chat'],
     });
     expect(wallet.tickets.find((t) => t.id === 'account:glm-acc')).toMatchObject({
       surface: 'glm-coding-plan',
@@ -428,7 +550,7 @@ describe('mock ticket wallet', () => {
     const generatedId = `claude-kimi-adapter-${CONNECT_FLOW_FIXTURE_IDS.kimiMembership}`;
     await expect(getBackend().ticket.plan(`provider:${generatedId}`, 'pi')).rejects.toMatchObject({
       code: 'invalid_arg',
-      message: expect.stringContaining('投影不是登录'),
+      message: expect.stringContaining('自动生成的配置不是登录'),
     });
   });
 
@@ -467,7 +589,7 @@ describe('mock ticket wallet', () => {
     const generatedId = `claude-kimi-adapter-${CONNECT_FLOW_FIXTURE_IDS.kimiMembership}`;
     await expect(getBackend().ticket.bind(`provider:${generatedId}`, 'pi')).rejects.toMatchObject({
       code: 'invalid_arg',
-      message: expect.stringContaining('投影不是登录'),
+      message: expect.stringContaining('自动生成的配置不是登录'),
     });
   });
 

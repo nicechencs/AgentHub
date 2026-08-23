@@ -3,6 +3,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  type Ref,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -25,32 +26,33 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Hint } from '@/components/ui/tooltip';
+import { Hint, Tip } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
-import type { AgentId, Conversation, Provider } from '@/lib/types';
+import type { AgentId, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { extractModel } from './chat-format';
 import {
   autoApproveFooter,
   blockerCopy,
   blockerPrimaryTarget,
   chatAgentPickerEmptyCopy,
   chatAgentPickerEmptyKind,
+  chatShowsUnimportedCurrent,
+  COMPOSER_TEXTAREA_MAX_PX,
+  COMPOSER_TEXTAREA_MIN_PX,
+  composerTextareaMeasuredStyle,
+  composerUsesCssFieldSizing,
   type ChatAgentPickerRow,
+  type ChatConnectionOption,
   type ChatConnectionPickerView,
   type ChatSendBlocker,
 } from './chat-model';
-
-/** Composer 正文区：约 1 行起、最多 ~12 行；超出后内部滚动，工具条始终贴底。 */
-const COMPOSER_MIN_PX = 56;
-const COMPOSER_MAX_PX = 240;
 
 export function ChatComposer({
   draft,
   setDraft,
   sending,
   active,
-  providers,
+  connectionOptions,
   primaryAgent,
   agentPickerLabel,
   connectionView,
@@ -63,16 +65,19 @@ export function ChatComposer({
   onSend,
   onCancel,
   onSelectAgent,
-  onSwitchProvider,
+  onSwitchConnection,
   onOpenSettings,
   onPickWorkingDirectory,
   onFocusConversation,
+  fillHeight = false,
+  paneHeight = null,
+  paneRef,
 }: {
   draft: string;
   setDraft: (v: string) => void;
   sending: boolean;
   active: Conversation;
-  providers: Provider[];
+  connectionOptions: ChatConnectionOption[];
   primaryAgent: AgentId | null;
   agentPickerLabel: string;
   connectionView: ChatConnectionPickerView;
@@ -85,10 +90,13 @@ export function ChatComposer({
   onSend: () => void;
   onCancel: () => void;
   onSelectAgent: (id: AgentId) => void;
-  onSwitchProvider: (id: string) => void;
+  onSwitchConnection: (ticketId: string) => void;
   onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
   onFocusConversation: (id: string) => void;
+  fillHeight?: boolean;
+  paneHeight?: number | null;
+  paneRef?: Ref<HTMLDivElement>;
 }) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -102,16 +110,22 @@ export function ChatComposer({
   const syncTextareaHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = 'auto';
-    const contentH = el.scrollHeight;
-    const next = Math.min(Math.max(contentH, COMPOSER_MIN_PX), COMPOSER_MAX_PX);
-    el.style.height = `${next}px`;
-    el.style.overflowY = contentH > COMPOSER_MAX_PX ? 'auto' : 'hidden';
-  }, []);
+    if (fillHeight) {
+      el.style.height = '';
+      el.style.overflowY = '';
+      return;
+    }
+    if (composerUsesCssFieldSizing()) return;
+    el.style.overflowY = 'hidden';
+    el.style.height = '0px';
+    const layout = composerTextareaMeasuredStyle(el.scrollHeight);
+    el.style.height = layout.height;
+    el.style.overflowY = layout.overflowY;
+  }, [fillHeight]);
 
   useLayoutEffect(() => {
     syncTextareaHeight();
-  }, [draft, syncTextareaHeight]);
+  }, [draft, fillHeight, syncTextareaHeight]);
 
   useEffect(() => {
     const onResize = () => syncTextareaHeight();
@@ -144,15 +158,33 @@ export function ChatComposer({
           onCancel={onCancel}
         />
       )}
-      <div className="rounded-composer border border-border bg-panel shadow-xs">
+      <div
+        ref={paneRef}
+        className={cn(
+          'flex min-h-0 flex-col',
+          fillHeight ? 'overflow-hidden' : 'shrink-0',
+        )}
+        style={paneHeight != null ? { height: paneHeight } : undefined}
+      >
+        <div
+          className={cn(
+            'rounded-composer border border-border bg-panel shadow-xs',
+            fillHeight && 'flex min-h-0 flex-1 flex-col overflow-hidden',
+          )}
+        >
         <textarea
           ref={textareaRef}
           className={cn(
-            'block w-full resize-none overflow-x-hidden break-words bg-transparent',
+            'block w-full resize-none overflow-x-hidden overflow-y-auto break-words bg-transparent',
+            fillHeight ? 'min-h-0 flex-1' : '[field-sizing:content]',
             'px-4 pb-2 pt-3 text-body leading-[1.45] outline-none placeholder:text-muted',
             'disabled:cursor-not-allowed disabled:opacity-60',
           )}
-          style={{ minHeight: COMPOSER_MIN_PX, maxHeight: COMPOSER_MAX_PX }}
+          style={
+            fillHeight
+              ? undefined
+              : { minHeight: COMPOSER_TEXTAREA_MIN_PX, maxHeight: COMPOSER_TEXTAREA_MAX_PX }
+          }
           placeholder={t('chat.composer.placeholder')}
           rows={1}
           value={draft}
@@ -203,6 +235,9 @@ export function ChatComposer({
                       {agentDisplayName(row.id)}
                       {row.reason === 'noAuth' && (
                         <span className="text-meta text-muted">{t('chat.composer.noAuth')}</span>
+                      )}
+                      {row.reason === 'envNotReady' && (
+                        <span className="text-meta text-muted">{t('chat.composer.envNotReady')}</span>
                       )}
                     </span>
                   </DropdownMenuRadioItem>
@@ -261,7 +296,10 @@ export function ChatComposer({
                 <p className="px-2 pb-1.5 text-meta text-muted">{connectionCaption}</p>
               )}
               <DropdownMenuSeparator />
-              {connectionView.currentLoginTitle && (
+              {chatShowsUnimportedCurrent(
+                connectionOptions,
+                connectionView.currentLoginTitle,
+              ) && (
                 <DropdownMenuItem disabled>
                   <span className="flex min-w-0 flex-1 items-center gap-2">
                     <Check className="h-3.5 w-3.5 shrink-0 text-accent" />
@@ -276,14 +314,13 @@ export function ChatComposer({
                   </span>
                 </DropdownMenuItem>
               )}
-              {providers.map((p) => {
-                const model = extractModel(p.configText);
-                const isCurrent = connectionView.kind === 'api' && p.isCurrent;
+              {connectionOptions.map((option) => {
+                const isCurrent = option.isCurrent;
                 return (
                   <DropdownMenuItem
-                    key={p.id}
+                    key={option.ticketId}
                     disabled={isCurrent || switchingProvider}
-                    onClick={() => onSwitchProvider(p.id)}
+                    onClick={() => onSwitchConnection(option.ticketId)}
                   >
                     <span className="flex min-w-0 flex-1 items-center gap-2">
                       {isCurrent ? (
@@ -292,16 +329,18 @@ export function ChatComposer({
                         <span className="w-3.5 shrink-0" />
                       )}
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate">{p.name}</span>
-                        {model ? (
-                          <span className="block truncate text-meta text-muted">{model}</span>
+                        <span className="block truncate">{option.title}</span>
+                        {option.subtitle ? (
+                          <span className="block truncate text-meta text-muted">
+                            {option.subtitle}
+                          </span>
                         ) : null}
                       </span>
                     </span>
                   </DropdownMenuItem>
                 );
               })}
-              {connectionView.emptyHint && providers.length === 0 && (
+              {connectionView.emptyHint && connectionOptions.length === 0 && (
                 <p className="px-2 py-1.5 text-meta text-muted">{connectionView.emptyHint}</p>
               )}
               {primaryAgent && (
@@ -318,7 +357,15 @@ export function ChatComposer({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <div className="flex-1" />
+          <Tip
+            className={cn(
+              'min-w-0 flex-1 truncate text-left text-meta leading-none',
+              approveFooter.warning ? 'text-warning/50' : 'text-muted/35',
+            )}
+            label={approveFooter.text}
+          >
+            {approveFooter.text}
+          </Tip>
 
           {sending ? (
             <Button size="sm" variant="dangerOutline" onClick={onCancel}>
@@ -339,14 +386,7 @@ export function ChatComposer({
           )}
         </div>
       </div>
-      <p
-        className={cn(
-          'mt-2 text-center text-meta',
-          approveFooter.warning ? 'text-warning' : 'text-muted',
-        )}
-      >
-        {approveFooter.text}
-      </p>
+      </div>
     </>
   );
 }

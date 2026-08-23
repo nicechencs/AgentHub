@@ -11,20 +11,12 @@ use crate::bridge::types::{
 
 /// Parse the subset of `POST /v1/responses` that this bridge can faithfully represent.
 ///
-/// Unsupported multimodal and hosted-tool inputs fail closed.  This is intentional: sending
-/// a text-only approximation would make it look as if the model saw data it never received.
+/// Unsupported multimodal inputs fail closed. Non-function tool types are dropped.
 pub fn parse_responses_request(value: &Value) -> ProtocolResult<BridgeRequest> {
     let object = value
         .as_object()
         .ok_or_else(|| ProtocolError::invalid_request("The request body must be a JSON object."))?;
-    if object.contains_key("reasoning") {
-        // Kimi's OpenAI-compatible endpoint has no verified equivalent for Responses
-        // reasoning controls.  Dropping it could change the requested model behavior.
-        return Err(ProtocolError::unsupported(
-            "unsupported_reasoning",
-            "Reasoning configuration is not supported by this bridge.",
-        ));
-    }
+    // Responses `reasoning` is not a Chat field; map effort only for xAI.
     let model = required_string(object, "model", "A non-empty model is required.")?;
     let input = match object.get("input") {
         Some(Value::String(text)) => vec![BridgeMessage {
@@ -54,11 +46,14 @@ pub fn parse_responses_request(value: &Value) -> ProtocolResult<BridgeRequest> {
     };
 
     let known = known_request_fields();
-    let passthrough = object
+    let mut passthrough = object
         .iter()
         .filter(|(key, _)| !known.contains(key.as_str()))
         .map(|(key, item)| (key.clone(), item.clone()))
-        .collect();
+        .collect::<Map<String, Value>>();
+    if let Some(effort) = grok_reasoning_effort(object.get("reasoning")) {
+        passthrough.insert("reasoning_effort".to_owned(), Value::String(effort));
+    }
 
     Ok(BridgeRequest {
         model,
@@ -148,6 +143,20 @@ pub fn to_kimi_chat_request(request: &BridgeRequest) -> Value {
     Value::Object(body)
 }
 
+/// Convert a parsed OpenAI Responses request to xAI/Grok Chat Completions.
+///
+/// Same Chat Completions shape as [`to_kimi_chat_request`], plus `reasoning_effort`
+/// when Codex sent a mappable Responses `reasoning.effort`.
+pub fn to_grok_chat_request(request: &BridgeRequest) -> Value {
+    let mut body = to_kimi_chat_request(request);
+    if let Some(effort) = request.passthrough.get("reasoning_effort") {
+        if let Some(object) = body.as_object_mut() {
+            object.insert("reasoning_effort".to_owned(), effort.clone());
+        }
+    }
+    body
+}
+
 /// Convenience entry point for HTTP handlers.
 pub fn translate_responses_request(value: &Value) -> ProtocolResult<(BridgeRequest, Value)> {
     let request = parse_responses_request(value)?;
@@ -160,20 +169,27 @@ pub fn translate_responses_request(value: &Value) -> ProtocolResult<(BridgeReque
 /// Used by the Codex subscription → Claude Code kernel when the approved upstream
 /// transport is Responses. Unlike [`to_kimi_chat_request`], this keeps Responses
 /// shapes (`input` items, `max_output_tokens`, function tools without Chat wrapping).
+///
+/// Official ChatGPT / Codex Responses rejects `role=system` input items (400
+/// "System messages are not allowed"). Fold system and developer text into
+/// `instructions` instead of emitting those roles.
 pub fn to_responses_request(request: &BridgeRequest) -> Value {
     let mut body = Map::new();
     body.insert("model".to_owned(), Value::String(request.model.clone()));
     body.insert("stream".to_owned(), Value::Bool(request.stream));
-    if let Some(instructions) = &request.instructions {
-        body.insert(
-            "instructions".to_owned(),
-            Value::String(instructions.clone()),
-        );
-    }
 
+    let mut instructions = request.instructions.clone();
     let mut input = Vec::new();
     for message in &request.input {
-        append_responses_input(&mut input, message);
+        match message.role {
+            MessageRole::System | MessageRole::Developer => {
+                fold_text_into_instructions(&mut instructions, &bridge_message_text(message));
+            }
+            _ => append_responses_input(&mut input, message),
+        }
+    }
+    if let Some(instructions) = instructions {
+        body.insert("instructions".to_owned(), Value::String(instructions));
     }
     body.insert("input".to_owned(), Value::Array(input));
 
@@ -227,6 +243,250 @@ pub fn to_responses_request(request: &BridgeRequest) -> Value {
     }
 
     Value::Object(body)
+}
+
+/// Same Responses shape as [`to_responses_request`], plus Grok `reasoning` when
+/// passthrough has a mappable `reasoning_effort`. Codex / Kimi keep using
+/// [`to_responses_request`] so they never receive this object.
+pub fn to_grok_responses_request(request: &BridgeRequest) -> Value {
+    let mut body = to_responses_request(request);
+    let Some(object) = body.as_object_mut() else {
+        return body;
+    };
+
+    if let Some(effort) = grok_reasoning_effort(request.passthrough.get("reasoning_effort")) {
+        object.insert(
+            "reasoning".to_owned(),
+            json!({ "effort": effort, "summary": "detailed" }),
+        );
+        let include_item = "reasoning.encrypted_content";
+        if let Some(Value::Array(items)) = object.get_mut("include") {
+            if !items.iter().any(|item| item.as_str() == Some(include_item)) {
+                items.push(Value::String(include_item.to_owned()));
+            }
+        } else {
+            object.insert("include".to_owned(), json!([include_item]));
+        }
+    }
+
+    if !object.contains_key("prompt_cache_key") {
+        if let Some(key) = request
+            .passthrough
+            .get("prompt_cache_key")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        {
+            object.insert("prompt_cache_key".to_owned(), Value::String(key.to_owned()));
+        }
+    }
+
+    body
+}
+
+/// Official ChatGPT / Codex Responses rejects leftover bridge / CN model ids
+/// (400). Do not invent a ChatGPT model name to replace them — omit instead.
+pub fn is_leftover_bridge_model(model: &str) -> bool {
+    let model = model.trim();
+    model.starts_with("grok-")
+        || model.starts_with("claude-")
+        || model.starts_with("kimi-")
+        || model.starts_with("deepseek-")
+        || (model.starts_with("agenthub_") && model.ends_with("_bridge"))
+}
+
+/// Write the Responses `model` for official Codex upstream.
+///
+/// Configured override wins when it is non-empty and not leftover. Incoming
+/// leftovers are dropped rather than rewritten as `gpt-*`.
+pub fn apply_official_codex_model(body: &mut Value, incoming: &str, configured: Option<&str>) {
+    let configured = configured
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !is_leftover_bridge_model(value));
+    let incoming = incoming.trim().to_owned();
+    let incoming = if incoming.is_empty() || is_leftover_bridge_model(&incoming) {
+        None
+    } else {
+        Some(incoming)
+    };
+    match (configured, incoming) {
+        (Some(model), _) => {
+            body["model"] = Value::String(model.to_owned());
+        }
+        (None, Some(model)) => {
+            body["model"] = Value::String(model);
+        }
+        (None, None) => {
+            if let Some(object) = body.as_object_mut() {
+                object.remove("model");
+            }
+        }
+    }
+}
+
+const OFFICIAL_CODEX_RESPONSE_KEYS: &[&str] = &[
+    "model",
+    "input",
+    "stream",
+    "store",
+    "instructions",
+    "tools",
+    "tool_choice",
+    // Kept until a live official 400; existing tests still forward them.
+    "temperature",
+    "top_p",
+];
+
+/// Prepare a request for the official ChatGPT / Codex Responses upstream.
+///
+/// The official endpoint requires storage to be disabled for this local
+/// subscription route, rejects `role=system` input items, and 400s on
+/// unsupported request fields (`metadata`, `max_output_tokens`, and other
+/// Chat Completions leftovers). Keep only the allowlisted Responses keys
+/// so callers cannot accidentally forward Claude/OpenAI extras while
+/// leaving the provider-neutral request conversion unchanged.
+pub fn prepare_official_codex_request(
+    body: &mut Value,
+    incoming_model: &str,
+    configured_model: Option<&str>,
+) {
+    apply_official_codex_model(body, incoming_model, configured_model);
+    body["store"] = Value::Bool(false);
+    fold_official_codex_system_items(body);
+    if let Some(object) = body.as_object_mut() {
+        object.retain(|key, _| OFFICIAL_CODEX_RESPONSE_KEYS.contains(&key.as_str()));
+    }
+}
+
+/// Drop leftover `role=system` / `role=developer` input items.
+///
+/// Fold their text into `instructions` when that field is already present.
+/// Otherwise prepend onto the first user message so a Claude-style inline
+/// system prompt is not discarded. Official ChatGPT Responses 400s on
+/// system input items; developer is folded here for the same Claude/Chat
+/// conversion path.
+fn fold_official_codex_system_items(body: &mut Value) {
+    let Some(object) = body.as_object_mut() else {
+        return;
+    };
+    let folded_text = {
+        let Some(Value::Array(input)) = object.get_mut("input") else {
+            return;
+        };
+        let mut folded = Vec::new();
+        input.retain(|item| match item.get("role").and_then(Value::as_str) {
+            Some("system") | Some("developer") => {
+                let text = responses_item_text(item);
+                if !text.is_empty() {
+                    folded.push(text);
+                }
+                false
+            }
+            _ => true,
+        });
+        folded.join("\n")
+    };
+    if folded_text.is_empty() {
+        return;
+    }
+
+    let existing = object
+        .get("instructions")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    if !existing.is_empty() {
+        object.insert(
+            "instructions".to_owned(),
+            Value::String(merge_instruction_text(&existing, &folded_text)),
+        );
+        return;
+    }
+    if let Some(Value::Array(input)) = object.get_mut("input") {
+        if prepend_text_to_first_user_item(input, &folded_text) {
+            return;
+        }
+    }
+    object.insert("instructions".to_owned(), Value::String(folded_text));
+}
+
+fn responses_item_text(item: &Value) -> String {
+    match item.get("content") {
+        Some(Value::String(text)) => text.clone(),
+        Some(Value::Array(parts)) => parts
+            .iter()
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join(""),
+        _ => String::new(),
+    }
+}
+
+fn prepend_text_to_first_user_item(input: &mut [Value], text: &str) -> bool {
+    let Some(item) = input
+        .iter_mut()
+        .find(|item| item.get("role").and_then(Value::as_str) == Some("user"))
+    else {
+        return false;
+    };
+    match item.get_mut("content") {
+        Some(Value::String(existing)) => {
+            *existing = merge_instruction_text(text, existing);
+            true
+        }
+        Some(Value::Array(parts)) => {
+            if let Some(part) = parts
+                .iter_mut()
+                .find(|part| part.get("text").and_then(Value::as_str).is_some())
+            {
+                let existing = part
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned();
+                part["text"] = Value::String(merge_instruction_text(text, &existing));
+                return true;
+            }
+            parts.insert(0, json!({ "type": "input_text", "text": text }));
+            true
+        }
+        _ => {
+            item["content"] = json!([{ "type": "input_text", "text": text }]);
+            true
+        }
+    }
+}
+
+fn fold_text_into_instructions(instructions: &mut Option<String>, text: &str) {
+    if text.is_empty() {
+        return;
+    }
+    match instructions {
+        Some(existing) => {
+            let merged = merge_instruction_text(existing, text);
+            *existing = merged;
+        }
+        None => *instructions = Some(text.to_owned()),
+    }
+}
+
+fn merge_instruction_text(first: &str, second: &str) -> String {
+    match (first.is_empty(), second.is_empty()) {
+        (true, _) => second.to_owned(),
+        (_, true) => first.to_owned(),
+        _ => format!("{first}\n{second}"),
+    }
+}
+
+fn bridge_message_text(message: &BridgeMessage) -> String {
+    message
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            BridgeContent::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Build a non-streaming OpenAI Responses object from IR events.
@@ -307,6 +567,7 @@ pub fn encode_responses_from_ir(
                     output_tokens: *output_tokens,
                     total_tokens: input_tokens.saturating_add(*output_tokens),
                     cached_input_tokens: *cached_input_tokens,
+                    reasoning_tokens: 0,
                 });
             }
             IrEvent::MessageEnd {
@@ -517,6 +778,7 @@ impl IrToResponsesSse {
                     output_tokens: *output_tokens,
                     total_tokens: input_tokens.saturating_add(*output_tokens),
                     cached_input_tokens: *cached_input_tokens,
+                    reasoning_tokens: 0,
                 });
             }
             IrEvent::MessageEnd { stop_reason } => {
@@ -795,9 +1057,13 @@ fn responses_object(
     );
     response.insert(
         "usage".to_owned(),
-        usage
-            .map(|usage| usage.to_responses_json())
-            .unwrap_or(Value::Null),
+        if completed {
+            Usage::completed_responses_json(usage.as_ref())
+        } else {
+            usage
+                .map(|usage| usage.to_responses_json())
+                .unwrap_or(Value::Null)
+        },
     );
     Value::Object(response)
 }
@@ -1706,21 +1972,16 @@ fn parse_tools(value: Option<&Value>) -> ProtocolResult<Vec<BridgeTool>> {
         .as_array()
         .ok_or_else(|| ProtocolError::invalid_request("`tools` must be an array."))?;
     let mut tools = Vec::with_capacity(items.len());
+    let mut dropped = HashSet::new();
     for item in items {
         let object = item
             .as_object()
             .ok_or_else(|| ProtocolError::invalid_request("Every tool must be an object."))?;
         let kind = required_string(object, "type", "Every tool requires a type.")?;
         if kind != "function" {
-            let code = match kind.as_str() {
-                "web_search" | "web_search_preview" => "unsupported_web_search",
-                "computer_use" | "computer" => "unsupported_computer_use",
-                _ => "unsupported_tool",
-            };
-            return Err(ProtocolError::unsupported(
-                code,
-                "This hosted tool type is not supported by this bridge.",
-            ));
+            // Non-function tool types are dropped.
+            dropped.insert(kind);
+            continue;
         }
         let parameters = object
             .get("parameters")
@@ -1747,6 +2008,13 @@ fn parse_tools(value: Option<&Value>) -> ProtocolResult<Vec<BridgeTool>> {
             strict,
         });
     }
+    if !dropped.is_empty() {
+        tracing::warn!(
+            target: "core.adapter",
+            dropped = ?dropped,
+            "dropping hosted Responses tool types that Chat Completions cannot take",
+        );
+    }
     Ok(tools)
 }
 
@@ -1761,10 +2029,8 @@ fn parse_tool_choice(value: Option<&Value>) -> ProtocolResult<Option<ToolChoice>
         },
         Value::Object(object) => {
             if object.get("type").and_then(Value::as_str) != Some("function") {
-                return Err(ProtocolError::unsupported(
-                    "unsupported_tool_choice",
-                    "Only function tool choice is supported by this bridge.",
-                ));
+                // Hosted tool_choice objects become None.
+                return Ok(None);
             }
             let name = object
                 .get("name")
@@ -1837,7 +2103,56 @@ fn known_request_fields() -> HashSet<&'static str> {
         "tools",
         "tool_choice",
         "stream",
+        "reasoning",
     ]
     .into_iter()
     .collect()
+}
+
+/// Responses `reasoning` is not a Chat field; map effort only for xAI.
+fn grok_reasoning_effort(value: Option<&Value>) -> Option<String> {
+    let effort = match value? {
+        Value::Object(object) => object.get("effort").and_then(Value::as_str)?,
+        Value::String(effort) => effort.as_str(),
+        _ => return None,
+    };
+    grok_effort_name(effort)
+}
+
+fn grok_effort_name(effort: &str) -> Option<String> {
+    matches!(effort, "low" | "medium" | "high" | "xhigh" | "max").then(|| effort.to_owned())
+}
+
+/// Map Anthropic Messages top-level `thinking` to Grok `reasoning_effort`.
+///
+/// The original `thinking` object is never copied into passthrough.
+pub(crate) fn grok_reasoning_effort_from_thinking(value: Option<&Value>) -> Option<String> {
+    let object = value?.as_object()?;
+    match object.get("type").and_then(Value::as_str)? {
+        "disabled" => None,
+        "enabled" | "adaptive" => {
+            if let Some(effort) = object.get("effort").and_then(Value::as_str) {
+                match effort {
+                    "minimal" => return Some("low".to_owned()),
+                    "low" | "medium" | "high" | "xhigh" | "max" => return Some(effort.to_owned()),
+                    _ => {}
+                }
+            }
+            Some(grok_effort_from_thinking_budget(
+                object.get("budget_tokens"),
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn grok_effort_from_thinking_budget(value: Option<&Value>) -> String {
+    let budget = value.and_then(Value::as_f64).unwrap_or(0.0);
+    if budget > 0.0 && budget <= 2048.0 {
+        "low".to_owned()
+    } else if budget > 10000.0 {
+        "high".to_owned()
+    } else {
+        "medium".to_owned()
+    }
 }

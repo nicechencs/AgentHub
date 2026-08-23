@@ -11,10 +11,10 @@ use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult,
-    AdapterSourceKind, AgentId, BackupKind, Capability, LiveAccount, PersistedTicketSurface,
-    TicketSurface,
+    attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult, AgentId,
+    BackupKind, Capability, LiveAccount, PersistedTicketSurface, TicketSurface,
 };
+use crate::services::adapter_projection::projection_import_error;
 use crate::services::switch_undo::{
     clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
 };
@@ -47,15 +47,54 @@ impl AccountService {
 
         let adapter = self.registry.require(agent, Capability::AccountSwitch)?;
         let _lock = self.acquire_live_lock(agent)?;
-        let live = adapter.read_account()?;
-        if live.agent != agent {
-            return Err(AppError::InvalidArg(format!(
-                "adapter returned account for {}, expected {}",
-                live.agent.as_str(),
-                agent.as_str()
-            )));
+        let lives = self.read_live_accounts(adapter.as_ref(), agent)?;
+        if lives.is_empty() {
+            return Err(AppError::NotFound(
+                "no live account credentials found".into(),
+            ));
         }
 
+        // 「同步当前登录」is a user override: always copy the live file onto the
+        // matching row. Do not run rt/mtime bidirectional overlay here.
+        // Grok nested auth.json slots import one row per person, like Pi
+        // providers. Keep an existing current if that person is still in the
+        // file; otherwise activate the default `::client` slot, not last-sorted.
+        let mut grants = Vec::new();
+        let mut blocked_projection = false;
+        for live in lives {
+            if self.classify_live_account(agent, &live)?.is_projection() {
+                blocked_projection = true;
+                continue;
+            }
+            grants.push(live);
+        }
+        if grants.is_empty() {
+            if blocked_projection {
+                return Err(projection_import_error());
+            }
+            return Err(AppError::message(
+                "account.import",
+                "live import produced no accounts",
+            ));
+        }
+        let current = self.repo.get_current(agent)?;
+        let chosen =
+            self.pick_live_grant_to_activate(adapter.as_ref(), agent, &grants, current.as_ref());
+        let mut chosen_live = None;
+        let mut others = Vec::new();
+        for (index, live) in grants.into_iter().enumerate() {
+            if index == chosen {
+                chosen_live = Some(live);
+            } else {
+                others.push(live);
+            }
+        }
+        for live in others {
+            self.upsert_live_account(adapter.as_ref(), agent, live, None, false)?;
+        }
+        let live = chosen_live.ok_or_else(|| {
+            AppError::message("account.import", "live import produced no accounts")
+        })?;
         self.upsert_live_account(adapter.as_ref(), agent, live, name, true)
     }
 
@@ -76,14 +115,38 @@ impl AccountService {
             ));
         }
 
-        let mut last: Option<Account> = None;
-        let n = lives.len();
-        for (i, live) in lives.into_iter().enumerate() {
-            let is_last = i + 1 == n;
-            let display_name = if is_last { name } else { None };
-            let acc =
-                self.upsert_live_account(adapter.as_ref(), AgentId::Pi, live, display_name, false)?;
-            last = Some(acc);
+        let mut grants = Vec::new();
+        let mut blocked_projection = false;
+        for live in lives {
+            if self
+                .classify_live_account(AgentId::Pi, &live)?
+                .is_projection()
+            {
+                blocked_projection = true;
+                continue;
+            }
+            grants.push(live);
+        }
+        if grants.is_empty() {
+            if blocked_projection {
+                return Err(projection_import_error());
+            }
+            return Err(AppError::message(
+                "account.import",
+                "Pi import produced no accounts",
+            ));
+        }
+        let n = grants.len();
+        let mut last = None;
+        for (i, live) in grants.into_iter().enumerate() {
+            let display_name = if i + 1 == n { name } else { None };
+            last = Some(self.upsert_live_account(
+                adapter.as_ref(),
+                AgentId::Pi,
+                live,
+                display_name,
+                false,
+            )?);
         }
         last.ok_or_else(|| AppError::message("account.import", "Pi import produced no accounts"))
     }
@@ -118,24 +181,8 @@ impl AccountService {
         }
         let extra = attach_identity_meta(adapter, live.kind, &live.credentials, &display, extra);
 
-        // 远端票按授权指纹去重；loopback 桥票按 agent+kind 槽位 upsert
-        // （bind 会轮换 port+bearer，见 docs/account-authorization-pool.md）。
-        if let Some(existing) =
-            self.find_duplicate_authorization(adapter, agent, live.kind, &live.credentials)?
-        {
-            return self.merge_into_existing(
-                adapter,
-                existing,
-                live.kind,
-                display,
-                live.credentials,
-                extra,
-                make_current,
-            );
-        }
-
         let now = now_ts();
-        let row = Account {
+        let mut row = Account {
             id: format!("{}-live-{}", agent.as_str(), Uuid::new_v4()),
             agent_id: agent,
             kind: live.kind,
@@ -147,121 +194,75 @@ impl AccountService {
             created_at: now.clone(),
             updated_at: now,
         };
-        if make_current {
-            let (created, _binding) = self.connections.create_and_activate_account(&row)?;
-            self.stamp_account_surface(created)
-        } else {
-            let created = self.repo.create(&row)?;
-            self.stamp_account_surface(created)
-        }
+        row = self.prepare_account_surface(row);
+        let _ = crate::services::account_identity_heal::heal_account_identity(&mut row);
+        self.commit_authorization_merge(
+            adapter,
+            &row,
+            live.kind,
+            row.label.clone(),
+            row.credentials.clone(),
+            row.extra.clone(),
+            make_current,
+        )
+        .map(|committed| committed.stored)
+        .map_err(|error| error.into_error())
     }
 
-    /// 查找与给定凭据为「同一授权票」的已有行（非身份）。
-    ///
-    /// Loopback 桥票按 agent+kind 槽位匹配，不看 token 指纹。远端票仍按
-    /// `accounts_same_authorization`，且不会并进 loopback 行。
-    pub(super) fn find_duplicate_authorization(
-        &self,
-        adapter: &dyn AgentAdapter,
-        agent: AgentId,
-        kind: AccountKind,
-        credentials: &Value,
-    ) -> Result<Option<Account>> {
-        let incoming_loopback = credentials_are_loopback(credentials);
-        let candidates = self.repo.list(Some(agent))?;
-        let matches: Vec<Account> = candidates
-            .into_iter()
-            .filter(|a| a.kind == kind)
-            .filter(|a| same_live_slot(agent, credentials, &a.credentials))
-            .filter(|a| {
-                let existing_loopback = credentials_are_loopback(&a.credentials);
-                if incoming_loopback {
-                    existing_loopback
-                } else {
-                    !existing_loopback && accounts_same_authorization(adapter, kind, credentials, a)
-                }
-            })
-            .collect();
-        Ok(pick_primary_authorization_match(matches))
+    /// Add the ticket surface to a prospective row before its first database
+    /// mutation. Only a missing `extra.surface` is filled; Unrecognized and
+    /// Known values are left untouched so a newer/future surface cannot be
+    /// overwritten by this version's classifier.
+    pub(super) fn prepare_account_surface(&self, mut account: Account) -> Account {
+        if TicketSurface::from_persisted_json(&account.extra) != PersistedTicketSurface::Missing {
+            return account;
+        }
+        let product = AdapterRouteService::classify_account_source_product(&account);
+        attach_persisted_surface(&mut account.extra, TicketSurface::from_product(product));
+        account
     }
 
-    /// 合并进已有授权行。远端票只清理同授权指纹冗余；loopback 桥票清理
-    /// 同 agent+kind 的其它 loopback 行。绝不按身份删其它授权。
-    pub(super) fn merge_into_existing(
-        &self,
-        adapter: &dyn AgentAdapter,
-        existing: Account,
-        kind: AccountKind,
-        label: String,
-        credentials: Value,
-        extra: Value,
-        mark_current: bool,
-    ) -> Result<Account> {
-        let now = now_ts();
-        let mut row = existing.clone();
-        row.kind = kind;
-        row.label = label;
-        row.credentials = credentials;
-        row.extra = extra;
-        row.status = "active".into();
-        row.updated_at = now;
-        if mark_current {
-            row.is_current = true;
-        }
-
-        let updated = if row.is_current {
-            let (updated, _binding) = self.connections.update_and_activate_account(&row)?;
-            updated
-        } else {
-            self.repo.update(&row)?
+    pub(super) fn copy_persisted_surface(from: &Value, into: &mut Value) {
+        let Some(surface) = from.get("surface") else {
+            return;
         };
-
-        let incoming_loopback = credentials_are_loopback(&updated.credentials);
-        let leftovers = self.repo.list(Some(updated.agent_id))?;
-        for other in leftovers {
-            if other.id == updated.id || other.kind != updated.kind {
-                continue;
-            }
-            if !same_live_slot(updated.agent_id, &updated.credentials, &other.credentials) {
-                continue;
-            }
-            let should_delete = if incoming_loopback {
-                credentials_are_loopback(&other.credentials)
-            } else {
-                !credentials_are_loopback(&other.credentials)
-                    && accounts_same_authorization(
-                        adapter,
-                        updated.kind,
-                        &updated.credentials,
-                        &other,
-                    )
-            };
-            if should_delete {
-                // Prefer consistency path so an active leftover never leaves a dangling binding.
-                // Propagate delete errors — never report merge success with leftover rows.
-                self.connections
-                    .delete_account(&other.id, updated.agent_id)?;
-            }
+        if let Some(obj) = into.as_object_mut() {
+            obj.insert("surface".into(), surface.clone());
         }
-
-        self.stamp_account_surface(updated)
     }
 
-    /// Classify the persisted row and write `extra.surface` before the import
-    /// / add path returns. `classify_source_product` reads the stored row, so
-    /// this runs after the first successful persist.
+    /// Repair a legacy row's surface using a narrow optimistic update. Only
+    /// `extra.surface` and `updated_at` are written; credentials, label,
+    /// current state and active binding are never copied from a stale caller.
     pub(super) fn stamp_account_surface(&self, account: Account) -> Result<Account> {
-        let product = AdapterRouteService::new(self.db.clone())
-            .classify_source_product(AdapterSourceKind::Account, &account.id)?;
-        let surface = TicketSurface::from_product(product);
-        if TicketSurface::from_persisted_json(&account.extra)
-            == PersistedTicketSurface::Known(surface)
-        {
+        let prepared = self.prepare_account_surface(account.clone());
+        if prepared.extra == account.extra {
             return Ok(account);
         }
-        let mut stamped = account;
-        attach_persisted_surface(&mut stamped.extra, surface);
-        stamped.updated_at = now_ts();
-        self.repo.update(&stamped)
+        let expected_updated_at = account.updated_at.clone();
+        let updated_at = now_ts();
+        let extra = serde_json::to_string(&prepared.extra)?;
+        let changed = self.db.with_conn(|conn| {
+            conn.execute(
+                "UPDATE accounts SET extra = ?2, updated_at = ?3 WHERE id = ?1 AND agent_id = ?4 AND updated_at = ?5",
+                rusqlite::params![
+                    &account.id,
+                    extra,
+                    &updated_at,
+                    account.agent_id.as_str(),
+                    &expected_updated_at,
+                ],
+            )
+            .map_err(AppError::from)
+        })?;
+        if changed != 1 {
+            return Err(AppError::message(
+                "account.conflict",
+                format!("account changed before surface update: {}", account.id),
+            ));
+        }
+        self.repo
+            .get_by_id(&account.id)?
+            .ok_or_else(|| AppError::NotFound(format!("account not found: {}", account.id)))
     }
 }

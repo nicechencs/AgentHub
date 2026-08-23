@@ -3,6 +3,7 @@
  * Only Tauri ports may import this module.
  */
 import type { InstallProgressPayload } from '@/lib/backend/contracts/install-types';
+import { unavailableError } from '@/lib/backend/contracts/errors';
 import { isTauriApp } from '@/lib/platform';
 
 export const INSTALL_PROGRESS_EVENT = 'install-progress';
@@ -17,17 +18,23 @@ export async function onInstallProgress(
   handler: (payload: InstallProgressPayload) => void,
 ): Promise<() => void> {
   if (!isTauriApp()) {
-    return () => {};
+    throw unavailableError(
+      '安装进度订阅',
+      '当前不是 Tauri 桌面运行时；请使用桌面应用，或开发时注入 mock backend',
+    );
   }
   try {
     const { listen } = await import('@tauri-apps/api/event');
     const unlisten = await listen<InstallProgressPayload>(INSTALL_PROGRESS_EVENT, (event) => {
-      if (event.payload?.line) {
-        handler(event.payload);
-      }
+      const payload = event.payload;
+      if (!payload || typeof payload.line !== 'string') return;
+      handler(payload);
     });
     return unlisten;
-  } catch {
-    return () => {};
+  } catch (error) {
+    throw unavailableError(
+      '安装进度订阅',
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }

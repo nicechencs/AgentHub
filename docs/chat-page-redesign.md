@@ -6,22 +6,22 @@
 | 日期 | 2026-08-16 |
 | 状态 | Implemented（2026-08） |
 | 类型 | 产品 / UX / 界面重设计（无新后端能力、无 wire 变更） |
-| 范围 | Chat 页信息架构、会话 rail、会话 header、消息区与多 Agent 展示、过程面板 Phase 3 表面、Composer 与发送前置校验、消息轻操作、页面文件拆分、文档回写 |
+| 范围 | Chat 页信息架构、会话 rail、会话 header、消息区（现行一会话一 Agent）、过程面板 Phase 3 表面、Composer 与发送前置校验、消息轻操作、页面文件拆分、文档回写 |
 | 非范围 | Rust / Tauri 命令、`ChatEvent` wire、过程落库、CLI 原生 `--resume` 与交互式 tool 审批、Connections/Bridges 职责、凭据落盘加密（**无必要 / 项目范围外**）、国产 OAuth 开边 / OAuth→API（产品不做） |
 
-本文是 Chat 页本期重设计的真源，风格与 [bridges-page-redesign.md](bridges-page-redesign.md) 对齐。产品契约回写至 [ui-design.md §4.4](ui-design.md)；过程协议仍以 [chat-process-streaming.md](chat-process-streaming.md) 为真源，本文拍板其 Phase 3 的**展示层**（已落地）。协议侧（过程落库、过程内 usage、Pi rpc 审批、diff 预览落库）仍未做。
+本文是 Chat 页本期重设计的真源，风格与 [bridges-page-redesign.md](bridges-page-redesign.md) 对齐。产品契约回写至 [ui-design.md §4.4](ui-design.md)；过程协议仍以 [chat-process-streaming.md](chat-process-streaming.md) 为真源，本文拍板其 Phase 3 的**展示层**（已落地）。协议侧（过程落库、过程内 usage、Pi rpc 审批、diff 预览落库）仍未做。与 DSH Desktop 的机制对照见 [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md)（对照笔记，不改本期 IA）。
 
-> **现行状态**：本文 Implemented 的是 Chat 工作台表面。Chat **没有**独立模型选择器；线框里 `[官方 · sonnet ▾]` 是**连接/登录**下拉（模型只作副标题），不是模型 picker。Projects「继续」走 sessionStorage bootstrap，**不是** CLI `--resume`。下文 Implemented 正文不改。
+> **现行状态**：本文 Implemented 的是 Chat 工作台表面。Chat **一会话一 Agent**（core `require_single_agent`；UI `selectConversationAgent` 单选；打开旧多选行在非发送中折叠为 `[agentIds[0]]`）。轮级对比条 / 「仅作用于首位」caption / `retryAllHint` 仍留在代码里，只对历史 ≥2 条 agent 消息的 turn 生效，**不是**现行产品能力。Chat **没有**独立模型选择器；线框里 `[官方 · sonnet ▾]` 是**连接/登录**下拉（模型只作副标题），不是模型 picker。Projects「在 Chat 继续」走 sessionStorage bootstrap（摘录）。Claude/Codex Chat 在捕获官方 session id 后，后续轮次走 print+resume。下文 Key Decisions / 线框里的「多 Agent」是 2026-08 重设计当时的表面，读现行行为以本段与代码为准。
 
 ---
 
 ## Overview
 
-Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 prompt 发给一个或多个已安装 Agent，流式看 stdout 与 Cursor 式过程（命令 / 工具 / thinking / stderr），可取消。它**不是**各 CLI 原生 session 的续聊器，不接管交互式 tool 审批，不发明新后端协议。
+Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 prompt 发给会话当前的**一个**已安装 Agent，流式看 stdout 与 Cursor 式过程（命令 / 工具 / thinking / stderr），可取消。它**不是**各 CLI 原生 session 的续聊器，不接管交互式 tool 审批，不发明新后端协议。
 
 实施前基线功能语义完整（会话 CRUD、多 Agent 并行、流式过程、bootstrap、取消），但表面停留在「最小 IM」：rail 只有标题和相对时间，会话上下文（cwd / 自动批准）藏在 Dialog 与 composer 下方一行 Tip，多 Agent 只有纵向堆叠没有轮级对照，过程面板像调试日志，空态与引导挤在 toast 里，`index.tsx` 当时 908 行编排渲染一体。
 
-**2026-08 已落地**：Chat 现为桌面工作台。rail 有搜索、按日分组、agent/cwd 摘要、删除确认；header 有可编辑标题与上下文芯片；消息区有轮级对比条；过程面板为摘要行 + 时间线 +「运行详情」；composer 内嵌 `sendBlockers` 引导；复制/重试已接。`sendBlockers` / `filterConversations` / `groupConversationsByDay` / `retryTarget` / `turnComparisonChips` 在 `chat-model.ts` + `chat-model.test.ts`。`index.tsx` 已拆完，约 147 行只编排。chrome 水平 inset 引用 `pageRhythm.chatChromeX`。所有改动只用现有 `lib/api/chat` + provider switch，不引入新依赖，不改 `ChatEvent`。
+**2026-08 已落地**：Chat 现为桌面工作台。rail 有搜索、按日分组、agent/cwd 摘要、删除确认；header 有可编辑标题与上下文芯片；过程面板为摘要行 + 时间线 +「运行详情」；composer 内嵌 `sendBlockers` 引导；复制/重试已接。`sendBlockers` / `filterConversations` / `groupConversationsByDay` / `retryTarget` / `turnComparisonChips` 在 `chat-model.ts` + `chat-model.test.ts`。`index.tsx` 已拆完，约 147 行只编排。chrome 水平 inset 引用 `pageRhythm.chatChromeX`。所有改动只用现有 `lib/api/chat` + provider switch，不引入新依赖，不改 `ChatEvent`。轮级对比条是当时多 Agent 表面的残留，现行一会话一 Agent 下新会话不会走到。
 
 ---
 
@@ -76,13 +76,13 @@ Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 pro
 ### 必须保留的语义（重做表面，不动行为）
 
 - 会话 CRUD：list / create / update / delete；字段 `title` / `agentIds` / `cwd` / `allowDangerous`。
-- 多 Agent 并行：同一 turn 每个 agent 一条消息 + 一份过程视图（key = `${turn}:${agent}`）。
+- **一会话一 Agent**：core `require_single_agent`，create/update 拒绝 `len>1`。过程仍按 `(turn, agent)` 隔离（key = `${turn}:${agent}`）；`run_each` 仍带 Parallel 形状，jobs 长度 1。打开旧多选行，页 effect 在非 sending 时写成 `[agentIds[0]]`。
 - 流式事件：`started` / `agentChunk`(stdout) / `agentProcess` / `agentFinished` / `error`；过程仅内存，切会话清空。
 - 发送前必须有 cwd；含隐藏 Agent 的会话禁止发送。
-- 连接切换只作用于 `agentIds[0]`（primaryAgent）。
+- 连接切换作用于当前唯一 Agent（历史多选行才出现「仅作用于首位」caption）。
 - Projects → Chat bootstrap：`sessionStorage` + `/chat?from=projects`，可预填 prompt / title / cwd / agentIds，只消费一次。
 - 自动批准开启需二次确认；过程面板进行中/失败默认展开、成功/取消默认折叠。
-- 隐藏 / 未配置授权 Agent：picker 置底且不可新增；已在会话里的仍可见并标「已隐藏」/「未配置授权」，可取消勾选移出。
+- 隐藏 / 未配置授权 Agent：picker 置底且不可选为当前 Agent；已在会话里的仍可见并标「已隐藏」/「未配置授权」。
 - 空列表自动建会话（有已安装且未隐藏 Agent 时）；删除最后一个会话自动补建。
 - 发送中删除会话先 `chatCancel` 再删。
 
@@ -92,9 +92,9 @@ Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 pro
 
 ### Goals
 
-1. 用户一眼看清「在哪个目录、用哪些 Agent、什么批准策略」——上下文进 header，不再藏在 Dialog 与 Tip。
+1. 用户一眼看清「在哪个目录、用哪个 Agent、什么批准策略」——上下文进 header，不再藏在 Dialog 与 Tip。
 2. rail 成为可用的会话导航：可搜索、按日分组、行内可辨 agent 与目录，删除有确认，选中态与全站 `bg-active` 语义一致。
-3. 多 Agent 同轮有对照入口（轮级对比条），且连接切换的作用范围说清楚。
+3. 现行一会话一 Agent；轮级对比条仅对历史 ≥2 条 agent 消息的 turn 出现（UI 残留）。连接切换作用于当前唯一 Agent。
 4. 过程面板读起来像 Cursor 步骤时间线：一行摘要，展开才见步骤；命令 / stderr / exit 降为次级，成功后不吵。
 5. 发送前置条件（无 Agent / 隐藏 Agent / 无 cwd / 他处发送中）内嵌在 composer 引导行里，可点击直达修复动作。
 6. 桌面轻操作补齐：复制、末轮重试、标题就地编辑、发送中切会话的状态提示、条件跟随滚动。
@@ -107,12 +107,12 @@ Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 pro
 - **不换 accent 色相**；一页至多一个 accent 主 CTA（发送）。
 - **凭据落盘加密：无必要 / 项目范围外**，不列待办不列风险。
 - **国产 OAuth 开边 / OAuth→API：产品不做**，不列待办。
-- **不接管** CLI 原生 `--resume` / 交互式 tool 审批 RPC。
+- **不接管** 交互式 tool 审批 RPC。Claude/Codex 后续轮次可走 print+resume；不打开对方 TUI。
 - **不把 Chat 做成 Connections/Bridges**：连接切换可深链 `/connections`；绑定走既有 ConnectFlow；不在 Chat 重建钱包。
 - 页面层不 `invoke`；mock 不进生产 build。
 - 测试与生产分文件；纯函数必须可单测。
 - 中文正文；导航专有名词保持英文（Chat / Agents / Connections / Projects…）。
-- 浅色优先、低对比边框、明度分层；禁止魔法 `rounded-[Npx]`，只用 `rounded-btn` / `rounded-card` / `rounded-composer`。
+- 浅色优先、低对比边框、明度分层；禁止魔法 `rounded-[Npx]`，只用 `rounded-btn` / `rounded-card` / `rounded-composer`。用户气泡 12px，助手消息平铺。
 - Chat 继续 fullBleed、无 TopBar；主区 chrome 水平 inset 统一引用 `pageRhythm.chatChromeX`。
 
 ---
@@ -129,6 +129,8 @@ Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 pro
 | K6 | **发送前置校验统一为 `sendBlockers` 纯函数**，composer 上方渲染第一个 blocker 的引导行（含修复动作），发送按钮禁用 + Hint 原因。优先级：含隐藏 Agent > 未配置授权 > 无 cwd > 他会话发送中 >（空草稿只禁发送不出引导行）。页级「无可用 Agent 且无会话」用 EmptyState。Projects bootstrap 无 cwd 不再自动弹 Dialog，由引导行接管 | 前置条件从「点了才知道」变成「看得见、点得到」；toast 只留异步失败结果 |
 | K7 | **消息轻操作**：user / agent 气泡 hover 显示「复制」（`navigator.clipboard` + toast「已复制」）；**最后一轮**的失败/取消/超时 agent 气泡显示「重试」= 用该轮 user prompt 重新 `chatSend`（新 turn，发给会话当前全部 Agent；多 Agent 时 Hint 说明）。历史轮不出重试，用复制自行重发 | 重试复用现有 send，不新增 API；只在末轮出现避免 CTA 散落 |
 | K8 | **文件按 P1-7 样板拆**：`chat-model.ts`（纯函数）+ `use-chat-page.ts`（副作用 hook）+ `ChatSessionRail` / `ChatSessionHeader` / `ChatTranscript` / `ChatMessageBubble` / `ChatSettingsDialog`（JSX）；保留并打磨 `ChatComposer` / `ChatProcessPanel` / `chat-format.ts`；`index.tsx` 只编排 | 与 Connections 样板一致；纯函数可 vitest node 单测，拆分先行为不变后改表面 |
+
+> **2026-08-21 现行收口**：create/update 拒绝 `agentIds.len > 1`。K4 对比条、连接「仅作用于首位」、K7 重试「发给全部 Agent」仍是代码残留，只服务打开旧多选行之前已落盘的历史 turn。新会话不会进入这些表面。不要把残留 UI 读成「仍支持并跑」。
 
 附属拍板（不再另开讨论）：
 
@@ -256,7 +258,7 @@ Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 pro
 
 - 高度 `h-10`，`border-b`，水平 inset `pageRhythm.chatChromeX`。
 - **标题就地编辑**：点击标题进入 Input（同高内联），Enter/blur 保存 `updateConversation({ title })`，Esc 取消；空值保存 `''`、展示回退「新对话」。首轮自动标题仅在 title 为空时由后端从首条 prompt 生成（与 mock 语义一致），用户改过不被覆盖。
-- **Agent 芯片（只读）**：单 Agent 显示 logo + 名称；多 Agent 显示 logo 叠列 + 「N 个 Agent」。会话含隐藏 Agent 时芯片附「已隐藏」标记。修改 Agent 仍在 composer picker，header 不做第二个修改入口。
+- **Agent 芯片（只读）**：现行单 Agent，显示 logo + 名称。会话含隐藏 Agent 时芯片附「已隐藏」标记。修改 Agent 仍在 composer picker，header 不做第二个修改入口。历史多选叠列 + 「N 个 Agent」仍是组件能力，打开旧行会被折叠成一位。
 - **cwd 芯片**：显示末段目录名（Hint 完整路径），点击打开设置 Dialog；未设置时 warning 色「未设置工作目录」。
 - **自动批准芯片**：仅开启时显示（warning 色「自动批准」，Hint「已跳过工具确认，仅在信任该目录时开启」），点击打开设置 Dialog；关闭时不显示。
 - 右端保留设置（齿轮）按钮 → `ChatSettingsDialog`。
@@ -266,7 +268,7 @@ Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 pro
 - 消息列 `max-w-3xl` 居中，`px-4 py-6 space-y-6`（现状密度保留）。
 - user 气泡：右对齐 `bg-subtle rounded-composer max-w-[85%]`（现状保留）+ hover「复制」。
 - agent 消息：logo + meta 行（名称 / 状态文案 / 耗时）+ 过程面板 + 正文（Markdown）+ hover「复制」；失败时正文下红字 error（现状保留）。
-- **对比条**：同一 turn 有 ≥2 条 agent 消息时，在 user 气泡下渲染「本轮 N 个 Agent」芯片行；每个芯片 = logo + 名称 + 状态点（成功绿 / 失败红 / 进行中 spinner / 取消灰）+ 耗时；点击平滑滚动到对应气泡（锚点 = message id）。单 Agent 轮不渲染。
+- **对比条**：同一 turn 有 ≥2 条 agent 消息时，在 user 气泡下渲染「本轮 N 个 Agent」芯片行（历史 turn 残留；现行新会话一 Agent，不渲染）。每个芯片 = logo + 名称 + 状态点（成功绿 / 失败红 / 进行中 spinner / 取消灰）+ 耗时；点击平滑滚动到对应气泡（锚点 = message id）。
 - **滚动**：流式输出时仅当滚动位置距底部 ≤ ~80px 才跟随；用户上翻回看不被拉底；切会话跳到底部。
 - 空转录：居中「开始对话」+ 一句副文案（见文案表）。
 
@@ -311,14 +313,14 @@ function sendBlockers(input: {
 ```
 
 - 空草稿只禁用发送按钮，不出引导行。存在 blocker 时发送禁用 + Hint 显示原因；textarea 除 `hiddenAgents` / 发送中外保持可输入（无 cwd 时可先写 prompt）。
-- **Agent picker**：已安装且已配置授权的项在前、可选；已隐藏或未配置授权的项置底（标「已隐藏」/「未配置授权」），不可新增，已在会话内的可取消勾选移出。至少保留一个、发送中禁改。
-- **连接 picker**：label = 当前 provider 名 + model 副标题（现状）；多 Agent 时 dropdown label 行固定加一句「仅作用于首位 Agent（{name}）」，trigger Hint 同句；无连接时 dropdown 内为深链按钮「去 Connections 添加」→ `/connections?agent={primaryAgent}`。切换成功 toast「已切换连接」（现状）。
+- **Agent picker**：单选。已安装且已配置授权的项在前、可选；已隐藏或未配置授权的项置底（标「已隐藏」/「未配置授权」），不可选为当前 Agent。发送中禁改。历史多选会话打开时折叠为首位。
+- **连接 picker**：label = 当前 provider 名 + model 副标题（现状）；作用于当前唯一 Agent。历史多选时 dropdown 仍可能出现「仅作用于首位 Agent（{name}）」残留文案（`agentIds.length>1` 才返回）；无连接时 dropdown 内为深链按钮「去 Connections 添加」→ `/connections?agent={primaryAgent}`。切换成功 toast「已切换连接」（现状）。
 - 发送按钮为本页唯一 accent 主 CTA；发送中变「停止」（dangerOutline，现状）。
 
 ### 7. 消息轻操作
 
 - **复制**：user / agent 气泡 hover 右下角图标按钮；`navigator.clipboard.writeText(content)`；成功 toast「已复制」。运行中的 agent 气泡不显示复制。
-- **重试**：最后一轮中状态为 `failed` / `cancelled` / `timeout` 的 agent 气泡 meta 行显示「重试」；点击 = 取该轮 user prompt 调 `chatSend`（作为新 turn，发给会话当前全部 agentIds）。多 Agent 会话 Hint：「将把这条提示重新发给会话中的全部 Agent」。发送中、存在 blocker 时禁用。历史轮不出重试。纯函数 `retryTarget(turns, sending)` 判定。
+- **重试**：最后一轮中状态为 `failed` / `cancelled` / `timeout` 的 agent 气泡 meta 行显示「重试」；点击 = 取该轮 user prompt 调 `chatSend`（作为新 turn，发给会话当前 Agent）。发送中、存在 blocker 时禁用。历史轮不出重试。纯函数 `retryTarget(turns, sending)` 判定。历史多选行的 `retryAllHint` 仍在代码里，新会话走不到。
 
 ### 8. 交互细则（逐流程）
 
@@ -333,9 +335,9 @@ function sendBlockers(input: {
 | **重试** | 见 §7；重试本质是一次普通发送，走同一 blocker 校验 |
 | **切会话** | 清空 `processMap` 与流式缓冲（现状）；消息重新加载。**发送中切走**：目标会话 composer 显示 `sendingElsewhere` 引导行（回到该会话 / 停止），textarea 禁用；rail 中发送中行显示状态点。**切回**：后续 chunk 继续应用，早期增量缺失，最终以 `agentFinished` 全量落定（现状语义，不做回放） |
 | **Projects bootstrap** | `/chat?from=projects` + `takeChatBootstrap()` 只消费一次；建会话、可选设标题、预填草稿；toast「已从 Projects 创建会话」。**变化**：无 cwd 时不再自动弹设置 Dialog，由 `noCwd` 引导行 + header warning 芯片接管；query 清理（replace）保留 |
-| **隐藏 / 未配置授权 Agent** | picker 置底：不可新增，已在会话内的仍可见并标「已隐藏」/「未配置授权」，可取消勾选移出；含这些 Agent 的会话：header 芯片标记（隐藏）+ `hiddenAgents` / `unconfiguredAuth` 引导行 + 发送禁用 |
+| **隐藏 / 未配置授权 Agent** | picker 置底且不可选为当前 Agent；已在会话里的仍可见并标「已隐藏」/「未配置授权」；含这些 Agent 的会话：header 芯片标记（隐藏）+ `hiddenAgents` / `unconfiguredAuth` 引导行 + 发送禁用 |
 | **自动批准** | 编辑仍在设置 Dialog：开启走二次确认 Dialog（文案现状保留）；开启后 header 显示 warning 芯片、composer 安全提示行切换文案；关闭即时生效 |
-| **连接切换** | 仅 primaryAgent（现状）；成功后刷新 provider 列表；多选提示与深链见 §6 |
+| **连接切换** | 作用于当前唯一 Agent；成功后刷新 provider 列表；历史多选残留 caption 见 §6 |
 | **滚动 / 键盘** | 条件跟随滚动（§4）；标题编辑 Enter/Esc；不新增全局快捷键 |
 
 ```mermaid
@@ -406,16 +408,16 @@ src/pages/chat/
 | composer placeholder | 发送消息给 Agent…（Shift+Enter 换行） |
 | 安全提示（批准关） | Agent 可能修改工作目录中的文件 |
 | 安全提示（批准开） | 自动批准已开启 · Agent 将不经确认修改文件 |
-| 连接 picker 多选说明 | 仅作用于首位 Agent（{name}） |
+| 连接 picker 多选说明 | 仅作用于首位 Agent（{name}）（历史残留；`agentIds.length>1` 才返回） |
 | 连接 picker 空态 | 暂无连接 · 去 Connections 添加 |
 | 过程摘要 | {阶段} · {N} 步 · {耗时}（如：已完成 · 6 步 · 12.4s） |
 | 运行详情折叠 | 运行详情（内含：命令 / stderr / exit {code}） |
 | 过程等待 | 等待 CLI 输出过程日志… |
-| 对比条 | 本轮 {N} 个 Agent |
+| 对比条 | 本轮 {N} 个 Agent（历史残留；现行新会话不渲染） |
 | 复制 / 复制成功 | 复制 / 已复制 |
-| 重试 / 重试 Hint | 重试 / 将把这条提示重新发给会话中的全部 Agent |
+| 重试 / 重试 Hint | 重试 / 将把这条提示重新发给会话中的全部 Agent（Hint 为历史多选残留） |
 | 空转录标题 | 开始对话 |
-| 空转录副句 | 向 {Agent 名或 N 个 Agent} 发送第一条消息；多选 Agent 可同轮对比 |
+| 空转录副句 | 向 {Agent 名} 发送第一条消息。若 i18n 仍写「N 个 Agent / 多选可同轮对比」，视为文案残留，不以该句为产品能力 |
 | 页级空态标题 | 还没有可对话的 Agent |
 | 页级空态描述 / 按钮 | 安装或取消隐藏 Agent 后即可开始 / 去 Agents 页 |
 | 取消 toast | 已请求取消（副句：正在停止当前生成，过程面板将显示已取消。） |
@@ -456,18 +458,18 @@ src/pages/chat/
 **composer / 发送**
 
 - [x] `sendBlockers` 顺序：hiddenAgents > unconfiguredAuth > noCwd > sendingElsewhere；单测覆盖。
-- [x] Agent picker：可选项在前；已隐藏 / 未配置授权置底，不可新增，已在会话内可取消勾选。
+- [x] Agent picker：单选；可选项在前；已隐藏 / 未配置授权置底，不可选为当前 Agent。
 - [x] 引导行只渲染第一个 blocker 且带可用修复动作；发送禁用 + Hint 原因。
 - [x] 无 cwd 时 textarea 可输入、发送禁用；设置 cwd 后不丢草稿即可发送。
 - [x] Projects bootstrap 无 cwd：不自动弹 Dialog，引导行出现；query 清理、bootstrap 只消费一次。
-- [x] 连接 picker 多选时显示「仅作用于首位 Agent（{name}）」；空态深链 `/connections?agent=`。
+- [x] 连接 picker 现行作用于当前唯一 Agent；历史多选残留文案「仅作用于首位 Agent（{name}）」仅 `agentIds.length>1` 时出现；空态深链 `/connections?agent=`。
 - [x] 发送按钮是页内唯一 accent 主 CTA。
 
 **消息区 / 多 Agent**
 
-- [x] 同轮 ≥2 个 agent 消息才出现对比条；芯片状态点与耗时正确；点击定位到对应气泡。
+- [x] 同轮 ≥2 个 agent 消息才出现对比条（历史残留；现行新会话不出现）；芯片状态点与耗时正确；点击定位到对应气泡。
 - [x] user / agent 气泡 hover 复制可用；运行中气泡不显示复制。
-- [x] 仅最后一轮失败/取消/超时气泡显示重试；重试作为新 turn 发给会话全部 Agent；`retryTarget` 单测覆盖。
+- [x] 仅最后一轮失败/取消/超时气泡显示重试；重试作为新 turn 发给会话当前 Agent；`retryTarget` 单测覆盖。
 - [x] 流式仅在贴近底部时跟随滚动；上翻回看不被拉底。
 
 **过程面板**
@@ -496,7 +498,7 @@ src/pages/chat/
 - diff 预览落库、过程步骤落库回放、过程内 usage 展示（[chat-process-streaming.md](chat-process-streaming.md) Phase 3 的协议侧项，另行排期）。
 - CLI 原生 session 续聊（`--resume`）、交互式 tool 审批 RPC。
 - 并发多会话同时流式（保持同一时刻至多一个进行中 turn）。
-- 多 Agent 左右分栏布局（本期只做对比条）。
+- 多 Agent 并跑 / 左右分栏：现行已收口为一会话一 Agent；不要把对比条残留读成仍支持并跑。
 - rail 右键菜单、会话置顶/归档、会话导出、全局快捷键面板、虚拟滚动。
 - 在 Chat 内添加/绑定连接（去 Connections / ConnectFlow）。
 - 凭据落盘加密：**无必要 / 项目范围外**；国产 OAuth 开边 / OAuth→API：产品不做。二者均不得出现在实施待办或风险清单。

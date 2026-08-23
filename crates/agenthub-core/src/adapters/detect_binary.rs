@@ -18,6 +18,26 @@ pub(crate) fn detect_binary(
     channel_hint: Option<&str>,
     env_ready: bool,
 ) -> DetectResult {
+    detect_binary_with_env(
+        agent,
+        candidates,
+        version_args,
+        channel_hint,
+        env_ready,
+        &[],
+    )
+}
+
+/// Same as [`detect_binary`], with extra child env for the version probe
+/// (Pi prefixes PATH with a Node 22 bin dir).
+pub(crate) fn detect_binary_with_env(
+    agent: AgentId,
+    candidates: &[&str],
+    version_args: &[&str],
+    channel_hint: Option<&str>,
+    env_ready: bool,
+    extra_env: &[(String, String)],
+) -> DetectResult {
     use crate::models::DetectStatus;
     use which::which;
 
@@ -30,8 +50,35 @@ pub(crate) fn detect_binary(
         }
     }
 
+    // AgentHub user npm prefix first — PATH may still point at a leftover
+    // 0.2.3 global shim and would otherwise hide ~/.agenthub/npm.
+    if let Some(path) = first_existing_named_bin(&agenthub_user_npm_bin_dirs(), &names) {
+        tracing::debug!(
+            target: crate::logging::targets::DETECT,
+            module = crate::logging::targets::DETECT,
+            op = "detect_binary",
+            agent = agent.as_str(),
+            via = "user_npm_prefix",
+            channel = "npm",
+            path = %path.display(),
+            "agent binary resolved in AgentHub user npm prefix"
+        );
+        return finish_detect(
+            agent,
+            path,
+            version_args,
+            Some("npm"),
+            env_ready,
+            true,
+            extra_env,
+        );
+    }
+
     for name in &names {
         if let Ok(path) = which(name) {
+            if !is_direct_spawnable(&path) {
+                continue;
+            }
             let channel = infer_channel(&path, channel_hint);
             tracing::debug!(
                 target: crate::logging::targets::DETECT,
@@ -50,13 +97,18 @@ pub(crate) fn detect_binary(
                 Some(channel.as_str()),
                 env_ready,
                 false,
+                extra_env,
             );
         }
     }
 
-    // Well-known dirs: works when GUI PATH is incomplete after native/npm install.
+    // Remaining well-known dirs (legacy global npm, ~/.local/bin, …).
+    // User-prefix hits were already considered above.
     for (path, channel) in well_known_bin_paths(agent) {
-        if path.is_file() {
+        if is_under_agenthub_user_npm_prefix(&path) {
+            continue;
+        }
+        if path.is_file() && is_direct_spawnable(&path) {
             // PATH miss but disk hit — common after install without AgentHub restart.
             tracing::info!(
                 target: crate::logging::targets::DETECT,
@@ -68,7 +120,15 @@ pub(crate) fn detect_binary(
                 path = %path.display(),
                 "agent binary found outside process PATH (well-known dir); restart may refresh PATH"
             );
-            return finish_detect(agent, path, version_args, Some(channel), env_ready, true);
+            return finish_detect(
+                agent,
+                path,
+                version_args,
+                Some(channel),
+                env_ready,
+                true,
+                extra_env,
+            );
         }
     }
 
@@ -94,23 +154,31 @@ pub(crate) fn detect_binary(
 
 /// Surfaced in DetectResult.notes and searchable in doctor / GUI when binary is missing.
 pub(crate) const NOT_FOUND_FIREFIGHTING_NOTE: &str =
-    "binary not on PATH and not found in well-known install dirs; \
-     if you just installed, restart AgentHub or click re-detect after PATH refresh";
+    "未在 PATH 或常见安装目录中找到该命令。若刚完成安装，请完全退出并重启 AgentHub。";
 
 /// Expand a base command name with platform-typical suffixes.
+///
+/// On Windows, CreateProcess-spawnable shims come first. npm always also
+/// writes a Unix shebang `name` (no extension) that is **not** a valid Win32
+/// application; probing it marks the agent Installed with an empty version.
+///
+/// `.ps1` is deliberately not produced: CreateProcess cannot spawn PowerShell
+/// scripts directly (they require a `powershell -File` shim), and every
+/// consumer filters candidates through [`is_direct_spawnable`], which only
+/// allows cmd/bat/exe/com — so a `.ps1` entry could never be selected.
 pub(crate) fn expand_binary_names(base: &str) -> Vec<String> {
-    let mut out = vec![base.to_string()];
     if cfg!(windows)
         && !base.ends_with(".cmd")
         && !base.ends_with(".exe")
         && !base.ends_with(".ps1")
     {
-        // npm global shims are often `name.cmd`; native bins are `name.exe`.
-        out.push(format!("{base}.cmd"));
-        out.push(format!("{base}.exe"));
-        out.push(format!("{base}.ps1"));
+        return vec![
+            format!("{base}.cmd"),
+            format!("{base}.exe"),
+            base.to_string(),
+        ];
     }
-    out
+    vec![base.to_string()]
 }
 
 /// Allowlisted install locations (platform × agent). Channel is `npm` or `native`.
@@ -130,10 +198,11 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
         paths.push((dir.join(name), "native"));
     };
     let push_npm = |paths: &mut Vec<(PathBuf, &'static str)>, dir: PathBuf| {
+        // No `{name}.ps1` on Windows: CreateProcess cannot spawn PowerShell
+        // scripts directly, and is_direct_spawnable rejects them anyway.
         #[cfg(windows)]
         {
             paths.push((dir.join(format!("{name}.cmd")), "npm"));
-            paths.push((dir.join(format!("{name}.ps1")), "npm"));
             paths.push((dir.join(format!("{name}.exe")), "npm"));
         }
         paths.push((dir.join(name), "npm"));
@@ -226,8 +295,106 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
     paths
 }
 
+/// AgentHub-managed npm prefix roots (`<data>/npm` and `~/.agenthub/npm`).
+///
+/// These are **not** the OS/global npm prefix (AppData\Roaming\npm, /usr/local).
+pub(crate) fn agenthub_user_npm_prefix_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(data) = crate::utils::paths::resolve_data_dir(None) {
+        roots.push(data.join("npm"));
+    }
+    if let Ok(home) = crate::utils::paths::home_dir() {
+        let fallback = home.join(".agenthub").join("npm");
+        if !roots.iter().any(|p| p == &fallback) {
+            roots.push(fallback);
+        }
+    }
+    roots
+}
+
+fn npm_prefix_to_bin_dir(prefix: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        prefix
+    }
+    #[cfg(not(windows))]
+    {
+        prefix.join("bin")
+    }
+}
+
+/// Bin dirs under AgentHub user npm prefixes (Windows: prefix root; Unix: `prefix/bin`).
+pub(crate) fn agenthub_user_npm_bin_dirs() -> Vec<PathBuf> {
+    agenthub_user_npm_prefix_roots()
+        .into_iter()
+        .map(npm_prefix_to_bin_dir)
+        .collect()
+}
+
+/// True when `path` is inside an AgentHub user npm prefix (not legacy global npm).
+pub(crate) fn is_under_agenthub_user_npm_prefix(path: &Path) -> bool {
+    agenthub_user_npm_prefix_roots()
+        .iter()
+        .any(|root| path.starts_with(root))
+}
+
+/// First existing `names` entry under `dirs` (earlier dir wins). Does not call `which`.
+///
+/// Windows skips Unix shebang shims and `.ps1` (CreateProcess cannot run them).
+pub(crate) fn first_existing_named_bin(dirs: &[PathBuf], names: &[String]) -> Option<PathBuf> {
+    for dir in dirs {
+        for name in names {
+            let candidate = dir.join(name);
+            if candidate.is_file() && is_direct_spawnable(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+/// True when `Command::new(path)` can launch the file without a shell.
+///
+/// npm's extensionless `codex` on Windows is `#!/bin/sh` — CreateProcess
+/// fails with "not a valid Win32 application", which used to wipe the
+/// version string while still reporting Installed.
+fn is_direct_spawnable(path: &Path) -> bool {
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        true
+    }
+    #[cfg(windows)]
+    {
+        match path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("cmd" | "bat" | "exe" | "com") => true,
+            Some(_) => false,
+            None => !file_starts_with_shebang(path),
+        }
+    }
+}
+
+#[cfg(windows)]
+fn file_starts_with_shebang(path: &Path) -> bool {
+    use std::io::Read;
+    let mut buf = [0u8; 2];
+    std::fs::File::open(path)
+        .and_then(|mut f| f.read_exact(&mut buf))
+        .map(|_| buf == *b"#!")
+        .unwrap_or(false)
+}
+
 fn npm_global_bin_dirs(home: &Path) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
+    let mut dirs = agenthub_user_npm_bin_dirs();
+    let home_fallback = npm_prefix_to_bin_dir(home.join(".agenthub").join("npm"));
+    if !dirs.iter().any(|p| p == &home_fallback) {
+        dirs.push(home_fallback);
+    }
     #[cfg(windows)]
     {
         if let Ok(appdata) = std::env::var("APPDATA") {
@@ -297,6 +464,7 @@ fn infer_channel_from_path(path: &Path) -> Option<&'static str> {
             || s.ends_with(".cmd")
             || s.contains("node_modules")
             || s.contains("npm-global")
+            || s.contains(".agenthub") && s.contains("npm")
         {
             Some("npm")
         } else if s.contains(".local")
@@ -391,9 +559,10 @@ fn finish_detect(
     channel_hint: Option<&str>,
     env_ready: bool,
     via_well_known: bool,
+    extra_env: &[(String, String)],
 ) -> DetectResult {
     use crate::models::DetectStatus;
-    use crate::utils::process::{run_capture, stdout_first_line};
+    use crate::utils::process::{run_capture_with_env, stdout_first_line};
 
     let mut notes = Vec::new();
     if via_well_known {
@@ -404,7 +573,7 @@ fn finish_detect(
         ));
     }
 
-    let version = match run_capture(&path, version_args) {
+    let version = match run_capture_with_env(&path, version_args, extra_env) {
         Ok(o) => {
             if o.status.success() {
                 stdout_first_line(&o)

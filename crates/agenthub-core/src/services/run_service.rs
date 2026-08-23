@@ -43,15 +43,20 @@ fn emit_stream_outputs(
     }
 }
 
-/// Structured mode: **always** replace runner-captured stdout with decoded
-/// assistant text (may be empty). Never leave raw NDJSON as final content —
-/// even when truncated or when only tool/status events arrived.
+/// Structured mode: replace captured stdout with decoded assistant text only
+/// when the parser consumed every byte (no truncation, reader error, live
+/// drop, UTF-8 error, or leftover/overflow). Incomplete signals stay on the
+/// result; native session id is still copied.
 fn apply_structured_stdout(result: &mut AgentRunResult, session: &StreamSession) {
-    if session.is_structured() {
+    if session.is_structured()
+        && session.consumed_complete()
+        && !result.truncated
+        && !matches!(result.status, RunStatus::Timeout | RunStatus::Cancelled)
+    {
         result.stdout = session.assistant_text().to_string();
-        // Captured bytes were NDJSON, not user-facing text; clear truncated flag
-        // when we successfully rewrote content from the decoder.
-        result.truncated = false;
+    }
+    if result.native_session_id.is_none() {
+        result.native_session_id = session.native_session_id().map(str::to_string);
     }
 }
 
@@ -342,6 +347,7 @@ impl RunService {
                                 command: String::new(),
                                 error: Some("worker thread panicked".into()),
                                 truncated: false,
+                                native_session_id: None,
                             });
                         }
                     }
@@ -363,6 +369,7 @@ impl RunService {
                     command: String::new(),
                     error: Some("internal: missing result slot".into()),
                     truncated: false,
+                    native_session_id: None,
                 })
             })
             .collect()
@@ -532,6 +539,7 @@ impl RunService {
                                     command: String::new(),
                                     error: Some("worker thread panicked".into()),
                                     truncated: false,
+                                    native_session_id: None,
                                 },
                             ));
                         }
@@ -557,6 +565,7 @@ impl RunService {
                         command: String::new(),
                         error: Some("worker thread panicked".into()),
                         truncated: false,
+                        native_session_id: None,
                     });
                 }
             }
@@ -576,6 +585,7 @@ impl RunService {
                     command: String::new(),
                     error: Some("internal: missing result slot".into()),
                     truncated: false,
+                    native_session_id: None,
                 })
             })
             .collect()
@@ -593,6 +603,7 @@ fn cancelled_result(agent: AgentId) -> AgentRunResult {
         command: String::new(),
         error: Some("cancelled".into()),
         truncated: false,
+        native_session_id: None,
     }
 }
 

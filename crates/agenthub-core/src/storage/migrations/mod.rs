@@ -1,6 +1,12 @@
-use rusqlite::Connection;
+use std::thread;
+use std::time::Duration;
 
-use crate::error::Result;
+use rusqlite::{Connection, Error as SqliteError, Transaction, TransactionBehavior};
+
+use crate::error::{AppError, Result};
+
+pub(super) const MIGRATION_RETRY_ATTEMPTS: usize = 16;
+pub(super) const MIGRATION_RETRY_DELAY: Duration = Duration::from_millis(50);
 
 const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_init", include_str!("0001_init.sql")),
@@ -44,10 +50,36 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00014_adapter_profile_mode",
         include_str!("00014_adapter_profile_mode.sql"),
     ),
+    (
+        "00015_chat_native_session",
+        include_str!("00015_chat_native_session.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {
-    conn.execute_batch(
+    for attempt in 0..MIGRATION_RETRY_ATTEMPTS {
+        match run_once(conn, MIGRATIONS) {
+            Ok(()) => return Ok(()),
+            Err(error) if is_busy(&error) && attempt + 1 < MIGRATION_RETRY_ATTEMPTS => {
+                thread::sleep(MIGRATION_RETRY_DELAY);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    unreachable!("migration retry loop always returns")
+}
+
+/// Run the pending migration list while holding one SQLite write transaction.
+///
+/// `BEGIN EXCLUSIVE` makes the schema check and every DDL/DML/version marker
+/// update observe one serialized writer, including against concurrent readers
+/// still converting the file to WAL. If any migration fails, dropping the
+/// transaction rolls back the complete batch, including `schema_migrations`
+/// creation and all earlier migration steps in this invocation.
+fn run_once(conn: &Connection, migrations: &[(&str, &str)]) -> Result<()> {
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Exclusive)?;
+    tx.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS schema_migrations (
             version TEXT PRIMARY KEY,
@@ -56,8 +88,8 @@ pub fn run(conn: &Connection) -> Result<()> {
         "#,
     )?;
 
-    for (version, sql) in MIGRATIONS {
-        let already: bool = conn.query_row(
+    for (version, sql) in migrations {
+        let already: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = ?1)",
             [version],
             |row| row.get(0),
@@ -65,23 +97,82 @@ pub fn run(conn: &Connection) -> Result<()> {
         if already {
             continue;
         }
-        apply_migration(conn, version, sql)?;
+        apply_migration_in_transaction(&tx, version, sql)?;
     }
+    tx.commit()?;
     Ok(())
 }
 
-/// Applies a migration and records its version as one indivisible database
-/// change.  If either the SQL script or marker insert fails, dropping the
-/// transaction rolls the whole migration back.
+/// Applies one migration and records its version as one indivisible database
+/// change. This helper remains useful for focused migration tests; production
+/// startup uses `run_once`, which wraps the complete pending batch in one
+/// `BEGIN IMMEDIATE` transaction.
 fn apply_migration(conn: &Connection, version: &str, sql: &str) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
-    tx.execute_batch(sql)?;
-    tx.execute(
+    apply_migration_in_transaction(&tx, version, sql)?;
+    tx.commit()?;
+    Ok(())
+}
+
+fn apply_migration_in_transaction(conn: &Connection, version: &str, sql: &str) -> Result<()> {
+    conn.execute_batch(sql)?;
+    conn.execute(
         "INSERT INTO schema_migrations (version) VALUES (?1)",
         [version],
     )?;
-    tx.commit()?;
     Ok(())
+}
+
+pub(super) fn is_busy(error: &AppError) -> bool {
+    match error {
+        AppError::Db(err) => sqlite_error_is_busy(err),
+        AppError::Io(err) => io_error_is_lock(err),
+        _ => false,
+    }
+}
+
+fn sqlite_error_is_busy(error: &SqliteError) -> bool {
+    match error {
+        SqliteError::SqliteFailure(sqlite_error, _) => matches!(
+            sqlite_error.code,
+            rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+        ),
+        _ => false,
+    }
+}
+
+fn io_error_is_lock(error: &std::io::Error) -> bool {
+    if matches!(
+        error.kind(),
+        std::io::ErrorKind::WouldBlock
+            | std::io::ErrorKind::TimedOut
+            | std::io::ErrorKind::Interrupted
+    ) {
+        return true;
+    }
+    // Raw errno values are platform-specific: 32 is EPIPE on Unix but
+    // ERROR_SHARING_VIOLATION on Windows, and 11/16 mean entirely different
+    // things per platform. Only compare codes guarded by the target OS.
+    #[cfg(unix)]
+    {
+        const EINTR: i32 = 4;
+        const EAGAIN: i32 = 11;
+        const EBUSY: i32 = 16;
+        matches!(error.raw_os_error(), Some(EINTR | EAGAIN | EBUSY))
+    }
+    #[cfg(windows)]
+    {
+        const ERROR_SHARING_VIOLATION: i32 = 32;
+        const ERROR_LOCK_VIOLATION: i32 = 33;
+        matches!(
+            error.raw_os_error(),
+            Some(ERROR_SHARING_VIOLATION | ERROR_LOCK_VIOLATION)
+        )
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        false
+    }
 }
 
 #[cfg(test)]

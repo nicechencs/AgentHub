@@ -22,7 +22,7 @@ impl InstallContribution for PiContrib {
     }
 
     fn npm_min_runtime_notes(&self) -> Option<&'static str> {
-        Some("Node.js >= 18; install uses --ignore-scripts")
+        Some("Node.js >= 22 (engines.node >= 22.19.0); install uses --ignore-scripts")
     }
 
     fn native_uninstall_bin_paths(&self) -> Vec<PathBuf> {

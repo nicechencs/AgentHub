@@ -3,6 +3,7 @@
  * Only Tauri ports (and App.tsx) may import this module.
  */
 import { isTauriApp } from '@/lib/platform';
+import { unavailableError } from '@/lib/backend/contracts/errors';
 
 export const TRAY_NAVIGATE_EVENT = 'tray-navigate';
 
@@ -24,7 +25,10 @@ export async function onTrayNavigate(
   handler: (path: string) => void,
 ): Promise<() => void> {
   if (!isTauriApp()) {
-    return () => {};
+    throw unavailableError(
+      '托盘导航订阅',
+      '当前不是 Tauri 桌面运行时；请使用桌面应用，或开发时注入 mock backend',
+    );
   }
   try {
     const { listen } = await import('@tauri-apps/api/event');
@@ -35,7 +39,10 @@ export async function onTrayNavigate(
       }
     });
     return unlisten;
-  } catch {
-    return () => {};
+  } catch (error) {
+    throw unavailableError(
+      '托盘导航订阅',
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }

@@ -194,7 +194,7 @@ impl AgentAdapter for KimiAdapter {
         match cap {
             ConfigWrite | AccountSwitch | ApiKeyAccount | LiveBackup | StructuredStream
             | ProjectHistory | ProjectDelete | ProviderPresets => CapabilityState::full(),
-            Skills => CapabilityState::unsupported("Kimi CLI 无技能目录模型"),
+            Skills => CapabilityState::unsupported("Kimi 不支持技能目录"),
             DangerousMode => CapabilityState::partial("-p 与 --yolo 互斥，headless 下该开关不生效"),
             Usage => CapabilityState::full(),
             Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),

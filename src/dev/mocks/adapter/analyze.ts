@@ -8,11 +8,24 @@ import { classify } from './classify';
 import {
   AGENT_NO_WRITER_REASON,
   CLAUDE_SUBSCRIPTION_TO_CODEX_REASON,
+  CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID,
   CODEX_CLAUDE_RULE_ID,
   CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON,
   CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
+  CODEX_SUBSCRIPTION_TO_CODEX_REASON,
+  CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
+  CODEX_DSH_RULE_ID,
+  CODEX_GROK_RULE_ID,
+  CODEX_KIMI_RULE_ID,
+  CODEX_SUBSCRIPTION_TO_DSH_REASON,
+  CODEX_SUBSCRIPTION_TO_GROK_REASON,
+  CODEX_SUBSCRIPTION_TO_KIMI_REASON,
   GROK_CLAUDE_RULE_ID,
+  GROK_CODEX_RULE_ID,
   GROK_SUBSCRIPTION_TO_CLAUDE_REASON,
+  GROK_SUBSCRIPTION_TO_CODEX_REASON,
+  GROK_SUBSCRIPTION_TO_DSH_REASON,
+  GROK_SUBSCRIPTION_TO_KIMI_REASON,
   KIMI_NON_MEMBERSHIP_REASON,
   action,
   agentBindCapability,
@@ -54,12 +67,12 @@ export function analyze(
     return {
       route: 'local_bridge',
       support: 'experimental',
-      reason: 'Kimi Code 会员到 Codex 需要本地协议桥接。',
-      actions: [action('requires_local_bridge', 'Codex', 'Codex Responses 与 Kimi Chat Completions 需要本地双向协议转换。')],
+      reason: 'Kimi Code 会员接到 Codex 需要本机转发。',
+      actions: [action('requires_local_bridge', 'Codex', 'Codex 和 Kimi 说的话对不上，需要本机转发。')],
       limitations: [
-        '将在本机 loopback 启动协议桥接，并切换 Codex 到该本地端点。',
+        '将在本机地址启动本机转发，并切换 Codex 到该本地端点。',
         'AgentHub 需保持在托盘运行；退出前会尝试排空监听。',
-        '桥接为实验性协议覆盖；长流与工具调用可能受实现限制。',
+        '本机转发仍是实验性覆盖；长流与工具调用可能受实现限制。',
         '固定端口被占用时会尝试重新分配端口并写回配置。',
       ],
       evidence: [evidence('Kimi Code: Codex local routing', 'https://www.kimi.com/code/docs/third-party-tools/codex.html')],
@@ -71,12 +84,12 @@ export function analyze(
     return {
       route: 'local_bridge',
       support: 'experimental',
-      reason: '显式 Anthropic API Key 到 Codex 需要本地协议桥接。',
-      actions: [action('requires_local_bridge', 'Codex', 'Codex Responses 与 Anthropic Messages 需要本地双向协议转换。')],
+      reason: '这份 Anthropic API Key 接到 Codex 需要本机转发。',
+      actions: [action('requires_local_bridge', 'Codex', 'Codex 和 Anthropic 说的话对不上，需要本机转发。')],
       limitations: [
-        '将在本机 loopback 启动协议桥接，并切换 Codex 到该本地端点。',
+        '将在本机地址启动本机转发，并切换 Codex 到该本地端点。',
         'AgentHub 需保持在托盘运行；退出前会尝试排空监听。',
-        '桥接为实验性协议覆盖：下游 Responses，上游 Anthropic Messages。',
+        '本机转发仍是实验性覆盖：下游 Responses，上游 Anthropic Messages。',
         '固定端口被占用时会尝试重新分配端口并写回配置。',
       ],
       evidence: [evidence('Anthropic Messages API', 'https://docs.anthropic.com/en/api/messages')],
@@ -84,9 +97,75 @@ export function analyze(
       gateKind: 'none',
     };
   }
+  if (source === 'openai_api_key' && request.targetAgentId === 'codex') {
+    return {
+      route: 'local_bridge',
+      support: 'experimental',
+      reason: '这份 OpenAI API Key 接到 Codex 需要本机转发。',
+      actions: [action('requires_local_bridge', 'Codex', 'Codex 和 OpenAI 说的话对不上，需要本机转发。')],
+      limitations: [
+        '将在本机地址启动本机转发，并切换 Codex 到该本地端点。',
+        'AgentHub 需保持在托盘运行；退出前会尝试排空监听。',
+        '本机转发仍是实验性覆盖：下游 Responses，上游 OpenAI Chat Completions。',
+        '固定端口被占用时会尝试重新分配端口并写回配置。',
+      ],
+      evidence: [evidence('OpenAI Chat Completions API', 'https://platform.openai.com/docs/api-reference/chat')],
+      ruleId: 'openai-api-to-codex-v1',
+      gateKind: 'none',
+    };
+  }
 
   if (source === 'claude_subscription' && request.targetAgentId === 'codex') {
-    return unsupported(CLAUDE_SUBSCRIPTION_TO_CODEX_REASON, compatibilityEvidence);
+    return {
+      route: 'local_bridge',
+      support: 'experimental',
+      reason: CLAUDE_SUBSCRIPTION_TO_CODEX_REASON,
+      actions: [],
+      limitations: [
+        '会把 Codex 指到本机路由；上游 Claude 订阅 token 不会写入 Codex。',
+        '实验性本机转发：下游 Responses，上游 Anthropic Messages OAuth。',
+        '规则还没做完，现在接不上；thinking 无签名时降级关闭。',
+        'Claude access token 过期后需重新同步登录；Hub 本轮不自动 refresh。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId: CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID,
+      gateKind: 'preview_only',
+    };
+  }
+  if (source === 'grok_xai_subscription' && request.targetAgentId === 'kimi') {
+    return unsupported(GROK_SUBSCRIPTION_TO_KIMI_REASON, compatibilityEvidence);
+  }
+  if (source === 'grok_xai_subscription' && request.targetAgentId === 'dsh') {
+    return unsupported(GROK_SUBSCRIPTION_TO_DSH_REASON, compatibilityEvidence);
+  }
+  if (source === 'grok_xai_subscription' && request.targetAgentId === 'codex') {
+    return {
+      route: 'local_bridge',
+      support: 'experimental',
+      reason: GROK_SUBSCRIPTION_TO_CODEX_REASON,
+      actions: [
+        action(
+          'requires_local_bridge',
+          'Codex',
+          '会把 Codex 指到本机路由；上游 Grok 登录不会写入 Codex。',
+        ),
+        action(
+          'set_config',
+          'Codex',
+          '写入 Codex 的本机路由端点。',
+          'AgentHub Grok 本机路由',
+        ),
+      ],
+      limitations: [
+        '会把 Codex 指到本机路由；上游 Grok 登录不会写入 Codex。',
+        'AgentHub 需保持在托盘运行。',
+        'Grok 登录过期后需重新同步；Hub 本轮不自动刷新。',
+        '固定端口被占用时会尝试重新分配端口并写回配置。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId: GROK_CODEX_RULE_ID,
+      gateKind: 'none',
+    };
   }
   if (source === 'grok_xai_subscription' && request.targetAgentId === 'claude') {
     return {
@@ -97,23 +176,83 @@ export function analyze(
         action(
           'requires_local_bridge',
           'Claude Code',
-          'Claude Messages 与 xAI Chat Completions 需要本地双向协议转换。',
+          'Claude 和 Grok 说的话对不上，需要本机转发。',
         ),
         action(
           'set_env',
           'Claude Code',
-          '写入 Claude Code 的 loopback Base URL 与本机 bearer；不会写入上游 OAuth token。',
+          '写入 Claude Code 的本机地址 Base URL 与本机 bearer；不会写入上游 OAuth token。',
           'ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN',
         ),
       ],
       limitations: [
-        '会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 xAI OAuth token 不进 Claude。',
-        '实验性协议桥接：Claude Messages → xAI Chat Completions；AgentHub 需保持在托盘运行。',
+        '会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机地址；上游 xAI OAuth token 不进 Claude。',
+        '实验性本机转发：Claude Messages → xAI Responses (cli-chat-proxy)；AgentHub 需保持在托盘运行。',
         'Grok access token 过期后需重新同步 Grok 登录；Hub 本轮不自动 refresh。',
         '固定端口被占用时会尝试重新分配端口并写回配置。',
       ],
       evidence: compatibilityEvidence,
       ruleId: GROK_CLAUDE_RULE_ID,
+      gateKind: 'none',
+    };
+  }
+  if (
+    (source === 'codex_subscription' || source === 'codex_subscription_oauth_other')
+    && request.targetAgentId === 'codex'
+  ) {
+    return {
+      route: 'native_endpoint',
+      support: 'stable',
+      reason: CODEX_SUBSCRIPTION_TO_CODEX_REASON,
+      actions: [
+        action('set_config', 'Codex', '写入 Codex 官方登录，不改本机路由。', '官方登录'),
+      ],
+      limitations: [
+        '会把这份官方登录写进 Codex；不会改到本机路由。',
+        '应用后这份登录成为 Codex 当前登录。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId: CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
+      gateKind: 'none',
+    };
+  }
+  if (
+    (source === 'codex_subscription' || source === 'codex_subscription_oauth_other')
+    && (request.targetAgentId === 'grok' || request.targetAgentId === 'kimi' || request.targetAgentId === 'dsh')
+  ) {
+    const target = request.targetAgentId;
+    const reason = target === 'grok'
+      ? CODEX_SUBSCRIPTION_TO_GROK_REASON
+      : target === 'kimi'
+        ? CODEX_SUBSCRIPTION_TO_KIMI_REASON
+        : CODEX_SUBSCRIPTION_TO_DSH_REASON;
+    const ruleId = target === 'grok'
+      ? CODEX_GROK_RULE_ID
+      : target === 'kimi'
+        ? CODEX_KIMI_RULE_ID
+        : CODEX_DSH_RULE_ID;
+    const label = target === 'dsh' ? 'DeepSeek Harness' : target === 'kimi' ? 'Kimi' : 'Grok';
+    const loopback = target === 'dsh' ? 'http://127.0.0.1:<本机端口>' : 'http://127.0.0.1:<本机端口>/v1';
+    return {
+      route: 'local_bridge',
+      support: 'experimental',
+      reason,
+      actions: [
+        action(
+          'requires_local_bridge',
+          label,
+          `会把 ${label} 指到本机路由；上游 Codex 官方登录不会写入对方。`,
+        ),
+        action('set_config', label, `写入 ${label} 的本机路由端点。`, loopback),
+      ],
+      limitations: [
+        '会把目标 Agent 指到本机路由；上游 Codex 官方登录不会写入对方。',
+        'AgentHub 需保持在托盘运行。',
+        'Codex 登录过期后需重新同步；Hub 本轮不自动刷新。',
+        '固定端口被占用时会尝试重新分配端口并写回配置。',
+      ],
+      evidence: compatibilityEvidence,
+      ruleId,
       gateKind: 'none',
     };
   }
@@ -132,18 +271,18 @@ export function analyze(
           action(
             'requires_local_bridge',
             'Claude Code',
-            'Claude Messages 与 Codex Responses 需要本地双向协议转换。',
+            'Claude 和 Codex 说的话对不上，需要本机转发。',
           ),
           action(
             'set_env',
             'Claude Code',
-            '写入 Claude Code 的 loopback Base URL 与本机 bearer；不会写入上游 OAuth token。',
+            '写入 Claude Code 的本机地址 Base URL 与本机 bearer；不会写入上游 OAuth token。',
             'ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN',
           ),
         ],
         limitations: [
-          '会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 token 不进 Claude。',
-          '实验性协议桥接：Claude Messages → Codex Responses；AgentHub 需保持在托盘运行。',
+          '会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机地址；上游 token 不进 Claude。',
+          '实验性本机转发：Claude Messages → Codex Responses；AgentHub 需保持在托盘运行。',
           'Codex access token 过期后需重新同步 Codex 登录；Hub 本轮不自动 refresh。',
           '固定端口被占用时会尝试重新分配端口并写回配置。',
         ],

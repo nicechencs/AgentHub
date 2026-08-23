@@ -31,6 +31,8 @@ import {
   describePlanPreview,
   eligibilityOf,
   excludeOwnAgentTargets,
+  isOfficialCodexOauthAccount,
+  keepOwnAgentTarget,
   isBoundPlanStale,
   isConnectFlowEntryStale,
   isGeneratedAdapterSource,
@@ -48,10 +50,15 @@ import {
   resolvePreset,
   settleConfirm,
   shouldRevertPreviewToSelect,
+  shouldShowConnectGuideActions,
   shouldShowPreviewImportHint,
   shouldShowSelectSkeleton,
   sourceAgentIdOf,
   tryAcquireConfirmLock,
+  agentsForRouteEndpoint,
+  eligibilityForRouteEndpoint,
+  representativeAgentForRouteEndpoint,
+  visibleTargetsForPurpose,
   type ConnectFlowState,
 } from './connect-flow-state';
 
@@ -191,7 +198,7 @@ describe('进入模式 × 预选参数矩阵', () => {
     expect(state.selectedTargetAgentId).toBeNull();
     expect(resolvePreset(entry, [], [])).toEqual({
       status: 'invalid',
-      message: '目标 Agent 参数非法',
+      message: '目标工具参数非法',
     });
   });
 
@@ -240,6 +247,26 @@ describe('for-source 排除自身 Agent', () => {
     expect(excludeOwnAgentTargets(['claude', 'kimi', 'codex'], 'kimi')).toEqual(['claude', 'codex']);
   });
 
+  it('keeps Codex for official Codex oauth self-bind', () => {
+    expect(isOfficialCodexOauthAccount({ agentId: 'codex', kind: 'oauth' })).toBe(true);
+    expect(isOfficialCodexOauthAccount({ agentId: 'codex', kind: 'apikey' })).toBe(false);
+    expect(excludeOwnAgentTargets(['claude', 'kimi', 'codex'], 'codex', true))
+      .toEqual(['claude', 'kimi', 'codex']);
+    expect(excludeOwnAgentTargets(['claude', 'kimi', 'codex'], 'codex'))
+      .toEqual(['claude', 'kimi']);
+  });
+
+  it('select_target accepts own Codex when allowOwnAgent', () => {
+    const state = createConnectFlowState(forSource);
+    const allowed = reduceConnectFlow(state, {
+      type: 'select_target',
+      agentId: 'kimi',
+      sourceAgentId: 'kimi',
+      allowOwnAgent: true,
+    });
+    expect(allowed.selectedTargetAgentId).toBe('kimi');
+  });
+
   it('select_target 忽略来源自身 Agent', () => {
     const state = createConnectFlowState(forSource);
     const blocked = reduceConnectFlow(state, {
@@ -257,6 +284,62 @@ describe('for-source 排除自身 Agent', () => {
     });
     expect(allowed.selectedTargetAgentId).toBe('claude');
     expect(allowed.selectionGeneration).toBe(1);
+  });
+
+  it('purpose=route keeps the source agent instead of dropping it', () => {
+    const grokAccount = account({ id: 'acc-grok', agentId: 'grok', kind: 'oauth' });
+    const entry: ConnectFlowEntry = {
+      mode: 'for-source',
+      source: { kind: 'account', id: 'acc-grok' },
+      purpose: 'route',
+    };
+    expect(keepOwnAgentTarget(entry, [grokAccount])).toBe(true);
+    expect(excludeOwnAgentTargets(['claude', 'grok', 'codex'], 'grok', keepOwnAgentTarget(entry, [grokAccount])))
+      .toEqual(['claude', 'grok', 'codex']);
+
+    const selected = reduceConnectFlow(createConnectFlowState(entry), {
+      type: 'select_target',
+      agentId: 'grok',
+      sourceAgentId: 'grok',
+      allowOwnAgent: keepOwnAgentTarget(entry, [grokAccount]),
+    });
+    expect(selected.selectedTargetAgentId).toBe('grok');
+  });
+
+  it('purpose=share still drops own agent except official Codex oauth', () => {
+    const grokAccount = account({ id: 'acc-grok', agentId: 'grok', kind: 'oauth' });
+    const share: ConnectFlowEntry = {
+      mode: 'for-source',
+      source: { kind: 'account', id: 'acc-grok' },
+      purpose: 'share',
+    };
+    expect(keepOwnAgentTarget(share, [grokAccount])).toBe(false);
+    const blocked = reduceConnectFlow(createConnectFlowState(share), {
+      type: 'select_target',
+      agentId: 'grok',
+      sourceAgentId: 'grok',
+      allowOwnAgent: keepOwnAgentTarget(share, [grokAccount]),
+    });
+    expect(blocked.selectedTargetAgentId).toBeNull();
+
+    const codexOauth = account({ id: 'acc-codex', agentId: 'codex', kind: 'oauth' });
+    const shareCodex: ConnectFlowEntry = {
+      mode: 'for-source',
+      source: { kind: 'account', id: 'acc-codex' },
+      purpose: 'share',
+    };
+    expect(keepOwnAgentTarget(shareCodex, [codexOauth])).toBe(true);
+    const codexKey = account({ id: 'acc-codex-key', agentId: 'codex', kind: 'apikey' });
+    expect(keepOwnAgentTarget({
+      mode: 'for-source',
+      source: { kind: 'account', id: 'acc-codex-key' },
+      purpose: 'share',
+    }, [codexKey])).toBe(false);
+    expect(keepOwnAgentTarget({
+      mode: 'for-source',
+      source: { kind: 'provider', id: 'prov-codex' },
+      purpose: 'share',
+    }, [codexOauth])).toBe(false);
   });
 });
 
@@ -556,7 +639,7 @@ describe('空态', () => {
     })).toEqual({ kind: 'wallet_empty' });
   });
 
-  it('有凭据但全部不可行', () => {
+  it('有当前登录时不判全部不可行', () => {
     const options: SourceOption[] = [
       option({
         ref: { kind: 'account', id: 'acc-claude' },
@@ -580,6 +663,33 @@ describe('空态', () => {
       poolState: 'ready',
       poolErrors: {},
       accounts: [claudeAccount, claudeSpare],
+      providers: [kimiProvider],
+      options,
+      eligibilities,
+      entry: forAgent,
+    })).toEqual({ kind: 'none' });
+  });
+
+  it('无当前登录且全部不可行', () => {
+    const options: SourceOption[] = [
+      option({
+        ref: { kind: 'account', id: 'acc-blocked' },
+        state: { kind: 'blocked_native', reason: '不可切换' },
+      }),
+      option({
+        ref: kimiSource,
+        state: { kind: 'plannable' },
+        agentId: 'kimi',
+        group: 'cross',
+      }),
+    ];
+    const eligibilities = new Map<string, PlanEligibility>([
+      [planFanoutKey({ source: kimiSource, targetAgentId: 'claude' }), readyEligibility(false)],
+    ]);
+    expect(resolveEmptyKind({
+      poolState: 'ready',
+      poolErrors: {},
+      accounts: [claudeSpare],
       providers: [kimiProvider],
       options,
       eligibilities,
@@ -665,7 +775,7 @@ describe('plan 预览人话化', () => {
         reason: 'Grok 登录会经本机路由接到 Claude Code。',
         limitations: [
           '会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 xAI OAuth token 不进 Claude。',
-          '实验性协议桥接：Claude Messages → xAI Chat Completions；AgentHub 需保持在托盘运行。',
+          '实验性协议桥接：Claude Messages → xAI Responses (cli-chat-proxy)；AgentHub 需保持在托盘运行。',
         ],
       }),
       reusePath: 'local_bridge',
@@ -677,12 +787,51 @@ describe('plan 预览人话化', () => {
     }));
     expect(view.title).toBe('本机路由');
     expect(view.experimental).toBe(true);
-    expect(view.reason).toBe('用这份 Grok 登录接到 Claude Code。');
+    expect(view.reason).toBe('用这份 Grok 登录接到 /v1/messages。');
     expect(view.notes).toEqual(['关掉会进托盘，路由继续跑。']);
     const text = previewText(view);
     for (const banned of forbiddenPreviewCopy) {
       expect(text).not.toContain(banned);
     }
+  });
+
+  it('Codex 官方登录接到 Grok / Kimi / DSH 预览标题是本机路由', () => {
+    for (const [agentId, path] of [
+      ['grok', '/v1/responses'],
+      ['kimi', '/v1/chat/completions'],
+      ['dsh', '/v1/chat/completions'],
+    ] as const) {
+      const view = describePlanPreview(plan({
+        targetAgentId: agentId,
+        analysis: analysis({
+          route: 'local_bridge',
+          support: 'experimental',
+          reason: `Codex 官方登录会经本机路由接到 ${agentId}。`,
+        }),
+        reusePath: 'local_bridge',
+        serviceImpact: 'requires_local_bridge',
+      }));
+      expect(view.title).toBe('本机路由');
+      expect(view.reason).toBe(`用这份 Codex / ChatGPT 登录接到 ${path}。`);
+      expect(view.reason).not.toContain('实验');
+      expect(view.reason).not.toContain('未验证');
+    }
+  });
+
+  it('Grok→Codex local_bridge 预览接到 Responses 端点而不是 Agent 名', () => {
+    const view = describePlanPreview(plan({
+      targetAgentId: 'codex',
+      analysis: analysis({
+        route: 'local_bridge',
+        support: 'experimental',
+        reason: 'Grok 登录会经本机路由接到 Codex。',
+      }),
+      reusePath: 'local_bridge',
+      serviceImpact: 'requires_local_bridge',
+    }));
+    expect(view.title).toBe('本机路由');
+    expect(view.reason).toBe('用这份 Grok 登录接到 /v1/responses。');
+    expect(view.reason).not.toMatch(/接到 codex/);
   });
 
   it('renders native subscription reuse as a single human note', () => {
@@ -720,6 +869,68 @@ describe('eligibility 查找含 kind 防碰撞', () => {
 });
 
 describe('for-source 预览与 apply', () => {
+  it('下一步 canEnterPreview 与 enter_preview 同门禁（含 Codex 本机路由目标）', () => {
+    const codexSource: ConnectFlowEntry = {
+      mode: 'for-source',
+      source: { kind: 'account', id: 'codex-live-1' },
+    };
+    const targets = ['claude', 'grok', 'kimi', 'dsh'] as const;
+    for (const agentId of targets) {
+      let state = createConnectFlowState(codexSource);
+      state = reduceConnectFlow(state, {
+        type: 'select_target',
+        agentId,
+        sourceAgentId: 'codex',
+        allowOwnAgent: true,
+      });
+      const localPlan = plan({
+        canApply: true,
+        targetAgentId: agentId,
+        analysis: analysis({
+          route: 'local_bridge',
+          support: 'experimental',
+          reason: 'Codex 官方登录会经本机路由接到目标。',
+        }),
+        reusePath: 'local_bridge',
+      });
+      const ready: PlanEligibility = {
+        kind: 'ready',
+        plan: localPlan,
+        canApply: true,
+        routeSummary: '本机路由',
+      };
+      const displayTruePlanFalse: PlanEligibility = {
+        kind: 'ready',
+        plan: { ...localPlan, canApply: false },
+        canApply: true,
+        routeSummary: '本机路由',
+      };
+      const cases: Array<{ eligibility: PlanEligibility | undefined; wantPreview: boolean }> = [
+        { eligibility: ready, wantPreview: true },
+        { eligibility: displayTruePlanFalse, wantPreview: false },
+        { eligibility: { kind: 'loading' }, wantPreview: false },
+        { eligibility: { kind: 'error', message: 'fail' }, wantPreview: false },
+        { eligibility: undefined, wantPreview: false },
+      ];
+      for (const item of cases) {
+        expect(canEnterPreview(state, null, item.eligibility)).toBe(item.wantPreview);
+        expect(isTargetSelectable(item.eligibility)).toBe(item.wantPreview);
+        const next = reduceConnectFlow(state, {
+          type: 'enter_preview',
+          eligibility: item.eligibility,
+        });
+        expect(next.step).toBe(item.wantPreview ? 'preview' : 'select');
+        if (item.wantPreview) {
+          expect(next.previewKind).toBe('apply');
+          expect(next.boundPlan?.targetAgentId).toBe(agentId);
+          expect(next.boundPlan?.plan.canApply).toBe(true);
+        } else {
+          expect(next).toBe(state);
+        }
+      }
+    }
+  });
+
   it('选中可行目标后绑定 plan 并 apply', async () => {
     const eligibility = readyEligibility(true, { targetAgentId: 'claude' });
     let state = createConnectFlowState(forSource);
@@ -869,7 +1080,17 @@ describe('选中项失效退回 select', () => {
 describe('首帧 entry 不同步', () => {
   it('state.entry 与当前 entry 的 key 不同则视为过期', () => {
     expect(connectFlowEntryKey(forAgent)).toBe('for-agent:claude');
-    expect(connectFlowEntryKey(forSource)).toBe('for-source:provider:prov-kimi');
+    expect(connectFlowEntryKey(forSource)).toBe('for-source:provider:prov-kimi:all');
+    expect(connectFlowEntryKey({ ...forSource, purpose: 'share' })).toBe(
+      'for-source:provider:prov-kimi:share',
+    );
+    expect(connectFlowEntryKey({ ...forSource, purpose: 'route' })).toBe(
+      'for-source:provider:prov-kimi:route',
+    );
+    expect(shouldShowConnectGuideActions(forAgent)).toBe(true);
+    expect(shouldShowConnectGuideActions(forSource)).toBe(true);
+    expect(shouldShowConnectGuideActions({ ...forSource, purpose: 'share' })).toBe(true);
+    expect(shouldShowConnectGuideActions({ ...forSource, purpose: 'route' })).toBe(false);
     expect(isConnectFlowEntryStale(forAgent, { mode: 'for-agent', targetAgentId: 'kimi' })).toBe(true);
     expect(isConnectFlowEntryStale(forAgent, forAgent)).toBe(false);
     expect(isConnectFlowEntryStale(forAgent, null)).toBe(true);
@@ -1040,5 +1261,105 @@ describe('preview 同步失效与确认占锁', () => {
     releaseConfirmLock(lock);
     expect(lock.current).toBe(false);
     expect(tryAcquireConfirmLock(lock)).toBe(true);
+  });
+});
+
+describe('purpose-gated preview', () => {
+  it('for-source share cannot preview a local_bridge plan', () => {
+    const entry: ConnectFlowEntry = {
+      mode: 'for-source',
+      source: kimiSource,
+      purpose: 'share',
+    };
+    let state = createConnectFlowState(entry);
+    state = reduceConnectFlow(state, {
+      type: 'select_target',
+      agentId: 'codex',
+      sourceAgentId: 'kimi',
+    });
+    const elig = readyEligibility(true, {
+      analysis: analysis({ route: 'local_bridge' }),
+    });
+    expect(canEnterPreview(state, null, elig)).toBe(false);
+  });
+
+  it('for-source route can preview a local_bridge plan', () => {
+    const entry: ConnectFlowEntry = {
+      mode: 'for-source',
+      source: kimiSource,
+      purpose: 'route',
+    };
+    let state = createConnectFlowState(entry);
+    state = reduceConnectFlow(state, {
+      type: 'select_target',
+      agentId: 'codex',
+      sourceAgentId: 'kimi',
+    });
+    const elig = readyEligibility(true, {
+      analysis: analysis({ route: 'local_bridge' }),
+    });
+    expect(canEnterPreview(state, null, elig)).toBe(true);
+  });
+});
+
+describe('visibleTargetsForPurpose', () => {
+  it('keeps loading rows and drops ready plans for the other purpose', () => {
+    const map = new Map<string, PlanEligibility>([
+      [planFanoutKey({ source: kimiSource, targetAgentId: 'claude' }), readyEligibility(true, {
+        analysis: analysis({ route: 'config_sync' }),
+      })],
+      [planFanoutKey({ source: kimiSource, targetAgentId: 'codex' }), readyEligibility(true, {
+        analysis: analysis({ route: 'local_bridge' }),
+      })],
+      [planFanoutKey({ source: kimiSource, targetAgentId: 'grok' }), { kind: 'loading' }],
+    ]);
+    expect(visibleTargetsForPurpose(['claude', 'codex', 'grok'], kimiSource, map, 'share')).toEqual([
+      'claude',
+      'grok',
+    ]);
+    expect(visibleTargetsForPurpose(['claude', 'codex', 'grok'], kimiSource, map, 'route')).toEqual([
+      'codex',
+      'grok',
+    ]);
+  });
+});
+
+describe('route endpoint grouping', () => {
+  it('groups local-bridge writers onto the three unified surfaces', () => {
+    const map = new Map<string, PlanEligibility>([
+      [planFanoutKey({ source: kimiSource, targetAgentId: 'claude' }), readyEligibility(true, {
+        analysis: analysis({ route: 'local_bridge', ruleId: 'kimi-membership-to-claude-v1' }),
+      })],
+      [planFanoutKey({ source: kimiSource, targetAgentId: 'codex' }), readyEligibility(true, {
+        analysis: analysis({ route: 'local_bridge', ruleId: 'kimi-membership-to-codex-v1' }),
+      })],
+      [planFanoutKey({ source: kimiSource, targetAgentId: 'kimi' }), readyEligibility(false, {
+        analysis: analysis({ route: 'local_bridge', ruleId: 'kimi-membership-to-kimi-v1' }),
+      })],
+    ]);
+    const targets = ['claude', 'codex', 'kimi'] as const;
+    expect(agentsForRouteEndpoint('messages', targets, kimiSource, map)).toEqual(['claude']);
+    expect(agentsForRouteEndpoint('responses', targets, kimiSource, map)).toEqual(['codex']);
+    expect(agentsForRouteEndpoint('chat_completions', targets, kimiSource, map)).toEqual(['kimi']);
+    expect(representativeAgentForRouteEndpoint('messages', targets, kimiSource, map)).toBe('claude');
+    expect(representativeAgentForRouteEndpoint('chat_completions', targets, kimiSource, map)).toBe('kimi');
+    expect(eligibilityForRouteEndpoint('messages', targets, kimiSource, map)?.kind).toBe('ready');
+  });
+
+  it('prefers a canApply writer when several agents share a surface', () => {
+    const map = new Map<string, PlanEligibility>([
+      [planFanoutKey({ source: kimiSource, targetAgentId: 'kimi' }), readyEligibility(false, {
+        analysis: analysis({ route: 'local_bridge', ruleId: 'codex-subscription-to-kimi-v1' }),
+      })],
+      [planFanoutKey({ source: kimiSource, targetAgentId: 'dsh' }), readyEligibility(true, {
+        analysis: analysis({ route: 'local_bridge', ruleId: 'codex-subscription-to-dsh-v1' }),
+      })],
+    ]);
+    expect(representativeAgentForRouteEndpoint(
+      'chat_completions',
+      ['kimi', 'dsh'],
+      kimiSource,
+      map,
+    )).toBe('dsh');
   });
 });

@@ -7,6 +7,8 @@
 
 mod import_live;
 mod live_reconcile;
+mod oauth_file_sync;
+mod oauth_owner;
 mod pool_crud;
 mod surface;
 mod switch_saga;
@@ -45,7 +47,10 @@ pub(super) use surface::*;
 pub const MAX_ACCOUNT_ID_LEN: usize = 128;
 pub const MAX_ACCOUNT_LABEL_LEN: usize = 256;
 
+pub use oauth_owner::oauth_bridge_reload_callback;
+
 /// Business facade over [`AccountRepo`].
+#[derive(Clone)]
 pub struct AccountService {
     pub(super) db: Database,
     pub(super) repo: AccountRepo,

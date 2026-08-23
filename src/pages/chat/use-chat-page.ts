@@ -9,14 +9,18 @@ import {
   chatSend,
   createConversation,
   deleteConversation,
+  ensureDefaultConversation,
   listChatMessages,
   listConversations,
   updateConversation,
 } from '@/lib/api/chat';
+import { switchAccount } from '@/lib/api/account';
 import { listProviders, switchProvider } from '@/lib/api/provider';
 import { pickDirectory } from '@/lib/api/settings';
+import { bindTicket, isActiveBindingForAgent, listTicketWallet } from '@/lib/api/tickets';
 import { takeChatBootstrap } from '@/lib/chat-bootstrap';
 import { processKey, reduceProcessEvent, type ProcessMap } from '@/lib/chat-process';
+import type { TicketWallet } from '@/lib/backend/contracts/ticket';
 import type {
   AgentId,
   AgentStatus,
@@ -27,15 +31,18 @@ import type {
 } from '@/lib/types';
 import { extractModel, groupByTurn } from './chat-format';
 import {
+  agentChatEnvReady,
   agentHasConfiguredAuth,
   agentPickerLabel as agentPickerLabelOf,
   chatAgentPickerRows,
+  chatConnectionOptions,
   chatConnectionPickerView,
   connectionPickerCaption,
   conversationTitle,
   filterConversations,
   groupConversationsByDay,
   isChatAgentSelectable,
+  leftoverProviderIsCurrent,
   newConversationDefaults,
   selectConversationAgent,
   retryTarget,
@@ -43,6 +50,47 @@ import {
 } from './chat-model';
 
 const STICK_THRESHOLD_PX = 80;
+
+/** A send continuation may only write to the still-current conversation. */
+export function isCurrentChatRequest(
+  activeId: string | null,
+  activeGeneration: number,
+  requestId: string,
+  requestGeneration: number,
+): boolean {
+  return activeId === requestId && activeGeneration === requestGeneration;
+}
+
+/** The list and its initial selection are one generation-checked commit. */
+export function conversationListState(conversations: Conversation[]): {
+  conversations: Conversation[];
+  activeId: string | null;
+} {
+  return {
+    conversations,
+    activeId: conversations[0]?.id ?? null,
+  };
+}
+
+/** Keep initialization idempotent across StrictMode effect replays. */
+export function createSingleFlight<T>() {
+  let inFlight: Promise<T> | null = null;
+
+  return (factory: () => Promise<T>): Promise<T> => {
+    if (inFlight) return inFlight;
+    const next = factory();
+    inFlight = next;
+    next.then(
+      () => {
+        if (inFlight === next) inFlight = null;
+      },
+      () => {
+        if (inFlight === next) inFlight = null;
+      },
+    );
+    return next;
+  };
+}
 
 export function useChatPage() {
   const { t } = useI18n();
@@ -55,7 +103,9 @@ export function useChatPage() {
   /** listAgents 成功后才为 true；失败/未完成时不得把「未知」当成「没有可用 Agent」 */
   const [agentsReady, setAgentsReady] = useState(false);
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [wallet, setWallet] = useState<TicketWallet | null>(null);
   const providersGenRef = useRef(0);
+  const walletGenRef = useRef(0);
   const [error, setError] = useState<unknown>(null);
   /** 会话列表骨架（不再用整页 spinner 挡住消息区） */
   const [listLoading, setListLoading] = useState(true);
@@ -76,11 +126,24 @@ export function useChatPage() {
   const stickToBottomRef = useRef(true);
   const streamingRef = useRef<Record<string, string>>({});
   const activeIdRef = useRef<string | null>(null);
+  const activeGenerationRef = useRef(0);
+  const generationActiveIdRef = useRef<string | null>(null);
+  const ensureSingleFlightRef = useRef<ReturnType<typeof createSingleFlight<Conversation[]>> | null>(
+    null,
+  );
+  const loadListSingleFlightRef = useRef<ReturnType<typeof createSingleFlight<Conversation[]>> | null>(
+    null,
+  );
+  const loadGenerationRef = useRef(0);
   /** 当轮过程面板：命令 / stderr / 细状态（仅内存，不落库） */
   const [processMap, setProcessMap] = useState<ProcessMap>({});
   /** Projects 页跳转：bootstrap 只处理一次 */
   const bootstrapDoneRef = useRef(false);
   activeIdRef.current = activeId;
+  if (generationActiveIdRef.current !== activeId) {
+    generationActiveIdRef.current = activeId;
+    activeGenerationRef.current += 1;
+  }
 
   const active = useMemo(
     () => conversations.find((c) => c.id === activeId) ?? null,
@@ -120,6 +183,13 @@ export function useChatPage() {
       ),
     [agentStatus],
   );
+  const envNotReadyIds = useMemo(
+    () =>
+      new Set(
+        agentStatus.filter((a) => a.installed && !agentChatEnvReady(a)).map((a) => a.agentId),
+      ),
+    [agentStatus],
+  );
   const pickerRows = useMemo(
     () =>
       chatAgentPickerRows({
@@ -149,10 +219,15 @@ export function useChatPage() {
   const ensureConversation = useCallback(
     async (convs: Conversation[], agents: AgentStatus[], cwd?: string | null) => {
       if (convs.length > 0) return convs;
-      const ids = defaultAgents(agents);
-      if (ids.length === 0) return convs;
-      const created = await createConversation(ids, cwd ?? null);
-      return [created];
+      if (!ensureSingleFlightRef.current) {
+        ensureSingleFlightRef.current = createSingleFlight<Conversation[]>();
+      }
+      return ensureSingleFlightRef.current(async () => {
+        const ids = defaultAgents(agents);
+        if (ids.length === 0) return convs;
+        const created = await ensureDefaultConversation(ids, cwd ?? null);
+        return [created];
+      });
     },
     [defaultAgents],
   );
@@ -173,18 +248,29 @@ export function useChatPage() {
    * 会话列表优先：不因 listAgents（doctor）阻塞会话渲染。
    * agents 仅在空列表需自动建会话时才 await。
    */
-  const loadList = useCallback(async () => {
+  const loadList = useCallback(() => {
+    if (!loadListSingleFlightRef.current) {
+      loadListSingleFlightRef.current = createSingleFlight<Conversation[]>();
+    }
+    return loadListSingleFlightRef.current(async () => {
     const convs = await listConversations();
+    let next = convs;
     if (convs.length > 0) {
-      setConversations(convs);
       // agent 状态异步填充 picker，不挡列表；失败记 ready=false，允许重试
       void refreshAgents().catch(() => {});
-      return convs;
+    } else {
+      const agents = await refreshAgents();
+      next = await ensureConversation(convs, agents);
     }
-    const agents = await refreshAgents();
-    const ensured = await ensureConversation(convs, agents);
-    setConversations(ensured);
-    return ensured;
+    // 以服务端 sending 为准恢复页级 Stop；list 尚未带上 sending 时不要清掉进行中的本地 send
+    const inflight = next.find((c) => c.sending)?.id ?? null;
+    if (inflight) {
+      sendingConversationIdRef.current = inflight;
+      setSendingConversationId(inflight);
+      setSending(true);
+    }
+      return next;
+    });
   }, [ensureConversation, refreshAgents]);
 
   const loadMessages = useCallback(async (id: string) => {
@@ -203,11 +289,33 @@ export function useChatPage() {
     }
   }, []);
 
+  const loadWallet = useCallback(async () => {
+    const gen = ++walletGenRef.current;
+    try {
+      const next = await listTicketWallet();
+      if (gen !== walletGenRef.current) return;
+      setWallet(next);
+    } catch {
+      if (gen !== walletGenRef.current) return;
+      setWallet((prev) => prev ?? { tickets: [], bindings: [], surfaceGroups: [] });
+    }
+  }, []);
+
   useEffect(() => {
+    const generation = ++loadGenerationRef.current;
+    let cancelled = false;
     setListLoading(true);
     setError(null);
     loadList()
       .then(async (convs) => {
+        if (cancelled || generation !== loadGenerationRef.current) return;
+        // Commit the list and its initial selection together. Without this
+        // commit the hook kept an empty in-memory rail even though the API
+        // load succeeded, and bootstrap could accidentally discard existing
+        // conversations when it prepended its new one.
+        const committed = conversationListState(convs);
+        setConversations(committed.conversations);
+        setActiveId(committed.activeId);
         // Projects → Chat：新建会话并预填（可选自动发送）提示
         const fromProjects = searchParams.get('from') === 'projects';
         if (fromProjects && !bootstrapDoneRef.current) {
@@ -229,6 +337,7 @@ export function useChatPage() {
                   /* title 可选 */
                 }
               }
+              if (cancelled || generation !== loadGenerationRef.current) return;
               setConversations((prev) => [next, ...prev.filter((c) => c.id !== next.id)]);
               setActiveId(next.id);
               setMessages([]);
@@ -242,6 +351,7 @@ export function useChatPage() {
               }
               return;
             } catch (e) {
+              if (cancelled || generation !== loadGenerationRef.current) return;
               toast({
                 title: e instanceof Error ? e.message : String(e),
                 variant: 'danger',
@@ -249,10 +359,17 @@ export function useChatPage() {
             }
           }
         }
-        setActiveId(convs[0]?.id ?? null);
+        if (cancelled || generation !== loadGenerationRef.current) return;
       })
-      .catch(setError)
-      .finally(() => setListLoading(false));
+      .catch((e) => {
+        if (!cancelled && generation === loadGenerationRef.current) setError(e);
+      })
+      .finally(() => {
+        if (!cancelled && generation === loadGenerationRef.current) setListLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- bootstrap once on mount/list load
   }, [loadList]);
 
@@ -295,6 +412,10 @@ export function useChatPage() {
     void loadProviders(primaryAgent);
   }, [primaryAgent, loadProviders]);
 
+  useEffect(() => {
+    void loadWallet();
+  }, [primaryAgent, loadWallet]);
+
   const onTranscriptScroll = useCallback(() => {
     const el = transcriptRef.current;
     if (!el) return;
@@ -327,11 +448,12 @@ export function useChatPage() {
     return sendBlockers({
       conversation: active,
       hiddenIds,
+      envNotReadyIds,
       unconfiguredAuthIds,
       sendingConversationId: liveSendingConversationId,
       sendingTitle,
     });
-  }, [active, hiddenIds, unconfiguredAuthIds, liveSendingConversationId, sendingTitle]);
+  }, [active, hiddenIds, envNotReadyIds, unconfiguredAuthIds, liveSendingConversationId, sendingTitle]);
 
   const railGroups = useMemo(() => {
     const filtered = filterConversations(conversations, railQuery);
@@ -352,16 +474,47 @@ export function useChatPage() {
     [agentStatus, primaryAgent],
   );
 
+  const leftoverCurrent = leftoverProviderIsCurrent(providers);
+
+  const connectionOptions = useMemo(
+    () =>
+      chatConnectionOptions(t, {
+        wallet,
+        agentId: primaryAgent,
+      }),
+    [wallet, primaryAgent, t],
+  );
+
+  const activeLogin = connectionOptions.find((option) => option.isCurrent) ?? null;
+
   const connectionView = useMemo(
     () =>
       chatConnectionPickerView(t, {
         primaryAgent,
         switching: switchingProvider,
         status: primaryStatus,
-        currentProviderName: currentProvider?.name ?? null,
-        currentProviderModel: currentProvider ? extractModel(currentProvider.configText) : null,
+        currentProviderName: leftoverCurrent ? null : currentProvider?.name ?? null,
+        currentProviderModel: leftoverCurrent
+          ? null
+          : currentProvider
+            ? extractModel(currentProvider.configText)
+            : null,
+        activeLogin: activeLogin
+          ? { title: activeLogin.title, subtitle: activeLogin.subtitle }
+          : null,
+        leftoverCurrent,
+        walletReady: wallet !== null,
       }),
-    [primaryAgent, switchingProvider, primaryStatus, currentProvider, t],
+    [
+      primaryAgent,
+      switchingProvider,
+      primaryStatus,
+      leftoverCurrent,
+      currentProvider,
+      activeLogin,
+      wallet,
+      t,
+    ],
   );
 
   const connectionCaption = useMemo(
@@ -496,12 +649,24 @@ export function useChatPage() {
     await patchActive(next);
   }
 
-  async function handleSwitchProvider(providerId: string) {
+  async function handleSwitchConnection(ticketId: string) {
     if (!primaryAgent || switchingProvider || hiddenIds.has(primaryAgent)) return;
+    const option = connectionOptions.find((row) => row.ticketId === ticketId);
+    if (!option || option.isCurrent) return;
     setSwitchingProvider(true);
     try {
-      await switchProvider(primaryAgent, providerId);
+      if (option.action.type === 'switch-account') {
+        await switchAccount(primaryAgent, option.action.accountId);
+      } else if (option.action.type === 'switch-provider') {
+        await switchProvider(primaryAgent, option.action.providerId);
+      } else {
+        const { binding } = await bindTicket(option.action.ticketId, primaryAgent);
+        if (!isActiveBindingForAgent(binding, primaryAgent)) {
+          throw new Error(t('chat.connection.bindNotCurrent'));
+        }
+      }
       await Promise.all([
+        loadWallet(),
         loadProviders(primaryAgent),
         refreshAgents({ force: true }).catch(() => []),
       ]);
@@ -513,8 +678,15 @@ export function useChatPage() {
     }
   }
 
-  function applyEvent(ev: ChatEvent, sendConvId: string) {
-    if (activeIdRef.current !== sendConvId) {
+  function applyEvent(ev: ChatEvent, sendConvId: string, sendGeneration: number) {
+    if (
+      !isCurrentChatRequest(
+        activeIdRef.current,
+        activeGenerationRef.current,
+        sendConvId,
+        sendGeneration,
+      )
+    ) {
       if (ev.type === 'error') toast({ title: ev.message, variant: 'danger' });
       return;
     }
@@ -589,6 +761,7 @@ export function useChatPage() {
     if (sendBlockers({
       conversation: active,
       hiddenIds,
+      envNotReadyIds,
       unconfiguredAuthIds,
       sendingConversationId: liveSendingConversationId,
       sendingTitle,
@@ -598,6 +771,7 @@ export function useChatPage() {
     if (!prompt) return;
 
     const sendConvId = active.id;
+    const sendGeneration = activeGenerationRef.current;
     sendingConversationIdRef.current = sendConvId;
     setSending(true);
     setSendingConversationId(sendConvId);
@@ -618,17 +792,52 @@ export function useChatPage() {
     ]);
 
     try {
-      await chatSend(sendConvId, prompt, (ev) => applyEvent(ev, sendConvId));
+      await chatSend(sendConvId, prompt, (ev) => applyEvent(ev, sendConvId, sendGeneration));
+      // Events from the original generation are deliberately ignored after
+      // A → B → A. If A is current again when the send finishes, use the
+      // current generation for a fresh DB convergence read so the final
+      // persisted reply/running state cannot be lost with the old stream.
+      if (activeIdRef.current !== sendConvId) return;
+      const refreshGeneration = activeGenerationRef.current;
       const convs = await listConversations();
+      if (
+        !isCurrentChatRequest(
+          activeIdRef.current,
+          activeGenerationRef.current,
+          sendConvId,
+          refreshGeneration,
+        )
+      ) {
+        return;
+      }
       setConversations(convs);
-      if (activeIdRef.current === sendConvId) {
-        setMessages(await listChatMessages(sendConvId));
+      const rows = await listChatMessages(sendConvId);
+      if (
+        isCurrentChatRequest(
+          activeIdRef.current,
+          activeGenerationRef.current,
+          sendConvId,
+          refreshGeneration,
+        )
+      ) {
+        setMessages(rows);
       }
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
       if (activeIdRef.current === sendConvId) {
+        const refreshGeneration = activeGenerationRef.current;
         const rows = await loadMessages(sendConvId).catch(() => null);
-        if (rows && activeIdRef.current === sendConvId) setMessages(rows);
+        if (
+          rows &&
+          isCurrentChatRequest(
+            activeIdRef.current,
+            activeGenerationRef.current,
+            sendConvId,
+            refreshGeneration,
+          )
+        ) {
+          setMessages(rows);
+        }
       }
     } finally {
       if (sendingConversationIdRef.current === sendConvId) {
@@ -665,12 +874,23 @@ export function useChatPage() {
   }
 
   function retryLoad() {
+    const generation = ++loadGenerationRef.current;
+    let cancelled = false;
     setListLoading(true);
     setError(null);
     loadList()
-      .then((c) => c[0] && setActiveId(c[0].id))
-      .catch(setError)
-      .finally(() => setListLoading(false));
+      .then((next) => {
+        if (cancelled || generation !== loadGenerationRef.current) return;
+        const committed = conversationListState(next);
+        setConversations(committed.conversations);
+        setActiveId(committed.activeId);
+      })
+      .catch((e) => {
+        if (!cancelled && generation === loadGenerationRef.current) setError(e);
+      })
+      .finally(() => {
+        if (!cancelled && generation === loadGenerationRef.current) setListLoading(false);
+      });
   }
 
   function focusConversation(id: string) {
@@ -718,6 +938,7 @@ export function useChatPage() {
     activeHasHidden,
     agentPickerLabel,
     connectionView,
+    connectionOptions,
     connectionCaption,
     blockers,
     railGroups,
@@ -732,7 +953,7 @@ export function useChatPage() {
     pickWorkingDirectory,
     renameTitle,
     selectConversationAgentId,
-    handleSwitchProvider,
+    handleSwitchConnection,
     handleSend,
     retryLast,
     handleCancel,

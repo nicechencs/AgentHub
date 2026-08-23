@@ -8,6 +8,7 @@ mod auth_revision;
 mod config_write;
 mod detect_binary;
 mod registry;
+pub(crate) mod session_resume;
 
 mod claude;
 mod codex;
@@ -32,6 +33,7 @@ pub(crate) use workbuddy::detect_installation as detect_workbuddy_installation;
 // Codex OAuth PKCE historically stored flat token bundles; adapters + oauth finish
 // both need the same conversion into live `auth_json` shape.
 pub(crate) use codex::normalize_oauth_credentials as normalize_codex_oauth_credentials;
+pub(crate) use grok::{expand_grok_auth_to_live_accounts, grok_live_uses_default_auth_slot};
 
 pub use adapter_trait::{default_authorization_key, default_identity_label, AgentAdapter};
 pub(crate) use auth_revision::{
@@ -43,12 +45,15 @@ pub(crate) use config_write::{
     write_verified_json_object,
 };
 pub(crate) use detect_binary::{
-    detect_binary, expand_binary_names, extract_version_token, infer_channel,
-    looks_like_version_line, well_known_bin_paths, NOT_FOUND_FIREFIGHTING_NOTE,
+    agenthub_user_npm_prefix_roots, detect_binary, detect_binary_with_env, expand_binary_names,
+    extract_version_token, first_existing_named_bin, infer_channel,
+    is_under_agenthub_user_npm_prefix, looks_like_version_line, well_known_bin_paths,
+    NOT_FOUND_FIREFIGHTING_NOTE,
 };
 pub use registry::{
     register_all, supports_structured_stream, wants_structured_for, AdapterRegistry,
 };
+pub use session_resume::{plan_native_resume, supports_print_resume, NativeResumePlan};
 
 #[cfg(test)]
 mod tests;

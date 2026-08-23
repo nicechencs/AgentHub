@@ -79,15 +79,11 @@ pub fn run() {
                     let _ = window.hide();
                     return;
                 }
-                let bridge_active =
-                    exit_coordinator::ExitCoordinator::requires_impact_confirmation(
-                        state.exit_coordinator().prepare_exit(&state.bridge_host()),
-                    );
-                if decide_close_action(
-                    state.should_exit(),
-                    state.close_to_tray(),
-                    bridge_active,
-                ) == CloseAction::HideToTray
+                let bridge_active = exit_coordinator::ExitCoordinator::requires_impact_confirmation(
+                    state.exit_coordinator().prepare_exit(&state.bridge_host()),
+                );
+                if decide_close_action(state.should_exit(), state.close_to_tray(), bridge_active)
+                    == CloseAction::HideToTray
                 {
                     api.prevent_close();
                     let _ = window.hide();
@@ -195,12 +191,14 @@ pub fn run() {
             commands::usage::usage_collect,
             commands::usage::usage_query,
             commands::usage::usage_trend,
+            commands::usage::usage_overview,
             commands::usage::usage_list_models,
             commands::usage::usage_parser_health,
             commands::usage::usage_missing_pricing,
             // Chat
             commands::chat::list_conversations,
             commands::chat::create_conversation,
+            commands::chat::ensure_default_conversation,
             commands::chat::update_conversation,
             commands::chat::delete_conversation,
             commands::chat::list_chat_messages,

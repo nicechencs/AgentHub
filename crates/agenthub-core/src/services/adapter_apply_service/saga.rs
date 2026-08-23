@@ -346,13 +346,16 @@ impl AdapterApplyService {
                     if let Err(error) =
                         self.persist_previous_backup_id(&saga_guard, &result.provider, backup_id)
                     {
-                        if let Err(restore_error) = self.compensate_apply(
-                            &saga_guard,
-                            &spec.provider_id,
-                            spec.target_agent,
-                            &snapshot,
-                        ) {
-                            return Err(self.fail_profile(profile, &restore_error));
+                        if self
+                            .compensate_apply(
+                                &saga_guard,
+                                &spec.provider_id,
+                                spec.target_agent,
+                                &snapshot,
+                            )
+                            .is_err()
+                        {
+                            return Err(self.fail_rollback_incomplete(profile));
                         }
                         return Err(self.fail_profile(profile, &error));
                     }
@@ -360,13 +363,11 @@ impl AdapterApplyService {
                 result.provider
             }
             Err(error) => {
-                if let Err(restore_error) = self.compensate_apply(
-                    &saga_guard,
-                    &spec.provider_id,
-                    spec.target_agent,
-                    &snapshot,
-                ) {
-                    return Err(self.fail_profile(profile, &restore_error));
+                if self
+                    .compensate_apply(&saga_guard, &spec.provider_id, spec.target_agent, &snapshot)
+                    .is_err()
+                {
+                    return Err(self.fail_rollback_incomplete(profile));
                 }
                 return Err(self.fail_profile(profile, &error));
             }
@@ -381,25 +382,15 @@ impl AdapterApplyService {
             Err(_) => {
                 let mut attention = profile;
                 attention.status = AdapterProfileStatus::NeedsAttention;
-                let restore_error = self
+                if self
                     .compensate_apply(&saga_guard, &spec.provider_id, spec.target_agent, &snapshot)
-                    .err();
-                attention.last_error_code = Some(
-                    if restore_error.is_some() {
-                        "adapter.rollback_incomplete"
-                    } else {
-                        "adapter.profile_finalize"
-                    }
-                    .into(),
-                );
+                    .is_err()
+                {
+                    return Err(self.fail_rollback_incomplete(attention));
+                }
+                attention.last_error_code = Some("adapter.profile_finalize".into());
                 attention.updated_at = now();
                 let _ = self.profiles.update(&attention);
-                if restore_error.is_some() {
-                    return Err(AppError::message(
-                        "adapter.rollback_incomplete",
-                        "adapter profile finalization failed and repair rollback was incomplete",
-                    ));
-                }
                 return Err(AppError::message(
                     "adapter.profile_finalize",
                     "adapter profile finalization failed",
@@ -508,6 +499,17 @@ impl AdapterApplyService {
         provider: &Provider,
         backup_id: &str,
     ) -> Result<Provider> {
+        let already = provider
+            .meta
+            .get(PREVIOUS_BACKUP_ID)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .is_some_and(|id| !id.is_empty());
+        if already {
+            // First-bind snapshot wins. Later repair/re-switch must not
+            // replace it with a leftover 本机路由 projection.
+            return Ok(provider.clone());
+        }
         let mut input = provider_input(provider);
         let Some(meta) = input.meta.as_object_mut() else {
             return Ok(provider.clone());
@@ -543,8 +545,11 @@ impl AdapterApplyService {
             .filter(|id| !id.is_empty());
         if is_subscription_oauth {
             if let Some(backup_id) = backup_id {
-                self.providers
-                    .restore_named_backup_with_guard(saga_guard, backup_id)?;
+                self.providers.restore_named_backup_or_clean_codex(
+                    saga_guard,
+                    backup_id,
+                    target_agent,
+                )?;
             }
         }
         if let Some(previous_id) = previous_id {
@@ -552,6 +557,10 @@ impl AdapterApplyService {
                 Ok(_) => {
                     self.providers
                         .switch_with_guard(saga_guard, previous_id, target_agent)?;
+                    if target_agent == AgentId::Codex {
+                        crate::integrations::agents::codex::leftover::strip_live_bridge_leftovers(
+                        )?;
+                    }
                     return Ok(());
                 }
                 Err(AppError::NotFound(_)) => {}
@@ -559,8 +568,13 @@ impl AdapterApplyService {
             }
         }
         if let Some(backup_id) = backup_id.filter(|_| !is_subscription_oauth) {
-            self.providers
-                .restore_named_backup_with_guard(saga_guard, backup_id)?;
+            self.providers.restore_named_backup_or_clean_codex(
+                saga_guard,
+                backup_id,
+                target_agent,
+            )?;
+        } else if target_agent == AgentId::Codex {
+            crate::integrations::agents::codex::leftover::strip_live_bridge_leftovers()?;
         }
         Ok(())
     }
@@ -576,10 +590,23 @@ impl AdapterApplyService {
         )
     }
 
+    pub(super) fn fail_rollback_incomplete(&self, mut profile: AdapterProfile) -> AppError {
+        profile.status = AdapterProfileStatus::NeedsAttention;
+        profile.last_error_code = Some("adapter.rollback_incomplete".into());
+        profile.updated_at = now();
+        let _ = self.profiles.update(&profile);
+        AppError::message(
+            "adapter.rollback_incomplete",
+            "adapter apply failed and repair rollback was incomplete",
+        )
+    }
+
     /// Inverse of a successful live switch: restore the generated pool row
     /// (or delete a create), re-select the pre-switch current provider when one
-    /// existed, then force the pre-switch live config. Every step is attempted
-    /// even if an earlier step fails.
+    /// existed, then force the pre-switch live config. Pool/binding restoration
+    /// never writes live config, so a later live-restore failure cannot revert
+    /// the diagnosable database snapshot. Every step is attempted even if an
+    /// earlier step fails.
     pub(super) fn compensate_apply(
         &self,
         saga_guard: &ProviderLiveSagaGuard<'_>,
@@ -601,9 +628,9 @@ impl AdapterApplyService {
             let mut input = provider_input(old);
             // When the generated row itself was current, re-activate via the
             // pool update path (no second live switch). A different previous
-            // current is re-selected below with switch_with_guard.
+            // current is re-selected below without writing live config.
             input.is_current = generated_was_previous;
-            if let Err(error) = self.providers.update_with_guard(saga_guard, &input) {
+            if let Err(error) = self.providers.update_pool_with_guard(saga_guard, &input) {
                 failed = Some(error);
             }
         } else if snapshot.created {
@@ -617,17 +644,16 @@ impl AdapterApplyService {
 
         if let Some(previous) = &snapshot.previous_current {
             if !generated_was_previous {
-                if let Err(error) =
-                    self.providers
-                        .switch_with_guard(saga_guard, &previous.id, target_agent)
-                {
+                let mut input = provider_input(previous);
+                input.is_current = true;
+                if let Err(error) = self.providers.update_pool_with_guard(saga_guard, &input) {
                     failed = Some(error);
                 }
             }
         }
 
-        // Always restore live last so a switch-back that backfills a drifted
-        // value cannot leave the on-disk Claude config changed.
+        // Always restore live last so a pool restore that would otherwise
+        // materialize a drifted value cannot leave the on-disk config changed.
         if let Err(error) = self
             .providers
             .restore_live_config_snapshot_with_guard(saga_guard, &snapshot.live_config)

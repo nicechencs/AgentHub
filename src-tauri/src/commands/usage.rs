@@ -1,6 +1,8 @@
 //! Usage Tauri commands — collect / query / trend / models / health.
 
-use agenthub_core::models::{CollectResult, ParserHealth, UsageQuery, UsageRecord};
+use agenthub_core::models::{
+    AgentId, CollectResult, ParserHealth, UsageOverview, UsageQuery, UsageRecord,
+};
 use serde_json::Value;
 use tauri::State;
 
@@ -35,16 +37,24 @@ pub async fn usage_query(
     days: u32,
     agent_id: Option<String>,
     model: Option<String>,
+    limit: Option<u32>,
+    since: Option<String>,
+    exclude_agent_ids: Option<Vec<String>>,
 ) -> Result<Vec<UsageRecord>, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
         let agent = parse_agent_opt(agent_id.as_deref())?;
         let model = model.filter(|m| !m.is_empty() && m != "all");
+        let since = since.filter(|s| !s.is_empty());
+        let exclude_agent_ids = parse_exclude_agent_ids(exclude_agent_ids);
         hub.usage
             .query(UsageQuery {
                 days: days.max(1),
                 agent_id: agent,
                 model,
+                limit,
+                since,
+                exclude_agent_ids,
             })
             .map_err(|e| map_err_string("usage_query", e))
     })
@@ -56,17 +66,64 @@ pub async fn usage_trend(
     state: State<'_, AppState>,
     days: u32,
     agent_id: Option<String>,
+    model: Option<String>,
+    since: Option<String>,
+    exclude_agent_ids: Option<Vec<String>>,
 ) -> Result<Vec<Value>, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
         let agent = parse_agent_opt(agent_id.as_deref())?;
+        let model = model.filter(|m| !m.is_empty() && m != "all");
+        let since = since.filter(|s| !s.is_empty());
+        let exclude = parse_exclude_agent_ids(exclude_agent_ids);
         let points = hub
             .usage
-            .trend(days.max(1), agent)
+            .trend(
+                days.max(1),
+                agent,
+                model.as_deref(),
+                since.as_deref(),
+                &exclude,
+            )
             .map_err(|e| map_err_string("usage_trend", e))?;
         Ok(points.into_iter().map(|p| Value::Object(p.0)).collect())
     })
     .await
+}
+
+#[tauri::command]
+pub async fn usage_overview(
+    state: State<'_, AppState>,
+    days: u32,
+    agent_id: Option<String>,
+    model: Option<String>,
+    since: Option<String>,
+    exclude_agent_ids: Option<Vec<String>>,
+) -> Result<UsageOverview, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        let agent = parse_agent_opt(agent_id.as_deref())?;
+        let model = model.filter(|m| !m.is_empty() && m != "all");
+        let since = since.filter(|s| !s.is_empty());
+        let exclude = parse_exclude_agent_ids(exclude_agent_ids);
+        hub.usage
+            .overview(
+                days.max(1),
+                agent,
+                model.as_deref(),
+                since.as_deref(),
+                &exclude,
+            )
+            .map_err(|e| map_err_string("usage_overview", e))
+    })
+    .await
+}
+
+fn parse_exclude_agent_ids(ids: Option<Vec<String>>) -> Vec<AgentId> {
+    ids.unwrap_or_default()
+        .into_iter()
+        .filter_map(|s| AgentId::parse(&s))
+        .collect()
 }
 
 #[tauri::command]

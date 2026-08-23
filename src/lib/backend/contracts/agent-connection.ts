@@ -10,6 +10,8 @@ import {
   normalizeAuthHealth,
   type AuthHealth,
 } from '@/lib/backend/contracts/auth-state';
+import type { TranslateFn } from '@/lib/i18n';
+import { truncateAtWord } from '@/lib/text-truncate';
 import type {
   Account,
   AgentStatus,
@@ -77,21 +79,75 @@ export function extractProviderEndpoint(
   return any?.[0];
 }
 
-/** 缩短 URL 便于卡片一行展示 */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
+
+/** Internal adapter-generated / live-pool ids that must never be a title. */
+const INTERNAL_ID_RE = /grok-live-|-(?:adapter|bridge)-|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isLoopbackUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    return LOOPBACK_HOSTS.has(host);
+  } catch {
+    return /127\.0\.0\.1|localhost|\[::1\]/i.test(url);
+  }
+}
+
+/** True for English bridge product names, grok-live-* ids, raw uuids. */
+export function isInternalGeneratedName(value: string | undefined | null): boolean {
+  const v = value?.trim() ?? '';
+  if (!v) return false;
+  if (/bridge/i.test(v)) return true;
+  if (INTERNAL_ID_RE.test(v)) return true;
+  return false;
+}
+
+export function isInternalGeneratedProvider(
+  provider: Pick<Provider, 'id' | 'name' | 'configText' | 'configFormat'>,
+): boolean {
+  if (isInternalGeneratedName(provider.name) || isInternalGeneratedName(provider.id)) {
+    return true;
+  }
+  const endpoint = extractProviderEndpoint(provider.configText, provider.configFormat);
+  return Boolean(endpoint && isLoopbackUrl(endpoint));
+}
+
+export function formatLocalRouteLabel(sourceLabel?: string, t?: TranslateFn): string {
+  const base = t ? t('kind.route.localRoute') : '本机路由';
+  const src = sourceLabel?.trim() ?? '';
+  if (!src || isInternalGeneratedName(src) || /:\d{2,5}\b/.test(src)) return base;
+  return `${base} · ${src}`;
+}
+
+/** 缩短 URL 便于卡片一行展示。Never emit host:port; never cut mid-word. */
 export function formatEndpointHost(url: string): string {
   try {
     const u = new URL(url);
     const path = u.pathname === '/' ? '' : u.pathname.replace(/\/$/, '');
-    const hostPath = `${u.host}${path}`;
-    return hostPath.length > 36 ? `${hostPath.slice(0, 33)}…` : hostPath;
+    const hostPath = `${u.hostname}${path}`;
+    return hostPath.length > 36 ? truncateAtWord(hostPath, 33) : hostPath;
   } catch {
-    return url.length > 36 ? `${url.slice(0, 33)}…` : url;
+    return url.length > 36 ? truncateAtWord(url, 33) : url;
   }
 }
 
-export function formatApiConnectionLabel(provider: Provider): string {
+export type FormatApiConnectionLabelOptions = {
+  t?: TranslateFn;
+  sourceLabel?: string;
+};
+
+export function formatApiConnectionLabel(
+  provider: Provider,
+  options?: FormatApiConnectionLabelOptions,
+): string {
+  if (isInternalGeneratedProvider(provider)) {
+    return formatLocalRouteLabel(options?.sourceLabel, options?.t);
+  }
   const endpoint = extractProviderEndpoint(provider.configText, provider.configFormat);
   if (endpoint) {
+    if (isLoopbackUrl(endpoint)) {
+      return formatLocalRouteLabel(options?.sourceLabel, options?.t);
+    }
     return `${provider.name} · ${formatEndpointHost(endpoint)}`;
   }
   return provider.name;
@@ -119,6 +175,7 @@ function sortKey(updatedAt?: string, lastUsedAt?: string): string {
 export function resolveEffectiveConnection(
   account: Account | undefined,
   provider: Provider | undefined,
+  options?: FormatApiConnectionLabelOptions,
 ): EffectiveConnection {
   if (account && provider) {
     const accKey = sortKey(account.updatedAt, account.lastUsedAt);
@@ -127,7 +184,7 @@ export function resolveEffectiveConnection(
     if (provKey > accKey) {
       return {
         kind: 'api',
-        label: formatApiConnectionLabel(provider),
+        label: formatApiConnectionLabel(provider, options),
         authLabel: 'API',
         authStatus: 'valid',
         authHealth: 'configured',
@@ -158,7 +215,7 @@ export function resolveEffectiveConnection(
   if (provider) {
     return {
       kind: 'api',
-      label: formatApiConnectionLabel(provider),
+      label: formatApiConnectionLabel(provider, options),
       authLabel: 'API',
       authStatus: 'valid',
       authHealth: 'configured',

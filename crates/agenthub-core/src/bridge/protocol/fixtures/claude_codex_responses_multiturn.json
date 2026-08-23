@@ -1,0 +1,20 @@
+{
+  "model": "claude-sonnet-4-20250514",
+  "input": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": [{"type": "input_text", "text": "你好"}]
+    },
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [{"type": "output_text", "text": "已收到你好。"}]
+    },
+    {
+      "type": "message",
+      "role": "user",
+      "content": [{"type": "input_text", "text": "世界"}]
+    }
+  ]
+}

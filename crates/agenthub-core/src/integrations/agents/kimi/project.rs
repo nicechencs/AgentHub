@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use crate::error::Result;
 use crate::integrations::shared::projects::{builtin_key, empty_if_missing, finish_sessions};
-use crate::models::{AgentId, AgentProject, AgentSession};
+use crate::models::{AgentProject, AgentSession};
 use crate::platform::projects::{ProjectScanContext, ProjectSource};
 use crate::services::project_service::{
-    aggregate_projects, kimi_session_dir_for_delete, list_kimi_sessions,
+    kimi_session_dir_for_delete, list_kimi_projects, list_kimi_sessions,
 };
 
 struct KimiProjectSource;
@@ -20,8 +20,7 @@ impl ProjectSource for KimiProjectSource {
         if empty_if_missing(ctx.home) {
             return Ok(vec![]);
         }
-        let sessions = self.list_sessions(ctx)?;
-        Ok(aggregate_projects(AgentId::Kimi, ctx.home, &sessions))
+        list_kimi_projects(ctx.home)
     }
 
     fn list_sessions(&self, ctx: &ProjectScanContext<'_>) -> Result<Vec<AgentSession>> {

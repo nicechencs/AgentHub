@@ -700,5 +700,5 @@ export const FORM_FIELD_LABELS: Record<FormFieldKey, string> = {
   claudeAuthEnv: 'Auth 字段',
   reasoningEffort: 'Reasoning effort',
   wireApi: 'Wire API',
-  providerSlug: 'Pi 厂商槽',
+  providerSlug: 'Pi 官方厂商',
 };

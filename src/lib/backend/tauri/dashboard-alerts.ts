@@ -5,6 +5,7 @@
  */
 import type { AgentId, AgentStatus, DashboardAlert } from '@/lib/types';
 import { agentDisplayName } from '@/config/agents';
+import { createTranslator, type TranslateFn } from '@/lib/i18n';
 import { loadJson, saveJson } from '@/lib/ui-preferences';
 
 const DISMISS_KEY = 'agenthub:dismissed-alerts';
@@ -16,7 +17,22 @@ function agentName(id: string): string {
 }
 
 function fingerprint(alert: Omit<DashboardAlert, 'id'> & { id: string }): string {
-  return `${alert.level}|${alert.message}|${alert.actionKind}`;
+  return `${alert.id}|${alert.level}|${alert.actionKind}`;
+}
+
+function isUsefulConnectionLabel(value: string | undefined): boolean {
+  const label = value?.trim();
+  if (!label) return false;
+  return label !== '未配置' && label.toLowerCase() !== 'not configured';
+}
+
+/** Pool/route already configured — do not treat live probe authStatus none as empty. */
+function hasConfiguredConnection(a: AgentStatus): boolean {
+  if (a.effectiveKind === 'account' || a.effectiveKind === 'api') return true;
+  if (isUsefulConnectionLabel(a.effectiveLabel) || isUsefulConnectionLabel(a.currentProvider)) {
+    return true;
+  }
+  return a.authHealth === 'configured' || a.authHealth === 'renewable' || a.authHealth === 'verified';
 }
 
 function loadDismissed(): DismissMap {
@@ -28,7 +44,10 @@ function saveDismissed(map: DismissMap): void {
 }
 
 /** Pure builder — used by dashboard port and unit tests. */
-export function buildAlertsFromAgents(agents: AgentStatus[]): DashboardAlert[] {
+export function buildAlertsFromAgents(
+  agents: AgentStatus[],
+  t: TranslateFn = createTranslator('zh'),
+): DashboardAlert[] {
   const out: DashboardAlert[] = [];
 
   for (const a of agents) {
@@ -39,8 +58,8 @@ export function buildAlertsFromAgents(agents: AgentStatus[]): DashboardAlert[] {
       out.push({
         id: `auth-expired:${a.agentId}`,
         level: 'danger',
-        message: `${name} 登录已失效，连接可能不可用`,
-        actionLabel: '去连接页处理',
+        message: t('dashboard.alerts.authExpired', { name }),
+        actionLabel: t('dashboard.alerts.authExpiredAction'),
         actionKind: 'refresh-token',
         agentId: a.agentId,
       });
@@ -48,17 +67,17 @@ export function buildAlertsFromAgents(agents: AgentStatus[]): DashboardAlert[] {
       out.push({
         id: `auth-expiring:${a.agentId}`,
         level: 'warning',
-        message: `${name} 登录即将过期`,
-        actionLabel: '去刷新',
+        message: t('dashboard.alerts.authExpiring', { name }),
+        actionLabel: t('dashboard.alerts.authExpiringAction'),
         actionKind: 'refresh-token',
         agentId: a.agentId,
       });
-    } else if (a.installed && a.authStatus === 'none') {
+    } else if (a.installed && a.authStatus === 'none' && !hasConfiguredConnection(a)) {
       out.push({
         id: `auth-none:${a.agentId}`,
         level: 'info',
-        message: `${name} 已安装但尚未配置连接`,
-        actionLabel: '去配置',
+        message: t('dashboard.alerts.authNone', { name }),
+        actionLabel: t('dashboard.alerts.authNoneAction'),
         actionKind: 'refresh-token',
         agentId: a.agentId,
       });
@@ -68,8 +87,8 @@ export function buildAlertsFromAgents(agents: AgentStatus[]): DashboardAlert[] {
       out.push({
         id: `env-not-ready:${a.agentId}`,
         level: 'warning',
-        message: `${name} 运行环境未就绪`,
-        actionLabel: '去修复环境',
+        message: t('dashboard.alerts.envNotReady', { name }),
+        actionLabel: t('dashboard.alerts.envNotReadyAction'),
         actionKind: 'upgrade',
         agentId: a.agentId,
       });
@@ -80,8 +99,8 @@ export function buildAlertsFromAgents(agents: AgentStatus[]): DashboardAlert[] {
       out.push({
         id: `upgrade:${a.agentId}`,
         level: 'info',
-        message: `${name} 可升级到 ${latest}`,
-        actionLabel: '去升级',
+        message: t('dashboard.alerts.upgrade', { name, version: latest }),
+        actionLabel: t('dashboard.alerts.upgradeAction'),
         actionKind: 'upgrade',
         agentId: a.agentId,
       });

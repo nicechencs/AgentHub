@@ -6,13 +6,17 @@ import type {
 import { getRuleFixtureById } from './rule-fixtures';
 import {
   CLAUDE_NATIVE_EXPERIMENTAL_RULES,
+  CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID,
+  CODEX_CHAT_BRIDGE_RULE_IDS,
   CODEX_CLAUDE_RULE_ID,
+  CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID,
   DEEPSEEK_CODEX_BASE_URL,
   EXPLICIT_API_TO_CODEX_RULES,
   EXPLICIT_API_TO_PI_RULES,
   GLM_CODEX_BASE_URL,
   GLM_CODEX_RULE_ID,
   GROK_CLAUDE_RULE_ID,
+  GROK_CODEX_RULE_ID,
   GROK_NATIVE_RULE_IDS,
   KIMI_CLAUDE_BASE_URL,
   KIMI_GROK_BASE_URL,
@@ -87,8 +91,14 @@ export function buildPlan(
               'codex',
               'provider',
               analysis.ruleId === 'anthropic-api-to-codex-v1'
-                ? 'AgentHub Anthropic 本地桥接'
-                : 'AgentHub Kimi 本地桥接',
+                ? 'AgentHub Anthropic 本机路由'
+                : analysis.ruleId === 'openai-api-to-codex-v1'
+                  ? 'AgentHub OpenAI 本机路由'
+                  : analysis.ruleId === GROK_CODEX_RULE_ID
+                    ? 'AgentHub Grok 本机路由'
+                    : analysis.ruleId === CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID
+                      ? 'AgentHub Claude 本机路由'
+                      : 'AgentHub Kimi 本机路由',
             ),
             change('codex', 'baseUrl', 'http://127.0.0.1:<本机端口>/v1'),
           ]
@@ -97,16 +107,34 @@ export function buildPlan(
               change('claude', 'ANTHROPIC_BASE_URL', 'http://127.0.0.1:<本机端口>'),
               secretChange('claude', 'ANTHROPIC_AUTH_TOKEN'),
             ]
-        : analysis.route === 'native_endpoint' && request.targetAgentId === 'codex'
+        : analysis.route === 'local_bridge' && request.targetAgentId === 'grok'
           ? [
-              change(
-                'codex',
-                'provider',
-                analysis.ruleId === GLM_CODEX_RULE_ID ? 'GLM Coding Plan' : 'DeepSeek API',
-              ),
-              change('codex', 'baseUrl', codexBaseUrl),
-              change('codex', 'wireApi', 'responses'),
+              change('grok', 'baseUrl', 'http://127.0.0.1:<本机端口>/v1'),
+              change('grok', 'apiBackend', 'responses'),
+              secretChange('grok', 'apiKey'),
             ]
+        : analysis.route === 'local_bridge' && request.targetAgentId === 'kimi'
+          ? [
+              change('kimi', 'baseUrl', 'http://127.0.0.1:<本机端口>/v1'),
+              secretChange('kimi', 'apiKey'),
+            ]
+        : analysis.route === 'local_bridge' && request.targetAgentId === 'dsh'
+          ? [
+              change('dsh', 'baseURL', 'http://127.0.0.1:<本机端口>'),
+              secretChange('dsh', 'apiKey'),
+            ]
+        : analysis.route === 'native_endpoint' && request.targetAgentId === 'codex'
+          ? analysis.ruleId === CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID
+            ? [change('codex', 'login', '官方登录')]
+            : [
+                change(
+                  'codex',
+                  'provider',
+                  analysis.ruleId === GLM_CODEX_RULE_ID ? 'GLM Coding Plan' : 'DeepSeek API',
+                ),
+                change('codex', 'baseUrl', codexBaseUrl),
+                change('codex', 'wireApi', 'responses'),
+              ]
         : analysis.route === 'config_sync' && request.targetAgentId === 'pi'
       ? [
           change('pi', 'provider', configuredProvider ?? 'anthropic'),
@@ -132,10 +160,20 @@ export function buildPlan(
     || (analysis.route === 'native_endpoint' && analysis.support === 'experimental'
       && request.targetAgentId === 'codex'
       && !!analysis.ruleId && EXPLICIT_API_TO_CODEX_RULES.has(analysis.ruleId))
+    || (analysis.route === 'native_endpoint' && analysis.support === 'stable'
+      && request.targetAgentId === 'codex'
+      && analysis.ruleId === CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID)
     || (analysis.route === 'native_endpoint' && analysis.support === 'experimental'
       && request.targetAgentId === 'grok'
       && !!analysis.ruleId && GROK_NATIVE_RULE_IDS.has(analysis.ruleId))
-    || (analysis.route === 'local_bridge' && analysis.support === 'experimental' && request.targetAgentId === 'codex')
+    || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
+      && request.targetAgentId === 'codex'
+      && analysis.gateKind === 'none')
+    || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
+      && request.sourceKind === 'account'
+      && (request.targetAgentId === 'grok' || request.targetAgentId === 'kimi' || request.targetAgentId === 'dsh')
+      && !!analysis.ruleId && CODEX_CHAT_BRIDGE_RULE_IDS.has(analysis.ruleId)
+      && hasCodexAccessToken(resolver, request.sourceId))
     || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
       && request.sourceKind === 'account'
       && request.targetAgentId === 'claude'
@@ -145,6 +183,11 @@ export function buildPlan(
       && request.sourceKind === 'account'
       && request.targetAgentId === 'claude'
       && analysis.ruleId === GROK_CLAUDE_RULE_ID
+      && hasGrokAccessToken(resolver, request.sourceId))
+    || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
+      && request.sourceKind === 'account'
+      && request.targetAgentId === 'codex'
+      && analysis.ruleId === GROK_CODEX_RULE_ID
       && hasGrokAccessToken(resolver, request.sourceId))
     || (analysis.route === 'config_sync' && analysis.support === 'stable' && request.targetAgentId === 'pi')
     || (analysis.route === 'config_sync' && analysis.support === 'experimental'
@@ -201,6 +244,22 @@ export function buildPlan(
     && request.targetAgentId === 'claude'
     && analysis.ruleId === GROK_CLAUDE_RULE_ID
     && hasGrokAccessToken(resolver, request.sourceId);
+  const accountGrokCodexBridge = request.sourceKind === 'account'
+    && implementedPath
+    && request.targetAgentId === 'codex'
+    && analysis.ruleId === GROK_CODEX_RULE_ID
+    && hasGrokAccessToken(resolver, request.sourceId);
+  const accountCodexOfficialSelf = request.sourceKind === 'account'
+    && implementedPath
+    && request.targetAgentId === 'codex'
+    && analysis.ruleId === CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID
+    && hasCodexAccessToken(resolver, request.sourceId);
+  const accountCodexChatBridge = request.sourceKind === 'account'
+    && implementedPath
+    && (request.targetAgentId === 'grok' || request.targetAgentId === 'kimi' || request.targetAgentId === 'dsh')
+    && !!analysis.ruleId
+    && CODEX_CHAT_BRIDGE_RULE_IDS.has(analysis.ruleId)
+    && hasCodexAccessToken(resolver, request.sourceId);
   const writeGate = (request.sourceKind === 'provider' && implementedPath)
     || accountKimiMembership
     || accountGrokNative
@@ -209,10 +268,14 @@ export function buildPlan(
     || accountClaudeNative
     || accountNativeSubscriptionPi
     || accountCodexClaudeBridge
-    || accountGrokClaudeBridge;
+    || accountGrokClaudeBridge
+    || accountGrokCodexBridge
+    || accountCodexOfficialSelf
+    || accountCodexChatBridge;
   const canApply = writeGate;
   const maturity = mockPlanMaturity(analysis);
   const reusePath = NATIVE_SUBSCRIPTION_PI_RULE_IDS.has(analysis.ruleId ?? '')
+    || analysis.ruleId === CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID
     ? 'native_subscription' as const
     : analysis.route === 'unsupported'
       ? 'none' as const
@@ -229,6 +292,9 @@ export function buildPlan(
     && !accountNativeSubscriptionPi
     && !accountCodexClaudeBridge
     && !accountGrokClaudeBridge
+    && !accountGrokCodexBridge
+    && !accountCodexOfficialSelf
+    && !accountCodexChatBridge
     ? `${analysis.reason} ${SAME_EDGE_UNWRITABLE_REASON}`
     : analysis.reason;
   return {
@@ -252,20 +318,12 @@ export function hasCodexAccessToken(
   const credentials = account.credentials;
   if (!credentials || typeof credentials !== 'object') return false;
   const record = credentials as Record<string, unknown>;
-  const tokens = record.tokens;
-  if (tokens && typeof tokens === 'object' && !Array.isArray(tokens)) {
-    const accessToken = (tokens as Record<string, unknown>).access_token;
-    if (typeof accessToken === 'string' && accessToken.trim()) return true;
-  }
-  const body = record.body;
-  if (body && typeof body === 'object' && !Array.isArray(body)) {
-    const bodyTokens = (body as Record<string, unknown>).tokens;
-    if (bodyTokens && typeof bodyTokens === 'object' && !Array.isArray(bodyTokens)) {
-      const accessToken = (bodyTokens as Record<string, unknown>).access_token;
-      return typeof accessToken === 'string' && Boolean(accessToken.trim());
-    }
-  }
-  return false;
+  const candidates = [
+    record.access_token,
+    (record.tokens as Record<string, unknown> | undefined)?.access_token,
+    ((record.body as Record<string, unknown> | undefined)?.tokens as Record<string, unknown> | undefined)?.access_token,
+  ];
+  return candidates.some((token) => typeof token === 'string' && Boolean(token.trim()));
 }
 
 export function hasGrokAccessToken(

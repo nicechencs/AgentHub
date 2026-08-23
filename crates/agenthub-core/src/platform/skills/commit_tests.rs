@@ -10,16 +10,23 @@ use std::sync::Arc;
 use crate::adapters::AdapterRegistry;
 use crate::models::{AgentId, SkillSourceRecord};
 use crate::platform::skills::assignment::package_revision;
-use crate::platform::skills::commit::{commit_skill_package, PreparedSkillTree, SkillCommitFaults};
+use crate::platform::skills::commit::{
+    commit_skill_package, recover_skill_commit_journal, PreparedSkillTree, SkillCommitFaults,
+};
+use crate::platform::skills::journal::{
+    load_journal, write_journal, SkillCommitJournal, SkillCommitPhase, SkillPackageSnapshot,
+    SKILL_COMMIT_JOURNAL_SCHEMA,
+};
 use crate::platform::skills::lockfile::{skill_lock_file, skill_lock_load, skill_lock_upsert};
 use crate::platform::skills::packages::{
-    swap_staging_keep_backup, write_skill_tree, SkillPackageService,
+    finalize_retained_backup, swap_staging_keep_backup, write_skill_tree, RetainedLiveSwap,
+    SkillPackageService,
 };
 use crate::platform::skills::target::StaticSkillTarget;
 use crate::platform::skills::{SkillAssignmentService, SkillReconciler, SkillTargetRegistry};
 use crate::platform::AgentKey;
 use crate::services::SkillService;
-use crate::storage::{Database, SkillRepo};
+use crate::storage::{Database, SkillPackageRow, SkillRepo};
 use crate::utils::agent_lock::AgentWriteLock;
 
 fn try_symlink_dir(target: &Path, link: &Path) -> bool {
@@ -82,6 +89,10 @@ fn record(
         installed_at: installed_at.into(),
         updated_at: updated_at.map(|s| s.to_string()),
     }
+}
+
+fn load_journal_phase(root: &Path) -> SkillCommitPhase {
+    load_journal(root).unwrap().unwrap().phase
 }
 
 #[test]
@@ -283,6 +294,442 @@ fn package_db_write_failure_restores_old_live_lock_package() {
     assert_eq!(pkg_after.revision, pkg_before.revision);
     assert_eq!(pkg_after.locator, pkg_before.locator);
     assert_no_helper_dirs(&skills_root);
+}
+
+#[test]
+fn durable_commit_journal_recovers_each_phase() {
+    for phase in [
+        SkillCommitPhase::Prepared,
+        SkillCommitPhase::LiveSwapped,
+        SkillCommitPhase::LockCommitted,
+        SkillCommitPhase::PackageCommitted,
+    ] {
+        let tmp = crate::utils::test_temp::real_tempdir();
+        let root = tmp.path().join("skills");
+        fs::create_dir_all(&root).unwrap();
+        let db = Database::open(&root.join("db.sqlite")).unwrap();
+        let repo = SkillRepo::new(db);
+        let live = root.join("demo");
+        write_skill_tree_dir(&live, "# old\n", Some(("version.txt", "old")));
+        let old_record = record("local", "/old", "t0", None);
+        skill_lock_upsert(&root, "demo", old_record.clone()).unwrap();
+        let old_package = SkillPackageRow {
+            id: "demo".into(),
+            source_kind: "local".into(),
+            locator: "/old".into(),
+            revision: "old-revision".into(),
+            manifest_json: "{}".into(),
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        };
+        repo.upsert_package(&old_package).unwrap();
+
+        let staging = root.join(".agenthub-stage-demo-journal-test");
+        write_skill_tree_dir(&staging, "# new\n", Some(("version.txt", "new")));
+        let backup = root.join(".agenthub-bak-demo-journal-test");
+        let new_record = record("local", "/new", "t0", Some("t1"));
+        let new_package = SkillPackageRow {
+            locator: "/new".into(),
+            revision: "new-revision".into(),
+            updated_at: "t1".into(),
+            ..old_package.clone()
+        };
+
+        if phase != SkillCommitPhase::Prepared {
+            fs::rename(&live, &backup).unwrap();
+            fs::rename(&staging, &live).unwrap();
+        }
+        if matches!(
+            phase,
+            SkillCommitPhase::LockCommitted | SkillCommitPhase::PackageCommitted
+        ) {
+            skill_lock_upsert(&root, "demo", new_record).unwrap();
+        }
+        if phase == SkillCommitPhase::PackageCommitted {
+            repo.upsert_package(&new_package).unwrap();
+        }
+
+        let journal = SkillCommitJournal {
+            schema: SKILL_COMMIT_JOURNAL_SCHEMA,
+            skill: "demo".into(),
+            target: live.clone(),
+            had_live: true,
+            staging: staging.clone(),
+            // The overwrite journal reserves its backup name before the
+            // first rename.  Prepared therefore carries the path even while
+            // the helper itself does not exist yet.
+            backup: Some(backup.clone()),
+            old_lock: [("demo".into(), old_record.clone())].into_iter().collect(),
+            had_lock_file: true,
+            old_package: Some(SkillPackageSnapshot::from(&old_package)),
+            has_package_repo: true,
+            phase,
+        };
+        write_journal(&root, &journal).unwrap();
+
+        assert!(recover_skill_commit_journal(&root, Some(&repo)).unwrap());
+        assert!(!crate::platform::skills::journal::journal_path(&root).exists());
+        assert!(!staging.exists());
+        assert!(!backup.exists());
+
+        if phase == SkillCommitPhase::PackageCommitted {
+            assert_eq!(
+                fs::read_to_string(live.join("SKILL.md")).unwrap(),
+                "# new\n"
+            );
+            assert_eq!(
+                skill_lock_load(&root).unwrap().get("demo").unwrap().locator,
+                "/new"
+            );
+            assert_eq!(repo.get_package("demo").unwrap(), Some(new_package));
+        } else {
+            assert_eq!(
+                fs::read_to_string(live.join("SKILL.md")).unwrap(),
+                "# old\n"
+            );
+            assert_eq!(
+                skill_lock_load(&root).unwrap().get("demo"),
+                Some(&old_record)
+            );
+            assert_eq!(repo.get_package("demo").unwrap(), Some(old_package));
+        }
+    }
+}
+
+#[test]
+fn durable_prepared_journal_recovers_first_install_after_live_rename() {
+    let tmp = crate::utils::test_temp::real_tempdir();
+    let root = tmp.path().join("skills");
+    fs::create_dir_all(&root).unwrap();
+    let db = Database::open(&root.join("db.sqlite")).unwrap();
+    let repo = SkillRepo::new(db);
+    let target = root.join("demo");
+    let staging = root.join(".agenthub-stage-demo-first-install");
+    write_skill_tree_dir(&staging, "# new\n", None);
+    fs::rename(&staging, &target).unwrap();
+
+    let journal = SkillCommitJournal {
+        schema: SKILL_COMMIT_JOURNAL_SCHEMA,
+        skill: "demo".into(),
+        target: target.clone(),
+        had_live: false,
+        staging: staging.clone(),
+        backup: None,
+        old_lock: BTreeMap::new(),
+        had_lock_file: false,
+        old_package: None,
+        has_package_repo: true,
+        phase: SkillCommitPhase::Prepared,
+    };
+    write_journal(&root, &journal).unwrap();
+
+    recover_skill_commit_journal(&root, Some(&repo)).unwrap();
+    assert!(!target.exists());
+    assert!(!skill_lock_file(&root).exists());
+    assert!(!crate::platform::skills::journal::journal_path(&root).exists());
+}
+
+#[test]
+fn durable_prepared_overwrite_recovers_after_first_rename() {
+    let tmp = crate::utils::test_temp::real_tempdir();
+    let root = tmp.path().join("skills");
+    fs::create_dir_all(&root).unwrap();
+    let db = Database::open(&root.join("db.sqlite")).unwrap();
+    let repo = SkillRepo::new(db);
+    let target = root.join("demo");
+    let staging = root.join(".agenthub-stage-demo-first-rename");
+    let backup = root.join(".agenthub-bak-demo-first-rename");
+    write_skill_tree_dir(&target, "# old\n", None);
+    write_skill_tree_dir(&staging, "# new\n", None);
+    fs::rename(&target, &backup).unwrap();
+
+    write_journal(
+        &root,
+        &SkillCommitJournal {
+            schema: SKILL_COMMIT_JOURNAL_SCHEMA,
+            skill: "demo".into(),
+            target: target.clone(),
+            had_live: true,
+            staging: staging.clone(),
+            backup: Some(backup.clone()),
+            old_lock: BTreeMap::new(),
+            had_lock_file: false,
+            old_package: None,
+            has_package_repo: true,
+            phase: SkillCommitPhase::Prepared,
+        },
+    )
+    .unwrap();
+
+    recover_skill_commit_journal(&root, Some(&repo)).unwrap();
+    assert_eq!(
+        fs::read_to_string(target.join("SKILL.md")).unwrap(),
+        "# old\n"
+    );
+    assert!(!staging.exists());
+    assert!(!backup.exists());
+    assert!(!crate::platform::skills::journal::journal_path(&root).exists());
+}
+
+#[test]
+fn durable_recovery_retries_after_lock_restore_failure_without_deleting_old_live() {
+    let tmp = crate::utils::test_temp::real_tempdir();
+    let root = tmp.path().join("skills");
+    fs::create_dir_all(&root).unwrap();
+    let db = Database::open(&root.join("db.sqlite")).unwrap();
+    let repo = SkillRepo::new(db);
+    let target = root.join("demo");
+    let staging = root.join(".agenthub-stage-demo-lock-failure");
+    let backup = root.join(".agenthub-bak-demo-lock-failure");
+    write_skill_tree_dir(&target, "# new\n", None);
+    write_skill_tree_dir(&backup, "# old\n", None);
+    write_skill_tree_dir(&staging, "# staged\n", None);
+    fs::create_dir(skill_lock_file(&root)).unwrap();
+
+    write_journal(
+        &root,
+        &SkillCommitJournal {
+            schema: SKILL_COMMIT_JOURNAL_SCHEMA,
+            skill: "demo".into(),
+            target: target.clone(),
+            had_live: true,
+            staging: staging.clone(),
+            backup: Some(backup.clone()),
+            old_lock: BTreeMap::new(),
+            had_lock_file: true,
+            old_package: None,
+            has_package_repo: true,
+            phase: SkillCommitPhase::LiveSwapped,
+        },
+    )
+    .unwrap();
+
+    assert!(recover_skill_commit_journal(&root, Some(&repo)).is_err());
+    assert_eq!(
+        load_journal_phase(&root),
+        SkillCommitPhase::RollbackLiveRestored
+    );
+    assert_eq!(
+        fs::read_to_string(target.join("SKILL.md")).unwrap(),
+        "# old\n"
+    );
+    assert!(!backup.exists());
+
+    fs::remove_dir(skill_lock_file(&root)).unwrap();
+    recover_skill_commit_journal(&root, Some(&repo)).unwrap();
+    assert!(!crate::platform::skills::journal::journal_path(&root).exists());
+}
+
+#[test]
+fn durable_recovery_retries_after_package_restore_failure_without_repeating_live_rollback() {
+    let tmp = crate::utils::test_temp::real_tempdir();
+    let root = tmp.path().join("skills");
+    fs::create_dir_all(&root).unwrap();
+    let db = Database::open(&root.join("db.sqlite")).unwrap();
+    let repo = SkillRepo::new(db.clone());
+    let target = root.join("demo");
+    let staging = root.join(".agenthub-stage-demo-package-failure");
+    let backup = root.join(".agenthub-bak-demo-package-failure");
+    write_skill_tree_dir(&target, "# new\n", None);
+    write_skill_tree_dir(&backup, "# old\n", None);
+    write_skill_tree_dir(&staging, "# staged\n", None);
+    let old_package = SkillPackageRow {
+        id: "demo".into(),
+        source_kind: "local".into(),
+        locator: "/old".into(),
+        revision: "old".into(),
+        manifest_json: "{}".into(),
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    };
+    let new_package = SkillPackageRow {
+        locator: "/new".into(),
+        revision: "new".into(),
+        updated_at: "t1".into(),
+        ..old_package.clone()
+    };
+    repo.upsert_package(&new_package).unwrap();
+    db.with_conn(|conn| {
+        conn.execute_batch(
+            r#"
+            CREATE TRIGGER skill_packages_fail_recovery
+            BEFORE UPDATE ON skill_packages
+            BEGIN
+                SELECT RAISE(ABORT, 'injected recovery package failure');
+            END;
+            "#,
+        )?;
+        Ok(())
+    })
+    .unwrap();
+
+    write_journal(
+        &root,
+        &SkillCommitJournal {
+            schema: SKILL_COMMIT_JOURNAL_SCHEMA,
+            skill: "demo".into(),
+            target: target.clone(),
+            had_live: true,
+            staging: staging.clone(),
+            backup: Some(backup.clone()),
+            old_lock: BTreeMap::new(),
+            had_lock_file: false,
+            old_package: Some(SkillPackageSnapshot::from(&old_package)),
+            has_package_repo: true,
+            phase: SkillCommitPhase::LiveSwapped,
+        },
+    )
+    .unwrap();
+
+    assert!(recover_skill_commit_journal(&root, Some(&repo)).is_err());
+    assert_eq!(
+        load_journal_phase(&root),
+        SkillCommitPhase::RollbackLockRestored
+    );
+    assert_eq!(
+        fs::read_to_string(target.join("SKILL.md")).unwrap(),
+        "# old\n"
+    );
+    assert!(!backup.exists());
+
+    db.with_conn(|conn| {
+        conn.execute_batch("DROP TRIGGER skill_packages_fail_recovery")?;
+        Ok(())
+    })
+    .unwrap();
+    recover_skill_commit_journal(&root, Some(&repo)).unwrap();
+    assert!(!crate::platform::skills::journal::journal_path(&root).exists());
+    assert_eq!(repo.get_package("demo").unwrap(), Some(old_package));
+}
+
+#[test]
+fn durable_recovery_retries_after_helper_cleanup_failure() {
+    let tmp = crate::utils::test_temp::real_tempdir();
+    let root = tmp.path().join("skills");
+    fs::create_dir_all(&root).unwrap();
+    let db = Database::open(&root.join("db.sqlite")).unwrap();
+    let repo = SkillRepo::new(db);
+    let target = root.join("demo");
+    let staging = root.join(".agenthub-stage-demo-helper-failure");
+    let backup = root.join(".agenthub-bak-demo-helper-failure");
+    write_skill_tree_dir(&target, "# new\n", None);
+    write_skill_tree_dir(&backup, "# old\n", None);
+    fs::write(&staging, "not a directory").unwrap();
+
+    write_journal(
+        &root,
+        &SkillCommitJournal {
+            schema: SKILL_COMMIT_JOURNAL_SCHEMA,
+            skill: "demo".into(),
+            target: target.clone(),
+            had_live: true,
+            staging: staging.clone(),
+            backup: Some(backup.clone()),
+            old_lock: BTreeMap::new(),
+            had_lock_file: false,
+            old_package: None,
+            has_package_repo: true,
+            phase: SkillCommitPhase::LiveSwapped,
+        },
+    )
+    .unwrap();
+
+    assert!(recover_skill_commit_journal(&root, Some(&repo)).is_err());
+    assert_eq!(
+        load_journal_phase(&root),
+        SkillCommitPhase::RollbackPackageRestored
+    );
+    assert_eq!(
+        fs::read_to_string(target.join("SKILL.md")).unwrap(),
+        "# old\n"
+    );
+    assert!(!backup.exists());
+
+    fs::remove_file(&staging).unwrap();
+    recover_skill_commit_journal(&root, Some(&repo)).unwrap();
+    assert!(!crate::platform::skills::journal::journal_path(&root).exists());
+}
+
+#[test]
+fn finalize_backup_reports_helper_metadata_errors_without_claiming_cleanup() {
+    let tmp = crate::utils::test_temp::real_tempdir();
+    let root = tmp.path().join("skills");
+    fs::create_dir_all(&root).unwrap();
+    let backup = root.join(".agenthub-bak-demo-metadata-error");
+    fs::write(&backup, "not a directory").unwrap();
+
+    let err = finalize_retained_backup(
+        &root,
+        RetainedLiveSwap {
+            backup: Some(backup.clone()),
+            first_install: false,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.code(), "skill.backup");
+    assert!(
+        backup.exists(),
+        "cleanup error must retain the helper evidence"
+    );
+
+    fs::remove_file(&backup).unwrap();
+    finalize_retained_backup(
+        &root,
+        RetainedLiveSwap {
+            backup: Some(backup),
+            first_install: false,
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn skill_service_startup_recovery_is_narrow_and_root_locked() {
+    let tmp = crate::utils::test_temp::real_tempdir();
+    let root = tmp.path().join("skills");
+    fs::create_dir_all(&root).unwrap();
+    let (_db_dir, db) = tmp_db();
+    let service = SkillService::with_db(root.clone(), AdapterRegistry::new(), db.clone());
+    let target = root.join("demo");
+    let staging = root.join(".agenthub-stage-demo-startup");
+    write_skill_tree_dir(&staging, "# pending\n", None);
+    fs::rename(&staging, &target).unwrap();
+
+    write_journal(
+        &root,
+        &SkillCommitJournal {
+            schema: SKILL_COMMIT_JOURNAL_SCHEMA,
+            skill: "demo".into(),
+            target: target.clone(),
+            had_live: false,
+            staging,
+            backup: None,
+            old_lock: BTreeMap::new(),
+            had_lock_file: false,
+            old_package: None,
+            has_package_repo: true,
+            phase: SkillCommitPhase::Prepared,
+        },
+    )
+    .unwrap();
+
+    assert!(service.recover_pending_commit().is_ok());
+    assert!(!target.exists());
+    assert!(!crate::platform::skills::journal::journal_path(&root).exists());
+    assert!(SkillRepo::new(db).get_package("demo").unwrap().is_none());
+    assert!(!root.join(".locks").join("skill-__root__.lock").exists());
+}
+
+#[test]
+fn recover_pending_commit_without_journal_does_not_create_lock_dir() {
+    let tmp = crate::utils::test_temp::real_tempdir();
+    let root = tmp.path().join("skills");
+    let (_db_dir, db) = tmp_db();
+    let a = SkillService::with_db(root.clone(), AdapterRegistry::new(), db.clone());
+    let b = SkillService::with_db(root.clone(), AdapterRegistry::new(), db);
+    a.recover_pending_commit().unwrap();
+    b.recover_pending_commit().unwrap();
+    assert!(!root.join(".locks").exists());
 }
 
 #[test]

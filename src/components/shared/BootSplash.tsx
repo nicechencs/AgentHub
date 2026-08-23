@@ -78,11 +78,11 @@ export function BootSplash({
       <div className="boot-splash__content relative flex flex-col items-center gap-5">
         {/* Product logo（与安装包 / 桌面图标一致） */}
         <div className="boot-splash__mark relative flex h-14 w-14 items-center justify-center">
-          <span className="boot-splash__mark-ring absolute inset-0 rounded-2xl" aria-hidden />
+          <span className="boot-splash__mark-ring absolute inset-0 rounded-mark" aria-hidden />
           <AppLogo
             size={48}
             alt="AgentHub"
-            className="relative h-12 w-12 rounded-[22%] shadow-sm"
+            className="relative h-12 w-12 shadow-sm"
           />
         </div>
 

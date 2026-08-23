@@ -40,7 +40,7 @@
 | 约束 | 现行值 | 说明 |
 |---|---|---|
 | 字号 | 仅三档：`text-title` 16 / `text-body` 13 / `text-meta` 12 | `text-sm`/`text-xs` 等是同像素别名，**新代码写语义名** |
-| 圆角 | `rounded-btn` 6 / `rounded-card` 8 / `rounded-composer` 12 | 禁止 `rounded-[Npx]` |
+| 圆角 | `rounded-btn` 6 / `rounded-card` 8 / `rounded-composer` 12 / `rounded-mark` 产品标 | 禁止 `rounded-[Npx]`、`rounded-lg`、`rounded-2xl`；嵌套面板、Tooltip、代码井、应用壳列用 card |
 | 阴影 | `shadow-xs` 卡 / `sm` 轻浮层 / `md` 菜单·Toast / `lg` Dialog | |
 | 焦点环 | `focus:ring-2 focus:ring-accent/60` | Input / Button / Select 已对齐；**不要**再改成 1px 方言 |
 | Accent | 浅 `#4F46E5`，深 `#6366F1` | Phase 0 已选：保留 indigo，只降暴露。换色相 = Phase 5，先不做 |
@@ -132,7 +132,7 @@ src/components/connect/   # ConnectFlow / OAuth
 
 | 组件 | 职责 |
 |---|---|
-| `Sidebar` | Workspace：Chat / Agents / Skills / MCP / Projects。Manage：Dashboard / Connections / Routes（**有本机路由才出现**）/ Settings。备份在 Settings `?tab=backups`，不占侧栏 |
+| `Sidebar` | Workspace：Chat / Agents / Skills / MCP / Projects。Manage：Dashboard / Connections / Routes（英文 Routes、中文「路由」，**永久显示**）/ Settings。备份在 Settings `?tab=backups`，不占侧栏 |
 | `TopBar` | Chat 不渲染 |
 | `PageHeader` | `default` / `compact`（全高页只收底距）。标题一律 `text-title` |
 | `PageSection` | 段距 / 可选分割线 / 段标题（body + semibold） |
@@ -143,7 +143,7 @@ src/components/connect/   # ConnectFlow / OAuth
 
 | 组件 | 职责 |
 |---|---|
-| `ConnectFlowDialog` | 绑定。Dashboard 点工具 = 固定选登录；Connections「接到…」= 登录固定、选工具。确认走 `bind` |
+| `ConnectFlowDialog` | 绑定。Dashboard 点工具 = 固定选登录；Connections「分享 / 路由」= 登录固定、按目的过滤工具。确认走 `bind` |
 | `OAuthFlowDialog` | 仅已开边 OAuth（Claude / Codex / Gemini / Antigravity 等）。国产 OAuth **不开边** |
 
 ---
@@ -182,15 +182,15 @@ src/components/connect/   # ConnectFlow / OAuth
 | 场景 | 组件 | 尺寸 |
 |---|---|---|
 | 页级导航（Skills 两栏、Settings 四分区：偏好 / 本机 / 备份 / 关于） | `Tabs` | md |
-| 页内列表筛选（全部 / OAuth / API Key…） | `SegmentedControl` | sm + `count` |
-| 页内 Agent 过滤 | `AgentTabStrip` | md（不要再传 sm） |
+| 页内列表筛选（全部 / OAuth / API Key…） | `SegmentedControl` | sm + `count`。仍是需要类型芯片的页面的通用件 |
+| 页内 Agent 过滤 | `AgentTabStrip` | md（不要再传 sm）。Connections 走此件，**不再**用 `SegmentedControl` 做「官方登录 / API Key / 未识别」 |
 | 预览「预览 \| 源码」 | 允许手写扁段，`h-6` | 特例 |
 
-普通数量用 `segmentedCountClass`。琥珀行动角标用 `actionCountClass`，不要再画一遍明文数字。
+普通数量用 `segmentedCountClass`。琥珀行动角标用 `actionCountClass`，不要再画一遍明文数字。凭据类型在 Connections 用行内 OAuth 人头 / API Key 钥匙，不另开类型芯片。
 
 ### 5.4 搜索
 
-列表筛选 **必须** `SearchField`。现行已收口：Skills、Chat、Projects、**Connections 登录列表**。
+列表筛选 **必须** `SearchField`。现行已收口：Skills、Chat、Projects。**Connections 登录列表无搜索框。**
 
 禁止再写 `relative + Search icon + Input`（旧方言：`h-8 w-44 pl-7 text-xs`）。
 
@@ -240,15 +240,26 @@ src/components/connect/   # ConnectFlow / OAuth
 
 ## 6. 页面壳与节奏
 
+内容宽度只分两套（产品契约 [ui-design.md §3.1](ui-design.md)）。新页先选套，再写布局。
+
+| 套 | 何时用 | 必须引用 |
+|---|---|---|
+| **阅读列** | 对话 / 设置表单 / 长文 | `pageRhythm.readingColumn`（`mx-auto w-full max-w-3xl`）。Chat 与 Settings 必须同一条，禁止各写各的 max 宽。 |
+| **贴边列**（默认） | 列表 / 表格 / 卡片墙 / 主从分栏 | 常规页走 `pageRhythm.pageShell`（`px-[18px]`）；Skills / Projects 走 `workbenchX` / `pageEdgePx.x`。不要再套 `mx-auto max-w-*`。 |
+
+禁止第三套：不要恢复 `max-w-content`（1200），不要页面私有 `max-w-4xl` / `max-w-5xl`，不要阅读列左对齐。`fullBleed` 只管全高，不是第三套宽度。
+
 `App.tsx`：
 
-| 路由 | TopBar | 外壳 |
-|---|---|---|
-| 常规页 | 有 | `pageRhythm.pageShell` = `mx-auto max-w-content px-6 py-6`（1200） |
-| `/chat` | 无 | fullBleed，无 `PageHeader` |
-| `/skills` | 有 | fullBleed；`PageHeader size="compact"` + Tabs |
+| 路由 | TopBar | 宽度套 | 外壳 |
+|---|---|---|---|
+| 常规页 | 有 | 贴边列 | `pageRhythm.pageShell` = `w-full min-w-0 px-[18px] py-[18px]` |
+| `/chat` | 无 | 阅读列 | fullBleed，无 `PageHeader`；消息列 `pageRhythm.readingColumn` |
+| `/skills` | 有 | 贴边列 | fullBleed；`workbenchHeader` + `PageHeader size="compact"` + Tabs |
+| `/projects` | 有 | 贴边列 | fullBleed；`workbenchHeader` + `PageHeader size="compact"` + 左侧列表 / 右侧会话预览 |
+| `/settings` | 有 | 阅读列 | 常规壳；页头贴边，表单 `pageRhythm.readingColumn` |
 
-区块自上而下：`PageHeader` → `chrome` / `chromeRow` → `lead`（环境条、Notice）→ `stack` / `blocks` → `PageSection`。Chat / Skills 自管布局，但水平 inset 须走 `pageRhythm` / `pageEdgePx`，禁止硬编码 `px-4`（Chat chrome 除外，它的真源是 `chatChromeX`）。
+区块自上而下：`PageHeader` → `chrome` / `chromeRow` → `lead`（环境条、Notice）→ `stack` / `blocks` → `PageSection`。Chat / Skills / Projects 自管布局，但水平 inset 须走 `pageRhythm` / `pageEdgePx`，禁止硬编码 `px-4`（Chat chrome 除外，它的真源是 `chatChromeX`）。
 
 导航专有名词保持英文（Dashboard / Agents / …）；页面标题与正文用中文。
 
@@ -272,7 +283,7 @@ src/components/connect/   # ConnectFlow / OAuth
 
 | 项 | 原状 | 本标准 |
 |---|---|---|
-| Connections 登录列表搜索 | 手写 `h-8 w-44 pl-7 text-xs` | 已改 `SearchField` |
+| Connections 登录列表搜索 | 手写 `h-8 w-44 pl-7 text-xs`，后改 `SearchField` | **现行无搜索框** |
 | 登录列表 loading | 「正在加载钱包…」（历史文案） | 已改为 `ListSkeleton` / 登录列表 loading |
 | `EmptyState` / `ErrorState` / `Notice` / `QuotaBar` / `StatusDot` | `text-sm` / `text-xs` | 已改语义名；空态/错误主句升为 `text-title` |
 | 全站仍大量 `text-sm` / `text-xs` | 别名，像素相同 | 新代码写语义名；存量不搞大扫除 |
@@ -300,7 +311,7 @@ src/components/connect/   # ConnectFlow / OAuth
 ### 当前（Phase 3 收口，可拆 PR）
 
 1. **文档**：本文 + 回写 `ui-design.md` §1.3 / §5 + `docs/README.md` + 对标文档相关链接。  
-2. **SearchField 收口** Connections 登录列表（本 PR 已做）。  
+2. **SearchField 收口** Skills / Chat / Projects（禁止手写搜索框）。Connections 登录列表**无搜索框**。  
 3. **共享件字号**改语义 token；空态/错误主句用 `text-title`（本 PR 已做）。  
 4. **登录列表 loading** 改 `ListSkeleton`（本 PR 已做）。  
 5. **提示通道决策**以本文 §5.5 为准；后续 PR 按检查表自检。

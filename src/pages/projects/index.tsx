@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   EyeOff,
@@ -30,8 +30,6 @@ import {
   deleteAgentProject,
   deleteAgentProjects,
   getAgentProjectExcerpts,
-  getProjectMetadata,
-  listAgentProjects,
   listAgentProjectSessions,
   setShowHiddenProjects,
   upsertProjectMeta,
@@ -40,49 +38,62 @@ import { openPathInFileManager } from '@/lib/api/skill';
 import { setChatBootstrap } from '@/lib/chat-bootstrap';
 import { isCapabilityUsable } from '@/lib/capability';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
+import {
+  invalidateProjects,
+  rememberProjectAgent,
+  rememberedProjectAgent,
+  shouldShowProjectListSkeleton,
+  useAgentProjectList,
+  useProjectShowHidden,
+} from '@/lib/hooks/useProjects';
 import { normalizeOpenPath, verifiedProjectWorkspacePath } from '@/lib/path-open';
 import type { AgentId, AgentProject, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { projectMatches, sessionMatches } from './project-filter';
 import { buildContinuePrompt, buildSummaryPrompt } from './project-prompts';
-import { nativeSessionId, shortSessionId } from './project-format';
-import { resolveProjectFetchAgentId, resolveProjectTabAgents } from './project-tab-agents';
+import { nativeResumeCommand, nativeSessionId, shortSessionId } from './project-format';
+import {
+  resolveInitialProjectAgentId,
+  resolveProjectFetchAgentId,
+  resolveProjectTabAgents,
+} from './project-tab-agents';
+import { ProjectConversationPreviewPanel } from './ProjectConversationPreviewPanel';
 import { ProjectTree } from './ProjectTree';
+import {
+  PREVIEW_FRAME_PAD_RIGHT,
+  PREVIEW_FRAME_PAD_Y,
+} from './projects-preview-model';
+import { useProjectPreview } from './use-project-preview';
 
 export default function ProjectsPage() {
   const { t } = useI18n();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { installedAgents, installedIds, hiddenIds, loading: agentsLoading } = useInstalledAgents();
+  const { installedAgents, hiddenIds, loading: agentsLoading } = useInstalledAgents();
+  const { showHidden, ready: hiddenReady, setShowHidden } = useProjectShowHidden();
 
   const agentFromUrl = searchParams.get('agent') as AgentId | null;
   const tabAgents = resolveProjectTabAgents(installedAgents, hiddenIds);
-  /** 稳定 key，避免 installedAgents 每渲染新建数组导致计数重复拉取 */
-  const tabAgentIdsKey = agentsLoading ? '' : installedIds.join(',');
 
-  const [agentId, setAgentId] = useState<AgentId>(() => {
-    if (agentFromUrl && tabAgents.some((a) => a.id === agentFromUrl)) return agentFromUrl;
-    return tabAgents[0]?.id ?? '';
-  });
+  const [agentId, setAgentId] = useState<AgentId>(() =>
+    resolveInitialProjectAgentId(agentFromUrl, tabAgents, rememberedProjectAgent()),
+  );
 
-  const [projects, setProjects] = useState<AgentProject[]>([]);
   /** Lazy-loaded sessions keyed by project id */
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, AgentSession[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loadingProjectIds, setLoadingProjectIds] = useState<Set<string>>(new Set());
-  const [phase, setPhase] = useState<'loading' | 'error' | 'ready'>('loading');
-  const [error, setError] = useState<unknown>(null);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AgentSession | null>(null);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
-  const [showHidden, setShowHidden] = useState(false);
-  /** 各 agent 项目数量（Tab 角标） */
-  const [projectCounts, setProjectCounts] = useState<Partial<Record<AgentId, number>>>({});
+  const preview = useProjectPreview();
 
-  const requestIdRef = useRef(0);
+  useEffect(() => {
+    if (agentId) rememberProjectAgent(agentId);
+  }, [agentId]);
 
   const agentCaps = installedAgents.find((a) => a.id === agentId)?.capabilities;
   const canDelete = isCapabilityUsable(agentCaps?.projectDelete);
@@ -92,6 +103,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     if (agentFromUrl && agentFromUrl !== agentId && tabAgents.some((a) => a.id === agentFromUrl)) {
+      rememberProjectAgent(agentFromUrl);
       setAgentId(agentFromUrl);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to URL
@@ -100,7 +112,12 @@ export default function ProjectsPage() {
   useEffect(() => {
     if (agentsLoading || tabAgents.length === 0) return;
     if (!tabAgents.some((a) => a.id === agentId)) {
-      const nextId = tabAgents[0].id;
+      const nextId = resolveInitialProjectAgentId(
+        agentFromUrl,
+        tabAgents,
+        rememberedProjectAgent(),
+      );
+      rememberProjectAgent(nextId);
       setAgentId(nextId);
       const next = new URLSearchParams(searchParams);
       next.set('agent', nextId);
@@ -110,15 +127,38 @@ export default function ProjectsPage() {
   }, [agentsLoading, tabAgents, agentId]);
 
   const fetchAgentId = resolveProjectFetchAgentId(tabAgents, agentId);
+  const listEnabled = hiddenReady && !agentsLoading && !!fetchAgentId;
+  const {
+    data,
+    error,
+    loading: listLoading,
+    reload,
+    setData,
+  } = useAgentProjectList(fetchAgentId, showHidden, listEnabled);
+  const projects = data ?? [];
+  const projectCounts = useMemo(() => {
+    const next: Partial<Record<AgentId, number>> = {};
+    if (fetchAgentId && data) next[fetchAgentId] = data.length;
+    return next;
+  }, [fetchAgentId, data]);
+  const showListSkeleton = shouldShowProjectListSkeleton({
+    listLoading,
+    data,
+    error,
+    agentsLoading,
+    hiddenReady,
+  });
 
   const resetTree = useCallback(() => {
     setExpanded(new Set());
     setSessionsByProject({});
     setSelected(new Set());
     setLoadingProjectIds(new Set());
-  }, []);
+    preview.reset();
+  }, [preview.reset]);
 
   const setAgent = (id: AgentId) => {
+    rememberProjectAgent(id);
     setAgentId(id);
     resetTree();
     setSearch('');
@@ -127,83 +167,11 @@ export default function ProjectsPage() {
     setSearchParams(next, { replace: true });
   };
 
-  const loadProjects = useCallback(
-    async (id: AgentId, includeHidden: boolean) => {
-      const req = ++requestIdRef.current;
-      setPhase('loading');
-      setError(null);
-      resetTree();
-      try {
-        const rows = await listAgentProjects(id, includeHidden);
-        if (req !== requestIdRef.current) return;
-        setProjects(rows);
-        setProjectCounts((prev) => ({ ...prev, [id]: rows.length }));
-        setPhase('ready');
-      } catch (e) {
-        if (req !== requestIdRef.current) return;
-        setError(e);
-        setPhase('error');
-      }
-    },
-    [resetTree],
-  );
-
   const reloadProjects = () => {
     if (!fetchAgentId) return Promise.resolve();
-    return loadProjects(fetchAgentId, showHidden);
+    invalidateProjects();
+    return reload();
   };
-
-  useEffect(() => {
-    void getProjectMetadata()
-      .then((m) => setShowHidden(!!m.showHiddenProjects))
-      .catch(() => {
-        /* ignore */
-      });
-  }, []);
-
-  useEffect(() => {
-    if (agentsLoading) return;
-    if (!fetchAgentId) {
-      setProjects([]);
-      setPhase(tabAgents.length === 0 ? 'ready' : 'loading');
-      return;
-    }
-    void loadProjects(fetchAgentId, showHidden);
-  }, [fetchAgentId, showHidden, loadProjects, agentsLoading, tabAgents.length]);
-
-  /** 拉取全部 agent 项目数，角标与 Skills 工具条一致 */
-  useEffect(() => {
-    if (!tabAgentIdsKey) return;
-    const ids = tabAgentIdsKey.split(',') as AgentId[];
-    let cancelled = false;
-    void listAgentProjects(null, showHidden)
-      .then((rows) => {
-        if (cancelled) return;
-        const next: Partial<Record<AgentId, number>> = {};
-        for (const id of ids) next[id] = 0;
-        for (const p of rows) {
-          if (ids.includes(p.agentId)) {
-            next[p.agentId] = (next[p.agentId] ?? 0) + 1;
-          }
-        }
-        setProjectCounts((prev) => ({ ...prev, ...next }));
-      })
-      .catch(() => {
-        /* 角标失败不阻塞主列表 */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tabAgentIdsKey, showHidden]);
-
-  /** 本地删会话等导致列表变短时，同步当前 tab 角标 */
-  useEffect(() => {
-    if (phase !== 'ready') return;
-    setProjectCounts((prev) => {
-      if (prev[agentId] === projects.length) return prev;
-      return { ...prev, [agentId]: projects.length };
-    });
-  }, [phase, agentId, projects.length]);
 
   const loadSessionsFor = useCallback(async (project: AgentProject) => {
     if (project.sessionCount === 0) {
@@ -254,6 +222,7 @@ export default function ProjectsPage() {
           return next;
         });
       }
+      if (preview.session?.projectId === project.id) preview.close();
       return;
     }
     setExpanded((prev) => new Set(prev).add(project.id));
@@ -306,8 +275,8 @@ export default function ProjectsPage() {
     }
   }
 
-  async function openSessionRecord(s: AgentSession, e: React.MouseEvent) {
-    e.stopPropagation();
+  async function openSessionRecord(s: AgentSession, e?: React.MouseEvent) {
+    e?.stopPropagation();
     const target = normalizeOpenPath(s.path);
     if (!target) {
       toast({ title: t('projects.toast.noRecord'), variant: 'danger' });
@@ -333,6 +302,24 @@ export default function ProjectsPage() {
     try {
       await navigator.clipboard.writeText(sid);
       toast({ title: t('projects.toast.sessionIdCopied'), description: shortSessionId(sid, 48) });
+    } catch {
+      toast({ title: t('projects.toast.copyFailed'), variant: 'danger' });
+    }
+  }
+
+  async function copyResumeCommand(s: AgentSession, e?: React.MouseEvent) {
+    e?.stopPropagation();
+    const command = nativeResumeCommand(s);
+    if (!command) {
+      toast({ title: t('projects.toast.noResumeCommand'), variant: 'danger' });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(command);
+      toast({
+        title: t('projects.toast.resumeCommandCopied'),
+        description: command,
+      });
     } catch {
       toast({ title: t('projects.toast.copyFailed'), variant: 'danger' });
     }
@@ -410,8 +397,8 @@ export default function ProjectsPage() {
         const kids = (prev[pid] ?? []).filter((s) => s.id !== deleteTarget.id);
         return { ...prev, [pid]: kids };
       });
-      setProjects((prev) =>
-        prev
+      setData((prev) =>
+        (prev ?? [])
           .map((p) =>
             p.id === pid
               ? {
@@ -428,6 +415,7 @@ export default function ProjectsPage() {
         next.delete(deleteTarget.id);
         return next;
       });
+      if (preview.sessionId === deleteTarget.id) preview.close();
       toast({ title: t('projects.toast.deleted'), variant: 'success' });
       setDeleteTarget(null);
     } catch (e) {
@@ -451,8 +439,8 @@ export default function ProjectsPage() {
         }
         return next;
       });
-      setProjects((prev) =>
-        prev
+      setData((prev) =>
+        (prev ?? [])
           .map((p) => {
             const removed = (sessionsByProject[p.id] ?? []).filter((s) => idSet.has(s.id));
             if (removed.length === 0) return p;
@@ -467,6 +455,7 @@ export default function ProjectsPage() {
       );
       await reloadProjects();
       setSelected(new Set());
+      if (preview.sessionId && ids.includes(preview.sessionId)) preview.close();
       setBatchDeleteOpen(false);
       toast({
         title: n === ids.length
@@ -521,57 +510,8 @@ export default function ProjectsPage() {
     }
   }
 
-  return (
-    <div>
-      <PageHeader
-        title={t('projects.page.title')}
-        description={t('projects.page.description')}
-        descriptionTip={t('projects.page.descriptionTip')}
-        actions={
-          <div className="flex items-center gap-2">
-            {selected.size > 0 && (
-              <>
-                {showSummarize && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => void handleSummarize()}
-                  >
-                    {busy ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Sparkles className="h-3.5 w-3.5" />
-                    )}
-                    {t('projects.page.summarize', { n: selected.size })}
-                  </Button>
-                )}
-                {showDelete && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    className="text-danger hover:text-danger"
-                    onClick={() => setBatchDeleteOpen(true)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    {t('projects.page.delete', { n: selected.size })}
-                  </Button>
-                )}
-              </>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={phase === 'loading' || busy || tabAgents.length === 0}
-              onClick={() => void reloadProjects()}
-            >
-              {t('projects.page.refresh')}
-            </Button>
-          </div>
-        }
-      />
-
+  const listPane = (
+    <>
       <div className={cn(pageRhythm.chromeRow, 'gap-3')}>
         {agentsLoading ? (
           <div className="h-9 w-64 animate-pulse rounded-card bg-hover" />
@@ -587,7 +527,7 @@ export default function ProjectsPage() {
           />
         )}
         {selected.size > 0 && (
-          <span className="text-xs text-muted">{t('projects.page.selected', { n: selected.size })}</span>
+          <span className="text-meta text-muted">{t('projects.page.selected', { n: selected.size })}</span>
         )}
         <Button
           size="sm"
@@ -613,9 +553,9 @@ export default function ProjectsPage() {
         )}
       </div>
 
-      {phase === 'loading' ? (
+      {showListSkeleton ? (
         <ListSkeleton rows={5} />
-      ) : phase === 'error' ? (
+      ) : error && data == null ? (
         <ErrorState error={error} onRetry={() => void reloadProjects()} />
       ) : tabAgents.length === 0 ? (
         <EmptyState
@@ -651,17 +591,137 @@ export default function ProjectsPage() {
           selected={selected}
           busy={busy}
           showDelete={showDelete}
+          previewSessionId={preview.sessionId}
           visibleSessions={visibleSessions}
           onToggleExpand={(p) => void toggleExpand(p)}
           onOpenProjectWorkspace={(p, e) => void openProjectWorkspace(p, e)}
           onToggleHideProject={(p, e) => void toggleHideProject(p, e)}
           onToggleOne={toggleOne}
+          onPreviewSession={preview.open}
           onCopySessionId={(s, e) => void copySessionId(s, e)}
+          onCopyResumeCommand={(s, e) => void copyResumeCommand(s, e)}
           onOpenSessionRecord={(s, e) => void openSessionRecord(s, e)}
           onGoContinue={goContinue}
           onRequestDelete={setDeleteTarget}
         />
       )}
+    </>
+  );
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-canvas">
+      <div className={pageRhythm.workbenchHeader}>
+        <PageHeader
+          size="compact"
+          title={t('projects.page.title')}
+          description={t('projects.page.description')}
+          descriptionTip={t('projects.page.descriptionTip')}
+          actions={
+            <div className="flex items-center gap-2">
+              {selected.size > 0 && (
+                <>
+                  {showSummarize && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => void handleSummarize()}
+                    >
+                      {busy ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5" />
+                      )}
+                      {t('projects.page.summarize', { n: selected.size })}
+                    </Button>
+                  )}
+                  {showDelete && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      className="text-danger hover:text-danger"
+                      onClick={() => setBatchDeleteOpen(true)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {t('projects.page.delete', { n: selected.size })}
+                    </Button>
+                  )}
+                </>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={showListSkeleton || busy || tabAgents.length === 0}
+                onClick={() => void reloadProjects()}
+              >
+                {t('projects.page.refresh')}
+              </Button>
+            </div>
+          }
+        />
+      </div>
+
+      <div ref={preview.splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div
+          className={cn(
+            'min-w-0 flex-1 overflow-x-auto overflow-y-auto bg-canvas',
+            pageRhythm.workbenchX,
+            pageRhythm.workbenchY,
+          )}
+        >
+          {listPane}
+        </div>
+
+        {preview.previewShellMounted && preview.session ? (
+          <>
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t('projects.preview.resizeAria')}
+              aria-valuenow={preview.previewWidth}
+              aria-valuemin={preview.valuemin}
+              tabIndex={preview.previewExpanded ? 0 : -1}
+              onPointerDown={preview.previewExpanded ? preview.onPreviewResizeStart : undefined}
+              onDoubleClick={preview.previewExpanded ? preview.resetPreviewWidth : undefined}
+              onKeyDown={preview.previewExpanded ? preview.onPreviewSeparatorKeyDown : undefined}
+              className={cn(
+                'group relative z-10 w-1.5 shrink-0 cursor-col-resize bg-transparent outline-none',
+                'hover:bg-accent/40 focus-visible:bg-accent/40 active:bg-accent/60',
+                'before:absolute before:inset-y-0 before:-left-1.5 before:-right-1.5 before:content-[""]',
+                !preview.previewExpanded && 'pointer-events-none opacity-0',
+              )}
+            />
+            <div
+              className={cn('h-full min-h-0 shrink-0 overflow-hidden', preview.previewWidthTransition)}
+              style={{ width: preview.previewShellWidth }}
+              onTransitionEnd={preview.onPreviewPaneTransitionEnd}
+            >
+              <div
+                className="box-border flex h-full min-h-0"
+                style={{
+                  width: preview.previewWidth + PREVIEW_FRAME_PAD_RIGHT,
+                  paddingTop: 0,
+                  paddingBottom: PREVIEW_FRAME_PAD_Y,
+                  paddingRight: PREVIEW_FRAME_PAD_RIGHT,
+                }}
+              >
+                <ProjectConversationPreviewPanel
+                  session={preview.session}
+                  open
+                  width={preview.previewWidth}
+                  onClose={preview.close}
+                  onContinue={goContinue}
+                  busy={busy}
+                  onOpenRecord={(s) => void openSessionRecord(s)}
+                  contentRef={preview.previewBodyRef}
+                  className="h-full min-w-0 shrink-0"
+                />
+              </div>
+            </div>
+          </>
+        ) : null}
+      </div>
 
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent>
@@ -674,7 +734,7 @@ export default function ProjectsPage() {
             </DialogDescription>
           </DialogHeader>
           {deleteTarget && (
-            <div className="rounded-btn bg-subtle px-3 py-2 text-sm">
+            <div className="rounded-card bg-subtle px-3 py-2 text-sm">
               <p className="font-medium">{deleteTarget.title}</p>
               {nativeSessionId(deleteTarget) && (
                 <p className="mt-0.5 break-all font-mono text-xs text-muted">

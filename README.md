@@ -16,22 +16,22 @@ AgentHub 是一个本地运行的多 Agent 桌面管理工具。它用统一的 
 |---|---|
 | **Dashboard** | 查看 Agent 状态、Token 趋势、成本估算与解析健康度；已安装 Agent 可直接连接/切换 |
 | **Agents** | 检测 Node/npm/Git 等运行环境，安装、升级或卸载 Agent |
-| **Connections** | 管理官方登录与 API Key，查看一份登录正用于哪些编程工具，并接到其他工具。白话说明见 [产品决策](docs/product-decisions.md)；领域模型见 [连接绑定](docs/connection-binding-model.md)。切换前自动备份 live |
-| **Routes** | 本机路由运行时（端口、启停、恢复）；侧栏英文 Routes，有本机路由才出现。日常绑定走 Dashboard / Connections；规则见[厂商、API 与 OAuth 规则](docs/provider-api-oauth-adaptation.md) |
-| **Skills** | 以 `~/.agents/skills/` 为共享真源，向各 Agent 同步技能 |
-| **MCP** | 只读汇总各 Agent 的本机 MCP 配置；管理与注入仍在规划中 |
+| **Connections** | 跨工具登录列表。顶部按 Agent 筛选；OAuth 用头像、API Key 用钥匙。一份登录接到另一个工具只有三种做法：直连、写进对方登录、本机转发。切换前自动备份当前配置。白话说明见 [产品决策](docs/product-decisions.md) |
+| **Routes** | 本机转发运行时（启停、恢复）；列表与详情显示 127.0.0.1 和端口。日常连接走 Dashboard / Connections |
+| **Skills** | 以共享目录 `~/.agents/skills` 向各 Agent 同步技能 |
+| **MCP** | 只读查看各工具已配置的额外 MCP 能力（不会改它们的设置） |
 | **Chat** | 在桌面端调用一个或多个本机 Agent，并展示流式过程 |
 | **Projects** | 浏览、整理和汇总各 Agent 的本地项目与会话 |
-| **Settings** | 四个分区：偏好 / 本机 / 备份 / 关于。本机含数据目录、日志与本机路由入口；备份是独立分页（`/settings?tab=backups`，`/backups` 会跳过来），不占侧栏 |
+| **Settings** | 四个分区：偏好 / 本机 / 备份 / 关于。本机含数据目录与日志；备份是独立分页（`/settings?tab=backups`，`/backups` 会跳过来），不占侧栏 |
 | **CLI** | 提供 doctor、env、agent、provider、account、skill、usage、backup、run 等命令 |
 
-当前内置适配：**Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、Cursor Agent、DeepSeek Harness（dsh）**。各家能力不同，请以 [能力矩阵](docs/capability-matrix.md) 或以下命令为准：
+当前内置适配：**Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、Cursor Agent、DeepSeek Harness**。各家能力不同，可用以下命令查看：
 
 ```powershell
 cargo run -p agenthub-cli -- agent capabilities
 ```
 
-> 把已有登录接到另一个编程工具，只可能是三种做法：直接改配置、写进对方认的登录、本机转发。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。能改配置或写进对方认的登录，就不做转发。白话与图见 [产品决策](docs/product-decisions.md)。现在能不能写上去见[适配规则矩阵](docs/provider-api-oauth-adaptation.md#4-当前实现矩阵)。本机转发仍有未收口路径，端到端验收未完成。Cursor 只支持公开的 Agent CLI，不能作为写入目标。
+> 把已有登录接到另一个编程工具，只可能是三种做法：直接改配置、写进对方认的登录、本机转发。能改配置或写进对方认的登录，就不做转发。白话与图见 [产品决策](docs/product-decisions.md)。Cursor 只支持公开的 Agent CLI，不能作为写入目标。
 
 ## 快速开始
 
@@ -98,12 +98,12 @@ pnpm dev:mock
 | `pnpm build` | 前端生产构建，强制使用 Tauri adapter |
 | `pnpm tauri:build` | 构建桌面安装包 |
 | `pnpm tauri:build:macos` | 构建本地使用的 macOS `.app` |
-| `pnpm tauri:build:linux` | 构建本地使用的 Linux `.deb` 与 AppImage（未签名；正式包由 `release` 分支的 GitHub Actions 发布） |
+| `pnpm tauri:build:linux` | 构建本地使用的 Linux `.deb` 与 AppImage（未签名；正式包由推送 `v*` tag 的 GitHub Actions 发布） |
 | `./run.sh --check` | 检查 macOS/Linux 源码运行依赖 |
 | `cargo test -p agenthub-core` | 运行 Rust core 测试 |
 | `cargo run -p agenthub-cli -- --help` | 查看 CLI 帮助 |
 
-正式 Release 由 `release` 分支的 GitHub Actions 生成和发布，本地发布命令已禁用。日常 PR 合入 `dev`。要出新版本，须同时 bump `package.json`、`Cargo.toml` 的 `[workspace.package]`、`src-tauri/tauri.conf.json`（当前都是 0.2.3；已有 tag `v0.2.2`，workflow 会拒绝覆盖已有 tag），再更新 `release` 分支。`dev` 与 `release` 是无关历史（`dev` 于 8 月中改写过），不要把 `dev` 合并进 `release`。
+正式 Release 由推送到仓库的 `v*` tag 触发 GitHub Actions 生成和发布（tag 必须指向 `release` 分支上的提交），本地发布命令已禁用。日常 PR 合入 `dev`。要出新版本，须同时 bump `package.json`、`Cargo.toml` 的 `[workspace.package]`、`src-tauri/tauri.conf.json`（当前都是 0.2.3；已有 tag `v0.2.2`，workflow 会拒绝覆盖已有 tag），先更新 `release` 分支，再打并推送匹配的 `vX.Y.Z` tag。`dev` 与 `release` 是无关历史（`dev` 于 8 月中改写过），不要把 `dev` 合并进 `release`。
 
 ## 数据与隐私
 
@@ -112,52 +112,48 @@ AgentHub 默认只处理本机数据：
 | 路径 | 内容 |
 |---|---|
 | `~/.agenthub/` | SQLite 状态、设置与日志等应用数据 |
-| `~/.agenthub/backups/` | 切换或修改前创建的 live 配置快照 |
-| `~/.agents/skills/` | Skills 共享真源 |
+| `~/.agenthub/backups/` | 切换或修改前创建的配置快照 |
+| `~/.agents/skills/` | Skills 共享目录 |
 
 - Usage 只读解析本地会话或日志，不通过代理截取请求，也不上传云端。
 - 凭据沿用项目现有存储方案；界面、CLI 和日志输出会进行脱敏。
-- Adapter 引用已有 Connection，不复制凭据；Bridge 不记录请求或响应正文。
+- 把一份登录接到另一个工具时不复制凭据；本机转发不记录请求或响应正文。
 
 完整边界见 [隐私规范](docs/privacy.md) 和 [安全策略](SECURITY.md)。
 
 ## 架构
 
 ```text
-React GUI ── Tauri commands ─┐
-                             ├── agenthub-core ── Agent adapters / SQLite / local files
-agenthub CLI ────────────────┘
+React GUI ── Tauri ─┐
+                    ├── agenthub-core ── 各 Agent 适配 / SQLite / 本机文件
+agenthub CLI ───────┘
 ```
 
 - `agenthub-core` 集中业务逻辑，GUI 与 CLI 是薄入口。
-- Service 负责编排备份、切换、投影和聚合；Agent Adapter 负责路径、配置格式和能力差异。
-- Adapter 的 `local_bridge` 目标由同包用户级 `agenthub-adapterd` sidecar 长驻托管；当前版本仍由 Tauri 进程内宿主，详见[迁移方案](docs/adapter-sidecar-design.md)。Connections 数据域不随 sidecar 拆分。
-- 前端只有 `src/lib/backend/tauri/` 可以调用 Tauri `invoke`。
-- `pnpm dev:mock` 使用浏览器 mock；生产构建不会静默回退到 mock。
+- `pnpm dev:mock` 只用于浏览器演示；生产构建不会静默回退到 mock。
 
 ```text
 crates/agenthub-core/   Rust 业务核心
 crates/agenthub-cli/    CLI
 src-tauri/              Tauri 桌面壳
 src/                    React 前端
-docs/                   设计、契约与测试文档
-scripts/                构建与发布脚本
 ```
 
 ## 文档与贡献
 
-- [文档索引](docs/README.md)
-- [产品决策（把已有登录接到另一个工具）](docs/product-decisions.md)
-- [当前实现状态](docs/agenthub-plan.md#8-当前实现状态以代码与测试为准)
-- [架构说明](docs/architecture.md)
-- [Adapter Sidecar 目标架构](docs/adapter-sidecar-design.md)
-- [能力矩阵](docs/capability-matrix.md)
-- [厂商、API 与 OAuth 适配规则](docs/provider-api-oauth-adaptation.md)
-- [CLI 与配置](docs/cli-and-config.md)
-- [测试约定](docs/testing.md)
-- [新增 Agent 指南](docs/adding-an-agent.md)
+### 给使用者
 
-欢迎提交 Issue 或 PR。修改代码前请阅读 [AGENTS.md](AGENTS.md)；提交前至少运行改动范围内的测试和类型检查。安全问题请按 [SECURITY.md](SECURITY.md) 私下披露，不要创建公开 Issue。
+- [把已有登录接到另一个工具](docs/product-decisions.md)（白话三种接法）
+- [隐私规范](docs/privacy.md)
+- [安全策略](SECURITY.md)
+
+### 给贡献者
+
+以下是开发文档，不是产品说明书。
+
+- [文档索引](docs/README.md)
+
+贡献者开发约定在仓库根目录 `AGENTS.md`。欢迎提交 Issue 或 PR。提交前请运行改动范围内的测试和类型检查。安全问题请按 [SECURITY.md](SECURITY.md) 私下披露，不要创建公开 Issue。
 
 ## 许可证
 

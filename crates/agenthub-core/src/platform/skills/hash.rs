@@ -8,8 +8,34 @@ use std::io::Read;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
-use super::fs_index::join_normalized;
-use super::fs_safe::is_link_or_reparse;
+use super::fs_index::{collect_file_index, join_normalized};
+use super::fs_safe::{is_link_or_reparse, resolve_readable_skill_dir};
+
+/// True for generated junk that must not split otherwise-identical skill copies.
+fn is_noise_rel(rel: &str) -> bool {
+    rel.ends_with(".pyc") || rel.split('/').any(|part| part == "__pycache__")
+}
+
+/// Stable content fingerprint of a skill directory (path set + file bytes).
+///
+/// Used by the catalog so the GUI can merge identical private copies. `None`
+/// when the tree cannot be indexed (symlink / unreadable) — callers must not
+/// treat missing hashes as equal.
+pub(crate) fn fingerprint_skill_tree(root: &Path) -> Option<String> {
+    let root = resolve_readable_skill_dir(root).ok()?;
+    let index = collect_file_index(&root).ok()?;
+    let filtered: BTreeMap<String, u64> = index
+        .into_iter()
+        .filter(|(rel, _)| !is_noise_rel(rel))
+        .collect();
+    let hashes = hash_tree_files(&root, &filtered).ok()?;
+    let mut hasher = DefaultHasher::new();
+    for (rel, digest) in hashes {
+        rel.hash(&mut hasher);
+        digest.hash(&mut hasher);
+    }
+    Some(format!("{:016x}", hasher.finish()))
+}
 
 /// Shallow directory fingerprint: entry name + kind + mtime/size, plus `SKILL.md`
 /// when present. Deep content is intentionally not hashed (writes + watcher

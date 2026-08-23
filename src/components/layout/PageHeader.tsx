@@ -1,13 +1,15 @@
 import type { ReactNode } from 'react';
 import { Tip } from '@/components/ui/tooltip';
+import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
 
 /**
  * 页头：标题短、描述短。需要补充说明时用 descriptionTip（悬停展示），
  * 勿把长说明直接铺在页面上。
  *
- * - `default`：常规页（Dashboard / Settings…）
- * - `compact`：全高页（Skills / Chat 壳内）— 同档标题，只收底边距
+ * 标题槽固定两行（`pageTitle` + 一行 meta），切页字号/高度/左缘对齐。
+ * - `default`：常规页；底距 18px（顶/左右由 pageShell 提供）
+ * - `compact`：全高页；底距由 `workbenchHeader` 的 18px 提供，自身不再加 mb
  */
 export function PageHeader({
   title,
@@ -34,30 +36,29 @@ export function PageHeader({
     <div
       className={cn(
         'flex items-start justify-between gap-4',
-        compact ? 'mb-2' : 'mb-4',
+        compact ? 'mb-0' : 'mb-[18px]',
         className,
       )}
     >
-      <div className="min-w-0">
+      <div className={cn('min-w-0', pageRhythm.pageTitleBlock)}>
         <div className="flex min-w-0 items-center gap-2">
-          <h1 className="text-title font-semibold tracking-tight text-primary">
+          <h1 className={pageRhythm.pageTitle}>
             {title}
           </h1>
           {badge}
         </div>
-        {description &&
-          (descriptionTip ? (
-            <Tip
-              className="mt-0.5 block text-meta text-secondary"
-              label={descriptionTip}
-            >
-              {description}
-            </Tip>
-          ) : (
-            <p className="mt-0.5 text-meta text-secondary">
-              {description}
-            </p>
-          ))}
+        {description && descriptionTip ? (
+          <Tip
+            className="mt-0.5 block truncate text-meta text-secondary"
+            label={descriptionTip}
+          >
+            {description}
+          </Tip>
+        ) : (
+          <p className="mt-0.5 truncate text-meta text-secondary">
+            {description || '\u00a0'}
+          </p>
+        )}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>

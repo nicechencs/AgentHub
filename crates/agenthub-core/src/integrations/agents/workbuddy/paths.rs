@@ -25,6 +25,11 @@ impl AgentPathContribution for WorkBuddyPaths {
         }
         self.home_dir()
     }
+
+    fn config_dir_is_default(&self) -> bool {
+        first_env_path("WORKBUDDY_CONFIG_DIR").is_none()
+            && first_env_path("CODEBUDDY_CONFIG_DIR").is_none()
+    }
 }
 
 pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {

@@ -1,12 +1,11 @@
 //! Provider-related pure data structures (serde). No business logic.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-
-use super::BackupRecord;
+use serde_json::{json, Value};
 
 use super::AgentId;
-use crate::utils::redact::redact_json;
+use super::BackupRecord;
+use crate::utils::redact::{api_key_tail, redact_json};
 
 /// Live config file format for a provider template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -93,12 +92,20 @@ pub struct ProviderSwitchResult {
 impl Provider {
     /// Deep-copy with likely secret keys in JSON blobs redacted.
     pub fn redacted(&self) -> Self {
+        let mut meta = redact_json(&self.meta);
+        if let Some(tail) = api_key_tail(&self.settings_config) {
+            if let Value::Object(map) = &mut meta {
+                map.insert("secretTail".into(), json!(tail));
+            } else {
+                meta = json!({ "secretTail": tail });
+            }
+        }
         Self {
             id: self.id.clone(),
             agent_id: self.agent_id,
             name: self.name.clone(),
             settings_config: redact_json(&self.settings_config),
-            meta: redact_json(&self.meta),
+            meta,
             is_current: self.is_current,
             created_at: self.created_at.clone(),
             updated_at: self.updated_at.clone(),
@@ -247,6 +254,7 @@ mod tests {
         let redacted = p.redacted();
         assert_eq!(redacted.settings_config["format"], "toml");
         assert_eq!(redacted.settings_config["content"], "***");
+        assert_eq!(redacted.meta["secretTail"], "**cret");
         assert!(p.settings_config["content"]
             .as_str()
             .unwrap()

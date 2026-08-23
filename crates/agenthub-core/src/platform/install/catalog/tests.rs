@@ -44,7 +44,7 @@ fn adapter_install_channel_notes_come_from_contribution() {
     assert_eq!(pi[0].id, "npm");
     assert_eq!(
         pi[0].min_runtime_notes.as_deref(),
-        Some("Node.js >= 18; install uses --ignore-scripts")
+        Some("Node.js >= 22 (engines.node >= 22.19.0); install uses --ignore-scripts")
     );
 
     let cursor = adapter_install_channels(AgentId::Cursor);

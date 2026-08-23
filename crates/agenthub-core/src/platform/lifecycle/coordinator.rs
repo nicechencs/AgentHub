@@ -1,6 +1,7 @@
 //! LifecycleCoordinator — install-family operation template.
 
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use chrono::Utc;
@@ -12,8 +13,10 @@ use crate::models::{AgentId, DetectStatus, InstallOutcome};
 use crate::platform::detection::{builtin_detector_registry, DetectorRegistry};
 use crate::platform::install::{builtin_install_registry, InstallContributionRegistry};
 use crate::platform::AgentKey;
+use crate::services::LiveWriteAuthority;
 use crate::storage::{Database, OperationRepo};
 use crate::utils::command_exec::CommandExecutor;
+use crate::utils::paths::normalize_data_dir;
 use crate::utils::redact::redact_text;
 
 use super::executor::{BuiltinLifecycleInstallExecutor, LifecycleInstallExecutor};
@@ -62,15 +65,49 @@ pub struct LifecycleCoordinator {
     detectors: DetectorRegistry,
     installs: InstallContributionRegistry,
     executor: Arc<dyn LifecycleInstallExecutor>,
+    /// The immutable data directory resolved by the owning AgentHub. Purge
+    /// policy must never re-resolve this from process environment later.
+    data_dir: Option<PathBuf>,
+    /// A construction-time explicit data-dir failure. Keep the detail so a
+    /// later purge reports why it is unavailable instead of silently falling
+    /// back to an environment-derived guess.
+    data_dir_error: Option<String>,
 }
 
 impl LifecycleCoordinator {
+    pub(crate) fn data_dir(&self) -> Option<&std::path::Path> {
+        self.data_dir.as_deref()
+    }
+
+    pub(crate) fn data_dir_error(&self) -> Option<&str> {
+        self.data_dir_error.as_deref()
+    }
+
     pub fn new(db: Database, registry: AdapterRegistry) -> Self {
-        Self::with_registries(
+        let executor = Arc::new(BuiltinLifecycleInstallExecutor::new(&db, registry));
+        let data_dir = normalized_database_data_dir(&db);
+        Self::with_registries_and_executor_and_optional_data_dir(
             db,
-            registry,
             builtin_detector_registry().clone(),
             builtin_install_registry().clone(),
+            executor,
+            data_dir,
+            None,
+        )
+    }
+
+    /// Composition-root constructor used by [`crate::AgentHub`].
+    /// `data_dir` is the already-resolved path, including an explicit CLI
+    /// override, and is retained immutably for the lifetime of this saga
+    /// coordinator.
+    pub fn new_with_data_dir(db: Database, registry: AdapterRegistry, data_dir: PathBuf) -> Self {
+        let executor = Arc::new(BuiltinLifecycleInstallExecutor::new(&db, registry));
+        Self::with_registries_and_data_dir(
+            db,
+            builtin_detector_registry().clone(),
+            builtin_install_registry().clone(),
+            executor,
+            data_dir,
         )
     }
 
@@ -91,11 +128,49 @@ impl LifecycleCoordinator {
         installs: InstallContributionRegistry,
         executor: Arc<dyn LifecycleInstallExecutor>,
     ) -> Self {
+        let data_dir = normalized_database_data_dir(&db);
+        Self::with_registries_and_executor_and_optional_data_dir(
+            db, detectors, installs, executor, data_dir, None,
+        )
+    }
+
+    /// Injectable composition root with an explicit immutable data directory.
+    pub fn with_registries_and_data_dir(
+        db: Database,
+        detectors: DetectorRegistry,
+        installs: InstallContributionRegistry,
+        executor: Arc<dyn LifecycleInstallExecutor>,
+        data_dir: PathBuf,
+    ) -> Self {
+        let (data_dir, data_dir_error) = match normalize_data_dir(&data_dir) {
+            Ok(path) => (Some(path), None),
+            Err(error) => (None, Some(error.to_string())),
+        };
+        Self::with_registries_and_executor_and_optional_data_dir(
+            db,
+            detectors,
+            installs,
+            executor,
+            data_dir,
+            data_dir_error,
+        )
+    }
+
+    fn with_registries_and_executor_and_optional_data_dir(
+        db: Database,
+        detectors: DetectorRegistry,
+        installs: InstallContributionRegistry,
+        executor: Arc<dyn LifecycleInstallExecutor>,
+        data_dir: Option<PathBuf>,
+        data_dir_error: Option<String>,
+    ) -> Self {
         Self {
             repo: OperationRepo::new(db),
             detectors,
             installs,
             executor,
+            data_dir,
+            data_dir_error,
         }
     }
 
@@ -325,7 +400,23 @@ impl LifecycleCoordinator {
                 let contribution = installs
                     .get(key)
                     .ok_or_else(|| LifecycleError::unsupported(key, OperationKind::Uninstall))?;
-                lifecycle_executor.uninstall(key, contribution.as_ref(), purge_config, ex)
+                let data_dir = if purge_config {
+                    if let Some(error) = self.data_dir_error.as_deref() {
+                        return Err(AppError::InvalidArg(format!(
+                            "cannot purge config: invalid AgentHub data directory: {error}"
+                        )));
+                    }
+                    self.data_dir.as_deref().ok_or_else(|| {
+                        AppError::InvalidArg(
+                            "cannot purge config: actual AgentHub data directory is unknown".into(),
+                        )
+                    })?
+                } else {
+                    // Builtin executors do not read this path when purge is
+                    // disabled; retain compatibility for non-purge calls.
+                    std::path::Path::new("")
+                };
+                lifecycle_executor.uninstall(key, contribution.as_ref(), purge_config, data_dir, ex)
             },
             executor,
         )
@@ -718,6 +809,33 @@ fn sink_step(
         message: message.to_string(),
         percent: None,
     });
+}
+
+/// Resolve the data root from the same database authority used by the builtin
+/// lifecycle executor. In-memory databases deliberately have no durable data
+/// directory and therefore leave purge unavailable.
+fn normalized_database_data_dir(db: &Database) -> Option<PathBuf> {
+    let main_file = db
+        .with_conn(|conn| {
+            let path = conn.query_row(
+                "SELECT file FROM pragma_database_list WHERE name = 'main'",
+                [],
+                |row| row.get::<_, String>(0),
+            )?;
+            Ok(path)
+        })
+        .ok()?;
+    let main_file = main_file.trim();
+    if main_file.is_empty()
+        || main_file == ":memory:"
+        || main_file.starts_with("file:memdb")
+        || main_file.starts_with("file::memory:")
+    {
+        return None;
+    }
+
+    let authority = LiveWriteAuthority::try_from_database(db).ok()?;
+    normalize_data_dir(authority.data_root()).ok()
 }
 
 /// Structured ERROR for lifecycle coordination failures (`module=core.install`).

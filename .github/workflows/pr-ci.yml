@@ -21,23 +21,25 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           version: 9
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: |
             .
@@ -46,11 +48,26 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install Linux GUI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf
+
       - name: Type check app
         run: pnpm typecheck
 
       - name: Type check tests
         run: pnpm typecheck:test
+
+      - name: Production frontend build
+        run: pnpm build
 
       - name: Linux prereq script tests
         run: node --test scripts/check-linux-prereqs.test.mjs
@@ -60,3 +77,9 @@ jobs:
 
       - name: Core Rust tests (adapter contract + services)
         run: cargo test -p agenthub-core --locked
+
+      - name: CLI Rust tests
+        run: cargo test -p agenthub-cli --locked
+
+      - name: GUI Rust tests
+        run: cargo test -p agenthub-gui --locked

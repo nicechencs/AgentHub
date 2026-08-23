@@ -20,6 +20,7 @@ export type {
   CoreSkill,
   SkillSyncReport,
   InstalledSkillDto,
+  SkillCopyLocation,
   SkillListingDto,
   SkillMarkdownPreviewDto,
   SkillProjectResultDto,
@@ -46,7 +47,7 @@ export async function listSkills(): Promise<Skill[]> {
 export async function toggleSkillSync(
   skillId: string,
   agentId: AgentId,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; mode?: 'link' | 'copy' } = {},
 ): Promise<{ state: SkillSyncState; conflict: boolean }> {
   return getBackend().skill.toggleSkillSync(skillId, agentId, opts);
 }

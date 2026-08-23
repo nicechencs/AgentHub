@@ -16,6 +16,24 @@ use super::packages::{
 use super::sources::{ensure_skill_md, infer_skill_id, SkillSourceService};
 
 #[test]
+fn agent_hub_open_with_skills_root_stays_off_user_tree() {
+    let (tmp, skills) = crate::utils::test_temp::isolated_skills_root();
+    let data = tmp.path().join("data");
+    let hub = crate::AgentHub::open_with_skills_root(Some(&data), Some(&skills)).unwrap();
+    assert_eq!(hub.skills.source_root(), skills.as_path());
+    assert!(
+        !skills.join(".locks").exists(),
+        "empty recover must not create a lock dir on the skills root"
+    );
+    if let Ok(home) = crate::utils::paths::home_dir() {
+        assert_ne!(
+            hub.skills.source_root(),
+            home.join(".agents").join("skills").as_path()
+        );
+    }
+}
+
+#[test]
 fn git_locator_splits_branch() {
     let (u, b) = parse_git_locator("https://github.com/x/y.git#main");
     assert_eq!(u, "https://github.com/x/y.git");

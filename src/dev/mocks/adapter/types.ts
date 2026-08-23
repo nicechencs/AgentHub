@@ -62,25 +62,58 @@ export const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON =
 export const GROK_SUBSCRIPTION_TO_CLAUDE_REASON =
   'Grok 登录会经本机路由接到 Claude Code。';
 
+/** Keep in lockstep with `GROK_SUBSCRIPTION_TO_CODEX_REASON` in agenthub-core. */
+export const GROK_SUBSCRIPTION_TO_CODEX_REASON =
+  'Grok 登录会经本机路由接到 Codex。';
+
+/** Keep in lockstep with `CODEX_SUBSCRIPTION_TO_CODEX_REASON` in agenthub-core. */
+export const CODEX_SUBSCRIPTION_TO_CODEX_REASON = '用这份官方登录接到 Codex。';
+export const CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID = 'codex-subscription-to-codex-v1';
+
+export const CODEX_SUBSCRIPTION_TO_GROK_REASON = 'Codex 官方登录会经本机路由接到 Grok。';
+export const CODEX_SUBSCRIPTION_TO_KIMI_REASON = 'Codex 官方登录会经本机路由接到 Kimi。';
+export const CODEX_SUBSCRIPTION_TO_DSH_REASON =
+  'Codex 官方登录会经本机路由接到 DeepSeek Harness。';
+export const CODEX_GROK_RULE_ID = 'codex-subscription-to-grok-v1';
+export const CODEX_KIMI_RULE_ID = 'codex-subscription-to-kimi-v1';
+export const CODEX_DSH_RULE_ID = 'codex-subscription-to-dsh-v1';
+/** Codex subscription → Grok/Kimi/DSH local-bridge rules (Grok local is Responses; Kimi/DSH stay Chat). */
+export const CODEX_CHAT_BRIDGE_RULE_IDS = new Set([
+  CODEX_GROK_RULE_ID,
+  CODEX_KIMI_RULE_ID,
+  CODEX_DSH_RULE_ID,
+]);
+
+/** Keep in lockstep with `GROK_SUBSCRIPTION_TO_KIMI_REASON` in agenthub-core. */
+export const GROK_SUBSCRIPTION_TO_KIMI_REASON =
+  'Kimi 只认自己的官方 Key，接下不了这份 Grok 登录。';
+
+/** Keep in lockstep with `GROK_SUBSCRIPTION_TO_DSH_REASON` in agenthub-core. */
+export const GROK_SUBSCRIPTION_TO_DSH_REASON =
+  'DSH 只认 DeepSeek 官方 Key，接下不了这份 Grok 登录。';
+
+/** Keep in lockstep with `CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID` in agenthub-core. */
+export const CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID = 'claude-subscription-to-codex-v1';
+
+/** Keep in lockstep with `CLAUDE_SUBSCRIPTION_TO_CODEX_REASON` in agenthub-core. */
 export const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON =
-  'Claude 订阅 → Codex：产品不做。Codex 不吃 Anthropic PKCE，本产品不走这条边。';
+  'Claude 订阅接到 Codex 可以走本机转发，但规则还没做完，现在接不上。';
 
 export const CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON = [
-  'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
-  '尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。',
-  '不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。',
-  '这只表示没有可执行规则，不代表连接失效。',
-  '替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。',
+  'Codex / ChatGPT 订阅现在还接不到 Claude Code。',
+  '不会改配置，也不会开本机转发。',
+  '这不表示现有连接坏了。',
+  '可改用 Claude 自己的官方登录，或改用已支持的 API Key。',
 ].join('');
 
 /** Keep in lockstep with `AGENT_NO_WRITER_REASON` in agenthub-core. */
-export const AGENT_NO_WRITER_REASON = '该 Agent 无配置写入能力，不能作为绑定落点';
+export const AGENT_NO_WRITER_REASON = '这个工具不能写入配置，接不上。';
 
 /** Keep in lockstep with `PROTOCOL_MISMATCH_REASON` in agenthub-core. */
-export const PROTOCOL_MISMATCH_REASON = '这份登录接不到这个 Agent。';
+export const PROTOCOL_MISMATCH_REASON = '这份登录接不到这个工具。';
 
 /** Keep in lockstep with `SAME_PROTOCOL_NO_EDGE_REASON` in agenthub-core. */
-export const SAME_PROTOCOL_NO_EDGE_REASON = '这条接到方式还没做好，暂不能绑定。';
+export const SAME_PROTOCOL_NO_EDGE_REASON = '这条接法还没做好，现在接不上。';
 
 export type TicketProtocol =
   | 'anthropic-messages'
@@ -109,7 +142,7 @@ export function agentBindCapability(id: string): { accepts: TicketProtocol[]; wr
         writer: true,
       };
     case 'grok':
-      return { accepts: ['openai-chat'], writer: true };
+      return { accepts: ['openai-responses', 'openai-chat', 'anthropic-messages'], writer: true };
     case 'kimi':
       return { accepts: ['openai-chat'], writer: true };
     case 'dsh':
@@ -132,15 +165,16 @@ export function sourceSpeaks(source: RouteSourceLabel): TicketProtocol[] {
     case 'anthropic_api_key':
       return ['anthropic-messages'];
     case 'openai_api_key':
-    case 'xai_api_key':
       return ['openai-chat'];
+    case 'xai_api_key':
+      return ['openai-responses', 'openai-chat'];
     case 'codex_subscription':
     case 'codex_subscription_oauth_other':
       return ['openai-responses', 'openai-codex-pkce'];
     case 'claude_subscription':
       return ['anthropic-messages', 'anthropic-pkce'];
     case 'grok_xai_subscription':
-      return ['openai-chat', 'xai-device-code'];
+      return ['openai-responses', 'openai-chat', 'xai-device-code'];
     default:
       return [];
   }
@@ -166,7 +200,7 @@ export function unsupported(
     actions: [],
     limitations: [
       '当前不支持此组合；不会改动来源连接、本机服务或配置。',
-      'plan.canApply=false：无 Apply、启动 Bridge 或强制继续入口。',
+      '现在还写不上去；不会改配置，也不会开本机转发。',
     ],
     evidence: evidenceItems,
     ruleId: options?.ruleId ?? null,
@@ -201,7 +235,7 @@ export const SAME_EDGE_UNWRITABLE_REASON =
 
 /** Keep lockstep with core `KIMI_NON_MEMBERSHIP_REASON`. */
 export const KIMI_NON_MEMBERSHIP_REASON =
-  '当前 Kimi 连接不是「Kimi Code 会员」来源。跨 Agent 适配仅支持会员：Connections 中选择 preset「Kimi Code 会员」，或配置端点包含 api.kimi.com/coding。开放平台（moonshot）与任意兼容 API 不会自动升级。当前不支持不等于连接失效。';
+  '当前 Kimi 连接不是「Kimi Code 会员」来源。跨 Agent 适配仅支持会员：连接页中选择 preset「Kimi Code 会员」，或配置端点包含 api.kimi.com/coding。开放平台（moonshot）与任意兼容 API 不会自动升级。当前不支持不等于连接失效。';
 
 /** Keep lockstep with core `KIMI_MEMBERSHIP_PRESET` / `KIMI_CODING_ENDPOINT_NEEDLE`. */
 export const KIMI_MEMBERSHIP_PRESET = 'kimi-code-membership';
@@ -236,8 +270,10 @@ export const EXPLICIT_API_TO_PI_RULES = new Set([
   'glm-coding-plan-to-pi-v1',
   'deepseek-api-to-pi-v1',
 ]);
+export const OPENAI_CODEX_RULE_ID = 'openai-api-to-codex-v1';
 export const EXPLICIT_API_TO_CODEX_RULES = new Set([
   'anthropic-api-to-codex-v1',
+  OPENAI_CODEX_RULE_ID,
   GLM_CODEX_RULE_ID,
   DEEPSEEK_CODEX_RULE_ID,
 ]);
@@ -256,6 +292,7 @@ export const CODEX_CLAUDE_RULE_ID = 'codex-subscription-to-claude-responses-v1';
 export const KIMI_GROK_RULE_ID = 'kimi-membership-to-grok-v1';
 export const OPENAI_GROK_RULE_ID = 'openai-api-to-grok-v1';
 export const GROK_CLAUDE_RULE_ID = 'grok-subscription-to-claude-v1';
+export const GROK_CODEX_RULE_ID = 'grok-subscription-to-codex-v1';
 export const KIMI_GROK_BASE_URL = 'https://api.kimi.com/coding/v1';
 export const OPENAI_GROK_BASE_URL = 'https://api.openai.com/v1';
 export const GROK_NATIVE_RULE_IDS = new Set([KIMI_GROK_RULE_ID, OPENAI_GROK_RULE_ID]);

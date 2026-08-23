@@ -1,9 +1,18 @@
 use super::*;
+use std::fs;
+use std::path::Path;
+
+/// Open a hub whose skills source is under `dir`, never `~/.agents/skills`.
+fn open_isolated_hub(dir: &Path) -> AgentHub {
+    let skills = dir.join("skills");
+    fs::create_dir_all(&skills).expect("isolated skills root");
+    AgentHub::open_with_skills_root(Some(dir), Some(&skills)).expect("open hub")
+}
 
 #[test]
 fn agent_hub_open_doctor_has_all_runtimes_and_agents() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let hub = AgentHub::open(Some(dir.path())).expect("open hub");
+    let hub = open_isolated_hub(dir.path());
     assert_eq!(hub.data_dir, dir.path());
 
     let report = hub.doctor();
@@ -52,9 +61,26 @@ fn agent_hub_open_doctor_has_all_runtimes_and_agents() {
 }
 
 #[test]
+fn agent_hub_open_freezes_relative_data_dir_before_lifecycle_use() {
+    let cwd = std::env::current_dir().expect("current directory");
+    let dir = tempfile::tempdir_in(&cwd).expect("relative data-dir fixture");
+    let relative = Path::new(dir.path().file_name().expect("temp directory has a name"));
+
+    let skills = dir.path().join("skills");
+    fs::create_dir_all(&skills).expect("isolated skills root");
+    let hub = AgentHub::open_with_skills_root(Some(relative), Some(&skills))
+        .expect("open relative data dir");
+    assert!(hub.data_dir.is_absolute());
+    assert_eq!(
+        hub.data_dir,
+        crate::utils::paths::normalize_data_dir(relative).expect("normalize relative data dir")
+    );
+}
+
+#[test]
 fn legacy_repair_facade_keeps_detect_result_in_outcome() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let hub = AgentHub::open(Some(dir.path())).expect("open hub");
+    let hub = open_isolated_hub(dir.path());
     let outcome = hub
         // Lifecycle concurrency tests intentionally hold Claude's global
         // process lock; use an otherwise idle built-in to avoid cross-test races.
@@ -69,7 +95,7 @@ fn legacy_repair_facade_keeps_detect_result_in_outcome() {
 #[test]
 fn parser_health_omits_hidden_installed_agents() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let hub = AgentHub::open(Some(dir.path())).expect("open hub");
+    let hub = open_isolated_hub(dir.path());
     let installed: Vec<_> = hub
         .agents
         .detect_all()

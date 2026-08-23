@@ -26,6 +26,13 @@ export function formatDurationMs(ms: number): string {
   return `${m}m ${s}s`;
 }
 
+/** Chrome for a thinking episode — live timer vs collapsed “thought for”. */
+export function thinkingChromeLabel(done: boolean, elapsedMs: number, t: TranslateFn): string {
+  if (!done) return t('chat.process.thinkingLive', { duration: formatDurationMs(elapsedMs) });
+  if (elapsedMs > 0) return t('chat.process.thinkingFor', { duration: formatDurationMs(elapsedMs) });
+  return t('chat.process.thinkingDone');
+}
+
 export function isProcessActivePhase(phase: AgentProcessView['phase']): boolean {
   return phase === 'queued' || phase === 'starting' || phase === 'running';
 }

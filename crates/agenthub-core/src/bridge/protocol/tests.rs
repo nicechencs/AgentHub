@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::bridge::types::{
-    BridgeEvent, EmissionState, IrEvent, RetryClass, RetryGate, StopReason,
+    BridgeEvent, EmissionState, IrEvent, RetryClass, RetryGate, StopReason, Usage,
 };
 
 use super::{
@@ -10,11 +10,15 @@ use super::{
         parse_messages_request, to_anthropic_messages_request,
         translate_responses_to_anthropic_request, AnthropicStreamToIr,
     },
-    chat::{sse_frame, translate_chat_response, ChatStreamToIr, ResponsesSseTranslator},
+    chat::{
+        encode_chat_from_ir, parse_chat_request, sse_frame, translate_chat_response,
+        ChatStreamToIr, ResponsesSseTranslator,
+    },
     responses::{
-        encode_responses_from_ir, parse_responses_request, responses_output_to_ir,
-        to_kimi_chat_request, to_responses_request, translate_responses_request, IrToResponsesSse,
-        ResponsesStreamToIr,
+        apply_official_codex_model, encode_responses_from_ir, parse_responses_request,
+        prepare_official_codex_request, responses_output_to_ir, to_grok_chat_request,
+        to_grok_responses_request, to_kimi_chat_request, to_responses_request,
+        translate_responses_request, IrToResponsesSse, ResponsesStreamToIr,
     },
 };
 
@@ -76,6 +80,31 @@ fn fixture(name: &str) -> Value {
     serde_json::from_str(source).expect("fixture is valid JSON")
 }
 
+fn assert_codex_completed_usage(usage: &Value) {
+    #[derive(serde::Deserialize)]
+    struct CodexCompletedUsage {
+        input_tokens: i64,
+        output_tokens: i64,
+        total_tokens: i64,
+        reasoning_tokens: i64,
+        #[serde(default)]
+        output_tokens_details: Option<CodexOutputDetails>,
+    }
+    #[derive(serde::Deserialize)]
+    struct CodexOutputDetails {
+        reasoning_tokens: i64,
+    }
+    let parsed: CodexCompletedUsage = serde_json::from_value(usage.clone())
+        .expect("Codex ResponseCompleted usage must include reasoning_tokens");
+    assert_eq!(
+        parsed
+            .output_tokens_details
+            .as_ref()
+            .map(|details| details.reasoning_tokens),
+        Some(parsed.reasoning_tokens)
+    );
+}
+
 #[test]
 fn responses_request_maps_text_tools_options_and_unicode() {
     let request = fixture("responses_text");
@@ -102,15 +131,52 @@ fn streaming_request_opt_in_preserves_final_usage_chunk() {
 }
 
 #[test]
-fn reasoning_configuration_fails_closed_without_a_verified_kimi_mapping() {
-    let error = parse_responses_request(&fixture("responses_reasoning"))
-        .expect_err("reasoning must not be silently dropped");
+fn reasoning_is_dropped_on_kimi_chat_and_mapped_for_grok() {
+    let request = fixture("responses_reasoning");
+    let bridge = parse_responses_request(&request).expect("reasoning must not reject the request");
+    assert_eq!(bridge.passthrough["reasoning_effort"], "medium");
 
-    assert_eq!(error.code, "unsupported_reasoning");
-    assert_eq!(
-        error.message,
-        "Reasoning configuration is not supported by this bridge."
-    );
+    let kimi = to_kimi_chat_request(&bridge);
+    assert!(kimi.get("reasoning").is_none());
+    assert!(kimi.get("reasoning_effort").is_none());
+    assert_eq!(kimi["messages"][0]["content"], "Explain the result.");
+
+    let grok = to_grok_chat_request(&bridge);
+    assert!(grok.get("reasoning").is_none());
+    assert_eq!(grok["reasoning_effort"], "medium");
+    assert_eq!(grok["messages"][0]["content"], "Explain the result.");
+}
+
+#[test]
+fn unknown_or_malformed_reasoning_is_ignored_and_request_still_parses() {
+    for reasoning in [
+        json!({"effort": "minimal"}),
+        json!({"summary": "auto"}),
+        json!(null),
+        json!("fast"),
+        json!(1),
+    ] {
+        let mut request = fixture("responses_text");
+        request["reasoning"] = reasoning;
+        let bridge = parse_responses_request(&request)
+            .expect("malformed reasoning must not reject the request");
+        assert!(bridge.passthrough.get("reasoning_effort").is_none());
+        let kimi = to_kimi_chat_request(&bridge);
+        assert!(kimi.get("reasoning").is_none());
+        assert!(kimi.get("reasoning_effort").is_none());
+    }
+}
+
+#[test]
+fn codex_high_reasoning_with_summary_maps_only_effort_for_grok() {
+    let mut request = fixture("responses_text");
+    request["reasoning"] = json!({"effort": "high", "summary": "auto"});
+    let bridge = parse_responses_request(&request).expect("codex reasoning parses");
+    assert_eq!(bridge.passthrough["reasoning_effort"], "high");
+    let grok = to_grok_chat_request(&bridge);
+    assert_eq!(grok["reasoning_effort"], "high");
+    assert!(grok.get("reasoning").is_none());
+    assert!(grok.get("summary").is_none());
 }
 
 #[test]
@@ -161,14 +227,53 @@ fn unsupported_or_non_text_function_call_output_fails_closed() {
 }
 
 #[test]
-fn unsupported_multimodal_and_hosted_tools_fail_closed() {
+fn unsupported_multimodal_fails_closed() {
     let error = parse_responses_request(&fixture("unsupported_input")).expect_err("image rejected");
     assert_eq!(error.code, "unsupported_image_input");
     assert!(!error.message.contains("example.invalid"));
+}
 
-    let error = parse_responses_request(&fixture("unsupported_web_search"))
-        .expect_err("web search rejected");
-    assert_eq!(error.code, "unsupported_web_search");
+#[test]
+fn hosted_tools_are_dropped_and_function_tools_still_translate() {
+    let request = parse_responses_request(&fixture("unsupported_web_search"))
+        .expect("hosted tools must not reject the request");
+    assert!(request.tools.is_empty());
+
+    let mut mixed = fixture("unsupported_web_search");
+    mixed["tools"] = json!([
+        { "type": "web_search" },
+        { "type": "computer" },
+        { "type": "apply_patch" },
+        { "type": "local_shell" },
+        { "type": "custom", "name": "custom_tool" },
+        {
+            "type": "function",
+            "name": "lookup",
+            "description": "Look something up",
+            "parameters": { "type": "object", "properties": {} }
+        }
+    ]);
+    mixed["tool_choice"] = json!({ "type": "web_search" });
+    let request = parse_responses_request(&mixed).expect("mixed tools parse");
+    assert_eq!(request.tools.len(), 1);
+    assert_eq!(request.tools[0].name, "lookup");
+    assert!(request.tool_choice.is_none());
+
+    let kimi = to_kimi_chat_request(&request);
+    assert_eq!(
+        kimi["tools"]
+            .as_array()
+            .expect("function tools forwarded")
+            .len(),
+        1
+    );
+    assert_eq!(kimi["tools"][0]["type"], "function");
+    assert_eq!(kimi["tools"][0]["function"]["name"], "lookup");
+    assert!(kimi.get("tool_choice").is_none());
+
+    let grok = to_grok_chat_request(&request);
+    assert_eq!(grok["tools"][0]["function"]["name"], "lookup");
+    assert_eq!(grok["tools"].as_array().unwrap().len(), 1);
 }
 
 #[test]
@@ -182,6 +287,8 @@ fn non_streaming_text_response_has_responses_shape_and_usage() {
     assert_eq!(response["output"][0]["content"][0]["text"], "你好，世界。");
     assert_eq!(response["usage"]["input_tokens"], 8);
     assert_eq!(response["usage"]["output_tokens"], 4);
+    assert_eq!(response["usage"]["reasoning_tokens"], 0);
+    assert_codex_completed_usage(&response["usage"]);
 }
 
 #[test]
@@ -256,6 +363,11 @@ fn stream_text_split_emits_required_responses_event_sequence() {
         events.last().expect("completed").data()["response"]["usage"]["total_tokens"],
         9
     );
+    assert_eq!(
+        events.last().expect("completed").data()["response"]["usage"]["reasoning_tokens"],
+        0
+    );
+    assert_codex_completed_usage(&events.last().expect("completed").data()["response"]["usage"]);
     assert!(
         translator.finish().is_empty(),
         "completion is idempotent after the explicit terminal [DONE] handling"
@@ -406,6 +518,379 @@ fn upstream_error_is_generic_and_never_leaks_sensitive_upstream_data() {
     assert_eq!(error.code, "upstream_error");
     assert!(!error.message.contains("sk-secret-key"));
     assert!(!error.message.contains("private input"));
+}
+
+#[test]
+fn chat_request_maps_to_responses_and_strips_leftover_grok_model() {
+    let request = parse_chat_request(&json!({
+        "model": "grok-4.5",
+        "messages": [
+            { "role": "system", "content": "Be brief." },
+            { "role": "user", "content": "你好" }
+        ],
+        "stream": false,
+        "max_tokens": 64
+    }))
+    .expect("parse chat");
+    assert_eq!(request.model, "grok-4.5");
+    assert_eq!(request.instructions.as_deref(), Some("Be brief."));
+    assert_eq!(request.passthrough["max_output_tokens"], 64);
+
+    let mut responses = to_responses_request(&request);
+    apply_official_codex_model(&mut responses, &request.model, Some(""));
+    assert!(responses.get("model").is_none());
+    assert_eq!(responses["input"][0]["content"][0]["text"], "你好");
+    assert_eq!(responses["max_output_tokens"], 64);
+
+    apply_official_codex_model(&mut responses, "gpt-4o", None);
+    assert_eq!(responses["model"], "gpt-4o");
+}
+
+#[test]
+fn messages_request_maps_to_responses_and_strips_leftover_claude_model() {
+    let request = parse_messages_request(&json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 64,
+        "messages": [
+            { "role": "user", "content": "你好" }
+        ]
+    }))
+    .expect("parse messages");
+    assert_eq!(request.model, "claude-sonnet-4-20250514");
+    assert_eq!(request.passthrough["max_output_tokens"], 64);
+
+    let mut responses = to_responses_request(&request);
+    apply_official_codex_model(&mut responses, &request.model, Some(""));
+    assert!(responses.get("model").is_none());
+    assert_eq!(responses["input"][0]["content"][0]["text"], "你好");
+    assert_eq!(responses["max_output_tokens"], 64);
+
+    apply_official_codex_model(&mut responses, "gpt-4o", None);
+    assert_eq!(responses["model"], "gpt-4o");
+}
+
+#[test]
+fn official_codex_model_omits_bridge_slug_and_cn_models() {
+    for incoming in ["agenthub_codex_bridge", "kimi-k2.5", "deepseek-chat", ""] {
+        let mut body = json!({"model": incoming});
+        apply_official_codex_model(&mut body, incoming, Some(""));
+        assert!(
+            body.get("model").is_none(),
+            "expected omit for {incoming:?}, got {body}"
+        );
+    }
+}
+
+#[test]
+fn official_codex_model_keeps_official_ids_and_override() {
+    let mut gpt = json!({});
+    apply_official_codex_model(&mut gpt, "gpt-5.4", None);
+    assert_eq!(gpt["model"], "gpt-5.4");
+
+    let mut o3 = json!({});
+    apply_official_codex_model(&mut o3, "o3", None);
+    assert_eq!(o3["model"], "o3");
+
+    let mut overridden = json!({});
+    apply_official_codex_model(&mut overridden, "o3", Some("gpt-4o"));
+    assert_eq!(overridden["model"], "gpt-4o");
+}
+
+#[test]
+fn prepare_official_codex_request_forces_store_false_without_changing_model_policy() {
+    let mut missing_store = json!({"model": "claude-sonnet-4-20250514"});
+    prepare_official_codex_request(
+        &mut missing_store,
+        "claude-sonnet-4-20250514",
+        Some("gpt-5.4"),
+    );
+    assert_eq!(missing_store["store"], false);
+    assert_eq!(missing_store["model"], "gpt-5.4");
+
+    let mut true_store = json!({"model": "gpt-5.4", "store": true});
+    prepare_official_codex_request(&mut true_store, "gpt-5.4", None);
+    assert_eq!(true_store["store"], false);
+    assert_eq!(true_store["model"], "gpt-5.4");
+
+    let mut leftover_model = json!({"model": "claude-sonnet-4-20250514"});
+    prepare_official_codex_request(&mut leftover_model, "claude-sonnet-4-20250514", Some(""));
+    assert_eq!(leftover_model["store"], false);
+    assert!(leftover_model.get("model").is_none());
+}
+
+fn assert_no_system_input_items(body: &Value) {
+    let Some(items) = body.get("input").and_then(Value::as_array) else {
+        return;
+    };
+    for item in items {
+        assert_ne!(
+            item.get("role").and_then(Value::as_str),
+            Some("system"),
+            "official Codex Responses must not send role=system items: {item}"
+        );
+        assert_ne!(
+            item.get("role").and_then(Value::as_str),
+            Some("developer"),
+            "official Codex Responses must fold developer items: {item}"
+        );
+    }
+}
+
+#[test]
+fn to_responses_request_folds_claude_system_and_developer_into_instructions() {
+    let request = parse_messages_request(&json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 32,
+        "system": "Top-level Claude system.",
+        "messages": [
+            { "role": "system", "content": "Inline Claude system." },
+            { "role": "user", "content": "ping" }
+        ]
+    }))
+    .expect("parse messages");
+    assert_eq!(
+        request.instructions.as_deref(),
+        Some("Top-level Claude system.")
+    );
+    assert!(request
+        .input
+        .iter()
+        .any(|message| matches!(message.role, crate::bridge::types::MessageRole::System)));
+
+    let responses = to_responses_request(&request);
+    assert_no_system_input_items(&responses);
+    let instructions = responses["instructions"].as_str().expect("instructions");
+    assert!(
+        instructions.contains("Top-level Claude system."),
+        "{instructions}"
+    );
+    assert!(
+        instructions.contains("Inline Claude system."),
+        "{instructions}"
+    );
+    assert_eq!(responses["input"][0]["role"], "user");
+    assert_eq!(responses["input"][0]["content"][0]["text"], "ping");
+}
+
+#[test]
+fn to_responses_request_folds_chat_developer_after_user_into_instructions() {
+    let request = parse_chat_request(&json!({
+        "model": "claude-sonnet-4-20250514",
+        "messages": [
+            { "role": "user", "content": "hello" },
+            { "role": "developer", "content": "Be terse." },
+            { "role": "user", "content": "again" }
+        ]
+    }))
+    .expect("parse chat");
+    assert!(request.instructions.is_none());
+    assert!(request
+        .input
+        .iter()
+        .any(|message| matches!(message.role, crate::bridge::types::MessageRole::Developer)));
+
+    let responses = to_responses_request(&request);
+    assert_no_system_input_items(&responses);
+    assert_eq!(responses["instructions"], "Be terse.");
+    assert_eq!(responses["input"][0]["role"], "user");
+    assert_eq!(responses["input"][0]["content"][0]["text"], "hello");
+    assert_eq!(responses["input"][1]["role"], "user");
+    assert_eq!(responses["input"][1]["content"][0]["text"], "again");
+}
+
+#[test]
+fn prepare_official_codex_request_strips_system_items_into_existing_instructions() {
+    let mut body = json!({
+        "model": "claude-sonnet-4-20250514",
+        "instructions": "Keep going.",
+        "max_output_tokens": 64,
+        "input": [
+            {
+                "type": "message",
+                "role": "system",
+                "content": [{ "type": "input_text", "text": "You are a coding agent." }]
+            },
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{ "type": "input_text", "text": "ping" }]
+            }
+        ]
+    });
+    prepare_official_codex_request(&mut body, "claude-sonnet-4-20250514", Some(""));
+    assert_eq!(body["store"], false);
+    assert!(body.get("model").is_none(), "must not invent gpt-* models");
+    assert_no_system_input_items(&body);
+    assert!(
+        body.get("max_output_tokens").is_none(),
+        "official Codex Responses rejects max_output_tokens: {body}"
+    );
+    let instructions = body["instructions"].as_str().expect("instructions");
+    assert!(instructions.contains("Keep going."), "{instructions}");
+    assert!(
+        instructions.contains("You are a coding agent."),
+        "{instructions}"
+    );
+    assert_eq!(body["input"][0]["role"], "user");
+    assert_eq!(body["input"][0]["content"][0]["text"], "ping");
+}
+
+#[test]
+fn prepare_official_codex_request_folds_system_into_first_user_without_instructions() {
+    let mut body = json!({
+        "model": "claude-sonnet-4-20250514",
+        "input": [
+            {
+                "type": "message",
+                "role": "system",
+                "content": [{ "type": "input_text", "text": "Inline system." }]
+            },
+            {
+                "type": "message",
+                "role": "developer",
+                "content": [{ "type": "input_text", "text": "Developer note." }]
+            },
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{ "type": "input_text", "text": "ping" }]
+            }
+        ]
+    });
+    prepare_official_codex_request(&mut body, "claude-sonnet-4-20250514", None);
+    assert_eq!(body["store"], false);
+    assert!(body.get("model").is_none(), "must not invent gpt-* models");
+    assert_no_system_input_items(&body);
+    assert!(body.get("instructions").is_none());
+    let user_text = body["input"][0]["content"][0]["text"]
+        .as_str()
+        .expect("user text");
+    assert!(user_text.contains("Inline system."), "{user_text}");
+    assert!(user_text.contains("Developer note."), "{user_text}");
+    assert!(user_text.contains("ping"), "{user_text}");
+}
+
+#[test]
+fn official_codex_messages_path_has_no_system_items_after_prepare() {
+    let request = parse_messages_request(&json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 32,
+        "system": "Claude Code system prompt.",
+        "messages": [
+            { "role": "system", "content": "Extra system." },
+            { "role": "user", "content": "ping" }
+        ]
+    }))
+    .expect("parse messages");
+    let mut body = to_responses_request(&request);
+    prepare_official_codex_request(&mut body, &request.model, Some(""));
+    assert_eq!(body["store"], false);
+    assert!(body.get("model").is_none(), "must not invent gpt-* models");
+    assert_no_system_input_items(&body);
+    let instructions = body["instructions"].as_str().expect("instructions");
+    assert!(
+        instructions.contains("Claude Code system prompt."),
+        "{instructions}"
+    );
+    assert!(instructions.contains("Extra system."), "{instructions}");
+    assert_eq!(body["input"][0]["role"], "user");
+    assert_eq!(body["input"][0]["content"][0]["text"], "ping");
+    assert!(
+        body.get("max_output_tokens").is_none(),
+        "official Codex Responses rejects max_output_tokens: {body}"
+    );
+}
+
+#[test]
+fn prepare_official_codex_request_omits_max_output_tokens_from_passthrough() {
+    let request = parse_messages_request(&json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 64,
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "messages": [
+            { "role": "user", "content": "ping" }
+        ]
+    }))
+    .expect("parse messages");
+    assert_eq!(request.passthrough["max_output_tokens"], 64);
+
+    let mut body = to_responses_request(&request);
+    assert_eq!(body["max_output_tokens"], 64);
+    assert_eq!(body["temperature"], 0.2);
+    assert_eq!(body["top_p"], 0.9);
+
+    prepare_official_codex_request(&mut body, &request.model, Some(""));
+    assert_eq!(body["store"], false);
+    assert!(body.get("model").is_none(), "must not invent gpt-* models");
+    assert_no_system_input_items(&body);
+    assert!(
+        body.get("max_output_tokens").is_none(),
+        "official Codex Responses rejects max_output_tokens: {body}"
+    );
+    assert_eq!(body["temperature"], 0.2);
+    assert_eq!(body["top_p"], 0.9);
+    assert_eq!(body["input"][0]["content"][0]["text"], "ping");
+}
+
+#[test]
+fn prepare_official_codex_request_allowlists_responses_keys() {
+    let mut body = json!({
+        "model": "claude-sonnet-4-20250514",
+        "instructions": "Be brief.",
+        "stream": true,
+        "store": true,
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{ "type": "input_text", "text": "ping" }]
+            }
+        ],
+        "tools": [{ "type": "function", "name": "echo", "parameters": { "type": "object" } }],
+        "tool_choice": "auto",
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "max_output_tokens": 64,
+        "metadata": { "user_id": "u1", "session": "s1" },
+        "presence_penalty": 0.1,
+        "frequency_penalty": 0.2,
+        "seed": 7,
+        "user": "alice"
+    });
+    prepare_official_codex_request(&mut body, "claude-sonnet-4-20250514", Some(""));
+    assert_eq!(body["store"], false);
+    assert!(body.get("model").is_none(), "must not invent gpt-* models");
+    assert_eq!(body["stream"], true);
+    assert_eq!(body["instructions"], "Be brief.");
+    assert_eq!(body["tool_choice"], "auto");
+    assert_eq!(body["tools"][0]["name"], "echo");
+    assert_eq!(body["temperature"], 0.2);
+    assert_eq!(body["top_p"], 0.9);
+    assert_eq!(body["input"][0]["content"][0]["text"], "ping");
+    for key in [
+        "max_output_tokens",
+        "metadata",
+        "presence_penalty",
+        "frequency_penalty",
+        "seed",
+        "user",
+    ] {
+        assert!(
+            body.get(key).is_none(),
+            "official Codex Responses must drop {key}: {body}"
+        );
+    }
+}
+
+#[test]
+fn responses_ir_encodes_chat_completion_without_inventing_model() {
+    let ir = responses_output_to_ir(&fixture("responses_upstream_text")).expect("ir");
+    let chat = encode_chat_from_ir(&ir, Some("chatcmpl_test")).expect("chat");
+    assert_eq!(chat["object"], "chat.completion");
+    assert_eq!(chat["choices"][0]["message"]["content"], "你好，世界。");
+    assert_eq!(chat["choices"][0]["finish_reason"], "stop");
+    assert_eq!(chat["id"], "chatcmpl_test");
 }
 
 #[test]
@@ -625,15 +1110,162 @@ fn responses_sse_to_ir_to_anthropic_sse_tool_call_deltas() {
 }
 
 #[test]
-fn anthropic_thinking_configuration_fails_closed() {
-    let error = parse_messages_request(&json!({
+fn anthropic_thinking_configuration_is_dropped() {
+    let request = parse_messages_request(&json!({
         "model": "gpt-5",
         "max_tokens": 32,
         "messages": [{ "role": "user", "content": "hi" }],
         "thinking": { "type": "enabled", "budget_tokens": 1024 }
     }))
-    .expect_err("thinking must not be silently dropped");
-    assert_eq!(error.code, "unsupported_thinking");
+    .expect("thinking configuration must parse so Claude Code ping is not 400");
+    assert_eq!(request.model, "gpt-5");
+    assert!(request.passthrough.get("thinking").is_none());
+    assert_eq!(request.passthrough["reasoning_effort"], "low");
+}
+
+#[test]
+fn anthropic_thinking_maps_to_passthrough_reasoning_effort() {
+    let cases: &[(&str, Value, Option<&str>)] = &[
+        ("invalid type", json!({"type": "bogus"}), None),
+        ("disabled", json!({"type": "disabled"}), None),
+        (
+            "effort high",
+            json!({"type": "enabled", "effort": "high"}),
+            Some("high"),
+        ),
+        (
+            "effort minimal",
+            json!({"type": "enabled", "effort": "minimal"}),
+            Some("low"),
+        ),
+        (
+            "budget 12000",
+            json!({"type": "enabled", "budget_tokens": 12000}),
+            Some("high"),
+        ),
+        (
+            "budget default enabled",
+            json!({"type": "enabled"}),
+            Some("medium"),
+        ),
+    ];
+    for (label, thinking, expected) in cases {
+        let request = parse_messages_request(&json!({
+            "model": "gpt-5",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hi" }],
+            "thinking": thinking,
+        }))
+        .unwrap_or_else(|error| panic!("{label}: {error:?}"));
+        assert!(
+            request.passthrough.get("thinking").is_none(),
+            "{label}: thinking must not be forwarded"
+        );
+        match expected {
+            Some(effort) => {
+                assert_eq!(request.passthrough["reasoning_effort"], *effort, "{label}")
+            }
+            None => assert!(
+                request.passthrough.get("reasoning_effort").is_none(),
+                "{label}: reasoning_effort must be omitted"
+            ),
+        }
+    }
+}
+
+#[test]
+fn to_grok_responses_request_maps_thinking_to_reasoning_and_include() {
+    let request = parse_messages_request(&json!({
+        "model": "gpt-5",
+        "max_tokens": 32,
+        "messages": [{ "role": "user", "content": "hi" }],
+        "thinking": { "type": "enabled", "effort": "high" },
+        "prompt_cache_key": "cache-1"
+    }))
+    .expect("parse");
+    assert_eq!(request.passthrough["reasoning_effort"], "high");
+
+    let grok = to_grok_responses_request(&request);
+    assert_eq!(grok["reasoning"]["effort"], "high");
+    assert_eq!(grok["reasoning"]["summary"], "detailed");
+    assert_eq!(grok["include"], json!(["reasoning.encrypted_content"]));
+    assert_eq!(grok["prompt_cache_key"], "cache-1");
+    assert!(grok.get("thinking").is_none());
+    assert!(grok.get("reasoning_effort").is_none());
+
+    let kimi = to_kimi_chat_request(&request);
+    assert!(kimi.get("reasoning").is_none());
+    assert!(kimi.get("thinking").is_none());
+    assert!(kimi.get("reasoning_effort").is_none());
+}
+
+#[test]
+fn to_grok_responses_request_does_not_invent_reasoning_without_thinking() {
+    let request = parse_messages_request(&json!({
+        "model": "gpt-5",
+        "max_tokens": 32,
+        "messages": [{ "role": "user", "content": "hi" }]
+    }))
+    .expect("parse");
+    assert!(request.passthrough.get("reasoning_effort").is_none());
+    let grok = to_grok_responses_request(&request);
+    assert!(grok.get("reasoning").is_none());
+    assert!(grok.get("include").is_none());
+}
+
+#[test]
+fn to_responses_request_does_not_forward_reasoning_effort() {
+    let request = parse_messages_request(&json!({
+        "model": "gpt-5",
+        "max_tokens": 32,
+        "messages": [{ "role": "user", "content": "hi" }],
+        "thinking": { "type": "enabled", "effort": "high" }
+    }))
+    .expect("parse");
+    assert_eq!(request.passthrough["reasoning_effort"], "high");
+    let responses = to_responses_request(&request);
+    assert!(responses.get("reasoning").is_none());
+    assert!(responses.get("include").is_none());
+    assert!(responses.get("reasoning_effort").is_none());
+    assert!(responses.get("thinking").is_none());
+}
+
+#[test]
+fn responses_output_skips_encrypted_reasoning_items() {
+    let ir = responses_output_to_ir(&json!({
+        "id": "resp_grok",
+        "status": "completed",
+        "output": [
+            {
+                "id": "rs_1",
+                "type": "reasoning",
+                "encrypted_content": "opaque-blob",
+                "summary": [{ "type": "summary_text", "text": "plan" }]
+            },
+            {
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "content": [{ "type": "output_text", "text": "hello" }]
+            }
+        ],
+        "usage": { "input_tokens": 1, "output_tokens": 1, "total_tokens": 2 }
+    }))
+    .expect("reasoning items must not fail Messages translation");
+    let encoded = encode_anthropic_message(&ir).expect("anthropic");
+    assert_eq!(encoded["content"][0]["text"], "hello");
+}
+
+#[test]
+fn responses_reasoning_max_effort_is_mapped() {
+    let mut request = fixture("responses_text");
+    request["reasoning"] = json!({"effort": "max"});
+    let bridge = parse_responses_request(&request).expect("max effort");
+    assert_eq!(bridge.passthrough["reasoning_effort"], "max");
+    let grok = to_grok_responses_request(&bridge);
+    assert_eq!(grok["reasoning"]["effort"], "max");
+    assert_eq!(grok["reasoning"]["summary"], "detailed");
+    assert_eq!(grok["include"], json!(["reasoning.encrypted_content"]));
 }
 
 #[test]
@@ -746,11 +1378,14 @@ fn responses_tool_history_becomes_anthropic_tool_use_and_results() {
 }
 
 #[test]
-fn responses_to_anthropic_rejects_image_and_hosted_tools() {
+fn responses_to_anthropic_rejects_image_and_drops_hosted_tools() {
     let error = parse_responses_request(&fixture("unsupported_input")).expect_err("image");
     assert_eq!(error.code, "unsupported_image_input");
-    let error = parse_responses_request(&fixture("unsupported_web_search")).expect_err("search");
-    assert_eq!(error.code, "unsupported_web_search");
+    let request =
+        parse_responses_request(&fixture("unsupported_web_search")).expect("hosted tools dropped");
+    assert!(request.tools.is_empty());
+    let anthropic = to_anthropic_messages_request(&request);
+    assert!(anthropic.get("tools").is_none());
 }
 
 #[test]
@@ -855,7 +1490,10 @@ fn anthropic_usage_maps_cache_tokens_and_malformed_usage_is_dropped() {
         "malformed usage must not be invented"
     );
     let response = encode_responses_from_ir(&ir, Some("resp_bad_usage")).expect("responses");
-    assert!(response["usage"].is_null());
+    assert_eq!(response["usage"]["input_tokens"], 0);
+    assert_eq!(response["usage"]["output_tokens"], 0);
+    assert_eq!(response["usage"]["reasoning_tokens"], 0);
+    assert_codex_completed_usage(&response["usage"]);
 }
 
 #[test]
@@ -1010,4 +1648,25 @@ fn anthropic_stream_error_is_generic_and_never_leaks_upstream_body() {
         }
         other => panic!("expected Error, got {other:?}"),
     }
+}
+
+#[test]
+fn completed_responses_usage_includes_reasoning_tokens_even_when_unknown() {
+    let unknown = Usage::completed_responses_json(None);
+    assert_eq!(unknown["reasoning_tokens"], 0);
+    assert_eq!(unknown["output_tokens_details"]["reasoning_tokens"], 0);
+    assert_codex_completed_usage(&unknown);
+
+    let from_chat = Usage::from_chat_usage(&json!({
+        "prompt_tokens": 3,
+        "completion_tokens": 2,
+        "total_tokens": 5,
+        "completion_tokens_details": { "reasoning_tokens": 7 }
+    }))
+    .expect("chat usage");
+    let encoded = from_chat.to_responses_json();
+    assert_eq!(encoded["input_tokens"], 3);
+    assert_eq!(encoded["reasoning_tokens"], 7);
+    assert_eq!(encoded["output_tokens_details"]["reasoning_tokens"], 7);
+    assert_codex_completed_usage(&encoded);
 }

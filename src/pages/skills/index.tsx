@@ -41,12 +41,7 @@ import {
 } from '@/lib/api/skill';
 import { useInstalledAgents, type AgentColumn } from '@/lib/hooks/useInstalledAgents';
 import { normalizeOpenPath } from '@/lib/path-open';
-import {
-  privateSkillActiveKey,
-  sharedSkillActiveKey,
-  shouldIgnoreListKeyboard,
-  skillPreviewActiveKey,
-} from '@/lib/skills/preview-keys';
+import { shouldIgnoreListKeyboard } from '@/lib/skills/preview-keys';
 import {
   runImportPrivateSkill,
   runInstallMarketSkill,
@@ -67,6 +62,8 @@ import {
   adoptOkToast,
   batchEnableToast,
   conflictPromptToast,
+  deleteSharedFailedToast,
+  deleteSharedOkToast,
   disableFailedToast,
   disableOkToast,
   enableFailedToast,
@@ -86,10 +83,18 @@ import {
 import {
   catalogRowHasConflict,
   catalogRowHasMapped,
+  catalogRowKey,
   isPrivateSourceRow,
   isSharedCatalogRow,
+  previewTargetFromCatalogRow,
   visibleCatalogRows,
 } from './SkillMatrix';
+import {
+  previewAfterHiddenAgent,
+  previewAfterRemoveFromTool,
+  previewTargetsEqual,
+  resyncPreviewTarget,
+} from './skills-preview-resync';
 import { applyCatalogCellState, cellKey } from './skills-catalog-model';
 import {
   MAIN_WIDTH_FLOOR,
@@ -111,12 +116,38 @@ import {
 import { SkillsLibraryPanel } from './SkillsLibraryPanel';
 import { SkillsMarketPanel } from './SkillsMarketPanel';
 
+export function createIdempotentCleanup<T extends unknown[]>(cleanup: (...args: T) => void) {
+  let completed = false;
+  return (...args: T) => {
+    if (completed) return;
+    completed = true;
+    cleanup(...args);
+  };
+}
+
 export default function SkillsPage() {
   const { toast } = useToast();
   const { t } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = parseSkillTab(searchParams.get('tab'));
   const { installedAgents, hiddenIds, loading: agentsLoading } = useInstalledAgents();
+  // 最优列集：仅已安装 Agent（含 Kimi 等无 skills 能力），用后端 mapStatus 解释灰色格
+  // doctor 未完成时先用全量列，避免矩阵空列等待；detect 完成后未安装不占列
+  const matrixAgents: AgentColumn[] = useMemo(
+    () =>
+      installedAgents.length > 0 || !agentsLoading
+        ? installedAgents
+        : AGENTS.filter((a) => !hiddenIds.includes(a.id)),
+    [installedAgents, agentsLoading, hiddenIds],
+  );
+  const installedAgentIds = useMemo(
+    () => matrixAgents.map((a) => a.id),
+    [matrixAgents],
+  );
+  const visibleAgentIdSet = useMemo(
+    () => new Set<string>(installedAgentIds),
+    [installedAgentIds],
+  );
   const [marketQuery, setMarketQuery] = useState('');
   const [installingMarketId, setInstallingMarketId] = useState<string | null>(null);
   const [skillMarketSource, setSkillMarketSource] = useState<SkillMarketSource>('auto');
@@ -150,6 +181,10 @@ export default function SkillsPage() {
     name: string;
     inLibrary: boolean;
   } | null>(null);
+  const [removeShared, setRemoveShared] = useState<{
+    skillId: string;
+    name: string;
+  } | null>(null);
   const [dangerBusy, setDangerBusy] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<SkillPreviewTarget | null>(null);
   const [previewWidth, setPreviewWidth] = useState(readStoredPreviewWidth);
@@ -161,6 +196,13 @@ export default function SkillsPage() {
   const reduceMotion = usePrefersReducedMotion();
   const splitRef = useRef<HTMLDivElement>(null);
   const previewBodyRef = useRef<HTMLDivElement>(null);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+
+  const cancelPreviewResize = useCallback(() => {
+    resizeCleanupRef.current?.();
+  }, []);
+
+  useEffect(() => () => cancelPreviewResize(), [cancelPreviewResize]);
 
   const clampPreviewWidth = useCallback((w: number) => {
     const containerW = splitRef.current?.getBoundingClientRect().width ?? window.innerWidth;
@@ -210,6 +252,7 @@ export default function SkillsPage() {
   }, [previewShellMounted, previewExpanded, clampPreviewWidth]);
 
   const requestOpenPreview = useCallback((target: SkillPreviewTarget) => {
+    cancelPreviewResize();
     setPreviewTarget(target);
     setPreviewShellMounted(true);
     if (reduceMotion) {
@@ -220,15 +263,16 @@ export default function SkillsPage() {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => setPreviewExpanded(true));
     });
-  }, [reduceMotion]);
+  }, [cancelPreviewResize, reduceMotion]);
 
   const requestClosePreview = useCallback(() => {
+    cancelPreviewResize();
     setPreviewExpanded(false);
     if (reduceMotion) {
       setPreviewTarget(null);
       setPreviewShellMounted(false);
     }
-  }, [reduceMotion]);
+  }, [cancelPreviewResize, reduceMotion]);
 
   const onPreviewPaneTransitionEnd = useCallback(
     (e: ReactTransitionEvent<HTMLElement>) => {
@@ -243,32 +287,69 @@ export default function SkillsPage() {
   const onPreviewResizeStart = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       e.preventDefault();
+      cancelPreviewResize();
       const startX = e.clientX;
       const startW = previewWidth;
 
       const prevCursor = document.body.style.cursor;
       const prevSelect = document.body.style.userSelect;
+      const pointerTarget = e.currentTarget;
+      const pointerId = e.pointerId;
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
       setPreviewResizing(true);
 
-      const onMove = (ev: PointerEvent) => {
+      const onMove = (ev: globalThis.PointerEvent): void => {
+        if (ev.pointerId !== pointerId) return;
         // Dragging the left edge of the preview: mouse left → wider panel
         setPreviewWidth(clampPreviewWidth(startW + (startX - ev.clientX)));
       };
-      const onUp = (ev: PointerEvent) => {
-        persistPreviewWidth(startW + (startX - ev.clientX));
-        document.body.style.cursor = prevCursor;
-        document.body.style.userSelect = prevSelect;
-        setPreviewResizing(false);
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-      };
+      const cleanup = createIdempotentCleanup<[boolean, number?]>(
+        (commit: boolean, clientX: number = startX) => {
+          if (resizeCleanupRef.current !== cancel) return;
+          resizeCleanupRef.current = null;
+          if (commit) persistPreviewWidth(startW + (startX - clientX));
+          document.body.style.cursor = prevCursor;
+          document.body.style.userSelect = prevSelect;
+          setPreviewResizing(false);
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+          window.removeEventListener('pointercancel', onCancel);
+          window.removeEventListener('blur', onBlur);
+          try {
+            pointerTarget.releasePointerCapture(pointerId);
+          } catch {
+            // The pointer may already have been released by the browser.
+          }
+        },
+      );
+      function onUp(ev: globalThis.PointerEvent): void {
+        if (ev.pointerId !== pointerId) return;
+        cleanup(true, ev.clientX);
+      }
+      function onCancel(ev: globalThis.PointerEvent): void {
+        if (ev.pointerId !== pointerId) return;
+        cleanup(false);
+      }
+      function onBlur() {
+        cleanup(false);
+      }
+      function cancel() {
+        cleanup(false);
+      }
+      resizeCleanupRef.current = cancel;
 
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onCancel);
+      window.addEventListener('blur', onBlur);
+      try {
+        pointerTarget.setPointerCapture(pointerId);
+      } catch {
+        // Keep the window listeners as a compatibility fallback.
+      }
     },
-    [previewWidth, clampPreviewWidth, persistPreviewWidth],
+    [cancelPreviewResize, previewWidth, clampPreviewWidth, persistPreviewWidth],
   );
 
   const onPreviewSeparatorKeyDown = useCallback(
@@ -324,8 +405,8 @@ export default function SkillsPage() {
   };
 
   const localRows = useMemo(
-    () => (catalog ? visibleCatalogRows(catalog) : []),
-    [catalog],
+    () => (catalog ? visibleCatalogRows(catalog, visibleAgentIdSet) : []),
+    [catalog, visibleAgentIdSet],
   );
 
   const sharedCount = localRows.filter(isSharedCatalogRow).length;
@@ -397,7 +478,7 @@ export default function SkillsPage() {
     skillId: string,
     agentId: AgentId,
     force = false,
-    meta?: { name?: string; wasMapped?: boolean },
+    meta?: { name?: string; wasMapped?: boolean; mode?: 'link' | 'copy' },
   ) => {
     const key = cellKey(skillId, agentId);
     const agentName = agentDisplayName(agentId);
@@ -407,19 +488,28 @@ export default function SkillsPage() {
       skillId;
     setPendingCells((prev) => new Set(prev).add(key));
     try {
-      const result = await toggleSkillSync(skillId, agentId, { force });
+      const result = await toggleSkillSync(skillId, agentId, {
+        force,
+        mode: meta?.mode,
+      });
       if (result.conflict && !force) {
         toast({
           ...conflictPromptToast(t, agentName, skillName),
           duration: 12_000,
           onAction: () => {
-            void doToggle(skillId, agentId, true, { name: skillName, wasMapped: false });
+            void doToggle(skillId, agentId, true, {
+              name: skillName,
+              wasMapped: false,
+              mode: meta?.mode,
+            });
           },
         });
         return;
       }
       setCatalog((prev) =>
-        prev ? applyCatalogCellState(prev, skillId, agentId, result.state) : prev,
+        prev
+          ? applyCatalogCellState(prev, skillId, agentId, result.state)
+          : prev,
       );
       if (force) {
         toast({
@@ -484,6 +574,40 @@ export default function SkillsPage() {
       }
     }
     void doToggle(skill.id, agentId, false, { name: skill.name, wasMapped: false });
+  };
+
+  const handleCellProject = (
+    skill: Skill,
+    agentId: AgentId,
+    mode: 'link' | 'copy' | 'disable',
+  ) => {
+    const state = skill.sync[agentId];
+    if (state === 'unsupported') return;
+    if (mode === 'disable') {
+      if (!isMappedState(state)) return;
+      void doToggle(skill.id, agentId, false, { name: skill.name, wasMapped: true });
+      return;
+    }
+    if (state === 'foreign' || state === 'conflict' || skill.conflicts.includes(agentId)) {
+      const agentName = agentDisplayName(agentId);
+      toast({
+        ...conflictPromptToast(t, agentName, skill.name),
+        duration: 12_000,
+        onAction: () => {
+          void doToggle(skill.id, agentId, true, {
+            name: skill.name,
+            wasMapped: false,
+            mode,
+          });
+        },
+      });
+      return;
+    }
+    void doToggle(skill.id, agentId, false, {
+      name: skill.name,
+      wasMapped: false,
+      mode,
+    });
   };
 
   const handleInstall = async () => {
@@ -603,14 +727,6 @@ export default function SkillsPage() {
     }
   };
 
-  // 最优列集：仅已安装 Agent（含 Kimi 等无 skills 能力），用后端 mapStatus 解释灰色格
-  // doctor 未完成时先用全量列，避免矩阵空列等待；detect 完成后未安装不占列
-  const matrixAgents: AgentColumn[] =
-    installedAgents.length > 0 || !agentsLoading
-      ? installedAgents
-      : AGENTS.filter((a) => !hiddenIds.includes(a.id));
-  const installedAgentIds = matrixAgents.map((a) => a.id);
-
   const goLibraryAndHighlight = useCallback(() => {
     const p = new URLSearchParams(searchParams);
     p.delete('tab'); // library 为默认 tab
@@ -671,6 +787,42 @@ export default function SkillsPage() {
     });
   };
 
+  const handleDeleteFromTool = (skillId: string, agentId: AgentId, name: string) => {
+    const inLibrary = Boolean(
+      catalog?.some((row) => isSharedCatalogRow(row) && row.id === skillId),
+    );
+    handleUninstallPrivate(skillId, agentId, name, inLibrary);
+  };
+
+  const handleDeleteShared = (row: { id: string; name?: string }) => {
+    setRemoveShared({ skillId: row.id, name: row.name ?? row.id });
+  };
+
+  const confirmDeleteShared = async () => {
+    if (!removeShared) return;
+    const { skillId, name } = removeShared;
+    setDangerBusy(true);
+    try {
+      await runUninstallSkill(skillId);
+      toast({
+        ...deleteSharedOkToast(t, name),
+        variant: 'success',
+      });
+      setRemoveShared(null);
+      if (previewTarget?.skillId === skillId) {
+        requestClosePreview();
+      }
+      await load();
+    } catch (e) {
+      toast({
+        ...deleteSharedFailedToast(t, e instanceof Error ? e.message : String(e)),
+        variant: 'danger',
+      });
+    } finally {
+      setDangerBusy(false);
+    }
+  };
+
   const confirmRemoveFromTool = async () => {
     if (!removeFromTool) return;
     const { skillId, agentId, name } = removeFromTool;
@@ -682,6 +834,11 @@ export default function SkillsPage() {
         variant: 'success',
       });
       setRemoveFromTool(null);
+      if (previewTarget?.skillId === skillId) {
+        const next = previewAfterRemoveFromTool(previewTarget, agentId);
+        if (next === 'close') requestClosePreview();
+        else setPreviewTarget(next);
+      }
       await load();
     } catch (e) {
       toast({
@@ -693,7 +850,7 @@ export default function SkillsPage() {
     }
   };
 
-  const activeKey = previewTarget ? skillPreviewActiveKey(previewTarget) : null;
+  const activeKey = previewTarget?.rowKey ?? null;
   /** 动画壳宽 = 卡片宽 + 右侧画布 gutter（上下 padding 在壳内，不占横向） */
   const previewShellWidth = previewExpanded
     ? previewWidth + PREVIEW_FRAME_PAD_RIGHT
@@ -702,16 +859,65 @@ export default function SkillsPage() {
     !previewResizing && !reduceMotion ? 'motion-panel-width' : 'transition-none';
 
   const openCatalogPreview = useCallback(
-    (row: InstalledSkillDto) => {
-      requestOpenPreview({
-        skillId: row.id,
-        name: row.name,
-        sourceDir: row.sourceDir,
-        privateAgent: row.origin !== 'shared' ? (row.origin as AgentId) : null,
-      });
+    (row: InstalledSkillDto, agentId?: AgentId) => {
+      requestOpenPreview(previewTargetFromCatalogRow(row, agentId));
     },
     [requestOpenPreview],
   );
+
+  const selectPreviewCopy = useCallback((agentId: AgentId | null) => {
+    setPreviewTarget((current) => {
+      if (!current) return current;
+      if (agentId == null) {
+        if (current.privateAgent == null) return current;
+        return {
+          ...current,
+          privateAgent: null,
+          sourceDir: current.libraryDir ?? current.sourceDir,
+        };
+      }
+      const loc = (current.copies ?? []).find((copy) => copy.agentId === agentId);
+      if (!loc || current.privateAgent === agentId) return current;
+      return { ...current, privateAgent: agentId, sourceDir: loc.sourceDir };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!previewTarget) return;
+    const next = previewAfterHiddenAgent(previewTarget, visibleAgentIdSet);
+    if (next === 'keep') return;
+    if (next === 'close') {
+      requestClosePreview();
+      return;
+    }
+    setPreviewTarget(next);
+  }, [previewTarget, visibleAgentIdSet, requestClosePreview]);
+
+  useEffect(() => {
+    if (!previewTarget) return;
+    const ignoreAgentId =
+      dangerBusy && removeFromTool?.skillId === previewTarget.skillId
+        ? removeFromTool.agentId
+        : null;
+    const result = resyncPreviewTarget(previewTarget, localRows, {
+      catalogReady: catalog != null,
+      ignoreAgentId,
+    });
+    if (result === 'keep') return;
+    if (result === 'close') {
+      requestClosePreview();
+      return;
+    }
+    if (previewTargetsEqual(result, previewTarget)) return;
+    setPreviewTarget(result);
+  }, [
+    catalog,
+    dangerBusy,
+    localRows,
+    previewTarget,
+    removeFromTool,
+    requestClosePreview,
+  ]);
 
   /** ↑/↓ when preview open: move among currently filtered local rows (shared + private). */
   useEffect(() => {
@@ -724,11 +930,7 @@ export default function SkillsPage() {
       if (filtered.length === 0) return;
 
       e.preventDefault();
-      const keys = filtered.map((row) =>
-        row.origin !== 'shared'
-          ? privateSkillActiveKey(row.origin as AgentId, row.id)
-          : sharedSkillActiveKey(row.id),
-      );
+      const keys = filtered.map((row) => catalogRowKey(row));
       const cur = activeKey;
       let idx = cur ? keys.indexOf(cur) : -1;
       if (idx < 0) idx = e.key === 'ArrowDown' ? -1 : 0;
@@ -769,7 +971,7 @@ export default function SkillsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-canvas">
-      <div className={cn('shrink-0 border-b border-border pt-4 pb-1', pageRhythm.workbenchX)}>
+      <div className={pageRhythm.workbenchHeader}>
         <PageHeader
           size="compact"
           title={t('skills.page.title')}
@@ -794,106 +996,104 @@ export default function SkillsPage() {
             pageRhythm.workbenchY,
           )}
         >
-          <Tabs value={tab} onValueChange={(v) => setTab(parseSkillTab(v))} className="mb-2">
-        <TabsList>
-          <TabsTrigger value="library" className="gap-1.5">
-            {t('skills.tabs.library')}
-            {catalog != null ? (
-              <Tip className={segmentedCountClass} label={t('skills.tabs.libraryBadge', { n: localCount })}>
-                {localCount}
-              </Tip>
-            ) : null}
-          </TabsTrigger>
-          <TabsTrigger value="market" className="gap-1.5">
-            <Store className="h-3.5 w-3.5" />
-            {t('skills.tabs.market')}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="library" className="mt-3 space-y-3">
-
-          <SkillsLibraryPanel
-            error={error}
-            loading={loading}
-            onRetry={load}
-            search={search}
-            onSearchChange={setSearch}
-            filter={filter}
-            onFilterChange={setFilter}
-            filterCounts={filterCounts}
-            selected={selected}
-            onClearSelected={() => setSelected(new Set())}
-            batchSyncing={batchSyncing}
-            onBatchEnable={() => void handleBatchEnable()}
-            filtered={filtered}
-            allSelected={allSelected}
-            pendingCells={pendingCells}
-            importingIds={importingIds}
-            onToggleSelect={handleToggleSelect}
-            onToggleSelectAll={handleToggleSelectAll}
-            onCellClick={handleCellClick}
-            onOpenDir={(path) => void handleOpenDir(path)}
-            onPreview={openCatalogPreview}
-            activeKey={activeKey}
-            onAdopt={(skillId, agentId, name) => {
-              void handleImportPrivate(skillId, agentId, name, false);
-            }}
-            onUninstall={(skillId, agentId, name, inLibrary) =>
-              handleUninstallPrivate(skillId, agentId, name, inLibrary)
-            }
-            agents={matrixAgents}
-            installedAgentIds={installedAgentIds}
-          />
-</TabsContent>
-
-        <TabsContent value="market" className="mt-3">
-
-          <SkillsMarketPanel
-            marketQuery={marketQuery}
-            onMarketQueryChange={setMarketQuery}
-            skillMarketSource={skillMarketSource}
-            activeMarketProvider={activeMarketProvider}
-            loading={market.loading}
-            error={market.error}
-            onRetry={market.reload}
-            items={market.data}
-            installingId={installingMarketId}
-            onInstall={(item) => {
-              void (async () => {
-                setInstallingMarketId(item.id);
-                try {
-                  const skill = await runInstallMarketSkill(item.id, false);
-                  const toastCopy = marketInstallOkToast(t, skill.name);
-                  toast({
-                    title: toastCopy.title,
-                    description: toastCopy.description,
-                    variant: 'success',
-                    actionLabel: toastCopy.actionLabel,
-                    onAction: goLibraryAndHighlight,
-                    duration: 8000,
-                  });
-                  void market.reload();
-                  await load();
-                } catch (e) {
-                  const msg = e instanceof Error ? e.message : String(e);
-                  if (msg.toLowerCase().includes('already exists')) {
-                    toast({
-                      ...marketExistsToast(t, msg),
-                      variant: 'danger',
-                    });
-                  } else {
-                    toast({
-                      ...installFailedToast(t, msg),
-                      variant: 'danger',
-                    });
-                  }
-                } finally {
-                  setInstallingMarketId(null);
-                }
-              })();
-            }}
-          />
-</TabsContent>
+          <Tabs value={tab} onValueChange={(v) => setTab(parseSkillTab(v))}>
+            <div className={pageRhythm.chrome}>
+              <TabsList>
+                <TabsTrigger value="library" className="gap-1.5">
+                  {t('skills.tabs.library')}
+                  {catalog != null ? (
+                    <Tip className={segmentedCountClass} label={t('skills.tabs.libraryBadge', { n: localCount })}>
+                      {localCount}
+                    </Tip>
+                  ) : null}
+                </TabsTrigger>
+                <TabsTrigger value="market" className="gap-1.5">
+                  <Store className="h-3.5 w-3.5" />
+                  {t('skills.tabs.market')}
+                </TabsTrigger>
+              </TabsList>
+            </div>
+            <TabsContent value="library" className="space-y-3">
+              <SkillsLibraryPanel
+                error={error}
+                loading={loading}
+                onRetry={load}
+                search={search}
+                onSearchChange={setSearch}
+                filter={filter}
+                onFilterChange={setFilter}
+                filterCounts={filterCounts}
+                selected={selected}
+                onClearSelected={() => setSelected(new Set())}
+                batchSyncing={batchSyncing}
+                onBatchEnable={() => void handleBatchEnable()}
+                filtered={filtered}
+                allSelected={allSelected}
+                pendingCells={pendingCells}
+                importingIds={importingIds}
+                onToggleSelect={handleToggleSelect}
+                onToggleSelectAll={handleToggleSelectAll}
+                onCellClick={handleCellClick}
+                onCellProject={handleCellProject}
+                onPreview={openCatalogPreview}
+                activeKey={activeKey}
+                onAdopt={(skillId, agentId, name) => {
+                  void handleImportPrivate(skillId, agentId, name, false);
+                }}
+                onOpenDir={(path) => void handleOpenDir(path)}
+                onDeleteShared={(row) => handleDeleteShared(row)}
+                onDeleteFromTool={handleDeleteFromTool}
+                agents={matrixAgents}
+                installedAgentIds={installedAgentIds}
+              />
+            </TabsContent>
+            <TabsContent value="market">
+              <SkillsMarketPanel
+                marketQuery={marketQuery}
+                onMarketQueryChange={setMarketQuery}
+                skillMarketSource={skillMarketSource}
+                activeMarketProvider={activeMarketProvider}
+                loading={market.loading}
+                error={market.error}
+                onRetry={market.reload}
+                items={market.data}
+                installingId={installingMarketId}
+                onInstall={(item) => {
+                  void (async () => {
+                    setInstallingMarketId(item.id);
+                    try {
+                      const skill = await runInstallMarketSkill(item.id, false);
+                      const toastCopy = marketInstallOkToast(t, skill.name);
+                      toast({
+                        title: toastCopy.title,
+                        description: toastCopy.description,
+                        variant: 'success',
+                        actionLabel: toastCopy.actionLabel,
+                        onAction: goLibraryAndHighlight,
+                        duration: 8000,
+                      });
+                      void market.reload();
+                      await load();
+                    } catch (e) {
+                      const msg = e instanceof Error ? e.message : String(e);
+                      if (msg.toLowerCase().includes('already exists')) {
+                        toast({
+                          ...marketExistsToast(t, msg),
+                          variant: 'danger',
+                        });
+                      } else {
+                        toast({
+                          ...installFailedToast(t, msg),
+                          variant: 'danger',
+                        });
+                      }
+                    } finally {
+                      setInstallingMarketId(null);
+                    }
+                  })();
+                }}
+              />
+            </TabsContent>
           </Tabs>
         </div>
 
@@ -918,7 +1118,7 @@ export default function SkillsPage() {
             />
             {/*
               外层：宽度动画（卡片宽 + 右侧 gutter）。
-              内层：py + pr 形成与画布/右边框的稳定间距；卡片本身 width 固定，右侧永远留白。
+              内层：pr + 底距；顶距由页头 18px 槽承担。卡片 width 固定，右侧永远留白。
             */}
             <div
               className={cn(
@@ -932,7 +1132,7 @@ export default function SkillsPage() {
                 className="box-border flex h-full min-h-0"
                 style={{
                   width: previewWidth + PREVIEW_FRAME_PAD_RIGHT,
-                  paddingTop: PREVIEW_FRAME_PAD_Y,
+                  paddingTop: 0,
                   paddingBottom: PREVIEW_FRAME_PAD_Y,
                   paddingRight: PREVIEW_FRAME_PAD_RIGHT,
                 }}
@@ -943,6 +1143,29 @@ export default function SkillsPage() {
                   width={previewWidth}
                   onClose={requestClosePreview}
                   onOpenDir={(path) => void handleOpenDir(path)}
+                  onSelectCopy={selectPreviewCopy}
+                  onRemoveCopy={
+                    previewTarget.includeShared && !previewTarget.privateAgent
+                      ? () =>
+                          handleDeleteShared({
+                            id: previewTarget.skillId,
+                            name: previewTarget.name,
+                          })
+                      : previewTarget.privateAgent && !previewTarget.includeShared
+                        ? () =>
+                            handleUninstallPrivate(
+                              previewTarget.skillId,
+                              previewTarget.privateAgent!,
+                              previewTarget.name,
+                              false,
+                            )
+                        : undefined
+                  }
+                  removeCopyLabel={
+                    previewTarget.includeShared && !previewTarget.privateAgent
+                      ? t('skills.preview.removeShared')
+                      : undefined
+                  }
                   contentRef={previewBodyRef}
                   className="h-full min-w-0 shrink-0"
                 />
@@ -951,6 +1174,38 @@ export default function SkillsPage() {
           </>
         ) : null}
       </div>
+
+      <Dialog
+        open={removeShared !== null}
+        onOpenChange={(open) => !open && !dangerBusy && setRemoveShared(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('skills.dialog.deleteSharedTitle')}</DialogTitle>
+            <DialogDescription>
+              {removeShared
+                ? t('skills.dialog.deleteSharedBody', { skillName: removeShared.name })
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={dangerBusy}
+              onClick={() => setRemoveShared(null)}
+            >
+              {t('skills.dialog.conflictCancel')}
+            </Button>
+            <Button
+              variant="danger"
+              disabled={dangerBusy}
+              onClick={() => void confirmDeleteShared()}
+            >
+              {dangerBusy ? t('skills.dialog.busy') : t('skills.dialog.deleteSharedConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={removeFromTool !== null}

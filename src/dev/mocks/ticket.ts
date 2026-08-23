@@ -2,6 +2,7 @@
  * Mock ticket wallet: aggregate accounts + providers → tickets;
  * is_current + profiles → bindings. Generated providers are excluded.
  * Keep lockstep with crates/agenthub-core TicketReadService derive rules.
+ * Generated projections and leftover 本机路由 providers are not tickets.
  */
 import {
   adapterCommandError,
@@ -19,7 +20,10 @@ import {
   type TicketView,
   type TicketWallet,
   type BindingView,
+  groupTicketSurfaceMembers,
+  memberHealthFromAuthHealth,
 } from '@/lib/backend/contracts';
+import { authDisplayForAccount } from '@/lib/backend/contracts/auth-state';
 import type { Account, AgentId, Provider } from '@/lib/types';
 import { delay } from './delay';
 import { getMockAccountById } from './account';
@@ -79,7 +83,7 @@ function explicitTagMatches(tag: string | undefined, accepted: readonly string[]
   return !!tag && accepted.some((item) => item.toLowerCase() === tag.toLowerCase());
 }
 
-const PROJECTION_NOT_A_TICKET = '投影不是登录';
+const PROJECTION_NOT_A_TICKET = '自动生成的配置不是登录';
 
 function persistedSurface(blob: unknown): TicketSurface | undefined {
   const raw = jsonString(blob, 'surface');
@@ -248,18 +252,40 @@ function speaksOf(surface: TicketSurface): string[] {
     return ['anthropic-messages', 'openai-chat'];
   }
   if (surface === 'anthropic-api') return ['anthropic-messages'];
-  if (surface === 'openai-api' || surface === 'xai-api') return ['openai-chat'];
+  if (surface === 'openai-api') return ['openai-chat'];
+  if (surface === 'xai-api') return ['openai-responses', 'openai-chat'];
   if (surface === 'glm-coding-plan' || surface === 'deepseek-api') {
     return ['anthropic-messages', 'openai-chat'];
   }
   if (surface === 'codex-chatgpt-subscription') return ['openai-responses', 'openai-codex-pkce'];
   if (surface === 'claude-subscription') return ['anthropic-messages', 'anthropic-pkce'];
-  if (surface === 'grok-xai-subscription') return ['openai-chat', 'xai-device-code'];
+  if (surface === 'grok-xai-subscription') {
+    return ['openai-responses', 'openai-chat', 'xai-device-code'];
+  }
   return [];
 }
 
 function ticketId(kind: 'account' | 'provider', id: string): string {
   return `${kind}:${id}`;
+}
+
+const AGENTHUB_BRIDGE_SLUG = /agenthub_[^\s"'\\]*_bridge/i;
+
+function accountIsProjection(account: Account): boolean {
+  const row = account as ClassifiableAccount;
+  const haystack = `${JSON.stringify(row.credentials ?? {})}\n${JSON.stringify(row.extra ?? {})}`;
+  return /\bahb_/.test(haystack) || AGENTHUB_BRIDGE_SLUG.test(haystack);
+}
+
+function providerIsNotATicket(
+  provider: Provider,
+  generatedIds: ReadonlySet<string>,
+): boolean {
+  if (generatedIds.has(provider.id)) return true;
+  const meta = (provider as ClassifiableProvider).meta;
+  if (meta?.generatedBy === 'adapter') return true;
+  const haystack = `${provider.id}\n${provider.name}\n${provider.configText ?? ''}`;
+  return AGENTHUB_BRIDGE_SLUG.test(haystack);
 }
 
 function rejectIfProjection(
@@ -268,12 +294,21 @@ function rejectIfProjection(
   sourceId: string,
   resolver: MockTicketSourceResolver,
 ): void {
+  if (sourceKind === 'account') {
+    const account = resolver.listAccounts().find((row) => row.id === sourceId);
+    if (account && accountIsProjection(account)) {
+      throw adapterCommandError({
+        code: 'invalid_arg',
+        message: `${PROJECTION_NOT_A_TICKET}: ${ticketIdValue}`,
+        retryable: false,
+      });
+    }
+    return;
+  }
   if (sourceKind !== 'provider') return;
   const generated = generatedProviderIds(resolver.listProfiles());
-  const provider = resolver.listProviders().find((row) => row.id === sourceId) as
-    | ClassifiableProvider
-    | undefined;
-  if (generated.has(sourceId) || provider?.meta?.generatedBy === 'adapter') {
+  const provider = resolver.listProviders().find((row) => row.id === sourceId);
+  if (provider && providerIsNotATicket(provider, generated)) {
     throw adapterCommandError({
       code: 'invalid_arg',
       message: `${PROJECTION_NOT_A_TICKET}: ${ticketIdValue}`,
@@ -390,10 +425,10 @@ function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
   const generatedIds = generatedProviderIds(profiles);
   const accounts = resolver.listAccounts();
   const allProviders = resolver.listProviders();
-  const ticketProviders = allProviders.filter((p) => !generatedIds.has(p.id));
+  const ticketProviders = allProviders.filter((p) => !providerIsNotATicket(p, generatedIds));
 
   const tickets: TicketView[] = [
-    ...accounts.map(accountToTicket),
+    ...accounts.filter((account) => !accountIsProjection(account)).map(accountToTicket),
     ...ticketProviders.map(providerToTicket),
   ];
   tickets.sort((a, b) => a.id.localeCompare(b.id));
@@ -440,7 +475,12 @@ function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
       continue;
     }
     const tid = ticketId('provider', provider.id);
-    if (!ticketIds.has(tid)) continue;
+    if (!ticketIds.has(tid)) {
+      if (providerIsNotATicket(provider, generatedIds)) {
+        activeByAgent.delete(provider.agentId);
+      }
+      continue;
+    }
     activeByAgent.set(provider.agentId, {
       ticketId: tid,
       agentId: provider.agentId,
@@ -479,7 +519,38 @@ function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
     return Number(b.active) - Number(a.active);
   });
 
-  return { tickets, bindings };
+  return {
+    tickets,
+    bindings,
+    surfaceGroups: attachSurfaceMemberHealth(
+      groupTicketSurfaceMembers(tickets),
+      accounts,
+    ),
+  };
+}
+
+function attachSurfaceMemberHealth(
+  groups: TicketWallet['surfaceGroups'],
+  accounts: readonly Account[],
+): TicketWallet['surfaceGroups'] {
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
+  return groups.map((group) => ({
+    ...group,
+    members: group.members.map((member) => {
+      if (member.health) return member;
+      if (member.sourceKind === 'account') {
+        const account = accountById.get(member.sourceId);
+        if (account) {
+          return {
+            ...member,
+            health: memberHealthFromAuthHealth(authDisplayForAccount(account).health),
+          };
+        }
+        return { ...member, health: 'needs_login' as const };
+      }
+      return { ...member, health: 'renewable' as const };
+    }),
+  }));
 }
 
 export function createMockTicketPort(resolver: MockTicketSourceResolver): TicketPort {
@@ -523,7 +594,7 @@ export function createMockTicketPort(resolver: MockTicketSourceResolver): Ticket
       if (!binding) {
         throw adapterCommandError({
           code: 'invalid_arg',
-          message: '绑定未成为该 Agent 的当前连接',
+          message: '还没有切到这份登录',
           retryable: false,
         });
       }

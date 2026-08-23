@@ -582,6 +582,24 @@ fn setup_write_fixture() -> (
 }
 
 #[test]
+fn uninstall_skill_removes_shared_source() {
+    let (_tmp, source, _c, _x, _g, svc) = setup_write_fixture();
+    write_file(&source.join("demo").join("SKILL.md"), &skill_md("D", "d"));
+    assert!(source.join("demo").is_dir());
+    svc.uninstall_skill("demo", None).unwrap();
+    assert!(!source.join("demo").exists());
+}
+
+#[test]
+fn uninstall_private_skill_removes_agent_dir() {
+    let (_tmp, _source, claude, _x, _g, svc) = setup_write_fixture();
+    write_file(&claude.join("demo").join("SKILL.md"), &skill_md("D", "d"));
+    svc.uninstall_private_skill("demo", AgentId::Claude)
+        .unwrap();
+    assert!(!claude.join("demo").exists());
+}
+
+#[test]
 fn sync_happy_path_creates_projection() {
     let (_tmp, source, claude, _codex, _grok, svc) = setup_write_fixture();
     write_file(
@@ -1231,6 +1249,61 @@ fn read_skill_markdown_truncates_large_body() {
     assert!(!preview
         .content
         .contains(&"x".repeat(SKILL_MARKDOWN_PREVIEW_CHARS + 1)));
+}
+
+#[cfg(windows)]
+#[test]
+fn read_skill_markdown_follows_private_junction() {
+    let tmp = real_tempdir();
+    let source = tmp.path().join("skills");
+    let claude = tmp.path().join("claude-skills");
+    let codex = tmp.path().join("codex-skills");
+    let grok = tmp.path().join("grok-skills");
+    fs::create_dir_all(&source).unwrap();
+    fs::create_dir_all(&claude).unwrap();
+    fs::create_dir_all(&codex).unwrap();
+    fs::create_dir_all(&grok).unwrap();
+    let real = tmp.path().join("real-skill");
+    write_file(
+        &real.join("SKILL.md"),
+        &skill_md("Junctioned", "via-junction"),
+    );
+    if create_windows_junction(&codex.join("txn"), &real).is_err() {
+        return;
+    }
+    let svc = SkillService::new(source, make_registry(claude, codex, grok));
+    let preview = svc
+        .read_skill_markdown("txn", Some(AgentId::Codex))
+        .expect("preview must follow a leaf junction");
+    assert!(preview.content.contains("via-junction"));
+    let catalog = svc.list_catalog().unwrap();
+    let row = catalog
+        .iter()
+        .find(|s| s.id == "txn" && s.origin == "codex")
+        .expect("catalog lists the junction");
+    assert!(row.content_hash.as_deref().is_some_and(|h| !h.is_empty()));
+}
+
+#[cfg(unix)]
+#[test]
+fn read_skill_markdown_follows_private_symlink() {
+    let tmp = real_tempdir();
+    let source = tmp.path().join("skills");
+    let claude = tmp.path().join("claude-skills");
+    let codex = tmp.path().join("codex-skills");
+    let grok = tmp.path().join("grok-skills");
+    fs::create_dir_all(&source).unwrap();
+    fs::create_dir_all(&claude).unwrap();
+    fs::create_dir_all(&codex).unwrap();
+    fs::create_dir_all(&grok).unwrap();
+    let real = tmp.path().join("real-skill");
+    write_file(&real.join("SKILL.md"), &skill_md("Linked", "via-symlink"));
+    std::os::unix::fs::symlink(&real, codex.join("txn")).unwrap();
+    let svc = SkillService::new(source, make_registry(claude, codex, grok));
+    let preview = svc
+        .read_skill_markdown("txn", Some(AgentId::Codex))
+        .expect("preview must follow a leaf symlink");
+    assert!(preview.content.contains("via-symlink"));
 }
 
 #[test]
@@ -1893,11 +1966,42 @@ fn list_catalog_same_id_in_two_agents_is_two_rows() {
     assert_eq!(rows.len(), 2, "same private id must stay two catalog rows");
     assert!(rows.iter().any(|s| s.origin == "claude"));
     assert!(rows.iter().any(|s| s.origin == "codex"));
-    for row in rows {
+    for row in &rows {
         assert!(!row.projectable);
         assert_eq!(row.map_status, SkillMapStatus::PrivateSource);
         assert!(row.projections.is_empty());
+        assert!(
+            row.content_hash.as_deref().is_some_and(|h| !h.is_empty()),
+            "private catalog rows must carry a content hash"
+        );
     }
+    assert_ne!(
+        rows[0].content_hash, rows[1].content_hash,
+        "divergent copies must not share a content hash"
+    );
+}
+
+#[test]
+fn list_catalog_identical_private_copies_share_content_hash() {
+    let tmp = real_tempdir();
+    let source = tmp.path().join("skills");
+    fs::create_dir_all(&source).unwrap();
+    let claude = tmp.path().join("claude-skills");
+    let codex = tmp.path().join("codex-skills");
+    let grok = tmp.path().join("grok-skills");
+    let body = skill_md("Solo", "same-bytes");
+    write_file(&claude.join("solo").join("SKILL.md"), &body);
+    write_file(&codex.join("solo").join("SKILL.md"), &body);
+
+    let svc = SkillService::new(source, make_registry(claude, codex, grok));
+    let catalog = svc.list_catalog().unwrap();
+    let rows: Vec<_> = catalog.iter().filter(|s| s.id == "solo").collect();
+    assert_eq!(rows.len(), 2, "catalog still emits one row per agent root");
+    assert_eq!(rows[0].content_hash, rows[1].content_hash);
+    assert!(rows[0]
+        .content_hash
+        .as_deref()
+        .is_some_and(|h| !h.is_empty()));
 }
 
 #[test]

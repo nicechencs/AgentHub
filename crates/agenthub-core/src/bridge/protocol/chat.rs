@@ -1,11 +1,16 @@
-//! Kimi Chat Completions response and SSE translation to OpenAI Responses wire objects.
+//! Chat Completions request parsing and response / SSE translation.
+//!
+//! Existing Kimi path: Chat Completions upstream → Responses downstream.
+//! Codex official login → Grok / Kimi / DSH: Chat Completions local → Responses upstream.
 
 use std::collections::BTreeMap;
+use std::collections::HashSet;
 
 use serde_json::{json, Map, Value};
 
 use crate::bridge::types::{
-    BridgeEvent, IrEvent, ProtocolError, ProtocolResult, StopReason, ToolCallMap, Usage,
+    BridgeContent, BridgeEvent, BridgeMessage, BridgeRequest, BridgeTool, IrEvent, MessageRole,
+    ProtocolError, ProtocolResult, StopReason, ToolCallMap, ToolChoice, Usage,
 };
 
 /// Translate one non-streaming Kimi Chat Completions response to an OpenAI Responses object.
@@ -711,9 +716,13 @@ fn response_object(
     );
     response.insert(
         "usage".to_owned(),
-        usage
-            .map(|usage| usage.to_responses_json())
-            .unwrap_or(Value::Null),
+        if completed {
+            Usage::completed_responses_json(usage.as_ref())
+        } else {
+            usage
+                .map(|usage| usage.to_responses_json())
+                .unwrap_or(Value::Null)
+        },
     );
     Value::Object(response)
 }
@@ -806,4 +815,655 @@ fn message_id(response_id: &str) -> String {
 
 fn function_item_id(call_id: &str) -> String {
     format!("fc_{call_id}")
+}
+
+/// Parse `POST /v1/chat/completions` (Grok / Kimi / DSH) into the shared request IR.
+pub fn parse_chat_request(value: &Value) -> ProtocolResult<BridgeRequest> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| ProtocolError::invalid_request("The request body must be a JSON object."))?;
+    let model = object
+        .get("model")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("")
+        .to_owned();
+    let stream = match object.get("stream") {
+        Some(Value::Bool(stream)) => *stream,
+        Some(_) => {
+            return Err(ProtocolError::invalid_request(
+                "`stream` must be a boolean.",
+            ))
+        }
+        None => false,
+    };
+    let messages = object
+        .get("messages")
+        .and_then(Value::as_array)
+        .ok_or_else(|| ProtocolError::invalid_request("`messages` must be an array."))?;
+    let (instructions, input) = parse_chat_messages(messages)?;
+    let tools = parse_chat_tools(object.get("tools"))?;
+    let tool_choice = parse_chat_tool_choice(object.get("tool_choice"))?;
+
+    let known = known_chat_request_fields();
+    let mut passthrough = object
+        .iter()
+        .filter(|(key, _)| !known.contains(key.as_str()))
+        .map(|(key, item)| (key.clone(), item.clone()))
+        .collect::<Map<String, Value>>();
+    if let Some(max_tokens) = object.get("max_tokens") {
+        passthrough.insert("max_output_tokens".to_owned(), max_tokens.clone());
+    }
+
+    Ok(BridgeRequest {
+        model,
+        instructions,
+        input,
+        tools,
+        tool_choice,
+        stream,
+        passthrough,
+    })
+}
+
+/// Encode IR events as a non-streaming Chat Completions object.
+pub fn encode_chat_from_ir(events: &[IrEvent], response_id: Option<&str>) -> ProtocolResult<Value> {
+    let mut message_id = String::from("chatcmpl_agenthub");
+    let mut model = String::from("unknown");
+    let mut text = String::new();
+    let mut tool_calls = Vec::new();
+    let mut current_tool: Option<(String, String, String)> = None;
+    let mut usage = None;
+    let mut stop_reason = StopReason::Stop;
+    let mut saw_end = false;
+
+    for event in events {
+        match event {
+            IrEvent::MessageStart { id, model: m } => {
+                if let Some(stripped) = id.strip_prefix("msg_") {
+                    message_id = format!("chatcmpl_{stripped}");
+                }
+                if !m.is_empty() {
+                    model = m.clone();
+                }
+            }
+            IrEvent::TextDelta { text: delta } => text.push_str(delta),
+            IrEvent::ToolCallStart { id, name } => {
+                if current_tool.is_some() {
+                    return Err(ProtocolError::invalid_request(
+                        "Nested tool calls are not supported in one content slot.",
+                    ));
+                }
+                current_tool = Some((id.clone(), name.clone(), String::new()));
+            }
+            IrEvent::ToolCallDelta {
+                id: _,
+                arguments_delta,
+            } => {
+                let Some((_, _, args)) = &mut current_tool else {
+                    return Err(ProtocolError::invalid_request(
+                        "Tool call delta without a tool call start.",
+                    ));
+                };
+                args.push_str(arguments_delta);
+            }
+            IrEvent::ToolCallEnd { id: _ } => {
+                let Some((id, name, args)) = current_tool.take() else {
+                    return Err(ProtocolError::invalid_request(
+                        "Tool call end without a tool call start.",
+                    ));
+                };
+                tool_calls.push(json!({
+                    "id": id,
+                    "type": "function",
+                    "function": { "name": name, "arguments": args },
+                }));
+            }
+            IrEvent::Usage {
+                input_tokens,
+                output_tokens,
+                cached_input_tokens,
+            } => {
+                usage = Some(Usage {
+                    input_tokens: *input_tokens,
+                    output_tokens: *output_tokens,
+                    total_tokens: input_tokens.saturating_add(*output_tokens),
+                    cached_input_tokens: *cached_input_tokens,
+                    reasoning_tokens: 0,
+                });
+            }
+            IrEvent::MessageEnd {
+                stop_reason: reason,
+            } => {
+                saw_end = true;
+                stop_reason = reason.clone();
+            }
+            IrEvent::Error { .. } => return Err(ProtocolError::upstream()),
+        }
+    }
+    if current_tool.is_some() {
+        return Err(ProtocolError::invalid_request(
+            "Unterminated tool call in IR event stream.",
+        ));
+    }
+    if !saw_end {
+        return Err(ProtocolError::invalid_request(
+            "IR event stream is missing MessageEnd.",
+        ));
+    }
+
+    let id = response_id.map(ToOwned::to_owned).unwrap_or(message_id);
+    Ok(chat_completion_object(
+        &id,
+        &model,
+        &text,
+        &tool_calls,
+        stop_reason,
+        usage,
+    ))
+}
+
+/// Encode IR events as Chat Completions SSE `data:` frames, including a terminal `[DONE]`.
+pub fn encode_chat_sse(
+    events: &[IrEvent],
+    response_id: Option<&str>,
+) -> ProtocolResult<Vec<String>> {
+    let mut frames = Vec::new();
+    let mut id = response_id
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| "chatcmpl_agenthub".to_owned());
+    let mut model = String::from("unknown");
+    let mut started = false;
+    let mut tool_index: usize = 0;
+    let mut usage = None;
+    let mut stop_reason = StopReason::Stop;
+    let mut saw_end = false;
+
+    for event in events {
+        match event {
+            IrEvent::MessageStart {
+                id: message_id,
+                model: m,
+            } => {
+                if let Some(stripped) = message_id.strip_prefix("msg_") {
+                    id = format!("chatcmpl_{stripped}");
+                }
+                if !m.is_empty() {
+                    model = m.clone();
+                }
+                if !started {
+                    started = true;
+                    frames.push(chat_sse_data(chat_chunk(
+                        &id,
+                        &model,
+                        json!({ "role": "assistant" }),
+                        None,
+                        None,
+                    )));
+                }
+            }
+            IrEvent::TextDelta { text } => {
+                if text.is_empty() {
+                    continue;
+                }
+                if !started {
+                    started = true;
+                    frames.push(chat_sse_data(chat_chunk(
+                        &id,
+                        &model,
+                        json!({ "role": "assistant" }),
+                        None,
+                        None,
+                    )));
+                }
+                frames.push(chat_sse_data(chat_chunk(
+                    &id,
+                    &model,
+                    json!({ "content": text }),
+                    None,
+                    None,
+                )));
+            }
+            IrEvent::ToolCallStart { id: call_id, name } => {
+                if !started {
+                    started = true;
+                    frames.push(chat_sse_data(chat_chunk(
+                        &id,
+                        &model,
+                        json!({ "role": "assistant" }),
+                        None,
+                        None,
+                    )));
+                }
+                frames.push(chat_sse_data(chat_chunk(
+                    &id,
+                    &model,
+                    json!({
+                        "tool_calls": [{
+                            "index": tool_index,
+                            "id": call_id,
+                            "type": "function",
+                            "function": { "name": name, "arguments": "" }
+                        }]
+                    }),
+                    None,
+                    None,
+                )));
+            }
+            IrEvent::ToolCallDelta {
+                id: _,
+                arguments_delta,
+            } => {
+                if arguments_delta.is_empty() {
+                    continue;
+                }
+                frames.push(chat_sse_data(chat_chunk(
+                    &id,
+                    &model,
+                    json!({
+                        "tool_calls": [{
+                            "index": tool_index,
+                            "function": { "arguments": arguments_delta }
+                        }]
+                    }),
+                    None,
+                    None,
+                )));
+            }
+            IrEvent::ToolCallEnd { id: _ } => {
+                tool_index = tool_index.saturating_add(1);
+            }
+            IrEvent::Usage {
+                input_tokens,
+                output_tokens,
+                cached_input_tokens,
+            } => {
+                usage = Some(Usage {
+                    input_tokens: *input_tokens,
+                    output_tokens: *output_tokens,
+                    total_tokens: input_tokens.saturating_add(*output_tokens),
+                    cached_input_tokens: *cached_input_tokens,
+                    reasoning_tokens: 0,
+                });
+            }
+            IrEvent::MessageEnd {
+                stop_reason: reason,
+            } => {
+                saw_end = true;
+                stop_reason = reason.clone();
+            }
+            IrEvent::Error { .. } => return Err(ProtocolError::upstream()),
+        }
+    }
+    if saw_end {
+        if !started {
+            frames.push(chat_sse_data(chat_chunk(
+                &id,
+                &model,
+                json!({ "role": "assistant" }),
+                None,
+                None,
+            )));
+        }
+        frames.push(chat_sse_data(chat_chunk(
+            &id,
+            &model,
+            json!({}),
+            Some(chat_finish_reason(&stop_reason)),
+            usage.as_ref(),
+        )));
+        frames.push("data: [DONE]\n\n".to_owned());
+    }
+    Ok(frames)
+}
+
+fn parse_chat_messages(messages: &[Value]) -> ProtocolResult<(Option<String>, Vec<BridgeMessage>)> {
+    let mut instructions = None;
+    let mut input = Vec::new();
+    for message in messages {
+        let object = message.as_object().ok_or_else(|| {
+            ProtocolError::invalid_request("Every chat message must be an object.")
+        })?;
+        let role = object
+            .get("role")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ProtocolError::invalid_request("Each message requires a role."))?;
+        match role {
+            "system" | "developer" => {
+                let text = chat_text_content(object.get("content"))?;
+                if instructions.is_none() && input.is_empty() {
+                    if !text.is_empty() {
+                        instructions = Some(text);
+                    }
+                } else if !text.is_empty() {
+                    input.push(BridgeMessage {
+                        role: if role == "developer" {
+                            MessageRole::Developer
+                        } else {
+                            MessageRole::System
+                        },
+                        name: optional_chat_string(object, "name")?,
+                        content: vec![BridgeContent::Text { text }],
+                    });
+                }
+            }
+            "user" => {
+                let text = chat_text_content(object.get("content"))?;
+                input.push(BridgeMessage {
+                    role: MessageRole::User,
+                    name: optional_chat_string(object, "name")?,
+                    content: vec![BridgeContent::Text { text }],
+                });
+            }
+            "assistant" => {
+                let mut content = Vec::new();
+                let text = chat_text_content(object.get("content"))?;
+                if !text.is_empty() {
+                    content.push(BridgeContent::Text { text });
+                }
+                if let Some(tool_calls) = object.get("tool_calls").and_then(Value::as_array) {
+                    for (index, tool_call) in tool_calls.iter().enumerate() {
+                        content.push(parse_chat_tool_call(tool_call, index)?);
+                    }
+                }
+                input.push(BridgeMessage {
+                    role: MessageRole::Assistant,
+                    name: optional_chat_string(object, "name")?,
+                    content,
+                });
+            }
+            "tool" => {
+                let call_id = object
+                    .get("tool_call_id")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| {
+                        ProtocolError::invalid_request("Tool messages require tool_call_id.")
+                    })?;
+                let output = chat_text_content(object.get("content"))?;
+                input.push(BridgeMessage {
+                    role: MessageRole::Tool,
+                    name: optional_chat_string(object, "name")?,
+                    content: vec![BridgeContent::ToolResult {
+                        call_id: call_id.to_owned(),
+                        output,
+                    }],
+                });
+            }
+            _ => {
+                return Err(ProtocolError::unsupported(
+                    "unsupported_message_role",
+                    "This chat message role is not supported by this bridge.",
+                ));
+            }
+        }
+    }
+    Ok((instructions, input))
+}
+
+fn parse_chat_tool_call(value: &Value, index: usize) -> ProtocolResult<BridgeContent> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| ProtocolError::invalid_request("Each tool_call must be an object."))?;
+    let function = object
+        .get("function")
+        .and_then(Value::as_object)
+        .ok_or_else(|| ProtocolError::invalid_request("tool_call.function is required."))?;
+    let name = function
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ProtocolError::invalid_request("tool_call.function.name is required."))?;
+    let arguments = function
+        .get("arguments")
+        .and_then(Value::as_str)
+        .unwrap_or("{}")
+        .to_owned();
+    let id = object
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("call_{index}"));
+    Ok(BridgeContent::ToolCall {
+        id,
+        name: name.to_owned(),
+        arguments,
+        index: Some(index),
+    })
+}
+
+fn parse_chat_tools(value: Option<&Value>) -> ProtocolResult<Vec<BridgeTool>> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    let array = value
+        .as_array()
+        .ok_or_else(|| ProtocolError::invalid_request("`tools` must be an array."))?;
+    let mut tools = Vec::new();
+    for tool in array {
+        let object = tool
+            .as_object()
+            .ok_or_else(|| ProtocolError::invalid_request("Each tool must be an object."))?;
+        let function = object
+            .get("function")
+            .and_then(Value::as_object)
+            .ok_or_else(|| {
+                ProtocolError::invalid_request("Chat tools require a function object.")
+            })?;
+        let name = function
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| ProtocolError::invalid_request("Each tool requires a name."))?;
+        tools.push(BridgeTool {
+            name: name.to_owned(),
+            description: function
+                .get("description")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned),
+            parameters: function
+                .get("parameters")
+                .cloned()
+                .unwrap_or_else(|| json!({})),
+            strict: function.get("strict").and_then(Value::as_bool),
+        });
+    }
+    Ok(tools)
+}
+
+fn parse_chat_tool_choice(value: Option<&Value>) -> ProtocolResult<Option<ToolChoice>> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(choice)) => match choice.as_str() {
+            "auto" => Ok(Some(ToolChoice::Auto)),
+            "none" => Ok(Some(ToolChoice::None)),
+            "required" => Ok(Some(ToolChoice::Required)),
+            _ => Err(ProtocolError::invalid_request(
+                "`tool_choice` string must be auto, none, or required.",
+            )),
+        },
+        Some(Value::Object(object)) => {
+            if object.get("type").and_then(Value::as_str) != Some("function") {
+                return Err(ProtocolError::unsupported(
+                    "unsupported_tool_choice",
+                    "Only function tool_choice is supported by this bridge.",
+                ));
+            }
+            let name = object
+                .get("function")
+                .and_then(Value::as_object)
+                .and_then(|function| function.get("name"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    ProtocolError::invalid_request("function tool_choice requires a name.")
+                })?;
+            Ok(Some(ToolChoice::Function {
+                name: name.to_owned(),
+            }))
+        }
+        Some(_) => Err(ProtocolError::invalid_request(
+            "`tool_choice` must be a string or object.",
+        )),
+    }
+}
+
+fn chat_text_content(value: Option<&Value>) -> ProtocolResult<String> {
+    match value {
+        None | Some(Value::Null) => Ok(String::new()),
+        Some(Value::String(text)) => Ok(text.clone()),
+        Some(Value::Array(parts)) => {
+            let mut text = String::new();
+            for part in parts {
+                match part {
+                    Value::String(piece) => text.push_str(piece),
+                    Value::Object(object) => match object.get("type").and_then(Value::as_str) {
+                        Some("text") | None => {
+                            if let Some(piece) = object.get("text").and_then(Value::as_str) {
+                                text.push_str(piece);
+                            }
+                        }
+                        Some(_) => {
+                            return Err(ProtocolError::unsupported(
+                                "unsupported_input",
+                                "This chat content type is not supported by this bridge.",
+                            ));
+                        }
+                    },
+                    _ => {
+                        return Err(ProtocolError::invalid_request(
+                            "Chat content parts must be strings or objects.",
+                        ));
+                    }
+                }
+            }
+            Ok(text)
+        }
+        Some(_) => Err(ProtocolError::invalid_request(
+            "Chat message content must be a string or array.",
+        )),
+    }
+}
+
+fn optional_chat_string(object: &Map<String, Value>, key: &str) -> ProtocolResult<Option<String>> {
+    match object.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(trimmed.to_owned()))
+            }
+        }
+        Some(_) => Err(ProtocolError::invalid_request(
+            "This optional chat field must be a string.",
+        )),
+    }
+}
+
+fn known_chat_request_fields() -> HashSet<&'static str> {
+    HashSet::from([
+        "model",
+        "messages",
+        "tools",
+        "tool_choice",
+        "stream",
+        "max_tokens",
+        "stream_options",
+    ])
+}
+
+fn chat_completion_object(
+    id: &str,
+    model: &str,
+    text: &str,
+    tool_calls: &[Value],
+    stop_reason: StopReason,
+    usage: Option<Usage>,
+) -> Value {
+    let mut message = Map::new();
+    message.insert("role".to_owned(), Value::String("assistant".to_owned()));
+    if tool_calls.is_empty() {
+        message.insert("content".to_owned(), Value::String(text.to_owned()));
+    } else {
+        message.insert(
+            "content".to_owned(),
+            if text.is_empty() {
+                Value::Null
+            } else {
+                Value::String(text.to_owned())
+            },
+        );
+        message.insert("tool_calls".to_owned(), Value::Array(tool_calls.to_vec()));
+    }
+    let mut usage_json = json!({
+        "prompt_tokens": usage.as_ref().map(|usage| usage.input_tokens).unwrap_or(0),
+        "completion_tokens": usage.as_ref().map(|usage| usage.output_tokens).unwrap_or(0),
+        "total_tokens": usage.as_ref().map(|usage| usage.total_tokens).unwrap_or(0),
+    });
+    if let Some(cached) = usage.and_then(|usage| usage.cached_input_tokens) {
+        usage_json["prompt_tokens_details"] = json!({ "cached_tokens": cached });
+    }
+    json!({
+        "id": id,
+        "object": "chat.completion",
+        "created": 0,
+        "model": model,
+        "choices": [{
+            "index": 0,
+            "message": message,
+            "finish_reason": chat_finish_reason(&stop_reason),
+        }],
+        "usage": usage_json,
+    })
+}
+
+fn chat_chunk(
+    id: &str,
+    model: &str,
+    delta: Value,
+    finish_reason: Option<&str>,
+    usage: Option<&Usage>,
+) -> Value {
+    let mut chunk = json!({
+        "id": id,
+        "object": "chat.completion.chunk",
+        "created": 0,
+        "model": model,
+        "choices": [{
+            "index": 0,
+            "delta": delta,
+            "finish_reason": finish_reason,
+        }],
+    });
+    if let Some(usage) = usage {
+        chunk["usage"] = json!({
+            "prompt_tokens": usage.input_tokens,
+            "completion_tokens": usage.output_tokens,
+            "total_tokens": usage.total_tokens,
+        });
+    }
+    chunk
+}
+
+fn chat_sse_data(value: Value) -> String {
+    format!("data: {value}\n\n")
+}
+
+fn chat_finish_reason(reason: &StopReason) -> &'static str {
+    match reason {
+        StopReason::Stop => "stop",
+        StopReason::Length => "length",
+        StopReason::ToolCalls => "tool_calls",
+        StopReason::ContentFilter => "content_filter",
+        StopReason::Unknown => "stop",
+    }
 }

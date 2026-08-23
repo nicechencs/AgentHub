@@ -71,7 +71,7 @@ export function OAuthFlowDialog({
           <DialogTitle>OAuth 登录 — {meta.name}</DialogTitle>
         </DialogHeader>
 
-        <p className="mb-2 rounded-btn border border-warning/30 bg-warning/5 px-2.5 py-1.5 text-xs text-warning">
+        <p className="mb-2 rounded-card border border-warning/30 bg-warning/5 px-2.5 py-1.5 text-xs text-warning">
           开发演示（dev:mock）：不会打开真实系统浏览器，回调与账号均为模拟数据。
         </p>
 

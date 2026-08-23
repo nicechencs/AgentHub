@@ -16,13 +16,17 @@ describe('skills copy via createTranslator(zh)', () => {
   it('cell tips stay short and avoid L3 jargon', () => {
     const absent = skillCellTip(t, 'Claude', 'absent', 'available');
     const linked = skillCellTip(t, 'Claude', 'linked', 'available', 'junction');
+    const copied = skillCellTip(t, 'Claude', 'copied', 'available');
     const conflict = skillCellTip(t, 'Codex', 'foreign', 'conflict');
 
     expect(absent).toBe('未启用 · 点击启用');
-    expect(linked).toContain('已启用');
+    expect(linked).toBe('已启用（共用）· 点击取消');
+    expect(copied).toBe('已启用（副本）· 点击取消');
+    expect(linked).not.toBe(copied);
+    expect(linked).not.toMatch(/junction|symlink|hardlink/);
     expect(conflict).toContain('覆盖');
 
-    for (const s of [absent, linked, conflict]) {
+    for (const s of [absent, linked, copied, conflict]) {
       expect(s).not.toMatch(/单向投影/);
       expect(s).not.toMatch(/非双向/);
       expect(s.length).toBeLessThan(40);
@@ -54,8 +58,8 @@ describe('skills copy via createTranslator(zh)', () => {
     expect(skillCellTip(t, 'Claude', 'absent', 'private_source')).toBe(
       privateSkillRowHint(t),
     );
-    expect(privateSkillRowHint(t)).toBe('只在本工具 · 先加入共享库');
-    expect(privateSkillRowHint(t)).toContain('先加入共享库');
+    expect(privateSkillRowHint(t)).toBe('只在本工具 · 可加入共享库');
+    expect(privateSkillRowHint(t)).toContain('可加入共享库');
   });
 
   it('tabs are library + market only', () => {
@@ -65,6 +69,13 @@ describe('skills copy via createTranslator(zh)', () => {
     expect(t('skills.tabs.market')).toBe('技能市场');
     expect(t('skills.tabs.libraryBadge', { n: 12 })).toBe('12 个本地技能');
     expect(t('skills.menu.removePrivate')).toBe('从该工具目录删除');
+    expect(t('skills.menu.enableLink')).toBe('启用为共用');
+    expect(t('skills.menu.enableCopy')).toBe('启用为副本');
+    expect(t('skills.menu.disable')).toBe('取消启用');
+    expect(t('skills.menu.openFolder')).toBe('打开文件夹');
+    expect(t('skills.menu.deleteShared')).toBe('从共享库删除');
+    expect(t('skills.menu.deleteFromTool')).toBe('从该工具目录删除');
+    expect(t('skills.dialog.deleteSharedConfirm')).toBe('删除到回收站');
   });
 
   it('shared-root column names the path and states presence', () => {
@@ -80,7 +91,7 @@ describe('skills copy via createTranslator(zh)', () => {
   });
 
   it('adopt toast stays on the local table', () => {
-    expect(t('skills.toast.adoptOkDesc')).toBe('已可在矩阵中启用');
+    expect(t('skills.toast.adoptOkDesc')).toBe('已可在上方列表启用');
     expect(batchAdoptToast(t, 1, 0, 0)).not.toHaveProperty('actionLabel');
     expect(batchEnableToast(t, 1, 0, []).title).toBe('已启用所选 1 项');
   });

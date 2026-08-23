@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 
-export type AgentCardConfirmKind = 'program' | 'config' | 'force-upgrade' | null;
+export type AgentCardConfirmKind = 'program' | 'config' | 'force-upgrade' | 'install' | 'oneclick' | null;
 
 export type AgentCardDialogsProps = {
   agentName: string;
@@ -23,6 +23,8 @@ export type AgentCardDialogsProps = {
   onClose: () => void;
   onUninstall: (deleteConfig: boolean) => void;
   onConfirmForceUpgrade: () => void;
+  onConfirmInstall: () => void;
+  onConfirmOneClick: () => void;
   /** Live read: leftover menu dismiss while the opening click is settling. */
   shouldIgnoreDismiss?: (nextOpen: boolean) => boolean;
 };
@@ -38,6 +40,8 @@ export function AgentCardDialogs({
   onClose,
   onUninstall,
   onConfirmForceUpgrade,
+  onConfirmInstall,
+  onConfirmOneClick,
   shouldIgnoreDismiss,
 }: AgentCardDialogsProps) {
   const { t } = useI18n();
@@ -135,6 +139,58 @@ export function AgentCardDialogs({
               disabled={uninstalling || confirmName !== agentName}
             >
               {uninstalling ? t('agents.dialog.uninstalling') : t('agents.dialog.uninstallConfigAction')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmDialog === 'install'} onOpenChange={onDialogOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('agents.dialog.installTitle', { name: agentName })}</DialogTitle>
+            <DialogDescription>
+              {t('agents.dialog.installDesc')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => onClose()} disabled={busy}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="default"
+              disabled={busy}
+              onClick={() => {
+                onClose();
+                onConfirmInstall();
+              }}
+            >
+              {t('agents.dialog.confirmInstall')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmDialog === 'oneclick'} onOpenChange={onDialogOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('agents.dialog.oneClickTitle', { name: agentName })}</DialogTitle>
+            <DialogDescription>
+              {t('agents.dialog.oneClickDesc')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => onClose()} disabled={busy}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="default"
+              disabled={busy}
+              onClick={() => {
+                onClose();
+                onConfirmOneClick();
+              }}
+            >
+              {t('agents.dialog.confirmOneClick')}
             </Button>
           </DialogFooter>
         </DialogContent>

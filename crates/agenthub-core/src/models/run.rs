@@ -117,6 +117,8 @@ pub struct RunOptions {
     pub max_output_bytes: usize,
     /// Structured process stream decoding (Chat UI). Default text for CLI safety.
     pub process_mode: ProcessMode,
+    /// When set, print-capable agents resume this official CLI session.
+    pub native_session_id: Option<String>,
 }
 
 impl Default for RunOptions {
@@ -130,6 +132,7 @@ impl Default for RunOptions {
             allow_dangerous: false,
             max_output_bytes: 2 * 1024 * 1024,
             process_mode: ProcessMode::Text,
+            native_session_id: None,
         }
     }
 }
@@ -183,6 +186,8 @@ pub struct AgentRunResult {
     pub command: String,
     pub error: Option<String>,
     pub truncated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_session_id: Option<String>,
 }
 
 impl AgentRunResult {
@@ -197,6 +202,7 @@ impl AgentRunResult {
             command: String::new(),
             error: Some(reason.into()),
             truncated: false,
+            native_session_id: None,
         }
     }
 
@@ -211,6 +217,7 @@ impl AgentRunResult {
             command,
             error: None,
             truncated: false,
+            native_session_id: None,
         }
     }
 }
@@ -341,6 +348,7 @@ mod tests {
                     command: "codex".into(),
                     error: None,
                     truncated: false,
+                    native_session_id: None,
                 },
             ],
             "t0".into(),
@@ -365,6 +373,7 @@ mod tests {
                 command: "grok".into(),
                 error: Some("timeout".into()),
                 truncated: false,
+                native_session_id: None,
             }],
             "t0".into(),
             "t1".into(),

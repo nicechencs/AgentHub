@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use adapters::{register_all, AdapterRegistry};
 use error::Result;
+use logging::targets;
 use models::{
     AgentId, AgentUpdateInfo, InstallOutcome, MultiRunReport, RunOptions, RuntimeId, Skill,
     SkillListing,
@@ -36,9 +37,11 @@ use services::{
     ProjectService, ProviderService, RunService, SettingsService, SkillService, TicketBindService,
     TicketReadService, UsageService,
 };
-use storage::Database;
+use storage::{ChatRepo, Database};
 use utils::command_exec::SystemCommandExecutor;
-use utils::paths::{backups_dir, db_path, ensure_data_layout, home_dir, resolve_data_dir};
+use utils::paths::{
+    backups_dir, db_path, ensure_data_layout, home_dir, normalize_data_dir, resolve_data_dir,
+};
 
 // Re-export catalog + configuration types for GUI and CLI shells.
 pub use platform::{
@@ -88,16 +91,39 @@ pub struct AgentHub {
 
 impl AgentHub {
     /// Open hub with optional data-dir override (`--data-dir` / `AGENTHUB_HOME`).
+    ///
+    /// Skills stay at `~/.agents/skills` regardless of data-dir.
     pub fn open(data_dir_override: Option<&Path>) -> Result<Self> {
-        let data_dir = resolve_data_dir(data_dir_override)?;
+        Self::open_with_skills_root(data_dir_override, None)
+    }
+
+    /// Same as [`open`], with an optional skills source root.
+    ///
+    /// `skills_root == None` uses `~/.agents/skills` (production).
+    pub fn open_with_skills_root(
+        data_dir_override: Option<&Path>,
+        skills_root: Option<&Path>,
+    ) -> Result<Self> {
+        let data_dir = normalize_data_dir(&resolve_data_dir(data_dir_override)?)?;
         ensure_data_layout(&data_dir)?;
         // STORAGE module logs open success/failure (including migrate).
         let db = Database::open(&db_path(&data_dir))?;
         // Recover audit rows left running after crash (never auto-retry dangerous steps).
         let _ = LifecycleCoordinator::interrupt_stale_running(&db);
+        // Recover chat placeholders left running after crash. Cancelled is not a hard failure.
+        if let Ok(n) = ChatRepo::new(db.clone()).interrupt_stale_running() {
+            if n > 0 {
+                logging::log_warn(
+                    targets::CHAT,
+                    "chat_interrupt",
+                    &format!("marked {n} running chat messages as cancelled after restart"),
+                );
+            }
+        }
         let registry = register_all();
         let catalog = AgentCatalogService::from_registry(&registry)?;
-        let lifecycle = LifecycleCoordinator::new(db.clone(), registry.clone());
+        let lifecycle =
+            LifecycleCoordinator::new_with_data_dir(db.clone(), registry.clone(), data_dir.clone());
         let configuration = ConfigurationService::new(db.clone());
         let connections = ConnectionService::new(db.clone());
         // AgentService keeps a cheap Arc clone of the same adapters; do not call register_all twice.
@@ -122,14 +148,23 @@ impl AgentHub {
             adapter_apply.clone(),
             crate::storage::AdapterProfileRepo::new(db.clone()),
             providers.clone(),
+            accounts.clone(),
         );
         let backups = BackupService::new(db.clone(), registry.clone(), backups_dir(&data_dir));
+        let skills_root = match skills_root {
+            Some(path) => path.to_path_buf(),
+            None => home_dir()?.join(".agents").join("skills"),
+        };
         let skills = SkillService::with_db_and_target_registry(
-            home_dir()?.join(".agents").join("skills"),
+            skills_root,
             registry.clone(),
             db.clone(),
             crate::platform::skills::builtin_skill_target_registry().clone(),
         );
+        // Recover a durable package commit before exposing any skill operation.
+        // This is deliberately narrower than bootstrap_assignments(): startup
+        // must not import projections or mutate assignment intent implicitly.
+        skills.recover_pending_commit()?;
         let settings = SettingsService::new(data_dir.clone(), db.clone());
         let projects = ProjectService::new(registry.clone(), data_dir.clone());
         let agent_visibility = AgentVisibilityService::new(data_dir.clone());

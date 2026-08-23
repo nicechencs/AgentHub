@@ -22,12 +22,17 @@ use crate::platform::skills::assignment::SkillAssignmentService;
 use crate::platform::skills::fs_safe::{
     ensure_no_symlink_in_existing_prefix, validate_skills_root, validate_tree_entries_safe,
 };
+use crate::platform::skills::journal::{
+    clear_journal, load_journal, remove_journal_helper, restore_package, validate_journal_paths,
+    write_journal, SkillCommitJournal, SkillCommitPhase, SkillPackageSnapshot,
+};
 use crate::platform::skills::lockfile::{
     skill_lock_file, skill_lock_load, skill_lock_replace_map, skill_lock_upsert,
 };
 use crate::platform::skills::packages::{
-    create_staging_dir, finalize_retained_backup, rollback_retained_swap, swap_staging_keep_backup,
-    write_skill_tree, RetainedLiveSwap,
+    allocate_backup_path, create_staging_dir, finalize_retained_backup, rollback_retained_swap,
+    rollback_retained_swap_idempotent, swap_staging_keep_backup_at, write_skill_tree,
+    RetainedLiveSwap,
 };
 use crate::storage::{SkillPackageRow, SkillRepo};
 
@@ -76,6 +81,15 @@ pub(crate) fn commit_skill_package(
         std::fs::create_dir_all(skills_root)?;
     }
     validate_skills_root(skills_root)?;
+
+    // Never overwrite evidence from an interrupted commit.  Startup or the
+    // explicit SkillService bootstrap must recover it under the root lock.
+    if load_journal(skills_root)?.is_some() {
+        return Err(AppError::message(
+            "skill.commit_recovery",
+            "an interrupted skill commit requires bootstrap recovery",
+        ));
+    }
 
     let dest = skills_root.join(skill_id);
     let had_live = dest.exists();
@@ -127,24 +141,119 @@ pub(crate) fn commit_skill_package(
         None => None,
     };
 
+    // Allocate every helper path before the first rename, then persist the
+    // complete old-state snapshot.  A later bootstrap can now recover even if
+    // this process disappears between any two metadata writes.
+    let backup_path = if had_live {
+        match allocate_backup_path(skills_root, skill_id) {
+            Ok(path) => Some(path),
+            Err(e) => {
+                let _ = std::fs::remove_dir_all(&staging);
+                return Err(e);
+            }
+        }
+    } else {
+        None
+    };
+    let mut journal = SkillCommitJournal {
+        schema: crate::platform::skills::journal::SKILL_COMMIT_JOURNAL_SCHEMA,
+        skill: skill_id.to_string(),
+        target: dest.clone(),
+        had_live,
+        staging: staging.clone(),
+        backup: backup_path.clone(),
+        old_lock: old_lock.clone(),
+        had_lock_file,
+        old_package: old_package.as_ref().map(SkillPackageSnapshot::from),
+        has_package_repo: repo.is_some(),
+        phase: SkillCommitPhase::Prepared,
+    };
+    if let Err(e) = write_journal(skills_root, &journal) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(e);
+    }
+
     // --- live swap (retain backup) ---
     let existing = if had_live { Some(dest.as_path()) } else { None };
-    let swap = match swap_staging_keep_backup(skills_root, skill_id, existing, &dest, &staging) {
+    let swap = match swap_staging_keep_backup_at(
+        skills_root,
+        skill_id,
+        existing,
+        &dest,
+        &staging,
+        backup_path,
+    ) {
         Ok(s) => s,
         Err(e) => {
-            // Staging cleaned by swap helper when named helper-style; also try raw path.
-            let _ = std::fs::remove_dir_all(&staging);
+            // A retained backup means the helper crossed the first rename and
+            // must remain journaled for bootstrap recovery.  Otherwise the
+            // helper guarantees that no live state changed, so the prepared
+            // record can be removed.
+            let helper_retained = journal.staging.exists()
+                || journal.backup.as_ref().is_some_and(|path| path.exists());
+            if !helper_retained {
+                let _ = clear_journal(skills_root);
+            }
             return Err(e);
         }
     };
 
+    journal.phase = SkillCommitPhase::LiveSwapped;
+    if let Err(e) = write_journal(skills_root, &journal) {
+        let compensate = compensate_failed_commit(
+            skills_root,
+            skill_id,
+            &dest,
+            swap,
+            &old_lock,
+            had_lock_file,
+            repo,
+            old_package.as_ref(),
+        );
+        let compensate = if compensate.is_ok() {
+            clear_journal(skills_root)
+        } else {
+            compensate
+        };
+        return Err(log_commit_failure(skill_id, e, compensate));
+    }
+
     // From here: live is new; backup retained until metadata commits.
-    let commit_result = finish_metadata_commit(skills_root, skill_id, &record, repo, now, faults);
+    let commit_result = finish_metadata_commit(
+        skills_root,
+        skill_id,
+        &record,
+        repo,
+        now,
+        faults,
+        &mut journal,
+    );
 
     match commit_result {
         Ok(()) => {
-            // Backup cleanup failure does not roll back committed metadata.
-            finalize_retained_backup(skills_root, swap);
+            // Backup cleanup failure does not roll back committed metadata,
+            // but it must retain the journal with the concrete inspection or
+            // removal error so bootstrap can retry without losing the helper.
+            if let Err(e) = finalize_retained_backup(skills_root, swap) {
+                logging::log_app_error(targets::SKILL, "commit_journal_cleanup", &e);
+                tracing::warn!(
+                    module = targets::SKILL,
+                    op = "commit_journal_cleanup",
+                    skill_id = skill_id,
+                    code = e.code(),
+                    error = %e,
+                    "skill commit completed but backup cleanup failed; durable journal retained for bootstrap"
+                );
+            } else if let Err(e) = clear_journal(skills_root) {
+                logging::log_app_error(targets::SKILL, "commit_journal_cleanup", &e);
+                tracing::warn!(
+                    module = targets::SKILL,
+                    op = "commit_journal_cleanup",
+                    skill_id = skill_id,
+                    code = e.code(),
+                    "skill commit completed but durable journal cleanup failed; bootstrap will retry"
+                );
+            }
             Ok(SkillPackageCommit {
                 skill_id: skill_id.to_string(),
                 dest,
@@ -161,6 +270,11 @@ pub(crate) fn commit_skill_package(
                 repo,
                 old_package.as_ref(),
             );
+            let compensate = if compensate.is_ok() {
+                clear_journal(skills_root)
+            } else {
+                compensate
+            };
             Err(log_commit_failure(skill_id, primary, compensate))
         }
     }
@@ -173,6 +287,7 @@ fn finish_metadata_commit(
     repo: Option<&SkillRepo>,
     now: &str,
     faults: SkillCommitFaults,
+    journal: &mut SkillCommitJournal,
 ) -> Result<()> {
     if faults.fail_before_lock {
         return Err(AppError::message(
@@ -182,6 +297,9 @@ fn finish_metadata_commit(
     }
 
     skill_lock_upsert(skills_root, skill_id, record.clone())?;
+
+    journal.phase = SkillCommitPhase::LockCommitted;
+    write_journal(skills_root, journal)?;
 
     if faults.fail_before_package {
         return Err(AppError::message(
@@ -193,6 +311,162 @@ fn finish_metadata_commit(
     if let Some(r) = repo {
         let assign = SkillAssignmentService::new(r.clone());
         assign.ensure_package(skill_id, Some(record), now)?;
+    }
+    journal.phase = SkillCommitPhase::PackageCommitted;
+    write_journal(skills_root, journal)?;
+    Ok(())
+}
+
+/// Recover one interrupted package commit.  The caller must hold the shared
+/// source-root lock.  Every mutation is idempotent and the journal is removed
+/// only after live, lock, package, and helper cleanup all succeed.
+pub(crate) fn recover_skill_commit_journal(
+    skills_root: &Path,
+    repo: Option<&SkillRepo>,
+) -> Result<bool> {
+    let Some(journal) = load_journal(skills_root)? else {
+        return Ok(false);
+    };
+    validate_journal_paths(skills_root, &journal)?;
+
+    if journal.phase == SkillCommitPhase::Prepared {
+        // Prepared may mean either "before the first rename" or that the
+        // process crossed a rename and died before recording LiveSwapped.
+        // Run the same idempotent rollback state machine in both cases so a
+        // stale Prepared journal cannot hide a failed metadata compensation.
+        remove_journal_helper(skills_root, &journal.staging)?;
+        recover_after_live_swap(skills_root, &journal, repo)?;
+        return Ok(true);
+    }
+
+    if journal.phase == SkillCommitPhase::PackageCommitted {
+        // New metadata and live content are committed.  Finish cleanup only;
+        // never roll back a successful package commit.
+        let target_meta = fs::symlink_metadata(&journal.target).map_err(|e| {
+            AppError::message(
+                "skill.commit_recovery",
+                format!("committed skill target is unavailable: {e}"),
+            )
+        })?;
+        if !target_meta.is_dir()
+            || crate::platform::skills::fs_safe::is_link_or_reparse(&target_meta)
+        {
+            return Err(AppError::message(
+                "skill.commit_recovery",
+                format!(
+                    "refusing to remove backup while committed target is unsafe: {}",
+                    journal.target.display()
+                ),
+            ));
+        }
+        validate_tree_entries_safe(&journal.target, "skill source")?;
+        remove_journal_helper(skills_root, &journal.staging)?;
+        if let Some(backup) = journal.backup.as_ref() {
+            remove_journal_helper(skills_root, backup)?;
+        }
+        clear_journal(skills_root)?;
+        return Ok(true);
+    }
+
+    recover_after_live_swap(skills_root, &journal, repo)?;
+    Ok(true)
+}
+
+fn recover_after_live_swap(
+    skills_root: &Path,
+    journal: &SkillCommitJournal,
+    repo: Option<&SkillRepo>,
+) -> Result<()> {
+    let mut journal = journal.clone();
+
+    // Persist each completed compensation step before proceeding to the next
+    // store. If the process dies after a rename/write but before this journal
+    // update, the step is still safe to retry: the live rollback helper never
+    // deletes a target when its backup has already disappeared.
+    if matches!(
+        journal.phase,
+        SkillCommitPhase::Prepared
+            | SkillCommitPhase::LiveSwapped
+            | SkillCommitPhase::LockCommitted
+            | SkillCommitPhase::PackageCommitted
+    ) {
+        let swap = RetainedLiveSwap {
+            backup: journal.backup.clone(),
+            first_install: !journal.had_live,
+        };
+        rollback_retained_swap_idempotent(skills_root, &journal.target, swap).map_err(|e| {
+            AppError::message("skill.commit_recovery", format!("live restore failed: {e}"))
+        })?;
+        journal.phase = SkillCommitPhase::RollbackLiveRestored;
+        write_journal(skills_root, &journal)?;
+    }
+
+    if journal.phase == SkillCommitPhase::RollbackLiveRestored {
+        if !journal.had_lock_file {
+            match fs::remove_file(skill_lock_file(skills_root)) {
+                Ok(()) => {}
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(AppError::message(
+                        "skill.commit_recovery",
+                        format!("lock restore failed: {e}"),
+                    ));
+                }
+            }
+        } else if let Err(e) = skill_lock_replace_map(skills_root, &journal.old_lock) {
+            return Err(AppError::message(
+                "skill.commit_recovery",
+                format!("lock restore failed: {e}"),
+            ));
+        }
+        journal.phase = SkillCommitPhase::RollbackLockRestored;
+        write_journal(skills_root, &journal)?;
+    }
+
+    if journal.phase == SkillCommitPhase::RollbackLockRestored {
+        restore_package(repo, &journal).map_err(|e| {
+            AppError::message(
+                "skill.commit_recovery",
+                format!("package restore failed: {e}"),
+            )
+        })?;
+        journal.phase = SkillCommitPhase::RollbackPackageRestored;
+        write_journal(skills_root, &journal)?;
+    }
+
+    if journal.phase == SkillCommitPhase::RollbackPackageRestored {
+        remove_journal_helper(skills_root, &journal.staging).map_err(|e| {
+            AppError::message(
+                "skill.commit_recovery",
+                format!("staging cleanup failed: {e}"),
+            )
+        })?;
+        if let Some(backup) = journal.backup.as_ref() {
+            match fs::symlink_metadata(backup) {
+                Ok(_) => {
+                    return Err(AppError::message(
+                        "skill.commit_recovery",
+                        format!(
+                            "live restore left backup helper in place: {}",
+                            backup.display()
+                        ),
+                    ));
+                }
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(AppError::message(
+                        "skill.commit_recovery",
+                        format!("backup helper state could not be verified: {e}"),
+                    ));
+                }
+            }
+        }
+        journal.phase = SkillCommitPhase::RollbackHelpersCleaned;
+        write_journal(skills_root, &journal)?;
+    }
+
+    if journal.phase == SkillCommitPhase::RollbackHelpersCleaned {
+        clear_journal(skills_root)?;
     }
     Ok(())
 }

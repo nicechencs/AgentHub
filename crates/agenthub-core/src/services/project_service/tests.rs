@@ -8,6 +8,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use std::time::{Duration, SystemTime};
 use tempfile::tempdir;
 
 #[derive(Default)]
@@ -244,11 +245,54 @@ fn claude_actual_path_only_when_workspace_exists() {
         .iter()
         .find(|p| p.id.contains("demo-verified"))
         .expect("verified project");
-    let actual = found
+    let actual = found.actual_path.as_deref().expect("verified actual_path");
+    assert!(Path::new(actual).exists());
+}
+
+#[test]
+fn claude_list_projects_peeks_newest_not_huge_tail() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".claude");
+    let ws = dir.path().join("real-ws");
+    fs::create_dir_all(&ws).unwrap();
+    let proj = home.join("projects").join("-C-Users-demo-huge");
+    fs::create_dir_all(&proj).unwrap();
+
+    let huge = proj.join("old.jsonl");
+    {
+        let mut f = fs::File::create(&huge).unwrap();
+        let line = b"{\"type\":\"assistant\",\"text\":\"x\"}\n";
+        let mut written = 0usize;
+        while written < 600 * 1024 {
+            f.write_all(line).unwrap();
+            written += line.len();
+        }
+        f.flush().unwrap();
+        f.set_modified(SystemTime::now() - Duration::from_secs(120))
+            .unwrap();
+    }
+
+    let escaped = ws.display().to_string().replace('\\', "\\\\");
+    write_session(
+        &proj.join("new.jsonl"),
+        &[&format!(
+            r#"{{"cwd":"{escaped}","type":"user","text":"tiny cwd"}}"#
+        )],
+    );
+
+    let projects = list_projects_for_agent_home(AgentId::Claude, &home, None).unwrap();
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0].session_count, 2);
+    assert!(projects[0].message_count.is_none());
+    assert!(projects[0].size_bytes >= 600 * 1024);
+    let actual = projects[0]
         .actual_path
         .as_deref()
-        .expect("verified actual_path");
-    assert!(Path::new(actual).exists());
+        .expect("cwd from the newer tiny jsonl");
+    assert!(
+        Path::new(actual).exists(),
+        "actual_path must come from the tiny newer file, got {actual}"
+    );
 }
 
 #[test]

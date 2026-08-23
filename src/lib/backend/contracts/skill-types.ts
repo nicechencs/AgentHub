@@ -27,6 +27,14 @@ export interface SkillSyncReport {
   failed: { skill: string; agent: AgentId; code: string; error: string }[];
 }
 
+/** One physical private copy after GUI grouping. */
+export interface SkillCopyLocation {
+  agentId: AgentId;
+  sourceDir: string;
+  rootDir: string;
+  rootLabel: string;
+}
+
 /** Installed / catalog row. `listSkillCatalog` reuses this DTO (no extra type). */
 export interface InstalledSkillDto {
   id: string;
@@ -38,6 +46,10 @@ export interface InstalledSkillDto {
   origin: string;
   projectable: boolean;
   mapStatus?: SkillMapStatus;
+  /** Private catalog fingerprint; GUI groups identical copies by `(id, contentHash)`. */
+  contentHash?: string | null;
+  /** GUI-only: merged private copies. Backend catalog does not send this. */
+  copies?: SkillCopyLocation[];
   source?: {
     kind: string;
     locator: string;

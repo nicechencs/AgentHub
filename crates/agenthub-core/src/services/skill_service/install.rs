@@ -16,10 +16,11 @@ use crate::platform::skills::{
     commit_skill_package, create_projection_link, ensure_no_symlink_in_existing_prefix,
     ensure_skill_md, finalize_link_projection_ownership, inspect_projection_target, is_exact_child,
     is_link_or_reparse, materialize_projection, paths_equal_lexical, prepare_git_skill_staging,
-    read_skill_metadata, record_copy_ownership, remove_projection_link, resolve_link_path,
-    skill_lock_load, skill_lock_remove, skill_lock_upsert, validate_and_collect_source,
-    validate_skill_id, validate_skills_root, validate_tree_entries_safe, PreparedSkillTree,
-    SkillCommitFaults, SkillPackageService, SkillSourceService, TargetPresence,
+    read_skill_metadata, record_copy_ownership, recycle_skill_dir, remove_projection_link,
+    resolve_link_path, skill_lock_load, skill_lock_remove, skill_lock_upsert,
+    validate_and_collect_source, validate_skill_id, validate_skills_root,
+    validate_tree_entries_safe, PreparedSkillTree, SkillCommitFaults, SkillPackageService,
+    SkillSourceService, TargetPresence,
 };
 use crate::platform::AgentKey;
 use crate::storage::SkillRepo;
@@ -230,7 +231,7 @@ impl SkillService {
                 )));
             }
             validate_tree_entries_safe(&source_dir, "skill source")?;
-            fs::remove_dir_all(&source_dir)?;
+            recycle_skill_dir(&source_dir)?;
             skill_lock_remove(&self.source_root, &skill_id)?;
             Ok(())
         })();
@@ -267,7 +268,7 @@ impl SkillService {
                 TargetPresence::Link { .. } => remove_projection_link(&target),
                 TargetPresence::Directory => {
                     validate_tree_entries_safe(&target, "private skill")?;
-                    fs::remove_dir_all(&target)?;
+                    recycle_skill_dir(&target)?;
                     Ok(())
                 }
                 TargetPresence::Dangerous { kind } => Err(AppError::InvalidArg(format!(

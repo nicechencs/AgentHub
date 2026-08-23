@@ -51,6 +51,7 @@ pub fn run(hub: &AgentHub, args: RunArgs, format: OutputFormat) -> Result<()> {
         max_output_bytes: 2 * 1024 * 1024,
         // CLI multi-run stays human-readable text (no NDJSON process parse).
         process_mode: agenthub_core::models::ProcessMode::Text,
+        native_session_id: None,
     };
 
     let report = hub.run_agents(&agents, &args.prompt, &opts)?;

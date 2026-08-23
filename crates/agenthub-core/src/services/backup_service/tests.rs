@@ -195,11 +195,12 @@ fn snapshot_ids_are_unique() {
     let f = live.path().join("only.toml");
     write_file(&f, b"x");
 
-    let (_root, svc, _) = make_svc(AgentId::Grok, vec![f]);
+    let (_root, svc, _) = make_svc(AgentId::Grok, vec![f.clone()]);
 
     let r1 = svc
         .snapshot(AgentId::Grok, BackupKind::Manual, None)
         .unwrap();
+    write_file(&f, b"y");
     let r2 = svc
         .snapshot(AgentId::Grok, BackupKind::Manual, None)
         .unwrap();
@@ -238,6 +239,8 @@ fn list_filter_and_newest_first_order() {
         .snapshot(AgentId::Kimi, BackupKind::PreUninstall, Some("second"))
         .unwrap();
     std::thread::sleep(std::time::Duration::from_millis(5));
+    // Different content so the second Claude snapshot is a new point-in-time.
+    write_file(&f, b"2");
     let c = svc
         .snapshot(AgentId::Claude, BackupKind::PreRestore, Some("third"))
         .unwrap();
@@ -485,6 +488,7 @@ fn restore_rejects_tampered_manifest_destination() {
         entries: vec![ManifestEntry {
             stored: "settings.json".into(),
             source: evil_target.display().to_string(),
+            sha256: None,
         }],
     };
     write_manifest(Path::new(&snap.path), &manifest).unwrap();
@@ -637,6 +641,7 @@ fn restore_rejects_manifest_that_omits_an_indexed_file() {
         entries: vec![ManifestEntry {
             stored: "first.json".into(),
             source: a.display().to_string(),
+            sha256: None,
         }],
     };
     write_manifest(Path::new(&snap.path), &manifest).unwrap();
@@ -667,10 +672,12 @@ fn restore_rejects_manifest_with_duplicate_destination() {
             ManifestEntry {
                 stored: "first.json".into(),
                 source: a.display().to_string(),
+                sha256: None,
             },
             ManifestEntry {
                 stored: "second.json".into(),
                 source: a.display().to_string(),
+                sha256: None,
             },
         ],
     };
@@ -696,10 +703,12 @@ fn apply_restore_plan_rolls_back_partial_live_writes() {
         RestoreItem {
             stored_path: src_a,
             dest: dest_a.clone(),
+            expected_sha256: None,
         },
         RestoreItem {
             stored_path: src_b,
             dest: dest_b.clone(),
+            expected_sha256: None,
         },
     ];
     let err = apply_restore_plan(&plan).unwrap_err();
@@ -733,6 +742,47 @@ fn restore_rejects_corrupt_snapshot_file_before_overwrite() {
     assert_eq!(err.code(), "invalid_arg");
     assert_eq!(std::fs::read(&a).unwrap(), b"A-live");
     assert_eq!(std::fs::read(&b).unwrap(), b"B-live");
+}
+
+#[test]
+fn restore_rejects_tampered_payload_before_overwrite() {
+    let live = tempdir().unwrap();
+    let file = live.path().join("settings.json");
+    write_file(&file, b"original");
+    let (_root, svc, _) = make_svc(AgentId::Claude, vec![file.clone()]);
+    let snap = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, None)
+        .unwrap();
+
+    write_file(&file, b"live-data");
+    // Keep the payload length unchanged so a size-only check cannot accept it.
+    let stored = PathBuf::from(&snap.path).join("settings.json");
+    write_file(&stored, b"tampered");
+
+    let err = svc.restore(&snap.id).unwrap_err();
+    assert_eq!(err.code(), "invalid_arg");
+    assert_eq!(std::fs::read(&file).unwrap(), b"live-data");
+    // Validation fails before the automatic PreRestore can be created.
+    assert_eq!(svc.list(None).unwrap().len(), 1);
+}
+
+#[test]
+fn restore_rejects_missing_payload_before_overwrite() {
+    let live = tempdir().unwrap();
+    let file = live.path().join("settings.json");
+    write_file(&file, b"original");
+    let (_root, svc, _) = make_svc(AgentId::Claude, vec![file.clone()]);
+    let snap = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, None)
+        .unwrap();
+
+    write_file(&file, b"live-data");
+    std::fs::remove_file(PathBuf::from(&snap.path).join("settings.json")).unwrap();
+
+    let err = svc.restore(&snap.id).unwrap_err();
+    assert_eq!(err.code(), "not_found");
+    assert_eq!(std::fs::read(&file).unwrap(), b"live-data");
+    assert_eq!(svc.list(None).unwrap().len(), 1);
 }
 
 #[test]
@@ -788,4 +838,349 @@ fn delete_refuses_path_outside_backups_root() {
     assert!(outside.exists());
     // Index row remains.
     assert!(svc.get_by_id(&snap.id).is_ok());
+}
+
+#[cfg(unix)]
+fn inode_of(path: &Path) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path).unwrap().ino()
+}
+
+fn count_agent_snapshot_dirs(backups_root: &Path, agent: &str) -> usize {
+    let dir = backups_root.join("live").join(agent);
+    if !dir.is_dir() {
+        return 0;
+    }
+    std::fs::read_dir(&dir)
+        .unwrap()
+        .filter(|e| e.as_ref().map(|ent| ent.path().is_dir()).unwrap_or(false))
+        .count()
+}
+
+fn unique_payload_bytes(backups_root: &Path) -> u64 {
+    let live = backups_root.join("live");
+    if !live.is_dir() {
+        return 0;
+    }
+    #[cfg(unix)]
+    {
+        use std::collections::HashSet;
+        use std::os::unix::fs::MetadataExt;
+        let mut seen: HashSet<(u64, u64)> = HashSet::new();
+        let mut total = 0u64;
+        let mut pending = vec![live];
+        while let Some(dir) = pending.pop() {
+            let Ok(rd) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for ent in rd.flatten() {
+                let path = ent.path();
+                let Ok(meta) = std::fs::symlink_metadata(&path) else {
+                    continue;
+                };
+                if meta.is_dir() {
+                    pending.push(path);
+                    continue;
+                }
+                if !meta.is_file() {
+                    continue;
+                }
+                if path.file_name().and_then(|s| s.to_str()) == Some(MANIFEST_FILE) {
+                    continue;
+                }
+                let key = (meta.dev(), meta.ino());
+                if seen.insert(key) {
+                    total = total.saturating_add(meta.len());
+                }
+            }
+        }
+        total
+    }
+    #[cfg(windows)]
+    {
+        use std::collections::HashSet;
+        use std::os::windows::fs::MetadataExt;
+        use std::os::windows::io::AsRawHandle;
+
+        #[repr(C)]
+        struct ByHandleFileInformation {
+            file_attributes: u32,
+            creation_time: [u32; 2],
+            last_access_time: [u32; 2],
+            last_write_time: [u32; 2],
+            volume_serial_number: u32,
+            file_size_high: u32,
+            file_size_low: u32,
+            number_of_links: u32,
+            file_index_high: u32,
+            file_index_low: u32,
+        }
+
+        unsafe extern "system" {
+            fn GetFileInformationByHandle(
+                file: *mut std::ffi::c_void,
+                info: *mut ByHandleFileInformation,
+            ) -> i32;
+        }
+
+        fn windows_file_key(path: &std::path::Path) -> Option<(u32, u64)> {
+            let file = std::fs::File::open(path).ok()?;
+            let mut info = unsafe { std::mem::zeroed::<ByHandleFileInformation>() };
+            let ok = unsafe {
+                GetFileInformationByHandle(file.as_raw_handle() as *mut std::ffi::c_void, &mut info)
+            };
+            if ok == 0 {
+                return None;
+            }
+            let index = ((info.file_index_high as u64) << 32) | u64::from(info.file_index_low);
+            Some((info.volume_serial_number, index))
+        }
+
+        let mut seen = HashSet::new();
+        let mut total = 0u64;
+        let mut pending = vec![live];
+        while let Some(dir) = pending.pop() {
+            let Ok(rd) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for ent in rd.flatten() {
+                let path = ent.path();
+                let Ok(meta) = std::fs::symlink_metadata(&path) else {
+                    continue;
+                };
+                if meta.is_dir() {
+                    pending.push(path);
+                    continue;
+                }
+                if !meta.is_file() {
+                    continue;
+                }
+                if path.file_name().and_then(|s| s.to_str()) == Some(MANIFEST_FILE) {
+                    continue;
+                }
+                let key = windows_file_key(&path).unwrap_or((0, 0));
+                if seen.insert(key) {
+                    total = total.saturating_add(meta.file_size());
+                }
+            }
+        }
+        total
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let mut total = 0u64;
+        let mut pending = vec![live];
+        while let Some(dir) = pending.pop() {
+            let Ok(rd) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for ent in rd.flatten() {
+                let path = ent.path();
+                let Ok(meta) = std::fs::symlink_metadata(&path) else {
+                    continue;
+                };
+                if meta.is_dir() {
+                    pending.push(path);
+                    continue;
+                }
+                if !meta.is_file() {
+                    continue;
+                }
+                if path.file_name().and_then(|s| s.to_str()) == Some(MANIFEST_FILE) {
+                    continue;
+                }
+                total = total.saturating_add(meta.len());
+            }
+        }
+        total
+    }
+}
+
+#[test]
+fn identical_snapshot_reuses_row_and_does_not_duplicate_payload() {
+    let live = tempdir().unwrap();
+    let f = live.path().join("settings.json");
+    write_file(&f, b"same-bytes");
+    let (_root, svc, backups_root) = make_svc(AgentId::Claude, vec![f]);
+
+    let first = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, Some("keep"))
+        .unwrap();
+    let unique_after_first = unique_payload_bytes(&backups_root);
+    assert_eq!(unique_after_first, first.size);
+    assert_eq!(count_agent_snapshot_dirs(&backups_root, "claude"), 1);
+
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    let second = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, Some("ignored"))
+        .unwrap();
+
+    assert_eq!(second.id, first.id);
+    assert_eq!(second.path, first.path);
+    assert_eq!(second.files, first.files);
+    assert_eq!(second.size, first.size);
+    assert_eq!(second.kind, first.kind);
+    assert_eq!(second.note.as_deref(), Some("keep"));
+    assert_ne!(second.created_at, first.created_at);
+
+    assert_eq!(svc.list(None).unwrap().len(), 1);
+    assert_eq!(count_agent_snapshot_dirs(&backups_root, "claude"), 1);
+    assert_eq!(unique_payload_bytes(&backups_root), unique_after_first);
+    assert_eq!(
+        svc.get_by_id(&first.id).unwrap().created_at,
+        second.created_at
+    );
+}
+
+#[test]
+fn tampered_stored_payload_does_not_reuse_snapshot_even_when_manifest_hash_matches() {
+    let live = tempdir().unwrap();
+    let f = live.path().join("settings.json");
+    write_file(&f, b"same-bytes");
+    let (_root, svc, backups_root) = make_svc(AgentId::Claude, vec![f]);
+
+    let first = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, Some("keep"))
+        .unwrap();
+    assert_eq!(count_agent_snapshot_dirs(&backups_root, "claude"), 1);
+
+    let stored = PathBuf::from(&first.path).join("settings.json");
+    // Same length so size-based reuse still looks plausible; only a stored
+    // re-hash can detect the corruption while the manifest sha256 stays old.
+    std::fs::write(&stored, b"TAMPERED!!").unwrap();
+    assert_eq!(b"same-bytes".len(), b"TAMPERED!!".len());
+
+    let second = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, Some("again"))
+        .unwrap();
+
+    assert_ne!(second.id, first.id);
+    assert_ne!(second.path, first.path);
+    assert_eq!(svc.list(None).unwrap().len(), 2);
+    assert_eq!(count_agent_snapshot_dirs(&backups_root, "claude"), 2);
+    assert_eq!(std::fs::read(&stored).unwrap(), b"TAMPERED!!");
+    assert_eq!(
+        std::fs::read(PathBuf::from(&second.path).join("settings.json")).unwrap(),
+        b"same-bytes"
+    );
+}
+
+#[test]
+fn partial_change_hardlinks_unchanged_file() {
+    let live = tempdir().unwrap();
+    let changed = live.path().join("changed.json");
+    let stable = live.path().join("stable.json");
+    write_file(&changed, b"v1");
+    write_file(&stable, b"same");
+    let (_root, svc, backups_root) =
+        make_svc(AgentId::Codex, vec![changed.clone(), stable.clone()]);
+
+    let snap1 = svc
+        .snapshot(AgentId::Codex, BackupKind::Manual, None)
+        .unwrap();
+    write_file(&changed, b"v2!");
+    let snap2 = svc
+        .snapshot(AgentId::Codex, BackupKind::Manual, None)
+        .unwrap();
+
+    assert_ne!(snap1.id, snap2.id);
+    assert_ne!(snap1.path, snap2.path);
+    assert_eq!(svc.list(None).unwrap().len(), 2);
+
+    let dir1 = PathBuf::from(&snap1.path);
+    let dir2 = PathBuf::from(&snap2.path);
+    assert_eq!(std::fs::read(dir1.join("changed.json")).unwrap(), b"v1");
+    assert_eq!(std::fs::read(dir2.join("changed.json")).unwrap(), b"v2!");
+    assert_eq!(std::fs::read(dir1.join("stable.json")).unwrap(), b"same");
+    assert_eq!(std::fs::read(dir2.join("stable.json")).unwrap(), b"same");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        assert_eq!(
+            inode_of(&dir1.join("stable.json")),
+            inode_of(&dir2.join("stable.json"))
+        );
+        assert!(std::fs::metadata(dir1.join("stable.json")).unwrap().nlink() >= 2);
+        assert_ne!(
+            inode_of(&dir1.join("changed.json")),
+            inode_of(&dir2.join("changed.json"))
+        );
+    }
+
+    let unique = unique_payload_bytes(&backups_root);
+    let expected = (b"v1".len() + b"v2!".len() + b"same".len()) as u64;
+    assert_eq!(unique, expected);
+    assert!(unique < snap1.size + snap2.size);
+
+    write_file(&changed, b"live-a");
+    write_file(&stable, b"live-b");
+    svc.restore(&snap1.id).unwrap();
+    assert_eq!(std::fs::read(&changed).unwrap(), b"v1");
+    assert_eq!(std::fs::read(&stable).unwrap(), b"same");
+
+    write_file(&changed, b"live-a");
+    write_file(&stable, b"live-b");
+    svc.restore(&snap2.id).unwrap();
+    assert_eq!(std::fs::read(&changed).unwrap(), b"v2!");
+    assert_eq!(std::fs::read(&stable).unwrap(), b"same");
+}
+
+#[test]
+fn restore_legacy_manifest_without_sha256() {
+    let live = tempdir().unwrap();
+    let f = live.path().join("settings.json");
+    write_file(&f, b"original");
+    let (_root, svc, _) = make_svc(AgentId::Claude, vec![f.clone()]);
+    let snap = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, None)
+        .unwrap();
+
+    let manifest = BackupManifest {
+        version: MANIFEST_VERSION,
+        entries: vec![ManifestEntry {
+            stored: "settings.json".into(),
+            source: f.display().to_string(),
+            sha256: None,
+        }],
+    };
+    write_manifest(Path::new(&snap.path), &manifest).unwrap();
+
+    let raw = std::fs::read_to_string(PathBuf::from(&snap.path).join(MANIFEST_FILE)).unwrap();
+    assert!(
+        !raw.contains("sha256"),
+        "legacy rewrite must omit sha256: {raw}"
+    );
+
+    write_file(&f, b"changed");
+    let result = svc.restore(&snap.id).unwrap();
+    assert_eq!(result.restored.id, snap.id);
+    assert_eq!(std::fs::read(&f).unwrap(), b"original");
+}
+
+#[test]
+fn manifest_parses_without_sha256_field() {
+    let json = r#"{"version":1,"entries":[{"stored":"a.json","source":"/tmp/a.json"}]}"#;
+    let m: BackupManifest = serde_json::from_str(json).unwrap();
+    assert_eq!(m.version, MANIFEST_VERSION);
+    assert_eq!(m.entries[0].stored, "a.json");
+    assert_eq!(m.entries[0].sha256, None);
+}
+
+#[test]
+fn restore_of_identical_live_reuses_prerestore() {
+    let live = tempdir().unwrap();
+    let f = live.path().join("settings.json");
+    write_file(&f, b"original");
+    let (_root, svc, backups_root) = make_svc(AgentId::Claude, vec![f.clone()]);
+    let snap = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, None)
+        .unwrap();
+
+    let result = svc.restore(&snap.id).unwrap();
+    let pre = result.pre_restore.expect("pre-restore snapshot");
+    assert_eq!(pre.id, snap.id);
+    assert_eq!(svc.list(None).unwrap().len(), 1);
+    assert_eq!(count_agent_snapshot_dirs(&backups_root, "claude"), 1);
+    assert_eq!(std::fs::read(&f).unwrap(), b"original");
 }

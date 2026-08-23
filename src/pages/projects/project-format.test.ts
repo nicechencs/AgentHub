@@ -4,6 +4,7 @@ import {
   displayTitle,
   extraPreview,
   fmtBytes,
+  nativeResumeCommand,
   nativeSessionId,
   projectDisplayPath,
   titleHoverLabel,
@@ -132,6 +133,19 @@ describe('nativeSessionId', () => {
     expect(nativeSessionId({ sessionId: '  abc  ' })).toBe('abc');
     expect(nativeSessionId({ sessionId: '   ' })).toBeNull();
     expect(nativeSessionId({})).toBeNull();
+  });
+});
+
+describe('nativeResumeCommand', () => {
+  it('returns the official resume command when the agent has one', () => {
+    expect(nativeResumeCommand({ agentId: 'claude', sessionId: 'abc' })).toBe(
+      'claude --resume abc',
+    );
+    expect(nativeResumeCommand({ agentId: 'codex', sessionId: 'abc' })).toBe(
+      'codex resume abc',
+    );
+    expect(nativeResumeCommand({ agentId: 'workbuddy', sessionId: 'abc' })).toBeNull();
+    expect(nativeResumeCommand({ agentId: 'claude', sessionId: '  ' })).toBeNull();
   });
 });
 

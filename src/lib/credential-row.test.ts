@@ -58,6 +58,22 @@ describe('toCredentialRow', () => {
     expect(row.auth.status).toBeTruthy();
   });
 
+  it('hides adapter-generated bridge names from the title', () => {
+    const row = toCredentialRow({
+      source: 'provider',
+      provider: prov({
+        id: 'claude-grok-adapter-bridge-grok-live-1',
+        name: 'Grok Subscription Bridge',
+        configText: JSON.stringify({
+          env: { ANTHROPIC_BASE_URL: 'http://127.0.0.1:44227' },
+        }),
+      }),
+    });
+    expect(row.title).toBe('本机路由');
+    expect(row.title).not.toMatch(/Bridge|grok-live|127\.0\.0\.1/i);
+    expect(row.subtitle).not.toMatch(/127\.0\.0\.1|44227/);
+  });
+
   it('projects provider stable fields with endpoint subtitle', () => {
     const row = toCredentialRow({
       source: 'provider',

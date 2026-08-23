@@ -1,6 +1,6 @@
 # 模型厂商、API 与 OAuth 适配规则
 
-> **现行状态（2026-08-19）**：§4 矩阵以代码为准；sidecar 未迁；Grok→Claude 走本机路由。
+> **现行状态（2026-08-21）**：§4 矩阵以代码为准；sidecar 未迁；Grok→Claude 走本机路由。§5.4 本机路由下游表面统一（三种对话端点 + `/v1/models` 收敛到一个网关进程）为 **2026-08-21 拍板的规划方向，未实现**。同日拍板：**路由开放原则**——除国产模型 OAuth（产品关闭，见硬规则 7）外，所有已登记票面（含 Claude 订阅）均可作为 ③ 本机路由的来源；具体边仍按工程门禁逐条打开。另拍板：**本机路由可挂多账号自动轮询与故障切换（规划，见 [§5.5](#55-多账号并发路由轮询与故障切换规划)）；负载均衡暂不做**。§5.1.2 Grok/Codex OAuth refresh owner 分治（Hub PKCE 账户池续期 / CLI 导入文件跟随 + 首事件前一次 401 重试）**已在当前工作区实现**；`credentials.format=live_ref` **未接线**。§5.1.3 本机路由动态 `GET /models` **已在当前工作区实现**。`Capability::ModelSelect` 仍为 Planned。
 > 状态：**当前工作区规则**，不代表已发布版本。
 > 最近核对：2026-08-15。
 > 本文是厂商入口、凭据类型和**现在能不能写上去**的规则真源。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。实现用的对象名见 [connection-binding-model.md](connection-binding-model.md)；页面与运行时见 [adapter-design.md](adapter-design.md)、[ui-design.md](ui-design.md)。日常说法：① = 直接改配置，② = 写进对方认的登录，③ = 本机转发。现行 UI 芯片是 **直连 / 用这份登录 / 本机路由**（①②③ 仍是架构名，不出现在 picker）。§4 是**当前可执行矩阵**，不是 UI 白名单，也不是产品终点。
@@ -35,10 +35,10 @@
 1. **API Key 与 OAuth 分开判断**：支持某厂商 API Key，不等于支持其订阅 OAuth。
 2. **协议必须写全名**：`OpenAI-compatible` 必须进一步区分 Chat Completions 与 Responses。
 3. **同厂商不同产品不得混用**：Base URL、Key、额度和授权范围都可能不同。
-4. **只认显式来源标记**：进口写下 `surface`；不能根据名称、标签或 URL 猜测。未识别标 `unknown`，规划结果是不可行，而不是把「接到…」藏掉。
+4. **只认显式来源标记**：进口写下 `surface`；不能根据名称、标签或 URL 猜测。未识别标 `unknown`，规划结果是不可行，而不是把「分享 / 路由」藏掉。
 5. **默认拒绝写入**：没有代码规则和测试的组合一律不能 `bind`。用户仍看得到原因。
 6. **不复制凭据**：绑定只引用这份登录；真实凭据只在写入 live 或请求上游时短暂解析。自动生成的配置不是新登录，不出现在登录列表。
-7. **国产 OAuth 产品不做**：不为中国产 AI 的 OAuth 开 Adapter 边（直接改配置 / 写进对方认的登录 / 本机转发都不开），也不把这类 OAuth 转成 API Key 或 to-api。现有国产边只认官方 API Key。见 [product-decisions.md](product-decisions.md) 与根 [AGENTS.md](../AGENTS.md)。
+7. **国产 OAuth 产品不做**：不为中国产 AI 的 OAuth 开 Adapter 边（直接改配置 / 写进对方认的登录 / 本机转发都不开），也不把这类 OAuth 转成 API Key 或 to-api。**Kimi 会员 OAuth（Kimi CLI `/login`）不得反代给其他 Agent**；Kimi 接到其他 Agent 只用会员 **API Key**（① 直连 / ③ 本机转发均可）。现有国产边只认官方 API Key。见 [product-decisions.md](product-decisions.md) 与根 [AGENTS.md](../AGENTS.md)。
 
 ### 1.1 跨 Agent 复用：三路，订阅不等于要起桥
 
@@ -53,7 +53,7 @@
 安全与运营边界（约束部署形态，不否决产品）：
 
 - 本机转发的上游 token 不可导出、不可显示、不可复制到目标 Agent；目标只得到本地 loopback bearer。写进对方认的登录写的是目标自己的官方槽，不是把 token 翻译成另一家 Key。
-- 不监听公网地址，不作为远程服务、团队共享端点、多租户网关、转售或额度池。
+- 不监听公网地址，不作为远程服务、团队共享端点、多租户网关或转售形态。个人本机范围内同一票面挂多个自己的账号做自动轮询与故障切换**已开放**（2026-08-21 拍板，见 [§5.5](#55-多账号并发路由轮询与故障切换规划)）；对外提供服务或转售额度仍不在产品范围。
 - 每条边仍要单独做分类、refresh、协议 fixtures 与回滚；不能因为「同为订阅」或「同为双协议」就自动 `canApply=true`。
 - 打开 `bind` 的条件是工程就绪。本机转发的非官方通道风险对用户可见并需 opt-in，**不再**当作「未获官方书面批准就不能做这条产品」。
 
@@ -65,9 +65,9 @@
 
 | 厂商 / 产品 | 常见凭据 | 协议或客户端约束 | AgentHub 当前结论 |
 |---|---|---|---|
-| Anthropic API / Claude Code | Anthropic API Key；Claude 官方登录 | Claude Code 可连接 Anthropic Messages 兼容网关 | Key → Pi 是 ①（已可 bind）。Claude 订阅 → Pi 是 ②（产品要做，写 Pi Anthropic 槽）。Claude 订阅 → Codex 明确产品不做：Codex 不吃 Anthropic PKCE |
+| Anthropic API / Claude Code | Anthropic API Key；Claude 官方登录 | Claude Code 可连接 Anthropic Messages 兼容网关 | Key → Pi 是 ①（已可 bind）。Claude 订阅 → Pi 是 ②（产品要做，写 Pi Anthropic 槽）。Claude 订阅 → Codex 原产品关闭，**2026-08-21 改判为可路由**（③ 本机路由方向开放，待取证后 experimental bind，见 [§5.4](#54-本机路由下游表面统一规划)） |
 | OpenAI API / ChatGPT / Codex | OpenAI API Key；ChatGPT subscription 登录 | Codex 支持 ChatGPT subscription 登录；自定义 Provider 仍要求 Responses | Key → Pi 是 ①（已可 bind）。Codex 订阅 → Pi 是 ②（写 `openai-codex` 槽）。带 access token 的 `auth_json` 订阅 → Claude 是 ③ Responses（experimental `local_bridge`）；App Server/OauthOther 仍关闭。OpenAI → Grok 已开 ① `native_endpoint`，写官方 Chat TOML |
-| Kimi Code 会员平台 | 会员 API Key，**不是 OAuth** | 同一产品提供 Anthropic Messages 与 OpenAI Chat Completions 兼容入口 | 已有 Claude 直连、Codex 实验 Bridge、Pi 预览规则；→ Grok 已开 ① `native_endpoint` |
+| Kimi Code 会员平台 | 会员 API Key，**不是 OAuth** | 同一产品提供 Anthropic Messages 与 OpenAI Chat Completions 兼容入口 | **Key 可给其他 Agent 用**：Claude 直连、Codex 实验 Bridge、Pi 配置同步、→ Grok ① `native_endpoint`。**会员 OAuth 产品不做**：不得识别为会员 Key，不得反代、不得写进对方、不得转 API |
 | Kimi 开放平台 | 开放平台 API Key | 使用独立 Base URL、额度和产品契约 | 不与 Kimi Code 会员 Key 混用；当前无 Adapter 路由 |
 | 智谱 GLM Coding Plan | Coding Plan API Key，**不是 OAuth** | 提供 Anthropic Messages、OpenAI Chat Completions 与官方 Responses 入口；套餐仅限官方支持的工具环境 | 已登记票面；① Claude bind 已开；① → Pi 已可 experimental bind（自定义 provider 槽）；① → Codex 已开（官方 Responses，experimental `native_endpoint`） |
 | DeepSeek API | DeepSeek API Key，**不是 OAuth** | 提供 Anthropic Messages、OpenAI Chat Completions 与官方 Responses 入口；部分 Anthropic 字段会被忽略或不支持 | 已登记票面；① Claude / DSH / Pi bind 已开；① → Codex 已开（官方 Responses，experimental `native_endpoint`） |
@@ -85,6 +85,7 @@
 
 - Kimi Code 会员 → Claude Code 可以使用 Anthropic 兼容入口直连。
 - Kimi Code 会员 → Codex 需要本地协议转换，不能只改 Base URL。
+- 以上两条都只认**会员 API Key**。Kimi CLI `/login` 的会员 OAuth **不得**走本机转发。
 
 ### 2.2 Kimi Code 与 Kimi 开放平台
 
@@ -95,7 +96,7 @@
 | 额度 | Kimi Code 会员编程权益 | 开放平台计费与额度 |
 | 是否可混用 | 否 | 否 |
 
-Kimi CLI `/login` 生成的 managed OAuth 又是第三种来源，不能伪装成上述任一 API Key。**产品不做**：不为该 OAuth 开 Adapter 边，也不把它转成 API。
+Kimi CLI `/login` 生成的 managed OAuth 又是第三种来源，不能伪装成上述任一 API Key。**产品不做**：不为该 OAuth 开 Adapter 边（含本机转发），也不把它转成 API。Kimi 接到其他 Agent 只用会员 Key。
 
 ### 2.3 GLM Coding Plan
 
@@ -151,7 +152,7 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 
 下表是**现在能写入的边**，不是产品上限。目标扩大方式见 [connection-binding-model.md §6](connection-binding-model.md#6-扩大在本模型里怎么做)。
 
-`plan()` 是**唯一规划出口**：route / maturity / canApply / reason 只在这里计算。矩阵仍是图；`canApply` = 矩阵开放 ∩ plan 私有 `write_gate`。`write_gate` 表示「有 bind 实现 ∧ secret 可按该票 `source_kind` 解析」。Account 与同表面 Provider 走同一条边（相同 route / support / reason 主旨）。本步可写的 Account 同边是 **Kimi Code 会员 / Anthropic / OpenAI / xAI API Key account → Pi**、**Kimi Code 会员 / Anthropic API Key account → Claude 或 Codex**、**Kimi / OpenAI API account → Grok**、**GLM Coding Plan / DeepSeek API account → Claude 或 Codex**，以及带 access token 的 **Codex auth_json / Grok OAuth Account → Claude**；Claude 订阅 → Codex 是产品关闭。写入入口是 `bind`（`apply_adapter` 为薄兼容委托）。不要把「无规则」当成 Account 不可写的原因。
+`plan()` 是**唯一规划出口**：route / maturity / canApply / reason 只在这里计算。矩阵仍是图；`canApply` = 矩阵开放 ∩ plan 私有 `write_gate`。`write_gate` 表示「有 bind 实现 ∧ secret 可按该票 `source_kind` 解析」。Account 与同表面 Provider 走同一条边（相同 route / support / reason 主旨）。本步可写的 Account 同边是 **Kimi Code 会员 / Anthropic / OpenAI / xAI API Key account → Pi**、**Kimi Code 会员 / Anthropic API Key account → Claude 或 Codex**、**OpenAI API Key account → Codex**、**Kimi / OpenAI API account → Grok**、**GLM Coding Plan / DeepSeek API account → Claude 或 Codex**，以及带 access token 的 **Codex auth_json / Grok OAuth Account → Claude**；Claude 订阅 → Codex 已于 2026-08-21 改判为可路由（③ 方向开放，规则与 fixtures 未落地前 `canApply=false`）。写入入口是 `bind`（`apply_adapter` 为薄兼容委托）。不要把「无规则」当成 Account 不可写的原因。
 
 | 显式来源 | 目标 | 分析结果 | 当前可执行状态 |
 |---|---|---|---|
@@ -171,6 +172,7 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 | Grok / xAI OAuth Account | Pi | experimental `config_sync` | **可 experimental bind**；`gateKind=none`，`reusePath=native_subscription`，`canApply=true`，`ruleId=grok-subscription-to-pi-v1`；写入 Pi `auth.json` 的 `xai` 槽，写入后由 Pi 拥有该槽刷新 |
 | OpenAI Provider / Account（preset / extra.provider / `api.openai.com`） | Pi | stable `config_sync` | **可 bind**；写入 Pi `models.json` 的 `openai` 槽（API Key 槽，不是 `openai-codex` OAuth），凭据只引用 |
 | OpenAI Provider / Account（preset / extra.provider / `api.openai.com`） | Grok | experimental `native_endpoint` | **可 experimental bind**；`ruleId=openai-api-to-grok-v1`，写入 `https://api.openai.com/v1`、`gpt-4o`、`api_backend=chat_completions` 的 Grok `config.toml` |
+| OpenAI Provider / Account（preset / extra.provider / `api.openai.com`） | Codex | experimental `local_bridge` | **可实验应用**；`ruleId=openai-api-to-codex-v1`，`plan.canApply=true`（secret 可解析时），下游 Responses → 上游官方 OpenAI Chat Completions（`https://api.openai.com/v1`，默认 `gpt-4o`），由 Tauri 专用 Bridge 路径执行，尚未完成端到端验收 |
 | xAI Provider / Account（preset / extra.provider / `api.x.ai`） | Pi | stable `config_sync` | **可 bind**；写入 Pi `models.json` 的 `xai` 槽，凭据只引用。xAI → Grok 是原生切换，不进矩阵 |
 | GLM Coding Plan Provider / Account（preset / extra.provider / 官方 host） | Claude Code | experimental `native_endpoint` | **可实验应用**；写入 `https://open.bigmodel.cn/api/anthropic`，凭据只引用 |
 | GLM Coding Plan Provider / Account | Pi | experimental `config_sync` | **可实验应用**；写入 `glm-coding-plan` 自定义槽与 `https://open.bigmodel.cn/api/coding/paas/v4`，凭据只引用 |
@@ -180,20 +182,23 @@ Bridge 转换的是请求、流式事件、工具调用、停止原因和用量�
 | DeepSeek API Provider / Account | Codex | experimental `native_endpoint` | **可实验应用**；`ruleId=deepseek-api-to-codex-v1`，写入 `https://api.deepseek.com`、`deepseek-v4-flash`、`wire_api=responses`，不起本机路由，凭据只引用 |
 | DeepSeek API Provider（preset `deepseek-api` / `deepseek` 或 host `api.deepseek.com`） | DeepSeek Harness（`dsh`） | stable `config_sync` | **可应用**；写入 home 级官方 provider 引用，Key 只进 `.credentials.yaml`，不进 `cordis.patch.yml` |
 | Codex OAuth Account，`credentials.format=auth_json`（ChatGPT subscription） | Claude Code | experimental `local_bridge` | **③ 已可 experimental bind**；`ruleId=codex-subscription-to-claude-responses-v1`，`plan.canApply=true`（Account 有 access token 时），写入 Claude loopback env；上游 OAuth token 不写入 Claude。同票 → Pi 是 ②，见 [product-decisions.md](product-decisions.md) |
-| Grok OAuth Account（有 `access_token`） | Claude Code | experimental `local_bridge` | **③ 已可 experimental bind**；`ruleId=grok-subscription-to-claude-v1`，上游 `https://api.x.ai/v1` Chat Completions、默认 `grok-4.5`；只写 Claude loopback env，上游 token 不写入 Claude |
-| Claude OAuth Account | Codex | `unsupported` | **产品不做**；`canApply=false`，reason 为「Codex 不吃 Anthropic PKCE，本产品不走这条边」 |
+| Grok OAuth Account（有 `access_token`） | Claude Code | experimental `local_bridge` | **③ 已可 experimental bind**；`ruleId=grok-subscription-to-claude-v1`，上游 `https://cli-chat-proxy.grok.com/v1` xAI Responses（`XaiResponsesOauth`）、默认 `grok-4.5`；只写 Claude loopback env，上游 token 不写入 Claude |
+| Grok OAuth Account（有 `access_token`） | Codex | experimental `local_bridge` | **③ 已可 experimental bind**；`ruleId=grok-subscription-to-codex-v1`，上游 cli-chat-proxy Responses；只写 Codex loopback，上游 token 不写入 Codex |
+| Codex OAuth Account（`auth_json`） | Grok | experimental `local_bridge` | **③ 已可 experimental bind**；`ruleId=codex-subscription-to-grok-v1`，Grok `api_backend=responses` 指向本机 loopback；上游 Codex token 不写入 Grok |
+| Claude OAuth Account | Codex | experimental `local_bridge`（preview） | **③ 方向已开放，暂不能 bind**。`ruleId=claude-subscription-to-codex-v1`，gates 全关、`canApply=false`；reason 为「规则与 fixtures 未落地」。下游 Responses → 上游 Anthropic Messages OAuth。取证通过前不打开 apply；thinking 无签名时降级关闭 |
+| Kimi managed OAuth（Kimi CLI `/login`、Pi `kimi-coding`） | 任意 | `unsupported` | **产品不做**；不得升成会员 Key，不得 ①/②/③，不得反代。Kimi 接到其他 Agent 只用会员 API Key |
 | 其他来源、目标或未标记记录 | 任意 | `unsupported` | 不产生写操作 |
 
 补充边界：
 
-- Kimi managed OAuth 不会被识别为 Kimi Code 会员 API Key；国产 OAuth **产品不做**开边或转 API（含 Pi `kimi-coding` 残件）。
+- Kimi managed OAuth 不会被识别为 Kimi Code 会员 API Key；**不得反代给其他 Agent**，国产 OAuth **产品不做**开边或转 API（含 Pi `kimi-coding` 残件）。Kimi 接到其他 Agent 只用会员 API Key（① Claude / Pi / Grok；③ → Codex）。
 - Kimi Code 会员识别：Provider 认 **`meta.preset=kimi-code-membership`** 或配置中的官方端点 **`api.kimi.com/coding`**；Account 只认 **`extra.provider` / `extra.preset` / `credentials.provider=kimi-code-membership`** 或 `credentials` / `extra` 中的官方端点，且必须是 `kind=apikey`。仅 `agent_id=kimi` 或 Moonshot 开放平台 **不会**升为会员。
 - 普通 OpenAI、xAI 只认显式标记（preset / extra.provider / 官方 host）；自定义中转保持 `unknown`，不可 bind。OpenAI/xAI → Pi 已可 bind；Kimi/OpenAI → Grok 已开 ① 官方 Chat TOML；xAI→Grok 不进矩阵（native）。
 - GLM Coding Plan、DeepSeek API 已登记票面（speaks 含 Responses），classify 只认显式标记；**Claude / Codex bind 已开**（①，experimental `native_endpoint`，Provider 与 Account）；DeepSeek → DSH **已可应用**（①，Provider，`deepseek-api-to-dsh-v1`）；GLM/DeepSeek → Pi **已可 experimental `config_sync` bind**（Provider 与 Account，自定义 provider 槽）。② → Pi 的 Claude/Codex/Grok 订阅 Account 已可 experimental bind；Pi 拥有写入槽的刷新，Hub 不双刷同一 refresh token。③ Codex→Claude 的 Responses `auth_json` 边已可 experimental bind；App Server 仍关闭，OauthOther / 缺 access token 仍不可写，见 [product-decisions.md](product-decisions.md)。
 - Gemini、Kimi 开放平台或任意“兼容 API”目前都不会自动升级为 Adapter 规则。
 - `stable` / `experimental` / `preview` / `none` 是 `plan.maturity`：矩阵开放+Stable → `stable`；矩阵开放+Experimental → `experimental`；有 cell 但 gates 关或仅可解释 → `preview`；无边 / Other → `none`。`canApply` 仍只表示现在能写入。
-- Kimi → Codex 与 Anthropic API Key → Codex 是当前两条 Bridge 可写路径，不代表已经提供通用协议网关。
-- 当前 Bridge 数据面按 profile/route 选择上游：Kimi→Codex 走 Chat Completions + bearer；Grok→Claude 复用 Chat Completions + bearer 并把 Chat SSE → IR → Anthropic SSE；Anthropic 走 Messages + `x-api-key` / `anthropic-version`；Codex→Claude 走 Responses + bearer。它不是通用 Responses 网关。
+- Kimi → Codex、Anthropic API Key → Codex 与 OpenAI API Key → Codex 是当前 **API Key** Bridge 可写路径，不代表已经提供通用协议网关，也不代表 Kimi OAuth 可以走桥。
+- 当前 Bridge 数据面按 profile/route 选择上游：Kimi→Codex 走 Chat Completions + bearer；Grok→Claude / Grok→Codex 走 xAI Responses OAuth（cli-chat-proxy）+ bearer；Codex→Grok 走 Codex Responses 上游、本机 `api_backend=responses`；Anthropic 走 Messages + `x-api-key` / `anthropic-version`；Codex→Claude 走 Responses + bearer。它不是通用 Responses 网关；下游表面统一为三种对话端点的规划见 [§5.4](#54-本机路由下游表面统一规划)，表面统一不等于通用转发，每条边的门禁不变。
 
 ## 5. OAuth 边界
 
@@ -201,11 +206,11 @@ AgentHub 当前可发起的登录与跨 Agent 适配是两套能力：
 
 | 登录目标 | AgentHub 当前入口 | 跨 Agent 复用（产品 / 实现） |
 |---|---|---|
-| Claude | PKCE | ② → Pi Anthropic 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。→ Codex 产品不做 |
-| Codex / ChatGPT | PKCE | ② → Pi `openai-codex` 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → Claude Responses 本机路由（已可 experimental bind；Hub 本轮不自动 refresh，过期需重新同步 Codex 登录） |
-| Grok / xAI | PKCE | ② → Pi xAI 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → Claude xAI Chat 本机路由（experimental bind） |
+| Claude | PKCE | ② → Pi Anthropic 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → 其他 Agent 本机路由按 2026-08-21 路由开放原则开放（含原「→ Codex 不做」的改判），逐边取证后 bind |
+| Codex / ChatGPT | PKCE | ② → Pi `openai-codex` 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → Claude Responses 本机路由（已可 experimental bind；refresh 按 §5.1.2 owner 分治：Hub PKCE 可账户池续期，CLI `auth.json` 导入只跟随文件） |
+| Grok / xAI | PKCE | ② → Pi xAI 槽（已可 experimental bind；由 Pi 拥有该槽刷新）。③ → Claude / Codex xAI Responses 本机路由（experimental bind）；Codex 订阅 → Grok 本机 `api_backend=responses`。refresh 方案见 §5.1.2（owner 分治，不与官方 CLI 互踢） |
 | Pi | Anthropic PKCE、OpenAI Codex PKCE、xAI device code | **第 2 路的标准落点**：只写入 Pi 对应槽；不能推导其他 Agent 也有这些槽 |
-| Kimi | 当前没有 AgentHub OAuth 登录入口 | **产品不做**国产 OAuth 开边或转 API。会员 API Key 走 ①/③；Kimi CLI managed OAuth / Pi `kimi-coding` 不得升成会员 Key，也不得登记 Adapter 边 |
+| Kimi | 当前没有 AgentHub OAuth 登录入口 | **产品不做**：会员 OAuth 不得写进对方、不得本机转发、不得转 API。**会员 API Key 可以给其他 Agent 用**（① Claude / Pi / Grok；③ → Codex）。Kimi CLI managed OAuth / Pi `kimi-coding` 不得升成会员 Key |
 | 其他国产登录（GLM / DeepSeek / 通义 / 豆包等） | 无 AgentHub OAuth 入口 | **产品不做**。已登记的只有官方 API Key 票面；OAuth 不进矩阵 |
 
 OAuth access/refresh token 带有客户端、受众、范围和刷新语义。只有目标客户端公开支持相同契约，并且 AgentHub 增加显式规则与测试后，才允许 `config_sync`；否则应引导用户使用目标客户端自己的登录流程。
@@ -214,11 +219,11 @@ OAuth access/refresh token 带有客户端、受众、范围和刷新语义。�
 
 该组合是 **③ 本机路由** 的旗舰边，**不是** ②：Claude Code 没有 ChatGPT 订阅槽。目标：Claude Code 通过 `ANTHROPIC_BASE_URL` 与 `ANTHROPIC_AUTH_TOKEN` 调用**本机** bridge，而不是把 ChatGPT OAuth token 写入 Claude Code。Codex 订阅 → Pi 走 ②，不要和本条混写。
 
-**当前实现**已可 bind Responses `auth_json` Account：`canApply=true`，创建 `local_bridge` profile、启动 loopback，并写入 Claude 的 `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`。仅 access token 在进程内注入上游；ChatGPT OAuth token 不进入 Claude 配置、IPC 或日志。Hub 本轮不做 single-flight refresh，过期需重新同步 Codex 登录。见 [product-decisions.md](product-decisions.md)。
+**当前实现**已可 bind Responses `auth_json` Account：`canApply=true`，创建 `local_bridge` profile、启动 loopback，并写入 Claude 的 `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`。仅 access token 在进程内注入上游；ChatGPT OAuth token 不进入 Claude 配置、IPC 或日志。refresh 按 §5.1.2 owner 分治：CLI 导入的 grant 不调 Codex token 端点，只跟随 `auth.json`；Hub PKCE grant 可账户池 single-flight 续期。见 [product-decisions.md](product-decisions.md)。
 
-### 5.1.1 Grok subscription → Claude Code：第 3 路，xAI Chat experimental bind
+### 5.1.1 Grok subscription → Claude Code / Codex：第 3 路，xAI Responses experimental bind
 
-Grok 订阅同样走 `local_bridge`，但上游是 `https://api.x.ai/v1` 的 Chat Completions，默认模型 `grok-4.5`，复用 `BridgeUpstreamProtocol::KimiChatCompletions`。只允许带 access token 的 Grok OAuth Account。写入走 `bind_ticket`；本机路由用 `local_token`，Claude 只写 loopback Base URL 与本地 bearer，xAI token 不进入 Claude 配置、IPC 或日志。Hub 本轮不自动 refresh，过期需重新同步 Grok 登录。loopback 导入按 Agent upsert 同一槽，不每次新开一行。
+Grok 订阅同样走 `local_bridge`，上游是 `https://cli-chat-proxy.grok.com/v1` 的 xAI Responses（`BridgeUpstreamProtocol::XaiResponsesOauth`），默认模型 `grok-4.5`。→ Claude 的本机表面是 Messages；→ Codex 的本机表面是 Responses。只允许带 access token 的 Grok OAuth Account。写入走 `bind_ticket`；本机路由用 `local_token`，目标只写 loopback 地址与本地 bearer，xAI token 不进入目标配置、IPC 或日志。上游请求带 Grok CLI 身份头（`x-xai-token-auth`、`x-grok-client-version` / `identifier` / `mode`、`x-authenticateresponse`）；会话 ID 从 Claude/Codex cache seed 哈希，禁止每请求随机 UUID。Claude `thinking` 映射为 Grok `reasoning`；本机桥按会话缓存 `encrypted_content` 并在下一轮补回，上游 400 解码失败则去掉密文重试。Codex `local_shell` / `apply_patch` 在透传前规范化。refresh 按 §5.1.2 owner 分治：CLI 导入 grant 只跟随 `auth.json`，Hub PKCE grant 只写账户池；首个有效流事件前的上游 401 会 in-place 换上游 bearer 并重试一次（local bearer 不变）。loopback 导入按 Agent upsert 同一槽，不每次新开一行。Codex 订阅 → Grok 是对称的第 3 路边：上游 Codex Responses，Grok `config.toml` 写 `api_backend=responses`。
 
 Responses 已选为本轮上游 transport，并用 fixtures / host health 验证本地闭环。App Server 继续保持关闭：
 
@@ -228,6 +233,74 @@ Responses 已选为本轮上游 transport，并用 fixtures / host health 验证
 | Codex Responses transport（含本机 Responses 反代） | OAuth + Responses 流式/工具/取消闭环、失败补偿与 secret 隔离 | `codex-subscription-to-claude-responses-v1` 已开放为 experimental；本轮不实现自动 refresh |
 
 被选定的 transport 必须证明：身份只用于当前用户，token 不跨 IPC 泄露，刷新不导致并发风暴，协议闭环正确，且失败不会留下可用的 Claude Code loopback 配置。两条都未就绪时，UI 仍展示这条产品边为可预览，并给出 Claude 自身登录或已支持 API Key 作为临时替代。
+
+### 5.1.2 Grok OAuth 复用：自动 refresh 方案（不与官方 Grok CLI 互踢）
+
+> 状态：**owner 分治 A–C 已在当前工作区实现（2026-08-21）**；**同一身份行与官方登录文件按 rt + mtime 双向覆盖已接线（2026-08-23）**。`credentials.format=live_ref`（跟随文件、不拷贝 token）**未接线**，账户层仍是拷贝快照 + list reconcile / 401 文件跟随。bridge 遇上游 401：CLI-owned 重读官方 `auth.json`，Hub-owned 走账户池 refresh；token 变了则只换内存上游 bearer 并在首个有效流事件前重试一次；没变则 502 `upstream_error`，CLI-owned 账户健康标 `NeedsLogin`。
+
+事实（以代码为准）：
+
+- Grok OAuth grant 的主来源是官方 CLI 的 `~/.grok/auth.json`（`GROK_HOME` 可覆写；池内包装为 `format=auth_json`，`extra.source=auth.json`）。Hub 也能以同一 `client_id=grok-cli` 发起 PKCE，但那是**另一个 grant**、另一对 token。
+- xAI refresh 会轮换 access/refresh 对。官方 CLI 自己会就地续期 `auth.json`；如果 Hub 拿**同一个** refresh token 去调 token 端点，轮换会使 CLI 手里的 refresh token 失效——这就是互踢。互踢只发生在两方共用同一对 token 时，不同 grant 之间不互踢。
+- 现有缓解已在代码：`account list` 时 `sync_current_live` / `live_reconcile` 把 CLI 轮换后的 token 对认作同一行更新；`account refresh` 对 Grok 显式拒绝并引导「同步当前登录」；bridge secret resolver 只解析 access token，故意不返回、不持久化 refresh token。
+
+方案（owner 分治：**谁登录的，谁续期**；Hub 永不刷新不属于自己的 refresh token）：
+
+| 凭据 owner | 判定 | refresh 行为 |
+|---|---|---|
+| 官方 Grok CLI（`extra.source=auth.json` 导入/同步） | 主路径 | **文件跟随同步**：请求前 access JWT `exp` 临期、或上游 401 时，按账户 single-flight（复用 `live_reconcile_lock`）走一次 live reconcile 重读 `auth.json`；token 变了就替换上游 auth 并重试一次（仅限首个有效流事件前，遵守 §5.3 重试边界）；没变则维持 502，账户健康标 `NeedsLogin`，UI 引导「同步当前登录」。**不调 `accounts.x.ai/oauth/token`** |
+| Hub 自己（Hub PKCE 登录产生的 grant，非 live 导入） | `extra.source` 为 `oauth_pkce` / `oauth_refresh` | 可做标准按账户 single-flight refresh：轮换只影响 Hub 自己的 token 对。刷新结果写账户池；**仅本进程这次 refresh 成功后**，且这一行与官方登录文件同一身份、`updated_at` 新于文件 mtime 时写回文件。list 不写文件 |
+
+**同一身份行 ↔ 官方登录文件（Grok / Codex `auth.json`，Claude `.credentials.json`）**：内存比较 refresh token 是否相同（双方都有 `rt` 且相等才算同一谱系；缺 `rt` 不算相同）。再用本行 `updated_at` 与文件 mtime（不是令牌 `expires_at`）决定 list 时谁覆盖**行**：文件更新则覆盖这一行；时间相同且 `rt` 不同则停手（`extra.oauthFileSync=needs_attention`，不改 `updated_at`）。**list / 打开连接页不写 CLI 登录文件**（heal / quota 的 `now_ts()` 不得赢走文件）。写回文件只发生在 **Hub 自己拥有的 grant、且本进程 refresh 成功之后**，并且这一行新于文件、身份对得上；Grok 嵌套 `auth.json` 只补同一 `user_id`/email 的 profile，不改其它槽。身份对不上则永不互写。显式「同步当前登录」（`import_live`）仍**总是以文件为准**覆盖这一行，不走 mtime 双向。API Key 没有 `rt`，通常 no-op。国产 OAuth 仍不开边。
+
+不变式：refresh token 不进 bridge、下游、IPC 或日志；listener 替换上游 auth 时 local bearer 不变（既有测试锚点 `ensure_listener_replaces_upstream_auth_while_keeping_local_bearer`）；文件跟随同步失败不得把其余账户或 token 暴露给调用方；Codex 订阅边继续沿用同一 owner 原则（`auth_json` 导入的 grant 归 Codex CLI 续期，Hub 跟随文件，同一身份则同样按 rt + mtime 对齐）。
+
+**凭据来源两种模式（用户可选，2026-08-21 拍板；跟随模式未接线）**：owner=CLI 的 grant 在账户层规划了两种存放方式，创建账户时由用户选择。现行实现只有**复制一份保存**；`live_ref` 跟随模式尚未落地。这是**凭据来源模式**，不是第四种 route，UI 不得叫「路由」（避免与本机路由混淆）；绑定走哪条边仍由 §4 矩阵与 `plan()` 决定，两种模式下可绑的边完全相同。
+
+| 模式 | 存什么 | 保鲜方式 | 适用 |
+|---|---|---|---|
+| **跟随 Grok CLI 登录文件（不复制）**——Grok OAuth 建议默认 | 账户行只存 `auth.json` 引用（路径 + profile key）与身份标识（email / `user_id`），**不拷贝 token**；secret 在请求 / health 时现读文件（新 `credentials.format=live_ref` 或同义标记） | 天然跟随：CLI 续期即生效，无同步动作、无过期窗口，结构上不可能互踢 | 装有官方 Grok CLI 且由它维持登录的主路径 |
+| **复制一份保存（快照，现行行为）** | 拷贝 `auth.json` 入池成独立行（`format=auth_json`） | list reconcile + 上表文件跟随同步 | 想钉住某个 grant（之后 CLI 换号，Hub 仍用旧登录）；Hub PKCE grant 只能入池 |
+
+跟随模式的护栏（缺一不可，fail-closed）：
+
+- **身份钉住**：创建时记录文件内 email / `user_id`；请求时文件身份变了**不静默切换**（计费与额度主体变了），账户标 `NeedsAttention`，用户确认后才更新引用。
+- **文件缺失 / CLI 登出**：稳定错误 + `NeedsLogin`；没有旧 token 可回落，不得缓存上一次读到的 token 继续用（最多允许单请求生命周期内复用一次读取结果）。
+- 跟随行自身不含 secret：列表、导出、日志、IPC 均无 token；`account refresh` 对跟随行同样拒绝。
+- 只允许指向本机受支持的官方 CLI 凭据文件（`GROK_HOME` / `~/.grok`），不接受任意路径；这是把 §1 硬规则「不复制凭据、绑定只引用」推进到账户层，不是新的凭据类。
+
+排查清单（token 过期 / 疑似互踢）：
+
+1. 症状分辨：下游 Claude/Codex 收到 **502 `code=upstream_error`** 才是上游 token 问题；**401 `invalid_api_key`** 是本机 bearer 错（查目标配置里的 loopback `api_key`），与上游无关。
+2. 看账户健康：`Renewable` / `NeedsLogin`（由 access JWT `exp` 推导，不看相对 `expires_in`）。
+3. 对照 `~/.grok/auth.json` 的 mtime 与账户池 token 是否一致；打开账户列表即触发 reconcile。跟随模式没有池内拷贝，本步改为直接看文件身份与 access JWT `exp`。
+4. 让官方 Grok CLI 自己跑一轮请求（它会就地续期 `auth.json`），然后 Hub「同步当前登录」，再重试 bridge 请求。跟随模式无需同步动作，CLI 续期后直接重试；若仍 502，查文件身份是否与账户钉住的身份一致（`NeedsAttention`）。
+5. 官方 CLI 自己也登录失效 → 在官方 CLI 重新登录，再同步；这是唯一需要用户重登的情况。
+6. 判定互踢：官方 CLI 报 refresh token 失效，且时间点与 Hub 的 token 端点调用吻合。现行实现对导入 grant **不调** token 端点；若发生即为回归，按本节方案修复，不得靠加重试掩盖。
+
+### 5.1.3 本机路由动态 GET /models（Grok 模型选择仍 Planned）
+
+> 状态：**已在当前工作区实现（2026-08-21）**。listener 提供 `GET /v1/models` 与 `GET /models` 别名，要求 local bearer；清单从 `adapter_model_mapping` + rule `default_model` **本机合成**，不透传上游。`Capability::ModelSelect` 仍为 Planned，也不经该能力放行。
+
+事实（以代码为准）：
+
+- 上游 cli-chat-proxy 与 ChatGPT Codex Responses **都没有** `/models` 端点（bridge health 探针对这两类协议显式跳过 `/models`）；所以动态 `/models` 不能是上游透传，只能本机按边合成。
+- 主要消费方是 **Codex 订阅 → Grok** 边：`config.toml` 写 `api_backend=responses` + loopback `base_url`，且投影**故意不写 model**；Grok CLI 若按 OpenAI 习惯 `GET {base_url}/models` 列模型，现在拿到本机合成清单。
+- Grok→Codex / Grok→Claude 方向不受影响：目标配置直接写 `model = "grok-4.5"`（rule `default_model`），不走 /models。
+
+方案：
+
+- listener 新增 `GET /v1/models`（`/models` 别名），要求 local bearer，未认证同 `/health` 一样拒绝。
+- 响应为 OpenAI 列表形状 `{"object":"list","data":[{"id":…,"object":"model"}]}`；内容从该 profile 的 rule **本机合成**：接线 `adapter_model_mapping.rs`（为 Codex→Grok 边补 entries）+ rule `default_model`。列出的 id 必须与 dispatch 改写规则（`apply_official_codex_model` / `is_leftover_bridge_model`）接受的集合一致——不能列一个发出去会被上游 400 的名字。
+- fail-closed：映射表缺失时，有非空 `default_model` 就只返回该单项，否则返回空 `data` 并记结构化日志；不猜上游、不发明 `gpt-*` / `grok-*` 名字。
+- 产品边界：这是本机路由表面的枚举能力，**不改变** `Capability::ModelSelect` 的 Planned 状态，也不经 `Capability::ModelSelect` 放行（先例：只读 MCP inventory 不改变 `Mcp` 状态）。`ModelSelect` 转 Full 仍需对应 Service 落地 + 本地验证。
+
+排查清单（模型选择 / 列表异常）：
+
+1. Grok CLI 指向 loopback 后列不出模型：带 local bearer `curl http://127.0.0.1:{port}/v1/models`。**401** = bearer 不对，查 `config.toml` 的 `api_key`；**404** = 回归（端点应存在）；**200 且 `data: []`** = 该边无映射表且无非空 `default_model`（fail-closed，不是 404）。
+2. 200 但清单与预期不符：查该边 rule 的 `adapter_model_mapping` entries 与 `default_model`；Codex→Grok 边投影仍故意不写 model，清单来自 `codex-subscription-grok-v1` 映射表。
+3. 选中的模型上游 400：确认该 id 经 dispatch 改写后仍被上游接受；leftover 前缀（`grok-*` / `claude-*` / `kimi-*` / `deepseek-*` / `agenthub_*_bridge`）会被 omit 而不是重写。
+4. dogfood 需实测并记录 Grok CLI 对 404 与空列表两种回答的行为差异（只记状态码与行为，不记正文）。
 
 ### 5.2 订阅桥接的分层契约
 
@@ -246,10 +319,10 @@ Connection / Account（core services owner）
 | 层 | 职责与边界 |
 |---|---|
 | `SourceIdentity` / credential classifier | 只以来源产品、账户、`credential_kind`、授权范围和显式 metadata 分类；拒绝名称猜测及 API key/OAuth 混用。 |
-| `SubscriptionSessionProvider` | 本轮由 `AdapterSecretResolver` 从 Account `auth_json` 解析 access token；只返回进程内授权上下文，绝不经 GUI/sidecar IPC 返回原始 secret。Hub 不做自动 refresh 或 single-flight refresh，过期需重新同步 Codex 登录。 |
+| `SubscriptionSessionProvider` | 本轮由 `AdapterSecretResolver` 从 Account `auth_json` 解析 access token；只返回进程内授权上下文，绝不经 GUI/sidecar IPC 返回原始 secret。refresh 按 §5.1.2 owner 分治：CLI 导入不调 token 端点，Hub PKCE 按账户 single-flight 续期且只写账户池。 |
 | `UpstreamTransport` | 封装一个经门禁批准的 App Server spike 或 Codex Responses transport；不让协议映射层、UI 或目标客户端猜端点。 |
 | `ProtocolKernel` / IR | 纯请求、事件和错误映射；不读数据库、不刷新凭据、不监听端口。 |
-| `DownstreamSurface` | 按协议暴露最小 loopback surface：本候选为 Anthropic Messages；现有 Kimi 路径仍为 Responses。 |
+| `DownstreamSurface` | 按协议暴露最小 loopback surface：本候选为 Anthropic Messages；现有 Kimi 路径仍为 Responses。下游表面的统一规划见 [§5.4](#54-本机路由下游表面统一规划)。 |
 | sidecar runtime | 目标：`agenthub-adapterd` 是 `local_bridge` 唯一运行时/监听 owner。当前仍由 Tauri `AppState` / `BridgeRuntimeHost` 进程内托管；sidecar IPC 未迁移。Connections、Account、Provider 与数据库/live-config 事务仍由 core services owner 持有。 |
 | capability matrix | 对每一 source × credential × transport × target × protocol × version 记录门禁、限制、fixtures 与验证日期；缺项即 fail-closed。真源：`crates/agenthub-core/src/domain/protocol_graph/adapter_capability_matrix.rs`（`ADAPTER_CAPABILITY_MATRIX` / `decide_adapter_capability` / `CODEX_SUBSCRIPTION_TO_CLAUDE_REASON`）。analyze 对外附带结构化 `ruleId` + `gateKind`（如 `subscription_candidate`），UI 不得只靠解析 reason 文案。`plan()` 是唯一规划出口；`plan.can_apply` = 矩阵开放 ∩ plan 私有 `write_gate`（有 bind 实现且 secret 可按 `source_kind` 解析；本步 Account 同边可写包括 Anthropic API → Pi 与带 access token 的 Codex `auth_json` → Claude Responses）。模型映射预留（**未接线**）：`adapter_model_mapping.rs`。状态分层预留（**未接线**）：`adapter_state_model.rs`。 |
 
@@ -277,7 +350,81 @@ Claude Code
 | 工具与 thinking | 工具 id/name/参数增量/结果须能闭环；thinking/reasoning 仅在两端有可验证等价语义时映射，不能伪造、解密或重建签名块。要验证不会同时让 Claude Code 与 Codex 作为独立 Agent 各执行一轮工具。 |
 | 结束与错误 | 映射 stop reason、输入/输出/缓存用量、认证/限流/协议错误；客户端取消应立即取消上游并终止 SSE。 |
 
-重试安全性是状态机的一部分：只有在**首个有效流事件前**的可判定瞬态失败可在严格次数和 `Retry-After` 约束下重试；一旦已经向 Claude Code 输出任何有效事件，禁止重放、换账号重试或重新执行工具回合。已有刷新流程按账户 single-flight；本轮 Codex Responses bridge 不自动 refresh，也不实现新的 single-flight，token 过期时要求重新同步 Codex 登录。账户失效应隔离并返回稳定错误，不把其余账户或 token 暴露给调用方。
+重试安全性是状态机的一部分：只有在**首个有效流事件前**的可判定瞬态失败可在严格次数和 `Retry-After` 约束下重试；一旦已经向 Claude Code 输出任何有效事件，禁止重放、重新执行工具回合，也**不在流中切换账号**（流中切换会破坏工具闭环与用量归属）。账号级故障切换发生在**请求边界或首个有效事件前**（见 [§5.5](#55-多账号并发路由轮询与故障切换规划)）。OAuth 订阅桥在首事件前的上游 401 仍先走 §5.1.2 owner 分治（文件跟随或 Hub 账户池 refresh）并最多重试一次，token 未变则 502 或按 §5.5 切换账号。账户失效应隔离并返回稳定错误，不把其余账户或 token 暴露给调用方。
+
+### 5.4 本机路由下游表面统一（规划）
+
+> 状态：**2026-08-21 拍板的规划方向，未实现**。本节只描述 `local_bridge` 的目标表面与程序结构，不改变任何边的 `canApply`；每条边仍走 `plan()` + capability matrix。实施任务拆分见 [routing-connection-refactor-plan.md](routing-connection-refactor-plan.md)（泳道 A / B）。
+>
+> **路由开放原则（2026-08-21 拍板）**：③ 本机转发对已登记票面**方向开放**，不再把「不是 API Key」或「订阅接到另一家工具」写成产品关闭。② 写对方原生 OAuth 槽仍须目标自己认这套登录，不能类推。国产 OAuth 仍产品关闭（硬规则 7）。方向开放 ≠ 立即可写：每条新边仍须登记票面、实现 transport、fixtures 取证后才 `canApply=true`。禁止导出 token、公网监听、转售。首个按此原则改判的边是 Claude 订阅 → Codex（原关闭是因为 ② 写 Codex 原生槽；改走 ③ 后待落地，见 [product-decisions.md](product-decisions.md)）。
+
+#### 5.4.1 统一的下游端点集合
+
+`local_bridge` 的下游表面收敛为**一个网关进程内的三种标准对话端点 + `/v1/models`**，不再按边各自定义表面形状：
+
+| 下游端点 | 协议形状 | 服务的目标 |
+|---|---|---|
+| `/v1/messages` | Anthropic Messages（SSE） | Claude Code（Codex→Claude、Grok→Claude） |
+| `/v1/responses` | OpenAI Responses（SSE） | Codex（Grok→Codex）；Grok `api_backend=responses`（Codex→Grok） |
+| `/v1/chat/completions` | OpenAI Chat Completions（SSE） | Grok `api_backend=chat_completions` 类及其它 OpenAI 风格 agent（预留） |
+| `/v1/models` | OpenAI 列表形状 | 模型枚举；**已实现**，见 [§5.1.3](#513-本机路由动态-get-modelsgrok-模型选择仍-planned) |
+
+后续候选端点（**暂缓，非承诺**）：
+
+- `/v1/embeddings`、`/v1/images/generations`、`/v1/images/edits`、`/v1/images/variations`：转发本身无难度，但只有支持该能力的 **Key 类上游**才有意义；订阅 OAuth 上游无这些端点。待有真实边需求再评估。
+- `/v1/realtime`：WebSocket 双向长连接，与 HTTP/SSE 状态机（首事件前重试、取消传播）不兼容，需要独立运行时。**暂不做。**
+
+技术边界（不因表面统一而消失）：
+
+- **thinking 签名块不可伪造**：上游不提供可验证签名 reasoning 时只能降级关闭 thinking，这是密码学边界。
+- 个别字段无跨协议等价项时 fail-closed 或显式 limitation，不追求无损。
+
+#### 5.4.2 统一后的程序结构与请求路径
+
+表面统一后，网关内部结构收敛为一条主路径，消除按边散落的 listener / 鉴权 / 分派逻辑：
+
+```text
+统一 loopback listener（唯一监听 owner：目标 agenthub-adapterd sidecar）
+  → local bearer 鉴权（对外一律 local_token；未认证拒绝同 /health）
+  → 按下游端点分派 DownstreamSurface（messages / responses / chat_completions）
+  → ProtocolKernel IR（纯映射，无 IO）
+  → 按边选择的 UpstreamTransport（含身份头、会话 seed、encrypted_content 缓存等按边逻辑）
+  → SubscriptionSessionProvider 注入授权上下文（refresh owner 分治不变，§5.1.2）
+  → IR → 下游 SSE 回写
+```
+
+这是 **bind 之后才起** 的本机 listener，不是默认一直挂着的兼容服务。
+
+分层职责沿用 [§5.2](#52-订阅桥接的分层契约)：`DownstreamSurface` 只认端点形状，`ProtocolKernel` 只做纯映射，按边差异全部收在 `UpstreamTransport` 与规则层。新增一条边 = 登记票面 + 实现/复用 transport + fixtures 取证，不再新写 listener 或鉴权。
+
+不变式（全部保留）：
+
+1. 仅 loopback，不监听公网；对外只发 local bearer。有绑定才起，不默认开机常开。
+2. 上游 token 不进入目标配置、IPC 或日志；refresh token 不进 bridge。
+3. 表面统一 ≠ 通用转发：端点形状是公共设施，**每条边仍需单独分类、fixtures、回滚取证**，「同为订阅 / 同端点」不自动 `canApply=true`。
+4. `/v1/models` 保持本机合成 + fail-closed（§5.1.3），不透传上游。
+5. 重试安全状态机不变（§5.3）：首个有效流事件前最多一次上游 401 重试，之后禁止重放。
+
+### 5.5 多账号并发路由：轮询与故障切换（规划）
+
+> 状态：**2026-08-21 拍板的产品方向，未实现**。适用于 ③ 本机路由的各边；② 写原生槽与 ① 直连不涉及。实施任务拆分见 [routing-connection-refactor-plan.md](routing-connection-refactor-plan.md)（泳道 C）。
+
+同一票面可挂多个自己的账号，网关按序自动轮询与故障切换：
+
+| 能力 | 行为 | 状态 |
+|---|---|---|
+| 自动轮询 | 同票面多个健康账号按固定顺序轮流承接新请求 | 规划 |
+| 故障切换 | 当前账号失效（`NeedsLogin` / 上游持续 401 / 健康探针失败）时，在**请求边界或首事件前**切到同票面下一账号；原账号标 `NeedsLogin` 并隔离，不影响其余账号 | 规划 |
+| 负载均衡（按压力/余额分配） | **暂不做**，后续视需要再评估 | 关闭 |
+
+不变式：
+
+1. **仅限本人账号、仅本机**：轮询池只收当前用户自己的登录；不监听公网、不对外提供服务、不转售额度（§1.1）。
+2. **切换只发生在请求边界或首事件前**：已向目标输出有效事件后不得中断换号（§5.3）；单请求生命周期内最多切换一次。
+3. **身份可追溯**：每次请求记录实际使用的账户标识；上游身份头、会话 seed 按**实际承接账号**生成，不串号。
+4. **refresh owner 分治不变**（§5.1.2）：每个账号独立 single-flight 续期/文件跟随；一个账号的刷新不触碰其他账号。
+5. **失败隔离不变**（§5.3）：某账号失效只标记自身，不向调用方暴露其余账号信息。
+6. 每条边的轮询支持仍需随该边 fixtures 一并取证后才 `canApply=true`。
 
 ## 6. 判定顺序
 

@@ -82,7 +82,7 @@ const emptyListProps = {
 
 describe('Bridges page', () => {
   it('describes the page as local-bridge runtime ops', () => {
-    expect(adapterPageDescription()).toBe('本机协议转换 · 仅 127.0.0.1');
+    expect(adapterPageDescription()).toBe('本机转发 · 仅 127.0.0.1 · 含端口');
   });
 
   it('rewrites /adapter, /router and /bridges bookmarks onto /routes and drops ?tab=', () => {
@@ -177,10 +177,88 @@ describe('Bridges page', () => {
     expect(markup).toContain('运行中');
     expect(markup).toContain('本机端点');
     expect(markup).toContain('目标写入');
-    expect(markup).toContain('解除绑定');
+    expect(markup).toContain('停止并还原');
     expect(markup).not.toContain('配置已生效');
     expect(markup).not.toContain('在 Connections 查看');
     expect(markup).not.toContain('删除适配');
+  });
+
+  it('keeps both surface-group members visible and greys the failed row with a reason', () => {
+    const profile = localBridgeProfile();
+    const markup = renderToStaticMarkup(
+      createElement(AdapterProfileDetailDialog, {
+        profile,
+        bridgeStatus: runningStatus(profile.id),
+        statusUnavailable: false,
+        entries: [
+          {
+            key: 'provider:kimi-1',
+            source: 'provider',
+            kind: 'apikey',
+            id: 'kimi-1',
+            agentId: 'kimi',
+            title: 'Kimi Code 会员',
+            subtitle: '已配置',
+            isCurrent: true,
+            authStatus: 'valid',
+            authHealth: 'configured',
+            sortKey: '',
+          },
+          {
+            key: 'account:kimi-stale',
+            source: 'account',
+            kind: 'apikey',
+            id: 'kimi-stale',
+            agentId: 'kimi',
+            title: 'Kimi 会员（失效号）',
+            subtitle: '需要重新登录',
+            isCurrent: false,
+            authStatus: 'expired',
+            authHealth: 'needs_login',
+            identityLabel: 'Kimi 会员（失效号）',
+            sortKey: '',
+          },
+        ],
+        surfaceGroups: [{
+          surface: 'kimi-code-membership',
+          credentialClass: 'api_key',
+          members: [
+            {
+              ticketId: 'account:kimi-stale',
+              sourceKind: 'account',
+              sourceId: 'kimi-stale',
+              agentId: 'kimi',
+              label: 'Kimi 会员（失效号）',
+              health: 'needs_login',
+            },
+            {
+              ticketId: 'provider:kimi-1',
+              sourceKind: 'provider',
+              sourceId: 'kimi-1',
+              agentId: 'kimi',
+              label: 'Kimi Code 会员',
+              health: 'renewable',
+            },
+          ],
+        }],
+        busy: false,
+        error: null,
+        onClose: vi.fn(),
+        onSetAutoStart: vi.fn(),
+        onRequestRemove: vi.fn(),
+      }),
+    );
+    expect(markup).toContain('同一类登录');
+    expect(markup).toContain('Kimi Code 会员');
+    expect(markup).toContain('Kimi 会员（失效号）');
+    expect(markup).toContain('需要重新登录');
+    expect(markup).toContain('>可用<');
+    expect(markup).toContain('当前使用');
+    expect(markup).toContain('text-muted');
+    expect(markup).not.toContain('sk-');
+    expect(markup).not.toContain('token');
+    expect(markup.indexOf('Kimi 会员（失效号）')).toBeGreaterThan(-1);
+    expect(markup.indexOf('Kimi Code 会员')).toBeGreaterThan(-1);
   });
 
   it('preserves successful resources when another pool or bridge status fails', async () => {
