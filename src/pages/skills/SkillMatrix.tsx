@@ -342,7 +342,7 @@ export function SkillMatrixLegend({ className }: { className?: string }) {
         {t('skills.legend.toggle')}
       </button>
       {open ? (
-        <div className="mt-1.5 rounded-btn border border-border/60 bg-subtle/40 px-3 py-2">
+        <div className="mt-1.5 rounded-card border border-border/60 bg-subtle/40 px-3 py-2">
           <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
             {items.map((item) => (
               <li key={item.key} className="flex min-w-[10rem] max-w-xs items-start gap-1.5">

@@ -774,7 +774,7 @@ export default function ProjectsPage() {
             </DialogDescription>
           </DialogHeader>
           {deleteTarget && (
-            <div className="rounded-btn bg-subtle px-3 py-2 text-sm">
+            <div className="rounded-card bg-subtle px-3 py-2 text-sm">
               <p className="font-medium">{deleteTarget.title}</p>
               {nativeSessionId(deleteTarget) && (
                 <p className="mt-0.5 break-all font-mono text-xs text-muted">

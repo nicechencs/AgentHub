@@ -42,7 +42,7 @@ Agent 品牌色（logo 点、图表系列；改 tokens.ts 的 AGENT_COLORS）:
   --agent-pi / --agent-workbuddy / --agent-cursor / --agent-dsh
   TS 取 hex：agentHex(id) ；样式绑定：agentCssVar(id) 或 AGENT_MAP[id].color
 字号:  仅三档，真源 `TYPE_SCALE`（`src/styles/tokens.ts`）— 16 `text-title` 页标题/空态主句/指标 · 13 `text-body` 正文/按钮/列表名/段标题 · 12 `text-meta` 次级/表头/路径/角标。`text-lg`/`text-xl`=`title`，`text-sm`/`text-base`=`body`，`text-xs`/`text-2xs`=`meta`（同像素别名，禁止再长出第四档）
-圆角:  6px `rounded-btn` 控件 / 8px `rounded-card` 卡片·弹层 / 12px `rounded-composer` 输入壳·聊天气泡；chip 与头像用 `rounded-full`（禁止魔法 `rounded-[Npx]`）
+圆角:  6px `rounded-btn` 控件 / 8px `rounded-card` 卡片·弹层（含 Tooltip）·嵌套面板·代码井 / 12px `rounded-composer` 输入壳·用户气泡（助手消息平铺）；chip / 头像 / Switch / Progress 用 `rounded-full`；产品标 `rounded-mark` 22% squircle。Tailwind 只生成这些语义名（禁止 `rounded-lg` / `rounded-[Npx]`）
 阴影:  `shadow-xs` 卡片 / `shadow-sm` 轻浮层(Tooltip、分段选中) / `shadow-md` popover·菜单·Toast / `shadow-lg` Dialog
 间距:  4 / 8 / 12 / 16 / 24 / 32（优先整数阶梯；列表卡 `p-3`、组合 Card 水平 `px-4`、Dialog `p-6`）
 边缘:  常规页 / TopBar / Skills 工作台水平 **24**（`pageRhythm.pageShell` / `workbenchX` / `pageEdgePx.x`）；Chat 主区 chrome **16**（`chatChromeX`）；Skills 预览距右缘 **24**、上下 **12**

@@ -14,7 +14,7 @@ export const TOOLTIP_SURFACE_CLASS = [
   'max-h-[min(var(--tooltip-max-height),calc(100vh-16px))]',
   'overflow-x-hidden overflow-y-auto',
   'break-words [overflow-wrap:anywhere]',
-  'rounded-btn border border-border bg-panel shadow-sm',
+  'rounded-card border border-border bg-panel shadow-sm',
   'px-[var(--tooltip-pad-x)] py-[var(--tooltip-pad-y)]',
   'text-left font-sans text-meta font-normal leading-[var(--font-meta-leading)] text-primary',
 ].join(' ');
@@ -24,7 +24,7 @@ export function tooltipSurfaceStyle(): React.CSSProperties {
   return {
     backgroundColor: 'var(--bg-panel)',
     border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-sm)',
+    borderRadius: 'var(--radius)',
     boxShadow: 'var(--shadow-sm)',
     color: 'var(--text-primary)',
     fontFamily:

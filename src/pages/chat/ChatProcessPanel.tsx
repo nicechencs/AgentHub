@@ -232,7 +232,7 @@ export function ChatProcessPanel({
               {view.command ? (
                 <div>
                   <div className="mb-0.5 text-muted">{t('chat.process.command')}</div>
-                  <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-btn bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-primary">
+                  <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-primary">
                     {view.command}
                   </pre>
                 </div>
@@ -240,7 +240,7 @@ export function ChatProcessPanel({
               {view.stderr ? (
                 <div>
                   <div className="mb-0.5 text-muted">stderr</div>
-                  <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all rounded-btn bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-danger/90">
+                  <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-danger/90">
                     {view.stderr}
                   </pre>
                 </div>

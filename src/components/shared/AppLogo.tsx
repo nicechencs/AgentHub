@@ -23,7 +23,7 @@ export function AppLogo({
       height={size}
       alt={alt}
       draggable={false}
-      className={cn('pointer-events-none select-none object-cover', className)}
+      className={cn('pointer-events-none select-none rounded-mark object-cover', className)}
     />
   );
 }

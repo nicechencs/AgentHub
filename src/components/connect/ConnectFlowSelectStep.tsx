@@ -627,7 +627,7 @@ function GuideActions({
 }) {
   const { t } = useI18n();
   return (
-    <section className="space-y-2 rounded-btn border border-border bg-subtle/60 p-3">
+    <section className="space-y-2 rounded-card border border-border bg-subtle/60 p-3">
       <p className="text-xs font-medium text-secondary">{t('connect.select.otherWays')}</p>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" onClick={onGoImport}>

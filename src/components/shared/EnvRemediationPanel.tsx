@@ -200,7 +200,7 @@ export function EnvRemediationPanel({
 
       {primary.status === 'broken_path' && (
         <Tip
-          className="mt-2 block rounded-btn border border-warning/30 bg-panel px-2.5 py-2 text-xs text-warning"
+          className="mt-2 block rounded-card border border-warning/30 bg-panel px-2.5 py-2 text-xs text-warning"
           label={t('chrome.env.pathTip')}
         >
           {t('chrome.env.pathHint')}
@@ -276,7 +276,7 @@ function RemediationRow({
 
   if (item.kind === 'url') {
     return (
-      <li className="flex items-center justify-between gap-2 rounded-btn border border-border bg-panel px-2.5 py-1.5">
+      <li className="flex items-center justify-between gap-2 rounded-card border border-border bg-panel px-2.5 py-1.5">
         <span className="text-xs text-secondary">{item.label ?? t('chrome.env.officialDownload')}</span>
         <Button size="sm" variant="ghost" className="h-7" onClick={() => onOpenUrl(item.value)}>
           <ExternalLink className="h-3.5 w-3.5" /> {t('common.open')}
@@ -286,7 +286,7 @@ function RemediationRow({
   }
 
   return (
-    <li className="flex items-center justify-between gap-2 rounded-btn border border-border bg-panel px-2.5 py-1.5">
+    <li className="flex items-center justify-between gap-2 rounded-card border border-border bg-panel px-2.5 py-1.5">
       <div className="min-w-0">
         <p className="text-xs text-muted">
           {item.label ??

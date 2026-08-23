@@ -38,7 +38,6 @@ import {
 } from './adapter-model';
 import {
   adapterProfileRecoveryGuide,
-  adapterStatusDotClass,
   adapterStatusTextClass,
   bridgeRuntimeStatusView,
   resolveAdapterProfileSource,
@@ -193,7 +192,7 @@ function ProfileDetailBody({
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
         <section className="space-y-1.5">
           <h3 className="text-sm font-medium">{t('routes.status')}</h3>
-          <div className="space-y-1 rounded-btn border border-border bg-subtle p-3">
+          <div className="space-y-1 rounded-card border border-border bg-subtle p-3">
             {runtimeStatus ? <DetailStatusLine view={runtimeStatus} /> : null}
           </div>
         </section>
@@ -201,7 +200,7 @@ function ProfileDetailBody({
         {members.length > 0 ? (
           <section className="space-y-1.5">
             <h3 className="text-body font-medium">{t('routes.members.title')}</h3>
-            <ul className="space-y-1.5 rounded-btn border border-border bg-subtle p-3">
+            <ul className="space-y-1.5 rounded-card border border-border bg-subtle p-3">
               {members.map((member) => (
                 <li
                   key={member.ticketId}
@@ -238,7 +237,7 @@ function ProfileDetailBody({
         {isBridge ? (
           <section className="space-y-1.5">
             <h3 className="text-sm font-medium">{t('routes.localEndpoint')}</h3>
-            <div className="space-y-2 rounded-btn border border-border bg-subtle p-3 text-sm">
+            <div className="space-y-2 rounded-card border border-border bg-subtle p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-muted">{t('routes.localEndpointLabel')}</span>
                 {endpointPath && endpointId ? (
@@ -316,7 +315,7 @@ function ProfileDetailBody({
 
         {error ? <AdapterErrorLines error={error} fallback={t('routes.mutationFailure')} /> : null}
 
-        <details className="group rounded-btn border border-border bg-subtle/60">
+        <details className="group rounded-card border border-border bg-subtle/60">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
             <span>{t('routes.diagnostics')}</span>
             <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden />
@@ -367,9 +366,10 @@ function ProfileDetailBody({
 function DetailStatusLine({ view }: { view: AdapterStatusView }) {
   return (
     <p className="flex items-center gap-2 text-sm">
-      <span
-        className={`inline-block h-2 w-2 shrink-0 rounded-full ${adapterStatusDotClass(view.tone)}${view.pulse ? ' animate-pulse' : ''}`}
-        aria-hidden
+      <StatusPin
+        tone={view.tone}
+        size="md"
+        className={view.pulse ? 'animate-pulse' : undefined}
       />
       <span className={adapterStatusTextClass(view.tone)}>{view.label}</span>
     </p>

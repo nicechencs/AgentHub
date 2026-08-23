@@ -40,7 +40,7 @@
 | 约束 | 现行值 | 说明 |
 |---|---|---|
 | 字号 | 仅三档：`text-title` 16 / `text-body` 13 / `text-meta` 12 | `text-sm`/`text-xs` 等是同像素别名，**新代码写语义名** |
-| 圆角 | `rounded-btn` 6 / `rounded-card` 8 / `rounded-composer` 12 | 禁止 `rounded-[Npx]` |
+| 圆角 | `rounded-btn` 6 / `rounded-card` 8 / `rounded-composer` 12 / `rounded-mark` 产品标 | 禁止 `rounded-[Npx]`、`rounded-lg`、`rounded-2xl`；嵌套面板、Tooltip、代码井用 card |
 | 阴影 | `shadow-xs` 卡 / `sm` 轻浮层 / `md` 菜单·Toast / `lg` Dialog | |
 | 焦点环 | `focus:ring-2 focus:ring-accent/60` | Input / Button / Select 已对齐；**不要**再改成 1px 方言 |
 | Accent | 浅 `#4F46E5`，深 `#6366F1` | Phase 0 已选：保留 indigo，只降暴露。换色相 = Phase 5，先不做 |

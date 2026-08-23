@@ -242,7 +242,7 @@ export function UpdatePrompt({ onReady }: UpdatePromptProps) {
         </DialogHeader>
 
         {info?.notes ? (
-          <div className="max-h-40 overflow-y-auto rounded-btn border border-border bg-canvas/60 p-3 text-xs leading-relaxed text-secondary whitespace-pre-wrap">
+          <div className="max-h-40 overflow-y-auto rounded-card border border-border bg-canvas/60 p-3 text-xs leading-relaxed text-secondary whitespace-pre-wrap">
             {info.notes}
           </div>
         ) : (

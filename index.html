@@ -39,6 +39,7 @@
         --agent-pi: #0ea5e9;
         --agent-workbuddy: #0052d9;
         --agent-cursor: #f54e00;
+        --radius-mark: 22%;
       }
       html.dark {
         --bg-canvas: #0a0a0b;
@@ -103,7 +104,7 @@
       #boot-fallback .mark-ring {
         position: absolute;
         inset: 0;
-        border-radius: 16px;
+        border-radius: var(--radius-mark, 22%);
         background: color-mix(in srgb, var(--accent) 18%, transparent);
         filter: blur(10px);
         animation: boot-ring 1.8s ease-in-out infinite;
@@ -112,7 +113,7 @@
         position: relative;
         width: 48px;
         height: 48px;
-        border-radius: 22%;
+        border-radius: var(--radius-mark, 22%);
         overflow: hidden;
         display: flex;
         align-items: center;

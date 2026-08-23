@@ -244,7 +244,7 @@ export function MarkdownView({
               '[&_h4]:!mt-2.5 [&_h4]:!mb-1 [&_h4]:!text-body [&_h4]:!font-medium [&_h4]:!text-primary',
               '[&_p]:!my-1.5 [&_p]:!text-body [&_p]:!leading-[1.45] [&_p]:!text-primary',
               '[&_ul]:!my-1.5 [&_ol]:!my-1.5 [&_li]:!my-0.5 [&_li]:!text-body',
-              '[&_pre]:!my-2.5 [&_pre]:!max-w-full [&_pre]:!overflow-x-auto [&_pre]:!rounded-btn [&_pre]:!text-meta',
+              '[&_pre]:!my-2.5 [&_pre]:!max-w-full [&_pre]:!overflow-x-auto [&_pre]:!rounded-card [&_pre]:!text-meta',
               '[&_code]:!text-meta [&_code]:!font-mono',
               '[&_blockquote]:!my-2 [&_blockquote]:!border-l-2 [&_blockquote]:!border-border [&_blockquote]:!pl-3 [&_blockquote]:!text-secondary',
               '[&_hr]:!my-3 [&_hr]:!border-border',

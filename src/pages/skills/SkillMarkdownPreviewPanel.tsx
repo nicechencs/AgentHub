@@ -294,7 +294,7 @@ export function SkillMarkdownPreviewPanel({
             )}
           </div>
         ) : (
-          <pre className="min-w-0 overflow-x-auto whitespace-pre-wrap break-words rounded-btn border border-border/60 bg-subtle p-3 font-mono text-xs leading-relaxed text-primary">
+          <pre className="min-w-0 overflow-x-auto whitespace-pre-wrap break-words rounded-card border border-border/60 bg-subtle p-3 font-mono text-xs leading-relaxed text-primary">
             {content}
           </pre>
         )}

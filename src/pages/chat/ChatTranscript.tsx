@@ -2,6 +2,7 @@ import type { RefObject } from 'react';
 import { Loader2 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { StatusPin } from '@/components/shared/StatusPin';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { agentDisplayName } from '@/config/agents';
@@ -180,13 +181,13 @@ function ChipStatus({ status }: { status: ChatMessageStatus }) {
   }
   const tone =
     status === 'ok'
-      ? 'bg-success'
+      ? 'success'
       : status === 'failed' || status === 'timeout'
-        ? 'bg-danger'
-        : 'bg-muted';
+        ? 'danger'
+        : 'muted';
   return (
-    <span className={cn('inline-block h-1.5 w-1.5 rounded-full', tone)} aria-label={label}>
-      <span className="sr-only">{label}</span>
+    <span className="inline-flex" aria-label={label}>
+      <StatusPin tone={tone} size="sm" />
     </span>
   );
 }

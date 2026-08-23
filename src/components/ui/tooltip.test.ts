@@ -27,7 +27,7 @@ describe('tooltip surface contract', () => {
     expect(TOOLTIP_SURFACE_CLASS).toContain('w-max');
     expect(TOOLTIP_SURFACE_CLASS).toContain('break-words');
     expect(TOOLTIP_SURFACE_CLASS).toContain('[overflow-wrap:anywhere]');
-    expect(TOOLTIP_SURFACE_CLASS).toContain('rounded-btn');
+    expect(TOOLTIP_SURFACE_CLASS).toContain('rounded-card');
     expect(TOOLTIP_SURFACE_CLASS).toContain('bg-panel');
     expect(TOOLTIP_SURFACE_CLASS).toContain('border-border');
     expect(TOOLTIP_SURFACE_CLASS).toContain('text-meta');
@@ -41,7 +41,7 @@ describe('tooltip surface contract', () => {
     expect(tooltipSurfaceStyle()).toMatchObject({
       backgroundColor: 'var(--bg-panel)',
       border: '1px solid var(--border)',
-      borderRadius: 'var(--radius-sm)',
+      borderRadius: 'var(--radius)',
       maxWidth: TOOLTIP.maxWidth,
       maxHeight: `min(${TOOLTIP.maxHeight}, calc(100vh - 16px))`,
       fontSize: 'var(--font-meta-size)',

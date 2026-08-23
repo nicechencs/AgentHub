@@ -3,6 +3,7 @@ import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { StatusPin } from '@/components/shared/StatusPin';
 import { ListRow } from '@/components/shared/ListRow';
 import { CopyableRouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { Button } from '@/components/ui/button';
@@ -21,7 +22,6 @@ import {
 import {
   adapterProfilePrimaryAction,
   adapterProfileRecoveryGuide,
-  adapterStatusDotClass,
   adapterStatusTextClass,
   bridgeRuntimeStatusView,
   resolveAdapterProfileSource,
@@ -243,9 +243,10 @@ function AdapterProfileRow({
 function StatusLine({ view, emphasis = false }: { view: AdapterStatusView; emphasis?: boolean }) {
   return (
     <span className={emphasis ? 'flex items-center gap-1.5 text-sm' : 'flex items-center gap-1.5 text-xs'}>
-      <span
-        className={`inline-block h-2 w-2 shrink-0 rounded-full ${adapterStatusDotClass(view.tone)}${view.pulse ? ' animate-pulse' : ''}`}
-        aria-hidden
+      <StatusPin
+        tone={view.tone}
+        size="md"
+        className={view.pulse ? 'animate-pulse' : undefined}
       />
       <span className={adapterStatusTextClass(view.tone)}>{view.label}</span>
     </span>
