@@ -35,7 +35,6 @@ describe('create-route-flow', () => {
   });
 
   it('rejects a URL that is not http(s)', () => {
-    const { canSubmitCreateRoute } = require('./create-route-flow') as typeof import('./create-route-flow');
     expect(canSubmitCreateRoute({
       name: 'x',
       url: 'openrouter.ai/api/v1',
