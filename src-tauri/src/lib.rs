@@ -79,15 +79,11 @@ pub fn run() {
                     let _ = window.hide();
                     return;
                 }
-                let bridge_active =
-                    exit_coordinator::ExitCoordinator::requires_impact_confirmation(
-                        state.exit_coordinator().prepare_exit(&state.bridge_host()),
-                    );
-                if decide_close_action(
-                    state.should_exit(),
-                    state.close_to_tray(),
-                    bridge_active,
-                ) == CloseAction::HideToTray
+                let bridge_active = exit_coordinator::ExitCoordinator::requires_impact_confirmation(
+                    state.exit_coordinator().prepare_exit(&state.bridge_host()),
+                );
+                if decide_close_action(state.should_exit(), state.close_to_tray(), bridge_active)
+                    == CloseAction::HideToTray
                 {
                     api.prevent_close();
                     let _ = window.hide();
