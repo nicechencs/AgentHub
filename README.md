@@ -98,12 +98,12 @@ pnpm dev:mock
 | `pnpm build` | 前端生产构建，强制使用 Tauri adapter |
 | `pnpm tauri:build` | 构建桌面安装包 |
 | `pnpm tauri:build:macos` | 构建本地使用的 macOS `.app` |
-| `pnpm tauri:build:linux` | 构建本地使用的 Linux `.deb` 与 AppImage（未签名；正式包由 `release` 分支的 GitHub Actions 发布） |
+| `pnpm tauri:build:linux` | 构建本地使用的 Linux `.deb` 与 AppImage（未签名；正式包由推送 `v*` tag 的 GitHub Actions 发布） |
 | `./run.sh --check` | 检查 macOS/Linux 源码运行依赖 |
 | `cargo test -p agenthub-core` | 运行 Rust core 测试 |
 | `cargo run -p agenthub-cli -- --help` | 查看 CLI 帮助 |
 
-正式 Release 由 `release` 分支的 GitHub Actions 生成和发布，本地发布命令已禁用。日常 PR 合入 `dev`。要出新版本，须同时 bump `package.json`、`Cargo.toml` 的 `[workspace.package]`、`src-tauri/tauri.conf.json`（当前都是 0.2.3；已有 tag `v0.2.2`，workflow 会拒绝覆盖已有 tag），再更新 `release` 分支。`dev` 与 `release` 是无关历史（`dev` 于 8 月中改写过），不要把 `dev` 合并进 `release`。
+正式 Release 由推送到仓库的 `v*` tag 触发 GitHub Actions 生成和发布（tag 必须指向 `release` 分支上的提交），本地发布命令已禁用。日常 PR 合入 `dev`。要出新版本，须同时 bump `package.json`、`Cargo.toml` 的 `[workspace.package]`、`src-tauri/tauri.conf.json`（当前都是 0.2.3；已有 tag `v0.2.2`，workflow 会拒绝覆盖已有 tag），先更新 `release` 分支，再打并推送匹配的 `vX.Y.Z` tag。`dev` 与 `release` 是无关历史（`dev` 于 8 月中改写过），不要把 `dev` 合并进 `release`。
 
 ## 数据与隐私
 

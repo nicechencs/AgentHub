@@ -2,12 +2,14 @@ name: Release
 
 on:
   push:
-    branches:
-      - release
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
 
-# Build runs must never be cancelled midway after a later release push. Only
-# the publish job receives a write token, and it runs after both builds pass.
+# Releases start from a v* tag whose commit is on origin/release.
+# Build runs must never be cancelled midway after a later run of the same
+# tag. Only the publish job receives a write token, and it runs after
+# every platform build. CI never creates or moves tags.
 permissions:
   contents: read
 
@@ -25,19 +27,43 @@ jobs:
       tag: ${{ steps.metadata.outputs.tag }}
       prerelease: ${{ steps.metadata.outputs.prerelease }}
     steps:
-      - name: Require the release branch
+      - name: Require a version tag
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$GITHUB_REF" != "refs/heads/release" ]; then
-            echo "Releases may only run from refs/heads/release; received $GITHUB_REF" >&2
-            exit 1
-          fi
+          case "$GITHUB_REF" in
+            refs/tags/v*) ;;
+            *)
+              echo "Releases may only run from a v* tag; received $GITHUB_REF" >&2
+              exit 1
+              ;;
+          esac
 
-      - name: Checkout release commit
+      - name: Checkout tagged commit
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           fetch-depth: 0
+
+      - name: Require tagged commit is on origin/release
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=0
+          for attempt in 1 2 3 4 5 6; do
+            if git fetch --no-tags origin release; then
+              if git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+                found=1
+                break
+              fi
+            fi
+            if [ "$attempt" -lt 6 ]; then
+              sleep 5
+            fi
+          done
+          if [ "$found" -ne 1 ]; then
+            echo "Tag $GITHUB_REF_NAME ($GITHUB_SHA) is not on origin/release; refusing to release." >&2
+            exit 1
+          fi
 
       - name: Setup Node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -80,7 +106,7 @@ jobs:
 
       - name: Validate release version
         id: metadata
-        run: node scripts/release-metadata.mjs --github-output "$GITHUB_OUTPUT"
+        run: node scripts/release-metadata.mjs --github-output "$GITHUB_OUTPUT" --expect-tag "$GITHUB_REF_NAME"
 
       - name: Test release scripts
         run: |
@@ -112,6 +138,10 @@ jobs:
             exit 1
           fi
           tag_sha="$(printf '%s\n' "$tag_line" | awk 'NF {print $1; exit}')"
+          if [ -z "$tag_sha" ]; then
+            echo "Release tag $TAG is missing on origin; CI does not create tags." >&2
+            exit 1
+          fi
           if [ -n "$tag_sha" ]; then
             if ! peeled_line="$(git ls-remote origin "refs/tags/$TAG^{}")"; then
               echo "Unable to resolve annotated tag $TAG; refusing to release without a definitive result." >&2
@@ -568,8 +598,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$GITHUB_REF" != "refs/heads/release" ]; then
-            echo "Releases may only publish from refs/heads/release; received $GITHUB_REF" >&2
+          if [ "$GITHUB_REF" != "refs/tags/$TAG" ]; then
+            echo "Releases may only publish from refs/tags/$TAG; received $GITHUB_REF" >&2
             exit 1
           fi
           case "$PRERELEASE" in
@@ -581,6 +611,10 @@ jobs:
             exit 1
           fi
           tag_sha="$(printf '%s\n' "$tag_line" | awk 'NF {print $1; exit}')"
+          if [ -z "$tag_sha" ]; then
+            echo "Release tag $TAG is missing on origin; CI does not create tags." >&2
+            exit 1
+          fi
           if [ -n "$tag_sha" ]; then
             if ! peeled_line="$(git ls-remote origin "refs/tags/$TAG^{}")"; then
               echo "Unable to resolve annotated tag $TAG; refusing to release without a definitive result." >&2
@@ -739,15 +773,11 @@ jobs:
 
           find "$ASSETS" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort
 
-          # Claim the tag only after every asset and latest.json is ready. A
-          # lightweight tag push is the atomic remote ownership check. A tag
-          # that was already verified above is safe to reuse on a retry.
+          # The triggering v* tag is the release identity. CI never creates
+          # or moves tags; a missing tag is a hard failure, not a claim.
           if [ -z "$tag_sha" ]; then
-            git tag "$TAG" "$GITHUB_SHA"
-            if ! git push origin "refs/tags/$TAG"; then
-              echo "Unable to claim release tag $TAG; it may have been created concurrently." >&2
-              exit 1
-            fi
+            echo "Release tag $TAG is missing on origin; CI does not create tags." >&2
+            exit 1
           fi
           if ! tag_line="$(git ls-remote --refs origin "refs/tags/$TAG")"; then
             echo "Unable to confirm remote tag $TAG before creating the release." >&2

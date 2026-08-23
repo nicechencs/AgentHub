@@ -124,7 +124,7 @@ Hub Phase 1 统一连接流程的测试分文件存放（遵守 §1）；前端 
 | 触发 | 工作流 | 内容 |
 |---|---|---|
 | PR / push `dev`·`main` | `.github/workflows/pr-ci.yml` | `pnpm typecheck`、`pnpm typecheck:test`、全量 `pnpm test`、`cargo test -p agenthub-core` |
-| push `release` | `.github/workflows/release.yml` | 更严：`pnpm typecheck` + `pnpm typecheck:test` + 全量 `pnpm test` + `cargo test --workspace` + 打包发布元数据 |
+| push `v*` tag | `.github/workflows/release.yml` | 更严：`pnpm typecheck` + `pnpm typecheck:test` + 全量 `pnpm test` + `cargo test --workspace` + 打包发布元数据；tag 必须指向 `release` 上的提交且与三文件版本一致 |
 
 本地等价：`pnpm test:pr`。
 
