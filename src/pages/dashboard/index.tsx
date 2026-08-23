@@ -62,7 +62,6 @@ import {
   type UsageAvailability,
   type UsageOverview,
 } from '@/lib/api/usage';
-import { createBackup } from '@/lib/api/backup';
 import { listTicketWallet, type TicketWallet } from '@/lib/api/tickets';
 import type { MessageKey } from '@/lib/i18n';
 import { activeBindingForAgent } from '@/lib/ticket-wallet';
@@ -102,6 +101,7 @@ import {
   usageWindowBound,
   type DateRange,
 } from './usageOverviewModel';
+import { dashboardBackupNowHref } from './dashboard-actions';
 
 const DATE_RANGE_OPTIONS: { value: DateRange; days: number }[] = [
   { value: 'today', days: 1 },
@@ -141,7 +141,6 @@ export default function DashboardPage() {
   const [runtimes, setRuntimes] = useState<RuntimeDetect[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(true);
   const [agentsError, setAgentsError] = useState<unknown>(null);
-  const [backingUp, setBackingUp] = useState(false);
   const hiddenIds = useMemo(() => hiddenAgentIdSet(agents ?? []), [agents]);
   const hiddenAgentList = useMemo(() => [...hiddenIds].sort(), [hiddenIds]);
 
@@ -462,27 +461,8 @@ export default function DashboardPage() {
     return () => window.clearTimeout(scrollTimer);
   }, [searchParams, agentsLoading, usageLoading]);
 
-  const handleBackupAll = async () => {
-    if (!agents) return;
-    const installed = agents.filter((a) => a.installed && !a.hidden);
-    if (installed.length === 0) {
-      toast({ title: t('dashboard.page.noInstalledAgent'), variant: 'danger' });
-      return;
-    }
-    setBackingUp(true);
-    try {
-      await Promise.all(installed.map((a) => createBackup(a.agentId, t('dashboard.page.backupNote'))));
-      toast({
-        title: t('dashboard.page.backupDone'),
-        description: t('dashboard.page.backupDoneDesc', { n: installed.length }),
-        variant: 'success',
-      });
-      navigate('/settings?tab=backups');
-    } catch (e) {
-      toast({ title: t('dashboard.page.backupFailed'), description: String(e), variant: 'danger' });
-    } finally {
-      setBackingUp(false);
-    }
+  const handleBackupNow = () => {
+    navigate(dashboardBackupNowHref());
   };
 
   const usageUnavailable = usageAvailability?.status === 'unavailable';
@@ -853,11 +833,10 @@ export default function DashboardPage() {
                   <Button
                     variant="outline"
                     className="justify-start"
-                    disabled={backingUp || !agents}
-                    onClick={() => void handleBackupAll()}
+                    onClick={handleBackupNow}
                   >
                     <DatabaseBackup className="h-4 w-4" />
-                    {backingUp ? t('dashboard.page.backingUp') : t('dashboard.page.backupNow')}
+                    {t('dashboard.page.backupNow')}
                   </Button>
                 </CardContent>
               </Card>

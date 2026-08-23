@@ -13,6 +13,10 @@
 //! Results are written into `account.extra` for the existing UI fields
 //! (`quota5hPct`, `quota7dPct`, `quotaResetIn`). List probes are best-effort;
 //! an explicit Connections refresh surfaces probe failures.
+//!
+//! The Connections 5h QuotaBar is official-only: if Codex `/responses` headers
+//! or `/wham/usage` omit the 5h window, `quota5hPct` is cleared and the UI
+//! hides that bar. Do not invent a 5h percent from the 7d window.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 

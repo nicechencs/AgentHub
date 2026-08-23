@@ -189,6 +189,20 @@ describe('connection-model', () => {
     }
   });
 
+  it('shows a Chinese empty reason when 导入当前授权 has no live probe', () => {
+    expect(liveAuthImportGate(null, false, 'claude')).toEqual({
+      enabled: false,
+      reason: '无法确认本机登录态，已禁用导入',
+    });
+    expect(liveAuthImportGate(undefined, false, 'codex')).toEqual({
+      enabled: false,
+      reason: '无法确认本机登录态，已禁用导入',
+    });
+    expect(liveAuthImportGate({ agentId: 'claude' }, false, 'claude').reason).toMatch(
+      /未检测到可导入的 OAuth 登录态/,
+    );
+  });
+
   it('only enables current-login import for credentialed OAuth/file-auth probes', () => {
     expect(liveAuthImportGate(undefined, true, 'claude')).toEqual({
       enabled: false,

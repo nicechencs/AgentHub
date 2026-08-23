@@ -239,9 +239,107 @@ describe('TicketWalletList details', () => {
       }),
     );
     expect(markup).toContain('没有匹配的登录');
-    expect(markup).toContain('1 份登录');
+    expect(markup).toContain('0 份登录');
+    expect(markup).not.toContain('1 份登录');
     expect(markup).not.toContain('钱包');
     expect(markup).not.toContain('没有匹配的票');
+  });
+
+  it('filters cards to the selected agent and matches the footer count', () => {
+    const wallet: TicketWallet = {
+      tickets: [
+        {
+          id: 'account:claude-1',
+          sourceKind: 'account',
+          sourceId: 'claude-1',
+          agentId: 'claude',
+          label: '41375197@qq.com',
+          surface: 'claude-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'claude',
+        },
+        {
+          id: 'account:grok-1',
+          sourceKind: 'account',
+          sourceId: 'grok-1',
+          agentId: 'grok',
+          label: 'cunsen.chen@gmail.com',
+          surface: 'grok-xai-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'grok',
+        },
+      ],
+      bindings: [
+        {
+          ticketId: 'account:claude-1',
+          agentId: 'claude',
+          route: 'native',
+          active: true,
+          profileId: null,
+          bridge: null,
+        },
+        {
+          ticketId: 'account:claude-1',
+          agentId: 'codex',
+          route: 'bridge',
+          active: true,
+          profileId: 'p-codex',
+          bridge: { port: 33923, running: true },
+        },
+        {
+          ticketId: 'account:grok-1',
+          agentId: 'grok',
+          route: 'native',
+          active: true,
+          profileId: null,
+          bridge: null,
+        },
+      ],
+      surfaceGroups: [],
+    };
+    const claudeMarkup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        agentFilterId: 'claude',
+        onShareTicket() {},
+        onRouteTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(claudeMarkup).toContain('41375197@qq.com');
+    expect(claudeMarkup).not.toContain('cunsen.chen@gmail.com');
+    expect(claudeMarkup).toContain('1 份登录');
+    expect(claudeMarkup).not.toContain('2 份登录');
+
+    const grokMarkup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        agentFilterId: 'grok',
+        onShareTicket() {},
+        onRouteTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(grokMarkup).toContain('cunsen.chen@gmail.com');
+    expect(grokMarkup).not.toContain('41375197@qq.com');
+    expect(grokMarkup).toContain('1 份登录');
+
+    const allMarkup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        onShareTicket() {},
+        onRouteTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(allMarkup).toContain('41375197@qq.com');
+    expect(allMarkup).toContain('cunsen.chen@gmail.com');
+    expect(allMarkup).toContain('2 份登录');
   });
 
   it('does not put 添加 in the list chrome when logins exist', () => {
@@ -403,10 +501,43 @@ describe('TicketDetailPanel', () => {
     expect(markup).not.toContain('官方账号');
     expect(markup).toContain('编辑配置');
     expect(markup).toContain('移入回收站');
+    expect(markup).toContain('>7d<');
+    expect(markup).not.toContain('>5h<');
     const moreIndex = markup.indexOf('更多');
     const protocolIndex = markup.indexOf('anthropic-messages');
     expect(moreIndex).toBeGreaterThan(-1);
     expect(protocolIndex).toBeGreaterThan(moreIndex);
+  });
+
+  it('shows the Codex 5h quota bar only when upstream returned it', () => {
+    const with5h = renderWithTooltip(
+      createElement(TicketDetailPanel, {
+        id: 'quota-5h',
+        advanced: [],
+        extras: {
+          quota7dPct: 89,
+          quota7dResetIn: '3d11h 后重置',
+          quota5hPct: 12,
+          quotaResetIn: '4h20m 后重置',
+        },
+        onDelete() {},
+      }),
+    );
+    expect(with5h).toContain('>7d<');
+    expect(with5h).toContain('>5h<');
+    expect(with5h).toContain('12%');
+    expect(with5h).toContain('4h20m 后重置');
+
+    const only7d = renderWithTooltip(
+      createElement(TicketDetailPanel, {
+        id: 'quota-7d-only',
+        advanced: [],
+        extras: { quota7dPct: 89, quota7dResetIn: '3d11h 后重置' },
+        onDelete() {},
+      }),
+    );
+    expect(only7d).toContain('>7d<');
+    expect(only7d).not.toContain('>5h<');
   });
 
   it('puts refresh in details, not on the card', () => {
