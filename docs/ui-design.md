@@ -227,7 +227,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 └────────────────────────────────────────────────────────────┘
 ```
 
-- 「添加」在页头标题「连接」同一行右侧（`PageHeader` `actions`）。顶部 **AgentTabStrip**（含「全部」）：选「全部」时添加先选 Agent；选了某个 Agent 后，添加直接给出该 Agent 的「导入当前登录 / 添加 API Key」。无「官方登录 / API Key / 未识别」类型芯片。OAuth 用人头（账号登录），API Key 用钥匙（密钥授权）。
+- 「添加」在页头标题「连接」同一行右侧（`PageHeader` `actions`）。顶部 **AgentTabStrip**（含「全部」）：选「全部」时添加先选 Agent；选了某个 Agent 后，添加直接给出该 Agent 的「导入当前登录 / 添加 API Key」。无「官方登录 / API Key / 未识别」类型芯片。OAuth 用人头（账号登录），API Key 用钥匙（密钥授权），颜色与该行 Agent 品牌色一致。
 - 「正用于」来自绑定：native / reshape / bridge，不是手写 account/provider 出身。
 - **每一份真登录都有「分享」和「路由」**：分享打开绑定对话框并只列出直连 / 写进对方登录；路由只列本机转发。接不上、工具不能写入、未识别：对话框内置灰 + 原因，不在行上隐藏动作。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。不要把订阅默认写成转发。
 - **OAuth 刷新**（有 `oauthListAction` 才出现）：Grok「同步当前登录」；Pi「刷新凭据」；Codex / Claude 只探配额（Hub 不刷新 CLI 拥有的 token）；Kimi 不显示刷新。

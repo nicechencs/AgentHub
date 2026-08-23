@@ -65,6 +65,7 @@ describe('TicketWalletList details', () => {
     expect(markup).not.toContain('钱包');
     expect(markup).toContain('密钥授权');
     expect(markup).toContain('var(--agent-kimi)');
+    expect(markup).toMatch(/color:\s*var\(--agent-kimi\)/);
     expect(markup).not.toContain('●');
     expect(markup).not.toContain('○');
     expect(markup).not.toContain('搜票');
@@ -114,6 +115,7 @@ describe('TicketWalletList details', () => {
     expect(markup).toContain('账号登录');
     expect(markup).toContain('aria-label="刷新"');
     expect(markup).toContain('var(--agent-codex)');
+    expect(markup).toMatch(/color:\s*var\(--agent-codex\)/);
     expect(markup).toContain('Codex（切换）');
     expect(markup).not.toContain('正用于：');
     expect(markup).not.toContain('mt-1 pl-5');

@@ -60,13 +60,20 @@ import {
   type TicketWalletRow,
 } from './ticket-wallet-model';
 
-function CredentialMark({ cls }: { cls: TicketView['credentialClass'] }) {
+function CredentialMark({
+  cls,
+  agentId,
+}: {
+  cls: TicketView['credentialClass'];
+  agentId: AgentId;
+}) {
   const { t } = useI18n();
+  const color = resolveAgentMeta(agentId).color;
   if (cls === 'oauth') {
     const label = t('connections.list.oauthAccount');
     return (
       <Hint label={label}>
-        <span className="inline-flex text-secondary" aria-label={label}>
+        <span className="inline-flex" style={{ color }} aria-label={label}>
           <CircleUser className="h-4 w-4" strokeWidth={1.8} />
         </span>
       </Hint>
@@ -76,7 +83,7 @@ function CredentialMark({ cls }: { cls: TicketView['credentialClass'] }) {
     const label = t('connections.list.apiKeyAuth');
     return (
       <Hint label={label}>
-        <span className="inline-flex text-secondary" aria-label={label}>
+        <span className="inline-flex" style={{ color }} aria-label={label}>
           <KeyRound className="h-4 w-4" strokeWidth={1.8} />
         </span>
       </Hint>
@@ -217,7 +224,7 @@ function TicketRow({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
           <AgentDot agentId={ticket.agentId} />
-          <CredentialMark cls={ticket.credentialClass} />
+          <CredentialMark cls={ticket.credentialClass} agentId={ticket.agentId} />
           <Tip className="truncate text-body font-medium" label={ticket.label}>
             {ticket.label}
           </Tip>
