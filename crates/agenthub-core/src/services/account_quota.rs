@@ -852,8 +852,7 @@ pub fn parse_openai_wham_usage(body: &Value, now: DateTime<Utc>) -> QuotaSnapsho
 }
 
 fn rate_limit_has_windows(rate: &Value) -> bool {
-    rate.get("primary_window")
-        .is_some_and(|v| v.is_object())
+    rate.get("primary_window").is_some_and(|v| v.is_object())
         || rate.get("secondary_window").is_some_and(|v| v.is_object())
 }
 
@@ -865,7 +864,10 @@ fn pick_wham_rate_limit(body: &Value) -> Option<&Value> {
     if let Some(rate) = top.filter(|v| rate_limit_has_windows(v)) {
         return Some(rate);
     }
-    let Some(arr) = body.get("additional_rate_limits").and_then(|v| v.as_array()) else {
+    let Some(arr) = body
+        .get("additional_rate_limits")
+        .and_then(|v| v.as_array())
+    else {
         return top;
     };
     let mut first_codex: Option<&Value> = None;
@@ -1747,7 +1749,10 @@ mod tests {
         assert_eq!(payload["model"], "codex-auto-review");
         assert_eq!(payload["stream"], true);
         assert_eq!(payload["store"], false);
-        assert!(payload.get("instructions").and_then(|v| v.as_str()).is_some());
+        assert!(payload
+            .get("instructions")
+            .and_then(|v| v.as_str())
+            .is_some());
     }
 
     #[test]

@@ -688,7 +688,9 @@ fn usage_overview_sums_and_groups_by_agent_or_model() {
     assert_eq!(all.distribution[1].tokens, 35);
     assert_eq!(all.models, vec!["k2", "opus", "sonnet"]);
 
-    let claude = repo.overview(7, Some(AgentId::Claude), None, None, &[]).unwrap();
+    let claude = repo
+        .overview(7, Some(AgentId::Claude), None, None, &[])
+        .unwrap();
     assert_eq!(claude.metrics.billable_input, 150);
     assert_eq!(
         claude
@@ -772,7 +774,9 @@ fn usage_trend_filters_by_model_and_since() {
             .sum()
     }
 
-    let all = repo.trend(2, Some(AgentId::Claude), None, None, &[]).unwrap();
+    let all = repo
+        .trend(2, Some(AgentId::Claude), None, None, &[])
+        .unwrap();
     assert_eq!(
         claude_tokens(&all),
         187,
@@ -786,7 +790,13 @@ fn usage_trend_filters_by_model_and_since() {
 
     let since = recent_ts(5);
     let recent = repo
-        .trend(2, Some(AgentId::Claude), Some("opus"), Some(since.as_str()), &[])
+        .trend(
+            2,
+            Some(AgentId::Claude),
+            Some("opus"),
+            Some(since.as_str()),
+            &[],
+        )
         .unwrap();
     assert_eq!(claude_tokens(&recent), 110);
 }
