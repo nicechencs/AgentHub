@@ -232,7 +232,14 @@ const GROK_DEFAULT_AUTH_SLOT: &str = "https://auth.x.ai::client";
 
 /// Merge this grant into official nested `auth.json`. Patch only the profile
 /// whose email/`user_id` intersects; never copy tokens onto a sibling slot.
+/// A stored multi-slot `format=auth_json` snapshot with no top-level identity
+/// is written as-is (switch/apply of an imported file).
 fn grok_auth_json_body_from_credentials(credentials: &Value, auth_path: &Path) -> Result<Value> {
+    if let Some(body) = credentials.get("body") {
+        if is_grok_slot_map(body) && grok_tip_is_unpinned(credentials) {
+            return Ok(body.clone());
+        }
+    }
     let incoming = extract_incoming_grok_profile(credentials)?;
     let mut existing = if auth_path.is_file() {
         std::fs::read_to_string(auth_path)
@@ -245,6 +252,14 @@ fn grok_auth_json_body_from_credentials(credentials: &Value, auth_path: &Path) -
     };
     merge_incoming_grok_profile(&mut existing, incoming.clone(), &incoming);
     Ok(existing)
+}
+
+fn grok_tip_is_unpinned(credentials: &Value) -> bool {
+    let tip = grok_top_level_grant(credentials);
+    let (emails, subjects) = grok_identity_marks(&tip);
+    emails.is_empty()
+        && subjects.is_empty()
+        && first_oauth_string(&tip, &["key", "access_token", "refresh_token"]).is_none()
 }
 
 fn extract_incoming_grok_profile(credentials: &Value) -> Result<Value> {

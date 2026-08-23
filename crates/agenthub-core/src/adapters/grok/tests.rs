@@ -471,3 +471,50 @@ fn apply_account_wraps_empty_auth_json_as_nested_client_slot() {
     assert_eq!(body["https://auth.x.ai::client"]["user_id"], "uid-1");
     assert!(body.get("access_token").is_none());
 }
+
+#[test]
+fn apply_account_writes_two_slot_auth_json_snapshot_without_top_level_identity() {
+    let _guard = GROK_HOME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", dir.path());
+    let result = GrokAdapter.apply_account(&LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: serde_json::json!({
+            "format": "auth_json",
+            "body": {
+                "https://auth.x.ai::https://api.x.ai": {
+                    "email": "b@example.com",
+                    "user_id": "uid-2",
+                    "key": "at-2",
+                    "refresh_token": "rt-2"
+                },
+                "https://auth.x.ai::client": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1",
+                    "key": "at-1",
+                    "refresh_token": "rt-1"
+                }
+            }
+        }),
+        label_hint: Some("snapshot".into()),
+        extra: serde_json::json!({ "source": "auth.json" }),
+    });
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
+    result.unwrap();
+    let body: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(dir.path().join("auth.json")).unwrap()).unwrap();
+    assert_eq!(body["https://auth.x.ai::client"]["key"], "at-1");
+    assert_eq!(body["https://auth.x.ai::client"]["refresh_token"], "rt-1");
+    assert_eq!(body["https://auth.x.ai::https://api.x.ai"]["key"], "at-2");
+    assert_eq!(
+        body["https://auth.x.ai::https://api.x.ai"]["refresh_token"],
+        "rt-2"
+    );
+}
