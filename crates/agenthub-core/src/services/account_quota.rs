@@ -1,11 +1,18 @@
 //! Upstream subscription quota windows (5h / 7d) for OAuth accounts.
 //!
-//! - OpenAI Codex / ChatGPT: `GET https://chatgpt.com/backend-api/wham/usage`
-//! - Claude OAuth: `GET https://api.anthropic.com/api/oauth/usage`
+//! Codex (aligned with sub2api):
+//! 1. Preferred: `POST https://chatgpt.com/backend-api/codex/responses` with
+//!    `codex-auto-review` + `stream: true`; 5h/7d come from `x-codex-*` headers.
+//! 2. Fallback: `GET https://chatgpt.com/backend-api/wham/usage` (Codex Desktop
+//!    identity). Top-level `rate_limit` is the shared ChatGPT/Codex pool;
+//!    `additional_rate_limits` (e.g. Spark `codex_bengalfox`) is used only when
+//!    that pool has no windows.
+//!
+//! Claude OAuth: `GET https://api.anthropic.com/api/oauth/usage`.
 //!
 //! Results are written into `account.extra` for the existing UI fields
-//! (`quota5hPct`, `quota7dPct`, `quotaResetIn`). Failures are soft — list/refresh
-//! never fails solely because quota is unavailable.
+//! (`quota5hPct`, `quota7dPct`, `quotaResetIn`). List probes are best-effort;
+//! an explicit Connections refresh surfaces probe failures.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -23,9 +30,13 @@ const CHATGPT_USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 /// Codex desktop probe — rate limits arrive in `x-codex-*` response headers.
 const CHATGPT_CODEX_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
-/// User-Agent identity sent with the Codex probe.
+/// Cheap Codex model used by sub2api for header-only usage probes.
+const CODEX_PROBE_MODEL: &str = "codex-auto-review";
+/// User-Agent identity sent with the Codex `/responses` probe (matches Codex TUI).
 const CODEX_PROBE_VERSION: &str = "0.146.0";
 const CODEX_PROBE_ORIGINATOR: &str = "codex-tui";
+/// `/wham/usage` impersonates Codex Desktop (sub2api `openaiQuotaCodexOriginator`).
+const CHATGPT_WHAM_ORIGINATOR: &str = "Codex Desktop";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct QuotaSnapshot {
@@ -80,14 +91,17 @@ pub fn refresh_quota_reset_label(account: &mut Account, now: DateTime<Utc>) -> b
     let label7 =
         at7.map(|at| format_reset_in(clamp_reset_after((at - now).num_seconds(), 7 * 24 * 3600)));
 
-    let zero_5h = at5.map(|t| t <= now).unwrap_or(false);
+    let hide_5h = at5.map(|t| t <= now).unwrap_or(false);
     let zero_7d = at7.map(|t| t <= now).unwrap_or(false);
 
     let Some(obj) = account.extra.as_object_mut() else {
         return false;
     };
     let mut dirty = false;
-    if let Some(ref label) = label5 {
+    if hide_5h {
+        // Window ended and upstream has not returned a new 5h percent — hide, do not invent 0%.
+        dirty |= clear_codex_5h_quota_fields(obj);
+    } else if let Some(ref label) = label5 {
         let prev = obj
             .get("quotaResetIn")
             .and_then(|v| v.as_str())
@@ -107,10 +121,6 @@ pub fn refresh_quota_reset_label(account: &mut Account, now: DateTime<Utc>) -> b
             dirty = true;
         }
     }
-    if zero_5h && obj.get("quota5hPct").and_then(|v| v.as_i64()) != Some(0) {
-        obj.insert("quota5hPct".into(), json!(0));
-        dirty = true;
-    }
     if zero_7d && obj.get("quota7dPct").and_then(|v| v.as_i64()) != Some(0) {
         // Do not zero Grok weekly % just because period end passed without refresh;
         // only clear when we had an absolute reset and it's past.
@@ -120,10 +130,34 @@ pub fn refresh_quota_reset_label(account: &mut Account, now: DateTime<Utc>) -> b
     dirty
 }
 
+const CODEX_5H_QUOTA_KEYS: &[&str] = &[
+    "quota5hPct",
+    "quota5hResetAt",
+    "codex_5h_reset_after_seconds",
+    "quota5hResetAfterSec",
+    "quotaResetIn",
+];
+
+fn clear_codex_5h_quota_fields(obj: &mut Map<String, Value>) -> bool {
+    let mut dirty = false;
+    for key in CODEX_5H_QUOTA_KEYS {
+        if obj.remove(*key).is_some() {
+            dirty = true;
+        }
+    }
+    dirty
+}
+
 /// True when extra has no fresh quota snapshot (missing or older than cache TTL).
 pub fn quota_is_stale(account: &Account, now: DateTime<Utc>) -> bool {
     if account.kind != AccountKind::Oauth {
         return false;
+    }
+    // Window already rolled over — cached used% is from the previous period.
+    if extra_reset_elapsed(account, "quota5hResetAt", now)
+        || extra_reset_elapsed(account, "quota7dResetAt", now)
+    {
+        return true;
     }
     let Some(raw) = account
         .extra
@@ -132,9 +166,9 @@ pub fn quota_is_stale(account: &Account, now: DateTime<Utc>) -> bool {
         .map(str::trim)
         .filter(|s| !s.is_empty())
     else {
-        // No snapshot yet — only probe when we have zero quota fields too.
-        return account.extra.get("quota5hPct").is_none()
-            && account.extra.get("quota7dPct").is_none();
+        // No snapshot timestamp: probe even if leftover % fields exist,
+        // otherwise Connections stays frozen on import leftovers forever.
+        return true;
     };
     match DateTime::parse_from_rfc3339(raw) {
         Ok(dt) => {
@@ -144,6 +178,16 @@ pub fn quota_is_stale(account: &Account, now: DateTime<Utc>) -> bool {
         }
         Err(_) => true,
     }
+}
+
+fn extra_reset_elapsed(account: &Account, key: &str, now: DateTime<Utc>) -> bool {
+    account
+        .extra
+        .get(key)
+        .and_then(|v| v.as_str())
+        .and_then(parse_rfc3339)
+        .map(|at| at <= now)
+        .unwrap_or(false)
 }
 
 /// Best-effort network probe; updates `account.extra` on success.
@@ -179,6 +223,12 @@ pub fn refresh_account_quota(account: &mut Account, force: bool) -> Result<bool>
     };
 
     if snap.is_empty() {
+        if force {
+            return Err(AppError::message(
+                "account.quota",
+                "quota probe returned no 5h/7d windows",
+            ));
+        }
         return Ok(false);
     }
     Ok(apply_quota_snapshot(account, &snap, now))
@@ -216,28 +266,38 @@ pub fn apply_quota_snapshot(
 
     if let Some(p) = snap.quota5h_pct {
         obj.insert("quota5hPct".into(), json!(clamp_pct(p)));
+        if let Some(at) = snap.reset_5h_at {
+            obj.insert("quota5hResetAt".into(), json!(at.to_rfc3339()));
+            let after = (at - now).num_seconds().max(0);
+            obj.insert("codex_5h_reset_after_seconds".into(), json!(after));
+            obj.insert("quota5hResetAfterSec".into(), json!(after));
+        }
+        if let Some(label) = snap.reset_in_label(now) {
+            obj.insert("quotaResetIn".into(), json!(label));
+        }
+    } else {
+        // Official snapshot omitted 5h — hide the bar until a later probe returns it.
+        clear_codex_5h_quota_fields(obj);
     }
     if let Some(p) = snap.quota7d_pct {
         obj.insert("quota7dPct".into(), json!(clamp_pct(p)));
-    }
-    // Store absolute reset times so UI can recompute remaining later.
-    if let Some(at) = snap.reset_5h_at {
-        obj.insert("quota5hResetAt".into(), json!(at.to_rfc3339()));
-        // Relative form for Codex-style recompute: remaining = updated_at + after - now
-        let after = (at - now).num_seconds().max(0);
-        obj.insert("codex_5h_reset_after_seconds".into(), json!(after));
-        obj.insert("quota5hResetAfterSec".into(), json!(after));
-    }
-    if let Some(at) = snap.reset_7d_at {
-        obj.insert("quota7dResetAt".into(), json!(at.to_rfc3339()));
-        let after = (at - now).num_seconds().max(0);
-        obj.insert("codex_7d_reset_after_seconds".into(), json!(after));
-    }
-    if let Some(label) = snap.reset_in_label(now) {
-        obj.insert("quotaResetIn".into(), json!(label));
-    }
-    if let Some(label) = snap.reset_in_label_7d(now) {
-        obj.insert("quota7dResetIn".into(), json!(label));
+        if let Some(at) = snap.reset_7d_at {
+            obj.insert("quota7dResetAt".into(), json!(at.to_rfc3339()));
+            let after = (at - now).num_seconds().max(0);
+            obj.insert("codex_7d_reset_after_seconds".into(), json!(after));
+        }
+        if let Some(label) = snap.reset_in_label_7d(now) {
+            obj.insert("quota7dResetIn".into(), json!(label));
+        }
+    } else {
+        for key in [
+            "quota7dPct",
+            "quota7dResetAt",
+            "codex_7d_reset_after_seconds",
+            "quota7dResetIn",
+        ] {
+            obj.remove(key);
+        }
     }
     obj.insert("codex_usage_updated_at".into(), json!(now.to_rfc3339()));
     if let Some(ref plan) = snap.plan_type {
@@ -296,15 +356,30 @@ fn fetch_codex_quota(account: &Account) -> Result<QuotaSnapshot> {
             ("Authorization", &format!("Bearer {access}")),
             ("chatgpt-account-id", &account_id),
             ("openai-beta", "codex-1"),
-            ("originator", CODEX_PROBE_ORIGINATOR),
+            ("originator", CHATGPT_WHAM_ORIGINATOR),
             ("oai-language", "zh-CN"),
             ("Accept", "application/json"),
             ("sec-fetch-site", "none"),
             ("sec-fetch-mode", "no-cors"),
             ("sec-fetch-dest", "empty"),
+            ("priority", "u=4, i"),
         ],
     )?;
     Ok(parse_openai_wham_usage(&body, now))
+}
+
+/// Payload for the Codex `/responses` usage probe (sub2api `createOpenAITestPayload`).
+fn codex_responses_probe_payload() -> Value {
+    json!({
+        "model": CODEX_PROBE_MODEL,
+        "input": [{
+            "role": "user",
+            "content": [{ "type": "input_text", "text": "hi" }]
+        }],
+        "stream": true,
+        "store": false,
+        "instructions": "You are a helpful assistant."
+    })
 }
 
 /// Minimal Responses probe; rate-limit lives in response headers even on errors.
@@ -313,23 +388,13 @@ fn probe_codex_rate_limit_headers(
     account_id: &str,
     now: DateTime<Utc>,
 ) -> Result<QuotaSnapshot> {
-    // stream:false so we do not hang reading an SSE body; headers still carry limits.
-    let payload = json!({
-        "model": "gpt-5.4",
-        "input": [{
-            "role": "user",
-            "content": [{ "type": "input_text", "text": "hi" }]
-        }],
-        "stream": false,
-        "store": false,
-        "instructions": "You are a helpful assistant."
-    });
+    let payload = codex_responses_probe_payload();
     let ua = format!("{CODEX_PROBE_ORIGINATOR}/{CODEX_PROBE_VERSION}");
     let mut req = ureq::post(CHATGPT_CODEX_RESPONSES_URL)
         .set("Authorization", &format!("Bearer {access}"))
         .set("chatgpt-account-id", account_id)
         .set("Content-Type", "application/json")
-        .set("Accept", "application/json")
+        .set("Accept", "text/event-stream")
         .set("OpenAI-Beta", "responses=experimental")
         .set("Originator", CODEX_PROBE_ORIGINATOR)
         .set("Version", CODEX_PROBE_VERSION)
@@ -349,8 +414,9 @@ fn probe_codex_rate_limit_headers(
     };
 
     let headers = extract_codex_headers_from_ureq(&resp);
-    // Drain body quickly (ignore content) so the connection can close.
-    let _ = resp.into_string();
+    // Quota is in headers. Drop the SSE body so list()/refresh does not wait
+    // on a streamed completion (and does not burn extra tokens).
+    drop(resp);
 
     let Some(raw) = parse_codex_header_snapshot(&headers) else {
         return Ok(QuotaSnapshot {
@@ -779,29 +845,47 @@ pub fn parse_openai_wham_usage(body: &Value, now: DateTime<Utc>) -> QuotaSnapsho
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
-    // Prefer codex metered feature when present (bengalfox / desktop).
-    let mut rate = body.get("rate_limit");
-    if let Some(arr) = body
-        .get("additional_rate_limits")
-        .and_then(|v| v.as_array())
-    {
-        for item in arr {
-            let feature = item
-                .get("metered_feature")
-                .or_else(|| item.get("limit_name"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if feature.to_ascii_lowercase().contains("codex") {
-                rate = item.get("rate_limit");
-                break;
-            }
-        }
-    }
-
-    let raw = rate_limit_json_to_codex_raw(rate);
+    let raw = rate_limit_json_to_codex_raw(pick_wham_rate_limit(body));
     let mut snap = normalize_codex_snapshot_to_quota(&raw, now, "chatgpt_wham_usage");
     snap.plan_type = plan;
     snap
+}
+
+fn rate_limit_has_windows(rate: &Value) -> bool {
+    rate.get("primary_window")
+        .is_some_and(|v| v.is_object())
+        || rate.get("secondary_window").is_some_and(|v| v.is_object())
+}
+
+/// Shared ChatGPT/Codex pool (`rate_limit`) wins. Extra Codex meters such as
+/// Spark `codex_bengalfox` are used only when that pool has no windows —
+/// otherwise a null additional meter used to wipe the real 5h/7d bars.
+fn pick_wham_rate_limit(body: &Value) -> Option<&Value> {
+    let top = body.get("rate_limit");
+    if let Some(rate) = top.filter(|v| rate_limit_has_windows(v)) {
+        return Some(rate);
+    }
+    let Some(arr) = body.get("additional_rate_limits").and_then(|v| v.as_array()) else {
+        return top;
+    };
+    let mut first_codex: Option<&Value> = None;
+    for item in arr {
+        let feature = item
+            .get("metered_feature")
+            .or_else(|| item.get("limit_name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let Some(rate) = item.get("rate_limit").filter(|v| rate_limit_has_windows(v)) else {
+            continue;
+        };
+        if feature.eq_ignore_ascii_case("codex_bengalfox") {
+            return Some(rate);
+        }
+        if first_codex.is_none() && feature.to_ascii_lowercase().contains("codex") {
+            first_codex = Some(rate);
+        }
+    }
+    first_codex.or(top)
 }
 
 fn rate_limit_json_to_codex_raw(rate: Option<&Value>) -> CodexRawSnapshot {
@@ -1629,5 +1713,146 @@ mod tests {
             Some("plus")
         );
         assert!(!quota_is_stale(&acc, now));
+    }
+
+    #[test]
+    fn apply_snapshot_clears_omitted_5h_when_upstream_is_weekly_only() {
+        let mut acc = oauth_account_with_extra(json!({
+            "quota5hPct": 40,
+            "quota5hResetAt": "2026-08-01T00:00:00Z",
+            "quotaResetIn": "即将重置",
+            "quota7dPct": 10
+        }));
+        let now = Utc::now();
+        let snap = QuotaSnapshot {
+            quota5h_pct: None,
+            quota7d_pct: Some(22.0),
+            reset_5h_at: None,
+            reset_7d_at: Some(now + ChronoDuration::days(2)),
+            plan_type: None,
+            source: "test",
+        };
+        assert!(apply_quota_snapshot(&mut acc, &snap, now));
+        assert!(acc.extra.get("quota5hPct").is_none());
+        assert!(acc.extra.get("quotaResetIn").is_none());
+        assert_eq!(
+            acc.extra.get("quota7dPct").and_then(|v| v.as_i64()),
+            Some(22)
+        );
+    }
+
+    #[test]
+    fn codex_probe_payload_matches_sub2api_cheap_stream() {
+        let payload = codex_responses_probe_payload();
+        assert_eq!(payload["model"], "codex-auto-review");
+        assert_eq!(payload["stream"], true);
+        assert_eq!(payload["store"], false);
+        assert!(payload.get("instructions").and_then(|v| v.as_str()).is_some());
+    }
+
+    #[test]
+    fn parse_wham_keeps_top_level_pool_when_additional_codex_meter_is_empty() {
+        let now = Utc::now();
+        let body = json!({
+            "plan_type": "plus",
+            "rate_limit": {
+                "primary_window": {
+                    "used_percent": 18.0,
+                    "limit_window_seconds": 604800,
+                    "reset_after_seconds": 86400
+                },
+                "secondary_window": {
+                    "used_percent": 42.5,
+                    "limit_window_seconds": 18000,
+                    "reset_after_seconds": 7200
+                }
+            },
+            "additional_rate_limits": [{
+                "metered_feature": "codex_bengalfox",
+                "rate_limit": serde_json::Value::Null
+            }]
+        });
+        let snap = parse_openai_wham_usage(&body, now);
+        assert_eq!(snap.quota5h_pct, Some(42.5));
+        assert_eq!(snap.quota7d_pct, Some(18.0));
+    }
+
+    #[test]
+    fn parse_wham_uses_bengalfox_only_when_shared_pool_has_no_windows() {
+        let now = Utc::now();
+        let body = json!({
+            "rate_limit": serde_json::Value::Null,
+            "additional_rate_limits": [{
+                "metered_feature": "codex_bengalfox",
+                "rate_limit": {
+                    "primary_window": {
+                        "used_percent": 7.0,
+                        "limit_window_seconds": 604800,
+                        "reset_after_seconds": 1000
+                    },
+                    "secondary_window": {
+                        "used_percent": 3.0,
+                        "limit_window_seconds": 18000,
+                        "reset_after_seconds": 500
+                    }
+                }
+            }]
+        });
+        let snap = parse_openai_wham_usage(&body, now);
+        assert_eq!(snap.quota5h_pct, Some(3.0));
+        assert_eq!(snap.quota7d_pct, Some(7.0));
+    }
+
+    fn oauth_account_with_extra(extra: Value) -> Account {
+        Account {
+            id: "c1".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "x".into(),
+            credentials: json!({}),
+            extra,
+            status: "active".into(),
+            is_current: true,
+            created_at: "t".into(),
+            updated_at: "t".into(),
+        }
+    }
+
+    #[test]
+    fn quota_is_stale_when_updated_at_missing_even_if_pct_fields_exist() {
+        let acc = oauth_account_with_extra(json!({
+            "quota5hPct": 40,
+            "quota7dPct": 10
+        }));
+        assert!(quota_is_stale(&acc, Utc::now()));
+    }
+
+    #[test]
+    fn quota_is_stale_when_5h_reset_has_elapsed() {
+        let now = Utc::now();
+        let acc = oauth_account_with_extra(json!({
+            "quota5hPct": 40,
+            "quotaUpdatedAt": now.to_rfc3339(),
+            "quota5hResetAt": (now - ChronoDuration::seconds(1)).to_rfc3339()
+        }));
+        assert!(quota_is_stale(&acc, now));
+    }
+
+    #[test]
+    fn elapsed_5h_reset_hides_bar_instead_of_inventing_zero() {
+        let now = Utc::now();
+        let mut acc = oauth_account_with_extra(json!({
+            "quota5hPct": 40,
+            "quota5hResetAt": (now - ChronoDuration::seconds(1)).to_rfc3339(),
+            "quotaResetIn": "即将重置",
+            "quota7dPct": 10
+        }));
+        assert!(refresh_quota_reset_label(&mut acc, now));
+        assert!(acc.extra.get("quota5hPct").is_none());
+        assert!(acc.extra.get("quotaResetIn").is_none());
+        assert_eq!(
+            acc.extra.get("quota7dPct").and_then(|v| v.as_i64()),
+            Some(10)
+        );
     }
 }

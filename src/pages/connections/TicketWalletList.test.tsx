@@ -105,7 +105,7 @@ describe('TicketWalletList details', () => {
         onRouteTicket() {},
         onRefreshTicket() {},
         extrasForTicket: () => ({
-          oauthAction: { kind: 'refresh-credentials', label: '刷新' },
+          oauthAction: { kind: 'refresh-credentials' as const, label: '刷新' },
           identity: 'user@example.com',
         }),
         onEditTicket() {},

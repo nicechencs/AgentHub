@@ -35,7 +35,10 @@ import {
   useConnectionPool,
 } from '@/app/runtime';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { oauthListAction } from '@/lib/backend/contracts/account-actions';
+import {
+  oauthListAction,
+  oauthListActionProbesQuota,
+} from '@/lib/backend/contracts/account-actions';
 import type { AgentId } from '@/lib/types';
 import { ApiKeyAccountDialog } from '@/pages/accounts/ApiKeyAccountDialog';
 import { ProviderEditDialog } from '@/pages/providers/ProviderEditDialog';
@@ -385,6 +388,12 @@ export default function ConnectionsPage() {
           return;
         }
         const acc = await importCurrentLogin(account.agentId);
+        // Sync only refreshes auth.json; quota still needs an upstream probe
+        // (same as Hub-owned refresh-credentials). Swallow probe errors so a
+        // usage miss does not look like a failed login import.
+        if (oauthListActionProbesQuota(action.kind)) {
+          await refreshQuota(account.agentId, acc.id).catch(() => undefined);
+        }
         if (refreshGen.current !== generation) return;
         const coexistenceNotice = liveAuthCoexistenceNotice(probe, account.agentId, t);
         toast({

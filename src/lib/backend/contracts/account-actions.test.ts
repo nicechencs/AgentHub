@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { accountActionPolicy, oauthListAction } from './account-actions';
+import {
+  accountActionPolicy,
+  oauthListAction,
+  oauthListActionProbesQuota,
+} from './account-actions';
 import type { Account } from '@/lib/types';
 
 function account(overrides: Partial<Account> = {}): Pick<
@@ -11,6 +15,7 @@ function account(overrides: Partial<Account> = {}): Pick<
     kind: 'oauth',
     provider: undefined,
     refreshable: true,
+    isCurrent: false,
     ...overrides,
   };
 }
@@ -121,5 +126,11 @@ describe('oauthListAction', () => {
 
   it('hides Kimi CLI-owned OAuth', () => {
     expect(oauthListAction(account({ agentId: 'kimi' }))).toBeUndefined();
+  });
+
+  it('probes quota after every visible list-row action, including current Codex sync', () => {
+    expect(oauthListActionProbesQuota('refresh-quota')).toBe(true);
+    expect(oauthListActionProbesQuota('refresh-credentials')).toBe(true);
+    expect(oauthListActionProbesQuota('sync-current-login')).toBe(true);
   });
 });

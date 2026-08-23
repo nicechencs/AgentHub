@@ -76,6 +76,9 @@ pub(crate) fn detect_binary_with_env(
 
     for name in &names {
         if let Ok(path) = which(name) {
+            if !is_direct_spawnable(&path) {
+                continue;
+            }
             let channel = infer_channel(&path, channel_hint);
             tracing::debug!(
                 target: crate::logging::targets::DETECT,
@@ -105,7 +108,7 @@ pub(crate) fn detect_binary_with_env(
         if is_under_agenthub_user_npm_prefix(&path) {
             continue;
         }
-        if path.is_file() {
+        if path.is_file() && is_direct_spawnable(&path) {
             // PATH miss but disk hit — common after install without AgentHub restart.
             tracing::info!(
                 target: crate::logging::targets::DETECT,
@@ -154,19 +157,24 @@ pub(crate) const NOT_FOUND_FIREFIGHTING_NOTE: &str =
     "未在 PATH 或常见安装目录中找到该命令。若刚完成安装，请完全退出并重启 AgentHub。";
 
 /// Expand a base command name with platform-typical suffixes.
+///
+/// On Windows, CreateProcess-spawnable shims come first. npm always also
+/// writes a Unix shebang `name` (no extension) that is **not** a valid Win32
+/// application; probing it marks the agent Installed with an empty version.
 pub(crate) fn expand_binary_names(base: &str) -> Vec<String> {
-    let mut out = vec![base.to_string()];
     if cfg!(windows)
         && !base.ends_with(".cmd")
         && !base.ends_with(".exe")
         && !base.ends_with(".ps1")
     {
-        // npm global shims are often `name.cmd`; native bins are `name.exe`.
-        out.push(format!("{base}.cmd"));
-        out.push(format!("{base}.exe"));
-        out.push(format!("{base}.ps1"));
+        return vec![
+            format!("{base}.cmd"),
+            format!("{base}.exe"),
+            base.to_string(),
+            format!("{base}.ps1"),
+        ];
     }
-    out
+    vec![base.to_string()]
 }
 
 /// Allowlisted install locations (platform × agent). Channel is `npm` or `native`.
@@ -326,16 +334,54 @@ pub(crate) fn is_under_agenthub_user_npm_prefix(path: &Path) -> bool {
 }
 
 /// First existing `names` entry under `dirs` (earlier dir wins). Does not call `which`.
+///
+/// Windows skips Unix shebang shims and `.ps1` (CreateProcess cannot run them).
 pub(crate) fn first_existing_named_bin(dirs: &[PathBuf], names: &[String]) -> Option<PathBuf> {
     for dir in dirs {
         for name in names {
             let candidate = dir.join(name);
-            if candidate.is_file() {
+            if candidate.is_file() && is_direct_spawnable(&candidate) {
                 return Some(candidate);
             }
         }
     }
     None
+}
+
+/// True when `Command::new(path)` can launch the file without a shell.
+///
+/// npm's extensionless `codex` on Windows is `#!/bin/sh` — CreateProcess
+/// fails with "not a valid Win32 application", which used to wipe the
+/// version string while still reporting Installed.
+fn is_direct_spawnable(path: &Path) -> bool {
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        true
+    }
+    #[cfg(windows)]
+    {
+        match path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("cmd" | "bat" | "exe" | "com") => true,
+            Some(_) => false,
+            None => !file_starts_with_shebang(path),
+        }
+    }
+}
+
+#[cfg(windows)]
+fn file_starts_with_shebang(path: &Path) -> bool {
+    use std::io::Read;
+    let mut buf = [0u8; 2];
+    std::fs::File::open(path)
+        .and_then(|mut f| f.read_exact(&mut buf))
+        .map(|_| buf == *b"#!")
+        .unwrap_or(false)
 }
 
 fn npm_global_bin_dirs(home: &Path) -> Vec<PathBuf> {

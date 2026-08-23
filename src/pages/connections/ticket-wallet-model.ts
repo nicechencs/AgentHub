@@ -447,6 +447,11 @@ export function dashboardBindingMetaText(
   return `${ticketLabel} · ${bindingDashboardRouteLabel(route, t)}`;
 }
 
+/** Show a quota bar only when upstream returned a percent. `0` is a real value. */
+export function hasOfficialQuotaWindow(pct: number | undefined | null): boolean {
+  return typeof pct === 'number' && Number.isFinite(pct);
+}
+
 /** Optional pool-row fields shown only in the ticket detail panel. */
 export interface TicketDetailExtras {
   identity?: string;

@@ -50,6 +50,7 @@ import {
   handleTicketAddMenuSelect,
   buildTicketDetailFields,
   buildTicketWalletRows,
+  hasOfficialQuotaWindow,
   ticketAddActionLabel,
   ticketAuthChip,
   ticketCardTitle,
@@ -122,8 +123,8 @@ export function TicketDetailPanel({
   onDelete: () => void;
 }) {
   const { t } = useI18n();
-  const has7d = extras?.quota7dPct != null;
-  const has5h = extras?.quota5hPct != null;
+  const has7d = hasOfficialQuotaWindow(extras?.quota7dPct);
+  const has5h = hasOfficialQuotaWindow(extras?.quota5hPct);
   const hasQuota = has7d || has5h;
   const visibleAdvanced = advanced.filter((field) => !HIDDEN_ADVANCED_LABELS.has(field.label));
   const isSyncLogin = extras?.oauthAction?.kind === 'sync-current-login';

@@ -43,6 +43,15 @@ function isHubOwnedOauthSource(source?: string): boolean {
   return source === 'oauth_pkce' || source === 'oauth_refresh';
 }
 
+/** Every visible list-row action should follow with a 5h/7d quota probe. */
+export function oauthListActionProbesQuota(kind: AccountActionKind): boolean {
+  return (
+    kind === 'refresh-quota'
+    || kind === 'refresh-credentials'
+    || kind === 'sync-current-login'
+  );
+}
+
 export function oauthListAction(account: Pick<
   Account,
   'agentId' | 'kind' | 'provider' | 'refreshable' | 'source' | 'isCurrent'
