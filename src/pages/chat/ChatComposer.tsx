@@ -26,7 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Hint } from '@/components/ui/tooltip';
+import { Hint, Tip } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import type { AgentId, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -357,15 +357,15 @@ export function ChatComposer({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <p
+          <Tip
             className={cn(
               'min-w-0 flex-1 truncate text-left text-meta leading-none',
               approveFooter.warning ? 'text-warning/50' : 'text-muted/35',
             )}
-            title={approveFooter.text}
+            label={approveFooter.text}
           >
             {approveFooter.text}
-          </p>
+          </Tip>
 
           {sending ? (
             <Button size="sm" variant="dangerOutline" onClick={onCancel}>
