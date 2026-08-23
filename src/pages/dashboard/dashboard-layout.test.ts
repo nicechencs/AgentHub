@@ -24,4 +24,13 @@ describe('dashboard layout wiring', () => {
     expect(overview).not.toContain("from '@/components/ui/button'");
     expect(source('index.tsx')).not.toContain("t('dashboard.overview.manage')");
   });
+
+  it('wires 立即备份 to Settings backups instead of createBackup on the first agent', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('dashboardBackupNowHref');
+    expect(page).toContain('handleBackupNow');
+    expect(page).not.toContain('createBackup');
+    expect(page).not.toContain('handleBackupAll');
+    expect(source('dashboard-actions.ts')).toContain("settingsSearch('backups')");
+  });
 });

@@ -123,6 +123,7 @@ export function TicketDetailPanel({
   onDelete: () => void;
 }) {
   const { t } = useI18n();
+  // 5h is official-only. Missing quota5hPct hides the bar; never copy 7d into 5h.
   const has7d = hasOfficialQuotaWindow(extras?.quota7dPct);
   const has5h = hasOfficialQuotaWindow(extras?.quota5hPct);
   const hasQuota = has7d || has5h;
@@ -387,7 +388,7 @@ export function TicketAddMenu({
     ));
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button>
           <Plus className="h-4 w-4" /> {t('connections.list.add')} <ChevronDown className="h-3.5 w-3.5" />
@@ -559,7 +560,7 @@ export function TicketWalletList({
 
       {wallet ? (
         <p className="mt-3 text-meta text-muted">
-          {t('connections.list.count', { n: tickets.length })}
+          {t('connections.list.count', { n: rows.length })}
           {highlightAgentId
             ? t('connections.list.highlighted', { name: agentDisplayName(highlightAgentId) })
             : ''}

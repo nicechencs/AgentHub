@@ -15,6 +15,7 @@ import {
 } from '@/lib/connection-kind';
 import type { TranslateFn } from '@/lib/i18n';
 import type { AgentId, Provider } from '@/lib/types';
+import { isLeftoverLocalRouteProvider } from '@/pages/chat/chat-model';
 
 export type { ConnectionKind };
 export type {
@@ -259,6 +260,9 @@ function isApiKeyLiveAuthKind(kind: string): boolean {
 /** Which import dialog variant applies for the probed live credential kind. */
 export type LiveImportDialogMode = 'login' | 'api-key';
 
+/** Shared import dialog writes an Account (OAuth) or a provider-pool Key. */
+export type LiveImportAction = 'account' | 'provider';
+
 /**
  * The import entry point is shared; the probed auth kind decides whether it
  * reads as an OAuth login import or an API Key import. Anything unknown or
@@ -269,6 +273,11 @@ export function liveImportDialogMode(
 ): LiveImportDialogMode {
   const kind = probe?.kind?.trim().toLowerCase() ?? '';
   return isApiKeyLiveAuthKind(kind) ? 'api-key' : 'login';
+}
+
+/** `api-key` dialog must import a provider-pool Key, never an OAuth account. */
+export function liveImportAction(mode: LiveImportDialogMode): LiveImportAction {
+  return mode === 'api-key' ? 'provider' : 'account';
 }
 
 const GENERIC_LIVE_AUTH_COEXISTENCE_NOTICE =
@@ -345,11 +354,40 @@ export function isLiveAuthDiscoveryDeferred(input: {
   return false;
 }
 
+/**
+ * Enough of a pool provider to skip leftover / adapter-projection rows when
+ * deciding whether a live API Key is already imported.
+ */
+export type DiscoveryProviderLike = {
+  id?: string | null;
+  name?: string | null;
+  preset?: string | null;
+  configText?: string | null;
+  configFormat?: string | null;
+  isAdapterProjection?: boolean | null;
+  alsoPresent?: string[] | null;
+};
+
+function leftoverOrProjectionProvider(provider: DiscoveryProviderLike): boolean {
+  if (probeIsAdapterProjection(provider)) return true;
+  return isLeftoverLocalRouteProvider({
+    id: provider.id ?? '',
+    name: provider.name ?? '',
+    preset: provider.preset ?? '',
+    configText: provider.configText ?? '',
+    configFormat: provider.configFormat === 'toml' ? 'toml' : 'json',
+  });
+}
+
+function hasUserApiKeyProvider(providers: readonly DiscoveryProviderLike[]): boolean {
+  return providers.some((provider) => !leftoverOrProjectionProvider(provider));
+}
+
 export function liveAuthDiscoveryKind(input: {
   poolState: ConnectionPoolDiscoveryState;
   probe?: Pick<LiveAuthProbeLike, 'kind' | 'hasCredentials' | 'isAdapterProjection' | 'alsoPresent'> | null;
   accounts: readonly { kind: string }[];
-  providers: readonly unknown[];
+  providers: readonly DiscoveryProviderLike[];
   accountsFailed?: boolean;
   providersFailed?: boolean;
 }): DiscoveredAuthKind | null {
@@ -360,7 +398,8 @@ export function liveAuthDiscoveryKind(input: {
   const kind = liveAuthProbeKind(input.probe);
   const hasExistingOAuth = input.accounts.some((account) => account.kind === 'oauth');
   const hasExistingApiKey =
-    input.accounts.some((account) => account.kind === 'apikey') || input.providers.length > 0;
+    input.accounts.some((account) => account.kind === 'apikey') ||
+    hasUserApiKeyProvider(input.providers);
 
   if (isOAuthLiveAuthKind(kind) && !hasExistingOAuth) return 'account';
   if (isApiKeyLiveAuthKind(kind) && !hasExistingApiKey) return 'provider';
