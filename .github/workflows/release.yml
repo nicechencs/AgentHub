@@ -156,17 +156,38 @@ jobs:
               exit 1
             fi
           fi
-          if ! release_record="$(gh api graphql \
-            -f query='query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { id isDraft isPrerelease publishedAt } } }' \
-            -F owner="$GITHUB_REPOSITORY_OWNER" \
-            -F name="${GITHUB_REPOSITORY#*/}" \
-            -F tag="$TAG" \
-            --jq '.data.repository.release | if . == null then "" else "\(.id)\t\(.isDraft)\t\(.isPrerelease)\t\(.publishedAt // "")" end')"; then
+          # GraphQL release(tagName:) misses untagged drafts
+          # (/releases/tag/untagged-*). List and match title/tag/html_url.
+          if ! releases_json="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")"; then
+            echo "Unable to query GitHub Releases; refusing to release without a definitive result." >&2
+            exit 1
+          fi
+          if ! picked="$(printf '%s\n' "$releases_json" | node scripts/pick-github-release.mjs --tag "$TAG")"; then
             echo "Unable to query GitHub Release $TAG; refusing to release without a definitive result." >&2
             exit 1
           fi
-          if [ -n "$release_record" ]; then
-            IFS=$'\t' read -r release_id release_draft release_prerelease release_published_at <<< "$release_record"
+          if [ -z "$picked" ]; then
+            if ! graphql_id="$(gh api graphql \
+              -f query='query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { databaseId } } }' \
+              -F owner="$GITHUB_REPOSITORY_OWNER" \
+              -F name="${GITHUB_REPOSITORY#*/}" \
+              -F tag="$TAG" \
+              --jq '.data.repository.release.databaseId // empty')"; then
+              echo "Unable to query GitHub Release $TAG; refusing to release without a definitive result." >&2
+              exit 1
+            fi
+            if [ -n "$graphql_id" ]; then
+              if ! tagged_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$graphql_id")"; then
+                echo "Unable to query GitHub Release $TAG; refusing to release without a definitive result." >&2
+                exit 1
+              fi
+              picked="$(printf '%s\n' "$tagged_json" | node scripts/pick-github-release.mjs --tag "$TAG")"
+            fi
+          fi
+          if [ -n "$picked" ]; then
+            release_draft="$(printf '%s' "$picked" | jq -r '.draft')"
+            release_prerelease="$(printf '%s' "$picked" | jq -r '.prerelease')"
+            release_published_at="$(printf '%s' "$picked" | jq -r '.published_at // empty')"
             if [ -z "$tag_sha" ]; then
               echo "GitHub Release $TAG exists but its tag is missing; refusing to guess the release commit." >&2
               exit 1
@@ -630,17 +651,44 @@ jobs:
             fi
           fi
           RELEASE_STATE=none
-          if ! release_record="$(gh api graphql \
-            -f query='query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { id isDraft isPrerelease publishedAt } } }' \
-            -F owner="$GITHUB_REPOSITORY_OWNER" \
-            -F name="${GITHUB_REPOSITORY#*/}" \
-            -F tag="$TAG" \
-            --jq '.data.repository.release | if . == null then "" else "\(.id)\t\(.isDraft)\t\(.isPrerelease)\t\(.publishedAt // "")" end')"; then
+          RELEASE_ID=""
+          RELEASE_HTML_URL=""
+          RELEASE_GH_TARGET=""
+          # GraphQL release(tagName:) and GET /releases/tags/$TAG miss untagged
+          # drafts. List and match title "AgentHub $TAG", tag_name, or html_url.
+          if ! releases_json="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")"; then
+            echo "Unable to query GitHub Releases; refusing to release without a definitive result." >&2
+            exit 1
+          fi
+          if ! picked="$(printf '%s\n' "$releases_json" | node scripts/pick-github-release.mjs --tag "$TAG")"; then
             echo "Unable to query GitHub Release $TAG; refusing to release without a definitive result." >&2
             exit 1
           fi
-          if [ -n "$release_record" ]; then
-            IFS=$'\t' read -r release_id release_draft release_prerelease release_published_at <<< "$release_record"
+          if [ -z "$picked" ]; then
+            if ! graphql_id="$(gh api graphql \
+              -f query='query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { databaseId } } }' \
+              -F owner="$GITHUB_REPOSITORY_OWNER" \
+              -F name="${GITHUB_REPOSITORY#*/}" \
+              -F tag="$TAG" \
+              --jq '.data.repository.release.databaseId // empty')"; then
+              echo "Unable to query GitHub Release $TAG; refusing to release without a definitive result." >&2
+              exit 1
+            fi
+            if [ -n "$graphql_id" ]; then
+              if ! tagged_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$graphql_id")"; then
+                echo "Unable to query GitHub Release $TAG; refusing to release without a definitive result." >&2
+                exit 1
+              fi
+              picked="$(printf '%s\n' "$tagged_json" | node scripts/pick-github-release.mjs --tag "$TAG")"
+            fi
+          fi
+          if [ -n "$picked" ]; then
+            RELEASE_ID="$(printf '%s' "$picked" | jq -r '.id // empty')"
+            RELEASE_HTML_URL="$(printf '%s' "$picked" | jq -r '.html_url // empty')"
+            RELEASE_GH_TARGET="$(printf '%s' "$picked" | jq -r '.gh_target // empty')"
+            release_draft="$(printf '%s' "$picked" | jq -r '.draft')"
+            release_prerelease="$(printf '%s' "$picked" | jq -r '.prerelease')"
+            release_published_at="$(printf '%s' "$picked" | jq -r '.published_at // empty')"
             if [ -z "$tag_sha" ]; then
               echo "GitHub Release $TAG exists but its tag is missing; refusing to guess the release commit." >&2
               exit 1
@@ -659,7 +707,12 @@ jobs:
           elif [ -n "$tag_sha" ]; then
             echo "Resuming existing tag $TAG at $GITHUB_SHA; a draft release will be created."
           fi
-          echo "RELEASE_STATE=$RELEASE_STATE" >> "$GITHUB_ENV"
+          {
+            echo "RELEASE_STATE=$RELEASE_STATE"
+            echo "RELEASE_ID=$RELEASE_ID"
+            echo "RELEASE_HTML_URL=$RELEASE_HTML_URL"
+            echo "RELEASE_GH_TARGET=$RELEASE_GH_TARGET"
+          } >> "$GITHUB_ENV"
 
           BUNDLE="build-tree/target/release/bundle"
           ASSETS="release-assets"
@@ -726,7 +779,11 @@ jobs:
             # lost the response. Treat that state as idempotently complete
             # only when the remote release still points at this exact commit
             # and contains exactly the asset set prepared by this run.
-            if ! published_release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"; then
+            if [ -z "$RELEASE_ID" ]; then
+              echo "Unable to read the already-published GitHub Release $TAG; refusing to guess its state." >&2
+              exit 1
+            fi
+            if ! published_release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"; then
               echo "Unable to read the already-published GitHub Release $TAG; refusing to guess its state." >&2
               exit 1
             fi
@@ -750,14 +807,20 @@ jobs:
             # A draft retry may have a partial asset upload from an earlier
             # request. Allow missing expected assets so the upload can repair
             # it, but reject every remote asset outside this run's allowlist.
-            if ! draft_release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"; then
+            if [ -z "$RELEASE_ID" ]; then
+              echo "Unable to read the existing draft GitHub Release $TAG; refusing to resume it." >&2
+              exit 1
+            fi
+            if ! draft_release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"; then
               echo "Unable to read the existing draft GitHub Release $TAG; refusing to resume it." >&2
               exit 1
             fi
             draft_tag="$(printf '%s' "$draft_release_json" | jq -r '.tag_name // empty')"
+            draft_name="$(printf '%s' "$draft_release_json" | jq -r '.name // empty')"
             draft_state="$(printf '%s' "$draft_release_json" | jq -r '.draft // empty')"
             draft_prerelease="$(printf '%s' "$draft_release_json" | jq -r '.prerelease // empty')"
-            if [ "$draft_tag" != "$TAG" ] || [ "$draft_state" != "true" ] || [ "$draft_prerelease" != "$PRERELEASE" ]; then
+            if { [ "$draft_tag" != "$TAG" ] && [ "$draft_name" != "AgentHub $TAG" ]; } \
+              || [ "$draft_state" != "true" ] || [ "$draft_prerelease" != "$PRERELEASE" ]; then
               echo "Existing draft GitHub Release $TAG does not match this tag or prerelease state; refusing to resume it." >&2
               exit 1
             fi
@@ -805,31 +868,85 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          persist_release_identity() {
+            local create_out="${1:-}"
+            if ! releases_json="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")"; then
+              echo "Unable to read GitHub Release $TAG after uploading assets; refusing to publish." >&2
+              exit 1
+            fi
+            local pick_args=(--tag "$TAG")
+            if [ -n "$create_out" ]; then
+              pick_args+=(--create-output-text "$create_out")
+            fi
+            if ! picked="$(printf '%s\n' "$releases_json" | node scripts/pick-github-release.mjs "${pick_args[@]}")"; then
+              echo "Unable to read GitHub Release $TAG after uploading assets; refusing to publish." >&2
+              exit 1
+            fi
+            if [ -z "$picked" ]; then
+              echo "Unable to read GitHub Release $TAG after uploading assets; refusing to publish." >&2
+              exit 1
+            fi
+            RELEASE_ID="$(printf '%s' "$picked" | jq -r '.id // empty')"
+            RELEASE_HTML_URL="$(printf '%s' "$picked" | jq -r '.html_url // empty')"
+            RELEASE_GH_TARGET="$(printf '%s' "$picked" | jq -r '.gh_target // empty')"
+            if [ -z "$RELEASE_ID" ] && [ -n "$RELEASE_HTML_URL" ]; then
+              RELEASE_ID="$(gh release view "$RELEASE_HTML_URL" --json databaseId --jq .databaseId)"
+            fi
+            if [ -z "$RELEASE_ID" ]; then
+              echo "Unable to read GitHub Release $TAG after uploading assets; refusing to publish." >&2
+              exit 1
+            fi
+            {
+              echo "RELEASE_ID=$RELEASE_ID"
+              echo "RELEASE_HTML_URL=$RELEASE_HTML_URL"
+              echo "RELEASE_GH_TARGET=$RELEASE_GH_TARGET"
+            } >> "$GITHUB_ENV"
+          }
+
+          release_cli_target() {
+            if [ -n "${RELEASE_GH_TARGET:-}" ]; then
+              printf '%s\n' "$RELEASE_GH_TARGET"
+            elif [ -n "${RELEASE_HTML_URL:-}" ]; then
+              printf '%s\n' "$RELEASE_HTML_URL"
+            elif [ -n "${RELEASE_ID:-}" ]; then
+              gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq .html_url
+            else
+              echo "Unable to read GitHub Release $TAG after uploading assets; refusing to publish." >&2
+              exit 1
+            fi
+          }
+
           if [ "$RELEASE_STATE" = published ]; then
             echo "GitHub Release $TAG is already published with the expected assets; skipping release creation."
           elif [ "$RELEASE_STATE" = draft ]; then
-            gh release upload "$TAG" release-assets/* \
+            target="$(release_cli_target)"
+            gh release upload "$target" release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --clobber
-            gh release edit "$TAG" \
+            gh release edit "$target" \
               --repo "$GITHUB_REPOSITORY" \
               --title "AgentHub $TAG" \
               --notes "AgentHub $TAG"
+            persist_release_identity
           elif [ "$PRERELEASE" = true ]; then
-            gh release create "$TAG" release-assets/* \
+            create_out="$(gh release create "$TAG" release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --title "AgentHub $TAG" \
               --notes "AgentHub $TAG" \
               --draft \
               --prerelease \
-              --verify-tag
+              --verify-tag)"
+            printf '%s\n' "$create_out"
+            persist_release_identity "$create_out"
           else
-            gh release create "$TAG" release-assets/* \
+            create_out="$(gh release create "$TAG" release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --title "AgentHub $TAG" \
               --notes "AgentHub $TAG" \
               --draft \
-              --verify-tag
+              --verify-tag)"
+            printf '%s\n' "$create_out"
+            persist_release_identity "$create_out"
           fi
 
       - name: Verify release assets before publishing
@@ -844,14 +961,28 @@ jobs:
             echo "Published release $TAG was already verified; skipping draft asset verification."
             exit 0
           fi
-          if ! release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"; then
+          if [ -z "${RELEASE_ID:-}" ] && [ -n "${RELEASE_HTML_URL:-}" ]; then
+            RELEASE_ID="$(gh release view "$RELEASE_HTML_URL" --json databaseId --jq .databaseId)"
+          fi
+          if [ -z "${RELEASE_ID:-}" ]; then
+            if ! releases_json="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")"; then
+              echo "Unable to read GitHub Release $TAG after uploading assets; refusing to publish." >&2
+              exit 1
+            fi
+            picked="$(printf '%s\n' "$releases_json" | node scripts/pick-github-release.mjs --tag "$TAG")"
+            RELEASE_ID="$(printf '%s' "$picked" | jq -r '.id // empty')"
+          fi
+          if [ -z "${RELEASE_ID:-}" ] || ! release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"; then
             echo "Unable to read GitHub Release $TAG after uploading assets; refusing to publish." >&2
             exit 1
           fi
+          echo "RELEASE_ID=$RELEASE_ID" >> "$GITHUB_ENV"
           release_tag="$(printf '%s' "$release_json" | jq -r '.tag_name // empty')"
+          release_name="$(printf '%s' "$release_json" | jq -r '.name // empty')"
           release_draft="$(printf '%s' "$release_json" | jq -r '.draft // empty')"
           release_prerelease="$(printf '%s' "$release_json" | jq -r '.prerelease // empty')"
-          if [ "$release_tag" != "$TAG" ] || [ "$release_draft" != "true" ] || [ "$release_prerelease" != "$PRERELEASE" ]; then
+          if { [ "$release_tag" != "$TAG" ] && [ "$release_name" != "AgentHub $TAG" ]; } \
+            || [ "$release_draft" != "true" ] || [ "$release_prerelease" != "$PRERELEASE" ]; then
             echo "GitHub Release $TAG is not the expected draft/prerelease after asset upload; refusing to publish." >&2
             exit 1
           fi
@@ -892,10 +1023,20 @@ jobs:
             echo "Remote tag $TAG points to $remote_tag_sha, expected $GITHUB_SHA; refusing to publish." >&2
             exit 1
           fi
+          target="${RELEASE_GH_TARGET:-${RELEASE_HTML_URL:-}}"
+          if [ -z "$target" ] && [ -n "${RELEASE_ID:-}" ]; then
+            target="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq .html_url)"
+          fi
+          if [ -z "$target" ]; then
+            echo "Unable to read GitHub Release $TAG after uploading assets; refusing to publish." >&2
+            exit 1
+          fi
+          # Bind the existing origin tag to this release. Do not pass --target;
+          # GitHub must not create or move git tags here.
           if [ "$PRERELEASE" = true ]; then
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
+            gh release edit "$target" --repo "$GITHUB_REPOSITORY" --tag "$TAG" --draft=false --prerelease
           else
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+            gh release edit "$target" --repo "$GITHUB_REPOSITORY" --tag "$TAG" --draft=false --latest
           fi
 
       - name: Write release summary
