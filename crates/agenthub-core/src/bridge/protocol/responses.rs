@@ -323,13 +323,27 @@ pub fn apply_official_codex_model(body: &mut Value, incoming: &str, configured: 
     }
 }
 
+const OFFICIAL_CODEX_RESPONSE_KEYS: &[&str] = &[
+    "model",
+    "input",
+    "stream",
+    "store",
+    "instructions",
+    "tools",
+    "tool_choice",
+    // Kept until a live official 400; existing tests still forward them.
+    "temperature",
+    "top_p",
+];
+
 /// Prepare a request for the official ChatGPT / Codex Responses upstream.
 ///
 /// The official endpoint requires storage to be disabled for this local
-/// subscription route, rejects `role=system` input items, and rejects
-/// `max_output_tokens`. Keep these policies next to the model policy so
-/// callers cannot accidentally omit them while leaving the
-/// provider-neutral request conversion unchanged.
+/// subscription route, rejects `role=system` input items, and 400s on
+/// unsupported request fields (`metadata`, `max_output_tokens`, and other
+/// Chat Completions leftovers). Keep only the allowlisted Responses keys
+/// so callers cannot accidentally forward Claude/OpenAI extras while
+/// leaving the provider-neutral request conversion unchanged.
 pub fn prepare_official_codex_request(
     body: &mut Value,
     incoming_model: &str,
@@ -339,7 +353,7 @@ pub fn prepare_official_codex_request(
     body["store"] = Value::Bool(false);
     fold_official_codex_system_items(body);
     if let Some(object) = body.as_object_mut() {
-        object.remove("max_output_tokens");
+        object.retain(|key, _| OFFICIAL_CODEX_RESPONSE_KEYS.contains(&key.as_str()));
     }
 }
 

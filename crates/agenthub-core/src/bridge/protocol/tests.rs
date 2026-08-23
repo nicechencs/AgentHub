@@ -834,6 +834,56 @@ fn prepare_official_codex_request_omits_max_output_tokens_from_passthrough() {
 }
 
 #[test]
+fn prepare_official_codex_request_allowlists_responses_keys() {
+    let mut body = json!({
+        "model": "claude-sonnet-4-20250514",
+        "instructions": "Be brief.",
+        "stream": true,
+        "store": true,
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{ "type": "input_text", "text": "ping" }]
+            }
+        ],
+        "tools": [{ "type": "function", "name": "echo", "parameters": { "type": "object" } }],
+        "tool_choice": "auto",
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "max_output_tokens": 64,
+        "metadata": { "user_id": "u1", "session": "s1" },
+        "presence_penalty": 0.1,
+        "frequency_penalty": 0.2,
+        "seed": 7,
+        "user": "alice"
+    });
+    prepare_official_codex_request(&mut body, "claude-sonnet-4-20250514", Some(""));
+    assert_eq!(body["store"], false);
+    assert!(body.get("model").is_none(), "must not invent gpt-* models");
+    assert_eq!(body["stream"], true);
+    assert_eq!(body["instructions"], "Be brief.");
+    assert_eq!(body["tool_choice"], "auto");
+    assert_eq!(body["tools"][0]["name"], "echo");
+    assert_eq!(body["temperature"], 0.2);
+    assert_eq!(body["top_p"], 0.9);
+    assert_eq!(body["input"][0]["content"][0]["text"], "ping");
+    for key in [
+        "max_output_tokens",
+        "metadata",
+        "presence_penalty",
+        "frequency_penalty",
+        "seed",
+        "user",
+    ] {
+        assert!(
+            body.get(key).is_none(),
+            "official Codex Responses must drop {key}: {body}"
+        );
+    }
+}
+
+#[test]
 fn responses_ir_encodes_chat_completion_without_inventing_model() {
     let ir = responses_output_to_ir(&fixture("responses_upstream_text")).expect("ir");
     let chat = encode_chat_from_ir(&ir, Some("chatcmpl_test")).expect("chat");
